@@ -1,0 +1,161 @@
+# The BATCH path: one-shot runs that bring their own container, tee everything
+# to .log/, and exit. The other path is the devcontainer
+# (.devcontainer/cuda/ + devtools/devcontainer.sh), which is the interactive and
+# agent-facing one. Both run the SAME images, so a result here and a result in
+# there mean the same thing.
+#
+#   # from the repo root; build.sh walks base -> cuda and tags :cuda and :latest
+#   docker/build.sh cuda
+#   export HOST_UID=$(id -u) HOST_GID=$(id -g)
+#   docker compose -f docker/compose.yaml run --rm test
+#   docker compose -f docker/compose.yaml run --rm kernel
+#
+# FJ_IMAGE defaults to fj:latest, one of the two tags build.sh gives the CUDA
+# image -- so nothing here needs to know about the base/cuda/hip/combined
+# chain. Compose does not build; it only runs.
+#
+# Use these when you want a clean, logged, unattended run on THIS machine -- a
+# nightly, a sanitizer sweep, a long generation sweep you want a transcript of.
+# Use the devcontainer when you want to stay in the container and iterate.
+#
+# HOST_UID/HOST_GID are required (`:?` below) rather than defaulted, because a
+# default of 1000 on a host where you are not uid 1000 writes root-owned output
+# into the bind mount and the failure surfaces much later. See README.md here.
+
+# The compose PROJECT NAME, set explicitly because it otherwise defaults to the
+# containing directory -- `docker`. Two repos on this box each have a
+# docker/compose.yaml, so the default would give them the same project name and
+# `compose down` in one could reach the other's containers.
+name: fj
+
+# --- what every service shares ---------------------------------------------
+# An anchor rather than five copies: the services differ only in image, command
+# and which device they reserve, and a copied-out mount list is how one of them
+# silently stops sharing the cache.
+x-common: &common
+  volumes:
+    - ..:/workspace
+    # The sccache store, as a bind of its own rather than something reached
+    # through /workspace: a worktree's own .sccache is not the shared one. The
+    # default IS the shared store when you run from the main checkout; from a
+    # worktree, point FJ_SCCACHE_HOST_DIR at main's.
+    #
+    # create_host_path: false is the point of the long syntax. Docker's default
+    # is to CREATE a missing bind source, owned by root -- and the service runs
+    # as HOST_UID, so the first nvcc call dies with `failed to create directory
+    # /sccache/...: Permission denied`, leaving a directory only sudo can
+    # clear. False turns that into compose refusing to start and naming the
+    # path it wanted. (The devcontainer cannot say this in JSON, so
+    # devtools/devcontainer.sh mkdirs it instead.)
+    - type: bind
+      source: ${FJ_SCCACHE_HOST_DIR:-../.sccache}
+      target: /sccache
+      bind:
+        create_host_path: false
+  working_dir: /workspace
+  user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
+  environment:
+    # The store bound above, NOT the image's /home/ubuntu/.sccache: these
+    # services run as HOST_UID rather than ubuntu, so that home is not
+    # necessarily writable.
+    #
+    # Unlike the devcontainer -- which mounts each worktree at its own host path
+    # and so can share the store but not HITS -- every service here mounts the
+    # tree at the same /workspace, so the compile command lines and cache keys
+    # are identical whichever worktree you ran from. That gives real
+    # cross-worktree reuse of nvcc output.
+    - SCCACHE_DIR=/sccache
+    - JOBS=${JOBS:-}
+    - PYTEST_ARGS=${PYTEST_ARGS:-}
+
+x-nvidia: &nvidia
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+# AMD has no `deploy.devices` driver: the nodes are passed in directly, and the
+# container user must be in the HOST groups that own them. The gids are
+# ${FJ_RENDER_GID}/${FJ_VIDEO_GID} because a group NAME resolves inside the
+# container, where it means something else -- the failure mode is
+# hipErrorNoDevice, which reads exactly like having no card. The defaults are
+# this box's values (`getent group render video`); devtools/devcontainer.sh
+# exports the resolved ones for the interactive path.
+x-amd: &amd
+  devices:
+    - /dev/kfd
+    - /dev/dri
+  group_add:
+    - "${FJ_RENDER_GID:-109}"
+    - "${FJ_VIDEO_GID:-44}"
+
+services:
+  # The fast tier: pytest, no device compiler involved beyond what the suite
+  # itself asks for. This is the one to run when you only want to know whether
+  # the generator still agrees with its golden files.
+  test:
+    <<: [*common, *nvidia]
+    image: ${FJ_IMAGE:-fj:latest}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        ts=$$(date +%Y%m%d-%H%M%S)
+        mkdir -p .log
+        pytest -rs $$PYTEST_ARGS \
+          --junitxml=.log/pytest.$$ts.xml \
+          > >(tee .log/pytest.$$ts.out.txt) \
+          2> >(tee .log/pytest.$$ts.err.txt >&2)
+
+  # The kernel tier on NVIDIA: generate, hand each translation unit to nvcc,
+  # run it on the card, compare against the reference. The tier script owns the
+  # phases and the reports; this service only supplies the container.
+  kernel:
+    <<: [*common, *nvidia]
+    image: ${FJ_IMAGE:-fj:latest}
+    command: ["devtools/kernel-tier.sh", "--backend", "cuda"]
+
+  # The same tier on AMD. Needs an image with ROCm -- :hip or :combined, never
+  # :latest -- so FJ_HIP_IMAGE is separate and has no overlap with FJ_IMAGE's
+  # default. It matches ROCM_IMAGE in devtools/config.sh; keep the two in step.
+  kernel-hip:
+    <<: [*common, *amd]
+    image: ${FJ_HIP_IMAGE:-fj:hip}
+    command: ["devtools/kernel-tier.sh", "--backend", "hip"]
+
+  # memcheck/racecheck over a generated kernel. The reason this service exists
+  # at all: an unrolled high-L kernel carrying hand-scheduled shared-memory
+  # intermediates is exactly where a race or an out-of-bounds write hides, and
+  # neither shows up as a wrong number on every run. Pick the tool with
+  # COMPUTE_SANITIZER_TOOL=racecheck (default memcheck).
+  compute-sanitizer:
+    <<: [*common, *nvidia]
+    image: ${FJ_IMAGE:-fj:latest}
+    environment:
+      - SCCACHE_DIR=/sccache
+      - JOBS=${JOBS:-}
+      - COMPUTE_SANITIZER_TOOL=${COMPUTE_SANITIZER_TOOL:-memcheck}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        ts=$$(date +%Y%m%d-%H%M%S)
+        mkdir -p .log
+        compute-sanitizer --tool "$$COMPUTE_SANITIZER_TOOL" --error-exitcode 1 \
+          devtools/kernel-tier.sh --backend cuda --no-cache \
+          > >(tee .log/compute-sanitizer.$$ts.out.txt) \
+          2> >(tee .log/compute-sanitizer.$$ts.err.txt >&2)
+
+  # An interactive shell in the batch container, for reproducing one of the
+  # above by hand. `docker compose -f docker/compose.yaml run --rm shell`
+  shell:
+    <<: [*common, *nvidia]
+    image: ${FJ_IMAGE:-fj:latest}
+    command: ["/bin/bash"]
+    stdin_open: true
+    tty: true

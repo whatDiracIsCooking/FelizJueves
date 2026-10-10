@@ -1,0 +1,215 @@
+---
+name: doctor
+description: >-
+  Diagnose a degraded environment: run devtools/doctor.sh and turn each
+  finding into the fix, plus the failures it cannot see (orphaned pytest
+  workers, a container that ignored your config edit). Use when something
+  behaves oddly — commits fail with "No module named pre_commit", tests skip or
+  vanish, git says "not a repository" inside a container, a worktree command
+  cannot find its docker state — or when the user just asks what is wrong here.
+---
+
+# Reading a degraded environment
+
+```bash
+devtools/doctor.sh
+```
+
+It exits non-zero **only** on a FAIL (the core suite cannot run). A WARN means
+some slice of the suite will skip, which is often the correct state of a
+machine. So the output is not pass/fail: it is a list of what this environment
+cannot do, and the job is to say which of those matter for the task at hand.
+
+Run it **first** when anything behaves oddly, and again after any fix.
+
+## Run it on both sides, and compare
+
+This repo has a host half and a container half, and doctor is the thing that
+tells you which one you are on:
+
+```bash
+devtools/doctor.sh                                    # the host
+devtools/devcontainer.sh shell -c devtools/doctor.sh  # the CUDA container
+```
+
+On a bare host, **several warnings are the expected, healthy state**. What is
+genuinely container-only is most of the GPU toolchain -- `cmake`, `ninja`,
+`clang-format`, `compute-sanitizer`, `nsys`, `sccache` -- plus `hipcc` /
+`hipconfig` / `rocprofv3`, which are present only in the images built from
+`docker/Dockerfile.hip` and `docker/Dockerfile.combined`, not the `cuda` one.
+
+**`nvcc` is the exception on THIS box**: the CUDA 13.0 toolkit is installed on
+the host, so the CUDA half of the kernel tier runs without a container and
+doctor reports `[ ok ]` for it here. Do not generalise that to another machine.
+
+Note also that doctor resolves tools through `VENV_PATHS` (`find_tool` in
+`devtools/lib.sh`) rather than `PATH`, so a tool from `.venv` reports `[ ok ]`
+with a `not on PATH; using .../.venv/bin/...` note -- normal rather than a
+finding. A host missing the rest is not a broken machine; it is the laptop side
+of a two-sided workflow, good for editing, linting and the fast suite. The same
+list appearing *inside* a container is a real problem.
+
+Never report the host list on its own as "the environment is degraded." Say
+which side you ran on, and what the other side would cover.
+
+## Finding → what it means → fix
+
+**`[FAIL] not inside a git repository`** — nothing else can be checked. Usually
+means a container without the `.git` bind mount: a worktree's `.git` is a file
+pointing outside the workspace folder, so `.devcontainer/<variant>/devcontainer.json`
+mounts the main checkout's `.git` common dir inside. `devtools/devcontainer.sh`
+injects that host path as `FJ_GIT_DIR` on `up`/`rebuild`, so the usual cause
+is a container brought up another way (a direct `devcontainer up`, or VS Code
+"Reopen in Container" with the fallback path unedited). Bring it up with
+`devtools/devcontainer.sh rebuild`; `up` will not apply the mount change.
+
+**`[warn] <file> names volumes that do not start with '<name>-'`** — a
+half-applied rename. `PROJECT_NAME` is spelled out in `devtools/config.sh` *and*
+in **every** `devcontainer.json` file (JSON cannot source shell), and while they
+disagree `worktree.sh rm` and `gc` do not recognise this project's volumes, so
+every worktree you tear down leaks its whole set. Each file is checked
+separately, so the warning names which one drifted. The fix is to make the odd
+one out agree with `PROJECT_NAME` in `devtools/config.sh`.
+
+**`[warn] cannot resolve this repo's git dir for the container .git mount`** —
+`doctor` ran somewhere `git rev-parse --path-format=absolute --git-common-dir`
+returns nothing, so the path `devcontainer.sh` would inject as `FJ_GIT_DIR`
+is empty and the container's `.git` mount would fail. Run doctor from inside the
+FelizJueves checkout.
+
+**`[FAIL] DEVCONTAINER_CONFIG does not exist`** — `devtools/config.sh` points at
+a `devcontainer.json` that is not there, and *every* `devcontainer.sh` command
+refuses until it is fixed. The shipped values are
+`.devcontainer/cuda/devcontainer.json` (the default), `.devcontainer/hip/devcontainer.json`
+and `.devcontainer/combined/devcontainer.json`.
+
+**`[warn] worktree root not writable` / `primary checkout owned by uid N`**
+— `worktree.sh add` cannot create sibling checkouts, and git ops in main fail.
+Fix once with the numeric uid: `sudo chown -R $(id -u) <root>`. Not `chown
+ubuntu` — the host user and the container's `ubuntu` are usually both uid 1000
+under different names, so the name form fails on the host.
+
+**`[warn] N broken/prunable linked worktree(s)`** — a worktree directory was
+deleted out from under git. `git worktree prune` clears the bookkeeping; then
+check `devtools/worktree.sh gc --dry-run`, because a hand-deleted worktree
+usually left its container and volumes behind too.
+
+**`[warn] no venv found` / `pytest not found` / `uv not found`** — `uv sync`.
+`uv` is the only assumed host tool; the venv is built from the tracked
+`uv.lock`, never with `uv pip install`.
+
+**`[warn] uv.lock does not name the project '<name>' -- it is stale`** — the
+lock and `pyproject.toml` disagree, usually after a dependency edit or a
+half-finished rename. `uv sync --frozen` is what both Dockerfiles and CI run, so
+this surfaces as a failed **image build** a long way from the cause. Fix with
+`uv lock` and commit the result; do not hand-edit the lock, and do not "work
+around it" by dropping `--frozen`, which is the line that keeps the container
+and the host on the same versions.
+
+**`[warn] <tool> not found -- lost: <what>`** — an optional tool from
+`DOCTOR_OPTIONAL_TOOLS` in `devtools/config.sh`. Install it *or* accept that its
+slice of the suite will skip — but say which, because that is exactly the
+coverage a green run will not have. This list is the project's to maintain: when
+a test starts depending on a tool, add it here.
+
+**`[warn] gh cannot see <owner>/<repo>`** — the token authenticates but was
+never granted THIS repository. A fine-grained PAT names its repositories one by
+one, and `gh auth status` reports a clean login either way, so without this
+check the first symptom is `gh pr create` failing with "Could not resolve to a
+Repository" *after* the branch is already pushed. Fix it under Repository
+access on the token, not by re-authenticating. Blocks the `pr` and `milestone`
+skills entirely.
+
+**`[warn] gh present but GH_TOKEN empty`** — `gh` is installed but
+unauthenticated, so the PR flow fails at push time rather than at the start.
+Export a fine-grained PAT (Contents + Pull requests: read/write) on the **host**
+and `rebuild`: the container takes `GH_TOKEN` from the host env at create time,
+so an `export` after the container is up does not reach it.
+
+**`[warn] <path> absent`** — a `DOCTOR_REQUIRED_PATHS` entry. **There are none
+declared**, so this section does not appear at all today; it is there for a
+fixture tree or submodule a future slice of the suite genuinely needs. Reading
+material is not such a path — `docs/references.md` cites every paper by DOI
+rather than by a location on one machine.
+
+**`[warn] pre-commit hook unusable` / `no pre-commit hook installed`** — the
+one footgun worth memorising. The hook bakes an absolute `INSTALL_PYTHON` and
+lives in the **common** git dir: one file shared by the main checkout and every
+worktree. Installed from inside the container it points at `/opt/venv` and every
+host commit then fails with `ModuleNotFoundError: No module named 'pre_commit'`;
+installed on the host it breaks committing inside. Fix with `pre-commit install
+-f` **from whichever side you commit on**. `postCreateCommand` is guarded so
+bringing a container up will not do this to you — do not remove that guard.
+
+**`[warn] N orphaned docker resource(s)`** — containers, volumes and images from
+worktrees that no longer exist (a plain `git worktree remove`, or an agent's
+`.claude/worktrees/` checkout). Review with `devtools/worktree.sh gc --dry-run`,
+then `gc` to remove. The count comes from that same `--dry-run`, so the two
+always agree.
+
+**`[warn] Claude Code pin X is behind the registry (Y)`** — the GPU images
+install Claude Code at an explicit `ARG CLAUDE_CODE_VERSION`, and npm has moved
+on. Never a failure (a pin is a choice), but it is the only thing that reports
+the gap: `devtools/claude-version.sh --apply`, then rebuild the images you use.
+
+**`[warn] the Claude Code pin disagrees across the Dockerfiles`** — a bump
+reached some of the three GPU files and not all. `devtools/claude-version.sh
+--apply <version>` rewrites every one of them, which is the whole reason that
+script exists.
+
+**`[warn] claude on PATH is A, this image pinned B`** (only inside a container)
+— something `npm install -g`'d over the image's copy. Rebuild rather than
+patching in place; an install inside a container dies with it. The sibling
+warning *"this image was built at A, the tree now pins B"* means the opposite:
+the image is older than the checkout, so `devtools/devcontainer.sh rebuild`.
+
+## What doctor.sh cannot see
+
+Five failures that look like something else entirely:
+
+1. **A container running your old config.** `up` reuses the running container
+   and silently applies no change from `devcontainer.json` or the `Dockerfile`,
+   while reporting success and the same container id. If a change "did not take
+   effect", `devtools/devcontainer.sh rebuild` before debugging anything else.
+
+2. **Orphaned pytest workers.** Killing `devtools/devcontainer.sh test` on the
+   host kills `npx` only; the pytest master and its xdist workers keep running
+   inside at 100% CPU. Symptom: every later run is inexplicably slower.
+
+   ```bash
+   devtools/devcontainer.sh shell -c "ps -eo pid,pcpu,cmd --sort=-pcpu | head"
+   ```
+
+   `pkill -f pytest` reaches only the master — kill the workers by PID.
+
+3. **A green run that tested nothing.** Skips are silent without `-rs`, and a
+   suite whose tests all degrade-to-skip on a missing tool passes cleanly. This
+   is the failure doctor exists for, but it only tells you the *tools* are
+   missing — the `test` skill covers reading the skip list itself.
+
+4. **Stale generated kernels.** Doctor never generates, so it cannot see that
+   `.kernel-tier/` holds output from the generator as it was an hour ago. A
+   change that "does nothing" wants `devtools/kernel-tier.sh --fresh`, which
+   wipes that directory first.
+
+5. **A device-behaviour change with no gate behind it.** The push hook only
+   fires on `.py`, and `FAST_TEST_ARGS` keeps every compiler and device marker
+   out of it. There is no CI in this repo yet, and when there is it will have no
+   card. So a change that only a card would catch stays ungated until
+   `devtools/kernel-tier.sh` runs locally, on each backend. Doctor reports
+   tools, not that absence.
+
+6. **A card that is visible but unusable.** Doctor probes the driver, so it
+   catches the case `devcontainer.sh`'s CPU-limit path creates -- `docker
+   update` revoking the NVIDIA device cgroup while every `/dev/nvidia*` node
+   stays in place. What it cannot tell you is whether the gids passed to an AMD
+   container are the right ones: a wrong `--group-add` looks exactly like
+   having no card.
+
+## Reporting
+
+Say what is degraded and what it costs, not just the counts: "no failures, 21
+warnings — all the C++ toolchain, because this is the host and it lives in the
+CUDA image; the Python suite runs here, the C++ tier does not." A bare "doctor
+passes" throws away the entire point of the command, and a bare "21 warnings"
+reads as alarming when it is the expected state.

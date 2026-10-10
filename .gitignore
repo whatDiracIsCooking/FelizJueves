@@ -1,0 +1,67 @@
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# --- Generated kernels and compile output ----------------------------------
+# Where devtools/kernel-tier.sh emits, compiles and runs. One pattern covers
+# any out-of-tree build (a reference library built from source, say).
+/build*/
+/.kernel-tier/
+
+# NOTE WHAT IS *NOT* IGNORED: no `*.cu` / `*.hip` line, on purpose. Generated
+# kernel text that a test asserts against is a GOLDEN FILE -- it is tracked,
+# reviewed, and a diff in it is the whole signal when the generator changes.
+# Scratch emission goes under the two directories above instead.
+
+# --- Run artifacts ---------------------------------------------------------
+# docker/compose.yaml tees configure/build/test output here.
+/.log/
+# devtools/kernel-tier.sh writes timestamped run logs here.
+/.kernel-tier-reports/
+# .claude/hooks/protect-main.py appends one line per guard decision here, in
+# the PRIMARY checkout, so every session's edits-to-main land in one file.
+# Purely diagnostic and disposable; never tracked.
+/.logs/
+
+# --- Compiler cache --------------------------------------------------------
+# The shared sccache store. Lives in the PRIMARY checkout and is bind-mounted
+# into every container (.devcontainer/*/devcontainer.json, docker/compose.yaml)
+# so every worktree reaches this one directory. It caches nvcc and hipcc, which
+# is why a codegen project keeps it: the kernel tier recompiles the same
+# generated translation units across runs.
+/.sccache/
+
+# --- Local scratch ---------------------------------------------------------
+# Whatever a person keeps beside the checkout and nothing in the repo reads --
+# downloaded papers, notes, one-off data. Nothing here is ever an input to a
+# tier, so a clone without it is complete; docs/references.md cites the
+# literature by DOI for that reason.
+.temp/
+
+# --- Local environment -----------------------------------------------------
+# docker/.env holds machine-specific overrides (image tag, UID/GID).
+docker/.env
+*.local
+scratch/
+
+# --- Agent -----------------------------------------------------------------
+# Lightweight agent worktrees (devtools/worktree.sh gc cleans up after them).
+.claude/worktrees/
+# Personal overrides -- .claude/settings.json is tracked, this is not.
+.claude/settings.local.json
+
+# --- Editors and OS --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- Profiling output ------------------------------------------------------
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.sqlite

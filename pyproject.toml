@@ -1,0 +1,83 @@
+# A VIRTUAL uv project: there is no [build-system], and nothing in this repo is
+# importable yet. `uv sync` reads this file to build .venv on the host and
+# /opt/venv in the images, and records the project itself as
+# `source = { virtual = "." }` in uv.lock.
+#
+# WHY VIRTUAL RATHER THAN A PACKAGE. This repo is the dev environment and the
+# infrastructure first; the generator does not exist yet (README.md, "What is
+# here"). Turning it into a real package later is an edit to this file plus
+# `uv lock` -- nothing else in the tree assumes either shape.
+#
+# uv.lock IS THE ONLY PLACE VERSIONS LIVE. After editing this file run
+# `uv lock` and commit the result; never `uv pip install`, and never hand-edit
+# the lock. Both Dockerfiles install with `uv sync --frozen`, which FAILS
+# rather than re-resolving, so a stale lock breaks the image build instead of
+# letting the container drift from the host. devtools/doctor.sh reports when
+# the lock no longer names this project.
+[project]
+name = "felizjueves"
+version = "0.0.0"
+description = "Python codegen of GPU kernels for high-angular-momentum ERI and Coulomb-matrix (J) evaluation"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+
+# EMPTY, AND IT IS THE RUNTIME LIST -- it stays empty until something here is
+# importable. The reference numerics and the dev tooling are dependency-groups
+# below, which `uv sync` installs and a consumer of this project would not.
+dependencies = []
+
+# >=3.12 BECAUSE THAT IS THE SYSTEM INTERPRETER ON BOTH SIDES: this host runs
+# Ubuntu's python3.12 and docker/Dockerfile.base is ubuntu:24.04. A >=3.13
+# floor instead makes `uv sync` download a uv-managed CPython into the image,
+# which is what UV_PYTHON_INSTALL_DIR there exists to keep reachable by uid
+# 1000 -- raise the floor and that trap comes back, so read that comment first.
+
+[dependency-groups]
+# What a bare `uv sync` installs. Split so a lint-only job can take `lint`
+# without pulling numpy.
+dev = [{ include-group = "lint" }, { include-group = "test" }]
+
+lint = [
+  "ruff>=0.14",
+  "pre-commit>=4.0",
+]
+
+test = [
+  "pytest>=8.3",
+  # Worker count comes from JOBS in devtools/config.sh rather than `auto`:
+  # several containers can be up on this box at once, and `auto` in each would
+  # claim every core.
+  "pytest-xdist>=3.6",
+  # The host-side oracle. Every claim this project will make has the shape
+  # "the generated kernel agrees with a reference to a tolerance", and the
+  # reference is computed here before any device result is compared to it.
+  "numpy>=2.1",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+# Narrow on purpose, and there is NO FORMATTER HOOK: the output that matters is
+# generated kernel text, and a formatter arguing with the generator over its
+# own string layout is pure noise. E/F pycodestyle+pyflakes, I import order,
+# UP pyupgrade, B bugbear.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "-ra"
+# THE MARKERS DECIDE WHAT A GREEN RUN PROVES, so they separate toolchain from
+# device: `cuda`/`hip` need a COMPILER (nvcc / hipcc) and stop at compile-and-
+# link; `gpu` launches a kernel and needs a live CARD. A GitHub runner has
+# neither, this host has both, a container has whatever its image carries --
+# the same suite therefore reports three different amounts of evidence, and
+# has to say which one it collected.
+markers = [
+  "cuda: needs the CUDA toolchain (nvcc) to compile",
+  "hip: needs the ROCm toolchain (hipcc) to compile",
+  "gpu: launches a kernel -- needs a live device, not merely a compiler",
+  "slow: seconds to minutes; kept off the pre-push gate",
+]

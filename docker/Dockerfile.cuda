@@ -1,0 +1,106 @@
+# syntax=docker/dockerfile:1.7
+# ============================================================================
+# cuda -- base + the CUDA toolkit. THE DEFAULT BACKEND.
+# ============================================================================
+# What .devcontainer/cuda/devcontainer.json and docker/compose.yaml build, and
+# the only image the everyday workflow needs.
+#
+#   docker/build.sh cuda      # builds base first, then this; tags :cuda, :latest
+#
+# By hand, and the parent must already be tagged (see Dockerfile.base, "WHY THE
+# FOUR FILES CHAIN BY TAG"):
+#
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t fj:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda -t fj:latest .
+#
+# Both from the REPO ROOT: the trailing `.` is the context, and this file
+# bind-mounts docker/install-cuda.sh from it.
+#
+# ---------------------------------------------------------------------------
+# PICK CUDA_VERSION AGAINST THE HOST DRIVER, NOT AGAINST THE NEWEST CUDA
+# ---------------------------------------------------------------------------
+# A driver whose ceiling is below the image's CUDA version makes the container
+# refuse to START under `--gpus all`:
+#
+#   nvidia-container-cli: requirement error: unsatisfied condition: cuda>=13.1
+#
+# `nvidia-smi` reports the ceiling as "CUDA Version:". This box is driver
+# 580.126.20, whose ceiling is 13.0 -- so NOT 13.1 until the host driver moves.
+#
+# CUDA 13 also dropped Maxwell/Pascal/Volta: nvcc's floor is now compute_75.
+# sm_86 (this box's RTX 3080) is supported; a pre-Turing card would need a 12.x
+# CUDA_VERSION here.
+ARG PROJECT_NAME=fj
+ARG PARENT_IMAGE=${PROJECT_NAME}:base
+FROM ${PARENT_IMAGE}
+
+ARG CUDA_VERSION=13-0
+ARG TARGETARCH
+USER root
+
+# Re-stamped rather than merely inherited from the parent, so that the
+# PROJECT_NAME the devcontainer passes to THIS build is consumed where it is
+# declared. See Dockerfile.base for what the label is for.
+ARG PROJECT_NAME
+LABEL devcontainer.project="${PROJECT_NAME}"
+
+# The target architecture, declared BEFORE the install so install-cuda.sh's
+# device-code probe can compile for it. A build arg so a cluster build can
+# widen it:  --build-arg CUDA_ARCH="80;86;90"
+#
+# 86 is Ampere consumer (RTX 30xx), which is the card in this box. CUDAARCHS is
+# what CMake reads for a dependency built in here; the kernel tier reads
+# CUDA_ARCH directly.
+ARG CUDA_ARCH=86
+ENV CUDA_ARCH=${CUDA_ARCH} \
+    CUDAARCHS=${CUDA_ARCH}
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=docker/install-cuda.sh,target=/tmp/install-cuda.sh \
+    CUDA_VERSION="${CUDA_VERSION}" TARGETARCH="${TARGETARCH}" \
+    CUDA_ARCH="${CUDA_ARCH}" bash /tmp/install-cuda.sh
+
+# Set by the nvidia/cuda base images, and required by the NVIDIA container
+# runtime to inject the driver under `--gpus all`. Building on plain Ubuntu
+# means setting them here instead.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Version-independent symlink, so a toolkit bump (13.0 -> 13.1) does not leave
+# these pointing at a directory that no longer exists.
+ENV CUDAToolkit_ROOT=/usr/local/cuda \
+    CUDACXX=/usr/local/cuda/bin/nvcc \
+    PATH=/usr/local/cuda/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+
+# Nsight Systems CLI, for profiling from inside the container -- and the one
+# profiler claim in the papers this project is chasing (memory-bound to
+# compute-bound, docs/references.md) is exactly what it measures. Non-fatal:
+# the repository is occasionally unavailable, and nothing else depends on nsys.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    repo="https://developer.download.nvidia.com/devtools/repos/ubuntu2404/${TARGETARCH}" && \
+    ( wget -qO /etc/apt/trusted.gpg.d/nvidia-devtools.asc "${repo}/nvidia.pub" && \
+      echo "deb ${repo}/ /" > /etc/apt/sources.list.d/nvidia-devtools.list && \
+      apt-get update && apt-get install -y --no-install-recommends nsight-systems-cli ) \
+    || echo "WARN: nsight-systems-cli unavailable; nsys will be missing (doctor.sh reports it)"
+
+# Claude Code, PINNED -- the last root layer in this file on purpose: a version
+# bump re-runs only this and the two lines after it, never the SDK above it.
+# docker/install-claude-code.sh carries the rest (why not Dockerfile.base, and
+# which drift this ended). The same ARG is declared by Dockerfile.cuda, .hip
+# and .combined, so bump it with `devtools/claude-version.sh --apply`, which
+# rewrites all three at once -- doctor.sh warns when they have drifted apart.
+#
+# ENV as well as ARG so the INTENDED version is readable from inside a running
+# container (`printenv CLAUDE_CODE_VERSION`), not merely inferable from the
+# binary: that is what lets doctor.sh tell "pinned and installed" apart from
+# "someone npm-installed over the top".
+ARG CLAUDE_CODE_VERSION=2.1.292
+ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
+RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
+    bash /tmp/install-claude-code.sh
+
+USER ubuntu
+RUN nvcc --version | grep release

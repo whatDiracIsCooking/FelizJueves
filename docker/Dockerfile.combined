@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1.7
+# ============================================================================
+# combined -- cuda + ROCm in one image
+# ============================================================================
+# For working on both backends in one shell: generate once, then compile and
+# run the same kernel through nvcc on the RTX 3080 and hipcc on the RX 9060 XT
+# without leaving the container. That cross-check is the reason this image
+# exists -- the two device compilers disagree (hipcc IS clang, nvcc is not),
+# and a generated kernel that only one of them accepts is the defect class this
+# project is most exposed to.
+#
+#   docker/build.sh combined   # base, cuda, then this; tags :combined
+#
+# A DIAMOND ONLY IN INTENT. Docker has no multiple inheritance, so this takes
+# `cuda` as its parent and re-runs docker/install-rocm.sh rather than layering
+# on the `hip` image -- which is why ROCM_VERSION, GPU_TARGETS and
+# ROCM_PACKAGES are declared in BOTH this file and Dockerfile.hip. Bump them
+# together; devtools/doctor.sh does not check these two for drift the way it
+# does the Claude pin.
+ARG PROJECT_NAME=fj
+ARG PARENT_IMAGE=${PROJECT_NAME}:cuda
+FROM ${PARENT_IMAGE}
+
+ARG ROCM_VERSION=7.2.4
+USER root
+
+ARG PROJECT_NAME
+LABEL devcontainer.project="${PROJECT_NAME}"
+
+# Must match Dockerfile.hip -- see the header.
+ARG GPU_TARGETS=gfx1200
+ENV GPU_TARGETS=${GPU_TARGETS} \
+    AMDGPU_TARGETS=${GPU_TARGETS} \
+    HIP_ARCH=${GPU_TARGETS} \
+    ROCM_PATH=/opt/rocm
+
+ARG ROCM_PACKAGES=""
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=docker/install-rocm.sh,target=/tmp/install-rocm.sh \
+    ROCM_VERSION="${ROCM_VERSION}" GPU_TARGETS="${GPU_TARGETS}" \
+    ${ROCM_PACKAGES:+ROCM_PACKAGES="${ROCM_PACKAGES}"} \
+    bash /tmp/install-rocm.sh
+
+# /opt/rocm/bin LAST, and here it matters more than in Dockerfile.hip: this
+# image has nvcc as well, and nvcc's default host compiler is the first g++ on
+# PATH. ROCm's own clang must not displace the system one.
+ENV PATH=${PATH}:/opt/rocm/bin
+
+# Claude Code, PINNED. Note install-claude-code.sh runs for the SECOND time in
+# this image -- the `cuda` parent already ran it -- which is why its keyring
+# step passes `gpg --batch --yes`: a bare dearmor over an existing file prompts,
+# opens /dev/tty to do it, and dies in a build that has none.
+ARG CLAUDE_CODE_VERSION=2.1.292
+ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
+RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
+    bash /tmp/install-claude-code.sh
+
+USER ubuntu
+RUN nvcc --version | grep release && hipconfig --version

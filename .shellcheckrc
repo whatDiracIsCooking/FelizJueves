@@ -1,0 +1,11 @@
+# Sourcing a sibling is how every script in devtools/ reaches lib.sh and
+# config.sh, and shellcheck cannot follow a path it computes at runtime
+# (`$(dirname "${BASH_SOURCE[0]}")/lib.sh`). SC1091 is therefore noise on every
+# script in the repo rather than a finding; `shellcheck -x` would follow them,
+# but the pre-commit hook does not pass it.
+#
+# Nothing else is disabled globally. A real finding gets a targeted
+# `# shellcheck disable=` with the reason on the line above it -- see
+# devtools/lib.sh (arrays set for the caller) and devtools/doctor.sh (an
+# intentional A && B || C).
+disable=SC1091

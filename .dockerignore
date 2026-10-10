@@ -1,0 +1,20 @@
+# The build context is the REPO ROOT (docker/build.sh always passes it), and
+# the Dockerfiles need almost none of it: two files to COPY, plus the docker/
+# directory whose install scripts they bind-mount.
+#
+# AN ALLOWLIST RATHER THAN A DENYLIST, because what it keeps out is large and
+# arrives by accident. Every `docker build` would otherwise ship .git, .venv,
+# the sccache store and whatever local scratch sits under .temp/ to the daemon
+# before running the first layer -- tens of megabytes on this box today, and
+# whatever someone drops there tomorrow. An allowlist excludes the next big
+# directory by default instead of relying on anyone remembering to add it.
+*
+
+!pyproject.toml
+!uv.lock
+# `uv sync` reads the project metadata, which names these two.
+!README.md
+!LICENSE
+# Bind-mounted by RUN --mount=type=bind in Dockerfile.{cuda,hip,combined}: a
+# bind source must be IN the context even though it is never COPYed.
+!docker/

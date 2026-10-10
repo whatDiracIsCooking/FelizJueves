@@ -1,0 +1,89 @@
+// Both SDKs: nvcc for the RTX 3080 and hipcc for the RX 9060 XT, in one
+// container. Open this one to answer whether a generated kernel compiles under
+// BOTH device compilers -- hipcc is clang and nvcc is not, and that
+// disagreement is this project's main portability risk. KERNEL_BACKEND is cuda
+// in here; `kernel-tier.sh --backend hip` is the other half.
+//
+// Drive it with devtools/devcontainer.sh (up / rebuild / shell / test / down)
+// rather than VS Code's "Reopen in Container": that script resolves the
+// ${localEnv:...} values below before the CLI runs. Opening this file directly
+// still works, but falls back to the literals baked in here, which are this
+// box's values and nothing more.
+//
+// WHY initializeCommand BUILDS THE PARENT: docker/Dockerfile.cuda opens with
+// FROM ${PARENT_IMAGE}, and a devcontainer runs exactly one docker build -- so
+// with no fj:base tagged, docker tries to PULL it and fails with "pull access
+// denied", which reads like a registry problem. See docker/Dockerfile.base,
+// "WHY THE FOUR FILES CHAIN BY TAG".
+{
+  "name": "fj-combined",
+  "initializeCommand": "docker/build.sh cuda",
+  "build": {
+    "dockerfile": "../../docker/Dockerfile.combined",
+    "context": "../..",
+    "args": {
+      "PROJECT_NAME": "fj",
+      "PARENT_IMAGE": "fj:cuda"
+    }
+  },
+
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+
+  "mounts": [
+    // The repo's COMMON git dir, at its HOST path (source == target). A
+    // worktree's own .git is a FILE pointing into <main>/.git/worktrees/<name>,
+    // so git inside the container only works if that absolute path resolves in
+    // here too. devtools/devcontainer.sh exports FJ_GIT_DIR; the literal is the
+    // fallback for a direct "Reopen in Container".
+    "source=${localEnv:FJ_GIT_DIR:/home/lostica/projects/FelizJueves/main/.git},target=${localEnv:FJ_GIT_DIR:/home/lostica/projects/FelizJueves/main/.git},type=bind",
+
+    // The shared sccache store, which is the PRIMARY checkout's -- every
+    // worktree binds the same host directory, so a generated kernel compiled in
+    // one is not recompiled from scratch in another.
+    "source=${localEnv:FJ_SCCACHE_DIR:/home/lostica/projects/FelizJueves/main/.sccache},target=/home/ubuntu/.sccache,type=bind",
+
+    // Named volumes, keyed on the worktree's directory basename so two
+    // worktrees never share them. The fj- prefix is what devtools/worktree.sh
+    // rm and gc recognise as this project's; doctor.sh warns when it stops
+    // matching PROJECT_NAME in devtools/config.sh.
+    "source=fj-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",
+    "source=fj-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",
+    "source=fj-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume"
+  ],
+
+  // AMD has no --gpus equivalent: the device nodes are passed in directly, and
+  // the container user must be in the HOST groups that own them. /dev/kfd is
+  // the compute node; /dev/dri carries the render nodes.
+  //
+  // THE GIDS ARE NUMERIC AND THAT IS LOAD-BEARING. "--group-add render" would
+  // resolve `render` INSIDE the container, where docker/install-rocm.sh made it
+  // gid 110, while the bind-mounted nodes keep their host ownership (109 on
+  // this box). The container then starts clean and the first device call fails
+  // with hipErrorNoDevice -- indistinguishable from a machine with no AMD card.
+  // devtools/devcontainer.sh exports the resolved FJ_RENDER_GID / FJ_VIDEO_GID;
+  // the literals after the colon are this box's values, for a direct
+  // "Reopen in Container" that runs no script.
+  "runArgs": [
+    "--gpus", "all",
+    "--device", "/dev/kfd",
+    "--device", "/dev/dri",
+    "--group-add", "${localEnv:FJ_RENDER_GID:109}",
+    "--group-add", "${localEnv:FJ_VIDEO_GID:44}"
+  ],
+
+  "containerEnv": {
+    "KERNEL_BACKEND": "cuda",
+    // Passed through for the gh-based PR flow. Empty on a host that has none,
+    // which is fine -- doctor.sh reports it.
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    // The image PINS Claude Code (docker/install-claude-code.sh) and npm's
+    // global prefix is /usr, which is root-owned -- so a self-update in here
+    // cannot succeed and should not be attempted. Bump the pin instead:
+    // devtools/claude-version.sh --apply.
+    "DISABLE_AUTOUPDATER": "1"
+  },
+
+  "remoteUser": "ubuntu",
+  "postCreateCommand": ".devcontainer/seed-claude-config.sh"
+}

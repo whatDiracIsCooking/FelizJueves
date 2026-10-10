@@ -1,0 +1,64 @@
+# Commit-time lint plus the pre-push test gate. Install it from WHICHEVER SIDE
+# YOU COMMIT ON (host or container): the hook bakes an absolute INSTALL_PYTHON
+# into one file in the shared git dir, so one installed from the other side
+# fails every commit with `No module named 'pre_commit'`. devtools/doctor.sh
+# checks exactly that path and names the fix.
+#
+#   pre-commit install              commit-time hooks
+#   pre-commit install --hook-type pre-push     ... and the push gate
+#   pre-commit run --all-files      everything, now
+#
+# NO FORMATTER, deliberately -- see pyproject.toml [tool.ruff.lint]. Every hook
+# here either finds a real defect or stops something that should not be
+# committed at all.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Same version uv.lock pins, so the hook and `ruff check .` in the venv
+    # cannot disagree about what is a finding.
+    rev: v0.17.0
+    hooks:
+      - id: ruff-check
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+      # Nothing in this repo should ever be a large binary: the tracked
+      # artefacts are source, generated kernel text and docs. The realistic
+      # accident is a downloaded PDF or a profiler capture copied into the tree
+      # and `git add -A`ed -- 512kB sits comfortably above any source file here
+      # and below anything of that kind.
+      - id: check-added-large-files
+        args: [--maxkb=512]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      # devtools/ and docker/ are shell, and the scripts are the project's
+      # actual interface. Pinned through pre-commit's own environment rather
+      # than the system binary, which is absent on this host and present in
+      # the image -- the hook has to mean the same thing on both sides.
+      - id: shellcheck
+
+  - repo: local
+    hooks:
+      # The fast correctness gate, at PUSH rather than at commit, and only when
+      # the push carries a .py -- that `files` filter is the whole condition,
+      # not anything inside the script. devtools/config.sh (PREPUSH_PATHS,
+      # FAST_TEST_ARGS) decides what it runs.
+      #
+      # The kernel tier is NOT here on purpose: devtools/kernel-tier.sh drives
+      # nvcc/hipcc and a real card, which costs minutes, and a gate that costs
+      # minutes is one people learn to bypass with --no-verify.
+      - id: prepush-tests
+        name: fast test tier (pytest)
+        entry: devtools/prepush-tests.sh
+        language: script
+        pass_filenames: false
+        stages: [pre-push]
+        files: \.py$

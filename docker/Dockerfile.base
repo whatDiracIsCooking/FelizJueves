@@ -1,0 +1,269 @@
+# syntax=docker/dockerfile:1.7
+# ============================================================================
+# base -- the vendor-neutral toolchain, and the parent of every GPU image
+# ============================================================================
+# Four files, one diamond. This is the top of it:
+#
+#                       Dockerfile.base
+#                        /           \
+#         Dockerfile.cuda             Dockerfile.hip
+#                   |                       :
+#         Dockerfile.combined ..............:
+#                                 (reuses install-rocm.sh, not the hip image)
+#
+# Everything the work needs EXCEPT a GPU SDK: a host C++ compiler, CMake,
+# Ninja, sccache, and a uv-managed venv for the Python side. Useful on its own
+# to check that half in isolation, and the shared parent of `cuda` and `hip` so
+# the two cannot drift apart.
+#
+#   docker/build.sh base          # the normal way: tags <PROJECT_NAME>:base
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t fj:base .
+#
+# RUN THAT FROM THE REPO ROOT. The trailing `.` is the build context and it is
+# the repo root, not this directory: this file COPYs pyproject.toml and uv.lock,
+# spelled relative to that root. `docker build -f Dockerfile.base .` from
+# inside docker/ dies on the first COPY.
+#
+# WHY THE FOUR FILES CHAIN BY TAG INSTEAD OF BY STAGE:
+# a child can only name an IMAGE, not a stage in another file, so it takes an
+# ARG:
+#
+#   ARG PARENT_IMAGE=fj:base
+#   FROM ${PARENT_IMAGE}
+#
+# which means the parent must exist and be tagged BEFORE the child builds. That
+# ordering is the whole cost of the split, and `docker/build.sh` is what pays
+# it -- it walks the chain for whichever target you name. Build a child by hand
+# with no parent tagged and docker does not fall back to building it; it tries
+# to PULL, and fails with `pull access denied for fj, repository does not
+# exist`, which reads like a registry problem rather than a missing local build.
+#
+# WHY THE TOOLKIT COMES FROM APT, NOT FROM nvidia/cuda:
+# this file cannot be both nvidia/cuda and rocm/dev-ubuntu at once, and
+# duplicating the CMake/Python stages per vendor is how they drift. The
+# nvidia/cuda images are Ubuntu plus the same apt packages, so the only thing
+# lost is the NVIDIA_* runtime env they set -- which Dockerfile.cuda sets back
+# explicitly. ROCm is ~20GB installed, which is the whole reason `hip` is a
+# separate image rather than everything living in one.
+#
+# Build one stage of THIS file in isolation to debug it:
+#   docker build --target=build-tools -f docker/Dockerfile.base -t dbg:tools .
+#
+# ---------------------------------------------------------------------------
+# WHAT IS *NOT* IN HERE, AND WHY -- read before adding to it
+# ---------------------------------------------------------------------------
+# This image is deliberately much smaller than the one this file was adapted
+# from. A generator written in Python that emits CUDA/HIP needs a device
+# compiler and a host compiler, and nothing else: so clang-20 with libc++'s
+# module manifest (no C++23 modules here), the CPU reference LAPACK (the oracle
+# is numpy on the host, see pyproject.toml), cuTENSOR/NCCL/nvCOMP/cuGraph and
+# hipCOMP all came out. Put a library in here only when something in the tree
+# links it, and say what does.
+#
+# The two SDK versions are NOT here: CUDA_VERSION lives in Dockerfile.cuda and
+# ROCM_VERSION in Dockerfile.hip / Dockerfile.combined, beside the install
+# script each one drives.
+ARG UBUNTU_TAG=24.04
+ARG CMAKE_VERSION=4.2.3
+ARG CMAKE_MAJOR_MINOR=4.2
+ARG NINJA_VERSION=1.13.1
+# Not in apt at any usable version, so it comes from the upstream release
+# tarball like CMake and Ninja do.
+ARG SCCACHE_VERSION=0.18.0
+
+# ============================================================================
+# Stage 1: base-system -- OS packages every later stage shares
+# ============================================================================
+FROM ubuntu:${UBUNTU_TAG} AS base-system
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# g++ AND clang: a generated kernel's host half is compiled by whichever the
+# test asks for, and the two disagree about enough (template diagnostics,
+# `__restrict__` handling, warning sets) that having both is the point --
+# nvcc's host compiler is g++ by default while hipcc IS clang.
+#
+# clang-format earns its place here in a way it would not in a hand-written
+# tree: the output of this project is generated source, and `clang-format` is
+# how a golden file stays reviewable instead of being one long line.
+#
+# shellcheck is in the image because devtools/ and docker/ are shell and
+# .pre-commit-config.yaml lints them -- on this host the hook brings its own,
+# so the two must agree; see that file.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      bash build-essential ca-certificates curl git gnupg jq less \
+      clang clang-format clang-tidy \
+      python3 python3-dev python3-venv \
+      pkg-config shellcheck ssh tree unzip vim-tiny wget zlib1g-dev \
+    && git --version && clang --version | head -1 && g++ --version | head -1
+
+# ============================================================================
+# Stage 2: downloads -- CMake, Ninja and sccache tarballs (independent of
+# base-system, so BuildKit runs it concurrently)
+# ============================================================================
+FROM ubuntu:${UBUNTU_TAG} AS downloads
+
+ARG CMAKE_VERSION
+ARG NINJA_VERSION
+ARG SCCACHE_VERSION
+# Supplied automatically by BuildKit: "amd64" or "arm64".
+ARG TARGETARCH
+
+RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upstream asset names differ per architecture, so they are resolved here and
+# staged under arch-independent filenames for the next stage to consume.
+RUN --mount=type=cache,target=/download-cache \
+    set -e; \
+    case "$TARGETARCH" in \
+      amd64) cmake_arch=x86_64;  ninja_asset=ninja-linux.zip; \
+             sccache_arch=x86_64 ;; \
+      arm64) cmake_arch=aarch64; ninja_asset=ninja-linux-aarch64.zip; \
+             sccache_arch=aarch64 ;; \
+      *) echo "unsupported TARGETARCH: '$TARGETARCH'" >&2; exit 1 ;; \
+    esac; \
+    cmake_asset="cmake-${CMAKE_VERSION}-linux-${cmake_arch}.sh"; \
+    sccache_dir="sccache-v${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl"; \
+    mkdir -p /downloads; \
+    [ -f "/download-cache/${cmake_asset}" ] || \
+      wget -q -O "/download-cache/${cmake_asset}" \
+        "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${cmake_asset}"; \
+    [ -f "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" ] || \
+      wget -q -O "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" \
+        "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/${ninja_asset}"; \
+    [ -f "/download-cache/${sccache_dir}.tar.gz" ] || \
+      wget -q -O "/download-cache/${sccache_dir}.tar.gz" \
+        "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${sccache_dir}.tar.gz"; \
+    cp "/download-cache/${cmake_asset}" /downloads/cmake-installer.sh; \
+    cp "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" /downloads/ninja.zip; \
+    chmod +x /downloads/cmake-installer.sh; \
+    tar -xzf "/download-cache/${sccache_dir}.tar.gz" -C /tmp; \
+    install -m 0755 "/tmp/${sccache_dir}/sccache" /downloads/sccache
+
+# ============================================================================
+# Stage 3: build-tools -- CMake and Ninja onto a base-system layer
+# ============================================================================
+# WHY CMAKE IS HERE AT ALL, since this project's own build is `python -m`:
+# the reference implementations the papers name are CMake projects (LibintX,
+# docs/references.md), and comparing against one means building it from source
+# in here. Pinned rather than apt's, so that comparison is reproducible.
+FROM base-system AS build-tools
+
+ARG CMAKE_VERSION
+
+COPY --link --from=downloads /downloads/cmake-installer.sh /tmp/
+COPY --link --from=downloads /downloads/ninja.zip /tmp/
+
+RUN cd /tmp && ./cmake-installer.sh --skip-license --prefix=/usr/local && rm cmake-installer.sh && \
+    unzip -q ninja.zip && mv ninja /usr/local/bin/ && chmod +x /usr/local/bin/ninja && rm ninja.zip && \
+    cmake --version | grep -q "${CMAKE_VERSION}" && ninja --version
+
+# ============================================================================
+# Stage 4: base -- the complete, vendor-neutral toolchain
+# ============================================================================
+# The published stage of this file, and what Dockerfile.{cuda,hip} take as
+# their PARENT_IMAGE.
+FROM base-system AS base
+
+ARG CMAKE_MAJOR_MINOR
+
+# This label is what scopes `devtools/worktree.sh gc` to this project's build
+# images, so it cannot delete another repo's -- and this box carries images
+# from two other projects, so it is load-bearing here rather than theoretical.
+# Must match PROJECT_NAME in devtools/config.sh; devtools/doctor.sh warns when
+# they drift. Labels are inherited, so the GPU children carry it too; each
+# re-stamps it anyway, to keep the build arg they are passed consumed where it
+# is declared.
+ARG PROJECT_NAME=fj
+LABEL devcontainer.project="${PROJECT_NAME}"
+
+COPY --link --from=build-tools /usr/local/bin/cmake /usr/local/bin/cmake
+COPY --link --from=build-tools /usr/local/bin/ctest /usr/local/bin/ctest
+COPY --link --from=build-tools /usr/local/bin/cpack /usr/local/bin/cpack
+COPY --link --from=build-tools /usr/local/bin/ninja /usr/local/bin/ninja
+# CMake installs to share/cmake-<MAJOR>.<MINOR>, not -<MAJOR>.<MINOR>.<PATCH>.
+COPY --link --from=build-tools /usr/local/share/cmake-${CMAKE_MAJOR_MINOR} /usr/local/share/cmake-${CMAKE_MAJOR_MINOR}
+# The compiler cache. KEPT FOR A CODEGEN PROJECT ON PURPOSE, which is not the
+# obvious call: there is no large C++ tree in here to rebuild. What it caches
+# is the KERNEL TIER -- devtools/kernel-tier.sh emits a translation unit per
+# ERI class and hands each to nvcc or hipcc, the same text across runs whenever
+# the generator did not change, and an unrolled high-L kernel is slow to
+# compile. Wired in by the tier script, not by a preset, so an image or host
+# without it still works -- it just caches nothing.
+COPY --link --from=downloads /downloads/sccache /usr/local/bin/sccache
+
+# --- Python -----------------------------------------------------------------
+# One uv-managed venv at /opt/venv, installed `--frozen` from the committed
+# lock, so the container and the host cannot drift. This is why there is no pip
+# install list in here -- add a dependency to pyproject.toml, run `uv lock`,
+# commit both.
+COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /uvx /usr/local/bin/
+
+# UV_PYTHON_INSTALL_DIR is a trap-avoidance measure rather than tidiness, and
+# it is dormant TODAY: pyproject.toml requires >=3.12 and this image has
+# python3.12, so uv uses the system interpreter and downloads nothing. Raise
+# that floor above the system version and uv fetches a managed CPython instead
+# -- by default into the BUILD user's home, /root/.local/share/uv/python, which
+# is 0700. uid 1000 then cannot traverse it: chowning /opt/venv fixes the
+# symlink's inode and not its target, and the venv is dead for the user the
+# container actually runs as. Sending it to /opt/uv/python keeps it reachable.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_INSTALL_DIR=/opt/uv/python
+COPY pyproject.toml uv.lock README.md LICENSE /tmp/uvroot/
+RUN cd /tmp/uvroot && uv sync --frozen --no-install-project && rm -rf /tmp/uvroot && \
+    chown -R 1000:1000 /opt/venv && \
+    { [ -d /opt/uv ] && chown -R 1000:1000 /opt/uv || true; }
+
+# Ubuntu 24.04 ships an `ubuntu` user at uid 1000, which matches a typical
+# single-user host, so files written into the bind mount stay owned by you.
+# .devcontainer/*.json set `remoteUser: ubuntu`; docker/compose.yaml instead
+# passes HOST_UID:HOST_GID, which is why /opt/venv is group-readable rather
+# than owned by a user this image had to invent.
+RUN install -d -o 1000 -g 1000 \
+        /workspace \
+        /tmp/pytest-of-ubuntu \
+        /home/ubuntu/.sccache \
+        /home/ubuntu/.claude/plugins \
+        /home/ubuntu/.claude/backups
+
+# SCCACHE_DIR is a FIXED path inside the image on purpose, not a workspace-
+# relative one: the shared store is bind-mounted onto it, so one value works
+# from every checkout no matter where its workspace lands -- which is the whole
+# point for .claude/worktrees/<name>, whose mount does not contain the primary
+# checkout's store. .devcontainer/*/devcontainer.json and docker/compose.yaml
+# both bind here; devtools/devcontainer.sh creates the host directory first,
+# because docker would otherwise create it as root and the first compile would
+# die on a permission error that never mentions a mount.
+ENV SCCACHE_DIR=/home/ubuntu/.sccache \
+    SCCACHE_CACHE_SIZE=20G \
+    PATH=/opt/venv/bin:/usr/local/bin:${PATH} \
+    PYTHONPATH=/workspace
+
+WORKDIR /workspace
+
+RUN clang --version | head -1 && \
+    cmake --version | head -1 && \
+    ninja --version && \
+    sccache --version
+
+USER ubuntu
+
+# The venv smoke test belongs HERE, after the USER switch, because the bug it
+# guards against is a permission one: a venv that works for root and not for
+# uid 1000. It also has to do more than `python3 --version` -- an interpreter
+# whose stdlib is unreadable still prints its version, then dies on `import
+# encodings`. So import something, and run two entry points through the venv's
+# shebang.
+RUN python3 -c "import numpy, sys; print(sys.version.split()[0], sys.executable, numpy.__version__)" && \
+    pre-commit --version && \
+    pytest --version
+
+CMD ["/bin/bash"]
