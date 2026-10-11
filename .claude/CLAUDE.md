@@ -39,7 +39,7 @@ infrastructure, and every tier reports that rather than implying otherwise.
 | `data/` | **live.** `literature/jengine/table{1,2,3}.json` is `[JEngine]` Tables 1–3, 120 cells with provenance. `scoreboards/jengine/{literal,searched}.json` are the two boards; **every floor is unset** (`null`) until a change that computes cells sets it to what it measured. Table 4 (spills) is deliberately not transcribed; `data/literature/jengine/README.md` says why. |
 | the generator | **absent.** `KERNEL_GEN_CMD` in `devtools/config.sh` is empty, so the kernel tier skips its generate and compile phases **and says so in its report**. Do not read such a run as a green kernel tier. |
 | `pyproject.toml` | **a virtual uv project** — no `[build-system]`, nothing installed. `src/` is importable from pytest only, via `pythonpath = ["src"]`. Dev tooling plus numpy, and a lock. |
-| `docs/` | `references.md` only. The derived notes (the recurrences we implement, with equation numbers) go here as they are written, and they ARE tracked. |
+| `docs/` | `references.md`, plus the derived notes in `implementation/`: `j_engine.md` (recurrences, kernel contract, batching, pipeline) and `mild.md` (the MILD heuristic and the sieve). Both are **specifications, not descriptions** — nothing they describe is implemented yet. Tracked. |
 
 When you run something, say which of these it touched.
 
