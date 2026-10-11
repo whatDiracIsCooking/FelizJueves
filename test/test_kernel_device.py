@@ -86,6 +86,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from conftest import VRAM_PROBE, card_utilisation, check_vram
 
 from felizjueves import measured
 from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
@@ -141,6 +142,7 @@ PORTABLE = r"""
 #endif
 #define CHECK(x) do { devError_t e_ = (x); if (e_ != devSuccess) { \
     std::fprintf(stderr, "%s: %s\n", #x, devGetErrorString(e_)); return 1; } } while (0)
+""" + VRAM_PROBE + r"""
 
 static bool slurp(const char* path, std::vector<double>& out) {
     FILE* f = std::fopen(path, "rb");
@@ -191,6 +193,9 @@ int main(int argc, char** argv) {{
     const size_t sizes[] = {{(size_t)n_bra * 3, (size_t)n_bra, (size_t)n_bra,
                             (size_t)n_ket * 3, (size_t)n_ket, (size_t)n_ket,
                             (size_t)n_ket, (size_t)n_ket * n_q}};
+    if (fj_vram_probe(in.size() * sizeof(double) + 64
+                          + (size_t)n_bra * n_p * sizeof(double),
+                      {{(const void*){kernel_name}}})) return 0;
     double* d[8];
     for (int i = 0; i < 8; ++i) {{
         d[i] = upload(h, sizes[i]);
@@ -233,6 +238,8 @@ int main(int argc, char** argv) {{
     std::vector<double> in;
     if (!slurp(argv[1], in) || in.empty()) return 2;
     const int n = (int)in[0];
+    if (fj_vram_probe((size_t)3 * n * sizeof(double) + 16,
+                      {{(const void*)fj_boys_grid}})) return 0;
     double* dm = upload(in.data() + 1, n);
     double* dT = upload(in.data() + 1 + n, n);
     double* dF = nullptr;
@@ -381,7 +388,7 @@ def _run_pq(backend: str, L: int, request, compile_device_source,
         assert (grid, bx) == (n_bra, 1)
         src, dst = tmp_path / f"{case}.in", tmp_path / f"{case}.out"
         _pack(L, a, lanes).tofile(src)
-        run_device_binary(binary, str(src), str(dst))
+        run_device_binary(binary, str(src), str(dst), vram=backend)
         got = np.fromfile(dst, dtype=np.float64).reshape(n_bra, -1)
         want, scale, t_max = _reference(L, a)
         assert got.shape == want.shape
@@ -448,7 +455,7 @@ def _run_boys(backend: str, request, compile_device_source, run_device_binary,
     Ts = np.array([T for _, T in pts], dtype=np.float64)
     src, dst = tmp_path / "boys.in", tmp_path / "boys.out"
     np.concatenate([[float(len(pts))], ms, Ts]).tofile(src)
-    run_device_binary(binary, str(src), str(dst))
+    run_device_binary(binary, str(src), str(dst), vram=backend)
     got = np.fromfile(dst, dtype=np.float64)
     assert got.shape == (len(pts),)
     worst = (0.0, 0.0, None)
@@ -555,6 +562,9 @@ int main(int argc, char** argv) {{
     const size_t sizes[] = {{(size_t)n_bra * 3, (size_t)n_bra, (size_t)n_bra,
                             (size_t)n_ket * 3, (size_t)n_ket, (size_t)n_ket,
                             (size_t)n_ket, (size_t)n_ket * n_q}};
+    if (fj_vram_probe(in.size() * sizeof(double) + 64
+                          + (size_t)n_bra * n_p * sizeof(double),
+                      {{{vram_kernels}}})) return 0;
     double* d[8];
     for (int i = 0; i < 8; ++i) {{
         d[i] = upload(h, sizes[i]);
@@ -629,7 +639,9 @@ def _batched_source(backend: str, spec: Spec,
     prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
     src = BATCHED_HARNESS.format(
         prologue=prologue, portable=PORTABLE, includes="\n".join(includes),
-        n_batches=len(kernels), launches="\n".join(launches))
+        n_batches=len(kernels), launches="\n".join(launches),
+        vram_kernels=", ".join(f"(const void*)fj_b{i}::{k.name}"
+                               for i, k in enumerate(kernels)))
     sha = hashlib.sha256("".join(texts).encode()).hexdigest()
     return src, [k.name for k in kernels], sha
 
@@ -657,7 +669,7 @@ def _check_batched(backend: str, spec: Spec, binary: Path, run_device_binary,
         _, (_, lanes) = launch_shape(n_bra, arch.wavefront)
         src, dst = tmp_path / f"{case}.in", tmp_path / f"{case}.out"
         _pack(L, a, lanes).tofile(src)
-        run_device_binary(binary, str(src), str(dst), "0", "1")
+        run_device_binary(binary, str(src), str(dst), "0", "1", vram=backend)
         got = np.fromfile(dst, dtype=np.float64).reshape(2, n_bra, -1)[0]
         assert got.shape == want.shape
         assert np.all(np.isfinite(got)), f"{case}: non-finite J_p"
@@ -745,10 +757,12 @@ def test_hip_recycled_j_p_matches_the_reference(spec, request,
 # OPT-IN, AND RUN ALONE. It skips unless FJ_WALLCLOCK_STORE names the store to
 # write (normally data/measured/kernels.json), because inside the kernel tier
 # it would share the box with xdist workers compiling other tests -- and a
-# contended timing is garbage, not a noisy measurement. Run it by itself,
-# under the card's lock, with nothing else compile-bound on the box:
+# contended timing is garbage, not a noisy measurement. Run it by itself, with
+# nothing else compile-bound on the box; the card's lock is the device
+# fixture's (test/conftest.py, GPU_LOCK_PATH), so no `flock` wrapper is needed
+# -- one is harmless, the fixture recognising an ancestor's hold as its own:
 #
-#   flock /tmp/fj-gpu-cuda.lock env FJ_WALLCLOCK_STORE=data/measured/kernels.json \
+#   env FJ_WALLCLOCK_STORE=data/measured/kernels.json \
 #       uv run pytest test/test_kernel_device.py -p no:xdist -s -rs \
 #       -m "gpu and cuda" -k wallclock
 #
@@ -820,36 +834,13 @@ def _cpu_busy(seconds: float = 1.0) -> float:
     return 1.0 - (i1 - i0) / max(1, t1 - t0)
 
 
+# THE TIMING GATE, on top of the correctness gate the device fixtures already
+# hold (test/conftest.py: the card's lock and the free-VRAM probe). Utilisation
+# is a reason to WAIT here and nowhere else: #55's timings came out bimodal
+# while a process outside the container held the RTX 3080 at 100%, and a
+# timing on a busy card is garbage where a correct answer is still correct.
 GPU_BUSY_MAX = 30    # percent utilization of the card, from its own SMI
 GPU_QUIET_WAIT_S = 900.0
-
-
-def _gpu_util(backend: str) -> int | None:
-    """The card's utilization in percent, as nvidia-smi / rocm-smi report it,
-    or None when the tool says nothing parseable.
-
-    #55 found the RTX 3080 at 100% and 6.3 GiB held by a process outside this
-    container (invisible to nvidia-smi's process list here, and to the CPU
-    gate): its timings came out bimodal and a 48 KiB-stack kernel ran out of
-    memory. The card's own utilization is the only signal that sees that.
-    """
-    import re
-    import subprocess
-
-    if backend == "cuda":
-        cmd = ["nvidia-smi", "--query-gpu=utilization.gpu",
-               "--format=csv,noheader,nounits"]
-        pat = r"^\s*(\d+)"
-    else:
-        cmd = ["rocm-smi", "--showuse"]
-        pat = r"GPU use \(%\):\s*(\d+)"
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True,
-                             timeout=30).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    m = re.search(pat, out, re.MULTILINE)
-    return int(m[1]) if m else None
 
 
 def _quiet(backend: str | None = None, seen: list[int] | None = None) -> float:
@@ -862,7 +853,7 @@ def _quiet(backend: str | None = None, seen: list[int] | None = None) -> float:
         while True:
             samples = []
             for _ in range(3):
-                samples.append(_gpu_util(backend))
+                samples.append(card_utilisation(backend))  # None: unknown
                 time.sleep(0.2)
             util = max((s for s in samples if s is not None), default=None)
             if util is not None and util <= GPU_BUSY_MAX:
@@ -987,9 +978,10 @@ def _wallclock(backend: str, request, compile_device_source,
                     n_bra=TIMING_N_BRA, n_ket=TIMING_N_KET)
         src, dst = tmp_path / "timing.in", tmp_path / "timing.out"
         _pack(L, a, lanes).tofile(src)
+        args = (str(src), str(dst), str(WARMUP), str(REPEATS))
+        check_vram(binary, args, backend)  # before the wait, off the clock
         busy = _quiet(backend, gpu_seen)
-        out = run_device_binary(binary, str(src), str(dst), str(WARMUP),
-                                str(REPEATS))
+        out = run_device_binary(binary, *args)
         wall, events, batches = _parse_reps(out, spec.n_batches)
         assert len(wall) == REPEATS, out
         J = np.fromfile(dst, dtype=np.float64).reshape(2, TIMING_N_BRA, -1)

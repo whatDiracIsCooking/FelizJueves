@@ -293,6 +293,55 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
     printf 'gfx%d%d%x' "$(( $1 / 10000 ))" "$(( ($1 / 100) % 100 ))" "$(( $1 % 100 ))"
   }
 
+  # THE CARD-STATE ROW (#91): utilisation, free VRAM, and whether the card's
+  # lock (GPU_LOCK_PATH, taken by test/conftest.py's device fixtures) is held
+  # -- so a process outside this container holding the card is diagnosed
+  # BEFORE a run, not inferred from an out-of-memory error after one. A reading
+  # the tool cannot give is UNKNOWN, never idle: NVML says "Unknown Error"
+  # intermittently, and amdgpu's gpu_busy_percent can refuse a read (EBUSY).
+  # A held lock is a WARN: the next `gpu` run will wait behind it.
+  #
+  #   card_state <vendor> <backend> <util%|""> <free MiB|""> <total MiB|"">
+  card_state() {
+    local vendor=$1 backend=$2 util=$3 free=$4 total=$5 lock state holder
+    lock=${GPU_LOCK_PATH//\{backend\}/$backend}
+    [[ $util =~ ^[0-9]+$ ]] && util="$util%" || util="unknown"
+    if [[ $free =~ ^[0-9]+$ && $total =~ ^[0-9]+$ ]]; then
+      free="$free / $total MiB free"
+    else
+      free="free VRAM unknown"
+    fi
+    if [ ! -e "$lock" ]; then
+      state="free (no lock file yet)"
+    elif flock -n "$lock" true 2>/dev/null; then
+      state="free"
+    else
+      state="HELD"
+      # /proc/locks names the holder by device and inode: MAJ:MIN in hex.
+      local dev ino key pid
+      dev=$((0x$(stat -c %D "$lock"))); ino=$(stat -c %i "$lock")
+      key=$(printf '%02x:%02x:%s' $(( (dev >> 8) & 0xfff )) \
+            $(( (dev & 0xff) | ((dev >> 12) & 0xfff00) )) "$ino")
+      while read -r pid; do
+        if [ "$pid" -le 0 ]; then
+          holder+="${holder:+; }a process outside this pid namespace"
+        else
+          holder+="${holder:+; }pid $pid ($(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | cut -c1-100))"
+        fi
+      done < <(awk -v k="$key" '$2 == "FLOCK" && $6 == k {print $5}' /proc/locks)
+    fi
+    local row="$vendor card state: utilisation $util, $free, lock $lock $state"
+    if [ "$state" = HELD ]; then
+      warn "$row"
+      note "held by ${holder:-a holder /proc/locks does not show} -- the next \`gpu\` run waits behind it"
+    elif [ "$util" = unknown ] || [ "$free" = "free VRAM unknown" ]; then
+      warn "$row"
+      note "an unreadable reading is unknown, not idle -- re-run, or read the card's own SMI"
+    else
+      ok "$row"
+    fi
+  }
+
   for vendor in $DOCTOR_GPU_VENDORS; do
     case $vendor in
       nvidia)
@@ -324,6 +373,10 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         fi
         if [ "$nv_listed" -gt 0 ]; then
           gpus_found=$((gpus_found+nv_listed))
+          IFS=', ' read -r nv_util nv_free nv_total < <(nvidia-smi \
+            --query-gpu=utilization.gpu,memory.free,memory.total \
+            --format=csv,noheader,nounits 2>/dev/null | head -1)
+          card_state nvidia cuda "${nv_util:-}" "${nv_free:-}" "${nv_total:-}"
           find_tool nvcc >/dev/null 2>&1 ||
             note "card present but nvcc is not -- the CUDA toolchain is in the \`cuda\` image"
         else
@@ -358,6 +411,26 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         done
         if [ "$amd_listed" -gt 0 ]; then
           gpus_found=$((gpus_found+amd_listed))
+          # Utilisation from rocm-smi, the source the timing sweep waits on
+          # (sysfs gpu_busy_percent answers EBUSY on this box's RX 9060 XT);
+          # VRAM from amdgpu's own sysfs, the first DRM card of vendor 0x1002.
+          amd_util='' amd_free='' amd_total=''
+          if command -v rocm-smi >/dev/null 2>&1 || [ -x /opt/rocm/bin/rocm-smi ]; then
+            amd_util=$("$(command -v rocm-smi || echo /opt/rocm/bin/rocm-smi)" \
+              --showuse 2>/dev/null | sed -n 's/.*GPU use (%):[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
+          fi
+          for amd_dev in /sys/class/drm/card[0-9]*/device; do
+            [ "$(cat "$amd_dev/vendor" 2>/dev/null)" = 0x1002 ] || continue
+            [ -r "$amd_dev/mem_info_vram_total" ] || continue
+            [ -n "$amd_util" ] || amd_util=$(cat "$amd_dev/gpu_busy_percent" 2>/dev/null)
+            amd_total=$(cat "$amd_dev/mem_info_vram_total" 2>/dev/null)
+            amd_used=$(cat "$amd_dev/mem_info_vram_used" 2>/dev/null)
+            if [[ $amd_total =~ ^[0-9]+$ && $amd_used =~ ^[0-9]+$ ]]; then
+              amd_free=$(( (amd_total - amd_used) >> 20 )); amd_total=$(( amd_total >> 20 ))
+            fi
+            break
+          done
+          card_state amd hip "$amd_util" "$amd_free" "$amd_total"
           [ -e /dev/kfd ] ||
             note "/dev/kfd absent -- pass --device=/dev/kfd --device=/dev/dri to reach it"
           find_tool hipconfig >/dev/null 2>&1 ||
