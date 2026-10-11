@@ -232,7 +232,7 @@ CPUS=${CPUS:-}
 # level of quoting, so an unquoted `-m "not gpu"` would reach pytest as the
 # three words `-m`, `not`, `gpu` -- a marker expression of `not` and a path
 # called `gpu`, which collects nothing and says only "no tests ran".
-FAST_TEST_ARGS=${FAST_TEST_ARGS:-'-m "not cuda and not hip and not gpu and not slow"'}
+FAST_TEST_ARGS=${FAST_TEST_ARGS:-'-m "not cuda and not hip and not gpu and not slow and not oracle"'}
 
 # What the pre-push gate runs. Deliberately a curated list rather than the
 # whole suite: the gate should cost seconds, so anything driving a device
