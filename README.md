@@ -14,7 +14,7 @@ that rather than implying otherwise:
 | `test/` | **live, and thin.** `test_toolchain.py` asserts that nvcc and hipcc compile for this box's targets and that a kernel launched on each card agrees with a numpy reference. The rest checks the join key, the transcribed tables' own invariants, and the scoring rules on synthetic candidates. |
 | `src/felizjueves/` | **importable, and small.** The `Spec` join key, and `literature/`: published tables as data plus the rules that score a candidate against them. Nothing in it computes a table cell. |
 | `data/` | **live.** `[JEngine]` Tables 1–3 transcribed with provenance, and the two scoreboards over them — with every floor still unset, because nothing produces a number to set it from. |
-| the generator | **absent.** `KERNEL_GEN_CMD` in `devtools/config.sh` is empty, so the kernel tier skips its generate and compile phases and says so. |
+| the generator | **live, for one kernel family.** `KERNEL_GEN_CMD` in `devtools/config.sh` runs `python -m felizjueves.emit`, which writes the single-batch `[p\|q]` kernel for L = 0..16 in CUDA or HIP; the kernel tier compiles them and checks `J_p` on each card against the fp64 reference. Split classes and the full `J` build are not generated yet. |
 | `pyproject.toml` | **a virtual uv project** — dev tooling and a lock. Nothing is installed; pytest imports `src/` through `pythonpath`. |
 
 When you run something here, say which of these it touched.

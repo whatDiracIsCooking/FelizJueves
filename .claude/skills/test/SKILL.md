@@ -59,13 +59,14 @@ Four phases, and **the report at the end says which of them did anything**:
 | Phase | What it proves |
 |---|---|
 | preflight | the compiler is here; whether a card is |
-| generate | `KERNEL_GEN_CMD` emitted sources — **dormant today**, that variable is empty |
+| generate | `KERNEL_GEN_CMD` (`python -m felizjueves.emit`) writes the `[p\|q]` kernels, L = 0..16, into `.kernel-tier/src-<backend>/` — **dormant** if that variable is set empty |
 | compile | every emitted translation unit survives the real device compiler. The CUDA side takes `*.cu`; the **HIP side takes `*.hip` AND `*.cu`** (with `-x hip`), so one generated source can be checked against both compilers — which is the point |
-| device | the `gpu`-marked suite agrees with the host reference |
+| device | the `gpu`-marked suite **for that backend** (`-m "gpu and <backend>"`) agrees with the host reference — today `test_kernel_device.py` (the generated kernels' `J_p` and `fj_boys`) plus `test_toolchain.py`'s saxpy |
 
 **Read `generated nothing (KERNEL_GEN_CMD empty)` in the report as "this was not
-a kernel tier run".** It is the expected state until the generator exists; what
-it still proves is that this box compiles and runs device code.
+a kernel tier run".** What such a run still proves is that this box compiles
+and runs device code. A generator that runs and writes nothing fails the tier
+(`GENERATE PRODUCED NOTHING`) rather than passing it empty.
 
 A failed compile stops the tier before the device suite and says
 `COMPILE FAILED` with the source and object counts — a pass from a stale object
