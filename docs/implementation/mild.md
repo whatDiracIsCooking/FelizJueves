@@ -197,7 +197,13 @@ Two properties to carry into the implementation:
 - **The result depends on the seed order** of the targets. `[JEngine, v2, §4.1]`
   reports that this moves FLOPs and node count by at most ~2%, so they do not
   optimise it. We should still **fix** the order, so our output is
-  deterministic and golden files are stable.
+  deterministic and golden files are stable. The paper does not state its
+  order, and no rule recovers it: #108 searched 58 seed-order rules
+  (`plan/recovery.py`, `seed_orders(widened=True)`) and the best reproduces
+  33/40 of Table 1 and 38/40 of Table 2. Under the **rules-only** doctrine a
+  per-cell fitted order is not a recovered input, so Tables 1-2's
+  `exact_given_inputs` are refused, with the evidence in
+  `data/literature/jengine/limits.json`.
 - **Deleting a node can orphan its parents**, so the delete step sweeps upward
   rather than just dropping `i`.
 

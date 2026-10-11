@@ -202,6 +202,31 @@ def test_exact_recorded_inputs_are_read_only() -> None:
         r.inputs["split"] = "other"  # type: ignore[index]
 
 
+REFUSAL = "rules only (#108): no rule reproduces the table; see limits.json"
+
+
+def test_a_refusal_is_unset_and_says_why() -> None:
+    # #108: a refusal is recorded, but nothing was reproduced, so it is
+    # never PASS -- not even for a candidate whose every cell is exact.
+    r = ExactGivenInputs(refused=REFUSAL)
+    for cand in (_cand(), _with_inputs(_cand(), INPUTS)):
+        v = r.judge(T, cand)
+        assert v.status is Status.UNSET
+        assert v.reason.startswith("refused")
+        assert v.measured == {"refused": REFUSAL}
+
+
+def test_a_refusal_and_inputs_cannot_coexist() -> None:
+    with pytest.raises(ValueError, match="not both"):
+        ExactGivenInputs(INPUTS, refused=REFUSAL)
+
+
+@pytest.mark.parametrize("why", ["", "   "])
+def test_a_refusal_needs_a_reason(why: str) -> None:
+    with pytest.raises(ValueError, match="say why"):
+        ExactGivenInputs(refused=why)
+
+
 # -- coverage, for every rule ------------------------------------------------
 
 
