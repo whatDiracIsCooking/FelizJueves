@@ -36,7 +36,20 @@ register allocation, and an indexed local array can defeat it (an array
 indexed dynamically lives in local memory; one indexed statically is only
 promoted if the compiler chooses to). The unrolled high-L recurrence kernels
 this engine emits are the case where recycling is most likely to *hurt*. It is
-a lever, to be switched on when a measurement says so -- and none exists yet.
+a lever, to be switched on when a measurement says so.
+
+THE LEVER'S NAME is `RECYCLE` (`"recycle"`), carried in `Spec.levers` so the
+two arms of an A/B are two keys -- two goldens, two `Measured` rows -- rather
+than one key and a note. Lowering is the stage AFTER the builder: the driver
+(`measured.cell_kernels`) builds the kernels of the Spec without its `LEVERS`
+-- the plan layer and the builder never see them -- and then calls
+`lower(..., recycle_slots=True)` on each finished kernel, atomized or not.
+#55 measured it on both cards: `measured.lever_ab` is the verdict's
+definition, and test/test_measured.py pins what it said about the rows.
+WHAT #55 FOUND: neither hurt nor help. nvcc 13.0 and hipcc / ROCm 7.2.4 emit
+identical machine code for the two arms in every batch kernel of the
+subgrid -- both promote the statically indexed slot array back to scalars --
+so the lever is a no-op on this box's toolchains and stays opt-in.
 """
 
 from __future__ import annotations
@@ -67,6 +80,8 @@ from felizjueves.ir import (
 )
 
 __all__ = [
+    "LEVERS",
+    "RECYCLE",
     "KernelCost",
     "Liveness",
     "kernel_cost",
@@ -75,6 +90,13 @@ __all__ = [
     "recycle",
     "spilled",
 ]
+
+RECYCLE = "recycle"
+"""The `Spec.levers` name of slot recycling (#55): `lower(recycle_slots=True)`."""
+
+LEVERS = frozenset({RECYCLE})
+"""Every `Spec.levers` name this module applies: what a driver strips before
+building and hands to `lower` after."""
 
 
 # ---------------------------------------------------------------------------

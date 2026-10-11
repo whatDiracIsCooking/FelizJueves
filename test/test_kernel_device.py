@@ -80,7 +80,7 @@ import math
 import os
 import shlex
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 
@@ -94,12 +94,12 @@ from felizjueves.emit._c import BOYS_DEVICE
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
-    build_pq_kernels,
     ket_functions,
     launch_shape,
     pq_spec,
     split,
 )
+from felizjueves.lower import RECYCLE
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, theta_of
@@ -616,7 +616,7 @@ def _batched_source(backend: str, spec: Spec,
     """The harness for one cell: its source, its batch kernels' names in
     launch order, and the cell's source hash (as `measured.cell_sha256`)."""
     emit, arch, ext = BACKEND[backend]
-    kernels = build_pq_kernels(spec)
+    kernels = measured.cell_kernels(spec)  # build_pq_kernels, levers applied
     includes, launches, texts = [], [], []
     for i, k in enumerate(kernels):
         text = emit(k, arch)
@@ -703,6 +703,43 @@ def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_sou
                  tmp_path)
 
 
+# --- the recycle lever (#55): the same pin, the other arm -------------------
+#
+# `lower.recycle` turns every named fp64 value into an element of one local
+# array, reusing a slot only between closed live intervals; the arithmetic and
+# its order are unchanged, so the recycled kernel is held to the SAME J_REL
+# pin through the same launch sequence -- not a looser one. Every lever cell
+# (`measured.lever_cells`: the whole SUBGRID, one batch included), on both
+# cards.
+
+RECYCLE_CELLS = [pytest.param(s, id=f"L{s.total_am}-b{s.n_batches}-recycle")
+                 for s in measured.lever_cells(RECYCLE)]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", RECYCLE_CELLS)
+def test_cuda_recycled_j_p_matches_the_reference(spec, request,
+                                                 compile_device_source,
+                                                 run_device_binary,
+                                                 tmp_path) -> None:
+    """A recycle-lever cell's launch sequence on the RTX 3080, against the oracle."""
+    _run_batched("cuda", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", RECYCLE_CELLS)
+def test_hip_recycled_j_p_matches_the_reference(spec, request,
+                                                compile_device_source,
+                                                run_device_binary,
+                                                tmp_path) -> None:
+    """A recycle-lever cell's launch sequence on the RX 9060 XT, against the oracle."""
+    _run_batched("hip", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
 # --- the wall-clock sweep -----------------------------------------------------
 #
 # OPT-IN, AND RUN ALONE. It skips unless FJ_WALLCLOCK_STORE names the store to
@@ -721,6 +758,15 @@ def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_sou
 # against their IQR, and a cross-session comparison would mix the box's
 # drift into the effect.
 #
+# FJ_WALLCLOCK_LEVER (optional, e.g. "recycle") sweeps the lever's cells,
+# `measured.lever_cells(lever)`, instead: each cell's literal arm is compiled,
+# checked and timed BESIDE it as a same-session control (near-T control then
+# lever, wide-T lever then control) and lands in the LEVER row's raw as
+# `wallclock:control:*`; the literal rows are not rewritten. measured.py's
+# "A LEVER A/B" is the protocol's rationale and `measured.lever_ab` the
+# verdict (#55). The compile rows of the lever cells must exist first:
+#   python -m felizjueves.measured --remeasure --subgrid --lever recycle
+#
 # THE PROTOCOL, in order, all inside one test so the phases cannot overlap:
 #
 # 1. CPUSET from devtools/config.sh, if set, pins this process (and so the
@@ -734,7 +780,11 @@ def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_sou
 #    -- the TIMED binary is the CHECKED binary.
 # 4. TIME each cell: wait for the box to be quiet (CPU busy at most BUSY_MAX
 #    over a 1 s sample, for up to QUIET_WAIT_S; otherwise the test FAILS --
-#    the run is discarded, not averaged in), then WARMUP untimed sequences and
+#    the run is discarded, not averaged in) AND for the card to be (its own
+#    SMI's utilization at most GPU_BUSY_MAX, for up to GPU_QUIET_WAIT_S --
+#    added by #55, after a process outside the container held the RTX 3080;
+#    the highest settled value is raw `wallclock:gpu_util_pct_before_max`),
+#    then WARMUP untimed sequences and
 #    REPEATS timed ones, on each of two inputs -- no screening (tau = 0) so
 #    every cell does all its work, n_bra x n_ket = TIMING_N_BRA x
 #    TIMING_N_KET, and the same input for every n_batches of one L:
@@ -749,6 +799,7 @@ def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_sou
 
 WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
 WALLCLOCK_BATCHES = "FJ_WALLCLOCK_BATCHES"
+WALLCLOCK_LEVER = "FJ_WALLCLOCK_LEVER"
 WARMUP = 5
 REPEATS = 31
 TIMING_N_BRA = 2048  # one warp each: several waves on either card
@@ -769,8 +820,59 @@ def _cpu_busy(seconds: float = 1.0) -> float:
     return 1.0 - (i1 - i0) / max(1, t1 - t0)
 
 
-def _quiet() -> float:
-    """Block until the box is quiet; the busy fraction it settled at."""
+GPU_BUSY_MAX = 30    # percent utilization of the card, from its own SMI
+GPU_QUIET_WAIT_S = 900.0
+
+
+def _gpu_util(backend: str) -> int | None:
+    """The card's utilization in percent, as nvidia-smi / rocm-smi report it,
+    or None when the tool says nothing parseable.
+
+    #55 found the RTX 3080 at 100% and 6.3 GiB held by a process outside this
+    container (invisible to nvidia-smi's process list here, and to the CPU
+    gate): its timings came out bimodal and a 48 KiB-stack kernel ran out of
+    memory. The card's own utilization is the only signal that sees that.
+    """
+    import re
+    import subprocess
+
+    if backend == "cuda":
+        cmd = ["nvidia-smi", "--query-gpu=utilization.gpu",
+               "--format=csv,noheader,nounits"]
+        pat = r"^\s*(\d+)"
+    else:
+        cmd = ["rocm-smi", "--showuse"]
+        pat = r"GPU use \(%\):\s*(\d+)"
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True,
+                             timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(pat, out, re.MULTILINE)
+    return int(m[1]) if m else None
+
+
+def _quiet(backend: str | None = None, seen: list[int] | None = None) -> float:
+    """Block until the box is quiet -- the CPU and, given `backend`, the card
+    (the highest of three utilization samples at most GPU_BUSY_MAX) -- and
+    return the CPU busy fraction it settled at; the card's settled
+    utilization is appended to `seen`."""
+    if backend is not None:
+        deadline = time.monotonic() + GPU_QUIET_WAIT_S
+        while True:
+            samples = []
+            for _ in range(3):
+                samples.append(_gpu_util(backend))
+                time.sleep(0.2)
+            util = max((s for s in samples if s is not None), default=None)
+            if util is not None and util <= GPU_BUSY_MAX:
+                break
+            if time.monotonic() > deadline:
+                pytest.fail(f"card contended: {util}% busy > {GPU_BUSY_MAX}% "
+                            f"for {GPU_QUIET_WAIT_S:.0f} s -- timing DISCARDED")
+            time.sleep(10)
+        if seen is not None:
+            seen.append(util)
     deadline = time.monotonic() + QUIET_WAIT_S
     while True:
         busy = _cpu_busy()
@@ -845,22 +947,36 @@ def _wallclock(backend: str, request, compile_device_source,
     # 2. compile everything first
     only = os.environ.get(WALLCLOCK_BATCHES, "").strip()
     wanted = {int(b) for b in only.split(",")} if only else None
-    sweep = [s for s in SUBGRID if wanted is None or s.n_batches in wanted]
+    lever = os.environ.get(WALLCLOCK_LEVER, "").strip()
+    grid = measured.lever_cells(lever) if lever else SUBGRID
+    sweep = [s for s in grid if wanted is None or s.n_batches in wanted]
     assert sweep, f"{WALLCLOCK_BATCHES}={only!r} selects no SUBGRID cell"
-    print(f"{WALLCLOCK_BATCHES}={only or '(all)'}: {len(sweep)} cells")
+    print(f"{WALLCLOCK_BATCHES}={only or '(all)'} {WALLCLOCK_LEVER}="
+          f"{lever or '(none)'}: {len(sweep)} cells")
     cells = []
     for spec in sweep:
         work = tmp_path / f"L{spec.total_am}-b{spec.n_batches}"
         work.mkdir()
         src, names, sha = _batched_source(backend, spec, work)
         binary = compile_device_source(tc, src).rename(work / "cell")
-        cells.append((spec, binary, names, sha))
-        print(f"compiled {spec.key()}", flush=True)
+        control = None
+        if lever:  # the same-session literal arm (measured.py, A LEVER A/B)
+            cwork = work / "control"
+            cwork.mkdir()
+            literal = replace(spec, levers=())
+            csrc, _, _ = _batched_source(backend, literal, cwork)
+            control = (literal,
+                       compile_device_source(tc, csrc).rename(cwork / "cell"))
+        cells.append((spec, binary, names, sha, control))
+        print(f"compiled {spec.key()}" + (" and its control" if lever else ""),
+              flush=True)
     command = " ".join([Path(tc.path).name, *tc.compile_flags()])
 
-    # 3. the timed binary is the checked binary
-    for spec, binary, _, _ in cells:
+    # 3. the timed binary is the checked binary -- both arms of an A/B
+    for spec, binary, _, _, control in cells:
         _check_batched(backend, spec, binary, run_device_binary, tmp_path)
+        if control is not None:
+            _check_batched(backend, *control, run_device_binary, tmp_path)
 
     # 4. time, one cell at a time
     lanes = arch.wavefront
@@ -871,7 +987,7 @@ def _wallclock(backend: str, request, compile_device_source,
                     n_bra=TIMING_N_BRA, n_ket=TIMING_N_KET)
         src, dst = tmp_path / "timing.in", tmp_path / "timing.out"
         _pack(L, a, lanes).tofile(src)
-        busy = _quiet()
+        busy = _quiet(backend, gpu_seen)
         out = run_device_binary(binary, str(src), str(dst), str(WARMUP),
                                 str(REPEATS))
         wall, events, batches = _parse_reps(out, spec.n_batches)
@@ -882,13 +998,30 @@ def _wallclock(backend: str, request, compile_device_source,
         return wall, events, batches, J, (q1, med, q3), busy
 
     table = []
-    for spec, binary, names, sha in cells:
+    for spec, binary, names, sha, control in cells:
         L = spec.total_am
         load1 = os.getloadavg()[0]
+        gpu_seen: list[int] = []
+        ctrl: dict[str, int] = {}
+        if control is not None:  # near: control first; wide: lever first
+            c_spec, c_binary = control
+            c_wall, _, _, _, c_near, c_busy = timed(c_spec, c_binary, False)
         # the secondary input first: near-T (T < ~2, short Boys series)
         n_wall, _, _, _, (n_q1, n_med, n_q3), n_busy = timed(spec, binary, False)
         # the row's number: wide-T (T up to ~430, the Boys series long)
         wall, events, batches, J, (q1, med, q3), busy = timed(spec, binary, True)
+        if control is not None:
+            w_wall, _, _, _, c_wide, w_busy = timed(c_spec, c_binary, True)
+            for prefix, stats, w, b_ in (("wallclock:control:near:", c_near,
+                                          c_wall, c_busy),
+                                         ("wallclock:control:", c_wide, w_wall,
+                                          w_busy)):
+                ctrl |= {f"{prefix}q1_ns": round(stats[0]),
+                         f"{prefix}median_ns": round(stats[1]),
+                         f"{prefix}q3_ns": round(stats[2]),
+                         f"{prefix}min_ns": int(min(w)),
+                         f"{prefix}max_ns": int(max(w)),
+                         f"{prefix}cpu_busy_permille_before": round(1000 * b_)}
         busy_after = _cpu_busy(0.5)
         raw = {
             "wallclock:near:median_ns": round(n_med),
@@ -909,7 +1042,9 @@ def _wallclock(backend: str, request, compile_device_source,
             "wallclock:cpu_busy_permille_before": round(1000 * busy),
             "wallclock:cpu_busy_permille_after": round(1000 * busy_after),
             "wallclock:loadavg1_milli": round(1000 * load1),
+            "wallclock:gpu_util_pct_before_max": max(gpu_seen),
             "wallclock:J_bitwise_repeatable": int(np.array_equal(J[0], J[1])),
+            **ctrl,
         }
         per_batch = np.median(np.array(batches), axis=0)
         for name, t in zip(names, per_batch, strict=True):
@@ -933,9 +1068,21 @@ def _wallclock(backend: str, request, compile_device_source,
               f"warm-up) each; CPU busy {n_busy:.1%}/{busy:.1%} -> "
               f"{busy_after:.1%}, load1 {load1:.2f}; J bit-repeatable "
               f"{raw['wallclock:J_bitwise_repeatable']}", flush=True)
+        if ctrl:
+            print(f"  control (literal, same session): wide median "
+                  f"{ctrl['wallclock:control:median_ns'] / 1e6:.3f} ms, near "
+                  f"median {ctrl['wallclock:control:near:median_ns'] / 1e6:.3f}"
+                  " ms", flush=True)
 
     # 5. one write, after every cell timed
     measured.save(store, Path(store_path))
+    if lever:
+        print(f"\n#55 A/B, {lever} against its same-session literal control:")
+        for spec, *_ in cells:
+            c = measured.lever_ab(store, arch.name, spec)
+            print(f"  L={c.L} b{c.n_batches}: wide {c.wide_sign}, near "
+                  f"{c.near_sign} -> {c.verdict.upper()} (spill {c.spill[0]} "
+                  f"-> {c.spill[1]})")
     print(f"\n{backend} {arch.name} ({gpu}), compiled `{command}`")
     for col, label in ((2, "wide (the row)"), (4, "near (raw)")):
         print(f" {label}: median+-IQR, ms")

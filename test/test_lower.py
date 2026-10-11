@@ -6,26 +6,33 @@ straight-line recurrence -- a `Decl` per node in schedule order, fundamentals
 read from `F[m]`, each target stored to `out[k]` right after it is formed. It
 is a test fixture, not the [p|q] kernel (Refs #25).
 
-SEMANTICS ARE CHECKED WITHOUT interp.py, which does not exist yet (Refs #23).
-`_evaluate` is a test-local evaluator over the straight-line subset (Decl,
-Assign, Weighted, Index, Var, Lit) sharing no code with lower.py; recycled
-and named kernels are run on random inputs and must agree BITWISE, since the
-arithmetic and its order are unchanged. Once #23 lands, the issue's
-`interpret(recycle(kernel)) == interpret(kernel)` belongs here too.
+SEMANTICS ARE CHECKED TWICE. On the fixture, by `_evaluate`, a test-local
+evaluator over the straight-line subset (Decl, Assign, Weighted, Index, Var,
+Lit) sharing no code with lower.py; and, at the bottom (#55), on the [p|q]
+kernel the generator ships, by interp.py: `interpret(recycle(k)) ==
+interpret(k)` for every batch kernel of a cell. Both must agree BITWISE,
+since the arithmetic and its order are unchanged.
 
-TIMING: the module (127 tests, L = 7..16 on both DAGs) runs in ~10 s on the
-dev box, no test over 1 s (`pytest --durations`), so nothing is marked `slow`.
+TIMING: the fixture tests (L = 7..16 on both DAGs) run in ~10 s on the dev
+box. The #55 interpreted cells take ~1-4 s each; those at L >= 13 are marked
+`slow`, so the pre-push gate runs L <= 10 and the rest run by hand.
 """
 
 from __future__ import annotations
 
 import ast
 import random
+from dataclasses import replace
 from functools import cache
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from felizjueves import measured
+from felizjueves.device import GFX1200, SM_86
+from felizjueves.emit import cuda, hip
+from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     Call,
@@ -48,7 +55,17 @@ from felizjueves.ir import (
     Weighted,
     walk,
 )
+from felizjueves.kernel import (
+    bra_functions,
+    build_pq_kernel,
+    build_pq_kernels,
+    ket_functions,
+    launch_shape,
+    pq_spec,
+)
 from felizjueves.lower import (
+    LEVERS,
+    RECYCLE,
     KernelCost,
     kernel_cost,
     liveness,
@@ -59,6 +76,7 @@ from felizjueves.lower import (
 from felizjueves.plan.dag import BatchDag, Node, build, is_fundamental
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.sieve import plan
+from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
 GRID_L = range(7, 17)
@@ -401,3 +419,141 @@ def test_n_instructions_counts_the_computing_statements(L: int, which: str) -> N
     kernel, order = _kernel(L, which)
     n = kernel_cost(kernel, registers=0).n_instructions
     assert n == len(order) + len(_dag(L, which).targets)  # a Decl each, a store each
+
+
+# ---------------------------------------------------------------------------
+# #55: `recycle` as a Spec lever on the real [p|q] kernel
+# ---------------------------------------------------------------------------
+#
+# The interpreter exists now (#23), so the issue's property is asserted on
+# the kernel the generator ships, not only on the straight-line fixture above:
+# `interpret(recycle(k)) == interpret(k)`, BITWISE, for every batch kernel of
+# a cell -- the arithmetic and its order are unchanged, only where each value
+# is stored. The interpreter refuses a read of a local element nothing wrote,
+# so a slot read before its writer is an error here, not a wrong number.
+
+LEVER_CELLS = [
+    pytest.param(s, id=s.key(),
+                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
+    for s in (*(pq_spec(L) for L in (0, 1, 4)), *measured.SUBGRID)]
+GOLDEN = Path(__file__).resolve().parent / "golden"
+EMITTERS = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
+
+
+def _pq_inputs(spec: Spec, seed: int) -> dict:
+    rng = np.random.default_rng(seed)
+    n_bra, n_ket = 2, 3
+    n_p, n_q = len(bra_functions(spec)), len(ket_functions(spec))
+    Iq, Dmax = rng.uniform(0.2, 1.0, n_ket), rng.uniform(0.5, 1.0, n_ket)
+    srt = np.argsort(-(Iq * Dmax), kind="stable")
+    return dict(
+        n_bra=n_bra, n_ket=n_ket, tau=0.0,
+        P=rng.uniform(-0.5, 0.5, (n_bra, 3)), zeta=rng.uniform(0.6, 1.4, n_bra),
+        Ip=rng.uniform(0.5, 1.0, n_bra),
+        Q=rng.uniform(-0.5, 0.5, (n_ket, 3)), eta=rng.uniform(0.6, 1.4, n_ket),
+        Iq=Iq[srt].copy(), Dmax=Dmax[srt].copy(),
+        D=rng.uniform(-1.0, 1.0, (n_ket, n_q)), J=np.zeros((n_bra, n_p)))
+
+
+def _interpret(k: Kernel, args: dict) -> np.ndarray:
+    grid_, block = launch_shape(args["n_bra"], 2)
+    it = Interpreter(k, launch=Launch(grid_, block, 2), boys=boys)
+    return it.run(**args)["J"]
+
+
+def _with(spec: Spec, *levers: str) -> Spec:
+    return replace(spec, levers=tuple(sorted(levers)))
+
+
+@pytest.mark.parametrize("spec", LEVER_CELLS)
+def test_interpret_recycle_k_is_interpret_k_on_the_pq_kernel(spec: Spec) -> None:
+    named = build_pq_kernels(spec)
+    assert measured.cell_kernels(spec) is named or \
+        measured.cell_kernels(spec) == named  # no lever: the builder's own
+    recycled = measured.cell_kernels(_with(spec, RECYCLE))
+    assert len(recycled) == len(named) == spec.n_batches
+    args = _pq_inputs(spec, seed=55 + spec.total_am)
+    for k, r in zip(named, recycled, strict=True):
+        assert r == recycle(k)  # the lever IS the pass, on the finished kernel
+        assert r.name == k.name and r.params == k.params
+        assert r != k
+        got, want = _interpret(r, args), _interpret(k, args)
+        assert np.array_equal(got, want), (spec.key(), k.name)  # bitwise
+
+
+@pytest.mark.parametrize("spec", LEVER_CELLS)
+def test_the_recycled_slot_count_is_the_kernels_peak_live(spec: Spec) -> None:
+    # peak over the values recycle takes: fp64, not a Factor's binding (the
+    # I32 `bra` and PQ_x/y/z stay named, so `liveness.peak` over-counts)
+    keep = {f.name_in_kernel for f in Factor} - {None}
+    for k, r in zip(build_pq_kernels(spec),
+                    measured.cell_kernels(_with(spec, RECYCLE)), strict=True):
+        live = liveness(k)
+        f64 = [s.name for s in live.stmts if isinstance(s, Decl) and not s.shape
+               and s.space is Space.LOCAL and s.type is Scalar.F64
+               and s.name not in keep]
+        delta = [0] * (len(live.stmts) + 1)
+        for v in f64:
+            delta[live.start[v]] += 1
+            delta[live.end[v] + 1] -= 1
+        peak = run = 0
+        for d in delta:
+            run += d
+            peak = max(peak, run)
+        head = r.body[0]
+        assert head.name == "slot" and head.space is Space.LOCAL
+        assert head.shape == (Lit(peak),)
+        assert peak < len(f64) or len(f64) <= 1  # slots really are shared
+
+
+def test_the_lever_is_named_in_the_key_and_not_shown_to_the_plan_layer() -> None:
+    spec = pq_spec(10, (RECYCLE,), n_batches=3)
+    assert RECYCLE == "recycle" and LEVERS == {RECYCLE}
+    assert spec.key() == "coulomb/d0/(5,0|5,0)/b3/j/recycle"
+    assert pq_spec(10, n_batches=3).key().endswith("/b3/j/literal")
+    # lowering is after building: the plan layer and the builder refuse the
+    # lever (they do not own it), and the driver strips it, builds, lowers
+    with pytest.raises(ValueError, match="no lever"):
+        plan(spec)
+    with pytest.raises(ValueError, match="no lever"):
+        build_pq_kernels(spec)
+    assert len(measured.cell_kernels(spec)) == 3
+
+
+def test_the_default_arm_is_untouched() -> None:
+    """No lever: the kernel is NOT lowered, and the existing goldens hold."""
+    for L in (0, 4, 10):
+        assert build_pq_kernel(L) == build_pq_kernel(pq_spec(L, ()))
+        assert not any(isinstance(s, Decl) and s.name == "slot"
+                       for s in walk(build_pq_kernel(L).body))
+    for backend, (emit, arch, ext) in EMITTERS.items():
+        assert emit(build_pq_kernel(4), arch) == (
+            GOLDEN / backend / f"pq_L4_p2_q2.{ext}").read_text()
+
+
+# THE LEVER GOLDENS are the recycle arm of the class the literal goldens pin,
+# (2,0|2,0) one batch, in their own directory so no literal golden's glob
+# sees them. Regenerate (and review the diff) with:
+#   PYTHONPATH=src uv run python -c "from pathlib import Path; \
+#   from felizjueves.kernel import pq_spec; \
+#   from felizjueves.measured import cell_kernels; \
+#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.emit import cuda, hip; \
+#   (k,) = cell_kernels(pq_spec(4, ('recycle',))); \
+#   Path('test/golden/cuda/recycle/pq_L4_p2_q2.cu').write_text(cuda.emit(k, SM_86)); \
+#   Path('test/golden/hip/recycle/pq_L4_p2_q2.hip').write_text(hip.emit(k, GFX1200))"
+
+
+@pytest.mark.parametrize("backend", sorted(EMITTERS))
+def test_the_recycle_golden_is_unchanged(backend: str) -> None:
+    emit, arch, ext = EMITTERS[backend]
+    (k,) = measured.cell_kernels(pq_spec(4, (RECYCLE,)))
+    text = emit(k, arch)
+    assert text == (GOLDEN / backend / RECYCLE / f"pq_L4_p2_q2.{ext}").read_text()
+    # a statically indexed local array, and no named fp64 temporary left but
+    # the Factor bindings (PQ_x, PQ_y, PQ_z), which must stay named
+    assert "double slot[" in text
+    named = {line.split()[1] for line in text.splitlines()
+             if line.strip().startswith("double ") and "=" in line
+             and "fj_boys" not in line}
+    assert named <= {"PQ_x", "PQ_y", "PQ_z", "term", "sum", "next", "fj_v"}, named

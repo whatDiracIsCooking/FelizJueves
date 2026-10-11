@@ -21,6 +21,7 @@ from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
+from felizjueves.lower import RECYCLE
 from felizjueves.plan.pipeline import plan
 
 # --- the generator CLI ------------------------------------------------------
@@ -111,8 +112,11 @@ def test_the_amd_remark_is_read_for_the_named_kernel() -> None:
 STORE = json.loads(measured.STORE.read_text())
 ROWS = measured.load()
 
-# Every Spec a row may be keyed on: the one-batch classes and the subgrid.
-SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured.SUBGRID)}
+# Every Spec a row may be keyed on: the one-batch classes, the subgrid, and
+# the subgrid's recycle-lever arm (#55).
+RECYCLE_CELLS = measured.lever_cells(RECYCLE)
+SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured.SUBGRID,
+                              *RECYCLE_CELLS)}
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -134,7 +138,7 @@ def test_every_row_is_keyed_on_its_measured_key() -> None:
     assert ROWS, "no Measured rows recorded"
     for key, row in ROWS.items():
         spec = _spec_of(key)
-        assert row.kernel == ",".join(k.name for k in build_pq_kernels(spec))
+        assert row.kernel == ",".join(k.name for k in measured.cell_kernels(spec))
         mk = MeasuredKey(spec, ARCHS[row.arch], row.toolchain)
         assert mk.key() == key
 
@@ -162,14 +166,16 @@ def test_the_recorded_source_is_what_the_generator_writes_today() -> None:
         if spec.n_batches == 1:  # the one-batch hash is the one text's
             emit, arch = (cuda.emit, SM_86) if row.arch == "sm_86" else (
                 hip.emit, GFX1200)
-            text = emit(build_pq_kernel(spec), arch)
+            (k,) = measured.cell_kernels(spec)  # build_pq_kernel, lowered
+            text = emit(k, arch)
             assert hashlib.sha256(text.encode()).hexdigest() == row.source_sha256
 
 
 def test_both_cards_and_every_default_class_are_recorded() -> None:
     for arch in ("sm_86", "gfx1200"):
         kernels = {r.kernel for k, r in ROWS.items()
-                   if r.arch == arch and _spec_of(k).n_batches == 1}
+                   if r.arch == arch and _spec_of(k).n_batches == 1
+                   and not _spec_of(k).levers}
         assert kernels == {build_pq_kernel(L).name for L in range(17)}, arch
 
 
@@ -432,9 +438,11 @@ def test_the_read_path_filters_the_real_store() -> None:
     assert {r.arch for r in got.values()} == {"sm_86", "gfx1200"}
     assert all(k.startswith(spec.key() + "@") for k in got)
     nv = measured.rows(arch=SM_86)
-    # the one-batch classes L = 0..16, plus the subgrid's split cells
+    # the one-batch classes L = 0..16, plus the subgrid's split cells, plus
+    # the recycle arm of every subgrid cell (#55)
     split = sum(s.n_batches > 1 for s in measured.SUBGRID)
-    assert len(nv) == 17 + split and measured.rows(arch="sm_86") == nv
+    assert len(nv) == 17 + split + len(RECYCLE_CELLS)
+    assert measured.rows(arch="sm_86") == nv
     assert measured.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
 
@@ -687,3 +695,147 @@ def test_nine_batches_do_not_suffice_on_either_card() -> None:
     for arch in ARCHS:
         # 9 suffices on an arch iff at every subgrid L: on neither card
         assert not all(not any(v) for (a, _), v in got.items() if a == arch)
+
+
+# --- #55: the recycle lever against the literal kernel ----------------------
+
+
+def test_the_lever_cells_are_the_whole_subgrid_with_the_lever() -> None:
+    # Not one class: every L and every batch count, so a sign flip is seen.
+    assert [replace(s, levers=()) for s in RECYCLE_CELLS] == list(measured.SUBGRID)
+    assert all(s.levers == (RECYCLE,) for s in RECYCLE_CELLS)
+    with pytest.raises(ValueError, match="kernel-layer"):
+        measured.lever_cells("no-sieve")  # a plan lever: not this A/B
+
+
+def _ab(control: tuple[int, int], lever: tuple[int, int],
+        near_c: tuple[int, int] = (500, 5),
+        near_l: tuple[int, int] = (500, 5)) -> measured.LeverAB:
+    """Synthetic literal + lever rows; (median, IQR) per arm and input."""
+    spec = RECYCLE_CELLS[0]
+    lit = MeasuredKey(replace(spec, levers=()), SM_86, "nvcc 13.0").key()
+    lev = MeasuredKey(spec, SM_86, "nvcc 13.0").key()
+    store = {
+        lit: measured.Measured(registers=255, spill_store=10, spill_load=20,
+                               **PROV),
+        lev: measured.Measured(
+            registers=255, spill_store=10, spill_load=30,
+            runtime_ns=lever[0], repeats=31, spread_ns=lever[1], **PROV,
+            raw={"wallclock:control:median_ns": control[0],
+                 "wallclock:control:q1_ns": 0,
+                 "wallclock:control:q3_ns": control[1],
+                 "wallclock:control:near:median_ns": near_c[0],
+                 "wallclock:control:near:q1_ns": 0,
+                 "wallclock:control:near:q3_ns": near_c[1],
+                 "wallclock:near:median_ns": near_l[0],
+                 "wallclock:near:q1_ns": 0, "wallclock:near:q3_ns": near_l[1]}),
+    }
+    return measured.lever_ab(store, "sm_86", spec)
+
+
+def test_a_lever_is_judged_both_ways_against_the_larger_iqr() -> None:
+    c = _ab((1000, 10), (995, 8))
+    assert (c.wide_sign, c.near_sign, c.verdict) == ("neutral", "neutral",
+                                                     "neutral")
+    assert c.spill == (30, 40)  # reported, literal row then lever row
+    assert _ab((1000, 10), (989, 10)).verdict == "win"
+    assert _ab((1000, 10), (1011, 10)).verdict == "loss"
+    assert _ab((1000, 10), (990, 10)).verdict == "neutral"  # exactly the IQR
+    assert _ab((1000, 10), (980, 25)).verdict == "neutral"  # lever's own spread
+    assert _ab((1000, 10), (989, 10), (500, 5), (506, 5)).verdict == "mixed"
+    assert _ab((1000, 10), (1000, 10), (500, 5), (494, 5)).verdict == "win"
+
+
+def test_a_lever_row_without_its_control_cannot_be_judged() -> None:
+    spec = RECYCLE_CELLS[0]
+    lev = MeasuredKey(spec, SM_86, "nvcc 13.0").key()
+    lit = MeasuredKey(replace(spec, levers=()), SM_86, "nvcc 13.0").key()
+    timed = measured.Measured(registers=1, spill_store=0, spill_load=0,
+                              runtime_ns=1, repeats=31, spread_ns=0, **PROV)
+    compiled = measured.Measured(registers=1, spill_store=0, spill_load=0, **PROV)
+    with pytest.raises(KeyError, match="control"):
+        measured.lever_ab({lev: timed, lit: compiled}, "sm_86", spec)
+    with pytest.raises(KeyError):
+        measured.lever_ab({lit: compiled}, "sm_86", spec)
+
+
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("spec", RECYCLE_CELLS, ids=lambda s: s.key())
+def test_every_recycle_cell_is_compiled_and_timed_against_a_control(
+        spec, arch) -> None:
+    """#55's acceptance: two rows per (class, batch count, arch) differing
+    only in `levers`, the lever's timed beside its same-session control."""
+    (row,) = measured.rows(spec=spec, arch=arch, store=ROWS).values()
+    (lit,) = measured.rows(spec=replace(spec, levers=()), arch=arch,
+                           store=ROWS).values()
+    assert row.kernel == lit.kernel and row.source_sha256 != lit.source_sha256
+    assert row.registers is not None and row.compile_s is not None
+    assert _timed(row) and row.repeats == 31 and row.gpu != "ABSENT", (
+        f"{spec.key()}@{arch}: FJ_WALLCLOCK_LEVER=recycle sweep not recorded")
+    w = row.raw
+    for p in ("wallclock:control:", "wallclock:control:near:"):
+        assert w[f"{p}min_ns"] <= w[f"{p}q1_ns"] <= w[f"{p}median_ns"] \
+            <= w[f"{p}q3_ns"] <= w[f"{p}max_ns"], (spec.key(), p)
+        assert w[f"{p}cpu_busy_permille_before"] <= 100, (spec.key(), p)
+
+
+# The verdict (#55), on the tracked rows. The definition is measured.py's
+# docstring ("A LEVER A/B"), committed before any lever row existed; this pins
+# what it said, cell by cell, so a remeasure that moves it is seen.
+# (arch, L, n_batches): (wide sign, near sign) of recycle against literal.
+# Every cell NEUTRAL on both inputs, except four gfx1200 cells at L <= 10
+# where the rule calls the lever SLOWER by a hair over the larger IQR (e.g.
+# L=7 b3 near 8.621 -> 8.753 ms, IQR 0.094) -- on machine code that both
+# compilers emit IDENTICALLY for the two arms (the PR records the SASS / ISA
+# comparison), so those four are the protocol's noise floor (the near-T
+# control always runs first), not an effect of the lever. Pinned as the rule
+# said them, not as they "should" read: the rule was declared first.
+LEVER_AB: dict[tuple[str, int, int], tuple[str, str]] = {
+    **{(a, s.total_am, s.n_batches): ("neutral", "neutral")
+       for a in ARCHS for s in RECYCLE_CELLS},
+    ("gfx1200", 7, 3): ("slower", "slower"),
+    ("gfx1200", 7, 6): ("neutral", "slower"),
+    ("gfx1200", 7, 9): ("neutral", "slower"),
+    ("gfx1200", 10, 1): ("neutral", "slower"),
+}
+
+
+def test_the_recycle_verdict_is_what_the_rows_say() -> None:
+    got = {}
+    for arch in ARCHS:
+        for spec in RECYCLE_CELLS:
+            c = measured.lever_ab(ROWS, arch, spec)
+            got[arch, c.L, c.n_batches] = (c.wide_sign, c.near_sign)
+    assert got == LEVER_AB
+
+
+def test_recycle_stays_opt_in() -> None:
+    """The default changes only if recycle WINS at every cell on BOTH arches
+    (measured.py). It wins at none, on either: `lower()` stays a no-op unless
+    asked, and a Spec without the lever is built exactly as before."""
+    verdicts = {k: measured.lever_ab(ROWS, k[0], replace(
+        pq_spec(k[1], n_batches=k[2]), levers=(RECYCLE,))).verdict
+        for k in LEVER_AB}
+    assert "win" not in verdicts.values()
+    assert "stays opt-in" in STORE["header"]["levers"]  # the data says so too
+    for s in measured.SUBGRID[:5]:
+        assert measured.cell_kernels(s) == build_pq_kernels(s)
+    assert "double slot[" not in cuda.emit(build_pq_kernel(10), SM_86)
+
+
+RECYCLE_PARAMS = [
+    pytest.param(s, id=s.key(),
+                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
+    for s in RECYCLE_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("spec", RECYCLE_PARAMS)
+def test_nvcc_still_reports_the_recycle_cells(spec, nvcc, tmp_path) -> None:
+    _recheck_cell("cuda", spec, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("spec", RECYCLE_PARAMS)
+def test_hipcc_still_reports_the_recycle_cells(spec, hipcc, tmp_path) -> None:
+    _recheck_cell("hip", spec, tmp_path)
