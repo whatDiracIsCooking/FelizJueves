@@ -19,9 +19,12 @@ satisfy **both** device compilers. `hipcc` is clang and `nvcc` is not, so they
 disagree about more than their flags; that disagreement is this project's main
 portability risk, and `.devcontainer/combined/` exists to put both in one shell.
 
-`docs/references.md` is the citation of record: the five papers, what each
-contributes, and why their PDFs are deliberately **not** in the repo. Cite as
-`[JEngine, v2, eq. 14]` — short key, version, equation.
+`docs/references.md` is the citation of record: a flat numbered list, every
+entry resolving by **DOI** and no PDF tracked anywhere in the repo. Cite by
+number, or by the short key where one is defined — `[Fock]` is entry 23 and
+`[JEngine]` is entry 35. A version inside a key, as in `[JEngine, v2, eq. 14]`,
+means the ChemRxiv v2 preprint's equation numbering and not the journal
+version's, which may renumber.
 
 ## The state of the tree — read this before trusting any tier
 
