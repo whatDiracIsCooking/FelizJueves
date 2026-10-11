@@ -6,6 +6,12 @@ thing every later test depends on and no later test can diagnose: that nvcc and
 hipcc are present and can produce code for the architectures this project
 targets, and that a kernel launched on each card agrees with a numpy reference.
 
+The profilers are the same kind of floor (#110): a kernel whose fp64 FLOPs
+and streamed bytes are known before it runs is read through
+`felizjueves.measured.profile` -- ncu on the RTX 3080, rocprofv3's counter
+mode on the RX 9060 XT -- and a profiler that cannot measure SKIPS, naming
+why, rather than reporting a zero.
+
 Read a green run honestly. On a bare host every test here SKIPS except the
 host-compiler one, and that is the expected healthy state -- `devtools/doctor.sh`
 says which half of the workflow you are on, and `devtools/kernel-tier.sh` is
@@ -88,6 +94,55 @@ __global__ void stage(const float* in, float* out, int n) {
   tile[threadIdx.x] = (i < n) ? in[i] : 0.0f;
   __syncthreads();
   if (i < n) out[i] = tile[63 - threadIdx.x];
+}
+"""
+
+
+# #110's witness for the counter parsers: a kernel whose counts are known
+# before it runs. One fp64 FMA per element (2 flops, exactly), 16 bytes read
+# and 8 written per element, over arrays of 128 MiB each -- past either card's
+# last-level cache (the RTX 3080's 5 MiB L2, the RX 9060 XT's 32 MiB Infinity
+# Cache), so the traffic reaches the counters below them.
+COUNTER_N = 1 << 24
+COUNTER_PROBE_SOURCE = r"""
+#include <cstdio>
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#include <hip/hip_runtime.h>
+#define devMalloc      hipMalloc
+#define devMemset      hipMemset
+#define devSynchronize hipDeviceSynchronize
+#define devGetLastError hipGetLastError
+#define devError_t     hipError_t
+#define devSuccess     hipSuccess
+#else
+#define devMalloc      cudaMalloc
+#define devMemset      cudaMemset
+#define devSynchronize cudaDeviceSynchronize
+#define devGetLastError cudaGetLastError
+#define devError_t     cudaError_t
+#define devSuccess     cudaSuccess
+#endif
+#define CHECK(x) do { devError_t e_ = (x); if (e_ != devSuccess) { \
+    std::fprintf(stderr, "%s failed\n", #x); return 1; } } while (0)
+
+constexpr long kN = 1L << 24;
+
+__global__ void fj_counter_probe(double a, const double* x, double* y, long n) {
+  long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) y[i] = fma(a, x[i], y[i]);
+}
+
+int main() {
+  double *x = nullptr, *y = nullptr;
+  CHECK(devMalloc(&x, kN * sizeof(double)));
+  CHECK(devMalloc(&y, kN * sizeof(double)));
+  CHECK(devMemset(x, 0, kN * sizeof(double)));
+  CHECK(devMemset(y, 0, kN * sizeof(double)));
+  fj_counter_probe<<<(kN + 255) / 256, 256>>>(3.0, x, y, kN);
+  CHECK(devGetLastError());
+  CHECK(devSynchronize());
+  std::printf("ok\n");
+  return 0;
 }
 """
 
@@ -176,3 +231,64 @@ def test_hip_kernel_matches_reference(
     got = parse_floats(run_device_binary(binary))
     assert got.size == 256, f"expected 256 values, got {got.size}"
     np.testing.assert_allclose(got, saxpy_reference(), rtol=0, atol=0)
+
+
+# --- #110: the profilers read a kernel whose counts are known ----------------
+
+STREAMED_READ, STREAMED_WRITTEN = 16 * COUNTER_N, 8 * COUNTER_N
+# DECLARED before reading a counter: each byte count within 10% of what the
+# kernel streams (DRAM sectors on NVIDIA and fabric requests on AMD may round
+# up; neither may lose a tenth of the traffic). The FLOP count is exact.
+BYTES_BAND = (0.9, 1.1)
+
+
+def _counted(backend: str, binary, tmp_path):
+    """The probe's one launch under `backend`'s profiler, behind the card
+    gate. A profiler that cannot measure SKIPS, naming why -- could not
+    measure is not a pass, and never a zero."""
+    from felizjueves import gate, measured
+
+    try:
+        gate.wait_card(backend)
+    except gate.Contended as e:
+        pytest.skip(f"card gate: {e}")
+    try:
+        launches, tool, command = measured.profile(
+            backend, [str(binary)], kernel_regex="fj_counter_probe",
+            workdir=tmp_path)
+    except measured.CouldNotMeasure as e:
+        pytest.skip(str(e))  # it says "could not measure" and why
+    (c,) = launches
+    assert c.kernel == "fj_counter_probe"
+    assert tool.startswith(measured.PROFILERS[backend] + " ")
+    assert command.startswith(measured.PROFILERS[backend] + " ")
+    lo, hi = BYTES_BAND
+    assert lo <= c.dram_bytes_read / STREAMED_READ <= hi, c
+    assert lo <= c.dram_bytes_written / STREAMED_WRITTEN <= hi, c
+    assert c.counter_ns > 0
+    return c
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_ncu_counts_the_probes_flops_and_bytes(
+    nvcc, cuda_device, compile_device_source, tmp_path
+) -> None:
+    """ncu, through `measured.profile`, reads exactly 2 flops per element
+    (dadd + dmul + 2 x dfma) and the streamed bytes within BYTES_BAND."""
+    binary = compile_device_source(nvcc, COUNTER_PROBE_SOURCE)
+    c = _counted("cuda", binary, tmp_path)
+    assert c.fp64_flops == 2 * COUNTER_N, c
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_rocprofv3_counts_the_probes_bytes_and_no_flops(
+    hipcc, hip_device, compile_device_source, tmp_path
+) -> None:
+    """rocprofv3's counter mode, through `measured.profile`: the streamed
+    bytes within BYTES_BAND, and fp64_flops None -- gfx1200 has no fp64
+    counter, and an uncounted quantity is unknown, not zero."""
+    binary = compile_device_source(hipcc, COUNTER_PROBE_SOURCE)
+    c = _counted("hip", binary, tmp_path)
+    assert c.fp64_flops is None, c

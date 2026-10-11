@@ -69,6 +69,36 @@ the launch `kernel.launch_shape` fixes, blockDim.y = wavefront).
 `compile_s` is the wall time of one compile while up to `-j` others run
 beside it: a cost indication, never a benchmark.
 
+COUNTERS (#110) are read here too: `profile` runs a built binary under the
+vendor's profiler and `parse_ncu_csv` / `parse_rocprof_csv` read what it
+wrote, one `KernelCounters` per launch; `counter_rows` files one cell's
+launches as the store's per-kernel counter rows (`measured_store`'s THE
+COUNTER ROW SHAPE). What each counter means, per vendor, is that module's
+COUNTERS section; the invocations are:
+
+- NVIDIA: `ncu --csv --print-units base --clock-control none --metrics
+  <NCU_METRICS> --kernel-name regex:<re> <binary>`. `--print-units base`
+  so a byte is a byte (each metric's printed unit is checked against
+  NCU_UNITS, and a different one refused -- a renamed or rescaled counter
+  is news, not a number); `--clock-control none` so the card runs at the
+  clock it chooses, as the ceiling probes (#109) and the timed runs do,
+  rather than ncu's default lock to base clock.
+- AMD: `rocprofv3 --pmc <ROCPROF_COUNTERS> --kernel-include-regex <re>
+  --output-format csv -d <dir> -o counters -- <binary>`, one pass, and its
+  `*counter_collection.csv` read by column name (`Dispatch_Id`,
+  `Kernel_Name`, `Counter_Name`, `Counter_Value`, `Start_Timestamp`,
+  `End_Timestamp`).
+
+COULD NOT MEASURE IS NOT ZERO. A profiler that is absent, cannot load (this
+container's rocprofv3 lacks `libdw.so.1` and `libhsa-amd-aqlprofile64.so.1`),
+is refused the counters (ncu's `ERR_NVGPUCTRPERM` on a host that restricts
+them to admins), or profiles no kernel raises `CouldNotMeasure` and yields
+no row. A counter it did not report is None in the row, never 0.
+
+Counter collection serialises and replays each kernel, so the profiled run is
+a SEPARATE run of the same binary from any timed one, and its duration is
+`counter_ns`, never `runtime_ns`.
+
 Nothing under `plan/` or `literature/` may import this module
 (test/test_layering.py): a measurement may never feed a literature floor.
 """
@@ -76,8 +106,10 @@ Nothing under `plan/` or `literature/` may import this module
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime
 import hashlib
+import io
 import os
 import re
 import shlex
@@ -108,6 +140,7 @@ from felizjueves.measured_store import (
     SUBGRID_LS,
     Measured,
     combine,
+    kernel_key,
     lever_ab,
     lever_cells,
     load,
@@ -433,6 +466,244 @@ def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
                           f"{row.compile_s}s", flush=True)
     save(got, path)
     return got
+
+
+# ---------------------------------------------------------------------------
+# #110: reading the card's performance counters (module docstring, COUNTERS)
+# ---------------------------------------------------------------------------
+
+class CouldNotMeasure(RuntimeError):
+    """The profiler could not report counters: no row, and never a zero."""
+
+
+# The exact counter names asked for, and the base unit ncu must print for each.
+NCU_DADD = "smsp__sass_thread_inst_executed_op_dadd_pred_on.sum"
+NCU_DMUL = "smsp__sass_thread_inst_executed_op_dmul_pred_on.sum"
+NCU_DFMA = "smsp__sass_thread_inst_executed_op_dfma_pred_on.sum"
+NCU_READ = "dram__bytes_read.sum"
+NCU_WRITE = "dram__bytes_write.sum"
+NCU_TIME = "gpu__time_duration.sum"
+NCU_UNITS = {NCU_DADD: "inst", NCU_DMUL: "inst", NCU_DFMA: "inst",
+             NCU_READ: "byte", NCU_WRITE: "byte", NCU_TIME: "ns"}
+NCU_METRICS = tuple(NCU_UNITS)
+
+ROCPROF_RD32 = "GL2C_EA_RDREQ_32B_sum"
+ROCPROF_RD64 = "GL2C_EA_RDREQ_64B_sum"
+ROCPROF_RD128 = "GL2C_EA_RDREQ_128B_sum"
+ROCPROF_WR = "GL2C_EA_WRREQ_sum"
+ROCPROF_WR64 = "GL2C_EA_WRREQ_64B_sum"
+ROCPROF_COUNTERS = (ROCPROF_RD32, ROCPROF_RD64, ROCPROF_RD128, ROCPROF_WR,
+                    ROCPROF_WR64)
+
+NV_COUNTER_UNIT = (
+    "ncu: fp64_flops = dadd + dmul + 2 x dfma thread instructions executed "
+    "(predicated on); dram_bytes_read / _written = dram__bytes_read.sum / "
+    "dram__bytes_write.sum, DRAM traffic at 32-byte-sector granularity; "
+    "counter_ns = gpu__time_duration.sum under replay, --clock-control none")
+AMD_COUNTER_UNIT = (
+    "rocprofv3: fp64_flops NOT COUNTED (gfx1200 exposes no fp64 instruction "
+    "counter); dram_bytes_read = 32 x GL2C_EA_RDREQ_32B_sum + 64 x "
+    "GL2C_EA_RDREQ_64B_sum + 128 x GL2C_EA_RDREQ_128B_sum, dram_bytes_written "
+    "= 64 x GL2C_EA_WRREQ_64B_sum + 32 x (GL2C_EA_WRREQ_sum - "
+    "GL2C_EA_WRREQ_64B_sum): GL2C <-> memory-fabric bytes, i.e. L2 misses "
+    "the Infinity Cache may serve, an UPPER bound on DRAM bytes; counter_ns "
+    "= End_Timestamp - Start_Timestamp under counter collection")
+
+
+@dataclass(frozen=True)
+class KernelCounters:
+    """One profiled launch: the kernel's name (no signature), every counter
+    by its exact name, and the four counter fields read off them (None:
+    not counted)."""
+
+    kernel: str
+    raw: Mapping[str, int]
+    fp64_flops: int | None
+    dram_bytes_read: int | None
+    dram_bytes_written: int | None
+    counter_ns: float | None
+
+
+def _int(v: str) -> int:
+    v = v.strip().replace(",", "")
+    if re.fullmatch(r"\d+", v):
+        return int(v)
+    f = float(v)
+    if f != int(f) or f < 0:
+        raise ValueError(f"counter value {v!r} is not a count")
+    return int(f)
+
+
+def parse_ncu_csv(text: str) -> list[KernelCounters]:
+    """`ncu --csv --print-units base`'s rows, one `KernelCounters` per
+    profiled launch in launch order (ncu's ID). Refuses a metric printed in
+    a unit other than NCU_UNITS', and a launch missing one of NCU_METRICS."""
+    start = text.find('"ID"')
+    if start < 0:
+        raise ValueError("no ncu CSV header in the output")
+    launches: dict[int, tuple[str, dict[str, int]]] = {}
+    for rec in csv.DictReader(io.StringIO(text[start:])):
+        if not rec.get("ID") or rec.get("Metric Name") is None:
+            continue
+        name, unit = rec["Metric Name"], rec.get("Metric Unit", "")
+        if name in NCU_UNITS and unit != NCU_UNITS[name]:
+            raise ValueError(f"ncu printed {name} in {unit!r}, not "
+                             f"{NCU_UNITS[name]!r}")
+        kernel = rec["Kernel Name"].split("(", 1)[0].strip()
+        got = launches.setdefault(int(rec["ID"]), (kernel, {}))[1]
+        got[name] = _int(rec["Metric Value"])
+    out = []
+    for i in sorted(launches):
+        kernel, raw = launches[i]
+        missing = [m for m in NCU_METRICS if m not in raw]
+        if missing:
+            raise ValueError(f"ncu launch {i} ({kernel}) has no {missing}")
+        out.append(KernelCounters(
+            kernel=kernel, raw=raw,
+            fp64_flops=raw[NCU_DADD] + raw[NCU_DMUL] + 2 * raw[NCU_DFMA],
+            dram_bytes_read=raw[NCU_READ], dram_bytes_written=raw[NCU_WRITE],
+            counter_ns=float(raw[NCU_TIME])))
+    return out
+
+
+def parse_rocprof_csv(text: str) -> list[KernelCounters]:
+    """`rocprofv3 --pmc ... --output-format csv`'s counter_collection rows,
+    one `KernelCounters` per dispatch in dispatch order. Refuses a dispatch
+    missing one of ROCPROF_COUNTERS."""
+    dispatches: dict[int, tuple[str, dict[str, int], int]] = {}
+    for rec in csv.DictReader(io.StringIO(text)):
+        if not rec.get("Dispatch_Id"):
+            continue
+        d = int(rec["Dispatch_Id"])
+        kernel = rec["Kernel_Name"].split("(", 1)[0].strip()
+        ns = _int(rec["End_Timestamp"]) - _int(rec["Start_Timestamp"])
+        got = dispatches.setdefault(d, (kernel, {}, ns))[1]
+        got[rec["Counter_Name"]] = _int(rec["Counter_Value"])
+    out = []
+    for d in sorted(dispatches):
+        kernel, raw, ns = dispatches[d]
+        missing = [c for c in ROCPROF_COUNTERS if c not in raw]
+        if missing:
+            raise ValueError(f"rocprofv3 dispatch {d} ({kernel}) has no "
+                             f"{missing}")
+        wr64 = raw[ROCPROF_WR64]
+        if raw[ROCPROF_WR] < wr64:
+            raise ValueError(f"rocprofv3 dispatch {d}: {ROCPROF_WR} < "
+                             f"{ROCPROF_WR64}")
+        out.append(KernelCounters(
+            kernel=kernel, raw=raw, fp64_flops=None,
+            dram_bytes_read=(32 * raw[ROCPROF_RD32] + 64 * raw[ROCPROF_RD64]
+                             + 128 * raw[ROCPROF_RD128]),
+            dram_bytes_written=64 * wr64 + 32 * (raw[ROCPROF_WR] - wr64),
+            counter_ns=float(ns)))
+    return out
+
+
+PROFILERS = {"cuda": "ncu", "hip": "rocprofv3"}
+
+
+def counter_tool(path: str, backend: str) -> str:
+    """The profiler as it reports itself: `ncu 2025.3.1.0`, `rocprofv3 1.1.0`."""
+    text = _out([path, "--version"])
+    pat = r"^Version (\S+)" if backend == "cuda" else r"^\s*version: (\S+)"
+    m = re.search(pat, text, re.M)
+    name = PROFILERS[backend]
+    return f"{name} {m[1]}" if m else f"{name} (unknown version)"
+
+
+def profile_command(backend: str, tool: str, argv: Sequence[str], *,
+                    kernel_regex: str, outdir: Path) -> list[str]:
+    """The profiler invocation around `argv` (module docstring, COUNTERS)."""
+    if backend == "cuda":
+        return [tool, "--csv", "--print-units", "base", "--clock-control",
+                "none", "--metrics", ",".join(NCU_METRICS), "--kernel-name",
+                f"regex:{kernel_regex}", *argv]
+    return [tool, "--pmc", *ROCPROF_COUNTERS, "--kernel-include-regex",
+            kernel_regex, "--output-format", "csv", "-d", str(outdir), "-o",
+            "counters", "--", *argv]
+
+
+_NOT_LOADED = re.compile(r"error while loading shared libraries: (\S+?):")
+
+
+def profile(backend: str, argv: Sequence[str], *, kernel_regex: str,
+            workdir: Path) -> tuple[list[KernelCounters], str, str]:
+    """Run `argv` under `backend`'s profiler; its launches matching
+    `kernel_regex`, the profiler as it reports itself, and the invocation as
+    recorded (the binary and output directory shown as `<name>`).
+
+    Raises CouldNotMeasure when the profiler is absent, cannot load, is
+    refused the counters, or reports no launch -- never a row of zeros.
+    """
+    name = PROFILERS[backend]
+    tool = _which(name)
+    if tool is None:
+        raise CouldNotMeasure(f"{name} not found: could not measure")
+    outdir = workdir / f"{name}-out"
+    cmd = profile_command(backend, tool, argv, kernel_regex=kernel_regex,
+                          outdir=outdir)
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise CouldNotMeasure(f"{name}: {e}: could not measure") from e
+    report = done.stdout + done.stderr
+    if "ERR_NVGPUCTRPERM" in report:
+        raise CouldNotMeasure(
+            "ncu: ERR_NVGPUCTRPERM -- this host restricts GPU performance "
+            "counters to admins (NVreg_RestrictProfilingToAdminUsers): could "
+            "not measure")
+    libs = sorted(set(_NOT_LOADED.findall(report)))
+    if libs:
+        raise CouldNotMeasure(f"{name} cannot load {', '.join(libs)}: could "
+                              "not measure")
+    if backend == "cuda":
+        if done.returncode != 0 or "==ERROR==" in report:
+            raise CouldNotMeasure(f"ncu exited {done.returncode}: could not "
+                                  f"measure\n{report[-2000:]}")
+        got = parse_ncu_csv(report) if '"ID"' in report else []
+    else:
+        files = sorted(outdir.rglob("*counter_collection.csv"))
+        if done.returncode != 0 or len(files) > 1:
+            raise CouldNotMeasure(
+                f"rocprofv3 exited {done.returncode} with {len(files)} counter "
+                f"files: could not measure\n{report[-2000:]}")
+        got = parse_rocprof_csv(files[0].read_text()) if files else []
+    if not got:
+        raise CouldNotMeasure(f"{name} profiled no launch matching "
+                              f"{kernel_regex!r}: could not measure")
+    shown = [Path(cmd[0]).name, *cmd[1:]]
+    shown = [f"<{Path(c).name}>" if c in (str(argv[0]) if argv else "",
+                                          str(outdir)) else c for c in shown]
+    return got, counter_tool(tool, backend), " ".join(shown)
+
+
+def counter_rows(backend: Backend, spec: Spec, units: Sequence[Unit],
+                 launches: Sequence[KernelCounters], *, toolchain: str,
+                 gpu: str, tool: str, command: str) -> dict[str, Measured]:
+    """One cell's counter rows, keyed `kernel_key(MeasuredKey, batch)`: one
+    per batch kernel, `units` in plan order, each matched by name to exactly
+    one profiled launch (measured_store, THE COUNTER ROW SHAPE)."""
+    if not units:
+        raise ValueError(f"{spec.key()}: no units")
+    key = MeasuredKey(spec, backend.arch, toolchain)
+    out = {}
+    for b, u in enumerate(units):
+        mine = [c for c in launches if c.kernel == u.name]
+        if len(mine) != 1:
+            raise ValueError(f"{spec.key()}: kernel {u.name} was profiled "
+                             f"{len(mine)} times, not once")
+        (c,) = mine
+        out[kernel_key(key, b)] = Measured(
+            fp64_flops=c.fp64_flops, dram_bytes_read=c.dram_bytes_read,
+            dram_bytes_written=c.dram_bytes_written, counter_ns=c.counter_ns,
+            toolchain=toolchain, arch=backend.arch.name, host=host(), gpu=gpu,
+            date=datetime.date.today().isoformat(), kernel=u.name,
+            command=command,
+            source_sha256=hashlib.sha256(u.text.encode()).hexdigest(),
+            raw=dict(c.raw), counter_tool=tool,
+            counter_unit=(NV_COUNTER_UNIT if backend.name == "cuda"
+                          else AMD_COUNTER_UNIT))
+    return out
 
 
 def main(argv: Sequence[str] | None = None) -> int:
