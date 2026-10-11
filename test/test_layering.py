@@ -162,6 +162,21 @@ RULES: dict[str, Rule] = {
         literature="nothing in KernelCost may feed a literature floor "
                    "(lower.py); the limits it records are read by tests",
         reference=_GROUND_TRUTH),
+    "ao": _rule(
+        "the AO layer (#80): shells, the basis and the one normalisation "
+        "convention -- input data a kernel is eventually run on, in plain "
+        "tuples and floats",
+        ("ao",),
+        spec="a shell is input data, not a generation key: no `Spec` field "
+             "and no `key()` (#80)",
+        plan="the AO side restates the Cartesian order rather than importing "
+             "it; a test asserts the two agree, so neither drifts silently",
+        ir="the AO layer describes basis functions, not instructions",
+        emit="the definition of the input must not be shaped by how a kernel "
+             "is spelled",
+        reference="the reference is checked against what the AO layer feeds "
+                  "it; sharing ancestry would compare a thing to itself "
+                  "(#20)"),
 }
 
 RULE_OF: dict[str, str] = {
@@ -203,6 +218,8 @@ RULE_OF: dict[str, str] = {
     "measured": "driver",
     "kernelrank": "analysis",
     "batchreport": "analysis",
+    "ao": "ao",
+    "ao.shell": "ao",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -252,6 +269,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                  "spec"),
     "kernelrank": ("device", "kernel", "lower", "measured", "spec"),
     "batchreport": ("device", "measured"),
+    "ao": (),
+    "ao.shell": (),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
