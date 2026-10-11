@@ -1,7 +1,8 @@
 """The two [JEngine] scoreboards: same tables, separate thresholds.
 
-Only Table 3's literal Agreement thresholds are set; Tables 1 and 2 are scored
-pre-sieve and their thresholds wait for the sieve."""
+Every literal Agreement threshold is set, each to what the plan layer
+measured: Table 3 from the batch partition, Tables 1 and 2 from the sieved
+plan. Every exact_given_inputs is still unrecorded."""
 
 from __future__ import annotations
 
@@ -51,33 +52,28 @@ def test_a_board_cannot_load_the_other_boards_file() -> None:
         load_scoreboard(BOARDS / "searched.json", "literal")
 
 
-def test_no_floor_is_set_before_the_sieve() -> None:
-    # Tables 1 and 2 are computed by the plan layer, but PRE-sieve (plan/dag.py
-    # builds MILD's DAG and nothing prunes it), and they are post-sieve
-    # numbers. The sieve can move a cell either way -- a re-expansion that
-    # deletes an intermediate can cost FLOPs -- so a floor set now could be
-    # one the sieve has to lower, and a floor never falls. Their thresholds
-    # stay unset until the sieve (#12) measures them. Table 3 is targets
-    # only, which the sieve does not touch, and has its measured Agreement
-    # floor and ceiling; every exact_given_inputs is still unrecorded (#14).
-    for tid, rules in _board("literal").rules.items():
+def test_every_agreement_is_set_and_no_input_is_recorded() -> None:
+    # Tables 1 and 2 are computed post-sieve (#12), the paper's algorithm as
+    # written, and their floors and ceilings are what that measured; Table 3's
+    # are the batch partition's. From here a floor only rises and a ceiling
+    # only falls (Agreement.tightened). Every exact_given_inputs is still
+    # unrecorded (#14).
+    for rules in _board("literal").rules.values():
         for rule in rules:
-            if tid == "jengine/table3" and isinstance(rule, Agreement):
-                continue
             if isinstance(rule, Agreement):
-                assert rule.floor_exact is None
-                assert rule.ceiling_worst_rel_dev is None
+                assert rule.floor_exact is not None
+                assert rule.ceiling_worst_rel_dev is not None
             else:
                 assert rule.inputs is None
 
 
 def test_the_printed_tables_score_as_unset_and_at_or_under() -> None:
-    # Scoring the paper against itself: the literal board has nothing to judge
-    # against except Table 3's Agreement, which the printed values pass (40
-    # exact, no deviation); the searched board's rule holds with equality.
+    # Scoring the paper against itself: on the literal board every Agreement
+    # passes (40 exact, no deviation) and every exact_given_inputs is unset;
+    # the searched board's rule holds with equality.
     literal = score(_board("literal"), TABLES, _as_printed("literal"))
     passed = {(v.table, v.rule) for v in literal if v.status is Status.PASS}
-    assert passed == {("jengine/table3", "agreement")}
+    assert passed == {(tid, "agreement") for tid in TABLES}
     assert {v.status for v in literal} == {Status.UNSET, Status.PASS}
     searched = score(_board("searched"), TABLES, _as_printed("searched"))
     assert {v.status for v in searched} == {Status.PASS}
@@ -181,18 +177,18 @@ def test_tables_1_and_2_score_post_sieve_on_the_literal_board() -> None:
     }
     t1 = by_table["jengine/table1", "agreement"]
     t2 = by_table["jengine/table2", "agreement"]
-    assert t1.status is t2.status is Status.UNSET  # thresholds still null
+    assert t1.status is t2.status is Status.PASS  # at exactly the thresholds
     assert t1.measured == {"exact": 7, "worst_rel_dev": 50 / 560}
     assert t2.measured == {"exact": 15, "worst_rel_dev": (301 - 280) / 280}
     assert by_table["jengine/table3", "agreement"].status is Status.PASS
 
 
 def test_the_full_board_with_the_plan_layers_candidates() -> None:
-    # Every table now has a candidate, so nothing FAILs for want of one: Table
-    # 3's Agreement passes, and everything else is UNSET.
+    # Every table has a candidate, so nothing FAILs for want of one: every
+    # Agreement passes, and every exact_given_inputs is UNSET.
     verdicts = score(_board("literal"), TABLES, _plan_candidates())
     assert {(v.table, v.rule) for v in verdicts if v.status is Status.PASS} == {
-        ("jengine/table3", "agreement")
+        (tid, "agreement") for tid in TABLES
     }
     assert {v.status for v in verdicts} == {Status.PASS, Status.UNSET}
 
