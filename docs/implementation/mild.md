@@ -45,10 +45,9 @@ Two things make the search hard, and both matter when reading any cost number:
 
 The rule in one line: **reduce in the direction of the smallest non-zero
 component of `r`, breaking ties round-robin.** `[JEngine, v2, Alg. 2]`, after
-Ryu, Kim & Lee, *J. Comput. Chem.* **14**, 30–36 (1993), who introduced the
-minimum-component choice; "MILD" (minimum-L direction) is the JEngine paper's
-name for it. That paper is **not yet in `../references.md`** and wants adding —
-with a DOI checked at source, not inferred from the volume.
+Ryu, Kim & Lee (entry 45 of [`../references.md`](../references.md)), who
+introduced the minimum-component choice; "MILD" (minimum-L direction) is the
+JEngine paper's name for it.
 
 "Non-zero" is load-bearing: a zero component cannot be reduced at all, so zeros
 are excluded from the minimum rather than winning it.
