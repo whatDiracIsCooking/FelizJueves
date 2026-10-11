@@ -554,3 +554,76 @@ either, and for a second reason on top of the first: those are A100
 measurements of their kernels under their compiler, and neither of our targets
 (`sm_86`, `gfx1200`) is that. Our equivalent numbers come from the kernel tier,
 which is the only place this repo can make a numerical claim at all.
+
+## The screen as an error claim: a `τ` ladder (#88)
+
+**Implemented, host-side.** `ao.j.coulomb_matrix_screened(basis, D, *, pq,
+tau, order)` is the unique-pairs `J` sweep with the kernel's screen: a
+(bra record, ket record) pair is skipped when `I_bra · (I_ket · Dmax) < τ`,
+`I` the pair-factor-free bound of `ao/pairs.py` and `Dmax` over the weighted,
+dressed ket vector. `order="sorted"` is the kernel's form — kets sorted
+**descending by `I_ket · Dmax`, stable**, and a `break` at the first ket under
+`τ`; `order="unsorted"` is the `continue` in the original order.
+`coulomb_matrix` and `coulomb_matrix_reference` are unchanged (at `τ = 0` they
+still evaluate no bound).
+
+**Why the `break` is exact.** `I_bra ≥ 0`, and a rounded product with a fixed
+non-negative factor is monotone in the other, so on kets sorted by exactly the
+factor the screen multiplies, every ket after the first rejected one is
+rejected too. The sort must be by that product and nothing else, and stable
+(the H₂ chain's symmetry produces tied bounds, and the test sees them).
+
+**The three claims**, each at every rung `τ ∈ {0, 1e-14, 1e-12, 1e-10, 1e-8,
+1e-6}`, in `test/test_ao_screening.py`:
+
+- **Sorted-`break` = unsorted-`continue`, to 0**, and the same skip count —
+  `test_kernel.py`'s claim on synthetic data, here on real bounds. Each `J_p`
+  is accumulated over kets with `math.fsum` (correctly rounded, so independent
+  of order), which makes the equality a statement about *which* terms were
+  summed rather than about summation order.
+- **`|J(τ) − J(0)| ≤ τ · scale`**, element by element, with the scale stated
+  and independent of `τ`: `scale_ab = n_ket · Σ_{bra records} Σ_p |E^{ab}_p|`.
+  Every skipped pair has `|Σ_q [p|q] D_q| ≤ I_p I_ket Dmax ≤ I_bra I_ket Dmax <
+  τ` for every `p`, moves `J_ab` by at most `τ Σ_p |E^{ab}_p|`, and a bra
+  record skips at most `n_ket` kets. `J(0)` is the same path at `τ = 0`.
+- **The error is non-decreasing in `τ`** (as is the skip count: the skipped
+  sets are nested).
+
+**The cases.** *Compact*: H₂O/STO-3G, the `h2o_sto3g_j` fixture's basis and
+density. *Extended*: two H₂ (bond 1.4 bohr), centres 6 bohr apart, collinear,
+STO-3G H from the `h2_sto3g_j` fixture and the fixtures' hilbert density
+`D_ij = 1/(i+j+1)` — every `D_cd` non-zero, so a skip comes from the decay of
+the ket's dressed `E`, not from a zero. Two molecules and not more: a third puts
+`T = θ²|PQ|²` at ~616, past the `T ≤ 500` that `reference.boys` has measured
+and refuses beyond; the test pins that the chain is as long as the evaluator
+allows.
+
+**Measured** (`data/ao/screening.json`; `err/scale` is the maximum over
+elements of `|J(τ) − J(0)| / scale`, and the claim is that it is `≤ τ`):
+
+| case | `τ` | max `\|J(τ) − J(0)\|` | err/scale | skip fraction |
+|---|---|---|---|---|
+| compact | 0 | 0 | 0 | 0.0000 |
+| compact | 1e-14 | 0 | 0 | 0.0000 |
+| compact | 1e-12 | 0 | 0 | 0.0000 |
+| compact | 1e-10 | 0 | 0 | 0.0000 |
+| compact | 1e-8 | 4.4e-9 | 3.0e-11 | 0.0023 |
+| compact | 1e-6 | 3.1e-7 | 2.3e-9 | 0.0211 |
+| extended | 0 | 0 | 0 | 0.0000 |
+| extended | 1e-14 | 6.7e-15 | 7.4e-17 | 0.0543 |
+| extended | 1e-12 | 8.7e-15 | 9.6e-17 | 0.0667 |
+| extended | 1e-10 | 2.0e-11 | 9.8e-13 | 0.0691 |
+| extended | 1e-8 | 2.6e-9 | 3.9e-11 | 0.1222 |
+| extended | 1e-6 | 5.5e-7 | 1.2e-8 | 0.1457 |
+
+**Read it as follows.** The compact molecule skips **nothing** at
+`τ ≤ 1e-10`: there the error claim is vacuous (the error is exactly 0 because
+nothing was dropped), and the test says so rather than passing quietly. The
+extended case skips at every positive rung — 5% of record pairs at `1e-14`,
+15% at `1e-6` — so the bound does reject whole inter-molecule blocks, and
+nothing goes to `limits.json`. The stated scale is loose by design (it charges
+every bra record for every ket); `err/scale` sits two to five orders under
+`τ`. Accuracy only: no timings and no `Measured` rows; the work saved is the
+skip fraction. Regenerate with
+`PYTHONPATH=src uv run python test/test_ao_screening.py --write`; the `slow`
+test requires the file to equal a fresh run exactly.
