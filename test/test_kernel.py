@@ -61,6 +61,7 @@ from felizjueves.kernel import (
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.targets import hermite_targets
+from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq, theta_of
 from felizjueves.spec import Operator, Spec, Target
 
@@ -97,7 +98,7 @@ def _inputs(spec: Spec, n_bra: int, n_ket: int, seed: int) -> dict:
 
 def _run(spec: Spec, args: dict, lanes: int) -> tuple[np.ndarray, Interpreter]:
     grid, block = launch_shape(args["n_bra"], lanes)
-    it = Interpreter(_kernel(spec), launch=Launch(grid, block, lanes))
+    it = Interpreter(_kernel(spec), launch=Launch(grid, block, lanes), boys=boys)
     return it.run(**args)["J"], it
 
 
