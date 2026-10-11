@@ -43,6 +43,23 @@
     // one is not recompiled from scratch in another.
     "source=${localEnv:FJ_SCCACHE_DIR:/home/lostica/projects/FelizJueves/main/.sccache},target=/home/ubuntu/.sccache,type=bind",
 
+    // CLAUDE CODE'S AUTH, so that a newly created container is not a fresh
+    // login. The OAuth token is ~/.claude/.credentials.json, carried by the
+    // first bind. ~/.claude.json -- onboarding, oauthAccount, and every
+    // project's trust state -- sits BESIDE that directory rather than inside
+    // it, so it needs a mount of its own, and it is READ-ONLY because
+    // .devcontainer/seed-claude-config.sh takes a mutable per-container copy
+    // instead: that file is rewritten whole on every change, so sharing it
+    // read-write with the host and other worktree containers is
+    // last-writer-wins.
+    //
+    // The first bind is read-WRITE and IS your host ~/.claude: this container's
+    // sessions, settings and history land in the host's directory, not in a
+    // copy. The two named volumes below are mounted INSIDE it, which is what
+    // keeps plugins and backups per-container.
+    "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
+
     // Named volumes, keyed on the worktree's directory basename so two
     // worktrees never share them. The fj- prefix is what devtools/worktree.sh
     // rm and gc recognise as this project's; doctor.sh warns when it stops
@@ -77,6 +94,15 @@
     // Passed through for the gh-based PR flow. Empty on a host that has none,
     // which is fine -- doctor.sh reports it.
     "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    // The workspace's HOST path, which is NOT where it is mounted (/workspace).
+    // Claude Code keys its per-project state in ~/.claude.json by absolute
+    // path, so the host's entry for this checkout -- including the accepted
+    // trust dialog, without which the 40 permissions.allow entries in
+    // .claude/settings.json are IGNORED -- does not match /workspace and the
+    // dialog is asked again in every new container.
+    // .devcontainer/seed-claude-config.sh uses this to carry that one decision
+    // across, and only when the host had already made it.
+    "FJ_HOST_WORKSPACE": "${localWorkspaceFolder}",
     // The image PINS Claude Code (docker/install-claude-code.sh) and npm's
     // global prefix is /usr, which is root-owned -- so a self-update in here
     // cannot succeed and should not be attempted. Bump the pin instead:
