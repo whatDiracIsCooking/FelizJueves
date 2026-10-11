@@ -138,6 +138,15 @@ generator must not transcribe them:
 
 - **`1y` is misprinted** as `(1,1,0)` in `[JEngine, v2, eq. 17]`. It is
   `(0,1,0)`; `(1,1,0)` is not a unit vector and would break eq. 11.
+  `recurrence.reduction` transcribes eq. 17's reduction form, applying the
+  shift `1d` as the direction's unit vector, and
+  `test_eq17_witness.py::test_y_reduction_shifts_by_the_unit_vector_0_1_0`
+  holds it there (`jengine/eq17-1y-misprint`, asserted, #107): on every node
+  a real plan reduces along y with `r_y ≥ 1` and `r_x ≥ 1` (where `(1,1,0)`
+  and `(0,1,0)` name different in-range parents), the `PQ_y` term must read
+  `[r - (0,1,0)]^(m+1)` and the `(r_y - 1)` term `[r - (0,2,0)]^(m+1)`.
+  Spelling `1y` as `(1,1,0)`, in the test's transcription or in the DAG and
+  IR builder, fails it.
 - **`θ` is never defined, and eq. 13 is wrong in `m` under any definition.**
   The fundamental, as printed, is
   `[0]^(m) = (2/√π) θ (-2θ)^m F_m(|θ·PQ|²)` (`[JEngine, v2, eq. 13]`), and v2
@@ -175,7 +184,8 @@ generator must not transcribe them:
   outside" has the perturbations that show it. The `(-2θ²)^m` weight is
   witnessed by the same comparisons wherever `m > 0` is reached (any class
   above `(ss|ss)`), but carries no record of its own. The `1y` misprint
-  (`jengine/eq17-1y-misprint`) is still pending: no code transcribes eq. 17.
+  (`jengine/eq17-1y-misprint`) is asserted by the structural witness above
+  (#107): `recurrence.py` transcribes eq. 17 with `1y = (0,1,0)`.
 
 ## Why this is a J engine and not an ERI engine
 
