@@ -34,7 +34,7 @@ from typing import Any
 
 import numpy as np
 
-from .manifest import ERI_PREFIX, FIXTURES, SCHEMA, dumps, encode_array, load
+from .manifest import ERI_PREFIX, FIXTURES, J_ARRAY, SCHEMA, dumps, encode_array, load
 
 COMMAND = ("PYTHONPATH=test uv run --group oracle python -m oracle.generate "
            "--regenerate")
@@ -63,6 +63,10 @@ class Case:
     # 512 KB check-added-large-files hook caps a fixture: every class of an
     # s-to-f basis is ~1.2 MB, L <= 8 is ~330 KB.
     max_eri_L: int | None = None
+    # Write the `vj` array (#86): PySCF's `get_jk` Coulomb matrix for the
+    # recorded `density`, so both sides of the J comparison see identical
+    # input. Needs `record_basis` (our side builds its shells from it).
+    record_j: bool = False
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -106,6 +110,8 @@ def hilbert_density(nao: int) -> np.ndarray:
 
 DENSITY_RECIPE = ("hilbert: D[i][j] = 1/(i+j+1) -- symmetric positive "
                   "definite, no RNG, reproducible bit-for-bit on any host")
+
+_H2O = "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12"
 
 CASES: dict[str, Case] = {
     "h2_sto3g": Case(
@@ -175,6 +181,62 @@ CASES: dict[str, Case] = {
         record_basis=True,
         record_eri=True,
         max_eri_L=8,
+    ),
+    # #86's J cases: the recorded hilbert density, contracted by PySCF's
+    # `get_jk`. One geometry for every H2O case (h2o_631g_eri's, no atom on
+    # an axis), so the three bases differ in nothing else.
+    "h2_sto3g_j": Case(
+        description=(
+            "#86's smallest J case: H2 in STO-3G, Cartesian, the bond off "
+            "every axis. Records the converted basis and PySCF's get_jk J "
+            "for the recorded density."
+        ),
+        atom="H 0 0 0; H 0.3 -0.4 1.3",
+        unit="Bohr",
+        basis="sto-3g",
+        cart=True,
+        record_basis=True,
+        record_j=True,
+    ),
+    "h2o_sto3g_j": Case(
+        description=(
+            "#86: H2O in STO-3G, Cartesian, no atom on an axis -- s and p, "
+            "three-primitive contractions. Records the converted basis and "
+            "PySCF's get_jk J for the recorded density."
+        ),
+        atom=_H2O,
+        unit="Bohr",
+        basis="sto-3g",
+        cart=True,
+        record_basis=True,
+        record_j=True,
+    ),
+    "h2o_631g_j": Case(
+        description=(
+            "#86's 6-31G case: H2O, Cartesian, no atom on an axis -- the O 1s "
+            "six-primitive contraction and split valence. Records the "
+            "converted basis and PySCF's get_jk J for the recorded density."
+        ),
+        atom=_H2O,
+        unit="Bohr",
+        basis="6-31g",
+        cart=True,
+        record_basis=True,
+        record_j=True,
+    ),
+    "h2o_ccpvdz_j": Case(
+        description=(
+            "#86's d case (slow): H2O in cc-pVDZ, Cartesian (six d "
+            "components), no atom on an axis, general contractions on O. "
+            "Records the converted basis and PySCF's get_jk J for the "
+            "recorded density."
+        ),
+        atom=_H2O,
+        unit="Bohr",
+        basis="cc-pvdz",
+        cart=True,
+        record_basis=True,
+        record_j=True,
     ),
 }
 
@@ -336,7 +398,30 @@ def build(name: str) -> dict[str, Any]:
             raise ValueError(f"{name}: record_eri needs record_basis and cart")
         out["arrays"].update(eri_arrays(mol, out["converted"],
                                         case.max_eri_L))
+    if case.record_j:
+        if not case.record_basis:
+            raise ValueError(f"{name}: record_j needs record_basis")
+        out["arrays"][J_ARRAY] = encode_array(j_array(mol))
     return out
+
+
+def j_array(mol: Any) -> np.ndarray:
+    """PySCF's Coulomb matrix for the recorded density: `scf.hf.get_jk` with
+    `hermi=1` (the density is exactly symmetric) and no `vhfopt`, so no
+    integral screening on PySCF's side either. Cross-checked against the full
+    `int2e` tensor contracted by `einsum`, to 1e-13 of the largest element,
+    so a fixture is never written from a `get_jk` that disagrees with
+    libcint's own integrals; what is RECORDED is `get_jk`'s."""
+    from pyscf import scf
+
+    dm = hilbert_density(int(mol.nao_nr()))
+    vj, _ = scf.hf.get_jk(mol, dm, hermi=1, with_k=False)
+    vj = np.asarray(vj, dtype=np.float64)
+    full = np.einsum("ijkl,kl->ij", mol.intor("int2e"), dm)
+    err = float(np.max(np.abs(vj - full)))
+    if err > 1e-13 * float(np.max(np.abs(full))):
+        raise ValueError(f"get_jk and einsum(int2e, dm) differ by {err:.3e}")
+    return vj
 
 
 def comparable(obj: dict[str, Any]) -> str:

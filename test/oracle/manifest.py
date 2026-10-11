@@ -31,6 +31,8 @@ THE SHAPE (schema 1), one JSON object per file under `fixtures/`:
                  libcint's Cartesian `(ij|kl)` block for converted shells
                  i, j, k, l, shape (n_i, n_j, n_k, n_l), AOs in `cartesians`
                  order -- one shell quartet, never the whole tensor
+                 `vj` (OPTIONAL, #86; needs `converted`) is PySCF's
+                 `get_jk` Coulomb matrix (nao x nao) for `density`, AO order
     density_recipe  how the recorded density was made
     converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
                  (`ao.shell.Shell`, one entry per contraction, in AO order) as
@@ -75,6 +77,7 @@ TOP_KEYS = (
 OPTIONAL_KEYS = ("converted",)
 REQUIRED_ARRAYS = ("density",)
 ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
+J_ARRAY = "vj"  # PySCF get_jk's Coulomb matrix for `density` (#86)
 
 
 class FixtureError(ValueError):
@@ -320,6 +323,14 @@ def validate(path: Path, raw: Any) -> Fixture:
                             nao)
                  if "converted" in raw else None)
     _check_eri(path, arrays, converted)
+    if J_ARRAY in arrays:
+        if converted is None:
+            raise _fail(path, f"arrays.{J_ARRAY} needs the converted basis "
+                              "its AOs are in")
+        if arrays[J_ARRAY].shape != (nao, nao):
+            raise _fail(path, f"arrays.{J_ARRAY} has shape "
+                              f"{arrays[J_ARRAY].shape}, expected "
+                              f"({nao}, {nao})")
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,
