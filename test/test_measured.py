@@ -657,3 +657,33 @@ def test_an_untimed_cell_cannot_be_judged() -> None:
         measured.nine_vs_twelve({k9: r9, k12: untimed}, "sm_86", 13)
     with pytest.raises(KeyError):
         measured.nine_vs_twelve({k9: r9}, "sm_86", 13)
+
+
+# The verdict (#60), on the tracked rows. The definition is measured.py's
+# docstring, committed before any 12-batch row existed; this pins what it
+# said about the rows, cell by cell, so a remeasure that moves it is seen.
+# claims.json's `jengine/nine-batches-suffice` record cites this test.
+NINE_VS_TWELVE = {
+    # (arch, L): (fewer_spills, faster_wide, faster_near) for b 12 against b 9
+    ("sm_86", 7): (False, False, False),
+    ("sm_86", 10): (False, False, False),
+    ("sm_86", 13): (True, False, False),
+    ("sm_86", 16): (True, False, False),
+    ("gfx1200", 7): (False, False, False),
+    ("gfx1200", 10): (False, False, False),
+    ("gfx1200", 13): (False, False, False),
+    ("gfx1200", 16): (False, False, True),
+}
+
+
+def test_nine_batches_do_not_suffice_on_either_card() -> None:
+    got = {}
+    for arch, L in NINE_VS_TWELVE:
+        c = measured.nine_vs_twelve(ROWS, arch, L)
+        got[arch, L] = (c.fewer_spills, c.faster_wide, c.faster_near)
+    assert got == NINE_VS_TWELVE
+    assert {(a, L) for a, L in got} == {
+        (a, L) for a in ARCHS for L in measured.SUBGRID_LS}
+    for arch in ARCHS:
+        # 9 suffices on an arch iff at every subgrid L: on neither card
+        assert not all(not any(v) for (a, _), v in got.items() if a == arch)

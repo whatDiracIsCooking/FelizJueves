@@ -71,8 +71,8 @@
       "statement": "For L <= 16, at most 9 batches are needed; the batch counts worth generating over are 1, 3, 6 and 9.",
       "source": "[JEngine, v2, §7]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "Not decidable by #13's cut search. Whether 9 batches suffice is relative to a register and shared-memory budget, and the plan layer models neither: PlanCost has no budget for max intermediates or max targets to fall under, so nothing in it marks a batch count as enough. It needs the kernel tier's measured spills and occupancy at 9 against 12 or more batches, once a generator emits kernels."
+      "status": "unverifiable",
+      "reason": "The claim is relative to the paper's register and shared-memory budget on their A100, which no measurement here reaches. What #60 measured instead, on OUR cards and under a definition declared before the 12-batch rows existed (felizjueves.measured's docstring, NINE AGAINST TWELVE: 9 suffices at (arch, L) iff the 12-batch cell neither has fewer summed spills nor is faster, on the wide-T or near-T input, by more than the larger IQR; on an arch iff at every L in {7, 10, 13, 16}), is that 9 does NOT suffice on either card. sm_86 (nvcc 13.0): b 12 spills less at L 13 (14472 -> 12048 bytes) and L 16 (181224 -> 146020), though it is slower than b 9 at every L on both inputs. gfx1200 (hipcc / ROCm 7.2.4): b 12 spills more at every spilling L and is slower on wide-T everywhere, but is faster on near-T at L 16 (302.5 -> 299.7 ms, beyond the 1.3 ms IQR). Held, cell by cell, by test/test_measured.py::test_nine_batches_do_not_suffice_on_either_card; data/measured/kernels.json has the rows."
     },
     {
       "id": "jengine/rule-4-needs-the-sieve",
