@@ -175,6 +175,79 @@ Screening: Cauchy–Schwarz bounds take the nominal `O(N⁴)` to `O(N²)`. Each
 Hermite index carries a bound `I`, and the kernel tests `D_max · I_p · I_q`
 against a threshold `τ`.
 
+## The `E` transform
+
+**Status: the undressed coefficients are implemented** —
+`src/felizjueves/ao/hermite.py` (`e_axis`, `e_block`), checked by
+`test/test_ao_hermite.py`. The dressing (`ao/pairs.py`) and the bra
+back-transform `J_ab = Σ_p E_p^{ab} J_p` are not yet code.
+
+`[JEngine, v2]` says only that the primitive ERI carries "transformation
+coefficients `E` on each side"; it does not state their recurrence. That is
+McMurchie & Davidson's, and the equation numbers below are the **report's**
+(entry 46 of [`../references.md`](../references.md), UCRL-13791, as read from
+its OSTI scan). The journal version (entry 39) was not read for this section,
+so no equation number here is a claim about entry 39's numbering.
+
+**The recurrence.** Per axis, for a primitive pair with exponents `α` on `A`
+and `β` on `B`:
+
+```
+ζ = α + β        P = (αA + βB)/ζ        μ = αβ/ζ        (eqs. 2.8, 2.9)
+X_PA = P_x − A_x  (eq. 2.14)     X_PB = P_x − B_x     X_AB = A_x − B_x
+
+E^{00}_0    = exp(−μ X_AB²)
+E^{i+1,j}_t = (1/2ζ) E^{ij}_{t−1} + X_PA E^{ij}_t + (t+1) E^{ij}_{t+1}   (eq. 2.20)
+E^{i,j+1}_t = (1/2ζ) E^{ij}_{t−1} + X_PB E^{ij}_t + (t+1) E^{ij}_{t+1}   (eq. 2.21)
+E^{ij}_t    = 0   for t < 0 or t > i+j
+```
+
+and the 3D coefficient over a Hermite index `t = (tx, ty, tz)` is the product
+`E^{ab}_t = E_x E_y E_z`, enumerated in `hermite_targets(|a|+|b|)` order (the
+plan layer's; `ao` enumerates the same order itself and a test asserts the two
+agree, because `ao` may not import `plan`).
+
+**How this differs from the report's `d`.** MD's coefficients are `d^{nn'}_N`
+with `d^{00}_0 = 1` (eq. 2.22), and the Gaussian-product constant
+`E_IJ = exp(−αβ(α+β)⁻¹|A−B|²)` (eq. 2.10) is kept outside them and applied once
+per pair (eq. 2.27). Here each axis carries its own factor `exp(−μ X_AB²)` in
+`E^{00}_0`, so the product over three axes reproduces `E_IJ · d d d` exactly.
+In code, `μ X_AB²` is formed as `−ζ X_PA X_PB`, which equals it identically
+(`X_PA = −(β/ζ) X_AB`, `X_PB = (α/ζ) X_AB`); so `e_axis` takes
+`(i, j, ζ, X_PA, X_PB)` and no separate `X_AB` or `μ`.
+
+**What it expands.** With `Λ_t(x) = ζ^{t/2} H_t(√ζ (x−P)) exp(−ζ(x−P)²)` —
+MD's `Λ_t` (eqs. 2.15–2.16) times the Gaussian it multiplies — the coefficients
+satisfy, pointwise,
+
+```
+x_A^i x_B^j exp(−α x_A²) exp(−β x_B²) = Σ_t E^{ij}_t Λ_t(x)     (eqs. 2.7, 2.17)
+```
+
+`test/test_ao_hermite.py` checks exactly this, with `H_t` from numpy's closed
+form rather than from the recurrence under test, plus a Gauss–Hermite moment
+check, `E^{00}_0`, the empty top of the table, parity at `A = B`, and that
+`e_block` is the product of its three axes.
+
+**Where the factors go — decided once.** MD's ERI prefactor is
+`λ = 2π^{5/2} ζ⁻¹ η⁻¹ (ζ+η)^{−1/2}` (eqs. 3.30–3.31), and
+
+```
+λ = (2/√π) θ · (π/ζ)^{3/2} · (π/η)^{3/2},        θ² = ζη/(ζ+η)
+```
+
+- `(2/√π) θ` lives on the fundamental `[0]^(m)`, in the kernel (see "Two
+  defects in the source" above).
+- `(π/ζ)^{3/2}` goes on the **bra** pair and `(π/η)^{3/2}` on the **ket** pair,
+  host-side, applied by one dressing function in `ao/pairs.py` together with
+  the contraction coefficient and the primitive normalisation.
+- `ao/hermite.py` carries **none** of these. Any of them there breaks the
+  pointwise identity above, which is the only independent check `E` has: if
+  that identity needs a fudge factor to hold, the factor is in the wrong module.
+
+The three placements multiply back to `λ` and nothing else, which is the check
+that the placement is complete.
+
 ## The `[p|q]` kernel contract
 
 What the generated kernel must look like from the outside
