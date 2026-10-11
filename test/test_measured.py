@@ -602,3 +602,57 @@ def test_nvcc_still_reports_the_subgrid(spec, nvcc, tmp_path) -> None:
 @pytest.mark.parametrize("spec", SUBGRID_PARAMS)
 def test_hipcc_still_reports_the_subgrid(spec, hipcc, tmp_path) -> None:
     _recheck_cell("hip", spec, tmp_path)
+
+
+# --- #60: do 9 batches suffice? ---------------------------------------------
+
+
+def _cell(b: int, spill: int, wide: tuple[int, int], near: tuple[int, int],
+          L: int = 13) -> tuple[str, measured.Measured]:
+    """A synthetic compiled-and-timed row: wide/near are (median, IQR)."""
+    key = MeasuredKey(pq_spec(L, n_batches=b), SM_86, "nvcc 13.0").key()
+    return key, measured.Measured(
+        registers=255, spill_store=spill, spill_load=spill,
+        runtime_ns=wide[0], repeats=31, spread_ns=wide[1], **PROV,
+        raw={"wallclock:near:median_ns": near[0], "wallclock:near:q1_ns": 0,
+             "wallclock:near:q3_ns": near[1]})
+
+
+def _verdict(nine, twelve) -> measured.TwelveVsNine:
+    store = dict([_cell(9, *nine), _cell(12, *twelve)])
+    return measured.nine_vs_twelve(store, "sm_86", 13)
+
+
+def test_nine_suffices_when_twelve_is_no_better_on_anything() -> None:
+    c = _verdict((100, (1000, 10), (500, 5)), (100, (995, 8), (497, 4)))
+    assert not (c.fewer_spills or c.faster_wide or c.faster_near)
+    assert c.nine_suffices
+
+
+@pytest.mark.parametrize("twelve, which", [
+    pytest.param((99, (1000, 10), (500, 5)), "fewer_spills", id="one-spill-less"),
+    pytest.param((100, (989, 10), (500, 5)), "faster_wide", id="wide-beyond-iqr"),
+    pytest.param((100, (1000, 10), (494, 5)), "faster_near", id="near-beyond-iqr"),
+])
+def test_any_one_win_for_twelve_means_nine_does_not_suffice(twelve, which) -> None:
+    c = _verdict((100, (1000, 10), (500, 5)), twelve)
+    assert getattr(c, which) and not c.nine_suffices
+
+
+def test_a_wall_clock_win_is_judged_against_the_larger_iqr() -> None:
+    # 20 faster, but 12's own spread is 25: within noise, not a win
+    c = _verdict((100, (1000, 10), (500, 5)), (100, (980, 25), (500, 5)))
+    assert not c.faster_wide and c.nine_suffices
+    # exactly the spread is not beyond it
+    c = _verdict((100, (1000, 10), (500, 5)), (100, (990, 10), (500, 5)))
+    assert not c.faster_wide
+
+
+def test_an_untimed_cell_cannot_be_judged() -> None:
+    k9, r9 = _cell(9, 100, (1000, 10), (500, 5))
+    k12, r12 = _cell(12, 100, (1000, 10), (500, 5))
+    untimed = replace(r12, runtime_ns=None, repeats=None, spread_ns=None)
+    with pytest.raises(KeyError):
+        measured.nine_vs_twelve({k9: r9, k12: untimed}, "sm_86", 13)
+    with pytest.raises(KeyError):
+        measured.nine_vs_twelve({k9: r9}, "sm_86", 13)
