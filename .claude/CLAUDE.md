@@ -34,9 +34,11 @@ infrastructure, and every tier reports that rather than implying otherwise.
 | | State |
 |---|---|
 | `docker/`, `.devcontainer/`, `devtools/` | **live.** Both toolchains build; `devtools/kernel-tier.sh` runs end to end on this box. |
-| `test/` | **live, and thin.** `test_toolchain.py` asserts nvcc and hipcc compile for this box's targets and that a kernel launched on each card matches a numpy reference. The floor, not the subject. |
+| `test/` | **live, and thin.** `test_toolchain.py` asserts nvcc and hipcc compile for this box's targets and that a kernel launched on each card matches a numpy reference. The rest is fast-tier: the `Spec` key, the transcribed tables' structural invariants, and the scoring rules on **synthetic** candidates. |
+| `src/felizjueves/` | **importable, and small.** `spec.py` is `Spec`, the frozen key every later subsystem joins on. `literature/` loads published tables and scores a candidate against them: `tables`, `rules` (`Agreement`, `AtOrUnder`, `ExactGivenInputs`), `scoreboard`, `limits`. Nothing in it computes a table cell. |
+| `data/` | **live.** `literature/jengine/table{1,2,3}.json` is `[JEngine]` Tables 1–3, 120 cells with provenance. `scoreboards/jengine/{literal,searched}.json` are the two boards; **every floor is unset** (`null`) until a change that computes cells sets it to what it measured. Table 4 (spills) is deliberately not transcribed; `data/literature/jengine/README.md` says why. |
 | the generator | **absent.** `KERNEL_GEN_CMD` in `devtools/config.sh` is empty, so the kernel tier skips its generate and compile phases **and says so in its report**. Do not read such a run as a green kernel tier. |
-| `pyproject.toml` | **a virtual uv project** — no `[build-system]`, nothing importable. Dev tooling plus numpy, and a lock. |
+| `pyproject.toml` | **a virtual uv project** — no `[build-system]`, nothing installed. `src/` is importable from pytest only, via `pythonpath = ["src"]`. Dev tooling plus numpy, and a lock. |
 | `docs/` | `references.md` only. The derived notes (the recurrences we implement, with equation numbers) go here as they are written, and they ARE tracked. |
 
 When you run something, say which of these it touched.

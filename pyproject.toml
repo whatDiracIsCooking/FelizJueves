@@ -1,6 +1,7 @@
-# A VIRTUAL uv project: there is no [build-system], and nothing in this repo is
-# importable yet. `uv sync` reads this file to build .venv on the host and
-# /opt/venv in the images, and records the project itself as
+# A VIRTUAL uv project: there is no [build-system], so nothing here is
+# INSTALLED. The package under src/ is importable from pytest only, through
+# `pythonpath = ["src"]` below. `uv sync` reads this file to build .venv on
+# the host and /opt/venv in the images, and records the project itself as
 # `source = { virtual = "." }` in uv.lock.
 #
 # WHY VIRTUAL RATHER THAN A PACKAGE. This repo is the dev environment and the
@@ -22,9 +23,10 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 
-# EMPTY, AND IT IS THE RUNTIME LIST -- it stays empty until something here is
-# importable. The reference numerics and the dev tooling are dependency-groups
-# below, which `uv sync` installs and a consumer of this project would not.
+# EMPTY, AND IT IS THE RUNTIME LIST -- src/felizjueves imports nothing outside
+# the standard library, and this stays empty until it does. The reference
+# numerics and the dev tooling are dependency-groups below, which `uv sync`
+# installs and a consumer of this project would not.
 dependencies = []
 
 # >=3.12 BECAUSE THAT IS THE SYSTEM INTERPRETER ON BOTH SIDES: this host runs
@@ -68,6 +70,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+# src/ layout without installing it: the project stays virtual (see the top of
+# this file), and pytest puts src/ on sys.path itself.
+pythonpath = ["src"]
 addopts = "-ra"
 # THE MARKERS DECIDE WHAT A GREEN RUN PROVES, so they separate toolchain from
 # device: `cuda`/`hip` need a COMPILER (nvcc / hipcc) and stop at compile-and-

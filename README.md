@@ -11,9 +11,11 @@ that rather than implying otherwise:
 | | State |
 |---|---|
 | `docker/`, `.devcontainer/`, `devtools/` | **live.** Both device toolchains build, and `devtools/kernel-tier.sh` runs end to end. |
-| `test/` | **live, and thin.** `test_toolchain.py` asserts that nvcc and hipcc compile for this box's targets and that a kernel launched on each card agrees with a numpy reference. That is the floor the rest will stand on, not the subject. |
+| `test/` | **live, and thin.** `test_toolchain.py` asserts that nvcc and hipcc compile for this box's targets and that a kernel launched on each card agrees with a numpy reference. The rest checks the join key, the transcribed tables' own invariants, and the scoring rules on synthetic candidates. |
+| `src/felizjueves/` | **importable, and small.** The `Spec` join key, and `literature/`: published tables as data plus the rules that score a candidate against them. Nothing in it computes a table cell. |
+| `data/` | **live.** `[JEngine]` Tables 1–3 transcribed with provenance, and the two scoreboards over them — with every floor still unset, because nothing produces a number to set it from. |
 | the generator | **absent.** `KERNEL_GEN_CMD` in `devtools/config.sh` is empty, so the kernel tier skips its generate and compile phases and says so. |
-| `pyproject.toml` | **a virtual uv project** — dev tooling and a lock, no importable package yet. |
+| `pyproject.toml` | **a virtual uv project** — dev tooling and a lock. Nothing is installed; pytest imports `src/` through `pythonpath`. |
 
 When you run something here, say which of these it touched.
 
@@ -70,6 +72,8 @@ devtools/        the scripts: doctor, devcontainer, worktree, kernel tier, claud
 docker/          four Dockerfiles (base -> cuda/hip -> combined), build.sh, compose
 .devcontainer/   one variant per GPU image, driven by devtools/devcontainer.sh
 docs/            references.md, and the derived notes on what gets generated
+data/            published tables as data (literature/), and the scoreboards over them
+src/felizjueves/ the Spec join key, and literature/: loading and scoring those tables
 test/            pytest; markers separate "needs a compiler" from "needs a card"
 ```
 
