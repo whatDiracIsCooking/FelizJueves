@@ -10,13 +10,20 @@ import pytest
 
 from felizjueves.device import (
     ARCHS,
+    COMPUTE_BOUND,
     GFX1200,
+    MEMORY_BOUND,
+    QUANTITIES,
     SM_86,
     Arch,
     MeasuredKey,
+    Uncharacterised,
     Vendor,
     by_name,
     from_env,
+    recorded_ceilings,
+    require_characterised,
+    verdict,
 )
 from felizjueves.spec import Operator, Spec, Target
 
@@ -102,6 +109,99 @@ def test_two_rows_differing_only_in_card_do_not_collide() -> None:
     )
     with pytest.raises(ValueError):
         MeasuredKey(spec, "sm_86", "nvcc 13.0")  # type: ignore[arg-type]
+
+
+# -- the ceilings (#109) -------------------------------------------------------
+
+UNCHARACTERISED = Arch(Vendor.AMD, "gfx9999", wavefront=64)  # deliberately
+
+
+def test_an_uncharacterised_arch_gets_no_ridge_and_no_verdict() -> None:
+    # #109's acceptance: a third card, declared with no measured ceilings,
+    # is refused -- no default ridge, no verdict -- rather than scored.
+    a = UNCHARACTERISED
+    assert a.fp64_flops_per_s == 0.0 and a.mem_bandwidth_bytes_per_s == 0.0
+    assert not a.characterised
+    with pytest.raises(Uncharacterised, match="not characterised"):
+        a.ridge  # noqa: B018
+    for intensity in (0.0, 1.0, 1e6):
+        with pytest.raises(Uncharacterised):
+            verdict(a, intensity)
+    # Half a characterisation is still none.
+    half = Arch(Vendor.AMD, "gfx9999", 64, fp64_flops_per_s=1e12)
+    with pytest.raises(Uncharacterised, match="mem_bandwidth_bytes_per_s"):
+        half.ridge  # noqa: B018
+    with pytest.raises(Uncharacterised):
+        require_characterised(half)
+
+
+def test_a_characterised_arch_has_a_ridge_and_verdicts() -> None:
+    a = Arch(Vendor.NVIDIA, "sm_test", 32, fp64_flops_per_s=400e9,
+             mem_bandwidth_bytes_per_s=100e9)
+    assert a.characterised and a.ridge == pytest.approx(4.0)
+    assert verdict(a, 3.9) == MEMORY_BOUND
+    assert verdict(a, 4.0) == COMPUTE_BOUND
+    with pytest.raises(ValueError):
+        verdict(a, -1.0)
+    for bad in (-1.0, float("nan"), True, "1e12"):
+        with pytest.raises(ValueError):
+            Arch(Vendor.NVIDIA, "sm_test", 32, fp64_flops_per_s=bad)  # type: ignore[arg-type]
+
+
+def test_ceilings_are_observations_not_identity() -> None:
+    # Equality and hashing are the compiler target's; a (re-)probe must not
+    # split one card into two keys.
+    bare = Arch(Vendor.NVIDIA, "sm_86", 32)
+    assert bare == SM_86 and hash(bare) == hash(SM_86)
+    assert MeasuredKey(_spec(), bare, "t").key() == MeasuredKey(_spec(), SM_86,
+                                                                "t").key()
+
+
+def test_the_declared_archs_read_their_ceilings_from_the_record() -> None:
+    for arch in ARCHS:
+        assert {q: getattr(arch, q) for q in QUANTITIES} == recorded_ceilings(
+            arch.name)
+
+
+def test_a_missing_record_is_uncharacterised(tmp_path: Path) -> None:
+    assert recorded_ceilings("sm_86", tmp_path / "absent.json") == {
+        q: 0.0 for q in QUANTITIES}
+    part = tmp_path / "part.json"
+    part.write_text('{"ceilings": {"sm_86": {"fp64_flops_per_s": '
+                    '{"value": 4e11}}}}')
+    got = recorded_ceilings("sm_86", part)
+    assert got == {"fp64_flops_per_s": 4e11, "mem_bandwidth_bytes_per_s": 0.0}
+    assert not Arch(Vendor.NVIDIA, "sm_86", 32, **got).characterised
+
+
+def test_device_spells_no_datasheet_peak() -> None:
+    # #109's hazard: the ridge is measured on this box. No float literal of a
+    # plausible peak's size (>= 1e9) may appear in device.py.
+    src = Path(__file__).resolve().parent.parent / "src" / "felizjueves" / "device.py"
+    big = [n.value for n in ast.walk(ast.parse(src.read_text()))
+           if isinstance(n, ast.Constant) and type(n.value) in (int, float)
+           and abs(n.value) >= 1e9]
+    assert not big, f"a datasheet-sized constant in device.py: {big}"
+
+
+CEILING_NAMES = {"fp64_flops_per_s", "mem_bandwidth_bytes_per_s", "ridge",
+                 "verdict", "require_characterised", "characterised",
+                 "recorded_ceilings", "ceilings"}
+
+
+def test_nothing_in_the_literature_layer_reads_the_ceilings() -> None:
+    # #109's hazard: a scoreboard reading a field a re-probe rewrites destroys
+    # a frozen observation condition. Names, not just imports (test_layering
+    # holds the imports): an attribute access is invisible to an import walk.
+    root = Path(__file__).resolve().parent.parent / "src" / "felizjueves"
+    found = []
+    for path in sorted((root / "literature").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            name = (node.attr if isinstance(node, ast.Attribute) else
+                    node.id if isinstance(node, ast.Name) else None)
+            if name in CEILING_NAMES:
+                found.append(f"{path.name}:{node.lineno}: {name}")
+    assert not found, "\n".join(found)
 
 
 def _emit_sources() -> list[Path]:

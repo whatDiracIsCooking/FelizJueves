@@ -1,0 +1,154 @@
+{
+ "schema": 1,
+ "about": "Each card's two roofline ceilings (#109), measured on this box by src/felizjueves/ceilings.py's probes behind the card gate (src/felizjueves/gate.py), and read by src/felizjueves/device.py as Arch.fp64_flops_per_s / Arch.mem_bandwidth_bytes_per_s. A quantity with no record here is NOT CHARACTERISED (0.0): that card has no ridge and gets no verdict. Values are ACHIEVABLE rates (kind), the median over the probe's timed launches, never datasheet peaks. 'published' is the vendors' figures, a sanity bound only (a measured rate above one is a bug in the probe) and the denominator of each record's ratio_to_published; it never reaches device.py. Rewritten only by the opt-in recording run each record's 'command' names.",
+ "published": {
+  "sm_86": {
+   "fp64_flops_per_s": 465000000000.0,
+   "mem_bandwidth_bytes_per_s": 760000000000.0,
+   "source": "NVIDIA GeForce RTX 3080 (GA102) as specified by NVIDIA: 29.8 TFLOPS fp32 at the 1710 MHz rated boost, fp64 at GA102's 1:64 ratio (NVIDIA Ampere GA102 GPU Architecture whitepaper) = 0.465 TFLOPS; 10 GB GDDR6X, 320-bit at 19 Gbps = 760 GB/s.",
+   "note": "At the RATED boost clock. This card's SMI reports a 2100 MHz maximum SM clock and it ran the probe at ~1.95 GHz, so a probe reaching the hardware's issue rate could exceed 0.465 TFLOPS without a bug; the probe's best is ~0.44 (95%), so the bound has not bitten -- if a better probe trips it, check the clock before calling the probe wrong."
+  },
+  "gfx1200": {
+   "fp64_flops_per_s": 801000000000.0,
+   "mem_bandwidth_bytes_per_s": 320000000000.0,
+   "source": "AMD Radeon RX 9060 XT (Navi 44, RDNA4) as specified by AMD: 25.6 TFLOPS peak fp32 (dual-issue, 3130 MHz boost); AMD publishes no fp64 figure for it, so 0.801 TFLOPS is that fp32 peak at the 1:32 fp64 ratio third-party databases list for RDNA4 (TechPowerUp); 16 GB GDDR6, 128-bit at 20 Gbps = 320 GB/s.",
+   "note": "fp64 on gfx1200 is slow by design. The derived 0.801 TFLOPS counts the dual-issue fp32 rate; the probe saturates near half of it (~0.44 TFLOPS with 16 chains), which is 1:32 of the single-issue rate. A low ratio here is the measurement, not a broken probe."
+  }
+ },
+ "ceilings": {
+  "gfx1200": {
+   "fp64_flops_per_s": {
+    "value": 446416364605.2088,
+    "unit": "flop/s",
+    "kind": "achievable",
+    "probe": "ceilings.PROBE_SOURCE (fj_fma<C>, fj_triad)",
+    "command": "env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and hip' -k record",
+    "compile": "hipcc -O3 -g1 -std=c++17 -Wall -Wextra --offload-arch=gfx1200 <fj_ceilings.hip>",
+    "source_sha256": "bf20e288a01205ce333b1ebfc3488698692246d74db6003932b9a59b7ed6827c",
+    "toolchain": "hipcc / ROCm 7.2.4",
+    "arch": "gfx1200",
+    "host": "a37a1afdb77b (container)",
+    "gpu": "AMD Radeon Graphics (device 0x7590, gfx1200)",
+    "date": "2026-10-11",
+    "repeats": 31,
+    "raw": {
+     "probe_header": "probe fma chains 16 iters 16384 grid 512 block 256 sms 16 flops_per_launch 68719476736",
+     "configs_median": {
+      "probe fma chains 8 iters 16384 grid 512 block 256 sms 16 flops_per_launch 34359738368": 414959174372.7764,
+      "probe fma chains 16 iters 16384 grid 512 block 256 sms 16 flops_per_launch 68719476736": 446416364605.2088
+     },
+     "best": 446642956296.60284,
+     "worst": 442608255019.8338,
+     "q1": 446232689627.88135,
+     "q3": 446493241350.1935,
+     "warmup": 5,
+     "published": 801000000000.0,
+     "ratio_to_published": 0.5573238010052545,
+     "best_ratio_to_published": 0.5576066870119886,
+     "gpu_util_before": 4,
+     "gpu_util_after": 0,
+     "cpu_busy_permille_before": 97
+    }
+   },
+   "mem_bandwidth_bytes_per_s": {
+    "value": 299723045144.1938,
+    "unit": "B/s",
+    "kind": "achievable",
+    "probe": "ceilings.PROBE_SOURCE (fj_fma<C>, fj_triad)",
+    "command": "env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and hip' -k record",
+    "compile": "hipcc -O3 -g1 -std=c++17 -Wall -Wextra --offload-arch=gfx1200 <fj_ceilings.hip>",
+    "source_sha256": "bf20e288a01205ce333b1ebfc3488698692246d74db6003932b9a59b7ed6827c",
+    "toolchain": "hipcc / ROCm 7.2.4",
+    "arch": "gfx1200",
+    "host": "a37a1afdb77b (container)",
+    "gpu": "AMD Radeon Graphics (device 0x7590, gfx1200)",
+    "date": "2026-10-11",
+    "repeats": 31,
+    "raw": {
+     "probe_header": "probe triad n 33554432 grid 512 block 256 sms 16 bytes_per_launch 805306368",
+     "configs_median": {
+      "probe triad n 33554432 grid 512 block 256 sms 16 bytes_per_launch 805306368": 299723045144.1938
+     },
+     "best": 300209980551.5574,
+     "worst": 298580435331.50397,
+     "q1": 299533247368.4375,
+     "q3": 299948327222.7748,
+     "warmup": 5,
+     "published": 320000000000.0,
+     "ratio_to_published": 0.9366345160756055,
+     "best_ratio_to_published": 0.9381561892236168,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0,
+     "cpu_busy_permille_before": 95
+    }
+   }
+  },
+  "sm_86": {
+   "fp64_flops_per_s": {
+    "value": 438531459635.0044,
+    "unit": "flop/s",
+    "kind": "achievable",
+    "probe": "ceilings.PROBE_SOURCE (fj_fma<C>, fj_triad)",
+    "command": "env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and cuda' -k record",
+    "compile": "nvcc -O3 -lineinfo --std=c++17 -Xcompiler -Wall -arch=sm_86 <fj_ceilings.cu>",
+    "source_sha256": "bf20e288a01205ce333b1ebfc3488698692246d74db6003932b9a59b7ed6827c",
+    "toolchain": "nvcc 13.0",
+    "arch": "sm_86",
+    "host": "a37a1afdb77b (container)",
+    "gpu": "NVIDIA GeForce RTX 3080",
+    "date": "2026-10-11",
+    "repeats": 31,
+    "raw": {
+     "probe_header": "probe fma chains 8 iters 16384 grid 1632 block 256 sms 68 flops_per_launch 109521666048",
+     "configs_median": {
+      "probe fma chains 8 iters 16384 grid 1632 block 256 sms 68 flops_per_launch 109521666048": 438531459635.0044,
+      "probe fma chains 16 iters 16384 grid 1632 block 256 sms 68 flops_per_launch 219043332096": 438215983481.58936
+     },
+     "best": 441901516909.99884,
+     "worst": 415247013742.8026,
+     "q1": 433341111522.365,
+     "q3": 441235154348.80054,
+     "warmup": 5,
+     "published": 465000000000.0,
+     "ratio_to_published": 0.9430784078172137,
+     "best_ratio_to_published": 0.9503258428172018,
+     "gpu_util_before": 22,
+     "gpu_util_after": 2,
+     "cpu_busy_permille_before": 94
+    }
+   },
+   "mem_bandwidth_bytes_per_s": {
+    "value": 673892030848.3291,
+    "unit": "B/s",
+    "kind": "achievable",
+    "probe": "ceilings.PROBE_SOURCE (fj_fma<C>, fj_triad)",
+    "command": "env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and cuda' -k record",
+    "compile": "nvcc -O3 -lineinfo --std=c++17 -Xcompiler -Wall -arch=sm_86 <fj_ceilings.cu>",
+    "source_sha256": "bf20e288a01205ce333b1ebfc3488698692246d74db6003932b9a59b7ed6827c",
+    "toolchain": "nvcc 13.0",
+    "arch": "sm_86",
+    "host": "a37a1afdb77b (container)",
+    "gpu": "NVIDIA GeForce RTX 3080",
+    "date": "2026-10-11",
+    "repeats": 31,
+    "raw": {
+     "probe_header": "probe triad n 33554432 grid 1632 block 256 sms 68 bytes_per_launch 805306368",
+     "configs_median": {
+      "probe triad n 33554432 grid 1632 block 256 sms 68 bytes_per_launch 805306368": 673892030848.3291
+     },
+     "best": 679129533678.7565,
+     "worst": 627138755980.8612,
+     "q1": 671581638003.8218,
+     "q3": 676500770308.8486,
+     "warmup": 5,
+     "published": 760000000000.0,
+     "ratio_to_published": 0.8867000405899067,
+     "best_ratio_to_published": 0.8935914916825743,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0,
+     "cpu_busy_permille_before": 56
+    }
+   }
+  }
+ }
+}

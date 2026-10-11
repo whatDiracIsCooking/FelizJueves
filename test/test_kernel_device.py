@@ -79,16 +79,15 @@ import hashlib
 import math
 import os
 import shlex
-import time
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import VRAM_PROBE, card_utilisation, check_vram
+from conftest import VRAM_PROBE, check_vram
 
-from felizjueves import measured
+from felizjueves import gate, measured
 from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
@@ -822,78 +821,37 @@ WARMUP = 5
 REPEATS = 31
 TIMING_N_BRA = 2048  # one warp each: several waves on either card
 TIMING_N_KET = 128   # four kets per lane at wavefront 32
-BUSY_MAX = 0.10      # of all cores: ~2 of this box's 24, so no compile-bound job
-QUIET_WAIT_S = 120.0
-
-
-def _cpu_busy(seconds: float = 1.0) -> float:
-    """Fraction of all cores busy over `seconds`, from /proc/stat."""
-    def snap() -> tuple[int, int]:
-        with open("/proc/stat") as f:
-            v = [int(x) for x in f.readline().split()[1:]]
-        return sum(v), v[3] + v[4]
-    t0, i0 = snap()
-    time.sleep(seconds)
-    t1, i1 = snap()
-    return 1.0 - (i1 - i0) / max(1, t1 - t0)
-
-
 # THE TIMING GATE, on top of the correctness gate the device fixtures already
-# hold (test/conftest.py: the card's lock and the free-VRAM probe). Utilisation
-# is a reason to WAIT here and nowhere else: #55's timings came out bimodal
-# while a process outside the container held the RTX 3080 at 100%, and a
-# timing on a busy card is garbage where a correct answer is still correct.
-GPU_BUSY_MAX = 30    # percent utilization of the card, from its own SMI
-GPU_QUIET_WAIT_S = 900.0
-# THE AFTER-READING, and why it is taken the way it is (#93, measured on this
-# box with a 3.4 s L 16 b 12 run): nvidia-smi reports utilisation over a
-# trailing window of up to 1 s -- 100% for the first second after a run,
-# then 0%. rocm-smi's FIRST read after a pause reports the card's average
-# SINCE THE PREVIOUS READ -- 96% at +0.08 s, 75% at +1 s, 52% at +3 s, each
-# followed at once by 0-1% -- so a max over samples that includes that read
-# measures our own run. So: one read discarded, GPU_SETTLE_S of sleep, then
-# `_card_util` -- on both vendors the window it reads is the settle alone.
-GPU_SETTLE_S = 1.0
-
-
-def _card_util(backend: str) -> int | None:
-    """The card's utilisation now: the highest of three SMI samples 0.2 s
-    apart, or None -- UNKNOWN, never idle -- when no sample parsed."""
-    samples = []
-    for _ in range(3):
-        samples.append(card_utilisation(backend))  # None: unknown
-        time.sleep(0.2)
-    return max((s for s in samples if s is not None), default=None)
+# hold (test/conftest.py: the card's lock and the free-VRAM probe), is
+# `felizjueves.gate` -- lifted there by #109 so the ceiling probes (and #112's
+# counter sweep) read the same code; its docstring has the readings and why
+# the after-reading is taken the way it is. Utilisation is a reason to WAIT
+# here and nowhere else: #55's timings came out bimodal while a process
+# outside the container held the RTX 3080 at 100%, and a timing on a busy
+# card is garbage where a correct answer is still correct. The names below
+# are the gate's, re-exported so this file's protocol reads as it did.
+BUSY_MAX = gate.BUSY_MAX
+QUIET_WAIT_S = gate.QUIET_WAIT_S
+GPU_BUSY_MAX = gate.GPU_BUSY_MAX
+GPU_QUIET_WAIT_S = gate.GPU_QUIET_WAIT_S
+GPU_SETTLE_S = gate.GPU_SETTLE_S
+_cpu_busy = gate.cpu_busy
+_card_util = gate.card_util
 
 
 def _quiet(backend: str | None = None, seen: list[int] | None = None) -> float:
     """Block until the box is quiet -- the CPU and, given `backend`, the card
-    (`_card_util` at most GPU_BUSY_MAX) -- and return the CPU busy fraction
-    it settled at; the card's settled utilization is appended to `seen`."""
-    if backend is not None:
-        deadline = time.monotonic() + GPU_QUIET_WAIT_S
-        t0 = time.monotonic()
-        while True:
-            util = _card_util(backend)
-            if util is not None and util <= GPU_BUSY_MAX:
-                break
-            if time.monotonic() > deadline:
-                pytest.fail(f"card contended: {util}% busy > {GPU_BUSY_MAX}% "
-                            f"for {GPU_QUIET_WAIT_S:.0f} s -- timing DISCARDED")
-            print(f"gate: card {util}% busy > {GPU_BUSY_MAX}%, waiting "
-                  f"({time.monotonic() - t0:.0f} s)", flush=True)
-            time.sleep(10)
-        if seen is not None:
-            seen.append(util)
-    deadline = time.monotonic() + QUIET_WAIT_S
-    while True:
-        busy = _cpu_busy()
-        if busy <= BUSY_MAX:
-            return busy
-        if time.monotonic() > deadline:
-            pytest.fail(f"box contended: CPU {busy:.0%} busy > {BUSY_MAX:.0%} "
-                        f"for {QUIET_WAIT_S:.0f} s -- timing DISCARDED, not "
-                        "averaged in")
+    (`gate.wait_quiet`) -- and return the CPU busy fraction it settled at; the
+    card's settled utilization is appended to `seen`. Past the gate's
+    deadline the test FAILS: the timing is discarded, not averaged in."""
+    try:
+        busy, util = gate.wait_quiet(
+            backend, say=lambda line: print(line, flush=True))
+    except gate.Contended as e:
+        pytest.fail(f"{e} -- timing DISCARDED, not averaged in")
+    if backend is not None and seen is not None:
+        seen.append(util)
+    return busy
 
 
 def _cpu_list(spec: str) -> set[int]:
@@ -1004,9 +962,9 @@ def _wallclock(backend: str, request, compile_device_source,
         seen: list[int] = []
         busy = _quiet(backend, seen)
         out = run_device_binary(binary, *args)
-        card_utilisation(backend)  # discarded: rocm-smi's first read after
-        time.sleep(GPU_SETTLE_S)   # a pause averages over it -- our own run
-        card =(seen[-1], _card_util(backend))  # the gate's reading, and after
+        # the gate's reading, and one after (gate.after_reading: one SMI read
+        # discarded, GPU_SETTLE_S, then the reading -- our own run excluded)
+        card = (seen[-1], gate.after_reading(backend))
         wall, events, batches = _parse_reps(out, spec.n_batches)
         assert len(wall) == REPEATS, out
         J = np.fromfile(dst, dtype=np.float64).reshape(2, TIMING_N_BRA, -1)

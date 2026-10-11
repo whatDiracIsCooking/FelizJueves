@@ -31,8 +31,10 @@ probe, and is split by what a test needs -- the two are not the same gate:
   a reason to refuse: a correct answer does not care how fast it arrives, and
   a gate on it would make every correctness test hostage to an outside
   process.
-- TIMING (the opt-in wall-clock sweep in test_kernel_device.py): the same lock,
-  plus that file's utilisation wait, which reads `card_utilisation` here.
+- TIMING (the opt-in wall-clock sweep in test_kernel_device.py, and the
+  ceiling probes' recording run in test_ceilings_device.py): the same lock,
+  plus the utilisation wait of `felizjueves.gate` (#109; it lived in
+  test_kernel_device.py and here until a second measurement needed it).
 
 UNDER XDIST THE CONTROLLER HOLDS THE LOCK and the workers run under it. A
 session fixture in each worker cannot hold it: the first worker's lock would
@@ -337,31 +339,6 @@ def cuda_device(request: pytest.FixtureRequest):
 def hip_device(request: pytest.FixtureRequest):
     """Presence (skip), then the card's lock for the session (module docstring)."""
     yield from _card(request, "hip", "no AMD device on this machine (/dev/kfd absent)")
-
-
-def card_utilisation(backend: str) -> int | None:
-    """The card's utilisation in percent, from its own SMI, or None -- UNKNOWN,
-    never idle -- when the tool says nothing parseable (NVML's intermittent
-    "Unknown Error" included). Only the timing sweep waits on it.
-
-    #55 found the RTX 3080 at 100% and 6.3 GiB held by a process outside this
-    container (invisible to nvidia-smi's process list here, and to the CPU
-    gate): the card's own utilisation is the only signal that sees that.
-    """
-    if backend == "cuda":
-        cmd = ["nvidia-smi", "--query-gpu=utilization.gpu",
-               "--format=csv,noheader,nounits"]
-        pat = r"^\s*(\d+)"
-    else:
-        cmd = ["rocm-smi", "--showuse"]
-        pat = r"GPU use \(%\):\s*(\d+)"
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True,
-                             timeout=30).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    m = re.search(pat, out, re.MULTILINE)
-    return int(m[1]) if m else None
 
 
 def card_processes(backend: str) -> str:

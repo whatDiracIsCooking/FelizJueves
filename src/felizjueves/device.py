@@ -29,7 +29,28 @@ changes emitted TEXT and that the two vendors spell differently (32 on both of
 this box's cards, which is exactly why it is easy to bake in as a literal and
 why it is read from here instead). Spelling differences -- the `__shfl` family,
 launch-bounds attributes, `atomicAdd` on `double` -- belong in the backend, not
-here; a fact earns a field when a backend asks for it.
+here; a fact earns a field when a backend asks for it. (The two ceilings
+below are the one exception: no backend reads them, a roofline verdict does.)
+
+THE ROOFLINE CEILINGS (#109), AND THE REFUSAL. Each Arch also carries the two
+ceilings a ridge is computed from -- `fp64_flops_per_s` and
+`mem_bandwidth_bytes_per_s`, both MEASURED on this box by `ceilings.py`'s
+probes behind the card gate and read here from `data/measured/ceilings.json`
+(the record, with each value's probe, host, date and the card's state at probe
+time). `0.0` means NOT CHARACTERISED, and an uncharacterised card has no
+`ridge` and gets no `verdict`: both raise `Uncharacterised` rather than invent
+a number. No datasheet peak lives here -- the published figures in the data
+file are the probes' sanity bound, never a default -- because a ridge borrowed
+from a datasheet scores this box's kernels against a card it is not. A probe
+the gate refused records nothing, so that card stays uncharacterised and
+refuses: a missing ridge refuses to score, while a low one (a contended probe
+under-reports) would score wrongly and look like data.
+
+The ceilings are observations OF a card, not part of what names it, so they
+take no part in `Arch` equality or hashing: `Arch(NVIDIA, "sm_86", 32)` is the
+same card as `SM_86`, characterised or not. NOTHING IN THE LITERATURE LAYER
+MAY READ THEM (test/test_layering.py): a scoreboard reading a field that a
+re-probe rewrites is how a frozen observation condition is destroyed.
 
 ONE SOURCE. `devtools/config.sh` is the shell's copy of the pins (shell cannot
 import Python): `CUDA_ARCH=86`, `HIP_ARCH=gfx1200`. `from_env` reads the same
@@ -40,10 +61,12 @@ this module does not declare fails loudly rather than drifting silently.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 
 from felizjueves.spec import Spec
 
@@ -66,6 +89,9 @@ class Arch:
     # Lanes per warp (NVIDIA) / wavefront (AMD). gfx12 compiles wave32 by
     # default under hipcc; RDNA can run wave64, and that would be a second Arch.
     wavefront: int
+    # The measured ceilings (module docstring); 0.0 = not characterised.
+    fp64_flops_per_s: float = field(default=0.0, compare=False)
+    mem_bandwidth_bytes_per_s: float = field(default=0.0, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.vendor, Vendor):
@@ -74,13 +100,80 @@ class Arch:
             raise ValueError(f"arch name {self.name!r} must be a non-empty string")
         if type(self.wavefront) is not int or self.wavefront <= 0:
             raise ValueError(f"wavefront {self.wavefront!r} must be a positive int")
+        for q in QUANTITIES:
+            v = getattr(self, q)
+            if isinstance(v, bool) or not isinstance(v, int | float) or not v >= 0:
+                raise ValueError(f"{q} {v!r} must be a float >= 0 (0.0: not "
+                                 "characterised)")
 
     def __str__(self) -> str:
         return self.name
 
+    @property
+    def characterised(self) -> bool:
+        return all(getattr(self, q) > 0 for q in QUANTITIES)
 
-SM_86 = Arch(Vendor.NVIDIA, "sm_86", wavefront=32)  # RTX 3080, CUDA 13.0
-GFX1200 = Arch(Vendor.AMD, "gfx1200", wavefront=32)  # RX 9060 XT, RDNA4, ROCm 7.2.4
+    @property
+    def ridge(self) -> float:
+        """The ridge point, flop/byte: fp64 ceiling over bandwidth, both
+        measured. Raises `Uncharacterised` when either is 0.0 -- there is no
+        default ridge."""
+        require_characterised(self)
+        return self.fp64_flops_per_s / self.mem_bandwidth_bytes_per_s
+
+
+class Uncharacterised(ValueError):
+    """An Arch without both measured ceilings: no ridge, and no verdict."""
+
+
+QUANTITIES = ("fp64_flops_per_s", "mem_bandwidth_bytes_per_s")
+
+
+def require_characterised(arch: Arch) -> Arch:
+    """`arch`, if both its ceilings are measured; else refuse."""
+    missing = [q for q in QUANTITIES if not getattr(arch, q) > 0]
+    if missing:
+        raise Uncharacterised(
+            f"{arch.name} is not characterised ({', '.join(missing)} = 0.0): "
+            "measure it (ceilings.py's probe, behind the card gate) -- a "
+            "datasheet figure is not a substitute")
+    return arch
+
+
+COMPUTE_BOUND = "compute-bound"
+MEMORY_BOUND = "memory-bound"
+
+
+def verdict(arch: Arch, flops_per_byte: float) -> str:
+    """Which roof a kernel of arithmetic intensity `flops_per_byte` sits under
+    on `arch`: COMPUTE_BOUND at or past the ridge, MEMORY_BOUND below it.
+    Refuses (`Uncharacterised`) for a card without both measured ceilings."""
+    ridge = require_characterised(arch).ridge
+    if not flops_per_byte >= 0:
+        raise ValueError(f"intensity {flops_per_byte!r} must be >= 0")
+    return COMPUTE_BOUND if flops_per_byte >= ridge else MEMORY_BOUND
+
+
+# The record the ceilings are read from (written by ceilings.py's probes).
+CEILINGS_PATH = (Path(__file__).resolve().parent.parent.parent
+                 / "data" / "measured" / "ceilings.json")
+
+
+def recorded_ceilings(name: str, path: Path = CEILINGS_PATH) -> dict[str, float]:
+    """The recorded `{quantity: value}` for the arch named `name`; a quantity
+    with no record is 0.0 (not characterised), and so is every quantity when
+    the file is absent."""
+    try:
+        data = json.loads(path.read_text())
+    except FileNotFoundError:
+        data = {}
+    rows = data.get("ceilings", {}).get(name, {})
+    return {q: float(rows[q]["value"]) if q in rows else 0.0 for q in QUANTITIES}
+
+
+# RTX 3080, CUDA 13.0 / RX 9060 XT, RDNA4, ROCm 7.2.4
+SM_86 = Arch(Vendor.NVIDIA, "sm_86", wavefront=32, **recorded_ceilings("sm_86"))
+GFX1200 = Arch(Vendor.AMD, "gfx1200", wavefront=32, **recorded_ceilings("gfx1200"))
 
 # Every card this box has, and so every Arch a test or the kernel tier may name.
 ARCHS: tuple[Arch, ...] = (SM_86, GFX1200)

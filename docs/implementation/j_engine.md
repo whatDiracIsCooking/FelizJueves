@@ -529,6 +529,53 @@ generation time is **dispatch**, which has no home in this repo yet; this table
 is evidence for that future layer, not a policy the generator silently
 follows.
 
+### Measured: each card's roofline ceilings (#109)
+
+A roofline verdict (compute- or memory-bound) needs a **ridge**, the fp64 rate
+over the memory bandwidth, and this repo takes both from **this box**, never
+from a datasheet. `device.Arch` carries `fp64_flops_per_s` and
+`mem_bandwidth_bytes_per_s`, `0.0` meaning *not characterised*; `Arch.ridge`
+and `device.verdict` **refuse** (`Uncharacterised`) for a card without both.
+The values are read from `data/measured/ceilings.json`, written by the probes
+in `src/felizjueves/ceilings.py` — an fp64 FMA-saturating kernel (8 and 16
+independent chains; the faster median wins) and STREAM's triad over three
+256 MiB fp64 arrays, one portable translation unit — compiled with
+`NVCC_FLAGS` / `HIPCC_FLAGS` and timed with device events, 5 warm-up and 31
+timed launches, the median rate recorded.
+
+**Behind the card gate.** `src/felizjueves/gate.py` is the gate the wall-clock
+sweep used (lifted out of `test_kernel_device.py`, which now reads it): card
+utilisation at most 30% and the CPU at most 10% busy before a phase, and the
+settled reading after it. A contended probe does not add noise, it
+under-reports — a lower ridge, every verdict pushed toward compute-bound — so a
+phase the gate does not let through, or whose after-reading is non-idle or
+unparseable, is **not recorded**, and that card stays uncharacterised. Each
+record carries the probe, its source hash, the compile line, the toolchain,
+host, date and the two card readings (`raw.gpu_util_before` / `_after`).
+Reproduce with the record's `command`:
+`env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest
+test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and <backend>' -k
+record`, run alone.
+
+**Achievable, not peak.** Each value is what a streaming / FMA-only kernel
+reaches, recorded as `kind: "achievable"`, with its ratio to the vendor's
+published figure (`published` in the data file, a sanity bound only: a rate
+above it fails as a probe bug). `test/test_ceilings.py` checks each record's
+provenance and bound, and nothing in `literature/` may read these fields.
+
+Recorded on 2026-10-11, host `a37a1afdb77b (container)`, every phase let
+through by the gate (card ≤ 22% before, ≤ 2% after):
+
+| arch | fp64, flop/s | of published | bandwidth (triad), B/s | of published | ridge, flop/B |
+|---|---|---|---|---|---|
+| `sm_86` (RTX 3080, `nvcc 13.0`) | 4.39e11 | 94% of 0.465 T | 6.74e11 | 89% of 760 G | 0.65 |
+| `gfx1200` (RX 9060 XT, `hipcc / ROCm 7.2.4`) | 4.46e11 | 56% of 0.801 T | 3.00e11 | 94% of 320 G | 1.49 |
+
+`gfx1200`'s fp64 is slow by design; AMD publishes no fp64 figure for it, and
+the 0.801 T denominator counts dual-issue fp32 (the data file's `note`). The
+ceilings are observations of two cards on one day — **never compared against
+the paper's A100**.
+
 ## The pipeline
 
 This is the algorithm the repo *is* (`[JEngine, v2, §6]`):
