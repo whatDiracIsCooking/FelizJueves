@@ -403,6 +403,35 @@ if [ "${#CONFIG_LINES[@]}" -gt 0 ]; then
   done
 fi
 
+# --- oracle (PySCF group, tracked fixtures) -------------------------------
+# Self-contained. The `oracle` dependency group (PySCF) is deliberately NOT in
+# `dev`, so its ABSENCE is the normal state: the fast tier compares against
+# the fixtures in test/oracle/fixtures/ with numpy alone, and only the
+# `oracle`-marked drift test (which regenerates them) skips. So absent is ok,
+# not a warn; a fixture that will not LOAD is a warn, because the fast tier
+# then fails rather than skips.
+if [ -d "$TOP/test/oracle" ]; then
+  echo "oracle"
+  opy=""
+  if ovenv=$(find_venv); then opy="$ovenv/bin/python"; fi
+  if [ -z "$opy" ]; then
+    warn "no venv -- cannot check the oracle group or load its fixtures"
+  else
+    if pv=$("$opy" -c "import pyscf; print(pyscf.__version__)" 2>/dev/null); then
+      ok "oracle group installed (pyscf $pv) -- 'pytest -m oracle' can regenerate"
+    else
+      ok "oracle group not installed (by design) -- 'oracle' tests skip"
+      note "to regenerate or drift-check fixtures: uv sync --group oracle"
+    fi
+    if out=$(PYTHONPATH="$TOP/test" "$opy" -m oracle.manifest 2>&1); then
+      while IFS= read -r line; do ok "fixture $line"; done <<<"$out"
+    else
+      warn "oracle fixtures do not load -- the fast tier will fail"
+      while IFS= read -r line; do note "$line"; done <<<"$out"
+    fi
+  fi
+fi
+
 # --- pre-commit hook (the shared-hook footgun) ----------------------------
 echo "pre-commit hook"
 # The hook lives in the *common* git dir, shared by the main repo and every

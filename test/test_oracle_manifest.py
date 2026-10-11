@@ -1,0 +1,174 @@
+"""The oracle's fixtures: they load without PySCF, refuse corruption by name,
+and -- with the `oracle` group installed -- are what PySCF computes today.
+
+Everything but the last test is fast-tier and needs numpy only: that is the
+rule `test/oracle/` exists to establish (a comparison AGAINST a tracked
+fixture is fast-tier; PySCF is needed only to regenerate one). The last test
+is `oracle`-marked, so `FAST_TEST_ARGS` keeps it off the push gate, and it
+skips -- says so, and proves nothing -- where PySCF is absent.
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import re
+import tomllib
+from pathlib import Path
+
+import numpy as np
+import pytest
+from oracle import manifest
+from oracle.manifest import FixtureError, load
+
+ROOT = Path(__file__).resolve().parents[1]
+SEED = manifest.FIXTURES / "h2_sto3g.json"
+
+
+# --- the tracked fixtures, with no PySCF -----------------------------------
+
+
+def test_there_is_a_seed_fixture():
+    assert SEED in manifest.tracked()
+
+
+@pytest.mark.parametrize("path", manifest.tracked(), ids=lambda p: p.stem)
+def test_tracked_fixture_loads_and_is_canonical(path):
+    fx = load(path)
+    assert fx.name == path.stem
+    # Byte-for-byte what the one serialiser writes: full-precision floats, and
+    # no hand edit the generator would undo.
+    assert manifest.dumps(json.loads(path.read_text())) == path.read_text()
+    assert set(fx.arrays) >= set(manifest.REQUIRED_ARRAYS)
+    for a in fx.arrays.values():
+        assert not a.flags.writeable
+
+
+def test_seed_fixture_is_h2_sto3g():
+    fx = load(SEED)
+    assert fx.provenance.basis == "sto-3g" and fx.provenance.cart is True
+    assert [a.symbol for a in fx.atoms] == ["H", "H"]
+    assert fx.atoms[1].coord == (0.0, 0.0, 1.4)
+    assert fx.nao == 2 and fx.ao_loc == (0, 1, 2)
+    assert all(s.l == 0 and len(s.exponents) == 3 for s in fx.shells)
+    d = fx.density
+    assert np.array_equal(d, d.T)
+    # The recorded density is its recipe's, exactly -- an input, not a result.
+    i = np.arange(fx.nao, dtype=np.float64)
+    assert np.array_equal(d, 1.0 / (i[:, None] + i[None, :] + 1.0))
+    s = fx.arrays["ovlp"]
+    assert np.array_equal(s, s.T)
+
+
+def test_manifest_imports_numpy_and_stdlib_only():
+    """The loader must not need PySCF, or the fast tier would."""
+    tree = ast.parse(Path(manifest.__file__).read_text())
+    mods = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            mods |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            mods.add((node.module or "").split(".")[0])
+    third_party = mods - {"__future__", "json", "math", "sys", "dataclasses",
+                          "pathlib", "typing"}
+    assert third_party == {"numpy"}
+
+
+def test_pyscf_is_kept_out_of_dev_and_the_gate():
+    """`oracle` is its own group, reachable from nothing `uv sync` installs,
+    and the push gate's marker expression excludes it."""
+    groups = tomllib.loads((ROOT / "pyproject.toml").read_text())[
+        "dependency-groups"]
+    assert any(str(r).startswith("pyscf") for r in groups["oracle"])
+
+    def reach(name, seen=()):
+        for item in groups[name]:
+            if isinstance(item, dict):
+                yield from reach(item["include-group"], (*seen, name))
+            else:
+                yield item
+
+    assert not [r for r in reach("dev") if str(r).startswith("pyscf")]
+    assert all(not (isinstance(i, dict) and i["include-group"] == "oracle")
+               for g in groups.values() for i in g)
+    config = (ROOT / "devtools" / "config.sh").read_text()
+    fast = re.search(r"^FAST_TEST_ARGS=.*$", config, re.M).group(0)
+    assert "not oracle" in fast
+
+
+# --- corruption fails the loader, naming the file --------------------------
+
+
+def _write(tmp_path, mutate):
+    raw = json.loads(SEED.read_text())
+    mutate(raw)
+    path = tmp_path / "h2_sto3g.json"
+    path.write_text(json.dumps(raw))
+    return path
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r["provenance"].pop("libcint"), "missing key(s) ['libcint']"),
+        (lambda r: r["provenance"].pop("date"), "missing key(s) ['date']"),
+        (lambda r: r["arrays"]["density"]["values"].pop(), "truncated"),
+        (lambda r: r["arrays"]["ovlp"].update(values=[1.0]), "truncated"),
+        (lambda r: r["arrays"]["density"]["values"].__setitem__(1, 0.25),
+         "not exactly symmetric"),
+        (lambda r: r["arrays"].pop("density"), "missing ['density']"),
+        (lambda r: r.pop("ao_loc"), "missing key(s) ['ao_loc']"),
+        (lambda r: r.update(ao_loc=[0, 2, 2]), "ao_loc gives shell 0"),
+        (lambda r: r["shells"][0]["coefficients"].pop(), "one row per primitive"),
+        (lambda r: r["provenance"].update(cart="yes"), "cart must be"),
+        (lambda r: r.update(schema=2), "schema 2"),
+    ],
+    ids=["no-libcint", "no-date", "density-short", "ovlp-short", "asymmetric",
+         "no-density", "no-ao_loc", "bad-ao_loc", "ragged-shell", "cart-str",
+         "schema"],
+)
+def test_corrupted_fixture_fails_naming_the_file(tmp_path, mutate, says):
+    path = _write(tmp_path, mutate)
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value)
+    assert says in str(e.value)
+
+
+def test_truncated_file_fails_naming_the_file(tmp_path):
+    path = tmp_path / "h2_sto3g.json"
+    path.write_text(SEED.read_text()[:-200])
+    with pytest.raises(FixtureError, match=re.escape(str(path))):
+        load(path)
+
+
+def test_manifest_cli_reports_each_fixture(capsys):
+    assert manifest.main() == 0
+    out = capsys.readouterr().out
+    assert "h2_sto3g: nao=2, generated " in out
+
+
+# --- the drift check: needs PySCF ------------------------------------------
+
+
+@pytest.mark.oracle
+@pytest.mark.parametrize("path", manifest.tracked(), ids=lambda p: p.stem)
+def test_fixture_is_what_pyscf_computes_today(path):
+    """Regenerate in memory and compare byte-for-byte on the numbers.
+
+    A failure here is news about PySCF/libcint, not proof the fixture was
+    wrong: a fixture records what libcint computed on a date. The message
+    names both versions and that date.
+    """
+    pytest.importorskip("pyscf", reason="oracle group not installed: "
+                        "uv sync --group oracle")
+    from oracle import generate
+
+    msg = generate.drift(path.stem)
+    assert msg is None, msg
+    # And the arrays, compared as doubles rather than as text.
+    fresh = generate.build(path.stem)
+    fx = load(path)
+    for name, a in fresh["arrays"].items():
+        got = np.array(a["values"]).reshape(a["shape"])
+        assert np.array_equal(got, fx.arrays[name]), name

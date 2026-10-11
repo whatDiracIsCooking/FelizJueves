@@ -57,6 +57,20 @@ test = [
   "numpy>=2.1",
 ]
 
+# THE ORACLE: a program with different ancestry (PySCF, over libcint) that the
+# AO layer is compared against. DELIBERATELY NOT IN `dev`, and nothing includes
+# it: a bare `uv sync` -- the host, both images (`uv sync --frozen`) and the
+# push gate -- never installs it, so none of them start depending on scipy and
+# h5py. Installed into an image it would add PySCF plus scipy and h5py, a few
+# hundred MB, to a layer every rebuild carries; do not. The comparison itself
+# runs in the fast tier against fixtures tracked under test/oracle/fixtures/;
+# PySCF is needed only to REGENERATE one (`uv sync --group oracle`, then
+# `pytest -m oracle`, or `PYTHONPATH=test uv run --group oracle python -m
+# oracle.generate --regenerate`).
+oracle = [
+  "pyscf>=2.6",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 88
@@ -85,5 +99,6 @@ markers = [
   "hip: needs the ROCm toolchain (hipcc) to compile",
   "gpu: launches a kernel -- needs a live device, not merely a compiler",
   "slow: seconds to minutes; kept off the pre-push gate",
+  "oracle: needs PySCF (the `oracle` dependency group) to regenerate a tracked fixture; a comparison AGAINST a fixture is fast-tier and carries no marker",
   "claim(id): discharges a registered claim in data/literature/*/claims.json; test/test_claims.py checks the registry both ways",
 ]
