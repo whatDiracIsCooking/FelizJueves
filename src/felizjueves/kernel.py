@@ -172,8 +172,9 @@ def _tree(terms: list[Expr]) -> Expr:
     return _c(Fn.ADD, _tree(terms[:mid]), _tree(terms[mid:]))
 
 
-def _f64(name: str, *, array: bool = True, intent: Intent = Intent.IN) -> Param:
-    return Param(name, Scalar.F64, array=array, intent=intent)
+def _f64(name: str, *, array: bool = True, intent: Intent = Intent.IN,
+         shape: tuple[Expr, ...] = ()) -> Param:
+    return Param(name, Scalar.F64, array=array, intent=intent, shape=shape)
 
 
 # ---------------------------------------------------------------------------
@@ -284,14 +285,17 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
         Decl(JSH, Scalar.F64, (Lit(len(ps)), Call(Fn.BLOCK_DIM_Y)), Space.SHARED),
         If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
     )
+    nb, nk = Var("n_bra"), Var("n_ket")
     params = (
         Param("n_bra", Scalar.I32),
         Param("n_ket", Scalar.I32),
         _f64("tau", array=False),
-        _f64("P"), _f64("zeta"), _f64("Ip"),
-        _f64("Q"), _f64("eta"), _f64("Iq"), _f64("Dmax"),
-        _f64("D"),
-        _f64("J", intent=Intent.OUT),
+        _f64("P", shape=(nb, Lit(3))), _f64("zeta", shape=(nb,)),
+        _f64("Ip", shape=(nb,)),
+        _f64("Q", shape=(nk, Lit(3))), _f64("eta", shape=(nk,)),
+        _f64("Iq", shape=(nk,)), _f64("Dmax", shape=(nk,)),
+        _f64("D", shape=(nk, Lit(len(qs)))),
+        _f64("J", intent=Intent.OUT, shape=(nb, Lit(len(ps)))),
     )
     if name is None:
         name = f"pq_L{lp + lq}_p{lp}_q{lq}"
