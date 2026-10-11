@@ -147,7 +147,6 @@ def test_sharing_between_batches_is_counted_once_per_batch() -> None:
     assert all(((0, 0, 0), 1) in d.intermediates() for d in dags)
 
 
-@pytest.mark.claim("jengine/batching-trades-flops-for-intermediates")
 @pytest.mark.parametrize("L", GRID_L)
 def test_batching_trades_flops_for_intermediates(L: int) -> None:
     """Across 1 -> 3 -> 6 -> 9 batches: targets and intermediates per batch do
