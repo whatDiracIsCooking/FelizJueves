@@ -31,8 +31,8 @@
       "statement": "Raising the batch count lowers intermediates and targets per batch and raises total FLOPs across batches, because intermediates shared between batches are recomputed.",
       "source": "[JEngine, v2, §5]",
       "kind": "monotonicity",
-      "status": "pending",
-      "reason": "#10 discharges it."
+      "status": "asserted",
+      "test": "test/test_plan_dag.py::test_batching_trades_flops_for_intermediates"
     },
     {
       "id": "jengine/eq17-1y-misprint",

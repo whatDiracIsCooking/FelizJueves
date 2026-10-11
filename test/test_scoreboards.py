@@ -1,4 +1,7 @@
-"""The two [JEngine] scoreboards: same tables, separate thresholds, none set."""
+"""The two [JEngine] scoreboards: same tables, separate thresholds.
+
+Only Table 3's literal Agreement thresholds are set; Tables 1 and 2 are scored
+pre-sieve and their thresholds wait for the sieve."""
 
 from __future__ import annotations
 
@@ -16,6 +19,9 @@ from felizjueves.literature.rules import (
 from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
 from felizjueves.plan.batching import max_targets_per_batch
+from felizjueves.plan.cost import cost
+from felizjueves.plan.dag import build
+from felizjueves.spec import Operator, Spec, Target
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 BOARDS = DATA / "scoreboards" / "jengine"
@@ -45,12 +51,15 @@ def test_a_board_cannot_load_the_other_boards_file() -> None:
         load_scoreboard(BOARDS / "searched.json", "literal")
 
 
-def test_no_floor_is_set_where_nothing_computes_a_cell() -> None:
-    # Tables 1 and 2 need MILD, the DAG and the sieve; nothing computes them
-    # yet, so their thresholds must be unset. The first change that produces
-    # their numbers fills these with what it measured. Table 3 is computed by
-    # the plan layer and has its measured Agreement floor and ceiling; its
-    # exact_given_inputs inputs are still unrecorded (#14).
+def test_no_floor_is_set_before_the_sieve() -> None:
+    # Tables 1 and 2 are computed by the plan layer, but PRE-sieve (plan/dag.py
+    # builds MILD's DAG and nothing prunes it), and they are post-sieve
+    # numbers. The sieve can move a cell either way -- a re-expansion that
+    # deletes an intermediate can cost FLOPs -- so a floor set now could be
+    # one the sieve has to lower, and a floor never falls. Their thresholds
+    # stay unset until the sieve (#12) measures them. Table 3 is targets
+    # only, which the sieve does not touch, and has its measured Agreement
+    # floor and ceiling; every exact_given_inputs is still unrecorded (#14).
     for tid, rules in _board("literal").rules.items():
         for rule in rules:
             if tid == "jengine/table3" and isinstance(rule, Agreement):
@@ -136,19 +145,52 @@ def test_table3_scores_on_the_literal_board() -> None:
     assert exact_given_inputs.status is Status.UNSET  # inputs still null
 
 
-def test_the_full_board_fails_while_two_tables_have_no_candidate() -> None:
-    # A partial run cannot be told apart from a regression: the plan layer
-    # computes Table 3 only, so Tables 1 and 2 are FAILs by design.
-    verdicts = score(
-        _board("literal"), TABLES, {"jengine/table3": _table3_candidate()}
-    )
-    failed = {v.table for v in verdicts if v.status is Status.FAIL}
-    assert failed == {"jengine/table1", "jengine/table2"}
-    assert all(
-        v.reason == "no candidate supplied"
-        for v in verdicts
-        if v.table != "jengine/table3"
-    )
+def _plan_candidates() -> dict[str, Candidate]:
+    """Tables 1 and 2 from the pre-sieve PlanCost, Table 3 as above."""
+    t1 = TABLES["jengine/table1"]
+    costs = {
+        (L, nb): cost(build(Spec(Operator.COULOMB, 0, (L, 0, 0, 0), Target.J,
+                                 n_batches=nb)))
+        for L in t1.row_values
+        for nb in t1.column_values
+    }
+    return {
+        "jengine/table1": Candidate(
+            {c: k.flops for c, k in costs.items()}, board="literal"
+        ),
+        "jengine/table2": Candidate(
+            {c: k.max_intermediates for c, k in costs.items()}, board="literal"
+        ),
+        "jengine/table3": _table3_candidate(),
+    }
+
+
+def test_tables_1_and_2_score_pre_sieve_on_the_literal_board() -> None:
+    # What the pre-sieve plan measures, pinned so a change to it is a diff
+    # here. Exact cells -- Table 1: (7,3) (7,6) (8,6) (8,9) (11,6); Table 2:
+    # (7,6) (8,9) (10,6) (10,9). Worst -- Table 1: (7,9), 510 against 560,
+    # where the paper's 9-batch partition is not ours (Table 3 differs there
+    # too); Table 2: (16,1), 2021 against 1647, the cell with most to prune.
+    by_table = {
+        (v.table, v.rule): v
+        for v in score(_board("literal"), TABLES, _plan_candidates())
+    }
+    t1 = by_table["jengine/table1", "agreement"]
+    t2 = by_table["jengine/table2", "agreement"]
+    assert t1.status is t2.status is Status.UNSET  # thresholds null until #12
+    assert t1.measured == {"exact": 5, "worst_rel_dev": 50 / 560}
+    assert t2.measured == {"exact": 4, "worst_rel_dev": (2021 - 1647) / 1647}
+    assert by_table["jengine/table3", "agreement"].status is Status.PASS
+
+
+def test_the_full_board_with_the_plan_layers_candidates() -> None:
+    # Every table now has a candidate, so nothing FAILs for want of one: Table
+    # 3's Agreement passes, and everything else is UNSET.
+    verdicts = score(_board("literal"), TABLES, _plan_candidates())
+    assert {(v.table, v.rule) for v in verdicts if v.status is Status.PASS} == {
+        ("jengine/table3", "agreement")
+    }
+    assert {v.status for v in verdicts} == {Status.PASS, Status.UNSET}
 
 
 def test_tables_are_read_only() -> None:
