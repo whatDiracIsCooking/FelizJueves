@@ -42,9 +42,11 @@ THE RULE, per (arch, L, input), over the n_batches the subgrid declares:
   best's by no more than max(IQR(best), IQR(that cell)). One entry means the
   best is distinguishable from every other count; more means it is not.
 - `same_session`: whether best and runner_up were timed in one sweep
-  (`SESSION`). The b 12 rows came from #60's sweep, the rest from #53's;
-  #60 measured cross-session drift of up to 1.7% (10% on one noisy cell),
-  which is IQR-scale, so a cross-session margin is weaker evidence.
+  (`SESSION`). #60 measured cross-session drift of up to 1.7% (10% on one
+  noisy cell), which is IQR-scale, so a cross-session margin is weaker
+  evidence. The tracked rows are all one session per arch (#93's re-timing,
+  which replaced #53's b 1-9 and #60's b 12), so on them it is always true;
+  the field stays for a store that mixes sweeps again.
 
 A missing cell is not skipped: `recommend` raises, and the report cannot be
 written over a subgrid with a gap. Every SUBGRID cell is timed on both arches
@@ -75,10 +77,11 @@ SCHEMA = 1
 INPUTS = ("wide", "near")
 BATCHES = tuple(sorted({s.n_batches for s in measured.SUBGRID}))
 
-# Which wall-clock sweep timed each n_batches of the tracked rows: #53 timed
-# b 1, 3, 6, 9 (PR #75); #60 timed b 12 (PR #77), with b 9 re-timed beside it
-# as a drift check but NOT stored. Declared, because the rows do not say.
-SESSION: Mapping[int, str] = {1: "#53", 3: "#53", 6: "#53", 9: "#53", 12: "#60"}
+# Which wall-clock sweep timed each n_batches of the tracked rows. #53 timed
+# b 1, 3, 6, 9 (PR #75) and #60 b 12 (PR #77); #93 re-timed all five behind
+# the card gate, ONE session per arch, replacing both. Declared, because the
+# rows do not say.
+SESSION: Mapping[int, str] = dict.fromkeys(BATCHES, "#93")
 
 ABOUT = ("A recommended n_batches per (L, arch) of measured.SUBGRID, derived "
          "from wall-clock ONLY (felizjueves.batchreport, #56), on each of the "
@@ -262,10 +265,13 @@ def report(store: Mapping[str, measured.Measured]) -> dict:
                         "screening; the timed binary is the one checked "
                         "against reference/ first.",
             "sessions": {str(b): s for b, s in SESSION.items()},
-            "cross_session": "b 12 was timed by #60, the rest by #53. #60 "
-                             "re-timed b 9 beside b 12 (not stored) and found "
-                             "drift of up to 1.7% (10% on one noisy cell); a "
-                             "same_session=false margin is weaker evidence.",
+            "cross_session": "Every n_batches of one arch was timed in ONE "
+                             "session by #93, behind the card gate (each "
+                             "row's raw wallclock:gpu_util_*), replacing #53's "
+                             "(b 1-9) and #60's (b 12) timings, so every "
+                             "margin is same-session. #60 had measured "
+                             "cross-session drift of up to 1.7% (10% on one "
+                             "noisy cell).",
             "provenance": {a.name: _provenance(store, a.name) for a in ARCHS},
             "compare": "Within one arch, across n_batches only. Absolute "
                        "times are not comparable across vendors (gfx1200 "

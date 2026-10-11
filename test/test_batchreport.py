@@ -86,7 +86,7 @@ PINNED = {
     ("sm_86", 16): (1, 9, True),
     ("gfx1200", 7): (1, 1, True),
     ("gfx1200", 10): (1, 3, False),
-    ("gfx1200", 13): (1, 3, False),
+    ("gfx1200", 13): (1, 6, False),  # 3 before #93's re-timing; a tie either way
     ("gfx1200", 16): (1, 12, True),
 }
 
@@ -156,7 +156,11 @@ def test_wall_clock_only_spills_and_registers_move_nothing() -> None:
     assert before["near"].best.n_batches == 12
 
 
-def test_a_cell_crossing_sweeps_is_flagged() -> None:
+def test_a_cell_crossing_sweeps_is_flagged(monkeypatch) -> None:
+    # The tracked rows are one session per arch (#93); the flag is for a store
+    # that mixes sweeps, as #53's and #60's did.
+    monkeypatch.setattr(batchreport, "SESSION",
+                        {**batchreport.SESSION, 12: "another sweep"})
     near = {1: (1000, 1), 3: (1100, 1), 6: (1200, 1), 9: (990, 1), 12: (980, 1)}
     r = batchreport.recommend(_store(FLAT, near), ARCHS[0].name, 13, "near")
     assert (r.best.n_batches, r.runner_up.n_batches) == (12, 9)

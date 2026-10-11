@@ -302,7 +302,7 @@ def test_the_rows_28_recorded_survive_the_schema_1_migration() -> None:
 def test_the_loader_keeps_every_field_of_every_row() -> None:
     # The failure mode the amendment names: a row (or a field of one) silently
     # dropped or defaulted by a loader change.
-    assert STORE["schema"] == measured.SCHEMA == 1
+    assert STORE["schema"] == measured.SCHEMA == 2
     assert set(ROWS) == set(STORE["rows"])
     for key, row in ROWS.items():
         assert asdict(row) == STORE["rows"][key], key
@@ -323,14 +323,33 @@ def test_a_row_written_and_read_back_compares_equal_through_its_key(
     assert measured.rows(spec=k.spec, arch=k.arch, store=p) == {k.key(): row}
 
 
+UNKNOWN_CARD = dict.fromkeys(measured.GPU_UTIL_FIELDS)  # all null: unknown
+
+
 def test_a_timing_only_row_and_a_compile_only_row_are_both_legal(tmp_path) -> None:
-    timing = measured.Measured(runtime_ns=1234.5, repeats=50, spread_ns=3.0, **PROV)
+    timing = measured.Measured(runtime_ns=1234.5, repeats=50, spread_ns=3.0,
+                               raw=UNKNOWN_CARD, **PROV)
     compile_only = measured.Measured(registers=40, spill_store=0, spill_load=0,
                                      shared_bytes=0, **PROV)
     assert timing.registers is None and compile_only.runtime_ns is None
     p = tmp_path / "m.json"
     measured.save({_key(4).key(): timing, _key(6).key(): compile_only}, p)
     assert measured.load(p)[_key(4).key()] == timing
+
+
+@pytest.mark.parametrize("raw", [
+    {},  # no reading and no null: absent is not unknown
+    {**UNKNOWN_CARD, "wallclock:near:gpu_util_after": 101},
+    {**UNKNOWN_CARD, "wallclock:gpu_util_before": 12.5},
+], ids=["absent", "over-100", "not-an-int"])
+def test_a_timed_row_without_the_cards_state_is_refused(raw, tmp_path) -> None:
+    # #93: a timed row records the card's state, or null for unknown.
+    p = tmp_path / "m.json"
+    timing = measured.Measured(runtime_ns=1, repeats=31, spread_ns=0, raw=raw,
+                               **PROV)
+    measured.save({_key(4).key(): timing}, p)
+    with pytest.raises(ValueError, match=str(p)):
+        measured.load(p)
 
 
 def test_a_row_that_measures_nothing_is_refused() -> None:
@@ -377,7 +396,8 @@ def _doc(tmp_path: Path, **change) -> Path:
 
 @pytest.mark.parametrize("change", [
     {"schema": None},  # #28's header-only form
-    {"schema": 2},
+    {"schema": 1},  # before #93: timed rows without the card's state
+    {"schema": 3},
     {"about": None},
     {"rows": []},
     {"rows": {_key().key(): {"registers": 1, "bogus": 2, **PROV}}},
@@ -543,6 +563,28 @@ def test_a_wall_clock_row_is_its_own_quartiles() -> None:
         names = r.kernel.split(",")
         assert all(f"{n}:events_median_ns" in w for n in names), key
         assert w["n_bra"] > 0 and w["n_ket"] > 0 and w["warmup"] > 0, key
+
+
+GPU_BUSY_MAX = 30  # test_kernel_device.py's gate: the card at most 30% busy
+
+
+def test_every_timed_row_records_the_cards_state_or_null() -> None:
+    # #93's acceptance: a gpu_util reading, or an explicit null (unknown).
+    timed = {k: r for k, r in ROWS.items() if _timed(r)}
+    for key, r in timed.items():
+        for f in measured.GPU_UTIL_FIELDS:
+            assert f in r.raw, f"{key}: no {f}"
+            v = r.raw[f]
+            assert v is None or (type(v) is int and 0 <= v <= 100), (key, f, v)
+    # The literal SUBGRID rows were re-timed behind the gate by #93: each
+    # input's reading is KNOWN, and the gate let it through at <= 30%.
+    for spec in measured.SUBGRID:
+        for arch in ARCHS:
+            (r,) = measured.rows(spec=spec, arch=arch, store=ROWS).values()
+            for f in ("wallclock:gpu_util_before",
+                      "wallclock:near:gpu_util_before"):
+                v = r.raw[f]
+                assert v is not None and v <= GPU_BUSY_MAX, (spec.key(), arch, f)
 
 
 # --- re-measure: the recorded rows against the toolchain here ---------------

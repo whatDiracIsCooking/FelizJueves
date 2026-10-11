@@ -109,7 +109,10 @@ and `spread_ns` the interquartile range of those same sequences, on the
 sweep's wide-T input; min, max, the quartiles, the per-batch GPU-event
 medians, the problem size, the box's load as sampled before the cell, and
 the same statistics on a second, near-T input (`wallclock:near:*`) are in
-`raw`, keyed `wallclock:...`.
+`raw`, keyed `wallclock:...`. The card's state is in it too (#93,
+`GPU_UTIL_FIELDS`): its utilisation as the gate let each input through and
+just after it, or null -- unknown, never idle -- for a row timed before the
+gate recorded it; the loader refuses a timed row without the keys.
 The binary is built from the same emitted text with config.sh's flag set
 (the report flag aside, which changes no code). Absolute times are NOT
 comparable across vendors (gfx1200 rate-limits fp64): only the ranking over
@@ -240,7 +243,17 @@ def lever_cells(lever: str) -> tuple[Spec, ...]:
                  for s in SUBGRID)
 
 
-SCHEMA = 1
+SCHEMA = 2  # 2: a timed row carries GPU_UTIL_FIELDS, a reading or null (#93)
+
+# THE CARD'S STATE AT TIMING (#93). Every row with a `runtime_ns` carries
+# these raw keys: the card's utilisation in percent, from its own SMI, as the
+# sweep's gate let the input through (`_before`) and just after its last
+# timed sequence (`_after`), on each input. `None` (JSON null) means UNKNOWN
+# -- not read, or not parseable -- and NEVER idle: every row timed before
+# #93 records null here, whatever gate it ran behind.
+GPU_UTIL_FIELDS = ("wallclock:gpu_util_before", "wallclock:gpu_util_after",
+                   "wallclock:near:gpu_util_before",
+                   "wallclock:near:gpu_util_after")
 
 ABOUT = ("Measured rows (felizjueves.measured): what one device toolchain "
          "reported about one emitted translation unit on one card, keyed on "
@@ -275,6 +288,20 @@ HEADER = {
                  "uncontended box by test/test_kernel_device.py's opt-in "
                  "wall-clock sweep (FJ_WALLCLOCK_STORE). Compare only within "
                  "one arch, across n_batches -- never across vendors.",
+    "gpu_util": "#93: every row with runtime_ns carries raw "
+                "'wallclock:gpu_util_before' / '_after' and "
+                "'wallclock:near:gpu_util_before' / '_after' (and, on a lever "
+                "row timed after #93, 'wallclock:control:...' likewise): the "
+                "card's utilisation in percent from its own SMI, as the "
+                "sweep's gate let the input through and 1 s after its last "
+                "timed sequence (one read discarded first: rocm-smi's first "
+                "read after a pause averages over it, i.e. over our own run). "
+                "null means UNKNOWN, never idle: the "
+                ".../recycle@... rows were timed before #93 and record null "
+                "(their sm_86 rows keep #55's 'wallclock:gpu_util_pct_before_"
+                "max', the highest settled reading over the cell's four "
+                "timed inputs). The 40 literal SUBGRID rows were re-timed "
+                "behind the gate by #93, one session per arch.",
     "levers": "#55: rows keyed .../recycle@... are the recycle arm "
               "(lower.recycle, measured.lever_cells) of every SUBGRID cell, "
               "timed against a same-session literal control kept in their "
@@ -328,7 +355,7 @@ class Measured:
     spill_unit: str = ""
     command: str = ""  # the compiler invocation, measurement flag included
     source_sha256: str = ""  # of the emitted translation unit
-    raw: Mapping[str, int] = field(default_factory=dict)
+    raw: Mapping[str, int | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for n in MEASUREMENTS:
@@ -643,6 +670,15 @@ def _row(path: Path, key: str, v: object) -> Measured:
     if (arch, toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"{path}: row {key!r} records arch/toolchain "
                          f"{row.arch!r}/{row.toolchain!r}, not its key's")
+    if row.runtime_ns is not None:
+        for f in GPU_UTIL_FIELDS:
+            if f not in row.raw:
+                raise ValueError(f"{path}: timed row {key!r} has no {f!r} -- "
+                                 "a reading, or null for unknown")
+            v = row.raw[f]
+            if v is not None and (type(v) is not int or not 0 <= v <= 100):
+                raise ValueError(f"{path}: row {key!r}: {f} = {v!r} is not a "
+                                 "percentage or null")
     return row
 
 
