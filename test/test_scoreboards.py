@@ -45,11 +45,16 @@ def test_a_board_cannot_load_the_other_boards_file() -> None:
         load_scoreboard(BOARDS / "searched.json", "literal")
 
 
-def test_no_floor_is_set_yet() -> None:
-    # Nothing in the repo computes a cell, so every threshold must be unset.
-    # The first change that produces numbers fills these with what it measured.
-    for rules in _board("literal").rules.values():
+def test_no_floor_is_set_where_nothing_computes_a_cell() -> None:
+    # Tables 1 and 2 need MILD, the DAG and the sieve; nothing computes them
+    # yet, so their thresholds must be unset. The first change that produces
+    # their numbers fills these with what it measured. Table 3 is computed by
+    # the plan layer and has its measured Agreement floor and ceiling; its
+    # exact_given_inputs inputs are still unrecorded (#14).
+    for tid, rules in _board("literal").rules.items():
         for rule in rules:
+            if tid == "jengine/table3" and isinstance(rule, Agreement):
+                continue
             if isinstance(rule, Agreement):
                 assert rule.floor_exact is None
                 assert rule.ceiling_worst_rel_dev is None
@@ -59,9 +64,12 @@ def test_no_floor_is_set_yet() -> None:
 
 def test_the_printed_tables_score_as_unset_and_at_or_under() -> None:
     # Scoring the paper against itself: the literal board has nothing to judge
-    # against, and the searched board's rule holds with equality.
+    # against except Table 3's Agreement, which the printed values pass (40
+    # exact, no deviation); the searched board's rule holds with equality.
     literal = score(_board("literal"), TABLES, _as_printed("literal"))
-    assert {v.status for v in literal} == {Status.UNSET}
+    passed = {(v.table, v.rule) for v in literal if v.status is Status.PASS}
+    assert passed == {("jengine/table3", "agreement")}
+    assert {v.status for v in literal} == {Status.UNSET, Status.PASS}
     searched = score(_board("searched"), TABLES, _as_printed("searched"))
     assert {v.status for v in searched} == {Status.PASS}
 
@@ -123,8 +131,8 @@ def test_table3_scores_on_the_literal_board() -> None:
     agreement, exact_given_inputs = score(
         only_t3, {t3.id: t3}, {t3.id: _table3_candidate()}
     )
-    assert agreement.status is Status.UNSET  # until the floor is set
-    assert agreement.measured["exact"] == 38
+    assert agreement.status is Status.PASS
+    assert agreement.measured == {"exact": 38, "worst_rel_dev": 1 / 21}
     assert exact_given_inputs.status is Status.UNSET  # inputs still null
 
 
