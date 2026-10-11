@@ -123,14 +123,23 @@ def test_table3_exact_given_inputs_passes_with_the_recorded_inputs(
     assert verdict.status is Status.PASS
 
 
+def _exact_limits():
+    """limits.json's records for the literal board's exact_given_inputs (#14);
+    the searched board's at_or_under record (#13) is test_scoreboards.py's."""
+    return [
+        lim for lim in load_limits(JENGINE / "limits.json")
+        if (lim.asserted_value["board"], lim.asserted_value["rule"])
+        == ("literal", "exact_given_inputs")
+    ]
+
+
 def test_tables_1_and_2_record_no_inputs_and_a_limit_each() -> None:
     board = load_scoreboard(DATA / "scoreboards" / "jengine" / "literal.json",
                             "literal")
     for tid in ("jengine/table1", "jengine/table2"):
         (rule,) = [r for r in board.rules[tid] if isinstance(r, ExactGivenInputs)]
         assert rule.inputs is None
-    limits = load_limits(JENGINE / "limits.json")
-    limited = [lim.asserted_value["table"] for lim in limits]
+    limited = [lim.asserted_value["table"] for lim in _exact_limits()]
     assert limited == ["jengine/table1", "jengine/table2"]
 
 
@@ -148,7 +157,7 @@ def test_the_recovered_cut_reproduces_all_three_tables_at_7_9_and_10_9() -> None
 def test_the_limits_name_exactly_the_cells_still_unreproduced(
     candidates: dict[str, Candidate],
 ) -> None:
-    for lim in load_limits(JENGINE / "limits.json"):
+    for lim in _exact_limits():
         tid = lim.asserted_value["table"]
         table, cand = TABLES[tid], candidates[tid]
         wrong = sorted(c for c, p in table.cells.items() if cand.cells[c] != p)

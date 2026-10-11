@@ -22,7 +22,7 @@ from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
 from felizjueves.plan.batching import max_targets_per_batch
 from felizjueves.plan.cost import cost
-from felizjueves.plan.search import load_cuts, searched_plan
+from felizjueves.plan.search import SEED_ORDERS, load_cuts, searched_plan
 from felizjueves.plan.sieve import plan
 from felizjueves.spec import Operator, Spec, Target
 
@@ -206,10 +206,10 @@ def test_the_full_board_with_the_plan_layers_candidates() -> None:
 
 
 def _searched_candidates() -> dict[str, Candidate]:
-    """One plan per cell, replayed from the recorded cut (plan/search.py),
-    scores all three tables."""
+    """One plan per cell, replayed from the recorded cut and seed order
+    (plan/search.py), scores all three tables."""
     cuts = load_cuts(BOARDS / "searched_cuts.json")
-    costs = {c: cost(searched_plan(*c, cut)) for c, cut in cuts.items()}
+    costs = {c: cost(searched_plan(*c, *choice)) for c, choice in cuts.items()}
     return {
         tid: Candidate({c: getattr(k, attr) for c, k in costs.items()},
                        board="searched")
@@ -219,34 +219,52 @@ def _searched_candidates() -> dict[str, Candidate]:
     }
 
 
+def _searched_limit() -> StructuralLimit:
+    (lim,) = [
+        lim for lim in load_limits(JENGINE / "limits.json")
+        if (lim.asserted_value["board"], lim.asserted_value["rule"])
+        == ("searched", "at_or_under")
+    ]
+    return lim
+
+
 def test_the_searched_board_with_the_searched_plans() -> None:
-    # #13's outcome, pinned so a change to it is a diff here. Table 3 passes:
-    # the objective puts minimax targets first, and minimax is at or under
-    # the paper everywhere. Tables 1 and 2 FAIL at_or_under, and these are the
-    # cells. Twenty of each table's are 1- or 3-batch cells, where there is
-    # no cut to search and the plan is the literal one. Of the 6- and 9-batch
-    # cells still over, no shared cut, sieve on or off, is at or under in all
-    # three tables, except (15, 9), where the one that is is not minimax
-    # (test_plan_search.py).
+    # #13's outcome, pinned so a change to it is a diff here: the "Not found"
+    # branch. Table 3 passes. Tables 1 and 2 FAIL at_or_under in 21 and 3
+    # cells, every one within +2.04% of the printed value, and the
+    # StructuralLimit names exactly those cells with exactly those margins.
     by_table = {
         v.table: v
         for v in score(_board("searched"), TABLES, _searched_candidates())
     }
-    assert by_table["jengine/table3"].status is Status.PASS
+    t3 = by_table["jengine/table3"]
+    assert t3.status is Status.PASS and t3.measured["worst_overshoot"] == 0.0
     t1, t2 = by_table["jengine/table1"], by_table["jengine/table2"]
     assert t1.status is t2.status is Status.FAIL
-    one_or_three = {(L, nb) for L in range(7, 17) for nb in (1, 3)}
-    assert set(t1.cells) - one_or_three == {
-        (10, 6), (11, 6), (12, 6), (12, 9), (13, 6), (13, 9),
-        (14, 6), (14, 9), (15, 6), (16, 6), (16, 9),
-    }
-    assert set(t1.cells) & one_or_three == one_or_three - {(7, 3)}
-    assert t1.measured == {"over": 30}
-    assert set(t2.cells) == {
-        (7, 1), (8, 1), (8, 3), (9, 1), (9, 3), (10, 1), (10, 3),
-        (11, 1), (11, 3), (12, 1), (12, 3), (13, 1), (15, 9),
-    }
-    assert t2.measured == {"over": 13}
+    assert (t1.measured["over"], t2.measured["over"]) == (21, 3)
+    assert round(100 * t1.measured["worst_overshoot"], 2) == 2.04
+    assert round(100 * t2.measured["worst_overshoot"], 2) == 0.78
+    residual = _searched_limit().asserted_value["residual_percent_over"]
+    assert set(residual) == {"jengine/table1", "jengine/table2"}
+    for v in (t1, t2):
+        assert residual[v.table] == [
+            [L, nb, round(100 * o, 2)] for (L, nb), o in v.measured["overshoot"]
+        ]
+
+
+def test_no_searched_candidate_is_at_or_under_all_three_in_a_residual_cell() -> None:
+    # The limit's "unreachable, independent of the objective", checked on the
+    # 1- and 3-batch residual cells, where there is no cut and the space is
+    # the 26 seed orders alone. Every cell, every cut is
+    # test_plan_search.py's slow test.
+    residual = _searched_limit().asserted_value["residual_percent_over"]
+    cells = {(L, nb) for L, nb, _ in residual["jengine/table1"] if nb in (1, 3)}
+    assert len(cells) == 14
+    printed = [TABLES[f"jengine/table{n}"] for n in (1, 2, 3)]
+    for L, nb in sorted(cells):
+        for seed in SEED_ORDERS:
+            c = cost(searched_plan(L, nb, (), seed))
+            assert c.flops > printed[0].cells[L, nb], (L, nb, seed)
 
 
 def test_tables_are_read_only() -> None:
@@ -256,10 +274,16 @@ def test_tables_are_read_only() -> None:
 
 def test_limits_record_tables_1_and_2() -> None:
     # #14: the sieve's seed order is not recovered for Tables 1-2, so each
-    # carries a StructuralLimit (test_plan_recovery.py checks its cells).
+    # carries a StructuralLimit (test_plan_recovery.py checks its cells);
+    # #13: the searched board's residual at_or_under cells carry one more.
     limits = load_limits(JENGINE / "limits.json")
-    assert [lim.asserted_value["table"] for lim in limits] == [
-        "jengine/table1", "jengine/table2",
+    assert [
+        (lim.asserted_value["board"], lim.asserted_value["rule"],
+         lim.asserted_value.get("table")) for lim in limits
+    ] == [
+        ("literal", "exact_given_inputs", "jengine/table1"),
+        ("literal", "exact_given_inputs", "jengine/table2"),
+        ("searched", "at_or_under", None),
     ]
 
 

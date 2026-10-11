@@ -9,6 +9,7 @@ threshold has not been measured.
 from __future__ import annotations
 
 import dataclasses
+import math
 from types import MappingProxyType
 
 import pytest
@@ -122,6 +123,44 @@ def test_at_or_under_accepts_improvement() -> None:
 def test_at_or_under_rejects_regression() -> None:
     v = AtOrUnder().judge(T, _cand(**{"8_3": 900, "7_3": 201}))
     assert v.status is Status.FAIL and v.cells == ((7, 3),)
+
+
+def test_at_or_under_reports_the_margin_per_cell_and_worst() -> None:
+    v = AtOrUnder().judge(T, _cand(**{"7_1": 101, "7_3": 230, "8_3": 900}))
+    assert v.status is Status.FAIL
+    assert v.cells == ((7, 1), (7, 3))
+    assert v.measured["over"] == 2
+    assert v.measured["overshoot"] == (((7, 1), 0.01), ((7, 3), 0.15))
+    assert v.measured["worst_overshoot"] == 0.15
+
+
+def test_at_or_under_a_tiny_margin_still_fails() -> None:
+    # No tolerance: the margin is reported, never judged.
+    v = AtOrUnder().judge(T, _cand(**{"8_3": 1000.001}))
+    assert v.status is Status.FAIL and v.cells == ((8, 3),)
+    assert 0 < v.measured["worst_overshoot"] < 1e-5
+
+
+def test_at_or_under_zero_overshoot_when_every_cell_is_equal() -> None:
+    v = AtOrUnder().judge(T, _cand())
+    assert v.status is Status.PASS
+    assert v.measured == {"over": 0, "worst_overshoot": 0.0, "overshoot": ()}
+
+
+def test_at_or_under_zero_overshoot_when_every_cell_is_under() -> None:
+    v = AtOrUnder().judge(
+        T, _cand(**{"7_1": 50, "7_3": 199, "8_1": 1, "8_3": 999})
+    )
+    assert v.status is Status.PASS
+    assert v.measured == {"over": 0, "worst_overshoot": 0.0, "overshoot": ()}
+
+
+def test_at_or_under_over_a_zero_printed_cell_is_unbounded() -> None:
+    zero = dataclasses.replace(T, cells=MappingProxyType({**PRINTED, (7, 1): 0}))
+    v = AtOrUnder().judge(zero, _cand(**{"7_1": 1}))
+    assert v.status is Status.FAIL
+    assert v.measured["worst_overshoot"] == math.inf
+    assert AtOrUnder().judge(zero, _cand(**{"7_1": 0})).status is Status.PASS
 
 
 # -- ExactGivenInputs --------------------------------------------------------

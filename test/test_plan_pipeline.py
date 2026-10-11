@@ -144,15 +144,20 @@ def test_replay_searched_without_cuts_is_unset(
 
 
 def test_replay_searched(capsys: pytest.CaptureFixture[str]) -> None:
-    # #13's recorded cuts, replayed: Table 3 is at or under everywhere, Tables
-    # 1 and 2 are not (test_scoreboards.py pins the cells), so the run FAILs.
+    # #13's recorded choices, replayed: Table 3 is at or under everywhere,
+    # Tables 1 and 2 are not (test_scoreboards.py pins the cells), so the run
+    # FAILs -- and prints each cell's margin, indented under its verdict.
     assert main(["replay", "searched"]) == EXIT_FAIL
     lines = capsys.readouterr().out.splitlines()
-    assert [tuple(line.split()[1:4]) for line in lines] == [
+    verdicts = [line for line in lines if not line.startswith(" ")]
+    assert [tuple(line.split()[1:4]) for line in verdicts] == [
         ("jengine/table1", "at_or_under", "FAIL"),
         ("jengine/table2", "at_or_under", "FAIL"),
         ("jengine/table3", "at_or_under", "PASS"),
     ]
+    assert '"worst_overshoot": "+2.04%"' in verdicts[0]
+    assert len(lines) == 3 + 21 + 3
+    assert "    (16, 1)  +2.04%" in lines
 
 
 def test_replay_searched_with_an_unread_cuts_file_could_not_run(
