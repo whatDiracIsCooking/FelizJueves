@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "scoreboard": "searched",
+  "about": "The choices [JEngine] leaves open, searched rather than fixed. Scored against the same tables as the literal board, by a rule with no threshold to ratchet: at or under the printed value in every cell. Nothing here is read by the literal board, and nothing in literal.json is read here.",
+  "tables": {
+    "jengine/table1": [{"rule": "at_or_under"}],
+    "jengine/table2": [{"rule": "at_or_under"}],
+    "jengine/table3": [{"rule": "at_or_under"}]
+  }
+}

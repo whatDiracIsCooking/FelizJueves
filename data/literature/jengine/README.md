@@ -1,0 +1,37 @@
+# [JEngine] tables
+
+`[JEngine]` is entry 35 of `docs/references.md`. Every table here was
+transcribed from the ChemRxiv v2 preprint (doi:10.26434/chemrxiv-2025-2lntb-v2),
+PDF page 12 / printed page 11. Each JSON file records its own provenance. The
+PDF is not tracked.
+
+| File | Table | Quantity |
+|---|---|---|
+| `table1.json` | 1 | total FLOPs to evaluate every `[r](0)` |
+| `table2.json` | 2 | maximum intermediates `[r](m)`, m > 0, per batch |
+| `table3.json` | 3 | maximum targets `[r](0)` per batch |
+| `limits.json` | — | what a model will structurally not predict (empty) |
+
+## Table 4 is deliberately absent
+
+Table 4 is on the same page: the average spills (bytes of loads and stores per
+kernel), or register utilisation where a kernel does not spill, for L = 7..16
+and 1, 3, 6 and 9 batches. That is another 40 cells. It is **not transcribed,
+and that is not an oversight.**
+
+A FLOP or intermediate count can be computed from the recurrence alone, but a
+spill count cannot. It is the output of an emitted kernel, run through a
+particular compiler and version, for a particular register file. The paper's
+numbers are from its own kernels on an A100, sm_80. Those observation
+conditions are frozen into the table and cannot be recovered from it, so no
+model in this repo can score against it. This project's own kernels, compilers
+and cards (sm_86, gfx1200) are a different experiment, and their numbers must
+never be compared against Table 4's or read as reproducing it.
+
+If Table 4 is ever wanted, for example to show that spills fall as the batch
+count rises, record it as a `StructuralLimit` in `limits.json`, with the
+observation conditions as its mechanism. Do not add it as a scored table.
+
+The same applies to the bold cells in Tables 1–3, which mark the fastest
+measured batch count at each L. They are timings on that A100, so they are not
+recorded as values.

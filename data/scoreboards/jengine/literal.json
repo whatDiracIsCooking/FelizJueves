@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "scoreboard": "literal",
+  "about": "[JEngine]'s algorithms run as written, with every choice the paper leaves open fixed arbitrarily. Two claims per table. agreement: how close the reconstruction gets, with thresholds null until a change that computes these cells sets them to what it measured; after that a floor only rises and a ceiling only falls, each in its own commit naming the cells that moved. exact_given_inputs: given the inputs the paper's own numbers were produced from, all 120 cells reproduce exactly; the inputs are null until someone records them. Only candidates declaring board 'literal' are scored here, and the searched board's thresholds live in searched.json and are never read here.",
+  "tables": {
+    "jengine/table1": [
+      {"rule": "agreement", "floor_exact": null, "ceiling_worst_rel_dev": null},
+      {"rule": "exact_given_inputs", "inputs": null}
+    ],
+    "jengine/table2": [
+      {"rule": "agreement", "floor_exact": null, "ceiling_worst_rel_dev": null},
+      {"rule": "exact_given_inputs", "inputs": null}
+    ],
+    "jengine/table3": [
+      {"rule": "agreement", "floor_exact": null, "ceiling_worst_rel_dev": null},
+      {"rule": "exact_given_inputs", "inputs": null}
+    ]
+  }
+}
