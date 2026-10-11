@@ -1,5 +1,10 @@
 """MILD, [JEngine, v2, Alg. 2]: the tie-break, Johnson's rules, and rule 4's absence.
 
+Three registered claims are discharged here (data/literature/jengine/
+claims.json): MILD's tie-break, rules 1-2-3-5, and the batching pass's
+tie-break -- the last because the claim is relational, "deliberately the
+opposite convention to MILD's", and is asserted beside MILD's own.
+
 Johnson, Gill & Pople (doi:10.1002/qua.560400610) give five rules an optimal
 tree obeys. `[JEngine, v2, §4.1]` claims MILD keeps 1, 2, 3 and 5; those are
 asserted here as properties over every node up to L = 16. Rule 4 is NOT
@@ -17,6 +22,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from felizjueves.plan.batching import batch_direction
 from felizjueves.plan.mild import AXES, R, mild_direction
 
 L_MAX = 16
@@ -82,48 +88,92 @@ def test_the_direction_is_the_minimum_non_zero_component() -> None:
         assert _reduced(r) == min(c for c in r if c)
 
 
+def _tied(r: R, value: int) -> list[int]:
+    """The axes whose component equals `value`, ascending."""
+    return [i for i in range(3) if r[i] == value]
+
+
+@pytest.mark.claim("jengine/mild-tie-break")
+def test_the_whole_tie_break_on_every_node() -> None:
+    # Restated as the claim states it, not as mild.py computes it: the axes
+    # holding the smallest non-zero value; one wins outright, two go to the
+    # cyclic successor of the pair, three go to z.
+    successor = {(0, 1): 1, (1, 2): 2, (0, 2): 0}
+    seen = {1: 0, 2: 0, 3: 0}
+    for r in _every_r(L_MAX):
+        tied = _tied(r, min(c for c in r if c))
+        seen[len(tied)] += 1
+        want = tied[0] if len(tied) == 1 else successor.get(tuple(tied), 2)
+        assert mild_direction(r) == AXES[want], r
+    assert all(seen.values())
+
+
+@pytest.mark.claim("jengine/batch-tie-break")
+def test_mild_and_the_batching_pass_break_ties_oppositely() -> None:
+    """[JEngine, v2, Alg. 2] against Alg. 4: MILD minimises, the batching pass
+    maximises, and their tie-breaks are deliberately inverse -- successor and
+    z for MILD, predecessor and x for batching (j_engine.md, "The scheme").
+
+    The batching rule is restated here exhaustively, as the claim states it.
+    Then the comparison: where both rules face the SAME tied set -- every
+    non-zero component equal, so the smallest non-zero is also the maximum --
+    they disagree on every node with a real tie and agree on every node
+    without one. That is "disagree exactly where the specs say they do".
+    """
+    predecessor = {(0, 1): 0, (1, 2): 1, (0, 2): 2}
+    successor = {(0, 1): 1, (1, 2): 2, (0, 2): 0}
+    disagreed = 0
+    for r in _every_r(L_MAX):
+        hi = _tied(r, max(r))
+        want = hi[0] if len(hi) == 1 else predecessor.get(tuple(hi), 0)
+        assert batch_direction(r) == AXES[want], r
+
+        lo = _tied(r, min(c for c in r if c))
+        if lo != hi:
+            continue  # different candidate sets: the comparison says nothing
+        if len(lo) == 1:
+            assert mild_direction(r) == batch_direction(r), r  # forced, axial
+            continue
+        disagreed += 1
+        assert batch_direction(r) == AXES[predecessor.get(tuple(lo), 0)], r
+        assert mild_direction(r) == AXES[successor.get(tuple(lo), 2)], r
+    # (a, a, 0) in three rotations and (a, a, a), for every a with |r| <= 16
+    assert disagreed == 3 * (L_MAX // 2) + L_MAX // 3
+
+
 # -- Johnson, Gill & Pople's rules ---------------------------------------------
 
 
-def test_rule_1_the_axial_reduction_is_forced() -> None:
+# (lo, mid) of the sorted components, the least j, and the reduced component's
+# value -- or None for "the only non-zero one", which is rule 1's forced choice.
+JOHNSON_RULES = {
     # {0 0 j}: one non-zero component, so there is no choice to make -- MILD
     # reduces it because it is the only reducible component.
-    for r in _every_r(L_MAX):
-        if sorted(r)[:2] == [0, 0]:
-            assert [AXES[i] for i, c in enumerate(r) if c] == [mild_direction(r)]
-
-
-def test_rule_2_reduces_the_unit_component_of_an_axial_child() -> None:
+    1: ((0, 0), 1, None),
     # {0 1 j}, j >= 2: reduce the unit component.
-    seen = 0
-    for r in _every_r(L_MAX):
-        lo, mid, hi = sorted(r)
-        if (lo, mid) == (0, 1) and hi >= 2:
-            assert _reduced(r) == 1
-            seen += 1
-    assert seen
-
-
-def test_rule_3_never_reduces_the_large_component() -> None:
+    2: ((0, 1), 2, 1),
     # {1 1 j}, j >= 2: never reduce the j. (Which unit component is free.)
-    seen = 0
-    for r in _every_r(L_MAX):
-        lo, mid, hi = sorted(r)
-        if (lo, mid) == (1, 1) and hi >= 2:
-            assert _reduced(r) == 1
-            seen += 1
-    assert seen
-
-
-def test_rule_5_reduces_the_two() -> None:
+    3: ((1, 1), 2, 1),
     # {0 2 j}, j >= 3: reduce the 2.
+    5: ((0, 2), 3, 2),
+}
+
+
+@pytest.mark.claim("jengine/mild-keeps-rules-1-2-3-5")
+@pytest.mark.parametrize("rule", sorted(JOHNSON_RULES))
+def test_johnsons_rule_holds_on_every_node(rule: int) -> None:
+    (lo_mid, j_min, reduced) = JOHNSON_RULES[rule]
     seen = 0
     for r in _every_r(L_MAX):
         lo, mid, hi = sorted(r)
-        if (lo, mid) == (0, 2) and hi >= 3:
-            assert _reduced(r) == 2
-            seen += 1
-    assert seen
+        if (lo, mid) != lo_mid or hi < j_min:
+            continue
+        seen += 1
+        if reduced is None:
+            assert [AXES[i] for i, c in enumerate(r) if c] == [mild_direction(r)]
+        else:
+            assert _reduced(r) == reduced, r
+    assert seen  # no rule passes vacuously
 
 
 # -- rule 4, exhibited rather than asserted ------------------------------------
