@@ -36,6 +36,7 @@ Y_12 = {
 }
 
 
+@pytest.mark.claim("jengine/y12-example")
 def test_the_y_1_2_batch_is_the_papers_eight_targets() -> None:
     got = {r for r in hermite_targets(5) if in_batch(r, "y", 1, 2)}
     assert got == Y_12
@@ -89,6 +90,7 @@ def test_the_partition_covers_every_target_exactly_once(L, n_batches) -> None:
     assert sorted(seen) == sorted(targets)  # disjoint AND covering
 
 
+@pytest.mark.claim("jengine/batch-count-multiple-of-3")
 @pytest.mark.parametrize("bad", [0, 2, 4, 5, -3, 3.0, True])
 def test_an_illegal_batch_count_raises(bad) -> None:
     with pytest.raises(ValueError):

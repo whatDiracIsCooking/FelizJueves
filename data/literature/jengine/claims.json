@@ -12,11 +12,11 @@
     },
     {
       "id": "jengine/batch-count-multiple-of-3",
-      "statement": "The batch count is always a multiple of three: each of the x, y, z directions is split into the same number of sub-batches, and finer splits that break the three-way symmetry are both unnecessary and worse.",
+      "statement": "A split class's batch count is a multiple of three, k sub-batches per direction, and the unsplit class is the one batch: partition refuses any count that is neither 1 nor a positive multiple of 3 (0, 2, 4, 5, a negative, and a non-int such as 3.0 or True). The paper's further claim that symmetry-breaking splits are worse is its own record, jengine/symmetry-breaking-splits-are-worse.",
       "source": "[JEngine, v2, §5]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "partition and Spec refuse any other count since #6 (test/test_plan_batching.py::test_an_illegal_batch_count_raises), but no test carries the claim mark yet, and test_plan_batching.py was outside #10's lane. The 'finer splits are worse' half is the paper's measurement."
+      "status": "asserted",
+      "test": "test/test_plan_batching.py::test_an_illegal_batch_count_raises"
     },
     {
       "id": "jengine/batch-tie-break",
@@ -91,20 +91,28 @@
       "reason": "A spill count is a measurement of the paper's kernels on their compiler and their card (an A100), not a property of the tree -- the same argument that keeps Table 4 out of data/. The kernel tier can measure our own spills on sm_86 and gfx1200, but that is a different claim."
     },
     {
+      "id": "jengine/symmetry-breaking-splits-are-worse",
+      "statement": "Splits that break the three-way symmetry (a batch count other than 1 or a multiple of three) are both unnecessary and worse than the symmetric ones.",
+      "source": "[JEngine, v2, §5]",
+      "kind": "monotonicity",
+      "status": "pending",
+      "reason": "Split from jengine/batch-count-multiple-of-3 by #63: that record's refusal is code, this half is the paper's measurement. Ours needs measured registers, spills and wall-clock (#52/#53), and a partition that admits an asymmetric split to measure against -- partition and Spec refuse one today."
+    },
+    {
       "id": "jengine/theta-undefined",
-      "statement": "theta appears in eq. 13 (the fundamental) and is never defined; the conventional McMurchie-Davidson reading is theta^2 = zeta*eta/(zeta+eta), to be pinned against McMurchie & Davidson directly.",
+      "statement": "theta appears in eq. 13 (the fundamental) and is never defined; the conventional McMurchie-Davidson reading is theta^2 = zeta*eta/(zeta+eta), and that theta and no other is what both reference.pq and the generated kernel's prelude form.",
       "source": "[JEngine, v2, eq. 13]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "#8 pins the convention."
+      "status": "asserted",
+      "test": "test/test_theta_convention.py::test_theta_is_the_reduced_exponent_where_it_is_used"
     },
     {
       "id": "jengine/y12-example",
       "statement": "At L = 5 the batch Y_{1,2} (direction y, 1 <= ry <= 2) is exactly the eight targets { p_y, d_yz, d_y2, f_xy2, f_y2z, g_xy2z, g_y2z2, h_xy2z2 }; d_yz, g_y2z2 and h_xy2z2 are members only because of the tie-break.",
       "source": "[JEngine, v2, §5]",
       "kind": "membership",
-      "status": "pending",
-      "reason": "Held by test/test_plan_batching.py::test_the_y_1_2_batch_is_the_papers_eight_targets since #6, but that test does not carry the claim mark yet, and test_plan_batching.py was outside #10's lane."
+      "status": "asserted",
+      "test": "test/test_plan_batching.py::test_the_y_1_2_batch_is_the_papers_eight_targets"
     }
   ]
 }
