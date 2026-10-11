@@ -159,8 +159,9 @@ RULES: dict[str, Rule] = {
         "`python -m felizjueves.emit` (KERNEL_GEN_CMD, #28) and "
         "`python -m felizjueves.measured` (#28). Their own rule, so that emit/*'s "
         "stays narrow. A driver also LOWERS what it built when the Spec names "
-        "a lowering lever (`measured.cell_kernels`, #55): build -> lower -> emit",
-        ("spec", "device", "ir", "kernel", "lower", "emit"),
+        "a lowering lever (`measured.cell_kernels`, #55): build -> lower -> emit. "
+        "`measured` writes its rows into `measured_store` (#94)",
+        ("spec", "device", "ir", "kernel", "lower", "emit", "measured_store"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         interp="a driver ships kernels; it does not check them -- the tests do",
@@ -171,11 +172,32 @@ RULES: dict[str, Rule] = {
         "against the Measured rows (#54), and batchreport.py derives a "
         "recommended n_batches from their wall-clock alone (#56; its EDGES "
         "hold it off `lower`). It reads both sides and feeds neither",
-        ("spec", "device", "kernel", "lower", "measured"),
+        ("spec", "device", "kernel", "lower", "measured_store"),
+        measured="an analysis reads the STORE (`measured_store`), never the "
+                 "driver that compiles into it: a ranking must not need a "
+                 "toolchain to be recomputed (#94)",
         plan="a model-vs-measurement result must never reach the "
              "calibrated instrument the literature floors are measured with",
         literature="nothing in KernelCost may feed a literature floor "
                    "(lower.py); the limits it records are read by tests",
+        reference=_GROUND_TRUTH),
+    "store": _rule(
+        "measured_store.py (#94): the `Measured` record, its file and read "
+        "path, the declared SUBGRID and the verdicts read off the rows. It "
+        "names cells (`kernel.pq_spec`) and lowering levers (`lower.LEVERS`) "
+        "but knows no toolchain, so the fast tier and the analyses read it "
+        "without one (`TOOLCHAIN_STDLIB` below holds the runtime half)",
+        ("spec", "device", "kernel", "lower"),
+        measured="the driver writes into the store, never the reverse: a store "
+                 "that imports its driver drags a toolchain into every reader "
+                 "(#94)",
+        emit="the store records what a compiler said about text; spelling the "
+             "text is the driver's job (#94)",
+        ir="a row is keyed on a Spec, not on instructions",
+        interp="a measurement is not an interpretation",
+        plan="a stored measurement must never reach the instrument the "
+             "literature floors are measured with",
+        literature="nothing measured may feed a literature floor",
         reference=_GROUND_TRUTH),
     "ao": _rule(
         "the AO layer (#80, #81, #83, #85, #86): shells, the basis and the "
@@ -250,6 +272,7 @@ RULE_OF: dict[str, str] = {
     "emit.hip": "emit",
     "emit.__main__": "driver",
     "measured": "driver",
+    "measured_store": "store",
     "kernelrank": "analysis",
     "batchreport": "analysis",
     "ao": "ao",
@@ -308,9 +331,10 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.hip": ("device", "emit._c", "ir"),
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "spec"),
     "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "lower",
-                 "spec"),
-    "kernelrank": ("device", "kernel", "lower", "measured", "spec"),
-    "batchreport": ("device", "measured"),
+                 "measured_store", "spec"),
+    "measured_store": ("device", "kernel", "lower", "spec"),
+    "kernelrank": ("device", "kernel", "lower", "measured_store", "spec"),
+    "batchreport": ("device", "measured_store"),
     "ao": (),
     "ao.shell": (),
     "ao.hermite": (),
@@ -472,3 +496,30 @@ def test_nothing_that_emits_text_imports_the_reference() -> None:
                for m in emitters}
     reached = {m: r for m, r in reached.items() if r}
     assert not reached, f"text emitters that reach reference/: {reached}"
+
+
+# #94: the store half knows no toolchain. The internal edges above keep it off
+# the driver and `emit/`; these are the standard-library modules through which
+# a module runs a compiler, finds one, or asks the box who it is -- the driver
+# imports every one of them, and the store none.
+TOOLCHAIN_STDLIB = frozenset({"subprocess", "shutil", "socket", "tempfile",
+                              "concurrent", "os", "time"})
+
+
+def _stdlib_imports(path: Path) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            found |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            found.add(node.module.split(".")[0])
+    return found
+
+
+def test_the_measured_store_imports_no_toolchain() -> None:
+    store = _stdlib_imports(ROOT / "measured_store.py")
+    assert not store & TOOLCHAIN_STDLIB, (
+        f"measured_store imports {sorted(store & TOOLCHAIN_STDLIB)}: running a "
+        "compiler is the driver's (felizjueves.measured), not the store's (#94)")
+    # ...and the list names what the driver really uses, so it is not vacuous
+    assert TOOLCHAIN_STDLIB <= _stdlib_imports(ROOT / "measured.py")

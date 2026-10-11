@@ -53,9 +53,9 @@ A MIS-RANKING IS A RECORD, NOT A TEST. data/measured/limits.json holds one
 mechanism written out; test/test_kernelrank.py recomputes every number it
 records, and fails on a mis-ranking over SUBGRID that no record covers.
 
-NOTHING HERE FEEDS A LITERATURE FLOOR. This module reads `measured` and
-`lower`; nothing under `plan/` or `literature/` may import it
-(test/test_layering.py), and it imports neither.
+NOTHING HERE FEEDS A LITERATURE FLOOR. This module reads `measured_store`
+(the store, not its driver: #94) and `lower`; nothing under `plan/` or
+`literature/` may import it (test/test_layering.py), and it imports neither.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 
-from felizjueves import measured
+from felizjueves import measured_store as measured
 from felizjueves.device import ARCHS, Arch
 from felizjueves.kernel import build_pq_kernels
 from felizjueves.lower import kernel_cost

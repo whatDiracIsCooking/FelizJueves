@@ -19,7 +19,8 @@ the raw `wallclock:near:*` keys of the `Measured` rows -- never spills,
 registers or `lower.KernelCost` -- of the LITERAL rows, `measured.SUBGRID`'s
 own specs (`levers = ()`); a lever arm's rows (#55's `.../recycle@...`) are
 keyed on another Spec and never read. test/test_layering.py holds this module's
-imports to `measured` and `device`, so it cannot reach the cost model.
+imports to `measured_store` (the store, not its driver: #94) and `device`,
+so it cannot reach the cost model.
 
 TWO INPUTS, TWO ANSWERS. The sweep (test/test_kernel_device.py) times every
 cell on a WIDE-T input (`runtime_ns`, the row's number; T up to ~430, a long
@@ -36,7 +37,7 @@ THE RULE, per (arch, L, input), over the n_batches the subgrid declares:
 - `best`: the lowest median. Its median, IQR and repeats are carried.
 - `runner_up`: the second-lowest median; `margin_ns` = its median minus
   best's. `resolved` iff margin_ns > max(IQR(best), IQR(runner_up)) -- the
-  test #60's NINE AGAINST TWELVE uses (measured.py), so "faster" means one
+  test #60's NINE AGAINST TWELVE uses (measured_store.py), so "faster" means one
   thing in this repo.
 - `within_spread`: every n_batches (best included) whose median exceeds
   best's by no more than max(IQR(best), IQR(that cell)). One entry means the
@@ -68,7 +69,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from felizjueves import measured
+from felizjueves import measured_store as measured
 from felizjueves.device import ARCHS
 
 RECOMMENDATION = measured.REPO / "data" / "measured" / "batch_recommendation.json"

@@ -1,8 +1,15 @@
 """The measured store (data/measured/kernels.json) and the generator's CLI.
 
+Two halves, as the source is split (#94): the STORE -- the record, the file,
+the read path, the subgrid and the verdicts -- is `measured_store`, and its
+cases call nothing else; the DRIVER (`measured`: parsing what each compiler
+prints, emitting a cell's units, compiling, the CLI) is reached only by the
+cases that test it, and by the checks that a row describes the text the
+generator writes today.
+
 Fast tier, except the `cuda`/`hip` re-measure checks at the bottom, which
 need a compiler (no card): they recompile a few recorded classes, and every
-`measured.SUBGRID` cell, and assert the toolchain still reports what the store
+`measured_store.SUBGRID` cell, and assert the toolchain still reports what the store
 says -- when the toolchain is the one the row was keyed on. A different
 compiler version is a different key, and the check SKIPS naming it rather
 than comparing across compilers. The subgrid's L >= 13 cells are also `slow`.
@@ -16,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import measured
+from felizjueves import measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
@@ -109,20 +116,20 @@ def test_the_amd_remark_is_read_for_the_named_kernel() -> None:
 
 # --- the store --------------------------------------------------------------
 
-STORE = json.loads(measured.STORE.read_text())
-ROWS = measured.load()
+STORE = json.loads(measured_store.STORE.read_text())
+ROWS = measured_store.load()
 
 # Every Spec a row may be keyed on: the one-batch classes, the subgrid, and
 # the subgrid's recycle-lever arm (#55).
-RECYCLE_CELLS = measured.lever_cells(RECYCLE)
-SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured.SUBGRID,
+RECYCLE_CELLS = measured_store.lever_cells(RECYCLE)
+SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
                               *RECYCLE_CELLS)}
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
 
 def _spec_of(key: str):
-    spec_key, _, _ = measured.split_key(key)
+    spec_key, _, _ = measured_store.split_key(key)
     assert spec_key in SPECS, f"{key}: keyed on a Spec no one declared"
     return SPECS[spec_key]
 
@@ -183,14 +190,14 @@ def test_both_cards_and_every_default_class_are_recorded() -> None:
 
 
 def test_the_subgrid_is_the_declared_l_by_n_batches_product() -> None:
-    cells = [(s.total_am, s.n_batches) for s in measured.SUBGRID]
+    cells = [(s.total_am, s.n_batches) for s in measured_store.SUBGRID]
     # 12 is #60's: "9 batches suffice" cannot be judged from below 9
     assert cells == [(L, b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9, 12)]
     assert all(s == pq_spec(s.total_am, n_batches=s.n_batches)
-               for s in measured.SUBGRID)
+               for s in measured_store.SUBGRID)
 
 
-@pytest.mark.parametrize("spec", measured.SUBGRID, ids=lambda s: s.key())
+@pytest.mark.parametrize("spec", measured_store.SUBGRID, ids=lambda s: s.key())
 def test_every_subgrid_cell_is_admitted_by_the_plan_layer(spec) -> None:
     # #64 made partition refuse an empty batch; a refused cell is not a cell.
     assert len(plan(spec).dags) == spec.n_batches
@@ -198,9 +205,9 @@ def test_every_subgrid_cell_is_admitted_by_the_plan_layer(spec) -> None:
 
 
 @pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
-@pytest.mark.parametrize("spec", measured.SUBGRID, ids=lambda s: s.key())
+@pytest.mark.parametrize("spec", measured_store.SUBGRID, ids=lambda s: s.key())
 def test_every_subgrid_cell_is_recorded_on_both_cards(spec, arch) -> None:
-    got = measured.rows(spec=spec, arch=arch, store=ROWS)
+    got = measured_store.rows(spec=spec, arch=arch, store=ROWS)
     assert len(got) == 1, f"{spec.key()}@{arch}: {len(got)} rows -- " \
         "python -m felizjueves.measured --remeasure --subgrid"
     (row,) = got.values()
@@ -244,17 +251,27 @@ def test_the_dynamic_shared_footprint_is_the_kernels_own_declaration() -> None:
 
 def test_the_store_round_trips(tmp_path: Path) -> None:
     p = tmp_path / "m.json"
-    measured.save(ROWS, p)
-    assert measured.load(p) == ROWS
+    measured_store.save(ROWS, p)
+    assert measured_store.load(p) == ROWS
+
+
+def test_the_tracked_store_is_rewritten_byte_for_byte(tmp_path: Path) -> None:
+    """#94's hazard: the store holds measurements nobody wants to re-take, so
+    load -> save must reproduce the tracked file exactly -- header, row order,
+    number spelling and all. A refactor of either half that moves a byte here
+    would move it in every `--remeasure` too."""
+    p = tmp_path / "kernels.json"
+    measured_store.save(ROWS, p)
+    assert p.read_bytes() == measured_store.STORE.read_bytes()
 
 
 def test_a_measured_row_refuses_a_negative_or_missing_field() -> None:
     row = next(iter(ROWS.values()))
     fields = {**row.__dict__}
     with pytest.raises(ValueError):
-        measured.Measured(**{**fields, "registers": -1})
+        measured_store.Measured(**{**fields, "registers": -1})
     with pytest.raises(ValueError):
-        measured.Measured(**{**fields, "gpu": ""})
+        measured_store.Measured(**{**fields, "gpu": ""})
 
 
 # --- #50: schema 1, optional measurements, the read path --------------------
@@ -302,7 +319,7 @@ def test_the_rows_28_recorded_survive_the_schema_1_migration() -> None:
 def test_the_loader_keeps_every_field_of_every_row() -> None:
     # The failure mode the amendment names: a row (or a field of one) silently
     # dropped or defaulted by a loader change.
-    assert STORE["schema"] == measured.SCHEMA == 2
+    assert STORE["schema"] == measured_store.SCHEMA == 2
     assert set(ROWS) == set(STORE["rows"])
     for key, row in ROWS.items():
         assert asdict(row) == STORE["rows"][key], key
@@ -317,24 +334,24 @@ def test_a_row_written_and_read_back_compares_equal_through_its_key(
         tmp_path: Path) -> None:
     p = tmp_path / "m.json"
     k = _key(4)
-    row = measured.Measured(registers=40, compile_s=1.5, **PROV)
-    measured.save(measured.merge({}, k, row), p)
-    assert measured.load(p) == {k.key(): row}
-    assert measured.rows(spec=k.spec, arch=k.arch, store=p) == {k.key(): row}
+    row = measured_store.Measured(registers=40, compile_s=1.5, **PROV)
+    measured_store.save(measured_store.merge({}, k, row), p)
+    assert measured_store.load(p) == {k.key(): row}
+    assert measured_store.rows(spec=k.spec, arch=k.arch, store=p) == {k.key(): row}
 
 
-UNKNOWN_CARD = dict.fromkeys(measured.GPU_UTIL_FIELDS)  # all null: unknown
+UNKNOWN_CARD = dict.fromkeys(measured_store.GPU_UTIL_FIELDS)  # all null: unknown
 
 
 def test_a_timing_only_row_and_a_compile_only_row_are_both_legal(tmp_path) -> None:
-    timing = measured.Measured(runtime_ns=1234.5, repeats=50, spread_ns=3.0,
-                               raw=UNKNOWN_CARD, **PROV)
-    compile_only = measured.Measured(registers=40, spill_store=0, spill_load=0,
-                                     shared_bytes=0, **PROV)
+    timing = measured_store.Measured(runtime_ns=1234.5, repeats=50, spread_ns=3.0,
+                                     raw=UNKNOWN_CARD, **PROV)
+    compile_only = measured_store.Measured(registers=40, spill_store=0, spill_load=0,
+                                           shared_bytes=0, **PROV)
     assert timing.registers is None and compile_only.runtime_ns is None
     p = tmp_path / "m.json"
-    measured.save({_key(4).key(): timing, _key(6).key(): compile_only}, p)
-    assert measured.load(p)[_key(4).key()] == timing
+    measured_store.save({_key(4).key(): timing, _key(6).key(): compile_only}, p)
+    assert measured_store.load(p)[_key(4).key()] == timing
 
 
 @pytest.mark.parametrize("raw", [
@@ -345,45 +362,45 @@ def test_a_timing_only_row_and_a_compile_only_row_are_both_legal(tmp_path) -> No
 def test_a_timed_row_without_the_cards_state_is_refused(raw, tmp_path) -> None:
     # #93: a timed row records the card's state, or null for unknown.
     p = tmp_path / "m.json"
-    timing = measured.Measured(runtime_ns=1, repeats=31, spread_ns=0, raw=raw,
-                               **PROV)
-    measured.save({_key(4).key(): timing}, p)
+    timing = measured_store.Measured(runtime_ns=1, repeats=31, spread_ns=0, raw=raw,
+                                     **PROV)
+    measured_store.save({_key(4).key(): timing}, p)
     with pytest.raises(ValueError, match=str(p)):
-        measured.load(p)
+        measured_store.load(p)
 
 
 def test_a_row_that_measures_nothing_is_refused() -> None:
     with pytest.raises(ValueError, match="records nothing"):
-        measured.Measured(**PROV)
+        measured_store.Measured(**PROV)
 
 
 @pytest.mark.parametrize("bad", [{"repeats": 0}, {"runtime_ns": -1.0},
                                  {"registers": 1.5}, {"compile_s": "1"}])
 def test_a_bad_measurement_is_refused(bad) -> None:
     with pytest.raises(ValueError):
-        measured.Measured(**{"registers": 1, **PROV, **bad})
+        measured_store.Measured(**{"registers": 1, **PROV, **bad})
 
 
-@pytest.mark.parametrize("missing", measured.PROVENANCE)
+@pytest.mark.parametrize("missing", measured_store.PROVENANCE)
 def test_a_row_missing_provenance_is_refused(missing, tmp_path) -> None:
     prov = {k: v for k, v in PROV.items() if k != missing}
     with pytest.raises(TypeError):
-        measured.Measured(registers=1, **prov)
+        measured_store.Measured(registers=1, **prov)
     with pytest.raises(ValueError):
-        measured.Measured(registers=1, **{**PROV, missing: ""})
+        measured_store.Measured(registers=1, **{**PROV, missing: ""})
     # ...and in a file, refused with the path named.
     p = tmp_path / "m.json"
-    measured.save({}, p)
+    measured_store.save({}, p)
     doc = json.loads(p.read_text())
     doc["rows"][_key().key()] = {"registers": 1, **prov}
     p.write_text(json.dumps(doc))
     with pytest.raises(ValueError, match=str(p)):
-        measured.load(p)
+        measured_store.load(p)
 
 
 def _doc(tmp_path: Path, **change) -> Path:
     p = tmp_path / "m.json"
-    measured.save({_key().key(): measured.Measured(registers=1, **PROV)}, p)
+    measured_store.save({_key().key(): measured_store.Measured(registers=1, **PROV)}, p)
     doc = json.loads(p.read_text())
     for k, v in change.items():
         if v is None:
@@ -409,61 +426,61 @@ def test_a_malformed_or_foreign_store_is_refused_with_its_path(
         change, tmp_path) -> None:
     p = _doc(tmp_path, **change)
     with pytest.raises(ValueError, match=str(p)):
-        measured.load(p)
+        measured_store.load(p)
 
 
 def test_a_file_that_is_not_json_is_refused_with_its_path(tmp_path) -> None:
     p = tmp_path / "m.json"
     p.write_text("{ not json")
     with pytest.raises(ValueError, match=str(p)):
-        measured.load(p)
+        measured_store.load(p)
 
 
 def test_an_empty_store_is_not_a_missing_one(tmp_path) -> None:
     p = tmp_path / "m.json"
     with pytest.raises(FileNotFoundError):
-        measured.load(p)
-    measured.save({}, p)
-    assert measured.load(p) == {}
-    assert measured.rows(store=p) == {}
+        measured_store.load(p)
+    measured_store.save({}, p)
+    assert measured_store.load(p) == {}
+    assert measured_store.rows(store=p) == {}
 
 
 def test_the_same_key_twice_replaces_rather_than_duplicates() -> None:
     k = _key()
-    first = measured.Measured(registers=40, **PROV)
-    second = measured.Measured(registers=41, **PROV)
-    got = measured.merge(measured.merge({}, k, first), k, second)
+    first = measured_store.Measured(registers=40, **PROV)
+    second = measured_store.Measured(registers=41, **PROV)
+    got = measured_store.merge(measured_store.merge({}, k, first), k, second)
     assert got == {k.key(): second}
 
 
 def test_two_toolchains_on_one_arch_and_spec_do_not_collide() -> None:
     a, b = _key(toolchain="nvcc 13.0"), _key(toolchain="nvcc 13.1")
-    ra = measured.Measured(registers=40, **PROV)
-    rb = measured.Measured(registers=38, **{**PROV, "toolchain": "nvcc 13.1"})
-    got = measured.merge(measured.merge({}, a, ra), b, rb)
+    ra = measured_store.Measured(registers=40, **PROV)
+    rb = measured_store.Measured(registers=38, **{**PROV, "toolchain": "nvcc 13.1"})
+    got = measured_store.merge(measured_store.merge({}, a, ra), b, rb)
     assert len(got) == 2
-    assert measured.rows(spec=a.spec, arch=SM_86, store=got) == got
-    assert measured.rows(toolchain="nvcc 13.1", store=got) == {b.key(): rb}
+    assert measured_store.rows(spec=a.spec, arch=SM_86, store=got) == got
+    assert measured_store.rows(toolchain="nvcc 13.1", store=got) == {b.key(): rb}
 
 
 def test_merge_refuses_a_row_filed_under_another_cards_key() -> None:
     with pytest.raises(ValueError):
-        measured.merge({}, _key(arch=GFX1200),
-                       measured.Measured(registers=1, **PROV))
+        measured_store.merge({}, _key(arch=GFX1200),
+                             measured_store.Measured(registers=1, **PROV))
 
 
 def test_the_read_path_filters_the_real_store() -> None:
     spec = pq_spec(8)
-    got = measured.rows(spec=spec)
+    got = measured_store.rows(spec=spec)
     assert {r.arch for r in got.values()} == {"sm_86", "gfx1200"}
     assert all(k.startswith(spec.key() + "@") for k in got)
-    nv = measured.rows(arch=SM_86)
+    nv = measured_store.rows(arch=SM_86)
     # the one-batch classes L = 0..16, plus the subgrid's split cells, plus
     # the recycle arm of every subgrid cell (#55)
-    split = sum(s.n_batches > 1 for s in measured.SUBGRID)
+    split = sum(s.n_batches > 1 for s in measured_store.SUBGRID)
     assert len(nv) == 17 + split + len(RECYCLE_CELLS)
-    assert measured.rows(arch="sm_86") == nv
-    assert measured.rows(spec=spec, arch=GFX1200).keys() == {
+    assert measured_store.rows(arch="sm_86") == nv
+    assert measured_store.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
 
 
@@ -499,34 +516,34 @@ SHA = "a" * 64
 
 
 def test_combine_keeps_the_other_side_when_both_saw_the_same_text() -> None:
-    compiled = measured.Measured(registers=40, spill_store=0, spill_load=0,
-                                 compile_s=1.0, kernel="k", spill_unit="u",
-                                 command="nvcc -c", source_sha256=SHA,
-                                 raw={"registers": 40}, **PROV)
-    timed = measured.Measured(runtime_ns=1e6, repeats=31, spread_ns=1e3,
-                              kernel="k", source_sha256=SHA,
-                              raw={"wallclock:min_ns": 9},
-                              **{**PROV, "date": "2026-10-12"})
-    got = measured.combine(compiled, timed)
+    compiled = measured_store.Measured(registers=40, spill_store=0, spill_load=0,
+                                       compile_s=1.0, kernel="k", spill_unit="u",
+                                       command="nvcc -c", source_sha256=SHA,
+                                       raw={"registers": 40}, **PROV)
+    timed = measured_store.Measured(runtime_ns=1e6, repeats=31, spread_ns=1e3,
+                                    kernel="k", source_sha256=SHA,
+                                    raw={"wallclock:min_ns": 9},
+                                    **{**PROV, "date": "2026-10-12"})
+    got = measured_store.combine(compiled, timed)
     assert (got.registers, got.compile_s, got.runtime_ns, got.repeats,
             got.spread_ns) == (40, 1.0, 1e6, 31, 1e3)
     assert got.raw == {"registers": 40, "wallclock:min_ns": 9}
     assert got.command == "nvcc -c" and got.spill_unit == "u"
     assert got.date == "2026-10-12"  # the latest observation's provenance
     # symmetric: a re-measured compile row keeps the timing
-    again = measured.combine(got, replace(compiled, registers=41))
+    again = measured_store.combine(got, replace(compiled, registers=41))
     assert (again.registers, again.runtime_ns) == (41, 1e6)
 
 
 def test_combine_drops_a_side_measured_on_other_text() -> None:
-    compiled = measured.Measured(registers=40, source_sha256="b" * 64, **PROV)
-    timed = measured.Measured(runtime_ns=1e6, repeats=31, spread_ns=1e3,
-                              source_sha256=SHA, **PROV)
-    assert measured.combine(compiled, timed) == timed
-    assert measured.combine(None, timed) == timed
-    other = measured.Measured(registers=40, source_sha256=SHA,
-                              **{**PROV, "toolchain": "nvcc 13.1"})
-    assert measured.combine(other, timed) == timed
+    compiled = measured_store.Measured(registers=40, source_sha256="b" * 64, **PROV)
+    timed = measured_store.Measured(runtime_ns=1e6, repeats=31, spread_ns=1e3,
+                                    source_sha256=SHA, **PROV)
+    assert measured_store.combine(compiled, timed) == timed
+    assert measured_store.combine(None, timed) == timed
+    other = measured_store.Measured(registers=40, source_sha256=SHA,
+                                    **{**PROV, "toolchain": "nvcc 13.1"})
+    assert measured_store.combine(other, timed) == timed
 
 
 def _timed(row) -> bool:
@@ -534,10 +551,10 @@ def _timed(row) -> bool:
 
 
 @pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
-@pytest.mark.parametrize("spec", measured.SUBGRID, ids=lambda s: s.key())
+@pytest.mark.parametrize("spec", measured_store.SUBGRID, ids=lambda s: s.key())
 def test_every_subgrid_cell_is_timed_on_both_cards(spec, arch) -> None:
     """#53's acceptance: runtime_ns, repeats and spread_ns, with provenance."""
-    (row,) = measured.rows(spec=spec, arch=arch, store=ROWS).values()
+    (row,) = measured_store.rows(spec=spec, arch=arch, store=ROWS).values()
     assert _timed(row), f"{spec.key()}@{arch}: no wall-clock -- run the " \
         "opt-in sweep in test/test_kernel_device.py (FJ_WALLCLOCK_STORE)"
     assert row.repeats is not None and row.repeats >= 2  # one timing is not one
@@ -572,15 +589,15 @@ def test_every_timed_row_records_the_cards_state_or_null() -> None:
     # #93's acceptance: a gpu_util reading, or an explicit null (unknown).
     timed = {k: r for k, r in ROWS.items() if _timed(r)}
     for key, r in timed.items():
-        for f in measured.GPU_UTIL_FIELDS:
+        for f in measured_store.GPU_UTIL_FIELDS:
             assert f in r.raw, f"{key}: no {f}"
             v = r.raw[f]
             assert v is None or (type(v) is int and 0 <= v <= 100), (key, f, v)
     # The literal SUBGRID rows were re-timed behind the gate by #93: each
     # input's reading is KNOWN, and the gate let it through at <= 30%.
-    for spec in measured.SUBGRID:
+    for spec in measured_store.SUBGRID:
         for arch in ARCHS:
-            (r,) = measured.rows(spec=spec, arch=arch, store=ROWS).values()
+            (r,) = measured_store.rows(spec=spec, arch=arch, store=ROWS).values()
             for f in ("wallclock:gpu_util_before",
                       "wallclock:near:gpu_util_before"):
                 v = r.raw[f]
@@ -640,7 +657,7 @@ def _recheck_cell(backend_name: str, spec, tmp_path: Path) -> None:
 SUBGRID_PARAMS = [
     pytest.param(s, id=s.key(),
                  marks=[pytest.mark.slow] if s.total_am >= 13 else [])
-    for s in measured.SUBGRID]
+    for s in measured_store.SUBGRID]
 
 
 @pytest.mark.cuda
@@ -659,19 +676,19 @@ def test_hipcc_still_reports_the_subgrid(spec, hipcc, tmp_path) -> None:
 
 
 def _cell(b: int, spill: int, wide: tuple[int, int], near: tuple[int, int],
-          L: int = 13) -> tuple[str, measured.Measured]:
+          L: int = 13) -> tuple[str, measured_store.Measured]:
     """A synthetic compiled-and-timed row: wide/near are (median, IQR)."""
     key = MeasuredKey(pq_spec(L, n_batches=b), SM_86, "nvcc 13.0").key()
-    return key, measured.Measured(
+    return key, measured_store.Measured(
         registers=255, spill_store=spill, spill_load=spill,
         runtime_ns=wide[0], repeats=31, spread_ns=wide[1], **PROV,
         raw={"wallclock:near:median_ns": near[0], "wallclock:near:q1_ns": 0,
              "wallclock:near:q3_ns": near[1]})
 
 
-def _verdict(nine, twelve) -> measured.TwelveVsNine:
+def _verdict(nine, twelve) -> measured_store.TwelveVsNine:
     store = dict([_cell(9, *nine), _cell(12, *twelve)])
-    return measured.nine_vs_twelve(store, "sm_86", 13)
+    return measured_store.nine_vs_twelve(store, "sm_86", 13)
 
 
 def test_nine_suffices_when_twelve_is_no_better_on_anything() -> None:
@@ -704,12 +721,12 @@ def test_an_untimed_cell_cannot_be_judged() -> None:
     k12, r12 = _cell(12, 100, (1000, 10), (500, 5))
     untimed = replace(r12, runtime_ns=None, repeats=None, spread_ns=None)
     with pytest.raises(KeyError):
-        measured.nine_vs_twelve({k9: r9, k12: untimed}, "sm_86", 13)
+        measured_store.nine_vs_twelve({k9: r9, k12: untimed}, "sm_86", 13)
     with pytest.raises(KeyError):
-        measured.nine_vs_twelve({k9: r9}, "sm_86", 13)
+        measured_store.nine_vs_twelve({k9: r9}, "sm_86", 13)
 
 
-# The verdict (#60), on the tracked rows. The definition is measured.py's
+# The verdict (#60), on the tracked rows. The definition is measured_store's
 # docstring, committed before any 12-batch row existed; this pins what it
 # said about the rows, cell by cell, so a remeasure that moves it is seen.
 # claims.json's `jengine/nine-batches-suffice` record cites this test.
@@ -729,11 +746,11 @@ NINE_VS_TWELVE = {
 def test_nine_batches_do_not_suffice_on_either_card() -> None:
     got = {}
     for arch, L in NINE_VS_TWELVE:
-        c = measured.nine_vs_twelve(ROWS, arch, L)
+        c = measured_store.nine_vs_twelve(ROWS, arch, L)
         got[arch, L] = (c.fewer_spills, c.faster_wide, c.faster_near)
     assert got == NINE_VS_TWELVE
     assert {(a, L) for a, L in got} == {
-        (a, L) for a in ARCHS for L in measured.SUBGRID_LS}
+        (a, L) for a in ARCHS for L in measured_store.SUBGRID_LS}
     for arch in ARCHS:
         # 9 suffices on an arch iff at every subgrid L: on neither card
         assert not all(not any(v) for (a, _), v in got.items() if a == arch)
@@ -744,23 +761,24 @@ def test_nine_batches_do_not_suffice_on_either_card() -> None:
 
 def test_the_lever_cells_are_the_whole_subgrid_with_the_lever() -> None:
     # Not one class: every L and every batch count, so a sign flip is seen.
-    assert [replace(s, levers=()) for s in RECYCLE_CELLS] == list(measured.SUBGRID)
+    assert [replace(s, levers=()) for s in RECYCLE_CELLS] == list(
+        measured_store.SUBGRID)
     assert all(s.levers == (RECYCLE,) for s in RECYCLE_CELLS)
     with pytest.raises(ValueError, match="kernel-layer"):
-        measured.lever_cells("no-sieve")  # a plan lever: not this A/B
+        measured_store.lever_cells("no-sieve")  # a plan lever: not this A/B
 
 
 def _ab(control: tuple[int, int], lever: tuple[int, int],
         near_c: tuple[int, int] = (500, 5),
-        near_l: tuple[int, int] = (500, 5)) -> measured.LeverAB:
+        near_l: tuple[int, int] = (500, 5)) -> measured_store.LeverAB:
     """Synthetic literal + lever rows; (median, IQR) per arm and input."""
     spec = RECYCLE_CELLS[0]
     lit = MeasuredKey(replace(spec, levers=()), SM_86, "nvcc 13.0").key()
     lev = MeasuredKey(spec, SM_86, "nvcc 13.0").key()
     store = {
-        lit: measured.Measured(registers=255, spill_store=10, spill_load=20,
-                               **PROV),
-        lev: measured.Measured(
+        lit: measured_store.Measured(registers=255, spill_store=10, spill_load=20,
+                                     **PROV),
+        lev: measured_store.Measured(
             registers=255, spill_store=10, spill_load=30,
             runtime_ns=lever[0], repeats=31, spread_ns=lever[1], **PROV,
             raw={"wallclock:control:median_ns": control[0],
@@ -772,7 +790,7 @@ def _ab(control: tuple[int, int], lever: tuple[int, int],
                  "wallclock:near:median_ns": near_l[0],
                  "wallclock:near:q1_ns": 0, "wallclock:near:q3_ns": near_l[1]}),
     }
-    return measured.lever_ab(store, "sm_86", spec)
+    return measured_store.lever_ab(store, "sm_86", spec)
 
 
 def test_a_lever_is_judged_both_ways_against_the_larger_iqr() -> None:
@@ -792,13 +810,13 @@ def test_a_lever_row_without_its_control_cannot_be_judged() -> None:
     spec = RECYCLE_CELLS[0]
     lev = MeasuredKey(spec, SM_86, "nvcc 13.0").key()
     lit = MeasuredKey(replace(spec, levers=()), SM_86, "nvcc 13.0").key()
-    timed = measured.Measured(registers=1, spill_store=0, spill_load=0,
-                              runtime_ns=1, repeats=31, spread_ns=0, **PROV)
-    compiled = measured.Measured(registers=1, spill_store=0, spill_load=0, **PROV)
+    timed = measured_store.Measured(registers=1, spill_store=0, spill_load=0,
+                                    runtime_ns=1, repeats=31, spread_ns=0, **PROV)
+    compiled = measured_store.Measured(registers=1, spill_store=0, spill_load=0, **PROV)
     with pytest.raises(KeyError, match="control"):
-        measured.lever_ab({lev: timed, lit: compiled}, "sm_86", spec)
+        measured_store.lever_ab({lev: timed, lit: compiled}, "sm_86", spec)
     with pytest.raises(KeyError):
-        measured.lever_ab({lit: compiled}, "sm_86", spec)
+        measured_store.lever_ab({lit: compiled}, "sm_86", spec)
 
 
 @pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
@@ -807,9 +825,9 @@ def test_every_recycle_cell_is_compiled_and_timed_against_a_control(
         spec, arch) -> None:
     """#55's acceptance: two rows per (class, batch count, arch) differing
     only in `levers`, the lever's timed beside its same-session control."""
-    (row,) = measured.rows(spec=spec, arch=arch, store=ROWS).values()
-    (lit,) = measured.rows(spec=replace(spec, levers=()), arch=arch,
-                           store=ROWS).values()
+    (row,) = measured_store.rows(spec=spec, arch=arch, store=ROWS).values()
+    (lit,) = measured_store.rows(spec=replace(spec, levers=()), arch=arch,
+                                 store=ROWS).values()
     assert row.kernel == lit.kernel and row.source_sha256 != lit.source_sha256
     assert row.registers is not None and row.compile_s is not None
     assert _timed(row) and row.repeats == 31 and row.gpu != "ABSENT", (
@@ -821,7 +839,7 @@ def test_every_recycle_cell_is_compiled_and_timed_against_a_control(
         assert w[f"{p}cpu_busy_permille_before"] <= 100, (spec.key(), p)
 
 
-# The verdict (#55), on the tracked rows. The definition is measured.py's
+# The verdict (#55), on the tracked rows. The definition is measured_store's
 # docstring ("A LEVER A/B"), committed before any lever row existed; this pins
 # what it said, cell by cell, so a remeasure that moves it is seen.
 # (arch, L, n_batches): (wide sign, near sign) of recycle against literal.
@@ -846,21 +864,21 @@ def test_the_recycle_verdict_is_what_the_rows_say() -> None:
     got = {}
     for arch in ARCHS:
         for spec in RECYCLE_CELLS:
-            c = measured.lever_ab(ROWS, arch, spec)
+            c = measured_store.lever_ab(ROWS, arch, spec)
             got[arch, c.L, c.n_batches] = (c.wide_sign, c.near_sign)
     assert got == LEVER_AB
 
 
 def test_recycle_stays_opt_in() -> None:
     """The default changes only if recycle WINS at every cell on BOTH arches
-    (measured.py). It wins at none, on either: `lower()` stays a no-op unless
+    (measured_store.py). It wins at none, on either: `lower()` stays a no-op unless
     asked, and a Spec without the lever is built exactly as before."""
-    verdicts = {k: measured.lever_ab(ROWS, k[0], replace(
+    verdicts = {k: measured_store.lever_ab(ROWS, k[0], replace(
         pq_spec(k[1], n_batches=k[2]), levers=(RECYCLE,))).verdict
         for k in LEVER_AB}
     assert "win" not in verdicts.values()
     assert "stays opt-in" in STORE["header"]["levers"]  # the data says so too
-    for s in measured.SUBGRID[:5]:
+    for s in measured_store.SUBGRID[:5]:
         assert measured.cell_kernels(s) == build_pq_kernels(s)
     assert "double slot[" not in cuda.emit(build_pq_kernel(10), SM_86)
 
