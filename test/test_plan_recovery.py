@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from felizjueves.literature.limits import load_limits
-from felizjueves.literature.rules import Candidate, ExactGivenInputs
-from felizjueves.literature.scoreboard import load_scoreboard
+from felizjueves.literature.rules import Candidate, ExactGivenInputs, Status
+from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
 from felizjueves.plan.batching import (
     AXES,
@@ -22,6 +22,7 @@ from felizjueves.plan.batching import (
 from felizjueves.plan.cost import cost
 from felizjueves.plan.dag import build
 from felizjueves.plan.recovery import (
+    CUT_INPUTS,
     exact_counts,
     recovered_batches,
     recovered_candidates,
@@ -108,6 +109,18 @@ def test_minimax_misses_exactly_the_two_cells_the_rule_recovers() -> None:
     def mm(L: int, nb: int) -> int:
         return max(batch_size(L, b) for b in partition(L, nb, cut=MINIMAX_TARGETS))
     assert {c for c in CELLS if mm(*c) != T3.cells[c]} == {(7, 9), (15, 9)}
+
+
+def test_table3_exact_given_inputs_passes_with_the_recorded_inputs(
+    candidates: dict[str, Candidate],
+) -> None:
+    board = load_scoreboard(DATA / "scoreboards" / "jengine" / "literal.json",
+                            "literal")
+    (rule,) = [r for r in board.rules[T3.id] if isinstance(r, ExactGivenInputs)]
+    assert dict(rule.inputs) == dict(CUT_INPUTS)
+    (verdict,) = score(Scoreboard("literal", {T3.id: (rule,)}),
+                       {T3.id: T3}, {T3.id: candidates[T3.id]})
+    assert verdict.status is Status.PASS
 
 
 def test_tables_1_and_2_record_no_inputs_and_a_limit_each() -> None:

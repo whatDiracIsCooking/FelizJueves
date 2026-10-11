@@ -13,7 +13,7 @@
     ],
     "jengine/table3": [
       {"rule": "agreement", "floor_exact": 38, "ceiling_worst_rel_dev": 0.047619047619047616},
-      {"rule": "exact_given_inputs", "inputs": null}
+      {"rule": "exact_given_inputs", "inputs": {"cut": "two-ended-nearest-fill", "cut_scope": "per-direction"}}
     ]
   }
 }
