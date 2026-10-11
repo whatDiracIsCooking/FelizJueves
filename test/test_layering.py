@@ -90,6 +90,21 @@ RULES: dict[str, Rule] = {
         ir="an arch is data about a card, not about a kernel",
         emit="backends read `Arch`; `Arch` does not know the backends",
         reference=_GROUND_TRUTH),
+    "gate": _rule(
+        "the card gate (#109): wait for a quiet card before a measurement, "
+        "and refuse the phase when it is not. Stdlib only, so that a driver, "
+        "the probes and the tests can all reach it",
+        (),
+        literature="a gate decides whether a measurement is taken; it must "
+                   "not know what the measurement will be scored against"),
+    "probe": _rule(
+        "ceilings.py (#109): the roofline ceiling probes and their record, "
+        "behind the gate. It writes what `device` reads",
+        ("device", "gate"),
+        literature="the published tables must never see a ceiling a re-probe "
+                   "rewrites (#109's hazard)",
+        plan="the plan counts; a card's measured ceiling must not reach it",
+        reference=_GROUND_TRUTH),
     "ir": _rule(
         "the instruction set: types only (#22). May reach `spec` and the device "
         "vocabulary; today it needs neither",
@@ -221,6 +236,8 @@ RULE_OF: dict[str, str] = {
     "reference.boys": "reference",
     "reference.pq": "reference",
     "device": "device",
+    "gate": "gate",
+    "ceilings": "probe",
     "ir": "ir",
     "interp": "interp",
     "lower": "lower",
@@ -275,6 +292,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "reference.boys": (),
     "reference.pq": ("reference.boys",),
     "device": ("spec",),
+    "gate": (),
+    "ceilings": ("device", "gate"),
     "ir": (),
     "interp": ("ir",),
     "lower": ("ir",),
