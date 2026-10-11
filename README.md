@@ -66,7 +66,7 @@ disagreement is this project's main portability risk, which is what
 ## Layout
 
 ```
-devtools/        the scripts: doctor, devcontainer, worktree, kernel tier, articles
+devtools/        the scripts: doctor, devcontainer, worktree, kernel tier, claude pin
 docker/          four Dockerfiles (base -> cuda/hip -> combined), build.sh, compose
 .devcontainer/   one variant per GPU image, driven by devtools/devcontainer.sh
 docs/            references.md, and the derived notes on what gets generated
