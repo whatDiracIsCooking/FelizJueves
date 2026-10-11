@@ -1,0 +1,177 @@
+{
+ "schema": 1,
+ "name": "h2_sto3g_j",
+ "description": "#86's smallest J case: H2 in STO-3G, Cartesian, the bond off every axis. Records the converted basis and PySCF's get_jk J for the recorded density.",
+ "provenance": {
+  "pyscf": "2.14.0",
+  "libcint": "6.1.3",
+  "numpy": "2.5.3",
+  "date": "2026-10-11",
+  "host": "1da02cac6d4e (container)",
+  "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate h2_sto3g_j",
+  "mol": {
+   "atom": "H 0 0 0; H 0.3 -0.4 1.3",
+   "unit": "Bohr",
+   "charge": 0,
+   "spin": 0
+  },
+  "basis": "sto-3g",
+  "cart": true
+ },
+ "atoms": [
+  {
+   "symbol": "H",
+   "charge": 1,
+   "coord": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "symbol": "H",
+   "charge": 1,
+   "coord": [
+    0.3,
+    -0.4,
+    1.3
+   ]
+  }
+ ],
+ "shells": [
+  {
+   "atom": 0,
+   "l": 0,
+   "exponents": [
+    3.42525091,
+    0.62391373,
+    0.1688554
+   ],
+   "coefficients": [
+    [
+     0.15432897
+    ],
+    [
+     0.53532814
+    ],
+    [
+     0.44463454
+    ]
+   ]
+  },
+  {
+   "atom": 1,
+   "l": 0,
+   "exponents": [
+    3.42525091,
+    0.62391373,
+    0.1688554
+   ],
+   "coefficients": [
+    [
+     0.15432897
+    ],
+    [
+     0.53532814
+    ],
+    [
+     0.44463454
+    ]
+   ]
+  }
+ ],
+ "nao": 2,
+ "ao_labels": [
+  "0  H 1s    ",
+  "1  H 1s    "
+ ],
+ "ao_loc": [
+  0,
+  1,
+  2
+ ],
+ "arrays": {
+  "density": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.0,
+    0.5,
+    0.5,
+    0.3333333333333333
+   ]
+  },
+  "ovlp": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.0000000000000002,
+    0.6617981434351801,
+    0.6617981434351801,
+    1.0000000000000002
+   ]
+  },
+  "vj": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.4112427572115593,
+    0.8945711033506735,
+    0.8945711033506735,
+    1.2755732957907142
+   ]
+  }
+ },
+ "density_recipe": "hilbert: D[i][j] = 1/(i+j+1) -- symmetric positive definite, no RNG, reproducible bit-for-bit on any host",
+ "converted": {
+  "common_factor": [
+   0.28209479177387814
+  ],
+  "shells": [
+   {
+    "atom": 0,
+    "l": 0,
+    "centre": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "exponents": [
+     3.42525091,
+     0.62391373,
+     0.1688554
+    ],
+    "coefficients": [
+     0.2769343609526477,
+     0.2678388517525271,
+     0.08347366961692529
+    ]
+   },
+   {
+    "atom": 1,
+    "l": 0,
+    "centre": [
+     0.3,
+     -0.4,
+     1.3
+    ],
+    "exponents": [
+     3.42525091,
+     0.62391373,
+     0.1688554
+    ],
+    "coefficients": [
+     0.2769343609526477,
+     0.2678388517525271,
+     0.08347366961692529
+    ]
+   }
+  ]
+ }
+}
