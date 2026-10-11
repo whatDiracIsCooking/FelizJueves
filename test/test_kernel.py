@@ -321,7 +321,8 @@ def test_the_kernel_module_is_vendor_neutral() -> None:
     tree = ast.parse((SRC / "kernel.py").read_text())
     mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     ours = {m for m in mods if m and m.startswith("felizjueves")}
-    assert ours == {"felizjueves.ir", "felizjueves.plan.pipeline",
+    assert ours == {"felizjueves.ir", "felizjueves.passes",
+                    "felizjueves.plan.dag", "felizjueves.plan.pipeline",
                     "felizjueves.plan.schedule", "felizjueves.plan.targets",
                     "felizjueves.recurrence", "felizjueves.spec"}
 
