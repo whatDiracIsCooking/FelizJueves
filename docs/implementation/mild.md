@@ -147,6 +147,13 @@ near-optimal tree search: **+1–2% FLOPs, −2–6% intermediates.** MILD is no
 cheap approximation of the exact search; on the metric that drives register
 pressure it is slightly *better*, and it is `O(1)` per node.
 
+That search is not in this repo; `plan/optimum.py` (#106) computes the exact
+`(intermediates, FLOPs)` frontier over the same space instead — one direction
+per node, nodes shared, `plan/cost.py`'s counts — for `L ≤ EXACT_MAX_L = 5`
+(L = 6 does not finish; the module refuses it with the measured reason), with
+`beam(L, width)` as an upper bound above. It is a measuring instrument, never
+a default: nothing in `pipeline`, `search` or `recovery` calls it.
+
 ## The sieve — pruning what MILD left behind
 
 MILD is non-optimal in node count for `L ≥ 5`. The sieve, after Gill,
