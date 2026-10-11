@@ -39,6 +39,13 @@ class Operator(StrEnum):
 
 
 class Target(StrEnum):
+    """The MATRIX being built -- not the hardware.
+
+    The card a kernel is compiled for is a `felizjueves.device.Arch`, which is
+    deliberately not part of a `Spec`; `device.py` says why and what keys a
+    measurement instead.
+    """
+
     J = "j"  # the Coulomb matrix, [JEngine] Algorithm 1
 
 

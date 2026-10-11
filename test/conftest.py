@@ -28,11 +28,16 @@ from pathlib import Path
 
 import pytest
 
-# Architectures the toolchains are driven at. Same defaults as
-# devtools/config.sh, read from the environment so a container's own pin wins
-# (the images export CUDA_ARCH and GPU_TARGETS).
-CUDA_ARCH = os.environ.get("CUDA_ARCH", "86")
-HIP_ARCH = os.environ.get("HIP_ARCH") or os.environ.get("GPU_TARGETS", "gfx1200")
+from felizjueves.device import Vendor, from_env
+
+# Architectures the toolchains are driven at, resolved through
+# felizjueves.device -- the single Python source, which reads the same
+# environment variables and defaults as devtools/config.sh (so a container's
+# own pin wins; the images export CUDA_ARCH and GPU_TARGETS) and raises on a
+# pin to a card it does not declare. CUDA_ARCH stays the bare compute
+# capability ("86") because Toolchain.compile_flags spells the `sm_` itself.
+CUDA_ARCH = from_env(Vendor.NVIDIA).name.removeprefix("sm_")
+HIP_ARCH = from_env(Vendor.AMD).name
 
 
 @dataclass(frozen=True)
