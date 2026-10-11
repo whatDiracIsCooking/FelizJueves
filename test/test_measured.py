@@ -10,6 +10,7 @@ and the check SKIPS naming it rather than comparing across compilers.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -168,6 +169,217 @@ def test_a_measured_row_refuses_a_negative_or_missing_field() -> None:
         measured.Measured(**{**fields, "registers": -1})
     with pytest.raises(ValueError):
         measured.Measured(**{**fields, "gpu": ""})
+
+
+# --- #50: schema 1, optional measurements, the read path --------------------
+
+PROV = {"toolchain": "nvcc 13.0", "arch": "sm_86", "host": "h", "gpu": "g",
+        "date": "2026-10-11"}
+
+
+def _key(L: int = 4, arch=SM_86, toolchain: str = "nvcc 13.0") -> MeasuredKey:
+    return MeasuredKey(pq_spec(L), arch, toolchain)
+
+
+# The rows #28 recorded before this schema existed, as they read in the
+# header-only file. A row is pinned while its source_sha256 is the one it was
+# measured from; a --remeasure after an emitter change may move the numbers,
+# never drop the key.
+LEGACY_KEYS = {
+    f"{pq_spec(L).key()}@{arch}/{tc}" for L in range(17)
+    for arch, tc in (("sm_86", "nvcc 13.0"), ("gfx1200", "hipcc / ROCm 7.2.4"))}
+LEGACY = {  # key: (registers, spill_store, spill_load, source_sha256[:12])
+    "coulomb/d0/(0,0|0,0)/b1/j/literal@gfx1200/hipcc / ROCm 7.2.4":
+        (42, 0, 0, "da13d0e3ddc4"),
+    "coulomb/d0/(6,0|6,0)/b1/j/literal@gfx1200/hipcc / ROCm 7.2.4":
+        (192, 5225, 5225, "983a2d085abd"),
+    "coulomb/d0/(8,0|8,0)/b1/j/literal@gfx1200/hipcc / ROCm 7.2.4":
+        (192, 22376, 22376, "e45c2fa006ea"),
+    "coulomb/d0/(0,0|0,0)/b1/j/literal@sm_86/nvcc 13.0": (50, 0, 0, "d1a96a489a52"),
+    "coulomb/d0/(6,0|6,0)/b1/j/literal@sm_86/nvcc 13.0":
+        (255, 18828, 40236, "04f0eaf2348f"),
+    "coulomb/d0/(8,0|8,0)/b1/j/literal@sm_86/nvcc 13.0":
+        (255, 70628, 246632, "30839efc3ee3"),
+}
+
+
+def test_the_rows_28_recorded_survive_the_schema_1_migration() -> None:
+    assert len(LEGACY_KEYS) == 34
+    missing = sorted(LEGACY_KEYS - set(ROWS))
+    assert not missing, f"rows dropped by the migration or the loader: {missing}"
+    for key, (regs, store, load, sha) in LEGACY.items():
+        r = ROWS[key]
+        if r.source_sha256.startswith(sha):
+            assert (r.registers, r.spill_store, r.spill_load) == (regs, store, load)
+
+
+def test_the_loader_keeps_every_field_of_every_row() -> None:
+    # The failure mode the amendment names: a row (or a field of one) silently
+    # dropped or defaulted by a loader change.
+    assert STORE["schema"] == measured.SCHEMA == 1
+    assert set(ROWS) == set(STORE["rows"])
+    for key, row in ROWS.items():
+        assert asdict(row) == STORE["rows"][key], key
+
+
+def test_the_store_says_what_it_is_and_what_it_is_not() -> None:
+    assert "MeasuredKey(spec, arch, toolchain).key()" in STORE["about"]
+    assert "Table 4" in STORE["about"]
+
+
+def test_a_row_written_and_read_back_compares_equal_through_its_key(
+        tmp_path: Path) -> None:
+    p = tmp_path / "m.json"
+    k = _key(4)
+    row = measured.Measured(registers=40, compile_s=1.5, **PROV)
+    measured.save(measured.merge({}, k, row), p)
+    assert measured.load(p) == {k.key(): row}
+    assert measured.rows(spec=k.spec, arch=k.arch, store=p) == {k.key(): row}
+
+
+def test_a_timing_only_row_and_a_compile_only_row_are_both_legal(tmp_path) -> None:
+    timing = measured.Measured(runtime_ns=1234.5, repeats=50, spread_ns=3.0, **PROV)
+    compile_only = measured.Measured(registers=40, spill_store=0, spill_load=0,
+                                     shared_bytes=0, **PROV)
+    assert timing.registers is None and compile_only.runtime_ns is None
+    p = tmp_path / "m.json"
+    measured.save({_key(4).key(): timing, _key(6).key(): compile_only}, p)
+    assert measured.load(p)[_key(4).key()] == timing
+
+
+def test_a_row_that_measures_nothing_is_refused() -> None:
+    with pytest.raises(ValueError, match="records nothing"):
+        measured.Measured(**PROV)
+
+
+@pytest.mark.parametrize("bad", [{"repeats": 0}, {"runtime_ns": -1.0},
+                                 {"registers": 1.5}, {"compile_s": "1"}])
+def test_a_bad_measurement_is_refused(bad) -> None:
+    with pytest.raises(ValueError):
+        measured.Measured(**{"registers": 1, **PROV, **bad})
+
+
+@pytest.mark.parametrize("missing", measured.PROVENANCE)
+def test_a_row_missing_provenance_is_refused(missing, tmp_path) -> None:
+    prov = {k: v for k, v in PROV.items() if k != missing}
+    with pytest.raises(TypeError):
+        measured.Measured(registers=1, **prov)
+    with pytest.raises(ValueError):
+        measured.Measured(registers=1, **{**PROV, missing: ""})
+    # ...and in a file, refused with the path named.
+    p = tmp_path / "m.json"
+    measured.save({}, p)
+    doc = json.loads(p.read_text())
+    doc["rows"][_key().key()] = {"registers": 1, **prov}
+    p.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match=str(p)):
+        measured.load(p)
+
+
+def _doc(tmp_path: Path, **change) -> Path:
+    p = tmp_path / "m.json"
+    measured.save({_key().key(): measured.Measured(registers=1, **PROV)}, p)
+    doc = json.loads(p.read_text())
+    for k, v in change.items():
+        if v is None:
+            doc.pop(k)
+        else:
+            doc[k] = v
+    p.write_text(json.dumps(doc))
+    return p
+
+
+@pytest.mark.parametrize("change", [
+    {"schema": None},  # #28's header-only form
+    {"schema": 2},
+    {"about": None},
+    {"rows": []},
+    {"rows": {_key().key(): {"registers": 1, "bogus": 2, **PROV}}},
+    {"rows": {"not a key": {"registers": 1, **PROV}}},
+    # a row filed under another toolchain's key than the one it records
+    {"rows": {_key(toolchain="nvcc 13.1").key(): {"registers": 1, **PROV}}},
+])
+def test_a_malformed_or_foreign_store_is_refused_with_its_path(
+        change, tmp_path) -> None:
+    p = _doc(tmp_path, **change)
+    with pytest.raises(ValueError, match=str(p)):
+        measured.load(p)
+
+
+def test_a_file_that_is_not_json_is_refused_with_its_path(tmp_path) -> None:
+    p = tmp_path / "m.json"
+    p.write_text("{ not json")
+    with pytest.raises(ValueError, match=str(p)):
+        measured.load(p)
+
+
+def test_an_empty_store_is_not_a_missing_one(tmp_path) -> None:
+    p = tmp_path / "m.json"
+    with pytest.raises(FileNotFoundError):
+        measured.load(p)
+    measured.save({}, p)
+    assert measured.load(p) == {}
+    assert measured.rows(store=p) == {}
+
+
+def test_the_same_key_twice_replaces_rather_than_duplicates() -> None:
+    k = _key()
+    first = measured.Measured(registers=40, **PROV)
+    second = measured.Measured(registers=41, **PROV)
+    got = measured.merge(measured.merge({}, k, first), k, second)
+    assert got == {k.key(): second}
+
+
+def test_two_toolchains_on_one_arch_and_spec_do_not_collide() -> None:
+    a, b = _key(toolchain="nvcc 13.0"), _key(toolchain="nvcc 13.1")
+    ra = measured.Measured(registers=40, **PROV)
+    rb = measured.Measured(registers=38, **{**PROV, "toolchain": "nvcc 13.1"})
+    got = measured.merge(measured.merge({}, a, ra), b, rb)
+    assert len(got) == 2
+    assert measured.rows(spec=a.spec, arch=SM_86, store=got) == got
+    assert measured.rows(toolchain="nvcc 13.1", store=got) == {b.key(): rb}
+
+
+def test_merge_refuses_a_row_filed_under_another_cards_key() -> None:
+    with pytest.raises(ValueError):
+        measured.merge({}, _key(arch=GFX1200),
+                       measured.Measured(registers=1, **PROV))
+
+
+def test_the_read_path_filters_the_real_store() -> None:
+    spec = pq_spec(8)
+    got = measured.rows(spec=spec)
+    assert {r.arch for r in got.values()} == {"sm_86", "gfx1200"}
+    assert all(k.startswith(spec.key() + "@") for k in got)
+    nv = measured.rows(arch=SM_86)
+    assert len(nv) == 17 and measured.rows(arch="sm_86") == nv
+    assert measured.rows(spec=spec, arch=GFX1200).keys() == {
+        k for k in got if "@gfx1200/" in k}
+
+
+def test_the_n_batches_axis_reaches_the_builder() -> None:
+    """measure() takes a Spec, so #52 can sweep n_batches; the builder refuses
+    a split class today, and does so before anything is compiled."""
+    b = measured.BACKENDS["cuda"]
+    assert b.emit(pq_spec(4)) == b.emit(4)
+    split = replace(pq_spec(4), n_batches=3)
+    with pytest.raises(ValueError, match="n_batches"):
+        measured.measure(b, split, compiler="/nonexistent", toolchain="nvcc 13.0",
+                         gpu="g", workdir=Path("/nonexistent"))
+
+
+def test_ptxas_smem_is_read_when_printed() -> None:
+    text = PTXAS.replace("used 0 barriers,", "used 1 barriers, 384 bytes smem,")
+    assert measured.parse_ptxas(text, "pq_L12_p6_q6")["smem_bytes"] == 384
+    assert "smem_bytes" not in measured.parse_ptxas(PTXAS, "pq_L12_p6_q6")
+
+
+def test_the_cli_prints_the_store_and_exits_2_on_a_bad_one(tmp_path, capsys) -> None:
+    assert measured.main([]) == 0
+    assert "registers=" in capsys.readouterr().out
+    bad = tmp_path / "m.json"
+    bad.write_text("{}")
+    assert measured.main(["--store", str(bad)]) == 2
 
 
 # --- re-measure: the recorded rows against the toolchain here ---------------
