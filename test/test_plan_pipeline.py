@@ -134,9 +134,21 @@ def test_replay_literal_fails_on_a_raised_floor(
 def test_replay_searched_without_cuts_is_unset(
     data: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert not (data / "scoreboards" / "jengine" / SEARCHED_CUTS).exists()
+    (data / "scoreboards" / "jengine" / SEARCHED_CUTS).unlink()  # #13 records it
     assert main(["replay", "searched", "--data", str(data)]) == EXIT_UNSET
     assert "no candidates yet" in capsys.readouterr().out
+
+
+def test_replay_searched(capsys: pytest.CaptureFixture[str]) -> None:
+    # #13's recorded cuts, replayed: Table 3 is at or under everywhere, Tables
+    # 1 and 2 are not (test_scoreboards.py pins the cells), so the run FAILs.
+    assert main(["replay", "searched"]) == EXIT_FAIL
+    lines = capsys.readouterr().out.splitlines()
+    assert [tuple(line.split()[1:4]) for line in lines] == [
+        ("jengine/table1", "at_or_under", "FAIL"),
+        ("jengine/table2", "at_or_under", "FAIL"),
+        ("jengine/table3", "at_or_under", "PASS"),
+    ]
 
 
 def test_replay_searched_with_an_unread_cuts_file_could_not_run(
