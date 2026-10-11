@@ -26,8 +26,12 @@
 #              a tier ran.
 #   compile    every translation unit the generate phase wrote, through the
 #              backend's compiler, in parallel, through sccache when it is
-#              available.
-#   device     the `gpu`-marked pytest suite (KERNEL_TEST_ARGS), which is what
+#              available. A WARNING located in a generated unit fails the
+#              phase (exit 1, reported as COMPILE WARNINGS and distinct from
+#              COMPILE FAILED), naming the kernel and the line; one in a
+#              vendor header is reported and does not (config.sh,
+#              NVCC_FLAGS / HIPCC_FLAGS).
+#   device    the `gpu`-marked pytest suite (KERNEL_TEST_ARGS), which is what
 #              compares a kernel's output against the host reference.
 #
 # WHAT THE GENERATOR AND THE DEVICE SUITE ARE TOLD, as environment variables
@@ -281,14 +285,19 @@ else
   # unit sccache can hit on. Compiling in parallel with xargs rather than a build
   # system because there is nothing to express here that a dependency graph
   # would capture -- each unit is independent by construction.
+  #
+  # Each unit's diagnostics go to its OWN log first ($OBJ_DIR/<unit>.log) and
+  # are printed as one block after it finishes: parallel compilers writing to
+  # one pipe interleave mid-line, and the warning scan below reads per unit.
   set +e
   # shellcheck disable=SC2016  # the single quotes are the point: $1/$OBJ_DIR
   # are expanded by the xargs CHILD, not here
   printf '%s\n' "${sources[@]}" \
     | xargs -P "${jobs:-1}" -I{} -- \
         env OBJ_DIR="$obj_dir" bash -c \
-        'src="$1"; shift; out="$OBJ_DIR/$(basename "${src%.*}").o";
-         echo "   cc $(basename "$src")"; exec "$@" -c "$src" -o "$out"' \
+        'src="$1"; shift; stem="$OBJ_DIR/$(basename "${src%.*}")";
+         "$@" -c "$src" -o "$stem.o" >"$stem.log" 2>&1; rc=$?;
+         { echo "   cc $(basename "$src")"; cat "$stem.log"; } ; exit "$rc"' \
         _ {} "${launcher[@]}" "$compiler_path" "${compiler_flags[@]}" \
     2>&1 | tee "$report_dir/compile.log"
   compile_rc=${PIPESTATUS[1]}
@@ -307,6 +316,64 @@ else
     note "be tested, and a pass from a stale object would be a lie."
     note "report    ${report_dir#"$REPO_ROOT"/}"
     exit 1
+  fi
+
+  # A WARNING IN GENERATED TEXT FAILS THE TIER (#92). The flags that make the
+  # compilers say it are NVCC_FLAGS / HIPCC_FLAGS in config.sh; this is the
+  # verdict. It is a FILTER BY FILE, not -Werror: a diagnostic counts against
+  # the generator only when its location is the generated unit itself, so a
+  # warning inside a vendor header, or one with no source location at all (a
+  # ptxas/linker remark), is reported here and never fails the run -- the
+  # generator cannot fix it. Both spellings are matched: nvcc's front end
+  # writes `file(LINE): warning #N-D: ...`, clang and gcc write
+  # `file:LINE:COL: warning: ...`. hipcc compiles each unit for the device and
+  # for the host and says the same thing twice; duplicates are dropped.
+  #
+  # Exit 1, like a failed compile: the generator produced bad text. Exit 2
+  # keeps meaning "could not run" and nothing here can produce one.
+  gen_warnings=()
+  other_warnings=0
+  for src in "${sources[@]}"; do
+    kernel=$(basename "${src%.*}")
+    log="$obj_dir/$kernel.log"
+    [ -s "$log" ] || continue
+    # One awk pass per unit: `G <text>` for a warning located in the generated
+    # unit, `O` for any other warning diagnostic (a header, a toolchain stage).
+    while IFS= read -r hit; do
+      case $hit in
+        G\ *) gen_warnings+=("${hit#G }") ;;
+        O)    other_warnings=$((other_warnings + 1)) ;;
+      esac
+    done < <(awk -v f="$src" -v k="$kernel" '
+      index($0, f) == 1 {
+        rest = substr($0, length(f) + 1)
+        if (rest ~ /^\([0-9]+\): warning/ || rest ~ /^:[0-9]+:([0-9]+:)? warning:/) {
+          line = rest; sub(/^[(:]/, "", line); sub(/[^0-9].*/, "", line)
+          msg = rest; sub(/^[^ ]* warning:? */, "", msg)
+          out = "kernel " k ", line " line ": " msg
+          if (!(out in seen)) { seen[out] = 1; print "G " out }
+        }
+        next
+      }
+      /(\([0-9]+\)|:[0-9]+(:[0-9]+)?): warning/ || /^(ptxas|nvlink|ld\.lld|lld)[^:]*warning/ {
+        if (!($0 in seen)) { seen[$0] = 1; print "O" }
+      }' "$log")
+  done
+
+  if [ "${#gen_warnings[@]}" -gt 0 ]; then
+    printf '%s\n' "${gen_warnings[@]}" > "$report_dir/warnings.log"
+    note "COMPILE WARNINGS: ${#gen_warnings[@]} warning(s) in generated text --"
+    note "every unit compiled (no error), but a warning in emitted text is a"
+    note "generator bug and fails the tier. Fix the emitter; do not relax a flag."
+    for w in "${gen_warnings[@]}"; do note "  $w"; done
+    note "the device suite is NOT run."
+    note "report    ${report_dir#"$REPO_ROOT"/}"
+    exit 1
+  fi
+  note "warnings: none in generated text"
+  if [ "$other_warnings" -gt 0 ]; then
+    note "          ($other_warnings warning(s) OUTSIDE it -- a vendor header or a"
+    note "          toolchain stage; reported, not failing: see compile.log)"
   fi
 fi
 
