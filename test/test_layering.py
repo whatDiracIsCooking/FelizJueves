@@ -108,7 +108,8 @@ RULES: dict[str, Rule] = {
         kernel="the builder is what the interpreter checks",
         emit="interpreting is not emitting; neither may lean on the other"),
     "lower": _rule(
-        "IR -> IR rewrites (register recycling, #24)",
+        "IR -> IR rewrites: lower.py (register recycling, #24) and passes.py "
+        "(the levers, first `atomize`, #48)",
         ("ir",),
         reference=_GROUND_TRUTH,
         emit="lowering is backend-neutral; a backend consumes its output",
@@ -177,6 +178,7 @@ RULE_OF: dict[str, str] = {
     "ir": "ir",
     "interp": "interp",
     "lower": "lower",
+    "passes": "lower",
     "recurrence": "builder",
     "kernel": "builder",
     "emit": "emit",
@@ -220,6 +222,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ir": (),
     "interp": ("ir",),
     "lower": ("ir",),
+    "passes": ("ir",),
     "recurrence": ("ir", "plan.dag", "plan.pipeline", "plan.schedule",
                    "plan.targets", "spec"),
     "kernel": ("ir", "plan.pipeline", "plan.schedule", "plan.targets",

@@ -7,8 +7,8 @@
       "statement": "Alg. 1 line 10 writes J_p to global memory without atomics; once a class is split into batches, several kernels contribute to the same J_p, so the write needs atomics -- as §5 itself corrects.",
       "source": "[JEngine, v2, Alg. 1 vs §5]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Alg. 1 presents the global write as atomic-free and §5 corrects it; no kernel is generated yet, so nothing can be held to the atomic write."
+      "status": "asserted",
+      "test": "test/test_passes.py::test_atomize_writes_j_only_by_atomic_add"
     },
     {
       "id": "jengine/batch-count-multiple-of-3",
