@@ -227,10 +227,20 @@ RUN cd /tmp/uvroot && uv sync --frozen --no-install-project && rm -rf /tmp/uvroo
 # .devcontainer/*.json set `remoteUser: ubuntu`; docker/compose.yaml instead
 # passes HOST_UID:HOST_GID, which is why /opt/venv is group-readable rather
 # than owned by a user this image had to invent.
+#
+# /home/ubuntu/.claude IS LISTED EXPLICITLY, and that is not redundant with its
+# two children below: `install -d -o 1000 -g 1000 a/b` applies the owner only to
+# the LAST component and creates `a` with the default, root. With just the
+# children listed, ~/.claude came out root-owned in the image and
+# .devcontainer/seed-claude-config.sh exited 1 on its writability check -- which
+# read as a problem with the volume and was not one. The devcontainers now bind
+# the host's ~/.claude over this path anyway, so it is docker/compose.yaml,
+# which does not, that still depends on this line.
 RUN install -d -o 1000 -g 1000 \
         /workspace \
         /tmp/pytest-of-ubuntu \
         /home/ubuntu/.sccache \
+        /home/ubuntu/.claude \
         /home/ubuntu/.claude/plugins \
         /home/ubuntu/.claude/backups
 
