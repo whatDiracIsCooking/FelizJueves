@@ -1,8 +1,13 @@
 """The `[p|q]` kernel of `[JEngine, v2, Alg. 1]`, built as a `Kernel`, not text.
 
-    build_pq_kernel(L | spec) -> Kernel
+    build_pq_kernel(L | spec) -> Kernel              n_batches = 1
+    build_pq_kernels(spec)    -> tuple[Kernel, ...]  one per batch, atomized
 
-One kernel per class, ONE BATCH per class (n_batches = 1), no atomics. It
+`build_pq_kernel` is one kernel per class, ONE BATCH (n_batches = 1), no
+atomics; `build_pq_kernels` is a split class as a set of kernels, one per
+batch of the plan, each contracting only its batch's targets and each
+writing `J_p` through `passes.atomize` (see its docstring for the launch
+convention and why the asymmetry is deliberate). Each
 consumes the plan (pipeline steps 1-3: the sieved MILD DAG), the schedule
 (step 4) and the IR, and is pipeline step 5's input: a backend (`emit/`) only
 spells it. It is not under `plan/`, whose package is host-side counting.
@@ -37,11 +42,12 @@ THE CONTRACT, from docs/implementation/j_engine.md, each as an IR node:
   the kernel as a `Note`. Unsorted kets make the break a WRONG ANSWER, not a
   slow one (test/test_kernel.py shows it);
 - `J_p` accumulated in a `Space.SHARED` array, one slot per lane, then one
-  `WarpReduce` per `p`;
+  `WarpReduce` per `p` -- per `p` the batch TOUCHES (`batch_contraction`);
+  in the one-batch case that is every `p`;
 - the global write is a plain `Assign` by lane 0, one per bra index per
-  block, NOT an `AtomicAdd`: this is the single-batch case. `[JEngine, v2,
+  block, NOT an `AtomicAdd`, in the single-batch case. `[JEngine, v2,
   Alg. 1]` presents line 10 as atomic-free and §5 corrects it once a class is
-  split -- milestone 3, which is why `n_batches != 1` is refused here.
+  split, which is why a batch kernel's write is atomized.
 
 ONLY THE KET CONTRACTION IS AT SHELL-QUARTET LEVEL: `J_p = SUM_q [p|q] D_q`
 ([JEngine, v2, eqs. 20-22]). The `E` transform is bra-pair-only and is not in
@@ -49,7 +55,8 @@ this kernel, so it never materialises `[ab|cd]`: the only per-quartet values
 are the recurrence's LOCAL scalars, and the only array it declares is the
 shared `J_p` accumulator.
 
-SHARED FOOTPRINT: `n_p * blockDim.y * 8` bytes. The default class for an int
+SHARED FOOTPRINT: `n_p * blockDim.y * 8` bytes for one batch, and for a
+batch the number of `p` it touches in place of `n_p`. The default class for an int
 L (`pq_spec`) splits L as lp = ceil(L/2), lq = floor(L/2), so for L <= 16,
 lp <= 8, n_p <= 165, and the accumulator is at most 42 240 bytes at 32
 lanes -- under the 48 KiB both of this box's cards give a block. A bra-heavy
@@ -82,6 +89,8 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
+from felizjueves.passes import atomize
+from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import R, hermite_targets
@@ -98,7 +107,9 @@ __all__ = [
     "JSH",
     "KET",
     "SORTED_KETS",
+    "batch_contraction",
     "build_pq_kernel",
+    "build_pq_kernels",
     "bra_functions",
     "ket_functions",
     "launch_shape",
@@ -122,11 +133,13 @@ SORTED_KETS = (
 # ---------------------------------------------------------------------------
 
 
-def pq_spec(L: int, levers: tuple[str, ...] = ()) -> Spec:
-    """The default class of total L: (ceil(L/2), 0 | floor(L/2), 0), one batch."""
+def pq_spec(L: int, levers: tuple[str, ...] = (), n_batches: int = 1) -> Spec:
+    """The default class of total L: (ceil(L/2), 0 | floor(L/2), 0), one
+    batch unless `n_batches` says otherwise."""
     if type(L) is not int or L < 0:
         raise ValueError(f"L = {L!r} is not an int >= 0")
-    return Spec(Operator.COULOMB, 0, ((L + 1) // 2, 0, L // 2, 0), Target.J, levers)
+    return Spec(Operator.COULOMB, 0, ((L + 1) // 2, 0, L // 2, 0), Target.J,
+                levers, n_batches)
 
 
 def split(spec: Spec) -> tuple[int, int]:
@@ -187,7 +200,8 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
 
     `cls` is a total L (the class `pq_spec(L)`) or a `Spec`. The recurrence is
     `pipeline.plan(spec)`'s DAG in `schedule`'s order; `n_batches != 1` is
-    refused, because a split class needs the atomic write-back of milestone 3.
+    refused, because a split class writes `J_p` from several kernels and
+    needs atomics: that is `build_pq_kernels`.
     """
     spec = pq_spec(cls) if isinstance(cls, int) else cls
     if not isinstance(spec, Spec):
@@ -195,17 +209,94 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
     if spec.n_batches != 1:
         raise ValueError(
             f"n_batches = {spec.n_batches}: a split class writes J_p from "
-            "several kernels and needs atomics ([JEngine, v2, §5]); milestone 3")
+            "several kernels and needs atomics ([JEngine, v2, §5]); "
+            "build_pq_kernels builds it")
+    lp, lq = split(spec)
+    (dag,) = plan(spec).dags
+    if name is None:
+        name = f"pq_L{lp + lq}_p{lp}_q{lq}"
+    return _pq_kernel(spec, dag, name, "one batch")
+
+
+def build_pq_kernels(spec: Spec) -> tuple[Kernel, ...]:
+    """One kernel per batch of `plan(spec)`, in partition order, each atomized.
+
+    `n_batches == 1` delegates to `build_pq_kernel`: one kernel, a plain
+    write, byte-identical to it -- so its golden files stay the control.
+
+    A batch's kernel is named `pq_L{L}_p{lp}_q{lq}_{direction}{a}_{b}`, after
+    `recurrence.build_recurrence_kernel`'s convention, and contracts only the
+    `(p, q)` pairs whose `p + q` is one of that batch's targets (see
+    `batch_contraction`); its write-back is `passes.atomize`d.
+
+    THE ASYMMETRY IS DELIBERATE. The one-batch kernel keeps the plain write
+    and a split one is atomic throughout: `[JEngine, v2, Alg. 1]` line 10 is
+    atomic-free, and §5 corrects it only for the split case, where several
+    kernels write the same `J_p`. Do not "unify" the two without a
+    measurement -- an atomic the one-batch class does not need is a cost.
+
+    THE LAUNCH, a convention rather than a type (its consumer, the kernel
+    tier, has not fixed a signature): every kernel takes the same arguments
+    and the same `launch_shape(n_bra, lanes)`, and they run in the returned
+    order -- `Plan.dags` order -- into ONE `J` that the caller ZEROES first.
+    Each batch adds its partial `J_p`; the batches' targets partition the
+    class, so the partial sums add up to the whole. The sorted-ket
+    precondition (`SORTED_KETS`) is per launch, so every batch carries it.
+    The fundamentals are recomputed per batch, on purpose ([JEngine, v2,
+    §5]): hoisting them across batches is a lever needing a measurement, and
+    would reintroduce the cross-batch dependency batching exists to remove.
+    """
+    if not isinstance(spec, Spec):
+        raise TypeError(f"build_pq_kernels takes a Spec, not {spec!r}")
+    if spec.n_batches == 1:
+        return (build_pq_kernel(spec),)
+    lp, lq = split(spec)
+    out = []
+    for i, dag in enumerate(plan(spec).dags):
+        direction, a, b = dag.batch
+        name = f"pq_L{lp + lq}_p{lp}_q{lq}_{direction}{a}_{b}"
+        head = (f"batch {i + 1} of {spec.n_batches}, "
+                f"{direction.upper()}_{{{a},{b}}}")
+        out.append(atomize(_pq_kernel(spec, dag, name, head)))
+    return tuple(out)
+
+
+Contraction = tuple[tuple[int, R, tuple[tuple[int, R], ...]], ...]
+
+
+def batch_contraction(spec: Spec, dag: BatchDag) -> Contraction:
+    """What one batch's kernel contracts: `((i, p, ((j, q), ...)), ...)`.
+
+    Every bra function `p` (index `i` in `bra_functions(spec)`) with at least
+    one ket function `q` (index `j` in `ket_functions(spec)`) such that
+    `(p + q, 0)` is one of `dag.targets`, with those `q` in order. A `p` with
+    no such `q` is UNTOUCHED by the batch and is absent: no shared slot, no
+    `WarpReduce`, no write -- not an added zero. This is the ONE list the
+    kernel's shared extent, its reductions and its write-back all key on.
+    """
+    out = []
+    for i, p in enumerate(bra_functions(spec)):
+        qs = tuple((j, q) for j, q in enumerate(ket_functions(spec))
+                   if ((p[0] + q[0], p[1] + q[1], p[2] + q[2]), 0) in dag.targets)
+        if qs:
+            out.append((i, p, qs))
+    return tuple(out)
+
+
+def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
+    """The [p|q] kernel over one batch's DAG, with the plain lane-0 write."""
     lp, lq = split(spec)
     ps, qs = bra_functions(spec), ket_functions(spec)
-    (dag,) = plan(spec).dags
     order = schedule(dag)
+    touched = batch_contraction(spec, dag)
+    if not touched:
+        raise ValueError(f"batch {dag.batch} of {spec.key()} contracts nothing")
 
     k, ty = Var(KET), Call(Fn.THREAD_Y)
     bra = Var("bra")
 
-    def jsh(i: int, lane: Expr = ty) -> Index:
-        return Index(JSH, (Lit(i), lane))
+    def jsh(slot: int, lane: Expr = ty) -> Index:
+        return Index(JSH, (Lit(slot), lane))
 
     def ket(arr: str, *more: Expr) -> Index:
         return Index(arr, (k, *more))
@@ -222,17 +313,19 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
              "20-22]: the only shell-quartet-level contraction; [ab|cd] is "
              "never formed"),
     ]
-    for i, p in enumerate(ps):
+    for slot, (_, p, pairs) in enumerate(touched):
         plus: list[Expr] = []
         minus: list[Expr] = []
-        for j, q in enumerate(qs):
+        for j, q in pairs:
             r = (p[0] + q[0], p[1] + q[1], p[2] + q[2])
             term = _c(Fn.MUL, Var(node_name((r, 0))), ket("D", Lit(j)))
             (minus if sum(q) % 2 else plus).append(term)
-        value = _c(Fn.ADD, jsh(i), _tree(plus))
+        value: Expr = jsh(slot)
+        if plus:
+            value = _c(Fn.ADD, value, _tree(plus))
         if minus:
             value = _c(Fn.SUB, value, _tree(minus))
-        contract.append(Assign(jsh(i), value))
+        contract.append(Assign(jsh(slot), value))
 
     ket_body: tuple[Stmt, ...] = (
         Decl("bound", Scalar.F64,
@@ -255,7 +348,7 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
     # --- one bra index: zero, strip-mine the kets, reduce, write ------------
     per_bra: list[Stmt] = [
         Note("accumulate J_p in shared memory, one slot per lane"),
-        *(Assign(jsh(i), Lit(0.0)) for i in range(len(ps))),
+        *(Assign(jsh(slot), Lit(0.0)) for slot in range(len(touched))),
         *(Decl(f"P{d}", Scalar.F64, init=Index("P", (bra, Lit(d))))
           for d in range(3)),
         Decl("ze", Scalar.F64, init=Index("zeta", (bra,))),
@@ -264,25 +357,27 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
         For(KET, ty, Var("n_ket"), Call(Fn.BLOCK_DIM_Y), ket_body),
         Note("reduce J_p across the warp: every lane sees the sum"),
     ]
-    for i in range(len(ps)):
-        per_bra += [Decl(f"Jp{i}", Scalar.F64), WarpReduce(Var(f"Jp{i}"), jsh(i))]
+    for slot, (i, _, _) in enumerate(touched):
+        per_bra += [Decl(f"Jp{i}", Scalar.F64),
+                    WarpReduce(Var(f"Jp{i}"), jsh(slot))]
     per_bra += [
         Note("plain write, NOT atomic: one batch per class, so this kernel is "
              "the only writer of J_p. [JEngine, v2, Alg. 1] line 10 is "
              "atomic-free; §5 corrects it once a class is split (milestone 3)"),
         If(_c(Fn.LT, ty, Lit(1)), tuple(
             Assign(Index("J", (bra, Lit(i))), Var(f"Jp{i}"))
-            for i in range(len(ps)))),
+            for i, _, _ in touched)),
     ]
 
     body: tuple[Stmt, ...] = (
         Note(f"[JEngine, v2, Alg. 1]: J_p = SUM_q [p|q] D_q, class lp={lp} "
-             f"lq={lq} (L={lp + lq}), one batch, no atomics"),
+             f"lq={lq} (L={lp + lq}), {head}, no atomics"),
         Note(SORTED_KETS),
         Note("launch: blockDim = (1, warp width), one warp per bra index"),
         Decl("bra", Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
             Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
-        Decl(JSH, Scalar.F64, (Lit(len(ps)), Call(Fn.BLOCK_DIM_Y)), Space.SHARED),
+        Decl(JSH, Scalar.F64, (Lit(len(touched)), Call(Fn.BLOCK_DIM_Y)),
+             Space.SHARED),
         If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
     )
     nb, nk = Var("n_bra"), Var("n_ket")
@@ -297,6 +392,4 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
         _f64("D", shape=(nk, Lit(len(qs)))),
         _f64("J", intent=Intent.OUT, shape=(nb, Lit(len(ps)))),
     )
-    if name is None:
-        name = f"pq_L{lp + lq}_p{lp}_q{lq}"
     return Kernel(name, params, body)

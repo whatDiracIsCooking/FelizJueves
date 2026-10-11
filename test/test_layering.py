@@ -117,8 +117,10 @@ RULES: dict[str, Rule] = {
     "builder": _rule(
         "plan -> IR: recurrence.py (the McMurchie-Davidson recurrence as IR, "
         "#23) and kernel.py (the [p|q] contract, Alg. 1, #25). They read the "
-        "plan and the key and produce a vendor-neutral `Kernel`",
-        ("spec", "plan", "ir", "recurrence"),
+        "plan and the key and produce a vendor-neutral `Kernel`; a split "
+        "class's kernels are built then `passes.atomize`d (#49), so a "
+        "builder may apply a pass",
+        ("spec", "plan", "ir", "recurrence", "passes"),
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific "
              "(#25)",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
@@ -225,8 +227,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "passes": ("ir",),
     "recurrence": ("ir", "plan.dag", "plan.pipeline", "plan.schedule",
                    "plan.targets", "spec"),
-    "kernel": ("ir", "plan.pipeline", "plan.schedule", "plan.targets",
-               "recurrence", "spec"),
+    "kernel": ("ir", "passes", "plan.dag", "plan.pipeline", "plan.schedule",
+               "plan.targets", "recurrence", "spec"),
     "emit": (),
     "emit._c": ("device", "ir"),
     "emit.cuda": ("device", "emit._c", "ir"),

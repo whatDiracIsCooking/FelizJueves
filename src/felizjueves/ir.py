@@ -454,8 +454,9 @@ class Param:
     `shape` is an array's extents, row-major, when it has more than one
     subscript (`()` leaves a 1-D array's length to the caller). It is an IR
     fact because a backend lays a global array out flat and needs the
-    trailing extents to linearise `P[bra, d]` (the interpreter, which is
-    handed ndarrays, does not yet check them against it). Extents are
+    trailing extents to linearise `P[bra, d]`; the interpreter checks every
+    input against it at launch (its size must be the extents' product, and
+    each subscript is bounds-checked per extent). Extents are
     evaluated at launch, so they may use only I32 literals, scalar `Param`s
     and ADD SUB MUL DIV.
     """
