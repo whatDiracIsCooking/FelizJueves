@@ -11,12 +11,36 @@
       "test": "test/test_passes.py::test_atomize_writes_j_only_by_atomic_add"
     },
     {
+      "id": "jengine/alg1-line10-factor-four",
+      "statement": "Alg. 1 line 10 writes J[p] = 4 Jshm[p], and the factor 4 is never explained -- not in the algorithm, §3.3 or eqs. 19-22, where J_p = SUM_q [p|q] D_q carries no factor. It can only be a convention of the authors' pair lists or density (unique shell pairs, a doubled density), which the text does not state. This repo's kernel writes J_p unscaled and puts the only pair weight host-side (ao/j.py's unique sweep: ket off-diagonal weight 2, bra blocks scattered to both triangles), and J_mn then matches libcint's get_jk.",
+      "source": "[JEngine, v2, Alg. 1]",
+      "kind": "defect",
+      "status": "pending",
+      "reason": "Witnessed, not yet marked: test/test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint compares J_mn built from the generated kernel's unscaled J_p against libcint, so a factor 4 on the write would put every element off by 4. That test already carries jengine/theta-undefined's mark and lies outside #120's partition; #116 places a second mark there (or on a sibling test) or says why not."
+    },
+    {
+      "id": "jengine/batch-count-is-hardware-dependent",
+      "statement": "The best batch count per class depends on the GPU's memory system, not only on the class: on V100, A100 and GH200 the newer parts (larger L2) favour fewer batches -- L = 10 is best at 3 on A100 and GH200 and at 6 on V100, and [5|4] collapses on V100 (and less on A100) because its spills overflow L2 -- while above L = 12 the ranking agrees across all three despite their bandwidths, which the paper reads as high-L kernels being bound by memory latency rather than bandwidth; so the count should be chosen per hardware.",
+      "source": "[JEngine, v2, §7.3.1, Figs. 9-10]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "Timings of the authors' kernels on three NVIDIA data-centre GPUs (V100, A100, GH200), none of which this repo has; the latency reading rests on their Nsight Compute analysis. What is measured here is a different experiment on different hardware: data/measured/batch_recommendation.json (#56, recomputed by test/test_batchreport.py) gives each of OUR two cards its own best n_batches per (L, input), and it records where sm_86 and gfx1200 disagree. Whether batching moves our kernels across our ridge is #114's own claim, not this one."
+    },
+    {
       "id": "jengine/batch-count-multiple-of-3",
       "statement": "A split class's batch count is a multiple of three, k sub-batches per direction, and the unsplit class is the one batch: partition refuses any count that is neither 1 nor a positive multiple of 3 (0, 2, 4, 5, a negative, and a non-int such as 3.0 or True). The paper's further claim that symmetry-breaking splits are worse is its own record, jengine/symmetry-breaking-splits-are-worse.",
       "source": "[JEngine, v2, §5]",
       "kind": "shape",
       "status": "asserted",
       "test": "test/test_plan_batching.py::test_an_illegal_batch_count_raises"
+    },
+    {
+      "id": "jengine/batch-overlap-is-fundamentals-and-axials",
+      "statement": "Under MILD (before the sieve), the only intermediates two batches of DIFFERENT directions share are the fundamentals (0,0,0)^(m), m > 0, and two sub-batches of the SAME direction share only axial intermediates (at most one non-zero component). Hence each batch kernel re-evaluates the Boys function for itself.",
+      "source": "[JEngine, v2, §5, Figs. 5-6]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "Witnessed, not yet marked: test/test_plan_dag.py::test_directions_share_only_fundamentals and ::test_sub_batches_of_one_direction_share_only_axials check exactly the two halves on our MILD DAGs over the published grid (L = 7..16, 3/6/9 and 6/9 batches). One record names one test, so the record is either split in two or one test made to hold both halves; both tests lie outside #120's partition, and #116 does it."
     },
     {
       "id": "jengine/batch-tie-break",
@@ -27,12 +51,44 @@
       "test": "test/test_plan_mild.py::test_mild_and_the_batching_pass_break_ties_oppositely"
     },
     {
+      "id": "jengine/batching-crosses-the-ridge",
+      "statement": "Batching moves [p|q] kernels from memory-bound to compute-bound on the roofline: [5|5] is compute-bound from 3 batches and gains nothing beyond, [6|6] stays memory-bound at 1 and 3 and crosses at 6, and [7|7] needs at least 9 -- with some kernels of its 9-batch partition still memory-bound, so more batches might still help.",
+      "source": "[JEngine, v2, §7.2, Fig. 7]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "A roofline of the authors' kernels on an A100 (gly40/cc-pVQZ): its ridge is that card's fp64 peak over its bandwidth, and both the kernels and the card are out of reach here. #114 asks the same question of OUR kernels on sm_86 and gfx1200, under a rule declared before its rows exist, and records it as this repo's own claim; that answer, either way, is about our cards' ridge and does not discharge this one (the same split as jengine/nine-batches-suffice)."
+    },
+    {
+      "id": "jengine/batching-reduces-spills",
+      "statement": "Raising the batch count lowers register use and spills, for two reasons together: fewer intermediates per batch, and fewer targets per batch, which narrows the J_p contraction each kernel carries.",
+      "source": "[JEngine, v2, §7.1]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "The evidence is Table 4: spill and register counts of the authors' kernels through their compiler on an A100, deliberately not transcribed (data/literature/jengine/README.md says why). Our own spills on sm_86 and gfx1200 are measured (data/measured/kernels.json) and are a different claim; jengine/nine-batches-suffice's reason records one place where they do not fall with the batch count (gfx1200, 9 -> 12)."
+    },
+    {
       "id": "jengine/batching-trades-flops-for-intermediates",
       "statement": "Raising the batch count lowers intermediates and targets per batch and raises total FLOPs across batches, because intermediates shared between batches are recomputed.",
       "source": "[JEngine, v2, §5]",
       "kind": "monotonicity",
       "status": "pending",
       "reason": "Post-sieve (#12) it holds at most cells but not at all of them. FLOPs are flat 1->3 at L = 7 (425, 425, where the paper prints 424, 425), and max intermediates per batch are flat 6->9 at L = 10 (95, 95). test/test_plan_sieve.py::test_batching_post_sieve pins both exceptions and carries no mark. #108's widened seed-order search (58 rules, plan/recovery.py seed_orders(widened=True), recovered cut) closes the L = 7 FLOP exception under 37 of them (424 -> 425, as printed) but moves no default, so the literal plan stays flat there; it does not close L = 10's flat intermediates, which are 95, 95 under all 58 orders and are 95, 95 in the paper's own Table 2. And the paper's Table 2 RISES at L = 7 from 6 to 9 batches (39 -> 40), which the recovered cut reproduces under all 58. So the source's own numbers contradict the intermediates half of the claim at two steps; test/test_plan_recovery.py::test_the_batching_exceptions_under_the_widened_family pins all three. The claim stays unasserted: no test can hold us to a direction the source's table does not keep."
+    },
+    {
+      "id": "jengine/best-batch-count-rises-with-l",
+      "statement": "The fastest batch count rises with L: no batching gain below L = 7, then 3 batches for most kernels at 8 <= L <= 10, 6 at 11-12 and 9 from 13 -- and the choice is largely independent of the molecule's size and composition (polyglycine, water, boron nitride), so a per-class table read off Fig. 8 serves as a general dispatch.",
+      "source": "[JEngine, v2, §7.3, Fig. 8]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "Kernel timings of the authors' kernels on an A100 inside EXESS, over molecules this repo does not run. The analogue measured here is a different experiment: data/measured/batch_recommendation.json (#56) derives a best n_batches per (L, card) from wall-clock on two synthetic inputs, and the two inputs (wide-T, near-T) do not always pick the same count, which is a dependence on the input that the paper's system-independence does not speak to. Dispatch is specification only in this repo (j_engine.md)."
+    },
+    {
+      "id": "jengine/conclusion-overstates-compute-bound",
+      "statement": "§8 says the batching strategy transitioned ALL high-angular-momentum kernels from memory-bound to compute-bound; §7.2 says some kernels of the 9-batch [7|7] partition remain memory-bound. The two sentences cannot both hold.",
+      "source": "[JEngine, v2, §8 vs §7.2]",
+      "kind": "defect",
+      "status": "unverifiable",
+      "reason": "A contradiction between two sentences of the source about the authors' own A100 measurement; nothing in this repo depends on which one they meant. It is recorded because the distinction it blurs -- a class crossing the ridge versus every kernel of its partition crossing -- is exactly the cell-level versus per-kernel split #114 declares separately for our cards."
     },
     {
       "id": "jengine/eq17-1y-misprint",
@@ -43,12 +99,52 @@
       "test": "test/test_eq17_witness.py::test_y_reduction_shifts_by_the_unit_vector_0_1_0"
     },
     {
+      "id": "jengine/fig4-l6-six-batches",
+      "statement": "At L = 6 the six batches are X_{0,2}, X_{3,6}, Y_{1,2}, Y_{3,6}, Z_{1,2}, Z_{3,6}: one cut (after a maximum component of 2) shared by all three directions, Y_{0,2} and Y_{1,2} (likewise Z) holding the same targets because no Y or Z target has a maximum component of 0.",
+      "source": "[JEngine, v2, §5, Fig. 4]",
+      "kind": "membership",
+      "status": "pending",
+      "reason": "Witnessed, not yet marked: test/test_plan_batching.py::test_figure_4s_cut_at_l_6 asserts partition(6, 6) is this cut. That test lies outside #120's partition; #116 places the mark."
+    },
+    {
+      "id": "jengine/j-speedup-tracks-high-l-share",
+      "statement": "The whole-J speedup from batching varies across molecules because of composition, not because batching a class becomes less effective: hydrogen-rich systems (water) spend less of their time in high-L classes than hydrogen-poor ones (boron nitride), and small systems lose some of the gain to kernel-launch overhead.",
+      "source": "[JEngine, v2, §7.4, Fig. 11]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "An explanation of the authors' whole-J timings in EXESS on an A100 over water clusters, polyglycine and boron nitride; this repo has neither the engine nor the systems at that size, and builds J_mn host-side (ao/) with only J_p generated."
+    },
+    {
+      "id": "jengine/m-weight-minus-two-theta-squared",
+      "statement": "eq. 13 prints the fundamental's m-dependence as (-2 theta)^m; it is (-2 theta^2)^m (McMurchie-Davidson's (-2 alpha)^j with alpha = theta^2). Only the latter makes d/dPQ_x [0]^(m) = PQ_x [0]^(m+1), which eqs. 10-12 assume, so (-2 theta)^m is wrong in every class that reaches m > 0 (every class above (ss|ss)) whenever theta != 1. reference.pq forms (-2 theta^2)^m, and ERI blocks built from it match libcint's int2e class by class; with the base perturbed -- the printed -2 theta, or -2 theta^2 scaled by 1 + 1e-9 -- every fast-tier class above (ss|ss) fails that comparison and (ss|ss), which reaches only m = 0, is bit-for-bit unchanged (#120).",
+      "source": "[JEngine, v2, eq. 13]",
+      "kind": "defect",
+      "status": "asserted",
+      "test": "test/test_ao_eri.py::test_the_m_weight_is_minus_two_theta_squared"
+    },
+    {
+      "id": "jengine/memory-bound-grows-with-l",
+      "statement": "At one batch, kernels go from compute-bound at low L (L <= 6, whose intermediates fit on chip) to progressively memory-bound as L rises, because the intermediates spill out of registers; moving a kernel back to compute-bound can be worth up to an order of magnitude.",
+      "source": "[JEngine, v2, §2, Fig. 1]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "A roofline of the authors' kernels on an A100 (gly20/cc-pVQZ), and the L <= 6 boundary is that card's. Our own one-batch kernels over the subgrid's L get roofline rows on sm_86 and gfx1200 in #112, which is a different experiment: our cards' fp64 ridge is far below an A100's, so the boundary need not fall anywhere near L = 6."
+    },
+    {
       "id": "jengine/mild-keeps-rules-1-2-3-5",
       "statement": "The MILD tree obeys Johnson, Gill & Pople's optimal-tree rules 1, 2, 3 and 5: axial integrals {0 0 j} always present; reduce the unit component of {0 1 j}; never reduce the j of {1 1 j}; reduce the 2 of {0 2 j}.",
       "source": "[JEngine, v2, §4.1]",
       "kind": "shape",
       "status": "asserted",
       "test": "test/test_plan_mild.py::test_johnsons_rule_holds_on_every_node"
+    },
+    {
+      "id": "jengine/mild-suboptimal-from-l5",
+      "statement": "The MILD tree alone (before the sieve) is optimal in intermediates below L = 5 and not from L = 5 on. Held where plan/optimum.py (#106) is exact, L <= 5: MILD's one-batch point equals the exact frontier for L <= 4, and at L = 5 it is (51 intermediates, 161 FLOPs) against the frontier's single point (48, 160), strictly dominated (#111's measurement, data/literature/jengine/mild_vs_optimum.json). L >= 6 is beyond the exact search; a beam there bounds the gap from below only.",
+      "source": "[JEngine, v2, §4.1]",
+      "kind": "shape",
+      "status": "asserted",
+      "test": "test/test_mild_vs_optimum.py::test_mild_against_the_exact_optimum"
     },
     {
       "id": "jengine/mild-tie-break",
@@ -75,6 +171,14 @@
       "reason": "The claim is relative to the paper's register and shared-memory budget on their A100, which no measurement here reaches. What #60 measured instead, on OUR cards and under a definition declared before the 12-batch rows existed (felizjueves.measured's docstring, NINE AGAINST TWELVE: 9 suffices at (arch, L) iff the 12-batch cell neither has fewer summed spills nor is faster, on the wide-T or near-T input, by more than the larger IQR; on an arch iff at every L in {7, 10, 13, 16}), is that 9 does NOT suffice on either card. sm_86 (nvcc 13.0): b 12 spills less at L 13 (14472 -> 12048 bytes) and L 16 (181224 -> 146020), though it is slower than b 9 at every L on both inputs. gfx1200 (hipcc / ROCm 7.2.4): b 12 spills more at every spilling L and is slower on wide-T everywhere, but is faster on near-T at L 16 (303.5 -> 299.4 ms, beyond the 0.8 ms IQR). #93 re-timed every subgrid cell behind the card-utilisation gate, one session per card, and the verdict is unchanged cell for cell; the medians quoted here are #93's. Held, cell by cell, by test/test_measured.py::test_nine_batches_do_not_suffice_on_either_card; data/measured/kernels.json has the rows."
     },
     {
+      "id": "jengine/optimal-batching-is-np-hard",
+      "statement": "Choosing an optimal batching is an NP-hard partitioning problem, and its cost function needs the MD search tree re-solved for every candidate batch, which is why both the tree and the batching are solved heuristically.",
+      "source": "[JEngine, v2, §4]",
+      "kind": "shape",
+      "status": "unverifiable",
+      "reason": "A complexity claim, stated without a proof or a reduction and without a citation; no finite computation establishes NP-hardness. What this repo can say is narrower: plan/search.py searches the cut space the paper's scheme admits, and plan/optimum.py's exact tree search stops at L = 5 on cost (its CEILING_REASON), which is consistent with the claim and does not prove it."
+    },
+    {
       "id": "jengine/prefactor-factorisation",
       "statement": "eq. 13's fundamental keeps (2/sqrt(pi)) theta and not the pair factors. McMurchie-Davidson's ERI prefactor lambda = 2 pi^{5/2} / (zeta eta sqrt(zeta+eta)) factors exactly as (2/sqrt(pi)) theta * (pi/zeta)^{3/2} * (pi/eta)^{3/2}, theta^2 = zeta*eta/(zeta+eta), so the pair factors go with the E coefficients -- (pi/zeta)^{3/2} on the bra pair, (pi/eta)^{3/2} on the ket pair, both by ao.pairs.dress, the one dressing function -- and the three placements multiply back to lambda: none missing, none applied twice. Witnessed per angular-momentum class against libcint's int2e (#85's blocks; s/p fast, d and above slow), with no class boundary (#121): all 55 canonical classes of HF/cc-pVTZ, s to f, L = 0..12 -- L <= 8 in test/oracle/fixtures/hf_ccpvtz_eri.json, L = 9..12 one file each in hf_ccpvtz_eri_l9..l12.json, every file under the 512 KB hook -- plus H2O/6-31G's six s/p classes (h2o_631g_eri.json): dress scaled by 1 + 1e-9, or (pi/zeta)^1 in place of ^{3/2}, fails every fast-tier class. The comparison sees the PRODUCT: a constant moved between dress and the fundamental (dress * 2 with 2/sqrt(pi) / 4) passes every block (and J), and what fails then is the in-repo absolute pins of each half: the fundamental by test/test_theta_convention.py's [0]^(0) = erf(theta R)/R and test_reference_pq.py's defining integral, the dressing by test_ao_pairs.py's dressed-overlap checks (the dressed t = 0 column is the overlap; a unit self-overlap) -- so with those, the placement, not only the product, is held (#90; j_engine.md, 'The Coulomb matrix, witnessed from outside').",
       "source": "[JEngine, v2, eq. 13]",
@@ -97,6 +201,14 @@
       "kind": "monotonicity",
       "status": "unverifiable",
       "reason": "A spill count is a measurement of the paper's kernels on their compiler and their card (an A100), not a property of the tree -- the same argument that keeps Table 4 out of data/. The kernel tier can measure our own spills on sm_86 and gfx1200, but that is a different claim."
+    },
+    {
+      "id": "jengine/sieve-underspecified",
+      "statement": "Alg. 3 leaves three choices open: the order targets are seeded into the queue (line 4) -- §4.1 says the result depends on it, by up to ~2%, and does not give the order; which other direction a child is re-expanded in (line 12); and how far 'any unnecessary parents of i' reaches when i is deleted (line 16).",
+      "source": "[JEngine, v2, §4.1, Alg. 3]",
+      "kind": "defect",
+      "status": "unverifiable",
+      "reason": "An omission in the source: no test can recover what the text does not carry. plan/sieve.py fixes lines 12 and 16 by our own choice, in its docstring (docs/implementation/mild.md); for line 4, #108 searched a family of seed-order RULES (plan/recovery.py, seed_orders(widened=True)) and none reproduces every Tables 1-2 cell, so under the rules-only doctrine the order is recorded as not recovered (data/literature/jengine/limits.json)."
     },
     {
       "id": "jengine/symmetry-breaking-splits-are-worse",

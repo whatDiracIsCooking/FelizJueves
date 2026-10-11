@@ -179,6 +179,52 @@ def test_block_matches_libcint(name, q):
         f"ours/libcint = {ratio:.6g}")
 
 
+def _worst(name, q):
+    """max err/scale of our block against libcint's, as the test above."""
+    ref = manifest.eri_blocks(_FX[name])[q]
+    ours, scale = _ours(name, q, scale=True)
+    err = np.abs(ours - ref)
+    return float(np.max(np.divide(err, scale, out=np.zeros_like(err),
+                                  where=scale > 0)))
+
+
+@pytest.mark.claim("jengine/m-weight-minus-two-theta-squared")
+def test_the_m_weight_is_minus_two_theta_squared(monkeypatch):
+    """[JEngine, v2, eq. 13] prints (-2 theta)^m; `reference.pq` forms
+    (-2 theta^2)^m, and the libcint comparison above is what holds it -- shown
+    here by perturbing the BASE alone, every other factor of the fundamental
+    untouched (#120). Over the fast-tier classes: the true weight passes; the
+    printed -2 theta, and -2 theta^2 scaled by 1 + 1e-9, fail every class
+    above (ss|ss); (ss|ss) reaches only m = 0 and is bit-for-bit unchanged,
+    so the perturbation reaches the weight and nothing else."""
+    import felizjueves.reference.pq as pqmod
+
+    fast = [p.values for p in PARAMS if not p.marks]
+    true = {(n, q): _worst(n, q) for n, q in fast}
+    assert all(w <= TOL for w in true.values()), true
+
+    exact = pqmod.fundamental
+    bases = {
+        "printed (-2 theta)^m": lambda t: -2.0 * t,
+        "(-2 theta^2)^m * (1 + 1e-9)^m": lambda t: -2.0 * t * t * (1 + 1e-9),
+    }
+    for label, base in bases.items():
+        def wrong(m, pqv, theta, base=base):
+            return exact(m, pqv, theta) * (base(theta) / (-2.0 * theta * theta)) ** m
+
+        monkeypatch.setattr(pqmod, "fundamental", wrong)
+        for n, q in fast:
+            w = _worst(n, q)
+            L = sum(_SHELLS[n][s].l for s in q)
+            print(f"\n{label}: {n} {q} L={L}: max err/scale = {w:.2e}")
+            if L == 0:
+                assert w == true[(n, q)], (label, n, q)
+            else:
+                assert w > TOL, (label, n, q, w)
+        monkeypatch.undo()
+    assert pqmod.fundamental is exact
+
+
 @pytest.mark.parametrize("name,q", PARAMS)
 def test_block_has_eightfold_symmetry(name, q):
     x, scale = _ours(name, q, scale=True)

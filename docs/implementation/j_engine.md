@@ -181,9 +181,12 @@ generator must not transcribe them:
   and the factorisation of `λ` — `jengine/prefactor-factorisation` — by
   `test_ao_eri.py::test_block_matches_libcint`, per angular-momentum class.
   Both fail when the claim is false; "The Coulomb matrix, witnessed from
-  outside" has the perturbations that show it. The `(-2θ²)^m` weight is
-  witnessed by the same comparisons wherever `m > 0` is reached (any class
-  above `(ss|ss)`), but carries no record of its own. The `1y` misprint
+  outside" has the perturbations that show it. The `(-2θ²)^m` weight has its
+  own record since #120, `jengine/m-weight-minus-two-theta-squared`, held by
+  `test_ao_eri.py::test_the_m_weight_is_minus_two_theta_squared`: the same
+  libcint block comparison, with the base perturbed (the printed `-2θ`, or
+  `-2θ²·(1+1e-9)`) failing every fast-tier class above `(ss|ss)` and leaving
+  `(ss|ss)`, which reaches only `m = 0`, unchanged. The `1y` misprint
   (`jengine/eq17-1y-misprint`) is asserted by the structural witness above
   (#107): `recurrence.py` transcribes eq. 17 with `1y = (0,1,0)`.
 

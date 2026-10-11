@@ -1,0 +1,249 @@
+{
+  "schema": 1,
+  "about": "The reading of [JEngine, v2] that claims.json is the inventory of, recorded so that an omission cannot be silent (#120). One entry per unit of the paper -- every numbered section and subsection, the abstract, every algorithm and every figure caption -- in the paper's order. `claims` is exactly the ids of the records whose `source` cites that unit (an `eq. N` resolves to the section whose `eqs` range holds N); `note` says what else the unit asserts and why it is not a record. test/test_claims.py holds the two against each other both ways, and pins the unit list to the paper's structure. Numeric tables are NOT units: Tables 1-3 are the scoreboards and Table 4 is deliberately not transcribed (README.md); a record may not cite a Table. A claim restated in a later unit is cited at the unit that makes it with its evidence, and the restatement is named in the later unit's note.",
+  "read": {
+    "text": "ChemRxiv v2, doi:10.26434/chemrxiv-2025-2lntb-v2, 19 PDF pages (16 of text and references), as archived by the Wayback Machine on 2025-07-31 from the ChemRxiv asset of item 68882c3b23be8e43d6890350; not tracked, as no PDF is.",
+    "by": "#120, 2026-10-11, section by section, end to end"
+  },
+  "units": [
+    {
+      "unit": "Abstract",
+      "claims": [],
+      "note": "Restates the memory- to compute-bound transition (jengine/batching-crosses-the-ridge, cited at §7.2) and quotes headline numbers (up to 9x per kernel, up to 64% on J, cc-pVQZ on an A100): numeric observations of the authors' engine, not claims about the algorithm's shape."
+    },
+    {
+      "unit": "§1",
+      "claims": [],
+      "note": "Prior art (White & Head-Gordon, COLD PRISM, Shao & Head-Gordon, Yasuda & Maruoka, Ufimtsev & Martinez, Galvez et al., TeraChem's splitting, LibintX, GPU4PySCF, RI-J error figures) -- claims about the cited works, not [JEngine]'s own. The paper's own claims here are previews: batching moves kernels to compute-bound (jengine/batching-crosses-the-ridge, §7.2), a batching that minimises intermediate overlap (jengine/batch-overlap-is-fundamentals-and-axials, §5), and an extension to g with 'straightforward' extension beyond -- an aim, which this repo's generator meets by construction for L = 0..16."
+    },
+    {
+      "unit": "§2",
+      "claims": [
+        "jengine/memory-bound-grows-with-l"
+      ],
+      "note": "Also: GPU background (A100 register and shared-memory sizes, occupancy arithmetic, -maxrregcount trading occupancy for spills) -- facts about the card, not about the algorithm; and 'L = 16 needs up to 160 KB of spills', a number from Table 4's experiment."
+    },
+    {
+      "unit": "§3.1",
+      "eqs": [1, 6],
+      "claims": [],
+      "note": "Notation and definitions only (primitives, shells, eqs. 1-6). Conventions, implemented in ao/shell.py and witnessed against libcint's overlap (test/test_oracle_basis.py); nothing asserted beyond a definition."
+    },
+    {
+      "unit": "§3.2",
+      "eqs": [7, 18],
+      "claims": [
+        "jengine/eq17-1y-misprint",
+        "jengine/m-weight-minus-two-theta-squared",
+        "jengine/prefactor-factorisation",
+        "jengine/theta-undefined"
+      ],
+      "note": "The rest is the MD scheme as content -- eqs. 7-12, 14-16 and 18 -- implemented in reference/pq.py and recurrence.py and held by their tests, not by records. The count (L+1)(L+2)(L+3)/6 of one-centre targets is a number: Table 3's one-batch column, scored on the boards."
+    },
+    {
+      "unit": "§3.3",
+      "eqs": [19, 22],
+      "claims": [],
+      "note": "eqs. 19-22 (J by pre-contraction, J_p the only shell-quartet contraction) are content, implemented in ao/j.py and kernel.py and witnessed against libcint's get_jk. 'This reduces register usage' is design rationale, and Cauchy-Schwarz bringing J to O(N^2) is the cited works' claim (refs 52-58). Alg. 1's own claims are recorded under 'Alg. 1'."
+    },
+    {
+      "unit": "§4",
+      "claims": [
+        "jengine/optimal-batching-is-np-hard"
+      ],
+      "note": "Also: a solution to the MD recurrence is exactly one reduction direction per node -- the definition plan/optimum.py searches over, not a claim; exact solutions known for L <= 7 and heuristics above -- the cited works' claim (refs 59-60); and the aim that the heuristic be near-optimal with and without batching, stated as an aim, whose unbatched half is jengine/mild-vs-exact-tradeoff."
+    },
+    {
+      "unit": "§4.1",
+      "claims": [
+        "jengine/mild-keeps-rules-1-2-3-5",
+        "jengine/mild-suboptimal-from-l5",
+        "jengine/mild-vs-exact-tradeoff",
+        "jengine/rule-4-needs-the-sieve",
+        "jengine/sieve-non-monotone-in-spills",
+        "jengine/sieve-underspecified"
+      ],
+      "note": "Also: MILD's geometric reading (step to the nearest face, then the nearest edge) restates Alg. 2 (jengine/mild-tie-break); its three listed benefits are qualitative, the third (reduce a unit component where possible) being rule 2 (jengine/mild-keeps-rules-1-2-3-5); 'fewer intermediates need not mean fewer registers or spills' is the premise of jengine/sieve-non-monotone-in-spills."
+    },
+    {
+      "unit": "§5",
+      "claims": [
+        "jengine/alg1-line10-atomic-free",
+        "jengine/batch-count-multiple-of-3",
+        "jengine/batch-overlap-is-fundamentals-and-axials",
+        "jengine/batching-trades-flops-for-intermediates",
+        "jengine/fig4-l6-six-batches",
+        "jengine/symmetry-breaking-splits-are-worse",
+        "jengine/y12-example"
+      ],
+      "note": "Also: the batch definition (direction of the largest component, sub-batches by its magnitude, cut points chosen minimax on targets per batch) is content, implemented in plan/batching.py (test_the_cut_is_minimax_by_brute_force) and scored through Table 3; 'Boys ~2% of kernel time' and 'atomics and duplicated reductions are minor' are timings of the authors' kernels; recomputing [r](0) to give each J_p one writer is a suggestion for K (as TeraChem does), not a claim about this algorithm."
+    },
+    {
+      "unit": "§6",
+      "claims": [],
+      "note": "The generator's five steps (split, MILD DAG per batch, sieve, topological sort, emit Alg. 1) are the pipeline this repo implements (plan/pipeline.py, plan/schedule.py, kernel.py), content rather than a claim; that Tables 1-3 are the generator's own counts is their provenance, which is why the boards can score them exactly."
+    },
+    {
+      "unit": "§7",
+      "claims": [
+        "jengine/nine-batches-suffice"
+      ],
+      "note": "Also: 'easily extended to more batches' is an aim; the benchmark setup (cc-pVQZ, gly/water/BN, an A100, tau = 1e-10) is the experiment's conditions."
+    },
+    {
+      "unit": "§7.1",
+      "claims": [
+        "jengine/batching-reduces-spills"
+      ],
+      "note": "Also: the FLOP counts neglect the Boys function -- the definition of Table 1's quantity, which plan/cost.py follows (a fundamental costs no FLOP) and the boards score; 'FLOPs rise modestly while intermediates fall sharply' restates jengine/batching-trades-flops-for-intermediates (cited at §5)."
+    },
+    {
+      "unit": "§7.2",
+      "claims": [
+        "jengine/batching-crosses-the-ridge",
+        "jengine/conclusion-overstates-compute-bound"
+      ],
+      "note": "Also: 'a two- to three-fold FLOP-rate gain' and '~2.4x' for [5|5], '~4x' for [6|6] -- numbers from the A100 roofline."
+    },
+    {
+      "unit": "§7.3",
+      "claims": [
+        "jengine/best-batch-count-rises-with-l"
+      ],
+      "note": "Also: the oscillation in Fig. 8 is explained by basis-function counts per L (a reading of their timings); 'further batching would keep helping beyond g but matters little for cc-pVQZ' is a conjecture; and the recipe for more than 9 batches (sub-divide by the second-largest component, e.g. ry > rz within X) is a proposal -- this repo's 12-batch cells split by the largest component's magnitude instead, and #113 owns the asymmetric question (jengine/symmetry-breaking-splits-are-worse)."
+    },
+    {
+      "unit": "§7.3.1",
+      "claims": [
+        "jengine/batch-count-is-hardware-dependent"
+      ],
+      "note": "Also: HBM bandwidths, latencies and L2 sizes of V100, A100 and GH200 -- datasheet facts about those cards."
+    },
+    {
+      "unit": "§7.4",
+      "claims": [
+        "jengine/j-speedup-tracks-high-l-share"
+      ],
+      "note": "Also: the speedups themselves (up to 20% on water, up to 64% on boron nitride) and the hydrogen fractions of the test systems -- numbers."
+    },
+    {
+      "unit": "§8",
+      "claims": [
+        "jengine/conclusion-overstates-compute-bound"
+      ],
+      "note": "Otherwise a summary of §§4-7 (restatements of the records cited there, with the headline numbers) and future work (higher L, the exchange matrix K)."
+    },
+    {
+      "unit": "§9",
+      "claims": [],
+      "note": "Acknowledgments: no claim."
+    },
+    {
+      "unit": "§10",
+      "claims": [],
+      "note": "Supporting Information: names the numeric timings of Figs. 8-11 and the systems' xyz files -- numbers and inputs, not obtained here."
+    },
+    {
+      "unit": "Alg. 1",
+      "claims": [
+        "jengine/alg1-line10-atomic-free",
+        "jengine/alg1-line10-factor-four"
+      ],
+      "note": "Also: one bra index per thread in x, kets strip-mined over y, kets sorted by I_q D_max so the screen can break -- content, implemented in kernel.py and specified in j_engine.md ('Kets arrive pre-sorted')."
+    },
+    {
+      "unit": "Alg. 2",
+      "claims": [
+        "jengine/mild-tie-break"
+      ],
+      "note": "The whole algorithm is the tie-break table; nothing further."
+    },
+    {
+      "unit": "Alg. 3",
+      "claims": [
+        "jengine/sieve-underspecified"
+      ],
+      "note": "Otherwise content, implemented in plan/sieve.py; what it is for (rule 4) is jengine/rule-4-needs-the-sieve, cited at §4.1."
+    },
+    {
+      "unit": "Alg. 4",
+      "claims": [
+        "jengine/batch-tie-break"
+      ],
+      "note": "Otherwise content (membership of r in D_{a,b}), implemented in plan/batching.py. Line 10's trailing 'print(S)' is a typesetting artefact with no meaning."
+    },
+    {
+      "unit": "Fig. 1",
+      "claims": [
+        "jengine/memory-bound-grows-with-l"
+      ],
+      "note": "Caption: a double-precision roofline over L, gly20/cc-pVQZ on an A100 -- the experiment's conditions."
+    },
+    {
+      "unit": "Fig. 2",
+      "claims": [],
+      "note": "Caption: the targets [r](0), r <= L = 6, drawn as stacked ternary plots -- a visualisation, no claim."
+    },
+    {
+      "unit": "Fig. 3",
+      "claims": [],
+      "note": "Caption: MILD's reduction directions at L = 6 (Alg. 2, jengine/mild-tie-break), and that targets are formed from [r](m), m > 0, not from other targets -- eqs. 10-12 read as content (every edge runs m -> m+1, the layering plan/optimum.py relies on)."
+    },
+    {
+      "unit": "Fig. 4",
+      "claims": [
+        "jengine/fig4-l6-six-batches"
+      ],
+      "note": "Caption: the six batches at L = 6; bounding boxes for visualisation only."
+    },
+    {
+      "unit": "Fig. 5",
+      "claims": [
+        "jengine/batch-overlap-is-fundamentals-and-axials"
+      ],
+      "note": "Caption: the [r](1) intermediates of Fig. 4's six batches, shared ones marked."
+    },
+    {
+      "unit": "Fig. 6",
+      "claims": [
+        "jengine/batch-overlap-is-fundamentals-and-axials"
+      ],
+      "note": "Caption: the same at [r](2)."
+    },
+    {
+      "unit": "Fig. 7",
+      "claims": [
+        "jengine/batching-crosses-the-ridge"
+      ],
+      "note": "Caption: rooflines of [5|5], [6|6], [7|7] at 1, 3, 6, 9 batches, gly40/cc-pVQZ on an A100, one CUDA stream -- the experiment's conditions."
+    },
+    {
+      "unit": "Fig. 8",
+      "claims": [
+        "jengine/best-batch-count-rises-with-l"
+      ],
+      "note": "Caption: kernel times for 7 <= L <= 16 over 10 SCF iterations on an A100 -- conditions and numbers."
+    },
+    {
+      "unit": "Fig. 9",
+      "claims": [
+        "jengine/batch-count-is-hardware-dependent"
+      ],
+      "note": "Caption: the same on a V100."
+    },
+    {
+      "unit": "Fig. 10",
+      "claims": [
+        "jengine/batch-count-is-hardware-dependent"
+      ],
+      "note": "Caption: the same on a GH200."
+    },
+    {
+      "unit": "Fig. 11",
+      "claims": [
+        "jengine/j-speedup-tracks-high-l-share"
+      ],
+      "note": "Caption: whole-J timings on water, polyglycine and boron nitride, cc-pVQZ on one A100 -- numbers."
+    }
+  ]
+}
