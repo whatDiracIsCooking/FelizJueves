@@ -150,6 +150,16 @@ RULES: dict[str, Rule] = {
         interp="a driver ships kernels; it does not check them -- the tests do",
         plan="a driver goes through the builder, so the kernel it writes is "
              "the kernel the tests built"),
+    "analysis": _rule(
+        "model against measurement: kernelrank.py ranks lower.KernelCost "
+        "against the Measured rows (#54). It reads both sides and feeds "
+        "neither",
+        ("spec", "device", "kernel", "lower", "measured"),
+        plan="a model-vs-measurement result must never reach the "
+             "calibrated instrument the literature floors are measured with",
+        literature="nothing in KernelCost may feed a literature floor "
+                   "(lower.py); the limits it records are read by tests",
+        reference=_GROUND_TRUTH),
 }
 
 RULE_OF: dict[str, str] = {
@@ -189,6 +199,7 @@ RULE_OF: dict[str, str] = {
     "emit.hip": "emit",
     "emit.__main__": "driver",
     "measured": "driver",
+    "kernelrank": "analysis",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -235,6 +246,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.hip": ("device", "emit._c", "ir"),
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel"),
     "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "spec"),
+    "kernelrank": ("device", "kernel", "lower", "measured", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.

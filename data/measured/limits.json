@@ -1,0 +1,1874 @@
+{
+ "schema": 1,
+ "about": "StructuralLimits of the engineering model lower.KernelCost against Measured rows (#54): where it mis-ranks the batch counts of measured.SUBGRID, recorded with its mechanism rather than as a test named 'cannot predict X'. Read by literature.limits.load_limits. Nothing here is, or feeds, a literature floor. Every number is recomputed by test/test_kernelrank.py.",
+ "rank_claim": {
+  "statement": "Within one (L, arch), rank n_batches by KernelCost (traffic, summed and per-kernel max; peak_live, per-kernel max) and by the row's spill (summed store+load; per-kernel max store+load), and compare: Spearman rho with average ranks, and pairs the measurement orders strictly counted concordant / discordant / unresolved (model tie).",
+  "registers": {
+   "sm_86": 127,
+   "gfx1200": 96
+  },
+  "register_unit": "fp64 values per thread = floor(ceiling / 2) 32-bit registers",
+  "ceiling": {
+   "sm_86": 255,
+   "gfx1200": 192
+  },
+  "n_batches": [
+   1,
+   3,
+   6,
+   9
+  ],
+  "n": 4,
+  "weak": "n = 4 batch counts per (L, arch): rho takes few values and a single pair flips it; an order, never a prediction interval.",
+  "result": "sm_86 at 127: no discordant pair at any L, any aggregation (summed-traffic rho 1.0 / 0.816 / 0.949 / 1.0 at L 7 / 10 / 13 / 16; the misses are unresolved pairs where the model predicts zero traffic and nvcc still spills). gfx1200 at 96: summed traffic is REVERSED at L 13 and 16 (rho -1.0) and has one discordant pair at L 10; per-kernel max has one discordant pair (b 6 vs 9) at L 10, 13 and 16. See limits.",
+  "cells": [
+   {
+    "arch": "sm_86",
+    "L": 7,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     50,
+     0,
+     0,
+     0
+    ],
+    "measured": [
+     508,
+     0,
+     0,
+     0
+    ],
+    "spearman": 1.0,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 7,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     50,
+     0,
+     0,
+     0
+    ],
+    "measured": [
+     508,
+     0,
+     0,
+     0
+    ],
+    "spearman": 1.0,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 7,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     130,
+     52,
+     32,
+     30
+    ],
+    "measured": [
+     508,
+     0,
+     0,
+     0
+    ],
+    "spearman": 0.774597,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 10,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     2897,
+     0,
+     0,
+     0
+    ],
+    "measured": [
+     19268,
+     3564,
+     0,
+     0
+    ],
+    "spearman": 0.816497,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 2
+   },
+   {
+    "arch": "sm_86",
+    "L": 10,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     2897,
+     0,
+     0,
+     0
+    ],
+    "measured": [
+     19268,
+     1348,
+     0,
+     0
+    ],
+    "spearman": 0.816497,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 2
+   },
+   {
+    "arch": "sm_86",
+    "L": 10,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     299,
+     108,
+     66,
+     56
+    ],
+    "measured": [
+     19268,
+     1348,
+     0,
+     0
+    ],
+    "spearman": 0.948683,
+    "concordant": 5,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 13,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     11798,
+     5300,
+     0,
+     0
+    ],
+    "measured": [
+     86632,
+     59444,
+     28656,
+     14472
+    ],
+    "spearman": 0.948683,
+    "concordant": 5,
+    "discordant": 0,
+    "unresolved": 1
+   },
+   {
+    "arch": "sm_86",
+    "L": 13,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     11798,
+     2253,
+     0,
+     0
+    ],
+    "measured": [
+     86632,
+     22600,
+     7736,
+     2720
+    ],
+    "spearman": 0.948683,
+    "concordant": 5,
+    "discordant": 0,
+    "unresolved": 1
+   },
+   {
+    "arch": "sm_86",
+    "L": 13,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     576,
+     201,
+     121,
+     117
+    ],
+    "measured": [
+     86632,
+     22600,
+     7736,
+     2720
+    ],
+    "spearman": 1.0,
+    "concordant": 6,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 16,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     32827,
+     24651,
+     10912,
+     1845
+    ],
+    "measured": [
+     317260,
+     291916,
+     253048,
+     181224
+    ],
+    "spearman": 1.0,
+    "concordant": 6,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 16,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     32827,
+     9416,
+     2651,
+     245
+    ],
+    "measured": [
+     317260,
+     98340,
+     61184,
+     29748
+    ],
+    "spearman": 1.0,
+    "concordant": 6,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "sm_86",
+    "L": 16,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 127,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     991,
+     340,
+     179,
+     165
+    ],
+    "measured": [
+     317260,
+     98340,
+     61184,
+     29748
+    ],
+    "spearman": 1.0,
+    "concordant": 6,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 7,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     259,
+     0,
+     0,
+     0
+    ],
+    "measured": [
+     676,
+     0,
+     0,
+     0
+    ],
+    "spearman": 1.0,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 7,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     259,
+     0,
+     0,
+     0
+    ],
+    "measured": [
+     676,
+     0,
+     0,
+     0
+    ],
+    "spearman": 1.0,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 7,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     130,
+     52,
+     32,
+     30
+    ],
+    "measured": [
+     676,
+     0,
+     0,
+     0
+    ],
+    "spearman": 0.774597,
+    "concordant": 3,
+    "discordant": 0,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 10,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     3489,
+     516,
+     0,
+     0
+    ],
+    "measured": [
+     5330,
+     4044,
+     4474,
+     2942
+    ],
+    "spearman": 0.632456,
+    "concordant": 4,
+    "discordant": 1,
+    "unresolved": 1
+   },
+   {
+    "arch": "gfx1200",
+    "L": 10,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     3489,
+     203,
+     0,
+     0
+    ],
+    "measured": [
+     5330,
+     1360,
+     860,
+     956
+    ],
+    "spearman": 0.948683,
+    "concordant": 5,
+    "discordant": 0,
+    "unresolved": 1
+   },
+   {
+    "arch": "gfx1200",
+    "L": 10,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     299,
+     108,
+     66,
+     56
+    ],
+    "measured": [
+     5330,
+     1360,
+     860,
+     956
+    ],
+    "spearman": 0.8,
+    "concordant": 5,
+    "discordant": 1,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 13,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     12671,
+     8219,
+     2125,
+     852
+    ],
+    "measured": [
+     20986,
+     40658,
+     52084,
+     67708
+    ],
+    "spearman": -1.0,
+    "concordant": 0,
+    "discordant": 6,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 13,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     12671,
+     3306,
+     941,
+     163
+    ],
+    "measured": [
+     20986,
+     13590,
+     12570,
+     12706
+    ],
+    "spearman": 0.8,
+    "concordant": 5,
+    "discordant": 1,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 13,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     576,
+     201,
+     121,
+     117
+    ],
+    "measured": [
+     20986,
+     13590,
+     12570,
+     12706
+    ],
+    "spearman": 0.8,
+    "concordant": 5,
+    "discordant": 1,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 16,
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     33799,
+     27208,
+     18959,
+     7663
+    ],
+    "measured": [
+     44752,
+     103622,
+     192158,
+     218852
+    ],
+    "spearman": -1.0,
+    "concordant": 0,
+    "discordant": 6,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 16,
+    "metric": "traffic",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     33799,
+     10245,
+     4601,
+     1609
+    ],
+    "measured": [
+     44752,
+     34694,
+     32918,
+     33206
+    ],
+    "spearman": 0.8,
+    "concordant": 5,
+    "discordant": 1,
+    "unresolved": 0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 16,
+    "metric": "peak_live",
+    "aggregation": "max",
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "model": [
+     991,
+     340,
+     179,
+     165
+    ],
+    "measured": [
+     44752,
+     34694,
+     32918,
+     33206
+    ],
+    "spearman": 0.8,
+    "concordant": 5,
+    "discordant": 1,
+    "unresolved": 0
+   }
+  ]
+ },
+ "wallclock_claim": {
+  "statement": "Do spill wins predict wall-clock? Per (L, arch, input): is the batch count with the fewest summed spills the fastest by median wall-clock, and Spearman(summed spill, median). Inputs: 'wide' is runtime_ns (wide-T), 'near' is raw wallclock:near:median_ns (near-T).",
+  "result": "The spill win is the fastest in 3 of 16 (L, arch, input) cases. See limits.",
+  "cells": [
+   {
+    "arch": "sm_86",
+    "L": 7,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     508,
+     0,
+     0,
+     0
+    ],
+    "median_ns": [
+     24120581,
+     64490868,
+     116289865,
+     136142399
+    ],
+    "fewest_spill": [
+     3,
+     6,
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.774597
+   },
+   {
+    "arch": "sm_86",
+    "L": 7,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     508,
+     0,
+     0,
+     0
+    ],
+    "median_ns": [
+     3682227.0,
+     6212278.0,
+     10063629.0,
+     11717135.0
+    ],
+    "fewest_spill": [
+     3,
+     6,
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.774597
+   },
+   {
+    "arch": "sm_86",
+    "L": 10,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     19268,
+     3564,
+     0,
+     0
+    ],
+    "median_ns": [
+     37015154,
+     92800604,
+     160819696,
+     224803045
+    ],
+    "fewest_spill": [
+     6,
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.948683
+   },
+   {
+    "arch": "sm_86",
+    "L": 10,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     19268,
+     3564,
+     0,
+     0
+    ],
+    "median_ns": [
+     8486164.0,
+     12336374.0,
+     17230772.0,
+     21703333.0
+    ],
+    "fewest_spill": [
+     6,
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.948683
+   },
+   {
+    "arch": "sm_86",
+    "L": 13,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     86632,
+     59444,
+     28656,
+     14472
+    ],
+    "median_ns": [
+     66983346,
+     148756685,
+     233343428,
+     339142885
+    ],
+    "fewest_spill": [
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -1.0
+   },
+   {
+    "arch": "sm_86",
+    "L": 13,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     86632,
+     59444,
+     28656,
+     14472
+    ],
+    "median_ns": [
+     32241038.0,
+     29317232.0,
+     33722331.0,
+     40685162.0
+    ],
+    "fewest_spill": [
+     9
+    ],
+    "fastest": 3,
+    "spill_win_is_fastest": false,
+    "spearman": -0.8
+   },
+   {
+    "arch": "sm_86",
+    "L": 16,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     317260,
+     291916,
+     253048,
+     181224
+    ],
+    "median_ns": [
+     157270999,
+     290584408,
+     463119164,
+     578746192
+    ],
+    "fewest_spill": [
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -1.0
+   },
+   {
+    "arch": "sm_86",
+    "L": 16,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     317260,
+     291916,
+     253048,
+     181224
+    ],
+    "median_ns": [
+     123117241.0,
+     116865552.0,
+     108433688.0,
+     99386875.0
+    ],
+    "fewest_spill": [
+     9
+    ],
+    "fastest": 9,
+    "spill_win_is_fastest": true,
+    "spearman": 1.0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 7,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     676,
+     0,
+     0,
+     0
+    ],
+    "median_ns": [
+     34895022,
+     88605725,
+     150135733,
+     174250755
+    ],
+    "fewest_spill": [
+     3,
+     6,
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.774597
+   },
+   {
+    "arch": "gfx1200",
+    "L": 7,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     676,
+     0,
+     0,
+     0
+    ],
+    "median_ns": [
+     4485325.0,
+     8677284.0,
+     13352583.0,
+     15052357.0
+    ],
+    "fewest_spill": [
+     3,
+     6,
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.774597
+   },
+   {
+    "arch": "gfx1200",
+    "L": 10,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     5330,
+     4044,
+     4474,
+     2942
+    ],
+    "median_ns": [
+     52338316,
+     128408637,
+     220759046,
+     299908370
+    ],
+    "fewest_spill": [
+     9
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": false,
+    "spearman": -0.8
+   },
+   {
+    "arch": "gfx1200",
+    "L": 10,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     5330,
+     4044,
+     4474,
+     2942
+    ],
+    "median_ns": [
+     18032110.0,
+     17928019.0,
+     24216591.0,
+     29629150.0
+    ],
+    "fewest_spill": [
+     9
+    ],
+    "fastest": 3,
+    "spill_win_is_fastest": false,
+    "spearman": -0.4
+   },
+   {
+    "arch": "gfx1200",
+    "L": 13,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     20986,
+     40658,
+     52084,
+     67708
+    ],
+    "median_ns": [
+     150058710,
+     260666615,
+     379634997,
+     538247195
+    ],
+    "fewest_spill": [
+     1
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": true,
+    "spearman": 1.0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 13,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     20986,
+     40658,
+     52084,
+     67708
+    ],
+    "median_ns": [
+     97507126.0,
+     80159775.0,
+     80204318.0,
+     93056758.0
+    ],
+    "fewest_spill": [
+     1
+    ],
+    "fastest": 3,
+    "spill_win_is_fastest": false,
+    "spearman": -0.2
+   },
+   {
+    "arch": "gfx1200",
+    "L": 16,
+    "input": "wide",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     44752,
+     103622,
+     192158,
+     218852
+    ],
+    "median_ns": [
+     531570168,
+     582016016,
+     812146731,
+     980233786
+    ],
+    "fewest_spill": [
+     1
+    ],
+    "fastest": 1,
+    "spill_win_is_fastest": true,
+    "spearman": 1.0
+   },
+   {
+    "arch": "gfx1200",
+    "L": 16,
+    "input": "near",
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "spill_sum": [
+     44752,
+     103622,
+     192158,
+     218852
+    ],
+    "median_ns": [
+     457602756.0,
+     307978306.0,
+     309723928.0,
+     302517958.0
+    ],
+    "fewest_spill": [
+     1
+    ],
+    "fastest": 9,
+    "spill_win_is_fastest": false,
+    "spearman": -0.8
+   }
+  ]
+ },
+ "limits": [
+  {
+   "claim": "On gfx1200 (hipcc), KernelCost.traffic summed over a split class's batch kernels ranks n_batches in the order of the row's summed spill.",
+   "mechanism": "KernelCost prices each value its sweep evicts, in IR statement order, against a fixed budget, so splitting a class -- which takes values out of every batch kernel's IR -- can only lower its traffic, and the sum falls with n_batches -- and is ZERO for any kernel whose IR peak fits the budget. hipcc's count is of registers spilled after its own scheduling and allocation, and its demand is not the IR's liveness: a batch kernel whose IR peak is 55 fp64 values (110 VGPRs; L 10 b 6) still sits at the 192-VGPR ceiling and spills 377 registers (row raw, per kernel). So a batch kernel's spill shrinks far more slowly than its IR peak, and the SUM grows with the NUMBER of kernels. The model has no term for that per-kernel floor, and no budget changes the direction: at 64, 96 or 127 values L 13 and L 16 stay reversed.",
+   "evidence": "L 10: b [1, 3, 6, 9] model [3489, 516, 0, 0] measured [5330, 4044, 4474, 2942] rho 0.632456 discordant 1; L 13: b [1, 3, 6, 9] model [12671, 8219, 2125, 852] measured [20986, 40658, 52084, 67708] rho -1.0 discordant 6; L 16: b [1, 3, 6, 9] model [33799, 27208, 18959, 7663] measured [44752, 103622, 192158, 218852] rho -1.0 discordant 6. Per-kernel max spill at L 13 is [20986, 13590, 12570, 12706]: flat after b 3, while the model's falls 13x by b 6 and 78x by b 9.",
+   "asserted_value": {
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "cells": [
+     {
+      "arch": "gfx1200",
+      "L": 10,
+      "metric": "traffic",
+      "aggregation": "sum",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       3489,
+       516,
+       0,
+       0
+      ],
+      "measured": [
+       5330,
+       4044,
+       4474,
+       2942
+      ],
+      "spearman": 0.632456,
+      "concordant": 4,
+      "discordant": 1,
+      "unresolved": 1
+     },
+     {
+      "arch": "gfx1200",
+      "L": 13,
+      "metric": "traffic",
+      "aggregation": "sum",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       12671,
+       8219,
+       2125,
+       852
+      ],
+      "measured": [
+       20986,
+       40658,
+       52084,
+       67708
+      ],
+      "spearman": -1.0,
+      "concordant": 0,
+      "discordant": 6,
+      "unresolved": 0
+     },
+     {
+      "arch": "gfx1200",
+      "L": 16,
+      "metric": "traffic",
+      "aggregation": "sum",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       33799,
+       27208,
+       18959,
+       7663
+      ],
+      "measured": [
+       44752,
+       103622,
+       192158,
+       218852
+      ],
+      "spearman": -1.0,
+      "concordant": 0,
+      "discordant": 6,
+      "unresolved": 0
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+  },
+  {
+   "claim": "On gfx1200 (hipcc), KernelCost.traffic and peak_live, as the max over a split class's batch kernels, rank n_batches in the order of the worst batch kernel's spill.",
+   "mechanism": "The same ceiling: past b 6 hipcc's worst per-kernel spill has stopped falling (it moves by +0.9% to +11% from b 6 to b 9), while the model's per-kernel traffic and peak keep falling because the IR keeps shrinking. The order of the flat tail is decided by the compiler's scheduling and allocation of one kernel, which the IR liveness sweep does not model. Every other pair is concordant.",
+   "evidence": "L 10 peak_live: b [1, 3, 6, 9] model [299, 108, 66, 56] measured [5330, 1360, 860, 956] rho 0.8 discordant 1; L 13 traffic: b [1, 3, 6, 9] model [12671, 3306, 941, 163] measured [20986, 13590, 12570, 12706] rho 0.8 discordant 1; L 13 peak_live: b [1, 3, 6, 9] model [576, 201, 121, 117] measured [20986, 13590, 12570, 12706] rho 0.8 discordant 1; L 16 traffic: b [1, 3, 6, 9] model [33799, 10245, 4601, 1609] measured [44752, 34694, 32918, 33206] rho 0.8 discordant 1; L 16 peak_live: b [1, 3, 6, 9] model [991, 340, 179, 165] measured [44752, 34694, 32918, 33206] rho 0.8 discordant 1",
+   "asserted_value": {
+    "registers": 96,
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "cells": [
+     {
+      "arch": "gfx1200",
+      "L": 10,
+      "metric": "peak_live",
+      "aggregation": "max",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       299,
+       108,
+       66,
+       56
+      ],
+      "measured": [
+       5330,
+       1360,
+       860,
+       956
+      ],
+      "spearman": 0.8,
+      "concordant": 5,
+      "discordant": 1,
+      "unresolved": 0
+     },
+     {
+      "arch": "gfx1200",
+      "L": 13,
+      "metric": "traffic",
+      "aggregation": "max",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       12671,
+       3306,
+       941,
+       163
+      ],
+      "measured": [
+       20986,
+       13590,
+       12570,
+       12706
+      ],
+      "spearman": 0.8,
+      "concordant": 5,
+      "discordant": 1,
+      "unresolved": 0
+     },
+     {
+      "arch": "gfx1200",
+      "L": 13,
+      "metric": "peak_live",
+      "aggregation": "max",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       576,
+       201,
+       121,
+       117
+      ],
+      "measured": [
+       20986,
+       13590,
+       12570,
+       12706
+      ],
+      "spearman": 0.8,
+      "concordant": 5,
+      "discordant": 1,
+      "unresolved": 0
+     },
+     {
+      "arch": "gfx1200",
+      "L": 16,
+      "metric": "traffic",
+      "aggregation": "max",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       33799,
+       10245,
+       4601,
+       1609
+      ],
+      "measured": [
+       44752,
+       34694,
+       32918,
+       33206
+      ],
+      "spearman": 0.8,
+      "concordant": 5,
+      "discordant": 1,
+      "unresolved": 0
+     },
+     {
+      "arch": "gfx1200",
+      "L": 16,
+      "metric": "peak_live",
+      "aggregation": "max",
+      "registers": 96,
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "model": [
+       991,
+       340,
+       179,
+       165
+      ],
+      "measured": [
+       44752,
+       34694,
+       32918,
+       33206
+      ],
+      "spearman": 0.8,
+      "concordant": 5,
+      "discordant": 1,
+      "unresolved": 0
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+  },
+  {
+   "claim": "Fewer spills -- measured, or KernelCost.traffic, which models them -- pick the fastest n_batches by wall-clock.",
+   "mechanism": "Splitting a class into b batch kernels is b launches over the same bra x ket grid, each re-evaluating the Boys function and re-forming the recurrence nodes its targets share with other batches: the summed static instruction count (KernelCost.n_instructions) grows 2.7x to 3.0x from b 1 to b 9 over the subgrid. On the wide-T input that added work dominates and b 1 is fastest at every L on both cards, spills or not; on the near-T input a split wins at L 13 and 16 on both cards (and, by 0.6%, at L 10 on gfx1200), and which split wins is not the one with fewest spills except at L 16 on sm_86. A spill model prices register traffic only, so it cannot rank a quantity set by redundant work and the input's T.",
+   "evidence": "sm_86 L 7 wide: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; sm_86 L 7 near: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; sm_86 L 10 wide: fewest spills at b [6, 9], fastest b 1, rho -0.948683; sm_86 L 10 near: fewest spills at b [6, 9], fastest b 1, rho -0.948683; sm_86 L 13 wide: fewest spills at b [9], fastest b 1, rho -1.0; sm_86 L 13 near: fewest spills at b [9], fastest b 3, rho -0.8; sm_86 L 16 wide: fewest spills at b [9], fastest b 1, rho -1.0; gfx1200 L 7 wide: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; gfx1200 L 7 near: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; gfx1200 L 10 wide: fewest spills at b [9], fastest b 1, rho -0.8; gfx1200 L 10 near: fewest spills at b [9], fastest b 3, rho -0.4; gfx1200 L 13 near: fewest spills at b [1], fastest b 3, rho -0.2; gfx1200 L 16 near: fewest spills at b [1], fastest b 9, rho -0.8",
+   "asserted_value": {
+    "n_batches": [
+     1,
+     3,
+     6,
+     9
+    ],
+    "cells": [
+     {
+      "arch": "sm_86",
+      "L": 7,
+      "input": "wide",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       508,
+       0,
+       0,
+       0
+      ],
+      "median_ns": [
+       24120581,
+       64490868,
+       116289865,
+       136142399
+      ],
+      "fewest_spill": [
+       3,
+       6,
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.774597
+     },
+     {
+      "arch": "sm_86",
+      "L": 7,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       508,
+       0,
+       0,
+       0
+      ],
+      "median_ns": [
+       3682227.0,
+       6212278.0,
+       10063629.0,
+       11717135.0
+      ],
+      "fewest_spill": [
+       3,
+       6,
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.774597
+     },
+     {
+      "arch": "sm_86",
+      "L": 10,
+      "input": "wide",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       19268,
+       3564,
+       0,
+       0
+      ],
+      "median_ns": [
+       37015154,
+       92800604,
+       160819696,
+       224803045
+      ],
+      "fewest_spill": [
+       6,
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.948683
+     },
+     {
+      "arch": "sm_86",
+      "L": 10,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       19268,
+       3564,
+       0,
+       0
+      ],
+      "median_ns": [
+       8486164.0,
+       12336374.0,
+       17230772.0,
+       21703333.0
+      ],
+      "fewest_spill": [
+       6,
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.948683
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "input": "wide",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       86632,
+       59444,
+       28656,
+       14472
+      ],
+      "median_ns": [
+       66983346,
+       148756685,
+       233343428,
+       339142885
+      ],
+      "fewest_spill": [
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -1.0
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       86632,
+       59444,
+       28656,
+       14472
+      ],
+      "median_ns": [
+       32241038.0,
+       29317232.0,
+       33722331.0,
+       40685162.0
+      ],
+      "fewest_spill": [
+       9
+      ],
+      "fastest": 3,
+      "spill_win_is_fastest": false,
+      "spearman": -0.8
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "input": "wide",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       317260,
+       291916,
+       253048,
+       181224
+      ],
+      "median_ns": [
+       157270999,
+       290584408,
+       463119164,
+       578746192
+      ],
+      "fewest_spill": [
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -1.0
+     },
+     {
+      "arch": "gfx1200",
+      "L": 7,
+      "input": "wide",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       676,
+       0,
+       0,
+       0
+      ],
+      "median_ns": [
+       34895022,
+       88605725,
+       150135733,
+       174250755
+      ],
+      "fewest_spill": [
+       3,
+       6,
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.774597
+     },
+     {
+      "arch": "gfx1200",
+      "L": 7,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       676,
+       0,
+       0,
+       0
+      ],
+      "median_ns": [
+       4485325.0,
+       8677284.0,
+       13352583.0,
+       15052357.0
+      ],
+      "fewest_spill": [
+       3,
+       6,
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.774597
+     },
+     {
+      "arch": "gfx1200",
+      "L": 10,
+      "input": "wide",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       5330,
+       4044,
+       4474,
+       2942
+      ],
+      "median_ns": [
+       52338316,
+       128408637,
+       220759046,
+       299908370
+      ],
+      "fewest_spill": [
+       9
+      ],
+      "fastest": 1,
+      "spill_win_is_fastest": false,
+      "spearman": -0.8
+     },
+     {
+      "arch": "gfx1200",
+      "L": 10,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       5330,
+       4044,
+       4474,
+       2942
+      ],
+      "median_ns": [
+       18032110.0,
+       17928019.0,
+       24216591.0,
+       29629150.0
+      ],
+      "fewest_spill": [
+       9
+      ],
+      "fastest": 3,
+      "spill_win_is_fastest": false,
+      "spearman": -0.4
+     },
+     {
+      "arch": "gfx1200",
+      "L": 13,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       20986,
+       40658,
+       52084,
+       67708
+      ],
+      "median_ns": [
+       97507126.0,
+       80159775.0,
+       80204318.0,
+       93056758.0
+      ],
+      "fewest_spill": [
+       1
+      ],
+      "fastest": 3,
+      "spill_win_is_fastest": false,
+      "spearman": -0.2
+     },
+     {
+      "arch": "gfx1200",
+      "L": 16,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9
+      ],
+      "spill_sum": [
+       44752,
+       103622,
+       192158,
+       218852
+      ],
+      "median_ns": [
+       457602756.0,
+       307978306.0,
+       309723928.0,
+       302517958.0
+      ],
+      "fewest_spill": [
+       1
+      ],
+      "fastest": 9,
+      "spill_win_is_fastest": false,
+      "spearman": -0.8
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+  }
+ ]
+}
