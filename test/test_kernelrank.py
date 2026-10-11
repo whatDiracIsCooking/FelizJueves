@@ -31,7 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import kernelrank, measured
+from felizjueves import kernelrank
+from felizjueves import measured_store as measured
 from felizjueves.device import ARCHS
 from felizjueves.literature.limits import StructuralLimit, load_limits
 
