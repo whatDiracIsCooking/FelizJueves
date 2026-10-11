@@ -108,8 +108,22 @@ HIP_ARCH=${HIP_ARCH:-gfx1200}
 # floating point. The tier's only assertion is "this agrees with the host
 # reference to a tolerance", and a flag that reassociates arithmetic changes
 # the thing being measured. Add one per experiment, never here.
-NVCC_FLAGS=${NVCC_FLAGS:--O3 -lineinfo --std=c++17}
-HIPCC_FLAGS=${HIPCC_FLAGS:--O3 -g1 -std=c++17}
+#
+# THE WARNING FLAGS ARE A RATCHET (#92, after #62's unused declaration): the
+# compile phase of kernel-tier.sh FAILS on any warning whose location is a
+# generated translation unit, naming the kernel and the line. nvcc's front end
+# warns on its own (#177-D and friends); `-Xcompiler -Wall` adds the host
+# compiler's view of the same text. hipcc is clang, and `-Wall -Wextra` is its
+# whole policy. The two disagree about what warns -- that is expected, and the
+# fix for a warning on one side is in the emitter, never a per-vendor
+# `-diag-suppress` / `-Wno-` here.
+#
+# Deliberately NOT -Werror: that would also fail on a warning inside a vendor
+# header (hip_runtime.h, the CUDA runtime), which the generator cannot fix.
+# kernel-tier.sh filters by FILE instead; a warning outside the generated
+# unit is reported and does not fail the tier.
+NVCC_FLAGS=${NVCC_FLAGS:--O3 -lineinfo --std=c++17 -Xcompiler -Wall}
+HIPCC_FLAGS=${HIPCC_FLAGS:--O3 -g1 -std=c++17 -Wall -Wextra}
 
 # How the kernels get generated. The tier runs this, from the repo root, with
 # the project venv first on PATH, and expects the emitted sources in
