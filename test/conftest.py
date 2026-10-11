@@ -11,10 +11,15 @@ COMPILER targets an architecture and needs no card, while RUNNING needs the
 card and not the compiler's target. So `nvcc`/`hipcc` skip on a missing
 compiler and `cuda_device`/`hip_device` skip on a missing device, and a test
 asks for exactly the ones it needs.
+
+`claim_marked_tests` is the other half of `test/test_claims.py`'s registry
+check: every `@pytest.mark.claim(id)` under test/, read from source so that a
+narrowed run cannot hide one.
 """
 
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
@@ -138,3 +143,81 @@ def run_device_binary():
         return done.stdout
 
     return _run
+
+
+# -- the claim registry ------------------------------------------------------
+
+TEST_DIR = Path(__file__).resolve().parent
+
+
+def _is_claim_mark(node: ast.AST) -> bool:
+    """`pytest.mark.claim(...)` (or any `<x>.mark.claim(...)`)."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "claim"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "mark"
+    )
+
+
+def scan_claim_marks(test_dir: Path) -> dict[str, str]:
+    """Map each claim id to the node id of the one test marked with it.
+
+    Read from the SOURCE, not from the session's collected items, on purpose:
+    a run narrowed by `-k`, `-m` or a path collects a subset, and a registry
+    check that only saw that subset would pass or fail by accident. A mark
+    this scanner cannot pin to one test -- a non-literal id, a module-level
+    `pytestmark`, a mark on a class, the same id on two tests -- is an error,
+    not something to skip, since the point is that nothing drifts silently.
+    """
+    found: dict[str, str] = {}
+    root = test_dir.parent
+    for path in sorted(test_dir.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        rel = path.relative_to(root).as_posix()
+        placed = list(_marks_on_tests(tree.body, f"{rel}::"))
+        for where, deco in placed:
+            args = deco.args
+            if (
+                len(args) != 1
+                or deco.keywords
+                or not isinstance(args[0], ast.Constant)
+                or not isinstance(args[0].value, str)
+            ):
+                raise ValueError(f"{where}: claim mark takes one literal claim id")
+            cid = args[0].value
+            if cid in found:
+                raise ValueError(
+                    f"claim {cid!r} marked on both {found[cid]} and {where}"
+                )
+            found[cid] = where
+        on_tests = {id(deco) for _, deco in placed}
+        stray = [
+            n.lineno
+            for n in ast.walk(tree)
+            if _is_claim_mark(n) and id(n) not in on_tests
+        ]
+        if stray:
+            raise ValueError(
+                f"{rel}: claim mark not on a test function (lines {stray}); "
+                "a claim is discharged by exactly one named test"
+            )
+    return found
+
+
+def _marks_on_tests(body: list[ast.stmt], prefix: str):
+    """Yield (node id, claim-mark decorator) for functions, into classes."""
+    for stmt in body:
+        if isinstance(stmt, ast.ClassDef):
+            yield from _marks_on_tests(stmt.body, f"{prefix}{stmt.name}::")
+        elif isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
+            for deco in stmt.decorator_list:
+                if _is_claim_mark(deco):
+                    yield f"{prefix}{stmt.name}", deco
+
+
+@pytest.fixture(scope="session")
+def claim_marked_tests() -> dict[str, str]:
+    """Every `@pytest.mark.claim(id)` under test/, as {claim id: node id}."""
+    return scan_claim_marks(TEST_DIR)

@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "about": "The non-numeric claims of [JEngine], one record each: id, statement (in our vocabulary), source, kind, status, and either test (ASSERTED) or reason (PENDING / UNVERIFIABLE). See felizjueves.literature.claims. Ordered by id: add a record in its place rather than rewriting the file.",
+  "claims": [
+    {
+      "id": "jengine/alg1-line10-atomic-free",
+      "statement": "Alg. 1 line 10 writes J_p to global memory without atomics; once a class is split into batches, several kernels contribute to the same J_p, so the write needs atomics -- as §5 itself corrects.",
+      "source": "[JEngine, v2, Alg. 1 vs §5]",
+      "kind": "defect",
+      "status": "pending",
+      "reason": "Alg. 1 presents the global write as atomic-free and §5 corrects it; no kernel is generated yet, so nothing can be held to the atomic write."
+    },
+    {
+      "id": "jengine/batch-count-multiple-of-3",
+      "statement": "The batch count is always a multiple of three: each of the x, y, z directions is split into the same number of sub-batches, and finer splits that break the three-way symmetry are both unnecessary and worse.",
+      "source": "[JEngine, v2, §5]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "#6 implements the batching split and its test."
+    },
+    {
+      "id": "jengine/batch-tie-break",
+      "statement": "A target's batch direction is the axis of its largest component, a tie going to the cyclic predecessor: {x,y} -> x, {y,z} -> y, {x,z} -> z, and all three equal -> x. This is deliberately the opposite convention to MILD's.",
+      "source": "[JEngine, v2, Alg. 4]",
+      "kind": "ordering",
+      "status": "pending",
+      "reason": "#6 implements batch_direction and its test."
+    },
+    {
+      "id": "jengine/batching-trades-flops-for-intermediates",
+      "statement": "Raising the batch count lowers intermediates and targets per batch and raises total FLOPs across batches, because intermediates shared between batches are recomputed.",
+      "source": "[JEngine, v2, §5]",
+      "kind": "monotonicity",
+      "status": "pending",
+      "reason": "#10 discharges it."
+    },
+    {
+      "id": "jengine/eq17-1y-misprint",
+      "statement": "eq. 17 prints the unit vector 1y as (1,1,0); it is (0,1,0). (1,1,0) is not a unit vector and would break eq. 11.",
+      "source": "[JEngine, v2, eq. 17]",
+      "kind": "defect",
+      "status": "pending",
+      "reason": "#8 records it in the docs; no code transcribes eq. 17 yet, so no test can hold the generator to (0,1,0)."
+    },
+    {
+      "id": "jengine/mild-keeps-rules-1-2-3-5",
+      "statement": "The MILD tree obeys Johnson, Gill & Pople's optimal-tree rules 1, 2, 3 and 5: axial integrals {0 0 j} always present; reduce the unit component of {0 1 j}; never reduce the j of {1 1 j}; reduce the 2 of {0 2 j}.",
+      "source": "[JEngine, v2, §4.1]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "#7 implements MILD and its test."
+    },
+    {
+      "id": "jengine/mild-tie-break",
+      "statement": "MILD reduces along the smallest non-zero component of r (zeros excluded from the minimum) and breaks a tie toward the cyclic successor: rx=ry<rz -> y, ry=rz<rx -> z, rx=rz<ry -> x, and all three equal -> z.",
+      "source": "[JEngine, v2, Alg. 2]",
+      "kind": "ordering",
+      "status": "pending",
+      "reason": "#7 implements mild_direction and its test."
+    },
+    {
+      "id": "jengine/mild-vs-exact-tradeoff",
+      "statement": "Against Johnson et al.'s near-optimal tree search, MILD costs 1-2% more FLOPs and has 2-6% fewer intermediates.",
+      "source": "[JEngine, v2, §4.1]",
+      "kind": "monotonicity",
+      "status": "pending",
+      "reason": "Needs an exact (near-optimal) tree search to compare against, which this repo does not have."
+    },
+    {
+      "id": "jengine/nine-batches-suffice",
+      "statement": "For L <= 16, at most 9 batches are needed; the batch counts worth generating over are 1, 3, 6 and 9.",
+      "source": "[JEngine, v2, §7]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "#13 discharges it."
+    },
+    {
+      "id": "jengine/rule-4-needs-the-sieve",
+      "statement": "MILD cannot obey rule 4 (reduce to a parent and grandparent already in the tree): that is a property of the graph built so far, while MILD is a pure function of r. The sieve is the pass that recovers it.",
+      "source": "[JEngine, v2, §4.1]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "#12 implements the sieve and its test."
+    },
+    {
+      "id": "jengine/sieve-non-monotone-in-spills",
+      "statement": "The sieve's effect on register spills is non-monotone across classes: about 4% fewer on average, but [5|6] gets 3% more and [8|8] 11% fewer.",
+      "source": "[JEngine, v2, §4.1]",
+      "kind": "monotonicity",
+      "status": "unverifiable",
+      "reason": "A spill count is a measurement of the paper's kernels on their compiler and their card (an A100), not a property of the tree -- the same argument that keeps Table 4 out of data/. The kernel tier can measure our own spills on sm_86 and gfx1200, but that is a different claim."
+    },
+    {
+      "id": "jengine/theta-undefined",
+      "statement": "theta appears in eq. 13 (the fundamental) and is never defined; the conventional McMurchie-Davidson reading is theta^2 = zeta*eta/(zeta+eta), to be pinned against McMurchie & Davidson directly.",
+      "source": "[JEngine, v2, eq. 13]",
+      "kind": "defect",
+      "status": "pending",
+      "reason": "#8 pins the convention."
+    },
+    {
+      "id": "jengine/y12-example",
+      "statement": "At L = 5 the batch Y_{1,2} (direction y, 1 <= ry <= 2) is exactly the eight targets { p_y, d_yz, d_y2, f_xy2, f_y2z, g_xy2z, g_y2z2, h_xy2z2 }; d_yz, g_y2z2 and h_xy2z2 are members only because of the tie-break.",
+      "source": "[JEngine, v2, §5]",
+      "kind": "membership",
+      "status": "pending",
+      "reason": "#6 implements in_batch and its test."
+    }
+  ]
+}
