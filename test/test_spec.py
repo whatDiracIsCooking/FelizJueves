@@ -17,10 +17,18 @@ def _spec(**kw) -> Spec:
 
 
 def test_key_names_every_field() -> None:
-    assert _spec().key() == "coulomb/d0/(4,4|4,4)/j/literal"
-    assert _spec(am=(10, 2, 3, 1), levers=("a", "b")).key() == (
-        "coulomb/d0/(10,2|3,1)/j/a+b"
+    assert _spec().key() == "coulomb/d0/(4,4|4,4)/b1/j/literal"
+    assert _spec(am=(10, 2, 3, 1), levers=("a", "b"), n_batches=9).key() == (
+        "coulomb/d0/(10,2|3,1)/b9/j/a+b"
     )
+
+
+def test_the_batch_count_is_part_of_the_key() -> None:
+    # A kernel is emitted per class AND per batch, so two batch counts are two
+    # artifacts and must be two keys.
+    assert _spec().n_batches == 1
+    assert _spec(n_batches=3) != _spec(n_batches=6)
+    assert len({_spec(n_batches=n).key() for n in (1, 3, 6, 9)}) == 4
 
 
 def test_total_am_is_the_table_row() -> None:
@@ -53,6 +61,12 @@ def test_frozen() -> None:
         {"levers": ("b", "a")},
         {"levers": ("a", "a")},
         {"levers": ("",)},
+        {"n_batches": 0},
+        {"n_batches": 2},
+        {"n_batches": 4},
+        {"n_batches": -3},
+        {"n_batches": 3.0},
+        {"n_batches": True},
     ],
 )
 def test_illegal_values_are_refused(bad: dict) -> None:

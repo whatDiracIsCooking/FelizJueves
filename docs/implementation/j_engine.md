@@ -5,6 +5,16 @@
 satisfy — our notation, our vocabulary, our batching config — written so a test
 can be read against it rather than against a paper.
 
+**Implemented so far: step 1 of the pipeline, the split.** Target enumeration
+is `src/felizjueves/plan/targets.py`; `batch_direction`, `in_batch` and the
+sub-batch partition are `src/felizjueves/plan/batching.py`. The partition's cut
+rule is **minimax** — the largest batch minimised, `[JEngine, v2, §5]` — with
+ties to the lowest boundaries and one set of cut points shared by `X`, `Y` and
+`Z`; that is the rule, wherever this file says "equalise". It computes
+`[JEngine, v2, Table 3]` (targets per batch), scored on the `literal` board.
+Everything else here — the recurrences, MILD, the sieve, emission, Tables 1–2 —
+is still specification.
+
 The tree-search half (reduction directions, and the sieve that prunes them) is
 [`mild.md`](mild.md). This file covers everything around it: the recurrences,
 the Coulomb contraction, the kernel contract, the batching scheme, the pipeline

@@ -18,6 +18,12 @@ total angular momentum, L = l1 + l2 + l3 + l4 (the [p|q] class has
 lp = l1 + l2 and lq = l3 + l4, and L = lp + lq). A Spec's four shells index a
 table row through `total_am`, their sum, and through nothing else.
 
+THE BATCH COUNT IS PART OF THE KEY. A kernel is emitted per class AND per
+batch, and [JEngine] Tables 1-3 are indexed by (L, batches), so `n_batches`
+changes the artifact; it is a field, not a loose call argument. It is 1, or a
+positive multiple of 3 -- finer splits break the three-way symmetry
+([JEngine, v2, §5]). `is_batch_count` is that rule, stated once.
+
 Values only, plus two derived reads: `total_am` above, and `key`, a string
 form of the key for file names and JSON, where a dataclass cannot go.
 """
@@ -40,6 +46,11 @@ class Target(StrEnum):
 DERIVATIVE_ORDERS = (0,)
 
 
+def is_batch_count(n: object) -> bool:
+    """1, or a positive multiple of 3 ([JEngine, v2, §5])."""
+    return type(n) is int and (n == 1 or (n > 0 and n % 3 == 0))
+
+
 @dataclass(frozen=True)
 class Spec:
     operator: Operator
@@ -50,6 +61,9 @@ class Spec:
     # Named departures from the paper, sorted and unique. () is the literal
     # [JEngine] reconstruction.
     levers: tuple[str, ...] = ()
+    # 1, or a multiple of 3: finer splits break the three-way symmetry
+    # ([JEngine, v2, §5]).
+    n_batches: int = 1
 
     def __post_init__(self) -> None:
         if not isinstance(self.operator, Operator):
@@ -72,6 +86,11 @@ class Spec:
             raise ValueError(f"levers {self.levers!r} must be non-empty strings")
         if tuple(sorted(set(self.levers))) != self.levers:
             raise ValueError(f"levers {self.levers!r} must be sorted and unique")
+        if not is_batch_count(self.n_batches):
+            raise ValueError(
+                f"n_batches {self.n_batches!r} is neither 1 nor a positive "
+                "multiple of 3"
+            )
 
     @property
     def total_am(self) -> int:
@@ -79,10 +98,10 @@ class Spec:
         return sum(self.am)
 
     def key(self) -> str:
-        """E.g. ``coulomb/d0/(4,4|4,4)/j/literal``."""
+        """E.g. ``coulomb/d0/(4,4|4,4)/b1/j/literal``."""
         l1, l2, l3, l4 = self.am
         levers = "+".join(self.levers) or "literal"
         return (
             f"{self.operator}/d{self.derivative_order}/({l1},{l2}|{l3},{l4})/"
-            f"{self.target}/{levers}"
+            f"b{self.n_batches}/{self.target}/{levers}"
         )

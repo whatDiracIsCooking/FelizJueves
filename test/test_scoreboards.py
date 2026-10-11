@@ -13,8 +13,9 @@ from felizjueves.literature.rules import (
     ExactGivenInputs,
     Status,
 )
-from felizjueves.literature.scoreboard import load_scoreboard, score
+from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
+from felizjueves.plan.batching import max_targets_per_batch
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 BOARDS = DATA / "scoreboards" / "jengine"
@@ -44,11 +45,16 @@ def test_a_board_cannot_load_the_other_boards_file() -> None:
         load_scoreboard(BOARDS / "searched.json", "literal")
 
 
-def test_no_floor_is_set_yet() -> None:
-    # Nothing in the repo computes a cell, so every threshold must be unset.
-    # The first change that produces numbers fills these with what it measured.
-    for rules in _board("literal").rules.values():
+def test_no_floor_is_set_where_nothing_computes_a_cell() -> None:
+    # Tables 1 and 2 need MILD, the DAG and the sieve; nothing computes them
+    # yet, so their thresholds must be unset. The first change that produces
+    # their numbers fills these with what it measured. Table 3 is computed by
+    # the plan layer and has its measured Agreement floor and ceiling; its
+    # exact_given_inputs inputs are still unrecorded (#14).
+    for tid, rules in _board("literal").rules.items():
         for rule in rules:
+            if tid == "jengine/table3" and isinstance(rule, Agreement):
+                continue
             if isinstance(rule, Agreement):
                 assert rule.floor_exact is None
                 assert rule.ceiling_worst_rel_dev is None
@@ -58,9 +64,12 @@ def test_no_floor_is_set_yet() -> None:
 
 def test_the_printed_tables_score_as_unset_and_at_or_under() -> None:
     # Scoring the paper against itself: the literal board has nothing to judge
-    # against, and the searched board's rule holds with equality.
+    # against except Table 3's Agreement, which the printed values pass (40
+    # exact, no deviation); the searched board's rule holds with equality.
     literal = score(_board("literal"), TABLES, _as_printed("literal"))
-    assert {v.status for v in literal} == {Status.UNSET}
+    passed = {(v.table, v.rule) for v in literal if v.status is Status.PASS}
+    assert passed == {("jengine/table3", "agreement")}
+    assert {v.status for v in literal} == {Status.UNSET, Status.PASS}
     searched = score(_board("searched"), TABLES, _as_printed("searched"))
     assert {v.status for v in searched} == {Status.PASS}
 
@@ -101,6 +110,45 @@ def test_a_candidate_not_supplied_fails() -> None:
     missing = [v for v in verdicts if v.table == "jengine/table3"]
     assert [v.status for v in missing] == [Status.FAIL]
     assert missing[0].reason == "no candidate supplied"
+
+
+def _table3_candidate() -> Candidate:
+    t3 = TABLES["jengine/table3"]
+    return Candidate(
+        cells={
+            (L, nb): max_targets_per_batch(L, nb)
+            for L in t3.row_values
+            for nb in t3.column_values
+        },
+        board="literal",
+    )
+
+
+def test_table3_scores_on_the_literal_board() -> None:
+    t3 = TABLES["jengine/table3"]
+    board = _board("literal")
+    only_t3 = Scoreboard(board.name, {t3.id: board.rules[t3.id]})
+    agreement, exact_given_inputs = score(
+        only_t3, {t3.id: t3}, {t3.id: _table3_candidate()}
+    )
+    assert agreement.status is Status.PASS
+    assert agreement.measured == {"exact": 38, "worst_rel_dev": 1 / 21}
+    assert exact_given_inputs.status is Status.UNSET  # inputs still null
+
+
+def test_the_full_board_fails_while_two_tables_have_no_candidate() -> None:
+    # A partial run cannot be told apart from a regression: the plan layer
+    # computes Table 3 only, so Tables 1 and 2 are FAILs by design.
+    verdicts = score(
+        _board("literal"), TABLES, {"jengine/table3": _table3_candidate()}
+    )
+    failed = {v.table for v in verdicts if v.status is Status.FAIL}
+    assert failed == {"jengine/table1", "jengine/table2"}
+    assert all(
+        v.reason == "no candidate supplied"
+        for v in verdicts
+        if v.table != "jengine/table3"
+    )
 
 
 def test_tables_are_read_only() -> None:
