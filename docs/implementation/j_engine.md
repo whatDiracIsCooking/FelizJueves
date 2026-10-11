@@ -711,13 +711,19 @@ rejected too. The sort must be by that product and nothing else, and stable
   sets are nested).
 
 **The cases.** *Compact*: H₂O/STO-3G, the `h2o_sto3g_j` fixture's basis and
-density. *Extended*: two H₂ (bond 1.4 bohr), centres 6 bohr apart, collinear,
+density. *Extended*: four H₂ (bond 1.4 bohr), centres 6 bohr apart, collinear,
 STO-3G H from the `h2_sto3g_j` fixture and the fixtures' hilbert density
 `D_ij = 1/(i+j+1)` — every `D_cd` non-zero, so a skip comes from the decay of
-the ket's dressed `E`, not from a zero. Two molecules and not more: a third puts
-`T = θ²|PQ|²` at ~616, past the `T ≤ 500` that `reference.boys` has measured
-and refuses beyond; the test pins that the chain is as long as the evaluator
-allows.
+the ket's dressed `E`, not from a zero. Four molecules and not more: four reach
+`T = θ²|PQ|²` ≈ 1289 and a fifth ≈ 2210, past the `T ≤ 2000` that
+`reference.boys` has measured and refuses beyond; the test pins that the chain
+is as long as the evaluator allows. (#88 ran two H₂ under the original
+`T ≤ 500` cap; #122 gave `reference.boys` a measured large-`T` branch — the
+asymptote `Γ(m+½)/(2T^(m+½))` from `T = 125`, where its truncation for every
+`m ≤ 40` is under 1e-18, to `T = 2000`, its error under 8e-16 against the
+Kummer series — and the ladder was re-run. The bound that bites is `T_MAX`,
+not `M_MAX`: the chain is all s shells, so only `F_0` is ever asked for. The
+device-side `fj_boys` is untouched by that widening.)
 
 **Measured** (`data/ao/screening.json`; `err/scale` is the maximum over
 elements of `|J(τ) − J(0)| / scale`, and the claim is that it is `≤ τ`):
@@ -731,20 +737,21 @@ elements of `|J(τ) − J(0)| / scale`, and the claim is that it is `≤ τ`):
 | compact | 1e-8 | 4.4e-9 | 3.0e-11 | 0.0023 |
 | compact | 1e-6 | 3.1e-7 | 2.3e-9 | 0.0211 |
 | extended | 0 | 0 | 0 | 0.0000 |
-| extended | 1e-14 | 6.7e-15 | 7.4e-17 | 0.0543 |
-| extended | 1e-12 | 8.7e-15 | 9.6e-17 | 0.0667 |
-| extended | 1e-10 | 2.0e-11 | 9.8e-13 | 0.0691 |
-| extended | 1e-8 | 2.6e-9 | 3.9e-11 | 0.1222 |
-| extended | 1e-6 | 5.5e-7 | 1.2e-8 | 0.1457 |
+| extended | 1e-14 | 1.2e-14 | 4.0e-17 | 0.2651 |
+| extended | 1e-12 | 1.4e-12 | 6.2e-15 | 0.2980 |
+| extended | 1e-10 | 3.0e-10 | 1.3e-12 | 0.3436 |
+| extended | 1e-8 | 1.7e-8 | 6.4e-11 | 0.4047 |
+| extended | 1e-6 | 2.9e-6 | 9.1e-9 | 0.4664 |
 
 **Read it as follows.** The compact molecule skips **nothing** at
 `τ ≤ 1e-10`: there the error claim is vacuous (the error is exactly 0 because
 nothing was dropped), and the test says so rather than passing quietly. The
-extended case skips at every positive rung — 5% of record pairs at `1e-14`,
-15% at `1e-6` — so the bound does reject whole inter-molecule blocks, and
+extended case skips at every positive rung — 27% of record pairs at `1e-14`,
+47% at `1e-6` (two H₂ skipped 5% and 15%: the longer chain has more distant
+pairs to drop) — so the bound does reject whole inter-molecule blocks, and
 nothing goes to `limits.json`. The stated scale is loose by design (it charges
-every bra record for every ket); `err/scale` sits two to five orders under
-`τ`. Accuracy only: no timings and no `Measured` rows; the work saved is the
+every bra record for every ket); `err/scale` sits about two orders (1.9 to
+2.6) under `τ`. Accuracy only: no timings and no `Measured` rows; the work saved is the
 skip fraction. Regenerate with
 `PYTHONPATH=src uv run python test/test_ao_screening.py --write`; the `slow`
 test requires the file to equal a fresh run exactly.

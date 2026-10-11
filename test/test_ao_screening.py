@@ -35,16 +35,19 @@ nothing, so a compact case alone proves the screen by never testing it.
             error is exactly 0 because nothing was dropped), which is what
             "a compact molecule cannot exercise a screen" means. `slow`: the
             p shells make it ~20 s.
-  extended  two H2 molecules (bond 1.4 bohr) whose centres are 6 bohr apart,
+  extended  four H2 molecules (bond 1.4 bohr) whose centres are 6 bohr apart,
             collinear on z, STO-3G hydrogen from the `h2_sto3g_j` fixture's
             converted basis, and the fixtures' hilbert density
             `D[i][j] = 1/(i+j+1)` (so every `D_cd` is non-zero and a skip
             comes from the decay of the ket's dressed `E`, not from a zero in
-            `D`). TWO molecules, not more, because `reference.boys` refuses
-            `T > 500` (where its quadrature stops being measured) and a third
-            H2 puts a bra and a ket 13.4 bohr apart: `T = theta^2 |PQ|^2`
-            reaches ~616. `test_the_chain_is_as_long_as_the_evaluator_allows`
-            pins that. Fast tier: it is small.
+            `D`). FOUR molecules, not more, because `reference.boys` refuses
+            `T > T_MAX = 2000` (where its measurement stops; #122 extended it
+            from 500 with a measured large-T asymptote) and a fifth H2 puts a
+            bra and a ket 25.4 bohr apart: `T = theta^2 |PQ|^2` reaches ~2210
+            (four reach ~1289). The bound that bites is T_MAX, not M_MAX:
+            every shell is s, so only F_0 is ever asked for.
+            `test_the_chain_is_as_long_as_the_evaluator_allows` pins both.
+            Fast tier: it is small (~8 s).
 
 `test_screening_json_is_recomputed` (`slow`) rebuilds both ladders and requires
 the data file to equal them exactly; the fast tier checks the extended ladder
@@ -79,7 +82,7 @@ DATA = Path(__file__).resolve().parent.parent / "data" / "ao" / "screening.json"
 
 BOND = 1.4  # bohr, H-H
 SPACING = 6.0  # bohr, centre to centre of neighbouring H2
-N_H2 = 2
+N_H2 = 4
 
 
 def _hilbert(n: int) -> np.ndarray:
@@ -215,8 +218,11 @@ def test_extended_ladder_live():
 
 
 def test_the_chain_is_as_long_as_the_evaluator_allows():
-    """Two H2, because a third takes `T` past `reference.boys`'s measured
-    range: the chain's length is the evaluator's limit, not a choice."""
+    """Four H2, because a fifth takes `T` past `reference.boys`'s measured
+    range: the chain's length is the evaluator's limit, not a choice. T_MAX
+    is the bound that bites; M_MAX cannot, the chain being all s shells
+    (fundamentals need m = 0 only, at any length)."""
+    assert all(s.l == 0 for s in _h2_chain(N_H2 + 1).shells)
     def max_T(basis: Basis) -> float:
         recs = [k for a in basis.shells for b in basis.shells
                 for k in primitive_pairs(a, b)]
