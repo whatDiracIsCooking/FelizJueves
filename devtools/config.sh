@@ -215,13 +215,16 @@ CPUS=${CPUS:-}
 # gate would quietly start compiling device code and cost seconds-to-minutes
 # depending on which side you pushed from. The kernel tier is where that
 # belongs (devtools/kernel-tier.sh), and it selects the same markers from the
-# other direction (KERNEL_TEST_ARGS above).
+# other direction (KERNEL_TEST_ARGS above). It also excludes `slow`, which
+# pyproject.toml's marker list promises is "kept off the pre-push gate": a
+# slow test re-runs an exhaustive search (minutes), and is run by hand or
+# with plain `pytest`.
 #
 # NB THE SINGLE QUOTES ARE LOAD-BEARING: inside ${VAR:-default} bash strips one
 # level of quoting, so an unquoted `-m "not gpu"` would reach pytest as the
 # three words `-m`, `not`, `gpu` -- a marker expression of `not` and a path
 # called `gpu`, which collects nothing and says only "no tests ran".
-FAST_TEST_ARGS=${FAST_TEST_ARGS:-'-m "not cuda and not hip and not gpu"'}
+FAST_TEST_ARGS=${FAST_TEST_ARGS:-'-m "not cuda and not hip and not gpu and not slow"'}
 
 # What the pre-push gate runs. Deliberately a curated list rather than the
 # whole suite: the gate should cost seconds, so anything driving a device

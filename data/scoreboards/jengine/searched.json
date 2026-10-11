@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "scoreboard": "searched",
-  "about": "The choices [JEngine] leaves open, searched rather than fixed. Scored against the same tables as the literal board, by a rule with no threshold to ratchet: at or under the printed value in every cell. Nothing here is read by the literal board, and nothing in literal.json is read here. The candidates are plan/search.py's: one plan per cell, the cut searched under one lexicographic objective (max targets, then max intermediates, then FLOPs), recorded per (L, n_batches) in searched_cuts.json so a replay does not re-search.",
+  "about": "The choices [JEngine] leaves open, searched rather than fixed. Scored against the same tables as the literal board, by a rule with no threshold to ratchet: at or under the printed value in every cell. Nothing here is read by the literal board, and nothing in literal.json is read here. The candidates are plan/search.py's: one plan per cell, the cut and the sieve's seed order searched under one objective (max targets within one of the cell's minimax, then max intermediates, then FLOPs), recorded per (L, n_batches) in searched_cuts.json so a replay does not re-search. at_or_under reports each cell's margin over the printed value and never judges it; the cells still over are named with their margins in data/literature/jengine/limits.json, as a StructuralLimit.",
   "tables": {
     "jengine/table1": [{"rule": "at_or_under"}],
     "jengine/table2": [{"rule": "at_or_under"}],

@@ -84,7 +84,7 @@ gets reported as a pass:
 | `cuda` | nvcc — **no card required** | `nvcc` |
 | `hip` | hipcc — **no card required** | `hipcc` |
 | `gpu` | a live device | `cuda_device` / `hip_device` |
-| `slow` | nothing; just costs seconds | — |
+| `slow` | nothing; costs minutes (an exhaustive search re-run); off the pre-push gate via `FAST_TEST_ARGS` | — |
 
 A test takes exactly the fixtures it needs, so the skip message names the real
 reason (`hipcc not found -- it lives in the fj:hip / fj:combined image`, versus

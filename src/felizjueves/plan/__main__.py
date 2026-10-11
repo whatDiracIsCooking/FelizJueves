@@ -43,7 +43,7 @@ from felizjueves.literature.tables import Cell, Table, load_table
 from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.recovery import recovered_candidates
-from felizjueves.plan.search import load_cuts, searched_plan
+from felizjueves.plan.search import Choice, load_cuts, searched_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import Operator, Spec, Target
 
@@ -89,9 +89,9 @@ def literal_candidates(tables: Mapping[str, Table]) -> dict[str, Candidate]:
 
 # -- the searched board's recorded cuts (#13) ----------------------------------
 #
-# #13 records the chosen cut per (L, n_batches) next to searched.json, in
-# plan/search.py's schema. Without that file the board has no candidates.
-# Everything that knows about the file is in this block.
+# #13 records the chosen cut and seed order per (L, n_batches) next to
+# searched.json, in plan/search.py's schema. Without that file the board has
+# no candidates. Everything that knows about the file is in this block.
 
 SEARCHED_CUTS = "searched_cuts.json"
 
@@ -100,8 +100,9 @@ class UnreadableCuts(Exception):
     """The cuts file exists, but this reader does not know its schema."""
 
 
-def read_searched_cuts(path: Path) -> dict[Cell, tuple[int, ...]] | None:
-    """#13's cuts, keyed by (L, n_batches); None while the file is absent.
+def read_searched_cuts(path: Path) -> dict[Cell, Choice] | None:
+    """#13's (cut, seed order) per (L, n_batches); None while the file is
+    absent.
     The schema is plan/search.py's (`load_cuts`); a file it refuses is
     UnreadableCuts."""
     if not path.exists():
@@ -113,13 +114,14 @@ def read_searched_cuts(path: Path) -> dict[Cell, tuple[int, ...]] | None:
 
 
 def searched_candidates(
-    tables: Mapping[str, Table], cuts: Mapping[Cell, tuple[int, ...]]
+    tables: Mapping[str, Table], cuts: Mapping[Cell, Choice]
 ) -> dict[str, Candidate]:
-    """One plan per cell, replayed from its recorded cut (search.searched_plan),
-    scores every table. A cell with no recorded cut gets no candidate value,
-    which the rule reports rather than this reader guessing a cut."""
+    """One plan per cell, replayed from its recorded cut and seed order
+    (search.searched_plan), scores every table. A cell with no record gets no
+    candidate value, which the rule reports rather than this reader guessing
+    one."""
     cells = {c for t in tables.values() for c in t.cells} & set(cuts)
-    costs = {c: cost(searched_plan(*c, cuts[c])) for c in sorted(cells)}
+    costs = {c: cost(searched_plan(*c, *cuts[c])) for c in sorted(cells)}
     return {
         tid: Candidate(
             {c: getattr(costs[c], QUANTITY[tid]) for c in t.cells if c in costs},
@@ -136,11 +138,24 @@ def _load_tables(data: Path, ids: Sequence[str]) -> dict[str, Table]:
     return {tid: load_table(data / "literature" / f"{tid}.json") for tid in ids}
 
 
+def _pct(x: float) -> str:
+    return f"{100 * x:+.2f}%"
+
+
 def _print_verdicts(board: str, verdicts: Sequence[Verdict]) -> None:
+    """One line per verdict. An at_or_under margin is printed in percent over
+    the printed value -- the worst on the verdict's line, then one indented
+    line per cell over -- since a list of float pairs is unreadable."""
     for v in verdicts:
-        measured = json.dumps(dict(v.measured)) if v.measured else ""
+        measured = dict(v.measured)
+        per_cell = measured.pop("overshoot", ())
+        if "worst_overshoot" in measured:
+            measured["worst_overshoot"] = _pct(measured["worst_overshoot"])
+        shown = json.dumps(measured) if measured else ""
         print(f"{board}  {v.table}  {v.rule}  {v.status.upper()}  {v.reason}"
-              + (f"  {measured}" if measured else ""))
+              + (f"  {shown}" if shown else ""))
+        for cell, over in per_cell:
+            print(f"    {cell}  {_pct(over)}")
 
 
 def exit_status(verdicts: Sequence[Verdict]) -> int:

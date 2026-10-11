@@ -5,7 +5,8 @@ Three rules, each a frozen value that carries its own thresholds:
 - `Agreement`        exact-cell count >= floor, and worst relative deviation
                      <= ceiling.
 - `AtOrUnder`        the candidate is at or under the printed value in every
-                     cell.
+                     cell; reports by how much it is over, but never judges
+                     the amount.
 - `ExactGivenInputs` every cell exact -- but only for a candidate produced
                      from the recorded inputs; any other candidate is
                      INAPPLICABLE, not a failure.
@@ -27,6 +28,7 @@ a regression.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -148,8 +150,23 @@ class Agreement:
         return Agreement(floor, ceiling)
 
 
+def _overshoot(printed: float, value: float) -> float:
+    """(value - printed) / |printed|; inf for a cell printed as 0, where any
+    value over it is over by an unbounded fraction."""
+    return (value - printed) / abs(printed) if printed else math.inf
+
+
 @dataclass(frozen=True)
 class AtOrUnder:
+    """At or under the printed value in every cell. Nothing to ratchet.
+
+    The MARGIN is reported, never judged: `measured` carries the worst
+    relative overshoot across the table (0.0 when no cell is over) and, per
+    cell over, its overshoot, in the same order as `cells`. There is no
+    tolerance: a cell over by any amount is a FAIL. A margin is evidence for
+    whatever discharges the FAIL (a StructuralLimit), not a way past it.
+    """
+
     name: str = field(default="at_or_under", init=False)
 
     def judge(self, table: Table, candidate: Candidate) -> Verdict:
@@ -158,7 +175,14 @@ class AtOrUnder:
         over = tuple(
             sorted(c for c, p in table.cells.items() if candidate.cells[c] > p)
         )
-        measured = {"over": len(over)}
+        overshoot = tuple(
+            (c, _overshoot(table.cells[c], candidate.cells[c])) for c in over
+        )
+        measured = {
+            "over": len(over),
+            "worst_overshoot": max((o for _, o in overshoot), default=0.0),
+            "overshoot": overshoot,
+        }
         if over:
             return Verdict(
                 self.name, table.id, Status.FAIL,
