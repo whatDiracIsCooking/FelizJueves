@@ -24,6 +24,15 @@ leaves open, and on the literal board it is fixed arbitrarily as:
 Which optimal cut is taken does not move Table 3, but it will move Tables 1-2
 (intermediates and FLOPs) once those are computed.
 
+NO BATCH IS EMPTY. `partition` refuses a cut that leaves a batch with no
+target, naming L, n_batches and the empty batches (#64), rather than hand the
+sieve and the kernel builder a batch with nothing to contract. Only Y_{0,0}
+and Z_{0,0} can be empty (see `empty_batches`), so a split is refused exactly
+when its first cut is 1 -- or, at L = 0, whenever it splits at all. Which
+(L, n_batches) the DEFAULT cut admits is therefore not monotone in either
+argument: (5, 9) is refused while (6, 9) and (5, 12) plan, because each
+minimax cut is chosen on its own counts. test_plan_batching.py pins the map.
+
 The first range always starts at 0: (0, 0, 0) is a target, and its maximum
 component is 0, so a range starting at 1 would drop it from every batch.
 
@@ -95,6 +104,20 @@ def largest_batch(counts: Counts, cuts: Sequence[int]) -> int:
     )
 
 
+def empty_batches(counts: Counts, cuts: Sequence[int]) -> tuple[Batch, ...]:
+    """The batches these shared cut points leave with NO target, in partition
+    order. Only Y_{0,0} and Z_{0,0} can be: (0, 0, 0) is the one target with
+    max component 0, and `batch_direction` sends it to x; every m >= 1 has a
+    target in each direction ((m, 0, 0), (0, m, 0), (0, 0, m))."""
+    total_am = len(counts["x"]) - 1
+    return tuple(
+        (d, a, b)
+        for d in AXES
+        for a, b in _ranges(cuts, total_am)
+        if not sum(counts[d][a : b + 1])
+    )
+
+
 def MINIMAX_TARGETS(counts: Counts, k: int) -> tuple[int, ...]:
     """Cut points minimising the largest batch; ties to the lowest boundaries.
 
@@ -142,6 +165,16 @@ def partition(
     ):
         raise ValueError(
             f"cut rule returned {cuts!r}, not {k - 1} ascending cut points in 1..L"
+        )
+    empty = empty_batches(target_counts(total_am), cuts)
+    if empty:
+        raise ValueError(
+            f"L = {total_am}, n_batches = {n_batches} (cut {cuts!r}) leaves "
+            f"{len(empty)} batches with no targets: "
+            + ", ".join(f"{d.upper()}_{{{a},{b}}}" for d, a, b in empty)
+            + ". (0, 0, 0) is the only target with max component 0 and it "
+            "belongs to x, so a y or z sub-batch covering only m = 0 is empty; "
+            "an empty batch has no contraction to emit"
         )
     return tuple((d, a, b) for d in AXES for a, b in _ranges(cuts, total_am))
 

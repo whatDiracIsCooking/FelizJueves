@@ -118,19 +118,26 @@ def test_the_literal_plan_is_the_hermite_seed_of_the_literal_cut() -> None:
 
 
 def test_the_search_space_is_bounded_and_counted() -> None:
+    # Every cut but those whose first point is 1 (#64: they empty Y_{0,0} and
+    # Z_{0,0}, and partition refuses them): C(L, k - 1) - C(L - 1, k - 2).
     for L, nb in GRID:
         k = 1 if nb == 1 else nb // 3
-        assert sum(1 for _ in candidate_cuts(L, nb)) == comb(L, k - 1)
+        expected = 1 if k == 1 else comb(L, k - 1) - comb(L - 1, k - 2)
+        got = list(candidate_cuts(L, nb))
+        assert len(got) == expected
+        assert all(not c or c[0] > 1 for c in got)
     assert len(SEED_ORDERS) == 26
-    assert max(comb(L, 2) for L in range(7, 17)) * len(SEED_ORDERS) == 3120
+    biggest = max(comb(L, 2) - comb(L - 1, 1) for L in range(7, 17))
+    assert biggest * len(SEED_ORDERS) == 2730
 
 
-def test_an_empty_batch_is_kept_and_costs_nothing() -> None:
-    # A first cut at 1 leaves Y_{0,0} and Z_{0,0} empty (as Fig. 4 at L = 6).
-    dags = searched_plan(7, 6, (1,))
-    empty = [d for d in dags if not d.targets]
-    assert [d.batch for d in empty] == [("y", 0, 0), ("z", 0, 0)]
-    assert all(not d.parents for d in empty)
+def test_a_cut_that_empties_a_batch_is_refused() -> None:
+    # A first cut at 1 leaves Y_{0,0} and Z_{0,0} empty ([JEngine, v2, Fig. 4]
+    # does not draw them at L = 6); #64 refuses it at the partition, so it is
+    # neither a search candidate nor a replayable plan.
+    assert (1,) not in set(candidate_cuts(7, 6))
+    with pytest.raises(ValueError, match=r"Y_\{0,0\}, Z_\{0,0\}"):
+        searched_plan(7, 6, (1,))
 
 
 def test_an_unknown_seed_order_is_refused(tmp_path: Path) -> None:
@@ -180,7 +187,7 @@ def test_a_cut_file_with_the_wrong_schema_is_refused(tmp_path: Path) -> None:
 
 @pytest.mark.slow
 def test_the_search_reproduces_the_record() -> None:
-    # ~4 minutes serial: 40 cells x up to 120 cuts x 26 seed orders.
+    # ~4 minutes serial: 40 cells x up to 105 cuts x 26 seed orders.
     results = {(L, nb): search(L, nb) for L, nb in GRID}
     assert dump_cuts(results) == CUTS.read_text()
     for (L, nb), r in results.items():
