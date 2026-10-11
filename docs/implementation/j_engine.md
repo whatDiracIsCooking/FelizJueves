@@ -258,9 +258,11 @@ Two consequences, both real costs:
 
 - **Batch count is always a multiple of three.** Finer splits break the
   three-way symmetry; `[JEngine, v2, §5]` found them both unnecessary and worse.
-- **Sub-batch ranges `a..b` are chosen to equalise target count per batch**, not
-  fixed a priori. So the ranges are an output of the generator, not an input —
-  the input is the batch count.
+- **Sub-batch ranges `a..b` are chosen to minimise the largest batch's target
+  count** (minimax, `[JEngine, v2, §5]`), not fixed a priori: ties go to the
+  lowest boundaries, and one set of cut points is shared by `X`, `Y` and `Z`.
+  So the ranges are an output of the generator, not an input — the input is the
+  batch count.
 - `[JEngine, v2, §7]` reports that **at most 9 batches suffices for `L ≤ 16`**,
   and presents 1, 3, 6 and 9 — which is the range we should generate over.
 

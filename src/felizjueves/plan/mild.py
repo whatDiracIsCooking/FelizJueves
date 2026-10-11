@@ -12,18 +12,18 @@ that recovers it.
 
 THE TIE-BREAK IS THE OPPOSITE OF THE BATCHING PASS'S, on purpose: here ties go
 to the cyclic successor and all-equal goes to z; there, to the predecessor and
-to x (docs/implementation/j_engine.md). Both are to be pinned by tests.
+to x (docs/implementation/j_engine.md). test/test_plan_mild.py pins both, and
+that they disagree exactly where the two specs say they do.
 
-`R` and `AXES` are defined here until the plan layer's targets module exists
-to own them.
+`R` is the plan layer's, from plan/targets.py; `AXES` is plan/batching.py's.
 """
 
 from __future__ import annotations
 
 from math import inf
 
-R = tuple[int, int, int]
-AXES = ("x", "y", "z")
+from felizjueves.plan.batching import AXES
+from felizjueves.plan.targets import R
 
 
 def mild_direction(r: R) -> str:

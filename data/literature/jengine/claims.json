@@ -16,15 +16,15 @@
       "source": "[JEngine, v2, §5]",
       "kind": "shape",
       "status": "pending",
-      "reason": "#6 implements the batching split and its test."
+      "reason": "partition and Spec refuse any other count since #6 (test/test_plan_batching.py::test_an_illegal_batch_count_raises), but no test carries the claim mark yet, and test_plan_batching.py was outside #10's lane. The 'finer splits are worse' half is the paper's measurement."
     },
     {
       "id": "jengine/batch-tie-break",
       "statement": "A target's batch direction is the axis of its largest component, a tie going to the cyclic predecessor: {x,y} -> x, {y,z} -> y, {x,z} -> z, and all three equal -> x. This is deliberately the opposite convention to MILD's.",
       "source": "[JEngine, v2, Alg. 4]",
       "kind": "ordering",
-      "status": "pending",
-      "reason": "#6 implements batch_direction and its test."
+      "status": "asserted",
+      "test": "test/test_plan_mild.py::test_mild_and_the_batching_pass_break_ties_oppositely"
     },
     {
       "id": "jengine/batching-trades-flops-for-intermediates",
@@ -32,7 +32,7 @@
       "source": "[JEngine, v2, §5]",
       "kind": "monotonicity",
       "status": "pending",
-      "reason": "#10 discharges it."
+      "reason": "Pre-sieve FLOPs are flat 1->3 (test/test_plan_dag.py::test_batching_trades_flops_for_intermediates pins that); the rise is post-sieve, so #12 discharges it."
     },
     {
       "id": "jengine/eq17-1y-misprint",
@@ -47,16 +47,16 @@
       "statement": "The MILD tree obeys Johnson, Gill & Pople's optimal-tree rules 1, 2, 3 and 5: axial integrals {0 0 j} always present; reduce the unit component of {0 1 j}; never reduce the j of {1 1 j}; reduce the 2 of {0 2 j}.",
       "source": "[JEngine, v2, §4.1]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "#7 implements MILD and its test."
+      "status": "asserted",
+      "test": "test/test_plan_mild.py::test_johnsons_rule_holds_on_every_node"
     },
     {
       "id": "jengine/mild-tie-break",
       "statement": "MILD reduces along the smallest non-zero component of r (zeros excluded from the minimum) and breaks a tie toward the cyclic successor: rx=ry<rz -> y, ry=rz<rx -> z, rx=rz<ry -> x, and all three equal -> z.",
       "source": "[JEngine, v2, Alg. 2]",
       "kind": "ordering",
-      "status": "pending",
-      "reason": "#7 implements mild_direction and its test."
+      "status": "asserted",
+      "test": "test/test_plan_mild.py::test_the_whole_tie_break_on_every_node"
     },
     {
       "id": "jengine/mild-vs-exact-tradeoff",
@@ -104,7 +104,7 @@
       "source": "[JEngine, v2, §5]",
       "kind": "membership",
       "status": "pending",
-      "reason": "#6 implements in_batch and its test."
+      "reason": "Held by test/test_plan_batching.py::test_the_y_1_2_batch_is_the_papers_eight_targets since #6, but that test does not carry the claim mark yet, and test_plan_batching.py was outside #10's lane."
     }
   ]
 }
