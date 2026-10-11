@@ -8,9 +8,14 @@ MILD DAG, with the two choices the paper leaves open (which other direction,
 and how far the upward sweep reaches) fixed in its docstring and switchable
 off by the `no-sieve` lever; `test/test_plan_sieve.py` tests it, including
 that it recovers rule 4. `src/felizjueves/plan/pipeline.py` composes them
-with the batch split into one plan per `Spec`. All of it is host-side
-counting: no kernel is emitted from it yet, so the sections below remain the
-specification that code is read against.
+with the batch split into one plan per `Spec`. The plan
+itself is host-side counting, but it is no longer only that: for a one-batch
+class, `build_pq_kernel` (`src/felizjueves/kernel.py`) emits the recurrence
+from the sieved MILD DAG, in `plan/schedule.py`'s order, as the `[p|q]` kernel
+both backends spell ([`j_engine.md`](j_engine.md) has its status). A split
+class's batches are planned and sieved but no kernel is generated from them, and
+the "with and without the sieve" kernel-tier comparison below is not wired.
+The sections below remain the specification that code is read against.
 
 This file covers steps 2 and 3 of the generator pipeline — choosing a reduction
 direction for every node, and pruning the resulting graph. The engine around it
