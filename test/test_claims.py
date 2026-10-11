@@ -1,8 +1,8 @@
 """The claims registry: the record type, the seed inventory, and the check that
 keeps the inventory and the claim-marked tests in step, in both directions.
 
-Nothing here tests a claim -- the seed is all PENDING or UNVERIFIABLE until the
-code that discharges each one lands. What is tested is that the inventory
+Nothing here tests a claim -- each ASSERTED record is discharged by the
+marked test it names, elsewhere under test/. What is tested is that the inventory
 cannot rot: an ASSERTED record must name a test that exists and carries its
 mark, a marked test must discharge a registered record, and a record that is
 not asserted must say why.

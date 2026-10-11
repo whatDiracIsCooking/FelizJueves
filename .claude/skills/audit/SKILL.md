@@ -52,9 +52,11 @@ For each `<name>/SKILL.md`:
 ### The two claims this repo's docs get wrong most easily
 
 - **Claims about tiers that do not exist yet.** The generator emits one kernel
-  family (the single-batch `[p|q]` kernel, L = 0..16); split classes, the `E`
-  transform and the full `J` build are not generated, so nothing about them is
-  compiled or run. A doc that describes what a tier *will* prove reads exactly like
+  family, the `[p|q]` kernel: the default L = 0..16 ladder, split classes as
+  atomic batch kernels, and (via the class selector) the classes a basis
+  reaches. The `E` transform and the `J` build exist only host-side in `ao/`,
+  and dispatch is not generated, so none of those is compiled or run as a
+  kernel. A doc that describes what a tier *will* prove reads exactly like
   one describing what it *does* prove — flag any sentence that would let a
   reader think a kernel was generated, compiled, or run. The honest spellings
   are already in `.claude/CLAUDE.md` ("The state of the tree") and in

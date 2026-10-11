@@ -8,8 +8,8 @@
 
 `J_mn = sum_{ls} (mn|ls) D_ls`, never by forming `(mn|ls)`. For a bra
 primitive pair (index record) of an ordered shell pair `(a, b)` and a ket
-primitive pair `k` of `(c, d)` ([JEngine, v2, eqs. 20-22]; j_engine.md, "The
-Coulomb contraction"):
+primitive pair `k` of `(c, d)` ([JEngine, v2, eqs. 20-22]; j_engine.md, "Why
+this is a J engine and not an ERI engine"):
 
     D_q  = w sum_{cd} E^{cd}_q D_cd     ket pre-contraction, per ket record
     J_p  = sum_k sum_q [p|q] D_q        the ONLY shell-quartet-level work

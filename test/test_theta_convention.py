@@ -1,4 +1,4 @@
-"""The theta convention, held where theta is USED: `jengine/theta-undefined`.
+"""The theta convention, held where theta is USED -- the in-repo anchor.
 
 [JEngine, v2, eq. 13] writes the fundamental with a `theta` it never defines.
 docs/implementation/j_engine.md ("Two defects in the source", #8) reads it as
@@ -6,11 +6,23 @@ the conventional McMurchie-Davidson reduced exponent
 
     theta^2 = zeta eta / (zeta + eta)
 
+THE RECORD'S WITNESS IS ELSEWHERE. Since #90, `jengine/theta-undefined` is
+discharged from outside the repo -- `J_mn` from the interpreted generated
+kernel against PySCF/libcint (test/test_ao_j_interpreted.py,
+`test_interpreted_j_matches_reference_and_libcint`, which carries the
+`claim` mark). This file carries no mark and stays for two things that
+witness cannot give: a closed-form check with no fixture at all, and the
+ABSOLUTE normalisation of the fundamental. libcint sees only the product
+`(2/sqrt(pi)) theta (pi/zeta)^{3/2} (pi/eta)^{3/2}`, so a constant moved
+between the fundamental and `ao.pairs.dress` passes it; it fails here
+(`jengine/prefactor-factorisation`'s record says so).
+
 A doc pins a reading; only the code that forms the number can get it wrong.
-theta is formed in exactly two places -- `reference.pq.theta_of` (the oracle)
-and the generated kernel's per-pair prelude (`kernel.build_pq_kernel`, spelled
-by `emit/`) -- so this file holds the convention at both, against an anchor
-that shares ancestry with neither:
+The kernel forms theta in its per-pair prelude (`kernel.build_pq_kernel`,
+spelled by `emit/`); the host forms the same expression in
+`reference.pq.theta_of` (the oracle), `ao/eri.py` and `ao/j.py`. This file
+holds it at the oracle and the kernel, against an anchor that shares ancestry
+with neither:
 
     [0]^(0) = (2/sqrt(pi)) theta F_0(theta^2 R^2) = erf(theta R) / R
 
@@ -85,7 +97,6 @@ def _reference_J(L: int, D: np.ndarray, theta: float) -> np.ndarray:
     ])
 
 
-@pytest.mark.claim("jengine/theta-undefined")
 def test_theta_is_the_reduced_exponent_where_it_is_used() -> None:
     R = float(np.linalg.norm(P - Q))
     want_theta = math.sqrt(ZETA * ETA / (ZETA + ETA))

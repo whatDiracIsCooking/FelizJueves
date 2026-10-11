@@ -34,13 +34,25 @@ against this file, not the other way round.
   `measured.SUBGRID` (see "Measured" below). `python -m felizjueves.emit`
   (the kernel tier's `KERNEL_GEN_CMD`) still writes one-batch kernels only.
 
-**Still specification:** the bra-side `E` transform
-`J_ab = Σ_p E_p^{ab} J_p`, the `J_ab` scatter (pre- and post-contraction,
-deferred to `[Fock]`), and **dispatch** — choosing `n_batches` per class at
-generation time. `Spec.n_batches` defaults to 1; the measured recommendation
-below is evidence for dispatch, not a policy the generator follows. A count
-this file states is a claim about the code only where a test or a scored board
-checks it.
+**Implemented host-side, around the kernel: the Coulomb matrix** (milestone 4,
+`src/felizjueves/ao/`). The `E` transform (`hermite.py`), pair data, the one
+dressing function and the Schwarz bound (`pairs.py`), the ERI block
+(`eri.py`), and `J_µν` — ket pre-contraction, `J_p`, bra back-transform
+`J_ab = Σ_p E_p^{ab} J_p` and the scatter — by two sweeps (`j.py`), all pure
+Python on the host. `J_p` can come from `reference.pq` or, through `ao.j`'s
+`jp=` seam, from the **generated** kernel: interpreted (`drive.py`), or
+compiled and launched on both cards (`test/test_ao_j_ondevice.py`, kernels
+written by `python -m felizjueves.emit --class …`). Every one of those paths is
+compared against PySCF/libcint — see "The Coulomb matrix, witnessed from
+outside" below.
+
+**Still specification:** **dispatch** — choosing `n_batches` per class at
+generation time — and any device code for what is host-side above (the `E`
+transform, the pre-contraction, the scatter, a device-resident `J`, sorted
+kets with real bounds on the card). `Spec.n_batches` defaults to 1; the
+measured recommendation below is evidence for dispatch, not a policy the
+generator follows. A count this file states is a claim about the code only
+where a test or a scored board checks it.
 
 The tree-search half (reduction directions, and the sieve that prunes them) is
 [`mild.md`](mild.md). This file covers everything around it: the recurrences,
@@ -151,6 +163,20 @@ generator must not transcribe them:
   source states none of this in v2; it is our derivation, and a test should
   cite it here rather than the paper.
 
+  **No longer only a derivation (#90): it has an outside witness.** `J_µν`
+  built with the generated kernel's `J_p` matches PySCF/libcint, which
+  shares no ancestry with this repo, and the claims registry
+  (`data/literature/jengine/claims.json`) names the tests:
+  `jengine/theta-undefined` is held by
+  `test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint`,
+  and the factorisation of `λ` — `jengine/prefactor-factorisation` — by
+  `test_ao_eri.py::test_block_matches_libcint`, per angular-momentum class.
+  Both fail when the claim is false; "The Coulomb matrix, witnessed from
+  outside" has the perturbations that show it. The `(-2θ²)^m` weight is
+  witnessed by the same comparisons wherever `m > 0` is reached (any class
+  above `(ss|ss)`), but carries no record of its own. The `1y` misprint
+  (`jengine/eq17-1y-misprint`) is still pending: no code transcribes eq. 17.
+
 ## Why this is a J engine and not an ERI engine
 
 The Coulomb matrix is `J_µν = Σ_λσ (µν|λσ) D_λσ`. Because the density spans
@@ -168,8 +194,11 @@ level**; the `E` transform depends on the bra pair alone and so drops to
 shell-pair level. That is the register saving the whole design rests on — the
 kernel never materialises `[ab|cd]`.
 
-Pre- and post-contraction (forming `D_q`, and scattering `J_ab` back) are out of
-scope here; `[JEngine, v2]` defers them to `[Fock]`.
+Pre- and post-contraction (forming `D_q`, and scattering `J_ab` back) are
+deferred by `[JEngine, v2]` to `[Fock]`. This repo takes only as much of them as
+a `J` build needs, host-side, in `src/felizjueves/ao/j.py` (milestone 4; "The
+Coulomb matrix, witnessed from outside" below); they are not generated as
+device code.
 
 Screening: Cauchy–Schwarz bounds take the nominal `O(N⁴)` to `O(N²)`. Each
 Hermite index carries a bound `I`, and the kernel tests `D_max · I_p · I_q`
@@ -177,10 +206,11 @@ against a threshold `τ`.
 
 ## The `E` transform
 
-**Status: the undressed coefficients are implemented** —
+**Status: implemented, host-side.** The undressed coefficients are
 `src/felizjueves/ao/hermite.py` (`e_axis`, `e_block`), checked by
-`test/test_ao_hermite.py`. The dressing (`ao/pairs.py`) and the bra
-back-transform `J_ab = Σ_p E_p^{ab} J_p` are not yet code.
+`test/test_ao_hermite.py`; the dressing is `ao.pairs.dress`; the bra
+back-transform `J_ab = Σ_p E_p^{ab} J_p` is in `ao/j.py`. None of it is
+emitted as device code.
 
 `[JEngine, v2]` says only that the primitive ERI carries "transformation
 coefficients `E` on each side"; it does not state their recurrence. That is
@@ -566,6 +596,85 @@ either, and for a second reason on top of the first: those are A100
 measurements of their kernels under their compiler, and neither of our targets
 (`sm_86`, `gfx1200`) is that. Our equivalent numbers come from the kernel tier,
 which is the only place this repo can make a numerical claim at all.
+
+## The Coulomb matrix, witnessed from outside
+
+**Implemented, host-side, and compared against PySCF/libcint** (milestone 4,
+#80–#89; #90 records it). `J_µν = Σ_λσ (µν|λσ) D_λσ` for a real molecule,
+through the split above, with every piece but `J_p` in
+`src/felizjueves/ao/`: shells and their Cartesian order (`shell.py`), the
+undressed `E` (`hermite.py`), primitive-pair records, `dress` and the Schwarz
+bound (`pairs.py`), and `J` by two sweeps that must agree (`j.py`). `J_p`
+comes from one of three places, all behind the same `jp=` seam:
+`reference.pq`; the generated kernel **interpreted** (`ao/drive.py`'s
+`KernelJP`); or the generated kernel **compiled and launched** on the RTX 3080
+and the RX 9060 XT (`test/test_ao_j_ondevice.py`, from the kernels
+`python -m felizjueves.emit --class LA LB LC LD` writes). PySCF is never
+imported by `src/`: the comparisons run in the fast tier against tracked
+fixtures in `test/oracle/fixtures/`, and the `oracle` group only regenerates
+them. Every comparison runs at `τ = 0`; the screen has its own section below.
+
+| What | Against libcint | Test | Tier |
+|---|---|---|---|
+| shells, normalisation, `common_fac` | overlap `int1e_ovlp` | `test_oracle_basis.py` | fast |
+| `(ab\|cd)`, one block per class, L ≤ 8 | `int2e`, `≤ 1e-12·scale` | `test_ao_eri.py` | s/p fast, d+ slow |
+| `J_µν`, `reference.pq` | `get_jk`, `≤ 1e-12·scale_J` (derived from the ERI bound) | `test_ao_j.py` | H₂, H₂O STO-3G/6-31G fast; cc-pVDZ slow |
+| `J_µν`, interpreted generated kernel | same | `test_ao_j_interpreted.py` | H₂ fast; H₂O ×3 slow |
+| `J_µν`, generated kernel on each card | same | `test_ao_j_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G |
+
+**What it proves, as records** (`data/literature/jengine/claims.json`):
+
+- `jengine/theta-undefined` — `θ² = ζη/(ζ+η)` is the `θ` the kernel forms —
+  is held by `test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint`.
+  Chosen over the on-device test because it runs without a card: the fast tier
+  exercises it on H₂ (`θ` through `F_0` only) and the slow tier on three H₂O
+  bases (`m > 0`); the on-device test corroborates on both cards but skips,
+  green and empty, wherever there is none. **It fails when the claim is
+  false:** with `θ` perturbed at every site that forms it — the kernel's
+  prelude, `ao/j.py`, `ao/eri.py`, so the internal comparison against
+  `reference.pq` still agrees to 0 — libcint alone catches it. A relative
+  error of 1e-9 in `θ` gives `8.85e-10·scale_J` on H₂ and ~3.5e-9 on H₂O
+  (STO-3G and 6-31G), against the `1e-12` tolerance, so the comparison
+  resolves `θ` to about a part in 10¹²; the slip readings (`θ²` unrooted,
+  `√(ζ+η)`, `√(ζη)`) give 0.35–0.50 `scale_J`.
+- `jengine/prefactor-factorisation` — `λ = (2/√π)θ·(π/ζ)^{3/2}(π/η)^{3/2} =
+  2π^{5/2}/(ζη√(ζ+η))`, placed as "Two defects" and "The `E` transform" say —
+  is held by `test_ao_eri.py::test_block_matches_libcint`, per class: `dress`
+  scaled by `1 + 1e-9`, or `(π/ζ)^1` for `(π/ζ)^{3/2}`, fails every fast-tier
+  block.
+
+**The search for a compensating error, and what it found.** libcint sees only
+products, so the question is which wrong pair of factors multiplies out right.
+
+- *A constant moved between the fundamental and `dress`* (`dress·2`,
+  `2/√π ÷ 4`): every ERI block and `J` still match libcint, by construction.
+  It is **not** a blind spot of the repo: each half has an in-repo absolute
+  pin that fails — the fundamental against the closed form `erf(θR)/R`
+  (`test_theta_convention.py`) and its defining integral
+  (`test_reference_pq.py`), the dressing against an independent overlap
+  (`test_ao_pairs.py`).
+- *A `θ` error compensated elsewhere*: `θ` enters both the prefactor and the
+  Boys argument `θ²|PQ|²`, and no constant cancels a change in the second
+  across geometries and exponents; perturbing it fails as above.
+- *A factor shared unequally between bra and ket*: one `dress` serves both
+  sides, so only a factor with `f(ζ) f(η) = 1` for every pair could hide —
+  `f = ±1`, and a sign on both sides is not an error in any observable.
+
+So nothing is added to `limits.json`: the search found no compensating error
+the comparisons leave open. What they do not **reach** is a coverage boundary,
+not a structural limit, and it is stated here instead:
+
+- **Classes with L = la+lb+lc+ld ≥ 9.** The ERI fixture stops at L = 8 (the
+  nine HF/cc-pVTZ classes above it exceed the repo's 512 KB file hook), and
+  the `J` fixtures stop at `d` (cc-pVDZ, so L ≤ 8). The kernel ladder runs to
+  L = 16; above 8 it is checked only against `reference/`, which shares its
+  ancestry. `θ` is formed once per pair by the same prelude at every L, so
+  the record does not depend on L, but a recurrence defect that only appears
+  above L = 8 would be invisible to libcint here. A `J` fixture with `f`
+  functions is small (`n_ao²`), so this boundary can move.
+- **The device's screen.** The capstone launches with `Ip = Iq = Dmax = 1`
+  and `τ = 0`; sorted kets with real bounds on a card are the next milestone's
+  driver. The host-side screen is #88's ladder, below.
 
 ## The screen as an error claim: a `τ` ladder (#88)
 
