@@ -7,8 +7,16 @@ a fact about the model and it belongs in a record, not in a test named
 what is claimed, why the model cannot reach it, what shows that, the value
 taken from the source in its place, and which source.
 
-Nothing fills this yet; the record type is here so the first such finding has
-somewhere to go.
+Two files hold records, each read with `load_limits` and each recomputed by the
+tests that cite it:
+
+- data/literature/jengine/limits.json: the `searched` board's residual against
+  `[JEngine, v2, Tables 1-2]` (test/test_scoreboards.py, test_plan_search.py,
+  test_plan_recovery.py);
+- data/measured/limits.json: where `lower.KernelCost` mis-ranks the batch
+  counts of `measured.SUBGRID` against the Measured rows, and where spill wins
+  do not pick the fastest count (#54, #60; test/test_kernelrank.py). A record
+  there is read by tests only and never feeds a literature floor.
 """
 
 from __future__ import annotations
