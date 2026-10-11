@@ -20,13 +20,29 @@
 #              `gpu`-marked test SKIPS there rather than failing, which is how
 #              a green, empty run happens.
 #   generate   KERNEL_GEN_CMD (devtools/config.sh) emits sources into
-#              KERNEL_BUILD_DIR. DORMANT while that is empty -- there is no
-#              generator yet -- and this script says so instead of implying a
-#              tier ran.
-#   compile    every emitted translation unit through the backend's compiler,
-#              in parallel, through sccache when it is available.
+#              $KERNEL_TIER_OUT, a per-backend directory under
+#              KERNEL_BUILD_DIR that is emptied first. DORMANT while the
+#              command is empty, and this script says so instead of implying
+#              a tier ran.
+#   compile    every translation unit the generate phase wrote, through the
+#              backend's compiler, in parallel, through sccache when it is
+#              available.
 #   device     the `gpu`-marked pytest suite (KERNEL_TEST_ARGS), which is what
 #              compares a kernel's output against the host reference.
+#
+# WHAT THE GENERATOR AND THE DEVICE SUITE ARE TOLD, as environment variables
+# (the generator reads them as its defaults, the suite to find what was
+# generated):
+#
+#   KERNEL_TIER_BACKEND  cuda | hip
+#   KERNEL_TIER_ARCH     the arch the compiler is driven at (sm_86, gfx1200)
+#   KERNEL_TIER_OUT      where the generator must write, and the only place
+#                        the compile phase looks
+#
+# KERNEL_GEN_CMD runs from the repo root with the project venv's bin/ first on
+# PATH (the first of VENV_PATHS that runs), so `python` there is the project's.
+# A `{backend}` in KERNEL_TEST_ARGS is replaced by the backend, so the device
+# phase can select only that backend's tests.
 #
 # It is NOT a git hook. An unrolled high-angular-momentum kernel is slow to
 # compile and this tier costs minutes; a gate that costs minutes is one people
@@ -198,16 +214,37 @@ build_dir=$KERNEL_BUILD_DIR
 case "$build_dir" in /*) : ;; *) build_dir="$REPO_ROOT/$build_dir" ;; esac
 [ -z "$fresh" ] || { note "--fresh: removing $build_dir"; rm -rf "$build_dir"; }
 mkdir -p "$build_dir"
+# Per backend, and emptied every run: the compile phase compiles exactly what
+# THIS run generated -- never a source left by the other backend's spelling or
+# by an earlier generator.
+src_dir="$build_dir/src-$backend"
+rm -rf "$src_dir"
+mkdir -p "$src_dir"
+export KERNEL_TIER_BACKEND="$backend" KERNEL_TIER_ARCH="$target_desc" KERNEL_TIER_OUT="$src_dir"
 
 if [ -z "$KERNEL_GEN_CMD" ]; then
   note "DORMANT: KERNEL_GEN_CMD is empty in devtools/config.sh, so nothing was"
-  note "generated and the compile phase below has nothing to compile. This is"
-  note "the expected state until the generator exists -- do not read the"
-  note "result of this run as a green kernel tier."
+  note "generated and the compile phase below has nothing to compile. Do not"
+  note "read the result of this run as a green kernel tier."
 else
+  gen_path=$PATH
+  venv=$(find_venv) && gen_path="$venv/bin:$PATH"
   note "+ $KERNEL_GEN_CMD"
+  note "  -> $src_dir (backend $backend, arch $target_desc)"
+  set +e
   # shellcheck disable=SC2086  # deliberate word splitting: it is a command line
-  $KERNEL_GEN_CMD 2>&1 | tee "$report_dir/generate.log"
+  PATH=$gen_path $KERNEL_GEN_CMD 2>&1 | tee "$report_dir/generate.log"
+  gen_rc=${PIPESTATUS[0]}
+  set -e
+  # A generator's own 2 keeps its meaning: it could not run (bad arguments,
+  # an arch it does not know), which is not a failed kernel either.
+  [ "$gen_rc" != 2 ] || cannot "the generator could not run (rc=2); see $report_dir/generate.log"
+  if [ "$gen_rc" != 0 ]; then
+    note "GENERATE FAILED (rc=$gen_rc): nothing is compiled or run from a"
+    note "generator that did not finish."
+    note "report    ${report_dir#"$REPO_ROOT"/}"
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -219,18 +256,29 @@ for ext in "${source_exts[@]}"; do
   [ "${#find_args[@]}" -eq 0 ] || find_args+=(-o)
   find_args+=(-name "*.$ext")
 done
-mapfile -t sources < <(find "$build_dir" -type f \( "${find_args[@]}" \) | sort)
+mapfile -t sources < <(find "$src_dir" -type f \( "${find_args[@]}" \) | sort)
 exts_desc=$(printf '*.%s ' "${source_exts[@]}")
 
 if [ "${#sources[@]}" -eq 0 ]; then
-  note "no ${exts_desc% } under $build_dir -- skipped"
+  note "no ${exts_desc% } under $src_dir -- skipped"
+  # A generator that RAN and wrote nothing is the green-and-empty failure this
+  # tier exists to refuse, not a dormant phase.
+  if [ -n "$KERNEL_GEN_CMD" ]; then
+    note "GENERATE PRODUCED NOTHING: KERNEL_GEN_CMD ran but wrote no ${exts_desc% }"
+    note "under KERNEL_TIER_OUT -- nothing to compile, so nothing proven."
+    note "report    ${report_dir#"$REPO_ROOT"/}"
+    exit 1
+  fi
 else
   obj_dir="$build_dir/obj-$backend"
+  # Emptied, so `objects` counts this run's compile and not a stale one.
+  rm -rf "$obj_dir"
   mkdir -p "$obj_dir"
   note "${#sources[@]} translation unit(s) -> $obj_dir, ${jobs:-1} at a time"
-  # Objects rather than executables: a generated kernel is linked INTO whatever
-  # harness the device suite builds, and one file per ERI class is the unit
-  # sccache can hit on. Compiling in parallel with xargs rather than a build
+  # Objects rather than executables: this phase proves each generated unit
+  # survives the real compiler with the configured flags; the device suite
+  # builds its own harness around the same text. One file per ERI class is the
+  # unit sccache can hit on. Compiling in parallel with xargs rather than a build
   # system because there is nothing to express here that a dependency graph
   # would capture -- each unit is independent by construction.
   set +e
@@ -270,7 +318,7 @@ if [ "$run_tests" = 0 ]; then
   note "--no-test: skipped"
 else
   xdist_args
-  config_args "$KERNEL_TEST_ARGS"
+  config_args "${KERNEL_TEST_ARGS//\{backend\}/$backend}"
   set +e
   "$PYTEST" -rs "${XDIST[@]}" "${CONFIG_ARGS[@]}" "${pytest_extra[@]}" \
     --junitxml="$report_dir/pytest.xml" 2>&1 | tee "$report_dir/pytest.log"
@@ -282,6 +330,15 @@ phase "result"
 note "backend   $backend ($target_desc)"
 note "device    $([ "$device_present" = 1 ] && echo present || echo ABSENT -- numbers unproven)"
 note "generated $([ -n "$KERNEL_GEN_CMD" ] && echo "$KERNEL_GEN_CMD" || echo "nothing (KERNEL_GEN_CMD empty)")"
-note "compiled  ${#sources[@]} translation unit(s)"
+note "compiled  ${#sources[@]} translation unit(s) from ${src_dir#"$REPO_ROOT"/}"
+note "tests     ${KERNEL_TEST_ARGS//\{backend\}/$backend}$([ "$run_tests" = 1 ] || echo ' (NOT RUN: --no-test)')"
 note "report    ${report_dir#"$REPO_ROOT"/}"
+# NO CARD IS "COULD NOT RUN", not a pass: the device suite above ran so its
+# skips are on the record, but every `gpu` test in it skipped, and a green,
+# empty device phase is exactly what this tier exists to refuse. (--no-test
+# asked for the compile check only, and keeps its own exit status.)
+if [ "$device_present" = 0 ] && [ "$run_tests" = 1 ] && [ "${rc:-0}" = 0 ]; then
+  note "NOT A PASS: device ABSENT, so every gpu test skipped -- exit 2"
+  exit 2
+fi
 exit "${rc:-0}"

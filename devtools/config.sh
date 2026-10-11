@@ -111,17 +111,20 @@ HIP_ARCH=${HIP_ARCH:-gfx1200}
 NVCC_FLAGS=${NVCC_FLAGS:--O3 -lineinfo --std=c++17}
 HIPCC_FLAGS=${HIPCC_FLAGS:--O3 -g1 -std=c++17}
 
-# How the kernels get generated. The tier runs this, from the repo root, and
-# expects the emitted sources under KERNEL_BUILD_DIR.
+# How the kernels get generated. The tier runs this, from the repo root, with
+# the project venv first on PATH, and expects the emitted sources in
+# $KERNEL_TIER_OUT (it also exports KERNEL_TIER_BACKEND and KERNEL_TIER_ARCH;
+# kernel-tier.sh's header has the contract). Word-split, not eval'd: no
+# quoting, no `VAR=value` prefix -- hence `env`.
 #
-# EMPTY TODAY, AND THE TIER REPORTS THAT RATHER THAN PRETENDING: there is no
-# generator yet (README.md, "What is here"). With this empty, kernel-tier.sh
-# skips the generate and compile phases and runs only the preflight and the
-# device suite -- which is still the honest answer to "does this box compile
-# and run device code", and is what the toolchain tests in test/ assert. Set it
-# to the generator's entry point when it exists, e.g.
-#   KERNEL_GEN_CMD=${KERNEL_GEN_CMD:-python3 -m jengine.emit --all}
-KERNEL_GEN_CMD=${KERNEL_GEN_CMD:-}
+# felizjueves.emit's CLI reads those three variables as its defaults and
+# writes one translation unit per class, L = 0..16 (`build_pq_kernel(L)`),
+# in the backend's own spelling. PYTHONPATH because this is a virtual uv
+# project: nothing is installed, src/ is put on the path by hand.
+#
+# Set it EMPTY (KERNEL_GEN_CMD= devtools/kernel-tier.sh ...) and the tier
+# reports its generate and compile phases DORMANT rather than pretending.
+KERNEL_GEN_CMD=${KERNEL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit}
 
 # Where generated sources and their binaries land. Gitignored (/.kernel-tier/),
 # and wiped by --fresh.
@@ -134,8 +137,13 @@ KERNEL_TIER_REPORTS=${KERNEL_TIER_REPORTS:-.kernel-tier-reports}
 
 # Extra pytest arguments for the tier's device phase. `-m gpu` is the marker
 # pyproject.toml declares for "launches a kernel", as opposed to `cuda`/`hip`,
-# which only need a compiler.
-KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:--m gpu}
+# which only need a compiler. kernel-tier.sh replaces `{backend}` with the
+# backend it runs, and this project's compiler markers ARE the backend names,
+# so `--backend cuda` runs the gpu tests that launch on the NVIDIA card and
+# not the AMD ones (in a combined container both compilers are present, and
+# without this one backend's run would compile and launch the other's too).
+# Single quotes load-bearing, as for FAST_TEST_ARGS below.
+KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:-'-m "gpu and {backend}"'}
 
 # --- the AMD device passthrough -------------------------------------------
 #

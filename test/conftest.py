@@ -137,9 +137,9 @@ def compile_device_source(tmp_path: Path):
 def run_device_binary():
     """Run a compiled binary and return its stdout, failing loudly on nonzero."""
 
-    def _run(binary: Path) -> str:
+    def _run(binary: Path, *args: str) -> str:
         done = subprocess.run(
-            [str(binary)], capture_output=True, text=True, timeout=300
+            [str(binary), *args], capture_output=True, text=True, timeout=300
         )
         assert done.returncode == 0, (
             f"{binary.name} exited {done.returncode}\n"

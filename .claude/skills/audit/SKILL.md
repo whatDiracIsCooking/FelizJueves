@@ -51,9 +51,10 @@ For each `<name>/SKILL.md`:
 
 ### The two claims this repo's docs get wrong most easily
 
-- **Claims about tiers that do not exist yet.** The generator is absent, and
-  `KERNEL_GEN_CMD` is empty, so the kernel tier's generate and compile phases
-  are dormant. A doc that describes what a tier *will* prove reads exactly like
+- **Claims about tiers that do not exist yet.** The generator emits one kernel
+  family (the single-batch `[p|q]` kernel, L = 0..16); split classes, the `E`
+  transform and the full `J` build are not generated, so nothing about them is
+  compiled or run. A doc that describes what a tier *will* prove reads exactly like
   one describing what it *does* prove — flag any sentence that would let a
   reader think a kernel was generated, compiled, or run. The honest spellings
   are already in `.claude/CLAUDE.md` ("The state of the tree") and in
