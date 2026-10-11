@@ -20,7 +20,7 @@ from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
 from felizjueves.plan.batching import max_targets_per_batch
 from felizjueves.plan.cost import cost
-from felizjueves.plan.dag import build
+from felizjueves.plan.sieve import plan
 from felizjueves.spec import Operator, Spec, Target
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -146,10 +146,11 @@ def test_table3_scores_on_the_literal_board() -> None:
 
 
 def _plan_candidates() -> dict[str, Candidate]:
-    """Tables 1 and 2 from the pre-sieve PlanCost, Table 3 as above."""
+    """Tables 1 and 2 from the sieved PlanCost (levers=(), the literal
+    reconstruction: the paper's algorithm, sieve on), Table 3 as above."""
     t1 = TABLES["jengine/table1"]
     costs = {
-        (L, nb): cost(build(Spec(Operator.COULOMB, 0, (L, 0, 0, 0), Target.J,
+        (L, nb): cost(plan(Spec(Operator.COULOMB, 0, (L, 0, 0, 0), Target.J,
                                  n_batches=nb)))
         for L in t1.row_values
         for nb in t1.column_values
@@ -165,21 +166,24 @@ def _plan_candidates() -> dict[str, Candidate]:
     }
 
 
-def test_tables_1_and_2_score_pre_sieve_on_the_literal_board() -> None:
-    # What the pre-sieve plan measures, pinned so a change to it is a diff
-    # here. Exact cells -- Table 1: (7,3) (7,6) (8,6) (8,9) (11,6); Table 2:
-    # (7,6) (8,9) (10,6) (10,9). Worst -- Table 1: (7,9), 510 against 560,
-    # where the paper's 9-batch partition is not ours (Table 3 differs there
-    # too); Table 2: (16,1), 2021 against 1647, the cell with most to prune.
+def test_tables_1_and_2_score_post_sieve_on_the_literal_board() -> None:
+    # What the sieved plan measures, pinned so a change to it is a diff here.
+    # Exact cells -- Table 1: (7,3) (7,6) (8,6) (8,9) (9,6) (9,9) (11,9);
+    # Table 2: (7,3) (7,6) (8,6) (8,9) (9,6) (9,9) (10,6) (10,9) (11,6)
+    # (11,9) (12,6) (12,9) (13,9) (14,9) (15,3). Pre-sieve these were 5 and 4;
+    # Table 1's (11,6) was exact pre-sieve (2015) and the sieve moves it off
+    # (2016). Worst -- Table 1: (7,9), 510 against 560, unchanged by the
+    # sieve, where the paper's 9-batch partition is not ours (Table 3 differs
+    # there too); Table 2: (15,9), 301 against 280.
     by_table = {
         (v.table, v.rule): v
         for v in score(_board("literal"), TABLES, _plan_candidates())
     }
     t1 = by_table["jengine/table1", "agreement"]
     t2 = by_table["jengine/table2", "agreement"]
-    assert t1.status is t2.status is Status.UNSET  # thresholds null until #12
-    assert t1.measured == {"exact": 5, "worst_rel_dev": 50 / 560}
-    assert t2.measured == {"exact": 4, "worst_rel_dev": (2021 - 1647) / 1647}
+    assert t1.status is t2.status is Status.UNSET  # thresholds still null
+    assert t1.measured == {"exact": 7, "worst_rel_dev": 50 / 560}
+    assert t2.measured == {"exact": 15, "worst_rel_dev": (301 - 280) / 280}
     assert by_table["jengine/table3", "agreement"].status is Status.PASS
 
 
