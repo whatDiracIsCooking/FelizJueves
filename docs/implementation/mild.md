@@ -154,6 +154,30 @@ per node, nodes shared, `plan/cost.py`'s counts — for `L ≤ EXACT_MAX_L = 5`
 `beam(L, width)` as an upper bound above. It is a measuring instrument, never
 a default: nothing in `pipeline`, `search` or `recovery` calls it.
 
+**Measured here (#111): the paper's shape does not appear.** The record is
+`data/literature/jengine/mild_vs_optimum.json`, recomputed by
+`test/test_mild_vs_optimum.py`. It *replaces* §4.1's comparison and does not
+reproduce it: different optimum, cost model and grid (`limits.json` says so).
+The reference point is the same in every cell: the frontier point with the
+fewest FLOPs among those with equal-or-fewer intermediates than MILD.
+
+| L | optimum | MILD (no sieve) | gap: intermediates / FLOPs | MILD + sieve |
+|---|---|---|---|---|
+| 0–4 | single point | equal | 0 / 0 | equal |
+| 5 | (48, 160) | (51, 161) | **+6.25% / +0.625%**, so behind on both axes | (48, 161): 0 / +0.625% |
+
+MILD is behind on **both** axes at L = 5 and ahead on neither at any L. That
+is not §4.1's "1–2% behind on FLOPs, 2–6% ahead on intermediates": the FLOP
+gap falls below the paper's band, and the intermediate gap has the opposite
+sign. Every exact frontier is a single point, least on both axes at once, so
+over this space nothing *can* be ahead of the optimum on intermediates. The
+disagreement is the result, and it is not reconciled. Above the ceiling, a
+width-16 beam is an achievable scheme, so it gives only a *lower* bound on the
+gap. On the published grid it strictly dominates MILD at L = 11 and 12
+(≥ 0.74% behind on FLOPs, ≥ 10.9% on intermediates) and proves nothing at the
+other L. It never beats MILD + sieve. It can show MILD far from optimal, never
+close.
+
 ## The sieve — pruning what MILD left behind
 
 MILD is non-optimal in node count for `L ≥ 5`. The sieve, after Gill,

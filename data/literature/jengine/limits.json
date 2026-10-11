@@ -58,6 +58,27 @@
         "printed_values_stand": "the cells above, with their margin in percent over the printed value; their printed values are taken from the tables as published"
       },
       "source": "[JEngine, v2, Tables 1-2; §4.1; §5]"
+    },
+    {
+      "claim": "[JEngine, v2, §4.1]'s comparison of MILD against Johnson et al.'s near-optimal tree search (the paper's refs 59/60): MILD 1-2% behind on FLOPs and 2-6% ahead on intermediates. Not reproducible on this machine; this repo's own measurement replaces it rather than reproducing it.",
+      "mechanism": "The search the paper compares against is not here: neither its code nor its output is available, and the paper does not state the grid, the cost convention or the reference point on a frontier that its percentages were taken against. A number computed here therefore measures a different comparison -- this tree's optimum (plan/optimum.py, exact over one reduction direction per materialised node with nodes shared; no algebraic rewriting, no recompute) under this tree's cost model (plan/cost.py) -- and cannot confirm or refute the printed one, only stand in its place.",
+      "evidence": "data/literature/jengine/mild_vs_optimum.json, recomputed by test/test_mild_vs_optimum.py (#111). Exact range L = 0..5: MILD equals the optimum for L <= 4 and at L = 5 is (51, 161) against (48, 160), behind on both axes, +6.25% intermediates and +0.625% FLOPs -- not the paper's shape (behind on FLOPs, ahead on intermediates). Every exact frontier there is a single point, so no scheme in the space is ahead of it on either axis. On the published grid a width-16 beam proves MILD at least 0.743% and 0.73% behind on FLOPs at L = 11 and 12 (dominated on both axes) and proves nothing elsewhere.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": "jengine/mild-vs-exact-tradeoff",
+        "flops_percent_behind": [
+          1,
+          2
+        ],
+        "intermediates_percent_ahead": [
+          2,
+          6
+        ],
+        "replaced_by": "data/literature/jengine/mild_vs_optimum.json",
+        "printed_values_stand": "the paper's percentages are taken as published; this repo's gap is recorded beside them, not reconciled with them. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, §4.1; refs 59, 60]"
     }
   ]
 }

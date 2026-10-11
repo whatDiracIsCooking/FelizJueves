@@ -63,8 +63,8 @@
       "statement": "Against Johnson et al.'s near-optimal tree search, MILD costs 1-2% more FLOPs and has 2-6% fewer intermediates.",
       "source": "[JEngine, v2, §4.1]",
       "kind": "monotonicity",
-      "status": "pending",
-      "reason": "Needs an exact (near-optimal) tree search to compare against, which this repo does not have."
+      "status": "asserted",
+      "test": "test/test_mild_vs_optimum.py::test_mild_against_the_exact_optimum"
     },
     {
       "id": "jengine/nine-batches-suffice",
