@@ -21,6 +21,7 @@ from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
 from felizjueves.plan.batching import max_targets_per_batch
 from felizjueves.plan.cost import cost
+from felizjueves.plan.search import load_cuts, searched_plan
 from felizjueves.plan.sieve import plan
 from felizjueves.spec import Operator, Spec, Target
 
@@ -191,6 +192,50 @@ def test_the_full_board_with_the_plan_layers_candidates() -> None:
         (tid, "agreement") for tid in TABLES
     }
     assert {v.status for v in verdicts} == {Status.PASS, Status.UNSET}
+
+
+def _searched_candidates() -> dict[str, Candidate]:
+    """One plan per cell, replayed from the recorded cut (plan/search.py),
+    scores all three tables."""
+    cuts = load_cuts(BOARDS / "searched_cuts.json")
+    costs = {c: cost(searched_plan(*c, cut)) for c, cut in cuts.items()}
+    return {
+        tid: Candidate({c: getattr(k, attr) for c, k in costs.items()},
+                       board="searched")
+        for tid, attr in (("jengine/table1", "flops"),
+                          ("jengine/table2", "max_intermediates"),
+                          ("jengine/table3", "max_targets"))
+    }
+
+
+def test_the_searched_board_with_the_searched_plans() -> None:
+    # #13's outcome, pinned so a change to it is a diff here. Table 3 passes:
+    # the objective puts minimax targets first, and minimax is at or under
+    # the paper everywhere. Tables 1 and 2 FAIL at_or_under, and these are the
+    # cells. Twenty of each table's are 1- or 3-batch cells, where there is
+    # no cut to search and the plan is the literal one. Of the 6- and 9-batch
+    # cells still over, no shared cut, sieve on or off, is at or under in all
+    # three tables, except (15, 9), where the one that is is not minimax
+    # (test_plan_search.py).
+    by_table = {
+        v.table: v
+        for v in score(_board("searched"), TABLES, _searched_candidates())
+    }
+    assert by_table["jengine/table3"].status is Status.PASS
+    t1, t2 = by_table["jengine/table1"], by_table["jengine/table2"]
+    assert t1.status is t2.status is Status.FAIL
+    one_or_three = {(L, nb) for L in range(7, 17) for nb in (1, 3)}
+    assert set(t1.cells) - one_or_three == {
+        (10, 6), (11, 6), (12, 6), (12, 9), (13, 6), (13, 9),
+        (14, 6), (14, 9), (15, 6), (16, 6), (16, 9),
+    }
+    assert set(t1.cells) & one_or_three == one_or_three - {(7, 3)}
+    assert t1.measured == {"over": 30}
+    assert set(t2.cells) == {
+        (7, 1), (8, 1), (8, 3), (9, 1), (9, 3), (10, 1), (10, 3),
+        (11, 1), (11, 3), (12, 1), (12, 3), (13, 1), (15, 9),
+    }
+    assert t2.measured == {"over": 13}
 
 
 def test_tables_are_read_only() -> None:

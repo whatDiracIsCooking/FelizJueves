@@ -72,7 +72,7 @@
       "source": "[JEngine, v2, §7]",
       "kind": "shape",
       "status": "pending",
-      "reason": "#13 discharges it."
+      "reason": "Not decidable by #13's cut search. Whether 9 batches suffice is relative to a register and shared-memory budget, and the plan layer models neither: PlanCost has no budget for max intermediates or max targets to fall under, so nothing in it marks a batch count as enough. It needs the kernel tier's measured spills and occupancy at 9 against 12 or more batches, once a generator emits kernels."
     },
     {
       "id": "jengine/rule-4-needs-the-sieve",

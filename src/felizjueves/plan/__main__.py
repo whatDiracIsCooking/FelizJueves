@@ -39,8 +39,9 @@ from pathlib import Path
 from felizjueves.literature.rules import Candidate, Status, Verdict
 from felizjueves.literature.scoreboard import load_scoreboard, score
 from felizjueves.literature.tables import Cell, Table, load_table
-from felizjueves.plan.cost import PlanCost
+from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.pipeline import plan
+from felizjueves.plan.search import load_cuts, searched_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import Operator, Spec, Target
 
@@ -79,10 +80,9 @@ def literal_candidates(tables: Mapping[str, Table]) -> dict[str, Candidate]:
 
 # -- the searched board's recorded cuts (#13) ----------------------------------
 #
-# #13 records the chosen cut per (L, n_batches) next to searched.json. Until it
-# lands that file does not exist, and the board has no candidates. Everything
-# that knows about the file is in this block, so adjusting to #13's schema is
-# an edit here and nowhere else.
+# #13 records the chosen cut per (L, n_batches) next to searched.json, in
+# plan/search.py's schema. Without that file the board has no candidates.
+# Everything that knows about the file is in this block.
 
 SEARCHED_CUTS = "searched_cuts.json"
 
@@ -91,14 +91,33 @@ class UnreadableCuts(Exception):
     """The cuts file exists, but this reader does not know its schema."""
 
 
-def read_searched_cuts(path: Path) -> dict | None:
-    """#13's cuts, keyed by (L, n_batches); None while the file is absent."""
+def read_searched_cuts(path: Path) -> dict[Cell, tuple[int, ...]] | None:
+    """#13's cuts, keyed by (L, n_batches); None while the file is absent.
+    The schema is plan/search.py's (`load_cuts`); a file it refuses is
+    UnreadableCuts."""
     if not path.exists():
         return None
-    raise UnreadableCuts(
-        f"{path} exists, but this reader predates its schema; teach "
-        "read_searched_cuts (felizjueves/plan/__main__.py) to read it"
-    )
+    try:
+        return load_cuts(path)
+    except (ValueError, KeyError, TypeError) as e:
+        raise UnreadableCuts(f"{path}: {e}") from e
+
+
+def searched_candidates(
+    tables: Mapping[str, Table], cuts: Mapping[Cell, tuple[int, ...]]
+) -> dict[str, Candidate]:
+    """One plan per cell, replayed from its recorded cut (search.searched_plan),
+    scores every table. A cell with no recorded cut gets no candidate value,
+    which the rule reports rather than this reader guessing a cut."""
+    cells = {c for t in tables.values() for c in t.cells} & set(cuts)
+    costs = {c: cost(searched_plan(*c, cuts[c])) for c in sorted(cells)}
+    return {
+        tid: Candidate(
+            {c: getattr(costs[c], QUANTITY[tid]) for c in t.cells if c in costs},
+            board="searched",
+        )
+        for tid, t in tables.items()
+    }
 
 
 # -- replay --------------------------------------------------------------------
@@ -140,7 +159,7 @@ def replay(board_name: str, data: Path = DATA) -> int:
             print(f"{board_name}: no candidates yet -- {boards / SEARCHED_CUTS} "
                   "does not exist, so nothing was judged (UNSET)")
             return EXIT_UNSET
-        raise AssertionError("unreachable: read_searched_cuts returns or raises")
+        candidates = searched_candidates(tables, cuts)
     verdicts = score(board, tables, candidates)
     _print_verdicts(board_name, verdicts)
     return exit_status(verdicts)
