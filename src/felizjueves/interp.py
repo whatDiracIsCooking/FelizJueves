@@ -41,6 +41,11 @@ STRICTNESS, because a lax machine passes broken kernels:
 - Array `Param`s must be passed as ndarrays of the declared dtype (float64 for
   F64, int32 for I32); IN arrays are read-only, OUT arrays are copied and the
   copies returned. Scalar `Param`s take a Python or 0-d numpy number.
+- An array with a declared `Param.shape` must hold exactly prod(extents)
+  elements, in any shape (flat is the contract: the backend linearises), and
+  is indexed at the declared extents. An extent the bound I32 scalars and the
+  launch cannot evaluate leaves that array unchecked, in
+  `Interpreter.unchecked`.
 - Every subscript is bounds-checked (no negative wrap); every read of a local
   or shared element, or of a scalar, that was never written raises.
 - int is I32 and float is F64, as `Lit` says. Integer DIV truncates toward
@@ -404,6 +409,8 @@ class Interpreter:
         self.launch = Launch() if launch is None else launch
         self.boys = boys
         self.iterations: Counter[str] = Counter()
+        # Array params whose declared extents could not be evaluated, and why.
+        self.unchecked: dict[str, str] = {}
 
     def _bind(self, inputs: dict[str, Any]) -> tuple[dict[str, Any], dict]:
         params = {p.name: p for p in self.kernel.params}
@@ -432,6 +439,40 @@ class Interpreter:
                 elif isinstance(v, np.generic):
                     v = v.item()
                 globals_[name] = _Scalar(p.type, _coerce(p.type, v, name))
+
+        # Shapes. A backend lays a global array out flat (row-major), so the
+        # contract is the SIZE, prod(extents) == v.size, never v.shape ==
+        # extents: a flat array of the right length is the right array. It is
+        # then viewed at the declared extents, so every subscript is bounds-
+        # checked per extent as the backend linearises it; an OUT array is
+        # returned in the caller's shape. Extents are evaluated with the bound
+        # I32 scalars and the launch's block dimensions; one that cannot be
+        # (an F64 scalar, a division by zero) leaves its array unchecked, with
+        # the reason in `self.unchecked`: unevaluable is not wrong.
+        self.unchecked = {}
+        env = {k: s for k, s in globals_.items()
+               if isinstance(s, _Scalar) and s.type is Scalar.I32}
+        bx, by = self.launch.block
+        ev = _Thread(self, env, {}, {Fn.BLOCK_DIM_X: bx, Fn.BLOCK_DIM_Y: by})
+        for name, p in params.items():
+            if not p.array or not p.shape:
+                continue
+            arr = globals_[name]
+            try:
+                extents = tuple(ev.eval(d) for d in p.shape)
+            except InterpError as e:
+                self.unchecked[name] = str(e)
+                continue
+            if any(type(n) is not int for n in extents):
+                self.unchecked[name] = f"extents {extents} are not all I32"
+                continue
+            need = math.prod(extents)
+            if any(n < 0 for n in extents) or need != arr.data.size:
+                raise InterpError(
+                    f"{name}: declared extents {p.shape!r} evaluate to "
+                    f"{extents} = {need} elements, but got shape "
+                    f"{arr.data.shape} = {arr.data.size} elements")
+            arr.data = arr.data.reshape(extents)  # a view: an OUT still aliases
         return globals_, outs
 
     def run(self, **inputs: Any) -> dict[str, np.ndarray]:

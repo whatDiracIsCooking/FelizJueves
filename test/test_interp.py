@@ -376,3 +376,70 @@ def test_the_machine_refuses_what_has_no_meaning() -> None:
     # Integer division truncates toward zero, as C does.
     got = run(Assign(Index("out", (Lit(0),)), Call(Fn.DIV, (Lit(-7), Lit(2)))), a=a)
     assert got["out"][0] == -3.0
+
+
+# ---------------------------------------------------------------------------
+# Inputs against the declared shapes (#59)
+# ---------------------------------------------------------------------------
+
+N_P, N_Q = 3, 2
+
+
+def _shaped() -> Kernel:
+    """J[bra, i] = D[bra, 0] * i + D[bra, 1], one thread per bra: the
+    `[p|q]` kernel's parameter shapes, (n_bra, n_p) and (n_bra, n_q)."""
+    bra, nb = Call(Fn.BLOCK_X), Var("n_bra")
+    d = lambda j: Index("D", (bra, Lit(j)))  # noqa: E731
+    return Kernel("shaped", (
+        Param("n_bra", Scalar.I32),
+        Param("D", Scalar.F64, array=True, shape=(nb, Lit(N_Q))),
+        Param("J", Scalar.F64, array=True, intent=Intent.OUT,
+              shape=(nb, Lit(N_P))),
+    ), tuple(
+        Assign(Index("J", (bra, Lit(i))),
+               Call(Fn.ADD, (Call(Fn.MUL, (d(0), Lit(float(i)))), d(1))))
+        for i in range(N_P)))
+
+
+def _run_shaped(n_bra: int, D: np.ndarray, J: np.ndarray) -> np.ndarray:
+    return interpret(_shaped(), launch=Launch(grid=n_bra), n_bra=n_bra,
+                     D=D, J=J)["J"]
+
+
+def test_an_input_off_its_declared_extents_raises_naming_it() -> None:
+    n, D = 4, np.ones((4, N_Q))
+    with pytest.raises(InterpError, match=r"^J: .*\(4, 3\) = 12 .*11 elements"):
+        _run_shaped(n, D, np.zeros(n * N_P - 1))           # a short J
+    with pytest.raises(InterpError, match=r"^J: .*= 12 .*\(5, 3\) = 15"):
+        _run_shaped(n, D, np.zeros((n + 1, N_P)))          # a long J
+    with pytest.raises(InterpError, match=r"^D: .*\(4, 2\) = 8 .*\(4, 1\)"):
+        _run_shaped(n, np.ones((n, N_Q - 1)), np.zeros((n, N_P)))  # short D
+
+
+def test_flat_is_the_contract() -> None:
+    """A flat J and the same-sized 2-D J both run, agree, and come back in the
+    shape they went in; the contract is the size, not the ndarray shape."""
+    n = 5
+    D = np.random.default_rng(59).uniform(-1, 1, (n, N_Q))
+    want = D[:, :1] * np.arange(N_P) + D[:, 1:]
+    two_d = _run_shaped(n, D, np.zeros((n, N_P)))
+    flat = _run_shaped(n, D.ravel(), np.zeros(n * N_P))
+    assert two_d.shape == (n, N_P) and flat.shape == (n * N_P,)
+    assert np.array_equal(two_d, want) and np.array_equal(flat, want.ravel())
+
+
+def test_an_unevaluable_extent_is_skipped_and_recorded() -> None:
+    """An extent the I32 scalars cannot evaluate is not a failure."""
+    out = _f64("out", Intent.OUT)
+    k = Kernel("k", (
+        _f64("tau", array=False), Param("n", Scalar.I32),
+        Param("a", Scalar.F64, array=True, shape=(Var("tau"),)),
+        Param("b", Scalar.F64, array=True,
+              shape=(Call(Fn.DIV, (Var("n"), Lit(0))),)),
+        out,
+    ), (Assign(Index("out", (Lit(0),)), Index("a", (Lit(1),))),))
+    it = Interpreter(k)
+    got = it.run(tau=0.5, n=3, a=np.arange(4.0), b=np.ones(7), out=np.zeros(1))
+    assert got["out"][0] == 1.0
+    assert set(it.unchecked) == {"a", "b"}
+    assert "tau" in it.unchecked["a"] and "division" in it.unchecked["b"]
