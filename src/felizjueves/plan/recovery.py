@@ -128,7 +128,9 @@ def recovered_plan(
 ) -> tuple[BatchDag, ...]:
     """Pipeline steps 1-3 with the recovered cut: MILD DAG per batch, then the
     sieve, seeded in `seed_order` (default: the literal `hermite_targets`).
-    An empty batch is kept and not sieved, as plan/search.py does."""
+    An empty batch is kept and not sieved. `batching.partition` refuses one
+    (#64); this recovered cut reconstructs the paper's input on L = 7..16,
+    where it leaves none, and only reaches one below that grid (L <= 2)."""
     dags = (batch_dag(total_am, b) for b in recovered_batches(total_am, n_batches))
     return tuple(sieve(d, seed_order=seed_order) if d.targets else d for d in dags)
 

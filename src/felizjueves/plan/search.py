@@ -14,14 +14,15 @@ deterministic:
 
 - THE CUT. Every contiguous cut `batching.partition` accepts: k - 1
   ascending cut points in 1..L, ONE set shared by X, Y and Z (the shape
-  [JEngine, v2, Fig. 4] draws, and the only one `partition` builds).
-  C(L, k - 1) of them, at most C(16, 2) = 120. With 1 batch, or 3 (k = 1),
-  the only cut is ().
+  [JEngine, v2, Fig. 4] draws, and the only one `partition` builds), and
+  leaving no batch empty (#64: a first cut at 1 empties Y_{0,0} and Z_{0,0},
+  and `partition` refuses it). C(L, k - 1) - C(L - 1, k - 2) of them, at most
+  C(16, 2) - 15 = 105. With 1 batch, or 3 (k = 1), the only cut is ().
 - THE SEED ORDER. Each of plan/recovery.py's 26 structured `seed_orders()`
   (#14's family: `hermite_targets` and its reverse, and every sort by |r|
   then the components), imported, not redefined.
 
-So at most 120 x 26 = 3120 full plans per cell; the whole board is a few
+So at most 105 x 26 = 2730 full plans per cell; the whole board is a few
 minutes serial (test_plan_search.py's one `slow` test).
 
 WHAT IS NOT SEARCHED. Per-direction cuts (plan/recovery.py's cut is one; it
@@ -63,9 +64,13 @@ test_plan_search.py: putting intermediates before FLOPs takes a FLOP-costlier
 seed order in some cells, worst at (16, 1), +2.04% over Table 1 where the
 FLOPs-first order would be +0.20%.
 
-An EMPTY batch (Y_{0,0} and Z_{0,0} whenever the first cut is 1; Fig. 4 has
-them at L = 6) is kept, as the paper keeps it: it contributes no node and no
-FLOP, and is not handed to the sieve, which seeds from a batch's targets.
+An EMPTY batch (Y_{0,0} and Z_{0,0} whenever the first cut is 1; Fig. 4
+does not draw them at L = 6) is not a candidate: `partition` refuses it
+(#64), so the cuts that make one are not enumerated. Excluding them moves no
+recorded choice: none of searched_cuts.json's cuts starts at 1, and on the
+L = 7..16 grid the minimax is reached by a cut that does not either (the
+default cut, which takes the lowest optimal boundaries, never starts at 1
+there), so neither the feasibility bound nor the winner can change.
 
 THE RECORD. The chosen cut and seed order per (L, n_batches) are data, in
 data/scoreboards/jengine/searched_cuts.json, so a replay (#15) builds the plan
@@ -80,7 +85,13 @@ from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 
-from felizjueves.plan.batching import Counts, CutRule, partition
+from felizjueves.plan.batching import (
+    Counts,
+    CutRule,
+    empty_batches,
+    partition,
+    target_counts,
+)
 from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.dag import BatchDag, batch_dag
 from felizjueves.plan.recovery import SeedOrder, seed_orders
@@ -98,7 +109,7 @@ SEED_ORDERS: Mapping[str, SeedOrder] = dict(seed_orders())
 
 def fixed_cut(cuts: Cuts) -> CutRule:
     """A CutRule that ignores the counts and returns `cuts`. partition()
-    validates them (k - 1 ascending points in 1..L)."""
+    validates them (k - 1 ascending points in 1..L, no batch empty)."""
     cuts = tuple(cuts)
 
     def rule(counts: Counts, k: int) -> Cuts:
@@ -108,10 +119,16 @@ def fixed_cut(cuts: Cuts) -> CutRule:
 
 
 def candidate_cuts(total_am: int, n_batches: int) -> Iterator[Cuts]:
-    """Every shared contiguous cut, in lexicographic order; () when there is
-    nothing to cut (1 batch, or one sub-batch per direction)."""
-    k = 1 if n_batches == 1 else n_batches // 3
-    yield from combinations(range(1, total_am + 1), k - 1)
+    """Every shared contiguous cut `partition` accepts -- none leaves a batch
+    empty -- in lexicographic order; () when there is nothing to cut (1
+    batch, or one sub-batch per direction)."""
+    if n_batches == 1:
+        yield ()
+        return
+    counts = target_counts(total_am)
+    for cuts in combinations(range(1, total_am + 1), n_batches // 3 - 1):
+        if not empty_batches(counts, cuts):
+            yield cuts
 
 
 def _seed_order(name: str) -> SeedOrder:
@@ -127,7 +144,7 @@ def _sieved(
     total_am: int, dags: Iterator[BatchDag] | tuple[BatchDag, ...], seed: str
 ) -> tuple[BatchDag, ...]:
     order = _seed_order(seed)(total_am)
-    return tuple(sieve(d, seed_order=order) if d.targets else d for d in dags)
+    return tuple(sieve(d, seed_order=order) for d in dags)
 
 
 def searched_plan(

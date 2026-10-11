@@ -12,13 +12,16 @@ from felizjueves.plan.batching import (
     MINIMAX_TARGETS,
     batch_direction,
     batch_size,
+    empty_batches,
     in_batch,
     largest_batch,
     max_targets_per_batch,
     partition,
     target_counts,
 )
+from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets, n_targets
+from felizjueves.spec import Operator, Spec, Target
 
 # [JEngine, v2, §5]: L = 5, direction Y, a..b = 1..2
 Y_12 = {
@@ -99,6 +102,94 @@ def test_too_many_sub_batches_for_the_class_raises() -> None:
         partition(1, 9)
 
 
+# -- #64: which (L, n_batches) the plan layer admits ---------------------------
+
+LEGAL_COUNTS = (1, *range(3, 22, 3))  # every legal n_batches up to 21
+
+# Refused because a batch would come out EMPTY: Y_{0,0} and Z_{0,0}, always
+# exactly those two. The first six are the cells of L = 0..16 x {1, 3, 6, 9}.
+EMPTY = {
+    (0, 3), (1, 6), (2, 6), (2, 9), (3, 9), (5, 9),
+    (3, 12), (4, 12), (6, 12),
+    (4, 15), (5, 15), (7, 15),
+    (5, 18), (6, 18), (7, 18), (8, 18),
+    (6, 21), (7, 21), (8, 21), (9, 21), (10, 21), (11, 21),
+}
+
+
+def _too_many(L: int, n_batches: int) -> bool:
+    """More sub-batches per direction than the max component has values."""
+    return n_batches > 1 and n_batches // 3 > L + 1
+
+
+@pytest.mark.parametrize("L", range(0, 17))
+@pytest.mark.parametrize("n_batches", LEGAL_COUNTS)
+def test_the_feasibility_map_is_asserted(L: int, n_batches: int) -> None:
+    # Every pair either partitions into n_batches non-empty batches covering
+    # every target once, or is refused by name -- never an exception from a
+    # later stage. The map is the artifact: EMPTY and _too_many ARE the rule.
+    if _too_many(L, n_batches):
+        with pytest.raises(ValueError, match="sub-batches per direction"):
+            partition(L, n_batches)
+    elif (L, n_batches) in EMPTY:
+        with pytest.raises(
+            ValueError,
+            match=rf"L = {L}, n_batches = {n_batches} .*2 batches with no "
+            r"targets: Y_\{0,0\}, Z_\{0,0\}",
+        ):
+            partition(L, n_batches)
+    else:
+        targets = hermite_targets(L)
+        batches = partition(L, n_batches)
+        assert len(batches) == n_batches
+        assert all(batch_size(L, b) > 0 for b in batches)
+        seen = [r for b in batches for r in targets if in_batch(r, *b)]
+        assert sorted(seen) == sorted(targets)
+
+
+@pytest.mark.parametrize(("L", "n_batches"), sorted(EMPTY))
+def test_an_empty_batch_is_refused_at_the_partition_not_the_sieve(
+    L: int, n_batches: int
+) -> None:
+    # #64: these reached sieve._target_order and died in `max()` three frames
+    # below the cause. The full pipeline must now stop at the partition.
+    spec = Spec(Operator.COULOMB, 0, (L, 0, 0, 0), Target.J, n_batches=n_batches)
+    with pytest.raises(ValueError, match="no targets") as info:
+        plan(spec)
+    assert "iterable argument is empty" not in str(info.value)
+    assert info.traceback[-1].name == "partition"
+
+
+def test_the_six_grid_cells_are_the_ones_the_issue_names() -> None:
+    grid = {(L, b) for L in range(0, 17) for b in (1, 3, 6, 9)}
+    assert grid & EMPTY == {(0, 3), (1, 6), (2, 6), (2, 9), (3, 9), (5, 9)}
+    # [JEngine] Tables 1-3 are L = 7..16 x {1, 3, 6, 9}: all of it plans.
+    assert not any(L >= 7 and _too_many(L, b) for L, b in grid)
+    assert all(L < 7 for L, _ in grid & EMPTY)
+
+
+def test_legality_is_not_monotone_in_either_argument() -> None:
+    # Pinned so nobody "simplifies" the rule to a threshold: each minimax cut
+    # is chosen on its own counts, and only a first cut at 1 empties a batch.
+    with pytest.raises(ValueError, match="no targets"):
+        partition(5, 9)
+    assert len(partition(6, 9)) == 9  # larger L, same n_batches: plans
+    assert len(partition(5, 12)) == 12  # same L, more batches: plans
+    assert len(partition(4, 9)) == 9  # and smaller L plans too
+    with pytest.raises(ValueError, match="no targets"):
+        partition(4, 12)
+
+
+def test_empty_batches_names_only_y_and_z_at_zero() -> None:
+    counts = target_counts(7)
+    assert empty_batches(counts, (1,)) == (("y", 0, 0), ("z", 0, 0))
+    assert empty_batches(counts, (2,)) == ()
+    for L in range(1, 17):
+        c = target_counts(L)
+        for cut in combinations(range(1, L + 1), 1):
+            assert bool(empty_batches(c, cut)) == (cut[0] == 1)
+
+
 def test_an_unknown_direction_raises() -> None:
     with pytest.raises(ValueError, match="direction"):
         in_batch((1, 0, 0), "w", 0, 1)
@@ -139,7 +230,12 @@ def test_the_direction_groups_differ_only_in_their_tie_class(L: int) -> None:
     assert set(all_equal) <= set(groups["x"])
     assert len(groups["x"]) == len(groups["y"]) + len(all_equal)
     assert len(groups["y"]) == len(groups["z"])
-    assert max_targets_per_batch(L, 3) == len(groups["x"])
+    if (L, 3) in EMPTY:  # L = 0: Y and Z hold nothing, so 3 batches is refused
+        assert not groups["y"] and not groups["z"]
+        with pytest.raises(ValueError, match="no targets"):
+            max_targets_per_batch(L, 3)
+    else:
+        assert max_targets_per_batch(L, 3) == len(groups["x"])
 
 
 def test_figure_4s_cut_at_l_6() -> None:
@@ -171,7 +267,11 @@ def test_the_cut_is_minimax_by_brute_force(L: int, k: int) -> None:
 
     sizes = {cuts: largest(cuts) for cuts in combinations(range(1, L + 1), k - 1)}
     best = min(sizes.values())
-    assert max_targets_per_batch(L, 3 * k) == best
+    if (L, 3 * k) in EMPTY:  # #64: the minimax cut starts at 1 -- refused
+        with pytest.raises(ValueError, match="no targets"):
+            max_targets_per_batch(L, 3 * k)
+    else:
+        assert max_targets_per_batch(L, 3 * k) == best
     # ... and among the optimal cuts, the lowest boundaries.
     chosen = MINIMAX_TARGETS(target_counts(L), k)
     assert chosen == min(c for c, s in sizes.items() if s == best)
