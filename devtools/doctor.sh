@@ -215,7 +215,11 @@ for entry in "${CONFIG_LINES[@]}"; do
   # find_tool, not `command -v`: some tools come from the project venv
   # and are on PATH inside the image but not on the host. See devtools/lib.sh.
   if toolpath=$(find_tool "$tool"); then
-    ver=$("$toolpath" --version 2>/dev/null | head -1)
+    # The first line that names a version (ncu, compute-sanitizer and the
+    # shell linter all open with a banner), else the first line.
+    vout=$("$toolpath" --version 2>/dev/null)
+    ver=$(grep -m1 -E '[Vv]ersion:? +[0-9]' <<<"$vout" | sed 's/^ *//')
+    [ -n "$ver" ] || ver=$(head -1 <<<"$vout")
     ok "$tool${ver:+: $ver}"
     command -v "$tool" >/dev/null 2>&1 || note "not on PATH; using $toolpath"
   else
@@ -301,6 +305,51 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
   # intermittently, and amdgpu's gpu_busy_percent can refuse a read (EBUSY).
   # A held lock is a WARN: the next `gpu` run will wait behind it.
   #
+  # THE COUNTER TOOL, PER SIDE (#110): the profiler that reads this card's
+  # performance counters -- ncu for cuda, rocprofv3's counter mode for hip --
+  # with its version, or a WARN naming what is lost. Present is not usable, and
+  # the two ways it is not are checked without running a kernel: NVIDIA's
+  # driver can restrict the counters to admins (ncu then fails with
+  # ERR_NVGPUCTRPERM), and rocprofv3 can be installed without the libraries
+  # its SDK loads (libdw, the AQL profiler). Either reads as "could not
+  # measure" in felizjueves.measured.profile, never as a zero.
+  #
+  #   counter_tool_state <cuda|hip>
+  counter_tool_state() {
+    local backend=$1 tool path ver lib missing
+    if [ "$backend" = cuda ]; then tool=ncu; else tool=rocprofv3; fi
+    path=$(find_tool "$tool" 2>/dev/null) ||
+      for c in /usr/local/cuda/bin/$tool /opt/rocm/bin/$tool; do
+        [ -x "$c" ] && { path=$c; break; }
+      done
+    if [ -z "$path" ]; then
+      if [ "$backend" = cuda ]; then
+        warn "card present but ncu is not -- lost: fp64 FLOP and DRAM-byte counters, so every sm_86 counter row and its arithmetic intensity"
+      else
+        warn "card present but rocprofv3 is not -- lost: DRAM-side byte counters, so every gfx1200 counter row"
+      fi
+      return
+    fi
+    if [ "$backend" = cuda ]; then
+      ver=$("$path" --version 2>/dev/null | sed -n 's/^Version \([^ ]*\).*/\1/p' | head -1)
+      ok "counters: ncu ${ver:-(version unread)} ($path)"
+      if grep -qs '^RmProfilingAdminOnly: 1' /proc/driver/nvidia/params; then
+        warn "the driver restricts GPU counters to admins -- ncu will fail with ERR_NVGPUCTRPERM: could not measure"
+        note "fix (host): NVreg_RestrictProfilingToAdminUsers=0 in a modprobe.d file, then reload the driver"
+      fi
+    else
+      ver=$("$path" --version 2>/dev/null | sed -n 's/^ *version: *\([^ ]*\).*/\1/p' | head -1)
+      lib="$(dirname "$(readlink -f "$path")")/../lib/librocprofiler-sdk.so"
+      missing=$(ldd "$lib" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | paste -sd, -)
+      if [ -n "$missing" ]; then
+        warn "rocprofv3 ${ver:-} present but its SDK cannot load ${missing//,/, } -- counter mode cannot run: could not measure"
+        note "the image lacks them: libdw1 and hsa-amd-aqlprofile (docker/install-rocm.sh)"
+      else
+        ok "counters: rocprofv3 ${ver:-(version unread)} ($path)"
+      fi
+    fi
+  }
+
   #   card_state <vendor> <backend> <util%|""> <free MiB|""> <total MiB|"">
   card_state() {
     local vendor=$1 backend=$2 util=$3 free=$4 total=$5 lock state holder
@@ -379,6 +428,7 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
           card_state nvidia cuda "${nv_util:-}" "${nv_free:-}" "${nv_total:-}"
           find_tool nvcc >/dev/null 2>&1 ||
             note "card present but nvcc is not -- the CUDA toolchain is in the \`cuda\` image"
+          counter_tool_state cuda
         else
           note "no nvidia device -- nvcc still compiles, but no kernel can run"
         fi
@@ -435,6 +485,7 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
             note "/dev/kfd absent -- pass --device=/dev/kfd --device=/dev/dri to reach it"
           find_tool hipconfig >/dev/null 2>&1 ||
             note "card present but hipconfig is not -- ROCm is in the \`hip\`/\`combined\` image"
+          counter_tool_state hip
         else
           note "no amd device -- hipcc still compiles, but no kernel can run"
         fi

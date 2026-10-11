@@ -589,6 +589,34 @@ the 0.801 T denominator counts dual-issue fp32 (the data file's `note`). The
 ceilings are observations of two cards on one day — **never compared against
 the paper's A100**.
 
+### Measured: the counter fields, and where a kernel's counters live (#110)
+
+A roofline point needs the kernel's own **arithmetic intensity** — fp64 FLOPs
+over memory bytes — read off the card's performance counters, never a model.
+`Measured` carries `fp64_flops`, `dram_bytes_read`, `dram_bytes_written` and
+`counter_ns` (the kernel's duration *under counter collection*, which
+serialises and replays it — not a timing, never `runtime_ns`); intensity and
+achieved FLOP/s are **derived** properties, never stored. `counter_tool`,
+`counter_unit`, `command` and `raw` (every counter by its exact name) say
+where each number came from. The driver (`felizjueves.measured.profile`) runs
+`ncu` on NVIDIA (`fp64_flops = dadd + dmul + 2·dfma` thread instructions;
+`dram__bytes_read/write.sum`) and `rocprofv3 --pmc` on AMD (GL2C↔fabric
+requests × their size — L2 misses, an upper bound on DRAM bytes). **`gfx1200`
+exposes no fp64 counter**, so an AMD row leaves `fp64_flops` unset: an AMD
+intensity needs a FLOP count from elsewhere, labelled as such. A profiler
+that is absent, refused the counters, or cannot load raises
+`CouldNotMeasure` — no row, never a zero. (This container's `rocprofv3`
+lacks `libdw.so.1` and `libhsa-amd-aqlprofile64.so.1`; `devtools/doctor.sh`
+says so.)
+
+**One row per batch kernel**, in their own store, `data/measured/roofline.json`,
+keyed `MeasuredKey.key() + "#<batch>"` (0-based, plan order; a cell of
+`n_batches` b has exactly `#0 … #b-1`). A cell's counters are **derived** —
+summed over its kernels by `measured_store.cell_counters` — so a per-kernel
+verdict (`[JEngine, v2, §7.2]`'s *some* kernels of a 9-batch `[7|7]` stay
+memory-bound) and the per-cell one read the same numbers. `kernels.json`'s
+literal rows are untouched: one row is still one cell there.
+
 ## The pipeline
 
 This is the algorithm the repo *is* (`[JEngine, v2, §6]`):

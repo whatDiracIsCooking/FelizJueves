@@ -120,6 +120,67 @@ LEVER ROW EXISTED, and not to be tuned after reading one.
   verdict (`spill`, literal row against lever row, same compiler) and never
   enter it: the clock is the verdict.
 
+COUNTERS (#110) are the roofline's inputs, read off the card's own
+performance counters by a profiler -- `ncu` on NVIDIA, `rocprofv3`'s counter
+mode on AMD -- never off a model:
+
+- `fp64_flops`: fp64 floating-point operations EXECUTED, an FMA counted as
+  two (ncu: `smsp__sass_thread_inst_executed_op_{dadd,dmul,dfma}_pred_on.sum`,
+  dadd + dmul + 2 x dfma, thread-level, so a FLOP count and not a warp
+  instruction count). gfx1200 exposes NO fp64 instruction counter
+  (rocprofiler-sdk's counter definitions have none for gfx12), so an AMD row
+  leaves it None: unmeasured, never zero, and never borrowed from the
+  NVIDIA row or from a model.
+- `dram_bytes_read`, `dram_bytes_written`: bytes moved between the card's
+  last counted cache level and memory. ncu: `dram__bytes_read.sum` /
+  `dram__bytes_write.sum`, DRAM traffic at 32-byte-sector granularity.
+  gfx1200: the GL2C <-> EA (memory fabric) requests,
+  32 x `GL2C_EA_RDREQ_32B_sum` + 64 x `..._64B_sum` + 128 x `..._128B_sum`
+  read, and 64 x `GL2C_EA_WRREQ_64B_sum` + 32 x (`GL2C_EA_WRREQ_sum` -
+  `GL2C_EA_WRREQ_64B_sum`) written -- L2 misses, which RDNA4's Infinity
+  Cache may serve before DRAM, so an UPPER bound on DRAM bytes. The two
+  vendors' numbers share a field name, not a meaning: `counter_unit` says
+  which, and nothing compares them across vendors.
+- `counter_ns`: the profiler's own duration of the kernel UNDER COUNTER
+  COLLECTION (ncu `gpu__time_duration.sum`; rocprofv3 End - Start
+  timestamps). Collection serialises and replays kernels, so this is NOT a
+  timing measurement and never lands in `runtime_ns`: it is the denominator
+  of `achieved_flops_per_s` and nothing else.
+
+THE MEASURED COUNTS ARE CANONICAL; the ratios are derived, never stored:
+`dram_bytes` (read + written), `arithmetic_intensity` (FLOP/byte) and
+`achieved_flops_per_s` (FLOP/s) are properties, so a stored ratio cannot drift
+from its inputs. `counter_tool` is the profiler as it reports itself
+(`"ncu 2025.3.1.0"`), `counter_unit` what each field means on that vendor,
+`command` the full invocation and `raw` every counter by its EXACT name --
+a counter renamed between toolchain versions is the drift this shape exists
+to surface. The fields are serialised only when present (`as_record`), so a
+row without counters reads and writes back exactly as before. Nothing here
+is comparable to `[JEngine, v2, Fig. 7]`: their kernels, their A100.
+
+THE COUNTER ROW SHAPE (#110, for #112): ONE ROW PER BATCH KERNEL, in their
+own store, `data/measured/roofline.json` (`load_counters` / `save_counters`),
+keyed
+
+    kernel_key(MeasuredKey(spec, arch, toolchain), batch)
+      == MeasuredKey(...).key() + "#" + str(batch)
+
+`batch` being the kernel's 0-based position in the cell's plan order
+(`measured.cell_kernels(spec)`), so a cell of `n_batches` b has exactly the
+rows `#0` .. `#b-1` -- a one-batch cell has the one row `#0` -- and the loader
+refuses a cell with a missing or extra kernel row, or kernel rows from two
+profilers, cards or vendor meanings. The CELL's counters are NOT stored:
+`cell_counters` derives them (every count summed over the cell's kernels,
+each launched once per class), so the per-kernel and per-cell verdicts are
+read off one set of numbers and cannot disagree. Why a separate store rather
+than a batch index on `MeasuredKey` or a nested field: `kernels.json`'s 40
+literal rows mean one cell each, and `kernelrank`, `batchreport` and both
+verdicts read them so; a per-kernel row filed beside them would change what
+"the row for this key" is, while one in its own file changes nothing they
+read. A counter row carries counter measurements only (a compile observation
+belongs in `kernels.json`, a timing in its `runtime_ns`), and the loader
+refuses anything else in it.
+
 THE SPLIT (#94). This module is the store and nothing else: the record, the
 file, the read path, the declared subgrid, and the two verdicts read off the
 rows. It knows no toolchain -- it runs no compiler, reads no config.sh,
@@ -150,6 +211,7 @@ from felizjueves.spec import Spec
 
 REPO = Path(__file__).resolve().parents[2]
 STORE = REPO / "data" / "measured" / "kernels.json"
+ROOFLINE = REPO / "data" / "measured" / "roofline.json"  # counter rows (#110)
 
 # THE declared subgrid (#52): see the module docstring. One edit adds a cell.
 SUBGRID_LS = (7, 10, 13, 16)
@@ -240,10 +302,47 @@ HEADER = {
 }
 
 
+# The counter measurements (#110; module docstring, COUNTERS), and each
+# field's unit -- the derived quantities' too, though they are never stored.
+COUNTERS = ("fp64_flops", "dram_bytes_read", "dram_bytes_written", "counter_ns")
+COUNTER_UNITS = {
+    "fp64_flops": "fp64 floating-point operations executed (FMA = 2)",
+    "dram_bytes_read": "bytes (vendor meaning: the row's counter_unit)",
+    "dram_bytes_written": "bytes (vendor meaning: the row's counter_unit)",
+    "counter_ns": "ns, the profiler's kernel duration under counter "
+                  "collection -- NOT a timing",
+    "arithmetic_intensity": "FLOP / byte = fp64_flops / (dram_bytes_read + "
+                            "dram_bytes_written), derived",
+    "achieved_flops_per_s": "FLOP / s = fp64_flops / counter_ns, derived",
+}
+COUNTERS_ABOUT = (
+    "#110: fp64_flops, dram_bytes_read, dram_bytes_written and counter_ns are "
+    "the card's own performance counters as a profiler reported them for one "
+    "kernel -- ncu on NVIDIA (fp64_flops = dadd + dmul + 2 x dfma thread "
+    "instructions; DRAM bytes at sector granularity), rocprofv3's counter "
+    "mode on AMD (GL2C <-> EA bytes, an upper bound on DRAM; gfx1200 has no "
+    "fp64 counter, so fp64_flops is None there) -- with the profiler in "
+    "counter_tool, the vendor meaning in counter_unit, the invocation in "
+    "command and every counter by its exact name in raw. counter_ns is the "
+    "kernel's duration under counter collection (serialised, replayed): NOT "
+    "a timing, never runtime_ns. The counts are canonical; "
+    "arithmetic_intensity and achieved_flops_per_s are derived, never "
+    "stored. Units: " + "; ".join(f"{k}: {v}" for k, v in COUNTER_UNITS.items())
+    + ". Counter rows live in data/measured/roofline.json, ONE PER BATCH "
+    "KERNEL, keyed MeasuredKey.key() + '#<batch>' (plan order, from 0); a "
+    "cell's counters are their sum, derived (measured_store.cell_counters), "
+    "never stored. NOT comparable to [JEngine, v2, Fig. 7]: their kernels, "
+    "their A100.")
+HEADER["counters"] = COUNTERS_ABOUT
+
 MEASUREMENTS = ("registers", "spill_store", "spill_load", "shared_bytes",
-                "compile_s", "runtime_ns", "repeats", "spread_ns")
+                "compile_s", "runtime_ns", "repeats", "spread_ns", *COUNTERS)
 PROVENANCE = ("toolchain", "arch", "host", "gpu", "date")
-_INTS = ("registers", "spill_store", "spill_load", "shared_bytes", "repeats")
+_INTS = ("registers", "spill_store", "spill_load", "shared_bytes", "repeats",
+         "fp64_flops", "dram_bytes_read", "dram_bytes_written")
+# Serialised only when present (`as_record`): a row without counters is
+# written exactly as it was before #110.
+_OMITTED_WHEN_ABSENT = (*COUNTERS, "counter_tool", "counter_unit")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -264,6 +363,11 @@ class Measured:
     runtime_ns: float | None = None
     repeats: int | None = None
     spread_ns: float | None = None
+    # the card's performance counters, from a profiler (#110)
+    fp64_flops: int | None = None
+    dram_bytes_read: int | None = None
+    dram_bytes_written: int | None = None
+    counter_ns: float | None = None
     # provenance, all REQUIRED
     toolchain: str  # "nvcc 13.0", "hipcc / ROCm 7.2.4"
     arch: str  # "sm_86", "gfx1200"
@@ -276,6 +380,8 @@ class Measured:
     command: str = ""  # the compiler invocation, measurement flag included
     source_sha256: str = ""  # of the emitted translation unit
     raw: Mapping[str, int | None] = field(default_factory=dict)
+    counter_tool: str = ""  # the profiler as it reports itself (#110)
+    counter_unit: str = ""  # what the counter fields mean on this vendor
 
     def __post_init__(self) -> None:
         for n in MEASUREMENTS:
@@ -294,6 +400,42 @@ class Measured:
         for n in PROVENANCE:
             if not isinstance(getattr(self, n), str) or not getattr(self, n):
                 raise ValueError(f"{n} must be a non-empty string")
+
+    # Derived from the stored counts, never stored themselves (#110).
+    @property
+    def dram_bytes(self) -> int | None:
+        """Bytes read + written, or None unless both were counted."""
+        if self.dram_bytes_read is None or self.dram_bytes_written is None:
+            return None
+        return self.dram_bytes_read + self.dram_bytes_written
+
+    @property
+    def arithmetic_intensity(self) -> float | None:
+        """fp64 FLOP per DRAM byte, or None unless both sides were counted
+        (and some byte moved)."""
+        b = self.dram_bytes
+        if self.fp64_flops is None or not b:
+            return None
+        return self.fp64_flops / b
+
+    @property
+    def achieved_flops_per_s(self) -> float | None:
+        """fp64 FLOP/s over the kernel's duration under counter collection,
+        or None unless both were counted."""
+        if self.fp64_flops is None or not self.counter_ns:
+            return None
+        return self.fp64_flops * 1e9 / self.counter_ns
+
+
+def as_record(row: Measured) -> dict:
+    """`row` as the store writes it: every field, except that the counter
+    fields are left out when absent -- so a row with no counters is written
+    exactly as it was before #110."""
+    d = asdict(row)
+    for n in _OMITTED_WHEN_ABSENT:
+        if d[n] in (None, ""):
+            del d[n]
+    return d
 
 
 
@@ -417,7 +559,7 @@ def rows(spec: Spec | None = None, arch: Arch | str | None = None,
 def save(store: Mapping[str, Measured], path: Path = STORE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     doc = {"schema": SCHEMA, "about": ABOUT, "header": HEADER,
-           "rows": {k: asdict(store[k]) for k in sorted(store, key=_order)}}
+           "rows": {k: as_record(store[k]) for k in sorted(store, key=_order)}}
     path.write_text(json.dumps(doc, indent=2) + "\n")
 
 
@@ -425,6 +567,191 @@ def _order(key: str) -> tuple:
     m = re.search(r"\((\d+),(\d+)\|(\d+),(\d+)\)", key)
     am = tuple(int(x) for x in m.groups()) if m else ()
     return (key.split("@", 1)[-1], sum(am), am, key)
+
+
+# ---------------------------------------------------------------------------
+# #110: the counter store, one row per batch kernel (module docstring)
+# ---------------------------------------------------------------------------
+
+ROOFLINE_SCHEMA = 1
+
+ROOFLINE_ABOUT = (
+    "Counter rows (felizjueves.measured_store, #110): the card's own "
+    "performance counters, as a profiler reported them for ONE BATCH KERNEL "
+    "of one cell, keyed device.MeasuredKey(spec, arch, toolchain).key() + "
+    "'#<batch>', the kernel's 0-based position in the cell's plan order. A "
+    "cell's counters are derived (summed over its kernels), never stored. "
+    "Observations of a profiler on one card, not claims about this code. NOT "
+    "comparable to [JEngine, v2, Fig. 7]: their kernels, their A100.")
+
+ROOFLINE_HEADER = {
+    "what": "One row per batch kernel: what a profiler's counters said about "
+            "one launch of one emitted kernel on one card "
+            "(felizjueves.measured_store, #110).",
+    "key": "MeasuredKey(spec, arch, toolchain).key() + '#<batch>': the "
+           "generation Spec, the card's Arch, the COMPILER that built the "
+           "kernel, and the kernel's 0-based index in the cell's plan order "
+           "(measured.cell_kernels). A cell of n_batches b has exactly the "
+           "rows #0 .. #b-1; the loader refuses any other set.",
+    "cell": "A cell's counters are measured_store.cell_counters: every count "
+            "summed over its kernels (each launched once per class). Derived, "
+            "never stored, so the per-kernel and per-cell verdicts read one "
+            "set of numbers.",
+    "counters": COUNTERS_ABOUT,
+    "not_timing": "counter_ns is the kernel's duration under counter "
+                  "collection, which serialises and replays kernels: never a "
+                  "timing. Wall-clock lives in kernels.json's runtime_ns, "
+                  "and a row here carries none.",
+    "not_compared": "Nothing here is compared against [JEngine, v2, Fig. 7] "
+                    "(their kernels, their A100), nor across vendors (the "
+                    "fields share a name, not a meaning: see counter_unit).",
+}
+
+_COUNTER_ONLY_FORBIDDEN = tuple(n for n in MEASUREMENTS if n not in COUNTERS)
+_BATCHES = re.compile(r"/b(\d+)/")
+
+
+def kernel_key(key: MeasuredKey | str, batch: int) -> str:
+    """A counter row's key: the cell's `MeasuredKey.key()` + '#<batch>'."""
+    cell = key.key() if isinstance(key, MeasuredKey) else key
+    if type(batch) is not int or batch < 0:
+        raise ValueError(f"batch {batch!r} must be an int >= 0")
+    split_key(cell)
+    return f"{cell}#{batch}"
+
+
+def split_kernel_key(key: str) -> tuple[str, int]:
+    """A counter row's key back into (the cell's MeasuredKey.key(), batch)."""
+    cell, sep, batch = key.rpartition("#")
+    if not sep or not re.fullmatch(r"0|[1-9]\d*", batch):
+        raise ValueError(f"{key!r} is not a kernel_key (no '#<batch>')")
+    split_key(cell)
+    return cell, int(batch)
+
+
+def n_batches_of(cell: str) -> int:
+    """The `n_batches` a cell key's Spec names."""
+    m = _BATCHES.search(split_key(cell)[0])
+    if not m:
+        raise ValueError(f"{cell!r} names no n_batches")
+    return int(m[1])
+
+
+def _counter_row(path: Path, key: str, v: object) -> Measured:
+    try:
+        cell, _ = split_kernel_key(key)
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from e
+    if isinstance(v, dict):
+        unknown = sorted(set(v) - _FIELDS)
+        if unknown:
+            raise ValueError(f"{path}: row {key!r} has unknown fields {unknown}")
+    row = _row(path, cell, v)
+    other = [n for n in _COUNTER_ONLY_FORBIDDEN if getattr(row, n) is not None]
+    if other:
+        raise ValueError(f"{path}: counter row {key!r} records {other}: a "
+                         "counter row carries counters only (a timing is "
+                         "kernels.json's runtime_ns; counter_ns is not one)")
+    if all(getattr(row, n) is None for n in COUNTERS):
+        raise ValueError(f"{path}: counter row {key!r} records no counter")
+    for n in ("counter_tool", "counter_unit", "command"):
+        if not getattr(row, n):
+            raise ValueError(f"{path}: counter row {key!r} has no {n}")
+    return row
+
+
+def _check_cells(path: Path, got: Mapping[str, Measured]) -> None:
+    cells: dict[str, dict[int, Measured]] = {}
+    for k, r in got.items():
+        cell, b = split_kernel_key(k)
+        cells.setdefault(cell, {})[b] = r
+    for cell, ks in cells.items():
+        want = set(range(n_batches_of(cell)))
+        if set(ks) != want:
+            raise ValueError(f"{path}: cell {cell!r} has kernel rows "
+                             f"{sorted(ks)}, not exactly {sorted(want)}")
+        first = ks[0]
+        for b, r in ks.items():
+            same = ("counter_tool", "counter_unit", "gpu", "host")
+            bad = [n for n in same if getattr(r, n) != getattr(first, n)]
+            present = {n for n in COUNTERS if getattr(r, n) is not None}
+            if present != {n for n in COUNTERS
+                           if getattr(first, n) is not None}:
+                bad.append("the counters present")
+            if bad:
+                raise ValueError(f"{path}: cell {cell!r}: kernel #{b} differs "
+                                 f"from #0 in {bad}")
+
+
+def load_counters(path: Path = ROOFLINE) -> dict[str, Measured]:
+    """Every counter row, by `kernel_key`. Refuses a malformed or foreign
+    file, a non-counter measurement, and an incomplete or mixed cell.
+
+    A missing file raises FileNotFoundError, as `load` does.
+    """
+    path = Path(path)
+    try:
+        doc = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path}: not JSON ({e})") from e
+    if not isinstance(doc, dict):
+        raise ValueError(f"{path}: top level is not an object")
+    if doc.get("schema") != ROOFLINE_SCHEMA:
+        raise ValueError(f"{path}: schema {doc.get('schema')!r}, expected "
+                         f"{ROOFLINE_SCHEMA}")
+    if not isinstance(doc.get("about"), str) or not doc["about"]:
+        raise ValueError(f"{path}: no \"about\" string")
+    got = doc.get("rows")
+    if not isinstance(got, dict):
+        raise ValueError(f"{path}: \"rows\" is not an object")
+    out = {k: _counter_row(path, k, v) for k, v in got.items()}
+    _check_cells(path, out)
+    return out
+
+
+def save_counters(store: Mapping[str, Measured], path: Path = ROOFLINE) -> None:
+    """Write the counter store, refusing what `load_counters` would refuse."""
+    path = Path(path)
+    tmp = {k: _counter_row(path, k, as_record(r)) for k, r in store.items()}
+    _check_cells(path, tmp)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = {"schema": ROOFLINE_SCHEMA, "about": ROOFLINE_ABOUT,
+           "header": ROOFLINE_HEADER,
+           "rows": {k: as_record(store[k])
+                    for k in sorted(store, key=_kernel_order)}}
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+
+
+def _kernel_order(key: str) -> tuple:
+    cell, b = split_kernel_key(key)
+    return (*_order(cell), b)
+
+
+def kernel_counters(store: Mapping[str, Measured],
+                    cell: MeasuredKey | str) -> tuple[Measured, ...]:
+    """One cell's counter rows, in plan order (#0 first). KeyError if absent."""
+    c = cell.key() if isinstance(cell, MeasuredKey) else cell
+    n = n_batches_of(c)
+    try:
+        return tuple(store[kernel_key(c, b)] for b in range(n))
+    except KeyError as e:
+        raise KeyError(f"{c}: no counter row {e}") from None
+
+
+def cell_counters(store: Mapping[str, Measured],
+                  cell: MeasuredKey | str) -> Measured:
+    """A cell's counters, DERIVED from its kernel rows: each count summed
+    over the batch kernels (None where the kernels did not count it); the
+    provenance is kernel #0's, the date the latest; `raw` is every kernel's,
+    keyed '#<batch>:<counter>'."""
+    ks = kernel_counters(store, cell)
+    first = ks[0]
+    sums = {n: (None if any(getattr(r, n) is None for r in ks)
+                else sum(getattr(r, n) for r in ks)) for n in COUNTERS}
+    return replace(
+        first, **sums, date=max(r.date for r in ks),
+        kernel=",".join(r.kernel for r in ks), source_sha256="",
+        raw={f"#{b}:{k}": v for b, r in enumerate(ks) for k, v in r.raw.items()})
 
 
 # ---------------------------------------------------------------------------

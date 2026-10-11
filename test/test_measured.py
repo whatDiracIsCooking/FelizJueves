@@ -322,7 +322,10 @@ def test_the_loader_keeps_every_field_of_every_row() -> None:
     assert STORE["schema"] == measured_store.SCHEMA == 2
     assert set(ROWS) == set(STORE["rows"])
     for key, row in ROWS.items():
-        assert asdict(row) == STORE["rows"][key], key
+        assert measured_store.as_record(row) == STORE["rows"][key], key
+        # ...and a row without counters writes none of their fields (#110)
+        assert set(asdict(row)) - set(STORE["rows"][key]) <= {
+            *measured_store.COUNTERS, "counter_tool", "counter_unit"}, key
 
 
 def test_the_store_says_what_it_is_and_what_it_is_not() -> None:
@@ -602,6 +605,267 @@ def test_every_timed_row_records_the_cards_state_or_null() -> None:
                       "wallclock:near:gpu_util_before"):
                 v = r.raw[f]
                 assert v is not None and v <= GPU_BUSY_MAX, (spec.key(), arch, f)
+
+
+# --- #110: the counter fields, the counter store, and the profilers' output --
+#
+# Fast tier: no profiler is run here (the device witnesses are in
+# test/test_toolchain.py), so these hold with ncu and rocprofv3 absent.
+
+COUNTED = {"fp64_flops": 2_000, "dram_bytes_read": 1_600, "dram_bytes_written": 800,
+           "counter_ns": 500.0}
+COUNTER_PROV = {**PROV, "counter_tool": "ncu 2025.3.1.0",
+                "counter_unit": measured.NV_COUNTER_UNIT, "command": "ncu ..."}
+
+
+def _counter_row(**kw) -> measured_store.Measured:
+    return measured_store.Measured(**{**COUNTED, **COUNTER_PROV, **kw})
+
+
+def test_a_row_with_only_counter_fields_is_legal_and_derives_its_ratios() -> None:
+    r = _counter_row()
+    assert r.registers is None and r.runtime_ns is None
+    assert r.dram_bytes == 2_400
+    assert r.arithmetic_intensity == 2_000 / 2_400
+    assert r.achieved_flops_per_s == 4e9  # 2000 FLOP in 500 ns
+    # one side uncounted: the ratio is unknown, not zero
+    amd = _counter_row(fp64_flops=None)
+    assert amd.arithmetic_intensity is None and amd.achieved_flops_per_s is None
+    assert amd.dram_bytes == 2_400
+    with pytest.raises(ValueError, match="records nothing"):
+        measured_store.Measured(**COUNTER_PROV)
+
+
+@pytest.mark.parametrize("bad", [{"fp64_flops": -1}, {"dram_bytes_read": 1.5},
+                                 {"counter_ns": -2.0}])
+def test_a_bad_counter_is_refused(bad) -> None:
+    with pytest.raises(ValueError):
+        _counter_row(**bad)
+
+
+def test_every_counter_field_has_its_unit_and_the_header_says_what_they_are() -> None:
+    units = measured_store.COUNTER_UNITS
+    assert set(measured_store.COUNTERS) | {"arithmetic_intensity",
+                                           "achieved_flops_per_s"} == set(units)
+    for header in (STORE["header"], measured_store.ROOFLINE_HEADER):
+        c = header["counters"]
+        assert "ncu" in c and "rocprofv3" in c  # which tool reported them
+        assert "NOT comparable to [JEngine, v2, Fig. 7]" in c
+        assert "never runtime_ns" in c
+        assert all(f in c for f in units)
+
+
+def test_the_kernel_key_is_the_cell_key_and_the_batch() -> None:
+    k = MeasuredKey(pq_spec(10, n_batches=9), GFX1200, "hipcc / ROCm 7.2.4")
+    kk = measured_store.kernel_key(k, 3)
+    assert kk == k.key() + "#3"
+    assert measured_store.split_kernel_key(kk) == (k.key(), 3)
+    assert measured_store.n_batches_of(k.key()) == 9
+    for bad in (k.key(), k.key() + "#", k.key() + "#03", k.key() + "#-1"):
+        with pytest.raises(ValueError):
+            measured_store.split_kernel_key(bad)
+
+
+def _cell_rows(spec, flops=(100, 200, 300)) -> dict:
+    k = MeasuredKey(spec, SM_86, "nvcc 13.0")
+    return {measured_store.kernel_key(k, b): _counter_row(
+        fp64_flops=f, kernel=f"k{b}", raw={measured.NCU_DFMA: f // 2})
+        for b, f in enumerate(flops)}
+
+
+def test_a_counter_row_per_batch_kernel_is_written_and_read_back(tmp_path) -> None:
+    spec = pq_spec(4, n_batches=3)
+    rows = {**_cell_rows(spec), **_cell_rows(pq_spec(4), flops=(7,))}
+    p = tmp_path / "roofline.json"
+    measured_store.save_counters(rows, p)
+    got = measured_store.load_counters(p)
+    assert got == rows
+    measured_store.save_counters(got, tmp_path / "again.json")
+    assert (tmp_path / "again.json").read_bytes() == p.read_bytes()
+    # the per-kernel rows, in plan order, and the cell DERIVED from them
+    ks = measured_store.kernel_counters(got, MeasuredKey(spec, SM_86, "nvcc 13.0"))
+    assert [r.kernel for r in ks] == ["k0", "k1", "k2"]
+    cell = measured_store.cell_counters(got, MeasuredKey(spec, SM_86, "nvcc 13.0"))
+    assert cell.fp64_flops == 600
+    assert cell.dram_bytes_read == 3 * 1_600 and cell.counter_ns == 3 * 500.0
+    assert cell.arithmetic_intensity == 600 / (3 * 2_400)
+    assert cell.kernel == "k0,k1,k2"
+    assert cell.raw == {f"#{b}:{measured.NCU_DFMA}": f // 2
+                        for b, f in enumerate((100, 200, 300))}
+
+
+def test_the_tracked_counter_store_reads_and_rewrites_byte_for_byte(tmp_path) -> None:
+    got = measured_store.load_counters()
+    p = tmp_path / "roofline.json"
+    measured_store.save_counters(got, p)
+    assert p.read_bytes() == measured_store.ROOFLINE.read_bytes()
+
+
+@pytest.mark.parametrize("change", ["missing", "extra", "timed", "compiled",
+                                    "uncounted", "two-tools", "no-command",
+                                    "bare-key"])
+def test_the_counter_store_refuses_what_is_not_a_complete_counter_cell(
+        change, tmp_path) -> None:
+    rows = _cell_rows(pq_spec(4, n_batches=3))
+    keys = sorted(rows)
+    if change == "missing":
+        del rows[keys[1]]
+    elif change == "extra":
+        rows[keys[0][:-1] + "3"] = rows[keys[0]]
+    elif change == "timed":  # a counter run's duration is not a timing
+        rows[keys[0]] = replace(rows[keys[0]], runtime_ns=1.0)
+    elif change == "compiled":
+        rows[keys[0]] = replace(rows[keys[0]], registers=40)
+    elif change == "uncounted":
+        rows[keys[0]] = replace(rows[keys[0]], **dict.fromkeys(
+            measured_store.COUNTERS), compile_s=1.0)
+    elif change == "two-tools":
+        rows[keys[2]] = replace(rows[keys[2]], counter_tool="ncu 2099.1")
+    elif change == "no-command":
+        rows[keys[0]] = replace(rows[keys[0]], command="")
+    else:
+        rows[keys[0][:-2]] = rows.pop(keys[0])
+    p = tmp_path / "roofline.json"
+    with pytest.raises(ValueError, match=str(p)):
+        measured_store.save_counters(rows, p)
+    # ...and a file holding it is refused on the way in, too
+    ok = tmp_path / "ok.json"
+    measured_store.save_counters(_cell_rows(pq_spec(4, n_batches=3)), ok)
+    doc = json.loads(ok.read_text())
+    doc["rows"] = {k: measured_store.as_record(v) for k, v in rows.items()}
+    p.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match=str(p)):
+        measured_store.load_counters(p)
+
+
+def test_counter_rows_do_not_change_what_the_cell_store_reads(tmp_path) -> None:
+    # The 40 literal rows mean one cell each; counter rows live elsewhere.
+    assert measured_store.ROOFLINE != measured_store.STORE
+    assert not any("#" in k for k in ROWS)
+
+
+# ncu --csv --print-units base, as ncu 2025.3.1.0 printed it on this box's RTX
+# 3080 for test_toolchain.py's counter probe: one row per metric per launch,
+# every column as printed (rebuilt from parts only to fit the line length).
+NCU_HEAD = ('"ID","Process ID","Process Name","Host Name","Kernel Name",'
+            '"Context","Stream","Block Size","Grid Size","Device","CC",'
+            '"Section Name","Metric Name","Metric Unit","Metric Value"')
+NCU_LAUNCH = ('"0","108619","k_cuda","127.0.0.1",'
+              '"fj_counter_probe(double, const double *, double *, long)","1",'
+              '"7","(256, 1, 1)","(65536, 1, 1)","0","8.6",'
+              '"Command line profiler metrics"')
+NCU_CSV = "\n".join([
+    "==PROF== Connected to process 108619 (k_cuda)", "ok",
+    "==PROF== Disconnected from process 108619", NCU_HEAD,
+    *(f'{NCU_LAUNCH},"{m}","{u}","{v}"' for m, u, v in [
+        ("dram__bytes_read.sum", "byte", 271641472),
+        ("dram__bytes_write.sum", "byte", 134105856),
+        ("gpu__time_duration.sum", "ns", 600832),
+        ("smsp__sass_thread_inst_executed_op_dadd_pred_on.sum", "inst", 0),
+        ("smsp__sass_thread_inst_executed_op_dfma_pred_on.sum", "inst", 16777216),
+        ("smsp__sass_thread_inst_executed_op_dmul_pred_on.sum", "inst", 0)]),
+]) + "\n"
+
+
+def test_ncu_is_read_by_exact_counter_name() -> None:
+    (c,) = measured.parse_ncu_csv(NCU_CSV)
+    assert c.kernel == "fj_counter_probe"
+    assert set(c.raw) == set(measured.NCU_METRICS)
+    assert c.fp64_flops == 2 * 16777216  # an FMA is two flops
+    assert (c.dram_bytes_read, c.dram_bytes_written) == (271641472, 134105856)
+    assert c.counter_ns == 600832.0
+
+
+def test_a_rescaled_or_missing_ncu_counter_is_refused() -> None:
+    with pytest.raises(ValueError, match="Kbyte"):
+        measured.parse_ncu_csv(NCU_CSV.replace('"byte","271641472"',
+                                               '"Kbyte","265275.5"'))
+    dropped = "\n".join(line for line in NCU_CSV.splitlines()
+                        if "dram__bytes_write" not in line)
+    with pytest.raises(ValueError, match="dram__bytes_write.sum"):
+        measured.parse_ncu_csv(dropped)
+
+
+# rocprofv3's counter_collection.csv: SYNTHETIC -- this container's rocprofv3
+# cannot load (libdw.so.1, libhsa-amd-aqlprofile64.so.1 absent), so no real
+# file exists here. The column names are the ones librocprofiler-sdk-tool
+# 1.1.0 carries; the parser reads by name, so their order does not matter.
+ROCPROF_HEAD = ("Correlation_Id,Dispatch_Id,Agent_Id,Queue_Id,Process_Id,Thread_Id,"
+                "Grid_Size,Kernel_Id,Kernel_Name,Workgroup_Size,LDS_Block_Size,"
+                "Scratch_Size,VGPR_Count,Accum_VGPR_Count,SGPR_Count,Counter_Name,"
+                "Counter_Value,Start_Timestamp,End_Timestamp")
+
+
+def _rocprof(dispatch: int, kernel: str, counters: dict) -> str:
+    return "\n".join(
+        f'{dispatch},{dispatch},1,1,9,9,1024,3,"{kernel}",256,0,0,32,0,16,{n},{v},'
+        f"1000,{1000 + 250 * dispatch}" for n, v in counters.items())
+
+
+def test_rocprofv3_is_read_by_exact_counter_name_and_counts_no_flops() -> None:
+    counters = {measured.ROCPROF_RD32: 10, measured.ROCPROF_RD64: 20,
+                measured.ROCPROF_RD128: 30, measured.ROCPROF_WR: 50,
+                measured.ROCPROF_WR64: 40}
+    text = "\n".join([ROCPROF_HEAD, _rocprof(2, "pq_b1(double*)", counters),
+                      _rocprof(1, "pq_b0", counters)]) + "\n"
+    a, b = measured.parse_rocprof_csv(text)
+    assert (a.kernel, b.kernel) == ("pq_b0", "pq_b1")  # dispatch order
+    assert a.fp64_flops is None  # gfx1200 has no fp64 counter: unknown, not 0
+    assert a.dram_bytes_read == 32 * 10 + 64 * 20 + 128 * 30
+    assert a.dram_bytes_written == 64 * 40 + 32 * (50 - 40)
+    assert (a.counter_ns, b.counter_ns) == (250.0, 500.0)
+    assert set(a.raw) == set(measured.ROCPROF_COUNTERS)
+    del counters[measured.ROCPROF_WR64]
+    with pytest.raises(ValueError, match=measured.ROCPROF_WR64):
+        measured.parse_rocprof_csv(ROCPROF_HEAD + "\n" + _rocprof(1, "k", counters))
+
+
+def test_counter_rows_file_one_row_per_batch_kernel_in_plan_order(tmp_path) -> None:
+    b = measured.BACKENDS["cuda"]
+    spec = pq_spec(4, n_batches=3)
+    units = b.units(spec)
+    launches = [measured.KernelCounters(u.name, {"x": i}, 2 * i + 2, 16, 8, 10.0)
+                for i, u in reversed(list(enumerate(units)))]
+    rows = measured.counter_rows(b, spec, units, launches, toolchain="nvcc 13.0",
+                                 gpu="g", tool="ncu 2025.3.1.0", command="ncu ...")
+    cell = MeasuredKey(spec, SM_86, "nvcc 13.0")
+    assert list(rows) == [measured_store.kernel_key(cell, i) for i in range(3)]
+    assert [r.kernel for r in rows.values()] == [u.name for u in units]
+    assert [r.fp64_flops for r in rows.values()] == [2, 4, 6]
+    assert all(r.runtime_ns is None for r in rows.values())
+    p = tmp_path / "roofline.json"
+    measured_store.save_counters(rows, p)
+    assert measured_store.cell_counters(measured_store.load_counters(p),
+                                        cell).fp64_flops == 12
+    with pytest.raises(ValueError, match="profiled 0 times"):
+        measured.counter_rows(b, spec, units, launches[:2], toolchain="nvcc 13.0",
+                              gpu="g", tool="t", command="c")
+
+
+def test_a_profiler_that_cannot_measure_yields_no_row(monkeypatch, tmp_path) -> None:
+    # Absent, refused the counters, or unable to load: CouldNotMeasure, never 0.
+    monkeypatch.setattr(measured, "_which", lambda tool: None)
+    with pytest.raises(measured.CouldNotMeasure, match="could not measure"):
+        measured.profile("cuda", ["./a.out"], kernel_regex="fj_", workdir=tmp_path)
+
+    class Done:
+        returncode = 0
+        stderr = ""
+
+    for out, match in [
+        ("==ERROR== ERR_NVGPUCTRPERM - The user does not have permission",
+         "ERR_NVGPUCTRPERM"),
+        ("./a.out: error while loading shared libraries: libdw.so.1: cannot open",
+         "libdw.so.1"),
+        ("==PROF== Disconnected\n", "profiled no launch"),
+    ]:
+        monkeypatch.setattr(measured, "_which", lambda tool: f"/x/{tool}")
+        monkeypatch.setattr(measured.subprocess, "run",
+                            lambda *a, _o=out, **k: type("D", (Done,),
+                                                         {"stdout": _o})())
+        with pytest.raises(measured.CouldNotMeasure, match=match):
+            measured.profile("cuda", ["./a.out"], kernel_regex="fj_",
+                             workdir=tmp_path)
 
 
 # --- re-measure: the recorded rows against the toolchain here ---------------
