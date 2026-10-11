@@ -1,0 +1,645 @@
+{
+ "schema": 1,
+ "about": "MILD's (intermediates, FLOPs) gap against the computed optimum (plan/optimum.py, #106), one batch, per L: [JEngine, v2, §4.1]'s trade-off measured with this tree's optimum, this tree's cost model and this tree's grid. It REPLACES the paper's comparison, whose search (its refs 59/60) is not here (limits.json); it does not re-run it, and agreement or disagreement with the printed percentages is evidence about neither. Recomputed by test/test_mild_vs_optimum.py (the exact rows and the beam rows L <= 10 in the fast tier, the beam rows L = 11..16 slow); rewritten by `PYTHONPATH=src uv run python test/test_mild_vs_optimum.py --write`, which keeps every key but `exact.rows`, `exact.band`, `beam.rows` and `beam.width` as written by hand.",
+ "search_space": "Every assignment of one reduction direction per materialised node [r]^(m), with nodes shared between all their consumers; one batch, targets hermite_targets(L). Not in the space: no algebraic rewriting of the recurrence, and no recomputing a node to shorten a live range. 'Optimal' below means optimal over this space and nothing wider.",
+ "cost": "plan/cost.py, read and unchanged: FLOPs 1, 2 or 3 per non-fundamental node by its reduced component r_d (the Boys function free); intermediates every node with m > 0, fundamentals [0]^(m) included.",
+ "subjects": {
+  "mild": "cost(dag.build(Spec, one batch)): MILD as built, no sieve -- the heuristic §4.1's claim is about, and the claim test's subject.",
+  "mild_sieved": "cost(sieve.plan(Spec, one batch)): MILD then the sieve seeded in hermite_targets order, the pipeline's literal one-batch plan. Reported alongside; not the claim's subject."
+ },
+ "reference_point": "One rule for every cell, never switched per cell: the frontier point with the fewest FLOPs among those with equal-or-fewer intermediates than the subject's (on a frontier, the one with the most intermediates not exceeding the subject's). The exact frontier always holds one, because MILD's own scheme is in the space.",
+ "sign_convention": "gap_percent = 100 * (subject - reference) / reference on each axis, rounded to 3 places. Positive: the subject spends MORE, i.e. is BEHIND. Negative: it spends less, i.e. is AHEAD. Zero: level.",
+ "paper": {
+  "source": "[JEngine, v2, §4.1]",
+  "flops_percent_behind": [
+   1,
+   2
+  ],
+  "intermediates_percent_ahead": [
+   2,
+   6
+  ]
+ },
+ "verdict": "EXACT RANGE, L = 0..5: the range §4.1's onset claim is about, and BELOW the published grid (L = 7..16), so no table cell is scored by it. MILD equals the optimum for L <= 4. At L = 5 MILD is (51, 161) against the optimum (48, 160): BEHIND ON BOTH AXES, +6.25% intermediates and +0.625% FLOPs. It is ahead on neither axis at any L, and cannot be: every exact frontier here is a single point, least on both axes at once. DISAGREEMENT WITH §4.1, recorded as the result and not reconciled: the paper puts MILD 1-2% behind on FLOPs (here 0.625%, below that band) and 2-6% AHEAD on intermediates (here 6.25% BEHIND, the opposite sign). Being ahead on intermediates needs a reference that is not intermediate-optimal; over this space, at every L the exact search reaches, the optimum is. MILD + sieve at L = 5 is (48, 161): level on intermediates, +0.625% FLOPs. PUBLISHED GRID, beam width 16 (an achievable scheme: a lower bound on the gap, never an estimate of it): the beam's point strictly dominates MILD at L = 11 ((524, 1750) against (581, 1763)) and L = 12 ((696, 2328) against (775, 2345)), so there MILD is at least 0.743% and 0.73% behind on FLOPs against the stated reference, and the optimum holds a point at least 10.878% and 11.351% below MILD on intermediates at the same time (likewise at L = 6, outside the grid: 0.369% and 7.317%). At every other grid L the beam's point has fewer intermediates and more FLOPs than MILD, and proves nothing about FLOPs. It proves nothing about MILD + sieve anywhere: the sieved plan has fewer intermediates than the beam's point at every L = 6..16 and dominates it at L = 7..16. The beam can show MILD far from optimal and never close: nothing here bounds MILD's gap from above at any L > 5.",
+ "exact": {
+  "about": "The gap against optimum(L), the exact frontier, for every L <= EXACT_MAX_L. `band` is what the claim test holds MILD to (no gap through L = 4; at most 1% behind on FLOPs and 7% behind on intermediates at every exact L); each row is pinned exactly besides. A rule with its ties to the lowest axis, to the highest axis, or that reduces the largest component, leaves the band; MILD's mirror image (ties to the cyclic predecessor, all-equal to x) has identical cost by the x<->z symmetry and is indistinguishable here (test/test_plan_mild.py pins the tie-break itself).",
+  "max_L": 5,
+  "band": {
+   "zero_through_L": 4,
+   "flops_percent": [
+    0.0,
+    1.0
+   ],
+   "intermediates_percent": [
+    0.0,
+    7.0
+   ]
+  },
+  "rows": [
+   {
+    "L": 0,
+    "frontier": [
+     [
+      0,
+      0
+     ]
+    ],
+    "mild": [
+     0,
+     0
+    ],
+    "reference": [
+     0,
+     0
+    ],
+    "gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    },
+    "direction": "equal to the reference",
+    "mild_sieved": [
+     0,
+     0
+    ],
+    "sieved_reference": [
+     0,
+     0
+    ],
+    "sieved_gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    }
+   },
+   {
+    "L": 1,
+    "frontier": [
+     [
+      1,
+      3
+     ]
+    ],
+    "mild": [
+     1,
+     3
+    ],
+    "reference": [
+     1,
+     3
+    ],
+    "gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    },
+    "direction": "equal to the reference",
+    "mild_sieved": [
+     1,
+     3
+    ],
+    "sieved_reference": [
+     1,
+     3
+    ],
+    "sieved_gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    }
+   },
+   {
+    "L": 2,
+    "frontier": [
+     [
+      5,
+      15
+     ]
+    ],
+    "mild": [
+     5,
+     15
+    ],
+    "reference": [
+     5,
+     15
+    ],
+    "gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    },
+    "direction": "equal to the reference",
+    "mild_sieved": [
+     5,
+     15
+    ],
+    "sieved_reference": [
+     5,
+     15
+    ],
+    "sieved_gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    }
+   },
+   {
+    "L": 3,
+    "frontier": [
+     [
+      13,
+      41
+     ]
+    ],
+    "mild": [
+     13,
+     41
+    ],
+    "reference": [
+     13,
+     41
+    ],
+    "gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    },
+    "direction": "equal to the reference",
+    "mild_sieved": [
+     13,
+     41
+    ],
+    "sieved_reference": [
+     13,
+     41
+    ],
+    "sieved_gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    }
+   },
+   {
+    "L": 4,
+    "frontier": [
+     [
+      26,
+      86
+     ]
+    ],
+    "mild": [
+     26,
+     86
+    ],
+    "reference": [
+     26,
+     86
+    ],
+    "gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    },
+    "direction": "equal to the reference",
+    "mild_sieved": [
+     26,
+     86
+    ],
+    "sieved_reference": [
+     26,
+     86
+    ],
+    "sieved_gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.0
+    }
+   },
+   {
+    "L": 5,
+    "frontier": [
+     [
+      48,
+      160
+     ]
+    ],
+    "mild": [
+     51,
+     161
+    ],
+    "reference": [
+     48,
+     160
+    ],
+    "gap_percent": {
+     "intermediates": 6.25,
+     "flops": 0.625
+    },
+    "direction": "behind on both axes",
+    "mild_sieved": [
+     48,
+     161
+    ],
+    "sieved_reference": [
+     48,
+     160
+    ],
+    "sieved_gap_percent": {
+     "intermediates": 0.0,
+     "flops": 0.625
+    }
+   }
+  ]
+ },
+ "beam": {
+  "about": "The bound against beam(L, width) for L = 6..16 (the published grid is 7..16; 6 is the gap between the exact ceiling and the grid). Every beam point is an achievable scheme, so each bound is a LOWER bound on the gap to the optimum. `reference` is the stated reference point taken on the beam's frontier. A `lower_bound_percent` is recorded only where that point strictly dominates the subject; its `flops` is then a lower bound on the subject's FLOP gap against the stated reference on the OPTIMUM's frontier (whose FLOPs are no more than the beam point's), and its `intermediates` says the optimum holds a point (one dominating the beam's) at least that far below the subject on intermediates, at no more FLOPs -- not necessarily the stated reference. Elsewhere `lower_bound_percent` is null and `proves` says why; `vs_reference_percent` is then a comparison with one achievable scheme, not a bound.",
+  "width": 16,
+  "rows": [
+   {
+    "L": 6,
+    "in_published_grid": false,
+    "beam_frontier": [
+     [
+      82,
+      271
+     ]
+    ],
+    "mild": [
+     88,
+     272
+    ],
+    "mild_bound": {
+     "reference": [
+      82,
+      271
+     ],
+     "vs_reference_percent": {
+      "intermediates": 7.317,
+      "flops": 0.369
+     },
+     "proves": "the beam's reference dominates: MILD is at least this far behind",
+     "lower_bound_percent": {
+      "intermediates": 7.317,
+      "flops": 0.369
+     }
+    },
+    "mild_sieved": [
+     81,
+     272
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 7,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      129,
+      427
+     ]
+    ],
+    "mild": [
+     137,
+     425
+    ],
+    "mild_bound": {
+     "reference": [
+      129,
+      427
+     ],
+     "vs_reference_percent": {
+      "intermediates": 6.202,
+      "flops": -0.468
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     126,
+     425
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 8,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      193,
+      651
+     ]
+    ],
+    "mild": [
+     210,
+     644
+    ],
+    "mild_bound": {
+     "reference": [
+      193,
+      651
+     ],
+     "vs_reference_percent": {
+      "intermediates": 8.808,
+      "flops": -1.075
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     184,
+     631
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 9,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      279,
+      936
+     ]
+    ],
+    "mild": [
+     306,
+     932
+    ],
+    "mild_bound": {
+     "reference": [
+      279,
+      936
+     ],
+     "vs_reference_percent": {
+      "intermediates": 9.677,
+      "flops": -0.427
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     264,
+     908
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 10,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      388,
+      1302
+     ]
+    ],
+    "mild": [
+     424,
+     1292
+    ],
+    "mild_bound": {
+     "reference": [
+      388,
+      1302
+     ],
+     "vs_reference_percent": {
+      "intermediates": 9.278,
+      "flops": -0.768
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     368,
+     1254
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 11,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      524,
+      1750
+     ]
+    ],
+    "mild": [
+     581,
+     1763
+    ],
+    "mild_bound": {
+     "reference": [
+      524,
+      1750
+     ],
+     "vs_reference_percent": {
+      "intermediates": 10.878,
+      "flops": 0.743
+     },
+     "proves": "the beam's reference dominates: MILD is at least this far behind",
+     "lower_bound_percent": {
+      "intermediates": 10.878,
+      "flops": 0.743
+     }
+    },
+    "mild_sieved": [
+     496,
+     1694
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 12,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      696,
+      2328
+     ]
+    ],
+    "mild": [
+     775,
+     2345
+    ],
+    "mild_bound": {
+     "reference": [
+      696,
+      2328
+     ],
+     "vs_reference_percent": {
+      "intermediates": 11.351,
+      "flops": 0.73
+     },
+     "proves": "the beam's reference dominates: MILD is at least this far behind",
+     "lower_bound_percent": {
+      "intermediates": 11.351,
+      "flops": 0.73
+     }
+    },
+    "mild_sieved": [
+     652,
+     2230
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 13,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      936,
+      3079
+     ]
+    ],
+    "mild": [
+     1004,
+     3038
+    ],
+    "mild_bound": {
+     "reference": [
+      936,
+      3079
+     ],
+     "vs_reference_percent": {
+      "intermediates": 7.265,
+      "flops": -1.332
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     845,
+     2887
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 14,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      1205,
+      3991
+     ]
+    ],
+    "mild": [
+     1290,
+     3896
+    ],
+    "mild_bound": {
+     "reference": [
+      1205,
+      3991
+     ],
+     "vs_reference_percent": {
+      "intermediates": 7.054,
+      "flops": -2.38
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     1060,
+     3655
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 15,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      1569,
+      5112
+     ]
+    ],
+    "mild": [
+     1630,
+     4916
+    ],
+    "mild_bound": {
+     "reference": [
+      1569,
+      5112
+     ],
+     "vs_reference_percent": {
+      "intermediates": 3.888,
+      "flops": -3.834
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     1328,
+     4573
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   },
+   {
+    "L": 16,
+    "in_published_grid": true,
+    "beam_frontier": [
+     [
+      1953,
+      6379
+     ]
+    ],
+    "mild": [
+     2021,
+     6095
+    ],
+    "mild_bound": {
+     "reference": [
+      1953,
+      6379
+     ],
+     "vs_reference_percent": {
+      "intermediates": 3.482,
+      "flops": -4.452
+     },
+     "proves": "nothing on FLOPs: the beam's reference spends more FLOPs",
+     "lower_bound_percent": null
+    },
+    "mild_sieved": [
+     1639,
+     5644
+    ],
+    "sieved_bound": {
+     "reference": null,
+     "proves": "nothing: every beam point has more intermediates",
+     "lower_bound_percent": null
+    }
+   }
+  ]
+ }
+}

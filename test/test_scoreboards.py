@@ -296,7 +296,14 @@ def test_limits_record_tables_1_and_2() -> None:
     # carries a StructuralLimit (test_plan_recovery.py checks its cells, and
     # #108's widened family and doctrine);
     # #13: the searched board's residual at_or_under cells carry one more.
-    limits = load_limits(JENGINE / "limits.json")
+    # Only the board-scoped records are this test's: a record about a claim
+    # rather than a scoreboard rule (board null or absent; #111's, say) is
+    # pinned by its own test, so an unrelated append does not break this one.
+    limits = [
+        lim for lim in load_limits(JENGINE / "limits.json")
+        if isinstance(lim.asserted_value, dict)
+        and lim.asserted_value.get("board") is not None
+    ]
     assert [
         (lim.asserted_value["board"], lim.asserted_value["rule"],
          lim.asserted_value.get("table")) for lim in limits
