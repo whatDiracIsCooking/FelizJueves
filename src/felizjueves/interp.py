@@ -47,9 +47,13 @@ STRICTNESS, because a lax machine passes broken kernels:
   zero and overflow past 32 bits raises; storing a float into an I32 raises;
   an int stored into an F64 widens (exact). A `For` with step <= 0 raises.
 
-`Fn.BOYS` is the one special function. Its semantics, F_m(T), are supplied by
-`reference.boys` (quadrature) unless the caller passes `boys=`; a kernel that
-calls it is therefore checked on everything *but* its Boys function.
+`Fn.BOYS` is the one special function. Its semantics, F_m(T), are INJECTED:
+the caller passes `boys=` (the pins pass `reference.boys.boys`, quadrature),
+and a kernel that calls `Fn.BOYS` without one raises. A kernel that calls it
+is therefore checked on everything *but* its Boys function. There is no
+default, on purpose: a default would be an import of `reference/` from here,
+and the interpreter must not share ancestry with the reference its own pins
+compare against (test/test_layering.py).
 
 COUNTERS. `Interpreter.iterations[var]` is the number of `For` body entries
 of the loop over `var`, summed over every thread of the launch. It is how a
@@ -267,6 +271,8 @@ class _Thread:
         args = [self.eval(a) for a in e.args]
         if fn is Fn.BOYS:
             m, T = args
+            if self.interp.boys is None:
+                raise InterpError("BOYS called but no boys= evaluator injected")
             if type(m) is not int:
                 raise InterpError(f"BOYS order {m!r} is not an I32")
             return float(self.interp.boys(m, float(T)))
@@ -396,8 +402,6 @@ class Interpreter:
             raise TypeError("interpret takes a Kernel")
         self.kernel = kernel
         self.launch = Launch() if launch is None else launch
-        if boys is None:
-            from felizjueves.reference.boys import boys
         self.boys = boys
         self.iterations: Counter[str] = Counter()
 
@@ -473,10 +477,11 @@ class Interpreter:
 
 
 def interpret(kernel: Kernel, *, launch: Launch | None = None,
+              boys: Callable[[int, float], float] | None = None,
               **inputs: Any) -> dict[str, np.ndarray]:
     """Execute every Stmt: Decl, Assign, For, If, Break, WarpReduce, AtomicAdd.
 
     Returns a copy of every OUT array after the launch. The warp reduction is
     emulated on the host (see the module docstring for the machine).
     """
-    return Interpreter(kernel, launch=launch).run(**inputs)
+    return Interpreter(kernel, launch=launch, boys=boys).run(**inputs)

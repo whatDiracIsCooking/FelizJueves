@@ -65,6 +65,7 @@ from felizjueves.ir import (
 )
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.recurrence import recurrence_kernels, target_order
+from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental, one_centre
 from felizjueves.spec import Operator, Spec, Target
 
@@ -90,8 +91,8 @@ def _kernels(L: int, n_batches: int, levers: tuple[str, ...] = ()):
 
 
 def _run(kernel: Kernel, n: int, pq, theta) -> np.ndarray:
-    return interpret(kernel, PQ_x=pq[0], PQ_y=pq[1], PQ_z=pq[2], theta=theta,
-                     out=np.zeros(n))["out"]
+    return interpret(kernel, boys=boys, PQ_x=pq[0], PQ_y=pq[1], PQ_z=pq[2],
+                     theta=theta, out=np.zeros(n))["out"]
 
 
 def _pin(L: int, n_batches: int, levers: tuple[str, ...] = ()) -> None:
@@ -323,13 +324,13 @@ def test_notes_are_inert() -> None:
 
 
 def test_the_interpreter_does_not_know_mcmurchie_davidson() -> None:
-    """Its only felizjueves imports are the IR and the Boys primitive."""
+    """Its only felizjueves import is the IR; Boys is injected (`boys=`)."""
     tree = ast.parse((SRC / "interp.py").read_text())
     mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     mods |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import)
              for a in n.names}
     ours = {m for m in mods if m and m.startswith("felizjueves")}
-    assert ours == {"felizjueves.ir", "felizjueves.reference.boys"}
+    assert ours == {"felizjueves.ir"}
 
 
 def test_shared_memory_atomics_and_geometry() -> None:
@@ -369,6 +370,9 @@ def test_the_machine_refuses_what_has_no_meaning() -> None:
         run(a=np.ones(2, np.float32))
     with pytest.raises(InterpError, match="missing"):
         run()
+    # Boys is injected, never defaulted from reference/ (test/test_layering.py).
+    with pytest.raises(InterpError, match="no boys= evaluator"):
+        run(Assign(Index("out", (Lit(0),)), Call(Fn.BOYS, (Lit(0), Lit(1.0)))), a=a)
     # Integer division truncates toward zero, as C does.
     got = run(Assign(Index("out", (Lit(0),)), Call(Fn.DIV, (Lit(-7), Lit(2)))), a=a)
     assert got["out"][0] == -3.0
