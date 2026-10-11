@@ -52,6 +52,34 @@ class Case:
     cart: bool
     charge: int = 0
     spin: int = 0
+    # Write the `converted` slot: the basis in our convention (oracle.basis).
+    record_basis: bool = False
+
+
+# A basis given inline rather than by library name: NWChem text, one
+# "#BASIS SET" block per element (what `gto.basis.parse(text, symb)` splits on).
+# One primitive per l = 0..3 on each element, with different exponents, so the
+# single-primitive overlap is not one exponent pair repeated.
+PRIM_SPDF = """\
+#BASIS SET: one primitive per l = 0..3
+He S
+  1.3 1.0
+He P
+  0.9 1.0
+He D
+  0.7 1.0
+He F
+  0.55 1.0
+#BASIS SET: one primitive per l = 0..3
+Ne S
+  2.1 1.0
+Ne P
+  1.4 1.0
+Ne D
+  1.1 1.0
+Ne F
+  0.8 1.0
+"""
 
 
 def hilbert_density(nao: int) -> np.ndarray:
@@ -82,6 +110,32 @@ CASES: dict[str, Case] = {
         basis="sto-3g",
         cart=True,
     ),
+    "prim_spdf": Case(
+        description=(
+            "#84's single-primitive case: He and Ne, one uncontracted "
+            "primitive per l = 0..3 on each, the second atom off every axis "
+            "so all Cartesian components couple. Records the converted basis "
+            "and libcint's overlap."
+        ),
+        atom="He 0 0 0; Ne 0.3 -0.5 1.2",
+        unit="Bohr",
+        basis=PRIM_SPDF,
+        cart=True,
+        record_basis=True,
+    ),
+    "hf_ccpvtz": Case(
+        description=(
+            "#84's contracted case: HF in cc-pVTZ, Cartesian -- s to f on F, "
+            "s to d on H, a general contraction (one F s shell carries two "
+            "contractions) and H off every axis. Records the converted basis "
+            "and libcint's overlap."
+        ),
+        atom="F 0 0 0; H 0.4 -0.7 1.6",
+        unit="Bohr",
+        basis="cc-pvtz",
+        cart=True,
+        record_basis=True,
+    ),
 }
 
 
@@ -109,7 +163,11 @@ def build(name: str) -> dict[str, Any]:
     from pyscf import gto
 
     case = CASES[name]
-    mol = gto.M(atom=case.atom, unit=case.unit, basis=case.basis, cart=case.cart,
+    basis: Any = case.basis
+    if "\n" in case.basis:  # inline NWChem text, not a library name
+        symbols = {s.split()[0] for s in case.atom.split(";") if s.strip()}
+        basis = {s: gto.basis.parse(case.basis, symb=s) for s in sorted(symbols)}
+    mol = gto.M(atom=case.atom, unit=case.unit, basis=basis, cart=case.cart,
                 charge=case.charge, spin=case.spin, verbose=0)
 
     coords = mol.atom_coords(unit="Bohr")
@@ -137,7 +195,7 @@ def build(name: str) -> dict[str, Any]:
 
     nao = int(mol.nao_nr())
     ao_loc = mol.ao_loc_nr(cart=case.cart)
-    return {
+    out = {
         "schema": SCHEMA,
         "name": name,
         "description": case.description,
@@ -164,6 +222,11 @@ def build(name: str) -> dict[str, Any]:
         },
         "density_recipe": DENSITY_RECIPE,
     }
+    if case.record_basis:
+        from .basis import converted_record
+
+        out["converted"] = converted_record(mol)
+    return out
 
 
 def comparable(obj: dict[str, Any]) -> str:
@@ -216,6 +279,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("could not run: PySCF is not installed -- uv sync --group oracle",
               file=sys.stderr)
         return 2
+    # `oracle.basis` (the converted slot) imports felizjueves.ao.shell. pytest
+    # gets `src` from `pythonpath`; the project is virtual (nothing installed),
+    # so run as `python -m oracle.generate` it is put on the path here.
+    src = str(Path(__file__).resolve().parents[2] / "src")
+    if src not in sys.path:
+        sys.path.append(src)
 
     status = 0
     for name in args.names or list(CASES):

@@ -28,6 +28,14 @@ THE SHAPE (schema 1), one JSON object per file under `fixtures/`:
     arrays       {name: {shape, values}} -- values flattened row-major
                  `density` (nao x nao, exactly symmetric) is required
     density_recipe  how the recorded density was made
+    converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
+                 (`ao.shell.Shell`, one entry per contraction, in AO order) as
+                 `oracle.basis` converts it -- coefficients are libcint's
+                 normalised `_libcint_ctr_coeff` times `common_factor(l)`, to
+                 multiply unnormalised Cartesian primitives -- and
+                 `common_factor`, libcint's `common_fac` per l = 0.. as PySCF's
+                 data yields it. Present only where a case records it; it lets
+                 a later test build our shells with no PySCF. Cartesian only.
 
 FULL PRECISION. Floats are written by `json`, i.e. by `repr`, which is the
 shortest string that round-trips the double exactly, so "the numbers match"
@@ -60,6 +68,7 @@ TOP_KEYS = (
     "schema", "name", "description", "provenance", "atoms", "shells", "nao",
     "ao_labels", "ao_loc", "arrays", "density_recipe",
 )
+OPTIONAL_KEYS = ("converted",)
 REQUIRED_ARRAYS = ("density",)
 
 
@@ -100,6 +109,24 @@ class Shell:
 
 
 @dataclass(frozen=True)
+class ConvertedShell:
+    """One contraction in our convention (`felizjueves.ao.shell.Shell`'s fields
+    plus the atom it sits on). Plain data: this module must not import `src`."""
+
+    atom: int
+    l: int  # noqa: E741
+    centre: tuple[float, float, float]  # Bohr
+    exponents: tuple[float, ...]
+    coefficients: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class Converted:
+    common_factor: tuple[float, ...]  # indexed by l
+    shells: tuple[ConvertedShell, ...]
+
+
+@dataclass(frozen=True)
 class Fixture:
     path: Path
     name: str
@@ -112,6 +139,7 @@ class Fixture:
     ao_loc: tuple[int, ...]
     arrays: dict[str, np.ndarray]  # read-only
     density_recipe: str
+    converted: Converted | None = None
 
     @property
     def density(self) -> np.ndarray:
@@ -208,7 +236,7 @@ def validate(path: Path, raw: Any) -> Fixture:
     missing = [k for k in TOP_KEYS if k not in raw]
     if missing:
         raise _fail(path, f"missing key(s) {missing}")
-    extra = sorted(set(raw) - set(TOP_KEYS))
+    extra = sorted(set(raw) - set(TOP_KEYS) - set(OPTIONAL_KEYS))
     if extra:
         raise _fail(path, f"unknown key(s) {extra}")
     if raw["schema"] != SCHEMA:
@@ -283,9 +311,49 @@ def validate(path: Path, raw: Any) -> Fixture:
         if not isinstance(raw[k], str) or not raw[k]:
             raise _fail(path, f"{k} must be a non-empty string")
 
+    converted = (_converted(path, raw["converted"], prov, len(atoms), shells,
+                            nao)
+                 if "converted" in raw else None)
+
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,
-                   raw["density_recipe"])
+                   raw["density_recipe"], converted)
+
+
+def _converted(path: Path, c: Any, prov: Provenance, n_atoms: int,
+               shells: list[Shell], nao: int) -> Converted:
+    if not isinstance(c, dict) or sorted(c) != ["common_factor", "shells"]:
+        raise _fail(path, "converted must be {common_factor, shells}")
+    if not prov.cart:
+        raise _fail(path, "converted is Cartesian only, and provenance.cart "
+                          "is false")
+    common = _floats(path, "converted.common_factor", c["common_factor"])
+    out = []
+    raw = c["shells"] if isinstance(c["shells"], list) else []
+    for i, s in enumerate(raw):
+        keys = ["atom", "centre", "coefficients", "exponents", "l"]
+        if not isinstance(s, dict) or sorted(s) != keys:
+            raise _fail(path, f"converted.shells[{i}] must be {{atom, l, "
+                              "centre, exponents, coefficients}")
+        if not (isinstance(s["atom"], int) and 0 <= s["atom"] < n_atoms):
+            raise _fail(path, f"converted.shells[{i}].atom is not an atom index")
+        if not (isinstance(s["l"], int) and 0 <= s["l"] < len(common)):
+            raise _fail(path, f"converted.shells[{i}].l has no common_factor")
+        centre = _floats(path, f"converted.shells[{i}].centre", s["centre"], 3)
+        exps = _floats(path, f"converted.shells[{i}].exponents", s["exponents"])
+        if not exps or min(exps) <= 0:
+            raise _fail(path, f"converted.shells[{i}].exponents must be positive")
+        coefs = _floats(path, f"converted.shells[{i}].coefficients",
+                        s["coefficients"], len(exps))
+        out.append(ConvertedShell(s["atom"], s["l"], centre, exps, coefs))
+    want = sum(len(sh.coefficients[0]) for sh in shells)
+    if len(out) != want:
+        raise _fail(path, f"converted has {len(out)} shells, the basis has "
+                          f"{want} contractions")
+    n = sum((s.l + 1) * (s.l + 2) // 2 for s in out)
+    if n != nao:
+        raise _fail(path, f"converted shells give {n} AOs, nao is {nao}")
+    return Converted(common, tuple(out))
 
 
 def load(path: Path | str) -> Fixture:
