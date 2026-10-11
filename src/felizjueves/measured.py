@@ -2,7 +2,8 @@
 
     python -m felizjueves.measured                      # print the store
     python -m felizjueves.measured --remeasure [--backend cuda|hip|both]
-                                   [--L 0 4 8] [-j N]   # recompile, rewrite rows
+                                   [--L 0 4 8] [-j N]   # one-batch classes
+    python -m felizjueves.measured --remeasure --subgrid [-j N]  # SUBGRID
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -50,6 +51,43 @@ not one per arch: rows are keyed on the arch already, `remeasure` merges
 into what is there (a one-card remeasure diffs only that card's rows), and
 the file's path is what the docs map points at.
 
+THE SUBGRID (#52) is `SUBGRID`, the one declared set of `(L, n_batches)`
+cells the compile-side measurement sweeps: L in {7, 10, 13, 16} x n_batches
+in {1, 3, 6, 9}, `[JEngine, v2, §7]`'s own reporting range. Every cell is a
+default-split `pq_spec(L, n_batches=b)` that the plan layer admits (its
+partition refuses an empty batch, #64; test/test_measured.py checks every
+cell). Tests parametrize over it, #53's wall-clock rows join on it, and a
+cell is added here and nowhere else. Widen per experiment, never by default.
+
+A CELL IS N KERNELS, ONE ROW. A split class is `build_pq_kernels(spec)`: one
+kernel, one translation unit, one compile per batch. The store is keyed on
+`MeasuredKey(spec, arch, toolchain)`, which has no batch index, so a cell is
+ONE row, aggregated over its batch kernels as follows -- each batch is its
+own launch, run one after another into one J:
+
+- `registers`, `shared_bytes`: the MAX over the batch kernels (a per-launch
+  resource; the launches never coexist);
+- `spill_store`, `spill_load`: the SUM (the cell's whole spill, every batch
+  kernel being run once per class); the per-batch numbers, and so the max,
+  are in `raw`;
+- `compile_s`: the sum of the batch compiles' wall times;
+- `kernel`: the batch kernels' names, comma-separated, in partition order;
+- `source_sha256`: of the batch texts concatenated in that order;
+- `raw`: every number each compiler printed, keyed `<kernel>:<field>`.
+
+A one-batch cell (n_batches = 1) is one kernel, and its row reads exactly as
+before: unprefixed `raw`, the one kernel's name and source hash.
+
+`shared_bytes` is what the compiler reports, which is the STATIC footprint:
+the kernel's `Jsh` is `extern __shared__`, sized at launch, so nvcc prints no
+smem and hipcc an `LDS Size` of 0. The dynamic footprint is the kernel's own
+declaration, not a toolchain observation: `raw` carries it as
+`jsh_dynamic_bytes` (`Jsh` doubles per lane x the arch's wavefront x 8, at
+the launch `kernel.launch_shape` fixes, blockDim.y = wavefront).
+
+`compile_s` is the wall time of one compile while up to `-j` others run
+beside it: a cost indication, never a benchmark.
+
 Nothing under `plan/` or `literature/` may import this module
 (test/test_layering.py): a measurement may never feed a literature floor.
 """
@@ -76,12 +114,17 @@ from pathlib import Path
 
 from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, pq_spec
+from felizjueves.ir import Decl, Kernel, Lit, Space
+from felizjueves.kernel import build_pq_kernels, pq_spec
 from felizjueves.spec import Spec
 
 REPO = Path(__file__).resolve().parents[2]
 STORE = REPO / "data" / "measured" / "kernels.json"
 DEFAULT_LS = tuple(range(0, 17))
+
+# THE declared subgrid (#52): see the module docstring. One edit adds a cell.
+SUBGRID: tuple[Spec, ...] = tuple(
+    pq_spec(L, n_batches=b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9))
 
 SCHEMA = 1
 
@@ -303,10 +346,36 @@ class Backend:
                 "-Rpass-analysis=kernel-resource-usage", "-c", str(src),
                 "-o", str(obj)]
 
-    def emit(self, cls: int | Spec) -> tuple[str, str]:
-        k = build_pq_kernel(cls)
+    def units(self, cls: int | Spec) -> tuple[Unit, ...]:
+        """The cell's translation units: one per batch kernel, in plan order."""
+        spec = pq_spec(cls) if isinstance(cls, int) else cls
         emit = cuda.emit if self.name == "cuda" else hip.emit
-        return k.name, emit(k, self.arch)
+        return tuple(Unit(k.name, emit(k, self.arch),
+                          jsh_slots(k) * self.arch.wavefront * 8)
+                     for k in build_pq_kernels(spec))
+
+
+@dataclass(frozen=True)
+class Unit:
+    """One emitted translation unit: a batch kernel's name and text, and the
+    dynamic shared bytes its own declaration asks for at the standard launch."""
+
+    name: str
+    text: str
+    jsh_dynamic_bytes: int
+
+
+def jsh_slots(k: Kernel) -> int:
+    """Doubles per lane of the kernel's SHARED declarations (the `Jsh` rows)."""
+    return sum(d.shape[0].value for d in k.body
+               if isinstance(d, Decl) and d.space is Space.SHARED
+               and d.shape and isinstance(d.shape[0], Lit))
+
+
+def cell_sha256(units: Sequence[Unit]) -> str:
+    """The cell's source hash: its batch texts concatenated in plan order
+    (for one batch, the hash of the one text)."""
+    return hashlib.sha256("".join(u.text for u in units).encode()).hexdigest()
 
 
 BACKENDS = {
@@ -321,51 +390,91 @@ def host() -> str:
     return f"{name} (container)" if Path("/.dockerenv").exists() else name
 
 
-def measure(backend: Backend, cls: int | Spec, *, compiler: str,
-            toolchain: str, gpu: str,
-            workdir: Path) -> tuple[MeasuredKey, Measured]:
-    """Compile one class's kernel with the measurement flag; parse the report.
+def compile_unit(backend: Backend, unit: Unit, *, compiler: str,
+                 workdir: Path) -> tuple[dict[str, int], float, str]:
+    """Compile one translation unit with the measurement flag.
 
-    `cls` is a total L (`pq_spec(L)`, one batch) or a full `Spec` -- the
-    latter is the `n_batches` axis (#52). The builder decides which Specs it
-    can build; today it refuses `n_batches != 1`, and that refusal is raised
-    here before anything is compiled.
+    Returns the compiler's numbers for the unit's kernel, the compile's wall
+    time, and the command as recorded (paths shown as `<file>`).
     """
-    spec = pq_spec(cls) if isinstance(cls, int) else cls
-    name, text = backend.emit(spec)
-    src = workdir / f"{name}.{backend.ext}"
-    src.write_text(text)
-    cmd = backend.command(compiler, src, workdir / f"{name}.o")
+    src = workdir / f"{unit.name}.{backend.ext}"
+    obj = workdir / f"{unit.name}.o"
+    src.write_text(unit.text)
+    cmd = backend.command(compiler, src, obj)
     t0 = time.perf_counter()
     done = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-    compile_s = round(time.perf_counter() - t0, 3)
+    compile_s = time.perf_counter() - t0
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(cmd)} failed:\n{done.stderr[-4000:]}")
     report = done.stdout + done.stderr
     if backend.name == "cuda":
-        raw = parse_ptxas(report, name)
-        regs, store, load = (raw["registers"], raw["spill_store_bytes"],
-                             raw["spill_load_bytes"])
-        shared = raw.get("smem_bytes")  # None when ptxas printed no smem
-        unit = NV_SPILL_UNIT
+        raw = parse_ptxas(report, unit.name)
     else:
-        raw = parse_amd_remarks(report, name)
-        regs = raw["VGPRs"]
-        store = load = raw["VGPRs Spill"] + raw.get("SGPRs Spill", 0)
-        shared = raw.get("LDS Size")
-        unit = AMD_SPILL_UNIT
+        raw = parse_amd_remarks(report, unit.name)
     shown = [Path(c).name if i == 0 else c for i, c in enumerate(cmd)]
-    shown = [f"<{Path(c).name}>" if c in (str(src), str(workdir / f"{name}.o"))
-             else c for c in shown]
+    shown = [f"<{Path(c).name}>" if c in (str(src), str(obj)) else c
+             for c in shown]
+    return raw, compile_s, " ".join(shown)
+
+
+def _numbers(backend: Backend,
+             raw: Mapping[str, int]) -> tuple[int, int, int, int | None]:
+    """(registers, spill_store, spill_load, shared_bytes) of one unit's raw."""
+    if backend.name == "cuda":
+        # shared: None when ptxas printed no smem
+        return (raw["registers"], raw["spill_store_bytes"],
+                raw["spill_load_bytes"], raw.get("smem_bytes"))
+    spill = raw["VGPRs Spill"] + raw.get("SGPRs Spill", 0)
+    return raw["VGPRs"], spill, spill, raw.get("LDS Size")
+
+
+def cell_row(backend: Backend, spec: Spec, units: Sequence[Unit],
+             compiled: Sequence[tuple[dict[str, int], float, str]], *,
+             toolchain: str, gpu: str) -> tuple[MeasuredKey, Measured]:
+    """One cell's row, aggregated over its batch kernels (module docstring)."""
+    if len(units) != len(compiled) or not units:
+        raise ValueError(f"{spec.key()}: {len(units)} units, {len(compiled)} "
+                         "compiles")
+    nums = [_numbers(backend, raw) for raw, _, _ in compiled]
+    shared = [n[3] for n in nums if n[3] is not None]
+    if len(units) == 1:
+        command = compiled[0][2]
+        raw = {**compiled[0][0], "jsh_dynamic_bytes": units[0].jsh_dynamic_bytes}
+    else:
+        raw = {f"{u.name}:{k}": v
+               for u, (r, _, _) in zip(units, compiled, strict=True)
+               for k, v in {**r, "jsh_dynamic_bytes": u.jsh_dynamic_bytes}.items()}
+        stem = units[0].name.rsplit("_", 2)[0]
+        command = compiled[0][2].replace(units[0].name, f"{stem}_*")
     row = Measured(
-        registers=regs, spill_store=store, spill_load=load,
-        shared_bytes=shared, compile_s=compile_s,
+        registers=max(n[0] for n in nums),
+        spill_store=sum(n[1] for n in nums),
+        spill_load=sum(n[2] for n in nums),
+        shared_bytes=max(shared) if shared else None,
+        compile_s=round(sum(c[1] for c in compiled), 3),
         toolchain=toolchain, arch=backend.arch.name,
         host=host(), gpu=gpu,
         date=datetime.date.today().isoformat(),
-        kernel=name, spill_unit=unit, command=" ".join(shown),
-        source_sha256=hashlib.sha256(text.encode()).hexdigest(), raw=raw)
+        kernel=",".join(u.name for u in units),
+        spill_unit=NV_SPILL_UNIT if backend.name == "cuda" else AMD_SPILL_UNIT,
+        command=command, source_sha256=cell_sha256(units), raw=raw)
     return MeasuredKey(spec, backend.arch, toolchain), row
+
+
+def measure(backend: Backend, cls: int | Spec, *, compiler: str,
+            toolchain: str, gpu: str,
+            workdir: Path) -> tuple[MeasuredKey, Measured]:
+    """Compile one cell's kernels with the measurement flag; one row.
+
+    `cls` is a total L (`pq_spec(L)`, one batch) or a full `Spec` -- the
+    `n_batches` axis (#52): a split cell compiles each of its
+    `build_pq_kernels` units in turn and aggregates them into one row.
+    """
+    spec = pq_spec(cls) if isinstance(cls, int) else cls
+    units = backend.units(spec)
+    compiled = [compile_unit(backend, u, compiler=compiler, workdir=workdir)
+                for u in units]
+    return cell_row(backend, spec, units, compiled, toolchain=toolchain, gpu=gpu)
 
 
 # ---------------------------------------------------------------------------
@@ -469,23 +578,35 @@ def _order(key: str) -> tuple:
     return (key.split("@", 1)[-1], sum(am), am, key)
 
 
-def remeasure(names: Sequence[str], Ls: Sequence[int], jobs: int,
+def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
               path: Path = STORE) -> dict[str, Measured]:
+    """Recompile every cell on each backend and merge its row into the store.
+
+    The pool runs over translation units, not cells, so a 9-batch cell's
+    kernels compile side by side; `jobs` bounds how many compilers run at
+    once (#52's memory hazard: keep it modest for large classes).
+    """
     got = load(path) if path.exists() else {}
+    specs = [pq_spec(c) if isinstance(c, int) else c for c in cells]
     for bname in names:
         b = BACKENDS[bname]
         compiler = b.compiler()
         toolchain, gpu = b.toolchain(compiler), b.gpu()
+        cell_units = [b.units(s) for s in specs]
         with tempfile.TemporaryDirectory(prefix=f"fj-measure-{bname}-") as tmp:
             with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-                futures = [pool.submit(measure, b, L, compiler=compiler,
-                                       toolchain=toolchain, gpu=gpu,
-                                       workdir=Path(tmp)) for L in Ls]
-                for f in futures:
-                    key, row = f.result()
+                futures = [[pool.submit(compile_unit, b, u, compiler=compiler,
+                                        workdir=Path(tmp)) for u in units]
+                           for units in cell_units]
+                for spec, units, fs in zip(specs, cell_units, futures,
+                                           strict=True):
+                    key, row = cell_row(b, spec, units,
+                                        [f.result() for f in fs],
+                                        toolchain=toolchain, gpu=gpu)
                     got = merge(got, key, row)
                     print(f"{key.key()}: {row.registers} regs, spill "
-                          f"{row.spill_store}/{row.spill_load}")
+                          f"{row.spill_store}/{row.spill_load}, "
+                          f"{row.compile_s}s", flush=True)
     save(got, path)
     return got
 
@@ -495,6 +616,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--remeasure", action="store_true")
     ap.add_argument("--backend", choices=("cuda", "hip", "both"), default="both")
     ap.add_argument("--L", dest="Ls", type=int, nargs="+", default=list(DEFAULT_LS))
+    ap.add_argument("--subgrid", action="store_true",
+                    help="remeasure SUBGRID (every n_batches) instead of --L")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--store", type=Path, default=STORE)
     try:
@@ -504,7 +627,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.remeasure:
         names = ("cuda", "hip") if args.backend == "both" else (args.backend,)
         try:
-            remeasure(names, args.Ls, args.j, args.store)
+            cells = SUBGRID if args.subgrid else args.Ls
+            remeasure(names, cells, args.j, args.store)
         except (RuntimeError, ValueError) as e:
             print(f"measured: {e}", file=sys.stderr)
             return 2
