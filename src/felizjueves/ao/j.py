@@ -1,6 +1,6 @@
 """The Coulomb matrix `J_mn`, through the J-engine split -- by two sweeps.
 
-    coulomb_matrix(basis, D, *, pq, tau=0.0)            -> J   (unique pairs)
+    coulomb_matrix(basis, D, *, pq, tau=0.0, jp=None)   -> J   (unique pairs)
     coulomb_matrix_reference(basis, D, *, pq, tau=0.0)  -> J   (all ordered)
     coulomb_matrix_and_scale(basis, D, *, pq)           -> (J, scale)
     coulomb_matrix_screened(basis, D, *, pq, tau, order="sorted")
@@ -87,6 +87,20 @@ has `|sum_q [p|q] D_q| <= I_p I_ket Dmax <= I_bra I_ket Dmax < tau` for every
 `p` (ao/pairs.py), so it moves `J_ab` by at most `tau sum_p |E^{ab}_p|`, and
 a bra record skips at most `n_ket` kets: `|J(tau) - J(0)| <= tau * scale`.
 
+THE `J_p` SEAM, `jp=` (#87). `coulomb_matrix` takes an optional `jp`, a
+`JP` evaluator of the ONLY shell-quartet-level step, called once per (bra
+shell pair, ket class) with the bra pair's angular momenta `(la, lb)`, the
+ket class `(lc, ld)`, the bra records as `(P, zeta)` and the ket records
+of every ket shell pair of that class as `(Q, eta, D_q)` -- `D_q` already
+weighted and dressed, in `hermite_order(lc + ld)` -- and returning `J_p`
+per bra record in `hermite_order(la + lb)`. The ket pre-contraction, the
+bra transform and the scatter are this module's either way, so a `J` built
+through a `jp` that disagrees localises the disagreement to the `jp`.
+Without `jp` the `pq` path above runs unchanged; `jp_from_pq(pq)` is the
+same contraction through the seam (a test pins the two equal). The seam is
+UNSCREENED: `jp` with `tau > 0` is refused -- screening is the kernel's
+sorted `break` and the `continue` above, not a `jp`'s business.
+
 MEMOISE NOTHING. The ket records are built once per call and dropped; a cache
 keyed on a shell pair is a driver's concern, and one here would make #88's
 tau ladder measure the cache.
@@ -109,6 +123,10 @@ from felizjueves.ao.shell import Basis
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]
 PQ = Callable[[Ang, Ang, Vec, float], float]
+BraRec = tuple[Vec, float]  # (P, zeta)
+KetRec = tuple[Vec, float, Sequence[float]]  # (Q, eta, D_q)
+JP = Callable[[tuple[int, int], tuple[int, int], Sequence[BraRec],
+               Sequence[KetRec]], Sequence[Sequence[float]]]
 Matrix = tuple[tuple[float, ...], ...]
 
 _ORIGIN = (0.0, 0.0, 0.0)
@@ -241,6 +259,77 @@ def _bra_block(bra_recs: Sequence[PrimitivePair], kets: Sequence[_Ket], *,
     return jab, jab_abs
 
 
+def jp_from_pq(pq: PQ) -> JP:
+    """The `pq` contraction as a `JP`: `J_p = sum_k sum_q [p|q] D_q`."""
+
+    def jp(bra_am: tuple[int, int], ket_am: tuple[int, int],
+           bras: Sequence[BraRec], kets: Sequence[KetRec]) -> list[list[float]]:
+        ps, qs = hermite_order(sum(bra_am)), hermite_order(sum(ket_am))
+        out = []
+        for P, zeta in bras:
+            row = [0.0] * len(ps)
+            for Q, eta, dq in kets:
+                theta = math.sqrt(zeta * eta / (zeta + eta))
+                PQv = (P[0] - Q[0], P[1] - Q[1], P[2] - Q[2])
+                for ip, p in enumerate(ps):
+                    acc = 0.0
+                    for q, d in zip(qs, dq, strict=True):
+                        acc += pq(p, q, PQv, theta) * d
+                    row[ip] += acc
+            out.append(row)
+        return out
+
+    return jp
+
+
+def _no_pq(p: Ang, q: Ang, PQv: Vec, theta: float) -> float:
+    raise AssertionError("no [p|q] is evaluated building kets at tau = 0")
+
+
+def _jp_sweep(basis: Basis, D: object, *, jp: JP) -> Matrix:
+    """The unique sweep with `J_p` from `jp`: the same kets, weights, bra
+    transform and mirror as `_sweep(ordered=False)`, kets grouped by class."""
+    rows = _density(basis, D)
+    shells, off = basis.shells, basis.offsets
+    n_sh = len(shells)
+    pairs = [(a, b, 1.0 if a == b else 2.0)
+             for a in range(n_sh) for b in range(a + 1)]
+    groups: dict[tuple[int, int], list[KetRec]] = {}
+    for c, d, w in pairs:
+        groups.setdefault((shells[c].l, shells[d].l), []).extend(
+            (k.Q, k.eta, k.dq)
+            for k in _kets(basis, rows, [(c, d, w)], pq=_no_pq, tau=0.0))
+    n = basis.n_ao
+    J = [[0.0] * n for _ in range(n)]
+    for a, b, _ in pairs:
+        sa, sb = shells[a], shells[b]
+        recs = primitive_pairs(sa, sb)
+        n_p = len(hermite_order(sa.l + sb.l))
+        jps = [[0.0] * n_p for _ in recs]
+        bras = [(r.P, r.zeta) for r in recs]
+        for ket_am, kets in groups.items():
+            got = jp((sa.l, sb.l), ket_am, bras, kets)
+            if len(got) != len(recs) or any(len(g) != n_p for g in got):
+                raise ValueError(f"jp returned the wrong shape for bra "
+                                 f"{(sa.l, sb.l)}, ket {ket_am}")
+            for acc, g in zip(jps, got, strict=True):
+                for i, v in enumerate(g):
+                    acc[i] += float(v)
+        jab = [0.0] * len(recs[0].block)
+        for rec, jp_row in zip(recs, jps, strict=True):
+            for r, row in enumerate(rec.block):
+                s = 0.0
+                for e, v in zip(row, jp_row, strict=True):
+                    s += e * v
+                jab[r] += s
+        for i in range(sa.n_cart):
+            for j in range(sb.n_cart):
+                v = jab[i * sb.n_cart + j]
+                J[off[a] + i][off[b] + j] = v
+                J[off[b] + j][off[a] + i] = v
+    return tuple(tuple(r) for r in J)
+
+
 def _sweep(basis: Basis, D: object, *, pq: PQ, tau: float, ordered: bool,
            want_scale: bool) -> tuple[Matrix, Matrix]:
     rows = _density(basis, D)
@@ -272,8 +361,14 @@ def _sweep(basis: Basis, D: object, *, pq: PQ, tau: float, ordered: bool,
 
 
 def coulomb_matrix(basis: Basis, D: object, *, pq: PQ,
-                   tau: float = 0.0) -> Matrix:
-    """`J_mn` by unique bra and ket shell pairs, ket off-diagonal weight 2."""
+                   tau: float = 0.0, jp: JP | None = None) -> Matrix:
+    """`J_mn` by unique bra and ket shell pairs, ket off-diagonal weight 2;
+    with `jp`, `J_p` comes from it instead of from `pq` (the seam, above)."""
+    if jp is not None:
+        if _tau(tau) != 0.0:
+            raise ValueError(f"tau = {tau!r}: the jp seam is unscreened; "
+                             "only tau = 0 is accepted with jp")
+        return _jp_sweep(basis, D, jp=jp)
     return _sweep(basis, D, pq=pq, tau=tau, ordered=False,
                   want_scale=False)[0]
 
