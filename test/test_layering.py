@@ -234,7 +234,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel"),
-    "measured": ("device", "emit.cuda", "emit.hip", "kernel", "spec"),
+    "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.

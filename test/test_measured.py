@@ -1,10 +1,11 @@
 """The measured store (data/measured/kernels.json) and the generator's CLI.
 
-Fast tier, except the two `cuda`/`hip` re-measure checks at the bottom, which
-need a compiler (no card): they recompile a few recorded classes and assert
-the toolchain still reports what the store says -- when the toolchain is the
-one the row was keyed on. A different compiler version is a different key,
-and the check SKIPS naming it rather than comparing across compilers.
+Fast tier, except the `cuda`/`hip` re-measure checks at the bottom, which
+need a compiler (no card): they recompile a few recorded classes, and every
+`measured.SUBGRID` cell, and assert the toolchain still reports what the store
+says -- when the toolchain is the one the row was keyed on. A different
+compiler version is a different key, and the check SKIPS naming it rather
+than comparing across compilers. The subgrid's L >= 13 cells are also `slow`.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from felizjueves import measured
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, pq_spec
+from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
+from felizjueves.plan.pipeline import plan
 
 # --- the generator CLI ------------------------------------------------------
 
@@ -109,6 +111,17 @@ def test_the_amd_remark_is_read_for_the_named_kernel() -> None:
 STORE = json.loads(measured.STORE.read_text())
 ROWS = measured.load()
 
+# Every Spec a row may be keyed on: the one-batch classes and the subgrid.
+SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured.SUBGRID)}
+ARCHS = {a.name: a for a in (SM_86, GFX1200)}
+BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
+
+
+def _spec_of(key: str):
+    spec_key, _, _ = measured.split_key(key)
+    assert spec_key in SPECS, f"{key}: keyed on a Spec no one declared"
+    return SPECS[spec_key]
+
 
 def test_the_store_says_what_its_rows_are_keyed_on() -> None:
     h = STORE["header"]
@@ -119,11 +132,10 @@ def test_the_store_says_what_its_rows_are_keyed_on() -> None:
 
 def test_every_row_is_keyed_on_its_measured_key() -> None:
     assert ROWS, "no Measured rows recorded"
-    by_name = {a.name: a for a in (SM_86, GFX1200)}
     for key, row in ROWS.items():
-        L = int(row.kernel.split("_")[1].removeprefix("L"))
-        assert build_pq_kernel(L).name == row.kernel
-        mk = MeasuredKey(pq_spec(L), by_name[row.arch], row.toolchain)
+        spec = _spec_of(key)
+        assert row.kernel == ",".join(k.name for k in build_pq_kernels(spec))
+        mk = MeasuredKey(spec, ARCHS[row.arch], row.toolchain)
         assert mk.key() == key
 
 
@@ -142,18 +154,85 @@ def test_the_recorded_source_is_what_the_generator_writes_today() -> None:
     import hashlib
 
     for key, row in ROWS.items():
-        L = int(row.kernel.split("_")[1].removeprefix("L"))
-        emit, arch = (cuda.emit, SM_86) if row.arch == "sm_86" else (hip.emit, GFX1200)
-        text = emit(build_pq_kernel(L), arch)
-        assert hashlib.sha256(text.encode()).hexdigest() == row.source_sha256, (
+        spec = _spec_of(key)
+        units = measured.BACKENDS[BACKEND_OF[row.arch]].units(spec)
+        assert measured.cell_sha256(units) == row.source_sha256, (
             f"{key}: the emitted text changed since it was measured -- "
             "python -m felizjueves.measured --remeasure")
+        if spec.n_batches == 1:  # the one-batch hash is the one text's
+            emit, arch = (cuda.emit, SM_86) if row.arch == "sm_86" else (
+                hip.emit, GFX1200)
+            text = emit(build_pq_kernel(spec), arch)
+            assert hashlib.sha256(text.encode()).hexdigest() == row.source_sha256
 
 
 def test_both_cards_and_every_default_class_are_recorded() -> None:
     for arch in ("sm_86", "gfx1200"):
-        kernels = {r.kernel for r in ROWS.values() if r.arch == arch}
+        kernels = {r.kernel for k, r in ROWS.items()
+                   if r.arch == arch and _spec_of(k).n_batches == 1}
         assert kernels == {build_pq_kernel(L).name for L in range(17)}, arch
+
+
+# --- #52: the declared subgrid ----------------------------------------------
+
+
+def test_the_subgrid_is_the_declared_l_by_n_batches_product() -> None:
+    cells = [(s.total_am, s.n_batches) for s in measured.SUBGRID]
+    assert cells == [(L, b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9)]
+    assert all(s == pq_spec(s.total_am, n_batches=s.n_batches)
+               for s in measured.SUBGRID)
+
+
+@pytest.mark.parametrize("spec", measured.SUBGRID, ids=lambda s: s.key())
+def test_every_subgrid_cell_is_admitted_by_the_plan_layer(spec) -> None:
+    # #64 made partition refuse an empty batch; a refused cell is not a cell.
+    assert len(plan(spec).dags) == spec.n_batches
+    assert len(build_pq_kernels(spec)) == spec.n_batches
+
+
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("spec", measured.SUBGRID, ids=lambda s: s.key())
+def test_every_subgrid_cell_is_recorded_on_both_cards(spec, arch) -> None:
+    got = measured.rows(spec=spec, arch=arch, store=ROWS)
+    assert len(got) == 1, f"{spec.key()}@{arch}: {len(got)} rows -- " \
+        "python -m felizjueves.measured --remeasure --subgrid"
+    (row,) = got.values()
+    assert row.registers is not None and row.spill_store is not None
+    assert row.compile_s is not None
+
+
+def _per_batch(row, field: str) -> list[int]:
+    return [row.raw[f"{name}:{field}"] for name in row.kernel.split(",")]
+
+
+def test_a_split_cell_is_one_row_aggregated_over_its_batch_kernels() -> None:
+    split = {k: r for k, r in ROWS.items() if _spec_of(k).n_batches > 1}
+    assert split, "no split-cell rows recorded"
+    for key, row in split.items():
+        names = row.kernel.split(",")
+        assert len(names) == _spec_of(key).n_batches, key
+        if row.arch == "sm_86":
+            regs = _per_batch(row, "registers")
+            store = _per_batch(row, "spill_store_bytes")
+            load = _per_batch(row, "spill_load_bytes")
+        else:
+            regs = _per_batch(row, "VGPRs")
+            store = load = [v + s for v, s in zip(
+                _per_batch(row, "VGPRs Spill"), _per_batch(row, "SGPRs Spill"),
+                strict=True)]
+        assert row.registers == max(regs), key
+        assert (row.spill_store, row.spill_load) == (sum(store), sum(load)), key
+        assert all(_per_batch(row, "jsh_dynamic_bytes")), key
+        assert "<" in row.command and "_*." in row.command, key
+
+
+def test_the_dynamic_shared_footprint_is_the_kernels_own_declaration() -> None:
+    b = measured.BACKENDS["cuda"]
+    (u,) = b.units(pq_spec(4))
+    # (2,0|2,0): 10 bra functions p, blockDim.y = 32 lanes, 8-byte doubles
+    assert u.jsh_dynamic_bytes == 10 * 32 * 8
+    assert [x.jsh_dynamic_bytes for x in b.units(pq_spec(4, n_batches=3))] == [
+        9 * 32 * 8] * 3
 
 
 def test_the_store_round_trips(tmp_path: Path) -> None:
@@ -352,20 +431,23 @@ def test_the_read_path_filters_the_real_store() -> None:
     assert {r.arch for r in got.values()} == {"sm_86", "gfx1200"}
     assert all(k.startswith(spec.key() + "@") for k in got)
     nv = measured.rows(arch=SM_86)
-    assert len(nv) == 17 and measured.rows(arch="sm_86") == nv
+    # the one-batch classes L = 0..16, plus the subgrid's split cells
+    split = sum(s.n_batches > 1 for s in measured.SUBGRID)
+    assert len(nv) == 17 + split and measured.rows(arch="sm_86") == nv
     assert measured.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
 
 
 def test_the_n_batches_axis_reaches_the_builder() -> None:
-    """measure() takes a Spec, so #52 can sweep n_batches; the builder refuses
-    a split class today, and does so before anything is compiled."""
+    """measure() takes a Spec; a split cell is its build_pq_kernels units."""
     b = measured.BACKENDS["cuda"]
-    assert b.emit(pq_spec(4)) == b.emit(4)
+    assert b.units(pq_spec(4)) == b.units(4)
+    assert [u.name for u in b.units(pq_spec(4))] == [build_pq_kernel(4).name]
     split = replace(pq_spec(4), n_batches=3)
-    with pytest.raises(ValueError, match="n_batches"):
-        measured.measure(b, split, compiler="/nonexistent", toolchain="nvcc 13.0",
-                         gpu="g", workdir=Path("/nonexistent"))
+    units = b.units(split)
+    assert [u.name for u in units] == [k.name for k in build_pq_kernels(split)]
+    assert [u.text for u in units] == [cuda.emit(k, SM_86)
+                                       for k in build_pq_kernels(split)]
 
 
 def test_ptxas_smem_is_read_when_printed() -> None:
@@ -411,3 +493,37 @@ def test_nvcc_still_reports_the_recorded_rows(nvcc, tmp_path) -> None:
 @pytest.mark.hip
 def test_hipcc_still_reports_the_recorded_rows(hipcc, tmp_path) -> None:
     _recheck("hip", tmp_path)
+
+
+def _recheck_cell(backend_name: str, spec, tmp_path: Path) -> None:
+    b = measured.BACKENDS[backend_name]
+    compiler = b.compiler()
+    toolchain = b.toolchain(compiler)
+    key = MeasuredKey(spec, b.arch, toolchain).key()
+    if key not in ROWS:
+        pytest.skip(f"no row for {key}: this toolchain is not the recorded "
+                    "one (a different key, not a regression)")
+    want = ROWS[key]
+    _, row = measured.measure(b, spec, compiler=compiler, toolchain=toolchain,
+                              gpu=want.gpu, workdir=tmp_path)
+    assert row.source_sha256 == want.source_sha256, key
+    assert (row.registers, row.spill_store, row.spill_load, row.raw) == (
+        want.registers, want.spill_store, want.spill_load, want.raw), key
+
+
+SUBGRID_PARAMS = [
+    pytest.param(s, id=s.key(),
+                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
+    for s in measured.SUBGRID]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("spec", SUBGRID_PARAMS)
+def test_nvcc_still_reports_the_subgrid(spec, nvcc, tmp_path) -> None:
+    _recheck_cell("cuda", spec, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("spec", SUBGRID_PARAMS)
+def test_hipcc_still_reports_the_subgrid(spec, hipcc, tmp_path) -> None:
+    _recheck_cell("hip", spec, tmp_path)
