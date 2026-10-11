@@ -741,10 +741,10 @@
      0
     ],
     "median_ns": [
-     24120581,
-     64490868,
-     116289865,
-     136142399
+     25305992,
+     64816319,
+     115937440,
+     136678820
     ],
     "fewest_spill": [
      3,
@@ -772,10 +772,10 @@
      0
     ],
     "median_ns": [
-     3682227.0,
-     6212278.0,
-     10063629.0,
-     11717135.0
+     3682409.0,
+     7188164.0,
+     11171597.0,
+     13473024.0
     ],
     "fewest_spill": [
      3,
@@ -803,10 +803,10 @@
      0
     ],
     "median_ns": [
-     37015154,
-     92800604,
-     160819696,
-     224803045
+     37319012,
+     92865965,
+     160220756,
+     223359730
     ],
     "fewest_spill": [
      6,
@@ -833,10 +833,10 @@
      0
     ],
     "median_ns": [
-     8486164.0,
-     12336374.0,
-     17230772.0,
-     21703333.0
+     9643603.0,
+     14064404.0,
+     18848170.0,
+     23607385.0
     ],
     "fewest_spill": [
      6,
@@ -863,10 +863,10 @@
      14472
     ],
     "median_ns": [
-     66983346,
-     148756685,
-     233343428,
-     339142885
+     66524997,
+     148558233,
+     232788652,
+     337589490
     ],
     "fewest_spill": [
      9
@@ -892,10 +892,10 @@
      14472
     ],
     "median_ns": [
-     32241038.0,
-     29317232.0,
-     33722331.0,
-     40685162.0
+     32598188.0,
+     29478359.0,
+     35187380.0,
+     40675687.0
     ],
     "fewest_spill": [
      9
@@ -921,10 +921,10 @@
      181224
     ],
     "median_ns": [
-     157270999,
-     290584408,
-     463119164,
-     578746192
+     156851366,
+     289301426,
+     458199128,
+     572236225
     ],
     "fewest_spill": [
      9
@@ -950,10 +950,10 @@
      181224
     ],
     "median_ns": [
-     123117241.0,
-     116865552.0,
-     108433688.0,
-     99386875.0
+     123336273.0,
+     117028513.0,
+     108364366.0,
+     98775713.0
     ],
     "fewest_spill": [
      9
@@ -979,10 +979,10 @@
      0
     ],
     "median_ns": [
-     34895022,
-     88605725,
-     150135733,
-     174250755
+     34779041,
+     89139219,
+     150272643,
+     174119138
     ],
     "fewest_spill": [
      3,
@@ -1010,10 +1010,10 @@
      0
     ],
     "median_ns": [
-     4485325.0,
-     8677284.0,
-     13352583.0,
-     15052357.0
+     4507346.0,
+     8790469.0,
+     13406497.0,
+     15173704.0
     ],
     "fewest_spill": [
      3,
@@ -1041,10 +1041,10 @@
      2942
     ],
     "median_ns": [
-     52338316,
-     128408637,
-     220759046,
-     299908370
+     52929214,
+     128619127,
+     220696288,
+     299987085
     ],
     "fewest_spill": [
      9
@@ -1070,10 +1070,10 @@
      2942
     ],
     "median_ns": [
-     18032110.0,
-     17928019.0,
-     24216591.0,
-     29629150.0
+     18143059.0,
+     18054558.0,
+     24398662.0,
+     29817354.0
     ],
     "fewest_spill": [
      9
@@ -1099,10 +1099,10 @@
      67708
     ],
     "median_ns": [
-     150058710,
-     260666615,
-     379634997,
-     538247195
+     150010521,
+     260591982,
+     379859648,
+     539435190
     ],
     "fewest_spill": [
      1
@@ -1128,17 +1128,17 @@
      67708
     ],
     "median_ns": [
-     97507126.0,
-     80159775.0,
-     80204318.0,
-     93056758.0
+     97436245.0,
+     80277250.0,
+     80227422.0,
+     93181159.0
     ],
     "fewest_spill": [
      1
     ],
-    "fastest": 3,
+    "fastest": 6,
     "spill_win_is_fastest": false,
-    "spearman": -0.2
+    "spearman": -0.4
    },
    {
     "arch": "gfx1200",
@@ -1157,10 +1157,10 @@
      218852
     ],
     "median_ns": [
-     531570168,
-     582016016,
-     812146731,
-     980233786
+     533063899,
+     582714399,
+     814645092,
+     982278772
     ],
     "fewest_spill": [
      1
@@ -1186,10 +1186,10 @@
      218852
     ],
     "median_ns": [
-     457602756.0,
-     307978306.0,
-     309723928.0,
-     302517958.0
+     458539780.0,
+     308516555.0,
+     310477147.0,
+     303465125.0
     ],
     "fewest_spill": [
      1
@@ -1303,7 +1303,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
   },
   {
    "claim": "On gfx1200 (hipcc), KernelCost.traffic and peak_live, as the max over a split class's batch kernels, rank n_batches in the order of the worst batch kernel's spill.",
@@ -1465,12 +1465,12 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
   },
   {
    "claim": "Fewer spills -- measured, or KernelCost.traffic, which models them -- pick the fastest n_batches by wall-clock.",
-   "mechanism": "Splitting a class into b batch kernels is b launches over the same bra x ket grid, each re-evaluating the Boys function and re-forming the recurrence nodes its targets share with other batches: the summed static instruction count (KernelCost.n_instructions) grows 2.7x to 3.0x from b 1 to b 9 over the subgrid. On the wide-T input that added work dominates and b 1 is fastest at every L on both cards, spills or not; on the near-T input a split wins at L 13 and 16 on both cards (and, by 0.6%, at L 10 on gfx1200), and which split wins is not the one with fewest spills except at L 16 on sm_86. A spill model prices register traffic only, so it cannot rank a quantity set by redundant work and the input's T.",
-   "evidence": "sm_86 L 7 wide: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; sm_86 L 7 near: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; sm_86 L 10 wide: fewest spills at b [6, 9], fastest b 1, rho -0.948683; sm_86 L 10 near: fewest spills at b [6, 9], fastest b 1, rho -0.948683; sm_86 L 13 wide: fewest spills at b [9], fastest b 1, rho -1.0; sm_86 L 13 near: fewest spills at b [9], fastest b 3, rho -0.8; sm_86 L 16 wide: fewest spills at b [9], fastest b 1, rho -1.0; gfx1200 L 7 wide: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; gfx1200 L 7 near: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; gfx1200 L 10 wide: fewest spills at b [9], fastest b 1, rho -0.8; gfx1200 L 10 near: fewest spills at b [9], fastest b 3, rho -0.4; gfx1200 L 13 near: fewest spills at b [1], fastest b 3, rho -0.2; gfx1200 L 16 near: fewest spills at b [1], fastest b 9, rho -0.8",
+   "mechanism": "Splitting a class into b batch kernels is b launches over the same bra x ket grid, each re-evaluating the Boys function and re-forming the recurrence nodes its targets share with other batches: the summed static instruction count (KernelCost.n_instructions) grows 2.7x to 3.0x from b 1 to b 9 over the subgrid. On the wide-T input that added work dominates and b 1 is fastest at every L on both cards, spills or not; on the near-T input a split wins at L 13 and 16 on both cards (and, by 0.5%, at L 10 on gfx1200), and which split wins is not the one with fewest spills except at L 16 on sm_86. A spill model prices register traffic only, so it cannot rank a quantity set by redundant work and the input's T.",
+   "evidence": "sm_86 L 7 wide: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; sm_86 L 7 near: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; sm_86 L 10 wide: fewest spills at b [6, 9], fastest b 1, rho -0.948683; sm_86 L 10 near: fewest spills at b [6, 9], fastest b 1, rho -0.948683; sm_86 L 13 wide: fewest spills at b [9], fastest b 1, rho -1.0; sm_86 L 13 near: fewest spills at b [9], fastest b 3, rho -0.8; sm_86 L 16 wide: fewest spills at b [9], fastest b 1, rho -1.0; gfx1200 L 7 wide: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; gfx1200 L 7 near: fewest spills at b [3, 6, 9], fastest b 1, rho -0.774597; gfx1200 L 10 wide: fewest spills at b [9], fastest b 1, rho -0.8; gfx1200 L 10 near: fewest spills at b [9], fastest b 3, rho -0.4; gfx1200 L 13 near: fewest spills at b [1], fastest b 6, rho -0.4; gfx1200 L 16 near: fewest spills at b [1], fastest b 9, rho -0.8",
    "asserted_value": {
     "n_batches": [
      1,
@@ -1496,10 +1496,10 @@
        0
       ],
       "median_ns": [
-       24120581,
-       64490868,
-       116289865,
-       136142399
+       25305992,
+       64816319,
+       115937440,
+       136678820
       ],
       "fewest_spill": [
        3,
@@ -1527,10 +1527,10 @@
        0
       ],
       "median_ns": [
-       3682227.0,
-       6212278.0,
-       10063629.0,
-       11717135.0
+       3682409.0,
+       7188164.0,
+       11171597.0,
+       13473024.0
       ],
       "fewest_spill": [
        3,
@@ -1558,10 +1558,10 @@
        0
       ],
       "median_ns": [
-       37015154,
-       92800604,
-       160819696,
-       224803045
+       37319012,
+       92865965,
+       160220756,
+       223359730
       ],
       "fewest_spill": [
        6,
@@ -1588,10 +1588,10 @@
        0
       ],
       "median_ns": [
-       8486164.0,
-       12336374.0,
-       17230772.0,
-       21703333.0
+       9643603.0,
+       14064404.0,
+       18848170.0,
+       23607385.0
       ],
       "fewest_spill": [
        6,
@@ -1618,10 +1618,10 @@
        14472
       ],
       "median_ns": [
-       66983346,
-       148756685,
-       233343428,
-       339142885
+       66524997,
+       148558233,
+       232788652,
+       337589490
       ],
       "fewest_spill": [
        9
@@ -1647,10 +1647,10 @@
        14472
       ],
       "median_ns": [
-       32241038.0,
-       29317232.0,
-       33722331.0,
-       40685162.0
+       32598188.0,
+       29478359.0,
+       35187380.0,
+       40675687.0
       ],
       "fewest_spill": [
        9
@@ -1676,10 +1676,10 @@
        181224
       ],
       "median_ns": [
-       157270999,
-       290584408,
-       463119164,
-       578746192
+       156851366,
+       289301426,
+       458199128,
+       572236225
       ],
       "fewest_spill": [
        9
@@ -1705,10 +1705,10 @@
        0
       ],
       "median_ns": [
-       34895022,
-       88605725,
-       150135733,
-       174250755
+       34779041,
+       89139219,
+       150272643,
+       174119138
       ],
       "fewest_spill": [
        3,
@@ -1736,10 +1736,10 @@
        0
       ],
       "median_ns": [
-       4485325.0,
-       8677284.0,
-       13352583.0,
-       15052357.0
+       4507346.0,
+       8790469.0,
+       13406497.0,
+       15173704.0
       ],
       "fewest_spill": [
        3,
@@ -1767,10 +1767,10 @@
        2942
       ],
       "median_ns": [
-       52338316,
-       128408637,
-       220759046,
-       299908370
+       52929214,
+       128619127,
+       220696288,
+       299987085
       ],
       "fewest_spill": [
        9
@@ -1796,10 +1796,10 @@
        2942
       ],
       "median_ns": [
-       18032110.0,
-       17928019.0,
-       24216591.0,
-       29629150.0
+       18143059.0,
+       18054558.0,
+       24398662.0,
+       29817354.0
       ],
       "fewest_spill": [
        9
@@ -1825,17 +1825,17 @@
        67708
       ],
       "median_ns": [
-       97507126.0,
-       80159775.0,
-       80204318.0,
-       93056758.0
+       97436245.0,
+       80277250.0,
+       80227422.0,
+       93181159.0
       ],
       "fewest_spill": [
        1
       ],
-      "fastest": 3,
+      "fastest": 6,
       "spill_win_is_fastest": false,
-      "spearman": -0.2
+      "spearman": -0.4
      },
      {
       "arch": "gfx1200",
@@ -1854,10 +1854,10 @@
        218852
       ],
       "median_ns": [
-       457602756.0,
-       307978306.0,
-       309723928.0,
-       302517958.0
+       458539780.0,
+       308516555.0,
+       310477147.0,
+       303465125.0
       ],
       "fewest_spill": [
        1
@@ -1868,12 +1868,12 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
   },
   {
    "claim": "With n_batches = 12 added to the subgrid (#60), fewer spills still pick the fastest n_batches on the near-T input at L 16 on sm_86 -- the one (L, arch, input) where the spill win WAS the fastest over b in {1, 3, 6, 9}.",
    "mechanism": "The record above's mechanism, one batch further: going from b 9 to b 12 cuts nvcc's summed spill at L 16 by 19% (181224 -> 146020 bytes), but adds three more launches that each re-evaluate the Boys function and re-form the recurrence nodes shared across batches. On the near-T input that redundant work costs more than the spill traffic it removes, so b 9 stays the fastest while b 12 becomes the fewest-spill cell. A spill count cannot see the redundant work, so it cannot rank past the point where the work dominates.",
-   "evidence": "sm_86 L 16 near: n_batches [1, 3, 6, 9, 12], summed spill [317260, 291916, 253048, 181224, 146020], near-T median ms [123.117, 116.866, 108.434, 99.387, 102.121]; fewest spills at b [12], fastest b 9, rho 0.9.",
+   "evidence": "sm_86 L 16 near: n_batches [1, 3, 6, 9, 12], summed spill [317260, 291916, 253048, 181224, 146020], near-T median ms [123.336, 117.029, 108.364, 98.776, 103.055]; fewest spills at b [12], fastest b 9, rho 0.9.",
    "asserted_value": {
     "n_batches": [
      1,
@@ -1902,11 +1902,11 @@
        146020
       ],
       "median_ns": [
-       123117241.0,
-       116865552.0,
-       108433688.0,
-       99386875.0,
-       102120566.0
+       123336273.0,
+       117028513.0,
+       108364366.0,
+       98775713.0,
+       103055402.0
       ],
       "untimed": [],
       "fewest_spill": [
@@ -1918,7 +1918,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52 and #60, wall-clock #53 and #60); via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52 and #60, wall-clock #53 and #60, re-timed behind the card gate by #93); via felizjueves.kernelrank (#54)"
   }
  ]
 }

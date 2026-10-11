@@ -797,7 +797,11 @@ def test_hip_recycled_j_p_matches_the_reference(spec, request,
 #    the run is discarded, not averaged in) AND for the card to be (its own
 #    SMI's utilization at most GPU_BUSY_MAX, for up to GPU_QUIET_WAIT_S --
 #    added by #55, after a process outside the container held the RTX 3080;
-#    the highest settled value is raw `wallclock:gpu_util_pct_before_max`),
+#    #93 records it per input: raw `wallclock:gpu_util_before` is the settled
+#    reading the gate let through, `wallclock:gpu_util_after` one taken
+#    GPU_SETTLE_S after the last timed sequence, `wallclock:near:*` and
+#    `wallclock:control:*` likewise -- `null` where the SMI said nothing
+#    parseable, which means UNKNOWN and never idle),
 #    then WARMUP untimed sequences and
 #    REPEATS timed ones, on each of two inputs -- no screening (tau = 0) so
 #    every cell does all its work, n_bra x n_ket = TIMING_N_BRA x
@@ -841,26 +845,43 @@ def _cpu_busy(seconds: float = 1.0) -> float:
 # timing on a busy card is garbage where a correct answer is still correct.
 GPU_BUSY_MAX = 30    # percent utilization of the card, from its own SMI
 GPU_QUIET_WAIT_S = 900.0
+# THE AFTER-READING, and why it is taken the way it is (#93, measured on this
+# box with a 3.4 s L 16 b 12 run): nvidia-smi reports utilisation over a
+# trailing window of up to 1 s -- 100% for the first second after a run,
+# then 0%. rocm-smi's FIRST read after a pause reports the card's average
+# SINCE THE PREVIOUS READ -- 96% at +0.08 s, 75% at +1 s, 52% at +3 s, each
+# followed at once by 0-1% -- so a max over samples that includes that read
+# measures our own run. So: one read discarded, GPU_SETTLE_S of sleep, then
+# `_card_util` -- on both vendors the window it reads is the settle alone.
+GPU_SETTLE_S = 1.0
+
+
+def _card_util(backend: str) -> int | None:
+    """The card's utilisation now: the highest of three SMI samples 0.2 s
+    apart, or None -- UNKNOWN, never idle -- when no sample parsed."""
+    samples = []
+    for _ in range(3):
+        samples.append(card_utilisation(backend))  # None: unknown
+        time.sleep(0.2)
+    return max((s for s in samples if s is not None), default=None)
 
 
 def _quiet(backend: str | None = None, seen: list[int] | None = None) -> float:
     """Block until the box is quiet -- the CPU and, given `backend`, the card
-    (the highest of three utilization samples at most GPU_BUSY_MAX) -- and
-    return the CPU busy fraction it settled at; the card's settled
-    utilization is appended to `seen`."""
+    (`_card_util` at most GPU_BUSY_MAX) -- and return the CPU busy fraction
+    it settled at; the card's settled utilization is appended to `seen`."""
     if backend is not None:
         deadline = time.monotonic() + GPU_QUIET_WAIT_S
+        t0 = time.monotonic()
         while True:
-            samples = []
-            for _ in range(3):
-                samples.append(card_utilisation(backend))  # None: unknown
-                time.sleep(0.2)
-            util = max((s for s in samples if s is not None), default=None)
+            util = _card_util(backend)
             if util is not None and util <= GPU_BUSY_MAX:
                 break
             if time.monotonic() > deadline:
                 pytest.fail(f"card contended: {util}% busy > {GPU_BUSY_MAX}% "
                             f"for {GPU_QUIET_WAIT_S:.0f} s -- timing DISCARDED")
+            print(f"gate: card {util}% busy > {GPU_BUSY_MAX}%, waiting "
+                  f"({time.monotonic() - t0:.0f} s)", flush=True)
             time.sleep(10)
         if seen is not None:
             seen.append(util)
@@ -980,40 +1001,54 @@ def _wallclock(backend: str, request, compile_device_source,
         _pack(L, a, lanes).tofile(src)
         args = (str(src), str(dst), str(WARMUP), str(REPEATS))
         check_vram(binary, args, backend)  # before the wait, off the clock
-        busy = _quiet(backend, gpu_seen)
+        seen: list[int] = []
+        busy = _quiet(backend, seen)
         out = run_device_binary(binary, *args)
+        card_utilisation(backend)  # discarded: rocm-smi's first read after
+        time.sleep(GPU_SETTLE_S)   # a pause averages over it -- our own run
+        card =(seen[-1], _card_util(backend))  # the gate's reading, and after
         wall, events, batches = _parse_reps(out, spec.n_batches)
         assert len(wall) == REPEATS, out
         J = np.fromfile(dst, dtype=np.float64).reshape(2, TIMING_N_BRA, -1)
         assert np.all(np.isfinite(J)), f"{spec.key()}: non-finite J (timing input)"
         q1, med, q3 = (float(x) for x in np.percentile(wall, [25, 50, 75]))
-        return wall, events, batches, J, (q1, med, q3), busy
+        return wall, events, batches, J, (q1, med, q3), busy, card
+
+    def gpu_fields(prefix: str, card: tuple[int, int | None]) -> dict:
+        # measured.GPU_UTIL_FIELDS: the gate's settled reading before the
+        # input's warm-up, and one GPU_SETTLE_S after its last timed sequence
+        return {f"{prefix}gpu_util_before": card[0],
+                f"{prefix}gpu_util_after": card[1]}
 
     table = []
     for spec, binary, names, sha, control in cells:
         L = spec.total_am
         load1 = os.getloadavg()[0]
-        gpu_seen: list[int] = []
-        ctrl: dict[str, int] = {}
+        ctrl: dict[str, int | None] = {}
         if control is not None:  # near: control first; wide: lever first
             c_spec, c_binary = control
-            c_wall, _, _, _, c_near, c_busy = timed(c_spec, c_binary, False)
+            c_wall, _, _, _, c_near, c_busy, c_gpu = timed(c_spec, c_binary,
+                                                           False)
         # the secondary input first: near-T (T < ~2, short Boys series)
-        n_wall, _, _, _, (n_q1, n_med, n_q3), n_busy = timed(spec, binary, False)
+        n_wall, _, _, _, (n_q1, n_med, n_q3), n_busy, n_gpu = timed(
+            spec, binary, False)
         # the row's number: wide-T (T up to ~430, the Boys series long)
-        wall, events, batches, J, (q1, med, q3), busy = timed(spec, binary, True)
+        wall, events, batches, J, (q1, med, q3), busy, card = timed(
+            spec, binary, True)
         if control is not None:
-            w_wall, _, _, _, c_wide, w_busy = timed(c_spec, c_binary, True)
-            for prefix, stats, w, b_ in (("wallclock:control:near:", c_near,
-                                          c_wall, c_busy),
-                                         ("wallclock:control:", c_wide, w_wall,
-                                          w_busy)):
+            w_wall, _, _, _, c_wide, w_busy, w_gpu = timed(c_spec, c_binary,
+                                                           True)
+            for prefix, stats, w, b_, g in (("wallclock:control:near:", c_near,
+                                             c_wall, c_busy, c_gpu),
+                                            ("wallclock:control:", c_wide,
+                                             w_wall, w_busy, w_gpu)):
                 ctrl |= {f"{prefix}q1_ns": round(stats[0]),
                          f"{prefix}median_ns": round(stats[1]),
                          f"{prefix}q3_ns": round(stats[2]),
                          f"{prefix}min_ns": int(min(w)),
                          f"{prefix}max_ns": int(max(w)),
-                         f"{prefix}cpu_busy_permille_before": round(1000 * b_)}
+                         f"{prefix}cpu_busy_permille_before": round(1000 * b_),
+                         **gpu_fields(prefix, g)}
         busy_after = _cpu_busy(0.5)
         raw = {
             "wallclock:near:median_ns": round(n_med),
@@ -1022,6 +1057,7 @@ def _wallclock(backend: str, request, compile_device_source,
             "wallclock:near:min_ns": int(min(n_wall)),
             "wallclock:near:max_ns": int(max(n_wall)),
             "wallclock:near:cpu_busy_permille_before": round(1000 * n_busy),
+            **gpu_fields("wallclock:near:", n_gpu),
             "wallclock:warmup": WARMUP,
             "wallclock:n_bra": TIMING_N_BRA,
             "wallclock:n_ket": TIMING_N_KET,
@@ -1034,7 +1070,7 @@ def _wallclock(backend: str, request, compile_device_source,
             "wallclock:cpu_busy_permille_before": round(1000 * busy),
             "wallclock:cpu_busy_permille_after": round(1000 * busy_after),
             "wallclock:loadavg1_milli": round(1000 * load1),
-            "wallclock:gpu_util_pct_before_max": max(gpu_seen),
+            **gpu_fields("wallclock:", card),
             "wallclock:J_bitwise_repeatable": int(np.array_equal(J[0], J[1])),
             **ctrl,
         }
@@ -1058,7 +1094,8 @@ def _wallclock(backend: str, request, compile_device_source,
               f"{max(wall) / 1e6:.3f}] ms; near median {n_med / 1e6:.3f} ms, "
               f"IQR {(n_q3 - n_q1) / 1e6:.3f} ms; {REPEATS} timed (+{WARMUP} "
               f"warm-up) each; CPU busy {n_busy:.1%}/{busy:.1%} -> "
-              f"{busy_after:.1%}, load1 {load1:.2f}; J bit-repeatable "
+              f"{busy_after:.1%}, load1 {load1:.2f}; card util {n_gpu[0]}->"
+              f"{n_gpu[1]}% / {card[0]}->{card[1]}%; J bit-repeatable "
               f"{raw['wallclock:J_bitwise_repeatable']}", flush=True)
         if ctrl:
             print(f"  control (literal, same session): wide median "

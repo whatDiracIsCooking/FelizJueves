@@ -385,15 +385,16 @@ bolded choice: their kernels, compiler and card are not ours, and their bold
 cells are deliberately not transcribed
 (`data/literature/jengine/README.md`).
 
-**Where it was measured.** One host, `ddbbc02dbb08 (container)` — a dev
+**Where it was measured.** One host, `1da02cac6d4e (container)` — a dev
 container on this box carrying both device toolchains — with two cards:
 
 - NVIDIA GeForce RTX 3080, `sm_86`, `nvcc 13.0`;
 - AMD Radeon RX 9060 XT (`AMD Radeon Graphics (device 0x7590, gfx1200)`),
   `gfx1200`, `hipcc / ROCm 7.2.4`;
 
-with `devtools/config.sh`'s `NVCC_FLAGS` / `HIPCC_FLAGS` (no fast-math), on
-2026-10-11.
+with `devtools/config.sh`'s `NVCC_FLAGS` / `HIPCC_FLAGS` (no fast-math; since
+#92 they carry `-Xcompiler -Wall` / `-Wall -Wextra`, which change no register,
+spill or remark), on 2026-10-11.
 
 **What was measured.** `measured.SUBGRID`: `L ∈ {7, 10, 13, 16}` ×
 `n_batches ∈ {1, 3, 6, 9, 12}`, the default split `pq_spec(L, n_batches)`,
@@ -402,8 +403,14 @@ number is the host wall-clock of its whole launch sequence (every
 `build_pq_kernels` batch into one zeroed `J`, then one synchronize), 5 warm-up
 and **31 timed** sequences, `n_bra × n_ket = 2048 × 128`, no screening, run
 alone on an uncontended box by `test/test_kernel_device.py`'s opt-in sweep —
-and the timed binary is the one first checked against `reference/`. Two
-sweeps: #53 timed `n_batches` 1, 3, 6, 9 (PR #75); #60 timed 12 (PR #77).
+and the timed binary is the one first checked against `reference/`. **One
+session per card**: #93 re-timed every cell of an arch in one sweep, behind
+the card lock and the CPU and card-utilisation gates, replacing the two
+sweeps it was first taken in (#53: `n_batches` 1, 3, 6, 9, PR #75; #60: 12,
+PR #77). Each row records the card's state as the gate let each input
+through and just after it (raw `wallclock:gpu_util_before` / `_after`, and
+`wallclock:near:...`): every `_before` reading was at most 20% (the gate
+admits 30%), every `_after` at most 5%.
 **Two inputs**, both with that protocol: *wide-T* (`T` up to ~430, a long
 Boys series; the row's `runtime_ns`) and *near-T* (`T < ~2`; the row's raw
 `wallclock:near:*`). Only the ranking over `n_batches` **within one arch** is a
@@ -417,7 +424,7 @@ the two IQRs (#60's test of "faster"); *within spread* lists every count whose
 median is within that distance of the best; *same sweep* says whether best and
 runner-up came from one sweep — #60 measured cross-sweep drift of up to 1.7%
 (10% on one noisy cell), IQR-scale, so a cross-sweep margin is weaker
-evidence.
+evidence. Since #93 every margin below is same-sweep.
 
 The data is `data/measured/batch_recommendation.json`, written by
 `PYTHONPATH=src uv run python -m felizjueves.batchreport --write` from
@@ -429,27 +436,27 @@ has moved.
 
 | arch | L | best `n_batches` | median ms | IQR ms | repeats | runner-up (+ms) | resolved | within spread | same sweep |
 |---|---|---|---|---|---|---|---|---|---|
-| sm_86 | 7 | **1** | 24.121 | 0.500 | 31 | 3 (+40.370) | yes | 1 | yes |
-| sm_86 | 10 | **1** | 37.015 | 0.659 | 31 | 3 (+55.785) | yes | 1 | yes |
-| sm_86 | 13 | **1** | 66.983 | 0.381 | 31 | 3 (+81.773) | yes | 1 | yes |
-| sm_86 | 16 | **1** | 157.271 | 1.703 | 31 | 3 (+133.313) | yes | 1 | yes |
-| gfx1200 | 7 | **1** | 34.895 | 0.983 | 31 | 3 (+53.711) | yes | 1 | yes |
-| gfx1200 | 10 | **1** | 52.338 | 1.222 | 31 | 3 (+76.070) | yes | 1 | yes |
-| gfx1200 | 13 | **1** | 150.059 | 0.781 | 31 | 3 (+110.608) | yes | 1 | yes |
-| gfx1200 | 16 | **1** | 531.570 | 1.551 | 31 | 3 (+50.446) | yes | 1 | yes |
+| sm_86 | 7 | **1** | 25.306 | 2.687 | 31 | 3 (+39.510) | yes | 1 | yes |
+| sm_86 | 10 | **1** | 37.319 | 1.958 | 31 | 3 (+55.547) | yes | 1 | yes |
+| sm_86 | 13 | **1** | 66.525 | 0.528 | 31 | 3 (+82.033) | yes | 1 | yes |
+| sm_86 | 16 | **1** | 156.851 | 0.723 | 31 | 3 (+132.450) | yes | 1 | yes |
+| gfx1200 | 7 | **1** | 34.779 | 1.404 | 31 | 3 (+54.360) | yes | 1 | yes |
+| gfx1200 | 10 | **1** | 52.929 | 1.622 | 31 | 3 (+75.690) | yes | 1 | yes |
+| gfx1200 | 13 | **1** | 150.011 | 0.876 | 31 | 3 (+110.581) | yes | 1 | yes |
+| gfx1200 | 16 | **1** | 533.064 | 0.841 | 31 | 3 (+49.651) | yes | 1 | yes |
 
 *near-T input:*
 
 | arch | L | best `n_batches` | median ms | IQR ms | repeats | runner-up (+ms) | resolved | within spread | same sweep |
 |---|---|---|---|---|---|---|---|---|---|
-| sm_86 | 7 | **1** | 3.682 | 0.017 | 31 | 3 (+2.530) | yes | 1 | yes |
-| sm_86 | 10 | **1** | 8.486 | 0.096 | 31 | 3 (+3.850) | yes | 1 | yes |
-| sm_86 | 13 | **3** | 29.317 | 0.157 | 31 | 1 (+2.924) | yes | 3 | yes |
-| sm_86 | 16 | **9** | 99.387 | 0.127 | 31 | 12 (+2.734) | yes | 9 | no |
-| gfx1200 | 7 | **1** | 4.485 | 0.069 | 31 | 3 (+4.192) | yes | 1 | yes |
-| gfx1200 | 10 | **3** | 17.928 | 0.146 | 31 | 1 (+0.104) | no | 1, 3 | yes |
-| gfx1200 | 13 | **3** | 80.160 | 0.378 | 31 | 6 (+0.045) | no | 3, 6 | yes |
-| gfx1200 | 16 | **12** | 299.697 | 0.335 | 31 | 9 (+2.821) | yes | 12 | no |
+| sm_86 | 7 | **1** | 3.682 | 0.010 | 31 | 3 (+3.506) | yes | 1 | yes |
+| sm_86 | 10 | **1** | 9.644 | 0.321 | 31 | 3 (+4.421) | yes | 1 | yes |
+| sm_86 | 13 | **3** | 29.478 | 2.546 | 31 | 1 (+3.120) | yes | 3 | yes |
+| sm_86 | 16 | **9** | 98.776 | 0.120 | 31 | 12 (+4.280) | yes | 9 | yes |
+| gfx1200 | 7 | **1** | 4.507 | 0.058 | 31 | 3 (+4.283) | yes | 1 | yes |
+| gfx1200 | 10 | **3** | 18.055 | 0.160 | 31 | 1 (+0.089) | no | 1, 3 | yes |
+| gfx1200 | 13 | **6** | 80.227 | 0.686 | 31 | 3 (+0.050) | no | 3, 6 | yes |
+| gfx1200 | 16 | **12** | 299.352 | 0.314 | 31 | 9 (+4.113) | yes | 12 | yes |
 
 What it says:
 
@@ -464,14 +471,19 @@ What it says:
   `gfx1200` at 12; at `L = 10`, `gfx1200` already prefers 3 (unresolved
   against 1) where `sm_86` keeps 1. That is the reason dispatch will have to be
   per target — not a disagreement to average away.
-- **Two near-T cells are unresolved**: `gfx1200` at `L = 10` (3 vs 1, +0.104
-  ms against a 0.146 ms IQR) and `L = 13` (3 vs 6, +0.045 ms against 0.378
+- **Two near-T cells are unresolved**: `gfx1200` at `L = 10` (3 vs 1, +0.089
+  ms against a 0.160 ms IQR) and `L = 13` (6 vs 3, +0.050 ms against 0.686
   ms). Their recommendation is "either of the *within spread* counts".
-- **Two near-T winners cross sweeps.** `gfx1200` `L = 16`: 12 (timed by #60)
-  over 9 (timed by #53). #60 re-timed 9 beside 12 as a drift check, not stored:
-  303.82 against 299.70 ms, IQR 0.67 ms — the same order. Within #53's sweep
-  alone the best is 9, +5.46 ms ahead of 3. `sm_86` `L = 16`: 9 (#53) over 12
-  (#60) by 2.73 ms; within #53's sweep, 9 leads 6 by 9.05 ms.
+- **Re-timed behind the gate (#93), and confirmed.** Every conclusion above
+  is the one #53's and #60's sweeps gave: wide-T picks 1 everywhere, near-T
+  splits from `L = 13`, the cards disagree at `L = 16` (9 on `sm_86`, 12 on
+  `gfx1200`), and the same two cells are unresolved with the same *within
+  spread* sets. The one recorded best that moved is `gfx1200` `L = 13`
+  near-T, 3 → 6, inside that unresolved tie (3 led 6 by 0.045 ms before; 6
+  leads 3 by 0.050 ms now). The two `L = 16` near-T winners, which used to
+  cross sweeps, now hold within one: `gfx1200` 12 over 9 by 4.11 ms against
+  a 0.80 ms IQR (#60's drift check had 303.82 against 299.70 ms), `sm_86` 9
+  over 12 by 4.28 ms against 0.74 ms.
 - **Outside the subgrid** (`L ∉ {7, 10, 13, 16}`) nothing is timed, so there is
   no recommendation there.
 - **Literal kernels only.** The table reads the `levers = ()` rows. The one

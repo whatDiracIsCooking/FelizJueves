@@ -26,22 +26,22 @@
   "rule": "best = lowest median; resolved iff runner-up median - best median > max(IQR of the two) (#60's test); within_spread = every n_batches whose median exceeds best's by at most max(IQR of best, IQR of it).",
   "protocol": "test/test_kernel_device.py's opt-in wall-clock sweep: host steady_clock over a cell's whole batched launch sequence into one zeroed J, then one synchronize; 5 warm-up + 31 timed sequences per input; n_bra x n_ket = 2048 x 128, no screening; the timed binary is the one checked against reference/ first.",
   "sessions": {
-   "1": "#53",
-   "3": "#53",
-   "6": "#53",
-   "9": "#53",
-   "12": "#60"
+   "1": "#93",
+   "3": "#93",
+   "6": "#93",
+   "9": "#93",
+   "12": "#93"
   },
-  "cross_session": "b 12 was timed by #60, the rest by #53. #60 re-timed b 9 beside b 12 (not stored) and found drift of up to 1.7% (10% on one noisy cell); a same_session=false margin is weaker evidence.",
+  "cross_session": "Every n_batches of one arch was timed in ONE session by #93, behind the card gate (each row's raw wallclock:gpu_util_*), replacing #53's (b 1-9) and #60's (b 12) timings, so every margin is same-session. #60 had measured cross-session drift of up to 1.7% (10% on one noisy cell).",
   "provenance": {
    "sm_86": {
-    "host": "ddbbc02dbb08 (container)",
+    "host": "1da02cac6d4e (container)",
     "gpu": "NVIDIA GeForce RTX 3080",
     "toolchain": "nvcc 13.0",
     "date": "2026-10-11"
    },
    "gfx1200": {
-    "host": "ddbbc02dbb08 (container)",
+    "host": "1da02cac6d4e (container)",
     "gpu": "AMD Radeon Graphics (device 0x7590, gfx1200)",
     "toolchain": "hipcc / ROCm 7.2.4",
     "date": "2026-10-11"
@@ -58,11 +58,11 @@
    "agree": true,
    "wide": {
     "n_batches": 1,
-    "median_ns": 24120581,
-    "iqr_ns": 500188,
+    "median_ns": 25305992,
+    "iqr_ns": 2687448,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 40370287,
+    "margin_ns": 39510327,
     "resolved": true,
     "within_spread": [
      1
@@ -70,34 +70,34 @@
     "same_session": true,
     "all": {
      "1": [
-      24120581,
-      500188
+      25305992,
+      2687448
      ],
      "3": [
-      64490868,
-      874119
+      64816319,
+      1076192
      ],
      "6": [
-      116289865,
-      1812078
+      115937440,
+      1644116
      ],
      "9": [
-      136142399,
-      1432303
+      136678820,
+      750872
      ],
      "12": [
-      196714251,
-      1130188
+      197532106,
+      1105492
      ]
     }
    },
    "near": {
     "n_batches": 1,
-    "median_ns": 3682227,
-    "iqr_ns": 17255,
+    "median_ns": 3682409,
+    "iqr_ns": 10030,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 2530051,
+    "margin_ns": 3505755,
     "resolved": true,
     "within_spread": [
      1
@@ -105,24 +105,24 @@
     "same_session": true,
     "all": {
      "1": [
-      3682227,
-      17255
+      3682409,
+      10030
      ],
      "3": [
-      6212278,
-      33615
+      7188164,
+      30906
      ],
      "6": [
-      10063629,
-      51661
+      11171597,
+      573805
      ],
      "9": [
-      11717135,
-      55700
+      13473024,
+      663861
      ],
      "12": [
-      15850452,
-      103851
+      17559389,
+      946151
      ]
     }
    }
@@ -133,11 +133,11 @@
    "agree": true,
    "wide": {
     "n_batches": 1,
-    "median_ns": 37015154,
-    "iqr_ns": 658960,
+    "median_ns": 37319012,
+    "iqr_ns": 1957632,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 55785450,
+    "margin_ns": 55546953,
     "resolved": true,
     "within_spread": [
      1
@@ -145,34 +145,34 @@
     "same_session": true,
     "all": {
      "1": [
-      37015154,
-      658960
+      37319012,
+      1957632
      ],
      "3": [
-      92800604,
-      1275115
+      92865965,
+      1120632
      ],
      "6": [
-      160819696,
-      1225340
+      160220756,
+      958736
      ],
      "9": [
-      224803045,
-      2293166
+      223359730,
+      1040892
      ],
      "12": [
-      267396774,
-      2540534
+      265744534,
+      2016508
      ]
     }
    },
    "near": {
     "n_batches": 1,
-    "median_ns": 8486164,
-    "iqr_ns": 96462,
+    "median_ns": 9643603,
+    "iqr_ns": 321066,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 3850210,
+    "margin_ns": 4420801,
     "resolved": true,
     "within_spread": [
      1
@@ -180,24 +180,24 @@
     "same_session": true,
     "all": {
      "1": [
-      8486164,
-      96462
+      9643603,
+      321066
      ],
      "3": [
-      12336374,
-      134497
+      14064404,
+      683221
      ],
      "6": [
-      17230772,
-      2291481
+      18848170,
+      1248859
      ],
      "9": [
-      21703333,
-      72916
+      23607385,
+      2148258
      ],
      "12": [
-      24843791,
-      55271
+      25953802,
+      2445559
      ]
     }
    }
@@ -208,11 +208,11 @@
    "agree": false,
    "wide": {
     "n_batches": 1,
-    "median_ns": 66983346,
-    "iqr_ns": 380890,
+    "median_ns": 66524997,
+    "iqr_ns": 527978,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 81773339,
+    "margin_ns": 82033236,
     "resolved": true,
     "within_spread": [
      1
@@ -220,34 +220,34 @@
     "same_session": true,
     "all": {
      "1": [
-      66983346,
-      380890
+      66524997,
+      527978
      ],
      "3": [
-      148756685,
-      1671417
+      148558233,
+      310510
      ],
      "6": [
-      233343428,
-      1972026
+      232788652,
+      558974
      ],
      "9": [
-      339142885,
-      2234816
+      337589490,
+      1419142
      ],
      "12": [
-      401031954,
-      2147048
+      399515007,
+      1187289
      ]
     }
    },
    "near": {
     "n_batches": 3,
-    "median_ns": 29317232,
-    "iqr_ns": 157282,
+    "median_ns": 29478359,
+    "iqr_ns": 2545725,
     "repeats": 31,
     "runner_up": 1,
-    "margin_ns": 2923806,
+    "margin_ns": 3119829,
     "resolved": true,
     "within_spread": [
      3
@@ -255,24 +255,24 @@
     "same_session": true,
     "all": {
      "1": [
-      32241038,
-      139863
+      32598188,
+      933811
      ],
      "3": [
-      29317232,
-      157282
+      29478359,
+      2545725
      ],
      "6": [
-      33722331,
-      54746
+      35187380,
+      3323188
      ],
      "9": [
-      40685162,
-      93576
+      40675687,
+      1991542
      ],
      "12": [
-      45521717,
-      80897
+      45355582,
+      1494344
      ]
     }
    }
@@ -283,11 +283,11 @@
    "agree": false,
    "wide": {
     "n_batches": 1,
-    "median_ns": 157270999,
-    "iqr_ns": 1703012,
+    "median_ns": 156851366,
+    "iqr_ns": 723286,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 133313409,
+    "margin_ns": 132450060,
     "resolved": true,
     "within_spread": [
      1
@@ -295,59 +295,59 @@
     "same_session": true,
     "all": {
      "1": [
-      157270999,
-      1703012
+      156851366,
+      723286
      ],
      "3": [
-      290584408,
-      1923340
+      289301426,
+      1035082
      ],
      "6": [
-      463119164,
-      1892470
+      458199128,
+      1224395
      ],
      "9": [
-      578746192,
-      2501250
+      572236225,
+      1307225
      ],
      "12": [
-      684591406,
-      4873087
+      692772409,
+      873904
      ]
     }
    },
    "near": {
     "n_batches": 9,
-    "median_ns": 99386875,
-    "iqr_ns": 126552,
+    "median_ns": 98775713,
+    "iqr_ns": 120387,
     "repeats": 31,
     "runner_up": 12,
-    "margin_ns": 2733691,
+    "margin_ns": 4279689,
     "resolved": true,
     "within_spread": [
      9
     ],
-    "same_session": false,
+    "same_session": true,
     "all": {
      "1": [
-      123117241,
-      1598095
+      123336273,
+      377506
      ],
      "3": [
-      116865552,
-      1784752
+      117028513,
+      166391
      ],
      "6": [
-      108433688,
-      1128313
+      108364366,
+      189082
      ],
      "9": [
-      99386875,
-      126552
+      98775713,
+      120387
      ],
      "12": [
-      102120566,
-      263115
+      103055402,
+      742438
      ]
     }
    }
@@ -358,11 +358,11 @@
    "agree": true,
    "wide": {
     "n_batches": 1,
-    "median_ns": 34895022,
-    "iqr_ns": 983205,
+    "median_ns": 34779041,
+    "iqr_ns": 1404191,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 53710703,
+    "margin_ns": 54360178,
     "resolved": true,
     "within_spread": [
      1
@@ -370,34 +370,34 @@
     "same_session": true,
     "all": {
      "1": [
-      34895022,
-      983205
+      34779041,
+      1404191
      ],
      "3": [
-      88605725,
-      4332827
+      89139219,
+      2753436
      ],
      "6": [
-      150135733,
-      2091230
+      150272643,
+      2969408
      ],
      "9": [
-      174250755,
-      1938058
+      174119138,
+      1791972
      ],
      "12": [
-      256541628,
-      2197098
+      257327535,
+      3415412
      ]
     }
    },
    "near": {
     "n_batches": 1,
-    "median_ns": 4485325,
-    "iqr_ns": 68871,
+    "median_ns": 4507346,
+    "iqr_ns": 57667,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 4191959,
+    "margin_ns": 4283123,
     "resolved": true,
     "within_spread": [
      1
@@ -405,24 +405,24 @@
     "same_session": true,
     "all": {
      "1": [
-      4485325,
-      68871
+      4507346,
+      57667
      ],
      "3": [
-      8677284,
-      116721
+      8790469,
+      71036
      ],
      "6": [
-      13352583,
-      125118
+      13406497,
+      126077
      ],
      "9": [
-      15052357,
-      125362
+      15173704,
+      120697
      ],
      "12": [
-      21474850,
-      221314
+      21511327,
+      105547
      ]
     }
    }
@@ -433,11 +433,11 @@
    "agree": false,
    "wide": {
     "n_batches": 1,
-    "median_ns": 52338316,
-    "iqr_ns": 1222412,
+    "median_ns": 52929214,
+    "iqr_ns": 1622054,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 76070321,
+    "margin_ns": 75689913,
     "resolved": true,
     "within_spread": [
      1
@@ -445,34 +445,34 @@
     "same_session": true,
     "all": {
      "1": [
-      52338316,
-      1222412
+      52929214,
+      1622054
      ],
      "3": [
-      128408637,
-      1725854
+      128619127,
+      1792937
      ],
      "6": [
-      220759046,
-      2655389
+      220696288,
+      1936058
      ],
      "9": [
-      299908370,
-      2131318
+      299987085,
+      2617082
      ],
      "12": [
-      360778434,
-      3286056
+      359401211,
+      3122736
      ]
     }
    },
    "near": {
     "n_batches": 3,
-    "median_ns": 17928019,
-    "iqr_ns": 145717,
+    "median_ns": 18054558,
+    "iqr_ns": 160483,
     "repeats": 31,
     "runner_up": 1,
-    "margin_ns": 104091,
+    "margin_ns": 88501,
     "resolved": false,
     "within_spread": [
      1,
@@ -481,24 +481,24 @@
     "same_session": true,
     "all": {
      "1": [
-      18032110,
-      63771
+      18143059,
+      112462
      ],
      "3": [
-      17928019,
-      145717
+      18054558,
+      160483
      ],
      "6": [
-      24216591,
-      160412
+      24398662,
+      124307
      ],
      "9": [
-      29629150,
-      257633
+      29817354,
+      377676
      ],
      "12": [
-      34390129,
-      362936
+      34460943,
+      359176
      ]
     }
    }
@@ -509,11 +509,11 @@
    "agree": false,
    "wide": {
     "n_batches": 1,
-    "median_ns": 150058710,
-    "iqr_ns": 780896,
+    "median_ns": 150010521,
+    "iqr_ns": 875588,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 110607905,
+    "margin_ns": 110581461,
     "resolved": true,
     "within_spread": [
      1
@@ -521,34 +521,34 @@
     "same_session": true,
     "all": {
      "1": [
-      150058710,
-      780896
+      150010521,
+      875588
      ],
      "3": [
-      260666615,
-      1476795
+      260591982,
+      1876332
      ],
      "6": [
-      379634997,
-      1352322
+      379859648,
+      2148734
      ],
      "9": [
-      538247195,
-      2255122
+      539435190,
+      2615281
      ],
      "12": [
-      616033276,
-      2461682
+      617075009,
+      3252338
      ]
     }
    },
    "near": {
-    "n_batches": 3,
-    "median_ns": 80159775,
-    "iqr_ns": 378046,
+    "n_batches": 6,
+    "median_ns": 80227422,
+    "iqr_ns": 685730,
     "repeats": 31,
-    "runner_up": 6,
-    "margin_ns": 44543,
+    "runner_up": 3,
+    "margin_ns": 49828,
     "resolved": false,
     "within_spread": [
      3,
@@ -557,24 +557,24 @@
     "same_session": true,
     "all": {
      "1": [
-      97507126,
-      393126
+      97436245,
+      368535
      ],
      "3": [
-      80159775,
-      378046
+      80277250,
+      403265
      ],
      "6": [
-      80204318,
-      255834
+      80227422,
+      685730
      ],
      "9": [
-      93056758,
-      330365
+      93181159,
+      227894
      ],
      "12": [
-      95940198,
-      206648
+      96048467,
+      289999
      ]
     }
    }
@@ -585,11 +585,11 @@
    "agree": false,
    "wide": {
     "n_batches": 1,
-    "median_ns": 531570168,
-    "iqr_ns": 1550878,
+    "median_ns": 533063899,
+    "iqr_ns": 841318,
     "repeats": 31,
     "runner_up": 3,
-    "margin_ns": 50445848,
+    "margin_ns": 49650500,
     "resolved": true,
     "within_spread": [
      1
@@ -597,59 +597,59 @@
     "same_session": true,
     "all": {
      "1": [
-      531570168,
-      1550878
+      533063899,
+      841318
      ],
      "3": [
-      582016016,
-      1355116
+      582714399,
+      1668061
      ],
      "6": [
-      812146731,
-      2006126
+      814645092,
+      2221410
      ],
      "9": [
-      980233786,
-      2355998
+      982278772,
+      3486196
      ],
      "12": [
-      1141594867,
-      3093068
+      1140581327,
+      2480264
      ]
     }
    },
    "near": {
     "n_batches": 12,
-    "median_ns": 299697176,
-    "iqr_ns": 334601,
+    "median_ns": 299351714,
+    "iqr_ns": 314115,
     "repeats": 31,
     "runner_up": 9,
-    "margin_ns": 2820782,
+    "margin_ns": 4113411,
     "resolved": true,
     "within_spread": [
      12
     ],
-    "same_session": false,
+    "same_session": true,
     "all": {
      "1": [
-      457602756,
-      1062626
+      458539780,
+      779472
      ],
      "3": [
-      307978306,
-      684221
+      308516555,
+      872928
      ],
      "6": [
-      309723928,
-      564280
+      310477147,
+      381451
      ],
      "9": [
-      302517958,
-      1294104
+      303465125,
+      794825
      ],
      "12": [
-      299697176,
-      334601
+      299351714,
+      314115
      ]
     }
    }
