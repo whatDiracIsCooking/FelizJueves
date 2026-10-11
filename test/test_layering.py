@@ -285,7 +285,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit._c": ("device", "ir"),
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
-    "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel"),
+    "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "spec"),
     "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "lower",
                  "spec"),
     "kernelrank": ("device", "kernel", "lower", "measured", "spec"),
