@@ -28,7 +28,7 @@ fixes, and the evidence for it is in plan/cost.py's docstring.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -82,13 +82,19 @@ class BatchDag:
         return next(c for c, c1 in zip(r, r1, strict=True) if c != c1)
 
 
-def batch_dag(total_am: int, batch: Batch) -> BatchDag:
-    """The MILD DAG for the targets of one batch of the class L = total_am."""
-    targets = frozenset(
-        (r, 0) for r in hermite_targets(total_am) if in_batch(r, *batch)
-    )
+def batch_dag(
+    total_am: int, batch: Batch, order: Sequence[R] | None = None
+) -> BatchDag:
+    """The MILD DAG for the targets of one batch of the class L = total_am,
+    walked in `order` (default: `hermite_targets`)."""
+    ordered = [
+        r
+        for r in (hermite_targets(total_am) if order is None else order)
+        if in_batch(r, *batch)
+    ]
+    targets = frozenset((r, 0) for r in ordered)
     parents: dict[Node, tuple[Node, ...]] = {}
-    stack = [n for n in targets if not is_fundamental(n)]
+    stack = [(r, 0) for r in ordered if any(r)]
     while stack:
         node = stack.pop()
         if node in parents:
@@ -98,11 +104,14 @@ def batch_dag(total_am: int, batch: Batch) -> BatchDag:
     return BatchDag(batch, targets, MappingProxyType(parents))
 
 
-def build(spec: Spec) -> tuple[BatchDag, ...]:
+def build(spec: Spec, *, targets: Sequence[R] | None = None) -> tuple[BatchDag, ...]:
     """One DAG per batch of `partition(spec.total_am, spec.n_batches)`, in the
     partition's order. Only the literal reconstruction exists: a Spec naming
-    any lever is refused rather than silently built as if it named none."""
+    any lever is refused rather than silently built as if it named none.
+    `targets`, a permutation of `hermite_targets(L)`, is the visiting order."""
     if spec.levers:
         raise ValueError(f"no lever is implemented in the plan layer: {spec.levers}")
     L = spec.total_am
-    return tuple(batch_dag(L, b) for b in partition(L, spec.n_batches))
+    if targets is not None and sorted(targets) != sorted(hermite_targets(L)):
+        raise ValueError(f"targets is not a permutation of hermite_targets({L})")
+    return tuple(batch_dag(L, b, targets) for b in partition(L, spec.n_batches))
