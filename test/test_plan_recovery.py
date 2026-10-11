@@ -1,5 +1,7 @@
 """#14: the inputs behind the printed cells. Table 3's are found (the cut);
-Tables 1-2's are not, and limits.json records why."""
+Tables 1-2's are not, and limits.json records why. #108 widened the seed-order
+family to 58 rules and decided the doctrine: rules only, so Tables 1-2 are
+refused, and every number the records quote about that is recomputed here."""
 
 from __future__ import annotations
 
@@ -139,8 +141,12 @@ def test_tables_1_and_2_record_no_inputs_and_a_limit_each() -> None:
     for tid in ("jengine/table1", "jengine/table2"):
         (rule,) = [r for r in board.rules[tid] if isinstance(r, ExactGivenInputs)]
         assert rule.inputs is None
+        assert rule.refused is not None  # #108: refused, not left null
     limited = [lim.asserted_value["table"] for lim in _exact_limits()]
     assert limited == ["jengine/table1", "jengine/table2"]
+    assert {lim.asserted_value["doctrine"] for lim in _exact_limits()} == {
+        "rules-only"
+    }
 
 
 # -- Tables 1-2: what the recovered cut moves, and the limit -------------------
@@ -178,6 +184,89 @@ def test_the_bounded_seed_order_search() -> None:
         "jengine/table1": 9, "jengine/table2": 17,
     }
     assert results["hermite"] == exact_counts(TABLES, recovered_costs(CELLS))
+
+
+# -- #108: the widened family, and the doctrine ---------------------------------
+
+BEST_WIDENED = "+max/-mid, ties reversed"
+QUANTITY = {"jengine/table1": "flops", "jengine/table2": "max_intermediates"}
+
+
+def test_widening_moves_no_default() -> None:
+    # The default family is still #13's 26 (plan/search.py is pinned to it);
+    # widened=True appends 32 rules after them, in the same order.
+    base = [name for name, _ in seed_orders()]
+    wide = [name for name, _ in seed_orders(widened=True)]
+    assert len(base) == 26 and len(wide) == 58 == len(set(wide))
+    assert wide[:26] == base
+    assert BEST_WIDENED in wide[26:]
+
+
+@pytest.fixture(scope="module")
+def best_widened_costs():
+    order = dict(seed_orders(widened=True))[BEST_WIDENED]
+    return recovered_costs(CELLS, order)
+
+
+def test_the_best_widened_rule_and_its_residual(best_widened_costs) -> None:
+    # limits.json's (5): 33/40 and 38/40, Table 3 untouched, and a residual
+    # with one sign per table -- every Table 1 miss over, every Table 2 miss
+    # under -- which is what argues against fitting the seed order per cell.
+    c = best_widened_costs
+    assert exact_counts(TABLES, c) == {
+        "jengine/table1": 33, "jengine/table2": 38, "jengine/table3": 40,
+    }
+    sign = {"jengine/table1": 1, "jengine/table2": -1}
+    board = load_scoreboard(DATA / "scoreboards" / "jengine" / "literal.json",
+                            "literal")
+    for lim in _exact_limits():
+        tid, wide = lim.asserted_value["table"], lim.asserted_value["widened"]
+        miss = sorted(cl for cl, p in TABLES[tid].cells.items()
+                      if getattr(c[cl], QUANTITY[tid]) != p)
+        assert wide["best"] == BEST_WIDENED and wide["orders"] == 58
+        assert wide["exact"] == 40 - len(miss)
+        assert [list(cl) for cl in miss] == wide["unreproduced_cells"]
+        for cl in miss:
+            diff = getattr(c[cl], QUANTITY[tid]) - TABLES[tid].cells[cl]
+            assert diff * sign[tid] > 0, (tid, cl, diff)
+        (rule,) = [r for r in board.rules[tid] if isinstance(r, ExactGivenInputs)]
+        assert f"{wide['exact']} of 40" in rule.refused
+        assert "58 seed-order rules" in rule.refused
+
+
+def test_the_batching_exceptions_under_the_widened_family(
+    best_widened_costs,
+) -> None:
+    # claims.json's jengine/batching-trades-flops-for-intermediates. Under the
+    # best widened rule: L = 7 FLOPs rise 1 -> 3 as printed (424, 425), but
+    # L = 10's intermediates stay flat 6 -> 9 (95, 95) and L = 7's RISE 6 -> 9
+    # (39, 40) -- and the paper's own Table 2 prints exactly those two.
+    c, t1, t2 = best_widened_costs, *(TABLES[f"jengine/table{n}"] for n in (1, 2))
+    assert (c[7, 1].flops, c[7, 3].flops) == (t1.cells[7, 1], t1.cells[7, 3])
+    assert (t1.cells[7, 1], t1.cells[7, 3]) == (424, 425)
+    for cells, printed in ((((10, 6), (10, 9)), (95, 95)),
+                           (((7, 6), (7, 9)), (39, 40))):
+        assert tuple(c[cl].max_intermediates for cl in cells) == printed
+        assert tuple(t2.cells[cl] for cl in cells) == printed
+
+
+@pytest.mark.slow
+def test_the_widened_seed_order_search() -> None:
+    # Every number limits.json's (5) and claims.json quote about the 58
+    # orders, recomputed (about 30 s, hence slow; the best rule's numbers
+    # are checked in the fast tier above).
+    costs = {name: recovered_costs(CELLS, order)
+             for name, order in seed_orders(widened=True)}
+    results = {name: exact_counts(TABLES, c) for name, c in costs.items()}
+    assert all(e["jengine/table3"] == 40 for e in results.values())
+    for tid, best in (("jengine/table1", 33), ("jengine/table2", 38)):
+        assert max(e[tid] for e in results.values()) == best
+        assert [n for n, e in results.items() if e[tid] == best] == [BEST_WIDENED]
+    assert sum(c[7, 1].flops == 424 for c in costs.values()) == 37
+    assert {(c[10, 6].max_intermediates, c[10, 9].max_intermediates)
+            for c in costs.values()} == {(95, 95)}
+    assert {(c[7, 6].max_intermediates, c[7, 9].max_intermediates)
+            for c in costs.values()} == {(39, 40)}
 
 
 # -- nothing literal moves -------------------------------------------------------

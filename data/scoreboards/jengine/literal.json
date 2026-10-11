@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "scoreboard": "literal",
-  "about": "[JEngine]'s algorithms run as written, with every choice the paper leaves open fixed arbitrarily. Two claims per table. agreement: how close the reconstruction gets, with thresholds null until a change that computes these cells sets them to what it measured; after that a floor only rises and a ceiling only falls, each in its own commit naming the cells that moved. exact_given_inputs: given the inputs the paper's own numbers were produced from, all 120 cells reproduce exactly; the inputs are null until someone records them. Only candidates declaring board 'literal' are scored here, and the searched board's thresholds live in searched.json and are never read here.",
+  "about": "[JEngine]'s algorithms run as written, with every choice the paper leaves open fixed arbitrarily. Two claims per table. agreement: how close the reconstruction gets, with thresholds null until a change that computes these cells sets them to what it measured; after that a floor only rises and a ceiling only falls, each in its own commit naming the cells that moved. exact_given_inputs: given the inputs the paper's own numbers were produced from, all 120 cells reproduce exactly; the inputs are null until someone records them. The inputs are RULES, the same for every cell, never per-cell fits (#108, the rules-only doctrine; felizjueves.literature.rules.ExactGivenInputs). Where the search for a rule ended without one, the entry carries 'refused': the decision, and the StructuralLimit in data/literature/jengine/limits.json holding the evidence; a refusal scores UNSET, never PASS. Only candidates declaring board 'literal' are scored here, and the searched board's thresholds live in searched.json and are never read here.",
   "tables": {
     "jengine/table1": [
       {"rule": "agreement", "floor_exact": 7, "ceiling_worst_rel_dev": 0.08928571428571429},
-      {"rule": "exact_given_inputs", "inputs": null}
+      {"rule": "exact_given_inputs", "inputs": null, "refused": "rules only (#108): the cut is recovered, the sieve's seed order is not. The best of 58 seed-order rules (plan/recovery.py, seed_orders(widened=True)) reproduces 33 of 40 cells; a per-cell fitted order is not a recovered input and is not admitted. Evidence: data/literature/jengine/limits.json, the jengine/table1 exact_given_inputs record."}
     ],
     "jengine/table2": [
       {"rule": "agreement", "floor_exact": 15, "ceiling_worst_rel_dev": 0.075},
-      {"rule": "exact_given_inputs", "inputs": null}
+      {"rule": "exact_given_inputs", "inputs": null, "refused": "rules only (#108): the cut is recovered, the sieve's seed order is not. The best of 58 seed-order rules (plan/recovery.py, seed_orders(widened=True)) reproduces 38 of 40 cells; a per-cell fitted order is not a recovered input and is not admitted. Evidence: data/literature/jengine/limits.json, the jengine/table2 exact_given_inputs record."}
     ],
     "jengine/table3": [
       {"rule": "agreement", "floor_exact": 38, "ceiling_worst_rel_dev": 0.047619047619047616},

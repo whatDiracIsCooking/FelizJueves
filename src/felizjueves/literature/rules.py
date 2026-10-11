@@ -9,7 +9,9 @@ Three rules, each a frozen value that carries its own thresholds:
                      the amount.
 - `ExactGivenInputs` every cell exact -- but only for a candidate produced
                      from the recorded inputs; any other candidate is
-                     INAPPLICABLE, not a failure.
+                     INAPPLICABLE, not a failure. The inputs are RULES,
+                     never per-cell fits (#108); where no rule exists the
+                     slot carries a `refused` reason and stays UNSET.
 
 A THRESHOLD NOBODY HAS MEASURED IS UNSET, NOT GUESSED. A slot left as None
 makes the rule report what it measured with status UNSET: neither a pass nor a
@@ -195,16 +197,51 @@ class AtOrUnder:
 
 @dataclass(frozen=True, eq=False)
 class ExactGivenInputs:
+    """Every cell exact, for a candidate produced from the recorded inputs.
+
+    THE DOCTRINE (#108): RULES ONLY. `inputs` names RULES the source's
+    numbers were produced by -- a cut rule, a seed-order rule -- each one a
+    function of the class and the batch count that is the same for every
+    cell. A per-cell fitted input (an order searched, cell by cell, against
+    the printed answer) is NOT a recovered input and may not be recorded
+    here: it shows that some input reproduces a number, which is evidence of
+    nothing about the method. If a fit is ever admitted, it is a different
+    claim and gets a different rule class, with its own name, so the two can
+    never be read as one.
+
+    THREE STATES. `inputs` set: judged. Neither set: UNSET, nobody has
+    looked. `refused` set: someone looked, no rule reproduces the table, and
+    the doctrine forbids filling the slot with a fit -- the text says so and
+    names the StructuralLimit holding the evidence. A refusal is still
+    UNSET, never PASS or INAPPLICABLE: nothing was reproduced, and a
+    reader of the exit status must not see a green it did not earn.
+    """
+
     # The inputs the paper's numbers were produced from (a batch split, say).
     # None until someone records them.
     inputs: Mapping[str, Any] | None = None
+    # Why no inputs will be recorded under the doctrine; None if not refused.
+    refused: str | None = None
     name: str = field(default="exact_given_inputs", init=False)
 
     def __post_init__(self) -> None:
+        if self.refused is not None:
+            if not isinstance(self.refused, str) or not self.refused.strip():
+                raise ValueError("a refusal must say why, in non-empty text")
+            if self.inputs is not None:
+                raise ValueError(
+                    "exact_given_inputs is either given inputs or refused, not both"
+                )
         if self.inputs is not None:
             object.__setattr__(self, "inputs", MappingProxyType(dict(self.inputs)))
 
     def judge(self, table: Table, candidate: Candidate) -> Verdict:
+        if self.refused is not None:
+            return Verdict(
+                self.name, table.id, Status.UNSET,
+                "refused: no recovered rule reproduces this table",
+                {"refused": self.refused},
+            )
         if self.inputs is None:
             return Verdict(
                 self.name, table.id, Status.UNSET, "recorded inputs not yet entered"

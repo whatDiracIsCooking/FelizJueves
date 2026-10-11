@@ -32,7 +32,7 @@
       "source": "[JEngine, v2, §5]",
       "kind": "monotonicity",
       "status": "pending",
-      "reason": "Post-sieve (#12) it holds at most cells but not at all of them. FLOPs are flat 1->3 at L = 7 (425, 425, where the paper prints 424, 425), and max intermediates per batch are flat 6->9 at L = 10 (95, 95). test/test_plan_sieve.py::test_batching_post_sieve pins both exceptions and carries no mark. At L = 7 the 1-batch sieve leaves one FLOP more than the paper's; a seed-order search (#13/#14) may close it."
+      "reason": "Post-sieve (#12) it holds at most cells but not at all of them. FLOPs are flat 1->3 at L = 7 (425, 425, where the paper prints 424, 425), and max intermediates per batch are flat 6->9 at L = 10 (95, 95). test/test_plan_sieve.py::test_batching_post_sieve pins both exceptions and carries no mark. #108's widened seed-order search (58 rules, plan/recovery.py seed_orders(widened=True), recovered cut) closes the L = 7 FLOP exception under 37 of them (424 -> 425, as printed) but moves no default, so the literal plan stays flat there; it does not close L = 10's flat intermediates, which are 95, 95 under all 58 orders and are 95, 95 in the paper's own Table 2. And the paper's Table 2 RISES at L = 7 from 6 to 9 batches (39 -> 40), which the recovered cut reproduces under all 58. So the source's own numbers contradict the intermediates half of the claim at two steps; test/test_plan_recovery.py::test_the_batching_exceptions_under_the_widened_family pins all three. The claim stays unasserted: no test can hold us to a direction the source's table does not keep."
     },
     {
       "id": "jengine/eq17-1y-misprint",

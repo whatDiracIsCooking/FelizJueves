@@ -43,20 +43,37 @@ states it did not optimise or fix that order ([JEngine, v2, §4.1]). The
 bounded search over the structured family `seed_orders` is reproducible
 here; what it reached, and the StructuralLimit it ends in, are in
 data/literature/jengine/limits.json and test/test_plan_recovery.py.
+
+#108 WIDENED THAT FAMILY AND DECIDED THE DOCTRINE. `seed_orders(widened=True)`
+adds 32 rules, each with its rationale in `widened_seed_orders`; the best,
+'+max/-mid, ties reversed', reproduces 33/40 of Table 1 and 38/40 of Table
+2, not all. The decision: RULES ONLY -- a per-cell fitted order is not a
+recovered input (literature/rules.py, ExactGivenInputs), so Tables 1-2's
+exact_given_inputs are refused on literal.json, with the evidence in
+limits.json. The default family, and so plan/search.py's board, is unchanged.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from fractions import Fraction
+from functools import cache
 from itertools import permutations
+from types import MappingProxyType
 
 from felizjueves.literature.rules import Candidate
 from felizjueves.literature.tables import Cell, Table
-from felizjueves.plan.batching import ALL, AXES, Batch, target_counts
-from felizjueves.plan.cost import PlanCost, cost
-from felizjueves.plan.dag import BatchDag, batch_dag
-from felizjueves.plan.sieve import sieve
+from felizjueves.plan.batching import ALL, AXES, Batch, batch_direction, target_counts
+from felizjueves.plan.cost import PlanCost, cost, node_flops
+from felizjueves.plan.dag import (
+    BatchDag,
+    Node,
+    batch_dag,
+    is_fundamental,
+    mild_parents,
+)
+from felizjueves.plan.sieve import parents_along, sieve
 from felizjueves.plan.targets import R, hermite_targets
 from felizjueves.spec import is_batch_count
 
@@ -164,11 +181,16 @@ def recovered_candidates(tables: Mapping[str, Table]) -> dict[str, Candidate]:
 
 # -- the bounded seed-order search (Tables 1-2) ----------------------------------
 
-def seed_orders() -> Iterator[tuple[str, SeedOrder]]:
+def seed_orders(*, widened: bool = False) -> Iterator[tuple[str, SeedOrder]]:
     """The structured family searched: `hermite_targets` order and its
     reverse, and every sort by (|r| asc/desc, then the components in one of
     the 6 axis orders, all asc or all desc) -- 26 orders. Each value maps L to
-    an order of hermite_targets(L)."""
+    an order of hermite_targets(L).
+
+    `widened=True` (#108) yields those 26 first, unchanged and in the same
+    order, then `widened_seed_orders()`'s 32. The default is the 26 alone:
+    plan/search.py's searched board (#13) is pinned to exactly that family,
+    and widening the search here must not silently move that board."""
     yield "hermite", hermite_targets
     yield "hermite-reversed", lambda L: hermite_targets(L)[::-1]
     for perm in permutations(range(3)):
@@ -184,6 +206,130 @@ def seed_orders() -> Iterator[tuple[str, SeedOrder]]:
                         f"{''.join(AXES[p] for p in perm)} "
                         f"{'asc' if c_sign > 0 else 'desc'}")
                 yield name, order
+    if widened:
+        yield from widened_seed_orders()
+
+
+@dataclass(frozen=True)
+class _Features:
+    """What the widened rules sort a target r by, read off the ONE-batch MILD
+    DAG of its class before the sieve: properties of r and L, never of a
+    printed cell."""
+
+    cost: int  # FLOPs of r's whole MILD ancestor closure (fundamentals free)
+    out_degree: int  # children in the unsieved DAG, summed over r's parents
+    prunable: int  # how many of r's parents pass Alg. 3's test, unsieved
+
+
+def _mild_axis(node: Node) -> int:
+    """The axis MILD reduces a non-fundamental node along, read off its
+    first MILD parent (dag.mild_parents)."""
+    r, (r1, _) = node[0], mild_parents(node)[0]
+    return next(k for k, (c, c1) in enumerate(zip(r, r1, strict=True)) if c != c1)
+
+
+@cache
+def _features(total_am: int) -> Mapping[R, _Features]:
+    dag = batch_dag(total_am, (ALL, 0, total_am))
+    nodes = dag.nodes()
+    children: dict[Node, set[Node]] = {}
+    for n, ps in dag.parents.items():
+        for p in ps:
+            children.setdefault(p, set()).add(n)
+
+    def passes(p: Node) -> bool:
+        # Alg. 3 lines 11-13 on the unsieved DAG: every child of p re-expands
+        # along some other direction, out of nodes present, none of them p.
+        for j in children.get(p, ()):
+            here = _mild_axis(j)
+            if not any(
+                all(q in nodes and q != p for q in parents_along(j, a))
+                for a in range(3) if a != here and j[0][a]
+            ):
+                return False
+        return True
+
+    def closure_cost(t: Node) -> int:
+        seen: set[Node] = set()
+        stack, total = [t], 0
+        while stack:
+            n = stack.pop()
+            if n in seen or is_fundamental(n):
+                continue
+            seen.add(n)
+            total += node_flops(n[0][_mild_axis(n)])
+            stack.extend(mild_parents(n))
+        return total
+
+    out = {}
+    for r in hermite_targets(total_am):
+        ps = dag.parents.get((r, 0), ())
+        out[r] = _Features(
+            cost=closure_cost((r, 0)),
+            out_degree=sum(len(children.get(p, ())) for p in ps),
+            prunable=sum(passes(p) for p in ps),
+        )
+    return MappingProxyType(out)
+
+
+def _sorted_by(key: Callable[[R, int], tuple[int, ...]], ties: int) -> SeedOrder:
+    """hermite_targets(L) sorted by key(r, L); remaining ties by hermite
+    position (ties = 1) or by reversed hermite position (ties = -1)."""
+    def order(L: int) -> Sequence[R]:
+        h = hermite_targets(L)
+        pos = {r: i for i, r in enumerate(h)}
+        return sorted(h, key=lambda r: (*key(r, L), ties * pos[r]))
+    return order
+
+
+def widened_seed_orders() -> Iterator[tuple[str, SeedOrder]]:
+    """#108's widening: 32 more seed orders, each a RULE over r and L with a
+    stated reason a sieve author might seed that way. Every rule comes with
+    two tie-breaks, hermite position and reversed hermite position (the
+    original family's best Table 2 order was `hermite-reversed`), named by a
+    trailing ", ties hermite" / ", ties reversed".
+
+    - COST (asc, desc): by the FLOPs of r's whole MILD ancestor closure. The
+      sieve exists to cut FLOPs; seeding the most expensive targets first
+      tests their parents before cheaper targets' walks reach them.
+    - OUT-DEGREE (asc, desc): by how many children r's MILD parents have in
+      the unsieved DAG. A parent with few children is the cheap one to
+      delete (fewer children to re-expand); a widely shared one is the one a
+      breadth-first walk meets anyway.
+    - SIEVE-GREEDY (prunable desc, asc): by how many of r's MILD parents
+      already pass Alg. 3's re-expansion test on the unsieved DAG -- a
+      one-shot greedy that seeds the deletions it can already see first.
+    - DIRECTION-MAJOR (6 axis orders): grouped by `batch_direction`, the
+      direction the partition assigns r to; a generator that enumerates
+      targets the way it batches them seeds this way. Only a one-batch cell
+      can feel the grouping (a split batch already holds one direction).
+    - MAX/MID (4 signs): by the largest component, then the middle one, each
+      ascending (+) or descending (-). `+max/-mid` is the predecessor tree's
+      own base rule; its per-cell transpositions do not transfer (a
+      different cut recovery, a different family) and are not used here.
+    """
+    signs = ((1, "asc"), (-1, "desc"))
+    for ties, tname in ((1, "ties hermite"), (-1, "ties reversed")):
+        for s, sname in signs:
+            yield (f"cost {sname}, {tname}",
+                   _sorted_by(lambda r, L, s=s: (s * _features(L)[r].cost,), ties))
+        for s, sname in signs:
+            yield (f"out-degree {sname}, {tname}",
+                   _sorted_by(lambda r, L, s=s: (s * _features(L)[r].out_degree,),
+                              ties))
+        for s, sname in ((-1, "desc"), (1, "asc")):
+            yield (f"prunable {sname}, {tname}",
+                   _sorted_by(lambda r, L, s=s: (s * _features(L)[r].prunable,),
+                              ties))
+        for perm in permutations(range(3)):
+            rank = {AXES[p]: i for i, p in enumerate(perm)}
+            yield (f"direction-major {''.join(AXES[p] for p in perm)}, {tname}",
+                   _sorted_by(lambda r, L, rank=rank:
+                              (rank[batch_direction(r)] if any(r) else -1,), ties))
+        for a, b in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+            yield (f"{'+' if a > 0 else '-'}max/{'+' if b > 0 else '-'}mid, {tname}",
+                   _sorted_by(lambda r, L, a=a, b=b: (a * max(r), b * sorted(r)[1]),
+                              ties))
 
 
 def exact_counts(

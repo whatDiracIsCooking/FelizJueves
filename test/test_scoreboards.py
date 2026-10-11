@@ -3,7 +3,8 @@
 Every literal Agreement threshold is set, each to what the plan layer
 measured: Table 3 from the batch partition, Tables 1 and 2 from the sieved
 plan. Table 3's exact_given_inputs records the recovered cut (#14); Tables
-1 and 2's stay null, with a StructuralLimit each in limits.json."""
+1 and 2's are refused under the rules-only doctrine (#108), each refusal
+naming the StructuralLimit in limits.json that holds the evidence."""
 
 from __future__ import annotations
 
@@ -59,16 +60,34 @@ def test_every_agreement_is_set_and_only_table3_records_inputs() -> None:
     # written, and their floors and ceilings are what that measured; Table 3's
     # are the batch partition's. From here a floor only rises and a ceiling
     # only falls (Agreement.tightened). #14 recorded Table 3's inputs (the
-    # cut, plan/recovery.py); Tables 1 and 2 have none, and a limit each.
+    # cut, plan/recovery.py); Tables 1 and 2 have none, and #108 refused them
+    # under the rules-only doctrine: no slot is left null and silent.
     for tid, rules in _board("literal").rules.items():
         for rule in rules:
             if isinstance(rule, Agreement):
                 assert rule.floor_exact is not None
                 assert rule.ceiling_worst_rel_dev is not None
             elif tid == "jengine/table3":
-                assert rule.inputs is not None
+                assert rule.inputs is not None and rule.refused is None
             else:
                 assert rule.inputs is None
+                assert rule.refused is not None
+                assert "rules only" in rule.refused
+                assert "limits.json" in rule.refused
+
+
+def test_the_refusals_score_unset_with_their_reason() -> None:
+    # #108: a refusal is not a pass. The printed values themselves -- every
+    # cell exact -- still score UNSET on Tables 1-2, carrying the refusal.
+    refusals = [
+        v for v in score(_board("literal"), TABLES, _as_printed("literal"))
+        if v.rule == "exact_given_inputs" and v.table != "jengine/table3"
+    ]
+    assert len(refusals) == 2
+    for v in refusals:
+        assert v.status is Status.UNSET
+        assert v.reason.startswith("refused")
+        assert "rules only" in v.measured["refused"]
 
 
 def test_the_printed_tables_score_as_unset_and_at_or_under() -> None:
@@ -274,7 +293,8 @@ def test_tables_are_read_only() -> None:
 
 def test_limits_record_tables_1_and_2() -> None:
     # #14: the sieve's seed order is not recovered for Tables 1-2, so each
-    # carries a StructuralLimit (test_plan_recovery.py checks its cells);
+    # carries a StructuralLimit (test_plan_recovery.py checks its cells, and
+    # #108's widened family and doctrine);
     # #13: the searched board's residual at_or_under cells carry one more.
     limits = load_limits(JENGINE / "limits.json")
     assert [
