@@ -153,8 +153,9 @@ RULES: dict[str, Rule] = {
              "the kernel the tests built"),
     "analysis": _rule(
         "model against measurement: kernelrank.py ranks lower.KernelCost "
-        "against the Measured rows (#54). It reads both sides and feeds "
-        "neither",
+        "against the Measured rows (#54), and batchreport.py derives a "
+        "recommended n_batches from their wall-clock alone (#56; its EDGES "
+        "hold it off `lower`). It reads both sides and feeds neither",
         ("spec", "device", "kernel", "lower", "measured"),
         plan="a model-vs-measurement result must never reach the "
              "calibrated instrument the literature floors are measured with",
@@ -201,6 +202,7 @@ RULE_OF: dict[str, str] = {
     "emit.__main__": "driver",
     "measured": "driver",
     "kernelrank": "analysis",
+    "batchreport": "analysis",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -249,6 +251,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "lower",
                  "spec"),
     "kernelrank": ("device", "kernel", "lower", "measured", "spec"),
+    "batchreport": ("device", "measured"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.

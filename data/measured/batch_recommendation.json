@@ -1,0 +1,658 @@
+{
+ "schema": 1,
+ "about": "A recommended n_batches per (L, arch) of measured.SUBGRID, derived from wall-clock ONLY (felizjueves.batchreport, #56), on each of the sweep's two inputs. Evidence for a future dispatch layer, NOT a policy: Spec.n_batches still defaults to 1. Not a reproduction of [JEngine, v2, §7]'s bolded counts (their A100). Recomputed from data/measured/kernels.json by test/test_batchreport.py.",
+ "header": {
+  "derived_from": "data/measured/kernels.json, the measured.SUBGRID rows (levers=(), the literal kernel; lever rows such as .../recycle@... are not read) and their wall-clock fields only (runtime_ns, spread_ns, repeats, raw wallclock:near:*)",
+  "subgrid": {
+   "L": [
+    7,
+    10,
+    13,
+    16
+   ],
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ]
+  },
+  "dropped_cells": [],
+  "inputs": {
+   "wide": "runtime_ns / spread_ns: the sweep's wide-T input (T up to ~430, the Boys series long)",
+   "near": "raw wallclock:near:median_ns and q3 - q1: the near-T input (T < ~2, the Boys series short)"
+  },
+  "rule": "best = lowest median; resolved iff runner-up median - best median > max(IQR of the two) (#60's test); within_spread = every n_batches whose median exceeds best's by at most max(IQR of best, IQR of it).",
+  "protocol": "test/test_kernel_device.py's opt-in wall-clock sweep: host steady_clock over a cell's whole batched launch sequence into one zeroed J, then one synchronize; 5 warm-up + 31 timed sequences per input; n_bra x n_ket = 2048 x 128, no screening; the timed binary is the one checked against reference/ first.",
+  "sessions": {
+   "1": "#53",
+   "3": "#53",
+   "6": "#53",
+   "9": "#53",
+   "12": "#60"
+  },
+  "cross_session": "b 12 was timed by #60, the rest by #53. #60 re-timed b 9 beside b 12 (not stored) and found drift of up to 1.7% (10% on one noisy cell); a same_session=false margin is weaker evidence.",
+  "provenance": {
+   "sm_86": {
+    "host": "ddbbc02dbb08 (container)",
+    "gpu": "NVIDIA GeForce RTX 3080",
+    "toolchain": "nvcc 13.0",
+    "date": "2026-10-11"
+   },
+   "gfx1200": {
+    "host": "ddbbc02dbb08 (container)",
+    "gpu": "AMD Radeon Graphics (device 0x7590, gfx1200)",
+    "toolchain": "hipcc / ROCm 7.2.4",
+    "date": "2026-10-11"
+   }
+  },
+  "compare": "Within one arch, across n_batches only. Absolute times are not comparable across vendors (gfx1200 rate-limits fp64).",
+  "not_policy": "Spec.n_batches defaults to 1 and this does not change it: choosing a count per class is dispatch, which has no home in this repo yet.",
+  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.batchreport --write"
+ },
+ "cells": [
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "agree": true,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 24120581,
+    "iqr_ns": 500188,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 40370287,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      24120581,
+      500188
+     ],
+     "3": [
+      64490868,
+      874119
+     ],
+     "6": [
+      116289865,
+      1812078
+     ],
+     "9": [
+      136142399,
+      1432303
+     ],
+     "12": [
+      196714251,
+      1130188
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 1,
+    "median_ns": 3682227,
+    "iqr_ns": 17255,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 2530051,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      3682227,
+      17255
+     ],
+     "3": [
+      6212278,
+      33615
+     ],
+     "6": [
+      10063629,
+      51661
+     ],
+     "9": [
+      11717135,
+      55700
+     ],
+     "12": [
+      15850452,
+      103851
+     ]
+    }
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "agree": true,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 37015154,
+    "iqr_ns": 658960,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 55785450,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      37015154,
+      658960
+     ],
+     "3": [
+      92800604,
+      1275115
+     ],
+     "6": [
+      160819696,
+      1225340
+     ],
+     "9": [
+      224803045,
+      2293166
+     ],
+     "12": [
+      267396774,
+      2540534
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 1,
+    "median_ns": 8486164,
+    "iqr_ns": 96462,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 3850210,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      8486164,
+      96462
+     ],
+     "3": [
+      12336374,
+      134497
+     ],
+     "6": [
+      17230772,
+      2291481
+     ],
+     "9": [
+      21703333,
+      72916
+     ],
+     "12": [
+      24843791,
+      55271
+     ]
+    }
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "agree": false,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 66983346,
+    "iqr_ns": 380890,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 81773339,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      66983346,
+      380890
+     ],
+     "3": [
+      148756685,
+      1671417
+     ],
+     "6": [
+      233343428,
+      1972026
+     ],
+     "9": [
+      339142885,
+      2234816
+     ],
+     "12": [
+      401031954,
+      2147048
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 3,
+    "median_ns": 29317232,
+    "iqr_ns": 157282,
+    "repeats": 31,
+    "runner_up": 1,
+    "margin_ns": 2923806,
+    "resolved": true,
+    "within_spread": [
+     3
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      32241038,
+      139863
+     ],
+     "3": [
+      29317232,
+      157282
+     ],
+     "6": [
+      33722331,
+      54746
+     ],
+     "9": [
+      40685162,
+      93576
+     ],
+     "12": [
+      45521717,
+      80897
+     ]
+    }
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "agree": false,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 157270999,
+    "iqr_ns": 1703012,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 133313409,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      157270999,
+      1703012
+     ],
+     "3": [
+      290584408,
+      1923340
+     ],
+     "6": [
+      463119164,
+      1892470
+     ],
+     "9": [
+      578746192,
+      2501250
+     ],
+     "12": [
+      684591406,
+      4873087
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 9,
+    "median_ns": 99386875,
+    "iqr_ns": 126552,
+    "repeats": 31,
+    "runner_up": 12,
+    "margin_ns": 2733691,
+    "resolved": true,
+    "within_spread": [
+     9
+    ],
+    "same_session": false,
+    "all": {
+     "1": [
+      123117241,
+      1598095
+     ],
+     "3": [
+      116865552,
+      1784752
+     ],
+     "6": [
+      108433688,
+      1128313
+     ],
+     "9": [
+      99386875,
+      126552
+     ],
+     "12": [
+      102120566,
+      263115
+     ]
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "agree": true,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 34895022,
+    "iqr_ns": 983205,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 53710703,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      34895022,
+      983205
+     ],
+     "3": [
+      88605725,
+      4332827
+     ],
+     "6": [
+      150135733,
+      2091230
+     ],
+     "9": [
+      174250755,
+      1938058
+     ],
+     "12": [
+      256541628,
+      2197098
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 1,
+    "median_ns": 4485325,
+    "iqr_ns": 68871,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 4191959,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      4485325,
+      68871
+     ],
+     "3": [
+      8677284,
+      116721
+     ],
+     "6": [
+      13352583,
+      125118
+     ],
+     "9": [
+      15052357,
+      125362
+     ],
+     "12": [
+      21474850,
+      221314
+     ]
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "agree": false,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 52338316,
+    "iqr_ns": 1222412,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 76070321,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      52338316,
+      1222412
+     ],
+     "3": [
+      128408637,
+      1725854
+     ],
+     "6": [
+      220759046,
+      2655389
+     ],
+     "9": [
+      299908370,
+      2131318
+     ],
+     "12": [
+      360778434,
+      3286056
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 3,
+    "median_ns": 17928019,
+    "iqr_ns": 145717,
+    "repeats": 31,
+    "runner_up": 1,
+    "margin_ns": 104091,
+    "resolved": false,
+    "within_spread": [
+     1,
+     3
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      18032110,
+      63771
+     ],
+     "3": [
+      17928019,
+      145717
+     ],
+     "6": [
+      24216591,
+      160412
+     ],
+     "9": [
+      29629150,
+      257633
+     ],
+     "12": [
+      34390129,
+      362936
+     ]
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "agree": false,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 150058710,
+    "iqr_ns": 780896,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 110607905,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      150058710,
+      780896
+     ],
+     "3": [
+      260666615,
+      1476795
+     ],
+     "6": [
+      379634997,
+      1352322
+     ],
+     "9": [
+      538247195,
+      2255122
+     ],
+     "12": [
+      616033276,
+      2461682
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 3,
+    "median_ns": 80159775,
+    "iqr_ns": 378046,
+    "repeats": 31,
+    "runner_up": 6,
+    "margin_ns": 44543,
+    "resolved": false,
+    "within_spread": [
+     3,
+     6
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      97507126,
+      393126
+     ],
+     "3": [
+      80159775,
+      378046
+     ],
+     "6": [
+      80204318,
+      255834
+     ],
+     "9": [
+      93056758,
+      330365
+     ],
+     "12": [
+      95940198,
+      206648
+     ]
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "agree": false,
+   "wide": {
+    "n_batches": 1,
+    "median_ns": 531570168,
+    "iqr_ns": 1550878,
+    "repeats": 31,
+    "runner_up": 3,
+    "margin_ns": 50445848,
+    "resolved": true,
+    "within_spread": [
+     1
+    ],
+    "same_session": true,
+    "all": {
+     "1": [
+      531570168,
+      1550878
+     ],
+     "3": [
+      582016016,
+      1355116
+     ],
+     "6": [
+      812146731,
+      2006126
+     ],
+     "9": [
+      980233786,
+      2355998
+     ],
+     "12": [
+      1141594867,
+      3093068
+     ]
+    }
+   },
+   "near": {
+    "n_batches": 12,
+    "median_ns": 299697176,
+    "iqr_ns": 334601,
+    "repeats": 31,
+    "runner_up": 9,
+    "margin_ns": 2820782,
+    "resolved": true,
+    "within_spread": [
+     12
+    ],
+    "same_session": false,
+    "all": {
+     "1": [
+      457602756,
+      1062626
+     ],
+     "3": [
+      307978306,
+      684221
+     ],
+     "6": [
+      309723928,
+      564280
+     ],
+     "9": [
+      302517958,
+      1294104
+     ],
+     "12": [
+      299697176,
+      334601
+     ]
+    }
+   }
+  }
+ ]
+}

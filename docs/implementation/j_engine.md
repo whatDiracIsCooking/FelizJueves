@@ -6,7 +6,7 @@ the generator must satisfy — our notation, our vocabulary, our batching config
 it is now code (see CLAUDE.md, "The state of the tree"); the code is read
 against this file, not the other way round.
 
-**Implemented: pipeline steps 1–5, for one batch.**
+**Implemented: pipeline steps 1–5, for one batch and for a split class.**
 
 - *Step 1, the split.* Target enumeration is `src/felizjueves/plan/targets.py`;
   `batch_direction`, `in_batch` and the sub-batch partition are
@@ -22,15 +22,25 @@ against this file, not the other way round.
   built from it as IR by `src/felizjueves/recurrence.py`.
 - *Step 5, the kernel*, is `build_pq_kernel` in `src/felizjueves/kernel.py` —
   the `[p|q]` contract below, `J_p = Σ_q [p|q] D_q` — spelled for each vendor
-  by `emit/cuda.py` and `emit/hip.py`, **for `n_batches = 1` only, with a plain
-  (non-atomic) write-back**. A split class is refused.
+  by `emit/cuda.py` and `emit/hip.py`, for `n_batches = 1` with a plain
+  (non-atomic) write-back; `build_pq_kernel` refuses a split class.
+- *A split class* (`n_batches > 1`) is `build_pq_kernels(spec)`: one kernel
+  per batch of the plan, each contracting only its batch's targets and writing
+  `J_p` by atomic add (`passes.atomize`, `[JEngine, v2, §5]`), launched one
+  after another into one zeroed `J`. Interpreted against `reference/` over
+  every cell the plan admits for L = 0..16 × {1, 3, 6, 9}
+  (`test/test_kernel_batched.py`); golden text for L = 4, `n_batches = 3`
+  (`test/test_emit_batched.py`); run on both cards for every split cell of
+  `measured.SUBGRID` (see "Measured" below). `python -m felizjueves.emit`
+  (the kernel tier's `KERNEL_GEN_CMD`) still writes one-batch kernels only.
 
-**Still specification:** the split class's atomic write-back and per-batch
-launches (`[JEngine, v2, §5]`, "Batching" below — the plan layer computes the
-split, but no kernel is generated from it), the bra-side `E` transform
-`J_ab = Σ_p E_p^{ab} J_p`, and the `J_ab` scatter (pre- and post-contraction,
-deferred to `[Fock]`). A count this file states is a claim about the code only
-where a test or a scored board checks it.
+**Still specification:** the bra-side `E` transform
+`J_ab = Σ_p E_p^{ab} J_p`, the `J_ab` scatter (pre- and post-contraction,
+deferred to `[Fock]`), and **dispatch** — choosing `n_batches` per class at
+generation time. `Spec.n_batches` defaults to 1; the measured recommendation
+below is evidence for dispatch, not a policy the generator follows. A count
+this file states is a claim about the code only where a test or a scored board
+checks it.
 
 The tree-search half (reduction directions, and the sieve that prunes them) is
 [`mild.md`](mild.md). This file covers everything around it: the recurrences,
@@ -282,6 +292,124 @@ Two consequences, both real costs:
   batch count.
 - `[JEngine, v2, §7]` reports that **at most 9 batches suffices for `L ≤ 16`**,
   and presents 1, 3, 6 and 9 — which is the range we should generate over.
+  On our cards, under a definition declared before the data (`measured.py`,
+  NINE AGAINST TWELVE), 9 does **not** suffice on either: 12 spills less on
+  `sm_86` at L 13 and 16, and is faster on near-T on `gfx1200` at L 16
+  (`jengine/nine-batches-suffice` in `data/literature/jengine/claims.json`,
+  UNVERIFIABLE against their A100). So the measured subgrid runs to 12.
+- **The default is one batch.** `Spec.n_batches` defaults to 1, and the
+  measured recommendation below does not change that.
+
+### Measured: a recommended batch count per `(L, arch)`
+
+`[JEngine, v2, §7]` and the captions of Tables 1–3 bold the batch count that
+minimised runtime on their A100 at each `L`. This is the **same kind of
+statement about our cards** — and only that. It is not a reproduction of their
+bolded choice: their kernels, compiler and card are not ours, and their bold
+cells are deliberately not transcribed
+(`data/literature/jengine/README.md`).
+
+**Where it was measured.** One host, `ddbbc02dbb08 (container)` — a dev
+container on this box carrying both device toolchains — with two cards:
+
+- NVIDIA GeForce RTX 3080, `sm_86`, `nvcc 13.0`;
+- AMD Radeon RX 9060 XT (`AMD Radeon Graphics (device 0x7590, gfx1200)`),
+  `gfx1200`, `hipcc / ROCm 7.2.4`;
+
+with `devtools/config.sh`'s `NVCC_FLAGS` / `HIPCC_FLAGS` (no fast-math), on
+2026-10-11.
+
+**What was measured.** `measured.SUBGRID`: `L ∈ {7, 10, 13, 16}` ×
+`n_batches ∈ {1, 3, 6, 9, 12}`, the default split `pq_spec(L, n_batches)`,
+every cell on both arches — **no cell dropped** for compile cost. A cell's
+number is the host wall-clock of its whole launch sequence (every
+`build_pq_kernels` batch into one zeroed `J`, then one synchronize), 5 warm-up
+and **31 timed** sequences, `n_bra × n_ket = 2048 × 128`, no screening, run
+alone on an uncontended box by `test/test_kernel_device.py`'s opt-in sweep —
+and the timed binary is the one first checked against `reference/`. Two
+sweeps: #53 timed `n_batches` 1, 3, 6, 9 (PR #75); #60 timed 12 (PR #77).
+**Two inputs**, both with that protocol: *wide-T* (`T` up to ~430, a long
+Boys series; the row's `runtime_ns`) and *near-T* (`T < ~2`; the row's raw
+`wallclock:near:*`). Only the ranking over `n_batches` **within one arch** is a
+claim; absolute times are not comparable across vendors (`gfx1200`
+rate-limits fp64).
+
+**The rule, from wall-clock only** — not spills, not registers, not
+`KernelCost`: per `(arch, L, input)`, the lowest median wins. It is
+*resolved* iff the runner-up's median exceeds it by more than the larger of
+the two IQRs (#60's test of "faster"); *within spread* lists every count whose
+median is within that distance of the best; *same sweep* says whether best and
+runner-up came from one sweep — #60 measured cross-sweep drift of up to 1.7%
+(10% on one noisy cell), IQR-scale, so a cross-sweep margin is weaker
+evidence.
+
+The data is `data/measured/batch_recommendation.json`, written by
+`PYTHONPATH=src uv run python -m felizjueves.batchreport --write` from
+`data/measured/kernels.json`; the tables below are its `--markdown`, and
+`test/test_batchreport.py` recomputes both from the store and fails if either
+has moved.
+
+*wide-T input:*
+
+| arch | L | best `n_batches` | median ms | IQR ms | repeats | runner-up (+ms) | resolved | within spread | same sweep |
+|---|---|---|---|---|---|---|---|---|---|
+| sm_86 | 7 | **1** | 24.121 | 0.500 | 31 | 3 (+40.370) | yes | 1 | yes |
+| sm_86 | 10 | **1** | 37.015 | 0.659 | 31 | 3 (+55.785) | yes | 1 | yes |
+| sm_86 | 13 | **1** | 66.983 | 0.381 | 31 | 3 (+81.773) | yes | 1 | yes |
+| sm_86 | 16 | **1** | 157.271 | 1.703 | 31 | 3 (+133.313) | yes | 1 | yes |
+| gfx1200 | 7 | **1** | 34.895 | 0.983 | 31 | 3 (+53.711) | yes | 1 | yes |
+| gfx1200 | 10 | **1** | 52.338 | 1.222 | 31 | 3 (+76.070) | yes | 1 | yes |
+| gfx1200 | 13 | **1** | 150.059 | 0.781 | 31 | 3 (+110.608) | yes | 1 | yes |
+| gfx1200 | 16 | **1** | 531.570 | 1.551 | 31 | 3 (+50.446) | yes | 1 | yes |
+
+*near-T input:*
+
+| arch | L | best `n_batches` | median ms | IQR ms | repeats | runner-up (+ms) | resolved | within spread | same sweep |
+|---|---|---|---|---|---|---|---|---|---|
+| sm_86 | 7 | **1** | 3.682 | 0.017 | 31 | 3 (+2.530) | yes | 1 | yes |
+| sm_86 | 10 | **1** | 8.486 | 0.096 | 31 | 3 (+3.850) | yes | 1 | yes |
+| sm_86 | 13 | **3** | 29.317 | 0.157 | 31 | 1 (+2.924) | yes | 3 | yes |
+| sm_86 | 16 | **9** | 99.387 | 0.127 | 31 | 12 (+2.734) | yes | 9 | no |
+| gfx1200 | 7 | **1** | 4.485 | 0.069 | 31 | 3 (+4.192) | yes | 1 | yes |
+| gfx1200 | 10 | **3** | 17.928 | 0.146 | 31 | 1 (+0.104) | no | 1, 3 | yes |
+| gfx1200 | 13 | **3** | 80.160 | 0.378 | 31 | 6 (+0.045) | no | 3, 6 | yes |
+| gfx1200 | 16 | **12** | 299.697 | 0.335 | 31 | 9 (+2.821) | yes | 12 | no |
+
+What it says:
+
+- **The answer depends on the input.** On wide-T, one batch wins at every
+  `L` on both cards, by margins far beyond the spread: each batch recomputes
+  its fundamentals ("Why the maximum direction is the right split"), and with
+  a long Boys series that duplicated work outweighs anything splitting saves.
+  On near-T, splitting wins from `L = 13`. "The batch count with the best
+  median" is therefore not one number per `(L, arch)`, and a dispatch layer
+  will need to know which regime of `T` it is serving.
+- **The arches disagree.** On near-T at `L = 16`, `sm_86` is fastest at 9 and
+  `gfx1200` at 12; at `L = 10`, `gfx1200` already prefers 3 (unresolved
+  against 1) where `sm_86` keeps 1. That is the reason dispatch will have to be
+  per target — not a disagreement to average away.
+- **Two near-T cells are unresolved**: `gfx1200` at `L = 10` (3 vs 1, +0.104
+  ms against a 0.146 ms IQR) and `L = 13` (3 vs 6, +0.045 ms against 0.378
+  ms). Their recommendation is "either of the *within spread* counts".
+- **Two near-T winners cross sweeps.** `gfx1200` `L = 16`: 12 (timed by #60)
+  over 9 (timed by #53). #60 re-timed 9 beside 12 as a drift check, not stored:
+  303.82 against 299.70 ms, IQR 0.67 ms — the same order. Within #53's sweep
+  alone the best is 9, +5.46 ms ahead of 3. `sm_86` `L = 16`: 9 (#53) over 12
+  (#60) by 2.73 ms; within #53's sweep, 9 leads 6 by 9.05 ms.
+- **Outside the subgrid** (`L ∉ {7, 10, 13, 16}`) nothing is timed, so there is
+  no recommendation there.
+- **Literal kernels only.** The table reads the `levers = ()` rows. The one
+  measured lever, `recycle` (#55), changes nothing it could rank: nvcc 13.0
+  and hipcc / ROCm 7.2.4 emit identical machine code for both arms at every
+  subgrid cell, and the A/B reads `sm_86` 20/20 neutral and `gfx1200` 16/20
+  neutral (4 read as slower on that identical code, the protocol's noise
+  floor). It stays opt-in.
+
+**This does not change `Spec`'s default.** `n_batches` defaults to 1 and stays
+there (`test/test_batchreport.py` holds it). Choosing a count per class at
+generation time is **dispatch**, which has no home in this repo yet; this table
+is evidence for that future layer, not a policy the generator silently
+follows.
 
 ## The pipeline
 
