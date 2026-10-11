@@ -237,6 +237,7 @@ def ties_to_predecessor(r) -> str:
 
 
 @pytest.mark.claim("jengine/mild-vs-exact-tradeoff")
+@pytest.mark.claim("jengine/mild-suboptimal-from-l5")  # equal to L = 4, behind at 5
 def test_mild_against_the_exact_optimum() -> None:
     # Recomputed, not read back: every L the exact search reaches, MILD's gap
     # on each axis against the stated reference point, pinned to the record,

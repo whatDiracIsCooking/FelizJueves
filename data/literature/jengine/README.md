@@ -11,6 +11,34 @@ PDF is not tracked.
 | `table2.json` | 2 | maximum intermediates `[r](m)`, m > 0, per batch |
 | `table3.json` | 3 | maximum targets `[r](0)` per batch |
 | `limits.json` | — | what a model will structurally not predict (empty) |
+| `claims.json` | — | the non-numeric claims, one record each, with status |
+| `coverage.json` | — | the reading `claims.json` is the inventory of, unit by unit |
+
+## The claims inventory, and how it stays closed
+
+`claims.json` holds what `[JEngine, v2]` asserts **without** a number: a
+tie-break, a worked example, a split's shape, a direction of change, a defect
+in the text. Each record is `asserted` by a named `claim`-marked test, or
+`pending` / `unverifiable` with its reason (`felizjueves.literature.claims`).
+The counts by status live in the file and nowhere else; recompute them rather
+than quoting them.
+
+`coverage.json` records the reading (#120): every unit of the paper — the
+abstract, each numbered section and subsection, each algorithm and each figure
+caption — with exactly the records whose `source` cites it, and a note saying
+what else the unit asserts and why that is not a record (content implemented
+and tested elsewhere, a claim about a cited work, a number, the experiment's
+conditions). An `eq. N` in a `source` resolves to the section holding it.
+`test/test_claims.py` holds the two files against each other in both
+directions and pins the unit list to the paper's structure, so:
+
+- **a new record** must cite a unit by its `source`, and that unit's `claims`
+  must gain its id, in the same change;
+- **a new reading** of a unit that finds a claim must add the record, or say
+  in the unit's note why it is not one.
+
+Tables are not units, and a record may not cite one: Tables 1–3 are the
+scoreboards, and a cell is never duplicated as a claim.
 
 ## Table 4 is deliberately absent
 
