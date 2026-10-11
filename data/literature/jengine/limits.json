@@ -1,5 +1,28 @@
 {
   "schema": 1,
-  "about": "What a model of [JEngine] will structurally be unable to predict, one record each: claim, mechanism, evidence, asserted_value, source. See felizjueves.literature.limits. Empty until the first such finding.",
-  "limits": []
+  "about": "What a model of [JEngine] will structurally be unable to predict, one record each: claim, mechanism, evidence, asserted_value, source. See felizjueves.literature.limits.",
+  "limits": [
+    {
+      "claim": "exact_given_inputs on jengine/table1 (FLOPs): no recovered set of inputs reproduces all 40 printed cells. The cut IS recovered (plan/recovery.py, two-ended nearest fill per direction, which also gives all 40 of Table 3); the sieve's inputs are not.",
+      "mechanism": "Table 1 is post-sieve, and the sieve's output depends on its seed order: an order of a batch's targets, up to 969! of them at L = 16, one batch. [JEngine, v2, §4.1] says the order moves FLOPs and node count by up to ~2%, and that the authors did not optimise it; they do not state the order they used. So the order is an unpublished input with no rule to recover it from, and the printed cells sit inside its spread. Also unpublished, and searched below: which other direction a re-parented child takes, how far the upward sweep deletes, and whether the walk is breadth- or depth-first.",
+      "evidence": "Every search below uses the recovered cut and the counting conventions #10 fixed (1/2/3 FLOPs per node by r_d; fundamentals with m > 0 are intermediates). (1) The literal sieve seeded in hermite_targets order: 9/40 exact, (7,3) (7,6) (7,9) (8,6) (8,9) (9,6) (9,9) (10,9) (11,9). (2) The literal sieve over plan/recovery.py's 26 structured seed orders (hermite_targets and its reverse; |r| ascending or descending, then the components in each of the 6 axis orders, all ascending or all descending): best 17/40 ('|r| asc, then xzy desc'). (3) A scratch variant of the sieve, not kept in the repo, over those 26 orders x 7 re-expansion choices (smallest r_d', largest r_d', xyz, zyx, smallest r_d' ties to z, cyclic successor, cyclic predecessor) x 2 sweeps (every orphaned node, or only i and its parents upward) x breadth- or depth-first x [r-1d] or [r-2d] enqueued first: 1456 configurations, best 17/40 Table 1 together with 29/40 Table 2. (4) Random seed orders, each sieved twice (smallest- and largest-r_d' re-expansion): 6000 runs (3000 orders) at (7,1) and at (8,1) reach the printed pair in 3578 and 460 of them, so those cells ARE seed-order effects; 600 runs (300 orders) at (16,1) never reach it (best FLOPs 5666 against the printed 5633; the hermite order gives 5644), so the paper's order there is in the tail, and no rule this search knows names it. Bounded at that point on purpose: the remaining space is the factorial order space itself, and searching it for each cell would be a per-cell fit.",
+      "asserted_value": {
+        "table": "jengine/table1",
+        "unreproduced_cells": [[7, 1], [8, 1], [8, 3], [9, 1], [9, 3], [10, 1], [10, 3], [10, 6], [11, 1], [11, 3], [11, 6], [12, 1], [12, 3], [12, 6], [12, 9], [13, 1], [13, 3], [13, 6], [13, 9], [14, 1], [14, 3], [14, 6], [14, 9], [15, 1], [15, 3], [15, 6], [15, 9], [16, 1], [16, 3], [16, 6], [16, 9]],
+        "printed_values_stand": "the 31 cells above, under the recovered cut and the literal sieve seeded in hermite_targets order; their printed values are taken from the table as published"
+      },
+      "source": "[JEngine, v2, Table 1; §4.1; Alg. 3]"
+    },
+    {
+      "claim": "exact_given_inputs on jengine/table2 (max intermediates per batch): no recovered set of inputs reproduces all 40 printed cells. The cut IS recovered (plan/recovery.py); the sieve's inputs are not.",
+      "mechanism": "Table 2 is post-sieve, as Table 1 is, and the intermediates the sieve deletes depend on the same unpublished seed order ([JEngine, v2, §4.1]: up to ~2%, not optimised, not stated). The record for jengine/table1 gives the full argument; the search was one search scoring both tables.",
+      "evidence": "Same search as jengine/table1's record. (1) Literal sieve, hermite_targets seed: 17/40 exact, (7,3) (7,6) (7,9) (8,6) (8,9) (9,6) (9,9) (10,6) (10,9) (11,6) (11,9) (12,6) (12,9) (13,9) (14,9) (15,3) (15,9). (2) Best of the 26 structured seed orders with the literal sieve: 29/40 ('hermite-reversed'; '|r| asc, then xzy desc' gives 28). (3) Best of the 1456 scratch-variant configurations: 29/40. (4) Random seed orders: the printed (7,1) and (8,1) cells are reached; the printed (16,1) cell is not in 600 runs (range 1633-1666 against the printed 1647, together with FLOPs never at 5633).",
+      "asserted_value": {
+        "table": "jengine/table2",
+        "unreproduced_cells": [[7, 1], [8, 1], [8, 3], [9, 1], [9, 3], [10, 1], [10, 3], [11, 1], [11, 3], [12, 1], [12, 3], [13, 1], [13, 3], [13, 6], [14, 1], [14, 3], [14, 6], [15, 1], [15, 6], [16, 1], [16, 3], [16, 6], [16, 9]],
+        "printed_values_stand": "the 23 cells above, under the recovered cut and the literal sieve seeded in hermite_targets order; their printed values are taken from the table as published"
+      },
+      "source": "[JEngine, v2, Table 2; §4.1; Alg. 3]"
+    }
+  ]
 }

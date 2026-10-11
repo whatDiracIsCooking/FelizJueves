@@ -243,8 +243,13 @@ def test_tables_are_read_only() -> None:
         TABLES["jengine/table1"].cells[(7, 1)] = 0  # type: ignore[index]
 
 
-def test_limits_record_exists_and_is_empty() -> None:
-    assert load_limits(JENGINE / "limits.json") == ()
+def test_limits_record_tables_1_and_2() -> None:
+    # #14: the sieve's seed order is not recovered for Tables 1-2, so each
+    # carries a StructuralLimit (test_plan_recovery.py checks its cells).
+    limits = load_limits(JENGINE / "limits.json")
+    assert [lim.asserted_value["table"] for lim in limits] == [
+        "jengine/table1", "jengine/table2",
+    ]
 
 
 def test_a_limit_record_needs_every_field() -> None:
