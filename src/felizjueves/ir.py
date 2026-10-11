@@ -450,12 +450,21 @@ class Param:
     """A kernel argument: a scalar, or (when `array`) a global array.
 
     An OUT parameter is an array; there are no pointers, only names to index.
+
+    `shape` is an array's extents, row-major, when it has more than one
+    subscript (`()` leaves a 1-D array's length to the caller). It is an IR
+    fact because a backend lays a global array out flat and needs the
+    trailing extents to linearise `P[bra, d]` (the interpreter, which is
+    handed ndarrays, does not yet check them against it). Extents are
+    evaluated at launch, so they may use only I32 literals, scalar `Param`s
+    and ADD SUB MUL DIV.
     """
 
     name: str
     type: Scalar
     array: bool = False
     intent: Intent = Intent.IN
+    shape: tuple[Expr, ...] = ()
 
     def __post_init__(self) -> None:
         _ident(self.name, "Param name")
@@ -465,6 +474,11 @@ class Param:
             raise ValueError(f"Param intent {self.intent!r} is not an Intent")
         if self.intent is Intent.OUT and not self.array:
             raise ValueError(f"OUT param {self.name!r} must be an array")
+        shape = _tuple(self, "shape", self.shape)
+        if shape and not self.array:
+            raise ValueError(f"scalar param {self.name!r} takes no shape")
+        for d in shape:
+            _expr(d, "a Param extent")
 
 
 def walk(body: tuple[Stmt, ...]) -> Iterator[Stmt]:
@@ -514,6 +528,9 @@ def _check_breaks(body: tuple[Stmt, ...], in_loop: bool) -> None:
             _check_breaks(s.orelse, in_loop)
 
 
+_EXTENT_FNS = (Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV)
+
+
 @dataclass(frozen=True)
 class Kernel:
     """One device kernel: a name, its parameters, and an ordered body.
@@ -536,6 +553,16 @@ class Kernel:
         names = [p.name for p in params]
         if len(set(names)) != len(names):
             raise ValueError(f"duplicate Param names in {names}")
+        scalars = {p.name for p in params if not p.array}
+        for p in params:
+            for e in (x for d in p.shape for x in _subexprs(d)):
+                ok = (isinstance(e, Lit) and e.type is Scalar.I32) or (
+                    isinstance(e, Var) and e.name in scalars) or (
+                    isinstance(e, Call) and e.fn in _EXTENT_FNS)
+                if not ok:
+                    raise ValueError(
+                        f"Param {p.name!r} extent uses {e!r}: only I32 "
+                        "literals, scalar Params and ADD SUB MUL DIV")
         _body(self, "body", self.body)
         _check_breaks(self.body, False)
 
