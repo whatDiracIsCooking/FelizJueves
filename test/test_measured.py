@@ -464,6 +464,78 @@ def test_the_cli_prints_the_store_and_exits_2_on_a_bad_one(tmp_path, capsys) -> 
     assert measured.main(["--store", str(bad)]) == 2
 
 
+# --- #53: wall-clock rows ----------------------------------------------------
+
+SHA = "a" * 64
+
+
+def test_combine_keeps_the_other_side_when_both_saw_the_same_text() -> None:
+    compiled = measured.Measured(registers=40, spill_store=0, spill_load=0,
+                                 compile_s=1.0, kernel="k", spill_unit="u",
+                                 command="nvcc -c", source_sha256=SHA,
+                                 raw={"registers": 40}, **PROV)
+    timed = measured.Measured(runtime_ns=1e6, repeats=31, spread_ns=1e3,
+                              kernel="k", source_sha256=SHA,
+                              raw={"wallclock:min_ns": 9},
+                              **{**PROV, "date": "2026-10-12"})
+    got = measured.combine(compiled, timed)
+    assert (got.registers, got.compile_s, got.runtime_ns, got.repeats,
+            got.spread_ns) == (40, 1.0, 1e6, 31, 1e3)
+    assert got.raw == {"registers": 40, "wallclock:min_ns": 9}
+    assert got.command == "nvcc -c" and got.spill_unit == "u"
+    assert got.date == "2026-10-12"  # the latest observation's provenance
+    # symmetric: a re-measured compile row keeps the timing
+    again = measured.combine(got, replace(compiled, registers=41))
+    assert (again.registers, again.runtime_ns) == (41, 1e6)
+
+
+def test_combine_drops_a_side_measured_on_other_text() -> None:
+    compiled = measured.Measured(registers=40, source_sha256="b" * 64, **PROV)
+    timed = measured.Measured(runtime_ns=1e6, repeats=31, spread_ns=1e3,
+                              source_sha256=SHA, **PROV)
+    assert measured.combine(compiled, timed) == timed
+    assert measured.combine(None, timed) == timed
+    other = measured.Measured(registers=40, source_sha256=SHA,
+                              **{**PROV, "toolchain": "nvcc 13.1"})
+    assert measured.combine(other, timed) == timed
+
+
+def _timed(row) -> bool:
+    return row.runtime_ns is not None
+
+
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("spec", measured.SUBGRID, ids=lambda s: s.key())
+def test_every_subgrid_cell_is_timed_on_both_cards(spec, arch) -> None:
+    """#53's acceptance: runtime_ns, repeats and spread_ns, with provenance."""
+    (row,) = measured.rows(spec=spec, arch=arch, store=ROWS).values()
+    assert _timed(row), f"{spec.key()}@{arch}: no wall-clock -- run the " \
+        "opt-in sweep in test/test_kernel_device.py (FJ_WALLCLOCK_STORE)"
+    assert row.repeats is not None and row.repeats >= 2  # one timing is not one
+    assert row.spread_ns is not None and row.gpu != "ABSENT"
+    # the compile side survived beside it
+    assert row.registers is not None and row.compile_s is not None
+
+
+def test_a_wall_clock_row_is_its_own_quartiles() -> None:
+    timed = {k: r for k, r in ROWS.items() if _timed(r)}
+    assert timed, "no wall-clock rows recorded"
+    for key, r in timed.items():
+        w = {k.removeprefix("wallclock:"): v for k, v in r.raw.items()
+             if k.startswith("wallclock:")}
+        assert w["min_ns"] <= w["q1_ns"] <= r.runtime_ns <= w["q3_ns"] \
+            <= w["max_ns"], key
+        assert abs(r.spread_ns - (w["q3_ns"] - w["q1_ns"])) <= 1, key
+        assert w["near:min_ns"] <= w["near:q1_ns"] <= w["near:median_ns"] \
+            <= w["near:q3_ns"] <= w["near:max_ns"], key
+        # the box was quiet: at most BUSY_MAX (10%) busy before each input
+        assert w["cpu_busy_permille_before"] <= 100, key
+        assert w["near:cpu_busy_permille_before"] <= 100, key
+        names = r.kernel.split(",")
+        assert all(f"{n}:events_median_ns" in w for n in names), key
+        assert w["n_bra"] > 0 and w["n_ket"] > 0 and w["warmup"] > 0, key
+
+
 # --- re-measure: the recorded rows against the toolchain here ---------------
 
 RECHECK_LS = (0, 4, 8)
@@ -507,8 +579,11 @@ def _recheck_cell(backend_name: str, spec, tmp_path: Path) -> None:
     _, row = measured.measure(b, spec, compiler=compiler, toolchain=toolchain,
                               gpu=want.gpu, workdir=tmp_path)
     assert row.source_sha256 == want.source_sha256, key
+    # the stored row also carries the wall-clock side (#53): compare the
+    # compiler's own numbers only
+    compiled = {k: v for k, v in want.raw.items() if not k.startswith("wallclock:")}
     assert (row.registers, row.spill_store, row.spill_load, row.raw) == (
-        want.registers, want.spill_store, want.spill_load, want.raw), key
+        want.registers, want.spill_store, want.spill_load, compiled), key
 
 
 SUBGRID_PARAMS = [

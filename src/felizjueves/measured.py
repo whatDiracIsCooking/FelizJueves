@@ -88,6 +88,32 @@ the launch `kernel.launch_shape` fixes, blockDim.y = wavefront).
 `compile_s` is the wall time of one compile while up to `-j` others run
 beside it: a cost indication, never a benchmark.
 
+WALL-CLOCK (#53) is `runtime_ns`, `repeats` and `spread_ns`, written by the
+opt-in, `gpu`-marked sweep in test/test_kernel_device.py
+(`test_<backend>_wallclock_over_the_subgrid`, run alone and uncontended; its
+docstring is the protocol). What one cell's number IS: the host
+`steady_clock` time of the cell's WHOLE launch sequence -- every batch kernel
+of `build_pq_kernels(spec)`, in plan order, into one J zeroed beforehand
+(outside the clock), then one device synchronize -- producing one `J_p`.
+`runtime_ns` is the MEDIAN over `repeats` timed sequences after a warm-up,
+and `spread_ns` the interquartile range of those same sequences, on the
+sweep's wide-T input; min, max, the quartiles, the per-batch GPU-event
+medians, the problem size, the box's load as sampled before the cell, and
+the same statistics on a second, near-T input (`wallclock:near:*`) are in
+`raw`, keyed `wallclock:...`.
+The binary is built from the same emitted text with config.sh's flag set
+(the report flag aside, which changes no code). Absolute times are NOT
+comparable across vendors (gfx1200 rate-limits fp64): only the ranking over
+`n_batches` within one arch is a claim.
+
+ONE ROW CARRIES BOTH SIDES. A timing and a compile observation of one cell
+share a `MeasuredKey`, so they are one row: `combine` keeps the other side's
+measurements (and `raw`) when, and only when, both observed the same text
+(`source_sha256`). A changed kernel drops the stale side rather than pairing
+a register count with a time it did not produce. The row's `date`, `host`,
+`gpu` and `command` are the latest observation's (a timing row records no
+`command`, so the compile's is kept).
+
 Nothing under `plan/` or `literature/` may import this module
 (test/test_layering.py): a measurement may never feed a literature floor.
 """
@@ -109,7 +135,7 @@ import tempfile
 import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
 from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
@@ -151,6 +177,16 @@ HEADER = {
              "row's spill_unit and raw.",
     "remeasure": "PYTHONPATH=src uv run python -m felizjueves.measured "
                  "--remeasure --backend both",
+    "wallclock": "runtime_ns is the MEDIAN host wall-clock of a cell's whole "
+                 "batched launch sequence (every build_pq_kernels batch into "
+                 "one zeroed J, then a synchronize), over `repeats` timed "
+                 "sequences after a warm-up, on a wide-T input; spread_ns is "
+                 "their interquartile range; raw 'wallclock:*' has the rest, "
+                 "and 'wallclock:near:*' the same on a near-T input. Taken "
+                 "alone on an "
+                 "uncontended box by test/test_kernel_device.py's opt-in "
+                 "wall-clock sweep (FJ_WALLCLOCK_STORE). Compare only within "
+                 "one arch, across n_batches -- never across vendors.",
 }
 
 NV_SPILL_UNIT = "bytes (ptxas -v: spill stores / spill loads)"
@@ -542,6 +578,26 @@ def merge(store: Mapping[str, Measured], key: MeasuredKey,
     return {**store, key.key(): row}
 
 
+def combine(old: Measured | None, new: Measured) -> Measured:
+    """`new`, with `old`'s other-side measurements kept when both saw one text.
+
+    A field `new` leaves None is taken from `old`, and `old`'s `raw` entries
+    survive under `new`'s, only when the two rows record the same arch,
+    toolchain and non-empty `source_sha256`; otherwise `new` alone (module
+    docstring, ONE ROW CARRIES BOTH SIDES).
+    """
+    if (old is None or not new.source_sha256
+            or (old.arch, old.toolchain, old.source_sha256)
+            != (new.arch, new.toolchain, new.source_sha256)):
+        return new
+    kept = {n: getattr(old, n) for n in MEASUREMENTS
+            if getattr(new, n) is None and getattr(old, n) is not None}
+    return replace(new, **kept, raw={**old.raw, **new.raw},
+                   kernel=new.kernel or old.kernel,
+                   spill_unit=new.spill_unit or old.spill_unit,
+                   command=new.command or old.command)
+
+
 def rows(spec: Spec | None = None, arch: Arch | str | None = None,
          toolchain: str | None = None, *,
          store: Mapping[str, Measured] | Path = STORE) -> dict[str, Measured]:
@@ -603,7 +659,7 @@ def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
                     key, row = cell_row(b, spec, units,
                                         [f.result() for f in fs],
                                         toolchain=toolchain, gpu=gpu)
-                    got = merge(got, key, row)
+                    got = merge(got, key, combine(got.get(key.key()), row))
                     print(f"{key.key()}: {row.registers} regs, spill "
                           f"{row.spill_store}/{row.spill_load}, "
                           f"{row.compile_s}s", flush=True)

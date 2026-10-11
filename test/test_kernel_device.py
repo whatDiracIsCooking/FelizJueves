@@ -53,6 +53,14 @@ THE TOLERANCES ARE DERIVED, NOT TUNED TO GREEN.
   inside it (no `a*b + c` appears), so the bound is the same on both cards.
   Measured worst: printed by the test (`-s`), and recorded in the PR.
 
+SPLIT CELLS (#53), at the bottom: every `measured.SUBGRID` cell with
+n_batches > 1 runs as its whole atomic launch sequence and is held to the
+same J_REL pin -- the first time the atomic accumulation is checked on
+hardware rather than interpreted -- and an OPT-IN wall-clock sweep
+(FJ_WALLCLOCK_STORE) times every SUBGRID cell into the measured store. The
+sweep's section comment is its protocol; it skips in the kernel tier, by
+design, because a timing taken beside the tier's compiles is contended.
+
 WHAT SKIPS, AND WHY: every test here is `gpu` plus `cuda` or `hip`, takes the
 compiler fixture AND the device fixture, and so skips -- not fails -- on a box
 without the card. A green run of this file on a device-less box is EMPTY;
@@ -66,19 +74,27 @@ checked is the number of the generated translation unit, not of a sibling.
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import math
 import os
+import shlex
+import time
+from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from felizjueves.device import GFX1200, SM_86, Arch
+from felizjueves import measured
+from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
+    build_pq_kernels,
     ket_functions,
     launch_shape,
     pq_spec,
@@ -87,6 +103,9 @@ from felizjueves.kernel import (
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, theta_of
+from felizjueves.spec import Spec
+
+SUBGRID = measured.SUBGRID
 
 # Every class the generator writes by default: L = 0..16.
 LS = tuple(range(0, 17))
@@ -465,3 +484,468 @@ def test_hip_fj_boys_matches_reference_boys(request, compile_device_source,
                                             run_device_binary, tmp_path) -> None:
     """The emitted Boys routine on the RX 9060 XT, against quadrature."""
     _run_boys("hip", request, compile_device_source, run_device_binary, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# #53: the batched launch sequence on the card -- J_p, then wall-clock
+# ---------------------------------------------------------------------------
+#
+# A SPLIT CELL IS ONE LAUNCH SEQUENCE. `build_pq_kernels(spec)` is one kernel
+# per batch, every one taking the same arguments and launch shape, run in plan
+# order into ONE J the caller zeroes (kernel.py, build_pq_kernels). The harness
+# below includes every batch's emitted text, each in its own namespace (each
+# carries its own `fj_boys`; the kernels themselves are `extern "C"` and named
+# apart), and launches them back to back on the default stream with the
+# dynamic shared memory each kernel's own `Jsh` declaration asks for. One
+# sequence is what a cell IS, for the comparison and for the clock alike.
+#
+# THE COMPARISON, AND WHY ITS TOLERANCE IS STILL J_REL. Batch b adds its
+# partial sum into J[bra, p] with `atomicAdd`. fp64 atomics are UNORDERED in
+# general, so J is not promised bit-reproducible, and the comparison must
+# allow any order of the n_b partials -- it does, without loosening anything:
+# however n_b partials s_1..s_nb are added, the rounding is at most
+# (n_b - 1) u SUM_b |s_b| <= 8 u * scale (n_b <= 9, and SUM_b |s_b| <= scale,
+# the partials partitioning the very terms scale sums), about 1e-15 * scale,
+# three orders inside J_REL = 1e-12 * scale -- the pin the interpreter already
+# holds every batched cell to (test/test_kernel_batched.py), whose regrouping
+# of the contraction by batch is this one's too. So the batched check is
+# `_run_pq`'s pin, unchanged. (Here the launches are stream-ordered and each
+# (bra, p) gets one atomic per kernel, from lane 0, so the order happens to be
+# fixed; the sweep records whether J came out bit-identical across repeats as
+# `wallclock:J_bitwise_repeatable` -- an observation, not an assertion.)
+#
+# THE TIMING does not care about any of that: it times the sequence and never
+# compares its J against anything but itself.
+
+BATCHED_HARNESS = r"""
+{prologue}
+{portable}
+#include <chrono>
+{includes}
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devEvent_t           hipEvent_t
+#define devEventCreate       hipEventCreate
+#define devEventRecord(e)    hipEventRecord(e, 0)
+#define devEventElapsedTime  hipEventElapsedTime
+#define devMemset            hipMemset
+#else
+#define devEvent_t           cudaEvent_t
+#define devEventCreate       cudaEventCreate
+#define devEventRecord(e)    cudaEventRecord(e, 0)
+#define devEventElapsedTime  cudaEventElapsedTime
+#define devMemset            cudaMemset
+#endif
+
+// usage: in out warmup reps. Writes J of the FIRST timed sequence, then J of
+// the LAST, to `out`; prints one `rep` line per timed sequence:
+//   rep <i> wall_ns <host steady_clock, launches + synchronize>
+//       events_ns <GPU events, first launch to last> batch_ns <one per batch>
+int main(int argc, char** argv) {{
+    if (argc != 5) {{ std::fprintf(stderr, "usage: in out warmup reps\n"); return 2; }}
+    const int warmup = std::atoi(argv[3]), reps = std::atoi(argv[4]);
+    std::vector<double> in;
+    if (!slurp(argv[1], in) || in.size() < 6 || reps < 1 || warmup < 0) {{
+        std::fprintf(stderr, "bad input\n");
+        return 2;
+    }}
+    const int n_bra = (int)in[0], n_ket = (int)in[1], n_p = (int)in[2],
+              n_q = (int)in[3], lanes = (int)in[4];
+    const double tau = in[5];
+    const double* h = in.data() + 6;
+    const size_t sizes[] = {{(size_t)n_bra * 3, (size_t)n_bra, (size_t)n_bra,
+                            (size_t)n_ket * 3, (size_t)n_ket, (size_t)n_ket,
+                            (size_t)n_ket, (size_t)n_ket * n_q}};
+    double* d[8];
+    for (int i = 0; i < 8; ++i) {{
+        d[i] = upload(h, sizes[i]);
+        if (!d[i]) {{ std::fprintf(stderr, "upload %d failed\n", i); return 1; }}
+        h += sizes[i];
+    }}
+    if ((size_t)(h - in.data()) != in.size()) {{
+        std::fprintf(stderr, "size mismatch\n");
+        return 2;
+    }}
+    const size_t jbytes = (size_t)n_bra * n_p * sizeof(double);
+    double* dJ = nullptr;
+    CHECK(devMalloc(&dJ, jbytes));
+    const int NB = {n_batches};
+    devEvent_t ev[NB + 1];
+    for (int i = 0; i <= NB; ++i) CHECK(devEventCreate(&ev[i]));
+    std::vector<double> first((size_t)n_bra * n_p), last(first.size());
+    for (int r = 0; r < warmup + reps; ++r) {{
+        CHECK(devMemset(dJ, 0, jbytes));  // the caller zeroes J: off the clock
+        CHECK(devSynchronize());
+        const auto t0 = std::chrono::steady_clock::now();
+        CHECK(devEventRecord(ev[0]));
+{launches}
+        CHECK(devGetLastError());
+        CHECK(devSynchronize());
+        const auto t1 = std::chrono::steady_clock::now();
+        if (r < warmup) continue;
+        float total_ms = 0.f;
+        CHECK(devEventElapsedTime(&total_ms, ev[0], ev[NB]));
+        std::printf("rep %d wall_ns %lld events_ns %.0f batch_ns", r - warmup,
+                    (long long)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        t1 - t0).count(), (double)total_ms * 1e6);
+        for (int i = 0; i < NB; ++i) {{
+            float ms = 0.f;
+            CHECK(devEventElapsedTime(&ms, ev[i], ev[i + 1]));
+            std::printf(" %.0f", (double)ms * 1e6);
+        }}
+        std::printf("\n");
+        std::vector<double>& dst = (r == warmup) ? first : last;
+        CHECK(devMemcpy(dst.data(), dJ, jbytes, devMemcpyD2H));
+    }}
+    if (reps == 1) last = first;
+    std::vector<double> both(first);
+    both.insert(both.end(), last.begin(), last.end());
+    if (!spill(argv[2], both)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
+    return 0;
+}}
+"""
+
+LAUNCH = ("        {ns}::{name}<<<dim3(n_bra), dim3(1, lanes), "
+          "(size_t){slots} * lanes * sizeof(double)>>>(\n"
+          "            n_bra, n_ket, tau, d[0], d[1], d[2], d[3], d[4], d[5], "
+          "d[6], d[7], dJ);\n"
+          "        CHECK(devEventRecord(ev[{next}]));")
+
+
+def _batched_source(backend: str, spec: Spec,
+                    workdir: Path) -> tuple[str, list[str], str]:
+    """The harness for one cell: its source, its batch kernels' names in
+    launch order, and the cell's source hash (as `measured.cell_sha256`)."""
+    emit, arch, ext = BACKEND[backend]
+    kernels = build_pq_kernels(spec)
+    includes, launches, texts = [], [], []
+    for i, k in enumerate(kernels):
+        text = emit(k, arch)
+        texts.append(text)
+        path = workdir / f"{k.name}.{ext}"
+        path.write_text(text)
+        includes.append(f'namespace fj_b{i} {{\n#include "{path}"\n}}')
+        launches.append(LAUNCH.format(ns=f"fj_b{i}", name=k.name,
+                                      slots=measured.jsh_slots(k), next=i + 1))
+    prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
+    src = BATCHED_HARNESS.format(
+        prologue=prologue, portable=PORTABLE, includes="\n".join(includes),
+        n_batches=len(kernels), launches="\n".join(launches))
+    sha = hashlib.sha256("".join(texts).encode()).hexdigest()
+    return src, [k.name for k in kernels], sha
+
+
+@cache
+def _case(L: int, case: str):
+    """A CASES input of class L and its oracle -- shared by every n_batches,
+    since the inputs depend on the class, never on its split."""
+    wide, tq, n_bra, n_ket = CASES[case]
+    a = _inputs(L, wide=wide, tau_quantile=tq, seed=1000 * L + len(case),
+                n_bra=n_bra, n_ket=n_ket)
+    return a, _reference(L, a)
+
+
+def _check_batched(backend: str, spec: Spec, binary: Path, run_device_binary,
+                   tmp_path: Path) -> list[tuple[str, float, float]]:
+    """Every CASES input through one cell's launch sequence, against the
+    oracle at J_REL (the comparison: see the section comment)."""
+    arch: Arch = BACKEND[backend][1]
+    L = spec.total_am
+    results = []
+    for case in CASES:
+        a, (want, scale, t_max) = _case(L, case)
+        n_bra = a["P"].shape[0]
+        _, (_, lanes) = launch_shape(n_bra, arch.wavefront)
+        src, dst = tmp_path / f"{case}.in", tmp_path / f"{case}.out"
+        _pack(L, a, lanes).tofile(src)
+        run_device_binary(binary, str(src), str(dst), "0", "1")
+        got = np.fromfile(dst, dtype=np.float64).reshape(2, n_bra, -1)[0]
+        assert got.shape == want.shape
+        assert np.all(np.isfinite(got)), f"{case}: non-finite J_p"
+        err = float(np.max(np.abs(got - want) / scale))
+        assert err <= J_REL, (
+            f"{spec.key()} {case} on {arch.name}: max |J - want| / scale = "
+            f"{err:.3e} > {J_REL:.0e} (T up to {t_max:.1f})")
+        results.append((case, err, t_max))
+    print(f"\n{backend} {arch.name} {spec.key()}: " + ", ".join(
+        f"{c} err/scale {e:.2e} (T<={t:.0f})" for c, e, t in results))
+    return results
+
+
+SPLIT_CELLS = [pytest.param(s, id=f"L{s.total_am}-b{s.n_batches}")
+               for s in SUBGRID if s.n_batches > 1]
+
+
+def _run_batched(backend: str, spec: Spec, request, compile_device_source,
+                 run_device_binary, tmp_path: Path) -> None:
+    tc = _toolchain(backend, request)
+    src, _, _ = _batched_source(backend, spec, tmp_path)
+    binary = compile_device_source(tc, src)
+    _check_batched(backend, spec, binary, run_device_binary, tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", SPLIT_CELLS)
+def test_cuda_batched_j_p_matches_the_reference(spec, request, compile_device_source,
+                                                run_device_binary, tmp_path) -> None:
+    """A split cell's atomic launch sequence on the RTX 3080, against the oracle."""
+    _run_batched("cuda", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", SPLIT_CELLS)
+def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_source,
+                                               run_device_binary, tmp_path) -> None:
+    """A split cell's atomic launch sequence on the RX 9060 XT, against the oracle."""
+    _run_batched("hip", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+# --- the wall-clock sweep -----------------------------------------------------
+#
+# OPT-IN, AND RUN ALONE. It skips unless FJ_WALLCLOCK_STORE names the store to
+# write (normally data/measured/kernels.json), because inside the kernel tier
+# it would share the box with xdist workers compiling other tests -- and a
+# contended timing is garbage, not a noisy measurement. Run it by itself,
+# under the card's lock, with nothing else compile-bound on the box:
+#
+#   flock /tmp/fj-gpu-cuda.lock env FJ_WALLCLOCK_STORE=data/measured/kernels.json \
+#       uv run pytest test/test_kernel_device.py -p no:xdist -s -rs \
+#       -m "gpu and cuda" -k wallclock
+#
+# THE PROTOCOL, in order, all inside one test so the phases cannot overlap:
+#
+# 1. CPUSET from devtools/config.sh, if set, pins this process (and so the
+#    harness) with sched_setaffinity; CPUS is a container quota and cannot be
+#    applied to a bare process -- a set CPUS is reported, not silently
+#    honoured. Both are empty by default.
+# 2. COMPILE every SUBGRID cell's harness, one after another, with config.sh's
+#    NVCC_FLAGS / HIPCC_FLAGS (the flag set the measured rows' registers came
+#    from). No compile runs after this point.
+# 3. CHECK every compiled binary against the oracle on CASES (`_check_batched`)
+#    -- the TIMED binary is the CHECKED binary.
+# 4. TIME each cell: wait for the box to be quiet (CPU busy at most BUSY_MAX
+#    over a 1 s sample, for up to QUIET_WAIT_S; otherwise the test FAILS --
+#    the run is discarded, not averaged in), then WARMUP untimed sequences and
+#    REPEATS timed ones, on each of two inputs -- no screening (tau = 0) so
+#    every cell does all its work, n_bra x n_ket = TIMING_N_BRA x
+#    TIMING_N_KET, and the same input for every n_batches of one L:
+#      WIDE (CASES' wide regime, T up to ~430): THE ROW's number. The median
+#        and IQR of the host wall-clock are runtime_ns / spread_ns.
+#      NEAR (T < ~2): `wallclock:near:*` in raw. Each batch recomputes its
+#        fundamentals (kernel.py), so the Boys series length -- long at
+#        large T -- weighs on the batch-count ranking; timing both regimes
+#        shows whether the ranking depends on it, instead of hiding it.
+# 5. WRITE one row per cell, `measured.combine`d into the existing compile
+#    row (same text, one row: measured.py's docstring).
+
+WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
+WARMUP = 5
+REPEATS = 31
+TIMING_N_BRA = 2048  # one warp each: several waves on either card
+TIMING_N_KET = 128   # four kets per lane at wavefront 32
+BUSY_MAX = 0.10      # of all cores: ~2 of this box's 24, so no compile-bound job
+QUIET_WAIT_S = 120.0
+
+
+def _cpu_busy(seconds: float = 1.0) -> float:
+    """Fraction of all cores busy over `seconds`, from /proc/stat."""
+    def snap() -> tuple[int, int]:
+        with open("/proc/stat") as f:
+            v = [int(x) for x in f.readline().split()[1:]]
+        return sum(v), v[3] + v[4]
+    t0, i0 = snap()
+    time.sleep(seconds)
+    t1, i1 = snap()
+    return 1.0 - (i1 - i0) / max(1, t1 - t0)
+
+
+def _quiet() -> float:
+    """Block until the box is quiet; the busy fraction it settled at."""
+    deadline = time.monotonic() + QUIET_WAIT_S
+    while True:
+        busy = _cpu_busy()
+        if busy <= BUSY_MAX:
+            return busy
+        if time.monotonic() > deadline:
+            pytest.fail(f"box contended: CPU {busy:.0%} busy > {BUSY_MAX:.0%} "
+                        f"for {QUIET_WAIT_S:.0f} s -- timing DISCARDED, not "
+                        "averaged in")
+
+
+def _cpu_list(spec: str) -> set[int]:
+    """`0-11,16` -> {0..11, 16}."""
+    out: set[int] = set()
+    for part in spec.split(","):
+        lo, _, hi = part.partition("-")
+        out.update(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
+@dataclass(frozen=True)
+class _Configured:
+    """A conftest Toolchain, driven with devtools/config.sh's flag set."""
+
+    name: str
+    path: str
+    arch: str
+    ext: str
+
+    def compile_flags(self) -> list[str]:
+        b = measured.BACKENDS["cuda" if self.name == "nvcc" else "hip"]
+        flags = shlex.split(measured.config_value(b.flags_var))
+        if self.name == "nvcc":
+            return [*flags, f"-arch=sm_{self.arch}"]
+        return [*flags, f"--offload-arch={self.arch}"]
+
+
+def _parse_reps(out: str, n_batches: int):
+    wall, events, batches = [], [], []
+    for line in out.splitlines():
+        f = line.split()
+        if not f or f[0] != "rep":
+            continue
+        assert (f[2], f[4], f[6]) == ("wall_ns", "events_ns", "batch_ns"), line
+        wall.append(int(f[3]))
+        events.append(float(f[5]))
+        batches.append([float(x) for x in f[7:]])
+        assert len(batches[-1]) == n_batches, line
+    return wall, events, batches
+
+
+def _wallclock(backend: str, request, compile_device_source,
+               run_device_binary, tmp_path: Path) -> None:
+    store_path = os.environ.get(WALLCLOCK_STORE)
+    if not store_path:
+        pytest.skip(f"wall-clock is opt-in and must run alone, uncontended: set "
+                    f"{WALLCLOCK_STORE} (see the section comment)")
+    base = _toolchain(backend, request)
+    tc = _Configured(base.name, base.path, base.arch, base.ext)
+    arch: Arch = BACKEND[backend][1]
+    b = measured.BACKENDS[backend]
+    toolchain, gpu = b.toolchain(b.compiler()), b.gpu()
+    store = measured.load(Path(store_path))
+
+    # 1. CPU bounds
+    cpuset, cpus = measured.config_value("CPUSET"), measured.config_value("CPUS")
+    if cpuset:
+        os.sched_setaffinity(0, _cpu_list(cpuset))
+    print(f"\nCPUSET={cpuset or '(empty)'} CPUS={cpus or '(empty)'}"
+          + (" -- CPUS is a container quota, not applied here" if cpus else ""))
+
+    # 2. compile everything first
+    cells = []
+    for spec in SUBGRID:
+        work = tmp_path / f"L{spec.total_am}-b{spec.n_batches}"
+        work.mkdir()
+        src, names, sha = _batched_source(backend, spec, work)
+        binary = compile_device_source(tc, src).rename(work / "cell")
+        cells.append((spec, binary, names, sha))
+        print(f"compiled {spec.key()}", flush=True)
+    command = " ".join([Path(tc.path).name, *tc.compile_flags()])
+
+    # 3. the timed binary is the checked binary
+    for spec, binary, _, _ in cells:
+        _check_batched(backend, spec, binary, run_device_binary, tmp_path)
+
+    # 4. time, one cell at a time
+    lanes = arch.wavefront
+
+    def timed(spec: Spec, binary: Path, wide: bool):
+        L = spec.total_am
+        a = _inputs(L, wide=wide, tau_quantile=None, seed=53_000 + L,
+                    n_bra=TIMING_N_BRA, n_ket=TIMING_N_KET)
+        src, dst = tmp_path / "timing.in", tmp_path / "timing.out"
+        _pack(L, a, lanes).tofile(src)
+        busy = _quiet()
+        out = run_device_binary(binary, str(src), str(dst), str(WARMUP),
+                                str(REPEATS))
+        wall, events, batches = _parse_reps(out, spec.n_batches)
+        assert len(wall) == REPEATS, out
+        J = np.fromfile(dst, dtype=np.float64).reshape(2, TIMING_N_BRA, -1)
+        assert np.all(np.isfinite(J)), f"{spec.key()}: non-finite J (timing input)"
+        q1, med, q3 = (float(x) for x in np.percentile(wall, [25, 50, 75]))
+        return wall, events, batches, J, (q1, med, q3), busy
+
+    table = []
+    for spec, binary, names, sha in cells:
+        L = spec.total_am
+        load1 = os.getloadavg()[0]
+        # the secondary input first: near-T (T < ~2, short Boys series)
+        n_wall, _, _, _, (n_q1, n_med, n_q3), n_busy = timed(spec, binary, False)
+        # the row's number: wide-T (T up to ~430, the Boys series long)
+        wall, events, batches, J, (q1, med, q3), busy = timed(spec, binary, True)
+        busy_after = _cpu_busy(0.5)
+        raw = {
+            "wallclock:near:median_ns": round(n_med),
+            "wallclock:near:q1_ns": round(n_q1),
+            "wallclock:near:q3_ns": round(n_q3),
+            "wallclock:near:min_ns": int(min(n_wall)),
+            "wallclock:near:max_ns": int(max(n_wall)),
+            "wallclock:near:cpu_busy_permille_before": round(1000 * n_busy),
+            "wallclock:warmup": WARMUP,
+            "wallclock:n_bra": TIMING_N_BRA,
+            "wallclock:n_ket": TIMING_N_KET,
+            "wallclock:lanes": lanes,
+            "wallclock:min_ns": int(min(wall)),
+            "wallclock:q1_ns": round(q1),
+            "wallclock:q3_ns": round(q3),
+            "wallclock:max_ns": int(max(wall)),
+            "wallclock:events_median_ns": round(float(np.median(events))),
+            "wallclock:cpu_busy_permille_before": round(1000 * busy),
+            "wallclock:cpu_busy_permille_after": round(1000 * busy_after),
+            "wallclock:loadavg1_milli": round(1000 * load1),
+            "wallclock:J_bitwise_repeatable": int(np.array_equal(J[0], J[1])),
+        }
+        per_batch = np.median(np.array(batches), axis=0)
+        for name, t in zip(names, per_batch, strict=True):
+            raw[f"wallclock:{name}:events_median_ns"] = round(float(t))
+        row = measured.Measured(
+            runtime_ns=round(med), repeats=REPEATS, spread_ns=round(q3 - q1),
+            toolchain=toolchain, arch=arch.name, host=measured.host(), gpu=gpu,
+            date=datetime.date.today().isoformat(), kernel=",".join(names),
+            source_sha256=sha, raw=raw)
+        key = MeasuredKey(spec, arch, toolchain)
+        old = store.get(key.key())
+        assert old is None or old.source_sha256 == sha, (
+            f"{key.key()}: the store's compile row is of other text -- "
+            "remeasure the compile side first")
+        store = measured.merge(store, key, measured.combine(old, row))
+        table.append((L, spec.n_batches, med, q3 - q1, n_med, n_q3 - n_q1))
+        print(f"{key.key()}: wide median {med / 1e6:.3f} ms, IQR "
+              f"{(q3 - q1) / 1e6:.3f} ms, range [{min(wall) / 1e6:.3f}, "
+              f"{max(wall) / 1e6:.3f}] ms; near median {n_med / 1e6:.3f} ms, "
+              f"IQR {(n_q3 - n_q1) / 1e6:.3f} ms; {REPEATS} timed (+{WARMUP} "
+              f"warm-up) each; CPU busy {n_busy:.1%}/{busy:.1%} -> "
+              f"{busy_after:.1%}, load1 {load1:.2f}; J bit-repeatable "
+              f"{raw['wallclock:J_bitwise_repeatable']}", flush=True)
+
+    # 5. one write, after every cell timed
+    measured.save(store, Path(store_path))
+    print(f"\n{backend} {arch.name} ({gpu}), compiled `{command}`")
+    for col, label in ((2, "wide (the row)"), (4, "near (raw)")):
+        print(f" {label}: median+-IQR, ms")
+        for L in sorted({t[0] for t in table}):
+            at_L = [t for t in table if t[0] == L]
+            best = min(at_L, key=lambda t: t[col])
+            print(f"  L={L}: " + "  ".join(
+                f"b{t[1]} {t[col] / 1e6:.3f}+-{t[col + 1] / 1e6:.3f}"
+                for t in at_L) + f"   -> lowest median at n_batches={best[1]}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_wallclock_over_the_subgrid(request, compile_device_source,
+                                         run_device_binary, tmp_path) -> None:
+    """Wall-clock of every SUBGRID cell's launch sequence on the RTX 3080."""
+    _wallclock("cuda", request, compile_device_source, run_device_binary, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_wallclock_over_the_subgrid(request, compile_device_source,
+                                        run_device_binary, tmp_path) -> None:
+    """Wall-clock of every SUBGRID cell's launch sequence on the RX 9060 XT."""
+    _wallclock("hip", request, compile_device_source, run_device_binary, tmp_path)
