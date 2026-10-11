@@ -4,6 +4,8 @@
     python -m felizjueves.measured --remeasure [--backend cuda|hip|both]
                                    [--L 0 4 8] [-j N]   # one-batch classes
     python -m felizjueves.measured --remeasure --subgrid [-j N]  # SUBGRID
+                                   [--n-batches 12]     # only those cells
+    python -m felizjueves.measured --nine-vs-twelve     # #60's comparison
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -53,7 +55,9 @@ the file's path is what the docs map points at.
 
 THE SUBGRID (#52) is `SUBGRID`, the one declared set of `(L, n_batches)`
 cells the compile-side measurement sweeps: L in {7, 10, 13, 16} x n_batches
-in {1, 3, 6, 9}, `[JEngine, v2, §7]`'s own reporting range. Every cell is a
+in {1, 3, 6, 9, 12} -- `[JEngine, v2, §7]`'s own reporting range, and 12
+past it (#60) because "9 batches suffice" cannot be judged from below 9.
+Every cell is a
 default-split `pq_spec(L, n_batches=b)` that the plan layer admits (its
 partition refuses an empty batch, #64; test/test_measured.py checks every
 cell). Tests parametrize over it, #53's wall-clock rows join on it, and a
@@ -114,6 +118,27 @@ a register count with a time it did not produce. The row's `date`, `host`,
 `gpu` and `command` are the latest observation's (a timing row records no
 `command`, so the compile's is kept).
 
+NINE AGAINST TWELVE (#60) is `nine_vs_twelve`: whether `[JEngine, v2, §7]`'s
+"for L <= 16, at most 9 batches are needed" holds on OUR cards. DECLARED
+BEFORE ANY 12-BATCH ROW EXISTED, and not to be tuned after reading one. For
+one arch and one subgrid L, with r9 and r12 the rows of pq_spec(L, 9) and
+pq_spec(L, 12) on that arch:
+
+- SPILL: 12 reduces spill traffic iff  spill(r12) < spill(r9), spill being
+  the row's spill_store + spill_load (the cell's whole spill, summed over
+  its batch kernels; bytes on sm_86, register counts on gfx1200 -- only the
+  within-arch comparison is made). Compiler output, so no tolerance.
+- WALL-CLOCK, judged on BOTH of #53's inputs, separately: 12 improves on an
+  input iff  median(r9) - median(r12) > max(IQR(r9), IQR(r12)), i.e. it is
+  faster by more than the larger recorded spread. WIDE-T is runtime_ns /
+  spread_ns; NEAR-T is raw `wallclock:near:median_ns` and q3 - q1. Near-T
+  is the informative one (#53: there splitting wins from L = 13 and b9 is
+  best at L = 16), but a win on EITHER input counts against 9.
+- 9 SUFFICES at (arch, L) iff 12 does none of the three (SPILL, WIDE, NEAR);
+  9 SUFFICES ON AN ARCH iff it suffices at every subgrid L. The two arches
+  are judged apart and may disagree; sm_86 and gfx1200 are our cards, not
+  the paper's A100, and that is the strongest form the claim can take here.
+
 Nothing under `plan/` or `literature/` may import this module
 (test/test_layering.py): a measurement may never feed a literature floor.
 """
@@ -149,8 +174,9 @@ STORE = REPO / "data" / "measured" / "kernels.json"
 DEFAULT_LS = tuple(range(0, 17))
 
 # THE declared subgrid (#52): see the module docstring. One edit adds a cell.
+SUBGRID_LS = (7, 10, 13, 16)
 SUBGRID: tuple[Spec, ...] = tuple(
-    pq_spec(L, n_batches=b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9))
+    pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in (1, 3, 6, 9, 12))
 
 SCHEMA = 1
 
@@ -667,6 +693,73 @@ def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
     return got
 
 
+# ---------------------------------------------------------------------------
+# #60: do 9 batches suffice? (the definition is in the module docstring)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TwelveVsNine:
+    """What the 12-batch cell does against the 9-batch one, at one (arch, L)."""
+
+    arch: str
+    L: int
+    spill: tuple[int, int]  # (spill(r9), spill(r12))
+    wide: tuple[float, float, float]  # (median r9, median r12, max IQR)
+    near: tuple[float, float, float]
+
+    @staticmethod
+    def _faster(t: tuple[float, float, float]) -> bool:
+        return t[0] - t[1] > t[2]
+
+    @property
+    def fewer_spills(self) -> bool:
+        return self.spill[1] < self.spill[0]
+
+    @property
+    def faster_wide(self) -> bool:
+        return self._faster(self.wide)
+
+    @property
+    def faster_near(self) -> bool:
+        return self._faster(self.near)
+
+    @property
+    def nine_suffices(self) -> bool:
+        return not (self.fewer_spills or self.faster_wide or self.faster_near)
+
+
+def nine_vs_twelve(store: Mapping[str, Measured], arch: str,
+                   L: int) -> TwelveVsNine:
+    """#60's comparison at one (arch, L), from the store's rows.
+
+    Raises KeyError when either cell is unrecorded, uncompiled or untimed
+    on `arch`.
+    """
+    def one(b: int) -> Measured:
+        got = rows(spec=pq_spec(L, n_batches=b), arch=arch, store=store)
+        if len(got) != 1:
+            raise KeyError(f"L={L}, n_batches={b} @ {arch}: {len(got)} rows")
+        (r,) = got.values()
+        if r.runtime_ns is None or r.spread_ns is None or r.spill_store is None \
+                or r.spill_load is None:
+            raise KeyError(f"L={L}, n_batches={b} @ {arch}: not both compiled "
+                           "and timed")
+        return r
+
+    def near(r: Measured) -> tuple[float, float]:
+        return (r.raw["wallclock:near:median_ns"],
+                r.raw["wallclock:near:q3_ns"] - r.raw["wallclock:near:q1_ns"])
+
+    r9, r12 = one(9), one(12)
+    n9, n12 = near(r9), near(r12)
+    return TwelveVsNine(
+        arch=arch, L=L,
+        spill=(r9.spill_store + r9.spill_load, r12.spill_store + r12.spill_load),
+        wide=(r9.runtime_ns, r12.runtime_ns, max(r9.spread_ns, r12.spread_ns)),
+        near=(n9[0], n12[0], max(n9[1], n12[1])))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m felizjueves.measured")
     ap.add_argument("--remeasure", action="store_true")
@@ -674,6 +767,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--L", dest="Ls", type=int, nargs="+", default=list(DEFAULT_LS))
     ap.add_argument("--subgrid", action="store_true",
                     help="remeasure SUBGRID (every n_batches) instead of --L")
+    ap.add_argument("--n-batches", type=int, nargs="+", default=None,
+                    help="with --subgrid: only the cells of these n_batches")
+    ap.add_argument("--nine-vs-twelve", action="store_true",
+                    help="print #60's 9-against-12 comparison per arch and L")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--store", type=Path, default=STORE)
     try:
@@ -684,6 +781,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         names = ("cuda", "hip") if args.backend == "both" else (args.backend,)
         try:
             cells = SUBGRID if args.subgrid else args.Ls
+            if args.subgrid and args.n_batches:
+                cells = [s for s in SUBGRID if s.n_batches in args.n_batches]
             remeasure(names, cells, args.j, args.store)
         except (RuntimeError, ValueError) as e:
             print(f"measured: {e}", file=sys.stderr)
@@ -694,6 +793,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError) as e:
         print(f"measured: {e}", file=sys.stderr)
         return 2
+    if args.nine_vs_twelve:
+        for arch in (SM_86.name, GFX1200.name):
+            for L in SUBGRID_LS:
+                try:
+                    c = nine_vs_twelve(got, arch, L)
+                except KeyError as e:
+                    print(f"{arch} L={L}: {e}")
+                    continue
+                ms = 1e6
+                print(f"{arch} L={L}: spill {c.spill[0]} -> {c.spill[1]}"
+                      f"{' FEWER' if c.fewer_spills else ''}; wide "
+                      f"{c.wide[0] / ms:.3f} -> {c.wide[1] / ms:.3f} ms "
+                      f"(IQR {c.wide[2] / ms:.3f})"
+                      f"{' FASTER' if c.faster_wide else ''}; near "
+                      f"{c.near[0] / ms:.3f} -> {c.near[1] / ms:.3f} ms "
+                      f"(IQR {c.near[2] / ms:.3f})"
+                      f"{' FASTER' if c.faster_near else ''} -> 9 "
+                      f"{'suffices' if c.nine_suffices else 'does NOT suffice'}")
+        return 0
     for k, r in got.items():
         shown = ", ".join(f"{n}={getattr(r, n)}" for n in MEASUREMENTS
                           if getattr(r, n) is not None)

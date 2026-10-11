@@ -715,6 +715,12 @@ def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_sou
 #       uv run pytest test/test_kernel_device.py -p no:xdist -s -rs \
 #       -m "gpu and cuda" -k wallclock
 #
+# FJ_WALLCLOCK_BATCHES (optional, e.g. "9,12") restricts the sweep to the
+# SUBGRID cells of those n_batches -- every other row is left as it is. #60
+# used it to time 9 and 12 in ONE session: its verdict compares the two
+# against their IQR, and a cross-session comparison would mix the box's
+# drift into the effect.
+#
 # THE PROTOCOL, in order, all inside one test so the phases cannot overlap:
 #
 # 1. CPUSET from devtools/config.sh, if set, pins this process (and so the
@@ -742,6 +748,7 @@ def test_hip_batched_j_p_matches_the_reference(spec, request, compile_device_sou
 #    row (same text, one row: measured.py's docstring).
 
 WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
+WALLCLOCK_BATCHES = "FJ_WALLCLOCK_BATCHES"
 WARMUP = 5
 REPEATS = 31
 TIMING_N_BRA = 2048  # one warp each: several waves on either card
@@ -836,8 +843,13 @@ def _wallclock(backend: str, request, compile_device_source,
           + (" -- CPUS is a container quota, not applied here" if cpus else ""))
 
     # 2. compile everything first
+    only = os.environ.get(WALLCLOCK_BATCHES, "").strip()
+    wanted = {int(b) for b in only.split(",")} if only else None
+    sweep = [s for s in SUBGRID if wanted is None or s.n_batches in wanted]
+    assert sweep, f"{WALLCLOCK_BATCHES}={only!r} selects no SUBGRID cell"
+    print(f"{WALLCLOCK_BATCHES}={only or '(all)'}: {len(sweep)} cells")
     cells = []
-    for spec in SUBGRID:
+    for spec in sweep:
         work = tmp_path / f"L{spec.total_am}-b{spec.n_batches}"
         work.mkdir()
         src, names, sha = _batched_source(backend, spec, work)

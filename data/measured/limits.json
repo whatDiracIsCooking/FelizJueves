@@ -1869,6 +1869,56 @@
     ]
    },
    "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+  },
+  {
+   "claim": "With n_batches = 12 added to the subgrid (#60), fewer spills still pick the fastest n_batches on the near-T input at L 16 on sm_86 -- the one (L, arch, input) where the spill win WAS the fastest over b in {1, 3, 6, 9}.",
+   "mechanism": "The record above's mechanism, one batch further: going from b 9 to b 12 cuts nvcc's summed spill at L 16 by 19% (181224 -> 146020 bytes), but adds three more launches that each re-evaluate the Boys function and re-form the recurrence nodes shared across batches. On the near-T input that redundant work costs more than the spill traffic it removes, so b 9 stays the fastest while b 12 becomes the fewest-spill cell. A spill count cannot see the redundant work, so it cannot rank past the point where the work dominates.",
+   "evidence": "sm_86 L 16 near: n_batches [1, 3, 6, 9, 12], summed spill [317260, 291916, 253048, 181224, 146020], near-T median ms [123.117, 116.866, 108.434, 99.387, 102.121]; fewest spills at b [12], fastest b 9, rho 0.9.",
+   "asserted_value": {
+    "n_batches": [
+     1,
+     3,
+     6,
+     9,
+     12
+    ],
+    "cells": [
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "input": "near",
+      "n_batches": [
+       1,
+       3,
+       6,
+       9,
+       12
+      ],
+      "spill_sum": [
+       317260,
+       291916,
+       253048,
+       181224,
+       146020
+      ],
+      "median_ns": [
+       123117241.0,
+       116865552.0,
+       108433688.0,
+       99386875.0,
+       102120566.0
+      ],
+      "untimed": [],
+      "fewest_spill": [
+       12
+      ],
+      "fastest": 9,
+      "spill_win_is_fastest": false,
+      "spearman": 0.9
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52 and #60, wall-clock #53 and #60); via felizjueves.kernelrank (#54)"
   }
  ]
 }

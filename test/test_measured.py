@@ -178,7 +178,8 @@ def test_both_cards_and_every_default_class_are_recorded() -> None:
 
 def test_the_subgrid_is_the_declared_l_by_n_batches_product() -> None:
     cells = [(s.total_am, s.n_batches) for s in measured.SUBGRID]
-    assert cells == [(L, b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9)]
+    # 12 is #60's: "9 batches suffice" cannot be judged from below 9
+    assert cells == [(L, b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9, 12)]
     assert all(s == pq_spec(s.total_am, n_batches=s.n_batches)
                for s in measured.SUBGRID)
 
@@ -602,3 +603,87 @@ def test_nvcc_still_reports_the_subgrid(spec, nvcc, tmp_path) -> None:
 @pytest.mark.parametrize("spec", SUBGRID_PARAMS)
 def test_hipcc_still_reports_the_subgrid(spec, hipcc, tmp_path) -> None:
     _recheck_cell("hip", spec, tmp_path)
+
+
+# --- #60: do 9 batches suffice? ---------------------------------------------
+
+
+def _cell(b: int, spill: int, wide: tuple[int, int], near: tuple[int, int],
+          L: int = 13) -> tuple[str, measured.Measured]:
+    """A synthetic compiled-and-timed row: wide/near are (median, IQR)."""
+    key = MeasuredKey(pq_spec(L, n_batches=b), SM_86, "nvcc 13.0").key()
+    return key, measured.Measured(
+        registers=255, spill_store=spill, spill_load=spill,
+        runtime_ns=wide[0], repeats=31, spread_ns=wide[1], **PROV,
+        raw={"wallclock:near:median_ns": near[0], "wallclock:near:q1_ns": 0,
+             "wallclock:near:q3_ns": near[1]})
+
+
+def _verdict(nine, twelve) -> measured.TwelveVsNine:
+    store = dict([_cell(9, *nine), _cell(12, *twelve)])
+    return measured.nine_vs_twelve(store, "sm_86", 13)
+
+
+def test_nine_suffices_when_twelve_is_no_better_on_anything() -> None:
+    c = _verdict((100, (1000, 10), (500, 5)), (100, (995, 8), (497, 4)))
+    assert not (c.fewer_spills or c.faster_wide or c.faster_near)
+    assert c.nine_suffices
+
+
+@pytest.mark.parametrize("twelve, which", [
+    pytest.param((99, (1000, 10), (500, 5)), "fewer_spills", id="one-spill-less"),
+    pytest.param((100, (989, 10), (500, 5)), "faster_wide", id="wide-beyond-iqr"),
+    pytest.param((100, (1000, 10), (494, 5)), "faster_near", id="near-beyond-iqr"),
+])
+def test_any_one_win_for_twelve_means_nine_does_not_suffice(twelve, which) -> None:
+    c = _verdict((100, (1000, 10), (500, 5)), twelve)
+    assert getattr(c, which) and not c.nine_suffices
+
+
+def test_a_wall_clock_win_is_judged_against_the_larger_iqr() -> None:
+    # 20 faster, but 12's own spread is 25: within noise, not a win
+    c = _verdict((100, (1000, 10), (500, 5)), (100, (980, 25), (500, 5)))
+    assert not c.faster_wide and c.nine_suffices
+    # exactly the spread is not beyond it
+    c = _verdict((100, (1000, 10), (500, 5)), (100, (990, 10), (500, 5)))
+    assert not c.faster_wide
+
+
+def test_an_untimed_cell_cannot_be_judged() -> None:
+    k9, r9 = _cell(9, 100, (1000, 10), (500, 5))
+    k12, r12 = _cell(12, 100, (1000, 10), (500, 5))
+    untimed = replace(r12, runtime_ns=None, repeats=None, spread_ns=None)
+    with pytest.raises(KeyError):
+        measured.nine_vs_twelve({k9: r9, k12: untimed}, "sm_86", 13)
+    with pytest.raises(KeyError):
+        measured.nine_vs_twelve({k9: r9}, "sm_86", 13)
+
+
+# The verdict (#60), on the tracked rows. The definition is measured.py's
+# docstring, committed before any 12-batch row existed; this pins what it
+# said about the rows, cell by cell, so a remeasure that moves it is seen.
+# claims.json's `jengine/nine-batches-suffice` record cites this test.
+NINE_VS_TWELVE = {
+    # (arch, L): (fewer_spills, faster_wide, faster_near) for b 12 against b 9
+    ("sm_86", 7): (False, False, False),
+    ("sm_86", 10): (False, False, False),
+    ("sm_86", 13): (True, False, False),
+    ("sm_86", 16): (True, False, False),
+    ("gfx1200", 7): (False, False, False),
+    ("gfx1200", 10): (False, False, False),
+    ("gfx1200", 13): (False, False, False),
+    ("gfx1200", 16): (False, False, True),
+}
+
+
+def test_nine_batches_do_not_suffice_on_either_card() -> None:
+    got = {}
+    for arch, L in NINE_VS_TWELVE:
+        c = measured.nine_vs_twelve(ROWS, arch, L)
+        got[arch, L] = (c.fewer_spills, c.faster_wide, c.faster_near)
+    assert got == NINE_VS_TWELVE
+    assert {(a, L) for a, L in got} == {
+        (a, L) for a in ARCHS for L in measured.SUBGRID_LS}
+    for arch in ARCHS:
+        # 9 suffices on an arch iff at every subgrid L: on neither card
+        assert not all(not any(v) for (a, _), v in got.items() if a == arch)
