@@ -143,8 +143,9 @@ RULES: dict[str, Rule] = {
         "CLIs that COMPOSE builder + backend and write or measure the result: "
         "`python -m felizjueves.emit` (KERNEL_GEN_CMD, #28) and "
         "`python -m felizjueves.measured` (#28). Their own rule, so that emit/*'s "
-        "stays narrow",
-        ("spec", "device", "ir", "kernel", "emit"),
+        "stays narrow. A driver also LOWERS what it built when the Spec names "
+        "a lowering lever (`measured.cell_kernels`, #55): build -> lower -> emit",
+        ("spec", "device", "ir", "kernel", "lower", "emit"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         interp="a driver ships kernels; it does not check them -- the tests do",
@@ -245,7 +246,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel"),
-    "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "spec"),
+    "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "lower",
+                 "spec"),
     "kernelrank": ("device", "kernel", "lower", "measured", "spec"),
 }.items()}
 

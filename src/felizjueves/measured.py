@@ -6,6 +6,8 @@
     python -m felizjueves.measured --remeasure --subgrid [-j N]  # SUBGRID
                                    [--n-batches 12]     # only those cells
     python -m felizjueves.measured --nine-vs-twelve     # #60's comparison
+    python -m felizjueves.measured --remeasure --subgrid --lever recycle
+    python -m felizjueves.measured --lever-ab recycle   # #55's comparison
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -80,7 +82,10 @@ own launch, run one after another into one J:
 - `raw`: every number each compiler printed, keyed `<kernel>:<field>`.
 
 A one-batch cell (n_batches = 1) is one kernel, and its row reads exactly as
-before: unprefixed `raw`, the one kernel's name and source hash.
+before: unprefixed `raw`, the one kernel's name and source hash. A cell's
+kernels are `cell_kernels(spec)`: `build_pq_kernels`, then lowered as the
+Spec's lowering levers say (#55) -- for a Spec with none, exactly the
+builder's.
 
 `shared_bytes` is what the compiler reports, which is the STATIC footprint:
 the kernel's `Jsh` is `extern __shared__`, sized at launch, so nvcc prints no
@@ -139,6 +144,38 @@ pq_spec(L, 12) on that arch:
   are judged apart and may disagree; sm_86 and gfx1200 are our cards, not
   the paper's A100, and that is the strongest form the claim can take here.
 
+A LEVER A/B (#55) is `lever_ab`: does a kernel-layer lever (today only
+`lower.RECYCLE`, `"recycle"`) beat the literal kernel? DECLARED BEFORE ANY
+LEVER ROW EXISTED, and not to be tuned after reading one.
+
+- THE CELLS are `lever_cells(lever)`: EVERY `SUBGRID` cell with the lever
+  added to `Spec.levers` -- all four L and all five batch counts, on both
+  cards, so a sign that flips with L, with n_batches or with the arch is
+  seen rather than generalised from one cell. A lever cell is its own key
+  (`.../recycle@...`), so the literal rows, and everything that reads them
+  (`kernelrank`, `nine_vs_twelve`), are untouched by it.
+- THE CONTROL IS TIMED IN THE SAME SESSION. The wall-clock sweep, asked for a
+  lever (`FJ_WALLCLOCK_LEVER`), compiles and checks BOTH arms of every cell
+  and times them back to back (near-T literal then lever, wide-T lever then
+  literal, so neither arm always runs first), writing the lever row with the
+  literal arm's same-session statistics in its `raw` as `wallclock:control:*`
+  (and `wallclock:control:near:*`). The literal row in the store is NOT
+  rewritten: a cross-session comparison would mix the box's drift into the
+  effect, and rewriting it would move #54's and #60's recorded verdicts.
+- PER INPUT (wide-T and near-T, judged apart): with c the control and r the
+  lever, the lever is FASTER iff  median(c) - median(r) > max(IQR(c),
+  IQR(r)), SLOWER iff  median(r) - median(c) > that same max, else NEUTRAL --
+  #60's rule, symmetric.
+- PER CELL: WIN if faster on an input and slower on none; LOSS if slower on
+  an input and faster on none; MIXED if both; NEUTRAL if neither.
+- THE DEFAULT. The lever may become the default on an arch only if it WINS at
+  every cell there; the default (no lever) changes only if that holds on
+  BOTH arches, and then in its own commit. Anything else -- including the
+  arms disagreeing in sign across L, n_batches or arch, which is itself the
+  result -- leaves the lever opt-in. Spill numbers are reported beside the
+  verdict (`spill`, literal row against lever row, same compiler) and never
+  enter it: the clock is the verdict.
+
 Nothing under `plan/` or `literature/` may import this module
 (test/test_layering.py): a measurement may never feed a literature floor.
 """
@@ -167,6 +204,7 @@ from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Lit, Space
 from felizjueves.kernel import build_pq_kernels, pq_spec
+from felizjueves.lower import LEVERS, RECYCLE, lower
 from felizjueves.spec import Spec
 
 REPO = Path(__file__).resolve().parents[2]
@@ -177,6 +215,30 @@ DEFAULT_LS = tuple(range(0, 17))
 SUBGRID_LS = (7, 10, 13, 16)
 SUBGRID: tuple[Spec, ...] = tuple(
     pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in (1, 3, 6, 9, 12))
+
+
+def cell_kernels(spec: Spec) -> tuple[Kernel, ...]:
+    """A cell's kernels, BUILT then LOWERED: `build_pq_kernels` of `spec`
+    without the lowering levers (`lower.LEVERS`, which neither the builder
+    nor the plan layer accepts), then `lower` on each finished kernel as
+    those levers say. No lowering lever: `build_pq_kernels(spec)`, the very
+    same objects -- the literal arm is not touched."""
+    rest = tuple(lv for lv in spec.levers if lv not in LEVERS)
+    if rest == spec.levers:
+        return build_pq_kernels(spec)
+    return tuple(lower(k, recycle_slots=RECYCLE in spec.levers)
+                 for k in build_pq_kernels(replace(spec, levers=rest)))
+
+
+def lever_cells(lever: str) -> tuple[Spec, ...]:
+    """#55's A/B cells for `lever`: every SUBGRID cell with the lever added
+    (module docstring, A LEVER A/B). Only a lowering lever is accepted."""
+    if lever not in LEVERS:
+        raise ValueError(f"lever {lever!r} is not a kernel-layer lever "
+                         f"({', '.join(sorted(LEVERS))})")
+    return tuple(replace(s, levers=tuple(sorted({*s.levers, lever})))
+                 for s in SUBGRID)
+
 
 SCHEMA = 1
 
@@ -213,6 +275,17 @@ HEADER = {
                  "uncontended box by test/test_kernel_device.py's opt-in "
                  "wall-clock sweep (FJ_WALLCLOCK_STORE). Compare only within "
                  "one arch, across n_batches -- never across vendors.",
+    "levers": "#55: rows keyed .../recycle@... are the recycle arm "
+              "(lower.recycle, measured.lever_cells) of every SUBGRID cell, "
+              "timed against a same-session literal control kept in their "
+              "raw 'wallclock:control:*'; measured.lever_ab is the verdict. "
+              "CONCLUSION: recycle stays opt-in. nvcc 13.0 and hipcc / ROCm "
+              "7.2.4 emit IDENTICAL machine code for the two arms in every "
+              "batch kernel of every cell (both scalarise the statically "
+              "indexed slot array), registers and spills match exactly, and "
+              "the clock is NEUTRAL at every cell on sm_86; on gfx1200 the "
+              "declared rule reads 4 cells at L <= 10 as SLOWER, on that "
+              "identical code -- the A/B's noise floor, not the lever.",
 }
 
 NV_SPILL_UNIT = "bytes (ptxas -v: spill stores / spill loads)"
@@ -414,7 +487,7 @@ class Backend:
         emit = cuda.emit if self.name == "cuda" else hip.emit
         return tuple(Unit(k.name, emit(k, self.arch),
                           jsh_slots(k) * self.arch.wavefront * 8)
-                     for k in build_pq_kernels(spec))
+                     for k in cell_kernels(spec))
 
 
 @dataclass(frozen=True)
@@ -760,6 +833,91 @@ def nine_vs_twelve(store: Mapping[str, Measured], arch: str,
         near=(n9[0], n12[0], max(n9[1], n12[1])))
 
 
+# ---------------------------------------------------------------------------
+# #55: a kernel-layer lever against the literal kernel (module docstring)
+# ---------------------------------------------------------------------------
+
+FASTER, SLOWER, NEUTRAL = "faster", "slower", "neutral"
+WIN, LOSS, MIXED = "win", "loss", "mixed"
+
+
+def _sign(control: tuple[float, float], lever: tuple[float, float]) -> str:
+    """FASTER / SLOWER / NEUTRAL for (median, IQR) pairs: #60's rule, both ways."""
+    margin = max(control[1], lever[1])
+    if control[0] - lever[0] > margin:
+        return FASTER
+    if lever[0] - control[0] > margin:
+        return SLOWER
+    return NEUTRAL
+
+
+@dataclass(frozen=True)
+class LeverAB:
+    """One lever cell against its same-session literal control, on one arch."""
+
+    arch: str
+    L: int
+    n_batches: int
+    lever: str
+    spill: tuple[int, int]  # (literal row, lever row): reported, not judged
+    wide: tuple[float, float, float, float]  # control median, IQR; lever median, IQR
+    near: tuple[float, float, float, float]
+
+    @property
+    def wide_sign(self) -> str:
+        return _sign(self.wide[:2], self.wide[2:])
+
+    @property
+    def near_sign(self) -> str:
+        return _sign(self.near[:2], self.near[2:])
+
+    @property
+    def verdict(self) -> str:
+        signs = {self.wide_sign, self.near_sign}
+        if FASTER in signs and SLOWER in signs:
+            return MIXED
+        if FASTER in signs:
+            return WIN
+        if SLOWER in signs:
+            return LOSS
+        return NEUTRAL
+
+
+def lever_ab(store: Mapping[str, Measured], arch: str, spec: Spec) -> LeverAB:
+    """#55's comparison for one lever cell `spec` on `arch`, from the store.
+
+    Raises KeyError when the lever row is missing, uncompiled or untimed, or
+    carries no same-session control, or the literal row is missing.
+    """
+    (lever,) = [lv for lv in spec.levers if lv in LEVERS]
+    literal = replace(spec, levers=tuple(lv for lv in spec.levers if lv != lever))
+
+    def one(s: Spec) -> Measured:
+        got = rows(spec=s, arch=arch, store=store)
+        if len(got) != 1:
+            raise KeyError(f"{s.key()} @ {arch}: {len(got)} rows")
+        (r,) = got.values()
+        return r
+
+    r, lit = one(spec), one(literal)
+    if r.runtime_ns is None or r.spread_ns is None or r.spill_store is None \
+            or "wallclock:control:median_ns" not in r.raw:
+        raise KeyError(f"{spec.key()} @ {arch}: not compiled and timed "
+                       "against a same-session control")
+    if lit.spill_store is None or lit.spill_load is None or r.spill_load is None:
+        raise KeyError(f"{literal.key()} @ {arch}: not compiled")
+
+    def stats(prefix: str) -> tuple[float, float]:
+        return (r.raw[f"{prefix}median_ns"],
+                r.raw[f"{prefix}q3_ns"] - r.raw[f"{prefix}q1_ns"])
+
+    return LeverAB(
+        arch=arch, L=spec.total_am, n_batches=spec.n_batches, lever=lever,
+        spill=(lit.spill_store + lit.spill_load, r.spill_store + r.spill_load),
+        wide=(*stats("wallclock:control:"), r.runtime_ns, r.spread_ns),
+        near=(*stats("wallclock:control:near:"), *stats("wallclock:near:")))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m felizjueves.measured")
     ap.add_argument("--remeasure", action="store_true")
@@ -771,6 +929,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="with --subgrid: only the cells of these n_batches")
     ap.add_argument("--nine-vs-twelve", action="store_true",
                     help="print #60's 9-against-12 comparison per arch and L")
+    ap.add_argument("--lever", default=None,
+                    help="with --subgrid: the lever_cells of this lever (#55)")
+    ap.add_argument("--lever-ab", default=None, metavar="LEVER",
+                    help="print #55's A/B of LEVER against literal, per arch "
+                         "and cell")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--store", type=Path, default=STORE)
     try:
@@ -780,9 +943,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.remeasure:
         names = ("cuda", "hip") if args.backend == "both" else (args.backend,)
         try:
-            cells = SUBGRID if args.subgrid else args.Ls
+            if args.lever and not args.subgrid:
+                raise ValueError("--lever needs --subgrid")
+            grid = lever_cells(args.lever) if args.lever else SUBGRID
+            cells = grid if args.subgrid else args.Ls
             if args.subgrid and args.n_batches:
-                cells = [s for s in SUBGRID if s.n_batches in args.n_batches]
+                cells = [s for s in grid if s.n_batches in args.n_batches]
             remeasure(names, cells, args.j, args.store)
         except (RuntimeError, ValueError) as e:
             print(f"measured: {e}", file=sys.stderr)
@@ -793,6 +959,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError) as e:
         print(f"measured: {e}", file=sys.stderr)
         return 2
+    if args.lever_ab:
+        try:
+            cells = lever_cells(args.lever_ab)
+        except ValueError as e:
+            print(f"measured: {e}", file=sys.stderr)
+            return 2
+        ms = 1e6
+        for arch in (SM_86.name, GFX1200.name):
+            for spec in cells:
+                try:
+                    c = lever_ab(got, arch, spec)
+                except KeyError as e:
+                    print(f"{arch} {e}")
+                    continue
+                print(f"{arch} L={c.L} b{c.n_batches}: spill {c.spill[0]} -> "
+                      f"{c.spill[1]}; wide {c.wide[0] / ms:.3f}+-"
+                      f"{c.wide[1] / ms:.3f} -> {c.wide[2] / ms:.3f}+-"
+                      f"{c.wide[3] / ms:.3f} ms {c.wide_sign}; near "
+                      f"{c.near[0] / ms:.3f}+-{c.near[1] / ms:.3f} -> "
+                      f"{c.near[2] / ms:.3f}+-{c.near[3] / ms:.3f} ms "
+                      f"{c.near_sign} -> {c.lever} {c.verdict.upper()}")
+        return 0
     if args.nine_vs_twelve:
         for arch in (SM_86.name, GFX1200.name):
             for L in SUBGRID_LS:

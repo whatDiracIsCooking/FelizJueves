@@ -23,6 +23,17 @@ def test_key_names_every_field() -> None:
     )
 
 
+def test_the_two_arms_of_a_lever_ab_are_two_keys() -> None:
+    # #55: the recycle arm is told apart by its key, not by a note; levers
+    # from two layers (the plan's no-sieve, the builder's recycle) compose.
+    literal, lever = _spec(n_batches=3), _spec(levers=("recycle",), n_batches=3)
+    assert literal.key() == "coulomb/d0/(4,4|4,4)/b3/j/literal"
+    assert lever.key() == "coulomb/d0/(4,4|4,4)/b3/j/recycle"
+    assert _spec(levers=("no-sieve", "recycle")).key().endswith("/no-sieve+recycle")
+    with pytest.raises(ValueError):
+        _spec(levers=("recycle", "no-sieve"))  # sorted, or refused
+
+
 def test_the_batch_count_is_part_of_the_key() -> None:
     # A kernel is emitted per class AND per batch, so two batch counts are two
     # artifacts and must be two keys.
