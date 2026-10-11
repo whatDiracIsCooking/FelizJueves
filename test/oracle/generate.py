@@ -58,11 +58,14 @@ class Case:
     # representative shell quartet per canonical angular-momentum class
     # (`eri_quartets`, #85). Needs `record_basis`: i, j, k, l index its shells.
     record_eri: bool = False
-    # Only classes with la + lb + lc + ld <= this. A class's block size is
-    # fixed by its l's (no smaller representative exists), and the repo's
-    # 512 KB check-added-large-files hook caps a fixture: every class of an
-    # s-to-f basis is ~1.2 MB, L <= 8 is ~330 KB.
+    # Only classes with min_eri_L <= la + lb + lc + ld <= max_eri_L. A
+    # class's block size is fixed by its l's (no smaller representative
+    # exists), and the repo's 512 KB check-added-large-files hook caps a
+    # fixture: every class of an s-to-f basis is ~1.2 MB, L <= 8 is ~330 KB.
+    # So one basis's classes are split across several cases by L (#121),
+    # each a file under the cap, together covering every class once.
     max_eri_L: int | None = None
+    min_eri_L: int | None = None
     # Write the `vj` array (#86): PySCF's `get_jk` Coulomb matrix for the
     # recorded `density`, so both sides of the J comparison see identical
     # input. Needs `record_basis` (our side builds its shells from it).
@@ -112,6 +115,31 @@ DENSITY_RECIPE = ("hilbert: D[i][j] = 1/(i+j+1) -- symmetric positive "
                   "definite, no RNG, reproducible bit-for-bit on any host")
 
 _H2O = "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12"
+
+
+def _hf_eri_by_L(L: int, classes: str) -> Case:
+    """#121: HF/cc-pVTZ's classes with la + lb + lc + ld == L, one file per
+    L = 9..12 -- the f-heavy blocks hf_ccpvtz_eri's 512 KB cap leaves out.
+    Same molecule, basis and representative rule as hf_ccpvtz_eri, so the
+    five files together hold all 55 canonical classes, each exactly once."""
+    return Case(
+        description=(
+            f"#121's split of #85's s-to-f case: hf_ccpvtz_eri's molecule and "
+            f"basis, with libcint's int2e for one representative shell "
+            f"quartet per angular-momentum class with la + lb + lc + ld = "
+            f"{L}: {classes}. With hf_ccpvtz_eri (L <= 8) and its L = 9..12 "
+            f"siblings, all 55 classes of HF/cc-pVTZ, each file under the "
+            f"512 KB hook."
+        ),
+        atom="F 0 0 0; H 0.4 -0.7 1.6",
+        unit="Bohr",
+        basis="cc-pvtz",
+        cart=True,
+        record_basis=True,
+        record_eri=True,
+        min_eri_L=L,
+        max_eri_L=L,
+    )
 
 CASES: dict[str, Case] = {
     "h2_sto3g": Case(
@@ -182,6 +210,11 @@ CASES: dict[str, Case] = {
         record_eri=True,
         max_eri_L=8,
     ),
+    # #121: the nine classes over hf_ccpvtz_eri's cap, one file per L.
+    "hf_ccpvtz_eri_l9": _hf_eri_by_L(9, "(ff|fs) (ff|dp) (fd|fp) (fd|dd)"),
+    "hf_ccpvtz_eri_l10": _hf_eri_by_L(10, "(ff|fp) (ff|dd) (fd|fd)"),
+    "hf_ccpvtz_eri_l11": _hf_eri_by_L(11, "(ff|fd)"),
+    "hf_ccpvtz_eri_l12": _hf_eri_by_L(12, "(ff|ff)"),
     # #86's J cases: the recorded hilbert density, contracted by PySCF's
     # `get_jk`. One geometry for every H2O case (h2o_631g_eri's, no atom on
     # an axis), so the three bases differ in nothing else.
@@ -268,9 +301,11 @@ def canonical_classes(ls: Sequence[int]) -> list[tuple[int, int, int, int]]:
 
 
 def eri_quartets(shells: Sequence[Any], max_L: int | None = None,
+                 min_L: int | None = None,
                  ) -> list[tuple[int, int, int, int]]:
     """One representative shell quartet per canonical class (with total
-    angular momentum <= `max_L`, if given), deterministically.
+    angular momentum <= `max_L` and >= `min_L`, where given),
+    deterministically.
 
     `shells` are `converted` records ({atom, l, exponents, ...}) or anything
     with those fields as keys. Among a class's quartets, prefer the most
@@ -291,6 +326,8 @@ def eri_quartets(shells: Sequence[Any], max_L: int | None = None,
     for cls in canonical_classes(list(by_l)):
         if max_L is not None and sum(cls) > max_L:
             continue
+        if min_L is not None and sum(cls) < min_L:
+            continue
         cands = [(i, j, k, m) for i in by_l[cls[0]] for j in by_l[cls[1]]
                  for k in by_l[cls[2]] for m in by_l[cls[3]]]
         out.append(min(cands, key=key))
@@ -298,7 +335,8 @@ def eri_quartets(shells: Sequence[Any], max_L: int | None = None,
 
 
 def eri_arrays(mol: Any, converted: dict[str, Any],
-               max_L: int | None = None) -> dict[str, Any]:
+               max_L: int | None = None,
+               min_L: int | None = None) -> dict[str, Any]:
     """libcint's Cartesian `int2e` for each of `eri_quartets`, cut to our
     shells' AO ranges -- one block per class, never the whole tensor."""
     shells = converted["shells"]
@@ -310,7 +348,7 @@ def eri_arrays(mol: Any, converted: dict[str, Any],
             lib.append(i)
             ctr.append(c)
     out = {}
-    for q in eri_quartets(shells, max_L):
+    for q in eri_quartets(shells, max_L, min_L):
         sl: list[int] = []
         for s in q:
             sl += [lib[s], lib[s] + 1]
@@ -397,7 +435,7 @@ def build(name: str) -> dict[str, Any]:
         if not (case.record_basis and case.cart):
             raise ValueError(f"{name}: record_eri needs record_basis and cart")
         out["arrays"].update(eri_arrays(mol, out["converted"],
-                                        case.max_eri_L))
+                                        case.max_eri_L, case.min_eri_L))
     if case.record_j:
         if not case.record_basis:
             raise ValueError(f"{name}: record_j needs record_basis")

@@ -19,11 +19,15 @@ comparison is against that tracked fixture, so it is fast-tier for s/p and
     h2o_631g_eri   H2O / 6-31G: contraction depth (O 1s, six primitives) at
                    low l -- what exercises the dressing
     hf_ccpvtz_eri  HF / cc-pVTZ: s to f, a general contraction, H off-axis;
-                   the classes with la+lb+lc+ld <= 8 (46 of 55). A class's
-                   block size is fixed by its l's, and all 55 are ~1.2 MB,
-                   over the repo's 512 KB large-file hook; the nine left out
-                   are L = 9..12: (ff|fs) (ff|dp) (fd|fp) (fd|dd)
-                   (ff|fp) (ff|dd) (fd|fd) (ff|fd) (ff|ff).
+                   the classes with la+lb+lc+ld <= 8 (46 of 55)
+    hf_ccpvtz_eri_l9 .. _l12
+                   the same molecule and basis, one file per L = 9..12
+                   (#121): (ff|fs) (ff|dp) (fd|fp) (fd|dd) | (ff|fp) (ff|dd)
+                   (fd|fd) | (ff|fd) | (ff|ff). A class's block size is fixed
+                   by its l's, and all 55 in one file are ~1.2 MB, over the
+                   repo's 512 KB large-file hook; split by L, every file is
+                   under it and the five together hold all 55 classes of
+                   HF/cc-pVTZ, each exactly once -- no reach to record.
 
 THE TOLERANCE, stated and not tuned: element by element,
 
@@ -34,8 +38,8 @@ THE TOLERANCE, stated and not tuned: element by element,
 so the bound is about rounding in either program, not about how much a sum
 cancelled. 1e-12 is ~4500 ulps of the scale. Measured worst on this box
 (2026-10-11, pyscf 2.14.0 / libcint 6.1.3): 1.3e-13 of scale, (fs|ps) on
-HF/cc-pVTZ; every class is printed with `-s`. (Before the cap the same
-code met all 55 classes, (ff|ff) included, at that same worst 1.3e-13.)
+HF/cc-pVTZ; every class is printed with `-s`, all 55 tracked, (ff|ff)
+included.
 A failure here is a defect to find, not a tolerance to widen -- that
 needs a `decimal` recomputation first, the way test_kernel_device.py
 justified its 5e-13.
@@ -60,7 +64,10 @@ from felizjueves.ao.eri import eri_block, eri_block_and_scale
 from felizjueves.reference.pq import pq
 
 TOL = 1e-12
-CASES = ("h2o_631g_eri", "hf_ccpvtz_eri")
+HF_SPLIT = ("hf_ccpvtz_eri", "hf_ccpvtz_eri_l9", "hf_ccpvtz_eri_l10",
+            "hf_ccpvtz_eri_l11", "hf_ccpvtz_eri_l12")
+CASES = ("h2o_631g_eri", *HF_SPLIT)
+HOOK_BYTES = 512 * 1024  # .pre-commit-config.yaml: check-added-large-files 512
 
 # The eight orderings of (i j | k l), as positions into the quartet.
 PERMS = ((0, 1, 2, 3), (1, 0, 2, 3), (0, 1, 3, 2), (1, 0, 3, 2),
@@ -106,16 +113,45 @@ def test_every_canonical_class_has_its_representative():
     for name, fx in _FX.items():
         recs = [{"atom": s.atom, "l": s.l, "exponents": s.exponents}
                 for s in fx.converted.shells]
-        want = eri_quartets(recs, CASE_OF[name].max_eri_L)
+        case = CASE_OF[name]
+        want = eri_quartets(recs, case.max_eri_L, case.min_eri_L)
         assert sorted(manifest.eri_blocks(fx)) == sorted(want)
-    # The cap is the 512 KB fixture hook's, and it still reaches f: every
-    # class with L <= 8 of HF/cc-pVTZ, 46 of 55.
+    # hf_ccpvtz_eri is capped at L <= 8 by the 512 KB hook: 46 of 55.
     assert len(manifest.eri_blocks(_FX["hf_ccpvtz_eri"])) == 46
+
+
+def test_the_split_covers_every_class_of_hf_ccpvtz_once():
+    """#121: the five HF/cc-pVTZ files are one basis (same converted shells)
+    and together hold every canonical class -- all 55 -- in exactly one file.
+    So `jengine/prefactor-factorisation`'s witness has no class boundary."""
+    shells = _FX["hf_ccpvtz_eri"].converted.shells
+    recs = [{"atom": s.atom, "l": s.l, "exponents": s.exponents}
+            for s in shells]
+    seen: list[tuple[int, int, int, int]] = []
+    for name in HF_SPLIT:
+        assert _FX[name].converted.shells == shells, name
+        seen += manifest.eri_blocks(_FX[name])
+    assert len(seen) == len(set(seen)) == 55
+    assert sorted(seen) == sorted(eri_quartets(recs))
+    by_L = {}
+    for name in HF_SPLIT:
+        by_L[name] = sorted({sum(shells[s].l for s in q)
+                             for q in manifest.eri_blocks(_FX[name])})
+    assert by_L == {"hf_ccpvtz_eri": list(range(9)),
+                    "hf_ccpvtz_eri_l9": [9], "hf_ccpvtz_eri_l10": [10],
+                    "hf_ccpvtz_eri_l11": [11], "hf_ccpvtz_eri_l12": [12]}
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_eri_fixture_is_under_the_large_file_hook(name):
+    """The split dodges the cap; it must not quietly creep back over it."""
+    assert (manifest.FIXTURES / f"{name}.json").stat().st_size < HOOK_BYTES
 
 
 def test_the_fast_tier_holds_the_sp_classes_and_both_cases():
     fast = [p for p in PARAMS if not p.marks]
-    assert {p.values[0] for p in fast} == set(CASES)
+    # The L = 9..12 files are f-only (slow): s/p lives in the two base cases.
+    assert {p.values[0] for p in fast} == {"h2o_631g_eri", "hf_ccpvtz_eri"}
     assert len(fast) == 6 + 6  # (ss|ss) .. (pp|pp), in each case
 
 
