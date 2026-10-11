@@ -133,7 +133,8 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
     Computation **21**, 9388–9403 (2025). doi:10.1021/acs.jctc.5c00775 —
     `[JEngine]`. Also a ChemRxiv v2 preprint,
     doi:10.26434/chemrxiv-2025-2lntb-v2, whose equation numbering is what
-    `[JEngine, v2, eq. N]` indexes; the journal version may renumber.
+    `[JEngine, v2, eq. N]` indexes; the journal version may renumber. The v1
+    preprint, doi:10.26434/chemrxiv-2025-2lntb, is `[JEngine, v1, …]`.
 36. P. T. Bauman et al. (31 authors), "Experiences readying applications for
     Exascale," in Proceedings of the International Conference for High
     Performance Computing, Networking, Storage and Analysis (SC '23) (ACM,
@@ -167,3 +168,12 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
 44. Y. Shao and M. Head-Gordon, "An improved J matrix engine for density
     functional theory calculations," Chemical Physics Letters **323**, 425–433
     (2000). doi:10.1016/S0009-2614(00)00524-8
+45. U. Ryu, M. Kim, and Y. S. Lee, "Optimal use of the recurrence relations
+    for the evaluation of molecular integrals over Cartesian Gaussian basis
+    functions," Journal of Computational Chemistry **14**, 30–36 (1993).
+    doi:10.1002/jcc.540140107
+46. L. E. McMurchie and E. R. Davidson, "One and two electron integrals over
+    Cartesian Gaussian functions," University of Washington technical report
+    UCRL-13791 (1976). doi:10.2172/5184486 — the authors' report of entry 39,
+    and an openly readable text of it. Equation numbers cited against this
+    entry are the report's; the journal version may renumber.

@@ -89,12 +89,30 @@ generator must not transcribe them:
 
 - **`1y` is misprinted** as `(1,1,0)` in `[JEngine, v2, eq. 17]`. It is
   `(0,1,0)`; `(1,1,0)` is not a unit vector and would break eq. 11.
-- **`θ` is never defined.** It appears only in `[JEngine, v2, eq. 13]`, the
-  fundamental. The conventional MD reading is `θ² = ζη/(ζ+η)` with `ζ = α+β`
-  and `η = γ+δ` (`[JEngine, v2, eqs. 14–15]` do define those), prefactors
-  partly absorbed into the `E` coefficients — but **pin this against McMurchie
-  & Davidson directly before the generator depends on it**, since the choice of
-  convention decides where the `2/√π` and the `(-2θ)^m` sign live.
+- **`θ` is never defined, and eq. 13 is wrong in `m` under any definition.**
+  The fundamental, as printed, is
+  `[0]^(m) = (2/√π) θ (-2θ)^m F_m(|θ·PQ|²)` (`[JEngine, v2, eq. 13]`), and v2
+  never says what `θ` is. (`[JEngine, v1]` did: `θ = √(ζη/(ζ+η))` in the text
+  under its eq. 11. v2 dropped the line.) **Pinned, by our derivation** against
+  McMurchie & Davidson — numbers are the report's, entry 46 of
+  [`../references.md`](../references.md):
+  - `θ² = ζη/(ζ+η)`, `ζ = α+β`, `η = γ+δ`. Forced by the Boys argument: MD's
+    `T = α_P α_Q (α_P+α_Q)⁻¹ |PQ|²` (eq. 3.32) equals `|θ·PQ|²` only so.
+  - **The `m`-dependence is `(-2θ²)^m`, not `(-2θ)^m`.** MD set
+    `R_000j = (-2α)^j F_j(T)` with `T = α|PQ|²` (eqs. 4.2, 4.4), so that the
+    unscaled recurrences (eqs. 4.6–4.8, ours above) hold; here `α = θ²`.
+    With `(-2θ)^m` the recurrence no longer differentiates the fundamental.
+    The sign is `(-1)^m`, on the fundamental, alongside `F_m`.
+  - **`2/√π` lives on the fundamental, with one `θ`; `π³/(ζη)^{3/2}` does not.**
+    MD's ERI prefactor is `λ = 2π^{5/2} ζ⁻¹ η⁻¹ (ζ+η)^{-1/2}` (eqs. 3.30–3.31),
+    which factors exactly as `(2/√π) θ · (π/ζ)^{3/2} (π/η)^{3/2}`. Eq. 13 keeps
+    the first factor. The pair factors `(π/ζ)^{3/2}` and `(π/η)^{3/2}` are ours
+    to place: the generator folds them into the bra and ket pair data (with
+    the `E` coefficients), never into `[0]^(m)`.
+
+  So the generator emits `[0]^(m) = (2/√π) θ (-2θ²)^m F_m(θ²|PQ|²)`. The
+  source states none of this in v2; it is our derivation, and a test should
+  cite it here rather than the paper.
 
 ## Why this is a J engine and not an ERI engine
 
