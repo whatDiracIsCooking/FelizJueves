@@ -240,7 +240,10 @@ check, `E^{00}_0`, the empty top of the table, parity at `A = B`, and that
   defects in the source" above).
 - `(π/ζ)^{3/2}` goes on the **bra** pair and `(π/η)^{3/2}` on the **ket** pair,
   host-side, applied by one dressing function in `ao/pairs.py` together with
-  the contraction coefficient and the primitive normalisation.
+  the contraction coefficient. The primitive normalisation is **not** a
+  dressing: a `Shell`'s coefficients multiply unnormalised primitives
+  (`ao/shell.py`), so it is already in them, and applying it again in the
+  dressing normalised twice — caught against libcint's `int2e` by #85.
 - `ao/hermite.py` carries **none** of these. Any of them there breaks the
   pointwise identity above, which is the only independent check `E` has: if
   that identity needs a fudge factor to hold, the factor is in the wrong module.

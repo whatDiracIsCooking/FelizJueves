@@ -26,7 +26,11 @@ THE SHAPE (schema 1), one JSON object per file under `fixtures/`:
     ao_labels    PySCF's `ao_labels()`, one per AO
     ao_loc       shell offsets into the AO list, len(shells) + 1 entries
     arrays       {name: {shape, values}} -- values flattened row-major
-                 `density` (nao x nao, exactly symmetric) is required
+                 `density` (nao x nao, exactly symmetric) is required.
+                 `int2e:i,j,k,l` (OPTIONAL, #85; needs `converted`) is
+                 libcint's Cartesian `(ij|kl)` block for converted shells
+                 i, j, k, l, shape (n_i, n_j, n_k, n_l), AOs in `cartesians`
+                 order -- one shell quartet, never the whole tensor
     density_recipe  how the recorded density was made
     converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
                  (`ao.shell.Shell`, one entry per contraction, in AO order) as
@@ -70,6 +74,7 @@ TOP_KEYS = (
 )
 OPTIONAL_KEYS = ("converted",)
 REQUIRED_ARRAYS = ("density",)
+ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
 
 
 class FixtureError(ValueError):
@@ -314,6 +319,7 @@ def validate(path: Path, raw: Any) -> Fixture:
     converted = (_converted(path, raw["converted"], prov, len(atoms), shells,
                             nao)
                  if "converted" in raw else None)
+    _check_eri(path, arrays, converted)
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,
@@ -354,6 +360,45 @@ def _converted(path: Path, c: Any, prov: Provenance, n_atoms: int,
     if n != nao:
         raise _fail(path, f"converted shells give {n} AOs, nao is {nao}")
     return Converted(common, tuple(out))
+
+
+def _eri_quartet(name: str) -> tuple[int, ...] | None:
+    """`int2e:i,j,k,l` -> (i, j, k, l); None for any other array name."""
+    if not name.startswith(ERI_PREFIX):
+        return None
+    try:
+        q = tuple(int(x) for x in name[len(ERI_PREFIX):].split(","))
+    except ValueError:
+        return ()
+    return q if len(q) == 4 and min(q) >= 0 else ()
+
+
+def _check_eri(path: Path, arrays: dict[str, np.ndarray],
+               converted: Converted | None) -> None:
+    for name, a in arrays.items():
+        q = _eri_quartet(name)
+        if q is None:
+            continue
+        if not q:
+            raise _fail(path, f"arrays.{name} is not int2e:i,j,k,l")
+        if converted is None:
+            raise _fail(path, f"arrays.{name} needs the converted basis its "
+                              "indices name")
+        if max(q) >= len(converted.shells):
+            raise _fail(path, f"arrays.{name} names a shell the converted "
+                              "basis does not have")
+        want = tuple((converted.shells[s].l + 1) * (converted.shells[s].l + 2)
+                     // 2 for s in q)
+        if a.shape != want:
+            raise _fail(path, f"arrays.{name} has shape {a.shape}, its shells "
+                              f"need {want}")
+
+
+def eri_blocks(fx: Fixture) -> dict[tuple[int, int, int, int], np.ndarray]:
+    """Every `int2e:i,j,k,l` block of `fx`, keyed by its converted-shell
+    quartet (validated on load)."""
+    return {q: a for name, a in fx.arrays.items()
+            if (q := _eri_quartet(name))}
 
 
 def load(path: Path | str) -> Fixture:

@@ -34,7 +34,7 @@ from typing import Any
 
 import numpy as np
 
-from .manifest import FIXTURES, SCHEMA, dumps, encode_array, load
+from .manifest import ERI_PREFIX, FIXTURES, SCHEMA, dumps, encode_array, load
 
 COMMAND = ("PYTHONPATH=test uv run --group oracle python -m oracle.generate "
            "--regenerate")
@@ -54,6 +54,15 @@ class Case:
     spin: int = 0
     # Write the `converted` slot: the basis in our convention (oracle.basis).
     record_basis: bool = False
+    # Write `int2e:i,j,k,l` arrays: libcint's Cartesian ERI block for one
+    # representative shell quartet per canonical angular-momentum class
+    # (`eri_quartets`, #85). Needs `record_basis`: i, j, k, l index its shells.
+    record_eri: bool = False
+    # Only classes with la + lb + lc + ld <= this. A class's block size is
+    # fixed by its l's (no smaller representative exists), and the repo's
+    # 512 KB check-added-large-files hook caps a fixture: every class of an
+    # s-to-f basis is ~1.2 MB, L <= 8 is ~330 KB.
+    max_eri_L: int | None = None
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -136,6 +145,37 @@ CASES: dict[str, Case] = {
         cart=True,
         record_basis=True,
     ),
+    "h2o_631g_eri": Case(
+        description=(
+            "#85's contracted s/p case: H2O in 6-31G, Cartesian, no atom on "
+            "an axis -- contraction depth (O 1s is six primitives) at low l, "
+            "which is what exercises the dressing. Records the converted "
+            "basis and libcint's int2e for one representative shell quartet "
+            "per angular-momentum class."
+        ),
+        atom="O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+        unit="Bohr",
+        basis="6-31g",
+        cart=True,
+        record_basis=True,
+        record_eri=True,
+    ),
+    "hf_ccpvtz_eri": Case(
+        description=(
+            "#85's s-to-f case: hf_ccpvtz's molecule and basis (a general "
+            "contraction, H off every axis), with libcint's int2e for one "
+            "representative shell quartet per angular-momentum class with "
+            "la + lb + lc + ld <= 8: 46 of the 55, f included, (dd|dd) and "
+            "(ff|pp) the largest."
+        ),
+        atom="F 0 0 0; H 0.4 -0.7 1.6",
+        unit="Bohr",
+        basis="cc-pvtz",
+        cart=True,
+        record_basis=True,
+        record_eri=True,
+        max_eri_L=8,
+    ),
 }
 
 
@@ -155,6 +195,71 @@ def _libcint_version() -> str:
     except OSError:
         m = None
     return m.group(1) if m else "unknown (no cint.h shipped with this pyscf)"
+
+
+def canonical_classes(ls: Sequence[int]) -> list[tuple[int, int, int, int]]:
+    """Every `(la lb|lc ld)` with la >= lb, lc >= ld, (la, lb) >= (lc, ld)
+    over the angular momenta `ls` -- one per 8-fold-symmetry orbit."""
+    lv = sorted(set(ls), reverse=True)
+    pairs = [(a, b) for a in lv for b in lv if a >= b]
+    return [(*bra, *ket) for bra in pairs for ket in pairs if bra >= ket]
+
+
+def eri_quartets(shells: Sequence[Any], max_L: int | None = None,
+                 ) -> list[tuple[int, int, int, int]]:
+    """One representative shell quartet per canonical class (with total
+    angular momentum <= `max_L`, if given), deterministically.
+
+    `shells` are `converted` records ({atom, l, exponents, ...}) or anything
+    with those fields as keys. Among a class's quartets, prefer the most
+    distinct atoms (geometry), then the most distinct shells (no accidental
+    symmetry), then the most primitives (contraction depth), then the lowest
+    indices.
+    """
+    by_l: dict[int, list[int]] = {}
+    for i, s in enumerate(shells):
+        by_l.setdefault(s["l"], []).append(i)
+
+    def key(q: tuple[int, int, int, int]) -> tuple:
+        atoms = len({shells[i]["atom"] for i in q})
+        prims = sum(len(shells[i]["exponents"]) for i in q)
+        return (-atoms, -len(set(q)), -prims, q)
+
+    out = []
+    for cls in canonical_classes(list(by_l)):
+        if max_L is not None and sum(cls) > max_L:
+            continue
+        cands = [(i, j, k, m) for i in by_l[cls[0]] for j in by_l[cls[1]]
+                 for k in by_l[cls[2]] for m in by_l[cls[3]]]
+        out.append(min(cands, key=key))
+    return out
+
+
+def eri_arrays(mol: Any, converted: dict[str, Any],
+               max_L: int | None = None) -> dict[str, Any]:
+    """libcint's Cartesian `int2e` for each of `eri_quartets`, cut to our
+    shells' AO ranges -- one block per class, never the whole tensor."""
+    shells = converted["shells"]
+    # Our shell s is contraction `ctr[s]` of libcint shell `lib[s]`; within a
+    # libcint shell the AOs are contraction-major (oracle.basis.from_mole).
+    lib, ctr = [], []
+    for i in range(mol.nbas):
+        for c in range(int(mol.bas_nctr(i))):
+            lib.append(i)
+            ctr.append(c)
+    out = {}
+    for q in eri_quartets(shells, max_L):
+        sl: list[int] = []
+        for s in q:
+            sl += [lib[s], lib[s] + 1]
+        full = mol.intor("int2e", shls_slice=tuple(sl))  # cart=True: int2e_cart
+        cut = []
+        for s in q:
+            n = (shells[s]["l"] + 1) * (shells[s]["l"] + 2) // 2
+            cut.append(slice(ctr[s] * n, (ctr[s] + 1) * n))
+        out[ERI_PREFIX + ",".join(str(s) for s in q)] = encode_array(
+            np.ascontiguousarray(full[tuple(cut)]))
+    return out
 
 
 def build(name: str) -> dict[str, Any]:
@@ -226,6 +331,11 @@ def build(name: str) -> dict[str, Any]:
         from .basis import converted_record
 
         out["converted"] = converted_record(mol)
+    if case.record_eri:
+        if not (case.record_basis and case.cart):
+            raise ValueError(f"{name}: record_eri needs record_basis and cart")
+        out["arrays"].update(eri_arrays(mol, out["converted"],
+                                        case.max_eri_L))
     return out
 
 

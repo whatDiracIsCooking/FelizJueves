@@ -1,7 +1,7 @@
 """Primitive-pair data for the `[p|q]` kernel, and a Schwarz bound that bounds.
 
     primitive_pairs(sa, sb) -> tuple[PrimitivePair, ...]   one per (i, j)
-    dress(e, ...)           -> the ONE place the three dressings multiply in
+    dress(e, ...)           -> the ONE place the two dressings multiply in
     hermite_bound(zeta, p, *, one_centre) -> I_p >= 0
     pair_bound(zeta, L, *, one_centre)    -> I_pair = sum_p I_p
     dmax(dq)                              -> max_q |D_q|, of the DRESSED D_q
@@ -14,15 +14,23 @@ DRESSED Hermite coefficient block -- one row per Cartesian component pair
 `(a, b)` in `cartesians(la) x cartesians(lb)` order, one column per Hermite
 index in `hermite_order(la + lb)` order (= `plan.targets.hermite_targets`).
 
-WHERE THE THREE DRESSINGS GO, decided once (milestone 4, "The physics this
+WHERE THE DRESSINGS GO, decided once (milestone 4, "The physics this
 milestone owns"; docs/implementation/j_engine.md, "The `E` transform").
 `ao/hermite.py` produces McMurchie & Davidson's PURE `E` (entry 46 of
 docs/references.md, eqs. 2.20-2.22). `dress` multiplies in, and nothing else
 in this package does:
 
     the contraction coefficients   c_a c_b             (ao.shell.Shell)
-    the primitive normalisation    N(la, alpha) N(lb, beta)   (ao.shell.primitive_norm)
     the pair factor                (pi / zeta)^{3/2}
+
+THE PRIMITIVE NORMALISATION IS NOT A DRESSING (#85, correcting #83). A
+`Shell`'s coefficients multiply UNNORMALISED primitives (ao/shell.py's
+module docstring, the one stated convention), so any normalisation is
+already IN them -- put there by whoever built the shell from basis-file
+coefficients, via `ao.shell.primitive_norm`, or by `test/oracle/basis.py`
+from libcint's. Multiplying `N(la, alpha) N(lb, beta)` in here as well
+normalised twice: a clean per-class constant against libcint's `int2e`,
+which test/test_ao_eri.py now pins.
 
 The kernel keeps `(2/sqrt(pi)) theta` inside `[0]^{(m)}` (reference/pq.py,
 `fundamental`), the host applies `(pi/zeta)^{3/2}` on the bra and
@@ -88,7 +96,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from felizjueves.ao.hermite import e_block, hermite_order
-from felizjueves.ao.shell import Shell, cartesians, primitive_norm
+from felizjueves.ao.shell import Shell, cartesians
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]
@@ -112,13 +120,14 @@ class PrimitivePair:
     block: tuple[tuple[float, ...], ...]
 
 
-def dress(e: Sequence[float], *, ca: float, cb: float, na: float, nb: float,
+def dress(e: Sequence[float], *, ca: float, cb: float,
           zeta: float) -> tuple[float, ...]:
-    """`c_a c_b N_a N_b (pi/zeta)^{3/2} E` -- the ONLY place any of the three
-    dressings (module docstring) multiplies into a Hermite coefficient."""
+    """`c_a c_b (pi/zeta)^{3/2} E` -- the ONLY place either dressing (module
+    docstring) multiplies into a Hermite coefficient. No normalisation: that
+    is already in the coefficients."""
     if not zeta > 0.0:
         raise ValueError(f"zeta = {zeta!r} is not > 0")
-    scale = ca * cb * na * nb * (math.pi / zeta) ** 1.5
+    scale = ca * cb * (math.pi / zeta) ** 1.5
     return tuple(scale * x for x in e)
 
 
@@ -130,15 +139,13 @@ def primitive_pairs(sa: Shell, sb: Shell) -> tuple[PrimitivePair, ...]:
     out = []
     for i, (alpha, ca) in enumerate(zip(sa.exponents, sa.coefficients,
                                         strict=True)):
-        na = primitive_norm(sa.l, alpha)
         for j, (beta, cb) in enumerate(zip(sb.exponents, sb.coefficients,
                                            strict=True)):
-            nb = primitive_norm(sb.l, beta)
             zeta = alpha + beta
             P = tuple((alpha * A[d] + beta * B[d]) / zeta for d in range(3))
             block = tuple(
                 dress(e_block(a, b, zeta, P, A, B),
-                      ca=ca, cb=cb, na=na, nb=nb, zeta=zeta)
+                      ca=ca, cb=cb, zeta=zeta)
                 for a, b in carts
             )
             out.append(PrimitivePair(i, j, P, zeta, L, block))
