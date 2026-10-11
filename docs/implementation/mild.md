@@ -1,8 +1,11 @@
 # The MD search tree: the MILD heuristic and the sieve
 
-**Status: specification, not description.** Nothing here is implemented yet.
-This is the rule the generator's tree-search pass must follow, written so that
-a test can be read against it.
+**Status: partly implemented.** MILD itself is: `mild_direction` in
+`src/felizjueves/plan/mild.py`, with the tie-break table, rules 1, 2, 3 and 5,
+and an exhibit of rule 4's absence tested in `test/test_plan_mild.py`. The
+sieve is not implemented yet; that section is still a specification, the rule
+the generator's pruning pass must follow, written so that a test can be read
+against it.
 
 This file covers steps 2 and 3 of the generator pipeline — choosing a reduction
 direction for every node, and pruning the resulting graph. The engine around it
