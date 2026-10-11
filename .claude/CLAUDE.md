@@ -113,7 +113,7 @@ device group). Never read a 2 as a pass.
 
 | File | What it is |
 |---|---|
-| `docker/Dockerfile.base` | g++ and clang, pinned CMake/Ninja/sccache, a uv venv at `/opt/venv`. No GPU SDK. |
+| `docker/Dockerfile.base` | g++ and clang, pinned CMake/Ninja/sccache/`gh`, a uv venv at `/opt/venv`. No GPU SDK. |
 | `docker/Dockerfile.cuda` | `base` + the CUDA toolkit, `sm_86`, Nsight Systems. **The default.** |
 | `docker/Dockerfile.hip` | `base` + ROCm's HIP compiler and profilers, `gfx1200`. No CUDA. |
 | `docker/Dockerfile.combined` | `cuda` + ROCm. Both device compilers. |

@@ -12,9 +12,9 @@
 #                                 (reuses install-rocm.sh, not the hip image)
 #
 # Everything the work needs EXCEPT a GPU SDK: a host C++ compiler, CMake,
-# Ninja, sccache, and a uv-managed venv for the Python side. Useful on its own
-# to check that half in isolation, and the shared parent of `cuda` and `hip` so
-# the two cannot drift apart.
+# Ninja, sccache, the GitHub CLI, and a uv-managed venv for the Python side.
+# Useful on its own to check that half in isolation, and the shared parent of
+# `cuda` and `hip` so the two cannot drift apart.
 #
 #   docker/build.sh base          # the normal way: tags <PROJECT_NAME>:base
 #   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t fj:base .
@@ -70,6 +70,12 @@ ARG NINJA_VERSION=1.13.1
 # Not in apt at any usable version, so it comes from the upstream release
 # tarball like CMake and Ninja do.
 ARG SCCACHE_VERSION=0.18.0
+# The GitHub CLI, which the PR / issue / milestone flows in .claude/skills/
+# shell out to. Noble's universe does carry `gh`, frozen at 2.45.0 and never
+# backported, so this takes the upstream tarball too -- and gets a reviewable
+# pin out of it, the same bargain as the three above. A bump is not free; see
+# the COPY in stage 4.
+ARG GH_VERSION=2.102.0
 
 # ============================================================================
 # Stage 1: base-system -- OS packages every later stage shares
@@ -112,6 +118,7 @@ FROM ubuntu:${UBUNTU_TAG} AS downloads
 ARG CMAKE_VERSION
 ARG NINJA_VERSION
 ARG SCCACHE_VERSION
+ARG GH_VERSION
 # Supplied automatically by BuildKit: "amd64" or "arm64".
 ARG TARGETARCH
 
@@ -131,6 +138,7 @@ RUN --mount=type=cache,target=/download-cache \
     esac; \
     cmake_asset="cmake-${CMAKE_VERSION}-linux-${cmake_arch}.sh"; \
     sccache_dir="sccache-v${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl"; \
+    gh_dir="gh_${GH_VERSION}_linux_${TARGETARCH}"; \
     mkdir -p /downloads; \
     [ -f "/download-cache/${cmake_asset}" ] || \
       wget -q -O "/download-cache/${cmake_asset}" \
@@ -141,11 +149,16 @@ RUN --mount=type=cache,target=/download-cache \
     [ -f "/download-cache/${sccache_dir}.tar.gz" ] || \
       wget -q -O "/download-cache/${sccache_dir}.tar.gz" \
         "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${sccache_dir}.tar.gz"; \
+    [ -f "/download-cache/${gh_dir}.tar.gz" ] || \
+      wget -q -O "/download-cache/${gh_dir}.tar.gz" \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${gh_dir}.tar.gz"; \
     cp "/download-cache/${cmake_asset}" /downloads/cmake-installer.sh; \
     cp "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" /downloads/ninja.zip; \
     chmod +x /downloads/cmake-installer.sh; \
     tar -xzf "/download-cache/${sccache_dir}.tar.gz" -C /tmp; \
-    install -m 0755 "/tmp/${sccache_dir}/sccache" /downloads/sccache
+    install -m 0755 "/tmp/${sccache_dir}/sccache" /downloads/sccache; \
+    tar -xzf "/download-cache/${gh_dir}.tar.gz" -C /tmp; \
+    install -m 0755 "/tmp/${gh_dir}/bin/gh" /downloads/gh
 
 # ============================================================================
 # Stage 3: build-tools -- CMake and Ninja onto a base-system layer
@@ -198,6 +211,20 @@ COPY --link --from=build-tools /usr/local/share/cmake-${CMAKE_MAJOR_MINOR} /usr/
 # compile. Wired in by the tier script, not by a preset, so an image or host
 # without it still works -- it just caches nothing.
 COPY --link --from=downloads /downloads/sccache /usr/local/bin/sccache
+# The GitHub CLI. In `base` and not at the leaves beside Claude Code, because
+# the PR flow is vendor-neutral and all three GPU images want it -- the three
+# .devcontainer/*/devcontainer.json files already pass GH_TOKEN through to a
+# `gh` that, until this line, was not in any image.
+#
+# THE COST OF THAT CHOICE, and the reason install-claude-code.sh made the
+# other one: the children resolve `base` as an IMAGE, by tag, so bumping
+# GH_VERSION hands them a new parent id and rebuilds the CUDA toolkit and the
+# ~20GB ROCm install behind it. A single static binary with no deps, so bump
+# it when something needs the newer gh, not on sight.
+#
+# The binary only: gh's man pages and shell completions ship in the same
+# tarball and nothing here reads them.
+COPY --link --from=downloads /downloads/gh /usr/local/bin/gh
 
 # --- Python -----------------------------------------------------------------
 # One uv-managed venv at /opt/venv, installed `--frozen` from the committed
@@ -259,10 +286,15 @@ ENV SCCACHE_DIR=/home/ubuntu/.sccache \
 
 WORKDIR /workspace
 
+# `gh --version` is NOT piped through `head`, unlike the lines above it: in
+# /bin/sh the status of a pipeline is the LAST command's, so `gh --version |
+# head -1` exits 0 and this layer passes while printing `gh: not found` --
+# which is exactly how the first draft of this file shipped a gh-less image.
 RUN clang --version | head -1 && \
     cmake --version | head -1 && \
     ninja --version && \
-    sccache --version
+    sccache --version && \
+    gh --version
 
 USER ubuntu
 

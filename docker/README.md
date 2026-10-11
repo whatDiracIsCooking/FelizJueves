@@ -12,7 +12,7 @@ Four Dockerfiles, one diamond, and two front ends onto them.
 
 | File | What it is |
 |---|---|
-| `Dockerfile.base` | The vendor-neutral toolchain: g++ and clang, CMake and Ninja (pinned), sccache, and a uv-managed venv at `/opt/venv`. No GPU SDK. |
+| `Dockerfile.base` | The vendor-neutral toolchain: g++ and clang, CMake and Ninja (pinned), sccache, `gh`, and a uv-managed venv at `/opt/venv`. No GPU SDK. |
 | `Dockerfile.cuda` | `base` + the CUDA toolkit (`nvcc`), `sm_86`, Nsight Systems. **The default**, and what the devcontainer and compose build. |
 | `Dockerfile.hip` | `base` + ROCm's HIP compiler and profilers, `gfx1200`. No CUDA at all. |
 | `Dockerfile.combined` | `cuda` + ROCm. Both device compilers in one container. |
@@ -52,6 +52,7 @@ build.
 | `ROCM_PACKAGES` | *(the compiler + profilers)* | `Dockerfile.hip`, `.combined` | See below. |
 | `CLAUDE_CODE_VERSION` | pinned | all three GPU files | Bump with `devtools/claude-version.sh --apply`, which rewrites all three. |
 | `UBUNTU_TAG`, `CMAKE_VERSION`, `NINJA_VERSION`, `SCCACHE_VERSION` | pinned | `Dockerfile.base` | |
+| `GH_VERSION` | `2.102.0` | `Dockerfile.base` | The GitHub CLI, for the PR / issue / milestone skills. Upstream tarball, not noble's 2.45.0. Bumping it reparents every GPU child, so the CUDA and ROCm installs rebuild — bump it when a flow needs the newer `gh`. |
 
 ### What is deliberately *not* installed
 
