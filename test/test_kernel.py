@@ -22,6 +22,7 @@ Nothing compiles and nothing launches on a card: interpreting is not emitting.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from felizjueves.ir import (
     Break,
     Call,
     Decl,
+    Expr,
     Fn,
     For,
     If,
@@ -44,7 +46,10 @@ from felizjueves.ir import (
     Note,
     Raw,
     Space,
+    Stmt,
+    Var,
     WarpReduce,
+    Weighted,
     walk,
 )
 from felizjueves.kernel import (
@@ -61,6 +66,7 @@ from felizjueves.kernel import (
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.targets import hermite_targets
+from felizjueves.recurrence import fundamental_prelude, recurrence_kernels
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq, theta_of
 from felizjueves.spec import Operator, Spec, Target
@@ -295,7 +301,7 @@ def test_ab_cd_is_never_materialised(L: int) -> None:
     in_loop = [s for s in walk(loop.body) if isinstance(s, Decl)]
     assert all(not d.shape for d in in_loop)
     # The DAG's nodes, plus a fixed handful: bound, PQ_x/y/z, eta, theta,
-    # t2, T, s, and one Boys weight W{m} per fundamental [0]^(m).
+    # t2, T, s (present for L >= 1), and one Boys weight W{m} per fundamental [0]^(m).
     n_fund = sum(1 for (r, _) in dag.nodes() if not any(r))
     assert len(in_loop) == len(dag.nodes()) + 9 + n_fund
 
@@ -318,3 +324,80 @@ def test_the_kernel_module_is_vendor_neutral() -> None:
     assert ours == {"felizjueves.ir", "felizjueves.plan.pipeline",
                     "felizjueves.plan.schedule", "felizjueves.plan.targets",
                     "felizjueves.recurrence", "felizjueves.spec"}
+
+
+# ---------------------------------------------------------------------------
+# No dead declarations (#62)
+# ---------------------------------------------------------------------------
+
+
+def _names_in(e: Expr | None) -> Iterator[str]:
+    """Every name an expression mentions: Vars, indexed arrays, the scalar a
+    non-unit Factor binds."""
+    if e is None:
+        return
+    if isinstance(e, Var):
+        yield e.name
+    elif isinstance(e, Index):
+        yield e.array
+        for i in e.at:
+            yield from _names_in(i)
+    elif isinstance(e, Call):
+        for a in e.args:
+            yield from _names_in(a)
+    elif isinstance(e, Weighted):
+        for t in e.terms:
+            if t.g.name_in_kernel is not None:
+                yield t.g.name_in_kernel
+            yield from _names_in(t.src)
+
+
+def _referenced(body: tuple[Stmt, ...]) -> set[str]:
+    """Every name some statement of `body` mentions, declarations aside."""
+    names: set[str] = set()
+    for s in walk(body):
+        if isinstance(s, Decl):
+            exprs: tuple[Expr | None, ...] = (*s.shape, s.init)
+        elif isinstance(s, (Assign, WarpReduce, AtomicAdd)):
+            exprs = (s.dst, s.value)
+        elif isinstance(s, For):
+            exprs = (s.start, s.stop, s.step)
+        elif isinstance(s, If):
+            exprs = (s.cond,)
+        else:
+            exprs = ()
+        for e in exprs:
+            names.update(_names_in(e))
+    return names
+
+
+def _dead_decls(k: Kernel) -> list[str]:
+    declared = [s.name for s in walk(k.body) if isinstance(s, Decl)]
+    declared += [s.var for s in walk(k.body) if isinstance(s, For)]
+    used = _referenced(k.body)
+    return [n for n in declared if n not in used]
+
+
+def test_s_is_declared_only_when_a_weight_reads_it() -> None:
+    """`s = -2 theta^2` is the ratio W{m+1} = W{m} s: at L = 0 only W0 exists,
+    and declaring `s` anyway is nvcc's warning #177-D (#62)."""
+    def names(ms: list[int]) -> list[str]:
+        stmts, _ = fundamental_prelude(ms)
+        return [s.name for s in stmts if isinstance(s, Decl)]
+
+    assert names([0]) == ["t2", "T", "W0"]
+    assert names([0, 1]) == ["t2", "T", "s", "W0", "W1"]
+
+
+@pytest.mark.parametrize("L", range(17))
+def test_no_statement_declares_a_name_nothing_references(L: int) -> None:
+    """The property #177-D is one instance of: every Decl (and every For
+    variable) of the generated [p|q] kernel is mentioned by some statement."""
+    assert _dead_decls(build_pq_kernel(L)) == []
+
+
+@pytest.mark.parametrize("L", [0, 1, 4])
+def test_the_recurrence_only_kernel_has_no_dead_declaration(L: int) -> None:
+    """`build_recurrence_kernel` shares the prelude, and so the guard."""
+    for _, k in recurrence_kernels(pq_spec(L)):
+        assert _dead_decls(k) == []

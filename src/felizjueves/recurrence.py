@@ -157,9 +157,12 @@ def fundamental_prelude(ms: list[int]) -> tuple[tuple[Stmt, ...], Fundamental]:
         Decl("t2", Scalar.F64, init=_mul(theta, theta)),
         Decl("T", Scalar.F64, init=_mul(Var("t2"), _add(
             _add(_mul(pqx, pqx), _mul(pqy, pqy)), _mul(pqz, pqz)))),
-        Decl("s", Scalar.F64, init=_mul(Lit(-2.0), Var("t2"))),
-        Decl("W0", Scalar.F64, init=_mul(Lit(_TWO_OVER_SQRT_PI), theta)),
     ]
+    # `s` is read only by the `W{m}`, m >= 1, below: at top == 0 (L = 0) it
+    # would be a dead declaration (nvcc warning #177-D, issue #62).
+    if top >= 1:
+        stmts.append(Decl("s", Scalar.F64, init=_mul(Lit(-2.0), Var("t2"))))
+    stmts.append(Decl("W0", Scalar.F64, init=_mul(Lit(_TWO_OVER_SQRT_PI), theta)))
     for m in range(1, top + 1):
         stmts.append(Decl(f"W{m}", Scalar.F64, init=_mul(Var(f"W{m - 1}"), Var("s"))))
 
