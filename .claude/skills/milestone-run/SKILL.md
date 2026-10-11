@@ -225,13 +225,18 @@ these overrides:
   run is the only evidence the PR carries. Do not claim a check passed.
 - Test on ONE card, your assigned <card> — this overrides the issue skill's
   both-cards rule. Nothing else verifies the other backend, so say in the PR
-  which one you did not run. Siblings share the card, so compile unlocked and
-  take the card's lock only to run:
-    devtools/kernel-tier.sh --backend <card> -j <J> --no-test
-    flock /tmp/fj-gpu-<card>.lock devtools/kernel-tier.sh --backend <card> -j <J> -- -k '<pattern>'
+  which one you did not run. Siblings share the card; the tier compiles
+  unlocked, and its device phase takes the card's lock itself (test/conftest.py,
+  #91, at GPU_LOCK_PATH in devtools/config.sh), so siblings serialise only on
+  the launch:
+    devtools/kernel-tier.sh --backend <card> -j <J> -- -k '<pattern>'
+  (An outer `flock /tmp/fj-gpu-<card>.lock …` is redundant now — conftest
+  recognises an ancestor holding the lock — but harmless.)
   If your card is down (nvidia-smi -L / rocminfo), use the other one and say
-  so in the PR. An out-of-memory error on the card means a sibling's run
-  overlapped yours: re-run under the lock before calling it a failure.
+  so in the PR. A VRAM-probe failure names the free memory and what the vendor
+  tool lists on the card. Other pytest runs queue on the lock, so the holder
+  is usually a process outside pytest — read the list before calling it a
+  failure of your change.
 - If a suite fails, or passing would mean loosening a tolerance, stop and
   reply "STUCK: <reason>" — no PR needed.
 - Commit and push with `git -C <abs worktree path> …` (protect-main

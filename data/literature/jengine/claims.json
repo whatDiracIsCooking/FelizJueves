@@ -75,6 +75,14 @@
       "reason": "The claim is relative to the paper's register and shared-memory budget on their A100, which no measurement here reaches. What #60 measured instead, on OUR cards and under a definition declared before the 12-batch rows existed (felizjueves.measured's docstring, NINE AGAINST TWELVE: 9 suffices at (arch, L) iff the 12-batch cell neither has fewer summed spills nor is faster, on the wide-T or near-T input, by more than the larger IQR; on an arch iff at every L in {7, 10, 13, 16}), is that 9 does NOT suffice on either card. sm_86 (nvcc 13.0): b 12 spills less at L 13 (14472 -> 12048 bytes) and L 16 (181224 -> 146020), though it is slower than b 9 at every L on both inputs. gfx1200 (hipcc / ROCm 7.2.4): b 12 spills more at every spilling L and is slower on wide-T everywhere, but is faster on near-T at L 16 (303.5 -> 299.4 ms, beyond the 0.8 ms IQR). #93 re-timed every subgrid cell behind the card-utilisation gate, one session per card, and the verdict is unchanged cell for cell; the medians quoted here are #93's. Held, cell by cell, by test/test_measured.py::test_nine_batches_do_not_suffice_on_either_card; data/measured/kernels.json has the rows."
     },
     {
+      "id": "jengine/prefactor-factorisation",
+      "statement": "eq. 13's fundamental keeps (2/sqrt(pi)) theta and not the pair factors. McMurchie-Davidson's ERI prefactor lambda = 2 pi^{5/2} / (zeta eta sqrt(zeta+eta)) factors exactly as (2/sqrt(pi)) theta * (pi/zeta)^{3/2} * (pi/eta)^{3/2}, theta^2 = zeta*eta/(zeta+eta), so the pair factors go with the E coefficients -- (pi/zeta)^{3/2} on the bra pair, (pi/eta)^{3/2} on the ket pair, both by ao.pairs.dress, the one dressing function -- and the three placements multiply back to lambda: none missing, none applied twice. Witnessed per angular-momentum class against libcint's int2e (#85's blocks; s/p fast, d and above slow): dress scaled by 1 + 1e-9, or (pi/zeta)^1 in place of ^{3/2}, fails every fast-tier class. The comparison sees the PRODUCT: a constant moved between dress and the fundamental (dress * 2 with 2/sqrt(pi) / 4) passes every block (and J), and what fails then is the in-repo absolute pins of each half: the fundamental by test/test_theta_convention.py's [0]^(0) = erf(theta R)/R and test_reference_pq.py's defining integral, the dressing by test_ao_pairs.py's dressed-overlap checks (the dressed t = 0 column is the overlap; a unit self-overlap) -- so with those, the placement, not only the product, is held (#90; j_engine.md, 'The Coulomb matrix, witnessed from outside').",
+      "source": "[JEngine, v2, eq. 13]",
+      "kind": "shape",
+      "status": "asserted",
+      "test": "test/test_ao_eri.py::test_block_matches_libcint"
+    },
+    {
       "id": "jengine/rule-4-needs-the-sieve",
       "statement": "MILD cannot obey rule 4 (reduce to a parent and grandparent already in the tree): that is a property of the graph built so far, while MILD is a pure function of r. The sieve is the pass that recovers it.",
       "source": "[JEngine, v2, §4.1]",
@@ -100,11 +108,11 @@
     },
     {
       "id": "jengine/theta-undefined",
-      "statement": "theta appears in eq. 13 (the fundamental) and is never defined; the conventional McMurchie-Davidson reading is theta^2 = zeta*eta/(zeta+eta), and that theta and no other is what both reference.pq and the generated kernel's prelude form.",
+      "statement": "theta appears in eq. 13 (the fundamental) and is never defined; the conventional McMurchie-Davidson reading is theta^2 = zeta*eta/(zeta+eta), and that theta and no other is what the generated kernel's prelude forms (as do reference.pq and ao/). Witnessed from OUTSIDE (#90): J_mn with every J_p from the interpreted generated kernel (ao.drive.KernelJP through ao.j's jp= seam) matches PySCF/libcint's get_jk fixture to the derived 1e-12 scale_J. Perturbing theta consistently at every site that forms it (the kernel prelude, ao/j.py, ao/eri.py), so that the internal reference/pq comparison still agrees to 0, moves H2/STO-3G to 8.85e-10 scale_J at a relative theta error of 1e-9, and to 0.35-0.50 scale_J under the slip readings (theta^2 unrooted, sqrt(zeta+eta), sqrt(zeta*eta)). The fast-tier H2 cases reach theta through F_0 only; the slow H2O cases (to cc-pVDZ, l <= 2) reach it through m > 0 too. test/test_theta_convention.py stays the in-repo closed-form anchor (erf(theta R)/R) and the emitted-text check, unmarked.",
       "source": "[JEngine, v2, eq. 13]",
       "kind": "defect",
       "status": "asserted",
-      "test": "test/test_theta_convention.py::test_theta_is_the_reduced_exponent_where_it_is_used"
+      "test": "test/test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint"
     },
     {
       "id": "jengine/y12-example",

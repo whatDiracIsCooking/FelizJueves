@@ -119,8 +119,13 @@ def test_the_fast_tier_holds_the_sp_classes_and_both_cases():
     assert len(fast) == 6 + 6  # (ss|ss) .. (pp|pp), in each case
 
 
+@pytest.mark.claim("jengine/prefactor-factorisation")
 @pytest.mark.parametrize("name,q", PARAMS)
 def test_block_matches_libcint(name, q):
+    """Also the witness of `jengine/prefactor-factorisation` (#90): a pair
+    factor missing, doubled or at the wrong power is a per-class constant
+    here. It sees the PRODUCT lambda only; the placement is closed by the
+    in-repo absolute pins of each half (the record names them)."""
     ref = manifest.eri_blocks(_FX[name])[q]
     ours, scale = _ours(name, q, scale=True)
     err = np.abs(ours - ref)

@@ -94,6 +94,11 @@ devtools/kernel-tier.sh --backend cuda -- -k '<pattern>'   # NVIDIA
 devtools/kernel-tier.sh --backend hip  -- -k '<pattern>'   # AMD
 ```
 
+No `flock` wrapper is needed: the device phase's `gpu` fixtures take the card's
+lock themselves (`test/conftest.py`, #91, at `GPU_LOCK_PATH` in
+`devtools/config.sh`), so a concurrent run on the same card waits and says
+whom for. An outer `flock` on that path is redundant but harmless.
+
 "Relevant" means the tests for everything the diff touches **and** everything
 that imports it (`grep -rl '<module>' . --include='*.py'`). A change to a
 shared part of the generator, to `test/conftest.py`, or to the compiler flags

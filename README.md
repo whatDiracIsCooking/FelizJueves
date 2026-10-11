@@ -4,18 +4,22 @@ Python code generation for electronic structure tensors.
 
 ## What is here
 
-**The dev environment and the infrastructure. Not the generator — it does not
-exist yet.** Nothing in this repo emits a kernel today, and every tier reports
-that rather than implying otherwise:
+**A generator of one kernel family, and a Coulomb matrix built around it.** The
+generator emits the McMurchie–Davidson `[p|q]` kernel of `[JEngine]` in CUDA
+and HIP; a host-side AO layer turns a real molecule into its inputs and its
+output back into `J_µν`, and that `J` is compared against PySCF/libcint — a
+program with no shared ancestry. Every tier reports what it touched rather
+than implying more. `.claude/CLAUDE.md` ("The state of the tree") has the
+detail; in short:
 
 | | State |
 |---|---|
 | `docker/`, `.devcontainer/`, `devtools/` | **live.** Both device toolchains build, and `devtools/kernel-tier.sh` runs end to end. |
-| `test/` | **live, and thin.** `test_toolchain.py` asserts that nvcc and hipcc compile for this box's targets and that a kernel launched on each card agrees with a numpy reference. The rest checks the join key, the transcribed tables' own invariants, and the scoring rules on synthetic candidates. |
-| `src/felizjueves/` | **importable, and small.** The `Spec` join key, and `literature/`: published tables as data plus the rules that score a candidate against them. Nothing in it computes a table cell. |
-| `data/` | **live.** `[JEngine]` Tables 1–3 transcribed with provenance, and the two scoreboards over them — with every floor still unset, because nothing produces a number to set it from. |
-| the generator | **live, for one kernel family.** `KERNEL_GEN_CMD` in `devtools/config.sh` runs `python -m felizjueves.emit`, which writes the single-batch `[p\|q]` kernel for L = 0..16 in CUDA or HIP; the kernel tier compiles them and checks `J_p` on each card against the fp64 reference. Split classes and the full `J` build are not generated yet. |
-| `pyproject.toml` | **a virtual uv project** — dev tooling and a lock. Nothing is installed; pytest imports `src/` through `pythonpath`. |
+| `test/` | **live.** Fast tier: the plan layer against `[JEngine]` Tables 1–3, the kernel IR interpreted against `reference/`, the golden kernel texts, and the AO layer against **tracked libcint fixtures** (`test/oracle/`), so PySCF is not needed to run it. Kernel tier (`gpu`): the generated kernels on each card against `reference/`, and `J_µν` for H₂ and H₂O against libcint. |
+| `src/felizjueves/` | **importable.** `plan/` (batching, MILD, the sieve, the per-batch counts), `kernel.py` + `emit/` (the generator), `measured.py` (registers, spills, wall-clock on both cards), `literature/` (published tables and claims, and the rules that score against them), and `ao/` (shells, the `E` transform, pair data and the Schwarz bound, ERI blocks, and `J_µν`). |
+| `data/` | **live.** `[JEngine]` Tables 1–3 with provenance and the two scoreboards over them; the registry of the paper's non-numeric claims (`claims.json`) and what a model cannot reach (`limits.json`); the measured store and the recommended batch count per `(L, arch)`; the `τ`-ladder screening record (`ao/screening.json`). |
+| the generator | **live, for one kernel family.** `KERNEL_GEN_CMD` in `devtools/config.sh` runs `python -m felizjueves.emit`, which writes the single-batch `[p\|q]` kernel for L = 0..16 in CUDA or HIP; split classes (`build_pq_kernels`, atomic write-back) and, through `--class LA LB LC LD`, the classes a real basis reaches are written by the tests. **Generated: `J_p` only.** The `E` transform, the pre-contraction and the scatter are host-side Python; dispatch (choosing a batch count per class) is not built. |
+| `pyproject.toml` | **a virtual uv project** — dev tooling, numpy, and a lock; PySCF is a separate `oracle` group a bare `uv sync` does not install. Nothing is installed; pytest imports `src/` through `pythonpath`. |
 
 When you run something here, say which of these it touched.
 
@@ -50,14 +54,16 @@ ends.
 | Tier | Command | What a green run means |
 |---|---|---|
 | lint | `ruff check .` | narrow by design: `E,F,I,UP,B`, no formatter. |
-| fast | `pytest` | the Python side agrees with itself. Compiles nothing, launches nothing. This is the push gate, and `FAST_TEST_ARGS` excludes every marker that would reach a compiler. |
-| kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler → run on the card → compare against the host reference. |
+| fast | `pytest` | the Python side agrees with itself, and with libcint through tracked fixtures. Compiles nothing, launches nothing, needs no PySCF. This is the push gate, and `FAST_TEST_ARGS` excludes every marker that would reach a compiler, a card, PySCF (`oracle`) or minutes (`slow`). |
+| kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler (a warning in generated text fails it) → run on the card → compare against the host reference, and `J_µν` against libcint. |
+| oracle | `uv sync --group oracle`, then `pytest -m oracle` | the tracked fixtures still equal what PySCF computes today. |
 
-**The kernel tier is the only place a numerical claim can be made.** No hosted
-CI runner has a GPU, so everything else can say is that the generator agrees
-with its golden files. A `gpu`-marked test *skips* on a device-less box rather
-than failing, so a green run there is green and empty — `devtools/doctor.sh`
-exists to make that visible.
+**The kernel tier is the only place a claim about a card can be made.** No
+hosted CI runner has a GPU. A `gpu`-marked test *skips* on a device-less box
+rather than failing, so a green run there is green and empty —
+`devtools/doctor.sh` exists to make that visible. The `gpu` fixtures lock the
+card themselves (`GPU_LOCK_PATH` in `devtools/config.sh`), so two runs on one
+card serialise.
 
 This box is the reference machine for both halves: an **RTX 3080** (sm_86, CUDA
 13.0) and an **RX 9060 XT** (gfx1200, RDNA4, ROCm 7.2.4). A generated kernel has
@@ -72,9 +78,10 @@ devtools/        the scripts: doctor, devcontainer, worktree, kernel tier, claud
 docker/          four Dockerfiles (base -> cuda/hip -> combined), build.sh, compose
 .devcontainer/   one variant per GPU image, driven by devtools/devcontainer.sh
 docs/            references.md, and the derived notes on what gets generated
-data/            published tables as data (literature/), and the scoreboards over them
-src/felizjueves/ the Spec join key, and literature/: loading and scoring those tables
-test/            pytest; markers separate "needs a compiler" from "needs a card"
+data/            published tables and claims (literature/), scoreboards, the measured store, ao/
+src/felizjueves/ plan/, the kernel builder and emit/, measured, literature/, and ao/
+test/            pytest; markers separate "needs a compiler", "needs a card", "needs PySCF";
+                 test/oracle/ holds the libcint fixtures and the PySCF converter
 ```
 
 Depth lives where it is used: each script's header explains itself (`--help`

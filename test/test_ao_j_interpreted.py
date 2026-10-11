@@ -147,8 +147,18 @@ def _check_full(name: str, n: int) -> None:
         f"{name} b{n}: interpreted J vs libcint, worst err/scale {jk:.2e}")
 
 
+@pytest.mark.claim("jengine/theta-undefined")
 @pytest.mark.parametrize(("name", "n"), FULL)
 def test_interpreted_j_matches_reference_and_libcint(name: str, n: int):
+    """Also the OUTSIDE witness of `jengine/theta-undefined` (#90): the
+    kernel's prelude forms theta, and libcint shares no ancestry with it.
+    theta perturbed consistently at every site that forms it, so the
+    reference/pq comparison still agrees to 0, fails the libcint comparison
+    (8.85e-10 scale_J on H2 at a relative theta error of 1e-9). Why this
+    test and not the on-device one: it runs without a card, so the fast tier
+    exercises it (H2, theta through F_0) and the slow tier the H2O cases
+    (m > 0); test_ao_j_ondevice.py corroborates on both cards but skips,
+    green and empty, wherever there is none."""
     _check_full(name, n)
 
 
