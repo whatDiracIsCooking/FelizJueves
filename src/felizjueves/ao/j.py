@@ -3,6 +3,8 @@
     coulomb_matrix(basis, D, *, pq, tau=0.0)            -> J   (unique pairs)
     coulomb_matrix_reference(basis, D, *, pq, tau=0.0)  -> J   (all ordered)
     coulomb_matrix_and_scale(basis, D, *, pq)           -> (J, scale)
+    coulomb_matrix_screened(basis, D, *, pq, tau, order="sorted")
+                                                        -> Screened (#88)
 
 `J_mn = sum_{ls} (mn|ls) D_ls`, never by forming `(mn|ls)`. For a bra
 primitive pair (index record) of an ordered shell pair `(a, b)` and a ket
@@ -64,6 +66,26 @@ sum with every factor replaced by its absolute value -- `|E^{ab}_p|`,
 exactly `sum_{ls} scale_{mnls} |D_ls|` for `ao.eri`'s per-element ERI scale.
 So a per-ERI bound `|err| <= t scale_eri` gives `|err J| <= t scale_J` by the
 triangle inequality: the J tolerance is inherited, not chosen.
+
+THE SORTED `break` (#88, `coulomb_matrix_screened`) -- the kernel's form, on
+real bounds. The ket records are sorted DESCENDING by `I_ket * Dmax`
+(`_Ket.bound`, exactly the factor the screen multiplies by `I_bra`), with a
+STABLE sort, and each bra record stops at its first ket under `tau`. That is
+exact, not approximate: `I_bra >= 0`, and a rounded product with a fixed
+non-negative factor is monotone non-decreasing in the other, so every ket
+after the first rejected one is rejected too. `order="unsorted"` is the
+`continue` form in the original ket order. The two must give the SAME `J`
+to 0, and to make that a statement about WHICH terms were summed rather than
+about summation order, each `J_p` is accumulated over its kets with
+`math.fsum` (correctly rounded, hence independent of order); the per-ket
+term itself is computed identically on both paths. `Screened.n_skipped`
+counts the (bra record, ket record) index pairs not summed.
+
+`Screened.scale` is the error claim's stated scale, independent of `tau`:
+per element, `n_ket * sum_{bra records} sum_p |E^{ab}_p|`. Each skipped pair
+has `|sum_q [p|q] D_q| <= I_p I_ket Dmax <= I_bra I_ket Dmax < tau` for every
+`p` (ao/pairs.py), so it moves `J_ab` by at most `tau sum_p |E^{ab}_p|`, and
+a bra record skips at most `n_ket` kets: `|J(tau) - J(0)| <= tau * scale`.
 
 MEMOISE NOTHING. The ket records are built once per call and dropped; a cache
 keyed on a shell pair is a driver's concern, and one here would make #88's
@@ -268,3 +290,108 @@ def coulomb_matrix_and_scale(basis: Basis, D: object, *,
     """`coulomb_matrix` at `tau = 0`, and its absolute-value twin `scale`
     (module docstring) -- the size of what was added, per element."""
     return _sweep(basis, D, pq=pq, tau=0.0, ordered=False, want_scale=True)
+
+
+# --- the screen as an error claim (#88): the sorted break -----------------
+
+
+@dataclass(frozen=True)
+class Screened:
+    """`coulomb_matrix_screened`'s result (module docstring, "THE SORTED
+    `break`"): `J`, the `tau`-independent error scale, and the count of
+    (bra record, ket record) index pairs, total and skipped."""
+
+    J: Matrix
+    scale: Matrix
+    n_pairs: int
+    n_skipped: int
+
+    @property
+    def skip_fraction(self) -> float:
+        return self.n_skipped / self.n_pairs
+
+
+ORDERS = ("sorted", "unsorted")
+
+
+def _sorted_kets(kets: Sequence[_Ket]) -> list[_Ket]:
+    """Descending by `bound` (= `I_ket * Dmax`), STABLE: `sorted` is stable,
+    and `reverse=True` keeps equal keys in their original order."""
+    return sorted(kets, key=lambda k: k.bound, reverse=True)
+
+
+def _bra_block_screened(bra_recs: Sequence[PrimitivePair],
+                        kets: Sequence[_Ket], *, pq: PQ, tau: float,
+                        brk: bool):
+    nrow = len(bra_recs[0].block)
+    jab = [0.0] * nrow
+    sab = [0.0] * nrow
+    skipped = 0
+    n_ket = len(kets)
+    for bra in bra_recs:
+        ps = hermite_order(bra.L)
+        zeta, P = bra.zeta, bra.P
+        terms: list[list[float]] = [[] for _ in ps]
+        ibra = pair_bound_pq(zeta, bra.L, pq=pq)
+        for i, k in enumerate(kets):
+            if ibra * k.bound < tau:
+                if brk:  # sorted: every later ket is under tau too
+                    skipped += n_ket - i
+                    break
+                skipped += 1
+                continue
+            theta = math.sqrt(zeta * k.eta / (zeta + k.eta))
+            PQv = (P[0] - k.Q[0], P[1] - k.Q[1], P[2] - k.Q[2])
+            for ip, p in enumerate(ps):
+                acc = 0.0
+                for q, dq in zip(k.qs, k.dq, strict=True):
+                    acc += pq(p, q, PQv, theta) * dq
+                terms[ip].append(acc)
+        jp = [math.fsum(t) for t in terms]  # order-independent: see docstring
+        for r, row in enumerate(bra.block):
+            s = 0.0
+            for e, v in zip(row, jp, strict=True):
+                s += e * v
+            jab[r] += s
+            sab[r] += n_ket * math.fsum(abs(e) for e in row)
+    return jab, sab, skipped
+
+
+def coulomb_matrix_screened(basis: Basis, D: object, *, pq: PQ, tau: float,
+                            order: str = "sorted") -> Screened:
+    """`J_mn` by the unique sweep, screened at `tau` as the kernel's sorted
+    `break` (`order="sorted"`) or as the unsorted `continue`
+    (`order="unsorted"`); module docstring, "THE SORTED `break`". The bound
+    is evaluated at every `tau`, 0 included (it is the sort key); at
+    `tau = 0` nothing is skipped, since the product is >= 0."""
+    if order not in ORDERS:
+        raise ValueError(f"order = {order!r} is not one of {ORDERS}")
+    rows = _density(basis, D)
+    tau = _tau(tau)
+    n_sh = len(basis.shells)
+    pairs = [(a, b, 1.0 if a == b else 2.0)
+             for a in range(n_sh) for b in range(a + 1)]
+    # `_kets` evaluates the bound only when its tau is > 0; this one is
+    # passed to switch it on and is used for nothing else.
+    kets = _kets(basis, rows, pairs, pq=pq, tau=1.0)
+    if order == "sorted":
+        kets = _sorted_kets(kets)
+    n = basis.n_ao
+    J = [[0.0] * n for _ in range(n)]
+    S = [[0.0] * n for _ in range(n)]
+    shells, off = basis.shells, basis.offsets
+    n_pairs = n_skipped = 0
+    for a, b, _ in pairs:
+        sa, sb = shells[a], shells[b]
+        bras = primitive_pairs(sa, sb)
+        jab, sab, sk = _bra_block_screened(bras, kets, pq=pq, tau=tau,
+                                           brk=order == "sorted")
+        n_pairs += len(bras) * len(kets)
+        n_skipped += sk
+        for i in range(sa.n_cart):
+            for j in range(sb.n_cart):
+                r = i * sb.n_cart + j
+                J[off[a] + i][off[b] + j] = J[off[b] + j][off[a] + i] = jab[r]
+                S[off[a] + i][off[b] + j] = S[off[b] + j][off[a] + i] = sab[r]
+    return Screened(tuple(tuple(r) for r in J), tuple(tuple(r) for r in S),
+                    n_pairs, n_skipped)
