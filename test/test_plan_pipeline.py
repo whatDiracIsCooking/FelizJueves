@@ -100,16 +100,20 @@ def test_the_exit_codes_are_distinct() -> None:
 
 
 def test_replay_literal(capsys: pytest.CaptureFixture[str]) -> None:
-    # Every Agreement passes at its measured threshold; every
-    # exact_given_inputs is UNSET (no inputs recorded), so the run says
-    # "nothing to judge" rather than pass.
+    # Every Agreement passes at its measured threshold. Table 3's
+    # exact_given_inputs passes from the inputs #14 recorded; Tables 1-2's
+    # are UNSET (none recorded), so the run says "nothing to judge" rather
+    # than pass.
     assert main(["replay", "literal"]) == EXIT_UNSET
     lines = capsys.readouterr().out.splitlines()
     pairs = [tuple(line.split()[1:4]) for line in lines]
     assert pairs == [
         (f"jengine/table{n}", rule, status)
         for n in (1, 2, 3)
-        for rule, status in (("agreement", "PASS"), ("exact_given_inputs", "UNSET"))
+        for rule, status in (
+            ("agreement", "PASS"),
+            ("exact_given_inputs", "PASS" if n == 3 else "UNSET"),
+        )
     ]
 
 
