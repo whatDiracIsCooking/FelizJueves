@@ -178,7 +178,8 @@ def test_both_cards_and_every_default_class_are_recorded() -> None:
 
 def test_the_subgrid_is_the_declared_l_by_n_batches_product() -> None:
     cells = [(s.total_am, s.n_batches) for s in measured.SUBGRID]
-    assert cells == [(L, b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9)]
+    # 12 is #60's: "9 batches suffice" cannot be judged from below 9
+    assert cells == [(L, b) for L in (7, 10, 13, 16) for b in (1, 3, 6, 9, 12)]
     assert all(s == pq_spec(s.total_am, n_batches=s.n_batches)
                for s in measured.SUBGRID)
 

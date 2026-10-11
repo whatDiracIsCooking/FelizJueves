@@ -55,7 +55,9 @@ the file's path is what the docs map points at.
 
 THE SUBGRID (#52) is `SUBGRID`, the one declared set of `(L, n_batches)`
 cells the compile-side measurement sweeps: L in {7, 10, 13, 16} x n_batches
-in {1, 3, 6, 9}, `[JEngine, v2, §7]`'s own reporting range. Every cell is a
+in {1, 3, 6, 9, 12} -- `[JEngine, v2, §7]`'s own reporting range, and 12
+past it (#60) because "9 batches suffice" cannot be judged from below 9.
+Every cell is a
 default-split `pq_spec(L, n_batches=b)` that the plan layer admits (its
 partition refuses an empty batch, #64; test/test_measured.py checks every
 cell). Tests parametrize over it, #53's wall-clock rows join on it, and a
@@ -174,7 +176,7 @@ DEFAULT_LS = tuple(range(0, 17))
 # THE declared subgrid (#52): see the module docstring. One edit adds a cell.
 SUBGRID_LS = (7, 10, 13, 16)
 SUBGRID: tuple[Spec, ...] = tuple(
-    pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in (1, 3, 6, 9))
+    pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in (1, 3, 6, 9, 12))
 
 SCHEMA = 1
 
