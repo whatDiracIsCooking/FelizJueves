@@ -39,8 +39,8 @@
       "statement": "eq. 17 prints the unit vector 1y as (1,1,0); it is (0,1,0). (1,1,0) is not a unit vector and would break eq. 11.",
       "source": "[JEngine, v2, eq. 17]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "#8 records it in the docs; no code transcribes eq. 17 yet, so no test can hold the generator to (0,1,0)."
+      "status": "asserted",
+      "test": "test/test_eq17_witness.py::test_y_reduction_shifts_by_the_unit_vector_0_1_0"
     },
     {
       "id": "jengine/mild-keeps-rules-1-2-3-5",
