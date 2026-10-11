@@ -181,6 +181,18 @@ RULES: dict[str, Rule] = {
         reference="the reference is checked against what the AO layer feeds "
                   "it; sharing ancestry would compare a thing to itself "
                   "(#20)"),
+    "adapter": _rule(
+        "ao/drive.py (#87): runs the GENERATED kernel in the interpreter as "
+        "ao.j's `jp=` seam -- builder + interp + ao, producing numbers. Not "
+        "a `driver`: that rule ships kernel text and must not interpret or "
+        "plan, and this module does both (it asks the plan which n_batches "
+        "a class admits, #64). Not `ao`: the AO layer may not know IR",
+        ("spec", "kernel", "ir", "interp", "plan", "ao"),
+        reference="the kernel's numbers are compared against reference/; "
+                  "Boys arrives by injection (`boys=`), so the adapter "
+                  "shares no ancestry with its witness (#20)",
+        emit="it produces numbers, not text: a backend's spelling is the "
+             "kernel tier's to check, not this adapter's"),
 }
 
 RULE_OF: dict[str, str] = {
@@ -228,6 +240,7 @@ RULE_OF: dict[str, str] = {
     "ao.pairs": "ao",
     "ao.eri": "ao",
     "ao.j": "ao",
+    "ao.drive": "adapter",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -283,6 +296,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.pairs": ("ao.hermite", "ao.shell"),
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
+    "ao.drive": ("ao.j", "interp", "ir", "kernel", "plan.pipeline", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.

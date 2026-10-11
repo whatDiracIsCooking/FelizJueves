@@ -67,6 +67,7 @@ from felizjueves.ao.j import (
     coulomb_matrix,
     coulomb_matrix_and_scale,
     coulomb_matrix_reference,
+    jp_from_pq,
     pair_bound_pq,
 )
 from felizjueves.ao.pairs import pair_bound
@@ -159,6 +160,30 @@ def test_the_weight_is_exercised():
     # above SWEEP_TOL makes the point; 1e-3 is that floor.
     assert np.max(np.abs(j_off / 2)) > 1e-3 * np.max(np.abs(J))
     assert np.allclose(j_off + j_diag, J, rtol=0, atol=1e-14 * np.abs(J).max())
+
+
+# --- the jp seam (#87) ----------------------------------------------------
+
+
+@pytest.mark.parametrize("name", FAST)
+def test_the_jp_seam_is_the_pq_path(name):
+    """`jp=jp_from_pq(pq)` is the same J as the `pq` path: only the order of
+    the ket sum (grouped by class) differs, so the sweeps' 1e-14 holds."""
+    fx, basis = _case(name)
+    J = np.array(coulomb_matrix(basis, fx.density, pq=pq))
+    S = np.array(coulomb_matrix(basis, fx.density, pq=pq, jp=jp_from_pq(pq)))
+    assert np.all(np.abs(S - J) <= SWEEP_TOL * np.max(np.abs(J)))
+    assert np.array_equal(S, S.T)
+
+
+def test_the_jp_seam_refuses_a_screen_and_a_wrong_shape():
+    fx, basis = _case("h2_sto3g_j")
+    with pytest.raises(ValueError, match="unscreened"):
+        coulomb_matrix(basis, fx.density, pq=pq, tau=1e-10,
+                       jp=jp_from_pq(pq))
+    with pytest.raises(ValueError, match="wrong shape"):
+        coulomb_matrix(basis, fx.density, pq=pq,
+                       jp=lambda b, k, bras, kets: [[0.0, 0.0] for _ in bras])
 
 
 # --- the density contract -------------------------------------------------
