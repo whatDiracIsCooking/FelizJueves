@@ -13,8 +13,9 @@ from felizjueves.literature.rules import (
     ExactGivenInputs,
     Status,
 )
-from felizjueves.literature.scoreboard import load_scoreboard, score
+from felizjueves.literature.scoreboard import Scoreboard, load_scoreboard, score
 from felizjueves.literature.tables import load_table
+from felizjueves.plan.batching import max_targets_per_batch
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 BOARDS = DATA / "scoreboards" / "jengine"
@@ -101,6 +102,45 @@ def test_a_candidate_not_supplied_fails() -> None:
     missing = [v for v in verdicts if v.table == "jengine/table3"]
     assert [v.status for v in missing] == [Status.FAIL]
     assert missing[0].reason == "no candidate supplied"
+
+
+def _table3_candidate() -> Candidate:
+    t3 = TABLES["jengine/table3"]
+    return Candidate(
+        cells={
+            (L, nb): max_targets_per_batch(L, nb)
+            for L in t3.row_values
+            for nb in t3.column_values
+        },
+        board="literal",
+    )
+
+
+def test_table3_scores_on_the_literal_board() -> None:
+    t3 = TABLES["jengine/table3"]
+    board = _board("literal")
+    only_t3 = Scoreboard(board.name, {t3.id: board.rules[t3.id]})
+    agreement, exact_given_inputs = score(
+        only_t3, {t3.id: t3}, {t3.id: _table3_candidate()}
+    )
+    assert agreement.status is Status.UNSET  # until the floor is set
+    assert agreement.measured["exact"] == 38
+    assert exact_given_inputs.status is Status.UNSET  # inputs still null
+
+
+def test_the_full_board_fails_while_two_tables_have_no_candidate() -> None:
+    # A partial run cannot be told apart from a regression: the plan layer
+    # computes Table 3 only, so Tables 1 and 2 are FAILs by design.
+    verdicts = score(
+        _board("literal"), TABLES, {"jengine/table3": _table3_candidate()}
+    )
+    failed = {v.table for v in verdicts if v.status is Status.FAIL}
+    assert failed == {"jengine/table1", "jengine/table2"}
+    assert all(
+        v.reason == "no candidate supplied"
+        for v in verdicts
+        if v.table != "jengine/table3"
+    )
 
 
 def test_tables_are_read_only() -> None:
