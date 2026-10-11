@@ -2,7 +2,8 @@
 
 Every literal Agreement threshold is set, each to what the plan layer
 measured: Table 3 from the batch partition, Tables 1 and 2 from the sieved
-plan. Every exact_given_inputs is still unrecorded."""
+plan. Table 3's exact_given_inputs records the recovered cut (#14); Tables
+1 and 2's stay null, with a StructuralLimit each in limits.json."""
 
 from __future__ import annotations
 
@@ -53,29 +54,35 @@ def test_a_board_cannot_load_the_other_boards_file() -> None:
         load_scoreboard(BOARDS / "searched.json", "literal")
 
 
-def test_every_agreement_is_set_and_no_input_is_recorded() -> None:
+def test_every_agreement_is_set_and_only_table3_records_inputs() -> None:
     # Tables 1 and 2 are computed post-sieve (#12), the paper's algorithm as
     # written, and their floors and ceilings are what that measured; Table 3's
     # are the batch partition's. From here a floor only rises and a ceiling
-    # only falls (Agreement.tightened). Every exact_given_inputs is still
-    # unrecorded (#14).
-    for rules in _board("literal").rules.values():
+    # only falls (Agreement.tightened). #14 recorded Table 3's inputs (the
+    # cut, plan/recovery.py); Tables 1 and 2 have none, and a limit each.
+    for tid, rules in _board("literal").rules.items():
         for rule in rules:
             if isinstance(rule, Agreement):
                 assert rule.floor_exact is not None
                 assert rule.ceiling_worst_rel_dev is not None
+            elif tid == "jengine/table3":
+                assert rule.inputs is not None
             else:
                 assert rule.inputs is None
 
 
 def test_the_printed_tables_score_as_unset_and_at_or_under() -> None:
     # Scoring the paper against itself: on the literal board every Agreement
-    # passes (40 exact, no deviation) and every exact_given_inputs is unset;
+    # passes (40 exact, no deviation); exact_given_inputs is unset on Tables
+    # 1-2 and inapplicable on Table 3 (the printed values were not produced
+    # from its recorded inputs by this candidate);
     # the searched board's rule holds with equality.
     literal = score(_board("literal"), TABLES, _as_printed("literal"))
     passed = {(v.table, v.rule) for v in literal if v.status is Status.PASS}
     assert passed == {(tid, "agreement") for tid in TABLES}
-    assert {v.status for v in literal} == {Status.UNSET, Status.PASS}
+    assert {v.status for v in literal} == {
+        Status.UNSET, Status.PASS, Status.INAPPLICABLE
+    }
     searched = score(_board("searched"), TABLES, _as_printed("searched"))
     assert {v.status for v in searched} == {Status.PASS}
 
@@ -139,7 +146,8 @@ def test_table3_scores_on_the_literal_board() -> None:
     )
     assert agreement.status is Status.PASS
     assert agreement.measured == {"exact": 38, "worst_rel_dev": 1 / 21}
-    assert exact_given_inputs.status is Status.UNSET  # inputs still null
+    # The minimax cut is not the recorded one (#14: two-ended nearest fill).
+    assert exact_given_inputs.status is Status.INAPPLICABLE
 
 
 def _plan_candidates() -> dict[str, Candidate]:
@@ -186,12 +194,15 @@ def test_tables_1_and_2_score_post_sieve_on_the_literal_board() -> None:
 
 def test_the_full_board_with_the_plan_layers_candidates() -> None:
     # Every table has a candidate, so nothing FAILs for want of one: every
-    # Agreement passes, and every exact_given_inputs is UNSET.
+    # Agreement passes; exact_given_inputs is UNSET on Tables 1-2 and
+    # INAPPLICABLE on Table 3, whose recorded inputs these are not.
     verdicts = score(_board("literal"), TABLES, _plan_candidates())
     assert {(v.table, v.rule) for v in verdicts if v.status is Status.PASS} == {
         (tid, "agreement") for tid in TABLES
     }
-    assert {v.status for v in verdicts} == {Status.PASS, Status.UNSET}
+    assert {v.status for v in verdicts} == {
+        Status.PASS, Status.UNSET, Status.INAPPLICABLE
+    }
 
 
 def _searched_candidates() -> dict[str, Candidate]:
@@ -243,8 +254,13 @@ def test_tables_are_read_only() -> None:
         TABLES["jengine/table1"].cells[(7, 1)] = 0  # type: ignore[index]
 
 
-def test_limits_record_exists_and_is_empty() -> None:
-    assert load_limits(JENGINE / "limits.json") == ()
+def test_limits_record_tables_1_and_2() -> None:
+    # #14: the sieve's seed order is not recovered for Tables 1-2, so each
+    # carries a StructuralLimit (test_plan_recovery.py checks its cells).
+    limits = load_limits(JENGINE / "limits.json")
+    assert [lim.asserted_value["table"] for lim in limits] == [
+        "jengine/table1", "jengine/table2",
+    ]
 
 
 def test_a_limit_record_needs_every_field() -> None:

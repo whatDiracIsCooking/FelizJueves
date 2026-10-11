@@ -24,8 +24,9 @@ same rule as kernel-tier.sh's "never read a 2 as a pass":
        candidates at all yet
 
 FAIL outranks UNSET. `report` judges nothing, and exits 0 or 2. Today
-`replay literal` exits 3: every Agreement passes and every
-exact_given_inputs is UNSET, because no inputs are recorded.
+`replay literal` exits 3: every Agreement passes, Table 3's
+exact_given_inputs passes from its recorded inputs (#14), and Tables 1-2's
+are UNSET, because none are recorded for them.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from felizjueves.literature.scoreboard import load_scoreboard, score
 from felizjueves.literature.tables import Cell, Table, load_table
 from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.pipeline import plan
+from felizjueves.plan.recovery import recovered_candidates
 from felizjueves.plan.search import load_cuts, searched_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import Operator, Spec, Target
@@ -56,6 +58,7 @@ QUANTITY = {
     "jengine/table2": "max_intermediates",
     "jengine/table3": "max_targets",
 }
+T3 = "jengine/table3"
 
 
 def spec_for(total_am: int, n_batches: int, levers: tuple[str, ...] = ()) -> Spec:
@@ -70,12 +73,18 @@ def literal_candidates(tables: Mapping[str, Table]) -> dict[str, Candidate]:
     (levers=(): the paper's algorithm as written, sieve on)."""
     cells: set[Cell] = {c for t in tables.values() for c in t.cells}
     costs: dict[Cell, PlanCost] = {c: plan(spec_for(*c)).cost for c in sorted(cells)}
-    return {
+    out = {
         tid: Candidate(
             {c: getattr(costs[c], QUANTITY[tid]) for c in t.cells}, board="literal"
         )
         for tid, t in tables.items()
     }
+    # #14: Table 3's inputs are recovered (plan/recovery.py) and recorded in
+    # literal.json, so its candidate is produced from them and carries them;
+    # exact_given_inputs then judges it. Tables 1-2 have no recorded inputs.
+    if T3 in tables:
+        out[T3] = recovered_candidates({T3: tables[T3]})[T3]
+    return out
 
 
 # -- the searched board's recorded cuts (#13) ----------------------------------

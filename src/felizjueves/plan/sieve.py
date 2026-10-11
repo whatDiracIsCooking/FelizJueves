@@ -51,12 +51,13 @@ build() and is still refused there.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import replace
 from types import MappingProxyType
 
 from felizjueves.plan.batching import AXES
 from felizjueves.plan.dag import BatchDag, Node, build
-from felizjueves.plan.targets import hermite_targets
+from felizjueves.plan.targets import R, hermite_targets
 from felizjueves.spec import Spec
 
 NO_SIEVE = "no-sieve"
@@ -95,8 +96,13 @@ def _reexpansion(
     return None
 
 
-def sieve(dag: BatchDag) -> BatchDag:
-    """[JEngine, v2, Alg. 3] on one batch's DAG. Pure: `dag` is not changed."""
+def sieve(dag: BatchDag, *, seed_order: Sequence[R] | None = None) -> BatchDag:
+    """[JEngine, v2, Alg. 3] on one batch's DAG. Pure: `dag` is not changed.
+
+    `seed_order` is the order lines 4-5 seed the queue in: any sequence of
+    target indices r, of which those in this batch are used. None (the
+    default, and the literal board's choice) is `hermite_targets` order.
+    plan/recovery.py (#14) is the caller that varies it."""
     parents: dict[Node, tuple[Node, ...]] = dict(dag.parents)
     present: set[Node] = set(dag.nodes())
     children: dict[Node, set[Node]] = {n: set() for n in present}
@@ -123,7 +129,7 @@ def sieve(dag: BatchDag) -> BatchDag:
             del children[n]
 
     queue: deque[Node] = deque()
-    for t in _target_order(dag):  # lines 4-5
+    for t in _target_order(dag, seed_order):  # lines 4-5
         queue.extend(parents.get(t, ()))
     seen: set[Node] = set()
     while queue:  # lines 6-10
@@ -153,10 +159,13 @@ def sieve(dag: BatchDag) -> BatchDag:
     return replace(dag, parents=MappingProxyType(parents))
 
 
-def _target_order(dag: BatchDag) -> list[Node]:
-    """The batch's targets in `hermite_targets` order: the fixed seed order."""
-    top = max(sum(r) for r, _ in dag.targets)
-    return [(r, 0) for r in hermite_targets(top) if (r, 0) in dag.targets]
+def _target_order(dag: BatchDag, order: Sequence[R] | None = None) -> list[Node]:
+    """The batch's targets in `order`; by default `hermite_targets` order,
+    the fixed seed order."""
+    if order is None:
+        top = max(sum(r) for r, _ in dag.targets)
+        order = hermite_targets(top)
+    return [(r, 0) for r in order if (r, 0) in dag.targets]
 
 
 def plan(spec: Spec) -> tuple[BatchDag, ...]:
