@@ -163,9 +163,9 @@ RULES: dict[str, Rule] = {
                    "(lower.py); the limits it records are read by tests",
         reference=_GROUND_TRUTH),
     "ao": _rule(
-        "the AO layer (#80): shells, the basis and the one normalisation "
-        "convention -- input data a kernel is eventually run on, in plain "
-        "tuples and floats",
+        "the AO layer (#80, #81): shells, the basis and the one normalisation "
+        "convention, and the pure Hermite coefficients `E` -- input data a "
+        "kernel is eventually run on, in plain tuples and floats",
         ("ao",),
         spec="a shell is input data, not a generation key: no `Spec` field "
              "and no `key()` (#80)",
@@ -220,6 +220,7 @@ RULE_OF: dict[str, str] = {
     "batchreport": "analysis",
     "ao": "ao",
     "ao.shell": "ao",
+    "ao.hermite": "ao",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -271,6 +272,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "batchreport": ("device", "measured"),
     "ao": (),
     "ao.shell": (),
+    "ao.hermite": (),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
