@@ -1,19 +1,36 @@
 # The J engine: what the generator emits
 
-**Status: specification, not description.** The generator does not exist yet
-(see CLAUDE.md, "The state of the tree"). This file is the derived spec it must
-satisfy — our notation, our vocabulary, our batching config — written so a test
-can be read against it rather than against a paper.
+**Status: specification, partly implemented.** This file is the derived spec
+the generator must satisfy — our notation, our vocabulary, our batching config
+— written so a test can be read against it rather than against a paper. Part of
+it is now code (see CLAUDE.md, "The state of the tree"); the code is read
+against this file, not the other way round.
 
-**Implemented so far: step 1 of the pipeline, the split.** Target enumeration
-is `src/felizjueves/plan/targets.py`; `batch_direction`, `in_batch` and the
-sub-batch partition are `src/felizjueves/plan/batching.py`. The partition's cut
-rule is **minimax** — the largest batch minimised, `[JEngine, v2, §5]` — with
-ties to the lowest boundaries and one set of cut points shared by `X`, `Y` and
-`Z`; that is the rule, wherever this file says "equalise". It computes
-`[JEngine, v2, Table 3]` (targets per batch), scored on the `literal` board.
-Everything else here — the recurrences, MILD, the sieve, emission, Tables 1–2 —
-is still specification.
+**Implemented: pipeline steps 1–5, for one batch.**
+
+- *Step 1, the split.* Target enumeration is `src/felizjueves/plan/targets.py`;
+  `batch_direction`, `in_batch` and the sub-batch partition are
+  `src/felizjueves/plan/batching.py`. The partition's cut rule is **minimax** —
+  the largest batch minimised, `[JEngine, v2, §5]` — with ties to the lowest
+  boundaries and one set of cut points shared by `X`, `Y` and `Z`; that is the
+  rule, wherever this file says "equalise".
+- *Steps 2–3, MILD and the sieve*, and the per-batch counts, are host-side in
+  `plan/` ([`mild.md`](mild.md) has the status): `dag.py`, `sieve.py`, and
+  `cost.py`'s `PlanCost`, composed by `pipeline.plan(spec)`. They compute
+  `[JEngine, v2, Tables 1–3]`, scored on the `literal` and `searched` boards.
+- *Step 4, the schedule*, is `plan/schedule.py`; the recurrences below are
+  built from it as IR by `src/felizjueves/recurrence.py`.
+- *Step 5, the kernel*, is `build_pq_kernel` in `src/felizjueves/kernel.py` —
+  the `[p|q]` contract below, `J_p = Σ_q [p|q] D_q` — spelled for each vendor
+  by `emit/cuda.py` and `emit/hip.py`, **for `n_batches = 1` only, with a plain
+  (non-atomic) write-back**. A split class is refused.
+
+**Still specification:** the split class's atomic write-back and per-batch
+launches (`[JEngine, v2, §5]`, "Batching" below — the plan layer computes the
+split, but no kernel is generated from it), the bra-side `E` transform
+`J_ab = Σ_p E_p^{ab} J_p`, and the `J_ab` scatter (pre- and post-contraction,
+deferred to `[Fock]`). A count this file states is a claim about the code only
+where a test or a scored board checks it.
 
 The tree-search half (reduction directions, and the sieve that prunes them) is
 [`mild.md`](mild.md). This file covers everything around it: the recurrences,
@@ -293,10 +310,11 @@ correct implementation of steps 1–3 should **reproduce them** — and it is th
 cheapest end-to-end check available on the tree search, needing neither a
 compiler nor a card.
 
-**The grid itself is deliberately not copied here.** Once the generator exists
-it computes these counts itself, so the artifact we want tracked is *our* output
-as a golden file, with the paper cited as what it was cross-checked against.
-Read the full grid from the paper when implementing; commit ours.
+**The grid itself is deliberately not copied here.** The plan layer computes
+these counts itself (`plan/cost.py`'s `PlanCost`); the paper's grid is
+transcribed, with provenance, in `data/literature/jengine/table{1,2,3}.json`,
+and the scoreboards in `data/scoreboards/jengine/` record how our counts
+compare to it.
 
 Four corner values, as anchors to bootstrap the first implementation:
 
