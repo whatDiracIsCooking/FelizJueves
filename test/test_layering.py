@@ -163,10 +163,11 @@ RULES: dict[str, Rule] = {
                    "(lower.py); the limits it records are read by tests",
         reference=_GROUND_TRUTH),
     "ao": _rule(
-        "the AO layer (#80, #81, #83): shells, the basis and the one "
-        "normalisation convention, the pure Hermite coefficients `E`, and the "
+        "the AO layer (#80, #81, #83, #85): shells, the basis and the one "
+        "normalisation convention, the pure Hermite coefficients `E`, the "
         "dressed pair data with its Schwarz bound (whose `[r]^(0)` evaluator "
-        "is injected as `one_centre=`, never imported) -- input data a "
+        "is injected as `one_centre=`, never imported), and the ERI block "
+        "(whose `[p|q]` evaluator is injected as `pq=`) -- input data a "
         "kernel is eventually run on, in plain tuples and floats",
         ("ao",),
         spec="a shell is input data, not a generation key: no `Spec` field "
@@ -224,6 +225,7 @@ RULE_OF: dict[str, str] = {
     "ao.shell": "ao",
     "ao.hermite": "ao",
     "ao.pairs": "ao",
+    "ao.eri": "ao",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -277,6 +279,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.shell": (),
     "ao.hermite": (),
     "ao.pairs": ("ao.hermite", "ao.shell"),
+    "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.

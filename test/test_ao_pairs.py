@@ -232,13 +232,17 @@ def test_the_bound_bounds_with_dressed_kets(la, lb, lc, ld) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_dress_applies_exactly_the_three_factors() -> None:
+def test_dress_applies_exactly_the_two_factors() -> None:
+    # c_a c_b (pi/zeta)^{3/2}, and no normalisation: that is in the
+    # coefficients (ao/shell.py's convention; #85 removed a second one here).
     e = (1.0, -2.0, 0.25)
-    got = dress(e, ca=0.3, cb=-1.7, na=2.0, nb=0.5, zeta=1.9)
-    want = [0.3 * -1.7 * 2.0 * 0.5 * (math.pi / 1.9) ** 1.5 * x for x in e]
+    got = dress(e, ca=0.3, cb=-1.7, zeta=1.9)
+    want = [0.3 * -1.7 * (math.pi / 1.9) ** 1.5 * x for x in e]
     assert got == pytest.approx(want, rel=1e-15)
     with pytest.raises(ValueError):
-        dress(e, ca=1.0, cb=1.0, na=1.0, nb=1.0, zeta=0.0)
+        dress(e, ca=1.0, cb=1.0, zeta=0.0)
+    with pytest.raises(TypeError):  # no normalisation parameter, dead or live
+        dress(e, ca=1.0, cb=1.0, na=2.0, nb=0.5, zeta=1.9)
 
 
 def test_the_placement_is_complete() -> None:
@@ -250,8 +254,8 @@ def test_the_placement_is_complete() -> None:
     for _ in range(200):
         zeta, eta = _exp(rng), _exp(rng)
         kernel = fundamental(0, (0.0, 0.0, 0.0), theta_of(zeta, eta))
-        host_bra = dress((1.0,), ca=1.0, cb=1.0, na=1.0, nb=1.0, zeta=zeta)[0]
-        host_ket = dress((1.0,), ca=1.0, cb=1.0, na=1.0, nb=1.0, zeta=eta)[0]
+        host_bra = dress((1.0,), ca=1.0, cb=1.0, zeta=zeta)[0]
+        host_ket = dress((1.0,), ca=1.0, cb=1.0, zeta=eta)[0]
         lam = 2.0 * math.pi ** 2.5 / (zeta * eta * math.sqrt(zeta + eta))
         assert kernel * host_bra * host_ket == pytest.approx(lam, rel=1e-14)
 
@@ -292,7 +296,9 @@ def _overlap_1d(i: int, j: int, alpha: float, beta: float, A: float,
 
 def test_the_dressed_t0_column_is_the_dressed_overlap() -> None:
     # int Lambda_t = 0 for t != 0 and (pi/zeta)^{3/2} for t = 0, so the
-    # dressed t = 0 coefficient is c_a c_b N_a N_b S_ab exactly.
+    # dressed t = 0 coefficient is c_a c_b S_ab exactly, S_ab the overlap of
+    # the UNNORMALISED primitives (by quadrature below) -- the coefficients
+    # carry any normalisation, so nothing else may appear (#85).
     rng = random.Random(831)
     for la in range(3):
         for lb in range(3):
@@ -303,8 +309,7 @@ def test_the_dressed_t0_column_is_the_dressed_overlap() -> None:
             for rec in pp:
                 alpha, beta = sa.exponents[rec.i], sb.exponents[rec.j]
                 assert rec.zeta == alpha + beta and rec.L == la + lb
-                coef = (sa.coefficients[rec.i] * sb.coefficients[rec.j]
-                        * primitive_norm(la, alpha) * primitive_norm(lb, beta))
+                coef = sa.coefficients[rec.i] * sb.coefficients[rec.j]
                 rows = [(a, b) for a in cartesians(la) for b in cartesians(lb)]
                 assert len(rec.block) == len(rows)
                 for (a, b), row in zip(rows, rec.block, strict=True):
@@ -319,7 +324,9 @@ def test_the_dressed_t0_column_is_the_dressed_overlap() -> None:
 def test_an_axis_primitive_has_unit_self_overlap() -> None:
     for l in range(5):  # noqa: E741
         for alpha in (0.01, 1.0, 100.0):
-            s = Shell(l, (0.3, -0.2, 1.1), (alpha,), (1.0,))
+            # The normalisation is the coefficient's to carry (#85).
+            s = Shell(l, (0.3, -0.2, 1.1), (alpha,),
+                      (primitive_norm(l, alpha),))
             (rec,) = primitive_pairs(s, s)
             assert rec.block[0][0] == pytest.approx(1.0, rel=1e-14)
 
@@ -330,13 +337,11 @@ def test_the_block_is_the_dressed_pure_block() -> None:
     rng = random.Random(832)
     sa, sb = _shell(rng, 2, 1), _shell(rng, 1, 1)
     (rec,) = primitive_pairs(sa, sb)
-    alpha, beta = sa.exponents[0], sb.exponents[0]
     k = 0
     for a in cartesians(2):
         for b in cartesians(1):
             pure = e_block(a, b, rec.zeta, rec.P, sa.centre, sb.centre)
             assert rec.block[k] == dress(
                 pure, ca=sa.coefficients[0], cb=sb.coefficients[0],
-                na=primitive_norm(2, alpha), nb=primitive_norm(1, beta),
                 zeta=rec.zeta)
             k += 1
