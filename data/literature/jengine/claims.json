@@ -32,7 +32,7 @@
       "source": "[JEngine, v2, §5]",
       "kind": "monotonicity",
       "status": "pending",
-      "reason": "Pre-sieve FLOPs are flat 1->3 (test/test_plan_dag.py::test_batching_trades_flops_for_intermediates pins that); the rise is post-sieve, so #12 discharges it."
+      "reason": "Post-sieve (#12) it holds at most cells but not at all of them. FLOPs are flat 1->3 at L = 7 (425, 425, where the paper prints 424, 425), and max intermediates per batch are flat 6->9 at L = 10 (95, 95). test/test_plan_sieve.py::test_batching_post_sieve pins both exceptions and carries no mark. At L = 7 the 1-batch sieve leaves one FLOP more than the paper's; a seed-order search (#13/#14) may close it."
     },
     {
       "id": "jengine/eq17-1y-misprint",
@@ -79,8 +79,8 @@
       "statement": "MILD cannot obey rule 4 (reduce to a parent and grandparent already in the tree): that is a property of the graph built so far, while MILD is a pure function of r. The sieve is the pass that recovers it.",
       "source": "[JEngine, v2, §4.1]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "#12 implements the sieve and its test."
+      "status": "asserted",
+      "test": "test/test_plan_sieve.py::test_the_sieve_recovers_common_parents_where_mild_cannot"
     },
     {
       "id": "jengine/sieve-non-monotone-in-spills",

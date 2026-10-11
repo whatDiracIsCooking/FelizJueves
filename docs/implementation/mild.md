@@ -23,7 +23,7 @@ which reduces one Cartesian component at a time and raises the auxiliary index
 recurrence is exactly an assignment of one reduction direction to every node** —
 every target `[r]^(0)` and every intermediate `[r]^(m)`, `m > 0`. That
 assignment induces a DAG; its node count is what sets register pressure, and its
-edge count sets the FLOP count (one edge per multiply, two per multiply-add —
+edges set the FLOP count (1, 2 or 3 per node for `r_d` = 1, 2, ≥ 3, per `plan/cost.py` —
 see the cost table in [`j_engine.md`](j_engine.md)).
 
 Choosing the assignment that minimises the DAG is a tree-search problem. Exact
