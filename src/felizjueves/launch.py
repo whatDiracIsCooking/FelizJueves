@@ -1,7 +1,7 @@
 """The whole-molecule launch plan, as a value (#138; milestone 6).
 
     launches(basis, D, *, bound, n_batches, tau, density_sort=True,
-             strict=True)                         -> LaunchPlan
+             strict=True, resolve=None)           -> LaunchPlan
     LaunchPlan    iterable of ClassLaunch, plus tau / n_batches / refused
     ClassLaunch(lp, lq, n_batches, bras, kets, kernels, bra_blocks)
     PairRec(i, j, prim, L, G, key)                one index record
@@ -74,8 +74,12 @@ THE BATCH COUNT is asked of the plan per class, `ao.drive.KernelJP`'s
 `strict` contract: a count `plan.pipeline.plan` refuses (#64) raises with the
 class and the count (`strict=True`, the default), or the class is built at
 ONE batch and `(lp, lq, n_batches)` recorded in `LaunchPlan.refused`
-(`strict=False`). `_batches_for` is the one place a count is chosen, so an
-injected per-class resolver (#145) replaces it rather than threading through.
+(`strict=False`). `_batches_for` is the one place a count is chosen: with
+`resolve=` (#145) the count of class `(lp, lq)` is `resolve(lp, lq)` instead
+of `n_batches` -- a policy injected, never imported (`dispatch.Resolver` is
+one), and asked of the plan exactly as a fixed count is. Without it the plan
+is today's; `LaunchPlan.n_batches` records the argument either way, and each
+`ClassLaunch.n_batches` the count it was built at.
 
 `tau` is carried, validated, for the consumer: it is the kernel's runtime
 argument, and the plan itself skips nothing.
@@ -196,7 +200,10 @@ def _kernels(spec: Spec) -> tuple[Kernel, ...]:
 
 
 def _batches_for(lp: int, lq: int, n_batches: int, *, strict: bool,
-                 refused: list[tuple[int, int, int]]) -> int:
+                 refused: list[tuple[int, int, int]],
+                 resolve: Callable[[int, int], int] | None = None) -> int:
+    if resolve is not None:
+        n_batches = resolve(lp, lq)
     if _admits(lp, lq, n_batches):
         return n_batches
     if strict:
@@ -220,7 +227,8 @@ def _no_pq(p, q, PQv, theta) -> float:
 
 def launches(basis: Basis, D: object, *, bound: Bound, n_batches: int,
              tau: float, density_sort: bool = True,
-             strict: bool = True) -> LaunchPlan:
+             strict: bool = True,
+             resolve: Callable[[int, int], int] | None = None) -> LaunchPlan:
     """The launch plan of `J` for `basis` and the symmetric density `D`
     (module docstring). `bound(zeta, L)` is `I_pair`, injected."""
     rows = _density(basis, D)
@@ -261,7 +269,7 @@ def launches(basis: Basis, D: object, *, bound: Bound, n_batches: int,
     for lp in sorted(bras):
         for lq in sorted(kets):
             n = _batches_for(lp, lq, n_batches, strict=strict,
-                             refused=refused)
+                             refused=refused, resolve=resolve)
             out.append(ClassLaunch(
                 lp, lq, n, tuple(bras[lp]),
                 tuple(_sorted_desc(kets[lq])),
