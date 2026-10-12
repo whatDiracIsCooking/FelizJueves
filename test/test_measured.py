@@ -797,10 +797,11 @@ def test_a_rescaled_or_missing_ncu_counter_is_refused() -> None:
         measured.parse_ncu_csv(dropped)
 
 
-# rocprofv3's counter_collection.csv: SYNTHETIC -- this container's rocprofv3
-# cannot load (libdw.so.1, libhsa-amd-aqlprofile64.so.1 absent), so no real
-# file exists here. The column names are the ones librocprofiler-sdk-tool
-# 1.1.0 carries; the parser reads by name, so their order does not matter.
+# rocprofv3's counter_collection.csv: SYNTHETIC values, so the byte
+# arithmetic is exercised on non-zero counts (on this box every byte counter
+# reads 0: ROCPROF_PASS0/1 below are the RECORDED files, #140). The column
+# names are the ones librocprofiler-sdk-tool 1.1.0 writes; the parser reads
+# by name, so their order does not matter.
 ROCPROF_HEAD = ("Correlation_Id,Dispatch_Id,Agent_Id,Queue_Id,Process_Id,Thread_Id,"
                 "Grid_Size,Kernel_Id,Kernel_Name,Workgroup_Size,LDS_Block_Size,"
                 "Scratch_Size,VGPR_Count,Accum_VGPR_Count,SGPR_Count,Counter_Name,"
@@ -829,6 +830,153 @@ def test_rocprofv3_is_read_by_exact_counter_name_and_counts_no_flops() -> None:
     del counters[measured.ROCPROF_WR64]
     with pytest.raises(ValueError, match=measured.ROCPROF_WR64):
         measured.parse_rocprof_csv(ROCPROF_HEAD + "\n" + _rocprof(1, "k", counters))
+
+
+# The probe of test/test_toolchain.py (2^24 doubles, 384 MiB streamed) under
+# `measured.profile("hip", ...)`'s two passes, RECORDED on the RX 9060 XT
+# (#140, rocprofv3 1.1.0, ROCm 7.2.4): every byte counter reads 0.
+_ROCPROF_REC_HEAD = (
+    '"Correlation_Id","Dispatch_Id","Agent_Id","Queue_Id","Process_Id",'
+    '"Thread_Id","Grid_Size","Kernel_Id","Kernel_Name","Workgroup_Size",'
+    '"LDS_Block_Size","Scratch_Size","VGPR_Count","Accum_VGPR_Count",'
+    '"SGPR_Count","Counter_Name","Counter_Value","Start_Timestamp",'
+    '"End_Timestamp"')
+_PROBE = '"fj_counter_probe(double, double const*, double*, long)"'
+
+
+def _rec(pid: int, counter: str, start: int, end: int) -> str:
+    return (f'3,3,"Agent 1",1,{pid},{pid},16777216,16,{_PROBE},256,0,0,8,0,'
+            f'128,"{counter}",0.00000000e+00,{start},{end}')
+
+
+ROCPROF_PASS0 = "\n".join([_ROCPROF_REC_HEAD] + [
+    _rec(35230, c, 411622396805623, 411622398883152)
+    for c in ("GL2C_EA_RDREQ_128B_sum", "GL2C_EA_RDREQ_32B_sum",
+              "GL2C_EA_RDREQ_64B_sum")]) + "\n"
+ROCPROF_PASS1 = "\n".join([_ROCPROF_REC_HEAD] + [
+    _rec(35236, c, 411622658835233, 411622660502673)
+    for c in ("GL2C_EA_WRREQ_sum", "GL2C_EA_WRREQ_64B_sum")]) + "\n"
+
+
+def test_rocprofv3_passes_fit_gfx1200s_gl2c_and_cover_every_counter() -> None:
+    # #140: five GL2C counters in one pass abort rocprofv3 (error code 38)
+    flat = [c for p in measured.ROCPROF_PASSES for c in p]
+    assert sorted(flat) == sorted(measured.ROCPROF_COUNTERS)  # each once
+    assert all(len(p) <= 4 for p in measured.ROCPROF_PASSES)
+    cmds = measured.profile_commands("hip", "rocprofv3", ["./probe"],
+                                     kernel_regex="k", outdir=Path("/o"))
+    assert len(cmds) == len(measured.ROCPROF_PASSES)
+    for i, (cmd, p) in enumerate(zip(cmds, measured.ROCPROF_PASSES,
+                                     strict=True)):
+        assert cmd[cmd.index("--pmc") + 1:cmd.index("--kernel-include-regex")] \
+            == list(p)
+        assert cmd[cmd.index("-d") + 1] == f"/o/pass{i}"
+
+
+def test_the_recorded_passes_join_into_one_launch_of_zero_bytes() -> None:
+    (c,) = measured.parse_rocprof_csv(ROCPROF_PASS0, ROCPROF_PASS1)
+    assert c.kernel == "fj_counter_probe" and c.fp64_flops is None
+    assert c.raw == dict.fromkeys(measured.ROCPROF_COUNTERS, 0)
+    assert (c.dram_bytes_read, c.dram_bytes_written) == (0, 0)
+    assert c.counter_ns == 411622398883152 - 411622396805623  # the read pass
+    with pytest.raises(ValueError, match="different kernels"):
+        measured.parse_rocprof_csv(ROCPROF_PASS0, ROCPROF_PASS1.replace(
+            "fj_counter_probe(", "other("))
+    with pytest.raises(ValueError, match="two passes"):
+        measured.parse_rocprof_csv(ROCPROF_PASS0, ROCPROF_PASS0)
+
+
+def _fake_rocprof(monkeypatch, passes: list[str], report: str = "") -> None:
+    monkeypatch.setattr(measured, "_which", lambda tool: f"/x/{tool}")
+    monkeypatch.setattr(measured, "counter_tool", lambda *a: "rocprofv3 1.1.0")
+    calls = iter(passes)
+
+    def run(cmd, **_):
+        out = Path(cmd[cmd.index("-d") + 1])
+        out.mkdir(parents=True)
+        (out / "counters_counter_collection.csv").write_text(next(calls))
+        return type("D", (), {"returncode": 0, "stdout": "", "stderr": report})()
+    monkeypatch.setattr(measured.subprocess, "run", run)
+
+
+def test_rocprofv3_byte_counters_that_all_read_zero_are_refused(
+        monkeypatch, tmp_path) -> None:
+    # #140: the recorded reading -- a zero that is not a measurement
+    _fake_rocprof(monkeypatch, [ROCPROF_PASS0, ROCPROF_PASS1])
+    with pytest.raises(measured.CouldNotMeasure) as e:
+        measured.profile("hip", [str(tmp_path / "probe")],
+                         kernel_regex="fj_counter_probe", workdir=tmp_path)
+    assert str(e.value).startswith(measured.ROCPROF_ZERO_BYTES)
+    assert "could not measure" in str(e.value)
+    # a reading with bytes in it is a launch, with both passes recorded
+    _fake_rocprof(monkeypatch, [ROCPROF_PASS0.replace(
+        "0.00000000e+00,411622396805623", "7,411622396805623", 1),
+        ROCPROF_PASS1], )
+    (c,), tool, command = measured.profile(
+        "hip", [str(tmp_path / "probe")], kernel_regex="fj_counter_probe",
+        workdir=tmp_path / "again")
+    assert c.dram_bytes_read == 128 * 7 and tool == "rocprofv3 1.1.0"
+    assert command.count("rocprofv3 --pmc") == 2 and "<probe>" in command
+    assert "<rocprofv3-out/pass1>" in command and str(tmp_path) not in command
+
+
+def test_a_rocprofv3_pass_the_card_cannot_collect_is_refused(
+        monkeypatch, tmp_path) -> None:
+    _fake_rocprof(monkeypatch, [ROCPROF_PASS0], report=(
+        "Could not construct profile cfg failed with error code 38: Request "
+        "exceeds the capabilities of the hardware to collect"))
+    with pytest.raises(measured.CouldNotMeasure, match="pass 0 .*exceeds"):
+        measured.profile("hip", ["./probe"], kernel_regex="k",
+                         workdir=tmp_path)
+
+
+# `rocprofv3 --list-avail`, an excerpt RECORDED on the RX 9060 XT (#140,
+# rocprofv3 1.1.0, ROCm 7.2.4): the PC-sampling block first, then the
+# counter block, each opening with the agent's Name.
+ROCPROF_AVAIL = """\
+GPU     :\t0
+Name    :\tgfx1200
+configs :
+   Method              :\thost_trap
+   Unit                :\ttime
+
+GPU:0
+Name:gfx1200
+Counter_Name        :\tGL2C_EA_RDREQ_32B_sum
+Description         :\tNumber of 32-byte GL2C/EA read requests. Sum over GL2C instances.
+
+
+Counter_Name        :\tGL2C_EA_RDREQ_64B_sum
+Description         :\tNumber of 64-byte GL2C/EA read requests. Sum over GL2C instances.
+
+
+Counter_Name        :\tSQ_INSTS_VALU
+Description         :\tThe number of VALU (Vector ALU) instructions issued. \
+The value is returned per-SE (aggregate of values in SIMDs in the SE). See AMD \
+ISAs for more information on VALU instructions.
+
+
+Counter_Name        :\tSQ_WAVE64_INSTS
+Description         :\tNumber of instructions issued by wave64 waves. Skipped \
+instructions are not counted. {emulated}
+"""
+
+
+def test_rocprofv3_list_avail_is_read_per_agent_and_fp64_counters_picked() -> None:
+    got = measured.parse_rocprof_avail(ROCPROF_AVAIL)
+    assert got == {"gfx1200": frozenset({
+        "GL2C_EA_RDREQ_32B_sum", "GL2C_EA_RDREQ_64B_sum", "SQ_INSTS_VALU",
+        "SQ_WAVE64_INSTS"})}
+    # a byte counter's "64B" and a wave64 count are not fp64 counters ...
+    assert measured.fp64_counters(got["gfx1200"]) == []
+    # ... and every fp64 / FLOP spelling rocprofiler-sdk 1.1.0 uses (on CDNA) is
+    cdna = {"SQ_INSTS_VALU_ADD_F64", "SQ_INSTS_VALU_MUL_F64",
+            "SQ_INSTS_VALU_FMA_F64", "SQ_INSTS_VALU_TRANS_F64",
+            "SQ_INSTS_VALU_MFMA_MOPS_F64", "SQ_INSTS_VALU_FLOPS_FP64",
+            "TOTAL_64_OPS", "MfmaFlopsF64"}
+    assert measured.fp64_counters(cdna | got["gfx1200"]) == sorted(cdna)
+    with pytest.raises(ValueError, match="named no counter"):
+        measured.parse_rocprof_avail("GPU:0\nName:gfx1200\n")
 
 
 def test_counter_rows_file_one_row_per_batch_kernel_in_plan_order(tmp_path) -> None:
@@ -883,8 +1031,19 @@ def test_a_counter_row_without_card_state_or_on_a_card_without_a_ridge_is_refuse
 def test_the_unmeasured_card_is_recorded_with_its_reason_not_as_zero() -> None:
     assert set(measured_store.UNMEASURED) == {"gfx1200"}
     why = measured_store.UNMEASURED["gfx1200"]
-    assert "could not measure" in why.lower()
+    # #140: FINAL, with its mechanism -- the profiler loads (so "cannot
+    # load" is no longer the reason) and the missing counter is named
+    assert why.startswith("FINAL (#140): ")
+    assert "now LOADS" in why and "cannot load" not in why
     assert "libdw.so.1" in why and "fp64" in why
+    assert set(measured_store.MISSING_COUNTERS) == set(measured_store.UNMEASURED)
+    for name in measured_store.MISSING_COUNTERS["gfx1200"]:
+        assert name in why and measured.fp64_counters({name}) == [name]
+    assert "gfx1200" not in measured_store.FP64_COUNTER_ARCHS
+    # and the bytes: the driver's refusal and the store's reason share a phrase
+    zero = "GL2C <-> EA byte counters all read 0"
+    assert zero in why and zero in measured.ROCPROF_ZERO_BYTES
+    assert ", ".join(measured_store.FP64_COUNTER_ARCHS) in why
     assert measured_store.ROOFLINE_HEADER["could_not_measure"] == \
         measured_store.UNMEASURED
     doc = json.loads(measured_store.ROOFLINE.read_text())
