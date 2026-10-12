@@ -1238,8 +1238,9 @@ def test_hip_wallclock_over_the_subgrid(request, compile_device_source,
 #    input in raw, once, after every cell -- then print each kernel's and
 #    each cell's verdict against the card's measured ridge.
 #
-# gfx1200 is measured_store.UNMEASURED: its test skips with the recorded
-# reason (could not measure -- not a zero).
+# gfx1200 is measured_store.UNMEASURED: its test skips with the recorded,
+# FINAL reason (#140: rocprofv3 loads, but the card has no fp64 FLOP counter,
+# so no roofline row -- not a zero).
 
 ROOFLINE_STORE = "FJ_ROOFLINE_STORE"
 ROOFLINE_BATCHES = "FJ_ROOFLINE_BATCHES"
@@ -1383,7 +1384,9 @@ def test_cuda_roofline_over_the_subgrid(request, compile_device_source,
 @pytest.mark.gpu
 def test_hip_roofline_over_the_subgrid(request, compile_device_source,
                                        run_device_binary, tmp_path) -> None:
-    """gfx1200: could not measure (measured_store.UNMEASURED) -- skips with
-    the recorded reason; no row, never a zero."""
+    """gfx1200: no fp64 FLOP counter, a final refusal (#140,
+    measured_store.UNMEASURED) -- skips with the recorded reason, which
+    test_toolchain.py pins to the card's own counter list; no row, never a
+    zero."""
     _roofline("hip", request, compile_device_source, run_device_binary,
               tmp_path)

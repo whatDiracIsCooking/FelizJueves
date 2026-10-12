@@ -43,8 +43,12 @@
 #                         profiler is not optional tooling here.
 #   hsa-amd-aqlprofile    libhsa-amd-aqlprofile64.so.1 and libdw.so.1, which
 #   libdw1                librocprofiler-sdk.so loads at start: without them
-#                         rocprofv3 cannot run at all, and every AMD counter
-#                         row is "could not measure" (#110, #112).
+#                         rocprofv3 cannot run at all (#110, #112). With
+#                         them it loads and profiles (#140; on 24.04 apt
+#                         satisfies libdw1 with libdw1t64) -- but gfx1200
+#                         has no fp64 counter and its byte counters read 0,
+#                         so still no AMD roofline row, for good
+#                         (measured_store.UNMEASURED).
 #   rocm-gdb             parity with the cuda-gdb the CUDA toolkit carries.
 #
 # TO GET THE MATH LIBRARIES BACK, e.g. to benchmark against a hipBLAS-based

@@ -346,6 +346,11 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         note "the image lacks them: libdw1 and hsa-amd-aqlprofile (docker/install-rocm.sh)"
       else
         ok "counters: rocprofv3 ${ver:-(version unread)} ($path)"
+        # #140: loading is not measuring. gfx1200 defines no fp64 FLOP
+        # counter, and its GL2C byte counters read 0 on this box, so it has
+        # no roofline rows, by a final refusal -- said here so a working
+        # profiler is not read as "the AMD rows are owed".
+        note "loads, but gfx1200 has no fp64 FLOP counter and its byte counters read 0: no gfx1200 roofline rows (final: measured_store.UNMEASURED, #140)"
       fi
     fi
   }

@@ -138,7 +138,9 @@ mode on AMD -- never off a model:
   32 x `GL2C_EA_RDREQ_32B_sum` + 64 x `..._64B_sum` + 128 x `..._128B_sum`
   read, and 64 x `GL2C_EA_WRREQ_64B_sum` + 32 x (`GL2C_EA_WRREQ_sum` -
   `GL2C_EA_WRREQ_64B_sum`) written -- L2 misses, which RDNA4's Infinity
-  Cache may serve before DRAM, so an UPPER bound on DRAM bytes. The two
+  Cache may serve before DRAM, so an UPPER bound on DRAM bytes (#140: on
+  this box they all read 0 for streamed traffic, and the driver refuses
+  that reading -- see UNMEASURED). The two
   vendors' numbers share a field name, not a meaning: `counter_unit` says
   which, and nothing compares them across vendors.
 - `counter_ns`: the profiler's own duration of the kernel UNDER COUNTER
@@ -656,20 +658,45 @@ ROOFLINE_STATE_FIELDS = ("roofline:gpu_util_before", "roofline:gpu_util_after",
                          "roofline:cpu_busy_permille_before",
                          "roofline:gate_discarded_phases")
 
-# #112: the cards that have NO counter rows, by decision, and why. Could not
-# measure is recorded here -- never as a zero, never as an absent file.
+# #140: the fp64 instruction counters a roofline row needs and a card in
+# UNMEASURED does not expose, and the architectures rocprofiler-sdk 1.1.0
+# (ROCm 7.2.4, share/rocprofiler-sdk/counter_defs.yaml) DOES define them for
+# -- CDNA only; the derived TOTAL_64_OPS and SQ_INSTS_VALU_FLOPS_FP64 are
+# defined for that set too (gfx950 alone for the latter). The refusal's
+# mechanism, as data: test/test_toolchain.py reads the card's own
+# `rocprofv3 --list-avail` and fails if one of these, or any fp64 / FLOP
+# counter, appears on it.
+MISSING_COUNTERS = {
+    "gfx1200": ("SQ_INSTS_VALU_ADD_F64", "SQ_INSTS_VALU_MUL_F64",
+                "SQ_INSTS_VALU_FMA_F64"),
+}
+FP64_COUNTER_ARCHS = ("gfx90a", "gfx940", "gfx941", "gfx942", "gfx950")
+
+# #112, made FINAL by #140: the cards that have NO counter rows, by decision,
+# and why. The absence is recorded here -- never as a zero, never as an absent
+# file -- and it is a refusal with its mechanism, not a pending measurement.
 UNMEASURED = {
     "gfx1200": (
-        "COULD NOT MEASURE (#112). rocprofv3 1.1.0 cannot run in this "
-        "container: librocprofiler-sdk.so cannot load libdw.so.1 or "
-        "libhsa-amd-aqlprofile64.so.1 (no root to install them here; "
-        "docker/install-rocm.sh now installs libdw1 and hsa-amd-aqlprofile, "
-        "so a rebuilt image can collect the bytes). And gfx1200 exposes NO "
-        "fp64 instruction counter in rocprofiler-sdk (its counter "
-        "definitions have none for gfx12), so even a working rocprofv3 "
-        "gives no measured FLOP count and hence no measured intensity: an "
-        "AMD roofline row needs a FLOP count from elsewhere, labelled as "
-        "such. No gfx1200 row exists; that is not a zero."),
+        "FINAL (#140): no roofline row on gfx1200, because the card exposes "
+        "no fp64 FLOP counter. rocprofv3 1.1.0 (ROCm 7.2.4) now LOADS -- "
+        "libdw.so.1 and libhsa-amd-aqlprofile64.so.1 are present and the "
+        "AMD counter witness in test/test_toolchain.py dispatches -- but of "
+        "the counters rocprofiler-sdk defines for gfx1200 none counts fp64 "
+        "operations: " + ", ".join(MISSING_COUNTERS["gfx1200"])
+        + " (and the derived TOTAL_64_OPS, SQ_INSTS_VALU_FLOPS_FP64) are "
+        "defined only for " + ", ".join(FP64_COUNTER_ARCHS)
+        + ", and SQ_INSTS_VALU counts every VALU instruction whatever its "
+        "type. With no measured FLOP count there is no measured intensity "
+        "and no roofline point, and a FLOP count from the model or the "
+        "interpreter would be a model, not a counter. Nor are there bytes: "
+        "on this box (amdgpu module 6.16.13, host Linux 6.8) the GL2C <-> EA "
+        "byte "
+        "counters all read 0 for a probe that streams 384 MiB -- as do "
+        "TCP_REQ, TA_TA_BUSY and SQ_INSTS_VALU, while GRBM_GUI_ACTIVE and "
+        "SQ_WAVES count -- so the driver refuses that reading rather than "
+        "file it. No gfx1200 row exists; that is not a zero, and rebuilding "
+        "the image does not change it -- a rocprofiler-sdk defining an fp64 "
+        "counter for gfx12 would."),
 }
 
 ROOFLINE_HEADER["card_state"] = (

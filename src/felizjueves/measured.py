@@ -91,17 +91,25 @@ COUNTERS section; the invocations are:
   is news, not a number); `--clock-control none` so the card runs at the
   clock it chooses, as the ceiling probes (#109) and the timed runs do,
   rather than ncu's default lock to base clock.
-- AMD: `rocprofv3 --pmc <ROCPROF_COUNTERS> --kernel-include-regex <re>
-  --output-format csv -d <dir> -o counters -- <binary>`, one pass, and its
-  `*counter_collection.csv` read by column name (`Dispatch_Id`,
+- AMD: `rocprofv3 --pmc <pass> --kernel-include-regex <re> --output-format
+  csv -d <dir>/pass<i> -o counters -- <binary>`, once per ROCPROF_PASSES
+  entry (gfx1200's GL2C collects at most four of the five byte counters at
+  once, #140), each pass's `*counter_collection.csv` read by column name (`Dispatch_Id`,
   `Kernel_Name`, `Counter_Name`, `Counter_Value`, `Start_Timestamp`,
   `End_Timestamp`).
 
-COULD NOT MEASURE IS NOT ZERO. A profiler that is absent, cannot load (this
-container's rocprofv3 lacks `libdw.so.1` and `libhsa-amd-aqlprofile64.so.1`),
-is refused the counters (ncu's `ERR_NVGPUCTRPERM` on a host that restricts
-them to admins), or profiles no kernel raises `CouldNotMeasure` and yields
-no row. A counter it did not report is None in the row, never 0.
+COULD NOT MEASURE IS NOT ZERO. A profiler that is absent, cannot load (an
+image whose rocprofv3 lacks `libdw.so.1` or `libhsa-amd-aqlprofile64.so.1`,
+as milestone 5's did), is refused the counters (ncu's `ERR_NVGPUCTRPERM` on
+a host that restricts them to admins), or profiles no kernel raises
+`CouldNotMeasure` and yields no row. A counter it did not report is None in
+the row, never 0.
+
+WHAT A CARD CAN COUNT (#140) is read off the profiler, not assumed:
+`parse_rocprof_avail` reads `rocprofv3 --list-avail`'s counter names per
+agent and `fp64_counters` picks the ones that count fp64 operations. On
+gfx1200 that set is empty (`measured_store.MISSING_COUNTERS`), which is why
+the card is in `measured_store.UNMEASURED` for good.
 
 Counter collection serialises and replays each kernel, so the profiled run is
 a SEPARATE run of the same binary from any timed one, and its duration is
@@ -530,6 +538,15 @@ ROCPROF_WR = "GL2C_EA_WRREQ_sum"
 ROCPROF_WR64 = "GL2C_EA_WRREQ_64B_sum"
 ROCPROF_COUNTERS = (ROCPROF_RD32, ROCPROF_RD64, ROCPROF_RD128, ROCPROF_WR,
                     ROCPROF_WR64)
+# #140, measured on the RX 9060 XT: gfx1200's GL2C block collects at most
+# four of these in one pass -- all five abort rocprofv3 with "Request exceeds
+# the capabilities of the hardware to collect" (error code 38), after which
+# the profiled process HANGS rather than exits. So two passes, read and
+# written, each a separate run of the same binary; `parse_rocprof_csv` joins
+# them dispatch by dispatch.
+ROCPROF_PASSES = ((ROCPROF_RD32, ROCPROF_RD64, ROCPROF_RD128),
+                  (ROCPROF_WR, ROCPROF_WR64))
+ROCPROF_TIMEOUT_S = 600  # per pass: a pass that aborted hangs, so bound it
 
 NV_COUNTER_UNIT = (
     "ncu: fp64_flops = dadd + dmul + 2 x dfma thread instructions executed "
@@ -543,7 +560,9 @@ AMD_COUNTER_UNIT = (
     "= 64 x GL2C_EA_WRREQ_64B_sum + 32 x (GL2C_EA_WRREQ_sum - "
     "GL2C_EA_WRREQ_64B_sum): GL2C <-> memory-fabric bytes, i.e. L2 misses "
     "the Infinity Cache may serve, an UPPER bound on DRAM bytes; counter_ns "
-    "= End_Timestamp - Start_Timestamp under counter collection")
+    "= End_Timestamp - Start_Timestamp under counter collection, of the "
+    "read pass (two passes: gfx1200's GL2C collects at most four of the "
+    "five counters at once)")
 
 
 @dataclass(frozen=True)
@@ -602,10 +621,9 @@ def parse_ncu_csv(text: str) -> list[KernelCounters]:
     return out
 
 
-def parse_rocprof_csv(text: str) -> list[KernelCounters]:
-    """`rocprofv3 --pmc ... --output-format csv`'s counter_collection rows,
-    one `KernelCounters` per dispatch in dispatch order. Refuses a dispatch
-    missing one of ROCPROF_COUNTERS."""
+def _rocprof_dispatches(text: str) -> list[tuple[int, str, dict[str, int], int]]:
+    """One counter_collection CSV's dispatches, in dispatch order: (id,
+    kernel, every counter by name, End - Start ns)."""
     dispatches: dict[int, tuple[str, dict[str, int], int]] = {}
     for rec in csv.DictReader(io.StringIO(text)):
         if not rec.get("Dispatch_Id"):
@@ -615,9 +633,33 @@ def parse_rocprof_csv(text: str) -> list[KernelCounters]:
         ns = _int(rec["End_Timestamp"]) - _int(rec["Start_Timestamp"])
         got = dispatches.setdefault(d, (kernel, {}, ns))[1]
         got[rec["Counter_Name"]] = _int(rec["Counter_Value"])
+    return [(d, *dispatches[d]) for d in sorted(dispatches)]
+
+
+def parse_rocprof_csv(*texts: str) -> list[KernelCounters]:
+    """`rocprofv3 --pmc ... --output-format csv`'s counter_collection rows,
+    one `KernelCounters` per dispatch in dispatch order. Several texts are
+    the PASSES of one run (ROCPROF_PASSES), each a separate run of the same
+    binary: joined dispatch by dispatch, which must name the same kernels in
+    the same order, with counter_ns the FIRST pass's. Refuses a dispatch
+    missing one of ROCPROF_COUNTERS, a counter reported by two passes, and
+    passes that disagree on what was launched."""
+    if not texts:
+        raise ValueError("no rocprofv3 counter CSV")
+    first, *rest = [_rocprof_dispatches(t) for t in texts]
+    for other in rest:
+        if [k for _, k, _, _ in other] != [k for _, k, _, _ in first]:
+            raise ValueError(
+                "rocprofv3 passes launched different kernels: "
+                f"{[k for _, k, _, _ in first]} vs {[k for _, k, _, _ in other]}")
+        for (d, _, raw, _), (_, _, more, _) in zip(first, other, strict=True):
+            twice = sorted(set(raw) & set(more))
+            if twice:
+                raise ValueError(f"rocprofv3 dispatch {d}: {twice} reported "
+                                 "by two passes")
+            raw.update(more)
     out = []
-    for d in sorted(dispatches):
-        kernel, raw, ns = dispatches[d]
+    for d, kernel, raw, ns in first:
         missing = [c for c in ROCPROF_COUNTERS if c not in raw]
         if missing:
             raise ValueError(f"rocprofv3 dispatch {d} ({kernel}) has no "
@@ -635,6 +677,35 @@ def parse_rocprof_csv(text: str) -> list[KernelCounters]:
     return out
 
 
+_AVAIL_AGENT = re.compile(r"^\s*Name\s*:\s*(\S+)\s*$")
+_AVAIL_COUNTER = re.compile(r"^\s*Counter_Name\s*:\s*(\S+)\s*$")
+# A counter name that counts fp64 operations, in rocprofiler-sdk's spelling:
+# SQ_INSTS_VALU_{ADD,MUL,FMA,TRANS,MFMA}_F64, SQ_INSTS_VALU_FLOPS_FP64,
+# TOTAL_64_OPS, MfmaFlops*. A byte counter (GL2C_EA_RDREQ_64B) is not one.
+_FP64_COUNTER = re.compile(r"F64|FP64|FLOP|64_OPS", re.I)
+
+
+def parse_rocprof_avail(text: str) -> dict[str, frozenset[str]]:
+    """`rocprofv3 --list-avail`'s counter names, per agent (`gfx1200`).
+    Refuses output that names no counter: an empty list is not a card that
+    counts nothing."""
+    got: dict[str, set[str]] = {}
+    agent = None
+    for line in text.splitlines():
+        if m := _AVAIL_AGENT.match(line):
+            agent = m[1]
+        elif (m := _AVAIL_COUNTER.match(line)) and agent is not None:
+            got.setdefault(agent, set()).add(m[1])
+    if not got:
+        raise ValueError("rocprofv3 --list-avail named no counter")
+    return {a: frozenset(n) for a, n in got.items()}
+
+
+def fp64_counters(names: frozenset[str] | set[str]) -> list[str]:
+    """The counters among `names` that count fp64 operations (or FLOPs)."""
+    return sorted(n for n in names if _FP64_COUNTER.search(n))
+
+
 PROFILERS = {"cuda": "ncu", "hip": "rocprofv3"}
 
 
@@ -647,16 +718,29 @@ def counter_tool(path: str, backend: str) -> str:
     return f"{name} {m[1]}" if m else f"{name} (unknown version)"
 
 
-def profile_command(backend: str, tool: str, argv: Sequence[str], *,
-                    kernel_regex: str, outdir: Path) -> list[str]:
-    """The profiler invocation around `argv` (module docstring, COUNTERS)."""
+def profile_commands(backend: str, tool: str, argv: Sequence[str], *,
+                     kernel_regex: str, outdir: Path) -> list[list[str]]:
+    """The profiler invocations around `argv`, one per pass (module
+    docstring, COUNTERS): ncu replays in one; rocprofv3 needs
+    ROCPROF_PASSES, each writing under its own `outdir/pass<i>`."""
     if backend == "cuda":
-        return [tool, "--csv", "--print-units", "base", "--clock-control",
-                "none", "--metrics", ",".join(NCU_METRICS), "--kernel-name",
-                f"regex:{kernel_regex}", *argv]
-    return [tool, "--pmc", *ROCPROF_COUNTERS, "--kernel-include-regex",
-            kernel_regex, "--output-format", "csv", "-d", str(outdir), "-o",
-            "counters", "--", *argv]
+        return [[tool, "--csv", "--print-units", "base", "--clock-control",
+                 "none", "--metrics", ",".join(NCU_METRICS), "--kernel-name",
+                 f"regex:{kernel_regex}", *argv]]
+    return [[tool, "--pmc", *pmc, "--kernel-include-regex", kernel_regex,
+             "--output-format", "csv", "-d", str(outdir / f"pass{i}"), "-o",
+             "counters", "--", *argv] for i, pmc in enumerate(ROCPROF_PASSES)]
+
+
+# rocprofv3's own report that a pass's counter set does not fit the card.
+_ROCPROF_CANNOT = "exceeds the capabilities of the hardware to collect"
+# #140, measured on the RX 9060 XT (rocprofv3 1.1.0, ROCm 7.2.4, amdgpu
+# module 6.16.13, host Linux 6.8): every GL2C <-> EA byte counter reads 0
+# for a launch that streams 384 MiB (as do TCP_*, TA_*, SQ_INSTS_*), while
+# GRBM_GUI_ACTIVE and SQ_WAVES count. A launch whose byte counters ALL read
+# 0 is refused: no J-engine kernel moves no bytes, so that 0 is the counter
+# not counting, and an absence never becomes a zero.
+ROCPROF_ZERO_BYTES = "rocprofv3's GL2C <-> EA byte counters all read 0"
 
 
 _NOT_LOADED = re.compile(r"error while loading shared libraries: (\S+?):")
@@ -676,41 +760,71 @@ def profile(backend: str, argv: Sequence[str], *, kernel_regex: str,
     if tool is None:
         raise CouldNotMeasure(f"{name} not found: could not measure")
     outdir = workdir / f"{name}-out"
-    cmd = profile_command(backend, tool, argv, kernel_regex=kernel_regex,
-                          outdir=outdir)
-    try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        raise CouldNotMeasure(f"{name}: {e}: could not measure") from e
-    report = done.stdout + done.stderr
-    if "ERR_NVGPUCTRPERM" in report:
-        raise CouldNotMeasure(
-            "ncu: ERR_NVGPUCTRPERM -- this host restricts GPU performance "
-            "counters to admins (NVreg_RestrictProfilingToAdminUsers): could "
-            "not measure")
-    libs = sorted(set(_NOT_LOADED.findall(report)))
-    if libs:
-        raise CouldNotMeasure(f"{name} cannot load {', '.join(libs)}: could "
-                              "not measure")
-    if backend == "cuda":
-        if done.returncode != 0 or "==ERROR==" in report:
-            raise CouldNotMeasure(f"ncu exited {done.returncode}: could not "
-                                  f"measure\n{report[-2000:]}")
-        got = parse_ncu_csv(report) if '"ID"' in report else []
-    else:
-        files = sorted(outdir.rglob("*counter_collection.csv"))
+    cmds = profile_commands(backend, tool, argv, kernel_regex=kernel_regex,
+                            outdir=outdir)
+    texts = []
+    workdir.mkdir(parents=True, exist_ok=True)
+    for i, cmd in enumerate(cmds):
+        try:
+            # rocprofv3 drops a .rocprofv3/ directory in its cwd: keep it in
+            # workdir, out of the checkout
+            done = subprocess.run(
+                cmd, capture_output=True, text=True,
+                cwd=None if backend == "cuda" else workdir,
+                timeout=3600 if backend == "cuda" else ROCPROF_TIMEOUT_S)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise CouldNotMeasure(f"{name}: {e}: could not measure") from e
+        report = done.stdout + done.stderr
+        if "ERR_NVGPUCTRPERM" in report:
+            raise CouldNotMeasure(
+                "ncu: ERR_NVGPUCTRPERM -- this host restricts GPU performance "
+                "counters to admins (NVreg_RestrictProfilingToAdminUsers): "
+                "could not measure")
+        libs = sorted(set(_NOT_LOADED.findall(report)))
+        if libs:
+            raise CouldNotMeasure(f"{name} cannot load {', '.join(libs)}: "
+                                  "could not measure")
+        if backend == "cuda":
+            if done.returncode != 0 or "==ERROR==" in report:
+                raise CouldNotMeasure(f"ncu exited {done.returncode}: could "
+                                      f"not measure\n{report[-2000:]}")
+            if '"ID"' in report:
+                texts.append(report)
+            continue
+        if _ROCPROF_CANNOT in report:
+            raise CouldNotMeasure(
+                f"rocprofv3 pass {i} ({', '.join(ROCPROF_PASSES[i])}): "
+                f"{_ROCPROF_CANNOT}: could not measure")
+        files = sorted((outdir / f"pass{i}").rglob("*counter_collection.csv"))
         if done.returncode != 0 or len(files) > 1:
             raise CouldNotMeasure(
-                f"rocprofv3 exited {done.returncode} with {len(files)} counter "
-                f"files: could not measure\n{report[-2000:]}")
-        got = parse_rocprof_csv(files[0].read_text()) if files else []
+                f"rocprofv3 pass {i} exited {done.returncode} with "
+                f"{len(files)} counter files: could not measure\n"
+                f"{report[-2000:]}")
+        if not files:
+            texts = []
+            break
+        texts.append(files[0].read_text())
+    if backend == "cuda":
+        got = parse_ncu_csv(texts[0]) if texts else []
+    else:
+        got = parse_rocprof_csv(*texts) if texts else []
     if not got:
         raise CouldNotMeasure(f"{name} profiled no launch matching "
                               f"{kernel_regex!r}: could not measure")
-    shown = [Path(cmd[0]).name, *cmd[1:]]
-    shown = [f"<{Path(c).name}>" if c in (str(argv[0]) if argv else "",
-                                          str(outdir)) else c for c in shown]
-    return got, counter_tool(tool, backend), " ".join(shown)
+    for c in got:
+        if backend == "hip" and not any(c.raw[n] for n in ROCPROF_COUNTERS):
+            raise CouldNotMeasure(
+                f"{ROCPROF_ZERO_BYTES} for {c.kernel} ({c.counter_ns:.0f} ns "
+                "under collection): the counter not counting, not a "
+                "measurement -- could not measure")
+    # the binary as `<name>`, a pass's output directory as `<name-out/passN>`
+    hidden = {str(argv[0]): f"<{Path(argv[0]).name}>"} if argv else {}
+    hidden.update({str(outdir / f"pass{i}"): f"<{outdir.name}/pass{i}>"
+                   for i in range(len(cmds))})
+    shown = [" ".join([Path(cmd[0]).name, *(hidden.get(c, c) for c in cmd[1:])])
+             for cmd in cmds]
+    return got, counter_tool(tool, backend), " ; ".join(shown)
 
 
 def counter_rows(backend: Backend, spec: Spec, units: Sequence[Unit],
