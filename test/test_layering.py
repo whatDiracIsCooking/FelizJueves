@@ -73,6 +73,9 @@ RULES: dict[str, Rule] = {
         "and the published tables, and knows nothing of IR or devices",
         ("spec", "plan", "literature"),
         ir="the plan counts; it emits no instructions",
+        dispatch="nothing measured may reach the plan's cost model: a "
+                 "dispatch choice is admitted by the plan, never imported "
+                 "by it (#145)",
         reference=_GROUND_TRUTH),
     "reference": _rule(
         "numeric ground truth (#20) with independent ancestry: it may use only "
@@ -189,6 +192,28 @@ RULES: dict[str, Rule] = {
         literature="nothing in KernelCost may feed a literature floor "
                    "(lower.py); the limits it records are read by tests",
         reference=_GROUND_TRUTH),
+    "dispatch": _rule(
+        "dispatch.py (#145): the batch count of a class, chosen from the "
+        "measured wall-clock rows by batchreport's rule (best median) and "
+        "INJECTED into `launch.launches` as `resolve=`. Not `analysis`: it "
+        "feeds the launch plan, by injection. It reads the store and the "
+        "card, nothing else",
+        ("device", "measured_store", "batchreport"),
+        lower="measured rows only, never a model: `lower.KernelCost` is the "
+              "model #54's limits record mis-ranking the hardware (#145)",
+        kernelrank="a model-vs-measurement ranking is not a choice: the "
+                   "clock arbitrates, never a model or byte proxy (#145)",
+        ridge="a counter/roofline verdict is a byte proxy, not the clock",
+        crossread="the cross-read reports disagreements; it does not choose",
+        plan="nothing measured may reach the plan's cost model; the plan "
+             "admits the chosen count in `launch`, not here",
+        launch="the resolver is injected into the launch plan; it does not "
+               "need the plan, and importing it would invite the reverse",
+        measured="the resolver reads the STORE, never the driver: a choice "
+                 "must not need a toolchain (#94)",
+        literature="a dispatch choice is not scored against the published "
+                   "tables, and nothing measured may feed a floor",
+        reference=_GROUND_TRUTH),
     "study": _rule(
         "asym.py (#113): the asymmetric split, a STUDY that builds a batch "
         "list the generator refuses (plan + the builder's `_pq_kernel` + "
@@ -219,6 +244,9 @@ RULES: dict[str, Rule] = {
              "text is the driver's job (#94)",
         ir="a row is keyed on a Spec, not on instructions",
         interp="a measurement is not an interpretation",
+        dispatch="the resolver reads the store; a store that imports it "
+                 "is a cycle, and a choice would shape its own evidence "
+                 "(#145)",
         plan="a stored measurement must never reach the instrument the "
              "literature floors are measured with",
         literature="nothing measured may feed a literature floor",
@@ -278,6 +306,9 @@ RULES: dict[str, Rule] = {
         emit="the plan is data: no text is emitted (#138's acceptance)",
         measured="a batch count is the plan's admission or an injected "
                  "resolver's (#145), never a toolchain's",
+        dispatch="the resolver is injected (`resolve=`, #145), never "
+                 "imported: the plan stays data and the policy "
+                 "replaceable",
         measured_store="nothing measured may reach the plan by import: a "
                        "dispatch policy arrives injected (#145)",
         literature="a launch plan is not scored against the published "
@@ -329,6 +360,7 @@ RULE_OF: dict[str, str] = {
     "kernelrank": "analysis",
     "batchreport": "analysis",
     "ridge": "analysis",
+    "dispatch": "dispatch",
     "crossread": "analysis",
     "ao": "ao",
     "ao.shell": "ao",
@@ -395,6 +427,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "kernelrank": ("device", "kernel", "lower", "measured_store", "spec"),
     "batchreport": ("device", "measured_store"),
     "ridge": ("device", "measured_store"),
+    "dispatch": ("batchreport", "device", "measured_store"),
     "crossread": ("batchreport", "device", "kernelrank", "measured_store",
                   "ridge", "spec"),
     "ao": (),
@@ -576,10 +609,32 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged",
+    for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged", "dispatch",
                    "measured", "measured_store"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch reaches {hit}"
+
+
+def test_nothing_measured_reaches_back_through_the_resolver() -> None:
+    # #145's hazard, TRANSITIVELY: the resolver reads the store, so neither
+    # the store nor the plan (its cost model) nor the launch plan may reach it
+    # by any chain of imports -- the policy arrives injected (`resolve=`).
+    graph = _graph()
+
+    def reach(m: str) -> set[str]:
+        seen: set[str] = set()
+        todo = [m]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        return seen
+
+    for m in sorted(graph):
+        if (_under(m, "plan") or m in ("measured_store", "launch")) and (
+                "dispatch" in reach(m)):
+            raise AssertionError(f"{m} reaches dispatch")
 
 
 # #94: the store half knows no toolchain. The internal edges above keep it off
