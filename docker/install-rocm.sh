@@ -41,7 +41,11 @@
 #                         occupancy and memory traffic is the measurement this
 #                         project exists to move (docs/references.md), so the
 #                         profiler is not optional tooling here.
-#   rocm-gdb              parity with the cuda-gdb the CUDA toolkit carries.
+#   hsa-amd-aqlprofile    libhsa-amd-aqlprofile64.so.1 and libdw.so.1, which
+#   libdw1                librocprofiler-sdk.so loads at start: without them
+#                         rocprofv3 cannot run at all, and every AMD counter
+#                         row is "could not measure" (#110, #112).
+#   rocm-gdb             parity with the cuda-gdb the CUDA toolkit carries.
 #
 # TO GET THE MATH LIBRARIES BACK, e.g. to benchmark against a hipBLAS-based
 # reference: pass ROCM_PACKAGES="rocm-hip-sdk rocm-hip-runtime-dev" as a build
@@ -50,7 +54,7 @@ set -euo pipefail
 
 ROCM_VERSION="${ROCM_VERSION:?ROCM_VERSION must be set, e.g. 7.2.4}"
 GPU_TARGETS="${GPU_TARGETS:?GPU_TARGETS must be set, e.g. gfx1200}"
-ROCM_PACKAGES="${ROCM_PACKAGES:-rocm-hip-runtime-dev rocminfo rocm-smi-lib amd-smi-lib roctracer-dev rocprofiler-sdk rocm-gdb}"
+ROCM_PACKAGES="${ROCM_PACKAGES:-rocm-hip-runtime-dev rocminfo rocm-smi-lib amd-smi-lib roctracer-dev rocprofiler-sdk hsa-amd-aqlprofile libdw1 rocm-gdb}"
 
 # ONE TARGET, NOT A LIST. hipcc takes a repeated `--offload-arch` flag rather
 # than a CMake-style `gfx1200;gfx1100` list, so a list here reaches the compiler

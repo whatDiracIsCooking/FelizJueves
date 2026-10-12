@@ -666,6 +666,95 @@ verdict (`[JEngine, v2, §7.2]`'s *some* kernels of a 9-batch `[7|7]` stay
 memory-bound) and the per-cell one read the same numbers. `kernels.json`'s
 literal rows are untouched: one row is still one cell there.
 
+### Measured: roofline rows over the subgrid, `sm_86` only (#112)
+
+`data/measured/roofline.json` holds **124 counter rows**: every batch kernel
+of every `SUBGRID` cell on the RTX 3080 (`sm_86`, `nvcc 13.0`, `ncu
+2025.3.1.0`). They were written by the opt-in sweep
+`test_cuda_roofline_over_the_subgrid` (`env
+FJ_ROOFLINE_STORE=data/measured/roofline.json uv run pytest
+test/test_kernel_device.py -p no:xdist -s -rs -m "gpu and cuda" -k
+roofline`, run alone). The sweep works as follows:
+
+- It compiles each cell's batched harness, the binary the wall-clock sweep
+  times. A cell whose emitted text differs from the text the `kernels.json`
+  compile row hashed is refused.
+- It checks every binary against the oracle at `J_REL`.
+- It profiles one launch sequence per cell on the wide-T timing input
+  (2048 × 128, τ = 0), so each batch kernel is launched once. The counter run
+  is a **separate run** of the same binary: collection replays each kernel
+  and may change occupancy, so `counter_ns` is never `runtime_ns`. No
+  wall-clock cell was re-timed.
+- Each profile runs behind `felizjueves.gate`. A phase whose after-reading is
+  non-idle or unknown is discarded and retaken.
+
+Every row carries the card's state (`raw` `roofline:gpu_util_before` /
+`_after`, `roofline:cpu_busy_permille_before`,
+`roofline:gate_discarded_phases`), the counters by their exact names and the
+`ncu` invocation. The loader refuses a row without them, and it also refuses a
+row for a card that has no measured ridge. On 2026-10-12, host
+`a37a1afdb77b (container)`, the gate discarded **0** phases: every card
+reading was ≤ 8% before and ≤ 7% after. The profiling took 140 s (the whole
+sweep took 9 min 22 s, most of it serial compiles).
+
+**The verdict is computed, never stored.** `measured_store.roofline_point`
+divides `fp64_flops` by the DRAM bytes and asks `device.verdict` against the
+measured ridge (#109: 0.65 FLOP/B on `sm_86`). `kernel_roofline` gives the
+verdict per batch kernel and `cell_roofline` gives it per cell (counts summed).
+`python -m felizjueves.measured --roofline` prints both.
+
+| L | b = 1 | b = 3 | b = 6 | b = 9 | b = 12 |
+|---|---|---|---|---|---|
+| 7 | 300 C | 2542 C | 2893 C | 2327 C | 2391 C |
+| 10 | 3.54 C | 40.2 C | 2255 C | 2086 C | 1935 C |
+| 13 | 0.96 C | 4.95 C | 14.2 C | 47.2 C | 75.0 C |
+| 16 | **0.40 M** | 1.52 C | 2.77 C | 4.80 C | 6.97 C |
+
+Each cell shows its intensity in FLOP/B: C means compute-bound, M means
+memory-bound. The achieved rate is 107–151 GFLOP/s in every cell, 24–35% of
+the measured fp64 ceiling. **Per kernel**, all 124 kernels match their cell's
+verdict: the one memory-bound kernel is L = 16's single unsplit kernel, and no
+kernel of a split cell sits below the ridge. Kernel intensities within one
+split cell spread widely. At L = 13 b = 12 they range from 23.6 to 1175
+FLOP/B, because the batches whose working set stays in L2 hardly touch DRAM.
+
+What these rows say, for #114 to score:
+
+- On this card the ridge is low enough that only **L = 16, one batch** is
+  memory-bound. Its spill traffic (70,628 bytes of spill stores per thread in `kernels.json`)
+  puts it at 0.40 FLOP/B. Splitting into three batches already puts it past
+  the ridge, at 1.52 FLOP/B.
+- Below L = 16, every cell is compute-bound at one batch, so batching cannot
+  move them across the ridge. They are already past it.
+
+These are observations of one card, not compared to `[JEngine, v2, Fig. 7]`.
+
+**`gfx1200`: could not measure. No rows exist, and that is not a zero.** The
+reason is recorded in `measured_store.UNMEASURED` (the store header's
+`could_not_measure`), and the loader refuses a `gfx1200` counter row. There
+are two blockers:
+
+- `rocprofv3` 1.1.0 cannot load `libdw.so.1` or
+  `libhsa-amd-aqlprofile64.so.1` in this container.
+  `docker/install-rocm.sh` now installs `libdw1` and `hsa-amd-aqlprofile`,
+  but the image has not been rebuilt.
+- More fundamentally, gfx1200 has no fp64 instruction counter in
+  rocprofiler-sdk. A rebuilt image yields bytes but no measured FLOP count, so
+  an AMD intensity needs a FLOP count from elsewhere, labelled as such.
+
+**`L = 12` and `L = 14` stay out of `SUBGRID_LS`.** `L = 10` is already the
+paper's `[5|5]`. The compile cost was measured, not guessed, by compiling the
+ten cells `L ∈ {12, 14}` × b ∈ {1, 3, 6, 9, 12} into a scratch copy of the
+store; `kernels.json` is untouched. Adding them costs 108 + 228 = **336
+compile-seconds on `sm_86`** (+77% over the current subgrid's 439) and 184 +
+352 = **537 on `gfx1200`** (+60% over 892). That sum is per pass over the
+cells, and the kernel tier pays it more than once: the split cells and the
+recycle cells are both drawn from `SUBGRID`. Adding the two values would also
+oblige new literal wall-clock rows, recycle A/B rows and counter rows for 20
+cells on each card. The roofline question does not need them: L = 13
+(`(7,0|6,0)`) and L = 16 already bracket `[7|7]`, and the ridge crossing
+appears only at L = 16.
+
 ## The pipeline
 
 This is the algorithm the repo *is* (`[JEngine, v2, §6]`):
