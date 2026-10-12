@@ -26,7 +26,12 @@ same rule as kernel-tier.sh's "never read a 2 as a pass":
 FAIL outranks UNSET. `report` judges nothing, and exits 0 or 2. Today
 `replay literal` exits 3: every Agreement passes, Table 3's
 exact_given_inputs passes from its recorded inputs (#14), and Tables 1-2's
-are UNSET, because none are recorded for them.
+are UNSET with a recorded refusal (#108, the rules-only doctrine): no rule
+recovers the sieve's seed order, a per-cell fit is not admitted, and a
+refusal scores UNSET, never PASS (literal.json's `refused`, and the evidence
+in data/literature/jengine/limits.json). Table 3's Agreement line reads 40
+exact because its candidate is the recovered one; its floor (38) is pinned to
+the minimax reconstruction by test/test_scoreboards.py.
 """
 
 from __future__ import annotations
