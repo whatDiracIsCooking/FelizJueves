@@ -114,27 +114,34 @@ def _axial(node: Node) -> bool:
     return sum(1 for c in node[0] if c) <= 1
 
 
+@pytest.mark.claim("jengine/batch-overlap-is-fundamentals-and-axials")
 @pytest.mark.parametrize("L", GRID_L)
 @pytest.mark.parametrize("n_batches", (3, 6, 9))
-def test_directions_share_only_fundamentals(L: int, n_batches: int) -> None:
+def test_batches_share_only_fundamentals_across_and_axials_within(
+    L: int, n_batches: int
+) -> None:
+    """Both halves of [JEngine, v2, §5, Figs. 5-6], on the MILD DAGs (pre-sieve)
+    over the published grid: two batches of DIFFERENT directions share only
+    fundamentals `[0]^(m)`, and two sub-batches of the SAME direction share
+    only axial intermediates (at most one non-zero component). Fails when
+    either half is false: one shared non-fundamental across directions, or one
+    shared non-axial within a direction. Not vacuous: every cross-direction
+    pair shares at least one fundamental, and at 6 and 9 batches same-direction
+    pairs exist and share axials beyond the fundamentals."""
+    across = within = within_axials = 0
     for a, b in combinations(_dags(L, n_batches), 2):
-        if a.batch[0] == b.batch[0]:
-            continue
         shared = a.intermediates() & b.intermediates()
-        assert all(is_fundamental(n) for n in shared), (a.batch, b.batch)
-
-
-@pytest.mark.parametrize("L", GRID_L)
-@pytest.mark.parametrize("n_batches", (6, 9))
-def test_sub_batches_of_one_direction_share_only_axials(L: int, n_batches) -> None:
-    pairs = 0
-    for a, b in combinations(_dags(L, n_batches), 2):
         if a.batch[0] != b.batch[0]:
-            continue
-        pairs += 1
-        shared = a.intermediates() & b.intermediates()
-        assert all(_axial(n) for n in shared), (a.batch, b.batch)
-    assert pairs
+            across += 1
+            assert shared, (a.batch, b.batch)
+            assert all(is_fundamental(n) for n in shared), (a.batch, b.batch)
+        else:
+            within += 1
+            assert all(_axial(n) for n in shared), (a.batch, b.batch)
+            within_axials += sum(1 for n in shared if not is_fundamental(n))
+    assert across
+    if n_batches > 3:
+        assert within and within_axials
 
 
 def test_sharing_between_batches_is_counted_once_per_batch() -> None:

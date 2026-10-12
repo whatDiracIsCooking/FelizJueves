@@ -54,6 +54,12 @@ measured recommendation below is evidence for dispatch, not a policy the
 generator follows. A count this file states is a claim about the code only
 where a test or a scored board checks it.
 
+**Measured, and recorded** (milestone 5): each card's roofline ceilings,
+counter rows on `sm_86` (none on `gfx1200`: could not measure), and the
+answer to whether batching crosses our ridge — "The roofline, in one place"
+below; the status of every `[JEngine]` claim — "The `[JEngine]` claims" below,
+rendered from `claims.json` and checked by `test/test_claims.py`.
+
 The tree-search half (reduction directions, and the sieve that prunes them) is
 [`mild.md`](mild.md). This file covers everything around it: the recurrences,
 the Coulomb contraction, the kernel contract, the batching scheme, the pipeline
@@ -411,8 +417,8 @@ Two consequences, both real costs:
   batch count.
 - `[JEngine, v2, §7]` reports that **at most 9 batches suffices for `L ≤ 16`**,
   and presents 1, 3, 6 and 9 — which is the range we should generate over.
-  On our cards, under a definition declared before the data (`measured.py`,
-  NINE AGAINST TWELVE), 9 does **not** suffice on either: 12 spills less on
+  On our cards, under a definition declared before the data
+  (`measured_store.py`'s docstring, NINE AGAINST TWELVE), 9 does **not** suffice on either: 12 spills less on
   `sm_86` at L 13 and 16, and is faster on near-T on `gfx1200` at L 16
   (`jengine/nine-batches-suffice` in `data/literature/jengine/claims.json`,
   UNVERIFIABLE against their A100). So the measured subgrid runs to 12.
@@ -633,10 +639,16 @@ through by the gate (card ≤ 22% before, ≤ 2% after):
 | `sm_86` (RTX 3080, `nvcc 13.0`) | 4.39e11 | 94% of 0.465 T | 6.74e11 | 89% of 760 G | 0.65 |
 | `gfx1200` (RX 9060 XT, `hipcc / ROCm 7.2.4`) | 4.46e11 | 56% of 0.801 T | 3.00e11 | 94% of 320 G | 1.49 |
 
-`gfx1200`'s fp64 is slow by design; AMD publishes no fp64 figure for it, and
-the 0.801 T denominator counts dual-issue fp32 (the data file's `note`). The
-ceilings are observations of two cards on one day — **never compared against
-the paper's A100**.
+`gfx1200`'s fp64 is slow by design, and AMD publishes no fp64 figure for it.
+**The 0.801 T denominator is an assumption**: 25.6 TFLOPS fp32 at 1:32, which
+counts RDNA4's fp32 dual-issue as if it applied to fp64 too. If it does not,
+the published-style peak is ~0.400 T, *below* the recorded 0.446 T (112% of
+it) — so that figure would be wrong rather than the probe, and the probe-bug
+bound would not bite on `gfx1200`'s fp64 at all (the data file's `note`). The
+recorded ceiling, and the ridge computed from it, are the measurement either
+way; the published figure never reaches `device.py`. The ceilings are
+observations of two cards on one day — **never compared against the paper's
+A100**.
 
 ### Measured: the counter fields, and where a kernel's counters live (#110)
 
@@ -892,6 +904,70 @@ Each kind of disagreement is a `StructuralLimit` in
 mechanism and the numbers above. The test fails on any disagreement that no
 record covers, and on any record that is no longer a disagreement.
 
+### The roofline, in one place: what it sees, what it answered, what it cannot see
+
+The sections from #109 to #115 above are the detail. This is the summary the
+milestone closes on (#116).
+
+**What the repo can see.** Arithmetic intensity, measured: fp64 FLOPs (`ncu`'s
+`dadd + dmul + 2·dfma` thread instructions) over DRAM bytes
+(`dram__bytes_read/write.sum`), per batch kernel, in
+`data/measured/roofline.json` (124 rows, every kernel of every `SUBGRID` cell
+on `sm_86`), against each card's **measured** ceilings
+(`data/measured/ceilings.json`). A card without both ceilings gets no verdict
+(`device.verdict` refuses), and the verdict is computed from the rows, never
+stored.
+
+**What it answered.** `[JEngine, v2, §7.2]`'s question — does batching move a
+`[p|q]` kernel across the ridge? — asked of our kernels on our cards, under
+the rule #114 declared before the rows existed:
+
+- **`sm_86` (RTX 3080, ridge 0.65 FLOP/B):** a crossing only at L = 16, at 3
+  batches (0.40 → 1.52 FLOP/B, both the cell and every kernel). L = 7, 10 and
+  13 are compute-bound **already at one batch**, so there is nothing for
+  batching to cross: that is the card's low fp64 ridge speaking, not batching.
+  Where the ridge *is* crossed, the wide-T clock gets slower (the crossing
+  adds FLOPs as well as removing bytes); where splitting pays (near-T,
+  L ≥ 13) it pays through spills on a kernel already past the ridge (#115).
+- **`gfx1200` (RX 9060 XT, ridge 1.49 FLOP/B): the answer is absent.** By
+  user decision #112 measured CUDA only. `rocprofv3` cannot load in this
+  container, and gfx1200 exposes no fp64 counter, so even a working profiler
+  would give bytes and no measured FLOP count. No rows exist, the loader
+  refuses one, and every verdict on this card is *could not measure* —
+  never "never crossed", never a zero (`measured_store.UNMEASURED`;
+  `docker/install-rocm.sh` now installs `libdw1` and `hsa-amd-aqlprofile` for
+  a future image).
+
+This is the question Fig. 7 answers, asked again on different hardware. It is
+**not** a reproduction of Fig. 7 or Fig. 8: those are an A100's numbers, whose
+ridge is a different number, and nothing here is compared with them.
+
+**What it structurally cannot see**, each recorded with its mechanism in
+`data/literature/jengine/limits.json` (the `jengine/batching-crosses-our-ridge`
+entry) or the data files:
+
+- **One input.** The counters were taken on the wide-T input only; a near-T
+  clock is set against a wide-T verdict wherever the cross-read uses one.
+- **DRAM, not the hierarchy.** The bytes are DRAM traffic. A batch whose
+  working set stays in L2 barely touches DRAM, so kernel intensities within a
+  split cell spread over orders of magnitude, and an L2- or register-level
+  bottleneck is not on this roofline at all.
+- **Every fp64 instruction counts.** `ncu` counts what the kernel issues, the
+  Boys evaluation included, while `[JEngine]` Table 1's FLOPs exclude the Boys
+  function; an intensity here is not Table 1's FLOPs over anything.
+- **A threshold, not a margin.** L = 13 at one batch is compute-bound at 0.96
+  FLOP/B against 0.65; a different ridge would flip it.
+- **The counter run is not the timed run.** Collection serialises and replays
+  each kernel; `counter_ns` is never a timing.
+- **Classes not measured.** `[6|6]` (L = 12) and L = 14 are outside `SUBGRID`
+  (#112 measured the compile cost and declined them); L = 10 is Fig. 7's
+  `[5|5]`, and L = 13 and 16 bracket its `[7|7]`.
+- **Achievable ceilings, and one assumed published figure.** The ridges come
+  from achievable rates, not peaks. `gfx1200`'s published fp64 figure (the
+  probe's sanity bound only) assumes fp32 dual-issue applies to fp64; without
+  that assumption the recorded rate would exceed it ("each card's roofline
+  ceilings" above).
+
 ## The pipeline
 
 This is the algorithm the repo *is* (`[JEngine, v2, §6]`):
@@ -960,6 +1036,101 @@ measurements of their kernels under their compiler, and neither of our targets
 (`sm_86`, `gfx1200`) is that. Our equivalent numbers come from the kernel tier,
 which is the only place this repo can make a numerical claim at all.
 
+**Where the tables stand (#108, #116).** On the `literal` board every
+Agreement threshold is set and passes; Table 3's `exact_given_inputs` passes
+from its recovered cut (40/40); Tables 1–2's `exact_given_inputs` are
+**refused** under the rules-only doctrine — the sieve's seed order is not
+published, the best of 58 seed-order rules reproduces 33/40 and 38/40, and a
+per-cell fit is not admitted — so they score UNSET with the decision recorded,
+never PASS (`literal.json`, `limits.json`). The `searched` board still FAILs
+`at_or_under` on 21 + 3 cells, each within +2.04%, recorded as a
+`StructuralLimit`.
+
+## The `[JEngine]` claims: what this repo discharges, and what it never will
+
+`data/literature/jengine/claims.json` is the one file that answers it: every
+non-numeric claim of `[JEngine, v2]`, one record each, `asserted` by a named
+`claim`-marked test **that fails when the claim is false**, or `unverifiable`
+with the mechanism that puts it out of reach. "Is that the whole list?" is
+answered by `coverage.json` (#120): the paper read unit by unit — every
+section, algorithm and figure caption — each unit listing exactly the records
+that cite it, with a note on what else it says and why that is not a record;
+`test/test_claims.py` holds the two files against each other. One asserted
+record, `jengine/batching-crosses-our-ridge`, is this repo's own question put
+to its own cards (the roofline summary above), not a claim of the paper's.
+
+The table below is rendered from `claims.json` and checked verbatim:
+
+<!-- claims-status:begin -->
+**30 records: 17 asserted, 13 unverifiable, 0 pending** (recomputed from `claims.json` by `test/test_claims.py`).
+
+| status | claim | kind | held by |
+|---|---|---|---|
+| asserted | `jengine/alg1-line10-atomic-free` | defect | `test/test_passes.py::test_atomize_writes_j_only_by_atomic_add` |
+| asserted | `jengine/alg1-line10-factor-four` | defect | `test/test_ao_j_interpreted.py::test_j_p_is_written_unscaled_and_a_factor_four_is_caught` |
+| asserted | `jengine/batch-count-multiple-of-3` | shape | `test/test_plan_batching.py::test_an_illegal_batch_count_raises` |
+| asserted | `jengine/batch-overlap-is-fundamentals-and-axials` | shape | `test/test_plan_dag.py::test_batches_share_only_fundamentals_across_and_axials_within` |
+| asserted | `jengine/batch-tie-break` | ordering | `test/test_plan_mild.py::test_mild_and_the_batching_pass_break_ties_oppositely` |
+| asserted | `jengine/batching-crosses-our-ridge` | monotonicity | `test/test_ridge.py::test_batching_crosses_our_ridge_on_sm_86_and_gfx1200_could_not_measure` |
+| asserted | `jengine/eq17-1y-misprint` | defect | `test/test_eq17_witness.py::test_y_reduction_shifts_by_the_unit_vector_0_1_0` |
+| asserted | `jengine/fig4-l6-six-batches` | membership | `test/test_plan_batching.py::test_figure_4s_cut_at_l_6` |
+| asserted | `jengine/m-weight-minus-two-theta-squared` | defect | `test/test_ao_eri.py::test_the_m_weight_is_minus_two_theta_squared` |
+| asserted | `jengine/mild-keeps-rules-1-2-3-5` | shape | `test/test_plan_mild.py::test_johnsons_rule_holds_on_every_node` |
+| asserted | `jengine/mild-suboptimal-from-l5` | shape | `test/test_mild_vs_optimum.py::test_mild_against_the_exact_optimum` |
+| asserted | `jengine/mild-tie-break` | ordering | `test/test_plan_mild.py::test_the_whole_tie_break_on_every_node` |
+| asserted | `jengine/prefactor-factorisation` | shape | `test/test_ao_eri.py::test_block_matches_libcint` |
+| asserted | `jengine/rule-4-needs-the-sieve` | shape | `test/test_plan_sieve.py::test_the_sieve_recovers_common_parents_where_mild_cannot` |
+| asserted | `jengine/symmetry-breaking-splits-are-worse` | monotonicity | `test/test_measured.py::test_asymmetric_splits_are_worse_on_both_cards` |
+| asserted | `jengine/theta-undefined` | defect | `test/test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint` |
+| asserted | `jengine/y12-example` | membership | `test/test_plan_batching.py::test_the_y_1_2_batch_is_the_papers_eight_targets` |
+| unverifiable | `jengine/batch-count-is-hardware-dependent` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/batching-crosses-the-ridge` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/batching-reduces-spills` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/batching-trades-flops-for-intermediates` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/best-batch-count-rises-with-l` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/conclusion-overstates-compute-bound` | defect | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/j-speedup-tracks-high-l-share` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/memory-bound-grows-with-l` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/mild-vs-exact-tradeoff` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/nine-batches-suffice` | shape | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/optimal-batching-is-np-hard` | shape | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/sieve-non-monotone-in-spills` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/sieve-underspecified` | defect | no test: the reason is in `claims.json` |
+<!-- claims-status:end -->
+
+**Why the unverifiable ones stay so**, by mechanism (each record's `reason`
+has the detail):
+
+- *A measurement of the authors' kernels on their A100* — a roofline, a spill
+  count, a timing: `batching-crosses-the-ridge`, `memory-bound-grows-with-l`,
+  `batching-reduces-spills` (Table 4, deliberately not transcribed),
+  `sieve-non-monotone-in-spills`, `best-batch-count-rises-with-l`,
+  `batch-count-is-hardware-dependent`, `j-speedup-tracks-high-l-share`,
+  `nine-batches-suffice`. Where this repo asked the same question of its own
+  cards, the answer is a different record or a measured file (#56, #60,
+  #114), never a discharge of the paper's.
+- *A comparison with a search that is not here*: `mild-vs-exact-tradeoff`.
+  #111 replaced it with this tree's own optimum, and the measurement
+  disagrees with the printed percentages (`mild_vs_optimum.json`); the test
+  that pins our gap holds `mild-suboptimal-from-l5` instead, because a test
+  that would fail if the paper's numbers held cannot be their witness (#116).
+- *A direction the source's own table does not keep*:
+  `batching-trades-flops-for-intermediates` — post-sieve, so it rides on the
+  unpublished seed order, and the printed Table 2 breaks its intermediates
+  half at two steps.
+- *Something the text does not carry*: `sieve-underspecified`,
+  `conclusion-overstates-compute-bound` (two sentences of the source that
+  cannot both hold), `optimal-batching-is-np-hard` (no finite computation
+  establishes NP-hardness).
+
+**What the milestone's result is, stated accurately.** The paper's algorithms
+are reconstructed and witnessed (the plan layer against Tables 1–3, the kernel
+and `J_µν` against libcint); its generator tables are matched where its
+unpublished inputs allow (Table 3 exactly; Tables 1–2 up to the seed order);
+and its central performance claim — batching moves a kernel across the ridge —
+has been asked and answered on different hardware, with an answer about our
+cards' ridges and nothing to say against its A100.
+
 ## The Coulomb matrix, witnessed from outside
 
 **Implemented, host-side, and compared against PySCF/libcint** (milestone 4,
@@ -980,7 +1151,7 @@ them. Every comparison runs at `τ = 0`; the screen has its own section below.
 | What | Against libcint | Test | Tier |
 |---|---|---|---|
 | shells, normalisation, `common_fac` | overlap `int1e_ovlp` | `test_oracle_basis.py` | fast |
-| `(ab\|cd)`, one block per class, L ≤ 8 | `int2e`, `≤ 1e-12·scale` | `test_ao_eri.py` | s/p fast, d+ slow |
+| `(ab\|cd)`, one block per class: all 55 classes of HF/cc-pVTZ (L ≤ 12), H₂O/6-31G's s/p | `int2e`, `≤ 1e-12·scale` | `test_ao_eri.py` | s/p fast, d+ slow |
 | `J_µν`, `reference.pq` | `get_jk`, `≤ 1e-12·scale_J` (derived from the ERI bound) | `test_ao_j.py` | H₂, H₂O STO-3G/6-31G fast; cc-pVDZ slow |
 | `J_µν`, interpreted generated kernel | same | `test_ao_j_interpreted.py` | H₂ fast; H₂O ×3 slow |
 | `J_µν`, generated kernel on each card | same | `test_ao_j_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G |
@@ -1027,14 +1198,21 @@ So nothing is added to `limits.json`: the search found no compensating error
 the comparisons leave open. What they do not **reach** is a coverage boundary,
 not a structural limit, and it is stated here instead:
 
-- **Classes with L = la+lb+lc+ld ≥ 9.** The ERI fixture stops at L = 8 (the
-  nine HF/cc-pVTZ classes above it exceed the repo's 512 KB file hook), and
-  the `J` fixtures stop at `d` (cc-pVDZ, so L ≤ 8). The kernel ladder runs to
-  L = 16; above 8 it is checked only against `reference/`, which shares its
-  ancestry. `θ` is formed once per pair by the same prelude at every L, so
-  the record does not depend on L, but a recurrence defect that only appears
-  above L = 8 would be invisible to libcint here. A `J` fixture with `f`
-  functions is small (`n_ao²`), so this boundary can move.
+- **Classes with L = la+lb+lc+ld ≥ 13.** Since #121 the ERI witness has no
+  class boundary inside its basis: every one of the 55 canonical classes of
+  HF/cc-pVTZ (s to f, L = 0..12) is compared block by block against
+  `int2e` — L ≤ 8 in `hf_ccpvtz_eri.json`, L = 9..12 one file each
+  (`hf_ccpvtz_eri_l9` … `_l12.json`, every file under the 512 KB hook), and
+  `test_ao_eri.py` checks that their union is exactly the basis's 55 classes.
+  Those blocks are built from `reference.pq`; the **generated kernel** meets
+  libcint only through the `J` fixtures, which still stop at `d` (cc-pVDZ,
+  so L ≤ 8). The kernel ladder runs to L = 16 and is checked against
+  `reference/` at every L, and `reference/` is itself witnessed by libcint to
+  L = 12 — so above L = 8 the kernel is held to libcint at one remove, and
+  above L = 12 not at all. `θ` is formed once per pair by the same prelude at
+  every L, so the record does not depend on L, but a recurrence defect that
+  only appears above L = 12 would be invisible to libcint here (a basis with
+  `g` functions would move it).
 - **The device's screen.** The capstone launches with `Ip = Iq = Dmax = 1`
   and `τ = 0`; sorted kets with real bounds on a card are the next milestone's
   driver. The host-side screen is #88's ladder, below.

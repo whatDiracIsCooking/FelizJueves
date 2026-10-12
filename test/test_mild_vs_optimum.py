@@ -16,7 +16,12 @@ THE TWO RANGES.
 
 - EXACT, L = 0..EXACT_MAX_L: the gap against `optimum(L)`. The claim test
   recomputes it (about 2 s) and pins it exactly, inside a stated band, so a
-  worse MILD fails it (`test_a_degraded_mild_leaves_the_band`).
+  worse MILD fails it (`test_a_degraded_mild_leaves_the_band`). It holds
+  `jengine/mild-suboptimal-from-l5` and NOT `jengine/mild-vs-exact-tradeoff`
+  (#116): it pins OUR gap, which disagrees with §4.1's percentages, so it
+  would fail if they held here rather than when they are false. That record
+  is UNVERIFIABLE -- the search it compares against is not here -- and this
+  module is its replacement, not its witness.
 - BEAM, L = 6..16 (the published grid is 7..16; 6 is the hole between): the
   gap against `beam(L, BEAM_WIDTH)`, an achievable scheme, so an UPPER bound on
   the optimum and a LOWER bound on MILD's gap. It can prove MILD far from
@@ -236,7 +241,6 @@ def ties_to_predecessor(r) -> str:
 # -- the claim ----------------------------------------------------------------
 
 
-@pytest.mark.claim("jengine/mild-vs-exact-tradeoff")
 @pytest.mark.claim("jengine/mild-suboptimal-from-l5")  # equal to L = 4, behind at 5
 def test_mild_against_the_exact_optimum() -> None:
     # Recomputed, not read back: every L the exact search reaches, MILD's gap
@@ -350,10 +354,18 @@ def test_the_record_states_its_search_space_and_reference() -> None:
     assert "reproduces" not in json.dumps(rec)
 
 
-def test_the_claim_is_asserted_here() -> None:
-    (c,) = [c for c in load_claims(JENGINE / "claims.json") if c.id == CLAIM]
-    assert c.status is ClaimStatus.ASSERTED
-    assert c.test == (
+def test_the_papers_comparison_is_unverifiable_and_replaced_here() -> None:
+    # #116: a test pinning a gap that DISAGREES with the claim cannot be the
+    # claim's witness (it would fail if the claim held). The record is
+    # unverifiable, its reason names this record as the replacement, and the
+    # onset half of §4.1 is the record this module does hold.
+    claims = {c.id: c for c in load_claims(JENGINE / "claims.json")}
+    c = claims[CLAIM]
+    assert c.status is ClaimStatus.UNVERIFIABLE
+    assert "data/literature/jengine/mild_vs_optimum.json" in c.reason
+    onset = claims["jengine/mild-suboptimal-from-l5"]
+    assert onset.status is ClaimStatus.ASSERTED
+    assert onset.test == (
         "test/test_mild_vs_optimum.py::test_mild_against_the_exact_optimum")
 
 
