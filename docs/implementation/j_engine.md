@@ -628,26 +628,36 @@ record`, run alone.
 **Achievable, not peak.** Each value is what a streaming / FMA-only kernel
 reaches, recorded as `kind: "achievable"`, with its ratio to the vendor's
 published figure (`published` in the data file, a sanity bound only: a rate
-above it fails as a probe bug). `test/test_ceilings.py` checks each record's
+above it fails as a probe bug — except `gfx1200`'s fp64, bounded per counted
+GPU cycle instead, below). `test/test_ceilings.py` checks each record's
 provenance and bound, and nothing in `literature/` may read these fields.
 
 Recorded on 2026-10-11, host `a37a1afdb77b (container)`, every phase let
-through by the gate (card ≤ 22% before, ≤ 2% after):
+through by the gate (card ≤ 22% before, ≤ 2% after); `gfx1200`'s fp64
+re-recorded on 2026-10-12 by #141 (card 4% before, 0% after, and 0% / 0%
+around its cycle-counter phase):
 
 | arch | fp64, flop/s | of published | bandwidth (triad), B/s | of published | ridge, flop/B |
 |---|---|---|---|---|---|
 | `sm_86` (RTX 3080, `nvcc 13.0`) | 4.39e11 | 94% of 0.465 T | 6.74e11 | 89% of 760 G | 0.65 |
-| `gfx1200` (RX 9060 XT, `hipcc / ROCm 7.2.4`) | 4.46e11 | 56% of 0.801 T | 3.00e11 | 94% of 320 G | 1.49 |
+| `gfx1200` (RX 9060 XT, `hipcc / ROCm 7.2.4`) | 4.46e11 | 111% of 0.4006 T (rated clock); 99.96% per clock | 3.00e11 | 94% of 320 G | 1.49 |
 
 `gfx1200`'s fp64 is slow by design, and AMD publishes no fp64 figure for it.
-**The 0.801 T denominator is an assumption**: 25.6 TFLOPS fp32 at 1:32, which
-counts RDNA4's fp32 dual-issue as if it applied to fp64 too. If it does not,
-the published-style peak is ~0.400 T, *below* the recorded 0.446 T (112% of
-it) — so that figure would be wrong rather than the probe, and the probe-bug
-bound would not bite on `gfx1200`'s fp64 at all (the data file's `note`). The
-recorded ceiling, and the ridge computed from it, are the measurement either
-way; the published figure never reaches `device.py`. The ceilings are
-observations of two cards on one day — **never compared against the paper's
+**Settled by #141, the #116 assumption retired.** The old 0.801 T bound was
+AMD's 25.6 TFLOPS fp32 at 1:32, counting RDNA4's fp32 dual-issue as if it
+applied to fp64. It does not: the probe is plain `v_fma_f64` (VOPD dual-issue
+has no f64 form), and a `GRBM_GUI_ACTIVE` cycle count (`rocprofv3`, behind the
+gate) puts it at **127.95 flop per GPU cycle** for 16 chains and 127.93 for 8
+— the single-issue 32 CUs × 2 fp64 FMA lanes × 2 = 128, at half what
+dual-issue would allow. So `gfx1200`'s fp64 bound is now **per clock**
+(`published.gfx1200.per_clock`, checked by `ceilings.check_per_clock` on every
+counted launch), and its flop/s figure, 0.4006 T, is that rate at the 3130 MHz
+rated boost. The recorded ceiling is **above** that figure because the card
+ran the probe at a counted ~3.49 GHz (amd-smi's own `MAX_CLK` reads 2700 MHz):
+the one row whose value legitimately exceeds its flop/s figure, reported and
+not clamped. The ridge reads the recorded ceiling, never a published figure
+or bound (`device.verdict`), so 1.49 FLOP/B is the card at that clock. The
+ceilings are observations of two cards — **never compared against the paper's
 A100**.
 
 ### Measured: the counter fields, and where a kernel's counters live (#110)
@@ -962,11 +972,11 @@ entry) or the data files:
 - **Classes not measured.** `[6|6]` (L = 12) and L = 14 are outside `SUBGRID`
   (#112 measured the compile cost and declined them); L = 10 is Fig. 7's
   `[5|5]`, and L = 13 and 16 bracket its `[7|7]`.
-- **Achievable ceilings, and one assumed published figure.** The ridges come
-  from achievable rates, not peaks. `gfx1200`'s published fp64 figure (the
-  probe's sanity bound only) assumes fp32 dual-issue applies to fp64; without
-  that assumption the recorded rate would exceed it ("each card's roofline
-  ceilings" above).
+- **Achievable ceilings, at the clock the card ran them.** The ridges come
+  from achievable rates, not peaks. `gfx1200`'s fp64 ceiling is 128 flop per
+  counted GPU cycle at ~3.49 GHz, above its rated boost (#141 retired the
+  dual-issue assumption; "each card's roofline ceilings" above), so its ridge
+  is the card at that clock.
 
 ## The pipeline
 

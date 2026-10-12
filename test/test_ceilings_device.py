@@ -8,9 +8,12 @@ gate's refusal, in the fast tier.
 - `test_*_probe_is_bounded_by_the_published_peak` runs in the kernel tier:
   it compiles `ceilings.PROBE_SOURCE` with devtools/config.sh's flag set, runs
   both probes (the triad checks every element on the device) and asserts each
-  configuration's best rate is at or under the vendor's published peak.
-  Contention can only LOWER a rate, so this check is sound on a busy card; it
-  records nothing.
+  configuration's best rate is at or under the vendor's published peak --
+  or, for a quantity the card bounds PER CLOCK (gfx1200's fp64, #141), runs
+  the cycle-counter pass and asserts every launch's flop per counted GPU cycle
+  is at or under that bound (`ceilings.check_per_clock`), printing the counted
+  clock. Contention can only LOWER a rate, so this check is sound on a busy
+  card; it records nothing.
 
 - `test_*_record_ceilings` is the RECORDING run, opt-in exactly as the
   wall-clock sweep is (test_kernel_device.py's section comment): it skips
@@ -34,6 +37,7 @@ import datetime
 import hashlib
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -85,6 +89,31 @@ def _runner(binary: Path, mode: str, backend: str, run_device_binary):
     return run
 
 
+def _counter(binary: Path, tmp_path: Path):
+    """The cycle-counter pass (ceilings.CYCLES_COMMAND) and the tool's name,
+    or a skip naming why it could not run -- a per-clock bound that cannot
+    be counted is not checked, and never passes by default."""
+    tool = shutil.which("rocprofv3")
+    if tool is None:
+        pytest.skip("rocprofv3 not found: the per-clock bound cannot be counted")
+    name = measured.counter_tool(tool, "hip")
+
+    def cycles() -> str:
+        out = tmp_path / "rocprofv3-cycles"
+        shutil.rmtree(out, ignore_errors=True)
+        done = subprocess.run(ceilings.cycles_command(tool, str(binary),
+                                                      str(out)),
+                              capture_output=True, text=True, timeout=600,
+                              cwd=tmp_path)  # rocprofv3 drops .rocprofv3/ in cwd
+        files = sorted(out.rglob("*counter_collection.csv"))
+        if done.returncode != 0 or len(files) != 1:
+            pytest.skip(f"rocprofv3 exited {done.returncode} with {len(files)} "
+                        "counter files: the per-clock bound could not be "
+                        f"counted\n{(done.stdout + done.stderr)[-1500:]}")
+        return files[0].read_text()
+    return cycles, name
+
+
 def _bounded(backend, request, run_device_binary, tmp_path) -> None:
     arch = ARCH[backend]
     binary, _ = _build(backend, request, tmp_path)
@@ -92,11 +121,23 @@ def _bounded(backend, request, run_device_binary, tmp_path) -> None:
     for quantity, mode in ceilings.PROBE_OF.items():
         runs = ceilings.parse_probe(_runner(binary, mode, backend,
                                             run_device_binary)())
+        bound = published.get("per_clock", {}).get(quantity)
         for r in runs:
             best = max(r.rates())
-            ratio = ceilings.check_published(quantity, best, published)
+            ratio = best / published[quantity]
+            if bound is None:
+                ratio = ceilings.check_published(quantity, best, published)
             print(f"\n{arch.name} {quantity}: {r.header} -> best {best:.4g} "
                   f"{ceilings.UNIT_OF[quantity]}, {ratio:.1%} of published")
+        if bound is not None:
+            cycles, _ = _counter(binary, tmp_path)
+            per = ceilings.check_per_clock(runs, ceilings.parse_cycles(cycles()),
+                                           bound["flop_per_clk"])
+            for chains, ev in per.items():
+                print(f"{arch.name} {quantity}: fj_fma<{chains}> "
+                      f"{ev['flop_per_clk_max']:.4g} flop/clk (bound "
+                      f"{bound['flop_per_clk']:.4g}) at a counted "
+                      f"{ev['clock_hz_median'] / 1e9:.3f} GHz median")
 
 
 @pytest.mark.cuda
@@ -123,10 +164,14 @@ def _record(backend, request, run_device_binary, tmp_path) -> None:
     store = ceilings.load(Path(store_path))
     lines = []
     for quantity, mode in ceilings.PROBE_OF.items():
+        cycles = None
+        if quantity in store["published"][arch.name].get("per_clock", {}):
+            cycles, tool = _counter(binary, tmp_path)
+            provenance = {**provenance, "counter_tool": tool}
         store, ceiling, why = ceilings.record(
             store, arch, quantity, _runner(binary, mode, backend,
                                            run_device_binary),
-            backend=backend, provenance=provenance)
+            backend=backend, provenance=provenance, cycles=cycles)
         print(why, flush=True)
         lines.append(why)
         if ceiling is not None:
@@ -136,6 +181,17 @@ def _record(backend, request, run_device_binary, tmp_path) -> None:
                   f"best {ceiling.raw['best']:.4g}, IQR "
                   f"[{ceiling.raw['q1']:.4g}, {ceiling.raw['q3']:.4g}]",
                   flush=True)
+            pc = ceiling.raw.get("per_clock")
+            if pc:
+                for chains, ev in pc["configs"].items():
+                    print(f"  per clock: fj_fma<{chains}> "
+                          f"{ev['flop_per_clk_max']:.4g} flop/clk (bound "
+                          f"{pc['bound_flop_per_clk']:.4g}), counted clock "
+                          f"{ev['clock_hz_min'] / 1e9:.3f}-"
+                          f"{ev['clock_hz_max'] / 1e9:.3f} GHz, median "
+                          f"{ev['clock_hz_median'] / 1e9:.3f}; counter phase "
+                          f"card {pc['gpu_util_before']}% -> "
+                          f"{pc['gpu_util_after']}%", flush=True)
     ceilings.save(store, Path(store_path))
     refused = [ln for ln in lines if ln.startswith("REFUSED")]
     if refused:

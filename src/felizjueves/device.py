@@ -46,6 +46,17 @@ the gate refused records nothing, so that card stays uncharacterised and
 refuses: a missing ridge refuses to score, while a low one (a contended probe
 under-reports) would score wrongly and look like data.
 
+WHAT A VERDICT RESTS ON, AND NOTHING ELSE (#141). `verdict` reads exactly the
+two recorded `value`s (`recorded_ceilings`) and nothing in the record's
+`published` block: no vendor figure, no per-clock bound, no ratio. Each value
+is the card at the clock it ran the probe at -- gfx1200's fp64 ceiling is
+~3.49 GHz of 128 flop/clk, above its 3130 MHz rated boost (the data file's
+`published.gfx1200.per_clock`) -- so a verdict is a statement about this card
+at that clock. The #116 assumption that RDNA4's fp32 dual-issue applies to
+fp64 was a property of the published sanity bound only, never of a ridge, and
+#141's cycle counter retired it (single issue: 2 fp64 FMA lanes per CU per
+clock).
+
 The ceilings are observations OF a card, not part of what names it, so they
 take no part in `Arch` equality or hashing: `Arch(NVIDIA, "sm_86", 32)` is the
 same card as `SM_86`, characterised or not. NOTHING IN THE LITERATURE LAYER
@@ -147,7 +158,9 @@ MEMORY_BOUND = "memory-bound"
 def verdict(arch: Arch, flops_per_byte: float) -> str:
     """Which roof a kernel of arithmetic intensity `flops_per_byte` sits under
     on `arch`: COMPUTE_BOUND at or past the ridge, MEMORY_BOUND below it.
-    Refuses (`Uncharacterised`) for a card without both measured ceilings."""
+    Refuses (`Uncharacterised`) for a card without both measured ceilings.
+    Depends on the measured ceilings ONLY -- never on a published figure or
+    bound (module docstring, #141)."""
     ridge = require_characterised(arch).ridge
     if not flops_per_byte >= 0:
         raise ValueError(f"intensity {flops_per_byte!r} must be >= 0")
