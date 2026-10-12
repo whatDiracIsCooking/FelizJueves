@@ -1836,3 +1836,155 @@ def test_an_arm_is_its_own_row() -> None:
     b = _build_row(density_sort=False, arm="global-dmax")
     store = measured_store.merge_build(measured_store.merge_build({}, a), b)
     assert set(store) == {a.key(), b.key()} and a.key() != b.key()
+
+
+# --- #147: the sort key, product against one global max|D| -----------------
+#
+# The rule is measured_store's docstring, THE SORT KEY, declared before any
+# 'sort-ab' row existed. Synthetic rows first; the tracked rows after.
+
+SK = measured_store
+SK_CELL = SK.SORT_KEY_CELLS[0]
+
+
+def _sort_pair(cell=SK_CELL, *, p=(100_000, 2_000, 50), g=(100_000, 2_000, 0),
+               session=(7, 7), pairs=(1000, 1000), arch="sm_86",
+               toolchain="nvcc 13.0") -> dict:
+    """The two arms of `cell` as build rows: (median, IQR, n_skipped) each."""
+    fixture, tau, n = cell
+    out = {}
+    for ds, (med, iqr, sk), s, npairs in zip(
+            (True, False), (p, g), session, pairs, strict=True):
+        r = _build_row(fixture=fixture, tau=tau, n_batches=n, density_sort=ds,
+                       arm=SK.SORT_AB_ARM, runtime_ns=med, spread_ns=iqr,
+                       arch=arch, toolchain=toolchain,
+                       raw={SK.SESSION_FIELD: s, "build:n_pairs": npairs,
+                            "build:n_skipped": sk})
+        out[r.key()] = r
+    return out
+
+
+def test_the_sort_key_cells_are_the_declared_set() -> None:
+    """Two inputs x two taus, both arms of each, alternating which runs
+    first; the chain is the two-H2 one whose T stays in fj_boys' domain."""
+    from test_j_launched_ondevice import SORT_KEY_BUILD_CELLS
+    assert SK.SORT_KEY_CELLS == (
+        ("h2o_ccpvdz_j", 1e-3, "dispatch:wide"),
+        ("h2o_ccpvdz_j", 1e-10, "dispatch:wide"),
+        ("h2chain2_sto3g", 1e-3, 1), ("h2chain2_sto3g", 1e-10, 1))
+    cells = SORT_KEY_BUILD_CELLS
+    assert len(cells) == 2 * len(SK.SORT_KEY_CELLS)
+    assert {c.arm for c in cells} == {SK.SORT_AB_ARM}
+    firsts = [cells[i].density_sort for i in range(0, len(cells), 2)]
+    assert firsts == [True, False, True, False]
+    for a, b in zip(cells[::2], cells[1::2], strict=True):
+        assert (a.fixture, a.tau, a.n) == (b.fixture, b.tau, b.n)
+        assert a.density_sort != b.density_sort
+        assert a.n_batches == b.n_batches
+
+
+@pytest.mark.parametrize(("g", "clock", "verdict"), [
+    ((104_001, 2_000, 0), SK.SLOWER, SK.WORSE),       # slower by > max IQR
+    ((95_999, 2_000, 0), SK.FASTER, SK.BETTER),       # faster by > max IQR
+    ((104_000, 2_000, 0), SK.NEUTRAL, SK.UNRESOLVED),  # == max IQR: neutral
+    ((105_000, 4_000, 0), SK.NEUTRAL, SK.UNRESOLVED),  # the LARGER IQR
+    ((100_000, 2_000, 50), SK.NEUTRAL, SK.SAME),      # same skips, same time
+    ((104_001, 2_000, 50), SK.SLOWER, SK.WORSE),      # same skips, slower
+])
+def test_the_sort_key_verdict_follows_the_declared_rule(g, clock,
+                                                        verdict) -> None:
+    ab = SK.sort_key_ab(_sort_pair(p=(102_000, 2_000, 50), g=g), "sm_86",
+                        SK_CELL)
+    # p median 102_000: g - p is +2_001, -6_001, +2_000, +3_000 (under the
+    # larger IQR, 4_000), -2_000, +2_001
+    assert ab.clock_sign == clock and ab.verdict == verdict
+
+
+def test_the_sort_key_arch_and_claim_verdicts() -> None:
+    def store(per_cell, arch="sm_86"):
+        out = {}
+        for cell, g in zip(SK.SORT_KEY_CELLS, per_cell, strict=True):
+            out.update(_sort_pair(cell, g=g, arch=arch))
+        return out
+
+    slow, fast, tie = (110_000, 2_000, 0), (90_000, 2_000, 0), \
+        (100_000, 2_000, 0)
+    assert SK.sort_key_arch_verdict(store([slow] * 4), "sm_86") == SK.WORSE
+    assert SK.sort_key_arch_verdict(store([slow, slow, tie, slow]),
+                                    "sm_86") == SK.NOT_SHOWN
+    assert SK.sort_key_arch_verdict(store([slow, fast, tie, slow]),
+                                    "sm_86") == SK.CONTRADICTED
+    both = {**store([slow] * 4), **store([slow] * 4, arch="gfx1200")}
+    assert SK.sort_key_claim_holds(both, ("sm_86", "gfx1200"))
+    one = {**store([slow] * 4), **store([slow, tie, slow, slow],
+                                        arch="gfx1200")}
+    assert not SK.sort_key_claim_holds(one, ("sm_86", "gfx1200"))
+
+
+def test_a_sort_key_pair_that_is_not_one_experiment_is_refused() -> None:
+    with pytest.raises(KeyError, match="different sessions"):
+        SK.sort_key_ab(_sort_pair(session=(7, 8)), "sm_86", SK_CELL)
+    with pytest.raises(KeyError, match="more than the sort"):
+        SK.sort_key_ab(_sort_pair(pairs=(1000, 999)), "sm_86", SK_CELL)
+    lone = dict(list(_sort_pair().items())[:1])
+    with pytest.raises(KeyError, match="0 rows"):
+        SK.sort_key_ab(lone, "sm_86", SK_CELL)
+    with pytest.raises(KeyError, match="0 rows"):
+        SK.sort_key_ab(_sort_pair(), "gfx1200", SK_CELL)
+    # the global key skipping MORE than the product is impossible: refused
+    with pytest.raises(ValueError, match="impossible"):
+        SK.sort_key_ab(_sort_pair(g=(1, 1, 51)), "sm_86", SK_CELL)
+
+
+# The tracked rows. What the declared rule reads off them -- the result, not
+# a tuning target: a re-timing that moves a cell fails here, and the claim's
+# reason and limits.json's record must move with it.
+SORT_KEY_VERDICTS = {
+    "sm_86": (SK.BETTER, SK.UNRESOLVED, SK.WORSE, SK.BETTER),
+    "gfx1200": (SK.UNRESOLVED, SK.BETTER, SK.WORSE, SK.BETTER),
+}
+
+
+def test_every_sort_key_cell_has_both_arms_from_one_session() -> None:
+    from test_launch_oracle import SORT_KEY_SKIPS
+    for arch in BUILD_ARCHS:
+        rows = [r for r in BUILDS.values()
+                if r.arch == arch and r.arm == SK.SORT_AB_ARM]
+        assert len(rows) == 2 * len(SK.SORT_KEY_CELLS), arch
+        assert len({r.raw[SK.SESSION_FIELD] for r in rows}) == 1, arch
+        assert len({(r.toolchain, r.host, r.gpu) for r in rows}) == 1, arch
+        for cell in SK.SORT_KEY_CELLS:
+            ab = SK.sort_key_ab(BUILDS, arch, cell)
+            n, sk_p, sk_g = SORT_KEY_SKIPS[cell[:2]]
+            # the rows' counts are the launch oracle's, recomputed there
+            assert (ab.n_pairs, *ab.skipped) == (n, sk_p, sk_g), (arch, cell)
+
+
+def test_the_sort_key_verdict_is_contradicted_on_both_cards() -> None:
+    """#147 under the rule declared before its rows: the global key skips
+    no pair anywhere, yet it is BETTER on the clock at some cell on each
+    card, so the expectation ("the global key is worse") is CONTRADICTED on
+    sm_86 AND gfx1200. Held cell by cell; claims.json's reason and
+    limits.json's record quote these verdicts and are checked against them."""
+    lim = json.loads((Path(measured_store.REPO) / "data" / "literature"
+                      / "jengine" / "limits.json").read_text())["limits"]
+    (rec,) = [x for x in lim if x["asserted_value"].get("claim")
+              == "jengine/ket-sort-key-beats-the-global-max"]
+    av = rec["asserted_value"]
+    for arch, want in SORT_KEY_VERDICTS.items():
+        got = tuple(SK.sort_key_ab(BUILDS, arch, c).verdict
+                    for c in SK.SORT_KEY_CELLS)
+        assert got == want, (arch, got)
+        assert SK.sort_key_arch_verdict(BUILDS, arch) == SK.CONTRADICTED
+        assert av["verdict"][arch] == SK.CONTRADICTED
+        assert tuple(av["cells"][arch].values()) == want
+        for c in SK.SORT_KEY_CELLS:
+            assert SK.sort_key_ab(BUILDS, arch, c).skip_sign == SK.FEWER
+    assert not SK.sort_key_claim_holds(BUILDS, BUILD_ARCHS)
+    from felizjueves.literature.claims import load_claims
+    (claim,) = [c for c in load_claims(Path(measured_store.REPO) / "data"
+                                       / "literature" / "jengine"
+                                       / "claims.json")
+                if c.id == "jengine/ket-sort-key-beats-the-global-max"]
+    assert claim.status.value == "unverifiable"
+    assert "CONTRADICTED on BOTH cards" in claim.reason

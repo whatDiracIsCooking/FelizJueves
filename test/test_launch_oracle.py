@@ -67,9 +67,11 @@ from oracle import manifest
 from test_ao_screening import DATA as SCREENING_JSON
 from test_ao_screening import TAUS as LADDER_TAUS
 from test_ao_screening import _case as _ladder_case
+from test_ao_screening import _h2_chain, _hilbert
 from test_launch_staged import HOST_TOL, _tiny
 from test_launch_staged import _taus as _staged_taus
 
+from felizjueves import measured_store
 from felizjueves.ao.j import (
     Screened,
     coulomb_matrix_and_scale,
@@ -93,6 +95,9 @@ def _case(name: str):
     if name == "chain":
         basis, D = _ladder_case("extended")
         return basis, np.asarray(D)
+    if name == measured_store.CHAIN_INPUT:  # #147's device chain: two H2
+        basis = _h2_chain(2)
+        return basis, _hilbert(basis.n_ao)
     fx = manifest.load(manifest.FIXTURES / f"{name}.json")
     return ob.from_fixture(fx), np.array(fx.density)
 
@@ -269,6 +274,65 @@ def test_density_sort_off_is_a_looser_sound_screen(tau):
     assert np.all(err <= tau * np.array(flat.scale))
     if flat.n_skipped == host.n_skipped == 0:
         assert flat.J == host.J
+
+
+# --- #147: the two sort keys, on the oracle (no card) -------------------------
+#
+# Both keys at each of #147's (input, tau) cells -- and at #88's four-H2 chain,
+# the input the card's Boys cannot reach (measured_store, THE SORT KEY) --
+# walked by the oracle: the SAME J to the screen's claimed error bound (a
+# different key may skip different terms, so the claim is the bound, not bit
+# equality), and the skip counts, recorded here. They are the counts the
+# device rows carry as raw 'build:n_skipped' (test/test_measured.py holds the
+# two equal). (n_pairs, product skipped, global skipped).
+SORT_KEY_SKIPS = {
+    ("h2o_ccpvdz_j", 1e-3): (351649, 123896, 0),
+    ("h2o_ccpvdz_j", 1e-10): (351649, 15684, 0),
+    (measured_store.CHAIN_INPUT, 1e-3): (8100, 2790, 0),
+    (measured_store.CHAIN_INPUT, 1e-10): (8100, 560, 0),
+    ("chain", 1e-3): (104976, 66060, 0),
+    ("chain", 1e-10): (104976, 36072, 0),
+}
+SORT_KEY_PARAMS = [
+    pytest.param(n, t, id=f"{n}-{t:g}",
+                 marks=[pytest.mark.slow] if n == "h2o_ccpvdz_j" else [])
+    for n, t in SORT_KEY_SKIPS]
+
+
+@cache
+def _j0(name: str) -> Screened:
+    basis, D = _case(name)
+    return coulomb_launched(basis, D, pq=pq, tau=0.0)
+
+
+def test_the_sort_key_cells_are_recorded_here():
+    assert {k for k in SORT_KEY_SKIPS if k[0] != "chain"} == {
+        (f, t) for f, t, _ in measured_store.SORT_KEY_CELLS}
+
+
+@pytest.mark.parametrize(("name", "tau"), SORT_KEY_PARAMS)
+def test_both_sort_keys_hold_the_screens_bound(name, tau):
+    """#147's fast tier: product and global key, same input, same tau, one
+    batch -- each J within `tau * scale` of J(0), and the skip counts as
+    recorded. The global key skips none of these pairs: `I_pair` is
+    pair-factor-free, so the distance decay of a ket lives in its `Dmax`
+    alone, and a global `Dmax` erases it."""
+    basis, D = _case(name)
+    J0 = np.array(_j0(name).J)
+    got = []
+    for ds in (True, False):
+        s = coulomb_launched(basis, D, pq=pq, tau=tau, density_sort=ds)
+        err = np.abs(np.array(s.J) - J0)
+        assert np.all(err <= tau * np.array(s.scale)), (name, tau, ds)
+        got.append(s)
+    prod, glob = got
+    assert prod.n_pairs == glob.n_pairs
+    assert glob.n_skipped <= prod.n_skipped
+    assert (prod.n_pairs, prod.n_skipped, glob.n_skipped) == SORT_KEY_SKIPS[
+        (name, tau)]
+    print(f"\n{name} tau={tau:g}: product skips {prod.n_skipped}/"
+          f"{prod.n_pairs} ({prod.skip_fraction:.4f}), global "
+          f"{glob.n_skipped} ({glob.skip_fraction:.4f})")
 
 
 def test_the_walk_refuses_a_foreign_basis():

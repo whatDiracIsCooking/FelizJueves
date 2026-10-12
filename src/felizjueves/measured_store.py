@@ -217,7 +217,62 @@ every row carries -- a contended phase is discarded, so the loader refuses a
 null or over-threshold reading rather than read it as idle. A row is keyed by
 fixture, tau, n_batches (or `dispatch:<input>`), the plan's `density_sort`
 and an ARM label, so #147's same-session sort-key A/B files two rows that
-differ in their arm and sort only.
+differ in their sort only (both carry the arm `SORT_AB_ARM`).
+
+THE SORT KEY (#147) is `sort_key_ab`: is the plan's per-record product key
+(`launch.launches(density_sort=True)`, ket key `I_q * max_q |D_q|`) better
+than `density_sort=False`'s one global `max|D|` (ket key `I_q * Dmax_global`,
+the order by `I_q` alone)? #147 declared the expectation before any row --
+"the global key is worse. If it is not, that is the result" -- and this rule,
+written before any sort-key row existed, is that sentence made checkable. It
+is not to be tuned after reading one.
+
+- THE CELLS are `SORT_KEY_CELLS`: (input, tau, n_batches) = H2O/cc-pVDZ
+  (`h2o_ccpvdz_j`, d shells, 25 classes, dispatched as #146's cells are) and
+  an extended chain (`h2chain2_sto3g`: s only, one class, one batch), each
+  at tau = 1e-3 (#146's screened cell) and tau = 1e-10 (a production SCF
+  threshold). Same molecule, same tau, same batch count per pair of arms:
+  the arms differ in `density_sort` and nothing else. THE CHAIN IS TWO H2,
+  not #88/#122's four: test/test_ao_screening.py's `_h2_chain(2)` (bond 1.4,
+  centres 6 bohr apart, its hilbert density). The four-H2 chain's sweep
+  asks for T = theta^2 |PQ|^2 up to 1289 -- inside reference.boys' T <=
+  2000, but past the card's `fj_boys` (emit/_c.py's Kummer series), which
+  is witnessed on [0, 500] only (test/test_kernel_device.py) and overflows
+  near T = 700; three H2 reach 615. Two H2 reach 188, inside the device
+  Boys' witnessed domain under either key: the Schwarz screen does not see
+  the bra-ket distance, so the product key's screen removes no large-T pair
+  either. The four-H2 chain's skip counts are still read off the launch
+  oracle in the fast tier (test/test_launch_oracle.py), where no card is
+  needed.
+- BOTH ARMS IN ONE SESSION, behind the gate, per card: one `time_builds`
+  call times every cell's two arms (alternating which arm runs first from
+  cell to cell), and each row carries raw 'build:session', the session's
+  start in integer seconds -- `sort_key_ab` refuses two arms whose sessions
+  differ. Each arm has its own gate readings (BUILD_STATE_FIELDS).
+- SKIP (the screen's work, the launch oracle's count on the same plan, raw
+  'build:n_skipped'; deterministic, so no tolerance): the global key skips
+  FEWER pairs, the SAME number, or MORE. MORE cannot happen -- the global
+  value bounds every record's `Dmax`, so its screen is a superset test (the
+  structural record, jengine/ket-sort-key-is-the-product, (d)) -- and a row
+  pair that says so is refused, not judged.
+- CLOCK (the build's `runtime_ns` median and `spread_ns` IQR, BUILD_TIMED_
+  REGION): #60's rule, symmetric, as `lever_ab` applies it -- with p the
+  product arm and g the global one, the global key is SLOWER iff median(g) -
+  median(p) > max(IQR(p), IQR(g)), FASTER iff median(p) - median(g) > that
+  same max, else NEUTRAL. The larger IQR is this box's noise floor, the one
+  every same-session A/B here has used (#55, #60, #113).
+- PER CELL: WORSE if the global key is SLOWER; BETTER if it is FASTER (a win
+  for the global key is the result the issue anticipates as possible);
+  otherwise, the clock NEUTRAL, UNRESOLVED if it skips FEWER (it does less
+  screening, but the time saved is below what this box can resolve) and SAME
+  if it skips the same.
+- PER ARCH: WORSE iff every cell is WORSE; CONTRADICTED iff any cell is
+  BETTER; otherwise NOT SHOWN. The two arches are judged apart.
+- THE MEASURED CLAIM, jengine/ket-sort-key-beats-the-global-max, is
+  `asserted` iff the verdict is WORSE on BOTH arches. NOT SHOWN anywhere
+  lands in data/literature/jengine/limits.json (below what this box can
+  resolve) with the per-cell verdicts; CONTRADICTED is a disagreement with
+  [JEngine, v2, §3.3], recorded as the result.
 
 THE SPLIT (#94). This module is the store and nothing else: the record, the
 file, the read path, the declared subgrid, and the two verdicts read off the
@@ -1179,13 +1234,29 @@ BUILD_HEADER = {
     "key": "build_key(fixture, tau, n_batches, density_sort, arm, arch, "
            "toolchain) = '<fixture>/tau=<repr>/b=<n>/sort=<density|global>/"
            "<arm>@<arch>/<toolchain>'. fixture is test/oracle/fixtures/"
-           "<fixture>.json (the molecule, basis and density); n_batches is "
+           "<fixture>.json (the molecule, basis and density), or "
+           "'h2chain2_sto3g': test/test_ao_screening.py's _h2_chain(2) "
+           "(two H2, STO-3G H, hilbert density), which has no libcint "
+           "fixture -- its device J is held to the launch oracle and the "
+           "host sweep's J(0) plus the screen's tau * scale; n_batches is "
            "the plan's fixed count, or 'dispatch:<input>' for a plan "
            "resolved per class by dispatch.Resolver(arch, <input>); "
            "density_sort is launch.launches' sort key (density: G * Dmax per "
            "ket; global: one global Dmax, so the order is by G alone); arm "
            "labels a same-session A/B (#147) -- 'baseline' is the plan's "
-           "default, timed alone.",
+           "default, timed alone; 'sort-ab' is #147's pair of arms, which "
+           "differ in density_sort only.",
+    "sort_key": "#147: the 'sort-ab' rows are SORT_KEY_CELLS' two arms, "
+                "timed in ONE session per card (raw 'build:session', the "
+                "session's start in integer seconds, equal on both arms), "
+                "each with its own gate readings. The verdict is "
+                "measured_store.sort_key_ab's, declared in its module "
+                "docstring (THE SORT KEY) before any of these rows existed: "
+                "per cell the global key is WORSE iff slower than the "
+                "product by more than the larger IQR (#60's rule), BETTER "
+                "iff faster by that, else UNRESOLVED (skips fewer) or SAME; "
+                "WORSE on an arch iff at every cell. Computed from the rows, "
+                "never stored.",
     "timed_region": BUILD_TIMED_REGION,
     "gate": "#146: every row's raw carries " + ", ".join(BUILD_STATE_FIELDS)
             + ". A cell's timing phase is one process run of the checked "
@@ -1381,3 +1452,119 @@ def save_builds(store: Mapping[str, BuildRow], path: Path = BUILDS) -> None:
 def _build_order(key: str) -> tuple:
     cell, _, where = key.partition("@")
     return (where, cell)
+
+
+# ---------------------------------------------------------------------------
+# #147: the sort key, per-record product against one global max|D|
+# (module docstring, THE SORT KEY -- declared before any sort-key row)
+# ---------------------------------------------------------------------------
+
+SORT_AB_ARM = "sort-ab"  # both arms' label; the pair differs in sort only
+SESSION_FIELD = "build:session"  # the session's start, integer seconds
+CHAIN_INPUT = "h2chain2_sto3g"  # test_ao_screening._h2_chain(2), hilbert D
+SORT_KEY_TAUS = (1e-3, 1e-10)
+SORT_KEY_CELLS: tuple[tuple[str, float, int | str], ...] = tuple(
+    (fixture, tau, n) for fixture, n in (("h2o_ccpvdz_j", "dispatch:wide"),
+                                         (CHAIN_INPUT, 1))
+    for tau in SORT_KEY_TAUS)
+FEWER, SAME = "fewer", "same"
+WORSE, BETTER, UNRESOLVED = "worse", "better", "unresolved"
+CONTRADICTED, NOT_SHOWN = "contradicted", "not shown"
+
+
+@dataclass(frozen=True)
+class SortKeyAB:
+    """The global-`max|D|` arm against the product arm, one cell, one arch."""
+
+    arch: str
+    fixture: str
+    tau: float
+    n_batches: int | str
+    n_pairs: int
+    skipped: tuple[int, int]  # (product, global)
+    clock: tuple[float, float, float, float]  # product median, IQR; global's
+
+    def __post_init__(self) -> None:
+        if self.skipped[1] > self.skipped[0]:
+            raise ValueError(
+                f"{self.fixture} tau={self.tau!r} @ {self.arch}: the global "
+                f"key skips {self.skipped[1]} > the product's "
+                f"{self.skipped[0]} -- impossible for a bounding key, so the "
+                "rows are wrong, not the verdict")
+
+    @property
+    def skip_sign(self) -> str:
+        return FEWER if self.skipped[1] < self.skipped[0] else SAME
+
+    @property
+    def clock_sign(self) -> str:
+        """FASTER / SLOWER / NEUTRAL, of the GLOBAL arm (#60's rule)."""
+        return _sign(self.clock[:2], self.clock[2:])
+
+    @property
+    def verdict(self) -> str:
+        if self.clock_sign == SLOWER:
+            return WORSE
+        if self.clock_sign == FASTER:
+            return BETTER
+        return UNRESOLVED if self.skip_sign == FEWER else SAME
+
+
+def _sort_row(store: Mapping[str, BuildRow], arch: str,
+              cell: tuple[str, float, int | str], density_sort: bool
+              ) -> BuildRow:
+    fixture, tau, n = cell
+    got = [r for r in store.values()
+           if r.arch == arch and r.fixture == fixture and r.tau == tau
+           and r.n_batches == n and r.density_sort == density_sort
+           and r.arm == SORT_AB_ARM]
+    if len(got) != 1:
+        raise KeyError(f"{fixture} tau={tau!r} b={n} sort="
+                       f"{'density' if density_sort else 'global'} "
+                       f"{SORT_AB_ARM} @ {arch}: {len(got)} rows")
+    return got[0]
+
+
+def sort_key_ab(store: Mapping[str, BuildRow], arch: str,
+                cell: tuple[str, float, int | str]) -> SortKeyAB:
+    """#147's comparison for one of `SORT_KEY_CELLS` on `arch`, from the
+    build store. Raises KeyError when an arm is missing, when the two arms
+    were not timed in one session, or when they differ in the toolchain or
+    the plan's size."""
+    p = _sort_row(store, arch, cell, True)
+    g = _sort_row(store, arch, cell, False)
+    for f in (SESSION_FIELD, "build:n_pairs", "build:n_skipped"):
+        for r in (p, g):
+            if f not in r.raw:
+                raise KeyError(f"{r.key()}: no raw {f}")
+    if p.raw[SESSION_FIELD] != g.raw[SESSION_FIELD]:
+        raise KeyError(f"{cell} @ {arch}: the arms were timed in different "
+                       f"sessions ({p.raw[SESSION_FIELD]} and "
+                       f"{g.raw[SESSION_FIELD]})")
+    if p.toolchain != g.toolchain or (p.raw["build:n_pairs"]
+                                      != g.raw["build:n_pairs"]):
+        raise KeyError(f"{cell} @ {arch}: the arms differ in more than the "
+                       "sort (toolchain or plan size)")
+    return SortKeyAB(
+        arch=arch, fixture=cell[0], tau=cell[1], n_batches=cell[2],
+        n_pairs=int(p.raw["build:n_pairs"]),
+        skipped=(int(p.raw["build:n_skipped"]), int(g.raw["build:n_skipped"])),
+        clock=(p.runtime_ns, p.spread_ns, g.runtime_ns, g.spread_ns))
+
+
+def sort_key_arch_verdict(store: Mapping[str, BuildRow], arch: str,
+                          cells=SORT_KEY_CELLS) -> str:
+    """WORSE, CONTRADICTED or NOT SHOWN on one arch, over every cell."""
+    got = [sort_key_ab(store, arch, c).verdict for c in cells]
+    if any(v == BETTER for v in got):
+        return CONTRADICTED
+    if all(v == WORSE for v in got):
+        return WORSE
+    return NOT_SHOWN
+
+
+def sort_key_claim_holds(store: Mapping[str, BuildRow], arches,
+                         cells=SORT_KEY_CELLS) -> bool:
+    """The measured claim is `asserted` iff WORSE on every arch."""
+    return all(sort_key_arch_verdict(store, a, cells) == WORSE
+               for a in arches)

@@ -1076,7 +1076,7 @@ key in time, against the global-`D_max` fallback, is the measured arm (#147).
 The table below is rendered from `claims.json` and checked verbatim:
 
 <!-- claims-status:begin -->
-**31 records: 18 asserted, 13 unverifiable, 0 pending** (recomputed from `claims.json` by `test/test_claims.py`).
+**32 records: 18 asserted, 14 unverifiable, 0 pending** (recomputed from `claims.json` by `test/test_claims.py`).
 
 | status | claim | kind | held by |
 |---|---|---|---|
@@ -1105,6 +1105,7 @@ The table below is rendered from `claims.json` and checked verbatim:
 | unverifiable | `jengine/best-batch-count-rises-with-l` | monotonicity | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/conclusion-overstates-compute-bound` | defect | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/j-speedup-tracks-high-l-share` | monotonicity | no test: the reason is in `claims.json` |
+| unverifiable | `jengine/ket-sort-key-beats-the-global-max` | monotonicity | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/memory-bound-grows-with-l` | monotonicity | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/mild-vs-exact-tradeoff` | monotonicity | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/nine-batches-suffice` | shape | no test: the reason is in `claims.json` |
