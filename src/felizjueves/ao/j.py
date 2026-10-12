@@ -81,6 +81,15 @@ about summation order, each `J_p` is accumulated over its kets with
 term itself is computed identically on both paths. `Screened.n_skipped`
 counts the (bra record, ket record) index pairs not summed.
 
+`Screened` is THE screening record, shared with `launch.walk` (#142, the
+launch oracle) so one type serves both paths: `n_pairs` considered,
+`n_skipped` skipped, `n_examined` the kets whose screen test was evaluated
+(the break's witness: `n_pairs` under the `continue`, fewer under the
+`break`), `max_skipped` the largest skipped bound `I_bra * I_ket * Dmax`
+(`0.0` when nothing is skipped) and `dropped` the `math.fsum` of every
+skipped bound -- order-independent, so the break, the continue and the
+oracle's per-class walk record the same value for the same skipped set.
+
 `Screened.scale` is the error claim's stated scale, independent of `tau`:
 per element, `n_ket * sum_{bra records} sum_p |E^{ab}_p|`. Each skipped pair
 has `|sum_q [p|q] D_q| <= I_p I_ket Dmax <= I_bra I_ket Dmax < tau` for every
@@ -392,14 +401,18 @@ def coulomb_matrix_and_scale(basis: Basis, D: object, *,
 
 @dataclass(frozen=True)
 class Screened:
-    """`coulomb_matrix_screened`'s result (module docstring, "THE SORTED
-    `break`"): `J`, the `tau`-independent error scale, and the count of
-    (bra record, ket record) index pairs, total and skipped."""
+    """`coulomb_matrix_screened`'s and `launch.walk`'s result (module
+    docstring, "THE SORTED `break`"): `J`, the `tau`-independent error scale,
+    the count of (bra record, ket record) index pairs, total, skipped and
+    examined, and the largest and the total skipped bound."""
 
     J: Matrix
     scale: Matrix
     n_pairs: int
     n_skipped: int
+    n_examined: int
+    max_skipped: float
+    dropped: float
 
     @property
     def skip_fraction(self) -> float:
@@ -421,7 +434,8 @@ def _bra_block_screened(bra_recs: Sequence[PrimitivePair],
     nrow = len(bra_recs[0].block)
     jab = [0.0] * nrow
     sab = [0.0] * nrow
-    skipped = 0
+    skipped = examined = 0
+    dropped: list[float] = []  # the skipped bounds I_bra * I_ket * Dmax
     n_ket = len(kets)
     for bra in bra_recs:
         ps = hermite_order(bra.L)
@@ -429,11 +443,14 @@ def _bra_block_screened(bra_recs: Sequence[PrimitivePair],
         terms: list[list[float]] = [[] for _ in ps]
         ibra = pair_bound_pq(zeta, bra.L, pq=pq)
         for i, k in enumerate(kets):
+            examined += 1
             if ibra * k.bound < tau:
                 if brk:  # sorted: every later ket is under tau too
                     skipped += n_ket - i
+                    dropped.extend(ibra * x.bound for x in kets[i:])
                     break
                 skipped += 1
+                dropped.append(ibra * k.bound)
                 continue
             theta = math.sqrt(zeta * k.eta / (zeta + k.eta))
             PQv = (P[0] - k.Q[0], P[1] - k.Q[1], P[2] - k.Q[2])
@@ -449,7 +466,7 @@ def _bra_block_screened(bra_recs: Sequence[PrimitivePair],
                 s += e * v
             jab[r] += s
             sab[r] += n_ket * math.fsum(abs(e) for e in row)
-    return jab, sab, skipped
+    return jab, sab, skipped, examined, dropped
 
 
 def coulomb_matrix_screened(basis: Basis, D: object, *, pq: PQ, tau: float,
@@ -475,18 +492,22 @@ def coulomb_matrix_screened(basis: Basis, D: object, *, pq: PQ, tau: float,
     J = [[0.0] * n for _ in range(n)]
     S = [[0.0] * n for _ in range(n)]
     shells, off = basis.shells, basis.offsets
-    n_pairs = n_skipped = 0
+    n_pairs = n_skipped = n_examined = 0
+    dropped: list[float] = []
     for a, b, _ in pairs:
         sa, sb = shells[a], shells[b]
         bras = primitive_pairs(sa, sb)
-        jab, sab, sk = _bra_block_screened(bras, kets, pq=pq, tau=tau,
-                                           brk=order == "sorted")
+        jab, sab, sk, ex, dr = _bra_block_screened(
+            bras, kets, pq=pq, tau=tau, brk=order == "sorted")
         n_pairs += len(bras) * len(kets)
         n_skipped += sk
+        n_examined += ex
+        dropped.extend(dr)
         for i in range(sa.n_cart):
             for j in range(sb.n_cart):
                 r = i * sb.n_cart + j
                 J[off[a] + i][off[b] + j] = J[off[b] + j][off[a] + i] = jab[r]
                 S[off[a] + i][off[b] + j] = S[off[b] + j][off[a] + i] = sab[r]
     return Screened(tuple(tuple(r) for r in J), tuple(tuple(r) for r in S),
-                    n_pairs, n_skipped)
+                    n_pairs, n_skipped, n_examined, max(dropped, default=0.0),
+                    math.fsum(dropped))

@@ -83,6 +83,43 @@ is today's; `LaunchPlan.n_batches` records the argument either way, and each
 
 `tau` is carried, validated, for the consumer: it is the kernel's runtime
 argument, and the plan itself skips nothing.
+
+THE ORACLE (#142) -- the plan WALKED, in Python:
+
+    walk(plan, basis, D, *, pq)                       -> ao.j.Screened
+    coulomb_launched(basis, D, *, pq, tau, n_batches=1, bound=None,
+                     density_sort=True, strict=True)  -> ao.j.Screened
+
+`jgen`'s `coulomb_launched`. Per `ClassLaunch`, per bra record (pair order),
+down that class's sorted ket list, Alg. 1's `break` at the first ket with
+`G_bra * key_ket < tau`; each surviving (bra, ket) pair contributes
+`sum_q [p|q] D_q` per `p` (eq. 21, `pq` injected), every class's
+contributions to one bra record are summed with `math.fsum`, and eq. 20
+transforms the record's `J_p` into its block `J[a][b]`, mirrored (eq. 22's
+scatter). The result is `ao.j.Screened`, the ONE screening record both paths
+fill (`ao/j.py`, "THE SORTED `break`"). It is the independent witness the
+staged device driver (#143) must reproduce, and it is pure Python, so it
+runs in the push gate.
+
+WHAT EQUALS WHAT. With `bound` defaulted to `ao.j.pair_bound_pq` through the
+same `pq`, every key is bit-identical to the host sweep's, so the oracle
+skips EXACTLY the pairs `ao.j.coulomb_matrix_screened` skips -- the
+partition of the one global ket list into per-class lists cannot change
+which kets clear the threshold for a given bra -- and, each per-ket term
+being computed by the host's own arithmetic and each `J_p` accumulated with
+`fsum` (order-independent), `J` equals the host's TO 0. `n_pairs`,
+`n_skipped`, `max_skipped` and `dropped` equal the host's too.
+`n_examined` does NOT, by design: the walk breaks once per (bra record,
+class) row, the host once per bra record over one global list, so the
+oracle examines `n_pairs - n_skipped` plus one per row that broke.
+
+The walk rebuilds the per-pair data the plan does not carry (`P`, `zeta`,
+the dressed `E` block, `Q`, `eta`, `D_q`) from `basis` and `D` -- once per
+call and dropped, through `ao.j._kets` and `ao.pairs.primitive_pairs`, the
+host's own constructors. NOTHING IS MEMOISED: the tau ladder must measure
+the screen, not a cache. `plan` must have been planned from the same
+`basis` and `D`; a record that does not name a primitive pair of `basis`
+raises.
 """
 
 from __future__ import annotations
@@ -92,7 +129,14 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import cache
 
-from felizjueves.ao.j import _density, _kets, _tau
+from felizjueves.ao.j import (
+    PQ,
+    Screened,
+    _density,
+    _kets,
+    _tau,
+    pair_bound_pq,
+)
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis
 from felizjueves.ir import Kernel
@@ -101,7 +145,7 @@ from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["Bound", "ClassLaunch", "LaunchPlan", "PairRec", "class_spec",
-           "launches"]
+           "coulomb_launched", "launches", "walk"]
 
 Bound = Callable[[float, int], float]  # (zeta, L) -> I_pair >= 0
 
@@ -281,3 +325,98 @@ def launches(basis: Basis, D: object, *, bound: Bound, n_batches: int,
 def _sorted_desc(recs: Sequence[PairRec]) -> list[PairRec]:
     """Descending by `key`, STABLE -- `ao.j._sorted_kets`' form exactly."""
     return sorted(recs, key=lambda r: r.key, reverse=True)
+
+
+# --- the oracle (#142): the plan walked in Python ---------------------------
+
+
+def walk(plan: LaunchPlan, basis: Basis, D: object, *, pq: PQ) -> Screened:
+    """`J` and its screening record by walking `plan` (module docstring, "THE
+    ORACLE"): per class, per bra record, down the sorted kets to the first
+    `G_bra * key < plan.tau` -- a `break`, never a `continue`."""
+    rows = _density(basis, D)
+    tau = plan.tau
+    shells, off = basis.shells, basis.offsets
+    sides = {r.shell_pair for c in plan for r in (*c.bras, *c.kets)}
+    # Per-call record data, dropped on return (never memoised). `_kets` at
+    # tau = 0 evaluates no bound; its `qs` is the pair's hermite_order(L),
+    # which serves the bra side too (both sides sweep the same pairs).
+    kets = {(a, b): _kets(basis, rows, [(a, b, 1.0 if a == b else 2.0)],
+                          pq=_no_pq, tau=0.0) for a, b in sorted(sides)}
+    bras = {(a, b): primitive_pairs(shells[a], shells[b])
+            for a, b in sorted(sides)}
+
+    terms: dict[tuple[int, int], list[list[float]]] = {}  # (lp, bra row)
+    n_ket: dict[int, int] = {}  # per lp: the kets a bra record walks
+    blocks: dict[int, tuple[tuple[int, int, int, int], ...]] = {}
+    n_pairs = n_skipped = n_examined = 0
+    dropped: list[float] = []
+    for c in plan:
+        n_ket[c.lp] = n_ket.get(c.lp, 0) + len(c.kets)
+        blocks.setdefault(c.lp, c.bra_blocks)
+        n_pairs += len(c.bras) * len(c.kets)
+        for row, br in enumerate(c.bras):
+            bra = bras[br.shell_pair][br.prim]
+            ps = kets[br.shell_pair][0].qs
+            zeta, P = bra.zeta, bra.P
+            acc = terms.setdefault((c.lp, row), [[] for _ in ps])
+            for i, kr in enumerate(c.kets):
+                n_examined += 1
+                if br.G * kr.key < tau:  # sorted: every later ket is too
+                    rest = c.kets[i:]
+                    n_skipped += len(rest)
+                    dropped.extend(br.G * r.key for r in rest)
+                    break
+                k = kets[kr.shell_pair][kr.prim]
+                theta = math.sqrt(zeta * k.eta / (zeta + k.eta))
+                PQv = (P[0] - k.Q[0], P[1] - k.Q[1], P[2] - k.Q[2])
+                for ip, p in enumerate(ps):
+                    s = 0.0
+                    for q, dq in zip(k.qs, k.dq, strict=True):
+                        s += pq(p, q, PQv, theta) * dq
+                    acc[ip].append(s)
+
+    n = basis.n_ao
+    J = [[0.0] * n for _ in range(n)]
+    S = [[0.0] * n for _ in range(n)]
+    for lp, blks in blocks.items():
+        for a, b, start, stop in blks:
+            sa, sb = shells[a], shells[b]
+            recs = bras[(a, b)]
+            if stop - start != len(recs):
+                raise ValueError(f"the plan's block ({a}, {b}) has "
+                                 f"{stop - start} records, basis has "
+                                 f"{len(recs)}")
+            jab = [0.0] * len(recs[0].block)
+            sab = [0.0] * len(recs[0].block)
+            for bra, row in zip(recs, range(start, stop), strict=True):
+                jp = [math.fsum(t) for t in terms[(lp, row)]]
+                for r, erow in enumerate(bra.block):
+                    s = 0.0
+                    for e, v in zip(erow, jp, strict=True):
+                        s += e * v
+                    jab[r] += s
+                    sab[r] += n_ket[lp] * math.fsum(abs(e) for e in erow)
+            for i in range(sa.n_cart):
+                for j in range(sb.n_cart):
+                    r = i * sb.n_cart + j
+                    J[off[a] + i][off[b] + j] = J[off[b] + j][off[a] + i] = jab[r]
+                    S[off[a] + i][off[b] + j] = S[off[b] + j][off[a] + i] = sab[r]
+    return Screened(tuple(tuple(r) for r in J), tuple(tuple(r) for r in S),
+                    n_pairs, n_skipped, n_examined, max(dropped, default=0.0),
+                    math.fsum(dropped))
+
+
+def coulomb_launched(basis: Basis, D: object, *, pq: PQ, tau: float,
+                     n_batches: int = 1, bound: Bound | None = None,
+                     density_sort: bool = True,
+                     strict: bool = True) -> Screened:
+    """`walk(launches(...), basis, D, pq=pq)`. `bound` defaults to
+    `ao.j.pair_bound_pq` through `pq` -- the host sweep's own bound, so the
+    two screen identically (module docstring, "WHAT EQUALS WHAT")."""
+    if bound is None:
+        def bound(zeta: float, L: int) -> float:
+            return pair_bound_pq(zeta, L, pq=pq)
+    return walk(launches(basis, D, bound=bound, n_batches=n_batches, tau=tau,
+                         density_sort=density_sort, strict=strict),
+                basis, D, pq=pq)
