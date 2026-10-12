@@ -254,6 +254,29 @@ RULES: dict[str, Rule] = {
                   "shares no ancestry with its witness (#20)",
         emit="it produces numbers, not text: a backend's spelling is the "
              "kernel tier's to check, not this adapter's"),
+    "launch": _rule(
+        "launch.py (#138): the whole-molecule launch plan as a VALUE -- which "
+        "class kernels run over which bra and ket index records, in which "
+        "order. It reads the key, asks the plan which batch counts a class "
+        "admits, builds the class's kernels, and takes its records from the "
+        "AO layer (milestone 6 (a)); the bound arrives injected (`bound=`). "
+        "`ir` for the `Kernel` type it carries",
+        ("spec", "plan", "kernel", "ir", "ao"),
+        reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
+                  "ao/pairs.py takes its `one_centre=`",
+        interp="the plan is data: nothing is launched or interpreted here",
+        **{"ao.drive": "the adapter runs kernels; the staged driver beside "
+                       "it imports this plan (#143), so the plan importing "
+                       "the adapter is a cycle and drags the interpreter in "
+                       "-- `class_spec` is restated, and a test pins the "
+                       "two equal"},
+        emit="the plan is data: no text is emitted (#138's acceptance)",
+        measured="a batch count is the plan's admission or an injected "
+                 "resolver's (#145), never a toolchain's",
+        measured_store="nothing measured may reach the plan by import: a "
+                       "dispatch policy arrives injected (#145)",
+        literature="a launch plan is not scored against the published "
+                   "tables; nothing here may feed a floor"),
 }
 
 RULE_OF: dict[str, str] = {
@@ -309,6 +332,7 @@ RULE_OF: dict[str, str] = {
     "ao.eri": "ao",
     "ao.j": "ao",
     "ao.drive": "adapter",
+    "launch": "launch",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -374,6 +398,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.drive": ("ao.j", "interp", "ir", "kernel", "plan.pipeline", "spec"),
+    "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
+               "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
@@ -528,6 +554,24 @@ def test_nothing_that_emits_text_imports_the_reference() -> None:
                for m in emitters}
     reached = {m: r for m, r in reached.items() if r}
     assert not reached, f"text emitters that reach reference/: {reached}"
+
+
+def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
+    # #138's acceptance, TRANSITIVELY: the plan's bound is injected, and the
+    # plan is data -- no chain of imports from it reaches reference/, the
+    # interpreter, a backend, or the adapter that runs kernels.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["launch"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    for banned in (_REF, "interp", "emit", "ao.drive", "measured",
+                   "measured_store"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"launch reaches {hit}"
 
 
 # #94: the store half knows no toolchain. The internal edges above keep it off
