@@ -718,7 +718,7 @@ kernel of a split cell sits below the ridge. Kernel intensities within one
 split cell spread widely. At L = 13 b = 12 they range from 23.6 to 1175
 FLOP/B, because the batches whose working set stays in L2 hardly touch DRAM.
 
-What these rows say, for #114 to score:
+What these rows say (#114 scores them below, under its declared rule):
 
 - On this card the ridge is low enough that only **L = 16, one batch** is
   memory-bound. Its spill traffic (70,628 bytes of spill stores per thread in `kernels.json`)
@@ -754,6 +754,62 @@ oblige new literal wall-clock rows, recycle A/B rows and counter rows for 20
 cells on each card. The roofline question does not need them: L = 13
 (`(7,0|6,0)`) and L = 16 already bracket `[7|7]`, and the ridge crossing
 appears only at L = 16.
+
+### Measured: what batching buys on these cards — does it cross our ridge? (#114)
+
+**The rule predates the rows; this section's code does not.** The rule is
+issue #114's, created 2026-10-11T18:07:53Z and never edited. PR #134 wrote
+the roofline rows and was merged 2026-10-12T04:27Z. `src/felizjueves/ridge.py`
+was written after both, and after #134 had reported its summary. It copies
+the issue's words into a function and adds only readings the repo already
+defined (its docstring lists them). The issue's rule: for one arch and one L,
+batching **crosses the ridge** iff the cell is memory-bound at
+`n_batches = 1` and compute-bound at some higher `SUBGRID` count, with the
+crossing count recorded. The **per-kernel variant** asks instead that every
+kernel of that count's partition be compute-bound, and it is scored
+separately. The two variants are reported side by side, and neither rescues
+the other. Each card is scored on its own.
+
+| L | `sm_86`, cell | `sm_86`, per kernel | `gfx1200` |
+|---|---|---|---|
+| 7 | compute-bound already at 1 batch (300 FLOP/B) | the same | could not measure |
+| 10 | compute-bound already at 1 batch (3.54) | the same | could not measure |
+| 13 | compute-bound already at 1 batch (0.96) | the same | could not measure |
+| 16 | **crossed at 3** (0.40 → 1.52) | **crossed at 3** (every kernel ≥ 1.46) | could not measure |
+
+The ridges are each card's own, measured on this box (#109): **0.65 FLOP/B on
+`sm_86`** and **1.49 FLOP/B on `gfx1200`**. Fig. 7's A100 ridge is a
+different number, and nothing here is compared with it.
+
+**What batching buys on the RTX 3080, by the roofline:** a ridge crossing
+only at L = 16, where the unsplit kernel's spill traffic holds it below the
+ridge and three batches lift it past. Below L = 16, every class is past
+the ridge at one batch, because consumer fp64 puts this card's ridge so low.
+There is nothing for batching to cross there. Whatever batching buys at
+those L (#56's near-T split from L = 13), it is not a move across the ridge.
+That is a fact about this card. It says nothing against `[JEngine, v2, §7.2]`,
+whose A100 measurement stands.
+
+**On the RX 9060 XT the answer is absent.** `gfx1200` has no counter rows
+(`measured_store.UNMEASURED`): `rocprofv3` cannot load in this container, and
+gfx1200 has no fp64 counter. `ridge.crossing` returns *could not measure*,
+never *never crossed*.
+
+**Cross-read against #60** (9 batches do not suffice on either card). On
+`sm_86`, every kernel of every 9-batch cell is compute-bound, so the roofline
+**contradicts** the reading that 9 fails because kernels are still
+memory-bound at 9. On this card 9 fails #60 on spills alone: 12 spills less at
+L = 13 and 16, yet 12 is slower than 9 at every L on both inputs. The
+roofline agrees with the clock: at 9 there is no ridge left to cross. On
+`gfx1200`, where 12 wins on near-T at L = 16, the roofline can say nothing.
+
+The record is the claim `jengine/batching-crosses-our-ridge` (asserted by
+`test/test_ridge.py`, which recomputes every number above) and its entry in
+`data/literature/jengine/limits.json`. That entry names what the comparison
+cannot see: the ridge is the card's; the AMD answer is absent; the DRAM bytes
+come from one input, with L2-resident batches; `[6|6]` is unmeasured. The
+paper's own claim, `jengine/batching-crosses-the-ridge`, stays
+`unverifiable`, and so does `jengine/nine-batches-suffice`.
 
 ## The pipeline
 
