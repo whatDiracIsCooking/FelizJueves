@@ -21,6 +21,23 @@ both paths fill. Three witnesses, three ancestries:
   libcint   the tracked `get_jk` fixtures for H2 and H2O/STO-3G, to
             test_ao_j.py's inherited `1e-12 scale_J`. No PySCF is imported.
 
+THE STAGED DRIVER (#143's deferred comparison). `ao.staged.coulomb_matrix_staged`
+over the SAME plan, at several `tau` (0 and three that skip a real share):
+
+  exact     the ket-loop count. The kernel screens `Ib * (Iq * Dmax)`, and
+            the staged driver checks `Iq * Dmax == key` bit for bit, so its
+            break decisions are the oracle's: per class,
+            `Interpreter.iterations` (lanes = 1) equals the oracle's
+            `n_examined` on that class alone, times the class's kernels.
+  bounded   `J`. NOT to 0, and the summation structure is why: the staged
+            `J_p` comes from the generated kernel's own recurrence and the
+            injected Boys, plain-added in kernel order, the oracle's from
+            `reference.pq` through `fsum`. The oracle equals the host sweep
+            TO 0 (above), and test_launch_staged.py holds the staged build
+            to `1e-13 max|J_host|` -- test_ao_j_interpreted.py's
+            kernel-vs-`reference.pq` bound -- so that same bound, and no
+            looser one, is the staged-vs-oracle bound.
+
 THE BREAK IS A BREAK. `n_examined` counts the kets whose screen test ran.
 The oracle breaks once per (bra record, class) row, so it examines exactly
 `n_pairs - n_skipped` plus one per row that has a ket under `tau` -- counted
@@ -39,6 +56,7 @@ the first.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from functools import cache, partial
 
@@ -49,6 +67,8 @@ from oracle import manifest
 from test_ao_screening import DATA as SCREENING_JSON
 from test_ao_screening import TAUS as LADDER_TAUS
 from test_ao_screening import _case as _ladder_case
+from test_launch_staged import HOST_TOL, _tiny
+from test_launch_staged import _taus as _staged_taus
 
 from felizjueves.ao.j import (
     Screened,
@@ -57,7 +77,9 @@ from felizjueves.ao.j import (
     coulomb_matrix_screened,
     pair_bound_pq,
 )
+from felizjueves.ao.staged import coulomb_matrix_staged
 from felizjueves.launch import coulomb_launched, launches, walk
+from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 
 SWEEP_TOL = 1e-14  # test_ao_j.py's, unique vs ordered sweep, of max|J|
@@ -183,6 +205,42 @@ def test_equals_the_libcint_fixture(name):
     worst = float(np.max(np.abs(J - ref) / scale))
     print(f"\n{name}: max |J - get_jk| / scale_J = {worst:.2e}")
     assert worst <= JK_TOL
+
+
+# --- the staged interpreted driver, over the same plan (#143's deferral) -----
+
+
+def _staged_cases():
+    basis, D = _tiny()
+    return [0.0, *_staged_taus(basis, D)]
+
+
+@pytest.mark.parametrize("n", [1, 3])
+@pytest.mark.parametrize("rung", range(4))
+def test_the_staged_driver_equals_the_oracle(rung, n):
+    """Same plan, same tau: the break decisions exactly, `J` to the staged
+    driver's inherited bound (module docstring, "THE STAGED DRIVER")."""
+    basis, D = _tiny()
+    tau = _staged_cases()[rung]
+    plan = launches(basis, D, bound=BOUND, n_batches=n, tau=tau,
+                    strict=False)
+    staged = coulomb_matrix_staged(plan, basis, D, boys=boys)
+    got = walk(plan, basis, D, pq=pq)
+    host = coulomb_matrix_screened(basis, D, pq=pq, tau=tau)
+    assert got.J == host.J and got.n_skipped == host.n_skipped
+    for cl in plan:
+        alone = walk(dataclasses.replace(plan, classes=(cl,)), basis, D, pq=pq)
+        assert staged.iterations[(cl.lp, cl.lq)] == (
+            alone.n_examined * len(cl.kernels)), (cl.lp, cl.lq, tau)
+    if n == 1:
+        assert sum(staged.iterations.values()) == got.n_examined
+    if tau > 0.0:
+        assert got.n_skipped > 0
+    Jo, Js = np.array(got.J), np.array(staged.J)
+    worst = float(np.max(np.abs(Js - Jo)) / np.max(np.abs(Jo)))
+    print(f"\ntau={tau:.3e} n={n}: staged vs oracle {worst:.2e} of max|J|, "
+          f"{got.n_skipped} of {got.n_pairs} skipped")
+    assert worst <= HOST_TOL, (tau, n, worst)
 
 
 # --- the plan's options do not change what is summed -------------------------
