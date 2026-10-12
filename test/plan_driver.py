@@ -58,11 +58,12 @@ from __future__ import annotations
 
 import re
 import shlex
-import subprocess
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+import devcache
 import numpy as np
 from conftest import Toolchain
 from test_kernel_device import BACKEND, PORTABLE
@@ -294,14 +295,26 @@ def generated_warnings(drv: Driver, diagnostics: str) -> list[str]:
     return hits
 
 
-def compile_checked(tc: Toolchain, drv: Driver, out: Path) -> Path:
+def compile_checked(tc: Toolchain, drv: Driver, out: Path, *,
+                    env: Mapping[str, str] | None = None) -> Path:
     """Compile the driver with the tier's flags; FAIL on an error, and on any
-    warning located in generated text (#92), naming file and line."""
+    warning located in generated text (#92), naming file and line.
+
+    `compile_command`'s flags, run through the compiler cache (#186,
+    test/devcache.py): the driver and every unit it includes are carried, by
+    name, into a content-addressed directory and compiled there -- `-c`
+    through sccache, then linked -- so the same plan in a fresh `tmp_path`
+    is a hit. The compiler always runs; on a hit sccache replays the stored
+    diagnostics, and the filter below reads them the same way (the carried
+    units keep their names, which is what `generated_warnings` matches)."""
     cmd = compile_command(tc, drv, out)
-    done = subprocess.run(cmd, capture_output=True, text=True, timeout=1800,
-                          cwd=drv.path.parent)
-    diag = done.stdout + done.stderr
-    assert done.returncode == 0, f"{tc.name} failed:\n{shlex.join(cmd)}\n{diag}"
+    text, units = devcache.localize(drv.path.read_text(), drv.path.parent)
+    got = devcache.compile_unit(cmd[0], cmd[1:-3], drv.path.name, text, units,
+                                out, env=env, timeout=1800)
+    diag = got.diagnostics
+    assert got.returncode == 0, (
+        f"{tc.name} failed in {got.workdir}:\n"
+        + "\n".join(shlex.join(c) for c in got.commands) + f"\n{diag}")
     warned = generated_warnings(drv, diag)
     assert not warned, (
         f"{tc.name}: {len(warned)} warning(s) in generated text (#92) -- fix "

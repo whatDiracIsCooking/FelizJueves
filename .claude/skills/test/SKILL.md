@@ -63,6 +63,17 @@ Four phases, and **the report at the end says which of them did anything**:
 | compile | every emitted translation unit survives the real device compiler. The CUDA side takes `*.cu`; the **HIP side takes `*.hip` AND `*.cu`** (with `-x hip`), so one generated source can be checked against both compilers — which is the point |
 | device | the `gpu`-marked suite **for that backend** (`-m "gpu and <backend>"`) agrees with the host reference — today `test_kernel_device.py` (the generated kernels' `J_p` and `fj_boys`) plus `test_toolchain.py`'s saxpy |
 
+**The cache covers the tests' compiles too (#186).** `test/devcache.py` puts
+the same sccache in front of every compile a test issues
+(`compile_device_source`, `plan_driver.compile_checked`), from a
+content-addressed directory under `.kernel-tier/test-cache/`, so a warm re-run
+recompiles only what changed. The compiler always runs (a hit replays its
+diagnostics, so #92's warning filter still bites). `--no-cache` exports
+`KERNEL_NO_CACHE=1` and the tests compile cold; the same variable works with
+bare pytest. `--fresh` clears the test build directory, never the sccache
+store. The result block prints the cache's hits and misses for the compile and
+device phases, and the device phase's wall-clock.
+
 **Read `generated nothing (KERNEL_GEN_CMD empty)` in the report as "this was not
 a kernel tier run".** What such a run still proves is that this box compiles
 and runs device code. A generator that runs and writes nothing fails the tier

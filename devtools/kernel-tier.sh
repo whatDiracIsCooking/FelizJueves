@@ -32,7 +32,18 @@
 #              vendor header is reported and does not (config.sh,
 #              NVCC_FLAGS / HIPCC_FLAGS).
 #   device    the `gpu`-marked pytest suite (KERNEL_TEST_ARGS), which is what
-#              compares a kernel's output against the host reference.
+#              compares a kernel's output against the host reference. Its
+#              own compiles go through the same sccache (test/devcache.py,
+#              #186), from a content-addressed directory under
+#              KERNEL_BUILD_DIR, so a warm re-run recompiles only what
+#              changed.
+#
+# THE CACHE. --no-cache drops sccache from the compile phase AND exports
+# KERNEL_NO_CACHE (config.sh) so the device suite compiles cold too; setting
+# that variable does the same for this script or a bare pytest. --fresh
+# removes KERNEL_BUILD_DIR, the test-side build directory with it, never the
+# sccache store. The result block reports the cache's hits and misses for the
+# compile phase and for the device phase, and the device phase's wall-clock.
 #
 # WHAT THE GENERATOR AND THE DEVICE SUITE ARE TOLD, as environment variables
 # (the generator reads them as its defaults, the suite to find what was
@@ -71,7 +82,7 @@ usage() { usage_from_header "${BASH_SOURCE[0]}"; }
 
 backend=$KERNEL_BACKEND
 fresh=
-no_cache=
+no_cache=$KERNEL_NO_CACHE
 run_tests=1
 jobs=${JOBS:-}
 report=$KERNEL_TIER_REPORTS
@@ -202,6 +213,10 @@ PYTEST=$(find_pytest) || cannot "no pytest in $VENV_PATHS or on PATH -- run 'uv 
 # sccache as a compiler launcher. Wired in HERE rather than baked into the
 # compiler flags so an image or host without it still works, just colder --
 # which is the same contract docker/Dockerfile.base's comment describes.
+#
+# The device suite's own compiles (test/devcache.py, #186) resolve the same
+# launcher and read the same off switch: --no-cache exports KERNEL_NO_CACHE
+# (config.sh), so the tests run cold too.
 launcher=()
 if [ -z "$no_cache" ] && sccache_path=$(find_tool sccache); then
   launcher=("$sccache_path")
@@ -209,6 +224,34 @@ if [ -z "$no_cache" ] && sccache_path=$(find_tool sccache); then
 else
   note "cache: none -- every translation unit is a cold compile"
 fi
+if [ -n "$no_cache" ]; then
+  export KERNEL_NO_CACHE=1
+fi
+
+# The server's cumulative hit and miss counts, as `hits misses`, every
+# language summed (nvcc counts each of its stages). Read before and after a
+# phase, and the difference is that phase's -- not a --zero-stats, which would
+# erase the counts of a concurrent run on the other backend sharing the server.
+# Prints nothing without a launcher or when the server cannot be asked.
+cache_counts() {
+  [ "${#launcher[@]}" -gt 0 ] || return 0
+  "${launcher[0]}" --show-stats --stats-format=json 2>/dev/null \
+    | python3 -c 'import json, sys
+s = json.load(sys.stdin)["stats"]
+print(sum(s["cache_hits"]["counts"].values()), sum(s["cache_misses"]["counts"].values()))' \
+    2>/dev/null || true
+}
+# `<label> <before> <after>` -> one report line with the difference.
+cache_delta() {
+  local label=$1 b=$2 a=$3
+  if [ -z "$b" ] || [ -z "$a" ]; then
+    note "$label  -- (no cache stats: $([ "${#launcher[@]}" -gt 0 ] && echo 'server not readable' || echo 'no launcher'))"
+    return
+  fi
+  local bh bm ah am
+  read -r bh bm <<<"$b"; read -r ah am <<<"$a"
+  note "$label  hits $((ah - bh)) misses $((am - bm))"
+}
 
 # ---------------------------------------------------------------------------
 # generate
@@ -289,6 +332,7 @@ else
   # Each unit's diagnostics go to its OWN log first ($OBJ_DIR/<unit>.log) and
   # are printed as one block after it finishes: parallel compilers writing to
   # one pipe interleave mid-line, and the warning scan below reads per unit.
+  cc_cmp0=$(cache_counts)
   set +e
   # shellcheck disable=SC2016  # the single quotes are the point: $1/$OBJ_DIR
   # are expanded by the xargs CHILD, not here
@@ -302,6 +346,7 @@ else
     2>&1 | tee "$report_dir/compile.log"
   compile_rc=${PIPESTATUS[1]}
   set -e
+  cc_cmp1=$(cache_counts)
   objects=$(find "$obj_dir" -name '*.o' | wc -l)
   note "objects: $objects"
 
@@ -386,11 +431,15 @@ if [ "$run_tests" = 0 ]; then
 else
   xdist_args
   config_args "${KERNEL_TEST_ARGS//\{backend\}/$backend}"
+  cc_dev0=$(cache_counts)
+  t_dev0=$(date +%s.%N)
   set +e
   "$PYTEST" -rs "${XDIST[@]}" "${CONFIG_ARGS[@]}" "${pytest_extra[@]}" \
     --junitxml="$report_dir/pytest.xml" 2>&1 | tee "$report_dir/pytest.log"
   rc=${PIPESTATUS[0]}
   set -e
+  t_dev1=$(date +%s.%N)
+  cc_dev1=$(cache_counts)
 fi
 
 phase "result"
@@ -399,6 +448,13 @@ note "device    $([ "$device_present" = 1 ] && echo present || echo ABSENT -- nu
 note "generated $([ -n "$KERNEL_GEN_CMD" ] && echo "$KERNEL_GEN_CMD" || echo "nothing (KERNEL_GEN_CMD empty)")"
 note "compiled  ${#sources[@]} translation unit(s) from ${src_dir#"$REPO_ROOT"/}"
 note "tests     ${KERNEL_TEST_ARGS//\{backend\}/$backend}$([ "$run_tests" = 1 ] || echo ' (NOT RUN: --no-test)')"
+# What the compiler cache did, per phase (#186): the tier's own units, and
+# every compile the device suite issued (test/devcache.py). Counts from the
+# shared sccache server, so a concurrent run's compiles would land here too.
+note "cache     $([ "${#launcher[@]}" -gt 0 ] && echo "${launcher[0]}" || echo "none (cold)")"
+[ -z "${cc_cmp0+x}" ] || cache_delta "  compile" "$cc_cmp0" "$cc_cmp1"
+[ -z "${cc_dev0+x}" ] || cache_delta "  device " "$cc_dev0" "$cc_dev1"
+[ -z "${t_dev0:-}" ] || note "device wall-clock $(awk -v a="$t_dev0" -v b="$t_dev1" 'BEGIN { printf "%.1f s", b - a }')"
 note "report    ${report_dir#"$REPO_ROOT"/}"
 # NO CARD IS "COULD NOT RUN", not a pass: the device suite above ran so its
 # skips are on the record, but every `gpu` test in it skipped, and a green,
