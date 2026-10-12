@@ -46,19 +46,38 @@ written by `python -m felizjueves.emit --class …`). Every one of those paths i
 compared against PySCF/libcint — see "The Coulomb matrix, witnessed from
 outside" below.
 
-**Still specification:** **dispatch** — choosing `n_batches` per class at
-generation time — and any device code for what is host-side above (the `E`
-transform, the pre-contraction, the scatter, a device-resident `J`, sorted
-kets with real bounds on the card). `Spec.n_batches` defaults to 1; the
-measured recommendation below is evidence for dispatch, not a policy the
-generator follows. A count this file states is a claim about the code only
-where a test or a scored board checks it.
+**Implemented, around the kernel: a whole molecule's `J` from a launch plan**
+(milestone 6, #138–#147). `src/felizjueves/launch.py` is the plan as a
+value. It has one `ClassLaunch` per `(lp, lq)`: bra records in pair order,
+ket records sorted descending by `I_q · max|D_q|` (`[JEngine, v2, §3.3]`'s
+key), and the class's batch kernels. Three things walk it. The launch oracle
+(`launch.walk`) is pure Python. The staged driver (`ao/staged.py`) runs the
+kernels interpreted. A device `main()`, generated from the plan by
+`test/plan_driver.py`, uploads each bra and ket class once, keeps one `J_p`
+buffer per bra class and launches every batch kernel into it with fp64
+atomics. That device build ran on **both cards** and was compared against the
+oracle and the libcint fixtures. `src/felizjueves/dispatch.py` chooses a
+class's batch count from measured wall-clock and is injected into the plan.
+See "The launch plan" below.
 
-**Measured, and recorded** (milestone 5): each card's roofline ceilings,
-counter rows on `sm_86` (none on `gfx1200`: could not measure), and the
-answer to whether batching crosses our ridge — "The roofline, in one place"
-below; the status of every `[JEngine]` claim — "The `[JEngine]` claims" below,
-rendered from `claims.json` and checked by `test/test_claims.py`.
+**Still specification, or deliberately absent:** any device code for what is
+host-side above. The `E` transform, the pre-contraction, eq. 20's
+back-transform and the `J_ab` scatter are host-side Python, and moving them
+to the device is milestone 7's subject. Also absent: a `J` kept resident on
+the card across SCF iterations, a `Launch` IR, and a `LaunchCost` model, all
+declared out of scope (`limits.json`). Dispatch exists as a library choice
+the plan takes, and the generator does not follow it: `Spec.n_batches` still
+defaults to 1, and `KERNEL_GEN_CMD` writes one-batch kernels. A count this
+file states is a claim about the code only where a test or a scored board
+checks it.
+
+**Measured, and recorded** (milestones 5 and 6): each card's roofline
+ceilings, counter rows on `sm_86` (none on `gfx1200`, final since #140), and
+the answer to whether batching crosses our ridge: "The roofline, in one place"
+below. The whole-build wall-clock and the sort-key A/B on both cards: "The
+launch plan" below. The status of every `[JEngine]` claim: "The `[JEngine]`
+claims" below, rendered from `claims.json` and checked by
+`test/test_claims.py`.
 
 The tree-search half (reduction directions, and the sieve that prunes them) is
 [`mild.md`](mild.md). This file covers everything around it: the recurrences,
@@ -514,12 +533,13 @@ What it says:
   its fundamentals ("Why the maximum direction is the right split"), and with
   a long Boys series that duplicated work outweighs anything splitting saves.
   On near-T, splitting wins from `L = 13`. "The batch count with the best
-  median" is therefore not one number per `(L, arch)`, and a dispatch layer
-  will need to know which regime of `T` it is serving.
+  median" is therefore not one number per `(L, arch)`, and dispatch has to
+  be told which regime of `T` it is serving (`dispatch.py` takes the input
+  as a required argument, #145).
 - **The arches disagree.** On near-T at `L = 16`, `sm_86` is fastest at 9 and
   `gfx1200` at 12; at `L = 10`, `gfx1200` already prefers 3 (unresolved
-  against 1) where `sm_86` keeps 1. That is the reason dispatch will have to be
-  per target — not a disagreement to average away.
+  against 1) where `sm_86` keeps 1. That is the reason dispatch is per
+  target — not a disagreement to average away.
 - **Two near-T cells are unresolved**: `gfx1200` at `L = 10` (3 vs 1, +0.089
   ms against a 0.160 ms IQR) and `L = 13` (6 vs 3, +0.050 ms against 0.686
   ms). Their recommendation is "either of the *within spread* counts".
@@ -544,9 +564,12 @@ What it says:
 
 **This does not change `Spec`'s default.** `n_batches` defaults to 1 and stays
 there (`test/test_batchreport.py` holds it). Choosing a count per class at
-generation time is **dispatch**, which has no home in this repo yet; this table
-is evidence for that future layer, not a policy the generator silently
-follows.
+generation time is **dispatch**. Since #145 it is `src/felizjueves/dispatch.py`:
+this table's rule (best median, ties to fewer batches), recomputed from the
+`Measured` rows per `(arch, class, input)`, with 1 for any class that has no
+row. It is injected into a launch plan (`launch.launches(resolve=)`), and the
+generator does not follow it: `KERNEL_GEN_CMD` still writes one-batch
+kernels.
 
 ### Measured: the asymmetric split, measured and refused (#113)
 
@@ -676,9 +699,13 @@ requests × their size — L2 misses, an upper bound on DRAM bytes). **`gfx1200`
 exposes no fp64 counter**, so an AMD row leaves `fp64_flops` unset: an AMD
 intensity needs a FLOP count from elsewhere, labelled as such. A profiler
 that is absent, refused the counters, or cannot load raises
-`CouldNotMeasure` — no row, never a zero. (This container's `rocprofv3`
-lacks `libdw.so.1` and `libhsa-amd-aqlprofile64.so.1`; `devtools/doctor.sh`
-says so.)
+`CouldNotMeasure` — no row, never a zero. So does a reading whose byte
+counters all read 0 (`measured.ROCPROF_ZERO_BYTES`, #140). The AMD byte
+counters are read in two passes (`measured.ROCPROF_PASSES`, at most four
+counters each), because asking gfx1200's GL2C for all five at once aborts
+`rocprofv3` with error 38, and the profiled process then hangs; each pass has
+a timeout. (`rocprofv3` now loads in this container; whether it can is
+`devtools/doctor.sh`'s to say.)
 
 **One row per batch kernel**, in their own store, `data/measured/roofline.json`,
 keyed `MeasuredKey.key() + "#<batch>"` (0-based, plan order; a cell of
@@ -753,16 +780,28 @@ These are observations of one card, not compared to `[JEngine, v2, Fig. 7]`.
 
 **`gfx1200`: could not measure. No rows exist, and that is not a zero.** The
 reason is recorded in `measured_store.UNMEASURED` (the store header's
-`could_not_measure`), and the loader refuses a `gfx1200` counter row. There
-are two blockers:
+`could_not_measure`), and the loader refuses a `gfx1200` counter row.
+**Since #140 the refusal is final.** It used to be blamed on the container:
+`rocprofv3` 1.1.0 could not load `libdw.so.1`. It loads now (ROCm 7.2.4,
+rocprofiler-sdk 1.1.0), and loading is not measuring. Two reasons remain,
+and neither is the image:
 
-- `rocprofv3` 1.1.0 cannot load `libdw.so.1` or
-  `libhsa-amd-aqlprofile64.so.1` in this container.
-  `docker/install-rocm.sh` now installs `libdw1` and `hsa-amd-aqlprofile`,
-  but the image has not been rebuilt.
-- More fundamentally, gfx1200 has no fp64 instruction counter in
-  rocprofiler-sdk. A rebuilt image yields bytes but no measured FLOP count, so
-  an AMD intensity needs a FLOP count from elsewhere, labelled as such.
+- **No fp64 counter.** In rocprofiler-sdk's counter definitions,
+  `SQ_INSTS_VALU_{ADD,MUL,FMA}_F64` (and the derived `TOTAL_64_OPS` and
+  `SQ_INSTS_VALU_FLOPS_FP64`) exist for CDNA only (gfx90a, gfx940–942,
+  gfx950). The card's own `--list-avail` has none, and `SQ_INSTS_VALU` counts
+  every VALU instruction regardless of type. Without a measured FLOP count
+  there is no measured intensity. A FLOP count from the model or the
+  interpreter would be a model, not a counter.
+- **The byte counters read 0 on this box.** Every GL2C ↔ EA counter reads
+  exactly 0 for a probe that streams 384 MiB, while `SQ_WAVES` and
+  `GRBM_GUI_ACTIVE` count, so collection itself works. The driver refuses
+  that reading rather than store it. The root cause was not found (amdgpu
+  module 6.16.13, host Linux 6.8).
+
+`test_toolchain.py` holds both. One test fails if the byte counters ever
+count. The other reads the card's `--list-avail` and fails if an fp64
+counter appears.
 
 **`L = 12` and `L = 14` stay out of `SUBGRID_LS`.** `L = 10` is already the
 paper's `[5|5]`. The compile cost was measured, not guessed, by compiling the
@@ -813,8 +852,9 @@ That is a fact about this card. It says nothing against `[JEngine, v2, §7.2]`,
 whose A100 measurement stands.
 
 **On the RX 9060 XT the answer is absent.** `gfx1200` has no counter rows
-(`measured_store.UNMEASURED`): `rocprofv3` cannot load in this container, and
-gfx1200 has no fp64 counter. `ridge.crossing` returns *could not measure*,
+(`measured_store.UNMEASURED`, final since #140): `rocprofv3` loads, but
+gfx1200 has no fp64 counter and its byte counters read 0 on this box.
+`ridge.crossing` returns *could not measure*,
 never *never crossed*.
 
 **Cross-read against #60** (9 batches do not suffice on either card). On
@@ -940,13 +980,14 @@ the rule #114 declared before the rows existed:
   adds FLOPs as well as removing bytes); where splitting pays (near-T,
   L ≥ 13) it pays through spills on a kernel already past the ridge (#115).
 - **`gfx1200` (RX 9060 XT, ridge 1.49 FLOP/B): the answer is absent.** By
-  user decision #112 measured CUDA only. `rocprofv3` cannot load in this
-  container, and gfx1200 exposes no fp64 counter, so even a working profiler
-  would give bytes and no measured FLOP count. No rows exist, the loader
-  refuses one, and every verdict on this card is *could not measure* —
-  never "never crossed", never a zero (`measured_store.UNMEASURED`;
-  `docker/install-rocm.sh` now installs `libdw1` and `hsa-amd-aqlprofile` for
-  a future image).
+  user decision #112 measured CUDA only, and #140 made the refusal final.
+  `rocprofv3` now loads in this container, but gfx1200 exposes no fp64
+  counter, so it gives no measured FLOP count, and its GL2C byte counters
+  read 0 on this box, so it gives no bytes either. No rows exist, the loader
+  refuses one, and every verdict on this card is *could not measure*, never
+  "never crossed" and never a zero (`measured_store.UNMEASURED`). A rebuilt
+  image does not change that. A rocprofiler-sdk that defined an fp64 counter
+  for gfx12 would.
 
 This is the question Fig. 7 answers, asked again on different hardware. It is
 **not** a reproduction of Fig. 7 or Fig. 8: those are an A100's numbers, whose
@@ -1070,8 +1111,11 @@ record, `jengine/batching-crosses-our-ridge`, is this repo's own question put
 to its own cards (the roofline summary above), not a claim of the paper's.
 `jengine/ket-sort-key-is-the-product` (#139) is the structural half of the
 ket sort key: the plan orders kets by `I_q · D_max`, and under any other key
-the same `break` returns a different `J`; whether the product is the better
-key in time, against the global-`D_max` fallback, is the measured arm (#147).
+the same `break` returns a different `J`. Whether the product is the better
+key *in time*, against the global-`D_max` fallback, is the measured arm,
+`jengine/ket-sort-key-beats-the-global-max` (#147). It is `unverifiable`
+because it speaks of the paper's A100. On our cards the expectation, declared
+before the rows, is **contradicted on both** ("The launch plan" below).
 
 The table below is rendered from `claims.json` and checked verbatim:
 
@@ -1145,7 +1189,11 @@ and `J_µν` against libcint); its generator tables are matched where its
 unpublished inputs allow (Table 3 exactly; Tables 1–2 up to the seed order);
 and its central performance claim — batching moves a kernel across the ridge —
 has been asked and answered on different hardware, with an answer about our
-cards' ridges and nothing to say against its A100.
+cards' ridges and nothing to say against its A100. Since milestone 6 a whole
+molecule's `J` is built from a launch plan on both cards, with the `E`
+transform and the scatter still host-side, the plan's order witnessed by an
+independent Python driver and by libcint, and one of the paper's §3.3 claims
+(the ket sort key) measured.
 
 ## The Coulomb matrix, witnessed from outside
 
@@ -1171,6 +1219,7 @@ them. Every comparison runs at `τ = 0`; the screen has its own section below.
 | `J_µν`, `reference.pq` | `get_jk`, `≤ 1e-12·scale_J` (derived from the ERI bound) | `test_ao_j.py` | H₂, H₂O STO-3G/6-31G fast; cc-pVDZ slow |
 | `J_µν`, interpreted generated kernel | same | `test_ao_j_interpreted.py` | H₂ fast; H₂O ×3 slow |
 | `J_µν`, generated kernel on each card | same | `test_ao_j_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G |
+| `J_µν` from the launch plan on each card (#144) | same, plus `τ · scale` when `τ > 0` | `test_j_launched_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G, H₂O/cc-pVDZ |
 
 **What it proves, as records** (`data/literature/jengine/claims.json`):
 
@@ -1229,9 +1278,10 @@ not a structural limit, and it is stated here instead:
   every L, so the record does not depend on L, but a recurrence defect that
   only appears above L = 12 would be invisible to libcint here (a basis with
   `g` functions would move it).
-- **The device's screen.** The capstone launches with `Ip = Iq = Dmax = 1`
-  and `τ = 0`; sorted kets with real bounds on a card are the next milestone's
-  driver. The host-side screen is #88's ladder, below.
+- **The device's screen.** This capstone launches with `Ip = Iq = Dmax = 1`
+  and `τ = 0`. Sorted kets with real bounds run on the card in the launch-plan
+  build (#144, "The launch plan" below). The host-side screen is #88's ladder,
+  below.
 
 ## The screen as an error claim: a `τ` ladder (#88)
 
@@ -1312,3 +1362,222 @@ every bra record for every ket); `err/scale` sits about two orders (1.9 to
 skip fraction. Regenerate with
 `PYTHONPATH=src uv run python test/test_ao_screening.py --write`; the `slow`
 test requires the file to equal a fresh run exactly.
+
+## The launch plan: a whole molecule's `J`, on both cards (milestone 6)
+
+**Implemented, and run on the RTX 3080 and the RX 9060 XT** (#138–#147).
+Everything above builds `J_µν` one `(bra shell pair, ket class)` launch at a
+time through the `jp=` seam, with `Ip = Iq = Dmax = 1` and `τ = 0`. This
+section builds a whole molecule's `J` from a **plan**, in the plan's shape,
+with the real screen.
+
+**What is generated, and what is not.** The generator emits the `[p|q]`
+kernels (`J_p = Σ_q [p|q] D_q`) and nothing else. The plan is a Python value.
+The device `main()` that runs it is written by a test harness
+(`test/plan_driver.py`), not by `emit/`. The `E` transform, the ket
+pre-contraction, eq. 20's back-transform `J_ab = Σ_p E_p^{ab} J_p` and the
+`J_ab` scatter stay **host-side Python** (`ao/`), as they are in the
+predecessor's `jgen`. Moving them to the device is milestone 7, and none of
+it is device code here.
+
+### The plan as a value (#138)
+
+`launch.launches(basis, D, *, bound, n_batches, tau, density_sort=True,
+strict=True, resolve=None) -> LaunchPlan` returns one `ClassLaunch(lp, lq,
+n_batches, bras, kets, kernels, bra_blocks)` per `(lp, lq)` that has records
+on both sides. A class with records on one side only is absent, never present
+and empty. The kernels are `build_pq_kernels` of the class. One build serves
+every shell class `(la, lb | lc, ld)` with those sums.
+
+- **Records, not shell pairs.** A `PairRec(i, j, prim, L, G, key)` is one
+  *primitive-pair* index record. The kernel maps one warp per bra record, and
+  `ao/pairs.py`'s `I_pair` is proved per record. The predecessor's `jgen`
+  maps one warp per **shell pair** and screens per shell pair. Both are
+  readings of Alg. 1's per-index `Ip`/`Iq`; this one is finer, and it is the
+  one with a proof here. That makes every `n_pairs` and `n_skipped` in this
+  section a count of record pairs, not comparable one for one with a
+  shell-pair screen's (`limits.json` records this as a reading, not a
+  defect). The plan carries the record → shell pair map (`PairRec.shell_pair`,
+  and `ClassLaunch.bra_blocks` on the bra side) because eq. 20 accumulates
+  per shell pair.
+- **The sweep** is `ao.j`'s unique one: shell pairs `a ≥ b` on both sides,
+  with the ket off-diagonal weight 2 folded into `D_q` and so into `Dmax`.
+  The ket pre-contraction is `ao.j._kets` itself, not a restatement.
+- **The sort key, `[JEngine, v2, §3.3]`.** Bras stay in pair order, because
+  the kernel maps warps to bras by index. Kets are sorted **descending by
+  `key = I_q · max_q |D_q|`, stably** (`sorted(..., reverse=True)`,
+  `ao.j._sorted_kets`' choice). With a fixed `I_bra ≥ 0`, `I_bra · key` is
+  then non-increasing, so Alg. 1's `break` at the first ket under `τ` loses
+  nothing. `density_sort=False` replaces every ket's `Dmax` with one global
+  value, the largest per-record `Dmax`. The ket order is then by `I_q` alone:
+  the fallback `jgen` keeps. That screen is sound but looser. The structural
+  claim is `jengine/ket-sort-key-is-the-product`, asserted by
+  `test/test_launch.py`: under the product the `break` equals the unsorted
+  `continue` to 0, and under `I_q` alone or pair order the same `break` puts
+  `J` outside `τ · scale`.
+- **The batch count** is asked of the plan per class, with
+  `ao.drive.KernelJP`'s `strict` contract (raise, or build at 1 and record
+  the class in `refused`). `resolve=` injects a policy per class (#145).
+
+### Three walkers, and what each one witnesses (#142, #143, #144)
+
+| walker | where | what runs `[p\|q]` | held against |
+|---|---|---|---|
+| the launch oracle, `launch.walk` / `coulomb_launched` | pure Python (`src/`) | `reference.pq`, injected | `ao.j.coulomb_matrix_screened` **to 0** (same `J`, `n_pairs`, `n_skipped`, `max_skipped`, `dropped`) on H₂, H₂O/STO-3G and the four-H₂ chain at `τ` from 0 to 1e-1; the ordered reference within `1e-14·max\|J\|`; libcint within `1e-12·scale_J` |
+| the staged driver, `ao.staged.coulomb_matrix_staged` | interpreted (`interp`) | the generated kernels | the host sweep within `1e-13·max\|J\|`, libcint within `1e-12·scale_J`, and the oracle's ket-loop count per class **exactly** |
+| the device build, `test/plan_driver.py` | compiled with `NVCC_FLAGS` / `HIPCC_FLAGS`, run on each card | the generated kernels | the oracle on the same plan within `1e-13·max\|J\|`; libcint within `1e-12·scale_J` (plus `τ·scale` when `τ > 0`) |
+
+The oracle rebuilds its per-pair data on every call and memoises nothing, so
+the `τ` ladder measures the screen and not a cache. Its skip fractions equal
+`data/ao/screening.json`'s on every rung.
+
+### The residency shape: what "on the card" means here
+
+Within **one build** of `J_p`:
+
+- **Uploads:** one contiguous upload per bra class (`P ζ Ip`) and one per ket
+  class (`Q η Iq Dmax D_q`, kets in the plan's sorted order). That is one
+  upload per ket class, not one per (bra pair, ket class). A ket class shared
+  by several `ClassLaunch`es must carry the identical ket list, or the staging
+  refuses.
+- **`J_p`:** one device buffer per bra class, zeroed once per build. Every
+  `(lp, lq)` batch kernel is launched into its bra class's buffer, in plan
+  order, and accumulates with **fp64 atomics** across ket classes. Split
+  classes are atomised by the builder. One-batch kernels are atomised by the
+  driver (`passes.atomize`), because there the kernel is no longer its
+  buffer's only writer. The builder, its goldens and every `source_sha256` in
+  `kernels.json` are unchanged.
+- **The screen is real.** The kernels read the plan's `Ip`, `Iq`, `Dmax` and
+  `τ`, and each ket's `Iq · Dmax` is checked bit for bit against its plan
+  `key` before upload.
+- **Read-back:** one copy per bra class after one synchronize. Eq. 20 and the
+  scatter then run on the host.
+
+**What it is not.** A `J` resident across SCF iterations, a `Launch` IR and a
+`LaunchCost` model are out of scope by the milestone's own decision, and
+`limits.json` records them as **deliberately absent**: the build is
+measured, never predicted.
+
+### On the cards (#144)
+
+`test/test_j_launched_ondevice.py` (`gpu` + `cuda`/`hip`). Per-cell results,
+identical on both cards to the digits shown (PR #182):
+
+| cell | classes | kernels per build | vs libcint (`/scale_J`) | vs oracle (`/max\|J\|`) |
+|---|---|---|---|---|
+| H₂/STO-3G, `τ = 0`, 1 batch | (0,0) | 1 | 3.83e-15 | 1.57e-16 |
+| H₂O/STO-3G, `τ = 0`, 1 batch | 9 | 9 | 5.09e-15 | 1.30e-16 |
+| H₂O/STO-3G, `τ = 0`, 3 batches | 9, (0,0) refused → 1 | 25 | 5.09e-15 | 2.61e-16 |
+| H₂O/STO-3G, `τ = 1e-3`, 3 batches | 9; the oracle skips 2024 of 18225 | 25 | 1.30e-3, inside `1e-12·scale_J + τ·scale` | 3.26e-17 (CUDA) / 6.52e-17 (HIP) |
+| H₂O/cc-pVDZ, `τ = 0`, dispatched | 25, all at 1 batch | 25 | 1.24e-14 | 3.29e-16 |
+
+The worst unscreened deviation from libcint is **1.24e-14·scale_J** against a
+`1e-12` tolerance, and no tolerance was loosened. Two runs of the same
+binary are held to an fp64-atomic run-to-run bound on `J_p`. In every cell
+they were also bit-identical, which is recorded as an observation.
+
+**What the cards reach.** STO-3G is s and p (classes up to L = 4), and
+cc-pVDZ adds d (up to L = 8). The dispatched cell injects
+`dispatch.Resolver(arch, "wide")`. On both cards the measured wide-T choice
+is 1 at every L, so all 25 classes run at 1: 24 by fallback, and `(4, 3)` from
+its measured row (`pq_spec(7)`'s split). No tracked fixture reaches a class
+whose measured choice is above 1 (near-T: `(5, 5)` on `gfx1200`, `(7, 6)` on
+both). The card's `fj_boys` is witnessed on `T ∈ [0, 500]` and overflows near
+`T ≈ 700`, below `reference.boys`' `T_MAX = 2000`, so #88's four-H₂ chain
+(`T` up to 1289) has no on-card build. Its skip counts come from the oracle.
+Both limits are in `limits.json`.
+
+### Measured: the whole build, behind the gate (#146)
+
+`data/measured/builds.json` is the first store of a **build** rather than a
+kernel (`measured_store.BuildRow`, its own file, because a build is not a
+`Spec`). Each row records the card's gate readings, and the loader refuses a
+null reading or one above the threshold. **The timed region** (the header's
+`timed_region`): zero each bra class's `J_p` buffer; launch every batch
+kernel in plan order; synchronize; copy each `J_p` back. That is 31 timed
+builds after 5 warm-up ones, in one process. **Outside the clock:** the
+uploads (once per process, recorded as a single `build:upload_ns`), every
+allocation, host staging, and eq. 20 and the scatter. A row is the device
+cost of one `J_p` for a molecule whose index data is already on the card. It
+is not a cold start and not an SCF iteration.
+
+| cell | card | median ± IQR, µs | device | read-back | upload (once) |
+|---|---|---|---|---|---|
+| H₂O/STO-3G, `τ = 0`, 1 batch | RTX 3080 | 930.1 ± 1.5 | 913.3 | 16.6 | 0.12 ms |
+| H₂O/cc-pVDZ, `τ = 0`, dispatched | RTX 3080 | 11070.7 ± 1492.9 | 11041.8 | 30.1 | 0.15 ms |
+| H₂O/cc-pVDZ, `τ = 1e-3`, dispatched | RTX 3080 | 10081.5 ± 797.1 | 10052.8 | 29.6 | 0.14 ms |
+| H₂O/STO-3G, `τ = 0`, 1 batch | RX 9060 XT | 636.4 ± 52.8 | 564.2 | 72.4 | 21.9 ms |
+| H₂O/cc-pVDZ, `τ = 0`, dispatched | RX 9060 XT | 9045.4 ± 276.6 | 8922.5 | 122.7 | 35.8 ms |
+| H₂O/cc-pVDZ, `τ = 1e-3`, dispatched | RX 9060 XT | 7056.2 ± 185.1 | 6930.3 | 124.5 | 34.9 ms |
+
+These are observations of two cards. They are not compared with each other
+(gfx1200 rate-limits fp64) and not compared with the paper's A100. Three
+things they do **not** say. **What the plan saved:** the per-pair
+(`KernelJP`-shaped) launch path was not timed in the same session, so no row
+measures the plan against it. **Why gfx1200's upload is slow:** its one-off
+upload is 22–36 ms against about 0.1–0.16 ms on `sm_86`, a single observation
+outside the timed region, and not explained. **Why sm_86's cc-pVDZ rows
+are wide:** their IQRs are 0.8–1.5 ms on about 10–11 ms, and #147's
+sessions found these builds bimodal (near 8.5 ms and near 10 ms).
+
+### Measured: the sort key, product against a global `max|D|` (#147)
+
+The question is whether `[JEngine, v2, §3.3]`'s product key builds `J_p`
+faster than the global-`Dmax` fallback. #147 declared the expectation before
+any row existed: *the global key is worse; if it is not, that is the result.*
+The rule, transcribed into `measured_store` (THE SORT KEY) before the rows
+existed, is #60's noise floor. Per cell, the global key is WORSE iff its
+median is slower by more than the larger IQR, BETTER iff faster by that, and
+otherwise UNRESOLVED. A card is WORSE iff every cell is, and CONTRADICTED iff
+any cell is BETTER. Both arms of a cell are timed in one gated session per
+card, and they differ only in `density_sort`.
+
+| card | cell | skipped, product / global | median µs, product / global | global key |
+|---|---|---|---|---|
+| sm_86 | H₂O/cc-pVDZ `τ = 1e-3` | 123896 / 0 of 351649 | 10080.9 / 8510.4 | **better** |
+| sm_86 | H₂O/cc-pVDZ `τ = 1e-10` | 15684 / 0 | 10451.9 / 9836.6 | unresolved |
+| sm_86 | two-H₂ chain `τ = 1e-3` | 2790 / 0 of 8100 | 255.4 / 285.7 | worse |
+| sm_86 | two-H₂ chain `τ = 1e-10` | 560 / 0 | 346.7 / 285.7 | **better** |
+| gfx1200 | H₂O/cc-pVDZ `τ = 1e-3` | 123896 / 0 | 7066.6 / 7063.6 | unresolved |
+| gfx1200 | H₂O/cc-pVDZ `τ = 1e-10` | 15684 / 0 | 8750.3 / 7059.9 | **better** |
+| gfx1200 | two-H₂ chain `τ = 1e-3` | 2790 / 0 | 211.6 / 251.5 | worse |
+| gfx1200 | two-H₂ chain `τ = 1e-10` | 560 / 0 | 273.8 / 251.0 | **better** |
+
+**The expectation is contradicted on both cards.** The screen goes the
+expected way everywhere: the global key skips **no** record pair on any
+input. `I_pair` is pair-factor-free, so a ket's distance decay reaches the
+screen only through its own `Dmax`, and a global value erases it. The clock
+does not follow. Where the product key skips little, its ket **order** costs
+more time than its skips save. Why is not measured; one candidate is lane
+divergence in the device Boys loop, whose length grows with `T`. The claim
+`jengine/ket-sort-key-beats-the-global-max` is `unverifiable` (it speaks of
+the paper's A100) and carries this result. `limits.json` has the per-cell
+verdicts and names the two unresolved cells as below what this box can
+resolve. `test_measured.py` recomputes every verdict from the rows.
+
+### Parity with the predecessor, stated with both qualifications
+
+The predecessor's `jgen` reconstructs the same paper (`[JEngine]`) for the
+energy-order `J`. With this milestone the repo has **parity on `jgen`'s
+energy-order `J` surface except the tuned-plan wire, with Table 4
+declined**. It goes beyond that surface in several ways: two vendors from one
+source, the kernel as checked IR with an interpreter, the claims registry and
+its coverage reading, gated measurement provenance, and an outside witness
+(libcint). It differs from `jgen` in exactly two places:
+
+1. **Table 4 is declined, by decision**
+   (`data/literature/jengine/README.md`). `jgen` scores a static
+   register-pressure proxy against Table 4's 40 cells. This repo uses a
+   different instrument on purpose: `lower.KernelCost`, plus real ptxas /
+   hipcc rows from two cards and `kernelrank`'s ranking against them.
+2. **The tuned plan does not reach the emitter here, and in `jgen` it does.**
+   `jgen` emits from its searched sieve order by default. Here
+   `pipeline.plan(spec)` takes only a `Spec`, the pipeline never passes
+   `sieve.sieve(dag, *, seed_order=None)` an order, and `plan/search.py` is
+   imported by `plan/__main__.py` alone. So every shipped kernel comes from
+   the **literal** plan. Closing that wire would change every kernel's text,
+   and with it the `source_sha256` of all 122 `kernels.json` rows. That is a
+   milestone-sized decision and not this one's.
+
+This repo computes no gradients or Hessians, so none of this is parity with
+anything that has them.

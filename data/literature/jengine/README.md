@@ -10,7 +10,7 @@ PDF is not tracked.
 | `table1.json` | 1 | total FLOPs to evaluate every `[r](0)` |
 | `table2.json` | 2 | maximum intermediates `[r](m)`, m > 0, per batch |
 | `table3.json` | 3 | maximum targets `[r](0)` per batch |
-| `limits.json` | — | what a model will structurally not predict, or what cannot be reproduced here, one `StructuralLimit` each with its mechanism: the two refused `exact_given_inputs` (#108), the searched board's residual, §4.1's comparison (#111), and what the roofline answer cannot see (#114) |
+| `limits.json` | — | what a model will structurally not predict, what cannot be reproduced here, or what was declined, with its mechanism: nine `StructuralLimit`s, namely the two refused `exact_given_inputs` (#108), the searched board's residual, §4.1's comparison (#111), what the roofline answer cannot see (#114), the sort-key verdict (#147), the absent `Launch` IR and `LaunchCost`, the record-versus-shell-pair screen granularity, and what the on-card launch-plan build does not reach (#148) |
 | `claims.json` | — | the non-numeric claims, one record each, with status |
 | `coverage.json` | — | the reading `claims.json` is the inventory of, unit by unit |
 | `mild_vs_optimum.json` | — | MILD's gap against this tree's computed optimum, replacing §4.1's comparison (#111) |

@@ -860,8 +860,9 @@ def test_hip_asym_j_p_matches_the_reference(cell, request,
 #        fundamentals (kernel.py), so the Boys series length -- long at
 #        large T -- weighs on the batch-count ranking; timing both regimes
 #        shows whether the ranking depends on it, instead of hiding it.
-# 5. WRITE one row per cell, `measured.combine`d into the existing compile
-#    row (same text, one row: measured.py's docstring).
+# 5. WRITE one row per cell, `measured_store.combine`d into the existing
+#    compile row (same text, one row: measured_store.py's docstring, ONE ROW
+#    CARRIES BOTH SIDES -- the store left measured.py in #94).
 
 WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
 WALLCLOCK_BATCHES = "FJ_WALLCLOCK_BATCHES"
