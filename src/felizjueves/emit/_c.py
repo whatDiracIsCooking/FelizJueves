@@ -360,6 +360,8 @@ class CWriter:
             return f"({args[0]} {_BINARY[fn]} {args[1]})"
         if fn is Fn.SQRT:
             return f"sqrt({args[0]})"
+        if fn is Fn.EXP:
+            return f"exp({args[0]})"
         if fn is Fn.BOYS:
             return f"fj_boys({args[0]}, {args[1]})"
         raise EmitError(f"no spelling for {fn}")  # pragma: no cover

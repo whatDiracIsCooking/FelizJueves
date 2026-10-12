@@ -144,6 +144,21 @@ RULES: dict[str, Rule] = {
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         interp="the builder is checked by the interpreter, never built on it",
         reference=_GROUND_TRUTH),
+    "fragment": _rule(
+        "e_fragment.py (#152): device-code `Fragment`s for the AO side's "
+        "quantities, first the McMurchie-Davidson `E`. It builds IR (`ir`) "
+        "and reads the Hermite order from the plan's targets, which "
+        "`ao.hermite` restates and a test pins equal",
+        ("ir", "plan.targets"),
+        ao="`ao.hermite` is the reference the fragment is interpreted "
+           "against, and `ao.shell` the layout it is pinned to: importing "
+           "either shares ancestry with its witness (#20); the Cartesian "
+           "order is restated and a test asserts the two equal",
+        interp="the fragment is checked by the interpreter, never built on "
+               "it; and the interpreter must not know what `E` is (#152)",
+        emit="a fragment is vendor-neutral IR; the arch enters at emission",
+        device="the IR is arch-neutral",
+        reference=_GROUND_TRUTH),
     "emit": _rule(
         "IR -> text, one backend per vendor sharing emit/_c.py (#26/#27). Reads "
         "a finished `Kernel` and an `Arch`",
@@ -349,6 +364,7 @@ RULE_OF: dict[str, str] = {
     "passes": "lower",
     "recurrence": "builder",
     "kernel": "builder",
+    "e_fragment": "fragment",
     "emit": "emit",
     "emit._c": "emit",
     "emit.cuda": "emit",
@@ -414,6 +430,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                    "plan.targets", "spec"),
     "kernel": ("ir", "passes", "plan.dag", "plan.pipeline", "plan.schedule",
                "plan.targets", "recurrence", "spec"),
+    "e_fragment": ("ir", "plan.targets"),
     "emit": (),
     "emit._c": ("device", "ir"),
     "emit.cuda": ("device", "emit._c", "ir"),
