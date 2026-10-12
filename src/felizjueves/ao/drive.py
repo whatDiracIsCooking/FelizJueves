@@ -36,6 +36,13 @@ exists only to make the `break` correct -- is vacuous.
 BOYS IS INJECTED (`boys=`), as the interpreter requires; nothing here imports
 `reference/`. Kernels are memoised per Spec (building is pure); results are
 not.
+
+`KernelJAB(threads=32)` (#154) is the same for `ao.j`'s `jab=` seam: the bra
+transform and scatter of `kernel_jab.build_jab_kernel((la, lb))`, run in the
+interpreter, one launch per unique bra shell pair with its records in order
+(`row = 0..n_rec-1`, `Jp` the pair's own `J_p` rows), adding into the seam's
+zeroed `J`. Interpreted, it is `==` to `ao.j.jab_from_host` (the kernel
+module's docstring says why); `ran` is the set of `(la, lb)` launched.
 """
 
 from __future__ import annotations
@@ -45,7 +52,7 @@ from functools import cache
 
 import numpy as np
 
-from felizjueves.ao.j import BraRec, KetRec
+from felizjueves.ao.j import BraRec, EPair, KetRec
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Kernel
 from felizjueves.kernel import (
@@ -54,10 +61,12 @@ from felizjueves.kernel import (
     ket_functions,
     launch_shape,
 )
+from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
 
-__all__ = ["BATCH_COUNTS", "KernelJP", "admitted_batches", "class_spec"]
+__all__ = ["BATCH_COUNTS", "KernelJAB", "KernelJP", "admitted_batches",
+           "class_spec"]
 
 BATCH_COUNTS = (1, 3, 6, 9)
 Am = tuple[int, int, int, int]
@@ -144,3 +153,50 @@ class KernelJP:
             J = it.run(**args, J=J)["J"]
         self.ran.add((am, n))
         return J
+
+
+# ---------------------------------------------------------------------------
+# The bra transform and scatter, as `ao.j`'s `jab=` seam (#154)
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _jab_kernel(la: int, lb: int) -> Kernel:
+    return build_jab_kernel((la, lb))
+
+
+class KernelJAB:
+    """A `ao.j.JAB` backed by the interpreted `Target.JAB` kernel (module
+    docstring). `ran` is the set of bra pair classes `(la, lb)` launched."""
+
+    def __init__(self, *, threads: int = 32) -> None:
+        self.threads = threads
+        self.ran: set[tuple[int, int]] = set()
+
+    def __call__(self, bra: EPair, jps: Sequence[Sequence[float]],
+                 offsets: tuple[int, int], J: list[list[float]]) -> None:
+        n_rec = len(bra.recs)
+        if len(jps) != n_rec:
+            raise ValueError(f"{len(jps)} J_p rows for {n_rec} records")
+        oa, ob = offsets
+        n_ao = len(J)
+        grid, block = jab_launch_shape(n_rec, self.threads)
+        it = Interpreter(_jab_kernel(bra.la, bra.lb),
+                         launch=Launch(grid, block, 1))
+        out = it.run(
+            n_rec=n_rec, n_ao=n_ao, n_rows=n_rec,
+            zeta_ab=np.array([z for _, z, _ in bra.recs], dtype=np.float64),
+            XPA=np.array([[P[d] - bra.A[d] for d in range(3)]
+                          for P, _, _ in bra.recs], dtype=np.float64),
+            XPB=np.array([[P[d] - bra.B[d] for d in range(3)]
+                          for P, _, _ in bra.recs], dtype=np.float64),
+            s=np.array([s for _, _, s in bra.recs], dtype=np.float64),
+            off_a=np.full(n_rec, oa, dtype=np.int32),
+            off_b=np.full(n_rec, ob, dtype=np.int32),
+            row=np.arange(n_rec, dtype=np.int32),
+            Jp=np.array([list(r) for r in jps], dtype=np.float64),
+            J=np.array(J, dtype=np.float64),
+        )["J"]
+        for x in range(n_ao):
+            J[x][:] = out[x].tolist()
+        self.ran.add((bra.la, bra.lb))
