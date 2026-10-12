@@ -482,9 +482,9 @@ def test_the_read_path_filters_the_real_store() -> None:
     assert all(k.startswith(spec.key() + "@") for k in got)
     nv = measured_store.rows(arch=SM_86)
     # the one-batch classes L = 0..16, plus the subgrid's split cells, plus
-    # the recycle arm of every subgrid cell (#55)
+    # the recycle arm of every subgrid cell (#55), plus #113's asym cells
     split = sum(s.n_batches > 1 for s in measured_store.SUBGRID)
-    assert len(nv) == 17 + split + len(RECYCLE_CELLS)
+    assert len(nv) == 17 + split + len(RECYCLE_CELLS) + len(asym.ASYM_CELLS)
     assert measured_store.rows(arch="sm_86") == nv
     assert measured_store.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
@@ -906,7 +906,7 @@ def _recheck_cell(backend_name: str, spec, tmp_path: Path) -> None:
     b = measured.BACKENDS[backend_name]
     compiler = b.compiler()
     toolchain = b.toolchain(compiler)
-    key = MeasuredKey(spec, b.arch, toolchain).key()
+    key = measured.measured_key(spec, b.arch, toolchain).key()
     if key not in ROWS:
         pytest.skip(f"no row for {key}: this toolchain is not the recorded "
                     "one (a different key, not a regression)")
@@ -1337,3 +1337,83 @@ def test_an_asym_row_without_both_controls_cannot_be_judged() -> None:
         asym.asym_vs_neighbours(store, "sm_86", cell)
     with pytest.raises(KeyError):
         asym.asym_vs_neighbours({}, "sm_86", cell)
+
+
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("cell", asym.ASYM_CELLS, ids=lambda c: c.key())
+def test_every_asym_cell_is_compiled_and_timed_against_both_neighbours(
+        cell, arch) -> None:
+    """#113's acceptance: the asymmetric row, compiled and timed behind the
+    gate, with the card's state for itself AND each same-session control."""
+    (r,) = measured_store.rows(spec=cell, arch=arch, store=ROWS).values()
+    assert r.registers is not None and r.spill_store is not None
+    assert _timed(r) and r.repeats == 31 and r.gpu != "ABSENT"
+    assert r.kernel == ",".join(k.name for k in cell.kernels())
+    assert r.raw["wallclock:gate_discarded_phases"] >= 0
+    for n in cell.neighbours:
+        p = asym.control_prefix(n)
+        for q in ("", "near:"):
+            assert r.raw[f"{p}{q}q1_ns"] <= r.raw[f"{p}{q}median_ns"] \
+                <= r.raw[f"{p}{q}q3_ns"], (p, q)
+            assert r.raw[f"{p}{q}cpu_busy_permille_before"] <= 100
+            # the gate let it through quiet, and nothing took the card
+            # during it (a phase read otherwise was discarded and retaken)
+            for when in ("before", "after"):
+                v = r.raw[f"{p}{q}gpu_util_{when}"]
+                assert v is not None and v <= GPU_BUSY_MAX, (p, q, when, v)
+    for f in measured_store.GPU_UTIL_FIELDS:
+        assert r.raw[f] is not None and r.raw[f] <= GPU_BUSY_MAX, f
+
+
+# What the declared rule (felizjueves.asym's docstring, committed before any
+# asymmetric row existed) reads off the rows: (wide sign, near sign) of the
+# asymmetric arm against its best same-session legal neighbour. Pinned as the
+# rule's output, not tuned: a re-timing that moves a sign is news.
+ASYM_VERDICT: dict[tuple[str, int, int], tuple[str, str]] = {
+    **{("sm_86", L, n): ("slower", "slower") for L in (13, 16)
+       for n in (4, 5, 7, 8)},
+    ("gfx1200", 13, 4): ("slower", "neutral"),
+    ("gfx1200", 13, 5): ("slower", "slower"),
+    ("gfx1200", 13, 7): ("slower", "neutral"),
+    ("gfx1200", 13, 8): ("slower", "slower"),
+    ("gfx1200", 16, 4): ("slower", "neutral"),
+    ("gfx1200", 16, 5): ("slower", "slower"),
+    ("gfx1200", 16, 7): ("slower", "slower"),
+    ("gfx1200", 16, 8): ("slower", "slower"),
+}
+
+
+def test_the_asym_verdict_is_what_the_rows_say() -> None:
+    got = {(a, c.L, c.n_batches): (v.wide_sign, v.near_sign)
+           for a in ARCHS for c in asym.ASYM_CELLS
+           for v in [asym.asym_vs_neighbours(ROWS, a, c)]}
+    assert got == ASYM_VERDICT
+
+
+@pytest.mark.claim("jengine/symmetry-breaking-splits-are-worse")
+def test_asymmetric_splits_are_worse_on_both_cards() -> None:
+    """[JEngine, v2, §5]: a split breaking the three-way symmetry is worse.
+    Under the rule declared before any asymmetric row existed, every
+    asymmetric cell is slower than its best legal neighbour on at least one
+    input and faster on none, on sm_86 AND on gfx1200. An asymmetric split
+    winning anywhere -- or merely tying everywhere on one card -- fails it."""
+    for arch in ARCHS:
+        assert asym.arch_verdict(ROWS, arch) == asym.WORSE, arch
+    assert asym.claim_holds(ROWS, tuple(ARCHS))
+    assert "asserted" in STORE["header"]["asym"]
+
+
+ASYM_PARAMS = [pytest.param(c, id=c.key(), marks=[pytest.mark.slow])
+               for c in asym.ASYM_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("cell", ASYM_PARAMS)
+def test_nvcc_still_reports_the_asym_cells(cell, nvcc, tmp_path) -> None:
+    _recheck_cell("cuda", cell, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("cell", ASYM_PARAMS)
+def test_hipcc_still_reports_the_asym_cells(cell, hipcc, tmp_path) -> None:
+    _recheck_cell("hip", cell, tmp_path)
