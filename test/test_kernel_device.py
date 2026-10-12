@@ -87,8 +87,8 @@ import numpy as np
 import pytest
 from conftest import VRAM_PROBE, check_vram
 
-from felizjueves import gate, measured
-from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
+from felizjueves import asym, gate, measured
+from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
 from felizjueves.kernel import (
@@ -751,6 +751,44 @@ def test_hip_recycled_j_p_matches_the_reference(spec, request,
                  tmp_path)
 
 
+# --- the asymmetric split (#113): the same pin, a batch list the generator ----
+# --- refuses -------------------------------------------------------------------
+#
+# `asym.AsymCell` builds an asymmetric batch list (felizjueves.asym's
+# docstring) through the same `_pq_kernel` + `atomize` as a split SUBGRID
+# cell, and its batches partition the class (checked by the study itself), so
+# its launch sequence is held to the SAME J_REL pin -- the batched comparison's
+# argument above holds for any partition with n_b <= 9. Every study cell, on
+# both cards, before any of them is timed.
+
+ASYM_CELLS = [pytest.param(c, id=f"L{c.L}-b{c.n_batches}-asym")
+              for c in asym.ASYM_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("cell", ASYM_CELLS)
+def test_cuda_asym_j_p_matches_the_reference(cell, request,
+                                             compile_device_source,
+                                             run_device_binary,
+                                             tmp_path) -> None:
+    """An asymmetric cell's launch sequence on the RTX 3080, against the oracle."""
+    _run_batched("cuda", cell, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("cell", ASYM_CELLS)
+def test_hip_asym_j_p_matches_the_reference(cell, request,
+                                            compile_device_source,
+                                            run_device_binary,
+                                            tmp_path) -> None:
+    """An asymmetric cell's launch sequence on the RX 9060 XT, against the oracle."""
+    _run_batched("hip", cell, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
 # --- the wall-clock sweep -----------------------------------------------------
 #
 # OPT-IN, AND RUN ALONE. It skips unless FJ_WALLCLOCK_STORE names the store to
@@ -779,6 +817,16 @@ def test_hip_recycled_j_p_matches_the_reference(spec, request,
 # "A LEVER A/B" is the protocol's rationale and `measured.lever_ab` the
 # verdict (#55). The compile rows of the lever cells must exist first:
 #   python -m felizjueves.measured --remeasure --subgrid --lever recycle
+#
+# FJ_WALLCLOCK_ASYM=1 (optional) sweeps #113's asymmetric study cells,
+# `asym.ASYM_CELLS`, instead: each cell's two nearest legal neighbours
+# (literal SUBGRID Specs) are compiled, checked and timed BESIDE it as
+# same-session controls (near-T lo, asym, hi; wide-T hi, asym, lo) and land
+# in the ASYMMETRIC row's raw as `wallclock:control:b<n>:*`; no literal row
+# is re-timed or rewritten. `asym`'s docstring is the rule, declared before
+# any asymmetric row existed, and `asym.asym_vs_neighbours` the verdict. The
+# compile rows must exist first:
+#   python -m felizjueves.measured --remeasure --asym
 #
 # THE PROTOCOL, in order, all inside one test so the phases cannot overlap:
 #
@@ -817,6 +865,7 @@ def test_hip_recycled_j_p_matches_the_reference(spec, request,
 WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
 WALLCLOCK_BATCHES = "FJ_WALLCLOCK_BATCHES"
 WALLCLOCK_LEVER = "FJ_WALLCLOCK_LEVER"
+WALLCLOCK_ASYM = "FJ_WALLCLOCK_ASYM"
 WARMUP = 5
 REPEATS = 31
 TIMING_N_BRA = 2048  # one warp each: several waves on either card
@@ -918,35 +967,44 @@ def _wallclock(backend: str, request, compile_device_source,
     only = os.environ.get(WALLCLOCK_BATCHES, "").strip()
     wanted = {int(b) for b in only.split(",")} if only else None
     lever = os.environ.get(WALLCLOCK_LEVER, "").strip()
-    grid = measured.lever_cells(lever) if lever else SUBGRID
+    study = bool(os.environ.get(WALLCLOCK_ASYM, "").strip())
+    assert not (lever and study), f"{WALLCLOCK_LEVER} or {WALLCLOCK_ASYM}"
+    grid = (asym.ASYM_CELLS if study
+            else measured.lever_cells(lever) if lever else SUBGRID)
     sweep = [s for s in grid if wanted is None or s.n_batches in wanted]
-    assert sweep, f"{WALLCLOCK_BATCHES}={only!r} selects no SUBGRID cell"
+    assert sweep, f"{WALLCLOCK_BATCHES}={only!r} selects no cell"
     print(f"{WALLCLOCK_BATCHES}={only or '(all)'} {WALLCLOCK_LEVER}="
-          f"{lever or '(none)'}: {len(sweep)} cells")
+          f"{lever or '(none)'} {WALLCLOCK_ASYM}={int(study)}: "
+          f"{len(sweep)} cells")
     cells = []
     for spec in sweep:
         work = tmp_path / f"L{spec.total_am}-b{spec.n_batches}"
         work.mkdir()
         src, names, sha = _batched_source(backend, spec, work)
         binary = compile_device_source(tc, src).rename(work / "cell")
-        control = None
-        if lever:  # the same-session literal arm (measured.py, A LEVER A/B)
-            cwork = work / "control"
+        # Same-session controls, as (raw prefix, Spec, binary): the literal
+        # arm of a lever cell (measured_store, A LEVER A/B), or an asymmetric
+        # cell's two nearest legal neighbours, lo then hi (asym, #113).
+        arms = ([("wallclock:control:", replace(spec, levers=()))] if lever
+                else [(asym.control_prefix(n), n) for n in spec.neighbours]
+                if study else [])
+        controls = []
+        for prefix, cspec in arms:
+            cwork = work / f"control-b{cspec.n_batches}"
             cwork.mkdir()
-            literal = replace(spec, levers=())
-            csrc, _, _ = _batched_source(backend, literal, cwork)
-            control = (literal,
-                       compile_device_source(tc, csrc).rename(cwork / "cell"))
-        cells.append((spec, binary, names, sha, control))
-        print(f"compiled {spec.key()}" + (" and its control" if lever else ""),
-              flush=True)
+            csrc, _, _ = _batched_source(backend, cspec, cwork)
+            controls.append((prefix, cspec, compile_device_source(
+                tc, csrc).rename(cwork / "cell")))
+        cells.append((spec, binary, names, sha, controls))
+        print(f"compiled {spec.key()}" + "".join(
+            f" and control {c[1].key()}" for c in controls), flush=True)
     command = " ".join([Path(tc.path).name, *tc.compile_flags()])
 
-    # 3. the timed binary is the checked binary -- both arms of an A/B
-    for spec, binary, _, _, control in cells:
+    # 3. the timed binary is the checked binary -- every arm of an A/B
+    for spec, binary, _, _, controls in cells:
         _check_batched(backend, spec, binary, run_device_binary, tmp_path)
-        if control is not None:
-            _check_batched(backend, *control, run_device_binary, tmp_path)
+        for _, cspec, cbinary in controls:
+            _check_batched(backend, cspec, cbinary, run_device_binary, tmp_path)
 
     # 4. time, one cell at a time
     lanes = arch.wavefront
@@ -979,34 +1037,38 @@ def _wallclock(backend: str, request, compile_device_source,
                 f"{prefix}gpu_util_after": card[1]}
 
     table = []
-    for spec, binary, names, sha, control in cells:
+    def control_stats(prefix: str, got) -> dict:
+        w, _, _, _, stats, b_, g = got
+        return {f"{prefix}q1_ns": round(stats[0]),
+                f"{prefix}median_ns": round(stats[1]),
+                f"{prefix}q3_ns": round(stats[2]),
+                f"{prefix}min_ns": int(min(w)),
+                f"{prefix}max_ns": int(max(w)),
+                f"{prefix}cpu_busy_permille_before": round(1000 * b_),
+                **gpu_fields(prefix, g)}
+
+    for spec, binary, names, sha, controls in cells:
         L = spec.total_am
         load1 = os.getloadavg()[0]
         ctrl: dict[str, int | None] = {}
-        if control is not None:  # near: control first; wide: lever first
-            c_spec, c_binary = control
-            c_wall, _, _, _, c_near, c_busy, c_gpu = timed(c_spec, c_binary,
-                                                           False)
+        # Arm order, so no arm always runs first: near-T the first control
+        # before the cell and the rest after it; wide-T the reverse (a lever:
+        # near control-lever, wide lever-control; asym: near lo-asym-hi, wide
+        # hi-asym-lo).
+        for prefix, cspec, cbinary in controls[:1]:
+            ctrl |= control_stats(prefix + "near:", timed(cspec, cbinary, False))
         # the secondary input first: near-T (T < ~2, short Boys series)
         n_wall, _, _, _, (n_q1, n_med, n_q3), n_busy, n_gpu = timed(
             spec, binary, False)
+        for prefix, cspec, cbinary in controls[1:]:
+            ctrl |= control_stats(prefix + "near:", timed(cspec, cbinary, False))
+        for prefix, cspec, cbinary in reversed(controls[1:]):
+            ctrl |= control_stats(prefix, timed(cspec, cbinary, True))
         # the row's number: wide-T (T up to ~430, the Boys series long)
         wall, events, batches, J, (q1, med, q3), busy, card = timed(
             spec, binary, True)
-        if control is not None:
-            w_wall, _, _, _, c_wide, w_busy, w_gpu = timed(c_spec, c_binary,
-                                                           True)
-            for prefix, stats, w, b_, g in (("wallclock:control:near:", c_near,
-                                             c_wall, c_busy, c_gpu),
-                                            ("wallclock:control:", c_wide,
-                                             w_wall, w_busy, w_gpu)):
-                ctrl |= {f"{prefix}q1_ns": round(stats[0]),
-                         f"{prefix}median_ns": round(stats[1]),
-                         f"{prefix}q3_ns": round(stats[2]),
-                         f"{prefix}min_ns": int(min(w)),
-                         f"{prefix}max_ns": int(max(w)),
-                         f"{prefix}cpu_busy_permille_before": round(1000 * b_),
-                         **gpu_fields(prefix, g)}
+        for prefix, cspec, cbinary in controls[:1]:
+            ctrl |= control_stats(prefix, timed(cspec, cbinary, True))
         busy_after = _cpu_busy(0.5)
         raw = {
             "wallclock:near:median_ns": round(n_med),
@@ -1040,7 +1102,7 @@ def _wallclock(backend: str, request, compile_device_source,
             toolchain=toolchain, arch=arch.name, host=measured.host(), gpu=gpu,
             date=datetime.date.today().isoformat(), kernel=",".join(names),
             source_sha256=sha, raw=raw)
-        key = MeasuredKey(spec, arch, toolchain)
+        key = measured.measured_key(spec, arch, toolchain)
         old = store.get(key.key())
         assert old is None or old.source_sha256 == sha, (
             f"{key.key()}: the store's compile row is of other text -- "
@@ -1055,7 +1117,11 @@ def _wallclock(backend: str, request, compile_device_source,
               f"{busy_after:.1%}, load1 {load1:.2f}; card util {n_gpu[0]}->"
               f"{n_gpu[1]}% / {card[0]}->{card[1]}%; J bit-repeatable "
               f"{raw['wallclock:J_bitwise_repeatable']}", flush=True)
-        if ctrl:
+        for prefix, cspec, _ in controls if study else ():
+            print(f"  control {cspec.key()} (same session): wide median "
+                  f"{ctrl[prefix + 'median_ns'] / 1e6:.3f} ms, near median "
+                  f"{ctrl[prefix + 'near:median_ns'] / 1e6:.3f} ms", flush=True)
+        if lever:
             print(f"  control (literal, same session): wide median "
                   f"{ctrl['wallclock:control:median_ns'] / 1e6:.3f} ms, near "
                   f"median {ctrl['wallclock:control:near:median_ns'] / 1e6:.3f}"
@@ -1070,6 +1136,17 @@ def _wallclock(backend: str, request, compile_device_source,
             print(f"  L={c.L} b{c.n_batches}: wide {c.wide_sign}, near "
                   f"{c.near_sign} -> {c.verdict.upper()} (spill {c.spill[0]} "
                   f"-> {c.spill[1]})")
+    if study:
+        print("\n#113, the asymmetric split against its same-session "
+              "neighbours:")
+        judged = [spec for spec, *_ in cells]
+        for spec in judged:
+            c = asym.asym_vs_neighbours(store, arch.name, spec)
+            print(f"  L={c.L} b{c.n_batches} {c.ks}: wide {c.wide_sign} vs "
+                  f"b{c.wide_best}, near {c.near_sign} vs b{c.near_best} -> "
+                  f"{c.verdict.upper()} (spill {c.spill}, regs {c.registers})")
+        print(f"  {arch.name}: "
+              f"{asym.arch_verdict(store, arch.name, judged).upper()}")
     print(f"\n{backend} {arch.name} ({gpu}), compiled `{command}`")
     for col, label in ((2, "wide (the row)"), (4, "near (raw)")):
         print(f" {label}: median+-IQR, ms")

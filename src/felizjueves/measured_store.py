@@ -507,7 +507,9 @@ def load(path: Path = STORE) -> dict[str, Measured]:
 
 def merge(store: Mapping[str, Measured], key: MeasuredKey,
           row: Measured) -> dict[str, Measured]:
-    """`store` with `row` at `key`, REPLACING any row already there."""
+    """`store` with `row` at `key`, REPLACING any row already there. `key`
+    is a `MeasuredKey`, or anything keyed its way (`arch`, `toolchain`,
+    `key()`): #113's `asym.AsymKey`, whose cell is not a Spec."""
     if (key.arch.name, key.toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"row is {row.arch}/{row.toolchain}, key {key.key()!r}")
     return {**store, key.key(): row}

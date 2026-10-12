@@ -23,13 +23,16 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import measured, measured_store
+from felizjueves import asym, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
 from felizjueves.lower import RECYCLE
+from felizjueves.plan.batching import in_batch, partition
 from felizjueves.plan.pipeline import plan
+from felizjueves.plan.targets import hermite_targets
+from felizjueves.spec import is_batch_count
 
 # --- the generator CLI ------------------------------------------------------
 
@@ -123,7 +126,7 @@ ROWS = measured_store.load()
 # the subgrid's recycle-lever arm (#55).
 RECYCLE_CELLS = measured_store.lever_cells(RECYCLE)
 SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
-                              *RECYCLE_CELLS)}
+                              *RECYCLE_CELLS, *asym.ASYM_CELLS)}  # + #113's arm
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -146,7 +149,7 @@ def test_every_row_is_keyed_on_its_measured_key() -> None:
     for key, row in ROWS.items():
         spec = _spec_of(key)
         assert row.kernel == ",".join(k.name for k in measured.cell_kernels(spec))
-        mk = MeasuredKey(spec, ARCHS[row.arch], row.toolchain)
+        mk = measured.measured_key(spec, ARCHS[row.arch], row.toolchain)
         assert mk.key() == key
 
 
@@ -1163,3 +1166,174 @@ def test_nvcc_still_reports_the_recycle_cells(spec, nvcc, tmp_path) -> None:
 @pytest.mark.parametrize("spec", RECYCLE_PARAMS)
 def test_hipcc_still_reports_the_recycle_cells(spec, hipcc, tmp_path) -> None:
     _recheck_cell("hip", spec, tmp_path)
+
+
+# --- #113: the asymmetric split, a study the generator refuses ---------------
+
+
+def test_the_study_rule_was_declared_before_its_rows() -> None:
+    doc = asym.__doc__
+    assert "DECLARED BEFORE ANY ASYMMETRIC ROW EXISTED" in doc
+    for part in ("THE CELLS", "THE SPLIT", "THE NEIGHBOURS", "THE CONTROL",
+                 "PER INPUT", "PER CELL", "PER ARCH", "THE CLAIM"):
+        assert part in doc, part
+
+
+def test_the_generator_still_refuses_an_asymmetric_count() -> None:
+    """The study measures what Spec and partition refuse; it widens neither
+    (the witness of jengine/batch-count-multiple-of-3 stays intact)."""
+    for n in asym.ASYM_COUNTS:
+        assert not is_batch_count(n)
+        with pytest.raises(ValueError):
+            pq_spec(13, n_batches=n)
+        with pytest.raises(ValueError):
+            partition(13, n)
+
+
+def test_the_asym_cells_are_the_declared_set() -> None:
+    assert [(c.L, c.n_batches) for c in asym.ASYM_CELLS] == [
+        (L, n) for L in (13, 16) for n in (4, 5, 7, 8)]
+    for c in asym.ASYM_CELLS:
+        lo, hi = c.neighbours
+        assert lo in measured_store.SUBGRID and hi in measured_store.SUBGRID
+        assert lo.n_batches < c.n_batches < hi.n_batches == lo.n_batches + 3
+    with pytest.raises(ValueError):
+        asym.AsymCell(13, 6)  # a legal count is the literal arm's
+    with pytest.raises(ValueError):
+        asym.AsymCell(13, 2)
+
+
+def test_the_split_is_minimax_then_the_next_largest() -> None:
+    want = {4: (2, 1, 1), 5: (2, 2, 1), 7: (3, 2, 2), 8: (3, 3, 2)}
+    for c in asym.ASYM_CELLS:
+        assert c.ks == want[c.n_batches], c.key()
+        assert len(c.batches) == c.n_batches == sum(c.ks)
+
+
+@pytest.mark.parametrize("cell", asym.ASYM_CELLS, ids=lambda c: c.key())
+def test_every_asym_cell_partitions_its_class(cell) -> None:
+    asym.check_partition(cell.L, cell.batches)  # the study's own check
+    owners = {r: [b for b in cell.batches if in_batch(r, *b)]
+              for r in hermite_targets(cell.L)}
+    assert all(len(v) == 1 for v in owners.values())
+    assert {b for v in owners.values() for b in v} == set(cell.batches)
+
+
+def test_a_bad_partition_is_refused_by_the_study() -> None:
+    with pytest.raises(ValueError, match="2 batches"):
+        asym.check_partition(4, (("xyz", 0, 4), ("x", 0, 4)))
+    with pytest.raises(ValueError, match="0 batches"):
+        asym.check_partition(4, (("x", 0, 4), ("y", 0, 4)))
+    with pytest.raises(ValueError, match="no target"):
+        asym.check_partition(4, (("x", 0, 4), ("y", 0, 0), ("y", 1, 4),
+                                 ("z", 0, 4)))
+
+
+@pytest.mark.parametrize("L,k", [(5, 2), (13, 2), (13, 3), (16, 3)])
+def test_a_symmetric_split_built_by_the_study_is_the_literal_one(L, k) -> None:
+    """For (k, k, k) the study's cut and builder reproduce build_pq_kernels
+    byte for byte: the asymmetric arm differs from the literal one by the
+    count alone."""
+    assert asym.split_batches(L, (k, k, k)) == partition(L, 3 * k)
+    got = asym.split_kernels(pq_spec(L), (k, k, k))
+    want = build_pq_kernels(pq_spec(L, n_batches=3 * k))
+    assert [cuda.emit(x, SM_86) for x in got] == [
+        cuda.emit(x, SM_86) for x in want]
+
+
+def test_an_asym_cell_is_keyed_as_its_own_arm() -> None:
+    c = asym.AsymCell(13, 4)
+    assert c.key() == "coulomb/d0/(7,0|6,0)/b4/j/asym"
+    k = measured.measured_key(c, SM_86, "nvcc 13.0")
+    assert k.key() == "coulomb/d0/(7,0|6,0)/b4/j/asym@sm_86/nvcc 13.0"
+    assert measured_store.split_key(k.key())[1:] == ("sm_86", "nvcc 13.0")
+    assert [x.name for x in measured.cell_kernels(c)] == [
+        "pq_L13_p7_q6_x0_6", "pq_L13_p7_q6_x7_13", "pq_L13_p7_q6_y0_13",
+        "pq_L13_p7_q6_z0_13"]
+    # its rows sit beside the literal ones and are invisible to their readers
+    lit = MeasuredKey(pq_spec(13, n_batches=3), SM_86, "nvcc 13.0")
+    row = measured_store.Measured(registers=1, **PROV)
+    store = measured_store.merge(measured_store.merge({}, lit, row), k, row)
+    assert list(measured_store.rows(spec=pq_spec(13, n_batches=3),
+                                    store=store)) == [lit.key()]
+
+
+def _asym_store(lo: tuple, a: tuple, hi: tuple, *, spill=(30, 20, 10),
+                cell=None) -> tuple[dict, object]:
+    """Synthetic rows for one asymmetric cell: each arm is ((wide median,
+    IQR), (near median, IQR)); the neighbours' stats are same-session
+    controls in the asym row's raw, their literal rows compile-only."""
+    cell = cell or asym.AsymCell(13, 4)
+    nlo, nhi = cell.neighbours
+    raw = {"wallclock:near:median_ns": a[1][0], "wallclock:near:q1_ns": 0,
+           "wallclock:near:q3_ns": a[1][1]}
+    for n, arm in ((nlo, lo), (nhi, hi)):
+        p = asym.control_prefix(n)
+        raw |= {f"{p}median_ns": arm[0][0], f"{p}q1_ns": 0,
+                f"{p}q3_ns": arm[0][1], f"{p}near:median_ns": arm[1][0],
+                f"{p}near:q1_ns": 0, f"{p}near:q3_ns": arm[1][1]}
+    store = {}
+    for s, sp in ((nlo, spill[0]), (nhi, spill[2])):
+        store = measured_store.merge(store, MeasuredKey(s, SM_86, "nvcc 13.0"),
+                                     measured_store.Measured(
+                                         registers=255, spill_store=sp,
+                                         spill_load=sp, **PROV))
+    store = measured_store.merge(
+        store, measured.measured_key(cell, SM_86, "nvcc 13.0"),
+        measured_store.Measured(registers=255, spill_store=spill[1],
+                                spill_load=spill[1], runtime_ns=a[0][0],
+                                repeats=31, spread_ns=a[0][1], **PROV, raw=raw))
+    return store, cell
+
+
+def test_the_asym_arm_is_judged_against_its_best_neighbour() -> None:
+    def verdict(lo, a, hi):
+        store, cell = _asym_store(lo, a, hi)
+        return asym.asym_vs_neighbours(store, "sm_86", cell)
+
+    # slower than b3 on wide, between them on near (b6 the best there)
+    c = verdict(((100, 2), (60, 1)), ((120, 2), (55, 1)), ((150, 2), (50, 1)))
+    assert (c.wide_best, c.wide_sign) == (3, "slower")
+    assert (c.near_best, c.near_sign) == (6, "slower")
+    assert c.verdict == "worse"
+    assert c.spill == (60, 40, 20) and c.registers == (255, 255, 255)
+    # faster than the best neighbour on ONE input is a win, whatever the other
+    c = verdict(((100, 2), (60, 1)), ((120, 2), (45, 1)), ((150, 2), (50, 1)))
+    assert c.near_sign == "faster" and c.verdict == "win"
+    # within the larger IQR on both: neutral
+    c = verdict(((100, 2), (60, 1)), ((101, 3), (50, 4)), ((150, 2), (50, 1)))
+    assert (c.wide_sign, c.near_sign, c.verdict) == ("neutral", "neutral",
+                                                     "neutral")
+
+
+def test_the_arch_and_claim_verdicts_follow_the_declared_rule() -> None:
+    worse = (((100, 2), (60, 1)), ((120, 2), (65, 1)), ((150, 2), (70, 1)))
+    win = (((100, 2), (60, 1)), ((90, 2), (65, 1)), ((150, 2), (70, 1)))
+    tie = (((100, 2), (60, 1)), ((100, 2), (60, 1)), ((150, 2), (70, 1)))
+    cells = (asym.AsymCell(13, 4), asym.AsymCell(13, 5))
+
+    def store_of(a, b):
+        s1, _ = _asym_store(*a, cell=cells[0])
+        s2, _ = _asym_store(*b, cell=cells[1])
+        return {**s1, **s2}
+
+    assert asym.arch_verdict(store_of(worse, worse), "sm_86", cells) == "worse"
+    assert asym.claim_holds(store_of(worse, worse), ["sm_86"], cells)
+    assert asym.arch_verdict(store_of(worse, win), "sm_86", cells) == \
+        "contradicted"
+    assert asym.arch_verdict(store_of(worse, tie), "sm_86", cells) == \
+        "not shown"
+    assert not asym.claim_holds(store_of(worse, tie), ["sm_86"], cells)
+
+
+def test_an_asym_row_without_both_controls_cannot_be_judged() -> None:
+    store, cell = _asym_store(((100, 2), (60, 1)), ((120, 2), (65, 1)),
+                              ((150, 2), (70, 1)))
+    k = measured.measured_key(cell, SM_86, "nvcc 13.0").key()
+    raw = {f: v for f, v in store[k].raw.items()
+           if not f.startswith("wallclock:control:b6:")}
+    store[k] = replace(store[k], raw=raw)
+    with pytest.raises(KeyError, match="neighbours"):
+        asym.asym_vs_neighbours(store, "sm_86", cell)
+    with pytest.raises(KeyError):
+        asym.asym_vs_neighbours({}, "sm_86", cell)
