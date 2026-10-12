@@ -285,7 +285,7 @@ sccache:warm recompiles of generated kernels; without it every kernel-tier run i
 compute-sanitizer:the GPU memcheck/racecheck sweep (docker compose run --rm compute-sanitizer)
 nsys:Nsight Systems timelines (launch order, overlap, host gaps) -- a timeline, NOT counters: it gives no FLOP or DRAM-byte count, so no arithmetic intensity
 ncu:Nsight Compute counters on NVIDIA -- fp64 FLOPs and DRAM bytes per kernel (felizjueves.measured.profile), i.e. every sm_86 counter row and its arithmetic intensity; the cuda counter witness in test_toolchain.py SKIPS
-rocprofv3:counter mode on AMD -- DRAM-side bytes per kernel on gfx1200 (no fp64 counter there), i.e. every gfx1200 counter row; the hip counter witness in test_toolchain.py SKIPS
+rocprofv3:counter mode on AMD -- DRAM-side bytes per kernel on gfx1200, and no fp64 counter there, so no measured intensity even when it loads (gfx1200 has no counter rows: measured_store.UNMEASURED); the hip counter witness in test_toolchain.py SKIPS
 cmake:building a reference implementation from source to compare against
 ninja:the generator cmake drives for that
 shellcheck:the devtools/ and docker/ lint pass (pre-commit brings its own on the host)"}
