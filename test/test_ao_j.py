@@ -63,14 +63,20 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
+from felizjueves.ao.hermite import e_block
 from felizjueves.ao.j import (
+    EPair,
     coulomb_matrix,
     coulomb_matrix_and_scale,
     coulomb_matrix_reference,
+    dq_from_host,
+    epair,
+    jab_from_host,
     jp_from_pq,
     pair_bound_pq,
 )
-from felizjueves.ao.pairs import pair_bound
+from felizjueves.ao.pairs import pair_bound, primitive_pairs
+from felizjueves.ao.shell import cartesians
 from felizjueves.reference.pq import one_centre, pq
 
 TAU = 0.0  # no screening: see the module docstring
@@ -184,6 +190,108 @@ def test_the_jp_seam_refuses_a_screen_and_a_wrong_shape():
     with pytest.raises(ValueError, match="wrong shape"):
         coulomb_matrix(basis, fx.density, pq=pq,
                        jp=lambda b, k, bras, kets: [[0.0, 0.0] for _ in bras])
+
+
+# --- the dq and jab seams (#151) ------------------------------------------
+
+
+def _counted(hook, calls):
+    def wrapped(*args):
+        calls.append(args[0])
+        return hook(*args)
+    return wrapped
+
+
+@pytest.mark.parametrize("name", PARAMS)
+def test_the_dq_and_jab_seams_with_the_host_references_are_exact(name):
+    """`dq_from_host` / `jab_from_host` are the host arithmetic in the host's
+    order, so through the seams `J` is `==` to itself without them -- each
+    seam alone and both, on the `pq` path and on the `jp` path. Every unique
+    ket and bra shell pair goes through its hook exactly once, and the
+    hooked `J` still agrees with the reference sweep."""
+    fx, basis = _case(name)
+    D = fx.density
+    n_sh = len(basis.shells)
+    n_unique = n_sh * (n_sh + 1) // 2
+    J = coulomb_matrix(basis, D, pq=pq)
+    dq_calls, jab_calls = [], []
+    both = coulomb_matrix(basis, D, pq=pq,
+                          dq=_counted(dq_from_host, dq_calls),
+                          jab=_counted(jab_from_host, jab_calls))
+    assert both == J
+    assert len(dq_calls) == len(jab_calls) == n_unique
+    assert all(isinstance(p, EPair) for p in dq_calls + jab_calls)
+    assert coulomb_matrix(basis, D, pq=pq, dq=dq_from_host) == J
+    assert coulomb_matrix(basis, D, pq=pq, jab=jab_from_host) == J
+
+    jp = jp_from_pq(pq)
+    Jjp = coulomb_matrix(basis, D, pq=pq, jp=jp)
+    assert coulomb_matrix(basis, D, pq=pq, jp=jp, dq=dq_from_host,
+                          jab=jab_from_host) == Jjp
+
+    R = np.array(coulomb_matrix_reference(basis, D, pq=pq))
+    assert np.all(np.abs(np.array(both) - R) <= SWEEP_TOL * np.max(np.abs(R)))
+
+
+def test_the_seams_cover_off_diagonal_weights_and_diagonal_blocks():
+    """The exactness above means something for the weight and the diagonal
+    scatter only if the case has both: an off-diagonal ket pair (`w = 2`)
+    and a diagonal bra pair with more than one Cartesian (`i != j` inside a
+    diagonal block, where only the lower triangle is written)."""
+    fx, basis = _case("h2o_sto3g_j")
+    weights = []
+    coulomb_matrix(basis, fx.density, pq=pq,
+                   dq=lambda k, dcd, w: weights.append(w) or
+                   dq_from_host(k, dcd, w))
+    assert set(weights) == {1.0, 2.0}
+    assert any(s.n_cart > 1 for s in basis.shells)
+
+
+def test_the_seams_are_load_bearing():
+    """A hook's output is what the module uses: a `dq` of zeros gives a zero
+    `J`, and a `jab` that writes nothing leaves `J` zero."""
+    fx, basis = _case("h2_sto3g_j")
+    zero = coulomb_matrix(basis, fx.density, pq=pq,
+                          dq=lambda k, dcd, w: [[0.0] * len(r)
+                                                for r in dq_from_host(k, dcd, w)])
+    assert all(x == 0.0 for row in zero for x in row)
+    none = coulomb_matrix(basis, fx.density, pq=pq,
+                          jab=lambda b, jps, offs, J: None)
+    assert all(x == 0.0 for row in none for x in row)
+
+
+@pytest.mark.parametrize("hooks", [
+    pytest.param({"dq": dq_from_host}, id="dq"),
+    pytest.param({"jab": jab_from_host}, id="jab"),
+    pytest.param({"dq": dq_from_host, "jab": jab_from_host}, id="both"),
+])
+def test_the_dq_and_jab_seams_refuse_a_screen(hooks):
+    fx, basis = _case("h2_sto3g_j")
+    with pytest.raises(ValueError, match="unscreened"):
+        coulomb_matrix(basis, fx.density, pq=pq, tau=1e-10, **hooks)
+
+
+def test_the_dq_seam_refuses_a_wrong_shape():
+    fx, basis = _case("h2_sto3g_j")
+    with pytest.raises(ValueError, match="wrong shape"):
+        coulomb_matrix(basis, fx.density, pq=pq,
+                       dq=lambda k, dcd, w: [[0.0, 0.0] for _ in k.recs])
+
+
+def test_the_dressing_scalar_is_pairs_dress():
+    """`EPair`'s `s` is `pairs.dress`'s scale: re-forming `s * E` from the
+    undressed block gives `PrimitivePair.block` bit for bit."""
+    _, basis = _case("h2o_sto3g_j")
+    for sa in basis.shells:
+        for sb in basis.shells:
+            recs = primitive_pairs(sa, sb)
+            carts = [(a, b) for a in cartesians(sa.l) for b in cartesians(sb.l)]
+            for k, (P, zeta, s) in zip(recs, epair(sa, sb).recs, strict=True):
+                assert (P, zeta) == (k.P, k.zeta)
+                for row, (a, b) in zip(k.block, carts, strict=True):
+                    got = tuple(s * e for e in
+                                e_block(a, b, zeta, P, sa.centre, sb.centre))
+                    assert got == row
 
 
 # --- the density contract -------------------------------------------------
