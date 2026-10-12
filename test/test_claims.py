@@ -255,6 +255,29 @@ def test_every_tally_a_doc_quotes_matches_the_file() -> None:
     assert quoted  # the check is not vacuous: j_engine.md quotes one
 
 
+# The same failure mode for limits.json: a doc that says "holds six
+# `StructuralLimit`s" outlives the record that made it seven (#148). Every such
+# count a doc spells, in words or digits, is held to the file.
+
+LIMITS = CLAIMS.parent / "limits.json"
+_WORDS = ("zero one two three four five six seven eight nine ten eleven twelve "
+          "thirteen fourteen fifteen sixteen seventeen eighteen nineteen "
+          "twenty").split()
+_LIMIT_COUNT = re.compile(r"\b(\w+) `StructuralLimit`s")
+
+
+def test_every_limits_count_a_doc_spells_matches_the_file() -> None:
+    n = len(json.loads(LIMITS.read_text())["limits"])
+    quoted = 0
+    for doc in TALLY_DOCS:
+        for m in _LIMIT_COUNT.finditer(doc.read_text()):
+            word = m[1].lower()
+            got = int(word) if word.isdigit() else _WORDS.index(word)
+            quoted += 1
+            assert got == n, (doc.relative_to(ROOT).as_posix(), m[0], n)
+    assert quoted  # CLAUDE.md and the data README spell one each
+
+
 @pytest.mark.parametrize(
     "source, units",
     [

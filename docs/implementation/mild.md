@@ -13,8 +13,19 @@ itself is host-side counting, but it is no longer only that: for a one-batch
 class, `build_pq_kernel` (`src/felizjueves/kernel.py`) emits the recurrence
 from the sieved MILD DAG, in `plan/schedule.py`'s order, as the `[p|q]` kernel
 both backends spell ([`j_engine.md`](j_engine.md) has its status). A split
-class's batches are planned and sieved but no kernel is generated from them, and
-the "with and without the sieve" kernel-tier comparison below is not wired.
+class gets one kernel per batch from `build_pq_kernels`, each generated from
+its own batch's sieved DAG. The "with and without the sieve" kernel-tier
+comparison below is not wired.
+
+**The sieve that reaches the emitter is the literal one.** `pipeline.plan(spec)`
+takes only a `Spec`, and the pipeline never passes `sieve.sieve(dag, *,
+seed_order=None)` an order. The searched seed orders (`plan/search.py`,
+`searched_cuts.json`) are scored on the `searched` board and imported by
+`plan/__main__.py` alone, so no shipped kernel is built from them. The
+predecessor's `jgen` emits its searched order by default. Wiring the
+searched order through here would change every kernel's text, and with it
+the `source_sha256` of every `kernels.json` row. That is a decision for its
+own milestone ([`j_engine.md`](j_engine.md), "Parity with the predecessor").
 The sections below remain the specification that code is read against.
 
 This file covers steps 2 and 3 of the generator pipeline — choosing a reduction
