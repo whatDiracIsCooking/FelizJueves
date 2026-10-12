@@ -61,6 +61,8 @@ from felizjueves.kernel import (
     ket_functions,
     launch_shape,
 )
+from felizjueves.kernel_dq import build_dq_kernel, dq_shape
+from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
@@ -200,3 +202,92 @@ class KernelJAB:
         for x in range(n_ao):
             J[x][:] = out[x].tolist()
         self.ran.add((bra.la, bra.lb))
+
+
+# ---------------------------------------------------------------------------
+# `D_q` from the interpreted pre-contraction kernel: `ao.j`'s `dq=` seam (#153)
+# ---------------------------------------------------------------------------
+
+__all__ += ["KernelDQ"]
+
+DQItem = tuple[EPair, Sequence[float], float]  # (ket, dcd, w): one dq= call
+
+
+@cache
+def _dq_kernel(lc: int, ld: int) -> Kernel:
+    return build_dq_kernel((lc, ld))
+
+
+class KernelDQ:
+    """A `ao.j.DQ` backed by the interpreted `Target.DQ` kernel
+    (`kernel_dq.build_dq_kernel`): `D_q` per ket record, and `Dmax`.
+
+    `ao.j.coulomb_matrix(basis, D, pq=..., dq=KernelDQ())` is then `J_mn`
+    with the ket pre-contraction done by the generator's own kernel in
+    `interp.Interpreter` -- no compiler, no card -- and everything else
+    (`Q`, `eta`, `J_p`, the bra transform, the scatter) `ao.j`'s, so a
+    disagreement localises to this kernel.
+
+    `run(items)` is ONE launch over every record of several ket shell pairs
+    of one class -- each item `(ket, dcd, w)` exactly as `dq=` receives it,
+    `pair[k]` the item record `k` came from -- and returns `(D, Dmax)` in
+    record order. `__call__` is the seam: one item, `D` as rows.
+
+    THE WEIGHT AND THE DRESSING ARE THE HOST'S. `w` is whatever `ao.j`
+    passed (2.0 off the diagonal, 1.0 on it) and `s` is `EPair`'s, from
+    `pairs.dress`; both reach the kernel as per-record scalars, and nothing
+    here decides either. The kernel receives `X_PA = P - A` and
+    `X_PB = P - B`, formed here per axis with the subtraction in that order,
+    as `ao.hermite.e_block` forms them.
+
+    `ran` is the set of ket classes `(lc, ld)` launched. Kernels are
+    memoised per class (building is pure); results are not.
+    """
+
+    def __init__(self, *, lanes: int = 32) -> None:
+        self.lanes = lanes
+        self.ran: set[tuple[int, int]] = set()
+
+    def run(self, items: Sequence[DQItem]) -> tuple[np.ndarray, np.ndarray]:
+        if not items:
+            raise ValueError("no ket shell pairs to pre-contract")
+        classes = {(ket.la, ket.lb) for ket, _, _ in items}
+        if len(classes) != 1:
+            raise ValueError(f"one launch is one ket class, got "
+                             f"{sorted(classes)}")
+        ((lc, ld),) = classes
+        n_cd, n_q = dq_shape(lc, ld)
+        eta, xpa, xpb, s, w, pair = [], [], [], [], [], []
+        for i, (ket, dcd, wt) in enumerate(items):
+            if len(dcd) != n_cd:
+                raise ValueError(f"dcd has {len(dcd)} entries, class "
+                                 f"{(lc, ld)} wants {n_cd}")
+            for P, zeta, sk in ket.recs:
+                eta.append(zeta)
+                xpa.append([P[d] - ket.A[d] for d in range(3)])
+                xpb.append([P[d] - ket.B[d] for d in range(3)])
+                s.append(sk)
+                w.append(float(wt))
+                pair.append(i)
+        n_rec = len(eta)
+        if n_rec == 0:
+            return np.zeros((0, n_q)), np.zeros(0)
+        grid, block = dq_launch_shape(n_rec, self.lanes)
+        out = Interpreter(_dq_kernel(lc, ld),
+                          launch=Launch(grid, block, self.lanes)).run(
+            n_rec=n_rec, n_pair=len(items),
+            eta=np.array(eta, dtype=np.float64),
+            XPA=np.array(xpa, dtype=np.float64),
+            XPB=np.array(xpb, dtype=np.float64),
+            s=np.array(s, dtype=np.float64), w=np.array(w, dtype=np.float64),
+            pair=np.array(pair, dtype=np.int32),
+            Dcd=np.array([[float(x) for x in dcd] for _, dcd, _ in items],
+                         dtype=np.float64),
+            D=np.zeros((n_rec, n_q)), Dmax=np.zeros(n_rec))
+        self.ran.add((lc, ld))
+        return out["D"], out["Dmax"]
+
+    def __call__(self, ket: EPair, dcd: Sequence[float],
+                 w: float) -> list[list[float]]:
+        D, _ = self.run([(ket, dcd, w)])
+        return D.tolist()

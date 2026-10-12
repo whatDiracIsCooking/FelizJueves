@@ -295,7 +295,7 @@ RULES: dict[str, Rule] = {
         "`launch`'s `ClassLaunch`es, and `passes.atomize`s a one-batch "
         "kernel because one `J_p` per bra class has a writer per ket class",
         ("spec", "kernel", "ir", "interp", "plan", "ao", "launch", "passes",
-         "kernel_jab"),
+         "kernel_dq", "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -339,6 +339,21 @@ RULES: dict[str, Rule] = {
         interp="the builder is checked by the interpreter, never built on it",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+    "dq_builder": _rule(
+        "kernel_dq.py (#153): the ket pre-contraction kernel, `Target.DQ` -- "
+        "the key, the `E` block fragment (inlined), the Hermite order from "
+        "the plan's targets, and IR. ao/drive.py's `KernelDQ` runs it in "
+        "the interpreter as `ao.j`'s `dq=` seam",
+        ("spec", "ir", "e_fragment", "plan.targets"),
+        ao="`ao.j.dq_from_host` is the reference the kernel is interpreted "
+           "against, and `ao.pairs.dress` the dressing it must not form: "
+           "importing either shares ancestry with its witness (#20); the "
+           "weight and the dressing arrive as host scalars",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="a builder produces vendor-neutral IR; the arch enters at "
+             "emission (#156)",
+        device="the `Kernel` is arch-neutral",
         reference=_GROUND_TRUTH),
 }
 
@@ -400,6 +415,7 @@ RULE_OF: dict[str, str] = {
     "ao.staged": "adapter",
     "launch": "launch",
     "kernel_jab": "jab_builder",
+    "kernel_dq": "dq_builder",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -466,13 +482,14 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.pairs": ("ao.hermite", "ao.shell"),
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
-    "ao.drive": ("ao.j", "interp", "ir", "kernel", "plan.pipeline", "spec",
-                 "kernel_jab"),
+    "ao.drive": ("ao.j", "interp", "ir", "kernel", "kernel_dq", "kernel_jab",
+                 "plan.pipeline", "spec"),
     "ao.staged": ("ao.j", "ao.pairs", "ao.shell", "interp", "ir", "kernel",
                   "launch", "passes"),
     "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
                "spec"),
     "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
+    "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
@@ -694,3 +711,22 @@ def test_the_measured_store_imports_no_toolchain() -> None:
         "compiler is the driver's (felizjueves.measured), not the store's (#94)")
     # ...and the list names what the driver really uses, so it is not vacuous
     assert TOOLCHAIN_STDLIB <= _stdlib_imports(ROOT / "measured.py")
+
+
+def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    # #153, TRANSITIVELY: the pre-contraction kernel is built from IR, the
+    # `E` fragment and the key alone. No chain of imports reaches the AO
+    # layer it is checked against (`ao.j.dq_from_host`), the interpreter,
+    # reference/, a backend or a card.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_dq"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_dq reaches {hit}"
+    assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
