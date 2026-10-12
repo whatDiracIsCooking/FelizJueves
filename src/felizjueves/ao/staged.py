@@ -50,6 +50,24 @@ rows `start:stop` of its class's `J_p` through the dressed `E^{ab}_p` and is
 scattered to `J[a][b]` and, mirrored, `J[b][a]`: the arithmetic of `ao.j`'s
 `jp=` sweep, restated here because `ao.j` exposes it only inside that sweep.
 
+THE HOOKS (#155), additive: without them every path above is unchanged.
+
+  `ket_data(recs, n_q) -> KetData`  replaces the HOST pre-contraction as the
+      source of one ket class's `Q`, `eta`, `D` and `Dmax`, in the order of
+      `recs` (the plan's sorted order). The checks stay here: the shapes, and
+      every `Iq * Dmax` equal to its plan key bit for bit -- so a hook whose
+      `Dmax` is not the one the plan sorted by is refused, not run. With a
+      hook, `density_sort=False`'s host global `Dmax` is not computed: the
+      hook's `Dmax` is the one checked.
+  `transform(blocks, jps) -> J`  replaces eq. 20 and the scatter: `blocks`
+      the bra blocks `(a, b, start, stop)` per bra class `lp`, `jps` each bra
+      class's finished `J_p` buffer.
+
+`ao.drive.coulomb_matrix_chain` is their one caller: `D_q` and `Dmax` from
+the generated pre-contraction, eq. 20 and the scatter from the generated
+bra-transform kernel, and the staging, its checks and the `[p|q]` launches
+this module's, unchanged.
+
 BOYS IS INJECTED (`boys=`); nothing here imports `reference/`. Nothing is
 memoised across calls: the buffers are built per call and dropped.
 """
@@ -77,7 +95,7 @@ from felizjueves.kernel import (
 from felizjueves.launch import ClassLaunch, LaunchPlan, PairRec, class_spec
 from felizjueves.passes import atomize
 
-__all__ = ["BufferSize", "Staged", "coulomb_matrix_staged"]
+__all__ = ["BufferSize", "KetData", "Staged", "coulomb_matrix_staged"]
 
 _F64 = 8  # bytes per double
 
@@ -116,6 +134,23 @@ class Staged:
     sizes: tuple[BufferSize, ...]
     ran: tuple[tuple[int, int, int], ...]
     iterations: dict[tuple[int, int], int]
+
+
+@dataclass(frozen=True)
+class KetData:
+    """What a `ket_data=` hook returns for one ket class (module docstring,
+    "THE HOOKS"): per record, in the order of the records it was given,
+    `Q[n, 3]`, `eta[n]`, `D[n, n_q]` and `Dmax[n]`."""
+
+    Q: np.ndarray
+    eta: np.ndarray
+    D: np.ndarray
+    Dmax: np.ndarray
+
+
+KetDataHook = Callable[[tuple[PairRec, ...], int], KetData]
+Transform = Callable[[dict[int, tuple[tuple[int, int, int, int], ...]],
+                      dict[int, np.ndarray]], Matrix]
 
 
 @dataclass(frozen=True)
@@ -162,22 +197,38 @@ def _ket_buffers(basis: Basis, rows, recs: tuple[PairRec, ...], n_q: int,
     kts = _ket_vectors(basis, rows, recs)
     dmax = [max(abs(v) for v in k.dq) if dglobal is None else dglobal
             for k in kts]
-    for r, d in zip(recs, dmax, strict=True):
-        if r.G * d != r.key:
-            raise ValueError(
-                f"ket record {(r.i, r.j, r.prim)}: Iq * Dmax = {r.G * d!r} is "
-                f"not its plan key {r.key!r}; the kernel's break would read a "
-                "different order from the one the plan sorted")
-    D = np.array([list(k.dq) for k in kts], dtype=np.float64)
-    if D.shape != (len(recs), n_q):
-        raise ValueError(f"D_q has shape {D.shape}, the class wants "
-                         f"({len(recs)}, {n_q})")
-    return _Kets(
-        recs=recs,
+    return _kets_checked(recs, n_q, KetData(
         Q=np.array([k.Q for k in kts], dtype=np.float64),
         eta=np.array([k.eta for k in kts], dtype=np.float64),
+        D=np.array([list(k.dq) for k in kts], dtype=np.float64),
+        Dmax=np.array(dmax, dtype=np.float64)))
+
+
+def _kets_checked(recs: tuple[PairRec, ...], n_q: int, kd: KetData) -> _Kets:
+    """One ket class's buffers from `kd` (rows in `recs`' order): the shapes
+    checked, and every `Iq * Dmax` equal to its plan key, bit for bit."""
+    n = len(recs)
+    for name, got, want in (("D_q", np.shape(kd.D), (n, n_q)),
+                            ("Q", np.shape(kd.Q), (n, 3)),
+                            ("eta", np.shape(kd.eta), (n,)),
+                            ("Dmax", np.shape(kd.Dmax), (n,))):
+        if got != want:
+            raise ValueError(f"{name} has shape {got}, the class wants "
+                             f"{want}")
+    for r, d in zip(recs, kd.Dmax, strict=True):
+        if r.G * float(d) != r.key:
+            raise ValueError(
+                f"ket record {(r.i, r.j, r.prim)}: Iq * Dmax = "
+                f"{r.G * float(d)!r} is not its plan key {r.key!r}; the "
+                "kernel's break would read a different order from the one "
+                "the plan sorted")
+    return _Kets(
+        recs=recs,
+        Q=np.asarray(kd.Q, dtype=np.float64),
+        eta=np.asarray(kd.eta, dtype=np.float64),
         Iq=np.array([r.G for r in recs], dtype=np.float64),
-        Dmax=np.array(dmax, dtype=np.float64), D=D)
+        Dmax=np.asarray(kd.Dmax, dtype=np.float64),
+        D=np.asarray(kd.D, dtype=np.float64))
 
 
 def _no_pq(p, q, PQv, theta) -> float:
@@ -211,12 +262,15 @@ def _accumulating(k: Kernel) -> Kernel:
 
 def coulomb_matrix_staged(plan: LaunchPlan, basis: Basis, D: object, *,
                           boys: Callable[[int, float], float], lanes: int = 1,
-                          check_sorted: bool = True) -> Staged:
+                          check_sorted: bool = True,
+                          ket_data: KetDataHook | None = None,
+                          transform: Transform | None = None) -> Staged:
     """`J_mn` from `plan` (built by `launch.launches` for this `basis` and
     `D`), its buffers staged per class and `J_p` from the interpreted
-    generated kernels (module docstring)."""
+    generated kernels (module docstring; `ket_data=` and `transform=` are
+    "THE HOOKS")."""
     rows = _density(basis, D)
-    dglobal = _dglobal(plan, basis, rows)
+    dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     builds: Counter[str] = Counter()
     sizes: list[BufferSize] = []
     bras: dict[int, _Bras] = {}
@@ -247,7 +301,10 @@ def coulomb_matrix_staged(plan: LaunchPlan, basis: Basis, D: object, *,
                 raise ValueError(
                     f"class ({cl.lp}, {cl.lq}): kets are not sorted "
                     "descending by key, and the kernel's screen is a break")
-            kets[cl.lq] = _ket_buffers(basis, rows, cl.kets, n_q, dglobal)
+            kets[cl.lq] = (
+                _ket_buffers(basis, rows, cl.kets, n_q, dglobal)
+                if ket_data is None
+                else _kets_checked(cl.kets, n_q, ket_data(cl.kets, n_q)))
             builds["ket"] += 1
             sizes.append(BufferSize("ket", cl.lq, n_ket, n_q,
                                     n_ket * (6 + n_q)))
@@ -259,8 +316,9 @@ def coulomb_matrix_staged(plan: LaunchPlan, basis: Basis, D: object, *,
             cl, bras[cl.lp], kets[cl.lq], jps[cl.lp], plan.tau, boys, lanes)
         ran.append((cl.lp, cl.lq, cl.n_batches))
 
-    return Staged(_transform(basis, blocks, jps), builds, tuple(sizes),
-                  tuple(ran), iterations)
+    J = (_transform(basis, blocks, jps) if transform is None
+         else transform(blocks, jps))
+    return Staged(J, builds, tuple(sizes), tuple(ran), iterations)
 
 
 def _launch(cl: ClassLaunch, b: _Bras, k: _Kets, J: np.ndarray, tau: float,

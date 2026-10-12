@@ -293,7 +293,11 @@ RULES: dict[str, Rule] = {
         "a class admits, #64). Not `ao`: the AO layer may not know IR. "
         "Also ao/staged.py (#143): the same, over a LAUNCH PLAN -- it reads "
         "`launch`'s `ClassLaunch`es, and `passes.atomize`s a one-batch "
-        "kernel because one `J_p` per bra class has a writer per ket class",
+        "kernel because one `J_p` per bra class has a writer per ket class. "
+        "And ao/drive.py's chain (#155): `Target.DQ` -> `[p|q]` -> "
+        "`Target.JAB` composed over that staging, so the adapter reaches "
+        "`ao.staged` and builds its own `launch` plan from the DQ kernel's "
+        "read-back `Dmax`",
         ("spec", "kernel", "ir", "interp", "plan", "ao", "launch", "passes",
          "kernel_dq", "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
@@ -482,8 +486,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.pairs": ("ao.hermite", "ao.shell"),
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
-    "ao.drive": ("ao.j", "interp", "ir", "kernel", "kernel_dq", "kernel_jab",
-                 "plan.pipeline", "spec"),
+    "ao.drive": ("ao.j", "ao.shell", "ao.staged", "interp", "ir", "kernel",
+                 "kernel_dq", "kernel_jab", "launch", "plan.pipeline", "spec"),
     "ao.staged": ("ao.j", "ao.pairs", "ao.shell", "interp", "ir", "kernel",
                   "launch", "passes"),
     "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
