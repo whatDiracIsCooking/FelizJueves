@@ -824,7 +824,8 @@ def test_hip_asym_j_p_matches_the_reference(cell, request,
 # same-session controls (near-T lo, asym, hi; wide-T hi, asym, lo) and land
 # in the ASYMMETRIC row's raw as `wallclock:control:b<n>:*`; no literal row
 # is re-timed or rewritten. `asym`'s docstring is the rule, declared before
-# any asymmetric row existed, and `asym.asym_vs_neighbours` the verdict. The
+# any asymmetric row existed, and `asym.asym_vs_neighbours` the verdict. A
+# study phase the card was taken during is retaken (STUDY_RETAKES). The
 # compile rows must exist first:
 #   python -m felizjueves.measured --remeasure --asym
 #
@@ -866,6 +867,13 @@ WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
 WALLCLOCK_BATCHES = "FJ_WALLCLOCK_BATCHES"
 WALLCLOCK_LEVER = "FJ_WALLCLOCK_LEVER"
 WALLCLOCK_ASYM = "FJ_WALLCLOCK_ASYM"
+# #113 only: a phase whose after-reading is non-idle or unknown was shared
+# with something outside this process (the first study session saw 100%
+# after-readings with bimodal times), so it is DISCARDED and retaken, up to
+# this many times, and the row counts its discards in raw
+# `wallclock:gate_discarded_phases`. The literal and lever sweeps record the
+# after-reading instead, as they always have.
+STUDY_RETAKES = 5
 WARMUP = 5
 REPEATS = 31
 TIMING_N_BRA = 2048  # one warp each: several waves on either card
@@ -1008,6 +1016,7 @@ def _wallclock(backend: str, request, compile_device_source,
 
     # 4. time, one cell at a time
     lanes = arch.wavefront
+    discarded = [0]  # the study's gate-discarded phases, per cell (below)
 
     def timed(spec: Spec, binary: Path, wide: bool):
         L = spec.total_am
@@ -1017,12 +1026,25 @@ def _wallclock(backend: str, request, compile_device_source,
         _pack(L, a, lanes).tofile(src)
         args = (str(src), str(dst), str(WARMUP), str(REPEATS))
         check_vram(binary, args, backend)  # before the wait, off the clock
-        seen: list[int] = []
-        busy = _quiet(backend, seen)
-        out = run_device_binary(binary, *args)
-        # the gate's reading, and one after (gate.after_reading: one SMI read
-        # discarded, GPU_SETTLE_S, then the reading -- our own run excluded)
-        card = (seen[-1], gate.after_reading(backend))
+        for take in range(1 + (STUDY_RETAKES if study else 0)):
+            seen: list[int] = []
+            busy = _quiet(backend, seen)
+            out = run_device_binary(binary, *args)
+            # the gate's reading, and one after (gate.after_reading: one SMI
+            # read discarded, GPU_SETTLE_S, then the reading -- our own run
+            # excluded)
+            card = (seen[-1], gate.after_reading(backend))
+            if not study or (card[1] is not None and card[1] <= GPU_BUSY_MAX):
+                break
+            # #113: the card was taken DURING the phase (after-reading
+            # non-idle or unknown): the phase is discarded and retaken
+            discarded[0] += 1
+            print(f"  DISCARDED {spec.key()} {'wide' if wide else 'near'}: "
+                  f"card util {card[0]} -> {card[1]}% (take {take + 1})",
+                  flush=True)
+        else:
+            pytest.fail(f"{spec.key()}: the card stayed contended through "
+                        f"{STUDY_RETAKES + 1} takes -- nothing recorded")
         wall, events, batches = _parse_reps(out, spec.n_batches)
         assert len(wall) == REPEATS, out
         J = np.fromfile(dst, dtype=np.float64).reshape(2, TIMING_N_BRA, -1)
@@ -1050,6 +1072,7 @@ def _wallclock(backend: str, request, compile_device_source,
     for spec, binary, names, sha, controls in cells:
         L = spec.total_am
         load1 = os.getloadavg()[0]
+        discarded[0] = 0
         ctrl: dict[str, int | None] = {}
         # Arm order, so no arm always runs first: near-T the first control
         # before the cell and the rest after it; wide-T the reverse (a lever:
@@ -1094,6 +1117,8 @@ def _wallclock(backend: str, request, compile_device_source,
             "wallclock:J_bitwise_repeatable": int(np.array_equal(J[0], J[1])),
             **ctrl,
         }
+        if study:
+            raw["wallclock:gate_discarded_phases"] = discarded[0]
         per_batch = np.median(np.array(batches), axis=0)
         for name, t in zip(names, per_batch, strict=True):
             raw[f"wallclock:{name}:events_median_ns"] = round(float(t))
