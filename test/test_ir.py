@@ -21,8 +21,10 @@ from felizjueves.ir import (
     Factor,
     Fn,
     For,
+    Fragment,
     If,
     Index,
+    Inline,
     Intent,
     Kernel,
     Lit,
@@ -343,3 +345,219 @@ def test_structural_equality_is_the_check_for_a_pass() -> None:
     assert stripped != a
     assert Lit(1) != Lit(1.0)  # an I32 is not an F64
     assert Term(1, Factor.ONE, Var("x")) != Term(2, Factor.ONE, Var("x"))
+
+
+# ---------------------------------------------------------------------------
+# Fragment and Inline (#149): a device-code block with a checked contract
+# ---------------------------------------------------------------------------
+
+
+def synthetic_fragment() -> Fragment:
+    """`dst[i] = PQ_x * (src[0] + ... + src[i])` for i < n.
+
+    Synthetic on purpose (no `E` yet): one scalar bind read as a `Factor`
+    (`PQ_x`), one read as a loop bound (`n`), an array read (`src`), an array
+    written (`dst`, the fragment's only way out), a local, and a loop var.
+    """
+    return Fragment("prefix_scale", ("PQ_x", "n", "src", "dst"), (
+        Note("synthetic: dst[i] = PQ_x * (src[0] + ... + src[i])"),
+        Decl("acc", Scalar.F64, init=Lit(0.0)),
+        For("i", Lit(0), Var("n"), Lit(1), (
+            Assign(Var("acc"), Weighted((
+                Term(1, Factor.ONE, Var("acc")),
+                Term(1, Factor.ONE, Index("src", (Var("i"),))),
+            ))),
+            Assign(Index("dst", (Var("i"),)),
+                   Weighted((Term(1, Factor.PQ_X, Var("acc")),))),
+        )),
+    ))
+
+
+def synthetic_inline_kernel(fragment: Fragment | None = None) -> Kernel:
+    """A host kernel that splices `synthetic_fragment` once.
+
+    `n` is bound to the host's own `n` (the one admitted name-sharing, and so
+    no `const` line); `PQ_x` to an expression; the arrays to the host's. The
+    host writes `out[0]` again after the splice, so the splice is not last.
+    """
+    frag = synthetic_fragment() if fragment is None else fragment
+    n = Var("n")
+    return Kernel("inline_probe", (
+        Param("n", Scalar.I32),
+        Param("scale", Scalar.F64),
+        Param("xs", Scalar.F64, array=True, shape=(n,)),
+        Param("out", Scalar.F64, array=True, intent=Intent.OUT, shape=(n,)),
+    ), (
+        Decl("half", Scalar.F64, init=_mul(Var("scale"), Lit(0.5))),
+        Inline(frag, {"PQ_x": _add(Var("half"), Var("half")), "n": n,
+                      "src": Var("xs"), "dst": Var("out")}),
+        Assign(Index("out", (Lit(0),)),
+               _add(Index("out", (Lit(0),)), Var("half"))),
+    ))
+
+
+def _inline(frag: Fragment, **over: ir.Expr) -> Inline:
+    b = {"PQ_x": Var("scale"), "n": Var("n"), "src": Var("xs"),
+         "dst": Var("out")}
+    b.update(over)
+    return Inline(frag, b)
+
+
+def test_the_synthetic_kernel_builds() -> None:
+    k = synthetic_inline_kernel()
+    frag = synthetic_fragment()
+    assert frag.array_binds == {"src", "dst"}
+    assert frag.declared == {"acc", "i"}
+    assert k == synthetic_inline_kernel() and hash(k) == hash(
+        synthetic_inline_kernel())
+
+
+def test_a_free_name_raises() -> None:
+    with pytest.raises(ValueError, match=r"reads \['b'\] without"):
+        Fragment("f", ("a",), (
+            Decl("x", Scalar.F64, init=_add(Var("a"), Var("b"))),))
+    # A Factor's scalar is a read too, and an indexed array.
+    with pytest.raises(ValueError, match=r"reads \['PQ_y'\]"):
+        Fragment("f", ("a",), (Decl("x", Scalar.F64, init=Weighted((
+            Term(1, Factor.PQ_Y, Var("a")),))),))
+    with pytest.raises(ValueError, match=r"reads \['v'\]"):
+        Fragment("f", ("a",), (Decl("x", Scalar.F64, init=_add(
+            Var("a"), Index("v", (Lit(0),)))),))
+
+
+def test_a_name_used_before_its_decl_is_free() -> None:
+    # Scope is source order: the read precedes the Decl, so `x` is free here.
+    with pytest.raises(ValueError, match=r"reads \['x'\]"):
+        Fragment("f", ("a",), (
+            Decl("y", Scalar.F64, init=_add(Var("a"), Var("x"))),
+            Decl("x", Scalar.F64, init=Lit(1.0)),
+        ))
+    # And a For var is not visible after its loop.
+    with pytest.raises(ValueError, match=r"reads \['i'\]"):
+        Fragment("f", ("a",), (
+            For("i", Lit(0), Var("a"), Lit(1), ()),
+            Decl("y", Scalar.I32, init=Var("i")),
+        ))
+
+
+def test_an_unused_bind_raises() -> None:
+    with pytest.raises(ValueError, match="stale contract"):
+        Fragment("f", ("a", "unused"), (Decl("x", Scalar.F64, init=Var("a")),))
+
+
+def test_a_scalar_bind_is_read_only() -> None:
+    with pytest.raises(ValueError, match="read-only"):
+        Fragment("f", ("a",), (Assign(Var("a"), _add(Var("a"), Lit(1.0))),))
+
+
+def test_binds_are_unique_identifiers() -> None:
+    with pytest.raises(ValueError, match="duplicate binds"):
+        Fragment("f", ("a", "a"), (Decl("x", Scalar.F64, init=Var("a")),))
+    with pytest.raises(ValueError, match="not an identifier"):
+        Fragment("f", ("a.b",), ())
+    with pytest.raises(ValueError, match="both as a scalar and as an array"):
+        Fragment("f", ("a",), (Decl("x", Scalar.F64, init=_add(
+            Var("a"), Index("a", (Lit(0),)))),))
+    with pytest.raises(ValueError, match="also binds"):
+        Fragment("f", ("a",), (Decl("x", Scalar.F64, init=Var("a")),
+                               Decl("a", Scalar.F64, init=Lit(1.0))))
+
+
+def test_one_level_names_only() -> None:
+    inner = Fragment("g", ("a",), (Decl("x", Scalar.F64, init=Var("a")),))
+    with pytest.raises(ValueError, match="cannot hold an Inline"):
+        Fragment("f", ("b",), (Inline(inner, {"a": Var("b")}),))
+    with pytest.raises(ValueError, match="cannot hold a Raw"):
+        Fragment("f", (), (Raw("__nanosleep(1);"),))
+    with pytest.raises(ValueError, match="Break outside a For"):
+        Fragment("f", (), (Break(),))
+
+
+def test_an_inline_with_a_missing_or_extra_binding_raises() -> None:
+    frag = synthetic_fragment()
+    full = {"PQ_x": Var("scale"), "n": Var("n"), "src": Var("xs"),
+            "dst": Var("out")}
+    assert Inline(frag, full) == Inline(frag, list(reversed(full.items())))
+    with pytest.raises(ValueError, match=r"missing bindings \['n'\]"):
+        Inline(frag, {k: v for k, v in full.items() if k != "n"})
+    with pytest.raises(ValueError, match=r"extra \['zeta'\]"):
+        Inline(frag, {**full, "zeta": Lit(1.0)})
+    with pytest.raises(ValueError, match="twice"):
+        Inline(frag, [*full.items(), ("n", Lit(3))])
+    with pytest.raises(TypeError, match="must be an Expr"):
+        Inline(frag, {**full, "n": 3})
+    with pytest.raises(TypeError, match="array bind 'src'"):
+        Inline(frag, {**full, "src": Index("xs", (Lit(0),))})
+
+
+def _host(*body: ir.Stmt, extra: tuple[Param, ...] = ()) -> Kernel:
+    return Kernel("k", (
+        Param("n", Scalar.I32),
+        Param("scale", Scalar.F64),
+        Param("xs", Scalar.F64, array=True),
+        Param("out", Scalar.F64, array=True, intent=Intent.OUT),
+        *extra,
+    ), body)
+
+
+def test_a_colliding_name_raises_and_nothing_is_renamed() -> None:
+    frag = synthetic_fragment()
+    _host(_inline(frag))  # no collision: fine
+    with pytest.raises(ValueError, match=r"declares \['acc'\].*not a macro"):
+        _host(Decl("acc", Scalar.F64, init=Lit(0.0)), _inline(frag))
+    with pytest.raises(ValueError, match=r"declares \['i'\]"):
+        _host(For("i", Lit(0), Lit(1), Lit(1), ()), _inline(frag))
+    with pytest.raises(ValueError, match=r"declares \['acc'\]"):
+        _host(_inline(frag), extra=(Param("acc", Scalar.F64),))
+    # A collision after the splice, or nested in the host, is still one.
+    with pytest.raises(ValueError, match=r"declares \['acc'\]"):
+        _host(_inline(frag), If(Lit(1), (Decl("acc", Scalar.I32, init=Lit(0)),)))
+
+
+def test_a_bind_may_share_a_host_name_only_as_itself() -> None:
+    frag = synthetic_fragment()
+    _host(_inline(frag, n=Var("n")))  # the host's own n: admitted
+    with pytest.raises(ValueError, match=r"binds 'n', a host name"):
+        _host(_inline(frag, n=_add(Var("n"), Lit(1))))
+    with pytest.raises(ValueError, match=r"binds 'src', a host name"):
+        _host(_inline(frag, n=Var("n")), extra=(
+            Param("src", Scalar.F64, array=True),))
+
+
+def test_array_and_scalar_binds_match_the_host() -> None:
+    frag = synthetic_fragment()
+    with pytest.raises(ValueError, match="not a host array"):
+        _host(_inline(frag, src=Var("scale")))
+    with pytest.raises(ValueError, match="bound to the host array"):
+        _host(_inline(frag, PQ_x=Var("xs")))
+    # A host array Decl is a host array.
+    _host(Decl("buf", Scalar.F64, (Lit(4),)), _inline(frag, dst=Var("buf")))
+
+
+def test_a_factor_bound_by_a_bind_satisfies_the_kernel() -> None:
+    # PQ_x is neither a Param nor a Decl of the host: the bind binds it.
+    k = synthetic_inline_kernel()
+    assert "PQ_x" not in {p.name for p in k.params}
+
+
+def test_walk_sees_through_the_splice() -> None:
+    frag = synthetic_fragment()
+    k = synthetic_inline_kernel(frag)
+    inside = set(map(id, walk(frag.body)))
+    seen = list(walk(k.body))
+    assert any(isinstance(s, Inline) for s in seen)
+    assert inside <= set(map(id, seen))  # the very statements, not copies
+    assert any(isinstance(s, Decl) and s.name == "acc" for s in seen)
+    hidden = list(walk(k.body, into_inline=False))
+    assert not inside & set(map(id, hidden))
+    # The expression census sees the bindings.
+    exprs = [e for s in seen for root in ir._exprs_of(s) if root is not None
+             for e in ir._subexprs(root)]
+    assert Var("half") in exprs
+
+
+def test_the_raw_census_is_unchanged_by_fragments() -> None:
+    # Fragment and Inline add no escape hatch: a Fragment refuses Raw, and
+    # src/ constructs none (the census above is still zero).
+    assert count_raw_in_src() == 0
+    assert not any(isinstance(s, Raw) for s in walk(synthetic_inline_kernel().body))

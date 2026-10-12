@@ -23,7 +23,10 @@ uniformly; nothing depends on what the kernel computes:
   array with a launch-time extent is the block's dynamic shared memory
   (`extern __shared__`, row-major), and there may be at most one, because
   laying out two would be a decision;
-- `Note` is a `//` comment beside the statement it precedes.
+- `Note` is a `//` comment beside the statement it precedes;
+- an `Inline` is a `{ ... }` block headed `// fragment <name>`, its bindings
+  `const` declarations, then the fragment's statements in place. Nothing is
+  renamed: `Kernel` has already refused any name the block could shadow.
 
 `Fn.BOYS` has no vendor intrinsic, so the writer emits one fixed device
 routine, `fj_boys` (`BOYS_DEVICE`), when the kernel calls it -- the spelling
@@ -52,6 +55,7 @@ from felizjueves.ir import (
     For,
     If,
     Index,
+    Inline,
     Intent,
     Kernel,
     Lit,
@@ -210,11 +214,46 @@ class CWriter:
         elif isinstance(s, AtomicAdd):
             self._emit(depth, self.atomic_add(self.lvalue(s.dst),
                                               self.expr(s.value)))
+        elif isinstance(s, Inline):
+            self.inline(s, depth)
         elif isinstance(s, Raw):
             for line in s.text.splitlines():
                 self._emit(depth, line)
         else:  # pragma: no cover
             raise EmitError(f"not a Stmt: {s!r}")
+
+    def inline(self, s: Inline, depth: int) -> None:
+        """The fragment's statements in place, in a block of their own.
+
+        Each binding is a `const` declaration ahead of the body: a scalar
+        bind `const auto b = <expr>;`, an array bind `auto* const b = a;`
+        (the host array, decayed to a pointer that indexes as it does). A
+        bind bound to the host name it shares (`Var(b)`, which `Kernel`
+        admits and nothing else) is the host's own `b`, so it gets no line.
+        """
+        frag = s.fragment
+        self._emit(depth, "{")
+        self._emit(depth + 1, f"// fragment {frag.name}")
+        scope: dict[str, _Array | None] = {}
+        for name, e in s.bindings:
+            if e == Var(name):
+                scope[name] = self._lookup(name)
+            elif name in frag.array_binds:
+                arr = self._lookup(e.name)
+                if arr is None:
+                    raise EmitError(f"array bind {name!r} is bound to the "
+                                    f"scalar {e.name!r}")
+                scope[name] = arr
+                self._emit(depth + 1, f"auto* const {name} = {e.name};")
+            else:
+                scope[name] = None
+                self._emit(depth + 1, f"const auto {name} = {self.expr(e)};")
+        self._scopes.append(scope)
+        try:
+            self._block(frag.body, depth + 1)
+        finally:
+            self._scopes.pop()
+        self._emit(depth, "}")
 
     def decl(self, s: Decl, depth: int) -> None:
         t = CTYPE[s.type]
@@ -344,6 +383,8 @@ class CWriter:
                 names.append(s.name)
             elif isinstance(s, For):
                 names.append(s.var)
+            elif isinstance(s, Inline):
+                names.extend(s.fragment.binds)
         bad = sorted({n for n in names if n.startswith(RESERVED)})
         if bad:
             raise EmitError(f"names {bad} use the writer's {RESERVED!r} prefix")

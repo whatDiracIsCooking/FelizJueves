@@ -7,7 +7,9 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 
     Kernel(name, params, body)
     Stmt = Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
+         | Inline
     Expr = Weighted | Index | Call | Lit | Var
+    Fragment(name, binds, body)   -- spliced into a kernel by Inline(fragment, bindings)
 
 THE ONE THING EXPRESSED NATIVELY is the recurrence instruction, in the reduction
 form of `[JEngine, v2, eqs. 10-12]` (docs/implementation/j_engine.md):
@@ -48,6 +50,13 @@ interpreter ignores it.
 `Raw(text)` is the single escape hatch: explicitly marked, opaque to every
 pass and to the interpreter, and **counted** (test/test_ir.py's census over
 src/). Raise the count only with a reason.
+
+`Fragment` is the opposite of `Raw`: a block of IR whose binding contract is
+checked by construction. Its `binds` are exactly the names its body uses
+without declaring; `Inline` binds each to a host `Expr`, once; and the
+`Kernel` refuses a fragment whose own names collide with the host's -- a
+fragment is not a macro, so nothing is ever renamed. `walk()` descends into
+an `Inline`, so every census here sees through the splice.
 """
 
 from __future__ import annotations
@@ -55,7 +64,7 @@ from __future__ import annotations
 import keyword
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 # ---------------------------------------------------------------------------
@@ -436,8 +445,199 @@ class Raw:
             raise ValueError("Raw needs non-empty text")
 
 
-Stmt = Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, AtomicAdd, Note, Raw)
+# ---------------------------------------------------------------------------
+# Fragments: a device-code block with a checked binding contract
+# ---------------------------------------------------------------------------
+
+
+def _free_uses(body: tuple[Stmt, ...]) -> tuple[dict[str, str], set[str], set[str]]:
+    """What a fragment body uses without declaring it, and what it declares.
+
+    Returns `(free, written, declared)`: `free` maps each name the body uses
+    but never declared to `"scalar"` (a `Var` read, or a `Factor`'s name) or
+    `"array"` (an `Index` read or written); `written` is the free names
+    assigned as scalars; `declared` is every `Decl` name and `For` var. Scope
+    is source order and block nesting, as the interpreter and C see it.
+    """
+    free: dict[str, str] = {}
+    written: set[str] = set()
+    declared: set[str] = set()
+    scopes: list[set[str]] = [set()]
+
+    def visible(name: str) -> bool:
+        return any(name in sc for sc in scopes)
+
+    def use(name: str, kind: str) -> None:
+        if visible(name):
+            return
+        if free.setdefault(name, kind) != kind:
+            raise ValueError(f"fragment uses {name!r} both as a scalar and as "
+                             "an array")
+
+    def read(e: Expr | None) -> None:
+        if e is None:
+            return
+        for x in _subexprs(e):
+            if isinstance(x, Var):
+                use(x.name, "scalar")
+            elif isinstance(x, Index):
+                use(x.array, "array")
+            elif isinstance(x, Weighted):
+                for t in x.terms:
+                    if t.g.name_in_kernel is not None:
+                        use(t.g.name_in_kernel, "scalar")
+
+    def write(dst: Var | Index) -> None:
+        if isinstance(dst, Index):
+            read(dst)
+        elif not visible(dst.name):
+            use(dst.name, "scalar")
+            written.add(dst.name)
+
+    def scan(stmts: tuple[Stmt, ...]) -> None:
+        for s in stmts:
+            if isinstance(s, Inline):
+                raise ValueError("a Fragment cannot hold an Inline: one level, "
+                                 "names only")
+            if isinstance(s, Raw):
+                raise ValueError("a Fragment cannot hold a Raw: its names "
+                                 "cannot be checked against the binds")
+            if isinstance(s, Decl):
+                for d in s.shape:
+                    read(d)
+                read(s.init)
+                scopes[-1].add(s.name)
+                declared.add(s.name)
+            elif isinstance(s, (Assign, WarpReduce)):
+                read(s.value)
+                write(s.dst)
+            elif isinstance(s, AtomicAdd):
+                read(s.value)
+                read(s.dst)
+            elif isinstance(s, For):
+                read(s.start)
+                read(s.stop)
+                read(s.step)
+                declared.add(s.var)
+                scopes.append({s.var})
+                scan(s.body)
+                scopes.pop()
+            elif isinstance(s, If):
+                read(s.cond)
+                for branch in (s.then, s.orelse):
+                    scopes.append(set())
+                    scan(branch)
+                    scopes.pop()
+
+    scan(body)
+    return free, written, declared
+
+
+@dataclass(frozen=True)
+class Fragment:
+    """A named block of device code whose free names are its `binds`, exactly.
+
+    `binds` is the READ set of the body: every name the body uses without
+    declaring it -- a `Var`, an indexed array, a `Factor`'s scalar -- is in
+    `binds`, and every bind is used. A bind nothing reads is a stale
+    contract, and raises. A bind is used either as a scalar (read-only: an
+    assignment to one raises) or as an array (indexed, and may be written --
+    the one way a fragment hands a result to its host, since its own locals
+    end with it).
+
+    One level, names only: no parameters, no return value, no `Inline` inside
+    a fragment, and no `Raw` (whose names could not be checked). A `Break`
+    must sit inside a `For` of the fragment's own.
+
+    `array_binds` and `declared` (every `Decl` name and `For` var) are
+    derived, for `Inline` and `Kernel` to check against; they take no part in
+    equality.
+    """
+
+    name: str
+    binds: tuple[str, ...]
+    body: tuple[Stmt, ...]
+    array_binds: frozenset[str] = field(init=False, repr=False, compare=False)
+    declared: frozenset[str] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        _ident(self.name, "Fragment name")
+        binds = _tuple(self, "binds", self.binds)
+        for b in binds:
+            _ident(b, "Fragment bind")
+        if len(set(binds)) != len(binds):
+            raise ValueError(f"duplicate binds in {list(binds)}")
+        _body(self, "body", self.body)
+        _check_breaks(self.body, False)
+        free, written, declared = _free_uses(self.body)
+        unbound = sorted(free.keys() - set(binds))
+        if unbound:
+            raise ValueError(f"fragment {self.name!r} reads {unbound} without "
+                             "declaring or binding them")
+        unused = [b for b in binds if b not in free]
+        if unused:
+            raise ValueError(f"fragment {self.name!r} binds {unused}, which "
+                             "nothing reads: a stale contract")
+        if written:
+            raise ValueError(f"fragment {self.name!r} assigns to scalar binds "
+                             f"{sorted(written)}: a scalar bind is read-only")
+        clash = sorted(declared & set(binds))
+        if clash:
+            raise ValueError(f"fragment {self.name!r} declares {clash}, "
+                             "which it also binds")
+        object.__setattr__(self, "array_binds", frozenset(
+            b for b in binds if free[b] == "array"))
+        object.__setattr__(self, "declared", frozenset(declared))
+
+
+@dataclass(frozen=True)
+class Inline:
+    """Splice `fragment` here, each of its binds bound to an `Expr` of the host.
+
+    `bindings` (a mapping, or `(name, expr)` pairs) binds every name in
+    `fragment.binds` exactly once -- none missing, none extra -- and is
+    frozen to `(name, expr)` pairs in the fragment's bind order. A scalar bind
+    takes any `Expr`; an array bind takes a `Var` naming a host array (here a
+    `Var` names the array to alias, not a scalar). The fragment's own names
+    are checked against the host's when the `Kernel` is built: a collision
+    raises, and nothing is renamed.
+    """
+
+    fragment: Fragment
+    bindings: tuple[tuple[str, Expr], ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fragment, Fragment):
+            raise TypeError("Inline needs a Fragment, got "
+                            f"{type(self.fragment).__name__}")
+        raw = self.bindings
+        pairs = list(raw.items()) if hasattr(raw, "items") else list(
+            _tuple(self, "bindings", raw))
+        given: dict[str, Expr] = {}
+        for pair in pairs:
+            name, e = pair
+            if name in given:
+                raise ValueError(f"Inline binds {name!r} twice")
+            given[name] = e
+        binds = self.fragment.binds
+        missing = [b for b in binds if b not in given]
+        extra = sorted(given.keys() - set(binds))
+        if missing or extra:
+            raise ValueError(f"Inline of {self.fragment.name!r}: missing "
+                             f"bindings {missing}, extra {extra}")
+        for b in binds:
+            _expr(given[b], f"the binding of {b!r}")
+            if b in self.fragment.array_binds and not isinstance(given[b], Var):
+                raise TypeError(f"array bind {b!r} must be bound to a Var "
+                                "naming a host array")
+        object.__setattr__(self, "bindings",
+                           tuple((b, given[b]) for b in binds))
+
+
+Stmt = (Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
+        | Inline)
+STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, AtomicAdd, Note, Raw,
+              Inline)
 
 
 # ---------------------------------------------------------------------------
@@ -482,15 +682,21 @@ class Param:
             _expr(d, "a Param extent")
 
 
-def walk(body: tuple[Stmt, ...]) -> Iterator[Stmt]:
-    """Every statement in `body`, nested ones included, in source order."""
+def walk(body: tuple[Stmt, ...], *, into_inline: bool = True) -> Iterator[Stmt]:
+    """Every statement in `body`, nested ones included, in source order.
+
+    An `Inline` is yielded, then -- unless `into_inline` is false -- its
+    fragment's body, so every census sees through the splice.
+    """
     for s in body:
         yield s
         if isinstance(s, For):
-            yield from walk(s.body)
+            yield from walk(s.body, into_inline=into_inline)
         elif isinstance(s, If):
-            yield from walk(s.then)
-            yield from walk(s.orelse)
+            yield from walk(s.then, into_inline=into_inline)
+            yield from walk(s.orelse, into_inline=into_inline)
+        elif isinstance(s, Inline) and into_inline:
+            yield from walk(s.fragment.body, into_inline=into_inline)
 
 
 def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
@@ -502,6 +708,8 @@ def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
         return (s.start, s.stop, s.step)
     if isinstance(s, If):
         return (s.cond,)
+    if isinstance(s, Inline):
+        return tuple(e for _, e in s.bindings)
     return ()
 
 
@@ -530,6 +738,51 @@ def _check_breaks(body: tuple[Stmt, ...], in_loop: bool) -> None:
 
 
 _EXTENT_FNS = (Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV)
+
+
+def _check_inlines(params: tuple[Param, ...], body: tuple[Stmt, ...]) -> None:
+    """Hygiene: a fragment is not a macro, so a name clash raises.
+
+    Host names are the `Param`s and every `Decl` name and `For` var outside
+    any fragment. A fragment's own `Decl` name or `For` var that is also a
+    host name raises. A bind may share a host name only when bound to that
+    very name (`Var(b)`): anything else would shadow the host's `b` inside the
+    splice. An array bind's `Var` must name a host array, and a scalar bind's
+    binding must not be one.
+    """
+    host_stmts = list(walk(body, into_inline=False))
+    host = {p.name for p in params}
+    arrays = {p.name for p in params if p.array}
+    for s in host_stmts:
+        if isinstance(s, Decl):
+            host.add(s.name)
+            if s.shape:
+                arrays.add(s.name)
+        elif isinstance(s, For):
+            host.add(s.var)
+    for s in host_stmts:
+        if not isinstance(s, Inline):
+            continue
+        frag = s.fragment
+        clash = sorted(frag.declared & host)
+        if clash:
+            raise ValueError(
+                f"fragment {frag.name!r} declares {clash}, which the host "
+                "kernel also names: a fragment is not a macro, and nothing is "
+                "renamed")
+        for b, e in s.bindings:
+            if b in host and e != Var(b):
+                raise ValueError(
+                    f"fragment {frag.name!r} binds {b!r}, a host name, to "
+                    f"{e!r}: only the host's own {b!r} may be bound under "
+                    "that name")
+            if b in frag.array_binds:
+                if e.name not in arrays:
+                    raise ValueError(f"array bind {b!r} of {frag.name!r} is "
+                                     f"bound to {e.name!r}, not a host array")
+            elif isinstance(e, Var) and e.name in arrays:
+                raise ValueError(f"scalar bind {b!r} of {frag.name!r} is "
+                                 f"bound to the host array {e.name!r}")
 
 
 @dataclass(frozen=True)
@@ -567,7 +820,11 @@ class Kernel:
         _body(self, "body", self.body)
         _check_breaks(self.body, False)
 
+        _check_inlines(params, self.body)
+
         bound = set(names) | {s.name for s in walk(self.body) if isinstance(s, Decl)}
+        bound |= {b for s in walk(self.body) if isinstance(s, Inline)
+                  for b in s.fragment.binds}
         for s in walk(self.body):
             for root in _exprs_of(s):
                 if root is None:
