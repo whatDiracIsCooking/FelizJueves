@@ -97,10 +97,20 @@ def test_the_unit_component_is_one_term() -> None:
 
 
 def test_the_factor_vocabulary_is_closed_and_named() -> None:
-    assert [f.name for f in Factor] == ["ONE", "PQ_X", "PQ_Y", "PQ_Z"]
+    assert [f.name for f in Factor] == [
+        "ONE", "PQ_X", "PQ_Y", "PQ_Z",
+        # #152: the E recurrence's g_k (test_e_fragment uses each one)
+        "HALF_INV_ZETA", "PA_X", "PA_Y", "PA_Z", "PB_X", "PB_Y", "PB_Z"]
     assert [Factor.pq(d) for d in range(3)] == [Factor.PQ_X, Factor.PQ_Y, Factor.PQ_Z]
+    assert [Factor.pa(d) for d in range(3)] == [Factor.PA_X, Factor.PA_Y, Factor.PA_Z]
+    assert [Factor.pb(d) for d in range(3)] == [Factor.PB_X, Factor.PB_Y, Factor.PB_Z]
     assert Factor.ONE.name_in_kernel is None
     assert Factor.PQ_Y.name_in_kernel == "PQ_y"
+    assert Factor.HALF_INV_ZETA.name_in_kernel == "half_inv_zeta"
+    # Every bound name is an identifier: it is spelled as a C name.
+    for f in Factor:
+        if f.name_in_kernel is not None:
+            ir._ident(f.name_in_kernel, "Factor name")
 
 
 @pytest.mark.parametrize("g", ["PQ_x", "1", "theta", 1, None])
@@ -137,6 +147,9 @@ def test_the_scalar_type_is_fp64() -> None:
 def test_call_vocabulary_and_arity() -> None:
     assert Call(Fn.THREAD_X).args == ()
     Call(Fn.BOYS, (Lit(3), Var("T")))
+    Call(Fn.EXP, (Var("x"),))  # #152: E^{00}_0's seed
+    with pytest.raises(ValueError, match="takes 1 args"):
+        Call(Fn.EXP, (Var("x"), Var("y")))
     with pytest.raises(ValueError, match="takes 2 args"):
         Call(Fn.ADD, (Lit(1),))
     with pytest.raises(ValueError, match="Fn vocabulary"):

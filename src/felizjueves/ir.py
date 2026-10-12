@@ -16,7 +16,8 @@ form of `[JEngine, v2, eqs. 10-12]` (docs/implementation/j_engine.md):
 
     dst = SUM_k ( c_k * g_k * src_k )      c_k a positive int, g_k a `Factor`
 
-`Factor` is the declared, closed vocabulary of `g_k`: `1` and `PQ[d]`. With
+`Factor` is the declared, closed vocabulary of `g_k`: `1` and `PQ[d]`
+(and, for the `E` fragments, `1/2zeta`, `X_PA[d]`, `X_PB[d]`). With
 `c_k` in `{1, r_d - 1}` that is the two terms of
 `[r]^(m) = PQ_d [r-1d]^(m+1) + (r_d - 1) [r-2d]^(m+1)`, and the cheap unit
 component (one multiply; the second term vanishes) is a one-term `Weighted`.
@@ -80,7 +81,17 @@ class Scalar(Enum):
 
 
 class Factor(Enum):
-    """The `g_k` of a `Weighted` term: `1`, or one component of `PQ`.
+    """The `g_k` of a `Weighted` term. Closed; each member serves a contract.
+
+    - ONE: the unit factor -- `(r_d - 1)` and `(t + 1)` ride in `c_k`.
+    - PQ_X PQ_Y PQ_Z: `PQ[d]`, the [p|q] contract's (#25) Hermite-to-`[r]`
+      recurrence, `[JEngine, v2, eqs. 10-12]`.
+    - HALF_INV_ZETA, PA_X PA_Y PA_Z, PB_X PB_Y PB_Z: the `E` recurrence's
+      `g_k` (#152; McMurchie & Davidson's report eqs. 2.20-2.21, entry 46 of
+      docs/references.md): `E^{i+1,j}_t = (1/2zeta) E^{ij}_{t-1} + X_PA
+      E^{ij}_t + (t+1) E^{ij}_{t+1}`, and the same with `X_PB` raising `j`.
+      `1/2zeta` is one bound scalar, not a `DIV` per term; `X_PA` and `X_PB`
+      are per axis, as `PQ` is.
 
     A non-unit factor names a scalar the kernel must bind (a `Param` or `Decl`
     called `Factor.name_in_kernel`), which `Kernel` validates.
@@ -90,6 +101,13 @@ class Factor(Enum):
     PQ_X = "PQ_x"
     PQ_Y = "PQ_y"
     PQ_Z = "PQ_z"
+    HALF_INV_ZETA = "half_inv_zeta"
+    PA_X = "PA_x"
+    PA_Y = "PA_y"
+    PA_Z = "PA_z"
+    PB_X = "PB_x"
+    PB_Y = "PB_y"
+    PB_Z = "PB_z"
 
     @property
     def name_in_kernel(self) -> str | None:
@@ -99,6 +117,16 @@ class Factor(Enum):
     def pq(cls, d: int) -> Factor:
         """`PQ[d]` for d in 0, 1, 2 (x, y, z)."""
         return (cls.PQ_X, cls.PQ_Y, cls.PQ_Z)[d]
+
+    @classmethod
+    def pa(cls, d: int) -> Factor:
+        """`X_PA` on axis d (`P - A`), for d in 0, 1, 2 (x, y, z)."""
+        return (cls.PA_X, cls.PA_Y, cls.PA_Z)[d]
+
+    @classmethod
+    def pb(cls, d: int) -> Factor:
+        """`X_PB` on axis d (`P - B`), for d in 0, 1, 2 (x, y, z)."""
+        return (cls.PB_X, cls.PB_Y, cls.PB_Z)[d]
 
 
 class Fn(Enum):
@@ -112,6 +140,9 @@ class Fn(Enum):
     - SQRT: `theta` in the fundamental `(2/sqrt(pi)) theta (-2 theta^2)^m F_m`.
     - BOYS: `F_m(T)`, `Call(BOYS, (m, T))` -- the fundamentals' special
       function; the recurrences never reduce it.
+    - EXP: `E^{00}_0 = exp(zeta X_PA X_PB)` (`= exp(-mu X_AB^2)`), the seed
+      of each axis of the `E` recurrence (#152), formed from the pair
+      `(X_PA, X_PB)` exactly as `ao/hermite.py` forms it.
     - THREAD_X THREAD_Y BLOCK_X BLOCK_DIM_X BLOCK_DIM_Y: launch geometry. The
       bra index is `THREAD_X + BLOCK_X * BLOCK_DIM_X`; kets are strip-mined
       from `THREAD_Y` with stride `BLOCK_DIM_Y`.
@@ -123,6 +154,7 @@ class Fn(Enum):
     DIV = ("div", 2)
     LT = ("lt", 2)
     SQRT = ("sqrt", 1)
+    EXP = ("exp", 1)
     BOYS = ("boys", 2)
     THREAD_X = ("thread_x", 0)
     THREAD_Y = ("thread_y", 0)

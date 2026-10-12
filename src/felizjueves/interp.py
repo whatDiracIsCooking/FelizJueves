@@ -307,6 +307,9 @@ class _Thread:
             if x < 0:
                 raise InterpError(f"sqrt of {x!r}")
             return math.sqrt(x)
+        if fn is Fn.EXP:
+            (x,) = args
+            return math.exp(float(x))
         a, b = args
         ints = type(a) is int and type(b) is int
         if fn is Fn.LT:
