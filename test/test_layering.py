@@ -171,9 +171,11 @@ RULES: dict[str, Rule] = {
              "the kernel the tests built"),
     "analysis": _rule(
         "model against measurement: kernelrank.py ranks lower.KernelCost "
-        "against the Measured rows (#54), and batchreport.py derives a "
+        "against the Measured rows (#54), batchreport.py derives a "
         "recommended n_batches from their wall-clock alone (#56; its EDGES "
-        "hold it off `lower`). It reads both sides and feeds neither",
+        "hold it off `lower`), and ridge.py scores #114's declared "
+        "ridge-crossing rule off the counter rows (its EDGES hold it to the "
+        "store and the card). It reads both sides and feeds neither",
         ("spec", "device", "kernel", "lower", "measured_store"),
         measured="an analysis reads the STORE (`measured_store`), never the "
                  "driver that compiles into it: a ranking must not need a "
@@ -294,6 +296,7 @@ RULE_OF: dict[str, str] = {
     "asym": "study",
     "kernelrank": "analysis",
     "batchreport": "analysis",
+    "ridge": "analysis",
     "ao": "ao",
     "ao.shell": "ao",
     "ao.hermite": "ao",
@@ -356,6 +359,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
              "plan.batching", "plan.dag", "plan.sieve", "plan.targets", "spec"),
     "kernelrank": ("device", "kernel", "lower", "measured_store", "spec"),
     "batchreport": ("device", "measured_store"),
+    "ridge": ("device", "measured_store"),
     "ao": (),
     "ao.shell": (),
     "ao.hermite": (),

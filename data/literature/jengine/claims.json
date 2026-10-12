@@ -51,12 +51,20 @@
       "test": "test/test_plan_mild.py::test_mild_and_the_batching_pass_break_ties_oppositely"
     },
     {
+      "id": "jengine/batching-crosses-our-ridge",
+      "statement": "THIS REPO'S claim, not the paper's: [JEngine, v2, §7.2]'s question -- does batching move a [p|q] kernel from memory-bound to compute-bound? -- asked of our generated kernels on our cards, under the rule issue #114 declared before any roofline row existed (felizjueves.ridge: for one arch and one L, batching crosses iff the cell is memory-bound at n_batches = 1 and compute-bound at some higher SUBGRID count; the per-kernel variant, every kernel of that count's partition compute-bound, scored separately). On sm_86 (RTX 3080, nvcc 13.0, ncu; measured ridge 0.65 FLOP/B) both variants give the same answers: at L = 16 batching CROSSES at 3 batches (the cell is memory-bound at 1 batch, 0.40 FLOP/B, and compute-bound at 3, 1.52 FLOP/B, every kernel of the 3-batch partition at 1.46 FLOP/B or more); at L = 7, 10 and 13 the cell is compute-bound ALREADY AT 1 BATCH (300, 3.54 and 0.96 FLOP/B), so batching does not cross -- there is nothing to cross, which is a statement about this card's low fp64 ridge; no L never crosses. On gfx1200 (measured ridge 1.49 FLOP/B) the answer is ABSENT: could not measure (measured_store.UNMEASURED: rocprofv3 cannot load here, and gfx1200 has no fp64 counter), which is not 'never crossed'. Fig. 7's A100 ridge is a different number, and nothing here is compared with it.",
+      "source": "[JEngine, v2, §7.2, Fig. 7]",
+      "kind": "monotonicity",
+      "status": "asserted",
+      "test": "test/test_ridge.py::test_batching_crosses_our_ridge_on_sm_86_and_gfx1200_could_not_measure"
+    },
+    {
       "id": "jengine/batching-crosses-the-ridge",
       "statement": "Batching moves [p|q] kernels from memory-bound to compute-bound on the roofline: [5|5] is compute-bound from 3 batches and gains nothing beyond, [6|6] stays memory-bound at 1 and 3 and crosses at 6, and [7|7] needs at least 9 -- with some kernels of its 9-batch partition still memory-bound, so more batches might still help.",
       "source": "[JEngine, v2, §7.2, Fig. 7]",
       "kind": "monotonicity",
       "status": "unverifiable",
-      "reason": "A roofline of the authors' kernels on an A100 (gly40/cc-pVQZ): its ridge is that card's fp64 peak over its bandwidth, and both the kernels and the card are out of reach here. #114 asks the same question of OUR kernels on sm_86 and gfx1200, under a rule declared before its rows exist, and records it as this repo's own claim; that answer, either way, is about our cards' ridge and does not discharge this one (the same split as jengine/nine-batches-suffice)."
+      "reason": "A roofline of the authors' kernels on an A100 (gly40/cc-pVQZ): its ridge is that card's fp64 peak over its bandwidth, and both the kernels and the card are out of reach here. #114 asked the same question of OUR kernels on sm_86 and gfx1200, under a rule declared in the issue before the roofline rows existed, and recorded the answer as this repo's own claim, jengine/batching-crosses-our-ridge (sm_86: crosses at 3 batches at L = 16 only, compute-bound already at 1 batch below it; gfx1200: could not measure); that answer is about our cards' ridge and does not discharge this one (the same split as jengine/nine-batches-suffice)."
     },
     {
       "id": "jengine/batching-reduces-spills",
