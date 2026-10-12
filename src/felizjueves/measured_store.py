@@ -181,6 +181,27 @@ read. A counter row carries counter measurements only (a compile observation
 belongs in `kernels.json`, a timing in its `runtime_ns`), and the loader
 refuses anything else in it.
 
+THE ROOFLINE ROWS (#112) are those counter rows, filled over `SUBGRID` by
+test/test_kernel_device.py's opt-in counter sweep (FJ_ROOFLINE_STORE) behind
+the card gate (`felizjueves.gate`). Each row carries the card's state around
+its phase in `raw` -- ROOFLINE_STATE_FIELDS: the gate's settled reading
+before, the reading after (both KNOWN: a phase whose after-reading is
+non-idle or unknown was discarded and retaken), the CPU's, and how many
+phases of that cell the gate discarded -- and the loader refuses a row
+without them. The VERDICT is computed, never stored: `roofline_point` reads
+a row's derived intensity and achieved FLOP/s and asks `device.verdict`
+against the card's MEASURED ridge (#109), so `memory_bound` cannot be
+written by hand, and a card without both ceilings gets no point at all
+(`device.Uncharacterised`) -- nor any row: the loader refuses a counter row
+for an uncharacterised arch. `kernel_roofline` is the per-batch-kernel
+verdict, `cell_roofline` the cell's (its counters summed, so its intensity is
+total FLOPs over total bytes and its rate total FLOPs over the summed
+serialised durations); the paper's own [7|7] finding is that SOME kernels of
+a split stay memory-bound, which only the per-kernel view can see. A card in
+UNMEASURED has no rows by decision, with the reason recorded (the header's
+`could_not_measure`), and the loader refuses one: COULD NOT MEASURE IS NOT
+ZERO, and not a missing file either.
+
 THE SPLIT (#94). This module is the store and nothing else: the record, the
 file, the read path, the declared subgrid, and the two verdicts read off the
 rows. It knows no toolchain -- it runs no compiler, reads no config.sh,
@@ -204,7 +225,14 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
-from felizjueves.device import Arch, MeasuredKey
+from felizjueves.device import (
+    MEMORY_BOUND,
+    Arch,
+    MeasuredKey,
+    by_name,
+    require_characterised,
+    verdict,
+)
 from felizjueves.kernel import pq_spec
 from felizjueves.lower import LEVERS
 from felizjueves.spec import Spec
@@ -619,6 +647,52 @@ ROOFLINE_HEADER = {
                     "fields share a name, not a meaning: see counter_unit).",
 }
 
+# #112: the card's state around a counter phase, in every counter row's raw.
+# gpu_util_*: percent, the card's own SMI (gate.card_util); both KNOWN (the
+# sweep retakes a phase whose after-reading is non-idle or unknown).
+# cpu_busy_permille_before: the CPU gate's settled reading. gate_discarded_
+# phases: the cell's phases the gate discarded before this one was kept.
+ROOFLINE_STATE_FIELDS = ("roofline:gpu_util_before", "roofline:gpu_util_after",
+                         "roofline:cpu_busy_permille_before",
+                         "roofline:gate_discarded_phases")
+
+# #112: the cards that have NO counter rows, by decision, and why. Could not
+# measure is recorded here -- never as a zero, never as an absent file.
+UNMEASURED = {
+    "gfx1200": (
+        "COULD NOT MEASURE (#112). rocprofv3 1.1.0 cannot run in this "
+        "container: librocprofiler-sdk.so cannot load libdw.so.1 or "
+        "libhsa-amd-aqlprofile64.so.1 (no root to install them here; "
+        "docker/install-rocm.sh now installs libdw1 and hsa-amd-aqlprofile, "
+        "so a rebuilt image can collect the bytes). And gfx1200 exposes NO "
+        "fp64 instruction counter in rocprofiler-sdk (its counter "
+        "definitions have none for gfx12), so even a working rocprofv3 "
+        "gives no measured FLOP count and hence no measured intensity: an "
+        "AMD roofline row needs a FLOP count from elsewhere, labelled as "
+        "such. No gfx1200 row exists; that is not a zero."),
+}
+
+ROOFLINE_HEADER["card_state"] = (
+    "#112: every row's raw carries " + ", ".join(ROOFLINE_STATE_FIELDS)
+    + ": the card's utilisation (percent, its own SMI) as the gate let the "
+    "counter phase through and 1 s after it, the CPU's busy fraction "
+    "(permille) before it, and how many of that cell's phases the gate "
+    "discarded (after-reading non-idle or unknown) before this one was "
+    "kept. The counter run is a SEPARATE run of the same checked binary as "
+    "kernels.json's timed one, on the same wide-T input (raw 'roofline:"
+    "n_bra' / 'roofline:n_ket' / 'roofline:lanes'); collection serialises "
+    "and replays each kernel, so it may change occupancy, and its duration "
+    "is counter_ns, never runtime_ns.")
+ROOFLINE_HEADER["verdict"] = (
+    "#112: never stored. measured_store.roofline_point derives intensity "
+    "(fp64_flops / DRAM bytes) and achieved FLOP/s (fp64_flops / "
+    "counter_ns) from a row and asks device.verdict against the card's "
+    "MEASURED ridge (data/measured/ceilings.json, #109): memory_bound iff "
+    "intensity < ridge. kernel_roofline is per batch kernel, cell_roofline "
+    "per cell (counts summed). A card without both ceilings has no ridge, "
+    "no verdict and no row.")
+ROOFLINE_HEADER["could_not_measure"] = dict(UNMEASURED)
+
 _COUNTER_ONLY_FORBIDDEN = tuple(n for n in MEASUREMENTS if n not in COUNTERS)
 _BATCHES = re.compile(r"/b(\d+)/")
 
@@ -669,6 +743,22 @@ def _counter_row(path: Path, key: str, v: object) -> Measured:
     for n in ("counter_tool", "counter_unit", "command"):
         if not getattr(row, n):
             raise ValueError(f"{path}: counter row {key!r} has no {n}")
+    if row.arch in UNMEASURED:
+        raise ValueError(f"{path}: counter row {key!r} is on {row.arch}, "
+                         "which has no counter rows by decision "
+                         "(UNMEASURED: could not measure)")
+    try:
+        require_characterised(by_name(row.arch))
+    except ValueError as e:
+        raise ValueError(f"{path}: counter row {key!r}: {e} -- a row for an "
+                         "uncharacterised card does not exist") from e
+    for f in ROOFLINE_STATE_FIELDS:
+        v = row.raw.get(f)
+        if type(v) is not int or v < 0 or (
+                "gpu_util" in f and v > 100) or ("permille" in f and v > 1000):
+            raise ValueError(f"{path}: counter row {key!r}: {f} = {v!r} -- "
+                             "the card's state is a KNOWN reading in every "
+                             "counter row")
     return row
 
 
@@ -764,6 +854,58 @@ def cell_counters(store: Mapping[str, Measured],
         first, **sums, date=max(r.date for r in ks),
         kernel=",".join(r.kernel for r in ks), source_sha256="",
         raw={f"#{b}:{k}": v for b, r in enumerate(ks) for k, v in r.raw.items()})
+
+
+@dataclass(frozen=True)
+class RooflinePoint:
+    """One kernel's (or one cell's) place under its card's measured roofs.
+    Derived from counter rows and the card's ceilings, never stored."""
+
+    key: str
+    arch: str
+    intensity: float  # fp64 FLOP / DRAM byte
+    achieved_flops_per_s: float  # fp64 FLOP / counter_ns
+    ridge: float  # the card's measured ridge, FLOP / byte (#109)
+    peak_flops_per_s: float  # the card's measured fp64 ceiling (#109)
+    memory_bound: bool  # intensity < ridge, by device.verdict
+
+    @property
+    def of_peak(self) -> float:
+        """Achieved FLOP/s over the card's measured fp64 ceiling."""
+        return self.achieved_flops_per_s / self.peak_flops_per_s
+
+
+def roofline_point(row: Measured, key: str = "") -> RooflinePoint:
+    """`row`'s verdict against its card's measured ridge. Refuses
+    (`device.Uncharacterised`) a card without both ceilings, and a row
+    without a measured intensity or rate (ValueError): no FLOP count, no
+    point -- never a zero."""
+    arch = require_characterised(by_name(row.arch))
+    intensity, rate = row.arithmetic_intensity, row.achieved_flops_per_s
+    if intensity is None or rate is None:
+        raise ValueError(f"{key or row.kernel}: no measured intensity or "
+                         "FLOP rate (fp64_flops, DRAM bytes or counter_ns "
+                         "uncounted): no roofline point")
+    return RooflinePoint(
+        key=key, arch=arch.name, intensity=intensity,
+        achieved_flops_per_s=rate, ridge=arch.ridge,
+        peak_flops_per_s=arch.fp64_flops_per_s,
+        memory_bound=verdict(arch, intensity) == MEMORY_BOUND)
+
+
+def kernel_roofline(store: Mapping[str, Measured],
+                    cell: MeasuredKey | str) -> tuple[RooflinePoint, ...]:
+    """The verdict per batch kernel of `cell`, in plan order."""
+    c = cell.key() if isinstance(cell, MeasuredKey) else cell
+    return tuple(roofline_point(r, kernel_key(c, b))
+                 for b, r in enumerate(kernel_counters(store, c)))
+
+
+def cell_roofline(store: Mapping[str, Measured],
+                  cell: MeasuredKey | str) -> RooflinePoint:
+    """The cell's verdict, off `cell_counters` (every count summed)."""
+    c = cell.key() if isinstance(cell, MeasuredKey) else cell
+    return roofline_point(cell_counters(store, c), c)
 
 
 # ---------------------------------------------------------------------------

@@ -669,10 +669,16 @@ def test_the_kernel_key_is_the_cell_key_and_the_batch() -> None:
             measured_store.split_kernel_key(bad)
 
 
+# #112: the card's state every counter row carries (the gate's readings)
+STATE = {"roofline:gpu_util_before": 3, "roofline:gpu_util_after": 0,
+         "roofline:cpu_busy_permille_before": 40,
+         "roofline:gate_discarded_phases": 0}
+
+
 def _cell_rows(spec, flops=(100, 200, 300)) -> dict:
     k = MeasuredKey(spec, SM_86, "nvcc 13.0")
     return {measured_store.kernel_key(k, b): _counter_row(
-        fp64_flops=f, kernel=f"k{b}", raw={measured.NCU_DFMA: f // 2})
+        fp64_flops=f, kernel=f"k{b}", raw={measured.NCU_DFMA: f // 2, **STATE})
         for b, f in enumerate(flops)}
 
 
@@ -693,8 +699,8 @@ def test_a_counter_row_per_batch_kernel_is_written_and_read_back(tmp_path) -> No
     assert cell.dram_bytes_read == 3 * 1_600 and cell.counter_ns == 3 * 500.0
     assert cell.arithmetic_intensity == 600 / (3 * 2_400)
     assert cell.kernel == "k0,k1,k2"
-    assert cell.raw == {f"#{b}:{measured.NCU_DFMA}": f // 2
-                        for b, f in enumerate((100, 200, 300))}
+    assert cell.raw == {f"#{b}:{k}": v for b, f in enumerate((100, 200, 300))
+                        for k, v in {measured.NCU_DFMA: f // 2, **STATE}.items()}
 
 
 def test_the_tracked_counter_store_reads_and_rewrites_byte_for_byte(tmp_path) -> None:
@@ -837,12 +843,103 @@ def test_counter_rows_file_one_row_per_batch_kernel_in_plan_order(tmp_path) -> N
     assert [r.fp64_flops for r in rows.values()] == [2, 4, 6]
     assert all(r.runtime_ns is None for r in rows.values())
     p = tmp_path / "roofline.json"
+    rows = {k: replace(r, raw={**r.raw, **STATE}) for k, r in rows.items()}
     measured_store.save_counters(rows, p)
     assert measured_store.cell_counters(measured_store.load_counters(p),
                                         cell).fp64_flops == 12
     with pytest.raises(ValueError, match="profiled 0 times"):
         measured.counter_rows(b, spec, units, launches[:2], toolchain="nvcc 13.0",
                               gpu="g", tool="t", command="c")
+
+
+# --- #112: the roofline rows, the verdict, and the unmeasured card ----------
+
+
+@pytest.mark.parametrize("change", ["no-state", "unknown-util", "unmeasured",
+                                    "uncharacterised"])
+def test_a_counter_row_without_card_state_or_on_a_card_without_a_ridge_is_refused(
+        change, tmp_path, monkeypatch) -> None:
+    rows = _cell_rows(pq_spec(4, n_batches=3))
+    k0 = sorted(rows)[0]
+    if change == "no-state":
+        rows[k0] = replace(rows[k0], raw={measured.NCU_DFMA: 1})
+    elif change == "unknown-util":  # UNKNOWN is never idle, and never recorded
+        rows[k0] = replace(rows[k0], raw={
+            **rows[k0].raw, "roofline:gpu_util_after": None})
+    elif change == "unmeasured":  # gfx1200: no rows, by decision
+        k = MeasuredKey(pq_spec(4), GFX1200, "hipcc / ROCm 7.2.4")
+        rows = {measured_store.kernel_key(k, 0): _counter_row(
+            fp64_flops=None, arch="gfx1200", toolchain="hipcc / ROCm 7.2.4",
+            raw=STATE)}
+    else:  # a card with no measured ceilings has no ridge, so no row
+        bare = type(SM_86)(SM_86.vendor, SM_86.name, SM_86.wavefront)
+        monkeypatch.setattr(measured_store, "by_name", lambda name: bare)
+    with pytest.raises(ValueError, match=str(tmp_path)):
+        measured_store.save_counters(rows, tmp_path / "roofline.json")
+
+
+def test_the_unmeasured_card_is_recorded_with_its_reason_not_as_zero() -> None:
+    assert set(measured_store.UNMEASURED) == {"gfx1200"}
+    why = measured_store.UNMEASURED["gfx1200"]
+    assert "could not measure" in why.lower()
+    assert "libdw.so.1" in why and "fp64" in why
+    assert measured_store.ROOFLINE_HEADER["could_not_measure"] == \
+        measured_store.UNMEASURED
+    doc = json.loads(measured_store.ROOFLINE.read_text())
+    assert doc["header"]["could_not_measure"] == measured_store.UNMEASURED
+    assert not any("@gfx1200/" in k for k in doc["rows"])
+
+
+def test_memory_bound_is_computed_against_the_measured_ridge() -> None:
+    ridge = SM_86.ridge
+    for intensity, bound in ((ridge * 0.5, True), (ridge * 2, False)):
+        flops = 10**9
+        r = _counter_row(fp64_flops=flops, dram_bytes_read=round(
+            flops / intensity), dram_bytes_written=0, counter_ns=1e6)
+        p = measured_store.roofline_point(r, "k")
+        assert p.memory_bound is bound
+        assert p.ridge == ridge and p.achieved_flops_per_s == 1e12
+        assert p.of_peak == 1e12 / SM_86.fp64_flops_per_s
+    # no FLOP count (gfx1200's counters): no point, never a zero
+    with pytest.raises(ValueError, match="no measured intensity"):
+        measured_store.roofline_point(_counter_row(fp64_flops=None))
+    # per kernel AND per cell, read off one set of numbers
+    rows = _cell_rows(pq_spec(4, n_batches=3), flops=(100, 20_000, 300))
+    cell = MeasuredKey(pq_spec(4, n_batches=3), SM_86, "nvcc 13.0")
+    ks = measured_store.kernel_roofline(rows, cell)
+    assert [k.memory_bound for k in ks] == [
+        100 / 2400 < ridge, 20_000 / 2400 < ridge, 300 / 2400 < ridge]
+    c = measured_store.cell_roofline(rows, cell)
+    assert c.intensity == 20_400 / (3 * 2_400)
+    assert c.achieved_flops_per_s == 20_400 * 1e9 / (3 * 500.0)
+
+
+COUNTER_ROWS = measured_store.load_counters()
+
+
+def test_the_tracked_roofline_rows_cover_the_subgrid_on_sm_86_behind_the_gate() -> None:
+    cells = {measured_store.split_kernel_key(k)[0] for k in COUNTER_ROWS}
+    for spec in measured_store.SUBGRID:
+        (cell,) = [c for c in cells if c.startswith(spec.key() + "@sm_86/")]
+        ks = measured_store.kernel_counters(COUNTER_ROWS, cell)
+        # the kernels profiled are the kernels the compile row names
+        (compiled,) = measured_store.rows(spec=spec, arch=SM_86,
+                                          store=ROWS).values()
+        assert [r.kernel for r in ks] == compiled.kernel.split(",")
+        for r in ks:
+            assert r.counter_tool.startswith("ncu ")
+            assert r.command.startswith("ncu ") and "--metrics" in r.command
+            assert all(m in r.raw for m in measured.NCU_METRICS)
+            assert r.toolchain == compiled.toolchain and r.gpu == compiled.gpu
+            for f in ("roofline:gpu_util_before", "roofline:gpu_util_after"):
+                assert r.raw[f] <= GPU_BUSY_MAX, (cell, f)
+            assert r.raw["roofline:n_bra"] == compiled.raw["wallclock:n_bra"]
+            assert r.raw["roofline:n_ket"] == compiled.raw["wallclock:n_ket"]
+        # both verdicts compute; neither is stored
+        assert len(measured_store.kernel_roofline(COUNTER_ROWS, cell)) == \
+            spec.n_batches
+        measured_store.cell_roofline(COUNTER_ROWS, cell)
+    assert all(r.arch == "sm_86" for r in COUNTER_ROWS.values())
 
 
 def test_a_profiler_that_cannot_measure_yields_no_row(monkeypatch, tmp_path) -> None:

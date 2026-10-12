@@ -1197,3 +1197,193 @@ def test_hip_wallclock_over_the_subgrid(request, compile_device_source,
                                         run_device_binary, tmp_path) -> None:
     """Wall-clock of every SUBGRID cell's launch sequence on the RX 9060 XT."""
     _wallclock("hip", request, compile_device_source, run_device_binary, tmp_path)
+
+
+# --- the roofline sweep (#112) ------------------------------------------------
+#
+# OPT-IN, AND RUN ALONE, like the wall-clock sweep and for the same reason: a
+# counter row taken beside the tier's compiles, or on a card something else
+# holds, is not a noisy row but a different experiment. It skips unless
+# FJ_ROOFLINE_STORE names the counter store to write (normally
+# data/measured/roofline.json):
+#
+#   env FJ_ROOFLINE_STORE=data/measured/roofline.json \
+#       uv run pytest test/test_kernel_device.py -p no:xdist -s -rs \
+#       -m "gpu and cuda" -k roofline
+#
+# FJ_ROOFLINE_BATCHES (optional, e.g. "9,12") restricts it to the SUBGRID
+# cells of those n_batches; every other row is left as it is.
+#
+# THE PROTOCOL, in order, inside one test:
+# 1. COMPILE every SUBGRID cell's batched harness (`_batched_source`, the
+#    wall-clock sweep's, with config.sh's NVCC_FLAGS) and refuse a cell whose
+#    emitted text is not the text the measured store's compile row hashed.
+# 2. CHECK every binary against the oracle (`_check_batched`, J_REL): the
+#    profiled binary is the checked binary, and the same one the wall-clock
+#    sweep times -- a SEPARATE run of it (counter collection serialises and
+#    replays each kernel, so it may change occupancy; its duration is
+#    counter_ns, never runtime_ns, and no wall-clock cell is touched).
+# 3. PROFILE each cell, one launch sequence (no warm-up, one rep: each batch
+#    kernel launched exactly once) on the wide-T timing input -- kernels.json's
+#    row input, TIMING_N_BRA x TIMING_N_KET, tau = 0 -- under
+#    `measured.profile` (ncu), behind the card gate (`felizjueves.gate`, the
+#    shared helper): wait for a quiet card and CPU (a deadline FAILS the test,
+#    nothing written), profile, then the after-reading. A phase whose
+#    after-reading is non-idle or unknown was shared with something outside
+#    this process (#113's lesson on this box): it is DISCARDED and retaken, up
+#    to ROOFLINE_RETAKES times, else the test fails and nothing is written.
+#    The cell's discard count lands in every one of its rows.
+# 4. WRITE one row per batch kernel (`measured.counter_rows`, #110's shape)
+#    with the card's state (measured_store.ROOFLINE_STATE_FIELDS) and the
+#    input in raw, once, after every cell -- then print each kernel's and
+#    each cell's verdict against the card's measured ridge.
+#
+# gfx1200 is measured_store.UNMEASURED: its test skips with the recorded
+# reason (could not measure -- not a zero).
+
+ROOFLINE_STORE = "FJ_ROOFLINE_STORE"
+ROOFLINE_BATCHES = "FJ_ROOFLINE_BATCHES"
+ROOFLINE_RETAKES = 5
+
+
+def _roofline(backend: str, request, compile_device_source,
+              run_device_binary, tmp_path: Path) -> None:
+    store_path = os.environ.get(ROOFLINE_STORE)
+    if not store_path:
+        pytest.skip(f"the counter sweep is opt-in and must run alone, "
+                    f"uncontended: set {ROOFLINE_STORE} (see the section "
+                    "comment)")
+    arch: Arch = BACKEND[backend][1]
+    if arch.name in measured.UNMEASURED:
+        pytest.skip(measured.UNMEASURED[arch.name])
+    base = _toolchain(backend, request)
+    tc = _Configured(base.name, base.path, base.arch, base.ext)
+    b = measured.BACKENDS[backend]
+    toolchain, gpu = b.toolchain(b.compiler()), b.gpu()
+    compile_rows = measured.load()
+    store = measured.load_counters(Path(store_path))
+
+    # 1. compile everything first, against the measured store's text
+    only = os.environ.get(ROOFLINE_BATCHES, "").strip()
+    wanted = {int(n) for n in only.split(",")} if only else None
+    sweep = [s for s in SUBGRID if wanted is None or s.n_batches in wanted]
+    assert sweep, f"{ROOFLINE_BATCHES}={only!r} selects no cell"
+    cells = []
+    for spec in sweep:
+        work = tmp_path / f"L{spec.total_am}-b{spec.n_batches}"
+        work.mkdir()
+        src, names, sha = _batched_source(backend, spec, work)
+        units = b.units(spec)
+        assert [u.name for u in units] == names
+        assert measured.cell_sha256(units) == sha
+        key = measured.MeasuredKey(spec, arch, toolchain)
+        old = compile_rows.get(key.key())
+        assert old is not None and old.source_sha256 == sha, (
+            f"{key.key()}: the measured store's compile row is of other text "
+            "(or absent) -- remeasure the compile side first")
+        binary = compile_device_source(tc, src).rename(work / "cell")
+        cells.append((spec, binary, units, work))
+        print(f"compiled {spec.key()}", flush=True)
+
+    # 2. the profiled binary is the checked binary
+    for spec, binary, _, _ in cells:
+        _check_batched(backend, spec, binary, run_device_binary, tmp_path)
+
+    # 3. profile, one cell at a time, behind the gate
+    lanes = arch.wavefront
+    new: dict[str, measured.Measured] = {}
+    discarded_total = 0
+    t_sweep = datetime.datetime.now()
+    for spec, binary, units, work in cells:
+        L = spec.total_am
+        a = _inputs(L, wide=True, tau_quantile=None, seed=53_000 + L,
+                    n_bra=TIMING_N_BRA, n_ket=TIMING_N_KET)
+        src, dst = work / "counter.in", work / "counter.out"
+        _pack(L, a, lanes).tofile(src)
+        args = (str(src), str(dst), "0", "1")
+        check_vram(binary, args, backend)  # before the wait, off the gate
+        regex = "^(" + "|".join(u.name for u in units) + ")$"
+        discarded = 0
+        for take in range(1 + ROOFLINE_RETAKES):
+            try:
+                busy, before = gate.wait_quiet(
+                    backend, say=lambda line: print(line, flush=True))
+            except gate.Contended as e:
+                pytest.fail(f"{e} -- counter sweep DISCARDED, nothing written")
+            outdir = work / f"take{take}"
+            outdir.mkdir()
+            try:
+                launches, tool, command = measured.profile(
+                    backend, [str(binary), *args], kernel_regex=regex,
+                    workdir=outdir)
+            except measured.CouldNotMeasure as e:
+                pytest.skip(f"{e} -- nothing written")
+            after = gate.after_reading(backend)
+            if gate.is_idle(after):
+                break
+            discarded += 1
+            print(f"  DISCARDED {spec.key()}: card util {before} -> {after}% "
+                  f"(take {take + 1})", flush=True)
+        else:
+            pytest.fail(f"{spec.key()}: the card stayed contended through "
+                        f"{ROOFLINE_RETAKES + 1} takes -- nothing written")
+        discarded_total += discarded
+        command = command.replace(str(src), "<counter.in>").replace(
+            str(dst), "<counter.out>")
+        rows = measured.counter_rows(b, spec, units, launches,
+                                     toolchain=toolchain, gpu=gpu, tool=tool,
+                                     command=command)
+        state = {"roofline:gpu_util_before": before,
+                 "roofline:gpu_util_after": after,
+                 "roofline:cpu_busy_permille_before": round(1000 * busy),
+                 "roofline:gate_discarded_phases": discarded,
+                 "roofline:n_bra": TIMING_N_BRA,
+                 "roofline:n_ket": TIMING_N_KET,
+                 "roofline:lanes": lanes}
+        for k, r in rows.items():
+            assert all(m in r.raw for m in measured.NCU_METRICS), k
+            assert r.runtime_ns is None, k
+            new[k] = replace(r, raw={**r.raw, **state})
+        cell = measured.cell_roofline(new, measured.MeasuredKey(
+            spec, arch, toolchain))
+        print(f"{spec.key()}: card {before}->{after}%, discarded {discarded};"
+              f" I = {cell.intensity:.2f} FLOP/B (ridge {cell.ridge:.2f}), "
+              f"{cell.achieved_flops_per_s / 1e9:.1f} GFLOP/s "
+              f"({cell.of_peak:.0%} of peak) -> "
+              f"{'MEMORY' if cell.memory_bound else 'COMPUTE'}-bound",
+              flush=True)
+
+    # 4. one write, after every cell profiled
+    elapsed = (datetime.datetime.now() - t_sweep).total_seconds()
+    merged = {**store, **new}
+    measured.save_counters(merged, Path(store_path))
+    print(f"\n{backend} {arch.name} ({gpu}): {len(cells)} cells, {len(new)} "
+          f"kernel rows, {discarded_total} phases discarded by the gate, "
+          f"profiling took {elapsed:.0f} s")
+    for spec, *_ in cells:
+        key = measured.MeasuredKey(spec, arch, toolchain)
+        ks = measured.kernel_roofline(merged, key)
+        c = measured.cell_roofline(merged, key)
+        print(f"  L={spec.total_am} b{spec.n_batches}: cell I {c.intensity:.2f}"
+              f" {'MEM' if c.memory_bound else 'CMP'}; kernels "
+              + " ".join(f"{p.intensity:.2f}{'m' if p.memory_bound else 'c'}"
+                         for p in ks))
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_roofline_over_the_subgrid(request, compile_device_source,
+                                        run_device_binary, tmp_path) -> None:
+    """ncu counter rows of every SUBGRID batch kernel on the RTX 3080."""
+    _roofline("cuda", request, compile_device_source, run_device_binary,
+              tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_roofline_over_the_subgrid(request, compile_device_source,
+                                       run_device_binary, tmp_path) -> None:
+    """gfx1200: could not measure (measured_store.UNMEASURED) -- skips with
+    the recorded reason; no row, never a zero."""
+    _roofline("hip", request, compile_device_source, run_device_binary,
+              tmp_path)

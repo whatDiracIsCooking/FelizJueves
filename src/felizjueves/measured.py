@@ -10,6 +10,7 @@
     python -m felizjueves.measured --lever-ab recycle   # #55's comparison
     python -m felizjueves.measured --remeasure --asym   # #113's study cells
     python -m felizjueves.measured --asym-verdict       # #113's comparison
+    python -m felizjueves.measured --roofline           # #112's verdicts
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -152,15 +153,24 @@ from felizjueves.measured_store import (
     STORE,
     SUBGRID,
     SUBGRID_LS,
+    UNMEASURED,
     Measured,
+    cell_roofline,
     combine,
     kernel_key,
+    kernel_roofline,
     lever_ab,
     lever_cells,
     load,
+    load_counters,
     merge,
     nine_vs_twelve,
     save,
+    split_kernel_key,
+)
+from felizjueves.measured_store import ROOFLINE as ROOFLINE
+from felizjueves.measured_store import (
+    save_counters as save_counters,  # re-exported: test_kernel_device's sweep
 )
 from felizjueves.spec import Spec
 
@@ -732,6 +742,38 @@ def counter_rows(backend: Backend, spec: Spec, units: Sequence[Unit],
     return out
 
 
+def print_roofline(path: Path = ROOFLINE) -> int:
+    """#112's view: each SUBGRID cell's verdict, and its kernels', against
+    the card's measured ridge (`measured_store.roofline_point`), for every
+    card and toolchain the counter store holds; a card in UNMEASURED is named
+    with its reason. Exit 2 when the store cannot be read."""
+    try:
+        got = load_counters(path)
+    except (OSError, ValueError) as e:
+        print(f"measured: {e}", file=sys.stderr)
+        return 2
+    cells = {split_kernel_key(k)[0] for k in got}
+    where = sorted({c.split("@", 1)[1] for c in cells})
+    for at in where:
+        for spec in SUBGRID:
+            c = f"{spec.key()}@{at}"
+            if c not in cells:
+                print(f"{c}: no counter rows")
+                continue
+            p = cell_roofline(got, c)
+            ks = kernel_roofline(got, c)
+            print(f"{c}: I {p.intensity:.2f} FLOP/B vs ridge {p.ridge:.2f}, "
+                  f"{p.achieved_flops_per_s / 1e9:.1f} GFLOP/s "
+                  f"({p.of_peak:.0%} of peak) -> "
+                  f"{'MEMORY' if p.memory_bound else 'COMPUTE'}-bound; kernels "
+                  f"{sum(k.memory_bound for k in ks)}/{len(ks)} memory-bound, "
+                  f"I in [{min(k.intensity for k in ks):.2f}, "
+                  f"{max(k.intensity for k in ks):.2f}]")
+    for arch, why in UNMEASURED.items():
+        print(f"{arch}: no rows -- {why}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m felizjueves.measured")
     ap.add_argument("--remeasure", action="store_true")
@@ -754,8 +796,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--asym-verdict", action="store_true",
                     help="print #113's asymmetric split against its "
                          "neighbours, per arch and cell")
+    ap.add_argument("--roofline", action="store_true",
+                    help="print #112's roofline verdict per cell and per "
+                         "batch kernel, from the counter store")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--store", type=Path, default=STORE)
+    ap.add_argument("--counters", type=Path, default=ROOFLINE)
     try:
         args = ap.parse_args(argv)
     except SystemExit as e:
@@ -778,6 +824,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"measured: {e}", file=sys.stderr)
             return 2
         return 0
+    if args.roofline:
+        return print_roofline(args.counters)
     try:
         got = load(args.store)
     except (OSError, ValueError) as e:
