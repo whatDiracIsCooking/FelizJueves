@@ -143,7 +143,7 @@
     },
     {
       "claim": "A `Launch` IR and a `LaunchCost` model for the whole-molecule J of [JEngine, v2, §6]: DELIBERATELY ABSENT (#148, milestone 6's description (c), decided before any of its code). No IR represents the launch sequence, no model predicts what a whole build costs, and so nothing here ranks one launch plan above another or says the plan's order is the BEST one. J resident on the card across SCF iterations is out of scope by the same decision.",
-      "mechanism": "Milestone 6 makes the plan a VALUE and nothing else: `launch.LaunchPlan` (#138) says which [p|q] kernels run, over which index records, in which order. Each consumer checks the plan directly instead of going through a fourth representation of it: the launch oracle `launch.walk` (#142, pure Python, equal to the host's screened sweep to 0), the staged interpreted driver `ao/staged.py` (#143), and the device `main()` that `test/plan_driver.py` writes from a plan for the card (#144). That driver lives under `test/`, not `src/felizjueves/emit/`: the generator still emits kernels, not launch code. A `LaunchCost` would model a build with only the clock to score it against. The one per-kernel model this repo has, `lower.KernelCost`, already mis-ranks the measured rows it is scored against (data/measured/limits.json, #54 and #60). So the build is MEASURED (data/measured/builds.json, #146) and never predicted. The only ordering question put to the clock is #147's single A/B of two sort keys, and its declared expectation was contradicted on both cards (the jengine/ket-sort-key-beats-the-global-max record above). Residency stops at one build. Every timed build zeroes its J_p buffers, launches, and reads them back. The uploads happen once per process, outside the clock. Eq. 20's back-transform and the J_ab scatter run host-side in Python. Moving those to the device is milestone 7's subject.",
+      "mechanism": "Milestone 6 makes the plan a VALUE and nothing else: `launch.LaunchPlan` (#138) says which [p|q] kernels run, over which index records, in which order. Each consumer checks the plan directly instead of going through a fourth representation of it: the launch oracle `launch.walk` (#142, pure Python, equal to the host's screened sweep to 0), the staged interpreted driver `ao/staged.py` (#143), and the device `main()` that `test/plan_driver.py` writes from a plan for the card (#144). That driver lives under `test/`, not `src/felizjueves/emit/`: the generator still emits kernels, not launch code. A `LaunchCost` would model a build with only the clock to score it against. The one per-kernel model this repo has, `lower.KernelCost`, already mis-ranks the measured rows it is scored against (data/measured/limits.json, #54 and #60). So the build is MEASURED (data/measured/builds.json, #146) and never predicted. The only ordering question put to the clock is #147's single A/B of two sort keys, and its declared expectation was contradicted on both cards (the jengine/ket-sort-key-beats-the-global-max record above). Residency stops at one build. Every timed build zeroes its J_p buffers, launches, and reads them back. The uploads happen once per process, outside the clock. Eq. 20's back-transform and the J_ab scatter run host-side in Python. Moving those to the device is milestone 7's subject. (Milestone 7 did: the E transform, the pre-contraction and the scatter are generated kernels since #152-#157, run on both cards on this same test-side driver; see the three records below. Nothing in builds.json times them, and this record's decision is unchanged.)",
       "evidence": "test/test_layering.py: the `launch` rule bans `emit`, `interp`, `measured`, `measured_store` and `literature`, and its transitive test holds `launch` off `reference/`, `interp`, `emit`, `ao.drive`, `ao.staged`, `dispatch`, `measured` and `measured_store` through any chain of imports. Nothing under src/ is named or defines a Launch IR or a LaunchCost; `interp.Launch` is the thread geometry, which is why the plan's unit is `ClassLaunch` (milestone (a)). The `timed_region` in data/measured/builds.json's header (`measured_store.BUILD_TIMED_REGION`) puts the H2D uploads, the host staging, eq. 20 and the scatter outside the clock.",
       "asserted_value": {
         "board": null,
@@ -203,6 +203,82 @@
         "printed_values_stand": "[JEngine, v2, Alg. 1]'s per-molecule build is taken as published for its kernel on its A100; this record says how far this repo's on-card build reaches. No scoreboard, no rule: board and rule are null."
       },
       "source": "[JEngine, v2, Alg. 1]"
+    },
+    {
+      "claim": "Pre- and post-contraction (forming D_q from the AO density, and the bra back-transform of J_p with its scatter into J_mn): [JEngine, v2] DEFERS both to [Fock] (entry 23 of docs/references.md), which this repo has NOT read. So the two kernels milestone 7 generated for them, Target.DQ (src/felizjueves/kernel_dq.py, #153) and Target.JAB (src/felizjueves/kernel_jab.py, #154), are THIS REPO'S OWN DESIGN and not a reconstruction of anything published: not of [Fock], not of [JEngine], and not of the predecessor `jgen`, which keeps both host-side.",
+      "mechanism": "[JEngine, v2]'s eqs. 20-22 split J into the shell-quartet contraction J_p = SUM_q [p|q] D_q (Alg. 1, the [p|q] kernel this repo reconstructs) and the shell-pair-level steps around it, and leave those steps to [Fock]. With no source read, there is nothing for a DQ or JAB kernel to be scored or witnessed against except this repo's own host arithmetic. So both kernels were specified as that arithmetic, step for step (docs/implementation/j_engine.md, 'The J chain as device code', #151): the host order of operations, the host's weight w (2 off the diagonal, decided by the host and never by the kernel), the host's dressing scale s from ao.pairs.dress, and the host's assign-then-mirror scatter, which on a diagonal bra pair becomes the lower triangle mirrored. Interpreted, each is bitwise equal to the host; on the cards, within stated round-off and fp64-atomic bounds of it; and the J they build is within 1e-12 scale_J of libcint. Agreement with libcint shows the design is CORRECT. It says nothing about whether [Fock] does the same, or does it faster.",
+      "evidence": "test/test_kernel_dq.py and test/test_kernel_jab.py: each kernel interpreted is == ao.j.dq_from_host / ao.j.jab_from_host for every pair class (ss) through (ff) on HF/cc-pVTZ. test/test_ao_j_chain.py: the whole chain interpreted against libcint on every tracked J fixture, worst 1.3e-14 scale_J. test/test_j_chain_ondevice.py (PR #210): on both cards, every pair class through (ff) against the host, and J through d against libcint, worst 1.24e-14 scale_J. docs/references.md lists [Fock] by DOI only; no section of it is cited anywhere in the repo.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "deferred_to": "[Fock]",
+        "source_read": false,
+        "own_design": [
+          "Target.DQ",
+          "Target.JAB"
+        ],
+        "held_to": "ao/j.py's host arithmetic (bitwise, interpreted) and libcint's J (1e-12 scale_J)",
+        "printed_values_stand": "Nothing is printed for these steps in [JEngine, v2]; the record says they are not reconstructions. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, eqs. 20-22]"
+    },
+    {
+      "claim": "The instruction form's reach, on the first device code that is not the [p|q] recurrence (#149, #152, #153, #154). The McMurchie-Davidson E recurrence fits the [p|q] kernel's `Weighted` instruction with no escape: every entry E^{ij}_t, i <= 3, j <= 3, on every axis, is ONE `Weighted` of the terms 1/2zeta, X_PA or X_PB, and (t+1); the only `Call`s are the three EXP seeds E^{00}_0 = exp(zeta X_PA X_PB) and the block's MUL products; no `Raw`. Where the IR did NOT reach, the kernels worked around it and the work-around is recorded here: (1) no nested `Inline` (#149's one-level rule), so the E block is composed at build time from one axis builder rather than by inlining the axis fragment three times; (2) `Fn` has no ABS or MAX, so DQ writes |x| and max_q with LT and SUB; (3) #149's hygiene refuses a host array named like a fragment's scalar bind, so JAB's exponent array is `zeta_ab`, not the contract's `zeta`; (4) an array extent must be a scalar `Param`, so DQ gains `n_pair` and JAB `n_rows`, which nothing reads, and which the emitter casts to (void) because hipcc's -Wunused-parameter otherwise fails #92's warning filter (#156).",
+      "mechanism": "`Weighted` (src/felizjueves/ir.py) is SUM_k c_k g_k src_k, [JEngine, v2, eqs. 10-12] in reduction form. Eqs. 2.20-2.21 of McMurchie-Davidson's report have exactly that shape: a sum of a factor times a previous entry, with integer weights. So the form that was built for [p|q] reaches E unchanged, and widening the IR took vocabulary only (the `Factor`s 1/2zeta, PA, PB and `Fn.EXP`). Nothing structural was added. The four work-arounds above are the IR's edges as this milestone met them. None is a defect in a kernel. None changes a bit of the result, and each is spelled in its module's docstring.",
+      "evidence": "test/test_e_fragment.py::test_every_recurrence_step_is_weighted (all 16 ordered classes (ss) through (ff)); test/test_ir.py::test_the_raw_census (0 Raw under src/); the E block interpreted is bitwise == ao.hermite.e_block for all 16 classes; ir.py's Fragment/Inline checks, which refuse a nested Inline and a colliding name (#149; test/test_ir.py::test_a_colliding_name_raises_and_nothing_is_renamed); the DQ and JAB parameter blocks against the contract, docs/implementation/j_engine.md, 'Step 2' and 'Step 4'. The issue that specified the fragment (#152) wrote the seed as exp(-zeta X_PA X_PB). That was a sign slip: X_PA X_PB = -(alpha beta / zeta^2) X_AB^2, so the seed is exp(+zeta X_PA X_PB) = exp(-mu X_AB^2), as ao/hermite.py has it, and the Hermite identity test holds it.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "e_in_weighted": true,
+        "calls": [
+          "EXP seed, one per axis",
+          "MUL, the 3D product"
+        ],
+        "raw": 0,
+        "workarounds": [
+          "block composed at build time, no nested Inline",
+          "|x| and max by LT and SUB",
+          "zeta_ab, not zeta",
+          "n_pair and n_rows extents, cast to (void)"
+        ],
+        "printed_values_stand": "[JEngine, v2, eqs. 10-12] are taken as published; the record says how far their instruction form reaches. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, eqs. 10-12]"
+    },
+    {
+      "claim": "J with every arithmetic step a generated kernel, on the RTX 3080 and the RX 9060 XT (#157), and what that does not reach. (1) THE CLASSES: the pair kernels run alone through (ff), and a whole molecule's J only through d (H2O/cc-pVDZ, [p|q] up to L = 8), because no tracked J fixture has an f shell. The pair ladder emits up to --pair-l 8, but no tier compiles or runs a pair class above f. (2) NOTHING MEASURED: no registers, spills, wall-clock or counters for a DQ or JAB kernel, and no whole-build row times the chain; builds.json (#146, #147) predates it and times [p|q] alone. (3) WHAT STAYS ON THE HOST: the pair list and each record's inputs, the Schwarz bound, the sort, the staging and the launch code, which is a test-side driver run from Python. The DQ program and milestone 6's driver are separate programs, so D_q and Dmax are read back and staged by the host. (4) MEMORY: the (23) DQ program needs about 7.2 GB of the 3080's VRAM.",
+      "mechanism": "(1) Reach is bought with the cheap kernels: part 1 compiles each pair unit alone into a small harness over HF/cc-pVTZ, the one fixture whose shells reach f, against the host on the same inputs. Its witness for f is the host E, which is itself held to the Hermite identity and, through ao/eri.py, to libcint's ERI blocks up to (ff|ff). A whole-molecule f build would need a new f J fixture and [p|q] up to L = 12 in a driver, a separate decision. (2) Milestone 7's acceptance was correctness on both cards. Measuring the new kernels was not in its scope, so the compile wall-clocks its PRs quote are the tier's cost and are stored nowhere. (3) These decide launches, and moving them would need the launch program that `limits.json`'s Launch-IR record declines. (4) The DQ kernel holds the record's undressed E block in a per-thread local array, beside the fragment's locals and one accumulator per Hermite index. For (23) that is a 72 KB per-thread stack, and the CUDA runtime reserves that stack for every resident thread (104448 on the 3080): 7237 MiB of the 8764 MiB free when it ran. The harness's VRAM probe checks before the launch, so an outside process holding more than about 1.5 GB of that card makes the case FAIL with both figures, rather than run out of memory.",
+      "evidence": "PR #210: the full kernel tier, CUDA RTX 3080 (sm_86) 96 passed / 5 skipped, HIP RX 9060 XT (gfx1200) 97 passed / 5 skipped, the skips the five opt-in recordings; 10 part-1 and 4 part-2 device tests passed on each card. Part 1 worst: DQ 5.45e-16 S, JAB 4.04e-16 T, against bounds of 2.66e-15 to 3.00e-14. Part 2 worst: 1.24e-14 scale_J against libcint (tolerance 1e-12) and 3.29e-16 max|J| against the launch oracle, on both cards. test/test_j_chain_ondevice.py asserts that no [p|q] above L = 8 enters a driver and that the basis has no f shell. data/measured/kernels.json has no DQ or JAB key (the pair key spelling exists since #150, test/test_spec.py), and data/measured/builds.json's rows are all from #146 and #147.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "pair_kernels_run_through": "(ff)",
+        "j_run_through": "d",
+        "pq_in_driver_max_L": 8,
+        "pair_ladder_emitted_max": 8,
+        "measured": false,
+        "dq_23_stack_per_thread": "72 KB",
+        "dq_23_vram_mib": [
+          7237,
+          8764
+        ],
+        "last_device_run": {
+          "pr": 210,
+          "sm_86": {
+            "passed": 96,
+            "skipped": 5
+          },
+          "gfx1200": {
+            "passed": 97,
+            "skipped": 5
+          }
+        },
+        "printed_values_stand": "Nothing in [JEngine, v2] is scored against this; the record says how far this repo's generated chain reaches. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, §3.3]"
     }
   ]
 }
