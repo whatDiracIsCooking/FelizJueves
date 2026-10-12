@@ -247,8 +247,11 @@ RULES: dict[str, Rule] = {
         "ao.j's `jp=` seam -- builder + interp + ao, producing numbers. Not "
         "a `driver`: that rule ships kernel text and must not interpret or "
         "plan, and this module does both (it asks the plan which n_batches "
-        "a class admits, #64). Not `ao`: the AO layer may not know IR",
-        ("spec", "kernel", "ir", "interp", "plan", "ao"),
+        "a class admits, #64). Not `ao`: the AO layer may not know IR. "
+        "Also ao/staged.py (#143): the same, over a LAUNCH PLAN -- it reads "
+        "`launch`'s `ClassLaunch`es, and `passes.atomize`s a one-batch "
+        "kernel because one `J_p` per bra class has a writer per ket class",
+        ("spec", "kernel", "ir", "interp", "plan", "ao", "launch", "passes"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -269,7 +272,9 @@ RULES: dict[str, Rule] = {
                        "it imports this plan (#143), so the plan importing "
                        "the adapter is a cycle and drags the interpreter in "
                        "-- `class_spec` is restated, and a test pins the "
-                       "two equal"},
+                       "two equal",
+           "ao.staged": "the staged driver (#143) runs this plan; the plan "
+                        "importing it is the same cycle as `ao.drive`"},
         emit="the plan is data: no text is emitted (#138's acceptance)",
         measured="a batch count is the plan's admission or an injected "
                  "resolver's (#145), never a toolchain's",
@@ -332,6 +337,7 @@ RULE_OF: dict[str, str] = {
     "ao.eri": "ao",
     "ao.j": "ao",
     "ao.drive": "adapter",
+    "ao.staged": "adapter",
     "launch": "launch",
 }
 
@@ -398,6 +404,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.drive": ("ao.j", "interp", "ir", "kernel", "plan.pipeline", "spec"),
+    "ao.staged": ("ao.j", "ao.pairs", "ao.shell", "interp", "ir", "kernel",
+                  "launch", "passes"),
     "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
                "spec"),
 }.items()}
@@ -568,8 +576,8 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in (_REF, "interp", "emit", "ao.drive", "measured",
-                   "measured_store"):
+    for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged",
+                   "measured", "measured_store"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch reaches {hit}"
 
