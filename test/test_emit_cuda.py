@@ -199,3 +199,37 @@ def test_it_compiles(nvcc, compile_device_source, L_: int) -> None:
     # A device compiler needs no card: this is green on a device-less box and
     # proves nothing about a number.
     compile_device_source(nvcc, emit(build_pq_kernel(L_), SM_86), link=False)
+
+
+# --- the pair ladder's kernels (#156) ----------------------------------------
+# One DQ and one JAB per backend, class (1,1): the smallest pair class whose E
+# block raises on both centres and binds 1/(2 zeta). Regenerate (never
+# hand-edit), then review the diff:
+#   PYTHONPATH=src uv run python -c "from felizjueves.kernel_dq import \
+#   build_dq_kernel; from felizjueves.device import SM_86; from \
+#   felizjueves.emit.cuda import emit; print(emit(build_dq_kernel((1, 1)), \
+#   SM_86), end='')" > test/golden/cuda/dq_1_1.cu
+# and likewise `kernel_jab.build_jab_kernel` > test/golden/cuda/jab_11.cu.
+
+PAIR_GOLDENS = {"dq_1_1": "dq", "jab_11": "jab"}
+
+
+def _pair_kernel(family: str):
+    from felizjueves.kernel_dq import build_dq_kernel
+    from felizjueves.kernel_jab import build_jab_kernel
+    return {"dq": build_dq_kernel, "jab": build_jab_kernel}[family]((1, 1))
+
+
+@pytest.mark.parametrize("name", sorted(PAIR_GOLDENS))
+def test_the_pair_goldens_are_unchanged(name: str) -> None:
+    k = _pair_kernel(PAIR_GOLDENS[name])
+    assert k.name == name
+    assert emit(k, SM_86) == (GOLDEN.parent / f"{name}.cu").read_text()
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("name", sorted(PAIR_GOLDENS))
+def test_the_pair_goldens_compile(nvcc, compile_device_source, name: str) -> None:
+    # Compile only: a device compiler needs no card.
+    compile_device_source(nvcc, emit(_pair_kernel(PAIR_GOLDENS[name]), SM_86),
+                          link=False)

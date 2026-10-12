@@ -128,3 +128,45 @@ def test_it_compiles(hipcc, compile_device_source, L_: int) -> None:
     # proves nothing about a number.
     compile_device_source(hipcc, hip.emit(build_pq_kernel(L_), GFX1200),
                           link=False)
+
+
+# --- the pair ladder's kernels (#156) ----------------------------------------
+# The same two classes as test_emit_cuda.py's pair goldens. Regenerate (never
+# hand-edit), as there, with `emit.hip` and `GFX1200` > test/golden/hip/
+# dq_1_1.hip and jab_11.hip.
+
+PAIR_GOLDENS = {"dq_1_1": "dq", "jab_11": "jab"}
+
+
+def _pair_kernel(family: str):
+    from felizjueves.kernel_dq import build_dq_kernel
+    from felizjueves.kernel_jab import build_jab_kernel
+    return {"dq": build_dq_kernel, "jab": build_jab_kernel}[family]((1, 1))
+
+
+@pytest.mark.parametrize("name", sorted(PAIR_GOLDENS))
+def test_the_pair_goldens_are_unchanged(name: str) -> None:
+    k = _pair_kernel(PAIR_GOLDENS[name])
+    assert k.name == name
+    assert hip.emit(k, GFX1200) == (GOLDEN.parent / f"{name}.hip").read_text()
+
+
+@pytest.mark.parametrize("name", sorted(PAIR_GOLDENS))
+def test_the_pair_texts_differ_only_in_the_prologue(name: str) -> None:
+    # No warp reduction in either family, and JAB's AtomicAdd is spelled the
+    # same by both vendors: only the prologue differs.
+    k = _pair_kernel(PAIR_GOLDENS[name])
+    c = cuda.emit(k, SM_86).splitlines()
+    h = hip.emit(k, GFX1200).splitlines()
+    assert h[0] == c[0].replace("emit.cuda", "emit.hip")
+    assert h[1] == c[1].replace(SM_86.name, GFX1200.name)
+    assert h[2] == "#include <hip/hip_runtime.h>"
+    assert c[2:] == h[3:]
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("name", sorted(PAIR_GOLDENS))
+def test_the_pair_goldens_compile(hipcc, compile_device_source, name: str) -> None:
+    # Compile only: a device compiler needs no card.
+    compile_device_source(hipcc, hip.emit(_pair_kernel(PAIR_GOLDENS[name]),
+                                          GFX1200), link=False)

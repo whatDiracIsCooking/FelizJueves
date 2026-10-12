@@ -24,6 +24,10 @@ uniformly; nothing depends on what the kernel computes:
   (`extern __shared__`, row-major), and there may be at most one, because
   laying out two would be a decision;
 - `Note` is a `//` comment beside the statement it precedes;
+- a scalar parameter the body never reads -- one that exists only as an
+  array's leading extent, which row-major indexing never needs -- is cast
+  to `(void)` at the top of the body, so hipcc's `-Wextra` has no unused
+  parameter to warn of (#156; nvcc's `-Wall` does not ask);
 - an `Inline` is a `{ ... }` block headed `// fragment <name>`, its bindings
   `const` declarations, then the fragment's statements in place. Nothing is
   renamed: `Kernel` has already refused any name the block could shadow.
@@ -140,10 +144,17 @@ class CWriter:
         self._scopes: list[dict[str, _Array | None]] = [{}]
         self._lines: list[str] = []
         self._dynamic_shared = 0
+        self._used: set[str] = set()
         for p in k.params:
             self._bind(p.name, _Array(p.shape, True) if p.array else None)
         sig = ",\n".join(INDENT + self.param(p) for p in k.params)
         self._block(k.body, 1)
+        unread = [p.name for p in k.params
+                  if not p.array and p.name not in self._used]
+        if unread:
+            self._lines[:0] = [
+                f"{INDENT}// an extent only (a leading dimension, never read):\n",
+                *(f"{INDENT}(void){n};\n" for n in unread)]
         head = self.prologue(k)
         if any(isinstance(e, Call) and e.fn is Fn.BOYS for e in _exprs(k)):
             head += "\n" + BOYS_DEVICE
@@ -297,6 +308,7 @@ class CWriter:
         if isinstance(e, Lit):
             return self.lit(e)
         if isinstance(e, Var):
+            self._used.add(e.name)
             return e.name
         if isinstance(e, Index):
             return self.index(e)

@@ -137,7 +137,11 @@ class DeviceJ:
                 "--class", *map(str, am), "--n-batches", str(n)]
         assert emit_cli.main(argv) == 0, f"emit {argv} failed"
         cell = gen / emit_cli.cell_dir(am, n)
-        order = cell.joinpath("order").read_text().split()
+        chain = cell.joinpath("order").read_text().split()
+        # #156: the order is the chain's, DQ -> [p|q] batches -> JAB; only
+        # J_p runs on the card here, so only the batches are compiled.
+        assert chain[0].startswith("dq_") and chain[-1].startswith("jab_"), chain
+        order = chain[1:-1]
         kernels = build_pq_kernels(drive_class_spec(am, n))
         assert order == [f"{k.name}.{ext}" for k in kernels], (
             f"{cell}: launch order {order} is not the plan's")
@@ -322,8 +326,8 @@ def test_the_selector_writes_the_admitted_cells(backend, tmp_path):
                 assert not cell.exists()
                 continue
             ks = build_pq_kernels(drive_class_spec(am, n))
-            assert cell.joinpath("order").read_text().split() == [
-                f"{k.name}.{ext}" for k in ks]
+            assert cell.joinpath("order").read_text().split()[1:-1] == [
+                f"{k.name}.{ext}" for k in ks]  # between DQ and JAB (#156)
             for k in ks:
                 assert (cell / f"{k.name}.{ext}").read_text() == emit(k, arch)
 
