@@ -1581,3 +1581,238 @@ its coverage reading, gated measurement provenance, and an outside witness
 
 This repo computes no gradients or Hessians, so none of this is parity with
 anything that has them.
+
+## The J chain as device code
+
+**Status: specification (milestone 7, #151).** This section is the contract
+the chain's kernels are built against: the four arithmetic steps of `J_µν`,
+the parameter block and preconditions of each kernel not yet built, the
+layout each consumer indexes, where the dressing goes, and what stays on the
+host. **Implemented:** the `[p|q]` kernel (step 3), and the two seams in
+`ao/j.py` that the new kernels plug into, with host references that make the
+seams `==` to the host path (#151). **Not built:** the `E` fragment, the
+pre-contraction kernel and the bra-transform-and-scatter kernel. Each step
+below carries its own status line. The "The `E` transform" section above keeps
+its status until the record issue changes it.
+
+### The four steps
+
+| step | computes, per primitive-pair record | keyed by | device status | host equivalent |
+|---|---|---|---|---|
+| 1. `E` | `E^{ab}_t`, undressed, over `hermite_order(la+lb)` | inlined, not launched | **not built** (#152) | `ao.hermite.e_block` |
+| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | **not built** (#153) | `ao.j._kets`; through the seam, `ao.j.dq_from_host` |
+| 3. `[p\|q]` | `J_p = Σ_k Σ_q [p\|q] D_q` | class `(lp, lq)`, `Target.J` | **implemented** (`kernel.py`) | `ao.j.jp_from_pq` |
+| 4. bra transform + scatter | `J_ab += Σ_p s E^{ab}_p J_p`, written into `J_µν` | bra pair class `(la, lb)`, `Target.JAB` | **not built** (#154) | `ao.j`'s transform and mirror; through the seam, `ao.j.jab_from_host` |
+
+Steps 2 and 4 contain step 1: the `E` fragment is inlined into both. It is not
+a kernel and has no buffer of its own. Composed in the interpreter: **not
+built** (#155). Composed on the cards: **not built** (milestone 7's capstone).
+
+### The layout every consumer indexes
+
+One shell pair `(a, b)` of angular momenta `(la, lb)` and one primitive pair of
+it give one **record**. Records are in `ao.pairs.primitive_pairs` order: the
+`a`-side primitive outer. The `E` block of a record is a matrix:
+
+- **rows**: one per Cartesian pair, `cartesians(la) × cartesians(lb)`, `a`
+  outer. Row `r = i · ncart(lb) + j` is the pair `(cartesians(la)[i],
+  cartesians(lb)[j])`. This is `ao.pairs.PrimitivePair.block`'s layout.
+- **columns**: one per Hermite index `t`, in `hermite_order(la + lb)` order
+  (`|t|` ascending, then `tx`, then `ty` descending), which equals
+  `plan.targets.hermite_targets(la + lb)`. This is also the order of the
+  `[p|q]` kernel's `D[k, q]` and `J[bra, p]`.
+
+Per axis, `E^{ij}_t` exists for `t ≤ i + j` only. In the block, the entry at
+`t` for the row `(a, b)` is zero exactly when `t_d > a_d + b_d` on some axis.
+The block fragment omits those terms; it does not compute them as zeros.
+
+The density block `D_cd` of a ket shell pair is indexed by the same row order:
+element `r` is `D[off_c + i][off_d + j]`, with `i` and `j` as above.
+
+### The `E` inputs, and the dressing pin
+
+Each record gives the fragment `ζ` and, per axis `d`, `X_PA = P_d − A_d` and
+`X_PB = P_d − B_d`. These are `P`, `A` and `B` as `primitive_pairs` and
+`e_block` have them, with the subtraction in that order. The recurrence is the
+one in "The `E` transform" above (MD report eqs. 2.20–2.21), with
+`E^{00}_0 = exp(−ζ X_PA X_PB)`. The fragment forms no `X_AB` and no `μ`.
+
+**The fragment computes the undressed `E` of `ao/hermite.py` and nothing
+else.** The dressing reaches the kernel as **one host-supplied scalar per
+record**:
+
+```
+s = c_a c_b (π/ζ)^{3/2}         # ao.pairs.dress's scale; ao.j.EPair carries it
+```
+
+`ao.j.epair` takes `s` from `ao.pairs.dress` itself (`dress((1.0,), …)[0]`,
+the scale times 1.0, which is exact). So the dressing stays one function's
+decision. No kernel forms `(π/ζ)^{3/2}` or a contraction coefficient. A
+dressing inside the fragment breaks the pointwise Hermite identity, which is
+the only independent check `E` has (#85 is the failure this rules out).
+
+### Step 2: the pre-contraction kernel, `Target.DQ`
+
+**Status: specified; not built (#153).**
+
+One kernel per ket pair class `(lc, ld)`. With `n_q = |hermite_order(lc+ld)|`
+and `n_cd = ncart(lc) · ncart(ld)`:
+
+```
+params  n_rec (I32)
+        eta[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]  w[n_rec]   per record
+        pair[n_rec] (I32)                    the record's row of Dcd
+        Dcd[n_pair, n_cd]                    D_cd per ket shell pair, row order above
+        D[n_rec, n_q]  (OUT)   Dmax[n_rec]  (OUT)
+```
+
+Per record `k`, with `E` the undressed block of record `k`:
+
+```
+acc_q   = Σ_{r in row order} Dcd[pair[k], r] · (s[k] · E[r, q])
+D[k, q] = w[k] · acc_q
+Dmax[k] = max_q |D[k, q]|
+```
+
+**Preconditions.**
+
+- `D` is symmetric. The host checks this (`ao.j._density`) and rejects an
+  asymmetric `D`; the kernel never symmetrises.
+- `w` is 2.0 for an off-diagonal ket shell pair (`c ≠ d`) and 1.0 for a
+  diagonal one. **The host decides it**, and it is folded into `D_q` and so
+  into `Dmax`. The kernel never decides `w`. A weight of 1 off the diagonal is
+  the order-unity error this design is most likely to ship.
+- Only unique ket shell pairs `c ≥ d` are records.
+- `eta > 0`.
+
+**What the output is.** `D` is the `D[n_ket, n_q]` buffer the `[p|q]` kernel
+reads, and `Dmax` is the vector it screens on, over the weighted, dressed
+`D_q`. The two are in **record order**, not the sorted order `[p|q]` requires
+(see "The round-trip" below). `Dmax` is a reduction over the kernel's own
+output. It is not the AO density's largest element and cannot be computed
+from it. Lanes may map one thread per record; the mapping is not part of the
+numerical contract.
+
+**Equality.** In the operation order above, an interpreted kernel is `==` to
+`ao.j.dq_from_host`. That reference also skips `D_cd = 0` terms, which changes
+no bit, because adding `±0` to an accumulator that started at `+0.0` is the
+identity. A kernel that factors `s · w` out of the sum is admitted. It agrees
+with the host to fp64 round-off and not bitwise, and its test says which
+order it uses.
+
+### Step 3: the `[p|q]` kernel
+
+**Status: implemented** (`kernel.py`, "The `[p|q]` kernel contract" above).
+Its parameter block, `P zeta Ip | Q eta Iq Dmax | D | J`, is unchanged by the
+chain. It takes `D` and `Dmax` from step 2, after the sort, and writes `J_p`
+per bra record in `hermite_order(lp)`, one buffer per bra class (milestone 6),
+by fp64 atomics when the class is split.
+
+### Step 4: the bra-transform-and-scatter kernel, `Target.JAB`
+
+**Status: specified; not built (#154).**
+
+One kernel per bra pair class `(la, lb)`. With `n_p = |hermite_order(la+lb)|`:
+
+```
+params  n_rec (I32)  n_ao (I32)
+        zeta[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]            per record
+        off_a[n_rec]  off_b[n_rec]  (I32)    the record's shells' AO offsets
+        row[n_rec] (I32)                     the record's row of Jp
+        Jp[n_rows, n_p]                      the bra class's J_p buffer (step 3)
+        J[n_ao, n_ao]  (IN/OUT, AtomicAdd)
+```
+
+Per record `k` and Cartesian pair `r = (i, j)`:
+
+```
+v = Σ_{p in hermite_order} (s[k] · E[r, p]) · Jp[row[k], p]
+off-diagonal (off_a ≠ off_b):  J[off_a+i][off_b+j] += v;  J[off_b+j][off_a+i] += v
+diagonal     (off_a = off_b):  only i ≥ j;  J[off_a+i][off_a+j] += v,
+                               and for i ≠ j also J[off_a+j][off_a+i] += v
+```
+
+**The diagonal rule** reproduces the host bit for bit. It is not a choice made
+for the kernel. `ao.j`'s host scatter assigns `J[a][b]` and then, transposed,
+`J[b][a]`, row by row. On a diagonal block, element `(x, y)` is assigned twice
+and keeps the later value, which is `J_ab[max(x, y), min(x, y)]`. So the
+block's lower triangle, mirrored, is the host's result. Writing the whole
+block and its mirror would double-count the diagonal pair. Writing the whole
+block without a mirror would put `J_ab[x, y]` where the host has
+`J_ab[y, x]`. The two are equal mathematically. On the tracked H₂O fixtures
+(STO-3G, 6-31G, cc-pVDZ) they were also equal bit for bit when checked for
+this section, but nothing makes the `E` recurrence round symmetrically in `a`
+and `b`. The lower-triangle rule is the one that equals the host by
+construction. Under it, every element of `J` is written by exactly one bra
+shell pair, once per record.
+
+**Preconditions.**
+
+- `J` is **zeroed by the caller** before the first `JAB` launch of a build.
+  This is the same convention `build_pq_kernels`' atomic write-back already
+  requires.
+- Only unique bra shell pairs `a ≥ b` are records.
+- A record's `Jp` row is complete. Every ket class's `[p|q]` launch into it
+  has finished.
+
+**Why atomic.** Several records of one shell pair, and both mirror positions,
+add into the same elements. The write is an `AtomicAdd`, with that reason as
+its `Note`.
+
+**Equality.** Interpreted with records in order, the kernel is `==` to
+`ao.j.jab_from_host`. The `+=` chain starting from a zeroed `J` is the host's
+`jab[r] += …` starting from `0.0`, and `+0.0 + v` is `v` (it differs only in
+the sign of a zero, which `==` does not distinguish). On a card, fp64 atomics
+make the summation order differ from run to run. The tolerance for that is
+stated where the device test asserts, and not here.
+
+### What stays host-side, and the one round-trip
+
+**Host-side, by decision**, as in milestone 6:
+
+- the **pair list**: unique shell pairs `a ≥ b`, the records of each, and the
+  weight `w`;
+- the **density check**;
+- the **Schwarz bound** `I = Σ_p I_p` per record (`ao/pairs.py`,
+  pair-factor-free, so it needs no `D` and no dressing);
+- the **sort** of each ket class, descending by `I_q · Dmax`, stable
+  (`launch.launches`);
+- the **staging**: class-grouped buffers, one upload per bra class and one per
+  ket class (`ao/staged.py`, #143; `test/plan_driver.py`, #144);
+- the **launches** and their order.
+
+These decide launches, which is why they stay on the host.
+
+**The round-trip.** The sort needs `Dmax`, and step 2 produces `Dmax` on the
+device. So the chain reads `Dmax` back, sorts on the host, and then puts
+`D_q` into the ket class's buffer in sorted order before step 3 launches.
+The gather can be a host copy or a device gather. Either way it waits on the
+read-back. This is the chain's **only** device-to-host transfer before `J`
+itself, and it is named here, and in the chain adapter's docstring (#155),
+as the one a launch program would remove. **Status: inherent to the
+host-side sort;** removing it is out of this milestone's scope.
+
+### The seams: `ao.j`'s `dq=` and `jab=`
+
+**Status: implemented** (#151). `ao.j.coulomb_matrix(basis, D, *, pq,
+tau=0.0, jp=None, dq=None, jab=None)` follows `jp=`'s discipline (#87). Each
+seam replaces one step, so a disagreement in a `J` built through it is
+localised to that one kernel. A single combined "device chain" hook would make
+a disagreement impossible to localise. Both seams receive an `ao.j.EPair`
+(`la, lb, A, B`, and per record `(P, ζ, s)` in `primitive_pairs` order), built
+by `ao.j.epair`.
+
+| seam | called | signature | the module keeps |
+|---|---|---|---|
+| `dq=` | once per unique ket shell pair `c ≥ d`, in sweep order | `dq(ket: EPair, dcd, w) -> rows`: one `D_q` row per record, over `hermite_order(lc+ld)` | the pair list, `w`, the extraction and symmetry check of `D`, `Q` and `η`, everything downstream |
+| `jab=` | once per unique bra shell pair `a ≥ b`, in sweep order | `jab(bra: EPair, jps, (off_a, off_b), J) -> None`: adds into `J` by the rule of step 4 | the pair list, `J_p` (from `pq` or from `jp=`), and the zeroing of `J` |
+
+- **Both seams are unscreened.** `tau > 0` with either one is refused, as with
+  `jp=`.
+- **The references.** `ao.j.dq_from_host` and `ao.j.jab_from_host` are each
+  step's host arithmetic in the host's own order. With them, `coulomb_matrix`
+  is `==` to itself without them, for each seam alone and for both, on the
+  `pq` path and on the `jp=` path (`test/test_ao_j.py`).
+- **With no hook supplied, every path runs exactly the operations it ran
+  before the seams existed.** That includes `math.fsum`'s placement in the
+  screened sweep, which the seams do not touch.
