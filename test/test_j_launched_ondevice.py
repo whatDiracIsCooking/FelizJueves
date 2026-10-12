@@ -78,6 +78,13 @@ generated text -- the driver or an emitted kernel unit -- fails it (#92),
 as it fails the kernel tier's compile phase. The device tests compile the
 same way, so a warning fails them too.
 
+THE BUILD WALL-CLOCK (#146), opt-in (`FJ_LAUNCH_WALLCLOCK_STORE`) and run
+alone: `test_<backend>_build_wallclock` times BUILD_CELLS' whole-molecule
+builds behind the card gate into data/measured/builds.json; its section
+comment is the protocol and `measured_store.BUILD_TIMED_REGION` the clock's
+boundary. `time_builds` takes any cells, so #147's sort-key A/B is two arms
+of one cell in one session.
+
 WHAT SKIPS: the device tests are `gpu` plus `cuda` or `hip` and take the
 compiler and device fixtures, so on a box without the card they SKIP -- the
 run is green and empty, and devtools/kernel-tier.sh exits 2. The VRAM probe
@@ -87,18 +94,25 @@ rather than launching into an out-of-memory error.
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import math
+import os
+from dataclasses import dataclass
 from functools import cache, partial
 from pathlib import Path
 
 import numpy as np
 import pytest
 import test_ao_j_ondevice
+from conftest import check_vram
 from oracle import basis as ob
 from oracle import manifest
 from plan_driver import (
     RUNS,
+    Driver,
     compile_checked,
+    compile_command,
     counts,
     driver,
     generated_warnings,
@@ -106,13 +120,16 @@ from plan_driver import (
     stage,
     transform,
 )
+from plan_driver import reps as rep_lines
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import dispatch
+from felizjueves import dispatch, gate, measured_store
 from felizjueves.ao.j import _density, coulomb_matrix_and_scale, pair_bound_pq
 from felizjueves.ao.staged import _bra_buffers, _ket_buffers
 from felizjueves.kernel import bra_functions, ket_functions
 from felizjueves.launch import LaunchPlan, class_spec, launches, walk
+from felizjueves.measured import BACKENDS as MEASURED_BACKENDS
+from felizjueves.measured import host as measured_host
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import fundamental
 from felizjueves.reference.pq import pq as ref_pq
@@ -150,14 +167,16 @@ def _scale_j(name: str) -> np.ndarray:
     return np.array(coulomb_matrix_and_scale(basis, D, pq=ref_pq)[1])
 
 
-def _plan(backend: str, name: str, tau: float, n) -> LaunchPlan:
+def _plan(backend: str, name: str, tau: float, n,
+          density_sort: bool = True) -> LaunchPlan:
     _, basis, D = _fixture(name)
     if n == DISPATCH:
         arch = BACKEND[backend][1]
         return launches(basis, D, bound=BOUND, n_batches=1, tau=tau,
-                        strict=False,
+                        density_sort=density_sort, strict=False,
                         resolve=dispatch.Resolver(arch, DISPATCH_INPUT))
-    return launches(basis, D, bound=BOUND, n_batches=n, tau=tau, strict=False)
+    return launches(basis, D, bound=BOUND, n_batches=n, tau=tau,
+                    density_sort=density_sort, strict=False)
 
 
 def _r_all(L: int, PQ: tuple[float, float, float], theta: float):
@@ -237,25 +256,65 @@ def _dispatch_report(backend: str, plan: LaunchPlan) -> str:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Checked:
+    """One cell's driver, compiled, run in its correctness mode and checked
+    (`_check`): what a timing of the SAME binary is compared against."""
+
+    plan: LaunchPlan
+    drv: Driver
+    binary: Path
+    src: Path  # its staged input
+    jp: dict[int, np.ndarray]  # the checked run's J_p, per bra class
+    bound: dict[int, np.ndarray]  # 2 gamma_{K-1} A_p, per bra class
+    n_pairs: int
+    n_skipped: int
+
+
+def _built(backend: str, tc, name: str, tau: float, n, density_sort: bool,
+           workdir: Path) -> tuple[LaunchPlan, Driver, Path, Path]:
+    """Plan, generate, compile (#92's filter) and stage one cell."""
+    _, basis, D = _fixture(name)
+    plan = _plan(backend, name, tau, n, density_sort)
+    drv = driver(plan, backend, workdir / "gen")
+    binary = compile_checked(tc, drv, workdir / "driver")
+    src = workdir / "in.bin"
+    stage(plan, basis, D, drv).tofile(src)
+    return plan, drv, binary, src
+
+
+def _check_counts(c: dict[str, int], drv: Driver, plan: LaunchPlan, *,
+                  warmup: int, reps: int) -> None:
+    """The plan's shape, as the driver counted it, over `warmup + reps`
+    builds in one process."""
+    runs = warmup + reps
+    nb, nk, nl = len(drv.bra), len(drv.ket), len(drv.launches)
+    c = {k: v for k, v in c.items() if k != "upload_ns"}
+    assert c == dict(runs=runs, bra_classes=nb, ket_classes=nk,
+                     uploads_bra=nb, uploads_ket=nk, jp_buffers=nb,
+                     memsets=nb * runs, launches=nl * runs,
+                     readbacks=nb * runs, plan_launches=nl, warmup=warmup,
+                     reps=reps), c
+    assert nl == sum(len(cl.kernels) for cl in plan)
+
+
 def _run(backend: str, name: str, tau: float, n, request,
          run_device_binary, tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
-    fx, basis, D = _fixture(name)
-    plan = _plan(backend, name, tau, n)
-    drv = driver(plan, backend, tmp_path / "gen")
-    binary = compile_checked(tc, drv, tmp_path / "driver")
-    src, dst = tmp_path / "in.bin", tmp_path / "out.bin"
-    stage(plan, basis, D, drv).tofile(src)
-    out = run_device_binary(binary, str(src), str(dst), vram=backend)
+    _check(backend, name, tau, n, True, tc, run_device_binary, tmp_path)
 
-    # the plan's shape, as the driver counted it
-    c = counts(out)
+
+def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
+           run_device_binary, workdir: Path) -> Checked:
+    """Build one cell and run it in its correctness mode: the counts, the
+    run-to-run bound, the launch oracle and libcint (module docstring)."""
+    fx, basis, D = _fixture(name)
+    plan, drv, binary, src = _built(backend, tc, name, tau, n, density_sort,
+                                    workdir)
+    dst = workdir / "out.bin"
+    out = run_device_binary(binary, str(src), str(dst), vram=backend)
+    _check_counts(counts(out), drv, plan, warmup=0, reps=RUNS)
     nb, nk, nl = len(drv.bra), len(drv.ket), len(drv.launches)
-    assert c == dict(runs=RUNS, bra_classes=nb, ket_classes=nk,
-                     uploads_bra=nb, uploads_ket=nk, jp_buffers=nb,
-                     memsets=nb * RUNS, launches=nl * RUNS,
-                     readbacks=nb * RUNS, plan_launches=nl), c
-    assert nl == sum(len(cl.kernels) for cl in plan)
 
     runs = read_back(drv, np.fromfile(dst, dtype=np.float64))
     for r in runs:
@@ -265,12 +324,13 @@ def _run(backend: str, name: str, tau: float, n, request,
     # the fp64-atomic run-to-run tolerance (module docstring):
     #   |J_p(1) - J_p(2)| <= 2 gamma_{K-1} A_p, K = kernels into J_p[lp]
     A = _abs_jp(plan, name)
+    bounds = {lp: 2.0 * _gamma(K - 1) * A[lp]
+              for lp, K in drv.writers.items()}
     bitwise = True
     for lp, K in drv.writers.items():
         diff = np.abs(runs[0][lp] - runs[1][lp])
         bitwise &= bool(np.all(diff == 0.0))
-        bound = 2.0 * _gamma(K - 1) * A[lp]
-        assert np.all(diff <= bound), (
+        assert np.all(diff <= bounds[lp]), (
             f"J_p[{lp}] run to run: worst {float(np.max(diff)):.3e} over "
             f"the {K}-atomic bound")
 
@@ -286,7 +346,8 @@ def _run(backend: str, name: str, tau: float, n, request,
     arch = BACKEND[backend][1]
     ran = " ".join(f"({cl.lp},{cl.lq})b{cl.n_batches}" for cl in plan)
     extra = ("; " + _dispatch_report(backend, plan)) if n == DISPATCH else ""
-    print(f"\n{backend} {arch.name} {name} tau={tau:g} n_batches={n}: "
+    print(f"\n{backend} {arch.name} {name} tau={tau:g} n_batches={n} "
+          f"density_sort={density_sort}: "
           f"{len(plan)} classes [{ran}], refused {list(plan.refused)}; "
           f"{nl} kernels per run, {nb} J_p buffers, {nk} ket uploads; "
           f"oracle skipped {oracle.n_skipped} of {oracle.n_pairs}; "
@@ -295,14 +356,16 @@ def _run(backend: str, name: str, tau: float, n, request,
           f"max|J - oracle|/max|J| = {rel:.2e} (tol {ORACLE_TOL:g}); "
           f"runs bit-identical: {bitwise}{extra}")
 
-    if tau > 0.0:
+    if tau > 0.0 and density_sort:
         assert oracle.n_skipped > 0, "the screen never fired"
-    else:
+    elif tau == 0.0:
         assert oracle.n_skipped == 0
     assert rel <= ORACLE_TOL, (
         f"{name} on {arch.name}: J vs the launch oracle, worst {rel:.2e}")
     assert np.all(np.abs(J - ref) <= allowed), (
         f"{name} on {arch.name}: J vs libcint, worst err/scale_J {jk:.2e}")
+    return Checked(plan, drv, binary, src, runs[0], bounds, oracle.n_pairs,
+                   oracle.n_skipped)
 
 
 @pytest.mark.cuda
@@ -321,6 +384,246 @@ def test_hip_j_from_the_launch_plan(name, tau, n, request, run_device_binary,
                                     tmp_path) -> None:
     """The whole molecule's `J` from the plan on the RX 9060 XT."""
     _run("hip", name, tau, n, request, run_device_binary, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# #146: the whole-build wall-clock, behind the card gate (opt-in, run alone)
+# ---------------------------------------------------------------------------
+#
+# OPT-IN, AND RUN ALONE. It skips unless FJ_LAUNCH_WALLCLOCK_STORE names the
+# build store to write (normally data/measured/builds.json, which must exist:
+# a missing store is an error, as for every measured store). Inside the
+# kernel tier it would share the box with xdist workers compiling other
+# tests, and a contended timing is garbage, not a noisy measurement -- so
+# run it by itself, one session per card:
+#
+#   env FJ_LAUNCH_WALLCLOCK_STORE=data/measured/builds.json \
+#       devtools/kernel-tier.sh --backend cuda -- -n 0 -s -k build_wallclock
+#
+# WHAT ONE ROW IS: `measured_store.BUILD_TIMED_REGION`, verbatim in the
+# store's header -- the per-build memsets, every batch kernel of every class
+# in plan order, one synchronize and the J_p read-back; NOT the uploads
+# (once per process, timed apart as raw 'build:upload_ns'), NOT eq. 20 and
+# the scatter (host Python), NOT compilation.
+#
+# THE PROTOCOL, in order, all inside one test so the phases cannot overlap:
+#
+# 1. COMPILE every cell's driver, with config.sh's NVCC_FLAGS / HIPCC_FLAGS
+#    and #92's warning filter (`compile_checked`). No compile after this.
+# 2. CHECK every compiled binary in its correctness mode (`_check`: counts,
+#    the fp64-atomic run-to-run bound, the launch oracle, libcint) -- the
+#    TIMED binary is the CHECKED binary.
+# 3. TIME each cell: the VRAM probe first (off the clock), then the gate
+#    (`gate.wait_quiet`: card at most GPU_BUSY_MAX by its own SMI, CPU at
+#    most BUSY_MAX), ONE process running BUILD_WARMUP untimed builds and
+#    BUILD_REPEATS timed ones, then `gate.after_reading`. A phase whose
+#    after-reading is non-idle or unknown is DISCARDED -- nothing from it
+#    is kept -- and retaken, up to BUILD_RETAKES times; the row counts its
+#    discards. A card the gate never lets through fails the test with
+#    nothing recorded. The timed process's first and last J_p must agree
+#    with the checked run's within the same fp64-atomic bound.
+# 4. WRITE one row per cell (`measured_store.BuildRow`), one save after
+#    every cell is timed.
+#
+# THE ARMS (#147). A cell is `BuildCell(fixture, tau, n, density_sort, arm)`;
+# `time_builds` takes any tuple of them, so a same-session A/B is two cells
+# that differ in `density_sort` and `arm` only, timed in one call (one
+# session, one store write). This issue's sweep is BUILD_CELLS, the plan's
+# default sort, arm `measured_store.BASELINE_ARM`.
+
+LAUNCH_WALLCLOCK_STORE = "FJ_LAUNCH_WALLCLOCK_STORE"
+BUILD_WARMUP = 5
+BUILD_REPEATS = 31
+BUILD_RETAKES = 5
+
+
+@dataclass(frozen=True)
+class BuildCell:
+    """One timed build: a fixture's molecule through `_plan`'s launch plan."""
+
+    fixture: str
+    tau: float
+    n: int | str  # a fixed n_batches, or DISPATCH (dispatch.Resolver)
+    density_sort: bool = True
+    arm: str = measured_store.BASELINE_ARM
+
+    @property
+    def n_batches(self) -> int | str:
+        """The row's n_batches: the count, or 'dispatch:<input>'."""
+        return (f"{measured_store.DISPATCH_PREFIX}{DISPATCH_INPUT}"
+                if self.n == DISPATCH else self.n)
+
+    def key(self, arch: str, toolchain: str) -> str:
+        return measured_store.build_key(self.fixture, self.tau, self.n_batches,
+                                        self.density_sort, self.arm, arch,
+                                        toolchain)
+
+
+# H2O/STO-3G one batch (s and p shells, 9 classes); H2O/cc-pVDZ dispatched
+# (d shells, 25 classes) unscreened, and at tau = 1e-3, where the screen
+# skips 123896 of its 351649 record pairs (the launch oracle's count) --
+# the cell #147's sort-key A/B reads against.
+BUILD_CELLS = (
+    BuildCell("h2o_sto3g_j", 0.0, 1),
+    BuildCell("h2o_ccpvdz_j", 0.0, DISPATCH),
+    BuildCell("h2o_ccpvdz_j", 1e-3, DISPATCH),
+)
+
+
+def _quartiles(xs) -> tuple[float, float, float]:
+    q1, med, q3 = (float(x) for x in np.percentile(xs, [25, 50, 75]))
+    return q1, med, q3
+
+
+def time_builds(backend: str, cells, store_path: Path, request,
+                run_device_binary, tmp_path: Path) -> dict[str, object]:
+    """The protocol above over `cells`, on `backend`'s card; writes the rows
+    into `store_path` and returns them by key."""
+    tc = _toolchain(backend, request)
+    arch = BACKEND[backend][1]
+    mb = MEASURED_BACKENDS[backend]
+    toolchain, gpu = mb.toolchain(mb.compiler()), mb.gpu()
+    store = measured_store.load_builds(store_path)
+    keys = [c.key(arch.name, toolchain) for c in cells]
+    assert len(set(keys)) == len(keys), f"two cells, one key: {keys}"
+
+    # 1-2. compile, then check, every cell -- before any timing
+    checked = []
+    for i, cell in enumerate(cells):
+        work = tmp_path / f"cell{i}"
+        work.mkdir()
+        ck = _check(backend, cell.fixture, cell.tau, cell.n, cell.density_sort,
+                    tc, run_device_binary, work)
+        checked.append(ck)
+        print(f"checked {keys[i]}", flush=True)
+
+    # 3. time, one cell at a time
+    got: dict[str, object] = {}
+    table = []
+    for cell, key, ck in zip(cells, keys, checked, strict=True):
+        dst = ck.src.parent / "timed.bin"
+        args = (str(ck.src), str(dst), str(BUILD_WARMUP), str(BUILD_REPEATS))
+        check_vram(ck.binary, args, backend)  # before the wait, off the clock
+        discarded = 0
+        for take in range(1 + BUILD_RETAKES):
+            try:
+                cpu, before = gate.wait_quiet(
+                    backend, say=lambda line: print(line, flush=True))
+            except gate.Contended as e:
+                pytest.fail(f"{key}: {e} -- nothing recorded")
+            load1 = os.getloadavg()[0]
+            out = run_device_binary(ck.binary, *args)
+            after = gate.after_reading(backend)
+            if gate.is_idle(after):
+                break
+            discarded += 1
+            print(f"  DISCARDED {key}: card {before}% -> {after}% (take "
+                  f"{take + 1})", flush=True)
+        else:
+            pytest.fail(f"{key}: the card was taken during {BUILD_RETAKES + 1} "
+                        "phases -- nothing recorded")
+
+        c = counts(out)
+        _check_counts(c, ck.drv, ck.plan, warmup=BUILD_WARMUP,
+                      reps=BUILD_REPEATS)
+        rows = rep_lines(out)
+        assert len(rows) == BUILD_REPEATS, out
+        wall, dev, back, events = (list(x) for x in zip(*rows, strict=True))
+        first, last = read_back(ck.drv, np.fromfile(dst, dtype=np.float64))
+        bitwise = True
+        for lp, bound in ck.bound.items():
+            for run in (first, last):
+                diff = np.abs(run[lp] - ck.jp[lp])
+                assert np.all(diff <= bound), (
+                    f"{key}: timed J_p[{lp}] off the checked run by "
+                    f"{float(np.max(diff)):.3e}, over the atomic bound")
+            bitwise &= bool(np.array_equal(first[lp], last[lp]))
+
+        q1, med, q3 = _quartiles(wall)
+        dq1, dmed, dq3 = _quartiles(dev)
+        raw = {
+            "build:warmup": BUILD_WARMUP,
+            "build:min_ns": int(min(wall)),
+            "build:q1_ns": round(q1),
+            "build:q3_ns": round(q3),
+            "build:max_ns": int(max(wall)),
+            "build:device_median_ns": round(dmed),
+            "build:device_q1_ns": round(dq1),
+            "build:device_q3_ns": round(dq3),
+            "build:readback_median_ns": round(float(np.median(back))),
+            "build:events_median_ns": round(float(np.median(events))),
+            "build:upload_ns": c["upload_ns"],
+            "build:classes": len(ck.plan),
+            "build:kernels": len(ck.drv.launches),
+            "build:bra_classes": len(ck.drv.bra),
+            "build:ket_classes": len(ck.drv.ket),
+            "build:n_pairs": ck.n_pairs,
+            "build:n_skipped": ck.n_skipped,
+            "build:refused": len(ck.plan.refused),
+            "build:J_bitwise_repeatable": int(bitwise),
+            "build:loadavg1_milli": round(1000 * load1),
+            "build:gpu_util_before": before,
+            "build:gpu_util_after": after,
+            "build:gpu_busy_max": gate.GPU_BUSY_MAX,
+            "build:cpu_busy_permille_before": round(1000 * cpu),
+            "build:gate_discarded_phases": discarded,
+        }
+        text = ck.drv.source + "".join(u.read_text() for u in ck.drv.units)
+        cmd = compile_command(tc, ck.drv, ck.binary)
+        cmd = [Path(cmd[0]).name, *cmd[1:-3], "<driver>", "-o", "<binary>"]
+        row = measured_store.BuildRow(
+            fixture=cell.fixture, tau=cell.tau, n_batches=cell.n_batches,
+            density_sort=cell.density_sort, arm=cell.arm,
+            runtime_ns=round(med), spread_ns=round(q3 - q1),
+            repeats=BUILD_REPEATS, toolchain=toolchain, arch=arch.name,
+            host=measured_host(), gpu=gpu,
+            date=datetime.date.today().isoformat(), command=" ".join(cmd),
+            source_sha256=hashlib.sha256(text.encode()).hexdigest(), raw=raw)
+        assert row.key() == key, (row.key(), key)
+        got[key] = row
+        table.append((key, med, q3 - q1, dmed, raw))
+        print(f"{key}: median {med / 1e3:.1f} us, IQR {(q3 - q1) / 1e3:.1f} "
+              f"us, range [{min(wall) / 1e3:.1f}, {max(wall) / 1e3:.1f}] us "
+              f"(device {dmed / 1e3:.1f} us, read-back "
+              f"{raw['build:readback_median_ns'] / 1e3:.1f} us, upload once "
+              f"{c['upload_ns'] / 1e3:.1f} us); {len(ck.drv.launches)} "
+              f"kernels/build; {BUILD_REPEATS} timed (+{BUILD_WARMUP} "
+              f"warm-up); card {before}% -> {after}%, CPU {cpu:.1%}, "
+              f"discarded {discarded}; J_p bit-repeatable {bitwise}",
+              flush=True)
+
+    # 4. one write, after every cell is timed
+    for row in got.values():
+        store = measured_store.merge_build(store, row)
+    measured_store.save_builds(store, store_path)
+    print(f"\n{backend} {arch.name} ({gpu}), {toolchain}: {len(got)} build "
+          f"rows -> {store_path}")
+    return got
+
+
+def _build_wallclock(backend: str, request, run_device_binary,
+                     tmp_path: Path) -> None:
+    store = os.environ.get(LAUNCH_WALLCLOCK_STORE)
+    if not store:
+        pytest.skip(f"the build wall-clock is opt-in and must run alone, "
+                    f"uncontended: set {LAUNCH_WALLCLOCK_STORE} (see the "
+                    "section comment)")
+    time_builds(backend, BUILD_CELLS, Path(store), request, run_device_binary,
+                tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_build_wallclock(request, run_device_binary, tmp_path) -> None:
+    """The whole-molecule J_p build's wall-clock on the RTX 3080 (#146)."""
+    _build_wallclock("cuda", request, run_device_binary, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_build_wallclock(request, run_device_binary, tmp_path) -> None:
+    """The whole-molecule J_p build's wall-clock on the RX 9060 XT (#146)."""
+    _build_wallclock("hip", request, run_device_binary, tmp_path)
 
 
 # ---------------------------------------------------------------------------
