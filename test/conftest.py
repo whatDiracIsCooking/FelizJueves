@@ -65,6 +65,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+import devcache
 import pytest
 
 from felizjueves.device import Vendor, from_env
@@ -449,19 +450,23 @@ def compile_device_source(tmp_path: Path):
     check that needs no card. Timeouts are generous on purpose: an unrolled
     high-angular-momentum kernel is slow to compile, and that is the point of
     the whole batching exercise rather than a sign something hung.
+
+    Through the compiler cache (#186, test/devcache.py): every quoted
+    `#include` is carried into a content-addressed directory and the compile
+    runs there through sccache, so an unchanged unit is a hit on a re-run;
+    the binary is copied to `tmp_path/probe` (or `probe.o`).
     """
 
     def _compile(toolchain: Toolchain, source: str, *, link: bool = True) -> Path:
-        src = tmp_path / f"probe.{toolchain.ext}"
-        src.write_text(source)
+        text, units = devcache.localize(source, tmp_path)
         out = tmp_path / ("probe" if link else "probe.o")
-        cmd = [toolchain.path, *toolchain.compile_flags()]
-        if not link:
-            cmd += ["-cubin" if toolchain.name == "nvcc" else "-c"]
-        cmd += [str(src), "-o", str(out)]
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        assert done.returncode == 0, (
-            f"{toolchain.name} failed:\n{' '.join(cmd)}\n{done.stderr}"
+        mode = "link" if link else ("-cubin" if toolchain.name == "nvcc" else "-c")
+        got = devcache.compile_unit(
+            toolchain.path, toolchain.compile_flags(), f"probe.{toolchain.ext}",
+            text, units, out, mode=mode, timeout=600)
+        assert got.returncode == 0, (
+            f"{toolchain.name} failed in {got.workdir}:\n"
+            + "\n".join(" ".join(c) for c in got.commands) + f"\n{got.diagnostics}"
         )
         assert out.exists() and out.stat().st_size > 0, f"{out} is empty"
         return out

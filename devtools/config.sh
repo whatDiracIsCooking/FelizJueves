@@ -144,6 +144,19 @@ KERNEL_GEN_CMD=${KERNEL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit}
 # and wiped by --fresh.
 KERNEL_BUILD_DIR=${KERNEL_BUILD_DIR:-.kernel-tier}
 
+# The compiler cache's off switch for TEST-SIDE compiles (#186). Non-empty
+# means test/devcache.py prepends no sccache launcher, so every compile a test
+# issues (conftest.compile_device_source, plan_driver.compile_checked) is cold.
+# kernel-tier.sh --no-cache exports it for the device phase, and the same
+# variable works when pytest runs alone:
+#
+#   KERNEL_NO_CACHE=1 pytest -m "gpu and cuda"
+#
+# Test compiles run in a content-addressed directory under KERNEL_BUILD_DIR
+# (test-cache/<key>/), so --fresh clears those too; the sccache store
+# (SCCACHE_DIR) is never touched by this repo's scripts.
+KERNEL_NO_CACHE=${KERNEL_NO_CACHE:-}
+
 # Where kernel-tier.sh writes its run logs. Relative paths resolve against the
 # repo root. Gitignored; `.gitignore` and `.dockerignore` both name this path,
 # so keep them in step if you rename it.
