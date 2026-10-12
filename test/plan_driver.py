@@ -52,6 +52,30 @@ line), and eq. 20 is host-side and not in it.
 THE LAYOUT is baked into the source from the plan (counts per class, launch
 order, kernel names) and the input file carries only data; the driver
 refuses a file whose size is not the plan's.
+
+THE CHAIN (#157): every arithmetic step of `J_mn` a generated kernel on the
+card, on THIS driver -- not a second one. Two processes, because the plan
+the driver is generated from is keyed on the DQ kernel's own `Dmax`:
+
+  1. `dq_program` -- every ket pair class's `Target.DQ` kernel (`dq_l_l`),
+     one launch per class over all its records, `D_q` and `Dmax` read back:
+     the chain's one round-trip (j_engine.md, "The round-trip"), as in
+     `ao.drive.coulomb_matrix_chain`, whose plan builder (`_chain_plan`)
+     then keys and sorts the kets on the kernel's `Dmax`;
+  2. `driver(plan, ..., chain=basis)` -- milestone 6's driver, unchanged in
+     its uploads and `[p|q]` launches, staged with the DQ kernel's `D_q` /
+     `Dmax` through `ao.staged`'s `ket_data=` hook (`stage(ket_data=)`,
+     its plan-key check intact), and EXTENDED by one `Target.JAB` launch
+     per bra pair class (`jab_ll`) after every `[p|q]` launch, on the same
+     stream: each reads its bra class's `J_p` buffer WHERE IT LIES ON THE
+     CARD (no `J_p` comes back to be re-uploaded) and adds into one zeroed
+     `J_mn`, read back per run. `J_p` is read back too, as the witness of the
+     run-to-run bound. Without `chain=` the driver's text is milestone 6's,
+     byte for byte (every chain slot of the template is empty).
+
+`jab_program` is one JAB unit alone over a given `J_p` (#157's part 1); the
+DQ part-1 harness is `dq_program` over one class. Both are harness, and the
+emitted units they `#include` are the generator's text, unchanged.
 """
 
 from __future__ import annotations
@@ -69,18 +93,25 @@ from conftest import Toolchain
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import measured
-from felizjueves.ao.j import _density
+from felizjueves.ao.j import _density, epair
 from felizjueves.ao.shell import Basis
 from felizjueves.ao.staged import (
+    KetDataHook,
     _accumulating,
     _bra_buffers,
     _dglobal,
     _ket_buffers,
+    _kets_checked,
     _transform,
 )
 from felizjueves.ir import Kernel
 from felizjueves.kernel import bra_functions, ket_functions, launch_shape
+from felizjueves.kernel_dq import PARAMS as DQ_PARAMS
+from felizjueves.kernel_dq import build_dq_kernel, dq_shape
+from felizjueves.kernel_dq import launch_shape as dq_launch_shape
+from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
 from felizjueves.launch import LaunchPlan, class_spec
+from felizjueves.plan.targets import hermite_targets
 
 RUNS = 2  # whole-plan runs per process: the run-to-run witness
 # The kernel's signature, in the order every launch below passes it.
@@ -110,6 +141,11 @@ class Driver:
     ket: tuple[tuple[int, int, int], ...]  # (lq, n_ket, n_q), plan order
     launches: tuple[Launch, ...]
     tau: float
+    # The chain (#157): the JAB launches after every [p|q] launch, reading
+    # `J_p[lp]` on the card and adding into one zeroed `J_mn` (n_ao x n_ao).
+    # Empty for milestone 6's J_p-only driver, whose text is then unchanged.
+    jab: tuple[JabLaunch, ...] = ()
+    n_ao: int = 0
 
     @property
     def writers(self) -> Counter[int]:
@@ -119,7 +155,8 @@ class Driver:
     @property
     def n_input(self) -> int:
         return 1 + sum(5 * n for _, n, _ in self.bra) + sum(
-            n * (6 + q) for _, n, q in self.ket)
+            n * (6 + q) for _, n, q in self.ket) + sum(
+            JAB_DOUBLES * x.n_rec for x in self.jab)
 
 
 def _shapes(plan: LaunchPlan):
@@ -135,9 +172,13 @@ def _shapes(plan: LaunchPlan):
     return ([(lp, *bra[lp]) for lp in bra], [(lq, *ket[lq]) for lq in ket])
 
 
-def driver(plan: LaunchPlan, backend: str, workdir: Path) -> Driver:
+def driver(plan: LaunchPlan, backend: str, workdir: Path, *,
+           chain: Basis | None = None) -> Driver:
     """Emit every kernel of `plan` for `backend` and the `main()` that
-    launches them in the plan's shape (module docstring)."""
+    launches them in the plan's shape (module docstring). With `chain=` (the
+    plan's basis, #157) the driver also launches every bra pair class's
+    `Target.JAB` kernel after the `[p|q]` launches, reading each `J_p`
+    buffer where it lies on the card, and reads back `J_mn` ("THE CHAIN")."""
     emit, arch, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     bra, ket = _shapes(plan)
@@ -171,9 +212,28 @@ def driver(plan: LaunchPlan, backend: str, workdir: Path) -> Driver:
                 f"        ++launches;")
     lanes = {launch_shape(n, arch.wavefront)[1][1] for _, n, _ in bra}
     assert lanes == {arch.wavefront}, lanes
+    jabs: list[JabLaunch] = []
+    chain_text = dict.fromkeys(CHAIN_SLOTS, "")
+    n_ao = 0
+    if chain is not None:
+        n_ao = chain.n_ao
+        for c, (la, lb, lp, data, ints) in enumerate(jab_records(plan, chain)):
+            kern = build_jab_kernel((la, lb))
+            names = tuple(p.name for p in kern.params)
+            if names != JAB_PARAMS:
+                raise ValueError(f"{kern.name}: signature {names}, the driver "
+                                 f"passes {JAB_PARAMS}")
+            ns = f"fj_jab{c}"
+            path = workdir / f"{ns}_{kern.name}.{ext}"
+            path.write_text(emit(kern, arch))
+            units.append(path)
+            includes.append(f'namespace {ns} {{\n#include "{path.name}"\n}}')
+            jabs.append(JabLaunch(la, lb, lp, ns, kern, data, ints))
+        chain_text = _chain_text(jabs, bslot, n_ao)
     prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
     src = DRIVER.format(
         prologue=prologue, portable=PORTABLE, includes="\n".join(includes),
+        **chain_text,
         n_b=len(bra), n_k=len(ket), lanes=arch.wavefront, runs=RUNS,
         nb=", ".join(str(n) for _, n, _ in bra),
         np_=", ".join(str(p) for _, _, p in bra),
@@ -181,26 +241,34 @@ def driver(plan: LaunchPlan, backend: str, workdir: Path) -> Driver:
         nq=", ".join(str(q) for _, _, q in ket),
         n_launch=len(launches),
         vram_kernels=", ".join(f"(const void*){x.ns}::{x.kernel.name}"
-                               for x in launches),
+                               for x in (*launches, *jabs)),
         launches="\n".join(body))
     path = workdir / f"driver.{ext}"
     path.write_text(src)
     return Driver(backend, src, path, tuple(units), tuple(bra), tuple(ket),
-                  tuple(launches), plan.tau)
+                  tuple(launches), plan.tau, tuple(jabs), n_ao)
 
 
-def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver) -> np.ndarray:
+def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver, *,
+          ket_data: KetDataHook | None = None) -> np.ndarray:
     """The packed input: `tau | per bra class P zeta Ip | per ket class
-    Q eta Iq Dmax D`, built by `ao.staged`'s own buffer builders."""
+    Q eta Iq Dmax D [| per JAB class zeta_ab XPA XPB s off_a off_b row]`,
+    built by `ao.staged`'s own buffer builders. `ket_data=` is
+    `ao.staged`'s hook (#155): a ket class's `Q eta D Dmax` from it -- the
+    DQ kernel's, in the chain -- instead of the host pre-contraction, through
+    the same `_kets_checked` (every `Iq * Dmax` its plan key, bit for bit)."""
     rows = _density(basis, D)
-    dglobal = _dglobal(plan, basis, rows)
+    dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     bras, kets = {}, {}
     for cl in plan:
         if cl.lp not in bras:
             bras[cl.lp] = _bra_buffers(basis, cl.bras)
         if cl.lq not in kets:
             n_q = dict((lq, q) for lq, _, q in drv.ket)[cl.lq]
-            kets[cl.lq] = _ket_buffers(basis, rows, cl.kets, n_q, dglobal)
+            kets[cl.lq] = (
+                _ket_buffers(basis, rows, cl.kets, n_q, dglobal)
+                if ket_data is None
+                else _kets_checked(cl.kets, n_q, ket_data(cl.kets, n_q)))
         elif kets[cl.lq].recs != cl.kets:
             raise ValueError(f"ket class {cl.lq}: two ket lists, one upload")
     parts = [np.array([plan.tau])]
@@ -210,15 +278,19 @@ def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver) -> np.ndarray:
     for lq, _, _ in drv.ket:
         k = kets[lq]
         parts += [k.Q.ravel(), k.eta, k.Iq, k.Dmax, k.D.ravel()]
+    for x in drv.jab:
+        parts += _jab_parts(x)
     out = np.concatenate([np.asarray(p, dtype=np.float64) for p in parts])
     assert out.size == drv.n_input, (out.size, drv.n_input)
     return out
 
 
 def read_back(drv: Driver, raw: np.ndarray) -> list[dict[int, np.ndarray]]:
-    """`[run][lp]` -> that run's `J_p` of bra class `lp`."""
+    """`[run][lp]` -> that run's `J_p` of bra class `lp`. (A chain
+    driver's `J_mn` follows the `J_p` runs: `read_back_j`.)"""
     per_run = sum(n * p for _, n, p in drv.bra)
-    assert raw.size == RUNS * per_run, (raw.size, RUNS, per_run)
+    n_j = RUNS * drv.n_ao * drv.n_ao if drv.jab else 0
+    assert raw.size == RUNS * per_run + n_j, (raw.size, RUNS, per_run, n_j)
     out, at = [], 0
     for _ in range(RUNS):
         run = {}
@@ -227,6 +299,374 @@ def read_back(drv: Driver, raw: np.ndarray) -> list[dict[int, np.ndarray]]:
             at += n * p
         out.append(run)
     return out
+
+
+def read_back_j(drv: Driver, raw: np.ndarray) -> list[np.ndarray]:
+    """A chain driver's `[run]` -> that run's `J_mn`, from the card's JAB."""
+    assert drv.jab, "not a chain driver"
+    n = drv.n_ao * drv.n_ao
+    tail = raw[raw.size - RUNS * n:]
+    return [tail[r * n:(r + 1) * n].reshape(drv.n_ao, drv.n_ao)
+            for r in range(RUNS)]
+
+
+# --- the J chain on the card (#157) ----------------------------------------
+
+DQ_LANES = 32  # one thread per record (kernel_dq.launch_shape); not numerical
+JAB_THREADS = 32  # one thread per record (kernel_jab.jab_launch_shape)
+JAB_PARAMS = ("n_rec", "n_ao", "n_rows", "zeta_ab", "XPA", "XPB", "s", "off_a",
+              "off_b", "row", "Jp", "J")
+DQ_DOUBLES = 10  # per record: eta XPA(3) XPB(3) s w pair
+JAB_DOUBLES = 11  # per record: zeta_ab XPA(3) XPB(3) s off_a off_b row
+
+
+@dataclass(frozen=True)
+class JabLaunch:
+    """One bra pair class's `Target.JAB` launch, after every `[p|q]` launch,
+    reading `J_p[lp]` on the card. `data` is per record `zeta_ab XPA XPB s`
+    and `ints` `off_a off_b row` (exact as doubles), `ao.drive`'s values."""
+
+    la: int
+    lb: int
+    lp: int
+    ns: str
+    kernel: Kernel
+    data: np.ndarray  # (n_rec, 8)
+    ints: np.ndarray  # (n_rec, 3)
+
+    @property
+    def n_rec(self) -> int:
+        return int(self.data.shape[0])
+
+
+def jab_rows(basis: Basis, members) -> tuple[np.ndarray, np.ndarray]:
+    """`(data, ints)` for the records of `members`, each `(a, b, start)`: a
+    shell pair and its first row of the `J_p` buffer, records in
+    `primitive_pairs` order -- `ao.drive.KernelJAB` / `_jab_launches`' own
+    `zeta_ab`, `X_PA = P - A`, `X_PB = P - B`, `s`, offsets and rows."""
+    shells, off = basis.shells, basis.offsets
+    data, ints = [], []
+    for a, b, start in members:
+        ep = epair(shells[a], shells[b])
+        for k, (P, zeta, s) in enumerate(ep.recs):
+            data.append([zeta, *(P[d] - ep.A[d] for d in range(3)),
+                         *(P[d] - ep.B[d] for d in range(3)), s])
+            ints.append([off[a], off[b], start + k])
+    return (np.array(data, dtype=np.float64).reshape(-1, 8),
+            np.array(ints, dtype=np.float64).reshape(-1, 3))
+
+
+def jab_records(plan: LaunchPlan, basis: Basis):
+    """Per bra pair class `(la, lb)`, sorted: `(la, lb, lp, data, ints)` over
+    every record of every bra shell pair of the class -- the grouping of
+    `ao.drive._jab_launches` (one launch per class, rows of `J_p[lp]` from
+    the plan's bra blocks)."""
+    shells = basis.shells
+    blocks: dict[int, tuple] = {}
+    for cl in plan:
+        blocks.setdefault(cl.lp, cl.bra_blocks)
+    groups: dict[tuple[int, int], list] = {}
+    for lp, blks in blocks.items():
+        for a, b, start, stop in blks:
+            la, lb = shells[a].l, shells[b].l
+            if la + lb != lp:
+                raise ValueError(f"bra pair {(a, b)} filed under lp = {lp}")
+            if stop - start != len(epair(shells[a], shells[b]).recs):
+                raise ValueError(f"bra block {(a, b)}: {stop - start} rows")
+            groups.setdefault((la, lb), []).append((a, b, start))
+    return [(la, lb, la + lb, *jab_rows(basis, groups[(la, lb)]))
+            for la, lb in sorted(groups)]
+
+
+def _jab_parts(x: JabLaunch) -> list[np.ndarray]:
+    """One JAB class's input, in the order the generated `main()` reads it."""
+    return [x.data[:, 0], x.data[:, 1:4].ravel(), x.data[:, 4:7].ravel(),
+            x.data[:, 7], x.ints[:, 0], x.ints[:, 1], x.ints[:, 2]]
+
+
+CHAIN_SLOTS = ("jab_helpers", "jab_count", "jab_need", "jab_upload",
+               "jab_launch", "jab_readback", "jab_keep", "jab_free",
+               "jab_counts")
+
+UPLOAD_INT = r"""
+static int* upload_int(const double* h, size_t n) {
+    std::vector<int> v(n);
+    for (size_t i = 0; i < n; ++i) v[i] = (int)h[i];
+    int* d = nullptr;
+    if (devMalloc(&d, n * sizeof(int) + 8) != devSuccess) return nullptr;
+    if (n && devMemcpy(d, v.data(), n * sizeof(int), devMemcpyH2D) != devSuccess)
+        return nullptr;
+    return d;
+}
+"""
+
+
+def _jab_call(x: JabLaunch, c: int, jp: str, n_rows: str) -> str:
+    n = x.n_rec
+    grid, (threads, _) = jab_launch_shape(n, JAB_THREADS)
+    return (f"        // bra pair class ({x.la}, {x.lb}): J_p[{x.lp}] -> J_mn\n"
+            f"        {x.ns}::{x.kernel.name}<<<dim3({grid}), dim3({threads})>>>(\n"
+            f"            {n}, NAO, {n_rows}, jd[{c}], jd[{c}] + {n}, "
+            f"jd[{c}] + {4 * n}, jd[{c}] + {7 * n},\n"
+            f"            ji[{c}], ji[{c}] + {n}, ji[{c}] + {2 * n}, {jp}, dJmn);\n"
+            f"        CHECK(devGetLastError());\n")
+
+
+def _chain_text(jabs: list[JabLaunch], bslot: dict[int, int],
+                n_ao: int) -> dict[str, str]:
+    """The DRIVER template's chain slots (#157), filled."""
+    nj = len(jabs)
+    calls = "".join(_jab_call(x, c, f"dJ[{bslot[x.lp]}]",
+                              f"nb[{bslot[x.lp]}]") + "        ++jab_launches;\n"
+                    for c, x in enumerate(jabs))
+    return dict(
+        jab_helpers=(f"\n// the chain (#157): one JAB launch per bra pair class"
+                     f"\nstatic const int NJ = {nj}, NAO = {n_ao};\n"
+                     f"static const int nj[NJ] = {{"
+                     + ", ".join(str(x.n_rec) for x in jabs) + "};"
+                     + UPLOAD_INT),
+        jab_count=(f"    for (int c = 0; c < NJ; ++c) want += (size_t)"
+                   f"{JAB_DOUBLES} * nj[c];\n"),
+        jab_need="\n                          + (size_t)NAO * NAO * sizeof(double)",
+        jab_upload=(
+            "    int uploads_jab = 0, jab_launches = 0, j_memsets = 0, "
+            "j_readbacks = 0;\n"
+            "    double* jd[NJ];\n"
+            "    int* ji[NJ];\n"
+            "    for (int c = 0; c < NJ; ++c) {\n"
+            "        jd[c] = upload(h, (size_t)8 * nj[c]);\n"
+            "        h += (size_t)8 * nj[c];\n"
+            "        ji[c] = upload_int(h, (size_t)3 * nj[c]);\n"
+            "        h += (size_t)3 * nj[c];\n"
+            "        if (!jd[c] || !ji[c]) { std::fprintf(stderr, \"jab upload "
+            "%d failed\\n\", c); return 1; }\n"
+            "        ++uploads_jab;\n"
+            "    }\n"
+            "    double* dJmn = nullptr;\n"
+            "    CHECK(devMalloc(&dJmn, (size_t)NAO * NAO * sizeof(double)));\n"
+            "    std::vector<double> Jmn((size_t)NAO * NAO), jfirst(Jmn.size()),"
+            " jlast(Jmn.size());\n"),
+        jab_launch=(
+            "        // the chain (#157): every [p|q] launch above is on this "
+            "stream, so\n"
+            "        // each J_p row is complete; JAB reads it on the card and "
+            "adds into J_mn\n"
+            "        CHECK(devMemset(dJmn, 0, (size_t)NAO * NAO * sizeof(double)));"
+            "\n        ++j_memsets;\n" + calls),
+        jab_readback=(
+            "        CHECK(devMemcpy(Jmn.data(), dJmn, Jmn.size() * sizeof(double),"
+            "\n                        devMemcpyD2H));\n"
+            "        ++j_readbacks;\n"),
+        jab_keep=("        if (r == warmup) jfirst = Jmn;\n"
+                  "        jlast = Jmn;\n"),
+        jab_free=(
+            "    out.insert(out.end(), jfirst.begin(), jfirst.end());\n"
+            "    out.insert(out.end(), jlast.begin(), jlast.end());\n"
+            "    for (int c = 0; c < NJ; ++c) {\n"
+            "        CHECK(devFree(jd[c]));\n"
+            "        CHECK(devFree(ji[c]));\n"
+            "    }\n"
+            "    CHECK(devFree(dJmn));\n"),
+        jab_counts=(
+            "    std::printf(\"fj-chain jab_classes %d uploads_jab %d jab_launches "
+            "%d \"\n                \"j_memsets %d j_readbacks %d\\n\", NJ, "
+            "uploads_jab,\n                jab_launches, j_memsets, "
+            "j_readbacks);\n"),
+    )
+
+
+_CHAIN = re.compile(r"^fj-chain (.*)$", re.MULTILINE)
+
+
+def chain_counts(stdout: str) -> dict[str, int]:
+    """A chain driver's own JAB counts line, as `{name: value}`."""
+    m = _CHAIN.search(stdout)
+    assert m, f"no fj-chain line in:\n{stdout}"
+    words = m.group(1).split()
+    return {k: int(v) for k, v in zip(words[::2], words[1::2], strict=True)}
+
+
+@dataclass(frozen=True)
+class Program:
+    """A generated harness `main()` and the emitted units it includes:
+    what `compile_checked` compiles and filters (it reads `backend`, `path`,
+    `units`)."""
+
+    backend: str
+    source: str
+    path: Path
+    units: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class DQClass:
+    """One ket pair class's DQ launch: its shell pairs (sweep order), per
+    record `eta XPA XPB s w` and `pair`, and `Dcd` per shell pair --
+    `ao.drive.KernelDQ.run`'s arguments, built the same way."""
+
+    lc: int
+    ld: int  # ld
+    members: tuple[tuple[int, int], ...]
+    data: np.ndarray  # (n_rec, 9)
+    pair: np.ndarray  # (n_rec,)
+    dcd: np.ndarray  # (n_pair, n_cd)
+
+    @property
+    def cls(self) -> tuple[int, int]:
+        return (self.lc, self.ld)
+
+    @property
+    def n_rec(self) -> int:
+        return int(self.data.shape[0])
+
+
+def dq_classes(basis: Basis, D: object) -> list[DQClass]:
+    """Every ket pair class of `basis`, sorted, with its unique shell pairs
+    `c >= d` in sweep order and the host's weight -- the grouping and the
+    arguments of `ao.drive.coulomb_matrix_chain`'s DQ step."""
+    rows = _density(basis, D)
+    shells, off = basis.shells, basis.offsets
+    by: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for c in range(len(shells)):
+        for d in range(c + 1):
+            by.setdefault((shells[c].l, shells[d].l), []).append((c, d))
+    out = []
+    for cls in sorted(by):
+        data, pair, dcd = [], [], []
+        for i, (c, d) in enumerate(by[cls]):
+            sc, sd = shells[c], shells[d]
+            ep = epair(sc, sd)
+            w = 1.0 if c == d else 2.0
+            dcd.append([float(rows[off[c] + x][off[d] + y])
+                        for x in range(sc.n_cart) for y in range(sd.n_cart)])
+            for P, zeta, sk in ep.recs:
+                data.append([zeta, *(P[k] - ep.A[k] for k in range(3)),
+                             *(P[k] - ep.B[k] for k in range(3)), sk, w])
+                pair.append(i)
+        out.append(DQClass(cls[0], cls[1], tuple(by[cls]),
+                           np.array(data, dtype=np.float64),
+                           np.array(pair, dtype=np.float64),
+                           np.array(dcd, dtype=np.float64)))
+    return out
+
+
+def _unit(kern: Kernel, backend: str, workdir: Path,
+          units: Mapping[str, Path] | None) -> Path:
+    """The emitted text of `kern`: `units[kern.name]` when the caller has the
+    file (the tier's own, asserted byte-identical by the caller), else
+    written into `workdir`."""
+    if units is not None and kern.name in units:
+        return units[kern.name]
+    emit, arch, ext = BACKEND[backend]
+    path = workdir / f"{kern.name}.{ext}"
+    path.write_text(emit(kern, arch))
+    return path
+
+
+def dq_program(classes: list[DQClass], backend: str, workdir: Path, *,
+               units: Mapping[str, Path] | None = None) -> Program:
+    """A `main()` running every class's `Target.DQ` kernel once per run
+    (RUNS runs), one launch per class over all its records, and writing
+    each run's `D` then `Dmax` per class. The outputs are poisoned (all
+    bytes 0xff, a NaN) before every run, so a record the kernel leaves
+    unwritten reads back non-finite."""
+    _, arch, ext = BACKEND[backend]
+    workdir.mkdir(parents=True, exist_ok=True)
+    includes, paths, calls, kernels = [], [], [], []
+    for c, dc in enumerate(classes):
+        kern = build_dq_kernel(dc.cls)
+        names = tuple(p.name for p in kern.params)
+        if names != DQ_PARAMS:
+            raise ValueError(f"{kern.name}: signature {names}")
+        path = _unit(kern, backend, workdir, units)
+        paths.append(path)
+        ns = f"fj_dq{c}"
+        includes.append(f'namespace {ns} {{\n#include "{path}"\n}}')
+        kernels.append(f"(const void*){ns}::{kern.name}")
+        n = dc.n_rec
+        grid, (lanes, _) = dq_launch_shape(n, DQ_LANES)
+        calls.append(
+            f"        // ket pair class ({dc.lc}, {dc.ld})\n"
+            f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
+            f"            nr[{c}], npair[{c}], dd[{c}], dd[{c}] + {n}, "
+            f"dd[{c}] + {4 * n}, dd[{c}] + {7 * n},\n"
+            f"            dd[{c}] + {8 * n}, dp[{c}], dc[{c}], dD[{c}], dM[{c}]);\n"
+            f"        CHECK(devGetLastError());\n"
+            f"        ++launches;")
+    nq = [dq_shape(*dc.cls)[1] for dc in classes]
+    ncd = [dq_shape(*dc.cls)[0] for dc in classes]
+    src = DQ_PROGRAM.format(
+        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
+        portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
+        n_c=len(classes), runs=RUNS,
+        nr=", ".join(str(dc.n_rec) for dc in classes),
+        npair=", ".join(str(len(dc.members)) for dc in classes),
+        ncd=", ".join(map(str, ncd)), nq=", ".join(map(str, nq)),
+        vram_kernels=", ".join(kernels), launches="\n".join(calls))
+    path = workdir / f"dq_program.{ext}"
+    path.write_text(src)
+    return Program(backend, src, path, tuple(paths))
+
+
+def dq_stage(classes: list[DQClass]) -> np.ndarray:
+    """`dq_program`'s input: per class `eta XPA XPB s w | pair | Dcd`."""
+    parts = []
+    for dc in classes:
+        d = dc.data
+        parts += [d[:, 0], d[:, 1:4].ravel(), d[:, 4:7].ravel(), d[:, 7],
+                  d[:, 8], dc.pair, dc.dcd.ravel()]
+    return np.concatenate([np.asarray(p, dtype=np.float64) for p in parts])
+
+
+def dq_read_back(classes: list[DQClass], raw: np.ndarray
+                 ) -> list[dict[tuple[int, int], tuple[np.ndarray, np.ndarray]]]:
+    """`[run][(lc, ld)]` -> `(D[n_rec, n_q], Dmax[n_rec])`, record order."""
+    out, at = [], 0
+    for _ in range(RUNS):
+        run = {}
+        for dc in classes:
+            n, n_q = dc.n_rec, dq_shape(*dc.cls)[1]
+            D = raw[at:at + n * n_q].reshape(n, n_q)
+            at += n * n_q
+            run[dc.cls] = (D, raw[at:at + n])
+            at += n
+        out.append(run)
+    assert at == raw.size, (at, raw.size)
+    return out
+
+
+def jab_program(cls: tuple[int, int], n_rec: int, n_rows: int, n_ao: int,
+                backend: str, workdir: Path, *,
+                units: Mapping[str, Path] | None = None) -> Program:
+    """A `main()` running ONE bra pair class's `Target.JAB` kernel over a
+    given `J_p` buffer, RUNS times into a freshly zeroed `J_mn` each, and
+    writing each run's `J_mn` (#157's part 1)."""
+    _, arch, ext = BACKEND[backend]
+    workdir.mkdir(parents=True, exist_ok=True)
+    kern = build_jab_kernel(cls)
+    names = tuple(p.name for p in kern.params)
+    if names != JAB_PARAMS:
+        raise ValueError(f"{kern.name}: signature {names}")
+    path = _unit(kern, backend, workdir, units)
+    n_p = len(hermite_targets(sum(cls)))
+    x = JabLaunch(cls[0], cls[1], sum(cls), "fj_jab0", kern,
+                  np.zeros((n_rec, 8)), np.zeros((n_rec, 3)))
+    src = JAB_PROGRAM.format(
+        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
+        portable=PORTABLE, unit=path, upload_int=UPLOAD_INT,
+        n_rec=n_rec, n_rows=n_rows, n_p=n_p, n_ao=n_ao, runs=RUNS,
+        name=kern.name, launch=_jab_call(x, 0, "dJp", "NROWS"))
+    main = workdir / f"jab_program.{ext}"
+    main.write_text(src)
+    return Program(backend, src, main, (path,))
+
+
+def jab_stage(jp: np.ndarray, data: np.ndarray, ints: np.ndarray) -> np.ndarray:
+    """`jab_program`'s input: `Jp | zeta_ab XPA XPB s | off_a off_b row`."""
+    x = JabLaunch(0, 0, 0, "", None, data, ints)  # type: ignore[arg-type]
+    return np.concatenate([np.asarray(jp, dtype=np.float64).ravel(),
+                           *(np.asarray(p, dtype=np.float64)
+                             for p in _jab_parts(x))])
 
 
 def transform(basis: Basis, plan: LaunchPlan, jps: dict[int, np.ndarray]):
@@ -295,7 +735,7 @@ def generated_warnings(drv: Driver, diagnostics: str) -> list[str]:
     return hits
 
 
-def compile_checked(tc: Toolchain, drv: Driver, out: Path, *,
+def compile_checked(tc: Toolchain, drv: Driver | Program, out: Path, *,
                     env: Mapping[str, str] | None = None) -> Path:
     """Compile the driver with the tier's flags; FAIL on an error, and on any
     warning located in generated text (#92), naming file and line.
@@ -327,7 +767,7 @@ def compile_checked(tc: Toolchain, drv: Driver, out: Path, *,
 DRIVER = r"""// generated from a launch plan by test/plan_driver.py (#144) -- harness.
 {prologue}
 {portable}
-{includes}
+{includes}{jab_helpers}
 #include <chrono>
 #if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
 #define devMemset hipMemset
@@ -382,13 +822,13 @@ int main(int argc, char** argv) {{
         jdoubles += (size_t)nb[i] * np_[i];
     }}
     for (int j = 0; j < NK; ++j) want += (size_t)nk[j] * (6 + nq[j]);
-    if (in.size() != want) {{
+{jab_count}    if (in.size() != want) {{
         std::fprintf(stderr, "input has %zu doubles, the plan wants %zu\n",
                      in.size(), want);
         return 2;
     }}
     if (fj_vram_probe(in.size() * sizeof(double) + (size_t)8 * (NB + NK)
-                          + jdoubles * sizeof(double),
+                          + jdoubles * sizeof(double){jab_need},
                       {{{vram_kernels}}})) return 0;
     const double tau = in[0];
     const double* h = in.data() + 1;
@@ -414,7 +854,7 @@ int main(int argc, char** argv) {{
         h += n;
         ++uploads_ket;
     }}
-    CHECK(devSynchronize());
+{jab_upload}    CHECK(devSynchronize());
     const long long upload_ns = fj_ns(u0, fj_clock::now());
     // ONE J_p per bra class.
     double* dJ[NB];
@@ -434,7 +874,7 @@ int main(int argc, char** argv) {{
             ++memsets;
         }}
 {launches}
-        CHECK(devEventRecord(ev[1]));
+{jab_launch}        CHECK(devEventRecord(ev[1]));
         CHECK(devSynchronize());
         const auto t1 = fj_clock::now();
         size_t at = 0;
@@ -445,7 +885,7 @@ int main(int argc, char** argv) {{
             at += n;
             ++readbacks;
         }}
-        const auto t2 = fj_clock::now();
+{jab_readback}        const auto t2 = fj_clock::now();
         if (r < warmup) continue;
         float ms = 0.f;
         CHECK(devEventElapsedTime(&ms, ev[0], ev[1]));
@@ -454,10 +894,10 @@ int main(int argc, char** argv) {{
                     fj_ns(t0, t1), fj_ns(t1, t2), (double)ms * 1e6);
         if (r == warmup) first = J;
         last = J;
-    }}
+{jab_keep}    }}
     std::vector<double> out(first);
     out.insert(out.end(), last.begin(), last.end());
-    for (int i = 0; i < NB; ++i) CHECK(devFree(bp[i]));
+{jab_free}    for (int i = 0; i < NB; ++i) CHECK(devFree(bp[i]));
     for (int j = 0; j < NK; ++j) CHECK(devFree(kp[j]));
     for (int i = 0; i < NB; ++i) CHECK(devFree(dJ[i]));
     if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
@@ -467,6 +907,162 @@ int main(int argc, char** argv) {{
                 "upload_ns %lld\n", warmup + reps, NB, NK,
                 uploads_bra, uploads_ket, jp_buffers, memsets, launches,
                 readbacks, {n_launch}, warmup, reps, upload_ns);
+{jab_counts}    return 0;
+}}
+"""
+
+
+# The DQ step alone (#157): every ket pair class's pre-contraction, RUNS
+# times; `{...}` from the classes, everything else C++.
+DQ_PROGRAM = r"""// generated by test/plan_driver.py (#157) -- harness: the DQ step.
+{prologue}
+{portable}
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devMemset hipMemset
+#define devFree   hipFree
+#else
+#define devMemset cudaMemset
+#define devFree   cudaFree
+#endif
+{includes}
+{upload_int}
+static const int NC = {n_c}, RUNS = {runs};
+static const int nr[NC] = {{{nr}}};      // records per ket pair class
+static const int npair[NC] = {{{npair}}};  // ket shell pairs per class
+static const int ncd[NC] = {{{ncd}}};     // Cartesian pairs per shell pair
+static const int nq[NC] = {{{nq}}};      // Hermite indices per record
+
+// usage: in out. `in` is, per class, eta XPA XPB s w | pair | Dcd; `out` is,
+// per run and per class, D[nr, nq] then Dmax[nr].
+int main(int argc, char** argv) {{
+    if (argc != 3) {{ std::fprintf(stderr, "usage: in out\n"); return 2; }}
+    std::vector<double> in;
+    if (!slurp(argv[1], in)) {{ std::fprintf(stderr, "bad input\n"); return 2; }}
+    size_t want = 0, outs = 0;
+    for (int c = 0; c < NC; ++c) {{
+        want += (size_t)10 * nr[c] + (size_t)npair[c] * ncd[c];
+        outs += (size_t)nr[c] * (nq[c] + 1);
+    }}
+    if (in.size() != want) {{
+        std::fprintf(stderr, "input has %zu doubles, the classes want %zu\n",
+                     in.size(), want);
+        return 2;
+    }}
+    if (fj_vram_probe(in.size() * sizeof(double) + outs * sizeof(double)
+                          + (size_t)40 * NC,
+                      {{{vram_kernels}}})) return 0;
+    const double* h = in.data();
+    double* dd[NC];
+    int* dp[NC];
+    double* dc[NC];
+    double* dD[NC];
+    double* dM[NC];
+    int launches = 0;
+    for (int c = 0; c < NC; ++c) {{
+        dd[c] = upload(h, (size_t)9 * nr[c]);
+        h += (size_t)9 * nr[c];
+        dp[c] = upload_int(h, (size_t)nr[c]);
+        h += (size_t)nr[c];
+        dc[c] = upload(h, (size_t)npair[c] * ncd[c]);
+        h += (size_t)npair[c] * ncd[c];
+        if (!dd[c] || !dp[c] || !dc[c]) {{
+            std::fprintf(stderr, "upload %d failed\n", c);
+            return 1;
+        }}
+        CHECK(devMalloc(&dD[c], (size_t)nr[c] * nq[c] * sizeof(double)));
+        CHECK(devMalloc(&dM[c], (size_t)nr[c] * sizeof(double)));
+    }}
+    std::vector<double> out;
+    for (int r = 0; r < RUNS; ++r) {{
+        for (int c = 0; c < NC; ++c) {{  // poisoned: 0xff.. is a NaN
+            CHECK(devMemset(dD[c], 0xff, (size_t)nr[c] * nq[c] * sizeof(double)));
+            CHECK(devMemset(dM[c], 0xff, (size_t)nr[c] * sizeof(double)));
+        }}
+{launches}
+        CHECK(devSynchronize());
+        for (int c = 0; c < NC; ++c) {{
+            std::vector<double> D((size_t)nr[c] * nq[c]), M((size_t)nr[c]);
+            CHECK(devMemcpy(D.data(), dD[c], D.size() * sizeof(double),
+                            devMemcpyD2H));
+            CHECK(devMemcpy(M.data(), dM[c], M.size() * sizeof(double),
+                            devMemcpyD2H));
+            out.insert(out.end(), D.begin(), D.end());
+            out.insert(out.end(), M.begin(), M.end());
+        }}
+    }}
+    for (int c = 0; c < NC; ++c) {{
+        CHECK(devFree(dd[c]));
+        CHECK(devFree(dp[c]));
+        CHECK(devFree(dc[c]));
+        CHECK(devFree(dD[c]));
+        CHECK(devFree(dM[c]));
+    }}
+    if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
+    std::printf("fj-dq classes %d launches %d runs %d\n", NC, launches, RUNS);
+    return 0;
+}}
+"""
+
+# One JAB unit alone over a given J_p (#157's part 1), RUNS times.
+JAB_PROGRAM = r"""// generated by test/plan_driver.py (#157) -- harness: one JAB unit.
+{prologue}
+{portable}
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devMemset hipMemset
+#define devFree   hipFree
+#else
+#define devMemset cudaMemset
+#define devFree   cudaFree
+#endif
+namespace fj_jab0 {{
+#include "{unit}"
+}}
+{upload_int}
+static const int NROWS = {n_rows}, NP = {n_p}, NAO = {n_ao}, RUNS = {runs};
+
+// usage: in out. `in` is Jp[NROWS, NP] | zeta_ab XPA XPB s | off_a off_b row;
+// `out` is each run's J[NAO, NAO], each from a zeroed J.
+int main(int argc, char** argv) {{
+    if (argc != 3) {{ std::fprintf(stderr, "usage: in out\n"); return 2; }}
+    std::vector<double> in;
+    if (!slurp(argv[1], in)) {{ std::fprintf(stderr, "bad input\n"); return 2; }}
+    const size_t want = (size_t)NROWS * NP + (size_t)11 * {n_rec};
+    if (in.size() != want) {{
+        std::fprintf(stderr, "input has %zu doubles, want %zu\n", in.size(), want);
+        return 2;
+    }}
+    if (fj_vram_probe(in.size() * sizeof(double)
+                          + (size_t)NAO * NAO * sizeof(double) + 64,
+                      {{(const void*)fj_jab0::{name}}})) return 0;
+    const double* h = in.data();
+    double* dJp = upload(h, (size_t)NROWS * NP);
+    h += (size_t)NROWS * NP;
+    double* jd[1];
+    int* ji[1];
+    jd[0] = upload(h, (size_t)8 * {n_rec});
+    h += (size_t)8 * {n_rec};
+    ji[0] = upload_int(h, (size_t)3 * {n_rec});
+    if (!dJp || !jd[0] || !ji[0]) {{
+        std::fprintf(stderr, "upload failed\n");
+        return 1;
+    }}
+    double* dJmn = nullptr;
+    CHECK(devMalloc(&dJmn, (size_t)NAO * NAO * sizeof(double)));
+    std::vector<double> J((size_t)NAO * NAO), out;
+    int launches = 0;
+    for (int r = 0; r < RUNS; ++r) {{
+        CHECK(devMemset(dJmn, 0, J.size() * sizeof(double)));
+{launch}        ++launches;
+        CHECK(devSynchronize());
+        CHECK(devMemcpy(J.data(), dJmn, J.size() * sizeof(double), devMemcpyD2H));
+        out.insert(out.end(), J.begin(), J.end());
+    }}
+    CHECK(devFree(dJp));
+    CHECK(devFree(jd[0]));
+    CHECK(devFree(ji[0]));
+    CHECK(devFree(dJmn));
+    if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
+    std::printf("fj-jab launches %d runs %d\n", launches, RUNS);
     return 0;
 }}
 """

@@ -141,7 +141,12 @@ from felizjueves.ao.j import (
     coulomb_matrix_and_scale,
     pair_bound_pq,
 )
-from felizjueves.ao.staged import _bra_buffers, _dglobal, _ket_buffers
+from felizjueves.ao.staged import (
+    _bra_buffers,
+    _dglobal,
+    _ket_buffers,
+    _kets_checked,
+)
 from felizjueves.kernel import bra_functions, ket_functions
 from felizjueves.launch import LaunchPlan, class_spec, launches, walk
 from felizjueves.measured import BACKENDS as MEASURED_BACKENDS
@@ -226,18 +231,26 @@ def _r_all(L: int, PQ: tuple[float, float, float], theta: float):
     return lambda r: node(r, 0)
 
 
-def _abs_jp(plan: LaunchPlan, name: str) -> dict[int, np.ndarray]:
+def _abs_jp(plan: LaunchPlan, name: str, *, basis=None, D=None,
+            ket_data=None) -> dict[int, np.ndarray]:
     """`A_p = SUM_ket SUM_q |[p|q]| |D_q|` per bra record and `p`, per bra
-    class, over EVERY ket of every class (module docstring)."""
-    _, basis, D = _fixture(name)
+    class, over EVERY ket of every class (module docstring). `ket_data=`
+    (#157) takes `D_q` from `ao.staged`'s hook -- the DQ kernel's, staged
+    exactly as the driver's input -- instead of the host pre-contraction;
+    `basis` / `D` then give the molecule, and `name` is only a label."""
+    if basis is None:
+        _, basis, D = _fixture(name)
     rows = _density(basis, D)
-    dglobal = _dglobal(plan, basis, rows)  # None under the product key
+    # None under the product key, and with ket_data (the chain's own Dmax)
+    dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     out: dict[int, np.ndarray] = {}
     for cl in plan:
         spec = class_spec(cl.lp, cl.lq, cl.n_batches)
         ps, qs = bra_functions(spec), ket_functions(spec)
         b = _bra_buffers(basis, cl.bras)
-        k = _ket_buffers(basis, rows, cl.kets, len(qs), dglobal)
+        k = (_ket_buffers(basis, rows, cl.kets, len(qs), dglobal)
+             if ket_data is None
+             else _kets_checked(cl.kets, len(qs), ket_data(cl.kets, len(qs))))
         acc = out.setdefault(cl.lp, np.zeros((len(cl.bras), len(ps))))
         absD = np.abs(k.D)
         for i in range(len(cl.bras)):
