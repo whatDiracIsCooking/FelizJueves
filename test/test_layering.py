@@ -181,7 +181,7 @@ RULES: dict[str, Rule] = {
         "`measured` writes its rows into `measured_store` (#94), and compiles "
         "#113's asymmetric study cells through `asym`",
         ("spec", "device", "ir", "kernel", "lower", "emit", "measured_store",
-         "asym"),
+         "asym", "kernel_dq", "kernel_jab"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         interp="a driver ships kernels; it does not check them -- the tests do",
@@ -468,7 +468,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit._c": ("device", "ir"),
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
-    "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "spec"),
+    "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "kernel_dq",
+                      "kernel_jab", "spec"),
     "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "kernel",
                  "lower", "measured_store", "spec"),
     "measured_store": ("device", "kernel", "lower", "spec"),
