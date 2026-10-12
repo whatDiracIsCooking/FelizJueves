@@ -175,8 +175,12 @@ RULES: dict[str, Rule] = {
         "recommended n_batches from their wall-clock alone (#56; its EDGES "
         "hold it off `lower`), and ridge.py scores #114's declared "
         "ridge-crossing rule off the counter rows (its EDGES hold it to the "
-        "store and the card). It reads both sides and feeds neither",
-        ("spec", "device", "kernel", "lower", "measured_store"),
+        "store and the card), and crossread.py reads those three against "
+        "each other (#115; the one analysis that may import its siblings, "
+        "and only the three it cross-reads). It reads both sides and feeds "
+        "neither",
+        ("spec", "device", "kernel", "lower", "measured_store",
+         "kernelrank", "batchreport", "ridge"),
         measured="an analysis reads the STORE (`measured_store`), never the "
                  "driver that compiles into it: a ranking must not need a "
                  "toolchain to be recomputed (#94)",
@@ -297,6 +301,7 @@ RULE_OF: dict[str, str] = {
     "kernelrank": "analysis",
     "batchreport": "analysis",
     "ridge": "analysis",
+    "crossread": "analysis",
     "ao": "ao",
     "ao.shell": "ao",
     "ao.hermite": "ao",
@@ -360,6 +365,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "kernelrank": ("device", "kernel", "lower", "measured_store", "spec"),
     "batchreport": ("device", "measured_store"),
     "ridge": ("device", "measured_store"),
+    "crossread": ("batchreport", "device", "kernelrank", "measured_store",
+                  "ridge", "spec"),
     "ao": (),
     "ao.shell": (),
     "ao.hermite": (),

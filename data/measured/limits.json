@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "StructuralLimits of the engineering model lower.KernelCost against Measured rows (#54): where it mis-ranks the batch counts of measured.SUBGRID, recorded with its mechanism rather than as a test named 'cannot predict X'. Read by literature.limits.load_limits. Nothing here is, or feeds, a literature floor. Every number is recomputed by test/test_kernelrank.py.",
+ "about": "StructuralLimits of the engineering model lower.KernelCost against Measured rows (#54): where it mis-ranks the batch counts of measured.SUBGRID, recorded with its mechanism rather than as a test named 'cannot predict X'. Read by literature.limits.load_limits. Nothing here is, or feeds, a literature floor. Every number is recomputed by test/test_kernelrank.py. Since #115 it also holds the cross-read's disagreements (asserted_value.cross_read = true): where the model, the wall-clock recommendation and the counters' ridge crossing name different batch counts per (L, arch) (data/measured/crossread.json), recomputed by the same test file.",
  "rank_claim": {
   "statement": "Within one (L, arch), rank n_batches by KernelCost (traffic, summed and per-kernel max; peak_live, per-kernel max) and by the row's spill (summed store+load; per-kernel max store+load), and compare: Spearman rho with average ranks, and pairs the measurement orders strictly counted concordant / discordant / unresolved (model tie).",
   "registers": {
@@ -1919,6 +1919,407 @@
     ]
    },
    "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52 and #60, wall-clock #53 and #60, re-timed behind the card gate by #93); via felizjueves.kernelrank (#54)"
+  },
+  {
+   "claim": "KernelCost.traffic, summed over a split class's batch kernels, picks the batch count the wall-clock recommends, per (L, arch) and input (#115's cross-read).",
+   "mechanism": "The model's summed traffic only falls as a class is split -- splitting removes values from every batch kernel's IR -- and is zero once each kernel's IR peak fits the budget, so its pick is always a split: never 1 at any (L, arch), and the largest counts at L 13 and 16. The clock pays what the model has no term for: each batch is another launch that re-evaluates the Boys function and re-forms the recurrence nodes it shares with other batches (the wall-clock record above: summed instruction count 2.7x to 3.0x from b 1 to b 9). So on the wide-T input b 1 is fastest at every (L, arch), and on the near-T input the clock's choice is below every count the model picks, except at L 16 on gfx1200, where both name 12 because the model's monotone fall ends at the subgrid's edge. That one agreement is the edge of the grid, not the model ranking right.",
+   "evidence": "model pick (traffic summed, sm_86 / gfx1200): L 7 [3, 6, 9, 12] / [3, 6, 9, 12]; L 10 [3, 6, 9, 12] / [6, 9, 12]; L 13 [6, 9, 12] / [9, 12]; L 16 [12] / [12]. Clock best, wide-T: 1 at all 8 (L, arch). Clock best, near-T, sm_86: 1, 1, 3, 9; gfx1200: 1, 3, 6, 12. 15 of 16 (L, arch, input) disagree; the agreement is gfx1200 L 16 near-T.",
+   "asserted_value": {
+    "cross_read": true,
+    "pair": "model_clock",
+    "cells": [
+     {
+      "arch": "sm_86",
+      "L": 7,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 7,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 10,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 10,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       6,
+       9,
+       12
+      ],
+      "choice": 3
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       12
+      ],
+      "choice": 9
+     },
+     {
+      "arch": "gfx1200",
+      "L": 7,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "gfx1200",
+      "L": 7,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "gfx1200",
+      "L": 10,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       6,
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "gfx1200",
+      "L": 10,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       6,
+       9,
+       12
+      ],
+      "choice": 3
+     },
+     {
+      "arch": "gfx1200",
+      "L": 13,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       9,
+       12
+      ],
+      "choice": 1
+     },
+     {
+      "arch": "gfx1200",
+      "L": 13,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "near",
+      "model_pick": [
+       9,
+       12
+      ],
+      "choice": 6
+     },
+     {
+      "arch": "gfx1200",
+      "L": 16,
+      "pair": "model_clock",
+      "variant": null,
+      "input": "wide",
+      "model_pick": [
+       12
+      ],
+      "choice": 1
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+  },
+  {
+   "claim": "On the wide-T input -- the input the counters were taken on -- the batch count the clock prefers is the first compute-bound one: the paper's implicit mechanism, that crossing the ridge is why the clock improves.",
+   "mechanism": "At L 16 on sm_86 three batches do cross the ridge (0.40 -> 1.52 FLOP/B against 0.65), but they cross it by adding work as much as by removing traffic: the cell's counted fp64 FLOPs rise 1.55x (22.3 G -> 34.6 G) while its DRAM bytes fall 2.47x (56.3 GB -> 22.8 GB). Past the ridge the card is bound by fp64 issue, so the added FLOPs are paid in full and the wide-T median rises 1.84x (156.851 -> 289.301 ms); b 1 stays fastest. Arithmetic intensity is a ratio, and batching raises it partly by raising the numerator, which is what the clock prices. At L 7, 10 and 13 the two agree only because nothing crosses: one batch is already compute-bound and the clock never splits on this input.",
+   "evidence": "sm_86 L 16, cell counters summed over the batch kernels (wide-T): b 1 22337792683 FLOP / 56340805376 B (0.40 FLOP/B, memory-bound); b 3 34615796809 FLOP / 22777134336 B (1.52 FLOP/B, compute-bound; every kernel >= 1.46). Wide-T medians b 1 156.851 ms, b 3 289.301 ms, resolved. The per-kernel variant crosses at the same count.",
+   "asserted_value": {
+    "cross_read": true,
+    "pair": "clock_crossing",
+    "input": "wide",
+    "cells": [
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "clock_crossing",
+      "variant": "cell",
+      "input": "wide",
+      "choice": 1,
+      "first_compute_bound": 3
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "clock_crossing",
+      "variant": "per-kernel",
+      "input": "wide",
+      "choice": 1,
+      "first_compute_bound": 3
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+  },
+  {
+   "claim": "On the near-T input the batch count the clock prefers is the first compute-bound one.",
+   "mechanism": "One reason per L. At L 13 the clock's split (b 3) has no crossing to explain it: the wide-T counters put one batch already past the ridge (0.96 FLOP/B against 0.65), so the near-T gain comes from what splitting removes -- summed spill falls 86632 -> 59444 bytes from b 1 to b 3 -- against a Boys series too short for the redundant work to dominate. At L 16 the cell crosses at 3 but the clock keeps improving to 9 while every count from 3 is already past the ridge: what pays there is spill falling (291916 -> 181224 bytes), not a move across the ridge, and 12 is slower again (the #60 record above). Both comparisons pair a near-T clock with a wide-T verdict, because the counters were taken on the wide-T input only: no near-T roofline row exists, so the near-T verdict itself is unmeasured.",
+   "evidence": "sm_86 near-T medians: L 13 b 1 32.598 ms, b 3 29.478 ms (best, resolved); L 16 b 3 117.029 ms, b 9 98.776 ms (best, resolved), b 12 103.055 ms. First compute-bound count (wide-T counters, both variants): L 13 1, L 16 3.",
+   "asserted_value": {
+    "cross_read": true,
+    "pair": "clock_crossing",
+    "input": "near",
+    "cells": [
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "pair": "clock_crossing",
+      "variant": "cell",
+      "input": "near",
+      "choice": 3,
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "pair": "clock_crossing",
+      "variant": "per-kernel",
+      "input": "near",
+      "choice": 3,
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "clock_crossing",
+      "variant": "cell",
+      "input": "near",
+      "choice": 9,
+      "first_compute_bound": 3
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "clock_crossing",
+      "variant": "per-kernel",
+      "input": "near",
+      "choice": 9,
+      "first_compute_bound": 3
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+  },
+  {
+   "claim": "KernelCost.traffic's pick contains the first compute-bound batch count on sm_86.",
+   "mechanism": "They answer different questions. The crossing count is a threshold, the first count whose measured intensity clears the card's ridge; the model's pick is a minimum, the counts at which its modelled traffic is least. On sm_86 the ridge is low enough (0.65 FLOP/B) that L 7, 10 and 13 are past it at one batch, where the model still prices spill traffic (50, 2897 and 11798 fp64 words) and so never picks 1. At L 16 the cell clears the ridge at 3 while the model's traffic keeps falling to 12 (24651 -> 1574). A model of register traffic against a budget carries no ridge, so nothing in it can name the count where a card's ridge is first cleared.",
+   "evidence": "sm_86, model traffic summed at b [1, 3, 6, 9, 12]: L 7 [50, 0, 0, 0, 0]; L 10 [2897, 0, 0, 0, 0]; L 13 [11798, 5300, 0, 0, 0]; L 16 [32827, 24651, 10912, 1845, 1574]. First compute-bound count (both variants): 1, 1, 1, 3. gfx1200 could not be measured (measured_store.UNMEASURED), so its flags are null, not disagreements.",
+   "asserted_value": {
+    "cross_read": true,
+    "pair": "model_crossing",
+    "cells": [
+     {
+      "arch": "sm_86",
+      "L": 7,
+      "pair": "model_crossing",
+      "variant": "cell",
+      "input": null,
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 7,
+      "pair": "model_crossing",
+      "variant": "per-kernel",
+      "input": null,
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 10,
+      "pair": "model_crossing",
+      "variant": "cell",
+      "input": null,
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 10,
+      "pair": "model_crossing",
+      "variant": "per-kernel",
+      "input": null,
+      "model_pick": [
+       3,
+       6,
+       9,
+       12
+      ],
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "pair": "model_crossing",
+      "variant": "cell",
+      "input": null,
+      "model_pick": [
+       6,
+       9,
+       12
+      ],
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 13,
+      "pair": "model_crossing",
+      "variant": "per-kernel",
+      "input": null,
+      "model_pick": [
+       6,
+       9,
+       12
+      ],
+      "first_compute_bound": 1
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "model_crossing",
+      "variant": "cell",
+      "input": null,
+      "model_pick": [
+       12
+      ],
+      "first_compute_bound": 3
+     },
+     {
+      "arch": "sm_86",
+      "L": 16,
+      "pair": "model_crossing",
+      "variant": "per-kernel",
+      "input": null,
+      "model_pick": [
+       12
+      ],
+      "first_compute_bound": 3
+     }
+    ]
+   },
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
   }
  ]
 }
