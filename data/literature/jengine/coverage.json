@@ -43,8 +43,10 @@
     {
       "unit": "§3.3",
       "eqs": [19, 22],
-      "claims": [],
-      "note": "eqs. 19-22 (J by pre-contraction, J_p the only shell-quartet contraction) are content, implemented in ao/j.py and kernel.py and witnessed against libcint's get_jk. 'This reduces register usage' is design rationale, and Cauchy-Schwarz bringing J to O(N^2) is the cited works' claim (refs 52-58). Alg. 1's own claims are recorded under 'Alg. 1'."
+      "claims": [
+        "jengine/ket-sort-key-is-the-product"
+      ],
+      "note": "The ket sort key -- kets ordered by the per-block product I_q * max|D|, so the screen can break -- is jengine/ket-sort-key-is-the-product (#139), cited here and at Alg. 1, which carries the break. Otherwise eqs. 19-22 (J by pre-contraction, J_p the only shell-quartet contraction) are content, implemented in ao/j.py and kernel.py and witnessed against libcint's get_jk. 'This reduces register usage' is design rationale, and Cauchy-Schwarz bringing J to O(N^2) is the cited works' claim (refs 52-58). Alg. 1's own claims are recorded under 'Alg. 1'."
     },
     {
       "unit": "§4",
@@ -148,9 +150,10 @@
       "unit": "Alg. 1",
       "claims": [
         "jengine/alg1-line10-atomic-free",
-        "jengine/alg1-line10-factor-four"
+        "jengine/alg1-line10-factor-four",
+        "jengine/ket-sort-key-is-the-product"
       ],
-      "note": "Also: one bra index per thread in x, kets strip-mined over y, kets sorted by I_q D_max so the screen can break -- content, implemented in kernel.py and specified in j_engine.md ('Kets arrive pre-sorted')."
+      "note": "Also: one bra index per thread in x, kets strip-mined over y -- content, implemented in kernel.py and specified in j_engine.md ('Kets arrive pre-sorted'). That the kets are sorted by I_q D_max so the screen can break is jengine/ket-sort-key-is-the-product, cited here and at §3.3."
     },
     {
       "unit": "Alg. 2",

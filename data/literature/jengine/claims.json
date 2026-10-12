@@ -123,6 +123,14 @@
       "reason": "An explanation of the authors' whole-J timings in EXESS on an A100 over water clusters, polyglycine and boron nitride; this repo has neither the engine nor the systems at that size, and builds J_mn host-side (ao/) with only J_p generated."
     },
     {
+      "id": "jengine/ket-sort-key-is-the-product",
+      "statement": "Kets are sorted descending by the per-record product I_q * max_q |D_q| (the pair-factor-free Schwarz bound times the largest weighted, dressed density element of that ket record), and that order is what makes the screen's break sound: with a fixed I_bra >= 0, I_bra * key is non-increasing along the list, so the first ket under tau ends the row with nothing lost. Under another key the same break is unsound -- ordered by I_q alone (the order of jgen's global-max|D| fallback) or left in pair order, it drops kets that clear tau, and J leaves the screen's own error bound tau * scale. The global-max|D| key used as the screen's key too is sound but looser (it skips no more). This record is the structural half; whether the product is the better key in time on a card is the measured arm, #147.",
+      "source": "[JEngine, v2, §3.3, Alg. 1]",
+      "kind": "ordering",
+      "status": "asserted",
+      "test": "test/test_launch.py::test_the_ket_sort_key_is_the_product_and_the_break_needs_it"
+    },
+    {
       "id": "jengine/m-weight-minus-two-theta-squared",
       "statement": "eq. 13 prints the fundamental's m-dependence as (-2 theta)^m; it is (-2 theta^2)^m (McMurchie-Davidson's (-2 alpha)^j with alpha = theta^2). Only the latter makes d/dPQ_x [0]^(m) = PQ_x [0]^(m+1), which eqs. 10-12 assume, so (-2 theta)^m is wrong in every class that reaches m > 0 (every class above (ss|ss)) whenever theta != 1. reference.pq forms (-2 theta^2)^m, and ERI blocks built from it match libcint's int2e class by class; with the base perturbed -- the printed -2 theta, or -2 theta^2 scaled by 1 + 1e-9 -- every fast-tier class above (ss|ss) fails that comparison and (ss|ss), which reaches only m = 0, is bit-for-bit unchanged (#120).",
       "source": "[JEngine, v2, eq. 13]",

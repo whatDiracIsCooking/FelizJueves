@@ -1058,11 +1058,15 @@ that cite it, with a note on what else it says and why that is not a record;
 `test/test_claims.py` holds the two files against each other. One asserted
 record, `jengine/batching-crosses-our-ridge`, is this repo's own question put
 to its own cards (the roofline summary above), not a claim of the paper's.
+`jengine/ket-sort-key-is-the-product` (#139) is the structural half of the
+ket sort key: the plan orders kets by `I_q · D_max`, and under any other key
+the same `break` returns a different `J`; whether the product is the better
+key in time, against the global-`D_max` fallback, is the measured arm (#147).
 
 The table below is rendered from `claims.json` and checked verbatim:
 
 <!-- claims-status:begin -->
-**30 records: 17 asserted, 13 unverifiable, 0 pending** (recomputed from `claims.json` by `test/test_claims.py`).
+**31 records: 18 asserted, 13 unverifiable, 0 pending** (recomputed from `claims.json` by `test/test_claims.py`).
 
 | status | claim | kind | held by |
 |---|---|---|---|
@@ -1074,6 +1078,7 @@ The table below is rendered from `claims.json` and checked verbatim:
 | asserted | `jengine/batching-crosses-our-ridge` | monotonicity | `test/test_ridge.py::test_batching_crosses_our_ridge_on_sm_86_and_gfx1200_could_not_measure` |
 | asserted | `jengine/eq17-1y-misprint` | defect | `test/test_eq17_witness.py::test_y_reduction_shifts_by_the_unit_vector_0_1_0` |
 | asserted | `jengine/fig4-l6-six-batches` | membership | `test/test_plan_batching.py::test_figure_4s_cut_at_l_6` |
+| asserted | `jengine/ket-sort-key-is-the-product` | ordering | `test/test_launch.py::test_the_ket_sort_key_is_the_product_and_the_break_needs_it` |
 | asserted | `jengine/m-weight-minus-two-theta-squared` | defect | `test/test_ao_eri.py::test_the_m_weight_is_minus_two_theta_squared` |
 | asserted | `jengine/mild-keeps-rules-1-2-3-5` | shape | `test/test_plan_mild.py::test_johnsons_rule_holds_on_every_node` |
 | asserted | `jengine/mild-suboptimal-from-l5` | shape | `test/test_mild_vs_optimum.py::test_mild_against_the_exact_optimum` |

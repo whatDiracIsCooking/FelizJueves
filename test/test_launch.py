@@ -1,10 +1,10 @@
 """`launch`: the whole-molecule launch plan as a value (#138).
 
-Fast tier, no markers: pure Python, no compiler, no card, no PySCF -- the
-basis comes from a tracked fixture's `converted` record, and the plan
-evaluates no `[p|q]` (it takes none). `reference/` is imported HERE, by the
-test, to build the real bound the plan is injected with; the module itself
-never reaches it (test_layering.py, rule "launch").
+Fast tier, no device markers (one test carries `claim`, #139): pure Python,
+no compiler, no card, no PySCF -- the basis comes from a tracked fixture's
+`converted` record, and the plan evaluates no `[p|q]` (it takes none).
+`reference/` is imported HERE, by the test, to build the real bound the plan
+is injected with; the module itself never reaches it (test_layering.py, rule "launch").
 
 THE CASES. H2O/STO-3G (s and p: classes lp, lq in 0..2) from the tracked
 fixture, with its stored density; and a symmetric H2 dimer built here, whose
@@ -13,6 +13,7 @@ equal keys are what the stability test needs.
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 from functools import cache, partial
 
@@ -246,3 +247,103 @@ def test_the_plan_refuses_what_the_host_sweep_refuses():
     with pytest.raises(ValueError, match="tau"):
         _plan(tau=-1.0)
     assert _plan(tau=1e-10).tau == 1e-10
+
+
+# --- the sort key, as a claim (#139) --------------------------------------------
+
+TAU_SORT = 1e-6  # H2O/STO-3G's screen skips 385 (bra, ket) index pairs here
+
+
+def _exceeds(A, B, scale, tau) -> bool:
+    """Some element of `A` is further from `B` than the screen's own stated
+    error, `tau * scale` (`ao.j`, "THE SORTED `break`"), allows."""
+    return any(abs(a - b) > tau * s
+               for xa, xb, xs in zip(A, B, scale, strict=True)
+               for a, b, s in zip(xa, xb, xs, strict=True))
+
+
+@pytest.mark.claim("jengine/ket-sort-key-is-the-product")
+def test_the_ket_sort_key_is_the_product_and_the_break_needs_it(monkeypatch):
+    """[JEngine, v2, §3.3, Alg. 1]: kets sorted descending by `I_q * Dmax`,
+    so the screen can `break`. Not "the code sorts": the claim is that the
+    PRODUCT is the key the `break` is sound under, so the falsifier is a
+    different key giving a different `J` through the same screened walk --
+    `ao.j.coulomb_matrix_screened`'s sorted `break`, with only its ket order
+    (`_sorted_kets`) replaced, test-locally, by monkeypatch.
+
+    (a) The plan's ket order is the product order -- the product recomputed
+        here from each record's `G` and the host's `max_q |D_q|` -- and it
+        is NOT the `G`-alone order, so the claim has content on this case.
+    (b) Under the product order the `break` is exact: the sorted walk equals
+        the unsorted `continue` to 0, with the same skip count.
+    (c) Under another order -- `G` alone, or the unsorted pair order -- the
+        same `break` returns a different `J`, outside the screen's own error
+        bound `tau * scale` from `J(tau = 0)`: unsound, not merely looser.
+    (d) The global-`Dmax` fallback (`density_sort=False`'s key, made the
+        screen's key too) is sound -- inside `tau * scale` -- and skips no
+        more than the product. How much less it skips, and what that costs
+        on a card, is the measured arm (#147), not this test.
+    """
+    basis, D = _h2o()
+    tau = TAU_SORT
+    P = launches(basis, D, bound=partial(aoj.pair_bound_pq, pq=pq),
+                 n_batches=1, tau=tau)
+    n_sh = len(basis.shells)
+    pairs = [(a, b, 1.0 if a == b else 2.0)
+             for a in range(n_sh) for b in range(a + 1)]
+    host = aoj._kets(basis, aoj._density(basis, D), pairs, pq=pq, tau=1.0)
+    rec = _unique_records(basis)  # the host's ket records, in its order
+    dmax = {r: max(abs(v) for v in k.dq)
+            for r, k in zip(rec, host, strict=True)}
+    G = {(r.i, r.j, r.prim, r.L): r.G for c in P for r in c.kets}
+
+    # (a) the plan's order is the product order, and not the G order
+    differs_from_g = False
+    for c in P:
+        ids = _ids(c.kets)
+        product = [G[x] * dmax[x] for x in ids]
+        assert product == sorted(product, reverse=True), (c.lp, c.lq)
+        differs_from_g |= sorted(ids, key=G.__getitem__, reverse=True) != ids
+    assert differs_from_g, "H2O's density must reorder some class's kets"
+
+    # The screened walk with its ket order replaced. `_kets` builds fresh
+    # records per call, in pair order, so a replacement keys them by `rec`.
+    product_sort = aoj._sorted_kets
+
+    def walk(order=None):
+        if order is not None:
+            monkeypatch.setattr(aoj, "_sorted_kets", order)
+        try:
+            return aoj.coulomb_matrix_screened(basis, D, pq=pq, tau=tau)
+        finally:
+            monkeypatch.undo()
+
+    def by_g(kets):
+        ks = list(kets)
+        return [ks[i] for i in sorted(range(len(ks)),
+                                      key=lambda i: G[rec[i]], reverse=True)]
+
+    J0 = aoj.coulomb_matrix_screened(basis, D, pq=pq, tau=0.0)
+    ref = aoj.coulomb_matrix_screened(basis, D, pq=pq, tau=tau,
+                                      order="unsorted")
+    assert ref.n_skipped > 0  # the screen acts at this tau
+
+    # (b) the product order: the break is exact
+    prod = walk()
+    assert prod.J == ref.J
+    assert prod.n_skipped == ref.n_skipped
+    assert not _exceeds(prod.J, J0.J, prod.scale, tau)
+
+    # (c) another key: a different J, outside the stated bound
+    for name, order in (("G alone", by_g), ("pair order", list)):
+        wrong = walk(order)
+        assert wrong.J != ref.J, name
+        assert _exceeds(wrong.J, J0.J, wrong.scale, tau), name
+
+    # (d) the global-Dmax fallback, as the screen's key: sound, looser
+    dglobal = max(dmax.values())
+    loose = walk(lambda kets: product_sort(
+        [dataclasses.replace(k, bound=G[r] * dglobal)
+         for r, k in zip(rec, kets, strict=True)]))
+    assert not _exceeds(loose.J, J0.J, loose.scale, tau)
+    assert loose.n_skipped <= prod.n_skipped
