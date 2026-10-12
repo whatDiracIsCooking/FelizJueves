@@ -294,7 +294,8 @@ RULES: dict[str, Rule] = {
         "Also ao/staged.py (#143): the same, over a LAUNCH PLAN -- it reads "
         "`launch`'s `ClassLaunch`es, and `passes.atomize`s a one-batch "
         "kernel because one `J_p` per bra class has a writer per ket class",
-        ("spec", "kernel", "ir", "interp", "plan", "ao", "launch", "passes"),
+        ("spec", "kernel", "ir", "interp", "plan", "ao", "launch", "passes",
+         "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -328,6 +329,17 @@ RULES: dict[str, Rule] = {
                        "dispatch policy arrives injected (#145)",
         literature="a launch plan is not scored against the published "
                    "tables; nothing here may feed a floor"),
+    "jab_builder": _rule(
+        "kernel_jab.py (#154): the bra-transform-and-scatter kernel, "
+        "`Target.JAB` -- key -> IR, with the `E` block fragment inlined "
+        "(`e_fragment`) and the Hermite order from the plan's targets",
+        ("spec", "ir", "e_fragment", "plan.targets"),
+        ao="`ao.j.jab_from_host` is the witness the kernel is interpreted "
+           "against; importing the AO layer shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
 }
 
 RULE_OF: dict[str, str] = {
@@ -387,6 +399,7 @@ RULE_OF: dict[str, str] = {
     "ao.drive": "adapter",
     "ao.staged": "adapter",
     "launch": "launch",
+    "kernel_jab": "jab_builder",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -453,11 +466,13 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.pairs": ("ao.hermite", "ao.shell"),
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
-    "ao.drive": ("ao.j", "interp", "ir", "kernel", "plan.pipeline", "spec"),
+    "ao.drive": ("ao.j", "interp", "ir", "kernel", "plan.pipeline", "spec",
+                 "kernel_jab"),
     "ao.staged": ("ao.j", "ao.pairs", "ao.shell", "interp", "ir", "kernel",
                   "launch", "passes"),
     "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
                "spec"),
+    "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
