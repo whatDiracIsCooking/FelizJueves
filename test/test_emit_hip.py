@@ -26,6 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from test_ir import synthetic_inline_kernel
 
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, hip
@@ -89,6 +90,35 @@ def test_emit_takes_an_amd_arch_value() -> None:
         hip.emit(k, "gfx1200")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="AMD"):
         hip.emit(k, SM_86)
+
+
+INLINE_GOLDEN = GOLDEN.parent / "inline_probe.hip"
+
+
+def test_the_inline_golden_is_unchanged() -> None:
+    # #149: a kernel splicing a synthetic Fragment. Regenerate (never hand-edit):
+    #   PYTHONPATH=src:test uv run python -c "from test_ir import \
+    #   synthetic_inline_kernel as k; from felizjueves.device import GFX1200; \
+    #   from felizjueves.emit.hip import emit; print(emit(k(), GFX1200), \
+    #   end='')" > test/golden/hip/inline_probe.hip
+    assert hip.emit(synthetic_inline_kernel(), GFX1200) == \
+        INLINE_GOLDEN.read_text()
+
+
+def test_the_inline_texts_differ_only_in_the_prologue() -> None:
+    # The splice is spelled once, in emit/_c.py: no vendor hook touches it.
+    k = synthetic_inline_kernel()
+    c = cuda.emit(k, SM_86).splitlines()
+    h = hip.emit(k, GFX1200).splitlines()
+    assert h[2] == "#include <hip/hip_runtime.h>"
+    assert c[2:] == h[3:]
+
+
+@pytest.mark.hip
+def test_the_inline_golden_compiles(hipcc, compile_device_source) -> None:
+    # Compile only: a device compiler needs no card.
+    compile_device_source(hipcc, hip.emit(synthetic_inline_kernel(), GFX1200),
+                          link=False)
 
 
 @pytest.mark.hip

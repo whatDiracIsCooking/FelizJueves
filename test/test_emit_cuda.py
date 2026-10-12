@@ -24,6 +24,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from test_ir import synthetic_inline_kernel
 
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit._c import EmitError
@@ -33,7 +34,9 @@ from felizjueves.ir import (
     Call,
     Decl,
     Fn,
+    Fragment,
     Index,
+    Inline,
     Intent,
     Kernel,
     Lit,
@@ -144,6 +147,50 @@ def test_a_param_shape_uses_only_launch_time_values() -> None:
                                shape=(Call(Fn.THREAD_X), Lit(2))),), ())
     with pytest.raises(ValueError, match="no shape"):
         Param("a", Scalar.F64, shape=(Lit(2),))
+
+
+INLINE_GOLDEN = GOLDEN.parent / "inline_probe.cu"
+
+
+def test_the_inline_golden_is_unchanged() -> None:
+    # #149: a kernel splicing a synthetic Fragment. Regenerate (never hand-edit):
+    #   PYTHONPATH=src:test uv run python -c "from test_ir import \
+    #   synthetic_inline_kernel as k; from felizjueves.device import SM_86; \
+    #   from felizjueves.emit.cuda import emit; print(emit(k(), SM_86), end='')" \
+    #   > test/golden/cuda/inline_probe.cu
+    assert emit(synthetic_inline_kernel(), SM_86) == INLINE_GOLDEN.read_text()
+
+
+def test_an_inline_is_a_block_with_const_bindings() -> None:
+    text = emit(synthetic_inline_kernel(), SM_86)
+    lines = [ln.strip() for ln in text.splitlines()]
+    start = lines.index("// fragment prefix_scale")
+    assert lines[start - 1] == "{"
+    assert lines[start + 1:start + 4] == [
+        "const auto PQ_x = (half + half);",
+        "auto* const src = xs;",
+        "auto* const dst = out;",
+    ]
+    # `n` is bound to the host's own `n`: no line, and no self-initialisation.
+    assert not any("const auto n" in ln for ln in lines)
+    # The fragment's local ends with its block: the host's next line is after.
+    assert lines.index("}", lines.index("double acc = 0.0;") + 4) < lines.index(
+        "out[0] = (out[0] + half);")
+
+
+def test_a_fragment_name_with_the_writers_prefix_is_refused() -> None:
+    frag = Fragment("f", ("fj_a",), (Decl("x", Scalar.F64, init=Var("fj_a")),))
+    k = Kernel("probe", (Param("y", Scalar.F64),),
+               (Inline(frag, {"fj_a": Var("y")}),))
+    with pytest.raises(EmitError, match="fj_"):
+        emit(k, SM_86)
+
+
+@pytest.mark.cuda
+def test_the_inline_golden_compiles(nvcc, compile_device_source) -> None:
+    # Compile only: a device compiler needs no card.
+    compile_device_source(nvcc, emit(synthetic_inline_kernel(), SM_86),
+                          link=False)
 
 
 @pytest.mark.cuda

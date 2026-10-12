@@ -3,8 +3,8 @@
     interpret(kernel, **inputs) -> {out_param: ndarray}
 
 An instruction set machine for ir.py and nothing more. It executes Decl,
-Assign, For, If, Break, WarpReduce and AtomicAdd; it skips Note; it refuses
-Raw (opaque by definition). **It does not know what McMurchie-Davidson is**:
+Assign, For, If, Break, WarpReduce, AtomicAdd and Inline; it skips Note; it
+refuses Raw (opaque by definition). **It does not know what McMurchie-Davidson is**:
 `Weighted` is `SUM_k c_k * g_k * src_k` in fp64, a `Factor` is the scalar of
 that name, and no recurrence, index set or integral appears here. The moment
 one did, it would share ancestry with the builder it checks and the pins in
@@ -60,6 +60,12 @@ default, on purpose: a default would be an import of `reference/` from here,
 and the interpreter must not share ancestry with the reference its own pins
 compare against (test/test_layering.py).
 
+FRAGMENTS. An `Inline` evaluates its bindings in the host's scope -- a scalar
+bind is a read-only copy typed by its value, an array bind an alias of the
+host array -- then runs the fragment's body with ONLY those names visible,
+and drops its locals after. `interpret_fragment(frag, **bindings)` runs one
+fragment alone, as a single thread with no kernel around it.
+
 COUNTERS. `Interpreter.iterations[var]` is the number of `For` body entries
 of the loop over `var`, summed over every thread of the launch. It is how a
 test tells a screening `break` from a `continue`, which give the same answer.
@@ -85,8 +91,10 @@ from felizjueves.ir import (
     Factor,
     Fn,
     For,
+    Fragment,
     If,
     Index,
+    Inline,
     Intent,
     Kernel,
     Lit,
@@ -154,6 +162,19 @@ class _Array:
 
 class _Break(Exception):
     pass
+
+
+def _bound_scalar(v: Any, name: str) -> _Scalar:
+    """A scalar bind's slot: typed by its value, as `Lit` types a literal."""
+    if isinstance(v, np.ndarray) and v.ndim == 0:
+        v = v.item()
+    elif isinstance(v, np.generic):
+        v = v.item()
+    if type(v) is int:
+        return _Scalar(Scalar.I32, _check_i32(v))
+    if type(v) is float:
+        return _Scalar(Scalar.F64, v)
+    raise InterpError(f"bind {name!r}: {v!r} is not an int or float")
 
 
 def _check_i32(v: int) -> int:
@@ -336,10 +357,31 @@ class _Thread:
         elif isinstance(s, WarpReduce):
             total = yield (s, self.eval(s.value))
             self.store(s.dst, total)
+        elif isinstance(s, Inline):
+            yield from self.inline(s)
         elif isinstance(s, Raw):
             raise InterpError("Raw is opaque to the interpreter")
         else:  # pragma: no cover
             raise InterpError(f"not a Stmt: {s!r}")
+
+    def inline(self, s: Inline) -> Generator[Any, Any, None]:
+        """Bind the names in the host's scopes, then run the body in isolation.
+
+        The fragment sees its binds and nothing else of the host (its scope
+        chain is replaced, not extended), and its locals end with it.
+        """
+        frag = s.fragment
+        binds: dict[str, Any] = {}
+        for name, e in s.bindings:
+            if name in frag.array_binds:
+                binds[name] = self.array(e.name)  # an alias: writes reach the host
+            else:
+                binds[name] = _bound_scalar(self.eval(e), name)
+        host, self.scopes = self.scopes, [binds, {}]
+        try:
+            yield from self.run(frag.body)
+        finally:
+            self.scopes = host
 
     def decl(self, s: Decl) -> None:
         if not s.shape:
@@ -526,3 +568,57 @@ def interpret(kernel: Kernel, *, launch: Launch | None = None,
     emulated on the host (see the module docstring for the machine).
     """
     return Interpreter(kernel, launch=launch, boys=boys).run(**inputs)
+
+
+class _Alone:
+    """What a `_Thread` needs of its machine, for a fragment run alone."""
+
+    def __init__(self, boys: Callable[[int, float], float] | None) -> None:
+        self.boys = boys
+        self.iterations: Counter[str] = Counter()
+
+
+def interpret_fragment(fragment: Fragment, *,
+                       boys: Callable[[int, float], float] | None = None,
+                       **bindings: Any) -> dict[str, Any]:
+    """Run one `Fragment` with no kernel around it: thread 0 of one block.
+
+    `bindings` names every bind exactly once: a scalar bind takes a Python or
+    numpy number (an int is I32, a float F64, as `Lit` types them); an array
+    bind an ndarray of float64 or int32, which is copied, indexed at its own
+    shape, and may be written. Returns the fragment's top-level locals (a
+    scalar's value, or None if never written; an array's data) and every
+    array bind's data after the run. A `WarpReduce` raises: alone, there is
+    no warp.
+    """
+    if not isinstance(fragment, Fragment):
+        raise TypeError("interpret_fragment takes a Fragment")
+    extra = bindings.keys() - set(fragment.binds)
+    missing = set(fragment.binds) - bindings.keys()
+    if extra or missing:
+        raise InterpError(f"bindings: missing {sorted(missing)}, "
+                          f"unknown {sorted(extra)}")
+    binds: dict[str, Any] = {}
+    for name in fragment.binds:
+        v = bindings[name]
+        if name in fragment.array_binds:
+            types = {d: t for t, d in _DTYPE.items()}
+            if not isinstance(v, np.ndarray) or v.ndim < 1 or v.dtype not in types:
+                raise InterpError(f"{name}: an array bind needs an ndarray of "
+                                  "float64 or int32")
+            binds[name] = _Array(name, types[v.dtype], v.copy(), None, True)
+        else:
+            binds[name] = _bound_scalar(v, name)
+    geometry = {Fn.THREAD_X: 0, Fn.THREAD_Y: 0, Fn.BLOCK_X: 0,
+                Fn.BLOCK_DIM_X: 1, Fn.BLOCK_DIM_Y: 1}
+    thread = _Thread(_Alone(boys), binds, {}, geometry)  # type: ignore[arg-type]
+    local: dict[str, Any] = {}
+    thread.scopes.append(local)
+    for _ in thread.run(fragment.body):
+        raise InterpError("WarpReduce in a fragment run alone: there is no warp")
+    out: dict[str, Any] = {}
+    for name, slot in local.items():
+        out[name] = slot.value if isinstance(slot, _Scalar) else slot.data.copy()
+    for name in sorted(fragment.array_binds):
+        out[name] = binds[name].data
+    return out

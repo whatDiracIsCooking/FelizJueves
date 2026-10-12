@@ -38,8 +38,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from test_ir import synthetic_fragment, synthetic_inline_kernel
 
-from felizjueves.interp import InterpError, Interpreter, Launch, interpret
+from felizjueves.interp import (
+    InterpError,
+    Interpreter,
+    Launch,
+    interpret,
+    interpret_fragment,
+)
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -48,8 +55,10 @@ from felizjueves.ir import (
     Decl,
     Fn,
     For,
+    Fragment,
     If,
     Index,
+    Inline,
     Intent,
     Kernel,
     Lit,
@@ -443,3 +452,88 @@ def test_an_unevaluable_extent_is_skipped_and_recorded() -> None:
     assert got["out"][0] == 1.0
     assert set(it.unchecked) == {"a", "b"}
     assert "tau" in it.unchecked["a"] and "division" in it.unchecked["b"]
+
+
+# ---------------------------------------------------------------------------
+# Fragment and Inline (#149): alone and spliced, the same values
+# ---------------------------------------------------------------------------
+
+
+def _host_params() -> tuple[Param, ...]:
+    return (
+        Param("n", Scalar.I32), Param("scale", Scalar.F64),
+        Param("xs", Scalar.F64, array=True),
+        Param("out", Scalar.F64, array=True, intent=Intent.OUT),
+    )
+
+
+def test_a_fragment_alone_and_inlined_give_the_same_values() -> None:
+    n, scale = 6, 1.75
+    xs = np.random.default_rng(149).uniform(-1, 1, n)
+    alone = interpret_fragment(synthetic_fragment(), PQ_x=scale, n=n, src=xs,
+                               dst=np.zeros(n))
+    # numpy's cumsum sums left to right, as the fragment does.
+    assert np.array_equal(alone["dst"], scale * np.cumsum(xs))
+    assert alone["acc"] == float(np.cumsum(xs)[-1])  # a top-level local
+    # The top-level locals and the array binds; the loop var's scope ended.
+    assert set(alone) == {"acc", "src", "dst"}
+
+    got = interpret(synthetic_inline_kernel(), n=n, scale=scale, xs=xs,
+                    out=np.zeros(n))["out"]
+    # The host adds `half` to out[0] after the splice; everything else is the
+    # fragment's, bit for bit.
+    assert np.array_equal(got[1:], alone["dst"][1:])
+    assert got[0] == alone["dst"][0] + scale * 0.5
+
+
+def test_the_fragments_locals_are_invisible_to_the_host() -> None:
+    splice = Inline(synthetic_fragment(), {
+        "PQ_x": Var("scale"), "n": Var("n"), "src": Var("xs"),
+        "dst": Var("out")})
+    inputs = dict(n=3, scale=2.0, xs=np.ones(3), out=np.zeros(4))
+    ok = Kernel("k", _host_params(), (splice,))
+    assert np.array_equal(interpret(ok, **inputs)["out"], [2.0, 4.0, 6.0, 0.0])
+    leak = Kernel("k", _host_params(), (
+        splice, Assign(Index("out", (Lit(3),)), Var("acc"))))
+    with pytest.raises(InterpError, match="'acc' is not bound"):
+        interpret(leak, **inputs)
+
+
+def test_a_fragment_sees_only_its_binds() -> None:
+    # The splice replaces the scope chain rather than extending it: a host
+    # name smuggled past the static check (with object.__setattr__) does not
+    # resolve inside the fragment.
+    frag = synthetic_fragment()
+    object.__setattr__(frag, "body", frag.body + (
+        Decl("y", Scalar.F64, init=Var("scale")),))
+    k = Kernel("k", _host_params(), (Inline(frag, {
+        "PQ_x": Lit(1.0), "n": Var("n"), "src": Var("xs"),
+        "dst": Var("out")}),))
+    with pytest.raises(InterpError, match="'scale' is not bound"):
+        interpret(k, n=1, scale=1.0, xs=np.ones(1), out=np.zeros(1))
+
+
+def test_interpret_fragment_checks_its_bindings() -> None:
+    frag = synthetic_fragment()
+    ok = dict(PQ_x=1.0, n=2, src=np.ones(2), dst=np.zeros(2))
+    with pytest.raises(InterpError, match=r"missing \['n'\]"):
+        interpret_fragment(frag, **{k: v for k, v in ok.items() if k != "n"})
+    with pytest.raises(InterpError, match=r"unknown \['zeta'\]"):
+        interpret_fragment(frag, **ok, zeta=1.0)
+    with pytest.raises(InterpError, match="ndarray"):
+        interpret_fragment(frag, **{**ok, "src": [1.0, 1.0]})
+    with pytest.raises(InterpError, match="not an int or float"):
+        interpret_fragment(frag, **{**ok, "n": "2"})
+    with pytest.raises(InterpError, match=r"src\[2\] outside"):
+        interpret_fragment(frag, **{**ok, "n": 3})  # arrays are bounds-checked
+    # The caller's arrays are not written: the result carries the data.
+    dst = np.zeros(2)
+    got = interpret_fragment(frag, **{**ok, "dst": dst})
+    assert got["dst"].tolist() == [1.0, 2.0] and not dst.any()
+
+
+def test_a_fragment_alone_has_no_warp() -> None:
+    frag = Fragment("r", ("a",), (Decl("s", Scalar.F64),
+                                  WarpReduce(Var("s"), Var("a"))))
+    with pytest.raises(InterpError, match="no warp"):
+        interpret_fragment(frag, a=1.0)
