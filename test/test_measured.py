@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import asym, measured, measured_store
+from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
@@ -588,7 +588,9 @@ def test_a_wall_clock_row_is_its_own_quartiles() -> None:
         assert w["n_bra"] > 0 and w["n_ket"] > 0 and w["warmup"] > 0, key
 
 
-GPU_BUSY_MAX = 30  # test_kernel_device.py's gate: the card at most 30% busy
+# The card gate's threshold (the card at most 30% busy), read from the gate
+# itself (#109 lifted it into felizjueves.gate) rather than spelled again here.
+GPU_BUSY_MAX = gate.GPU_BUSY_MAX
 
 
 def test_every_timed_row_records_the_cards_state_or_null() -> None:

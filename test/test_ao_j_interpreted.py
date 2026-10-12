@@ -162,6 +162,34 @@ def test_interpreted_j_matches_reference_and_libcint(name: str, n: int):
     _check_full(name, n)
 
 
+@pytest.mark.claim("jengine/alg1-line10-factor-four")
+def test_j_p_is_written_unscaled_and_a_factor_four_is_caught():
+    """`[JEngine, v2, Alg. 1]` line 10 writes `J[p] = 4 Jshm[p]`; this repo's
+    kernel writes `J_p` unscaled and puts the only pair weight host-side
+    (`ao/j.py`'s unique sweep), and that `J_mn` matches libcint's `get_jk`
+    at test_ao_j.py's derived tolerance. The control is the claim made false:
+    the same kernel's `J_p` multiplied by 4 on its way out -- Alg. 1's write,
+    with the host weights unchanged -- misses libcint by orders of magnitude
+    more than the tolerance, so the comparison sees the factor. H2/STO-3G,
+    one batch: fast tier, no card."""
+    name = "h2_sto3g_j"
+    fx, basis = _case(name)
+    ref = fx.arrays[manifest.J_ARRAY]
+    _, scale = _pq_j(name)
+
+    def worst(jp) -> float:
+        J = np.array(coulomb_matrix(basis, fx.density, pq=pq, jp=jp))
+        return float(np.max(np.abs(J - ref) / scale))
+
+    k = KernelJP(boys=boys, n_batches=1, strict=False)
+    assert worst(k) <= JK_TOL
+
+    def written_times_four(bra_am, ket_am, bras, kets):
+        return [[4.0 * v for v in row] for row in k(bra_am, ket_am, bras, kets)]
+
+    assert worst(written_times_four) > 1e6 * JK_TOL
+
+
 def test_the_cells_are_what_the_plan_admits():
     """Over the four full-J runs, every admitted (class, n_batches) of every
     full-J case ran, and nothing the plan refuses was built."""

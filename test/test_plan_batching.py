@@ -240,10 +240,13 @@ def test_the_direction_groups_differ_only_in_their_tie_class(L: int) -> None:
         assert max_targets_per_batch(L, 3) == len(groups["x"])
 
 
+@pytest.mark.claim("jengine/fig4-l6-six-batches")
 def test_figure_4s_cut_at_l_6() -> None:
     # [JEngine, v2, Fig. 4]: X_{0,2}, X_{3,6}, Y_{1,2}, Y_{3,6}, Z_{1,2},
     # Z_{3,6}. Y_{0,2} and Y_{1,2} hold the same targets (nothing in Y has a
-    # maximum of 0), so the figure and the shared cut agree.
+    # maximum of 0), so the figure and the shared cut agree. Fails when the
+    # claim is false: any other cut, a cut not shared by the three directions,
+    # or a Y/Z target with maximum component 0 breaks one of the two asserts.
     assert partition(6, 6) == (
         ("x", 0, 2), ("x", 3, 6),
         ("y", 0, 2), ("y", 3, 6),

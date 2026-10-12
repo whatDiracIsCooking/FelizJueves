@@ -15,8 +15,8 @@
       "statement": "Alg. 1 line 10 writes J[p] = 4 Jshm[p], and the factor 4 is never explained -- not in the algorithm, §3.3 or eqs. 19-22, where J_p = SUM_q [p|q] D_q carries no factor. It can only be a convention of the authors' pair lists or density (unique shell pairs, a doubled density), which the text does not state. This repo's kernel writes J_p unscaled and puts the only pair weight host-side (ao/j.py's unique sweep: ket off-diagonal weight 2, bra blocks scattered to both triangles), and J_mn then matches libcint's get_jk.",
       "source": "[JEngine, v2, Alg. 1]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Witnessed, not yet marked: test/test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint compares J_mn built from the generated kernel's unscaled J_p against libcint, so a factor 4 on the write would put every element off by 4. That test already carries jengine/theta-undefined's mark and lies outside #120's partition; #116 places a second mark there (or on a sibling test) or says why not."
+      "status": "asserted",
+      "test": "test/test_ao_j_interpreted.py::test_j_p_is_written_unscaled_and_a_factor_four_is_caught"
     },
     {
       "id": "jengine/batch-count-is-hardware-dependent",
@@ -39,8 +39,8 @@
       "statement": "Under MILD (before the sieve), the only intermediates two batches of DIFFERENT directions share are the fundamentals (0,0,0)^(m), m > 0, and two sub-batches of the SAME direction share only axial intermediates (at most one non-zero component). Hence each batch kernel re-evaluates the Boys function for itself.",
       "source": "[JEngine, v2, §5, Figs. 5-6]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "Witnessed, not yet marked: test/test_plan_dag.py::test_directions_share_only_fundamentals and ::test_sub_batches_of_one_direction_share_only_axials check exactly the two halves on our MILD DAGs over the published grid (L = 7..16, 3/6/9 and 6/9 batches). One record names one test, so the record is either split in two or one test made to hold both halves; both tests lie outside #120's partition, and #116 does it."
+      "status": "asserted",
+      "test": "test/test_plan_dag.py::test_batches_share_only_fundamentals_across_and_axials_within"
     },
     {
       "id": "jengine/batch-tie-break",
@@ -79,8 +79,8 @@
       "statement": "Raising the batch count lowers intermediates and targets per batch and raises total FLOPs across batches, because intermediates shared between batches are recomputed.",
       "source": "[JEngine, v2, §5]",
       "kind": "monotonicity",
-      "status": "pending",
-      "reason": "Post-sieve (#12) it holds at most cells but not at all of them. FLOPs are flat 1->3 at L = 7 (425, 425, where the paper prints 424, 425), and max intermediates per batch are flat 6->9 at L = 10 (95, 95). test/test_plan_sieve.py::test_batching_post_sieve pins both exceptions and carries no mark. #108's widened seed-order search (58 rules, plan/recovery.py seed_orders(widened=True), recovered cut) closes the L = 7 FLOP exception under 37 of them (424 -> 425, as printed) but moves no default, so the literal plan stays flat there; it does not close L = 10's flat intermediates, which are 95, 95 under all 58 orders and are 95, 95 in the paper's own Table 2. And the paper's Table 2 RISES at L = 7 from 6 to 9 batches (39 -> 40), which the recovered cut reproduces under all 58. So the source's own numbers contradict the intermediates half of the claim at two steps; test/test_plan_recovery.py::test_the_batching_exceptions_under_the_widened_family pins all three. The claim stays unasserted: no test can hold us to a direction the source's table does not keep."
+      "status": "unverifiable",
+      "reason": "UNVERIFIABLE, decided by #116: no test can fail exactly when this claim is false. The claim is about the paper's post-sieve plans, and those depend on the sieve's seed order, which the paper does not publish and no rule recovers (#108, rules-only doctrine; limits.json). Worse, the paper's OWN printed Table 2 breaks the intermediates half at two steps (flat 95, 95 at L = 10 from 6 to 9 batches; rising 39 -> 40 at L = 7 from 6 to 9), so a test asserting the claim would fail on the source's own numbers, and a test pinning those exceptions holds our reconstruction, not the claim. What IS held, unmarked: the pre-sieve direction on our own counts (test/test_plan_dag.py::test_batching_trades_flops_for_intermediates: per-batch targets and intermediates do not rise and total FLOPs do not fall over 1 -> 3 -> 6 -> 9, L = 7..16), and the post-sieve exceptions below. The record of #12 and #108 follows. Post-sieve (#12) it holds at most cells but not at all of them. FLOPs are flat 1->3 at L = 7 (425, 425, where the paper prints 424, 425), and max intermediates per batch are flat 6->9 at L = 10 (95, 95). test/test_plan_sieve.py::test_batching_post_sieve pins both exceptions and carries no mark. #108's widened seed-order search (58 rules, plan/recovery.py seed_orders(widened=True), recovered cut) closes the L = 7 FLOP exception under 37 of them (424 -> 425, as printed) but moves no default, so the literal plan stays flat there; it does not close L = 10's flat intermediates, which are 95, 95 under all 58 orders and are 95, 95 in the paper's own Table 2. And the paper's Table 2 RISES at L = 7 from 6 to 9 batches (39 -> 40), which the recovered cut reproduces under all 58. So the source's own numbers contradict the intermediates half of the claim at two steps; test/test_plan_recovery.py::test_the_batching_exceptions_under_the_widened_family pins all three. No test can hold us to a direction the source's table does not keep."
     },
     {
       "id": "jengine/best-batch-count-rises-with-l",
@@ -111,8 +111,8 @@
       "statement": "At L = 6 the six batches are X_{0,2}, X_{3,6}, Y_{1,2}, Y_{3,6}, Z_{1,2}, Z_{3,6}: one cut (after a maximum component of 2) shared by all three directions, Y_{0,2} and Y_{1,2} (likewise Z) holding the same targets because no Y or Z target has a maximum component of 0.",
       "source": "[JEngine, v2, §5, Fig. 4]",
       "kind": "membership",
-      "status": "pending",
-      "reason": "Witnessed, not yet marked: test/test_plan_batching.py::test_figure_4s_cut_at_l_6 asserts partition(6, 6) is this cut. That test lies outside #120's partition; #116 places the mark."
+      "status": "asserted",
+      "test": "test/test_plan_batching.py::test_figure_4s_cut_at_l_6"
     },
     {
       "id": "jengine/j-speedup-tracks-high-l-share",
@@ -136,7 +136,7 @@
       "source": "[JEngine, v2, §2, Fig. 1]",
       "kind": "monotonicity",
       "status": "unverifiable",
-      "reason": "A roofline of the authors' kernels on an A100 (gly20/cc-pVQZ), and the L <= 6 boundary is that card's. Our own one-batch kernels over the subgrid's L get roofline rows on sm_86 and gfx1200 in #112, which is a different experiment: our cards' fp64 ridge is far below an A100's, so the boundary need not fall anywhere near L = 6."
+      "reason": "A roofline of the authors' kernels on an A100 (gly20/cc-pVQZ), and the L <= 6 boundary is that card's. Our own one-batch kernels over the subgrid's L have roofline rows on sm_86 only (#112, data/measured/roofline.json; gfx1200 could not measure, measured_store.UNMEASURED), which is a different experiment: our cards' measured fp64 ridges (0.65 and 1.49 FLOP/B, data/measured/ceilings.json) are far below an A100's, so the boundary need not fall anywhere near L = 6. On sm_86 it falls between L = 13 and 16: one batch is compute-bound at L = 7, 10 and 13 (300, 3.54 and 0.96 FLOP/B) and memory-bound at L = 16 (0.40), the direction the claim states but at that card's boundary, with four L sampled (felizjueves.ridge; test/test_ridge.py recomputes it)."
     },
     {
       "id": "jengine/mild-keeps-rules-1-2-3-5",
@@ -167,8 +167,8 @@
       "statement": "Against Johnson et al.'s near-optimal tree search, MILD costs 1-2% more FLOPs and has 2-6% fewer intermediates.",
       "source": "[JEngine, v2, §4.1]",
       "kind": "monotonicity",
-      "status": "asserted",
-      "test": "test/test_mild_vs_optimum.py::test_mild_against_the_exact_optimum"
+      "status": "unverifiable",
+      "reason": "A comparison against a search that is not here: Johnson et al.'s near-optimal tree search (the paper's refs 59/60), whose code, output, grid, cost convention and reference point are all unavailable (data/literature/jengine/limits.json records it as not reproducible on this machine). #111 REPLACED the comparison rather than re-running it: data/literature/jengine/mild_vs_optimum.json measures MILD (no sieve) against this tree's own exact optimum (plan/optimum.py, one reduction direction per materialised node, L <= 5), and DISAGREES with the printed percentages -- equal through L = 4, and at L = 5 behind on BOTH axes, +6.25% intermediates and +0.625% FLOPs, where the paper says 2-6% ahead and 1-2% behind; every exact frontier is a single point, so nothing in the space is ahead of it on either axis. #111 first marked this record asserted on the test that pins that gap; #116 demoted it, because that test fails if the paper's percentages held here and passes when they are false, which is the opposite of a witness. The test now holds jengine/mild-suboptimal-from-l5, the half of §4.1 this tree can compute."
     },
     {
       "id": "jengine/nine-batches-suffice",
@@ -176,7 +176,7 @@
       "source": "[JEngine, v2, §7]",
       "kind": "shape",
       "status": "unverifiable",
-      "reason": "The claim is relative to the paper's register and shared-memory budget on their A100, which no measurement here reaches. What #60 measured instead, on OUR cards and under a definition declared before the 12-batch rows existed (felizjueves.measured's docstring, NINE AGAINST TWELVE: 9 suffices at (arch, L) iff the 12-batch cell neither has fewer summed spills nor is faster, on the wide-T or near-T input, by more than the larger IQR; on an arch iff at every L in {7, 10, 13, 16}), is that 9 does NOT suffice on either card. sm_86 (nvcc 13.0): b 12 spills less at L 13 (14472 -> 12048 bytes) and L 16 (181224 -> 146020), though it is slower than b 9 at every L on both inputs. gfx1200 (hipcc / ROCm 7.2.4): b 12 spills more at every spilling L and is slower on wide-T everywhere, but is faster on near-T at L 16 (303.5 -> 299.4 ms, beyond the 0.8 ms IQR). #93 re-timed every subgrid cell behind the card-utilisation gate, one session per card, and the verdict is unchanged cell for cell; the medians quoted here are #93's. Held, cell by cell, by test/test_measured.py::test_nine_batches_do_not_suffice_on_either_card; data/measured/kernels.json has the rows."
+      "reason": "The claim is relative to the paper's register and shared-memory budget on their A100, which no measurement here reaches. What #60 measured instead, on OUR cards and under a definition declared before the 12-batch rows existed (felizjueves.measured_store's docstring, NINE AGAINST TWELVE: 9 suffices at (arch, L) iff the 12-batch cell neither has fewer summed spills nor is faster, on the wide-T or near-T input, by more than the larger IQR; on an arch iff at every L in {7, 10, 13, 16}), is that 9 does NOT suffice on either card. sm_86 (nvcc 13.0): b 12 spills less at L 13 (14472 -> 12048 bytes) and L 16 (181224 -> 146020), though it is slower than b 9 at every L on both inputs. gfx1200 (hipcc / ROCm 7.2.4): b 12 spills more at every spilling L and is slower on wide-T everywhere, but is faster on near-T at L 16 (303.5 -> 299.4 ms, beyond the 0.8 ms IQR). #93 re-timed every subgrid cell behind the card-utilisation gate, one session per card, and the verdict is unchanged cell for cell; the medians quoted here are #93's. Held, cell by cell, by test/test_measured.py::test_nine_batches_do_not_suffice_on_either_card; data/measured/kernels.json has the rows."
     },
     {
       "id": "jengine/optimal-batching-is-np-hard",

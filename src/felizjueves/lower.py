@@ -44,8 +44,10 @@ than one key and a note. Lowering is the stage AFTER the builder: the driver
 (`measured.cell_kernels`) builds the kernels of the Spec without its `LEVERS`
 -- the plan layer and the builder never see them -- and then calls
 `lower(..., recycle_slots=True)` on each finished kernel, atomized or not.
-#55 measured it on both cards: `measured.lever_ab` is the verdict's
-definition, and test/test_measured.py pins what it said about the rows.
+#55 measured it on both cards: `measured_store.lever_ab` is the verdict's
+definition (the store's docstring, A LEVER A/B; since #94 the store and the
+`--remeasure` driver are two modules), and test/test_measured.py pins what it
+said about the rows.
 WHAT #55 FOUND: neither hurt nor help. nvcc 13.0 and hipcc / ROCm 7.2.4 emit
 identical machine code for the two arms in every batch kernel of the
 subgrid -- both promote the statically indexed slot array back to scalars --

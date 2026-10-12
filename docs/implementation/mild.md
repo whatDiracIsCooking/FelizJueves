@@ -143,9 +143,11 @@ Honouring it requires looking at the graph, so no per-node function can do it.
 Hence the second pass.
 
 Cost of the trade, per `[JEngine, v2, §4.1]`, against Johnson et al.'s
-near-optimal tree search: **+1–2% FLOPs, −2–6% intermediates.** MILD is not a
-cheap approximation of the exact search; on the metric that drives register
-pressure it is slightly *better*, and it is `O(1)` per node.
+near-optimal tree search: **+1–2% FLOPs, −2–6% intermediates.** On the
+paper's account MILD is not a cheap approximation of the exact search; on the
+metric that drives register pressure it is slightly *better*, and it is `O(1)`
+per node. (The measurement below does not bear the middle clause out on this
+tree's optimum.)
 
 That search is not in this repo; `plan/optimum.py` (#106) computes the exact
 `(intermediates, FLOPs)` frontier over the same space instead — one direction
@@ -177,6 +179,15 @@ gap. On the published grid it strictly dominates MILD at L = 11 and 12
 (≥ 0.74% behind on FLOPs, ≥ 10.9% on intermediates) and proves nothing at the
 other L. It never beats MILD + sieve. It can show MILD far from optimal, never
 close.
+
+**As records** (`data/literature/jengine/claims.json`, #116):
+`jengine/mild-suboptimal-from-l5` is **asserted** by
+`test_mild_vs_optimum.py::test_mild_against_the_exact_optimum` — equal to the
+optimum through L = 4, strictly dominated at 5 — and
+`jengine/mild-vs-exact-tradeoff` (the 1–2% / 2–6% comparison) is
+**unverifiable**: the search it compares against is not here, and a test that
+pins a gap disagreeing with the printed percentages would fail if they held,
+so it cannot be their witness.
 
 ## The sieve — pruning what MILD left behind
 

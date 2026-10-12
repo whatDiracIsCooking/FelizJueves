@@ -200,6 +200,61 @@ def test_a_note_names_only_records_that_exist() -> None:
         assert named <= ids, (u["unit"], sorted(named - ids))
 
 
+# -- the status as the docs quote it (#116) -----------------------------------
+#
+# A status sentence carrying a stale tally is the failure mode this registry
+# has already shown once (j_engine.md's "8 asserted" outlived its file). So
+# j_engine.md carries the status table rendered from claims.json, verbatim,
+# and any "N records: A asserted, U unverifiable, P pending" a doc spells is
+# held to the file.
+
+JENGINE_MD = ROOT / "docs" / "implementation" / "j_engine.md"
+TALLY_DOCS = (JENGINE_MD, ROOT / "README.md", ROOT / ".claude" / "CLAUDE.md",
+              CLAIMS.parent / "README.md")
+_BEGIN, _END = "<!-- claims-status:begin -->", "<!-- claims-status:end -->"
+_TALLY = re.compile(
+    r"(\d+) records: (\d+) asserted, (\d+) unverifiable, (\d+) pending")
+_ORDER = (ClaimStatus.ASSERTED, ClaimStatus.UNVERIFIABLE, ClaimStatus.PENDING)
+
+
+def tally(claims) -> str:
+    n = {s: sum(1 for c in claims if c.status is s) for s in _ORDER}
+    return (f"{len(claims)} records: {n[ClaimStatus.ASSERTED]} asserted, "
+            f"{n[ClaimStatus.UNVERIFIABLE]} unverifiable, "
+            f"{n[ClaimStatus.PENDING]} pending")
+
+
+def status_table(claims) -> str:
+    """The block j_engine.md carries between its claims-status markers."""
+    rows = [f"**{tally(claims)}** (recomputed from `claims.json` by "
+            "`test/test_claims.py`).", "",
+            "| status | claim | kind | held by |", "|---|---|---|---|"]
+    for status in _ORDER:
+        for c in (c for c in claims if c.status is status):
+            held = (f"`{c.test}`" if status is ClaimStatus.ASSERTED
+                    else "no test: the reason is in `claims.json`")
+            rows.append(f"| {status.value} | `{c.id}` | {c.kind.value} | {held} |")
+    return "\n".join(rows)
+
+
+def test_j_engine_md_carries_the_status_table_verbatim() -> None:
+    text = JENGINE_MD.read_text()
+    assert text.count(_BEGIN) == text.count(_END) == 1
+    block = text.split(_BEGIN)[1].split(_END)[0].strip()
+    want = status_table(load_claims(CLAIMS))
+    assert block == want, f"j_engine.md's claims table is stale; it should be:\n{want}"
+
+
+def test_every_tally_a_doc_quotes_matches_the_file() -> None:
+    want = tally(load_claims(CLAIMS))
+    quoted = 0
+    for doc in TALLY_DOCS:
+        for m in _TALLY.finditer(doc.read_text()):
+            quoted += 1
+            assert m[0] == want, (doc.relative_to(ROOT).as_posix(), m[0], want)
+    assert quoted  # the check is not vacuous: j_engine.md quotes one
+
+
 @pytest.mark.parametrize(
     "source, units",
     [
