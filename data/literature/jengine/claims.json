@@ -12,7 +12,7 @@
     },
     {
       "id": "jengine/alg1-line10-factor-four",
-      "statement": "Alg. 1 line 10 writes J[p] = 4 Jshm[p], and the factor 4 is never explained -- not in the algorithm, §3.3 or eqs. 19-22, where J_p = SUM_q [p|q] D_q carries no factor. It can only be a convention of the authors' pair lists or density (unique shell pairs, a doubled density), which the text does not state. This repo's kernel writes J_p unscaled and puts the only pair weight host-side (ao/j.py's unique sweep: ket off-diagonal weight 2, bra blocks scattered to both triangles), and J_mn then matches libcint's get_jk.",
+      "statement": "Alg. 1 line 10 writes J[p] = 4 Jshm[p], and the factor 4 is never explained -- not in the algorithm, §3.3 or eqs. 19-22, where J_p = SUM_q [p|q] D_q carries no factor. It can only be a convention of the authors' pair lists or density (unique shell pairs, a doubled density), which the text does not state. This repo's kernel writes J_p unscaled and puts the only pair weight host-side (ao/j.py's unique sweep: ket off-diagonal weight 2, bra blocks scattered to both triangles; since milestone 7 the generated DQ kernel takes that weight as a host-supplied w and the JAB kernel scatters by the same rule), and J_mn then matches libcint's get_jk.",
       "source": "[JEngine, v2, Alg. 1]",
       "kind": "defect",
       "status": "asserted",
@@ -120,7 +120,7 @@
       "source": "[JEngine, v2, §7.4, Fig. 11]",
       "kind": "monotonicity",
       "status": "unverifiable",
-      "reason": "An explanation of the authors' whole-J timings in EXESS on an A100 over water clusters, polyglycine and boron nitride; this repo has neither the engine nor the systems at that size, and builds J_mn host-side (ao/) with only J_p generated."
+      "reason": "An explanation of the authors' whole-J timings in EXESS on an A100 over water clusters, polyglycine and boron nitride; this repo has neither the engine nor the systems at that size, and builds J_mn only at fixture size (through d on the cards), with every arithmetic step generated since milestone 7 but nothing of the new kernels timed and no whole-J timing across molecules of different composition."
     },
     {
       "id": "jengine/ket-sort-key-beats-the-global-max",

@@ -4,37 +4,51 @@ Python code generation for electronic structure tensors.
 
 ## What is here
 
-**A generator of one kernel family, and a Coulomb matrix built around it.** The
-generator emits the McMurchie–Davidson `[p|q]` kernel of `[JEngine]` in CUDA
-and HIP; a host-side AO layer turns a real molecule into its inputs and its
-output back into `J_µν`, and that `J` is compared against PySCF/libcint — a
-program with no shared ancestry. Every tier reports what it touched rather
-than implying more.
+**A generator of the kernels of a Coulomb-matrix build, and that build.** The
+generator emits, in CUDA and HIP, the McMurchie–Davidson `[p|q]` kernel of
+`[JEngine]` and, since milestone 7, the kernels around it: the `E` transform
+(inlined), the ket pre-contraction and the bra back-transform with its
+scatter. A host-side AO layer turns a real molecule into their inputs and
+remains the reference they are held to, and the `J` they build is compared
+against PySCF/libcint — a program with no shared ancestry. Every tier reports
+what it touched rather than implying more.
 
 **In three questions:**
 
-- **What does it generate?** The `[p|q]` kernels, `J_p = Σ_q [p|q] D_q`, in
-  CUDA and HIP, one per `(lp, lq)` class and batch count. Nothing else is
-  generated. The `E` transform, the ket pre-contraction, eq. 20's
-  back-transform and the `J_ab` scatter are host-side Python.
+- **What does it generate?** Every arithmetic step of `J_µν`, in CUDA and HIP:
+  the `[p|q]` kernels (`J_p = Σ_q [p|q] D_q`, one per `(lp, lq)` class and
+  batch count), the pre-contraction `D_q` and `Dmax` (`Target.DQ`, one kernel
+  per ket pair class) and the bra back-transform and scatter into `J_µν`
+  (`Target.JAB`, one per bra pair class), with the undressed `E` coefficients
+  inlined into the last two. What stays on the host is what decides
+  launches: the pair list and each record's inputs, the Schwarz bound, the
+  sort (which reads `Dmax` back), the staging and the launch code. The
+  pre-contraction and scatter kernels are this repo's own design, because
+  `[JEngine]` defers those steps to another paper (`limits.json`).
 - **How is a whole molecule's `J` built?** From a **launch plan**
   (`launch.py`, milestone 6). It has one entry per `(lp, lq)` class, with bra
   records in pair order and ket records sorted by `I_q · max|D_q|`
   (`[JEngine, v2, §3.3]`). On the card, each bra class and each ket class is
   uploaded once, and every batch kernel is launched with fp64 atomics into
-  one `J_p` buffer per bra class. That buffer is read back, and eq. 20 and the
-  scatter finish `J` on the host. The plan's order is witnessed by an
-  independent Python walker (the launch oracle) and by libcint. A class's
-  batch count can be chosen from measured wall-clock (`dispatch.py`).
+  one `J_p` buffer per bra class. Since milestone 7 the `DQ` kernels produce
+  the kets' `D_q` and the `JAB` kernels turn each `J_p` buffer into `J_µν` on
+  the card, launched from Python through a test-side driver. The plan's order
+  is witnessed by an independent Python walker (the launch oracle) and by
+  libcint. A class's batch count can be chosen from measured wall-clock
+  (`dispatch.py`).
 - **On which cards has that run?** The RTX 3080 (`sm_86`) and the RX 9060 XT
-  (`gfx1200`), on H₂, H₂O/STO-3G and H₂O/cc-pVDZ (s, p and d shells, classes
-  up to L = 8), within `1e-12·scale_J` of libcint (worst 1.24e-14). It is
-  timed per build on both cards (`data/measured/builds.json`). The kernels
-  alone run to L = 16 on both cards against the host reference.
+  (`gfx1200`). The whole chain built `J` for H₂, H₂O/STO-3G and H₂O/cc-pVDZ
+  (s, p and d shells, `[p|q]` classes up to L = 8), within `1e-12·scale_J` of
+  libcint (worst 1.24e-14). The pre-contraction and scatter kernels ran alone
+  for every pair class through (ff), and the `[p|q]` kernels alone to L = 16,
+  each against the host. Milestone 6's build, with `[p|q]` alone on the
+  card, is timed on both cards (`data/measured/builds.json`). **Nothing about the new kernels is
+  measured.** `docs/implementation/j_engine.md`, "The J chain as device code",
+  is the one place with the detail.
 
 Not built: a `J` kept on the card across SCF iterations, a `Launch` IR or
-`LaunchCost` model (declined, `limits.json`), a device `E` transform or
-scatter, and anything with gradients. Against the predecessor `jgen`, this is
+`LaunchCost` model (declined, `limits.json`), dispatch inside the generator,
+and anything with gradients. Against the predecessor `jgen`, this is
 parity on its energy-order `J` surface **except the tuned-plan wire** (the
 searched sieve order does not reach the emitter here), **with Table 4
 declined** (`docs/implementation/j_engine.md`, "Parity with the
@@ -45,10 +59,10 @@ predecessor").
 | | State |
 |---|---|
 | `docker/`, `.devcontainer/`, `devtools/` | **live.** Both device toolchains build, and `devtools/kernel-tier.sh` runs end to end. |
-| `test/` | **live.** Fast tier: the plan layer against `[JEngine]` Tables 1–3, the kernel IR interpreted against `reference/`, the golden kernel texts, and the AO layer against **tracked libcint fixtures** (`test/oracle/`), so PySCF is not needed to run it. Fast tier also: the launch plan, its oracle and the staged interpreted driver (`test_launch*.py`), and dispatch on synthetic and tracked rows. Kernel tier (`gpu`): the generated kernels on each card against `reference/`, `J_µν` for H₂ and H₂O against libcint, and the whole molecule built from the launch plan on each card against the oracle and libcint (`test_j_launched_ondevice.py`). Last full kernel tier, PR #182 (#144): CUDA 78 passed / 3 skipped, HIP 79 passed / 3 skipped, the skips being opt-in recordings. |
-| `src/felizjueves/` | **importable.** `plan/` (batching, MILD, the sieve, the per-batch counts, and `optimum.py`, the exact tree-search optimum for L ≤ 5), `kernel.py` + `emit/` (the generator), `measured_store.py` (the measured store: registers, spills, wall-clock on both cards; roofline counters on `sm_86`) and `measured.py` (the driver that compiles, parses and profiles into it), `gate.py` (the card gate every timed or profiled phase runs behind), `ceilings.py` (each card's measured fp64 and bandwidth ceilings), `ridge.py` (whether batching crosses our cards' ridge, under the rule #114 declared before the rows), `crossread.py` (model, clock and counters read against each other), `asym.py` (the asymmetric-split study), `literature/` (published tables and claims, and the rules that score against them), `ao/` (shells, the `E` transform, pair data and the Schwarz bound, ERI blocks, `J_µν`, and `staged.py`, `J` from a launch plan with the kernels interpreted), `launch.py` (the whole-molecule launch plan as a value, and the launch oracle that walks it in Python) and `dispatch.py` (a class's batch count from measured wall-clock, injected into a plan). |
+| `test/` | **live.** Fast tier: the plan layer against `[JEngine]` Tables 1–3, the kernel IR interpreted against `reference/`, the golden kernel texts, and the AO layer against **tracked libcint fixtures** (`test/oracle/`), so PySCF is not needed to run it. Fast tier also: the launch plan, its oracle and the staged interpreted driver (`test_launch*.py`), and dispatch on synthetic and tracked rows. Kernel tier (`gpu`): the generated kernels on each card against `reference/`, `J_µν` for H₂ and H₂O against libcint, the whole molecule built from the launch plan on each card against the oracle and libcint (`test_j_launched_ondevice.py`), and the generated J chain on each card: every pre-contraction and scatter kernel through (ff) against the host, and `J` through d with every arithmetic step a generated kernel against libcint (`test_j_chain_ondevice.py`). Fast tier also: the `E` fragment and the two new kernels interpreted, bitwise against the host (`test_e_fragment.py`, `test_kernel_dq.py`, `test_kernel_jab.py`), and the whole chain interpreted against libcint (`test_ao_j_chain.py`). Last full kernel tier, PR #210 (#157): CUDA, RTX 3080, 96 passed / 5 skipped; HIP, RX 9060 XT, 97 passed / 5 skipped; the skips are the five opt-in recordings. |
+| `src/felizjueves/` | **importable.** `plan/` (batching, MILD, the sieve, the per-batch counts, and `optimum.py`, the exact tree-search optimum for L ≤ 5), `kernel.py` + `emit/` (the generator), `e_fragment.py`, `kernel_dq.py` and `kernel_jab.py` (the `E` fragment and the pre-contraction and scatter kernels, milestone 7), `measured_store.py` (the measured store: registers, spills, wall-clock on both cards; roofline counters on `sm_86`) and `measured.py` (the driver that compiles, parses and profiles into it), `gate.py` (the card gate every timed or profiled phase runs behind), `ceilings.py` (each card's measured fp64 and bandwidth ceilings), `ridge.py` (whether batching crosses our cards' ridge, under the rule #114 declared before the rows), `crossread.py` (model, clock and counters read against each other), `asym.py` (the asymmetric-split study), `literature/` (published tables and claims, and the rules that score against them), `ao/` (shells, the host `E` transform, pair data and the Schwarz bound, ERI blocks, `J_µν` with its `jp=`, `dq=` and `jab=` seams, `staged.py`, `J` from a launch plan with the kernels interpreted, and `drive.py`'s `coulomb_matrix_chain`, `J` with every step a generated kernel, interpreted), `launch.py` (the whole-molecule launch plan as a value, and the launch oracle that walks it in Python) and `dispatch.py` (a class's batch count from measured wall-clock, injected into a plan). |
 | `data/` | **live.** `[JEngine]` Tables 1–3 with provenance and the two scoreboards over them; the registry of the paper's non-numeric claims (`claims.json`, 32 records: 18 asserted, 14 unverifiable, 0 pending), the unit-by-unit reading it is the inventory of (`coverage.json`), and what a model cannot reach, this machine cannot reproduce, or this repo declined (`limits.json`); the measured store and the recommended batch count per `(L, arch)`; each card's measured roofline ceilings, roofline rows on `sm_86` and the answer they give — **batching crosses the ridge only at L = 16 (at 3 batches); L = 7, 10 and 13 are compute-bound already at one batch; `gfx1200` could not be measured** (`docs/implementation/j_engine.md`, "The roofline, in one place" and "The `[JEngine]` claims"). That refusal is **final** (#140): `rocprofv3` now loads in the ROCm image, but gfx1200 defines no fp64 counter and its byte counters read 0 on this box. **gfx1200's fp64 ceiling is settled** (#141): single issue, 128 flop per counted GPU cycle, so the recorded 4.46e11 flop/s is the card at a counted ~3.49 GHz and the ridge stays 1.49 FLOP/B. Also: the whole-build wall-clock on both cards and #147's sort-key A/B (`measured/builds.json`; the expectation that the global `max\|D\|` key is worse is **contradicted on both cards**), and the `τ`-ladder screening record (`ao/screening.json`). |
-| the generator | **live, for one kernel family.** `KERNEL_GEN_CMD` in `devtools/config.sh` runs `python -m felizjueves.emit`, which writes the single-batch `[p\|q]` kernel for L = 0..16 in CUDA or HIP; split classes (`build_pq_kernels`, atomic write-back) and, through `--class LA LB LC LD`, the classes a real basis reaches are written by the tests. **Generated: `J_p` only.** The `E` transform, the pre-contraction and the scatter are host-side Python. Dispatch (`dispatch.py`) chooses a batch count per class for a launch plan; `KERNEL_GEN_CMD` does not follow it, and `Spec.n_batches` still defaults to 1. The shipped kernels come from the literal plan, not the searched one. |
+| the generator | **live, for the whole J chain.** `KERNEL_GEN_CMD` in `devtools/config.sh` runs `python -m felizjueves.emit`, which writes, in CUDA or HIP, the single-batch `[p\|q]` kernel for L = 0..16 and the pair kernels `dq_{la}_{lb}` and `jab_{la}{lb}` for `la ≤ lb ≤ 3` (37 units). Split classes (`build_pq_kernels`, atomic write-back) and, through `--class LA LB LC LD`, each real class's whole chain (`DQ`, the `[p\|q]` batches, `JAB`) are written by the tests. **Generated: every arithmetic step of `J`.** The pair list, the bound, the sort with its `Dmax` read-back, the staging and the launch code stay host-side, and nothing about the new kernels is measured. Dispatch (`dispatch.py`) chooses a batch count per class for a launch plan; `KERNEL_GEN_CMD` does not follow it, and `Spec.n_batches` still defaults to 1. The shipped kernels come from the literal plan, not the searched one. |
 | `pyproject.toml` | **a virtual uv project** — dev tooling, numpy, and a lock; PySCF is a separate `oracle` group a bare `uv sync` does not install. Nothing is installed; pytest imports `src/` through `pythonpath`. |
 
 When you run something here, say which of these it touched.

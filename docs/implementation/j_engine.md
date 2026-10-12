@@ -32,7 +32,8 @@ against this file, not the other way round.
   (`test/test_kernel_batched.py`); golden text for L = 4, `n_batches = 3`
   (`test/test_emit_batched.py`); run on both cards for every split cell of
   `measured.SUBGRID` (see "Measured" below). `python -m felizjueves.emit`
-  (the kernel tier's `KERNEL_GEN_CMD`) still writes one-batch kernels only.
+  (the kernel tier's `KERNEL_GEN_CMD`) still writes one-batch `[p|q]`
+  kernels only, beside the chain's pair kernels (#156, below).
 
 **Implemented host-side, around the kernel: the Coulomb matrix** (milestone 4,
 `src/felizjueves/ao/`). The `E` transform (`hermite.py`), pair data, the one
@@ -60,16 +61,27 @@ oracle and the libcint fixtures. `src/felizjueves/dispatch.py` chooses a
 class's batch count from measured wall-clock and is injected into the plan.
 See "The launch plan" below.
 
-**Still specification, or deliberately absent:** any device code for what is
-host-side above. The `E` transform, the pre-contraction, eq. 20's
-back-transform and the `J_ab` scatter are host-side Python, and moving them
-to the device is milestone 7's subject. Also absent: a `J` kept resident on
-the card across SCF iterations, a `Launch` IR, and a `LaunchCost` model, all
-declared out of scope (`limits.json`). Dispatch exists as a library choice
-the plan takes, and the generator does not follow it: `Spec.n_batches` still
-defaults to 1, and `KERNEL_GEN_CMD` writes one-batch kernels. A count this
-file states is a claim about the code only where a test or a scored board
-checks it.
+**Implemented since milestone 7: every arithmetic step of `J` as a generated
+kernel** (#149–#157). The `E` transform is a device-code fragment
+(`e_fragment.py`), inlined into two new kernel families: the ket
+pre-contraction `Target.DQ` (`kernel_dq.py`) and the bra back-transform and
+scatter `Target.JAB` (`kernel_jab.py`). `KERNEL_GEN_CMD` writes both beside
+the `[p|q]` ladder. The chain runs interpreted against the host and libcint,
+and compiled and launched on both cards: pair kernels through (ff), and a
+whole molecule's `J` through d. The host-side `ao/` paths stay as the
+references the kernels are held to. See "The J chain as device code" below,
+the one place that says which steps are generated and where they ran.
+
+**Still host-side, or deliberately absent.** Host-side: the pair list, each
+record's inputs (`ζ`, `X_PA`, `X_PB`, the dressing scale), the Schwarz bound,
+the sort with its `Dmax` read-back, the staging, and the launch code (a
+test-side driver). Nothing about the new kernels is measured. Absent: a `J`
+kept resident on the card across SCF iterations, a `Launch` IR, and a
+`LaunchCost` model, all declared out of scope (`limits.json`). Dispatch
+exists as a library choice the plan takes, and the generator does not follow
+it: `Spec.n_batches` still defaults to 1, and `KERNEL_GEN_CMD` writes
+one-batch `[p|q]` kernels. A count this file states is a claim about the code
+only where a test or a scored board checks it.
 
 **Measured, and recorded** (milestones 5 and 6): each card's roofline
 ceilings, counter rows on `sm_86` (none on `gfx1200`, final since #140), and
@@ -233,10 +245,14 @@ shell-pair level. That is the register saving the whole design rests on — the
 kernel never materialises `[ab|cd]`.
 
 Pre- and post-contraction (forming `D_q`, and scattering `J_ab` back) are
-deferred by `[JEngine, v2]` to `[Fock]`. This repo takes only as much of them as
-a `J` build needs, host-side, in `src/felizjueves/ao/j.py` (milestone 4; "The
-Coulomb matrix, witnessed from outside" below); they are not generated as
-device code.
+deferred by `[JEngine, v2]` to `[Fock]`, which this repo has not read. This
+repo takes only as much of them as a `J` build needs. They were first written
+host-side, in `src/felizjueves/ao/j.py` (milestone 4; "The Coulomb matrix,
+witnessed from outside" below), and that host path is still the reference.
+Since milestone 7 they are also **generated as device code**: the `DQ` and
+`JAB` kernels ("The J chain as device code" below). Both are this repo's own
+design, not a reconstruction of `[Fock]` or of anything else
+(`limits.json`).
 
 Screening: Cauchy–Schwarz bounds take the nominal `O(N⁴)` to `O(N²)`. Each
 Hermite index carries a bound `I`, and the kernel tests `D_max · I_p · I_q`
@@ -244,11 +260,15 @@ against a threshold `τ`.
 
 ## The `E` transform
 
-**Status: implemented, host-side.** The undressed coefficients are
-`src/felizjueves/ao/hermite.py` (`e_axis`, `e_block`), checked by
-`test/test_ao_hermite.py`; the dressing is `ao.pairs.dress`; the bra
-back-transform `J_ab = Σ_p E_p^{ab} J_p` is in `ao/j.py`. None of it is
-emitted as device code.
+**Status: implemented host-side, and generated as device code (milestone
+7).** The host reference is `src/felizjueves/ao/hermite.py` (`e_axis`,
+`e_block`), checked by `test/test_ao_hermite.py`; the dressing is
+`ao.pairs.dress`, and it stays host-side; the host bra back-transform
+`J_ab = Σ_p E_p^{ab} J_p` is in `ao/j.py`. The device form is
+`src/felizjueves/e_fragment.py` (#152): an `ir.Fragment` of this recurrence,
+undressed, bitwise `==` `e_block` for every class (ss) through (ff) when
+interpreted (`test/test_e_fragment.py`). It is inlined into the `DQ` and `JAB`
+kernels, which ran on both cards ("The J chain as device code" below).
 
 `[JEngine, v2]` says only that the primitive ERI carries "transformation
 coefficients `E` on each side"; it does not state their recurrence. That is
@@ -569,7 +589,7 @@ this table's rule (best median, ties to fewer batches), recomputed from the
 `Measured` rows per `(arch, class, input)`, with 1 for any class that has no
 row. It is injected into a launch plan (`launch.launches(resolve=)`), and the
 generator does not follow it: `KERNEL_GEN_CMD` still writes one-batch
-kernels.
+`[p|q]` kernels.
 
 ### Measured: the asymmetric split, measured and refused (#113)
 
@@ -1190,10 +1210,14 @@ unpublished inputs allow (Table 3 exactly; Tables 1–2 up to the seed order);
 and its central performance claim — batching moves a kernel across the ridge —
 has been asked and answered on different hardware, with an answer about our
 cards' ridges and nothing to say against its A100. Since milestone 6 a whole
-molecule's `J` is built from a launch plan on both cards, with the `E`
-transform and the scatter still host-side, the plan's order witnessed by an
-independent Python driver and by libcint, and one of the paper's §3.3 claims
-(the ket sort key) measured.
+molecule's `J` is built from a launch plan on both cards, the plan's order
+witnessed by an independent Python driver and by libcint, and one of the
+paper's §3.3 claims (the ket sort key) measured. Since milestone 7 every
+arithmetic step of that build is a generated kernel, run on both cards: the
+`E` transform, the pre-contraction and the scatter as well as `J_p`. The two
+new kernels are this repo's own design, because the paper defers them to
+`[Fock]`, so they discharge no claim of the paper's, and no record above
+changed status for them.
 
 ## The Coulomb matrix, witnessed from outside
 
@@ -1377,8 +1401,10 @@ The device `main()` that runs it is written by a test harness
 (`test/plan_driver.py`), not by `emit/`. The `E` transform, the ket
 pre-contraction, eq. 20's back-transform `J_ab = Σ_p E_p^{ab} J_p` and the
 `J_ab` scatter stay **host-side Python** (`ao/`), as they are in the
-predecessor's `jgen`. Moving them to the device is milestone 7, and none of
-it is device code here.
+predecessor's `jgen`. That was milestone 6's state. Milestone 7 generated
+them as device code and ran them on both cards on this same driver ("The J
+chain as device code" below). The timed builds in this section
+(`builds.json`) predate it, and still time `[p|q]` alone.
 
 ### The plan as a value (#138)
 
@@ -1584,29 +1610,90 @@ anything that has them.
 
 ## The J chain as device code
 
-**Status: specification (milestone 7, #151).** This section is the contract
-the chain's kernels are built against: the four arithmetic steps of `J_µν`,
-the parameter block and preconditions of each kernel not yet built, the
-layout each consumer indexes, where the dressing goes, and what stays on the
-host. **Implemented:** the `[p|q]` kernel (step 3), and the two seams in
-`ao/j.py` that the new kernels plug into, with host references that make the
-seams `==` to the host path (#151). **Not built:** the `E` fragment, the
-pre-contraction kernel and the bra-transform-and-scatter kernel. Each step
-below carries its own status line. The "The `E` transform" section above keeps
-its status until the record issue changes it.
+**Status: implemented, and run on both cards (milestone 7, #149–#157).**
+This section is the contract the chain's kernels were built against, and the
+one place that answers *which steps of a `J` build does this repo generate,
+and on which cards has that run?* Every **arithmetic** step of `J_µν` is a
+generated kernel: the `E` fragment, the pre-contraction (`Target.DQ`), the
+`[p|q]` kernel (`Target.J`) and the bra transform and scatter
+(`Target.JAB`). `KERNEL_GEN_CMD` writes all three kernel families (#156),
+and the whole chain ran on the RTX 3080 and the RX 9060 XT (#157). What is
+**not** generated is everything that decides launches: the pair list and its
+per-record inputs, the bound, the sort (with its `Dmax` read-back), the
+staging, and the launch code itself, which is a test-side driver
+(`test/plan_driver.py`) launched from Python. **Nothing about the new kernels
+is measured**: no registers, spills, wall-clock or counters. There is no
+device-resident `J` across SCF iterations, and dispatch does not reach the
+generator.
+
+`[JEngine, v2]` defers pre- and post-contraction to `[Fock]`, which this repo
+has not read. So the `DQ` and `JAB` kernels below are **this repo's own
+design**, built to equal `ao/j.py`'s host arithmetic, and not a
+reconstruction of anything published (`limits.json`).
 
 ### The four steps
 
-| step | computes, per primitive-pair record | keyed by | device status | host equivalent |
-|---|---|---|---|---|
-| 1. `E` | `E^{ab}_t`, undressed, over `hermite_order(la+lb)` | inlined, not launched | **not built** (#152) | `ao.hermite.e_block` |
-| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | **not built** (#153) | `ao.j._kets`; through the seam, `ao.j.dq_from_host` |
-| 3. `[p\|q]` | `J_p = Σ_k Σ_q [p\|q] D_q` | class `(lp, lq)`, `Target.J` | **implemented** (`kernel.py`) | `ao.j.jp_from_pq` |
-| 4. bra transform + scatter | `J_ab += Σ_p s E^{ab}_p J_p`, written into `J_µν` | bra pair class `(la, lb)`, `Target.JAB` | **not built** (#154) | `ao.j`'s transform and mirror; through the seam, `ao.j.jab_from_host` |
+| step | computes, per primitive-pair record | keyed by | built by | interpreted | on the cards (#157) | host equivalent |
+|---|---|---|---|---|---|---|
+| 1. `E` | `E^{ab}_t`, undressed, over `hermite_order(la+lb)` | inlined, not launched | `e_fragment.block_fragment` (#152; an `ir.Fragment`, #149) | bitwise `==` `ao.hermite.e_block`, (ss)–(ff) (`test_e_fragment.py`) | inside steps 2 and 4 | `ao.hermite.e_block` |
+| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | `kernel_dq.build_dq_kernel` (#153), unit `dq_{lc}_{ld}` | bitwise `==` `ao.j.dq_from_host`, (ss)–(ff) (`test_kernel_dq.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.j._kets`; through the seam, `ao.j.dq_from_host` |
+| 3. `[p\|q]` | `J_p = Σ_k Σ_q [p\|q] D_q` | class `(lp, lq)`, `Target.J` | `kernel.build_pq_kernel(s)` | against `reference/` | L = 0..16 against `reference/`; in `J` up to L = 8 | `ao.j.jp_from_pq` |
+| 4. bra transform + scatter | `J_ab += Σ_p s E^{ab}_p J_p`, written into `J_µν` | bra pair class `(la, lb)`, `Target.JAB` | `kernel_jab.build_jab_kernel` (#154), unit `jab_{la}{lb}` | bitwise `==` `ao.j.jab_from_host`, (ss)–(ff) (`test_kernel_jab.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.j`'s transform and mirror; through the seam, `ao.j.jab_from_host` |
 
 Steps 2 and 4 contain step 1: the `E` fragment is inlined into both. It is not
-a kernel and has no buffer of its own. Composed in the interpreter: **not
-built** (#155). Composed on the cards: **not built** (milestone 7's capstone).
+a kernel and has no buffer of its own. #149's rule is one level only (a
+`Fragment` holds no `Inline`), so the block fragment is **composed at build
+time** from the one axis builder, instantiated once per axis, and does not
+nest the axis fragment. Every recurrence entry is one `Weighted`. The only
+`Call`s are the three `EXP` seeds and the block's `MUL` products, and there
+is no `Raw` (`limits.json`, the instruction form's reach).
+
+**Composed in the interpreter** (#155). `ao.drive.coulomb_matrix_chain` builds
+`J_µν` with every step a generated kernel run by `interp.py`. It runs `DQ`
+per ket class, reads `Dmax` back, sorts, runs `[p|q]` through milestone 6's
+staging (`ao.staged`, with its `ket_data=` and `transform=` hooks), then runs
+`JAB` per bra class. A missing step raises. It is within `1e-12·scale_J` of
+libcint on every tracked `J` fixture (H₂, H₂O/STO-3G, 6-31G, cc-pVDZ; worst
+1.3e-14), and `==` the staged host path (`test/test_ao_j_chain.py`).
+
+**Composed on the cards** (#157, `test/test_j_chain_ondevice.py`, `gpu` +
+`cuda`/`hip`), in two parts:
+
+- *Part 1, per pair class, (ss) through (ff).* Each `dq_{la}_{lb}` and
+  `jab_{la}{lb}` unit that the kernel tier's generate phase wrote is compiled
+  alone into a small harness and run over every record of its class in
+  HF/cc-pVTZ, against `ao.j.dq_from_host` / `jab_from_host` on the same
+  inputs. Worst: `DQ` 5.45e-16 `S`, `JAB` 4.04e-16 `T`, against bounds of
+  2.66e-15 to 3.00e-14 by class (the error analysis is in the test module's
+  docstring).
+- *Part 2, per molecule, through d.* `J_µν` for H₂/STO-3G, H₂O/STO-3G at 1 and
+  3 batches, and H₂O/cc-pVDZ. A `DQ` program runs every ket class and reads
+  `D_q` and `Dmax` back. The host sorts on the kernel's `Dmax`. Milestone 6's
+  driver then runs every `[p|q]` batch kernel, with its kets staged from the
+  kernel's `D_q`, and in the same process one `JAB` launch per bra class adds
+  into one zeroed `J_µν` on the card. Worst against libcint
+  **1.24e-14·scale_J** (tolerance `1e-12`), against the launch oracle
+  3.29e-16 `max|J|`, with the same digits on both cards. No `[p|q]` above
+  L = 8 and no f shell enters a whole-molecule build, because the `J`
+  fixtures stop at d.
+
+**The last device run, per card** (PR #210, the full kernel tier, every unit
+generated by `KERNEL_GEN_CMD`): CUDA, RTX 3080 (`sm_86`), **96 passed, 5
+skipped**; HIP, RX 9060 XT (`gfx1200`), **97 passed, 5 skipped**. The five
+skips on each card are the opt-in recordings (ceilings, `[p|q]` wall-clock,
+roofline counters, build wall-clock, sort-key A/B). The largest single need
+was part 1's `(23)` `DQ` program on the 3080: 7237 MiB of 8764 MiB free,
+from a 72 KB per-thread stack over 104448 resident threads. The VRAM probe
+passed, but an outside process holding more than about 1.5 GB of that card
+would fail the case, with both figures (`limits.json`).
+
+**The generator** (#156). With no ladder flag, `python -m felizjueves.emit`
+writes 37 units: the `[p|q]` ladder L = 0..16 (`--L`, byte-identical to
+before, its `source_sha256` pins unchanged) and the pair ladder,
+`dq_{la}_{lb}` and `jab_{la}{lb}` for `la ≤ lb ≤ 3` (`--pair-l LMAX`, 0..8; 20
+units by default). The class selector (`--class`, `--shell-ls`) writes each
+cell's whole chain, with an `order` file in launch order: `dq_{lc}_{ld}`, the
+`[p|q]` batch kernels, then `jab_{la}{lb}`.
 
 ### The layout every consumer indexes
 
@@ -1635,7 +1722,13 @@ Each record gives the fragment `ζ` and, per axis `d`, `X_PA = P_d − A_d` and
 `X_PB = P_d − B_d`. These are `P`, `A` and `B` as `primitive_pairs` and
 `e_block` have them, with the subtraction in that order. The recurrence is the
 one in "The `E` transform" above (MD report eqs. 2.20–2.21), with
-`E^{00}_0 = exp(−ζ X_PA X_PB)`. The fragment forms no `X_AB` and no `μ`.
+`E^{00}_0 = exp(+ζ X_PA X_PB)`, which is `exp(−μ X_AB²)` because
+`X_PA X_PB = −(αβ/ζ²) X_AB²`. (#152's issue text wrote the seed with a minus
+sign. That was a slip: the fragment follows `ao/hermite.py`, and the Hermite
+identity test holds the sign.) The fragment forms no `X_AB` and no `μ`.
+It binds `zeta` as well as `half_inv_zeta` (`1/2ζ`) so that the seed costs no
+extra division; a class with no raised entry, `(ss)`, binds no
+`half_inv_zeta`.
 
 **The fragment computes the undressed `E` of `ao/hermite.py` and nothing
 else.** The dressing reaches the kernel as **one host-supplied scalar per
@@ -1653,13 +1746,20 @@ the only independent check `E` has (#85 is the failure this rules out).
 
 ### Step 2: the pre-contraction kernel, `Target.DQ`
 
-**Status: specified; not built (#153).**
+**Status: implemented** (#153, `src/felizjueves/kernel_dq.py`; emitted as
+`dq_{lc}_{ld}` by #156; run on both cards by #157). The built kernel has one
+parameter the specification below did not spell, **`n_pair` (I32)**, after
+`n_rec`. It is `Dcd`'s leading extent, because an array extent in the IR must
+be a scalar `Param`. Row-major indexing never reads it, so the emitter casts
+it to `(void)` (#156; hipcc's `-Wunused-parameter` otherwise fails #92's
+filter). The kernel has no `ABS` or `MAX` function to call, so it writes
+`|x|` and `max` with `LT` and `SUB` (`0.0 − x` is `−x` exactly).
 
 One kernel per ket pair class `(lc, ld)`. With `n_q = |hermite_order(lc+ld)|`
 and `n_cd = ncart(lc) · ncart(ld)`:
 
 ```
-params  n_rec (I32)
+params  n_rec (I32)  n_pair (I32)
         eta[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]  w[n_rec]   per record
         pair[n_rec] (I32)                    the record's row of Dcd
         Dcd[n_pair, n_cd]                    D_cd per ket shell pair, row order above
@@ -1710,13 +1810,27 @@ by fp64 atomics when the class is split.
 
 ### Step 4: the bra-transform-and-scatter kernel, `Target.JAB`
 
-**Status: specified; not built (#154).**
+**Status: implemented** (#154, `src/felizjueves/kernel_jab.py`; emitted as
+`jab_{la}{lb}` by #156; run on both cards by #157). The built kernel departs
+from the specification below in two places, both forced by the IR and
+spelled in the block:
+
+- The per-record exponent is **`zeta_ab`**, not `zeta`. The `E` fragment binds
+  a *scalar* named `zeta`, and #149's hygiene refuses a host array of the
+  same name. The kernel loads `zeta_ab[rec]` into a local `zeta` and binds
+  that.
+- **`n_rows` (I32)** is an extra parameter: `Jp`'s leading extent, which has to
+  be a scalar `Param`. As with `DQ`'s `n_pair`, nothing reads it, and the
+  emitter casts it to `(void)`.
+
+The diagonal-pair branch is built only when `la == lb`. The launch shape is
+one thread per record (`jab_launch_shape`).
 
 One kernel per bra pair class `(la, lb)`. With `n_p = |hermite_order(la+lb)|`:
 
 ```
-params  n_rec (I32)  n_ao (I32)
-        zeta[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]            per record
+params  n_rec (I32)  n_ao (I32)  n_rows (I32)
+        zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]            per record
         off_a[n_rec]  off_b[n_rec]  (I32)    the record's shells' AO offsets
         row[n_rec] (I32)                     the record's row of Jp
         Jp[n_rows, n_p]                      the bra class's J_p buffer (step 3)
@@ -1779,9 +1893,12 @@ stated where the device test asserts, and not here.
   (`launch.launches`);
 - the **staging**: class-grouped buffers, one upload per bra class and one per
   ket class (`ao/staged.py`, #143; `test/plan_driver.py`, #144);
-- the **launches** and their order.
+- the **launches** and their order;
+- each record's **inputs** to the kernels: `ζ` or `η`, `X_PA`, `X_PB`, the
+  dressing scale `s`, and the AO offsets.
 
-These decide launches, which is why they stay on the host.
+These decide launches, or feed the kernels, which is why they stay on the
+host. Milestone 7 left all of them where milestone 6 put them.
 
 **The round-trip.** The sort needs `Dmax`, and step 2 produces `Dmax` on the
 device. So the chain reads `Dmax` back, sorts on the host, and then puts
@@ -1790,7 +1907,10 @@ The gather can be a host copy or a device gather. Either way it waits on the
 read-back. This is the chain's **only** device-to-host transfer before `J`
 itself, and it is named here, and in the chain adapter's docstring (#155),
 as the one a launch program would remove. **Status: inherent to the
-host-side sort;** removing it is out of this milestone's scope.
+host-side sort;** removing it is out of this milestone's scope. On the cards
+(#157) it is wider than the minimum: the `DQ` program and milestone 6's
+driver are separate programs, so `D_q` is read back with `Dmax` and staged
+into the driver's ket buffers by the host.
 
 ### The seams: `ao.j`'s `dq=` and `jab=`
 
