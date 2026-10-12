@@ -20,7 +20,10 @@ translation unit (nvcc and hipcc both accept it) with two kernels:
   from the device, not a constant. Both FMA_CHAINS configurations run and the
   faster median is the ceiling: measured on this box, 8 chains is the RTX
   3080's best (16 halves it) and 16 the RX 9060 XT's (8 is ~7% short), and a
-  probe that under-uses a card under-reports its ceiling.
+  probe that under-uses a card under-reports its ceiling. On the RX 9060 XT
+  the shortfall is the CLOCK, not the chains (#141): the cycle counter reads
+  the same 127.95 flop/clk for both, and 8 runs first, while the clock is
+  still ramping (~3.22 GHz median against 16's ~3.49).
 - `fj_triad`: STREAM's triad, `a[i] = b[i] + s * c[i]`, grid-stride, over three
   fp64 arrays of TRIAD_N elements each (256 MiB apiece, far past either card's
   last-level cache: the RTX 3080's 5 MiB L2, the RX 9060 XT's 32 MiB Infinity
@@ -44,11 +47,29 @@ above one is a bug in the probe (`check_published` refuses it), and the ratio
 of each measured value to its published figure is recorded in `raw`, not
 hidden. They never reach `device`: an uncharacterised card refuses to score,
 it does not borrow a datasheet.
+
+THE PER-CLOCK BOUND (#141). A flop/s figure is a per-clock rate times a clock,
+and a card that runs above its rated boost legitimately exceeds the flop/s
+figure quoted at that boost. Where `published[arch]["per_clock"]` names a
+quantity, the probe-bug bound for it is PER CLOCK and assumes no clock: a
+counter pass (`rocprofv3 --pmc GRBM_GUI_ACTIVE`, the GPU's active-cycle count;
+CYCLES_COMMAND), behind the gate like any phase, counts the cycles of every
+FMA launch, and the probe's own work count over them must be at or under
+`flop_per_clk` (`check_per_clock`, ProbeBug otherwise). The flop/s figure
+stays in `published` as the rated-clock figure; the measured value MAY exceed
+it, and the record says by how much and at what counted clock
+(`raw["per_clock"]`) -- reported, never clamped. gfx1200's fp64 is the one such
+row: 128 flop/clk = 32 CUs x 2 fp64 FMA lanes per CU per clock x 2 flop, with
+no reference to AMD's dual-issue fp32 figure; the data file's `per_clock`
+entry has the derivation and the counter evidence that settled it.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import json
+import re
 import socket
 import statistics
 from collections.abc import Callable, Mapping
@@ -337,6 +358,103 @@ def check_published(quantity: str, value: float, published: Mapping) -> float:
     return ratio
 
 
+# -- the per-clock bound (#141) ------------------------------------------------
+
+# The GPU's active-cycle counter: the denominator of a per-clock rate.
+CLOCK_COUNTER = "GRBM_GUI_ACTIVE"
+CYCLES_COMMAND = (f"rocprofv3 --pmc {CLOCK_COUNTER} --kernel-include-regex "
+                  "fj_fma --output-format csv -d <out> -o cycles -- "
+                  "<fj_ceilings> fma")
+
+
+def cycles_command(tool: str, binary: str, outdir: str) -> list[str]:
+    """The counter pass (CYCLES_COMMAND): every FMA launch, its cycles counted."""
+    return [tool, "--pmc", CLOCK_COUNTER, "--kernel-include-regex", "fj_fma",
+            "--output-format", "csv", "-d", outdir, "-o", "cycles", "--",
+            binary, "fma"]
+
+
+@dataclass(frozen=True)
+class Dispatch:
+    """One counted FMA launch: its chain count, GPU cycles and duration."""
+
+    chains: int
+    cycles: float
+    ns: float
+
+    @property
+    def clock_hz(self) -> float:
+        return self.cycles / (self.ns * 1e-9)
+
+
+def parse_cycles(csv_text: str) -> list[Dispatch]:
+    """rocprofv3's counter_collection CSV: one Dispatch per `fj_fma<C>` row of
+    CLOCK_COUNTER (its Start/End timestamps are the dispatch's, in ns)."""
+    got = []
+    for row in csv.DictReader(io.StringIO(csv_text)):
+        if row.get("Counter_Name") != CLOCK_COUNTER:
+            continue
+        m = re.search(r"fj_fma<(\d+)>", row["Kernel_Name"])
+        if not m:
+            continue
+        ns = float(row["End_Timestamp"]) - float(row["Start_Timestamp"])
+        cycles = float(row["Counter_Value"])
+        if not (ns > 0 and cycles > 0):
+            raise ValueError(f"dispatch {row.get('Dispatch_Id')}: "
+                             f"{CLOCK_COUNTER} {cycles} over {ns} ns -- not a "
+                             "counted launch")
+        got.append(Dispatch(int(m[1]), cycles, ns))
+    if not got:
+        raise ValueError(f"no fj_fma launch with {CLOCK_COUNTER} in the counter "
+                         "output")
+    return got
+
+
+def chains_of(run: ProbeRun) -> int:
+    """The chain count an FMA ProbeRun's header names."""
+    f = run.header.split()
+    return int(f[f.index("chains") + 1])
+
+
+def check_per_clock(runs: list[ProbeRun], dispatches: list[Dispatch],
+                    flop_per_clk: float) -> dict[str, Any]:
+    """Every counted launch's work per GPU cycle, against `flop_per_clk`.
+
+    ProbeBug if any launch did more flops per cycle than the bound: the work
+    count is the probe's own and the cycles the hardware's, so neither a clock
+    nor a datasheet enters. Returns each configuration's evidence for `raw`
+    (the clock is the counted cycles over the dispatch's duration)."""
+    if not flop_per_clk > 0:
+        raise ValueError(f"flop_per_clk must be positive, got {flop_per_clk}")
+    per = {chains_of(r): r for r in runs}
+    extra = {d.chains for d in dispatches} - set(per)
+    if extra:
+        raise ValueError(f"counted launches of fj_fma<{sorted(extra)}> that the "
+                         "timed probe did not run")
+    out: dict[str, Any] = {}
+    for chains, run in sorted(per.items()):
+        ds = [d for d in dispatches if d.chains == chains]
+        if len(ds) != WARMUP + REPEATS:
+            raise ValueError(f"fj_fma<{chains}>: {len(ds)} counted launches, "
+                             f"expected {WARMUP + REPEATS}")
+        fpc = [run.per_launch / d.cycles for d in ds]
+        worst = max(fpc)
+        if worst > flop_per_clk:
+            raise ProbeBug(
+                f"fj_fma<{chains}> did {worst:.4g} flop per GPU cycle, above "
+                f"the per-clock bound {flop_per_clk:.4g}: a bug in the probe's "
+                "work count, not a fast card")
+        clocks = sorted(d.clock_hz for d in ds[WARMUP:])
+        out[str(chains)] = {
+            "flop_per_clk_max": worst,
+            "flop_per_clk_median": statistics.median(fpc[WARMUP:]),
+            "clock_hz_median": statistics.median(clocks),
+            "clock_hz_min": clocks[0],
+            "clock_hz_max": clocks[-1],
+        }
+    return out
+
+
 def host() -> str:
     """The hostname, marked when it is a container's -- `measured.host`'s rule."""
     name = socket.gethostname()
@@ -359,6 +477,7 @@ def record(store: dict, arch: Arch, quantity: str,
            read: Callable[[str], int | None] | None = None,
            wait_s: float | None = None, cpu_busy: Callable[[], float] | None = None,
            sleep: Callable[[float], None] | None = None,
+           cycles: Callable[[], str] | None = None,
            ) -> tuple[dict, Ceiling | None, str]:
     """Run one probe phase behind the card gate; return (store, ceiling, why).
 
@@ -369,26 +488,65 @@ def record(store: dict, arch: Arch, quantity: str,
     every verdict toward compute-bound. `provenance` supplies `probe`,
     `compile`, `source_sha256`, `toolchain`, `gpu`, `date`; `read`, `wait_s`,
     `cpu_busy` and `sleep` are injectable so a test can drive the refusal.
+
+    A quantity with a PER-CLOCK bound (`published[arch]["per_clock"]`, module
+    docstring) also needs `cycles`, the counter pass returning rocprofv3's
+    counter CSV; it runs as a second gated phase, a refusal there records
+    nothing, and the bound checked is `check_per_clock`'s, not the flop/s
+    figure -- which the value may exceed, with the counted clock recorded.
     """
     if quantity not in QUANTITIES:
         raise ValueError(f"{quantity!r} is not one of {QUANTITIES}")
+    published = store["published"][arch.name]
+    bound = published.get("per_clock", {}).get(quantity)
+    if bound is not None and cycles is None:
+        raise ValueError(f"{arch.name} {quantity} is bounded per clock: it needs "
+                         "the cycle-counter pass (cycles=), not the flop/s "
+                         "figure")
+    gate_kw = {"read": read, "wait_s": wait_s, "cpu_busy": cpu_busy,
+               "sleep": sleep}
     try:
-        out, phase = gate.gated(run, backend, read=read, wait_s=wait_s,
-                                cpu_busy=cpu_busy, sleep=sleep)
+        out, phase = gate.gated(run, backend, **gate_kw)
     except gate.Contended as refused:
         return store, None, f"REFUSED {arch.name} {quantity}: {refused}"
     runs = parse_probe(out)
     if any(r.mode != PROBE_OF[quantity] for r in runs):
         raise ValueError(f"{quantity} needs the {PROBE_OF[quantity]} probe, "
                          f"got {[r.mode for r in runs]}")
-    published = store["published"][arch.name]
-    for r in runs:  # every configuration is bounded, not just the chosen one
-        check_published(quantity, max(r.rates()), published)
+    per_clock: dict[str, Any] | None = None
+    if bound is None:
+        for r in runs:  # every configuration is bounded, not just the chosen one
+            check_published(quantity, max(r.rates()), published)
+    else:
+        if not float(published[quantity]) > 0:
+            raise ValueError(f"published {quantity} must be positive")
+        try:
+            text, cphase = gate.gated(cycles, backend, **gate_kw)
+        except gate.Contended as refused:
+            return store, None, (f"REFUSED {arch.name} {quantity} (cycle "
+                                 f"counter): {refused}")
+        per_clock = {
+            "counter": CLOCK_COUNTER,
+            "command": CYCLES_COMMAND,
+            "bound_flop_per_clk": float(bound["flop_per_clk"]),
+            "configs": check_per_clock(runs, parse_cycles(text),
+                                       float(bound["flop_per_clk"])),
+            "gpu_util_before": cphase.gpu_before,
+            "gpu_util_after": cphase.gpu_after,
+        }
     parsed = best_config(runs)
     rates = sorted(parsed.rates())
     value = statistics.median(rates)
     q1, _, q3 = statistics.quantiles(rates, n=4, method="inclusive")
-    ratio = check_published(quantity, max(rates), published)
+    ratio = max(rates) / float(published[quantity])
+    if per_clock is not None:
+        chosen = per_clock["configs"][str(chains_of(parsed))]
+        per_clock["chosen"] = chains_of(parsed)
+        # the timed median's clock-equivalent at the bound, beside the
+        # counted clock: equal when the probe issues at the bound's rate
+        per_clock["value_at_bound_clock_hz"] = value / per_clock[
+            "bound_flop_per_clk"]
+        per_clock["clock_hz_median"] = chosen["clock_hz_median"]
     raw = {
         "probe_header": parsed.header,
         "configs_median": {r.header: statistics.median(r.rates()) for r in runs},
@@ -404,6 +562,9 @@ def record(store: dict, arch: Arch, quantity: str,
         "gpu_util_after": phase.gpu_after,
         "cpu_busy_permille_before": round(1000 * phase.cpu_before),
     }
+    if per_clock is not None:
+        per_clock["tool"] = provenance.get("counter_tool", "rocprofv3")
+        raw["per_clock"] = per_clock
     ceiling = Ceiling(
         value=value, unit=UNIT_OF[quantity], kind="achievable",
         probe=provenance["probe"], command=COMMAND.format(backend=backend),

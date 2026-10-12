@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "Each card's two roofline ceilings (#109), measured on this box by src/felizjueves/ceilings.py's probes behind the card gate (src/felizjueves/gate.py), and read by src/felizjueves/device.py as Arch.fp64_flops_per_s / Arch.mem_bandwidth_bytes_per_s. A quantity with no record here is NOT CHARACTERISED (0.0): that card has no ridge and gets no verdict. Values are ACHIEVABLE rates (kind), the median over the probe's timed launches, never datasheet peaks. 'published' is the vendors' figures, a sanity bound only (a measured rate above one is a bug in the probe) and the denominator of each record's ratio_to_published; it never reaches device.py. Rewritten only by the opt-in recording run each record's 'command' names.",
+ "about": "Each card's two roofline ceilings (#109), measured on this box by src/felizjueves/ceilings.py's probes behind the card gate (src/felizjueves/gate.py), and read by src/felizjueves/device.py as Arch.fp64_flops_per_s / Arch.mem_bandwidth_bytes_per_s. A quantity with no record here is NOT CHARACTERISED (0.0): that card has no ridge and gets no verdict. Values are ACHIEVABLE rates (kind), the median over the probe's timed launches, never datasheet peaks. 'published' is the vendors' figures, a sanity bound only (a measured rate above one is a bug in the probe -- except where a card's 'per_clock' names the quantity: then the bound is flop per counted GPU cycle, the flop/s figure is at the rated clock, and a card clocking above it may exceed it, #141) and the denominator of each record's ratio_to_published; it never reaches device.py. Rewritten only by the opt-in recording run each record's 'command' names.",
  "published": {
   "sm_86": {
    "fp64_flops_per_s": 465000000000.0,
@@ -9,16 +9,28 @@
    "note": "At the RATED boost clock. This card's SMI reports a 2100 MHz maximum SM clock and it ran the probe at ~1.95 GHz, so a probe reaching the hardware's issue rate could exceed 0.465 TFLOPS without a bug; the probe's best is ~0.44 (95%), so the bound has not bitten -- if a better probe trips it, check the clock before calling the probe wrong."
   },
   "gfx1200": {
-   "fp64_flops_per_s": 801000000000.0,
+   "fp64_flops_per_s": 400640000000.0,
    "mem_bandwidth_bytes_per_s": 320000000000.0,
-   "source": "AMD Radeon RX 9060 XT (Navi 44, RDNA4) as specified by AMD: 25.6 TFLOPS peak fp32 (dual-issue, 3130 MHz boost); AMD publishes no fp64 figure for it, so 0.801 TFLOPS is that fp32 peak at the 1:32 fp64 ratio third-party databases list for RDNA4 (TechPowerUp); 16 GB GDDR6, 128-bit at 20 Gbps = 320 GB/s.",
-   "note": "fp64 on gfx1200 is slow by design. ASSUMPTION, stated here rather than buried (#116): the derived 0.801 TFLOPS assumes the dual-issue that doubles RDNA4's fp32 peak applies to fp64 too, and AMD publishes nothing that settles it. If it does not, the single-issue fp32 rate is 12.8 TFLOPS and the 1:32 fp64 peak is ~0.400 TFLOPS -- BELOW the recorded 0.446 TFLOPS (112% of it), which would make this bound wrong, not the probe, and would leave the ProbeBug check on gfx1200's fp64 with no bound that bites. Read the recorded value as 56% of 0.801 under the assumption, and as above the single-issue figure without it; either way the recorded ceiling is the measurement and the ridge is computed from it (1.49 FLOP/B), never from this figure."
+   "source": "AMD Radeon RX 9060 XT (Navi 44, RDNA4): AMD publishes no fp64 figure for it. 0.4006 TFLOPS is per_clock.fp64_flops_per_s's 128 flop/clk at AMD's 3130 MHz rated boost -- derived WITHOUT AMD's 25.6 TFLOPS fp32 figure, which counts VOPD dual-issue (#141). 16 GB GDDR6, 128-bit at 20 Gbps = 320 GB/s, as specified by AMD.",
+   "per_clock": {
+    "fp64_flops_per_s": {
+     "flop_per_clk": 128.0,
+     "compute_units": 32,
+     "fp64_fma_lanes_per_cu_per_clk": 2,
+     "flop_per_fma": 2,
+     "rated_clock_hz": 3130000000.0,
+     "derivation": "32 CUs (amd-smi static --asic NUM_COMPUTE_UNITS) x 2 fp64 FMA lanes per CU per clock x 2 flop = 128 flop per GPU clock. The lane count is the 1:32 fp64 ratio third-party databases list for RDNA4 applied to the 64 fp32 FMA lanes a CU issues per clock in SINGLE issue (2 SIMD32), not to the dual-issue 128 AMD's fp32 figure counts: dual issue is VOPD, whose opcode set has no f64 operation, and the probe's gfx1200 code (hipcc --save-temps, ROCm 7.2.4) is plain v_fma_f64, 16 per loop iteration for fj_fma<16>, with no v_dual_* in the loop -- the probe is not dual-issue-shaped and cannot be.",
+     "evidence": "#141, measured on this box behind the gate, independent of any vendor figure: the cycle-counter pass (rocprofv3 1.1.0, GRBM_GUI_ACTIVE per fj_fma launch; ceilings.CYCLES_COMMAND) reads 127.95 flop per GPU cycle for fj_fma<16> and 127.93 for fj_fma<8> -- doubling the independent chains does not move it, so it is a throughput limit, not latency, and it sits 0.04% under 128 and at half the 256 a dual-issue fp64 rate would allow. The counted clock (cycles over the dispatch's duration) is ~3.49 GHz under fj_fma<16>, matching amd-smi's GFX_0 samples during the timed run (3.48-3.49 GHz), ABOVE both the 3130 MHz rated boost and the 2700 MHz amd-smi reports as MAX_CLK. Each recorded row's raw.per_clock carries its own counter pass.",
+     "check": "ceilings.check_per_clock: every counted launch's flops over its GPU cycles must be <= flop_per_clk, else ProbeBug. This bound needs no clock; the flop/s figure above is the rated-clock figure only, and the measured value may exceed it."
+    }
+   },
+   "note": "SETTLED (#141), the #116 assumption retired: fp64 on this card is 2 FMA lanes per CU per clock, the single-issue reading; the 0.801 TFLOPS figure that assumed dual-issue applies to fp64 is withdrawn as a bound (it was 2x too high). The measured ceiling EXCEEDS the 0.4006 TFLOPS rated-clock figure (~111%) because the card runs fp64-only work at ~3.49 GHz, above its rated boost -- the one row whose value legitimately exceeds its own flop/s figure; the bound that bites is per clock (per_clock.fp64_flops_per_s), and the probe runs at ~99.96% of it. The ridge reads the MEASURED ceiling (ceilings.gfx1200), i.e. the card at the clock it ran the probe at; it never reads this figure or the per-clock bound."
   }
  },
  "ceilings": {
   "gfx1200": {
    "fp64_flops_per_s": {
-    "value": 446416364605.2088,
+    "value": 446182047479.29956,
     "unit": "flop/s",
     "kind": "achievable",
     "probe": "ceilings.PROBE_SOURCE (fj_fma<C>, fj_triad)",
@@ -27,27 +39,54 @@
     "source_sha256": "bf20e288a01205ce333b1ebfc3488698692246d74db6003932b9a59b7ed6827c",
     "toolchain": "hipcc / ROCm 7.2.4",
     "arch": "gfx1200",
-    "host": "a37a1afdb77b (container)",
+    "host": "e614efd48a48 (container)",
     "gpu": "AMD Radeon Graphics (device 0x7590, gfx1200)",
-    "date": "2026-10-11",
+    "date": "2026-10-12",
     "repeats": 31,
     "raw": {
      "probe_header": "probe fma chains 16 iters 16384 grid 512 block 256 sms 16 flops_per_launch 68719476736",
      "configs_median": {
-      "probe fma chains 8 iters 16384 grid 512 block 256 sms 16 flops_per_launch 34359738368": 414959174372.7764,
-      "probe fma chains 16 iters 16384 grid 512 block 256 sms 16 flops_per_launch 68719476736": 446416364605.2088
+      "probe fma chains 8 iters 16384 grid 512 block 256 sms 16 flops_per_launch 34359738368": 416895859434.26434,
+      "probe fma chains 16 iters 16384 grid 512 block 256 sms 16 flops_per_launch 68719476736": 446182047479.29956
      },
-     "best": 446642956296.60284,
-     "worst": 442608255019.8338,
-     "q1": 446232689627.88135,
-     "q3": 446493241350.1935,
+     "best": 446349335005.2248,
+     "worst": 443226758819.6637,
+     "q1": 446113520019.7535,
+     "q3": 446236027512.0662,
      "warmup": 5,
-     "published": 801000000000.0,
-     "ratio_to_published": 0.5573238010052545,
-     "best_ratio_to_published": 0.5576066870119886,
+     "published": 400640000000.0,
+     "ratio_to_published": 1.11367324151183,
+     "best_ratio_to_published": 1.1140907922454693,
      "gpu_util_before": 4,
      "gpu_util_after": 0,
-     "cpu_busy_permille_before": 97
+     "cpu_busy_permille_before": 68,
+     "per_clock": {
+      "counter": "GRBM_GUI_ACTIVE",
+      "command": "rocprofv3 --pmc GRBM_GUI_ACTIVE --kernel-include-regex fj_fma --output-format csv -d <out> -o cycles -- <fj_ceilings> fma",
+      "bound_flop_per_clk": 128.0,
+      "configs": {
+       "8": {
+        "flop_per_clk_max": 127.93070302950589,
+        "flop_per_clk_median": 127.92951604859888,
+        "clock_hz_median": 3488295605.8996677,
+        "clock_hz_min": 3429968432.5969014,
+        "clock_hz_max": 3489561963.9363832
+       },
+       "16": {
+        "flop_per_clk_max": 127.95232141435909,
+        "flop_per_clk_median": 127.94918623967894,
+        "clock_hz_median": 3488519904.0069942,
+        "clock_hz_min": 3487259079.0516124,
+        "clock_hz_max": 3490005854.863977
+       }
+      },
+      "gpu_util_before": 0,
+      "gpu_util_after": 0,
+      "chosen": 16,
+      "value_at_bound_clock_hz": 3485797245.932028,
+      "clock_hz_median": 3488519904.0069942,
+      "tool": "rocprofv3 1.1.0"
+     }
     }
    },
    "mem_bandwidth_bytes_per_s": {
