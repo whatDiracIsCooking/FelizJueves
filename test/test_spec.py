@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import AM_LENGTH, Operator, Spec, Target
 
 
 def _spec(**kw) -> Spec:
@@ -78,8 +78,89 @@ def test_frozen() -> None:
         {"n_batches": -3},
         {"n_batches": 3.0},
         {"n_batches": True},
+        {"am": (4, 4)},  # J takes a quartet, not a pair
+        {"am": (4,)},
+        {"am": ()},
     ],
 )
 def test_illegal_values_are_refused(bad: dict) -> None:
     with pytest.raises(ValueError):
         _spec(**bad)
+
+
+# #150: the pair targets. A pair class is (la, lb); a quartet (l1, l2 | l3, l4).
+
+PAIR_TARGETS = (Target.DQ, Target.JAB)
+
+
+def test_the_target_enum_is_widened_not_renamed() -> None:
+    assert [t.value for t in Target] == ["j", "dq", "jab"]
+    assert AM_LENGTH == {Target.J: 4, Target.DQ: 2, Target.JAB: 2}
+
+
+@pytest.mark.parametrize("target", PAIR_TARGETS)
+def test_a_pair_target_takes_two_shells_and_only_two(target: Target) -> None:
+    assert _spec(target=target, am=(2, 1)).am == (2, 1)
+    for am in ((4, 4, 4, 4), (2, 1, 0), (2,), (2, -1), (2, 1.0)):
+        with pytest.raises(ValueError):
+            _spec(target=target, am=am)
+
+
+def test_j_takes_four_shells_and_only_four() -> None:
+    assert _spec(am=(1, 0, 1, 0)).am == (1, 0, 1, 0)
+    for am in ((1, 0), (1, 0, 1), (1, 0, 1, 0, 0)):
+        with pytest.raises(ValueError):
+            _spec(am=am)
+
+
+@pytest.mark.parametrize("target", PAIR_TARGETS)
+def test_total_am_is_the_sum_for_a_pair_too(target: Target) -> None:
+    assert _spec(target=target, am=(3, 2)).total_am == 5
+    assert _spec(target=target, am=(0, 0)).total_am == 0
+    assert _spec(am=(3, 2, 0, 0)).total_am == 5  # same sum, different classes
+    assert "NO published table row" in Spec.total_am.__doc__
+
+
+@pytest.mark.parametrize("target", PAIR_TARGETS)
+@pytest.mark.parametrize("n", [3, 6, 9, 12])
+def test_a_pair_target_is_never_batched(target: Target, n: int) -> None:
+    # A legal quartet batch count is still refused for a pair: batching
+    # partitions a quartet's Hermite targets, and a pair has none.
+    assert _spec(n_batches=n).n_batches == n
+    with pytest.raises(ValueError, match="never batched"):
+        _spec(target=target, am=(2, 1), n_batches=n)
+    assert _spec(target=target, am=(2, 1)).n_batches == 1
+
+
+def test_a_pair_key_is_spelled_without_a_bar() -> None:
+    assert _spec(target=Target.DQ, am=(2, 1)).key() == "coulomb/d0/(2,1)/b1/dq/literal"
+    assert _spec(target=Target.JAB, am=(0, 3), levers=("x",)).key() == (
+        "coulomb/d0/(0,3)/b1/jab/x"
+    )
+
+
+def test_a_pair_key_never_collides_with_a_quartet_key() -> None:
+    ls = range(4)
+    quartets = {
+        _spec(am=(a, b, c, d), levers=lv).key()
+        for a in ls for b in ls for c in ls for d in ls for lv in ((), ("x",))
+    }
+    pairs = {
+        _spec(target=t, am=(a, b), levers=lv).key()
+        for t in PAIR_TARGETS for a in ls for b in ls for lv in ((), ("x",))
+    }
+    assert len(quartets) == 4**4 * 2 and len(pairs) == 2 * 4**2 * 2
+    assert quartets.isdisjoint(pairs)
+    # Not just a different target slot: the class field alone tells them apart.
+    q_classes = {k.split("/")[2] for k in quartets}
+    p_classes = {k.split("/")[2] for k in pairs}
+    assert q_classes.isdisjoint(p_classes)
+    assert all("|" in c for c in q_classes) and not any("|" in c for c in p_classes)
+
+
+def test_a_quartet_key_is_byte_identical_to_before_the_widening() -> None:
+    # The join key of 122 measured rows: these strings are pre-#150 literals.
+    assert _spec(am=(0, 0, 0, 0)).key() == "coulomb/d0/(0,0|0,0)/b1/j/literal"
+    assert _spec(am=(8, 0, 8, 0), n_batches=12, levers=("recycle",)).key() == (
+        "coulomb/d0/(8,0|8,0)/b12/j/recycle"
+    )
