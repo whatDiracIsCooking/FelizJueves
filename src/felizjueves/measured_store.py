@@ -299,6 +299,16 @@ HEADER = {
               "the clock is NEUTRAL at every cell on sm_86; on gfx1200 the "
               "declared rule reads 4 cells at L <= 10 as SLOWER, on that "
               "identical code -- the A/B's noise floor, not the lever.",
+    "asym": "#113: rows keyed .../b<n>/j/asym@... are the asymmetric-split "
+            "STUDY (felizjueves.asym; its docstring is the rule, committed "
+            "before any such row existed): L in {13, 16} x n_batches in {4, "
+            "5, 7, 8}, a batch list Spec and partition refuse, each timed "
+            "against its two nearest legal neighbours in the same session "
+            "(raw 'wallclock:control:b<n>:*'; no literal row re-timed). A "
+            "phase the card was taken during was discarded and retaken (raw "
+            "'wallclock:gate_discarded_phases'). CONCLUSION: every cell is "
+            "WORSE than its best legal neighbour on both sm_86 and gfx1200, "
+            "so jengine/symmetry-breaking-splits-are-worse is asserted.",
 }
 
 
@@ -507,7 +517,9 @@ def load(path: Path = STORE) -> dict[str, Measured]:
 
 def merge(store: Mapping[str, Measured], key: MeasuredKey,
           row: Measured) -> dict[str, Measured]:
-    """`store` with `row` at `key`, REPLACING any row already there."""
+    """`store` with `row` at `key`, REPLACING any row already there. `key`
+    is a `MeasuredKey`, or anything keyed its way (`arch`, `toolchain`,
+    `key()`): #113's `asym.AsymKey`, whose cell is not a Spec."""
     if (key.arch.name, key.toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"row is {row.arch}/{row.toolchain}, key {key.key()!r}")
     return {**store, key.key(): row}

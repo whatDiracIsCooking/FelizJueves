@@ -542,6 +542,55 @@ generation time is **dispatch**, which has no home in this repo yet; this table
 is evidence for that future layer, not a policy the generator silently
 follows.
 
+### Measured: the asymmetric split, measured and refused (#113)
+
+`[JEngine, v2, §5]` calls splits that break the three-way symmetry
+"unnecessary and worse". The generator still **refuses** such a count
+(`spec.is_batch_count`, `partition`); `felizjueves.asym` is a study path that
+builds the asymmetric batch list itself, checks it partitions the class, and
+keys its rows `.../b<n>/j/asym@...` beside the literal ones, which it does not
+touch. Its docstring is the rule, committed before any asymmetric row existed:
+L ∈ {13, 16} × n ∈ {4, 5, 7, 8}; per-direction counts minimax by the paper's
+own criterion (then the next-largest batch, ties to x); each cell timed in one
+session against its nearest legal counts `3⌊n/3⌋` and `+3`, on both of #53's
+inputs; an input is *slower* / *faster* against the better neighbour by more
+than the larger IQR (#60's rule); a cell is WORSE if slower on one input and
+faster on none. Medians in ms, asymmetric arm against its best neighbour:
+
+| arch | L | n (kx, ky, kz) | wide-T | near-T |
+|---|---|---|---|---|
+| `sm_86` | 13 | 4 (2, 1, 1) | 183.4 vs b3 153.2: slower | 31.3 vs b3 30.1: slower |
+| `sm_86` | 13 | 5 (2, 2, 1) | 208.1 vs b3 151.0: slower | 32.6 vs b3 29.7: slower |
+| `sm_86` | 13 | 7 (3, 2, 2) | 275.0 vs b6 237.2: slower | 36.7 vs b6 34.3: slower |
+| `sm_86` | 13 | 8 (3, 3, 2) | 308.1 vs b6 237.3: slower | 39.0 vs b6 34.3: slower |
+| `sm_86` | 16 | 4 (2, 1, 1) | 350.0 vs b3 292.7: slower | 113.9 vs b6 108.9: slower |
+| `sm_86` | 16 | 5 (2, 2, 1) | 409.1 vs b3 293.6: slower | 111.7 vs b6 109.5: slower |
+| `sm_86` | 16 | 7 (3, 2, 2) | 501.2 vs b6 463.0: slower | 106.7 vs b9 100.2: slower |
+| `sm_86` | 16 | 8 (3, 3, 2) | 539.2 vs b6 463.1: slower | 103.2 vs b9 100.2: slower |
+| `gfx1200` | 13 | 4 (2, 1, 1) | 300.0 vs b3 260.4: slower | 80.2 vs b6 80.3: neutral |
+| `gfx1200` | 13 | 5 (2, 2, 1) | 340.3 vs b3 260.1: slower | 80.7 vs b6 80.1: slower |
+| `gfx1200` | 13 | 7 (3, 2, 2) | 432.6 vs b6 379.0: slower | 84.1 vs b6 85.3: neutral |
+| `gfx1200` | 13 | 8 (3, 3, 2) | 486.1 vs b6 380.4: slower | 88.5 vs b6 80.3: slower |
+| `gfx1200` | 16 | 4 (2, 1, 1) | 658.0 vs b3 582.2: slower | 307.3 vs b3 308.0: neutral |
+| `gfx1200` | 16 | 5 (2, 2, 1) | 736.3 vs b3 582.3: slower | 310.1 vs b3 308.4: slower |
+| `gfx1200` | 16 | 7 (3, 2, 2) | 867.2 vs b6 814.4: slower | 305.0 vs b9 303.8: slower |
+| `gfx1200` | 16 | 8 (3, 3, 2) | 924.4 vs b6 813.9: slower | 304.9 vs b9 303.8: slower |
+
+Every cell is WORSE on both cards — slower than the best legal count on wide-T
+everywhere, never faster on either input — so
+`jengine/symmetry-breaking-splits-are-worse` is **asserted**
+(`test_measured.py::test_asymmetric_splits_are_worse_on_both_cards`). The
+three near-T neutrals on `gfx1200` are where its near-T clock is flat in the
+batch count (80–85 ms at L = 13, 304–310 ms at L = 16): there an asymmetric
+split ties, and the wide-T loss decides. Spills and registers are reported
+(`--asym-verdict`), never judged: on both cards every asymmetric cell's spill
+sits strictly between its two neighbours'. Timed on 2026-10-12
+behind the gate, one session per cell set; a phase whose after-reading showed
+the card taken by something outside the container was discarded and retaken
+(raw `wallclock:gate_discarded_phases`). Reproduce with
+`python -m felizjueves.measured --remeasure --asym`, then the opt-in sweep with
+`FJ_WALLCLOCK_ASYM=1`.
+
 ### Measured: each card's roofline ceilings (#109)
 
 A roofline verdict (compute- or memory-bound) needs a **ridge**, the fp64 rate

@@ -8,6 +8,8 @@
     python -m felizjueves.measured --nine-vs-twelve     # #60's comparison
     python -m felizjueves.measured --remeasure --subgrid --lever recycle
     python -m felizjueves.measured --lever-ab recycle   # #55's comparison
+    python -m felizjueves.measured --remeasure --asym   # #113's study cells
+    python -m felizjueves.measured --asym-verdict       # #113's comparison
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -32,6 +34,11 @@ WHERE THE NUMBERS COME FROM, per vendor -- they are not the same quantity:
   store/load split, so `spill_store` and `spill_load` both carry the
   VGPR + SGPR spill count, and `spill_unit` says so. Every number the
   remark printed (ScratchSize, Occupancy, ...) is kept in `raw`.
+
+THE ASYMMETRIC STUDY (#113) is `felizjueves.asym`: its `AsymCell`s are
+compiled here like any cell (`cell_kernels` builds them through the study,
+`measured_key` keys them `.../asym@...`), and its rule is that module's
+docstring. An `AsymCell` is not a `Spec`; nothing else here accepts one.
 
 Neither measurement flag changes code generation: both are reports. The rest
 of the flag set is `devtools/config.sh`'s NVCC_FLAGS / HIPCC_FLAGS, read by
@@ -124,6 +131,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from felizjueves.asym import (
+    ASYM_CELLS,
+    AsymCell,
+    AsymKey,
+    arch_verdict,
+    asym_vs_neighbours,
+)
 from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Lit, Space
@@ -153,17 +167,29 @@ from felizjueves.spec import Spec
 DEFAULT_LS = tuple(range(0, 17))
 
 
-def cell_kernels(spec: Spec) -> tuple[Kernel, ...]:
+def cell_kernels(spec: Spec | AsymCell) -> tuple[Kernel, ...]:
     """A cell's kernels, BUILT then LOWERED: `build_pq_kernels` of `spec`
     without the lowering levers (`lower.LEVERS`, which neither the builder
     nor the plan layer accepts), then `lower` on each finished kernel as
     those levers say. No lowering lever: `build_pq_kernels(spec)`, the very
-    same objects -- the literal arm is not touched."""
+    same objects -- the literal arm is not touched. An `AsymCell` (#113) is
+    the study's own batch list (`AsymCell.kernels`), never lowered."""
+    if isinstance(spec, AsymCell):
+        return spec.kernels()
     rest = tuple(lv for lv in spec.levers if lv not in LEVERS)
     if rest == spec.levers:
         return build_pq_kernels(spec)
     return tuple(lower(k, recycle_slots=RECYCLE in spec.levers)
                  for k in build_pq_kernels(replace(spec, levers=rest)))
+
+
+def measured_key(spec: Spec | AsymCell, arch: Arch,
+                 toolchain: str) -> MeasuredKey | AsymKey:
+    """The row key of a cell: `MeasuredKey` for a Spec, `asym.AsymKey`
+    (`.../asym@...`) for the asymmetric study's cell."""
+    if isinstance(spec, AsymCell):
+        return AsymKey(spec, arch, toolchain)
+    return MeasuredKey(spec, arch, toolchain)
 
 
 NV_SPILL_UNIT = "bytes (ptxas -v: spill stores / spill loads)"
@@ -416,7 +442,7 @@ def cell_row(backend: Backend, spec: Spec, units: Sequence[Unit],
         kernel=",".join(u.name for u in units),
         spill_unit=NV_SPILL_UNIT if backend.name == "cuda" else AMD_SPILL_UNIT,
         command=command, source_sha256=cell_sha256(units), raw=raw)
-    return MeasuredKey(spec, backend.arch, toolchain), row
+    return measured_key(spec, backend.arch, toolchain), row
 
 
 def measure(backend: Backend, cls: int | Spec, *, compiler: str,
@@ -722,6 +748,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--lever-ab", default=None, metavar="LEVER",
                     help="print #55's A/B of LEVER against literal, per arch "
                          "and cell")
+    ap.add_argument("--asym", action="store_true",
+                    help="with --remeasure: #113's asymmetric study cells "
+                         "(asym.ASYM_CELLS)")
+    ap.add_argument("--asym-verdict", action="store_true",
+                    help="print #113's asymmetric split against its "
+                         "neighbours, per arch and cell")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--store", type=Path, default=STORE)
     try:
@@ -733,9 +765,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             if args.lever and not args.subgrid:
                 raise ValueError("--lever needs --subgrid")
+            if args.asym and (args.subgrid or args.lever):
+                raise ValueError("--asym is its own cell set")
             grid = lever_cells(args.lever) if args.lever else SUBGRID
             cells = grid if args.subgrid else args.Ls
-            if args.subgrid and args.n_batches:
+            if args.asym:
+                grid = cells = ASYM_CELLS
+            if (args.subgrid or args.asym) and args.n_batches:
                 cells = [s for s in grid if s.n_batches in args.n_batches]
             remeasure(names, cells, args.j, args.store)
         except (RuntimeError, ValueError) as e:
@@ -768,6 +804,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                       f"{c.near[0] / ms:.3f}+-{c.near[1] / ms:.3f} -> "
                       f"{c.near[2] / ms:.3f}+-{c.near[3] / ms:.3f} ms "
                       f"{c.near_sign} -> {c.lever} {c.verdict.upper()}")
+        return 0
+    if args.asym_verdict:
+        ms = 1e6
+        for arch in (SM_86.name, GFX1200.name):
+            for cell in ASYM_CELLS:
+                try:
+                    c = asym_vs_neighbours(got, arch, cell)
+                except KeyError as e:
+                    print(f"{arch} {e}")
+                    continue
+                lo, hi = c.neighbours
+
+                def arms(t: tuple, lo: int = lo, hi: int = hi) -> str:
+                    return "  ".join(f"{n} {m / ms:.3f}+-{q / ms:.3f}"
+                                     for n, (m, q) in zip(
+                                         (f"b{lo}", "asym", f"b{hi}"), t,
+                                         strict=True))
+
+                print(f"{arch} L={c.L} b{c.n_batches} {c.ks}: spill "
+                      f"{c.spill}, regs {c.registers}; wide {arms(c.wide)} "
+                      f"ms -> {c.wide_sign} vs b{c.wide_best}; near "
+                      f"{arms(c.near)} ms -> {c.near_sign} vs "
+                      f"b{c.near_best} => {c.verdict.upper()}")
+            try:
+                print(f"{arch}: {arch_verdict(got, arch).upper()}")
+            except KeyError as e:
+                print(f"{arch}: cannot judge ({e})")
         return 0
     if args.nine_vs_twelve:
         for arch in (SM_86.name, GFX1200.name):

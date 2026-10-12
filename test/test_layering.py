@@ -160,8 +160,10 @@ RULES: dict[str, Rule] = {
         "`python -m felizjueves.measured` (#28). Their own rule, so that emit/*'s "
         "stays narrow. A driver also LOWERS what it built when the Spec names "
         "a lowering lever (`measured.cell_kernels`, #55): build -> lower -> emit. "
-        "`measured` writes its rows into `measured_store` (#94)",
-        ("spec", "device", "ir", "kernel", "lower", "emit", "measured_store"),
+        "`measured` writes its rows into `measured_store` (#94), and compiles "
+        "#113's asymmetric study cells through `asym`",
+        ("spec", "device", "ir", "kernel", "lower", "emit", "measured_store",
+         "asym"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         interp="a driver ships kernels; it does not check them -- the tests do",
@@ -180,6 +182,22 @@ RULES: dict[str, Rule] = {
              "calibrated instrument the literature floors are measured with",
         literature="nothing in KernelCost may feed a literature floor "
                    "(lower.py); the limits it records are read by tests",
+        reference=_GROUND_TRUTH),
+    "study": _rule(
+        "asym.py (#113): the asymmetric split, a STUDY that builds a batch "
+        "list the generator refuses (plan + the builder's `_pq_kernel` + "
+        "`passes.atomize`) and judges its rows against the literal ones read "
+        "from the store. Not `builder`: it reads the store; not `analysis`: "
+        "it plans",
+        ("spec", "device", "ir", "plan", "kernel", "passes", "measured_store"),
+        literature="the study's verdict is recorded by hand in claims.json / "
+                   "limits.json and read by tests; nothing measured may feed "
+                   "a literature floor",
+        measured="the study reads the STORE; the driver compiles its cells, "
+                 "never the reverse (#94)",
+        emit="the study builds kernels; spelling them is the driver's job",
+        interp="the kernel tier checks the study's kernels, not the "
+               "interpreter",
         reference=_GROUND_TRUTH),
     "store": _rule(
         "measured_store.py (#94): the `Measured` record, its file and read "
@@ -273,6 +291,7 @@ RULE_OF: dict[str, str] = {
     "emit.__main__": "driver",
     "measured": "driver",
     "measured_store": "store",
+    "asym": "study",
     "kernelrank": "analysis",
     "batchreport": "analysis",
     "ao": "ao",
@@ -330,9 +349,11 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "spec"),
-    "measured": ("device", "emit.cuda", "emit.hip", "ir", "kernel", "lower",
-                 "measured_store", "spec"),
+    "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "kernel",
+                 "lower", "measured_store", "spec"),
     "measured_store": ("device", "kernel", "lower", "spec"),
+    "asym": ("device", "ir", "kernel", "measured_store", "passes",
+             "plan.batching", "plan.dag", "plan.sieve", "plan.targets", "spec"),
     "kernelrank": ("device", "kernel", "lower", "measured_store", "spec"),
     "batchreport": ("device", "measured_store"),
     "ao": (),
