@@ -811,6 +811,87 @@ come from one input, with L2-resident batches; `[6|6]` is unmeasured. The
 paper's own claim, `jengine/batching-crosses-the-ridge`, stays
 `unverifiable`, and so does `jengine/nine-batches-suffice`.
 
+### Measured: three instruments, one subgrid — the cross-read (#115)
+
+The repo ranks a batch count three ways. Each has its own section above and
+its own test:
+
+- **the model**, `KernelCost.traffic` summed over a cell's batch kernels
+  (#54). Its *pick* is the set of counts at its minimum, ties kept;
+- **the clock**, the best-median count on each input (#56);
+- **the counters**, through #114's crossing rule. The *first compute-bound
+  count* is 1 when a class is compute-bound already at one batch, and the
+  crossing count when it crosses.
+
+`src/felizjueves/crossread.py` reads them against each other per
+`(L, arch)`. `data/measured/crossread.json` is the table, and
+`test/test_kernelrank.py` recomputes it. The counters were taken on the
+**wide-T** input only, so only the wide clock flag compares like with like.
+The near flag sets a near-T clock against a wide-T verdict. `gfx1200` has no
+counter rows (`measured_store.UNMEASURED`). Its crossing column says *could
+not measure*, and every flag that needs the counters is `n/a` there: an
+absence, never a disagreement and never a zero.
+
+**The choice is the clock's, everywhere.** `choice` is the clock's best and
+nothing else. The test swaps the model for its reverse and checks that no
+choice moves. The model and the counters choose nothing. The counters can
+only explain a choice or fail to. Four L on two cards gives an order, never a
+prediction interval.
+
+| arch | L | model pick (traffic, summed) | clock wide | clock near | first compute-bound (counters, wide-T) | model = clock (wide, near) | clock = crossing (wide, near) | model ∋ crossing |
+|---|---|---|---|---|---|---|---|---|
+| sm_86 | 7 | 3, 6, 9, 12 | **1** | **1** | already at 1 | **no**, **no** | yes, yes | **no** |
+| sm_86 | 10 | 3, 6, 9, 12 | **1** | **1** | already at 1 | **no**, **no** | yes, yes | **no** |
+| sm_86 | 13 | 6, 9, 12 | **1** | **3** | already at 1 | **no**, **no** | yes, **no** | **no** |
+| sm_86 | 16 | 12 | **1** | **9** | crossed at 3 | **no**, **no** | **no**, **no** | **no** |
+| gfx1200 | 7 | 3, 6, 9, 12 | **1** | **1** | could not measure | **no**, **no** | n/a, n/a | n/a |
+| gfx1200 | 10 | 6, 9, 12 | **1** | **3** | could not measure | **no**, **no** | n/a, n/a | n/a |
+| gfx1200 | 13 | 9, 12 | **1** | **6** | could not measure | **no**, **no** | n/a, n/a | n/a |
+| gfx1200 | 16 | 12 | **1** | **12** | could not measure | **no**, yes | n/a, n/a | n/a |
+
+(Flags are for #114's cell variant. The per-kernel variant gives the same
+first compute-bound count at every L on `sm_86`, and its flags are in the data
+file.)
+
+**Does the clock's count coincide with the first compute-bound one?** On
+`sm_86`, only where nothing crosses. At L = 7, 10 and 13 on wide-T, and at
+L = 7 and 10 on near-T, both say 1. One batch is already past the ridge and
+the clock does not split, so that agreement shows nothing about the
+mechanism. Where the ridge *is* crossed (L = 16, at 3), the clock disagrees
+on both inputs:
+
+- **wide-T: crossing the ridge makes the kernel slower.** Three batches lift
+  L = 16 from 0.40 to 1.52 FLOP/B. They get there by adding work as well as by
+  removing traffic: counted fp64 FLOPs rise 1.55x while DRAM bytes fall 2.47x.
+  Past the ridge the added FLOPs are paid in full, and the median rises 1.84x.
+  So 1 stays fastest. Intensity is a ratio, and batching raises it partly by
+  raising the numerator.
+- **near-T: the clock improves past the crossing, and also without one.** At
+  L = 16 the clock keeps improving up to 9, though every count from 3 is
+  already past the ridge. At L = 13 it prefers 3 although one batch is already
+  compute-bound. Both gains follow the spill falling, not a crossing. Both
+  also set a near-T clock against a wide-T verdict: no near-T counter row
+  exists.
+
+So on this card the paper's implicit mechanism (the clock improves *because*
+the ridge is crossed) is **not** what the measurements show. Where batching
+pays (near-T, L ≥ 13), it pays through spills on a kernel that is already
+compute-bound. Where the ridge is crossed, it costs. This says nothing about
+`[JEngine, v2, §7.2]`'s A100, whose ridge is a different number.
+
+**The model never names the clock's or the counters' count**, except once.
+Its summed traffic only falls with `n_batches` and has no term for the
+per-batch redundant work, so it never picks 1. Its one agreement with the
+clock (gfx1200, L = 16, near-T, both 12) is the edge of the subgrid, not a
+correct ranking. Against the counters it answers a different question. The
+crossing count is a threshold, the first count that clears the ridge. The
+model's pick is a minimum, and a register-traffic model carries no ridge.
+
+Each kind of disagreement is a `StructuralLimit` in
+`data/measured/limits.json` (`asserted_value.cross_read = true`), with its
+mechanism and the numbers above. The test fails on any disagreement that no
+record covers, and on any record that is no longer a disagreement.
+
 ## The pipeline
 
 This is the algorithm the repo *is* (`[JEngine, v2, §6]`):

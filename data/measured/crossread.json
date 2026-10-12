@@ -1,0 +1,920 @@
+{
+ "schema": 1,
+ "about": "The three ways this repo ranks a batch count (KernelCost's model, #54; the wall-clock recommendation, #56; the counters' ridge crossing, #112/#114) read against each other per (L, arch) of measured.SUBGRID (felizjueves.crossread, #115). The choice is the clock's, everywhere: Measured outranks Cost. Every disagreement is a StructuralLimit in data/measured/limits.json. An order, never a prediction. Recomputed by test/test_kernelrank.py.",
+ "header": {
+  "model": "kernelrank.model_cell(spec, kernelrank.BUDGET[arch]).traffic_sum: KernelCost.traffic summed over the batch kernels (#54's headline). order = batch counts grouped by value, ascending; pick = the first group (ties kept).",
+  "clock": "batchreport.recommend: best median per input, with resolved and within_spread as #56 defines them.",
+  "counters": "ridge.crossing, both variants (#114's declared rule); first_compute_bound = 1 if compute-bound already at 1 batch, the crossing count if crossed, null if never. The counter run is the WIDE-T input only, so clock.wide is the same-input comparison and clock.near is not.",
+  "choice": "The clock's best per input, and only that: Measured outranks Cost. The model and the counters choose nothing.",
+  "agree": "model_clock: clock best in model pick. clock_crossing: clock best == first compute-bound count. model_crossing: first compute-bound count in model pick. null = the card could not be measured (measured_store.UNMEASURED): an absence, not a disagreement.",
+  "small_sample": "4 L x 2 cards x 5 batch counts. Each cell reports which count each instrument names, never a prediction interval or a pooled score.",
+  "disagreements": "Each is covered by a StructuralLimit in data/measured/limits.json whose asserted_value has cross_read = true.",
+  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.crossread --write"
+ },
+ "rows": [
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "values": [
+     50,
+     0,
+     0,
+     0,
+     0
+    ],
+    "order": [
+     [
+      3,
+      6,
+      9,
+      12
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     3,
+     6,
+     9,
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "cell": {
+     "answer": "compute-bound already at 1 batch",
+     "count": null,
+     "bound": [
+      [
+       1,
+       true
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 1
+    },
+    "per-kernel": {
+     "answer": "compute-bound already at 1 batch",
+     "count": null,
+     "bound": [
+      [
+       1,
+       true
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 1
+    }
+   },
+   "choice": {
+    "wide": 1,
+    "near": 1
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": true,
+      "near": true
+     },
+     "per-kernel": {
+      "wide": true,
+      "near": true
+     }
+    },
+    "model_crossing": {
+     "cell": false,
+     "per-kernel": false
+    }
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "values": [
+     2897,
+     0,
+     0,
+     0,
+     0
+    ],
+    "order": [
+     [
+      3,
+      6,
+      9,
+      12
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     3,
+     6,
+     9,
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "cell": {
+     "answer": "compute-bound already at 1 batch",
+     "count": null,
+     "bound": [
+      [
+       1,
+       true
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 1
+    },
+    "per-kernel": {
+     "answer": "compute-bound already at 1 batch",
+     "count": null,
+     "bound": [
+      [
+       1,
+       true
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 1
+    }
+   },
+   "choice": {
+    "wide": 1,
+    "near": 1
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": true,
+      "near": true
+     },
+     "per-kernel": {
+      "wide": true,
+      "near": true
+     }
+    },
+    "model_crossing": {
+     "cell": false,
+     "per-kernel": false
+    }
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "values": [
+     11798,
+     5300,
+     0,
+     0,
+     0
+    ],
+    "order": [
+     [
+      6,
+      9,
+      12
+     ],
+     [
+      3
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     6,
+     9,
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 3,
+     "resolved": true,
+     "within_spread": [
+      3
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "cell": {
+     "answer": "compute-bound already at 1 batch",
+     "count": null,
+     "bound": [
+      [
+       1,
+       true
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 1
+    },
+    "per-kernel": {
+     "answer": "compute-bound already at 1 batch",
+     "count": null,
+     "bound": [
+      [
+       1,
+       true
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 1
+    }
+   },
+   "choice": {
+    "wide": 1,
+    "near": 3
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": true,
+      "near": false
+     },
+     "per-kernel": {
+      "wide": true,
+      "near": false
+     }
+    },
+    "model_crossing": {
+     "cell": false,
+     "per-kernel": false
+    }
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 127,
+    "values": [
+     32827,
+     24651,
+     10912,
+     1845,
+     1574
+    ],
+    "order": [
+     [
+      12
+     ],
+     [
+      9
+     ],
+     [
+      6
+     ],
+     [
+      3
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 9,
+     "resolved": true,
+     "within_spread": [
+      9
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "cell": {
+     "answer": "crossed",
+     "count": 3,
+     "bound": [
+      [
+       1,
+       false
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 3
+    },
+    "per-kernel": {
+     "answer": "crossed",
+     "count": 3,
+     "bound": [
+      [
+       1,
+       false
+      ],
+      [
+       3,
+       true
+      ],
+      [
+       6,
+       true
+      ],
+      [
+       9,
+       true
+      ],
+      [
+       12,
+       true
+      ]
+     ],
+     "first_compute_bound": 3
+    }
+   },
+   "choice": {
+    "wide": 1,
+    "near": 9
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": false,
+      "near": false
+     },
+     "per-kernel": {
+      "wide": false,
+      "near": false
+     }
+    },
+    "model_crossing": {
+     "cell": false,
+     "per-kernel": false
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "values": [
+     259,
+     0,
+     0,
+     0,
+     0
+    ],
+    "order": [
+     [
+      3,
+      6,
+      9,
+      12
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     3,
+     6,
+     9,
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "could_not_measure": "COULD NOT MEASURE (#112). rocprofv3 1.1.0 cannot run in this container: librocprofiler-sdk.so cannot load libdw.so.1 or libhsa-amd-aqlprofile64.so.1 (no root to install them here; docker/install-rocm.sh now installs libdw1 and hsa-amd-aqlprofile, so a rebuilt image can collect the bytes). And gfx1200 exposes NO fp64 instruction counter in rocprofiler-sdk (its counter definitions have none for gfx12), so even a working rocprofv3 gives no measured FLOP count and hence no measured intensity: an AMD roofline row needs a FLOP count from elsewhere, labelled as such. No gfx1200 row exists; that is not a zero."
+   },
+   "choice": {
+    "wide": 1,
+    "near": 1
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": null,
+      "near": null
+     },
+     "per-kernel": {
+      "wide": null,
+      "near": null
+     }
+    },
+    "model_crossing": {
+     "cell": null,
+     "per-kernel": null
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "values": [
+     3489,
+     516,
+     0,
+     0,
+     0
+    ],
+    "order": [
+     [
+      6,
+      9,
+      12
+     ],
+     [
+      3
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     6,
+     9,
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 3,
+     "resolved": false,
+     "within_spread": [
+      1,
+      3
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "could_not_measure": "COULD NOT MEASURE (#112). rocprofv3 1.1.0 cannot run in this container: librocprofiler-sdk.so cannot load libdw.so.1 or libhsa-amd-aqlprofile64.so.1 (no root to install them here; docker/install-rocm.sh now installs libdw1 and hsa-amd-aqlprofile, so a rebuilt image can collect the bytes). And gfx1200 exposes NO fp64 instruction counter in rocprofiler-sdk (its counter definitions have none for gfx12), so even a working rocprofv3 gives no measured FLOP count and hence no measured intensity: an AMD roofline row needs a FLOP count from elsewhere, labelled as such. No gfx1200 row exists; that is not a zero."
+   },
+   "choice": {
+    "wide": 1,
+    "near": 3
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": null,
+      "near": null
+     },
+     "per-kernel": {
+      "wide": null,
+      "near": null
+     }
+    },
+    "model_crossing": {
+     "cell": null,
+     "per-kernel": null
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "values": [
+     12671,
+     8219,
+     2125,
+     852,
+     852
+    ],
+    "order": [
+     [
+      9,
+      12
+     ],
+     [
+      6
+     ],
+     [
+      3
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     9,
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 6,
+     "resolved": false,
+     "within_spread": [
+      3,
+      6
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "could_not_measure": "COULD NOT MEASURE (#112). rocprofv3 1.1.0 cannot run in this container: librocprofiler-sdk.so cannot load libdw.so.1 or libhsa-amd-aqlprofile64.so.1 (no root to install them here; docker/install-rocm.sh now installs libdw1 and hsa-amd-aqlprofile, so a rebuilt image can collect the bytes). And gfx1200 exposes NO fp64 instruction counter in rocprofiler-sdk (its counter definitions have none for gfx12), so even a working rocprofv3 gives no measured FLOP count and hence no measured intensity: an AMD roofline row needs a FLOP count from elsewhere, labelled as such. No gfx1200 row exists; that is not a zero."
+   },
+   "choice": {
+    "wide": 1,
+    "near": 6
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": false
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": null,
+      "near": null
+     },
+     "per-kernel": {
+      "wide": null,
+      "near": null
+     }
+    },
+    "model_crossing": {
+     "cell": null,
+     "per-kernel": null
+    }
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "n_batches": [
+    1,
+    3,
+    6,
+    9,
+    12
+   ],
+   "model": {
+    "metric": "traffic",
+    "aggregation": "sum",
+    "registers": 96,
+    "values": [
+     33799,
+     27208,
+     18959,
+     7663,
+     2756
+    ],
+    "order": [
+     [
+      12
+     ],
+     [
+      9
+     ],
+     [
+      6
+     ],
+     [
+      3
+     ],
+     [
+      1
+     ]
+    ],
+    "pick": [
+     12
+    ]
+   },
+   "clock": {
+    "wide": {
+     "n_batches": 1,
+     "resolved": true,
+     "within_spread": [
+      1
+     ],
+     "same_input": true
+    },
+    "near": {
+     "n_batches": 12,
+     "resolved": true,
+     "within_spread": [
+      12
+     ],
+     "same_input": false
+    }
+   },
+   "counters": {
+    "could_not_measure": "COULD NOT MEASURE (#112). rocprofv3 1.1.0 cannot run in this container: librocprofiler-sdk.so cannot load libdw.so.1 or libhsa-amd-aqlprofile64.so.1 (no root to install them here; docker/install-rocm.sh now installs libdw1 and hsa-amd-aqlprofile, so a rebuilt image can collect the bytes). And gfx1200 exposes NO fp64 instruction counter in rocprofiler-sdk (its counter definitions have none for gfx12), so even a working rocprofv3 gives no measured FLOP count and hence no measured intensity: an AMD roofline row needs a FLOP count from elsewhere, labelled as such. No gfx1200 row exists; that is not a zero."
+   },
+   "choice": {
+    "wide": 1,
+    "near": 12
+   },
+   "agree": {
+    "model_clock": {
+     "wide": false,
+     "near": true
+    },
+    "clock_crossing": {
+     "cell": {
+      "wide": null,
+      "near": null
+     },
+     "per-kernel": {
+      "wide": null,
+      "near": null
+     }
+    },
+    "model_crossing": {
+     "cell": null,
+     "per-kernel": null
+    }
+   }
+  }
+ ]
+}
