@@ -4,6 +4,7 @@
     stage(plan, basis, D, driver)           -> np.ndarray, the packed input
     compile_checked(tc, driver, out)        -> Path     (#92's warning filter)
     read_back(driver, raw)                  -> [run][lp] -> J_p[n_bra, n_p]
+    reps(stdout)                            -> the timing mode's rep lines
 
 The device twin of `ao.staged.coulomb_matrix_staged` (#143): the plan's
 shape on the card, where `test_ao_j_ondevice.py` (#89) launched one process
@@ -38,6 +39,15 @@ build the very arrays the interpreted staged driver feeds `interp`, including
 its bit-for-bit check that every ket's `Iq * Dmax` is its plan key (the
 order the kernel's `break` reads). Eq. 20 and the scatter stay host-side,
 `ao.staged._transform`, as `jgen` does.
+
+THE TIMING MODE (#146). `driver in out WARMUP REPS` runs WARMUP untimed
+builds and REPS timed ones in the one process and prints a `rep` line per
+timed build (`reps`); `out` is then the FIRST timed build's `J_p` and the
+LAST's, the layout the correctness mode (no WARMUP/REPS: 0 and RUNS) writes.
+One timed build is the region `measured_store.BUILD_TIMED_REGION` names:
+the per-run memsets, every launch, one synchronize and the read-back, after
+a synchronize; the uploads are timed once, apart (`upload_ns` on the counts
+line), and eq. 20 is host-side and not in it.
 
 THE LAYOUT is baked into the source from the plan (counts per class, launch
 order, kernel names) and the input file carries only data; the driver
@@ -229,6 +239,19 @@ def transform(basis: Basis, plan: LaunchPlan, jps: dict[int, np.ndarray]):
 _COUNTS = re.compile(r"^fj-driver (.*)$", re.MULTILINE)
 
 
+_REP = re.compile(r"^rep (\d+) wall_ns (\d+) device_ns (\d+) readback_ns "
+                  r"(\d+) events_ns (\d+)$", re.MULTILINE)
+
+
+def reps(stdout: str) -> list[tuple[int, int, int, float]]:
+    """The timing mode's `rep` lines, in order, as (wall_ns, device_ns,
+    readback_ns, events_ns); their indices must be 0, 1, ..."""
+    got = [(int(m[1]), int(m[2]), int(m[3]), int(m[4]), float(m[5]))
+           for m in _REP.finditer(stdout)]
+    assert [g[0] for g in got] == list(range(len(got))), stdout
+    return [g[1:] for g in got]
+
+
 def counts(stdout: str) -> dict[str, int]:
     """The driver's own counts line, as `{name: value}`."""
     m = _COUNTS.search(stdout)
@@ -292,13 +315,27 @@ DRIVER = r"""// generated from a launch plan by test/plan_driver.py (#144) -- ha
 {prologue}
 {portable}
 {includes}
+#include <chrono>
 #if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
 #define devMemset hipMemset
 #define devFree   hipFree
+#define devEvent_t          hipEvent_t
+#define devEventCreate      hipEventCreate
+#define devEventRecord(e)   hipEventRecord(e, 0)
+#define devEventElapsedTime hipEventElapsedTime
 #else
 #define devMemset cudaMemset
 #define devFree   cudaFree
+#define devEvent_t          cudaEvent_t
+#define devEventCreate      cudaEventCreate
+#define devEventRecord(e)   cudaEventRecord(e, 0)
+#define devEventElapsedTime cudaEventElapsedTime
 #endif
+typedef std::chrono::steady_clock fj_clock;
+static long long fj_ns(fj_clock::time_point a, fj_clock::time_point b) {{
+    return (long long)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        b - a).count();
+}}
 
 static const int NB = {n_b}, NK = {n_k}, LANES = {lanes}, RUNS = {runs};
 static const int nb[NB] = {{{nb}}};   // bra records per bra class
@@ -306,10 +343,24 @@ static const int np_[NB] = {{{np_}}};  // n_p per bra class
 static const int nk[NK] = {{{nk}}};   // ket records per ket class
 static const int nq[NK] = {{{nq}}};   // n_q per ket class
 
-// usage: in out. `in` is tau | per bra class P zeta Ip | per ket class
-// Q eta Iq Dmax D; `out` is every bra class's J_p, in plan order, per run.
+// usage: in out [warmup reps]. `in` is tau | per bra class P zeta Ip | per
+// ket class Q eta Iq Dmax D; `out` is every bra class's J_p, in plan order,
+// of the FIRST timed build and then of the LAST (warmup 0 and reps RUNS when
+// not given: the correctness mode). One `rep` line per timed build (#146):
+//   rep <i> wall_ns <memsets + launches + synchronize + read-back>
+//       device_ns <memsets + launches + synchronize> readback_ns <D2H>
+//       events_ns <GPU events, before the memsets to after the last launch>
 int main(int argc, char** argv) {{
-    if (argc != 3) {{ std::fprintf(stderr, "usage: in out\n"); return 2; }}
+    if (argc != 3 && argc != 5) {{
+        std::fprintf(stderr, "usage: in out [warmup reps]\n");
+        return 2;
+    }}
+    const int warmup = argc == 5 ? std::atoi(argv[3]) : 0;
+    const int reps = argc == 5 ? std::atoi(argv[4]) : RUNS;
+    if (warmup < 0 || reps < 1) {{
+        std::fprintf(stderr, "bad warmup/reps\n");
+        return 2;
+    }}
     std::vector<double> in;
     if (!slurp(argv[1], in)) {{ std::fprintf(stderr, "bad input\n"); return 2; }}
     size_t want = 1, jdoubles = 0;
@@ -331,7 +382,9 @@ int main(int argc, char** argv) {{
     int uploads_bra = 0, uploads_ket = 0, jp_buffers = 0, memsets = 0,
         launches = 0, readbacks = 0;
     // ONE upload per bra class and per ket class; the kernel's arguments
-    // are pointers into it.
+    // are pointers into it. Timed ONCE, apart from the builds (#146).
+    CHECK(devSynchronize());
+    const auto u0 = fj_clock::now();
     double* bp[NB];
     for (int i = 0; i < NB; ++i) {{
         const size_t n = (size_t)5 * nb[i];
@@ -348,38 +401,59 @@ int main(int argc, char** argv) {{
         h += n;
         ++uploads_ket;
     }}
+    CHECK(devSynchronize());
+    const long long upload_ns = fj_ns(u0, fj_clock::now());
     // ONE J_p per bra class.
     double* dJ[NB];
     for (int i = 0; i < NB; ++i) {{
         CHECK(devMalloc(&dJ[i], (size_t)nb[i] * np_[i] * sizeof(double)));
         ++jp_buffers;
     }}
-    std::vector<double> out;
-    out.reserve(jdoubles * RUNS);
-    for (int r = 0; r < RUNS; ++r) {{
+    devEvent_t ev[2];
+    for (int e = 0; e < 2; ++e) CHECK(devEventCreate(&ev[e]));
+    std::vector<double> first(jdoubles), last(jdoubles), J(jdoubles);
+    for (int r = 0; r < warmup + reps; ++r) {{
+        CHECK(devSynchronize());  // nothing earlier inside the clock
+        const auto t0 = fj_clock::now();
+        CHECK(devEventRecord(ev[0]));
         for (int i = 0; i < NB; ++i) {{  // zeroed ONCE per run
             CHECK(devMemset(dJ[i], 0, (size_t)nb[i] * np_[i] * sizeof(double)));
             ++memsets;
         }}
 {launches}
+        CHECK(devEventRecord(ev[1]));
         CHECK(devSynchronize());
+        const auto t1 = fj_clock::now();
+        size_t at = 0;
         for (int i = 0; i < NB; ++i) {{  // read back per bra class
-            std::vector<double> J((size_t)nb[i] * np_[i]);
-            CHECK(devMemcpy(J.data(), dJ[i], J.size() * sizeof(double),
+            const size_t n = (size_t)nb[i] * np_[i];
+            CHECK(devMemcpy(J.data() + at, dJ[i], n * sizeof(double),
                             devMemcpyD2H));
-            out.insert(out.end(), J.begin(), J.end());
+            at += n;
             ++readbacks;
         }}
+        const auto t2 = fj_clock::now();
+        if (r < warmup) continue;
+        float ms = 0.f;
+        CHECK(devEventElapsedTime(&ms, ev[0], ev[1]));
+        std::printf("rep %d wall_ns %lld device_ns %lld readback_ns %lld "
+                    "events_ns %.0f\n", r - warmup, fj_ns(t0, t2),
+                    fj_ns(t0, t1), fj_ns(t1, t2), (double)ms * 1e6);
+        if (r == warmup) first = J;
+        last = J;
     }}
+    std::vector<double> out(first);
+    out.insert(out.end(), last.begin(), last.end());
     for (int i = 0; i < NB; ++i) CHECK(devFree(bp[i]));
     for (int j = 0; j < NK; ++j) CHECK(devFree(kp[j]));
     for (int i = 0; i < NB; ++i) CHECK(devFree(dJ[i]));
     if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
     std::printf("fj-driver runs %d bra_classes %d ket_classes %d "
                 "uploads_bra %d uploads_ket %d jp_buffers %d memsets %d "
-                "launches %d readbacks %d plan_launches %d\n", RUNS, NB, NK,
+                "launches %d readbacks %d plan_launches %d warmup %d reps %d "
+                "upload_ns %lld\n", warmup + reps, NB, NK,
                 uploads_bra, uploads_ket, jp_buffers, memsets, launches,
-                readbacks, {n_launch});
+                readbacks, {n_launch}, warmup, reps, upload_ns);
     return 0;
 }}
 """

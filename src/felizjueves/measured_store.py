@@ -204,6 +204,21 @@ UNMEASURED has no rows by decision, with the reason recorded (the header's
 `could_not_measure`), and the loader refuses one: COULD NOT MEASURE IS NOT
 ZERO, and not a missing file either.
 
+THE BUILD ROWS (#146) are the first measurement of a BUILD rather than a
+kernel: the host wall-clock of one whole-molecule `J_p` from a
+`launch.LaunchPlan` on one card, timed behind the card gate by
+test/test_j_launched_ondevice.py's opt-in sweep (FJ_LAUNCH_WALLCLOCK_STORE).
+They live in their own file, `data/measured/builds.json` (`BuildRow`,
+`build_key`, `load_builds` / `save_builds`), because no `Spec` names a
+molecule's plan and a kernels.json row is never widened; `BUILD_TIMED_REGION`
+says exactly what the number contains (and what it does not: the uploads,
+the host eq. 20), and `BUILD_STATE_FIELDS` are the gate's KNOWN readings
+every row carries -- a contended phase is discarded, so the loader refuses a
+null or over-threshold reading rather than read it as idle. A row is keyed by
+fixture, tau, n_batches (or `dispatch:<input>`), the plan's `density_sort`
+and an ARM label, so #147's same-session sort-key A/B files two rows that
+differ in their arm and sort only.
+
 THE SPLIT (#94). This module is the store and nothing else: the record, the
 file, the read path, the declared subgrid, and the two verdicts read off the
 rows. It knows no toolchain -- it runs no compiler, reads no config.sh,
@@ -1085,3 +1100,284 @@ def lever_ab(store: Mapping[str, Measured], arch: str, spec: Spec) -> LeverAB:
         spill=(lit.spill_store + lit.spill_load, r.spill_store + r.spill_load),
         wide=(*stats("wallclock:control:"), r.runtime_ns, r.spread_ns),
         near=(*stats("wallclock:control:near:"), *stats("wallclock:near:")))
+
+
+
+# ---------------------------------------------------------------------------
+# #146: the build store -- one row per timed WHOLE-MOLECULE J build
+# ---------------------------------------------------------------------------
+#
+# WHY ITS OWN FILE. A kernels.json row is keyed on MeasuredKey(spec, arch,
+# toolchain): ONE class's batch kernels. A build is a whole molecule's launch
+# plan -- every (lp, lq) class of a basis, each at its own n_batches, over
+# real index records under a screen -- and no Spec names it. Filing it under
+# a MeasuredKey would need a fake Spec or a widened kernel row, and every
+# reader of kernels.json (kernelrank, batchreport, dispatch, both verdicts)
+# reads "the row for this key" as one class. So a build row is its own record
+# in its own file, data/measured/builds.json, with its own provenance and
+# key, and nothing that reads kernels.json sees it.
+
+BUILDS = REPO / "data" / "measured" / "builds.json"
+BUILD_SCHEMA = 1
+DISPATCH_PREFIX = "dispatch:"  # n_batches of a resolved plan: "dispatch:wide"
+BASELINE_ARM = "baseline"  # the plan's default; #147 labels its own arms
+
+# The card's state around the KEPT timing phase, in every build row's raw
+# (the gate's readings, felizjueves.gate; this module imports no gate, so the
+# threshold the phase was judged against is recorded beside the readings):
+#   build:gpu_util_before            percent, the settled reading the gate
+#                                    let the phase through at
+#   build:gpu_util_after             percent, gate.after_reading after it
+#   build:gpu_busy_max               the gate's GPU_BUSY_MAX at the time
+#   build:cpu_busy_permille_before   the CPU gate's settled reading
+#   build:gate_discarded_phases      phases of this cell discarded before
+#                                    this one was kept (after-reading
+#                                    non-idle or unknown)
+# All KNOWN integers: a contended or unreadable phase is DISCARDED, never
+# recorded, so a null here is refused rather than read as idle.
+BUILD_STATE_FIELDS = ("build:gpu_util_before", "build:gpu_util_after",
+                      "build:gpu_busy_max", "build:cpu_busy_permille_before",
+                      "build:gate_discarded_phases")
+
+BUILD_TIMED_REGION = (
+    "runtime_ns / spread_ns / repeats are the MEDIAN, the INTERQUARTILE RANGE "
+    "and the COUNT of `repeats` timed builds (after raw 'build:warmup' "
+    "untimed ones, all in ONE process), host std::chrono::steady_clock. ONE "
+    "TIMED BUILD IS, in order: (a) one device memset zeroing each bra "
+    "class's J_p buffer; (b) every batch kernel of every (lp, lq) class of "
+    "the plan, launched in plan order on the default stream into its bra "
+    "class's J_p (fp64 atomics); (c) one device synchronize; (d) the "
+    "device-to-host copy of every bra class's J_p (one blocking copy per bra "
+    "class). It starts after a device synchronize, so no earlier work is "
+    "inside it. raw 'build:device_median_ns' is (a)-(c) alone and "
+    "'build:readback_median_ns' is (d) alone (each the median over the same "
+    "repeats); 'build:events_median_ns' is the GPU-event time from before "
+    "(a) to after (b). OUTSIDE THE CLOCK: process start, reading the input "
+    "file, the VRAM probe, every device allocation, and the H2D UPLOADS -- "
+    "one per bra class (P zeta Ip) and one per ket class (Q eta Iq Dmax D), "
+    "done ONCE per process before the first build and timed once, apart, as "
+    "raw 'build:upload_ns' (a single observation, allocation included); the "
+    "host-side staging that builds those buffers (Python, ao.staged); the "
+    "host-side eq. 20 back-transform and J_ab scatter (Python, "
+    "ao.staged._transform), which is not device code and is not timed; and "
+    "compilation. So a row is the device cost of one J_p for a molecule "
+    "whose index data is already resident, read back to the host ready for "
+    "eq. 20 -- not a cold start and not a whole SCF iteration.")
+
+BUILD_ABOUT = (
+    "Build rows (felizjueves.measured_store, #146): the host wall-clock of "
+    "ONE WHOLE-MOLECULE J_p BUILD from a launch.LaunchPlan on one card -- "
+    "every class's batch kernels into one J_p per bra class -- timed behind "
+    "the card gate (felizjueves.gate), keyed by build_key. Its own file: a "
+    "build is no MeasuredKey's Spec, and kernels.json's rows are not "
+    "widened. Observations of two cards and their toolchains, NOT comparable "
+    "to [JEngine]'s A100 figures, nor across vendors.")
+
+BUILD_HEADER = {
+    "what": "One row per timed whole-molecule J_p build (launch.launches -> "
+            "test/plan_driver.py's generated driver), per card, per arm.",
+    "key": "build_key(fixture, tau, n_batches, density_sort, arm, arch, "
+           "toolchain) = '<fixture>/tau=<repr>/b=<n>/sort=<density|global>/"
+           "<arm>@<arch>/<toolchain>'. fixture is test/oracle/fixtures/"
+           "<fixture>.json (the molecule, basis and density); n_batches is "
+           "the plan's fixed count, or 'dispatch:<input>' for a plan "
+           "resolved per class by dispatch.Resolver(arch, <input>); "
+           "density_sort is launch.launches' sort key (density: G * Dmax per "
+           "ket; global: one global Dmax, so the order is by G alone); arm "
+           "labels a same-session A/B (#147) -- 'baseline' is the plan's "
+           "default, timed alone.",
+    "timed_region": BUILD_TIMED_REGION,
+    "gate": "#146: every row's raw carries " + ", ".join(BUILD_STATE_FIELDS)
+            + ". A cell's timing phase is one process run of the checked "
+            "binary (warm-up plus repeats) between gate.wait_quiet (card at "
+            "most build:gpu_busy_max percent busy by its own SMI, CPU at most "
+            "gate.BUSY_MAX) and gate.after_reading; a phase whose "
+            "after-reading was non-idle or unknown is DISCARDED and retaken, "
+            "and counted in build:gate_discarded_phases. A contended timing "
+            "is a different experiment, not a noisy one: nothing from a "
+            "discarded phase is in a row, and the loader refuses a row whose "
+            "card state is unknown or over the threshold.",
+    "checked": "The timed binary is the checked binary: before timing, each "
+               "cell's driver is run in its correctness mode and its J "
+               "asserted against the launch oracle (launch.walk) and the "
+               "libcint fixture (test/test_j_launched_ondevice.py's "
+               "tolerances), and every timed process's first and last J_p "
+               "must agree with it within the fp64-atomic run-to-run bound.",
+    "plan": "raw 'build:classes', 'build:kernels' (batch-kernel launches per "
+            "build), 'build:bra_classes', 'build:ket_classes', "
+            "'build:n_pairs' and 'build:n_skipped' (the launch oracle's "
+            "screen count on the same plan: the (bra, ket) record pairs the "
+            "kernel's break skips), and 'build:refused' (classes built at 1 "
+            "batch because the plan refused the asked count).",
+    "not_compared": "Report, do not compare: nothing here is compared "
+                    "against [JEngine]'s A100 build times, nor across vendors "
+                    "(gfx1200 rate-limits fp64), nor against kernels.json's "
+                    "synthetic-input class timings.",
+    "rerun": "env FJ_LAUNCH_WALLCLOCK_STORE=data/measured/builds.json "
+             "devtools/kernel-tier.sh --backend <cuda|hip> -- -n 0 -s "
+             "-k build_wallclock (alone; one session per card).",
+}
+
+# A card with no build row by decision, and why: a session the gate refused
+# for good would be recorded here, never as a zero. Empty: both cards have
+# rows.
+BUILD_UNMEASURED: dict[str, str] = {}
+BUILD_HEADER["could_not_measure"] = dict(BUILD_UNMEASURED)
+
+_BUILD_INTS = ("runtime_ns", "spread_ns", "repeats")
+
+
+def _n_batches_word(n: int | str) -> str:
+    if type(n) is int and n >= 1:
+        return str(n)
+    if (isinstance(n, str) and n.startswith(DISPATCH_PREFIX)
+            and len(n) > len(DISPATCH_PREFIX) and "/" not in n
+            and "@" not in n):
+        return n
+    raise ValueError(f"n_batches {n!r} is neither an int >= 1 nor "
+                     f"'{DISPATCH_PREFIX}<input>'")
+
+
+def build_key(fixture: str, tau: float, n_batches: int | str,
+              density_sort: bool, arm: str, arch: str, toolchain: str) -> str:
+    """A build row's key (BUILD_HEADER['key'])."""
+    for name, v in (("fixture", fixture), ("arm", arm), ("arch", arch),
+                    ("toolchain", toolchain)):
+        if not isinstance(v, str) or not v or (name != "toolchain" and (
+                "/" in v or "@" in v)):
+            raise ValueError(f"{name} {v!r} must be a non-empty string "
+                             "without '/' or '@'")
+    if type(tau) is not float or not tau >= 0.0:
+        raise ValueError(f"tau {tau!r} must be a float >= 0")
+    if type(density_sort) is not bool:
+        raise ValueError(f"density_sort {density_sort!r} must be a bool")
+    sort = "density" if density_sort else "global"
+    return (f"{fixture}/tau={tau!r}/b={_n_batches_word(n_batches)}/"
+            f"sort={sort}/{arm}@{arch}/{toolchain}")
+
+
+@dataclass(frozen=True, kw_only=True)
+class BuildRow:
+    """One timed whole-molecule J_p build on one card (#146). An observation,
+    not a claim about the paper's numbers; BUILD_TIMED_REGION is what the
+    number contains."""
+
+    # what was built
+    fixture: str
+    tau: float
+    n_batches: int | str
+    density_sort: bool
+    arm: str
+    # the timing (ns, host steady_clock; BUILD_TIMED_REGION)
+    runtime_ns: int
+    spread_ns: int
+    repeats: int
+    # provenance, all REQUIRED
+    toolchain: str
+    arch: str
+    host: str
+    gpu: str
+    date: str
+    command: str  # the driver's compile command (paths elided)
+    source_sha256: str  # of the driver text plus every unit, in launch order
+    raw: Mapping[str, int | float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.key()  # validates fixture / tau / n_batches / sort / arm
+        for n in _BUILD_INTS:
+            v = getattr(self, n)
+            if type(v) is not int or v < 0:
+                raise ValueError(f"{n} = {v!r} must be an int >= 0")
+        if self.repeats < 1:
+            raise ValueError(f"repeats = {self.repeats!r} must be >= 1")
+        for n in (*PROVENANCE, "command", "source_sha256"):
+            if not isinstance(getattr(self, n), str) or not getattr(self, n):
+                raise ValueError(f"{n} must be a non-empty string")
+        for k, v in self.raw.items():
+            if not isinstance(k, str) or type(v) not in (int, float):
+                raise ValueError(f"raw {k!r} = {v!r}: a number, never null "
+                                 "(an unknown is not recorded as a reading)")
+        for f in BUILD_STATE_FIELDS:
+            v = self.raw.get(f)
+            if type(v) is not int or v < 0 or (
+                    "gpu_" in f and v > 100) or ("permille" in f and v > 1000):
+                raise ValueError(f"raw {f} = {v!r} -- every build row carries "
+                                 "the card's state as a KNOWN reading")
+        cap = self.raw["build:gpu_busy_max"]
+        for f in ("build:gpu_util_before", "build:gpu_util_after"):
+            if self.raw[f] > cap:
+                raise ValueError(f"raw {f} = {self.raw[f]}% > build:gpu_busy_"
+                                 f"max = {cap}%: a contended phase is "
+                                 "discarded, never recorded")
+
+    def key(self) -> str:
+        return build_key(self.fixture, self.tau, self.n_batches,
+                         self.density_sort, self.arm, self.arch,
+                         self.toolchain)
+
+
+_BUILD_FIELDS = frozenset(f.name for f in fields(BuildRow))
+
+
+def _build_row(path: Path, key: str, v: object) -> BuildRow:
+    if not isinstance(v, dict):
+        raise ValueError(f"{path}: row {key!r} is not an object")
+    unknown = sorted(set(v) - _BUILD_FIELDS)
+    if unknown:
+        raise ValueError(f"{path}: row {key!r} has unknown fields {unknown}")
+    try:
+        row = BuildRow(**v)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{path}: row {key!r}: {e}") from e
+    if row.key() != key:
+        raise ValueError(f"{path}: row {key!r} records the key {row.key()!r}")
+    if row.arch in BUILD_UNMEASURED:
+        raise ValueError(f"{path}: row {key!r} is on {row.arch}, which has no "
+                         "build rows by decision (BUILD_UNMEASURED)")
+    return row
+
+
+def load_builds(path: Path = BUILDS) -> dict[str, BuildRow]:
+    """Every build row, by `build_key`. Refuses a malformed or foreign file,
+    a row filed under a key not its own, and a row without a KNOWN,
+    uncontended card state. A missing file raises FileNotFoundError, as
+    `load` does."""
+    path = Path(path)
+    try:
+        doc = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path}: not JSON ({e})") from e
+    if not isinstance(doc, dict):
+        raise ValueError(f"{path}: top level is not an object")
+    if doc.get("schema") != BUILD_SCHEMA:
+        raise ValueError(f"{path}: schema {doc.get('schema')!r}, expected "
+                         f"{BUILD_SCHEMA}")
+    if not isinstance(doc.get("about"), str) or not doc["about"]:
+        raise ValueError(f"{path}: no \"about\" string")
+    got = doc.get("rows")
+    if not isinstance(got, dict):
+        raise ValueError(f"{path}: \"rows\" is not an object")
+    return {k: _build_row(path, k, v) for k, v in got.items()}
+
+
+def merge_build(store: Mapping[str, BuildRow],
+                row: BuildRow) -> dict[str, BuildRow]:
+    """`store` with `row` at its own key, REPLACING any row already there."""
+    return {**store, row.key(): row}
+
+
+def save_builds(store: Mapping[str, BuildRow], path: Path = BUILDS) -> None:
+    for k, r in store.items():
+        if r.key() != k:
+            raise ValueError(f"row filed at {k!r} is {r.key()!r}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = {"schema": BUILD_SCHEMA, "about": BUILD_ABOUT,
+           "header": BUILD_HEADER,
+           "rows": {k: asdict(store[k])
+                    for k in sorted(store, key=_build_order)}}
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+
+
+def _build_order(key: str) -> tuple:
+    cell, _, where = key.partition("@")
+    return (where, cell)

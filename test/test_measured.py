@@ -1675,3 +1675,164 @@ def test_nvcc_still_reports_the_asym_cells(cell, nvcc, tmp_path) -> None:
 @pytest.mark.parametrize("cell", ASYM_PARAMS)
 def test_hipcc_still_reports_the_asym_cells(cell, hipcc, tmp_path) -> None:
     _recheck_cell("hip", cell, tmp_path)
+
+
+# --- #146: the build store (data/measured/builds.json) ----------------------
+
+BUILD_ARCHS = ("sm_86", "gfx1200")
+
+
+def _build_row(**over) -> measured_store.BuildRow:
+    raw = {"build:gpu_util_before": 3, "build:gpu_util_after": 0,
+           "build:gpu_busy_max": 30, "build:cpu_busy_permille_before": 12,
+           "build:gate_discarded_phases": 0, "build:upload_ns": 1234}
+    raw.update(over.pop("raw", {}))
+    kw = dict(fixture="h2o_ccpvdz_j", tau=1e-3, n_batches="dispatch:wide",
+              density_sort=True, arm="baseline", runtime_ns=100_000,
+              spread_ns=2_000, repeats=31, toolchain="nvcc 13.0",
+              arch="sm_86", host="box", gpu="RTX", date="2026-10-12",
+              command="nvcc <driver> -o <binary>", source_sha256="ab" * 32,
+              raw={k: v for k, v in raw.items() if v is not None})
+    kw.update(over)
+    return measured_store.BuildRow(**kw)
+
+
+def _build_doc(rows: dict) -> dict:
+    return {"schema": measured_store.BUILD_SCHEMA, "about": "x",
+            "rows": {k: asdict(r) for k, r in rows.items()}}
+
+
+BUILDS = measured_store.load_builds()
+
+
+def test_the_tracked_build_store_is_rewritten_byte_for_byte(tmp_path) -> None:
+    """load -> save reproduces data/measured/builds.json exactly: header,
+    row order, number spelling and all."""
+    p = tmp_path / "builds.json"
+    measured_store.save_builds(BUILDS, p)
+    assert p.read_bytes() == measured_store.BUILDS.read_bytes()
+
+
+def test_a_build_row_round_trips(tmp_path) -> None:
+    rows = {r.key(): r for r in (
+        _build_row(), _build_row(density_sort=False, arm="global"),
+        _build_row(n_batches=3, tau=0.0, arch="gfx1200",
+                   toolchain="hipcc / ROCm 7.2.4"))}
+    p = tmp_path / "b.json"
+    measured_store.save_builds(rows, p)
+    assert measured_store.load_builds(p) == rows
+    text = p.read_text()
+    measured_store.save_builds(measured_store.load_builds(p), p)
+    assert p.read_text() == text
+
+
+def test_both_cards_have_the_baseline_build_rows_with_their_gate_state() -> None:
+    """#146's acceptance: rows for both cards, each with the card's state as
+    KNOWN gate readings (the loader refuses anything else), or the refusal
+    recorded in the header."""
+    from test_j_launched_ondevice import BUILD_CELLS
+    doc = json.loads(measured_store.BUILDS.read_text())
+    assert doc["header"]["could_not_measure"] == measured_store.BUILD_UNMEASURED
+    assert doc["header"]["timed_region"] == measured_store.BUILD_TIMED_REGION
+    for arch in BUILD_ARCHS:
+        if arch in measured_store.BUILD_UNMEASURED:
+            assert not [r for r in BUILDS.values() if r.arch == arch]
+            continue
+        on = {k.split("@")[0]: r for k, r in BUILDS.items() if r.arch == arch}
+        want = {c.key(arch, "t").split("@")[0] for c in BUILD_CELLS}
+        assert want <= set(on), (arch, sorted(want - set(on)))
+        for r in on.values():
+            for f in measured_store.BUILD_STATE_FIELDS:
+                assert type(r.raw[f]) is int, (r.key(), f)
+            assert r.raw["build:gpu_util_before"] <= r.raw["build:gpu_busy_max"]
+            assert r.raw["build:gpu_util_after"] <= r.raw["build:gpu_busy_max"]
+            assert r.raw["build:gpu_busy_max"] == gate.GPU_BUSY_MAX
+            assert r.repeats >= 1
+            assert r.raw["build:min_ns"] <= r.runtime_ns <= r.raw["build:max_ns"]
+            assert r.raw["build:device_median_ns"] <= r.raw["build:max_ns"]
+
+
+def test_build_key_spells_every_field() -> None:
+    k = measured_store.build_key("h2o_sto3g_j", 0.0, 1, True, "baseline",
+                                 "sm_86", "nvcc 13.0")
+    assert k == "h2o_sto3g_j/tau=0.0/b=1/sort=density/baseline@sm_86/nvcc 13.0"
+    assert measured_store.build_key(
+        "h2o_ccpvdz_j", 1e-3, "dispatch:wide", False, "global", "gfx1200",
+        "hipcc / ROCm 7.2.4") == ("h2o_ccpvdz_j/tau=0.001/b=dispatch:wide/"
+                                  "sort=global/global@gfx1200/hipcc / ROCm 7.2.4")
+
+
+@pytest.mark.parametrize("bad", [
+    dict(n_batches=0), dict(n_batches="wide"), dict(n_batches="dispatch:"),
+    dict(tau=1), dict(tau=-1.0), dict(density_sort=1), dict(arm=""),
+    dict(arm="a/b"), dict(fixture="x@y"), dict(repeats=0),
+    dict(runtime_ns=1.5), dict(spread_ns=-1), dict(host=""),
+    dict(source_sha256=""), dict(command=""),
+])
+def test_a_malformed_build_row_is_refused(bad) -> None:
+    with pytest.raises(ValueError):
+        _build_row(**bad)
+
+
+@pytest.mark.parametrize("field", measured_store.BUILD_STATE_FIELDS)
+def test_a_build_row_without_its_card_state_is_refused(field) -> None:
+    """No row without a recorded card state is read as idle: a missing or
+    null reading is refused, never defaulted."""
+    with pytest.raises(ValueError, match=field):
+        _build_row(raw={field: None})
+    raw = {**_build_row().raw, field: None}
+    with pytest.raises(ValueError):
+        _build_row(raw=raw)
+
+
+@pytest.mark.parametrize("field", ["build:gpu_util_before",
+                                   "build:gpu_util_after"])
+def test_a_contended_build_row_is_refused(field) -> None:
+    """A phase over the gate's threshold is discarded, never recorded."""
+    with pytest.raises(ValueError, match="contended"):
+        _build_row(raw={field: 31})
+    _build_row(raw={field: 30})  # at the threshold: let through
+
+
+def test_the_build_loader_refuses(tmp_path, monkeypatch) -> None:
+    p = tmp_path / "b.json"
+    row = _build_row()
+
+    def refused(doc, match):
+        p.write_text(json.dumps(doc))
+        with pytest.raises(ValueError, match=match):
+            measured_store.load_builds(p)
+
+    refused({**_build_doc({row.key(): row}), "schema": 99}, "schema")
+    refused({**_build_doc({row.key(): row}), "about": ""}, "about")
+    refused({**_build_doc({}), "rows": []}, "rows")
+    refused(_build_doc({"elsewhere@sm_86/nvcc 13.0": row}), "records the key")
+    doc = _build_doc({row.key(): row})
+    doc["rows"][row.key()]["bogus"] = 1
+    refused(doc, "unknown fields")
+    doc = _build_doc({row.key(): row})
+    doc["rows"][row.key()]["raw"]["build:gpu_util_after"] = None
+    refused(doc, "build:gpu_util_after")
+    del doc["rows"][row.key()]["raw"]["build:gpu_util_after"]
+    refused(doc, "build:gpu_util_after")
+    p.write_text("{")
+    with pytest.raises(ValueError, match="not JSON"):
+        measured_store.load_builds(p)
+    with pytest.raises(FileNotFoundError):
+        measured_store.load_builds(tmp_path / "absent.json")
+    monkeypatch.setitem(measured_store.BUILD_UNMEASURED, "sm_86", "refused")
+    refused(_build_doc({row.key(): row}), "by decision")
+
+
+def test_save_builds_refuses_a_row_filed_under_another_key(tmp_path) -> None:
+    row = _build_row()
+    with pytest.raises(ValueError, match="filed at"):
+        measured_store.save_builds({"x": row}, tmp_path / "b.json")
+
+
+def test_an_arm_is_its_own_row() -> None:
+    """#147's A/B: two arms of one cell are two rows, never one replaced."""
+    a = _build_row()
+    b = _build_row(density_sort=False, arm="global-dmax")
+    store = measured_store.merge_build(measured_store.merge_build({}, a), b)
+    assert set(store) == {a.key(), b.key()} and a.key() != b.key()
