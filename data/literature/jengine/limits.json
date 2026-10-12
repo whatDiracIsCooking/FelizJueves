@@ -106,6 +106,40 @@
         "printed_values_stand": "Fig. 7's A100 result is taken as published; this record is about our cards and reconciles nothing with it. No scoreboard, no rule: board and rule are null."
       },
       "source": "[JEngine, v2, §7.2, Fig. 7]"
+    },
+    {
+      "claim": "jengine/ket-sort-key-beats-the-global-max on our cards (#147): the per-record product key I_q * max_q |D_q| against one global max|D|, same tau, molecule and batch count, both arms in one gated session per card. The declared expectation -- the global key is worse -- is CONTRADICTED on sm_86 and on gfx1200; two of the eight cells are below what this box can resolve.",
+      "mechanism": "(1) THE SCREEN. I_pair (ao/pairs.py) is pair-factor-free: a ket's Gaussian pair factor and dressing live in its dressed D_q, so its distance decay reaches the screen only through Dmax. A global Dmax erases it, and on every input here the global key skips NO (bra, ket) record pair, at either tau -- the screen's work goes the expected way, by the whole of the product's skips. (2) THE ORDER. The global key changes the ket order too (by I_q alone, i.e. by exponent and pair momentum) and that order is not free: on the two-H2 chain at tau = 1e-10 the product arm skips 560 of 8100 pairs and is still slower than the global arm, which skips none, by 21% on sm_86 and 9% on gfx1200 -- the two arms differ in ket order and keys only. At tau = 1e-3 (2790 skipped) the skips win. Why the product order costs time is NOT measured here; a candidate is the per-ket work of the device Boys (emit/_c.py's Kummer loop, whose length grows with T), grouped by exponent under the I_q order and interleaved under the product order, so lanes diverge more. (3) THE NOISE FLOOR is #60's: the larger of the two arms' IQRs over 31 timed builds. On sm_86 the H2O/cc-pVDZ builds are bimodal (near 8.5 and near 10 ms, IQRs 1.3-1.6 ms), so its two cc-pVDZ cells are the weakest: tau = 1e-3 reads BETTER by 1.57 ms over a 1.36 ms floor, tau = 1e-10 UNRESOLVED. On gfx1200 the cc-pVDZ tau = 1e-3 arms are equal to 3 us (UNRESOLVED) while tau = 1e-10 reads BETTER by 1.69 ms over a 0.25 ms floor. The chain cells resolve on both cards (IQRs under 13 us). (4) THE INPUTS: the chain is two H2, not #88's four, because the four-H2 sweep asks the card's fj_boys for T up to 1289, past its witnessed [0, 500] and its overflow near 700; the four-H2 chain's skip counts (66060 and 36072 of 104976 for the product, 0 for the global key) are the oracle's only.",
+      "evidence": "data/measured/builds.json, arm 'sort-ab', host e614efd48a48 (container), RTX 3080 (nvcc 13.0) and RX 9060 XT (hipcc / ROCm 7.2.4), one session per card, no phase discarded by the gate; verdicts computed by measured_store.sort_key_ab and pinned by test/test_measured.py::test_the_sort_key_verdict_is_contradicted_on_both_cards; skip counts recomputed by the launch oracle in test/test_launch_oracle.py::test_both_sort_keys_hold_the_screens_bound, which also holds both keys' J within tau * scale of J(0). Medians, product against global: sm_86 cc-pVDZ 1e-3 10080.9 / 8510.4 us (BETTER), 1e-10 10451.9 / 9836.6 us (UNRESOLVED), chain 1e-3 255.4 / 285.7 us (WORSE), 1e-10 346.7 / 285.7 us (BETTER); gfx1200 cc-pVDZ 1e-3 7066.6 / 7063.6 us (UNRESOLVED), 1e-10 8750.3 / 7059.9 us (BETTER), chain 1e-3 211.6 / 251.5 us (WORSE), 1e-10 273.8 / 251.0 us (BETTER).",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": "jengine/ket-sort-key-beats-the-global-max",
+        "expected": "the global key is worse (#147, declared before the rows)",
+        "verdict": {"sm_86": "contradicted", "gfx1200": "contradicted"},
+        "cells": {
+          "sm_86": {
+            "h2o_ccpvdz_j tau=1e-3": "better",
+            "h2o_ccpvdz_j tau=1e-10": "unresolved",
+            "h2chain2_sto3g tau=1e-3": "worse",
+            "h2chain2_sto3g tau=1e-10": "better"
+          },
+          "gfx1200": {
+            "h2o_ccpvdz_j tau=1e-3": "unresolved",
+            "h2o_ccpvdz_j tau=1e-10": "better",
+            "h2chain2_sto3g tau=1e-3": "worse",
+            "h2chain2_sto3g tau=1e-10": "better"
+          }
+        },
+        "skipped_product_global": {
+          "h2o_ccpvdz_j tau=1e-3": [123896, 0, 351649],
+          "h2o_ccpvdz_j tau=1e-10": [15684, 0, 351649],
+          "h2chain2_sto3g tau=1e-3": [2790, 0, 8100],
+          "h2chain2_sto3g tau=1e-10": [560, 0, 8100]
+        },
+        "printed_values_stand": "[JEngine, v2, §3.3]'s choice of key is taken as published for its kernel on its A100; this record is about our kernel on our cards. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, §3.3]"
     }
   ]
 }

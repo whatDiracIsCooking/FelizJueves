@@ -44,9 +44,10 @@
       "unit": "§3.3",
       "eqs": [19, 22],
       "claims": [
+        "jengine/ket-sort-key-beats-the-global-max",
         "jengine/ket-sort-key-is-the-product"
       ],
-      "note": "The ket sort key -- kets ordered by the per-block product I_q * max|D|, so the screen can break -- is jengine/ket-sort-key-is-the-product (#139), cited here and at Alg. 1, which carries the break. Otherwise eqs. 19-22 (J by pre-contraction, J_p the only shell-quartet contraction) are content, implemented in ao/j.py and kernel.py and witnessed against libcint's get_jk. 'This reduces register usage' is design rationale, and Cauchy-Schwarz bringing J to O(N^2) is the cited works' claim (refs 52-58). Alg. 1's own claims are recorded under 'Alg. 1'."
+      "note": "The ket sort key -- kets ordered by the per-block product I_q * max|D|, so the screen can break -- is jengine/ket-sort-key-is-the-product (#139), cited here and at Alg. 1, which carries the break; that the product is the better key than a global max|D| is jengine/ket-sort-key-beats-the-global-max (#147, measured on our cards and contradicted). Otherwise eqs. 19-22 (J by pre-contraction, J_p the only shell-quartet contraction) are content, implemented in ao/j.py and kernel.py and witnessed against libcint's get_jk. 'This reduces register usage' is design rationale, and Cauchy-Schwarz bringing J to O(N^2) is the cited works' claim (refs 52-58). Alg. 1's own claims are recorded under 'Alg. 1'."
     },
     {
       "unit": "§4",

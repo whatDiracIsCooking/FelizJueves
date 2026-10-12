@@ -82,8 +82,17 @@ THE BUILD WALL-CLOCK (#146), opt-in (`FJ_LAUNCH_WALLCLOCK_STORE`) and run
 alone: `test_<backend>_build_wallclock` times BUILD_CELLS' whole-molecule
 builds behind the card gate into data/measured/builds.json; its section
 comment is the protocol and `measured_store.BUILD_TIMED_REGION` the clock's
-boundary. `time_builds` takes any cells, so #147's sort-key A/B is two arms
-of one cell in one session.
+boundary. `time_builds` takes any cells, so #147's sort-key A/B
+(`test_<backend>_sort_key_ab`, same opt-in) is two arms of each cell in one
+session.
+
+THE CHAIN (#147). `measured_store.CHAIN_INPUT` is test_ao_screening.py's
+two-H2 chain, the extended input on which a decay screen bites and whose
+every T stays inside the device Boys' witnessed [0, 500] (measured_store's
+docstring, THE SORT KEY, says why not four). It has no libcint fixture, so
+its outside witness is the host sweep's J(0) (`ao.j.coulomb_matrix`, the
+code held to libcint on every fixture) to `ORACLE_TOL max|J0| + tau scale`;
+`test_<backend>_the_chain_under_both_keys` checks it, both keys, untimed.
 
 WHAT SKIPS: the device tests are `gpu` plus `cuda` or `hip` and take the
 compiler and device fixtures, so on a box without the card they SKIP -- the
@@ -98,6 +107,7 @@ import datetime
 import hashlib
 import math
 import os
+import time
 from dataclasses import dataclass
 from functools import cache, partial
 from pathlib import Path
@@ -121,11 +131,17 @@ from plan_driver import (
     transform,
 )
 from plan_driver import reps as rep_lines
+from test_ao_screening import _h2_chain, _hilbert
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import dispatch, gate, measured_store
-from felizjueves.ao.j import _density, coulomb_matrix_and_scale, pair_bound_pq
-from felizjueves.ao.staged import _bra_buffers, _ket_buffers
+from felizjueves.ao.j import (
+    _density,
+    coulomb_matrix,
+    coulomb_matrix_and_scale,
+    pair_bound_pq,
+)
+from felizjueves.ao.staged import _bra_buffers, _dglobal, _ket_buffers
 from felizjueves.kernel import bra_functions, ket_functions
 from felizjueves.launch import LaunchPlan, class_spec, launches, walk
 from felizjueves.measured import BACKENDS as MEASURED_BACKENDS
@@ -156,6 +172,12 @@ PARAMS = [pytest.param(*c, id=f"{c[0]}-tau{c[1]:g}-"
 
 @cache
 def _fixture(name: str):
+    """(fixture or None, basis, D). `measured_store.CHAIN_INPUT` is the
+    two-H2 chain of test_ao_screening.py, which has no libcint fixture
+    (None): `_check` holds it to the host sweep's J(0) instead."""
+    if name == measured_store.CHAIN_INPUT:
+        basis = _h2_chain(2)
+        return None, basis, _hilbert(basis.n_ao)
     fx = manifest.load(manifest.FIXTURES / f"{name}.json")
     return fx, ob.from_fixture(fx), np.array(fx.density)
 
@@ -209,12 +231,13 @@ def _abs_jp(plan: LaunchPlan, name: str) -> dict[int, np.ndarray]:
     class, over EVERY ket of every class (module docstring)."""
     _, basis, D = _fixture(name)
     rows = _density(basis, D)
+    dglobal = _dglobal(plan, basis, rows)  # None under the product key
     out: dict[int, np.ndarray] = {}
     for cl in plan:
         spec = class_spec(cl.lp, cl.lq, cl.n_batches)
         ps, qs = bra_functions(spec), ket_functions(spec)
         b = _bra_buffers(basis, cl.bras)
-        k = _ket_buffers(basis, rows, cl.kets, len(qs), None)
+        k = _ket_buffers(basis, rows, cl.kets, len(qs), dglobal)
         acc = out.setdefault(cl.lp, np.zeros((len(cl.bras), len(ps))))
         absD = np.abs(k.D)
         for i in range(len(cl.bras)):
@@ -337,9 +360,20 @@ def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
     J = transform(basis, plan, runs[0])
     oracle = walk(plan, basis, D, pq=ref_pq)
     Jo = np.array(oracle.J)
-    ref = fx.arrays[manifest.J_ARRAY]
-    scale = _scale_j(name)
-    allowed = JK_TOL * scale + tau * np.array(oracle.scale)
+    if fx is not None:
+        ref = fx.arrays[manifest.J_ARRAY]
+        scale = _scale_j(name)
+        allowed = JK_TOL * scale + tau * np.array(oracle.scale)
+        outside = "get_jk"
+    else:
+        # No libcint fixture (the chain): the host sweep's unscreened J(0),
+        # through `ao.j.coulomb_matrix` -- the code witnessed against libcint
+        # on every fixture -- with the oracle's bound and the screen's own
+        # error claim on top, both inherited: ORACLE_TOL max|J0| + tau scale.
+        ref = np.array(coulomb_matrix(basis, D, pq=ref_pq))
+        scale = np.full_like(ref, np.max(np.abs(ref)))
+        allowed = ORACLE_TOL * scale + tau * np.array(oracle.scale)
+        outside = "host J(0)"
     rel = float(np.max(np.abs(J - Jo)) / np.max(np.abs(Jo)))
     jk = float(np.max(np.abs(J - ref) / scale))
 
@@ -351,7 +385,8 @@ def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
           f"{len(plan)} classes [{ran}], refused {list(plan.refused)}; "
           f"{nl} kernels per run, {nb} J_p buffers, {nk} ket uploads; "
           f"oracle skipped {oracle.n_skipped} of {oracle.n_pairs}; "
-          f"max|J - get_jk|/scale_J = {jk:.2e} (tol {JK_TOL:g}"
+          f"max|J - {outside}|/scale = {jk:.2e} (tol "
+          f"{JK_TOL if fx is not None else ORACLE_TOL:g}"
           f"{' + tau scale' if tau else ''}); "
           f"max|J - oracle|/max|J| = {rel:.2e} (tol {ORACLE_TOL:g}); "
           f"runs bit-identical: {bitwise}{extra}")
@@ -363,7 +398,7 @@ def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
     assert rel <= ORACLE_TOL, (
         f"{name} on {arch.name}: J vs the launch oracle, worst {rel:.2e}")
     assert np.all(np.abs(J - ref) <= allowed), (
-        f"{name} on {arch.name}: J vs libcint, worst err/scale_J {jk:.2e}")
+        f"{name} on {arch.name}: J vs {outside}, worst err/scale {jk:.2e}")
     return Checked(plan, drv, binary, src, runs[0], bounds, oracle.n_pairs,
                    oracle.n_skipped)
 
@@ -427,9 +462,19 @@ def test_hip_j_from_the_launch_plan(name, tau, n, request, run_device_binary,
 #
 # THE ARMS (#147). A cell is `BuildCell(fixture, tau, n, density_sort, arm)`;
 # `time_builds` takes any tuple of them, so a same-session A/B is two cells
-# that differ in `density_sort` and `arm` only, timed in one call (one
-# session, one store write). This issue's sweep is BUILD_CELLS, the plan's
-# default sort, arm `measured_store.BASELINE_ARM`.
+# that differ in `density_sort` only, timed in one call (one session, one
+# store write; every row carries raw 'build:session'). #146's sweep is
+# BUILD_CELLS, the plan's default sort, arm `measured_store.BASELINE_ARM`;
+# #147's is SORT_KEY_BUILD_CELLS, both arms of every
+# `measured_store.SORT_KEY_CELLS` cell under arm `SORT_AB_ARM`, the arm that
+# runs first alternating from cell to cell -- run alone, one session per
+# card, with the same store variable:
+#
+#   env FJ_LAUNCH_WALLCLOCK_STORE=data/measured/builds.json \
+#       devtools/kernel-tier.sh --backend cuda -- -n 0 -s -k sort_key_ab
+#
+# The verdict (`measured_store.sort_key_ab`) was declared in that module's
+# docstring before any of its rows existed, and is computed, never stored.
 
 LAUNCH_WALLCLOCK_STORE = "FJ_LAUNCH_WALLCLOCK_STORE"
 BUILD_WARMUP = 5
@@ -470,6 +515,22 @@ BUILD_CELLS = (
 )
 
 
+def _sort_key_cells() -> tuple[BuildCell, ...]:
+    """Both arms of every SORT_KEY_CELLS cell, product first on even cells
+    and global first on odd ones, so neither arm always runs first."""
+    out = []
+    for i, (fixture, tau, n) in enumerate(measured_store.SORT_KEY_CELLS):
+        n = DISPATCH if n == f"{measured_store.DISPATCH_PREFIX}" \
+            f"{DISPATCH_INPUT}" else n
+        arms = (True, False) if i % 2 == 0 else (False, True)
+        out.extend(BuildCell(fixture, tau, n, ds, measured_store.SORT_AB_ARM)
+                   for ds in arms)
+    return tuple(out)
+
+
+SORT_KEY_BUILD_CELLS = _sort_key_cells()
+
+
 def _quartiles(xs) -> tuple[float, float, float]:
     q1, med, q3 = (float(x) for x in np.percentile(xs, [25, 50, 75]))
     return q1, med, q3
@@ -486,6 +547,7 @@ def time_builds(backend: str, cells, store_path: Path, request,
     store = measured_store.load_builds(store_path)
     keys = [c.key(arch.name, toolchain) for c in cells]
     assert len(set(keys)) == len(keys), f"two cells, one key: {keys}"
+    session = int(time.time())  # every row of this call: one session
 
     # 1-2. compile, then check, every cell -- before any timing
     checked = []
@@ -567,6 +629,7 @@ def time_builds(backend: str, cells, store_path: Path, request,
             "build:gpu_busy_max": gate.GPU_BUSY_MAX,
             "build:cpu_busy_permille_before": round(1000 * cpu),
             "build:gate_discarded_phases": discarded,
+            measured_store.SESSION_FIELD: session,
         }
         text = ck.drv.source + "".join(u.read_text() for u in ck.drv.units)
         cmd = compile_command(tc, ck.drv, ck.binary)
@@ -624,6 +687,75 @@ def test_cuda_build_wallclock(request, run_device_binary, tmp_path) -> None:
 def test_hip_build_wallclock(request, run_device_binary, tmp_path) -> None:
     """The whole-molecule J_p build's wall-clock on the RX 9060 XT (#146)."""
     _build_wallclock("hip", request, run_device_binary, tmp_path)
+
+
+def _sort_key_ab(backend: str, request, run_device_binary,
+                 tmp_path: Path) -> None:
+    store = os.environ.get(LAUNCH_WALLCLOCK_STORE)
+    if not store:
+        pytest.skip(f"#147's sort-key A/B is opt-in and must run alone, "
+                    f"uncontended: set {LAUNCH_WALLCLOCK_STORE} (see the "
+                    "section comment)")
+    got = time_builds(backend, SORT_KEY_BUILD_CELLS, Path(store), request,
+                      run_device_binary, tmp_path)
+    arch = BACKEND[backend][1].name
+    print(f"\n#147 on {arch} (verdict declared before these rows):")
+    for cell in measured_store.SORT_KEY_CELLS:
+        ab = measured_store.sort_key_ab(got, arch, cell)
+        pm, piqr, gm, giqr = ab.clock
+        print(f"  {cell[0]} tau={cell[1]:g} b={cell[2]}: skipped "
+              f"{ab.skipped[0]} (product) vs {ab.skipped[1]} (global) of "
+              f"{ab.n_pairs}; median {pm / 1e3:.1f} us (IQR {piqr / 1e3:.1f}) "
+              f"vs {gm / 1e3:.1f} us (IQR {giqr / 1e3:.1f}): global "
+              f"{ab.clock_sign}, skips {ab.skip_sign} -> {ab.verdict}")
+    print(f"  {arch}: {measured_store.sort_key_arch_verdict(got, arch)}")
+
+
+CHAIN_ARMS = [pytest.param(c.tau, c.density_sort,
+                           id=f"tau{c.tau:g}-sort{int(c.density_sort)}")
+              for c in SORT_KEY_BUILD_CELLS
+              if c.fixture == measured_store.CHAIN_INPUT]
+
+
+def _chain_arm(backend, tau, density_sort, request, run_device_binary,
+               tmp_path) -> None:
+    tc = _toolchain(backend, request)
+    ck = _check(backend, measured_store.CHAIN_INPUT, tau, 1, density_sort, tc,
+                run_device_binary, tmp_path)
+    if not density_sort:
+        assert ck.n_skipped == 0  # the global key screens nothing here
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize(("tau", "density_sort"), CHAIN_ARMS)
+def test_cuda_the_chain_under_both_keys(tau, density_sort, request,
+                                        run_device_binary, tmp_path) -> None:
+    """#147's extended input, both arms, checked (not timed) on the 3080."""
+    _chain_arm("cuda", tau, density_sort, request, run_device_binary, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize(("tau", "density_sort"), CHAIN_ARMS)
+def test_hip_the_chain_under_both_keys(tau, density_sort, request,
+                                       run_device_binary, tmp_path) -> None:
+    """#147's extended input, both arms, checked (not timed) on the 9060 XT."""
+    _chain_arm("hip", tau, density_sort, request, run_device_binary, tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_sort_key_ab(request, run_device_binary, tmp_path) -> None:
+    """#147's two sort keys, one session, on the RTX 3080."""
+    _sort_key_ab("cuda", request, run_device_binary, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_sort_key_ab(request, run_device_binary, tmp_path) -> None:
+    """#147's two sort keys, one session, on the RX 9060 XT."""
+    _sort_key_ab("hip", request, run_device_binary, tmp_path)
 
 
 # ---------------------------------------------------------------------------
