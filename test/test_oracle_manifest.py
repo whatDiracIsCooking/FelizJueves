@@ -121,7 +121,7 @@ def _write(tmp_path, mutate):
         (lambda r: r.update(ao_loc=[0, 2, 2]), "ao_loc gives shell 0"),
         (lambda r: r["shells"][0]["coefficients"].pop(), "one row per primitive"),
         (lambda r: r["provenance"].update(cart="yes"), "cart must be"),
-        (lambda r: r.update(schema=2), "schema 2"),
+        (lambda r: r.update(schema=3), "schema 3"),
     ],
     ids=["no-libcint", "no-date", "density-short", "ovlp-short", "asymmetric",
          "no-density", "no-ao_loc", "bad-ao_loc", "ragged-shell", "cart-str",
@@ -182,6 +182,96 @@ def test_manifest_cli_reports_each_fixture(capsys):
     assert manifest.main() == 0
     out = capsys.readouterr().out
     assert "h2_sto3g: nao=2, generated " in out
+
+
+# --- #240: schema 2 and the one-electron arrays ----------------------------
+
+ONE_E_FIXTURE = manifest.FIXTURES / "h2o_ccpvdz_j.json"  # has a d shell
+
+
+def test_a_schema_1_file_is_refused_naming_the_bump(tmp_path):
+    """Not a KeyError on a missing array: the message says what changed."""
+    path = _write(tmp_path, lambda r: r.update(schema=1))
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    msg = str(e.value)
+    assert str(path) in msg and "schema 1" in msg
+    assert "bump to 2 (#240)" in msg and "regenerate" in msg
+
+
+def test_the_one_e_arrays_are_named_and_shaped_by_cartesian_aos():
+    assert manifest.SCHEMA == 2
+    assert manifest.ONE_E_ARRAYS == ("int1e_ovlp", "int1e_kin", "int1e_nuc",
+                                     "hcore")
+    fx = load(ONE_E_FIXTURE)
+    assert fx.provenance.cart is True and fx.converted is not None
+    # A d shell is 6 Cartesian AOs, not 5: H2O/cc-pVDZ is 25, not 24.
+    assert any(s.l == 2 for s in fx.converted.shells)
+    assert fx.nao == 25
+    for name in manifest.ONE_E_ARRAYS:
+        a = fx.arrays[name]
+        assert a.shape == (25, 25)
+        # libcint computes both triangles, so symmetric to rounding only
+        assert np.max(np.abs(a - a.T)) <= 1e-14 * np.max(np.abs(a)), name
+    assert np.array_equal(fx.arrays["int1e_ovlp"], fx.arrays["ovlp"])
+
+
+def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
+    """The five HF/cc-pVTZ ERI files are the declared exception
+    (`Case.record_one_e`), and `hf_ccpvtz` -- same molecule, basis, Cartesian
+    flag -- carries the four for them."""
+    from oracle import generate
+
+    fixtures = [load(p) for p in manifest.tracked()]
+
+    def key(fx):
+        p = fx.provenance
+        return (p.mol["atom"], p.mol["unit"], p.basis, p.cart)
+
+    carriers = {key(fx) for fx in fixtures
+                if manifest.OVLP_ARRAY in fx.arrays}
+    skipped = set()
+    for fx in fixtures:
+        has = [n for n in manifest.ONE_E_ARRAYS if n in fx.arrays]
+        if fx.converted is None:
+            assert not has, fx.name
+            continue
+        if generate.CASES[fx.name].record_one_e:
+            assert has == list(manifest.ONE_E_ARRAYS), fx.name
+        else:
+            assert not has and key(fx) in carriers, fx.name
+            skipped.add(fx.name)
+    assert skipped == {"hf_ccpvtz_eri", *(f"hf_ccpvtz_eri_l{L}"
+                                          for L in (9, 10, 11, 12))}
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: (r.pop("converted"), r["arrays"].pop("vj")),
+         "arrays.int1e_ovlp needs the converted basis"),
+        # cart=True is load-bearing: read as spherical, the d shell's 6
+        # Cartesian AOs are refused as the 5 a spherical d would have.
+        (lambda r: r["provenance"].update(cart=False),
+         "ao_loc gives shell 4 6 AOs, its l and contractions need 5"),
+        (lambda r: r["arrays"]["hcore"].update(
+            shape=[24, 24], values=[0.0] * 576), "arrays.hcore has shape"),
+        (lambda r: r["arrays"].pop("int1e_nuc"), "all four or none"),
+        (lambda r: r["arrays"]["int1e_ovlp"]["values"].__setitem__(0, 0.5),
+         "arrays.int1e_ovlp is not exactly arrays.ovlp"),
+    ],
+    ids=["no-converted", "not-cart", "wrong-shape", "three-of-four",
+         "ovlp-mismatch"],
+)
+def test_a_bad_one_e_array_fails_naming_the_file(tmp_path, mutate, says):
+    raw = json.loads(ONE_E_FIXTURE.read_text())
+    mutate(raw)
+    path = tmp_path / ONE_E_FIXTURE.name
+    path.write_text(json.dumps(raw))
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value)
+    assert says in str(e.value)
 
 
 # --- the drift check: needs PySCF ------------------------------------------

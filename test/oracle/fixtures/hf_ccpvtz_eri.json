@@ -1,13 +1,13 @@
 {
- "schema": 1,
+ "schema": 2,
  "name": "hf_ccpvtz_eri",
  "description": "#85's s-to-f case: hf_ccpvtz's molecule and basis (a general contraction, H off every axis), with libcint's int2e for one representative shell quartet per angular-momentum class with la + lb + lc + ld <= 8: 46 of the 55, f included, (dd|dd) and (ff|pp) the largest.",
  "provenance": {
   "pyscf": "2.14.0",
   "libcint": "6.1.3",
   "numpy": "2.5.3",
-  "date": "2026-10-11",
-  "host": "1da02cac6d4e (container)",
+  "date": "2026-10-13",
+  "host": "2d821a04888a (container)",
   "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate hf_ccpvtz_eri",
   "mol": {
    "atom": "F 0 0 0; H 0.4 -0.7 1.6",

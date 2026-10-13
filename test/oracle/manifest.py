@@ -5,9 +5,10 @@ tracked fixture on a box where the `oracle` group was never installed. The
 writer is `generate.py`; this module only defines what a fixture IS and refuses
 anything that is not one, with a message naming the file.
 
-THE SHAPE (schema 1), one JSON object per file under `fixtures/`:
+THE SHAPE (schema 2), one JSON object per file under `fixtures/`:
 
-    schema       1
+    schema       2 (#240: schema 1 had no one-electron arrays; a schema-1
+                 file is refused by name, not read as one with them absent)
     name         the file's stem
     description  free text: what the case is for
     provenance   {pyscf, libcint, numpy, date, host, command, mol, basis, cart}
@@ -37,6 +38,12 @@ THE SHAPE (schema 1), one JSON object per file under `fixtures/`:
                  `get_jk` exchange matrix (nao x nao) for `density`, AO
                  order: `vk_il = sum_jk (ij|kl) D_jk`, which is our
                  `K_ab = sum_cd D_cd (ac|bd)`
+                 `int1e_ovlp`, `int1e_kin`, `int1e_nuc`, `hcore` (OPTIONAL,
+                 #240; each needs `converted`, all four or none) are
+                 libcint's `S`, `T`, `V` (point nuclei, `-Z_C` folded in)
+                 and PySCF's `get_hcore` (`T + V`), nao x nao, AO order.
+                 `int1e_ovlp` is the same `intor` call as `ovlp` and must
+                 equal it exactly; the legacy `ovlp` stays in every file.
     density_recipe  how the recorded density was made
     converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
                  (`ao.shell.Shell`, one entry per contraction, in AO order) as
@@ -67,7 +74,7 @@ from typing import Any
 
 import numpy as np
 
-SCHEMA = 1
+SCHEMA = 2
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 PROVENANCE_KEYS = (
@@ -83,6 +90,12 @@ REQUIRED_ARRAYS = ("density",)
 ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
 J_ARRAY = "vj"  # PySCF get_jk's Coulomb matrix for `density` (#86)
 K_ARRAY = "vk"  # PySCF get_jk's exchange matrix for `density` (#199)
+# #240: libcint's one-electron matrices and PySCF's core Hamiltonian.
+OVLP_ARRAY = "int1e_ovlp"
+KIN_ARRAY = "int1e_kin"
+NUC_ARRAY = "int1e_nuc"
+HCORE_ARRAY = "hcore"
+ONE_E_ARRAYS = (OVLP_ARRAY, KIN_ARRAY, NUC_ARRAY, HCORE_ARRAY)
 
 
 class FixtureError(ValueError):
@@ -252,6 +265,11 @@ def validate(path: Path, raw: Any) -> Fixture:
     extra = sorted(set(raw) - set(TOP_KEYS) - set(OPTIONAL_KEYS))
     if extra:
         raise _fail(path, f"unknown key(s) {extra}")
+    if raw["schema"] == 1:
+        raise _fail(path, f"schema 1, this loader reads {SCHEMA}: the bump to "
+                          "2 (#240) added the one-electron arrays -- "
+                          "regenerate it (python -m oracle.generate "
+                          "--regenerate)")
     if raw["schema"] != SCHEMA:
         raise _fail(path, f"schema {raw['schema']!r}, this loader reads {SCHEMA}")
     if raw["name"] != path.stem:
@@ -328,7 +346,11 @@ def validate(path: Path, raw: Any) -> Fixture:
                             nao)
                  if "converted" in raw else None)
     _check_eri(path, arrays, converted)
-    for name in (J_ARRAY, K_ARRAY):
+    one_e = [n for n in ONE_E_ARRAYS if n in arrays]
+    if one_e and len(one_e) != len(ONE_E_ARRAYS):
+        raise _fail(path, f"arrays has {one_e} of the one-electron arrays "
+                          f"{list(ONE_E_ARRAYS)}: all four or none")
+    for name in (J_ARRAY, K_ARRAY, *ONE_E_ARRAYS):
         if name not in arrays:
             continue
         if converted is None:
@@ -338,6 +360,8 @@ def validate(path: Path, raw: Any) -> Fixture:
             raise _fail(path, f"arrays.{name} has shape "
                               f"{arrays[name].shape}, expected "
                               f"({nao}, {nao})")
+    if one_e and not np.array_equal(arrays[OVLP_ARRAY], arrays["ovlp"]):
+        raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,

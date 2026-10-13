@@ -1,5 +1,5 @@
 {
- "schema": 1,
+ "schema": 2,
  "name": "h2_sto3g_k",
  "description": "#199: h2_sto3g_j's molecule, basis and recorded density, with PySCF's get_jk exchange matrix K (vk_il = sum_jk (ij|kl) D_jk) in place of J.",
  "provenance": {
@@ -7,7 +7,7 @@
   "libcint": "6.1.3",
   "numpy": "2.5.3",
   "date": "2026-10-13",
-  "host": "5827cf35122c (container)",
+  "host": "2d821a04888a (container)",
   "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate h2_sto3g_k",
   "mol": {
    "atom": "H 0 0 0; H 0.3 -0.4 1.3",
@@ -125,6 +125,54 @@
     1.0303494693666195,
     1.0303494693666195,
     1.004016563758822
+   ]
+  },
+  "int1e_ovlp": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.0000000000000002,
+    0.6617981434351801,
+    0.6617981434351801,
+    1.0000000000000002
+   ]
+  },
+  "int1e_kin": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    0.7600318835666091,
+    0.23871876221103205,
+    0.23871876221103205,
+    0.7600318835666091
+   ]
+  },
+  "int1e_nuc": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    -1.8829053710819523,
+    -1.2015523930144039,
+    -1.2015523930144039,
+    -1.8829053710819523
+   ]
+  },
+  "hcore": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    -1.1228734875153432,
+    -0.9628336308033718,
+    -0.9628336308033718,
+    -1.1228734875153432
    ]
   }
  },

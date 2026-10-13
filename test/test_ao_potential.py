@@ -256,3 +256,102 @@ def test_236_screened_potential_drops_only_blocks_below_tau() -> None:
                                 assert got == want, (name, tau, key)
     basis, nuc = _chain_236(3)
     assert pair_list(basis, tau=1e-6, bound=_bound_236(nuc)).dropped
+
+# --- #240: V against libcint's int1e_nuc, and T + V against hcore ----------
+#
+# THE TOLERANCES, stated as test_ao_overlap.py's #240 block states S's:
+#
+#     |V - int1e_nuc|  <= 1e-12 one_e_scale(E_V),           element by element
+#     |T + V - hcore|  <= 1e-12 (one_e_scale(E_T) + one_e_scale(E_V))
+#     E_V[a][b] = SUM_pp SUM_C |Z_C| SUM_t |dressed block_pp[ab][t]| |[t]^(0)|
+#
+# E_V is every product `ao.potential` adds, before any of it cancels; E_T is
+# test_ao_kinetic.py's. The hcore bound is the triangle inequality on the two
+# (`hcore` is PySCF's get_hcore, which `generate.one_e_arrays` checks IS
+# int1e_kin + int1e_nuc before writing it). WHY hcore AT ALL: a normalisation
+# or sign slip shared by T and V would be invisible to each one's own oracle
+# only if both oracles shared it; hcore is PySCF's sum, read independently.
+# The nuclei are the fixture's atoms (charge, Bohr coordinates), point
+# charges, as libcint's int1e_nuc is. `reference.pq.one_centre` is injected,
+# as everywhere in this module. Measured worst on this box (2026-10-13,
+# pyscf 2.14.0 / libcint 6.1.3), printed with -s: V 5.4e-14 of scale
+# (prim_spdf), hcore 3.5e-14 (prim_spdf). These fixtures reach T ~ 1.3e5
+# (hf_ccpvtz's F 1s against H), inside `reference.boys`' T_MAX since #265.
+# Fast tier for s/p, `slow` from l = 2; no PySCF.
+
+from functools import cache  # noqa: E402
+
+import numpy as np  # noqa: E402
+from oracle import basis as _ob  # noqa: E402
+from oracle import manifest as _manifest  # noqa: E402
+from test_ao_kinetic import kinetic_scale_block  # noqa: E402
+from test_ao_overlap import ONE_E_PARAMS, ONE_E_TOL, one_e_scale  # noqa: E402
+
+from felizjueves.ao.kinetic import kinetic_matrix  # noqa: E402
+from felizjueves.ao.one_electron import matrix as _matrix  # noqa: E402
+
+
+def _nuclei(fx) -> tuple:
+    return tuple((float(a.charge), a.coord) for a in fx.atoms)
+
+
+def potential_scale_block(sa: Shell, sb: Shell, nuclei):
+    """`E_V` for one shell pair (the block comment), `potential_block`'s
+    shape and sum order, every factor in absolute value."""
+    ts = hermite_order(sa.l + sb.l)
+    nb = sb.n_cart
+    acc = [0.0] * (sa.n_cart * nb)
+    for pp in primitive_pairs(sa, sb):
+        theta = math.sqrt(pp.zeta)
+        for Z, Cc in nuclei:
+            pc = tuple(pp.P[d] - Cc[d] for d in range(3))
+            R = [abs(one_centre(t, 0, pc, theta)) for t in ts]
+            for k, row in enumerate(pp.block):
+                acc[k] += abs(Z) * sum(abs(e) * r for e, r in zip(row, R,
+                                                                   strict=True))
+    return tuple(tuple(acc[r * nb:(r + 1) * nb]) for r in range(sa.n_cart))
+
+
+@cache
+def _one_e(name: str):
+    """(fixture, V, scale_V) for one tracked fixture, computed once."""
+    fx = _manifest.load(_manifest.FIXTURES / f"{name}.json")
+    basis = _ob.from_fixture(fx)
+    nuc = _nuclei(fx)
+    V = np.array(potential_matrix(basis, nuc, one_centre=one_centre))
+    scale = one_e_scale(np.array(_matrix(
+        basis, lambda sa, sb: potential_scale_block(sa, sb, nuc))))
+    return fx, basis, V, scale
+
+
+def _against(name: str, label: str, ours, ref, scale) -> None:
+    assert ours.shape == ref.shape
+    assert np.all(scale > 0)
+    err = np.abs(ours - ref)
+    worst = float(np.max(err / scale))
+    print(f"\n{name}: max|{label}| = {err.max():.2e}, "
+          f"max err/scale = {worst:.2e}")
+    assert np.all(err <= ONE_E_TOL * scale), (
+        f"{name}: {label} disagrees with libcint, worst err/scale "
+        f"{worst:.2e} against {ONE_E_TOL:.0e}")
+
+
+def test_the_fixture_nuclei_are_its_atoms() -> None:
+    fx = _manifest.load(_manifest.FIXTURES / "hf_ccpvtz.json")
+    assert _nuclei(fx) == ((9.0, (0.0, 0.0, 0.0)), (1.0, (0.4, -0.7, 1.6)))
+
+
+@pytest.mark.parametrize("name", ONE_E_PARAMS)
+def test_potential_matrix_against_libcint(name: str) -> None:
+    fx, _, V, scale = _one_e(name)
+    assert V.shape == (fx.nao, fx.nao)
+    _against(name, "V - int1e_nuc", V, fx.arrays[_manifest.NUC_ARRAY], scale)
+
+
+@pytest.mark.parametrize("name", ONE_E_PARAMS)
+def test_core_hamiltonian_against_hcore(name: str) -> None:
+    fx, basis, V, scale_v = _one_e(name)
+    T = np.array(kinetic_matrix(basis))
+    scale_t = one_e_scale(np.array(_matrix(basis, kinetic_scale_block)))
+    _against(name, "T + V - hcore", T + V, fx.arrays[_manifest.HCORE_ARRAY],
+             scale_t + scale_v)

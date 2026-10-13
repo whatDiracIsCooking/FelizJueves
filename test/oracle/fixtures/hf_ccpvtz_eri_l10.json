@@ -1,13 +1,13 @@
 {
- "schema": 1,
+ "schema": 2,
  "name": "hf_ccpvtz_eri_l10",
  "description": "#121's split of #85's s-to-f case: hf_ccpvtz_eri's molecule and basis, with libcint's int2e for one representative shell quartet per angular-momentum class with la + lb + lc + ld = 10: (ff|fp) (ff|dd) (fd|fd). With hf_ccpvtz_eri (L <= 8) and its L = 9..12 siblings, all 55 classes of HF/cc-pVTZ, each file under the 512 KB hook.",
  "provenance": {
   "pyscf": "2.14.0",
   "libcint": "6.1.3",
   "numpy": "2.5.3",
-  "date": "2026-10-11",
-  "host": "a37a1afdb77b (container)",
+  "date": "2026-10-13",
+  "host": "2d821a04888a (container)",
   "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate hf_ccpvtz_eri_l10",
   "mol": {
    "atom": "F 0 0 0; H 0.4 -0.7 1.6",
