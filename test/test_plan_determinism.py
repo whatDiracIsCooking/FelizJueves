@@ -33,8 +33,12 @@ THE PROBES, one per path through plan/ that a later issue makes load-bearing:
                  order it yields -- the widened rules sort on DAG features
     climb        order_search.climb over a small cell, RNG included: its
                  runs are seeded from strings, and a frontier over tuples
+    search       search.build, the searched board's build step (#172), on
+                 one small cell with a small budget: per-start climbs, the
+                 per-batch frontiers, the product, the selection and the
+                 record's text, serially and over a process pool
 
-TO EXTEND (#172 puts a search with an RNG on the board): write a function
+TO EXTEND: write a function
 returning JSON-ready data, register it in PROBES, and it is run under every
 seed in SEEDS by `test_a_probe_is_the_same_under_every_hash_seed`. Keep a
 probe to a second or two -- it runs once per seed, in a fresh interpreter.
@@ -109,10 +113,23 @@ def probe_searched() -> dict[str, Any]:
     record = load_cuts(CUTS)
     out = {}
     for L, nb in CELLS:
-        cut, seed = record[L, nb]
-        out[f"{L}/{nb}"] = {"choice": [list(cut), seed],
-                            **_with_cost(searched_plan(L, nb, cut, seed))}
+        cut, orders = record[L, nb]
+        out[f"{L}/{nb}"] = {"choice": [list(cut), [list(o) for o in orders]],
+                            **_with_cost(searched_plan(L, nb, cut, orders))}
     return out
+
+
+def probe_search() -> dict[str, Any]:
+    """The searched board's build step (#172) on one small cell, its RNG
+    and its process split included: (7, 3), every start of every batch
+    climbed with a budget of 4, once serially and once over two processes
+    -- which must agree with each other as well as across hash seeds."""
+    from felizjueves.plan.search import build, dump_cuts
+
+    serial = dump_cuts(build([(7, 3)], workers=1, budget=4), budget=4)
+    pooled = dump_cuts(build([(7, 3)], workers=2, budget=4), budget=4)
+    assert serial == pooled, "the record depends on the worker count"
+    return json.loads(serial)
 
 
 def probe_seed_orders() -> dict[str, Any]:
@@ -155,6 +172,7 @@ PROBES: dict[str, Callable[[], Any]] = {
     "searched": probe_searched,
     "seed_orders": probe_seed_orders,
     "climb": probe_climb,
+    "search": probe_search,
 }
 
 

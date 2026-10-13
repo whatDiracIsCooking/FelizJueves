@@ -181,6 +181,24 @@ def test_neighbourhood_is_every_transposition_and_move_once(n):
     assert set(got) == expected
 
 
+@pytest.mark.parametrize("n", range(0, 9))
+def test_move_at_is_moves_by_arithmetic(n):
+    ms = moves(n)
+    assert order_search.n_moves(n) == len(ms)
+    assert [order_search.move_at(n, k) for k in range(len(ms))] == ms
+    with pytest.raises(IndexError):
+        order_search.move_at(n, len(ms))
+
+
+@pytest.mark.parametrize("n", range(0, 8))
+def test_a_lazy_shuffle_is_a_permutation_of_the_neighbourhood(n):
+    rng = random.Random(n)
+    got = list(order_search._shuffled(rng, n))
+    assert sorted(got) == sorted(moves(n))
+    if len(got) > 3:  # and not the fixed order
+        assert got != moves(n)
+
+
 # -- the climb -----------------------------------------------------------------
 
 
@@ -283,6 +301,30 @@ def test_a_run_does_not_depend_on_the_runs_before_it():
     assert all(r2[k] == v for k, v in r1.items())
 
 
+def test_one_start_at_a_time_with_the_shared_ref_is_the_same_climb():
+    """#172 spreads a batch's starts over processes: each start climbed
+    alone, against the reference point of ALL the starts, makes exactly the
+    runs one call over every start makes, and the union of the frontiers is
+    that call's frontier, point for point."""
+    starts = {"down": tuple(range(6, -1, -1)), "mixed": (3, 1, 6, 0, 5, 2, 4),
+              "up": tuple(range(7))}
+    whole = climb(starts, _synthetic, budget=40, seed=9)
+    ref = (min(_synthetic(o)[0] for o in starts.values()),
+           min(_synthetic(o)[1] for o in starts.values()))
+    alone = [climb({k: v}, _synthetic, budget=40, seed=9, ref=ref)
+             for k, v in starts.items()]
+    def walk(r):  # a run, less which start first evaluated its final order
+        return (r.start, r.weight, r.final.order, r.final.point, r.steps,
+                r.examined, r.exhausted)
+
+    assert [walk(r) for a in alone for r in a.runs] == [walk(r) for r in whole.runs]
+    merged = frontier((e for a in alone for e in a.frontier),
+                      key=lambda e: e.point)
+    assert [e.point for e in merged] == [e.point for e in whole.frontier]
+    with pytest.raises(ValueError, match="not a point"):
+        climb({"up": starts["up"]}, _synthetic, ref=(1,))
+
+
 def test_the_budget_bounds_every_run():
     res = climb({"down": tuple(range(7, -1, -1))}, _synthetic, budget=5)
     assert all(r.examined <= 5 for r in res.runs)
@@ -305,12 +347,13 @@ def test_climb_refuses(starts, kw):
         climb(starts, _synthetic, **kw)
 
 
-# -- wired to nothing ----------------------------------------------------------
+# -- wired to the searched board only ------------------------------------------
 
 
-def test_no_module_imports_order_search():
-    """#170's acceptance: imported by nothing outside its own test (and
-    test_layering.py's allow-list refuses any new edge to it)."""
+def test_only_plan_search_imports_order_search():
+    """#170 kept the module imported by nothing; #172 wires it into the
+    searched board's build step, and that is its one importer
+    (test_layering.py's allow-list refuses any other edge to it)."""
     users = [p.relative_to(SRC) for p in SRC.rglob("*.py")
              if p.name != "order_search.py" and "order_search" in p.read_text()]
-    assert users == []
+    assert users == [Path("plan/search.py")]

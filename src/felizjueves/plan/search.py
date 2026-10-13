@@ -9,40 +9,57 @@ and scores the full plan, not the cut: a candidate is partition -> MILD DAG
 per batch -> sieve -> PlanCost, so Tables 1 and 2 are the post-sieve numbers
 the paper prints.
 
-WHAT IS SEARCHED, per (L, n_batches), exhaustively -- bounded and
-deterministic:
+WHAT IS SEARCHED, per (L, n_batches), bounded and deterministic:
 
 - THE CUT. Every contiguous cut `batching.partition` accepts: k - 1
   ascending cut points in 1..L, ONE set shared by X, Y and Z (the shape
   [JEngine, v2, Fig. 4] draws, and the only one `partition` builds), and
   leaving no batch empty (#64: a first cut at 1 empties Y_{0,0} and Z_{0,0},
   and `partition` refuses it). C(L, k - 1) - C(L - 1, k - 2) of them, at most
-  C(16, 2) - 15 = 105. With 1 batch, or 3 (k = 1), the only cut is ().
-- THE SEED ORDER. Each of plan/recovery.py's 58 `seed_orders(widened=True)`
-  (#168): #14's 26 structured orders (`hermite_targets` and its reverse,
-  and every sort by |r| then the components) first, unchanged and in the
-  same order, then #108's 32 widened rules, imported, not redefined. Each is
-  a rule over r and L, never a per-cell fit. Searching them here is a choice
-  of this board only: #108's rules-only doctrine for the literal board's
-  `exact_given_inputs` is untouched.
-
-So at most 105 x 58 = 6090 full plans per cell; the whole board is about
-8 minutes serial (test_plan_search.py's `slow` tests). Until #168 the
-search ranged over the 26 alone, and its residual was read as unreachable
-"independent of the objective"; that was a bound of the space searched, not
-of the problem -- at (12, 1) a widened order lands on the printed cell
-exactly.
+  C(16, 2) - 15 = 105; with 1 batch, or 3 (k = 1), the only cut is (). Only
+  the FEASIBLE ones are searched further (largest batch within
+  MINIMAX_TOLERANCE of the cell's minimax -- a cut's target count is its
+  own, no seed order moves it); on the L = 7..16 grid that is one cut per
+  cell but (7, 9), (8, 9) and (15, 9).
+- THE SEED ORDER, per batch, as an explicit PERMUTATION of the batch's
+  targets (#172). Until #172 a cell took one of plan/recovery.py's 58
+  `seed_orders(widened=True)` rules (#168) for all its batches; those rules
+  are now the STARTS of a climb, not the space:
+    * STARTS: the 58 rules restricted to the batch's targets, one per
+      distinct order (`batch_starts`). All are evaluated; the ones on the
+      batch's frontier of them are climbed (`climb_starts`).
+    * THE CLIMB: plan/order_search.py's `climb` (#170) -- every
+      transposition and every single-element move, first improvement in a
+      seeded random order, strictly better steps only, each start climbed
+      once per weight of order_search's SWEEP (pure intermediates to pure
+      FLOPs, in quarters) and each run stopped at a local optimum or after
+      CLIMB_BUDGET neighbours examined; seed CLIMB_SEED. A batch's starts are
+      climbed one at a time (`Unit`), each against the reference point of
+      all of them, so the runs are exactly those of one `climb` over them,
+      and the build step spreads them over processes without changing a
+      byte of the result.
+    * THE CELL: per batch, the frontier of every order its climbs
+      evaluated; per cut, order_search's `product` of its batches'
+      frontiers (max intermediates, summed FLOPs -- exact, not a heuristic;
+      see order_search); over the feasible cuts, the frontier.
+  Every rule plan on a feasible cut is evaluated, so the climbed frontier
+  weakly dominates the whole 58-rule space there: the climb only adds to
+  what #171's rule selects from. It is still a choice of this board only:
+  #108's rules-only doctrine for the literal board's `exact_given_inputs`
+  is untouched, since a climbed order is a per-cell search, not a rule.
 
 WHAT IS NOT SEARCHED. Per-direction cuts (plan/recovery.py's cut is one; it
 is the paper's recovered INPUT, judged on the literal board, not a choice
-this board makes), seed orders outside the 58 rules (the factorial space;
-#14's record searched random ones and stopped there on purpose), the
-sieve's re-expansion choice and sweep, and `no-sieve`. Everything else is the
-literal reconstruction, sieve on.
+this board makes), orders more than CLIMB_BUDGET examined neighbours from a
+climbed start (the factorial space beyond; #14's record searched random
+orders and stopped there on purpose), the sieve's re-expansion choice and
+sweep, and `no-sieve`. Everything else is the literal reconstruction, sieve
+on.
 
 ONE PLAN PER CELL, chosen in two steps (#171): the FRONTIER of the feasible
 plans, then ONE point of it by a SELECTION RULE stated in #171 before the
-board was re-read, and not tuned to it. The rule, verbatim:
+board was re-read, and not tuned to it. #172 changes the space the frontier
+is taken over, not the rule. The rule, verbatim:
 
     Among feasible plans (max targets within `MINIMAX_TOLERANCE` of the
     cell's minimax), take the Pareto frontier over (max_intermediates,
@@ -58,14 +75,11 @@ Spelled out as the code runs it:
     0. FEASIBLE: max targets per batch <= the cell's minimax + 1
        (MINIMAX_TOLERANCE). Minimax is the paper's own cut criterion; the
        tolerance admits a cut one target off it.
-    1. FRONTIER (`pareto`): the feasible plans whose point
-       (max_intermediates, FLOPs) -- Tables 2 and 1 -- no other feasible
-       plan's point weakly dominates; one plan per distinct point, the first
-       found: cuts in `combinations` order (lowest boundaries first), and
-       within a cut the seed orders in `SEED_ORDERS` order (`hermite`, the
-       literal one, first). Ascending in intermediates, strictly descending
-       in FLOPs -- the convention of #170's `frontier`, which
-       test_plan_search.py checks this one against.
+    1. FRONTIER (order_search's `frontier`, since #172 the only Pareto set
+       in the package): the feasible plans whose point (max_intermediates,
+       FLOPs) -- Tables 2 and 1 -- no other feasible plan's point weakly
+       dominates; one plan per distinct point, the first met. Ascending in
+       intermediates, strictly descending in FLOPs.
     2. SELECT (`select`): the frontier point with the smallest
        i / i_min + f / f_min, in exact rationals, with i_min and f_min the
        frontier's (equally, the feasible plans') fewest intermediates and
@@ -85,41 +99,46 @@ puts the targets in one batch.
 
 What a cell motivated, said plainly: the first search of #13 put targets
 FIRST (tolerance 0), and its one large residual, (15, 9) Table 2 at +7.50%,
-was an artefact of that -- the cut (6, 9) there is one target off minimax
-and at or under in all three tables. The tolerance was set to the smallest
-value that admits it (tolerance 2 picked identically under the old
-objective; 3 broke (9, 9) on Table 3). The selection rule is #171's, quoted
-above, and was not changed after the board was read. What it costs, in the
-cells it does not help, is pinned in test_plan_search.py and limits.json:
-against the lexicographic objective it moves one cell, (13, 1), onto the
-printed values exactly; in (14, 1) and (14, 3) the frontier holds a point at
-or under all three tables and the rule selects another, over Table 1.
+was an artefact of that -- the cut (6, 9) there is one target off minimax.
+The tolerance was set to the smallest value that admits it (tolerance 2
+picked identically under the old objective; 3 broke (9, 9) on Table 3).
+The selection rule is #171's, quoted above, and was not changed after the
+board was read. What #172 chose after reading the board, also said plainly:
+the starts and the budget. Climbing EVERY distinct rule order with a budget
+of 200 left (14, 1) and (15, 1) over Table 1, each with a frontier point at
+or under all three tables that the rule passes over; climbing only the
+batch's frontier starts, ten times deeper (order_search's DEFAULT_BUDGET),
+is cheaper and is the space recorded.
 
 An EMPTY batch (Y_{0,0} and Z_{0,0} whenever the first cut is 1; Fig. 4
 does not draw them at L = 6) is not a candidate: `partition` refuses it
-(#64), so the cuts that make one are not enumerated. Excluding them moves no
-recorded choice: none of searched_cuts.json's cuts starts at 1, and on the
-L = 7..16 grid the minimax is reached by a cut that does not either (the
-default cut, which takes the lowest optimal boundaries, never starts at 1
-there), so neither the feasibility bound nor the winner can change.
+(#64), so the cuts that make one are not enumerated.
 
-THE RECORD. The chosen cut and seed order per (L, n_batches) are data, in
-data/scoreboards/jengine/searched_cuts.json, so a replay (#15) builds the plan
-from `searched_plan(L, n_batches, cuts, seed)` without searching again. Each
-cell also carries its frontier -- every point's cut, seed order and counts --
-and the index of the selected point in it (#171).
+THE RECORD (schema 3, #172). Per (L, n_batches), data/scoreboards/jengine/
+searched_cuts.json carries the cell's frontier -- every point's cut, the
+start each batch's order was climbed from, its counts, and one explicit seed
+order per batch -- and the index of the selected point. `load_cuts` and
+`load_frontiers` refuse a recorded order that is not a permutation of its
+batch's targets (`check_orders`, naming the cell and the batch), and a
+replay (#15) builds the plan with `searched_plan(L, n_batches, cut,
+orders)` without searching again. The build step that writes it is
+`python -m felizjueves.plan search` (`build`).
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
+from functools import cache
 from itertools import combinations
+from multiprocessing import get_context
 from pathlib import Path
 
 from felizjueves.plan.batching import (
+    Batch,
     Counts,
     CutRule,
     empty_batches,
@@ -128,17 +147,37 @@ from felizjueves.plan.batching import (
 )
 from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.dag import BatchDag, batch_dag
+from felizjueves.plan.order_search import (
+    DEFAULT_BUDGET,
+    NEIGHBOURHOOD,
+    SWEEP,
+    Evaluated,
+    Point,
+    climb,
+    frontier,
+    point,
+    product,
+)
 from felizjueves.plan.recovery import SeedOrder, seed_orders
 from felizjueves.plan.sieve import sieve
+from felizjueves.plan.targets import R
 
 Cuts = tuple[int, ...]
-CUTS_SCHEMA = 2
+Order = tuple[R, ...]  # one batch's seed order: a permutation of its targets
+Orders = tuple[Order, ...]  # one per batch, in partition order
+CUTS_SCHEMA = 3
 
 # How many targets over the cell's minimax a chosen cut may hold. See above.
 MINIMAX_TOLERANCE = 1
 
 LITERAL_SEED = "hermite"
 SEED_ORDERS: Mapping[str, SeedOrder] = dict(seed_orders(widened=True))
+
+# The climb (#172), declared: order_search.climb's neighbourhood and sweep,
+# this budget per run, this seed.
+CLIMB_BUDGET = DEFAULT_BUDGET
+CLIMB_SEED = 172
+CLIMB_SWEEP: tuple[Fraction, ...] = SWEEP
 
 # #171's selection rule, verbatim from the issue, declared before the board
 # was re-read. `select` is its code; the record quotes this text.
@@ -187,49 +226,84 @@ def _seed_order(name: str) -> SeedOrder:
         ) from None
 
 
-def _sieved(
-    total_am: int, dags: Iterator[BatchDag] | tuple[BatchDag, ...], seed: str
-) -> tuple[BatchDag, ...]:
-    order = _seed_order(seed)(total_am)
-    return tuple(sieve(d, seed_order=order) for d in dags)
+@cache
+def _dags(total_am: int, n_batches: int, cuts: Cuts) -> tuple[BatchDag, ...]:
+    """The unsieved MILD DAG of each batch of one cut (partition validates
+    the cut). Cached: a DAG is immutable, and the climb sieves one thousands
+    of times."""
+    batches = partition(total_am, n_batches, cut=fixed_cut(cuts))
+    return tuple(batch_dag(total_am, b) for b in batches)
+
+
+def batch_targets(dag: BatchDag) -> frozenset[R]:
+    return frozenset(r for r, _ in dag.targets)
+
+
+def _batch_name(b: Batch) -> str:
+    return f"{b[0]}{b[1]}..{b[2]}"
+
+
+def check_orders(
+    total_am: int, n_batches: int, cuts: Cuts, orders: Sequence[Sequence[R]]
+) -> Orders:
+    """`orders` as Orders, refused unless it holds one order per batch of
+    this cut and each is a permutation of that batch's target set. The
+    message names the cell and the batch."""
+    dags = _dags(total_am, n_batches, tuple(cuts))
+    cell = f"cell {total_am}/{n_batches}"
+    if isinstance(orders, str) or len(orders) != len(dags):
+        raise ValueError(f"{cell}: {len(orders)} seed orders for "
+                         f"{len(dags)} batches")
+    out = []
+    for k, (d, o) in enumerate(zip(dags, orders, strict=True)):
+        order = tuple(tuple(int(c) for c in r) for r in o)
+        mine = batch_targets(d)
+        where = f"{cell}, batch {k} ({_batch_name(d.batch)})"
+        if len(set(order)) != len(order):
+            raise ValueError(f"{where}: the seed order repeats a target")
+        if set(order) != mine:
+            raise ValueError(
+                f"{where}: the seed order is not a permutation of the batch's "
+                f"{len(mine)} targets ({len(order)} given, "
+                f"{len(set(order) - mine)} not in the batch, "
+                f"{len(mine - set(order))} missing)")
+        out.append(order)
+    return tuple(out)
+
+
+def _sieved(dags: Iterable[BatchDag], orders: Iterable[Sequence[R]]
+            ) -> tuple[BatchDag, ...]:
+    return tuple(sieve(d, seed_order=o) for d, o in zip(dags, orders, strict=True))
+
+
+def rule_order(total_am: int, dag: BatchDag, name: str) -> Order:
+    """The named rule's order of `hermite_targets(L)`, restricted to the
+    batch's targets: what `sieve(dag, seed_order=rule(L))` seeds with."""
+    mine = batch_targets(dag)
+    return tuple(r for r in _seed_order(name)(total_am) if r in mine)
 
 
 def searched_plan(
-    total_am: int, n_batches: int, cuts: Cuts, seed: str = LITERAL_SEED
+    total_am: int, n_batches: int, cuts: Cuts,
+    seed: str | Sequence[Sequence[R]] = LITERAL_SEED,
 ) -> tuple[BatchDag, ...]:
-    """The full plan for one cut and seed order: partition, MILD DAG per
-    batch, sieve seeded in the named `seed_orders(widened=True)` order."""
-    batches = partition(total_am, n_batches, cut=fixed_cut(cuts))
-    return _sieved(total_am, (batch_dag(total_am, b) for b in batches), seed)
+    """The full plan for one cut and seed: partition, MILD DAG per batch,
+    sieve. `seed` is the name of one of `seed_orders(widened=True)`, every
+    batch seeded in that rule's order, or (#172) one explicit permutation
+    of each batch's targets, in partition order -- refused, naming the
+    batch, unless it is one (`check_orders`)."""
+    cuts = tuple(cuts)
+    dags = _dags(total_am, n_batches, cuts)
+    if isinstance(seed, str):
+        return _sieved(dags, (rule_order(total_am, d, seed) for d in dags))
+    return _sieved(dags, check_orders(total_am, n_batches, cuts, seed))
 
 
-Point = tuple[int, int]  # (max_intermediates, FLOPs), both minimised
-Plan = tuple[Cuts, str, PlanCost]  # (cut points, seed order name, its cost)
-
-
-def point(c: PlanCost) -> Point:
-    """The pair the frontier is taken over: (max_intermediates, FLOPs)."""
-    return (c.max_intermediates, c.flops)
+Plan = tuple[Cuts, str, PlanCost]  # a rule plan: cut points, rule name, cost
 
 
 def feasible(c: PlanCost, minimax: int) -> bool:
     return c.max_targets <= minimax + MINIMAX_TOLERANCE
-
-
-def pareto(plans: Iterator[Plan] | tuple[Plan, ...] | list[Plan]) -> tuple[Plan, ...]:
-    """The plans whose `point` no other plan's point weakly dominates, one per
-    distinct point (the first met, so the caller's order is the tie-break),
-    ascending in intermediates and strictly descending in FLOPs."""
-    first: dict[Point, Plan] = {}
-    for p in plans:
-        first.setdefault(point(p[2]), p)
-    out: list[Plan] = []
-    best_flops: int | None = None
-    for pt in sorted(first):
-        if best_flops is None or pt[1] < best_flops:
-            out.append(first[pt])
-            best_flops = pt[1]
-    return tuple(out)
 
 
 def reference(points: Iterator[Point] | tuple[Point, ...] | list[Point]) -> Point:
@@ -255,45 +329,220 @@ def select(points: tuple[Point, ...] | list[Point]) -> int:
                key=lambda k: (score(points[k], ref), points[k][0]))
 
 
+def all_plans(total_am: int, n_batches: int) -> Iterator[Plan]:
+    """The rule space (#168), costed, in tie-break order: `candidate_cuts`
+    outer, `seed_orders(widened=True)` inner."""
+    for cuts in candidate_cuts(total_am, n_batches):
+        for name in SEED_ORDERS:
+            yield cuts, name, cost(searched_plan(total_am, n_batches, cuts, name))
+
+
+def max_targets(total_am: int, n_batches: int, cuts: Cuts) -> int:
+    """A cut's largest batch: Table 3's quantity, which no seed order moves
+    (the sieve never deletes a target)."""
+    return max(len(d.targets) for d in _dags(total_am, n_batches, tuple(cuts)))
+
+
+def feasible_cuts(total_am: int, n_batches: int) -> tuple[Cuts, ...]:
+    """The cuts within MINIMAX_TOLERANCE of the cell's minimax, in
+    `candidate_cuts` order."""
+    sizes = {c: max_targets(total_am, n_batches, c)
+             for c in candidate_cuts(total_am, n_batches)}
+    minimax = min(sizes.values())
+    return tuple(c for c, n in sizes.items() if n <= minimax + MINIMAX_TOLERANCE)
+
+
+# -- the climb ----------------------------------------------------------------
+
+
+def _batch_point(dag: BatchDag, order: Sequence[R]) -> Point:
+    return point(cost((sieve(dag, seed_order=order),)))
+
+
+def batch_starts(total_am: int, dag: BatchDag) -> dict[str, Order]:
+    """The 58 rules restricted to one batch, one start per DISTINCT order
+    (the first rule, in `SEED_ORDERS` order, to give it names it)."""
+    out: dict[str, Order] = {}
+    seen: set[Order] = set()
+    for name in SEED_ORDERS:
+        o = rule_order(total_am, dag, name)
+        if o not in seen:
+            seen.add(o)
+            out[name] = o
+    return out
+
+
+@dataclass(frozen=True)
+class Unit:
+    """One climb: one start of one batch of one cut of one cell, under every
+    weight of the sweep, against the batch's reference point. Independent of
+    every other unit, so units run in any order, in any process."""
+
+    total_am: int
+    n_batches: int
+    cuts: Cuts
+    batch: int  # index in partition order
+    start: str
+    ref: Point
+    budget: int
+    seed: int
+
+
+@dataclass(frozen=True)
+class UnitResult:
+    unit: Unit
+    frontier: tuple[Evaluated, ...]
+    runs: int
+    exhausted: int  # runs stopped by the budget, not at a local optimum
+    examined: int  # neighbours examined over the runs, memo hits included
+
+
+def run_unit(u: Unit) -> UnitResult:
+    dag = _dags(u.total_am, u.n_batches, u.cuts)[u.batch]
+    order = batch_starts(u.total_am, dag)[u.start]
+    res = climb({u.start: order}, lambda o: _batch_point(dag, o),
+                sweep=CLIMB_SWEEP, budget=u.budget, seed=u.seed, ref=u.ref)
+    return UnitResult(u, res.frontier, len(res.runs),
+                      sum(r.exhausted for r in res.runs),
+                      sum(r.examined for r in res.runs))
+
+
+def climb_starts(total_am: int, dag: BatchDag) -> tuple[tuple[str, ...], Point]:
+    """The starts a batch is climbed from, and its reference point. Every
+    distinct rule order (`batch_starts`) is evaluated; the reference is the
+    best intermediates and the best FLOPs over them, as one `climb` over all
+    of them would take it; and the climbed starts are the ones whose point
+    no other start's weakly dominates -- the batch's 58-rule frontier, one
+    start per point, the first in `SEED_ORDERS` order."""
+    starts = batch_starts(total_am, dag)
+    pts = {name: _batch_point(dag, o) for name, o in starts.items()}
+    ref = (min(p[0] for p in pts.values()), min(p[1] for p in pts.values()))
+    return frontier(list(starts), key=lambda name: pts[name]), ref
+
+
+def units(total_am: int, n_batches: int, *, budget: int = CLIMB_BUDGET,
+          seed: int = CLIMB_SEED) -> tuple[Unit, ...]:
+    """Every climb the cell's search runs: feasible cuts, then batches, then
+    `climb_starts`, in that order."""
+    out = []
+    for cuts in feasible_cuts(total_am, n_batches):
+        for b, dag in enumerate(_dags(total_am, n_batches, cuts)):
+            names, ref = climb_starts(total_am, dag)
+            out += [Unit(total_am, n_batches, cuts, b, name, ref, budget, seed)
+                    for name in names]
+    return tuple(out)
+
+
+@dataclass(frozen=True)
+class SearchedPlan:
+    """One plan of the climbed space: a cut, one seed order per batch, the
+    start each order was climbed from, and its counts."""
+
+    cuts: Cuts
+    starts: tuple[str, ...]
+    orders: Orders
+    cost: PlanCost
+
+    @property
+    def point(self) -> Point:
+        return point(self.cost)
+
+
 @dataclass(frozen=True)
 class SearchResult:
     total_am: int
     n_batches: int
-    cuts: Cuts
-    seed: str
-    cost: PlanCost
-    n_searched: int
-    frontier: tuple[Plan, ...]  # the feasible plans' Pareto set, see `pareto`
-    selected: int  # the index of (cuts, seed) in `frontier`
+    frontier: tuple[SearchedPlan, ...]  # the cell's Pareto set, see `assemble`
+    selected: int  # the index of the chosen plan in `frontier`
+    runs: int
+    exhausted: int
+    examined: int
+
+    @property
+    def chosen(self) -> SearchedPlan:
+        return self.frontier[self.selected]
+
+    @property
+    def cuts(self) -> Cuts:
+        return self.chosen.cuts
+
+    @property
+    def orders(self) -> Orders:
+        return self.chosen.orders
+
+    @property
+    def cost(self) -> PlanCost:
+        return self.chosen.cost
 
 
-def all_plans(total_am: int, n_batches: int) -> Iterator[Plan]:
-    """The whole search space, costed, in tie-break order: `candidate_cuts`
-    outer, `seed_orders(widened=True)` inner."""
-    for cuts in candidate_cuts(total_am, n_batches):
-        batches = partition(total_am, n_batches, cut=fixed_cut(cuts))
-        dags = tuple(batch_dag(total_am, b) for b in batches)
-        for seed in SEED_ORDERS:
-            yield cuts, seed, cost(_sieved(total_am, dags, seed))
+def assemble(total_am: int, n_batches: int,
+             results: Iterable[UnitResult]) -> SearchResult:
+    """The cell from its units' results: per batch, the frontier of every
+    order its starts' climbs evaluated (starts in order, so a point keeps
+    the first start's order); per cut, `product` of its batches' frontiers;
+    over the feasible cuts in order, the frontier; and #171's `select`."""
+    by_batch: dict[tuple[Cuts, int], list[Evaluated]] = {}
+    rs = list(results)
+    for r in rs:
+        by_batch.setdefault((r.unit.cuts, r.unit.batch), []).extend(r.frontier)
+    plans: list[SearchedPlan] = []
+    for cuts in feasible_cuts(total_am, n_batches):
+        dags = _dags(total_am, n_batches, cuts)
+        n = max(len(d.targets) for d in dags)
+        fronts = [frontier(by_batch[cuts, b], key=lambda e: e.point)
+                  for b in range(len(dags))]
+        for c in product(fronts, key=lambda e: e.point):
+            plans.append(SearchedPlan(
+                cuts, tuple(e.start for e in c.parts),
+                tuple(e.order for e in c.parts),
+                PlanCost(flops=c.point[1], max_intermediates=c.point[0],
+                         max_targets=n)))
+    front = frontier(plans, key=lambda p: p.point)
+    k = select([p.point for p in front])
+    return SearchResult(total_am, n_batches, front, k, sum(r.runs for r in rs),
+                        sum(r.exhausted for r in rs), sum(r.examined for r in rs))
 
 
-def search(total_am: int, n_batches: int) -> SearchResult:
-    """Exhaustive over `all_plans`. The minimax is the smallest max target
-    count over the cuts (the seed order cannot move it: the sieve never
-    deletes a target); the frontier is taken over the feasible plans, and
-    `select` picks one point of it."""
-    plans = list(all_plans(total_am, n_batches))
-    minimax = min(c.max_targets for _, _, c in plans)
-    front = pareto(p for p in plans if feasible(p[2], minimax))
-    k = select([point(c) for _, _, c in front])
-    cuts, seed, best = front[k]
-    return SearchResult(total_am, n_batches, cuts, seed, best, len(plans),
-                        front, k)
+def search(total_am: int, n_batches: int, *, budget: int = CLIMB_BUDGET,
+           seed: int = CLIMB_SEED,
+           map_: Callable[..., Iterable[UnitResult]] = map) -> SearchResult:
+    """One cell: run its `units` (through `map_`, e.g. a process pool's) and
+    `assemble` them."""
+    return assemble(total_am, n_batches,
+                    map_(run_unit, units(total_am, n_batches, budget=budget,
+                                         seed=seed)))
+
+
+def build(cells: Sequence[tuple[int, int]], *, workers: int = 1,
+          budget: int = CLIMB_BUDGET, seed: int = CLIMB_SEED
+          ) -> dict[tuple[int, int], SearchResult]:
+    """Every cell's search, its units spread over `workers` processes
+    (largest batches first, for balance). The result does not depend on
+    `workers`: each unit is a pure function of its fields."""
+    todo = [u for c in cells for u in units(*c, budget=budget, seed=seed)]
+    if workers <= 1:
+        done = list(map(run_unit, todo))
+    else:
+        order = sorted(range(len(todo)), key=lambda i: -len(
+            _dags(todo[i].total_am, todo[i].n_batches, todo[i].cuts)
+            [todo[i].batch].targets))
+        # spawn, not fork: the caller may be threaded (a test runner), and
+        # a unit needs nothing of the parent but its fields.
+        with ProcessPoolExecutor(workers, mp_context=get_context("spawn")) as pool:
+            got = list(pool.map(run_unit, [todo[i] for i in order], chunksize=1))
+        done = [None] * len(todo)
+        for i, r in zip(order, got, strict=True):
+            done[i] = r
+    out: dict[tuple[int, int], SearchResult] = {}
+    for c in cells:
+        out[c] = assemble(*c, (r for r in done
+                               if (r.unit.total_am, r.unit.n_batches) == c))
+    return out
 
 
 # -- the record ---------------------------------------------------------------
 
-Choice = tuple[Cuts, str]  # (cut points, seed order name)
+Choice = tuple[Cuts, Orders]  # (cut points, one seed order per batch)
 
 
 @dataclass(frozen=True)
@@ -301,7 +550,8 @@ class FrontierPoint:
     """One recorded frontier point: its plan and the counts it replays to."""
 
     cuts: Cuts
-    seed: str
+    starts: tuple[str, ...]
+    orders: Orders
     max_intermediates: int
     flops: int
     max_targets: int
@@ -310,32 +560,77 @@ class FrontierPoint:
     def point(self) -> Point:
         return (self.max_intermediates, self.flops)
 
-
-def _point_json(cuts: Cuts, seed: str, c: PlanCost) -> str:
-    return json.dumps({"cut": list(cuts), "seed_order": seed,
-                       "max_intermediates": c.max_intermediates,
-                       "flops": c.flops, "max_targets": c.max_targets})
+    @property
+    def choice(self) -> Choice:
+        return (self.cuts, self.orders)
 
 
-def dump_cuts(results: Mapping[tuple[int, int], SearchResult]) -> str:
-    """searched_cuts.json: per "L/n_batches", the chosen cut and seed order,
-    the index of that plan in the cell's frontier, and the frontier, one
-    point per line; sorted by (L, nb)."""
+def _compact(x) -> str:
+    return json.dumps(x, separators=(",", ":"))
+
+
+def _point_json(p: SearchedPlan) -> str:
+    head = json.dumps({"cut": list(p.cuts), "start": list(p.starts),
+                       "max_intermediates": p.cost.max_intermediates,
+                       "flops": p.cost.flops,
+                       "max_targets": p.cost.max_targets})
+    orders = ",\n".join(f"        {_compact([list(r) for r in o])}"
+                        for o in p.orders)
+    return f'      {head[:-1]}, "orders": [\n{orders}\n      ]}}'
+
+
+def space_record(budget: int = CLIMB_BUDGET, seed: int = CLIMB_SEED) -> dict:
+    """The space the build step searched, as the record states it."""
+    return {
+        "cuts": ("every shared contiguous cut batching.partition accepts "
+                 "whose largest batch is within minimax_tolerance of the "
+                 "cell's minimax"),
+        "starts": ("per batch, plan.recovery.seed_orders(widened=True)'s 58 "
+                   "rules restricted to the batch's targets, one per distinct "
+                   "order, named by the first rule that gives it; all are "
+                   "evaluated, and those on the batch's frontier of them "
+                   "(no other start's point weakly dominates theirs, one per "
+                   "point) are climbed"),
+        "neighbourhood": list(NEIGHBOURHOOD),
+        "sweep": [str(w) for w in CLIMB_SWEEP],
+        "budget": budget,
+        "seed": seed,
+        "climb": ("plan.order_search.climb, one start at a time against the "
+                  "batch's reference point (the best intermediates and the "
+                  "best flops over its starts): first-improvement, strictly "
+                  "better steps only, each run ending at a local optimum or "
+                  "after 'budget' neighbours examined"),
+        "combine": ("per batch the frontier of every order its climbs "
+                    "evaluated; per cut plan.order_search.product of its "
+                    "batches' frontiers (max intermediates, summed flops); "
+                    "over the feasible cuts the frontier; then 'select'"),
+    }
+
+
+def dump_cuts(results: Mapping[tuple[int, int], SearchResult], *,
+              budget: int = CLIMB_BUDGET, seed: int = CLIMB_SEED) -> str:
+    """searched_cuts.json: per "L/n_batches", the chosen cut, the start of
+    each batch's order, the index of the chosen plan in the cell's frontier,
+    the climb's tally, and the frontier -- each point's cut, starts, counts
+    and one explicit seed order per batch, one batch per line; sorted by
+    (L, nb)."""
     doc = {
         "schema": CUTS_SCHEMA,
         "about": (
-            "The cut and sieve seed order plan/search.py chose per "
-            "(L, n_batches) for the searched board: the shared cut points "
-            "c_1 < ... < c_{k-1} that batching.partition takes, "
-            "k = n_batches // 3, and the name of one of "
-            "plan.recovery.seed_orders(widened=True). Replay with "
-            "plan.search.searched_plan(L, n_batches, cut, seed_order); do not "
-            "re-search. Each cell also records its frontier -- the feasible "
-            "plans' Pareto set over (max_intermediates, flops), ascending in "
-            "max_intermediates, with each point's plan and counts -- and "
-            "'selected', the index of the chosen plan in it, so a reader "
-            "with another exchange rate between the two can re-select "
-            "without re-searching (#171)."
+            "The plan plan/search.py chose per (L, n_batches) for the searched "
+            "board (#172): the shared cut points c_1 < ... < c_{k-1} that "
+            "batching.partition takes, k = n_batches // 3, and one explicit "
+            "sieve seed order per batch, in partition order -- a permutation "
+            "of that batch's targets [rx, ry, rz], climbed from one of "
+            "plan.recovery.seed_orders(widened=True) (named in 'start'). The "
+            "chosen plan is frontier[selected]; replay any point with "
+            "plan.search.searched_plan(L, n_batches, cut, orders); do not "
+            "re-search. Each cell records its frontier -- the feasible plans' "
+            "Pareto set over (max_intermediates, flops), ascending in "
+            "max_intermediates -- so a reader with another exchange rate "
+            "between the two can re-select without re-searching (#171). "
+            "'space' is what was searched; the build step is "
+            "`python -m felizjueves.plan search`."
         ),
         "objective": {
             "feasible": "max_targets <= minimax + minimax_tolerance",
@@ -352,17 +647,22 @@ def dump_cuts(results: Mapping[tuple[int, int], SearchResult]) -> str:
             ),
             "rule": SELECTION_RULE,
             "ties": (
-                "one plan per point: the first in search order, lowest cut "
-                "points, then seed_orders(widened=True) order"
+                "one plan per point: the first met -- within a batch, starts "
+                "in seed_orders(widened=True) order and each climb's "
+                "evaluation order; across batches, order_search.product's "
+                "nested order; across cuts, lowest cut points first"
             ),
         },
+        "space": space_record(budget, seed),
     }
     blocks = []
     for L, nb in sorted(results):
         r = results[L, nb]
-        head = json.dumps({"cut": list(r.cuts), "seed_order": r.seed,
-                           "selected": r.selected})
-        pts = ",\n".join(f"      {_point_json(*p)}" for p in r.frontier)
+        head = json.dumps({"cut": list(r.cuts), "start": list(r.chosen.starts),
+                           "selected": r.selected,
+                           "climb": {"runs": r.runs, "exhausted": r.exhausted,
+                                     "examined": r.examined}})
+        pts = ",\n".join(_point_json(p) for p in r.frontier)
         blocks.append(f'    "{L}/{nb}": {head[:-1]}, "frontier": [\n{pts}\n    ]}}')
     head = json.dumps(doc, indent=2)
     return head[:-2] + ',\n  "cuts": {\n' + ",\n".join(blocks) + "\n  }\n}\n"
@@ -376,43 +676,46 @@ def _read(path: Path) -> dict:
 
 
 def _frontier_of(key: str, cell: Mapping) -> tuple[FrontierPoint, ...]:
-    pts = tuple(
-        FrontierPoint(tuple(p["cut"]), p["seed_order"], p["max_intermediates"],
-                      p["flops"], p["max_targets"])
-        for p in cell["frontier"]
-    )
-    for p in pts:
-        _seed_order(p.seed)
+    """A cell's recorded frontier, every point's orders checked against its
+    cut's batches, and its 'selected' point checked to be the cell's own cut
+    and starts."""
+    L, nb = (int(x) for x in key.split("/"))
+    pts = []
+    for p in cell["frontier"]:
+        cuts = tuple(p["cut"])
+        starts = tuple(p["start"])
+        for s in starts:
+            _seed_order(s)  # a start names one of the 58 rules
+        orders = check_orders(L, nb, cuts, p["orders"])
+        if len(starts) != len(orders):
+            raise ValueError(f"cell {key}: {len(starts)} starts for "
+                             f"{len(orders)} batches")
+        pts.append(FrontierPoint(cuts, starts, orders, p["max_intermediates"],
+                                 p["flops"], p["max_targets"]))
     k = cell["selected"]
-    if not 0 <= k < len(pts) or (pts[k].cuts, pts[k].seed) != (
-        tuple(cell["cut"]), cell["seed_order"]
+    if not 0 <= k < len(pts) or (pts[k].cuts, pts[k].starts) != (
+        tuple(cell["cut"]), tuple(cell["start"])
     ):
         raise ValueError(f"cell {key}: 'selected' {k} is not the recorded "
-                         f"cut and seed order's index in its frontier")
-    return pts
-
-
-def load_cuts(path: Path) -> dict[tuple[int, int], Choice]:
-    """(cut, seed order) per cell. A cell that records a frontier must name
-    its own plan as the frontier's selected point."""
-    doc = _read(path)
-    out: dict[tuple[int, int], Choice] = {}
-    for key, cell in doc["cuts"].items():
-        L, nb = (int(x) for x in key.split("/"))
-        _seed_order(cell["seed_order"])  # refuse a name no replay can build
-        if "frontier" in cell:
-            _frontier_of(key, cell)
-        out[L, nb] = (tuple(cell["cut"]), cell["seed_order"])
-    return out
+                         f"cut and starts' index in its frontier")
+    return tuple(pts)
 
 
 def load_frontiers(
     path: Path,
 ) -> dict[tuple[int, int], tuple[tuple[FrontierPoint, ...], int]]:
-    """Per cell, the recorded frontier and the index of the selected point."""
+    """Per cell, the recorded frontier and the index of the selected point.
+    Every recorded seed order is checked to be a permutation of its batch's
+    targets (`check_orders`); a record that is not is refused."""
     doc = _read(path)
     out = {}
     for key, cell in doc["cuts"].items():
         L, nb = (int(x) for x in key.split("/"))
         out[L, nb] = (_frontier_of(key, cell), cell["selected"])
     return out
+
+
+def load_cuts(path: Path) -> dict[tuple[int, int], Choice]:
+    """(cut, one seed order per batch) per cell: its frontier's selected
+    point, after `load_frontiers`' checks."""
+    return {c: front[k].choice for c, (front, k) in load_frontiers(path).items()}

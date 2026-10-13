@@ -6,10 +6,17 @@ be put on the path by hand:
     PYTHONPATH=src uv run python -m felizjueves.plan replay literal
     PYTHONPATH=src uv run python -m felizjueves.plan replay searched
     PYTHONPATH=src uv run python -m felizjueves.plan report 12 6 [--no-sieve]
+    PYTHONPATH=src uv run python -m felizjueves.plan search [--workers N]
 
 REPLAY builds every cell the board's tables hold with `pipeline.plan`, scores
 the candidates through `scoreboard.score`, and prints one verdict per
 (table, rule). Host-side counting only: nothing compiles, nothing launches.
+
+SEARCH is the searched board's build step (#172): it runs plan/search.py's
+climb over every cell of the table grid, its climbs spread over `--workers`
+processes (the record does not depend on how many), writes
+searched_cuts.json, and prints its wall-clock. It judges nothing; run
+`replay searched` after it. Exit 0 written, 2 could not run.
 
 REPORT prints one Spec's `Plan.report()` as JSON: the cost and the per-batch
 FLOP, intermediate and target counts.
@@ -39,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -48,7 +56,14 @@ from felizjueves.literature.tables import Cell, Table, load_table
 from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.recovery import recovered_candidates
-from felizjueves.plan.search import Choice, load_cuts, searched_plan
+from felizjueves.plan.search import (
+    CLIMB_BUDGET,
+    Choice,
+    build,
+    dump_cuts,
+    load_cuts,
+    searched_plan,
+)
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import Operator, Spec, Target
 
@@ -194,6 +209,25 @@ def replay(board_name: str, data: Path = DATA) -> int:
     return exit_status(verdicts)
 
 
+# -- the searched board's build step (#172) ------------------------------------
+
+GRID = tuple((L, nb) for L in range(7, 17) for nb in (1, 3, 6, 9))
+
+
+def build_searched(out: Path, workers: int, budget: int = CLIMB_BUDGET) -> int:
+    t0 = time.monotonic()
+    results = build(GRID, workers=workers, budget=budget)
+    text = dump_cuts(results, budget=budget)
+    out.write_text(text)
+    wall = time.monotonic() - t0
+    print(f"search: {len(results)} cells, "
+          f"{sum(r.runs for r in results.values())} climbs "
+          f"({sum(r.exhausted for r in results.values())} stopped by the "
+          f"budget {budget}), {workers} workers, {wall:.0f} s wall-clock; "
+          f"wrote {out}")
+    return EXIT_PASS
+
+
 # -- entry point ---------------------------------------------------------------
 
 
@@ -208,6 +242,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     rp.add_argument("board", choices=BOARDS)
     rp.add_argument("--data", type=Path, default=DATA,
                     help=f"the repo's data/ directory (default: {DATA})")
+    sp = sub.add_parser("search", help="the searched board's build step: "
+                        "climb every cell and write searched_cuts.json")
+    sp.add_argument("--workers", type=int, default=1)
+    sp.add_argument("--budget", type=int, default=CLIMB_BUDGET,
+                    help=f"neighbours examined per run (default {CLIMB_BUDGET}, "
+                    "the recorded one)")
+    sp.add_argument("--out", type=Path,
+                    default=DATA / "scoreboards" / "jengine" / SEARCHED_CUTS)
     pp = sub.add_parser("report", help="one plan's cost and per-batch counts, "
                         "as JSON")
     pp.add_argument("total_am", type=int, metavar="L")
@@ -217,6 +259,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "replay":
         return replay(args.board, args.data)
+    if args.command == "search":
+        if args.workers < 1 or args.budget < 0:
+            print("search: could not run: --workers >= 1, --budget >= 0",
+                  file=sys.stderr)
+            return EXIT_COULD_NOT_RUN
+        return build_searched(args.out, args.workers, args.budget)
     try:
         spec = spec_for(args.total_am, args.n_batches,
                         (NO_SIEVE,) if args.no_sieve else ())

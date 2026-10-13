@@ -248,46 +248,47 @@ def _searched_limit() -> StructuralLimit:
 
 
 def test_the_searched_board_with_the_searched_plans() -> None:
-    # #13's outcome, pinned so a change to it is a diff here: the "Not found"
-    # branch. Since #168 (58 seed orders) Tables 2 and 3 pass, and since
-    # #171 (a frontier and its selection rule) Table 1 FAILs at_or_under in
-    # 8 cells, every one within +0.89% of the printed value; the
-    # StructuralLimit names exactly those cells with exactly those margins.
-    # (Under 26 orders it was 21 and 3 cells, within +2.04%; under #168's
-    # lexicographic objective 9 cells, (13, 1) the ninth.)
+    # #13's outcome, pinned so a change to it is a diff here. Since #172
+    # (explicit per-batch seed orders, climbed from the 58 rules) all three
+    # tables PASS at_or_under in every cell, and the StructuralLimit records
+    # no residual. (Under 26 orders it was 21 and 3 cells over, within
+    # +2.04%; under #168's lexicographic objective 9 cells of Table 1; under
+    # #171's frontier over the 58 rules 8, within +0.89% -- the record's
+    # previous_residual.)
     by_table = {
         v.table: v
         for v in score(_board("searched"), TABLES, _searched_candidates())
     }
-    t1, t2, t3 = (by_table[f"jengine/table{n}"] for n in (1, 2, 3))
-    for t in (t2, t3):
-        assert t.status is Status.PASS and t.measured["worst_overshoot"] == 0.0
-    assert t1.status is Status.FAIL
-    assert t1.measured["over"] == 8
-    assert round(100 * t1.measured["worst_overshoot"], 2) == 0.89
-    residual = _searched_limit().asserted_value["residual_percent_over"]
-    assert set(residual) == {"jengine/table1"}
-    assert residual[t1.table] == [
-        [L, nb, round(100 * o, 2)] for (L, nb), o in t1.measured["overshoot"]
-    ]
+    for n in (1, 2, 3):
+        t = by_table[f"jengine/table{n}"]
+        assert t.status is Status.PASS, t
+        assert t.measured["over"] == 0 and t.measured["worst_overshoot"] == 0.0
+    value = _searched_limit().asserted_value
+    assert value["residual_percent_over"] == {}
+    assert value["unreachable_in_space"] == [] and value["selection_price"] == []
 
 
-def test_no_searched_candidate_is_at_or_under_all_three_in_a_residual_cell() -> None:
-    # The limit's "unreachable in the 58-order space", checked on the 1- and
-    # 3-batch unreachable cells, where there is no cut and the space is the
-    # 58 seed orders alone: every order is over Table 1 there. Every cell,
-    # every cut -- and the two cells where the selection rule passes over a
-    # frontier point at or under all three tables -- is test_plan_search.py's
-    # slow tests.
-    unreachable = _searched_limit().asserted_value["unreachable_in_space"]
-    cells = {(L, nb) for L, nb in unreachable if nb in (1, 3)}
-    assert cells == {(13, 3), (15, 1), (15, 3), (16, 1), (16, 3)}
+def test_the_previous_residual_cells_are_reached_only_by_the_climb() -> None:
+    # The limit's previous_residual, re-checked where it is cheap: in its
+    # 1- and 3-batch cells there is no cut, so #171's space was the 58 seed
+    # orders alone, and every one of them is still over Table 1 there --
+    # while the recorded climbed plan is at or under all three tables. The
+    # climb, not a change of rule, is what moved these cells.
+    prev = _searched_limit().asserted_value["previous_residual"]
+    cells = {(L, nb) for L, nb, _ in prev["jengine/table1"] if nb in (1, 3)}
+    assert cells == {(13, 3), (14, 1), (14, 3), (15, 1), (15, 3), (16, 1),
+                     (16, 3)}
     assert len(SEED_ORDERS) == 58
     printed = [TABLES[f"jengine/table{n}"] for n in (1, 2, 3)]
-    for L, nb in sorted(cells):
+    recorded = load_cuts(BOARDS / "searched_cuts.json")
+    for L, nb in sorted(cells - {(14, 1), (14, 3)}):
         for seed in SEED_ORDERS:
             c = cost(searched_plan(L, nb, (), seed))
             assert c.flops > printed[0].cells[L, nb], (L, nb, seed)
+    for L, nb in sorted(cells):
+        c = cost(searched_plan(L, nb, *recorded[L, nb]))
+        got = (c.flops, c.max_intermediates, c.max_targets)
+        assert all(g <= t.cells[L, nb] for g, t in zip(got, printed, strict=True))
 
 
 def test_tables_are_read_only() -> None:
