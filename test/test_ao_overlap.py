@@ -260,3 +260,92 @@ def test_236_matrix_refuses_a_pair_outside_the_upper_triangle() -> None:
     for bad in ((1, 0), (0, n), (-1, 0), (0.0, 1)):
         with pytest.raises(ValueError, match="pair"):
             matrix(basis, overlap_block, pairs=[bad])
+
+# --- #240: S against libcint's int1e_ovlp, every fixture that carries it ----
+#
+# THE TOLERANCE, stated and not tuned, the way test_ao_j.py states J's:
+#
+#     |S - int1e_ovlp| <= 1e-12 scale_S,  element by element,
+#     scale_S = one_e_scale(E),  E[a][b] = SUM_pp |dressed block_pp[ab][t = 0]|
+#
+# E is the size of what was added before any of it cancelled (test_ao_eri.py's
+# scale, read at t = 0), completed by Cauchy-Schwarz, sqrt(E_aa E_bb), where
+# that is larger (`one_e_scale` says why). 1e-12 is ~4500 ulps of the
+# scale. test_ao_kinetic.py and test_ao_potential.py state T's and V's the
+# same way, over their own absolute-value sums. Fast tier for the
+# s/p fixtures, `slow` once a d function appears (#85's rule). The arrays are
+# the tracked fixture's, so no PySCF. Measured worst on this box (2026-10-13,
+# pyscf 2.14.0 / libcint 6.1.3), printed with -s: 6.2e-16 of scale
+# (prim_spdf), over all 11 fixtures that carry int1e_ovlp. A failure is a
+# defect to find, not a tolerance to widen.
+
+import numpy as np  # noqa: E402
+from oracle import basis as _ob  # noqa: E402
+from oracle import manifest as _manifest  # noqa: E402
+
+ONE_E_TOL = 1e-12
+
+
+def _one_e_params():
+    """Every tracked fixture carrying the #240 arrays; `slow` from l = 2."""
+    out = []
+    for path in _manifest.tracked():
+        fx = _manifest.load(path)
+        if _manifest.OVLP_ARRAY not in fx.arrays:
+            continue
+        slow = max(s.l for s in fx.converted.shells) >= 2
+        out.append(pytest.param(path.stem, id=path.stem,
+                                marks=[pytest.mark.slow] if slow else []))
+    return out
+
+
+ONE_E_PARAMS = _one_e_params()
+
+
+def _overlap_scale_block(sa: Shell, sb: Shell):
+    nb = sb.n_cart
+    acc = [0.0] * (sa.n_cart * nb)
+    for pp in primitive_pairs(sa, sb):
+        for k, row in enumerate(pp.block):
+            acc[k] += abs(row[0])
+    return tuple(tuple(acc[r * nb:(r + 1) * nb]) for r in range(sa.n_cart))
+
+
+def one_e_scale(entry: np.ndarray) -> np.ndarray:
+    """`max(entry, sqrt(entry_aa entry_bb))`, elementwise (the block comment).
+
+    `entry` is the absolute-value sum for each element. Its Cauchy-Schwarz
+    completion is there because `P` is formed in floating point: on one
+    centre off the origin `X_PA` is an ulp, not 0, so a parity zero comes
+    out ~1e-17 of the two functions' size while its own entry scale is that
+    same ~1e-17 (libcint writes 0.0). The error is a fraction of the
+    functions' size, which is what the geometric mean of the diagonals is.
+    """
+    d = np.sqrt(np.diag(entry))
+    return np.maximum(entry, np.outer(d, d))
+
+
+def test_every_one_e_fixture_is_compared() -> None:
+    # s/p cases in the fast tier; a d case and an s-to-f case behind `slow`.
+    names = {p.values[0]: bool(p.marks) for p in ONE_E_PARAMS}
+    assert {"h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_eri", "h2o_ccpvdz_j",
+            "hf_ccpvtz", "prim_spdf"} <= set(names)
+    assert not names["h2o_631g_eri"] and names["hf_ccpvtz"]
+
+
+@pytest.mark.parametrize("name", ONE_E_PARAMS)
+def test_overlap_matrix_against_libcint(name: str) -> None:
+    fx = _manifest.load(_manifest.FIXTURES / f"{name}.json")
+    basis = _ob.from_fixture(fx)
+    S = np.array(overlap_matrix(basis))
+    scale = one_e_scale(np.array(matrix(basis, _overlap_scale_block)))
+    ref = fx.arrays[_manifest.OVLP_ARRAY]
+    assert S.shape == ref.shape == (fx.nao, fx.nao)
+    assert np.all(scale > 0)
+    err = np.abs(S - ref)
+    worst = float(np.max(err / scale))
+    print(f"\n{name}: max|S - int1e_ovlp| = {err.max():.2e}, "
+          f"max err/scale = {worst:.2e}")
+    assert np.all(err <= ONE_E_TOL * scale), (
+        f"{name}: S disagrees with libcint, worst err/scale {worst:.2e} "
+        f"against {ONE_E_TOL:.0e}")

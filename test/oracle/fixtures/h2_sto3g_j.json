@@ -1,13 +1,13 @@
 {
- "schema": 1,
+ "schema": 2,
  "name": "h2_sto3g_j",
  "description": "#86's smallest J case: H2 in STO-3G, Cartesian, the bond off every axis. Records the converted basis and PySCF's get_jk J for the recorded density.",
  "provenance": {
   "pyscf": "2.14.0",
   "libcint": "6.1.3",
   "numpy": "2.5.3",
-  "date": "2026-10-11",
-  "host": "1da02cac6d4e (container)",
+  "date": "2026-10-13",
+  "host": "2d821a04888a (container)",
   "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate h2_sto3g_j",
   "mol": {
    "atom": "H 0 0 0; H 0.3 -0.4 1.3",
@@ -125,6 +125,54 @@
     0.8945711033506735,
     0.8945711033506735,
     1.2755732957907142
+   ]
+  },
+  "int1e_ovlp": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.0000000000000002,
+    0.6617981434351801,
+    0.6617981434351801,
+    1.0000000000000002
+   ]
+  },
+  "int1e_kin": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    0.7600318835666091,
+    0.23871876221103205,
+    0.23871876221103205,
+    0.7600318835666091
+   ]
+  },
+  "int1e_nuc": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    -1.8829053710819523,
+    -1.2015523930144039,
+    -1.2015523930144039,
+    -1.8829053710819523
+   ]
+  },
+  "hcore": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    -1.1228734875153432,
+    -0.9628336308033718,
+    -0.9628336308033718,
+    -1.1228734875153432
    ]
   }
  },

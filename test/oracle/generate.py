@@ -37,8 +37,12 @@ import numpy as np
 from .manifest import (
     ERI_PREFIX,
     FIXTURES,
+    HCORE_ARRAY,
     J_ARRAY,
     K_ARRAY,
+    KIN_ARRAY,
+    NUC_ARRAY,
+    OVLP_ARRAY,
     SCHEMA,
     dumps,
     encode_array,
@@ -82,6 +86,13 @@ class Case:
     # Write the `vk` array (#199): PySCF's `get_jk` exchange matrix for the
     # recorded `density`. Needs `record_basis`, as `record_j` does.
     record_k: bool = False
+    # Write the one-electron arrays (#240): libcint's `int1e_ovlp`,
+    # `int1e_kin`, `int1e_nuc` and PySCF's `hcore`. Only where `record_basis`
+    # holds (our side builds its shells from it). Off for the five
+    # HF/cc-pVTZ ERI files alone: they are `hf_ccpvtz`'s molecule and basis
+    # exactly, which carries the four, and four 50 x 50 arrays would put
+    # four of the five over the 512 KB hook (test_ao_eri.py pins it).
+    record_one_e: bool = True
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -151,6 +162,7 @@ def _hf_eri_by_L(L: int, classes: str) -> Case:
         record_eri=True,
         min_eri_L=L,
         max_eri_L=L,
+        record_one_e=False,  # hf_ccpvtz carries them (Case.record_one_e)
     )
 
 CASES: dict[str, Case] = {
@@ -221,6 +233,7 @@ CASES: dict[str, Case] = {
         record_basis=True,
         record_eri=True,
         max_eri_L=8,
+        record_one_e=False,  # hf_ccpvtz carries them (Case.record_one_e)
     ),
     # #121: the nine classes over hf_ccpvtz_eri's cap, one file per L.
     "hf_ccpvtz_eri_l9": _hf_eri_by_L(9, "(ff|fs) (ff|dp) (fd|fp) (fd|dd)"),
@@ -482,7 +495,30 @@ def build(name: str) -> dict[str, Any]:
         if not case.record_basis:
             raise ValueError(f"{name}: record_k needs record_basis")
         out["arrays"][K_ARRAY] = encode_array(k_array(mol))
+    if case.record_basis and case.record_one_e:
+        out["arrays"].update(one_e_arrays(mol))
     return out
+
+
+def one_e_arrays(mol: Any) -> dict[str, Any]:
+    """#240: libcint's `S`, `T`, `V` (`int1e_ovlp`, `int1e_kin`,
+    `int1e_nuc`: point nuclei, `-Z_C` already in) and PySCF's
+    `scf.hf.get_hcore`. `get_hcore` is cross-checked against `T + V` to 1e-14
+    of the largest element before it is written (no ECP, no pseudo, no
+    finite nuclei here, so it must be that sum); what is RECORDED is
+    `get_hcore`'s, the matrix a later `Tr(D h)` is read against."""
+    from pyscf import scf
+
+    s = mol.intor("int1e_ovlp")
+    t = mol.intor("int1e_kin")
+    v = mol.intor("int1e_nuc")
+    h = np.asarray(scf.hf.get_hcore(mol), dtype=np.float64)
+    err = float(np.max(np.abs(h - (t + v))))
+    if err > 1e-14 * float(np.max(np.abs(h))):
+        raise ValueError(f"get_hcore and int1e_kin + int1e_nuc differ by "
+                         f"{err:.3e}")
+    return {OVLP_ARRAY: encode_array(s), KIN_ARRAY: encode_array(t),
+            NUC_ARRAY: encode_array(v), HCORE_ARRAY: encode_array(h)}
 
 
 def j_array(mol: Any) -> np.ndarray:

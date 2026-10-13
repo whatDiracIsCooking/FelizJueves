@@ -281,3 +281,72 @@ def test_236_screened_kinetic_drops_only_blocks_below_tau() -> None:
                             else:
                                 assert got == want, (name, tau, key)
     assert pair_list(_chain_236(8), tau=1e-6, bound=kinetic_bound).dropped
+
+# --- #240: T against libcint's int1e_kin, every fixture that carries it -----
+#
+# THE TOLERANCE, stated as test_ao_overlap.py's #240 block states S's:
+#
+#     |T - int1e_kin| <= 1e-12 one_e_scale(E_T),  element by element,
+#     E_T[a][b] = SUM_pp |c_a c_b| (pi/zeta)^{3/2}
+#                 (|K_x| |S_y| |S_z| + |S_x| |K_y| |S_z| + |S_x| |S_y| |K_z|)
+#
+# with |K| the three-term ket shift taken term by term in absolute value
+# (2 beta^2 |S_{i,j+2}| + beta (2j+1) |S_ij| + 1/2 j(j-1) |S_{i,j-2}|): every
+# product `ao.kinetic` adds, before any of it cancels. Measured worst on this
+# box (2026-10-13, pyscf 2.14.0 / libcint 6.1.3), printed with -s: 7.6e-16
+# of scale (hf_ccpvtz). Fast tier for s/p, `slow` from l = 2; no PySCF.
+
+import numpy as np  # noqa: E402
+from oracle import basis as _ob  # noqa: E402
+from oracle import manifest as _manifest  # noqa: E402
+from test_ao_overlap import ONE_E_PARAMS, ONE_E_TOL, one_e_scale  # noqa: E402
+
+from felizjueves.ao.hermite import e_axis  # noqa: E402
+from felizjueves.ao.one_electron import matrix as _matrix  # noqa: E402
+
+
+def _abs_k(s, j: int, beta: float) -> float:
+    k = 2.0 * beta * beta * abs(s[j + 2]) + beta * (2 * j + 1) * abs(s[j])
+    if j >= 2:
+        k += 0.5 * j * (j - 1) * abs(s[j - 2])
+    return k
+
+
+def kinetic_scale_block(sa: Shell, sb: Shell):
+    """`E_T` for one shell pair (the block comment), `kinetic_block`'s shape."""
+    A, B = sa.centre, sb.centre
+    carts = [(a, b) for a in cartesians(sa.l) for b in cartesians(sb.l)]
+    nb = sb.n_cart
+    acc = [0.0] * len(carts)
+    for alpha, ca in zip(sa.exponents, sa.coefficients, strict=True):
+        for beta, cb in zip(sb.exponents, sb.coefficients, strict=True):
+            zeta = alpha + beta
+            P = [(alpha * A[d] + beta * B[d]) / zeta for d in range(3)]
+            S = [[[e_axis(i, j, zeta, P[d] - A[d], P[d] - B[d])[0]
+                   for j in range(sb.l + 3)] for i in range(sa.l + 1)]
+                 for d in range(3)]
+            w = abs(ca * cb) * (math.pi / zeta) ** 1.5
+            for n, (a, b) in enumerate(carts):
+                s = [abs(S[d][a[d]][b[d]]) for d in range(3)]
+                k = [_abs_k(S[d][a[d]], b[d], beta) for d in range(3)]
+                acc[n] += w * (k[0] * s[1] * s[2] + s[0] * k[1] * s[2]
+                               + s[0] * s[1] * k[2])
+    return tuple(tuple(acc[r * nb:(r + 1) * nb]) for r in range(sa.n_cart))
+
+
+@pytest.mark.parametrize("name", ONE_E_PARAMS)
+def test_kinetic_matrix_against_libcint(name: str) -> None:
+    fx = _manifest.load(_manifest.FIXTURES / f"{name}.json")
+    basis = _ob.from_fixture(fx)
+    T = np.array(kinetic_matrix(basis))
+    scale = one_e_scale(np.array(_matrix(basis, kinetic_scale_block)))
+    ref = fx.arrays[_manifest.KIN_ARRAY]
+    assert T.shape == ref.shape == (fx.nao, fx.nao)
+    assert np.all(scale > 0)
+    err = np.abs(T - ref)
+    worst = float(np.max(err / scale))
+    print(f"\n{name}: max|T - int1e_kin| = {err.max():.2e}, "
+          f"max err/scale = {worst:.2e}")
+    assert np.all(err <= ONE_E_TOL * scale), (
+        f"{name}: T disagrees with libcint, worst err/scale {worst:.2e} "
+        f"against {ONE_E_TOL:.0e}")
