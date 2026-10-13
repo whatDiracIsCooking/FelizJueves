@@ -5,6 +5,9 @@
     exchange_matrix_and_scale(basis, D, *, pq)          -> (K, scale)
     k_from_eris(basis, D, *, pq)                        -> K   via ao.eri
     k_quartet(bra_pair, ket_pair, D_cd, *, pq)          the seam's reference
+    exchange_matrix_screened(basis, D, *, pq, tau, order="sorted")
+                                                        -> KScreened (#200)
+    record_bounds(pair, *, pq)                          -> I per record
 
 `K_ab = sum_{cd} D_cd (ac|bd)`, never by forming `(ac|bd)`. The BRA pair
 record is `(a, c)` and the KET pair record is `(b, d)` -- the two Hermite
@@ -95,10 +98,80 @@ scale_eri(ac|bd)` for `ao.eri`'s per-element ERI scale, and a per-ERI bound
 inequality: the K tolerance is inherited, not chosen, exactly as
 `ao.j.coulomb_matrix_and_scale`'s is.
 
-THE SCREEN. `tau` is in every sweep's signature for #200 (K's Schwarz bound,
-proved, and the sort by `I_bd` alone); it is not built here. `tau = 0.0` is
-accepted and screens nothing; any `tau > 0` is REFUSED (`ValueError`) rather
-than silently ignored.
+THE SCREEN (#200). A (bra record, ket record) pair -- one primitive pair
+of `(sa, sc)` against one of `(sb, sd)` -- is skipped when
+
+    (I_ac * I_bd) * Dm < tau,      Dm = max_{mn} |D_mn|  (the whole density)
+
+with `I` the per-record scalar `record_bounds` returns:
+
+    I_ac = max_{i in a} sum_{k in c} sum_p |E^{a_i c_k}_p| I_p(zeta)
+
+`I_p = sqrt([p|p](PQ = 0, theta = sqrt(zeta/2)))` is `ao.pairs.hermite_bound`
+-- the pair-factor-free Schwarz factor #84/#85 proved for J -- evaluated
+through the injected `pq` exactly as `ao.j.pair_bound_pq` does (a test pins
+it equal to `hermite_bound` under `reference.pq.one_centre`), and `E` is the
+DRESSED coefficient, the same `s * E` the contraction uses. THE PROOF that
+it bounds: the record pair's contribution to `K[a_i][b_j]` is
+
+    X_ij = sum_{kl} D_{c_k d_l} sum_{pq} E^{ik}_p [p|q] E^{jl}_q
+
+and `|[p|q]| <= I_p I_q` (ao/pairs.py: Cauchy-Schwarz on the Coulomb form,
+the pair factors cancelling), so
+
+    |X_ij| <= sum_{kl} |D_kl| (sum_p |E^{ik}_p| I_p) (sum_q |E^{jl}_q| I_q)
+           <= Dm (sum_k sum_p |E^{ik}_p| I_p) (sum_l sum_q |E^{jl}_q| I_q)
+           <= Dm I_ac I_bd.
+
+The dressing rides `I` here where in J it rides `Dmax`: J's `D_q` is a
+pre-contraction that carries the ket's `E`, and K has none (next
+paragraph). test/test_ao_k_screening.py asserts the inequality over
+randomised records rather than taking it on authority.
+
+THE KEY THE J ENGINE USES IS UNAVAILABLE FOR K. J sorts its kets by
+`I_ket * Dmax_ket` because `D_q` belongs to the ket alone. In K the density
+element `D_cd` STRADDLES the two records -- `c` is the bra's summed index,
+`d` the ket's -- so no ket-side quantity tracks it, and no ket order
+follows the density. [Fock, §4.3.1] (docs/references.md entry 23, doi
+10.1021/acs.jctc.4c00994; the sentence as the milestone description quotes
+it) is prior art for the same observation: "Unlike the J scheme, we cannot
+order our shell pairs based on the magnitude of the density matrix." So
+K's density factor is the bra- and ket-independent `Dm`, and the kets are
+sorted descending by `I_bd` ALONE, with a STABLE sort. That is what makes
+the sorted `break` exact: for one bra record `I_ac >= 0` and `Dm >= 0` are
+fixed, and the rounded `(I_ac * x) * Dm` is non-decreasing in `x`, so every
+ket after the first rejected one is rejected too. Sorting by the J key
+misapplied -- `I_bd * max|D_bd|`, the ket pair's own density block, J's
+`Dmax` shape -- orders the kets by something the screen does not test, and
+its `break` skips kets the `continue` keeps (a test shows it on real
+bounds). The break's precondition is the Schwarz-only order. (A tighter
+density factor that stays bra-side, the max over `D`'s `c` rows, would keep
+the break exact too; it is not taken, and [Fock]'s density-decay bound is
+out of this milestone's scope.)
+
+  `exchange_matrix(tau=)`, `exchange_matrix_reference(tau=)`  the unsorted
+      `continue`, inside the quartet contraction; the two sweeps skip the
+      same set, the product being symmetric under the bra-ket swap.
+  `exchange_matrix_screened(tau=, order=)`  the unique sweep per bra record
+      over its kets: `order="sorted"` the kernel's `break`, `"unsorted"` the
+      `continue`, returning `KScreened`. Each element is accumulated with
+      `math.fsum` over its per-record-pair terms, so the two orders give the
+      SAME `K` to 0 when they skip the same set -- a statement about WHICH
+      terms were summed, not their order (#88's `coulomb_matrix_screened`).
+
+AT `tau = 0.0` NOTHING IS SKIPPED AND NO BOUND IS EVALUATED, in every entry
+point: the branch is not taken, no `I` is formed, and the sorted form keeps
+the unsorted order (there is no key without a bound, and `fsum` makes the
+order immaterial). So a comparison at `tau = 0` cannot have an error hidden
+by screening. `exchange_matrix_and_scale` is unscreened, and the `k=` seam
+with `tau > 0` is REFUSED: screening is not a hook's business.
+
+`KScreened.scale` is the stated error scale, independent of `tau`: per
+element `(m, n)`, the number of ORDERED record pairs whose block covers it,
+`R(shell of m) * R(shell of n)` with `R(x) = sum_c n_records(x, c)`. Each
+skipped record pair, with its bra-ket partner, removes from an element at
+most one term per ordered record pair, each bounded by `I_ac I_bd Dm <
+tau`, so `|K(tau) - K(0)| <= tau * scale` element by element.
 
 THE `K` SEAM, `k=` (the shape #151 set for `dq=` / `jab=`). `exchange_matrix`
 takes an optional `k(bra, ket, dcd) -> block`, called once per unique
@@ -110,7 +183,8 @@ The quadruple list, the density's extraction and symmetry check, the
 weights and the scatter stay this module's, so a disagreement through `k=`
 localises to the hook. `k_quartet` with its `pq` bound is the host path
 through the seam (`functools.partial(k_quartet, pq=pq)`), and with it
-`exchange_matrix` is `==` to itself without it. The seam is unscreened.
+`exchange_matrix` is `==` to itself without it. The seam is unscreened:
+`k` with `tau > 0` is refused.
 
 MEMOISE NOTHING across calls. Pure Python floats; `D` is anything
 indexable as `D[m][n]`, and `K` is a tuple of rows.
@@ -120,6 +194,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 
 from felizjueves.ao.eri import eri_block
 from felizjueves.ao.hermite import e_block, hermite_order
@@ -132,13 +207,59 @@ PQ = Callable[[Ang, Ang, Vec, float], float]
 Matrix = tuple[tuple[float, ...], ...]
 Block = list[list[float]]
 KQ = Callable[[EPair, EPair, Sequence[float]], Sequence[Sequence[float]]]
+Skip = Callable[[int, int], bool]
+
+_ORIGIN = (0.0, 0.0, 0.0)
 
 
-def _no_screen(tau: float) -> None:
-    if _tau(tau) != 0.0:
-        raise ValueError(
-            f"tau = {tau!r}: K's screen is not built (#200); only tau = 0 is "
-            "accepted (ao/k.py's module docstring)")
+def _hermite_bounds_pq(zeta: float, L: int, *, pq: PQ) -> list[float]:
+    """`I_p = sqrt([p|p](PQ = 0, theta = sqrt(zeta/2)))` over
+    `hermite_order(L)`: `ao.pairs.hermite_bound` through the `[p|q]`
+    evaluator, as `ao.j.pair_bound_pq` forms it. Raises on a negative
+    radicand, never `abs`es it."""
+    theta = math.sqrt(zeta / 2.0)
+    out = []
+    for p in hermite_order(L):
+        s = pq(p, p, _ORIGIN, theta)
+        if s < 0.0:
+            raise ValueError(
+                f"[p|p](0) = {s!r} < 0 at p = {p}, zeta = {zeta!r}: a diagonal "
+                "of a positive-definite form, so the evaluator's sign "
+                "convention is wrong")
+        out.append(math.sqrt(s))
+    return out
+
+
+def record_bounds(pair: EPair, *, pq: PQ) -> tuple[float, ...]:
+    """K's per-record Schwarz scalar, one per record of `pair` (module
+    docstring, "THE SCREEN"): `I = max_{i in a} sum_{k in c} sum_p
+    |E^{a_i c_k}_p| I_p(zeta)`, the dressed `E` of `pair = epair(sa, sc)` --
+    rows over the FIRST shell (the output index), summed over the second."""
+    out = []
+    L = pair.la + pair.lb
+    cb = cartesians(pair.lb)
+    for rec in pair.recs:
+        ips = _hermite_bounds_pq(rec[1], L, pq=pq)
+        rows = []
+        for a in cartesians(pair.la):
+            terms = []
+            for c in cb:
+                e = _dressed(rec, a, c, pair.A, pair.B)
+                terms.extend(abs(x) * y for x, y in zip(e, ips, strict=True))
+            rows.append(math.fsum(terms))
+        out.append(max(rows))
+    return tuple(out)
+
+
+def _dm(rows: list[list[float]]) -> float:
+    """`Dm = max_{mn} |D_mn|`, the screen's density factor."""
+    return max(abs(x) for r in rows for x in r)
+
+
+def _skip(ib: Sequence[float], ik: Sequence[float], dm: float,
+          tau: float) -> Skip:
+    """The screen's test on record indices: `(I_ac * I_bd) * Dm < tau`."""
+    return lambda i, j: (ib[i] * ik[j]) * dm < tau
 
 
 def _dressed(rec: tuple[Vec, float, float], x: Ang, y: Ang, X: Vec,
@@ -149,8 +270,11 @@ def _dressed(rec: tuple[Vec, float, float], x: Ang, y: Ang, X: Vec,
 
 
 def _k_quartet(bra: EPair, ket: EPair, dcd: Sequence[float], *, pq: PQ,
-               want_scale: bool) -> tuple[Block, Block]:
-    """The staged contraction of one shell quartet, and its |.| twin."""
+               want_scale: bool,
+               skip: Skip | None = None) -> tuple[Block, Block]:
+    """The staged contraction of one shell quartet, and its |.| twin;
+    `skip(i, j)` true drops bra record `i` against ket record `j` (the
+    unsorted `continue`)."""
     ca, cc = cartesians(bra.la), cartesians(bra.lb)
     cb, cd = cartesians(ket.la), cartesians(ket.lb)
     na, nc, nb, nd = len(ca), len(cc), len(cb), len(cd)
@@ -160,10 +284,12 @@ def _k_quartet(bra: EPair, ket: EPair, dcd: Sequence[float], *, pq: PQ,
     qs = hermite_order(ket.la + ket.lb)
     K = [[0.0] * nb for _ in range(na)]
     S = [[0.0] * nb for _ in range(na)]
-    for brec in bra.recs:  # one bra pair record (a, c)
+    for ibr, brec in enumerate(bra.recs):  # one bra pair record (a, c)
         P, zeta, _ = brec
         e_ac = [_dressed(brec, a, c, bra.A, bra.B) for a in ca for c in cc]
-        for krec in ket.recs:  # one ket pair record (b, d)
+        for ikr, krec in enumerate(ket.recs):  # one ket pair record (b, d)
+            if skip is not None and skip(ibr, ikr):
+                continue
             Q, eta, _ = krec
             theta = math.sqrt(zeta * eta / (zeta + eta))
             PQv = (P[0] - Q[0], P[1] - Q[1], P[2] - Q[2])
@@ -239,20 +365,32 @@ def _quadruples(n_sh: int, *, ordered: bool):
 
 
 def _sweep(basis: Basis, D: object, *, pq: PQ, ordered: bool,
-           want_scale: bool, k: KQ | None = None) -> tuple[Matrix, Matrix]:
+           want_scale: bool, k: KQ | None = None,
+           tau: float = 0.0) -> tuple[Matrix, Matrix]:
     rows = _density(basis, D)
+    tau = _tau(tau)
+    if k is not None and tau > 0.0:
+        raise ValueError(f"tau = {tau!r}: the k seam is unscreened; only "
+                         "tau = 0 is accepted with k (ao/k.py's module "
+                         "docstring)")
     shells, off = basis.shells, basis.offsets
     n_sh = len(shells)
     eps = {(x, y): epair(shells[x], shells[y])
            for x in range(n_sh) for y in range(n_sh)}
+    # the bound, only when it can fire: at tau = 0 none is evaluated
+    bnd = ({xy: record_bounds(ep, pq=pq) for xy, ep in eps.items()}
+           if tau > 0.0 else None)
+    dm = _dm(rows) if tau > 0.0 else 0.0
     n = basis.n_ao
     K = [[0.0] * n for _ in range(n)]
     S = [[0.0] * n for _ in range(n)]
     for a, b, c, d in _quadruples(n_sh, ordered=ordered):
         dcd = _dcd(basis, rows, c, d)
         if k is None:
+            skip = (None if bnd is None
+                    else _skip(bnd[a, c], bnd[b, d], dm, tau))
             X, A = _k_quartet(eps[a, c], eps[b, d], dcd, pq=pq,
-                              want_scale=want_scale)
+                              want_scale=want_scale, skip=skip)
         else:
             got = k(eps[a, c], eps[b, d], dcd)
             na, nb = shells[a].n_cart, shells[b].n_cart
@@ -278,17 +416,19 @@ def _sweep(basis: Basis, D: object, *, pq: PQ, ordered: bool,
 def exchange_matrix(basis: Basis, D: object, *, pq: PQ, tau: float = 0.0,
                     k: KQ | None = None) -> Matrix:
     """`K_mn` by one quadruple per bra-ket orbit, with K's weights (module
-    docstring); `k` replaces the quartet contraction (the seam)."""
-    _no_screen(tau)
-    return _sweep(basis, D, pq=pq, ordered=False, want_scale=False, k=k)[0]
+    docstring); `k` replaces the quartet contraction (the seam). `tau > 0`
+    screens as the unsorted `continue` ("THE SCREEN"); not with `k`."""
+    return _sweep(basis, D, pq=pq, ordered=False, want_scale=False, k=k,
+                  tau=tau)[0]
 
 
 def exchange_matrix_reference(basis: Basis, D: object, *, pq: PQ,
                               tau: float = 0.0) -> Matrix:
     """`K_mn` by EVERY ordered quadruple, weight 1, no symmetry. The internal
-    check on `exchange_matrix`'s weights; keep it."""
-    _no_screen(tau)
-    return _sweep(basis, D, pq=pq, ordered=True, want_scale=False)[0]
+    check on `exchange_matrix`'s weights; keep it. `tau > 0` screens as the
+    unsorted `continue`, the same skipped set as `exchange_matrix`'s."""
+    return _sweep(basis, D, pq=pq, ordered=True, want_scale=False,
+                  tau=tau)[0]
 
 
 def exchange_matrix_and_scale(basis: Basis, D: object, *,
@@ -319,3 +459,119 @@ def k_from_eris(basis: Basis, D: object, *, pq: PQ) -> Matrix:
                         acc += rows[off[c] + kk][off[d] + ll] * row[j * nd + ll]
                 K[off[a] + i][off[b] + j] += acc
     return tuple(tuple(r) for r in K)
+
+
+# --- the screen as an error claim (#200): the sorted break ---------------
+
+
+@dataclass(frozen=True)
+class KScreened:
+    """`exchange_matrix_screened`'s result, `ao.j.Screened`'s shape for K
+    (module docstring, "THE SCREEN"): `K`, the `tau`-independent error scale,
+    the count of (bra record, ket record) pairs of the unique sweep, total,
+    skipped and examined (whose screen test was evaluated: 0 at `tau = 0`),
+    and the largest and the `math.fsum` of every skipped bound
+    `I_ac I_bd Dm`."""
+
+    K: Matrix
+    scale: Matrix
+    n_pairs: int
+    n_skipped: int
+    n_examined: int
+    max_skipped: float
+    dropped: float
+
+    @property
+    def skip_fraction(self) -> float:
+        return self.n_skipped / self.n_pairs
+
+
+ORDERS = ("sorted", "unsorted")
+
+KetKey = Callable[[int, int, float], float]  # (b, d, I_bd) -> sort key
+
+
+def _schwarz_key(b: int, d: int, i_bd: float) -> float:
+    """K's ket order: `I_bd` ALONE (module docstring)."""
+    return i_bd
+
+
+def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
+              ket_key: KetKey = _schwarz_key) -> KScreened:
+    """The unique sweep, per bra record over its kets in `order`. `ket_key`
+    is the sort key: `_schwarz_key`, except where a test shows what another
+    key does to the break (module docstring)."""
+    if order not in ORDERS:
+        raise ValueError(f"order = {order!r} is not one of {ORDERS}")
+    rows = _density(basis, D)
+    tau = _tau(tau)
+    shells, off = basis.shells, basis.offsets
+    n_sh = len(shells)
+    eps = {(x, y): epair(shells[x], shells[y])
+           for x in range(n_sh) for y in range(n_sh)}
+    screen = tau > 0.0  # at tau = 0: no bound, no key, no sort, no skip
+    bnd = ({xy: record_bounds(ep, pq=pq) for xy, ep in eps.items()}
+           if screen else {})
+    dm = _dm(rows) if screen else 0.0
+    dcds = {(x, y): _dcd(basis, rows, x, y)
+            for x in range(n_sh) for y in range(n_sh)}
+    n = basis.n_ao
+    terms: list[list[list[float]]] = [[[] for _ in range(n)] for _ in range(n)]
+    n_pairs = n_skipped = n_examined = 0
+    dropped: list[float] = []
+    for a in range(n_sh):
+        oa = off[a]
+        for c in range(n_sh):
+            bra = eps[a, c]
+            kets = [(b, d, j) for b in range(a + 1) for d in range(n_sh)
+                    if not (b == a and d > c)  # its partner is visited
+                    for j in range(len(eps[b, d].recs))]
+            if screen and order == "sorted":  # descending, stable
+                kets.sort(key=lambda t: ket_key(t[0], t[1],
+                                                bnd[t[0], t[1]][t[2]]),
+                          reverse=True)
+            n_ket = len(kets)
+            for i, brec in enumerate(bra.recs):
+                one_bra = replace(bra, recs=(brec,))
+                n_pairs += n_ket
+                for idx, (b, d, j) in enumerate(kets):
+                    if screen:
+                        n_examined += 1
+                        if (bnd[a, c][i] * bnd[b, d][j]) * dm < tau:
+                            if order == "sorted":  # every later ket too
+                                rest = kets[idx:]
+                                n_skipped += len(rest)
+                                dropped.extend(
+                                    (bnd[a, c][i] * bnd[y, z][w]) * dm
+                                    for y, z, w in rest)
+                                break
+                            n_skipped += 1
+                            dropped.append((bnd[a, c][i] * bnd[b, d][j]) * dm)
+                            continue
+                    ket = eps[b, d]
+                    X = _k_quartet(one_bra, replace(ket, recs=(ket.recs[j],)),
+                                   dcds[c, d], pq=pq, want_scale=False)[0]
+                    ob = off[b]
+                    mirror = not (a == b and c == d)  # else a fixed point
+                    for ii, row in enumerate(X):
+                        for jj, v in enumerate(row):
+                            terms[oa + ii][ob + jj].append(v)
+                            if mirror:  # the partner: X^T (X + X^T if a == b)
+                                terms[ob + jj][oa + ii].append(v)
+    K = tuple(tuple(math.fsum(t) for t in r) for r in terms)
+    # the scale: ordered record pairs covering (m, n) = R(sh m) * R(sh n)
+    R = [sum(len(eps[x, y].recs) for y in range(n_sh)) for x in range(n_sh)]
+    sh_of = [x for x in range(n_sh) for _ in range(shells[x].n_cart)]
+    S = tuple(tuple(float(R[sh_of[m]] * R[sh_of[v]]) for v in range(n))
+              for m in range(n))
+    return KScreened(K, S, n_pairs, n_skipped, n_examined,
+                     max(dropped, default=0.0), math.fsum(dropped))
+
+
+def exchange_matrix_screened(basis: Basis, D: object, *, pq: PQ, tau: float,
+                             order: str = "sorted") -> KScreened:
+    """`K_mn` by the unique sweep, screened at `tau` as the kernel's sorted
+    `break` (`order="sorted"`: kets descending by `I_bd` alone, stable) or as
+    the unsorted `continue` (`order="unsorted"`); module docstring, "THE
+    SCREEN". At `tau = 0` no bound is evaluated and nothing is skipped."""
+    return _screened(basis, D, pq=pq, tau=tau, order=order)
