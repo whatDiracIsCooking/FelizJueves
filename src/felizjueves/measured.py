@@ -15,6 +15,8 @@
     python -m felizjueves.measured --remeasure --asym   # #113's study cells
     python -m felizjueves.measured --asym-verdict       # #113's comparison
     python -m felizjueves.measured --roofline           # #112's verdicts
+    python -m felizjueves.measured --remeasure --subgrid --target k
+                [--subgrid-ls 7 10] [--compile-timeout S]  # #205's K cells
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -81,6 +83,16 @@ the launch `kernel.launch_shape` fixes, blockDim.y = wavefront).
 `compile_s` is the wall time of one compile while up to `-j` others run
 beside it: a cost indication, never a benchmark.
 
+THE K CELLS (#205) are `measured_store.K_SUBGRID`, compiled the same way
+(`cell_kernels` builds them with `kernel_k.build_k_kernels`). A K batch
+kernel's stage-2 digest is fully unrolled, so its unit runs from 0.8 MB of
+source (L = 7) to 187 MB (L = 16), and the compile with it: each unit has a
+wall-time budget (`--compile-timeout`, COMPILE_TIMEOUT_S by default), a
+compile past it is killed with its whole process group and its cell gets
+NO ROW (`CompileTimeout`, never a partial cell), and each cell's largest
+unit is compiled first, so a cell that cannot be compiled is known -- and
+its other units cancelled -- after one budget, not after all of them.
+
 COUNTERS (#110) are read here too: `profile` runs a built binary under the
 vendor's profiler and `parse_ncu_csv` / `parse_rocprof_csv` read what it
 wrote, one `KernelCounters` per launch; `counter_rows` files one cell's
@@ -134,13 +146,14 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -155,11 +168,13 @@ from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Lit, Space
 from felizjueves.kernel import build_pq_kernels, pq_spec
+from felizjueves.kernel_k import build_k_kernels
 from felizjueves.lower import LEVERS, RECYCLE, lower
 from felizjueves.measured_store import (
     GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: test_kernel_device's sweep
 )
 from felizjueves.measured_store import (
+    K_SUBGRID,
     MEASUREMENTS,
     NO_SIEVE,
     NOT_MEASURABLE,
@@ -192,7 +207,7 @@ from felizjueves.measured_store import (
 from felizjueves.measured_store import (
     save_counters as save_counters,  # re-exported: test_kernel_device's sweep
 )
-from felizjueves.spec import Spec
+from felizjueves.spec import Spec, Target
 
 DEFAULT_LS = tuple(range(0, 17))
 
@@ -203,9 +218,18 @@ def cell_kernels(spec: Spec | AsymCell) -> tuple[Kernel, ...]:
     nor the plan layer accepts), then `lower` on each finished kernel as
     those levers say. No lowering lever: `build_pq_kernels(spec)`, the very
     same objects -- the literal arm is not touched. An `AsymCell` (#113) is
-    the study's own batch list (`AsymCell.kernels`), never lowered."""
+    the study's own batch list (`AsymCell.kernels`), never lowered. A
+    `Target.K` cell (#205) is `kernel_k.build_k_kernels(spec)`: the
+    partial-sum form, one kernel per batch, atomized when split. No lever is
+    declared for K, so a K Spec carrying one is refused, never built as
+    something else."""
     if isinstance(spec, AsymCell):
         return spec.kernels()
+    if spec.target is Target.K:
+        if spec.levers:
+            raise ValueError(f"{spec.key()}: no lever is declared for a K "
+                             "cell (#205)")
+        return build_k_kernels(spec)
     rest = tuple(lv for lv in spec.levers if lv not in LEVERS)
     if rest == spec.levers:
         return build_pq_kernels(spec)
@@ -404,19 +428,46 @@ def host() -> str:
     return f"{name} (container)" if Path("/.dockerenv").exists() else name
 
 
+COMPILE_TIMEOUT_S = 1800  # per unit; a K cell's unrolled digest asks more
+
+
+class CompileTimeout(RuntimeError):
+    """A unit's compile did not finish within its budget: no row, and the
+    budget, the unit and its size are in the message (#205)."""
+
+
 def compile_unit(backend: Backend, unit: Unit, *, compiler: str,
-                 workdir: Path) -> tuple[dict[str, int], float, str]:
+                 workdir: Path, timeout: float = COMPILE_TIMEOUT_S
+                 ) -> tuple[dict[str, int], float, str]:
     """Compile one translation unit with the measurement flag.
 
     Returns the compiler's numbers for the unit's kernel, the compile's wall
-    time, and the command as recorded (paths shown as `<file>`).
+    time, and the command as recorded (paths shown as `<file>`). A compile
+    past `timeout` seconds is killed and raises `CompileTimeout`.
     """
     src = workdir / f"{unit.name}.{backend.ext}"
     obj = workdir / f"{unit.name}.o"
     src.write_text(unit.text)
     cmd = backend.command(compiler, src, obj)
     t0 = time.perf_counter()
-    done = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    # its own session, so a timeout kills the driver's children too (nvcc's
+    # cicc / ptxas, hipcc's clang -cc1), not the driver alone
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        done = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    except subprocess.TimeoutExpired as e:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        raise CompileTimeout(
+            f"{backend.tool} did not finish compiling {unit.name} "
+            f"({len(unit.text)} bytes of source) within {timeout:.0f} s"
+        ) from e
+    finally:  # a K cell's sources run to hundreds of MB: keep none
+        src.unlink(missing_ok=True)
+        obj.unlink(missing_ok=True)
     compile_s = time.perf_counter() - t0
     if done.returncode != 0:
         raise RuntimeError(f"{' '.join(cmd)} failed:\n{done.stderr[-4000:]}")
@@ -476,31 +527,42 @@ def cell_row(backend: Backend, spec: Spec, units: Sequence[Unit],
 
 
 def measure(backend: Backend, cls: int | Spec, *, compiler: str,
-            toolchain: str, gpu: str,
-            workdir: Path) -> tuple[MeasuredKey, Measured]:
+            toolchain: str, gpu: str, workdir: Path,
+            timeout: float = COMPILE_TIMEOUT_S,
+            jobs: int = 1) -> tuple[MeasuredKey, Measured]:
     """Compile one cell's kernels with the measurement flag; one row.
 
     `cls` is a total L (`pq_spec(L)`, one batch) or a full `Spec` -- the
     `n_batches` axis (#52): a split cell compiles each of its
-    `build_pq_kernels` units in turn and aggregates them into one row.
+    `build_pq_kernels` units (`build_k_kernels` for K) -- `jobs` at a
+    time -- and aggregates them into one row.
     """
     spec = pq_spec(cls) if isinstance(cls, int) else cls
     units = backend.units(spec)
-    compiled = [compile_unit(backend, u, compiler=compiler, workdir=workdir)
-                for u in units]
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        compiled = list(pool.map(
+            lambda u: compile_unit(backend, u, compiler=compiler,
+                                   workdir=workdir, timeout=timeout), units))
     return cell_row(backend, spec, units, compiled, toolchain=toolchain, gpu=gpu)
 
 
 def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
-              path: Path = STORE) -> dict[str, Measured]:
+              path: Path = STORE, *,
+              timeout: float = COMPILE_TIMEOUT_S) -> dict[str, Measured]:
     """Recompile every cell on each backend and merge its row into the store.
 
     The pool runs over translation units, not cells, so a 9-batch cell's
     kernels compile side by side; `jobs` bounds how many compilers run at
     once (#52's memory hazard: keep it modest for large classes).
+
+    A cell one of whose units fails or runs past `timeout` gets NO row (a
+    partial cell is not a cell); the others are still merged, the store is
+    saved after every finished cell (a K sweep runs for hours, #205), and
+    the failures are raised together at the end, each with its reason.
     """
     got = load(path) if path.exists() else {}
     specs = [pq_spec(c) if isinstance(c, int) else c for c in cells]
+    failed: list[str] = []
     for bname in names:
         b = BACKENDS[bname]
         compiler = b.compiler()
@@ -508,19 +570,65 @@ def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
         cell_units = [b.units(s) for s in specs]
         with tempfile.TemporaryDirectory(prefix=f"fj-measure-{bname}-") as tmp:
             with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-                futures = [[pool.submit(compile_unit, b, u, compiler=compiler,
-                                        workdir=Path(tmp)) for u in units]
-                           for units in cell_units]
+                # Each cell's LARGEST unit is submitted first, every cell's
+                # before any cell's second: a cell whose unit fails gets no
+                # row, so its other units are cancelled rather than compiled
+                # (#205: a K cell's units run to hours each).
+                futures: list[list[Future | None]] = [
+                    [None] * len(units) for units in cell_units]
+                order = [sorted(range(len(units)),
+                                key=lambda i, us=units: -len(us[i].text))
+                         for units in cell_units]
+
+                dead: set[int] = set()
+
+                def cancel_rest(f: Future, c: int, fut=futures,
+                                dead=dead) -> None:
+                    if not f.cancelled() and f.exception() is not None:
+                        dead.add(c)
+                        for g in fut[c]:
+                            if g is not None:
+                                g.cancel()
+
+                for rank in range(max((len(u) for u in cell_units), default=0)):
+                    for c, units in enumerate(cell_units):
+                        if rank >= len(units) or c in dead:
+                            continue
+                        i = order[c][rank]
+                        f = pool.submit(compile_unit, b, units[i],
+                                        compiler=compiler, workdir=Path(tmp),
+                                        timeout=timeout)
+                        futures[c][i] = f
+                        f.add_done_callback(lambda f, c=c: cancel_rest(f, c))
                 for spec, units, fs in zip(specs, cell_units, futures,
                                            strict=True):
-                    key, row = cell_row(b, spec, units,
-                                        [f.result() for f in fs],
+                    try:
+                        if any(f is None for f in fs):  # never submitted
+                            raise CancelledError
+                        compiled = [f.result() for f in fs]
+                    except (RuntimeError, CancelledError) as e:
+                        for f in fs:  # the failure, not a sibling's cancel
+                            if f is not None and not f.cancelled():
+                                f.exception()  # wait for it
+                        first = next((f.exception() for f in fs
+                                      if f is not None and not f.cancelled()
+                                      and f.exception() is not None), e)
+                        why = f"{bname} {spec.key()}: {first}".splitlines()[0]
+                        failed.append(why)
+                        print(f"measured: NO ROW -- {why}", file=sys.stderr,
+                              flush=True)
+                        continue
+                    key, row = cell_row(b, spec, units, compiled,
                                         toolchain=toolchain, gpu=gpu)
                     got = merge(got, key, combine(got.get(key.key()), row))
+                    save(got, path)
                     print(f"{key.key()}: {row.registers} regs, spill "
                           f"{row.spill_store}/{row.spill_load}, "
                           f"{row.compile_s}s", flush=True)
     save(got, path)
+    if failed:
+        raise RuntimeError(f"{len(failed)} cells got no row:\n"
+                           + "\n".join(failed))
     return got
 
 
@@ -927,6 +1035,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--roofline", action="store_true",
                     help="print #112's roofline verdict per cell and per "
                          "batch kernel, from the counter store")
+    ap.add_argument("--subgrid-ls", type=int, nargs="+", default=None,
+                    metavar="L", help="with --subgrid: only the cells of "
+                                      "these L")
+    ap.add_argument("--target", choices=("j", "k"), default="j",
+                    help="with --subgrid: the J subgrid (default) or "
+                         "K_SUBGRID, its exchange twins (#205)")
+    ap.add_argument("--compile-timeout", type=float,
+                    default=COMPILE_TIMEOUT_S, metavar="S",
+                    help="per unit: a compile past S seconds is killed and "
+                         "its cell gets no row")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--store", type=Path, default=STORE)
     ap.add_argument("--counters", type=Path, default=ROOFLINE)
@@ -941,17 +1059,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ValueError("--lever needs --subgrid")
             if args.asym and (args.subgrid or args.lever):
                 raise ValueError("--asym is its own cell set")
-            grid = ab_cells(args.lever) if args.lever else SUBGRID
+            if args.target == "k" and (args.lever or args.asym
+                                       or not args.subgrid):
+                raise ValueError("--target k is K_SUBGRID: it needs "
+                                 "--subgrid, and takes no lever")
+            grid = (ab_cells(args.lever) if args.lever
+                    else K_SUBGRID if args.target == "k" else SUBGRID)
             cells = grid if args.subgrid else args.Ls
             if args.asym:
                 grid = cells = ASYM_CELLS
             if (args.subgrid or args.asym) and args.n_batches:
                 cells = [s for s in grid if s.n_batches in args.n_batches]
+            if args.subgrid_ls:
+                if not args.subgrid:
+                    raise ValueError("--subgrid-ls needs --subgrid")
+                cells = [s for s in cells if s.total_am in args.subgrid_ls]
             if args.lever:  # #163: said, never silently skipped
                 for s, why in NOT_MEASURABLE.get(args.lever, {}).items():
                     print(f"measured: {s.key()} NOT MEASURABLE -- {why}",
                           file=sys.stderr)
-            remeasure(names, cells, args.j, args.store)
+            if args.compile_timeout != COMPILE_TIMEOUT_S:
+                remeasure(names, cells, args.j, args.store,
+                          timeout=args.compile_timeout)
+            else:  # the call #163's CLI test pins, unchanged
+                remeasure(names, cells, args.j, args.store)
         except (RuntimeError, ValueError) as e:
             print(f"measured: {e}", file=sys.stderr)
             return 2

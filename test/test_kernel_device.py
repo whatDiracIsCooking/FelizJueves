@@ -61,6 +61,12 @@ hardware rather than interpreted -- and an OPT-IN wall-clock sweep
 sweep's section comment is its protocol; it skips in the kernel tier, by
 design, because a timing taken beside the tier's compiles is contended.
 
+THE K CELLS (#205), at the very bottom: every `measured_store.K_SUBGRID`
+cell's launch sequence against the host staging (`slow`: a K unit takes up
+to an hour to compile), a recorded refusal re-derived on the card instead
+where the cell cannot be launched, and an opt-in sweep that times each K
+cell beside its J twin. Their section comments are the protocol.
+
 WHAT SKIPS, AND WHY: every test here is `gpu` plus `cuda` or `hip`, takes the
 compiler fixture AND the device fixture, and so skips -- not fails -- on a box
 without the card. A green run of this file on a device-less box is EMPTY;
@@ -79,6 +85,7 @@ import hashlib
 import math
 import os
 import shlex
+import subprocess
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
@@ -1527,3 +1534,733 @@ def test_hip_roofline_over_the_subgrid(request, compile_device_source,
     zero."""
     _roofline("hip", request, compile_device_source, run_device_binary,
               tmp_path)
+
+
+# --- the K cells (#205) -------------------------------------------------------
+#
+# `measured_store.K_SUBGRID`, the J subgrid's exchange twins, on the card:
+# every cell's launch sequence (`kernel_k.build_k_kernels`, the partial-sum
+# form) checked against the host's staged contraction, and an OPT-IN
+# wall-clock sweep that times each K cell BESIDE its J twin (the J subgrid
+# cell of the same L and n_batches) in one session, as #55 times a lever
+# beside its literal control.
+#
+# HOW A K CELL IS BUILT. A K batch kernel is fully unrolled (kernel_k: every
+# stage-2 term is a statement), so one translation unit runs to 0.8 MB of
+# source at L = 7 and 187 MB at L = 16: the J harness's one-TU build would
+# put a whole cell through one compiler process. Here each batch kernel is
+# its own object (`devcache.compile_unit(mode="-c")`, config.sh's flag set,
+# FJ_K_JOBS at a time, cached), and a small main (K_HARNESS) declares them
+# `extern "C"` and launches them -- each kernel's host stub registers it, so
+# no relocatable device code is needed on either vendor. The text compiled
+# is `measured.cell_kernels(spec)` emitted, hash for hash the row's
+# `source_sha256` (measured.cell_sha256).
+#
+# THE LAUNCH IS kernel_k's PINNED MAPPING, UNCHANGED: blockDim (1, lanes),
+# one warp per bra record, `Ksh` sized at launch -- each batch kernel's own
+# declaration (`measured.jsh_slots`) x lanes x 8 bytes -- and NO opt-in to a
+# larger dynamic shared allocation (the J harness makes none either). A cell
+# whose largest batch kernel asks more than the card's per-block shared
+# memory (`K_HARNESS limits`, read off the card) cannot be launched as
+# pinned: that is a REFUSAL, recorded with its mechanism
+# (`measured_store.K_REFUSED`), never a launch error read as a number.
+#
+# THE INPUTS. A K launch here is one synthetic `b` shell (dd = 0) and one
+# density row (n_dc = 1, dc = 0): the kernel's arithmetic does not depend on
+# which shells the records came from. P, zeta, Ip, Q, eta and Iq are
+# `_inputs`' -- the very values the J twin gets for that L and regime -- and
+# each record's two centres are placed so that P lies between them (A = P +
+# (c/zeta) u, C = P - (a/zeta) u with a + c = zeta), so the undressed `E`'s
+# seed exp(zeta XPA XPC) is at most 1, as it is for any real pair. Kets are
+# sorted descending by Iq alone (kernel_k.SORTED_BY_IQ).
+#
+# THE CHECK, K_REL = test_ao_k.KJ_TOL = 1e-12 of the quartet scale,
+# inherited: per bra record, `ao.k._k_quartet` (the host staging) on
+# `reference.pq` (the direct recursion: no MILD, DAG, sieve or schedule),
+# summed over the ket records, against the kernel's row -- elementwise,
+# |K - X| <= K_REL * S, S the host's |.| twin. The same pin the K build holds
+# against libcint (test_k_ondevice.py), so it is not loosened for high L.
+
+K_SUBGRID = measured_store.K_SUBGRID
+FJ_BOYS_HOST = "_Z7fj_boysid"  # nvcc's host shadow of `fj_boys(int, double)`
+K_REL = 1e-12  # test_ao_k.KJ_TOL (module section comment)
+K_JOBS = "FJ_K_JOBS"  # parallel unit compiles (default: every core)
+K_COMPILE_TIMEOUT_S = 6 * 3600  # per unit: an unrolled L = 13 unit is slow
+# (wide, tau_quantile, n_bra, n_ket): as CASES, kets > 32 lanes and not a
+# multiple of them; two bra records, because the host staging is pure Python
+# and a high-L quartet costs it seconds.
+K_CASES = {
+    "near": (False, None, 2, 37),
+    "wide-screened": (True, 0.4, 2, 37),
+}
+K_SIGNATURE = (
+    "int n_bra, int n_ket, int n_dc, double tau, double maxD, const double* P, "
+    "const double* zeta_ac, const double* XPA, const double* XPC, "
+    "const double* s_ac, const double* Ip, const int* dc, const double* Q, "
+    "const double* eta, const double* XQB, const double* XQD, "
+    "const double* s_bd, const double* Iq, const int* dd, const double* Dcd, "
+    "double* K")
+
+K_HARNESS = r"""
+{portable}
+#include <chrono>
+#include <cstring>
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devEvent_t           hipEvent_t
+#define devEventCreate       hipEventCreate
+#define devEventRecord(e)    hipEventRecord(e, 0)
+#define devEventElapsedTime  hipEventElapsedTime
+#define devMemset            hipMemset
+#define devAttrSmem          hipDeviceAttributeMaxSharedMemoryPerBlock
+#define devAttrSmemOptin     hipDeviceAttributeSharedMemPerBlockOptin
+#else
+#define devEvent_t           cudaEvent_t
+#define devEventCreate       cudaEventCreate
+#define devEventRecord(e)    cudaEventRecord(e, 0)
+#define devEventElapsedTime  cudaEventElapsedTime
+#define devMemset            cudaMemset
+#define devAttrSmem          cudaDevAttrMaxSharedMemoryPerBlock
+#define devAttrSmemOptin     cudaDevAttrMaxSharedMemoryPerBlockOptin
+#endif
+{decls}
+
+static int* upload_ints(const double* h, size_t n) {{
+    std::vector<int> v(n);
+    for (size_t i = 0; i < n; ++i) v[i] = (int)h[i];
+    int* d = nullptr;
+    if (devMalloc(&d, n * sizeof(int) + 8) != devSuccess) return nullptr;
+    if (n && devMemcpy(d, v.data(), n * sizeof(int), devMemcpyH2D) != devSuccess)
+        return nullptr;
+    return d;
+}}
+
+// usage: `limits` prints the card's per-block shared memory (default and
+// opt-in maximum); `in out warmup reps` runs the cell as BATCHED_HARNESS
+// does, K in place of J: K of the first timed sequence, then of the last.
+int main(int argc, char** argv) {{
+    if (argc == 2 && std::strcmp(argv[1], "limits") == 0) {{
+        int smem = 0, optin = 0;
+        CHECK(devDeviceGetAttribute(&smem, devAttrSmem, 0));
+        CHECK(devDeviceGetAttribute(&optin, devAttrSmemOptin, 0));
+        std::printf("smem_per_block %d optin %d\n", smem, optin);
+        return 0;
+    }}
+    if (argc != 5) {{ std::fprintf(stderr, "usage: in out warmup reps\n"); return 2; }}
+    const int warmup = std::atoi(argv[3]), reps = std::atoi(argv[4]);
+    std::vector<double> in;
+    if (!slurp(argv[1], in) || in.size() < 6 || reps < 1 || warmup < 0) {{
+        std::fprintf(stderr, "bad input\n");
+        return 2;
+    }}
+    const int n_bra = (int)in[0], n_ket = (int)in[1], n_dc = (int)in[2],
+              lanes = (int)in[5];
+    const double tau = in[3], maxD = in[4];
+    const size_t nb = (size_t)n_bra, nk = (size_t)n_ket;
+    // bra: P XPA XPC (3n), zeta s_ac Ip (n), dc (n); ket alike; then Dcd
+    const size_t sizes[] = {{nb * 3, nb, nb * 3, nb * 3, nb, nb, nb,
+                            nk * 3, nk, nk * 3, nk * 3, nk, nk, nk,
+                            (size_t)n_dc * {n_cd}}};
+    const size_t jbytes = nb * {n_ab} * sizeof(double);
+    if (fj_vram_probe(in.size() * sizeof(double) + 64 + jbytes,
+                      {{{vram_kernels}}})) return 0;
+    const double* h = in.data() + 6;
+    double* d[15];
+    int* di[15] = {{nullptr}};
+    for (int i = 0; i < 15; ++i) {{
+        if (i == 6 || i == 13) {{
+            di[i] = upload_ints(h, sizes[i]);
+            if (!di[i]) {{ std::fprintf(stderr, "upload %d failed\n", i); return 1; }}
+            d[i] = nullptr;
+        }} else {{
+            d[i] = upload(h, sizes[i]);
+            if (!d[i]) {{ std::fprintf(stderr, "upload %d failed\n", i); return 1; }}
+        }}
+        h += sizes[i];
+    }}
+    if ((size_t)(h - in.data()) != in.size()) {{
+        std::fprintf(stderr, "size mismatch\n");
+        return 2;
+    }}
+    double* dK = nullptr;
+    CHECK(devMalloc(&dK, jbytes));
+    const int NB = {n_batches};
+    devEvent_t ev[NB + 1];
+    for (int i = 0; i <= NB; ++i) CHECK(devEventCreate(&ev[i]));
+    std::vector<double> first(nb * {n_ab}), last(first.size());
+    for (int r = 0; r < warmup + reps; ++r) {{
+        CHECK(devMemset(dK, 0, jbytes));  // the caller zeroes K: off the clock
+        CHECK(devSynchronize());
+        const auto t0 = std::chrono::steady_clock::now();
+        CHECK(devEventRecord(ev[0]));
+{launches}
+        CHECK(devGetLastError());
+        CHECK(devSynchronize());
+        const auto t1 = std::chrono::steady_clock::now();
+        if (r < warmup) continue;
+        float total_ms = 0.f;
+        CHECK(devEventElapsedTime(&total_ms, ev[0], ev[NB]));
+        std::printf("rep %d wall_ns %lld events_ns %.0f batch_ns", r - warmup,
+                    (long long)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        t1 - t0).count(), (double)total_ms * 1e6);
+        for (int i = 0; i < NB; ++i) {{
+            float ms = 0.f;
+            CHECK(devEventElapsedTime(&ms, ev[i], ev[i + 1]));
+            std::printf(" %.0f", (double)ms * 1e6);
+        }}
+        std::printf("\n");
+        std::vector<double>& dst = (r == warmup) ? first : last;
+        CHECK(devMemcpy(dst.data(), dK, jbytes, devMemcpyD2H));
+    }}
+    if (reps == 1) last = first;
+    std::vector<double> both(first);
+    both.insert(both.end(), last.begin(), last.end());
+    if (!spill(argv[2], both)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
+    return 0;
+}}
+"""
+
+K_LAUNCH = ("        {name}<<<dim3(n_bra), dim3(1, lanes), "
+            "(size_t){slots} * lanes * sizeof(double)>>>(\n"
+            "            n_bra, n_ket, n_dc, tau, maxD, d[0], d[1], d[2], d[3], "
+            "d[4], d[5], di[6],\n"
+            "            d[7], d[8], d[9], d[10], d[11], d[12], di[13], d[14], "
+            "dK);\n"
+            "        CHECK(devEventRecord(ev[{next}]));")
+
+
+def _k_dims(spec: Spec) -> tuple[int, int]:
+    """(n_a n_b, n_c n_d): K's row length and D_cd's, of a K class."""
+    def n(l: int) -> int:  # noqa: E741
+        return (l + 1) * (l + 2) // 2
+    la, lc, lb, ld = spec.am
+    return n(la) * n(lb), n(lc) * n(ld)
+
+
+@dataclass(frozen=True)
+class _KCell:
+    """One built K cell: its harness binary, batch kernels' names and shared
+    slots in launch order, and the cell's source hash."""
+
+    spec: Spec
+    binary: Path
+    names: tuple[str, ...]
+    slots: tuple[int, ...]
+    sha: str
+    compile_s: float
+
+
+def _k_build(backend: str, spec: Spec, tc, workdir: Path) -> _KCell:
+    """Each batch kernel its own object, FJ_K_JOBS at a time; one main."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    import devcache
+
+    from felizjueves.kernel_k import PARAMS
+    assert PARAMS == tuple(
+        a.split()[-1].lstrip("*") for a in K_SIGNATURE.split(", ")), PARAMS
+    emit, arch, ext = BACKEND[backend]
+    kernels = measured.cell_kernels(spec)
+    texts = [emit(k, arch) for k in kernels]
+    flags = tc.compile_flags()
+    workdir.mkdir(parents=True, exist_ok=True)
+    t0 = time.perf_counter()
+
+    def obj(i: int) -> Path:
+        out = workdir / f"{kernels[i].name}.o"
+        got = devcache.compile_unit(
+            tc.path, flags, f"{kernels[i].name}.{ext}", texts[i], {}, out,
+            mode="-c", timeout=K_COMPILE_TIMEOUT_S)
+        assert got.returncode == 0, (
+            f"{tc.name} failed on {kernels[i].name}:\n{got.diagnostics[-4000:]}")
+        if backend == "cuda":
+            # nvcc gives every unit's `__device__ fj_boys` a HOST shadow
+            # definition, so two units would not link: make it local to its
+            # object (the device code is untouched; the host never calls it)
+            done = subprocess.run(["objcopy", f"--localize-symbol={FJ_BOYS_HOST}",
+                                   str(out)], capture_output=True, text=True)
+            assert done.returncode == 0, done.stderr
+        return out
+
+    jobs = int(os.environ.get(K_JOBS, "0") or 0) or (os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        objs = list(pool.map(obj, range(len(kernels))))
+    n_ab, n_cd = _k_dims(spec)
+    slots = tuple(measured.jsh_slots(k) for k in kernels)
+    src = K_HARNESS.format(
+        portable=PORTABLE, n_cd=n_cd, n_ab=n_ab, n_batches=len(kernels),
+        decls="\n".join(f'extern "C" __global__ void {k.name}({K_SIGNATURE});'
+                        for k in kernels),
+        launches="\n".join(K_LAUNCH.format(name=k.name, slots=s, next=i + 1)
+                           for i, (k, s) in enumerate(zip(kernels, slots,
+                                                          strict=True))),
+        vram_kernels=", ".join(f"(const void*){k.name}" for k in kernels))
+    main_o = workdir / "k_main.o"
+    got = devcache.compile_unit(tc.path, flags, f"k_main.{ext}", src, {},
+                                main_o, mode="-c", timeout=600)
+    assert got.returncode == 0, f"{tc.name} failed on k_main:\n{got.diagnostics}"
+    binary = workdir / "kcell"
+    done = subprocess.run(
+        [tc.path, *devcache._link_flags(flags), str(main_o),
+         *(str(o) for o in objs), "-o", str(binary)],
+        capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, f"link failed:\n{done.stdout}{done.stderr}"
+    return _KCell(spec, binary, tuple(k.name for k in kernels), slots,
+                  hashlib.sha256("".join(texts).encode()).hexdigest(),
+                  time.perf_counter() - t0)
+
+
+def _k_limits(binary: Path, args: tuple[str, ...] = ("limits",)
+              ) -> tuple[int, int]:
+    """The card's per-block shared memory: (default, opt-in maximum)."""
+    done = subprocess.run([str(binary), *args], capture_output=True,
+                          text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    f = done.stdout.split()
+    assert (f[0], f[2]) == ("smem_per_block", "optin"), done.stdout
+    return int(f[1]), int(f[3])
+
+
+def k_shared_need(cell: _KCell, lanes: int) -> int:
+    """The largest dynamic shared allocation the cell's launches ask for."""
+    return max(cell.slots) * lanes * 8
+
+
+def _k_inputs(spec: Spec, a: dict, seed: int) -> dict:
+    """K's arguments from a J input `a` (module section comment)."""
+    rng = np.random.default_rng(seed)
+    _, n_cd = _k_dims(spec)
+    srt = np.argsort(-a["Iq"], kind="stable")
+
+    def side(X, z):
+        n = X.shape[0]
+        f = rng.uniform(0.25, 0.75, n)
+        u = rng.normal(size=(n, 3))
+        u *= (rng.uniform(0.5, 2.0, n) / np.linalg.norm(u, axis=1))[:, None]
+        e1, e2 = f * z, (1 - f) * z
+        A = X + (e2 / z)[:, None] * u
+        B = X - (e1 / z)[:, None] * u
+        return A, B, X - A, X - B, rng.uniform(0.5, 1.0, n)
+
+    A, C, XPA, XPC, s_ac = side(a["P"], a["zeta"])
+    Q, eta, Iq = a["Q"][srt], a["eta"][srt], a["Iq"][srt]
+    B, D, XQB, XQD, s_bd = side(Q, eta)
+    return dict(n_bra=a["P"].shape[0], n_ket=Q.shape[0], tau=a["tau"],
+                maxD=1.0, P=a["P"], zeta=a["zeta"], XPA=XPA, XPC=XPC,
+                s_ac=s_ac, Ip=a["Ip"], A=A, C=C, Q=Q, eta=eta, XQB=XQB,
+                XQD=XQD, s_bd=s_bd, Iq=Iq, B=B, D=D,
+                Dcd=rng.uniform(-1.0, 1.0, (1, n_cd)))
+
+
+def _k_pack(k: dict, lanes: int) -> np.ndarray:
+    nb, nk = k["n_bra"], k["n_ket"]
+    head = [nb, nk, 1, k["tau"], k["maxD"], lanes]
+    body = [k["P"], k["zeta"], k["XPA"], k["XPC"], k["s_ac"], k["Ip"],
+            np.zeros(nb), k["Q"], k["eta"], k["XQB"], k["XQD"], k["s_bd"],
+            k["Iq"], np.zeros(nk), k["Dcd"]]
+    return np.concatenate([np.array(head, dtype=np.float64),
+                           *(np.asarray(x, dtype=np.float64).ravel()
+                             for x in body)])
+
+
+def _k_timing_tau(k: dict, quantile: float | None) -> float:
+    if quantile is None:
+        return 0.0
+    return float(np.quantile(k["Ip"][0] * k["Iq"] * k["maxD"], quantile))
+
+
+@cache
+def _k_case(L: int, case: str):
+    """A K_CASES input of class L and its host reference (want, scale, T
+    max) -- shared by every n_batches of L, as `_case` is for J."""
+    from felizjueves.ao.j import EPair
+    from felizjueves.ao.k import _k_quartet
+    from felizjueves.kernel import k_spec
+
+    spec = k_spec(L)
+    wide, tq, n_bra, n_ket = K_CASES[case]
+    a = _inputs(L, wide=wide, tau_quantile=None, seed=1000 * L + len(case),
+                n_bra=n_bra, n_ket=n_ket)
+    k = _k_inputs(spec, a, seed=7000 + L + len(case))
+    k["tau"] = _k_timing_tau(k, tq)
+    la, lc, lb, ld = spec.am
+    targets = hermite_targets(la + lc + lb + ld)
+    memo: dict = {}
+
+    def pq(p, q, PQv, theta):
+        key = (PQv, theta)
+        if key not in memo:
+            memo.clear()
+            memo[key] = {r: one_centre(r, 0, PQv, theta) for r in targets}
+        r = (p[0] + q[0], p[1] + q[1], p[2] + q[2])
+        return (-1.0 if sum(q) % 2 else 1.0) * memo[key][r]
+
+    dcd = [float(x) for x in k["Dcd"][0]]
+    n_ab, _ = _k_dims(spec)
+    want, scale = np.zeros((n_bra, n_ab)), np.zeros((n_bra, n_ab))
+    t_max = 0.0
+
+    def vec(x) -> tuple[float, float, float]:
+        return (float(x[0]), float(x[1]), float(x[2]))
+
+    for i in range(n_bra):
+        bra = EPair(la, lc, vec(k["A"][i]), vec(k["C"][i]),
+                    ((vec(k["P"][i]), float(k["zeta"][i]), float(k["s_ac"][i])),))
+        for j in range(n_ket):
+            if k["Ip"][i] * k["Iq"][j] * k["maxD"] < k["tau"]:
+                continue  # a continue: this side does not rely on the sort
+            ket = EPair(lb, ld, vec(k["B"][j]), vec(k["D"][j]),
+                        ((vec(k["Q"][j]), float(k["eta"][j]),
+                          float(k["s_bd"][j])),))
+            th = theta_of(float(k["zeta"][i]), float(k["eta"][j]))
+            PQ = k["P"][i] - k["Q"][j]
+            t_max = max(t_max, th * th * float(PQ @ PQ))
+            X, S = _k_quartet(bra, ket, dcd, pq=pq, want_scale=True)
+            want[i] += np.array(X).ravel()
+            scale[i] += np.array(S).ravel()
+    return k, want, scale, t_max
+
+
+def _k_check(backend: str, cell: _KCell, run_device_binary,
+             tmp_path: Path) -> list[tuple[str, float, float]]:
+    """Every K_CASES input through one cell's launch sequence, against the
+    host staging at K_REL of the quartet scale, elementwise."""
+    arch: Arch = BACKEND[backend][1]
+    L = cell.spec.total_am
+    out = []
+    for case in K_CASES:
+        k, want, scale, t_max = _k_case(L, case)
+        src, dst = tmp_path / f"k-{case}.in", tmp_path / f"k-{case}.out"
+        _k_pack(k, arch.wavefront).tofile(src)
+        run_device_binary(cell.binary, str(src), str(dst), "0", "1",
+                          vram=backend)
+        got = np.fromfile(dst, dtype=np.float64).reshape(2, k["n_bra"], -1)[0]
+        assert got.shape == want.shape
+        assert np.all(np.isfinite(got)), f"{case}: non-finite K"
+        bad = np.abs(got - want) > K_REL * scale
+        err = float(np.max(np.abs(got - want) / np.where(scale > 0, scale, 1)))
+        assert not bad.any(), (
+            f"{cell.spec.key()} {case} on {arch.name}: max |K - X| / S = "
+            f"{err:.3e} > {K_REL:.0e} (T up to {t_max:.1f})")
+        out.append((case, err, t_max))
+    print(f"\n{backend} {arch.name} {cell.spec.key()}: " + ", ".join(
+        f"{c} err/S {e:.2e} (T<={t:.0f})" for c, e, t in out), flush=True)
+    return out
+
+
+K_LIMITS_PROBE = r"""
+{portable}
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devAttrSmem          hipDeviceAttributeMaxSharedMemoryPerBlock
+#define devAttrSmemOptin     hipDeviceAttributeSharedMemPerBlockOptin
+#else
+#define devAttrSmem          cudaDevAttrMaxSharedMemoryPerBlock
+#define devAttrSmemOptin     cudaDevAttrMaxSharedMemoryPerBlockOptin
+#endif
+int main() {{
+    int smem = 0, optin = 0;
+    CHECK(devDeviceGetAttribute(&smem, devAttrSmem, 0));
+    CHECK(devDeviceGetAttribute(&optin, devAttrSmemOptin, 0));
+    std::printf("smem_per_block %d optin %d\n", smem, optin);
+    return 0;
+}}
+"""
+
+
+def _run_k(backend: str, spec: Spec, request, compile_device_source,
+           run_device_binary, tmp_path: Path) -> None:
+    arch: Arch = BACKEND[backend][1]
+    base = _toolchain(backend, request)
+    tc = _Configured(base.name, base.path, base.arch, base.ext)
+    untimed = measured_store.K_UNTIMED.get(arch.name, {}).get(spec)
+    if untimed is not None:
+        # the recorded refusal, re-derived: the cell's own kernels' Ksh
+        # (built, not compiled) against the card's limit, read off the card
+        probe = compile_device_source(tc, K_LIMITS_PROBE.format(
+            portable=PORTABLE))
+        smem, optin = _k_limits(probe, args=())
+        assert (smem, optin) == measured_store.K_SMEM_PER_BLOCK[arch.name]
+        slots = max(measured.jsh_slots(k) for k in measured.cell_kernels(spec))
+        assert slots == measured_store.K_MAX_SLOTS[
+            (spec.total_am, spec.n_batches)]
+        assert slots * arch.wavefront * 8 > smem
+        pytest.skip(f"NOT LAUNCHABLE, recorded (measured_store.K_UNTIMED), "
+                    f"re-derived on the card: {untimed}")
+    refused = measured_store.K_REFUSED.get(arch.name, {}).get(spec)
+    if refused is not None:
+        pytest.skip(f"REFUSED, recorded (measured_store.K_REFUSED): {refused}")
+    cell = _k_build(backend, spec, tc, tmp_path / "build")
+    smem, optin = _k_limits(cell.binary)
+    need = k_shared_need(cell, arch.wavefront)
+    assert need <= smem, (
+        f"{spec.key()} asks {need} B of shared per block, the card gives "
+        f"{smem} (opt-in {optin}) and the cell is not in K_UNTIMED")
+    _k_check(backend, cell, run_device_binary, tmp_path)
+
+
+K_CELLS = [pytest.param(s, id=f"L{s.total_am}-b{s.n_batches}-k",
+                        marks=[pytest.mark.slow]) for s in K_SUBGRID]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", K_CELLS)
+def test_cuda_k_cell_matches_the_host(spec, request, compile_device_source,
+                                      run_device_binary, tmp_path) -> None:
+    """A K_SUBGRID cell's launch sequence on the RTX 3080, against the host
+    -- or, for a recorded refusal, the refusal re-derived on the card."""
+    _run_k("cuda", spec, request, compile_device_source, run_device_binary,
+           tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", K_CELLS)
+def test_hip_k_cell_matches_the_host(spec, request, compile_device_source,
+                                     run_device_binary, tmp_path) -> None:
+    """A K_SUBGRID cell's launch sequence on the RX 9060 XT, against the host
+    -- or, for a recorded refusal, the refusal re-derived on the card."""
+    _run_k("hip", spec, request, compile_device_source, run_device_binary,
+           tmp_path)
+
+
+# --- the K wall-clock sweep (#205) --------------------------------------------
+#
+# OPT-IN, AND RUN ALONE, as the J sweep: it runs only with FJ_WALLCLOCK_STORE
+# set AND FJ_WALLCLOCK_K=1, and its protocol is the J sweep's, steps 1-5,
+# with these differences (measured_store's THE K ROWS is the rule):
+#
+#   env FJ_WALLCLOCK_STORE=data/measured/kernels.json FJ_WALLCLOCK_K=1 \
+#       uv run pytest test/test_kernel_device.py -p no:xdist -s -rs \
+#       -m "gpu and cuda" -k k_wallclock
+#
+# - THE CELLS are K_SUBGRID less `K_REFUSED[arch]` and `K_UNTIMED[arch]`
+#   (named, never timed);
+#   FJ_WALLCLOCK_LS (e.g. "7,10") restricts them by L -- never by batch
+#   count, since a curve is read within one session.
+# - THE CONTROL is each cell's J twin (`measured_store.j_twin`), compiled,
+#   checked and timed beside it -- near-T J then K, wide-T K then J -- and
+#   written into the K row's raw as `wallclock:control:*`; no J row is
+#   rewritten. Both arms get the SAME P, zeta, Q, eta, at K_TIMING_N_BRA x
+#   K_TIMING_N_KET: one ket per lane, because a K quartet at L = 16 costs
+#   about a thousand times a J one (#202's count) and 128 kets per bra
+#   would make one sequence minutes long. tau = 0: no ket is screened.
+# - A PHASE THE CARD WAS TAKEN DURING IS DISCARDED AND RETAKEN (#113, #162):
+#   a gate that stays shut past its deadline, or an after-reading non-idle
+#   or unknown, up to STUDY_RETAKES times, counted in the K row's raw
+#   `wallclock:gate_discarded_phases`; each cell is written as soon as it
+#   is timed, and FJ_WALLCLOCK_RESUME=1 skips the cells already timed.
+
+WALLCLOCK_K = "FJ_WALLCLOCK_K"
+WALLCLOCK_LS = "FJ_WALLCLOCK_LS"
+K_TIMING_N_BRA = TIMING_N_BRA
+K_TIMING_N_KET = 32
+
+
+def _stats(prefix: str, wall, busy: float, card) -> dict:
+    q1, med, q3 = (float(x) for x in np.percentile(wall, [25, 50, 75]))
+    return {f"{prefix}median_ns": round(med), f"{prefix}q1_ns": round(q1),
+            f"{prefix}q3_ns": round(q3), f"{prefix}min_ns": int(min(wall)),
+            f"{prefix}max_ns": int(max(wall)),
+            f"{prefix}cpu_busy_permille_before": round(1000 * busy),
+            f"{prefix}gpu_util_before": card[0],
+            f"{prefix}gpu_util_after": card[1]}
+
+
+def _k_wallclock(backend: str, request, compile_device_source,
+                 run_device_binary, tmp_path: Path) -> None:
+    from felizjueves.kernel import k_spec
+
+    store_path = os.environ.get(WALLCLOCK_STORE)
+    if not store_path or not os.environ.get(WALLCLOCK_K, "").strip():
+        pytest.skip(f"the K wall-clock is opt-in and must run alone, "
+                    f"uncontended: set {WALLCLOCK_STORE} and {WALLCLOCK_K}=1 "
+                    "(see the section comment)")
+    base = _toolchain(backend, request)
+    tc = _Configured(base.name, base.path, base.arch, base.ext)
+    arch: Arch = BACKEND[backend][1]
+    b = measured.BACKENDS[backend]
+    toolchain, gpu = b.toolchain(b.compiler()), b.gpu()
+    store = measured.load(Path(store_path))
+    lanes = arch.wavefront
+
+    # 1. CPU bounds
+    cpuset, cpus = measured.config_value("CPUSET"), measured.config_value("CPUS")
+    if cpuset:
+        os.sched_setaffinity(0, _cpu_list(cpuset))
+    print(f"\nCPUSET={cpuset or '(empty)'} CPUS={cpus or '(empty)'}"
+          + (" -- CPUS is a container quota, not applied here" if cpus else ""))
+
+    refused = {**measured_store.K_REFUSED.get(arch.name, {}),
+               **measured_store.K_UNTIMED.get(arch.name, {})}
+    for s, why in refused.items():
+        print(f"{s.key()} @ {arch.name}: NOT TIMED -- {why}")
+    only = os.environ.get(WALLCLOCK_LS, "").strip()
+    ls = {int(x) for x in only.split(",")} if only else None
+    sweep = [s for s in K_SUBGRID if s not in refused
+             and (ls is None or s.total_am in ls)]
+    if os.environ.get(WALLCLOCK_RESUME, "").strip():
+        def done(s: Spec) -> bool:
+            r = store.get(measured.measured_key(s, arch, toolchain).key())
+            return (r is not None and r.runtime_ns is not None
+                    and "wallclock:control:median_ns" in r.raw)
+        print(f"{WALLCLOCK_RESUME}: {sum(map(done, sweep))} cells already "
+              "timed, skipped")
+        sweep = [s for s in sweep if not done(s)]
+        if not sweep:
+            pytest.skip(f"{WALLCLOCK_RESUME}: every cell already timed")
+    assert sweep, f"{WALLCLOCK_LS}={only!r} selects no cell"
+
+    # 2. compile everything first: the K cells, then their J twins
+    cells = []
+    for spec in sweep:
+        work = tmp_path / f"k-L{spec.total_am}-b{spec.n_batches}"
+        cell = _k_build(backend, spec, tc, work)
+        smem, optin = _k_limits(cell.binary)
+        need = k_shared_need(cell, lanes)
+        assert need <= smem, (
+            f"{spec.key()}: {need} B shared > the card's {smem} (opt-in "
+            f"{optin}), and the cell is not in K_REFUSED")
+        twin = measured_store.j_twin(spec)
+        jwork = work / "twin"
+        jwork.mkdir()
+        jsrc, jnames, _ = _batched_source(backend, twin, jwork)
+        jbin = compile_device_source(tc, jsrc).rename(jwork / "cell")
+        cells.append((cell, twin, jbin, jnames))
+        print(f"compiled {spec.key()} ({cell.compile_s:.0f} s, {need} B "
+              f"shared of {smem}) and its J twin", flush=True)
+    command = " ".join([Path(tc.path).name, *tc.compile_flags()])
+
+    # 3. the timed binary is the checked binary -- both arms
+    for cell, twin, jbin, _ in cells:
+        _k_check(backend, cell, run_device_binary, tmp_path)
+        _check_batched(backend, twin, jbin, run_device_binary, tmp_path)
+
+    # 4. time, one cell at a time, both arms back to back
+    discarded = [0]
+
+    def timed(binary: Path, packed: np.ndarray, nb: int, label: str):
+        src, dst = tmp_path / "timing.in", tmp_path / "timing.out"
+        packed.tofile(src)
+        args = (str(src), str(dst), str(WARMUP), str(REPEATS))
+        check_vram(binary, args, backend)  # before the wait, off the clock
+        for take in range(1 + STUDY_RETAKES):
+            try:
+                busy, util = gate.wait_quiet(
+                    backend, say=lambda line: print(line, flush=True))
+            except gate.Contended as e:
+                discarded[0] += 1
+                print(f"  DISCARDED {label}: {e} (take {take + 1})", flush=True)
+                continue
+            out = run_device_binary(binary, *args)
+            card = (util, gate.after_reading(backend))
+            if card[1] is not None and card[1] <= GPU_BUSY_MAX:
+                break
+            discarded[0] += 1
+            print(f"  DISCARDED {label}: card util {card[0]} -> {card[1]}% "
+                  f"(take {take + 1})", flush=True)
+        else:
+            pytest.fail(f"{label}: the box or the card stayed contended "
+                        f"through {STUDY_RETAKES + 1} takes -- not recorded")
+        wall, events, batches = _parse_reps(out, nb)
+        assert len(wall) == REPEATS, out
+        res = np.fromfile(dst, dtype=np.float64)
+        assert np.all(np.isfinite(res)), f"{label}: non-finite result"
+        half = res.size // 2
+        return wall, events, batches, busy, card, bool(
+            np.array_equal(res[:half], res[half:]))
+
+    for cell, _twin, jbin, _jnames in cells:
+        spec, L = cell.spec, cell.spec.total_am
+        discarded[0] = 0
+        load1 = os.getloadavg()[0]
+        packs = {}
+        for wide in (False, True):
+            a = _inputs(L, wide=wide, tau_quantile=None, seed=53_000 + L,
+                        n_bra=K_TIMING_N_BRA, n_ket=K_TIMING_N_KET)
+            k = _k_inputs(k_spec(L), a, seed=54_000 + L + int(wide))
+            packs[wide] = (_pack(L, a, lanes), _k_pack(k, lanes))
+        nbt = spec.n_batches
+        tag = spec.key()
+        jn = timed(jbin, packs[False][0], nbt, f"{tag} J twin near")
+        kn = timed(cell.binary, packs[False][1], nbt, f"{tag} near")
+        kw = timed(cell.binary, packs[True][1], nbt, f"{tag} wide")
+        jw = timed(jbin, packs[True][0], nbt, f"{tag} J twin wide")
+        busy_after = _cpu_busy(0.5)
+        wall, events, batches, busy, card, rep = kw
+        q1, med, q3 = (float(x) for x in np.percentile(wall, [25, 50, 75]))
+        raw = {
+            **_stats("wallclock:near:", kn[0], kn[3], kn[4]),
+            "wallclock:warmup": WARMUP,
+            "wallclock:n_bra": K_TIMING_N_BRA,
+            "wallclock:n_ket": K_TIMING_N_KET,
+            "wallclock:lanes": lanes,
+            "wallclock:min_ns": int(min(wall)),
+            "wallclock:q1_ns": round(q1),
+            "wallclock:q3_ns": round(q3),
+            "wallclock:max_ns": int(max(wall)),
+            "wallclock:events_median_ns": round(float(np.median(events))),
+            "wallclock:cpu_busy_permille_before": round(1000 * busy),
+            "wallclock:cpu_busy_permille_after": round(1000 * busy_after),
+            "wallclock:loadavg1_milli": round(1000 * load1),
+            "wallclock:gpu_util_before": card[0],
+            "wallclock:gpu_util_after": card[1],
+            "wallclock:J_bitwise_repeatable": int(rep),
+            "wallclock:gate_discarded_phases": discarded[0],
+            **_stats("wallclock:control:near:", jn[0], jn[3], jn[4]),
+            **_stats("wallclock:control:", jw[0], jw[3], jw[4]),
+        }
+        per_batch = np.median(np.array(batches), axis=0)
+        for name, t in zip(cell.names, per_batch, strict=True):
+            raw[f"wallclock:{name}:events_median_ns"] = round(float(t))
+        row = measured.Measured(
+            runtime_ns=round(med), repeats=REPEATS, spread_ns=round(q3 - q1),
+            toolchain=toolchain, arch=arch.name, host=measured.host(),
+            gpu=gpu, date=datetime.date.today().isoformat(),
+            kernel=",".join(cell.names), source_sha256=cell.sha, raw=raw)
+        key = measured.measured_key(spec, arch, toolchain)
+        old = store.get(key.key())
+        assert old is not None and old.source_sha256 == cell.sha, (
+            f"{key.key()}: no compile row of this text -- run --remeasure "
+            "--subgrid --target k first")
+        store = measured.merge(store, key, measured.combine(old, row))
+        measured.save(store, Path(store_path))  # resumable, cell by cell
+        print(f"{key.key()}: wide K {med / 1e6:.3f}+-{(q3 - q1) / 1e6:.3f} ms"
+              f" vs J {raw['wallclock:control:median_ns'] / 1e6:.3f} ms; near"
+              f" K {raw['wallclock:near:median_ns'] / 1e6:.3f} ms vs J "
+              f"{raw['wallclock:control:near:median_ns'] / 1e6:.3f} ms; "
+              f"card {card[0]}->{card[1]}%, discarded {discarded[0]}",
+              flush=True)
+
+    # 5. the reading, per L whose whole curve this session timed
+    print(f"\n{backend} {arch.name} ({gpu}), compiled `{command}`")
+    for L in sorted({c[0].spec.total_am for c in cells}):
+        try:
+            g = measured_store.k_gain(store, arch.name, L)
+        except KeyError as e:
+            print(f"  L={L}: gain not read ({e})")
+            continue
+        for i, x in g.items():
+            print(f"  L={L} {i}: K gain {x.k_gain:.3f} (best b{x.k_best}), J "
+                  f"gain {x.j_gain:.3f} (best b{x.j_best}) -> K >= J "
+                  f"{x.k_at_least_j}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_k_wallclock_over_the_k_subgrid(request, compile_device_source,
+                                             run_device_binary,
+                                             tmp_path) -> None:
+    """Wall-clock of every K_SUBGRID cell beside its J twin, RTX 3080."""
+    _k_wallclock("cuda", request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_k_wallclock_over_the_k_subgrid(request, compile_device_source,
+                                            run_device_binary,
+                                            tmp_path) -> None:
+    """Wall-clock of every K_SUBGRID cell beside its J twin, RX 9060 XT."""
+    _k_wallclock("hip", request, compile_device_source, run_device_binary,
+                 tmp_path)

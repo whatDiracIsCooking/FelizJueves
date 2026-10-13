@@ -58,6 +58,52 @@ K cell never equals).
 - THE READ PATH is `rows(..., target=)`: a filter on the key's target slot,
   beside the spec, arch and toolchain ones. `target_of` reads that slot.
 
+THE K ROWS (#205) fill K_SUBGRID on both cards, ADDED beside the J rows
+(no J row is rewritten). DECLARED BEFORE ANY SPLIT K ROW EXISTED -- the
+only K numbers seen first were two one-batch calibration compiles (L = 7
+and 10) -- and not to be tuned after reading one.
+
+- THE COMPILE SIDE is `python -m felizjueves.measured --remeasure --subgrid
+  --target k`: `measured.cell_kernels` of a K cell is
+  `kernel_k.build_k_kernels`, aggregated into one row as a J cell's batch
+  kernels are (spill SUMMED, registers MAXED, `source_sha256` of the batch
+  texts concatenated; `raw`'s `jsh_dynamic_bytes` is the K kernel's `Ksh`).
+- THE CLOCK is test/test_kernel_device.py's opt-in K sweep: each K cell
+  and its J twin (`j_twin`: the J subgrid cell of the same L and
+  n_batches) compiled, checked and timed BACK TO BACK in one session
+  behind the gate, near-T J then K, wide-T K then J (#55's alternation);
+  the J twin's statistics land in the K row's raw as
+  `wallclock:control:*`, and no J row is re-timed or rewritten. The J
+  twin gets the same P, zeta, Q, eta (and the same n_bra x n_ket) as the
+  K cell, so the [p|q] work under both is identical.
+- SPILL (`k_spill_curve`), per (arch, L), the issue's question: does K's
+  spill curve fall faster than J's with batch count? With s_T(b) the
+  row's spill_store + spill_load (the cell's whole spill, summed over its
+  batch kernels -- the store's own aggregation, as #60 judges it; bytes on
+  sm_86, register counts on gfx1200, so only the within-arch reading is
+  made) and r_T(b) = s_T(b) / s_T(1) (a curve with no spill at one batch
+  is flat at 1 while it stays at 0, and +inf once it spills): at each
+  split b, K falls FASTER iff r_K(b) < r_J(b), SLOWER iff r_K(b) > r_J(b),
+  else SAME. Per (arch, L): FASTER iff FASTER at every judged split b,
+  SLOWER iff SLOWER at every one, NO SPILL iff neither curve ever spills,
+  otherwise MIXED. Compiler output, so no tolerance. The worst batch
+  kernel's spill (`kernel_spills`) is reported beside it, never judged.
+  The J rows are the store's, recompiled in the K session by
+  test/test_measured.py's rechecks (the same text, the same counts).
+- WALL-CLOCK (`k_gain`), per (arch, L) and input: each target's best-median
+  gain over its one-batch cell, median(b = 1) / min_b median(b), K off the
+  K rows and J off the same rows' same-session controls -- the quantity
+  `jengine/k-recompute-has-more-merit`'s measured half names (claims.json).
+  This module reads it; #207 scores the claim.
+- A CELL THAT CANNOT BE MEASURED is recorded with its mechanism, FINAL,
+  never "could not measure": in `K_REFUSED[arch]` when it has no row at
+  all (the compile side), in `K_UNTIMED[arch]` when it cannot be LAUNCHED
+  as kernel_k pins it (its largest batch kernel's `Ksh` over the card's
+  per-block shared memory, `K_SMEM_PER_BLOCK`, read off the card), so its
+  row, if any, has no clock. A refused cell enters no curve
+  (`KSpillCurve.refused` names it), and a refused one-batch cell leaves
+  its L NOT JUDGED.
+
 WALL-CLOCK (#53) is `runtime_ns`, `repeats` and `spread_ns`, written by the
 opt-in, `gpu`-marked sweep in test/test_kernel_device.py
 (`test_<backend>_wallclock_over_the_subgrid`, run alone and uncontended; its
@@ -403,6 +449,7 @@ Nothing under `plan/` or `literature/` may import this module
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
@@ -438,6 +485,48 @@ K_SUBGRID: tuple[Spec, ...] = tuple(
 # Each target the store declares a subgrid for, and that subgrid.
 SUBGRIDS: Mapping[Target, tuple[Spec, ...]] = MappingProxyType({
     Target.J: SUBGRID, Target.K: K_SUBGRID})
+
+# THE K CELLS THAT CANNOT BE MEASURED (#205; module docstring, THE K ROWS),
+# per arch, each with its mechanism, FINAL -- never "could not measure".
+# K_REFUSED: no row at all (the compile side). K_UNTIMED: no wall-clock (the
+# cell cannot be LAUNCHED as kernel_k pins it); its compile row may exist.
+K_SMEM_PER_BLOCK = MappingProxyType({  # read off each card (K_HARNESS limits)
+    "sm_86": (49152, 101376),   # (per-block default, opt-in maximum)
+    "gfx1200": (65536, 65536),  # LDS: no opt-in above the default
+})
+# The largest batch kernel's `Ksh` doubles per lane, per K cell of L >= 13
+# (measured.jsh_slots of measured.cell_kernels; test_kernel_device.py
+# rebuilds and re-reads them, `slow`).
+K_MAX_SLOTS = MappingProxyType({
+    (13, 1): 270, (13, 3): 266, (13, 6): 264, (13, 9): 266, (13, 12): 266,
+    (16, 1): 390, (16, 3): 389, (16, 6): 389, (16, 9): 389, (16, 12): 389,
+})
+K_LANES = 32  # sm_86's warp, gfx1200's wave32: the pinned blockDim.y
+
+
+def _untimed(arch: str) -> Mapping[Spec, str]:
+    smem, optin = K_SMEM_PER_BLOCK[arch]
+    out = {}
+    for s in K_SUBGRID:
+        slots = K_MAX_SLOTS.get((s.total_am, s.n_batches))
+        if slots is None or slots * K_LANES * 8 <= smem:
+            continue
+        out[s] = (
+            f"its largest batch kernel's Ksh is {slots} doubles x "
+            f"{K_LANES} lanes x 8 = {slots * K_LANES * 8} B of dynamic "
+            f"shared memory per block, over the {smem} B {arch} gives a "
+            "block at launch: kernel_k's pinned launch (one warp per bra "
+            "record, I and the K accumulator in one shared array, no "
+            "opt-in -- the J twin needs none) cannot run it"
+            + (f" (an opt-in to {optin} B exists on this card, outside the "
+               "pinned launch; the J twin it is compared with never uses it)"
+               if optin > smem else " (no opt-in exists on this card)"))
+    return MappingProxyType(out)
+
+
+K_UNTIMED: Mapping[str, Mapping[Spec, str]] = MappingProxyType(
+    {a: _untimed(a) for a in K_SMEM_PER_BLOCK})
+K_REFUSED: Mapping[str, Mapping[Spec, str]] = MappingProxyType({})
 
 
 # THE ARMS (#159; module docstring): every lever an A/B arm may carry, and
@@ -2105,3 +2194,182 @@ def sieve_spill_claim_holds(store: Mapping[str, Measured],
     """The published pattern holds iff it holds, all four halves, on every
     arch in `arches`."""
     return all(sieve_spills(store, a, cells).holds for a in arches)
+
+
+# ---------------------------------------------------------------------------
+# #205: the K rows against J's at the same L (module docstring, THE K ROWS)
+# ---------------------------------------------------------------------------
+
+SAME = "same"
+NO_SPILL = "no spill"
+NOT_JUDGED = "not judged"
+
+
+def j_twin(spec: Spec) -> Spec:
+    """The J subgrid cell a K cell is the twin of: same L, same n_batches."""
+    if spec.target is not Target.K:
+        raise ValueError(f"{spec.key()} is not a K cell")
+    return pq_spec(spec.total_am, n_batches=spec.n_batches)
+
+
+def kernel_spills(row: Measured) -> tuple[int, ...]:
+    """Each batch kernel's spill (store + load, in the row's own unit), in
+    the row's kernel order, read off `raw` -- they sum to the row's."""
+    names = row.kernel.split(",")
+    out = []
+    for n in names:
+        pre = "" if len(names) == 1 else f"{n}:"
+        if f"{pre}spill_store_bytes" in row.raw:  # nvcc
+            out.append(row.raw[f"{pre}spill_store_bytes"]
+                       + row.raw[f"{pre}spill_load_bytes"])
+        else:  # hipcc: one count, carried by both fields
+            out.append(2 * (row.raw[f"{pre}VGPRs Spill"]
+                            + row.raw.get(f"{pre}SGPRs Spill", 0)))
+    return tuple(out)
+
+
+def _relative(s: int, s1: int) -> float:
+    """s(b) / s(1); a curve with no spill at one batch is flat while it
+    stays at 0, and has risen (inf) once it spills."""
+    if s1 == 0:
+        return 1.0 if s == 0 else math.inf
+    return s / s1
+
+
+@dataclass(frozen=True)
+class KSpillCurve:
+    """K's spill curve against its J twin's, at one (arch, L) -- the rule is
+    the module docstring's THE K ROWS, SPILL."""
+
+    arch: str
+    L: int
+    batches: tuple[int, ...]  # judged: both rows recorded, 1 first
+    k: tuple[int, ...]  # the cell's whole spill, per b in `batches`
+    j: tuple[int, ...]
+    k_worst: tuple[int, ...]  # the worst batch kernel's: reported only
+    j_worst: tuple[int, ...]
+    refused: tuple[int, ...]  # b with no K row (K_REFUSED)
+
+    @property
+    def signs(self) -> tuple[str, ...]:
+        """Per split b of `batches`: K FASTER / SLOWER / SAME than J."""
+        out = []
+        for i in range(1, len(self.batches)):
+            rk = _relative(self.k[i], self.k[0])
+            rj = _relative(self.j[i], self.j[0])
+            out.append(FASTER if rk < rj else SLOWER if rk > rj else SAME)
+        return tuple(out)
+
+    @property
+    def verdict(self) -> str:
+        if len(self.batches) < 2 or self.batches[0] != 1:
+            return NOT_JUDGED
+        if self.k[0] == 0 and self.j[0] == 0 and not any(self.k + self.j):
+            return NO_SPILL
+        signs = set(self.signs)
+        if signs == {FASTER}:
+            return FASTER
+        if signs == {SLOWER}:
+            return SLOWER
+        return MIXED
+
+
+def k_spill_curve(store: Mapping[str, Measured], arch: str, L: int,
+                  refused: Mapping[Spec, str] | None = None) -> KSpillCurve:
+    """THE K ROWS, SPILL, at (arch, L), from the store. A K cell in
+    `refused` (default `K_REFUSED[arch]`) is named, not judged; any other
+    missing or uncompiled row raises KeyError."""
+    refused = K_REFUSED.get(arch, {}) if refused is None else refused
+    batches, k, j, kw, jw, gone = [], [], [], [], [], []
+    for spec in K_SUBGRID:
+        if spec.total_am != L:
+            continue
+        if spec in refused:
+            gone.append(spec.n_batches)
+            continue
+        pair = []
+        for s in (spec, j_twin(spec)):
+            got = rows(spec=s, arch=arch, store=store)
+            if len(got) != 1:
+                raise KeyError(f"{s.key()} @ {arch}: {len(got)} rows")
+            (r,) = got.values()
+            if r.spill_store is None or r.spill_load is None:
+                raise KeyError(f"{s.key()} @ {arch}: not compiled")
+            pair.append(r)
+        batches.append(spec.n_batches)
+        k.append(pair[0].spill_store + pair[0].spill_load)
+        j.append(pair[1].spill_store + pair[1].spill_load)
+        kw.append(max(kernel_spills(pair[0])))
+        jw.append(max(kernel_spills(pair[1])))
+    if not batches and not gone:
+        raise KeyError(f"L={L}: not a K_SUBGRID L")
+    return KSpillCurve(arch=arch, L=L, batches=tuple(batches), k=tuple(k),
+                       j=tuple(j), k_worst=tuple(kw), j_worst=tuple(jw),
+                       refused=tuple(gone))
+
+
+@dataclass(frozen=True)
+class KGain:
+    """One input's best-median gain of the split class over its one-batch
+    cell, K against its same-session J twins, at one (arch, L)."""
+
+    arch: str
+    L: int
+    input: str  # "wide" or "near"
+    batches: tuple[int, ...]
+    k: tuple[float, ...]  # medians, ns, per b
+    j: tuple[float, ...]
+
+    @staticmethod
+    def _gain(t: tuple[float, ...]) -> float:
+        return t[0] / min(t)
+
+    @property
+    def k_gain(self) -> float:
+        return self._gain(self.k)
+
+    @property
+    def j_gain(self) -> float:
+        return self._gain(self.j)
+
+    @property
+    def k_best(self) -> int:
+        return self.batches[self.k.index(min(self.k))]
+
+    @property
+    def j_best(self) -> int:
+        return self.batches[self.j.index(min(self.j))]
+
+    @property
+    def k_at_least_j(self) -> bool:
+        return self.k_gain >= self.j_gain
+
+
+def k_gain(store: Mapping[str, Measured], arch: str, L: int,
+           refused: Mapping[Spec, str] | None = None) -> dict[str, KGain]:
+    """THE K ROWS, WALL-CLOCK, at (arch, L): {"wide": ..., "near": ...}.
+    Raises KeyError when the one-batch K cell, or any unrefused cell, is
+    unrecorded or untimed against its same-session J twin. A cell in
+    `refused` (default: `K_REFUSED[arch]` and `K_UNTIMED[arch]`) is left
+    out; a refused one-batch cell leaves nothing to gain over."""
+    if refused is None:
+        refused = {**K_REFUSED.get(arch, {}), **K_UNTIMED.get(arch, {})}
+    cells = [s for s in K_SUBGRID if s.total_am == L and s not in refused]
+    if not cells or cells[0].n_batches != 1:
+        raise KeyError(f"L={L} @ {arch}: no one-batch K cell to gain over")
+    got: dict[str, tuple[list[float], list[float]]] = {
+        "wide": ([], []), "near": ([], [])}
+    for s in cells:
+        rs = rows(spec=s, arch=arch, store=store)
+        if len(rs) != 1:
+            raise KeyError(f"{s.key()} @ {arch}: {len(rs)} rows")
+        (r,) = rs.values()
+        if r.runtime_ns is None or "wallclock:control:median_ns" not in r.raw:
+            raise KeyError(f"{s.key()} @ {arch}: not timed against its J twin")
+        got["wide"][0].append(r.runtime_ns)
+        got["wide"][1].append(r.raw["wallclock:control:median_ns"])
+        got["near"][0].append(r.raw["wallclock:near:median_ns"])
+        got["near"][1].append(r.raw["wallclock:control:near:median_ns"])
+    b = tuple(s.n_batches for s in cells)
+    return {i: KGain(arch=arch, L=L, input=i, batches=b, k=tuple(kv),
+                     j=tuple(jv)) for i, (kv, jv) in got.items()}

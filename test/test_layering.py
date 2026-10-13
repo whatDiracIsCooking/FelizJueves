@@ -179,9 +179,10 @@ RULES: dict[str, Rule] = {
         "stays narrow. A driver also LOWERS what it built when the Spec names "
         "a lowering lever (`measured.cell_kernels`, #55): build -> lower -> emit. "
         "`measured` writes its rows into `measured_store` (#94), and compiles "
-        "#113's asymmetric study cells through `asym`",
+        "#113's asymmetric study cells through `asym`, and #205's K cells "
+        "through `kernel_k`",
         ("spec", "device", "ir", "kernel", "lower", "emit", "measured_store",
-         "asym", "kernel_dq", "kernel_jab"),
+         "asym", "kernel_dq", "kernel_jab", "kernel_k"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         interp="a driver ships kernels; it does not check them -- the tests do",
@@ -579,7 +580,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "kernel_dq",
                       "kernel_jab", "spec"),
     "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "kernel",
-                 "lower", "measured_store", "spec"),
+                 "kernel_k", "lower", "measured_store", "spec"),
     "measured_store": ("device", "kernel", "lower", "spec"),
     "asym": ("device", "ir", "kernel", "measured_store", "passes",
              "plan.batching", "plan.dag", "plan.sieve", "plan.targets", "spec"),

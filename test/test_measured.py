@@ -41,6 +41,16 @@ from felizjueves.spec import Spec, Target, is_batch_count
 # --- the generator CLI ------------------------------------------------------
 
 
+# #205 was paused mid-run (2026-10-13, the user's call) and its partial rows
+# merged: the L = 7 and L = 10 K cells, compile-only on both cards, with no
+# wall-clock and nothing yet for L = 13 and L = 16. These three tests state
+# #205's finished store, so they fail on the partial one. strict=True: the
+# moment #205 completes they XPASS, fail, and this marker must be removed.
+K_205_PAUSED = pytest.mark.xfail(
+    strict=True,
+    reason="#205 paused: K rows for L = 13, 16 and all K wall-clock pending")
+
+
 def test_the_cli_writes_one_unit_per_class_in_the_backend_spelling(tmp_path) -> None:
     assert emit_cli.main(["--backend", "cuda", "--out", str(tmp_path / "c"),
                           "--L", "0", "4"]) == 0
@@ -134,7 +144,7 @@ SIEVE_CELLS = measured_store.SIEVE_CELLS
 TUNED_CELLS = measured_store.TUNED_CELLS
 SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
                               *RECYCLE_CELLS, *asym.ASYM_CELLS, *SIEVE_CELLS,
-                              *TUNED_CELLS)}
+                              *TUNED_CELLS, *measured_store.K_SUBGRID)}
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -152,10 +162,23 @@ def test_the_store_says_what_its_rows_are_keyed_on() -> None:
     assert "--remeasure" in h["remeasure"]
 
 
+# #205: a K cell of L >= 13 takes minutes of Python to BUILD (its stage-2
+# digest unrolled: 40 to 520 MB of text a cell), so the fast tier reads the
+# rest of the store and leaves those to the `slow` cases below.
+K_SLOW_L = 13
+
+
+def _fast(spec) -> bool:
+    return (getattr(spec, "target", Target.J) is not Target.K
+            or spec.total_am < K_SLOW_L)  # an AsymCell has no target
+
+
 def test_every_row_is_keyed_on_its_measured_key() -> None:
     assert ROWS, "no Measured rows recorded"
     for key, row in ROWS.items():
         spec = _spec_of(key)
+        if not _fast(spec):
+            continue
         assert row.kernel == ",".join(k.name for k in measured.cell_kernels(spec))
         mk = measured.measured_key(spec, ARCHS[row.arch], row.toolchain)
         assert mk.key() == key
@@ -177,6 +200,8 @@ def test_the_recorded_source_is_what_the_generator_writes_today() -> None:
 
     for key, row in ROWS.items():
         spec = _spec_of(key)
+        if not _fast(spec):
+            continue  # test_a_high_l_k_row_hashes_todays_text, `slow`
         units = measured.BACKENDS[BACKEND_OF[row.arch]].units(spec)
         assert measured.cell_sha256(units) == row.source_sha256, (
             f"{key}: the emitted text changed since it was measured -- "
@@ -193,7 +218,8 @@ def test_both_cards_and_every_default_class_are_recorded() -> None:
     for arch in ("sm_86", "gfx1200"):
         kernels = {r.kernel for k, r in ROWS.items()
                    if r.arch == arch and _spec_of(k).n_batches == 1
-                   and not _spec_of(k).levers}
+                   and not _spec_of(k).levers
+                   and _spec_of(k).target is Target.J}
         assert kernels == {build_pq_kernel(L).name for L in range(17)}, arch
 
 
@@ -249,6 +275,8 @@ def test_a_split_cell_is_one_row_aggregated_over_its_batch_kernels() -> None:
         assert (row.spill_store, row.spill_load) == (sum(store), sum(load)), key
         assert all(_per_batch(row, "jsh_dynamic_bytes")), key
         assert "<" in row.command and "_*." in row.command, key
+    # and #205's K rows the same way
+    assert any(_spec_of(k).target is Target.K for k in split)
 
 
 def test_the_dynamic_shared_footprint_is_the_kernels_own_declaration() -> None:
@@ -485,6 +513,7 @@ def test_merge_refuses_a_row_filed_under_another_cards_key() -> None:
                              measured_store.Measured(registers=1, **PROV))
 
 
+@K_205_PAUSED
 def test_the_read_path_filters_the_real_store() -> None:
     spec = pq_spec(8)
     got = measured_store.rows(spec=spec)
@@ -496,8 +525,11 @@ def test_the_read_path_filters_the_real_store() -> None:
     # plus #162's no-sieve arm (the subgrid and L = 11), plus #163's tuned
     # arm (the subgrid less its four 12-batch cells)
     split = sum(s.n_batches > 1 for s in measured_store.SUBGRID)
+    # (and #205's K cells, each with a row or a final refusal on the card)
+    k_rows = len(measured_store.K_SUBGRID) - len(
+        measured_store.K_REFUSED.get("sm_86", {}))
     assert len(nv) == (17 + split + len(RECYCLE_CELLS) + len(asym.ASYM_CELLS)
-                       + len(SIEVE_CELLS) + len(TUNED_CELLS))
+                       + len(SIEVE_CELLS) + len(TUNED_CELLS) + k_rows)
     assert measured_store.rows(arch="sm_86") == nv
     assert measured_store.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
@@ -2252,7 +2284,8 @@ PRE_SIEVE_SHA256 = (
 
 def test_the_sieve_ab_added_rows_and_moved_none() -> None:
     old = {k: v for k, v in STORE["rows"].items()
-           if NO_SIEVE not in k and f"/{TUNED}@" not in k}  # #163's, below
+           if NO_SIEVE not in k and f"/{TUNED}@" not in k  # #163's, below
+           and measured_store.target_of(k) is Target.J}  # #205's K rows
     assert len(old) == PRE_SIEVE_ROWS
     got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
     assert got == PRE_SIEVE_SHA256
@@ -2501,7 +2534,8 @@ def test_the_tuned_verdict_is_declared_before_its_rows() -> None:
 
 
 def test_the_tuned_ab_added_rows_and_moved_none() -> None:
-    old = {k: v for k, v in STORE["rows"].items() if f"/{TUNED}@" not in k}
+    old = {k: v for k, v in STORE["rows"].items() if f"/{TUNED}@" not in k
+           and measured_store.target_of(k) is Target.J}  # #205's K rows
     assert len(old) == PRE_TUNED_ROWS
     got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
     assert got == PRE_TUNED_SHA256
@@ -2675,18 +2709,33 @@ def test_k_subgrid_is_the_j_subgrid_twin_cell_for_cell() -> None:
         measured_store.SUBGRIDS[Target.DQ] = ()  # read-only
 
 
-def test_every_tracked_row_is_a_j_row_and_records_no_target() -> None:
-    # #201's whole acceptance on the tracked store: no row moved (its record
-    # is read back as written, and the file round-trips byte for byte in
-    # test_the_store_file_round_trips_byte_for_byte), and no K cell joins one.
+# #205: the 196 J rows the store held before any K row, as written, digested
+# (sha256 of json.dumps(rows, sort_keys=True)) -- the K rows are ADDED.
+J_ROWS_BEFORE_K = (196, "5327147d08704fbfcb9cad8134dc923111fce9e4d0b16b036e5ec33d"
+                        "51f60c82")
+
+
+def test_every_tracked_row_is_a_j_or_k_row_and_the_j_rows_did_not_move() -> None:
+    # #201's acceptance on the tracked store: a J row records no target (its
+    # record is read back as written, and the file round-trips byte for byte
+    # in test_the_store_file_round_trips_byte_for_byte); #205's: the K rows
+    # are added beside the J rows, every J row exactly as before, and every
+    # K row is a K_SUBGRID cell that says so.
     assert len(ROWS) == len(STORE["rows"])
+    j_rows = {k: v for k, v in STORE["rows"].items()
+              if measured_store.target_of(k) is Target.J}
+    assert (len(j_rows), hashlib.sha256(json.dumps(
+        j_rows, sort_keys=True).encode()).hexdigest()) == J_ROWS_BEFORE_K
     for key, row in ROWS.items():
-        assert measured_store.target_of(key) is Target.J, key
-        assert row.target == "" and "target" not in STORE["rows"][key], key
-    assert measured_store.rows(store=ROWS, target=Target.J) == ROWS
-    assert measured_store.rows(store=ROWS, target=Target.K) == {}
-    for s in measured_store.K_SUBGRID:
-        assert measured_store.rows(spec=s, store=ROWS) == {}
+        if measured_store.target_of(key) is Target.J:
+            assert row.target == "" and "target" not in STORE["rows"][key], key
+        else:
+            assert measured_store.target_of(key) is Target.K, key
+            assert row.target == "k" == STORE["rows"][key]["target"], key
+            assert any(key.startswith(s.key() + "@")
+                       for s in measured_store.K_SUBGRID), key
+    assert measured_store.rows(store=ROWS, target=Target.J) == {
+        k: ROWS[k] for k in j_rows}
     for k, r in measured_store.load_counters().items():
         cell, _ = measured_store.split_kernel_key(k)
         assert measured_store.target_of(cell) is Target.J, k
@@ -2694,9 +2743,10 @@ def test_every_tracked_row_is_a_j_row_and_records_no_target() -> None:
 
 
 def test_a_k_cell_round_trips_through_the_store(tmp_path: Path) -> None:
-    k = MeasuredKey(measured_store.K_SUBGRID[0], SM_86, "nvcc 13.0")
+    # a toolchain no tracked row is keyed on, so the K row is new (#205)
+    k = MeasuredKey(measured_store.K_SUBGRID[0], SM_86, "nvcc 0.0 (synthetic)")
     j = MeasuredKey(measured_store.SUBGRID[0], SM_86, "nvcc 13.0")
-    row = _k_row()
+    row = replace(_k_row(), toolchain=k.toolchain)
     assert not row.target
     store = measured_store.merge(ROWS, k, row)  # merge stamps the target
     assert store[k.key()].target == "k"
@@ -2713,14 +2763,17 @@ def test_a_k_cell_round_trips_through_the_store(tmp_path: Path) -> None:
     measured_store.save(back, q)
     assert q.read_bytes() == p.read_bytes()
     # the read path: by spec, by target, and never through the J twin
-    assert measured_store.rows(spec=k.spec, store=back) == {k.key(): back[k.key()]}
+    assert measured_store.rows(spec=k.spec, toolchain=k.toolchain,
+                               store=back) == {k.key(): back[k.key()]}
     assert measured_store.rows(target=Target.K, store=back) == {
-        k.key(): back[k.key()]}
-    assert measured_store.rows(target=Target.J, store=back) == ROWS
+        k.key(): back[k.key()], **measured_store.rows(target=Target.K,
+                                                      store=ROWS)}
+    assert measured_store.rows(target=Target.J, store=back) == \
+        measured_store.rows(target=Target.J, store=ROWS)
     assert measured_store.rows(spec=j.spec, arch="sm_86", store=back) == {
         j.key(): ROWS[j.key()]}
     # a J row merged today carries no target, as before #201
-    assert measured_store.merge({}, j, row)[j.key()].target == ""
+    assert measured_store.merge({}, j, _k_row())[j.key()].target == ""
 
 
 def test_a_k_cell_round_trips_through_the_counter_store(tmp_path: Path) -> None:
@@ -2758,3 +2811,321 @@ def test_a_k_row_under_a_j_key_and_the_reverse_are_refused(
     with pytest.raises(ValueError, match="names no target"):
         measured_store.target_of(
             "coulomb/d0/(1,0|1,0)/b1/x/literal@sm_86/nvcc 13.0")
+
+
+# --- #205: the K rows, against J's at the same L ----------------------------
+
+
+def test_the_k_rule_was_declared_in_the_store() -> None:
+    doc = measured_store.__doc__
+    assert "THE K ROWS (#205)" in doc
+    assert "DECLARED BEFORE ANY SPLIT K ROW EXISTED" in doc
+    for part in ("THE COMPILE SIDE", "THE CLOCK", "SPILL (`k_spill_curve`)",
+                 "WALL-CLOCK (`k_gain`)", "A CELL THAT CANNOT BE MEASURED"):
+        assert part in doc, part
+
+
+def test_a_k_cell_is_built_by_kernel_k_and_takes_no_lever() -> None:
+    from felizjueves.kernel_k import build_k_kernels
+    s = k_spec(2, n_batches=3)
+    assert measured.cell_kernels(s) == build_k_kernels(s)
+    assert measured.cell_kernels(k_spec(1)) == build_k_kernels(k_spec(1))
+    with pytest.raises(ValueError, match="no lever is declared for a K cell"):
+        measured.cell_kernels(replace(k_spec(1), levers=(RECYCLE,)))
+    # the unit's dynamic shared bytes are the K kernel's Ksh, per lane
+    from felizjueves.kernel_k import shared_bytes
+    (u,) = measured.BACKENDS["cuda"].units(k_spec(2))
+    assert u.jsh_dynamic_bytes == shared_bytes(k_spec(2).am, 32)
+
+
+def test_every_k_cell_is_the_twin_of_a_j_subgrid_cell() -> None:
+    for k in measured_store.K_SUBGRID:
+        j = measured_store.j_twin(k)
+        assert j in measured_store.SUBGRID
+        assert (j.total_am, j.n_batches) == (k.total_am, k.n_batches)
+    with pytest.raises(ValueError, match="not a K cell"):
+        measured_store.j_twin(measured_store.SUBGRID[0])
+
+
+def test_the_remeasure_cli_reaches_the_k_subgrid(monkeypatch, capsys) -> None:
+    seen = []
+    monkeypatch.setattr(measured, "remeasure",
+                        lambda names, cells, j, store, **kw: seen.append(
+                            (list(cells), kw)))
+    assert measured.main(["--remeasure", "--subgrid", "--target", "k"]) == 0
+    assert seen[-1] == (list(measured_store.K_SUBGRID), {})
+    assert measured.main(["--remeasure", "--subgrid", "--target", "k",
+                          "--n-batches", "1", "--compile-timeout", "60"]) == 0
+    assert seen[-1] == ([s for s in measured_store.K_SUBGRID
+                         if s.n_batches == 1], {"timeout": 60.0})
+    for bad in (["--remeasure", "--target", "k"],
+                ["--remeasure", "--subgrid", "--target", "k", "--lever",
+                 RECYCLE]):
+        assert measured.main(bad) == 2
+
+
+def test_a_compile_past_its_budget_gets_no_row_and_the_others_do(
+        tmp_path: Path, monkeypatch) -> None:
+    calls = []
+
+    split = pq_spec(4, n_batches=3)
+    units = measured.BACKENDS["cuda"].units(split)
+    largest = max(units, key=lambda u: len(u.text)).name
+
+    def fake(backend, unit, *, compiler, workdir, timeout):
+        calls.append(unit.name)
+        if unit.name.startswith("pq_L1") or unit.name == largest:
+            raise measured.CompileTimeout(f"did not finish {unit.name}")
+        return ({"registers": 8, "stack_frame_bytes": 0,
+                 "spill_store_bytes": 0, "spill_load_bytes": 0}, 0.1, "nvcc x")
+
+    monkeypatch.setattr(measured, "compile_unit", fake)
+    monkeypatch.setattr(measured.Backend, "compiler", lambda self: "nvcc")
+    monkeypatch.setattr(measured.Backend, "toolchain",
+                        lambda self, c: "nvcc 0.0 (synthetic)")
+    monkeypatch.setattr(measured.Backend, "gpu", lambda self: "g")
+    p = tmp_path / "k.json"
+    measured_store.save({}, p)
+    with pytest.raises(RuntimeError, match="2 cells got no row") as e:
+        measured.remeasure(["cuda"], [0, 1, 2, split], 1, p, timeout=5)
+    assert f"did not finish {largest}" in str(e.value)
+    got = measured_store.load(p)
+    assert sorted(measured_store.split_key(k)[0] for k in got) == sorted(
+        pq_spec(L).key() for L in (0, 2))
+    # the split cell's LARGEST unit went first, every cell's before any
+    # cell's second, and its failure cancelled the cell's other two units
+    assert calls == ["pq_L0_p0_q0", "pq_L1_p1_q0", "pq_L2_p1_q1", largest]
+
+
+def _kc(spec: Spec, spill: int, *, worst: int | None = None,
+        arch: str = "sm_86") -> tuple[str, measured_store.Measured]:
+    """A synthetic compiled row of `spec` whose cell spills `spill` bytes."""
+    tc = "nvcc 13.0" if arch == "sm_86" else "hipcc / ROCm 7.2.4"
+    key = MeasuredKey(spec, ARCHS[arch], tc).key()
+    raw = ({"spill_store_bytes": spill // 2, "spill_load_bytes": spill // 2}
+           if spec.n_batches == 1 else
+           {f"k{i}:spill_store_bytes": v for i, v in enumerate(
+               [worst if worst is not None else spill // 2, 0])}
+           | {f"k{i}:spill_load_bytes": v for i, v in enumerate(
+               [0, spill - (worst if worst is not None else spill // 2)])})
+    return key, measured_store.Measured(
+        registers=255, spill_store=spill // 2, spill_load=spill - spill // 2,
+        toolchain=tc, arch=arch, host="h", gpu="g", date="2026-10-13",
+        kernel="k0" if spec.n_batches == 1 else "k0,k1",
+        target="k" if spec.target is Target.K else "", raw=raw)
+
+
+def _curve(L: int, k: list[int], j: list[int],
+           refused=None) -> measured_store.KSpillCurve:
+    store = {}
+    for s, sk, sj in zip([c for c in measured_store.K_SUBGRID
+                          if c.total_am == L], k, j, strict=True):
+        if sk is not None:
+            store.update([_kc(s, sk)])
+        store.update([_kc(measured_store.j_twin(s), sj)])
+    return measured_store.k_spill_curve(store, "sm_86", L, refused=refused or {})
+
+
+@pytest.mark.parametrize("k, j, verdict", [
+    # K falls to a smaller fraction of its one-batch spill at every b
+    pytest.param([100, 50, 20, 10, 5], [100, 80, 60, 40, 20], "faster",
+                 id="faster"),
+    pytest.param([100, 90, 80, 70, 60], [100, 50, 20, 10, 5], "slower",
+                 id="slower"),
+    pytest.param([100, 50, 80, 70, 60], [100, 60, 60, 40, 20], "mixed",
+                 id="mixed"),
+    # equal fractions are SAME, which is neither FASTER nor SLOWER
+    pytest.param([100, 50, 20, 10, 5], [10, 5, 2, 1, 1], "mixed",
+                 id="a-tie-is-not-faster"),
+    pytest.param([0, 0, 0, 0, 0], [0, 0, 0, 0, 0], "no spill", id="none"),
+    # J never spills (flat at 1); K spilling at one batch and then less falls
+    pytest.param([100, 50, 20, 10, 5], [0, 0, 0, 0, 0], "faster",
+                 id="j-flat"),
+    # K spilling only once split has RISEN (inf), slower than a flat J
+    pytest.param([0, 10, 0, 0, 0], [0, 0, 0, 0, 0], "mixed", id="k-rises"),
+])
+def test_the_k_spill_curve_rule_on_synthetic_rows(k, j, verdict) -> None:
+    c = _curve(13, k, j)
+    assert c.batches == (1, 3, 6, 9, 12)
+    assert (c.k, c.j) == (tuple(k), tuple(j))
+    assert c.verdict == verdict
+
+
+def test_a_refused_k_cell_is_named_and_not_judged() -> None:
+    cells = [c for c in measured_store.K_SUBGRID if c.total_am == 16]
+    c = _curve(16, [100, None, 20, 10, 5], [100, 80, 60, 40, 20],
+               refused={cells[1]: "a mechanism"})
+    assert (c.batches, c.refused, c.verdict) == ((1, 6, 9, 12), (3,), "faster")
+    c = _curve(16, [None, 50, 20, 10, 5], [100, 80, 60, 40, 20],
+               refused={cells[0]: "a mechanism"})
+    assert (c.batches, c.verdict) == ((3, 6, 9, 12), "not judged")
+    with pytest.raises(KeyError, match="0 rows"):
+        _curve(16, [None, 50, 20, 10, 5], [100, 80, 60, 40, 20])
+
+
+def test_the_worst_batch_kernel_is_read_off_raw_and_reported() -> None:
+    s = [c for c in measured_store.K_SUBGRID if c.total_am == 7]
+    _, row = _kc(s[1], 100, worst=70)
+    assert measured_store.kernel_spills(row) == (70, 30)
+    assert sum(measured_store.kernel_spills(row)) == 100
+    # hipcc: one count per kernel, carried by both fields
+    hip_row = measured_store.Measured(
+        registers=192, spill_store=5, spill_load=5, toolchain="hipcc / ROCm 7.2.4",
+        arch="gfx1200", host="h", gpu="g", date="2026-10-13", kernel="k0",
+        target="k", raw={"VGPRs Spill": 4, "SGPRs Spill": 1})
+    assert measured_store.kernel_spills(hip_row) == (10,)
+
+
+def test_the_k_gain_is_read_against_the_same_session_j_twin() -> None:
+    cells = [c for c in measured_store.K_SUBGRID if c.total_am == 10]
+    store = {}
+    for s, (kw, kn, jw, jn) in zip(cells, [
+            (100, 50, 10, 5), (60, 40, 8, 6), (50, 30, 9, 7), (80, 45, 12, 8),
+            (90, 55, 14, 9)], strict=True):
+        key, row = _kc(s, 0)
+        store[key] = replace(row, runtime_ns=kw, repeats=31, spread_ns=1, raw={
+            **row.raw, "wallclock:near:median_ns": kn,
+            "wallclock:control:median_ns": jw,
+            "wallclock:control:near:median_ns": jn})
+    g = measured_store.k_gain(store, "sm_86", 10, refused={})
+    assert (g["wide"].k_gain, g["wide"].k_best) == (2.0, 6)
+    assert (g["wide"].j_gain, g["wide"].j_best) == (1.25, 3)
+    assert g["wide"].k_at_least_j
+    assert (g["near"].k_gain, g["near"].j_gain) == (50 / 30, 1.0)
+    del store[next(iter(store))]
+    with pytest.raises(KeyError):
+        measured_store.k_gain(store, "sm_86", 10, refused={})
+
+
+@K_205_PAUSED
+def test_every_k_cell_has_a_row_or_a_final_refusal_on_both_cards() -> None:
+    # #205's acceptance: rows for every K_SUBGRID cell on both cards, or a
+    # FINAL recorded refusal with its mechanism -- and never both.
+    for arch in ("sm_86", "gfx1200"):
+        refused = measured_store.K_REFUSED.get(arch, {})
+        for s in measured_store.K_SUBGRID:
+            got = measured_store.rows(spec=s, arch=arch, store=ROWS)
+            if s in refused:
+                assert refused[s].strip(), (arch, s.key())
+                assert not any(r.registers is not None for r in got.values()), (
+                    f"{s.key()} @ {arch} is refused yet compiled")
+            else:
+                assert len(got) == 1, f"{s.key()} @ {arch}: no row, no refusal"
+                (r,) = got.values()
+                assert r.registers is not None and r.source_sha256, s.key()
+
+
+def test_the_unlaunchable_k_cells_are_every_high_l_cell_on_both_cards() -> None:
+    from felizjueves.kernel_k import shared_doubles
+    high = {s for s in measured_store.K_SUBGRID if s.total_am >= 13}
+    for arch, (smem, optin) in measured_store.K_SMEM_PER_BLOCK.items():
+        assert set(measured_store.K_UNTIMED[arch]) == high, arch
+        for s, why in measured_store.K_UNTIMED[arch].items():
+            need = measured_store.K_MAX_SLOTS[(s.total_am, s.n_batches)] * 256
+            assert need > smem and f"= {need} B" in why and f"{smem} B" in why
+            assert ("opt-in to" in why) == (optin > smem), why
+    # the one-batch cell's slots are kernel_k's own arithmetic, and a split
+    # cell's largest batch kernel never holds more (Ksh is compacted)
+    for L in (13, 16):
+        one = measured_store.K_MAX_SLOTS[(L, 1)]
+        assert one == shared_doubles(k_spec(L).am)
+        assert all(measured_store.K_MAX_SLOTS[(L, b)] <= one
+                   for b in measured_store.SUBGRID_BATCHES)
+    # and every lower-L cell fits the smaller of the two cards' blocks
+    for s in measured_store.K_SUBGRID:
+        if s.total_am < 13:
+            assert shared_doubles(s.am) * 256 <= min(
+                v[0] for v in measured_store.K_SMEM_PER_BLOCK.values())
+
+
+@K_205_PAUSED
+def test_every_k_row_is_timed_beside_its_j_twin_or_recorded_untimed() -> None:
+    for arch in measured_store.K_SMEM_PER_BLOCK:
+        off = {**measured_store.K_REFUSED.get(arch, {}),
+               **measured_store.K_UNTIMED[arch]}
+        for s in measured_store.K_SUBGRID:
+            for key, r in measured_store.rows(spec=s, arch=arch,
+                                              store=ROWS).items():
+                if s in off:
+                    assert r.runtime_ns is None, key
+                else:
+                    assert r.runtime_ns is not None, f"{key}: not timed"
+                    assert "wallclock:control:median_ns" in r.raw, key
+                    assert "wallclock:control:near:median_ns" in r.raw, key
+                    assert r.raw["wallclock:gate_discarded_phases"] >= 0
+
+
+def test_the_k_rows_hash_the_text_the_generator_writes_today() -> None:
+    # the compile row's source_sha256 is measured.cell_sha256 of today's
+    # emitted batch texts (cheap at L = 7; the rechecks below cover the rest)
+    for arch, b in (("sm_86", measured.BACKENDS["cuda"]),
+                    ("gfx1200", measured.BACKENDS["hip"])):
+        for s in measured_store.K_SUBGRID:
+            if s.total_am != 7:
+                continue
+            got = measured_store.rows(spec=s, arch=arch, store=ROWS)
+            if not got:
+                continue
+            (r,) = got.values()
+            assert r.source_sha256 == measured.cell_sha256(b.units(s)), s.key()
+
+
+K_PARAMS = [
+    pytest.param(s, id=s.key(),
+                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
+    for s in measured_store.K_SUBGRID]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("spec", K_PARAMS)
+def test_nvcc_still_reports_the_k_cells(spec, nvcc, tmp_path) -> None:
+    _recheck_k_cell("cuda", spec, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("spec", K_PARAMS)
+def test_hipcc_still_reports_the_k_cells(spec, hipcc, tmp_path) -> None:
+    _recheck_k_cell("hip", spec, tmp_path)
+
+
+def _recheck_k_cell(backend_name: str, spec, tmp_path: Path) -> None:
+    arch = measured.BACKENDS[backend_name].arch.name
+    why = measured_store.K_REFUSED.get(arch, {}).get(spec)
+    if why is not None:
+        pytest.skip(f"REFUSED, recorded (measured_store.K_REFUSED): {why}")
+    b = measured.BACKENDS[backend_name]
+    compiler = b.compiler()
+    toolchain = b.toolchain(compiler)
+    key = measured.measured_key(spec, b.arch, toolchain).key()
+    if key not in ROWS:
+        pytest.skip(f"no row for {key}: this toolchain is not the recorded "
+                    "one (a different key, not a regression)")
+    want = ROWS[key]
+    _, row = measured.measure(b, spec, compiler=compiler, toolchain=toolchain,
+                              gpu=want.gpu, workdir=tmp_path,
+                              timeout=K_RECHECK_TIMEOUT_S,
+                              jobs=spec.n_batches)
+    assert row.source_sha256 == want.source_sha256, key
+    compiled = {k: v for k, v in want.raw.items() if not k.startswith("wallclock:")}
+    assert (row.registers, row.spill_store, row.spill_load, row.raw) == (
+        want.registers, want.spill_store, want.spill_load, compiled), key
+
+
+K_RECHECK_TIMEOUT_S = 6 * 3600
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("spec", [s for s in measured_store.K_SUBGRID
+                                  if s.total_am >= K_SLOW_L],
+                         ids=lambda s: s.key())
+def test_a_high_l_k_row_hashes_todays_text(spec) -> None:
+    """The fast tier's two whole-store reads, for the K cells it skips."""
+    got = measured_store.rows(spec=spec, store=ROWS)
+    if not got:
+        pytest.skip(f"{spec.key()}: no row on either card (K_REFUSED)")
+    for key, row in got.items():
+        b = measured.BACKENDS[BACKEND_OF[row.arch]]
+        units = b.units(spec)
+        assert row.kernel == ",".join(u.name for u in units), key
+        assert measured.measured_key(spec, b.arch, row.toolchain).key() == key
+        assert measured.cell_sha256(units) == row.source_sha256, key

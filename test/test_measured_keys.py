@@ -25,8 +25,17 @@ from felizjueves.spec import Target
 _SPEC_KEY = re.compile(
     r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b(\d+)/j/([a-z+-]+)\Z"
 )
+# #205's K rows: the same shape, target slot `k`, literal only.
+_K_KEY = re.compile(
+    r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b(\d+)/k/literal\Z"
+)
 
-N_ROWS = 196
+N_ROWS = 196  # the J rows; #205 ADDS K rows beside them
+
+
+def _j_rows(rows):
+    return {k: r for k, r in rows.items()
+            if not _K_KEY.fullmatch(split_key(k)[0])}
 
 
 def _derive(key: str, arch: str, toolchain: str) -> str:
@@ -51,9 +60,18 @@ def _derive(key: str, arch: str, toolchain: str) -> str:
 
 def test_every_measured_key_is_rederived_byte_for_byte() -> None:
     rows = load()
-    assert len(rows) == N_ROWS
-    for key, row in rows.items():
+    assert len(_j_rows(rows)) == N_ROWS
+    for key, row in _j_rows(rows).items():
         assert _derive(key, row.arch, row.toolchain) == key
+    for key, row in rows.items():
+        if key in _j_rows(rows):
+            continue
+        m = _K_KEY.fullmatch(split_key(key)[0])
+        am = tuple(map(int, m.groups()[:4]))
+        L, n = sum(am), int(m.group(5))
+        assert k_spec(L).am == am, key  # the default K class of its L
+        assert MeasuredKey(k_spec(L, n_batches=n), by_name(row.arch),
+                           row.toolchain).key() == key
 
 
 def test_the_rederived_rows_cover_the_declared_cells() -> None:
@@ -62,7 +80,7 @@ def test_the_rederived_rows_cover_the_declared_cells() -> None:
     # (every subgrid cell plus L = 11 one-batch, per arch; #162), and 32
     # tuned (every subgrid cell but the four 12-batch ones, which have no
     # recorded search choice, per arch; #163).
-    rows = load()
+    rows = _j_rows(load())
     arches = {r.arch for r in rows.values()}
     assert arches == {"sm_86", "gfx1200"}
     literal = {pq_spec(L) for L in range(17)} | set(SUBGRID)
@@ -85,12 +103,15 @@ def test_the_rederived_rows_cover_the_declared_cells() -> None:
     assert len(tuned) * 2 == 32
 
 
-def test_a_k_cell_joins_no_measured_row() -> None:
+def test_a_k_cell_joins_no_measured_j_row() -> None:
     # #196: `Target.K` widens the enum without moving a J key (the two tests
     # above), and its own cells -- named by `k_spec` -- share no key with any
-    # row: the store has no K row, so a K cell never reads a J row by accident.
-    rows = load()
+    # J row, so a K cell never reads a J row by accident; #205's K rows are
+    # every one of them a K key.
+    rows = _j_rows(load())
     assert not any(split_key(key)[0].split("/")[4] == "k" for key in rows)
+    assert all(split_key(key)[0].split("/")[4] == "k"
+               for key in set(load()) - set(rows))
     arches = {r.arch: r.toolchain for r in rows.values()}
     k_keys = {
         MeasuredKey(k_spec(L, n_batches=n), by_name(arch), tc).key()
