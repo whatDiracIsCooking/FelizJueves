@@ -1767,3 +1767,174 @@ def sort_key_claim_holds(store: Mapping[str, BuildRow], arches,
     """The measured claim is `asserted` iff WORSE on every arch."""
     return all(sort_key_arch_verdict(store, a, cells) == WORSE
                for a in arches)
+
+
+
+# ---------------------------------------------------------------------------
+# #164: jengine/sieve-non-monotone-in-spills, read on OUR cards
+# ---------------------------------------------------------------------------
+#
+# THE PUBLISHED PATTERN ([JEngine, v2, §4.1]): the sieve's effect on spills
+# is non-monotone across classes -- about 4% fewer on average, but [5|6] 3%
+# more and [8|8] 11% fewer. #164 asked two questions of it, written before
+# #162's rows existed: does the mean fall, and is the effect non-monotone
+# across classes. How each is read was fixed in #164, after the rows were
+# visible, and is transcribed here, per arch, over SIEVE_CELLS (each
+# `no-sieve` cell against its literal, sieved control):
+#
+# - a cell's SPILLS are `spill_store + spill_load` of its row, summed over
+#   its batch kernels by the store already. On sm_86 that is bytes (ptxas);
+#   on gfx1200 both fields carry the spilled-REGISTER count (hipcc's
+#   kernel-resource-usage, VGPRs Spill + SGPRs Spill), so the sum is twice
+#   it -- a ratio within one arch is unaffected, a number across arches is
+#   not comparable;
+# - its CHANGE is (sieved - unsieved) / unsieved: negative is fewer spills
+#   with the sieve. A cell where neither arm spills has no change and is
+#   left out of the mean (its sign is SAME); one where only the sieved arm
+#   spills has no finite change and is refused;
+# - the MEAN is the arithmetic mean of the changes over the cells that
+#   spill (the paper's "on average", read per class); `total_change` is the
+#   ratio of summed spills, reported, not judged;
+# - NON-MONOTONE iff the sieve gives MORE spills at some cell and FEWER at
+#   another;
+# - the two named classes are read at L = 16, one batch, (8,0|8,0) -- which
+#   is [8|8] -- and at #162's L = 11 cell, (6,0|5,0): [6|5], the paper's
+#   [5|6] with bra and ket swapped (pq_spec's split), a different kernel, so
+#   its reading is a stand-in and recorded as one.
+#
+# The published pattern holds on an arch iff all four halves hold (mean
+# falls, non-monotone, the [5|6] stand-in MORE, [8|8] FEWER). What it holds
+# or fails on is OUR kernels on OUR cards: never the paper's A100, and never
+# compared against Table 4 (data/literature/jengine/limits.json).
+
+MORE = "more"
+EIGHT_EIGHT = (16, 1)  # (L, n_batches): pq_spec(16) is (8,0|8,0)
+FIVE_SIX_STAND_IN = (11, 1)  # pq_spec(11) is (6,0|5,0): [5|6] swapped
+
+
+@dataclass(frozen=True)
+class SieveSpill:
+    """One `no-sieve` cell's spills against its sieved control, one arch."""
+
+    arch: str
+    am: tuple[int, ...]
+    L: int
+    n_batches: int
+    sieved: int  # the literal row's spill_store + spill_load
+    unsieved: int  # the no-sieve row's
+
+    def __post_init__(self) -> None:
+        if self.sieved < 0 or self.unsieved < 0:
+            raise ValueError(f"L{self.L} b{self.n_batches} @ {self.arch}: a "
+                             "negative spill count")
+        if self.unsieved == 0 and self.sieved > 0:
+            raise ValueError(
+                f"L{self.L} b{self.n_batches} @ {self.arch}: only the sieved "
+                "arm spills, so the relative change from zero is not finite")
+
+    @property
+    def sign(self) -> str:
+        """MORE / FEWER / SAME spills WITH the sieve."""
+        if self.sieved > self.unsieved:
+            return MORE
+        if self.sieved < self.unsieved:
+            return FEWER
+        return SAME
+
+    @property
+    def change(self) -> float | None:
+        """(sieved - unsieved) / unsieved, or None where neither arm spills."""
+        if self.unsieved == 0:
+            return None
+        return (self.sieved - self.unsieved) / self.unsieved
+
+
+@dataclass(frozen=True)
+class SieveSpillPattern:
+    """#164's reading of the sieve's spills over a cell set, one arch."""
+
+    arch: str
+    cells: tuple[SieveSpill, ...]
+
+    @property
+    def spilling(self) -> tuple[SieveSpill, ...]:
+        return tuple(c for c in self.cells if c.change is not None)
+
+    @property
+    def mean_change(self) -> float:
+        got = [c.change for c in self.spilling]
+        if not got:
+            raise ValueError(f"{self.arch}: no cell spills in either arm")
+        return sum(got) / len(got)
+
+    @property
+    def total_change(self) -> float:
+        s = sum(c.sieved for c in self.cells)
+        u = sum(c.unsieved for c in self.cells)
+        if u == 0:
+            raise ValueError(f"{self.arch}: no cell spills in either arm")
+        return (s - u) / u
+
+    @property
+    def mean_falls(self) -> bool:
+        return self.mean_change < 0
+
+    @property
+    def non_monotone(self) -> bool:
+        signs = {c.sign for c in self.cells}
+        return MORE in signs and FEWER in signs
+
+    def at(self, L: int, n_batches: int) -> SieveSpill:
+        got = [c for c in self.cells if (c.L, c.n_batches) == (L, n_batches)]
+        if len(got) != 1:
+            raise KeyError(f"L{L} b{n_batches} @ {self.arch}: {len(got)} "
+                           "cells")
+        return got[0]
+
+    def halves(self) -> dict[str, bool]:
+        """The published pattern, half by half, on this arch."""
+        return {
+            "mean falls": self.mean_falls,
+            "non-monotone": self.non_monotone,
+            "[5|6] more": self.at(*FIVE_SIX_STAND_IN).sign == MORE,
+            "[8|8] fewer": self.at(*EIGHT_EIGHT).sign == FEWER,
+        }
+
+    @property
+    def holds(self) -> bool:
+        return all(self.halves().values())
+
+
+def sieve_spills(store: Mapping[str, Measured], arch: str,
+                 cells: tuple[Spec, ...] | None = None) -> SieveSpillPattern:
+    """#164's pattern on `arch` over `cells` (by default SIEVE_CELLS), read
+    from the spill fields alone -- a cell need be compiled, not timed.
+
+    Raises ValueError for a cell that is not a `no-sieve` arm, and KeyError
+    when either row is missing or carries no spill fields."""
+    cells = SIEVE_CELLS if cells is None else cells
+    out = []
+    for c in cells:
+        if arm_of(c) != NO_SIEVE:
+            raise ValueError(f"{c.key()}: not a {NO_SIEVE} arm")
+        pair = []
+        for s in (replace(c, levers=()), c):
+            got = rows(spec=s, arch=arch, store=store)
+            if len(got) != 1:
+                raise KeyError(f"{s.key()} @ {arch}: {len(got)} rows")
+            (r,) = got.values()
+            if r.spill_store is None or r.spill_load is None:
+                raise KeyError(f"{s.key()} @ {arch}: not compiled")
+            pair.append(r.spill_store + r.spill_load)
+        out.append(SieveSpill(arch=arch, am=tuple(c.am), L=c.total_am,
+                              n_batches=c.n_batches, sieved=pair[0],
+                              unsieved=pair[1]))
+    return SieveSpillPattern(arch=arch, cells=tuple(out))
+
+
+def sieve_spill_claim_holds(store: Mapping[str, Measured],
+                            arches: tuple[str, ...] = ("sm_86", "gfx1200"),
+                            cells: tuple[Spec, ...] | None = None) -> bool:
+    """The published pattern holds iff it holds, all four halves, on every
+    arch in `arches`."""
+    return all(sieve_spills(store, a, cells).holds for a in arches)
