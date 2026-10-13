@@ -377,6 +377,7 @@ RULE_OF: dict[str, str] = {
     "plan.dag": "plan",
     "plan.mild": "plan",
     "plan.optimum": "plan",
+    "plan.order_search": "plan",
     "plan.pipeline": "plan",
     "plan.recovery": "plan",
     "plan.schedule": "plan",
@@ -440,6 +441,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "plan.dag": ("plan.batching", "plan.mild", "plan.targets", "spec"),
     "plan.mild": ("plan.batching", "plan.targets"),
     "plan.optimum": ("plan.cost", "plan.targets"),
+    "plan.order_search": ("plan.cost",),  # #170: no module imports it yet
     "plan.pipeline": ("plan.cost", "plan.dag", "plan.sieve", "spec"),
     "plan.recovery": ("literature.rules", "literature.tables", "plan.batching",
                       "plan.cost", "plan.dag", "plan.sieve", "plan.targets",
