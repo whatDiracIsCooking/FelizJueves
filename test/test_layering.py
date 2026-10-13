@@ -878,3 +878,18 @@ EDGES |= {k: frozenset(v) for k, v in {
     "ao.one_electron": ("ao.shell",),
     "ao.overlap": ("ao.one_electron", "ao.pairs", "ao.shell"),
 }.items()}
+
+
+# ---------------------------------------------------------------------------
+# #235 (milestone 11): the nuclear attraction `V`, under the `ao` rule. It is
+# the point-charge limit of the J engine's `[p|q]` over the dressed block of
+# `ao.pairs`; its `[r]^(0)` evaluator arrives injected (`ao.pairs.OneCentre`),
+# so it reaches no `reference/`.
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "ao.potential": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.potential": ("ao.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
+}.items()}
