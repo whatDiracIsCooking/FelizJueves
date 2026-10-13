@@ -1,10 +1,12 @@
 """plan/search.py: the cut and seed-order search behind the `searched` board.
 
 Fast tests replay the recorded choices (data/scoreboards/jengine/
-searched_cuts.json) and check what the record must satisfy; the one `slow`
-test re-runs the whole search and asserts it reproduces the record byte for
-byte. How the replayed plans score on the searched board is pinned in
-test_scoreboards.py.
+searched_cuts.json) and check what the record must satisfy; the `slow`
+tests range over the whole 58-order space (#168): one re-runs the search and
+asserts it reproduces the record byte for byte, and two check limits.json's
+split of the residual into cells unreachable in that space and cells where
+the objective passes over a plan at or under all three tables. How the
+replayed plans score on the searched board is pinned in test_scoreboards.py.
 """
 
 from __future__ import annotations
@@ -126,9 +128,12 @@ def test_the_search_space_is_bounded_and_counted() -> None:
         got = list(candidate_cuts(L, nb))
         assert len(got) == expected
         assert all(not c or c[0] > 1 for c in got)
-    assert len(SEED_ORDERS) == 26
+    # #168: the widened family, the 26 structured orders first, unchanged.
+    assert len(SEED_ORDERS) == 58
+    assert list(SEED_ORDERS)[:26] == [name for name, _ in seed_orders()]
+    assert list(SEED_ORDERS) == [name for name, _ in seed_orders(widened=True)]
     biggest = max(comb(L, 2) - comb(L - 1, 1) for L in range(7, 17))
-    assert biggest * len(SEED_ORDERS) == 2730
+    assert biggest * len(SEED_ORDERS) == 105 * 58 == 6090
 
 
 def test_a_cut_that_empties_a_batch_is_refused() -> None:
@@ -155,27 +160,46 @@ def test_the_tolerance_takes_the_one_target_off_cut_at_15_9() -> None:
     # targets in its largest batch, the paper's printed value, where minimax
     # holds 115. With the tolerance the search takes it, and it is at or
     # under in all three tables; at tolerance 0, Table 2 was +7.50% here.
+    # (#168's 58 orders keep the cut and move the seed order: (5636, 272)
+    # under the 26, (5633, 271) now.)
     printed = tuple(t.cells[15, 9] for t in TABLES)
     assert printed == (5786, 280, 116)
     assert _minimax(15, 9) == 115
     assert _recorded()[15, 9][0] == (6, 9)
     chosen = _replayed(15, 9)
     assert (chosen.flops, chosen.max_intermediates, chosen.max_targets) == (
-        5636, 272, 116
+        5633, 271, 116
     )
 
 
 def test_what_intermediates_before_flops_costs_at_16_1() -> None:
     # The objective's price, stated: at (16, 1) it takes the seed order with
-    # the fewest intermediates (1637), which costs FLOPs -- +2.04% over the
+    # the fewest intermediates (1633), which costs FLOPs -- +0.36% over the
     # printed 5633, where the literal hermite order is +0.20% at 1639
     # intermediates. Both are under the printed 1647 intermediates, and both
-    # are over Table 1: the objective moves this cell's margin, not its FAIL.
+    # are over Table 1. The fewest FLOPs any of the 58 orders reaches, 5639,
+    # comes with 1651 intermediates, over Table 2: the objective moves this
+    # cell's margin, not its FAIL. (Under the 26 orders, before #168, the
+    # chosen order was +2.04% here at 5748 FLOPs and 1637 intermediates.)
     hermite = cost(searched_plan(16, 1, (), LITERAL_SEED))
     chosen = _replayed(16, 1)
+    assert _recorded()[16, 1] == ((), "prunable asc, ties hermite")
     assert (hermite.flops, hermite.max_intermediates) == (5644, 1639)
-    assert (chosen.flops, chosen.max_intermediates) == (5748, 1637)
+    assert (chosen.flops, chosen.max_intermediates) == (5653, 1633)
+    fewest_flops = cost(searched_plan(16, 1, (), "+max/+mid, ties reversed"))
+    assert (fewest_flops.flops, fewest_flops.max_intermediates) == (5639, 1651)
     assert TABLES[0].cells[16, 1] == 5633 and TABLES[1].cells[16, 1] == 1647
+
+
+def test_the_widened_space_reaches_12_1_exactly() -> None:
+    # #168's evidence that the 26-order residual was a bound of the space,
+    # not of the problem: at (12, 1) a widened order is the printed cell in
+    # all three tables, and the search takes it.
+    printed = tuple(t.cells[12, 1] for t in TABLES)
+    assert printed == (2221, 645, 455)
+    assert _recorded()[12, 1] == ((), "+max/-mid, ties hermite")
+    chosen = _replayed(12, 1)
+    assert (chosen.flops, chosen.max_intermediates, chosen.max_targets) == printed
 
 
 def test_a_cut_file_with_the_wrong_schema_is_refused(tmp_path: Path) -> None:
@@ -185,9 +209,49 @@ def test_a_cut_file_with_the_wrong_schema_is_refused(tmp_path: Path) -> None:
         load_cuts(bad)
 
 
+def _searched_limit_value() -> dict:
+    lim = next(
+        lim for lim in load_limits(JENGINE / "limits.json")
+        if isinstance(lim.asserted_value, dict)
+        and lim.asserted_value.get("board") == "searched"
+    )
+    return lim.asserted_value
+
+
+def _at_or_under_all_three(L: int, nb: int, c: PlanCost) -> bool:
+    got = (c.flops, c.max_intermediates, c.max_targets)
+    return all(g <= t.cells[L, nb] for g, t in zip(got, TABLES, strict=True))
+
+
+def test_the_residual_is_split_into_unreachable_and_the_objectives_price() -> None:
+    # limits.json names each residual cell once: unreachable in the 58-order
+    # space, or a cell where the objective passes over a plan at or under
+    # all three tables. The witness plans replay to what the record says and
+    # are at or under all three; the recorded plan in those cells is not.
+    value = _searched_limit_value()
+    assert value["seed_orders"] == len(SEED_ORDERS) == 58
+    residual = {(L, nb) for L, nb, _ in value["residual_percent_over"]
+                ["jengine/table1"]}
+    unreachable = {tuple(c) for c in value["unreachable_in_space"]}
+    price = {tuple(w["cell"]): w for w in value["objective_price"]}
+    assert set(price) == {(13, 1), (14, 1), (14, 3)}
+    assert unreachable == {(13, 3), (15, 1), (15, 3), (16, 1), (16, 3), (16, 6)}
+    assert unreachable | set(price) == residual
+    assert not unreachable & set(price)
+    for (L, nb), w in price.items():
+        c = cost(searched_plan(L, nb, tuple(w["cut"]), w["seed_order"]))
+        assert [c.flops, c.max_intermediates, c.max_targets] == w[
+            "flops_intermediates_targets"]
+        assert _at_or_under_all_three(L, nb, c)
+        assert feasible(c, _minimax(L, nb))
+        # the objective prefers the recorded plan, which is over Table 1
+        assert objective(_replayed(L, nb)) < objective(c)
+        assert not _at_or_under_all_three(L, nb, _replayed(L, nb))
+
+
 @pytest.mark.slow
 def test_the_search_reproduces_the_record() -> None:
-    # ~4 minutes serial: 40 cells x up to 105 cuts x 26 seed orders.
+    # ~8 minutes serial: 40 cells x up to 105 cuts x 58 seed orders.
     results = {(L, nb): search(L, nb) for L, nb in GRID}
     assert dump_cuts(results) == CUTS.read_text()
     for (L, nb), r in results.items():
@@ -196,20 +260,29 @@ def test_the_search_reproduces_the_record() -> None:
 
 @pytest.mark.slow
 def test_no_plan_in_the_space_is_at_or_under_all_three_in_a_residual_cell() -> None:
-    # limits.json's "unreachable, independent of the objective": in every
-    # cell the searched board leaves over, no plan in the whole space -- any
-    # cut, any seed order, any target count -- is at or under all three
+    # limits.json's "unreachable in the 58-order space": in each of these
+    # residual cells, no plan in the whole space -- any cut, any of the 58
+    # seed orders (#168), any target count -- is at or under all three
     # tables at once. (test_scoreboards.py checks the cheap 1- and 3-batch
     # cells on the fast tier.)
-    lim = next(
-        lim for lim in load_limits(JENGINE / "limits.json")
-        if lim.asserted_value["board"] == "searched"
-    )
-    residual = lim.asserted_value["residual_percent_over"]
-    cells = {(L, nb) for t in residual.values() for L, nb, _ in t}
+    assert len(SEED_ORDERS) == 58
+    cells = {tuple(c) for c in _searched_limit_value()["unreachable_in_space"]}
+    assert len(cells) == 6
     for L, nb in sorted(cells):
-        printed = [t.cells[L, nb] for t in TABLES]
         for cuts, seed, c in all_plans(L, nb):
-            got = (c.flops, c.max_intermediates, c.max_targets)
-            assert any(g > p for g, p in zip(got, printed, strict=True)), (
-                L, nb, cuts, seed)
+            assert not _at_or_under_all_three(L, nb, c), (L, nb, cuts, seed)
+
+
+@pytest.mark.slow
+def test_in_the_objectives_price_cells_the_space_holds_a_plan_at_or_under() -> None:
+    # limits.json's "the objective's price": in (13, 1), (14, 1) and (14, 3)
+    # the 58-order space DOES hold a plan at or under all three tables, the
+    # recorded witness is the first one in the search's own order, and the
+    # lexicographic objective (intermediates, then FLOPs) passes it over.
+    # #171 replaces the objective; this test pins what it costs today.
+    for w in _searched_limit_value()["objective_price"]:
+        L, nb = w["cell"]
+        hits = [(cuts, seed) for cuts, seed, c in all_plans(L, nb)
+                if _at_or_under_all_three(L, nb, c)]
+        assert hits and hits[0] == (tuple(w["cut"]), w["seed_order"]), (L, nb)
+        assert _recorded()[L, nb] not in hits

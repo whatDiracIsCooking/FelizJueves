@@ -18,17 +18,25 @@ deterministic:
   leaving no batch empty (#64: a first cut at 1 empties Y_{0,0} and Z_{0,0},
   and `partition` refuses it). C(L, k - 1) - C(L - 1, k - 2) of them, at most
   C(16, 2) - 15 = 105. With 1 batch, or 3 (k = 1), the only cut is ().
-- THE SEED ORDER. Each of plan/recovery.py's 26 structured `seed_orders()`
-  (#14's family: `hermite_targets` and its reverse, and every sort by |r|
-  then the components), imported, not redefined.
+- THE SEED ORDER. Each of plan/recovery.py's 58 `seed_orders(widened=True)`
+  (#168): #14's 26 structured orders (`hermite_targets` and its reverse,
+  and every sort by |r| then the components) first, unchanged and in the
+  same order, then #108's 32 widened rules, imported, not redefined. Each is
+  a rule over r and L, never a per-cell fit. Searching them here is a choice
+  of this board only: #108's rules-only doctrine for the literal board's
+  `exact_given_inputs` is untouched.
 
-So at most 105 x 26 = 2730 full plans per cell; the whole board is a few
-minutes serial (test_plan_search.py's one `slow` test).
+So at most 105 x 58 = 6090 full plans per cell; the whole board is about
+8 minutes serial (test_plan_search.py's `slow` tests). Until #168 the
+search ranged over the 26 alone, and its residual was read as unreachable
+"independent of the objective"; that was a bound of the space searched, not
+of the problem -- at (12, 1) a widened order lands on the printed cell
+exactly.
 
 WHAT IS NOT SEARCHED. Per-direction cuts (plan/recovery.py's cut is one; it
 is the paper's recovered INPUT, judged on the literal board, not a choice
-this board makes), seed orders outside the structured family (the factorial
-space; #14's record searched random ones and stopped there on purpose), the
+this board makes), seed orders outside the 58 rules (the factorial space;
+#14's record searched random ones and stopped there on purpose), the
 sieve's re-expansion choice and sweep, and `no-sieve`. Everything else is the
 literal reconstruction, sieve on.
 
@@ -42,7 +50,7 @@ and not tuned to it:
     2. FLOPs                   (Table 1)
 
 and among equal keys, the first found: cuts in `combinations` order (lowest
-boundaries first), and within a cut the seed orders in `seed_orders()` order
+boundaries first), and within a cut the seed orders in `SEED_ORDERS` order
 (`hermite`, the literal one, first).
 
 Why that order, on generator grounds and not table grounds: every target is
@@ -60,9 +68,11 @@ is one target off minimax and at or under in all three tables. The tolerance
 was set to the smallest value that admits it (tolerance 2 picks identically;
 3 breaks (9, 9) on Table 3), and the order of 1 and 2 above was NOT changed
 to suit the board. What it costs, in the cells it does not help, is pinned in
-test_plan_search.py: putting intermediates before FLOPs takes a FLOP-costlier
-seed order in some cells, worst at (16, 1), +2.04% over Table 1 where the
-FLOPs-first order would be +0.20%.
+test_plan_search.py and limits.json: putting intermediates before FLOPs
+takes a FLOP-costlier seed order in some cells, and in three of them --
+(13, 1), (14, 1) and (14, 3) -- it passes over a plan at or under all three
+tables for one over Table 1 (#171 revisits the objective; this module does
+not change it).
 
 An EMPTY batch (Y_{0,0} and Z_{0,0} whenever the first cut is 1; Fig. 4
 does not draw them at L = 6) is not a candidate: `partition` refuses it
@@ -104,7 +114,7 @@ CUTS_SCHEMA = 2
 MINIMAX_TOLERANCE = 1
 
 LITERAL_SEED = "hermite"
-SEED_ORDERS: Mapping[str, SeedOrder] = dict(seed_orders())
+SEED_ORDERS: Mapping[str, SeedOrder] = dict(seed_orders(widened=True))
 
 
 def fixed_cut(cuts: Cuts) -> CutRule:
@@ -136,7 +146,7 @@ def _seed_order(name: str) -> SeedOrder:
         return SEED_ORDERS[name]
     except KeyError:
         raise ValueError(
-            f"seed order {name!r} is not one of recovery.seed_orders()"
+            f"seed order {name!r} is not one of recovery.seed_orders(widened=True)"
         ) from None
 
 
@@ -151,7 +161,7 @@ def searched_plan(
     total_am: int, n_batches: int, cuts: Cuts, seed: str = LITERAL_SEED
 ) -> tuple[BatchDag, ...]:
     """The full plan for one cut and seed order: partition, MILD DAG per
-    batch, sieve seeded in the named `seed_orders()` order."""
+    batch, sieve seeded in the named `seed_orders(widened=True)` order."""
     batches = partition(total_am, n_batches, cut=fixed_cut(cuts))
     return _sieved(total_am, (batch_dag(total_am, b) for b in batches), seed)
 
@@ -178,7 +188,7 @@ class SearchResult:
 
 def all_plans(total_am: int, n_batches: int) -> Iterator[tuple[Cuts, str, PlanCost]]:
     """The whole search space, costed, in tie-break order: `candidate_cuts`
-    outer, `seed_orders()` inner."""
+    outer, `seed_orders(widened=True)` inner."""
     for cuts in candidate_cuts(total_am, n_batches):
         batches = partition(total_am, n_batches, cut=fixed_cut(cuts))
         dags = tuple(batch_dag(total_am, b) for b in batches)
@@ -219,7 +229,7 @@ def dump_cuts(results: Mapping[tuple[int, int], SearchResult]) -> str:
             "(L, n_batches) for the searched board: the shared cut points "
             "c_1 < ... < c_{k-1} that batching.partition takes, "
             "k = n_batches // 3, and the name of one of "
-            "plan.recovery.seed_orders(). Replay with "
+            "plan.recovery.seed_orders(widened=True). Replay with "
             "plan.search.searched_plan(L, n_batches, cut, seed_order); do not "
             "re-search."
         ),
@@ -227,7 +237,7 @@ def dump_cuts(results: Mapping[tuple[int, int], SearchResult]) -> str:
             "feasible": "max_targets <= minimax + minimax_tolerance",
             "minimax_tolerance": MINIMAX_TOLERANCE,
             "then": ["max_intermediates", "flops"],
-            "ties": "lowest cut points, then seed_orders() order",
+            "ties": "lowest cut points, then seed_orders(widened=True) order",
         },
         "cuts": cells,
     }
