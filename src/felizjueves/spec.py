@@ -6,19 +6,39 @@ which target, with which levers pulled away from the paper. Plan, cost model,
 emitter and scoreboards will each key their records on it, so a record made by
 one is findable by the others.
 
-SEVERAL FIELDS HAVE EXACTLY ONE LEGAL VALUE TODAY, AND THAT IS THE POINT. The
-operator is the Coulomb operator and the derivative order is 0. They are
+SEVERAL FIELDS HAD EXACTLY ONE LEGAL VALUE, AND THAT WAS THE POINT. The
+operator was the Coulomb operator and the derivative order is 0. They are
 fields anyway because adding a field later means retrofitting every consumer
 that was keyed without it; widening an enum does not.
+
+THE OPERATOR IS THE FIRST SUCH FIELD TO BE WIDENED (#232), and the sentence
+above is what that tests. Milestone 11 adds the one-electron operators:
+`OVERLAP` (S_ab = <a|b>), `KINETIC` (T_ab = <a|-1/2 nabla^2|b>) and `NUCLEAR`
+(V_ab = -SUM_C Z_C <a|1/r_C|b>), each with its own target -- `Target.S`, `T`
+and `V`, each a PAIR class (la, lb) like `DQ` and `JAB`. A target has
+exactly one operator (`OPERATOR_OF`) and the validator refuses any other
+pairing, so `Spec(COULOMB, 0, (1, 1), Target.S)` is never keyed. No consumer
+outside this module changed: a one-electron key reads
+``overlap/d0/(2,1)/b1/s/literal``, the shape every key already had, and every
+pre-existing key is byte-identical. `DERIVATIVE_ORDERS` stays (0,):
+gradients and Hessians are out of milestone 11's scope.
 
 THE TARGET DECIDES THE CLASS'S SHAPE (#150). `Target.J` is the [p|q] kernel
 of a QUARTET class (l1, l2 | l3, l4). `Target.DQ` (the pre-contracted ket
 vector) and `Target.JAB` (the bra back-transform and the scatter) act on one
 shell PAIR, so their `am` is a PAIR class (la, lb). That is a widening of
 `am` and of the enum, not a new field: `AM_LENGTH` says which target takes
-which length, and the validator refuses a mismatch either way. A pair class
-is never batched -- batching partitions the Hermite targets of a quartet, and
-a pair has none -- so `n_batches = 1` is a pair target's only legal value.
+which length, and the validator refuses a mismatch either way.
+
+A PAIR TARGET IS UNBATCHED, FOR A REASON STATED PER TARGET (#232). `DQ` and
+`JAB` (and `S` and `T`, which run no recurrence tower at all) are never
+batched for a structural reason: batching partitions the Hermite targets of
+a quartet's [p|q] tower, and those kernels have none to partition. That
+reason is FALSE for `V`, whose Hermite targets are every t with
+|t| <= la + lb (the J engine with the ket a unit point charge), so `V` is
+unbatched by milestone 11's DECISION, not by that rule; a batched `V` is a
+follow-up. Either way `n_batches = 1` is a pair target's only legal value
+today, and the refusal names which reason applies (`_PAIR_BATCH_REFUSAL`).
 
 A K CLASS IS NAMED IN HERMITE ORDER, NOT AO ORDER (#196). `Target.K` is the
 exchange matrix, K_ab = SUM_cd D_cd (ac|bd), on the same [p|q] recurrence:
@@ -59,6 +79,10 @@ from enum import StrEnum
 
 class Operator(StrEnum):
     COULOMB = "coulomb"  # 1/r12
+    # The one-electron operators (#232, milestone 11).
+    OVERLAP = "overlap"  # 1: S_ab = <a|b>
+    KINETIC = "kinetic"  # -1/2 nabla^2: T_ab
+    NUCLEAR = "nuclear"  # -SUM_C Z_C / r_C: V_ab
 
 
 class Target(StrEnum):
@@ -75,13 +99,49 @@ class Target(StrEnum):
     # The exchange matrix K_ab = SUM_cd D_cd (ac|bd); its `am` is
     # (la, lc, lb, ld), the Hermite pairing, bra first (#196, module docstring).
     K = "k"
+    # The one-electron matrices (#232), each a PAIR class (la, lb).
+    S = "s"  # overlap
+    T = "t"  # kinetic energy
+    V = "v"  # nuclear attraction
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
 # [p|q] kernel, a pair (la, lb) for the two per-pair families (#150), and a
-# quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196).
+# quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196),
+# and a pair (la, lb) for each one-electron matrix (#232).
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
+    Target.S: 2, Target.T: 2, Target.V: 2,
+}
+
+
+# The one operator each target is built from (#232); any other pairing is
+# refused. The four two-electron targets are Coulomb's.
+OPERATOR_OF: dict[Target, Operator] = {
+    Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
+    Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
+    Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
+    Target.V: Operator.NUCLEAR,
+}
+
+
+# Why a pair target refuses `n_batches > 1`, per target (#232, module
+# docstring): a structural reason for the targets with no Hermite targets to
+# partition, and a decision for `V`, of which the structural reason is false.
+_STRUCTURAL = (
+    "never batched -- batching partitions the Hermite targets of a quartet, "
+    "and this pair kernel has none to partition"
+)
+_PAIR_BATCH_REFUSAL: dict[Target, str] = {
+    Target.DQ: _STRUCTURAL,
+    Target.JAB: _STRUCTURAL,
+    Target.S: _STRUCTURAL,
+    Target.T: _STRUCTURAL,
+    Target.V: (
+        "unbatched by milestone 11's decision -- V does have Hermite targets "
+        "(every t with |t| <= la + lb), so the structural reason does not "
+        "apply; a batched V kernel is a follow-up"
+    ),
 }
 
 
@@ -116,6 +176,11 @@ class Spec:
             raise ValueError(f"operator {self.operator!r} is not an Operator")
         if not isinstance(self.target, Target):
             raise ValueError(f"target {self.target!r} is not a Target")
+        if self.operator is not OPERATOR_OF[self.target]:
+            raise ValueError(
+                f"target {self.target} is built from operator "
+                f"{OPERATOR_OF[self.target]}, not {self.operator}"
+            )
         if (
             type(self.derivative_order) is not int
             or self.derivative_order not in DERIVATIVE_ORDERS
@@ -152,8 +217,7 @@ class Spec:
         if want == 2 and self.n_batches != 1:
             raise ValueError(
                 f"n_batches {self.n_batches!r} for pair target {self.target}: "
-                "a pair class is never batched -- batching partitions the "
-                "Hermite targets of a quartet, which a pair has none of"
+                f"{_PAIR_BATCH_REFUSAL[self.target]}"
             )
 
     @property
@@ -161,9 +225,10 @@ class Spec:
         """The sum of `am`, a quartet's or a pair's alike.
 
         For a quartet (`Target.J`) this is L, the row the Spec indexes in
-        [JEngine] Tables 1-3. A PAIR class (`Target.DQ`, `Target.JAB`)
-        indexes NO published table row: its sum is la + lb, one pair's
-        Hermite order, and must never be scored against a [JEngine] table.
+        [JEngine] Tables 1-3. A PAIR class (`Target.DQ`, `Target.JAB`,
+        and the one-electron `Target.S`, `T`, `V`) indexes
+        NO published table row: its sum is la + lb, one pair's Hermite
+        order, and must never be scored against a [JEngine] table.
 
         A K quartet (`Target.K`, `am = (la, lc, lb, ld)`) indexes the SAME
         Tables 1-3 row as the J quartet with the same `am`: L is the sum
@@ -178,7 +243,8 @@ class Spec:
         """E.g. ``coulomb/d0/(4,4|4,4)/b1/j/literal``.
 
         A pair class spells ``coulomb/d0/(2,1)/b1/dq/literal`` -- no ``|``,
-        so it cannot collide with a quartet's. A quartet key is
+        so it cannot collide with a quartet's; a one-electron class spells
+        ``overlap/d0/(2,1)/b1/s/literal``. A quartet key is
         byte-identical to the one before #150: it is the join key of every
         measured row.
         """
