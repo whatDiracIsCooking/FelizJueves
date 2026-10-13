@@ -13,8 +13,10 @@
     },
     {
       "unit": "§1",
-      "claims": [],
-      "note": "Prior art (White & Head-Gordon, COLD PRISM, Shao & Head-Gordon, Yasuda & Maruoka, Ufimtsev & Martinez, Galvez et al., TeraChem's splitting, LibintX, GPU4PySCF, RI-J error figures) -- claims about the cited works, not [JEngine]'s own. The paper's own claims here are previews: batching moves kernels to compute-bound (jengine/batching-crosses-the-ridge, §7.2), a batching that minimises intermediate overlap (jengine/batch-overlap-is-fundamentals-and-axials, §5), and an extension to g with 'straightforward' extension beyond -- an aim, which this repo's generator meets by construction for L = 0..16."
+      "claims": [
+        "jengine/k-splitting-redundant-hermite"
+      ],
+      "note": "Prior art (White & Head-Gordon, COLD PRISM, Shao & Head-Gordon, Yasuda & Maruoka, Ufimtsev & Martinez, Galvez et al., TeraChem's splitting, LibintX, GPU4PySCF, RI-J error figures) -- claims about the cited works, not [JEngine]'s own, with one exception recorded by #195 and missed by #120's reading: the paper's characterisation of TeraChem's f-type K splitting (lower registers, redundant two-centre Hermite re-evaluation) is a shape our own split K kernels can show or not (jengine/k-splitting-redundant-hermite). The paper's own claims here are previews: batching moves kernels to compute-bound (jengine/batching-crosses-the-ridge, §7.2), a batching that minimises intermediate overlap (jengine/batch-overlap-is-fundamentals-and-axials, §5), and an extension to g with 'straightforward' extension beyond -- an aim, which this repo's generator meets by construction for L = 0..16."
     },
     {
       "unit": "§2",
@@ -83,8 +85,11 @@
     },
     {
       "unit": "§6",
-      "claims": [],
-      "note": "The generator's five steps (split, MILD DAG per batch, sieve, topological sort, emit Alg. 1) are the pipeline this repo implements (plan/pipeline.py, plan/schedule.py, kernel.py), content rather than a claim; that Tables 1-3 are the generator's own counts is their provenance, which is why the boards can score them exactly."
+      "claims": [
+        "jengine/k-contraction-at-quartet-level",
+        "jengine/k-recompute-has-more-merit"
+      ],
+      "note": "The generator's five steps (split, MILD DAG per batch, sieve, topological sort, emit Alg. 1) are the pipeline this repo implements (plan/pipeline.py, plan/schedule.py, kernel.py), content rather than a claim; that Tables 1-3 are the generator's own counts is their provenance, which is why the boards can score them exactly. The two K records were missed by #120's reading and added by #195: recomputing [r]^(0) in several kernels has more merit for the exchange matrix K, because of the contractions K needs at the shell quartet level."
     },
     {
       "unit": "§7",
