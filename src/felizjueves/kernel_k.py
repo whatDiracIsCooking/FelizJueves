@@ -1,6 +1,7 @@
 """The exchange kernel, `Target.K`: the staged contraction as IR (#198).
 
     build_k_kernel((la, lc, lb, ld) | spec) -> Kernel     n_batches = 1
+    build_k_kernels(spec) -> tuple[Kernel, ...]  one per batch, atomized (#203)
     k_class_spec(la, lc, lb, ld)            -> Spec       the class's key
     launch_shape(n_bra, lanes)              -> (grid, (1, lanes))
     shared_doubles(am) / shared_bytes(am, lanes)          the footprint
@@ -108,6 +109,64 @@ at most `(35 + 36) * 32 * 8 = 18,176` bytes through `(dd|dd)`, against the
 48 KiB both of this box's cards give a block. It is arithmetic of the class,
 not of a built kernel (`shared_doubles`), so a table needs no build.
 
+THE SPLIT CLASS (#203): `build_k_kernels(spec)`, one kernel per batch of the
+plan, and where the partial sums go. A batch holds only some of the Hermite
+targets `r = p + q`, so a batch kernel can complete stage 1 for only some
+`p`, while stage 2 sums over ALL `p`. Two forms are possible:
+
+- THE PARTIAL-SUM FORM -- BUILT, the default and the only form built. Each
+  batch kernel runs the batch's own DAG (the plan's, exactly as
+  `kernel.build_pq_kernels` runs it for `Target.J`) and contracts only that
+  batch's terms: stage 1 the `(p, q)` with `p + q` in the batch (and
+  `E^bd_q` structurally nonzero), stage 2 the `p` whose `I[p]` the batch
+  holds for that `(b,d)` row (and `E^ac_p` nonzero), stage 3 once per
+  `(a,c)` row whose `V` is not structurally zero IN THIS BATCH. It adds its
+  partial `K[a, b]` through `passes.atomize` (`array="K"`), as a split J
+  kernel adds its partial `J_p` -- so the fused stage-2/3 digest runs once
+  per batch per `(b,d)` row, and the `E^ac` contraction of a `p` that
+  several batches hold is DUPLICATED across them. That duplication is what
+  `kdup.py` (E1, #202) predicts, and test/test_kernel_k_batched.py counts it
+  off the built kernels and asserts the two equal. Chosen because it is the
+  direct analogue of the J engine's split, and so the arm the
+  `jengine/k-recompute-has-more-merit` claim compares against. What a slot
+  holds is per batch: `Ksh`'s rows are the `p` the batch holds, then the
+  `K[a, b]` it writes, compacted; a `p` or a `K[a, b]` the batch never
+  touches gets no slot, no `WarpReduce` and no write, not an added zero.
+  Each batch kernel also re-forms both `E` blocks (whole, as the one-batch
+  kernel does): `n_batches` evaluations of each, which E1 does not count
+  (its count is LOW on purpose).
+- THE RECOMPUTE FORM -- NOT BUILT, the lever E1/E2 score against: a batch
+  kernel recomputes whatever `[r]^(0)` it needs so that every `p` of a
+  given `K[a, b]` is in one kernel (`[JEngine, v2, §6]`'s "extreme case"),
+  paying re-evaluated two-centre Hermite integrals instead of duplicated
+  stage-2 work. It does not fall out of this builder: its batches would be
+  partitioned by `p` (or by output), not by `r`, which is a different plan
+  partition and a different DAG per kernel -- a second code path, so per
+  #203 it is not emitted.
+
+WHICH THE PAPER'S SENTENCE PREDICTS SHOULD WIN, written down before any
+count (E1, #202, counts the arithmetic; this builder only cross-checks it):
+`[JEngine, v2, §6]` says recomputing `[r]^(0)` in several kernels "has more
+merit when applied to the calculation of the exchange matrix K due to the
+additional contractions that must be completed at the shell quartet level".
+So the sentence predicts the RECOMPUTE form beats this partial-sum form for
+K (and by more than for J): the partial-sum form pays the duplicated
+quartet-level stage-2 contraction, which J's split does not have (J's
+products are partitioned by `r`, never duplicated). Whether that holds on
+a card is E2's measurement and E3's score, not this module's.
+
+EXACTNESS OF THE SPLIT. Interpreted with one lane, each batch kernel is
+`==` `ao.k.k_quartet` with `pq` restricted to the batch's targets (a zero
+elsewhere: every term the kernel omits is the host's `+-0.0`, the identity
+on an accumulator), bit for bit; and the batches, run in `Plan.dags` order
+onto a zeroed `K`, are `==` the host's left fold of those partials in that
+order (an atomic add onto a zero is exact). Against the ONE-BATCH kernel
+the sum agrees to ROUNDING ONLY, never bitwise in general: the split
+reassociates every sum it cuts -- `I[p]`'s fold over `q` is cut by `r`,
+`V`'s fold over `p` is cut by batch, and `D (V_1 + V_2)` becomes
+`D V_1 + D V_2`. On a card the atomics also add in hardware order, so a
+batched `K` is not bit-reproducible run to run (`passes.atomize`'s note).
+
 Nothing here is CUDA- or HIP-specific, and nothing imports `ao/` (the host
 staging it is checked against), the interpreter, `reference/`, a backend or
 a device.
@@ -141,6 +200,7 @@ from felizjueves.ir import (
 )
 from felizjueves.kernel import launch_shape as _j_launch_shape
 from felizjueves.kernel import split
+from felizjueves.passes import atomize
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
@@ -159,7 +219,9 @@ __all__ = [
     "NO_DENSITY_KEY",
     "PARAMS",
     "SORTED_BY_IQ",
+    "SPLIT_WRITE",
     "build_k_kernel",
+    "build_k_kernels",
     "k_class_spec",
     "launch_shape",
     "shared_bytes",
@@ -188,6 +250,15 @@ NO_DENSITY_KEY = (
     "shell pairs based on the magnitude of the density matrix.'")
 
 
+SPLIT_WRITE = (
+    "atomic write, by lane 0 only: the partial-sum form (#203). A batch "
+    "holds only some targets r = p + q, so it completes stage 1 for only "
+    "some p, while stage 2 sums over ALL p: every batch kernel of the class "
+    "adds its partial K[a,b] to the same K[a,b], so the write must "
+    "accumulate (passes.atomize, as a split J kernel writes J_p, [JEngine, "
+    "v2, §5]). The lane-0 guard stays: every lane holds the warp sum")
+
+
 def k_class_spec(la: int, lc: int, lb: int, ld: int) -> Spec:
     """The K class `(la, lc | lb, ld)` -- Hermite pairing, bra first."""
     return Spec(Operator.COULOMB, 0, (la, lc, lb, ld), Target.K)
@@ -205,9 +276,9 @@ def _spec_of(cls: tuple[int, int, int, int] | Spec) -> Spec:
         raise ValueError(f"{spec.key()} is not a Target.K class")
     if spec.n_batches != 1:
         raise ValueError(
-            f"n_batches = {spec.n_batches}: a split K class is B3's (one "
-            "kernel per batch, and where the partial sums go); this builds "
-            "one batch")
+            f"n_batches = {spec.n_batches}: a split K class writes K[a,b] "
+            "from several kernels and needs atomics (the partial-sum form, "
+            "#203); build_k_kernels builds it")
     return spec
 
 
@@ -244,6 +315,11 @@ def _absent(t: tuple[int, int, int], x: tuple[int, int, int],
     return any(t[d] > x[d] + y[d] for d in range(3))
 
 
+def _plus(p: tuple[int, int, int], q: tuple[int, int, int]
+          ) -> tuple[int, int, int]:
+    return (p[0] + q[0], p[1] + q[1], p[2] + q[2])
+
+
 def _bindings(frag, zeta: Expr, pa: str, pb: str, at: Expr
               ) -> dict[str, Expr]:
     """One fragment's binds: `zeta`, `1/2zeta`, `PA_d`, `PB_d`, the array."""
@@ -265,18 +341,86 @@ def build_k_kernel(cls: tuple[int, int, int, int] | Spec, *,
     """
     spec = _spec_of(cls)
     la, lc, lb, ld = spec.am
-    lp, lq = split(spec)
     (dag,) = plan(spec).dags
+    if name is None:
+        name = f"k_{la}{lc}_{lb}{ld}"
+    return _k_kernel(spec, dag, name, None)
+
+
+def build_k_kernels(spec: Spec) -> tuple[Kernel, ...]:
+    """One kernel per batch of `plan(spec)`, in `Plan.dags` order: THE
+    PARTIAL-SUM FORM, each kernel's `K` write `passes.atomize`d (module
+    docstring, "THE SPLIT CLASS").
+
+    `n_batches == 1` delegates to `build_k_kernel`: one kernel, a plain
+    write, `==` to it. A batch kernel is named
+    `k_{la}{lc}_{lb}{ld}_{direction}{a}_{b}` (`kernel.build_pq_kernels`'
+    convention). The batch count is `Spec`'s rule (1 or a multiple of 3,
+    refused when the `Spec` is made) and the plan's (an empty batch is
+    refused by `plan`, #64); this builder adds no rule of its own.
+
+    THE LAUNCH: every kernel takes the same arguments and the same
+    `launch_shape(n_bra, lanes)`, in the returned order, into ONE `K` the
+    caller ZEROES first; each adds its partial `K[a, b]`.
+    """
+    if not isinstance(spec, Spec):
+        raise TypeError(f"build_k_kernels takes a Spec, not {spec!r}")
+    if spec.target is not Target.K:
+        raise ValueError(f"{spec.key()} is not a Target.K class")
+    if spec.n_batches == 1:
+        return (build_k_kernel(spec),)
+    la, lc, lb, ld = spec.am
+    out = []
+    for i, dag in enumerate(plan(spec).dags):
+        direction, a, b = dag.batch
+        name = f"k_{la}{lc}_{lb}{ld}_{direction}{a}_{b}"
+        head = (f"batch {i + 1} of {spec.n_batches}, "
+                f"{direction.upper()}_{{{a},{b}}}")
+        out.append(atomize(_k_kernel(spec, dag, name, head), array="K"))
+    return tuple(out)
+
+
+def _k_kernel(spec: Spec, dag, name: str, head: str | None) -> Kernel:
+    """The K kernel over one batch's DAG, with the plain lane-0 write.
+
+    `head is None` is the one-batch kernel (`build_k_kernel`); otherwise the
+    batch's label, and the kernel holds only that batch's terms (module
+    docstring, "THE SPLIT CLASS")."""
+    la, lc, lb, ld = spec.am
+    lp, lq = split(spec)
     order = schedule(dag)
     ps, qs = hermite_targets(lp), hermite_targets(lq)
     rows_ac, rows_bd = ef.block_rows(la, lc), ef.block_rows(lb, ld)
-    n_p, n_q = len(ps), len(qs)
+    n_q = len(qs)
     nc, nb, nd = _ncart(lc), _ncart(lb), _ncart(ld)
     n_ab = _ncart(la) * nb
-    assert n_p + n_ab == shared_doubles(spec.am)
     frag_ac, frag_bd = ef.block_fragment(la, lc), ef.block_fragment(lb, ld)
-    if name is None:
-        name = f"k_{la}{lc}_{lb}{ld}"
+    held = {r for (r, _) in dag.targets}
+
+    # What this batch contracts, term by term. Stage 1: per (b,d) row and p,
+    # the q with E^bd_q structurally nonzero AND p + q one of the batch's
+    # targets. Stage 2: per (b,d) row and (a,c) row, the p whose I[p] this
+    # batch holds for that row AND whose E^ac_p is structurally nonzero.
+    # Absent terms are absent, not added zeros; with one batch every list is
+    # the whole class's (q = 0 and p = 0 are never absent).
+    s1 = {(rbd, i): [(j, q) for j, q in enumerate(qs)
+                     if not _absent(q, b, d) and _plus(p, q) in held]
+          for rbd, (b, d) in enumerate(rows_bd) for i, p in enumerate(ps)}
+    s1 = {key: v for key, v in s1.items() if v}
+    s2 = {(rbd, rac): [i for i, p in enumerate(ps)
+                       if (rbd, i) in s1 and not _absent(p, a, c)]
+          for rbd in range(len(rows_bd)) for rac, (a, c) in enumerate(rows_ac)}
+    s2 = {key: v for key, v in s2.items() if v}
+    if not s2:
+        raise ValueError(f"batch {dag.batch} of {spec.key()} contracts nothing")
+    i_rows = sorted({i for _, i in s1})  # the p this batch holds: I's rows
+    k_outs = sorted({divmod(rac, nc)[0] * nb + divmod(rbd, nd)[0]
+                     for rbd, rac in s2})  # the K[a,b] it writes
+    n_i = len(i_rows)
+    islot = {i: n for n, i in enumerate(i_rows)}
+    kslot = {s: n_i + n for n, s in enumerate(k_outs)}
+    if head is None:
+        assert n_i + len(k_outs) == shared_doubles(spec.am)
 
     k, ty, bra = Var(KET), Call(Fn.THREAD_Y), Var("bra")
 
@@ -319,28 +463,27 @@ def build_k_kernel(cls: tuple[int, int, int, int] | Spec, *,
              "SUM_p E^ac_p I[p] -- V is never an array (ao.k.k_quartet's "
              "order; absent E entries are structural zeros)"),
     ]
-    for rbd, (b, d) in enumerate(rows_bd):
+    for rbd in range(len(rows_bd)):
         ib, id_ = divmod(rbd, nd)
         for i, p in enumerate(ps):
+            if (rbd, i) not in s1:
+                continue  # I[p] is structurally zero in this batch: no slot
             acc: Expr = Lit(0.0)
-            for j, q in enumerate(qs):
-                if _absent(q, b, d):
-                    continue
-                r = (p[0] + q[0], p[1] + q[1], p[2] + q[2])
-                term = _c(Fn.MUL, Var(node_name((r, 0))), _c(
+            for j, q in s1[rbd, i]:
+                term = _c(Fn.MUL, Var(node_name((_plus(p, q), 0))), _c(
                     Fn.MUL, Var("sq"), Index("Ebd", (Lit(rbd), Lit(j)))))
                 acc = _c(Fn.SUB if sum(q) % 2 else Fn.ADD, acc, term)
-            ket_body.append(Assign(sh(i), acc))
-        for rac, (a, c) in enumerate(rows_ac):
+            ket_body.append(Assign(sh(islot[i]), acc))
+        for rac in range(len(rows_ac)):
+            if (rbd, rac) not in s2:
+                continue  # V(a,c) is structurally zero in this batch
             ia, ic = divmod(rac, nc)
             v: Expr = Lit(0.0)
-            for i, p in enumerate(ps):
-                if _absent(p, a, c):
-                    continue
+            for i in s2[rbd, rac]:
                 v = _c(Fn.ADD, v, _c(Fn.MUL, _c(
                     Fn.MUL, Var("sb"), Index("Eac", (Lit(rac), Lit(i)))),
-                    sh(i)))
-            slot = n_p + ia * nb + ib
+                    sh(islot[i])))
+            slot = kslot[ia * nb + ib]
             dv = Index("Dcd", (Var("dk"), Lit(ic * nd + id_)))
             ket_body.append(Assign(sh(slot), _c(
                 Fn.ADD, sh(slot), _c(Fn.MUL, dv, v))))
@@ -355,38 +498,41 @@ def build_k_kernel(cls: tuple[int, int, int, int] | Spec, *,
         Decl("dcb", Scalar.I32, init=Index("dc", (bra,))),
         Note("the undressed E^ac block of this bra record, once: "
              "e_fragment.block_fragment(la, lc), inlined; s_ac is the host's"),
-        Decl("Eac", Scalar.F64, (Lit(len(rows_ac)), Lit(n_p))),
+        Decl("Eac", Scalar.F64, (Lit(len(rows_ac)), Lit(len(ps)))),
         Inline(frag_ac, {**_bindings(frag_ac, Var("ze"), "XPA", "XPC", bra),
                          ef.E_ARRAY: Var("Eac")}),
         Note("accumulate K[a,b] in shared memory, one slot per lane, after "
              "the lane's I column"),
-        *(Assign(sh(n_p + s), Lit(0.0)) for s in range(n_ab)),
+        *(Assign(sh(kslot[s]), Lit(0.0)) for s in k_outs),
         Note("kets strip-mined over threadIdx.y, stride blockDim.y"),
         For(KET, ty, Var("n_ket"), Call(Fn.BLOCK_DIM_Y), tuple(ket_body)),
         Note("reduce K[a,b] across the warp: every lane sees the sum"),
     ]
-    for s in range(n_ab):
+    for s in k_outs:
         per_bra += [Decl(f"Kab{s}", Scalar.F64),
-                    WarpReduce(Var(f"Kab{s}"), sh(n_p + s))]
+                    WarpReduce(Var(f"Kab{s}"), sh(kslot[s]))]
     per_bra += [
         Note("plain write, NOT atomic: one batch, one warp per bra record, so "
-             "this kernel is the only writer of its row of K"),
+             "this kernel is the only writer of its row of K"
+             if head is None else SPLIT_WRITE),
         If(_c(Fn.LT, ty, Lit(1)), tuple(
             Assign(Index("K", (bra, Lit(s))), Var(f"Kab{s}"))
-            for s in range(n_ab))),
+            for s in k_outs)),
     ]
 
+    what = ("one batch, no atomics" if head is None
+            else f"{head}, the partial-sum form (#203), atomic write-back")
     body: tuple[Stmt, ...] = (
         Note(f"K[a,b] += D[c,d] SUM_p E^ac_p SUM_q [p|q] E^bd_q, K class "
              f"(la,lc|lb,ld) = ({la},{lc}|{lb},{ld}), lp={lp} lq={lq} "
-             f"(L={lp + lq}), one batch, no atomics: milestone 10's staged "
+             f"(L={lp + lq}), {what}: milestone 10's staged "
              "contraction (this repo's design; [Fock, §4.3.2] prior art)"),
         Note(SORTED_BY_IQ),
         Note(NO_DENSITY_KEY),
         Note("launch: blockDim = (1, warp width), one warp per bra record"),
         Decl("bra", Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
             Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
-        Decl(KSH, Scalar.F64, (Lit(n_p + n_ab), Call(Fn.BLOCK_DIM_Y)),
+        Decl(KSH, Scalar.F64, (Lit(n_i + len(k_outs)), Call(Fn.BLOCK_DIM_Y)),
              Space.SHARED),
         If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
     )

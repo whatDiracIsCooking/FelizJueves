@@ -409,8 +409,11 @@ RULES: dict[str, Rule] = {
         "kernel_k.py (#198): the exchange kernel, `Target.K` -- the staged "
         "contraction as IR: J's plan, schedule and recurrence region "
         "(`plan`, `recurrence`), J's key split and launch mapping "
-        "(`kernel`), and two `E` block fragments inlined (`e_fragment`)",
-        ("spec", "plan", "ir", "recurrence", "e_fragment", "kernel"),
+        "(`kernel`), and two `E` block fragments inlined (`e_fragment`); "
+        "a split class's kernels are built then `passes.atomize`d (#203), "
+        "as the `builder` rule lets `kernel.py` do",
+        ("spec", "plan", "ir", "recurrence", "e_fragment", "kernel",
+         "passes"),
         ao="`ao.k.k_quartet` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
            "importing either shares ancestry with its witness (#20); both "
@@ -579,7 +582,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
     "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
-    "kernel_k": ("e_fragment", "ir", "kernel", "plan.pipeline",
+    "kernel_k": ("e_fragment", "ir", "kernel", "passes", "plan.pipeline",
                  "plan.schedule", "plan.targets", "recurrence", "spec"),
 }.items()}
 
