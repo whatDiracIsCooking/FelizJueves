@@ -38,6 +38,26 @@ partition refuses an empty batch, #64; test/test_measured.py checks every
 cell). Tests parametrize over it, #53's wall-clock rows join on it, and a
 cell is added here and nowhere else. Widen per experiment, never by default.
 
+THE K CELLS (#201) are `K_SUBGRID`: `kernel.k_spec(L, n_batches=b)` over the
+same `SUBGRID_LS` x `SUBGRID_BATCHES`, cell for cell the J subgrid's twin --
+the same L, the same Hermite split `(lp, lq)` and the same batch count, so
+the same plan and the same Tables 1-3 row, under a different key (target
+slot `k`, `am` in Hermite order, `spec.py`). `SUBGRIDS` maps each target
+the store declares cells for to its subgrid. Declaring the cells measures
+nothing: no K row exists until one is recorded, and every row and verdict
+read off `SUBGRID` is untouched (the analyses join on `Spec.key()`, which a
+K cell never equals).
+- THE TARGET IS ON THE ROW. `Measured.target` is the row's `Spec.target`,
+  as the key's target slot spells it. `merge` stamps it from the key for
+  every target but `Target.J`, and the loader refuses a row whose target
+  disagrees with its key (a K row under a J key, or a J row under a K key)
+  and a non-J key whose row records none. A J row may omit it: every row
+  before #201 is a J row and is kept byte for byte, and a row with no
+  target is written exactly as before (`as_record`) -- the #159 pattern of
+  `arm_kind`.
+- THE READ PATH is `rows(..., target=)`: a filter on the key's target slot,
+  beside the spec, arch and toolchain ones. `target_of` reads that slot.
+
 WALL-CLOCK (#53) is `runtime_ns`, `repeats` and `spread_ns`, written by the
 opt-in, `gpu`-marked sweep in test/test_kernel_device.py
 (`test_<backend>_wallclock_over_the_subgrid`, run alone and uncontended; its
@@ -397,9 +417,9 @@ from felizjueves.device import (
     require_characterised,
     verdict,
 )
-from felizjueves.kernel import pq_spec
+from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.lower import LEVERS
-from felizjueves.spec import Spec
+from felizjueves.spec import Spec, Target
 
 REPO = Path(__file__).resolve().parents[2]
 STORE = REPO / "data" / "measured" / "kernels.json"
@@ -407,8 +427,17 @@ ROOFLINE = REPO / "data" / "measured" / "roofline.json"  # counter rows (#110)
 
 # THE declared subgrid (#52): see the module docstring. One edit adds a cell.
 SUBGRID_LS = (7, 10, 13, 16)
+SUBGRID_BATCHES = (1, 3, 6, 9, 12)
 SUBGRID: tuple[Spec, ...] = tuple(
-    pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in (1, 3, 6, 9, 12))
+    pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in SUBGRID_BATCHES)
+
+# THE K CELLS (#201; module docstring): the J subgrid's twins, cell for cell.
+K_SUBGRID: tuple[Spec, ...] = tuple(
+    k_spec(L, n_batches=b) for L in SUBGRID_LS for b in SUBGRID_BATCHES)
+
+# Each target the store declares a subgrid for, and that subgrid.
+SUBGRIDS: Mapping[Target, tuple[Spec, ...]] = MappingProxyType({
+    Target.J: SUBGRID, Target.K: K_SUBGRID})
 
 
 # THE ARMS (#159; module docstring): every lever an A/B arm may carry, and
@@ -614,7 +643,12 @@ _INTS = ("registers", "spill_store", "spill_load", "shared_bytes", "repeats",
 # Serialised only when present (`as_record`): a row without counters is
 # written exactly as it was before #110.
 # And so is an arm's kind (#159): a row with none is written as before it.
-_OMITTED_WHEN_ABSENT = (*COUNTERS, "counter_tool", "counter_unit", "arm_kind")
+# And so is a target (#201): a J row records none, as before it.
+_OMITTED_WHEN_ABSENT = (*COUNTERS, "counter_tool", "counter_unit", "arm_kind",
+                        "target")
+
+
+_TARGETS = frozenset(t.value for t in Target)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -655,6 +689,7 @@ class Measured:
     counter_tool: str = ""  # the profiler as it reports itself (#110)
     counter_unit: str = ""  # what the counter fields mean on this vendor
     arm_kind: str = ""  # an A/B arm's kind, LOWERING or PLAN (#159)
+    target: str = ""  # the key's Spec.target, required unless J (#201)
 
     def __post_init__(self) -> None:
         for n in MEASUREMENTS:
@@ -676,6 +711,9 @@ class Measured:
         if self.arm_kind not in ("", LOWERING, PLAN):
             raise ValueError(f"arm_kind = {self.arm_kind!r} must be "
                              f"{LOWERING!r}, {PLAN!r} or empty")
+        if self.target and self.target not in _TARGETS:
+            raise ValueError(f"target = {self.target!r} must be one of "
+                             f"{', '.join(sorted(_TARGETS))} or empty")
 
     # Derived from the stored counts, never stored themselves (#110).
     @property
@@ -705,9 +743,9 @@ class Measured:
 
 def as_record(row: Measured) -> dict:
     """`row` as the store writes it: every field, except that the counter
-    fields and `arm_kind` are left out when absent -- so a row with no
-    counters is written exactly as it was before #110, and one with no arm
-    kind as it was before #159."""
+    fields, `arm_kind` and `target` are left out when absent -- so a row with
+    no counters is written exactly as it was before #110, one with no arm
+    kind as it was before #159, and a J row as it was before #201."""
     d = asdict(row)
     for n in _OMITTED_WHEN_ABSENT:
         if d[n] in (None, ""):
@@ -749,6 +787,7 @@ def _row(path: Path, key: str, v: object) -> Measured:
                          f"{row.arch!r}/{row.toolchain!r}, not its key's")
     try:
         _check_arm_kind(key, row)
+        _check_target(key, row)
     except ValueError as e:
         raise ValueError(f"{path}: {e}") from e
     if row.runtime_ns is not None:
@@ -786,6 +825,28 @@ def _check_arm_kind(key: str, row: Measured) -> None:
         raise ValueError(f"row {key!r} is a plan arm and records no arm_kind")
 
 
+def target_of(key: str) -> Target:
+    """The `Spec.target` a row key names, read off its target slot (the fifth
+    segment of `Spec.key()`, `.../b<n>/<target>/<levers>`)."""
+    spec_key, _, _ = split_key(key)
+    parts = spec_key.split("/")
+    try:
+        return Target(parts[4])
+    except (IndexError, ValueError) as e:
+        raise ValueError(f"{key!r} names no target") from e
+
+
+def _check_target(key: str, row: Measured) -> None:
+    """THE TARGET IS ON THE ROW (module docstring, THE K CELLS)."""
+    want = target_of(key)
+    if row.target and row.target != want:
+        raise ValueError(f"row {key!r} records target {row.target!r}, but "
+                         f"its key's target is {want.value!r}")
+    if want is not Target.J and not row.target:
+        raise ValueError(f"row {key!r} is a {want.value!r} row and records "
+                         "no target")
+
+
 def load(path: Path = STORE) -> dict[str, Measured]:
     """Every row in the store, by key. Refuses a malformed or foreign file.
 
@@ -814,14 +875,19 @@ def merge(store: Mapping[str, Measured], key: MeasuredKey,
     """`store` with `row` at `key`, REPLACING any row already there. `key`
     is a `MeasuredKey`, or anything keyed its way (`arch`, `toolchain`,
     `key()`): #113's `asym.AsymKey`, whose cell is not a Spec. A
-    `MeasuredKey` on an A/B arm stamps the arm's kind on the row (#159)."""
+    `MeasuredKey` on an A/B arm stamps the arm's kind on the row (#159), and
+    a key of any target but J stamps the target (#201)."""
     if (key.arch.name, key.toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"row is {row.arch}/{row.toolchain}, key {key.key()!r}")
     if isinstance(key, MeasuredKey):
         kind = arm_kind(key.spec)  # refuses an undeclared lever or two arms
         if kind is not None and not row.arm_kind:
             row = replace(row, arm_kind=kind)
+    target = target_of(key.key())
+    if target is not Target.J and not row.target:
+        row = replace(row, target=target.value)
     _check_arm_kind(key.key(), row)
+    _check_target(key.key(), row)
     return {**store, key.key(): row}
 
 
@@ -847,11 +913,13 @@ def combine(old: Measured | None, new: Measured) -> Measured:
 
 def rows(spec: Spec | None = None, arch: Arch | str | None = None,
          toolchain: str | None = None, *,
-         store: Mapping[str, Measured] | Path = STORE) -> dict[str, Measured]:
+         store: Mapping[str, Measured] | Path = STORE,
+         target: Target | None = None) -> dict[str, Measured]:
     """The read path: the rows matching every filter given, by key.
 
     `store` is an already-loaded mapping, or a path to load (by default the
-    tracked store).
+    tracked store). `target` keeps the rows whose key names that
+    `Spec.target` (#201).
     """
     got = load(store) if isinstance(store, Path) else store
     arch_name = arch.name if isinstance(arch, Arch) else arch
@@ -863,6 +931,8 @@ def rows(spec: Spec | None = None, arch: Arch | str | None = None,
         if arch_name is not None and a != arch_name:
             continue
         if toolchain is not None and t != toolchain:
+            continue
+        if target is not None and target_of(k) is not target:
             continue
         out[k] = r
     return out

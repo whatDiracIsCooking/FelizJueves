@@ -28,14 +28,15 @@ from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
+from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
+from felizjueves.kernel import split as hermite_split
 from felizjueves.lower import LEVERS, RECYCLE
 from felizjueves.plan.batching import in_batch, partition
 from felizjueves.plan.dag import build
 from felizjueves.plan.pipeline import TUNED, plan, tuned_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.spec import Spec, is_batch_count
+from felizjueves.spec import Spec, Target, is_batch_count
 
 # --- the generator CLI ------------------------------------------------------
 
@@ -334,10 +335,10 @@ def test_the_loader_keeps_every_field_of_every_row() -> None:
     for key, row in ROWS.items():
         assert measured_store.as_record(row) == STORE["rows"][key], key
         # ...and a row without counters writes none of their fields (#110),
-        # nor an arm kind it does not record (#159)
+        # nor an arm kind it does not record (#159), nor a target (#201)
         assert set(asdict(row)) - set(STORE["rows"][key]) <= {
             *measured_store.COUNTERS, "counter_tool", "counter_unit",
-            "arm_kind"}, key
+            "arm_kind", "target"}, key
 
 
 def test_the_store_says_what_it_is_and_what_it_is_not() -> None:
@@ -2645,3 +2646,115 @@ def test_the_tuned_ab_is_what_the_rows_say() -> None:
     for arch in ARCHS:
         assert measured_store.tuned_verdict(ROWS, arch) == TUNED_VERDICT[arch]
     assert not measured_store.tuned_may_become_the_default(ROWS)
+
+
+# --- #201: the store admits a K cell ------------------------------------------
+# Pure Spec keys and synthetic rows: no K kernel is built, planned or
+# interpreted here, and no tracked file is written.
+
+
+def _k_row(**kw) -> measured_store.Measured:
+    return measured_store.Measured(registers=128, spill_store=0, spill_load=0,
+                                   **PROV, **kw)
+
+
+def test_k_subgrid_is_the_j_subgrid_twin_cell_for_cell() -> None:
+    k_cells, j_cells = measured_store.K_SUBGRID, measured_store.SUBGRID
+    assert len(k_cells) == len(j_cells) == 20
+    assert k_cells == tuple(k_spec(L, n_batches=b)
+                            for L in measured_store.SUBGRID_LS
+                            for b in measured_store.SUBGRID_BATCHES)
+    for k, j in zip(k_cells, j_cells, strict=True):
+        assert k.target is Target.K and j.target is Target.J
+        # the same L, Hermite split and batch count: the same plan and row
+        assert (k.total_am, k.n_batches) == (j.total_am, j.n_batches)
+        assert hermite_split(k) == hermite_split(j)
+        assert k.key() != j.key()
+    assert dict(measured_store.SUBGRIDS) == {Target.J: j_cells, Target.K: k_cells}
+    with pytest.raises(TypeError):
+        measured_store.SUBGRIDS[Target.DQ] = ()  # read-only
+
+
+def test_every_tracked_row_is_a_j_row_and_records_no_target() -> None:
+    # #201's whole acceptance on the tracked store: no row moved (its record
+    # is read back as written, and the file round-trips byte for byte in
+    # test_the_store_file_round_trips_byte_for_byte), and no K cell joins one.
+    assert len(ROWS) == len(STORE["rows"])
+    for key, row in ROWS.items():
+        assert measured_store.target_of(key) is Target.J, key
+        assert row.target == "" and "target" not in STORE["rows"][key], key
+    assert measured_store.rows(store=ROWS, target=Target.J) == ROWS
+    assert measured_store.rows(store=ROWS, target=Target.K) == {}
+    for s in measured_store.K_SUBGRID:
+        assert measured_store.rows(spec=s, store=ROWS) == {}
+    for k, r in measured_store.load_counters().items():
+        cell, _ = measured_store.split_kernel_key(k)
+        assert measured_store.target_of(cell) is Target.J, k
+        assert r.target == "", k
+
+
+def test_a_k_cell_round_trips_through_the_store(tmp_path: Path) -> None:
+    k = MeasuredKey(measured_store.K_SUBGRID[0], SM_86, "nvcc 13.0")
+    j = MeasuredKey(measured_store.SUBGRID[0], SM_86, "nvcc 13.0")
+    row = _k_row()
+    assert not row.target
+    store = measured_store.merge(ROWS, k, row)  # merge stamps the target
+    assert store[k.key()].target == "k"
+    assert store[j.key()] is ROWS[j.key()]  # the J twin is untouched
+    p = tmp_path / "m.json"
+    measured_store.save(store, p)
+    doc = json.loads(p.read_text())
+    assert doc["rows"][k.key()]["target"] == "k"
+    assert {kk: v for kk, v in doc["rows"].items() if kk != k.key()} \
+        == STORE["rows"]
+    back = measured_store.load(p)
+    assert back == store
+    q = tmp_path / "again.json"
+    measured_store.save(back, q)
+    assert q.read_bytes() == p.read_bytes()
+    # the read path: by spec, by target, and never through the J twin
+    assert measured_store.rows(spec=k.spec, store=back) == {k.key(): back[k.key()]}
+    assert measured_store.rows(target=Target.K, store=back) == {
+        k.key(): back[k.key()]}
+    assert measured_store.rows(target=Target.J, store=back) == ROWS
+    assert measured_store.rows(spec=j.spec, arch="sm_86", store=back) == {
+        j.key(): ROWS[j.key()]}
+    # a J row merged today carries no target, as before #201
+    assert measured_store.merge({}, j, row)[j.key()].target == ""
+
+
+def test_a_k_cell_round_trips_through_the_counter_store(tmp_path: Path) -> None:
+    rows = {kk: replace(r, target="k") for kk, r in
+            _cell_rows(measured_store.K_SUBGRID[1], flops=(1, 2, 3)).items()}
+    p = tmp_path / "roofline.json"
+    measured_store.save_counters(rows, p)
+    assert measured_store.load_counters(p) == rows
+    # a K cell's counter rows without their target are refused
+    with pytest.raises(ValueError, match="records no target"):
+        measured_store.save_counters(
+            {kk: replace(r, target="") for kk, r in rows.items()}, p)
+
+
+def test_a_k_row_under_a_j_key_and_the_reverse_are_refused(
+        tmp_path: Path) -> None:
+    k = MeasuredKey(measured_store.K_SUBGRID[0], SM_86, "nvcc 13.0")
+    j = MeasuredKey(measured_store.SUBGRID[0], SM_86, "nvcc 13.0")
+    rec = measured_store.as_record(_k_row())  # no target
+    # a K row under a J key
+    with pytest.raises(ValueError, match="records target 'k'.*target is 'j'"):
+        measured_store.load(_write(tmp_path, j.key(), {**rec, "target": "k"}))
+    with pytest.raises(ValueError, match="records target 'k'"):
+        measured_store.merge({}, j, _k_row(target="k"))
+    # a J row under a K key: one that says so, and one that records nothing
+    with pytest.raises(ValueError, match="records target 'j'.*target is 'k'"):
+        measured_store.load(_write(tmp_path, k.key(), {**rec, "target": "j"}))
+    with pytest.raises(ValueError, match="records target 'j'"):
+        measured_store.merge({}, k, _k_row(target="j"))
+    with pytest.raises(ValueError, match="'k' row and records no target"):
+        measured_store.load(_write(tmp_path, k.key(), rec))
+    # a target that is no Target at all
+    with pytest.raises(ValueError, match="target = 'x'"):
+        _k_row(target="x")
+    with pytest.raises(ValueError, match="names no target"):
+        measured_store.target_of(
+            "coulomb/d0/(1,0|1,0)/b1/x/literal@sm_86/nvcc 13.0")
