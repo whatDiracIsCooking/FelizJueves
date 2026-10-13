@@ -249,10 +249,12 @@ def _searched_limit() -> StructuralLimit:
 
 def test_the_searched_board_with_the_searched_plans() -> None:
     # #13's outcome, pinned so a change to it is a diff here: the "Not found"
-    # branch. Since #168 (58 seed orders) Tables 2 and 3 pass, and Table 1
-    # FAILs at_or_under in 9 cells, every one within +0.89% of the printed
-    # value; the StructuralLimit names exactly those cells with exactly those
-    # margins. (Under 26 orders it was 21 and 3 cells, within +2.04%.)
+    # branch. Since #168 (58 seed orders) Tables 2 and 3 pass, and since
+    # #171 (a frontier and its selection rule) Table 1 FAILs at_or_under in
+    # 8 cells, every one within +0.89% of the printed value; the
+    # StructuralLimit names exactly those cells with exactly those margins.
+    # (Under 26 orders it was 21 and 3 cells, within +2.04%; under #168's
+    # lexicographic objective 9 cells, (13, 1) the ninth.)
     by_table = {
         v.table: v
         for v in score(_board("searched"), TABLES, _searched_candidates())
@@ -261,7 +263,7 @@ def test_the_searched_board_with_the_searched_plans() -> None:
     for t in (t2, t3):
         assert t.status is Status.PASS and t.measured["worst_overshoot"] == 0.0
     assert t1.status is Status.FAIL
-    assert t1.measured["over"] == 9
+    assert t1.measured["over"] == 8
     assert round(100 * t1.measured["worst_overshoot"], 2) == 0.89
     residual = _searched_limit().asserted_value["residual_percent_over"]
     assert set(residual) == {"jengine/table1"}
@@ -274,9 +276,9 @@ def test_no_searched_candidate_is_at_or_under_all_three_in_a_residual_cell() -> 
     # The limit's "unreachable in the 58-order space", checked on the 1- and
     # 3-batch unreachable cells, where there is no cut and the space is the
     # 58 seed orders alone: every order is over Table 1 there. Every cell,
-    # every cut -- and the three cells where the objective passes over a
-    # plan at or under all three tables -- is test_plan_search.py's slow
-    # tests.
+    # every cut -- and the two cells where the selection rule passes over a
+    # frontier point at or under all three tables -- is test_plan_search.py's
+    # slow tests.
     unreachable = _searched_limit().asserted_value["unreachable_in_space"]
     cells = {(L, nb) for L, nb in unreachable if nb in (1, 3)}
     assert cells == {(13, 3), (15, 1), (15, 3), (16, 1), (16, 3)}

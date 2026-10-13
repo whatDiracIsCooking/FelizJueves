@@ -1,55 +1,156 @@
 {
   "schema": 2,
-  "about": "The cut and sieve seed order plan/search.py chose per (L, n_batches) for the searched board: the shared cut points c_1 < ... < c_{k-1} that batching.partition takes, k = n_batches // 3, and the name of one of plan.recovery.seed_orders(widened=True). Replay with plan.search.searched_plan(L, n_batches, cut, seed_order); do not re-search.",
+  "about": "The cut and sieve seed order plan/search.py chose per (L, n_batches) for the searched board: the shared cut points c_1 < ... < c_{k-1} that batching.partition takes, k = n_batches // 3, and the name of one of plan.recovery.seed_orders(widened=True). Replay with plan.search.searched_plan(L, n_batches, cut, seed_order); do not re-search. Each cell also records its frontier -- the feasible plans' Pareto set over (max_intermediates, flops), ascending in max_intermediates, with each point's plan and counts -- and 'selected', the index of the chosen plan in it, so a reader with another exchange rate between the two can re-select without re-searching (#171).",
   "objective": {
     "feasible": "max_targets <= minimax + minimax_tolerance",
     "minimax_tolerance": 1,
-    "then": [
-      "max_intermediates",
-      "flops"
-    ],
-    "ties": "lowest cut points, then seed_orders(widened=True) order"
+    "frontier": "the feasible plans whose (max_intermediates, flops) no other feasible plan's weakly dominates, one plan per distinct point",
+    "select": "minimise max_intermediates / intermediates_min + flops / flops_min over the frontier (the minima are the frontier's), in exact rationals; equal scores to the fewer max_intermediates",
+    "rule": "Among feasible plans (max targets within `MINIMAX_TOLERANCE` of the cell's minimax), take the Pareto frontier over (max_intermediates, FLOPs) and select the point minimising `intermediates / intermediates_min + flops / flops_min`, intermediates breaking ties. Equal weight because the paper prints the two in separate tables and trades them against each other without naming a price; normalised because the two quantities differ by an order of magnitude and an unnormalised sum would be a FLOPs-only rule wearing a disguise.",
+    "ties": "one plan per point: the first in search order, lowest cut points, then seed_orders(widened=True) order"
   },
   "cuts": {
-    "7/1": {"cut": [], "seed_order": "hermite-reversed"},
-    "7/3": {"cut": [], "seed_order": "hermite"},
-    "7/6": {"cut": [4], "seed_order": "hermite"},
-    "7/9": {"cut": [3, 4], "seed_order": "hermite"},
-    "8/1": {"cut": [], "seed_order": "prunable desc, ties hermite"},
-    "8/3": {"cut": [], "seed_order": "hermite-reversed"},
-    "8/6": {"cut": [4], "seed_order": "hermite"},
-    "8/9": {"cut": [4, 5], "seed_order": "hermite"},
-    "9/1": {"cut": [], "seed_order": "|r| asc, then xyz asc"},
-    "9/3": {"cut": [], "seed_order": "hermite-reversed"},
-    "9/6": {"cut": [5], "seed_order": "hermite"},
-    "9/9": {"cut": [4, 6], "seed_order": "hermite"},
-    "10/1": {"cut": [], "seed_order": "+max/-mid, ties hermite"},
-    "10/3": {"cut": [], "seed_order": "|r| asc, then xyz asc"},
-    "10/6": {"cut": [5], "seed_order": "hermite-reversed"},
-    "10/9": {"cut": [4, 6], "seed_order": "hermite"},
-    "11/1": {"cut": [], "seed_order": "+max/+mid, ties hermite"},
-    "11/3": {"cut": [], "seed_order": "prunable desc, ties hermite"},
-    "11/6": {"cut": [6], "seed_order": "hermite-reversed"},
-    "11/9": {"cut": [5, 7], "seed_order": "hermite"},
-    "12/1": {"cut": [], "seed_order": "+max/-mid, ties hermite"},
-    "12/3": {"cut": [], "seed_order": "+max/+mid, ties hermite"},
-    "12/6": {"cut": [6], "seed_order": "cost desc, ties hermite"},
-    "12/9": {"cut": [5, 7], "seed_order": "hermite-reversed"},
-    "13/1": {"cut": [], "seed_order": "|r| asc, then yxz desc"},
-    "13/3": {"cut": [], "seed_order": "prunable asc, ties reversed"},
-    "13/6": {"cut": [7], "seed_order": "out-degree asc, ties hermite"},
-    "13/9": {"cut": [6, 8], "seed_order": "+max/-mid, ties hermite"},
-    "14/1": {"cut": [], "seed_order": "hermite"},
-    "14/3": {"cut": [], "seed_order": "prunable desc, ties hermite"},
-    "14/6": {"cut": [7], "seed_order": "+max/+mid, ties hermite"},
-    "14/9": {"cut": [6, 8], "seed_order": "cost desc, ties hermite"},
-    "15/1": {"cut": [], "seed_order": "direction-major xzy, ties hermite"},
-    "15/3": {"cut": [], "seed_order": "prunable desc, ties hermite"},
-    "15/6": {"cut": [8], "seed_order": "|r| desc, then yzx desc"},
-    "15/9": {"cut": [6, 9], "seed_order": "out-degree asc, ties hermite"},
-    "16/1": {"cut": [], "seed_order": "prunable asc, ties hermite"},
-    "16/3": {"cut": [], "seed_order": "prunable asc, ties reversed"},
-    "16/6": {"cut": [8], "seed_order": "hermite"},
-    "16/9": {"cut": [7, 9], "seed_order": "+max/-mid, ties hermite"}
+    "7/1": {"cut": [], "seed_order": "hermite-reversed", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "hermite-reversed", "max_intermediates": 125, "flops": 424, "max_targets": 120}
+    ]},
+    "7/3": {"cut": [], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "hermite", "max_intermediates": 51, "flops": 425, "max_targets": 42}
+    ]},
+    "7/6": {"cut": [4], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [4], "seed_order": "hermite", "max_intermediates": 39, "flops": 506, "max_targets": 22}
+    ]},
+    "7/9": {"cut": [3, 4], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [3, 4], "seed_order": "hermite", "max_intermediates": 34, "flops": 539, "max_targets": 20},
+      {"cut": [2, 4], "seed_order": "hermite", "max_intermediates": 38, "flops": 510, "max_targets": 20}
+    ]},
+    "8/1": {"cut": [], "seed_order": "prunable desc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable desc, ties hermite", "max_intermediates": 182, "flops": 629, "max_targets": 165}
+    ]},
+    "8/3": {"cut": [], "seed_order": "hermite-reversed", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "hermite-reversed", "max_intermediates": 74, "flops": 641, "max_targets": 57}
+    ]},
+    "8/6": {"cut": [4], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [4], "seed_order": "hermite", "max_intermediates": 54, "flops": 743, "max_targets": 34}
+    ]},
+    "8/9": {"cut": [4, 5], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [4, 5], "seed_order": "hermite", "max_intermediates": 47, "flops": 872, "max_targets": 23}
+    ]},
+    "9/1": {"cut": [], "seed_order": "|r| asc, then xyz asc", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "|r| asc, then xyz asc", "max_intermediates": 263, "flops": 907, "max_targets": 220}
+    ]},
+    "9/3": {"cut": [], "seed_order": "hermite-reversed", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "hermite-reversed", "max_intermediates": 105, "flops": 926, "max_targets": 76}
+    ]},
+    "9/6": {"cut": [5], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [5], "seed_order": "hermite", "max_intermediates": 82, "flops": 1085, "max_targets": 41}
+    ]},
+    "9/9": {"cut": [4, 6], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [4, 6], "seed_order": "hermite", "max_intermediates": 71, "flops": 1214, "max_targets": 32}
+    ]},
+    "10/1": {"cut": [], "seed_order": "+max/-mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 367, "flops": 1252, "max_targets": 286}
+    ]},
+    "10/3": {"cut": [], "seed_order": "|r| asc, then xyz asc", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "|r| asc, then xyz asc", "max_intermediates": 139, "flops": 1277, "max_targets": 98}
+    ]},
+    "10/6": {"cut": [5], "seed_order": "hermite-reversed", "selected": 0, "frontier": [
+      {"cut": [5], "seed_order": "hermite-reversed", "max_intermediates": 95, "flops": 1472, "max_targets": 55}
+    ]},
+    "10/9": {"cut": [4, 6], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [4, 6], "seed_order": "hermite", "max_intermediates": 95, "flops": 1613, "max_targets": 39}
+    ]},
+    "11/1": {"cut": [], "seed_order": "+max/+mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "+max/+mid, ties hermite", "max_intermediates": 494, "flops": 1684, "max_targets": 364}
+    ]},
+    "11/3": {"cut": [], "seed_order": "prunable desc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable desc, ties hermite", "max_intermediates": 186, "flops": 1727, "max_targets": 124}
+    ]},
+    "11/6": {"cut": [6], "seed_order": "hermite-reversed", "selected": 0, "frontier": [
+      {"cut": [6], "seed_order": "hermite-reversed", "max_intermediates": 143, "flops": 2015, "max_targets": 68}
+    ]},
+    "11/9": {"cut": [5, 7], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [5, 7], "seed_order": "hermite", "max_intermediates": 110, "flops": 2252, "max_targets": 45}
+    ]},
+    "12/1": {"cut": [], "seed_order": "+max/-mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 645, "flops": 2221, "max_targets": 455},
+      {"cut": [], "seed_order": "+max/+mid, ties hermite", "max_intermediates": 648, "flops": 2218, "max_targets": 455}
+    ]},
+    "12/3": {"cut": [], "seed_order": "+max/+mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "+max/+mid, ties hermite", "max_intermediates": 242, "flops": 2261, "max_targets": 155}
+    ]},
+    "12/6": {"cut": [6], "seed_order": "cost desc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [6], "seed_order": "cost desc, ties hermite", "max_intermediates": 168, "flops": 2609, "max_targets": 83}
+    ]},
+    "12/9": {"cut": [5, 7], "seed_order": "hermite-reversed", "selected": 0, "frontier": [
+      {"cut": [5, 7], "seed_order": "hermite-reversed", "max_intermediates": 142, "flops": 2873, "max_targets": 56}
+    ]},
+    "13/1": {"cut": [], "seed_order": "+max/-mid, ties hermite", "selected": 1, "frontier": [
+      {"cut": [], "seed_order": "|r| asc, then yxz desc", "max_intermediates": 842, "flops": 2882, "max_targets": 560},
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 843, "flops": 2872, "max_targets": 560}
+    ]},
+    "13/3": {"cut": [], "seed_order": "prunable asc, ties reversed", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable asc, ties reversed", "max_intermediates": 305, "flops": 2948, "max_targets": 190},
+      {"cut": [], "seed_order": "|r| desc, then zyx asc", "max_intermediates": 306, "flops": 2946, "max_targets": 190},
+      {"cut": [], "seed_order": "|r| desc, then yzx desc", "max_intermediates": 307, "flops": 2943, "max_targets": 190},
+      {"cut": [], "seed_order": "prunable asc, ties hermite", "max_intermediates": 308, "flops": 2941, "max_targets": 190},
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 309, "flops": 2926, "max_targets": 190}
+    ]},
+    "13/6": {"cut": [7], "seed_order": "out-degree asc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [7], "seed_order": "out-degree asc, ties hermite", "max_intermediates": 232, "flops": 3360, "max_targets": 106}
+    ]},
+    "13/9": {"cut": [6, 8], "seed_order": "+max/-mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [6, 8], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 186, "flops": 3764, "max_targets": 74}
+    ]},
+    "14/1": {"cut": [], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "hermite", "max_intermediates": 1060, "flops": 3655, "max_targets": 680},
+      {"cut": [], "seed_order": "direction-major xyz, ties hermite", "max_intermediates": 1061, "flops": 3654, "max_targets": 680},
+      {"cut": [], "seed_order": "|r| asc, then yzx asc", "max_intermediates": 1062, "flops": 3652, "max_targets": 680},
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 1071, "flops": 3634, "max_targets": 680}
+    ]},
+    "14/3": {"cut": [], "seed_order": "prunable desc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable desc, ties hermite", "max_intermediates": 386, "flops": 3720, "max_targets": 230},
+      {"cut": [], "seed_order": "+max/+mid, ties hermite", "max_intermediates": 388, "flops": 3719, "max_targets": 230}
+    ]},
+    "14/6": {"cut": [7], "seed_order": "+max/+mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [7], "seed_order": "+max/+mid, ties hermite", "max_intermediates": 269, "flops": 4224, "max_targets": 119}
+    ]},
+    "14/9": {"cut": [6, 8], "seed_order": "cost desc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [6, 8], "seed_order": "cost desc, ties hermite", "max_intermediates": 201, "flops": 4691, "max_targets": 84}
+    ]},
+    "15/1": {"cut": [], "seed_order": "direction-major xzy, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "direction-major xzy, ties hermite", "max_intermediates": 1320, "flops": 4566, "max_targets": 816},
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 1329, "flops": 4546, "max_targets": 816}
+    ]},
+    "15/3": {"cut": [], "seed_order": "prunable desc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable desc, ties hermite", "max_intermediates": 478, "flops": 4624, "max_targets": 276},
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 481, "flops": 4622, "max_targets": 276},
+      {"cut": [], "seed_order": "+max/+mid, ties hermite", "max_intermediates": 482, "flops": 4616, "max_targets": 276}
+    ]},
+    "15/6": {"cut": [8], "seed_order": "|r| desc, then yzx desc", "selected": 0, "frontier": [
+      {"cut": [8], "seed_order": "|r| desc, then yzx desc", "max_intermediates": 360, "flops": 5231, "max_targets": 156}
+    ]},
+    "15/9": {"cut": [6, 9], "seed_order": "out-degree asc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [6, 9], "seed_order": "out-degree asc, ties hermite", "max_intermediates": 271, "flops": 5633, "max_targets": 116}
+    ]},
+    "16/1": {"cut": [], "seed_order": "prunable asc, ties hermite", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable asc, ties hermite", "max_intermediates": 1633, "flops": 5653, "max_targets": 969},
+      {"cut": [], "seed_order": "direction-major yzx, ties hermite", "max_intermediates": 1635, "flops": 5647, "max_targets": 969},
+      {"cut": [], "seed_order": "|r| asc, then zxy desc", "max_intermediates": 1638, "flops": 5645, "max_targets": 969},
+      {"cut": [], "seed_order": "hermite", "max_intermediates": 1639, "flops": 5644, "max_targets": 969},
+      {"cut": [], "seed_order": "+max/+mid, ties reversed", "max_intermediates": 1651, "flops": 5639, "max_targets": 969}
+    ]},
+    "16/3": {"cut": [], "seed_order": "prunable asc, ties reversed", "selected": 0, "frontier": [
+      {"cut": [], "seed_order": "prunable asc, ties reversed", "max_intermediates": 583, "flops": 5759, "max_targets": 327},
+      {"cut": [], "seed_order": "prunable desc, ties hermite", "max_intermediates": 587, "flops": 5750, "max_targets": 327},
+      {"cut": [], "seed_order": "prunable asc, ties hermite", "max_intermediates": 588, "flops": 5749, "max_targets": 327},
+      {"cut": [], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 591, "flops": 5718, "max_targets": 327}
+    ]},
+    "16/6": {"cut": [8], "seed_order": "hermite", "selected": 0, "frontier": [
+      {"cut": [8], "seed_order": "hermite", "max_intermediates": 402, "flops": 6447, "max_targets": 164},
+      {"cut": [8], "seed_order": "cost asc, ties reversed", "max_intermediates": 404, "flops": 6438, "max_targets": 164}
+    ]},
+    "16/9": {"cut": [7, 9], "seed_order": "+max/-mid, ties hermite", "selected": 0, "frontier": [
+      {"cut": [7, 9], "seed_order": "+max/-mid, ties hermite", "max_intermediates": 324, "flops": 7104, "max_targets": 120}
+    ]}
   }
 }
