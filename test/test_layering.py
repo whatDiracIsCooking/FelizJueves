@@ -954,3 +954,51 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     for banned in (_REF, "ao", "interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_s reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #238 (milestone 11): the kinetic-energy kernel, `Target.T`. `kernel_s`'s
+# shape: the key, IR and the `E` fragment's kinetic bracket (the axis tables
+# at `lb + 2` and the fixed ket shift), inlined. It is checked against
+# `ao.kinetic.kinetic_block` in the interpreter, so neither may be its
+# ancestor, nor `reference/`.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "t_builder": _rule(
+        "kernel_t.py (#238): the kinetic-energy kernel, `Target.T` -- key -> "
+        "IR, with the `E` fragment's kinetic bracket inlined (`e_fragment`) "
+        "and `kernel_jab`'s scatter rule restated, not imported",
+        ("spec", "ir", "e_fragment"),
+        ao="`ao.kinetic.kinetic_block` is the witness the kernel is "
+           "interpreted against, and `ao.pairs.dress` the prefactor it must "
+           "not form: importing either shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "kernel_t": "t_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_t": ("e_fragment", "ir", "spec"),
+}.items()}
+
+
+def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    # #238, TRANSITIVELY: no chain of imports from `kernel_t` reaches the AO
+    # layer it is checked against, the interpreter, reference/, a backend or
+    # a card.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_t"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "e_fragment" in seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_t reaches {hit}"
