@@ -438,6 +438,7 @@ RULE_OF: dict[str, str] = {
     "ao.pairs": "ao",
     "ao.eri": "ao",
     "ao.j": "ao",
+    "ao.k": "ao",
     "ao.drive": "adapter",
     "ao.staged": "adapter",
     "launch": "launch",
@@ -524,6 +525,9 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.pairs": ("ao.hermite", "ao.shell"),
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
+    # #197: K reuses ao.j's density contract and EPair, and ao.eri for its
+    # third index path (`k_from_eris`).
+    "ao.k": ("ao.eri", "ao.hermite", "ao.j", "ao.shell"),
     "ao.drive": ("ao.j", "ao.shell", "ao.staged", "interp", "ir", "kernel",
                  "kernel_dq", "kernel_jab", "launch", "plan.pipeline", "spec"),
     "ao.staged": ("ao.j", "ao.pairs", "ao.shell", "interp", "ir", "kernel",
