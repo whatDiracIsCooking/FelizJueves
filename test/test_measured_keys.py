@@ -16,7 +16,7 @@ import re
 
 from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
 from felizjueves.device import MeasuredKey, by_name
-from felizjueves.kernel import pq_spec
+from felizjueves.kernel import k_spec, pq_spec, split
 from felizjueves.lower import RECYCLE
 from felizjueves.measured_store import SUBGRID, TUNED_CELLS, load, split_key
 from felizjueves.spec import Target
@@ -83,3 +83,21 @@ def test_the_rederived_rows_cover_the_declared_cells() -> None:
     assert len(literal) * 2 == 66 and len(recycle) * 2 == 40
     assert len(ASYM_CELLS) * 2 == 16 and len(sieve) * 2 == 42
     assert len(tuned) * 2 == 32
+
+
+def test_a_k_cell_joins_no_measured_row() -> None:
+    # #196: `Target.K` widens the enum without moving a J key (the two tests
+    # above), and its own cells -- named by `k_spec` -- share no key with any
+    # row: the store has no K row, so a K cell never reads a J row by accident.
+    rows = load()
+    assert not any(split_key(key)[0].split("/")[4] == "k" for key in rows)
+    arches = {r.arch: r.toolchain for r in rows.values()}
+    k_keys = {
+        MeasuredKey(k_spec(L, n_batches=n), by_name(arch), tc).key()
+        for L in range(17) for n in (1, 3, 6, 9, 12) for arch, tc in arches.items()
+    }
+    assert k_keys.isdisjoint(rows)
+    # Same L, same (lp, lq), different key.
+    for L in range(17):
+        assert split(k_spec(L)) == split(pq_spec(L))
+        assert k_spec(L).key() != pq_spec(L).key()
