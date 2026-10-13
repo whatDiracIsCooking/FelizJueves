@@ -175,6 +175,42 @@ reading one.
 - THE DEFAULT. As #55's: the literal (sieved) plan stays the default unless
   `no-sieve` WINS at every cell on BOTH arches, and then in its own commit.
 
+THE TUNED ARM (#163, #161's lever) is `tuned_ab`: does the searched board's
+plan (`plan.pipeline.TUNED`: the recorded cut and per-batch seed order of
+data/scoreboards/jengine/searched_cuts.json) beat the literal plan on our
+cards? DECLARED BEFORE ANY `tuned` ROW EXISTED, and not to be tuned after
+reading one. The same shape as THE SIEVE ARM, so the two plan arms compare
+with each other as well as with their controls.
+
+- THE CELLS are `lever_cells(TUNED)` -- every SUBGRID cell, tuned -- less
+  the cells the lever cannot build. A tuned build is ALWAYS a recorded
+  search, never a fall back to the literal plan (#161), and the file records
+  n_batches in {1, 3, 6, 9} only, so the four n_batches = 12 cells raise "no
+  recorded choice". They are `NOT_MEASURABLE[TUNED]`, each with that reason:
+  RECORDED as not measurable, never silently skipped, and never replaced by
+  the literal arm (that would time a kernel against itself). The recorded
+  set is `TUNED_CELLS` = `ab_cells(TUNED)`: the subgrid's other 16, no
+  added cell. Where the search chose what the literal plan does, the tuned
+  kernel's text is the literal kernel's (#161: (7,3), (7,6) and (10,9) of
+  the subgrid); such a cell is timed and judged like any other -- it is the
+  A/B's own null, as #55's identical machine code was.
+- PER CELL: `lever_ab`'s verdict, with `tuned` as the lever and the literal
+  kernel as its same-session control -- #55's protocol, #162's plan-arm
+  sweep (discarded phases retaken and counted) and #60's symmetric rule on
+  both inputs, unchanged. Spill is reported beside it (`spill`, literal row
+  then tuned row) and never judged.
+- PER ARCH: the search is SUPPORTED on an arch iff `tuned` is a WIN at some
+  cell and a LOSS at none; CONTRADICTED iff it is a LOSS at some cell and a
+  WIN at none; otherwise NOT SHOWN (NEUTRAL everywhere, a MIXED cell, or
+  WINs and LOSSes both). The sign is the sieve's reversed because the
+  question is: the sieve arm asks whether taking a step away hurts, this
+  one whether the searched step helps. A not-measurable cell enters neither
+  side. The two arches are judged apart and may disagree.
+- THE DEFAULT. As #55's: the literal plan stays the default unless `tuned`
+  WINS at every cell of `TUNED_CELLS` on BOTH arches, and then in its own
+  commit (#166). A not-measurable cell has no tuned kernel at all, so it
+  can neither block nor carry that change; it is named beside the verdict.
+
 COUNTERS (#110) are the roofline's inputs, read off the card's own
 performance counters by a profiler -- `ncu` on NVIDIA, `rocprofv3`'s counter
 mode on AMD -- never off a model:
@@ -379,10 +415,11 @@ SUBGRID: tuple[Spec, ...] = tuple(
 # its kind. One entry adds an arm -- #161 adds `"tuned": PLAN` with the lever.
 LOWERING, PLAN = "lowering", "plan"
 NO_SIEVE = "no-sieve"  # plan.sieve.NO_SIEVE, spelled: plan/ is off-limits here
+TUNED = "tuned"  # plan.pipeline.TUNED, spelled likewise
 ARMS: Mapping[str, str] = MappingProxyType({
     **dict.fromkeys(sorted(LEVERS), LOWERING),  # "recycle" (#55)
     NO_SIEVE: PLAN,  # Alg. 3's sieve off (#162)
-    "tuned": PLAN,  # plan.pipeline.TUNED: the searched board's plan (#161)
+    TUNED: PLAN,  # plan.pipeline.TUNED: the searched board's plan (#161)
 })
 
 
@@ -430,11 +467,27 @@ ADDED_CELLS: Mapping[str, tuple[Spec, ...]] = MappingProxyType({
 })
 
 
+# Cells of `lever_cells(lever)` the arm cannot build, each with its reason
+# (#163; module docstring, THE TUNED ARM): recorded, never silently skipped,
+# never replaced by the literal arm. test/test_measured.py builds every
+# `lever_cells(TUNED)` cell and holds this map to exactly the ones refused.
+_NO_CHOICE = ("no recorded choice: data/scoreboards/jengine/searched_cuts.json "
+              "records n_batches in {1, 3, 6, 9} only, and a tuned build is "
+              "always a recorded search, never a fall back to the literal plan")
+NOT_MEASURABLE: Mapping[str, Mapping[Spec, str]] = MappingProxyType({
+    TUNED: MappingProxyType({s: _NO_CHOICE for s in lever_cells(TUNED)
+                             if s.n_batches == 12}),
+})
+
+
 def ab_cells(lever: str) -> tuple[Spec, ...]:
-    """Every cell an A/B of `lever` records: `lever_cells(lever)`, then the
-    arm's `ADDED_CELLS` -- what the driver compiles and the wall-clock sweep
-    times for `--lever` / `FJ_WALLCLOCK_LEVER`."""
-    return lever_cells(lever) + ADDED_CELLS.get(lever, ())
+    """Every cell an A/B of `lever` records: `lever_cells(lever)` less the
+    arm's `NOT_MEASURABLE` cells, then the arm's `ADDED_CELLS` -- what the
+    driver compiles and the wall-clock sweep times for `--lever` /
+    `FJ_WALLCLOCK_LEVER`."""
+    gone = NOT_MEASURABLE.get(lever, {})
+    return (tuple(s for s in lever_cells(lever) if s not in gone)
+            + ADDED_CELLS.get(lever, ()))
 
 
 SCHEMA = 2  # 2: a timed row carries GPU_UTIL_FIELDS, a reading or null (#93)
@@ -1354,6 +1407,50 @@ def sieve_may_leave_the_default(store: Mapping[str, Measured],
     every arch in `arches` (both cards by default)."""
     return all(ab.verdict == WIN for a in arches
                for ab in sieve_ab(store, a, cells).values())
+
+
+# #163: the tuned arm's verdict, declared before any tuned row (module
+# docstring, THE TUNED ARM), over TUNED_CELLS; NOT_MEASURABLE[TUNED] names
+# the four 12-batch cells beside it.
+TUNED_CELLS: tuple[Spec, ...] = ab_cells(TUNED)
+
+
+def tuned_ab(store: Mapping[str, Measured], arch: str,
+             cells: tuple[Spec, ...] | None = None) -> dict[Spec, LeverAB]:
+    """`lever_ab` of every `tuned` cell on `arch` (by default `TUNED_CELLS`);
+    a cell that is not a `tuned` arm, or is not measurable, is refused.
+    Raises KeyError, as `lever_ab` does, for a cell not yet recorded."""
+    cells = TUNED_CELLS if cells is None else cells
+    for c in cells:
+        if arm_of(c) != TUNED:
+            raise ValueError(f"{c.key()}: not a {TUNED} arm")
+        if c in NOT_MEASURABLE[TUNED]:
+            raise ValueError(f"{c.key()}: not measurable -- "
+                             f"{NOT_MEASURABLE[TUNED][c]}")
+    return {c: lever_ab(store, arch, c) for c in cells}
+
+
+def tuned_verdict(store: Mapping[str, Measured], arch: str,
+                  cells: tuple[Spec, ...] | None = None) -> str:
+    """The search on `arch` (THE TUNED ARM, PER ARCH): SUPPORTED iff `tuned`
+    WINS somewhere and LOSES nowhere, CONTRADICTED iff the reverse, else
+    NOT_SHOWN (a MIXED cell, both signs, or NEUTRAL everywhere)."""
+    got = {ab.verdict for ab in tuned_ab(store, arch, cells).values()}
+    if MIXED not in got and WIN in got and LOSS not in got:
+        return SUPPORTED
+    if MIXED not in got and LOSS in got and WIN not in got:
+        return CONTRADICTED
+    return NOT_SHOWN
+
+
+def tuned_may_become_the_default(store: Mapping[str, Measured],
+                                 cells: tuple[Spec, ...] | None = None,
+                                 arches: tuple[str, ...] = ("sm_86", "gfx1200"),
+                                 ) -> bool:
+    """THE TUNED ARM, THE DEFAULT: True iff `tuned` WINS at every measurable
+    cell on every arch in `arches` (both cards by default)."""
+    return all(ab.verdict == WIN for a in arches
+               for ab in tuned_ab(store, a, cells).values())
 
 
 
