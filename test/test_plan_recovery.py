@@ -5,6 +5,8 @@ refused, and every number the records quote about that is recomputed here."""
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -267,6 +269,8 @@ def test_the_widened_seed_order_search() -> None:
             for c in costs.values()} == {(95, 95)}
     assert {(c[7, 6].max_intermediates, c[7, 9].max_intermediates)
             for c in costs.values()} == {(39, 40)}
+    # #160: the spread record, every cell, from the same 58 sweeps.
+    assert spread_rows(CELLS, costs) == _spread_record()["rows"]
 
 
 # -- nothing literal moves -------------------------------------------------------
@@ -279,3 +283,200 @@ def test_the_seed_order_default_is_the_literal_sieve(L: int, nb: int) -> None:
     for d, lit in zip(build(spec), plan(spec), strict=True):
         explicit = sieve(d, seed_order=hermite_targets(L))
         assert dict(explicit.parents) == dict(lit.parents)
+
+
+# -- #160: the seed order's spread over the 58 rules ----------------------------
+#
+# [JEngine, v2, §4.1] says the seed order moves the sieve's FLOPs and node
+# count by up to ~2%, over a space it does not state. This is the same
+# question over OURS: the 58 rules of seed_orders(widened=True), on the
+# recovered cut, per cell of the Tables 1-3 grid. The record is
+# data/literature/jengine/seed_order_spread.json; its `orders`, `summary` and
+# `rows` are recomputed here, never retyped (every cell in the slow test
+# above, the L = 7..9 cells and the summary in the fast tier), and rewritten
+# with `PYTHONPATH=src uv run python test/test_plan_recovery.py --write`
+# (about 30 s), which keeps every other key as written by hand.
+
+SPREAD = JENGINE / "seed_order_spread.json"
+SPREAD_QUANTITIES = {"flops": "jengine/table1",
+                     "max_intermediates": "jengine/table2"}
+PAPER_PERCENT = 2  # §4.1's "~2%", as limits.json and claims.json quote it
+FAST_SPREAD_CELLS = [c for c in CELLS if c[0] <= 9]
+
+
+def spread_rows(cells, costs_by_order) -> list[dict]:
+    """Per cell and quantity: the least and the most over every order, the
+    spread 100 * (max - min) / min, the literal (hermite) order's value, the
+    printed value, and how many distinct values the orders reach."""
+    rows = []
+    for L, nb in cells:
+        row: dict = {"cell": [L, nb]}
+        for q, tid in SPREAD_QUANTITIES.items():
+            v = [getattr(c[L, nb], q) for c in costs_by_order.values()]
+            lo, hi = min(v), max(v)
+            row[q] = {
+                "min": lo,
+                "max": hi,
+                "spread_percent": round(100 * (hi - lo) / lo, 3),
+                "literal": getattr(costs_by_order["hermite"][L, nb], q),
+                "printed": TABLES[tid].cells[L, nb],
+                "distinct": len(set(v)),
+            }
+        rows.append(row)
+    return rows
+
+
+def spread_summary(rows) -> dict:
+    out: dict = {"cells": len(rows), "paper_percent": PAPER_PERCENT}
+    for q in SPREAD_QUANTITIES:
+        sp = [r[q]["spread_percent"] for r in rows]
+        top = max(sp)
+        out[q] = {
+            "max_spread_percent": top,
+            "at": [r["cell"] for r in rows if r[q]["spread_percent"] == top],
+            "cells_over_paper": [r["cell"] for r in rows
+                                 if r[q]["spread_percent"] > PAPER_PERCENT],
+            "cells_level": sum(s == 0 for s in sp),
+            "printed_outside_range": [
+                r["cell"] for r in rows
+                if not r[q]["min"] <= r[q]["printed"] <= r[q]["max"]],
+        }
+    return out
+
+
+def _spread_costs(cells):
+    return {name: recovered_costs(cells, order)
+            for name, order in seed_orders(widened=True)}
+
+
+def _spread_record() -> dict:
+    return json.loads(SPREAD.read_text())
+
+
+def test_the_spread_on_the_cheap_cells_is_recomputed() -> None:
+    # L = 7..9, all 58 rules (a couple of seconds); every cell is the slow
+    # test_the_widened_seed_order_search.
+    rec = _spread_record()
+    want = spread_rows(FAST_SPREAD_CELLS, _spread_costs(FAST_SPREAD_CELLS))
+    got = [r for r in rec["rows"] if tuple(r["cell"]) in set(FAST_SPREAD_CELLS)]
+    assert got == want
+
+
+def test_the_spread_record_is_its_grid_its_family_and_its_summary() -> None:
+    rec = _spread_record()
+    assert [tuple(r["cell"]) for r in rec["rows"]] == CELLS
+    assert rec["orders"] == [name for name, _ in seed_orders(widened=True)]
+    assert rec["summary"] == spread_summary(rec["rows"])
+    for r in rec["rows"]:
+        for q, tid in SPREAD_QUANTITIES.items():
+            e = r[q]
+            assert e["min"] <= e["literal"] <= e["max"]
+            assert e["printed"] == TABLES[tid].cells[tuple(r["cell"])]
+            assert (e["distinct"] == 1) == (e["spread_percent"] == 0)
+
+
+def test_the_spreads_literal_column_is_the_literal_sieve() -> None:
+    lit = recovered_costs(CELLS)
+    for r in _spread_record()["rows"]:
+        for q in SPREAD_QUANTITIES:
+            assert r[q]["literal"] == getattr(lit[tuple(r["cell"])], q)
+
+
+def test_the_spread_exceeds_the_papers_figure_over_our_space() -> None:
+    # The finding, pinned so a change to it is a diff here: over the 58 rules
+    # the spread passes ~2% at 9 cells on FLOPs (up to 3.706%, at (16, 1)) and
+    # 5 on max intermediates (up to 2.946%, at (12, 1)), every one a 1- or
+    # 3-batch cell; and a split cell's FLOP spread is no wider than its
+    # one-batch cell's at any L. It names OUR space; it does not dispute the
+    # paper's figure over its own.
+    rec = _spread_record()
+    f, i = rec["summary"]["flops"], rec["summary"]["max_intermediates"]
+    assert (f["max_spread_percent"], f["at"]) == (3.706, [[16, 1]])
+    assert (i["max_spread_percent"], i["at"]) == (2.946, [[12, 1]])
+    assert (len(f["cells_over_paper"]), len(i["cells_over_paper"])) == (9, 5)
+    assert all(nb in (1, 3) for q in (f, i) for _, nb in q["cells_over_paper"])
+    by = {tuple(r["cell"]): r["flops"]["spread_percent"] for r in rec["rows"]}
+    for L in range(7, 17):
+        assert all(by[L, nb] <= by[L, 1] for nb in (3, 6, 9)), L
+    # The printed intermediates lie inside every cell's range; the printed
+    # FLOPs, where outside, lie BELOW every order's.
+    assert i["printed_outside_range"] == []
+    rows = {tuple(r["cell"]): r["flops"] for r in rec["rows"]}
+    assert len(f["printed_outside_range"]) == 6
+    for cell in f["printed_outside_range"]:
+        assert rows[tuple(cell)]["printed"] < rows[tuple(cell)]["min"], cell
+    for q in (f, i):
+        assert f"{q['max_spread_percent']}%" in rec["verdict"]
+
+
+def test_the_open_choices_each_name_a_pinning_test_that_exists() -> None:
+    # #160: Alg. 3's three open choices, each with the test that fixes it,
+    # so the reconstruction choice is pinned rather than incidental.
+    choices = _spread_record()["open_choices"]
+    assert [c["alg3_line"] for c in choices] == [4, 12, 16]
+    subjects = {lim.asserted_value.get("subject")
+                for lim in load_limits(JENGINE / "limits.json")}
+    root = Path(__file__).resolve().parents[1]
+    for c in choices:
+        named = [t.rstrip(",") for t in c["pinned_by"].split() if "::" in t]
+        assert named, c["choice"]
+        for t in named:
+            path, name = t.split("::")
+            assert f"\ndef {name}(" in (root / path).read_text(), t
+        assert c["limit"].split("'")[1] in subjects, c["limit"]
+
+
+def test_the_spread_limit_quotes_the_record() -> None:
+    (lim,) = [lim for lim in load_limits(JENGINE / "limits.json")
+              if lim.asserted_value.get("subject") == "seed-order spread"]
+    v, rec = lim.asserted_value, _spread_record()
+    s = rec["summary"]
+    assert v["claim"] == "jengine/sieve-underspecified"
+    assert v["record"] == "data/literature/jengine/seed_order_spread.json"
+    assert v["paper_percent"] == s["paper_percent"] == PAPER_PERCENT
+    assert v["orders"] == len(rec["orders"]) == 58
+    assert v["cells"] == s["cells"] == 40
+    for q in SPREAD_QUANTITIES:
+        assert v["max_spread_percent"][q] == s[q]["max_spread_percent"]
+        assert v["at"][q] == s[q]["at"]
+        assert v["cells_over_paper"][q] == len(s[q]["cells_over_paper"])
+        assert v["printed_outside_range"][q] == s[q]["printed_outside_range"]
+
+
+def test_the_sieve_claim_and_mild_md_quote_the_spread() -> None:
+    # jengine/sieve-underspecified stays UNVERIFIABLE (the paper's space is
+    # unstated, so our spread can neither confirm nor refute its ~2%); its
+    # reason and mild.md's table quote the record's figures, held here.
+    from felizjueves.literature.claims import ClaimStatus, load_claims
+
+    s = _spread_record()["summary"]
+    f, i = s["flops"], s["max_intermediates"]
+    (claim,) = [c for c in load_claims(JENGINE / "claims.json")
+                if c.id == "jengine/sieve-underspecified"]
+    assert claim.status is ClaimStatus.UNVERIFIABLE
+    assert "seed_order_spread.json" in claim.reason
+    for q in (f, i):
+        assert f"{q['max_spread_percent']}%" in claim.reason
+    mild = (Path(__file__).resolve().parents[1] / "docs" / "implementation"
+            / "mild.md").read_text()
+    for q in (f, i):
+        cell = ", ".join(map(str, q["at"][0]))
+        assert f"**{q['max_spread_percent']}%**, at ({cell})" in mild
+        assert f"| {len(q['cells_over_paper'])} of {s['cells']}" in mild
+        assert f"| {q['cells_level']} |" in mild
+    assert f"| {len(f['printed_outside_range'])} cells, every one **below**" in mild
+
+
+def _write() -> None:
+    rec = _spread_record() if SPREAD.exists() else {}
+    rows = spread_rows(CELLS, _spread_costs(CELLS))
+    rec["orders"] = [name for name, _ in seed_orders(widened=True)]
+    rec["summary"] = spread_summary(rows)
+    rec["rows"] = rows
+    SPREAD.write_text(json.dumps(rec, indent=1, ensure_ascii=False) + "\n")
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--write"]:
+        sys.exit("usage: PYTHONPATH=src python test/test_plan_recovery.py --write")
+    _write()

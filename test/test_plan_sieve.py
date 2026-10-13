@@ -8,10 +8,12 @@ discharged here: `jengine/rule-4-needs-the-sieve`.
 from __future__ import annotations
 
 from functools import cache
+from unittest import mock
 
 import pytest
 
-from felizjueves.plan.batching import AXES
+import felizjueves.plan.sieve as sv
+from felizjueves.plan.batching import ALL, AXES
 from felizjueves.plan.cost import PlanCost, cost
 from felizjueves.plan.dag import BatchDag, Node, build, is_fundamental, mild_parents
 from felizjueves.plan.mild import mild_direction
@@ -145,6 +147,134 @@ def test_any_other_lever_is_still_refused(levers: tuple[str, ...]) -> None:
 def test_parents_along_a_zero_component_is_refused() -> None:
     with pytest.raises(ValueError, match="not reducible"):
         parents_along(((0, 2, 3), 0), AXES.index("x"))
+
+
+# -- #160: Alg. 3's open choices (ii) and (iii), pinned ----------------------------
+#
+# Alg. 3 leaves open which other direction a child is re-expanded in (line
+# 12) and how far deleting i reaches (line 16). plan/sieve.py fixes both
+# (its docstring, TWO CHOICES); data/literature/jengine/seed_order_spread.json
+# names them and limits.json records each as a reconstruction choice. These
+# tests pin them, so a refactor cannot change either silently. Neither is a
+# lever, and nothing here measures the alternative.
+
+
+def _closed(targets, chosen: dict[Node, tuple[Node, ...]]) -> BatchDag:
+    """A hand-made DAG: `chosen` parents where given, MILD's elsewhere,
+    closed upward. Every edge is a legal recurrence (parents_along)."""
+    parents: dict[Node, tuple[Node, ...]] = {}
+    stack = [t for t in targets if any(t[0])]
+    while stack:
+        n = stack.pop()
+        if n in parents:
+            continue
+        ps = chosen.get(n) or mild_parents(n)
+        assert ps in {parents_along(n, k) for k in range(3) if n[0][k]}, n
+        parents[n] = ps
+        stack.extend(p for p in ps if not is_fundamental(p))
+    return BatchDag((ALL, 0, 0), frozenset(targets), parents)
+
+
+@pytest.mark.parametrize(
+    ("r", "here", "present", "want"),
+    [
+        # x (r_x = 2) and z (r_z = 3) both qualify: the smaller component.
+        ((2, 1, 3), "y", "xz", "x"),
+        # x and z tie at 2: x, by axis order.
+        ((2, 1, 2), "y", "xz", "x"),
+        # y (3) and z (2) qualify: z, though y comes first by axis.
+        ((1, 3, 2), "x", "yz", "z"),
+        # only the costlier direction qualifies: it is taken.
+        ((2, 1, 3), "y", "z", "z"),
+        # nothing else qualifies: no re-expansion (the node survives).
+        ((2, 1, 3), "y", "", None),
+    ],
+)
+def test_reexpansion_takes_the_smallest_component_ties_by_axis(
+    r, here, present, want
+) -> None:
+    # Choice (ii), sieve._reexpansion: among the OTHER directions whose
+    # parents are all present (and none of them the node being deleted),
+    # the smallest reduced component r_d', ties by x, y, z.
+    node: Node = (r, 1)
+    current = parents_along(node, AXES.index(here))
+    avail = {p for a in present for p in parents_along(node, AXES.index(a))}
+    gone: Node = ((9, 9, 9), 9)  # deletes nothing the node could use
+    got = sv._reexpansion(node, current, avail | set(current), gone)
+    assert got == (None if want is None else parents_along(node, AXES.index(want)))
+    # The current direction is never "another" one, even when present.
+    assert got != current
+
+
+def test_reexpansion_never_uses_the_node_being_deleted() -> None:
+    node: Node = ((2, 1, 3), 1)
+    x = parents_along(node, AXES.index("x"))
+    z = parents_along(node, AXES.index("z"))
+    present = set(x) | set(z)
+    assert sv._reexpansion(node, parents_along(node, 1), present, x[0]) == z
+
+
+def _contested(L: int, n_batches: int) -> list[tuple[Node, bool]]:
+    """Every re-expansion test the literal sieve makes on (L, n_batches)
+    where more than one other direction qualified -- the case line 12 leaves
+    open -- with whether the one taken is the smallest r_d', ties by axis."""
+    real, contested = sv._reexpansion, []
+
+    def watch(node, current, present, gone):
+        got = real(node, current, present, gone)
+        here = sv._axis(node, current)
+        ok = [k for k in range(3) if k != here and node[0][k]
+              and all(p in present and p != gone
+                      for p in parents_along(node, k))]
+        if len(ok) > 1:
+            best = min(ok, key=lambda k: (node[0][k], k))
+            contested.append((node, got == parents_along(node, best)))
+        return got
+
+    with mock.patch.object(sv, "_reexpansion", watch):
+        for d in _mild(L, n_batches):
+            sv.sieve(d)
+    return contested
+
+
+@pytest.mark.parametrize(("L", "n_batches"), [(10, 1), (12, 3), (16, 9)])
+def test_reexpansion_end_to_end_takes_the_cheaper_direction(
+    L: int, n_batches: int
+) -> None:
+    # Choice (ii) in the shipped plans: where several other directions
+    # qualify, the one taken is the smallest r_d', ties by axis. The choice
+    # is exercised, not vacuous: at these cells such a case occurs.
+    contested = _contested(L, n_batches)
+    assert contested, (L, n_batches)
+    assert all(ok for _, ok in contested), [n for n, ok in contested if not ok]
+
+
+def test_reexpansion_is_first_contested_at_l10() -> None:
+    # In the literal one-batch plans, line 12's choice never arises below
+    # L = 10 (one qualifying direction at most); at L = 10 it first does.
+    # seed_order_spread.json's open_choices quotes this.
+    assert not any(_contested(L, 1) for L in range(5, 10))
+    assert len(_contested(10, 1)) == 3
+
+
+def test_deletion_sweeps_the_childs_other_old_parent() -> None:
+    # Choice (iii), line 16's "any unnecessary parents of i". The target
+    # [0 2 1] is built along y from a = [0 1 1]^(1) and b = [0 0 1]^(1);
+    # [0 3 0] puts [0 2 0]^(1) on the graph, so [0 2 1] re-expands along z
+    # out of it. Whichever of a and b the walk tests first is deleted, and
+    # the OTHER is not its parent -- Alg. 3's literal reach would leave it in
+    # the DAG with no child. The sweep deletes both.
+    t1, t2 = ((0, 2, 1), 0), ((0, 3, 0), 0)
+    a, b = ((0, 1, 1), 1), ((0, 0, 1), 1)
+    dag = _closed({t1, t2}, {t1: parents_along(t1, AXES.index("y"))})
+    assert dag.parents[t1] == (a, b)
+    assert {c for c, ps in dag.parents.items() if a in ps} == {t1}
+    assert {c for c, ps in dag.parents.items() if b in ps} == {t1}
+    assert b not in dag.parents[a] and a not in dag.parents.get(b, ())
+
+    out = sieve(dag)
+    assert out.parents[t1] == parents_along(t1, AXES.index("z"))
+    assert a not in out.nodes() and b not in out.nodes()
 
 
 # -- rule 4 --------------------------------------------------------------------

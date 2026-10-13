@@ -5,8 +5,8 @@
 and an exhibit of rule 4's absence tested in `test/test_plan_mild.py`. The
 sieve is `src/felizjueves/plan/sieve.py`, [JEngine, v2, Alg. 3] on each batch's
 MILD DAG, with the two choices the paper leaves open (which other direction,
-and how far the upward sweep reaches) fixed in its docstring and switchable
-off by the `no-sieve` lever; `test/test_plan_sieve.py` tests it, including
+and how far the upward sweep reaches) fixed in its docstring, pinned by tests
+since #160, and switchable off by the `no-sieve` lever; `test/test_plan_sieve.py` tests it, including
 that it recovers rule 4. `src/felizjueves/plan/pipeline.py` composes them
 with the batch split into one plan per `Spec`. The plan
 itself is host-side counting, but it is no longer only that: for a one-batch
@@ -200,6 +200,29 @@ optimum through L = 4, strictly dominated at 5 — and
 pins a gap disagreeing with the printed percentages would fail if they held,
 so it cannot be their witness.
 
+**The seed order's spread, measured here too (#160).** §4.1's other
+percentage, that the sieve's seed order moves the result by up to ~2%, is
+measured the same way: over a stated space, against no hidden one. The record
+is `data/literature/jengine/seed_order_spread.json`, recomputed by
+`test/test_plan_recovery.py`. The space is this repo's 58 seed-order rules
+(`plan/recovery.py`, `seed_orders(widened=True)`), each planned on the
+recovered cut, over the 40 cells of the Tables 1–3 grid. The spread of a cell
+is `100 · (max − min) / min` over those 58 orders.
+
+| quantity | widest spread | cells over 2% | cells level | printed value outside the range |
+|---|---|---|---|---|
+| FLOPs (Table 1) | **3.706%**, at (16, 1) | 9 of 40, all 1 or 3 batches | 9 | 6 cells, every one **below** all 58 orders |
+| max intermediates (Table 2) | **2.946%**, at (12, 1) | 5 of 40 | 15 | none |
+
+Over this space the ~2% is exceeded at the large one-batch cells and holds
+everywhere else. The spread narrows as the batch count rises: no split cell's
+FLOP spread is wider than its one-batch cell's. That names **our** space. The
+paper does not state the orders behind its ~2%, and a spread over 58 rules is
+only a lower bound on the spread over every order, so the figure neither
+confirms nor refutes the paper's. `limits.json` records it (subject
+`seed-order spread`), and `jengine/sieve-underspecified` stays
+**unverifiable**. #174 carries the searched-space version of the question.
+
 ## The sieve — pruning what MILD left behind
 
 MILD is non-optimal in node count for `L ≥ 5`. The sieve, after Gill,
@@ -249,9 +272,29 @@ Two properties to carry into the implementation:
   33/40 of Table 1 and 38/40 of Table 2. Under the **rules-only** doctrine a
   per-cell fitted order is not a recovered input, so Tables 1-2's
   `exact_given_inputs` are refused, with the evidence in
-  `data/literature/jengine/limits.json`.
+  `data/literature/jengine/limits.json`. Over those 58 rules the spread
+  reaches 3.706% on FLOPs (see "The seed order's spread" above).
 - **Deleting a node can orphan its parents**, so the delete step sweeps upward
   rather than just dropping `i`.
+
+### The three choices Alg. 3 leaves open, and what we chose
+
+`seed_order_spread.json`'s `open_choices` is the record. Each choice is a
+`StructuralLimit` in `limits.json` and is pinned by a test, so a refactor
+cannot change it silently. None is a lever, and no alternative is measured.
+
+| Alg. 3 | left open | here | pinned by |
+|---|---|---|---|
+| line 4 | the order targets seed the queue in | `hermite_targets` order (fixed; no rule recovers the paper's, #108) | `test_plan_recovery.py::test_the_seed_order_default_is_the_literal_sieve` |
+| line 12 | which other direction a child re-expands in, when several qualify | the smallest reduced component `r_d'`, ties by x, y, z: MILD's own criterion over the directions the graph allows | `test_plan_sieve.py::test_reexpansion_takes_the_smallest_component_ties_by_axis`, `test_reexpansion_end_to_end_takes_the_cheaper_direction` and `test_reexpansion_is_first_contested_at_l10` |
+| line 16 | how far "any unnecessary parents of i" reaches | every non-target node left with no child, transitively. That includes a re-parented child's **other** old parent, which is not a parent of `i` | `test_plan_sieve.py::test_deletion_sweeps_the_childs_other_old_parent` and `test_every_node_is_still_needed` |
+
+Line 12's choice arises only where two or more other directions qualify. In
+the literal one-batch plans that never happens below L = 10, and first happens
+at L = 10, three times. Line 16 read literally would leave the child's other
+old parent in the DAG with no child, which costs an intermediate and its
+FLOPs. The paper's tables cannot say which reading it ran, because the
+unstated seed order moves every printed cell as well.
 
 ### What the sieve actually buys
 
