@@ -2,7 +2,7 @@
 
 `Spec.key()` is the join key of the measured store. Widening `Spec` to admit a
 pair class (`Target.DQ`, `Target.JAB`) must not move a single byte of a
-quartet key, or 164 rows silently stop joining. This test rebuilds each row's
+quartet key, or 196 rows silently stop joining. This test rebuilds each row's
 key from scratch -- the class, batch count and lever read back by a parser
 that does not call `Spec.key()`, the card and compiler from the row's own
 `arch` and `toolchain` fields -- through the same constructors the driver
@@ -18,7 +18,7 @@ from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
 from felizjueves.device import MeasuredKey, by_name
 from felizjueves.kernel import pq_spec
 from felizjueves.lower import RECYCLE
-from felizjueves.measured_store import SUBGRID, load, split_key
+from felizjueves.measured_store import SUBGRID, TUNED_CELLS, load, split_key
 from felizjueves.spec import Target
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
@@ -26,7 +26,7 @@ _SPEC_KEY = re.compile(
     r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b(\d+)/j/([a-z+-]+)\Z"
 )
 
-N_ROWS = 164
+N_ROWS = 196
 
 
 def _derive(key: str, arch: str, toolchain: str) -> str:
@@ -59,7 +59,9 @@ def test_every_measured_key_is_rederived_byte_for_byte() -> None:
 def test_the_rederived_rows_cover_the_declared_cells() -> None:
     # 66 literal (17 one-batch classes + 16 split subgrid cells, per arch),
     # 40 recycle (every subgrid cell, per arch), 16 asym, and 42 no-sieve
-    # (every subgrid cell plus L = 11 one-batch, per arch; #162).
+    # (every subgrid cell plus L = 11 one-batch, per arch; #162), and 32
+    # tuned (every subgrid cell but the four 12-batch ones, which have no
+    # recorded search choice, per arch; #163).
     rows = load()
     arches = {r.arch for r in rows.values()}
     assert arches == {"sm_86", "gfx1200"}
@@ -67,13 +69,17 @@ def test_the_rederived_rows_cover_the_declared_cells() -> None:
     recycle = {pq_spec(s.total_am, (RECYCLE,), s.n_batches) for s in SUBGRID}
     sieve = {pq_spec(s.total_am, ("no-sieve",), s.n_batches) for s in SUBGRID} | {
         pq_spec(11, ("no-sieve",))}
+    tuned = {pq_spec(s.total_am, ("tuned",), s.n_batches) for s in SUBGRID
+             if s.n_batches != 12}
+    assert tuned == set(TUNED_CELLS)
     want = set(rows)
     got = set()
     for arch in arches:
         tc = next(r.toolchain for r in rows.values() if r.arch == arch)
         got |= {MeasuredKey(s, by_name(arch), tc).key()
-                for s in literal | recycle | sieve}
+                for s in literal | recycle | sieve | tuned}
         got |= {AsymKey(c, by_name(arch), tc).key() for c in ASYM_CELLS}
     assert got == want
     assert len(literal) * 2 == 66 and len(recycle) * 2 == 40
     assert len(ASYM_CELLS) * 2 == 16 and len(sieve) * 2 == 42
+    assert len(tuned) * 2 == 32
