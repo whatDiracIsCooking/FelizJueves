@@ -1087,3 +1087,18 @@ def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
     for banned in (_REF, "interp", "kernel_s", "kernel_t", "kernel_v"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #242 (milestone 11): the generator CLI writes the one-electron ladder
+# (`--one-e-l`), so the driver composes the three new builders with the
+# backends, as it does `kernel_dq` and `kernel_jab`. Still rule "driver":
+# it builds and emits; the builders' own rules keep them off `ao`.
+# ---------------------------------------------------------------------------
+
+_ONE_E_BUILDERS = ("kernel_s", "kernel_t", "kernel_v")
+RULES["driver"] = Rule(RULES["driver"].why + ", and #242's one-electron "
+                       "ladder through `kernel_s`, `kernel_t`, `kernel_v`",
+                       RULES["driver"].may | frozenset(_ONE_E_BUILDERS),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_ONE_E_BUILDERS)

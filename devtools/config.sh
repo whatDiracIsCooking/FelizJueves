@@ -132,13 +132,19 @@ HIPCC_FLAGS=${HIPCC_FLAGS:--O3 -g1 -std=c++17 -Wall -Wextra}
 # quoting, no `VAR=value` prefix -- hence `env`.
 #
 # felizjueves.emit's CLI reads those three variables as its defaults and
-# writes one translation unit per class, L = 0..16 (`build_pq_kernel(L)`),
-# in the backend's own spelling. PYTHONPATH because this is a virtual uv
-# project: nothing is installed, src/ is put on the path by hand.
+# writes one translation unit per class in the backend's own spelling: with
+# no ladder flag the J chain's 37 (`[p|q]` L = 0..16 and the DQ / JAB pair
+# ladder through (ff), whose `source_sha256` data/measured/kernels.json
+# pins), and `--one-e-l 2` ADDS the one-electron ladder (#242): `s_`, `t_`
+# and `v_` for every pair class `la <= lb <= 2`, 18 units, through (dd) --
+# the classes test/test_one_electron_device.py holds to the host on each
+# card. The one-electron units are never in the bare command's output; the
+# tier asks for them here, explicitly. PYTHONPATH because this is a virtual
+# uv project: nothing is installed, src/ is put on the path by hand.
 #
 # Set it EMPTY (KERNEL_GEN_CMD= devtools/kernel-tier.sh ...) and the tier
 # reports its generate and compile phases DORMANT rather than pretending.
-KERNEL_GEN_CMD=${KERNEL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit}
+KERNEL_GEN_CMD=${KERNEL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit --one-e-l 2}
 
 # Where generated sources and their binaries land. Gitignored (/.kernel-tier/),
 # and wiped by --fresh.
