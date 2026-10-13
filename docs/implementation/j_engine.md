@@ -80,8 +80,19 @@ kept resident on the card across SCF iterations, a `Launch` IR, and a
 `LaunchCost` model, all declared out of scope (`limits.json`). Dispatch
 exists as a library choice the plan takes, and the generator does not follow
 it: `Spec.n_batches` still defaults to 1, and `KERNEL_GEN_CMD` writes
-one-batch `[p|q]` kernels. A count this file states is a claim about the code
-only where a test or a scored board checks it.
+one-batch `[p|q]` kernels, by decision ("What the generator ships, and why"
+below). A count this file states is a claim about the code only where a test
+or a scored board checks it.
+
+**What the generator ships** (milestone 8, #159–#174): the **literal** plan
+(the minimax cut and the sieve's fixed seed order, `Spec.levers = ()`), one
+batch, plus the pair ladder. The levers measured against it on both cards
+are `recycle` (#55), `asym` (#113, a study path), `no-sieve` (#162) and
+`tuned` (#163), and none moved the default: the declared verdicts are
+neutral, worse, NOT SHOWN and NOT SHOWN. The plan-layer counts do not
+predict the kernel on either card (#165), so they are not grounds either way.
+"What the generator ships, and why (#166)" below has the decision, and
+"Parity with the predecessor" the one difference from `jgen`.
 
 **Measured, and recorded** (milestones 5 and 6): each card's roofline
 ceilings, counter rows on `sm_86` (none on `gfx1200`, final since #140), and
@@ -461,8 +472,10 @@ Two consequences, both real costs:
   `sm_86` at L 13 and 16, and is faster on near-T on `gfx1200` at L 16
   (`jengine/nine-batches-suffice` in `data/literature/jengine/claims.json`,
   UNVERIFIABLE against their A100). So the measured subgrid runs to 12.
-- **The default is one batch.** `Spec.n_batches` defaults to 1, and the
-  measured recommendation below does not change that.
+- **The default is one batch, by decision (#167).** `Spec.n_batches`
+  defaults to 1, and the measured recommendation below is the reason it
+  stays there rather than a policy waiting to be applied ("The batch count
+  it ships", under "What the generator ships, and why").
 
 ### Measured: a recommended batch count per `(L, arch)`
 
@@ -575,15 +588,20 @@ What it says:
   over 12 by 4.28 ms against 0.74 ms.
 - **Outside the subgrid** (`L ∉ {7, 10, 13, 16}`) nothing is timed, so there is
   no recommendation there.
-- **Literal kernels only.** The table reads the `levers = ()` rows. The one
-  measured lever, `recycle` (#55), changes nothing it could rank: nvcc 13.0
-  and hipcc / ROCm 7.2.4 emit identical machine code for both arms at every
-  subgrid cell, and the A/B reads `sm_86` 20/20 neutral and `gfx1200` 16/20
-  neutral (4 read as slower on that identical code, the protocol's noise
-  floor). It stays opt-in.
+- **Literal kernels only.** The table reads the `levers = ()` rows, which
+  are the kernels the generator ships (#166). `recycle` (#55) changes
+  nothing it could rank: nvcc 13.0 and hipcc / ROCm 7.2.4 emit identical
+  machine code for both arms at every subgrid cell, and the A/B reads
+  `sm_86` 20/20 neutral and `gfx1200` 16/20 neutral (4 read as slower on
+  that identical code, the protocol's noise floor). It stays opt-in. The
+  plan levers `no-sieve` (#162) and `tuned` (#163) were timed against their
+  same-session literal controls and are not read here either; neither
+  moved the default ("What the generator ships, and why (#166)" above).
 
-**This does not change `Spec`'s default.** `n_batches` defaults to 1 and stays
-there (`test/test_batchreport.py` holds it). Choosing a count per class at
+**This does not change `Spec`'s default, by decision.** `n_batches` defaults
+to 1 and stays there (`test/test_batchreport.py` holds it, and its
+`about` field gives these rows as the grounds; "The batch count it ships"
+above has the override recipe). Choosing a count per class at
 generation time is **dispatch**. Since #145 it is `src/felizjueves/dispatch.py`:
 this table's rule (best median, ties to fewer batches), recomputed from the
 `Measured` rows per `(arch, class, input)`, with 1 for any class that has no
@@ -1098,6 +1116,46 @@ row moves. The refusal is the last record in `limits.json`.
 `test/test_shipped_plan.py` recomputes that record from the stores and
 asserts that the shipped path's text is the literal rows' text and not the
 tuned rows'.
+
+**The batch count it ships.** `KERNEL_GEN_CMD` writes the single-batch
+`[p|q]` ladder plus the pair ladder (`test_emit_cli.py::test_the_default_writes_both_ladders_and_nothing_else`;
+single-batch by construction, since `generate()` calls `build_pq_kernel` per
+`L`). One batch is a decision, not an omission. Its grounds are measured
+("Measured: a recommended batch count per `(L, arch)`" below): wide-T picks 1
+everywhere, near-T splits from L = 13, and the two cards disagree at L = 16.
+`dispatch` resolves per `(arch, input)`, so following it would make the
+shipped unit **set** depend on the arch and the input, which it does not.
+The rows stay evidence, and dispatch reads them for a launch plan
+(`batch_recommendation.json`'s `about` says the same, written from
+`batchreport.ABOUT`). To emit another count, use the class selector:
+`python -m felizjueves.emit --class LA LB LC LD --n-batches 1 3 6` (or
+`--shell-ls l...`). The legal counts are 1 or a positive multiple of 3
+(`spec.is_batch_count`, `batching.partition`), and a pair target (`DQ`,
+`JAB`) is always 1. A `(class, n_batches)` cell the plan refuses is an error
+(exit 2) unless `--admitted-only` is given, in which case it is reported and
+skipped. The sharp edge: `--n-batches` is **rejected** on the default ladder
+path, with exit 2 (*"--n-batches / --admitted-only need --class or
+--shell-ls"*).
+
+**What this repo can score of Alg. 3, the sieve.** One claim is asserted:
+`jengine/rule-4-needs-the-sieve`, that the sieve recovers the common parents
+MILD cannot. Two stay `unverifiable`, at their final status.
+`jengine/sieve-underspecified`: the three choices Alg. 3 leaves open are
+named and pinned (#160: the seed order is `hermite_targets` order, the
+re-expansion direction is the smallest `r_d'`, and the deletion sweep
+reaches the child's other old parent). Its "~2%" is a range over the paper's
+own seed orders, which the paper does not state, so no space here can score
+it (#174). `jengine/sieve-non-monotone-in-spills`: the non-monotonicity
+reproduces on both cards, and the published pattern fails on both (#164).
+Neither can be promoted, because a test that failed on our rows would not
+make the paper's claim false. On the boards, Tables 1–2's
+`exact_given_inputs` stay refused on `literal`, because the seed order is
+not recovered (#108). `searched` passes `at_or_under` on all three tables,
+and that pass is a choice the board makes, not a recovered input.
+
+**What still differs from `jgen`**: one item, Table 4, declined. The plan
+that ships is a decision on measured grounds, not a gap ("Parity with the
+predecessor: one difference, and one decision" below).
 
 ## Validation targets
 
@@ -1649,29 +1707,41 @@ the paper's A100) and carries this result. `limits.json` has the per-cell
 verdicts and names the two unresolved cells as below what this box can
 resolve. `test_measured.py` recomputes every verdict from the rows.
 
-### Parity with the predecessor, stated with both qualifications
+### Parity with the predecessor: one difference, and one decision
 
 The predecessor's `jgen` reconstructs the same paper (`[JEngine]`) for the
-energy-order `J`. With this milestone the repo has **parity on `jgen`'s
-energy-order `J` surface except the tuned-plan wire, with Table 4
-declined**. It goes beyond that surface in several ways: two vendors from one
-source, the kernel as checked IR with an interpreter, the claims registry and
-its coverage reading, gated measurement provenance, and an outside witness
-(libcint). It differs from `jgen` in exactly two places:
+energy-order `J`. Against it, this repo has **parity on `jgen`'s
+energy-order `J` surface, with one difference: Table 4, declined**. It goes
+beyond that surface in several ways: two vendors from one source, the kernel
+as checked IR with an interpreter, the claims registry and its coverage
+reading, gated measurement provenance, and an outside witness (libcint).
 
-1. **Table 4 is declined, by decision**
-   (`data/literature/jengine/README.md`). `jgen` scores a static
-   register-pressure proxy against Table 4's 40 cells. This repo uses a
-   different instrument on purpose: `lower.KernelCost`, plus real ptxas /
-   hipcc rows from two cards and `kernelrank`'s ranking against them.
-2. **The tuned plan does not reach the emitter here, and in `jgen` it does.**
-   `jgen` emits from its searched sieve order by default. Here
-   `pipeline.plan(spec)` takes only a `Spec`, the pipeline never passes
-   `sieve.sieve(dag, *, seed_order=None)` an order, and `plan/search.py` is
-   imported by `plan/__main__.py` alone. So every shipped kernel comes from
-   the **literal** plan. Closing that wire would change every kernel's text,
-   and with it the `source_sha256` of all 122 `kernels.json` rows. That is a
-   milestone-sized decision and not this one's.
+**The one difference: Table 4 is declined, by decision**
+(`data/literature/jengine/README.md`). `jgen` scores a static
+register-pressure proxy against Table 4's 40 cells. This repo uses a
+different instrument on purpose: `lower.KernelCost`, plus real ptxas / hipcc
+rows from two cards and `kernelrank`'s ranking against them. So "this repo
+replicates `jgen`" is not true while Table 4 is declined.
+
+**The one decision: which plan ships** (#166, resolving milestone 6's
+qualification, #148). Until milestone 8 the searched plan did not reach the
+emitter here, and in `jgen` it does; that was a second difference. It now
+reaches it: #161's opt-in `tuned` lever (`pipeline.tuned_plan`) builds every
+`[p|q]` kernel from the searched board's recorded cut and per-batch seed
+orders (#172), and #163 measured it on both cards against its same-session
+literal control (32 rows). The generator still ships the **literal** plan,
+because the rule declared before those rows refuses the tuned default:
+`tuned_may_become_the_default` is False, the search NOT SHOWN on both cards
+("What the generator ships, and why (#166)" above). So "this repo is behind
+`jgen`" is not true either: the wire is here and was measured, and literal
+was chosen on that evidence. Nor does the choice say anything about `jgen`'s:
+its searched order is its own, on its kernels and cards, and the two searches
+are not the same search.
+
+**Not a parity item: the batch count.** `jgen.tuning.tuned_plan(L,
+n_batches=1, ...)` takes the count from its caller, as this repo's generator
+does, and `dispatch.py`'s docstring says NOT PARITY. The shipped single batch
+is this repo's own decision ("The batch count it ships", above).
 
 This repo computes no gradients or Hessians, so none of this is parity with
 anything that has them.

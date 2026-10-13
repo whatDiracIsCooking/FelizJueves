@@ -8,7 +8,8 @@ Three things are held here, all fast-tier (no compiler, no card):
   verbatim -- so the store, the data file and the doc cannot drift apart.
 - WALL-CLOCK ONLY. Moving a row's spills or registers moves nothing; moving
   its median does. The import side is test/test_layering.py's.
-- NOT A POLICY. `Spec.n_batches` still defaults to 1.
+- NOT A POLICY. `Spec.n_batches` still defaults to 1, and since #167 the
+  data file's `about` says that 1 is shipped by decision, on these rows.
 
 The pinned verdict (`PINNED`) is the result on the tracked rows, so a
 re-timing that moves a recommendation is seen as a diff here.
@@ -196,3 +197,28 @@ def test_spec_n_batches_still_defaults_to_one() -> None:
     assert Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.J).n_batches == 1
     assert pq_spec(16).n_batches == 1
     assert "does not change" in DOC["header"]["not_policy"]
+
+
+def test_one_batch_is_a_decision_and_its_grounds_are_the_rows() -> None:
+    """#167: the shipped `n_batches = 1` is stated as a choice, and each of
+    the grounds `ABOUT` names is read off the data file here rather than
+    believed: wide-T picks 1 everywhere, near-T first splits at L = 13 on
+    some card, and the cards disagree at L = 16 -- so following the rows
+    would make the shipped unit set depend on the arch and the input."""
+    about = " ".join(DOC["about"].split())
+    assert about == " ".join(batchreport.ABOUT.split())
+    assert "ships n_batches = 1 by decision (#167)" in about
+    assert "NOT a policy" not in about and "future dispatch" not in about
+    for phrase in ("wide-T picks 1 everywhere", "near-T splits from L = 13",
+                   "the two cards disagree at L = 16", "per (arch, input)"):
+        assert phrase in about, phrase
+    cells = DOC["cells"]
+    assert {c["wide"]["n_batches"] for c in cells} == {1}
+    split_at = min(c["L"] for c in cells if c["near"]["n_batches"] != 1)
+    # gfx1200's L = 10 near-T pick of 3 is unresolved against 1 (within its
+    # spread), so the first RESOLVED split is the one ABOUT quotes
+    resolved_split = min(c["L"] for c in cells
+                         if c["near"]["n_batches"] != 1 and c["near"]["resolved"])
+    assert split_at == 10 and resolved_split == 13
+    near16 = {c["arch"]: c["near"]["n_batches"] for c in cells if c["L"] == 16}
+    assert len(set(near16.values())) == 2

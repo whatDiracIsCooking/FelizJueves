@@ -58,6 +58,12 @@ model in this repo can score against it. This project's own kernels, compilers
 and cards (sm_86, gfx1200) are a different experiment, and their numbers must
 never be compared against Table 4's or read as reproducing it.
 
+This is also the one item on which the repo differs from its predecessor
+`jgen`, which scores a register-pressure proxy against Table 4
+(`docs/implementation/j_engine.md`, "Parity with the predecessor"). Which
+plan ships is not a second difference: it was decided on measured grounds
+(#166).
+
 If Table 4 is ever wanted, for example to show that spills fall as the batch
 count rises, record it as a `StructuralLimit` in `limits.json`, with the
 observation conditions as its mechanism. Do not add it as a scored table.
