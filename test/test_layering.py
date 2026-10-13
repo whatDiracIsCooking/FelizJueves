@@ -441,14 +441,18 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "plan.dag": ("plan.batching", "plan.mild", "plan.targets", "spec"),
     "plan.mild": ("plan.batching", "plan.targets"),
     "plan.optimum": ("plan.cost", "plan.targets"),
-    "plan.order_search": ("plan.cost",),  # #170: no module imports it yet
+    "plan.order_search": ("plan.cost",),
     "plan.pipeline": ("plan.cost", "plan.dag", "plan.sieve", "spec"),
     "plan.recovery": ("literature.rules", "literature.tables", "plan.batching",
                       "plan.cost", "plan.dag", "plan.sieve", "plan.targets",
                       "spec"),
     "plan.schedule": ("plan.dag",),
-    "plan.search": ("plan.batching", "plan.cost", "plan.dag", "plan.recovery",
-                    "plan.sieve"),
+    # #172: plan.order_search is the climb and the frontier the searched
+    # board's build step runs; plan.search is its one importer (pinned in
+    # test_plan_order_search.py), and plan.targets names the orders' type.
+    "plan.search": ("plan.batching", "plan.cost", "plan.dag",
+                    "plan.order_search", "plan.recovery", "plan.sieve",
+                    "plan.targets"),
     "plan.sieve": ("plan.batching", "plan.dag", "plan.targets", "spec"),
     "plan.targets": (),
     "reference": (),

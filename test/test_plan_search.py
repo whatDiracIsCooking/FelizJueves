@@ -1,18 +1,18 @@
 """plan/search.py: the cut and seed-order search behind the `searched` board.
 
 Fast tests replay the recorded choices (data/scoreboards/jengine/
-searched_cuts.json) and check what the record must satisfy; the `slow`
-tests range over the whole 58-order space (#168): one re-runs the search and
-asserts it reproduces the record byte for byte, and two check limits.json's
-split of the residual into cells unreachable in that space and cells where
-#171's selection rule passes over a frontier point at or under all three
-tables. How the replayed plans score on the searched board is pinned in
-test_scoreboards.py.
+searched_cuts.json, schema 3 since #172: one explicit seed order per batch)
+and check what the record must satisfy, and that a doctored record is
+refused. The `slow` test re-runs the build step and asserts it reproduces
+the record byte for byte. How the replayed plans score on the searched
+board is pinned in test_scoreboards.py.
 """
 
 from __future__ import annotations
 
+import copy
 import json
+import os
 from fractions import Fraction
 from functools import cache
 from math import comb
@@ -22,6 +22,7 @@ import pytest
 
 from felizjueves.literature.limits import load_limits
 from felizjueves.literature.tables import load_table
+from felizjueves.plan import order_search
 from felizjueves.plan.batching import (
     MINIMAX_TARGETS,
     largest_batch,
@@ -29,28 +30,37 @@ from felizjueves.plan.batching import (
     target_counts,
 )
 from felizjueves.plan.cost import PlanCost, cost
-from felizjueves.plan.order_search import frontier as order_search_frontier
 from felizjueves.plan.recovery import seed_orders
 from felizjueves.plan.search import (
+    CLIMB_BUDGET,
+    CLIMB_SEED,
+    CLIMB_SWEEP,
+    CUTS_SCHEMA,
     LITERAL_SEED,
     MINIMAX_TOLERANCE,
     SEED_ORDERS,
     SELECTION_RULE,
     FrontierPoint,
-    all_plans,
+    batch_starts,
+    build,
     candidate_cuts,
+    check_orders,
+    climb_starts,
     dump_cuts,
     feasible,
+    feasible_cuts,
     fixed_cut,
     load_cuts,
     load_frontiers,
-    pareto,
     point,
     reference,
+    rule_order,
     score,
     search,
     searched_plan,
     select,
+    space_record,
+    units,
 )
 from felizjueves.plan.sieve import plan
 from felizjueves.spec import Operator, Spec, Target
@@ -63,13 +73,18 @@ GRID = [(L, nb) for L in range(7, 17) for nb in (1, 3, 6, 9)]
 
 
 @cache
-def _recorded() -> dict[tuple[int, int], tuple[tuple[int, ...], str]]:
+def _recorded():
     return load_cuts(CUTS)
 
 
 @cache
 def _frontiers() -> dict[tuple[int, int], tuple[tuple[FrontierPoint, ...], int]]:
     return load_frontiers(CUTS)
+
+
+@cache
+def _doc() -> dict:
+    return json.loads(CUTS.read_text())
 
 
 @cache
@@ -89,6 +104,16 @@ def _minimax(L: int, nb: int) -> int:
     return _literal(L, nb).max_targets
 
 
+def _counts(c) -> tuple[int, int, int]:
+    """(flops, max_intermediates, max_targets): Tables 1, 2, 3's order."""
+    return (c.flops, c.max_intermediates, c.max_targets)
+
+
+def _at_or_under_all_three(L: int, nb: int, c) -> bool:
+    return all(g <= t.cells[L, nb]
+               for g, t in zip(_counts(c), TABLES, strict=True))
+
+
 def test_the_record_covers_exactly_the_table_grid() -> None:
     assert set(_recorded()) == set(GRID)
     for t in TABLES:
@@ -97,7 +122,7 @@ def test_the_record_covers_exactly_the_table_grid() -> None:
 
 # #171's rule, as the issue body states it (line breaks aside). It was
 # declared before the board was re-read; this pins that the code quotes it
-# unchanged, so a change to the rule is a diff here.
+# unchanged, so a change to the rule is a diff here. #172 does not touch it.
 ISSUE_171_RULE = (
     "Among feasible plans (max targets within `MINIMAX_TOLERANCE` of the "
     "cell's minimax), take the Pareto frontier over (max_intermediates, "
@@ -111,7 +136,7 @@ ISSUE_171_RULE = (
 
 
 def test_the_record_states_the_selection_rule_the_code_runs() -> None:
-    objective_ = json.loads(CUTS.read_text())["objective"]
+    objective_ = _doc()["objective"]
     assert objective_["minimax_tolerance"] == MINIMAX_TOLERANCE == 1
     assert objective_["rule"] == SELECTION_RULE == ISSUE_171_RULE
     assert "then" not in objective_  # the lexicographic objective is gone
@@ -128,33 +153,53 @@ def test_the_record_states_the_selection_rule_the_code_runs() -> None:
     assert select(((90, 1011), (100, 1000))) == 0
 
 
+def test_the_record_states_the_space_the_code_searches() -> None:
+    # #172's acceptance: the space actually searched is named in the record
+    # -- starts, neighbourhood, sweep, climb budget and seed.
+    doc = _doc()
+    assert doc["schema"] == CUTS_SCHEMA == 3
+    assert doc["space"] == space_record()
+    space = doc["space"]
+    assert space["neighbourhood"] == ["transposition", "move"]
+    assert space["sweep"] == ["1", "3/4", "1/2", "1/4", "0"]
+    assert [Fraction(w) for w in space["sweep"]] == list(CLIMB_SWEEP)
+    assert space["budget"] == CLIMB_BUDGET
+    assert space["seed"] == CLIMB_SEED == 172
+    assert "58" in space["starts"] and len(SEED_ORDERS) == 58
+
+
 @pytest.mark.parametrize(("L", "nb"), GRID)
 def test_each_recorded_frontier_replays_and_selects_the_recorded_plan(
     L: int, nb: int
 ) -> None:
-    # The replay reproduces every recorded count exactly; the points form a
-    # Pareto set (ascending intermediates, strictly descending FLOPs), every
-    # one feasible; and #171's rule, run on the recorded points, selects
-    # the recorded plan.
+    # The replay reproduces every recorded count exactly, from the recorded
+    # permutations; the points form a Pareto set (ascending intermediates,
+    # strictly descending FLOPs), every one feasible; and #171's rule, run
+    # on the recorded points, selects the recorded plan.
     front, k = _frontiers()[L, nb]
     for fp in front:
-        c = cost(searched_plan(L, nb, fp.cuts, fp.seed))
+        c = cost(searched_plan(L, nb, fp.cuts, fp.orders))
         assert (c.max_intermediates, c.flops, c.max_targets) == (
             fp.max_intermediates, fp.flops, fp.max_targets)
         assert feasible(c, _minimax(L, nb))
+        assert fp.cuts in feasible_cuts(L, nb)
+        assert all(s in SEED_ORDERS for s in fp.starts)
     pts = [fp.point for fp in front]
     assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(pts, pts[1:], strict=False))
     assert select(pts) == k
-    assert (front[k].cuts, front[k].seed) == _recorded()[L, nb]
+    assert front[k].choice == _recorded()[L, nb]
     assert front[k].point == point(_replayed(L, nb))
+    cell = _doc()["cuts"][f"{L}/{nb}"]
+    assert (tuple(cell["cut"]), tuple(cell["start"])) == (
+        front[k].cuts, front[k].starts)
 
 
 @pytest.mark.parametrize(("L", "nb"), GRID)
 def test_each_recorded_cut_is_within_the_minimax_tolerance(L: int, nb: int) -> None:
-    cuts, seed = _recorded()[L, nb]
+    cuts, orders = _recorded()[L, nb]
     assert cuts in set(candidate_cuts(L, nb))
-    assert seed in SEED_ORDERS
     partition(L, nb, cut=fixed_cut(cuts))  # raises on a malformed cut
+    assert len(orders) == nb
     if nb > 3:
         counts = target_counts(L)
         minimax = largest_batch(counts, MINIMAX_TARGETS(counts, nb // 3))
@@ -166,33 +211,33 @@ def test_each_recorded_cut_is_within_the_minimax_tolerance(L: int, nb: int) -> N
 
 
 @pytest.mark.parametrize(("L", "nb"), GRID)
-def test_the_searched_plan_is_never_worse_than_the_literal_one(L, nb) -> None:
-    # The literal plan (lowest minimax cut, hermite order) is one of the
-    # feasible candidates, so some frontier point weakly dominates it, and
-    # the selected point scores no worse than that one under the cell's own
-    # normalisers.
-    searched, literal = _replayed(L, nb), _literal(L, nb)
-    assert feasible(literal, _minimax(L, nb))
+def test_the_climbed_frontier_dominates_every_rule_plan(L: int, nb: int) -> None:
+    # Every start is evaluated, so every plan of the 58-rule space (#168) on
+    # a feasible cut is weakly dominated by a recorded frontier point: the
+    # climb only adds to the space #171 selected from. The literal plan
+    # (lowest minimax cut, hermite order) is one of them, and the selected
+    # point scores no worse than it under the cell's own normalisers.
     front, _ = _frontiers()[L, nb]
-    ref = reference([fp.point for fp in front])
-    assert any(fp.point[0] <= literal.max_intermediates
-               and fp.point[1] <= literal.flops for fp in front)
-    assert score(point(searched), ref) <= score(point(literal), ref)
+    pts = [fp.point for fp in front]
+    for cuts in feasible_cuts(L, nb):
+        for name in SEED_ORDERS:
+            p = point(cost(searched_plan(L, nb, cuts, name)))
+            assert any(order_search.dominates(q, p) for q in pts), (cuts, name)
+    literal = _literal(L, nb)
+    assert feasible(literal, _minimax(L, nb))
+    assert score(point(_replayed(L, nb)), reference(pts)) <= score(
+        point(literal), reference(pts))
 
 
 def test_the_frontier_is_order_searchs_frontier() -> None:
-    # #170's `frontier` is the reference implementation of the Pareto set;
-    # search.py keeps its own (#172 wires the order search into the
-    # package), and this pins that the two agree, point and tie-break, on a
-    # whole cell's space: (13, 3), 58 plans, a 5-point frontier.
-    plans = list(all_plans(13, 3))
-    minimax = min(c.max_targets for _, _, c in plans)
-    ok = [p for p in plans if feasible(p[2], minimax)]
-    ours = pareto(ok)
-    assert ours == order_search_frontier(ok, key=lambda p: point(p[2]))
-    assert len(ours) == 5
-    assert [(fp.cuts, fp.seed) for fp in _frontiers()[13, 3][0]] == [
-        (cuts, seed) for cuts, seed, _ in ours]
+    # #171 kept a private Pareto set while order_search was imported by
+    # nothing; #172 wires the module in and the duplicate is gone.
+    import felizjueves.plan.search as search_module
+
+    assert not hasattr(search_module, "pareto")
+    assert search_module.frontier is order_search.frontier
+    assert search_module.product is order_search.product
+    assert search_module.point is order_search.point
 
 
 def test_the_literal_plan_is_the_hermite_seed_of_the_literal_cut() -> None:
@@ -200,6 +245,12 @@ def test_the_literal_plan_is_the_hermite_seed_of_the_literal_cut() -> None:
     for L, nb in ((9, 1), (12, 6)):
         cut = MINIMAX_TARGETS(target_counts(L), max(1, nb // 3))
         assert cost(searched_plan(L, nb, cut)) == _literal(L, nb)
+        # a rule name and its explicit permutations are one plan
+        dags = searched_plan(L, nb, cut)
+        orders = [rule_order(L, d, LITERAL_SEED) for d in dags]
+        again = searched_plan(L, nb, cut, orders)
+        assert [(d.batch, d.targets, dict(d.parents)) for d in again] == [
+            (d.batch, d.targets, dict(d.parents)) for d in dags]
 
 
 def test_the_search_space_is_bounded_and_counted() -> None:
@@ -215,8 +266,39 @@ def test_the_search_space_is_bounded_and_counted() -> None:
     assert len(SEED_ORDERS) == 58
     assert list(SEED_ORDERS)[:26] == [name for name, _ in seed_orders()]
     assert list(SEED_ORDERS) == [name for name, _ in seed_orders(widened=True)]
-    biggest = max(comb(L, 2) - comb(L - 1, 1) for L in range(7, 17))
-    assert biggest * len(SEED_ORDERS) == 105 * 58 == 6090
+    # #172: the climbs. One per feasible cut, batch and DISTINCT rule order,
+    # each under every weight of the sweep, each at most CLIMB_BUDGET
+    # neighbours.
+    assert CLIMB_SWEEP == order_search.SWEEP and len(CLIMB_SWEEP) == 5
+    us = units(7, 3, budget=0)
+    assert len(us) == sum(len(climb_starts(7, d)[0])
+                          for d in searched_plan(7, 3, ()))
+    assert all(u.budget == 0 and u.seed == CLIMB_SEED for u in us)
+    # Only the feasible cuts are climbed: one per cell but three.
+    assert {(L, nb) for L, nb in GRID if len(feasible_cuts(L, nb)) > 1} == {
+        (7, 9), (8, 9), (15, 9)}
+
+
+def test_starts_are_the_distinct_rule_orders_of_a_batch() -> None:
+    dag = searched_plan(8, 3, ())[1]
+    starts = batch_starts(8, dag)
+    assert list(starts)[0] == LITERAL_SEED
+    assert len(set(starts.values())) == len(starts) <= 58
+    mine = {r for r, _ in dag.targets}
+    for name, o in starts.items():
+        assert set(o) == mine and len(o) == len(mine)
+        assert o == rule_order(8, dag, name)
+    # every rule's order is one of the starts, under its first namer
+    assert {rule_order(8, dag, n) for n in SEED_ORDERS} == set(starts.values())
+
+
+def test_a_search_does_not_depend_on_the_worker_count() -> None:
+    # The build step spreads climbs over processes; each is a pure function
+    # of its unit, so the record is the same serially and pooled.
+    serial = search(7, 3, budget=3)
+    assert build([(7, 3)], workers=2, budget=3)[7, 3] == serial
+    assert dump_cuts({(7, 3): serial}, budget=3) == dump_cuts(
+        build([(7, 3)], workers=1, budget=3), budget=3)
 
 
 def test_a_cut_that_empties_a_batch_is_refused() -> None:
@@ -231,136 +313,79 @@ def test_a_cut_that_empties_a_batch_is_refused() -> None:
 def test_an_unknown_seed_order_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="seed order 'nope'"):
         searched_plan(7, 1, (), "nope")
+    doc = copy.deepcopy(_doc())
+    doc["cuts"]["7/1"]["frontier"][0]["start"] = ["nope"]
     bad = tmp_path / "cuts.json"
-    bad.write_text('{"schema": 2, "cuts": {"7/1": {"cut": [], '
-                   '"seed_order": "nope"}}}')
+    bad.write_text(json.dumps(doc))
     with pytest.raises(ValueError, match="seed order 'nope'"):
         load_cuts(bad)
+
+
+# -- a doctored record is refused (#172; #173 pins more) -----------------------
+
+
+def _doctor(tmp_path: Path, key: str, edit) -> Path:
+    doc = copy.deepcopy(_doc())
+    cell = doc["cuts"][key]
+    edit(cell["frontier"][cell["selected"]]["orders"])
+    bad = tmp_path / "cuts.json"
+    bad.write_text(json.dumps(doc))
+    return bad
+
+
+@pytest.mark.parametrize(("edit", "message"), [
+    (lambda o: o[0].pop(), r"cell 9/3, batch 0 \(x0\.\.9\): the seed order "
+     r"is not a permutation"),
+    (lambda o: o[1].__setitem__(0, o[1][1]), r"cell 9/3, batch 1 \(y0\.\.9\): "
+     r"the seed order repeats a target"),
+    (lambda o: o.__setitem__(slice(0, 2), [o[1], o[0]]),
+     r"cell 9/3, batch 0 \(x0\.\.9\): the seed order is not a permutation"),
+    (lambda o: o[2].__setitem__(0, [9, 9, 9]), r"cell 9/3, batch 2 \(z0\.\.9\)"),
+    (lambda o: o.pop(), r"cell 9/3: 2 seed orders for 3 batches"),
+])
+def test_a_doctored_permutation_is_refused(tmp_path: Path, edit, message) -> None:
+    # A short permutation, a duplicated target, a permutation of the WRONG
+    # batch (x's and y's swapped), a target from outside the class, a
+    # missing batch: each refused on load, naming the cell and the batch.
+    bad = _doctor(tmp_path, "9/3", edit)
+    with pytest.raises(ValueError, match=message):
+        load_cuts(bad)
+    with pytest.raises(ValueError, match=message):
+        load_frontiers(bad)
+
+
+def test_searched_plan_refuses_what_is_not_a_permutation() -> None:
+    cut, orders = _recorded()[9, 3]
+    with pytest.raises(ValueError, match="batch 1"):
+        searched_plan(9, 3, cut, (orders[0], orders[0], orders[2]))
+    with pytest.raises(ValueError, match="1 seed orders for 3 batches"):
+        check_orders(9, 3, cut, orders[:1])
+    assert check_orders(9, 3, cut, [[list(r) for r in o] for o in orders]) == orders
 
 
 def test_a_selected_index_that_is_not_the_recorded_plan_is_refused(
     tmp_path: Path,
 ) -> None:
-    doc = json.loads(CUTS.read_text())
-    doc["cuts"]["13/1"]["selected"] = 0  # the lexicographic point, not ours
+    doc = copy.deepcopy(_doc())
+    key = next(k for k, c in doc["cuts"].items() if len(c["frontier"]) > 1)
+    cell = doc["cuts"][key]
+    cell["selected"] = 1 - min(cell["selected"], 1)
+    if cell["frontier"][cell["selected"]]["start"] == cell["start"]:
+        cell["start"] = ["hermite-reversed"] * len(cell["start"])
     bad = tmp_path / "cuts.json"
     bad.write_text(json.dumps(doc))
-    with pytest.raises(ValueError, match="cell 13/1: 'selected' 0"):
+    with pytest.raises(ValueError, match=f"cell {key}: 'selected'"):
         load_cuts(bad)
-    doc["cuts"]["13/1"]["selected"] = 9
+    cell["selected"] = 99
     bad.write_text(json.dumps(doc))
-    with pytest.raises(ValueError, match="'selected' 9"):
+    with pytest.raises(ValueError, match="'selected' 99"):
         load_frontiers(bad)
-
-
-def test_the_tolerance_takes_the_one_target_off_cut_at_15_9() -> None:
-    # The cell that motivated MINIMAX_TOLERANCE: (6, 9) at L = 15 holds 116
-    # targets in its largest batch, the paper's printed value, where minimax
-    # holds 115. With the tolerance the search takes it, and it is at or
-    # under in all three tables; at tolerance 0, Table 2 was +7.50% here.
-    # (#168's 58 orders keep the cut and move the seed order: (5636, 272)
-    # under the 26, (5633, 271) now.)
-    printed = tuple(t.cells[15, 9] for t in TABLES)
-    assert printed == (5786, 280, 116)
-    assert _minimax(15, 9) == 115
-    assert _recorded()[15, 9][0] == (6, 9)
-    chosen = _replayed(15, 9)
-    assert (chosen.flops, chosen.max_intermediates, chosen.max_targets) == (
-        5633, 271, 116
-    )
-
-
-def test_what_the_selection_rule_costs_at_16_1() -> None:
-    # The rule where it does not help, at (16, 1): the frontier has five
-    # points, and the rule takes the fewest-intermediates one (5653 FLOPs,
-    # 1633 intermediates), +0.36% over the printed 5633 on Table 1. The
-    # fewest FLOPs on the frontier, 5639, comes with 1651 intermediates,
-    # over Table 2's 1647, and every point is over Table 1: no selection
-    # rule passes this cell, so the rule moves its margin, not its FAIL. The
-    # literal hermite order (5644, 1639) is the frontier's fourth point.
-    # (Under the 26 orders, before #168, the chosen order was +2.04% here.)
-    front, k = _frontiers()[16, 1]
-    assert [(fp.flops, fp.max_intermediates) for fp in front] == [
-        (5653, 1633), (5647, 1635), (5645, 1638), (5644, 1639), (5639, 1651)]
-    assert k == 0 and _recorded()[16, 1] == ((), "prunable asc, ties hermite")
-    assert front[3].seed == LITERAL_SEED
-    ref = reference([fp.point for fp in front])
-    scores = [score(fp.point, ref) for fp in front]
-    assert scores == sorted(scores)  # here the score rises along the frontier
-    assert TABLES[0].cells[16, 1] == 5633 and TABLES[1].cells[16, 1] == 1647
-    assert all(fp.flops > 5633 for fp in front)
-
-
-# The selection rule's price, cell by cell, read off the recorded frontiers
-# (whose counts the replay test above reproduces): in each residual cell of
-# Table 1, the frontier points that are at or under all three tables. Where
-# that list is non-empty, another point would have passed and the selected
-# one does not -- the price #171 asked to be named. (14, 1) and (14, 3) are
-# those cells; the other six are unreachable in the space whatever is
-# selected (limits.json, and the slow test below).
-PRICE = {
-    (13, 3): [], (15, 1): [], (15, 3): [], (16, 1): [], (16, 3): [],
-    (16, 6): [],
-    (14, 1): [(3634, 1071, 680)],
-    (14, 3): [(3719, 388, 230)],
-}
-
-
-def test_what_the_selection_rule_costs_cell_by_cell() -> None:
-    residual = {(L, nb) for (L, nb) in GRID
-                if not _at_or_under_all_three(L, nb, _replayed(L, nb))}
-    assert residual == set(PRICE)
-    for (L, nb), passing in PRICE.items():
-        front, k = _frontiers()[L, nb]
-        got = [(fp.flops, fp.max_intermediates, fp.max_targets) for fp in front
-               if all(g <= t.cells[L, nb] for g, t in zip(
-                   (fp.flops, fp.max_intermediates, fp.max_targets), TABLES,
-                   strict=True))]
-        assert got == passing, (L, nb)
-    # (14, 1): (3655, 1060) is selected, 2.0058 against 2.0104 for the
-    # printed (3634, 1071): 11 fewer intermediates outweigh 21 more FLOPs.
-    # (14, 3): (3720, 386) at 2.0003 against 2.0052 for (3719, 388).
-    for (L, nb), sel, other in (((14, 1), (1060, 3655), (1071, 3634)),
-                                ((14, 3), (386, 3720), (388, 3719))):
-        front, k = _frontiers()[L, nb]
-        ref = reference([fp.point for fp in front])
-        assert front[k].point == sel
-        assert score(sel, ref) < score(other, ref)
-
-
-def test_where_the_selection_rule_helps_13_1() -> None:
-    # The one cell the rule moves against #168's lexicographic objective
-    # (fewest intermediates, then FLOPs -- the frontier's first point): at
-    # (13, 1) it takes (2872, 843), the printed cell in all three tables,
-    # over (2882, 842), +0.35% on Table 1.
-    printed = tuple(t.cells[13, 1] for t in TABLES)
-    assert printed == (2872, 843, 560)
-    front, k = _frontiers()[13, 1]
-    assert [(fp.flops, fp.max_intermediates) for fp in front] == [
-        (2882, 842), (2872, 843)]
-    assert k == 1
-    assert _recorded()[13, 1] == ((), "+max/-mid, ties hermite")
-    chosen = _replayed(13, 1)
-    assert (chosen.flops, chosen.max_intermediates, chosen.max_targets) == printed
-    # Everywhere else the selected point is the frontier's first.
-    assert {c for c, (_, k) in _frontiers().items() if k != 0} == {(13, 1)}
-
-
-def test_the_widened_space_reaches_12_1_exactly() -> None:
-    # #168's evidence that the 26-order residual was a bound of the space,
-    # not of the problem: at (12, 1) a widened order is the printed cell in
-    # all three tables, and the search takes it.
-    printed = tuple(t.cells[12, 1] for t in TABLES)
-    assert printed == (2221, 645, 455)
-    assert _recorded()[12, 1] == ((), "+max/-mid, ties hermite")
-    chosen = _replayed(12, 1)
-    assert (chosen.flops, chosen.max_intermediates, chosen.max_targets) == printed
 
 
 def test_a_cut_file_with_the_wrong_schema_is_refused(tmp_path: Path) -> None:
     bad = tmp_path / "cuts.json"
-    bad.write_text('{"schema": 1, "cuts": {}}')
-    with pytest.raises(ValueError, match="schema"):
+    bad.write_text('{"schema": 2, "cuts": {}}')
+    with pytest.raises(ValueError, match="schema 2, not 3"):
         load_cuts(bad)
 
 
@@ -373,86 +398,103 @@ def _searched_limit_value() -> dict:
     return lim.asserted_value
 
 
-def _at_or_under_all_three(L: int, nb: int, c: PlanCost) -> bool:
-    got = (c.flops, c.max_intermediates, c.max_targets)
-    return all(g <= t.cells[L, nb] for g, t in zip(got, TABLES, strict=True))
+def test_the_searched_plans_are_at_or_under_all_three_everywhere() -> None:
+    # #172's outcome: no residual. 22 cells land on the printed triple
+    # exactly; the other 18 come in under it.
+    assert all(_at_or_under_all_three(L, nb, _replayed(L, nb)) for L, nb in GRID)
+    exact = {(L, nb) for L, nb in GRID
+             if _counts(_replayed(L, nb)) == tuple(t.cells[L, nb] for t in TABLES)}
+    assert len(exact) == 22
 
 
-def test_the_residual_is_split_into_unreachable_and_the_selection_price() -> None:
-    # limits.json names each residual cell once: unreachable in the 58-order
-    # space, or a cell where #171's rule passes over a frontier point at or
-    # under all three tables. The witness plans are recorded frontier points
-    # that replay to what the record says and are at or under all three;
-    # the selected point in those cells is not. The cell the rule moved,
-    # (13, 1), is in neither: it is at or under now.
+# #171's residual, cell by cell, and what the climb selects there now:
+# (flops, max_intermediates, max_targets), printed then chosen. Every one is
+# at or under all three tables; each is a pinned figure, so a re-selection
+# is a diff here.
+PREVIOUS_RESIDUAL = {
+    (13, 3): ((2922, 309, 190), (2920, 303, 190)),
+    (14, 1): ((3634, 1071, 680), (3631, 1049, 680)),
+    (14, 3): ((3719, 390, 230), (3716, 384, 230)),
+    (15, 1): ((4540, 1329, 816), (4539, 1303, 816)),
+    (15, 3): ((4613, 482, 276), (4607, 475, 276)),
+    (16, 1): ((5633, 1647, 969), (5601, 1601, 969)),
+    (16, 3): ((5712, 591, 327), (5676, 574, 327)),
+    (16, 6): ((6426, 405, 164), (6414, 402, 164)),
+}
+
+
+def test_the_previous_residual_cells_cell_by_cell() -> None:
+    value = _searched_limit_value()
+    prev = value["previous_residual"]
+    assert {(L, nb) for L, nb, _ in prev["jengine/table1"]} == set(PREVIOUS_RESIDUAL)
+    assert {tuple(c) for c in prev["unreachable_in_space"]} | {
+        tuple(c) for c in prev["selection_price"]} == set(PREVIOUS_RESIDUAL)
+    for (L, nb), (printed, chosen) in PREVIOUS_RESIDUAL.items():
+        assert tuple(t.cells[L, nb] for t in TABLES) == printed
+        assert _counts(_replayed(L, nb)) == chosen, (L, nb)
+        assert all(c <= p for c, p in zip(chosen, printed, strict=True))
+
+
+def test_the_limit_names_the_space_and_records_no_residual() -> None:
+    # The space actually searched is named in the record, and is the one
+    # searched_cuts.json states and the code runs.
     value = _searched_limit_value()
     assert value["seed_orders"] == len(SEED_ORDERS) == 58
-    residual = {(L, nb) for L, nb, _ in value["residual_percent_over"]
-                ["jengine/table1"]}
-    unreachable = {tuple(c) for c in value["unreachable_in_space"]}
-    price = {tuple(w["cell"]): w for w in value["selection_price"]}
-    assert "objective_price" not in value
-    assert set(price) == {(14, 1), (14, 3)}
-    assert unreachable == {(13, 3), (15, 1), (15, 3), (16, 1), (16, 3), (16, 6)}
-    assert unreachable | set(price) == residual == set(PRICE)
-    assert not unreachable & set(price)
-    for (L, nb), w in price.items():
-        c = cost(searched_plan(L, nb, tuple(w["cut"]), w["seed_order"]))
-        assert [c.flops, c.max_intermediates, c.max_targets] == w[
-            "flops_intermediates_targets"]
-        assert _at_or_under_all_three(L, nb, c)
-        assert feasible(c, _minimax(L, nb))
-        front, k = _frontiers()[L, nb]
-        assert (tuple(w["cut"]), w["seed_order"]) in [
-            (fp.cuts, fp.seed) for fp in front]
-        sel = _replayed(L, nb)
-        assert [sel.flops, sel.max_intermediates] == w[
-            "selected_flops_intermediates"]
-        assert not _at_or_under_all_three(L, nb, sel)
-    (moved,) = value["moved_by_the_selection_rule"]
-    assert tuple(moved["cell"]) == (13, 1) and (13, 1) not in residual
-    front, k = _frontiers()[13, 1]
-    assert [front[0].flops, front[0].max_intermediates] == moved[
-        "lexicographic_flops_intermediates"]
-    assert [front[k].flops, front[k].max_intermediates] == moved[
-        "selected_flops_intermediates"]
+    assert value["space"] == _doc()["space"] == space_record()
+    assert value["residual_percent_over"] == {}
+    assert value["unreachable_in_space"] == []
+    assert value["selection_price"] == []
+
+
+# The cells where the climbed selection is strictly better than #171's
+# selection from the 58 rules -- better on one axis and no worse on the
+# other -- with #171's (flops, max_intermediates) there. In the other 26
+# cells the climb selects the same point.
+STRICTLY_BETTER = {
+    (10, 1): (1252, 367), (12, 1): (2221, 645), (13, 1): (2872, 843),
+    (13, 3): (2948, 305), (14, 1): (3655, 1060), (14, 3): (3720, 386),
+    (14, 6): (4224, 269), (15, 1): (4566, 1320), (15, 3): (4624, 478),
+    (15, 6): (5231, 360), (16, 1): (5653, 1633), (16, 3): (5759, 583),
+    (16, 6): (6447, 402), (16, 9): (7104, 324),
+}
+
+
+def test_where_the_climb_beats_the_rule_selection() -> None:
+    value = _searched_limit_value()
+    assert {tuple(c) for c in value["strictly_dominates_58_rule_selection"]} == set(
+        STRICTLY_BETTER)
+    for (L, nb), (f, i) in STRICTLY_BETTER.items():
+        c = _replayed(L, nb)
+        assert c.flops <= f and c.max_intermediates <= i
+        assert (c.flops, c.max_intermediates) != (f, i)
+
+
+def test_the_tolerance_still_takes_the_one_target_off_cut_at_15_9() -> None:
+    # The cell that motivated MINIMAX_TOLERANCE: (6, 9) at L = 15 holds 116
+    # targets in its largest batch, the paper's printed value, where minimax
+    # holds 115. With the tolerance the search takes it, and it is at or
+    # under in all three tables; at tolerance 0, Table 2 was +7.50% here.
+    printed = tuple(t.cells[15, 9] for t in TABLES)
+    assert printed == (5786, 280, 116)
+    assert _minimax(15, 9) == 115
+    assert _recorded()[15, 9][0] == (6, 9)
+    assert _counts(_replayed(15, 9)) == (5633, 271, 116)
+
+
+def test_the_search_subcommand_refuses_bad_arguments(capsys) -> None:
+    from felizjueves.plan.__main__ import EXIT_COULD_NOT_RUN, main
+
+    assert main(["search", "--workers", "0"]) == EXIT_COULD_NOT_RUN
+    assert "could not run" in capsys.readouterr().err
 
 
 @pytest.mark.slow
-def test_the_search_reproduces_the_record() -> None:
-    # ~8 minutes serial: 40 cells x up to 105 cuts x 58 seed orders.
-    results = {(L, nb): search(L, nb) for L, nb in GRID}
+def test_the_build_step_reproduces_the_record() -> None:
+    # `python -m felizjueves.plan search`'s work, over FJ_SEARCH_WORKERS
+    # processes (default 6): see searched_cuts.json's space and the PR for
+    # its wall-clock.
+    workers = int(os.environ.get("FJ_SEARCH_WORKERS", "6"))
+    results = build(GRID, workers=workers)
     assert dump_cuts(results) == CUTS.read_text()
     for (L, nb), r in results.items():
         assert r.cost == _replayed(L, nb)
-        assert r.frontier[r.selected][2] == r.cost
-
-
-@pytest.mark.slow
-def test_no_plan_in_the_space_is_at_or_under_all_three_in_a_residual_cell() -> None:
-    # limits.json's "unreachable in the 58-order space": in each of these
-    # residual cells, no plan in the whole space -- any cut, any of the 58
-    # seed orders (#168), any target count -- is at or under all three
-    # tables at once. (test_scoreboards.py checks the cheap 1- and 3-batch
-    # cells on the fast tier.)
-    assert len(SEED_ORDERS) == 58
-    cells = {tuple(c) for c in _searched_limit_value()["unreachable_in_space"]}
-    assert len(cells) == 6
-    for L, nb in sorted(cells):
-        for cuts, seed, c in all_plans(L, nb):
-            assert not _at_or_under_all_three(L, nb, c), (L, nb, cuts, seed)
-
-
-@pytest.mark.slow
-def test_in_the_selection_price_cells_the_space_holds_a_plan_at_or_under() -> None:
-    # limits.json's "the selection rule's price": in (14, 1) and (14, 3) the
-    # 58-order space DOES hold a plan at or under all three tables, the
-    # recorded witness is the first one in the search's own order, it is a
-    # point of the cell's recorded frontier, and #171's rule selects another.
-    for w in _searched_limit_value()["selection_price"]:
-        L, nb = w["cell"]
-        hits = [(cuts, seed) for cuts, seed, c in all_plans(L, nb)
-                if _at_or_under_all_three(L, nb, c)]
-        assert hits and hits[0] == (tuple(w["cut"]), w["seed_order"]), (L, nb)
-        assert _recorded()[L, nb] not in hits
-        assert hits[0] in [(fp.cuts, fp.seed) for fp in _frontiers()[L, nb][0]]

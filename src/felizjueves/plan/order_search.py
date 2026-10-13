@@ -1,8 +1,9 @@
-"""A frontier and a neighbourhood search over orders, wired to nothing (#170).
+"""A frontier and a neighbourhood search over orders (#170).
 
 The machinery #171 and #172 consume, and nothing more: no board, no data
-file, no objective decision. Nothing in the package imports this module
-(test_layering.py pins its edges and its importers).
+file, no objective decision. Its one importer is plan/search.py (#172),
+which climbs each batch's seed order with it and takes the cell's frontier
+with `product` (test_layering.py pins its edges and its importers).
 
 THE POINT. A plan, a batch or an order is scored by the pair
 (max_intermediates, FLOPs) -- Tables 2 and 1 -- both minimised. `Point` is
@@ -53,7 +54,10 @@ own `random.Random`, seeded from the string "{seed}|{start name}|{w}", so a
 run does not depend on which runs came before it and two calls with the same
 arguments return the same result. `evaluate` must be a pure function of the
 order: its results are memoised for the call, across runs, and a memo hit
-counts against a run's budget exactly as a fresh evaluation does.
+counts against a run's budget exactly as a fresh evaluation does. Each pass
+over the neighbourhood is a fresh uniformly random order of it, drawn lazily
+(`_shuffled`, #172): a one-batch order at L = 16 has 1.4 million neighbours,
+and shuffling them all before every step cost more than the steps.
 """
 
 from __future__ import annotations
@@ -198,6 +202,45 @@ def moves(n: int) -> list[Move]:
     return out
 
 
+def n_moves(n: int) -> int:
+    """len(moves(n)), without building it."""
+    return n * (n - 1) // 2 + max(n - 1, 0) * max(n - 2, 0)
+
+
+def move_at(n: int, k: int) -> Move:
+    """moves(n)[k], by arithmetic: at n = 969 (L = 16, one batch) the list
+    is 1.4 million moves, and a climb needs only the few it examines."""
+    if not 0 <= k < n_moves(n):
+        raise IndexError(f"move {k} of {n_moves(n)}")
+    t = n * (n - 1) // 2
+    if k < t:  # transpositions: row i holds n - 1 - i of them
+        i = 0
+        while k >= n - 1 - i:
+            k -= n - 1 - i
+            i += 1
+        return ("transposition", i, i + 1 + k)
+    k -= t  # moves: row i holds n - 1 - (0 < i) - (i < n - 1) of them
+    i = 0
+    while k >= (row := n - 1 - (i > 0) - (i < n - 1)):
+        k -= row
+        i += 1
+    low = max(i - 1, 0)  # the j in 0..i-2
+    return ("move", i, k if k < low else i + 2 + (k - low))
+
+
+def _shuffled(rng: random.Random, n: int) -> Iterator[Move]:
+    """The moves of an order of n in a uniformly random order, drawn lazily:
+    a forward Fisher-Yates shuffle over the indices of `moves(n)`, holding
+    only the positions it has swapped."""
+    size = n_moves(n)
+    swapped: dict[int, int] = {}
+    for i in range(size):
+        j = i + rng.randrange(size - i)
+        here, there = swapped.get(i, i), swapped.get(j, j)
+        swapped[j] = here
+        yield move_at(n, there)
+
+
 def apply(order: Order, move: Move) -> Order:
     kind, i, j = move
     o = list(order)
@@ -233,10 +276,17 @@ def climb[E](
     sweep: Sequence[Fraction] = SWEEP,
     budget: int = DEFAULT_BUDGET,
     seed: int = DEFAULT_SEED,
+    ref: Point | None = None,
 ) -> ClimbResult:
     """Climb every start under every weight of `sweep` (module docstring) and
     return everything evaluated, as a frontier. Runs go start by start in
-    `starts` order, weights in `sweep` order."""
+    `starts` order, weights in `sweep` order.
+
+    `ref` is the scalarisation's normalising point; by default the best
+    intermediates and the best FLOPs over `starts`. A caller that climbs a
+    batch's starts one at a time (plan/search.py, #172, to spread them over
+    processes) passes the reference of ALL the batch's starts, so each run
+    is exactly the run one call over every start would make."""
     if not starts:
         raise ValueError("a climb needs at least one start")
     if budget < 0:
@@ -265,9 +315,12 @@ def climb[E](
         return hit
 
     first = [score(o, name) for name, o in orders.items()]
-    ref = (min(e.point[0] for e in first), min(e.point[1] for e in first))
+    if ref is None:
+        ref = (min(e.point[0] for e in first), min(e.point[1] for e in first))
+    elif len(ref) != 2 or min(ref) < 0:
+        raise ValueError(f"ref {ref!r} is not a point")
+    ref = (ref[0], ref[1])
     n = len(next(iter(orders.values())))
-    space = moves(n)
 
     runs: list[Run] = []
     for name, o in orders.items():
@@ -280,9 +333,7 @@ def climb[E](
             improved = True
             while improved:
                 improved = False
-                trial = list(space)
-                rng.shuffle(trial)
-                for m in trial:
+                for m in _shuffled(rng, n):
                     if examined >= budget:
                         exhausted = True
                         break
