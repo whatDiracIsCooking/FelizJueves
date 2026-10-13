@@ -353,6 +353,138 @@
         "printed_values_stand": "Alg. 3 is taken as published; the record says which reading this repo implements. No scoreboard, no rule: board and rule are null."
       },
       "source": "[JEngine, v2, Alg. 3]"
+    },
+    {
+      "claim": "jengine/sieve-non-monotone-in-spills on our cards (#164): the sieve's effect on spills, read off #162's 21 no-sieve cells per card (the subgrid and L = 11, one batch) against their sieved controls. It is non-monotone on both cards, and [8|8] spills less with the sieve on both; but the [5|6] stand-in spills LESS on both, not more, and the per-class mean falls on gfx1200 only. The published pattern fails on both cards, and that is a statement about our kernels on our cards, not about the paper's.",
+      "mechanism": "(1) NOT THE PAPER'S MEASUREMENT. A spill count is what one compiler did with one emitted kernel for one arch: here nvcc 13.0 for sm_86 and hipcc / ROCm 7.2.4 for gfx1200, against the authors' kernels through their compiler on an A100. Neither compiler nor card is shared, and Table 4, the paper's own spill counts, is deliberately not transcribed (data/literature/jengine/README.md), so our rows are never compared against it. (2) NOT THE PAPER'S SIEVE. The two arms differ in Alg. 3 alone, and our Alg. 3 is a reconstruction: its seed order is not recovered (#108; this file's two refusals and its seed-order spread record) and lines 12 and 16 are our own choices, so which nodes the sieve removes need not be the paper's. (3) NOT THE PAPER'S CLASSES. The paper names [5|6]; #162's L = 11 cell is pq_spec(11) = (6,0|5,0), [6|5], bra and ket swapped. The plan's counts depend on L alone (#162 holds the PlanCost equal), but the emitted kernel, and so its spills, do not, and no [5|6] row exists. The cells are 21 per card, 5 of them one-batch (L = 7, 10, 11, 13, 16), against the paper's 40. (4) NOT ONE UNIT. sm_86's spill fields are ptxas bytes (stores plus loads); gfx1200's both carry hipcc's spilled-register count (VGPRs Spill + SGPRs Spill, and no SGPR spills anywhere), so only a ratio within one card is read. gfx1200's ScratchSize, per-lane scratch bytes that also hold non-spill stack, moves the other way from the register count at four cells (L10 b1, L13 b3, L13 b12, L16 b3), which is why it is not the measure. (5) NOT ONE MEAN. The paper does not say how it averages. #164 reads the per-class mean; on sm_86 it is +1.45%, carried by L7 b1 (+35.11% on a cell of a few hundred bytes), while the summed spills fall (-0.97%) and the one-batch mean is +5.11%. Whether 'the mean falls' on sm_86 turns on a choice the paper does not state. (6) THE CONTENT. Non-monotonicity is the claim's content, and it is the half both cards show: more spills with the sieve at 6 cells and fewer at 8 on sm_86, 8 and 8 on gfx1200, both ways still above a 1% floor. But the class the paper names for an increase goes the other way at our stand-in on both cards (-7.25% and -0.63%), and [8|8] falls by 3.78% and 2.50%, not 11%. A test asserting the published pattern would fail on our rows, and that failure would not make the paper's claim false, for (1)-(3): it cannot be the claim's witness (the argument #116 made for jengine/mild-vs-exact-tradeoff).",
+      "evidence": "data/measured/kernels.json: #162's 42 no-sieve rows and their literal controls (host 62bda674d9c8 (container), RTX 3080 with nvcc 13.0 and RX 9060 XT with hipcc / ROCm 7.2.4, 2026-10-13), read by measured_store.sieve_spills and recomputed into asserted_value by test/test_sieve_spill_claim.py::test_the_sieve_spill_pattern_on_both_cards; what the gfx1200 rows carry is pinned by test/test_sieve_spill_claim.py::test_the_gfx1200_rows_carry_a_spilled_register_count. Sieved against unsieved, per card: sm_86 per-class mean +1.45% over the 14 cells where either arm spills (7 spill in neither), summed -0.97%, one-batch mean +5.11%, [8|8] -3.78%, (6,0|5,0) -7.25%; gfx1200 per-class mean -0.24% over 17 cells, summed -0.34%, one-batch mean -0.44%, [8|8] -2.50%, (6,0|5,0) -0.63%. Spills only: the same cells' wall-clock is #159's sieve verdict (NOT SHOWN on both cards), not this record.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": "jengine/sieve-non-monotone-in-spills",
+        "expected": "[JEngine, v2, §4.1]: about 4% fewer spills with the sieve on average, non-monotone across classes, [5|6] 3% more and [8|8] 11% fewer",
+        "verdict": {
+          "sm_86": "fails",
+          "gfx1200": "fails"
+        },
+        "cards": {
+          "sm_86": {
+            "halves": {
+              "mean falls": false,
+              "non-monotone": true,
+              "[5|6] more": false,
+              "[8|8] fewer": true
+            },
+            "holds": false,
+            "cells": 21,
+            "spilling": 14,
+            "mean_change_pct": 1.45,
+            "one_batch_mean_change_pct": 5.11,
+            "total_change_pct": -0.97,
+            "more": [
+              "L7 b1",
+              "L10 b1",
+              "L10 b3",
+              "L13 b6",
+              "L16 b6",
+              "L16 b9"
+            ],
+            "fewer": [
+              "L13 b1",
+              "L13 b3",
+              "L13 b9",
+              "L13 b12",
+              "L16 b1",
+              "L16 b3",
+              "L16 b12",
+              "L11 b1"
+            ],
+            "non_monotone_at_1pct_floor": true,
+            "eight_eight_pct": -3.78,
+            "five_six_stand_in_pct": -7.25,
+            "change_pct": {
+              "L7 b1": 35.11,
+              "L10 b1": 2.21,
+              "L10 b3": 0.22,
+              "L13 b1": -0.74,
+              "L13 b3": -1.67,
+              "L13 b6": 1.46,
+              "L13 b9": -3.93,
+              "L13 b12": -1.67,
+              "L16 b1": -3.78,
+              "L16 b3": -0.56,
+              "L16 b6": 2.26,
+              "L16 b9": 0.69,
+              "L16 b12": -2.03,
+              "L11 b1": -7.25
+            }
+          },
+          "gfx1200": {
+            "halves": {
+              "mean falls": true,
+              "non-monotone": true,
+              "[5|6] more": false,
+              "[8|8] fewer": true
+            },
+            "holds": false,
+            "cells": 21,
+            "spilling": 17,
+            "mean_change_pct": -0.24,
+            "one_batch_mean_change_pct": -0.44,
+            "total_change_pct": -0.34,
+            "more": [
+              "L7 b1",
+              "L10 b1",
+              "L10 b6",
+              "L10 b9",
+              "L10 b12",
+              "L13 b6",
+              "L13 b9",
+              "L16 b9"
+            ],
+            "fewer": [
+              "L10 b3",
+              "L13 b1",
+              "L13 b3",
+              "L16 b1",
+              "L16 b3",
+              "L16 b6",
+              "L16 b12",
+              "L11 b1"
+            ],
+            "non_monotone_at_1pct_floor": true,
+            "eight_eight_pct": -2.5,
+            "five_six_stand_in_pct": -0.63,
+            "change_pct": {
+              "L7 b1": 2.74,
+              "L10 b1": 0.08,
+              "L10 b3": -0.3,
+              "L10 b6": 1.27,
+              "L10 b9": 0.14,
+              "L10 b12": 0.11,
+              "L13 b1": -1.87,
+              "L13 b3": -2.26,
+              "L13 b6": 0.01,
+              "L13 b9": 0.32,
+              "L13 b12": 0.0,
+              "L16 b1": -2.5,
+              "L16 b3": -0.89,
+              "L16 b6": -0.19,
+              "L16 b9": 0.02,
+              "L16 b12": -0.09,
+              "L11 b1": -0.63
+            }
+          }
+        },
+        "gfx1200_scratch_disagrees_at": [
+          "L10 b1",
+          "L13 b3",
+          "L13 b12",
+          "L16 b3"
+        ],
+        "printed_values_stand": "[JEngine, v2, §4.1]'s percentages are taken as published for its kernels on its A100; this record is about our kernels on our cards and is never compared against Table 4. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, §4.1]"
     }
   ]
 }

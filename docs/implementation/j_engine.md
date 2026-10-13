@@ -1203,7 +1203,15 @@ has the detail):
   `batch-count-is-hardware-dependent`, `j-speedup-tracks-high-l-share`,
   `nine-batches-suffice`. Where this repo asked the same question of its own
   cards, the answer is a different record or a measured file (#56, #60,
-  #114), never a discharge of the paper's.
+  #114), never a discharge of the paper's. For `sieve-non-monotone-in-spills`
+  #164 read the published pattern off #162's no-sieve rows
+  (`measured_store.sieve_spills`): the effect is non-monotone on both cards
+  and `[8|8]` spills less with the sieve on both, but the `[5|6]` stand-in,
+  `(6,0|5,0)`, spills less on both and the per-class mean falls on gfx1200
+  only, so the pattern fails on both cards. A test asserting it would fail on
+  our rows without making the paper's claim false, so `limits.json` records
+  the mechanism instead and `test/test_sieve_spill_claim.py` holds the
+  reading.
 - *A comparison with a search that is not here*: `mild-vs-exact-tradeoff`.
   #111 replaced it with this tree's own optimum, and the measurement
   disagrees with the printed percentages (`mild_vs_optimum.json`); the test
