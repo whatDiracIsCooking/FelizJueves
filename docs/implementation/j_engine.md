@@ -1476,8 +1476,11 @@ STO-3G H from the `h2_sto3g_j` fixture and the fixtures' hilbert density
 `D_ij = 1/(i+j+1)` — every `D_cd` non-zero, so a skip comes from the decay of
 the ket's dressed `E`, not from a zero. Four molecules and not more: four reach
 `T = θ²|PQ|²` ≈ 1289 and a fifth ≈ 2210, past the `T ≤ 2000` that
-`reference.boys` has measured and refuses beyond; the test pins that the chain
-is as long as the evaluator allows. (#88 ran two H₂ under the original
+`reference.boys` had measured (#122) when the ladder was run; the test pins
+that the chain is as long as that extent allowed. #265 has since carried the
+measurement to `T_MAX = 1e6` (for `V`'s point-charge kets, which reach
+`T ≈ 1.25e5` on HF/cc-pVTZ), so the evaluator now reaches much further; the
+chain is kept at #122's extent so the ladder is not rewritten. (#88 ran two H₂ under the original
 `T ≤ 500` cap; #122 gave `reference.boys` a measured large-`T` branch — the
 asymptote `Γ(m+½)/(2T^(m+½))` from `T = 125`, where its truncation for every
 `m ≤ 40` is under 1e-18, to `T = 2000`, its error under 8e-16 against the
@@ -1638,7 +1641,7 @@ is 1 at every L, so all 25 classes run at 1: 24 by fallback, and `(4, 3)` from
 its measured row (`pq_spec(7)`'s split). No tracked fixture reaches a class
 whose measured choice is above 1 (near-T: `(5, 5)` on `gfx1200`, `(7, 6)` on
 both). The card's `fj_boys` is witnessed on `T ∈ [0, 500]` and overflows near
-`T ≈ 700`, below `reference.boys`' `T_MAX = 2000`, so #88's four-H₂ chain
+`T ≈ 700`, far below `reference.boys`' `T_MAX = 1e6` (#265), so #88's four-H₂ chain
 (`T` up to 1289) has no on-card build. Its skip counts come from the oracle.
 Both limits are in `limits.json`.
 

@@ -36,6 +36,15 @@ PLAN_M = range(0, 17)  # L <= 16 in [JEngine] Tables 1-3
 # The asymptote's grids (#122), as the module docstring states them.
 HIGH_T = (125, 150, 200, 300, 500, 750, 1000, 1250, 1500, 2000)
 HIGH_OFF_GRID_T = (126.5, 333.3, 499.9, 612.0, 987.6, 1290.0, 1777.7, 1999.9)
+# #265's re-measurement to T_MAX, as the module docstring states it. The full
+# grid is `slow` (~7 CPU-minutes: the series is ~2T terms long, ~1 s a point at
+# 1e6), parametrised by m so xdist spreads it; FIXTURE_T is the fast spot check
+# at the T the tracked fixtures' point-charge kets actually reach (#240).
+FAR_T = (2000, 3000, 5000, 7500, 1e4, 2e4, 3.6e4, 5e4, 7.7e4, 1e5, 1.25e5,
+         2e5, 3e5, 5e5, 7.5e5, 1e6)
+FAR_OFF_GRID_T = (2345.6, 9876.5, 36123.4, 77000.7, 124999.9, 333333.3,
+                  765432.1, 999999.9)
+FIXTURE_T = (3.6e4, 7.7e4, 1.25e5)
 # Where both branches are measured: T_SWITCH up to the quadrature grid's end.
 OVERLAP_T = (125, 130, 150, 175, 200, 250, 300, 350, 400, 450, 500)
 # T_SWITCH's criterion: the m = M_MAX truncation under this, on a 5-wide grid.
@@ -161,6 +170,28 @@ def test_branches_agree_across_the_overlap() -> None:
     the sum of their rounding floors: the switch is no step."""
     assert _worst(range(0, M_MAX + 1), OVERLAP_T, quadrature,
                   ref=asymptote) < CONVERGED
+
+
+def test_asymptote_is_converged_at_the_fixtures_reach() -> None:
+    """The fast slice of #265's measurement: where V's fixtures land."""
+    assert _worst(range(0, M_MAX + 1, 8), FIXTURE_T, asymptote) < CONVERGED
+    assert 0.0 < boys(16, 1.25e5) == asymptote(16, 1.25e5)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("m", range(0, M_MAX + 1))
+def test_asymptote_is_converged_to_t_max(m: int) -> None:
+    """#265: the docstring's far table, every m, grid and off grid. The far
+    grid ends exactly at T_MAX: the cap is where this measurement stops."""
+    assert max(FAR_T) == T_MAX and max(FAR_OFF_GRID_T) < T_MAX
+    assert _worst(range(m, m + 1), FAR_T + FAR_OFF_GRID_T, asymptote) < CONVERGED
+
+
+def test_far_grid_reaches_the_fixtures_with_margin() -> None:
+    """T_MAX covers the largest fixture's T (HF/cc-pVTZ, 1.25e5) eightfold,
+    and float64 holds T^(M_MAX+1/2) there even for a port that forms it."""
+    assert T_MAX >= 8 * 1.25e5
+    assert (M_MAX + 0.5) * math.log10(T_MAX) < 300.0
 
 
 def test_boys_routes_by_t_switch() -> None:

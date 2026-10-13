@@ -40,12 +40,15 @@ nothing, so a compact case alone proves the screen by never testing it.
             converted basis, and the fixtures' hilbert density
             `D[i][j] = 1/(i+j+1)` (so every `D_cd` is non-zero and a skip
             comes from the decay of the ket's dressed `E`, not from a zero in
-            `D`). FOUR molecules, not more, because `reference.boys` refuses
-            `T > T_MAX = 2000` (where its measurement stops; #122 extended it
-            from 500 with a measured large-T asymptote) and a fifth H2 puts a
-            bra and a ket 25.4 bohr apart: `T = theta^2 |PQ|^2` reaches ~2210
-            (four reach ~1289). The bound that bites is T_MAX, not M_MAX:
-            every shell is s, so only F_0 is ever asked for.
+            `D`). FOUR molecules, not more: that is #122's measured extent.
+            When the ladder was last run `reference.boys` refused
+            `T > 2000` (#122 had extended it from 500 with a measured large-T
+            asymptote), and a fifth H2 puts a bra and a ket 25.4 bohr apart:
+            `T = theta^2 |PQ|^2` reaches ~2210 (four reach ~1289). #265 has
+            since carried the evaluator's measurement to T_MAX = 1e6, so it
+            now reaches much further; the chain is kept at #122's extent
+            (EXTENT_122) so the ladder, and screening.json, are not rewritten.
+            Every shell is s, so only F_0 is ever asked for.
             `test_the_chain_is_as_long_as_the_evaluator_allows` pins both.
             Fast tier: it is small (~8 s).
 
@@ -83,6 +86,9 @@ DATA = Path(__file__).resolve().parent.parent / "data" / "ao" / "screening.json"
 BOND = 1.4  # bohr, H-H
 SPACING = 6.0  # bohr, centre to centre of neighbouring H2
 N_H2 = 4
+# reference.boys' T_MAX as #122 measured it: the chain was sized to it, and is
+# kept at it after #265 widened the evaluator, so screening.json stands.
+EXTENT_122 = 2000.0
 
 
 def _hilbert(n: int) -> np.ndarray:
@@ -218,10 +224,11 @@ def test_extended_ladder_live():
 
 
 def test_the_chain_is_as_long_as_the_evaluator_allows():
-    """Four H2, because a fifth takes `T` past `reference.boys`'s measured
-    range: the chain's length is the evaluator's limit, not a choice. T_MAX
-    is the bound that bites; M_MAX cannot, the chain being all s shells
-    (fundamentals need m = 0 only, at any length)."""
+    """Four H2, because a fifth takes `T` past #122's measured extent
+    (EXTENT_122 = 2000): the chain's length was that evaluator's limit, and is
+    kept so the ladder is not rewritten. Since #265 the evaluator reaches
+    further (T_MAX = 1e6), so the chain must still be inside it. M_MAX cannot
+    bite, the chain being all s shells (fundamentals need m = 0 only)."""
     assert all(s.l == 0 for s in _h2_chain(N_H2 + 1).shells)
     def max_T(basis: Basis) -> float:
         recs = [k for a in basis.shells for b in basis.shells
@@ -230,7 +237,8 @@ def test_the_chain_is_as_long_as_the_evaluator_allows():
             x.zeta * y.zeta / (x.zeta + y.zeta)
             * sum((x.P[d] - y.P[d]) ** 2 for d in range(3))
             for x in recs for y in recs)
-    assert max_T(_h2_chain(N_H2)) <= T_MAX < max_T(_h2_chain(N_H2 + 1))
+    assert max_T(_h2_chain(N_H2)) <= EXTENT_122 < max_T(_h2_chain(N_H2 + 1))
+    assert T_MAX >= max_T(_h2_chain(N_H2))
 
 
 def test_the_break_needs_the_sort():

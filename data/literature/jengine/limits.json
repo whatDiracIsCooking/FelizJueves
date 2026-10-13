@@ -186,7 +186,7 @@
       "source": "[JEngine, v2, Alg. 1]"
     },
     {
-      "claim": "The whole-molecule J built from the launch plan on the card (#144, #146, #147), and what it does not reach. (1) THE DEVICE BOYS: the card's `fj_boys` is witnessed on T in [0, 500] only and overflows near T = 700, well below `reference.boys`' T_MAX = 2000, so the host ladder's four-H2 chain (T up to 1289) has no on-card build. (2) THE CLASSES: the tracked J fixtures stop at d (H2O/cc-pVDZ, pair momenta up to 4, classes L <= 8), so no on-card build reaches a class whose measured dispatch choice is above 1. (3) WHAT THE PLAN SAVED: the per-pair launch path (`ao.drive.KernelJP`-shaped) was not timed in #146's session, so no row says what building from the plan saves against it. (4) gfx1200's one-off upload is not explained.",
+      "claim": "The whole-molecule J built from the launch plan on the card (#144, #146, #147), and what it does not reach. (1) THE DEVICE BOYS: the card's `fj_boys` is witnessed on T in [0, 500] only and overflows near T = 700, far below `reference.boys`' T_MAX = 1e6 (#265; 2000 when this was recorded), so the host ladder's four-H2 chain (T up to 1289) has no on-card build. (2) THE CLASSES: the tracked J fixtures stop at d (H2O/cc-pVDZ, pair momenta up to 4, classes L <= 8), so no on-card build reaches a class whose measured dispatch choice is above 1. (3) WHAT THE PLAN SAVED: the per-pair launch path (`ao.drive.KernelJP`-shaped) was not timed in #146's session, so no row says what building from the plan saves against it. (4) gfx1200's one-off upload is not explained.",
       "mechanism": "(1) `fj_boys` (emit/_c.py's BOYS_DEVICE) is the Kummer series, exp(-T) times a sum of positive terms that grows like e^T. The sum overflows double near T = 709, before the exp(-T) factor can bring it back. `reference.boys` switched to a measured asymptote from T = 125 (#122), and the device routine did not. (2) Dispatch (#145) has rows only for the SUBGRID's L in {7, 10, 13, 16}, each for that L's own split (ceil(L/2), floor(L/2)); every other class falls back to 1. On the wide-T input the measured choice is 1 at every L on both cards. On near-T it is above 1 from L = 10 on gfx1200 and from L = 13 on sm_86, and those splits need pair momenta of 5 and 7, past cc-pVDZ's 4. The one dispatched cell on the card, H2O/cc-pVDZ with the wide-T resolver, therefore runs every class at 1: 24 by fallback and (4, 3) from its measured row. (3) #146 left the optional same-session reference out. (4) The uploads happen once per process, outside the timed region, recorded only as raw build:upload_ns, a single observation.",
       "evidence": "(1) test/test_kernel_device.py checks `fj_boys` on [0, 500]; measured_store's docstring, THE SORT KEY, says why #147's chain is two H2 (T up to 188; three reach 615, four reach 1289). The four-H2 chain's skip counts come from the launch oracle alone (test/test_launch_oracle.py). (2) test/test_j_launched_ondevice.py's dispatched cell asserts every class at `dispatch.choose`'s count, and that (4, 3) is the measured one. (3) PR #183. (4) data/measured/builds.json: gfx1200's build:upload_ns is 21.9 to 35.8 ms across its 11 rows, against 0.10 to 0.16 ms across sm_86's 11.",
       "asserted_value": {
@@ -198,7 +198,7 @@
           500
         ],
         "device_boys_overflow_near_T": 700,
-        "reference_boys_T_max": 2000,
+        "reference_boys_T_max": 1000000,
         "fixture_class_reach_L": 8,
         "dispatch_choice_above_one_from_L": {
           "wide": null,
