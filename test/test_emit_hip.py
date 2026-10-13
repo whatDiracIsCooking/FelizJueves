@@ -30,6 +30,7 @@ from test_ir import synthetic_inline_kernel
 
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, hip
+from felizjueves.emit.__main__ import one_e_kernels
 from felizjueves.kernel import build_pq_kernel
 
 L = 4
@@ -196,3 +197,27 @@ def test_the_wide_spelling_compiles(hipcc, compile_device_source) -> None:
 
     compile_device_source(hipcc, hip.emit(build_v_kernel((1, 1)), GFX1200),
                           link=False)
+
+
+# --- the one-electron ladder (#242) -------------------------------------------
+# `--one-e-l 2`'s units (s_, t_, v_ through (dd)): no warp reduction and the
+# AtomicAdd spelled alike, so as for the pair units only the prologue
+# differs. Each compiles, compile only, under #92's warning filter.
+
+ONE_E_DD = [pytest.param(k, id=k.name) for k in one_e_kernels(2)]
+
+
+@pytest.mark.parametrize("k", ONE_E_DD)
+def test_the_one_e_texts_differ_only_in_the_prologue(k) -> None:
+    c = cuda.emit(k, SM_86).splitlines()
+    h = hip.emit(k, GFX1200).splitlines()
+    assert h[0] == c[0].replace("emit.cuda", "emit.hip")
+    assert h[1] == c[1].replace(SM_86.name, GFX1200.name)
+    assert h[2] == "#include <hip/hip_runtime.h>"
+    assert c[2:] == h[3:]
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("k", ONE_E_DD)
+def test_the_one_e_units_compile(hipcc, compile_device_source, k) -> None:
+    compile_device_source(hipcc, hip.emit(k, GFX1200), link=False)

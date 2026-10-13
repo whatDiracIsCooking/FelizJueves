@@ -21,7 +21,9 @@
 #              a green, empty run happens.
 #   generate   KERNEL_GEN_CMD (devtools/config.sh) emits sources into
 #              $KERNEL_TIER_OUT, a per-backend directory under
-#              KERNEL_BUILD_DIR that is emptied first. DORMANT while the
+#              KERNEL_BUILD_DIR that is emptied first: by default the J
+#              chain's 37 units plus the one-electron ladder through (dd)
+#              (`--one-e-l 2`: s_, t_, v_, 18 units, #242). DORMANT while the
 #              command is empty, and this script says so instead of implying
 #              a tier ran.
 #   compile    every translation unit the generate phase wrote, through the
@@ -32,7 +34,9 @@
 #              vendor header is reported and does not (config.sh,
 #              NVCC_FLAGS / HIPCC_FLAGS).
 #   device    the `gpu`-marked pytest suite (KERNEL_TEST_ARGS), which is what
-#              compares a kernel's output against the host reference. Its
+#              compares a kernel's output against the host reference (the
+#              one-electron units: test/test_one_electron_device.py, which
+#              includes the very files the generate phase wrote). Its
 #              own compiles go through the same sccache (test/devcache.py,
 #              #186), from a content-addressed directory under
 #              KERNEL_BUILD_DIR, so a warm re-run recompiles only what

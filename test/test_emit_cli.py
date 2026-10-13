@@ -4,7 +4,10 @@ ONE LADDER PER KERNEL FAMILY. The no-argument default writes the `[p|q]`
 ladder (L = 0..16, unchanged: the measured store pins each unit's
 `source_sha256`) PLUS the pair ladder (`DQ` and `JAB` for every pair class
 `(la, lb)`, `la <= lb <= 3`: 10 classes, 20 units). `--L` alone writes only
-`[p|q]`, `--pair-l` alone only the pair ladder.
+`[p|q]`, `--pair-l` alone only the pair ladder. `--one-e-l LMAX` (#242)
+ADDS the one-electron ladder (`s_`, `t_`, `v_` per pair class `la <= lb <=
+LMAX`) beside whichever J ladders those select; it is never in the bare
+default, which stays 37 units with every pinned `source_sha256`.
 
 THE SELECTOR writes, per `(class, n_batches)` cell, the chain one class
 needs -- its ket's `DQ`, its `[p|q]` batch kernels, its bra's `JAB` -- with
@@ -110,13 +113,16 @@ def test_l_and_pair_l_together_write_both(tmp_path):
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "dq_0_0.cu", "jab_00.cu"}
 
 
-def test_the_pq_ladder_still_matches_the_measured_pins(tmp_path):
+@pytest.mark.parametrize("extra", [[], ["--one-e-l", "2"]],
+                         ids=["bare", "one-e-l"])
+def test_the_pq_ladder_still_matches_the_measured_pins(extra, tmp_path):
     """Every literal one-batch row's `source_sha256` is the text the default
-    writes: the `[p|q]` ladder's bytes did not move."""
+    writes -- and the text KERNEL_GEN_CMD's `--one-e-l 2` writes: the
+    `[p|q]` ladder's bytes did not move."""
     rows = json.loads(
         (ROOT / "data" / "measured" / "kernels.json").read_text())["rows"]
     for backend in BACKEND:
-        assert _run(tmp_path / backend, backend) == 0
+        assert _run(tmp_path / backend, backend, *extra) == 0
     checked = 0
     for key, row in rows.items():
         if "/b1/j/literal@" not in key:
@@ -127,6 +133,77 @@ def test_the_pq_ladder_still_matches_the_measured_pins(tmp_path):
             row["source_sha256"], key
         checked += 1
     assert checked == 34  # L = 0..16 on both arches
+
+
+# --- the one-electron ladder (#242) ------------------------------------------
+
+
+def _one_e_names(ext: str, lmax: int) -> set[str]:
+    return {f"{k.name}.{ext}" for k in emit_cli.one_e_kernels(lmax)}
+
+
+def test_the_one_e_ladder_is_s_t_v_per_pair_class() -> None:
+    assert emit_cli.DEFAULT_ONE_E_L == 3
+    assert emit_cli.one_e_classes(3) == PAIR_CLASSES_F
+    names = [k.name for k in emit_cli.one_e_kernels(2)]
+    assert names == [f"{f}_{la}{lb}" for la, lb in emit_cli.pair_classes(2)
+                     for f in "stv"]
+    assert len(names) == 18
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_bare_default_is_still_37_units_and_no_one_e_unit(backend, tmp_path):
+    _, _, ext = BACKEND[backend]
+    assert _run(tmp_path, backend) == 0
+    got = _names(tmp_path)
+    assert len(got) == 37
+    assert not got & _one_e_names(ext, emit_cli.ONE_E_L_MAX)
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_one_e_l_adds_the_ladder_beside_the_j_chain(backend, tmp_path):
+    """`--one-e-l 2` (KERNEL_GEN_CMD's) writes the 37 J units, byte for byte
+    the bare command's, plus the 18 one-electron units in `emit`'s text."""
+    emit, arch, ext = BACKEND[backend]
+    bare, flagged = tmp_path / "bare", tmp_path / "flagged"
+    assert _run(bare, backend) == 0
+    assert _run(flagged, backend, "--one-e-l", "2") == 0
+    one_e = _one_e_names(ext, 2)
+    assert len(one_e) == 18
+    assert _names(flagged) == _names(bare) | one_e
+    for name in _names(bare):
+        assert (flagged / name).read_bytes() == (bare / name).read_bytes()
+    for k in emit_cli.one_e_kernels(2):
+        assert (flagged / f"{k.name}.{ext}").read_text() == emit(k, arch)
+
+
+def test_one_e_l_bare_is_through_ff_and_adds_to_the_ladder_flags(tmp_path):
+    assert _run(tmp_path / "a", "cuda", "--L", "0", "--one-e-l") == 0
+    assert _names(tmp_path / "a") == {"pq_L0_p0_q0.cu"} | _one_e_names("cu", 3)
+    assert _run(tmp_path / "b", "cuda", "--pair-l", "0", "--one-e-l", "0") == 0
+    assert _names(tmp_path / "b") == {"dq_0_0.cu", "jab_00.cu", "s_00.cu",
+                                      "t_00.cu", "v_00.cu"}
+
+
+def test_the_one_e_names_cannot_collide_with_the_j_chain() -> None:
+    j = ({build_pq_kernel(L).name for L in range(17)}
+         | {k.name for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
+            for k in (build_dq_kernel(c), build_jab_kernel(c))})
+    one_e = {k.name for k in emit_cli.one_e_kernels(emit_cli.ONE_E_L_MAX)}
+    assert not j & one_e
+    assert all(n[:2] in ("s_", "t_", "v_") for n in one_e)
+
+
+@pytest.mark.parametrize("argv", [
+    ["--one-e-l", "-1"],
+    ["--one-e-l", str(emit_cli.ONE_E_L_MAX + 1)],
+    ["--one-e-l", "x"],
+    ["--one-e-l", "1", "--class", "0", "0", "0", "0"],
+    ["--one-e-l", "1", "--shell-ls", "0", "1"],
+])
+def test_a_one_e_l_it_cannot_honour_is_a_2(argv, tmp_path):
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
 # --- exit status ------------------------------------------------------------

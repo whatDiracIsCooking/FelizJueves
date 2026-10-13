@@ -7,6 +7,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --out DIR
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --L 4 8
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --pair-l 2
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --one-e-l 2
 
 ONE LADDER PER KERNEL FAMILY (#156), one translation unit per class, each
 emitted by the backend for the arch to `<out>/<kernel name>.<ext>` (`.cu`
@@ -20,11 +21,34 @@ for CUDA, `.hip` for HIP):
   kernel `kernel_jab.build_jab_kernel` (`jab_{la}{lb}`, `Target.JAB`, #154).
   Small units: an inlined `E` block, no Boys, no `[p|q]`.
 
-With NEITHER flag both ladders are written -- `[p|q]` L = 0..16 and the pair
-classes (ss) through (ff), 17 + 20 units: the J chain is what KERNEL_GEN_CMD
-writes. `--L` alone writes only `[p|q]` (so `--L 1` writes exactly
-`pq_L1_p1_q0.<ext>`), `--pair-l` alone only the pair ladder, the two
-together both. The two vendors' texts differ only in the backend hooks
+- the one-electron ladder, `--one-e-l [LMAX]` (#242): for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (3 when the flag is given bare), the
+  overlap, kinetic and nuclear-attraction kernels `kernel_s.build_s_kernel`
+  (`s_{la}{lb}`, `Target.S`), `kernel_t.build_t_kernel` (`t_{la}{lb}`,
+  `Target.T`) and `kernel_v.build_v_kernel` (`v_{la}{lb}`, `Target.V`, the
+  one that carries the wide `fj_boys`). NEVER in the no-flag default.
+
+With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
+L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
+is what the bare command writes, and `data/measured/kernels.json` pins those
+37 units' `source_sha256`. `--L` alone writes only `[p|q]` (so `--L 1`
+writes exactly `pq_L1_p1_q0.<ext>`), `--pair-l` alone only the pair ladder,
+the two together both. `--one-e-l` ADDS the one-electron ladder to whichever
+J ladders those two select (so `--one-e-l 2` alone writes the 37 J units
+plus 18): it is a second family beside the J chain, not a replacement for
+it, and the kernel tier asks for it explicitly (devtools/config.sh's
+KERNEL_GEN_CMD). Its units are named `s_`, `t_`, `v_` plus two digits, so
+none collides with `pq_`, `dq_` or `jab_`.
+
+WHY ONLY `la <= lb` ON THE ONE-ELECTRON LADDER. It is the pair ladder's set
+of classes, as #242 pins it. A real basis's one-electron launch
+(`launch.one_electron_launch`) keys a class by the shell pair `i <= j` in
+BASIS order, so a basis whose p or d shells precede its s shells (H2O: O's
+p before H's s) also reaches `(1, 0)`, `(2, 0)`, `(2, 1)`; a driver builds
+those from `build_*_kernel((la, lb))` itself (test/one_electron_driver.py),
+the same text this module would write for them.
+
+The two vendors' texts differ only in the backend hooks
 (test/test_emit_hip.py), and HIP's shuffle needs a 64-bit mask that the CUDA
 text does not carry, so each backend writes its own spelling; nothing here
 compiles anything.
@@ -97,6 +121,9 @@ from felizjueves.emit import cuda, hip
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel_s import build_s_kernel
+from felizjueves.kernel_t import build_t_kernel
+from felizjueves.kernel_v import build_v_kernel
 from felizjueves.spec import Operator, Spec, Target
 
 BACKENDS = {
@@ -106,6 +133,8 @@ BACKENDS = {
 DEFAULT_LS = tuple(range(0, 17))
 DEFAULT_PAIR_L = 3  # (ss) through (ff): 10 pair classes, 20 units
 PAIR_L_MAX = 8  # (bb) at L = 16, the [p|q] ladder's top
+DEFAULT_ONE_E_L = 3  # `--one-e-l` given bare: (ss) through (ff), 30 units
+ONE_E_L_MAX = PAIR_L_MAX  # the range the pair ladder accepts
 Am = tuple[int, int, int, int]
 
 
@@ -157,6 +186,35 @@ def generate_pairs(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]
         written.append(_write(backend, arch, out, build_dq_kernel(c)))
         written.append(_write(backend, arch, out, build_jab_kernel(c)))
     return written
+
+
+# ---------------------------------------------------------------------------
+# The one-electron ladder (#242)
+# ---------------------------------------------------------------------------
+
+ONE_E_BUILDERS = (build_s_kernel, build_t_kernel, build_v_kernel)
+
+
+def one_e_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`: `pair_classes`'
+    set, over `0..ONE_E_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= ONE_E_L_MAX:
+        raise ValueError(f"--one-e-l {lmax!r} is outside 0..{ONE_E_L_MAX}")
+    return pair_classes(lmax)
+
+
+def one_e_kernels(lmax: int) -> list:
+    """`s_{la}{lb}`, `t_{la}{lb}`, `v_{la}{lb}` for every class through
+    `lmax`, class-major."""
+    return [build(c) for c in one_e_classes(lmax) for build in ONE_E_BUILDERS]
+
+
+def generate_one_e(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]:
+    """Emit the `S`, `T` and `V` unit of every pair class through `lmax`
+    into `out`; return the paths."""
+    kernels = one_e_kernels(lmax)
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +315,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--L", dest="Ls", type=int, nargs="+", default=None)
     ap.add_argument("--pair-l", dest="pair_l", type=int, default=None,
                     metavar="LMAX")
+    ap.add_argument("--one-e-l", dest="one_e_l", type=int, nargs="?",
+                    const=DEFAULT_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--class", dest="classes", type=int, nargs=4, action="append",
                     metavar=("LA", "LB", "LC", "LD"))
     ap.add_argument("--shell-ls", type=int, nargs="+", default=None)
@@ -271,9 +331,10 @@ def main(argv: Sequence[str] | None = None) -> int:
               "KERNEL_TIER_OUT)", file=sys.stderr)
         return 2
     selector = bool(args.classes or args.shell_ls)
-    if selector and (args.Ls is not None or args.pair_l is not None):
-        print("emit: --L / --pair-l and --class / --shell-ls are separate paths; "
-              "give one", file=sys.stderr)
+    if selector and (args.Ls is not None or args.pair_l is not None
+                     or args.one_e_l is not None):
+        print("emit: --L / --pair-l / --one-e-l and --class / --shell-ls are "
+              "separate paths; give one", file=sys.stderr)
         return 2
     if not selector and (args.n_batches != [1] or args.admitted_only):
         print("emit: --n-batches / --admitted-only need --class or --shell-ls",
@@ -283,6 +344,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"emit: --pair-l {args.pair_l} is outside 0..{PAIR_L_MAX}",
               file=sys.stderr)
         return 2
+    if args.one_e_l is not None and not 0 <= args.one_e_l <= ONE_E_L_MAX:
+        print(f"emit: --one-e-l {args.one_e_l} is outside 0..{ONE_E_L_MAX}",
+              file=sys.stderr)
+        return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
     except ValueError as e:
@@ -290,13 +355,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if selector:
         return _main_classes(args, arch)
-    if args.Ls is None and args.pair_l is None:  # the default: both ladders
+    if args.Ls is None and args.pair_l is None:  # the default: both J ladders
         Ls, pair_l = DEFAULT_LS, DEFAULT_PAIR_L
     else:
         Ls, pair_l = args.Ls or (), args.pair_l
     written = generate(args.backend, arch, args.out, Ls)
     if pair_l is not None:
         written += generate_pairs(args.backend, arch, args.out, pair_l)
+    if args.one_e_l is not None:  # beside the J chain, never by default
+        written += generate_one_e(args.backend, arch, args.out, args.one_e_l)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "
           f"{arch.name} -> {args.out}")
     for p in written:

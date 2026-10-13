@@ -28,6 +28,7 @@ import pytest
 from test_ir import synthetic_inline_kernel
 
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
+from felizjueves.emit.__main__ import one_e_kernels
 from felizjueves.emit._c import EmitError
 from felizjueves.emit.cuda import emit
 from felizjueves.ir import (
@@ -310,3 +311,23 @@ def test_the_wide_spelling_compiles(nvcc, compile_device_source) -> None:
     from felizjueves.kernel_v import build_v_kernel
 
     compile_device_source(nvcc, emit(build_v_kernel((1, 1)), SM_86), link=False)
+
+
+# --- the one-electron ladder (#242) -------------------------------------------
+# Every unit `--one-e-l 2` writes (s_, t_, v_ through (dd)) compiles with nvcc,
+# compile only, under #92's warning filter. Their goldens are
+# test_kernel_{s,t,v}.py's (s_11, t_12, v_11).
+
+ONE_E_DD = [pytest.param(k, id=k.name) for k in one_e_kernels(2)]
+
+
+def test_only_the_v_units_carry_fj_boys() -> None:
+    for p in ONE_E_DD:
+        k = p.values[0]
+        assert (FJ_BOYS_DEF in emit(k, SM_86)) == k.name.startswith("v_")
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("k", ONE_E_DD)
+def test_the_one_e_units_compile(nvcc, compile_device_source, k) -> None:
+    compile_device_source(nvcc, emit(k, SM_86), link=False)
