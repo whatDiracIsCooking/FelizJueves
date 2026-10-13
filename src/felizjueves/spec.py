@@ -20,6 +20,20 @@ which length, and the validator refuses a mismatch either way. A pair class
 is never batched -- batching partitions the Hermite targets of a quartet, and
 a pair has none -- so `n_batches = 1` is a pair target's only legal value.
 
+A K CLASS IS NAMED IN HERMITE ORDER, NOT AO ORDER (#196). `Target.K` is the
+exchange matrix, K_ab = SUM_cd D_cd (ac|bd), on the same [p|q] recurrence:
+its bra Hermite pair is (a, c) and its ket pair (b, d). So a K class's `am`
+is `(la, lc, lb, ld)` -- the two Hermite pair orders, BRA FIRST -- and never
+the AO quartet order (la, lb, lc, ld). The sum L is the same either way, so
+the same Tables 1-3 row is indexed; the split (lp, lq) = (la + lc, lb + ld)
+is not, and the plan depends on the split. A `Spec` built in AO order plans
+the wrong kernel and still returns a plausible number. So named, a K class
+maps onto the identical DAG, MILD tree, sieve, batching, schedule and cost as
+the J class with the same `am`; only the digestion differs. It is a
+widening, not a new field: `AM_LENGTH` takes 4, the key spells the quartet
+`(la,lc|lb,ld)` with target slot `k`, and K admits batching exactly as
+`Target.J` does.
+
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
 total angular momentum, L = l1 + l2 + l3 + l4 (the [p|q] class has
@@ -58,11 +72,17 @@ class Target(StrEnum):
     J = "j"  # the Coulomb matrix, [JEngine] Algorithm 1
     DQ = "dq"  # the pre-contracted ket vector D_q of one shell pair
     JAB = "jab"  # the bra back-transform of J_p and its scatter into J_ab
+    # The exchange matrix K_ab = SUM_cd D_cd (ac|bd); its `am` is
+    # (la, lc, lb, ld), the Hermite pairing, bra first (#196, module docstring).
+    K = "k"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
-# [p|q] kernel, a pair (la, lb) for the two per-pair families (#150).
-AM_LENGTH: dict[Target, int] = {Target.J: 4, Target.DQ: 2, Target.JAB: 2}
+# [p|q] kernel, a pair (la, lb) for the two per-pair families (#150), and a
+# quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196).
+AM_LENGTH: dict[Target, int] = {
+    Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
+}
 
 
 # Geometric derivatives are a later operator family; order 0 only for now.
@@ -79,7 +99,9 @@ class Spec:
     operator: Operator
     derivative_order: int
     # (l1, l2 | l3, l4) for `Target.J`: the angular momentum of each of the
-    # four shells; (la, lb) for a pair target (`AM_LENGTH`).
+    # four shells; (la, lc | lb, ld) for `Target.K` -- the Hermite pairing,
+    # bra first, NOT the AO order (la, lb, lc, ld); (la, lb) for a pair
+    # target (`AM_LENGTH`).
     am: tuple[int, int, int, int] | tuple[int, int]
     target: Target
     # Named departures from the paper, sorted and unique. () is the literal
@@ -109,8 +131,13 @@ class Spec:
         want = AM_LENGTH[self.target]
         if len(self.am) != want:
             shape = "pair" if want == 2 else "quartet"
+            hermite = (
+                " in Hermite order (la, lc | lb, ld)"
+                if self.target is Target.K else ""
+            )
             raise ValueError(
-                f"target {self.target} takes a {shape} class ({want} shells), "
+                f"target {self.target} takes a {shape} class ({want} shells)"
+                f"{hermite}, "
                 f"not am {self.am!r}"
             )
         if not all(isinstance(lever, str) and lever for lever in self.levers):
@@ -137,6 +164,13 @@ class Spec:
         [JEngine] Tables 1-3. A PAIR class (`Target.DQ`, `Target.JAB`)
         indexes NO published table row: its sum is la + lb, one pair's
         Hermite order, and must never be scored against a [JEngine] table.
+
+        A K quartet (`Target.K`, `am = (la, lc, lb, ld)`) indexes the SAME
+        Tables 1-3 row as the J quartet with the same `am`: L is the sum
+        either way. The pairing is what differs -- K pairs (a, c) and
+        (b, d), so the AO order (la, lb, lc, ld) has the same L but a
+        different (lp, lq) split whenever lb != lc, and the sum alone cannot
+        catch that mistake.
         """
         return sum(self.am)
 

@@ -108,8 +108,9 @@ PAIR_TARGETS = (Target.DQ, Target.JAB)
 
 
 def test_the_target_enum_is_widened_not_renamed() -> None:
-    assert [t.value for t in Target] == ["j", "dq", "jab"]
-    assert AM_LENGTH == {Target.J: 4, Target.DQ: 2, Target.JAB: 2}
+    # #196 appends `k`; the earlier members keep their place and value.
+    assert [t.value for t in Target] == ["j", "dq", "jab", "k"]
+    assert AM_LENGTH == {Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4}
 
 
 @pytest.mark.parametrize("target", PAIR_TARGETS)

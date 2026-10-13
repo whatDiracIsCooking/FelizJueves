@@ -113,6 +113,7 @@ __all__ = [
     "bra_functions",
     "ket_functions",
     "launch_shape",
+    "k_spec",
     "pq_spec",
     "split",
 ]
@@ -142,8 +143,28 @@ def pq_spec(L: int, levers: tuple[str, ...] = (), n_batches: int = 1) -> Spec:
                 levers, n_batches)
 
 
+def k_spec(L: int, *, n_batches: int = 1) -> Spec:
+    """The default K class of total L: the one declared way to name a K cell.
+
+    L splits as `pq_spec` splits it -- lp = ceil(L/2), lq = floor(L/2) -- so
+    the K cell and the J cell of one L share (lp, lq), hence one plan and one
+    Tables 1-3 row. Each pair's order is then distributed over its two
+    shells, larger first: (la, lc) = (ceil(lp/2), floor(lp/2)), and
+    (lb, ld) likewise from lq. `am` is `(la, lc, lb, ld)`, the Hermite
+    pairing, bra first (`spec.py`, #196), so `split` reads (la + lc, lb + ld)
+    unchanged.
+    """
+    if type(L) is not int or L < 0:
+        raise ValueError(f"L = {L!r} is not an int >= 0")
+    lp, lq = (L + 1) // 2, L // 2
+    am = ((lp + 1) // 2, lp // 2, (lq + 1) // 2, lq // 2)
+    return Spec(Operator.COULOMB, 0, am, Target.K, (), n_batches)
+
+
 def split(spec: Spec) -> tuple[int, int]:
-    """(lp, lq) = (l1 + l2, l3 + l4): the bra and ket Hermite orders."""
+    """(lp, lq) = (l1 + l2, l3 + l4): the bra and ket Hermite orders.
+
+    For a K class, `am = (la, lc, lb, ld)`, that is (la + lc, lb + ld)."""
     l1, l2, l3, l4 = spec.am
     return l1 + l2, l3 + l4
 
