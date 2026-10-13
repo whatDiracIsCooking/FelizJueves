@@ -350,3 +350,140 @@ def test_the_weights_hold_with_p_shells_at_l_le_2():
     assert np.max(np.abs(K - R)) <= SWEEP_TOL * big
     assert np.max(np.abs(R - R.T)) <= SYM_TOL * big
     assert skew > 1e-3 * big
+
+
+# --- libcint: the tracked K fixtures (#199) ---------------------------------
+#
+# THE OUTSIDE WITNESS. `fixtures/*_k.json` record PySCF/libcint's `get_jk` K
+# (`manifest.K_ARRAY`, `vk_il = sum_jk (ij|kl) D_jk` -- our `K_ab = sum_cd
+# D_cd (ac|bd)`) for the density stored in the file, which is the `_j`
+# sibling's, bit for bit (checked below), so a K disagreement is the
+# contraction's and not the input's. `generate.k_array` cross-checks `get_jk`
+# against `einsum(int2e, dm)` before writing. Comparing against a tracked
+# fixture needs no PySCF and carries no `oracle` marker; the drift check of
+# the fixtures themselves is test_oracle_manifest.py's `oracle` test.
+#
+# THE TOLERANCE is J's, inherited the same way: |K - vk| <= 1e-12 scale_K
+# element by element, `scale_K = sum_cd |D_cd| scale_eri(ac|bd)` (the
+# equality `test_the_scale_is_inherited_from_the_eri_scale` pins), so #85's
+# per-ERI 1e-12 carries over by the triangle inequality.
+#
+# THE L <= 2 RULE. A whole K over a basis with a `p` shell evaluates
+# `(pp|pp)`. So the fast tier runs H2/STO-3G whole (s only), and on H2O/
+# STO-3G and H2O/6-31G (s and p, no d) the s-s BLOCK of K: an element
+# `K_ab` with `a`, `b` both s sums `(a c|b d)` over every `c`, `d`, and that
+# quartet's L is `lc + ld <= 2` -- so the block is exact while every quartet
+# above L = 2 is zeroed by the hook, never computed (such a quartet has a
+# `p` at `a` or `b`, and writes only rows or columns of a `p`). The whole
+# matrices, and every cc-pVDZ element (an s-s element there sums `(sd|sd)`,
+# L = 4), are `slow`: deferred to #231.
+
+KJ_TOL = 1e-12
+
+K_FAST_WHOLE = ("h2_sto3g_k",)
+K_FAST_SS = ("h2o_sto3g_k", "h2o_631g_k")
+K_SLOW_WHOLE = ("h2o_sto3g_k", "h2o_631g_k", "h2o_ccpvdz_k")
+K_CASES = ("h2_sto3g_k", "h2o_sto3g_k", "h2o_631g_k", "h2o_ccpvdz_k")
+
+
+@cache
+def _kfx(name: str):
+    fx = manifest.load(manifest.FIXTURES / f"{name}.json")
+    return fx, ob.from_fixture(fx)
+
+
+def _report(name, K, ref, scale, where):
+    err = np.abs(K - ref)
+    assert np.all(scale > 0)
+    worst = float(np.max(err / scale))
+    r = ref.ravel()
+    ratio = float(K.ravel() @ r / (r @ r))  # a uniform constant shows here
+    print(f"\n{name} ({where}): max|K - vk| = {err.max():.2e}, "
+          f"max err/scale = {worst:.2e}, K/vk ratio = {ratio:.15g}")
+    bad = err > KJ_TOL * scale
+    assert not bad.any(), (
+        f"{name} ({where}): {int(bad.sum())} of {err.size} elements exceed "
+        f"1e-12 * scale; worst err/scale {worst:.2e}; K/vk ratio {ratio:.6g}")
+
+
+def test_the_k_fixtures_are_the_j_fixtures_inputs():
+    """Every `_k` fixture carries `vk` and not `vj`, and its molecule, basis
+    (raw and converted), AO layout and density are its `_j` sibling's,
+    exactly -- the same input, so only the contraction differs."""
+    for name in K_CASES:
+        fk, _ = _kfx(name)
+        fj = manifest.load(manifest.FIXTURES / f"{name[:-1]}j.json")
+        assert manifest.K_ARRAY in fk.arrays, name
+        assert manifest.J_ARRAY not in fk.arrays, name
+        assert fk.provenance.mol == fj.provenance.mol, name
+        assert fk.provenance.basis == fj.provenance.basis, name
+        assert fk.provenance.cart is fj.provenance.cart is True, name
+        assert fk.density_recipe == fj.density_recipe, name
+        assert (fk.atoms, fk.shells, fk.nao, fk.ao_labels, fk.ao_loc,
+                fk.converted) == (fj.atoms, fj.shells, fj.nao, fj.ao_labels,
+                                  fj.ao_loc, fj.converted), name
+        assert np.array_equal(fk.density, fj.density), name
+        vk = fk.arrays[manifest.K_ARRAY]
+        # K of a symmetric D is symmetric; get_jk(hermi=1) records it so
+        assert np.max(np.abs(vk - vk.T)) <= SYM_TOL * np.max(np.abs(vk)), name
+
+
+def test_the_k_cases_keep_to_the_rule():
+    """Fast whole cases are s only; the s-s block cases have no `d`, so an
+    s-s element's quartets reach at most L = 2; cc-pVDZ is slow throughout."""
+    for name in K_FAST_WHOLE:
+        assert _lmax_quartet(_kfx(name)[1]) <= L_MAX_RUN, name
+    for name in K_FAST_SS:
+        basis = _kfx(name)[1]
+        assert max(s.l for s in basis.shells) == 1, name
+        assert any(s.l == 0 for s in basis.shells), name
+    for name in K_SLOW_WHOLE:
+        assert _lmax_quartet(_kfx(name)[1]) > L_MAX_RUN, name
+    assert set(K_FAST_WHOLE) | set(K_SLOW_WHOLE) == set(K_CASES)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [pytest.param(n, id=n) for n in K_FAST_WHOLE]
+    + [pytest.param(n, id=n, marks=pytest.mark.slow) for n in K_SLOW_WHOLE])
+def test_exchange_matrix_matches_libcint(name):
+    """The whole K against `vk`, to 1e-12 of `scale_K`, element by element.
+    The H2O cases are `slow` (they evaluate L > 2): deferred to #231."""
+    fx, basis = _kfx(name)
+    K, scale = (np.array(x) for x in
+                exchange_matrix_and_scale(basis, fx.density, pq=pq))
+    assert np.array_equal(K, np.array(exchange_matrix(basis, fx.density,
+                                                      pq=pq, tau=0.0)))
+    _report(name, K, fx.arrays[manifest.K_ARRAY], scale, "whole")
+
+
+@pytest.mark.parametrize("name", K_FAST_SS)
+def test_the_s_block_matches_libcint_at_l_le_2(name):
+    """The s-s block of K over the WHOLE basis (`c`, `d` over every shell,
+    `p` included), from `exchange_matrix` with every quartet above L = 2
+    zeroed by the hook and never computed. The scale is the same block of
+    `sum_cd |D_cd| scale_eri(ac|bd)`, from `eri_block_and_scale` on the
+    quartets an s-s element sums -- every one at L <= 2."""
+    fx, basis = _kfx(name)
+    D = np.array(fx.density)
+    calls: list[int] = []
+    K = np.array(exchange_matrix(basis, D, pq=pq, k=_truncated(calls)))
+    assert max(calls) > L_MAX_RUN  # the cut is real: p quartets were zeroed
+    sh, off = basis.shells, basis.offsets
+    s_idx = [i for i, s in enumerate(sh) if s.l == 0]
+    aos = [off[i] for i in s_idx]  # one AO per s shell
+    scale = np.zeros((len(aos), len(aos)))
+    for ia, a in enumerate(s_idx):
+        for ib, b in enumerate(s_idx):
+            for c, sc in enumerate(sh):
+                for d, sd in enumerate(sh):
+                    assert sh[a].l + sc.l + sh[b].l + sd.l <= L_MAX_RUN
+                    _, s = eri_block_and_scale((sh[a], sc), (sh[b], sd),
+                                               pq=pq)
+                    s = np.array(s).reshape(sc.n_cart, sd.n_cart)
+                    dcd = np.abs(D[off[c]:off[c] + sc.n_cart,
+                                   off[d]:off[d] + sd.n_cart])
+                    scale[ia, ib] += float(np.sum(s * dcd))
+    ref = fx.arrays[manifest.K_ARRAY][np.ix_(aos, aos)]
+    _report(name, K[np.ix_(aos, aos)], ref, scale,
+            f"s-s block, {len(aos)}^2 of {basis.n_ao}^2")

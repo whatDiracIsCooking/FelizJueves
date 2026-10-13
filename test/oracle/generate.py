@@ -28,13 +28,22 @@ import re
 import socket
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from .manifest import ERI_PREFIX, FIXTURES, J_ARRAY, SCHEMA, dumps, encode_array, load
+from .manifest import (
+    ERI_PREFIX,
+    FIXTURES,
+    J_ARRAY,
+    K_ARRAY,
+    SCHEMA,
+    dumps,
+    encode_array,
+    load,
+)
 
 COMMAND = ("PYTHONPATH=test uv run --group oracle python -m oracle.generate "
            "--regenerate")
@@ -70,6 +79,9 @@ class Case:
     # recorded `density`, so both sides of the J comparison see identical
     # input. Needs `record_basis` (our side builds its shells from it).
     record_j: bool = False
+    # Write the `vk` array (#199): PySCF's `get_jk` exchange matrix for the
+    # recorded `density`. Needs `record_basis`, as `record_j` does.
+    record_k: bool = False
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -274,6 +286,32 @@ CASES: dict[str, Case] = {
 }
 
 
+def _k_case(j_name: str) -> Case:
+    """#199: the `_j` case's molecule, basis and `cart` exactly -- so the
+    recorded hilbert density (a function of `nao` alone) and the converted
+    basis are the `_j` fixture's, bit for bit -- with PySCF's `get_jk` K in
+    place of J. A K disagreement then localises to the contraction, not to
+    the input; `test_ao_k.py` checks the two files' inputs are identical."""
+    j = CASES[j_name]
+    return replace(
+        j,
+        description=(
+            f"#199: {j_name}'s molecule, basis and recorded density, with "
+            "PySCF's get_jk exchange matrix K (vk_il = sum_jk (ij|kl) D_jk) "
+            "in place of J."
+        ),
+        record_j=False,
+        record_k=True,
+    )
+
+
+# #199's K cases: one beside every `_j` case.
+CASES.update({
+    j[:-1] + "k": _k_case(j)
+    for j in ("h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_j", "h2o_ccpvdz_j")
+})
+
+
 def _host() -> str:
     # The same marking felizjueves.measured uses: a container's hostname is
     # its id, not the box's.
@@ -440,6 +478,10 @@ def build(name: str) -> dict[str, Any]:
         if not case.record_basis:
             raise ValueError(f"{name}: record_j needs record_basis")
         out["arrays"][J_ARRAY] = encode_array(j_array(mol))
+    if case.record_k:
+        if not case.record_basis:
+            raise ValueError(f"{name}: record_k needs record_basis")
+        out["arrays"][K_ARRAY] = encode_array(k_array(mol))
     return out
 
 
@@ -460,6 +502,26 @@ def j_array(mol: Any) -> np.ndarray:
     if err > 1e-13 * float(np.max(np.abs(full))):
         raise ValueError(f"get_jk and einsum(int2e, dm) differ by {err:.3e}")
     return vj
+
+
+def k_array(mol: Any) -> np.ndarray:
+    """PySCF's exchange matrix for the recorded density: `scf.hf.get_jk` with
+    `hermi=1` and no `vhfopt`, as `j_array`, keeping the K half. PySCF's
+    convention is `vk_il = sum_jk (ij|kl) D_jk`, which by the ERI's
+    symmetry is `ao.k`'s `K_ab = sum_cd D_cd (ac|bd)`. Cross-checked against
+    the full `int2e` tensor contracted by `einsum` with exactly that index
+    pattern, to 1e-13 of the largest element, before it is written; what is
+    RECORDED is `get_jk`'s."""
+    from pyscf import scf
+
+    dm = hilbert_density(int(mol.nao_nr()))
+    _, vk = scf.hf.get_jk(mol, dm, hermi=1, with_j=False)
+    vk = np.asarray(vk, dtype=np.float64)
+    full = np.einsum("acbd,cd->ab", mol.intor("int2e"), dm)
+    err = float(np.max(np.abs(vk - full)))
+    if err > 1e-13 * float(np.max(np.abs(full))):
+        raise ValueError(f"get_jk and einsum(int2e, dm) differ by {err:.3e}")
+    return vk
 
 
 def comparable(obj: dict[str, Any]) -> str:

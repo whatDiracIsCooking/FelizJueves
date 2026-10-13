@@ -33,6 +33,10 @@ THE SHAPE (schema 1), one JSON object per file under `fixtures/`:
                  order -- one shell quartet, never the whole tensor
                  `vj` (OPTIONAL, #86; needs `converted`) is PySCF's
                  `get_jk` Coulomb matrix (nao x nao) for `density`, AO order
+                 `vk` (OPTIONAL, #199; needs `converted`) is PySCF's
+                 `get_jk` exchange matrix (nao x nao) for `density`, AO
+                 order: `vk_il = sum_jk (ij|kl) D_jk`, which is our
+                 `K_ab = sum_cd D_cd (ac|bd)`
     density_recipe  how the recorded density was made
     converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
                  (`ao.shell.Shell`, one entry per contraction, in AO order) as
@@ -78,6 +82,7 @@ OPTIONAL_KEYS = ("converted",)
 REQUIRED_ARRAYS = ("density",)
 ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
 J_ARRAY = "vj"  # PySCF get_jk's Coulomb matrix for `density` (#86)
+K_ARRAY = "vk"  # PySCF get_jk's exchange matrix for `density` (#199)
 
 
 class FixtureError(ValueError):
@@ -323,13 +328,15 @@ def validate(path: Path, raw: Any) -> Fixture:
                             nao)
                  if "converted" in raw else None)
     _check_eri(path, arrays, converted)
-    if J_ARRAY in arrays:
+    for name in (J_ARRAY, K_ARRAY):
+        if name not in arrays:
+            continue
         if converted is None:
-            raise _fail(path, f"arrays.{J_ARRAY} needs the converted basis "
+            raise _fail(path, f"arrays.{name} needs the converted basis "
                               "its AOs are in")
-        if arrays[J_ARRAY].shape != (nao, nao):
-            raise _fail(path, f"arrays.{J_ARRAY} has shape "
-                              f"{arrays[J_ARRAY].shape}, expected "
+        if arrays[name].shape != (nao, nao):
+            raise _fail(path, f"arrays.{name} has shape "
+                              f"{arrays[name].shape}, expected "
                               f"({nao}, {nao})")
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
