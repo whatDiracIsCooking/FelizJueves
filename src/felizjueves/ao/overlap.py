@@ -37,6 +37,8 @@ held to this bitwise.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from felizjueves.ao.one_electron import matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
@@ -54,7 +56,9 @@ def overlap_block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(acc[r * nb:(r + 1) * nb]) for r in range(sa.n_cart))
 
 
-def overlap_matrix(basis: Basis) -> list[list[float]]:
+def overlap_matrix(basis: Basis, *,
+                   pairs: Iterable[tuple[int, int]] | None = None
+                   ) -> list[list[float]]:
     """`S`, `basis.n_ao x basis.n_ao`, exactly symmetric
-    (`ao.one_electron.matrix`)."""
-    return matrix(basis, overlap_block)
+    (`ao.one_electron.matrix`); `pairs` screens it (#236)."""
+    return matrix(basis, overlap_block, pairs=pairs)

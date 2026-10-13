@@ -187,3 +187,76 @@ def test_matrix_refuses_a_block_of_the_wrong_shape(bad) -> None:
 def test_matrix_refuses_a_non_basis() -> None:
     with pytest.raises(ValueError):
         matrix(SHELLS, overlap_block)  # type: ignore[arg-type]
+
+
+
+# --- #236: the screened build ----------------------------------------------
+# `overlap_matrix(basis, pairs=ao.pairs.pair_list(...).kept)`: at tau = 0 it
+# IS the unscreened S, bitwise; at every tau of the ladder a kept block is
+# unchanged bitwise and a dropped block is exactly 0.0 where the unscreened
+# block is below tau. The extended case is test_ao_pairs.py's H2 chain, the
+# one tracked case where a two-centre pair is dropped.
+
+from oracle import basis as _ob236  # noqa: E402
+from oracle import manifest as _mf236  # noqa: E402
+
+from felizjueves.ao.pairs import overlap_bound, pair_list  # noqa: E402
+
+_TAUS_236 = (0.0, 1e-14, 1e-12, 1e-10, 1e-8, 1e-6)
+
+
+def _chain_236(n: int) -> Basis:
+    h = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES / "h2_sto3g_j.json"))
+    s = h.shells[0]
+    return Basis(tuple(Shell(0, (0.0, 0.0, 6.0 * m + dz), s.exponents,
+                             s.coefficients)
+                       for m in range(n) for dz in (0.0, 1.4)))
+
+
+def _bases_236() -> dict[str, Basis]:
+    out = {"SHELLS": Basis(SHELLS), "h2_chain_8": _chain_236(8)}
+    for name in ("h2o_sto3g_j", "hf_ccpvtz"):
+        out[name] = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES
+                                                    / f"{name}.json"))
+    return out
+
+
+def test_236_screened_overlap_at_tau_zero_is_the_unscreened() -> None:
+    for name, basis in _bases_236().items():
+        pl = pair_list(basis, tau=0.0, bound=overlap_bound)
+        assert pl.dropped == ()
+        assert overlap_matrix(basis, pairs=pl.kept) == overlap_matrix(basis), name
+
+
+def test_236_screened_overlap_drops_only_blocks_below_tau() -> None:
+    for name, basis in _bases_236().items():
+        S0 = overlap_matrix(basis)
+        off, sh = basis.offsets, basis.shells
+        for tau in _TAUS_236:
+            pl = pair_list(basis, tau=tau, bound=overlap_bound)
+            S = overlap_matrix(basis, pairs=pl.kept)
+            dropped = set(pl.dropped)
+            for i, sa in enumerate(sh):
+                for j, sb in enumerate(sh):
+                    key = (min(i, j), max(i, j))
+                    for r in range(sa.n_cart):
+                        for c in range(sb.n_cart):
+                            got = S[off[i] + r][off[j] + c]
+                            want = S0[off[i] + r][off[j] + c]
+                            if key in dropped:
+                                assert got == 0.0 and abs(want) < tau, (
+                                    name, tau, key)
+                            else:
+                                assert got == want, (name, tau, key)
+    # the chain really drops something at the loosest rung
+    assert pair_list(_chain_236(8), tau=1e-6, bound=overlap_bound).dropped
+
+
+def test_236_matrix_refuses_a_pair_outside_the_upper_triangle() -> None:
+    basis = Basis(SHELLS)
+    n = len(SHELLS)
+    assert matrix(basis, overlap_block, pairs=[
+        (i, j) for i in range(n) for j in range(i, n)]) == overlap_matrix(basis)
+    for bad in ((1, 0), (0, n), (-1, 0), (0.0, 1)):
+        with pytest.raises(ValueError, match="pair"):
+            matrix(basis, overlap_block, pairs=[bad])

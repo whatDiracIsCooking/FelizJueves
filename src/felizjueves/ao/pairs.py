@@ -5,6 +5,10 @@
     hermite_bound(zeta, p, *, one_centre) -> I_p >= 0
     pair_bound(zeta, L, *, one_centre)    -> I_pair = sum_p I_p
     dmax(dq)                              -> max_q |D_q|, of the DRESSED D_q
+    one_electron_bound(sa, sb, *, T, weight) -> >= max |S or V block|  (#236)
+    overlap_bound / kinetic_bound / potential_bound -> the three, per pair
+    point_charge_bounds(zeta, L, *, one_centre) -> B_t >= |[t]^(0)|, any C
+    pair_list(basis, *, tau, bound)       -> PairList, the screened shell pairs
 
 A *primitive pair* of an ordered shell pair `(sa, sb)` is one exponent from
 each, `alpha = sa.exponents[i]`, `beta = sb.exponents[j]`; it becomes one bra
@@ -85,6 +89,72 @@ as an argument (tests pass `reference.pq.one_centre`); importing `reference`
 here would make the bound share ancestry with the integrals it screens
 (test/test_layering.py, rule "ao").
 
+THE ONE-ELECTRON PAIR BOUND, PROVED (milestone 11, #236). Beside the Schwarz
+bound `J` uses, a one-electron block has a bound of its own, read off the
+SAME dressed Hermite coefficients the block is built from -- so no safety
+multiplier is guessed and none can drift:
+
+    one_electron_bound(sa, sb, *, T, weight) >= max_{a,b} |block[a][b]|
+
+For `S` (`overlap_bound`, `T = 0`) the block IS `SUM_pp block_pp[ab][0]`
+(ao/overlap.py), and the triangle inequality gives
+
+    |S_ab| <= SUM_pp max_{ab} |c_a c_b (pi/zeta)^{3/2} E^{ab}_0[pp]|
+
+-- equality for an `s`-`s` pair whose terms share a sign (one row, no
+cancellation), which test/test_ao_pairs.py asserts. For `V`
+(`potential_bound`, `T = la + lb`) the block is
+`-SUM_C Z_C SUM_pp SUM_t block_pp[ab][t] [t]^(0)(P - C, sqrt(zeta))`
+(ao/potential.py), and every `[t]^(0)` is bounded uniformly in `C` by
+`point_charge_bounds` (below), so
+
+    |V_ab| <= (SUM_C |Z_C|) SUM_pp max_{ab} SUM_t |block_pp[ab][t]| B_t(zeta)
+
+For `T` (`kinetic_bound`) the block is the fixed `K_ij` combination of 1D
+overlaps read at `lb + 2` (ao/kinetic.py); its bound is that combination
+with every coefficient and every overlap replaced by its absolute value,
+
+    |K_ij| <= 2 beta^2 |S_{i,j+2}| + beta (2j+1) |S_ij| + 1/2 j(j-1) |S_{i,j-2}|
+    |T_ab| <= |K_x| |S_y| |S_z| + |S_x| |K_y| |S_z| + |S_x| |S_y| |K_z|
+
+dressed by `dress` with `|c_a| |c_b|`, maximised over `ab`, summed over pp.
+
+IN FLOATING POINT, TOO, FOR `S` AND `T`. `overlap_bound` and `kinetic_bound`
+perform the block's own operations, in the block's own order, on the
+absolute values of its operands. Rounding to nearest is monotone,
+`|fl(xy)| = fl(|x||y|)` and `|fl(x + y)| <= fl(|x| + |y|)`, so by induction
+the computed bound is >= the computed block element -- not merely the exact
+one. `V`'s `B_t` is an analytic bound on `[t]^(0)`, so for `V` the statement
+is the exact-arithmetic one; it is loose everywhere except at `t = 0,
+C = P`, and the tests check it on the computed blocks.
+
+THE POINT-CHARGE BOUND `B_t`. `[t]^(0)(x, theta)` is `d^t/dx^t` of
+`(2/sqrt(pi)) theta F_0(theta^2 |x|^2)`, and `F_0(T) = INT_0^1 exp(-T u^2)
+du`, so `[t]^(0) = (2/sqrt(pi)) theta INT_0^1 PROD_d d^{t_d} exp(-theta^2
+u^2 x_d^2) du`. Write each 1D Gaussian as its Fourier integral, `exp(-a x^2)
+= E[exp(i K x)]` with `K ~ N(0, 2a)`: then `|d^n exp(-a x^2)| <= E|K|^n =
+(2a)^{n/2} m_n` for every `x`, `m_n = E|Z|^n` of a standard normal --
+`(n-1)!!` for even `n` (attained at `x = 0`), and `<= sqrt((n-2)!! n!!)` for
+odd `n` by Cauchy-Schwarz on the two neighbouring even moments. With
+`a = theta^2 u^2` and `INT_0^1 u^{|t|} du = 1/(|t| + 1)`:
+
+    |[t]^(0)(x, theta)| <= [0]^(0)(0, theta) (2 theta^2)^{|t|/2}
+                           PROD_d m_{t_d} / (|t| + 1)        for every x
+
+at `theta = sqrt(zeta)` (ao/potential.py). `[0]^(0)(0, theta)` is read from
+the INJECTED evaluator, so this module forms no constant of the operator and
+`pi` still appears in `dress` only. Every factor is proved; none is fitted.
+
+THE PAIR LIST. `pair_list(basis, *, tau, bound)` takes the bound as a
+CALLABLE `bound(sa, sb) -> float` -- the way `launch.py` takes `bound=` --
+so one list serves all three matrices, and the question of whose bound it is
+never arises. A shell pair `i <= j` is DROPPED when `bound < tau`; then every
+element of its block is `< tau`. `ao.one_electron.matrix(..., pairs=)`
+builds from the kept pairs only. The decay is `exp(-mu |A - B|^2)` through
+`E^{00}_0`, a genuine distance screen rather than a Schwarz product, which is
+why a one-electron build is `O(N)` work on an extended system -- and why a
+compact molecule screens almost nothing (test/test_ao_pairs.py records it).
+
 Plain tuples and floats, like `ao/shell.py`: `src/felizjueves` has no runtime
 dependencies.
 """
@@ -95,8 +165,8 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from felizjueves.ao.hermite import e_block, hermite_order
-from felizjueves.ao.shell import Shell, cartesians
+from felizjueves.ao.hermite import e_axis, e_block, hermite_order
+from felizjueves.ao.shell import Basis, Shell, cartesians
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]
@@ -191,3 +261,190 @@ def dmax(dq: Sequence[float]) -> float:
     if not len(dq):
         raise ValueError("an empty ket vector has no Dmax")
     return max(abs(float(x)) for x in dq)
+
+
+# ---------------------------------------------------------------------------
+# The one-electron pair bound (#236; module docstring, "THE ONE-ELECTRON PAIR
+# BOUND, PROVED")
+# ---------------------------------------------------------------------------
+
+Weight = Callable[[float], Sequence[float]]
+Bound = Callable[[Shell, Shell], float]
+
+
+def one_electron_bound(sa: Shell, sb: Shell, *, T: int = 0,
+                       weight: Weight | None = None) -> float:
+    """`SUM_pp max_{ab} SUM_{t in hermite_order(T)} |block_pp[ab][t]| w_t`.
+
+    `block_pp` is `primitive_pairs(sa, sb)`'s dressed block -- the
+    coefficients the integral is built from -- and `w_t = weight(zeta)[t]`
+    (all 1 when `weight` is None). `T = 0` with no weight bounds `S`;
+    `T = la + lb` with `point_charge_bounds` bounds `V` per unit charge
+    (module docstring).
+    """
+    if type(T) is not int or not 0 <= T <= sa.l + sb.l:
+        raise ValueError(f"T = {T!r} is not an int in [0, la + lb = "
+                         f"{sa.l + sb.l}]")
+    n = len(hermite_order(T))
+    total = 0.0
+    for pp in primitive_pairs(sa, sb):
+        if weight is None:
+            w: tuple[float, ...] = (1.0,) * n
+        else:
+            w = tuple(weight(pp.zeta))[:n]
+            if len(w) != n or any(not x >= 0.0 for x in w):
+                raise ValueError(
+                    f"weight({pp.zeta!r}) does not give {n} weights >= 0")
+        worst = 0.0
+        for row in pp.block:
+            v = 0.0
+            for e, x in zip(row[:n], w, strict=True):
+                v += abs(e) * x
+            worst = max(worst, v)
+        total += worst
+    return total
+
+
+def overlap_bound(sa: Shell, sb: Shell) -> float:
+    """`>= max |overlap_block(sa, sb)|`, in floating point too (`T = 0`)."""
+    return one_electron_bound(sa, sb, T=0)
+
+
+def _double_factorial(n: int) -> int:
+    """`n!!` for `n >= -1` (`(-1)!! = 0!! = 1`)."""
+    out = 1
+    for k in range(n, 0, -2):
+        out *= k
+    return out
+
+
+def abs_normal_moment_bound(n: int) -> float:
+    """`>= E|Z|^n`, `Z` a standard normal: `(n-1)!!` (exact) for even `n`,
+    `sqrt((n-2)!! n!!)` (Cauchy-Schwarz between `E Z^{n-1}` and `E Z^{n+1}`)
+    for odd `n`."""
+    if type(n) is not int or n < 0:
+        raise ValueError(f"n = {n!r} is not an int >= 0")
+    if n % 2 == 0:
+        return float(_double_factorial(n - 1))
+    return math.sqrt(_double_factorial(n - 2) * _double_factorial(n))
+
+
+def point_charge_bounds(zeta: float, L: int, *,
+                        one_centre: OneCentre) -> tuple[float, ...]:
+    """`B_t >= |[t]^(0)(x, sqrt(zeta))|` for EVERY `x`, over `hermite_order(L)`.
+
+    `B_t = [0]^(0)(0, theta) (2 theta^2)^{|t|/2} PROD_d m_{t_d} / (|t| + 1)`
+    with `theta = sqrt(zeta)` and `[0]^(0)(0, theta)` from the injected
+    evaluator (module docstring, "THE POINT-CHARGE BOUND").
+    """
+    if not zeta > 0.0:
+        raise ValueError(f"zeta = {zeta!r} is not > 0")
+    theta = math.sqrt(zeta)
+    r0 = one_centre((0, 0, 0), 0, (0.0, 0.0, 0.0), theta)
+    if not r0 > 0.0:
+        raise ValueError(f"[0]^(0)(0, theta) = {r0!r} is not > 0: the "
+                         "evaluator's convention is wrong")
+    out = []
+    for t in hermite_order(L):
+        n = sum(t)
+        m = math.prod(abs_normal_moment_bound(c) for c in t)
+        out.append(r0 * (2.0 * zeta) ** (0.5 * n) * m / (n + 1))
+    return tuple(out)
+
+
+def potential_bound(sa: Shell, sb: Shell,
+                    nuclei: Sequence[tuple[float, Vec]], *,
+                    one_centre: OneCentre) -> float:
+    """`>= max |potential_block(sa, sb, nuclei)|`: `SUM_C |Z_C|` times the
+    `T = la + lb` bound weighted by `point_charge_bounds` (exact arithmetic;
+    module docstring). Uniform in the nuclei's positions: `V` is long-ranged
+    in `C`, and only the pair's own `exp(-mu |A - B|^2)` decays."""
+    z = math.fsum(abs(float(n[0])) for n in nuclei)
+    L = sa.l + sb.l
+    per_charge = one_electron_bound(
+        sa, sb, T=L,
+        weight=lambda zeta: point_charge_bounds(zeta, L,
+                                                one_centre=one_centre))
+    return z * per_charge
+
+
+def kinetic_bound(sa: Shell, sb: Shell) -> float:
+    """`>= max |kinetic_block(sa, sb)|`, in floating point too: the block's
+    own operations, in its order, on absolute values (module docstring)."""
+    A, B = sa.centre, sb.centre
+    la, lb = sa.l, sb.l
+    carts = [(a, b) for a in cartesians(la) for b in cartesians(lb)]
+    total = 0.0
+    for alpha, ca in zip(sa.exponents, sa.coefficients, strict=True):
+        for beta, cb in zip(sb.exponents, sb.coefficients, strict=True):
+            zeta = alpha + beta
+            P = tuple((alpha * A[d] + beta * B[d]) / zeta for d in range(3))
+            S = [tuple(tuple(abs(e_axis(i, j, zeta, P[d] - A[d],
+                                        P[d] - B[d])[0])
+                             for j in range(lb + 3))
+                       for i in range(la + 1))
+                 for d in range(3)]
+            bracket = []
+            for a, b in carts:
+                s = [S[d][a[d]][b[d]] for d in range(3)]
+                k = []
+                for d in range(3):
+                    row, j = S[d][a[d]], b[d]
+                    kd = (2.0 * beta * beta * row[j + 2]
+                          + beta * (2 * j + 1) * row[j])
+                    if j >= 2:
+                        kd += 0.5 * j * (j - 1) * row[j - 2]
+                    k.append(kd)
+                bracket.append(k[0] * s[1] * s[2] + s[0] * k[1] * s[2]
+                               + s[0] * s[1] * k[2])
+            total += max(dress(bracket, ca=abs(ca), cb=abs(cb), zeta=zeta))
+    return total
+
+
+@dataclass(frozen=True)
+class PairList:
+    """The unordered shell pairs `(i, j)`, `i <= j`, of a basis, split by a
+    bound at `tau`: `kept` (bound >= tau) and `dropped` (bound < tau), each
+    in `ao.one_electron.matrix`'s row-major order (`i` outer)."""
+
+    tau: float
+    kept: tuple[tuple[int, int], ...]
+    dropped: tuple[tuple[int, int], ...]
+
+    @property
+    def n_pairs(self) -> int:
+        return len(self.kept) + len(self.dropped)
+
+    @property
+    def skip_fraction(self) -> float:
+        return len(self.dropped) / self.n_pairs if self.n_pairs else 0.0
+
+
+def _finite_non_negative(x: object) -> bool:
+    return (isinstance(x, (int, float)) and not isinstance(x, bool)
+            and 0.0 <= x < math.inf)
+
+
+def pair_list(basis: Basis, *, tau: float, bound: Bound) -> PairList:
+    """Screen every shell pair `i <= j` of `basis`: dropped when
+    `bound(sa, sb) < tau`, so every element of a dropped block is `< tau`.
+
+    `bound` is injected (`overlap_bound`, `kinetic_bound`, or a closure over
+    `potential_bound`'s nuclei and evaluator); a value that is not a finite
+    number `>= 0` is refused, never clipped. `tau = 0` drops nothing.
+    """
+    if not isinstance(basis, Basis):
+        raise ValueError(f"{basis!r} is not a Basis")
+    if not _finite_non_negative(tau):
+        raise ValueError(f"tau = {tau!r} is not a finite number >= 0")
+    kept, dropped = [], []
+    shells = basis.shells
+    for i, sa in enumerate(shells):
+        for j in range(i, len(shells)):
+            b = bound(sa, shells[j])
+            if not _finite_non_negative(b):
+                raise ValueError(
+                    f"bound(shell {i}, shell {j}) = {b!r} is not a finite "
+                    "number >= 0")
+            (kept if b >= tau else dropped).append((i, j))
+    return PairList(float(tau), tuple(kept), tuple(dropped))
