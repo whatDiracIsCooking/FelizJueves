@@ -10,6 +10,9 @@ fragment against the identity directly as well:
 - the BLOCK fragment equals `e_block` for every pair class (ss) through (ff),
   all 16 ordered `(la, lb)`, with the entries `t_d > a_d + b_d` ABSENT (left
   as the consumer's NaN) rather than written as zeros;
+- the OVERLAP fragment (#237) equals column 0 of `e_block` (and of the block
+  fragment) for every class (ss) through (ff), its axis entries a dead-free
+  subsequence of `_axis_body`'s, and the block and axis texts unchanged;
 - dressed by `ao.pairs.dress` -- the one module that dresses -- the block is
   `ao.pairs.PrimitivePair.block`, row for row, so the layout is the pair
   record's and no dressing is inside the fragment.
@@ -267,6 +270,87 @@ def test_bad_input_refused() -> None:
         ef.axis_fragment(0, 0, 3)
     with pytest.raises(ValueError):
         ef.block_fragment(1, 1.0)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# The overlap fragment: the t = 0 column only (#237)
+# ---------------------------------------------------------------------------
+
+
+def _run_overlap(la: int, lb: int, zeta, P, A, B) -> np.ndarray:
+    frag = ef.overlap_fragment(la, lb)
+    s = _scalars(la, lb, zeta, P, A, B)
+    s = {k: v for k, v in s.items() if k in frag.binds}
+    E0 = np.full(len(ef.block_rows(la, lb)), np.nan)
+    return interpret_fragment(frag, E0=E0, **s)["E0"]
+
+
+@pytest.mark.parametrize("la,lb", CLASSES)
+def test_the_overlap_fragment_is_column_zero_of_e_block(la: int, lb: int) -> None:
+    rng = random.Random(237 + 10 * la + lb)
+    rows = ef.block_rows(la, lb)
+    for _ in range(3):
+        _, _, zeta, P, A, B = _geometry(rng)
+        got = _run_overlap(la, lb, zeta, P, A, B)
+        assert not np.any(np.isnan(got))  # every row written: no t = 0 zero
+        want = np.array([e_block(a, b, zeta, P, A, B)[0] for a, b in rows])
+        assert np.array_equal(got, want)  # bitwise
+        # ...and the block fragment's own column 0, the same numbers
+        assert np.array_equal(got, _run_block(la, lb, zeta, P, A, B)[:, 0])
+
+
+@pytest.mark.parametrize("la,lb", CLASSES)
+def test_the_overlap_fragment_is_the_axis_body_minus_dead_entries(
+        la: int, lb: int) -> None:
+    # One source: its axis statements are `_axis_body`'s, in order, with
+    # the entries nothing reads dropped -- a subsequence, never a rewrite.
+    frag = ef.overlap_fragment(la, lb)
+    assert frag.name == f"e_overlap_{la}{lb}"
+    assert not any(isinstance(s, Inline) for s in walk(frag.body))
+    decls = [s for s in frag.body if isinstance(s, Decl)]
+    source = [s for d in range(3) for s in ef._axis_body(la, lb, d)]
+    it = iter(source)
+    assert all(any(s == x for x in it) for s in decls)  # a subsequence
+    # Nothing declared is unread (hipcc's -Wunused-variable, nvcc's #177-D):
+    read = {e.name for s in frag.body if isinstance(s, (Decl, Assign))
+            for e in ir._subexprs(s.init if isinstance(s, Decl) else s.value)
+            if isinstance(e, Var)}
+    assert {s.name for s in decls} <= read
+    # Only t = 0 products, one per row, (E_x E_y) E_z.
+    assigns = [s for s in frag.body if isinstance(s, Assign)]
+    assert len(assigns) == len(ef.block_rows(la, lb))
+    for row, (st, (a, b)) in enumerate(zip(assigns, ef.block_rows(la, lb),
+                                           strict=True)):
+        assert st.dst == ir.Index("E0", (Lit(row),))
+        names = [v.name for v in ir._subexprs(st.value) if isinstance(v, Var)]
+        assert names == [ef.e_name(d, a[d], b[d], 0) for d in range(3)]
+    notes = [s for s in walk(frag.body) if isinstance(s, Note)]
+    assert len(notes) == 1 and "eqs. 2.20-2.21" in notes[0].prov
+
+
+def test_the_overlap_binds_are_the_contract() -> None:
+    assert ef.overlap_fragment(1, 2).binds == (
+        "zeta", "half_inv_zeta", "PA_x", "PB_x", "PA_y", "PB_y", "PA_z",
+        "PB_z", "E0")
+    assert ef.overlap_fragment(1, 2).array_binds == {"E0"}
+    # (ss) raises nothing; (ps) and (sp) raise, but only E^{10}_0 = X_PA
+    # E^{00}_0 is live, so 1/2zeta would be a stale bind there: absent.
+    for cls in ((0, 0), (1, 0), (0, 1)):
+        assert "half_inv_zeta" not in ef.overlap_fragment(*cls).binds, cls
+    assert "half_inv_zeta" in ef.overlap_fragment(2, 0).binds
+    with pytest.raises(ValueError):
+        ef.overlap_fragment(-1, 0)
+
+
+def test_the_overlap_fragment_leaves_the_block_and_axis_unchanged() -> None:
+    # The new entry point shares `_axis_body`; the block's text is pinned by
+    # the probe goldens below, and the axis fragment is that body plus its
+    # Note (test_the_axis_body_is_the_one_source_of_the_block).
+    for la, lb in CLASSES:
+        body = ef.block_fragment(la, lb).body
+        heads = [s for d in range(3) for s in ef._axis_body(la, lb, d)]
+        assert list(body[1:1 + len(heads)]) == heads
+        assert ef.axis_fragment(la, lb, 0).body[1:] == ef._axis_body(la, lb, 0)
 
 
 def test_the_interpreter_does_not_know_what_e_is() -> None:
