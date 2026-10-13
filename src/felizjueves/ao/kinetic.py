@@ -49,7 +49,7 @@ when interpreted.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from felizjueves.ao.hermite import e_axis
 from felizjueves.ao.one_electron import matrix
@@ -110,7 +110,9 @@ def kinetic_block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(acc[r * nb:(r + 1) * nb]) for r in range(sa.n_cart))
 
 
-def kinetic_matrix(basis: Basis) -> list[list[float]]:
+def kinetic_matrix(basis: Basis, *,
+                   pairs: Iterable[tuple[int, int]] | None = None
+                   ) -> list[list[float]]:
     """`T`, `basis.n_ao x basis.n_ao`, exactly symmetric
-    (`ao.one_electron.matrix`)."""
-    return matrix(basis, kinetic_block)
+    (`ao.one_electron.matrix`); `pairs` screens it (#236)."""
+    return matrix(basis, kinetic_block, pairs=pairs)

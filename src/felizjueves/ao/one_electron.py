@@ -38,27 +38,49 @@ dependencies.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from felizjueves.ao.shell import Basis, Shell
 
 Block = Callable[[Shell, Shell], Sequence[Sequence[float]]]
 
 
-def matrix(basis: Basis, block: Block) -> list[list[float]]:
+def matrix(basis: Basis, block: Block, *,
+           pairs: Iterable[tuple[int, int]] | None = None
+           ) -> list[list[float]]:
     """The symmetric `basis.n_ao x basis.n_ao` matrix assembled from `block`.
 
     `block(sa, sb)` is called for every shell pair `i <= j` of `basis`, once,
     in row-major shell order (`i` outer); the module docstring has its
     contract and the symmetry rule.
+
+    THE SCREENED BUILD (#236). With `pairs` -- shell index pairs `(i, j)`,
+    `i <= j`, typically `ao.pairs.pair_list(...).kept` -- `block` is called
+    for those pairs only (still in row-major order) and every other block is
+    left exactly `0.0`. `pairs=None` is every pair, and so is a `pairs` that
+    lists them all: the same calls in the same order, the same matrix bitwise.
+    A pair outside `0 <= i <= j < n_shells` is refused.
     """
     if not isinstance(basis, Basis):
         raise ValueError(f"{basis!r} is not a Basis")
     n = basis.n_ao
     M = [[0.0] * n for _ in range(n)]
     shells, off = basis.shells, basis.offsets
+    keep = None
+    if pairs is not None:
+        keep = set()
+        for p in pairs:
+            i, j = p
+            if not (type(i) is int and type(j) is int
+                    and 0 <= i <= j < len(shells)):
+                raise ValueError(
+                    f"pair {p!r} is not (i, j) with 0 <= i <= j < "
+                    f"{len(shells)} shells")
+            keep.add((i, j))
     for i, sa in enumerate(shells):
         for j in range(i, len(shells)):
+            if keep is not None and (i, j) not in keep:
+                continue  # screened out: the block stays exactly 0.0
             sb = shells[j]
             b = block(sa, sb)
             na, nb = sa.n_cart, sb.n_cart

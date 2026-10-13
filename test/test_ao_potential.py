@@ -180,3 +180,79 @@ def test_no_nuclei_is_the_zero_matrix_and_bad_nuclei_are_refused() -> None:
         potential_matrix(basis, ((1.0, (0.0, 0.0)),), one_centre=one_centre)
     with pytest.raises(ValueError):
         potential_matrix(basis, ((1.0,),), one_centre=one_centre)
+
+
+
+# --- #236: the screened build ----------------------------------------------
+# `potential_matrix(basis, nuclei, pairs=ao.pairs.pair_list(...).kept)` with
+# `potential_bound`: at tau = 0 it IS the unscreened V, bitwise; at every tau
+# of the ladder a kept block is unchanged bitwise and a dropped block is
+# exactly 0.0 where the unscreened block is below tau. The extended case is
+# test_ao_pairs.py's H2 chain at THREE molecules: a fourth puts a nucleus far
+# enough from a compact pair that `reference.boys` refuses `T > T_MAX`.
+
+from oracle import basis as _ob236  # noqa: E402
+from oracle import manifest as _mf236  # noqa: E402
+
+from felizjueves.ao.pairs import pair_list, potential_bound  # noqa: E402
+
+_TAUS_236 = (0.0, 1e-14, 1e-12, 1e-10, 1e-8, 1e-6)
+
+
+def _chain_236(n: int):
+    h = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES / "h2_sto3g_j.json"))
+    s = h.shells[0]
+    centres = [(0.0, 0.0, 6.0 * m + dz) for m in range(n) for dz in (0.0, 1.4)]
+    return (Basis(tuple(Shell(0, c, s.exponents, s.coefficients)
+                        for c in centres)),
+            tuple((1.0, c) for c in centres))
+
+
+def _cases_236():
+    fx = _mf236.load(_mf236.FIXTURES / "h2o_sto3g_j.json")
+    return {
+        "SHELLS": (Basis(SHELLS), NUCLEI),
+        "h2_chain_3": _chain_236(3),
+        "h2o_sto3g_j": (_ob236.from_fixture(fx),
+                        tuple((float(a.charge), tuple(a.coord))
+                              for a in fx.atoms)),
+    }
+
+
+def _bound_236(nuclei):
+    return lambda sa, sb: potential_bound(sa, sb, nuclei,
+                                          one_centre=one_centre)
+
+
+def test_236_screened_potential_at_tau_zero_is_the_unscreened() -> None:
+    for name, (basis, nuc) in _cases_236().items():
+        pl = pair_list(basis, tau=0.0, bound=_bound_236(nuc))
+        assert pl.dropped == ()
+        assert potential_matrix(basis, nuc, one_centre=one_centre,
+                                pairs=pl.kept) == potential_matrix(
+            basis, nuc, one_centre=one_centre), name
+
+
+def test_236_screened_potential_drops_only_blocks_below_tau() -> None:
+    for name, (basis, nuc) in _cases_236().items():
+        V0 = potential_matrix(basis, nuc, one_centre=one_centre)
+        off, sh = basis.offsets, basis.shells
+        for tau in _TAUS_236:
+            pl = pair_list(basis, tau=tau, bound=_bound_236(nuc))
+            V = potential_matrix(basis, nuc, one_centre=one_centre,
+                                 pairs=pl.kept)
+            dropped = set(pl.dropped)
+            for i, sa in enumerate(sh):
+                for j, sb in enumerate(sh):
+                    key = (min(i, j), max(i, j))
+                    for r in range(sa.n_cart):
+                        for c in range(sb.n_cart):
+                            got = V[off[i] + r][off[j] + c]
+                            want = V0[off[i] + r][off[j] + c]
+                            if key in dropped:
+                                assert got == 0.0 and abs(want) < tau, (
+                                    name, tau, key)
+                            else:
+                                assert got == want, (name, tau, key)
+    basis, nuc = _chain_236(3)
+    assert pair_list(basis, tau=1e-6, bound=_bound_236(nuc)).dropped

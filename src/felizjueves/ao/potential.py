@@ -52,7 +52,7 @@ when interpreted.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.one_electron import matrix
@@ -98,9 +98,11 @@ def potential_block(sa: Shell, sb: Shell, nuclei: Sequence[Nucleus], *,
 
 
 def potential_matrix(basis: Basis, nuclei: Sequence[Nucleus], *,
-                     one_centre: OneCentre) -> list[list[float]]:
+                     one_centre: OneCentre,
+                     pairs: Iterable[tuple[int, int]] | None = None
+                     ) -> list[list[float]]:
     """`V`, `basis.n_ao x basis.n_ao`, exactly symmetric
-    (`ao.one_electron.matrix`)."""
+    (`ao.one_electron.matrix`); `pairs` screens it (#236)."""
     nuc = _check_nuclei(nuclei)
     return matrix(basis, lambda sa, sb: potential_block(
-        sa, sb, nuc, one_centre=one_centre))
+        sa, sb, nuc, one_centre=one_centre), pairs=pairs)

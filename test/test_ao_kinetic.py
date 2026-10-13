@@ -219,3 +219,65 @@ def test_kinetic_matrix_places_each_block_at_its_offsets() -> None:
                     if i == j and c < r:
                         continue
                     assert T[off[i] + r][off[j] + c] == blk[r][c]
+
+
+
+# --- #236: the screened build ----------------------------------------------
+# `kinetic_matrix(basis, pairs=ao.pairs.pair_list(...).kept)` with
+# `kinetic_bound`: at tau = 0 it IS the unscreened T, bitwise; at every tau
+# of the ladder a kept block is unchanged bitwise and a dropped block is
+# exactly 0.0 where the unscreened block is below tau. The extended case is
+# test_ao_pairs.py's H2 chain.
+
+from oracle import basis as _ob236  # noqa: E402
+from oracle import manifest as _mf236  # noqa: E402
+
+from felizjueves.ao.pairs import kinetic_bound, pair_list  # noqa: E402
+
+_TAUS_236 = (0.0, 1e-14, 1e-12, 1e-10, 1e-8, 1e-6)
+
+
+def _chain_236(n: int) -> Basis:
+    h = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES / "h2_sto3g_j.json"))
+    s = h.shells[0]
+    return Basis(tuple(Shell(0, (0.0, 0.0, 6.0 * m + dz), s.exponents,
+                             s.coefficients)
+                       for m in range(n) for dz in (0.0, 1.4)))
+
+
+def _bases_236() -> dict[str, Basis]:
+    out = {"SHELLS": Basis(SHELLS), "h2_chain_8": _chain_236(8)}
+    for name in ("h2o_sto3g_j", "hf_ccpvtz"):
+        out[name] = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES
+                                                    / f"{name}.json"))
+    return out
+
+
+def test_236_screened_kinetic_at_tau_zero_is_the_unscreened() -> None:
+    for name, basis in _bases_236().items():
+        pl = pair_list(basis, tau=0.0, bound=kinetic_bound)
+        assert pl.dropped == ()
+        assert kinetic_matrix(basis, pairs=pl.kept) == kinetic_matrix(basis), name
+
+
+def test_236_screened_kinetic_drops_only_blocks_below_tau() -> None:
+    for name, basis in _bases_236().items():
+        T0 = kinetic_matrix(basis)
+        off, sh = basis.offsets, basis.shells
+        for tau in _TAUS_236:
+            pl = pair_list(basis, tau=tau, bound=kinetic_bound)
+            T = kinetic_matrix(basis, pairs=pl.kept)
+            dropped = set(pl.dropped)
+            for i, sa in enumerate(sh):
+                for j, sb in enumerate(sh):
+                    key = (min(i, j), max(i, j))
+                    for r in range(sa.n_cart):
+                        for c in range(sb.n_cart):
+                            got = T[off[i] + r][off[j] + c]
+                            want = T0[off[i] + r][off[j] + c]
+                            if key in dropped:
+                                assert got == 0.0 and abs(want) < tau, (
+                                    name, tau, key)
+                            else:
+                                assert got == want, (name, tau, key)
+    assert pair_list(_chain_236(8), tau=1e-6, bound=kinetic_bound).dropped
