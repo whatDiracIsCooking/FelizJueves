@@ -101,6 +101,7 @@ from felizjueves.emit._c import BOYS_DEVICE
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
+    k_spec,
     ket_functions,
     launch_shape,
     pq_spec,
@@ -2020,6 +2021,42 @@ def test_hip_k_cell_matches_the_host(spec, request, compile_device_source,
                                      run_device_binary, tmp_path) -> None:
     """A K_SUBGRID cell's launch sequence on the RX 9060 XT, against the host
     -- or, for a recorded refusal, the refusal re-derived on the card."""
+    _run_k("hip", spec, request, compile_device_source, run_device_binary,
+           tmp_path)
+
+
+# CORRECTNESS-ONLY K CELLS: classes outside K_SUBGRID, checked on the card by
+# the same `_run_k` (same inputs, same K_REL pin) and recorded nowhere -- no
+# row, no refusal, no timing. L = 8 is (dd|dd) in k_spec's Hermite order,
+# the top class a cc-pVDZ molecule reaches (#231), and the first K check on a
+# card above #206's L <= 2. Each batch count is its own cell.
+K_CHECK_CELLS = [pytest.param(k_spec(8, n_batches=b),
+                              id=f"L8-b{b}-k", marks=[pytest.mark.slow])
+                 for b in (1, 3, 6, 9, 12)]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", K_CHECK_CELLS)
+def test_cuda_k_check_cell_matches_the_host(spec, request,
+                                            compile_device_source,
+                                            run_device_binary,
+                                            tmp_path) -> None:
+    """A correctness-only K cell's launch sequence on the RTX 3080, against
+    the host staging."""
+    _run_k("cuda", spec, request, compile_device_source, run_device_binary,
+           tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", K_CHECK_CELLS)
+def test_hip_k_check_cell_matches_the_host(spec, request,
+                                           compile_device_source,
+                                           run_device_binary,
+                                           tmp_path) -> None:
+    """A correctness-only K cell's launch sequence on the RX 9060 XT, against
+    the host staging."""
     _run_k("hip", spec, request, compile_device_source, run_device_binary,
            tmp_path)
 
