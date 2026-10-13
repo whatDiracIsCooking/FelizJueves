@@ -893,3 +893,17 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "ao.potential": ("ao.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
 }.items()}
+
+
+# ---------------------------------------------------------------------------
+# #234 (milestone 11): the kinetic matrix, under the `ao` rule. `ao.kinetic`
+# is `T` by the fixed +/-2 ket shift on `ao.hermite`'s axis tables, dressed
+# by `ao.pairs.dress` and assembled by `ao.one_electron`.
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "ao.kinetic": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.kinetic": ("ao.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
+}.items()}
