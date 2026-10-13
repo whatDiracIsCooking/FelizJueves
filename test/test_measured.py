@@ -126,10 +126,11 @@ STORE = json.loads(measured_store.STORE.read_text())
 ROWS = measured_store.load()
 
 # Every Spec a row may be keyed on: the one-batch classes, the subgrid, and
-# the subgrid's recycle-lever arm (#55).
+# the subgrid's recycle-lever arm (#55), #113's arm, and #162's sieve arm.
 RECYCLE_CELLS = measured_store.lever_cells(RECYCLE)
+SIEVE_CELLS = measured_store.SIEVE_CELLS
 SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
-                              *RECYCLE_CELLS, *asym.ASYM_CELLS)}  # + #113's arm
+                              *RECYCLE_CELLS, *asym.ASYM_CELLS, *SIEVE_CELLS)}
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -487,9 +488,11 @@ def test_the_read_path_filters_the_real_store() -> None:
     assert all(k.startswith(spec.key() + "@") for k in got)
     nv = measured_store.rows(arch=SM_86)
     # the one-batch classes L = 0..16, plus the subgrid's split cells, plus
-    # the recycle arm of every subgrid cell (#55), plus #113's asym cells
+    # the recycle arm of every subgrid cell (#55), plus #113's asym cells,
+    # plus #162's no-sieve arm (the subgrid and L = 11)
     split = sum(s.n_batches > 1 for s in measured_store.SUBGRID)
-    assert len(nv) == 17 + split + len(RECYCLE_CELLS) + len(asym.ASYM_CELLS)
+    assert len(nv) == (17 + split + len(RECYCLE_CELLS) + len(asym.ASYM_CELLS)
+                       + len(SIEVE_CELLS))
     assert measured_store.rows(arch="sm_86") == nv
     assert measured_store.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
@@ -2145,8 +2148,6 @@ def test_the_no_sieve_cells_are_the_whole_subgrid_unsieved() -> None:
         measured_store.SUBGRID)
     assert all(s.levers == (NO_SIEVE,) for s in NO_SIEVE_CELLS)
     assert {measured_store.arm_kind(s) for s in NO_SIEVE_CELLS} == {"plan"}
-    # declared before its rows: the tracked store has no no-sieve row yet
-    assert not any(NO_SIEVE in k for k in STORE["rows"])
 
 
 def _dags(dags) -> tuple:
@@ -2232,5 +2233,163 @@ def test_the_sieve_verdict_is_declared_before_its_rows() -> None:
         measured_store.sieve_may_leave_the_default(allwin, cells)
     with pytest.raises(ValueError, match="not a no-sieve arm"):
         measured_store.sieve_ab(allwin, "sm_86", RECYCLE_CELLS[:1])
-    with pytest.raises(KeyError):  # nothing recorded yet on the tracked store
-        measured_store.sieve_verdict(ROWS, "sm_86")
+    with pytest.raises(KeyError):  # a cell not recorded is not judged
+        measured_store.sieve_verdict(_sieve_store({cells[0]: win}), "sm_86")
+
+
+# --- #162: the sieve A/B on both cards ----------------------------------------
+
+# The 122 rows the store held before #162 (f95f87b..3191838): sha256 of their
+# records, json.dumps(sort_keys=True). #162 only ADDS rows; this pins that
+# every row it found -- #55's recycle rows among them -- is byte-identical.
+PRE_SIEVE_ROWS = 122
+PRE_SIEVE_SHA256 = (
+    "01153b046c1e969b2d01fea2c0b86129333acb51fc9166184dc94c8b092cf997")
+
+
+def test_the_sieve_ab_added_rows_and_moved_none() -> None:
+    old = {k: v for k, v in STORE["rows"].items() if NO_SIEVE not in k}
+    assert len(old) == PRE_SIEVE_ROWS
+    got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
+    assert got == PRE_SIEVE_SHA256
+    new = {k for k in STORE["rows"] if NO_SIEVE in k}
+    assert new == {MeasuredKey(s, a, ROWS[k].toolchain).key()
+                   for s in SIEVE_CELLS for a in (SM_86, GFX1200)
+                   for k in measured_store.rows(spec=replace(s, levers=()),
+                                                arch=a, store=ROWS)}
+    assert len(new) == 2 * len(SIEVE_CELLS) == 42
+
+
+def test_the_sieve_cells_are_the_subgrid_and_l11() -> None:
+    assert SIEVE_CELLS[:20] == measured_store.lever_cells(NO_SIEVE)
+    (l11,) = SIEVE_CELLS[20:]
+    assert l11 == pq_spec(11, levers=(NO_SIEVE,))
+    assert (l11.total_am, l11.n_batches, l11.am) == (11, 1, (6, 0, 5, 0))
+    # [5|6] and [6|5] are one plan: the plan layer counts by L alone
+    assert plan(l11).cost == plan(replace(l11, am=(5, 0, 6, 0))).cost
+    # its literal control is the store's one-batch L = 11 row, on both cards
+    for a in ARCHS:
+        assert len(measured_store.rows(spec=pq_spec(11), arch=a,
+                                       store=ROWS)) == 1
+    # an arm with no added cell is its subgrid cells alone (#55 unchanged)
+    assert measured_store.ab_cells(RECYCLE) == RECYCLE_CELLS
+    assert measured_store.ab_cells(NO_SIEVE) == SIEVE_CELLS
+    assert measured_store.sieve_ab.__defaults__ == (None,)
+
+
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("spec", SIEVE_CELLS, ids=lambda s: s.key())
+def test_every_sieve_cell_is_compiled_and_timed_against_a_control(
+        spec, arch) -> None:
+    """#162's acceptance: a no-sieve row per cell and card, compiled, timed
+    behind the gate with its same-session literal control, the card's state
+    known at every phase and the discarded phases counted."""
+    (row,) = measured_store.rows(spec=spec, arch=arch, store=ROWS).values()
+    (lit,) = measured_store.rows(spec=replace(spec, levers=()), arch=arch,
+                                 store=ROWS).values()
+    assert row.arm_kind == measured_store.PLAN
+    assert STORE["rows"][MeasuredKey(spec, ARCHS[arch], row.toolchain).key()][
+        "arm_kind"] == "plan"
+    assert row.toolchain == lit.toolchain and row.gpu == lit.gpu != "ABSENT"
+    assert row.kernel == lit.kernel  # the same batch kernels, by name
+    assert row.registers is not None and row.compile_s is not None
+    assert row.spill_store is not None and row.spill_load is not None
+    assert _timed(row) and row.repeats == 31, (
+        f"{spec.key()}@{arch}: FJ_WALLCLOCK_LEVER=no-sieve sweep not recorded")
+    w = row.raw
+    for p in ("wallclock:control:", "wallclock:control:near:"):
+        assert w[f"{p}min_ns"] <= w[f"{p}q1_ns"] <= w[f"{p}median_ns"] \
+            <= w[f"{p}q3_ns"] <= w[f"{p}max_ns"], (spec.key(), p)
+        assert w[f"{p}cpu_busy_permille_before"] <= 100, (spec.key(), p)
+    # every phase, both arms and both inputs, passed the gate clean: a known
+    # reading at most GPU_BUSY_MAX before AND after (a phase that was not is
+    # discarded and retaken, and counted)
+    for p in ("wallclock:", "wallclock:near:", "wallclock:control:",
+              "wallclock:control:near:"):
+        for f in ("gpu_util_before", "gpu_util_after"):
+            v = w[p + f]
+            assert type(v) is int and 0 <= v <= GPU_BUSY_MAX, (spec.key(), p, f)
+    d = w["wallclock:gate_discarded_phases"]
+    assert type(d) is int and d >= 0
+    assert w["wallclock:J_bitwise_repeatable"] in (0, 1)
+
+
+def test_the_sieve_verdict_reads_an_added_cell_by_the_same_rule() -> None:
+    """THE SIEVE ARM: the rule is per cell, so L = 11 is judged unchanged."""
+    l11 = SIEVE_CELLS[-1]
+    same, win, loss = (1000, 500), (900, 450), (1100, 550)
+    cells = (NO_SIEVE_CELLS[0], l11)
+    store = _sieve_store({NO_SIEVE_CELLS[0]: same, l11: loss})
+    got = measured_store.sieve_ab(store, "sm_86", cells)
+    assert got[l11].verdict == "loss" and got[l11].L == 11
+    assert measured_store.sieve_verdict(store, "sm_86", cells) == "supported"
+    assert measured_store.sieve_verdict(
+        _sieve_store({NO_SIEVE_CELLS[0]: same, l11: win}), "sm_86",
+        cells) == "contradicted"
+    with pytest.raises(KeyError):  # the default set needs every cell
+        measured_store.sieve_verdict(store, "sm_86")
+
+
+def test_the_cli_prints_the_sieve_ab_and_its_verdict(capsys) -> None:
+    assert measured.main(["--lever-ab", NO_SIEVE]) == 0
+    out = capsys.readouterr().out
+    for a in ARCHS:
+        assert f"{a}: the sieve {measured_store.sieve_verdict(ROWS, a).upper()}" \
+            in out
+        assert f"{a} L=11 b1:" in out
+    assert out.count(" -> no-sieve ") == 2 * len(SIEVE_CELLS)
+
+
+SIEVE_PARAMS = [
+    pytest.param(s, id=s.key(),
+                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
+    for s in SIEVE_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("spec", SIEVE_PARAMS)
+def test_nvcc_still_reports_the_sieve_cells(spec, nvcc, tmp_path) -> None:
+    _recheck_cell("cuda", spec, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("spec", SIEVE_PARAMS)
+def test_hipcc_still_reports_the_sieve_cells(spec, hipcc, tmp_path) -> None:
+    _recheck_cell("hip", spec, tmp_path)
+
+
+# The sieve A/B as the rule read the tracked rows (#162): (arch, L, n_batches)
+# -> (wide sign, near sign) of no-sieve against its same-session sieved
+# control. Pinned as the declared rule (measured_store, THE SIEVE ARM) said
+# it, so a re-recording that moves it is seen; #164 scores the claim.
+SIEVE_AB: dict[tuple[str, int, int], tuple[str, str]] = {
+    **{(a, s.total_am, s.n_batches): ("neutral", "neutral")
+       for a in ARCHS for s in SIEVE_CELLS},
+    ("sm_86", 16, 1): ("slower", "slower"),
+    ("sm_86", 16, 6): ("faster", "faster"),
+    ("sm_86", 16, 12): ("faster", "neutral"),
+    ("gfx1200", 7, 3): ("neutral", "slower"),
+    ("gfx1200", 7, 6): ("neutral", "slower"),
+    ("gfx1200", 7, 9): ("neutral", "slower"),
+    ("gfx1200", 7, 12): ("neutral", "slower"),
+    ("gfx1200", 10, 1): ("neutral", "faster"),
+    ("gfx1200", 10, 3): ("neutral", "slower"),
+    ("gfx1200", 11, 1): ("neutral", "slower"),
+    ("gfx1200", 13, 1): ("slower", "slower"),
+    ("gfx1200", 13, 3): ("neutral", "slower"),
+    ("gfx1200", 16, 1): ("slower", "slower"),
+    ("gfx1200", 16, 6): ("neutral", "faster"),
+}
+
+
+def test_the_sieve_ab_is_what_the_rows_say() -> None:
+    got = {}
+    for arch in ARCHS:
+        for c in measured_store.sieve_ab(ROWS, arch).values():
+            got[arch, c.L, c.n_batches] = (c.wide_sign, c.near_sign)
+    assert got == SIEVE_AB
+    # WINs and LOSSes on both cards: the declared rule says NOT SHOWN on
+    # each, and the sieved plan stays the default
+    for arch in ARCHS:
+        assert measured_store.sieve_verdict(ROWS, arch) == "not shown"
+    assert not measured_store.sieve_may_leave_the_default(ROWS)

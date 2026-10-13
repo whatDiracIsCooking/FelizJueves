@@ -156,7 +156,13 @@ reading one.
 
 - THE CELLS are `lever_cells(NO_SIEVE)` -- every SUBGRID cell, unsieved --
   plus any cell the recording adds (#162 adds one at L = 11); the rule is
-  per cell, so an added cell is judged by it unchanged.
+  per cell, so an added cell is judged by it unchanged. The recorded set is
+  `SIEVE_CELLS` = `ab_cells(NO_SIEVE)`: the subgrid's 20, then
+  `ADDED_CELLS[NO_SIEVE]`, the one-batch default class of L = 11 (#162:
+  `(6,0|5,0)`; the published pattern names `[5|6]`, and the plan layer's
+  counts depend on L alone, so the default split is the cell the store
+  already compiles as its literal L = 11 row, and that row is its spill
+  control).
 - PER CELL: `lever_ab`'s verdict, with `no-sieve` as the lever and the
   sieved literal kernel as its same-session control -- #55's protocol and
   #60's symmetric rule on both inputs, unchanged. Spill is reported beside
@@ -414,6 +420,21 @@ def lever_cells(lever: str) -> tuple[Spec, ...]:
     _declared(lever)
     return tuple(replace(s, levers=tuple(sorted({*s.levers, lever})))
                  for s in SUBGRID)
+
+
+# Cells an A/B adds beyond the subgrid, per arm (#162; module docstring, THE
+# SIEVE ARM): the sieve's one-batch L = 11 cell. `lever_cells` stays the
+# subgrid's, so #55's cells and verdict are untouched.
+ADDED_CELLS: Mapping[str, tuple[Spec, ...]] = MappingProxyType({
+    NO_SIEVE: (pq_spec(11, levers=(NO_SIEVE,)),),
+})
+
+
+def ab_cells(lever: str) -> tuple[Spec, ...]:
+    """Every cell an A/B of `lever` records: `lever_cells(lever)`, then the
+    arm's `ADDED_CELLS` -- what the driver compiles and the wall-clock sweep
+    times for `--lever` / `FJ_WALLCLOCK_LEVER`."""
+    return lever_cells(lever) + ADDED_CELLS.get(lever, ())
 
 
 SCHEMA = 2  # 2: a timed row carries GPU_UTIL_FIELDS, a reading or null (#93)
@@ -1294,16 +1315,18 @@ def lever_ab(store: Mapping[str, Measured], arch: str, spec: Spec) -> LeverAB:
 
 
 # #159: the sieve arm's verdict, declared before any no-sieve row (module
-# docstring, THE SIEVE ARM). #162 records the rows; nothing here reads one yet.
+# docstring, THE SIEVE ARM). #162 records the rows, over SIEVE_CELLS.
 SUPPORTED, CONTRADICTED, NOT_SHOWN = "supported", "contradicted", "not shown"
+SIEVE_CELLS: tuple[Spec, ...] = ab_cells(NO_SIEVE)
 
 
 def sieve_ab(store: Mapping[str, Measured], arch: str,
              cells: tuple[Spec, ...] | None = None) -> dict[Spec, LeverAB]:
     """`lever_ab` of every `no-sieve` cell on `arch` (by default
-    `lever_cells(NO_SIEVE)`); a cell that is not a `no-sieve` arm is refused.
+    `SIEVE_CELLS`: the subgrid's and #162's L = 11); a cell that is not a
+    `no-sieve` arm is refused.
     Raises KeyError, as `lever_ab` does, for a cell not yet recorded."""
-    cells = lever_cells(NO_SIEVE) if cells is None else cells
+    cells = SIEVE_CELLS if cells is None else cells
     for c in cells:
         if arm_of(c) != NO_SIEVE:
             raise ValueError(f"{c.key()}: not a {NO_SIEVE} arm")

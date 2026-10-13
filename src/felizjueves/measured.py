@@ -8,6 +8,8 @@
     python -m felizjueves.measured --nine-vs-twelve     # #60's comparison
     python -m felizjueves.measured --remeasure --subgrid --lever recycle
     python -m felizjueves.measured --lever-ab recycle   # #55's comparison
+    python -m felizjueves.measured --remeasure --subgrid --lever no-sieve
+    python -m felizjueves.measured --lever-ab no-sieve  # #162's, + verdict
     python -m felizjueves.measured --remeasure --asym   # #113's study cells
     python -m felizjueves.measured --asym-verdict       # #113's comparison
     python -m felizjueves.measured --roofline           # #112's verdicts
@@ -157,26 +159,31 @@ from felizjueves.measured_store import (
 )
 from felizjueves.measured_store import (
     MEASUREMENTS,
+    NO_SIEVE,
     REPO,
     STORE,
     SUBGRID,
     SUBGRID_LS,
     UNMEASURED,
     Measured,
+    ab_cells,
     cell_roofline,
     combine,
     kernel_key,
     kernel_roofline,
     lever_ab,
-    lever_cells,
     load,
     load_counters,
     merge,
     nine_vs_twelve,
     save,
+    sieve_verdict,
     split_kernel_key,
 )
 from felizjueves.measured_store import ROOFLINE as ROOFLINE
+from felizjueves.measured_store import (
+    lever_cells as lever_cells,  # re-exported: test_kernel_device's cells
+)
 from felizjueves.measured_store import (
     save_counters as save_counters,  # re-exported: test_kernel_device's sweep
 )
@@ -900,7 +907,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--nine-vs-twelve", action="store_true",
                     help="print #60's 9-against-12 comparison per arch and L")
     ap.add_argument("--lever", default=None,
-                    help="with --subgrid: the lever_cells of this lever (#55)")
+                    help="with --subgrid: the A/B cells of this lever "
+                         "(#55; ab_cells: no-sieve adds L = 11, #162)")
     ap.add_argument("--lever-ab", default=None, metavar="LEVER",
                     help="print #55's A/B of LEVER against literal, per arch "
                          "and cell")
@@ -927,7 +935,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ValueError("--lever needs --subgrid")
             if args.asym and (args.subgrid or args.lever):
                 raise ValueError("--asym is its own cell set")
-            grid = lever_cells(args.lever) if args.lever else SUBGRID
+            grid = ab_cells(args.lever) if args.lever else SUBGRID
             cells = grid if args.subgrid else args.Ls
             if args.asym:
                 grid = cells = ASYM_CELLS
@@ -947,7 +955,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.lever_ab:
         try:
-            cells = lever_cells(args.lever_ab)
+            cells = ab_cells(args.lever_ab)
         except ValueError as e:
             print(f"measured: {e}", file=sys.stderr)
             return 2
@@ -966,6 +974,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                       f"{c.near[0] / ms:.3f}+-{c.near[1] / ms:.3f} -> "
                       f"{c.near[2] / ms:.3f}+-{c.near[3] / ms:.3f} ms "
                       f"{c.near_sign} -> {c.lever} {c.verdict.upper()}")
+            if args.lever_ab == NO_SIEVE:  # #159's declared verdict, per arch
+                try:
+                    print(f"{arch}: the sieve "
+                          f"{sieve_verdict(got, arch).upper()}")
+                except KeyError as e:
+                    print(f"{arch}: the sieve cannot be judged ({e})")
         return 0
     if args.asym_verdict:
         ms = 1e6
