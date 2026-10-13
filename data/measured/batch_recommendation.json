@@ -48,7 +48,7 @@
    }
   },
   "compare": "Within one arch, across n_batches only. Absolute times are not comparable across vendors (gfx1200 rate-limits fp64).",
-  "not_policy": "Spec.n_batches defaults to 1 and this does not change it: choosing a count per class is dispatch, which has no home in this repo yet.",
+  "not_policy": "Spec.n_batches defaults to 1 and this does not change it: choosing a count per class is dispatch, which lives in dispatch.py (#145) and reads these rows per (arch, class, input) for a launch plan only, never for the generator, which ships one batch by decision (#167).",
   "regenerate": "PYTHONPATH=src uv run python -m felizjueves.batchreport --write"
  },
  "cells": [

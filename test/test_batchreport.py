@@ -196,7 +196,24 @@ def test_spec_n_batches_still_defaults_to_one() -> None:
     assert field.default == 1
     assert Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.J).n_batches == 1
     assert pq_spec(16).n_batches == 1
-    assert "does not change" in DOC["header"]["not_policy"]
+    not_policy = DOC["header"]["not_policy"]
+    assert "does not change" in not_policy
+    assert "dispatch.py" in not_policy
+    assert "never for the generator" in not_policy
+
+
+def test_dispatch_has_a_home_nowhere_says_otherwise() -> None:
+    """#229: dispatch lives in `dispatch.py` since #145, so no source or
+    measured-data file may still say it has no home."""
+    root = measured.REPO
+    offenders = [
+        str(f.relative_to(root))
+        for base in (root / "src", root / "data" / "measured")
+        for f in sorted(base.rglob("*"))
+        if f.is_file() and f.suffix in {".py", ".json", ".md"}
+        and "has no home" in f.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
 
 
 def test_one_batch_is_a_decision_and_its_grounds_are_the_rows() -> None:
