@@ -13,6 +13,10 @@ fragment against the identity directly as well:
 - the OVERLAP fragment (#237) equals column 0 of `e_block` (and of the block
   fragment) for every class (ss) through (ff), its axis entries a dead-free
   subsequence of `_axis_body`'s, and the block and axis texts unchanged;
+- the KINETIC fragment (#238) equals the undressed bracket formed from
+  `e_axis` at `lb + 2` by `ao.kinetic.kinetic_axis`, for every class (ss)
+  through (ff), its axis entries a dead-free subsequence of
+  `_axis_body(la, lb + 2, d)`'s and its `j(j-1)` term absent for `j < 2`;
 - dressed by `ao.pairs.dress` -- the one module that dresses -- the block is
   `ao.pairs.PrimitivePair.block`, row for row, so the layout is the pair
   record's and no dressing is inside the fragment.
@@ -41,6 +45,7 @@ from test_ao_hermite import EPS, K, _derived, _lambda, _pair
 from felizjueves import e_fragment as ef
 from felizjueves import ir
 from felizjueves.ao.hermite import e_axis, e_block, hermite_order
+from felizjueves.ao.kinetic import kinetic_axis
 from felizjueves.ao.pairs import dress, primitive_pairs
 from felizjueves.ao.shell import Shell, cartesians
 from felizjueves.device import GFX1200, SM_86
@@ -351,6 +356,104 @@ def test_the_overlap_fragment_leaves_the_block_and_axis_unchanged() -> None:
         heads = [s for d in range(3) for s in ef._axis_body(la, lb, d)]
         assert list(body[1:1 + len(heads)]) == heads
         assert ef.axis_fragment(la, lb, 0).body[1:] == ef._axis_body(la, lb, 0)
+
+
+# ---------------------------------------------------------------------------
+# The kinetic fragment: the axis tables at lb + 2 and the fixed shift (#238)
+# ---------------------------------------------------------------------------
+
+
+def _run_kinetic(la: int, lb: int, zeta, P, A, B, beta) -> np.ndarray:
+    frag = ef.kinetic_fragment(la, lb)
+    s = _scalars(la, lb + 2, zeta, P, A, B)
+    s = {k: v for k, v in s.items() if k in frag.binds}
+    KE = np.full(len(ef.block_rows(la, lb)), np.nan)
+    return interpret_fragment(frag, KE=KE, eb=beta, **s)["KE"]
+
+
+def _bracket(la: int, lb: int, zeta, P, A, B, beta) -> list[float]:
+    """The undressed bracket from `e_axis` at `lb + 2`, by `kinetic_axis`:
+    `ao.kinetic.kinetic_block`'s per-record arithmetic, before `dress`."""
+    S = [[[e_axis(i, j, zeta, P[d] - A[d], P[d] - B[d])[0]
+           for j in range(lb + 3)] for i in range(la + 1)] for d in range(3)]
+    out = []
+    for a, b in ef.block_rows(la, lb):
+        s = [S[d][a[d]][b[d]] for d in range(3)]
+        k = [kinetic_axis(S[d][a[d]], b[d], beta) for d in range(3)]
+        out.append(k[0] * s[1] * s[2] + s[0] * k[1] * s[2]
+                   + s[0] * s[1] * k[2])
+    return out
+
+
+@pytest.mark.parametrize("la,lb", CLASSES)
+def test_the_kinetic_fragment_is_the_shift_on_e_axis_at_lb_plus_2(
+        la: int, lb: int) -> None:
+    rng = random.Random(238 + 10 * la + lb)
+    for _ in range(3):
+        _, beta, zeta, P, A, B = _geometry(rng)
+        got = _run_kinetic(la, lb, zeta, P, A, B, beta)
+        assert not np.any(np.isnan(got))  # every row written
+        assert np.array_equal(got, _bracket(la, lb, zeta, P, A, B, beta))
+
+
+@pytest.mark.parametrize("la,lb", CLASSES)
+def test_the_kinetic_fragment_is_the_widened_axis_body(la: int, lb: int) -> None:
+    # One source: its E statements are `_axis_body(la, lb + 2, d)`'s, in
+    # order, dead ones dropped -- and the table reaches j = lb + 2 on every
+    # axis, while i never passes la.
+    frag = ef.kinetic_fragment(la, lb)
+    assert frag.name == f"e_kinetic_{la}{lb}"
+    assert not any(isinstance(s, Inline) for s in walk(frag.body))
+    decls = [s for s in frag.body if isinstance(s, Decl)]
+    edecls = [s for s in decls if s.name.startswith("E")]
+    source = [s for d in range(3) for s in ef._axis_body(la, lb + 2, d)]
+    it = iter(source)
+    assert all(any(s == x for x in it) for s in edecls)  # a subsequence
+    names = {s.name for s in decls}
+    for d in range(3):
+        assert ef.e_name(d, la, lb + 2, 0) in names
+        assert not any(n.startswith(f"E{'xyz'[d]}_{la + 1}_") for n in names)
+        for i in range(la + 1):
+            for j in range(lb + 1):
+                assert ef.k_name(d, i, j) in names
+    read = {e.name for s in frag.body if isinstance(s, (Decl, Assign))
+            for e in ir._subexprs(s.init if isinstance(s, Decl) else s.value)
+            if isinstance(e, Var)}
+    assert names <= read  # nothing declared is unread (#92's ratchet)
+    assigns = [s for s in frag.body if isinstance(s, Assign)]
+    assert [s.dst for s in assigns] == [
+        ir.Index("KE", (Lit(r),)) for r in range(len(ef.block_rows(la, lb)))]
+    notes = [s for s in walk(frag.body) if isinstance(s, Note)]
+    assert len(notes) == 1 and "eqs. 2.20-2.21" in notes[0].prov
+
+
+def test_the_j_minus_2_term_is_absent_below_j_2() -> None:
+    frag = ef.kinetic_fragment(1, 3)
+    shift = {s.name: s.init for s in frag.body
+             if isinstance(s, Decl) and s.name.startswith("K")}
+    for i in range(2):
+        for j in range(4):
+            init = shift[ef.k_name(0, i, j)]
+            reads = {e.name for e in ir._subexprs(init) if isinstance(e, Var)}
+            want = {ef.e_name(0, i, jj, 0) for jj in (j - 2, j, j + 2)
+                    if jj >= 0} | {"eb"}
+            assert reads == want
+            # absent, not a zero weight: no SUB at all below j = 2
+            assert (init.fn is Fn.SUB) == (j >= 2)
+            lits = {e.value for e in ir._subexprs(init) if isinstance(e, Lit)}
+            assert 0.0 not in lits
+
+
+def test_the_kinetic_binds_are_the_contract() -> None:
+    assert ef.kinetic_fragment(1, 2).binds == (
+        "zeta", "half_inv_zeta", "PA_x", "PB_x", "PA_y", "PB_y", "PA_z",
+        "PB_z", "eb", "KE")
+    assert ef.kinetic_fragment(0, 0).array_binds == {"KE"}
+    # Even (ss) raises the ket twice, so 1/2zeta is always live.
+    assert "half_inv_zeta" in ef.kinetic_fragment(0, 0).binds
+    for bad in ((-1, 0), (0, -1), (1, 1.0)):
+        with pytest.raises(ValueError):
+            ef.kinetic_fragment(*bad)  # type: ignore[arg-type]
 
 
 def test_the_interpreter_does_not_know_what_e_is() -> None:

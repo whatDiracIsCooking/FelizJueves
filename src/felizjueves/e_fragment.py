@@ -43,6 +43,27 @@ identity it is checked by (test/test_e_fragment.py).
   that is kept. `half_inv_zeta` is bound only when a live entry reads it
   (it is not, in (ps) and (sp)).
 
+- `kinetic_fragment(la, lb)` (#238): the three axes at `lb + 2` -- the same
+  `_axis_body(la, lb + 2, d)`, unchanged -- then the fixed ket shift per
+  axis, one local `K{x,y,z}_i_j` per `i <= la`, `j <= lb`,
+
+      K_ij = -2 eb^2 E^{i,j+2}_0 + eb (2j+1) E^{ij}_0 - 1/2 j(j-1) E^{i,j-2}_0
+
+  and the three-term product `K_x S_y S_z + S_x K_y S_z + S_x S_y K_z` (with
+  `S_d = E^{a_d b_d}_0`), written into the 1D array bind `KE` in
+  `block_rows` order. The `j(j-1)` term is ABSENT for `j < 2`, not a zero
+  weight -- the fragment's convention for an out-of-range source. Every
+  operation is `ao.kinetic`'s, in its association: `K_ij` is
+  `((-2.0 eb) eb) E^{i,j+2}_0 + (eb (2j+1)) E^{ij}_0`, then minus
+  `(1/2 j(j-1)) E^{i,j-2}_0` (`kinetic_axis`), and the product is
+  `((K_x S_y) S_z + (S_x K_y) S_z) + (S_x S_y) K_z`. `eb` -- the KET
+  primitive's exponent -- is a scalar bind of its own: the shift is the one
+  place a single primitive's exponent enters a fragment, so it is bound,
+  not reconstructed from `zeta`. Only the ket widens; the entries at
+  `j = lb + 1, lb + 2` are read ONLY through `K_ij` (the products read
+  `S_d` at `j <= lb`), and dead entries are dropped by `_live` as in the
+  overlap fragment.
+
 ONE LEVEL, COMPOSED AT BUILD TIME. `ir.Fragment` admits no `Inline` inside a
 fragment (#149: one level, names only), so the block does not `Inline` the
 axis fragment three times. Instead both are built from the one function that
@@ -62,7 +83,7 @@ Binds: `zeta` (the seed's exponent), `half_inv_zeta` (`1/2zeta`, a
 `Factor`, bound once rather than divided per term -- only when some entry
 is raised), and each axis's `PA_d` / `PB_d` (`Factor`s, read by the seed as
 plain scalars too); the block adds the array `E`, the overlap fragment
-the array `E0`.
+the array `E0`, the kinetic fragment the scalar `eb` and the array `KE`.
 
 This is a builder: it produces vendor-neutral IR. It must not import
 `ao.hermite` (the reference it is checked against) nor the interpreter.
@@ -74,6 +95,7 @@ from felizjueves.ir import (
     Assign,
     Call,
     Decl,
+    Expr,
     Factor,
     Fn,
     Fragment,
@@ -97,6 +119,8 @@ HALF_INV_ZETA = Factor.HALF_INV_ZETA.name_in_kernel
 ZETA = "zeta"
 E_ARRAY = "E"
 E0_ARRAY = "E0"
+KE_ARRAY = "KE"
+EB = "eb"  # the ket primitive's exponent: the kinetic shift's scalar
 
 
 def _check_am(name: str, n: int) -> None:
@@ -263,3 +287,50 @@ def overlap_fragment(la: int, lb: int) -> Fragment:
     kept, read = _live(body)
     binds = [b for b in _scalar_binds(la, lb, (0, 1, 2)) if b in read]
     return Fragment(f"e_overlap_{la}{lb}", (*binds, E0_ARRAY), kept)
+
+
+def k_name(d: int, i: int, j: int) -> str:
+    """The local holding the kinetic factor `K_ij` on axis `d`: `Kx_1_0`."""
+    return f"K{_AXES[d]}_{i}_{j}"
+
+
+def _mul(x: Expr, y: Expr) -> Call:
+    return Call(Fn.MUL, (x, y))
+
+
+def _shift(d: int, i: int, j: int) -> Decl:
+    """`K_ij` on axis `d` from the widened table: `ao.kinetic.kinetic_axis`'s
+    operations in its association, the `j(j-1)` term absent for `j < 2`."""
+    def e(jj: int) -> Var:
+        return Var(e_name(d, i, jj, 0))
+
+    eb = Var(EB)
+    k = Call(Fn.ADD, (_mul(_mul(_mul(Lit(-2.0), eb), eb), e(j + 2)),
+                      _mul(_mul(eb, Lit(float(2 * j + 1))), e(j))))
+    if j >= 2:
+        k = Call(Fn.SUB, (k, _mul(Lit(0.5 * j * (j - 1)), e(j - 2))))
+    return Decl(k_name(d, i, j), Scalar.F64, init=k)
+
+
+def kinetic_fragment(la: int, lb: int) -> Fragment:
+    """The undressed kinetic bracket `K_x S_y S_z + S_x K_y S_z + S_x S_y K_z`,
+    written into the 1D array bind `KE`, one entry per row of
+    `block_rows(la, lb)`, from the axis tables at `lb + 2` (module doc)."""
+    _check_am("la", la)
+    _check_am("lb", lb)
+    body: list[Stmt] = [Note(_PROVENANCE), *_axes_body(la, lb + 2)]
+    for d in range(3):
+        for i in range(la + 1):
+            for j in range(lb + 1):
+                body.append(_shift(d, i, j))
+    for row, (a, b) in enumerate(block_rows(la, lb)):
+        s = [Var(e_name(d, a[d], b[d], 0)) for d in range(3)]
+        k = [Var(k_name(d, a[d], b[d])) for d in range(3)]
+        value = Call(Fn.ADD, (
+            Call(Fn.ADD, (_mul(_mul(k[0], s[1]), s[2]),
+                          _mul(_mul(s[0], k[1]), s[2]))),
+            _mul(_mul(s[0], s[1]), k[2])))
+        body.append(Assign(Index(KE_ARRAY, (Lit(row),)), value))
+    kept, read = _live(body)
+    binds = [b for b in _scalar_binds(la, lb + 2, (0, 1, 2)) if b in read]
+    return Fragment(f"e_kinetic_{la}{lb}", (*binds, EB, KE_ARRAY), kept)
