@@ -1,0 +1,177 @@
+{
+ "schema": 1,
+ "name": "h2_sto3g_k",
+ "description": "#199: h2_sto3g_j's molecule, basis and recorded density, with PySCF's get_jk exchange matrix K (vk_il = sum_jk (ij|kl) D_jk) in place of J.",
+ "provenance": {
+  "pyscf": "2.14.0",
+  "libcint": "6.1.3",
+  "numpy": "2.5.3",
+  "date": "2026-10-13",
+  "host": "5827cf35122c (container)",
+  "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate h2_sto3g_k",
+  "mol": {
+   "atom": "H 0 0 0; H 0.3 -0.4 1.3",
+   "unit": "Bohr",
+   "charge": 0,
+   "spin": 0
+  },
+  "basis": "sto-3g",
+  "cart": true
+ },
+ "atoms": [
+  {
+   "symbol": "H",
+   "charge": 1,
+   "coord": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "symbol": "H",
+   "charge": 1,
+   "coord": [
+    0.3,
+    -0.4,
+    1.3
+   ]
+  }
+ ],
+ "shells": [
+  {
+   "atom": 0,
+   "l": 0,
+   "exponents": [
+    3.42525091,
+    0.62391373,
+    0.1688554
+   ],
+   "coefficients": [
+    [
+     0.15432897
+    ],
+    [
+     0.53532814
+    ],
+    [
+     0.44463454
+    ]
+   ]
+  },
+  {
+   "atom": 1,
+   "l": 0,
+   "exponents": [
+    3.42525091,
+    0.62391373,
+    0.1688554
+   ],
+   "coefficients": [
+    [
+     0.15432897
+    ],
+    [
+     0.53532814
+    ],
+    [
+     0.44463454
+    ]
+   ]
+  }
+ ],
+ "nao": 2,
+ "ao_labels": [
+  "0  H 1s    ",
+  "1  H 1s    "
+ ],
+ "ao_loc": [
+  0,
+  1,
+  2
+ ],
+ "arrays": {
+  "density": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.0,
+    0.5,
+    0.5,
+    0.3333333333333333
+   ]
+  },
+  "ovlp": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.0000000000000002,
+    0.6617981434351801,
+    0.6617981434351801,
+    1.0000000000000002
+   ]
+  },
+  "vk": {
+   "shape": [
+    2,
+    2
+   ],
+   "values": [
+    1.320723846534262,
+    1.0303494693666195,
+    1.0303494693666195,
+    1.004016563758822
+   ]
+  }
+ },
+ "density_recipe": "hilbert: D[i][j] = 1/(i+j+1) -- symmetric positive definite, no RNG, reproducible bit-for-bit on any host",
+ "converted": {
+  "common_factor": [
+   0.28209479177387814
+  ],
+  "shells": [
+   {
+    "atom": 0,
+    "l": 0,
+    "centre": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "exponents": [
+     3.42525091,
+     0.62391373,
+     0.1688554
+    ],
+    "coefficients": [
+     0.2769343609526477,
+     0.2678388517525271,
+     0.08347366961692529
+    ]
+   },
+   {
+    "atom": 1,
+    "l": 0,
+    "centre": [
+     0.3,
+     -0.4,
+     1.3
+    ],
+    "exponents": [
+     3.42525091,
+     0.62391373,
+     0.1688554
+    ],
+    "coefficients": [
+     0.2769343609526477,
+     0.2678388517525271,
+     0.08347366961692529
+    ]
+   }
+  ]
+ }
+}

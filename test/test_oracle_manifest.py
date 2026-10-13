@@ -135,6 +135,42 @@ def test_corrupted_fixture_fails_naming_the_file(tmp_path, mutate, says):
     assert says in str(e.value)
 
 
+MATRIX_FIXTURES = {manifest.J_ARRAY: manifest.FIXTURES / "h2_sto3g_j.json",
+                   manifest.K_ARRAY: manifest.FIXTURES / "h2_sto3g_k.json"}
+
+
+def test_the_matrix_arrays_are_named_and_tracked():
+    """`vj` (#86) and `vk` (#199) are distinct names, and each has a tracked
+    fixture that carries it with the converted basis its AOs are in."""
+    assert (manifest.J_ARRAY, manifest.K_ARRAY) == ("vj", "vk")
+    for name, path in MATRIX_FIXTURES.items():
+        fx = load(path)
+        assert name in fx.arrays and fx.converted is not None
+        assert fx.arrays[name].shape == (fx.nao, fx.nao)
+
+
+@pytest.mark.parametrize("array", [manifest.J_ARRAY, manifest.K_ARRAY])
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r, a: r.pop("converted"), "needs the converted basis"),
+        (lambda r, a: r["arrays"][a].update(shape=[1, 4]), "has shape (1, 4)"),
+    ],
+    ids=["no-converted", "wrong-shape"],
+)
+def test_a_bad_matrix_array_fails_naming_the_file(tmp_path, array, mutate,
+                                                  says):
+    """The shape check covers `vk` exactly as it covers `vj`."""
+    raw = json.loads(MATRIX_FIXTURES[array].read_text())
+    mutate(raw, array)
+    path = tmp_path / MATRIX_FIXTURES[array].name
+    path.write_text(json.dumps(raw))
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value)
+    assert f"arrays.{array} " in str(e.value) and says in str(e.value)
+
+
 def test_truncated_file_fails_naming_the_file(tmp_path):
     path = tmp_path / "h2_sto3g.json"
     path.write_text(SEED.read_text()[:-200])
