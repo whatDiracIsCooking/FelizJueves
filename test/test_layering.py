@@ -1002,3 +1002,54 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     for banned in (_REF, "ao", "interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_t reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #239 (milestone 11): the nuclear-attraction kernel, `Target.V` -- the plan
+# layer's first non-J consumer. A builder like `kernel_s`, plus the plan
+# layer and `recurrence` (the J engine's `[t]^(0)` statements, imported, not
+# rewritten). Checked against `ao.potential.potential_block` in the
+# interpreter, so neither may be its ancestor, nor `reference/`.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "v_builder": _rule(
+        "kernel_v.py (#239): the nuclear-attraction kernel, `Target.V` -- "
+        "key -> IR, with the plan layer's DAG and schedule (`plan`), the J "
+        "engine's prelude and recurrence statements (`recurrence`), the `E` "
+        "block fragment inlined (`e_fragment`) and `kernel_jab`'s scatter "
+        "rule restated, not imported",
+        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ao="`ao.potential.potential_block` is the witness the kernel is "
+           "interpreted against, and `ao.pairs.dress` the prefactor it must "
+           "not form: importing either shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "kernel_v": "v_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_v": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
+                 "plan.schedule", "plan.targets", "recurrence", "spec"),
+}.items()}
+
+
+def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    # #239, TRANSITIVELY: no chain of imports from `kernel_v` reaches the AO
+    # layer it is checked against, the interpreter, reference/, a backend or
+    # a card -- and it does reach the plan layer, through `recurrence`.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_v"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_v reaches {hit}"
