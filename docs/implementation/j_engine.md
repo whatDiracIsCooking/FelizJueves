@@ -1255,7 +1255,7 @@ before the rows, is **contradicted on both** ("The launch plan" below).
 The table below is rendered from `claims.json` and checked verbatim:
 
 <!-- claims-status:begin -->
-**32 records: 18 asserted, 14 unverifiable, 0 pending** (recomputed from `claims.json` by `test/test_claims.py`).
+**35 records: 18 asserted, 14 unverifiable, 3 pending** (recomputed from `claims.json` by `test/test_claims.py`).
 
 | status | claim | kind | held by |
 |---|---|---|---|
@@ -1291,6 +1291,9 @@ The table below is rendered from `claims.json` and checked verbatim:
 | unverifiable | `jengine/optimal-batching-is-np-hard` | shape | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/sieve-non-monotone-in-spills` | monotonicity | no test: the reason is in `claims.json` |
 | unverifiable | `jengine/sieve-underspecified` | defect | no test: the reason is in `claims.json` |
+| pending | `jengine/k-contraction-at-quartet-level` | shape | no test: the reason is in `claims.json` |
+| pending | `jengine/k-recompute-has-more-merit` | monotonicity | no test: the reason is in `claims.json` |
+| pending | `jengine/k-splitting-redundant-hermite` | shape | no test: the reason is in `claims.json` |
 <!-- claims-status:end -->
 
 **Why the unverifiable ones stay so**, by mechanism (each record's `reason`

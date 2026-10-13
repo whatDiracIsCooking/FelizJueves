@@ -123,6 +123,30 @@
       "reason": "An explanation of the authors' whole-J timings in EXESS on an A100 over water clusters, polyglycine and boron nitride; this repo has neither the engine nor the systems at that size, and builds J_mn only at fixture size (through d on the cards), with every arithmetic step generated since milestone 7 but nothing of the new kernels timed and no whole-J timing across molecules of different composition."
     },
     {
+      "id": "jengine/k-contraction-at-quartet-level",
+      "statement": "The exchange matrix K_ab = SUM_cd D_cd (ac|bd) needs contraction work per primitive quartet that J does not: its output indices a and b straddle the bra pair record (a,c) and the ket pair record (b,d), so the ket's E transform (I[p] = SUM_q [p|q] E^bd_q), the bra's (V = SUM_p E^ac_p I[p]) and the D_cd digest all run inside the quartet loop. J pre-contracts its ket once per ket record (DQ: D_q) and back-transforms its bra once per bra class (JAB), so its [p|q] kernel does only J_p += SUM_q [p|q] D_q per quartet. Source: [JEngine, v2, §6], the sentence giving 'the additional contractions that must be completed at the shell quartet level' as K's reason.",
+      "source": "[JEngine, v2, §6]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "No K kernel exists yet: milestone 10 declares this record before anything is built. The rule that will score it, fixed now: SHAPE, read off the kernel we build. The per-quartet body of a Target.K class (kernel_k.py, B2) inlines both E fragments (e_fragment.block_fragment for the (b,d) and the (a,c) pair records) inside the ket loop, while the Target.J [p|q] kernel at the same Spec.am inlines none. ASSERTED if that holds of the built IR for every K class built; refuted if K's per-quartet work can be written as J's (one pre-contracted ket vector per ket record, no E inside the quartet loop). Scored by E3."
+    },
+    {
+      "id": "jengine/k-recompute-has-more-merit",
+      "statement": "Recomputing the fundamentals [r]^(0) in several kernels (a batched class, so that fewer kernels write the same output element) is worth more for K than for J, because what a split duplicates for K is the per-quartet E contraction (I and V into K[a,b]) and not only a reduction into J_p. A direction -- K's gain from splitting exceeds J's at the same L and batch count -- not a value. Source: [JEngine, v2, §6], the sentence that recomputing [r]^(0) 'has more merit when applied to the calculation of the exchange matrix K'.",
+      "source": "[JEngine, v2, §6]",
+      "kind": "monotonicity",
+      "status": "pending",
+      "reason": "Nothing to score yet: no K kernel and no K row. The rule that will score it, fixed now, before any row exists (#109's discipline): MONOTONICITY in two halves. Arithmetic (E1, fast tier): from the plan's batch partition and the E nonzero structure, count the work each extra batch duplicates, for J and for K at the same Spec.am and n_batches; K's duplicated contraction work must be strictly larger than J's. Measured (E2, both cards): the best-median wall-clock gain of the split K class over its same-session one-batch control must be at least the split J class's gain over its own, at the same L; contradicted on a card where J's gain is the larger. ASSERTED only if both halves hold on both cards; a card on which they disagree is recorded, never averaged. The verdict is open: Wang et al. profile high-l K as memory-bound. Scored by E3."
+    },
+    {
+      "id": "jengine/k-splitting-redundant-hermite",
+      "statement": "Splitting K's element-wise contributions across several kernels (the f-type K of Wang et al. [24], as the paper characterises it) has two effects together: each kernel uses fewer registers, and the kernels re-evaluate the same two-centre Hermite integrals redundantly. In our vocabulary: a split K class (one kernel per batch, B3) has, per batch kernel, no more registers and spill bytes than its one-batch K kernel, and its batch kernels together evaluate more Hermite intermediates than the one-batch kernel does. Source: [JEngine, v2, §1], the prior-art paragraph on Wang et al. [24].",
+      "source": "[JEngine, v2, §1]",
+      "kind": "shape",
+      "status": "pending",
+      "reason": "No split K kernel exists yet (B3), and no K register row (E0, E2). The rule that will score it, fixed now: SHAPE, both effects required, on OUR split K kernels. (1) Every batch kernel's registers and spill bytes (sm_86: ptxas; gfx1200: kernel-resource-usage) are at or under the one-batch K kernel's at the same Spec.am, on both arches, and strictly under for at least one; (2) the summed count of Hermite intermediates evaluated across the batch kernels, counted from the built IR, is strictly greater than the one-batch kernel's. ASSERTED if both hold for every split K class measured; refuted at a class where either fails. It characterises another group's kernels, so a refutation says our split does not show the effect, not that theirs did not. Scored by E3."
+    },
+    {
       "id": "jengine/ket-sort-key-beats-the-global-max",
       "statement": "The per-record product key I_q * max_q |D_q| is the better ket sort key than one global max|D| (ket key I_q * Dmax_global, the order by I_q alone -- the density_sort=False fallback jgen kept and never measured): at the same tau, molecule and batch count it screens more (bra, ket) record pairs and so builds J_p faster. The measured arm of jengine/ket-sort-key-is-the-product.",
       "source": "[JEngine, v2, §3.3]",

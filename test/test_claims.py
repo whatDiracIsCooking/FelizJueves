@@ -37,6 +37,13 @@ SEED_IDS = {
     "jengine/batch-tie-break",
     "jengine/batching-trades-flops-for-intermediates",
     "jengine/eq17-1y-misprint",
+    # #195: [JEngine]'s K claims, declared PENDING before any K kernel exists.
+    # Neither direction of the registry check can see a claim nobody wrote
+    # down; these three were such an omission, and are pinned here so they
+    # cannot leave again unnoticed.
+    "jengine/k-contraction-at-quartet-level",
+    "jengine/k-recompute-has-more-merit",
+    "jengine/k-splitting-redundant-hermite",
     "jengine/mild-keeps-rules-1-2-3-5",
     "jengine/mild-tie-break",
     "jengine/mild-vs-exact-tradeoff",
