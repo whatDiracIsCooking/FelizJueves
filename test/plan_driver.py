@@ -76,15 +76,22 @@ the driver is generated from is keyed on the DQ kernel's own `Dmax`:
 `jab_program` is one JAB unit alone over a given `J_p` (#157's part 1); the
 DQ part-1 harness is `dq_program` over one class. Both are harness, and the
 emitted units they `#include` are the generator's text, unchanged.
+
+THE EXCHANGE MATRIX (#206): `k_driver` is the same pattern for a K launch
+plan (`launch_k.KLaunchPlan`, #204), in a template of its own (`K_DRIVER`),
+so the J driver's text is untouched. Its section below, "K on the card",
+states the layout; `k_stage` packs the input, `k_read_back` splits the runs,
+and `k_scatter` is the host-side sum of the per-record blocks into `K_mn`.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import shlex
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import devcache
@@ -94,7 +101,7 @@ from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import measured
 from felizjueves.ao.j import _density, epair
-from felizjueves.ao.shell import Basis
+from felizjueves.ao.shell import Basis, n_cartesians
 from felizjueves.ao.staged import (
     KetDataHook,
     _accumulating,
@@ -104,13 +111,17 @@ from felizjueves.ao.staged import (
     _kets_checked,
     _transform,
 )
-from felizjueves.ir import Kernel
+from felizjueves.ir import AtomicAdd, For, If, Kernel, Note, Stmt, walk
 from felizjueves.kernel import bra_functions, ket_functions, launch_shape
 from felizjueves.kernel_dq import PARAMS as DQ_PARAMS
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.launch import LaunchPlan, class_spec
+from felizjueves.kernel_k import PARAMS as K_PARAMS
+from felizjueves.kernel_k import launch_shape as k_launch_shape
+from felizjueves.launch import LaunchPlan, PairRec, class_spec
+from felizjueves.launch_k import KLaunchPlan
+from felizjueves.passes import atomize
 from felizjueves.plan.targets import hermite_targets
 
 RUNS = 2  # whole-plan runs per process: the run-to-run witness
@@ -1063,6 +1074,465 @@ int main(int argc, char** argv) {{
     CHECK(devFree(dJmn));
     if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
     std::printf("fj-jab launches %d runs %d\n", launches, RUNS);
+    return 0;
+}}
+"""
+
+
+# --- K on the card (#206) ----------------------------------------------------
+#
+# The whole-molecule exchange build from a K launch plan (`launch_k`, #204),
+# with the kernels `kernel_k.build_k_kernels` builds (#198, #203) injected
+# into the plan as `build=`. Harness, as the J driver above is: the kernels
+# are `emit/cuda.py` / `emit/hip.py`'s text, unchanged; only `main()` is
+# written here, from its own template (`K_DRIVER`).
+#
+# WHAT A K LAUNCH IS. The K kernel writes one `K[a, b]` block per bra record,
+# `K[n_bra, n_a n_b]`, with `b` taken from the KET (`kernel_k`'s docstring:
+# kets of several `d` shells may share a launch, but they must share the one
+# `b` shell whose column of `K` the block is -- "the launch plan's business").
+# A `KClassLaunch` carries every ket record of its ket class, every `b` shell
+# at once, sorted by `I_bd`. So the driver launches each of the class's
+# kernels once PER `b` SHELL, over that shell's kets: a SUBSEQUENCE of the
+# class's sorted list, in the same order, so still sorted descending by `Iq`
+# and the kernel's `break` stays sound.
+#
+# THE BUFFERS, uploaded once before the first run:
+#
+#   per bra pair class (la, lc)  one upload of its records in pair order:
+#                                P(3n) zeta_ac(n) XPA(3n) XPC(3n) s_ac(n)
+#                                Ip(n), and `dc` (n ints) apart;
+#   per ket pair class (lb, ld)  one upload, its records grouped by b shell
+#                                (b ascending, each group in the plan's
+#                                order): Q(3n) eta(n) XQB(3n) XQD(3n)
+#                                s_bd(n) Iq(n), and `dd` (n ints); a launch
+#                                passes pointers at its group's first ket;
+#   per density class (lc, ld)   `Dcd[n_sh * n_sh, n_c n_d]`, row
+#                                `c * n_sh + d` the (c, d) shell block of
+#                                D (zero for a shell of another l, never
+#                                read): so `dc = c * n_sh` and `dd = d`, and
+#                                the kernel's `dc[bra] + dd[k]` names it.
+#
+# ONE K BUFFER, zeroed once per run and read back once per run, holding one
+# block per (bra pair class, b shell): `n_bra x n_a n_b`. Every kernel whose
+# kets have that `b` ADDS into it -- ket classes of every `ld`, and every
+# batch of a split class -- so a one-batch kernel's plain write is
+# `passes.atomize`d here (`k_accumulating`), as `ao.staged._accumulating`
+# does for J; a split class's kernels are atomic already (#203).
+#
+# THE SCATTER is host-side (`k_scatter`): `K_mn[a][b] = SUM` of the rows of
+# every bra record whose first shell is `a`, over the blocks of shell `b`,
+# each element summed with `math.fsum` -- the launch plan's `bra_blocks`
+# (`(a, c, start, stop)`) name the rows.
+
+K_HARNESS_WRITE = (
+    "atomic write, by lane 0 only: the K launch harness (test/plan_driver.py, "
+    "#206) adds every kernel whose kets share one b shell -- ket classes of "
+    "every ld, and every batch -- into ONE (bra pair class, b) block of one "
+    "zeroed K buffer, so the write must accumulate; on a zeroed block the "
+    "first add is exact. The lane-0 guard stays: every lane holds the warp sum")
+K_BRA_DOUBLES = 12  # per bra record: P(3) zeta_ac XPA(3) XPC(3) s_ac Ip
+K_KET_DOUBLES = 12  # per ket record: Q(3) eta XQB(3) XQD(3) s_bd Iq
+_K_PLAIN = "plain write, NOT atomic"
+
+
+def _renote(body: tuple[Stmt, ...], old: str, new: str) -> tuple[Stmt, ...]:
+    out: list[Stmt] = []
+    for s in body:
+        if isinstance(s, Note) and old in s.prov:
+            s = Note(new)
+        elif isinstance(s, If):
+            s = If(s.cond, _renote(s.then, old, new),
+                   _renote(s.orelse, old, new))
+        elif isinstance(s, For):
+            s = replace(s, body=_renote(s.body, old, new))
+        out.append(s)
+    return tuple(out)
+
+
+def k_accumulating(k: Kernel) -> Kernel:
+    """A K kernel that ADDS into `K`: a split class's kernels already do; a
+    one-batch kernel's plain write is atomized, its write note restated for
+    this harness (`K_HARNESS_WRITE`) rather than left as `passes`' J note."""
+    if any(isinstance(s, AtomicAdd) for s in walk(k.body)):
+        return k
+    return atomize(replace(k, body=_renote(k.body, _K_PLAIN, K_HARNESS_WRITE)),
+                   array="K")
+
+
+@dataclass(frozen=True)
+class KBlock:
+    """One (bra pair class, b shell) block of the K buffer: one row per bra
+    record of the class, `n_a n_b` columns, at `offset` doubles."""
+
+    bra: tuple[int, int]  # (la, lc)
+    b: int  # the ket shell whose column of K the block is
+    offset: int
+    n_bra: int
+    n_ab: int
+
+    @property
+    def size(self) -> int:
+        return self.n_bra * self.n_ab
+
+
+@dataclass(frozen=True)
+class KLaunch:
+    """One launch: kernel `ns::kernel.name` of class `am` (batch `batch`),
+    over the `n_ket` kets of shell `b` from `start` in its ket class's
+    upload, adding into block `block`."""
+
+    am: tuple[int, int, int, int]
+    batch: int
+    b: int
+    start: int
+    n_ket: int
+    block: int
+    ns: str
+    kernel: Kernel
+
+
+@dataclass(frozen=True)
+class KDriver:
+    """The generated K translation unit and what it was generated from."""
+
+    backend: str
+    source: str
+    path: Path
+    units: tuple[Path, ...]
+    tau: float
+    dm: float
+    n_sh: int
+    bra: tuple[tuple[tuple[int, int], tuple[PairRec, ...]], ...]
+    ket: tuple[tuple[tuple[int, int], tuple[PairRec, ...]], ...]  # by b
+    dcd: tuple[tuple[int, int], ...]  # (lc, ld) per Dcd upload
+    blocks: tuple[KBlock, ...]
+    launches: tuple[KLaunch, ...]
+
+    @property
+    def writers(self) -> Counter[int]:
+        """Launches adding into each block (atomic adds per element)."""
+        return Counter(x.block for x in self.launches)
+
+    @property
+    def n_k(self) -> int:
+        return sum(b.size for b in self.blocks)
+
+    def dcd_doubles(self, lc: int, ld: int) -> int:
+        return self.n_sh * self.n_sh * n_cartesians(lc) * n_cartesians(ld)
+
+    @property
+    def n_input(self) -> int:
+        return 2 + sum((K_BRA_DOUBLES + 1) * len(r) for _, r in self.bra) + sum(
+            (K_KET_DOUBLES + 1) * len(r) for _, r in self.ket) + sum(
+            self.dcd_doubles(*x) for x in self.dcd)
+
+
+def _k_groups(plan: KLaunchPlan):
+    """Per bra class its records, per ket class its records grouped by b
+    shell (each group in the plan's order) and the groups' `(start, n)`."""
+    bra: dict[tuple[int, int], tuple[PairRec, ...]] = {}
+    ket: dict[tuple[int, int], tuple[PairRec, ...]] = {}
+    for cl in plan:
+        bls, kls = (cl.am[0], cl.am[1]), (cl.am[2], cl.am[3])
+        if bra.setdefault(bls, cl.bras) != cl.bras:
+            raise ValueError(f"bra class {bls}: two record lists, one upload")
+        if ket.setdefault(kls, cl.kets) != cl.kets:
+            raise ValueError(f"ket class {kls}: two record lists, one upload")
+    order: dict[tuple[int, int], tuple[PairRec, ...]] = {}
+    segs: dict[tuple[int, int], dict[int, tuple[int, int]]] = {}
+    for kls, recs in ket.items():
+        out: list[PairRec] = []
+        segs[kls] = {}
+        for b in sorted({r.i for r in recs}):
+            grp = [r for r in recs if r.i == b]  # a subsequence: still sorted
+            segs[kls][b] = (len(out), len(grp))
+            out.extend(grp)
+        order[kls] = tuple(out)
+    return bra, order, segs
+
+
+def k_driver(plan: KLaunchPlan, basis: Basis, backend: str,
+             workdir: Path) -> KDriver:
+    """Emit every kernel of the K plan for `backend` and the `main()` that
+    launches them per b shell into one K buffer ("K on the card")."""
+    emit, arch, ext = BACKEND[backend]
+    workdir.mkdir(parents=True, exist_ok=True)
+    shells = basis.shells
+    n_sh = len(shells)
+    bra, ket, segs = _k_groups(plan)
+    bra_cls, ket_cls = sorted(bra), sorted(ket)
+    dcd_cls = sorted({(cl.am[1], cl.am[3]) for cl in plan})
+    bslot = {x: i for i, x in enumerate(bra_cls)}
+    kslot = {x: i for i, x in enumerate(ket_cls)}
+    eslot = {x: i for i, x in enumerate(dcd_cls)}
+    blocks: list[KBlock] = []
+    bidx: dict[tuple[tuple[int, int], int], int] = {}
+    includes, units, launches, body, kernels = [], [], [], [], []
+    for c, cl in enumerate(plan):
+        if not cl.kernels:
+            raise ValueError(f"K class {cl.am} carries no kernels: plan it "
+                             "with build=")
+        la, lc, lb, ld = cl.am
+        bls, kls = (la, lc), (lb, ld)
+        for b in segs[kls]:
+            if (bls, b) not in bidx:
+                if shells[b].l != lb:
+                    raise ValueError(f"ket shell {b} filed under lb = {lb}")
+                n_ab = n_cartesians(la) * n_cartesians(lb)
+                bidx[bls, b] = len(blocks)
+                blocks.append(KBlock(bls, b, sum(x.size for x in blocks),
+                                     len(bra[bls]), n_ab))
+        for bt, k in enumerate(cl.kernels):
+            kern = k_accumulating(k)
+            names = tuple(p.name for p in kern.params)
+            if names != K_PARAMS:
+                raise ValueError(f"{kern.name}: signature {names}, the driver "
+                                 f"passes {K_PARAMS}")
+            ns = f"fj_k{c}_b{bt}"
+            path = workdir / f"{ns}_{kern.name}.{ext}"
+            path.write_text(emit(kern, arch))
+            units.append(path)
+            includes.append(f'namespace {ns} {{\n#include "{path.name}"\n}}')
+            kernels.append(f"(const void*){ns}::{kern.name}")
+            i, j, e = bslot[bls], kslot[kls], eslot[(lc, ld)]
+            n_bra = len(bra[bls])
+            grid, (_, lanes) = k_launch_shape(n_bra, arch.wavefront)
+            assert grid == n_bra and lanes == arch.wavefront, (grid, lanes)
+            shared = measured.jsh_slots(kern)
+            for b, (s, m) in segs[kls].items():
+                q = bidx[bls, b]
+                launches.append(KLaunch(cl.am, bt, b, s, m, q, ns, kern))
+                body.append(
+                    f"        // class ({la}{lc}|{lb}{ld}), batch {bt + 1} of "
+                    f"{len(cl.kernels)}, ket shell {b}: kets [{s}, {s + m}) "
+                    f"of ket class {j} -> block {q}\n"
+                    f"        {ns}::{kern.name}<<<dim3(nb[{i}]), dim3(1, LANES), "
+                    f"(size_t){shared} * LANES * sizeof(double)>>>(\n"
+                    f"            nb[{i}], {m}, NDC, tau, maxD,\n"
+                    f"            bp[{i}], bp[{i}] + 3 * nb[{i}], "
+                    f"bp[{i}] + 4 * nb[{i}], bp[{i}] + 7 * nb[{i}],\n"
+                    f"            bp[{i}] + 10 * nb[{i}], bp[{i}] + 11 * nb[{i}], "
+                    f"bi[{i}],\n"
+                    f"            kp[{j}] + {3 * s}, kp[{j}] + 3 * nk[{j}] + {s}, "
+                    f"kp[{j}] + 4 * nk[{j}] + {3 * s},\n"
+                    f"            kp[{j}] + 7 * nk[{j}] + {3 * s}, "
+                    f"kp[{j}] + 10 * nk[{j}] + {s}, kp[{j}] + 11 * nk[{j}] + {s}, "
+                    f"ki[{j}] + {s},\n"
+                    f"            dp[{e}], dK + {blocks[q].offset});\n"
+                    f"        CHECK(devGetLastError());\n"
+                    f"        ++launches;")
+    drv_partial = KDriver(backend, "", workdir, (), plan.tau, plan.dm, n_sh,
+                          tuple((x, bra[x]) for x in bra_cls),
+                          tuple((x, ket[x]) for x in ket_cls),
+                          tuple(dcd_cls), tuple(blocks), tuple(launches))
+    src = K_DRIVER.format(
+        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
+        portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
+        n_b=len(bra_cls), n_k=len(ket_cls), n_e=len(dcd_cls),
+        n_dc=n_sh * n_sh, lanes=arch.wavefront, runs=RUNS,
+        nb=", ".join(str(len(bra[x])) for x in bra_cls),
+        nk=", ".join(str(len(ket[x])) for x in ket_cls),
+        ne=", ".join(str(drv_partial.dcd_doubles(*x)) for x in dcd_cls),
+        n_kbuf=drv_partial.n_k, n_launch=len(launches),
+        vram_kernels=", ".join(kernels), launches="\n".join(body))
+    path = workdir / f"k_driver.{ext}"
+    path.write_text(src)
+    return replace(drv_partial, source=src, path=path, units=tuple(units))
+
+
+def _k_rows(basis: Basis, recs: tuple[PairRec, ...], *,
+            bra: bool) -> list[np.ndarray]:
+    """One class's upload, in the order `main()` reads it: P(3n) zeta(n)
+    X_PA(3n) X_PB(3n) s(n) I(n), then the n ints (`dc = c * n_sh` on the
+    bra, `dd = d` on the ket) -- `test_kernel_k.k_args`' values: `X_PA =
+    P - A`, `X_PB = P - B` of `epair(shells[i], shells[j])`, `s` its
+    dressing, `I` the plan's bound `G`."""
+    shells, n_sh = basis.shells, len(basis.shells)
+    eps: dict[tuple[int, int], object] = {}
+    data, ints = [], []
+    for r in recs:
+        ep = eps.get((r.i, r.j))
+        if ep is None:
+            ep = eps[r.i, r.j] = epair(shells[r.i], shells[r.j])
+        P, zeta, s = ep.recs[r.prim]
+        data.append([*P, zeta, *(P[d] - ep.A[d] for d in range(3)),
+                     *(P[d] - ep.B[d] for d in range(3)), s, r.G])
+        ints.append(r.j * n_sh if bra else r.j)
+    a = np.array(data, dtype=np.float64).reshape(-1, K_BRA_DOUBLES)
+    return [a[:, 0:3].ravel(), a[:, 3], a[:, 4:7].ravel(), a[:, 7:10].ravel(),
+            a[:, 10], a[:, 11], np.array(ints, dtype=np.float64)]
+
+
+def k_stage(drv: KDriver, basis: Basis, D: object) -> np.ndarray:
+    """The packed input: `tau maxD | per bra class (12 + 1) n | per ket
+    class (12 + 1) n | per density class Dcd`."""
+    rows = np.array(_density(basis, D), dtype=np.float64)
+    dm = max(abs(float(x)) for x in rows.ravel())
+    if dm != drv.dm:
+        raise ValueError(f"max|D| = {dm!r} is not the plan's {drv.dm!r}")
+    shells, off, n_sh = basis.shells, basis.offsets, len(basis.shells)
+    parts: list[np.ndarray] = [np.array([drv.tau, drv.dm])]
+    for _, recs in drv.bra:
+        parts += _k_rows(basis, recs, bra=True)
+    for _, recs in drv.ket:
+        parts += _k_rows(basis, recs, bra=False)
+    for lc, ld in drv.dcd:
+        nc, nd = n_cartesians(lc), n_cartesians(ld)
+        blk = np.zeros((n_sh * n_sh, nc * nd))
+        for c in range(n_sh):
+            for d in range(n_sh):
+                if shells[c].l == lc and shells[d].l == ld:
+                    blk[c * n_sh + d] = rows[off[c]:off[c] + nc,
+                                             off[d]:off[d] + nd].ravel()
+        parts.append(blk.ravel())
+    out = np.concatenate([np.asarray(p, dtype=np.float64) for p in parts])
+    assert out.size == drv.n_input, (out.size, drv.n_input)
+    return out
+
+
+def k_read_back(drv: KDriver, raw: np.ndarray) -> list[np.ndarray]:
+    """`[run]` -> that run's whole K buffer (every block, in block order)."""
+    assert raw.size == RUNS * drv.n_k, (raw.size, RUNS, drv.n_k)
+    return [raw[r * drv.n_k:(r + 1) * drv.n_k] for r in range(RUNS)]
+
+
+def k_block(drv: KDriver, buf: np.ndarray, q: int) -> np.ndarray:
+    """Block `q` of a K buffer, `[n_bra, n_a n_b]`."""
+    b = drv.blocks[q]
+    return buf[b.offset:b.offset + b.size].reshape(b.n_bra, b.n_ab)
+
+
+def k_scatter(drv: KDriver, basis: Basis, buf: np.ndarray) -> np.ndarray:
+    """`K_mn` from one run's K buffer: per block `(bra class, b)`, every bra
+    record's row (first shell `a`) into `K[a][b]`, each element `fsum`med."""
+    shells, off, n = basis.shells, basis.offsets, basis.n_ao
+    recs = dict(drv.bra)
+    terms: list[list[list[float]]] = [[[] for _ in range(n)] for _ in range(n)]
+    for q, blk in enumerate(drv.blocks):
+        X = k_block(drv, buf, q)
+        nb = shells[blk.b].n_cart
+        for row, r in enumerate(recs[blk.bra]):
+            na = shells[r.i].n_cart
+            assert na * nb == blk.n_ab
+            for ia in range(na):
+                for ib in range(nb):
+                    terms[off[r.i] + ia][off[blk.b] + ib].append(
+                        float(X[row, ia * nb + ib]))
+    return np.array([[math.fsum(t) for t in r] for r in terms])
+
+
+_KCOUNTS = re.compile(r"^fj-kdriver (.*)$", re.MULTILINE)
+
+
+def k_counts(stdout: str) -> dict[str, int]:
+    """The K driver's own counts line, as `{name: value}`."""
+    m = _KCOUNTS.search(stdout)
+    assert m, f"no fj-kdriver line in:\n{stdout}"
+    words = m.group(1).split()
+    return {k: int(v) for k, v in zip(words[::2], words[1::2], strict=True)}
+
+
+# The K driver (#206). `{...}` are filled from the plan; everything else C++.
+K_DRIVER = r"""// generated from a K launch plan by test/plan_driver.py (#206): harness.
+{prologue}
+{portable}
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devMemset hipMemset
+#define devFree   hipFree
+#else
+#define devMemset cudaMemset
+#define devFree   cudaFree
+#endif
+{includes}
+{upload_int}
+static const int NB = {n_b}, NK = {n_k}, NE = {n_e}, NDC = {n_dc},
+                 LANES = {lanes}, RUNS = {runs};
+static const int nb[NB] = {{{nb}}};  // bra records per bra pair class
+static const int nk[NK] = {{{nk}}};  // ket records per ket pair class
+static const int ne[NE] = {{{ne}}};  // Dcd doubles per density class
+static const size_t NKBUF = {n_kbuf};  // the one K buffer, every block
+
+// usage: in out. `in` is tau maxD | per bra class P zeta_ac XPA XPC s_ac Ip
+// | dc | per ket class (grouped by b shell) Q eta XQB XQD s_bd Iq | dd | per
+// density class Dcd; `out` is each run's K buffer.
+int main(int argc, char** argv) {{
+    if (argc != 3) {{ std::fprintf(stderr, "usage: in out\n"); return 2; }}
+    std::vector<double> in;
+    if (!slurp(argv[1], in)) {{ std::fprintf(stderr, "bad input\n"); return 2; }}
+    size_t want = 2;
+    for (int i = 0; i < NB; ++i) want += (size_t)13 * nb[i];
+    for (int j = 0; j < NK; ++j) want += (size_t)13 * nk[j];
+    for (int e = 0; e < NE; ++e) want += (size_t)ne[e];
+    if (in.size() != want) {{
+        std::fprintf(stderr, "input has %zu doubles, the plan wants %zu\n",
+                     in.size(), want);
+        return 2;
+    }}
+    if (fj_vram_probe(in.size() * sizeof(double) + NKBUF * sizeof(double)
+                          + (size_t)16 * (NB + NK + NE),
+                      {{{vram_kernels}}})) return 0;
+    const double tau = in[0], maxD = in[1];
+    const double* h = in.data() + 2;
+    int uploads_bra = 0, uploads_ket = 0, uploads_dcd = 0, k_buffers = 0,
+        memsets = 0, launches = 0, readbacks = 0;
+    double* bp[NB];
+    int* bi[NB];
+    for (int i = 0; i < NB; ++i) {{
+        bp[i] = upload(h, (size_t)12 * nb[i]);
+        h += (size_t)12 * nb[i];
+        bi[i] = upload_int(h, (size_t)nb[i]);
+        h += (size_t)nb[i];
+        if (!bp[i] || !bi[i]) {{
+            std::fprintf(stderr, "bra upload %d failed\n", i);
+            return 1;
+        }}
+        ++uploads_bra;
+    }}
+    double* kp[NK];
+    int* ki[NK];
+    for (int j = 0; j < NK; ++j) {{
+        kp[j] = upload(h, (size_t)12 * nk[j]);
+        h += (size_t)12 * nk[j];
+        ki[j] = upload_int(h, (size_t)nk[j]);
+        h += (size_t)nk[j];
+        if (!kp[j] || !ki[j]) {{
+            std::fprintf(stderr, "ket upload %d failed\n", j);
+            return 1;
+        }}
+        ++uploads_ket;
+    }}
+    double* dp[NE];
+    for (int e = 0; e < NE; ++e) {{
+        dp[e] = upload(h, (size_t)ne[e]);
+        h += (size_t)ne[e];
+        if (!dp[e]) {{ std::fprintf(stderr, "Dcd upload %d failed\n", e); return 1; }}
+        ++uploads_dcd;
+    }}
+    // ONE K buffer: a block per (bra pair class, b shell).
+    double* dK = nullptr;
+    CHECK(devMalloc(&dK, NKBUF * sizeof(double)));
+    ++k_buffers;
+    std::vector<double> K(NKBUF), out;
+    for (int r = 0; r < RUNS; ++r) {{
+        CHECK(devMemset(dK, 0, NKBUF * sizeof(double)));  // zeroed ONCE per run
+        ++memsets;
+{launches}
+        CHECK(devSynchronize());
+        CHECK(devMemcpy(K.data(), dK, NKBUF * sizeof(double), devMemcpyD2H));
+        ++readbacks;
+        out.insert(out.end(), K.begin(), K.end());
+    }}
+    for (int i = 0; i < NB; ++i) {{ CHECK(devFree(bp[i])); CHECK(devFree(bi[i])); }}
+    for (int j = 0; j < NK; ++j) {{ CHECK(devFree(kp[j])); CHECK(devFree(ki[j])); }}
+    for (int e = 0; e < NE; ++e) CHECK(devFree(dp[e]));
+    CHECK(devFree(dK));
+    if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
+    std::printf("fj-kdriver runs %d bra_classes %d ket_classes %d dcd_classes %d "
+                "uploads_bra %d uploads_ket %d uploads_dcd %d k_buffers %d "
+                "memsets %d launches %d readbacks %d plan_launches %d\n",
+                RUNS, NB, NK, NE, uploads_bra, uploads_ket, uploads_dcd,
+                k_buffers, memsets, launches, readbacks, {n_launch});
     return 0;
 }}
 """
