@@ -91,6 +91,18 @@ of `ClassLaunch`, `LaunchPlan` or `launches`, which are J-shaped -- why is
 `launch_k`'s module docstring. Nothing here changed behaviour for it: the J
 plans are pinned by a fingerprint taken before #204 (test/test_launch.py).
 
+THE ONE-ELECTRON LAUNCH (#241) sits beside both, at the end of this module:
+
+    one_electron_launch(basis, nuclei, *, tau, bound) -> OneELaunch
+    OneEClass(la, lb, recs, blocks)                     one pair class
+    OneERec(i, j, prim, zeta, P, XPA, XPB, s, eb, off_a, off_b)
+    walk_one_electron(plan, basis, target, *, one_centre=None) -> S, T or V
+
+ONE record set for `S`, `T` and `V`, and NOT a `ClassLaunch`: that type is
+J-shaped (a bra side, a density-keyed sorted ket side, a batch count), and
+`OneEClass`'s docstring says why a sibling type was the right call. None of
+`PairRec`, `ClassLaunch`, `LaunchPlan` or `launches` changed for it.
+
 THE ORACLE (#142) -- the plan WALKED, in Python:
 
     walk(plan, basis, D, *, pq)                       -> ao.j.Screened
@@ -136,23 +148,29 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import cache
 
+from felizjueves.ao.hermite import Ang, e_axis, hermite_order
 from felizjueves.ao.j import (
     PQ,
     Screened,
     _density,
     _kets,
     _tau,
+    epair,
     pair_bound_pq,
 )
-from felizjueves.ao.pairs import primitive_pairs
-from felizjueves.ao.shell import Basis
+from felizjueves.ao.kinetic import kinetic_axis
+from felizjueves.ao.one_electron import matrix
+from felizjueves.ao.pairs import OneCentre, pair_list, primitive_pairs
+from felizjueves.ao.potential import _check_nuclei
+from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.ir import Kernel
 from felizjueves.kernel import build_pq_kernels
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
 
-__all__ = ["Bound", "ClassLaunch", "LaunchPlan", "PairRec", "class_spec",
-           "coulomb_launched", "launches", "walk"]
+__all__ = ["Bound", "ClassLaunch", "LaunchPlan", "OneEClass", "OneELaunch",
+           "OneERec", "PairRec", "class_spec", "coulomb_launched", "launches",
+           "one_electron_launch", "walk", "walk_one_electron"]
 
 Bound = Callable[[float, int], float]  # (zeta, L) -> I_pair >= 0
 
@@ -433,3 +451,310 @@ def coulomb_launched(basis: Basis, D: object, *, pq: PQ, tau: float,
     return walk(launches(basis, D, bound=bound, n_batches=n_batches, tau=tau,
                          density_sort=density_sort, strict=strict),
                 basis, D, pq=pq)
+
+
+# --- the one-electron launch (#241): S, T and V, BESIDE ClassLaunch ---------
+
+Vec3 = tuple[float, float, float]
+Nucleus = tuple[float, Vec3]
+PairBound = Callable[[Shell, Shell], float]  # ao.pairs.Bound: per shell pair
+
+
+@dataclass(frozen=True)
+class OneERec:
+    """One primitive-pair record of a one-electron build: EVERYTHING the
+    `S`, `T` and `V` kernels read per record, and nothing else.
+
+    `i <= j` the shell pair (`ao.one_electron.matrix`'s upper triangle by
+    shell), `prim` its index in `ao.pairs.primitive_pairs(shells[i],
+    shells[j])`; `zeta`, `P`, `XPA = P - A`, `XPB = P - B`; `s = c_a c_b
+    (pi/zeta)^{3/2}` (`ao.j.epair`'s, the kernels' `s` / `s_ab`); `eb` the
+    KET primitive's exponent (`kernel_t`'s `eb_ket`); `off_a`, `off_b` the
+    AO offsets of shells `i` and `j`. The diagonal weight is `diagonal`:
+    the kernels read it from `off_a == off_b` (`kernel_jab`'s scatter rule,
+    a diagonal block's lower triangle written once and mirrored), so it is
+    a property of the record, not a parameter of its own.
+    """
+
+    i: int
+    j: int
+    prim: int
+    zeta: float
+    P: Vec3
+    XPA: Vec3
+    XPB: Vec3
+    s: float
+    eb: float
+    off_a: int
+    off_b: int
+
+    @property
+    def shell_pair(self) -> tuple[int, int]:
+        return (self.i, self.j)
+
+    @property
+    def diagonal(self) -> bool:
+        """`off_a == off_b`: one shell against itself, written once."""
+        return self.off_a == self.off_b
+
+
+_ONE_E_OPERATOR = {Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
+                   Target.V: Operator.NUCLEAR}
+
+
+@dataclass(frozen=True)
+class OneEClass:
+    """Every record of one pair class `(la, lb)`, in pair order (shell pair
+    `i` outer, then `j`, then `primitive_pairs` order). `blocks` is
+    `(i, j, start, stop)` per shell pair: `recs[start:stop]` are its records.
+
+    IS `ClassLaunch` J-SHAPED? YES, and that is why this is a sibling type,
+    not a widening. `ClassLaunch` is a bra side AND a ket side, its ket
+    records keyed by `I_q * max|D_q|` -- a quantity of the DENSITY -- and
+    sorted on that key so Alg. 1's `break` can end a bra row, plus a batch
+    count the plan admits per `(lp, lq)` and the `[p|q]` kernels built at
+    it. A one-electron build has ONE side, no density, so no `D_q`, no ket
+    key and no sort (the sort key #147 measured does not exist here), and
+    nothing to break on: its screen is a per-shell-pair DROP before the
+    launch (`ao.pairs.pair_list`), not a per-row break inside it. Its batch
+    count is 1 by the milestone's decision. Widening `ClassLaunch` would
+    leave `kets`, `key`, the sort and `bra_blocks`' eq. 20 meaning empty or
+    false here, so `ClassLaunch`, `PairRec` and `launches` are untouched,
+    byte for byte (test/test_launch.py's J fingerprint pins them).
+
+    ONE RECORD SET, THREE MATRICES. `S`, `T` and `V` of one basis take the
+    SAME records; only the kernel differs (`T` reads `eb` as well, `V` reads
+    `P` and the launch's nuclei). `spec(target)` is the kernel's key and
+    `arrays(target)` its per-record parameter arrays under that kernel's own
+    names.
+    """
+
+    la: int
+    lb: int
+    recs: tuple[OneERec, ...]
+    blocks: tuple[tuple[int, int, int, int], ...]
+
+    def __post_init__(self) -> None:
+        if not self.recs:
+            raise ValueError(f"pair class ({self.la}, {self.lb}) has no "
+                             "records: an absent class is absent, not empty")
+        if (sum(stop - start for _, _, start, stop in self.blocks)
+                != len(self.recs)):
+            raise ValueError(f"pair class ({self.la}, {self.lb}): the blocks "
+                             "do not cover the records")
+
+    @property
+    def L(self) -> int:
+        return self.la + self.lb
+
+    def spec(self, target: Target) -> Spec:
+        """The kernel key of this class for `Target.S`, `T` or `V` --
+        `kernel_s.s_spec` / `kernel_t.t_spec` / `kernel_v.v_spec`, restated
+        (building kernels is not this plan's business; a test pins the
+        restatement equal)."""
+        if target not in _ONE_E_OPERATOR:
+            raise ValueError(f"{target!r} is not a one-electron target")
+        return Spec(_ONE_E_OPERATOR[target], 0, (self.la, self.lb), target)
+
+    def arrays(self, target: Target) -> dict[str, list]:
+        """The per-record parameter arrays of `target`'s kernel, in record
+        order and in its parameter block's order, under its names
+        (`kernel_s` / `kernel_t` / `kernel_v`), as plain lists. `n_rec` is
+        `len(recs)`; `V`'s `n_nuc`, `Z` and `Cnuc` are the launch's."""
+        self.spec(target)
+        rs = self.recs
+        out: dict[str, list] = {"zeta_ab": [r.zeta for r in rs]}
+        if target is Target.V:
+            out["P"] = [list(r.P) for r in rs]
+        out["XPA"] = [list(r.XPA) for r in rs]
+        out["XPB"] = [list(r.XPB) for r in rs]
+        out["s_ab" if target is Target.V else "s"] = [r.s for r in rs]
+        if target is Target.T:
+            out["eb_ket"] = [r.eb for r in rs]
+        out["off_a"] = [r.off_a for r in rs]
+        out["off_b"] = [r.off_b for r in rs]
+        return out
+
+
+@dataclass(frozen=True)
+class OneELaunch:
+    """`one_electron_launch()`'s value: one `OneEClass` per pair class with
+    a kept shell pair, sorted by `(la, lb)`; the nuclei, ONCE per launch
+    (`V`'s `Z` and `Cnuc`); and the screen -- `tau`, and the shell pairs it
+    `kept` and `dropped` (`ao.pairs.pair_list`'s, row-major). Iterating it
+    iterates the classes."""
+
+    classes: tuple[OneEClass, ...]
+    nuclei: tuple[Nucleus, ...]
+    tau: float
+    kept: tuple[tuple[int, int], ...]
+    dropped: tuple[tuple[int, int], ...]
+
+    def __iter__(self) -> Iterator[OneEClass]:
+        return iter(self.classes)
+
+    def __len__(self) -> int:
+        return len(self.classes)
+
+    @property
+    def n_pairs(self) -> int:
+        return len(self.kept) + len(self.dropped)
+
+    @property
+    def skip_fraction(self) -> float:
+        return len(self.dropped) / self.n_pairs if self.n_pairs else 0.0
+
+    @property
+    def Z(self) -> list[float]:
+        return [z for z, _ in self.nuclei]
+
+    @property
+    def Cnuc(self) -> list[list[float]]:
+        return [list(c) for _, c in self.nuclei]
+
+
+def one_electron_launch(basis: Basis, nuclei: Sequence[Nucleus], *,
+                        tau: float, bound: PairBound) -> OneELaunch:
+    """The one-electron launch plan of `basis` (`OneEClass`'s docstring).
+
+    The shell pairs `i <= j` are screened by `ao.pairs.pair_list(basis,
+    tau=tau, bound=bound)` -- `bound` injected (`overlap_bound`,
+    `kinetic_bound`, or a closure over `potential_bound`), and the guarantee
+    is `pair_list`'s: every element of a dropped block of the matrix `bound`
+    bounds is below `tau`. `tau = 0` drops nothing. THE PLAN IS DATA: no
+    kernel is built, launched or interpreted, and no integral is evaluated.
+    """
+    nuc = _check_nuclei(nuclei)
+    pl = pair_list(basis, tau=tau, bound=bound)
+    shells, off = basis.shells, basis.offsets
+    recs: dict[tuple[int, int], list[OneERec]] = {}
+    blocks: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {}
+    for i, j in pl.kept:  # row-major, i outer: ao.one_electron.matrix's
+        sa, sb = shells[i], shells[j]
+        pps = primitive_pairs(sa, sb)
+        ep = epair(sa, sb, pps)
+        side = recs.setdefault((sa.l, sb.l), [])
+        start = len(side)
+        for k, (pp, (P, zeta, s)) in enumerate(zip(pps, ep.recs,
+                                                   strict=True)):
+            side.append(OneERec(
+                i, j, k, zeta, P,
+                (P[0] - sa.centre[0], P[1] - sa.centre[1],
+                 P[2] - sa.centre[2]),
+                (P[0] - sb.centre[0], P[1] - sb.centre[1],
+                 P[2] - sb.centre[2]),
+                s, float(sb.exponents[pp.j]), off[i], off[j]))
+        blocks.setdefault((sa.l, sb.l), []).append((i, j, start, len(side)))
+    return OneELaunch(
+        tuple(OneEClass(la, lb, tuple(recs[(la, lb)]),
+                        tuple(blocks[(la, lb)]))
+              for la, lb in sorted(recs)),
+        nuc, pl.tau, pl.kept, pl.dropped)
+
+
+# --- the one-electron walker: the plan, in Python ---------------------------
+
+
+def _e_rec(a: Ang, b: Ang, r: OneERec) -> tuple[float, ...]:
+    """`ao.hermite.e_block` from the RECORD's `XPA` / `XPB` (the block reads
+    only `P - A` and `P - B`), in its order and association."""
+    axes = [e_axis(a[d], b[d], r.zeta, r.XPA[d], r.XPB[d]) for d in range(3)]
+    out = []
+    for t in hermite_order(sum(a) + sum(b)):
+        v = 1.0
+        for d in range(3):
+            v = v * axes[d][t[d]] if t[d] < len(axes[d]) else 0.0
+        out.append(v)
+    return tuple(out)
+
+
+def _s_rec(carts, r: OneERec) -> list[float]:
+    return [r.s * _e_rec(a, b, r)[0] for a, b in carts]
+
+
+def _t_rec(la: int, lb: int, carts, r: OneERec) -> list[float]:
+    S = [tuple(tuple(e_axis(i, j, r.zeta, r.XPA[d], r.XPB[d])[0]
+                     for j in range(lb + 3)) for i in range(la + 1))
+         for d in range(3)]
+    out = []
+    for a, b in carts:
+        s = [S[d][a[d]][b[d]] for d in range(3)]
+        k = [kinetic_axis(S[d][a[d]], b[d], r.eb) for d in range(3)]
+        out.append(r.s * (k[0] * s[1] * s[2] + s[0] * k[1] * s[2]
+                          + s[0] * s[1] * k[2]))
+    return out
+
+
+def _v_rec(la: int, lb: int, carts, r: OneERec, nuclei: Sequence[Nucleus],
+           one_centre: OneCentre, acc: list[float]) -> None:
+    """Adds INTO the shell pair's `acc`, one `-Z v` per (nucleus, row):
+    `ao.potential.potential_block` keeps ONE accumulator chain over the
+    records AND the nuclei, and a per-record partial sum would reassociate
+    it (one ulp apart on H2 when tried)."""
+    block = [tuple(r.s * x for x in _e_rec(a, b, r)) for a, b in carts]
+    ts = hermite_order(la + lb)
+    theta = math.sqrt(r.zeta)
+    for Z, C in nuclei:
+        pc = (r.P[0] - C[0], r.P[1] - C[1], r.P[2] - C[2])
+        R = [one_centre(t, 0, pc, theta) for t in ts]
+        for k, row in enumerate(block):
+            v = 0.0
+            for e, x in zip(row, R, strict=True):
+                v += e * x
+            acc[k] += -Z * v
+
+
+def walk_one_electron(plan: OneELaunch, basis: Basis, target: Target, *,
+                      one_centre: OneCentre | None = None
+                      ) -> list[list[float]]:
+    """`S`, `T` or `V` (`target`) from the PLAN alone.
+
+    Each record's contribution is computed from the record's own fields
+    (for `V` also the launch's nuclei and the INJECTED `one_centre`, the
+    signature `ao.pairs.OneCentre`), the contributions of one shell pair
+    are summed in record order from `0.0` -- `ao.overlap`, `ao.kinetic` and
+    `ao.potential`'s arithmetic, in their order -- and the blocks are placed
+    by `ao.one_electron.matrix` over `plan.kept`. So the walk equals
+    `overlap_matrix(basis, pairs=plan.kept)` (and the other two) TO 0: a
+    difference means a record carries a wrong value, never a rounding.
+    `basis` supplies only the momenta and the AO layout. Nothing is
+    memoised, and no kernel is built or interpreted.
+    """
+    if target not in _ONE_E_OPERATOR:
+        raise ValueError(f"{target!r} is not a one-electron target")
+    if target is Target.V and one_centre is None:
+        raise ValueError("V needs the injected one_centre evaluator")
+    shells = basis.shells
+    out: dict[tuple[int, int], tuple[tuple[float, ...], ...]] = {}
+    for c in plan:
+        ca, cb = cartesians(c.la), cartesians(c.lb)
+        carts = [(a, b) for a in ca for b in cb]
+        nb = len(cb)
+        for i, j, start, stop in c.blocks:
+            if (shells[i].l, shells[j].l) != (c.la, c.lb):
+                raise ValueError(f"the plan's block ({i}, {j}) is not class "
+                                 f"({c.la}, {c.lb}) in this basis")
+            acc = [0.0] * len(carts)
+            for r in c.recs[start:stop]:
+                if target is Target.S:
+                    vs = _s_rec(carts, r)
+                elif target is Target.T:
+                    vs = _t_rec(c.la, c.lb, carts, r)
+                else:
+                    _v_rec(c.la, c.lb, carts, r, plan.nuclei, one_centre, acc)
+                    continue
+                for n, v in enumerate(vs):
+                    acc[n] += v
+            out[(i, j)] = tuple(tuple(acc[k * nb:(k + 1) * nb])
+                                for k in range(len(ca)))
+    if sorted(out) != sorted(plan.kept):
+        raise ValueError("the plan's classes do not cover its kept pairs")
+    order = iter(plan.kept)
+
+    def block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:
+        i, j = next(order)
+        if shells[i] is not sa or shells[j] is not sb:
+            raise ValueError(f"the kept pair ({i}, {j}) is out of order")
+        return out[(i, j)]
+
+    return matrix(basis, block, pairs=plan.kept)

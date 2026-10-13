@@ -389,3 +389,167 @@ def _j_plans_dump() -> str:
 def test_the_j_plans_are_unchanged_by_the_k_plan():
     got = hashlib.sha256(_j_plans_dump().encode()).hexdigest()
     assert got == J_PLANS_SHA256
+
+
+# --- #241: the one-electron launch, BESIDE ClassLaunch ------------------------
+#
+# `one_electron_launch` is a sibling of `ClassLaunch`, not a widening: J's
+# types keep their fields (pinned here) and their plans their fingerprint
+# (`test_the_j_plans_are_unchanged_by_the_k_plan`, above, re-run unchanged).
+# One record set serves S, T and V: its per-kernel arrays equal what each
+# kernel's own test feeds that kernel (test_kernel_{s,t,v}.py's `_records`),
+# under the kernel's parameter names and in its parameter block's order.
+
+import math  # noqa: E402
+
+from test_kernel_s import _records as _s_records  # noqa: E402
+from test_kernel_t import _records as _t_records  # noqa: E402
+from test_kernel_v import _records as _v_records  # noqa: E402
+
+from felizjueves.ao.pairs import (  # noqa: E402
+    kinetic_bound,
+    overlap_bound,
+    potential_bound,
+)
+from felizjueves.kernel_s import build_s_kernel, s_spec  # noqa: E402
+from felizjueves.kernel_t import build_t_kernel, t_spec  # noqa: E402
+from felizjueves.kernel_v import build_v_kernel, v_spec  # noqa: E402
+from felizjueves.launch import (  # noqa: E402
+    LaunchPlan,
+    OneEClass,
+    OneELaunch,
+    OneERec,
+    one_electron_launch,
+    walk_one_electron,
+)
+from felizjueves.spec import Target  # noqa: E402
+
+_ONE_E = {Target.S: (s_spec, build_s_kernel, _s_records),
+          Target.T: (t_spec, build_t_kernel, _t_records),
+          Target.V: (v_spec, build_v_kernel, _v_records)}
+_NON_RECORD = {"n_rec", "n_ao", "n_nuc", "Z", "Cnuc", "S", "T", "V"}
+
+
+@cache
+def _spdf():
+    fx = manifest.load(manifest.FIXTURES / "prim_spdf.json")
+    nuclei = tuple((float(a.charge), tuple(float(x) for x in a.coord))
+                   for a in fx.atoms)
+    return ob.from_fixture(fx), nuclei
+
+
+def _h2o_1e():
+    fx = manifest.load(manifest.FIXTURES / "h2o_sto3g_j.json")
+    return _h2o()[0], tuple((float(a.charge), tuple(a.coord))
+                            for a in fx.atoms)
+
+
+def _plan_1e(basis, nuclei, tau=0.0, bound=overlap_bound):
+    return one_electron_launch(basis, nuclei, tau=tau, bound=bound)
+
+
+def test_j_shaped_types_keep_their_fields():
+    # The sibling type was the call: nothing of J's was widened for it.
+    def names(cls):
+        return [f.name for f in dataclasses.fields(cls)]
+
+    assert names(PairRec) == ["i", "j", "prim", "L", "G", "key"]
+    assert names(ClassLaunch) == ["lp", "lq", "n_batches", "bras", "kets",
+                                  "kernels", "bra_blocks"]
+    assert names(LaunchPlan) == ["classes", "tau", "n_batches",
+                                 "density_sort", "refused"]
+
+
+@pytest.mark.parametrize("case", ["h2o", "spdf"])
+def test_every_record_of_every_kept_pair_once_in_pair_order(case):
+    basis, nuclei = _h2o_1e() if case == "h2o" else _spdf()
+    plan = _plan_1e(basis, nuclei)
+    sh, off = basis.shells, basis.offsets
+    assert [(c.la, c.lb) for c in plan] == sorted(
+        {(sh[i].l, sh[j].l) for i, j in plan.kept})
+    seen = []
+    for c in plan:
+        pairs = [(i, j) for i, j, _, _ in c.blocks]
+        assert pairs == [p for p in plan.kept
+                         if (sh[p[0]].l, sh[p[1]].l) == (c.la, c.lb)]
+        for i, j, start, stop in c.blocks:
+            recs = c.recs[start:stop]
+            pps = primitive_pairs(sh[i], sh[j])
+            assert [r.prim for r in recs] == list(range(len(pps)))
+            for r, pp in zip(recs, pps, strict=True):
+                assert r.shell_pair == (i, j) and i <= j
+                assert (r.off_a, r.off_b) == (off[i], off[j])
+                assert r.diagonal == (i == j)
+                assert (r.P, r.zeta) == (pp.P, pp.zeta)
+                assert r.eb == sh[j].exponents[pp.j]
+                seen.append((i, j, r.prim))
+    assert len(seen) == len(set(seen)) == sum(
+        len(primitive_pairs(sh[i], sh[j])) for i, j in plan.kept)
+
+
+@pytest.mark.parametrize("target", [Target.S, Target.T, Target.V])
+def test_one_record_set_carries_exactly_what_each_kernel_reads(target):
+    spec_of, build, records = _ONE_E[target]
+    basis, nuclei = _spdf()
+    plan = _plan_1e(basis, nuclei)
+    sh = basis.shells
+    for c in plan:
+        assert c.spec(target) == spec_of(c.la, c.lb)
+        got = c.arrays(target)
+        params = [p.name for p in build(c.spec(target)).params
+                  if p.name not in _NON_RECORD]
+        assert list(got) == params, (target, c.la, c.lb)
+        pairs = [p for p in plan.kept
+                 if (sh[p[0]].l, sh[p[1]].l) == (c.la, c.lb)]
+        want = records(basis, pairs)
+        assert set(want) == set(got)
+        for k in want:
+            assert np.array_equal(np.asarray(got[k], dtype=want[k].dtype),
+                                  want[k]), (target, c.la, c.lb, k)
+    if target is Target.V:
+        assert plan.Z == [z for z, _ in nuclei]
+        assert plan.Cnuc == [list(cn) for _, cn in nuclei]
+
+
+def test_the_records_do_not_depend_on_the_matrix():
+    # S, T and V of one basis: the same records, whichever bound screened
+    # them at tau = 0 (it drops nothing), and the same records as a bound
+    # that is everywhere 0.
+    basis, nuclei = _h2o_1e()
+    plans = [_plan_1e(basis, nuclei, bound=b) for b in (
+        overlap_bound, kinetic_bound, lambda sa, sb: 0.0,
+        lambda sa, sb: potential_bound(sa, sb, nuclei,
+                                       one_centre=one_centre))]
+    assert all(p == plans[0] for p in plans)
+    assert plans[0].dropped == () and plans[0].tau == 0.0
+
+
+def test_a_dropped_pair_leaves_its_records_and_maybe_its_class():
+    basis, nuclei = _h2o_1e()
+    plan = _plan_1e(basis, nuclei, tau=1e-12)
+    assert plan.dropped  # same-centre s-p pairs, zero blocks
+    recs = {r.shell_pair for c in plan for r in c.recs}
+    assert recs == set(plan.kept) and not recs & set(plan.dropped)
+    every = _plan_1e(basis, nuclei, tau=1e300)
+    assert len(every) == 0 and every.kept == () and every.skip_fraction == 1.0
+
+
+def test_the_one_electron_plan_refuses():
+    basis, nuclei = _h2o_1e()
+    with pytest.raises(ValueError, match="tau"):
+        _plan_1e(basis, nuclei, tau=-1.0)
+    with pytest.raises(ValueError, match="bound"):
+        _plan_1e(basis, nuclei, bound=lambda sa, sb: math.nan)
+    with pytest.raises(ValueError, match="nucleus"):
+        _plan_1e(basis, ((1.0,),))
+    with pytest.raises(ValueError, match="absent"):
+        OneEClass(0, 0, (), ())
+    plan = _plan_1e(basis, nuclei)
+    with pytest.raises(ValueError, match="one-electron"):
+        plan.classes[0].spec(Target.J)
+    with pytest.raises(ValueError, match="one-electron"):
+        walk_one_electron(plan, basis, Target.J)
+    with pytest.raises(ValueError, match="one_centre"):
+        walk_one_electron(plan, basis, Target.V)
+    assert isinstance(plan, OneELaunch)
+    assert all(isinstance(r, OneERec) for c in plan for r in c.recs)

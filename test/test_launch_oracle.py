@@ -371,3 +371,140 @@ def test_the_tau_ladder_through_the_oracle(name):
         lines.append(f"  {tau:9.0e}   {frac:.4f}        "
                      f"{rec['skip_fraction']:.4f}")
     print("\n" + "\n".join(lines))
+
+
+# --- #241: the one-electron launch, walked ------------------------------------
+#
+# `launch.walk_one_electron` reproduces `S`, `T` and `V` from the PLAN alone
+# (each record's contribution from the record's own fields), against the
+# host builds `ao.overlap.overlap_matrix`, `ao.kinetic.kinetic_matrix` and
+# `ao.potential.potential_matrix` -- TO 0, on every tracked basis with a
+# converted record, plus test_ao_pairs.py's H2 chain of eight. With #265's
+# `reference.boys` T_MAX = 1e6, V reaches every one of them. Then the
+# screen, per operator with its own bound (`ao.pairs`' three): at tau = 0
+# the plan drops nothing; at every tau of test_ao_pairs.py's ladder the
+# plan's dropped pairs are `pair_list`'s, every element of every dropped
+# block is below tau (COMPUTED, #236's guarantee re-checked at the plan
+# level), the walk equals the host's screened build (`pairs=plan.kept`) to
+# 0, and the skip counts are as recorded below.
+
+from test_ao_pairs import (  # noqa: E402
+    SKIPS_1E,
+    TAUS_1E,
+    _block_and_bound,
+    _fixture_case,
+    _h2_chain_1e,
+)
+
+from felizjueves.ao.kinetic import kinetic_matrix  # noqa: E402
+from felizjueves.ao.overlap import overlap_matrix  # noqa: E402
+from felizjueves.ao.pairs import overlap_bound, pair_list  # noqa: E402
+from felizjueves.ao.potential import potential_matrix  # noqa: E402
+from felizjueves.launch import (  # noqa: E402
+    one_electron_launch,
+    walk_one_electron,
+)
+from felizjueves.reference.pq import one_centre  # noqa: E402
+from felizjueves.spec import Target  # noqa: E402
+
+# Every tracked fixture that records a converted basis, once per basis.
+BASES_1E = ("h2_sto3g_j", "h2o_sto3g_j", "prim_spdf", "h2o_631g_j",
+            "h2o_ccpvdz_j", "hf_ccpvtz")
+LADDER_1E = ("h2o_sto3g_j", "prim_spdf", "h2_chain_8")
+
+
+@cache
+def _case_1e(name: str):
+    if name == "h2_chain_8":
+        return _h2_chain_1e(8)
+    return _fixture_case(name)
+
+
+def _host_1e(op: str, basis, nuclei, pairs=None):
+    if op == "S":
+        return overlap_matrix(basis, pairs=pairs)
+    if op == "T":
+        return kinetic_matrix(basis, pairs=pairs)
+    return potential_matrix(basis, nuclei, one_centre=one_centre, pairs=pairs)
+
+
+def _walk_1e(op: str, plan, basis):
+    return walk_one_electron(plan, basis, Target(op.lower()),
+                             one_centre=one_centre)
+
+
+def test_every_converted_fixture_is_a_case_1e():
+    # "every tracked basis": each converted fixture's basis (the _k / _eri
+    # fixtures repeat one) is the basis of a listed case.
+    listed = {_case_1e(n)[0] for n in BASES_1E}
+    for p in sorted(manifest.FIXTURES.glob("*.json")):
+        fx = manifest.load(p)
+        if fx.converted is not None:
+            assert ob.from_fixture(fx) in listed, p.name
+
+
+@pytest.mark.parametrize("name", [*BASES_1E, "h2_chain_8"])
+def test_the_walk_reproduces_the_three_host_matrices_exactly(name):
+    basis, nuclei = _case_1e(name)
+    # ONE plan, built with the overlap's bound at tau = 0, serves all three.
+    plan = one_electron_launch(basis, nuclei, tau=0.0, bound=overlap_bound)
+    assert plan.dropped == () and plan.skip_fraction == 0.0
+    for op in "STV":
+        assert _walk_1e(op, plan, basis) == _host_1e(op, basis, nuclei), (
+            name, op)
+
+
+@pytest.mark.parametrize("op", ["S", "T", "V"])
+@pytest.mark.parametrize("name", LADDER_1E)
+def test_the_screened_plan_drops_only_blocks_below_tau(name, op):
+    basis, nuclei = _case_1e(name)
+    block, bound = _block_and_bound(op, nuclei)
+    sh = basis.shells
+    unscreened = _host_1e(op, basis, nuclei)
+    for tau in TAUS_1E:
+        plan = one_electron_launch(basis, nuclei, tau=tau, bound=bound)
+        pl = pair_list(basis, tau=tau, bound=bound)
+        assert (plan.kept, plan.dropped) == (pl.kept, pl.dropped)
+        assert plan.skip_fraction == pl.skip_fraction
+        if tau == 0.0:
+            assert plan.dropped == ()
+            assert _walk_1e(op, plan, basis) == unscreened
+        for i, j in plan.dropped:
+            assert max(abs(x) for row in block(sh[i], sh[j]) for x in row) \
+                < tau, (name, op, tau, i, j)
+        assert _walk_1e(op, plan, basis) == _host_1e(
+            op, basis, nuclei, pairs=plan.kept), (name, op, tau)
+
+
+# The plan's dropped shell pairs per tau of TAUS_1E, and all `i <= j`.
+# S and T on the chain are test_ao_pairs.py's SKIPS_1E (asserted equal
+# below, not restated); V's are recorded here: nothing on the compact
+# cases (V's bound is uniform in the nuclei, and other nuclei make every
+# block non-zero), the decay screen on the chain.
+PLAN_SKIPS_1E = {
+    ("V", "h2o_sto3g_j"): ((0,) * 6, 15),
+    ("V", "prim_spdf"): ((0,) * 6, 36),
+    ("V", "h2_chain_8"): ((0, 40, 45, 55, 60, 66), 136),
+    ("S", "prim_spdf"): ((0, 8, 8, 8, 8, 8), 36),
+    ("T", "prim_spdf"): ((0, 8, 8, 8, 8, 8), 36),
+}
+
+
+@pytest.mark.parametrize("op", ["S", "T", "V"])
+@pytest.mark.parametrize("name", LADDER_1E)
+def test_the_plans_skip_fractions_are_as_recorded(name, op):
+    basis, nuclei = _case_1e(name)
+    _, bound = _block_and_bound(op, nuclei)
+    plans = [one_electron_launch(basis, nuclei, tau=tau, bound=bound)
+             for tau in TAUS_1E]
+    got = (tuple(len(p.dropped) for p in plans), plans[0].n_pairs)
+    if (op, name) in PLAN_SKIPS_1E:
+        want = PLAN_SKIPS_1E[(op, name)]
+    else:
+        want = SKIPS_1E[op][name][:2]
+    assert got == want
+    lines = [f"{op} {name}: tau -> skip fraction"]
+    for tau, p in zip(TAUS_1E, plans, strict=True):
+        assert p.skip_fraction == len(p.dropped) / p.n_pairs
+        lines.append(f"  {tau:7.0e}  {p.skip_fraction:.4f}")
+    print("\n" + "\n".join(lines))
