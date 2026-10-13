@@ -8,6 +8,7 @@ naming the StructuralLimit in limits.json that holds the evidence."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -224,10 +225,11 @@ def test_the_full_board_with_the_plan_layers_candidates() -> None:
     }
 
 
-def _searched_candidates() -> dict[str, Candidate]:
+def _searched_candidates(path: Path = BOARDS / "searched_cuts.json"
+                         ) -> dict[str, Candidate]:
     """One plan per cell, replayed from the recorded cut and seed order
     (plan/search.py), scores all three tables."""
-    cuts = load_cuts(BOARDS / "searched_cuts.json")
+    cuts = load_cuts(path)
     costs = {c: cost(searched_plan(*c, *choice)) for c, choice in cuts.items()}
     return {
         tid: Candidate({c: getattr(k, attr) for c, k in costs.items()},
@@ -266,6 +268,30 @@ def test_the_searched_board_with_the_searched_plans() -> None:
     value = _searched_limit().asserted_value
     assert value["residual_percent_over"] == {}
     assert value["unreachable_in_space"] == [] and value["selection_price"] == []
+
+
+def test_the_searched_board_scores_the_replay_not_the_records_counts(
+    tmp_path: Path,
+) -> None:
+    # #173: the counts in searched_cuts.json are not taken on trust. Doctor
+    # every one of them -- each frontier point claims the printed triple's
+    # half, which would PASS at_or_under by itself -- and the board's
+    # candidates are unchanged, because they are recomputed from the
+    # recorded permutations, not read.
+    doc = json.loads((BOARDS / "searched_cuts.json").read_text())
+    for key, cell in doc["cuts"].items():
+        L, nb = (int(x) for x in key.split("/"))
+        for p in cell["frontier"]:
+            p["flops"] = TABLES["jengine/table1"].cells[L, nb] // 2
+            p["max_intermediates"] = TABLES["jengine/table2"].cells[L, nb] // 2
+            p["max_targets"] = TABLES["jengine/table3"].cells[L, nb] // 2
+    bad = tmp_path / "searched_cuts.json"
+    bad.write_text(json.dumps(doc))
+    genuine = _searched_candidates()
+    doctored = _searched_candidates(bad)
+    assert {t: dict(c.cells) for t, c in doctored.items()} == {
+        t: dict(c.cells) for t, c in genuine.items()}
+    assert doctored["jengine/table3"].cells[15, 9] == 116  # not 58
 
 
 def test_the_previous_residual_cells_are_reached_only_by_the_climb() -> None:

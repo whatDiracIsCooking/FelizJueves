@@ -98,6 +98,44 @@ def _literal(L: int, nb: int) -> PlanCost:
                           n_batches=nb)))
 
 
+@cache
+def _rule_point(L: int, nb: int, cuts: tuple[int, ...], name: str):
+    """One plan of the 58-rule space (#168): every batch seeded by `name`."""
+    return point(cost(searched_plan(L, nb, cuts, name)))
+
+
+@cache
+def _rule_selection(L: int, nb: int):
+    """What "the best of the 58" selects, computed here and read from no
+    record: #171's rule over the frontier of the 58-rule plans on the cell's
+    feasible cuts. A search that degenerated to the rule space would record
+    exactly this point."""
+    return _rule_selected_plan(L, nb)[1]
+
+
+@cache
+def _rule_selected_plan(L: int, nb: int):
+    """((cut, rule name), point) of `_rule_selection`."""
+    plans = [(c, n) for c in feasible_cuts(L, nb) for n in SEED_ORDERS]
+    front = order_search.frontier(plans, key=lambda cn: _rule_point(L, nb, *cn))
+    pts = [_rule_point(L, nb, *cn) for cn in front]
+    k = select(pts)
+    return front[k], pts[k]
+
+
+def _strictly_better(choices) -> set[tuple[int, int]]:
+    """The cells where the plan replayed from `choices` (cell -> (cut,
+    orders)) strictly beats the live 58-rule selection; refused outright if
+    it is worse anywhere."""
+    out = set()
+    for (L, nb), choice in choices.items():
+        got, rule = point(cost(searched_plan(L, nb, *choice))), _rule_selection(L, nb)
+        assert order_search.dominates(got, rule), (L, nb, got, rule)
+        if got != rule:
+            out.add((L, nb))
+    return out
+
+
 def _minimax(L: int, nb: int) -> int:
     """The smallest max-targets any cut gives: the literal plan's, whose cut
     is batching's minimax one (and at 1 batch the only one)."""
@@ -221,7 +259,7 @@ def test_the_climbed_frontier_dominates_every_rule_plan(L: int, nb: int) -> None
     pts = [fp.point for fp in front]
     for cuts in feasible_cuts(L, nb):
         for name in SEED_ORDERS:
-            p = point(cost(searched_plan(L, nb, cuts, name)))
+            p = _rule_point(L, nb, cuts, name)
             assert any(order_search.dominates(q, p) for q in pts), (cuts, name)
     literal = _literal(L, nb)
     assert feasible(literal, _minimax(L, nb))
@@ -354,6 +392,72 @@ def test_a_doctored_permutation_is_refused(tmp_path: Path, edit, message) -> Non
         load_frontiers(bad)
 
 
+@pytest.mark.parametrize(("key", "edit", "message"), [
+    # A permutation of the wrong batch where the two batches are the same
+    # size: x5..10's and y5..10's orders swapped (55 targets each), so only
+    # the target SET can tell them apart.
+    ("10/6", lambda o: o.__setitem__(slice(1, 4, 2), [o[3], o[1]]),
+     r"cell 10/6, batch 1 \(x5\.\.10\): the seed order is not a permutation "
+     r"of the batch's 55 targets"),
+    # One order more than the cut has batches: a batch the cut does not make.
+    ("9/3", lambda o: o.append(o[0]), r"cell 9/3: 4 seed orders for 3 batches"),
+])
+def test_a_permutation_of_another_batch_is_refused(
+    tmp_path: Path, key: str, edit, message
+) -> None:
+    bad = _doctor(tmp_path, key, edit)
+    with pytest.raises(ValueError, match=message):
+        load_cuts(bad)
+
+
+@pytest.mark.parametrize(("key", "cut", "message"), [
+    # The recorded orders are the batches of cut (5,); the doctored point
+    # names a cut that does not produce them (#173), one point lower or
+    # higher, so the first batch gains or loses targets.
+    ("10/6", [4], r"cell 10/6, batch 0 \(x0\.\.3\): the seed order is not a "
+     r"permutation of the batch's 24 targets \(43 given, 19 not in the batch"),
+    ("10/6", [6], r"cell 10/6, batch 0 \(x0\.\.5\): the seed order is not a "
+     r"permutation of the batch's 63 targets \(43 given, 0 not in the batch, "
+     r"20 missing\)"),
+    ("16/9", [7, 10], r"cell 16/9, batch 1 \(x7\.\.9\)"),
+])
+def test_a_record_naming_batches_its_cut_does_not_produce_is_refused(
+    tmp_path: Path, key: str, cut: list[int], message: str
+) -> None:
+    doc = copy.deepcopy(_doc())
+    cell = doc["cuts"][key]
+    assert cell["cut"] != cut
+    cell["frontier"][cell["selected"]]["cut"] = cut
+    cell["cut"] = cut  # the cell agrees with its point: only the orders lie
+    bad = tmp_path / "cuts.json"
+    bad.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match=message):
+        load_cuts(bad)
+    with pytest.raises(ValueError, match=message):
+        load_frontiers(bad)
+
+
+def test_the_recorded_counts_are_not_believed(tmp_path: Path) -> None:
+    # #173: nothing the record says about a plan's COST is read. Every count
+    # of every frontier point is doctored; the loaded choices are unchanged,
+    # and the plan replayed from them -- the recorded permutations, sieved
+    # here -- still gives the true counts. (load_frontiers carries the
+    # recorded counts as written; that they equal the replay is held cell by
+    # cell by test_each_recorded_frontier_replays_and_selects_the_recorded_plan.)
+    doc = copy.deepcopy(_doc())
+    for cell in doc["cuts"].values():
+        for p in cell["frontier"]:
+            p["flops"], p["max_intermediates"], p["max_targets"] = 1, 1, 1
+    bad = tmp_path / "cuts.json"
+    bad.write_text(json.dumps(doc))
+    doctored = load_cuts(bad)
+    assert doctored == _recorded()
+    for L, nb in [(9, 3), (13, 1), (16, 9)]:
+        c = cost(searched_plan(L, nb, *doctored[L, nb]))
+        assert c == _replayed(L, nb)
+        assert (c.flops, c.max_intermediates, c.max_targets) != (1, 1, 1)
+
+
 def test_searched_plan_refuses_what_is_not_a_permutation() -> None:
     cut, orders = _recorded()[9, 3]
     with pytest.raises(ValueError, match="batch 1"):
@@ -467,6 +571,61 @@ def test_where_the_climb_beats_the_rule_selection() -> None:
         c = _replayed(L, nb)
         assert c.flops <= f and c.max_intermediates <= i
         assert (c.flops, c.max_intermediates) != (f, i)
+
+
+# #173: the search is not a no-op. at_or_under gives no credit for coming in
+# under, so a search that silently degenerated to "the best of the 58 rules"
+# could pass the board. N is the number of cells where the recorded plan is
+# STRICTLY better than the 58-rule selection, computed live
+# (`_rule_selection`), not read from STRICTLY_BETTER's pinned figures. It is
+# a ratchet: raise N (and add the cells) when a better search finds more,
+# never lower it. #172 measured 14.
+N_STRICTLY_BETTER = 14
+
+
+def test_the_search_is_not_the_best_of_the_58() -> None:
+    better = _strictly_better(_recorded())
+    assert len(better) >= N_STRICTLY_BETTER == len(STRICTLY_BETTER)
+    assert better == set(STRICTLY_BETTER)  # a new cell is a ratchet: add it
+    # The live 58-rule selection is #171's, as STRICTLY_BETTER pins it.
+    for (L, nb), (f, i) in STRICTLY_BETTER.items():
+        assert _rule_selection(L, nb) == (i, f), (L, nb)
+
+
+def test_the_guard_catches_a_search_degenerated_to_the_best_of_the_58() -> None:
+    # The degenerate record, built here: in every cell the 58-rule selection,
+    # written as schema 3 writes it (one explicit order per batch). It loads
+    # (each order is a permutation of its batch) and no plan is worse than
+    # the rule selection -- yet the count above finds 0 cells, so
+    # test_the_search_is_not_the_best_of_the_58 fails on it.
+    degenerate = {}
+    for L, nb in GRID:
+        (cuts, name), _ = _rule_selected_plan(L, nb)
+        dags = searched_plan(L, nb, cuts, name)
+        degenerate[L, nb] = (cuts, check_orders(
+            L, nb, cuts, [rule_order(L, d, name) for d in dags]))
+    assert _strictly_better(degenerate) == set()
+
+
+# Of the N cells, those whose recorded plan seeds every batch with SOME rule's
+# order -- a different rule per batch, which the 58-rule space (one rule for
+# all batches) does not hold. In the other 11 at least one batch's order is
+# no rule's: the climb itself moved it.
+MIXED_RULES_ONLY = {(14, 6), (15, 6), (16, 9)}
+
+
+@pytest.mark.parametrize(("L", "nb"), sorted(STRICTLY_BETTER))
+def test_the_strictly_better_plans_leave_the_rule_space(L: int, nb: int) -> None:
+    # No one of the 58 rules seeds every batch of the recorded plan.
+    cuts, orders = _recorded()[L, nb]
+    # A batch's rule orders depend only on its target set, which the sieve
+    # keeps.
+    dags = searched_plan(L, nb, cuts, orders)
+    for name in SEED_ORDERS:
+        assert tuple(rule_order(L, d, name) for d in dags) != orders, name
+    starts = [set(batch_starts(L, d).values()) for d in dags]
+    climbed = any(o not in s for o, s in zip(orders, starts, strict=True))
+    assert climbed == ((L, nb) not in MIXED_RULES_ONLY)
 
 
 def test_the_tolerance_still_takes_the_one_target_off_cut_at_15_9() -> None:
