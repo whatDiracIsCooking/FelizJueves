@@ -17,6 +17,7 @@ than comparing across compilers. The subgrid's L >= 13 cells are also `slow`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -28,11 +29,13 @@ from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
-from felizjueves.lower import RECYCLE
+from felizjueves.lower import LEVERS, RECYCLE
 from felizjueves.plan.batching import in_batch, partition
+from felizjueves.plan.dag import build
 from felizjueves.plan.pipeline import plan
+from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.spec import is_batch_count
+from felizjueves.spec import Spec, is_batch_count
 
 # --- the generator CLI ------------------------------------------------------
 
@@ -326,9 +329,11 @@ def test_the_loader_keeps_every_field_of_every_row() -> None:
     assert set(ROWS) == set(STORE["rows"])
     for key, row in ROWS.items():
         assert measured_store.as_record(row) == STORE["rows"][key], key
-        # ...and a row without counters writes none of their fields (#110)
+        # ...and a row without counters writes none of their fields (#110),
+        # nor an arm kind it does not record (#159)
         assert set(asdict(row)) - set(STORE["rows"][key]) <= {
-            *measured_store.COUNTERS, "counter_tool", "counter_unit"}, key
+            *measured_store.COUNTERS, "counter_tool", "counter_unit",
+            "arm_kind"}, key
 
 
 def test_the_store_says_what_it_is_and_what_it_is_not() -> None:
@@ -1289,8 +1294,8 @@ def test_the_lever_cells_are_the_whole_subgrid_with_the_lever() -> None:
     assert [replace(s, levers=()) for s in RECYCLE_CELLS] == list(
         measured_store.SUBGRID)
     assert all(s.levers == (RECYCLE,) for s in RECYCLE_CELLS)
-    with pytest.raises(ValueError, match="kernel-layer"):
-        measured_store.lever_cells("no-sieve")  # a plan lever: not this A/B
+    with pytest.raises(ValueError, match="not a declared arm lever"):
+        measured_store.lever_cells("tuned")  # #161's, not declared yet
 
 
 def _ab(control: tuple[int, int], lever: tuple[int, int],
@@ -1988,3 +1993,240 @@ def test_the_sort_key_verdict_is_contradicted_on_both_cards() -> None:
                 if c.id == "jengine/ket-sort-key-beats-the-global-max"]
     assert claim.status.value == "unverifiable"
     assert "CONTRADICTED on BOTH cards" in claim.reason
+
+
+# --- #159: the A/B arms admit a plan lever ------------------------------------
+
+NO_SIEVE_CELLS = measured_store.lever_cells(NO_SIEVE)
+
+# #55's recycle verdict as the tracked rows gave it BEFORE #159 generalised
+# the arms (f95f87b): sha256 of the repr of every cell's LeverAB, wide sign,
+# near sign and verdict, sm_86 then gfx1200, in lever_cells order.
+RECYCLE_AB_SHA256 = (
+    "7e5b8418d45749ee695bb5e4a9c65118e55bac4a2df1b98b0314f5114b2d8d60")
+
+
+def test_the_declared_arms_and_their_kinds() -> None:
+    assert dict(measured_store.ARMS) == {RECYCLE: measured_store.LOWERING,
+                                         NO_SIEVE: measured_store.PLAN}
+    # every lowering lever is an arm, and the store's spelling of the plan
+    # lever is the plan layer's (the store may not import plan/)
+    assert {lv for lv, k in measured_store.ARMS.items()
+            if k == measured_store.LOWERING} == set(LEVERS)
+    assert measured_store.NO_SIEVE == NO_SIEVE
+    with pytest.raises(TypeError):
+        measured_store.ARMS["tuned"] = measured_store.PLAN  # read-only
+
+
+def test_recycle_rows_and_verdict_did_not_move() -> None:
+    """#159's whole acceptance: the 40 recycle rows load unchanged (no kind
+    stamped on them, the file written back byte for byte) and #55's verdict
+    is byte-identical to the one before the generalisation."""
+    keys = [MeasuredKey(s, a, t).key() for s in RECYCLE_CELLS
+            for a, t in ((SM_86, "nvcc 13.0"), (GFX1200, "hipcc / ROCm 7.2.4"))]
+    assert len(keys) == 40 and set(keys) <= set(ROWS)
+    for k in keys:
+        assert "arm_kind" not in STORE["rows"][k]
+        assert ROWS[k].arm_kind == ""
+        assert measured_store.as_record(ROWS[k]) == STORE["rows"][k]
+    got = repr([(c, c.wide_sign, c.near_sign, c.verdict)
+                for c in (measured_store.lever_ab(ROWS, a, s)
+                          for a in ARCHS for s in RECYCLE_CELLS)])
+    assert hashlib.sha256(got.encode()).hexdigest() == RECYCLE_AB_SHA256
+    assert {measured_store.lever_ab(ROWS, "sm_86", s).kind
+            for s in RECYCLE_CELLS} == {measured_store.LOWERING}
+
+
+def test_the_store_file_round_trips_byte_for_byte(tmp_path: Path) -> None:
+    p = tmp_path / "k.json"
+    measured_store.save(ROWS, p)
+    assert p.read_bytes() == measured_store.STORE.read_bytes()
+
+
+def _plan_arm(spec=None, **kw) -> tuple[MeasuredKey, measured_store.Measured]:
+    spec = NO_SIEVE_CELLS[0] if spec is None else spec
+    return (MeasuredKey(spec, SM_86, "nvcc 13.0"),
+            measured_store.Measured(registers=200, spill_store=0, spill_load=0,
+                                    **PROV, **kw))
+
+
+def test_a_plan_arm_round_trips_byte_for_byte_with_its_kind(
+        tmp_path: Path) -> None:
+    k, row = _plan_arm()
+    assert not row.arm_kind
+    store = measured_store.merge({}, k, row)  # merge stamps the kind
+    assert store[k.key()].arm_kind == measured_store.PLAN
+    p = tmp_path / "m.json"
+    measured_store.save(store, p)
+    doc = json.loads(p.read_text())
+    assert doc["rows"][k.key()]["arm_kind"] == "plan"
+    back = measured_store.load(p)
+    assert back == store
+    q = tmp_path / "again.json"
+    measured_store.save(back, q)
+    assert q.read_bytes() == p.read_bytes()
+    # a recycle arm merged today is stamped too, as a lowering arm
+    rk = MeasuredKey(RECYCLE_CELLS[0], SM_86, "nvcc 13.0")
+    assert measured_store.merge({}, rk, row)[rk.key()].arm_kind == "lowering"
+    # and a literal row carries none
+    lk = MeasuredKey(measured_store.SUBGRID[0], SM_86, "nvcc 13.0")
+    assert measured_store.merge({}, lk, row)[lk.key()].arm_kind == ""
+
+
+def _write(tmp_path: Path, key: str, rec: dict) -> Path:
+    p = tmp_path / "bad.json"
+    p.write_text(json.dumps({"schema": measured_store.SCHEMA,
+                             "about": STORE["about"], "rows": {key: rec}}))
+    return p
+
+
+def test_the_loader_refuses_an_arm_kind_that_disagrees_with_its_key(
+        tmp_path: Path) -> None:
+    k, row = _plan_arm()
+    rec = measured_store.as_record(row)  # no kind
+    with pytest.raises(ValueError, match="plan arm and records no arm_kind"):
+        measured_store.load(_write(tmp_path, k.key(), rec))
+    with pytest.raises(ValueError, match="arm_kind 'lowering'"):
+        measured_store.load(_write(tmp_path, k.key(),
+                                   {**rec, "arm_kind": "lowering"}))
+    lit = MeasuredKey(measured_store.SUBGRID[0], SM_86, "nvcc 13.0").key()
+    with pytest.raises(ValueError, match="arm_kind 'plan'"):
+        measured_store.load(_write(tmp_path, lit, {**rec, "arm_kind": "plan"}))
+    with pytest.raises(ValueError, match="arm_kind"):
+        measured_store.load(_write(tmp_path, k.key(),
+                                   {**rec, "arm_kind": "tuning"}))
+    with pytest.raises(ValueError, match="arm_kind"):
+        measured_store.merge({}, k, replace(row, arm_kind="lowering"))
+
+
+def test_a_spec_carrying_two_arms_is_refused_naming_both(
+        tmp_path: Path) -> None:
+    two = replace(measured_store.SUBGRID[0],
+                  levers=tuple(sorted((NO_SIEVE, RECYCLE))))
+    _, row = _plan_arm()
+    for call in (lambda: measured_store.arm_of(two),
+                 lambda: measured_store.lever_ab(ROWS, "sm_86", two),
+                 lambda: measured_store.merge({}, MeasuredKey(
+                     two, SM_86, "nvcc 13.0"), row)):
+        with pytest.raises(ValueError) as e:
+            call()
+        assert NO_SIEVE in str(e.value) and RECYCLE in str(e.value)
+    key = MeasuredKey(two, SM_86, "nvcc 13.0").key()
+    rec = {**measured_store.as_record(row), "arm_kind": "plan"}
+    with pytest.raises(ValueError, match=r"no-sieve, recycle"):
+        measured_store.load(_write(tmp_path, key, rec))
+
+
+@pytest.mark.parametrize("lever", ("tuned", "no_sieve", "literal", "asym", ""))
+def test_a_lever_outside_the_declared_set_is_still_refused(lever) -> None:
+    with pytest.raises(ValueError, match="not a declared arm lever"):
+        measured_store.lever_cells(lever)
+    if lever:  # Spec itself refuses an empty lever
+        spec = replace(measured_store.SUBGRID[0], levers=(lever,))
+        with pytest.raises(ValueError, match="not a declared arm lever"):
+            measured_store.lever_ab(ROWS, "sm_86", spec)
+        with pytest.raises(ValueError, match="not a declared arm lever"):
+            measured_store.merge({}, MeasuredKey(spec, SM_86, "nvcc 13.0"),
+                                 _plan_arm()[1])
+
+
+def test_a_literal_cell_is_a_control_not_an_arm() -> None:
+    assert measured_store.arm_of(measured_store.SUBGRID[0]) is None
+    with pytest.raises(ValueError, match="control"):
+        measured_store.lever_ab(ROWS, "sm_86", measured_store.SUBGRID[0])
+
+
+def test_the_no_sieve_cells_are_the_whole_subgrid_unsieved() -> None:
+    assert [replace(s, levers=()) for s in NO_SIEVE_CELLS] == list(
+        measured_store.SUBGRID)
+    assert all(s.levers == (NO_SIEVE,) for s in NO_SIEVE_CELLS)
+    assert {measured_store.arm_kind(s) for s in NO_SIEVE_CELLS} == {"plan"}
+    # declared before its rows: the tracked store has no no-sieve row yet
+    assert not any(NO_SIEVE in k for k in STORE["rows"])
+
+
+def _dags(dags) -> tuple:
+    """BatchDag compares by identity (eq=False): compare what it holds."""
+    return tuple((d.batch, d.targets, dict(d.parents)) for d in dags)
+
+
+@pytest.mark.parametrize("spec", NO_SIEVE_CELLS[:5], ids=lambda s: s.key())
+def test_the_driver_passes_a_plan_lever_to_the_builder(spec) -> None:
+    """The driver strips only lower.LEVERS: a no-sieve cell's kernels are
+    the builder's for the unsieved plan, asserted against `plan(spec)`
+    directly. No compiler."""
+    got = measured.cell_kernels(spec)
+    assert got == build_pq_kernels(spec)
+    literal = replace(spec, levers=())
+    p = plan(spec)
+    assert _dags(p.dags) == _dags(build(literal))  # MILD's DAGs, unsieved
+    assert len(got) == len(p.dags) == spec.n_batches
+    if _dags(p.dags) != _dags(plan(literal).dags):  # the sieve acted here...
+        assert got != measured.cell_kernels(literal)  # ...so the kernel moves
+
+
+def test_the_sieve_changes_the_kernel_somewhere_on_the_subgrid() -> None:
+    """A plan arm is not a lowering arm: its kernel differs from the
+    control's (#162's premise), at least at one subgrid cell."""
+    assert any(measured.cell_kernels(s)
+               != measured.cell_kernels(replace(s, levers=()))
+               for s in NO_SIEVE_CELLS[:5])
+
+
+def _sieve_store(signs: dict[Spec, tuple[int, int]]) -> dict:
+    """Synthetic sm_86 rows for no-sieve cells: (wide, near) lever medians
+    against a control of (1000, 10) wide and (500, 5) near."""
+    store = {}
+    for spec, (w, n) in signs.items():
+        lit = MeasuredKey(replace(spec, levers=()), SM_86, "nvcc 13.0")
+        lev = MeasuredKey(spec, SM_86, "nvcc 13.0")
+        store = measured_store.merge(store, lit, measured_store.Measured(
+            registers=255, spill_store=0, spill_load=0, **PROV))
+        store = measured_store.merge(store, lev, measured_store.Measured(
+            registers=255, spill_store=0, spill_load=0, runtime_ns=w,
+            repeats=31, spread_ns=10, **PROV,
+            raw={"wallclock:control:median_ns": 1000,
+                 "wallclock:control:q1_ns": 0, "wallclock:control:q3_ns": 10,
+                 "wallclock:control:near:median_ns": 500,
+                 "wallclock:control:near:q1_ns": 0,
+                 "wallclock:control:near:q3_ns": 5,
+                 "wallclock:near:median_ns": n,
+                 "wallclock:near:q1_ns": 0, "wallclock:near:q3_ns": 5,
+                 **UNKNOWN_CARD}))
+    return store
+
+
+def test_the_sieve_verdict_is_declared_before_its_rows() -> None:
+    doc = measured_store.__doc__
+    assert "THE SIEVE ARM" in doc
+    assert "DECLARED BEFORE ANY `no-sieve` ROW EXISTED" in doc
+    cells = NO_SIEVE_CELLS[:3]
+    same, win, loss = (1000, 500), (900, 450), (1100, 550)
+    mixed = (900, 550)
+
+    def verdict(*arms) -> str:
+        return measured_store.sieve_verdict(
+            _sieve_store(dict(zip(cells, arms, strict=True))), "sm_86", cells)
+
+    assert verdict(loss, same, same) == measured_store.SUPPORTED
+    assert verdict(loss, loss, loss) == measured_store.SUPPORTED
+    assert verdict(win, same, same) == measured_store.CONTRADICTED
+    assert verdict(same, same, same) == measured_store.NOT_SHOWN
+    assert verdict(win, loss, same) == measured_store.NOT_SHOWN
+    assert verdict(mixed, loss, loss) == measured_store.NOT_SHOWN
+    got = measured_store.sieve_ab(_sieve_store(dict(zip(
+        cells, (loss, win, mixed), strict=True))), "sm_86", cells)
+    assert [c.verdict for c in got.values()] == ["loss", "win", "mixed"]
+    assert {c.kind for c in got.values()} == {"plan"}
+    # the default moves only on a WIN at every cell on every arch asked
+    allwin = _sieve_store(dict.fromkeys(cells, win))
+    assert measured_store.sieve_may_leave_the_default(allwin, cells, ("sm_86",))
+    assert not measured_store.sieve_may_leave_the_default(
+        _sieve_store(dict(zip(cells, (win, win, same), strict=True))), cells,
+        ("sm_86",))
+    with pytest.raises(KeyError):  # gfx1200 not recorded: not judged
+        measured_store.sieve_may_leave_the_default(allwin, cells)
+    with pytest.raises(ValueError, match="not a no-sieve arm"):
+        measured_store.sieve_ab(allwin, "sm_86", RECYCLE_CELLS[:1])
+    with pytest.raises(KeyError):  # nothing recorded yet on the tracked store
+        measured_store.sieve_verdict(ROWS, "sm_86")

@@ -88,9 +88,9 @@ pq_spec(L, 12) on that arch:
   are judged apart and may disagree; sm_86 and gfx1200 are our cards, not
   the paper's A100, and that is the strongest form the claim can take here.
 
-A LEVER A/B (#55) is `lever_ab`: does a kernel-layer lever (today only
-`lower.RECYCLE`, `"recycle"`) beat the literal kernel? DECLARED BEFORE ANY
-LEVER ROW EXISTED, and not to be tuned after reading one.
+A LEVER A/B (#55) is `lever_ab`: does a declared ARM lever (`ARMS`, below;
+#55 asked it of `lower.RECYCLE`, `"recycle"`) beat the literal kernel?
+DECLARED BEFORE ANY LEVER ROW EXISTED, and not to be tuned after reading one.
 
 - THE CELLS are `lever_cells(lever)`: EVERY `SUBGRID` cell with the lever
   added to `Spec.levers` -- all four L and all five batch counts, on both
@@ -119,6 +119,55 @@ LEVER ROW EXISTED, and not to be tuned after reading one.
   result -- leaves the lever opt-in. Spill numbers are reported beside the
   verdict (`spill`, literal row against lever row, same compiler) and never
   enter it: the clock is the verdict.
+
+THE ARMS (#159). An A/B arm is ONE lever from the DECLARED set `ARMS`, which
+maps each lever to its KIND: `LOWERING` (`lower.LEVERS`: the builder's kernel,
+rewritten after it is built -- `recycle`) or `PLAN` (the plan layer's choice,
+so the builder's kernel itself differs -- `no-sieve`, `plan.sieve.NO_SIEVE`).
+They are different experiments on the same kernel family: a lowering arm can
+come out as the very same machine code (#55's did), a plan arm cannot.
+
+- DECLARED, NOT ANY STRING. `lever_cells` and `lever_ab` refuse a lever
+  outside `ARMS`, so the store never records an arm nothing can reproduce. A
+  new arm is ONE entry in `ARMS`: #161's `"tuned"`, a `PLAN` arm, is added
+  there in the same change that makes the builder honour it, not before -- a
+  declared arm the builder cannot build is a slot no row can fill. This
+  module may not import `plan/` (test/test_layering.py), so a plan lever is
+  spelled here and test/test_measured.py pins the spelling to the plan
+  layer's constant.
+- ONE ARM AT A TIME. A Spec carrying two declared levers is two experiments
+  at once, and `arm_of` refuses it, naming both: its row could not say which
+  lever moved the clock.
+- THE KIND IS ON THE ROW. `Measured.arm_kind` is the arm's kind; `merge`
+  stamps it from the key's Spec, and the loader refuses a row whose kind
+  disagrees with its key, a kind on a row with no arm, and a PLAN arm's row
+  without one. A LOWERING row may omit it: #55's recycle rows predate the
+  field and are kept byte for byte (they are the control for #55's
+  conclusion), and their kind is `ARMS["recycle"]` either way. A row with no
+  kind is written exactly as before (`as_record`).
+- THE DRIVER (`measured.cell_kernels`) strips only `lower.LEVERS` and passes
+  every other lever to `build_pq_kernels`, so a plan arm reaches the plan
+  layer and a lowering arm reaches `lower`; test/test_measured.py asserts it.
+
+THE SIEVE ARM (#159, for #162's rows) is `sieve_ab`: does Alg. 3's sieve pay
+on our cards, i.e. is the literal (sieved) kernel better than `no-sieve`'s?
+DECLARED BEFORE ANY `no-sieve` ROW EXISTED, and not to be tuned after
+reading one.
+
+- THE CELLS are `lever_cells(NO_SIEVE)` -- every SUBGRID cell, unsieved --
+  plus any cell the recording adds (#162 adds one at L = 11); the rule is
+  per cell, so an added cell is judged by it unchanged.
+- PER CELL: `lever_ab`'s verdict, with `no-sieve` as the lever and the
+  sieved literal kernel as its same-session control -- #55's protocol and
+  #60's symmetric rule on both inputs, unchanged. Spill is reported beside
+  it (`spill`, literal row then no-sieve row) and never judged.
+- PER ARCH: the sieve is SUPPORTED on an arch iff `no-sieve` is a LOSS at
+  some cell and a WIN at none; CONTRADICTED iff it is a WIN at some cell and
+  a LOSS at none; otherwise NOT SHOWN (NEUTRAL everywhere, a MIXED cell, or
+  WINs and LOSSes both -- a sign that flips with L or n_batches, itself the
+  result). The two arches are judged apart and may disagree.
+- THE DEFAULT. As #55's: the literal (sieved) plan stays the default unless
+  `no-sieve` WINS at every cell on BOTH arches, and then in its own commit.
 
 COUNTERS (#110) are the roofline's inputs, read off the card's own
 performance counters by a profiler -- `ncu` on NVIDIA, `rocprofv3`'s counter
@@ -296,6 +345,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
+from types import MappingProxyType
 
 from felizjueves.device import (
     MEMORY_BOUND,
@@ -319,12 +369,48 @@ SUBGRID: tuple[Spec, ...] = tuple(
     pq_spec(L, n_batches=b) for L in SUBGRID_LS for b in (1, 3, 6, 9, 12))
 
 
+# THE ARMS (#159; module docstring): every lever an A/B arm may carry, and
+# its kind. One entry adds an arm -- #161 adds `"tuned": PLAN` with the lever.
+LOWERING, PLAN = "lowering", "plan"
+NO_SIEVE = "no-sieve"  # plan.sieve.NO_SIEVE, spelled: plan/ is off-limits here
+ARMS: Mapping[str, str] = MappingProxyType({
+    **dict.fromkeys(sorted(LEVERS), LOWERING),  # "recycle" (#55)
+    NO_SIEVE: PLAN,  # Alg. 3's sieve off (#162)
+})
+
+
+def _declared(lever: str) -> str:
+    if lever not in ARMS:
+        raise ValueError(f"lever {lever!r} is not a declared arm lever "
+                         f"({', '.join(sorted(ARMS))})")
+    return lever
+
+
+def arm_of(spec: Spec) -> str | None:
+    """The one declared arm lever `spec` carries, or None for a literal cell.
+
+    Refuses a lever outside `ARMS`, and a Spec carrying two arms at once,
+    naming both (module docstring, THE ARMS)."""
+    for lv in spec.levers:
+        _declared(lv)
+    if len(spec.levers) > 1:
+        raise ValueError(f"{spec.key()}: carries {len(spec.levers)} arms at "
+                         f"once ({', '.join(spec.levers)}); an A/B arm is "
+                         "one lever")
+    return spec.levers[0] if spec.levers else None
+
+
+def arm_kind(spec: Spec) -> str | None:
+    """`ARMS[arm_of(spec)]`: LOWERING or PLAN, or None for a literal cell."""
+    lever = arm_of(spec)
+    return None if lever is None else ARMS[lever]
+
+
 def lever_cells(lever: str) -> tuple[Spec, ...]:
     """#55's A/B cells for `lever`: every SUBGRID cell with the lever added
-    (module docstring, A LEVER A/B). Only a lowering lever is accepted."""
-    if lever not in LEVERS:
-        raise ValueError(f"lever {lever!r} is not a kernel-layer lever "
-                         f"({', '.join(sorted(LEVERS))})")
+    (module docstring, A LEVER A/B). Only a declared arm (`ARMS`) is
+    accepted, of either kind."""
+    _declared(lever)
     return tuple(replace(s, levers=tuple(sorted({*s.levers, lever})))
                  for s in SUBGRID)
 
@@ -452,7 +538,8 @@ _INTS = ("registers", "spill_store", "spill_load", "shared_bytes", "repeats",
          "fp64_flops", "dram_bytes_read", "dram_bytes_written")
 # Serialised only when present (`as_record`): a row without counters is
 # written exactly as it was before #110.
-_OMITTED_WHEN_ABSENT = (*COUNTERS, "counter_tool", "counter_unit")
+# And so is an arm's kind (#159): a row with none is written as before it.
+_OMITTED_WHEN_ABSENT = (*COUNTERS, "counter_tool", "counter_unit", "arm_kind")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -492,6 +579,7 @@ class Measured:
     raw: Mapping[str, int | None] = field(default_factory=dict)
     counter_tool: str = ""  # the profiler as it reports itself (#110)
     counter_unit: str = ""  # what the counter fields mean on this vendor
+    arm_kind: str = ""  # an A/B arm's kind, LOWERING or PLAN (#159)
 
     def __post_init__(self) -> None:
         for n in MEASUREMENTS:
@@ -510,6 +598,9 @@ class Measured:
         for n in PROVENANCE:
             if not isinstance(getattr(self, n), str) or not getattr(self, n):
                 raise ValueError(f"{n} must be a non-empty string")
+        if self.arm_kind not in ("", LOWERING, PLAN):
+            raise ValueError(f"arm_kind = {self.arm_kind!r} must be "
+                             f"{LOWERING!r}, {PLAN!r} or empty")
 
     # Derived from the stored counts, never stored themselves (#110).
     @property
@@ -539,8 +630,9 @@ class Measured:
 
 def as_record(row: Measured) -> dict:
     """`row` as the store writes it: every field, except that the counter
-    fields are left out when absent -- so a row with no counters is written
-    exactly as it was before #110."""
+    fields and `arm_kind` are left out when absent -- so a row with no
+    counters is written exactly as it was before #110, and one with no arm
+    kind as it was before #159."""
     d = asdict(row)
     for n in _OMITTED_WHEN_ABSENT:
         if d[n] in (None, ""):
@@ -580,6 +672,10 @@ def _row(path: Path, key: str, v: object) -> Measured:
     if (arch, toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"{path}: row {key!r} records arch/toolchain "
                          f"{row.arch!r}/{row.toolchain!r}, not its key's")
+    try:
+        _check_arm_kind(key, row)
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from e
     if row.runtime_ns is not None:
         for f in GPU_UTIL_FIELDS:
             if f not in row.raw:
@@ -590,6 +686,29 @@ def _row(path: Path, key: str, v: object) -> Measured:
                 raise ValueError(f"{path}: row {key!r}: {f} = {v!r} is not a "
                                  "percentage or null")
     return row
+
+
+def _key_arms(key: str) -> tuple[str, ...]:
+    """The declared arm levers a row key's Spec carries, read off its last
+    segment (`Spec.key()`'s levers). Anything undeclared there -- "literal",
+    #113's "asym" -- is not an arm and is not this check's business."""
+    spec_key, _, _ = split_key(key)
+    return tuple(lv for lv in spec_key.rsplit("/", 1)[-1].split("+")
+                 if lv in ARMS)
+
+
+def _check_arm_kind(key: str, row: Measured) -> None:
+    """THE KIND IS ON THE ROW (module docstring, THE ARMS)."""
+    arms = _key_arms(key)
+    if len(arms) > 1:
+        raise ValueError(f"row {key!r} carries {len(arms)} arms at once "
+                         f"({', '.join(arms)})")
+    kind = ARMS[arms[0]] if arms else ""
+    if row.arm_kind and row.arm_kind != kind:
+        raise ValueError(f"row {key!r} records arm_kind {row.arm_kind!r}, "
+                         f"but its key's arm kind is {kind or 'none'!r}")
+    if kind == PLAN and not row.arm_kind:
+        raise ValueError(f"row {key!r} is a plan arm and records no arm_kind")
 
 
 def load(path: Path = STORE) -> dict[str, Measured]:
@@ -619,9 +738,15 @@ def merge(store: Mapping[str, Measured], key: MeasuredKey,
           row: Measured) -> dict[str, Measured]:
     """`store` with `row` at `key`, REPLACING any row already there. `key`
     is a `MeasuredKey`, or anything keyed its way (`arch`, `toolchain`,
-    `key()`): #113's `asym.AsymKey`, whose cell is not a Spec."""
+    `key()`): #113's `asym.AsymKey`, whose cell is not a Spec. A
+    `MeasuredKey` on an A/B arm stamps the arm's kind on the row (#159)."""
     if (key.arch.name, key.toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"row is {row.arch}/{row.toolchain}, key {key.key()!r}")
+    if isinstance(key, MeasuredKey):
+        kind = arm_kind(key.spec)  # refuses an undeclared lever or two arms
+        if kind is not None and not row.arm_kind:
+            row = replace(row, arm_kind=kind)
+    _check_arm_kind(key.key(), row)
     return {**store, key.key(): row}
 
 
@@ -1103,6 +1228,12 @@ class LeverAB:
     near: tuple[float, float, float, float]
 
     @property
+    def kind(self) -> str:
+        """The arm's kind, `ARMS[lever]` (#159). A property, not a field, so
+        #55's recorded `LeverAB`s compare and print exactly as before."""
+        return ARMS[self.lever]
+
+    @property
     def wide_sign(self) -> str:
         return _sign(self.wide[:2], self.wide[2:])
 
@@ -1126,10 +1257,14 @@ def lever_ab(store: Mapping[str, Measured], arch: str, spec: Spec) -> LeverAB:
     """#55's comparison for one lever cell `spec` on `arch`, from the store.
 
     Raises KeyError when the lever row is missing, uncompiled or untimed, or
-    carries no same-session control, or the literal row is missing.
+    carries no same-session control, or the literal row is missing; and
+    ValueError when `spec` is not ONE declared arm (`arm_of`).
     """
-    (lever,) = [lv for lv in spec.levers if lv in LEVERS]
-    literal = replace(spec, levers=tuple(lv for lv in spec.levers if lv != lever))
+    lever = arm_of(spec)  # refuses an undeclared lever, and two arms at once
+    if lever is None:
+        raise ValueError(f"{spec.key()}: a literal cell is a control, not an "
+                         "arm")
+    literal = replace(spec, levers=())
 
     def one(s: Spec) -> Measured:
         got = rows(spec=s, arch=arch, store=store)
@@ -1155,6 +1290,46 @@ def lever_ab(store: Mapping[str, Measured], arch: str, spec: Spec) -> LeverAB:
         spill=(lit.spill_store + lit.spill_load, r.spill_store + r.spill_load),
         wide=(*stats("wallclock:control:"), r.runtime_ns, r.spread_ns),
         near=(*stats("wallclock:control:near:"), *stats("wallclock:near:")))
+
+
+# #159: the sieve arm's verdict, declared before any no-sieve row (module
+# docstring, THE SIEVE ARM). #162 records the rows; nothing here reads one yet.
+SUPPORTED, CONTRADICTED, NOT_SHOWN = "supported", "contradicted", "not shown"
+
+
+def sieve_ab(store: Mapping[str, Measured], arch: str,
+             cells: tuple[Spec, ...] | None = None) -> dict[Spec, LeverAB]:
+    """`lever_ab` of every `no-sieve` cell on `arch` (by default
+    `lever_cells(NO_SIEVE)`); a cell that is not a `no-sieve` arm is refused.
+    Raises KeyError, as `lever_ab` does, for a cell not yet recorded."""
+    cells = lever_cells(NO_SIEVE) if cells is None else cells
+    for c in cells:
+        if arm_of(c) != NO_SIEVE:
+            raise ValueError(f"{c.key()}: not a {NO_SIEVE} arm")
+    return {c: lever_ab(store, arch, c) for c in cells}
+
+
+def sieve_verdict(store: Mapping[str, Measured], arch: str,
+                  cells: tuple[Spec, ...] | None = None) -> str:
+    """The sieve on `arch` (THE SIEVE ARM, PER ARCH): SUPPORTED,
+    CONTRADICTED or NOT_SHOWN, read off `sieve_ab`'s per-cell verdicts of
+    `no-sieve` against the sieved literal."""
+    got = {ab.verdict for ab in sieve_ab(store, arch, cells).values()}
+    if MIXED not in got and LOSS in got and WIN not in got:
+        return SUPPORTED
+    if MIXED not in got and WIN in got and LOSS not in got:
+        return CONTRADICTED
+    return NOT_SHOWN
+
+
+def sieve_may_leave_the_default(store: Mapping[str, Measured],
+                                cells: tuple[Spec, ...] | None = None,
+                                arches: tuple[str, ...] = ("sm_86", "gfx1200"),
+                                ) -> bool:
+    """THE SIEVE ARM, THE DEFAULT: True iff `no-sieve` WINS at every cell on
+    every arch in `arches` (both cards by default)."""
+    return all(ab.verdict == WIN for a in arches
+               for ab in sieve_ab(store, a, cells).values())
 
 
 
