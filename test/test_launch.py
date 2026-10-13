@@ -14,6 +14,7 @@ equal keys are what the stability test needs.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import itertools
 from functools import cache, partial
 
@@ -347,3 +348,44 @@ def test_the_ket_sort_key_is_the_product_and_the_break_needs_it(monkeypatch):
          for r, k in zip(rec, kets, strict=True)]))
     assert not _exceeds(loose.J, J0.J, loose.scale, tau)
     assert loose.n_skipped <= prod.n_skipped
+
+
+# --- the J plans, unchanged by the K plan (#204) ------------------------------
+
+# sha256 of `_j_plans_dump()`, taken on main at af3b0dc, BEFORE #204 touched
+# launch.py. #204's acceptance: "a diff of the planned J launches before and
+# after is empty". Every record (shell pair, prim, L, G, key -- floats by
+# repr, so bit for bit), every class's batch count and bra blocks, each
+# class's kernels (by the sha256 of their repr), and the plan's tau, batch
+# count, density_sort and refusals, over both bounds, both sort keys, two
+# taus and two batch counts on H2O/STO-3G, and the dimer.
+J_PLANS_SHA256 = (
+    "27ec51f766a2e629a827ed2ef1d07dc5d2417cbece5fbb7755550816688a7ce5")
+
+
+def _j_plans_dump() -> str:
+    def dump(P):
+        out = [repr((P.tau, P.n_batches, P.density_sort, P.refused))]
+        for c in P:
+            out.append(repr((c.lp, c.lq, c.n_batches, c.bras, c.kets,
+                             c.bra_blocks)))
+            out.append(hashlib.sha256(repr(c.kernels).encode()).hexdigest())
+        return "\n".join(out)
+
+    cases = []
+    basis, D = _h2o()
+    for bound in (BOUND, partial(aoj.pair_bound_pq, pq=pq)):
+        for tau in (0.0, 1e-6):
+            for ds in (True, False):
+                for n in (1, 3):
+                    cases.append(dump(launches(
+                        basis, D, bound=bound, n_batches=n, tau=tau,
+                        density_sort=ds, strict=False)))
+    basis, D = _dimer()
+    cases.append(dump(launches(basis, D, bound=BOUND, n_batches=1, tau=0.0)))
+    return "\n#\n".join(cases)
+
+
+def test_the_j_plans_are_unchanged_by_the_k_plan():
+    got = hashlib.sha256(_j_plans_dump().encode()).hexdigest()
+    assert got == J_PLANS_SHA256

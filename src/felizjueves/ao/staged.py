@@ -68,6 +68,13 @@ the generated pre-contraction, eq. 20 and the scatter from the generated
 bra-transform kernel, and the staging, its checks and the `[p|q]` launches
 this module's, unchanged.
 
+J ONLY (#204). A K plan (`launch_k.KLaunchPlan`) is refused with a
+`TypeError`, never duck-typed through: its classes are quartets
+`(la, lc, lb, ld)`, its kets carry no `Dmax`, its bra blocks feed no eq. 20,
+and K's digestion is in the kernel. That is why `launch_k` keeps its own
+class type (its module docstring, "THE ANSWER"); the K plan's walk is
+`launch_k.walk_k`, and its staged device build is #206's.
+
 BOYS IS INJECTED (`boys=`); nothing here imports `reference/`. Nothing is
 memoised across calls: the buffers are built per call and dropped.
 """
@@ -269,6 +276,11 @@ def coulomb_matrix_staged(plan: LaunchPlan, basis: Basis, D: object, *,
     `D`), its buffers staged per class and `J_p` from the interpreted
     generated kernels (module docstring; `ket_data=` and `transform=` are
     "THE HOOKS")."""
+    if not isinstance(plan, LaunchPlan):
+        raise TypeError(
+            f"plan is a {type(plan).__name__}, not a J `LaunchPlan`: this "
+            "driver stages J only (a K plan, `launch_k.KLaunchPlan`, has "
+            "quartet classes, no ket Dmax and no eq. 20; module docstring)")
     rows = _density(basis, D)
     dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     builds: Counter[str] = Counter()

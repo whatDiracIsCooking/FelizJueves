@@ -354,6 +354,35 @@ RULES: dict[str, Rule] = {
                        "dispatch policy arrives injected (#145)",
         literature="a launch plan is not scored against the published "
                    "tables; nothing here may feed a floor"),
+    "k_launch": _rule(
+        "launch_k.py (#204): the K launch plan as a VALUE, BESIDE `launch` "
+        "-- which K class kernels run over which ordered bra and ket index "
+        "records, in which order -- and its walk in Python. It imports "
+        "from `launch` the part the two plans share (`PairRec`, the stable "
+        "sort, the bound check, the batch admission) and from `ao` its "
+        "records and the host's staged contraction; the bound, the ket "
+        "sort key and the K kernel builder arrive injected (`bound=`, "
+        "`key=`, `build=`)",
+        ("spec", "ir", "ao", "launch"),
+        reference=_GROUND_TRUTH + "; the bound and `pq` are injected",
+        interp="the plan is data and the walk is ao.k's arithmetic; "
+               "nothing is interpreted here",
+        kernel="J's builder is `launch`'s business, and the K builder "
+               "(`kernel_k`, #198) arrives injected as `build=`: this plan "
+               "names a class's `Spec`, it does not build it",
+        plan="the batch admission is `launch._batches_for`'s, shared, not "
+             "restated: a second path to the plan could disagree with J's",
+        emit="the plan is data: no text is emitted",
+        **{"ao.drive": "the adapter runs kernels; a plan importing it drags "
+                       "the interpreter in",
+           "ao.staged": "the staged J driver reads `launch`'s plans; this "
+                        "plan importing it is the same cycle as `launch`'s"},
+        measured="no toolchain reaches a plan",
+        dispatch="no K dispatch resolver exists (milestone 10's scope); "
+                 "when one does it is injected, never imported (#145)",
+        measured_store="nothing measured may reach the plan by import",
+        literature="a launch plan is not scored against the published "
+                   "tables; nothing here may feed a floor"),
     "jab_builder": _rule(
         "kernel_jab.py (#154): the bra-transform-and-scatter kernel, "
         "`Target.JAB` -- key -> IR, with the `E` block fragment inlined "
@@ -467,6 +496,7 @@ RULE_OF: dict[str, str] = {
     "ao.drive": "adapter",
     "ao.staged": "adapter",
     "launch": "launch",
+    "launch_k": "k_launch",
     "kernel_jab": "jab_builder",
     "kernel_dq": "dq_builder",
     "kdup": "count",
@@ -560,6 +590,9 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                   "launch", "passes"),
     "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
                "spec"),
+    # #204: the K plan beside J's -- the shared part from `launch`, the
+    # records and the host's staged contraction from `ao`.
+    "launch_k": ("ao.j", "ao.k", "ao.shell", "ir", "launch", "spec"),
     "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
@@ -724,18 +757,21 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
     # #138's acceptance, TRANSITIVELY: the plan's bound is injected, and the
     # plan is data -- no chain of imports from it reaches reference/, the
     # interpreter, a backend, or the adapter that runs kernels.
+    # #204: the K plan beside it, the same; and it reaches no K builder --
+    # `kernel_k` (#198) arrives injected as `build=`.
     graph = _graph()
-    seen: set[str] = set()
-    todo = ["launch"]
-    while todo:
-        for e in graph.get(todo.pop(), set()):
-            if e not in seen:
-                seen.add(e)
-                todo.append(e)
-    for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged", "dispatch",
-                   "measured", "measured_store"):
-        hit = sorted(e for e in seen if _under(e, banned))
-        assert not hit, f"launch reaches {hit}"
+    for root, extra in (("launch", ()), ("launch_k", ("kernel_k",))):
+        seen: set[str] = set()
+        todo = [root]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged",
+                       "dispatch", "measured", "measured_store", *extra):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{root} reaches {hit}"
 
 
 def test_nothing_measured_reaches_back_through_the_resolver() -> None:
