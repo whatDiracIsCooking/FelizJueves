@@ -207,6 +207,27 @@ RULES: dict[str, Rule] = {
         literature="nothing in KernelCost may feed a literature floor "
                    "(lower.py); the limits it records are read by tests",
         reference=_GROUND_TRUTH),
+    "plan_analysis": _rule(
+        "planrank.py (#165): the plan layer's counts against the measured "
+        "rows -- PlanCost of the literal, no-sieve and tuned plans of a cell "
+        "against its spills and its same-session wall-clock. Not `analysis`: "
+        "it must read `plan` (the counts are the plan's), which `analysis` "
+        "may not. It reads both sides and feeds neither: nothing may import "
+        "it (`plan` and `literature` admit no such edge), and a plan chosen "
+        "on its reading is #166's hand-recorded decision, not a loop the "
+        "code closes. `gate` only for GPU_BUSY_MAX, the clean-phase bound",
+        ("spec", "device", "gate", "plan", "measured_store", "kernelrank"),
+        literature="the reading may not feed a literature floor: a floor "
+                   "moved by what a card did with a kernel is no longer the "
+                   "paper's number (#165's hazard)",
+        measured="an analysis reads the STORE, never the driver that "
+                 "compiles into it: the reading must be recomputable "
+                 "without a toolchain (#94)",
+        dispatch="the reading is not a choice; dispatch chooses from the "
+                 "clock alone, and nothing here may become its input",
+        launch="the reading is about one class's kernel, not a molecule's "
+               "launch plan, and must not reach what the plan launches",
+        reference=_GROUND_TRUTH),
     "dispatch": _rule(
         "dispatch.py (#145): the batch count of a class, chosen from the "
         "measured wall-clock rows by batchreport's rule (best median) and "
@@ -410,6 +431,7 @@ RULE_OF: dict[str, str] = {
     "ridge": "analysis",
     "dispatch": "dispatch",
     "crossread": "analysis",
+    "planrank": "plan_analysis",
     "ao": "ao",
     "ao.shell": "ao",
     "ao.hermite": "ao",
@@ -492,6 +514,10 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "dispatch": ("batchreport", "device", "measured_store"),
     "crossread": ("batchreport", "device", "kernelrank", "measured_store",
                   "ridge", "spec"),
+    # #165: PlanCost (plan.pipeline, plan.cost) against the store's rows;
+    # kernelrank for its rank statistic, gate for GPU_BUSY_MAX.
+    "planrank": ("device", "gate", "kernelrank", "measured_store", "plan.cost",
+                 "plan.pipeline", "spec"),
     "ao": (),
     "ao.shell": (),
     "ao.hermite": (),

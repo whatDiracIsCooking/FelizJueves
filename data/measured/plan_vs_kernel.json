@@ -1,0 +1,8455 @@
+{
+ "schema": 1,
+ "about": "PlanCost across plan variants (literal, no-sieve, tuned) against the measured spills and, where a clean same-session clock phase exists, wall-clock, per (cell, card) (felizjueves.planrank, #165). Does a plan with fewer counted intermediates spill less; does one with fewer FLOPs run faster? Reads both sides, feeds neither: nothing here reaches PlanCost or a literature floor. An order, never a prediction. Recomputed by test/test_planrank.py.",
+ "header": {
+  "cells": [
+   [
+    7,
+    1
+   ],
+   [
+    7,
+    3
+   ],
+   [
+    7,
+    6
+   ],
+   [
+    7,
+    9
+   ],
+   [
+    7,
+    12
+   ],
+   [
+    10,
+    1
+   ],
+   [
+    10,
+    3
+   ],
+   [
+    10,
+    6
+   ],
+   [
+    10,
+    9
+   ],
+   [
+    10,
+    12
+   ],
+   [
+    11,
+    1
+   ],
+   [
+    13,
+    1
+   ],
+   [
+    13,
+    3
+   ],
+   [
+    13,
+    6
+   ],
+   [
+    13,
+    9
+   ],
+   [
+    13,
+    12
+   ],
+   [
+    16,
+    1
+   ],
+   [
+    16,
+    3
+   ],
+   [
+    16,
+    6
+   ],
+   [
+    16,
+    9
+   ],
+   [
+    16,
+    12
+   ]
+  ],
+  "variants": [
+   "literal",
+   "no-sieve",
+   "tuned"
+  ],
+  "plan": "plan.pipeline.plan(spec).cost: flops summed over batches, max_intermediates maxed over batches, of the plan the kernel is built from (sieved unless no-sieve; the recorded search if tuned).",
+  "spill": "max_intermediates against the row's spill_store + spill_load, over every two variants of a cell with a compiled row. sm_86: bytes; gfx1200: spilled register counts. Within a card only.",
+  "clock": "flops against lever_ab's same-session sign (#60's rule), for (literal, arm) only: a no-sieve row and a tuned row were timed in different sessions, so that pair is never formed. Per input, judged apart.",
+  "clean": "an arm row timed against its same-session control, its four gate readings on that input known and <= 30% (gate.GPU_BUSY_MAX). Anything else is listed as not clean with its reason, never imputed.",
+  "classes": "no_claim: the measurement ties. noise_floor: same text (source_sha256), measured apart. unresolved: the plan ties. concordant: the plan's cheaper variant measures better. discordant: it measures worse -- an inversion, named in summary.",
+  "verdict": "per card and claim: predicts iff concordant > 0 and discordant = 0; inverts iff the reverse; mixed iff both; not shown iff neither. The counts predict the kernel on a card iff every claim there predicts. Written after #162's and #163's rows were read: a reading, never a choice (#166 decides the default).",
+  "spearman": "kernelrank.spearman: per cell over its variants (spill), and per card over the pairs' relative changes. A handful of points: an order, never a prediction interval or a pooled score.",
+  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.planrank --write"
+ },
+ "summary": {
+  "sm_86": {
+   "spill": {
+    "n_pairs": 53,
+    "concordant": 15,
+    "discordant": 17,
+    "unresolved": 4,
+    "no_claim": 17,
+    "noise_floor": 0,
+    "verdict": "mixed",
+    "spearman": 0.060366,
+    "spearman_n": 53,
+    "spearman_left_out": [],
+    "inversions": [
+     {
+      "L": 7,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       126,
+       137
+      ],
+      "measured": [
+       508,
+       376
+      ]
+     },
+     {
+      "L": 7,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       126,
+       125
+      ],
+      "measured": [
+       508,
+       528
+      ]
+     },
+     {
+      "L": 7,
+      "n_batches": 1,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       137,
+       125
+      ],
+      "measured": [
+       376,
+       528
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       368,
+       424
+      ],
+      "measured": [
+       19268,
+       18852
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       368,
+       366
+      ],
+      "measured": [
+       19268,
+       19300
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 1,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       424,
+       366
+      ],
+      "measured": [
+       18852,
+       19300
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 3,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       140,
+       154
+      ],
+      "measured": [
+       3564,
+       3556
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 3,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       140,
+       139
+      ],
+      "measured": [
+       3564,
+       3676
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 3,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       154,
+       139
+      ],
+      "measured": [
+       3556,
+       3676
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       845,
+       836
+      ],
+      "measured": [
+       86632,
+       87864
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 1,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       1004,
+       836
+      ],
+      "measured": [
+       87280,
+       87864
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 6,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       232,
+       252
+      ],
+      "measured": [
+       28656,
+       28244
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 6,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       252,
+       232
+      ],
+      "measured": [
+       28244,
+       28856
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       1639,
+       1601
+      ],
+      "measured": [
+       317260,
+       319284
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 6,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       402,
+       451
+      ],
+      "measured": [
+       253048,
+       247452
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 9,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       324,
+       341
+      ],
+      "measured": [
+       181224,
+       179976
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 9,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       341,
+       324
+      ],
+      "measured": [
+       179976,
+       180224
+      ]
+     }
+    ],
+    "noise_floor_pairs": []
+   },
+   "clock": {
+    "wide": {
+     "n_pairs": 37,
+     "concordant": 4,
+     "discordant": 2,
+     "unresolved": 0,
+     "no_claim": 31,
+     "noise_floor": 0,
+     "verdict": "mixed",
+     "spearman": 0.03928,
+     "spearman_n": 37,
+     "spearman_left_out": [],
+     "inversions": [
+      {
+       "L": 16,
+       "n_batches": 6,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        6447,
+        6662
+       ],
+       "sign": "faster",
+       "arm_ns": [
+        461084746,
+        2740846
+       ],
+       "control_ns": [
+        463905606,
+        2347980
+       ]
+      },
+      {
+       "L": 16,
+       "n_batches": 12,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        7645,
+        7682
+       ],
+       "sign": "faster",
+       "arm_ns": [
+        694067405,
+        1520011
+       ],
+       "control_ns": [
+        699426050,
+        2780325
+       ]
+      }
+     ],
+     "noise_floor_pairs": [],
+     "clean": 37,
+     "not_clean": [
+      {
+       "L": 7,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 10,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 11,
+       "n_batches": 1,
+       "variant": "tuned",
+       "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+      },
+      {
+       "L": 13,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 16,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      }
+     ]
+    },
+    "near": {
+     "n_pairs": 37,
+     "concordant": 5,
+     "discordant": 1,
+     "unresolved": 0,
+     "no_claim": 31,
+     "noise_floor": 0,
+     "verdict": "mixed",
+     "spearman": 0.235668,
+     "spearman_n": 37,
+     "spearman_left_out": [],
+     "inversions": [
+      {
+       "L": 16,
+       "n_batches": 6,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        6447,
+        6662
+       ],
+       "sign": "faster",
+       "arm_ns": [
+        107748572,
+        254075
+       ],
+       "control_ns": [
+        109598223,
+        522605
+       ]
+      }
+     ],
+     "noise_floor_pairs": [],
+     "clean": 37,
+     "not_clean": [
+      {
+       "L": 7,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 10,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 11,
+       "n_batches": 1,
+       "variant": "tuned",
+       "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+      },
+      {
+       "L": 13,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 16,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      }
+     ]
+    }
+   },
+   "predicts": false,
+   "answer": "On sm_86 the plan-layer counts do not predict the kernel. Fewer intermediates -> less spill: MIXED (inversions: L7 b1 literal/no-sieve, L7 b1 literal/tuned, L7 b1 no-sieve/tuned, L10 b1 literal/no-sieve, L10 b1 literal/tuned, L10 b1 no-sieve/tuned, L10 b3 literal/no-sieve, L10 b3 literal/tuned, L10 b3 no-sieve/tuned, L13 b1 literal/tuned, L13 b1 no-sieve/tuned, L13 b6 literal/no-sieve, L13 b6 no-sieve/tuned, L16 b1 literal/tuned, L16 b6 literal/no-sieve, L16 b9 literal/no-sieve, L16 b9 no-sieve/tuned). Fewer FLOPs -> faster: wide-T MIXED (inversions: L16 b6 literal/no-sieve, L16 b12 literal/no-sieve); near-T MIXED (inversions: L16 b6 literal/no-sieve)."
+  },
+  "gfx1200": {
+   "spill": {
+    "n_pairs": 53,
+    "concordant": 17,
+    "discordant": 13,
+    "unresolved": 10,
+    "no_claim": 13,
+    "noise_floor": 0,
+    "verdict": "mixed",
+    "spearman": 0.337354,
+    "spearman_n": 53,
+    "spearman_left_out": [],
+    "inversions": [
+     {
+      "L": 7,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       126,
+       137
+      ],
+      "measured": [
+       676,
+       658
+      ]
+     },
+     {
+      "L": 7,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       126,
+       125
+      ],
+      "measured": [
+       676,
+       680
+      ]
+     },
+     {
+      "L": 7,
+      "n_batches": 1,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       137,
+       125
+      ],
+      "measured": [
+       658,
+       680
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       368,
+       424
+      ],
+      "measured": [
+       5330,
+       5326
+      ]
+     },
+     {
+      "L": 10,
+      "n_batches": 3,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       140,
+       139
+      ],
+      "measured": [
+       4044,
+       4048
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       845,
+       836
+      ],
+      "measured": [
+       20986,
+       21042
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 3,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       308,
+       303
+      ],
+      "measured": [
+       40658,
+       41006
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 6,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       232,
+       252
+      ],
+      "measured": [
+       52084,
+       52080
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 9,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       186,
+       191
+      ],
+      "measured": [
+       67708,
+       67492
+      ]
+     },
+     {
+      "L": 13,
+      "n_batches": 9,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       191,
+       186
+      ],
+      "measured": [
+       67492,
+       67716
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 1,
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       1639,
+       1601
+      ],
+      "measured": [
+       44752,
+       45012
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 9,
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       324,
+       341
+      ],
+      "measured": [
+       218852,
+       218808
+      ]
+     },
+     {
+      "L": 16,
+      "n_batches": 9,
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       341,
+       324
+      ],
+      "measured": [
+       218808,
+       218884
+      ]
+     }
+    ],
+    "noise_floor_pairs": []
+   },
+   "clock": {
+    "wide": {
+     "n_pairs": 37,
+     "concordant": 3,
+     "discordant": 0,
+     "unresolved": 0,
+     "no_claim": 33,
+     "noise_floor": 1,
+     "verdict": "predicts",
+     "spearman": 0.217891,
+     "spearman_n": 37,
+     "spearman_left_out": [],
+     "inversions": [],
+     "noise_floor_pairs": [
+      {
+       "L": 7,
+       "n_batches": 3,
+       "a": "literal",
+       "b": "tuned",
+       "plan": [
+        425,
+        425
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        89007816,
+        3674860
+       ],
+       "control_ns": [
+        83923238,
+        2326597
+       ]
+      }
+     ],
+     "clean": 37,
+     "not_clean": [
+      {
+       "L": 7,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 10,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 11,
+       "n_batches": 1,
+       "variant": "tuned",
+       "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+      },
+      {
+       "L": 13,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 16,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      }
+     ]
+    },
+    "near": {
+     "n_pairs": 37,
+     "concordant": 10,
+     "discordant": 4,
+     "unresolved": 1,
+     "no_claim": 17,
+     "noise_floor": 5,
+     "verdict": "mixed",
+     "spearman": 0.402629,
+     "spearman_n": 37,
+     "spearman_left_out": [],
+     "inversions": [
+      {
+       "L": 10,
+       "n_batches": 1,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        1254,
+        1292
+       ],
+       "sign": "faster",
+       "arm_ns": [
+        17312213,
+        100517
+       ],
+       "control_ns": [
+        18158466,
+        83212
+       ]
+      },
+      {
+       "L": 10,
+       "n_batches": 3,
+       "a": "literal",
+       "b": "tuned",
+       "plan": [
+        1278,
+        1277
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        18264156,
+        106892
+       ],
+       "control_ns": [
+        18092994,
+        126582
+       ]
+      },
+      {
+       "L": 13,
+       "n_batches": 1,
+       "a": "literal",
+       "b": "tuned",
+       "plan": [
+        2887,
+        2872
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        98065822,
+        261239
+       ],
+       "control_ns": [
+        97544354,
+        292029
+       ]
+      },
+      {
+       "L": 16,
+       "n_batches": 6,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        6447,
+        6662
+       ],
+       "sign": "faster",
+       "arm_ns": [
+        309780085,
+        349830
+       ],
+       "control_ns": [
+        310642843,
+        296246
+       ]
+      }
+     ],
+     "noise_floor_pairs": [
+      {
+       "L": 7,
+       "n_batches": 3,
+       "a": "literal",
+       "b": "tuned",
+       "plan": [
+        425,
+        425
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        8904412,
+        112323
+       ],
+       "control_ns": [
+        8715230,
+        73556
+       ]
+      },
+      {
+       "L": 7,
+       "n_batches": 6,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        506,
+        506
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        13336974,
+        92462
+       ],
+       "control_ns": [
+        13140582,
+        122691
+       ]
+      },
+      {
+       "L": 7,
+       "n_batches": 6,
+       "a": "literal",
+       "b": "tuned",
+       "plan": [
+        506,
+        506
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        13412446,
+        80391
+       ],
+       "control_ns": [
+        13128182,
+        120947
+       ]
+      },
+      {
+       "L": 7,
+       "n_batches": 9,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        510,
+        510
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        15363164,
+        116176
+       ],
+       "control_ns": [
+        15141990,
+        96147
+       ]
+      },
+      {
+       "L": 7,
+       "n_batches": 12,
+       "a": "literal",
+       "b": "no-sieve",
+       "plan": [
+        641,
+        641
+       ],
+       "sign": "slower",
+       "arm_ns": [
+        21672896,
+        127007
+       ],
+       "control_ns": [
+        21467183,
+        204198
+       ]
+      }
+     ],
+     "clean": 37,
+     "not_clean": [
+      {
+       "L": 7,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 10,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 11,
+       "n_batches": 1,
+       "variant": "tuned",
+       "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+      },
+      {
+       "L": 13,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      },
+      {
+       "L": 16,
+       "n_batches": 12,
+       "variant": "tuned",
+       "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+      }
+     ]
+    }
+   },
+   "predicts": false,
+   "answer": "On gfx1200 the plan-layer counts do not predict the kernel. Fewer intermediates -> less spill: MIXED (inversions: L7 b1 literal/no-sieve, L7 b1 literal/tuned, L7 b1 no-sieve/tuned, L10 b1 literal/no-sieve, L10 b3 literal/tuned, L13 b1 literal/tuned, L13 b3 literal/tuned, L13 b6 literal/no-sieve, L13 b9 literal/no-sieve, L13 b9 no-sieve/tuned, L16 b1 literal/tuned, L16 b9 literal/no-sieve, L16 b9 no-sieve/tuned). Fewer FLOPs -> faster: wide-T PREDICTS; near-T MIXED (inversions: L10 b1 literal/no-sieve, L10 b3 literal/tuned, L13 b1 literal/tuned, L16 b6 literal/no-sieve)."
+  }
+ },
+ "rows": [
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b1/j/literal",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 126,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 508,
+      "source_sha256": "b24560d380c56d4a360d87c56e73122f4f4087adb4bf0d1cc933c8b119102edd"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 137,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 376,
+      "source_sha256": "7af56896fe4793c5f77b959dc0623f5f4ce8332d9b97f85219f7973de450071c"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b1/j/tuned",
+     "plan": {
+      "flops": 424,
+      "max_intermediates": 125,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 528,
+      "source_sha256": "67f1dc8210602da0e182622dd25969d238e8e08689c5256ec95e607be75a16a6"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       126,
+       137
+      ],
+      "measured": [
+       508,
+       376
+      ],
+      "same_text": false,
+      "plan_rel": 0.087302,
+      "measured_rel": -0.259843,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       126,
+       125
+      ],
+      "measured": [
+       508,
+       528
+      ],
+      "same_text": false,
+      "plan_rel": -0.007937,
+      "measured_rel": 0.03937,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       137,
+       125
+      ],
+      "measured": [
+       376,
+       528
+      ],
+      "same_text": false,
+      "plan_rel": -0.087591,
+      "measured_rel": 0.404255,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       24943482,
+       1923948
+      ],
+      "arm_ns": [
+       24827049,
+       381716
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.004668,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       424
+      ],
+      "control_ns": [
+       24210089,
+       492288
+      ],
+      "arm_ns": [
+       24195419,
+       520583
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002353,
+      "measured_rel": -0.000606,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       3686973,
+       13970
+      ],
+      "arm_ns": [
+       3946287,
+       362776
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.070332,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       424
+      ],
+      "control_ns": [
+       3683407,
+       14544
+      ],
+      "arm_ns": [
+       3686238,
+       14595
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002353,
+      "measured_rel": 0.000769,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b3/j/literal",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 51,
+      "max_targets": 42
+     },
+     "measured": {
+      "registers": 166,
+      "spill": 0,
+      "source_sha256": "03dbc9aa69769e5954ed789ad2e60c16be60cdc62baf6dee1cc281023d6eecd7"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 53,
+      "max_targets": 42
+     },
+     "measured": {
+      "registers": 166,
+      "spill": 0,
+      "source_sha256": "66f8322e016e8472d0b5e19ff3d3c0885549bf7c957ee7481d9b5f8dc2a96829"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b3/j/tuned",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 51,
+      "max_targets": 42
+     },
+     "measured": {
+      "registers": 166,
+      "spill": 0,
+      "source_sha256": "03dbc9aa69769e5954ed789ad2e60c16be60cdc62baf6dee1cc281023d6eecd7"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       51,
+       53
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.039216,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       51,
+       51
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       53,
+       51
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": -0.037736,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       66307843,
+       1184128
+      ],
+      "arm_ns": [
+       66321572,
+       1215728
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.000207,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       65000758,
+       632756
+      ],
+      "arm_ns": [
+       64854355,
+       1217084
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.002252,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       6428843,
+       973644
+      ],
+      "arm_ns": [
+       7214025,
+       331485
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.122134,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       7165192,
+       957250
+      ],
+      "arm_ns": [
+       6254738,
+       944946
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.127066,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b6/j/literal",
+     "plan": {
+      "flops": 506,
+      "max_intermediates": 39,
+      "max_targets": 22
+     },
+     "measured": {
+      "registers": 128,
+      "spill": 0,
+      "source_sha256": "faefa6fe8eab2630c6cdf702dc0f8fe3f0380709214252e7697f11d143f877cd"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 506,
+      "max_intermediates": 39,
+      "max_targets": 22
+     },
+     "measured": {
+      "registers": 128,
+      "spill": 0,
+      "source_sha256": "faefa6fe8eab2630c6cdf702dc0f8fe3f0380709214252e7697f11d143f877cd"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b6/j/tuned",
+     "plan": {
+      "flops": 506,
+      "max_intermediates": 39,
+      "max_targets": 22
+     },
+     "measured": {
+      "registers": 128,
+      "spill": 0,
+      "source_sha256": "faefa6fe8eab2630c6cdf702dc0f8fe3f0380709214252e7697f11d143f877cd"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       39,
+       39
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       39,
+       39
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       39,
+       39
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       118046311,
+       1240994
+      ],
+      "arm_ns": [
+       118499604,
+       1178468
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.00384,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       116777748,
+       847598
+      ],
+      "arm_ns": [
+       116517814,
+       1040016
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.002226,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       10409911,
+       965160
+      ],
+      "arm_ns": [
+       10357051,
+       605923
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.005078,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       10100268,
+       94247
+      ],
+      "arm_ns": [
+       11515381,
+       1530864
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.140106,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b9/j/literal",
+     "plan": {
+      "flops": 510,
+      "max_intermediates": 38,
+      "max_targets": 20
+     },
+     "measured": {
+      "registers": 128,
+      "spill": 0,
+      "source_sha256": "5c42c5a975ef2d153c06f6869eb60788a414e8d5ff7503edf4b0d8730e071179"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 510,
+      "max_intermediates": 38,
+      "max_targets": 20
+     },
+     "measured": {
+      "registers": 128,
+      "spill": 0,
+      "source_sha256": "5c42c5a975ef2d153c06f6869eb60788a414e8d5ff7503edf4b0d8730e071179"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b9/j/tuned",
+     "plan": {
+      "flops": 539,
+      "max_intermediates": 34,
+      "max_targets": 20
+     },
+     "measured": {
+      "registers": 128,
+      "spill": 0,
+      "source_sha256": "06ee52863211ea6b2526d7494095077ae0b7be112db3117d1361c4c7e76f5286"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       38,
+       38
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       38,
+       34
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": -0.105263,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       38,
+       34
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": -0.105263,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       510,
+       510
+      ],
+      "control_ns": [
+       139905916,
+       1890768
+      ],
+      "arm_ns": [
+       142461820,
+       4459864
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.018269,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       510,
+       539
+      ],
+      "control_ns": [
+       137155427,
+       1063191
+      ],
+      "arm_ns": [
+       154489709,
+       927244
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.056863,
+      "measured_rel": 0.126384,
+      "class": "concordant"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       510,
+       510
+      ],
+      "control_ns": [
+       12072766,
+       604265
+      ],
+      "arm_ns": [
+       12280229,
+       1512782
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.017184,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       510,
+       539
+      ],
+      "control_ns": [
+       11812185,
+       1257519
+      ],
+      "arm_ns": [
+       12934063,
+       1925734
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.056863,
+      "measured_rel": 0.094976,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 7,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b12/j/literal",
+     "plan": {
+      "flops": 641,
+      "max_intermediates": 31,
+      "max_targets": 11
+     },
+     "measured": {
+      "registers": 124,
+      "spill": 0,
+      "source_sha256": "1a1f6fb4396497bda206c832b577052a31b3352540ee3c0d60ca253ae56ad95f"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 641,
+      "max_intermediates": 31,
+      "max_targets": 11
+     },
+     "measured": {
+      "registers": 124,
+      "spill": 0,
+      "source_sha256": "1a1f6fb4396497bda206c832b577052a31b3352540ee3c0d60ca253ae56ad95f"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(4,0|3,0)/b12/j/tuned: no recorded choice for cell L=7, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       31,
+       31
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       641,
+       641
+      ],
+      "control_ns": [
+       200819917,
+       1404351
+      ],
+      "arm_ns": [
+       202994475,
+       4239557
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.010828,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       641,
+       641
+      ],
+      "control_ns": [
+       16234467,
+       1405246
+      ],
+      "arm_ns": [
+       16203317,
+       478247
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.001919,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b1/j/literal",
+     "plan": {
+      "flops": 1254,
+      "max_intermediates": 368,
+      "max_targets": 286
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 19268,
+      "source_sha256": "f753856cc4d364870a4525de3eed31036a4fc8a7e16339187c839a53c673bd81"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 1292,
+      "max_intermediates": 424,
+      "max_targets": 286
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 18852,
+      "source_sha256": "b8cfe865fef2b46548297409b91bd441e03d56dc17840128dcd89aeca6c472c6"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b1/j/tuned",
+     "plan": {
+      "flops": 1252,
+      "max_intermediates": 366,
+      "max_targets": 286
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 19300,
+      "source_sha256": "0b63cfd1aabea295ca9d938c3fb27ac868680b3148575842a92994efc06837ec"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       368,
+       424
+      ],
+      "measured": [
+       19268,
+       18852
+      ],
+      "same_text": false,
+      "plan_rel": 0.152174,
+      "measured_rel": -0.02159,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       368,
+       366
+      ],
+      "measured": [
+       19268,
+       19300
+      ],
+      "same_text": false,
+      "plan_rel": -0.005435,
+      "measured_rel": 0.001661,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       424,
+       366
+      ],
+      "measured": [
+       18852,
+       19300
+      ],
+      "same_text": false,
+      "plan_rel": -0.136792,
+      "measured_rel": 0.023764,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1254,
+       1292
+      ],
+      "control_ns": [
+       38261762,
+       1639710
+      ],
+      "arm_ns": [
+       37611373,
+       885228
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.030303,
+      "measured_rel": -0.016998,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1254,
+       1252
+      ],
+      "control_ns": [
+       36754236,
+       552174
+      ],
+      "arm_ns": [
+       37094591,
+       563948
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.001595,
+      "measured_rel": 0.00926,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1254,
+       1292
+      ],
+      "control_ns": [
+       8781999,
+       1307320
+      ],
+      "arm_ns": [
+       9061033,
+       1177623
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.030303,
+      "measured_rel": 0.031773,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1254,
+       1252
+      ],
+      "control_ns": [
+       9634732,
+       947679
+      ],
+      "arm_ns": [
+       9665181,
+       594470
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.001595,
+      "measured_rel": 0.00316,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b3/j/literal",
+     "plan": {
+      "flops": 1278,
+      "max_intermediates": 140,
+      "max_targets": 98
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 3564,
+      "source_sha256": "475119e8660d761bc653a5e4af89070ca07e093b70f8cc0bde35e36723e68de3"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 1292,
+      "max_intermediates": 154,
+      "max_targets": 98
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 3556,
+      "source_sha256": "0fdf1cfd71bcc901bb62e3ca50e98f282c7f8268b9fb50ce700153e2b50e2d04"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b3/j/tuned",
+     "plan": {
+      "flops": 1277,
+      "max_intermediates": 139,
+      "max_targets": 98
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 3676,
+      "source_sha256": "e611e69d70021ee4e06aef309261e80ef6549505088dcfdc7403588d8e14ce56"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       140,
+       154
+      ],
+      "measured": [
+       3564,
+       3556
+      ],
+      "same_text": false,
+      "plan_rel": 0.1,
+      "measured_rel": -0.002245,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       140,
+       139
+      ],
+      "measured": [
+       3564,
+       3676
+      ],
+      "same_text": false,
+      "plan_rel": -0.007143,
+      "measured_rel": 0.031425,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       154,
+       139
+      ],
+      "measured": [
+       3556,
+       3676
+      ],
+      "same_text": false,
+      "plan_rel": -0.097403,
+      "measured_rel": 0.033746,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1278,
+       1292
+      ],
+      "control_ns": [
+       94907339,
+       1026410
+      ],
+      "arm_ns": [
+       94699675,
+       1672595
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.010955,
+      "measured_rel": -0.002188,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1278,
+       1277
+      ],
+      "control_ns": [
+       92169803,
+       541500
+      ],
+      "arm_ns": [
+       91950079,
+       1249339
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000782,
+      "measured_rel": -0.002384,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1278,
+       1292
+      ],
+      "control_ns": [
+       12917310,
+       1155287
+      ],
+      "arm_ns": [
+       13216415,
+       3084116
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.010955,
+      "measured_rel": 0.023155,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1278,
+       1277
+      ],
+      "control_ns": [
+       12302843,
+       646970
+      ],
+      "arm_ns": [
+       12701458,
+       583699
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000782,
+      "measured_rel": 0.0324,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b6/j/literal",
+     "plan": {
+      "flops": 1473,
+      "max_intermediates": 95,
+      "max_targets": 55
+     },
+     "measured": {
+      "registers": 254,
+      "spill": 0,
+      "source_sha256": "495ec5d7f3fd8b79380edd52cbd75a422c5571d254f4fc1e70304e17df7a9c0d"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 1475,
+      "max_intermediates": 95,
+      "max_targets": 55
+     },
+     "measured": {
+      "registers": 254,
+      "spill": 0,
+      "source_sha256": "48d94fec72ae5c3e3db05aca9860a6a52ba65940827754a61b9b8438a8a583aa"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b6/j/tuned",
+     "plan": {
+      "flops": 1472,
+      "max_intermediates": 95,
+      "max_targets": 55
+     },
+     "measured": {
+      "registers": 254,
+      "spill": 0,
+      "source_sha256": "ce9031b0e272b85fcbcdaa5380a526a1cd6df1d2f6494a6f4bc3a286e547fedf"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1473,
+       1475
+      ],
+      "control_ns": [
+       164847066,
+       2385300
+      ],
+      "arm_ns": [
+       164252905,
+       2671784
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001358,
+      "measured_rel": -0.003604,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1473,
+       1472
+      ],
+      "control_ns": [
+       159061150,
+       958801
+      ],
+      "arm_ns": [
+       158788376,
+       896704
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000679,
+      "measured_rel": -0.001715,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1473,
+       1475
+      ],
+      "control_ns": [
+       17595389,
+       1070470
+      ],
+      "arm_ns": [
+       17411187,
+       1234409
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001358,
+      "measured_rel": -0.010469,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1473,
+       1472
+      ],
+      "control_ns": [
+       17111088,
+       78646
+      ],
+      "arm_ns": [
+       17090078,
+       50955
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000679,
+      "measured_rel": -0.001228,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b9/j/literal",
+     "plan": {
+      "flops": 1613,
+      "max_intermediates": 95,
+      "max_targets": 39
+     },
+     "measured": {
+      "registers": 242,
+      "spill": 0,
+      "source_sha256": "99039bfcdf39c67191a987c199e0c5207588b33f32f8bdf9758fa1abde372bee"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 1613,
+      "max_intermediates": 95,
+      "max_targets": 39
+     },
+     "measured": {
+      "registers": 242,
+      "spill": 0,
+      "source_sha256": "94c961bc63d18d3d0b3fa7916458ed3a2ce94c80c36191b65f5fbcefb751948a"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b9/j/tuned",
+     "plan": {
+      "flops": 1613,
+      "max_intermediates": 95,
+      "max_targets": 39
+     },
+     "measured": {
+      "registers": 242,
+      "spill": 0,
+      "source_sha256": "99039bfcdf39c67191a987c199e0c5207588b33f32f8bdf9758fa1abde372bee"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       232032137,
+       3015720
+      ],
+      "arm_ns": [
+       231568377,
+       8334628
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.001999,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       222405652,
+       1528500
+      ],
+      "arm_ns": [
+       222252900,
+       1312946
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.000687,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       22439642,
+       1581128
+      ],
+      "arm_ns": [
+       22368571,
+       1341451
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.003167,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       21540347,
+       84422
+      ],
+      "arm_ns": [
+       21533648,
+       823898
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.000311,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 10,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b12/j/literal",
+     "plan": {
+      "flops": 1724,
+      "max_intermediates": 87,
+      "max_targets": 35
+     },
+     "measured": {
+      "registers": 209,
+      "spill": 0,
+      "source_sha256": "074b255cb7ddd2d0d5fd381113866061f41ea8ea2a2c60ec521e37c149e09a8e"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 1724,
+      "max_intermediates": 87,
+      "max_targets": 35
+     },
+     "measured": {
+      "registers": 209,
+      "spill": 0,
+      "source_sha256": "7ce6b44f1cf1c5f9919e056e1fc704b3b2a205e558a7c5d9cfc3267ae7a6fdba"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(5,0|5,0)/b12/j/tuned: no recorded choice for cell L=10, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       87,
+       87
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1724,
+       1724
+      ],
+      "control_ns": [
+       281492263,
+       5364759
+      ],
+      "arm_ns": [
+       277211026,
+       3392671
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.015209,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1724,
+       1724
+      ],
+      "control_ns": [
+       25586449,
+       1293190
+      ],
+      "arm_ns": [
+       25494319,
+       951495
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.003601,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 11,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(6,0|5,0)/b1/j/literal",
+     "plan": {
+      "flops": 1694,
+      "max_intermediates": 496,
+      "max_targets": 364
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 31096,
+      "source_sha256": "8847e37f75ed48d59a5e4f4da849e8e575de06f2d6f9e3ce3bc2d3a1c31c1e59"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(6,0|5,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 1763,
+      "max_intermediates": 581,
+      "max_targets": 364
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 33528,
+      "source_sha256": "127539d7fba4555529ac17718321b67b7821ed8e6038dfbc06bc4bbfebaea67d"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(6,0|5,0)/b1/j/tuned",
+     "plan": {
+      "flops": 1684,
+      "max_intermediates": 494,
+      "max_targets": 364
+     },
+     "measured": null,
+     "absent": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       496,
+       581
+      ],
+      "measured": [
+       31096,
+       33528
+      ],
+      "same_text": false,
+      "plan_rel": 0.171371,
+      "measured_rel": 0.078209,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1694,
+       1763
+      ],
+      "control_ns": [
+       40800412,
+       807764
+      ],
+      "arm_ns": [
+       41268549,
+       1625132
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.040732,
+      "measured_rel": 0.011474,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1694,
+       1763
+      ],
+      "control_ns": [
+       14415097,
+       979585
+      ],
+      "arm_ns": [
+       13950920,
+       550164
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.040732,
+      "measured_rel": -0.032201,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b1/j/literal",
+     "plan": {
+      "flops": 2887,
+      "max_intermediates": 845,
+      "max_targets": 560
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 86632,
+      "source_sha256": "6057d84024a3b1e9ed3f19a3f8eccf2b89e2f886f2049230a3d9759e122ba8b8"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 3038,
+      "max_intermediates": 1004,
+      "max_targets": 560
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 87280,
+      "source_sha256": "336778a57a409dff0b828443600bdb7b56ea5df045d32840e89997434679813f"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b1/j/tuned",
+     "plan": {
+      "flops": 2872,
+      "max_intermediates": 836,
+      "max_targets": 560
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 87864,
+      "source_sha256": "d1dc5a8eccdb882d737ddc5bee3fcc72e9ecbfb269309a4483d17055239bb615"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       845,
+       1004
+      ],
+      "measured": [
+       86632,
+       87280
+      ],
+      "same_text": false,
+      "plan_rel": 0.188166,
+      "measured_rel": 0.00748,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       845,
+       836
+      ],
+      "measured": [
+       86632,
+       87864
+      ],
+      "same_text": false,
+      "plan_rel": -0.010651,
+      "measured_rel": 0.014221,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       1004,
+       836
+      ],
+      "measured": [
+       87280,
+       87864
+      ],
+      "same_text": false,
+      "plan_rel": -0.167331,
+      "measured_rel": 0.006691,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2887,
+       3038
+      ],
+      "control_ns": [
+       69129961,
+       1688244
+      ],
+      "arm_ns": [
+       70099294,
+       1466636
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.052303,
+      "measured_rel": 0.014022,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2887,
+       2872
+      ],
+      "control_ns": [
+       66907088,
+       326704
+      ],
+      "arm_ns": [
+       66630063,
+       250984
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.005196,
+      "measured_rel": -0.00414,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2887,
+       3038
+      ],
+      "control_ns": [
+       32995811,
+       1353485
+      ],
+      "arm_ns": [
+       33858444,
+       1152523
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.052303,
+      "measured_rel": 0.026144,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2887,
+       2872
+      ],
+      "control_ns": [
+       32250075,
+       129612
+      ],
+      "arm_ns": [
+       32268306,
+       73431
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.005196,
+      "measured_rel": 0.000565,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b3/j/literal",
+     "plan": {
+      "flops": 2948,
+      "max_intermediates": 308,
+      "max_targets": 190
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 59444,
+      "source_sha256": "23871ba4b18ec663682be01dd062a969b9fb956feac45e7e6e79f3172755370b"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 3038,
+      "max_intermediates": 354,
+      "max_targets": 190
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 60452,
+      "source_sha256": "7acc9bbd097267ed731e6f02fb2b3a6dca198065dd9a907ce810352508611cc2"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b3/j/tuned",
+     "plan": {
+      "flops": 2920,
+      "max_intermediates": 303,
+      "max_targets": 190
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 59144,
+      "source_sha256": "0c5b398d11ad3fb3308aee13b404e78a063f2141b72ed36f3bd75b1d3ec5065f"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       308,
+       354
+      ],
+      "measured": [
+       59444,
+       60452
+      ],
+      "same_text": false,
+      "plan_rel": 0.149351,
+      "measured_rel": 0.016957,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       308,
+       303
+      ],
+      "measured": [
+       59444,
+       59144
+      ],
+      "same_text": false,
+      "plan_rel": -0.016234,
+      "measured_rel": -0.005047,
+      "class": "concordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       354,
+       303
+      ],
+      "measured": [
+       60452,
+       59144
+      ],
+      "same_text": false,
+      "plan_rel": -0.144068,
+      "measured_rel": -0.021637,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2948,
+       3038
+      ],
+      "control_ns": [
+       156820811,
+       6900863
+      ],
+      "arm_ns": [
+       155750734,
+       3410930
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.030529,
+      "measured_rel": -0.006824,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2948,
+       2920
+      ],
+      "control_ns": [
+       149661592,
+       368151
+      ],
+      "arm_ns": [
+       149742884,
+       464047
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.009498,
+      "measured_rel": 0.000543,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2948,
+       3038
+      ],
+      "control_ns": [
+       30345103,
+       1055722
+      ],
+      "arm_ns": [
+       30532555,
+       957093
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.030529,
+      "measured_rel": 0.006177,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2948,
+       2920
+      ],
+      "control_ns": [
+       29508772,
+       44226
+      ],
+      "arm_ns": [
+       29527823,
+       85501
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.009498,
+      "measured_rel": 0.000646,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b6/j/literal",
+     "plan": {
+      "flops": 3369,
+      "max_intermediates": 232,
+      "max_targets": 106
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 28656,
+      "source_sha256": "47dce7ad05b3bb9935e21655a5cb8f59642c7afaccd8b9928f7e34ae4ed8ed32"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 3410,
+      "max_intermediates": 252,
+      "max_targets": 106
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 28244,
+      "source_sha256": "a9f6adde1108805b1d935f17f90dc1502b78745740da5d3fe0feafe1c007d96d"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b6/j/tuned",
+     "plan": {
+      "flops": 3360,
+      "max_intermediates": 232,
+      "max_targets": 106
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 28856,
+      "source_sha256": "bee56929d9b0b8e01ac8c5b685ab1655a442675a424910611f858b23695a414c"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -0.866025,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       232,
+       252
+      ],
+      "measured": [
+       28656,
+       28244
+      ],
+      "same_text": false,
+      "plan_rel": 0.086207,
+      "measured_rel": -0.014377,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       232,
+       232
+      ],
+      "measured": [
+       28656,
+       28856
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.006979,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       252,
+       232
+      ],
+      "measured": [
+       28244,
+       28856
+      ],
+      "same_text": false,
+      "plan_rel": -0.079365,
+      "measured_rel": 0.021668,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3369,
+       3410
+      ],
+      "control_ns": [
+       247135767,
+       7423251
+      ],
+      "arm_ns": [
+       248095478,
+       3467813
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.01217,
+      "measured_rel": 0.003883,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3369,
+       3360
+      ],
+      "control_ns": [
+       234633643,
+       645880
+      ],
+      "arm_ns": [
+       234621603,
+       1135938
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002671,
+      "measured_rel": -5.1e-05,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3369,
+       3410
+      ],
+      "control_ns": [
+       35171595,
+       1294050
+      ],
+      "arm_ns": [
+       34967882,
+       1593409
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.01217,
+      "measured_rel": -0.005792,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3369,
+       3360
+      ],
+      "control_ns": [
+       33998622,
+       55071
+      ],
+      "arm_ns": [
+       33959242,
+       64541
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002671,
+      "measured_rel": -0.001158,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b9/j/literal",
+     "plan": {
+      "flops": 3767,
+      "max_intermediates": 186,
+      "max_targets": 74
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 14472,
+      "source_sha256": "0fbe948947d499a4deceafebf0c7f977d85b98f620bddc6202e84d6e1455bf4e"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 3767,
+      "max_intermediates": 191,
+      "max_targets": 74
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 15064,
+      "source_sha256": "9f586b6e3a209822b7dfbe985f3af3c9a7542b03dd6e30de85310a829d66cb8f"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b9/j/tuned",
+     "plan": {
+      "flops": 3764,
+      "max_intermediates": 186,
+      "max_targets": 74
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 14464,
+      "source_sha256": "2dc98493233a3e3f2985b0810c4bb09a55a5f28c2cfbfb1acbdbfd2bdb55dc47"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.866025,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       186,
+       191
+      ],
+      "measured": [
+       14472,
+       15064
+      ],
+      "same_text": false,
+      "plan_rel": 0.026882,
+      "measured_rel": 0.040907,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       186,
+       186
+      ],
+      "measured": [
+       14472,
+       14464
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.000553,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       191,
+       186
+      ],
+      "measured": [
+       15064,
+       14464
+      ],
+      "same_text": false,
+      "plan_rel": -0.026178,
+      "measured_rel": -0.03983,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3767,
+       3767
+      ],
+      "control_ns": [
+       347242460,
+       2993296
+      ],
+      "arm_ns": [
+       346411956,
+       4500319
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.002392,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3767,
+       3764
+      ],
+      "control_ns": [
+       342879786,
+       942230
+      ],
+      "arm_ns": [
+       342707924,
+       1203934
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000796,
+      "measured_rel": -0.000501,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3767,
+       3767
+      ],
+      "control_ns": [
+       41330204,
+       482748
+      ],
+      "arm_ns": [
+       41334095,
+       698876
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 9.4e-05,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3767,
+       3764
+      ],
+      "control_ns": [
+       40985472,
+       62781
+      ],
+      "arm_ns": [
+       40974901,
+       53986
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000796,
+      "measured_rel": -0.000258,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 13,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b12/j/literal",
+     "plan": {
+      "flops": 3866,
+      "max_intermediates": 162,
+      "max_targets": 60
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 12048,
+      "source_sha256": "f2def1a08074a6c6eccbb523a458b1517678aba3211a67ea2b353e2521b37738"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 3872,
+      "max_intermediates": 163,
+      "max_targets": 60
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 12252,
+      "source_sha256": "658674ce5a086695ec14bbd884d50c50e37d44920fb666b96c6a203a9f188ab0"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(7,0|6,0)/b12/j/tuned: no recorded choice for cell L=13, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       162,
+       163
+      ],
+      "measured": [
+       12048,
+       12252
+      ],
+      "same_text": false,
+      "plan_rel": 0.006173,
+      "measured_rel": 0.016932,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3866,
+       3872
+      ],
+      "control_ns": [
+       410396028,
+       4817390
+      ],
+      "arm_ns": [
+       410114126,
+       3158078
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001552,
+      "measured_rel": -0.000687,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3866,
+       3872
+      ],
+      "control_ns": [
+       46209383,
+       1237938
+      ],
+      "arm_ns": [
+       46270114,
+       1500048
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001552,
+      "measured_rel": 0.001314,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b1/j/literal",
+     "plan": {
+      "flops": 5644,
+      "max_intermediates": 1639,
+      "max_targets": 969
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 317260,
+      "source_sha256": "30839efc3ee3b130a59d29b41eed2a5fc554fc90ea9511f346d03c647f4e64bd"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 6095,
+      "max_intermediates": 2021,
+      "max_targets": 969
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 329732,
+      "source_sha256": "6509c4d35cdc687caeb0944a852d9ed9ead878103f85c5c3f36c947e7226bd60"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b1/j/tuned",
+     "plan": {
+      "flops": 5601,
+      "max_intermediates": 1601,
+      "max_targets": 969
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 319284,
+      "source_sha256": "307cf069c3ab0509ac0cf4a4d9b0ab480415cf8199328cb3e535998bdb397bd1"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       1639,
+       2021
+      ],
+      "measured": [
+       317260,
+       329732
+      ],
+      "same_text": false,
+      "plan_rel": 0.233069,
+      "measured_rel": 0.039312,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       1639,
+       1601
+      ],
+      "measured": [
+       317260,
+       319284
+      ],
+      "same_text": false,
+      "plan_rel": -0.023185,
+      "measured_rel": 0.00638,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       2021,
+       1601
+      ],
+      "measured": [
+       329732,
+       319284
+      ],
+      "same_text": false,
+      "plan_rel": -0.207818,
+      "measured_rel": -0.031686,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5644,
+       6095
+      ],
+      "control_ns": [
+       160770774,
+       1352198
+      ],
+      "arm_ns": [
+       166392054,
+       2418701
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.079908,
+      "measured_rel": 0.034965,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5644,
+       5601
+      ],
+      "control_ns": [
+       158896217,
+       319284
+      ],
+      "arm_ns": [
+       159016519,
+       668986
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.007619,
+      "measured_rel": 0.000757,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5644,
+       6095
+      ],
+      "control_ns": [
+       126855569,
+       1802179
+      ],
+      "arm_ns": [
+       132279310,
+       2398644
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.079908,
+      "measured_rel": 0.042755,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5644,
+       5601
+      ],
+      "control_ns": [
+       124314346,
+       270365
+      ],
+      "arm_ns": [
+       123973681,
+       284094
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.007619,
+      "measured_rel": -0.00274,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b3/j/literal",
+     "plan": {
+      "flops": 5763,
+      "max_intermediates": 584,
+      "max_targets": 327
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 291916,
+      "source_sha256": "49b4bd713557c69e0602439f852b041cf08a2777f9b6c069daf982b1aac1e69d"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 6095,
+      "max_intermediates": 701,
+      "max_targets": 327
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 293568,
+      "source_sha256": "b44fbb828df7cae448bbc2a9756d5fed63b9cdf86f8027f8e71c5b7d9e49f525"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b3/j/tuned",
+     "plan": {
+      "flops": 5676,
+      "max_intermediates": 574,
+      "max_targets": 327
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 287216,
+      "source_sha256": "71400bf63c01b542d110008dcdcc3cded1c36923488a4283b5ad313f116a83fa"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       584,
+       701
+      ],
+      "measured": [
+       291916,
+       293568
+      ],
+      "same_text": false,
+      "plan_rel": 0.200342,
+      "measured_rel": 0.005659,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       584,
+       574
+      ],
+      "measured": [
+       291916,
+       287216
+      ],
+      "same_text": false,
+      "plan_rel": -0.017123,
+      "measured_rel": -0.016101,
+      "class": "concordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       701,
+       574
+      ],
+      "measured": [
+       293568,
+       287216
+      ],
+      "same_text": false,
+      "plan_rel": -0.18117,
+      "measured_rel": -0.021637,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5763,
+       6095
+      ],
+      "control_ns": [
+       295804445,
+       8379767
+      ],
+      "arm_ns": [
+       293869795,
+       1268291
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.057609,
+      "measured_rel": -0.00654,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5763,
+       5676
+      ],
+      "control_ns": [
+       293284170,
+       1052776
+      ],
+      "arm_ns": [
+       292048941,
+       1059552
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.015096,
+      "measured_rel": -0.004212,
+      "class": "concordant"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5763,
+       6095
+      ],
+      "control_ns": [
+       118655628,
+       154823
+      ],
+      "arm_ns": [
+       119579883,
+       2623953
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.057609,
+      "measured_rel": 0.007789,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5763,
+       5676
+      ],
+      "control_ns": [
+       117675502,
+       147257
+      ],
+      "arm_ns": [
+       115725011,
+       249933
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.015096,
+      "measured_rel": -0.016575,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b6/j/literal",
+     "plan": {
+      "flops": 6447,
+      "max_intermediates": 402,
+      "max_targets": 164
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 253048,
+      "source_sha256": "1c0f3af197e3890449e78eccb819fe3793b7243a16245f56b1e5d37c7f1b3d62"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 6662,
+      "max_intermediates": 451,
+      "max_targets": 164
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 247452,
+      "source_sha256": "782e30b75fbf43d30717c9488999df29d8c4ac5685a719fed83d11b14b936902"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b6/j/tuned",
+     "plan": {
+      "flops": 6414,
+      "max_intermediates": 402,
+      "max_targets": 164
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 239524,
+      "source_sha256": "8f554a86f4e8c2c5d7565cc95662ae345a57dbd8c1901d78199d8fbf8b2204ce"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       402,
+       451
+      ],
+      "measured": [
+       253048,
+       247452
+      ],
+      "same_text": false,
+      "plan_rel": 0.121891,
+      "measured_rel": -0.022114,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       402,
+       402
+      ],
+      "measured": [
+       253048,
+       239524
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.053444,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       451,
+       402
+      ],
+      "measured": [
+       247452,
+       239524
+      ],
+      "same_text": false,
+      "plan_rel": -0.108647,
+      "measured_rel": -0.032039,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       6447,
+       6662
+      ],
+      "control_ns": [
+       463905606,
+       2347980
+      ],
+      "arm_ns": [
+       461084746,
+       2740846
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": 0.033349,
+      "measured_rel": -0.006081,
+      "class": "discordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       6447,
+       6414
+      ],
+      "control_ns": [
+       464970187,
+       973376
+      ],
+      "arm_ns": [
+       463151049,
+       1229599
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.005119,
+      "measured_rel": -0.003912,
+      "class": "concordant"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       6447,
+       6662
+      ],
+      "control_ns": [
+       109598223,
+       522605
+      ],
+      "arm_ns": [
+       107748572,
+       254075
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": 0.033349,
+      "measured_rel": -0.016877,
+      "class": "discordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       6447,
+       6414
+      ],
+      "control_ns": [
+       109350151,
+       95821
+      ],
+      "arm_ns": [
+       105970939,
+       156293
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.005119,
+      "measured_rel": -0.030903,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b9/j/literal",
+     "plan": {
+      "flops": 7121,
+      "max_intermediates": 324,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 181224,
+      "source_sha256": "32f363a7cdfbaf64ffcd5cb1e142a37c3f7409a3798b30d7c2fec76f96360104"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 7217,
+      "max_intermediates": 341,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 179976,
+      "source_sha256": "8c76f224ca22a7e4e07893b95649e8cf2f48b21d376f974d72c1fa16568af377"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b9/j/tuned",
+     "plan": {
+      "flops": 7103,
+      "max_intermediates": 324,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 180224,
+      "source_sha256": "c2c30f8b5bb298aef10bb5ad2b5a038a0fdc0ae633ed6472545af762480ec902"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -0.866025,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       324,
+       341
+      ],
+      "measured": [
+       181224,
+       179976
+      ],
+      "same_text": false,
+      "plan_rel": 0.052469,
+      "measured_rel": -0.006887,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       324,
+       324
+      ],
+      "measured": [
+       181224,
+       180224
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.005518,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       341,
+       324
+      ],
+      "measured": [
+       179976,
+       180224
+      ],
+      "same_text": false,
+      "plan_rel": -0.049853,
+      "measured_rel": 0.001378,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7121,
+       7217
+      ],
+      "control_ns": [
+       583714098,
+       7847892
+      ],
+      "arm_ns": [
+       583522253,
+       3848194
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.013481,
+      "measured_rel": -0.000329,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       7121,
+       7103
+      ],
+      "control_ns": [
+       580835550,
+       1309842
+      ],
+      "arm_ns": [
+       580488924,
+       1026952
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002528,
+      "measured_rel": -0.000597,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7121,
+       7217
+      ],
+      "control_ns": [
+       100434207,
+       1141799
+      ],
+      "arm_ns": [
+       100023150,
+       1504980
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.013481,
+      "measured_rel": -0.004093,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       7121,
+       7103
+      ],
+      "control_ns": [
+       100102196,
+       100526
+      ],
+      "arm_ns": [
+       99628929,
+       176769
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.002528,
+      "measured_rel": -0.004728,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "sm_86",
+   "L": 16,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b12/j/literal",
+     "plan": {
+      "flops": 7645,
+      "max_intermediates": 293,
+      "max_targets": 87
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 146020,
+      "source_sha256": "6273a5190855f1e14ef911ed067431c1eba60a857f84f30edbfe52699bf74ed8"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 7682,
+      "max_intermediates": 300,
+      "max_targets": 87
+     },
+     "measured": {
+      "registers": 255,
+      "spill": 149040,
+      "source_sha256": "b2e4bbaf9c4c5ac4d6808153e0caae2d592ad2c076f7bf68e1cb2f551b2f68de"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(8,0|8,0)/b12/j/tuned: no recorded choice for cell L=16, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       293,
+       300
+      ],
+      "measured": [
+       146020,
+       149040
+      ],
+      "same_text": false,
+      "plan_rel": 0.023891,
+      "measured_rel": 0.020682,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7645,
+       7682
+      ],
+      "control_ns": [
+       699426050,
+       2780325
+      ],
+      "arm_ns": [
+       694067405,
+       1520011
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": 0.00484,
+      "measured_rel": -0.007661,
+      "class": "discordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7645,
+       7682
+      ],
+      "control_ns": [
+       103876464,
+       803473
+      ],
+      "arm_ns": [
+       103961475,
+       253620
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.00484,
+      "measured_rel": 0.000818,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b1/j/literal",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 126,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 676,
+      "source_sha256": "498d0531db5f515f52aac6982b59d67516230f694942eade17b42bd71213cde9"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 137,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 658,
+      "source_sha256": "c3ed02780e47e025221832eb660f10d8f67359256987f9bf982c735d8d534153"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b1/j/tuned",
+     "plan": {
+      "flops": 424,
+      "max_intermediates": 125,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 680,
+      "source_sha256": "025c1c1f1fb067b0c21515ebce00201726e776aef276cac1d02399d4ca5989a2"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       126,
+       137
+      ],
+      "measured": [
+       676,
+       658
+      ],
+      "same_text": false,
+      "plan_rel": 0.087302,
+      "measured_rel": -0.026627,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       126,
+       125
+      ],
+      "measured": [
+       676,
+       680
+      ],
+      "same_text": false,
+      "plan_rel": -0.007937,
+      "measured_rel": 0.005917,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       137,
+       125
+      ],
+      "measured": [
+       658,
+       680
+      ],
+      "same_text": false,
+      "plan_rel": -0.087591,
+      "measured_rel": 0.033435,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       34517471,
+       1034275
+      ],
+      "arm_ns": [
+       34837316,
+       831892
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.009266,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       424
+      ],
+      "control_ns": [
+       34642986,
+       981014
+      ],
+      "arm_ns": [
+       35040211,
+       1208666
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002353,
+      "measured_rel": 0.011466,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       4498035,
+       78276
+      ],
+      "arm_ns": [
+       4504445,
+       113871
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.001425,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       424
+      ],
+      "control_ns": [
+       4520582,
+       81092
+      ],
+      "arm_ns": [
+       4535732,
+       45396
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002353,
+      "measured_rel": 0.003351,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b3/j/literal",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 51,
+      "max_targets": 42
+     },
+     "measured": {
+      "registers": 185,
+      "spill": 0,
+      "source_sha256": "e4cd939915677a1b52af39219d94c8a09ef4be1e352922e43ad391620c2a5f46"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 53,
+      "max_targets": 42
+     },
+     "measured": {
+      "registers": 185,
+      "spill": 0,
+      "source_sha256": "4e31b85a7c0ab7ce2492e3348836207195c79d490b4e029928237070954064e5"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b3/j/tuned",
+     "plan": {
+      "flops": 425,
+      "max_intermediates": 51,
+      "max_targets": 42
+     },
+     "measured": {
+      "registers": 185,
+      "spill": 0,
+      "source_sha256": "e4cd939915677a1b52af39219d94c8a09ef4be1e352922e43ad391620c2a5f46"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       51,
+       53
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": 0.039216,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       51,
+       51
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       53,
+       51
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": -0.037736,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       83608795,
+       1982110
+      ],
+      "arm_ns": [
+       87979389,
+       4573972
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.052274,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       83923238,
+       2326597
+      ],
+      "arm_ns": [
+       89007816,
+       3674860
+      ],
+      "sign": "slower",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.060586,
+      "class": "noise_floor"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       8716366,
+       109182
+      ],
+      "arm_ns": [
+       8856738,
+       104350
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.016104,
+      "class": "unresolved"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       425,
+       425
+      ],
+      "control_ns": [
+       8715230,
+       73556
+      ],
+      "arm_ns": [
+       8904412,
+       112323
+      ],
+      "sign": "slower",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.021707,
+      "class": "noise_floor"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b6/j/literal",
+     "plan": {
+      "flops": 506,
+      "max_intermediates": 39,
+      "max_targets": 22
+     },
+     "measured": {
+      "registers": 163,
+      "spill": 0,
+      "source_sha256": "e844e8ed5390b3b68246b07debf2a46628500d4b22a1a1109f8fcf5b48c2bcc2"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 506,
+      "max_intermediates": 39,
+      "max_targets": 22
+     },
+     "measured": {
+      "registers": 163,
+      "spill": 0,
+      "source_sha256": "e844e8ed5390b3b68246b07debf2a46628500d4b22a1a1109f8fcf5b48c2bcc2"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b6/j/tuned",
+     "plan": {
+      "flops": 506,
+      "max_intermediates": 39,
+      "max_targets": 22
+     },
+     "measured": {
+      "registers": 163,
+      "spill": 0,
+      "source_sha256": "e844e8ed5390b3b68246b07debf2a46628500d4b22a1a1109f8fcf5b48c2bcc2"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       39,
+       39
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       39,
+       39
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       39,
+       39
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       149274673,
+       1998035
+      ],
+      "arm_ns": [
+       149598267,
+       2097676
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.002168,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       149497532,
+       2010754
+      ],
+      "arm_ns": [
+       149707263,
+       2356902
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.001403,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       13140582,
+       122691
+      ],
+      "arm_ns": [
+       13336974,
+       92462
+      ],
+      "sign": "slower",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.014945,
+      "class": "noise_floor"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       506,
+       506
+      ],
+      "control_ns": [
+       13128182,
+       120947
+      ],
+      "arm_ns": [
+       13412446,
+       80391
+      ],
+      "sign": "slower",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.021653,
+      "class": "noise_floor"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b9/j/literal",
+     "plan": {
+      "flops": 510,
+      "max_intermediates": 38,
+      "max_targets": 20
+     },
+     "measured": {
+      "registers": 163,
+      "spill": 0,
+      "source_sha256": "4446c9ae55074d54b559fb8b3e3b1d20f83416b0ff2db927b53ce0158caf829f"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 510,
+      "max_intermediates": 38,
+      "max_targets": 20
+     },
+     "measured": {
+      "registers": 163,
+      "spill": 0,
+      "source_sha256": "4446c9ae55074d54b559fb8b3e3b1d20f83416b0ff2db927b53ce0158caf829f"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b9/j/tuned",
+     "plan": {
+      "flops": 539,
+      "max_intermediates": 34,
+      "max_targets": 20
+     },
+     "measured": {
+      "registers": 156,
+      "spill": 0,
+      "source_sha256": "2f7f22f581255a3aac80244bee7862c51ff30f89213117b450afc32ff4459c9c"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       38,
+       38
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       38,
+       34
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": -0.105263,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       38,
+       34
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": false,
+      "plan_rel": -0.105263,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       510,
+       510
+      ],
+      "control_ns": [
+       174517395,
+       1158046
+      ],
+      "arm_ns": [
+       174391741,
+       1625938
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.00072,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       510,
+       539
+      ],
+      "control_ns": [
+       174265147,
+       1684239
+      ],
+      "arm_ns": [
+       198878877,
+       1348959
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.056863,
+      "measured_rel": 0.141243,
+      "class": "concordant"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       510,
+       510
+      ],
+      "control_ns": [
+       15141990,
+       96147
+      ],
+      "arm_ns": [
+       15363164,
+       116176
+      ],
+      "sign": "slower",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.014607,
+      "class": "noise_floor"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       510,
+       539
+      ],
+      "control_ns": [
+       15172521,
+       89832
+      ],
+      "arm_ns": [
+       17352281,
+       114677
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.056863,
+      "measured_rel": 0.143665,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 7,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(4,0|3,0)/b12/j/literal",
+     "plan": {
+      "flops": 641,
+      "max_intermediates": 31,
+      "max_targets": 11
+     },
+     "measured": {
+      "registers": 156,
+      "spill": 0,
+      "source_sha256": "9ce11dd99ab31c2cb38795d1c999f35ca7288d16a27bcaa2bf30fcecef7d04d5"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(4,0|3,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 641,
+      "max_intermediates": 31,
+      "max_targets": 11
+     },
+     "measured": {
+      "registers": 156,
+      "spill": 0,
+      "source_sha256": "9ce11dd99ab31c2cb38795d1c999f35ca7288d16a27bcaa2bf30fcecef7d04d5"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(4,0|3,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(4,0|3,0)/b12/j/tuned: no recorded choice for cell L=7, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       31,
+       31
+      ],
+      "measured": [
+       0,
+       0
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       641,
+       641
+      ],
+      "control_ns": [
+       257042093,
+       2057564
+      ],
+      "arm_ns": [
+       256296001,
+       2110100
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.002903,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       641,
+       641
+      ],
+      "control_ns": [
+       21467183,
+       204198
+      ],
+      "arm_ns": [
+       21672896,
+       127007
+      ],
+      "sign": "slower",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.009583,
+      "class": "noise_floor"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b1/j/literal",
+     "plan": {
+      "flops": 1254,
+      "max_intermediates": 368,
+      "max_targets": 286
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 5330,
+      "source_sha256": "ad343d6277bed2d77ea7bd6ab5fa58d7fadd46231b18da29c1b9053ab350f71e"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 1292,
+      "max_intermediates": 424,
+      "max_targets": 286
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 5326,
+      "source_sha256": "99d68782c1e1a8c2a1890540b61f078b8e51dbce59e46d10ce4c8863d4579d0c"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b1/j/tuned",
+     "plan": {
+      "flops": 1252,
+      "max_intermediates": 366,
+      "max_targets": 286
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 5294,
+      "source_sha256": "ded9f3922d515166c96157a010505b792e7e0d26d2edf116002ddfb76639a684"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       368,
+       424
+      ],
+      "measured": [
+       5330,
+       5326
+      ],
+      "same_text": false,
+      "plan_rel": 0.152174,
+      "measured_rel": -0.00075,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       368,
+       366
+      ],
+      "measured": [
+       5330,
+       5294
+      ],
+      "same_text": false,
+      "plan_rel": -0.005435,
+      "measured_rel": -0.006754,
+      "class": "concordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       424,
+       366
+      ],
+      "measured": [
+       5326,
+       5294
+      ],
+      "same_text": false,
+      "plan_rel": -0.136792,
+      "measured_rel": -0.006008,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1254,
+       1292
+      ],
+      "control_ns": [
+       52592719,
+       1145326
+      ],
+      "arm_ns": [
+       53398361,
+       1869112
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.030303,
+      "measured_rel": 0.015319,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1254,
+       1252
+      ],
+      "control_ns": [
+       52400623,
+       1148521
+      ],
+      "arm_ns": [
+       53274985,
+       1582347
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.001595,
+      "measured_rel": 0.016686,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1254,
+       1292
+      ],
+      "control_ns": [
+       18158466,
+       83212
+      ],
+      "arm_ns": [
+       17312213,
+       100517
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": 0.030303,
+      "measured_rel": -0.046604,
+      "class": "discordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1254,
+       1252
+      ],
+      "control_ns": [
+       18126303,
+       86132
+      ],
+      "arm_ns": [
+       16980007,
+       85221
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.001595,
+      "measured_rel": -0.063239,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b3/j/literal",
+     "plan": {
+      "flops": 1278,
+      "max_intermediates": 140,
+      "max_targets": 98
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 4044,
+      "source_sha256": "57ed250fc229edb086b1bf446287f28fac980a9537f666cf4acc2ec5ccb3ad10"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 1292,
+      "max_intermediates": 154,
+      "max_targets": 98
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 4056,
+      "source_sha256": "3660825a017ac5e813b3006bf6c9ae636b379a9f6ca9749878ead50614660a22"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b3/j/tuned",
+     "plan": {
+      "flops": 1277,
+      "max_intermediates": 139,
+      "max_targets": 98
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 4048,
+      "source_sha256": "ad3f72015db69a5e997fd9e49015280b7ee43bedc88ee2921e12a84a3e81db23"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       140,
+       154
+      ],
+      "measured": [
+       4044,
+       4056
+      ],
+      "same_text": false,
+      "plan_rel": 0.1,
+      "measured_rel": 0.002967,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       140,
+       139
+      ],
+      "measured": [
+       4044,
+       4048
+      ],
+      "same_text": false,
+      "plan_rel": -0.007143,
+      "measured_rel": 0.000989,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       154,
+       139
+      ],
+      "measured": [
+       4056,
+       4048
+      ],
+      "same_text": false,
+      "plan_rel": -0.097403,
+      "measured_rel": -0.001972,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1278,
+       1292
+      ],
+      "control_ns": [
+       128079743,
+       1388841
+      ],
+      "arm_ns": [
+       128425008,
+       2181752
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.010955,
+      "measured_rel": 0.002696,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1278,
+       1277
+      ],
+      "control_ns": [
+       128177499,
+       1618208
+      ],
+      "arm_ns": [
+       128496791,
+       2594401
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000782,
+      "measured_rel": 0.002491,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1278,
+       1292
+      ],
+      "control_ns": [
+       18060494,
+       112071
+      ],
+      "arm_ns": [
+       18231866,
+       110711
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.010955,
+      "measured_rel": 0.009489,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1278,
+       1277
+      ],
+      "control_ns": [
+       18092994,
+       126582
+      ],
+      "arm_ns": [
+       18264156,
+       106892
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": -0.000782,
+      "measured_rel": 0.00946,
+      "class": "discordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b6/j/literal",
+     "plan": {
+      "flops": 1473,
+      "max_intermediates": 95,
+      "max_targets": 55
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 4474,
+      "source_sha256": "274016641b3b696f1513094ccc71b1ef614da25c0fe426ed9d72d9fcfbbad5d7"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 1475,
+      "max_intermediates": 95,
+      "max_targets": 55
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 4418,
+      "source_sha256": "0c1312664172d553cbea817e0aa6509f0b645ee6310581c013b195447a6d570b"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b6/j/tuned",
+     "plan": {
+      "flops": 1472,
+      "max_intermediates": 95,
+      "max_targets": 55
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 4480,
+      "source_sha256": "ce55d3ee8236a7aee97b58e6023bdab29bd3eb397f47ee87df17538d5351e554"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       4474,
+       4418
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.012517,
+      "class": "unresolved"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       4474,
+       4480
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.001341,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       4418,
+       4480
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.014033,
+      "class": "unresolved"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1473,
+       1475
+      ],
+      "control_ns": [
+       221150748,
+       1842937
+      ],
+      "arm_ns": [
+       220640860,
+       1978910
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001358,
+      "measured_rel": -0.002306,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1473,
+       1472
+      ],
+      "control_ns": [
+       220496429,
+       2708355
+      ],
+      "arm_ns": [
+       220753598,
+       1582528
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000679,
+      "measured_rel": 0.001166,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1473,
+       1475
+      ],
+      "control_ns": [
+       24381747,
+       182998
+      ],
+      "arm_ns": [
+       24549869,
+       178163
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001358,
+      "measured_rel": 0.006895,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1473,
+       1472
+      ],
+      "control_ns": [
+       24472794,
+       150617
+      ],
+      "arm_ns": [
+       24526205,
+       194182
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000679,
+      "measured_rel": 0.002182,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b9/j/literal",
+     "plan": {
+      "flops": 1613,
+      "max_intermediates": 95,
+      "max_targets": 39
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 2942,
+      "source_sha256": "c627567c78e0a07de7383d30d1f32d325d308fb6ad2e0a9417bf6186dfd96748"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 1613,
+      "max_intermediates": 95,
+      "max_targets": 39
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 2938,
+      "source_sha256": "9abdf41de44765ddec09cc265e940dfff402b91630eda3681d3e56ed14c4a79f"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b9/j/tuned",
+     "plan": {
+      "flops": 1613,
+      "max_intermediates": 95,
+      "max_targets": 39
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 2942,
+      "source_sha256": "c627567c78e0a07de7383d30d1f32d325d308fb6ad2e0a9417bf6186dfd96748"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       2942,
+       2938
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.00136,
+      "class": "unresolved"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       2942,
+       2942
+      ],
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       95,
+       95
+      ],
+      "measured": [
+       2938,
+       2942
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.001361,
+      "class": "unresolved"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       300612766,
+       3607239
+      ],
+      "arm_ns": [
+       301090843,
+       2534746
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.00159,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       300276023,
+       1651297
+      ],
+      "arm_ns": [
+       301345419,
+       2071496
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": 0.003561,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       29736875,
+       352159
+      ],
+      "arm_ns": [
+       29755895,
+       227669
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.00064,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       1613,
+       1613
+      ],
+      "control_ns": [
+       29754140,
+       331689
+      ],
+      "arm_ns": [
+       29659189,
+       217713
+      ],
+      "sign": "neutral",
+      "same_text": true,
+      "plan_rel": 0.0,
+      "measured_rel": -0.003191,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 10,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(5,0|5,0)/b12/j/literal",
+     "plan": {
+      "flops": 1724,
+      "max_intermediates": 87,
+      "max_targets": 35
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 3618,
+      "source_sha256": "252ffc54a4c06add1b0a6294b1d3a59776fd3ae897d97c658a8962921e075a51"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(5,0|5,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 1724,
+      "max_intermediates": 87,
+      "max_targets": 35
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 3614,
+      "source_sha256": "d82ec3dba629613b56870b2992bdf841541473059d3570a59ce558c2878e5239"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(5,0|5,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(5,0|5,0)/b12/j/tuned: no recorded choice for cell L=10, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       87,
+       87
+      ],
+      "measured": [
+       3618,
+       3614
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.001106,
+      "class": "unresolved"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1724,
+       1724
+      ],
+      "control_ns": [
+       360020994,
+       2675925
+      ],
+      "arm_ns": [
+       360986507,
+       3569148
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.002682,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1724,
+       1724
+      ],
+      "control_ns": [
+       34559757,
+       451236
+      ],
+      "arm_ns": [
+       34528436,
+       358925
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.000906,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 11,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(6,0|5,0)/b1/j/literal",
+     "plan": {
+      "flops": 1694,
+      "max_intermediates": 496,
+      "max_targets": 364
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 9402,
+      "source_sha256": "51afb30d3ed0c616127003ecee07a1a2f1d2612cb5fe426bc2651d24ca23d60d"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(6,0|5,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 1763,
+      "max_intermediates": 581,
+      "max_targets": 364
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 9462,
+      "source_sha256": "9aea550a7255d2cef2b8a9c64be24d79f7fe9c723cb2119546a112ef12933687"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(6,0|5,0)/b1/j/tuned",
+     "plan": {
+      "flops": 1684,
+      "max_intermediates": 494,
+      "max_targets": 364
+     },
+     "measured": null,
+     "absent": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       496,
+       581
+      ],
+      "measured": [
+       9402,
+       9462
+      ],
+      "same_text": false,
+      "plan_rel": 0.171371,
+      "measured_rel": 0.006382,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1694,
+       1763
+      ],
+      "control_ns": [
+       69846370,
+       1001207
+      ],
+      "arm_ns": [
+       70313700,
+       1006258
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.040732,
+      "measured_rel": 0.006691,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       1694,
+       1763
+      ],
+      "control_ns": [
+       32960403,
+       269120
+      ],
+      "arm_ns": [
+       33970629,
+       385582
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.040732,
+      "measured_rel": 0.03065,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not recorded: L = 11, n_batches = 1 is not an A/B cell of the 'tuned' arm (measured_store.ab_cells)"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b1/j/literal",
+     "plan": {
+      "flops": 2887,
+      "max_intermediates": 845,
+      "max_targets": 560
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 20986,
+      "source_sha256": "5e49d75cbfe6b577b7c722a753f3ff7d4450541c6dee6bc61eb08c680ed83463"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 3038,
+      "max_intermediates": 1004,
+      "max_targets": 560
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 21386,
+      "source_sha256": "af6dc7c838dc1d6a4f3b36c5d21ce379b54bdf4dd3624c1af18e445db9308e8d"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b1/j/tuned",
+     "plan": {
+      "flops": 2872,
+      "max_intermediates": 836,
+      "max_targets": 560
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 21042,
+      "source_sha256": "c6223a12d35176fd1e20a19a6d3850acb9d7586e7131a30fb4faf4501fe88908"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       845,
+       1004
+      ],
+      "measured": [
+       20986,
+       21386
+      ],
+      "same_text": false,
+      "plan_rel": 0.188166,
+      "measured_rel": 0.01906,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       845,
+       836
+      ],
+      "measured": [
+       20986,
+       21042
+      ],
+      "same_text": false,
+      "plan_rel": -0.010651,
+      "measured_rel": 0.002668,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       1004,
+       836
+      ],
+      "measured": [
+       21386,
+       21042
+      ],
+      "same_text": false,
+      "plan_rel": -0.167331,
+      "measured_rel": -0.016085,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2887,
+       3038
+      ],
+      "control_ns": [
+       150138266,
+       722850
+      ],
+      "arm_ns": [
+       153658387,
+       513192
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.052303,
+      "measured_rel": 0.023446,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2887,
+       2872
+      ],
+      "control_ns": [
+       150312679,
+       1213515
+      ],
+      "arm_ns": [
+       150516969,
+       980914
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.005196,
+      "measured_rel": 0.001359,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2887,
+       3038
+      ],
+      "control_ns": [
+       97659454,
+       231048
+      ],
+      "arm_ns": [
+       102329723,
+       346001
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.052303,
+      "measured_rel": 0.047822,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2887,
+       2872
+      ],
+      "control_ns": [
+       97544354,
+       292029
+      ],
+      "arm_ns": [
+       98065822,
+       261239
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": -0.005196,
+      "measured_rel": 0.005346,
+      "class": "discordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b3/j/literal",
+     "plan": {
+      "flops": 2948,
+      "max_intermediates": 308,
+      "max_targets": 190
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 40658,
+      "source_sha256": "beb49dc6e40ac3d7a9a245bb3a6c338b14652477d1422feba25fcf38d5fd5447"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 3038,
+      "max_intermediates": 354,
+      "max_targets": 190
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 41598,
+      "source_sha256": "c7278fb8081896850e3afed83975d20241e5879b4492e4cdc006590a915a0b4e"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b3/j/tuned",
+     "plan": {
+      "flops": 2920,
+      "max_intermediates": 303,
+      "max_targets": 190
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 41006,
+      "source_sha256": "59496ce5f1e3dc4bbebeffcf1fe8e306cf859c1f872b8dbe4690891aba4f641d"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       308,
+       354
+      ],
+      "measured": [
+       40658,
+       41598
+      ],
+      "same_text": false,
+      "plan_rel": 0.149351,
+      "measured_rel": 0.02312,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       308,
+       303
+      ],
+      "measured": [
+       40658,
+       41006
+      ],
+      "same_text": false,
+      "plan_rel": -0.016234,
+      "measured_rel": 0.008559,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       354,
+       303
+      ],
+      "measured": [
+       41598,
+       41006
+      ],
+      "same_text": false,
+      "plan_rel": -0.144068,
+      "measured_rel": -0.014231,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2948,
+       3038
+      ],
+      "control_ns": [
+       261425525,
+       1241808
+      ],
+      "arm_ns": [
+       261418303,
+       1259878
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.030529,
+      "measured_rel": -2.8e-05,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2948,
+       2920
+      ],
+      "control_ns": [
+       261082012,
+       2137086
+      ],
+      "arm_ns": [
+       260998725,
+       1489354
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.009498,
+      "measured_rel": -0.000319,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       2948,
+       3038
+      ],
+      "control_ns": [
+       80156798,
+       510883
+      ],
+      "arm_ns": [
+       80716516,
+       480327
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.030529,
+      "measured_rel": 0.006983,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       2948,
+       2920
+      ],
+      "control_ns": [
+       80238293,
+       472291
+      ],
+      "arm_ns": [
+       80110252,
+       612039
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.009498,
+      "measured_rel": -0.001596,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b6/j/literal",
+     "plan": {
+      "flops": 3369,
+      "max_intermediates": 232,
+      "max_targets": 106
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 52084,
+      "source_sha256": "548615ace26de724c4fc6b9a3a2b072c2f68908842785e0c6f7d76fd749b9408"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 3410,
+      "max_intermediates": 252,
+      "max_targets": 106
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 52080,
+      "source_sha256": "72aa20c31c96b618405d8de6af1c7dba2827e87a94bdef5a35fd117c6960a208"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b6/j/tuned",
+     "plan": {
+      "flops": 3360,
+      "max_intermediates": 232,
+      "max_targets": 106
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 52080,
+      "source_sha256": "69af4102443cdd0b48372e22a2aa5a18842af87d34e2c262d175ee1d4062d459"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       232,
+       252
+      ],
+      "measured": [
+       52084,
+       52080
+      ],
+      "same_text": false,
+      "plan_rel": 0.086207,
+      "measured_rel": -7.7e-05,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       232,
+       232
+      ],
+      "measured": [
+       52084,
+       52080
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -7.7e-05,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       252,
+       232
+      ],
+      "measured": [
+       52080,
+       52080
+      ],
+      "same_text": false,
+      "plan_rel": -0.079365,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3369,
+       3410
+      ],
+      "control_ns": [
+       380376180,
+       2204148
+      ],
+      "arm_ns": [
+       380197326,
+       2298189
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.01217,
+      "measured_rel": -0.00047,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3369,
+       3360
+      ],
+      "control_ns": [
+       380095185,
+       1552353
+      ],
+      "arm_ns": [
+       379752866,
+       2401162
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002671,
+      "measured_rel": -0.000901,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3369,
+       3410
+      ],
+      "control_ns": [
+       80349252,
+       407458
+      ],
+      "arm_ns": [
+       80253361,
+       375751
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.01217,
+      "measured_rel": -0.001193,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3369,
+       3360
+      ],
+      "control_ns": [
+       80414800,
+       387450
+      ],
+      "arm_ns": [
+       80138257,
+       461261
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002671,
+      "measured_rel": -0.003439,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b9/j/literal",
+     "plan": {
+      "flops": 3767,
+      "max_intermediates": 186,
+      "max_targets": 74
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 67708,
+      "source_sha256": "66ebc04e97e69eb30cd46b1dccaa0cb0cd50d3d3d20af2632697c8fdb771a1b8"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 3767,
+      "max_intermediates": 191,
+      "max_targets": 74
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 67492,
+      "source_sha256": "4e7a8a924c68c6f8e692127f9fe3817e9b668c0dcb567abe2f9d106bce990ef3"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b9/j/tuned",
+     "plan": {
+      "flops": 3764,
+      "max_intermediates": 186,
+      "max_targets": 74
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 67716,
+      "source_sha256": "a1e77f1a6a93cf62845a39535be4d7832be0f5ed665e7af4369d43e44ffee2b8"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -0.866025,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       186,
+       191
+      ],
+      "measured": [
+       67708,
+       67492
+      ],
+      "same_text": false,
+      "plan_rel": 0.026882,
+      "measured_rel": -0.00319,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       186,
+       186
+      ],
+      "measured": [
+       67708,
+       67716
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.000118,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       191,
+       186
+      ],
+      "measured": [
+       67492,
+       67716
+      ],
+      "same_text": false,
+      "plan_rel": -0.026178,
+      "measured_rel": 0.003319,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3767,
+       3767
+      ],
+      "control_ns": [
+       538915485,
+       2428990
+      ],
+      "arm_ns": [
+       540299571,
+       3582607
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.002568,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3767,
+       3764
+      ],
+      "control_ns": [
+       538705561,
+       2326702
+      ],
+      "arm_ns": [
+       539786416,
+       2564778
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000796,
+      "measured_rel": 0.002006,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3767,
+       3767
+      ],
+      "control_ns": [
+       93241794,
+       324245
+      ],
+      "arm_ns": [
+       93033560,
+       270899
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.002233,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       3767,
+       3764
+      ],
+      "control_ns": [
+       93213040,
+       257608
+      ],
+      "arm_ns": [
+       93167841,
+       272194
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.000796,
+      "measured_rel": -0.000485,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 13,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(7,0|6,0)/b12/j/literal",
+     "plan": {
+      "flops": 3866,
+      "max_intermediates": 162,
+      "max_targets": 60
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 68232,
+      "source_sha256": "4f8af00e5ac4a096a2333a5e773b5b511347838cb914c7f68cb11ba683885a8d"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(7,0|6,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 3872,
+      "max_intermediates": 163,
+      "max_targets": 60
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 68232,
+      "source_sha256": "2a65ba46ee4be3e649fbdf2b9c2805cae307869b078bc7eea1ec1758aa526abb"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(7,0|6,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(7,0|6,0)/b12/j/tuned: no recorded choice for cell L=13, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": null,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       162,
+       163
+      ],
+      "measured": [
+       68232,
+       68232
+      ],
+      "same_text": false,
+      "plan_rel": 0.006173,
+      "measured_rel": 0.0,
+      "class": "no_claim"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3866,
+       3872
+      ],
+      "control_ns": [
+       617214300,
+       3141084
+      ],
+      "arm_ns": [
+       616170891,
+       2139246
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001552,
+      "measured_rel": -0.001691,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       3866,
+       3872
+      ],
+      "control_ns": [
+       96075397,
+       229394
+      ],
+      "arm_ns": [
+       95880003,
+       292719
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.001552,
+      "measured_rel": -0.002034,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "n_batches": 1,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b1/j/literal",
+     "plan": {
+      "flops": 5644,
+      "max_intermediates": 1639,
+      "max_targets": 969
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 44752,
+      "source_sha256": "e45c2fa006eac70e5c0f6740b3774e0d023dc76e8cccd19a22f8da6cb4dfd3b4"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b1/j/no-sieve",
+     "plan": {
+      "flops": 6095,
+      "max_intermediates": 2021,
+      "max_targets": 969
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 45900,
+      "source_sha256": "5b8d9d0e78413cc76638cfbe82a5b8747134effb7a0ac07a3a70401f1de01d29"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b1/j/tuned",
+     "plan": {
+      "flops": 5601,
+      "max_intermediates": 1601,
+      "max_targets": 969
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 45012,
+      "source_sha256": "112034e8e2fb8317f8130085eba00eaa841675b388eedc441172646c6b1a9e41"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.5,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       1639,
+       2021
+      ],
+      "measured": [
+       44752,
+       45900
+      ],
+      "same_text": false,
+      "plan_rel": 0.233069,
+      "measured_rel": 0.025652,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       1639,
+       1601
+      ],
+      "measured": [
+       44752,
+       45012
+      ],
+      "same_text": false,
+      "plan_rel": -0.023185,
+      "measured_rel": 0.00581,
+      "class": "discordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       2021,
+       1601
+      ],
+      "measured": [
+       45900,
+       45012
+      ],
+      "same_text": false,
+      "plan_rel": -0.207818,
+      "measured_rel": -0.019346,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5644,
+       6095
+      ],
+      "control_ns": [
+       533076486,
+       1453952
+      ],
+      "arm_ns": [
+       547796610,
+       1071398
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.079908,
+      "measured_rel": 0.027614,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5644,
+       5601
+      ],
+      "control_ns": [
+       532740810,
+       563504
+      ],
+      "arm_ns": [
+       533256215,
+       1203048
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.007619,
+      "measured_rel": 0.000967,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5644,
+       6095
+      ],
+      "control_ns": [
+       458301975,
+       930301
+      ],
+      "arm_ns": [
+       473091138,
+       1254512
+      ],
+      "sign": "slower",
+      "same_text": false,
+      "plan_rel": 0.079908,
+      "measured_rel": 0.032269,
+      "class": "concordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5644,
+       5601
+      ],
+      "control_ns": [
+       458445060,
+       539105
+      ],
+      "arm_ns": [
+       458373401,
+       641168
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.007619,
+      "measured_rel": -0.000156,
+      "class": "no_claim"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "n_batches": 3,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b3/j/literal",
+     "plan": {
+      "flops": 5763,
+      "max_intermediates": 584,
+      "max_targets": 327
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 103622,
+      "source_sha256": "0e87e13241507ce4d2eefbb0bd9f1a0f3d391423c7373e35de89cf46eee60b98"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b3/j/no-sieve",
+     "plan": {
+      "flops": 6095,
+      "max_intermediates": 701,
+      "max_targets": 327
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 104554,
+      "source_sha256": "8977001a8a5cd3a62f4c0c411351d4ec831cf4deec9cda1f1b0e383fbac6484f"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b3/j/tuned",
+     "plan": {
+      "flops": 5676,
+      "max_intermediates": 574,
+      "max_targets": 327
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 103546,
+      "source_sha256": "a2acf49d2ae5ab433b2af202e929d8c0f99d3af2f72ad2db86af619a9415808c"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       584,
+       701
+      ],
+      "measured": [
+       103622,
+       104554
+      ],
+      "same_text": false,
+      "plan_rel": 0.200342,
+      "measured_rel": 0.008994,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       584,
+       574
+      ],
+      "measured": [
+       103622,
+       103546
+      ],
+      "same_text": false,
+      "plan_rel": -0.017123,
+      "measured_rel": -0.000733,
+      "class": "concordant"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       701,
+       574
+      ],
+      "measured": [
+       104554,
+       103546
+      ],
+      "same_text": false,
+      "plan_rel": -0.18117,
+      "measured_rel": -0.009641,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5763,
+       6095
+      ],
+      "control_ns": [
+       583029544,
+       1311356
+      ],
+      "arm_ns": [
+       583224911,
+       1895764
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.057609,
+      "measured_rel": 0.000335,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5763,
+       5676
+      ],
+      "control_ns": [
+       582947830,
+       1924204
+      ],
+      "arm_ns": [
+       582319086,
+       1756281
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.015096,
+      "measured_rel": -0.001079,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       5763,
+       6095
+      ],
+      "control_ns": [
+       308637279,
+       581680
+      ],
+      "arm_ns": [
+       308569024,
+       582674
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.057609,
+      "measured_rel": -0.000221,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       5763,
+       5676
+      ],
+      "control_ns": [
+       308814492,
+       397977
+      ],
+      "arm_ns": [
+       307582211,
+       382576
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.015096,
+      "measured_rel": -0.00399,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "n_batches": 6,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b6/j/literal",
+     "plan": {
+      "flops": 6447,
+      "max_intermediates": 402,
+      "max_targets": 164
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 192158,
+      "source_sha256": "7ff913b38b39641af2afd2587da51805cda2051f34017032be4df1d0f200dcf4"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b6/j/no-sieve",
+     "plan": {
+      "flops": 6662,
+      "max_intermediates": 451,
+      "max_targets": 164
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 192518,
+      "source_sha256": "b4d6315b907771c7abfbfa3c152000e66a645bc365e6da9a994afe16356d44d7"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b6/j/tuned",
+     "plan": {
+      "flops": 6414,
+      "max_intermediates": 402,
+      "max_targets": 164
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 192118,
+      "source_sha256": "31773beb9241d58449b8990fca76a4805b7b947750af34efe073572a6ff2f234"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": 0.866025,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       402,
+       451
+      ],
+      "measured": [
+       192158,
+       192518
+      ],
+      "same_text": false,
+      "plan_rel": 0.121891,
+      "measured_rel": 0.001873,
+      "class": "concordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       402,
+       402
+      ],
+      "measured": [
+       192158,
+       192118
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": -0.000208,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       451,
+       402
+      ],
+      "measured": [
+       192518,
+       192118
+      ],
+      "same_text": false,
+      "plan_rel": -0.108647,
+      "measured_rel": -0.002078,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       6447,
+       6662
+      ],
+      "control_ns": [
+       815156466,
+       2056448
+      ],
+      "arm_ns": [
+       812836787,
+       2898200
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.033349,
+      "measured_rel": -0.002846,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       6447,
+       6414
+      ],
+      "control_ns": [
+       813285577,
+       3210115
+      ],
+      "arm_ns": [
+       811527485,
+       2751502
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.005119,
+      "measured_rel": -0.002162,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       6447,
+       6662
+      ],
+      "control_ns": [
+       310642843,
+       296246
+      ],
+      "arm_ns": [
+       309780085,
+       349830
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": 0.033349,
+      "measured_rel": -0.002777,
+      "class": "discordant"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       6447,
+       6414
+      ],
+      "control_ns": [
+       310520052,
+       365902
+      ],
+      "arm_ns": [
+       308384054,
+       355848
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.005119,
+      "measured_rel": -0.006879,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "n_batches": 9,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b9/j/literal",
+     "plan": {
+      "flops": 7121,
+      "max_intermediates": 324,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 218852,
+      "source_sha256": "469a17d3bad37f29635e2da26de044cb3ac901ddedd91117a69c1116e5be8d3f"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b9/j/no-sieve",
+     "plan": {
+      "flops": 7217,
+      "max_intermediates": 341,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 218808,
+      "source_sha256": "d28a5d70063326048d54c139da1b8a75969984e5be8244e9bca9c948341131b8"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b9/j/tuned",
+     "plan": {
+      "flops": 7103,
+      "max_intermediates": 324,
+      "max_targets": 120
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 218884,
+      "source_sha256": "ef34c329e4439d7a4ada4a8aa769852d636ca9ddad4812adb05b7e8c5a32d234"
+     }
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve",
+     "tuned"
+    ],
+    "spearman": -0.866025,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       324,
+       341
+      ],
+      "measured": [
+       218852,
+       218808
+      ],
+      "same_text": false,
+      "plan_rel": 0.052469,
+      "measured_rel": -0.000201,
+      "class": "discordant"
+     },
+     {
+      "a": "literal",
+      "b": "tuned",
+      "plan": [
+       324,
+       324
+      ],
+      "measured": [
+       218852,
+       218884
+      ],
+      "same_text": false,
+      "plan_rel": 0.0,
+      "measured_rel": 0.000146,
+      "class": "unresolved"
+     },
+     {
+      "a": "no-sieve",
+      "b": "tuned",
+      "plan": [
+       341,
+       324
+      ],
+      "measured": [
+       218808,
+       218884
+      ],
+      "same_text": false,
+      "plan_rel": -0.049853,
+      "measured_rel": 0.000347,
+      "class": "discordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7121,
+       7217
+      ],
+      "control_ns": [
+       982770624,
+       2050949
+      ],
+      "arm_ns": [
+       983823139,
+       3708967
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.013481,
+      "measured_rel": 0.001071,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       7121,
+       7103
+      ],
+      "control_ns": [
+       981760234,
+       1428021
+      ],
+      "arm_ns": [
+       982506115,
+       2216633
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": -0.002528,
+      "measured_rel": 0.00076,
+      "class": "no_claim"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7121,
+       7217
+      ],
+      "control_ns": [
+       303637784,
+       982506
+      ],
+      "arm_ns": [
+       303518856,
+       552704
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.013481,
+      "measured_rel": -0.000392,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": true,
+      "plan": [
+       7121,
+       7103
+      ],
+      "control_ns": [
+       303733404,
+       714540
+      ],
+      "arm_ns": [
+       302645863,
+       848922
+      ],
+      "sign": "faster",
+      "same_text": false,
+      "plan_rel": -0.002528,
+      "measured_rel": -0.003581,
+      "class": "concordant"
+     }
+    ]
+   }
+  },
+  {
+   "arch": "gfx1200",
+   "L": 16,
+   "n_batches": 12,
+   "variants": {
+    "literal": {
+     "key": "coulomb/d0/(8,0|8,0)/b12/j/literal",
+     "plan": {
+      "flops": 7645,
+      "max_intermediates": 293,
+      "max_targets": 87
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 256970,
+      "source_sha256": "e93a67badc2e97e5e02088d283ec985759a584e153ea1cf2aba38204077b2fcd"
+     }
+    },
+    "no-sieve": {
+     "key": "coulomb/d0/(8,0|8,0)/b12/j/no-sieve",
+     "plan": {
+      "flops": 7682,
+      "max_intermediates": 300,
+      "max_targets": 87
+     },
+     "measured": {
+      "registers": 192,
+      "spill": 257214,
+      "source_sha256": "2d43cf36c155508d8a5c6882aece61710de17500093451f6762fbb102ec827ca"
+     }
+    },
+    "tuned": {
+     "key": "coulomb/d0/(8,0|8,0)/b12/j/tuned",
+     "plan": null,
+     "plan_refused": "coulomb/d0/(8,0|8,0)/b12/j/tuned: no recorded choice for cell L=16, n_batches=12 in searched_cuts.json; a tuned build is always a recorded search, never a fall back to the literal plan",
+     "measured": null,
+     "absent": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+    }
+   },
+   "spill": {
+    "variants": [
+     "literal",
+     "no-sieve"
+    ],
+    "spearman": 1.0,
+    "pairs": [
+     {
+      "a": "literal",
+      "b": "no-sieve",
+      "plan": [
+       293,
+       300
+      ],
+      "measured": [
+       256970,
+       257214
+      ],
+      "same_text": false,
+      "plan_rel": 0.023891,
+      "measured_rel": 0.00095,
+      "class": "concordant"
+     }
+    ]
+   },
+   "clock": {
+    "wide": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7645,
+       7682
+      ],
+      "control_ns": [
+       1139116858,
+       3305895
+      ],
+      "arm_ns": [
+       1140160037,
+       3093670
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.00484,
+      "measured_rel": 0.000916,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ],
+    "near": [
+     {
+      "variant": "no-sieve",
+      "clean": true,
+      "plan": [
+       7645,
+       7682
+      ],
+      "control_ns": [
+       299489348,
+       428288
+      ],
+      "arm_ns": [
+       299522819,
+       306125
+      ],
+      "sign": "neutral",
+      "same_text": false,
+      "plan_rel": 0.00484,
+      "measured_rel": 0.000112,
+      "class": "no_claim"
+     },
+     {
+      "variant": "tuned",
+      "clean": false,
+      "reason": "not measurable: no recorded choice: data/scoreboards/jengine/searched_cuts.json records n_batches in {1, 3, 6, 9} only, and a tuned build is always a recorded search, never a fall back to the literal plan"
+     }
+    ]
+   }
+  }
+ ]
+}
