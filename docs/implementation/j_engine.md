@@ -1057,6 +1057,48 @@ The generator should also **report FLOP and intermediate counts** per batch.
 That is not a nicety: it is the only cost signal available without a card, and
 it is what the anchors below are checked against.
 
+### What the generator ships, and why (#166)
+
+The generator ships the **literal** plan — the minimax cut and the
+sieve's fixed seed order, `Spec.levers = ()` — and not the searched board's
+tuned plan (#161's `tuned` lever), because under the rule #163 declared
+before any tuned row, `measured_store.tuned_may_become_the_default` is False:
+on `data/measured/kernels.json`'s 32 tuned rows against their same-session
+literal controls, the search is NOT SHOWN on both cards. The predecessor
+`jgen` ships its searched order; this repo ships literal **on measured
+wall-clock**, and the `tuned` lever stays opt-in and measured.
+
+The grounds, all read off rows and none off a model:
+
+- **The rule** (`measured_store`'s docstring, THE TUNED ARM, THE DEFAULT):
+  the default moves only if `tuned` WINS at every measurable cell on both
+  cards. Measured, it WINS only at L = 16 (`sm_86` b1/b3/b6/b9, `gfx1200`
+  b3/b6/b9) and at `gfx1200` L10 b1. It LOSES at L7 b9 on both cards, the
+  one cell whose recorded cut is not the minimax cut: wide-T 137.2 → 154.5 ms
+  on `sm_86`, 174.3 → 198.9 ms on `gfx1200`. `gfx1200` also LOSES at L10 b3
+  and L13 b1 (near-T). Its LOSSes at L7 b3 and b6 are on text identical to
+  literal, the protocol's noise floor, and the refusal stands without them.
+- **The sieve stays too.** #162's no-sieve A/B is NOT SHOWN on both cards and
+  `sieve_may_leave_the_default` is False.
+- **`PlanCost` is not admitted as grounds.** On neither card do the
+  plan-layer counts predict the kernel (#165:
+  `data/measured/plan_vs_kernel.json`'s `summary.<card>.answer`, or
+  `planrank.verdict(store, arch)`). A plan that counts cheaper is not, by
+  that, the faster kernel.
+- **Tuned cannot build every recommended count.** The four 12-batch cells
+  have no recorded choice, and 12 is what `batch_recommendation.json`
+  recommends for `gfx1200` at L = 16 on near-T.
+
+**The consequence for #145.** `batch_recommendation.json`, and `dispatch.py`
+which reads it, were measured on the literal kernels (`levers = ()` rows).
+With literal shipped they remain observations of the kernel the generator
+writes, so they need neither re-derivation nor a narrower scope. Likewise no
+`source_sha256`, golden, `builds.json`, `roofline.json` or `crossread.json`
+row moves. The refusal is the last record in `limits.json`.
+`test/test_shipped_plan.py` recomputes that record from the stores and
+asserts that the shipped path's text is the literal rows' text and not the
+tuned rows'.
+
 ## Validation targets
 
 `[JEngine, v2, Tables 1–3]` report what their generator computed over
