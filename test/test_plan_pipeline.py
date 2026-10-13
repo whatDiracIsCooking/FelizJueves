@@ -144,7 +144,8 @@ def test_replay_searched_without_cuts_is_unset(
 
 
 def test_replay_searched(capsys: pytest.CaptureFixture[str]) -> None:
-    # #13's recorded choices (58 seed orders since #168), replayed: Tables 2
+    # #13's recorded choices (58 seed orders since #168, selected from a
+    # frontier by #171's rule), replayed: Tables 2
     # and 3 are at or under everywhere, Table 1 is not (test_scoreboards.py
     # pins the cells), so the run FAILs -- and prints each cell's margin,
     # indented under its verdict.
@@ -157,7 +158,7 @@ def test_replay_searched(capsys: pytest.CaptureFixture[str]) -> None:
         ("jengine/table3", "at_or_under", "PASS"),
     ]
     assert '"worst_overshoot": "+0.89%"' in verdicts[0]
-    assert len(lines) == 3 + 9
+    assert len(lines) == 3 + 8
     assert "    (13, 3)  +0.89%" in lines
 
 
