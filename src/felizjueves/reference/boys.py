@@ -72,6 +72,31 @@ float64 against the Kummer series in 50-digit `decimal`, worst relative error:
     off grid {126.5, 333.3, 499.9, 612, 987.6, 1290,
               1777.7, 1999.9}                              7.7e-16   7.8e-16
 
+and, re-measured further for V (#265), on the same footing (the same Kummer
+series in 50-digit `decimal`, every m in 0..40):
+
+                                                           m <= 16   m <= 40
+    T in {2000, 3000, 5000, 7500, 1e4, 2e4, 3.6e4, 5e4,
+          7.7e4, 1e5, 1.25e5, 2e5, 3e5, 5e5, 7.5e5, 1e6}   5.7e-16   7.7e-16
+    off grid {2345.6, 9876.5, 36123.4, 77000.7, 124999.9,
+              333333.3, 765432.1, 999999.9}                4.6e-16   6.5e-16
+
+The series is still exact there: all its terms are positive (no cancellation),
+it is summed past k = 2T (~2e6 terms at 1e6, ~1 s a point), and exp(+-T)
+stays inside `decimal`'s default exponent range (|exponent| <= 999999, so
+T <~ 2.3e6). At m = 0 it is held to erf at T_MAX as well. The truncation needs
+no table here: for T > m - 1/2,
+
+    Q(m+1/2, T) <= T^(m-1/2) exp(-T) / (Gamma(m+1/2) (1 - (m-1/2)/T))
+
+(bound (1 + u/T)^(m-1/2) by exp((m-1/2) u/T) under Gamma(m+1/2, T)'s
+integral), which at m = 40, T = 2000 is already ~5e-786.
+
+float64's range at m = M_MAX: `asymptote` never forms T^(m+1/2), but a port
+that does is still safe here -- T^40.5 at T_MAX = 1e6 is 1e243, and it
+overflows only past T ~ 4.1e7. The value itself, F_40(1e6) = 6.4e-197
+(F_40(1.25e5) = 2.4e-160), is far above the subnormals.
+
 THE OVERLAP. On [125, 500] both branches are measured: quadrature against
 asymptote on T in {125, 130, 150, 175, 200, 250, 300, 350, 400, 450, 500}
 differs by at most 1.3e-15 (m <= 16) and 1.9e-15 (m <= 40) -- the sum of the
@@ -79,13 +104,16 @@ two rounding floors, each separately under 2.1e-15 against the series there.
 So the switch introduces no step bigger than either branch's own error.
 
 THE DOMAIN. The plan layer has no T at all (it counts; `[JEngine, v2, §7.1]`
-excludes the Boys side), so the T range is ours: `T_MAX = 2000` is where the
+excludes the Boys side), so the T range is ours: `T_MAX = 1e6` is where the
 measurement stops, and `boys` refuses T outside [0, T_MAX] and m outside
 0..M_MAX rather than return an unmeasured number. The asymptote does not stop
-being accurate at 2000 -- it only gets better -- but the measurement does, and
-the cap is the measurement. 2000 was chosen as the measured extent because it
-is what #88's extended screening case needs and no more: four H2 reach
-T ~ 1289, a fifth ~ 2210 (test/test_ao_screening.py pins that). Widening the
+being accurate at 1e6 -- it only gets better -- but the measurement does, and
+the cap is the measurement. Until #265 the measured extent was 2000, what
+#88's extended screening case needs (four H2 reach T ~ 1289, a fifth ~ 2210;
+test/test_ao_screening.py pins that). A point-charge ket (V) has no eta to
+damp T = zeta |P - C|^2: over (primitive pair, nucleus) the tracked fixtures
+reach T ~ 1.25e5 (HF/cc-pVTZ; H2O/cc-pVDZ 7.7e4, H2O/6-31G 3.6e4), so the
+measurement was carried to 1e6, eight times the largest fixture. Widening the
 domain again means re-measuring, not just raising the constant. Nothing in the
 emitted kernel's `fj_boys` (the Kummer series, emit/_c.py) follows this
 module's domain: widening the reference is not permission to widen the device
@@ -105,7 +133,7 @@ import numpy as np
 NODES = 112
 M_MAX = 40
 T_SWITCH = 125.0
-T_MAX = 2000.0
+T_MAX = 1.0e6
 
 
 def _legendre(n: int, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -144,7 +172,8 @@ def asymptote(m: int, T: float) -> float:
     """F_m(T) ~ (2m-1)!! / 2^(m+1) sqrt(pi / T^(2m+1)), unchecked.
 
     Formed as 0.5 sqrt(pi/T) times the factors (2k-1)/(2T), k = 1..m, so no
-    power of T is ever formed (T^81 overflows float64 past T ~ 6e3).
+    power of T is ever formed (T^81 overflows float64 past T ~ 6e3, T^40.5
+    past T ~ 4.1e7).
     """
     a = 0.5 * math.sqrt(math.pi / T)
     for k in range(1, m + 1):
