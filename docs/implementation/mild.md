@@ -14,19 +14,24 @@ class, `build_pq_kernel` (`src/felizjueves/kernel.py`) emits the recurrence
 from the sieved MILD DAG, in `plan/schedule.py`'s order, as the `[p|q]` kernel
 both backends spell ([`j_engine.md`](j_engine.md) has its status). A split
 class gets one kernel per batch from `build_pq_kernels`, each generated from
-its own batch's sieved DAG. The "with and without the sieve" kernel-tier
-comparison below is not wired.
+its own batch's sieved DAG. The "with and without the sieve" comparison
+below is measured on both cards (#162: the `no-sieve` arm against its
+same-session sieved control, NOT SHOWN on both) and read for spills by #164.
 
-**The sieve that reaches the emitter is the literal one.** `pipeline.plan(spec)`
-takes only a `Spec`, and the pipeline never passes `sieve.sieve(dag, *,
-seed_order=None)` an order. The searched seed orders (`plan/search.py`,
-`searched_cuts.json`) are scored on the `searched` board and imported by
-`plan/__main__.py` alone, so no shipped kernel is built from them. The
-predecessor's `jgen` emits its searched order by default. Wiring the
-searched order through here would change every kernel's text, and with it
-the `source_sha256` of every `kernels.json` row. That is a decision for its
-own milestone ([`j_engine.md`](j_engine.md), "Parity with the predecessor").
-The sections below remain the specification that code is read against.
+**The sieve the generator ships is the literal one, by decision.** The
+searched seed orders can reach the emitter: since #161 a `Spec` carrying the
+opt-in `tuned` lever is built by `pipeline.tuned_plan`, which passes each
+batch's recorded order (`searched_cuts.json`, #172) to `sieve.sieve(dag,
+seed_order=...)`. The default `Spec` (`levers = ()`) takes the fixed seed
+order, and that is what `KERNEL_GEN_CMD` writes. The predecessor's `jgen`
+ships its searched order. This repo ships literal on measured wall-clock:
+under the rule declared before any tuned row, the search is NOT SHOWN on
+both cards (#163, #166), and the plan-layer counts are not admitted as
+grounds because they do not predict the kernel on either card (#165).
+[`j_engine.md`](j_engine.md), "What the generator ships, and why (#166)",
+has the grounds, and "Parity with the predecessor" says why this is a
+decision and not a difference from `jgen`. The sections below remain the
+specification that code is read against.
 
 This file covers steps 2 and 3 of the generator pipeline — choosing a reduction
 direction for every node, and pruning the resulting graph. The engine around it
@@ -321,3 +326,12 @@ be switchable.** The generator should emit a class with it and without it, and
 the kernel tier should be able to compare — because for a given class on a
 given architecture either may win, and neither of our two targets is the A100
 those published numbers were measured on.
+
+That is what happened on our cards. The `no-sieve` lever is the switch, and
+#162 timed it against the sieved kernel over the subgrid plus L = 11, one
+batch, on both cards. Each card has cells where either arm wins, so the
+declared verdict is NOT SHOWN on both and the sieve stays in the default
+(`sieve_may_leave_the_default` is False). #164 read the spills: the effect is
+non-monotone on both cards, as the paper says, but the published pattern
+fails on both (`limits.json`; `jengine/sieve-non-monotone-in-spills` stays
+`unverifiable`).

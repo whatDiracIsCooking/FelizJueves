@@ -341,6 +341,43 @@ def test_the_sieve_claim_reads_the_searched_space() -> None:
             in _flat(JENGINE_MD))
 
 
+# #167: milestone 6 (#148) stated parity with `jgen` with two qualifications,
+# Table 4 declined and the tuned-plan wire absent. The wire now exists (#161)
+# and was refused as the default on measured wall-clock (#166), so every doc
+# that states the parity names ONE difference and the decision, and none
+# carries the two-item wording any more. Both overclaims are refused: no doc
+# may say the repo replicates `jgen`, and none may call the plan a gap.
+
+_PARITY_DOCS = (JENGINE_MD, ROOT / "README.md", ROOT / ".claude" / "CLAUDE.md")
+_PLAN_DOCS = (*_PARITY_DOCS, ROOT / "docs" / "implementation" / "mild.md",
+              CLAIMS.parent / "README.md")
+_STALE_PARITY = (
+    "except the tuned-plan wire", "both qualifications",
+    "in exactly two places", "literal plan, not the searched one",
+    "reaches the emitter is the literal one", "the tuned-plan wire `jgen` has",
+)
+
+
+def test_the_jgen_difference_is_one_item_and_the_plan_a_decision() -> None:
+    for doc in _PARITY_DOCS:
+        text = _flat(doc)
+        name = doc.relative_to(ROOT).as_posix()
+        assert "with one difference: Table 4, declined" in text, name
+        assert "#166" in text and "tuned" in text, name
+    for doc in _PLAN_DOCS:
+        text = _flat(doc)
+        name = doc.relative_to(ROOT).as_posix()
+        for stale in _STALE_PARITY:
+            assert stale not in text, (name, stale)
+        assert "replicates `jgen`" not in text.replace(
+            '"this repo replicates `jgen`" is not true', ""), name
+    # the decision those sentences cite is the one the store reads
+    from felizjueves import measured_store
+    store = measured_store.load()
+    assert measured_store.tuned_may_become_the_default(store) is False
+    assert measured_store.sieve_may_leave_the_default(store) is False
+
+
 @pytest.mark.parametrize(
     "source, units",
     [

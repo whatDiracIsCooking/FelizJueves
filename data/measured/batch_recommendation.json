@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "A recommended n_batches per (L, arch) of measured.SUBGRID, derived from wall-clock ONLY (felizjueves.batchreport, #56), on each of the sweep's two inputs. Evidence for a future dispatch layer, NOT a policy: Spec.n_batches still defaults to 1. Not a reproduction of [JEngine, v2, §7]'s bolded counts (their A100). Recomputed from data/measured/kernels.json by test/test_batchreport.py.",
+ "about": "A recommended n_batches per (L, arch) of measured.SUBGRID, derived from wall-clock ONLY (felizjueves.batchreport, #56), on each of the sweep's two inputs. The generator ships n_batches = 1 by decision (#167), and these rows are its grounds: wide-T picks 1 everywhere, near-T splits from L = 13 and the two cards disagree at L = 16, so following them (felizjueves.dispatch, #145, which resolves per (arch, input)) would make the shipped unit set arch- and input-dependent, which it is not. The rows stay evidence: dispatch reads them for a launch plan. Not a reproduction of [JEngine, v2, §7]'s bolded counts (their A100). Recomputed from data/measured/kernels.json by test/test_batchreport.py.",
  "header": {
   "derived_from": "data/measured/kernels.json, the measured.SUBGRID rows (levers=(), the literal kernel; lever rows such as .../recycle@... are not read) and their wall-clock fields only (runtime_ns, spread_ns, repeats, raw wallclock:near:*)",
   "subgrid": {
