@@ -54,10 +54,13 @@ written over a subgrid with a gap. Every SUBGRID cell is timed on both arches
 in the tracked store (no cell was dropped for compile cost, #52/#60).
 
 NOT A POLICY. `Spec.n_batches` defaults to 1, and this does not change it.
-Choosing a count per class at generation time is DISPATCH, which has no home
-in this repo yet; this table is evidence for that future layer, kept per arch
-because the arches may disagree. Nothing under `plan/` or `literature/`
-imports this module, and nothing here feeds a literature floor.
+Choosing a count per class is DISPATCH, and it lives in `dispatch.py` (#145):
+it reads these rows (`recommend`'s best median, recomputed from the store)
+per `(arch, class, input)` and is injected into `launch.launches(resolve=)`,
+so it reaches only a launch plan -- never the generator, which ships one
+batch by decision (#167). The table is kept per arch because the arches may
+disagree. Nothing under `plan/` or `literature/` imports this module, and
+nothing here feeds a literature floor.
 """
 
 from __future__ import annotations
@@ -284,7 +287,10 @@ def report(store: Mapping[str, measured.Measured]) -> dict:
                        "rate-limits fp64).",
             "not_policy": "Spec.n_batches defaults to 1 and this does not "
                           "change it: choosing a count per class is dispatch, "
-                          "which has no home in this repo yet.",
+                          "which lives in dispatch.py (#145) and reads these "
+                          "rows per (arch, class, input) for a launch plan "
+                          "only, never for the generator, which ships one "
+                          "batch by decision (#167).",
             "regenerate": "PYTHONPATH=src uv run python -m "
                           "felizjueves.batchreport --write",
         },
