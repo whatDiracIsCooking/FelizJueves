@@ -87,7 +87,7 @@ import numpy as np
 import pytest
 from conftest import VRAM_PROBE, check_vram
 
-from felizjueves import asym, gate, measured
+from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
@@ -751,6 +751,43 @@ def test_hip_recycled_j_p_matches_the_reference(spec, request,
                  tmp_path)
 
 
+# --- the sieve arm (#162): the same pin, the unsieved plan ----------------------
+#
+# `no-sieve` turns Alg. 3's sieve off in the plan layer, so the builder's
+# kernel itself differs (a PLAN arm, measured_store's THE ARMS): more
+# intermediates, the same targets, the same Boys values and contraction.
+# It is held to the SAME J_REL pin through the same launch sequence. Every
+# cell of the A/B (`measured.ab_cells`: the whole SUBGRID plus #162's L = 11),
+# on both cards, before any of them is timed.
+
+NO_SIEVE_CELLS = [pytest.param(s, id=f"L{s.total_am}-b{s.n_batches}-no-sieve")
+                  for s in measured_store.SIEVE_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", NO_SIEVE_CELLS)
+def test_cuda_unsieved_j_p_matches_the_reference(spec, request,
+                                                 compile_device_source,
+                                                 run_device_binary,
+                                                 tmp_path) -> None:
+    """A no-sieve cell's launch sequence on the RTX 3080, against the oracle."""
+    _run_batched("cuda", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", NO_SIEVE_CELLS)
+def test_hip_unsieved_j_p_matches_the_reference(spec, request,
+                                                compile_device_source,
+                                                run_device_binary,
+                                                tmp_path) -> None:
+    """A no-sieve cell's launch sequence on the RX 9060 XT, against the oracle."""
+    _run_batched("hip", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
 # --- the asymmetric split (#113): the same pin, a batch list the generator ----
 # --- refuses -------------------------------------------------------------------
 #
@@ -810,13 +847,23 @@ def test_hip_asym_j_p_matches_the_reference(cell, request,
 # drift into the effect.
 #
 # FJ_WALLCLOCK_LEVER (optional, e.g. "recycle") sweeps the lever's cells,
-# `measured.lever_cells(lever)`, instead: each cell's literal arm is compiled,
+# `measured.ab_cells(lever)` (the subgrid, plus L = 11 for "no-sieve", #162),
+# instead: each cell's literal arm is compiled,
 # checked and timed BESIDE it as a same-session control (near-T control then
 # lever, wide-T lever then control) and lands in the LEVER row's raw as
 # `wallclock:control:*`; the literal rows are not rewritten. measured.py's
 # "A LEVER A/B" is the protocol's rationale and `measured.lever_ab` the
 # verdict (#55). The compile rows of the lever cells must exist first:
 #   python -m felizjueves.measured --remeasure --subgrid --lever recycle
+# A PLAN arm's sweep (#162: "no-sieve", measured_store's THE ARMS) discards a
+# phase the card was taken during and retakes it, as #113's study does
+# (STUDY_RETAKES), counting the discards in the lever row's raw
+# `wallclock:gate_discarded_phases`; #55's recycle sweep is recorded as it was.
+# A plan arm's gate that stays shut past its deadline is a discarded phase
+# too (counted, retaken), each cell is written as soon as it is timed, and
+# FJ_WALLCLOCK_RESUME=1 skips the cells whose lever row already carries its
+# same-session control -- so a session the gate stopped resumes, and every
+# A/B pair is still timed back to back.
 #
 # FJ_WALLCLOCK_ASYM=1 (optional) sweeps #113's asymmetric study cells,
 # `asym.ASYM_CELLS`, instead: each cell's two nearest legal neighbours
@@ -868,6 +915,7 @@ WALLCLOCK_STORE = "FJ_WALLCLOCK_STORE"
 WALLCLOCK_BATCHES = "FJ_WALLCLOCK_BATCHES"
 WALLCLOCK_LEVER = "FJ_WALLCLOCK_LEVER"
 WALLCLOCK_ASYM = "FJ_WALLCLOCK_ASYM"
+WALLCLOCK_RESUME = "FJ_WALLCLOCK_RESUME"
 # #113 only: a phase whose after-reading is non-idle or unknown was shared
 # with something outside this process (the first study session saw 100%
 # after-readings with bimodal times), so it is DISCARDED and retaken, up to
@@ -979,9 +1027,28 @@ def _wallclock(backend: str, request, compile_device_source,
     study = bool(os.environ.get(WALLCLOCK_ASYM, "").strip())
     assert not (lever and study), f"{WALLCLOCK_LEVER} or {WALLCLOCK_ASYM}"
     grid = (asym.ASYM_CELLS if study
-            else measured.lever_cells(lever) if lever else SUBGRID)
+            else measured.ab_cells(lever) if lever else SUBGRID)
+    # a phase shared with something else is discarded and retaken: #113's
+    # study, and a plan arm's A/B (#162); #55's lowering sweep is as it was
+    plan_arm = bool(lever) and measured_store.ARMS[lever] == measured_store.PLAN
+    retake = study or plan_arm
     sweep = [s for s in grid if wanted is None or s.n_batches in wanted]
     assert sweep, f"{WALLCLOCK_BATCHES}={only!r} selects no cell"
+    if plan_arm and os.environ.get(WALLCLOCK_RESUME, "").strip():
+        # #162: a plan arm's sweep writes each cell as it is timed, so a
+        # session the gate stopped is resumed, not redone: skip every cell
+        # whose lever row already carries its same-session control
+        def done(s: Spec) -> bool:
+            r = store.get(measured.measured_key(s, arch, toolchain).key())
+            return (r is not None and r.runtime_ns is not None
+                    and "wallclock:control:median_ns" in r.raw
+                    and "wallclock:gate_discarded_phases" in r.raw)
+        skipped = [s for s in sweep if done(s)]
+        sweep = [s for s in sweep if not done(s)]
+        print(f"{WALLCLOCK_RESUME}: {len(skipped)} cells already timed, "
+              f"skipped")
+        if not sweep:
+            pytest.skip(f"{WALLCLOCK_RESUME}: every cell already timed")
     print(f"{WALLCLOCK_BATCHES}={only or '(all)'} {WALLCLOCK_LEVER}="
           f"{lever or '(none)'} {WALLCLOCK_ASYM}={int(study)}: "
           f"{len(sweep)} cells")
@@ -1027,25 +1094,41 @@ def _wallclock(backend: str, request, compile_device_source,
         _pack(L, a, lanes).tofile(src)
         args = (str(src), str(dst), str(WARMUP), str(REPEATS))
         check_vram(binary, args, backend)  # before the wait, off the clock
-        for take in range(1 + (STUDY_RETAKES if study else 0)):
+        for take in range(1 + (STUDY_RETAKES if retake else 0)):
             seen: list[int] = []
-            busy = _quiet(backend, seen)
+            if not plan_arm:
+                busy = _quiet(backend, seen)
+            else:
+                # #162: a gate that stays shut past its deadline (the box or
+                # the card busy before the phase) is a discarded phase too,
+                # counted and retaken -- never a timing taken anyway
+                try:
+                    busy, util = gate.wait_quiet(
+                        backend, say=lambda line: print(line, flush=True))
+                except gate.Contended as e:
+                    discarded[0] += 1
+                    print(f"  DISCARDED {spec.key()} "
+                          f"{'wide' if wide else 'near'}: {e} (take "
+                          f"{take + 1})", flush=True)
+                    continue
+                seen.append(util)
             out = run_device_binary(binary, *args)
             # the gate's reading, and one after (gate.after_reading: one SMI
             # read discarded, GPU_SETTLE_S, then the reading -- our own run
             # excluded)
             card = (seen[-1], gate.after_reading(backend))
-            if not study or (card[1] is not None and card[1] <= GPU_BUSY_MAX):
+            if not retake or (card[1] is not None and card[1] <= GPU_BUSY_MAX):
                 break
-            # #113: the card was taken DURING the phase (after-reading
+            # #113 / #162: the card was taken DURING the phase (after-reading
             # non-idle or unknown): the phase is discarded and retaken
             discarded[0] += 1
             print(f"  DISCARDED {spec.key()} {'wide' if wide else 'near'}: "
                   f"card util {card[0]} -> {card[1]}% (take {take + 1})",
                   flush=True)
         else:
-            pytest.fail(f"{spec.key()}: the card stayed contended through "
-                        f"{STUDY_RETAKES + 1} takes -- nothing recorded")
+            pytest.fail(f"{spec.key()}: the box or the card stayed contended "
+                        f"through {STUDY_RETAKES + 1} takes -- this cell not "
+                        "recorded")
         wall, events, batches = _parse_reps(out, spec.n_batches)
         assert len(wall) == REPEATS, out
         J = np.fromfile(dst, dtype=np.float64).reshape(2, TIMING_N_BRA, -1)
@@ -1118,7 +1201,7 @@ def _wallclock(backend: str, request, compile_device_source,
             "wallclock:J_bitwise_repeatable": int(np.array_equal(J[0], J[1])),
             **ctrl,
         }
-        if study:
+        if retake:
             raw["wallclock:gate_discarded_phases"] = discarded[0]
         per_batch = np.median(np.array(batches), axis=0)
         for name, t in zip(names, per_batch, strict=True):
@@ -1134,6 +1217,8 @@ def _wallclock(backend: str, request, compile_device_source,
             f"{key.key()}: the store's compile row is of other text -- "
             "remeasure the compile side first")
         store = measured.merge(store, key, measured.combine(old, row))
+        if plan_arm:  # #162: each cell written as it is timed (resumable)
+            measured.save(store, Path(store_path))
         table.append((L, spec.n_batches, med, q3 - q1, n_med, n_q3 - n_q1))
         print(f"{key.key()}: wide median {med / 1e6:.3f} ms, IQR "
               f"{(q3 - q1) / 1e6:.3f} ms, range [{min(wall) / 1e6:.3f}, "
@@ -1162,6 +1247,9 @@ def _wallclock(backend: str, request, compile_device_source,
             print(f"  L={c.L} b{c.n_batches}: wide {c.wide_sign}, near "
                   f"{c.near_sign} -> {c.verdict.upper()} (spill {c.spill[0]} "
                   f"-> {c.spill[1]})")
+        if lever == measured_store.NO_SIEVE:  # #159's declared verdict, this arch
+            print(f"  {arch.name}: the sieve "
+                  f"{measured_store.sieve_verdict(store, arch.name).upper()}")
     if study:
         print("\n#113, the asymmetric split against its same-session "
               "neighbours:")

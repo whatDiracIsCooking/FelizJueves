@@ -2,7 +2,7 @@
 
 `Spec.key()` is the join key of the measured store. Widening `Spec` to admit a
 pair class (`Target.DQ`, `Target.JAB`) must not move a single byte of a
-quartet key, or 122 rows silently stop joining. This test rebuilds each row's
+quartet key, or 164 rows silently stop joining. This test rebuilds each row's
 key from scratch -- the class, batch count and lever read back by a parser
 that does not call `Spec.key()`, the card and compiler from the row's own
 `arch` and `toolchain` fields -- through the same constructors the driver
@@ -26,7 +26,7 @@ _SPEC_KEY = re.compile(
     r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b(\d+)/j/([a-z+-]+)\Z"
 )
 
-N_ROWS = 122
+N_ROWS = 164
 
 
 def _derive(key: str, arch: str, toolchain: str) -> str:
@@ -58,18 +58,22 @@ def test_every_measured_key_is_rederived_byte_for_byte() -> None:
 
 def test_the_rederived_rows_cover_the_declared_cells() -> None:
     # 66 literal (17 one-batch classes + 16 split subgrid cells, per arch),
-    # 40 recycle (every subgrid cell, per arch), 16 asym, as CLAUDE.md says.
+    # 40 recycle (every subgrid cell, per arch), 16 asym, and 42 no-sieve
+    # (every subgrid cell plus L = 11 one-batch, per arch; #162).
     rows = load()
     arches = {r.arch for r in rows.values()}
     assert arches == {"sm_86", "gfx1200"}
     literal = {pq_spec(L) for L in range(17)} | set(SUBGRID)
     recycle = {pq_spec(s.total_am, (RECYCLE,), s.n_batches) for s in SUBGRID}
+    sieve = {pq_spec(s.total_am, ("no-sieve",), s.n_batches) for s in SUBGRID} | {
+        pq_spec(11, ("no-sieve",))}
     want = set(rows)
     got = set()
     for arch in arches:
         tc = next(r.toolchain for r in rows.values() if r.arch == arch)
-        got |= {MeasuredKey(s, by_name(arch), tc).key() for s in literal | recycle}
+        got |= {MeasuredKey(s, by_name(arch), tc).key()
+                for s in literal | recycle | sieve}
         got |= {AsymKey(c, by_name(arch), tc).key() for c in ASYM_CELLS}
     assert got == want
     assert len(literal) * 2 == 66 and len(recycle) * 2 == 40
-    assert len(ASYM_CELLS) * 2 == 16
+    assert len(ASYM_CELLS) * 2 == 16 and len(sieve) * 2 == 42
