@@ -194,7 +194,20 @@ def run_k(am: Am, bra: EPair, kets: list[tuple[EPair, int]],
           Iq: list[float] | None = None) -> tuple[np.ndarray, Interpreter]:
     """`K[n_bra, n_a n_b]` from the interpreted kernel, and its interpreter.
     `kets` is `(ket pair, dd)` per ket shell pair, in launch order."""
-    kern = build_k_kernel(am)
+    args = k_args(am, bra, kets, dcd_rows, dc=dc, tau=tau, maxD=maxD, Ip=Ip,
+                  Iq=Iq)
+    grid, block = launch_shape(args["n_bra"], lanes)
+    it = Interpreter(build_k_kernel(am), launch=Launch(grid, block, lanes),
+                     boys=boys)
+    return it.run(**args)["K"], it
+
+
+def k_args(am: Am, bra: EPair, kets: list[tuple[EPair, int]],
+           dcd_rows: list[list[float]], *, dc: int = 0, tau: float = 0.0,
+           maxD: float = 1.0, Ip: list[float] | None = None,
+           Iq: list[float] | None = None) -> dict:
+    """The kernel's arguments for one launch (`K` NaN-filled: the one-batch
+    kernel writes every entry; a split class's caller zeroes it)."""
     P = [rec[0] for rec in bra.recs]
     krecs = [(rec, ket, dd) for ket, dd in kets for rec in ket.recs]
     n_bra, n_ket = len(P), len(krecs)
@@ -221,9 +234,7 @@ def run_k(am: Am, bra: EPair, kets: list[tuple[EPair, int]],
         Dcd=np.array(dcd_rows, dtype=np.float64),
         K=np.full((n_bra, len(_flat(am))), np.nan),
     )
-    grid, block = launch_shape(n_bra, lanes)
-    it = Interpreter(kern, launch=Launch(grid, block, lanes), boys=boys)
-    return it.run(**args)["K"], it
+    return args
 
 
 def _flat(am: Am) -> list[tuple[int, int]]:
@@ -477,6 +488,24 @@ def test_the_builder_reaches_neither_its_witness_nor_a_machine() -> None:
         hit = sorted(e for e in seen if tl._under(e, banned))
         assert not hit, f"kernel_k reaches {hit}"
     assert {"e_fragment", "recurrence", "kernel"} <= seen
+
+
+def test_one_batch_delegates_and_a_split_is_build_k_kernels() -> None:
+    """#203: `build_k_kernels` at one batch is `(build_k_kernel,)`, a plain
+    write; `build_k_kernel` refuses a split and names the builder that takes
+    it. The split class itself is test_kernel_k_batched.py's."""
+    from felizjueves.kernel_k import build_k_kernels
+
+    for am in [(0, 0, 0, 0), (1, 0, 1, 0), (0, 2, 0, 0)]:
+        spec = k_class_spec(*am)
+        assert build_k_kernels(spec) == (build_k_kernel(am),)
+    with pytest.raises(ValueError, match="build_k_kernels builds it"):
+        build_k_kernel(Spec(Operator.COULOMB, 0, (1, 0, 0, 0), Target.K,
+                            n_batches=3))
+    with pytest.raises(ValueError, match="not a Target.K"):
+        build_k_kernels(Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.J))
+    with pytest.raises(TypeError):
+        build_k_kernels((1, 0, 1, 0))  # type: ignore[arg-type]
 
 
 def test_the_launch_is_js() -> None:
