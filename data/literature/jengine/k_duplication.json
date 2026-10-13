@@ -1,0 +1,1431 @@
+{
+ "schema": 1,
+ "about": "The duplicated-work count of #202: for each K class and batch count, the work a split duplicates across the kernels that write the same output element, for J and for K at the same Spec.am, and their ratio -- the arithmetic half of jengine/k-recompute-has-more-merit (claims.json), counted with no card, no compiler and no built kernel. Written by `PYTHONPATH=src uv run python -m felizjueves.kdup --write`; recomputed by test/test_k_duplication.py (L <= 2 in the fast tier, L > 2 `slow`). It scores nothing: the claim is E3's (#207).",
+ "rule": "Per primitive quartet, from plan.batching's partition and the E nonzero pattern (E^{ac}_p != 0 iff p_d <= a_d + c_d) only. Shared by J and K: the recurrence's extra FLOPs and intermediates (the sieved literal plan, plan/cost.py, at n_batches minus at one batch) and n_batches - 1 extra Boys evaluations. J: the J_p += [p+q] D_q products (partitioned by r, never duplicated) and sum_B |P_B| - n_p extra partial J_p write-backs, counted HIGH (as if per quartet). K: stage 1 (I[p] = sum_q [p|q] E^bd_q, partitioned), stage 2 (V(a,c) = sum_p E^ac_p I[p] over the p each batch holds for that (b,d) row) and stage 3 (K[a,b] += D[c,d] V(a,c) per batch with V structurally nonzero), counted LOW (nonzero terms only; no K write-back; no E re-evaluation). FLOPs: multiply-add 2, write-back 1. Duplicated = summed over batches minus the one-batch count. Direction per split cell: K>J iff K's duplicated contraction FLOPs exceed J's. Per class: supports if K>J at every admitted split, refutes if at none, cannot separate otherwise.",
+ "classes": "kernel.k_spec(L): (lp, lq) = (ceil(L/2), floor(L/2)), am = (la, lc, lb, ld) bra first; the J row at the same am",
+ "rows": [
+  {
+   "L": 0,
+   "n_batches": 1,
+   "am": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "lp": 0,
+   "lq": 0,
+   "keys": {
+    "j": "coulomb/d0/(0,0|0,0)/b1/j/literal",
+    "k": "coulomb/d0/(0,0|0,0)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 1,
+    "ket": 1,
+    "n_p": 1,
+    "n_q": 1
+   },
+   "recurrence": {
+    "flops": 0,
+    "flops_one_batch": 0,
+    "dup_flops": 0,
+    "intermediates": 0,
+    "intermediates_one_batch": 0,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 1,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 1,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 1,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 1,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 1,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 1,
+   "n_batches": 1,
+   "am": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "lp": 1,
+   "lq": 0,
+   "keys": {
+    "j": "coulomb/d0/(1,0|0,0)/b1/j/literal",
+    "k": "coulomb/d0/(1,0|0,0)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 3,
+    "ket": 1,
+    "n_p": 4,
+    "n_q": 1
+   },
+   "recurrence": {
+    "flops": 3,
+    "flops_one_batch": 3,
+    "dup_flops": 0,
+    "intermediates": 1,
+    "intermediates_one_batch": 1,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 4,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 4,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 4,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 6,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 3,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 1,
+   "n_batches": 3,
+   "am": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "lp": 1,
+   "lq": 0,
+   "keys": {
+    "j": "coulomb/d0/(1,0|0,0)/b3/j/literal",
+    "k": "coulomb/d0/(1,0|0,0)/b3/k/literal"
+   },
+   "rows": {
+    "bra": 3,
+    "ket": 1,
+    "n_p": 4,
+    "n_q": 1
+   },
+   "recurrence": {
+    "flops": 3,
+    "flops_one_batch": 3,
+    "dup_flops": 0,
+    "intermediates": 3,
+    "intermediates_one_batch": 1,
+    "dup_intermediates": 2,
+    "boys_evaluations": 3,
+    "dup_boys_evaluations": 2
+   },
+   "j": {
+    "contraction_fma": 4,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 4,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 4,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 6,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 5,
+    "dup_stage3_fma": 2,
+    "dup_contraction_flops": 4
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": "K>J"
+  },
+  {
+   "L": 2,
+   "n_batches": 1,
+   "am": [
+    1,
+    0,
+    1,
+    0
+   ],
+   "lp": 1,
+   "lq": 1,
+   "keys": {
+    "j": "coulomb/d0/(1,0|1,0)/b1/j/literal",
+    "k": "coulomb/d0/(1,0|1,0)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 3,
+    "ket": 3,
+    "n_p": 4,
+    "n_q": 4
+   },
+   "recurrence": {
+    "flops": 15,
+    "flops_one_batch": 15,
+    "dup_flops": 0,
+    "intermediates": 5,
+    "intermediates_one_batch": 5,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 16,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 4,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 24,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 18,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 9,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 2,
+   "n_batches": 3,
+   "am": [
+    1,
+    0,
+    1,
+    0
+   ],
+   "lp": 1,
+   "lq": 1,
+   "keys": {
+    "j": "coulomb/d0/(1,0|1,0)/b3/j/literal",
+    "k": "coulomb/d0/(1,0|1,0)/b3/k/literal"
+   },
+   "rows": {
+    "bra": 3,
+    "ket": 3,
+    "n_p": 4,
+    "n_q": 4
+   },
+   "recurrence": {
+    "flops": 15,
+    "flops_one_batch": 15,
+    "dup_flops": 0,
+    "intermediates": 9,
+    "intermediates_one_batch": 5,
+    "dup_intermediates": 4,
+    "boys_evaluations": 3,
+    "dup_boys_evaluations": 2
+   },
+   "j": {
+    "contraction_fma": 16,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 9,
+    "dup_reduction_writes": 5,
+    "dup_contraction_flops": 5
+   },
+   "k": {
+    "stage1_fma": 24,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 27,
+    "dup_stage2_fma": 9,
+    "stage3_fma": 19,
+    "dup_stage3_fma": 10,
+    "dup_contraction_flops": 38
+   },
+   "ratio_contraction": 7.6,
+   "ratio_total": 7.6,
+   "direction": "K>J"
+  },
+  {
+   "L": 7,
+   "n_batches": 1,
+   "am": [
+    2,
+    2,
+    2,
+    1
+   ],
+   "lp": 4,
+   "lq": 3,
+   "keys": {
+    "j": "coulomb/d0/(2,2|2,1)/b1/j/literal",
+    "k": "coulomb/d0/(2,2|2,1)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 36,
+    "ket": 18,
+    "n_p": 35,
+    "n_q": 20
+   },
+   "recurrence": {
+    "flops": 425,
+    "flops_one_batch": 425,
+    "dup_flops": 0,
+    "intermediates": 126,
+    "intermediates_one_batch": 126,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 700,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 35,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 3780,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 6048,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 648,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 7,
+   "n_batches": 3,
+   "am": [
+    2,
+    2,
+    2,
+    1
+   ],
+   "lp": 4,
+   "lq": 3,
+   "keys": {
+    "j": "coulomb/d0/(2,2|2,1)/b3/j/literal",
+    "k": "coulomb/d0/(2,2|2,1)/b3/k/literal"
+   },
+   "rows": {
+    "bra": 36,
+    "ket": 18,
+    "n_p": 35,
+    "n_q": 20
+   },
+   "recurrence": {
+    "flops": 425,
+    "flops_one_batch": 425,
+    "dup_flops": 0,
+    "intermediates": 147,
+    "intermediates_one_batch": 126,
+    "dup_intermediates": 21,
+    "boys_evaluations": 3,
+    "dup_boys_evaluations": 2
+   },
+   "j": {
+    "contraction_fma": 700,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 93,
+    "dup_reduction_writes": 58,
+    "dup_contraction_flops": 58
+   },
+   "k": {
+    "stage1_fma": 3780,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 11255,
+    "dup_stage2_fma": 5207,
+    "stage3_fma": 1836,
+    "dup_stage3_fma": 1188,
+    "dup_contraction_flops": 12790
+   },
+   "ratio_contraction": 220.51724137931035,
+   "ratio_total": 220.51724137931035,
+   "direction": "K>J"
+  },
+  {
+   "L": 7,
+   "n_batches": 6,
+   "am": [
+    2,
+    2,
+    2,
+    1
+   ],
+   "lp": 4,
+   "lq": 3,
+   "keys": {
+    "j": "coulomb/d0/(2,2|2,1)/b6/j/literal",
+    "k": "coulomb/d0/(2,2|2,1)/b6/k/literal"
+   },
+   "rows": {
+    "bra": 36,
+    "ket": 18,
+    "n_p": 35,
+    "n_q": 20
+   },
+   "recurrence": {
+    "flops": 506,
+    "flops_one_batch": 425,
+    "dup_flops": 81,
+    "intermediates": 211,
+    "intermediates_one_batch": 126,
+    "dup_intermediates": 85,
+    "boys_evaluations": 6,
+    "dup_boys_evaluations": 5
+   },
+   "j": {
+    "contraction_fma": 700,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 147,
+    "dup_reduction_writes": 112,
+    "dup_contraction_flops": 112
+   },
+   "k": {
+    "stage1_fma": 3780,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 12539,
+    "dup_stage2_fma": 6491,
+    "stage3_fma": 2220,
+    "dup_stage3_fma": 1572,
+    "dup_contraction_flops": 16126
+   },
+   "ratio_contraction": 143.98214285714286,
+   "ratio_total": 83.97409326424871,
+   "direction": "K>J"
+  },
+  {
+   "L": 7,
+   "n_batches": 9,
+   "am": [
+    2,
+    2,
+    2,
+    1
+   ],
+   "lp": 4,
+   "lq": 3,
+   "keys": {
+    "j": "coulomb/d0/(2,2|2,1)/b9/j/literal",
+    "k": "coulomb/d0/(2,2|2,1)/b9/k/literal"
+   },
+   "rows": {
+    "bra": 36,
+    "ket": 18,
+    "n_p": 35,
+    "n_q": 20
+   },
+   "recurrence": {
+    "flops": 510,
+    "flops_one_batch": 425,
+    "dup_flops": 85,
+    "intermediates": 222,
+    "intermediates_one_batch": 126,
+    "dup_intermediates": 96,
+    "boys_evaluations": 9,
+    "dup_boys_evaluations": 8
+   },
+   "j": {
+    "contraction_fma": 700,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 163,
+    "dup_reduction_writes": 128,
+    "dup_contraction_flops": 128
+   },
+   "k": {
+    "stage1_fma": 3780,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 15566,
+    "dup_stage2_fma": 9518,
+    "stage3_fma": 3597,
+    "dup_stage3_fma": 2949,
+    "dup_contraction_flops": 24934
+   },
+   "ratio_contraction": 194.796875,
+   "ratio_total": 117.46009389671362,
+   "direction": "K>J"
+  },
+  {
+   "L": 7,
+   "n_batches": 12,
+   "am": [
+    2,
+    2,
+    2,
+    1
+   ],
+   "lp": 4,
+   "lq": 3,
+   "keys": {
+    "j": "coulomb/d0/(2,2|2,1)/b12/j/literal",
+    "k": "coulomb/d0/(2,2|2,1)/b12/k/literal"
+   },
+   "rows": {
+    "bra": 36,
+    "ket": 18,
+    "n_p": 35,
+    "n_q": 20
+   },
+   "recurrence": {
+    "flops": 641,
+    "flops_one_batch": 425,
+    "dup_flops": 216,
+    "intermediates": 310,
+    "intermediates_one_batch": 126,
+    "dup_intermediates": 184,
+    "boys_evaluations": 12,
+    "dup_boys_evaluations": 11
+   },
+   "j": {
+    "contraction_fma": 700,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 233,
+    "dup_reduction_writes": 198,
+    "dup_contraction_flops": 198
+   },
+   "k": {
+    "stage1_fma": 3780,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 16045,
+    "dup_stage2_fma": 9997,
+    "stage3_fma": 3183,
+    "dup_stage3_fma": 2535,
+    "dup_contraction_flops": 25064
+   },
+   "ratio_contraction": 126.58585858585859,
+   "ratio_total": 61.06280193236715,
+   "direction": "K>J"
+  },
+  {
+   "L": 10,
+   "n_batches": 1,
+   "am": [
+    3,
+    2,
+    3,
+    2
+   ],
+   "lp": 5,
+   "lq": 5,
+   "keys": {
+    "j": "coulomb/d0/(3,2|3,2)/b1/j/literal",
+    "k": "coulomb/d0/(3,2|3,2)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 60,
+    "ket": 60,
+    "n_p": 56,
+    "n_q": 56
+   },
+   "recurrence": {
+    "flops": 1254,
+    "flops_one_batch": 1254,
+    "dup_flops": 0,
+    "intermediates": 368,
+    "intermediates_one_batch": 368,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 3136,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 56,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 45696,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 48960,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 3600,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 10,
+   "n_batches": 3,
+   "am": [
+    3,
+    2,
+    3,
+    2
+   ],
+   "lp": 5,
+   "lq": 5,
+   "keys": {
+    "j": "coulomb/d0/(3,2|3,2)/b3/j/literal",
+    "k": "coulomb/d0/(3,2|3,2)/b3/k/literal"
+   },
+   "rows": {
+    "bra": 60,
+    "ket": 60,
+    "n_p": 56,
+    "n_q": 56
+   },
+   "recurrence": {
+    "flops": 1278,
+    "flops_one_batch": 1254,
+    "dup_flops": 24,
+    "intermediates": 406,
+    "intermediates_one_batch": 368,
+    "dup_intermediates": 38,
+    "boys_evaluations": 3,
+    "dup_boys_evaluations": 2
+   },
+   "j": {
+    "contraction_fma": 3136,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 165,
+    "dup_reduction_writes": 109,
+    "dup_contraction_flops": 109
+   },
+   "k": {
+    "stage1_fma": 45696,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 104223,
+    "dup_stage2_fma": 55263,
+    "stage3_fma": 10512,
+    "dup_stage3_fma": 6912,
+    "dup_contraction_flops": 124350
+   },
+   "ratio_contraction": 1140.8256880733945,
+   "ratio_total": 935.1428571428571,
+   "direction": "K>J"
+  },
+  {
+   "L": 10,
+   "n_batches": 6,
+   "am": [
+    3,
+    2,
+    3,
+    2
+   ],
+   "lp": 5,
+   "lq": 5,
+   "keys": {
+    "j": "coulomb/d0/(3,2|3,2)/b6/j/literal",
+    "k": "coulomb/d0/(3,2|3,2)/b6/k/literal"
+   },
+   "rows": {
+    "bra": 60,
+    "ket": 60,
+    "n_p": 56,
+    "n_q": 56
+   },
+   "recurrence": {
+    "flops": 1473,
+    "flops_one_batch": 1254,
+    "dup_flops": 219,
+    "intermediates": 538,
+    "intermediates_one_batch": 368,
+    "dup_intermediates": 170,
+    "boys_evaluations": 6,
+    "dup_boys_evaluations": 5
+   },
+   "j": {
+    "contraction_fma": 3136,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 315,
+    "dup_reduction_writes": 259,
+    "dup_contraction_flops": 259
+   },
+   "k": {
+    "stage1_fma": 45696,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 120156,
+    "dup_stage2_fma": 71196,
+    "stage3_fma": 13209,
+    "dup_stage3_fma": 9609,
+    "dup_contraction_flops": 161610
+   },
+   "ratio_contraction": 623.976833976834,
+   "ratio_total": 338.5543933054393,
+   "direction": "K>J"
+  },
+  {
+   "L": 10,
+   "n_batches": 9,
+   "am": [
+    3,
+    2,
+    3,
+    2
+   ],
+   "lp": 5,
+   "lq": 5,
+   "keys": {
+    "j": "coulomb/d0/(3,2|3,2)/b9/j/literal",
+    "k": "coulomb/d0/(3,2|3,2)/b9/k/literal"
+   },
+   "rows": {
+    "bra": 60,
+    "ket": 60,
+    "n_p": 56,
+    "n_q": 56
+   },
+   "recurrence": {
+    "flops": 1613,
+    "flops_one_batch": 1254,
+    "dup_flops": 359,
+    "intermediates": 634,
+    "intermediates_one_batch": 368,
+    "dup_intermediates": 266,
+    "boys_evaluations": 9,
+    "dup_boys_evaluations": 8
+   },
+   "j": {
+    "contraction_fma": 3136,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 389,
+    "dup_reduction_writes": 333,
+    "dup_contraction_flops": 333
+   },
+   "k": {
+    "stage1_fma": 45696,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 143373,
+    "dup_stage2_fma": 94413,
+    "stage3_fma": 16542,
+    "dup_stage3_fma": 12942,
+    "dup_contraction_flops": 214710
+   },
+   "ratio_contraction": 644.7747747747748,
+   "ratio_total": 310.7933526011561,
+   "direction": "K>J"
+  },
+  {
+   "L": 10,
+   "n_batches": 12,
+   "am": [
+    3,
+    2,
+    3,
+    2
+   ],
+   "lp": 5,
+   "lq": 5,
+   "keys": {
+    "j": "coulomb/d0/(3,2|3,2)/b12/j/literal",
+    "k": "coulomb/d0/(3,2|3,2)/b12/k/literal"
+   },
+   "rows": {
+    "bra": 60,
+    "ket": 60,
+    "n_p": 56,
+    "n_q": 56
+   },
+   "recurrence": {
+    "flops": 1724,
+    "flops_one_batch": 1254,
+    "dup_flops": 470,
+    "intermediates": 702,
+    "intermediates_one_batch": 368,
+    "dup_intermediates": 334,
+    "boys_evaluations": 12,
+    "dup_boys_evaluations": 11
+   },
+   "j": {
+    "contraction_fma": 3136,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 482,
+    "dup_reduction_writes": 426,
+    "dup_contraction_flops": 426
+   },
+   "k": {
+    "stage1_fma": 45696,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 170728,
+    "dup_stage2_fma": 121768,
+    "stage3_fma": 21591,
+    "dup_stage3_fma": 17991,
+    "dup_contraction_flops": 279518
+   },
+   "ratio_contraction": 656.1455399061033,
+   "ratio_total": 312.48660714285717,
+   "direction": "K>J"
+  },
+  {
+   "L": 13,
+   "n_batches": 1,
+   "am": [
+    4,
+    3,
+    3,
+    3
+   ],
+   "lp": 7,
+   "lq": 6,
+   "keys": {
+    "j": "coulomb/d0/(4,3|3,3)/b1/j/literal",
+    "k": "coulomb/d0/(4,3|3,3)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 150,
+    "ket": 100,
+    "n_p": 120,
+    "n_q": 84
+   },
+   "recurrence": {
+    "flops": 2887,
+    "flops_one_batch": 2887,
+    "dup_flops": 0,
+    "intermediates": 845,
+    "intermediates_one_batch": 845,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 10080,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 120,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 230400,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 390000,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 15000,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 13,
+   "n_batches": 3,
+   "am": [
+    4,
+    3,
+    3,
+    3
+   ],
+   "lp": 7,
+   "lq": 6,
+   "keys": {
+    "j": "coulomb/d0/(4,3|3,3)/b3/j/literal",
+    "k": "coulomb/d0/(4,3|3,3)/b3/k/literal"
+   },
+   "rows": {
+    "bra": 150,
+    "ket": 100,
+    "n_p": 120,
+    "n_q": 84
+   },
+   "recurrence": {
+    "flops": 2948,
+    "flops_one_batch": 2887,
+    "dup_flops": 61,
+    "intermediates": 901,
+    "intermediates_one_batch": 845,
+    "dup_intermediates": 56,
+    "boys_evaluations": 3,
+    "dup_boys_evaluations": 2
+   },
+   "j": {
+    "contraction_fma": 10080,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 348,
+    "dup_reduction_writes": 228,
+    "dup_contraction_flops": 228
+   },
+   "k": {
+    "stage1_fma": 230400,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 822977,
+    "dup_stage2_fma": 432977,
+    "stage3_fma": 44360,
+    "dup_stage3_fma": 29360,
+    "dup_contraction_flops": 924674
+   },
+   "ratio_contraction": 4055.5877192982457,
+   "ratio_total": 3199.7750865051903,
+   "direction": "K>J"
+  },
+  {
+   "L": 13,
+   "n_batches": 6,
+   "am": [
+    4,
+    3,
+    3,
+    3
+   ],
+   "lp": 7,
+   "lq": 6,
+   "keys": {
+    "j": "coulomb/d0/(4,3|3,3)/b6/j/literal",
+    "k": "coulomb/d0/(4,3|3,3)/b6/k/literal"
+   },
+   "rows": {
+    "bra": 150,
+    "ket": 100,
+    "n_p": 120,
+    "n_q": 84
+   },
+   "recurrence": {
+    "flops": 3369,
+    "flops_one_batch": 2887,
+    "dup_flops": 482,
+    "intermediates": 1138,
+    "intermediates_one_batch": 845,
+    "dup_intermediates": 293,
+    "boys_evaluations": 6,
+    "dup_boys_evaluations": 5
+   },
+   "j": {
+    "contraction_fma": 10080,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 594,
+    "dup_reduction_writes": 474,
+    "dup_contraction_flops": 474
+   },
+   "k": {
+    "stage1_fma": 230400,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 879299,
+    "dup_stage2_fma": 489299,
+    "stage3_fma": 51521,
+    "dup_stage3_fma": 36521,
+    "dup_contraction_flops": 1051640
+   },
+   "ratio_contraction": 2218.649789029536,
+   "ratio_total": 1100.5460251046024,
+   "direction": "K>J"
+  },
+  {
+   "L": 13,
+   "n_batches": 9,
+   "am": [
+    4,
+    3,
+    3,
+    3
+   ],
+   "lp": 7,
+   "lq": 6,
+   "keys": {
+    "j": "coulomb/d0/(4,3|3,3)/b9/j/literal",
+    "k": "coulomb/d0/(4,3|3,3)/b9/k/literal"
+   },
+   "rows": {
+    "bra": 150,
+    "ket": 100,
+    "n_p": 120,
+    "n_q": 84
+   },
+   "recurrence": {
+    "flops": 3767,
+    "flops_one_batch": 2887,
+    "dup_flops": 880,
+    "intermediates": 1361,
+    "intermediates_one_batch": 845,
+    "dup_intermediates": 516,
+    "boys_evaluations": 9,
+    "dup_boys_evaluations": 8
+   },
+   "j": {
+    "contraction_fma": 10080,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 822,
+    "dup_reduction_writes": 702,
+    "dup_contraction_flops": 702
+   },
+   "k": {
+    "stage1_fma": 230400,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 973238,
+    "dup_stage2_fma": 583238,
+    "stage3_fma": 60659,
+    "dup_stage3_fma": 45659,
+    "dup_contraction_flops": 1257794
+   },
+   "ratio_contraction": 1791.7293447293448,
+   "ratio_total": 795.621997471555,
+   "direction": "K>J"
+  },
+  {
+   "L": 13,
+   "n_batches": 12,
+   "am": [
+    4,
+    3,
+    3,
+    3
+   ],
+   "lp": 7,
+   "lq": 6,
+   "keys": {
+    "j": "coulomb/d0/(4,3|3,3)/b12/j/literal",
+    "k": "coulomb/d0/(4,3|3,3)/b12/k/literal"
+   },
+   "rows": {
+    "bra": 150,
+    "ket": 100,
+    "n_p": 120,
+    "n_q": 84
+   },
+   "recurrence": {
+    "flops": 3866,
+    "flops_one_batch": 2887,
+    "dup_flops": 979,
+    "intermediates": 1447,
+    "intermediates_one_batch": 845,
+    "dup_intermediates": 602,
+    "boys_evaluations": 12,
+    "dup_boys_evaluations": 11
+   },
+   "j": {
+    "contraction_fma": 10080,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 976,
+    "dup_reduction_writes": 856,
+    "dup_contraction_flops": 856
+   },
+   "k": {
+    "stage1_fma": 230400,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 1316759,
+    "dup_stage2_fma": 926759,
+    "stage3_fma": 88994,
+    "dup_stage3_fma": 73994,
+    "dup_contraction_flops": 2001506
+   },
+   "ratio_contraction": 2338.207943925234,
+   "ratio_total": 1091.2724795640327,
+   "direction": "K>J"
+  },
+  {
+   "L": 16,
+   "n_batches": 1,
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "lp": 8,
+   "lq": 8,
+   "keys": {
+    "j": "coulomb/d0/(4,4|4,4)/b1/j/literal",
+    "k": "coulomb/d0/(4,4|4,4)/b1/k/literal"
+   },
+   "rows": {
+    "bra": 225,
+    "ket": 225,
+    "n_p": 165,
+    "n_q": 165
+   },
+   "recurrence": {
+    "flops": 5644,
+    "flops_one_batch": 5644,
+    "dup_flops": 0,
+    "intermediates": 1639,
+    "intermediates_one_batch": 1639,
+    "dup_intermediates": 0,
+    "boys_evaluations": 1,
+    "dup_boys_evaluations": 0
+   },
+   "j": {
+    "contraction_fma": 27225,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 165,
+    "dup_reduction_writes": 0,
+    "dup_contraction_flops": 0
+   },
+   "k": {
+    "stage1_fma": 1279575,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 1744875,
+    "dup_stage2_fma": 0,
+    "stage3_fma": 50625,
+    "dup_stage3_fma": 0,
+    "dup_contraction_flops": 0
+   },
+   "ratio_contraction": null,
+   "ratio_total": null,
+   "direction": null
+  },
+  {
+   "L": 16,
+   "n_batches": 3,
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "lp": 8,
+   "lq": 8,
+   "keys": {
+    "j": "coulomb/d0/(4,4|4,4)/b3/j/literal",
+    "k": "coulomb/d0/(4,4|4,4)/b3/k/literal"
+   },
+   "rows": {
+    "bra": 225,
+    "ket": 225,
+    "n_p": 165,
+    "n_q": 165
+   },
+   "recurrence": {
+    "flops": 5763,
+    "flops_one_batch": 5644,
+    "dup_flops": 119,
+    "intermediates": 1730,
+    "intermediates_one_batch": 1639,
+    "dup_intermediates": 91,
+    "boys_evaluations": 3,
+    "dup_boys_evaluations": 2
+   },
+   "j": {
+    "contraction_fma": 27225,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 492,
+    "dup_reduction_writes": 327,
+    "dup_contraction_flops": 327
+   },
+   "k": {
+    "stage1_fma": 1279575,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 3938401,
+    "dup_stage2_fma": 2193526,
+    "stage3_fma": 150625,
+    "dup_stage3_fma": 100000,
+    "dup_contraction_flops": 4587052
+   },
+   "ratio_contraction": 14027.681957186544,
+   "ratio_total": 10285.13677130045,
+   "direction": "K>J"
+  },
+  {
+   "L": 16,
+   "n_batches": 6,
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "lp": 8,
+   "lq": 8,
+   "keys": {
+    "j": "coulomb/d0/(4,4|4,4)/b6/j/literal",
+    "k": "coulomb/d0/(4,4|4,4)/b6/k/literal"
+   },
+   "rows": {
+    "bra": 225,
+    "ket": 225,
+    "n_p": 165,
+    "n_q": 165
+   },
+   "recurrence": {
+    "flops": 6447,
+    "flops_one_batch": 5644,
+    "dup_flops": 803,
+    "intermediates": 2087,
+    "intermediates_one_batch": 1639,
+    "dup_intermediates": 448,
+    "boys_evaluations": 6,
+    "dup_boys_evaluations": 5
+   },
+   "j": {
+    "contraction_fma": 27225,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 969,
+    "dup_reduction_writes": 804,
+    "dup_contraction_flops": 804
+   },
+   "k": {
+    "stage1_fma": 1279575,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 4296013,
+    "dup_stage2_fma": 2551138,
+    "stage3_fma": 180055,
+    "dup_stage3_fma": 129430,
+    "dup_contraction_flops": 5361136
+   },
+   "ratio_contraction": 6668.07960199005,
+   "ratio_total": 3336.6141879278157,
+   "direction": "K>J"
+  },
+  {
+   "L": 16,
+   "n_batches": 9,
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "lp": 8,
+   "lq": 8,
+   "keys": {
+    "j": "coulomb/d0/(4,4|4,4)/b9/j/literal",
+    "k": "coulomb/d0/(4,4|4,4)/b9/k/literal"
+   },
+   "rows": {
+    "bra": 225,
+    "ket": 225,
+    "n_p": 165,
+    "n_q": 165
+   },
+   "recurrence": {
+    "flops": 7121,
+    "flops_one_batch": 5644,
+    "dup_flops": 1477,
+    "intermediates": 2441,
+    "intermediates_one_batch": 1639,
+    "dup_intermediates": 802,
+    "boys_evaluations": 9,
+    "dup_boys_evaluations": 8
+   },
+   "j": {
+    "contraction_fma": 27225,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 1293,
+    "dup_reduction_writes": 1128,
+    "dup_contraction_flops": 1128
+   },
+   "k": {
+    "stage1_fma": 1279575,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 4802509,
+    "dup_stage2_fma": 3057634,
+    "stage3_fma": 214420,
+    "dup_stage3_fma": 163795,
+    "dup_contraction_flops": 6442858
+   },
+   "ratio_contraction": 5711.75354609929,
+   "ratio_total": 2473.8330134357007,
+   "direction": "K>J"
+  },
+  {
+   "L": 16,
+   "n_batches": 12,
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "lp": 8,
+   "lq": 8,
+   "keys": {
+    "j": "coulomb/d0/(4,4|4,4)/b12/j/literal",
+    "k": "coulomb/d0/(4,4|4,4)/b12/k/literal"
+   },
+   "rows": {
+    "bra": 225,
+    "ket": 225,
+    "n_p": 165,
+    "n_q": 165
+   },
+   "recurrence": {
+    "flops": 7645,
+    "flops_one_batch": 5644,
+    "dup_flops": 2001,
+    "intermediates": 2716,
+    "intermediates_one_batch": 1639,
+    "dup_intermediates": 1077,
+    "boys_evaluations": 12,
+    "dup_boys_evaluations": 11
+   },
+   "j": {
+    "contraction_fma": 27225,
+    "dup_contraction_fma": 0,
+    "reduction_writes": 1603,
+    "dup_reduction_writes": 1438,
+    "dup_contraction_flops": 1438
+   },
+   "k": {
+    "stage1_fma": 1279575,
+    "dup_stage1_fma": 0,
+    "stage2_fma": 5568263,
+    "dup_stage2_fma": 3823388,
+    "stage3_fma": 257434,
+    "dup_stage3_fma": 206809,
+    "dup_contraction_flops": 8060394
+   },
+   "ratio_contraction": 5605.280945757997,
+   "ratio_total": 2344.400988659494,
+   "direction": "K>J"
+  }
+ ],
+ "refused": [
+  {
+   "L": 0,
+   "n_batches": 3,
+   "reason": "L = 0, n_batches = 3 (cut ()) leaves 2 batches with no targets: Y_{0,0}, Z_{0,0}. (0, 0, 0) is the only target with max component 0 and it belongs to x, so a y or z sub-batch covering only m = 0 is empty; an empty batch has no contraction to emit"
+  },
+  {
+   "L": 0,
+   "n_batches": 6,
+   "reason": "2 sub-batches per direction, but the max component only takes 1 values at L = 0"
+  },
+  {
+   "L": 0,
+   "n_batches": 9,
+   "reason": "3 sub-batches per direction, but the max component only takes 1 values at L = 0"
+  },
+  {
+   "L": 0,
+   "n_batches": 12,
+   "reason": "4 sub-batches per direction, but the max component only takes 1 values at L = 0"
+  },
+  {
+   "L": 1,
+   "n_batches": 6,
+   "reason": "L = 1, n_batches = 6 (cut (1,)) leaves 2 batches with no targets: Y_{0,0}, Z_{0,0}. (0, 0, 0) is the only target with max component 0 and it belongs to x, so a y or z sub-batch covering only m = 0 is empty; an empty batch has no contraction to emit"
+  },
+  {
+   "L": 1,
+   "n_batches": 9,
+   "reason": "3 sub-batches per direction, but the max component only takes 2 values at L = 1"
+  },
+  {
+   "L": 1,
+   "n_batches": 12,
+   "reason": "4 sub-batches per direction, but the max component only takes 2 values at L = 1"
+  },
+  {
+   "L": 2,
+   "n_batches": 6,
+   "reason": "L = 2, n_batches = 6 (cut (1,)) leaves 2 batches with no targets: Y_{0,0}, Z_{0,0}. (0, 0, 0) is the only target with max component 0 and it belongs to x, so a y or z sub-batch covering only m = 0 is empty; an empty batch has no contraction to emit"
+  },
+  {
+   "L": 2,
+   "n_batches": 9,
+   "reason": "L = 2, n_batches = 9 (cut (1, 2)) leaves 2 batches with no targets: Y_{0,0}, Z_{0,0}. (0, 0, 0) is the only target with max component 0 and it belongs to x, so a y or z sub-batch covering only m = 0 is empty; an empty batch has no contraction to emit"
+  },
+  {
+   "L": 2,
+   "n_batches": 12,
+   "reason": "4 sub-batches per direction, but the max component only takes 3 values at L = 2"
+  }
+ ],
+ "summary": {
+  "per_class": {
+   "0": {
+    "split_cells": [],
+    "directions": [],
+    "ratio_trend": "one split",
+    "verdict": "cannot separate"
+   },
+   "1": {
+    "split_cells": [
+     3
+    ],
+    "directions": [
+     "K>J"
+    ],
+    "ratio_trend": "one split",
+    "verdict": "supports"
+   },
+   "2": {
+    "split_cells": [
+     3
+    ],
+    "directions": [
+     "K>J"
+    ],
+    "ratio_trend": "one split",
+    "verdict": "supports"
+   },
+   "7": {
+    "split_cells": [
+     3,
+     6,
+     9,
+     12
+    ],
+    "directions": [
+     "K>J",
+     "K>J",
+     "K>J",
+     "K>J"
+    ],
+    "ratio_trend": "mixed",
+    "verdict": "supports"
+   },
+   "10": {
+    "split_cells": [
+     3,
+     6,
+     9,
+     12
+    ],
+    "directions": [
+     "K>J",
+     "K>J",
+     "K>J",
+     "K>J"
+    ],
+    "ratio_trend": "mixed",
+    "verdict": "supports"
+   },
+   "13": {
+    "split_cells": [
+     3,
+     6,
+     9,
+     12
+    ],
+    "directions": [
+     "K>J",
+     "K>J",
+     "K>J",
+     "K>J"
+    ],
+    "ratio_trend": "mixed",
+    "verdict": "supports"
+   },
+   "16": {
+    "split_cells": [
+     3,
+     6,
+     9,
+     12
+    ],
+    "directions": [
+     "K>J",
+     "K>J",
+     "K>J",
+     "K>J"
+    ],
+    "ratio_trend": "falling",
+    "verdict": "supports"
+   }
+  },
+  "subgrid": "supports",
+  "all": "supports"
+ }
+}
