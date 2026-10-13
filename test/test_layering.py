@@ -380,6 +380,31 @@ RULES: dict[str, Rule] = {
              "emission (#156)",
         device="the `Kernel` is arch-neutral",
         reference=_GROUND_TRUTH),
+    "count": _rule(
+        "kdup.py (#202): the duplicated-work count, J against K, per class "
+        "and batch count -- counted from `plan`'s batch partition, its "
+        "`PlanCost` and the `E` nonzero pattern, with no card, no compiler "
+        "and no built kernel. Not `analysis`: it must read `plan`, which "
+        "`analysis` may not; not `plan_analysis`: it reads no measured row. "
+        "It reads the plan and feeds nothing: no module imports it "
+        "(test/test_k_duplication.py)",
+        ("spec", "plan"),
+        kernel="the count is the arithmetic half of a claim settled BEFORE "
+               "any K kernel is built (#202): `k_spec` is restated and a "
+               "test pins the two equal",
+        ir="the count reads no instructions: a builder's output would make "
+           "it a measurement of one kernel, not of the plan",
+        e_fragment="the `E` nonzero pattern is restated from the plan's "
+                   "targets; the fragment is a builder",
+        interp="nothing here is run",
+        emit="nothing here is spelled",
+        measured="no toolchain: the count is recomputed in the fast tier",
+        measured_store="no measured row may shape the arithmetic half; "
+                       "`SUBGRID_LS` is restated and a test pins it",
+        literature="the count scores nothing: the claim is E3's (#207), and "
+                   "nothing here may move a floor",
+        ao="the AO layer is the K witness's home, not the plan's",
+        reference=_GROUND_TRUTH),
 }
 
 RULE_OF: dict[str, str] = {
@@ -444,6 +469,7 @@ RULE_OF: dict[str, str] = {
     "launch": "launch",
     "kernel_jab": "jab_builder",
     "kernel_dq": "dq_builder",
+    "kdup": "count",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -536,6 +562,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                "spec"),
     "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
+    # #202: the partition, the plan's cost and the targets; nothing built.
+    "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
