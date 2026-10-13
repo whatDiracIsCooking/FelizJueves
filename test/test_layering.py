@@ -861,3 +861,20 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_dq reaches {hit}"
     assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
+
+
+# ---------------------------------------------------------------------------
+# #233 (milestone 11): the one-electron assembly and the overlap matrix, both
+# under the `ao` rule. `ao.one_electron` is the symmetric loop `S`, `T` and
+# `V` share, from `ao.shell` alone; `ao.overlap` is `S` as the `t = 0` column
+# of the block `ao.pairs` already dresses.
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "ao.one_electron": "ao",
+    "ao.overlap": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.one_electron": ("ao.shell",),
+    "ao.overlap": ("ao.one_electron", "ao.pairs", "ao.shell"),
+}.items()}
