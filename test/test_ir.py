@@ -574,3 +574,16 @@ def test_the_raw_census_is_unchanged_by_fragments() -> None:
     # src/ constructs none (the census above is still zero).
     assert count_raw_in_src() == 0
     assert not any(isinstance(s, Raw) for s in walk(synthetic_inline_kernel().body))
+
+
+def test_the_raw_census_is_unchanged_by_the_k_kernel() -> None:
+    # #198: the exchange kernel inlines two fragments and moves the census by
+    # zero -- src/ still constructs no Raw, and its built Kernel (at L <= 2,
+    # milestone 10's rule) holds none, through either splice.
+    from felizjueves.kernel_k import build_k_kernel
+
+    assert (SRC / "felizjueves" / "kernel_k.py").exists()
+    assert count_raw_in_src() == 0
+    for am in [(0, 0, 0, 0), (1, 0, 0, 1), (1, 1, 0, 0)]:
+        assert not any(isinstance(s, Raw)
+                       for s in walk(build_k_kernel(am).body))

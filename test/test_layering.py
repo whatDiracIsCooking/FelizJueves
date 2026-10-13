@@ -405,6 +405,20 @@ RULES: dict[str, Rule] = {
                    "nothing here may move a floor",
         ao="the AO layer is the K witness's home, not the plan's",
         reference=_GROUND_TRUTH),
+    "k_builder": _rule(
+        "kernel_k.py (#198): the exchange kernel, `Target.K` -- the staged "
+        "contraction as IR: J's plan, schedule and recurrence region "
+        "(`plan`, `recurrence`), J's key split and launch mapping "
+        "(`kernel`), and two `E` block fragments inlined (`e_fragment`)",
+        ("spec", "plan", "ir", "recurrence", "e_fragment", "kernel"),
+        ao="`ao.k.k_quartet` is the witness the kernel is interpreted "
+           "against, and `ao.pairs.dress` the dressing it must not form: "
+           "importing either shares ancestry with its witness (#20); both "
+           "dressings arrive as host scalars",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
 }
 
 RULE_OF: dict[str, str] = {
@@ -470,6 +484,7 @@ RULE_OF: dict[str, str] = {
     "kernel_jab": "jab_builder",
     "kernel_dq": "dq_builder",
     "kdup": "count",
+    "kernel_k": "k_builder",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
@@ -564,6 +579,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
     "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
+    "kernel_k": ("e_fragment", "ir", "kernel", "plan.pipeline",
+                 "plan.schedule", "plan.targets", "recurrence", "spec"),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
