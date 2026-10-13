@@ -170,3 +170,29 @@ def test_the_pair_goldens_compile(hipcc, compile_device_source, name: str) -> No
     # Compile only: a device compiler needs no card.
     compile_device_source(hipcc, hip.emit(_pair_kernel(PAIR_GOLDENS[name]),
                                           GFX1200), link=False)
+
+
+# --- the two fj_boys spellings (#266) -----------------------------------------
+# A J unit keeps the narrow text, a V unit carries the wide one; both backends
+# write the same routine (test_emit_cuda.py holds the spelling itself).
+
+
+def test_a_j_unit_is_narrow_and_a_v_unit_wide() -> None:
+    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
+    from felizjueves.kernel_v import build_v_kernel
+
+    j = hip.emit(build_pq_kernel(L), GFX1200)
+    v = hip.emit(build_v_kernel((1, 1)), GFX1200)
+    assert BOYS_DEVICE in j and BOYS_DEVICE_WIDE not in j
+    assert BOYS_DEVICE_WIDE in v and BOYS_DEVICE not in v
+    for text in (j, v):
+        assert text.count("__device__ double fj_boys(int m, double T)") == 1
+
+
+@pytest.mark.hip
+def test_the_wide_spelling_compiles(hipcc, compile_device_source) -> None:
+    # Compile only (a device compiler needs no card), under #92's warning filter.
+    from felizjueves.kernel_v import build_v_kernel
+
+    compile_device_source(hipcc, hip.emit(build_v_kernel((1, 1)), GFX1200),
+                          link=False)

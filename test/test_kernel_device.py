@@ -52,6 +52,17 @@ THE TOLERANCES ARE DERIVED, NOT TUNED TO GREEN.
   series length (recomputed on the host by the same loop). No FMA can form
   inside it (no `a*b + c` appears), so the bound is the same on both cards.
   Measured worst: printed by the test (`-s`), and recorded in the PR.
+- the WIDE `fj_boys` (#266, `BOYS_DEVICE_WIDE`, what a `V` unit carries):
+  the same routine below T = 125 (held to the same bound) and the asymptote
+  from there, on m = 0..16 (the (ff) V tower is m <= 6) and T across
+  [0, 1.25e5] -- the tracked fixtures' largest V argument -- with the switch's
+  neighbourhood sampled on both sides down to the adjacent doubles. Above the
+  switch: `a = 0.5 sqrt(pi/T)` rounds a division and a square root (<= 2u),
+  and each of the m factors rounds a division and a product (<= 2u), so the
+  device is within (2m + 2) u of the asymptote, whose truncation from the
+  switch is under 4e-19 for m <= 40 (reference.boys); the per-point bound is
+  `(2m + 2) u + 4e-19 + 1e-14`. Every point is also held to one stated
+  tolerance, WIDE_BOYS_REL = 1e-13, which both branches' bounds sit under.
 
 SPLIT CELLS (#53), at the bottom: every `measured.SUBGRID` cell with
 n_batches > 1 runs as its whole atomic launch sequence and is held to the
@@ -97,7 +108,7 @@ from conftest import VRAM_PROBE, check_vram
 from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
-from felizjueves.emit._c import BOYS_DEVICE
+from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE, BOYS_SWITCH
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
@@ -498,6 +509,83 @@ def test_hip_fj_boys_matches_reference_boys(request, compile_device_source,
                                             run_device_binary, tmp_path) -> None:
     """The emitted Boys routine on the RX 9060 XT, against quadrature."""
     _run_boys("hip", request, compile_device_source, run_device_binary, tmp_path)
+
+
+# The wide spelling (#266): what a V unit carries. T across [0, 1.25e5] (the
+# tracked fixtures' largest V argument, HF/cc-pVTZ), both sides of the switch.
+WIDE_BOYS_REL = 1e-13  # the stated tolerance; both branches' bounds sit under
+ASYM_TRUNC = 4e-19  # Q(m+1/2, 125) for m <= 40 (reference.boys, measured)
+_SW = BOYS_SWITCH
+WIDE_BOYS_T = sorted({
+    *BOYS_T,
+    # the switch's neighbourhood, down to the adjacent doubles
+    100.0, 110.0, 120.0, 124.0, 124.9, 124.99, 124.999999,
+    math.nextafter(_SW, 0.0), _SW, math.nextafter(_SW, math.inf),
+    125.000001, 125.01, 125.1, 126.0, 130.0,
+    # every fixture's reach: H2O/STO-3G 858, 6-31G 3.6e4, cc-pVDZ 7.7e4,
+    # cc-pVTZ 1.25e5
+    709.0, 710.0, 858.0, 2000.0, 3.6e4, 7.7e4, 1.25e5,
+    *np.geomspace(500.0, 1.25e5, 40).tolist(),
+    *np.random.default_rng(266).uniform(0.0, 1.25e5, 40).tolist(),
+    *np.random.default_rng(267).uniform(100.0, 150.0, 20).tolist(),
+})
+
+
+def _wide_bound(m: int, T: float) -> float:
+    if T >= _SW:
+        return (2 * m + 2) * U + ASYM_TRUNC + BOYS_REF_ERR
+    return (3 * series_length(m, T) + 2) * U + BOYS_REF_ERR
+
+
+def _run_wide_boys(backend: str, request, compile_device_source,
+                   run_device_binary, tmp_path: Path) -> None:
+    tc = _toolchain(backend, request)
+    prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
+    binary = compile_device_source(tc, BOYS_HARNESS.format(
+        prologue=prologue, portable=PORTABLE, boys=BOYS_DEVICE_WIDE))
+    pts = [(m, T) for m in BOYS_M for T in WIDE_BOYS_T]
+    ms = np.array([m for m, _ in pts], dtype=np.float64)
+    Ts = np.array([T for _, T in pts], dtype=np.float64)
+    src, dst = tmp_path / "boys.in", tmp_path / "boys.out"
+    np.concatenate([[float(len(pts))], ms, Ts]).tofile(src)
+    run_device_binary(binary, str(src), str(dst), vram=backend)
+    got = np.fromfile(dst, dtype=np.float64)
+    assert got.shape == (len(pts),)
+    worst = {"below": (0.0, None), "above": (0.0, None)}
+    bad = []
+    for (m, T), g in zip(pts, got, strict=True):
+        ref = boys(m, T)
+        rel = abs(g - ref) / ref
+        bound = _wide_bound(m, T)
+        assert bound < WIDE_BOYS_REL
+        if not (math.isfinite(g) and rel <= bound):
+            bad.append((m, T, g, rel, bound))
+        side = "above" if T >= _SW else "below"
+        if rel > worst[side][0]:
+            worst[side] = (rel, (m, T))
+    print(f"\n{backend} wide fj_boys: {len(pts)} points, worst rel err "
+          f"{worst['below'][0]:.2e} at {worst['below'][1]} below the switch, "
+          f"{worst['above'][0]:.2e} at {worst['above'][1] or 'every point'} "
+          "from it")
+    assert not bad, f"wide fj_boys outside its bound at {bad[:5]}"
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_wide_fj_boys_matches_reference_boys(
+        request, compile_device_source, run_device_binary, tmp_path) -> None:
+    """The V units' fj_boys on the RTX 3080, T across [0, 1.25e5] (#266)."""
+    _run_wide_boys("cuda", request, compile_device_source, run_device_binary,
+                   tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_wide_fj_boys_matches_reference_boys(
+        request, compile_device_source, run_device_binary, tmp_path) -> None:
+    """The V units' fj_boys on the RX 9060 XT, T across [0, 1.25e5] (#266)."""
+    _run_wide_boys("hip", request, compile_device_source, run_device_binary,
+                   tmp_path)
 
 
 # ---------------------------------------------------------------------------

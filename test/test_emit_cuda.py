@@ -21,6 +21,7 @@ nothing about a number. Running the kernel on the card is the kernel tier's
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -233,3 +234,79 @@ def test_the_pair_goldens_compile(nvcc, compile_device_source, name: str) -> Non
     # Compile only: a device compiler needs no card.
     compile_device_source(nvcc, emit(_pair_kernel(PAIR_GOLDENS[name]), SM_86),
                           link=False)
+
+
+# --- the two fj_boys spellings (#266) -----------------------------------------
+# The kernel picks the spelling (`Kernel.wide_boys`), never its name: a J unit
+# keeps the narrow Kummer text its kernels.json `source_sha256` pins, and a V
+# unit carries the wide one (the series below T = 125, the asymptote from
+# there). Each carries `fj_boys` exactly once.
+
+FJ_BOYS_DEF = "__device__ double fj_boys(int m, double T)"
+
+
+def _boys_kernel(*, wide: bool) -> Kernel:
+    return Kernel("boys_probe", (
+        Param("T", Scalar.F64),
+        Param("out", Scalar.F64, array=True, intent=Intent.OUT),
+    ), (Assign(Index("out", (Lit(0),)), Call(Fn.BOYS, (Lit(3), Var("T")))),),
+        wide_boys=wide)
+
+
+def test_a_j_unit_carries_the_narrow_fj_boys_unchanged() -> None:
+    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
+
+    k = build_pq_kernel(L)
+    text = emit(k, SM_86)
+    assert not k.wide_boys
+    assert text.count(FJ_BOYS_DEF) == 1
+    assert BOYS_DEVICE in text and BOYS_DEVICE_WIDE not in text
+    assert "T >= 125.0" not in text
+
+
+def test_the_kernel_flag_picks_the_wide_spelling() -> None:
+    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
+
+    narrow, wide = (emit(_boys_kernel(wide=w), SM_86) for w in (False, True))
+    assert BOYS_DEVICE in narrow and BOYS_DEVICE_WIDE not in narrow
+    assert BOYS_DEVICE_WIDE in wide and BOYS_DEVICE not in wide
+    assert wide.count(FJ_BOYS_DEF) == 1 and narrow.count(FJ_BOYS_DEF) == 1
+    # only the routine differs: the kernel, and its call site, are the same
+    assert narrow.replace(BOYS_DEVICE, BOYS_DEVICE_WIDE) == wide
+    # a narrow kernel's repr is the pre-#266 one (hashes of it stay put)
+    n, w = _boys_kernel(wide=False), _boys_kernel(wide=True)
+    assert "wide_boys" not in repr(n) and repr(w).endswith(", wide_boys=True)")
+    assert n != w
+
+
+def test_the_wide_spelling_is_the_narrow_series_plus_one_branch() -> None:
+    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE, BOYS_SWITCH
+    from felizjueves.reference.boys import T_SWITCH
+
+    narrow_body = BOYS_DEVICE.split(FJ_BOYS_DEF + " {\n")[1]
+    wide_body = BOYS_DEVICE_WIDE.split(FJ_BOYS_DEF + " {\n")[1]
+    assert wide_body.endswith(narrow_body)  # the series, word for word
+    branch = wide_body[: -len(narrow_body)]
+    assert branch.startswith(f"    if (T >= {BOYS_SWITCH!r}) {{\n")
+    assert f"0.5 * sqrt({math.pi!r} / T)" in branch  # pi, round-tripped
+    assert "exp" not in branch and "pow" not in branch  # no T^(m+1/2) formed
+    assert BOYS_SWITCH == T_SWITCH  # the reference's switch, the same T
+
+
+def test_wide_boys_is_refused_where_it_widens_nothing() -> None:
+    out = Param("out", Scalar.F64, array=True, intent=Intent.OUT)
+    with pytest.raises(ValueError, match="never calls Fn.BOYS"):
+        Kernel("k", (out,), (Assign(Index("out", (Lit(0),)), Lit(1.0)),),
+               wide_boys=True)
+    with pytest.raises(TypeError, match="wide_boys must be a bool"):
+        Kernel("k", (Param("T", Scalar.F64), out),
+               (Assign(Index("out", (Lit(0),)),
+                       Call(Fn.BOYS, (Lit(0), Var("T")))),), wide_boys=1)
+
+
+@pytest.mark.cuda
+def test_the_wide_spelling_compiles(nvcc, compile_device_source) -> None:
+    # Compile only (a device compiler needs no card), under #92's warning filter.
+    from felizjueves.kernel_v import build_v_kernel
+
+    compile_device_source(nvcc, emit(build_v_kernel((1, 1)), SM_86), link=False)

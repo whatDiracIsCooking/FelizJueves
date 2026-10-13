@@ -562,6 +562,32 @@
         ]
       },
       "source": "[JEngine, v2, §5 and Alg. 3] (the cut and the sieve order the tuned plan re-chooses); issue #166"
+    },
+    {
+      "claim": "The device Boys function has TWO spellings (#266), and which one a unit carries is a property of its Kernel, never of its name or target: `emit/_c.py`'s BOYS_DEVICE, the Kummer series alone, in every J-chain unit ([p|q], and every split batch kernel), and BOYS_DEVICE_WIDE, the same series below T = 125 and the asymptote Gamma(m+1/2) / (2 T^(m+1/2)) from there, in the V units only (`Kernel.wide_boys`, set by kernel_v.build_v_kernel). J keeps the narrow one because its rows are pinned to its text; the two are to be unified when J is next re-measured.",
+      "mechanism": "(1) WHY V NEEDS THE WIDE ONE. The Kummer series is exp(-T) times a sum that grows like e^T, so it overflows double near T = 709 (the narrow routine is witnessed on [0, 500] only, test_kernel_device.py). A point-charge ket has no eta to damp T = zeta |P - C|^2: V reaches T = 858 on H2O/STO-3G and ~1.25e5 on HF/cc-pVTZ. (2) WHY J KEEPS THE NARROW ONE. data/measured/kernels.json pins every J unit's `source_sha256` to the text KERNEL_GEN_CMD writes, and its 196 rows (registers, spills, wall-clock) were measured on that text up to L = 16. Changing fj_boys in J would change every hash and invalidate every row, and re-measuring them needs compiles to L = 16, which milestone 11's L <= 8 cap forbids. The user decided (milestone 11 run) that the branch goes only into the units that need it. A quartet's T is damped by theta^2 = zeta eta / (zeta + eta), so the J fixtures stay inside the narrow domain (limits.json's on-card build record: witnessed on [0, 500], overflowing near 700). (3) THE SWITCH. The device switches at reference.boys's T_SWITCH = 125 so device and reference change branch at the same T. Measured for m <= 40 by the reference, the asymptote's relative truncation Q(m+1/2, T) is under 4e-19 from 125. Below it the Kummer branch's a priori forward bound is (3N + 2) u (N ~ 227 steps at T = 125, 7.6e-14), and its observed host-side error against the reference is ~1e-15 at T in [100, 125]. A lower switch would buy the series nothing it needs and would cost the asymptote its margin (at T = 50 the asymptote is already 1.8e-15 from the quadrature reference at m = 6, and 1.2e-8 at m = 16). So 125 is also the right device switch in double, and one switch serves every m up to 40. (4) THE FOLLOW-UP. Unify the two spellings (the wide routine everywhere, BOYS_DEVICE retired) the next time J is re-measured: regenerate every J golden, re-run `python -m felizjueves.measured --remeasure` to rewrite kernels.json's hashes and rows, and re-witness the wide routine on m <= 16 across the fixtures' T on both cards. Until then a J unit that meets T >= ~700 overflows; none of the tracked J fixtures does.",
+      "evidence": "test/test_emit_cuda.py and test_emit_hip.py: a J unit carries BOYS_DEVICE and not the wide text, a V unit the wide text and not BOYS_DEVICE, each fj_boys exactly once; the wide text is the narrow series word for word after one branch, its switch equal to reference.boys.T_SWITCH; wide_boys on a kernel that never calls Fn.BOYS is refused. test/test_emit_cli.py keeps the no-flag 37 units and every source_sha256 pin unchanged, and every J golden is byte-identical; only test/golden/{cuda,hip}/v_11.* changed. test/test_kernel_device.py::test_{cuda,hip}_wide_fj_boys_matches_reference_boys: the wide routine on each card against reference.boys for m = 0..16 (the (ff) V tower is m <= 6) on T across [0, 1.25e5], the switch's neighbourhood down to its adjacent doubles, per point within (3N + 2) u + 1e-14 below the switch and (2m + 2) u + 4e-19 + 1e-14 from it, and all under the stated tolerance 1e-13. Run 2026-10-13 (#266), kernel tier with the generator capped at --L 0..4 --pair-l 3, on the RTX 3080 (sm_86, nvcc 13.0) and the RX 9060 XT (gfx1200, hipcc / ROCm 7.2.4): 3383 points per card, worst relative error 2.55e-15 below the switch (m = 9, T = 116.5) on both cards, and 0 from it -- the asymptote is bitwise equal to reference.boys.asymptote at every point on both cards (the same operations in the same order: one division, one sqrt, then a division and a product per factor, each correctly rounded on both). The narrow routine's own witness is unchanged (worst 4.85e-15 sm_86, 4.66e-15 gfx1200).",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "subject": "two fj_boys spellings",
+        "narrow": "BOYS_DEVICE (Kummer series), every J-chain unit",
+        "wide": "BOYS_DEVICE_WIDE (Kummer below 125, asymptote from 125), the V units only",
+        "picked_by": "Kernel.wide_boys",
+        "switch": 125.0,
+        "witnessed_m": [
+          0,
+          16
+        ],
+        "witnessed_T": [
+          0.0,
+          125000.0
+        ],
+        "tolerance_rel": 1e-13,
+        "follow_up": "unify on the wide spelling when J is next re-measured (kernels.json's hashes and rows move)"
+      },
+      "source": "not [JEngine]: this repo's own device spelling of F_m(T) ([JEngine, v2, eqs. 13, 18] for the series); reference.boys (#122, #265) for the asymptote and the switch; issue #266"
     }
   ]
 }

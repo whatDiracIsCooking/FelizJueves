@@ -2,11 +2,22 @@
 // arch gfx1200, wavefront 32; fp64 throughout.
 #include <hip/hip_runtime.h>
 
-// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1)), the Kummer
-// series ([JEngine, v2, eqs. 13, 18]): every term positive, summed until it
-// no longer changes the sum. Its accuracy on reference.boys's domain is a
-// kernel-tier question, not this file's.
+// F_m(T), wide (#266): below T = 125 the Kummer series
+// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1))
+// ([JEngine, v2, eqs. 13, 18]), every term positive, summed until it no
+// longer changes the sum; from T = 125 (reference.boys's switch) the
+// asymptote Gamma(m+1/2) / (2 T^(m+1/2)) = 0.5 sqrt(pi/T) PROD_k (2k-1)/(2T),
+// whose relative truncation Q(m+1/2, T) is under 4e-19 there for m <= 40.
+// Its accuracy on reference.boys's domain is a kernel-tier question, not
+// this file's.
 __device__ double fj_boys(int m, double T) {
+    if (T >= 125.0) {
+        double a = 0.5 * sqrt(3.141592653589793 / T);
+        for (int k = 1; k <= m; ++k) {
+            a = a * ((double)(2 * k - 1) / (2.0 * T));
+        }
+        return a;
+    }
     double term = 1.0 / (double)(2 * m + 1);
     double sum = term;
     for (int k = 1; k < 4096; ++k) {
