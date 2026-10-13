@@ -84,6 +84,13 @@ is today's; `LaunchPlan.n_batches` records the argument either way, and each
 `tau` is carried, validated, for the consumer: it is the kernel's runtime
 argument, and the plan itself skips nothing.
 
+THE K PLAN (#204) sits BESIDE this one, in `launch_k.py`: it shares
+`PairRec`, the stable descending sort (`_sorted_desc`), the bound's value
+check (`_nonneg`) and the batch-count admission (`_batches_for`), and none
+of `ClassLaunch`, `LaunchPlan` or `launches`, which are J-shaped -- why is
+`launch_k`'s module docstring. Nothing here changed behaviour for it: the J
+plans are pinned by a fingerprint taken before #204 (test/test_launch.py).
+
 THE ORACLE (#142) -- the plan WALKED, in Python:
 
     walk(plan, basis, D, *, pq)                       -> ao.j.Screened
@@ -154,7 +161,9 @@ Bound = Callable[[float, int], float]  # (zeta, L) -> I_pair >= 0
 class PairRec:
     """One bra or ket index record (module docstring, "THE KEYS").
 
-    `i, j` the shell pair (`i >= j`), `prim` its primitive pair's index in
+    `i, j` the shell pair (`i >= j` in a J plan; any ORDERED pair in a K
+    plan, `launch_k`, where `G` is K's record bound and `key` the injected
+    ket key), `prim` its primitive pair's index in
     `ao.pairs.primitive_pairs(shells[i], shells[j])`, `L` the pair momentum,
     `G` the injected bound `I_pair`, `key` = `G * Dmax` for a ket, `G` for a
     bra.
@@ -257,12 +266,16 @@ def _batches_for(lp: int, lq: int, n_batches: int, *, strict: bool,
     return 1
 
 
-def _g(bound: Bound, zeta: float, L: int) -> float:
-    g = bound(zeta, L)
+def _nonneg(g: object, what: str) -> float:
+    """A bound's value, refused unless a finite float >= 0 -- shared with the
+    K plan (`launch_k`, #204), whose bound has another signature."""
     if not (isinstance(g, int | float) and math.isfinite(g) and g >= 0.0):
-        raise ValueError(f"bound({zeta!r}, {L}) = {g!r} is not a finite "
-                         "float >= 0")
+        raise ValueError(f"{what} = {g!r} is not a finite float >= 0")
     return float(g)
+
+
+def _g(bound: Bound, zeta: float, L: int) -> float:
+    return _nonneg(bound(zeta, L), f"bound({zeta!r}, {L})")
 
 
 def _no_pq(p, q, PQv, theta) -> float:
