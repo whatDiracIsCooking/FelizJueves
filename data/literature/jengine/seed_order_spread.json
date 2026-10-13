@@ -1,0 +1,1092 @@
+{
+ "schema": 1,
+ "about": "How much the sieve's seed order moves the plan here, and what this repo chose where [JEngine, v2, Alg. 3] is silent (#160). One file answers both: `summary` and `rows` are the seed order's spread over this repo's own family of 58 seed-order RULES, per cell of the Tables 1-3 grid; `open_choices` names the three choices Alg. 3 leaves open, what plan/sieve.py does for each, and the test that pins it. `orders`, `summary` and `rows` are recomputed by test/test_plan_recovery.py (the L = 7..9 cells and the summary in the fast tier, every cell in the slow test_the_widened_seed_order_search) and rewritten by `PYTHONPATH=src uv run python test/test_plan_recovery.py --write`, which keeps every other key as written by hand.",
+ "search_space": "plan/recovery.py seed_orders(widened=True): the 26 orders of #13's family (hermite_targets order, its reverse, and the 24 sorts by |r| then the components) and #108's 32 rules (cost, out-degree, sieve-greedy, direction-major, max/mid, each with two tie-breaks), listed in `orders`. Each is a rule over r and L, never a per-cell fit. Every cell is planned by recovery.recovered_plan: MILD DAG per batch on the recovered cut (two-ended nearest fill, per direction; the literal partition at 1 and 3 batches), then the sieve seeded in that order, with plan/sieve.py's fixed choices for lines 12 and 16. This is NOT the paper's space, which it does not state: a wider or different family can only widen or move these spreads.",
+ "definition": "Per cell (L, n_batches) of L = 7..16 x {1, 3, 6, 9} and per quantity (flops: Table 1's total FLOPs; max_intermediates: Table 2's maximum intermediates per batch, plan/cost.py, unchanged): min and max over the 58 orders; spread_percent = 100 * (max - min) / min, rounded to 3 places; literal = the hermite_targets order, the seed the shipped plan uses; printed = the table's cell; distinct = how many values the 58 orders reach. summary.cells_over_paper lists the cells whose spread exceeds paper_percent; printed_outside_range the cells whose printed value no order in the family reaches or brackets.",
+ "paper": {
+  "source": "[JEngine, v2, §4.1]",
+  "statement": "the sieve's result depends on the order the targets are seeded in, by up to ~2% in FLOPs and node count, so the order is not optimised and is not given",
+  "percent": 2,
+  "space": "not stated"
+ },
+ "verdict": "OVER THIS SPACE THE SPREAD IS WIDER THAN ~2% AT SOME CELLS, and that names the space, not a defect in the paper. FLOPs: up to 3.706% (at (16, 1)), over 2% at 9 of 40 cells, every one a 1- or 3-batch cell; level (one value under all 58) at 9 cells, all at L <= 11 and none at one batch. Max intermediates: up to 2.946% (at (12, 1)), over 2% at 5 cells, level at 15. The spread narrows as the batch count rises (a split batch holds fewer targets, so fewer orders differ): no split cell's FLOP spread is wider than its one-batch cell's. Where the paper's ~2% holds over its own, unstated orders, it is a statement about that space; over ours it is exceeded at the large one-batch cells and holds everywhere else. The literal order lies inside the range everywhere (it is one of the 58). The printed max intermediates lie inside every cell's range; the printed FLOPs lie BELOW every order's at 6 cells ((13, 3), (15, 1), (15, 3), (16, 1), (16, 3), (16, 6)), so at those cells no seed order of this family, alone, reaches the paper's FLOPs. limits.json carries this as a StructuralLimit (subject 'seed-order spread'); claims.json's jengine/sieve-underspecified stays unverifiable.",
+ "open_choices": [
+  {
+   "choice": "(i) the seeding order",
+   "alg3_line": 4,
+   "paper": "§4.1: the result depends on it by up to ~2%; the order is not given",
+   "here": "hermite_targets order (sieve._target_order with seed_order=None), fixed so the output is deterministic and golden files are stable. No rule recovers the paper's (#108, rules-only doctrine); the spread over 58 rules is this file's summary",
+   "pinned_by": "test/test_plan_recovery.py::test_the_seed_order_default_is_the_literal_sieve",
+   "limit": "limits.json, subject 'seed-order spread'"
+  },
+  {
+   "choice": "(ii) the re-expansion direction",
+   "alg3_line": 12,
+   "paper": "a child of i must be re-expandable 'in another direction' out of nodes already present; which one, when several qualify, is not said",
+   "here": "the qualifying direction with the smallest reduced component r_d' (the cheapest by plan/cost.py's 1/2/3 FLOPs; r_d' = 1 has one parent), ties by x, y, z order: MILD's own criterion restricted to the directions the graph allows (sieve._reexpansion). In the literal one-batch plans the choice never arises below L = 10 (at most one other direction qualifies); at L = 10 it arises 3 times",
+   "pinned_by": "test/test_plan_sieve.py::test_reexpansion_takes_the_smallest_component_ties_by_axis, test/test_plan_sieve.py::test_reexpansion_end_to_end_takes_the_cheaper_direction and test/test_plan_sieve.py::test_reexpansion_is_first_contested_at_l10",
+   "limit": "limits.json, subject 'sieve re-expansion direction'"
+  },
+  {
+   "choice": "(iii) how far deletion reaches",
+   "alg3_line": 16,
+   "paper": "on deleting i, also delete 'any unnecessary parents of i'",
+   "here": "an upward sweep that deletes every non-target node left with no child, transitively: i's parents, as Alg. 3 says, and also each re-parented child's OTHER old parent ([r - 2d] when i was [r - 1d], or the reverse), which is not a parent of i and which the re-parenting can orphan just as surely (sieve.sieve's sweep)",
+   "pinned_by": "test/test_plan_sieve.py::test_deletion_sweeps_the_childs_other_old_parent and test/test_plan_sieve.py::test_every_node_is_still_needed",
+   "limit": "limits.json, subject 'sieve deletion reach'"
+  }
+ ],
+ "orders": [
+  "hermite",
+  "hermite-reversed",
+  "|r| asc, then xyz asc",
+  "|r| asc, then xyz desc",
+  "|r| desc, then xyz asc",
+  "|r| desc, then xyz desc",
+  "|r| asc, then xzy asc",
+  "|r| asc, then xzy desc",
+  "|r| desc, then xzy asc",
+  "|r| desc, then xzy desc",
+  "|r| asc, then yxz asc",
+  "|r| asc, then yxz desc",
+  "|r| desc, then yxz asc",
+  "|r| desc, then yxz desc",
+  "|r| asc, then yzx asc",
+  "|r| asc, then yzx desc",
+  "|r| desc, then yzx asc",
+  "|r| desc, then yzx desc",
+  "|r| asc, then zxy asc",
+  "|r| asc, then zxy desc",
+  "|r| desc, then zxy asc",
+  "|r| desc, then zxy desc",
+  "|r| asc, then zyx asc",
+  "|r| asc, then zyx desc",
+  "|r| desc, then zyx asc",
+  "|r| desc, then zyx desc",
+  "cost asc, ties hermite",
+  "cost desc, ties hermite",
+  "out-degree asc, ties hermite",
+  "out-degree desc, ties hermite",
+  "prunable desc, ties hermite",
+  "prunable asc, ties hermite",
+  "direction-major xyz, ties hermite",
+  "direction-major xzy, ties hermite",
+  "direction-major yxz, ties hermite",
+  "direction-major yzx, ties hermite",
+  "direction-major zxy, ties hermite",
+  "direction-major zyx, ties hermite",
+  "+max/+mid, ties hermite",
+  "+max/-mid, ties hermite",
+  "-max/+mid, ties hermite",
+  "-max/-mid, ties hermite",
+  "cost asc, ties reversed",
+  "cost desc, ties reversed",
+  "out-degree asc, ties reversed",
+  "out-degree desc, ties reversed",
+  "prunable desc, ties reversed",
+  "prunable asc, ties reversed",
+  "direction-major xyz, ties reversed",
+  "direction-major xzy, ties reversed",
+  "direction-major yxz, ties reversed",
+  "direction-major yzx, ties reversed",
+  "direction-major zxy, ties reversed",
+  "direction-major zyx, ties reversed",
+  "+max/+mid, ties reversed",
+  "+max/-mid, ties reversed",
+  "-max/+mid, ties reversed",
+  "-max/-mid, ties reversed"
+ ],
+ "summary": {
+  "cells": 40,
+  "paper_percent": 2,
+  "flops": {
+   "max_spread_percent": 3.706,
+   "at": [
+    [
+     16,
+     1
+    ]
+   ],
+   "cells_over_paper": [
+    [
+     10,
+     1
+    ],
+    [
+     12,
+     1
+    ],
+    [
+     13,
+     1
+    ],
+    [
+     14,
+     1
+    ],
+    [
+     14,
+     3
+    ],
+    [
+     15,
+     1
+    ],
+    [
+     15,
+     3
+    ],
+    [
+     16,
+     1
+    ],
+    [
+     16,
+     3
+    ]
+   ],
+   "cells_level": 9,
+   "printed_outside_range": [
+    [
+     13,
+     3
+    ],
+    [
+     15,
+     1
+    ],
+    [
+     15,
+     3
+    ],
+    [
+     16,
+     1
+    ],
+    [
+     16,
+     3
+    ],
+    [
+     16,
+     6
+    ]
+   ]
+  },
+  "max_intermediates": {
+   "max_spread_percent": 2.946,
+   "at": [
+    [
+     12,
+     1
+    ]
+   ],
+   "cells_over_paper": [
+    [
+     9,
+     1
+    ],
+    [
+     10,
+     1
+    ],
+    [
+     12,
+     1
+    ],
+    [
+     15,
+     1
+    ],
+    [
+     16,
+     3
+    ]
+   ],
+   "cells_level": 15,
+   "printed_outside_range": []
+  }
+ },
+ "rows": [
+  {
+   "cell": [
+    7,
+    1
+   ],
+   "flops": {
+    "min": 424,
+    "max": 425,
+    "spread_percent": 0.236,
+    "literal": 425,
+    "printed": 424,
+    "distinct": 2
+   },
+   "max_intermediates": {
+    "min": 125,
+    "max": 126,
+    "spread_percent": 0.8,
+    "literal": 126,
+    "printed": 125,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    7,
+    3
+   ],
+   "flops": {
+    "min": 425,
+    "max": 425,
+    "spread_percent": 0.0,
+    "literal": 425,
+    "printed": 425,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 51,
+    "max": 51,
+    "spread_percent": 0.0,
+    "literal": 51,
+    "printed": 51,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    7,
+    6
+   ],
+   "flops": {
+    "min": 506,
+    "max": 506,
+    "spread_percent": 0.0,
+    "literal": 506,
+    "printed": 506,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 39,
+    "max": 39,
+    "spread_percent": 0.0,
+    "literal": 39,
+    "printed": 39,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    7,
+    9
+   ],
+   "flops": {
+    "min": 560,
+    "max": 560,
+    "spread_percent": 0.0,
+    "literal": 560,
+    "printed": 560,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 40,
+    "max": 40,
+    "spread_percent": 0.0,
+    "literal": 40,
+    "printed": 40,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    8,
+    1
+   ],
+   "flops": {
+    "min": 629,
+    "max": 632,
+    "spread_percent": 0.477,
+    "literal": 631,
+    "printed": 629,
+    "distinct": 4
+   },
+   "max_intermediates": {
+    "min": 182,
+    "max": 185,
+    "spread_percent": 1.648,
+    "literal": 184,
+    "printed": 182,
+    "distinct": 4
+   }
+  },
+  {
+   "cell": [
+    8,
+    3
+   ],
+   "flops": {
+    "min": 641,
+    "max": 644,
+    "spread_percent": 0.468,
+    "literal": 642,
+    "printed": 641,
+    "distinct": 4
+   },
+   "max_intermediates": {
+    "min": 74,
+    "max": 75,
+    "spread_percent": 1.351,
+    "literal": 75,
+    "printed": 74,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    8,
+    6
+   ],
+   "flops": {
+    "min": 743,
+    "max": 743,
+    "spread_percent": 0.0,
+    "literal": 743,
+    "printed": 743,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 54,
+    "max": 54,
+    "spread_percent": 0.0,
+    "literal": 54,
+    "printed": 54,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    8,
+    9
+   ],
+   "flops": {
+    "min": 872,
+    "max": 872,
+    "spread_percent": 0.0,
+    "literal": 872,
+    "printed": 872,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 47,
+    "max": 47,
+    "spread_percent": 0.0,
+    "literal": 47,
+    "printed": 47,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    9,
+    1
+   ],
+   "flops": {
+    "min": 907,
+    "max": 919,
+    "spread_percent": 1.323,
+    "literal": 908,
+    "printed": 907,
+    "distinct": 9
+   },
+   "max_intermediates": {
+    "min": 263,
+    "max": 269,
+    "spread_percent": 2.281,
+    "literal": 264,
+    "printed": 263,
+    "distinct": 7
+   }
+  },
+  {
+   "cell": [
+    9,
+    3
+   ],
+   "flops": {
+    "min": 926,
+    "max": 929,
+    "spread_percent": 0.324,
+    "literal": 927,
+    "printed": 926,
+    "distinct": 4
+   },
+   "max_intermediates": {
+    "min": 105,
+    "max": 106,
+    "spread_percent": 0.952,
+    "literal": 106,
+    "printed": 105,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    9,
+    6
+   ],
+   "flops": {
+    "min": 1085,
+    "max": 1085,
+    "spread_percent": 0.0,
+    "literal": 1085,
+    "printed": 1085,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 82,
+    "max": 82,
+    "spread_percent": 0.0,
+    "literal": 82,
+    "printed": 82,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    9,
+    9
+   ],
+   "flops": {
+    "min": 1214,
+    "max": 1214,
+    "spread_percent": 0.0,
+    "literal": 1214,
+    "printed": 1214,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 71,
+    "max": 71,
+    "spread_percent": 0.0,
+    "literal": 71,
+    "printed": 71,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    10,
+    1
+   ],
+   "flops": {
+    "min": 1252,
+    "max": 1279,
+    "spread_percent": 2.157,
+    "literal": 1254,
+    "printed": 1252,
+    "distinct": 16
+   },
+   "max_intermediates": {
+    "min": 367,
+    "max": 375,
+    "spread_percent": 2.18,
+    "literal": 368,
+    "printed": 367,
+    "distinct": 8
+   }
+  },
+  {
+   "cell": [
+    10,
+    3
+   ],
+   "flops": {
+    "min": 1277,
+    "max": 1292,
+    "spread_percent": 1.175,
+    "literal": 1278,
+    "printed": 1277,
+    "distinct": 11
+   },
+   "max_intermediates": {
+    "min": 139,
+    "max": 140,
+    "spread_percent": 0.719,
+    "literal": 140,
+    "printed": 139,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    10,
+    6
+   ],
+   "flops": {
+    "min": 1472,
+    "max": 1475,
+    "spread_percent": 0.204,
+    "literal": 1473,
+    "printed": 1472,
+    "distinct": 4
+   },
+   "max_intermediates": {
+    "min": 95,
+    "max": 95,
+    "spread_percent": 0.0,
+    "literal": 95,
+    "printed": 95,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    10,
+    9
+   ],
+   "flops": {
+    "min": 1669,
+    "max": 1669,
+    "spread_percent": 0.0,
+    "literal": 1669,
+    "printed": 1669,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 95,
+    "max": 95,
+    "spread_percent": 0.0,
+    "literal": 95,
+    "printed": 95,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    11,
+    1
+   ],
+   "flops": {
+    "min": 1684,
+    "max": 1711,
+    "spread_percent": 1.603,
+    "literal": 1694,
+    "printed": 1684,
+    "distinct": 18
+   },
+   "max_intermediates": {
+    "min": 494,
+    "max": 502,
+    "spread_percent": 1.619,
+    "literal": 496,
+    "printed": 494,
+    "distinct": 7
+   }
+  },
+  {
+   "cell": [
+    11,
+    3
+   ],
+   "flops": {
+    "min": 1727,
+    "max": 1754,
+    "spread_percent": 1.563,
+    "literal": 1738,
+    "printed": 1727,
+    "distinct": 10
+   },
+   "max_intermediates": {
+    "min": 186,
+    "max": 187,
+    "spread_percent": 0.538,
+    "literal": 187,
+    "printed": 186,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    11,
+    6
+   ],
+   "flops": {
+    "min": 2015,
+    "max": 2018,
+    "spread_percent": 0.149,
+    "literal": 2016,
+    "printed": 2015,
+    "distinct": 4
+   },
+   "max_intermediates": {
+    "min": 143,
+    "max": 143,
+    "spread_percent": 0.0,
+    "literal": 143,
+    "printed": 143,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    11,
+    9
+   ],
+   "flops": {
+    "min": 2252,
+    "max": 2252,
+    "spread_percent": 0.0,
+    "literal": 2252,
+    "printed": 2252,
+    "distinct": 1
+   },
+   "max_intermediates": {
+    "min": 110,
+    "max": 110,
+    "spread_percent": 0.0,
+    "literal": 110,
+    "printed": 110,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    12,
+    1
+   ],
+   "flops": {
+    "min": 2218,
+    "max": 2286,
+    "spread_percent": 3.066,
+    "literal": 2230,
+    "printed": 2221,
+    "distinct": 28
+   },
+   "max_intermediates": {
+    "min": 645,
+    "max": 664,
+    "spread_percent": 2.946,
+    "literal": 652,
+    "printed": 645,
+    "distinct": 18
+   }
+  },
+  {
+   "cell": [
+    12,
+    3
+   ],
+   "flops": {
+    "min": 2261,
+    "max": 2294,
+    "spread_percent": 1.46,
+    "literal": 2282,
+    "printed": 2261,
+    "distinct": 11
+   },
+   "max_intermediates": {
+    "min": 242,
+    "max": 245,
+    "spread_percent": 1.24,
+    "literal": 243,
+    "printed": 242,
+    "distinct": 4
+   }
+  },
+  {
+   "cell": [
+    12,
+    6
+   ],
+   "flops": {
+    "min": 2609,
+    "max": 2618,
+    "spread_percent": 0.345,
+    "literal": 2611,
+    "printed": 2609,
+    "distinct": 7
+   },
+   "max_intermediates": {
+    "min": 168,
+    "max": 168,
+    "spread_percent": 0.0,
+    "literal": 168,
+    "printed": 168,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    12,
+    9
+   ],
+   "flops": {
+    "min": 2873,
+    "max": 2876,
+    "spread_percent": 0.104,
+    "literal": 2874,
+    "printed": 2873,
+    "distinct": 4
+   },
+   "max_intermediates": {
+    "min": 142,
+    "max": 142,
+    "spread_percent": 0.0,
+    "literal": 142,
+    "printed": 142,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    13,
+    1
+   ],
+   "flops": {
+    "min": 2872,
+    "max": 2962,
+    "spread_percent": 3.134,
+    "literal": 2887,
+    "printed": 2872,
+    "distinct": 35
+   },
+   "max_intermediates": {
+    "min": 842,
+    "max": 856,
+    "spread_percent": 1.663,
+    "literal": 845,
+    "printed": 843,
+    "distinct": 15
+   }
+  },
+  {
+   "cell": [
+    13,
+    3
+   ],
+   "flops": {
+    "min": 2926,
+    "max": 2983,
+    "spread_percent": 1.948,
+    "literal": 2948,
+    "printed": 2922,
+    "distinct": 25
+   },
+   "max_intermediates": {
+    "min": 305,
+    "max": 311,
+    "spread_percent": 1.967,
+    "literal": 308,
+    "printed": 309,
+    "distinct": 7
+   }
+  },
+  {
+   "cell": [
+    13,
+    6
+   ],
+   "flops": {
+    "min": 3360,
+    "max": 3375,
+    "spread_percent": 0.446,
+    "literal": 3369,
+    "printed": 3362,
+    "distinct": 14
+   },
+   "max_intermediates": {
+    "min": 232,
+    "max": 233,
+    "spread_percent": 0.431,
+    "literal": 232,
+    "printed": 233,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    13,
+    9
+   ],
+   "flops": {
+    "min": 3764,
+    "max": 3773,
+    "spread_percent": 0.239,
+    "literal": 3767,
+    "printed": 3764,
+    "distinct": 9
+   },
+   "max_intermediates": {
+    "min": 186,
+    "max": 186,
+    "spread_percent": 0.0,
+    "literal": 186,
+    "printed": 186,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    14,
+    1
+   ],
+   "flops": {
+    "min": 3634,
+    "max": 3757,
+    "spread_percent": 3.385,
+    "literal": 3655,
+    "printed": 3634,
+    "distinct": 36
+   },
+   "max_intermediates": {
+    "min": 1060,
+    "max": 1079,
+    "spread_percent": 1.792,
+    "literal": 1060,
+    "printed": 1071,
+    "distinct": 19
+   }
+  },
+  {
+   "cell": [
+    14,
+    3
+   ],
+   "flops": {
+    "min": 3719,
+    "max": 3796,
+    "spread_percent": 2.07,
+    "literal": 3751,
+    "printed": 3719,
+    "distinct": 26
+   },
+   "max_intermediates": {
+    "min": 386,
+    "max": 392,
+    "spread_percent": 1.554,
+    "literal": 389,
+    "printed": 390,
+    "distinct": 7
+   }
+  },
+  {
+   "cell": [
+    14,
+    6
+   ],
+   "flops": {
+    "min": 4224,
+    "max": 4251,
+    "spread_percent": 0.639,
+    "literal": 4232,
+    "printed": 4225,
+    "distinct": 17
+   },
+   "max_intermediates": {
+    "min": 269,
+    "max": 270,
+    "spread_percent": 0.372,
+    "literal": 269,
+    "printed": 270,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    14,
+    9
+   ],
+   "flops": {
+    "min": 4691,
+    "max": 4700,
+    "spread_percent": 0.192,
+    "literal": 4693,
+    "printed": 4691,
+    "distinct": 7
+   },
+   "max_intermediates": {
+    "min": 201,
+    "max": 201,
+    "spread_percent": 0.0,
+    "literal": 201,
+    "printed": 201,
+    "distinct": 1
+   }
+  },
+  {
+   "cell": [
+    15,
+    1
+   ],
+   "flops": {
+    "min": 4546,
+    "max": 4700,
+    "spread_percent": 3.388,
+    "literal": 4573,
+    "printed": 4540,
+    "distinct": 41
+   },
+   "max_intermediates": {
+    "min": 1320,
+    "max": 1347,
+    "spread_percent": 2.045,
+    "literal": 1328,
+    "printed": 1329,
+    "distinct": 21
+   }
+  },
+  {
+   "cell": [
+    15,
+    3
+   ],
+   "flops": {
+    "min": 4616,
+    "max": 4729,
+    "spread_percent": 2.448,
+    "literal": 4664,
+    "printed": 4613,
+    "distinct": 27
+   },
+   "max_intermediates": {
+    "min": 478,
+    "max": 485,
+    "spread_percent": 1.464,
+    "literal": 482,
+    "printed": 482,
+    "distinct": 7
+   }
+  },
+  {
+   "cell": [
+    15,
+    6
+   ],
+   "flops": {
+    "min": 5231,
+    "max": 5270,
+    "spread_percent": 0.746,
+    "literal": 5232,
+    "printed": 5231,
+    "distinct": 13
+   },
+   "max_intermediates": {
+    "min": 360,
+    "max": 364,
+    "spread_percent": 1.111,
+    "literal": 360,
+    "printed": 363,
+    "distinct": 5
+   }
+  },
+  {
+   "cell": [
+    15,
+    9
+   ],
+   "flops": {
+    "min": 5785,
+    "max": 5798,
+    "spread_percent": 0.225,
+    "literal": 5791,
+    "printed": 5786,
+    "distinct": 12
+   },
+   "max_intermediates": {
+    "min": 279,
+    "max": 280,
+    "spread_percent": 0.358,
+    "literal": 280,
+    "printed": 280,
+    "distinct": 2
+   }
+  },
+  {
+   "cell": [
+    16,
+    1
+   ],
+   "flops": {
+    "min": 5639,
+    "max": 5848,
+    "spread_percent": 3.706,
+    "literal": 5644,
+    "printed": 5633,
+    "distinct": 44
+   },
+   "max_intermediates": {
+    "min": 1633,
+    "max": 1655,
+    "spread_percent": 1.347,
+    "literal": 1639,
+    "printed": 1647,
+    "distinct": 19
+   }
+  },
+  {
+   "cell": [
+    16,
+    3
+   ],
+   "flops": {
+    "min": 5718,
+    "max": 5882,
+    "spread_percent": 2.868,
+    "literal": 5763,
+    "printed": 5712,
+    "distinct": 32
+   },
+   "max_intermediates": {
+    "min": 583,
+    "max": 595,
+    "spread_percent": 2.058,
+    "literal": 584,
+    "printed": 591,
+    "distinct": 13
+   }
+  },
+  {
+   "cell": [
+    16,
+    6
+   ],
+   "flops": {
+    "min": 6438,
+    "max": 6469,
+    "spread_percent": 0.482,
+    "literal": 6447,
+    "printed": 6426,
+    "distinct": 17
+   },
+   "max_intermediates": {
+    "min": 402,
+    "max": 407,
+    "spread_percent": 1.244,
+    "literal": 402,
+    "printed": 405,
+    "distinct": 6
+   }
+  },
+  {
+   "cell": [
+    16,
+    9
+   ],
+   "flops": {
+    "min": 7104,
+    "max": 7143,
+    "spread_percent": 0.549,
+    "literal": 7121,
+    "printed": 7105,
+    "distinct": 19
+   },
+   "max_intermediates": {
+    "min": 324,
+    "max": 325,
+    "spread_percent": 0.309,
+    "literal": 324,
+    "printed": 325,
+    "distinct": 2
+   }
+  }
+ ]
+}

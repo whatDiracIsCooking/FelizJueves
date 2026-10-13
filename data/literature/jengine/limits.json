@@ -285,6 +285,72 @@
         "printed_values_stand": "Nothing in [JEngine, v2] is scored against this; the record says how far this repo's generated chain reaches. No scoreboard, no rule: board and rule are null."
       },
       "source": "[JEngine, v2, §3.3]"
+    },
+    {
+      "claim": "The sieve's seed order moves the result by up to ~2% ([JEngine, v2, §4.1]). Over this repo's space -- the 58 seed-order rules of plan/recovery.py seed_orders(widened=True), on the recovered cut, the 40 cells of the Tables 1-3 grid -- it moves FLOPs by up to 3.706% (at (16, 1); over 2% at 9 cells, all 1- or 3-batch) and max intermediates per batch by up to 2.946% (at (12, 1); over 2% at 5 cells). That figure belongs to this space; it does not dispute the paper's.",
+      "mechanism": "The paper does not state the orders its ~2% ranges over, so no space here can be shown to be its space. A spread is a max minus a min over a family, so it can only grow as the family widens: 58 rules of a named family is a lower bound on the spread over every order (|targets|! at one batch), and a different family may land anywhere. The spread narrows with the batch count because a split batch holds fewer targets, so fewer orders differ; the one-batch cells at large L are where it passes 2%. #174 carries the searched-space version of the same question; this record and its file are the 58-rule one.",
+      "evidence": "data/literature/jengine/seed_order_spread.json: per cell, min, max, spread, the literal (hermite) order's value, the printed value and the count of distinct values, for Table 1's FLOPs and Table 2's max intermediates; recomputed by test/test_plan_recovery.py (L = 7..9 and the summary fast, every cell in the slow test_the_widened_seed_order_search), the finding pinned by test_the_spread_exceeds_the_papers_figure_over_our_space. The printed max intermediates lie inside every cell's range; the printed FLOPs lie BELOW every order's at 6 cells, so there no seed order of this family alone reaches the paper's FLOPs.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": "jengine/sieve-underspecified",
+        "subject": "seed-order spread",
+        "record": "data/literature/jengine/seed_order_spread.json",
+        "paper_percent": 2,
+        "orders": 58,
+        "cells": 40,
+        "max_spread_percent": {
+          "flops": 3.706,
+          "max_intermediates": 2.946
+        },
+        "at": {
+          "flops": [[16, 1]],
+          "max_intermediates": [[12, 1]]
+        },
+        "cells_over_paper": {
+          "flops": 9,
+          "max_intermediates": 5
+        },
+        "printed_outside_range": {
+          "flops": [[13, 3], [15, 1], [15, 3], [16, 1], [16, 3], [16, 6]],
+          "max_intermediates": []
+        },
+        "printed_values_stand": "The paper's ~2% is taken as published, over its own unstated space. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, §4.1]"
+    },
+    {
+      "claim": "Which other direction a child of i is re-expanded in when several qualify (Alg. 3, line 12): the paper requires only that one exist. plan/sieve.py takes the qualifying direction with the smallest reduced component r_d', ties by x, y, z order -- MILD's own criterion restricted to the directions the graph allows. A reconstruction choice, not a recovered input.",
+      "mechanism": "The text constrains the direction only by availability (every parent already in I \\ {i}); it names no rule among several available ones, and no table isolates it, since every printed cell is also moved by the unstated seed order. So no number here can say which rule the paper used. The choice matters only where several directions qualify: in the literal one-batch plans that first happens at L = 10 (3 times) and never below. It is not a lever and its alternative is not measured (#160's hazard: name and pin).",
+      "evidence": "plan/sieve.py's docstring, TWO CHOICES, 1; sieve._reexpansion. Pinned by test/test_plan_sieve.py::test_reexpansion_takes_the_smallest_component_ties_by_axis (the rule, on hand-made cases), test_reexpansion_end_to_end_takes_the_cheaper_direction (every contested re-expansion in the shipped plans at (10, 1), (12, 3) and (16, 9) follows it) and test_reexpansion_is_first_contested_at_l10.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": "jengine/sieve-underspecified",
+        "subject": "sieve re-expansion direction",
+        "alg3_line": 12,
+        "here": "smallest r_d', ties x, y, z",
+        "first_contested_one_batch_L": 10,
+        "record": "data/literature/jengine/seed_order_spread.json",
+        "printed_values_stand": "Alg. 3 is taken as published; the record says which reading this repo implements where it is silent. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, Alg. 3]"
+    },
+    {
+      "claim": "How far deleting i reaches (Alg. 3, line 16, 'any unnecessary parents of i'). plan/sieve.py sweeps upward, transitively, deleting every non-target node left with no child: i's parents, as the text says, and also each re-parented child's OTHER old parent ([r - 2d] when i was [r - 1d], or the reverse), which is not a parent of i. A reconstruction choice that reads past the letter of the line.",
+      "mechanism": "Re-parenting a child away from direction d drops BOTH of its old d-parents, and only one of them is i. Read literally, line 16 would leave the other in the DAG with no child -- a node nothing needs, costing an intermediate and its FLOPs. The paper's tables cannot say which reading it ran, for the same reason as line 12: the seed order moves every printed cell too. Not a lever; the literal reading is not measured.",
+      "evidence": "plan/sieve.py's docstring, TWO CHOICES, 2; sieve.sieve's sweep. Pinned by test/test_plan_sieve.py::test_deletion_sweeps_the_childs_other_old_parent (a hand-made DAG in which the other old parent is not a parent of i, and is deleted) and test_every_node_is_still_needed (over the whole grid, every node of a sieved DAG is reached from a target).",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": "jengine/sieve-underspecified",
+        "subject": "sieve deletion reach",
+        "alg3_line": 16,
+        "here": "every childless non-target node, transitively, including a re-parented child's other old parent",
+        "record": "data/literature/jengine/seed_order_spread.json",
+        "printed_values_stand": "Alg. 3 is taken as published; the record says which reading this repo implements. No scoreboard, no rule: board and rule are null."
+      },
+      "source": "[JEngine, v2, Alg. 3]"
     }
   ]
 }
