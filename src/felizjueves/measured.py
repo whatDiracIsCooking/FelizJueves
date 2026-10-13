@@ -10,6 +10,8 @@
     python -m felizjueves.measured --lever-ab recycle   # #55's comparison
     python -m felizjueves.measured --remeasure --subgrid --lever no-sieve
     python -m felizjueves.measured --lever-ab no-sieve  # #162's, + verdict
+    python -m felizjueves.measured --remeasure --subgrid --lever tuned
+    python -m felizjueves.measured --lever-ab tuned     # #163's, + verdict
     python -m felizjueves.measured --remeasure --asym   # #113's study cells
     python -m felizjueves.measured --asym-verdict       # #113's comparison
     python -m felizjueves.measured --roofline           # #112's verdicts
@@ -160,10 +162,12 @@ from felizjueves.measured_store import (
 from felizjueves.measured_store import (
     MEASUREMENTS,
     NO_SIEVE,
+    NOT_MEASURABLE,
     REPO,
     STORE,
     SUBGRID,
     SUBGRID_LS,
+    TUNED,
     UNMEASURED,
     Measured,
     ab_cells,
@@ -179,6 +183,7 @@ from felizjueves.measured_store import (
     save,
     sieve_verdict,
     split_kernel_key,
+    tuned_verdict,
 )
 from felizjueves.measured_store import ROOFLINE as ROOFLINE
 from felizjueves.measured_store import (
@@ -908,7 +913,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="print #60's 9-against-12 comparison per arch and L")
     ap.add_argument("--lever", default=None,
                     help="with --subgrid: the A/B cells of this lever "
-                         "(#55; ab_cells: no-sieve adds L = 11, #162)")
+                         "(#55; ab_cells: no-sieve adds L = 11, #162; "
+                         "tuned drops its NOT_MEASURABLE cells, #163)")
     ap.add_argument("--lever-ab", default=None, metavar="LEVER",
                     help="print #55's A/B of LEVER against literal, per arch "
                          "and cell")
@@ -941,6 +947,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 grid = cells = ASYM_CELLS
             if (args.subgrid or args.asym) and args.n_batches:
                 cells = [s for s in grid if s.n_batches in args.n_batches]
+            if args.lever:  # #163: said, never silently skipped
+                for s, why in NOT_MEASURABLE.get(args.lever, {}).items():
+                    print(f"measured: {s.key()} NOT MEASURABLE -- {why}",
+                          file=sys.stderr)
             remeasure(names, cells, args.j, args.store)
         except (RuntimeError, ValueError) as e:
             print(f"measured: {e}", file=sys.stderr)
@@ -980,6 +990,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                           f"{sieve_verdict(got, arch).upper()}")
                 except KeyError as e:
                     print(f"{arch}: the sieve cannot be judged ({e})")
+            if args.lever_ab == TUNED:  # #163's declared verdict, per arch
+                for s, why in NOT_MEASURABLE[TUNED].items():
+                    print(f"{arch} {s.key()}: NOT MEASURABLE -- {why}")
+                try:
+                    print(f"{arch}: the search "
+                          f"{tuned_verdict(got, arch).upper()}")
+                except KeyError as e:
+                    print(f"{arch}: the search cannot be judged ({e})")
         return 0
     if args.asym_verdict:
         ms = 1e6

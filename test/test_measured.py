@@ -32,7 +32,7 @@ from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
 from felizjueves.lower import LEVERS, RECYCLE
 from felizjueves.plan.batching import in_batch, partition
 from felizjueves.plan.dag import build
-from felizjueves.plan.pipeline import plan
+from felizjueves.plan.pipeline import TUNED, plan, tuned_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Spec, is_batch_count
@@ -126,11 +126,14 @@ STORE = json.loads(measured_store.STORE.read_text())
 ROWS = measured_store.load()
 
 # Every Spec a row may be keyed on: the one-batch classes, the subgrid, and
-# the subgrid's recycle-lever arm (#55), #113's arm, and #162's sieve arm.
+# the subgrid's recycle-lever arm (#55), #113's arm, #162's sieve arm, and
+# #163's tuned arm (the subgrid less its NOT_MEASURABLE 12-batch cells).
 RECYCLE_CELLS = measured_store.lever_cells(RECYCLE)
 SIEVE_CELLS = measured_store.SIEVE_CELLS
+TUNED_CELLS = measured_store.TUNED_CELLS
 SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
-                              *RECYCLE_CELLS, *asym.ASYM_CELLS, *SIEVE_CELLS)}
+                              *RECYCLE_CELLS, *asym.ASYM_CELLS, *SIEVE_CELLS,
+                              *TUNED_CELLS)}
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -489,10 +492,11 @@ def test_the_read_path_filters_the_real_store() -> None:
     nv = measured_store.rows(arch=SM_86)
     # the one-batch classes L = 0..16, plus the subgrid's split cells, plus
     # the recycle arm of every subgrid cell (#55), plus #113's asym cells,
-    # plus #162's no-sieve arm (the subgrid and L = 11)
+    # plus #162's no-sieve arm (the subgrid and L = 11), plus #163's tuned
+    # arm (the subgrid less its four 12-batch cells)
     split = sum(s.n_batches > 1 for s in measured_store.SUBGRID)
     assert len(nv) == (17 + split + len(RECYCLE_CELLS) + len(asym.ASYM_CELLS)
-                       + len(SIEVE_CELLS))
+                       + len(SIEVE_CELLS) + len(TUNED_CELLS))
     assert measured_store.rows(arch="sm_86") == nv
     assert measured_store.rows(spec=spec, arch=GFX1200).keys() == {
         k for k in got if "@gfx1200/" in k}
@@ -2011,8 +2015,6 @@ RECYCLE_AB_SHA256 = (
 
 
 def test_the_declared_arms_and_their_kinds() -> None:
-    from felizjueves.plan.pipeline import TUNED
-
     assert dict(measured_store.ARMS) == {RECYCLE: measured_store.LOWERING,
                                          NO_SIEVE: measured_store.PLAN,
                                          TUNED: measured_store.PLAN}
@@ -2248,7 +2250,8 @@ PRE_SIEVE_SHA256 = (
 
 
 def test_the_sieve_ab_added_rows_and_moved_none() -> None:
-    old = {k: v for k, v in STORE["rows"].items() if NO_SIEVE not in k}
+    old = {k: v for k, v in STORE["rows"].items()
+           if NO_SIEVE not in k and f"/{TUNED}@" not in k}  # #163's, below
     assert len(old) == PRE_SIEVE_ROWS
     got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
     assert got == PRE_SIEVE_SHA256
@@ -2393,3 +2396,252 @@ def test_the_sieve_ab_is_what_the_rows_say() -> None:
     for arch in ARCHS:
         assert measured_store.sieve_verdict(ROWS, arch) == "not shown"
     assert not measured_store.sieve_may_leave_the_default(ROWS)
+
+
+# --- #163: the tuned arm on both cards ----------------------------------------
+
+TUNED_LEVER_CELLS = measured_store.lever_cells(TUNED)
+NOT_MEASURABLE = measured_store.NOT_MEASURABLE[TUNED]
+
+# The 164 rows the store held before #163 (00e872c): sha256 of their records,
+# json.dumps(sort_keys=True). #163 only ADDS rows; this pins that every row
+# it found -- the literal controls, #55's and #162's arms -- is byte-identical.
+PRE_TUNED_ROWS = 164
+PRE_TUNED_SHA256 = (
+    "ea45730e45f8f028e0585079d7eacac00083917b94d141581826081b1429e112")
+
+# Where the search chose what the literal plan does, the tuned text IS the
+# literal text (#161's eight unchanged cells, three of them on the subgrid).
+TUNED_EQUALS_LITERAL = {(7, 3), (7, 6), (10, 9)}
+# Where the recorded cut is not the literal (minimax) one, the batch kernels
+# themselves are other kernels, named by their other ranges: on the subgrid,
+# L = 7 at 9 batches only. Everywhere else the tuned arm moves only the seed
+# order, inside the same batch kernels.
+TUNED_OTHER_CUT = {(7, 9)}
+
+
+def test_the_tuned_spelling_is_the_plan_layers() -> None:
+    assert measured_store.TUNED == TUNED
+    assert measured_store.ARMS[TUNED] == measured_store.PLAN
+
+
+def test_the_not_measurable_cells_are_exactly_the_ones_the_lever_refuses(
+        ) -> None:
+    """Every `lever_cells(TUNED)` cell is planned: the ones `tuned_plan`
+    refuses for want of a recorded choice are exactly NOT_MEASURABLE, each
+    with that reason, and every other one builds (no cell silently lost)."""
+    refused = {}
+    for spec in TUNED_LEVER_CELLS:
+        try:
+            tuned_plan(spec)
+        except ValueError as e:
+            refused[spec] = str(e)
+    assert set(refused) == set(NOT_MEASURABLE)
+    assert {(s.total_am, s.n_batches) for s in NOT_MEASURABLE} == {
+        (L, 12) for L in measured_store.SUBGRID_LS}
+    for spec, err in refused.items():
+        assert "no recorded choice" in err, err
+        assert NOT_MEASURABLE[spec].startswith("no recorded choice")
+        assert "never a fall back to the literal plan" in NOT_MEASURABLE[spec]
+    with pytest.raises(ValueError, match="no recorded choice"):
+        build_pq_kernels(next(iter(NOT_MEASURABLE)))
+
+
+def test_the_tuned_cells_are_the_subgrid_less_the_not_measurable() -> None:
+    assert TUNED_CELLS == measured_store.ab_cells(TUNED)
+    assert TUNED_CELLS == tuple(s for s in TUNED_LEVER_CELLS
+                                if s not in NOT_MEASURABLE)
+    assert len(TUNED_CELLS) == 16 and len(NOT_MEASURABLE) == 4
+    assert all(s.levers == (TUNED,) for s in TUNED_CELLS)
+    assert {measured_store.arm_kind(s) for s in TUNED_CELLS} == {"plan"}
+    # no other arm loses a cell to NOT_MEASURABLE (#55's and #162's unchanged)
+    assert set(measured_store.NOT_MEASURABLE) == {TUNED}
+    assert measured_store.tuned_ab.__defaults__ == (None,)
+
+
+def test_the_tuned_verdict_is_declared_before_its_rows() -> None:
+    doc = measured_store.__doc__
+    assert "THE TUNED ARM" in doc
+    assert "DECLARED BEFORE ANY `tuned` ROW EXISTED" in doc
+    cells = TUNED_CELLS[:3]
+    same, win, loss = (1000, 500), (900, 450), (1100, 550)
+    mixed = (900, 550)
+
+    def verdict(*arms) -> str:
+        return measured_store.tuned_verdict(
+            _sieve_store(dict(zip(cells, arms, strict=True))), "sm_86", cells)
+
+    # the sieve's sign reversed: the search is SUPPORTED by a tuned WIN
+    assert verdict(win, same, same) == measured_store.SUPPORTED
+    assert verdict(win, win, win) == measured_store.SUPPORTED
+    assert verdict(loss, same, same) == measured_store.CONTRADICTED
+    assert verdict(same, same, same) == measured_store.NOT_SHOWN
+    assert verdict(win, loss, same) == measured_store.NOT_SHOWN
+    assert verdict(mixed, win, win) == measured_store.NOT_SHOWN
+    got = measured_store.tuned_ab(_sieve_store(dict(zip(
+        cells, (loss, win, mixed), strict=True))), "sm_86", cells)
+    assert [c.verdict for c in got.values()] == ["loss", "win", "mixed"]
+    assert {c.kind for c in got.values()} == {"plan"}
+    assert {c.lever for c in got.values()} == {TUNED}
+    allwin = _sieve_store(dict.fromkeys(cells, win))
+    assert measured_store.tuned_may_become_the_default(allwin, cells,
+                                                       ("sm_86",))
+    assert not measured_store.tuned_may_become_the_default(
+        _sieve_store(dict(zip(cells, (win, win, same), strict=True))), cells,
+        ("sm_86",))
+    with pytest.raises(KeyError):  # gfx1200 not recorded: not judged
+        measured_store.tuned_may_become_the_default(allwin, cells)
+    with pytest.raises(ValueError, match="not a tuned arm"):
+        measured_store.tuned_ab(allwin, "sm_86", NO_SIEVE_CELLS[:1])
+    with pytest.raises(ValueError, match="not measurable -- no recorded"):
+        measured_store.tuned_ab(allwin, "sm_86", tuple(NOT_MEASURABLE)[:1])
+    with pytest.raises(KeyError):  # a cell not recorded is not judged
+        measured_store.tuned_verdict(_sieve_store({cells[0]: win}), "sm_86")
+
+
+def test_the_tuned_ab_added_rows_and_moved_none() -> None:
+    old = {k: v for k, v in STORE["rows"].items() if f"/{TUNED}@" not in k}
+    assert len(old) == PRE_TUNED_ROWS
+    got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
+    assert got == PRE_TUNED_SHA256
+    new = {k for k in STORE["rows"] if f"/{TUNED}@" in k}
+    assert new == {MeasuredKey(s, a, ROWS[k].toolchain).key()
+                   for s in TUNED_CELLS for a in (SM_86, GFX1200)
+                   for k in measured_store.rows(spec=replace(s, levers=()),
+                                                arch=a, store=ROWS)}
+    assert len(new) == 2 * len(TUNED_CELLS) == 32
+
+
+def test_a_not_measurable_cell_has_no_row_and_no_literal_stand_in() -> None:
+    """The four 12-batch cells are recorded as not measurable, never as a
+    row -- least of all one of literal text under the tuned key."""
+    for spec in NOT_MEASURABLE:
+        for a in ARCHS:
+            assert not measured_store.rows(spec=spec, arch=a, store=ROWS)
+
+
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("spec", TUNED_CELLS, ids=lambda s: s.key())
+def test_every_tuned_cell_is_compiled_and_timed_against_a_control(
+        spec, arch) -> None:
+    """#163's acceptance: a tuned row per measurable cell and card,
+    compiled, timed behind the gate with its same-session literal control,
+    the card's state known at every phase and the discarded phases counted."""
+    (row,) = measured_store.rows(spec=spec, arch=arch, store=ROWS).values()
+    (lit,) = measured_store.rows(spec=replace(spec, levers=()), arch=arch,
+                                 store=ROWS).values()
+    assert row.arm_kind == measured_store.PLAN
+    assert STORE["rows"][MeasuredKey(spec, ARCHS[arch], row.toolchain).key()][
+        "arm_kind"] == "plan"
+    assert row.toolchain == lit.toolchain and row.gpu == lit.gpu != "ABSENT"
+    cell = (spec.total_am, spec.n_batches)
+    assert (row.kernel != lit.kernel) is (cell in TUNED_OTHER_CUT)
+    assert len(row.kernel.split(",")) == len(lit.kernel.split(",")) \
+        == spec.n_batches
+    # the text moved exactly where the search chose other than literal
+    same = cell in TUNED_EQUALS_LITERAL
+    assert (row.source_sha256 == lit.source_sha256) is same
+    assert row.registers is not None and row.compile_s is not None
+    assert row.spill_store is not None and row.spill_load is not None
+    assert _timed(row) and row.repeats == 31, (
+        f"{spec.key()}@{arch}: FJ_WALLCLOCK_LEVER=tuned sweep not recorded")
+    w = row.raw
+    for p in ("wallclock:control:", "wallclock:control:near:"):
+        assert w[f"{p}min_ns"] <= w[f"{p}q1_ns"] <= w[f"{p}median_ns"] \
+            <= w[f"{p}q3_ns"] <= w[f"{p}max_ns"], (spec.key(), p)
+        assert w[f"{p}cpu_busy_permille_before"] <= 100, (spec.key(), p)
+    for p in ("wallclock:", "wallclock:near:", "wallclock:control:",
+              "wallclock:control:near:"):
+        for f in ("gpu_util_before", "gpu_util_after"):
+            v = w[p + f]
+            assert type(v) is int and 0 <= v <= GPU_BUSY_MAX, (spec.key(), p, f)
+    d = w["wallclock:gate_discarded_phases"]
+    assert type(d) is int and d >= 0
+    assert w["wallclock:J_bitwise_repeatable"] in (0, 1)
+
+
+def test_the_cli_prints_the_tuned_ab_its_verdict_and_the_unmeasurable(
+        capsys) -> None:
+    assert measured.main(["--lever-ab", TUNED]) == 0
+    out = capsys.readouterr().out
+    for a in ARCHS:
+        assert (f"{a}: the search "
+                f"{measured_store.tuned_verdict(ROWS, a).upper()}") in out
+        for spec in NOT_MEASURABLE:
+            assert f"{a} {spec.key()}: NOT MEASURABLE -- no recorded choice" \
+                in out
+    assert out.count(f" -> {TUNED} ") == 2 * len(TUNED_CELLS)
+
+
+def test_the_remeasure_cli_names_the_unmeasurable_cells(capsys,
+                                                        monkeypatch) -> None:
+    seen = []
+    monkeypatch.setattr(measured, "remeasure",
+                        lambda names, cells, j, store: seen.append(list(cells)))
+    assert measured.main(["--remeasure", "--subgrid", "--lever", TUNED]) == 0
+    assert seen == [list(TUNED_CELLS)]
+    err = capsys.readouterr().err
+    for spec in NOT_MEASURABLE:
+        assert f"{spec.key()} NOT MEASURABLE -- no recorded choice" in err
+
+
+TUNED_PARAMS = [
+    pytest.param(s, id=s.key(),
+                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
+    for s in TUNED_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("spec", TUNED_PARAMS)
+def test_nvcc_still_reports_the_tuned_cells(spec, nvcc, tmp_path) -> None:
+    _recheck_cell("cuda", spec, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("spec", TUNED_PARAMS)
+def test_hipcc_still_reports_the_tuned_cells(spec, hipcc, tmp_path) -> None:
+    _recheck_cell("hip", spec, tmp_path)
+
+
+# The tuned A/B as the rule read the tracked rows (#163): (arch, L, n_batches)
+# -> (wide sign, near sign) of tuned against its same-session literal
+# control. Pinned as the declared rule (measured_store, THE TUNED ARM) said
+# it, so a re-recording that moves it is seen; #165/#166 read it.
+#
+# The three cells whose tuned text IS the literal text (TUNED_EQUALS_LITERAL)
+# are the A/B's own null: on gfx1200 two of them, (7,3) and (7,6), read as
+# SLOWER -- identical code judged apart by the rule, i.e. the protocol's noise
+# floor on that card at L = 7 (#55 saw the same on identical machine code).
+TUNED_AB: dict[tuple[str, int, int], tuple[str, str]] = {
+    **{(a, s.total_am, s.n_batches): ("neutral", "neutral")
+       for a in ARCHS for s in TUNED_CELLS},
+    ("sm_86", 7, 9): ("slower", "neutral"),
+    ("sm_86", 16, 1): ("neutral", "faster"),
+    ("sm_86", 16, 3): ("faster", "faster"),
+    ("sm_86", 16, 6): ("faster", "faster"),
+    ("sm_86", 16, 9): ("neutral", "faster"),
+    ("gfx1200", 7, 3): ("slower", "slower"),
+    ("gfx1200", 7, 6): ("neutral", "slower"),
+    ("gfx1200", 7, 9): ("slower", "slower"),
+    ("gfx1200", 10, 1): ("neutral", "faster"),
+    ("gfx1200", 10, 3): ("neutral", "slower"),
+    ("gfx1200", 13, 1): ("neutral", "slower"),
+    ("gfx1200", 16, 3): ("neutral", "faster"),
+    ("gfx1200", 16, 6): ("neutral", "faster"),
+    ("gfx1200", 16, 9): ("neutral", "faster"),
+}
+TUNED_VERDICT = {"sm_86": "not shown", "gfx1200": "not shown"}
+
+
+def test_the_tuned_ab_is_what_the_rows_say() -> None:
+    got = {}
+    for arch in ARCHS:
+        for c in measured_store.tuned_ab(ROWS, arch).values():
+            got[arch, c.L, c.n_batches] = (c.wide_sign, c.near_sign)
+    assert got == TUNED_AB
+    # WINs at L = 16 and LOSSes at L = 7 (and on gfx1200 at L = 10 and 13)
+    # on both cards: the declared rule says NOT SHOWN on each, and the
+    # literal plan stays the default
+    for arch in ARCHS:
+        assert measured_store.tuned_verdict(ROWS, arch) == TUNED_VERDICT[arch]
+    assert not measured_store.tuned_may_become_the_default(ROWS)

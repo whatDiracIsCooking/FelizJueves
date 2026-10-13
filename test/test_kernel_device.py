@@ -788,6 +788,43 @@ def test_hip_unsieved_j_p_matches_the_reference(spec, request,
                  tmp_path)
 
 
+# --- the tuned arm (#163): the same pin, the searched plan ----------------------
+#
+# `tuned` builds the searched board's recorded cut and seed order (#161, a PLAN
+# arm): a different DAG of the same class, the same targets, Boys values and
+# contraction, so it is held to the SAME J_REL pin through the same launch
+# sequence. Every measurable cell of the A/B (`measured_store.TUNED_CELLS`:
+# the subgrid less its four 12-batch cells, which have no recorded choice and
+# are `NOT_MEASURABLE`), on both cards, before any of them is timed.
+
+TUNED_CELLS = [pytest.param(s, id=f"L{s.total_am}-b{s.n_batches}-tuned")
+               for s in measured_store.TUNED_CELLS]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", TUNED_CELLS)
+def test_cuda_tuned_j_p_matches_the_reference(spec, request,
+                                              compile_device_source,
+                                              run_device_binary,
+                                              tmp_path) -> None:
+    """A tuned cell's launch sequence on the RTX 3080, against the oracle."""
+    _run_batched("cuda", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("spec", TUNED_CELLS)
+def test_hip_tuned_j_p_matches_the_reference(spec, request,
+                                             compile_device_source,
+                                             run_device_binary,
+                                             tmp_path) -> None:
+    """A tuned cell's launch sequence on the RX 9060 XT, against the oracle."""
+    _run_batched("hip", spec, request, compile_device_source, run_device_binary,
+                 tmp_path)
+
+
 # --- the asymmetric split (#113): the same pin, a batch list the generator ----
 # --- refuses -------------------------------------------------------------------
 #
@@ -863,7 +900,9 @@ def test_hip_asym_j_p_matches_the_reference(cell, request,
 # too (counted, retaken), each cell is written as soon as it is timed, and
 # FJ_WALLCLOCK_RESUME=1 skips the cells whose lever row already carries its
 # same-session control -- so a session the gate stopped resumes, and every
-# A/B pair is still timed back to back.
+# A/B pair is still timed back to back. #163's "tuned" is a plan arm swept
+# the same way over `ab_cells("tuned")`; its NOT_MEASURABLE cells (no
+# recorded choice) are printed with their reason, never timed as literal.
 #
 # FJ_WALLCLOCK_ASYM=1 (optional) sweeps #113's asymmetric study cells,
 # `asym.ASYM_CELLS`, instead: each cell's two nearest legal neighbours
@@ -1049,6 +1088,9 @@ def _wallclock(backend: str, request, compile_device_source,
               f"skipped")
         if not sweep:
             pytest.skip(f"{WALLCLOCK_RESUME}: every cell already timed")
+    for s, why in (measured_store.NOT_MEASURABLE.get(lever, {}).items()
+                   if lever else ()):
+        print(f"{s.key()}: NOT MEASURABLE -- {why}")
     print(f"{WALLCLOCK_BATCHES}={only or '(all)'} {WALLCLOCK_LEVER}="
           f"{lever or '(none)'} {WALLCLOCK_ASYM}={int(study)}: "
           f"{len(sweep)} cells")
@@ -1250,6 +1292,12 @@ def _wallclock(backend: str, request, compile_device_source,
         if lever == measured_store.NO_SIEVE:  # #159's declared verdict, this arch
             print(f"  {arch.name}: the sieve "
                   f"{measured_store.sieve_verdict(store, arch.name).upper()}")
+        if lever == measured_store.TUNED:  # #163's declared verdict, this arch
+            try:
+                print(f"  {arch.name}: the search "
+                      f"{measured_store.tuned_verdict(store, arch.name).upper()}")
+            except KeyError as e:  # a resumed sweep, not every cell timed yet
+                print(f"  {arch.name}: the search cannot be judged yet ({e})")
     if study:
         print("\n#113, the asymmetric split against its same-session "
               "neighbours:")
