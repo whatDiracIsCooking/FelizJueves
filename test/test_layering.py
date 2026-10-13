@@ -1053,3 +1053,37 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     for banned in (_REF, "ao", "interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_v reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #241 (milestone 11): the one-electron launch, BESIDE `ClassLaunch` in
+# `launch.py`. Its records come from the AO layer (`ao.pairs.pair_list` and
+# `primitive_pairs`, `ao.j.epair`), and its walker reproduces the host's
+# `S`, `T` and `V` from the plan with the host's own axis pieces
+# (`ao.hermite.e_axis`, `ao.kinetic.kinetic_axis`), the host's placement
+# (`ao.one_electron.matrix`) and nucleus check (`ao.potential`). Still
+# under rule "launch": `ao` was already allowed, `one_centre` is injected,
+# and no builder of S, T or V is imported -- the plan restates their keys
+# (test/test_launch.py pins them equal), it does not build kernels.
+# ---------------------------------------------------------------------------
+
+EDGES["launch"] = EDGES["launch"] | frozenset(
+    ("ao.hermite", "ao.kinetic", "ao.one_electron", "ao.potential"))
+
+
+def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
+    # #241's acceptance ("no kernel is launched or interpreted in this
+    # module"), TRANSITIVELY: nothing `launch` reaches is an S, T or V
+    # builder, the interpreter, or reference/.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["launch"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"ao.one_electron", "ao.potential"} <= seen
+    for banned in (_REF, "interp", "kernel_s", "kernel_t", "kernel_v"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"launch reaches {hit}"
