@@ -824,14 +824,36 @@ class Kernel:
     Validated on construction: parameter names are unique, every `Break` sits
     inside a `For`, and every non-unit `Factor` a `Weighted` uses is bound by
     name to a `Param` or `Decl`. Frozen and hashable.
+
+    `wide_boys` (#266) is a property of the kernel, not of a call: the domain
+    its `Fn.BOYS` must hold on. False (the default, every J-chain kernel) is
+    the narrow domain a quartet's `T` stays in; True asks the writer for the
+    wide spelling, valid out to the asymptote's range, which a point-charge
+    ket (`Target.V`) needs because nothing damps its `T`. The meaning of
+    `F_m(T)` is the same either way -- only how far it must hold changes --
+    so the interpreter, whose Boys is injected, does not read it. A kernel
+    that sets it without calling `Fn.BOYS` is refused: the flag would widen
+    nothing.
     """
 
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
+    wide_boys: bool = False
+
+    def __repr__(self) -> str:
+        # The dataclass's own spelling, with `wide_boys` shown only when set:
+        # every kernel that existed before #266 keeps its repr byte for byte,
+        # and with it every hash taken of one (test_launch.py's J plans).
+        wide = ", wide_boys=True" if self.wide_boys else ""
+        return (f"Kernel(name={self.name!r}, params={self.params!r}, "
+                f"body={self.body!r}{wide})")
 
     def __post_init__(self) -> None:
         _ident(self.name, "Kernel name")
+        if type(self.wide_boys) is not bool:
+            raise TypeError(f"Kernel wide_boys must be a bool, not "
+                            f"{self.wide_boys!r}")
         params = _tuple(self, "params", self.params)
         for p in params:
             if not isinstance(p, Param):
@@ -871,3 +893,9 @@ class Kernel:
                                 f"Factor {t.g.name} needs a Param or Decl "
                                 f"named {need!r}"
                             )
+        if self.wide_boys and not any(
+                isinstance(e, Call) and e.fn is Fn.BOYS
+                for s in walk(self.body) for root in _exprs_of(s)
+                if root is not None for e in _subexprs(root)):
+            raise ValueError(f"Kernel {self.name!r} sets wide_boys but never "
+                             "calls Fn.BOYS")

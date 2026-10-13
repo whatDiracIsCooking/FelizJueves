@@ -39,6 +39,14 @@ accurate enough is a numerical question, and numerical questions are the
 kernel tier's (#28), against `reference.boys`, which this module does not
 import.
 
+It has two spellings, and the KERNEL picks one, never its name or target
+(#266): a kernel with `wide_boys` set gets `BOYS_DEVICE_WIDE` (the Kummer
+series below T = 125, the asymptote from there), every other kernel the
+narrow `BOYS_DEVICE`. The narrow text is what every J-chain unit carries and
+what `data/measured/kernels.json` pins by `source_sha256`, so it does not
+change; data/literature/jengine/limits.json records the two spellings and
+the follow-up that unifies them when J is next re-measured.
+
 Names starting `fj_` are the writer's own and are refused in a kernel.
 """
 
@@ -112,6 +120,49 @@ __device__ double fj_boys(int m, double T) {
 }
 """
 
+# The wide spelling (#266), for a kernel with `wide_boys` set (`Target.V`: a
+# point-charge ket has no eta to damp T, which reaches ~1.25e5 on the tracked
+# fixtures, and BOYS_DEVICE's exp(-T) * sum overflows near T = 709). The same
+# routine, the same name and signature, with one branch: from T_SWITCH = 125
+# (reference.boys's switch, kept equal so device and reference change branch
+# at the same T) the asymptote, formed in reference.boys.asymptote's order --
+# 0.5 sqrt(pi/T) times (2k-1)/(2T), k = 1..m, no power of T ever formed. Below
+# the switch it is BOYS_DEVICE's Kummer series, word for word. Its accuracy
+# against reference.boys is the kernel tier's question (#266's witness). The
+# switch and pi are spelled as literals below; test_emit_cuda.py holds them to
+# BOYS_SWITCH (== reference.boys.T_SWITCH) and repr(math.pi).
+BOYS_SWITCH = 125.0
+BOYS_DEVICE_WIDE = """\
+// F_m(T), wide (#266): below T = 125 the Kummer series
+// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1))
+// ([JEngine, v2, eqs. 13, 18]), every term positive, summed until it no
+// longer changes the sum; from T = 125 (reference.boys's switch) the
+// asymptote Gamma(m+1/2) / (2 T^(m+1/2)) = 0.5 sqrt(pi/T) PROD_k (2k-1)/(2T),
+// whose relative truncation Q(m+1/2, T) is under 4e-19 there for m <= 40.
+// Its accuracy on reference.boys's domain is a kernel-tier question, not
+// this file's.
+__device__ double fj_boys(int m, double T) {
+    if (T >= 125.0) {
+        double a = 0.5 * sqrt(3.141592653589793 / T);
+        for (int k = 1; k <= m; ++k) {
+            a = a * ((double)(2 * k - 1) / (2.0 * T));
+        }
+        return a;
+    }
+    double term = 1.0 / (double)(2 * m + 1);
+    double sum = term;
+    for (int k = 1; k < 4096; ++k) {
+        term = term * ((2.0 * T) / (double)(2 * m + 2 * k + 1));
+        double next = sum + term;
+        if (next == sum) {
+            break;
+        }
+        sum = next;
+    }
+    return exp(-T) * sum;
+}
+"""
+
 
 class EmitError(ValueError):
     """The kernel cannot be spelled without the writer deciding something."""
@@ -157,7 +208,7 @@ class CWriter:
                 *(f"{INDENT}(void){n};\n" for n in unread)]
         head = self.prologue(k)
         if any(isinstance(e, Call) and e.fn is Fn.BOYS for e in _exprs(k)):
-            head += "\n" + BOYS_DEVICE
+            head += "\n" + (BOYS_DEVICE_WIDE if k.wide_boys else BOYS_DEVICE)
         return (
             f"{head}\n"
             f'extern "C" __global__ void {k.name}(\n{sig})\n'

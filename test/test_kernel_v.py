@@ -62,6 +62,7 @@ from felizjueves.ao.potential import potential_block
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
+from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
@@ -476,9 +477,12 @@ def test_the_emitted_text_carries_fj_boys_exactly_once(cls):
     assert any(isinstance(e, Call) and e.fn is Fn.BOYS
                for s in walk(k.body) if isinstance(s, Decl) and s.init
                for e in _subexprs(s.init))
+    assert k.wide_boys  # #266: T = zeta |P - C|^2 is undamped
     for text in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)):
         assert text.count("double fj_boys(int m, double T)") == 1
         assert "fj_boys(0, T)" in text
+        # the wide spelling (the asymptote from T = 125), never the narrow
+        assert BOYS_DEVICE_WIDE in text and BOYS_DEVICE not in text
 
 
 GOLDEN = Path(__file__).resolve().parent / "golden"
