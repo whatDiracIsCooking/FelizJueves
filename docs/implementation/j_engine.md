@@ -1113,9 +1113,24 @@ from its recovered cut (40/40); Tables 1–2's `exact_given_inputs` are
 **refused** under the rules-only doctrine — the sieve's seed order is not
 published, the best of 58 seed-order rules reproduces 33/40 and 38/40, and a
 per-cell fit is not admitted — so they score UNSET with the decision recorded,
-never PASS (`literal.json`, `limits.json`). The `searched` board still FAILs
-`at_or_under` on 21 + 3 cells, each within +2.04%, recorded as a
-`StructuralLimit`.
+never PASS (`literal.json`, `limits.json`).
+
+**The `searched` board (#168, #171, #172).** Since #172 the board PASSes
+`at_or_under` on Tables 1, 2 and 3 in all 40 cells: 22 land on the printed
+triple exactly and 18 come in under it. Each plan is a feasible cut plus one
+explicit seed-order permutation per batch, climbed from the 58
+`seed_orders(widened=True)` rules within a bounded neighbourhood.
+`searched_cuts.json`'s `space` names that neighbourhood; the space is
+budget-bound and is not a set of local optima. The plan is chosen from the
+cell's Pareto frontier over (max intermediates, FLOPs) by #171's selection
+rule, which was declared before the board was read and is unchanged. The pass
+says the printed cells are reachable inside a declared space. It does not say
+which orders the authors drew, and #108's refusal on the `literal` board
+stands: a climbed order is a choice the board makes, not a recovered input.
+The searched record in `limits.json` has an empty residual. Its
+`previous_residual` keeps the earlier spaces' numbers as history, and so does
+its evidence, which records how the residual fell space by space. The 22 and
+18 are recomputed from `searched_cuts.json` by `test/test_claims.py`.
 
 ## The `[JEngine]` claims: what this repo discharges, and what it never will
 
@@ -1198,7 +1213,10 @@ has the detail):
   `batching-trades-flops-for-intermediates` — post-sieve, so it rides on the
   unpublished seed order, and the printed Table 2 breaks its intermediates
   half at two steps.
-- *Something the text does not carry*: `sieve-underspecified`,
+- *Something the text does not carry*: `sieve-underspecified` (its "~2%"
+  is a range over the paper's own seed orders, which the paper does not
+  state; the 58-rule spread and #172's climbed orders are this repo's spaces,
+  not that one),
   `conclusion-overstates-compute-bound` (two sentences of the source that
   cannot both hold), `optimal-batching-is-np-hard` (no finite computation
   establishes NP-hardness).

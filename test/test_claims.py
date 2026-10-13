@@ -278,6 +278,69 @@ def test_every_limits_count_a_doc_spells_matches_the_file() -> None:
     assert quoted  # CLAUDE.md and the data README spell one each
 
 
+# #174: jengine/sieve-underspecified's '~2%' stays UNVERIFIABLE after #172's
+# wider search, and its reason now reads that search. What it says of the
+# searched space -- the printed cells are all reached (so many exactly, the
+# rest under), including every cell where the printed FLOPs lie below all 58
+# rules -- is recomputed here from searched_cuts.json, the tables and
+# seed_order_spread.json, and every doc that quotes the pass is held to it.
+# (test_plan_search.py holds searched_cuts.json to the replay.)
+
+SEARCHED_CUTS = ROOT / "data" / "scoreboards" / "jengine" / "searched_cuts.json"
+SPREAD = CLAIMS.parent / "seed_order_spread.json"
+_PASS_DOCS = (JENGINE_MD, ROOT / ".claude" / "CLAUDE.md")
+
+
+def _flat(path: Path) -> str:
+    return " ".join(path.read_text().split())
+
+
+def test_the_sieve_claim_reads_the_searched_space() -> None:
+    from felizjueves.literature.tables import load_table
+
+    tables = [load_table(CLAIMS.parent / f"table{i}.json") for i in (1, 2, 3)]
+    selected = {}
+    for key, cell in json.loads(SEARCHED_CUTS.read_text())["cuts"].items():
+        L, nb = map(int, key.split("/"))
+        p = cell["frontier"][cell["selected"]]
+        selected[L, nb] = (p["flops"], p["max_intermediates"], p["max_targets"])
+    assert set(selected) == set(tables[0].cells)
+    printed = {c: tuple(t.cells[c] for t in tables) for c in selected}
+    assert all(s <= p for c in selected
+               for s, p in zip(selected[c], printed[c], strict=True))
+    exact = sum(selected[c] == printed[c] for c in selected)
+    under = len(selected) - exact
+
+    spread = json.loads(SPREAD.read_text())
+    n_rules = len(spread["orders"])
+    rows = {tuple(r["cell"]): r for r in spread["rows"]}
+    below = [tuple(c) for c in spread["summary"]["flops"]["printed_outside_range"]]
+    assert below
+    for c in below:
+        assert printed[c][0] < rows[c]["flops"]["min"], c  # below every rule
+        assert selected[c][0] <= printed[c][0], c           # a climbed order reaches it
+
+    (claim,) = [c for c in load_claims(CLAIMS)
+                if c.id == "jengine/sieve-underspecified"]
+    assert claim.status is ClaimStatus.UNVERIFIABLE
+    reason = " ".join(claim.reason.split())
+    assert "searched_cuts.json" in reason
+    assert ("test/test_claims.py::test_the_sieve_claim_reads_the_searched_space"
+            in reason)
+    assert (f"At all {len(below)} cells where the printed FLOPs lie below "
+            f"every one of the {n_rules} rules") in reason
+    assert (f"in all {len(selected)} cells ({exact} exactly, {under} under)"
+            in reason)
+    mild = _flat(ROOT / "docs" / "implementation" / "mild.md")
+    assert (f"At all {len(below)} cells where the printed FLOPs lie below "
+            f"every one of the {n_rules} rules") in mild
+    for doc in _PASS_DOCS:
+        assert (f"in all {len(selected)} cells: {exact} land on the printed "
+                f"triple exactly and {under} come in under it") in _flat(doc), doc
+    assert (f"The {exact} and {under} are recomputed from `searched_cuts.json`"
+            in _flat(JENGINE_MD))
+
+
 @pytest.mark.parametrize(
     "source, units",
     [

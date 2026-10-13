@@ -221,7 +221,20 @@ paper does not state the orders behind its ~2%, and a spread over 58 rules is
 only a lower bound on the spread over every order, so the figure neither
 confirms nor refutes the paper's. `limits.json` records it (subject
 `seed-order spread`), and `jengine/sieve-underspecified` stays
-**unverifiable**. #174 carries the searched-space version of the question.
+**unverifiable**.
+
+The searched board's wider space does not change that verdict; it sharpens
+the reason (#174). #172's per-batch permutations, climbed from the same 58
+rules, give no range to read. The climb is a minimisation and records only its
+frontier, so it bounds how low the order can take a cell, never how high. What
+it does show is that the order moves the result further than the rules do. At
+all 6 cells where the printed FLOPs lie below every one of the 58 rules, a
+climbed order comes in at or under them, and the searched plans are at or
+under the printed value in all three tables in every cell. So some seed order
+reaches every printed cell. That is consistent with §4.1's "the result depends
+on the order", and it says nothing about how far the paper's own orders range.
+`test/test_claims.py::test_the_sieve_claim_reads_the_searched_space` holds
+those figures to `searched_cuts.json` and `seed_order_spread.json`.
 
 ## The sieve — pruning what MILD left behind
 
