@@ -12,7 +12,8 @@ THE WITNESSES (ao/k.py's module docstring).
             contracted element by element -- no staging, no symmetry.
   libcint   not here: #199 adds the tracked K fixtures.
 
-TAU = 0 THROUGHOUT: K's screen is #200's, and every sweep refuses `tau > 0`.
+TAU = 0 THROUGHOUT: K's screen is #200's, tested in test/test_ao_k_screening.py;
+here only `tau`'s refusals (negative, and `tau > 0` through the `k=` seam).
 
 THE L <= 2 RULE (milestone 10's standing instruction: no class with
 `L = la + lc + lb + ld > 2` is run before #231, host-side Python included).
@@ -178,15 +179,19 @@ def test_an_asymmetric_density_is_rejected():
             f(basis, bad, pq=pq)
 
 
-def test_the_screen_is_not_built_here():
-    """`tau > 0` is #200's: refused, never silently ignored; tau = 0 runs."""
+def test_tau_is_checked_and_the_seam_is_unscreened():
+    """The screen itself is #200's (test/test_ao_k_screening.py). Here: a
+    negative `tau` is refused by both sweeps, and the `k=` seam refuses any
+    `tau > 0` -- screening is not a hook's business; tau = 0 runs."""
     basis, D = _case("h2_sto3g_j")
     for f in (exchange_matrix, exchange_matrix_reference):
-        with pytest.raises(ValueError, match="#200"):
-            f(basis, D, pq=pq, tau=1e-10)
         with pytest.raises(ValueError, match="tau"):
             f(basis, D, pq=pq, tau=-1.0)
         f(basis, D, pq=pq, tau=0.0)
+    hook = partial(k_quartet, pq=pq)
+    with pytest.raises(ValueError, match="unscreened"):
+        exchange_matrix(basis, D, pq=pq, tau=1e-10, k=hook)
+    exchange_matrix(basis, D, pq=pq, tau=0.0, k=hook)
 
 
 # --- the k seam -------------------------------------------------------------
