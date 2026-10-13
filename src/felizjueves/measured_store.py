@@ -376,6 +376,7 @@ NO_SIEVE = "no-sieve"  # plan.sieve.NO_SIEVE, spelled: plan/ is off-limits here
 ARMS: Mapping[str, str] = MappingProxyType({
     **dict.fromkeys(sorted(LEVERS), LOWERING),  # "recycle" (#55)
     NO_SIEVE: PLAN,  # Alg. 3's sieve off (#162)
+    "tuned": PLAN,  # plan.pipeline.TUNED: the searched board's plan (#161)
 })
 
 

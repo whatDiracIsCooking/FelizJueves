@@ -202,6 +202,11 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
     `pipeline.plan(spec)`'s DAG in `schedule`'s order; `n_batches != 1` is
     refused, because a split class writes `J_p` from several kernels and
     needs atomics: that is `build_pq_kernels`.
+
+    The plan's levers are the plan layer's: `no-sieve`, and `tuned` (#161),
+    the searched board's recorded cut and seed orders
+    (`pipeline.tuned_plan`; a cell with no recorded choice is refused). With
+    no lever every emitted byte is the literal reconstruction's.
     """
     spec = pq_spec(cls) if isinstance(cls, int) else cls
     if not isinstance(spec, Spec):

@@ -58,13 +58,17 @@ from felizjueves.kernel import (
     SORTED_KETS,
     bra_functions,
     build_pq_kernel,
+    build_pq_kernels,
     ket_functions,
     launch_shape,
     pq_spec,
     split,
 )
-from felizjueves.plan.pipeline import plan
+from felizjueves.plan.dag import BatchDag
+from felizjueves.plan.pipeline import SEARCHED_CUTS, TUNED, plan, tuned_plan
+from felizjueves.plan.search import load_frontiers, searched_plan
 from felizjueves.plan.sieve import NO_SIEVE
+from felizjueves.plan.sieve import plan as sieved_dags
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import fundamental_prelude, recurrence_kernels
 from felizjueves.reference.boys import boys
@@ -402,3 +406,103 @@ def test_the_recurrence_only_kernel_has_no_dead_declaration(L: int) -> None:
     """`build_recurrence_kernel` shares the prelude, and so the guard."""
     for _, k in recurrence_kernels(pq_spec(L)):
         assert _dead_decls(k) == []
+
+
+# ---------------------------------------------------------------------------
+# The `tuned` lever (#161): the searched board's recorded plan, opt-in
+# ---------------------------------------------------------------------------
+#
+# Every assertion RECOMPUTES from searched_cuts.json rather than pinning a
+# count, so a later re-selection of the file (#161's hazard) moves the tuned
+# kernels and these tests follow it.
+
+
+def _recorded_cells() -> list[tuple[int, int]]:
+    return sorted(load_frontiers(SEARCHED_CUTS))
+
+
+def _tuned(L: int, n: int) -> Spec:
+    return pq_spec(L, (TUNED,), n)
+
+
+def _same(a: tuple[BatchDag, ...], b: tuple[BatchDag, ...]) -> bool:
+    """BatchDag has no __eq__ (eq=False): batch, targets and parents, in
+    order -- the order `schedule` reads them in included."""
+    def key(d: BatchDag) -> tuple:
+        return d.batch, d.targets, tuple(d.parents.items())
+    return [key(d) for d in a] == [key(d) for d in b]
+
+
+def test_tuned_plan_cost_is_the_searched_boards_recorded_counts() -> None:
+    """The plan the board replayed, not a third thing: every recorded cell's
+    `PlanCost` under `("tuned",)` is its selected frontier point's counts."""
+    frontiers = load_frontiers(SEARCHED_CUTS)
+    assert frontiers
+    for (L, n), (front, k) in sorted(frontiers.items()):
+        got = plan(_tuned(L, n))
+        want = front[k]
+        assert (got.cost.max_intermediates, got.cost.flops,
+                got.cost.max_targets) == (
+            want.max_intermediates, want.flops, want.max_targets), (L, n)
+        # and the plan is the recorded cut and orders, batch for batch
+        assert _same(got.dags, searched_plan(L, n, want.cuts, want.orders)), (
+            L, n)
+
+
+def test_the_tuned_lever_moves_the_kernel_somewhere() -> None:
+    """Otherwise the lever is a no-op, and that is the finding."""
+    for L, n in _recorded_cells():
+        if build_pq_kernels(_tuned(L, n)) != build_pq_kernels(pq_spec(L, (), n)):
+            return
+    pytest.fail("no recorded cell's tuned kernel differs from literal")
+
+
+def test_no_lever_is_still_the_literal_plan() -> None:
+    """The default does not move: `()` is `sieve.plan` (the goldens and
+    kernels.json's source_sha256 pin the emitted text itself)."""
+    for L, n in _recorded_cells()[:4]:
+        spec = pq_spec(L, (), n)
+        assert _same(plan(spec).dags, sieved_dags(spec))
+
+
+def _run_batches(spec: Spec, args: dict, lanes: int) -> np.ndarray:
+    """Every batch kernel in Plan.dags order, J threaded through from zero."""
+    grid, block = launch_shape(args["n_bra"], lanes)
+    J = np.zeros_like(args["J"])
+    for k in build_pq_kernels(spec):
+        it = Interpreter(k, launch=Launch(grid, block, lanes), boys=boys)
+        J = it.run(**{**args, "J": J})["J"]
+    return J
+
+
+@pytest.mark.parametrize("n", [1, 3, 6, 9])
+def test_the_tuned_kernel_interprets_against_the_reference(n: int) -> None:
+    L = _recorded_cells()[0][0]
+    spec = _tuned(L, n)
+    args = _inputs(spec, n_bra=2, n_ket=3, seed=161 + n)
+    _assert_matches(_run_batches(spec, args, lanes=2), *_reference(spec, args))
+
+
+def test_a_cell_with_no_recorded_choice_is_refused() -> None:
+    """Never a silent fall back to literal: a tuned build is always traceable
+    to a recorded search."""
+    recorded = set(_recorded_cells())
+    for L, n in ((6, 1), (16, 12)):
+        assert (L, n) not in recorded
+        with pytest.raises(ValueError, match="no recorded choice"):
+            build_pq_kernels(_tuned(L, n))
+    with pytest.raises(ValueError, match="no recorded choice"):
+        build_pq_kernel(_tuned(6, 1))
+
+
+def test_tuned_is_its_own_arm() -> None:
+    """Neither implies nor admits `no-sieve`; any other lever is refused."""
+    L, n = _recorded_cells()[0]
+    with pytest.raises(ValueError, match="two arms at once"):
+        plan(pq_spec(L, (NO_SIEVE, TUNED), n))
+    with pytest.raises(ValueError, match="no lever but"):
+        plan(pq_spec(L, ("recycle", TUNED), n))
+    with pytest.raises(ValueError, match="needs the 'tuned' lever"):
+        tuned_plan(pq_spec(L, (), n))
+    spec = pq_spec(L, (NO_SIEVE,), n)
+    assert _same(plan(spec).dags, sieved_dags(spec))

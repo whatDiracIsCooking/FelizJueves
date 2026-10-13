@@ -34,6 +34,20 @@ def test_the_two_arms_of_a_lever_ab_are_two_keys() -> None:
         _spec(levers=("recycle", "no-sieve"))  # sorted, or refused
 
 
+def test_the_tuned_arm_is_its_own_key() -> None:
+    # #161: the searched board's plan is keyed apart from literal and from
+    # no-sieve, so the store can tell the arms apart; sorted like any lever.
+    assert _spec(levers=("tuned",), n_batches=3).key() == (
+        "coulomb/d0/(4,4|4,4)/b3/j/tuned")
+    keys = {_spec(levers=lv).key() for lv in ((), ("tuned",), ("no-sieve",))}
+    assert len(keys) == 3
+    assert _spec(levers=("recycle", "tuned")).key().endswith("/recycle+tuned")
+    with pytest.raises(ValueError):
+        _spec(levers=("tuned", "recycle"))  # sorted, or refused
+    with pytest.raises(ValueError):
+        _spec(levers=("tuned", "tuned"))  # unique, or refused
+
+
 def test_the_batch_count_is_part_of_the_key() -> None:
     # A kernel is emitted per class AND per batch, so two batch counts are two
     # artifacts and must be two keys.

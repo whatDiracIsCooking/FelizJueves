@@ -1294,8 +1294,9 @@ def test_the_lever_cells_are_the_whole_subgrid_with_the_lever() -> None:
     assert [replace(s, levers=()) for s in RECYCLE_CELLS] == list(
         measured_store.SUBGRID)
     assert all(s.levers == (RECYCLE,) for s in RECYCLE_CELLS)
-    with pytest.raises(ValueError, match="not a declared arm lever"):
-        measured_store.lever_cells("tuned")  # #161's, not declared yet
+    # #161's lever, declared with the builder that honours it
+    assert all(s.levers == ("tuned",)
+               for s in measured_store.lever_cells("tuned"))
 
 
 def _ab(control: tuple[int, int], lever: tuple[int, int],
@@ -2007,8 +2008,11 @@ RECYCLE_AB_SHA256 = (
 
 
 def test_the_declared_arms_and_their_kinds() -> None:
+    from felizjueves.plan.pipeline import TUNED
+
     assert dict(measured_store.ARMS) == {RECYCLE: measured_store.LOWERING,
-                                         NO_SIEVE: measured_store.PLAN}
+                                         NO_SIEVE: measured_store.PLAN,
+                                         TUNED: measured_store.PLAN}
     # every lowering lever is an arm, and the store's spelling of the plan
     # lever is the plan layer's (the store may not import plan/)
     assert {lv for lv, k in measured_store.ARMS.items()
@@ -2117,7 +2121,7 @@ def test_a_spec_carrying_two_arms_is_refused_naming_both(
         measured_store.load(_write(tmp_path, key, rec))
 
 
-@pytest.mark.parametrize("lever", ("tuned", "no_sieve", "literal", "asym", ""))
+@pytest.mark.parametrize("lever", ("no_sieve", "literal", "asym", ""))
 def test_a_lever_outside_the_declared_set_is_still_refused(lever) -> None:
     with pytest.raises(ValueError, match="not a declared arm lever"):
         measured_store.lever_cells(lever)

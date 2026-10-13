@@ -442,7 +442,12 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "plan.mild": ("plan.batching", "plan.targets"),
     "plan.optimum": ("plan.cost", "plan.targets"),
     "plan.order_search": ("plan.cost",),
-    "plan.pipeline": ("plan.cost", "plan.dag", "plan.sieve", "spec"),
+    # #161: the `tuned` lever builds the searched board's recorded plan, so
+    # pipeline reads searched_cuts.json through plan.search's loader and
+    # replays it with its searched_plan. The builder (kernel) reaches it
+    # only through pipeline.plan: no new edge in the `builder` rule.
+    "plan.pipeline": ("plan.cost", "plan.dag", "plan.search", "plan.sieve",
+                      "spec"),
     "plan.recovery": ("literature.rules", "literature.tables", "plan.batching",
                       "plan.cost", "plan.dag", "plan.sieve", "plan.targets",
                       "spec"),
