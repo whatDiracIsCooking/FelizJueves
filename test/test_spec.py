@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from felizjueves.spec import AM_LENGTH, Operator, Spec, Target
+from felizjueves.spec import AM_LENGTH, OPERATOR_OF, Operator, Spec, Target
 
 
 def _spec(**kw) -> Spec:
@@ -109,8 +109,12 @@ PAIR_TARGETS = (Target.DQ, Target.JAB)
 
 def test_the_target_enum_is_widened_not_renamed() -> None:
     # #196 appends `k`; the earlier members keep their place and value.
-    assert [t.value for t in Target] == ["j", "dq", "jab", "k"]
-    assert AM_LENGTH == {Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4}
+    # #232 appends `s`, `t` and `v` the same way.
+    assert [t.value for t in Target] == ["j", "dq", "jab", "k", "s", "t", "v"]
+    assert AM_LENGTH == {
+        Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
+        Target.S: 2, Target.T: 2, Target.V: 2,
+    }
 
 
 @pytest.mark.parametrize("target", PAIR_TARGETS)
@@ -179,3 +183,151 @@ def test_a_quartet_key_is_byte_identical_to_before_the_widening() -> None:
     assert _spec(am=(8, 0, 8, 0), n_batches=12, levers=("recycle",)).key() == (
         "coulomb/d0/(8,0|8,0)/b12/j/recycle"
     )
+
+
+# #232: the one-electron operators and their three pair targets.
+
+ONE_ELECTRON = {
+    Target.S: Operator.OVERLAP,
+    Target.T: Operator.KINETIC,
+    Target.V: Operator.NUCLEAR,
+}
+
+
+def _one(target: Target, **kw) -> Spec:
+    return _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1), **kw)
+
+
+def test_the_operator_enum_is_widened_not_renamed() -> None:
+    # The first widening of a field that had one legal value since the key
+    # was designed: COULOMB keeps its place and its value.
+    assert [o.value for o in Operator] == ["coulomb", "overlap", "kinetic", "nuclear"]
+    assert (Operator.OVERLAP, Operator.KINETIC, Operator.NUCLEAR) == (
+        "overlap", "kinetic", "nuclear")
+
+
+def test_operator_of_pins_each_target_to_one_operator() -> None:
+    assert OPERATOR_OF == {
+        Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
+        Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
+        Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
+        Target.V: Operator.NUCLEAR,
+    }
+    assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
+
+
+@pytest.mark.parametrize("target", list(Target))
+@pytest.mark.parametrize("operator", list(Operator))
+def test_every_target_operator_pairing_is_admitted_or_refused(
+    target: Target, operator: Operator
+) -> None:
+    # Both directions: the pinned pairing is keyed, every other is refused --
+    # Spec(COULOMB, 0, (1, 1), S) as much as Spec(OVERLAP, 0, (1, 1), DQ).
+    am = (1,) * AM_LENGTH[target]
+    if OPERATOR_OF[target] is operator:
+        assert Spec(operator, 0, am, target).operator is operator
+    else:
+        want = OPERATOR_OF[target]
+        with pytest.raises(ValueError, match=f"built from operator {want}"):
+            Spec(operator, 0, am, target)
+
+
+def test_coulomb_overlap_is_refused_not_keyed() -> None:
+    with pytest.raises(ValueError, match="target s is built from operator overlap"):
+        Spec(Operator.COULOMB, 0, (1, 1), Target.S)
+
+
+@pytest.mark.parametrize("target", list(ONE_ELECTRON))
+def test_a_one_electron_target_takes_a_pair(target: Target) -> None:
+    assert AM_LENGTH[target] == 2
+    assert _one(target).am == (2, 1)
+    assert _one(target).total_am == 3
+    op = ONE_ELECTRON[target]
+    for am in ((2, 1, 0, 0), (2, 1, 0), (2,), (2, -1)):
+        with pytest.raises(ValueError):
+            _spec(operator=op, target=target, am=am)
+
+
+@pytest.mark.parametrize("target", list(ONE_ELECTRON))
+def test_a_one_electron_target_is_derivative_order_zero(target: Target) -> None:
+    with pytest.raises(ValueError, match="derivative order"):
+        _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
+              derivative_order=1)
+
+
+def test_a_one_electron_key_has_the_shape_every_key_has() -> None:
+    assert _one(Target.S).key() == "overlap/d0/(2,1)/b1/s/literal"
+    assert _one(Target.T).key() == "kinetic/d0/(2,1)/b1/t/literal"
+    assert _one(Target.V).key() == "nuclear/d0/(2,1)/b1/v/literal"
+    assert _one(Target.V, levers=("x",)).key() == "nuclear/d0/(2,1)/b1/v/x"
+
+
+def test_one_electron_keys_never_collide_with_each_other_or_coulomb() -> None:
+    ls = range(4)
+    one = {Spec(ONE_ELECTRON[t], 0, (a, b), t).key()
+           for t in ONE_ELECTRON for a in ls for b in ls}
+    coulomb_pairs = {_spec(target=t, am=(a, b)).key()
+                     for t in PAIR_TARGETS for a in ls for b in ls}
+    assert len(one) == 3 * 4**2
+    assert one.isdisjoint(coulomb_pairs)
+
+
+# The batching refusal, per target: which reason applies is in the message.
+
+@pytest.mark.parametrize("n", [3, 6, 9, 12])
+@pytest.mark.parametrize("target", [Target.DQ, Target.JAB, Target.S, Target.T])
+def test_a_pair_without_hermite_targets_is_refused_structurally(
+    target: Target, n: int
+) -> None:
+    with pytest.raises(ValueError) as info:
+        _spec(operator=OPERATOR_OF[target], target=target, am=(2, 1), n_batches=n)
+    msg = str(info.value)
+    assert "never batched" in msg and "partitions the Hermite targets" in msg
+    assert "decision" not in msg
+
+
+@pytest.mark.parametrize("n", [3, 6, 9, 12])
+def test_v_is_unbatched_by_decision_not_by_the_structural_rule(n: int) -> None:
+    with pytest.raises(ValueError) as info:
+        _one(Target.V, n_batches=n)
+    msg = str(info.value)
+    assert "unbatched by milestone 11's decision" in msg
+    assert "|t| <= la + lb" in msg
+    # The false reason is not given: V does have Hermite targets.
+    assert "never batched" not in msg and "none to partition" not in msg
+    assert _one(Target.V).n_batches == 1
+
+
+# Every pre-existing key, byte for byte: a FIXED list of literals written
+# before #232 (J, K, DQ, JAB; every lever spelling the store uses). Nothing
+# in milestone 11 may move one -- they are the join key of every measured row.
+PRE_232_KEYS = [
+    ((Operator.COULOMB, 0, (0, 0, 0, 0), Target.J), {},
+     "coulomb/d0/(0,0|0,0)/b1/j/literal"),
+    ((Operator.COULOMB, 0, (4, 4, 4, 4), Target.J), {},
+     "coulomb/d0/(4,4|4,4)/b1/j/literal"),
+    ((Operator.COULOMB, 0, (4, 0, 3, 0), Target.J), {"n_batches": 3},
+     "coulomb/d0/(4,0|3,0)/b3/j/literal"),
+    ((Operator.COULOMB, 0, (8, 0, 8, 0), Target.J),
+     {"n_batches": 12, "levers": ("recycle",)},
+     "coulomb/d0/(8,0|8,0)/b12/j/recycle"),
+    ((Operator.COULOMB, 0, (7, 0, 6, 0), Target.J),
+     {"n_batches": 6, "levers": ("no-sieve",)},
+     "coulomb/d0/(7,0|6,0)/b6/j/no-sieve"),
+    ((Operator.COULOMB, 0, (5, 0, 5, 0), Target.J),
+     {"n_batches": 9, "levers": ("tuned",)},
+     "coulomb/d0/(5,0|5,0)/b9/j/tuned"),
+    ((Operator.COULOMB, 0, (2, 1, 2, 1), Target.K), {},
+     "coulomb/d0/(2,1|2,1)/b1/k/literal"),
+    ((Operator.COULOMB, 0, (2, 1), Target.DQ), {},
+     "coulomb/d0/(2,1)/b1/dq/literal"),
+    ((Operator.COULOMB, 0, (0, 3), Target.JAB), {"levers": ("x",)},
+     "coulomb/d0/(0,3)/b1/jab/x"),
+    ((Operator.COULOMB, 0, (3, 3), Target.JAB), {},
+     "coulomb/d0/(3,3)/b1/jab/literal"),
+]
+
+
+@pytest.mark.parametrize(("args", "kw", "key"), PRE_232_KEYS)
+def test_every_pre_existing_key_is_byte_identical(args, kw, key) -> None:
+    assert Spec(*args, **kw).key() == key
