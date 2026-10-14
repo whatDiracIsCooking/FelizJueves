@@ -104,6 +104,35 @@ and 10) -- and not to be tuned after reading one.
   (`KSpillCurve.refused` names it), and a refused one-batch cell leaves
   its L NOT JUDGED.
 
+THE F CELL (#278). The store ADMITS a `Target.F` row -- the fused Fock
+build of [Fock] §3 on the HGP recurrence (milestone 12) -- before anything
+fills it, so the measurement PR (#288) is not a schema PR. Nothing is
+measured here and no F row is tracked. What an F row is:
+- ITS KEY is `MeasuredKey(Spec(COULOMB, 0, (la, lb, lc, ld), Target.F),
+  arch, toolchain).key()`, e.g. ``coulomb/d0/(2,1|1,0)/b1/f/literal@sm_86/
+  nvcc 13.0``: the class in AO order (NOT K's Hermite pairing, spec.py),
+  one batch, target slot `f`, and no lever -- an F key with a lever or a
+  batch count other than 1 is refused (`_check_f`), because the plan layer
+  refuses an F spec (`plan.dag.refuse_hgp`) and no lowering lever is
+  declared for an HGP kernel. The key cannot see the ordering mistake (an
+  F class spelled in Hermite order is a legal F key naming another class);
+  that is the writer's, on the Spec.
+- ITS TARGET IS ON THE ROW, as for K (#201): `merge` stamps `"f"` and the
+  loader refuses an F key whose row records none or another.
+- ITS UNITS are the existing per-row convention, unchanged: nvcc reports
+  spill BYTES, hipcc spilled REGISTER COUNTS, so each row's `spill_unit`
+  and `raw` say which, and an F spill is compared within one arch only.
+  The row's shape is the same as every other row's -- no field is added --
+  so SCHEMA is not bumped.
+- ITS GATE IS NOT OPTIONAL. A timed F row (`runtime_ns` present) must carry
+  every `GPU_UTIL_FIELDS` key as a READING: null (unknown) is admitted only
+  for the J rows timed before #93 recorded the card's state, and no F row
+  predates the gate. An ungated F `runtime_ns` is absent, never unlabelled
+  (#288's acceptance); `_check_f` refuses one on `merge` and on `load`.
+- THE HEADER gains an `"f"` entry (`F_ABOUT`: the key, the ladder and the
+  command that writes the rows) only when the store holds an F row, so the
+  tracked file, which holds none, is rewritten byte for byte.
+
 WALL-CLOCK (#53) is `runtime_ns`, `repeats` and `spread_ns`, written by the
 opt-in, `gpu`-marked sweep in test/test_kernel_device.py
 (`test_<backend>_wallclock_over_the_subgrid`, run alone and uncontended; its
@@ -466,7 +495,7 @@ from felizjueves.device import (
 )
 from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.lower import LEVERS
-from felizjueves.spec import Spec, Target
+from felizjueves.spec import Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parents[2]
 STORE = REPO / "data" / "measured" / "kernels.json"
@@ -724,6 +753,22 @@ COUNTERS_ABOUT = (
     "their A100.")
 HEADER["counters"] = COUNTERS_ABOUT
 
+# THE F CELL (#278; module docstring): written into the header as "f" only
+# once the store holds an F row (`save`), so the tracked file is unchanged.
+F_ABOUT = (
+    "#278: rows keyed .../b1/f/literal@... are the fused Fock build of "
+    "[Fock] §3 on the HGP recurrence (milestone 12), one row per (class, "
+    "arch, toolchain): the class (la,lb|lc,ld) in AO order -- NOT the K "
+    "rows' Hermite pairing -- over the 21-class ladder, every shell l <= 2, "
+    "one batch, no lever. Units as above: each row's spill_unit and raw "
+    "say which (spill bytes on nvcc, spilled register counts on hipcc); "
+    "compare within one arch only. A timed F row carries every "
+    "'wallclock:*gpu_util_*' key as a reading, never null. Written by "
+    "#288's measurement (python -m felizjueves.measured --remeasure "
+    "--target f, once the HGP kernel exists); nothing here is compared "
+    "against [Fock]'s A100 timings, and there is no published register "
+    "table for its §3.2 kernel.")
+
 MEASUREMENTS = ("registers", "spill_store", "spill_load", "shared_bytes",
                 "compile_s", "runtime_ns", "repeats", "spread_ns", *COUNTERS)
 PROVENANCE = ("toolchain", "arch", "host", "gpu", "date")
@@ -877,6 +922,7 @@ def _row(path: Path, key: str, v: object) -> Measured:
     try:
         _check_arm_kind(key, row)
         _check_target(key, row)
+        _check_f(key, row)
     except ValueError as e:
         raise ValueError(f"{path}: {e}") from e
     if row.runtime_ns is not None:
@@ -936,6 +982,42 @@ def _check_target(key: str, row: Measured) -> None:
                          "no target")
 
 
+_F_KEY = re.compile(
+    r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b(\d+)/f/(.+)\Z")
+
+
+def _check_f(key: str, row: Measured) -> None:
+    """THE F CELL (module docstring): an F key names a legal one-batch,
+    lever-free `Target.F` spec, and a timed F row carries every gate reading
+    as a reading. A key of any other target is not this check's business."""
+    if target_of(key) is not Target.F:
+        return
+    spec_key, _, _ = split_key(key)
+    m = _F_KEY.fullmatch(spec_key)
+    if not m:
+        raise ValueError(f"row {key!r} is an 'f' row whose key is not "
+                         "coulomb/d0/(la,lb|lc,ld)/b<n>/f/<levers>")
+    *am, n, levers = m.groups()
+    if levers != "literal":
+        raise ValueError(f"row {key!r}: no lever is declared for an F cell "
+                         f"(the key carries {levers!r})")
+    try:
+        spec = Spec(Operator.COULOMB, 0, tuple(map(int, am)), Target.F,
+                    n_batches=int(n))
+    except ValueError as e:
+        raise ValueError(f"row {key!r} names no legal F spec: {e}") from e
+    if spec.key() != spec_key:
+        raise ValueError(f"row {key!r} does not spell its F spec's key "
+                         f"{spec.key()!r}")
+    if row.runtime_ns is not None:
+        for f in GPU_UTIL_FIELDS:
+            if row.raw.get(f) is None:
+                raise ValueError(
+                    f"timed F row {key!r} has no {f!r} reading -- an F row "
+                    "postdates the gate, so null (unknown) is refused: an "
+                    "ungated runtime_ns is absent, never unlabelled")
+
+
 def load(path: Path = STORE) -> dict[str, Measured]:
     """Every row in the store, by key. Refuses a malformed or foreign file.
 
@@ -977,6 +1059,7 @@ def merge(store: Mapping[str, Measured], key: MeasuredKey,
         row = replace(row, target=target.value)
     _check_arm_kind(key.key(), row)
     _check_target(key.key(), row)
+    _check_f(key.key(), row)
     return {**store, key.key(): row}
 
 
@@ -1029,7 +1112,11 @@ def rows(spec: Spec | None = None, arch: Arch | str | None = None,
 
 def save(store: Mapping[str, Measured], path: Path = STORE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    doc = {"schema": SCHEMA, "about": ABOUT, "header": HEADER,
+    # #278: the header's "f" entry is written only once the store holds an
+    # F row, so a store without one is rewritten byte for byte.
+    header = (HEADER if not any(target_of(k) is Target.F for k in store)
+              else {**HEADER, "f": F_ABOUT})
+    doc = {"schema": SCHEMA, "about": ABOUT, "header": header,
            "rows": {k: as_record(store[k]) for k in sorted(store, key=_order)}}
     path.write_text(json.dumps(doc, indent=2) + "\n")
 

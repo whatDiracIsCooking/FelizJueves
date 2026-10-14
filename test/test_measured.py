@@ -36,7 +36,7 @@ from felizjueves.plan.dag import build
 from felizjueves.plan.pipeline import TUNED, plan, tuned_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.spec import Spec, Target, is_batch_count
+from felizjueves.spec import Operator, Spec, Target, is_batch_count
 
 # --- the generator CLI ------------------------------------------------------
 
@@ -2811,6 +2811,134 @@ def test_a_k_row_under_a_j_key_and_the_reverse_are_refused(
     with pytest.raises(ValueError, match="names no target"):
         measured_store.target_of(
             "coulomb/d0/(1,0|1,0)/b1/x/literal@sm_86/nvcc 13.0")
+
+
+# --- #278: the store admits an F cell ----------------------------------------
+
+_F_SPEC = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.F)
+_GATE = dict.fromkeys(measured_store.GPU_UTIL_FIELDS, 3)
+
+
+def _f_timed(**raw) -> measured_store.Measured:
+    return measured_store.Measured(
+        registers=96, spill_store=0, spill_load=0, runtime_ns=1234.5,
+        repeats=31, spread_ns=10.0, raw={**_GATE, **raw}, **PROV)
+
+
+def test_the_f_rule_was_declared_in_the_store() -> None:
+    doc = measured_store.__doc__
+    assert "THE F CELL (#278)" in doc
+    for part in ("ITS KEY", "ITS TARGET IS ON THE ROW", "ITS UNITS",
+                 "ITS GATE IS NOT OPTIONAL", "THE HEADER"):
+        assert part in doc, part
+    # the row shape did not change, so the schema did not move
+    assert measured_store.SCHEMA == 2 == STORE["schema"]
+    assert "f" not in measured_store.HEADER and "f" not in STORE["header"]
+
+
+def test_a_synthetic_f_row_round_trips_through_the_store(
+        tmp_path: Path) -> None:
+    # #278's acceptance: written, read back, keyed. A toolchain no tracked
+    # row is keyed on, so the F row is new and every tracked row untouched.
+    k = MeasuredKey(_F_SPEC, SM_86, "nvcc 0.0 (synthetic)")
+    assert k.key() == ("coulomb/d0/(2,1|1,0)/b1/f/literal@sm_86/"
+                       "nvcc 0.0 (synthetic)")
+    row = replace(_f_timed(), toolchain=k.toolchain)
+    assert not row.target
+    store = measured_store.merge(ROWS, k, row)  # merge stamps the target
+    assert store[k.key()].target == "f"
+    assert all(store[kk] is ROWS[kk] for kk in ROWS)
+    p = tmp_path / "m.json"
+    measured_store.save(store, p)
+    doc = json.loads(p.read_text())
+    assert doc["schema"] == STORE["schema"]
+    assert doc["rows"][k.key()]["target"] == "f"
+    assert {kk: v for kk, v in doc["rows"].items() if kk != k.key()} \
+        == STORE["rows"]
+    # the header gains its "f" entry, and only that
+    assert doc["header"] == {**STORE["header"], "f": measured_store.F_ABOUT}
+    back = measured_store.load(p)
+    assert back == store
+    q = tmp_path / "again.json"
+    measured_store.save(back, q)
+    assert q.read_bytes() == p.read_bytes()
+    # the read path: by spec, by target, and the J and K reads unmoved
+    assert measured_store.target_of(k.key()) is Target.F
+    assert measured_store.rows(spec=_F_SPEC, store=back) == {
+        k.key(): back[k.key()]}
+    assert measured_store.rows(target=Target.F, store=back) == {
+        k.key(): back[k.key()]}
+    assert measured_store.rows(target=Target.F, store=ROWS) == {}
+    for t in (Target.J, Target.K):
+        assert measured_store.rows(target=t, store=back) == \
+            measured_store.rows(target=t, store=ROWS)
+    # without the F row the header is the tracked one again
+    r = tmp_path / "without.json"
+    measured_store.save({kk: v for kk, v in back.items() if kk != k.key()}, r)
+    assert r.read_bytes() == measured_store.STORE.read_bytes()
+
+
+def test_a_compile_only_f_row_needs_no_gate(tmp_path: Path) -> None:
+    k = MeasuredKey(_F_SPEC, GFX1200, "hipcc / ROCm 7.2.4")
+    row = measured_store.Measured(
+        registers=64, spill_store=2, spill_load=2,
+        spill_unit="registers (VGPR + SGPR spill counts)",
+        **{**PROV, "arch": "gfx1200", "toolchain": k.toolchain})
+    store = measured_store.merge({}, k, row)
+    p = tmp_path / "m.json"
+    measured_store.save(store, p)
+    assert measured_store.load(p) == store
+
+
+@pytest.mark.parametrize("field", measured_store.GPU_UTIL_FIELDS)
+def test_a_timed_f_row_without_its_gate_readings_is_refused(
+        tmp_path: Path, field: str) -> None:
+    k = MeasuredKey(_F_SPEC, SM_86, "nvcc 13.0")
+    absent = replace(_f_timed(), raw={f: v for f, v in _GATE.items()
+                                      if f != field})
+    null = _f_timed(**{field: None})
+    for row in (absent, null):
+        with pytest.raises(ValueError, match=f"timed F row.*{field}"):
+            measured_store.merge({}, k, row)
+        rec = {**measured_store.as_record(row), "target": "f"}
+        with pytest.raises(ValueError, match=field):
+            measured_store.load(_write(tmp_path, k.key(), rec))
+    # a J row timed before #93 may still record null: unknown, not idle
+    j = MeasuredKey(measured_store.SUBGRID[0], SM_86, "nvcc 13.0")
+    rec = measured_store.as_record(null)
+    assert measured_store.load(_write(tmp_path, j.key(), rec))[j.key()] == null
+
+
+def test_an_f_row_records_its_target_and_names_a_legal_f_spec(
+        tmp_path: Path) -> None:
+    k = MeasuredKey(_F_SPEC, SM_86, "nvcc 13.0")
+    rec = measured_store.as_record(_f_timed())  # no target
+    with pytest.raises(ValueError, match="'f' row and records no target"):
+        measured_store.load(_write(tmp_path, k.key(), rec))
+    with pytest.raises(ValueError, match="records target 'k'.*target is 'f'"):
+        measured_store.load(_write(tmp_path, k.key(), {**rec, "target": "k"}))
+    with pytest.raises(ValueError, match="records target 'f'"):
+        measured_store.merge({}, MeasuredKey(measured_store.SUBGRID[0], SM_86,
+                                             "nvcc 13.0"),
+                             replace(_f_timed(), target="f"))
+    rec = {**rec, "target": "f"}
+    base = "coulomb/d0/(2,1|1,0)/b{n}/f/{lv}@sm_86/nvcc 13.0"
+    for key, match in (
+            (base.format(n=3, lv="literal"), "names no legal F spec"),
+            (base.format(n=1, lv="recycle"), "no lever is declared"),
+            (base.format(n=1, lv="no-sieve"), "plan arm"),
+            ("coulomb/d0/(2,1)/b1/f/literal@sm_86/nvcc 13.0", "whose key"),
+            ("coulomb/d0/(02,1|1,0)/b1/f/literal@sm_86/nvcc 13.0",
+             "does not spell")):
+        with pytest.raises(ValueError, match=match):
+            measured_store.load(_write(tmp_path, key, rec))
+    # a plan arm is refused for an F cell even when it records its kind
+    with pytest.raises(ValueError, match="no lever is declared"):
+        measured_store.load(_write(tmp_path, base.format(n=1, lv="no-sieve"),
+                                   {**rec, "arm_kind": measured_store.PLAN}))
+    # and a legal one loads
+    assert measured_store.load(_write(tmp_path, k.key(), rec))[k.key()] == \
+        replace(_f_timed(), target="f")
 
 
 # --- #205: the K rows, against J's at the same L ----------------------------

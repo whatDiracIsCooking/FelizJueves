@@ -1,13 +1,14 @@
 """The card a kernel is compiled for and run on: `Arch`, as data.
 
 TWO MEANINGS OF "TARGET", AND WHICH ONE IS WHICH. In `spec.py`, `Target` (and
-`Spec.target`) is the MATRIX being built -- today only `Target.J`, the Coulomb
-matrix. It says nothing about hardware. The hardware is an `Arch`, defined
-here: the architecture a device compiler is driven at (`sm_86`, `gfx1200`) and
-the few facts about it that a backend reads. A backend's signature is
-`emit(kernel, arch: Arch)`; where an older issue body spells that parameter
-`target`, it means an `Arch`, never a `spec.Target`. The word "target" is
-reserved for the matrix.
+`Spec.target`) is the MATRIX (or per-pair family) being built -- `Target.J`,
+the Coulomb matrix, and its siblings (`K`, the fused Fock `F`, the pair and
+one-electron targets). It says nothing about hardware. The hardware is an
+`Arch`, defined here: the architecture a device compiler is driven at
+(`sm_86`, `gfx1200`) and the few facts about it that a backend reads. A
+backend's signature is `emit(kernel, arch: Arch)`; where an older issue body
+spells that parameter `target`, it means an `Arch`, never a `spec.Target`.
+The word "target" is reserved for the matrix.
 
 WHAT KEYS A `Measured` ROW: `MeasuredKey(spec, arch, toolchain)`, NOT A WIDER
 `Spec`. A `Spec` is the GENERATION key -- what the plan layer and the emitter
@@ -240,5 +241,10 @@ class MeasuredKey:
             raise ValueError(f"toolchain {self.toolchain!r} must be non-empty")
 
     def key(self) -> str:
-        """E.g. ``coulomb/d0/(4,4|4,4)/b1/j/literal@sm_86/nvcc 13.0``."""
+        """E.g. ``coulomb/d0/(4,4|4,4)/b1/j/literal@sm_86/nvcc 13.0``.
+
+        Every target keys the same way: a fused Fock (`Target.F`) cell is
+        ``coulomb/d0/(2,1|1,0)/b1/f/literal@sm_86/nvcc 13.0``, its class in
+        AO order (#278; `measured_store`, THE F CELL).
+        """
         return f"{self.spec.key()}@{self.arch.name}/{self.toolchain}"
