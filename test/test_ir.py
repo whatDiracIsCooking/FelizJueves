@@ -224,6 +224,7 @@ def _built_kernels() -> list[Kernel]:
     from felizjueves.hgp.recurrence import build_hrr_kernel, build_vrr_kernel
     from felizjueves.kernel import build_pq_kernel
     from felizjueves.kernel_dq import build_dq_kernel
+    from felizjueves.kernel_f import build_f_kernel
     from felizjueves.kernel_jab import build_jab_kernel
     from felizjueves.kernel_k import build_k_kernel
     from felizjueves.kernel_s import build_s_kernel
@@ -238,7 +239,10 @@ def _built_kernels() -> list[Kernel]:
             build_k_kernel((1, 0, 0, 0)),
             # #279: the standalone HGP VRR and HRR kernels, which bind every
             # HGP member as a scalar Param; (pp|pp) reaches each of them.
-            build_vrr_kernel(pppp), build_hrr_kernel(pppp)]
+            build_vrr_kernel(pppp), build_hrr_kernel(pppp),
+            # #282: the fused F kernel, which binds the same members as
+            # per-quartet / per-pair Decls instead of Params.
+            build_f_kernel(pppp)]
 
 
 # Members no built kernel binds yet, each with the reason. Empty since #279:

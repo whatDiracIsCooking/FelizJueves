@@ -1274,3 +1274,52 @@ def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                    "dispatch", "measured", "measured_store"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_f reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #282 (milestone 12): the fused Fock kernel, `Target.F`, up to the ERIs --
+# a builder beside `kernel_k`: the key, IR, and the HGP statements of
+# `hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs. It is interpreted
+# against a host path built from #279's kernels and against `ao/eri.py`, so
+# neither the AO layer nor reference/ may be its ancestor, and it keeps off
+# the plan layer as hgp/ does (milestone 12, pin 11).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "f_builder": _rule(
+        "kernel_f.py (#282): the fused Fock kernel of [Fock] §3.2 up to the "
+        "ERIs -- the K_CD x K_AB nest, the contracted boundary accumulators "
+        "and the HRR after the loop, its statements from `hgp.recurrence` "
+        "over `hgp.vrr` / `hgp.hrr`'s DAGs, keyed on a `Target.F` `Spec`",
+        ("spec", "ir", "hgp"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao="`ao/eri.py` is the integrals' witness and `launch_f`'s records "
+           "come from the AO layer: the kernel takes packed host scalars "
+           "(`kernel_f.pack`), and importing either shares ancestry (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["kernel_f"] = "f_builder"
+EDGES["kernel_f"] = frozenset(
+    ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+
+
+def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    # #282, TRANSITIVELY: no chain of imports from `kernel_f` reaches the
+    # plan layer, the AO layer, reference/, the interpreter, a backend or a
+    # card -- nor `launch_f`, whose records it consumes only as packed data.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_f"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "hgp.recurrence" in seen
+    for banned in ("plan", _REF, "ao", "interp", "emit", "device",
+                   "launch_f"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_f reaches {hit}"
