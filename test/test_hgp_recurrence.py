@@ -16,8 +16,8 @@ Three kinds of witness, from the inside out:
    checks the recurrence, and it is where the two `[Fock]` defects show:
    eq 26's printed `(m+1)` sign and eq 14's printed seed each fail it, while
    the derived ones pass (`fock/eq26-ket-vrr-sign` and
-   `fock/eq14-seed-inconsistent`, pending; #291 scores them, so these tests
-   carry no `claim` mark here). The contracted, cross-engine pin with
+   `fock/eq14-seed-inconsistent`, asserted by #291: the two tests here carry
+   their `claim` marks). The contracted, cross-engine pin with
    libcint fixtures is #281's.
 
 Fast tier: no compiler, no card. Every class here interprets in well under a
@@ -322,6 +322,7 @@ def test_hgp_matches_mmd_on_a_primitive_quartet(cls, geom) -> None:
     assert np.all(err <= TOL * scale), float(np.max(err / scale))
 
 
+@pytest.mark.claim("fock/eq26-ket-vrr-sign")
 @pytest.mark.parametrize("cls", [(0, 0, 0, 1), (0, 1, 0, 1), (1, 1, 1, 1),
                                  (2, 2, 2, 2)], ids=str)
 def test_eq26s_printed_ket_sign_fails_and_the_derived_one_passes(cls) -> None:
@@ -361,6 +362,7 @@ def _with_seed(cls, s, seeds) -> np.ndarray:
     return run_hrr(cls, s, bnd)
 
 
+@pytest.mark.claim("fock/eq14-seed-inconsistent")
 def test_eq14s_printed_seed_fails_and_the_derived_one_passes() -> None:
     """`fock/eq14-seed-inconsistent`: eq 14's `U_P U_Q theta^m F_m(T)` misses
     `(ss|ss)` (no `(2/sqrt(pi)) theta`); with that factor restored it matches
@@ -384,6 +386,9 @@ def test_eq14s_printed_seed_fails_and_the_derived_one_passes() -> None:
                                <= TOL * scale))
 
         assert close(derived)
+        # and the derived seed IS the engine's: fed through the harness, it
+        # gives the shipped VRR + HRR's block bit for bit
+        assert np.array_equal(_with_seed(cls, s, derived), hgp_block(cls, s))
         assert close(eq14) is eq14_ok
         assert close(repaired) is repaired_ok
 

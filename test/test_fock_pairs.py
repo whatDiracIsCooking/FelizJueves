@@ -23,8 +23,10 @@ THE CLAIMS (the issue's acceptance, in order).
              absent from the launch list, and every ERI they hold is `< tau`
              (computed, on fixtures where the screen fires). Fig. 1's launch
              matrix at `n = 2` is reproduced.
-  printed    the two pending defect records of #271 (scored in #291, not
-             here): the printed assignment (largest magnitude BELOW G) lets
+  printed    the two defect records of #271 (asserted by #291 in
+             test_fock_claims.py, which carries them to the two-electron F;
+             these are the ERI-level halves): the printed assignment
+             (largest magnitude BELOW G) lets
              the eq. 29 screen remove a quartet holding an ERI `>= tau`, and
              the printed inequality `i + j <= n` removes one too -- each
              shown on a computed ERI.
@@ -354,12 +356,18 @@ def test_the_assignment_is_the_upper_bound_one() -> None:
     assert mags[printed_magnitude_index(0.5, mags)] < 0.5
 
 
+@pytest.mark.claim("fock/prelaunch-screening-removes-launches")
 @pytest.mark.parametrize("name,tau", [("h2o_sto3g_j", 1e-2),
                                       ("h2o_631g_j", 1e-3),
                                       ("h2o_631g_j", 1e-2),
                                       ("h2o_ccpvdz_j", 1e-3)])
 def test_the_prelaunch_screen_removes_exactly_i_plus_j_at_least_n(name,
                                                                    tau) -> None:
+    # fock/prelaunch-screening-removes-launches, the mechanism only: on eq.
+    # 29's magnitudes the batch pairs with i + j >= n are absent from the
+    # launch list (and every other one is in it), and no quartet they hold
+    # has G_ab G_cd >= tau. How many launches that saves is not scored: the
+    # fixtures are compact (pin 9; limits.json's screen-efficacy record).
     n = 2
     plan = _plan(name, tau, n)
     mags = plan.magnitudes
@@ -425,7 +433,7 @@ def test_launches_are_the_upper_triangle_and_name_the_f_class(name,
     assert len(LADDER) == 21
 
 
-# -- the printed text, against computed ERIs (#271's pending records) --------
+# -- the printed text, against computed ERIs (#271's defect records) ---------
 
 
 def test_the_printed_assignment_screens_a_quartet_above_tau() -> None:

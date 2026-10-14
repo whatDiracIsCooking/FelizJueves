@@ -165,6 +165,59 @@ def test_every_pending_record_names_its_scoring_rule() -> None:
             assert _ISSUE.search(c.reason), c.id
 
 
+_NODE = re.compile(r"test/[A-Za-z0-9_/]+\.py::[A-Za-z0-9_]+")
+_CARDS = ("RTX 3080", "RX 9060 XT", "A100")
+
+
+def _defined(node: str) -> bool:
+    path, name = node.split("::")
+    src = (ROOT / path).read_text() if (ROOT / path).exists() else ""
+    return re.search(rf"^def {name}\(", src, re.MULTILINE) is not None
+
+
+def test_every_unverifiable_record_says_what_would_settle_it() -> None:
+    # #291, the m5 discipline: an UNVERIFIABLE record names what would
+    # settle it and on what hardware, and every test it names as holding
+    # the reachable half exists (a rename shows up here, not as a stale
+    # pointer).
+    for c in load_claims(CLAIMS):
+        if c.status is not ClaimStatus.UNVERIFIABLE:
+            continue
+        assert "would settle it" in c.reason, c.id
+        assert any(card in c.reason for card in _CARDS), c.id
+        for node in _NODE.findall(c.reason):
+            assert _defined(node), (c.id, node)
+
+
+def test_no_record_rests_on_the_ptxas_baseline() -> None:
+    # data/measured/fock_baseline.json (#289) is a quality baseline of common
+    # ancestry, never a numeric witness (limits.json): no record may cite it
+    # or be held by its test.
+    for c in load_claims(CLAIMS):
+        text = f"{c.statement} {c.reason} {c.test}"
+        assert "fock_baseline" not in text, c.id
+        assert "ptxas" not in text.lower(), c.id
+
+
+def test_section_3s_claims_are_scored() -> None:
+    # #291 moved every record #271 declared off PENDING: the issue's five
+    # minimum to the verdicts its scope stated in advance, and the defects
+    # all asserted. A later record may arrive PENDING (with its rule, above);
+    # these may not go back.
+    status = {c.id: c.status for c in load_claims(CLAIMS)}
+    A, U = ClaimStatus.ASSERTED, ClaimStatus.UNVERIFIABLE
+    assert {cid: status[cid] for cid in REQUIRED} == {
+        "fock/fused-six-block-digest": A,
+        "fock/skip-not-break": A,
+        "fock/predigest-bounds-atomics": A,
+        "fock/prelaunch-screening-removes-launches": A,
+        "fock/symmetry-vs-screening": U,
+    }
+    defects = {c.id for c in load_claims(CLAIMS) if c.kind is ClaimKind.DEFECT}
+    assert len(defects) == 5
+    assert all(status[cid] is A for cid in defects)
+
+
 def test_every_statement_quotes_its_source_location() -> None:
     # In our vocabulary, and anchored: each statement names a unit it cites
     # and carries at least one quotation from the paper.
