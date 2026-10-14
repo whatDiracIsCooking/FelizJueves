@@ -72,6 +72,12 @@ whole molecule's `J` through d. The host-side `ao/` paths stay as the
 references the kernels are held to. See "The J chain as device code" below,
 the one place that says which steps are generated and where they ran.
 
+**The one-electron matrices** (milestone 11) reuse this engine: `S`, `T`
+and `V` on the same `E` fragment, `V` as the `[p|q]` recurrence with the
+ket replaced by a unit point charge (`θ → √ζ`). They are not part of `J`
+and nothing about them is scored against `[JEngine]`;
+[`one_electron.md`](one_electron.md) is their note.
+
 **Still host-side, or deliberately absent.** Host-side: the pair list, each
 record's inputs (`ζ`, `X_PA`, `X_PB`, the dressing scale), the Schwarz bound,
 the sort with its `Dmax` read-back, the staging, and the launch code (a
@@ -1838,6 +1844,10 @@ before, its `source_sha256` pins unchanged) and the pair ladder,
 units by default). The class selector (`--class`, `--shell-ls`) writes each
 cell's whole chain, with an `order` file in launch order: `dq_{lc}_{ld}`, the
 `[p|q]` batch kernels, then `jab_{la}{lb}`.
+Since #242 `--one-e-l LMAX` adds the one-electron ladder beside these, and
+`KERNEL_GEN_CMD` asks for `--one-e-l 2` (37 + 18 units); the 37 above and
+their pins are unchanged ([`one_electron.md`](one_electron.md), "The
+generator").
 
 ### The layout every consumer indexes
 

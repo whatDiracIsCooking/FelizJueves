@@ -3,8 +3,9 @@
 The `[t]^(0)` evaluator (`reference.pq.one_centre`) and the Boys function
 (`reference.boys`) arrive by injection or are used only by the test's own
 closed forms, so this file shares no ancestry with the recurrence it checks.
-The libcint comparison is a later issue's (milestone 11, `O1`). Fast tier,
-no marker, no PySCF.
+Since #240, `V` is also held to libcint's `int1e_nuc`, and `T + V` to PySCF's
+`hcore`, through the tracked fixtures (the block at the end of this file; s/p
+fast, `slow` from l = 2). Fast tier otherwise, no marker, no PySCF.
 """
 
 from __future__ import annotations

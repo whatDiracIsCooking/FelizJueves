@@ -2,8 +2,9 @@
 
 The witnesses here are the Hermite identity (`S` IS element 0 of the block
 `ao.pairs.primitive_pairs` dresses, summed) and closed forms derivable by
-hand. The libcint comparison is a later issue's (milestone 11, `O1`), not
-this one's. Fast tier, no marker, no PySCF.
+hand, and, since #240, libcint's `int1e_ovlp` through the tracked fixtures
+(the block at the end of this file; s/p fast, `slow` from l = 2). Fast tier
+otherwise, no marker, no PySCF.
 """
 
 from __future__ import annotations

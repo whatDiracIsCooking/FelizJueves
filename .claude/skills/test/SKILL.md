@@ -30,14 +30,17 @@ Three rules, and the third is the one this project turns on:
 ### Fast tier — `pytest`
 
 ```bash
-pytest -rs                      # everything collectable here
-pytest -rs -n 8                 # host: 8 workers (JOBS in devtools/config.sh)
-pytest -rs -k toolchain         # one file's worth
+FAST='not cuda and not hip and not gpu and not slow and not oracle'
+pytest -rs -m "$FAST"           # the fast tier, as the push gate runs it
+pytest -rs -m "$FAST" -n 8      # host: 8 workers (JOBS in devtools/config.sh)
+pytest -rs -m "$FAST" -k toolchain   # one file's worth
 ```
 
-Touches no device compiler and launches no kernel, **because
-`FAST_TEST_ARGS` in `devtools/config.sh` excludes the `cuda`, `hip` and `gpu`
-markers**. That exclusion is what makes it honest as a push gate: inside a
+Touches no device compiler and launches no kernel, **because that marker
+expression (`FAST_TEST_ARGS` in `devtools/config.sh`) excludes the `cuda`,
+`hip` and `gpu` markers**. A **bare `pytest` applies no marker filter**
+(`addopts` is only `-ra`): on this host, where nvcc is native, it compiles
+and, with a card present, launches. That exclusion is what makes it honest as a push gate: inside a
 container both compilers are present, and without it the "seconds-fast" tier
 would start invoking nvcc.
 
@@ -59,9 +62,9 @@ Four phases, and **the report at the end says which of them did anything**:
 | Phase | What it proves |
 |---|---|
 | preflight | the compiler is here; whether a card is |
-| generate | `KERNEL_GEN_CMD` (`python -m felizjueves.emit`) writes the `[p\|q]` kernels, L = 0..16, into `.kernel-tier/src-<backend>/` — **dormant** if that variable is set empty |
+| generate | `KERNEL_GEN_CMD` (`python -m felizjueves.emit --one-e-l 2`) writes 55 units into `.kernel-tier/src-<backend>/`: the J chain's 37 (the `[p\|q]` kernels, L = 0..16, and the `dq_`/`jab_` pair ladder through (ff) — all the bare command writes) and the one-electron ladder's 18 (`s_`, `t_`, `v_` for `la ≤ lb ≤ 2`, #242) — **dormant** if that variable is set empty. To cap it, set it yourself, e.g. `KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit --L 0 1 2 3 4 --pair-l 3 --one-e-l 2"` |
 | compile | every emitted translation unit survives the real device compiler. The CUDA side takes `*.cu`; the **HIP side takes `*.hip` AND `*.cu`** (with `-x hip`), so one generated source can be checked against both compilers — which is the point |
-| device | the `gpu`-marked suite **for that backend** (`-m "gpu and <backend>"`) agrees with the host reference — today `test_kernel_device.py` (the generated kernels' `J_p` and `fj_boys`) plus `test_toolchain.py`'s saxpy |
+| device | the `gpu`-marked suite **for that backend** (`-m "gpu and <backend>"`) agrees with the host reference — among others `test_kernel_device.py` (the generated kernels' `J_p` and both `fj_boys` spellings), the J chain and launch-plan builds, `test_one_electron_device.py` and `test_hcore_device.py` (`S`, `T`, `V` and `h`, milestone 11), plus `test_toolchain.py`'s saxpy |
 
 **The cache covers the tests' compiles too (#186).** `test/devcache.py` puts
 the same sccache in front of every compile a test issues
@@ -96,7 +99,10 @@ gets reported as a pass:
 | `cuda` | nvcc — **no card required** | `nvcc` |
 | `hip` | hipcc — **no card required** | `hipcc` |
 | `gpu` | a live device | `cuda_device` / `hip_device` |
-| `slow` | nothing; costs minutes (an exhaustive search re-run); off the pre-push gate via `FAST_TEST_ARGS` | — |
+| `slow` | nothing; costs minutes (an exhaustive search re-run, or a deferred high-L device cell such as the one-electron (ff) classes); off the pre-push gate via `FAST_TEST_ARGS` | — |
+
+Those are the registered markers (with `oracle` and `claim(id)`). An issue that
+names a `kernel-tier` or `high-L` marker means `slow`: neither is registered.
 
 A test takes exactly the fixtures it needs, so the skip message names the real
 reason (`hipcc not found -- it lives in the fj:hip / fj:combined image`, versus
