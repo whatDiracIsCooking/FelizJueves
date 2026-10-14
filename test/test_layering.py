@@ -1102,3 +1102,53 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and #242's one-electron "
                        RULES["driver"].may | frozenset(_ONE_E_BUILDERS),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_ONE_E_BUILDERS)
+
+
+# ---------------------------------------------------------------------------
+# #273 (milestone 12): engine #2, the HGP recurrence of `[Fock]` §3, as the
+# package `hgp/`. The rule is PACKAGE-WIDE: every module under `hgp/` gets
+# rule "hgp" here, so a new `hgp.*` module is held to it the moment it exists
+# (it still needs its own EDGES entry, the per-PR edit), and the transitive
+# test below walks every `hgp.*` module.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgp": _rule(
+        "hgp/ (#273): engine #2, the Head-Gordon-Pople recurrence of "
+        "[Fock] §3 -- the VRR as an (e, f, m) DAG (`hgp.vrr`), and its "
+        "siblings. Kept off the MMD engine so that neither is bent into "
+        "the other's shape (milestone 12, pin 11)",
+        ("hgp", "spec"),
+        plan="the plan layer keys on `total_am`, which indexes a [JEngine] "
+             "row an HGP class does not have, and its (r, m) DAG is graded "
+             "by m -- every edge raises m by one, which its order, sieve and "
+             "recycling rest on -- while the HGP VRR has same-m edges (#273): "
+             "importing it would bend one engine into the other's shape "
+             "(milestone 12, pin 11)",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {m: "hgp" for m in _modules() if _under(m, "hgp")}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hgp": (),
+    "hgp.vrr": (),
+}.items()}
+
+
+def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
+    # Milestone 12, pin 11, TRANSITIVELY and package-wide: no chain of
+    # imports from any module under hgp/ reaches plan/ or reference/.
+    graph = _graph()
+    roots = [m for m in graph if _under(m, "hgp")]
+    assert "hgp.vrr" in roots
+    for root in roots:
+        assert RULE_OF[root] == "hgp", root
+        seen: set[str] = set()
+        todo = [root]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        for banned in ("plan", _REF):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{root} reaches {hit}"
