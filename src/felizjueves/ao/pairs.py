@@ -9,6 +9,9 @@
     overlap_bound / kinetic_bound / potential_bound -> the three, per pair
     point_charge_bounds(zeta, L, *, one_centre) -> B_t >= |[t]^(0)|, any C
     pair_list(basis, *, tau, bound)       -> PairList, the screened shell pairs
+    primitive_schwarz_bound(pp, *, one_centre)  -> G_[ab] of one primitive pair
+    primitive_schwarz_bounds(sa, sb, *, one_centre) -> G_[ab] per primitive pair
+    prune(bounds, *, eps)                 -> the kept prefix, bound-descending
 
 A *primitive pair* of an ordered shell pair `(sa, sb)` is one exponent from
 each, `alpha = sa.exponents[i]`, `beta = sb.exponents[j]`; it becomes one bra
@@ -154,6 +157,46 @@ builds from the kept pairs only. The decay is `exp(-mu |A - B|^2)` through
 `E^{00}_0`, a genuine distance screen rather than a Schwarz product, which is
 why a one-electron build is `O(N)` work on an extended system -- and why a
 compact molecule screens almost nothing (test/test_ao_pairs.py records it).
+
+THE CONTRACTED SCHWARZ BOUND OF [Fock] (#285; [Fock, eq. 22, §3.2 decision
+8]). The fused Fock kernel screens a CONTRACTED quartet `(ab|cd)` on
+`G_ab G_cd`, and deletes a primitive pair of `|ab)` on its own `G_[ab]`. Both
+are read off the bound above -- no second bound is introduced. For one
+primitive pair `pp` of `(sa, sb)` (its dressed block, `primitive_pairs`):
+
+    G_[ab](pp) = max_k SUM_{p in hermite_order(la + lb)} |block_pp[k][p]| I_p(zeta_pp)
+
+with `I_p = hermite_bound(zeta_pp, p)`, the max over the Cartesian pairs `k`.
+THE PROOF that it bounds: an element of the contracted block is (ao/eri.py)
+
+    (ab|cd)[k][l] = SUM_{pp, qq} SUM_{p, q} E_pp[k][p] [p|q] E_qq[l][q]
+
+and `|[p|q]| <= I_p(zeta) I_q(eta)` (THE BOUND above), so
+
+    |(ab|cd)[k][l]| <= SUM_{pp, qq} (SUM_p |E_pp[k][p]| I_p) (SUM_q |E_qq[l][q]| I_q)
+                    <= SUM_{pp, qq} G_[ab](pp) G_[cd](qq)
+                     = (SUM_pp G_[ab](pp)) (SUM_qq G_[cd](qq)).
+
+The last line holds for ANY subsets of the primitive pairs summed on each
+side: the same bound, restricted to the kept primitives, bounds the block
+computed from the kept primitives only. That is why pruning (below) keeps
+the proof -- the bound still bounds after pruning -- and the deleted
+primitive pairs move an element by at most `(SUM_dropped G_[ab]) G_cd +
+G_ab' (SUM_dropped G_[cd])`, `G_ab'` the kept sum. The statement is the
+exact-arithmetic one, like `V`'s; the tests check it on computed blocks.
+For an `s`-`s` primitive pair `G_[ab]` is `|block[0][0]| I_0`, the existing
+`hermite_bound` times the dressed coefficient (a test pins it). `[Fock]`'s
+eq. 22 defines `G_ab` as the exact `sqrt((ab|ab))`-type factor; this one is
+an upper bound on it that needs no ERI, and is the bound `ao.k` and the
+J engine already rest on.
+
+`prune(bounds, *, eps)` is [Fock]'s primitive-level screen: the primitive
+pairs ordered DESCENDING by `G_[ab]` (stably, by index on ties) and the
+LONGEST TAIL whose `math.fsum` is `< eps` deleted -- so the kept set is a
+PREFIX of the bound order, and the deleted sum is `< eps`: `fsum` is
+correctly rounded and `eps` is a float, so a rounded sum below `eps` is an
+exact one below it. Which `eps` makes a deletion insignificant is the
+caller's (`launch_f.py`); `eps = 0` deletes nothing.
 
 Plain tuples and floats, like `ao/shell.py`: `src/felizjueves` has no runtime
 dependencies.
@@ -448,3 +491,44 @@ def pair_list(basis: Basis, *, tau: float, bound: Bound) -> PairList:
                     "number >= 0")
             (kept if b >= tau else dropped).append((i, j))
     return PairList(float(tau), tuple(kept), tuple(dropped))
+
+
+# ---------------------------------------------------------------------------
+# The contracted Schwarz bound of [Fock] and primitive pruning (#285; module
+# docstring, "THE CONTRACTED SCHWARZ BOUND OF [Fock]")
+# ---------------------------------------------------------------------------
+
+
+def primitive_schwarz_bound(pp: PrimitivePair, *,
+                            one_centre: OneCentre) -> float:
+    """`G_[ab](pp) = max_k SUM_p |block[k][p]| I_p(zeta)`: the per-primitive
+    factor of the contracted Schwarz bound, from `hermite_bound`."""
+    ips = hermite_bounds(pp.zeta, pp.L, one_centre=one_centre)
+    return max(math.fsum(abs(e) * i for e, i in zip(row, ips, strict=True))
+               for row in pp.block)
+
+
+def primitive_schwarz_bounds(sa: Shell, sb: Shell, *,
+                             one_centre: OneCentre) -> tuple[float, ...]:
+    """`G_[ab]` for every primitive pair of `(sa, sb)`, in `primitive_pairs`
+    order (i outer); their sum is the contracted `G_ab`."""
+    return tuple(primitive_schwarz_bound(pp, one_centre=one_centre)
+                 for pp in primitive_pairs(sa, sb))
+
+
+def prune(bounds: Sequence[float], *, eps: float) -> tuple[int, ...]:
+    """The indices KEPT, in descending-bound order (stable): every index
+    except the longest tail of that order whose `math.fsum` is `< eps`.
+
+    Refuses a bound or an `eps` that is not a finite number `>= 0`.
+    """
+    if not _finite_non_negative(eps):
+        raise ValueError(f"eps = {eps!r} is not a finite number >= 0")
+    for k, g in enumerate(bounds):
+        if not _finite_non_negative(g):
+            raise ValueError(f"bounds[{k}] = {g!r} is not a finite number >= 0")
+    order = sorted(range(len(bounds)), key=lambda k: -bounds[k])
+    cut = len(order)
+    while cut and math.fsum(bounds[k] for k in order[cut - 1:]) < eps:
+        cut -= 1
+    return tuple(order[:cut])

@@ -52,6 +52,110 @@
         "measured": false
       },
       "source": "[Fock, eq. 29, §3.2 decision 7]"
+    },
+    {
+      "claim": "The pair stream (#285) counts what its screens remove on the compact fixtures and compares nothing: how many contracted pairs are deleted, how many primitive pairs are pruned and how many batch pairs eq. 29's pre-launch screen removes are recorded below, and none of them is a measurement of the screens' efficacy. At tau = 1e-10 no batch pair is removed before launch on any fixture, while primitive pruning already fires on 6-31G and cc-pVDZ.",
+      "mechanism": "Eq. 29's screen removes a batch pair only when both magnitudes are small, i.e. when the pairs' Schwarz factors G_ab decay below tau^(1/n); in H2 and H2O every shell pair overlaps (the smallest contracted G_ab is above 0.02 on every fixture), so the screen cannot fire at an SCF threshold, and the fraction it removes at a loose tau is a fact about the fixture (milestone 12 pin 9). Pruning acts inside a pair (a tight primitive against a diffuse one) and is less sensitive to the molecule's extent, so it fires here, and by splitting contraction degrees it ADDS batches. The follow-up is an extended case -- #88's chain of four H2 (data/ao/screening.json) or a longer one -- with the eq. 29 and six-block screens' removals counted against the unscreened F of ao/fock.py.",
+      "evidence": "launch_f.f_launches with ao.pairs.primitive_schwarz_bounds under reference.pq.one_centre, n = 2, on the tracked fixtures named below; test/test_fock_pairs.py recomputes every count and asserts that the screened batch pairs hold no ERI >= tau.",
+      "asserted_value": {
+        "measured": false,
+        "n": 2,
+        "taus": [
+          1e-10,
+          1e-06
+        ],
+        "fixtures": {
+          "h2_sto3g_j": {
+            "1e-10": {
+              "pairs": 3,
+              "pairs_deleted": 0,
+              "primitive_pairs": 27,
+              "primitive_pairs_pruned": 0,
+              "batches": 1,
+              "batch_pairs": 1,
+              "batch_pairs_screened": 0,
+              "launches": 1
+            },
+            "1e-06": {
+              "pairs": 3,
+              "pairs_deleted": 0,
+              "primitive_pairs": 27,
+              "primitive_pairs_pruned": 0,
+              "batches": 1,
+              "batch_pairs": 1,
+              "batch_pairs_screened": 0,
+              "launches": 1
+            }
+          },
+          "h2o_sto3g_j": {
+            "1e-10": {
+              "pairs": 15,
+              "pairs_deleted": 0,
+              "primitive_pairs": 135,
+              "primitive_pairs_pruned": 0,
+              "batches": 3,
+              "batch_pairs": 6,
+              "batch_pairs_screened": 0,
+              "launches": 6
+            },
+            "1e-06": {
+              "pairs": 15,
+              "pairs_deleted": 0,
+              "primitive_pairs": 135,
+              "primitive_pairs_pruned": 1,
+              "batches": 4,
+              "batch_pairs": 10,
+              "batch_pairs_screened": 0,
+              "launches": 10
+            }
+          },
+          "h2o_631g_j": {
+            "1e-10": {
+              "pairs": 45,
+              "pairs_deleted": 0,
+              "primitive_pairs": 280,
+              "primitive_pairs_pruned": 15,
+              "batches": 17,
+              "batch_pairs": 153,
+              "batch_pairs_screened": 0,
+              "launches": 153
+            },
+            "1e-06": {
+              "pairs": 45,
+              "pairs_deleted": 0,
+              "primitive_pairs": 280,
+              "primitive_pairs_pruned": 24,
+              "batches": 17,
+              "batch_pairs": 153,
+              "batch_pairs_screened": 0,
+              "launches": 153
+            }
+          },
+          "h2o_ccpvdz_j": {
+            "1e-10": {
+              "pairs": 78,
+              "pairs_deleted": 0,
+              "primitive_pairs": 593,
+              "primitive_pairs_pruned": 23,
+              "batches": 19,
+              "batch_pairs": 190,
+              "batch_pairs_screened": 0,
+              "launches": 190
+            },
+            "1e-06": {
+              "pairs": 78,
+              "pairs_deleted": 0,
+              "primitive_pairs": 593,
+              "primitive_pairs_pruned": 40,
+              "batches": 22,
+              "batch_pairs": 253,
+              "batch_pairs_screened": 0,
+              "launches": 253
+            }
+          }
+        }
+      },
+      "source": "[Fock, §3.2 decision 2, eq. 29, §3.2 decision 3, §3.2 decision 8]"
     }
   ]
 }

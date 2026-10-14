@@ -1167,3 +1167,58 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "ao.fock": ("ao.j", "ao.shell"),
 }.items()}
+
+
+# ---------------------------------------------------------------------------
+# #285 (milestone 12): the fused Fock build's pair stream, `launch_f`, as a
+# VALUE beside `launch` and `launch_k`: the contracted pairs, their pruned
+# primitive pairs, the degree-uniform batches, eq. 29's magnitudes and the
+# pre-launch screen. Its bound is injected (`bound=`), so it reaches no
+# reference/; it builds no kernel and evaluates no ERI.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "f_launch": _rule(
+        "launch_f.py (#285): the fused Fock build's pair stream as a VALUE "
+        "-- contracted pairs, pruned primitive pairs, batches keyed by "
+        "class, contraction degree and eq. 29 magnitude, and the batch "
+        "pairs launched. Its records come from the AO layer, the shared "
+        "bound check and stable sort from `launch`, the `Spec` it names "
+        "from `spec`; the bound arrives injected (`bound=`)",
+        ("spec", "ao", "launch"),
+        reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
+                  "ao/pairs.py takes its `one_centre=`",
+        plan="the plan layer keys on `total_am`, which indexes a [JEngine] "
+             "row an F class does not have, and refuses an F spec "
+             "(milestone 12, pin 11)",
+        emit="the plan is data: no text is emitted",
+        dispatch="nothing measured may reach a launch plan by import (#145)",
+        measured="a launch plan is data, never a toolchain's reading",
+        measured_store="nothing measured may reach a launch plan by import "
+                       "(#145)"),
+}
+RULE_OF |= {
+    "launch_f": "f_launch",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "launch_f": ("ao.j", "ao.pairs", "ao.shell", "launch", "spec"),
+}.items()}
+
+
+def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
+    # #285, TRANSITIVELY: no chain of imports from `launch_f` reaches
+    # reference/ (its bound is injected), a backend, the measured layer, the
+    # dispatch policy, or the adapters that run kernels.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["launch_f"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "ao.pairs" in seen
+    for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged",
+                   "dispatch", "measured", "measured_store"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"launch_f reaches {hit}"
