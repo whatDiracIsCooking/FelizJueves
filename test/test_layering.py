@@ -1135,6 +1135,26 @@ EDGES |= {k: frozenset(v) for k, v in {
     "hgp.cost": ("hgp.hrr", "hgp.vrr"),  # #276: FLOPs off both DAGs
 }.items()}
 
+# #279: `hgp.recurrence`, the bridge from `hgp/` to `ir.py` -- the HGP twin
+# of the MMD `recurrence` (rule "builder"). It is the one `hgp.*` module that
+# may reach the IR, so it gets its own rule; the package-wide prohibitions
+# (plan, reference) are restated, and the transitive test below holds it too.
+RULES |= {
+    "hgp_builder": _rule(
+        "hgp/recurrence.py (#279): the HGP VRR (eqs 25-26) and HRR (eq 28) "
+        "as IR -- the statements off `hgp.vrr` / `hgp.hrr`'s DAGs, and "
+        "standalone recurrence-only `Kernel`s keyed on a `Target.F` `Spec`",
+        ("ir", "spec", "hgp"),
+        plan=RULES["hgp"].must_not["plan"],
+        reference=_GROUND_TRUTH + "; its pins compare against "
+                  "reference/pq.py's fundamental and ao/eri.py",
+        emit="the builder is vendor-neutral; a backend spells its output",
+        interp="the interpreter is what checks the builder; it must not "
+               "know HGP, and the builder must not lean on it (#23)"),
+}
+RULE_OF["hgp.recurrence"] = "hgp_builder"
+EDGES["hgp.recurrence"] = frozenset(("hgp.hrr", "hgp.vrr", "ir", "spec"))
+
 
 def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
     # Milestone 12, pin 11, TRANSITIVELY and package-wide: no chain of
@@ -1143,7 +1163,7 @@ def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
     roots = [m for m in graph if _under(m, "hgp")]
     assert "hgp.vrr" in roots
     for root in roots:
-        assert RULE_OF[root] == "hgp", root
+        assert RULE_OF[root] in ("hgp", "hgp_builder"), root
         seen: set[str] = set()
         todo = [root]
         while todo:

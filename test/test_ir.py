@@ -221,6 +221,7 @@ def test_every_hgp_dag_term_is_a_term_of_the_vocabulary() -> None:
 def _built_kernels() -> list[Kernel]:
     """One kernel of every family the generator builds today, at a size that
     exercises every factor it can use."""
+    from felizjueves.hgp.recurrence import build_hrr_kernel, build_vrr_kernel
     from felizjueves.kernel import build_pq_kernel
     from felizjueves.kernel_dq import build_dq_kernel
     from felizjueves.kernel_jab import build_jab_kernel
@@ -228,18 +229,24 @@ def _built_kernels() -> list[Kernel]:
     from felizjueves.kernel_s import build_s_kernel
     from felizjueves.kernel_t import build_t_kernel
     from felizjueves.kernel_v import build_v_kernel
+    from felizjueves.spec import Operator, Spec, Target
 
+    pppp = Spec(Operator.COULOMB, 0, (1, 1, 1, 1), Target.F)
     return [build_pq_kernel(2), build_dq_kernel((1, 1)),
             build_jab_kernel((1, 1)), build_s_kernel((1, 1)),
             build_t_kernel((1, 1)), build_v_kernel((1, 1)),
-            build_k_kernel((1, 0, 0, 0))]
+            build_k_kernel((1, 0, 0, 0)),
+            # #279: the standalone HGP VRR and HRR kernels, which bind every
+            # HGP member as a scalar Param; (pp|pp) reaches each of them.
+            build_vrr_kernel(pppp), build_hrr_kernel(pppp)]
 
 
-# Members no built kernel binds yet, each with the reason. The HGP members
-# await the fused F kernel (#282); this registry shrinks when it lands, and a
-# member listed here that a kernel does bind fails the test below.
-UNBOUND = {f: "awaiting #282, the fused HGP F kernel (no HGP kernel exists "
-              "before it)" for f in HGP_FACTORS}
+# Members no built kernel binds yet, each with the reason. Empty since #279:
+# the HGP members (#277) were registered here "awaiting #282", and the
+# standalone VRR/HRR kernels of `hgp/recurrence.py` bind them all before the
+# fused F kernel exists. A member listed here that a kernel does bind fails
+# the test below, so a new unbound member must be added with its reason.
+UNBOUND: dict[Factor, str] = {}
 
 
 def test_every_factor_is_bound_by_a_built_kernel_or_registered_unbound() -> None:
