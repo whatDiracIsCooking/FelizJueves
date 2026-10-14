@@ -764,8 +764,12 @@ F_ABOUT = (
     "say which (spill bytes on nvcc, spilled register counts on hipcc); "
     "compare within one arch only. A timed F row carries every "
     "'wallclock:*gpu_util_*' key as a reading, never null. Written by "
-    "#288's measurement (python -m felizjueves.measured --remeasure "
-    "--target f, once the HGP kernel exists); nothing here is compared "
+    "#288's measurement: the compile side by python -m felizjueves.measured "
+    "--remeasure --target f --L 0 1 2, the clock by test/test_fock_ondevice"
+    ".py's opt-in sweep (FJ_WALLCLOCK_F=1, behind the gate; its docstring "
+    "is the protocol: one off-diagonal launch of 2048 x 128 contracted "
+    "quartets, runtime_ns on the wide input, wallclock:near:* on the near "
+    "one); nothing here is compared "
     "against [Fock]'s A100 timings, and there is no published register "
     "table for its §3.2 kernel.")
 

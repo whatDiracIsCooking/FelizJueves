@@ -1534,3 +1534,15 @@ def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
             f"{m} names engine machinery behind an entry point: "
             f"{sorted(named - entry)}")
         assert {_engine_of(e) for e in entry} == set(ENGINES), entry
+
+
+# ---------------------------------------------------------------------------
+# #288 (milestone 12): the `--remeasure` driver compiles the fused Fock
+# kernel's F cells (`--target f`), so `measured` composes `kernel_f` with the
+# backends as it composes `kernel` -- the second generator naming both
+# engines, under #287's same narrow exemption: by ENTRY POINT only
+# (`kernel`, `kernel_f`), never `hgp/` or the plan behind them.
+# ---------------------------------------------------------------------------
+
+GENERATORS["measured"] = frozenset(("kernel", "kernel_f"))
+EDGES["measured"] = EDGES["measured"] | frozenset(("kernel_f",))

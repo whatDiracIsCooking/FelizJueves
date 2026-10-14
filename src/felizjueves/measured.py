@@ -17,6 +17,8 @@
     python -m felizjueves.measured --roofline           # #112's verdicts
     python -m felizjueves.measured --remeasure --subgrid --target k
                 [--subgrid-ls 7 10] [--compile-timeout S]  # #205's K cells
+    python -m felizjueves.measured --remeasure --target f --L 0 1 2
+                                                        # #288's F cells
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -93,6 +95,17 @@ NO ROW (`CompileTimeout`, never a partial cell), and each cell's largest
 unit is compiled first, so a cell that cannot be compiled is known -- and
 its other units cancelled -- after one budget, not after all of them.
 
+THE F CELLS (#288) are milestone 12's fused Fock classes (`F_CLASSES`, the
+21-class ladder, every shell `l <= 2`), selected by total L with `--target
+f --L ...` (`f_cells`): each is `kernel_f.build_f_kernel(spec)`, ONE unit,
+so its row reads as a one-batch J row does -- unprefixed `raw`, the unit's
+name and source hash -- keyed `.../b1/f/literal@...` (measured_store's THE
+F CELL). Its one shared array, `ab_sh`, has a literal extent, so nvcc's
+`smem` and hipcc's `LDS Size` report it as `shared_bytes` and `raw`'s
+`jsh_dynamic_bytes` is 0. #288 recorded `--L 0 1 2`, the five classes its
+default tier runs on the cards; the clock beside each is written by
+test/test_fock_ondevice.py's opt-in sweep, behind the gate.
+
 COUNTERS (#110) are read here too: `profile` runs a built binary under the
 vendor's profiler and `parse_ncu_csv` / `parse_rocprof_csv` read what it
 wrote, one `KernelCounters` per launch; `counter_rows` files one cell's
@@ -168,6 +181,7 @@ from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Lit, Space
 from felizjueves.kernel import build_pq_kernels, pq_spec
+from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.lower import LEVERS, RECYCLE, lower
 from felizjueves.measured_store import (
@@ -211,6 +225,20 @@ from felizjueves.spec import Spec, Target
 
 DEFAULT_LS = tuple(range(0, 17))
 
+# THE F CELLS (#288; module docstring): milestone 12's 21-class ladder,
+# restated as emit.__main__ restates it (a driver names the HGP engine by its
+# entry point only, test/test_layering.py) and held equal to hgp.vrr.CLASSES
+# by test/test_measured.py.
+_F_PAIRS = tuple((a, b) for a in range(3) for b in range(a, 3))
+F_CLASSES: tuple[tuple[int, int, int, int], ...] = tuple(
+    bra + ket for i, bra in enumerate(_F_PAIRS) for ket in _F_PAIRS[i:])
+
+
+def f_cells(Ls: Sequence[int] = DEFAULT_LS) -> list[Spec]:
+    """The F cells whose total `L = la + lb + lc + ld` is in `Ls`, in ladder
+    order: `kernel_f.f_class_spec` of each (AO order, one batch, no lever)."""
+    return [f_class_spec(*c) for c in F_CLASSES if sum(c) in set(Ls)]
+
 
 def cell_kernels(spec: Spec | AsymCell) -> tuple[Kernel, ...]:
     """A cell's kernels, BUILT then LOWERED: `build_pq_kernels` of `spec`
@@ -222,9 +250,15 @@ def cell_kernels(spec: Spec | AsymCell) -> tuple[Kernel, ...]:
     `Target.K` cell (#205) is `kernel_k.build_k_kernels(spec)`: the
     partial-sum form, one kernel per batch, atomized when split. No lever is
     declared for K, so a K Spec carrying one is refused, never built as
-    something else."""
+    something else. A `Target.F` cell (#288) is `kernel_f.build_f_kernel
+    (spec)`, one unit, and refuses a lever the same way."""
     if isinstance(spec, AsymCell):
         return spec.kernels()
+    if spec.target is Target.F:  # #288: one unit, the fused kernel
+        if spec.levers:
+            raise ValueError(f"{spec.key()}: no lever is declared for an F "
+                             "cell (#278)")
+        return (build_f_kernel(spec),)
     if spec.target is Target.K:
         if spec.levers:
             raise ValueError(f"{spec.key()}: no lever is declared for a K "
@@ -388,8 +422,12 @@ class Backend:
         """The cell's translation units: one per batch kernel, in plan order."""
         spec = pq_spec(cls) if isinstance(cls, int) else cls
         emit = cuda.emit if self.name == "cuda" else hip.emit
-        return tuple(Unit(k.name, emit(k, self.arch),
-                          jsh_slots(k) * self.arch.wavefront * 8)
+        # an F kernel's one shared array (`ab_sh`) has a literal extent, so
+        # the compiler reports it as static smem / LDS: no dynamic bytes
+        # (an AsymCell, #113, is not a Spec and has no target: an MMD J cell)
+        f = getattr(spec, "target", Target.J) is Target.F
+        lane = 0 if f else self.arch.wavefront * 8
+        return tuple(Unit(k.name, emit(k, self.arch), jsh_slots(k) * lane)
                      for k in cell_kernels(spec))
 
 
@@ -1038,9 +1076,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--subgrid-ls", type=int, nargs="+", default=None,
                     metavar="L", help="with --subgrid: only the cells of "
                                       "these L")
-    ap.add_argument("--target", choices=("j", "k"), default="j",
+    ap.add_argument("--target", choices=("j", "k", "f"), default="j",
                     help="with --subgrid: the J subgrid (default) or "
-                         "K_SUBGRID, its exchange twins (#205)")
+                         "K_SUBGRID, its exchange twins (#205); f: the F "
+                         "ladder's classes whose total L is in --L (#288)")
     ap.add_argument("--compile-timeout", type=float,
                     default=COMPILE_TIMEOUT_S, metavar="S",
                     help="per unit: a compile past S seconds is killed and "
@@ -1063,9 +1102,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                                        or not args.subgrid):
                 raise ValueError("--target k is K_SUBGRID: it needs "
                                  "--subgrid, and takes no lever")
+            if args.target == "f" and (args.lever or args.asym or args.subgrid
+                                       or args.n_batches or args.subgrid_ls):
+                raise ValueError("--target f is the F ladder by --L: one "
+                                 "batch, no lever, no subgrid")
             grid = (ab_cells(args.lever) if args.lever
                     else K_SUBGRID if args.target == "k" else SUBGRID)
-            cells = grid if args.subgrid else args.Ls
+            cells = (grid if args.subgrid else f_cells(args.Ls)
+                     if args.target == "f" else args.Ls)
+            if not cells:
+                raise ValueError(f"--L {args.Ls} selects no cell")
             if args.asym:
                 grid = cells = ASYM_CELLS
             if (args.subgrid or args.asym) and args.n_batches:
