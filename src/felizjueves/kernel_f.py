@@ -1,38 +1,166 @@
 """The fused Fock kernel of `[Fock]` §3.2, `Target.F`: the contraction nest,
-the boundary, HRR after the loop (#282).
+the boundary, HRR after the loop (#282), and the six-block predigest with
+its 8-fold weights, DERIVED (#283).
 
-    build_f_kernel((la, lb, lc, ld) | spec) -> Kernel      n_batches = 1
+    build_f_kernel((la, lb, lc, ld) | spec, *, weights=, eris=) -> Kernel
     f_class_spec(la, lb, lc, ld)            -> Spec        the class's key
     pack(pairs)                             -> Packed      one side's staged record
-    PrimRec(P, X, zeta, U) / PairRec(sep, G, prims)        what the packer takes
+    PrimRec(P, X, zeta, U) / PairRec(sep, G, prims, sh, ao)  what pack takes
+    density_blocks(D, offsets, sizes)       -> Dsh         the screen's input
+    close(F)                                -> F + F^T     the host's last step
+    derive_weights() / degeneracy(a,b,c,d)  -> the orbit's weights, computed
     launch_shape(n_bra, threads)            -> (n_bra, (threads, 1))
-    kernel_counts(cls)                      -> statement counts, from the class
+    kernel_counts(cls) / six_block_size(cls) -> statement counts, from the class
 
 Engine #2's kernel, beside `kernel_k.py` (the MMD `K`) and `kernel_jab.py`.
 It computes every contracted ERI `(ab|cd)` of one launch -- a bra batch and
-a ket batch of `launch_f`'s pair stream (#285) -- and STOPS AT THE ERIs: it
-writes them to `g[bra, ket, i]` in `hgp.hrr.targets` order. The six-block
-digestion into `F` is #283's; the recurrence half is pinned bitwise against
-the host here while the dangerous half is still unwritten.
+a ket batch of `launch_f`'s pair stream (#285) -- and DIGESTS each quartet
+into the two-electron Fock matrix `G = J - K/2` (ao/fock.py's convention,
+`D` the total closed-shell density) through six thread-private two-index
+buffers. One unique quartet stands for its whole permutation orbit; the
+weights that make that true are derived below, in code (`derive_weights`)
+and in words, and held to `ao.fock`'s every-ordered-quartet sweep
+(test/test_kernel_f.py). With `eris=True` the kernel also writes every ERI
+to `g[bra, ket, i]` in `hgp.hrr.targets` order -- a TAP, the same body plus
+those writes, kept so the recurrence half stays pinned bitwise (#282).
 
 THE NEST (milestone 12, pins 5 and 7; `[Fock]` §3.2's "Block Execution"):
 
     bra = blockIdx.x                         one block per bra shell pair
     ab_sh[MAX_PRIM_PAIRS, REC] <- |ab)       the bra's primitive pairs, SHARED
+    d_ab <- D[a, b]; f_ab = 0                per bra: Fab spans the ket loop
     for k = threadIdx.x; k < n_ket; k += blockDim.x:   one thread per
                                              contracted quartet, consecutive
                                              threads on consecutive |cd)
-        bound = G_ab G_cd maxD
-        if bound < tau: skip                 the six-block screen's SHAPE
+        if k < diag * bra: skip              the canonical half (below)
         else:
-            c_(e,f) = 0                      |boundary| accumulators (961 at
+            dmax = max of the six weighted density blocks
+            bound = G_ab G_cd dmax
+            if bound < tau: skip             the six-block screen
+            else:
+                c_(e,f) = 0                  |boundary| accumulators (961 at
                                              (dd|dd)), zeroed per ket
-            for kcd < K_CD:                  the ket's primitive pairs (global)
-                for kab < K_AB:              the bra's (shared)
-                    quartet geometry, F_m(T) -> the VRR (eqs 25-26)
-                    c_(e,f) += [e0|f0]^(0)   eq 27, every boundary value
-            the HRR (eq 28) on the c_(e,f)   AFTER the loops: contracted only
-            g[bra, k, :] = (ab|cd)
+                for kcd < K_CD:              the ket's primitive pairs (global)
+                    for kab < K_AB:          the bra's (shared)
+                        quartet geometry, F_m(T) -> the VRR (eqs 25-26)
+                        c_(e,f) += [e0|f0]^(0)   eq 27, every boundary value
+                the HRR (eq 28) on the c_(e,f)   AFTER the loops: contracted
+                deg, the scaled density blocks, f_cd f_ac f_ad f_bc f_bd = 0
+                per ERI x: the six updates   the predigest
+                AtomicAdd the five ket-dependent buffers into F
+    AtomicAdd f_ab into F                    once per thread, after the loop
+
+and on the host, after every launch: `F <- F + F^T` (`close`).
+
+THE DIGESTION, AND ITS WEIGHTS -- DERIVED, NOT TRANSCRIBED (milestone 12,
+pin 6). The witness is `ao.fock`: for EVERY ordered shell quartet
+`(a, b, c, d)`, each visited once, the block `x_ijkl = (a_i b_j|c_k d_l)` is
+digested at weight 1 as
+
+    J[a_i][b_j] += D[c_k][d_l] x        K[a_i][c_k] += D[b_j][d_l] x,
+
+and `G = COULOMB_FRACTION J - EXCHANGE_FRACTION K = J - K/2`. The fused
+kernel visits ONE representative per orbit of the group that permutes the
+four positions -- the dihedral group of order 8 generated by `a <-> b`,
+`c <-> d` and `(ab) <-> (cd)`, the 8-fold symmetry of real ERIs,
+`(ab|cd) = (ba|cd) = (ab|dc) = (cd|ab) = ...`, which makes each member's
+block a re-indexing of the representative's. Write the eight images of
+`(a, b, c, d)`; a member `(p, q, r, s)` puts its Coulomb term at `(p, q)`
+with density `(r, s)` and its exchange term at `(p, r)` with density
+`(q, s)`:
+
+    member      J lands at   with D of   K lands at   with D of
+    (a b c d)   (a, b)       (c, d)      (a, c)       (b, d)
+    (a b d c)   (a, b)       (d, c)      (a, d)       (b, c)
+    (b a c d)   (b, a)       (c, d)      (b, c)       (a, d)
+    (b a d c)   (b, a)       (d, c)      (b, d)       (a, c)
+    (c d a b)   (c, d)       (a, b)      (c, a)       (d, b)
+    (c d b a)   (c, d)       (b, a)      (c, b)       (d, a)
+    (d c a b)   (d, c)       (a, b)      (d, a)       (c, b)
+    (d c b a)   (d, c)       (b, a)      (d, b)       (c, a)
+
+Every output lands on one of six unordered position pairs, each with the
+complementary pair as its density (`D` symmetric, so `D[d][c] = D[c][d]`).
+Counting per pair the members that land IN ORDER (`(a, b)`, not `(b, a)`):
+`{a, b}` takes two Coulomb terms in order, `(abcd)` and `(abdc)`, and two
+transposed; so does `{c, d}`; each of `{a, c}`, `{a, d}`, `{b, c}`, `{b, d}`
+takes ONE exchange term in order and one transposed. The kernel deposits
+only the in-order terms and the host's `close` (`F <- F + F^T`) supplies
+the transposed ones -- exact, because each transposed term is the in-order
+one at the transposed matrix element (the member's block is the transpose
+of the representative's). So per unique quartet, with `w = fraction x
+in-order count`:
+
+    F_ab[i][j] += 2 D_cd[k][l] x    F_cd[k][l] += 2 D_ab[i][j] x
+    F_ac[i][k] -= 1/2 D_bd[j][l] x  F_ad[i][l] -= 1/2 D_bc[j][k] x
+    F_bc[j][k] -= 1/2 D_ad[i][l] x  F_bd[j][l] -= 1/2 D_ac[i][k] x
+
+THE COULOMB BLOCKS WEIGH 2 = 1 (the fraction) x 2 (two in-order members);
+the predecessor weighted them 1 and was wrong in every symmetric Fock
+matrix it built (pin 6). The exchange blocks weigh -1/2 = -(1/N_SPIN) x 1.
+`derive_weights` computes exactly this table by enumerating the group, and
+a test fails the build if a Coulomb weight of 1 is substituted.
+
+THE DEGENERACY FACTOR. The table assumes the eight images are eight
+DIFFERENT ordered quartets. When shells coincide some images coincide, the
+sweep visits each distinct member only once, and the eight-image sum
+overcounts: by orbit-stabiliser, summing a function over the 8 images
+counts each distinct member `|Stab|` times, so the representative's deposit
+must be scaled by `deg = 1/|Stab| = |orbit| / 8`. With the pairs canonical
+(launch_f writes each unordered shell pair once, `P = {a, b}`, `Q = {c,
+d}`), the orbit is every ordered quartet whose bra is an ordering of one of
+`P, Q` and whose ket an ordering of the other, so `|orbit| = (2 - [a = b])
+(2 - [c = d]) (2 - [P = Q])` and
+
+    deg = (1/2 if a = b) (1/2 if c = d) (1/2 if P = Q):
+
+    case                    example     |orbit|   deg
+    all distinct            (ab|cd)        8      1
+    a = b                   (aa|cd)        4      1/2
+    c = d                   (ab|cc)        4      1/2
+    P = Q, a != b           (ab|ab)        4      1/2
+    a = b and c = d         (aa|cc)        2      1/4
+    all three               (aa|aa)        1      1/8
+
+(`P = Q` with `a = b` forces `c = d`.) `degeneracy(a, b, c, d)` computes
+`1/|Stab|` by enumerating the group, and a test holds the kernel's three
+flags to it over every canonical quartet of three shell labels. In the
+kernel: `[a = b]` is decided at build time when `la != lb` (distinct `l`,
+distinct shells) and otherwise read off the pair's two shell indices with
+two `LT`s (the IR has no `EQ`); `[P = Q]` holds only in a DIAGONAL launch
+(`diag = 1`: the bra and ket batches are one batch, launch_f's `I == J`) at
+`k == bra`, read as `k < diag * bra + diag` given the half test below.
+
+THE CANONICAL HALF. Across launches every unordered pair of pairs is met
+once (launch_f launches the batch pairs `I <= J`, and different batches hold
+different pairs); inside a diagonal launch each is met twice, as `(bra, k)`
+and `(k, bra)`. The kernel keeps `k >= bra` and SKIPS `k < diag * bra` --
+an `If`, so the consecutive-thread mapping is unchanged. Off the diagonal
+`diag = 0` and nothing is skipped.
+
+THE BUFFERS (`[Fock]` §3.2, Fig. 1). Six thread-private two-index buffers,
+one per block; the five ket-dependent ones are zeroed per quartet and
+flushed with `AtomicAdd` after it, and `f_ab` -- the bra's own block -- is
+accumulated over the thread's whole ket loop and flushed ONCE. The weight
+and `deg` are folded into the density elements once per quartet (`w_cd =
+2 deg D_cd`, ...), so each ERI costs six multiply-adds and no weight
+multiply. The `AtomicAdd` statements of a class are therefore exactly the
+six blocks' sizes, `n_a n_b + n_a n_c + n_a n_d + n_b n_c + n_b n_d + n_c
+n_d` (`six_block_size`), against the class's `n_a n_b n_c n_d` ERIs: the
+evidence for `fock/predigest-bounds-atomics` (scored in #291).
+
+THE SCREEN READS SIX DENSITY BLOCKS. `Dsh[s][t]` is the largest `|D|` over
+shell block `(s, t)` (`density_blocks`, host side); the kernel takes the
+six of a quartet, each times its block's `|w|`, and keeps the largest:
+
+    dmax  = max(2 Dsh_ab, 2 Dsh_cd, 1/2 Dsh_ac, 1/2 Dsh_ad,
+                1/2 Dsh_bc, 1/2 Dsh_bd)
+    bound = G_ab G_cd dmax
+
+so `bound` bounds every term the quartet deposits (`|x| <= G_ab G_cd` by
+Schwarz, `deg <= 1`), the analogue of the J engine's `I_p I_q max|D_q|` --
+which reads ONE block, where this reads six (`fock/symmetry-vs-screening`).
+The max is formed with `LT` and `Assign`, the IR having no `MAX`.
 
 THE CONTRACTION LOOP IS INSIDE, AND THAT IS FORCED (pin 5): eq 28 holds only
 for contracted values (`hgp/hrr.py`, "ITS INPUTS ARE CONTRACTED VALUES"), so
@@ -49,11 +177,8 @@ quartet's work sits in its `orelse`; the kernel holds no `Break` anywhere.
 The batch sort (`launch_f`: `G * dmax`) "does not rigorously prevent warp
 divergence", because the six-block `D_max` is not monotone along any one
 sort, so a screened quartet cannot speak for the kets after it -- the
-inverse of `Target.J`'s and `Target.K`'s sorted early break. THE BOUND
-ITSELF IS A PLACEHOLDER: `G_ab[bra] * G_cd[k] * maxD`, `maxD` one host
-scalar (K's form). The six-block `D_max` -- the largest `|D|` over the six
-density blocks a quartet digests into -- and its weights are #283's; it
-replaces the one `Decl bound`, and the control flow around it is final.
+inverse of `Target.J`'s and `Target.K`'s sorted early break. The canonical
+half test is a skip of the same kind.
 
 THE STAGED RECORD (`pack`, `REC`). One row per primitive pair, `REC`
 fields: `P` (3), `X` (3) = `P - A` on the bra (`Q - C` on the ket), the
@@ -120,17 +245,25 @@ test and cross-checked against `hgp.vrr` / `hgp.hrr`'s pinned node counts:
 one `Decl` per VRR node (2,330 at `(dd|dd)`), one accumulator `Decl` and one
 `+=` per boundary value (961), one `Decl` per HRR node counting the boundary
 reads (`HrrDag.n_statements`: 6,254 = 961 reads + 5,293 two-term updates,
-#274's figure), one write per ERI (1,296). The plan is re-read, never
+#274's figure), every ERI read by the digestion (1,296), and one
+`AtomicAdd` per element of the six blocks (216). The plan is re-read, never
 re-derived.
 
-So, interpreted, `g` is `==` the host path, bit for bit: per primitive
-quartet the scalars above in this order, `hgp.recurrence.build_vrr_kernel`'s
-boundary, the left fold `c = c + v` over `kcd` outer and `kab` inner from
-`+0.0`, then `build_hrr_kernel` on the sums (test/test_kernel_f.py).
+So, interpreted, the tap's `g` is `==` the host path, bit for bit: per
+primitive quartet the scalars above in this order,
+`hgp.recurrence.build_vrr_kernel`'s boundary, the left fold `c = c + v`
+over `kcd` outer and `kab` inner from `+0.0`, then `build_hrr_kernel` on
+the sums; and `F`, closed, agrees with `ao.fock`'s sweep to rounding
+(test/test_kernel_f.py).
+
+THE HOST'S HALF lives here, beside `pack`, as plain Python over sequences:
+`density_blocks` (the screen's `Dsh`) and `close` (`F + F^T`). Both are
+host arithmetic on host data; neither is a kernel.
 
 Nothing here imports `plan/` (pin 11: it keys on a `[JEngine]` row an HGP
-class does not have), `ao/` (the witness), `reference/`, the interpreter, a
-backend or a device.
+class does not have), `ao/` (the witness; its two fractions are restated
+below and held equal to `ao.fock`'s by the test), `reference/`, the
+interpreter, a backend or a device.
 """
 
 from __future__ import annotations
@@ -154,6 +287,7 @@ from felizjueves.hgp.recurrence import (
 from felizjueves.hgp.vrr import AmClass, Cart
 from felizjueves.ir import (
     Assign,
+    AtomicAdd,
     Call,
     Decl,
     Expr,
@@ -178,27 +312,42 @@ from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
     "AB_SH",
+    "BLOCKS",
+    "COULOMB_FRACTION",
     "Counts",
+    "EXCHANGE_FRACTION",
+    "FOCK",
+    "HALF",
     "MAX_PRIM_PAIRS",
+    "N_SPIN",
     "OUT",
     "REC",
     "SKIP",
+    "WEIGHTS",
     "Packed",
     "PairRec",
     "PrimRec",
+    "Weights",
     "build_f_kernel",
+    "close",
     "counted",
+    "degeneracy",
+    "density_blocks",
+    "derive_weights",
     "f_class_spec",
     "kernel_counts",
     "launch_shape",
+    "orbit_group",
     "pack",
     "params_of",
+    "six_block_size",
 ]
 
 MAX_PRIM_PAIRS = 128  # the shared staging cap (module docstring)
 REC = ("P_x", "P_y", "P_z", "X_x", "X_y", "X_z", "zeta", "U")
 AB_SH = "ab_sh"  # the staged |ab) record, Space.SHARED
-OUT = "g"
+OUT = "g"  # the ERI tap (eris=True)
+FOCK = "F"  # the two-electron Fock matrix, AtomicAdd-ed, closed on the host
 KET = "k"  # the strided ket loop: one thread per contracted quartet
 KCD, KAB = "kcd", "kab"  # the primitive loops, ket outer, bra inner
 STAGE = "i"
@@ -210,9 +359,110 @@ SKIP = (
     "break). The six-block D_max is not monotone along the batch sort, so a "
     "screened quartet says nothing of the kets after it")
 
-BOUND_PLACEHOLDER = (
-    "PLACEHOLDER bound G_ab G_cd maxD: the six-block D_max and its weights "
-    "are #283's; they replace this one Decl, and the skip around it is final")
+HALF = (
+    "the canonical half: in a diagonal launch (diag = 1, one batch on both "
+    "sides) the quartet (bra, k < bra) is the thread for (k, bra)'s; skip it, "
+    "never break")
+
+SIX_BLOCK = (
+    "the six-block screen: dmax is the largest |w| Dsh over the six density "
+    "blocks the quartet digests into (ab, cd, ac, ad, bc, bd), so G_ab G_cd "
+    "dmax bounds every term it deposits")
+
+
+# --- the weights, derived from the permutation orbit (module docstring) ------
+
+N_SPIN = 2  # closed shell: D = P^alpha + P^beta (ao/fock.py's derivation)
+COULOMB_FRACTION = 1.0  # G = J - K / N_SPIN; held equal to ao.fock's
+EXCHANGE_FRACTION = 1.0 / N_SPIN
+
+# The six blocks, as unordered pairs of positions in (a, b, c, d) = (0, 1, 2,
+# 3), each written in order; the kernel's buffer names follow them.
+BLOCKS = ((0, 1), (2, 3), (0, 2), (0, 3), (1, 2), (1, 3))
+_LETTER = "abcd"
+
+Quartet = tuple[int, int, int, int]
+
+
+def orbit_group() -> tuple[Quartet, ...]:
+    """The 8 permutations of the positions `(a, b, c, d)` that preserve a
+    real ERI: the closure of `a <-> b`, `c <-> d` and `(ab) <-> (cd)`. Each
+    is `g` with member `(q[g0], q[g1], q[g2], q[g3])`."""
+    gens = ((1, 0, 2, 3), (0, 1, 3, 2), (2, 3, 0, 1))
+    seen = {(0, 1, 2, 3)}
+    todo = [(0, 1, 2, 3)]
+    while todo:
+        g = todo.pop()
+        for h in gens:
+            gh = tuple(g[i] for i in h)
+            if gh not in seen:
+                seen.add(gh)
+                todo.append(gh)
+    return tuple(sorted(seen))
+
+
+@dataclass(frozen=True)
+class Weights:
+    """The digestion's per-block weights and whether the degeneracy factor
+    is applied. `WEIGHTS` (= `derive_weights()`) is what the kernel builds
+    with; any other value is for the tests that must see it fail."""
+
+    coulomb: float  # the F_ab and F_cd blocks
+    exchange: float  # the F_ac, F_ad, F_bc and F_bd blocks
+    degeneracy: bool = True
+
+    def of(self, block: tuple[int, int]) -> float:
+        return self.coulomb if block in BLOCKS[:2] else self.exchange
+
+
+def derive_weights() -> Weights:
+    """Enumerate the orbit (module docstring, "THE DIGESTION"): for each
+    of the 8 images, where the sweep's Coulomb and exchange terms land and
+    which density they read, counted in order and transposed per block.
+    Refuses (raises) on anything the derivation assumes and the enumeration
+    does not show."""
+    group = orbit_group()
+    if len(group) != 8:
+        raise AssertionError(f"the ERI group has order {len(group)}, not 8")
+    inorder = {b: [0, 0] for b in BLOCKS}  # [Coulomb, exchange] in order
+    transposed = {b: [0, 0] for b in BLOCKS}
+    for g in group:
+        # member (p, q, r, s) = positions (g0, g1, g2, g3):
+        # J at (p, q) with D (r, s); K at (p, r) with D (q, s)
+        for kind, out, dens in ((0, (g[0], g[1]), (g[2], g[3])),
+                                (1, (g[0], g[2]), (g[1], g[3]))):
+            block = tuple(sorted(out))
+            if block not in inorder:
+                raise AssertionError(f"{out} is not one of the six blocks")
+            if set(dens) != {0, 1, 2, 3} - set(out):
+                raise AssertionError(f"block {out} reads density {dens}, not "
+                                     "the complementary pair")
+            (inorder if out == block else transposed)[block][kind] += 1
+    for b in BLOCKS:
+        if inorder[b] != transposed[b]:
+            raise AssertionError(f"block {b}: in order {inorder[b]} != "
+                                 f"transposed {transposed[b]}; F + F^T "
+                                 "would not supply the rest")
+        if 0 not in inorder[b]:
+            raise AssertionError(f"block {b} takes both Coulomb and exchange")
+    fraction = (COULOMB_FRACTION, -EXCHANGE_FRACTION)
+    w = {b: sum(f * n for f, n in zip(fraction, inorder[b], strict=True))
+         for b in BLOCKS}
+    if len({w[b] for b in BLOCKS[:2]}) != 1 or len(
+            {w[b] for b in BLOCKS[2:]}) != 1:
+        raise AssertionError(f"the blocks' weights do not split two/four: {w}")
+    return Weights(w[BLOCKS[0]], w[BLOCKS[2]], True)
+
+
+WEIGHTS = derive_weights()  # Weights(coulomb=2.0, exchange=-0.5)
+
+
+def degeneracy(a: int, b: int, c: int, d: int) -> float:
+    """`1 / |Stab|` of the ordered quartet of shell labels `(a, b, c, d)`
+    under `orbit_group()`: `|orbit| / 8`, by enumeration."""
+    q = (a, b, c, d)
+    stab = sum(1 for g in orbit_group() if tuple(q[i] for i in g) == q)
+    return 1.0 / stab
 
 STAGING = (
     "stage |ab) in shared memory: every thread copies the whole record (the "
@@ -270,23 +520,30 @@ class PrimRec:
 @dataclass(frozen=True)
 class PairRec:
     """One contracted shell pair: `sep = A - B` (or `C - D`), its bound `G`,
-    and its kept primitive pairs in `launch_f.FPair.prims` order."""
+    its kept primitive pairs in `launch_f.FPair.prims` order, its two shell
+    indices `sh = (a, b)` (the screen's `Dsh` and the degeneracy test read
+    them) and the AO offsets `ao` of those shells (the digestion's `D` and
+    `F` elements)."""
 
     sep: Vec
     G: float
     prims: tuple[PrimRec, ...]
+    sh: tuple[int, int]
+    ao: tuple[int, int]
 
 
 @dataclass(frozen=True)
 class Packed:
     """One side of a launch, flat and row-major: `prim` is `n x degree x REC`,
-    `sep` is `n x 3`, `G` is `n`."""
+    `sep` is `n x 3`, `G` is `n`, `sh` and `ao` are `n x 2` ints."""
 
     n: int
     degree: int
     prim: tuple[float, ...]
     sep: tuple[float, ...]
     G: tuple[float, ...]
+    sh: tuple[int, ...]
+    ao: tuple[int, ...]
 
 
 def pack(pairs: Sequence[PairRec]) -> Packed:
@@ -308,10 +565,51 @@ def pack(pairs: Sequence[PairRec]) -> Packed:
             f"degree {degree} exceeds MAX_PRIM_PAIRS = {MAX_PRIM_PAIRS}, the "
             "shared staging cap (kernel_f's docstring): the predecessor had "
             "to lift exactly this cap later; lift it here, do not overflow it")
+    for p in pairs:
+        for what in ("sh", "ao"):
+            v = getattr(p, what)
+            if (len(v) != 2 or any(type(x) is not int or x < 0 for x in v)):
+                raise ValueError(f"pair {what} = {v!r} is not two "
+                                 "non-negative ints")
     prim = tuple(x for p in pairs for r in p.prims for x in r.row())
     sep = tuple(float(x) for p in pairs for x in p.sep)
     return Packed(len(pairs), degree, prim, sep,
-                  tuple(float(p.G) for p in pairs))
+                  tuple(float(p.G) for p in pairs),
+                  tuple(x for p in pairs for x in p.sh),
+                  tuple(x for p in pairs for x in p.ao))
+
+
+# --- the host's half: the screen's input and the closing transpose -----------
+
+
+def density_blocks(D: Sequence[Sequence[float]], offsets: Sequence[int],
+                   sizes: Sequence[int]) -> tuple[float, ...]:
+    """`Dsh`, flat `n_sh x n_sh`: the largest `|D|` over each shell block
+    `(s, t)`, shells at AO `offsets` with `sizes` Cartesian components."""
+    if len(offsets) != len(sizes):
+        raise ValueError("offsets and sizes differ in length")
+    return tuple(
+        max(abs(float(D[m][n])) for m in range(os, os + ns)
+            for n in range(ot, ot + nt))
+        for os, ns in zip(offsets, sizes, strict=True)
+        for ot, nt in zip(offsets, sizes, strict=True))
+
+
+def close(F: Sequence[Sequence[float]]) -> tuple[tuple[float, ...], ...]:
+    """`F + F^T`: the host's last step (module docstring, "THE DIGESTION"),
+    which supplies every transposed member the kernel did not deposit."""
+    n = len(F)
+    if any(len(r) != n for r in F):
+        raise ValueError("close takes a square matrix")
+    return tuple(tuple(float(F[i][j]) + float(F[j][i]) for j in range(n))
+                 for i in range(n))
+
+
+def six_block_size(cls: AmClass) -> int:
+    """`n_a n_b + n_a n_c + n_a n_d + n_b n_c + n_b n_d + n_c n_d`: the
+    elements of the six blocks, so the `AtomicAdd`s of one class."""
+    n = [len(vrr.cartesians(x)) for x in cls]
+    return sum(n[i] * n[j] for i, j in BLOCKS)
 
 
 # --- the kernel --------------------------------------------------------------
@@ -336,21 +634,33 @@ def _factors(stmts: Sequence[Stmt]) -> set[str]:
     return out
 
 
-def params_of(cls: AmClass) -> tuple[str, ...]:
+def params_of(cls: AmClass, *, eris: bool = False) -> tuple[str, ...]:
     """The kernel's parameter names, in order. `AB` only when `lb > 0` (the
-    bra HRR reads it), `CD` only when `ld > 0`."""
+    bra HRR reads it), `CD` only when `ld > 0`; `g` only with the tap."""
     _, lb, _, ld = cls
-    return ("n_bra", "n_ket", "k_ab", "k_cd", "tau", "maxD",
-            "bra_prim", *(("AB",) if lb else ()), "G_ab",
-            "ket_prim", *(("CD",) if ld else ()), "G_cd", OUT)
+    return ("n_bra", "n_ket", "k_ab", "k_cd", "n_sh", "n_ao", "diag", "tau",
+            "bra_prim", *(("AB",) if lb else ()), "G_ab", "bra_sh", "bra_ao",
+            "ket_prim", *(("CD",) if ld else ()), "G_cd", "ket_sh", "ket_ao",
+            "Dsh", "D", FOCK, *((OUT,) if eris else ()))
 
 
-def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None) -> Kernel:
-    """The fused Fock kernel of one F class, up to the ERIs (module
-    docstring). `cls` is `(la, lb, lc, ld)` in AO order or a `Target.F`
-    `Spec`."""
+def _cart_names(cls: AmClass) -> tuple[tuple[int, ...], ...]:
+    """Per ERI target, its four component indices within their shells."""
+    pos = [{c: i for i, c in enumerate(vrr.cartesians(x))} for x in cls]
+    return tuple(tuple(pos[s][v] for s, v in enumerate(t))
+                 for t in hrr.targets(cls))
+
+
+def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None,
+                   weights: Weights = WEIGHTS, eris: bool = False) -> Kernel:
+    """The fused Fock kernel of one F class (module docstring). `cls` is
+    `(la, lb, lc, ld)` in AO order or a `Target.F` `Spec`. `weights` is the
+    derived `WEIGHTS` unless a test substitutes a wrong one to watch it
+    fail; `eris=True` adds the ERI tap `g` (the same body plus its writes)."""
     spec = _spec_of(cls)
     cls = hgp_class(spec)
+    if not isinstance(weights, Weights):
+        raise TypeError(f"weights {weights!r} is not a Weights")
     la, lb, lc, ld = cls
     vdag, hdag = vrr.build(cls), hrr.build(cls)
     bnd = boundary_order(cls)
@@ -438,7 +748,95 @@ def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None) -> Kernel:
         For(KAB, Lit(0), Var("k_ab"), Lit(1), tuple(quartet)),
     ]
 
-    # --- one contracted quartet: accumulate, HRR, write -------------------
+    # --- the digestion's names (module docstring, "THE BUFFERS") -----------
+    ncart = [len(vrr.cartesians(x)) for x in cls]
+    comps = _cart_names(cls)
+    sh_of = ("sa", "sb", "sc", "sd")
+    ao_of = ("oa", "ob", "oc", "od")
+    wj, wk = float(weights.coulomb), float(weights.exchange)
+
+    def index(n: str, e: Expr) -> Decl:  # a shell index or an AO offset
+        return Decl(n, Scalar.I32, init=e)
+
+    def blk(b: tuple[int, int]) -> str:
+        return _LETTER[b[0]] + _LETTER[b[1]]
+
+    def comp(b: tuple[int, int]) -> tuple[int, int]:
+        return tuple(sorted({0, 1, 2, 3} - set(b)))  # type: ignore[return-value]
+
+    def elems(b: tuple[int, int]):
+        return ((i, j) for i in range(ncart[b[0]]) for j in range(ncart[b[1]]))
+
+    def buf(b, i, j) -> str:
+        return f"f_{blk(b)}_{i}_{j}"
+
+    def dens(b, i, j) -> str:  # the weighted density element w deg D
+        return f"w_{blk(b)}_{i}_{j}"
+
+    def raw(i, j) -> str:  # the bra's own block, loaded once per bra
+        return f"d_ab_{i}_{j}"
+
+    def ao(b, i, j) -> tuple[Expr, Expr]:
+        return (_c(Fn.ADD, Var(ao_of[b[0]]), Lit(i)),
+                _c(Fn.ADD, Var(ao_of[b[1]]), Lit(j)))
+
+    def one_half_if_same(flag: str, s: str, t: str) -> list[Stmt]:
+        """`flag = 1/2` when shells `s == t`: neither `s < t` nor `t < s`."""
+        return [scalar(flag, Lit(0.5)),
+                If(_c(Fn.LT, Var(s), Var(t)), (Assign(Var(flag), Lit(1.0)),)),
+                If(_c(Fn.LT, Var(t), Var(s)), (Assign(Var(flag), Lit(1.0)),))]
+
+    deg_bra = weights.degeneracy and la == lb  # else a != b at build time
+    deg_ket = weights.degeneracy and lc == ld
+    deg_pq = weights.degeneracy and (la, lb) == (lc, ld)  # else P != Q
+    flags = [f for f, on in (("hb", deg_bra), ("hk", deg_ket)) if on]
+    deg_init: Expr = Lit(1.0)
+    for f in flags:
+        deg_init = Var(f) if deg_init == Lit(1.0) else _c(
+            Fn.MUL, deg_init, Var(f))
+
+    # --- one contracted quartet: accumulate, HRR, digest -----------------
+    digest: list[Stmt] = [
+        Note("the degeneracy factor 1/|Stab| (module docstring): 1/2 for "
+             "a = b, for c = d, and for P = Q"),
+        *(one_half_if_same("hk", "sc", "sd") if deg_ket else ()),
+        scalar("deg", deg_init),
+    ]
+    if deg_pq:
+        digest.append(If(_c(Fn.LT, k, _c(Fn.ADD, Var("kmin"), Var("diag"))),
+                         (Note("P = Q: the diagonal launch at k == bra"),
+                          Assign(Var("deg"), _c(Fn.MUL, Var("deg"),
+                                                Lit(0.5))))))
+    digest += [
+        scalar("s_j", _c(Fn.MUL, Lit(wj), Var("deg"))),
+        scalar("s_k", _c(Fn.MUL, Lit(wk), Var("deg"))),
+        *(index(ao_of[s], Index("ket_ao", (k, Lit(s - 2)))) for s in (2, 3)),
+        Note("the weighted densities: w = (fraction x in-order members) deg "
+             "D, the weight folded in once per quartet"),
+    ]
+    for b in BLOCKS:
+        s = "s_j" if b in BLOCKS[:2] else "s_k"
+        for i, j in elems(b):
+            src: Expr = Var(raw(i, j)) if b == (0, 1) else Index("D", ao(b, i, j))
+            digest.append(scalar(dens(b, i, j), _c(Fn.MUL, Var(s), src)))
+    digest.append(Note("the five ket-dependent buffers, zeroed per quartet"))
+    for b in BLOCKS[1:]:
+        digest += [scalar(buf(b, i, j), Lit(0.0)) for i, j in elems(b)]
+    digest.append(Note("the predigest: six multiply-adds per ERI, one per "
+                       "block, each reading the complementary density"))
+    for t, idx in zip(hdag.targets, comps, strict=True):
+        x = Var(hrr_name(t))
+        for b in BLOCKS:
+            c = comp(b)
+            f = Var(buf(b, idx[b[0]], idx[b[1]]))
+            digest.append(Assign(f, _c(Fn.ADD, f, _c(
+                Fn.MUL, Var(dens(c, idx[c[0]], idx[c[1]])), x))))
+    digest.append(Note("flush the five ket-dependent buffers: AtomicAdd, the "
+                       "only atomics besides f_ab's one flush"))
+    for b in BLOCKS[1:]:
+        digest += [AtomicAdd(Index(FOCK, ao(b, i, j)), Var(buf(b, i, j)))
+                   for i, j in elems(b)]
+
     work: list[Stmt] = [
         *(scalar(Factor.cd(d).value, Index("CD", (k, Lit(d))))
           for d in range(3) if Factor.cd(d).value in hneed),
@@ -449,39 +847,72 @@ def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None) -> Kernel:
              "(shared)"),
         For(KCD, Lit(0), Var("k_cd"), Lit(1), tuple(per_kcd)),
         *hbody,
-        Note("the ERIs, hgp.hrr.targets order; the six-block digestion "
-             "replaces this write (#283)"),
-        *(Assign(Index(OUT, (bra, k, Lit(i))), Var(hrr_name(t)))
-          for i, t in enumerate(hdag.targets)),
+    ]
+    if eris:
+        work += [
+            Note("the ERI tap: every (ab|cd), hgp.hrr.targets order"),
+            *(Assign(Index(OUT, (bra, k, Lit(i))), Var(hrr_name(t)))
+              for i, t in enumerate(hdag.targets)),
+        ]
+    work += digest
+
+    def weighted_block(b: tuple[int, int]) -> Expr:
+        return _c(Fn.MUL, Lit(abs(weights.of(b))),
+                  Index("Dsh", (Var(sh_of[b[0]]), Var(sh_of[b[1]]))))
+
+    screen: list[Stmt] = [
+        *(index(sh_of[s], Index("ket_sh", (k, Lit(s - 2)))) for s in (2, 3)),
+        Note(SIX_BLOCK),
+        scalar("dmax", weighted_block(BLOCKS[0])),
+    ]
+    for b in BLOCKS[1:]:
+        t = f"dmax_{blk(b)}"
+        screen += [scalar(t, weighted_block(b)),
+                   If(_c(Fn.LT, Var("dmax"), Var(t)),
+                      (Assign(Var("dmax"), Var(t)),))]
+    screen += [
+        scalar("bound", _c(Fn.MUL, Var("Gb"), _c(
+            Fn.MUL, Index("G_cd", (k,)), Var("dmax")))),
+        If(_c(Fn.LT, Var("bound"), Var("tau")), (Note(SKIP),), tuple(work)),
     ]
     per_ket: list[Stmt] = [
-        Note(BOUND_PLACEHOLDER),
-        scalar("bound", _c(Fn.MUL, Var("Gb"), _c(
-            Fn.MUL, Index("G_cd", (k,)), Var("maxD")))),
-        If(_c(Fn.LT, Var("bound"), Var("tau")), (Note(SKIP),), tuple(work)),
+        If(_c(Fn.LT, k, Var("kmin")), (Note(HALF),), tuple(screen)),
     ]
 
     stage = For(STAGE, Lit(0), Var("k_ab"), Lit(1), tuple(
         Assign(Index(AB_SH, (Var(STAGE), Lit(f))),
                Index("bra_prim", (bra, Var(STAGE), Lit(f))))
         for f in range(len(REC))))
+    ab = BLOCKS[0]
     per_bra: list[Stmt] = [
         *(scalar(Factor.ab(d).value, Index("AB", (bra, Lit(d))))
           for d in range(3) if Factor.ab(d).value in hneed),
         scalar("Gb", Index("G_ab", (bra,))),
+        *(index(sh_of[s], Index("bra_sh", (bra, Lit(s)))) for s in (0, 1)),
+        *(index(ao_of[s], Index("bra_ao", (bra, Lit(s)))) for s in (0, 1)),
+        *(one_half_if_same("hb", "sa", "sb") if deg_bra else ()),
+        Decl("kmin", Scalar.I32, init=_c(Fn.MUL, Var("diag"), bra)),
+        Note("the bra's own density block, read once; f_ab spans the ket "
+             "loop and is flushed once"),
+        *(scalar(raw(i, j), Index("D", ao(ab, i, j))) for i, j in elems(ab)),
+        *(scalar(buf(ab, i, j), Lit(0.0)) for i, j in elems(ab)),
         Note(STAGING),
         stage,
         Note("one thread per contracted quartet: consecutive threads take "
              "consecutive |cd) ([Fock] §3.2, pin 7)"),
         For(KET, Call(Fn.THREAD_X), Var("n_ket"), Call(Fn.BLOCK_DIM_X),
             tuple(per_ket)),
+        Note("flush f_ab: once per thread, after its whole ket loop"),
+        *(AtomicAdd(Index(FOCK, ao(ab, i, j)), Var(buf(ab, i, j)))
+          for i, j in elems(ab)),
     ]
     body: tuple[Stmt, ...] = (
         Note(f"(ab|cd) by the HGP recurrence, F class ({la}{lb}|{lc}{ld}) in "
-             "AO order: [Fock] §3.2's fused kernel up to the ERIs (#282); "
-             "VRR eqs 25-26 inside the K_CD x K_AB nest, HRR eq 28 after it"),
+             "AO order: [Fock] §3.2's fused kernel (#282) and its six-block "
+             "predigest (#283); VRR eqs 25-26 inside the K_CD x K_AB nest, "
+             "HRR eq 28 after it, then the digestion into F"),
         Note("launch: grid = n_bra, blockDim = (threads, 1); one block per "
-             "bra shell pair"),
+             "bra shell pair; the host closes F <- F + F^T after every launch"),
         Decl("bra", Scalar.I32, init=Call(Fn.BLOCK_X)),
         Decl(AB_SH, Scalar.F64, (Lit(MAX_PRIM_PAIRS), Lit(len(REC))),
              Space.SHARED),
@@ -489,23 +920,31 @@ def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None) -> Kernel:
     )
 
     nb, nk, kab, kcd = (Var(n) for n in ("n_bra", "n_ket", "k_ab", "k_cd"))
+    nsh, nao = Var("n_sh"), Var("n_ao")
 
     def f64(n: str, *shape: Expr, intent: Intent = Intent.IN) -> Param:
         return Param(n, Scalar.F64, array=True, intent=intent, shape=shape)
 
+    def i32(n: str, *shape: Expr) -> Param:
+        return Param(n, Scalar.I32, array=True, shape=shape)
+
     params = (
         Param("n_bra", Scalar.I32), Param("n_ket", Scalar.I32),
         Param("k_ab", Scalar.I32), Param("k_cd", Scalar.I32),
-        Param("tau", Scalar.F64), Param("maxD", Scalar.F64),
+        Param("n_sh", Scalar.I32), Param("n_ao", Scalar.I32),
+        Param("diag", Scalar.I32), Param("tau", Scalar.F64),
         f64("bra_prim", nb, kab, Lit(len(REC))),
         *((f64("AB", nb, Lit(3)),) if lb else ()),
-        f64("G_ab", nb),
+        f64("G_ab", nb), i32("bra_sh", nb, Lit(2)), i32("bra_ao", nb, Lit(2)),
         f64("ket_prim", nk, kcd, Lit(len(REC))),
         *((f64("CD", nk, Lit(3)),) if ld else ()),
-        f64("G_cd", nk),
-        f64(OUT, nb, nk, Lit(hdag.n_eri), intent=Intent.OUT),
+        f64("G_cd", nk), i32("ket_sh", nk, Lit(2)), i32("ket_ao", nk, Lit(2)),
+        f64("Dsh", nsh, nsh), f64("D", nao, nao),
+        f64(FOCK, nao, nao, intent=Intent.OUT),
+        *((f64(OUT, nb, nk, Lit(hdag.n_eri), intent=Intent.OUT),)
+          if eris else ()),
     )
-    assert tuple(p.name for p in params) == params_of(cls)
+    assert tuple(p.name for p in params) == params_of(cls, eris=eris)
     return Kernel(name, params, body)
 
 
@@ -521,24 +960,34 @@ class Counts:
     boundary: int  # accumulators: one Decl and one += each
     hrr: int  # one Decl per HRR node, boundary reads included
     hrr_interior: int  # the two-term eq 28 updates among them
-    eri: int  # one write each
+    eri: int  # each read by the digestion, six times
+    atomic: int  # AtomicAdd statements: the six blocks' elements
 
 
 def kernel_counts(cls: AmClass) -> Counts:
-    """The counts the class's DAGs predict: `hgp.vrr` / `hgp.hrr`'s own."""
+    """The counts the class's DAGs predict: `hgp.vrr` / `hgp.hrr`'s own, and
+    the six blocks' size."""
     v, h = vrr.build(cls), hrr.build(cls)
     return Counts(v.n_nodes, h.n_boundary, h.n_statements, h.n_interior,
-                  h.n_eri)
+                  h.n_eri, six_block_size(cls))
 
 
 def counted(kernel: Kernel) -> Counts:
     """The same counts, read off a built kernel by statement kind."""
-    decls = [s for s in walk(kernel.body) if isinstance(s, Decl)]
+    stmts = list(walk(kernel.body))
+    decls = [s for s in stmts if isinstance(s, Decl)]
     vrr_n = sum(1 for s in decls if s.name.startswith("V"))
     acc = sum(1 for s in decls if s.name.startswith("C")
               and s.name not in ("CD_x", "CD_y", "CD_z"))
     hrr_d = [s for s in decls if s.name.startswith("H")]
     interior = sum(1 for s in hrr_d if isinstance(s.init, Weighted))
-    eri = sum(1 for s in walk(kernel.body) if isinstance(s, Assign)
-              and isinstance(s.dst, Index) and s.dst.array == OUT)
-    return Counts(vrr_n, acc, len(hrr_d), interior, eri)
+    reads: dict[str, int] = {}
+    for s in stmts:
+        if (isinstance(s, Assign) and isinstance(s.dst, Var)
+                and s.dst.name.startswith("f_")):
+            x = s.value.args[1].args[1]  # f = f + w * x
+            reads[x.name] = reads.get(x.name, 0) + 1
+    if any(n != len(BLOCKS) for n in reads.values()):
+        raise ValueError("an ERI is not read once per block")
+    atomic = sum(1 for s in stmts if isinstance(s, AtomicAdd))
+    return Counts(vrr_n, acc, len(hrr_d), interior, len(reads), atomic)
