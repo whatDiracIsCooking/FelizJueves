@@ -37,12 +37,24 @@ _K_KEY = re.compile(
     r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b(\d+)/k/literal\Z"
 )
 
-N_ROWS = 196  # the J rows; #205 ADDS K rows beside them
+# #288's F rows: the class in AO order, one batch, target slot `f`, literal.
+_F_KEY = re.compile(
+    r"coulomb/d0/\((\d+),(\d+)\|(\d+),(\d+)\)/b1/f/literal\Z"
+)
+
+N_ROWS = 196  # the J rows; #205 ADDS K rows beside them, #288 F rows
+N_K_ROWS = 20  # #205's
+# #288's: the five classes of total L <= 2 (`(00|00) (00|01) (00|02) (00|11)
+# (01|01)`), on both cards
+F_CLASSES_RECORDED = ((0, 0, 0, 0), (0, 0, 0, 1), (0, 0, 0, 2), (0, 0, 1, 1),
+                      (0, 1, 0, 1))
+N_F_ROWS = 2 * len(F_CLASSES_RECORDED)
 
 
 def _j_rows(rows):
     return {k: r for k, r in rows.items()
-            if not _K_KEY.fullmatch(split_key(k)[0])}
+            if not _K_KEY.fullmatch(split_key(k)[0])
+            and not _F_KEY.fullmatch(split_key(k)[0])}
 
 
 def _derive(key: str, arch: str, toolchain: str) -> str:
@@ -72,6 +84,13 @@ def test_every_measured_key_is_rederived_byte_for_byte() -> None:
         assert _derive(key, row.arch, row.toolchain) == key
     for key, row in rows.items():
         if key in _j_rows(rows):
+            continue
+        f = _F_KEY.fullmatch(split_key(key)[0])
+        if f:  # #288: the class read back, the spec rebuilt
+            am = tuple(map(int, f.groups()))
+            assert am in F_CLASSES_RECORDED, key
+            assert MeasuredKey(Spec(Operator.COULOMB, 0, am, Target.F),
+                               by_name(row.arch), row.toolchain).key() == key
             continue
         m = _K_KEY.fullmatch(split_key(key)[0])
         am = tuple(map(int, m.groups()[:4]))
@@ -117,7 +136,7 @@ def test_a_k_cell_joins_no_measured_j_row() -> None:
     # every one of them a K key.
     rows = _j_rows(load())
     assert not any(split_key(key)[0].split("/")[4] == "k" for key in rows)
-    assert all(split_key(key)[0].split("/")[4] == "k"
+    assert all(split_key(key)[0].split("/")[4] in ("k", "f")
                for key in set(load()) - set(rows))
     arches = {r.arch: r.toolchain for r in rows.values()}
     k_keys = {
@@ -134,27 +153,33 @@ def test_a_k_cell_joins_no_measured_j_row() -> None:
 def test_target_f_moves_no_measured_key_and_joins_no_row() -> None:
     # #272: `Target.F` widens the enum (milestone 12, pin 4); the two
     # re-derivation tests above hold every stored key byte for byte, and
-    # this pins the store's size and that no F key reaches a row. The store
-    # holds 216 rows -- 196 J and #205's 20 K -- every one a J or K key.
+    # this pins the store's size and that the only F keys holding a row are
+    # #288's. The store holds 226 rows -- 196 J, #205's 20 K and #288's 10 F.
     rows = load()
-    assert len(rows) == N_ROWS + 20
-    assert {split_key(key)[0].split("/")[4] for key in rows} == {"j", "k"}
+    assert len(rows) == N_ROWS + N_K_ROWS + N_F_ROWS
+    assert {split_key(key)[0].split("/")[4] for key in rows} == {"j", "k",
+                                                                 "f"}
     arches = {r.arch: r.toolchain for r in rows.values()}
     f_keys = {
-        MeasuredKey(Spec(Operator.COULOMB, 0, am, Target.F), by_name(arch),
-                    tc).key()
+        am: {MeasuredKey(Spec(Operator.COULOMB, 0, am, Target.F),
+                         by_name(arch), tc).key()
+             for arch, tc in arches.items()}
         for am in itertools.product(range(3), repeat=4)
-        for arch, tc in arches.items()
     }
-    assert f_keys.isdisjoint(rows)
+    for am, keys in f_keys.items():
+        if am in F_CLASSES_RECORDED:
+            assert keys <= set(rows), am
+        else:
+            assert keys.isdisjoint(rows), am
 
 
 def test_an_f_key_reads_back_as_an_f_target_and_its_parts() -> None:
     # #278: the store admits an F cell. An F key splits like every other key
     # (spec key, arch, toolchain), its target slot reads back as `Target.F`,
     # and the independent J and K parsers above reject it -- so an F row can
-    # never be re-derived as a J or K row, and the 216 tracked rows (196 J,
-    # 20 K) all still re-derive (the tests above) with the F check in place.
+    # never be re-derived as a J or K row, and the 226 tracked rows (196 J,
+    # 20 K, 10 F) all still re-derive (the tests above) with the F check in
+    # place.
     spec = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.F)
     key = MeasuredKey(spec, by_name("sm_86"), "nvcc 13.0").key()
     assert key == "coulomb/d0/(2,1|1,0)/b1/f/literal@sm_86/nvcc 13.0"
@@ -162,4 +187,4 @@ def test_an_f_key_reads_back_as_an_f_target_and_its_parts() -> None:
     assert target_of(key) is Target.F
     assert not _SPEC_KEY.fullmatch(spec.key())
     assert not _K_KEY.fullmatch(spec.key())
-    assert len(load()) == N_ROWS + 20
+    assert len(load()) == N_ROWS + N_K_ROWS + N_F_ROWS

@@ -144,7 +144,8 @@ SIEVE_CELLS = measured_store.SIEVE_CELLS
 TUNED_CELLS = measured_store.TUNED_CELLS
 SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
                               *RECYCLE_CELLS, *asym.ASYM_CELLS, *SIEVE_CELLS,
-                              *TUNED_CELLS, *measured_store.K_SUBGRID)}
+                              *TUNED_CELLS, *measured_store.K_SUBGRID,
+                              *measured.f_cells())}
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -2715,12 +2716,14 @@ J_ROWS_BEFORE_K = (196, "5327147d08704fbfcb9cad8134dc923111fce9e4d0b16b036e5ec33
                         "51f60c82")
 
 
-def test_every_tracked_row_is_a_j_or_k_row_and_the_j_rows_did_not_move() -> None:
+def test_every_tracked_row_is_a_j_k_or_f_row_and_the_j_rows_did_not_move(
+        ) -> None:
     # #201's acceptance on the tracked store: a J row records no target (its
     # record is read back as written, and the file round-trips byte for byte
     # in test_the_store_file_round_trips_byte_for_byte); #205's: the K rows
     # are added beside the J rows, every J row exactly as before, and every
-    # K row is a K_SUBGRID cell that says so.
+    # K row is a K_SUBGRID cell that says so; #288's: so is every F row, a
+    # cell of F_RECORDED.
     assert len(ROWS) == len(STORE["rows"])
     j_rows = {k: v for k, v in STORE["rows"].items()
               if measured_store.target_of(k) is Target.J}
@@ -2729,6 +2732,9 @@ def test_every_tracked_row_is_a_j_or_k_row_and_the_j_rows_did_not_move() -> None
     for key, row in ROWS.items():
         if measured_store.target_of(key) is Target.J:
             assert row.target == "" and "target" not in STORE["rows"][key], key
+        elif measured_store.target_of(key) is Target.F:
+            assert row.target == "f" == STORE["rows"][key]["target"], key
+            assert any(key.startswith(s.key() + "@") for s in F_RECORDED), key
         else:
             assert measured_store.target_of(key) is Target.K, key
             assert row.target == "k" == STORE["rows"][key]["target"], key
@@ -2833,7 +2839,11 @@ def test_the_f_rule_was_declared_in_the_store() -> None:
         assert part in doc, part
     # the row shape did not change, so the schema did not move
     assert measured_store.SCHEMA == 2 == STORE["schema"]
-    assert "f" not in measured_store.HEADER and "f" not in STORE["header"]
+    # the header's "f" entry is written by `save` once an F row exists --
+    # since #288's rows, the tracked store's -- and is never in HEADER itself
+    assert "f" not in measured_store.HEADER
+    assert STORE["header"] == {**measured_store.HEADER,
+                               "f": measured_store.F_ABOUT}
 
 
 def test_a_synthetic_f_row_round_trips_through_the_store(
@@ -2867,12 +2877,12 @@ def test_a_synthetic_f_row_round_trips_through_the_store(
     assert measured_store.rows(spec=_F_SPEC, store=back) == {
         k.key(): back[k.key()]}
     assert measured_store.rows(target=Target.F, store=back) == {
-        k.key(): back[k.key()]}
-    assert measured_store.rows(target=Target.F, store=ROWS) == {}
+        k.key(): back[k.key()], **measured_store.rows(target=Target.F,
+                                                      store=ROWS)}
     for t in (Target.J, Target.K):
         assert measured_store.rows(target=t, store=back) == \
             measured_store.rows(target=t, store=ROWS)
-    # without the F row the header is the tracked one again
+    # without the synthetic row the file is the tracked one again
     r = tmp_path / "without.json"
     measured_store.save({kk: v for kk, v in back.items() if kk != k.key()}, r)
     assert r.read_bytes() == measured_store.STORE.read_bytes()
@@ -3257,3 +3267,79 @@ def test_a_high_l_k_row_hashes_todays_text(spec) -> None:
         assert row.kernel == ",".join(u.name for u in units), key
         assert measured.measured_key(spec, b.arch, row.toolchain).key() == key
         assert measured.cell_sha256(units) == row.source_sha256, key
+
+
+# --- #288: the F rows, the fused Fock kernel on both cards --------------------
+
+# The cells #288 recorded: the classes of total L <= 2 its default tier runs
+# on the cards (test/test_fock_ondevice.py), one row per (class, arch).
+F_RECORDED = measured.f_cells((0, 1, 2))
+
+
+def test_the_f_ladder_is_hgp_vrr_classes_and_the_recorded_cells_are_five(
+        ) -> None:
+    from felizjueves.hgp.vrr import CLASSES
+    assert measured.F_CLASSES == CLASSES == emit_cli.FOCK_CLASSES
+    assert [s.am for s in measured.f_cells()] == list(CLASSES)
+    assert [s.am for s in F_RECORDED] == [
+        (0, 0, 0, 0), (0, 0, 0, 1), (0, 0, 0, 2), (0, 0, 1, 1), (0, 1, 0, 1)]
+    for s in F_RECORDED:
+        assert s.target is Target.F and s.n_batches == 1 and not s.levers
+
+
+def test_an_f_cell_is_built_by_kernel_f_and_takes_no_lever() -> None:
+    from felizjueves.kernel_f import build_f_kernel
+    s = F_RECORDED[1]
+    assert measured.cell_kernels(s) == (build_f_kernel(s),)
+    with pytest.raises(ValueError, match="no lever is declared for an F"):
+        measured.cell_kernels(replace(s, levers=(RECYCLE,)))
+    # its one shared array is static: no dynamic bytes at any arch
+    for b in measured.BACKENDS.values():
+        (u,) = b.units(s)
+        assert u.name == "f_0001" and u.jsh_dynamic_bytes == 0
+
+
+def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
+    got = measured_store.rows(target=Target.F, store=ROWS)
+    want = {measured.measured_key(s, by_arch, ROWS_TOOLCHAIN[by_arch.name])
+            .key(): s for s in F_RECORDED for by_arch in (SM_86, GFX1200)}
+    assert set(got) == set(want)
+    for key, row in got.items():
+        spec = want[key]
+        b = measured.BACKENDS[BACKEND_OF[row.arch]]
+        units = b.units(spec)
+        assert row.target == "f" and row.kernel == units[0].name, key
+        assert row.source_sha256 == measured.cell_sha256(units), key
+        assert row.registers is not None and row.spill_store is not None, key
+        assert row.shared_bytes == 8192, key  # ab_sh: 128 x 8 doubles
+        assert row.raw["jsh_dynamic_bytes"] == 0, key
+        if row.runtime_ns is not None:  # #278: a timed F row is gated
+            assert all(row.raw[f] is not None
+                       for f in measured_store.GPU_UTIL_FIELDS), key
+
+
+ROWS_TOOLCHAIN = {"sm_86": "nvcc 13.0", "gfx1200": "hipcc / ROCm 7.2.4"}
+
+
+def test_the_f_target_refuses_what_an_f_cell_does_not_have() -> None:
+    for argv in (["--remeasure", "--target", "f", "--subgrid"],
+                 ["--remeasure", "--target", "f", "--lever", "recycle"],
+                 ["--remeasure", "--target", "f", "--asym"],
+                 ["--remeasure", "--target", "f", "--n-batches", "3"],
+                 ["--remeasure", "--target", "f", "--L", "9"]):
+        assert measured.main(argv) == 2, argv
+
+
+F_PARAMS = [pytest.param(s, id=s.key()) for s in F_RECORDED]
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("spec", F_PARAMS)
+def test_nvcc_still_reports_the_f_cells(spec, nvcc, tmp_path) -> None:
+    _recheck_cell("cuda", spec, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("spec", F_PARAMS)
+def test_hipcc_still_reports_the_f_cells(spec, hipcc, tmp_path) -> None:
+    _recheck_cell("hip", spec, tmp_path)
