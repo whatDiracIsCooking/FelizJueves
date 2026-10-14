@@ -1,6 +1,8 @@
 """S, T and V on the card (#242): every pair class through (dd) against the
 host, and S, T and V of H2O/STO-3G and H2O/cc-pVDZ against libcint, on the
-RTX 3080 and the RX 9060 XT.
+RTX 3080 and the RX 9060 XT; and, `slow` (#244, the deferred tier), every
+pair class through (ff) against the host -- the predecessor's
+`sgen`/`tgen`/`vgen` parity bar.
 
 THE BUILD is `one_electron_driver.build_on_card`: one program per target of
 one launch (`launch.one_electron_launch`, #241), every pair class's kernel
@@ -22,6 +24,14 @@ pair, so each class is checked on its own elements, and every element no
 kept pair owns must come back exactly 0.0. Its nuclei are the fixture's
 atoms; V's Boys argument reaches T ~ 1.25e5 there (F 1s against H), inside
 the wide `fj_boys` the V units carry (#266) and inside `reference.boys`.
+
+PART 1 THROUGH (ff), `slow` (#244). The same launch, unrestricted: all
+sixteen ordered classes `(0..3, 0..3)` (F's f against H's s, p and d, and
+F's own `(ff)` diagonal pair), the same check under the same bound. `V` at
+`(ff)` is Hermite order 6 and `T` at `(ff)` reads axis tables at `lb + 2 =
+5`: nothing above `L = 8` is compiled. Under the tier with `--one-e-l 3`
+the `la <= lb` units are the generate phase's; without it the driver emits
+them, the same text. Its compile-only companions are `slow` too.
 
 PART 2, PER MOLECULE. H2O/STO-3G and H2O/cc-pVDZ, every class at once, S, T
 and V against the tracked libcint fixture arrays (`int1e_ovlp`, `int1e_kin`,
@@ -124,6 +134,7 @@ TARGETS = (Target.S, Target.T, Target.V)
 TARGET_PARAMS = [pytest.param(t, id=t.name) for t in TARGETS]
 PART1 = "hf_ccpvtz"
 LMAX = 2  # through (dd): the default tier's ceiling (the issue)
+LMAX_DEFERRED = 3  # through (ff): #244's deferred tier, `slow`
 MOLECULES = ("h2o_sto3g_j", "h2o_ccpvdz_j")
 MOLECULE_CELLS = [pytest.param(m, t, id=f"{m}-{t.name}")
                   for m in MOLECULES for t in TARGETS]
@@ -361,18 +372,22 @@ def _units(backend: str, launch: OneELaunch, target: Target):
     return tier_units(backend, [kernel_of(c, target) for c in launch])
 
 
+_THROUGH = {LMAX: "(dd)", LMAX_DEFERRED: "(ff)"}
+
+
 def _part1(backend: str, target: Target, request, run_device_binary,
-           tmp_path: Path) -> None:
+           tmp_path: Path, lmax: int = LMAX) -> None:
     tc = _toolchain(backend, request)
-    launch = _launch(PART1, LMAX)
+    launch = _launch(PART1, lmax)
     _, basis, _ = _case(PART1)
     units = _units(backend, launch, target)
     Ms = build_on_card(launch, target, basis.n_ao, backend, tc, tmp_path,
                        run_device_binary, units=units)
-    worst = _check_host(backend, PART1, target, LMAX, Ms)
+    worst = _check_host(backend, PART1, target, lmax, Ms)
     recs = {f"{c.la}{c.lb}": len(c.recs) for c in launch}
     print(f"\n{backend} {BACKEND[backend][1].name} {target.name} {PART1} "
-          f"classes through (dd) ({len(units)} of {len(launch)} units the "
+          f"classes through {_THROUGH[lmax]} ({len(units)} of {len(launch)} "
+          "units the "
           f"tier's): records {recs}; worst |M - M_host| / bound per class "
           + " ".join(f"{c}:{w:.2e}" for c, w in worst.items())
           + f"; runs bit-identical {bool(np.array_equal(Ms[0], Ms[1]))}")
@@ -396,6 +411,30 @@ def test_hip_every_class_through_dd_matches_the_host(target, request,
                                                      tmp_path) -> None:
     """Part 1 on the RX 9060 XT."""
     _part1("hip", target, request, run_device_binary, tmp_path)
+
+
+@pytest.mark.slow
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("target", TARGET_PARAMS)
+def test_cuda_every_class_through_ff_matches_the_host(target, request,
+                                                      run_device_binary,
+                                                      tmp_path) -> None:
+    """Part 1 through (ff) on the RTX 3080 (#244, deferred)."""
+    _part1("cuda", target, request, run_device_binary, tmp_path,
+           LMAX_DEFERRED)
+
+
+@pytest.mark.slow
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("target", TARGET_PARAMS)
+def test_hip_every_class_through_ff_matches_the_host(target, request,
+                                                     run_device_binary,
+                                                     tmp_path) -> None:
+    """Part 1 through (ff) on the RX 9060 XT (#244, deferred)."""
+    _part1("hip", target, request, run_device_binary, tmp_path,
+           LMAX_DEFERRED)
 
 
 # ---------------------------------------------------------------------------
@@ -467,28 +506,33 @@ def test_hip_one_electron_matrices_match_libcint(name, target, request,
 # Compile-only companions (`cuda` / `hip`, no `gpu`): no card needed
 # ---------------------------------------------------------------------------
 
-COMPILE_CELLS = [pytest.param(n, t, id=f"{n}-{t.name}")
-                 for n in (PART1, *MOLECULES) for t in TARGETS]
+COMPILE_CELLS = [pytest.param(n, t, LMAX, id=f"{n}-{t.name}")
+                 for n in (PART1, *MOLECULES) for t in TARGETS] + [
+    pytest.param(PART1, t, LMAX_DEFERRED, id=f"{PART1}-ff-{t.name}",
+                 marks=pytest.mark.slow) for t in TARGETS]
 
 
-def _compiles(backend: str, tc, name: str, target: Target, tmp_path: Path):
+def _compiles(backend: str, tc, name: str, target: Target, tmp_path: Path,
+              lmax: int = LMAX):
     _, basis, _ = _case(name)
-    launch = _launch(name, LMAX if name == PART1 else None)
+    launch = _launch(name, lmax if name == PART1 else None)
     prog = one_e_program(launch, target, basis.n_ao, backend, tmp_path,
                          units=_units(backend, launch, target))
     compile_checked(tc, prog, tmp_path / "bin")
 
 
 @pytest.mark.cuda
-@pytest.mark.parametrize(("name", "target"), COMPILE_CELLS)
-def test_cuda_one_electron_programs_compile(name, target, nvcc, tmp_path):
-    _compiles("cuda", nvcc, name, target, tmp_path)
+@pytest.mark.parametrize(("name", "target", "lmax"), COMPILE_CELLS)
+def test_cuda_one_electron_programs_compile(name, target, lmax, nvcc,
+                                            tmp_path):
+    _compiles("cuda", nvcc, name, target, tmp_path, lmax)
 
 
 @pytest.mark.hip
-@pytest.mark.parametrize(("name", "target"), COMPILE_CELLS)
-def test_hip_one_electron_programs_compile(name, target, hipcc, tmp_path):
-    _compiles("hip", hipcc, name, target, tmp_path)
+@pytest.mark.parametrize(("name", "target", "lmax"), COMPILE_CELLS)
+def test_hip_one_electron_programs_compile(name, target, lmax, hipcc,
+                                           tmp_path):
+    _compiles("hip", hipcc, name, target, tmp_path, lmax)
 
 
 # ---------------------------------------------------------------------------
@@ -496,19 +540,29 @@ def test_hip_one_electron_programs_compile(name, target, hipcc, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_part1_reaches_every_ordered_class_through_dd() -> None:
-    got = {(c.la, c.lb) for c in _launch(PART1, LMAX)}
-    assert got == {(a, b) for a in range(LMAX + 1) for b in range(LMAX + 1)}
+@pytest.mark.parametrize("lmax", [LMAX, LMAX_DEFERRED])
+def test_part1_reaches_every_ordered_class(lmax: int) -> None:
+    """Through (dd) restricted, and through (ff) the whole launch: every
+    ordered class `(la, lb)`, none above."""
+    launch = _launch(PART1, lmax)
+    got = {(c.la, c.lb) for c in launch}
+    assert got == {(a, b) for a in range(lmax + 1) for b in range(lmax + 1)}
+    if lmax == LMAX_DEFERRED:
+        assert launch.kept == _launch(PART1).kept
 
 
-def test_the_tier_writes_the_ladders_classes_and_no_other(tmp_path) -> None:
-    """KERNEL_GEN_CMD's `--one-e-l 2` writes every `la <= lb` class's three
-    units through (dd), `emit`'s text; the `la > lb` classes the launch also
-    reaches are the driver's to emit."""
+@pytest.mark.parametrize(("lmax", "n_units"), [(LMAX, 18),
+                                               (LMAX_DEFERRED, 30)])
+def test_the_tier_writes_the_ladders_classes_and_no_other(lmax, n_units,
+                                                          tmp_path) -> None:
+    """KERNEL_GEN_CMD's `--one-e-l 2` (and #244's `--one-e-l 3`) writes every
+    `la <= lb` class's three units through (dd) (and (ff)), `emit`'s text;
+    the `la > lb` classes the launch also reaches are the driver's to
+    emit."""
     emit, arch, ext = BACKEND["cuda"]
-    written = emit_cli.generate_one_e("cuda", arch, tmp_path, LMAX)
-    assert len(written) == 18
-    for c in _launch(PART1, LMAX):
+    written = emit_cli.generate_one_e("cuda", arch, tmp_path, lmax)
+    assert len(written) == n_units
+    for c in _launch(PART1, lmax):
         for t in TARGETS:
             k = kernel_of(c, t)
             path = tmp_path / f"{k.name}.{ext}"
@@ -580,14 +634,14 @@ def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
 
 def test_r_abs_bounds_one_centre_and_e_abs_bounds_e() -> None:
     rng = np.random.default_rng(242)
-    for L in range(2 * LMAX + 1):
+    for L in range(2 * LMAX_DEFERRED + 1):
         pc = rng.uniform(-2, 2, 3)
         theta = float(rng.uniform(0.3, 2.0))
         ra = _r_abs(L, pc, theta)
         for t in hermite_order(L):
             assert abs(one_centre(t, 0, pc, theta)) <= ra[t] * (1 + 1e-12)
-    for i in range(LMAX + 1):
-        for j in range(LMAX + 3):
+    for i in range(LMAX_DEFERRED + 1):
+        for j in range(LMAX_DEFERRED + 3):
             zeta = float(rng.uniform(0.2, 3.0))
             xa, xb = rng.uniform(-1.5, 1.5, 2)
             e = e_axis(i, j, zeta, xa, xb)
