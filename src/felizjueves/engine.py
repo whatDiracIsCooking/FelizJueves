@@ -104,7 +104,10 @@ from the MMD engine's own modules, and from no member of this protocol.
 
 THE RULE THAT NAMES NO ENGINE (test/test_layering.py, rule "engine" and
 `test_nothing_above_the_engines_names_an_engine`): this module is the one
-place in `src/` that imports both engines' entry points. A module ABOVE the
+place in `src/` that imports both engines' ERI and kernel entry points; the
+two generators written after it (`emit.__main__`, #287; `measured`, #288)
+name each engine's kernel builder only, under test_layering.py's narrow
+`GENERATORS` exemption. A module ABOVE the
 engines -- one that imports this protocol, or one declared engine-neutral
 there (today `ao.fock`, whose ERI arrives as `eri=`) -- may not import an
 engine's modules by name. Tests are witnesses, not "above": they name both

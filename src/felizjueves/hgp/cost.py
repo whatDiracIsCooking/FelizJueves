@@ -46,7 +46,7 @@ orders `0..m_max` of the leaves the DAG holds) and one `rsqrt(p+q)`; each
 primitive pair calls one `exp`. None of them is counted as FLOPs; they are
 reported beside the triple (`Cost.transcendentals`), per tier.
 
-EQ 26's SIGN. #271's pending claim `fock/eq26-ket-vrr-sign` says eq 26's
+EQ 26's SIGN. #271's claim `fock/eq26-ket-vrr-sign` (asserted by #291) says eq 26's
 `(m+1)` displacement is misprinted (`WQ = +zeta/(zeta+eta) PQ`, not `-`). A
 sign does not change a FLOP count, so the claim cannot move any number here;
 `WQ` is counted as the three multiplies either sign costs.
@@ -289,7 +289,7 @@ ABOUT = (
     "separations. 'pruned' (the default, by decision: nothing downstream is "
     "ratcheted) counts the pruned VRR DAG; 'unpruned' the forward build; "
     "'saving' is unpruned total - pruned total, reported, not asserted as a "
-    "win. Eq 26's misprinted sign (fock/eq26-ket-vrr-sign, pending) moves no "
+    "win. Eq 26's misprinted sign (fock/eq26-ket-vrr-sign, asserted) moves no "
     "count: a sign costs nothing.")
 
 

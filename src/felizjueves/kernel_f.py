@@ -147,7 +147,7 @@ and `deg` are folded into the density elements once per quartet (`w_cd =
 multiply. The `AtomicAdd` statements of a class are therefore exactly the
 six blocks' sizes, `n_a n_b + n_a n_c + n_a n_d + n_b n_c + n_b n_d + n_c
 n_d` (`six_block_size`), against the class's `n_a n_b n_c n_d` ERIs: the
-evidence for `fock/predigest-bounds-atomics` (scored in #291).
+evidence for `fock/predigest-bounds-atomics` (asserted by #291).
 
 THE SCREEN READS SIX DENSITY BLOCKS. `Dsh[s][t]` is the largest `|D|` over
 shell block `(s, t)` (`density_blocks`, host side); the kernel takes the
@@ -171,8 +171,8 @@ set with the lower bound `la <= |e|`, `lc <= |f|` dropped; #273's and #274's
 comments, and `hgp/hrr.py`'s docstring, which shows that #274's 6,254 HRR
 statements fit 961 and only 961).
 
-THE SCREEN IS A SKIP, NEVER A BREAK (pin 8; `fock/skip-not-break`, pending,
-scored in #291). `If(bound < tau)` holds no statement but a `Note`; the
+THE SCREEN IS A SKIP, NEVER A BREAK (pin 8; `fock/skip-not-break`, asserted
+by #291). `If(bound < tau)` holds no statement but a `Note`; the
 quartet's work sits in its `orelse`; the kernel holds no `Break` anywhere.
 The batch sort (`launch_f`: `G * dmax`) "does not rigorously prevent warp
 divergence", because the six-block `D_max` is not monotone along any one
