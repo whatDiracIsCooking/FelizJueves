@@ -17,18 +17,18 @@
    ],
    "boundary": 1,
    "carried": 1,
-   "peak_live": 15,
-   "n_instructions": 35,
+   "peak_live": 24,
+   "n_instructions": 89,
    "tiers": {
     "K4": 16,
     "K2": 5,
-    "K0": 4,
-    "outside": 10
+    "K0": 47,
+    "outside": 21
    },
    "nest": [
     [
      [],
-     2
+     13
     ],
     [
      [
@@ -40,7 +40,7 @@
      [
       "k"
      ],
-     4
+     47
     ],
     [
      [
@@ -73,18 +73,18 @@
    ],
    "boundary": 4,
    "carried": 4,
-   "peak_live": 26,
-   "n_instructions": 63,
+   "peak_live": 37,
+   "n_instructions": 141,
    "tiers": {
     "K4": 27,
     "K2": 8,
-    "K0": 18,
-    "outside": 10
+    "K0": 85,
+    "outside": 21
    },
    "nest": [
     [
      [],
-     2
+     13
     ],
     [
      [
@@ -96,7 +96,7 @@
      [
       "k"
      ],
-     18
+     85
     ],
     [
      [
@@ -129,18 +129,18 @@
    ],
    "boundary": 10,
    "carried": 10,
-   "peak_live": 38,
-   "n_instructions": 108,
+   "peak_live": 58,
+   "n_instructions": 228,
    "tiers": {
     "K4": 45,
     "K2": 8,
-    "K0": 45,
-    "outside": 10
+    "K0": 154,
+    "outside": 21
    },
    "nest": [
     [
      [],
-     2
+     13
     ],
     [
      [
@@ -152,7 +152,7 @@
      [
       "k"
      ],
-     45
+     154
     ],
     [
      [
@@ -185,18 +185,18 @@
    ],
    "boundary": 9,
    "carried": 9,
-   "peak_live": 37,
-   "n_instructions": 102,
+   "peak_live": 63,
+   "n_instructions": 243,
    "tiers": {
     "K4": 44,
     "K2": 8,
-    "K0": 40,
-    "outside": 10
+    "K0": 170,
+    "outside": 21
    },
    "nest": [
     [
      [],
-     2
+     13
     ],
     [
      [
@@ -208,7 +208,7 @@
      [
       "k"
      ],
-     40
+     170
     ],
     [
      [
@@ -241,18 +241,18 @@
    ],
    "boundary": 19,
    "carried": 19,
-   "peak_live": 57,
-   "n_instructions": 193,
+   "peak_live": 102,
+   "n_instructions": 421,
    "tiers": {
     "K4": 74,
     "K2": 8,
-    "K0": 101,
-    "outside": 10
+    "K0": 318,
+    "outside": 21
    },
    "nest": [
     [
      [],
-     2
+     13
     ],
     [
      [
@@ -264,7 +264,7 @@
      [
       "k"
      ],
-     101
+     318
     ],
     [
      [
@@ -297,18 +297,18 @@
    ],
    "boundary": 31,
    "carried": 31,
-   "peak_live": 83,
-   "n_instructions": 320,
+   "peak_live": 168,
+   "n_instructions": 713,
    "tiers": {
     "K4": 121,
     "K2": 8,
-    "K0": 181,
-    "outside": 10
+    "K0": 563,
+    "outside": 21
    },
    "nest": [
     [
      [],
-     2
+     13
     ],
     [
      [
@@ -320,7 +320,7 @@
      [
       "k"
      ],
-     181
+     563
     ],
     [
      [
@@ -353,18 +353,18 @@
    ],
    "boundary": 16,
    "carried": 16,
-   "peak_live": 52,
-   "n_instructions": 150,
+   "peak_live": 67,
+   "n_instructions": 288,
    "tiers": {
     "K4": 63,
     "K2": 8,
-    "K0": 66,
-    "outside": 13
+    "K0": 190,
+    "outside": 27
    },
    "nest": [
     [
      [],
-     5
+     19
     ],
     [
      [
@@ -376,7 +376,7 @@
      [
       "k"
      ],
-     66
+     190
     ],
     [
      [
@@ -409,18 +409,18 @@
    ],
    "boundary": 40,
    "carried": 40,
-   "peak_live": 103,
-   "n_instructions": 327,
+   "peak_live": 113,
+   "n_instructions": 554,
    "tiers": {
     "K4": 129,
     "K2": 8,
-    "K0": 177,
-    "outside": 13
+    "K0": 390,
+    "outside": 27
    },
    "nest": [
     [
      [],
-     5
+     19
     ],
     [
      [
@@ -432,7 +432,7 @@
      [
       "k"
      ],
-     177
+     390
     ],
     [
      [
@@ -465,18 +465,18 @@
    ],
    "boundary": 36,
    "carried": 36,
-   "peak_live": 97,
-   "n_instructions": 303,
+   "peak_live": 113,
+   "n_instructions": 575,
    "tiers": {
     "K4": 125,
     "K2": 8,
-    "K0": 157,
-    "outside": 13
+    "K0": 415,
+    "outside": 27
    },
    "nest": [
     [
      [],
-     5
+     19
     ],
     [
      [
@@ -488,7 +488,7 @@
      [
       "k"
      ],
-     157
+     415
     ],
     [
      [
@@ -521,18 +521,18 @@
    ],
    "boundary": 76,
    "carried": 76,
-   "peak_live": 178,
-   "n_instructions": 656,
+   "peak_live": 188,
+   "n_instructions": 1123,
    "tiers": {
     "K4": 245,
     "K2": 8,
-    "K0": 390,
-    "outside": 13
+    "K0": 843,
+    "outside": 27
    },
    "nest": [
     [
      [],
-     5
+     19
     ],
     [
      [
@@ -544,7 +544,7 @@
      [
       "k"
      ],
-     390
+     843
     ],
     [
      [
@@ -577,18 +577,18 @@
    ],
    "boundary": 124,
    "carried": 124,
-   "peak_live": 284,
-   "n_instructions": 1144,
+   "peak_live": 296,
+   "n_instructions": 1974,
    "tiers": {
     "K4": 433,
     "K2": 8,
-    "K0": 690,
-    "outside": 13
+    "K0": 1506,
+    "outside": 27
    },
    "nest": [
     [
      [],
-     5
+     19
     ],
     [
      [
@@ -600,7 +600,7 @@
      [
       "k"
      ],
-     690
+     1506
     ],
     [
      [
@@ -633,18 +633,18 @@
    ],
    "boundary": 100,
    "carried": 100,
-   "peak_live": 224,
-   "n_instructions": 786,
+   "peak_live": 240,
+   "n_instructions": 1179,
    "tiers": {
     "K4": 285,
     "K2": 8,
-    "K0": 480,
-    "outside": 13
+    "K0": 850,
+    "outside": 36
    },
    "nest": [
     [
      [],
-     5
+     28
     ],
     [
      [
@@ -656,7 +656,7 @@
      [
       "k"
      ],
-     480
+     850
     ],
     [
      [
@@ -689,18 +689,18 @@
    ],
    "boundary": 90,
    "carried": 90,
-   "peak_live": 208,
-   "n_instructions": 723,
+   "peak_live": 226,
+   "n_instructions": 1196,
    "tiers": {
     "K4": 275,
     "K2": 8,
-    "K0": 427,
-    "outside": 13
+    "K0": 877,
+    "outside": 36
    },
    "nest": [
     [
      [],
-     5
+     28
     ],
     [
      [
@@ -712,7 +712,7 @@
      [
       "k"
      ],
-     427
+     877
     ],
     [
      [
@@ -745,18 +745,18 @@
    ],
    "boundary": 190,
    "carried": 190,
-   "peak_live": 416,
-   "n_instructions": 1619,
+   "peak_live": 432,
+   "n_instructions": 2449,
    "tiers": {
     "K4": 575,
     "K2": 8,
-    "K0": 1023,
-    "outside": 13
+    "K0": 1830,
+    "outside": 36
    },
    "nest": [
     [
      [],
-     5
+     28
     ],
     [
      [
@@ -768,7 +768,7 @@
      [
       "k"
      ],
-     1023
+     1830
     ],
     [
      [
@@ -801,18 +801,18 @@
    ],
    "boundary": 310,
    "carried": 310,
-   "peak_live": 680,
-   "n_instructions": 2845,
+   "peak_live": 698,
+   "n_instructions": 4335,
    "tiers": {
     "K4": 1045,
     "K2": 8,
-    "K0": 1779,
-    "outside": 13
+    "K0": 3246,
+    "outside": 36
    },
    "nest": [
     [
      [],
-     5
+     28
     ],
     [
      [
@@ -824,7 +824,7 @@
      [
       "k"
      ],
-     1779
+     3246
     ],
     [
      [
@@ -857,18 +857,18 @@
    ],
    "boundary": 81,
    "carried": 81,
-   "peak_live": 190,
-   "n_instructions": 687,
+   "peak_live": 215,
+   "n_instructions": 1293,
    "tiers": {
     "K4": 257,
     "K2": 8,
-    "K0": 409,
-    "outside": 13
+    "K0": 980,
+    "outside": 48
    },
    "nest": [
     [
      [],
-     5
+     40
     ],
     [
      [
@@ -880,7 +880,7 @@
      [
       "k"
      ],
-     409
+     980
     ],
     [
      [
@@ -913,18 +913,18 @@
    ],
    "boundary": 171,
    "carried": 171,
-   "peak_live": 378,
-   "n_instructions": 1606,
+   "peak_live": 401,
+   "n_instructions": 2694,
    "tiers": {
     "K4": 537,
     "K2": 8,
-    "K0": 1048,
-    "outside": 13
+    "K0": 2101,
+    "outside": 48
    },
    "nest": [
     [
      [],
-     5
+     40
     ],
     [
      [
@@ -936,7 +936,7 @@
      [
       "k"
      ],
-     1048
+     2101
     ],
     [
      [
@@ -969,18 +969,18 @@
    ],
    "boundary": 279,
    "carried": 279,
-   "peak_live": 618,
-   "n_instructions": 2877,
+   "peak_live": 643,
+   "n_instructions": 4886,
    "tiers": {
     "K4": 980,
     "K2": 8,
-    "K0": 1876,
-    "outside": 13
+    "K0": 3850,
+    "outside": 48
    },
    "nest": [
     [
      [],
-     5
+     40
     ],
     [
      [
@@ -992,7 +992,7 @@
      [
       "k"
      ],
-     1876
+     3850
     ],
     [
      [
@@ -1025,18 +1025,18 @@
    ],
    "boundary": 361,
    "carried": 361,
-   "peak_live": 772,
-   "n_instructions": 3675,
+   "peak_live": 812,
+   "n_instructions": 5688,
    "tiers": {
     "K4": 1087,
     "K2": 8,
-    "K0": 2567,
-    "outside": 13
+    "K0": 4521,
+    "outside": 72
    },
    "nest": [
     [
      [],
-     5
+     64
     ],
     [
      [
@@ -1048,7 +1048,7 @@
      [
       "k"
      ],
-     2567
+     4521
     ],
     [
      [
@@ -1081,18 +1081,18 @@
    ],
    "boundary": 589,
    "carried": 589,
-   "peak_live": 1272,
-   "n_instructions": 6544,
+   "peak_live": 1314,
+   "n_instructions": 10314,
    "tiers": {
     "K4": 2000,
     "K2": 8,
-    "K0": 4523,
-    "outside": 13
+    "K0": 8234,
+    "outside": 72
    },
    "nest": [
     [
      [],
-     5
+     64
     ],
     [
      [
@@ -1104,7 +1104,7 @@
      [
       "k"
      ],
-     4523
+     8234
     ],
     [
      [
@@ -1137,18 +1137,18 @@
    ],
    "boundary": 961,
    "carried": 961,
-   "peak_live": 2061,
-   "n_instructions": 11857,
+   "peak_live": 2140,
+   "n_instructions": 19051,
    "tiers": {
     "K4": 3321,
     "K2": 8,
-    "K0": 8515,
-    "outside": 13
+    "K0": 15593,
+    "outside": 129
    },
    "nest": [
     [
      [],
-     5
+     121
     ],
     [
      [
@@ -1160,7 +1160,7 @@
      [
       "k"
      ],
-     8515
+     15593
     ],
     [
      [
