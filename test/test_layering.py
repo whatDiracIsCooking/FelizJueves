@@ -1323,3 +1323,127 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                    "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #292 (milestone 12, G1): `engine`, the protocol both ERI engines satisfy,
+# extracted last, and the rule that makes it stick: NOTHING ABOVE THE
+# ENGINES MAY IMPORT AN ENGINE BY NAME -- this file's preference for injected
+# callables (module docstring: `interp`'s `boys=`), made exact for the new
+# boundary.
+#
+# WHAT "AN ENGINE" IS, by module: the entry points `engine` names and the
+# recurrence machinery behind them (`ENGINES`). MMD is `plan/`, `recurrence`,
+# `kernel` and `ao.eri`; HGP is `hgp/`, `kernel_f` and `ao.hgp_drive`. The
+# modules that are one engine's private consumers (`launch`, `kernel_k`,
+# `ao.drive`, `launch_f`, ...) are neither an engine nor above one: their
+# own rules above hold them.
+#
+# WHAT "ABOVE" IS, precisely: (a) every module that imports `engine` -- a
+# consumer of the protocol, computed from the tree, so a new one is held the
+# moment it appears; and (b) the modules DECLARED engine-neutral here
+# (`DECLARED_ABOVE`): today `ao.fock`, the Fock witness whose ERI arrives as
+# `eri=` (#275). Such a module may not reach an engine module through any
+# chain of imports except through `engine` itself. "By name" therefore
+# means: by any import at all, direct or transitive, other than the protocol.
+#
+# Also tree-wide: no module but `engine` (and the engines' own modules)
+# names BOTH engines -- one that does is above them by definition and must
+# go through the protocol. Tests are outside `src/` and are witnesses: they
+# name both engines on purpose, to compare them.
+# ---------------------------------------------------------------------------
+
+ENGINES: dict[str, tuple[str, ...]] = {
+    "mmd": ("plan", "recurrence", "kernel", "ao.eri"),
+    "hgp": ("hgp", "kernel_f", "ao.hgp_drive"),
+}
+DECLARED_ABOVE = ("ao.fock",)
+_ENGINE_WHY = ("the protocol names the engines' ENTRY POINTS (`ao.eri`, "
+               "`ao.hgp_drive`, `kernel`, `kernel_f`) and nothing behind "
+               "them: reaching {} would make an engine's private machinery "
+               "part of the shared surface (#292's push-back-down list)")
+
+RULES |= {
+    "engine": _rule(
+        "engine.py (#292): the `Engine` protocol -- name, target, eri, "
+        "eri_and_scale, kernel -- and its two implementations, `Mmd` over "
+        "`ao.eri` + `kernel` and `Hgp` over `ao.hgp_drive` + `kernel_f`. "
+        "The one module in src/ that names both engines; each engine's "
+        "special function is injected at construction",
+        ("spec", "ir", "ao.shell", "ao.eri", "ao.hgp_drive", "kernel",
+         "kernel_f"),
+        reference=_GROUND_TRUTH + "; `pq=` and `boys=` arrive injected, as "
+                  "`interp` takes `boys=`",
+        plan=_ENGINE_WHY.format("plan/ (MILD, the sieve, the partition, "
+                                "the total_am row)"),
+        hgp=_ENGINE_WHY.format("hgp/ (the VRR/HRR DAGs)"),
+        recurrence=_ENGINE_WHY.format("the MMD recurrence"),
+        interp="the protocol evaluates nothing itself; HGP's adapter runs "
+               "the interpreter, and the protocol must not lean on it",
+        emit="a `Kernel` is vendor-neutral; spelling it is a driver's job",
+        device="the `Kernel` is arch-neutral; the arch enters at emission"),
+}
+RULE_OF["engine"] = "engine"
+EDGES["engine"] = frozenset(("ao.eri", "ao.hgp_drive", "ao.shell", "ir",
+                             "kernel", "kernel_f", "spec"))
+
+
+def _engine_of(module: str) -> str | None:
+    for name, prefixes in ENGINES.items():
+        if any(_under(module, p) for p in prefixes):
+            return name
+    return None
+
+
+def _above(graph: dict[str, set[str]]) -> set[str]:
+    return ({m for m, es in graph.items() if "engine" in es}
+            | set(DECLARED_ABOVE))
+
+
+def engines_named_from_above(graph: dict[str, set[str]]) -> dict[str, list]:
+    """For each module above the engines, the engine modules it reaches by
+    any chain of imports that does not pass through `engine`."""
+    out = {}
+    for root in sorted(_above(graph)):
+        seen: set[str] = set()
+        todo = [root]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen and e != "engine":
+                    seen.add(e)
+                    todo.append(e)
+        hit = sorted(e for e in seen if _engine_of(e))
+        if hit:
+            out[root] = hit
+    return out
+
+
+def test_nothing_above_the_engines_names_an_engine() -> None:
+    graph = _graph()
+    assert set(DECLARED_ABOVE) <= set(graph), "a declared module is gone"
+    assert not any(_engine_of(m) for m in _above(graph)), (
+        "a module is declared above the engines and is one of them")
+    assert not (hit := engines_named_from_above(graph)), (
+        f"modules above the engines that name one (#292): {hit}")
+
+
+def test_only_the_protocol_names_both_engines() -> None:
+    graph = _graph()
+    both = sorted(m for m, es in graph.items()
+                  if not _engine_of(m) and m != "engine"
+                  and len({_engine_of(e) for e in es} - {None}) == 2)
+    assert not both, f"modules naming both engines outside `engine`: {both}"
+    named = {_engine_of(e) for e in graph["engine"]} - {None}
+    assert named == set(ENGINES), named  # the registry really holds both
+
+
+def test_the_engine_rule_can_fail() -> None:
+    # A module above (it imports `engine`) that also imports `hgp.vrr`, and
+    # the declared `ao.fock` reaching `ao.eri` through two hops: both are
+    # caught; the route through `engine` itself is not a breach.
+    graph = {"engine": {"ao.eri", "kernel_f"}, "ao.eri": set(),
+             "kernel_f": {"hgp.vrr"}, "hgp.vrr": set(),
+             "consumer": {"engine", "hgp.vrr"}, "via": {"mid"},
+             "mid": {"ao.eri"}, "ao.fock": {"via"}, "clean": {"engine"}}
+    assert engines_named_from_above(graph) == {
+        "ao.fock": ["ao.eri"], "consumer": ["hgp.vrr"]}
