@@ -8,6 +8,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --L 4 8
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --pair-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --one-e-l 2
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --fock-l 1
 
 ONE LADDER PER KERNEL FAMILY (#156), one translation unit per class, each
 emitted by the backend for the arch to `<out>/<kernel name>.<ext>` (`.cu`
@@ -47,6 +48,38 @@ BASIS order, so a basis whose p or d shells precede its s shells (H2O: O's
 p before H's s) also reaches `(1, 0)`, `(2, 0)`, `(2, 1)`; a driver builds
 those from `build_*_kernel((la, lb))` itself (test/one_electron_driver.py),
 the same text this module would write for them.
+
+THE FOCK PATH, `--fock-class LA LB LC LD` / `--fock-l LMAX` (#287): the
+fused Fock kernel of `[Fock]` §3.2, `kernel_f.build_f_kernel` (`Target.F`,
+engine #2, milestone 12), one unit per class, `f_{la}{lb}{lc}{ld}`.
+`--fock-l LMAX` (0..`FOCK_L_MAX` = 2) writes every class of milestone 12's
+ladder (`FOCK_CLASSES`, the 21 canonical classes, each shell `l <= 2`)
+whose shells are all `l <= LMAX` -- 1, 6 or 21 units, in ladder order;
+`--fock-class` (repeatable) names classes one by one, and each must be ON
+the ladder: AO order, canonical `la <= lb`, `lc <= ld`, bra pair `<=` ket
+pair (the only classes `launch_f` launches), so `(10|00)` is a 2 and not a
+silent re-ordering. The two flags together write the union, in ladder
+order. It is a SEPARATE path, like the selector: never combined with `--L`,
+`--pair-l`, `--one-e-l`, `--class` or `--shell-ls`, and NEVER in the no-flag
+default -- `data/measured/kernels.json` pins the 37 J-chain units'
+`source_sha256` (m11's lesson), and KERNEL_GEN_CMD does not ask for it.
+Every F unit is named `f_` plus four digits, so none collides with `pq_`,
+`dq_`, `jab_`, `s_`, `t_` or `v_`.
+
+THE LADDER IS SPELLED HERE (`FOCK_CLASSES`), not imported from `hgp.vrr`,
+and test/test_emit_fock.py holds the two equal. This driver names each
+engine by its ENTRY POINT only (`kernel` for MMD, `kernel_f` for HGP; #292's
+rule, test/test_layering.py): `hgp.vrr` is the HGP engine's private
+machinery, behind that entry point.
+
+THE SHARED STAGING FITS, so the kernel is emitted as `kernel_f` builds it.
+Its one shared array, `ab_sh`, is ONE per block of literal extent
+`MAX_PRIM_PAIRS x REC` = 128 x 8 doubles = 8,192 bytes, independent of
+`blockDim` (every thread writes the same values into the same array; it is
+not a copy per thread). The compilers report exactly that for all 21
+classes: ptxas `8192 bytes smem` on the NVIDIA arch (48 KiB static per
+block) and `LDS Size [bytes/block]: 8192` on the AMD one (64 KiB per
+workgroup), pinned by test/test_emit_fock.py's compile cases.
 
 The two vendors' texts differ only in the backend hooks
 (test/test_emit_hip.py), and HIP's shuffle needs a 64-bit mask that the CUDA
@@ -120,6 +153,7 @@ from felizjueves.device import Arch, Vendor, by_name, from_env
 from felizjueves.emit import cuda, hip
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels
 from felizjueves.kernel_dq import build_dq_kernel
+from felizjueves.kernel_f import build_f_kernel
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
@@ -135,6 +169,13 @@ DEFAULT_PAIR_L = 3  # (ss) through (ff): 10 pair classes, 20 units
 PAIR_L_MAX = 8  # (bb) at L = 16, the [p|q] ladder's top
 DEFAULT_ONE_E_L = 3  # `--one-e-l` given bare: (ss) through (ff), 30 units
 ONE_E_L_MAX = PAIR_L_MAX  # the range the pair ladder accepts
+FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
+_FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
+                    for b in range(a, FOCK_L_MAX + 1))
+# the 21 classes: unordered pairs of canonical pairs, bra <= ket (module
+# docstring; == hgp.vrr.CLASSES, held by test/test_emit_fock.py)
+FOCK_CLASSES: tuple[Am, ...] = tuple(
+    bra + ket for i, bra in enumerate(_FOCK_PAIRS) for ket in _FOCK_PAIRS[i:])
 Am = tuple[int, int, int, int]
 
 
@@ -215,6 +256,44 @@ def generate_one_e(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]
     kernels = one_e_kernels(lmax)
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The Fock path (#287)
+# ---------------------------------------------------------------------------
+
+
+def fock_classes(lmax: int) -> list[Am]:
+    """Every ladder class (`FOCK_CLASSES`) whose shells are all `l <=
+    lmax`, in ladder order."""
+    if type(lmax) is not int or not 0 <= lmax <= FOCK_L_MAX:
+        raise ValueError(f"--fock-l {lmax!r} is outside 0..{FOCK_L_MAX}")
+    return [c for c in FOCK_CLASSES if max(c) <= lmax]
+
+
+def fock_selection(lmax: int | None, classes: Sequence[Sequence[int]] = ()
+                   ) -> list[Am]:
+    """The union of `--fock-l lmax` and the `--fock-class` list, in ladder
+    order; a named class off the ladder raises `ValueError`."""
+    chosen = set(fock_classes(lmax)) if lmax is not None else set()
+    for c in classes:
+        c = tuple(c)
+        if c not in FOCK_CLASSES:
+            raise ValueError(
+                f"--fock-class {' '.join(map(str, c))} is not on milestone "
+                "12's ladder: AO order, each shell l <= 2, canonical la <= lb, "
+                "lc <= ld and bra pair <= ket pair")
+        chosen.add(c)
+    return [c for c in FOCK_CLASSES if c in chosen]
+
+
+def generate_fock(backend: str, arch: Arch, out: Path,
+                  classes: Sequence[Am]) -> list[Path]:
+    """Emit the fused Fock unit `f_{la}{lb}{lc}{ld}` of every class into
+    `out`; return the paths."""
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, build_f_kernel(tuple(c)))
+            for c in classes]
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +396,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--one-e-l", dest="one_e_l", type=int, nargs="?",
                     const=DEFAULT_ONE_E_L, default=None, metavar="LMAX")
+    ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
+                    metavar="LMAX")
+    ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
+                    action="append", metavar=("LA", "LB", "LC", "LD"))
     ap.add_argument("--class", dest="classes", type=int, nargs=4, action="append",
                     metavar=("LA", "LB", "LC", "LD"))
     ap.add_argument("--shell-ls", type=int, nargs="+", default=None)
@@ -331,6 +414,25 @@ def main(argv: Sequence[str] | None = None) -> int:
               "KERNEL_TIER_OUT)", file=sys.stderr)
         return 2
     selector = bool(args.classes or args.shell_ls)
+    fock = args.fock_l is not None or bool(args.fock_classes)
+    if fock and (selector or args.Ls is not None or args.pair_l is not None
+                 or args.one_e_l is not None):
+        print("emit: --fock-l / --fock-class is a separate path from --L / "
+              "--pair-l / --one-e-l / --class / --shell-ls; give one",
+              file=sys.stderr)
+        return 2
+    if fock and (args.n_batches != [1] or args.admitted_only):
+        print("emit: an F class is one batch (spec.py, #272); --n-batches / "
+              "--admitted-only belong to --class or --shell-ls",
+              file=sys.stderr)
+        return 2
+    fock_cls: list[Am] = []
+    if fock:
+        try:
+            fock_cls = fock_selection(args.fock_l, args.fock_classes or ())
+        except ValueError as e:
+            print(f"emit: {e}", file=sys.stderr)
+            return 2
     if selector and (args.Ls is not None or args.pair_l is not None
                      or args.one_e_l is not None):
         print("emit: --L / --pair-l / --one-e-l and --class / --shell-ls are "
@@ -355,6 +457,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if selector:
         return _main_classes(args, arch)
+    if fock:
+        written = generate_fock(args.backend, arch, args.out, fock_cls)
+        print(f"emit: {len(written)} {args.backend} Fock translation unit(s) "
+              f"for {arch.name} -> {args.out}")
+        for p in written:
+            print(f"   {p.name}")
+        return 0
     if args.Ls is None and args.pair_l is None:  # the default: both J ladders
         Ls, pair_l = DEFAULT_LS, DEFAULT_PAIR_L
     else:

@@ -1431,6 +1431,7 @@ def test_only_the_protocol_names_both_engines() -> None:
     graph = _graph()
     both = sorted(m for m, es in graph.items()
                   if not _engine_of(m) and m != "engine"
+                  and m not in GENERATORS
                   and len({_engine_of(e) for e in es} - {None}) == 2)
     assert not both, f"modules naming both engines outside `engine`: {both}"
     named = {_engine_of(e) for e in graph["engine"]} - {None}
@@ -1447,3 +1448,33 @@ def test_the_engine_rule_can_fail() -> None:
              "mid": {"ao.eri"}, "ao.fock": {"via"}, "clean": {"engine"}}
     assert engines_named_from_above(graph) == {
         "ao.fock": ["ao.eri"], "consumer": ["hgp.vrr"]}
+
+
+# ---------------------------------------------------------------------------
+# #287 (milestone 12): the generator CLI writes the fused Fock kernel behind
+# `--fock-class` / `--fock-l`, so `emit.__main__` composes `kernel_f` with the
+# backends as it composes `kernel` -- and so names BOTH engines. It cannot go
+# through the protocol instead: it writes MMD's split batch kernels
+# (`kernel.build_pq_kernels`, the selector), which #292 pushed back DOWN as
+# engine-private, so it would be a module above the engines that names one.
+# The exemption is NARROW and stated as a test: a generator names each engine
+# by its ENTRY POINT only (`kernel`, `kernel_f`), never the machinery behind
+# it (`plan/`, `recurrence`, `hgp/`, the AO layer).
+# ---------------------------------------------------------------------------
+
+GENERATORS = {"emit.__main__": frozenset(("kernel", "kernel_f"))}
+RULES["driver"] = Rule(RULES["driver"].why + ", and #287's fused Fock "
+                       "kernel through `kernel_f`, by its entry point only",
+                       RULES["driver"].may | frozenset(("kernel_f",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_f",))
+
+
+def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
+    graph = _graph()
+    for m, entry in GENERATORS.items():
+        named = {e for e in graph[m] if _engine_of(e)}
+        assert named <= entry, (
+            f"{m} names engine machinery behind an entry point: "
+            f"{sorted(named - entry)}")
+        assert {_engine_of(e) for e in entry} == set(ENGINES), entry

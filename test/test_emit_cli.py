@@ -7,7 +7,9 @@ ladder (L = 0..16, unchanged: the measured store pins each unit's
 `[p|q]`, `--pair-l` alone only the pair ladder. `--one-e-l LMAX` (#242)
 ADDS the one-electron ladder (`s_`, `t_`, `v_` per pair class `la <= lb <=
 LMAX`) beside whichever J ladders those select; it is never in the bare
-default, which stays 37 units with every pinned `source_sha256`.
+default, which stays 37 units with every pinned `source_sha256`. The fused
+Fock kernel (`--fock-class` / `--fock-l`, #287) is a separate path, tested
+in test/test_emit_fock.py; here only its absence from the default.
 
 THE SELECTOR writes, per `(class, n_batches)` cell, the chain one class
 needs -- its ket's `DQ`, its `[p|q]` batch kernels, its bra's `JAB` -- with
@@ -158,6 +160,20 @@ def test_the_bare_default_is_still_37_units_and_no_one_e_unit(backend, tmp_path)
     got = _names(tmp_path)
     assert len(got) == 37
     assert not got & _one_e_names(ext, emit_cli.ONE_E_L_MAX)
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_default_ladder_holds_no_fock_unit(backend, tmp_path):
+    """#287: the fused Fock kernel is behind `--fock-class` / `--fock-l`
+    only. Neither the bare default nor KERNEL_GEN_CMD's `--one-e-l 2` writes
+    an `f_` unit, and the default's 37 names are exactly the J chain's
+    (their bytes: `test_the_pq_ladder_still_matches_the_measured_pins`)."""
+    _, _, ext = BACKEND[backend]
+    for argv in ([], ["--one-e-l", "2"]):
+        d = tmp_path / ("bare" if not argv else "one-e")
+        assert _run(d, backend, *argv) == 0
+        assert not any(n.startswith("f_") for n in _names(d))
+    assert _names(tmp_path / "bare") == _pq_names(ext) | _pair_names(ext)
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
