@@ -54,7 +54,10 @@ J rows -- of a basis of 3-primitive shells (`K_AB = K_CD = 9`) at random
 centres in a cube of side `side`, `tau = 0` so no quartet is screened, a
 random symmetric density. The bra and ket pairs are disjoint sets of the
 class's canonical pairs; nothing is closed or compared but its finiteness
-(the binary was checked on real launches first).
+(the binary was checked on real launches first). The basis is
+`SYNTHETIC_COUNTS` shells of `l = 0, 1, 2` when that fills the launch, and
+`DEFERRED_COUNTS` otherwise (#290: twelve of the sixteen classes above L =
+2); the launch shape, the exponents and the cubes are the same either way.
 
 Harness, in `test/`: not a second emitter, no measurement decided here.
 """
@@ -301,7 +304,18 @@ def _canonical_pairs(idx: Mapping[int, list[int]], la: int, lb: int
     return [(a, b) for a in idx[la] for b in idx[lb]]
 
 
-def synthetic_basis(*, side: float, seed: int, counts=(66, 34, 4)) -> Basis:
+# #288's basis: fills every class of total L <= 2, and (00|12), (01|02),
+# (01|11) at L = 3 and (01|12) at L = 4. #290: a class it cannot fill
+# (fewer than TIMING_N_BRA bra pairs, or TIMING_N_KET ket pairs disjoint from
+# them -- (ss|dd) has 10 ket pairs from 4 d shells) draws the same launch
+# shape from DEFERRED_COUNTS, which fills every class of the ladder
+# ((dd|dd): 2211 canonical pairs).
+SYNTHETIC_COUNTS = (66, 34, 4)
+DEFERRED_COUNTS = (66, 66, 66)
+
+
+def synthetic_basis(*, side: float, seed: int,
+                    counts=SYNTHETIC_COUNTS) -> Basis:
     """Shells of `l = 0, 1, 2` (`counts` of each, 3 primitives, exponents
     jittered by up to 10%) at uniform random centres in a cube of `side`."""
     rng = np.random.default_rng(seed)
@@ -325,14 +339,18 @@ def synthetic_launch(cls: tuple[int, int, int, int], *, side: float,
                      seed: int) -> tuple[FRec, Basis]:
     """The timing launch of `cls` (module docstring, THE SYNTHETIC LAUNCH)."""
     la, lb, lc, ld = cls
-    basis = synthetic_basis(side=side, seed=seed)
-    idx: dict[int, list[int]] = {}
-    for i, s in enumerate(basis.shells):
-        idx.setdefault(s.l, []).append(i)
-    bra_all = _canonical_pairs(idx, la, lb)
-    ket_all = _canonical_pairs(idx, lc, ld)
-    bras = bra_all[:TIMING_N_BRA]
-    kets = ket_all[-TIMING_N_KET:]
+    for counts in (SYNTHETIC_COUNTS, DEFERRED_COUNTS):
+        basis = synthetic_basis(side=side, seed=seed, counts=counts)
+        idx: dict[int, list[int]] = {}
+        for i, s in enumerate(basis.shells):
+            idx.setdefault(s.l, []).append(i)
+        bra_all = _canonical_pairs(idx, la, lb)
+        ket_all = _canonical_pairs(idx, lc, ld)
+        bras = bra_all[:TIMING_N_BRA]
+        kets = ket_all[-TIMING_N_KET:]
+        if len(bras) == TIMING_N_BRA and len(kets) == TIMING_N_KET \
+                and not set(bras) & set(kets):
+            break
     assert len(bras) == TIMING_N_BRA and len(kets) == TIMING_N_KET
     assert not set(bras) & set(kets), "the bra and ket pairs must differ"
 

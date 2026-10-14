@@ -3271,25 +3271,29 @@ def test_a_high_l_k_row_hashes_todays_text(spec) -> None:
 
 # --- #288: the F rows, the fused Fock kernel on both cards --------------------
 
-# The cells #288 recorded: the classes of total L <= 2 its default tier runs
-# on the cards (test/test_fock_ondevice.py), one row per (class, arch).
-F_RECORDED = measured.f_cells((0, 1, 2))
+# The cells recorded: #288's, the classes of total L <= 2 its default tier
+# runs on the cards (test/test_fock_ondevice.py), and #290's, the sixteen
+# above them (the deferred tier) -- the whole ladder, one row per (class,
+# arch).
+F_DEFAULT = measured.f_cells((0, 1, 2))
+F_RECORDED = measured.f_cells()
 
 
-def test_the_f_ladder_is_hgp_vrr_classes_and_the_recorded_cells_are_five(
+def test_the_f_ladder_is_hgp_vrr_classes_and_every_class_is_recorded(
         ) -> None:
     from felizjueves.hgp.vrr import CLASSES
     assert measured.F_CLASSES == CLASSES == emit_cli.FOCK_CLASSES
     assert [s.am for s in measured.f_cells()] == list(CLASSES)
-    assert [s.am for s in F_RECORDED] == [
+    assert [s.am for s in F_DEFAULT] == [
         (0, 0, 0, 0), (0, 0, 0, 1), (0, 0, 0, 2), (0, 0, 1, 1), (0, 1, 0, 1)]
+    assert len(F_RECORDED) == 21  # #290: the deferred sixteen joined them
     for s in F_RECORDED:
         assert s.target is Target.F and s.n_batches == 1 and not s.levers
 
 
 def test_an_f_cell_is_built_by_kernel_f_and_takes_no_lever() -> None:
     from felizjueves.kernel_f import build_f_kernel
-    s = F_RECORDED[1]
+    s = F_DEFAULT[1]
     assert measured.cell_kernels(s) == (build_f_kernel(s),)
     with pytest.raises(ValueError, match="no lever is declared for an F"):
         measured.cell_kernels(replace(s, levers=(RECYCLE,)))
@@ -3313,9 +3317,11 @@ def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
         assert row.registers is not None and row.spill_store is not None, key
         assert row.shared_bytes == 8192, key  # ab_sh: 128 x 8 doubles
         assert row.raw["jsh_dynamic_bytes"] == 0, key
-        if row.runtime_ns is not None:  # #278: a timed F row is gated
-            assert all(row.raw[f] is not None
-                       for f in measured_store.GPU_UTIL_FIELDS), key
+        # #290: every class ran on both cards, so every F row is timed, and
+        # (#278) a timed F row is gated
+        assert row.runtime_ns is not None, key
+        assert all(row.raw[f] is not None
+                   for f in measured_store.GPU_UTIL_FIELDS), key
 
 
 ROWS_TOOLCHAIN = {"sm_86": "nvcc 13.0", "gfx1200": "hipcc / ROCm 7.2.4"}
@@ -3330,7 +3336,11 @@ def test_the_f_target_refuses_what_an_f_cell_does_not_have() -> None:
         assert measured.main(argv) == 2, argv
 
 
-F_PARAMS = [pytest.param(s, id=s.key()) for s in F_RECORDED]
+# #290's sixteen (total L > 2) recompile only in the deferred tier: (dd|dd)
+# is ~15 s through either compiler
+F_PARAMS = [pytest.param(s, id=s.key(),
+                         marks=[] if s in F_DEFAULT else [pytest.mark.slow])
+            for s in F_RECORDED]
 
 
 @pytest.mark.cuda

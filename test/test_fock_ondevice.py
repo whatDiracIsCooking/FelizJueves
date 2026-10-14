@@ -53,14 +53,17 @@ both. Two runs of one binary differ only in the order of the atomics: held
 to `2 TOL` of scale too, and whether they repeat bit for bit is printed.
 
 THE MEASURED ROWS (milestone 12; #278's F cell). One row per (class, arch,
-toolchain) for the five classes the default tier runs. The compile side --
-registers, spill, static shared bytes -- is `python -m felizjueves.measured
---remeasure --target f --L 0 1 2` (`measured.py`, THE F CELLS). The clock
+toolchain): #288 recorded the five classes the default tier runs, #290 (the
+deferred tier) the sixteen above them. The compile side -- registers,
+spill, static shared bytes -- is `python -m felizjueves.measured
+--remeasure --target f --L ...` (`measured.py`, THE F CELLS). The clock
 is this file's opt-in sweep, `test_<backend>_f_wallclock`: it skips unless
 FJ_WALLCLOCK_STORE names the store and FJ_WALLCLOCK_F=1, and must run
-ALONE (a contended card is a different experiment):
+ALONE (a contended card is a different experiment). FJ_WALLCLOCK_F_L
+selects its classes by total L (unset: L <= 2, #288's five):
 
     FJ_WALLCLOCK_STORE=data/measured/kernels.json FJ_WALLCLOCK_F=1 \\
+        FJ_WALLCLOCK_F_L="3 4 5 6 7 8" \\
         devtools/kernel-tier.sh --backend cuda -- -k f_wallclock
 
 1. COMPILE each class's program, then CHECK it by part 1 -- the timed
@@ -162,6 +165,9 @@ MOLECULES = [
                  marks=pytest.mark.slow),
 ]
 WALLCLOCK_F = "FJ_WALLCLOCK_F"
+# #290: the sweep's classes by total L (space-separated); unset, the default
+# tier's L <= 2 -- #288's five cells, exactly as before
+WALLCLOCK_F_L = "FJ_WALLCLOCK_F_L"
 NEAR_SIDE, WIDE_SIDE = 0.25, 5.0  # bohr: the timing inputs' cubes
 BOYS_T_WITNESSED = 500.0  # the narrow fj_boys's witnessed range (limits.json)
 
@@ -396,6 +402,18 @@ def _source_sha(backend: str, k: Kernel) -> str:
     return hashlib.sha256(emit(k, arch).encode()).hexdigest()
 
 
+def _wallclock_classes(env=os.environ) -> tuple:
+    """The F sweep's classes, in ladder order: those of total L in
+    FJ_WALLCLOCK_F_L (#290), or the default tier's when it is unset."""
+    text = env.get(WALLCLOCK_F_L, "").strip()
+    if not text:
+        return DEFAULT
+    Ls = {int(x) for x in text.split()}
+    got = tuple(c for c in CLASSES if sum(c) in Ls)
+    assert got, f"{WALLCLOCK_F_L}={text!r} selects no class"
+    return got
+
+
 def _f_wallclock(backend: str, request, run_device_binary,
                  tmp_path: Path) -> None:
     store_path = os.environ.get(WALLCLOCK_STORE)
@@ -419,7 +437,7 @@ def _f_wallclock(backend: str, request, run_device_binary,
     def key(cls) -> MeasuredKey:
         return MeasuredKey(KF.f_class_spec(*cls), arch, toolchain)
 
-    sweep_cells = list(DEFAULT)
+    sweep_cells = list(_wallclock_classes())
     if os.environ.get(WALLCLOCK_RESUME, "").strip():
         def done(cls) -> bool:
             r = store.get(key(cls).key())
@@ -441,15 +459,15 @@ def _f_wallclock(backend: str, request, run_device_binary,
         old = store.get(key(cls).key())
         assert old is not None and old.source_sha256 == sha, (
             f"{key(cls).key()}: no compile row of this text -- run "
-            "`python -m felizjueves.measured --remeasure --target f --L 0 1 "
-            "2` first")
+            "`python -m felizjueves.measured --remeasure --target f --L "
+            f"{sum(cls)}` first")
         inputs = {}
         for label, side, seed in (("near", NEAR_SIDE, 288_000),
                                   ("wide", WIDE_SIDE, 288_100)):
             rec, basis = synthetic_launch(cls, side=side, seed=seed + sum(cls))
             assert max_boys_T(basis, side) <= BOYS_T_WITNESSED
             inputs[label] = (fock_stage([rec], [rec.kernel]), basis.n_ao,
-                             rec)
+                             rec, len(basis.shells))
             assert rec.kernel == k
         cells.append((cls, binary, sha, inputs))
     command = " ".join([Path(tc.path).name,
@@ -511,6 +529,9 @@ def _f_wallclock(backend: str, request, run_device_binary,
             "wallclock:lanes": lanes,
             "wallclock:k_ab": rec.args["k_ab"],
             "wallclock:k_cd": rec.args["k_cd"],
+            # #290: which synthetic basis (fock_driver's SYNTHETIC_COUNTS,
+            # 104 shells, or DEFERRED_COUNTS, 198) -- same launch shape
+            "wallclock:n_shells": inputs["wide"][3],
             "wallclock:near_side_milli_bohr": round(1000 * NEAR_SIDE),
             "wallclock:wide_side_milli_bohr": round(1000 * WIDE_SIDE),
             "wallclock:min_ns": int(min(wall)),
@@ -621,6 +642,16 @@ def test_the_default_classes_are_the_issues_five() -> None:
     assert len(DEFAULT) == 5 and len(CLASSES) == 21
 
 
+def test_the_wallclock_sweep_selects_its_classes_by_total_L() -> None:
+    # #290: unset, #288's five; "3 4 5 6 7 8", the deferred sixteen
+    assert _wallclock_classes({}) == DEFAULT
+    deferred = _wallclock_classes({WALLCLOCK_F_L: "3 4 5 6 7 8"})
+    assert len(deferred) == 16 and set(deferred).isdisjoint(DEFAULT)
+    assert deferred[-1] == (2, 2, 2, 2)
+    with pytest.raises(AssertionError, match="selects no class"):
+        _wallclock_classes({WALLCLOCK_F_L: "9"})
+
+
 def test_part1s_plan_reaches_every_class() -> None:
     recs, _ = _plan(PART1, 0.0, 1)
     assert {r.name for r in recs} == {_class_name(c) for c in CLASSES}
@@ -703,11 +734,14 @@ def test_the_staged_data_through_the_interpreter_is_the_walk() -> None:
 
 
 def test_the_timing_inputs_stay_in_the_witnessed_boys_range() -> None:
-    for cls in DEFAULT:
+    # #290: every class of the ladder, the deferred sixteen included
+    for cls in CLASSES:
         for side in (NEAR_SIDE, WIDE_SIDE):
             rec, basis = synthetic_launch(cls, side=side, seed=288_000)
             assert max_boys_T(basis, side) <= BOYS_T_WITNESSED
             assert rec.args["n_bra"] == TIMING_N_BRA
             assert rec.args["n_ket"] == TIMING_N_KET
             assert rec.args["diag"] == 0 and rec.args["tau"] == 0.0
+            if cls in DEFAULT:  # #288's input, unchanged by #290
+                assert len(basis.shells) == 104
             assert rec.args["k_ab"] == rec.args["k_cd"] == 9
