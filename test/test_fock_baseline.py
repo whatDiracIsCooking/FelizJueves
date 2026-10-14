@@ -200,6 +200,22 @@ def test_the_reading_is_written_down() -> None:
     assert all("hypothesis" in h for h in reading["hypotheses"])
 
 
+def test_the_deferred_tiers_addendum_is_the_kernels_json_rows() -> None:
+    # #290: on sm_86 (repo flags) every class of the ladder with at most 40
+    # boundary targets fits and every class with 76 or more spills -- the
+    # split by target count, not by L, that the addendum states
+    rows = json.loads(KERNELS.read_text())["rows"]
+    assert "#290" in _doc()["reading"]["deferred_tier"]
+    fits, spills = set(), set()
+    for cls in vrr.CLASSES:
+        key = "coulomb/d0/({},{}|{},{})/b1/f/literal@sm_86/nvcc 13.0".format(
+            *cls)
+        n = len(vrr.target_set(cls))
+        (fits if rows[key]["spill_store"] == 0 else spills).add(n)
+    assert max(fits) == 40 and min(spills) == 76
+    assert len(vrr.target_set((0, 0, 2, 2))) == 31 in fits  # L = 4, fits
+
+
 # -- the source each row measured -------------------------------------------------
 
 

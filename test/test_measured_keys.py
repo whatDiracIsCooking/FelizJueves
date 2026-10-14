@@ -44,11 +44,14 @@ _F_KEY = re.compile(
 
 N_ROWS = 196  # the J rows; #205 ADDS K rows beside them, #288 F rows
 N_K_ROWS = 20  # #205's
-# #288's: the five classes of total L <= 2 (`(00|00) (00|01) (00|02) (00|11)
-# (01|01)`), on both cards
-F_CLASSES_RECORDED = ((0, 0, 0, 0), (0, 0, 0, 1), (0, 0, 0, 2), (0, 0, 1, 1),
-                      (0, 1, 0, 1))
-N_F_ROWS = 2 * len(F_CLASSES_RECORDED)
+# #288's five classes of total L <= 2 (`(00|00) (00|01) (00|02) (00|11)
+# (01|01)`) and #290's sixteen above them: the whole 21-class ladder (every
+# shell l <= 2, each pair ascending, bra pair <= ket pair), on both cards
+_F_PAIRS = ((0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2))
+F_CLASSES_RECORDED = tuple(bra + ket for i, bra in enumerate(_F_PAIRS)
+                           for ket in _F_PAIRS[i:])
+assert len(F_CLASSES_RECORDED) == 21
+N_F_ROWS = 2 * len(F_CLASSES_RECORDED)  # 42
 
 
 def _j_rows(rows):
@@ -154,7 +157,8 @@ def test_target_f_moves_no_measured_key_and_joins_no_row() -> None:
     # #272: `Target.F` widens the enum (milestone 12, pin 4); the two
     # re-derivation tests above hold every stored key byte for byte, and
     # this pins the store's size and that the only F keys holding a row are
-    # #288's. The store holds 226 rows -- 196 J, #205's 20 K and #288's 10 F.
+    # #288's and #290's. The store holds 258 rows -- 196 J, #205's 20 K, and
+    # 42 F (#288's 10, #290's 32).
     rows = load()
     assert len(rows) == N_ROWS + N_K_ROWS + N_F_ROWS
     assert {split_key(key)[0].split("/")[4] for key in rows} == {"j", "k",
@@ -177,8 +181,8 @@ def test_an_f_key_reads_back_as_an_f_target_and_its_parts() -> None:
     # #278: the store admits an F cell. An F key splits like every other key
     # (spec key, arch, toolchain), its target slot reads back as `Target.F`,
     # and the independent J and K parsers above reject it -- so an F row can
-    # never be re-derived as a J or K row, and the 226 tracked rows (196 J,
-    # 20 K, 10 F) all still re-derive (the tests above) with the F check in
+    # never be re-derived as a J or K row, and the 258 tracked rows (196 J,
+    # 20 K, 42 F) all still re-derive (the tests above) with the F check in
     # place.
     spec = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.F)
     key = MeasuredKey(spec, by_name("sm_86"), "nvcc 13.0").key()
