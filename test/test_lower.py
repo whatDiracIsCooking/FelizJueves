@@ -21,7 +21,9 @@ box. The #55 interpreted cells take ~1-4 s each; those at L >= 13 are marked
 from __future__ import annotations
 
 import ast
+import json
 import random
+import sys
 from dataclasses import replace
 from functools import cache
 from pathlib import Path
@@ -32,6 +34,8 @@ import pytest
 from felizjueves import measured
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
+from felizjueves.hgp import cost as hgp_cost
+from felizjueves.hgp.vrr import CLASSES
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
@@ -59,19 +63,27 @@ from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
     build_pq_kernels,
+    k_spec,
     ket_functions,
     launch_shape,
     pq_spec,
 )
+from felizjueves.kernel_dq import build_dq_kernel
+from felizjueves.kernel_f import build_f_kernel, kernel_counts
+from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel_k import build_k_kernels
 from felizjueves.lower import (
     LEVERS,
     RECYCLE,
+    TIERS,
     KernelCost,
     kernel_cost,
     liveness,
+    loop_carried,
     lower,
     recycle,
     spilled,
+    tiered,
 )
 from felizjueves.plan.dag import BatchDag, Node, build, is_fundamental
 from felizjueves.plan.schedule import schedule
@@ -574,3 +586,209 @@ def test_the_recycle_golden_is_unchanged(backend: str) -> None:
              if line.strip().startswith("double ") and "=" in line
              and "fj_boys" not in line}
     assert named <= {"PQ_x", "PQ_y", "PQ_z", "term", "sum", "next", "fj_v"}, named
+
+
+# ---------------------------------------------------------------------------
+# #284: the loop nest and the loop-carried accumulator
+# ---------------------------------------------------------------------------
+#
+# `KernelCost` gained `nest` (computing statements by enclosing loop) and
+# `carried` (the most loop-carried values of one For). The three numbers it
+# had are the same functions of the IR they were: BYTE-IDENTICAL, pinned
+# below on the MMD kernels the generator ships, at one stated budget.
+#
+# The fused HGP kernel (kernel_f.py, #282) is read only through what survives
+# #283's six-block digestion: the boundary accumulators the K_CD loop
+# carries, peak_live >= |boundary|, and the K4 / K2 tiers (the digestion
+# replaces the write and the bound, both K0 / outside the primitive nest).
+
+# (peak_live, traffic, n_instructions) at registers = 64, recorded on main
+# before #284 (477874c) from the same builders: any drift is a regression.
+MMD_PINS = {
+    "pq_L0_p0_q0": (12, 0, 20), "pq_L1_p1_q0": (13, 0, 38),
+    "pq_L2_p1_q1": (19, 0, 49), "pq_L3_p2_q1": (29, 0, 92),
+    "pq_L4_p2_q2": (44, 0, 121), "pq_L5_p3_q2": (66, 30, 205),
+    "pq_L6_p3_q3": (94, 193, 267), "pq_L7_p4_q3": (130, 512, 409),
+    "pq_L8_p4_q4": (175, 1391, 513), "pq_L9_p5_q4": (231, 2490, 733),
+    "pq_L10_p5_q5": (299, 4141, 904),
+    "dq_0_0": (5, 0, 13), "dq_0_1": (8, 0, 36), "dq_1_1": (14, 0, 99),
+    "dq_2_2": (39, 0, 552), "dq_3_3": (88, 495, 2430),
+    "jab_00": (5, 0, 10), "jab_11": (13, 0, 43), "jab_22": (40, 0, 151),
+    "jab_33": (104, 593, 407),
+    "k_10_10": (21, 0, 85),
+}
+
+
+def _mmd_kernels() -> dict[str, Kernel]:
+    ks = [build_pq_kernel(L) for L in range(11)]
+    ks += [build_dq_kernel((la, lb)) for la, lb in ((0, 0), (0, 1), (1, 1),
+                                                     (2, 2), (3, 3))]
+    ks += [build_jab_kernel((la, la)) for la in range(4)]
+    ks += [k for L in range(5) for k in build_k_kernels(k_spec(L))]
+    return {k.name: k for k in ks}
+
+
+def test_the_mmd_kernel_cost_numbers_are_byte_identical() -> None:
+    ks = _mmd_kernels()
+    for name, want in MMD_PINS.items():
+        c = kernel_cost(ks[name], registers=64)
+        assert (c.peak_live, c.traffic, c.n_instructions) == want, name
+
+
+def test_the_mmd_kernels_carry_nothing_across_a_loop() -> None:
+    # The issue's premise, asserted: no MMD kernel declares a value before a
+    # loop and writes it inside (K accumulates in a SHARED array, not a value).
+    for name, k in _mmd_kernels().items():
+        c = kernel_cost(k, registers=0)
+        assert c.carried == 0 and not loop_carried(k), name
+        assert sum(n for _, n in c.nest) == c.n_instructions, name
+
+
+@grid
+def test_a_straight_line_kernel_has_one_nest(L: int, which: str) -> None:
+    kernel, _ = _kernel(L, which)
+    c = kernel_cost(kernel, registers=0)
+    assert c.nest == (((), c.n_instructions),) and c.carried == 0
+
+
+def test_loop_carried_and_nest_on_a_hand_built_kernel() -> None:
+    # acc declared before the j loop and updated inside a nested loop: carried
+    # by both loops; inv read-only: loop-invariant, live but not carried.
+    body = (
+        Decl("inv", Scalar.F64, init=Lit(0.5)),  # 0
+        Decl("acc", Scalar.F64, init=Lit(0.0)),  # 1
+        For("j", Lit(0), Lit(3), Lit(1), (  # 2
+            Decl("x", Scalar.F64, init=Var("inv")),  # 3
+            For("i", Lit(0), Lit(2), Lit(1), (  # 4
+                Assign(Var("acc"), Call(Fn.ADD, (Var("acc"), Var("x")))),  # 5
+            )),
+        )),
+        Assign(Index("out", (Lit(0),)), Var("acc")),  # 6
+    )
+    k = Kernel("k", (Param("out", Scalar.F64, array=True, intent=Intent.OUT),),
+               body)
+    assert dict(loop_carried(k)) == {2: {"acc"}, 4: {"acc"}}
+    c = kernel_cost(k, registers=0)
+    assert c.nest == (((), 3), (("j",), 1), (("j", "i"), 1))
+    assert c.n_instructions == 5 and c.carried == 1
+    assert c.by_nest()[("j", "i")] == 1
+    live = liveness(k)
+    assert live.end["acc"] == 6 and live.end["inv"] == 5  # held to j's end
+    assert dict(tiered(c, per="j", contraction=("i",))) == {
+        "K4": 0, "K2": 1, "K0": 1, "outside": 3}
+
+
+def test_tiered_refuses_what_it_cannot_place() -> None:
+    c = kernel_cost(build_f_kernel((0, 0, 0, 0)), registers=0)
+    with pytest.raises(ValueError, match="no computing statement"):
+        tiered(c, per="k", contraction=("nope",))
+    with pytest.raises(ValueError, match="outside"):
+        tiered(c, per="k", contraction=("i",))  # the staging loop
+    with pytest.raises(ValueError, match="more than two"):
+        tiered(c, per="k", contraction=("k", "kcd", "kab"))
+
+
+# --- the fused kernel's 21 classes, and the data file ----------------------
+
+F_LOOPS = {"per": "k", "contraction": ["kcd", "kab"]}
+F_DATA = Path(__file__).resolve().parents[1] / "data" / "hgp" / "kernel_cost.json"
+F_ABOUT = (
+    "KernelCost (src/felizjueves/lower.py, #284) of the fused HGP kernel "
+    "(kernel_f.build_f_kernel, #282) for milestone 12's 21 classes, beside "
+    "hgp.cost's FLOP triple (#276) for the same class. 'nest' is every "
+    "computing statement (Decl with init, Assign, WarpReduce, AtomicAdd) by "
+    "its enclosing For loops, outermost first; 'tiers' maps it with "
+    "lower.tiered under 'loops': inside the per-quartet loop k and both "
+    "primitive loops K4, one K2, none K0; outside k (per block: the "
+    "staging copy, the bra reads) 'outside'. The tiers sum to "
+    "n_instructions, the flat static count. STATEMENTS, NOT FLOPS: "
+    "KernelCost counts IR statements and hgp.cost counts FLOPs, so the two "
+    "are compared per class, never equated or merged; hgp.cost's K2 is the "
+    "pair geometry the kernel receives pre-staged (its K2 statements are "
+    "the ket row's loads). 'carried' is the most loop-carried values of one "
+    "For (the K_CD loop's boundary accumulators), and peak_live >= carried "
+    "by lower.py's loop model. KernelCost feeds no floor. Recorded before "
+    "#283's six-block digestion: its K4 and K2 tiers are digestion-"
+    "independent and test/test_lower.py holds them equal to the kernel; "
+    "K0, 'outside', peak_live and n_instructions are this snapshot's, "
+    "regenerated with `PYTHONPATH=src uv run python test/test_lower.py "
+    "--write-f`.")
+
+
+@cache
+def _f_cost(cls: tuple[int, int, int, int]) -> KernelCost:
+    return kernel_cost(build_f_kernel(cls), registers=0)
+
+
+def _f_tiers(cls: tuple[int, int, int, int]) -> dict[str, int]:
+    return dict(tiered(_f_cost(cls), per=F_LOOPS["per"],
+                       contraction=F_LOOPS["contraction"]))
+
+
+def _f_report() -> dict:
+    rows = []
+    for cls in CLASSES:
+        c, h = _f_cost(cls), hgp_cost.cost(cls)
+        rows.append({
+            "class": list(cls),
+            "boundary": kernel_counts(cls).boundary,
+            "carried": c.carried,
+            "peak_live": c.peak_live,
+            "n_instructions": c.n_instructions,
+            "tiers": _f_tiers(cls),
+            "nest": [[list(key), n] for key, n in c.nest],
+            "hgp_cost": {"x": h.x, "y": h.y, "z": h.z},
+        })
+    return {"about": F_ABOUT, "loops": F_LOOPS, "classes": rows}
+
+
+F_IDS = ["".join(map(str, c)) for c in CLASSES]
+
+
+@pytest.mark.parametrize("cls", CLASSES, ids=F_IDS)
+def test_the_fused_kernel_holds_its_boundary_live(cls) -> None:
+    k = build_f_kernel(cls)
+    boundary = kernel_counts(cls).boundary
+    flat = list(walk(k.body))
+    (kcd,) = [p for p, s in enumerate(flat)
+              if isinstance(s, For) and s.var == "kcd"]
+    acc = loop_carried(k)[kcd]
+    assert len(acc) == boundary and all(n.startswith("C") for n in acc)
+    # The model's why: every carried value is live at the loop's last
+    # position, so all |boundary| of them are live at once there.
+    last = kcd + sum(1 for _ in walk(flat[kcd].body))
+    assert acc <= liveness(k).live_at(last)
+    c = _f_cost(cls)
+    assert c.carried >= boundary and c.peak_live >= boundary
+
+
+@pytest.mark.parametrize("cls", CLASSES, ids=F_IDS)
+def test_the_fused_tiers_sum_to_the_flat_count(cls) -> None:
+    c, t = _f_cost(cls), _f_tiers(cls)
+    assert set(t) == {*TIERS, "outside"}
+    assert sum(t.values()) == c.n_instructions
+    # K4 holds every VRR node and every accumulation.
+    n = kernel_counts(cls)
+    assert t["K4"] >= n.vrr + n.boundary
+
+
+def test_the_tiered_counts_are_recorded() -> None:
+    doc = json.loads(F_DATA.read_text())
+    assert doc["about"] == F_ABOUT and doc["loops"] == F_LOOPS
+    assert [r["class"] for r in doc["classes"]] == [list(c) for c in CLASSES]
+    for r in doc["classes"]:
+        cls = tuple(r["class"])
+        assert sum(r["tiers"].values()) == r["n_instructions"]
+        assert sum(n for _, n in r["nest"]) == r["n_instructions"]
+        assert r["peak_live"] >= r["carried"] >= r["boundary"]
+        t = _f_tiers(cls)
+        assert (r["tiers"]["K4"], r["tiers"]["K2"]) == (t["K4"], t["K2"])
+        assert r["boundary"] == kernel_counts(cls).boundary
+        h = hgp_cost.cost(cls)
+        assert r["hgp_cost"] == {"x": h.x, "y": h.y, "z": h.z}
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--write-f"]:
+        sys.exit("usage: PYTHONPATH=src python test/test_lower.py --write-f")
+    F_DATA.write_text(json.dumps(_f_report(), indent=1) + "\n")
