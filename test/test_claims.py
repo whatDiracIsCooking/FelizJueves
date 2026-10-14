@@ -25,13 +25,34 @@ from felizjueves.literature.claims import (
     Claim,
     ClaimKind,
     ClaimStatus,
+    discover,
     load_claims,
+    load_registry,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-CLAIMS = ROOT / "data" / "literature" / "jengine" / "claims.json"
+LITERATURE = ROOT / "data" / "literature"
+CLAIMS = LITERATURE / "jengine" / "claims.json"
+
+# The papers whose claims are inventoried, one directory each (#271). A fact
+# about the tree, pinned so that a directory dropped or renamed shows up here
+# rather than as a paper silently no longer checked.
+PAPERS = {"fock", "jengine"}
 
 SEED_IDS = {
+    # #271: [Fock] §3's claims, declared PENDING before milestone 12 builds
+    # anything; the first five are the issue's minimum, the rest the defects
+    # its reading found.
+    "fock/batch-magnitude-bound-direction",
+    "fock/eq14-seed-inconsistent",
+    "fock/eq26-ket-vrr-sign",
+    "fock/eq29-screen-inequality-reversed",
+    "fock/fig1-digestion-unweighted",
+    "fock/fused-six-block-digest",
+    "fock/predigest-bounds-atomics",
+    "fock/prelaunch-screening-removes-launches",
+    "fock/skip-not-break",
+    "fock/symmetry-vs-screening",
     "jengine/alg1-line10-atomic-free",
     "jengine/batch-count-multiple-of-3",
     "jengine/batch-tie-break",
@@ -71,29 +92,69 @@ def _claim(**overrides: object) -> Claim:
 # -- the registry, both ways ---------------------------------------------------
 
 
+def test_every_paper_directory_is_discovered() -> None:
+    # Found by listing data/literature/*/claims.json, not by a hard-coded
+    # path: a second paper is checked by the same rule as the first (#271).
+    found = discover(LITERATURE)
+    assert set(found) == PAPERS
+    assert found["jengine"] == CLAIMS
+    assert set(load_registry(LITERATURE)) == PAPERS
+
+
+@pytest.mark.parametrize("paper", sorted(PAPERS))
 def test_every_asserted_claim_names_a_test_that_exists(
-    claim_marked_tests: dict[str, str],
+    paper: str, claim_marked_tests: dict[str, str],
 ) -> None:
-    claims = load_claims(CLAIMS)
+    # Per paper: each paper's asserted records against exactly the marks that
+    # carry its prefix, so adding a paper cannot weaken another's check.
+    claims = load_registry(LITERATURE)[paper]
     asserted = {c.id: c.test for c in claims if c.status is ClaimStatus.ASSERTED}
+    marked = {cid: node for cid, node in claim_marked_tests.items()
+              if cid.startswith(f"{paper}/")}
     # both directions: an asserted claim without a marked test, and a marked
     # test without an asserted claim, each fail here
-    assert set(asserted) == set(claim_marked_tests)
+    assert set(asserted) == set(marked)
     # and the record names the very test that carries its mark
-    assert asserted == claim_marked_tests
+    assert asserted == marked
+
+
+def test_every_claim_mark_belongs_to_a_paper(
+    claim_marked_tests: dict[str, str],
+) -> None:
+    # The per-paper check above cannot see a mark whose prefix is no paper's.
+    stray = sorted(cid for cid in claim_marked_tests
+                   if cid.split("/", 1)[0] not in PAPERS)
+    assert not stray
 
 
 def test_seed_inventory_is_the_issue_9_list() -> None:
     # Grows as lanes add records; a removal or a rename shows up here.
-    assert SEED_IDS <= {c.id for c in load_claims(CLAIMS)}
+    registry = load_registry(LITERATURE)
+    assert SEED_IDS <= {c.id for claims in registry.values() for c in claims}
 
 
 def test_no_claim_is_left_without_a_test_or_a_reason() -> None:
-    for c in load_claims(CLAIMS):
-        if c.status is ClaimStatus.ASSERTED:
-            assert c.test and not c.reason, c.id
-        else:
-            assert c.reason and not c.test, c.id
+    for claims in load_registry(LITERATURE).values():
+        for c in claims:
+            if c.status is ClaimStatus.ASSERTED:
+                assert c.test and not c.reason, c.id
+            else:
+                assert c.reason and not c.test, c.id
+
+
+def test_the_registry_refuses_an_id_outside_its_paper(tmp_path: Path) -> None:
+    for paper, cid in (("a", "a/x"), ("b", "a/y")):
+        (tmp_path / paper).mkdir()
+        (tmp_path / paper / "claims.json").write_text(
+            json.dumps({"schema": SCHEMA, "claims": [_raw(cid)]}))
+    assert set(discover(tmp_path)) == {"a", "b"}
+    with pytest.raises(ValueError, match="not prefixed 'b/'"):
+        load_registry(tmp_path)
+
+
+def test_discovery_refuses_an_empty_root(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="no <paper>/claims.json"):
+        discover(tmp_path)
 
 
 def test_seed_claims_are_jengine_and_cite_it() -> None:

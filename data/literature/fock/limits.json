@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "about": "What cannot be scored from [Fock] here, one record each: claim, mechanism, evidence, asserted_value, source. See felizjueves.literature.limits. Milestone 12 scores no published cell: there is no tables.json in this directory, by decision (pin 2).",
+  "limits": [
+    {
+      "claim": "No [Fock] table is a scoreboard here. In the text read (arXiv v1), Tables 1 and 2 are single-A100 Fock-build speedups of opt-Brc and opt-UM over TeraChem, QUICK and GPU4PySCF; Table 3 is single-iteration K timings in seconds on a V100 against LibintX; Table 4 is SCF iteration timings in seconds on 1 and 4 A100s. Milestone 12's 'Table 3, A100 seconds' is the journal version's numbering, which this reading could not see; the preprint's Table 4 fits that description, and the conclusion is the same for every table.",
+      "mechanism": "Every table is a wall-clock measurement (or a ratio of two) of whole programs on hardware this box does not have: an A100 or a V100, against an RTX 3080 (sm_86) and an RX 9060 XT (gfx1200). A timing depends on the card, the compiler and the rest of the program, none of which a reconstruction of §3 describes, so no model or kernel here predicts one.",
+      "evidence": "Table captions of arXiv:2407.21445v1, read for this record (#271). Milestone 12 pin 2: one literature file, no table cells; no tables.json is added under data/literature/fock/, and test/test_fock_coverage.py holds that.",
+      "asserted_value": {
+        "tables_added": [],
+        "scored_cells": 0,
+        "hardware": {
+          "Tables 1-2, 4": "A100",
+          "Table 3": "V100"
+        }
+      },
+      "source": "[Fock, §6, Tables 1-4]"
+    },
+    {
+      "claim": "§6's benchmarks (Figs. 5-9: single-GPU comparisons, strong scaling on 1-4 A100s, CPU comparisons, J/K scaling and per-class timings) are not reproduced or scored.",
+      "mechanism": "They are whole-program wall-clock on NERSC Perlmutter nodes (AMD EPYC 7763, four A100 40 GB or 80 GB), against other packages this repo does not run. This repo builds the two-electron F of §3's kernel, not an SCF program, and has neither the hardware nor the comparators.",
+      "evidence": "§6's opening paragraph and figure captions, arXiv:2407.21445v1 (#271).",
+      "asserted_value": {
+        "reproduced": false,
+        "hardware": "NERSC Perlmutter, A100"
+      },
+      "source": "[Fock, §6]"
+    },
+    {
+      "claim": "There is no published register table for the §3.2 kernel: the paper reports no register count, spill figure or occupancy for any opt-Brc class, so milestone 12's generated F kernel has no published figure to be held to. The predecessor's hand-spelled kernel (its test/hgp/brc/ptxas_data.py, measured under nvcc 13.0, -arch=sm_86) is a quality baseline of common ancestry (#289), never a witness and never a [Fock] cell.",
+      "mechanism": "Registers and spills are compiler readings of one kernel text on one architecture; the paper prints only timings, and mentions registers only qualitatively (§2.3's register pressure; §6's 80 GB cards 'to accommodate' f-function spills).",
+      "evidence": "A search of arXiv:2407.21445v1 for 'register' finds §2.3, §4.2, §4.3.2, §4.4 and §6 prose and no table (#271); the predecessor records the same absence.",
+      "asserted_value": {
+        "published_register_table": null
+      },
+      "source": "[Fock, §3.2]"
+    },
+    {
+      "claim": "Milestone 12 moves no [JEngine] cell, floor, claim or status. [Fock] was already a reference here (docs/references.md entry 23), cited as prior art in ao/k.py and kernel_k.py ([Fock, §4.3.1], [Fock, §4.3.2]); this directory is the first time a section of it is reconstructed rather than cited, and its records are its own.",
+      "mechanism": "[JEngine] is J only and its board is Tables 1-3 of that paper; [Fock] §3 is another engine (HGP, fused F) with no table cell this repo can score. The two registries are checked per paper (felizjueves.literature.claims.load_registry), so neither reads the other's records.",
+      "evidence": "#271 adds data/literature/fock/ and touches no file under data/literature/jengine/ or data/scoreboards/; test/test_claims.py checks each paper's registry separately.",
+      "asserted_value": {
+        "jengine_changes": 0
+      },
+      "source": "[Fock, §3]"
+    },
+    {
+      "claim": "The efficacy of §3.2's screens (eq. 29's pre-launch batch-pair screen and the six-block in-kernel screen) is not measured: how much work they remove depends on how extended the molecule is, and every fixture here is compact.",
+      "mechanism": "A Schwarz or density screen removes quartets in proportion to the fraction of distant pairs; in H2, H2O and HF that fraction is small, so a measured saving would be a fact about the fixture, not about the screen (milestone 12 pin 9). An extended case is a follow-up.",
+      "evidence": "Milestone 12 pin 9; the fixture list in test/oracle/fixtures/.",
+      "asserted_value": {
+        "measured": false
+      },
+      "source": "[Fock, eq. 29, §3.2 decision 7]"
+    }
+  ]
+}

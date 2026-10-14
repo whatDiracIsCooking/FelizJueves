@@ -1,0 +1,42 @@
+# [Fock] §3, read and declared
+
+`[Fock]` is entry 23 of `docs/references.md` (Palethorpe, Stocks and Barca,
+JCTC **20**, 10424–10442, 2024; doi:10.1021/acs.jctc.4c00994). It was already a
+reference here — `ao/k.py` and `kernel_k.py` cite its §4.3 as prior art for
+`K` — and this directory, added by #271 for milestone 12, is the first time a
+section of it is **reconstructed** rather than cited: §3, the HGP recurrence
+(§3.1, eqs. 25–28) and the fused Fock kernel built on it (§3.2, eq. 29, Fig. 1).
+
+The text read is the arXiv preprint, arXiv:2407.21445v1, whose section,
+equation and figure numbers are the ones milestone 12 cites; `coverage.json`
+records the provenance. The journal version was not available to the reading.
+No PDF is tracked.
+
+| File | What it holds |
+|---|---|
+| `coverage.json` | the reading, unit by unit: every numbered section, and inside §3 each of eqs. 25–29, each design decision of §3.2 (numbered by the reading, in text order, since the paper does not number them) and each of Fig. 1's four components; each unit `read` or `not-read`, with the records that cite it and a note in this repo's vocabulary |
+| `claims.json` | the scorable non-numeric claims, one record each (`felizjueves.literature.claims`); declared before anything is built, so each is `pending` with the rule and the issue that will score it in its `reason` |
+| `limits.json` | what cannot be scored here and why (`felizjueves.literature.limits`): the tables are A100 / V100 timings, §6 is whole-program wall-clock, there is no published register table for the §3.2 kernel, and no `[JEngine]` cell or floor moves |
+
+There is **no `tables.json`**, by decision (milestone 12, pin 2): `[Fock]`'s
+tables are timings on hardware this box does not have, so milestone 12 scores
+no published cell.
+
+## How the inventory stays closed
+
+The same rules as `../jengine/`, checked per paper. `test/test_claims.py`
+discovers every `<paper>/claims.json` under `data/literature/` and holds each
+paper's records against the `claim`-marked tests whose ids carry that paper's
+prefix, both ways; `test/test_fock_coverage.py` holds `coverage.json` against
+`claims.json` both ways and pins the unit list. So:
+
+- **a new record** must name its units in `source` (each token a unit name,
+  or `eqs. N-M`), and each of those units' `claims` must gain its id in the
+  same change;
+- **a record moved to `asserted`** must name the `claim`-marked test that holds
+  it, and that test must exist;
+- **a new reading** of a `not-read` unit flips its status, and adds a record
+  for any claim it finds or says in the note why it is not one.
+
+The counts by status live in `claims.json` and nowhere else; recompute them
+rather than quoting them.
