@@ -1,0 +1,1188 @@
+{
+ "about": "KernelCost (src/felizjueves/lower.py, #284) of the fused HGP kernel (kernel_f.build_f_kernel, #282) for milestone 12's 21 classes, beside hgp.cost's FLOP triple (#276) for the same class. 'nest' is every computing statement (Decl with init, Assign, WarpReduce, AtomicAdd) by its enclosing For loops, outermost first; 'tiers' maps it with lower.tiered under 'loops': inside the per-quartet loop k and both primitive loops K4, one K2, none K0; outside k (per block: the staging copy, the bra reads) 'outside'. The tiers sum to n_instructions, the flat static count. STATEMENTS, NOT FLOPS: KernelCost counts IR statements and hgp.cost counts FLOPs, so the two are compared per class, never equated or merged; hgp.cost's K2 is the pair geometry the kernel receives pre-staged (its K2 statements are the ket row's loads). 'carried' is the most loop-carried values of one For (the K_CD loop's boundary accumulators), and peak_live >= carried by lower.py's loop model. KernelCost feeds no floor. Recorded before #283's six-block digestion: its K4 and K2 tiers are digestion-independent and test/test_lower.py holds them equal to the kernel; K0, 'outside', peak_live and n_instructions are this snapshot's, regenerated with `PYTHONPATH=src uv run python test/test_lower.py --write-f`.",
+ "loops": {
+  "per": "k",
+  "contraction": [
+   "kcd",
+   "kab"
+  ]
+ },
+ "classes": [
+  {
+   "class": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "boundary": 1,
+   "carried": 1,
+   "peak_live": 15,
+   "n_instructions": 35,
+   "tiers": {
+    "K4": 16,
+    "K2": 5,
+    "K0": 4,
+    "outside": 10
+   },
+   "nest": [
+    [
+     [],
+     2
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     4
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     5
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     16
+    ]
+   ],
+   "hgp_cost": {
+    "x": 18,
+    "y": 40,
+    "z": 16
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "boundary": 4,
+   "carried": 4,
+   "peak_live": 26,
+   "n_instructions": 63,
+   "tiers": {
+    "K4": 27,
+    "K2": 8,
+    "K0": 18,
+    "outside": 10
+   },
+   "nest": [
+    [
+     [],
+     2
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     18
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     27
+    ]
+   ],
+   "hgp_cost": {
+    "x": 35,
+    "y": 43,
+    "z": 22
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    0,
+    2
+   ],
+   "boundary": 10,
+   "carried": 10,
+   "peak_live": 38,
+   "n_instructions": 108,
+   "tiers": {
+    "K4": 45,
+    "K2": 8,
+    "K0": 45,
+    "outside": 10
+   },
+   "nest": [
+    [
+     [],
+     2
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     45
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     45
+    ]
+   ],
+   "hgp_cost": {
+    "x": 82,
+    "y": 44,
+    "z": 46
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "boundary": 9,
+   "carried": 9,
+   "peak_live": 37,
+   "n_instructions": 102,
+   "tiers": {
+    "K4": 44,
+    "K2": 8,
+    "K0": 40,
+    "outside": 10
+   },
+   "nest": [
+    [
+     [],
+     2
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     40
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     44
+    ]
+   ],
+   "hgp_cost": {
+    "x": 81,
+    "y": 44,
+    "z": 34
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    1,
+    2
+   ],
+   "boundary": 19,
+   "carried": 19,
+   "peak_live": 57,
+   "n_instructions": 193,
+   "tiers": {
+    "K4": 74,
+    "K2": 8,
+    "K0": 101,
+    "outside": 10
+   },
+   "nest": [
+    [
+     [],
+     2
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     101
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     74
+    ]
+   ],
+   "hgp_cost": {
+    "x": 191,
+    "y": 44,
+    "z": 98
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    2,
+    2
+   ],
+   "boundary": 31,
+   "carried": 31,
+   "peak_live": 83,
+   "n_instructions": 320,
+   "tiers": {
+    "K4": 121,
+    "K2": 8,
+    "K0": 181,
+    "outside": 10
+   },
+   "nest": [
+    [
+     [],
+     2
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     181
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     121
+    ]
+   ],
+   "hgp_cost": {
+    "x": 400,
+    "y": 44,
+    "z": 174
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    0,
+    1
+   ],
+   "boundary": 16,
+   "carried": 16,
+   "peak_live": 52,
+   "n_instructions": 150,
+   "tiers": {
+    "K4": 63,
+    "K2": 8,
+    "K0": 66,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     66
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     63
+    ]
+   ],
+   "hgp_cost": {
+    "x": 103,
+    "y": 46,
+    "z": 58
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    0,
+    2
+   ],
+   "boundary": 40,
+   "carried": 40,
+   "peak_live": 103,
+   "n_instructions": 327,
+   "tiers": {
+    "K4": 129,
+    "K2": 8,
+    "K0": 177,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     177
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     129
+    ]
+   ],
+   "hgp_cost": {
+    "x": 312,
+    "y": 47,
+    "z": 166
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    1,
+    1
+   ],
+   "boundary": 36,
+   "carried": 36,
+   "peak_live": 97,
+   "n_instructions": 303,
+   "tiers": {
+    "K4": 125,
+    "K2": 8,
+    "K0": 157,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     157
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     125
+    ]
+   ],
+   "hgp_cost": {
+    "x": 308,
+    "y": 47,
+    "z": 124
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    1,
+    2
+   ],
+   "boundary": 76,
+   "carried": 76,
+   "peak_live": 178,
+   "n_instructions": 656,
+   "tiers": {
+    "K4": 245,
+    "K2": 8,
+    "K0": 390,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     390
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     245
+    ]
+   ],
+   "hgp_cost": {
+    "x": 792,
+    "y": 47,
+    "z": 376
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    2,
+    2
+   ],
+   "boundary": 124,
+   "carried": 124,
+   "peak_live": 284,
+   "n_instructions": 1144,
+   "tiers": {
+    "K4": 433,
+    "K2": 8,
+    "K0": 690,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     690
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     433
+    ]
+   ],
+   "hgp_cost": {
+    "x": 1702,
+    "y": 47,
+    "z": 676
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    0,
+    2
+   ],
+   "boundary": 100,
+   "carried": 100,
+   "peak_live": 224,
+   "n_instructions": 786,
+   "tiers": {
+    "K4": 285,
+    "K2": 8,
+    "K0": 480,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     480
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     285
+    ]
+   ],
+   "hgp_cost": {
+    "x": 845,
+    "y": 48,
+    "z": 496
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    1,
+    1
+   ],
+   "boundary": 90,
+   "carried": 90,
+   "peak_live": 208,
+   "n_instructions": 723,
+   "tiers": {
+    "K4": 275,
+    "K2": 8,
+    "K0": 427,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     427
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     275
+    ]
+   ],
+   "hgp_cost": {
+    "x": 835,
+    "y": 48,
+    "z": 394
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    1,
+    2
+   ],
+   "boundary": 190,
+   "carried": 190,
+   "peak_live": 416,
+   "n_instructions": 1619,
+   "tiers": {
+    "K4": 575,
+    "K2": 8,
+    "K0": 1023,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     1023
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     575
+    ]
+   ],
+   "hgp_cost": {
+    "x": 2136,
+    "y": 48,
+    "z": 1078
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    2,
+    2
+   ],
+   "boundary": 310,
+   "carried": 310,
+   "peak_live": 680,
+   "n_instructions": 2845,
+   "tiers": {
+    "K4": 1045,
+    "K2": 8,
+    "K0": 1779,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     1779
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     1045
+    ]
+   ],
+   "hgp_cost": {
+    "x": 4562,
+    "y": 48,
+    "z": 1894
+   }
+  },
+  {
+   "class": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "boundary": 81,
+   "carried": 81,
+   "peak_live": 190,
+   "n_instructions": 687,
+   "tiers": {
+    "K4": 257,
+    "K2": 8,
+    "K0": 409,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     409
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     257
+    ]
+   ],
+   "hgp_cost": {
+    "x": 787,
+    "y": 48,
+    "z": 340
+   }
+  },
+  {
+   "class": [
+    1,
+    1,
+    1,
+    2
+   ],
+   "boundary": 171,
+   "carried": 171,
+   "peak_live": 378,
+   "n_instructions": 1606,
+   "tiers": {
+    "K4": 537,
+    "K2": 8,
+    "K0": 1048,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     1048
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     537
+    ]
+   ],
+   "hgp_cost": {
+    "x": 2018,
+    "y": 48,
+    "z": 1096
+   }
+  },
+  {
+   "class": [
+    1,
+    1,
+    2,
+    2
+   ],
+   "boundary": 279,
+   "carried": 279,
+   "peak_live": 618,
+   "n_instructions": 2877,
+   "tiers": {
+    "K4": 980,
+    "K2": 8,
+    "K0": 1876,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     1876
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     980
+    ]
+   ],
+   "hgp_cost": {
+    "x": 4335,
+    "y": 48,
+    "z": 1996
+   }
+  },
+  {
+   "class": [
+    1,
+    2,
+    1,
+    2
+   ],
+   "boundary": 361,
+   "carried": 361,
+   "peak_live": 772,
+   "n_instructions": 3675,
+   "tiers": {
+    "K4": 1087,
+    "K2": 8,
+    "K0": 2567,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     2567
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     1087
+    ]
+   ],
+   "hgp_cost": {
+    "x": 4423,
+    "y": 48,
+    "z": 3050
+   }
+  },
+  {
+   "class": [
+    1,
+    2,
+    2,
+    2
+   ],
+   "boundary": 589,
+   "carried": 589,
+   "peak_live": 1272,
+   "n_instructions": 6544,
+   "tiers": {
+    "K4": 2000,
+    "K2": 8,
+    "K0": 4523,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     4523
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     2000
+    ]
+   ],
+   "hgp_cost": {
+    "x": 9390,
+    "y": 48,
+    "z": 5402
+   }
+  },
+  {
+   "class": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "boundary": 961,
+   "carried": 961,
+   "peak_live": 2061,
+   "n_instructions": 11857,
+   "tiers": {
+    "K4": 3321,
+    "K2": 8,
+    "K0": 8515,
+    "outside": 13
+   },
+   "nest": [
+    [
+     [],
+     5
+    ],
+    [
+     [
+      "i"
+     ],
+     8
+    ],
+    [
+     [
+      "k"
+     ],
+     8515
+    ],
+    [
+     [
+      "k",
+      "kcd"
+     ],
+     8
+    ],
+    [
+     [
+      "k",
+      "kcd",
+      "kab"
+     ],
+     3321
+    ]
+   ],
+   "hgp_cost": {
+    "x": 16427,
+    "y": 48,
+    "z": 10602
+   }
+  }
+ ]
+}

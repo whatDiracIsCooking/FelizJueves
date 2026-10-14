@@ -21,6 +21,35 @@ bounds count as references inside the loop, because `stop` and `step` are
 re-evaluated every iteration. Liveness is keyed by name, so it requires every
 value's `Decl` name to be unique within the kernel and raises otherwise.
 
+THE LOOP MODEL (#284), stated because the IR carries no trip count and this
+module infers none:
+
+- LIVENESS ACROSS A LOOP BOUNDARY is the rule above, unchanged: a value
+  declared before a `For` and referenced inside it is live from its `Decl`
+  through the loop's last statement. A value WRITTEN inside such a loop is
+  a LOOP-CARRIED accumulator (`loop_carried`): the next iteration reads what
+  this one wrote. All of one loop's carried values are live together at
+  that loop's last position (each interval opens before the loop and closes
+  at or after its end), so `peak_live >= KernelCost.carried`, always, by
+  construction rather than by measurement. The fused HGP kernel (#282)
+  declares its `|boundary|` contracted accumulators before the `K_CD`
+  primitive loop and updates every one inside it, so its `peak_live` is at
+  least `|boundary|` -- 961 at `(dd|dd)` -- whatever the VRR does.
+- ITS LIMITS. A loop of trip count 0 or 1 is costed exactly as one of a
+  thousand; a loop-INVARIANT value (read inside, never written) is held live
+  across the loop just as a carried one is, but is not counted in
+  `carried`; liveness is not path-sensitive, so both arms of an `If` count;
+  and a value declared INSIDE a loop is per iteration (its interval never
+  wraps, even where the backend would keep it in a register across trips).
+- TIERED COUNTS. `KernelCost.nest` attributes every computing statement to
+  the enclosing `For` loops by variable name, outermost first; the counts
+  sum to `n_instructions`, which stays static. Weighting a nest by its trip
+  counts is the caller's, because only the caller knows them: `tiered` maps
+  the nest onto `K^4 / K^2 / K^0` given which loops are the per-quartet
+  loop and which are the primitive-pair loops -- the tiers of `hgp.cost`
+  (#276), so the two are commensurable per class without either reading the
+  other.
+
 INTERVALS ARE CLOSED, ON PURPOSE. A value read for the last time at position p
 is still live at p, so the statement at p never writes into the slot of one of
 its own inputs. `dst = PQ_x * s[3] + 2 * s[5]` with `dst` allocated to `s[3]`
@@ -56,7 +85,7 @@ so the lever is a no-op on this box's toolchains and stays opt-in.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -86,11 +115,14 @@ __all__ = [
     "RECYCLE",
     "KernelCost",
     "Liveness",
+    "TIERS",
     "kernel_cost",
     "liveness",
+    "loop_carried",
     "lower",
     "recycle",
     "spilled",
+    "tiered",
 ]
 
 RECYCLE = "recycle"
@@ -244,6 +276,25 @@ def liveness(kernel: Kernel) -> Liveness:
     )
 
 
+def loop_carried(kernel: Kernel) -> Mapping[int, frozenset[str]]:
+    """Per `For` (by its position in `ir.walk` order), the values declared
+    BEFORE it and written inside it, nested loops included: its loop-carried
+    accumulators (module docstring, THE LOOP MODEL). A loop that carries
+    nothing is absent."""
+    flat, loops, _ = _positions(kernel.body)
+    start = {s.name: pos for pos, s in enumerate(flat) if _is_value(s)}
+    out: dict[int, set[str]] = {}
+    for pos, s in enumerate(flat):
+        for name in _refs(s)[1]:
+            d = start.get(name)
+            if d is None:
+                continue
+            for lp in loops[pos]:
+                if lp > d and lp != pos:
+                    out.setdefault(lp, set()).add(name)
+    return MappingProxyType({lp: frozenset(v) for lp, v in sorted(out.items())})
+
+
 # ---------------------------------------------------------------------------
 # Recycling (opt-in)
 # ---------------------------------------------------------------------------
@@ -383,12 +434,62 @@ class KernelCost:
     - `n_instructions`: static count of computing statements -- `Decl` with an
       `init`, `Assign`, `WarpReduce`, `AtomicAdd` -- not dynamic, so a loop
       body counts once.
+    - `nest`: the same statements, attributed to their enclosing `For` loops
+      (`((loop var, ...outermost first), count)`, in first-occurrence order;
+      `()` is outside every loop). The counts sum to `n_instructions`; the
+      trip counts that would weight them are not in the IR (`tiered`).
+    - `carried`: the most loop-carried values of any one `For`
+      (`loop_carried`); `peak_live >= carried` by construction (module
+      docstring, THE LOOP MODEL).
+
+    `nest` and `carried` (#284) are added beside the first three, which they
+    leave byte-identical: liveness, spilling and the flat count are the same
+    functions of the IR they were.
     """
 
     peak_live: int
     traffic: int
     n_instructions: int
     registers: int  # the budget `traffic` assumed; part of the number
+    nest: tuple[tuple[tuple[str, ...], int], ...]
+    carried: int
+
+    def by_nest(self) -> Mapping[tuple[str, ...], int]:
+        return MappingProxyType(dict(self.nest))
+
+
+TIERS = ("K4", "K2", "K0")
+
+
+def tiered(
+    cost: KernelCost, *, per: str, contraction: Sequence[str]
+) -> Mapping[str, int]:
+    """`cost.nest` as `hgp.cost`'s tiers, given the loop structure the IR
+    does not name: `per` is the loop over contracted quartets (one iteration
+    each), and each loop in `contraction` runs over one side's primitive
+    PAIRS, a degree `K^2` for shells of degree `K`. A statement inside `per`
+    and `n` contraction loops is `K^(2n)` (`n` <= 2: `K4`, `K2`, `K0`);
+    one outside `per` is per block or per thread, not per quartet, and is
+    `"outside"`. The four sum to `n_instructions`. Refuses a nest deeper
+    than two contraction loops, a contraction loop outside `per`, and loop
+    names the kernel does not have."""
+    contraction = tuple(contraction)
+    seen = {v for key, _ in cost.nest for v in key}
+    missing = [v for v in (per, *contraction) if v not in seen]
+    if missing:
+        raise ValueError(f"no computing statement sits in loop(s) {missing}")
+    out = dict.fromkeys((*TIERS, "outside"), 0)
+    for key, n in cost.nest:
+        depth = sum(v in contraction for v in key)
+        if per not in key:
+            if depth:
+                raise ValueError(f"contraction loop outside {per!r}: {key}")
+            out["outside"] += n
+        elif depth > 2:
+            raise ValueError(f"{key}: more than two contraction loops")
+        else:
+            out[f"K{2 * depth}"] += n
+    return MappingProxyType(out)
 
 
 def spilled(live: Liveness, registers: int) -> frozenset[str]:
@@ -420,14 +521,18 @@ def kernel_cost(kernel: Kernel, *, registers: int) -> KernelCost:
     live = liveness(kernel)
     out = spilled(live, registers)
     computing = (Assign, WarpReduce, AtomicAdd)
-    n = sum(
-        1
-        for s in live.stmts
-        if isinstance(s, computing) or (isinstance(s, Decl) and s.init is not None)
-    )
+    flat, loops, _ = _positions(kernel.body)
+    nest: dict[tuple[str, ...], int] = {}
+    for s, enclosing in zip(flat, loops, strict=True):
+        if isinstance(s, computing) or (isinstance(s, Decl) and s.init is not None):
+            key = tuple(flat[lp].var for lp in enclosing)  # type: ignore[attr-defined]
+            nest[key] = nest.get(key, 0) + 1
+    carried = loop_carried(kernel)
     return KernelCost(
         peak_live=live.peak,
         traffic=sum(1 + live.reads[v] for v in out),
-        n_instructions=n,
+        n_instructions=sum(nest.values()),
         registers=registers,
+        nest=tuple(nest.items()),
+        carried=max((len(v) for v in carried.values()), default=0),
     )
