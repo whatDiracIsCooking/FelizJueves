@@ -1132,6 +1132,7 @@ EDGES |= {k: frozenset(v) for k, v in {
     "hgp": (),
     "hgp.vrr": (),
     "hgp.hrr": ("hgp.vrr",),  # #274: the class check, Cartesians, targets
+    "hgp.cost": ("hgp.hrr", "hgp.vrr"),  # #276: FLOPs off both DAGs
 }.items()}
 
 

@@ -1,0 +1,1266 @@
+{
+ "about": "FLOPs per contracted quartet of each of milestone 12's 21 HGP classes, x K^4 + y K^2 + z, from src/felizjueves/hgp/cost.py (#276), which reads the VRR DAG (hgp.vrr, #273) and the bra-first HRR DAG (hgp.hrr, #274), never the lowered IR. AN ENGINEERING INSTRUMENT CALIBRATED AGAINST NOTHING: [Fock] publishes no FLOP table, so there is no floor, no ratchet and no published comparison. Convention: one +, -, *, / is one FLOP (no FMA); an integer coefficient of +-1 and a sign cost nothing; a VRR node costs one multiply per term (two when |mult| > 1) plus n - 1 adds, the terms of eqs 25-26 as hgp.vrr.reduce lists them; an HRR node one multiply and one add; transcendentals (boys, rsqrt per quartet; exp per primitive pair) are named under 'transcendentals', not counted. x (K^4): quartet geometry, one seed multiply per Boys leaf, every VRR step, one add per boundary value accumulated; y (K^2): the bra pair's and the ket pair's geometry; z (K^0): every HRR step and the shell-pair separations. 'pruned' (the default, by decision: nothing downstream is ratcheted) counts the pruned VRR DAG; 'unpruned' the forward build; 'saving' is unpruned total - pruned total, reported, not asserted as a win. Eq 26's misprinted sign (fock/eq26-ket-vrr-sign, pending) moves no count: a sign costs nothing.",
+ "hrr_first": "bra",
+ "classes": [
+  {
+   "class": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pruned": {
+    "x": 18,
+    "y": 40,
+    "z": 16,
+    "total": 74,
+    "K4": {
+     "geometry": 16,
+     "seed": 1,
+     "vrr": 0,
+     "accumulate": 1
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 20
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 0
+    }
+   },
+   "unpruned": {
+    "x": 18,
+    "y": 40,
+    "z": 16,
+    "total": 74,
+    "K4": {
+     "geometry": 16,
+     "seed": 1,
+     "vrr": 0,
+     "accumulate": 1
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 20
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 0
+    }
+   },
+   "saving": 0,
+   "boys_max_order": 0,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "pruned": {
+    "x": 35,
+    "y": 43,
+    "z": 22,
+    "total": 100,
+    "K4": {
+     "geometry": 20,
+     "seed": 2,
+     "vrr": 9,
+     "accumulate": 4
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 23
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 6
+    }
+   },
+   "unpruned": {
+    "x": 35,
+    "y": 43,
+    "z": 22,
+    "total": 100,
+    "K4": {
+     "geometry": 20,
+     "seed": 2,
+     "vrr": 9,
+     "accumulate": 4
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 23
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 6
+    }
+   },
+   "saving": 0,
+   "boys_max_order": 1,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    0,
+    2
+   ],
+   "pruned": {
+    "x": 82,
+    "y": 44,
+    "z": 46,
+    "total": 172,
+    "K4": {
+     "geometry": 21,
+     "seed": 3,
+     "vrr": 48,
+     "accumulate": 10
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 30
+    }
+   },
+   "unpruned": {
+    "x": 82,
+    "y": 44,
+    "z": 46,
+    "total": 172,
+    "K4": {
+     "geometry": 21,
+     "seed": 3,
+     "vrr": 48,
+     "accumulate": 10
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 30
+    }
+   },
+   "saving": 0,
+   "boys_max_order": 2,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "pruned": {
+    "x": 81,
+    "y": 44,
+    "z": 34,
+    "total": 159,
+    "K4": {
+     "geometry": 21,
+     "seed": 3,
+     "vrr": 48,
+     "accumulate": 9
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 18
+    }
+   },
+   "unpruned": {
+    "x": 81,
+    "y": 44,
+    "z": 34,
+    "total": 159,
+    "K4": {
+     "geometry": 21,
+     "seed": 3,
+     "vrr": 48,
+     "accumulate": 9
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 18
+    }
+   },
+   "saving": 0,
+   "boys_max_order": 2,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    1,
+    2
+   ],
+   "pruned": {
+    "x": 191,
+    "y": 44,
+    "z": 98,
+    "total": 333,
+    "K4": {
+     "geometry": 21,
+     "seed": 4,
+     "vrr": 147,
+     "accumulate": 19
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 82
+    }
+   },
+   "unpruned": {
+    "x": 191,
+    "y": 44,
+    "z": 98,
+    "total": 333,
+    "K4": {
+     "geometry": 21,
+     "seed": 4,
+     "vrr": 147,
+     "accumulate": 19
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 82
+    }
+   },
+   "saving": 0,
+   "boys_max_order": 3,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    0,
+    2,
+    2
+   ],
+   "pruned": {
+    "x": 400,
+    "y": 44,
+    "z": 174,
+    "total": 618,
+    "K4": {
+     "geometry": 21,
+     "seed": 5,
+     "vrr": 343,
+     "accumulate": 31
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 158
+    }
+   },
+   "unpruned": {
+    "x": 400,
+    "y": 44,
+    "z": 174,
+    "total": 618,
+    "K4": {
+     "geometry": 21,
+     "seed": 5,
+     "vrr": 343,
+     "accumulate": 31
+    },
+    "K2": {
+     "bra": 20,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 158
+    }
+   },
+   "saving": 0,
+   "boys_max_order": 4,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    0,
+    1
+   ],
+   "pruned": {
+    "x": 103,
+    "y": 46,
+    "z": 58,
+    "total": 207,
+    "K4": {
+     "geometry": 24,
+     "seed": 3,
+     "vrr": 60,
+     "accumulate": 16
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 23
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 42
+    }
+   },
+   "unpruned": {
+    "x": 112,
+    "y": 46,
+    "z": 58,
+    "total": 216,
+    "K4": {
+     "geometry": 24,
+     "seed": 3,
+     "vrr": 69,
+     "accumulate": 16
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 23
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 42
+    }
+   },
+   "saving": 9,
+   "boys_max_order": 2,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    0,
+    2
+   ],
+   "pruned": {
+    "x": 312,
+    "y": 47,
+    "z": 166,
+    "total": 525,
+    "K4": {
+     "geometry": 25,
+     "seed": 4,
+     "vrr": 243,
+     "accumulate": 40
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 150
+    }
+   },
+   "unpruned": {
+    "x": 351,
+    "y": 47,
+    "z": 166,
+    "total": 564,
+    "K4": {
+     "geometry": 25,
+     "seed": 4,
+     "vrr": 282,
+     "accumulate": 40
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 150
+    }
+   },
+   "saving": 39,
+   "boys_max_order": 3,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    1,
+    1
+   ],
+   "pruned": {
+    "x": 308,
+    "y": 47,
+    "z": 124,
+    "total": 479,
+    "K4": {
+     "geometry": 25,
+     "seed": 4,
+     "vrr": 243,
+     "accumulate": 36
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 108
+    }
+   },
+   "unpruned": {
+    "x": 347,
+    "y": 47,
+    "z": 124,
+    "total": 518,
+    "K4": {
+     "geometry": 25,
+     "seed": 4,
+     "vrr": 282,
+     "accumulate": 36
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 108
+    }
+   },
+   "saving": 39,
+   "boys_max_order": 3,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    1,
+    2
+   ],
+   "pruned": {
+    "x": 792,
+    "y": 47,
+    "z": 376,
+    "total": 1215,
+    "K4": {
+     "geometry": 25,
+     "seed": 5,
+     "vrr": 686,
+     "accumulate": 76
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 360
+    }
+   },
+   "unpruned": {
+    "x": 891,
+    "y": 47,
+    "z": 376,
+    "total": 1314,
+    "K4": {
+     "geometry": 25,
+     "seed": 5,
+     "vrr": 785,
+     "accumulate": 76
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 360
+    }
+   },
+   "saving": 99,
+   "boys_max_order": 4,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    1,
+    2,
+    2
+   ],
+   "pruned": {
+    "x": 1702,
+    "y": 47,
+    "z": 676,
+    "total": 2425,
+    "K4": {
+     "geometry": 25,
+     "seed": 6,
+     "vrr": 1547,
+     "accumulate": 124
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 660
+    }
+   },
+   "unpruned": {
+    "x": 1898,
+    "y": 47,
+    "z": 676,
+    "total": 2621,
+    "K4": {
+     "geometry": 25,
+     "seed": 6,
+     "vrr": 1743,
+     "accumulate": 124
+    },
+    "K2": {
+     "bra": 23,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 660
+    }
+   },
+   "saving": 196,
+   "boys_max_order": 5,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    0,
+    2
+   ],
+   "pruned": {
+    "x": 845,
+    "y": 48,
+    "z": 496,
+    "total": 1389,
+    "K4": {
+     "geometry": 26,
+     "seed": 5,
+     "vrr": 714,
+     "accumulate": 100
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 480
+    }
+   },
+   "unpruned": {
+    "x": 1058,
+    "y": 48,
+    "z": 496,
+    "total": 1602,
+    "K4": {
+     "geometry": 26,
+     "seed": 5,
+     "vrr": 927,
+     "accumulate": 100
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 480
+    }
+   },
+   "saving": 213,
+   "boys_max_order": 4,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    1,
+    1
+   ],
+   "pruned": {
+    "x": 835,
+    "y": 48,
+    "z": 394,
+    "total": 1277,
+    "K4": {
+     "geometry": 26,
+     "seed": 5,
+     "vrr": 714,
+     "accumulate": 90
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 378
+    }
+   },
+   "unpruned": {
+    "x": 1048,
+    "y": 48,
+    "z": 394,
+    "total": 1490,
+    "K4": {
+     "geometry": 26,
+     "seed": 5,
+     "vrr": 927,
+     "accumulate": 90
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 378
+    }
+   },
+   "saving": 213,
+   "boys_max_order": 4,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    1,
+    2
+   ],
+   "pruned": {
+    "x": 2136,
+    "y": 48,
+    "z": 1078,
+    "total": 3262,
+    "K4": {
+     "geometry": 26,
+     "seed": 6,
+     "vrr": 1914,
+     "accumulate": 190
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1062
+    }
+   },
+   "unpruned": {
+    "x": 2669,
+    "y": 48,
+    "z": 1078,
+    "total": 3795,
+    "K4": {
+     "geometry": 26,
+     "seed": 6,
+     "vrr": 2447,
+     "accumulate": 190
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1062
+    }
+   },
+   "saving": 533,
+   "boys_max_order": 5,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    0,
+    2,
+    2,
+    2
+   ],
+   "pruned": {
+    "x": 4562,
+    "y": 48,
+    "z": 1894,
+    "total": 6504,
+    "K4": {
+     "geometry": 26,
+     "seed": 7,
+     "vrr": 4219,
+     "accumulate": 310
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1878
+    }
+   },
+   "unpruned": {
+    "x": 5610,
+    "y": 48,
+    "z": 1894,
+    "total": 7552,
+    "K4": {
+     "geometry": 26,
+     "seed": 7,
+     "vrr": 5267,
+     "accumulate": 310
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1878
+    }
+   },
+   "saving": 1048,
+   "boys_max_order": 6,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "pruned": {
+    "x": 787,
+    "y": 48,
+    "z": 340,
+    "total": 1175,
+    "K4": {
+     "geometry": 26,
+     "seed": 5,
+     "vrr": 675,
+     "accumulate": 81
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 324
+    }
+   },
+   "unpruned": {
+    "x": 1039,
+    "y": 48,
+    "z": 340,
+    "total": 1427,
+    "K4": {
+     "geometry": 26,
+     "seed": 5,
+     "vrr": 927,
+     "accumulate": 81
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 324
+    }
+   },
+   "saving": 252,
+   "boys_max_order": 4,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    1,
+    1,
+    1,
+    2
+   ],
+   "pruned": {
+    "x": 2018,
+    "y": 48,
+    "z": 1096,
+    "total": 3162,
+    "K4": {
+     "geometry": 26,
+     "seed": 6,
+     "vrr": 1815,
+     "accumulate": 171
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1080
+    }
+   },
+   "unpruned": {
+    "x": 2650,
+    "y": 48,
+    "z": 1096,
+    "total": 3794,
+    "K4": {
+     "geometry": 26,
+     "seed": 6,
+     "vrr": 2447,
+     "accumulate": 171
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1080
+    }
+   },
+   "saving": 632,
+   "boys_max_order": 5,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    1,
+    1,
+    2,
+    2
+   ],
+   "pruned": {
+    "x": 4335,
+    "y": 48,
+    "z": 1996,
+    "total": 6379,
+    "K4": {
+     "geometry": 26,
+     "seed": 7,
+     "vrr": 4023,
+     "accumulate": 279
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1980
+    }
+   },
+   "unpruned": {
+    "x": 5579,
+    "y": 48,
+    "z": 1996,
+    "total": 7623,
+    "K4": {
+     "geometry": 26,
+     "seed": 7,
+     "vrr": 5267,
+     "accumulate": 279
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 1980
+    }
+   },
+   "saving": 1244,
+   "boys_max_order": 6,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    1,
+    2,
+    1,
+    2
+   ],
+   "pruned": {
+    "x": 4423,
+    "y": 48,
+    "z": 3050,
+    "total": 7521,
+    "K4": {
+     "geometry": 26,
+     "seed": 7,
+     "vrr": 4029,
+     "accumulate": 361
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 3034
+    }
+   },
+   "unpruned": {
+    "x": 6216,
+    "y": 48,
+    "z": 3050,
+    "total": 9314,
+    "K4": {
+     "geometry": 26,
+     "seed": 7,
+     "vrr": 5822,
+     "accumulate": 361
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 3034
+    }
+   },
+   "saving": 1793,
+   "boys_max_order": 6,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    1,
+    2,
+    2,
+    2
+   ],
+   "pruned": {
+    "x": 9390,
+    "y": 48,
+    "z": 5402,
+    "total": 14840,
+    "K4": {
+     "geometry": 26,
+     "seed": 8,
+     "vrr": 8767,
+     "accumulate": 589
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 5386
+    }
+   },
+   "unpruned": {
+    "x": 12900,
+    "y": 48,
+    "z": 5402,
+    "total": 18350,
+    "K4": {
+     "geometry": 26,
+     "seed": 8,
+     "vrr": 12277,
+     "accumulate": 589
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 5386
+    }
+   },
+   "saving": 3510,
+   "boys_max_order": 7,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  },
+  {
+   "class": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "pruned": {
+    "x": 16427,
+    "y": 48,
+    "z": 10602,
+    "total": 27077,
+    "K4": {
+     "geometry": 26,
+     "seed": 9,
+     "vrr": 15431,
+     "accumulate": 961
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 10586
+    }
+   },
+   "unpruned": {
+    "x": 25428,
+    "y": 48,
+    "z": 10602,
+    "total": 36078,
+    "K4": {
+     "geometry": 26,
+     "seed": 9,
+     "vrr": 24432,
+     "accumulate": 961
+    },
+    "K2": {
+     "bra": 24,
+     "ket": 24
+    },
+    "K0": {
+     "geometry": 16,
+     "hrr": 10586
+    }
+   },
+   "saving": 9001,
+   "boys_max_order": 8,
+   "transcendentals": {
+    "K4": {
+     "boys": 1,
+     "rsqrt": 1
+    },
+    "K2": {
+     "exp": 2
+    },
+    "K0": {}
+   }
+  }
+ ]
+}
