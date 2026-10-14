@@ -55,8 +55,8 @@ THE SIGN OF `WQ` IS DERIVED, NOT TRANSCRIBED. `[Fock]` eq 26 prints the
 eqs 25 and 28 fix (`PA = P - A`, `CD = C - D`, so `PQ = P - Q`) the ket
 displacement is `W - Q = +p/(p+q) PQ`, and only that sign reproduces the
 integrals (test/test_hgp_recurrence.py evaluates both against `ao/eri.py` on
-a quartet with `P != Q`; the pending claim is `fock/eq26-ket-vrr-sign`,
-scored in #291). The IR names `W - Q` itself, so the sign is a property of
+a quartet with `P != Q`; the claim is `fock/eq26-ket-vrr-sign`,
+asserted by #291). The IR names `W - Q` itself, so the sign is a property of
 the bound VALUE, never of the instruction stream.
 
 THE FUNDAMENTAL: ONE, AND IT IS FJ'S. `reference/pq.py` pins
@@ -88,7 +88,7 @@ asserts both identities pointwise against `reference.pq.fundamental`.
 `[Fock]` eq 14 (§2.1) prints the seed as `U_P U_Q theta^m F_m(T)`; against
 this derivation it lacks `(2/sqrt(pi)) theta` at every `m` and carries a
 `theta^m` the coefficients of eqs 25-26 do not expect (claim
-`fock/eq14-seed-inconsistent`, scored in #291). The seed here is derived, not
+`fock/eq14-seed-inconsistent`, asserted by #291). The seed here is derived, not
 transcribed from eq 14; the test shows eq 14's fails on `(ss|ss)` and, with
 its normalisation repaired, still fails one VRR step up.
 

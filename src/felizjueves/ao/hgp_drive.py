@@ -40,7 +40,7 @@ theta` (each statement is a weighted sum of earlier ones, and the leaves are
 `S F_m(T)`). `Shell.coefficients` already carry any normalisation
 (`ao/shell.py`), so this is `ao.pairs.dress`'s `c_a c_b (pi/zeta)^{3/2}`
 placed on the seed instead of on `E`. `WQ` is the DERIVED `W - Q = +p/(p+q)
-PQ`, not eq 26's printed sign (`fock/eq26-ket-vrr-sign`, pending).
+PQ`, not eq 26's printed sign (`fock/eq26-ket-vrr-sign`, asserted by #291).
 
 THE SCALE, `ao.eri.eri_block_and_scale`'s twin for THIS engine: the same two
 kernels with every `Weighted` coefficient `c` replaced by `|c|`

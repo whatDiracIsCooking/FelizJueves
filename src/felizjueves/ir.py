@@ -144,8 +144,9 @@ class Factor(Enum):
     price of a factor that means "minus" -- a sign spelled as a name. And
     `WQ` names `W - Q` itself, which the engine forms from `W`: the
     vocabulary does not carry eq 26's printed `-PQ zeta/(zeta+eta)`, whose
-    sign is the pending defect claim `fock/eq26-ket-vrr-sign`
-    (data/literature/fock/claims.json; scored by #279/#291, not here).
+    sign is the defect claim `fock/eq26-ket-vrr-sign`
+    (data/literature/fock/claims.json; asserted by #291 on #279's test, not
+    here).
 
     A non-unit factor names a scalar the kernel must bind (a `Param` or `Decl`
     called `Factor.name_in_kernel`), which `Kernel` validates.

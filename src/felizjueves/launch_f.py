@@ -84,7 +84,7 @@ rather than an unsound one returned. The screen reads no density (it cannot:
 the in-kernel six-block screen is what does, decision 7, #282/#287).
 
 THE PRINTED TEXT, AND WHY IT IS NOT WHAT IS BUILT. Two readings of §3.2 are
-pending defect records in data/literature/fock/claims.json (#271), scored in
+defect records in data/literature/fock/claims.json (#271), both asserted by
 #291; this module provides the printed forms so that a test can show the
 difference, and uses neither:
 

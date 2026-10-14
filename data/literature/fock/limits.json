@@ -188,6 +188,30 @@
         "timed": false
       },
       "source": "[Fock, §1, §2.3, §4, §4.3.1]"
+    },
+    {
+      "claim": "What milestone 12's fused F does not reach (#293). It is the two-electron G = J - K/2 of one density, built once per call on the 21-class ladder (every shell l <= 2, up to (dd|dd)): no f or higher shell reaches the HGP engine, nothing is kept on the card across SCF iterations, there is no gradient, no lever (measured_store refuses a lever on an F key) and no batch count other than 1 (spec._F_BATCH_REFUSAL). The bra record is staged into shared memory per thread, not cooperatively, so section 3.2's staging bandwidth is not reproduced. Neither off-diagonal cell of the paper's 2x2 exists here: no split HGP J/K and no fused MMD F.",
+      "mechanism": "Each is a scope decision of milestone 12, not a defect of the paper. Pin 3 fixes the ladder at l <= 2, and on sm_86 whether a class fits its registers follows its HRR boundary count (hgp.vrr.target_set): every class with at most 40 targets fits and every class with 76 or more spills (#290), while (ff|ff)'s set is 5,476 against (dd|dd)'s 961. Pin 4 makes n_batches = 1 because an HGP class has no Hermite targets to partition. Pin 1 keeps the split HGP J/K out of section 3, and the fused MMD F was never in scope. The IR has no barrier (ir.py), so a cooperative load cannot be spelled. kernel_f.MAX_PRIM_PAIRS = 128 is a refusal past the cap, never an overflow.",
+      "evidence": "hgp.vrr.CLASSES and test/test_hgp_vrr.py (the 21 classes); emit's --fock-l accepts 0..2 and --fock-class refuses a class off the ladder (test/test_emit_fock.py, test/test_emit_cli.py); test/test_spec_f.py (the batch refusal); test/test_measured.py (an F key with a lever is refused); kernel_f.py's docstring, 'THE STAGING IS PER THREAD, BECAUSE THE IR HAS NO BARRIER'; data/measured/kernels.json's 42 F rows (#288, #290). The follow-ups are filed: #325 (split HGP J/K), #326 (fused MMD F), #330 (f and above), #333 (a barrier and the cooperative staging).",
+      "asserted_value": {
+        "ladder": "21 classes, every shell l <= 2",
+        "n_batches": 1,
+        "levers": [],
+        "resident_across_scf": false,
+        "derivative_order": 0,
+        "cooperative_staging": false,
+        "cells_missing": [
+          "MMD fused",
+          "HGP split"
+        ],
+        "follow_ups": [
+          325,
+          326,
+          330,
+          333
+        ]
+      },
+      "source": "[Fock, §3.2]"
     }
   ]
 }
