@@ -1,0 +1,334 @@
+{
+  "schema": 1,
+  "about": "The reading of [Fock] that claims.json is the inventory of (#271), in the shape of jengine/coverage.json (#120) but scoped: milestone 12 reconstructs §3 only (the HGP recurrence, §3.1, and the fused Fock kernel built on it, §3.2). One entry per unit, in the paper's order: every numbered section and subsection; inside §3, also each of eqs. 25-29, each design decision of §3.2 (numbered 1-8 by THIS reading, in text order: the paper does not number them) and each of Fig. 1's four components (its three labelled panels and its legend). `status` is 'read' (the unit was read end to end) or 'not-read' (outside §3 and not needed by it; such a unit may list no claims). Every unit of §3 is read; §1, §2, §2.1-§2.3, §4, §4.3 and §4.3.1 were read too, because §3 depends on their notation or a §3 claim is stated there. `claims` is exactly the ids of the records whose `source` names that unit (a source token is a unit name; 'eqs. N-M' names each equation unit in the range); `note` says what else the unit asserts, in our vocabulary, and why it is not a record. Numeric tables are NOT units: they are timings on hardware this repo does not have (limits.json), and a record may not cite one. test/test_fock_coverage.py holds this file against claims.json both ways and pins the unit list.",
+  "read": {
+    "text": "arXiv:2407.21445v1 (submitted 2024-07-31; doi:10.48550/arXiv.2407.21445), the preprint of [Fock] (docs/references.md entry 23, JCTC 20, 10424-10442, doi:10.1021/acs.jctc.4c00994), read from its arXiv HTML rendering with Fig. 1 (figures/HGP.png) viewed as an image; not tracked, as no PDF is. Section, equation and figure numbers here are the preprint's: §3 = 'Brc21 scheme optimisations', eqs. 25-29, Fig. 1, as milestone 12 cites them. The journal version was not available to this reading and may renumber its tables (limits.json, the tables record).",
+    "by": "#271, 2026-10-14, §3 end to end, and the units named"
+  },
+  "units": [
+    {
+      "unit": "Abstract",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3. Headline speedups over other codes on A100s, not claims about §3's algorithm."
+    },
+    {
+      "unit": "§1",
+      "status": "read",
+      "claims": [
+        "fock/symmetry-vs-screening"
+      ],
+      "note": "Prior art (Yasuda; Ufimtsev-Martinez UM09; Asadchev-Gordon's Rys build with 8-fold symmetry and mutexes; Miao-Merz's HGP per contracted class in QUICK; Barca et al.'s Brc21; Asadchev-Valeev's matrix MMD; GPU4PySCF), claims about cited works. The paper's own claims here: the scheme choice is symmetry against fine density screening (fock/symmetry-vs-screening), and 'neither of the two dominates in performance' across basis, size and GPU count, a wall-clock observation on A100s this repo cannot test (limits.json)."
+    },
+    {
+      "unit": "§2",
+      "status": "read",
+      "claims": [],
+      "note": "Section heading and the three subsections below; nothing of its own."
+    },
+    {
+      "unit": "§2.1",
+      "status": "read",
+      "claims": [
+        "fock/eq14-seed-inconsistent"
+      ],
+      "note": "Notation: contracted and primitive shells, pairs |ab) and |ab], quartets, the batch |ab}, eqs. 7-8 (contracted ERI as the K^4 primitive sum), the fundamental (eqs. 9-15). §3.1 starts from eq. 14's seed, which is inconsistent with eqs. 25-26 (fock/eq14-seed-inconsistent). The class / sub-class distinction (sub-class: also uniform in contraction degree) is the one §3.2's batches use."
+    },
+    {
+      "unit": "§2.2",
+      "status": "read",
+      "claims": [
+        "fock/fig1-digestion-unweighted"
+      ],
+      "note": "Eqs. 17-23: F = h + J - K/2 with D doubly occupied (eq. 19), J and K (eqs. 20-21) as this repo's ao/j.py and ao/k.py define them, and the Schwarz bounds G_ab (contracted, eq. 22) and G_[ab] (primitive, eq. 23). Eq. 18 is what makes Fig. 1's unit weights wrong (fock/fig1-digestion-unweighted)."
+    },
+    {
+      "unit": "§2.3",
+      "status": "read",
+      "claims": [
+        "fock/symmetry-vs-screening"
+      ],
+      "note": "The four challenges: per-quartet tree search against register pressure (this repo's plan/ problem, for MMD), screening against warp divergence, symmetry against race conditions and fine screening (fock/symmetry-vs-screening), and load balance across classes and contraction degrees."
+    },
+    {
+      "unit": "§3",
+      "status": "read",
+      "claims": [
+        "fock/fused-six-block-digest"
+      ],
+      "note": "Brc21 is HGP: VRRs on primitives to build angular momentum on two centres, contraction midway, HRRs on contracted values; mid-contraction is cited as minimising FLOPs against late contraction (Gill 1994), a claim about the cited literature, and milestone 12's FLOP counts (#276) will show this repo's own figure without scoring it. 'A one-thread-per-contracted-ERI approach' is read as one thread per contracted quartet, as §3.2 says (fock/fused-six-block-digest); partial pre-digestion and coarser density screening are named here and stated in §3.2."
+    },
+    {
+      "unit": "§3.1",
+      "status": "read",
+      "claims": [],
+      "note": "The HGP refinement of Obara-Saika: from [00|00]^(m), m in 0..a+b+c+d, VRRs (eqs. 25-26) build [e0|f0], the contraction (eq. 27) sums them, HRRs (eq. 28) finish on contracted values. 'The HRRs in Eq. (28) do not depend on primitive-level data', so they run outside the K^4 loop: the reason the contraction loop is inside the kernel (milestone 12 pin 5). The per-class tree search is solved by an in-house heuristic generator (§5, not read): the search itself is not specified, so this repo's VRR/HRR DAGs (#273, #274) are its own and nothing about a published tree is scored."
+    },
+    {
+      "unit": "eq. 25",
+      "status": "read",
+      "claims": [
+        "fock/eq14-seed-inconsistent",
+        "fock/eq26-ket-vrr-sign"
+      ],
+      "note": "The bra VRR [e+0|f0]^(m) from (m) and (m+1) terms with PA, -PQ eta/(zeta+eta), e/(2 zeta) and f/(2(zeta+eta)): the Obara-Saika form under the XY = X - Y vector convention (PA = P - A, PQ = P - Q), correct as printed. It fixes the convention eq. 26 is read under (fock/eq26-ket-vrr-sign) and the coefficients eq. 14's seed must fit (fock/eq14-seed-inconsistent). Implemented by #279 as IR."
+    },
+    {
+      "unit": "eq. 26",
+      "status": "read",
+      "claims": [
+        "fock/eq14-seed-inconsistent",
+        "fock/eq26-ket-vrr-sign"
+      ],
+      "note": "The ket VRR [e0|f+0]^(m), the mirror of eq. 25, with its (m+1) displacement printed as -PQ zeta/(zeta+eta), the wrong sign under eq. 25's convention (fock/eq26-ket-vrr-sign)."
+    },
+    {
+      "unit": "eq. 27",
+      "status": "read",
+      "claims": [],
+      "note": "(e0|f0) = sum over K_A K_B K_C K_D of [e0|f0]_ijkl: the contraction of the VRR boundary, on the fly. In our terms the K^4 loop nest whose body is the VRR and whose result is the HRR's input (#282's boundary); a definition, implemented, not a claim."
+    },
+    {
+      "unit": "eq. 28",
+      "status": "read",
+      "claims": [],
+      "note": "HRRs (28a, ket: (e0|cd+) = (e0|c+d) + CD (e0|cd); 28b, bra: (ab+|cd) = (a+b|cd) + AB (ab|cd)) on contracted integrals, correct as printed. The order (ket first, then bra) is the HRR DAG #274 builds; a definition, implemented, not a claim."
+    },
+    {
+      "unit": "§3.2",
+      "status": "read",
+      "claims": [],
+      "note": "The optimised Brc21 GPU kernel (Fig. 1), read as eight design decisions in text order, each its own unit below, plus eq. 29. The batch size target 2500 and 'significant performance improvement' from eq. 29's magnitudes are tuning observations on an A100, not scorable here."
+    },
+    {
+      "unit": "§3.2 decision 1",
+      "status": "read",
+      "claims": [
+        "fock/fused-six-block-digest"
+      ],
+      "note": "One thread computes all contracted ERIs of one shell quartet (fock/fused-six-block-digest), and every thread of a block has quartets of one angular-momentum class and one contraction degree, for balance: §3.2 batches by contraction degree as well as class, which Target.J's launch plan does not."
+    },
+    {
+      "unit": "§3.2 decision 2",
+      "status": "read",
+      "claims": [
+        "fock/batch-magnitude-bound-direction"
+      ],
+      "note": "Significant contracted pairs |ab) are batched |ab}, uniform in angular momentum and contraction degree, each pair assigned to a magnitude (the printed rule makes it a lower bound, Fig. 1 says upper: fock/batch-magnitude-bound-direction), and batches sorted by G_ab times the pair's density-block maximum. The sort is the one Target.J's launch plan uses for kets (I_q max|D_q|), applied here to contracted pairs; implemented by #285."
+    },
+    {
+      "unit": "eq. 29",
+      "status": "read",
+      "claims": [
+        "fock/eq29-screen-inequality-reversed",
+        "fock/prelaunch-screening-removes-launches"
+      ],
+      "note": "Batch magnitudes tau^(i/n), n chosen for batch size, so that magnitude products land on tau (fock/prelaunch-screening-removes-launches); the printed screening inequality i + j <= n is reversed against the figure and the bound (fock/eq29-screen-inequality-reversed)."
+    },
+    {
+      "unit": "§3.2 decision 3",
+      "status": "read",
+      "claims": [
+        "fock/prelaunch-screening-removes-launches"
+      ],
+      "note": "Batch pairs below tau on their magnitude product are screened before launch, saving launches and in-kernel divergence (fock/prelaunch-screening-removes-launches). Its efficacy is unmeasurable on this repo's compact fixtures (milestone 12 pin 9)."
+    },
+    {
+      "unit": "§3.2 decision 4",
+      "status": "read",
+      "claims": [],
+      "note": "8-fold symmetry at launch: only pair classes with non-decreasing angular momentum (l_a <= l_b: sp, never ps) and only the upper triangle of the class-quartet matrix are launched, so one (sp|df) launch stands for eight. In our terms the l_a <= l_b canonical pair class this repo's pair ladders already use, with the class quartets ordered bra-ket: at l <= 2, the 21-class ladder of milestone 12 (pin 3). The fourth avoided launch is printed '(df|ps)', a repeat of the second where '(fd|ps)' is meant: a typo with no consequence, not a record. The weights that symmetry needs are fock/fig1-digestion-unweighted's subject."
+    },
+    {
+      "unit": "§3.2 decision 5",
+      "status": "read",
+      "claims": [],
+      "note": "Thread mapping: one block per contracted bra pair |ab), its data in shared memory; consecutive threads take consecutive contracted |cd) of one batch |cd}. Milestone 12 pin 7 adopts it as stated, so there is nothing to score beyond the kernel shape fock/fused-six-block-digest already names."
+    },
+    {
+      "unit": "§3.2 decision 6",
+      "status": "read",
+      "claims": [
+        "fock/fused-six-block-digest",
+        "fock/predigest-bounds-atomics"
+      ],
+      "note": "Six-block update with atomicAdd (several threads write one Fock element), and partial pre-digestion into thread-private buffers so that only the two-index buffers go through atomics (fock/fused-six-block-digest, fock/predigest-bounds-atomics)."
+    },
+    {
+      "unit": "§3.2 decision 7",
+      "status": "read",
+      "claims": [
+        "fock/skip-not-break"
+      ],
+      "note": "Intra-kernel screen G_ab G_cd D_max < tau over the six density blocks, because the pre-launch screen cannot see the density; batches sorted by G times the density-block maximum to make neighbouring threads agree, which 'does not rigorously prevent warp divergence' (fock/skip-not-break). 'Significant performance improvement over sorting only by the Cauchy Schwartz bound' is an A100 observation."
+    },
+    {
+      "unit": "§3.2 decision 8",
+      "status": "read",
+      "claims": [],
+      "note": "Primitive-level screening: when a contracted pair is built, its primitive pairs are ordered by the primitive Schwarz bound G_[ab] and the insignificant ones deleted. In our terms pruning of the K^2 primitive-pair list of a contracted pair record (#285's pruning, #276's 'pruning on'); a construction step, implemented there, not a claim with a shape of its own."
+    },
+    {
+      "unit": "Fig. 1 Kernel Launches",
+      "status": "read",
+      "claims": [
+        "fock/batch-magnitude-bound-direction",
+        "fock/eq29-screen-inequality-reversed",
+        "fock/prelaunch-screening-removes-launches"
+      ],
+      "note": "The class-quartet launch matrix for s and p at n = 2: rows and columns are pair batches by class (ss, sp, pp), contraction degree K_a K_b (1, 3, 9 for ss; 1, 3 for sp; 1 for pp) and magnitude ('Upper bound' 1 or sqrt(tau)); only the upper triangle is launched, and no (sqrt(tau), sqrt(tau)) cell. The figure is what the eq. 29 and magnitude defects are read against."
+    },
+    {
+      "unit": "Fig. 1 Block Launches",
+      "status": "read",
+      "claims": [],
+      "note": "One launched kernel as a grid: |ab) pairs down, |cd) pairs across, both shaded by the shell-pair ordering (decreasing size), blockdim threads per block along |cd). The mapping of §3.2 decision 5; no further claim."
+    },
+    {
+      "unit": "Fig. 1 Block Execution",
+      "status": "read",
+      "claims": [
+        "fock/fig1-digestion-unweighted",
+        "fock/fused-six-block-digest",
+        "fock/skip-not-break"
+      ],
+      "note": "One block: |ab) data in shared memory, one thread per |cd)_k; 'If D_max G_ab G_cd < tau : Exit' (fock/skip-not-break); VRRs inside, HRRs after, the loop over [ab|cd] in (ab|cd); six thread-private f buffers updated with unit weights (fock/fig1-digestion-unweighted) and added to the six global F blocks (fock/fused-six-block-digest)."
+    },
+    {
+      "unit": "Fig. 1 legend",
+      "status": "read",
+      "claims": [],
+      "note": "Shared memory, global memory, shell-pair ordering (decreasing size), GPU kernel, GPU block, thread, block of threads: the key to the three panels, which places |ab) in shared memory and the six F blocks in global memory. Nothing beyond the panels."
+    },
+    {
+      "unit": "§4",
+      "status": "read",
+      "claims": [
+        "fock/symmetry-vs-screening"
+      ],
+      "note": "UM09 (opt-UM) is MMD, late contraction, one thread per primitive, J and K split: 'complete symmetry utilization is sacrificed to enable screening based on one block of the density matrix rather than six' (fock/symmetry-vs-screening). This repo's Target.J and Target.K are that cell; its own J claims belong to [JEngine], and §4's are not inventoried here."
+    },
+    {
+      "unit": "§4.1",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3 (MMD, eqs. 30-37, Alg. 1)."
+    },
+    {
+      "unit": "§4.2",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3 (the opt-UM J kernel, Fig. 2)."
+    },
+    {
+      "unit": "§4.2.1",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3 (multi-GPU J)."
+    },
+    {
+      "unit": "§4.3",
+      "status": "read",
+      "claims": [],
+      "note": "The opt-UM K is designed for linear scaling and no warp divergence; the paragraph introduces §4.3.1-§4.3.3. Nothing of §3's."
+    },
+    {
+      "unit": "§4.3.1",
+      "status": "read",
+      "claims": [
+        "fock/symmetry-vs-screening"
+      ],
+      "note": "Read for the restatement: 'to facilitate fine grained density screening and to reduce atomic operations, the K implementation only exploits the [ab|cd] <-> [cd|ab] symmetry' (fock/symmetry-vs-screening). The rest (the density-decay bound eqs. 41-49, already cited as prior art by ao/k.py and kernel_k.py, and Luehr et al.'s GDG bound, eq. 50) is opt-UM and not inventoried here: a follow-up, with milestone 10's K."
+    },
+    {
+      "unit": "§4.3.2",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3 (MMD per-integral optimisation; cited as prior art by kernel_k.py)."
+    },
+    {
+      "unit": "§4.3.3",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3 (multi-GPU K)."
+    },
+    {
+      "unit": "§4.4",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: outside §3 (f functions in opt-UM)."
+    },
+    {
+      "unit": "§5",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: the code generator. §3.1 defers its tree search here; this repo's own HGP DAGs (#273, #274) do not reconstruct it."
+    },
+    {
+      "unit": "§6",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read as text: results. Its tables and figure captions were read for limits.json only."
+    },
+    {
+      "unit": "§6.1",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: single-A100 comparisons (Tables 1-2, Fig. 5)."
+    },
+    {
+      "unit": "§6.1.1",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: LibintX comparison (Table 3, a V100)."
+    },
+    {
+      "unit": "§6.2",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: strong scaling on 1-4 A100s (Fig. 6)."
+    },
+    {
+      "unit": "§6.3",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: CPU comparison (Fig. 7)."
+    },
+    {
+      "unit": "§6.4",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: additional benchmarks."
+    },
+    {
+      "unit": "§6.4.1",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: J and K scaling in opt-UM (Fig. 8)."
+    },
+    {
+      "unit": "§6.4.2",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: per-class timings of opt-Brc on an A100 (Fig. 9)."
+    },
+    {
+      "unit": "§6.4.3",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: SCF timings on 1 and 4 A100s (Table 4)."
+    },
+    {
+      "unit": "§7",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: conclusions."
+    },
+    {
+      "unit": "§8",
+      "status": "not-read",
+      "claims": [],
+      "note": "Not read: acknowledgements."
+    }
+  ]
+}

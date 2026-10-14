@@ -13,6 +13,9 @@ A record's status says what holds us to it. ASSERTED names the test that does;
 PENDING and UNVERIFIABLE name the reason none does. The pairing is enforced on
 construction, and `test/test_claims.py` checks the registry against the
 claim-marked tests in both directions, so neither side can drift alone.
+
+There is one claims file per paper (`discover`, `load_registry`): `jengine`
+since #9, and `fock` since #271. The check runs per paper.
 """
 
 from __future__ import annotations
@@ -93,3 +96,36 @@ def load_claims(path: Path) -> tuple[Claim, ...]:
     if ids != sorted(ids):
         raise ValueError(f"{path}: claims must be ordered by id")
     return claims
+
+
+def discover(root: Path) -> dict[str, Path]:
+    """Every paper's claims file under a literature root, keyed by paper.
+
+    One directory per paper (`data/literature/jengine/`, `.../fock/`), each
+    with its own `claims.json`; the directory's name is the paper's key and
+    the prefix of every id in its file. Found by listing, not by a hard-coded
+    path, so that a second paper is checked by the same rule as the first and
+    a paper whose directory is renamed or dropped shows up as a changed set
+    rather than as a silently unchecked file. An empty root is an error.
+    """
+    found = {p.parent.name: p for p in sorted(Path(root).glob("*/claims.json"))}
+    if not found:
+        raise ValueError(f"{root}: no <paper>/claims.json under it")
+    return found
+
+
+def load_registry(root: Path) -> dict[str, tuple[Claim, ...]]:
+    """Load every paper's claims file; each id must carry its paper's prefix.
+
+    Per paper, not merged: the registry checks in test/test_claims.py hold
+    each paper's records against the claim-marked tests whose ids carry that
+    paper's prefix, so adding a paper cannot weaken another's check.
+    """
+    out: dict[str, tuple[Claim, ...]] = {}
+    for paper, path in discover(root).items():
+        claims = load_claims(path)
+        stray = [c.id for c in claims if not c.id.startswith(f"{paper}/")]
+        if stray:
+            raise ValueError(f"{path}: ids not prefixed {paper + '/'!r}: {stray}")
+        out[paper] = claims
+    return out
