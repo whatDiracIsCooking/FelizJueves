@@ -1326,6 +1326,62 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 
 
 # ---------------------------------------------------------------------------
+# #286 (milestone 12): `walk_f`, the fused Fock build's pair stream WALKED --
+# milestone 6's launch oracle for the fused kernel. It reads `launch_f`'s
+# plan by duck type and must not import it (the walker independent of the
+# plan builder, m6's discipline); it rebuilds the records from the AO
+# layer's shells, builds and packs through `kernel_f`, and runs each launch
+# through an INJECTED executor (`run=`), so it reaches no interpreter and
+# no reference/. Nor may it reach the witnesses it is checked against.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "f_walk": _rule(
+        "walk_f.py (#286): `launch_f`'s plan walked with `kernel_f`'s "
+        "kernel -- the plan checked against the basis, the records rebuilt "
+        "from the shells, every launch run through an injected executor "
+        "(`run=`), `F` closed, and every unique quartet's fate recorded",
+        ("spec", "ir", "ao", "kernel_f"),
+        launch_f="the walker is independent of the plan builder (m6's "
+                 "discipline, #286): it reads the plan by duck type, never "
+                 "a second call into, or a type from, the module that made it",
+        reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
+                  "injected (`run=`)",
+        interp="the kernel runs through the injected `run=`; the walker "
+               "evaluates nothing itself",
+        plan=RULES["hgp"].must_not["plan"],
+        emit="the walk interprets; no text is emitted",
+        device="the walk runs no card",
+        dispatch="nothing measured may reach a launch plan by import (#145)",
+        measured="a walk is not a toolchain's reading",
+        measured_store="nothing measured may reach a walk by import"),
+}
+RULE_OF["walk_f"] = "f_walk"
+EDGES["walk_f"] = frozenset(("ao.j", "ao.shell", "ir", "kernel_f", "spec"))
+
+
+def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None:
+    # #286, TRANSITIVELY: no chain of imports from `walk_f` reaches the plan
+    # builder, reference/, the interpreter, a backend, the dispatch policy,
+    # or the witnesses the walk is held to (`ao.fock`'s sweep, `ao.eri`,
+    # `ao.hgp_drive`).
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["walk_f"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "kernel_f" in seen
+    for banned in ("launch_f", "launch", _REF, "interp", "emit", "device",
+                   "dispatch", "measured", "ao.fock", "ao.eri",
+                   "ao.hgp_drive", "engine"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"walk_f reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
 # #292 (milestone 12, G1): `engine`, the protocol both ERI engines satisfy,
 # extracted last, and the rule that makes it stick: NOTHING ABOVE THE
 # ENGINES MAY IMPORT AN ENGINE BY NAME -- this file's preference for injected
