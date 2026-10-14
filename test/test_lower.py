@@ -387,6 +387,23 @@ def test_nothing_on_the_literature_side_imports_lower() -> None:
                 assert not any(n.split(".")[-1] == "lower" for n in names), path
 
 
+def test_nothing_under_hgp_imports_lower() -> None:
+    # #276, the mirror: `hgp.cost` is PlanCost's sibling, not KernelCost's,
+    # so nothing under hgp/ may import the lowering, and so KernelCost.
+    paths = sorted((SRC / "hgp").rglob("*.py"))
+    assert SRC / "hgp" / "cost.py" in paths
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                names = [node.module or ""] + [a.name for a in node.names]
+            elif isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            else:
+                continue
+            assert not any(n.split(".")[-1] in ("lower", "KernelCost")
+                           for n in names), path
+
+
 def test_the_register_budget_has_no_default() -> None:
     kernel, _ = _kernel(7, "mild")
     with pytest.raises(TypeError):
