@@ -1152,3 +1152,18 @@ def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
         for banned in ("plan", _REF):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #275 (milestone 12): the two-electron Fock witness, under the `ao` rule.
+# `ao.fock` sweeps every ordered quartet with the ERI block function
+# INJECTED (`eri=`), so it imports no engine: only `ao.j`'s density contract
+# and `ao.shell`'s basis.
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "ao.fock": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.fock": ("ao.j", "ao.shell"),
+}.items()}
