@@ -109,11 +109,12 @@ PAIR_TARGETS = (Target.DQ, Target.JAB)
 
 def test_the_target_enum_is_widened_not_renamed() -> None:
     # #196 appends `k`; the earlier members keep their place and value.
-    # #232 appends `s`, `t` and `v` the same way.
-    assert [t.value for t in Target] == ["j", "dq", "jab", "k", "s", "t", "v"]
+    # #232 appends `s`, `t` and `v` the same way, and #272 appends `f`.
+    assert [t.value for t in Target] == [
+        "j", "dq", "jab", "k", "s", "t", "v", "f"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
-        Target.S: 2, Target.T: 2, Target.V: 2,
+        Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
     }
 
 
@@ -211,7 +212,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
         Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
         Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
-        Target.V: Operator.NUCLEAR,
+        Target.V: Operator.NUCLEAR, Target.F: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -331,3 +332,17 @@ PRE_232_KEYS = [
 @pytest.mark.parametrize(("args", "kw", "key"), PRE_232_KEYS)
 def test_every_pre_existing_key_is_byte_identical(args, kw, key) -> None:
     assert Spec(*args, **kw).key() == key
+
+
+# #272 widens the enum with `Target.F`; every key above, and milestone 11's
+# one-electron keys below (literals written before #272), must not move.
+PRE_272_ONE_ELECTRON_KEYS = [
+    ((Operator.OVERLAP, 0, (2, 1), Target.S), "overlap/d0/(2,1)/b1/s/literal"),
+    ((Operator.KINETIC, 0, (0, 3), Target.T), "kinetic/d0/(0,3)/b1/t/literal"),
+    ((Operator.NUCLEAR, 0, (3, 3), Target.V), "nuclear/d0/(3,3)/b1/v/literal"),
+]
+
+
+@pytest.mark.parametrize(("args", "key"), PRE_272_ONE_ELECTRON_KEYS)
+def test_every_one_electron_key_is_byte_identical_after_f(args, key) -> None:
+    assert Spec(*args).key() == key

@@ -207,6 +207,43 @@ def test_a_lever_is_refused() -> None:
         build(_spec(7, 1, ("sieve",)))
 
 
+def _f(am: tuple[int, int, int, int], levers: tuple[str, ...] = ()) -> Spec:
+    return Spec(Operator.COULOMB, 0, am, Target.F, levers)
+
+
+@pytest.mark.parametrize("am", [(0, 0, 0, 0), (1, 0, 1, 0), (2, 2, 2, 2)])
+def test_build_refuses_a_target_f_spec_naming_total_am_and_jengine(am) -> None:
+    # #272: the plan layer keys on total_am, which indexes a [JEngine] row an
+    # HGP class does not have; a plausible DAG here is the failure mode.
+    with pytest.raises(ValueError, match=r"total_am.*\[JEngine\]"):
+        build(_f(am))
+
+
+def test_the_f_refusal_comes_before_the_lever_refusal() -> None:
+    # The F refusal is the first thing build says, lever or no lever.
+    with pytest.raises(ValueError, match="refuses Target.F"):
+        build(_f((1, 0, 1, 0), ("no-sieve",)))
+
+
+@pytest.mark.parametrize("levers", [(), ("no-sieve",), ("tuned",)])
+def test_every_plan_layer_entry_refuses_target_f(levers) -> None:
+    # pipeline.plan reaches dag.build through the sieve, or tuned_plan,
+    # which builds from a recorded (L, n_batches) cell without dag.build;
+    # both refuse.
+    from felizjueves.plan.pipeline import plan, tuned_plan
+    from felizjueves.plan.sieve import plan as sieved
+
+    spec = _f((1, 1, 1, 1), levers)
+    with pytest.raises(ValueError, match=r"total_am.*\[JEngine\]"):
+        plan(spec)
+    if "tuned" in levers:
+        with pytest.raises(ValueError, match=r"total_am.*\[JEngine\]"):
+            tuned_plan(spec)
+    else:
+        with pytest.raises(ValueError, match=r"total_am.*\[JEngine\]"):
+            sieved(spec)
+
+
 def test_build_follows_the_spec_batch_count() -> None:
     assert [d.batch for d in build(_spec(8, 6))] == [
         ("x", 0, 3), ("x", 4, 8),

@@ -35,7 +35,7 @@ from types import MappingProxyType
 from felizjueves.plan.batching import AXES, Batch, in_batch, partition
 from felizjueves.plan.mild import mild_direction
 from felizjueves.plan.targets import R, hermite_targets
-from felizjueves.spec import Spec
+from felizjueves.spec import Spec, Target
 
 Node = tuple[R, int]  # ([r], m)
 
@@ -104,11 +104,28 @@ def batch_dag(
     return BatchDag(batch, targets, MappingProxyType(parents))
 
 
+def refuse_hgp(spec: Spec) -> None:
+    """Raise on a `Target.F` spec (#272): the plan layer keys on
+    `spec.total_am` and `spec.n_batches`, which index a [JEngine] Tables 1-3
+    row and its Hermite-target partition -- MMD machinery. An HGP class has
+    no Hermite targets, so any DAG, sieve or cost built here for it would be
+    a plausible number for a class that does not exist."""
+    if spec.target is Target.F:
+        raise ValueError(
+            f"{spec.key()}: the plan layer refuses Target.F -- it keys on "
+            "total_am, which indexes a [JEngine] Tables 1-3 row, and the "
+            "[JEngine] partition of Hermite targets is MMD machinery; an HGP "
+            "class has no Hermite targets and no such row"
+        )
+
+
 def build(spec: Spec, *, targets: Sequence[R] | None = None) -> tuple[BatchDag, ...]:
     """One DAG per batch of `partition(spec.total_am, spec.n_batches)`, in the
     partition's order. Only the literal reconstruction exists: a Spec naming
     any lever is refused rather than silently built as if it named none.
-    `targets`, a permutation of `hermite_targets(L)`, is the visiting order."""
+    `targets`, a permutation of `hermite_targets(L)`, is the visiting order.
+    A `Target.F` spec is refused first (`refuse_hgp`)."""
+    refuse_hgp(spec)
     if spec.levers:
         raise ValueError(f"no lever is implemented in the plan layer: {spec.levers}")
     L = spec.total_am

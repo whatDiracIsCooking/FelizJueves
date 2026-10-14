@@ -12,6 +12,7 @@ Fast: reads a tracked file, compiles nothing.
 
 from __future__ import annotations
 
+import itertools
 import re
 
 from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
@@ -19,7 +20,7 @@ from felizjueves.device import MeasuredKey, by_name
 from felizjueves.kernel import k_spec, pq_spec, split
 from felizjueves.lower import RECYCLE
 from felizjueves.measured_store import SUBGRID, TUNED_CELLS, load, split_key
-from felizjueves.spec import Target
+from felizjueves.spec import Operator, Spec, Target
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
 _SPEC_KEY = re.compile(
@@ -122,3 +123,21 @@ def test_a_k_cell_joins_no_measured_j_row() -> None:
     for L in range(17):
         assert split(k_spec(L)) == split(pq_spec(L))
         assert k_spec(L).key() != pq_spec(L).key()
+
+
+def test_target_f_moves_no_measured_key_and_joins_no_row() -> None:
+    # #272: `Target.F` widens the enum (milestone 12, pin 4); the two
+    # re-derivation tests above hold every stored key byte for byte, and
+    # this pins the store's size and that no F key reaches a row. The store
+    # holds 216 rows -- 196 J and #205's 20 K -- every one a J or K key.
+    rows = load()
+    assert len(rows) == N_ROWS + 20
+    assert {split_key(key)[0].split("/")[4] for key in rows} == {"j", "k"}
+    arches = {r.arch: r.toolchain for r in rows.values()}
+    f_keys = {
+        MeasuredKey(Spec(Operator.COULOMB, 0, am, Target.F), by_name(arch),
+                    tc).key()
+        for am in itertools.product(range(3), repeat=4)
+        for arch, tc in arches.items()
+    }
+    assert f_keys.isdisjoint(rows)

@@ -54,6 +54,30 @@ widening, not a new field: `AM_LENGTH` takes 4, the key spells the quartet
 `(la,lc|lb,ld)` with target slot `k`, and K admits batching exactly as
 `Target.J` does.
 
+AN F CLASS IS NAMED IN AO ORDER, NOT HERMITE ORDER (#272). `Target.F` is the
+FUSED Fock build of [Fock] §3 on the Head-Gordon-Pople recurrence: one kernel
+digests each contracted quartet (ab|cd) into both J and K. The HGP VRR pairs
+the bra (a, b) and the ket (c, d) AS WRITTEN, so an F class's `am` is the AO
+quartet order `(la, lb, lc, ld)` and the key spells `(la,lb|lc,ld)` with
+target slot `f`. That is the OPPOSITE convention to `Target.K` above: the tree
+now holds two quartet targets with two orderings, and the mistake is silent in
+both directions -- a K class spelled in AO order, or an F class spelled in
+Hermite order, is a legal `Spec` naming a different class. The same four
+shells therefore give different specs and different keys under `F` and `K`.
+`Target.F` is a widening of the enum, not a `scheme` field (milestone 12, pin
+4): every pre-existing key is byte-identical. The trigger that would force a
+`scheme` field is named: the first fused MMD `F`, or the first HGP `J`/`K`.
+
+AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
+a pair target is unbatched because a pair has no Hermite targets to
+partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
+-- its recurrence is the VRR/HRR, not the [p|q] tower, so [JEngine]'s
+partition does not apply to it. `n_batches = 1` is its only legal value
+today. The field is a widening path, not a dead end: its future meaning for
+`F` is VRR target grouping (`_F_BATCH_REFUSAL`). For the same reason the plan
+layer, which is MMD machinery keyed on `total_am`, refuses an F spec
+(`plan.dag.refuse_hgp`).
+
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
 total angular momentum, L = l1 + l2 + l3 + l4 (the [p|q] class has
@@ -103,23 +127,29 @@ class Target(StrEnum):
     S = "s"  # overlap
     T = "t"  # kinetic energy
     V = "v"  # nuclear attraction
+    # The fused Fock build of [Fock] §3 on the HGP recurrence; its `am` is
+    # (la, lb, lc, ld), the AO order -- NOT K's Hermite pairing (#272,
+    # module docstring).
+    F = "f"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
 # [p|q] kernel, a pair (la, lb) for the two per-pair families (#150), and a
 # quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196),
-# and a pair (la, lb) for each one-electron matrix (#232).
+# and a pair (la, lb) for each one-electron matrix (#232), and a quartet
+# (la, lb | lc, ld) in AO order for the fused Fock build (#272).
 AM_LENGTH: dict[Target, int] = {
-    Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
+    Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2,
 }
 
 
 # The one operator each target is built from (#232); any other pairing is
-# refused. The four two-electron targets are Coulomb's.
+# refused. The five two-electron targets are Coulomb's.
 OPERATOR_OF: dict[Target, Operator] = {
     Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
+    Target.F: Operator.COULOMB,
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
     Target.V: Operator.NUCLEAR,
 }
@@ -145,6 +175,15 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
 }
 
 
+# Why `Target.F` refuses `n_batches > 1` (#272, module docstring): its own
+# reason, not the pair one.
+_F_BATCH_REFUSAL = (
+    "an HGP class is never batched -- it has no Hermite targets at all, "
+    "batched or not, so [JEngine]'s partition does not apply; the field's "
+    "future meaning for F is VRR target grouping, not yet built"
+)
+
+
 # Geometric derivatives are a later operator family; order 0 only for now.
 DERIVATIVE_ORDERS = (0,)
 
@@ -160,7 +199,8 @@ class Spec:
     derivative_order: int
     # (l1, l2 | l3, l4) for `Target.J`: the angular momentum of each of the
     # four shells; (la, lc | lb, ld) for `Target.K` -- the Hermite pairing,
-    # bra first, NOT the AO order (la, lb, lc, ld); (la, lb) for a pair
+    # bra first, NOT the AO order (la, lb, lc, ld); (la, lb | lc, ld) for
+    # `Target.F` -- the AO order, NOT K's pairing; (la, lb) for a pair
     # target (`AM_LENGTH`).
     am: tuple[int, int, int, int] | tuple[int, int]
     target: Target
@@ -198,7 +238,9 @@ class Spec:
             shape = "pair" if want == 2 else "quartet"
             hermite = (
                 " in Hermite order (la, lc | lb, ld)"
-                if self.target is Target.K else ""
+                if self.target is Target.K
+                else " in AO order (la, lb | lc, ld)"
+                if self.target is Target.F else ""
             )
             raise ValueError(
                 f"target {self.target} takes a {shape} class ({want} shells)"
@@ -213,6 +255,11 @@ class Spec:
             raise ValueError(
                 f"n_batches {self.n_batches!r} is neither 1 nor a positive "
                 "multiple of 3"
+            )
+        if self.target is Target.F and self.n_batches != 1:
+            raise ValueError(
+                f"n_batches {self.n_batches!r} for target {self.target}: "
+                f"{_F_BATCH_REFUSAL}"
             )
         if want == 2 and self.n_batches != 1:
             raise ValueError(
@@ -236,6 +283,12 @@ class Spec:
         (b, d), so the AO order (la, lb, lc, ld) has the same L but a
         different (lp, lq) split whenever lb != lc, and the sum alone cannot
         catch that mistake.
+
+        An F quartet (`Target.F`, `am = (la, lb, lc, ld)`, the AO order)
+        indexes NO [JEngine] table row: an HGP class has no Hermite targets,
+        so its sum names no Tables 1-3 row, and it must never be scored
+        against one. The plan layer, which keys on this sum, refuses an F
+        spec (`plan.dag.refuse_hgp`).
         """
         return sum(self.am)
 
@@ -246,7 +299,8 @@ class Spec:
         so it cannot collide with a quartet's; a one-electron class spells
         ``overlap/d0/(2,1)/b1/s/literal``. A quartet key is
         byte-identical to the one before #150: it is the join key of every
-        measured row.
+        measured row. An F class spells ``coulomb/d0/(2,1|1,0)/b1/f/literal``
+        -- the AO order, target slot ``f`` (#272).
         """
         if len(self.am) == 4:
             l1, l2, l3, l4 = self.am
