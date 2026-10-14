@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from felizjueves.plan.cost import PlanCost, batch_flops, cost
-from felizjueves.plan.dag import BatchDag
+from felizjueves.plan.dag import BatchDag, refuse_hgp
 from felizjueves.plan.search import Choice, load_cuts, searched_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.sieve import plan as sieved_dags
@@ -74,6 +74,7 @@ def tuned_plan(spec: Spec, *, path: Path = SEARCHED_CUTS
     `spec` must name `tuned` and no other lever. A cell `path` holds no
     choice for is refused: a tuned build never falls back to literal.
     """
+    refuse_hgp(spec)
     if TUNED not in spec.levers:
         raise ValueError(f"{spec.key()}: tuned_plan needs the {TUNED!r} lever")
     rest = tuple(lv for lv in spec.levers if lv != TUNED)
