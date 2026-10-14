@@ -15,8 +15,8 @@ No PDF is tracked.
 | File | What it holds |
 |---|---|
 | `coverage.json` | the reading, unit by unit: every numbered section, and inside §3 each of eqs. 25–29, each design decision of §3.2 (numbered by the reading, in text order, since the paper does not number them) and each of Fig. 1's four components; each unit `read` or `not-read`, with the records that cite it and a note in this repo's vocabulary |
-| `claims.json` | the scorable non-numeric claims, one record each (`felizjueves.literature.claims`); declared before anything is built, so each is `pending` with the rule and the issue that will score it in its `reason` |
-| `limits.json` | what cannot be scored here and why (`felizjueves.literature.limits`): the tables are A100 / V100 timings, §6 is whole-program wall-clock, there is no published register table for the §3.2 kernel, and no `[JEngine]` cell or floor moves |
+| `claims.json` | the scorable non-numeric claims, one record each (`felizjueves.literature.claims`); declared `pending` by #271 before anything was built, each `reason` naming the rule that would score it, and scored by #291 against the built tree: an `asserted` record names the `claim`-marked test that holds it, on evidence no weaker than its declared rule; an `unverifiable` one says what would settle it and on what hardware |
+| `limits.json` | what cannot be scored here and why (`felizjueves.literature.limits`): the tables are A100 / V100 timings, §6 is whole-program wall-clock, there is no published register table for the §3.2 kernel, no `[JEngine]` cell or floor moves, the screens' efficacy is unmeasured on compact fixtures, and the symmetry-versus-screening trade is not decided on our cards |
 
 There is **no `tables.json`**, by decision (milestone 12, pin 2): `[Fock]`'s
 tables are timings on hardware this box does not have, so milestone 12 scores
@@ -39,4 +39,10 @@ prefix, both ways; `test/test_fock_coverage.py` holds `coverage.json` against
   for any claim it finds or says in the note why it is not one.
 
 The counts by status live in `claims.json` and nowhere else; recompute them
-rather than quoting them.
+rather than quoting them. A doc that does quote them spells them with the key,
+"N [Fock] records: A asserted, U unverifiable, P pending", and
+`test/test_claims.py` holds every such quote to the file.
+
+No record rests on `data/measured/fock_baseline.json` (#289): it is a quality
+baseline of common ancestry, never a numeric witness, and
+`test/test_fock_coverage.py` refuses a record that cites it.

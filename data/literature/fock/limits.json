@@ -47,7 +47,7 @@
     {
       "claim": "The efficacy of §3.2's screens (eq. 29's pre-launch batch-pair screen and the six-block in-kernel screen) is not measured: how much work they remove depends on how extended the molecule is, and every fixture here is compact.",
       "mechanism": "A Schwarz or density screen removes quartets in proportion to the fraction of distant pairs; in H2, H2O and HF that fraction is small, so a measured saving would be a fact about the fixture, not about the screen (milestone 12 pin 9). An extended case is a follow-up.",
-      "evidence": "Milestone 12 pin 9; the fixture list in test/oracle/fixtures/.",
+      "evidence": "Milestone 12 pin 9; the fixture list in test/oracle/fixtures/. #291 asserts fock/prelaunch-screening-removes-launches on its MECHANISM only (the removed batch pairs are never launched and hold no quartet with G_ab G_cd >= tau; test/test_fock_pairs.py), and this record is why the efficacy half is not asserted with it.",
       "asserted_value": {
         "measured": false
       },
@@ -170,6 +170,24 @@
         "predecessor": "whatDiracIsCooking/fock-build-generator-private test/hgp/brc/ptxas_data.py (blob 246cf588b5b8d2915f8f85cc895d30b92d468b23)"
       },
       "source": "[Fock, §3.2]"
+    },
+    {
+      "claim": "Which side of [Fock]'s symmetry-versus-screening trade gives up less -- full 8-fold symmetry with a six-block density screen (§3, opt-Brc), or every ordered quartet with a one-block screen (§4, opt-UM) -- is not decided here (fock/symmetry-vs-screening, UNVERIFIABLE).",
+      "mechanism": "The trade is settled by wall-clock, and [Fock]'s is whole-program timings on A100 (and V100) cards; a screen's payoff also grows with how extended the molecule is. This box has an RTX 3080 (sm_86) and an RX 9060 XT (gfx1200), every fixture is compact, and the two cells milestone 12 holds differ in the recurrence as well as the scheme (HGP fused against MMD split), so a timing of one against the other would confound the two decisions the paper itself says it confounds (§1, §4.3).",
+      "evidence": "What is held is structural, in claims.json's reason for fock/symmetry-vs-screening: Target.F reads six weighted density blocks and any one can keep a quartet (test/test_kernel_f.py), Target.J and Target.K visit every ordered quartet (test/test_ao_fock.py) and Target.J's screen reads one block (test/test_kernel.py). What would settle it on our cards: the fused F and the split J + K builds timed end to end behind the card gate on both cards, over an extended molecule set (a follow-up, pin 9), ideally with an off-diagonal cell (a fused MMD F or a split HGP J/K, follow-ups) so the scheme is not confounded with the recurrence. [Fock]'s own conclusion needs an A100 and its benchmark set.",
+      "asserted_value": {
+        "verdict": "unverifiable",
+        "cells_held": [
+          "HGP fused (Target.F)",
+          "MMD split (Target.J, Target.K)"
+        ],
+        "cells_missing": [
+          "MMD fused",
+          "HGP split"
+        ],
+        "timed": false
+      },
+      "source": "[Fock, §1, §2.3, §4, §4.3.1]"
     }
   ]
 }

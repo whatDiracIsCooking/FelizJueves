@@ -323,6 +323,30 @@ def test_every_tally_a_doc_quotes_matches_the_file() -> None:
     assert quoted  # the check is not vacuous: j_engine.md quotes one
 
 
+# [Fock]'s tally (#291) is spelled with its key, "N [Fock] records: A
+# asserted, U unverifiable, P pending", so it can never be read as the
+# [JEngine] tally above (whose pattern needs the digits right before
+# "records:"), and any doc that quotes one is held to the fock file. No doc
+# is required to quote it: data/literature/fock/README.md says to recompute.
+
+FOCK_CLAIMS = LITERATURE / "fock" / "claims.json"
+FOCK_TALLY_DOCS = (*TALLY_DOCS, FOCK_CLAIMS.parent / "README.md",
+                   *sorted((ROOT / "docs" / "implementation").glob("*.md")))
+_FOCK_TALLY = re.compile(r"(\d+) `?\[Fock\]`? records: (\d+) asserted, "
+                         r"(\d+) unverifiable, (\d+) pending")
+
+
+def test_every_fock_tally_a_doc_quotes_matches_the_file() -> None:
+    want = tally(load_claims(FOCK_CLAIMS))
+    for doc in FOCK_TALLY_DOCS:
+        for m in _FOCK_TALLY.finditer(_flat(doc)):
+            got = f"{m[1]} records: {m[2]} asserted, {m[3]} unverifiable, " \
+                  f"{m[4]} pending"
+            assert got == want, (doc.relative_to(ROOT).as_posix(), m[0], want)
+    # and the pattern does read the spelling it documents
+    assert _FOCK_TALLY.fullmatch(want.replace(" records", " [Fock] records"))
+
+
 # The same failure mode for limits.json: a doc that says "holds six
 # `StructuralLimit`s" outlives the record that made it seven (#148). Every such
 # count a doc spells, in words or digits, is held to the file.

@@ -1,86 +1,86 @@
 {
   "schema": 1,
-  "about": "The non-numeric claims of [Fock] §3 (#271), one record each: id, statement (in our vocabulary, quoting its source location), source, kind, status, and either test (ASSERTED) or reason (PENDING / UNVERIFIABLE). See felizjueves.literature.claims. Declared before anything of milestone 12 is built, so every record is PENDING and its reason names the rule and the issue that will score it. Ordered by id: add a record in its place rather than rewriting the file.",
+  "about": "The non-numeric claims of [Fock] §3 (#271), one record each: id, statement (in our vocabulary, quoting its source location), source, kind, status, and either test (ASSERTED) or reason (PENDING / UNVERIFIABLE). See felizjueves.literature.claims. Declared PENDING by #271 before anything of milestone 12 was built, each reason naming the rule that would score it; scored by #291 against the built tree, each ASSERTED record by the claim-marked test it names (no weaker than the rule its PENDING reason declared), each UNVERIFIABLE one with what would settle it and on what hardware. No record cites data/measured/fock_baseline.json as evidence: it is a quality baseline, never a numeric witness. Ordered by id: add a record in its place rather than rewriting the file.",
   "claims": [
     {
       "id": "fock/batch-magnitude-bound-direction",
       "statement": "§3.2 (decision 2 of this reading) assigns each contracted shell pair to 'the largest batch magnitude that is less than its G_ab value', which makes a batch's magnitude a LOWER bound on the Schwarz factors of the pair records it holds; Fig. 1's Kernel Launches panel labels the same magnitudes 'Upper bound'. The eq. 29 pre-launch screen drops a batch pair on its magnitude product alone, which is rigorous only if the magnitude bounds G_ab from above (the smallest magnitude at or above G_ab). Under the printed assignment a batch pair skipped before launch can hold a quartet with G_ab G_cd at or above tau.",
       "source": "[Fock, §3.2 decision 2 vs Fig. 1 Kernel Launches]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by the pair stream's batch assignment (#285), in #291: the record is asserted by a test showing that the printed assignment (largest magnitude below G_ab) lets the eq. 29 pre-launch screen drop a quartet with G_ab G_cd >= tau on some pair set, and that the upper-bound assignment the pair stream uses never does, checked against the unscreened two-electron F of ao/fock.py (#275)."
+      "status": "asserted",
+      "test": "test/test_fock_claims.py::test_the_printed_assignment_drops_f_and_the_upper_bound_one_does_not"
     },
     {
       "id": "fock/eq14-seed-inconsistent",
       "statement": "Eq. 14 (§2.1) seeds §3.1's VRRs with '[00|00]^(m) = U_P U_Q theta^m F_m(T)', theta = sqrt(zeta eta / (zeta + eta)). Against eqs. 25-26 it is wrong twice. The (m+1) coefficients of eqs. 25-26 (eta/(zeta+eta), zeta/(zeta+eta), 1/(2(zeta+eta))) are the Obara-Saika ones for a seed whose m-dependence is F_m(T) alone, so a theta^m factor breaks every step that mixes orders m and m+1. And with U_P, U_Q carrying (pi/zeta)^(3/2) and (pi/eta)^(3/2) (eqs. 12-13), the m = 0 seed lacks the factor 2 theta / sqrt(pi) that makes it 2 pi^(5/2) / (zeta eta sqrt(zeta + eta)) times the pair exponentials. The HGP engine's fundamental is derived, not transcribed from eq. 14.",
       "source": "[Fock, §2.1 vs eqs. 25-26]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by hgp/recurrence.py (#279) and the cross-engine pin against ao/eri.py (#281), in #291: the record is asserted by a test showing that the seed the HGP engine uses reproduces ao/eri.py's (ss|ss) and, through one VRR step, an m > 0 class, while eq. 14's printed seed does neither."
+      "status": "asserted",
+      "test": "test/test_hgp_recurrence.py::test_eq14s_printed_seed_fails_and_the_derived_one_passes"
     },
     {
       "id": "fock/eq26-ket-vrr-sign",
       "statement": "Eq. 26, the ket-side VRR of §3.1, prints its (m+1) displacement term as '-PQ zeta/(zeta+eta) [e0|f0]^(m+1)'. Under the convention eqs. 25 and 28 fix (PA = P - A, CD = C - D, so PQ = P - Q), the Obara-Saika displacement for the ket centre is W - Q = +zeta/(zeta+eta) PQ: eq. 25's '-PQ eta/(zeta+eta)' (W - P) is right, and eq. 26's sign is wrong. A transcribed eq. 26 gets every class built through the ket VRR wrong whenever P != Q.",
       "source": "[Fock, eq. 26 vs eq. 25]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by hgp/recurrence.py (#279) and the cross-engine pin against ao/eri.py (#281), in #291: the record is asserted by a test evaluating the ket VRR with eq. 26's printed sign and with the derived one on a quartet with P != Q, only the derived sign matching ao/eri.py (itself witnessed against libcint)."
+      "status": "asserted",
+      "test": "test/test_hgp_recurrence.py::test_eq26s_printed_ket_sign_fails_and_the_derived_one_passes"
     },
     {
       "id": "fock/eq29-screen-inequality-reversed",
       "statement": "Eq. 29 sets batch magnitudes 'tau^(i/n)', so batches i and j have magnitude product tau^((i+j)/n), at or below tau exactly when i + j >= n. §3.2 prints 'For all i and j such that i+j <= n, the batches will be screened'. Fig. 1's Kernel Launches panel (n = 2, magnitudes 1 and sqrt(tau), i = 0 and 1) launches every batch pair holding a magnitude-1 batch and omits exactly the (sqrt(tau), sqrt(tau)) pairs, i + j = 2 = n. Read 'screened' as removed and the printed inequality removes the largest batches; read it as kept and it keeps the pairs the figure omits. Either way the text contradicts the figure and the bound: the inequality that matches both is i + j >= n.",
       "source": "[Fock, eq. 29 vs Fig. 1 Kernel Launches]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by the pair stream's pre-launch screen (#285), in #291: the record is asserted by a test showing that, on eq. 29's magnitudes, the batch pairs the pair stream never launches are exactly those with i + j >= n, and that the printed i + j <= n would drop a quartet with G_ab G_cd >= tau."
+      "status": "asserted",
+      "test": "test/test_fock_claims.py::test_eq29s_printed_inequality_drops_f_and_i_plus_j_at_least_n_does_not"
     },
     {
       "id": "fock/fig1-digestion-unweighted",
       "statement": "Fig. 1's Block Execution panel digests each contracted ERI into six thread-private buffers, 'f_ab += (ab|cd) D_cd' and 'f_cd += (ab|cd) D_ab' (the Coulomb pair) and 'f_ac += (ab|cd) D_bd', 'f_ad += (ab|cd) D_bc', 'f_bc += (ab|cd) D_ad', 'f_bd += (ab|cd) D_ac' (the exchange four), every one with weight 1 and no degeneracy factor. With F = h + J - K/2 (eq. 18, §2.2) and one unique quartet standing for up to eight, the Coulomb and exchange buffers need different weights, and a quartet on a diagonal (a = b, c = d, or ab = cd) needs its degeneracy divided out: as printed, the panel builds neither J, nor K, nor F. The weights are derived (#283; milestone 12 pin 6), never transcribed from this panel.",
       "source": "[Fock, Fig. 1 Block Execution vs §2.2]",
       "kind": "defect",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by #283's derived six-block weights, in #291: the record is asserted by a test showing that the panel's unit-weight digestion, run over unique quartets, disagrees with fock_build_reference (ao/j.py and ao/k.py's every-ordered-quartet sweeps, through ao/fock.py, #275) on a fixture with a diagonal quartet, while the derived weights agree."
+      "status": "asserted",
+      "test": "test/test_kernel_f.py::test_fig1_digestion_unweighted_disagrees_with_the_sweep"
     },
     {
       "id": "fock/fused-six-block-digest",
-      "statement": "§3.2 and Fig. 1's Block Execution panel: one thread per contracted shell quartet computes every contracted ERI of it ('each thread is assigned to compute all contracted integrals arising from a single shell quartet') and updates the six two-index Fock blocks F_ab, F_ac, F_ad, F_bc, F_bd and F_cd, 'accounting for the 8 fold ERI symmetry'. In our terms: a fused Target.F class whose kernel does J's and K's digestion from one quartet evaluation, where Target.J and Target.K each evaluate a quartet for one matrix. §3's 'one-thread-per-contracted-ERI approach' is read as one thread per contracted quartet, as §3.2 and the figure say.",
+      "statement": "§3.2 and Fig. 1's Block Execution panel: one thread per contracted shell quartet computes every contracted ERI of it ('each thread is assigned to compute all contracted integrals arising from a single shell quartet') and updates the six two-index Fock blocks F_ab, F_ac, F_ad, F_bc, F_bd and F_cd, 'accounting for the 8 fold ERI symmetry'. In our terms: a fused Target.F class whose kernel does J's and K's digestion from one quartet evaluation, where Target.J and Target.K each evaluate a quartet for one matrix. §3's 'one-thread-per-contracted-ERI approach' is read as one thread per contracted quartet, as §3.2 and the figure say. Held on the built IR of all 21 classes: one block per bra pair, the ket loop strided by threadIdx.x / blockDim.x with the whole primitive nest inside it, every one of the class's n_a n_b n_c n_d ERIs declared after the nest in that thread and read by the digestion, and AtomicAdds into exactly the six blocks.",
       "source": "[Fock, §3, §3.2 decision 1, §3.2 decision 6, Fig. 1 Block Execution]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by the shape of the kernel kernel_f.py builds (#282, with #283's six-block predigest), in #291, on the built IR in the fast tier: one thread per contracted quartet in its thread mapping, every ERI of the class evaluated in that thread, and exactly six two-index outputs written."
+      "status": "asserted",
+      "test": "test/test_kernel_f.py::test_one_thread_per_contracted_quartet_evaluates_every_eri_into_six_blocks"
     },
     {
       "id": "fock/predigest-bounds-atomics",
-      "statement": "§3.2: 'Without partial digestion, the number of atomic operations per thread would scale with the number of integrals arising from the shell quartet. Partial digestion reduces this significantly, only the two-index buffers require atomic operations.' In our terms: with the six thread-private buffers, the AtomicAdd statements of a class's kernel scale with the six blocks' sizes (n_a n_b + n_a n_c + n_a n_d + n_b n_c + n_b n_d + n_c n_d Cartesian components), not with the class's n_a n_b n_c n_d ERIs.",
+      "statement": "§3.2: 'Without partial digestion, the number of atomic operations per thread would scale with the number of integrals arising from the shell quartet. Partial digestion reduces this significantly, only the two-index buffers require atomic operations.' In our terms: with the six thread-private buffers, the AtomicAdd statements of a class's kernel scale with the six blocks' sizes (n_a n_b + n_a n_c + n_a n_d + n_b n_c + n_b n_d + n_c n_d Cartesian components), not with the class's n_a n_b n_c n_d ERIs. Held as a COUNT of AtomicAdd statements in the built IR of the 21 classes, not as a timing or a contention measurement: per class the count equals the six-block size exactly, and its ratio to the ERI count falls strictly as a class grows in any shell, from 6 at (ss|ss) to 1/6 at (dd|dd). Below the crossing ((0,1,2,2) / (1,1,1,1)) the atomics OUTNUMBER the ERIs, so 'reduces significantly' holds for the large classes only; the scaling is what is asserted.",
       "source": "[Fock, §3.2 decision 6]",
       "kind": "monotonicity",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by counting AtomicAdd statements per class in the IR kernel_f.py builds (#282, #283), in #291, fast tier, no card: over the 21 classes of the ladder, the count is at most the class's six-block size, and its ratio to the class's ERI count falls as the class grows."
+      "status": "asserted",
+      "test": "test/test_kernel_f.py::test_predigest_bounds_atomics_recorded"
     },
     {
       "id": "fock/prelaunch-screening-removes-launches",
-      "statement": "Eq. 29 and §3.2: batch magnitudes 'tau^(i/n)' are chosen so that 'the product of the shell-pair batch magnitude equates to the screening threshold value', and a batch pair whose magnitude product is at or below tau is removed before any kernel is launched, which 'eliminates kernel call overhead and any warp divergence associated with intra-kernel screening' (Fig. 1's Kernel Launches panel, n = 2). In our terms: a launch-plan screen on batch pairs, ahead of the in-kernel six-block screen, with no counterpart in Target.J's launch plan, whose screen is per pair record inside the kernel. The printed inequality's direction is a separate record, fock/eq29-screen-inequality-reversed.",
+      "statement": "Eq. 29 and §3.2: batch magnitudes 'tau^(i/n)' are chosen so that 'the product of the shell-pair batch magnitude equates to the screening threshold value', and a batch pair whose magnitude product is at or below tau is removed before any kernel is launched, which 'eliminates kernel call overhead and any warp divergence associated with intra-kernel screening' (Fig. 1's Kernel Launches panel, n = 2). In our terms: a launch-plan screen on batch pairs, ahead of the in-kernel six-block screen, with no counterpart in Target.J's launch plan, whose screen is per pair record inside the kernel. The printed inequality's direction is a separate record, fock/eq29-screen-inequality-reversed. Held mechanically: the removed batch pairs are absent from the launch list and every quartet they hold has G_ab G_cd < tau. That the removal 'eliminates kernel call overhead and any warp divergence' worth having -- the screen's efficacy -- is NOT held: every fixture here is compact (milestone 12 pin 9), so how many launches it saves is a fact about the fixture, recorded as unmeasured in limits.json.",
       "source": "[Fock, eq. 29, §3.2 decision 3, Fig. 1 Kernel Launches]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by the pair stream (#285), in #291: on eq. 29's magnitudes, the batch pairs with i + j >= n are absent from the launch list, and no quartet they hold has G_ab G_cd >= tau. How many launches it saves is NOT scored: every molecule here is compact (milestone 12 pin 9)."
+      "status": "asserted",
+      "test": "test/test_fock_pairs.py::test_the_prelaunch_screen_removes_exactly_i_plus_j_at_least_n"
     },
     {
       "id": "fock/skip-not-break",
-      "statement": "§3.2: each thread screens its own quartet, '(ab|cd) if G_ab G_cd D_max < tau' with D_max over the six density blocks, and the batch sort by G times the pair's density-block maximum 'does not rigorously prevent warp divergence'. So a screened quartet is skipped (its thread does no work for it; Fig. 1 prints 'Exit' for the one quartet a thread owns) and no scan over |cd) is terminated. In our terms: the in-kernel screen of Target.F is a per-thread skip, the inverse of Target.J's (and Target.K's) sorted early break out of the ket loop, because the six-block D_max is not monotone along any one sort.",
+      "statement": "§3.2: each thread screens its own quartet, '(ab|cd) if G_ab G_cd D_max < tau' with D_max over the six density blocks, and the batch sort by G times the pair's density-block maximum 'does not rigorously prevent warp divergence'. So a screened quartet is skipped (its thread does no work for it; Fig. 1 prints 'Exit' for the one quartet a thread owns) and no scan over |cd) is terminated. In our terms: the in-kernel screen of Target.F is a per-thread skip, the inverse of Target.J's (and Target.K's) sorted early break out of the ket loop, because the six-block D_max is not monotone along any one sort. Held on the built IR and on the emitted CUDA and HIP text, beside Target.J's emitted break and Target.K's IR break.",
       "source": "[Fock, §3.2 decision 7, Fig. 1 Block Execution]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by kernel_f.py's emitted control flow (#282, #287), in #291: the screen is a guard around the quartet's work with no loop exit, contrasted in the same test with the break Target.J's emitted kernel takes."
+      "status": "asserted",
+      "test": "test/test_kernel_f.py::test_fock_skip_not_break_the_screen_is_a_skip"
     },
     {
       "id": "fock/symmetry-vs-screening",
       "statement": "§1: 'the Brc21 scheme fully exploits the eight-fold permutational symmetry of the ERIs, while the UM09 scheme elects to split the Coulomb and exchange computation for fine-grained density screening'; §2.3: 'full symmetry utilisation forces screening based on the density matrix to be less fine grained'; §4: 'complete symmetry utilization is sacrificed to enable screening based on one block of the density matrix rather than six'; restated for K in §4.3.1. In our terms: full 8-fold symmetry and a one-block density screen are mutually exclusive, and the choice of scheme is which one is given up. Target.J and Target.K (every ordered quartet, no symmetry) give up the symmetry, and Target.J's screen reads one density block, the ket's max|D_q|; the fused Target.F gives up the fine screen and reads six blocks.",
       "source": "[Fock, §1, §2.3, §4, §4.3.1]",
       "kind": "shape",
-      "status": "pending",
-      "reason": "Nothing is built yet. Scored by milestone 12's structure, in #291: Target.F (#272) beside Target.J and Target.K, and the screen of #283 and #285 reading six density blocks per quartet in the built IR where the MMD route reads one."
+      "status": "unverifiable",
+      "reason": "UNVERIFIABLE on this hardware, decided by #291. The claim is a performance trade -- which of full 8-fold symmetry or a one-block density screen to give up -- and [Fock] settles it with wall-clock: Tables 1-4 and §6's whole-program benchmarks on A100 (and V100) cards, against which no kernel or model here can be compared (limits.json). What IS held, unmarked, is the structure of the two diagonal cells milestone 12 put under one IR: the fused Target.F reads six weighted density blocks per quartet (test/test_kernel_f.py::test_the_screen_reads_six_density_blocks_weighted), and each of the six alone can keep a quartet, so no one-block screen is rigorous for it (test/test_kernel_f.py::test_each_of_the_six_blocks_can_keep_a_quartet); it uses the 8-fold orbit, with derived weights and degeneracy, held to the ordered sweep (test/test_kernel_f.py::test_the_weights_are_derived_from_the_orbit, test_every_degeneracy_case_equals_the_sweep); while Target.J and Target.K visit every ordered quartet with no symmetry (test/test_ao_fock.py::test_every_ordered_quartet_once) and Target.J's sorted screen reads one block, max|D_q| (test/test_kernel.py::test_the_screen_is_a_break_counted_in_iterations). Two instances do not show the two are mutually exclusive, and nothing here shows which gives up less. What would settle it on OUR cards: the fused F build and the split J + K build timed end to end, behind the card gate, on the RTX 3080 (sm_86) and the RX 9060 XT (gfx1200), over an EXTENDED molecule set where the density screen has distant pairs to remove (no fixture here has; pin 9, a follow-up), ideally with the off-diagonal cells (a fused MMD F or a split HGP J/K, both follow-ups) so that the scheme and the recurrence are not confounded. Reproducing [Fock]'s own conclusion needs an A100 and its benchmark set; that is out of reach here."
     }
   ]
 }

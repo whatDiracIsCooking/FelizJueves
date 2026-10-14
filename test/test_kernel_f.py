@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import re
 import time
 from dataclasses import astuple, replace
 from functools import cache, partial
@@ -127,7 +128,7 @@ COUNTS = {
 }
 
 # The AtomicAdd statements per class, RECORDED as built by #283 (the evidence
-# for `fock/predigest-bounds-atomics`, which #291 scores): exactly the six
+# for `fock/predigest-bounds-atomics`, asserted by #291): exactly the six
 # blocks' elements. Beside the ERI count (COUNTS' last column): the atomics
 # EXCEED the ERIs up to (0,1,1,2) -- 6 against 1 at (ss|ss) -- cross at
 # (0,1,2,2) / (1,1,1,1), and are 216 against 1,296 at (dd|dd).
@@ -250,15 +251,34 @@ def test_the_bra_record_is_staged_in_shared_memory_under_the_cap() -> None:
     assert order.index(stage) < order.index(ket)  # staged before any ket
 
 
+_BREAK = re.compile(r"^\s*break;", re.MULTILINE)
+_SCREEN = re.compile(r"if \(bound < tau\) \{\n((?:\s*//[^\n]*\n)*)\s*\} else \{")
+
+
+def _kernel_text(kernel: Kernel, backend: str) -> str:
+    """The emitted `__global__` function alone: the device `fj_boys` before
+    it has a `break` of its own (the series' convergence exit)."""
+    from felizjueves.device import GFX1200, SM_86
+    from felizjueves.emit import cuda, hip
+    emit, arch = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}[backend]
+    text = emit(kernel, arch)
+    assert text.count("__global__") == 1
+    return text[text.index("__global__"):]
+
+
+@pytest.mark.claim("fock/skip-not-break")
 @pytest.mark.parametrize("cls", [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)],
                          ids=str)
 def test_fock_skip_not_break_the_screen_is_a_skip(cls) -> None:
-    """`fock/skip-not-break` (pending; #291 scores it, so no claim mark): the
-    in-kernel screen guards the quartet's work and exits nothing. Its `then`
-    holds only a `Note`, its `orelse` the whole quartet, and there is no
-    `Break` anywhere in the kernel -- the inverse of `Target.K`'s sorted
-    early break, built beside it in the same IR. The canonical half test is
-    a skip of the same shape."""
+    """`fock/skip-not-break`: the in-kernel screen guards the quartet's work
+    and exits nothing. In the IR its `then` holds only a `Note`, its
+    `orelse` the whole quartet, and there is no `Break` anywhere in the
+    kernel; in the EMITTED text, on both vendors, the screen is `if (bound <
+    tau) { <comments> } else { ... }` and the kernel has no `break;`. The
+    contrast in the same test: `Target.J`'s emitted `[p|q]` kernel takes a
+    `break;` on its screen, and `Target.K`'s IR has a `Break` -- the sorted
+    early exits this kernel inverts. The canonical half test is a skip of
+    the same shape."""
     k = KF.build_f_kernel(cls)
     ket, half, screen = _the_half_and_screen(k)
     assert half.cond == Call(Fn.LT, (Var(KF.KET), Var("kmin")))
@@ -266,8 +286,16 @@ def test_fock_skip_not_break_the_screen_is_a_skip(cls) -> None:
         assert all(isinstance(x, Note) for x in s.then)
     assert not any(isinstance(s, Break) for s in walk(k.body))
     assert _find_for(screen.orelse, KF.KCD)  # the work is the orelse
-    # the contrast, in the same IR: Target.K's screen is a break
+    for backend in ("cuda", "hip"):
+        text = _kernel_text(k, backend)
+        assert not _BREAK.search(text), backend
+        assert len(_SCREEN.findall(text)) == 1, backend
+    # the contrast: Target.J's emitted screen is a break, Target.K's IR too
+    from felizjueves.kernel import build_pq_kernel
     from felizjueves.kernel_k import build_k_kernel
+    for backend in ("cuda", "hip"):
+        jtext = _kernel_text(build_pq_kernel(4), backend)
+        assert re.search(r"if \(bound < tau\) \{\n\s*break;", jtext), backend
     kk = build_k_kernel((1, 0, 0, 0))
     assert any(isinstance(s, Break) for s in walk(kk.body))
 
@@ -278,7 +306,8 @@ def _dsh_reads(stmts) -> set[tuple[str, str]]:
 
 
 def test_the_screen_reads_six_density_blocks_weighted() -> None:
-    """`fock/symmetry-vs-screening`'s F half (#291 scores it): the bound
+    """The structural half of `fock/symmetry-vs-screening` (UNVERIFIABLE,
+    #291: its reason names this test, unmarked, as what IS held): the bound
     reads SIX `Dsh` blocks, `ab cd ac ad bc bd`, each times its block's
     `|w|`, where `Target.J` reads one (`maxD * I_p * I_q`)."""
     k = KF.build_f_kernel((1, 1, 1, 1))
@@ -292,10 +321,11 @@ def test_the_screen_reads_six_density_blocks_weighted() -> None:
 
 
 def test_six_two_index_outputs_and_atomics_only_into_them() -> None:
-    """`fock/fused-six-block-digest`'s shape half (#291 scores it): every
-    `AtomicAdd` writes `F` at one of the six blocks' offset pairs, each block
-    gets exactly its elements, and nothing else is written to global memory
-    but the tap's `g` (absent from the shipped kernel)."""
+    """The six outputs on one mixed class: every `AtomicAdd` writes `F` at
+    one of the six blocks' offset pairs, each block gets exactly its
+    elements, and nothing else is written to global memory but the tap's
+    `g` (absent from the shipped kernel). The ladder-wide check, with the
+    thread mapping, is `fock/fused-six-block-digest`'s test below."""
     cls = (0, 1, 1, 2)
     k = KF.build_f_kernel(cls)
     n = [len(vrr.cartesians(x)) for x in cls]
@@ -310,6 +340,68 @@ def test_six_two_index_outputs_and_atomics_only_into_them() -> None:
     assert not any(isinstance(s, Assign) and isinstance(s.dst, Index)
                    and s.dst.array not in (KF.AB_SH,) for s in walk(k.body))
     assert KF.OUT not in {p.name for p in k.params}
+
+
+@pytest.mark.claim("fock/fused-six-block-digest")
+def test_one_thread_per_contracted_quartet_evaluates_every_eri_into_six_blocks(
+) -> None:
+    """`fock/fused-six-block-digest`, on the built IR of all 21 classes (the
+    builds are cheap: ~0.4 s at `(dd|dd)`, so no class is deferred):
+
+    * the thread mapping is one block per bra pair (`bra = blockIdx.x`,
+      `launch_shape`'s grid is the bra count) and one thread per contracted
+      quartet: the ket loop starts at `threadIdx.x` and strides by
+      `blockDim.x`, and the whole `K_CD x K_AB` primitive nest sits inside
+      it, so a quartet's contraction never leaves its thread;
+    * every ERI of the class -- each of the `n_a n_b n_c n_d` targets of
+      `hgp.hrr.targets` -- is declared inside that thread's screened work,
+      after the nest, and read by the digestion;
+    * exactly six two-index outputs are written: every `AtomicAdd` lands
+      in `F` at one of the six blocks' offset pairs, each block takes
+      exactly its `n_i n_j` elements, and nothing else reaches global
+      memory."""
+    o = ("oa", "ob", "oc", "od")
+    for cls in CLASSES:
+        k = _kernel(cls)
+        n = [len(vrr.cartesians(x)) for x in cls]
+        assert any(isinstance(s, Decl) and s.name == "bra"
+                   and s.init == Call(Fn.BLOCK_X) for s in walk(k.body)), cls
+        assert KF.launch_shape(7, 32) == (7, (32, 1))
+        ket = _find_for(k.body, KF.KET)
+        assert ket.start == Call(Fn.THREAD_X), cls
+        assert ket.step == Call(Fn.BLOCK_DIM_X), cls
+        assert sum(isinstance(s, For) and s.var == KF.KET
+                   for s in walk(k.body)) == 1, cls
+        _, _, screen = _the_half_and_screen(k)
+        work = screen.orelse
+        kcd = _find_for(work, KF.KCD)
+        assert _find_for(kcd.body, KF.KAB), cls  # the contraction, in-thread
+        eris = {R.hrr_name(t) for t in hrr.targets(cls)}
+        assert len(eris) == math.prod(n) == COUNTS[cls][4], cls
+        declared = {s.name for s in walk(work) if isinstance(s, Decl)}
+        assert eris <= declared, cls
+        in_nest = {s.name for s in walk(kcd.body) if isinstance(s, Decl)}
+        assert not eris & in_nest, cls  # after the nest, on contracted sums
+        read = {e.name for s in walk(work) for e in _vars(s)}
+        assert eris <= read, cls  # every ERI reaches the digestion
+        by_block: dict[tuple[str, str], int] = {}
+        for s in walk(k.body):
+            if isinstance(s, AtomicAdd):
+                assert s.dst.array == KF.FOCK, cls
+                key = tuple(e.args[0].name for e in s.dst.at)
+                by_block[key] = by_block.get(key, 0) + 1
+        assert by_block == {(o[i], o[j]): n[i] * n[j]
+                            for i, j in KF.BLOCKS}, cls
+        assert not any(isinstance(s, Assign) and isinstance(s.dst, Index)
+                       and s.dst.array != KF.AB_SH for s in walk(k.body)), cls
+
+
+def _vars(stmt) -> list[Var]:
+    """Every `Var` read by one statement's expressions (not its children's
+    bodies, which `walk` visits on its own)."""
+    from felizjueves.ir import _exprs_of, _subexprs
+    return [x for e in _exprs_of(stmt) if e is not None
+            for x in _subexprs(e) if isinstance(x, Var)]
 
 
 def test_a_non_f_class_is_refused() -> None:
@@ -852,12 +944,15 @@ def test_each_of_the_six_blocks_can_keep_a_quartet(block) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.claim("fock/predigest-bounds-atomics")
 def test_predigest_bounds_atomics_recorded() -> None:
-    """The evidence for `fock/predigest-bounds-atomics` (#291 scores it, so
-    no claim mark): per class the `AtomicAdd`s are EXACTLY the six blocks'
+    """`fock/predigest-bounds-atomics`, a COUNT of statements in the built
+    IR, not a timing: per class the `AtomicAdd`s are EXACTLY the six blocks'
     elements, never the `n_a n_b n_c n_d` ERIs; and their ratio to the ERIs
     falls strictly whenever a class grows in any shell (componentwise larger
-    Cartesian counts), from 6 at `(ss|ss)` to 1/6 at `(dd|dd)`."""
+    Cartesian counts), from 6 at `(ss|ss)` to 1/6 at `(dd|dd)`. Below the
+    crossing the atomics outnumber the ERIs (ATOMICS' comment); the claim
+    held is the scaling, not a saving at every class."""
     ratio = {}
     for cls in CLASSES:
         c = KF.counted(_kernel(cls))
@@ -914,10 +1009,11 @@ def test_a_whole_molecule_against_the_sweep_and_libcint(name) -> None:
     assert _worst(G, libcint, scale) <= LIBCINT_TOL
 
 
+@pytest.mark.claim("fock/fig1-digestion-unweighted")
 def test_fig1_digestion_unweighted_disagrees_with_the_sweep() -> None:
-    """The evidence for `fock/fig1-digestion-unweighted` (#291 scores it, so
-    no claim mark): Fig. 1's panel as printed -- six buffers, every one at
-    weight 1, no degeneracy factor -- run over the unique quartets of
+    """`fock/fig1-digestion-unweighted`: Fig. 1's panel as printed -- six
+    buffers, every one at weight 1, no degeneracy factor -- run over the
+    unique quartets of
     H2/STO-3G (a fixture with diagonal quartets) disagrees with
     `fock_build_reference`'s sweep, while the derived weights agree."""
     basis, D, _ = _molecule("h2_sto3g")

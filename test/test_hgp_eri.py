@@ -66,8 +66,9 @@ quartet of `h2o_631g_eri` and `hf_ccpvtz_eri` with every shell `l <= 2` --
 all 21 classes on HF/cc-pVTZ and the six s/p ones on H2O/6-31G (asserted).
 
 CAN IT FAIL. One HGP coefficient perturbed (`inv2pq`, by 1 + 1e-6) misses by
-far more than the tolerance; and the claims' scorer half (#291 scores them,
-so nothing here carries a `claim` mark): with eq 26's printed `WQ` sign the
+far more than the tolerance; and the claims' contracted twin (the `claim`
+marks, #291, are on test_hgp_recurrence.py's primitive-quartet tests, which
+the records name; nothing here carries one): with eq 26's printed `WQ` sign the
 contracted ket VRR misses, with the derived one it passes
 (`fock/eq26-ket-vrr-sign`, on contracted quartets with `P != Q`). Eq 14's
 seed (`fock/eq14-seed-inconsistent`) needs a seed the kernel's prelude does
