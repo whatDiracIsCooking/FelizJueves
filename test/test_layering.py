@@ -1131,6 +1131,7 @@ RULE_OF |= {m: "hgp" for m in _modules() if _under(m, "hgp")}
 EDGES |= {k: frozenset(v) for k, v in {
     "hgp": (),
     "hgp.vrr": (),
+    "hgp.hrr": ("hgp.vrr",),  # #274: the class check, Cartesians, targets
 }.items()}
 
 
