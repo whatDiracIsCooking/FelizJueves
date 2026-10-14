@@ -41,6 +41,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from test_ao_hermite import EPS, K, _derived, _lambda, _pair
+from test_ir import HGP_FACTORS
 
 from felizjueves import e_fragment as ef
 from felizjueves import ir
@@ -242,8 +243,11 @@ def test_every_new_factor_is_used() -> None:
             for e in ir._subexprs(s.init) if isinstance(e, Weighted)
             for t in e.terms}
     assert NEW_FACTORS <= used
+    # #152's members: everything before #277 widened the vocabulary for HGP
+    # (test_ir.HGP_FACTORS), which no E fragment uses.
     assert NEW_FACTORS == set(Factor) - {Factor.ONE, Factor.PQ_X, Factor.PQ_Y,
-                                         Factor.PQ_Z}
+                                         Factor.PQ_Z} - HGP_FACTORS
+    assert not HGP_FACTORS & used
 
 
 def test_the_binds_are_the_contract() -> None:

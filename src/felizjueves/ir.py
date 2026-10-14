@@ -14,14 +14,17 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 THE ONE THING EXPRESSED NATIVELY is the recurrence instruction, in the reduction
 form of `[JEngine, v2, eqs. 10-12]` (docs/implementation/j_engine.md):
 
-    dst = SUM_k ( c_k * g_k * src_k )      c_k a positive int, g_k a `Factor`
+    dst = SUM_k ( c_k * g_k * src_k )      c_k a nonzero int, g_k a `Factor`
 
 `Factor` is the declared, closed vocabulary of `g_k`: `1` and `PQ[d]`
-(and, for the `E` fragments, `1/2zeta`, `X_PA[d]`, `X_PB[d]`). With
-`c_k` in `{1, r_d - 1}` that is the two terms of
+(and, for the `E` fragments, `1/2zeta`, `X_PA[d]`, `X_PB[d]`; for the HGP
+recurrences of `[Fock]` eqs 25, 26 and 28, #277, the scalars listed on
+`Factor`). With `c_k` in `{1, r_d - 1}` that is the two terms of
 `[r]^(m) = PQ_d [r-1d]^(m+1) + (r_d - 1) [r-2d]^(m+1)`, and the cheap unit
 component (one multiply; the second term vanishes) is a one-term `Weighted`.
 A `g_k` that is an arbitrary string would be a `Raw` in disguise, so it raises.
+`c_k` is signed since #277 (eq 25's `-e_d` term); it is never zero -- a zero
+term is dropped, not emitted.
 
 CLOSED VOCABULARIES, all named here and nowhere else:
 
@@ -93,6 +96,57 @@ class Factor(Enum):
       `1/2zeta` is one bound scalar, not a `DIV` per term; `X_PA` and `X_PB`
       are per axis, as `PQ` is.
 
+    - The HGP recurrences of `[Fock]` §3.1 (#277), read off the built DAGs
+      `hgp.vrr` (#273) and `hgp.hrr` (#274), not off the paper:
+      - WP_X..WP_Z, WQ_X..WQ_Z, QC_X..QC_Z: eq 25's `W - P` and eq 26's
+        `W - Q` and `Q - C`, per axis. The bra's `P - A` is `PA_X..` above,
+        REUSED, not duplicated: it is `P - A` in both schemes, bound per
+        primitive pair in the HGP kernel and inside the `E` fragment in the
+        MMD one -- the evidence that the two vocabularies genuinely overlap
+        rather than coincide.
+      - INV2P, INV2Q, INV2PQ: `1/(2p)`, `1/(2q)`, `1/(2(p+q))`, each one bound
+        scalar (as `1/2zeta` is), the `e_d`, `f_d` multipliers riding in `c`.
+      - INV2P_ALPHA_OVER_P, INV2Q_ALPHA_OVER_Q: the DERIVED products
+        `(1/2p)(alpha/p)` and `(1/2q)(alpha/q)` of eqs 25-26's `(m+1)`
+        lowering term, each declared once per primitive quartet by the engine.
+      - AB_X..AB_Z, CD_X..CD_Z: eq 28's `A - B` and its ket twin `C - D`, per
+        axis. The HRR's transfer term is `ONE`; nothing else in eq 28 is new.
+
+    WHY A DERIVED SCALAR, NOT A PRODUCT TERM (#277, decision 2). Flattened,
+    eq 25 has one term whose `g` is a product of two named scalars,
+    `-e_d * inv2p * alpha_over_p * src` (eq 26 likewise with `q`). Two ways to
+    say it were open:
+
+    (a) `Term` grows a tuple of factors, `g = (INV2P, ALPHA_OVER_P)`. Every
+        consumer of a `Term` (the interpreter, the emitters' shared writer,
+        `lower`'s costing and recycling, `Kernel`'s binding check) learns a
+        product, the vocabulary stops being one scalar per term, and the
+        multiply that forms the product moves inside the recurrence -- once
+        per VRR term instead of once per primitive quartet.
+    (b) The engine declares the product as its own scalar, bound once per
+        primitive quartet, and `Term` stays single-factor.
+
+    (b) is the choice. It keeps `Factor` a closed, finite, one-scalar-per-term
+    vocabulary; it changes no existing `Term` consumer; and the product's cost
+    is paid where it belongs, in the engine, once per quartet. Nothing in the
+    built DAGs argues for (a): across every one of `hgp.vrr.CLASSES`' DAGs
+    the product appears only as these two pairs, never in a third
+    combination, so two derived members close it (test/test_ir.py checks
+    that every term of every built HGP DAG is a `Term` of this vocabulary).
+    `alpha/p` and `alpha/q` alone are deliberately NOT members: no DAG term
+    has either as its whole `g`, so each would be vocabulary "for later";
+    under (b) they are the engine's intermediates, not a `g_k`. A third
+    product would be the trigger to revisit (a).
+
+    THE SIGN LIVES IN `c`, NOT IN A FACTOR. The lowering term's coefficient
+    is `-e_d` (`hgp.vrr.reduce`'s `mult`), so `Term.c` is signed; folding the
+    sign into a negated derived scalar instead would keep `c >= 1` at the
+    price of a factor that means "minus" -- a sign spelled as a name. And
+    `WQ` names `W - Q` itself, which the engine forms from `W`: the
+    vocabulary does not carry eq 26's printed `-PQ zeta/(zeta+eta)`, whose
+    sign is the pending defect claim `fock/eq26-ket-vrr-sign`
+    (data/literature/fock/claims.json; scored by #279/#291, not here).
+
     A non-unit factor names a scalar the kernel must bind (a `Param` or `Decl`
     called `Factor.name_in_kernel`), which `Kernel` validates.
     """
@@ -108,6 +162,27 @@ class Factor(Enum):
     PB_X = "PB_x"
     PB_Y = "PB_y"
     PB_Z = "PB_z"
+    # #277: the HGP recurrences, [Fock] eqs 25-26 (VRR) and 28 (HRR)
+    WP_X = "WP_x"
+    WP_Y = "WP_y"
+    WP_Z = "WP_z"
+    WQ_X = "WQ_x"
+    WQ_Y = "WQ_y"
+    WQ_Z = "WQ_z"
+    QC_X = "QC_x"
+    QC_Y = "QC_y"
+    QC_Z = "QC_z"
+    INV2P = "inv2p"
+    INV2Q = "inv2q"
+    INV2PQ = "inv2pq"
+    INV2P_ALPHA_OVER_P = "inv2p_alpha_over_p"
+    INV2Q_ALPHA_OVER_Q = "inv2q_alpha_over_q"
+    AB_X = "AB_x"
+    AB_Y = "AB_y"
+    AB_Z = "AB_z"
+    CD_X = "CD_x"
+    CD_Y = "CD_y"
+    CD_Z = "CD_z"
 
     @property
     def name_in_kernel(self) -> str | None:
@@ -127,6 +202,31 @@ class Factor(Enum):
     def pb(cls, d: int) -> Factor:
         """`X_PB` on axis d (`P - B`), for d in 0, 1, 2 (x, y, z)."""
         return (cls.PB_X, cls.PB_Y, cls.PB_Z)[d]
+
+    @classmethod
+    def wp(cls, d: int) -> Factor:
+        """`W - P` on axis d, eq 25 (#277)."""
+        return (cls.WP_X, cls.WP_Y, cls.WP_Z)[d]
+
+    @classmethod
+    def wq(cls, d: int) -> Factor:
+        """`W - Q` on axis d, eq 26 (#277)."""
+        return (cls.WQ_X, cls.WQ_Y, cls.WQ_Z)[d]
+
+    @classmethod
+    def qc(cls, d: int) -> Factor:
+        """`Q - C` on axis d, eq 26 (#277)."""
+        return (cls.QC_X, cls.QC_Y, cls.QC_Z)[d]
+
+    @classmethod
+    def ab(cls, d: int) -> Factor:
+        """`A - B` on axis d, eq 28's bra HRR (#277)."""
+        return (cls.AB_X, cls.AB_Y, cls.AB_Z)[d]
+
+    @classmethod
+    def cd(cls, d: int) -> Factor:
+        """`C - D` on axis d, eq 28's ket twin (#277)."""
+        return (cls.CD_X, cls.CD_Y, cls.CD_Z)[d]
 
 
 class Fn(Enum):
@@ -297,17 +397,20 @@ class Call:
 
 @dataclass(frozen=True)
 class Term:
-    """One `c * g * src` of a `Weighted` sum."""
+    """One `c * g * src` of a `Weighted` sum: `c` a nonzero int (signed since
+    #277), `g` one `Factor` -- one scalar, never a product (`Factor`'s
+    docstring, "WHY A DERIVED SCALAR")."""
 
     c: int
     g: Factor
     src: Var | Index
 
     def __post_init__(self) -> None:
-        if type(self.c) is not int or self.c < 1:
+        if type(self.c) is not int or self.c == 0:
             # A zero term is dropped, not emitted: that is the unit-component
-            # saving. The reduction form's coefficients are 1 and r_d - 1 >= 1.
-            raise ValueError(f"Term coefficient {self.c!r} is not a positive int")
+            # saving. MMD's reduction form has 1 and r_d - 1 >= 1; HGP's eq 25
+            # (#277) adds the signed -e_d of its (m+1) lowering term.
+            raise ValueError(f"Term coefficient {self.c!r} is not a nonzero int")
         if not isinstance(self.g, Factor):
             raise ValueError(f"Term factor {self.g!r} is not in the Factor vocabulary")
         _lvalue(self.src, "a Term source")

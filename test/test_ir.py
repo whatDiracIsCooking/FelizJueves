@@ -100,13 +100,26 @@ def test_the_factor_vocabulary_is_closed_and_named() -> None:
     assert [f.name for f in Factor] == [
         "ONE", "PQ_X", "PQ_Y", "PQ_Z",
         # #152: the E recurrence's g_k (test_e_fragment uses each one)
-        "HALF_INV_ZETA", "PA_X", "PA_Y", "PA_Z", "PB_X", "PB_Y", "PB_Z"]
+        "HALF_INV_ZETA", "PA_X", "PA_Y", "PA_Z", "PB_X", "PB_Y", "PB_Z",
+        # #277: the HGP recurrences, [Fock] eqs 25-26 and 28
+        "WP_X", "WP_Y", "WP_Z", "WQ_X", "WQ_Y", "WQ_Z", "QC_X", "QC_Y", "QC_Z",
+        "INV2P", "INV2Q", "INV2PQ", "INV2P_ALPHA_OVER_P", "INV2Q_ALPHA_OVER_Q",
+        "AB_X", "AB_Y", "AB_Z", "CD_X", "CD_Y", "CD_Z"]
     assert [Factor.pq(d) for d in range(3)] == [Factor.PQ_X, Factor.PQ_Y, Factor.PQ_Z]
     assert [Factor.pa(d) for d in range(3)] == [Factor.PA_X, Factor.PA_Y, Factor.PA_Z]
     assert [Factor.pb(d) for d in range(3)] == [Factor.PB_X, Factor.PB_Y, Factor.PB_Z]
+    assert [Factor.wp(d) for d in range(3)] == [Factor.WP_X, Factor.WP_Y, Factor.WP_Z]
+    assert [Factor.wq(d) for d in range(3)] == [Factor.WQ_X, Factor.WQ_Y, Factor.WQ_Z]
+    assert [Factor.qc(d) for d in range(3)] == [Factor.QC_X, Factor.QC_Y, Factor.QC_Z]
+    assert [Factor.ab(d) for d in range(3)] == [Factor.AB_X, Factor.AB_Y, Factor.AB_Z]
+    assert [Factor.cd(d) for d in range(3)] == [Factor.CD_X, Factor.CD_Y, Factor.CD_Z]
     assert Factor.ONE.name_in_kernel is None
     assert Factor.PQ_Y.name_in_kernel == "PQ_y"
     assert Factor.HALF_INV_ZETA.name_in_kernel == "half_inv_zeta"
+    assert Factor.INV2P_ALPHA_OVER_P.name_in_kernel == "inv2p_alpha_over_p"
+    # Bound names are distinct: two members never claim one kernel scalar.
+    names = [f.value for f in Factor]
+    assert len(set(names)) == len(names)
     # Every bound name is an identifier: it is spelled as a C name.
     for f in Factor:
         if f.name_in_kernel is not None:
@@ -120,10 +133,132 @@ def test_a_factor_outside_the_vocabulary_raises(g: object) -> None:
         Term(1, g, Var("a"))  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("c", [0, -1, 1.0, True])
-def test_a_coefficient_is_a_positive_int(c: object) -> None:
-    with pytest.raises(ValueError, match="positive int"):
+@pytest.mark.parametrize("c", [0, 1.0, -1.0, True, False])
+def test_a_coefficient_is_a_nonzero_int(c: object) -> None:
+    # c = 0 is still refused now that c is signed (#277): a zero term is
+    # dropped, not emitted -- the unit-component saving.
+    with pytest.raises(ValueError, match="nonzero int"):
         Term(c, Factor.ONE, Var("a"))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("c", [-1, -2, 1, 3])
+def test_a_coefficient_is_signed(c: int) -> None:
+    # eq 25's (m+1) lowering term is -e_d * inv2p_alpha_over_p (#277).
+    t = Term(c, Factor.INV2P_ALPHA_OVER_P, Var("a"))
+    assert t.c == c
+
+
+# ---------------------------------------------------------------------------
+# #277: the vocabulary read off the built HGP DAGs, and the registry
+# ---------------------------------------------------------------------------
+
+# hgp.vrr's coefficient names, per reduction axis d -> the Factor that is its
+# g_k. The product names are the DERIVED scalars (Factor docstring, decision
+# 2): one bound name each, never a two-factor Term.
+_VRR_FACTOR = {
+    "PA": Factor.pa, "WP": Factor.wp, "QC": Factor.qc, "WQ": Factor.wq,
+    "inv2p": lambda d: Factor.INV2P,
+    "inv2q": lambda d: Factor.INV2Q,
+    "inv2pq": lambda d: Factor.INV2PQ,
+    "inv2p*a_over_p": lambda d: Factor.INV2P_ALPHA_OVER_P,
+    "inv2q*alpha_over_q": lambda d: Factor.INV2Q_ALPHA_OVER_Q,
+}
+_HRR_FACTOR = {"1": Factor.ONE} | {
+    f"{side}_{ax}": getattr(Factor, f"{side}_{ax.upper()}")
+    for side in ("AB", "CD") for ax in "xyz"}
+
+HGP_FACTORS = frozenset(Factor) - {
+    Factor.ONE, Factor.PQ_X, Factor.PQ_Y, Factor.PQ_Z, Factor.HALF_INV_ZETA,
+    Factor.PA_X, Factor.PA_Y, Factor.PA_Z, Factor.PB_X, Factor.PB_Y,
+    Factor.PB_Z}
+
+
+def _vrr_axis(node) -> int:
+    """`hgp.vrr.reduce`'s axis: the first nonzero of f, else of e."""
+    e, f, _ = node
+    return next(i for i, c in enumerate(f if any(f) else e) if c)
+
+
+def _hgp_terms():
+    """Every term of every built HGP DAG over the 21-class ladder, as an IR
+    `Term` -- which raises if the vocabulary cannot say it."""
+    from felizjueves.hgp import hrr, vrr
+
+    for cls in vrr.CLASSES:
+        for node, ts in vrr.build(cls).terms.items():
+            for t in ts:
+                yield "vrr", t.coef, Term(t.mult, _VRR_FACTOR[t.coef](
+                    _vrr_axis(node)), Var("src"))
+        for first in hrr.SIDES:
+            for ts in hrr.build(cls, first).terms.values():
+                for t in ts:
+                    yield "hrr", t.coef, Term(1, _HRR_FACTOR[t.coef], Var("src"))
+
+
+def test_every_hgp_dag_term_is_a_term_of_the_vocabulary() -> None:
+    from felizjueves.hgp import vrr
+
+    # The maps cover exactly the names the DAG modules declare.
+    assert set(_VRR_FACTOR) == set(vrr.BRA) | set(vrr.KET)
+    from felizjueves.hgp import hrr
+    assert set(_HRR_FACTOR) == set(hrr.COEFS)
+
+    used: set[Factor] = set()
+    signs: dict[Factor, set[bool]] = {}
+    for _, _, t in _hgp_terms():
+        used.add(t.g)
+        signs.setdefault(t.g, set()).add(t.c < 0)
+    # The ladder's DAGs use every new member (no "for later" vocabulary),
+    # plus ONE (HRR's transfer term) and PA, reused from the E fragment.
+    assert used == HGP_FACTORS | {Factor.ONE, Factor.PA_X, Factor.PA_Y,
+                                  Factor.PA_Z}
+    # The sign lives in c, and only on the derived (m+1) lowering scalars.
+    negative = {g for g, s in signs.items() if True in s}
+    assert negative == {Factor.INV2P_ALPHA_OVER_P, Factor.INV2Q_ALPHA_OVER_Q}
+    assert all(s == {True} for g, s in signs.items() if g in negative)
+
+
+def _built_kernels() -> list[Kernel]:
+    """One kernel of every family the generator builds today, at a size that
+    exercises every factor it can use."""
+    from felizjueves.kernel import build_pq_kernel
+    from felizjueves.kernel_dq import build_dq_kernel
+    from felizjueves.kernel_jab import build_jab_kernel
+    from felizjueves.kernel_k import build_k_kernel
+    from felizjueves.kernel_s import build_s_kernel
+    from felizjueves.kernel_t import build_t_kernel
+    from felizjueves.kernel_v import build_v_kernel
+
+    return [build_pq_kernel(2), build_dq_kernel((1, 1)),
+            build_jab_kernel((1, 1)), build_s_kernel((1, 1)),
+            build_t_kernel((1, 1)), build_v_kernel((1, 1)),
+            build_k_kernel((1, 0, 0, 0))]
+
+
+# Members no built kernel binds yet, each with the reason. The HGP members
+# await the fused F kernel (#282); this registry shrinks when it lands, and a
+# member listed here that a kernel does bind fails the test below.
+UNBOUND = {f: "awaiting #282, the fused HGP F kernel (no HGP kernel exists "
+              "before it)" for f in HGP_FACTORS}
+
+
+def test_every_factor_is_bound_by_a_built_kernel_or_registered_unbound() -> None:
+    bound: set[Factor] = set()
+    for k in _built_kernels():
+        names = ({p.name for p in k.params}
+                 | {s.name for s in walk(k.body) if isinstance(s, Decl)}
+                 | {b for s in walk(k.body) if isinstance(s, Inline)
+                    for b in s.fragment.binds})
+        used = {t.g for s in walk(k.body) for root in ir._exprs_of(s)
+                if root is not None for e in ir._subexprs(root)
+                if isinstance(e, Weighted) for t in e.terms}
+        # A factor counts as bound only where a Weighted uses it and a
+        # Param, Decl or fragment bind of its name exists.
+        bound |= {f for f in used
+                  if f.name_in_kernel is None or f.name_in_kernel in names}
+    assert bound.isdisjoint(UNBOUND), sorted(f.name for f in bound & set(UNBOUND))
+    assert bound | set(UNBOUND) == set(Factor), sorted(
+        f.name for f in set(Factor) - bound - set(UNBOUND))
 
 
 def test_weighted_rejects_empty_and_foreign_terms() -> None:

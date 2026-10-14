@@ -53,6 +53,7 @@ from felizjueves.ir import (
     Break,
     Call,
     Decl,
+    Factor,
     Fn,
     For,
     Fragment,
@@ -68,8 +69,10 @@ from felizjueves.ir import (
     Scalar,
     Space,
     Stmt,
+    Term,
     Var,
     WarpReduce,
+    Weighted,
     walk,
 )
 from felizjueves.plan.sieve import NO_SIEVE
@@ -357,6 +360,27 @@ def test_shared_memory_atomics_and_geometry() -> None:
                     hits=np.zeros(4, np.int32), out=np.zeros(12))
     assert got["out"].tolist() == [0.25] * 12
     assert got["hits"].tolist() == [3, 3, 3, 3]
+
+
+def test_a_signed_coefficient_is_interpreted_with_its_sign() -> None:
+    """#277: eq 25's (m+1) lowering term, `-e_d * inv2p_alpha_over_p * src`.
+
+    The interpreter needed no change -- `float(c)` was always signed -- and
+    this pins it: dyadic values, so the sums are exact."""
+    k = Kernel("signed", (
+        Param("inv2p_alpha_over_p", Scalar.F64),
+        Param("PA_x", Scalar.F64),
+        _f64("out", Intent.OUT)), (
+        Decl("a", Scalar.F64, init=Lit(0.75)),
+        Decl("b", Scalar.F64, init=Lit(0.5)),
+        Assign(Index("out", (Lit(0),)), Weighted((
+            Term(1, Factor.PA_X, Var("a")),
+            Term(-2, Factor.INV2P_ALPHA_OVER_P, Var("b")),
+            Term(-1, Factor.ONE, Var("a"))))),
+    ))
+    got = interpret(k, launch=Launch(grid=1, block=(1, 1), lanes=1),
+                    inv2p_alpha_over_p=0.25, PA_x=2.0, out=np.zeros(1))
+    assert got["out"].tolist() == [2.0 * 0.75 - 2 * 0.25 * 0.5 - 0.75]
 
 
 def test_the_machine_refuses_what_has_no_meaning() -> None:
