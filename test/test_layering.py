@@ -1156,6 +1156,36 @@ RULE_OF["hgp.recurrence"] = "hgp_builder"
 EDGES["hgp.recurrence"] = frozenset(("hgp.hrr", "hgp.vrr", "ir", "spec"))
 
 
+# #281: `ao.hgp_drive`, the HGP engine's ERI block INTERPRETED -- the
+# `ao.drive` precedent (builder + interp + ao, producing numbers) for engine
+# #2. It cannot live under `hgp/` (rule `hgp` admits only `hgp` and `spec`,
+# and `hgp_builder` bans `interp`), so it is an adapter of its own: the
+# MMD adapter's rule does not admit `hgp`, and widening it would let the
+# MMD driver reach the engine it is meant to be independent of.
+RULES |= {
+    "hgp_adapter": _rule(
+        "ao/hgp_drive.py (#281): `hgp.recurrence`'s VRR and HRR kernels run "
+        "in the interpreter on contracted shell quartets -- the HGP twin of "
+        "`ao.eri.eri_block`, same signature, for the cross-engine pin and "
+        "for `ao.fock`'s injected `eri=` slot (#286)",
+        ("spec", "ir", "interp", "hgp", "ao"),
+        reference=_GROUND_TRUTH + "; Boys arrives by injection (`boys=`), "
+                  "and the pin compares against ao/eri.py and libcint",
+        plan=RULES["hgp"].must_not["plan"],
+        emit="it produces numbers, not text: a backend's spelling is the "
+             "kernel tier's to check",
+        kernel="the MMD builder is the other engine: reaching it would make "
+               "the cross-engine pin share ancestry with its witness",
+        **{"ao.eri": "ao/eri.py is the witness this evaluator is pinned "
+                     "against; importing it would compare an engine to "
+                     "itself",
+           "ao.drive": "the MMD adapter runs the other engine"}),
+}
+RULE_OF["ao.hgp_drive"] = "hgp_adapter"
+EDGES["ao.hgp_drive"] = frozenset(("ao.shell", "hgp.hrr", "hgp.recurrence",
+                                   "interp", "ir", "spec"))
+
+
 def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
     # Milestone 12, pin 11, TRANSITIVELY and package-wide: no chain of
     # imports from any module under hgp/ reaches plan/ or reference/.
