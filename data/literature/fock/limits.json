@@ -156,6 +156,20 @@
         }
       },
       "source": "[Fock, §3.2 decision 2, eq. 29, §3.2 decision 3, §3.2 decision 8]"
+    },
+    {
+      "claim": "The cross-tree ptxas baseline (#289, data/measured/fock_baseline.json) is a quality baseline of common ancestry, never a numeric witness: it puts the generated F kernel's sm_86 registers, spill bytes and stack frame beside the predecessor's hand-spelled kernel's frozen PTXAS_MEASURED rows, under the predecessor's flags, and no correctness claim may cite it. It carries no threshold, no ratchet and no pass/fail on any delta.",
+      "mechanism": "Milestone 12 was designed from the predecessor's checkout, so the two kernels are not independent: where they agree, the agreement may be the shared design and not the physics, and a register count says nothing about a value in any case. Correctness is witnessed only from outside -- ao.fock's every-ordered-quartet sweep and libcint's vj/vk through the tracked fixtures (pin 6, pin 10). A tolerance on the deltas would turn a finding into a green test, so the file records them and the only structural reading is where the register ceiling falls: inside L = 3 there (ds|ps fits, pp|ps spills), between L = 3 and L = 4 here, with pp|ps the one class that crossed.",
+      "evidence": "data/measured/fock_baseline.json (its about, boundary and reading); test/test_fock_baseline.py holds the a >= b to la <= lb mapping a bijection on the eleven cells, the boundary recomputed from the rows, and each unit's source hash, and its cuda cases re-compile each unit under -dc -O2 --std=c++17 -arch=sm_86 and compare. Milestone 12's description: 'a quality baseline, never a numeric witness (same ancestry)'.",
+      "asserted_value": {
+        "numeric_witness": false,
+        "threshold": null,
+        "cells": 11,
+        "arch": "sm_86",
+        "flags": "-dc -O2 --std=c++17 -arch=sm_86",
+        "predecessor": "whatDiracIsCooking/fock-build-generator-private test/hgp/brc/ptxas_data.py (blob 246cf588b5b8d2915f8f85cc895d30b92d468b23)"
+      },
+      "source": "[Fock, §3.2]"
     }
   ]
 }

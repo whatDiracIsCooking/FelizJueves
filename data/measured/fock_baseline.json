@@ -1,0 +1,405 @@
+{
+  "schema": 1,
+  "about": "The cross-tree ptxas baseline on sm_86 (#289): this repo's generated fused F kernel (kernel_f.build_f_kernel, emitted by emit/cuda.py) beside the predecessor's hand-spelled fused Brc kernel, both compiled by nvcc 13.0 under the PREDECESSOR's flags, one row per class of the eleven its PTXAS_MEASURED table has with every shell l <= 2. A QUALITY BASELINE, NEVER A NUMERIC WITNESS: the two trees share ancestry (milestone 12 was designed from the predecessor's checkout), so agreement between them proves nothing about correctness, and no correctness claim may cite this file (data/literature/fock/limits.json says so). No threshold, no ratchet, no pass/fail on any delta: a class far off is the finding. Registers are informative only where a class does not spill (both trees pin at 255 when they do). The predecessor keys a class a >= b, this repo la <= lb with bra pair <= ket pair; each row's `predecessor_class` -> `class` is the explicit join (sort each pair ascending, then the two pairs ascending), held a bijection on the eleven cells by test/test_fock_baseline.py before any number is read. A mapped class is the same unordered quartet, not the same kernel: (ds|ps) there is (sp|sd) here, a different VRR target set and HRR. test/test_fock_baseline.py holds the file's shape, the mapping, the boundary reading and each unit's source hash in the fast tier, and re-compiles each unit under `flags` and compares (`cuda`, no card; (dd|dd) also `slow`).",
+  "flags": "-dc -O2 --std=c++17 -arch=sm_86",
+  "arch": "sm_86",
+  "register_ceiling": 255,
+  "predecessor": {
+    "repo": "whatDiracIsCooking/fock-build-generator-private",
+    "path": "test/hgp/brc/ptxas_data.py",
+    "table": "PTXAS_MEASURED",
+    "blob_sha": "246cf588b5b8d2915f8f85cc895d30b92d468b23",
+    "read_at_commit": "526a1877652576f49058d2e96c27438799e8dacf",
+    "measured_by": "2f1de7906c45d5134a8e3f32f953a5436179f65c (#816, PR #820: re-measured after #178's typed pair-stream reads; later commits only move the file)",
+    "date": "2026-10-05",
+    "toolchain": "nvcc 13.0 (13.0.88, per the file's docstring)",
+    "flags": "-dc -O2 --std=c++17 -arch=sm_86",
+    "arch": "sm_86",
+    "kernel": "hgp.brc.emit.cuda_fock.emit_fock_kernel, the priority-queue VRR schedule (lower_vrr -> topological_order_pq)",
+    "fields": "(registers, spill_store_bytes, spill_load_bytes, stack_frame_bytes), ptxas -v",
+    "cells_not_taken": "fs|ss, fs|fs, fp|fp, fd|fd: an f shell, outside milestone 12's ladder (pin 3)"
+  },
+  "this_tree": {
+    "repo": "whatDiracIsCooking/FelizJueves",
+    "base_commit": "28da834",
+    "toolchain": "nvcc 13.0 (Cuda compilation tools, release 13.0, V13.0.88)",
+    "flags": "-dc -O2 --std=c++17 -arch=sm_86",
+    "arch": "sm_86",
+    "command": "nvcc -dc -O2 --std=c++17 -arch=sm_86 -Xptxas -v -c <f_XXXX.cu> -o <f_XXXX.o>",
+    "kernel": "felizjueves.emit.cuda.emit(kernel_f.build_f_kernel(cls), SM_86): the unit `python -m felizjueves.emit --backend cuda --fock-class la lb lc ld` writes",
+    "host": "dba6c376c0a8 (container), compile only: no card was used",
+    "date": "2026-10-14",
+    "parser": "felizjueves.measured.parse_ptxas",
+    "cells_measured": "all eleven: the five L <= 2 cells (#289) and the six above (pp|ps through dd|dd, F5/#290's half) in one session, because a compile needs no card; #290 re-checks them with test_fock_baseline.py's `cuda` cases"
+  },
+  "rows": [
+    {
+      "predecessor_class": [0, 0, 0, 0],
+      "predecessor_label": "ss|ss",
+      "class": [0, 0, 0, 0],
+      "label": "ss|ss",
+      "L": 0,
+      "boundary_targets": {
+        "predecessor_orientation": 1,
+        "this_orientation": 1
+      },
+      "predecessor": {
+        "registers": 90,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 8
+      },
+      "this_tree": {
+        "kernel": "f_0000",
+        "registers": 72,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.8,
+        "source_sha256": "a288e3084aea82b12fada7c79067172eede180a569250688b50c08de8800caf3"
+      }
+    },
+    {
+      "predecessor_class": [1, 0, 0, 0],
+      "predecessor_label": "ps|ss",
+      "class": [0, 0, 0, 1],
+      "label": "ss|sp",
+      "L": 1,
+      "boundary_targets": {
+        "predecessor_orientation": 3,
+        "this_orientation": 4
+      },
+      "predecessor": {
+        "registers": 176,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 16
+      },
+      "this_tree": {
+        "kernel": "f_0001",
+        "registers": 100,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.8,
+        "source_sha256": "b1ac0d30070d451cdcada21e2a8cf4740ca39fd6b7ce042964fca69fd4e07814"
+      }
+    },
+    {
+      "predecessor_class": [1, 0, 1, 0],
+      "predecessor_label": "ps|ps",
+      "class": [0, 1, 0, 1],
+      "label": "sp|sp",
+      "L": 2,
+      "boundary_targets": {
+        "predecessor_orientation": 9,
+        "this_orientation": 16
+      },
+      "predecessor": {
+        "registers": 178,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 24
+      },
+      "this_tree": {
+        "kernel": "f_0101",
+        "registers": 158,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.8,
+        "source_sha256": "dc5065258b81ef153ea8a683f19ddb06bfe38ee37be2d4c88b9945c921f244af"
+      }
+    },
+    {
+      "predecessor_class": [1, 1, 0, 0],
+      "predecessor_label": "pp|ss",
+      "class": [0, 0, 1, 1],
+      "label": "ss|pp",
+      "L": 2,
+      "boundary_targets": {
+        "predecessor_orientation": 9,
+        "this_orientation": 9
+      },
+      "predecessor": {
+        "registers": 193,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 24
+      },
+      "this_tree": {
+        "kernel": "f_0011",
+        "registers": 120,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.8,
+        "source_sha256": "ed1e7612e24484d3a718483e0d7c045762ce7628983713d6b7a79e28d77e5327"
+      }
+    },
+    {
+      "predecessor_class": [2, 0, 0, 0],
+      "predecessor_label": "ds|ss",
+      "class": [0, 0, 0, 2],
+      "label": "ss|sd",
+      "L": 2,
+      "boundary_targets": {
+        "predecessor_orientation": 6,
+        "this_orientation": 10
+      },
+      "predecessor": {
+        "registers": 160,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 24
+      },
+      "this_tree": {
+        "kernel": "f_0002",
+        "registers": 123,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.8,
+        "source_sha256": "8ad4195543af30ce070720b0733dc6c8d35ced8a9bacd11feb585abef8a5f401"
+      }
+    },
+    {
+      "predecessor_class": [1, 1, 1, 0],
+      "predecessor_label": "pp|ps",
+      "class": [0, 1, 1, 1],
+      "label": "sp|pp",
+      "L": 3,
+      "boundary_targets": {
+        "predecessor_orientation": 27,
+        "this_orientation": 36
+      },
+      "predecessor": {
+        "registers": 255,
+        "spill_store_bytes": 264,
+        "spill_load_bytes": 192,
+        "stack_frame_bytes": 160
+      },
+      "this_tree": {
+        "kernel": "f_0111",
+        "registers": 211,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.9,
+        "source_sha256": "5733121e6a66c64bcb1a47feb35a9b86de5fe5fe857db65f9683f778b5460c9c"
+      }
+    },
+    {
+      "predecessor_class": [2, 0, 1, 0],
+      "predecessor_label": "ds|ps",
+      "class": [0, 1, 0, 2],
+      "label": "sp|sd",
+      "L": 3,
+      "boundary_targets": {
+        "predecessor_orientation": 18,
+        "this_orientation": 40
+      },
+      "predecessor": {
+        "registers": 233,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 32
+      },
+      "this_tree": {
+        "kernel": "f_0102",
+        "registers": 212,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "stack_frame_bytes": 0,
+        "smem_bytes": 8192,
+        "compile_s": 0.9,
+        "source_sha256": "1b2bad907415814e4e29633a0f64359ea5f6f7b314823489538f5b3791263984"
+      }
+    },
+    {
+      "predecessor_class": [1, 1, 1, 1],
+      "predecessor_label": "pp|pp",
+      "class": [1, 1, 1, 1],
+      "label": "pp|pp",
+      "L": 4,
+      "boundary_targets": {
+        "predecessor_orientation": 81,
+        "this_orientation": 81
+      },
+      "predecessor": {
+        "registers": 255,
+        "spill_store_bytes": 1644,
+        "spill_load_bytes": 1232,
+        "stack_frame_bytes": 648
+      },
+      "this_tree": {
+        "kernel": "f_1111",
+        "registers": 255,
+        "spill_store_bytes": 1308,
+        "spill_load_bytes": 1012,
+        "stack_frame_bytes": 544,
+        "smem_bytes": 8192,
+        "compile_s": 1.1,
+        "source_sha256": "e81641a903279aa82ec72aabc54ed9aad911c2fba030fea4cde52bc9cceea2b3"
+      }
+    },
+    {
+      "predecessor_class": [2, 0, 2, 0],
+      "predecessor_label": "ds|ds",
+      "class": [0, 2, 0, 2],
+      "label": "sd|sd",
+      "L": 4,
+      "boundary_targets": {
+        "predecessor_orientation": 36,
+        "this_orientation": 100
+      },
+      "predecessor": {
+        "registers": 255,
+        "spill_store_bytes": 304,
+        "spill_load_bytes": 260,
+        "stack_frame_bytes": 240
+      },
+      "this_tree": {
+        "kernel": "f_0202",
+        "registers": 255,
+        "spill_store_bytes": 1300,
+        "spill_load_bytes": 900,
+        "stack_frame_bytes": 480,
+        "smem_bytes": 8192,
+        "compile_s": 1.0,
+        "source_sha256": "7e3085ba4ea9febd3b7572b527a9d84d8a899970f6cd69abf9d7557b3f681dcb"
+      }
+    },
+    {
+      "predecessor_class": [2, 1, 2, 1],
+      "predecessor_label": "dp|dp",
+      "class": [1, 2, 1, 2],
+      "label": "pd|pd",
+      "L": 6,
+      "boundary_targets": {
+        "predecessor_orientation": 256,
+        "this_orientation": 361
+      },
+      "predecessor": {
+        "registers": 255,
+        "spill_store_bytes": 15564,
+        "spill_load_bytes": 15500,
+        "stack_frame_bytes": 5464
+      },
+      "this_tree": {
+        "kernel": "f_1212",
+        "registers": 255,
+        "spill_store_bytes": 23556,
+        "spill_load_bytes": 24144,
+        "stack_frame_bytes": 7872,
+        "smem_bytes": 8192,
+        "compile_s": 2.4,
+        "source_sha256": "931d0420cab4c75c4411a71a8486f564d30d97785d142ae61edbeec6472286ed"
+      }
+    },
+    {
+      "predecessor_class": [2, 2, 2, 2],
+      "predecessor_label": "dd|dd",
+      "class": [2, 2, 2, 2],
+      "label": "dd|dd",
+      "L": 8,
+      "boundary_targets": {
+        "predecessor_orientation": 961,
+        "this_orientation": 961
+      },
+      "predecessor": {
+        "registers": 255,
+        "spill_store_bytes": 102988,
+        "spill_load_bytes": 135096,
+        "stack_frame_bytes": 27912
+      },
+      "this_tree": {
+        "kernel": "f_2222",
+        "registers": 255,
+        "spill_store_bytes": 97516,
+        "spill_load_bytes": 137484,
+        "stack_frame_bytes": 26800,
+        "smem_bytes": 8192,
+        "compile_s": 14.7,
+        "source_sha256": "9fe66eb4c9e6ec9399cca62f9adea2c18fc29a546f182c73ddc6e9eb17ae4c70"
+      }
+    }
+  ],
+  "boundary": {
+    "about": "Classes named by the predecessor's label. A class fits when ptxas reports 0 spill-store and 0 spill-load bytes; `largest_fitting` is the fitting class with the most registers, `smallest_spilling` the spilling class with the fewest spill-store bytes. Structural only: where the register ceiling falls, not how good either side is.",
+    "predecessor": {
+      "fits": [
+        "ss|ss",
+        "ps|ss",
+        "ps|ps",
+        "pp|ss",
+        "ds|ss",
+        "ds|ps"
+      ],
+      "spills": [
+        "pp|ps",
+        "pp|pp",
+        "ds|ds",
+        "dp|dp",
+        "dd|dd"
+      ],
+      "largest_fitting": {
+        "class": "ds|ps",
+        "registers": 233
+      },
+      "smallest_spilling": {
+        "class": "pp|ps",
+        "spill_store_bytes": 264
+      },
+      "between": "inside L = 3: ds|ps fits (233 registers), pp|ps spills (264 B)"
+    },
+    "this_tree": {
+      "fits": [
+        "ss|ss",
+        "ps|ss",
+        "ps|ps",
+        "pp|ss",
+        "ds|ss",
+        "pp|ps",
+        "ds|ps"
+      ],
+      "spills": [
+        "pp|pp",
+        "ds|ds",
+        "dp|dp",
+        "dd|dd"
+      ],
+      "largest_fitting": {
+        "class": "ds|ps",
+        "registers": 212
+      },
+      "smallest_spilling": {
+        "class": "ds|ds",
+        "spill_store_bytes": 1300
+      },
+      "between": "between L = 3 and L = 4: every L <= 3 cell fits (sp|sd, the predecessor's ds|ps, at 212 registers), every L >= 4 cell spills (sd|sd, the predecessor's ds|ds, the least at 1300 B)"
+    },
+    "same_place": false,
+    "crossed": [
+      {
+        "class": "pp|ps",
+        "predecessor": "spills",
+        "this_tree": "fits"
+      }
+    ]
+  },
+  "reading": {
+    "match": "Every L >= 4 cell spills in both trees (pp|pp, ds|ds, dp|dp, dd|dd), and where the two orientations carry the same HRR boundary the two kernels land close: (dd|dd) 97516 / 137484 B spill stores / loads and a 26800 B stack frame here against 102988 / 135096 / 27912 there (-5%, +2%, -4%), (pp|pp) 1308 / 1012 / 544 against 1644 / 1232 / 648 (-20%, -18%, -16%).",
+    "mismatch": "(1) The boundary moves up by one class: pp|ps (sp|pp here) fits at 211 registers where the predecessor spills 264 B, so the ceiling now falls between L = 3 and L = 4 rather than inside L = 3; no class crossed the other way. (2) Two spilling cells spill MORE here: ds|ds (sd|sd) 1300 / 900 B against 304 / 260 (4.3x the stores), dp|dp (pd|pd) 23556 / 24144 B against 15564 / 15500 (1.5x). (3) Every fitting cell uses fewer registers here (72 to 212 against 90 to 233; ps|ss 100 against 176) and reports no stack frame where the predecessor reports 8 to 32 B.",
+    "hypotheses": [
+      "H1, the orientation sets the accumulator count. The contraction loop is inside the kernel (pin 5), so every VRR target the HRR reads is a contracted accumulator live across the K^4 loop, and that set is la..la+lb by lc..lc+ld: hgp.vrr.target_set, recorded per row as `boundary_targets`. The predecessor's a >= b puts the angular momentum on the VRR side; this repo's la <= lb puts it in the HRR and reads the boundary from 0. Where the counts are equal (pp|pp 81, dd|dd 961) the trees agree; where ours is larger they spill more (sd|sd 100 against 36, pd|pd 361 against 256). A hypothesis, not a conclusion: no kernel of the mirrored orientation was built here to test it.",
+      "H2, a smaller fixed per-thread state outside the recurrence. Where nothing spills this tree is lower even at equal or larger boundary counts (ss|pp 120 registers against 193 at 9 = 9; sp|pp 211 at 36 against the predecessor's spilling 27), which points at state the recurrence does not set -- the predecessor's typed pair-stream views (its #178 moved ds|ps by a register) or its screening and scatter bookkeeping -- and that headroom is the likeliest reason pp|ps crossed under the ceiling. Also a hypothesis: neither tree's register allocation was read past ptxas -v."
+    ]
+  }
+}
