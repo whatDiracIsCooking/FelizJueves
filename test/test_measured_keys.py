@@ -19,7 +19,13 @@ from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
 from felizjueves.device import MeasuredKey, by_name
 from felizjueves.kernel import k_spec, pq_spec, split
 from felizjueves.lower import RECYCLE
-from felizjueves.measured_store import SUBGRID, TUNED_CELLS, load, split_key
+from felizjueves.measured_store import (
+    SUBGRID,
+    TUNED_CELLS,
+    load,
+    split_key,
+    target_of,
+)
 from felizjueves.spec import Operator, Spec, Target
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
@@ -141,3 +147,19 @@ def test_target_f_moves_no_measured_key_and_joins_no_row() -> None:
         for arch, tc in arches.items()
     }
     assert f_keys.isdisjoint(rows)
+
+
+def test_an_f_key_reads_back_as_an_f_target_and_its_parts() -> None:
+    # #278: the store admits an F cell. An F key splits like every other key
+    # (spec key, arch, toolchain), its target slot reads back as `Target.F`,
+    # and the independent J and K parsers above reject it -- so an F row can
+    # never be re-derived as a J or K row, and the 216 tracked rows (196 J,
+    # 20 K) all still re-derive (the tests above) with the F check in place.
+    spec = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.F)
+    key = MeasuredKey(spec, by_name("sm_86"), "nvcc 13.0").key()
+    assert key == "coulomb/d0/(2,1|1,0)/b1/f/literal@sm_86/nvcc 13.0"
+    assert split_key(key) == (spec.key(), "sm_86", "nvcc 13.0")
+    assert target_of(key) is Target.F
+    assert not _SPEC_KEY.fullmatch(spec.key())
+    assert not _K_KEY.fullmatch(spec.key())
+    assert len(load()) == N_ROWS + 20
