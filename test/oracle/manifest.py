@@ -54,6 +54,23 @@ THE SHAPE (schema 2), one JSON object per file under `fixtures/`:
                  data yields it. Present only where a case records it; it lets
                  a later test build our shells with no PySCF. Cartesian only.
 
+THE FOCK PAIR (#280, milestone 12 pin 10). No fixture records the
+two-electron Fock matrix; it is COMBINED, never stored, from a `<m>_j` /
+`<m>_k` pair, which `fock_pair(m)` loads and `check_pair` asserts share
+their inputs before anything is combined: the raw `shells`, the `density`
+(exactly), `ao_loc`, `converted.common_factor` and `provenance.mol` (the
+issue's five), and also `provenance.basis` / `cart`, `atoms`, `nao`,
+`ao_labels`, the converted shells, the density recipe, and every array the
+two files both carry (`ovlp`, the one-electron matrices) -- each exactly.
+A pair regenerated at different times from different molecules would pass
+numerically on a small case and be meaningless, so a mismatch is a
+`FixtureError` naming both files and the field, never a tolerance. The
+combined quantity is `FockPair.two_electron() = vj - vk / 2`: PySCF's RHF
+`vj - 0.5 vk` for the total closed-shell density, `FOCK_EXCHANGE_FRACTION`
+= 1/2 (derived in `felizjueves.ao.fock`, which this module must not import;
+test/test_oracle_fock.py asserts the two constants agree). `fock_pairs()`
+names every tracked molecule that has both halves.
+
 FULL PRECISION. Floats are written by `json`, i.e. by `repr`, which is the
 shortest string that round-trips the double exactly, so "the numbers match"
 can mean `==` and not a tolerance. `dumps` is the one serialiser, and a
@@ -458,6 +475,102 @@ def load(path: Path | str) -> Fixture:
 def tracked() -> list[Path]:
     """Every tracked fixture file, sorted."""
     return sorted(FIXTURES.glob("*.json"))
+
+
+# --- the Fock pair (#280) ----------------------------------------------------
+
+J_SUFFIX, K_SUFFIX = "_j", "_k"
+# G = J - K / N_SPIN for the total closed-shell density (felizjueves.ao.fock's
+# derivation; PySCF's RHF vj - 0.5 vk). Not imported: this module stays numpy.
+FOCK_EXCHANGE_FRACTION = 0.5
+
+
+@dataclass(frozen=True)
+class FockPair:
+    """A `<name>_j` / `<name>_k` fixture pair that `check_pair` accepted."""
+
+    name: str
+    j: Fixture
+    k: Fixture
+
+    @property
+    def density(self) -> np.ndarray:
+        return self.j.density
+
+    @property
+    def vj(self) -> np.ndarray:
+        return self.j.arrays[J_ARRAY]
+
+    @property
+    def vk(self) -> np.ndarray:
+        return self.k.arrays[K_ARRAY]
+
+    def two_electron(self) -> np.ndarray:
+        """`G = vj - vk / 2`, PySCF's two-electron Fock matrix for the pair's
+        (total, closed-shell) density. `F = hcore + G`."""
+        g = self.vj - FOCK_EXCHANGE_FRACTION * self.vk
+        g.setflags(write=False)
+        return g
+
+
+def _pair_fail(fj: Fixture, fk: Fixture, msg: str) -> FixtureError:
+    return FixtureError(f"{fj.path} / {fk.path}: not a Fock pair: {msg}")
+
+
+def check_pair(fj: Fixture, fk: Fixture) -> None:
+    """Refuse, naming both files and the field, unless `fj` (carrying `vj`)
+    and `fk` (carrying `vk`) were computed from the same inputs. Every
+    comparison is exact (module docstring: THE FOCK PAIR)."""
+    if J_ARRAY not in fj.arrays:
+        raise _pair_fail(fj, fk, f"the first carries no {J_ARRAY}")
+    if K_ARRAY not in fk.arrays:
+        raise _pair_fail(fj, fk, f"the second carries no {K_ARRAY}")
+    if fj.converted is None or fk.converted is None:
+        raise _pair_fail(fj, fk, "both must record the converted basis")
+    pj, pk = fj.provenance, fk.provenance
+    fields = (  # the issue's five first, so the message names the first rot
+        ("shells", fj.shells, fk.shells),
+        ("ao_loc", fj.ao_loc, fk.ao_loc),
+        ("converted.common_factor", fj.converted.common_factor,
+         fk.converted.common_factor),
+        ("provenance.mol", pj.mol, pk.mol),
+        ("provenance.basis", pj.basis, pk.basis),
+        ("provenance.cart", pj.cart, pk.cart),
+        ("atoms", fj.atoms, fk.atoms),
+        ("nao", fj.nao, fk.nao),
+        ("ao_labels", fj.ao_labels, fk.ao_labels),
+        ("converted.shells", fj.converted.shells, fk.converted.shells),
+        ("density_recipe", fj.density_recipe, fk.density_recipe),
+    )
+    for name, a, b in fields[:3]:
+        if a != b:
+            raise _pair_fail(fj, fk, f"{name} differ")
+    if not np.array_equal(fj.density, fk.density):
+        raise _pair_fail(fj, fk, "density differ")
+    for name, a, b in fields[3:]:
+        if a != b:
+            raise _pair_fail(fj, fk, f"{name} differ")
+    shared = sorted(set(fj.arrays) & set(fk.arrays) - {"density"})
+    for name in shared:
+        if not np.array_equal(fj.arrays[name], fk.arrays[name]):
+            raise _pair_fail(fj, fk, f"arrays.{name} differ")
+
+
+def fock_pair(name: str, fixtures: Path = FIXTURES) -> FockPair:
+    """Load `<name>_j` and `<name>_k` and check them as a pair."""
+    fj = load(fixtures / f"{name}{J_SUFFIX}.json")
+    fk = load(fixtures / f"{name}{K_SUFFIX}.json")
+    check_pair(fj, fk)
+    return FockPair(name, fj, fk)
+
+
+def fock_pairs() -> list[str]:
+    """Every tracked molecule with both a `_j` and a `_k` fixture, sorted.
+    By file name only; `fock_pair` is what checks one."""
+    stems = {p.stem for p in tracked()}
+    return sorted(s[:-len(J_SUFFIX)] for s in stems
+                  if s.endswith(J_SUFFIX)
+                  and s[:-len(J_SUFFIX)] + K_SUFFIX in stems)
 
 
 def main(argv: list[str] | None = None) -> int:
