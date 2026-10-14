@@ -4,8 +4,9 @@ The witnesses are closed forms derivable by hand (two `s` primitives; parity
 on one centre), the self-adjointness of the operator against a recurrence that
 is NOT symmetric in `i <-> j`, the `j >= 2` guard of the `S_{i,j-2}` term, and
 an independent one-dimensional quadrature of `1/2 <a'|b'>` (integration by
-parts: no ket shift, no `E` table). The libcint comparison is a later issue's
-(milestone 11, `O1`). Fast tier, no marker, no PySCF.
+parts: no ket shift, no `E` table), and, since #240, libcint's `int1e_kin`
+through the tracked fixtures (the block at the end of this file; s/p fast,
+`slow` from l = 2). Fast tier otherwise, no marker, no PySCF.
 """
 
 from __future__ import annotations
