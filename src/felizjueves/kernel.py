@@ -101,13 +101,15 @@ from felizjueves.recurrence import (
     node_name,
     recurrence_body,
 )
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import Operator, Spec, Target, lever_provenance
 
 __all__ = [
     "JSH",
     "KET",
     "SORTED_KETS",
     "batch_contraction",
+    "builder_plan",
+    "lever_notes",
     "build_pq_kernel",
     "build_pq_kernels",
     "bra_functions",
@@ -226,8 +228,11 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
 
     The plan's levers are the plan layer's: `no-sieve`, and `tuned` (#161),
     the searched board's recorded cut and seed orders
-    (`pipeline.tuned_plan`; a cell with no recorded choice is refused). With
-    no lever every emitted byte is the literal reconstruction's.
+    (`pipeline.tuned_plan`; a cell with no recorded choice is refused). A
+    kernel-body lever (`levers.VOCABULARY`, #337) stays with the builder,
+    which records it in the kernel as a `Note` (`lever_notes`); the plan
+    never sees it (`builder_plan`). With no lever every emitted byte is the
+    literal reconstruction's.
     """
     spec = pq_spec(cls) if isinstance(cls, int) else cls
     if not isinstance(spec, Spec):
@@ -238,7 +243,7 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
             "several kernels and needs atomics ([JEngine, v2, §5]); "
             "build_pq_kernels builds it")
     lp, lq = split(spec)
-    (dag,) = plan(spec).dags
+    (dag,) = builder_plan(spec).dags
     if name is None:
         name = f"pq_L{lp + lq}_p{lp}_q{lq}"
     return _pq_kernel(spec, dag, name, "one batch")
@@ -278,13 +283,30 @@ def build_pq_kernels(spec: Spec) -> tuple[Kernel, ...]:
         return (build_pq_kernel(spec),)
     lp, lq = split(spec)
     out = []
-    for i, dag in enumerate(plan(spec).dags):
+    for i, dag in enumerate(builder_plan(spec).dags):
         direction, a, b = dag.batch
         name = f"pq_L{lp + lq}_p{lp}_q{lq}_{direction}{a}_{b}"
         head = (f"batch {i + 1} of {spec.n_batches}, "
                 f"{direction.upper()}_{{{a},{b}}}")
         out.append(atomize(_pq_kernel(spec, dag, name, head)))
     return tuple(out)
+
+
+def builder_plan(spec: Spec):
+    """`pipeline.plan` of `spec` without its kernel-body levers (#337).
+
+    Those levers are the builder's (`levers.VOCABULARY`), not the plan
+    layer's, which refuses any lever it does not implement; the rest (`no-
+    sieve`, `tuned`) reach the plan as they always have."""
+    return plan(spec.without_kernel_body_levers())
+
+
+def lever_notes(spec: Spec) -> tuple[Note, ...]:
+    """One provenance `Note` per kernel-body lever `spec` carries, in key
+    order: what makes a lever-carrying build observable in its `Kernel`
+    (#337). Empty for every spec without one, so no literal byte moves."""
+    return tuple(Note(lever_provenance(lv))
+                 for lv in spec.kernel_body_levers())
 
 
 Contraction = tuple[tuple[int, R, tuple[tuple[int, R], ...]], ...]
@@ -398,6 +420,7 @@ def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
     body: tuple[Stmt, ...] = (
         Note(f"[JEngine, v2, Alg. 1]: J_p = SUM_q [p|q] D_q, class lp={lp} "
              f"lq={lq} (L={lp + lq}), {head}, no atomics"),
+        *lever_notes(spec),
         Note(SORTED_KETS),
         Note("launch: blockDim = (1, warp width), one warp per bra index"),
         Decl("bra", Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(

@@ -81,6 +81,12 @@ WHAT #55 FOUND: neither hurt nor help. nvcc 13.0 and hipcc / ROCm 7.2.4 emit
 identical machine code for the two arms in every batch kernel of the
 subgrid -- both promote the statically indexed slot array back to scalars --
 so the lever is a no-op on this box's toolchains and stays opt-in.
+
+A LOWERING LEVER IS NOT A KERNEL-BODY LEVER (#337). The builders' own levers
+live in `levers.VOCABULARY`, which reserves `recycle` as lowering's
+(`levers.OTHER_LAYERS`, pinned to `LEVERS` by test/test_lower.py), so a
+builder never mistakes this one for its own and still hands it to the plan,
+which refuses it, exactly as before.
 """
 
 from __future__ import annotations

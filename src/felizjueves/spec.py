@@ -91,6 +91,14 @@ positive multiple of 3 -- finer splits break the three-way symmetry
 ([JEngine, v2, §5]). `is_batch_count` is that rule, stated once; for a
 pair target the count is 1 and only 1 (above).
 
+A KERNEL-BODY LEVER IS LEGAL PER TARGET (#337). `levers` holds names from
+several layers: the plan's (`no-sieve`, `tuned`), lowering's (`recycle`)
+and, since milestone 13, the kernel builders' own (`levers.VOCABULARY`). The
+last kind is checked HERE, against each lever's legality table, and an
+illegal `(target, lever)` is refused with the table's stated reason; a name
+outside the vocabulary passes through to its own layer, as before. The key
+spells every lever alike, so every pre-existing key is byte-identical.
+
 Values only, plus two derived reads: `total_am` above, and `key`, a string
 form of the key for file names and JSON, where a dataclass cannot go.
 """
@@ -99,6 +107,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+
+from felizjueves import levers as _levers
 
 
 class Operator(StrEnum):
@@ -205,7 +215,8 @@ class Spec:
     am: tuple[int, int, int, int] | tuple[int, int]
     target: Target
     # Named departures from the paper, sorted and unique. () is the literal
-    # [JEngine] reconstruction.
+    # [JEngine] reconstruction. A kernel-body lever (`levers.VOCABULARY`)
+    # must be legal on `target` (#337).
     levers: tuple[str, ...] = ()
     # 1, or a multiple of 3: finer splits break the three-way symmetry
     # ([JEngine, v2, §5]).
@@ -251,6 +262,11 @@ class Spec:
             raise ValueError(f"levers {self.levers!r} must be non-empty strings")
         if tuple(sorted(set(self.levers))) != self.levers:
             raise ValueError(f"levers {self.levers!r} must be sorted and unique")
+        for lever in self.levers:
+            why = _levers.refusal(self.target, lever)
+            if why is not None:
+                raise ValueError(
+                    f"lever {lever!r} on target {self.target}: {why}")
         if not is_batch_count(self.n_batches):
             raise ValueError(
                 f"n_batches {self.n_batches!r} is neither 1 nor a positive "
@@ -313,3 +329,25 @@ class Spec:
             f"{self.operator}/d{self.derivative_order}/{cls}/"
             f"b{self.n_batches}/{self.target}/{levers}"
         )
+
+    def kernel_body_levers(self) -> tuple[str, ...]:
+        """The levers a kernel BUILDER reads (`levers.VOCABULARY`, #337), in
+        key order; the rest belong to the plan or to lowering."""
+        return _levers.split(self.levers)[0]
+
+    def without_kernel_body_levers(self) -> Spec:
+        """This spec as the plan layer must see it: its kernel-body levers
+        removed (the plan refuses any lever it does not own), every other
+        field kept. `self` itself when it carries none (#337)."""
+        body, rest = _levers.split(self.levers)
+        if not body:
+            return self
+        return Spec(self.operator, self.derivative_order, self.am,
+                    self.target, rest, self.n_batches)
+
+
+def lever_provenance(name: str) -> str:
+    """The provenance line a builder records for kernel-body lever `name`
+    (`levers.provenance`, re-exported so a builder reads the vocabulary
+    through the key it already depends on)."""
+    return _levers.provenance(name)

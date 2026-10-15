@@ -61,7 +61,18 @@ _GROUND_TRUTH = ("an import from reference/ makes it share ancestry with the "
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
     "spec": _rule("the frozen key every subsystem joins on; it depends on "
-                  "nothing so that everything may depend on it", ()),
+                  "nothing but the lever vocabulary (a leaf, #337), so that "
+                  "everything may depend on it", ("levers",)),
+    "levers": _rule(
+        "levers.py (#337): the kernel-body lever vocabulary and its "
+        "per-target legality table, as data. A leaf, so that `spec` can "
+        "refuse an illegal (target, lever) at construction; targets are "
+        "named by their key slot, never by importing `spec`",
+        (),
+        spec="`spec` imports this module to validate; the reverse is a cycle",
+        plan="the plan layer's levers are its own; this vocabulary is the "
+             "builders'",
+        lower="lowering's levers are its own (`lower.LEVERS`)"),
     "literature": _rule(
         "published tables and the rules that score against them; self-contained "
         "so that a score cannot be bent by the code it scores",
@@ -137,8 +148,11 @@ RULES: dict[str, Rule] = {
         "#23) and kernel.py (the [p|q] contract, Alg. 1, #25). They read the "
         "plan and the key and produce a vendor-neutral `Kernel`; a split "
         "class's kernels are built then `passes.atomize`d (#49), so a "
-        "builder may apply a pass",
+        "builder may apply a pass. It reads the kernel-body levers through "
+        "the key (`Spec.kernel_body_levers`, #337), never `levers` directly",
         ("spec", "plan", "ir", "recurrence", "passes"),
+        levers="the builder reads the lever vocabulary through `spec`, its "
+               "one key (#337); the vendor-neutral import set is pinned",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific "
              "(#25)",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
@@ -519,11 +533,12 @@ RULE_OF: dict[str, str] = {
     "kernel_dq": "dq_builder",
     "kdup": "count",
     "kernel_k": "k_builder",
+    "levers": "levers",
 }
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "__init__": (),
-    "spec": (),
+    "spec": ("levers",),
     "literature": (),
     "literature.claims": (),
     "literature.limits": (),
@@ -616,8 +631,11 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
     "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
-    "kernel_k": ("e_fragment", "ir", "kernel", "passes", "plan.pipeline",
+    # #337: the plan reached through `kernel.builder_plan`, which strips the
+    # kernel-body levers, so `plan.pipeline` is no longer imported here.
+    "kernel_k": ("e_fragment", "ir", "kernel", "passes",
                  "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "levers": (),
 }.items()}
 
 # The rules under which a module writes kernel text, for #20's hazard.
