@@ -213,8 +213,10 @@ def test_an_f_key_with_a_non_vocabulary_lever_is_still_refused(
 
 def test_cell_kernels_names_a_lever_cell_s_units_as_the_ladder_does(
         probe) -> None:
-    j = measured_store.lever_arm(measured_store.SUBGRID[1], PROBE)  # split
-    lit = build_pq_kernels(measured_store.SUBGRID[1])
+    split = pq_spec(2, n_batches=3)  # L <= 2: a split cell, cheap to build
+    j = measured_store.lever_arm(split, PROBE)
+    lit = build_pq_kernels(split)
+    assert len(lit) == 3
     got = measured.cell_kernels(j)
     assert [k.name for k in got] == [f"{k.name}_lv_probe" for k in lit]
     assert got[0] != replace(lit[0], name=got[0].name)  # the Note differs
@@ -224,7 +226,7 @@ def test_cell_kernels_names_a_lever_cell_s_units_as_the_ladder_does(
     f = measured_store.lever_arm(f_class_spec(0, 0, 0, 0), PROBE)
     assert [x.name for x in measured.cell_kernels(f)] == ["f_0000_lv_probe"]
     # a literal cell, and a plan arm, keep the builder's names
-    assert measured.cell_kernels(measured_store.SUBGRID[1]) == lit
+    assert measured.cell_kernels(split) == lit
 
 
 @pytest.mark.parametrize(("argv", "want"), [

@@ -311,13 +311,31 @@ def test_with_the_vocabulary_empty_there_is_no_lever_flag(tmp_path):
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_a_declared_lever_moves_no_unflagged_unit(backend, monkeypatch,
+                                                  tmp_path):
+    """Declaring a lever adds its flags and nothing else: an unflagged
+    command writes the same units, byte for byte (L <= 2 here; the bare
+    37-unit default is the `slow` twin below)."""
+    argv = ("--L", "0", "1", "2", "--pair-l", "1")
+    assert _run(tmp_path / "before", backend, *argv) == 0
+    _declare(monkeypatch, {"j", "k", "f"})
+    assert [lf.flag for lf in lever_ladder.flags()] == [
+        "--klever-probe-pq", "--klever-probe-k", "--klever-probe-fock-l"]
+    assert _run(tmp_path / "after", backend, *argv) == 0
+    names = _names(tmp_path / "before")
+    assert _names(tmp_path / "after") == names and len(names) == 9
+    for n in names:
+        assert (tmp_path / "after" / n).read_bytes() == \
+            (tmp_path / "before" / n).read_bytes()
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
+@pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_a_declared_lever_gets_its_flags_and_the_default_is_unmoved(
         backend, monkeypatch, tmp_path):
     """Declaring a lever adds its flags and nothing else: the bare command
     still writes the 37 J-chain units, byte for byte (the pins above)."""
     _declare(monkeypatch, {"j", "k", "f"})
-    assert [lf.flag for lf in lever_ladder.flags()] == [
-        "--klever-probe-pq", "--klever-probe-k", "--klever-probe-fock-l"]
     _, _, ext = BACKEND[backend]
     assert _run(tmp_path, backend) == 0
     assert _names(tmp_path) == _pq_names(ext) | _pair_names(ext)
@@ -335,19 +353,32 @@ def test_the_pq_lever_ladder_adds_its_units_beside_the_literal(
     lit = tmp_path / "lit"
     assert _run(lit, backend, "--L", "1", "2") == 0
     assert _run(tmp_path / "lv", backend, "--L", "1", "2",
-                "--klever-probe-pq", "1", "3") == 0
+                "--klever-probe-pq", "0", "2") == 0
     lv = tmp_path / "lv"
-    assert _names(lv) == _names(lit) | {f"pq_L1_p1_q0_lv_probe.{ext}",
-                                        f"pq_L3_p2_q1_lv_probe.{ext}"}
+    assert _names(lv) == _names(lit) | {f"pq_L0_p0_q0_lv_probe.{ext}",
+                                        f"pq_L2_p1_q1_lv_probe.{ext}"}
     for n in _names(lit):  # the literal units did not move
         assert (lv / n).read_bytes() == (lit / n).read_bytes()
-    for L in (1, 3):
+    for L in (0, 2):
         k = build_pq_kernel(pq_spec(L, levers=(PROBE,)))
         k = replace(k, name=f"{k.name}_lv_probe")
         assert (lv / f"{k.name}.{ext}").read_text() == emit(k, arch)
         assert "lever probe (#339)" in emit(k, arch)  # the builder's Note
 
 
+def test_the_k_lever_ladder_adds_beside_the_selected_ladders(monkeypatch,
+                                                            tmp_path):
+    _declare(monkeypatch, {"j", "k"})
+    assert _run(tmp_path, "hip", "--L", "0", "--klever-probe-k", "1", "2") == 0
+    ks = [build_k_kernel(replace(k_spec(L), levers=(PROBE,))) for L in (1, 2)]
+    assert _names(tmp_path) == {"pq_L0_p0_q0.hip"} | {
+        f"{k.name}_lv_probe.hip" for k in ks}
+    for k in ks:
+        assert "lever probe (#339)" in (
+            tmp_path / f"{k.name}_lv_probe.hip").read_text()
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
 def test_a_lever_flag_alone_adds_to_the_default_ladders(monkeypatch, tmp_path):
     _declare(monkeypatch, {"j", "k"})
     assert _run(tmp_path, "cuda", "--klever-probe-pq", "0",
