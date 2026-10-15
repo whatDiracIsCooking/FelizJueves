@@ -167,6 +167,18 @@ reassociates every sum it cuts -- `I[p]`'s fold over `q` is cut by `r`,
 `D V_1 + D V_2`. On a card the atomics also add in hardware order, so a
 batched `K` is not bit-reproducible run to run (`passes.atomize`'s note).
 
+THE LEVER SEAMS (#367). `_k_kernel` below is a SKELETON: the parts no
+milestone-13 lever moves are laid out here, and every part a lever does move
+-- the accumulator slicing, a fan-out into several kernels, the shared
+array, the `E^ac` / `E^bd` bindings and reads, the contraction region (stage
+1, stages 2 and 3), the accumulator's zeroing, the write-back, the parameters
+and a last rewrite -- is asked of a `k_levers.seams.KHooks`, whose defaults
+are this module's code before #367, moved statement for statement (the
+literal kernel is byte-identical: test/test_k_seams.py). A K lever lands as
+its own module, `k_levers/<name>.py`, registered in `k_levers.REGISTRY`; the
+builders resolve a spec's levers through `k_levers.hooks_for` and this file
+does not change for a new lever.
+
 Nothing here is CUDA- or HIP-specific, and nothing imports `ao/` (the host
 staging it is checked against), the interpreter, `reference/`, a backend or
 a device.
@@ -174,40 +186,40 @@ a device.
 
 from __future__ import annotations
 
-from felizjueves import e_fragment as ef
 from felizjueves.ir import (
-    Assign,
     Break,
     Call,
     Decl,
     Expr,
-    Factor,
     Fn,
     For,
     If,
     Index,
-    Inline,
-    Intent,
     Kernel,
     Lit,
     Note,
-    Param,
     Scalar,
-    Space,
     Stmt,
     Var,
-    WarpReduce,
+)
+from felizjueves.k_levers import hooks_for
+from felizjueves.k_levers.seams import (
+    KET,
+    KSH,
+    PARAMS,
+    SPLIT_WRITE,
+    EmptyKernel,
+    KContext,
+    KHooks,
+    ncart,
 )
 from felizjueves.kernel import builder_plan, lever_notes, split
 from felizjueves.kernel import launch_shape as _j_launch_shape
 from felizjueves.passes import atomize
-from felizjueves.plan.schedule import schedule
-from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import (
     PQ_PARAMS,
     THETA,
     fundamental_prelude,
-    node_name,
     recurrence_body,
 )
 from felizjueves.spec import Operator, Spec, Target
@@ -227,14 +239,6 @@ __all__ = [
     "shared_doubles",
 ]
 
-KET = "k"  # the strip-mined ket loop's variable, as in kernel.py
-KSH = "Ksh"  # the shared I column and K accumulator, one array
-
-PARAMS = ("n_bra", "n_ket", "n_dc", "tau", "maxD",
-          "P", "zeta_ac", "XPA", "XPC", "s_ac", "Ip", "dc",
-          "Q", "eta", "XQB", "XQD", "s_bd", "Iq", "dd",
-          "Dcd", "K")
-
 SORTED_BY_IQ = (
     "PRECONDITION: kets arrive sorted by Iq ALONE, descending. The screen "
     "below is a break, not a continue: once Ip * Iq * maxD < tau the whole "
@@ -247,15 +251,6 @@ NO_DENSITY_KEY = (
     "order can track it, and the bound carries the global maxD instead. "
     "Prior art, [Fock, §4.3.1]: 'Unlike the J scheme, we cannot order our "
     "shell pairs based on the magnitude of the density matrix.'")
-
-
-SPLIT_WRITE = (
-    "atomic write, by lane 0 only: the partial-sum form (#203). A batch "
-    "holds only some targets r = p + q, so it completes stage 1 for only "
-    "some p, while stage 2 sums over ALL p: every batch kernel of the class "
-    "adds its partial K[a,b] to the same K[a,b], so the write must "
-    "accumulate (passes.atomize, as a split J kernel writes J_p, [JEngine, "
-    "v2, §5]). The lane-0 guard stays: every lane holds the warp sum")
 
 
 def k_class_spec(la: int, lc: int, lb: int, ld: int) -> Spec:
@@ -281,16 +276,12 @@ def _spec_of(cls: tuple[int, int, int, int] | Spec) -> Spec:
     return spec
 
 
-def _ncart(l: int) -> int:  # noqa: E741
-    return (l + 1) * (l + 2) // 2
-
-
 def shared_doubles(am: tuple[int, int, int, int]) -> int:
     """Doubles of `Ksh` per lane: `n_p + n_a n_b`, from the class alone."""
     la, lc, lb, _ = am
     lp = la + lc
     n_p = (lp + 1) * (lp + 2) * (lp + 3) // 6
-    return n_p + _ncart(la) * _ncart(lb)
+    return n_p + ncart(la) * ncart(lb)
 
 
 def shared_bytes(am: tuple[int, int, int, int], lanes: int) -> int:
@@ -308,47 +299,46 @@ def _c(fn: Fn, *args: Expr) -> Call:
     return Call(fn, args)
 
 
-def _absent(t: tuple[int, int, int], x: tuple[int, int, int],
-            y: tuple[int, int, int]) -> bool:
-    """`E^{xy}_t` is structurally zero: `t_d > x_d + y_d` on some axis."""
-    return any(t[d] > x[d] + y[d] for d in range(3))
-
-
-def _plus(p: tuple[int, int, int], q: tuple[int, int, int]
-          ) -> tuple[int, int, int]:
-    return (p[0] + q[0], p[1] + q[1], p[2] + q[2])
-
-
-def _bindings(frag, zeta: Expr, pa: str, pb: str, at: Expr
-              ) -> dict[str, Expr]:
-    """One fragment's binds: `zeta`, `1/2zeta`, `PA_d`, `PB_d`, the array."""
-    out: dict[str, Expr] = {ef.ZETA: zeta}
-    if ef.HALF_INV_ZETA in frag.binds:
-        out[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), zeta)
-    for d in range(3):
-        out[Factor.pa(d).name_in_kernel] = Index(pa, (at, Lit(d)))
-        out[Factor.pb(d).name_in_kernel] = Index(pb, (at, Lit(d)))
-    return out
+def _hooks(spec: Spec, hooks: KHooks | None) -> KHooks:
+    """`hooks` when given (a test's sketch), else the spec's levers composed
+    through `k_levers.REGISTRY` -- `DEFAULT_HOOKS` for a literal spec."""
+    if hooks is None:
+        return hooks_for(spec)
+    if not isinstance(hooks, KHooks):
+        raise TypeError(f"hooks= takes a KHooks, not {hooks!r}")
+    return hooks
 
 
 def build_k_kernel(cls: tuple[int, int, int, int] | Spec, *,
-                   name: str | None = None) -> Kernel:
+                   name: str | None = None,
+                   hooks: KHooks | None = None) -> Kernel:
     """The exchange kernel of one K class, one batch (module docstring).
 
     `cls` is `(la, lc, lb, ld)` -- the Hermite pairing, bra first, NOT the AO
     quartet order -- or a `Target.K` `Spec`. A kernel-body lever
     (`levers.VOCABULARY`, #337) is kept from the plan (`kernel.builder_plan`)
-    and recorded in the kernel as a `Note` (`kernel.lever_notes`).
+    and recorded in the kernel as a `Note` (`kernel.lever_notes`); a
+    registered one also moves its hooks (`k_levers`, #367). `hooks=`
+    replaces that resolution outright. A lever that fans the class out into
+    several kernels is refused here: `build_k_kernels` builds it.
     """
     spec = _spec_of(cls)
+    hooks = _hooks(spec, hooks)
+    variants = hooks.fan_out(spec, hooks)
+    if len(variants) != 1:
+        raise ValueError(
+            f"{spec.key()} fans out into {len(variants)} kernels; "
+            "build_k_kernels builds it")
+    ((suffix, hooks),) = variants
     la, lc, lb, ld = spec.am
     (dag,) = builder_plan(spec).dags
     if name is None:
-        name = f"k_{la}{lc}_{lb}{ld}"
-    return _k_kernel(spec, dag, name, None)
+        name = f"k_{la}{lc}_{lb}{ld}{suffix}"
+    return _k_kernel(spec, dag, name, None, hooks)
 
 
-def build_k_kernels(spec: Spec) -> tuple[Kernel, ...]:
+def build_k_kernels(spec: Spec, *,
+                    hooks: KHooks | None = None) -> tuple[Kernel, ...]:
     """One kernel per batch of `plan(spec)`, in `Plan.dags` order: THE
     PARTIAL-SUM FORM, each kernel's `K` write `passes.atomize`d (module
     docstring, "THE SPLIT CLASS").
@@ -360,6 +350,10 @@ def build_k_kernels(spec: Spec) -> tuple[Kernel, ...]:
     refused when the `Spec` is made) and the plan's (an empty batch is
     refused by `plan`, #64); this builder adds no rule of its own.
 
+    A lever's `fan_out` hook (#367) expands each batch's kernel into its
+    variants, in the order it returns them, each name suffixed by the
+    variant's suffix; with no fan-out the tuple is exactly the above.
+
     THE LAUNCH: every kernel takes the same arguments and the same
     `launch_shape(n_bra, lanes)`, in the returned order, into ONE `K` the
     caller ZEROES first; each adds its partial `K[a, b]`.
@@ -368,126 +362,80 @@ def build_k_kernels(spec: Spec) -> tuple[Kernel, ...]:
         raise TypeError(f"build_k_kernels takes a Spec, not {spec!r}")
     if spec.target is not Target.K:
         raise ValueError(f"{spec.key()} is not a Target.K class")
-    if spec.n_batches == 1:
-        return (build_k_kernel(spec),)
+    hooks = _hooks(spec, hooks)
+    variants = hooks.fan_out(spec, hooks)
     la, lc, lb, ld = spec.am
+    if spec.n_batches == 1 and len(variants) == 1:
+        return (build_k_kernel(spec, hooks=hooks),)
+
+    def variant(dag, name: str, head: str | None, h: KHooks):
+        try:
+            return _k_kernel(spec, dag, name, head, h)
+        except EmptyKernel:
+            if len(variants) == 1:
+                raise
+            return None  # a fan-out variant this batch never reaches
+
     out = []
     for i, dag in enumerate(builder_plan(spec).dags):
-        direction, a, b = dag.batch
-        name = f"k_{la}{lc}_{lb}{ld}_{direction}{a}_{b}"
-        head = (f"batch {i + 1} of {spec.n_batches}, "
-                f"{direction.upper()}_{{{a},{b}}}")
-        out.append(atomize(_k_kernel(spec, dag, name, head), array="K"))
+        if spec.n_batches == 1:
+            name, head = f"k_{la}{lc}_{lb}{ld}", None
+        else:
+            direction, a, b = dag.batch
+            name = f"k_{la}{lc}_{lb}{ld}_{direction}{a}_{b}"
+            head = (f"batch {i + 1} of {spec.n_batches}, "
+                    f"{direction.upper()}_{{{a},{b}}}")
+        for suffix, h in variants:
+            kern = variant(dag, name + suffix, head, h)
+            if kern is not None:
+                out.append(kern if head is None
+                           else atomize(kern, array="K"))
     return tuple(out)
 
 
-def _k_kernel(spec: Spec, dag, name: str, head: str | None) -> Kernel:
-    """The K kernel over one batch's DAG, with the plain lane-0 write.
+def _k_kernel(spec: Spec, dag, name: str, head: str | None,
+              hooks: KHooks) -> Kernel:
+    """The K kernel over one batch's DAG, with the plain lane-0 write: the
+    skeleton, every lever-movable part asked of `hooks` (#367).
 
     `head is None` is the one-batch kernel (`build_k_kernel`); otherwise the
     batch's label, and the kernel holds only that batch's terms (module
     docstring, "THE SPLIT CLASS")."""
     la, lc, lb, ld = spec.am
     lp, lq = split(spec)
-    order = schedule(dag)
-    ps, qs = hermite_targets(lp), hermite_targets(lq)
-    rows_ac, rows_bd = ef.block_rows(la, lc), ef.block_rows(lb, ld)
-    n_q = len(qs)
-    nc, nb, nd = _ncart(lc), _ncart(lb), _ncart(ld)
-    n_ab = _ncart(la) * nb
-    frag_ac, frag_bd = ef.block_fragment(la, lc), ef.block_fragment(lb, ld)
-    held = {r for (r, _) in dag.targets}
-
-    # What this batch contracts, term by term. Stage 1: per (b,d) row and p,
-    # the q with E^bd_q structurally nonzero AND p + q one of the batch's
-    # targets. Stage 2: per (b,d) row and (a,c) row, the p whose I[p] this
-    # batch holds for that row AND whose E^ac_p is structurally nonzero.
-    # Absent terms are absent, not added zeros; with one batch every list is
-    # the whole class's (q = 0 and p = 0 are never absent).
-    s1 = {(rbd, i): [(j, q) for j, q in enumerate(qs)
-                     if not _absent(q, b, d) and _plus(p, q) in held]
-          for rbd, (b, d) in enumerate(rows_bd) for i, p in enumerate(ps)}
-    s1 = {key: v for key, v in s1.items() if v}
-    s2 = {(rbd, rac): [i for i, p in enumerate(ps)
-                       if (rbd, i) in s1 and not _absent(p, a, c)]
-          for rbd in range(len(rows_bd)) for rac, (a, c) in enumerate(rows_ac)}
-    s2 = {key: v for key, v in s2.items() if v}
-    if not s2:
-        raise ValueError(f"batch {dag.batch} of {spec.key()} contracts nothing")
-    i_rows = sorted({i for _, i in s1})  # the p this batch holds: I's rows
-    k_outs = sorted({divmod(rac, nc)[0] * nb + divmod(rbd, nd)[0]
-                     for rbd, rac in s2})  # the K[a,b] it writes
-    n_i = len(i_rows)
-    islot = {i: n for n, i in enumerate(i_rows)}
-    kslot = {s: n_i + n for n, s in enumerate(k_outs)}
-    if head is None:
-        assert n_i + len(k_outs) == shared_doubles(spec.am)
-
-    k, ty, bra = Var(KET), Call(Fn.THREAD_Y), Var("bra")
-
-    def sh(row: int) -> Index:
-        return Index(KSH, (Lit(row), ty))
-
-    def ket(arr: str, *more: Expr) -> Index:
-        return Index(arr, (k, *more))
+    ctx = KContext.of(spec, dag, name, head, hooks)
+    if head is None and hooks.is_default("keep"):
+        assert ctx.n_shared == shared_doubles(spec.am)
+    ty, bra = ctx.ty, ctx.bra
 
     # --- one (bra, ket) pair: the screen, the recurrence, E^bd -------------
     prelude, fundamental = fundamental_prelude(
-        [m for (r, m) in order if not any(r)])
+        [m for (r, m) in ctx.order if not any(r)])
     ket_body: list[Stmt] = [
         Decl("bound", Scalar.F64,
-             init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ket("Iq"), Var("maxD")))),
+             init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ctx.ket("Iq"),
+                                           Var("maxD")))),
         Note("screen: Ip * Iq * maxD < tau, and every later ket is under it "
              "too (sorted by Iq) -- so break"),
         If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
-        *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"), ket("Q", Lit(d))))
+        *(Decl(n, Scalar.F64,
+               init=_c(Fn.SUB, Var(f"P{d}"), ctx.ket("Q", Lit(d))))
           for d, n in enumerate(PQ_PARAMS)),
-        Decl("et", Scalar.F64, init=ket("eta")),
+        Decl("et", Scalar.F64, init=ctx.ket("eta")),
         Note("theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in "
              "the source'"),
         Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
             Fn.DIV, _c(Fn.MUL, Var("ze"), Var("et")),
             _c(Fn.ADD, Var("ze"), Var("et"))))),
         *prelude,
-        *recurrence_body(dag, order, fundamental),
-        Note("the undressed E^bd block of this ket record: "
-             "e_fragment.block_fragment(lb, ld), inlined; s_bd is the host's"),
-        Decl("Ebd", Scalar.F64, (Lit(len(rows_bd)), Lit(n_q))),
-        Inline(frag_bd, {**_bindings(frag_bd, Var("et"), "XQB", "XQD", k),
-                         ef.E_ARRAY: Var("Ebd")}),
-        Decl("sq", Scalar.F64, init=ket("s_bd")),
+        *recurrence_body(dag, list(ctx.order), fundamental),
+        *hooks.bind_e_bd(ctx),
+        Decl("sq", Scalar.F64, init=ctx.ket("s_bd")),
         Note("the row of Dcd: D_cd straddles the records, c on the bra and d "
              "on the ket"),
-        Decl("dk", Scalar.I32, init=_c(Fn.ADD, Var("dcb"), ket("dd"))),
-        Note("per (b,d) row: stage 1, I[p] = SUM_q [p|q] E^bd_q into the "
-             "shared column; then stages 2 and 3 FUSED, K[a,b] += D[c,d] "
-             "SUM_p E^ac_p I[p] -- V is never an array (ao.k.k_quartet's "
-             "order; absent E entries are structural zeros)"),
+        Decl("dk", Scalar.I32, init=_c(Fn.ADD, Var("dcb"), ctx.ket("dd"))),
+        *hooks.contract(ctx),
     ]
-    for rbd in range(len(rows_bd)):
-        ib, id_ = divmod(rbd, nd)
-        for i, p in enumerate(ps):
-            if (rbd, i) not in s1:
-                continue  # I[p] is structurally zero in this batch: no slot
-            acc: Expr = Lit(0.0)
-            for j, q in s1[rbd, i]:
-                term = _c(Fn.MUL, Var(node_name((_plus(p, q), 0))), _c(
-                    Fn.MUL, Var("sq"), Index("Ebd", (Lit(rbd), Lit(j)))))
-                acc = _c(Fn.SUB if sum(q) % 2 else Fn.ADD, acc, term)
-            ket_body.append(Assign(sh(islot[i]), acc))
-        for rac in range(len(rows_ac)):
-            if (rbd, rac) not in s2:
-                continue  # V(a,c) is structurally zero in this batch
-            ia, ic = divmod(rac, nc)
-            v: Expr = Lit(0.0)
-            for i in s2[rbd, rac]:
-                v = _c(Fn.ADD, v, _c(Fn.MUL, _c(
-                    Fn.MUL, Var("sb"), Index("Eac", (Lit(rac), Lit(i)))),
-                    sh(islot[i])))
-            slot = kslot[ia * nb + ib]
-            dv = Index("Dcd", (Var("dk"), Lit(ic * nd + id_)))
-            ket_body.append(Assign(sh(slot), _c(
-                Fn.ADD, sh(slot), _c(Fn.MUL, dv, v))))
 
     # --- one bra record: E^ac, zero, strip-mine the kets, reduce, write ----
     per_bra: list[Stmt] = [
@@ -497,28 +445,11 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None) -> Kernel:
         Decl("Ib", Scalar.F64, init=Index("Ip", (bra,))),
         Decl("sb", Scalar.F64, init=Index("s_ac", (bra,))),
         Decl("dcb", Scalar.I32, init=Index("dc", (bra,))),
-        Note("the undressed E^ac block of this bra record, once: "
-             "e_fragment.block_fragment(la, lc), inlined; s_ac is the host's"),
-        Decl("Eac", Scalar.F64, (Lit(len(rows_ac)), Lit(len(ps)))),
-        Inline(frag_ac, {**_bindings(frag_ac, Var("ze"), "XPA", "XPC", bra),
-                         ef.E_ARRAY: Var("Eac")}),
-        Note("accumulate K[a,b] in shared memory, one slot per lane, after "
-             "the lane's I column"),
-        *(Assign(sh(kslot[s]), Lit(0.0)) for s in k_outs),
+        *hooks.bind_e_ac(ctx),
+        *hooks.init_acc(ctx),
         Note("kets strip-mined over threadIdx.y, stride blockDim.y"),
         For(KET, ty, Var("n_ket"), Call(Fn.BLOCK_DIM_Y), tuple(ket_body)),
-        Note("reduce K[a,b] across the warp: every lane sees the sum"),
-    ]
-    for s in k_outs:
-        per_bra += [Decl(f"Kab{s}", Scalar.F64),
-                    WarpReduce(Var(f"Kab{s}"), sh(kslot[s]))]
-    per_bra += [
-        Note("plain write, NOT atomic: one batch, one warp per bra record, so "
-             "this kernel is the only writer of its row of K"
-             if head is None else SPLIT_WRITE),
-        If(_c(Fn.LT, ty, Lit(1)), tuple(
-            Assign(Index("K", (bra, Lit(s))), Var(f"Kab{s}"))
-            for s in k_outs)),
+        *hooks.write_back(ctx),
     ]
 
     what = ("one batch, no atomics" if head is None
@@ -534,30 +465,7 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None) -> Kernel:
         Note("launch: blockDim = (1, warp width), one warp per bra record"),
         Decl("bra", Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
             Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
-        Decl(KSH, Scalar.F64, (Lit(n_i + len(k_outs)), Call(Fn.BLOCK_DIM_Y)),
-             Space.SHARED),
+        hooks.shared_decl(ctx),
         If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
     )
-    nbv, nkv, ndc = Var("n_bra"), Var("n_ket"), Var("n_dc")
-
-    def f64(n: str, *shape: Expr, intent: Intent = Intent.IN) -> Param:
-        return Param(n, Scalar.F64, array=True, intent=intent, shape=shape)
-
-    def i32(n: str, *shape: Expr) -> Param:
-        return Param(n, Scalar.I32, array=True, shape=shape)
-
-    params = (
-        Param("n_bra", Scalar.I32), Param("n_ket", Scalar.I32),
-        Param("n_dc", Scalar.I32),
-        Param("tau", Scalar.F64), Param("maxD", Scalar.F64),
-        f64("P", nbv, Lit(3)), f64("zeta_ac", nbv),
-        f64("XPA", nbv, Lit(3)), f64("XPC", nbv, Lit(3)),
-        f64("s_ac", nbv), f64("Ip", nbv), i32("dc", nbv),
-        f64("Q", nkv, Lit(3)), f64("eta", nkv),
-        f64("XQB", nkv, Lit(3)), f64("XQD", nkv, Lit(3)),
-        f64("s_bd", nkv), f64("Iq", nkv), i32("dd", nkv),
-        f64("Dcd", ndc, Lit(nc * nd)),
-        f64("K", nbv, Lit(n_ab), intent=Intent.OUT),
-    )
-    assert tuple(p.name for p in params) == PARAMS
-    return Kernel(name, params, body)
+    return hooks.finish(ctx, Kernel(name, hooks.params(ctx), body))
