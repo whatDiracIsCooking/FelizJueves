@@ -32,6 +32,20 @@ uniformly; nothing depends on what the kernel computes:
   `const` declarations, then the fragment's statements in place. Nothing is
   renamed: `Kernel` has already refused any name the block could shadow.
 
+F32 (#338) is spelled from the value's type, never from a flag: `float` for
+an F32 `Param` or `Decl`; `Fn.TO_F32` / `Fn.TO_F64` as `((float)x)` /
+`((double)x)`, and a `TO_F32` of a float literal (which `ir` holds to be
+exactly a float32) as the literal with C's `f` suffix, `0.5f`; `sqrtf` and
+`expf` for an F32 argument; and an F32 `Weighted`'s int coefficients as
+`2.0f`, so no double literal widens the sum (C would, silently). The types
+come from `ir.expr_type`, the rules' one statement. The IR has no fused
+multiply-add, so there is no `fmaf` to spell: whether `a*b + c` contracts is
+the compiler's (`-fmad` / `-ffp-contract`, untouched, devtools/config.sh),
+and test/test_f32_device.py measures what that leaves between card and
+interpreter. A kernel that declares no F32 takes none of these paths, so
+its text is byte-identical to before #338 (the goldens and
+`kernels.json`'s `source_sha256` are the check).
+
 `Fn.BOYS` has no vendor intrinsic, so the writer emits one fixed device
 routine, `fj_boys` (`BOYS_DEVICE`), when the kernel calls it -- the spelling
 of `F_m(T)` in the way `sqrt` is the spelling of `SQRT`. Whether it is
@@ -82,6 +96,7 @@ from felizjueves.ir import (
     Weighted,
     _exprs_of,
     _subexprs,
+    expr_type,
     walk,
 )
 
@@ -89,7 +104,8 @@ INDENT = "    "
 NOTE_WIDTH = 76
 RESERVED = "fj_"
 
-CTYPE = {Scalar.F64: "double", Scalar.I32: "int"}
+CTYPE = {Scalar.F64: "double", Scalar.F32: "float", Scalar.I32: "int"}
+_CAST = {Fn.TO_F32: "float", Fn.TO_F64: "double"}
 
 _BINARY = {Fn.ADD: "+", Fn.SUB: "-", Fn.MUL: "*", Fn.DIV: "/", Fn.LT: "<"}
 _GEOMETRY = {
@@ -193,11 +209,13 @@ class CWriter:
             raise TypeError(f"emit takes a Kernel, not {k!r}")
         self._check_names(k)
         self._scopes: list[dict[str, _Array | None]] = [{}]
+        self._types: list[dict[str, Scalar]] = [{}]
         self._lines: list[str] = []
         self._dynamic_shared = 0
         self._used: set[str] = set()
         for p in k.params:
-            self._bind(p.name, _Array(p.shape, True) if p.array else None)
+            self._bind(p.name, _Array(p.shape, True) if p.array else None,
+                       p.type)
         sig = ",\n".join(INDENT + self.param(p) for p in k.params)
         self._block(k.body, 1)
         unread = [p.name for p in k.params
@@ -229,11 +247,13 @@ class CWriter:
 
     def _block(self, body: tuple[Stmt, ...], depth: int) -> None:
         self._scopes.append({})
+        self._types.append({})
         try:
             for s in body:
                 self.stmt(s, depth)
         finally:
             self._scopes.pop()
+            self._types.pop()
 
     def stmt(self, s: Stmt, depth: int) -> None:
         if isinstance(s, Note):
@@ -253,10 +273,12 @@ class CWriter:
                               f"{v} < {self.expr(s.stop)}; "
                               f"{v} += {self.expr(s.step)}) {{")
             self._scopes.append({v: None})
+            self._types.append({v: Scalar.I32})
             try:
                 self._block(s.body, depth + 1)
             finally:
                 self._scopes.pop()
+                self._types.pop()
             self._emit(depth, "}")
         elif isinstance(s, If):
             cond = self.expr(s.cond)
@@ -297,7 +319,11 @@ class CWriter:
         self._emit(depth, "{")
         self._emit(depth + 1, f"// fragment {frag.name}")
         scope: dict[str, _Array | None] = {}
+        types: dict[str, Scalar] = {}
         for name, e in s.bindings:
+            t = self._type(e)
+            if t is not None:
+                types[name] = t
             if e == Var(name):
                 scope[name] = self._lookup(name)
             elif name in frag.array_binds:
@@ -311,10 +337,12 @@ class CWriter:
                 scope[name] = None
                 self._emit(depth + 1, f"const auto {name} = {self.expr(e)};")
         self._scopes.append(scope)
+        self._types.append(types)
         try:
             self._block(frag.body, depth + 1)
         finally:
             self._scopes.pop()
+            self._types.pop()
         self._emit(depth, "}")
 
     def decl(self, s: Decl, depth: int) -> None:
@@ -324,18 +352,18 @@ class CWriter:
                 if s.init is not None:
                     raise EmitError(f"shared scalar {s.name!r} cannot be "
                                     "initialised in its declaration")
-                self._bind(s.name, None)
+                self._bind(s.name, None, s.type)
                 self._emit(depth, f"__shared__ {t} {s.name};")
                 return
             init = "" if s.init is None else f" = {self.expr(s.init)}"
-            self._bind(s.name, None)
+            self._bind(s.name, None, s.type)
             self._emit(depth, f"{t} {s.name}{init};")
             return
         static = all(isinstance(d, Lit) for d in s.shape)
         if static:
             dims = "".join(f"[{self.expr(d)}]" for d in s.shape)
             space = "__shared__ " if s.space is Space.SHARED else ""
-            self._bind(s.name, _Array(s.shape, False))
+            self._bind(s.name, _Array(s.shape, False), s.type)
             self._emit(depth, f"{space}{t} {s.name}{dims};")
             return
         if s.space is not Space.SHARED:
@@ -344,7 +372,7 @@ class CWriter:
         if self._dynamic_shared > 1:
             raise EmitError("more than one dynamically sized SHARED array: "
                             "laying them out would be a decision")
-        self._bind(s.name, _Array(s.shape, True))
+        self._bind(s.name, _Array(s.shape, True), s.type)
         dims = " x ".join(self.expr(d) for d in s.shape)
         self._emit(depth, f"// {s.name}: dynamic shared memory, row-major, "
                           f"{dims} {t}s")
@@ -399,10 +427,11 @@ class CWriter:
 
     def weighted(self, e: Weighted) -> str:
         parts = []
+        suffix = "f" if self._type(e) is Scalar.F32 else ""
         for t in e.terms:
             src = self.expr(t.src)
             factor = None if t.g is Factor.ONE else t.g.name_in_kernel
-            coeff = None if t.c == 1 else repr(float(t.c))
+            coeff = None if t.c == 1 else repr(float(t.c)) + suffix
             if coeff and factor:
                 parts.append(f"(({coeff} * {factor}) * {src})")
             elif coeff or factor:
@@ -418,21 +447,39 @@ class CWriter:
         fn = e.fn
         if fn in _GEOMETRY:
             return _GEOMETRY[fn]
+        if fn is Fn.TO_F32 and isinstance(e.args[0], Lit) \
+                and e.args[0].type is Scalar.F64:
+            text = self.lit(e.args[0])  # ir: exactly a float32
+            return f"({text[1:-1]}f)" if text.startswith("(") else f"{text}f"
         args = [self.expr(a) for a in e.args]
         if fn in _BINARY:
             return f"({args[0]} {_BINARY[fn]} {args[1]})"
+        if fn in _CAST:
+            return f"(({_CAST[fn]}){args[0]})"
+        f = "f" if fn in (Fn.SQRT, Fn.EXP) and \
+            self._type(e.args[0]) is Scalar.F32 else ""
         if fn is Fn.SQRT:
-            return f"sqrt({args[0]})"
+            return f"sqrt{f}({args[0]})"
         if fn is Fn.EXP:
-            return f"exp({args[0]})"
+            return f"exp{f}({args[0]})"
         if fn is Fn.BOYS:
             return f"fj_boys({args[0]}, {args[1]})"
         raise EmitError(f"no spelling for {fn}")  # pragma: no cover
 
     # --- names --------------------------------------------------------------
 
-    def _bind(self, name: str, arr: _Array | None) -> None:
+    def _bind(self, name: str, arr: _Array | None, type_: Scalar) -> None:
         self._scopes[-1][name] = arr
+        self._types[-1][name] = type_
+
+    def _type_of(self, name: str) -> Scalar | None:
+        for scope in reversed(self._types):
+            if name in scope:
+                return scope[name]
+        return None
+
+    def _type(self, e: Expr) -> Scalar | None:
+        return expr_type(e, self._type_of)
 
     def _lookup(self, name: str) -> _Array | None:
         for scope in reversed(self._scopes):
@@ -466,6 +513,15 @@ class CWriter:
 
     def atomic_add(self, dst: str, value: str) -> str:
         return f"atomicAdd(&{dst}, {value});"
+
+
+def precision(k: Kernel) -> str:
+    """The prologue's word on precision: what the kernel declares (#338)."""
+    declared = {p.type for p in k.params} | {
+        s.type for s in walk(k.body) if isinstance(s, Decl)}
+    if Scalar.F32 in declared:
+        return "fp32 and fp64 as declared"
+    return "fp64 throughout"
 
 
 def _exprs(k: Kernel):

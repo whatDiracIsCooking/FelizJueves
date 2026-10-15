@@ -52,6 +52,33 @@ STRICTNESS, because a lax machine passes broken kernels:
   zero and overflow past 32 bits raises; storing a float into an I32 raises;
   an int stored into an F64 widens (exact). A `For` with step <= 0 raises.
 
+F32 (#338) IS ROUNDED WHERE THE DEVICE ROUNDS IT, which is the whole of its
+meaning: interpreted in fp64 and rounded only when it lands in a float32
+array, an fp32 program would pass every test while computing something no
+card computes. An F32 value is carried as a `F32` (a float subclass, so it
+keeps its tag) holding a float32-exact value, and every operation that
+produces one rounds to float32 -- each ADD SUB MUL DIV, SQRT and EXP, each
+multiply and add of a `Weighted` term in the emitter's left-to-right order
+(`(c * g) * src`, then the running sum), each `AtomicAdd`, each butterfly
+step of a `WarpReduce`, each `TO_F32`, and each store into an F32 slot. That
+is C's semantics on both device compilers (single-precision arithmetic is
+evaluated in single precision, FLT_EVAL_METHOD 0), and it implies the
+issue's "rounded at every assignment". An operation is computed exactly or
+in fp64 and then rounded once: for + - * / and sqrt of float32 operands,
+fp64 (53 bits >= 2 * 24 + 2) makes that double rounding innocuous, so the
+result is the correctly rounded float32 the device produces. `exp` is not
+correctly rounded on either device; the interpreter rounds the fp64 `exp`.
+Where a card may still differ is FMA contraction (one rounding where the
+interpreter has two) and `expf`'s last ulp: test/test_f32_device.py holds
+the card to the interpreter bitwise where neither can occur, and to the
+declared fp32 tolerance (test/oracle/tolerance.py) where they can.
+`_round32` is the one rounding; the device test replaces it with the
+identity to show the comparison fails when the rounding is absent.
+
+F32 never meets F64 without a cast (`ir.expr_type`'s rules, which the
+`Kernel` already checked); at run time the machine refuses it again rather
+than guess. An I32 meeting an F32 converts to F32 (rounded), as in C.
+
 `Fn.BOYS` is the one special function. Its semantics, F_m(T), are INJECTED:
 the caller passes `boys=` (the pins pass `reference.boys.boys`, quadrature),
 and a kernel that calls `Fn.BOYS` without one raises. A kernel that calls it
@@ -106,10 +133,81 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
     Weighted,
+    is_f32,
 )
 
 _I32_MIN, _I32_MAX = -(2**31), 2**31 - 1
-_DTYPE = {Scalar.F64: np.dtype(np.float64), Scalar.I32: np.dtype(np.int32)}
+_DTYPE = {Scalar.F64: np.dtype(np.float64), Scalar.F32: np.dtype(np.float32),
+          Scalar.I32: np.dtype(np.int32)}
+
+
+class F32(float):
+    """An F32 value: a float32-exact Python float that keeps its tag."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return f"F32({float(self)!r})"
+
+
+def _round32(x: float) -> float:
+    """Round an fp64 value to the nearest float32 (ties to even): THE rounding.
+
+    The single seam the device test (#338) mutates to the identity, to show
+    that the declared tolerance fails when this is absent.
+    """
+    return float(np.float32(x))
+
+
+def _f32(x: int | float) -> F32:
+    return F32(_round32(float(x)))
+
+
+def _kind(v: Any, what: str) -> Scalar:
+    t = type(v)
+    if t is int:
+        return Scalar.I32
+    if t is F32:
+        return Scalar.F32
+    if t is float:
+        return Scalar.F64
+    raise InterpError(f"{what}: {v!r} is not a number")
+
+
+def _mixed(what: str) -> InterpError:
+    return InterpError(f"{what}: F32 meets F64 without TO_F32 / TO_F64")
+
+
+def _arith(fn: Fn, a: int | float, b: int | float) -> int | float:
+    """ADD SUB MUL DIV LT on two values, in the type C would compute them in."""
+    ka, kb = _kind(a, fn.name), _kind(b, fn.name)
+    if Scalar.F32 in (ka, kb):
+        if Scalar.F64 in (ka, kb):
+            raise _mixed(fn.name)
+        x, y = float(_f32(a)), float(_f32(b))  # an I32 converts, rounded
+        if fn is Fn.LT:
+            return int(x < y)
+        if fn is Fn.DIV and y == 0:
+            raise InterpError("division by zero")
+        op = {Fn.ADD: x + y, Fn.SUB: x - y, Fn.MUL: x * y}
+        return _f32(op[fn] if fn in op else x / y)
+    ints = ka is Scalar.I32 and kb is Scalar.I32
+    if fn is Fn.LT:
+        return int(a < b)
+    if fn is Fn.ADD:
+        return _check_i32(a + b) if ints else float(a) + float(b)
+    if fn is Fn.SUB:
+        return _check_i32(a - b) if ints else float(a) - float(b)
+    if fn is Fn.MUL:
+        return _check_i32(a * b) if ints else float(a) * float(b)
+    if fn is Fn.DIV:
+        if b == 0:
+            raise InterpError("division by zero")
+        if ints:
+            q = abs(a) // abs(b)
+            return _check_i32(q if (a < 0) == (b < 0) else -q)
+        return float(a) / float(b)
+    raise InterpError(f"no meaning for {fn}")  # pragma: no cover
 
 
 class InterpError(RuntimeError):
@@ -166,15 +264,25 @@ class _Break(Exception):
 
 def _bound_scalar(v: Any, name: str) -> _Scalar:
     """A scalar bind's slot: typed by its value, as `Lit` types a literal."""
-    if isinstance(v, np.ndarray) and v.ndim == 0:
-        v = v.item()
-    elif isinstance(v, np.generic):
-        v = v.item()
+    v = _number(v)
     if type(v) is int:
         return _Scalar(Scalar.I32, _check_i32(v))
+    if type(v) is F32:
+        return _Scalar(Scalar.F32, v)
     if type(v) is float:
         return _Scalar(Scalar.F64, v)
     raise InterpError(f"bind {name!r}: {v!r} is not an int or float")
+
+
+def _number(v: Any) -> Any:
+    """A caller's number as the machine's: a numpy float32 is an `F32`."""
+    if isinstance(v, np.ndarray) and v.ndim == 0:
+        v = v[()]
+    if isinstance(v, np.float32):
+        return F32(float(v))
+    if isinstance(v, np.generic):
+        return v.item()
+    return v
 
 
 def _check_i32(v: int) -> int:
@@ -184,12 +292,18 @@ def _check_i32(v: int) -> int:
 
 
 def _coerce(type_: Scalar, v: Any, what: str) -> int | float:
-    """Store `v` into a `type_` slot: int widens into F64; float never into I32."""
+    """Store `v` into a `type_` slot: int widens into F64 (exact) or F32
+    (rounded); float never into I32; F32 and F64 never into each other."""
+    k = _kind(v, what)
     if type_ is Scalar.F64:
-        if type(v) not in (int, float):
-            raise InterpError(f"{what}: {v!r} is not a number")
+        if k is Scalar.F32:
+            raise _mixed(f"{what}: storing an F32 into an F64")
         return float(v)
-    if type(v) is not int:
+    if type_ is Scalar.F32:
+        if k is Scalar.F64:
+            raise _mixed(f"{what}: storing an F64 into an F32")
+        return _f32(v)  # rounded at every assignment
+    if k is not Scalar.I32:
         raise InterpError(f"{what}: storing {type(v).__name__} {v!r} into an I32")
     return _check_i32(v)
 
@@ -261,6 +375,8 @@ class _Thread:
         if arr.written is not None and not arr.written[at]:
             raise InterpError(f"{e.array}{list(at)} read before it was written")
         v = arr.data[at]
+        if arr.type is Scalar.F32:
+            return F32(float(v))
         return float(v) if arr.type is Scalar.F64 else int(v)
 
     def store(self, dst: Var | Index, v: int | float) -> None:
@@ -281,14 +397,34 @@ class _Thread:
         if isinstance(e, (Var, Index)):
             return self.load(e)
         if isinstance(e, Weighted):
+            terms = [(t.c, None if t.g is Factor.ONE
+                      else self.load(Var(t.g.name_in_kernel)), self.load(t.src))
+                     for t in e.terms]
+            kinds = {_kind(v, "a Weighted term") for _, g, src in terms
+                     for v in (g, src) if v is not None}
+            if Scalar.F32 in kinds:
+                if Scalar.F64 in kinds:
+                    raise _mixed("a Weighted sum")
+                return self.weighted32(terms)
             acc = 0.0
-            for t in e.terms:
-                g = 1.0 if t.g is Factor.ONE else self.load(Var(t.g.name_in_kernel))
-                acc += float(t.c) * float(g) * float(self.load(t.src))
+            for c, g, src in terms:
+                acc += float(c) * float(1.0 if g is None else g) * float(src)
             return acc
         if isinstance(e, Call):
             return self.call(e)
         raise InterpError(f"not an Expr: {e!r}")  # pragma: no cover
+
+    @staticmethod
+    def weighted32(terms: list) -> F32:
+        """An F32 `Weighted`, rounded as the emitted `((c * g) * src)` terms
+        summed left to right from the first are (an I32 converts, rounded)."""
+        acc: F32 | None = None
+        for c, g, src in terms:
+            cg = _f32(c) if g is None else _f32(float(_f32(c)) * float(_f32(g)))
+            term = _f32(float(cg) * float(_f32(src)))
+            acc = term if acc is None else _f32(float(acc) + float(term))
+        assert acc is not None
+        return acc
 
     def call(self, e: Call) -> int | float:
         fn = e.fn
@@ -301,33 +437,29 @@ class _Thread:
                 raise InterpError("BOYS called but no boys= evaluator injected")
             if type(m) is not int:
                 raise InterpError(f"BOYS order {m!r} is not an I32")
+            if type(T) is F32:
+                raise InterpError("BOYS of an F32: there is no fp32 Boys")
             return float(self.interp.boys(m, float(T)))
+        if fn is Fn.TO_F32:
+            (x,) = args
+            if _kind(x, fn.name) is Scalar.F32:
+                raise InterpError("TO_F32 of an F32")
+            return _f32(x)
+        if fn is Fn.TO_F64:
+            (x,) = args
+            if _kind(x, fn.name) is Scalar.F64:
+                raise InterpError("TO_F64 of an F64")
+            return float(x)
         if fn is Fn.SQRT:
             (x,) = args
             if x < 0:
                 raise InterpError(f"sqrt of {x!r}")
-            return math.sqrt(x)
+            return _f32(math.sqrt(x)) if type(x) is F32 else math.sqrt(x)
         if fn is Fn.EXP:
             (x,) = args
-            return math.exp(float(x))
+            return _f32(math.exp(x)) if type(x) is F32 else math.exp(float(x))
         a, b = args
-        ints = type(a) is int and type(b) is int
-        if fn is Fn.LT:
-            return int(a < b)
-        if fn is Fn.ADD:
-            return _check_i32(a + b) if ints else float(a) + float(b)
-        if fn is Fn.SUB:
-            return _check_i32(a - b) if ints else float(a) - float(b)
-        if fn is Fn.MUL:
-            return _check_i32(a * b) if ints else float(a) * float(b)
-        if fn is Fn.DIV:
-            if b == 0:
-                raise InterpError("division by zero")
-            if ints:
-                q = abs(a) // abs(b)
-                return _check_i32(q if (a < 0) == (b < 0) else -q)
-            return float(a) / float(b)
-        raise InterpError(f"no meaning for {fn}")  # pragma: no cover
+        return _arith(fn, a, b)
 
     # --- statements -------------------------------------------------------
 
@@ -350,7 +482,7 @@ class _Thread:
         elif isinstance(s, Assign):
             self.store(s.dst, self.eval(s.value))
         elif isinstance(s, AtomicAdd):
-            self.store(s.dst, self.eval(s.dst) + self.eval(s.value))
+            self.store(s.dst, _arith(Fn.ADD, self.eval(s.dst), self.eval(s.value)))
         elif isinstance(s, If):
             yield from self.block(s.then if self.eval(s.cond) else s.orelse)
         elif isinstance(s, For):
@@ -438,7 +570,7 @@ def _butterfly(values: list[float | int]) -> int | float:
     v = list(values)
     o = len(v) // 2
     while o:
-        v = [v[i] + v[i ^ o] for i in range(len(v))]
+        v = [_arith(Fn.ADD, v[i], v[i ^ o]) for i in range(len(v))]
         o //= 2
     return v[0]
 
@@ -479,10 +611,14 @@ class Interpreter:
                     outs[name] = data
                 globals_[name] = _Array(name, p.type, data, None, out)
             else:
-                if isinstance(v, np.ndarray) and v.ndim == 0:
-                    v = v.item()
-                elif isinstance(v, np.generic):
-                    v = v.item()
+                v = _number(v)
+                if p.type is Scalar.F32 and type(v) is float:
+                    # A caller's Python float is F64 by `Lit`'s rule; an
+                    # F32 parameter takes it only when it is already exact.
+                    if not is_f32(v):
+                        raise InterpError(f"{name}: {v!r} is not a float32; "
+                                          "pass np.float32")
+                    v = F32(v)
                 globals_[name] = _Scalar(p.type, _coerce(p.type, v, name))
 
         # Shapes. A backend lays a global array out flat (row-major), so the
@@ -587,8 +723,9 @@ def interpret_fragment(fragment: Fragment, *,
     """Run one `Fragment` with no kernel around it: thread 0 of one block.
 
     `bindings` names every bind exactly once: a scalar bind takes a Python or
-    numpy number (an int is I32, a float F64, as `Lit` types them); an array
-    bind an ndarray of float64 or int32, which is copied, indexed at its own
+    numpy number (an int is I32, a float F64, as `Lit` types them, and a
+    numpy float32 F32); an array bind an ndarray of float64, float32 or
+    int32, which is copied, indexed at its own
     shape, and may be written. Returns the fragment's top-level locals (a
     scalar's value, or None if never written; an array's data) and every
     array bind's data after the run. A `WarpReduce` raises: alone, there is
@@ -608,7 +745,7 @@ def interpret_fragment(fragment: Fragment, *,
             types = {d: t for t, d in _DTYPE.items()}
             if not isinstance(v, np.ndarray) or v.ndim < 1 or v.dtype not in types:
                 raise InterpError(f"{name}: an array bind needs an ndarray of "
-                                  "float64 or int32")
+                                  "float64, float32 or int32")
             binds[name] = _Array(name, types[v.dtype], v.copy(), None, True)
         else:
             binds[name] = _bound_scalar(v, name)
