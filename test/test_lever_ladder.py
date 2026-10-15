@@ -1,7 +1,8 @@
 """#339: the lever ladder as a registry, and the store's one lever-row path.
 
-`levers.VOCABULARY` ships EMPTY, so every test here declares a PROBE lever
-(`monkeypatch.setitem`), the way a lever issue declares its one entry -- and
+Beside the shipped vocabulary (`fused`, #344), the tests here declare a PROBE
+lever legal where they need it (`monkeypatch.setitem`), the way a lever
+issue declares its one entry -- and
 nothing else is edited for it: the generator CLI's flags come from
 `lever_ladder.flags()` (test/test_emit_cli.py drives them), and the store
 records a lever row through `measured_store.lever_arm` and `merge`, keyed by
@@ -60,24 +61,39 @@ def test_every_family_has_a_builder_in_the_cli_and_a_target_slot() -> None:
         assert (fam.path == lever_ladder.FOCK) == (slot == "f")
 
 
+def _probe(flags) -> list:
+    return [lf for lf in flags if lf.lever == PROBE]
+
+
+def test_the_shipped_vocabulary_s_ladders() -> None:
+    # `fused` (#344) is legal on J alone, so it ladders on J alone.
+    assert lever_ladder.ladders() == {
+        name: tuple(s for s in lever_ladder.FAMILIES if s in lv.legal)
+        for name, lv in levers.VOCABULARY.items()
+        if lv.legal & set(lever_ladder.FAMILIES)}
+    assert lever_ladder.ladders()["fused"] == ("j",)
+
+
 def test_the_table_is_the_vocabulary_read_now(probe_j_only) -> None:
-    assert lever_ladder.ladders() == {PROBE: ("j",)}
-    (lf,) = lever_ladder.flags()
+    assert lever_ladder.ladders()[PROBE] == ("j",)
+    (lf,) = _probe(lever_ladder.flags())
     assert lf.flag == "--klever-probe-pq" and lf.family.slot == "j"
 
 
 def test_a_lever_legal_on_every_family_gets_three_flags(probe) -> None:
-    assert lever_ladder.ladders() == {PROBE: ("j", "k", "f")}
-    assert {lf.flag for lf in lever_ladder.flags()} == {
+    assert lever_ladder.ladders()[PROBE] == ("j", "k", "f")
+    assert {lf.flag for lf in _probe(lever_ladder.flags())} == {
         "--klever-probe-pq", "--klever-probe-k", "--klever-probe-fock-l"}
-    assert len({lf.dest for lf in lever_ladder.flags()}) == 3
+    assert len({lf.dest for lf in lever_ladder.flags()}) == \
+        len(lever_ladder.flags())
 
 
 def test_a_lever_off_every_family_gets_no_flag(monkeypatch) -> None:
+    before = lever_ladder.flags()
     monkeypatch.setitem(levers.VOCABULARY, "pairish", levers.Lever.of(
         "pairish", 339, "pair targets only", {"dq"}))
-    assert lever_ladder.ladders() == {}
-    assert lever_ladder.flags() == ()
+    assert "pairish" not in lever_ladder.ladders()
+    assert lever_ladder.flags() == before
 
 
 def test_two_levers_spelling_one_unit_suffix_are_refused(monkeypatch) -> None:

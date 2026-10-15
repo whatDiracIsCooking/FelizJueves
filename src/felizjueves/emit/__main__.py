@@ -97,7 +97,8 @@ as `--one-e-l` does; the `-fock-l` flag belongs to the F path, beside
 `--fock-l` / `--fock-class`, and alone writes only the lever units. Every
 lever unit is named `<literal name>_lv_<lever>` (`lever_ladder.unit_name`),
 so it never overwrites its literal twin, and none is in the no-flag
-default. `VOCABULARY` ships empty, so today there is no lever flag at all.
+default. Today the vocabulary holds `fused` (#344, J only), so the one
+lever flag is `--klever-fused-pq`.
 
 The two vendors' texts differ only in the backend hooks
 (test/test_emit_hip.py), and HIP's shuffle needs a 64-bit mask that the CUDA

@@ -14,8 +14,9 @@ in test/test_emit_fock.py; here only its absence from the default.
 THE LEVER LADDERS (#339) are flags read from a registry
 (`lever_ladder.flags()`, over `levers.VOCABULARY`): `--klever-<name>-pq` and
 `--klever-<name>-k` add lever units beside the J ladders, and
-`--klever-<name>-fock-l` sits on the F path. The vocabulary ships empty, so
-the tests below declare a probe lever; none is in the bare default.
+`--klever-<name>-fock-l` sits on the F path. Beside the shipped `fused`
+lever (#344, its units checked against its goldens), the tests below declare
+a probe lever; no lever unit is in the bare default.
 
 THE SELECTOR writes, per `(class, n_batches)` cell, the chain one class
 needs -- its ket's `DQ`, its `[p|q]` batch kernels, its bra's `JAB` -- with
@@ -292,7 +293,7 @@ def test_the_selector_order_is_dq_batches_jab_for_a_split_cell(tmp_path):
 #
 # The flags are DATA: one per (kernel-body lever, family), read from
 # `levers.VOCABULARY` through `lever_ladder.flags()` each time the parser is
-# built. The vocabulary ships empty, so these tests declare a PROBE lever
+# built. Beside the shipped `fused`, these tests declare a PROBE lever
 # (`monkeypatch.setitem`), the way a lever issue declares its entry -- and the
 # CLI is never edited for it.
 
@@ -304,10 +305,39 @@ def _declare(monkeypatch, legal, name=PROBE):
         name, 339, "the ladder's witness; no statement changes", legal))
 
 
-def test_with_the_vocabulary_empty_there_is_no_lever_flag(tmp_path):
-    assert levers.VOCABULARY == {}
-    assert lever_ladder.flags() == ()
+def _probe_flags() -> list[str]:
+    return [lf.flag for lf in lever_ladder.flags() if lf.lever == PROBE]
+
+
+def test_only_a_declared_lever_has_a_flag(tmp_path):
+    # The shipped vocabulary: `fused` (#344), legal on J only, so one flag.
+    assert [lf.flag for lf in lever_ladder.flags()] == [
+        f"--klever-{lv}-pq" for lv in sorted(levers.VOCABULARY)]
+    assert "--klever-fused-pq" in {lf.flag for lf in lever_ladder.flags()}
     assert _run(tmp_path, "cuda", "--klever-probe-pq", "1") == 2
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_fused_ladder_writes_the_fused_goldens_under_lever_names(
+        backend, tmp_path):
+    """`--klever-fused-pq 4` writes #344's fused golden for (2,0|2,0) --
+    the same text, its kernel renamed `<literal>_lv_fused` -- beside the
+    literal unit, which does not move."""
+    emit, arch, ext = BACKEND[backend]
+    assert _run(tmp_path / "lit", backend, "--L", "4") == 0
+    assert _run(tmp_path / "lv", backend, "--L", "4",
+                "--klever-fused-pq", "4") == 0
+    lv = tmp_path / "lv"
+    assert _names(lv) == {f"pq_L4_p2_q2.{ext}", f"pq_L4_p2_q2_lv_fused.{ext}"}
+    assert (lv / f"pq_L4_p2_q2.{ext}").read_bytes() == \
+        (tmp_path / "lit" / f"pq_L4_p2_q2.{ext}").read_bytes()
+    golden = (ROOT / "test" / "golden" / backend / "fused"
+              / f"pq_L4_p2_q2.{ext}").read_text()
+    got = (lv / f"pq_L4_p2_q2_lv_fused.{ext}").read_text()
+    # the kernel's name, in its header comment and its signature, is the
+    # only difference
+    assert golden.count("pq_L4_p2_q2") == 2
+    assert got == golden.replace("pq_L4_p2_q2", "pq_L4_p2_q2_lv_fused")
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
@@ -319,7 +349,7 @@ def test_a_declared_lever_moves_no_unflagged_unit(backend, monkeypatch,
     argv = ("--L", "0", "1", "2", "--pair-l", "1")
     assert _run(tmp_path / "before", backend, *argv) == 0
     _declare(monkeypatch, {"j", "k", "f"})
-    assert [lf.flag for lf in lever_ladder.flags()] == [
+    assert _probe_flags() == [
         "--klever-probe-pq", "--klever-probe-k", "--klever-probe-fock-l"]
     assert _run(tmp_path / "after", backend, *argv) == 0
     names = _names(tmp_path / "before")
@@ -392,7 +422,7 @@ def test_a_lever_flag_alone_adds_to_the_default_ladders(monkeypatch, tmp_path):
 
 def test_the_f_lever_flag_is_on_the_fock_path(monkeypatch, tmp_path):
     _declare(monkeypatch, {"f"})
-    assert [lf.flag for lf in lever_ladder.flags()] == ["--klever-probe-fock-l"]
+    assert _probe_flags() == ["--klever-probe-fock-l"]
     assert _run(tmp_path / "a", "cuda", "--klever-probe-fock-l", "0") == 0
     assert _names(tmp_path / "a") == {"f_0000_lv_probe.cu"}
     assert _run(tmp_path / "b", "hip", "--fock-l", "0",
