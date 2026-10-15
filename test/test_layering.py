@@ -1652,3 +1652,14 @@ RULES["builder"] = Rule(RULES["builder"].why + "; its J kernel-body levers' "
                         RULES["builder"].may | frozenset(("j_levers",)),
                         RULES["builder"].must_not)
 EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",))
+
+
+# ---------------------------------------------------------------------------
+# #341 (milestone 13, M1): the per-element split, the first K lever module.
+# `k_levers` imports it to register it; it moves hooks only, so it reaches
+# the seams, the IR (its `Note`) and `Spec`, and nothing below `k_lever`'s
+# prohibitions.
+# ---------------------------------------------------------------------------
+
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.split",))
+EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
