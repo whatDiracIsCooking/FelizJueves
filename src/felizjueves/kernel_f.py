@@ -260,6 +260,18 @@ THE HOST'S HALF lives here, beside `pack`, as plain Python over sequences:
 `density_blocks` (the screen's `Dsh`) and `close` (`F + F^T`). Both are
 host arithmetic on host data; neither is a kernel.
 
+THE LEVER AXIS (#340). A `Target.F` `Spec` may carry kernel-body levers
+(`levers.VOCABULARY`), each legal on F only when its entry names `"f"`
+(`levers._F_REFUSAL` is why every other one is refused, by `Spec` itself).
+`build_f_kernel` records each as a provenance `Note` right under the
+kernel's head line, as `kernel.build_pq_kernel` and `kernel_k` do, and
+nothing else: no lever's behaviour lands here (#350-#361 add their own, on
+#368's seams). Any OTHER name is refused here (`F_NO_OUTER_LAYER`), because
+the layers that own the rest never see an F spec -- the plan layer refuses
+it (pin 11) and lowering's `recycle` is [p|q]-only -- so admitting one would
+build the literal kernel under a lever's key. With no lever every emitted
+byte is unchanged (the 21 goldens and `fock_digests.json`).
+
 Nothing here imports `plan/` (pin 11: it keys on a `[JEngine]` row an HGP
 class does not have), `ao/` (the witness; its two fractions are restated
 below and held equal to `ao.fock`'s by the test), `reference/`, the
@@ -308,7 +320,7 @@ from felizjueves.ir import (
     Weighted,
     walk,
 )
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import Operator, Spec, Target, lever_provenance
 
 __all__ = [
     "AB_SH",
@@ -317,6 +329,7 @@ __all__ = [
     "Counts",
     "EXCHANGE_FRACTION",
     "FOCK",
+    "F_NO_OUTER_LAYER",
     "HALF",
     "MAX_PRIM_PAIRS",
     "N_SPIN",
@@ -344,6 +357,13 @@ __all__ = [
 ]
 
 MAX_PRIM_PAIRS = 128  # the shared staging cap (module docstring)
+# Why a non-kernel-body lever is refused on an F spec (module docstring).
+F_NO_OUTER_LAYER = (
+    "is not a kernel-body lever, and no layer around the fused F kernel "
+    "reads any other: the plan layer refuses Target.F and lowering's "
+    "recycle is applied to [p|q] only, so the build would be the literal "
+    "kernel under a lever's key"
+)
 REC = ("P_x", "P_y", "P_z", "X_x", "X_y", "X_z", "zeta", "U")
 AB_SH = "ab_sh"  # the staged |ab) record, Space.SHARED
 OUT = "g"  # the ERI tap (eris=True)
@@ -471,9 +491,11 @@ STAGING = (
     "kernel_f.pack enforces")
 
 
-def f_class_spec(la: int, lb: int, lc: int, ld: int) -> Spec:
-    """The F class `(la lb | lc ld)` -- AO order, one batch (spec.py, #272)."""
-    return Spec(Operator.COULOMB, 0, (la, lb, lc, ld), Target.F)
+def f_class_spec(la: int, lb: int, lc: int, ld: int,
+                 levers: tuple[str, ...] = ()) -> Spec:
+    """The F class `(la lb | lc ld)` -- AO order, one batch (spec.py, #272),
+    carrying `levers` (sorted and unique; each legal on F, #340)."""
+    return Spec(Operator.COULOMB, 0, (la, lb, lc, ld), Target.F, levers)
 
 
 def _spec_of(cls: AmClass | Spec) -> Spec:
@@ -485,6 +507,11 @@ def _spec_of(cls: AmClass | Spec) -> Spec:
         raise TypeError("build_f_kernel takes (la, lb, lc, ld) or a Spec, "
                         f"not {cls!r}")
     hgp_class(spec)  # refuses anything but Target.F
+    outer = tuple(lv for lv in spec.levers
+                  if lv not in spec.kernel_body_levers())
+    if outer:
+        raise ValueError(f"{spec.key()}: lever {outer[0]!r} "
+                         f"{F_NO_OUTER_LAYER}")
     return spec  # n_batches == 1 is Spec's own rule for F (#272)
 
 
@@ -656,7 +683,9 @@ def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None,
     """The fused Fock kernel of one F class (module docstring). `cls` is
     `(la, lb, lc, ld)` in AO order or a `Target.F` `Spec`. `weights` is the
     derived `WEIGHTS` unless a test substitutes a wrong one to watch it
-    fail; `eris=True` adds the ERI tap `g` (the same body plus its writes)."""
+    fail; `eris=True` adds the ERI tap `g` (the same body plus its writes).
+    A kernel-body lever on the spec is recorded as a provenance `Note`
+    under the head line (#340); any other lever is refused."""
     spec = _spec_of(cls)
     cls = hgp_class(spec)
     if not isinstance(weights, Weights):
@@ -911,6 +940,7 @@ def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None,
              "AO order: [Fock] §3.2's fused kernel (#282) and its six-block "
              "predigest (#283); VRR eqs 25-26 inside the K_CD x K_AB nest, "
              "HRR eq 28 after it, then the digestion into F"),
+        *(Note(lever_provenance(lv)) for lv in spec.kernel_body_levers()),
         Note("launch: grid = n_bra, blockDim = (threads, 1); one block per "
              "bra shell pair; the host closes F <- F + F^T after every launch"),
         Decl("bra", Scalar.I32, init=Call(Fn.BLOCK_X)),
