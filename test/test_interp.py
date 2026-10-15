@@ -561,3 +561,96 @@ def test_a_fragment_alone_has_no_warp() -> None:
                                   WarpReduce(Var("s"), Var("a"))))
     with pytest.raises(InterpError, match="no warp"):
         interpret_fragment(frag, a=1.0)
+
+
+# ---------------------------------------------------------------------------
+# F32 (#338): rounded where the device rounds, refused where it would widen
+# ---------------------------------------------------------------------------
+
+
+def _f32_kernel(*body: Stmt, extra: tuple[Param, ...] = ()) -> Kernel:
+    return Kernel("k", (Param("a", Scalar.F32, array=True),
+                        Param("out", Scalar.F32, array=True, intent=Intent.OUT),
+                        *extra), tuple(body))
+
+
+def _a(i: int) -> Index:
+    return Index("a", (Lit(i),))
+
+
+def _o(i: int) -> Index:
+    return Index("out", (Lit(i),))
+
+
+def test_every_f32_operation_rounds_as_numpy_float32_does() -> None:
+    # 1 + 2^-24 is not a float32: rounded per operation, (1 + e) - 1 is 0;
+    # computed in fp64 and rounded at the store, it is 2^-24. Numpy's
+    # float32 arithmetic is the witness here; the card is test_f32_device.py's.
+    f = np.float32
+    a = np.array([1.0, 2.0**-24, 3.0, 7.0], dtype=f)
+    got = interpret(_f32_kernel(
+        Assign(_o(0), Call(Fn.SUB, (Call(Fn.ADD, (_a(0), _a(1))), _a(0)))),
+        Assign(_o(1), Call(Fn.DIV, (_a(0), _a(2)))),
+        Assign(_o(2), Call(Fn.SQRT, (_a(2),))),
+        Assign(_o(3), Call(Fn.EXP, (_a(2),))),
+        Assign(_o(4), Call(Fn.ADD, (_a(3), Lit(16777216)))),  # I32 converts
+        Assign(_o(5), Weighted((Term(3, Factor.ONE, _a(1)),
+                                Term(1, Factor.ONE, _a(0))))),
+    ), a=a, out=np.zeros(6, f))["out"]
+    assert got.dtype == np.float32
+    # exp is the fp64 exp rounded once (interp.py: no device expf is
+    # correctly rounded, so the interpreter does not pretend to be one)
+    want = [(a[0] + a[1]) - a[0], a[0] / a[2], np.sqrt(a[2]),
+            f(np.exp(np.float64(a[2]))),
+            a[3] + f(16777216), f(3) * a[1] + a[0]]
+    assert got[0] == 0.0
+    assert got.tolist() == np.array(want, dtype=f).tolist()
+
+
+def test_every_assignment_rounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An F32 scalar is rounded when it is stored, not only when it reaches a
+    # float32 array; with the rounding removed the cancellation survives.
+    from felizjueves import interp as m
+    k = _f32_kernel(
+        Decl("s", Scalar.F32, init=Call(Fn.ADD, (_a(0), _a(1)))),
+        Assign(_o(0), Call(Fn.SUB, (Var("s"), _a(0)))))
+    a = np.array([1.0, 2.0**-24], dtype=np.float32)
+    assert interpret(k, a=a, out=np.zeros(1, np.float32))["out"][0] == 0.0
+    monkeypatch.setattr(m, "_round32", lambda x: x)
+    assert interpret(k, a=a, out=np.zeros(1, np.float32))["out"][0] == 2.0**-24
+
+
+def test_the_machine_refuses_f32_meeting_f64() -> None:
+    from felizjueves import interp as m
+    f = np.float32
+    k = _f32_kernel(Assign(_o(0), _a(0)))
+    with pytest.raises(InterpError, match="ndarray of float32"):
+        interpret(k, a=np.ones(1), out=np.zeros(1, f))
+    k = _f32_kernel(Assign(_o(0), Var("x")), extra=(Param("x", Scalar.F32),))
+    # an F32 scalar takes a numpy float32, or a Python float only if exact
+    one = dict(a=np.ones(1, f), out=np.zeros(1, f))
+    assert interpret(k, **one, x=f(0.1))["out"][0] == f(0.1)
+    assert interpret(k, **one, x=0.5)["out"][0] == 0.5
+    with pytest.raises(InterpError, match="not a float32"):
+        interpret(k, **one, x=0.1)
+    # The Kernel refuses these statically (test_ir.py); the machine refuses
+    # them again rather than guess, e.g. behind a name the check cannot type.
+    with pytest.raises(InterpError, match="F32 meets F64"):
+        m._arith(Fn.ADD, m.F32(1.0), 1.0)
+    with pytest.raises(InterpError, match="F32 meets F64"):
+        m._coerce(Scalar.F64, m.F32(1.0), "x")
+    with pytest.raises(InterpError, match="F32 meets F64"):
+        m._coerce(Scalar.F32, 1.0, "x")
+
+
+def test_an_f32_fragment_runs_alone_and_inlined_alike() -> None:
+    frag = Fragment("h", ("u", "dst"), (
+        Decl("w", Scalar.F32, init=Call(Fn.ADD, (Var("u"), Call(
+            Fn.TO_F32, (Lit(16777216.0),))))),
+        Assign(Index("dst", (Lit(0),)), Call(Fn.SUB, (Var("w"), Var("u"))))))
+    f = np.float32
+    alone = interpret_fragment(frag, u=f(1.0), dst=np.zeros(1, f))
+    k = _f32_kernel(Inline(frag, {"u": _a(0), "dst": Var("out")}))
+    spliced = interpret(k, a=np.ones(1, f), out=np.zeros(1, f))["out"]
+    # 1 + 2^24 rounds (ties to even) to 2^24, so w - u is 2^24 - 1
+    assert alone["dst"].tolist() == spliced.tolist() == [16777215.0]

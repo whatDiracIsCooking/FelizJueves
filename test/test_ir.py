@@ -281,13 +281,166 @@ def test_weighted_rejects_empty_and_foreign_terms() -> None:
         Term(1, Factor.ONE, Lit(1.0))  # type: ignore[arg-type]
 
 
-def test_the_scalar_type_is_fp64() -> None:
-    # fp64 is an IR fact, not a backend flag; there is no fp32 member.
-    assert {s.name for s in Scalar} == {"F64", "I32"}
+def test_the_scalar_vocabulary_and_the_literal_rule() -> None:
+    # #338: F32 joins; a value's precision is declared, never a backend flag.
+    assert {s.name for s in Scalar} == {"F64", "F32", "I32"}
+    # A literal's type is its Python type, never its context's: a float is
+    # F64 even beside an F32, and an F32 constant is a TO_F32 of one.
     assert Lit(1.5).type is Scalar.F64
     assert Lit(3).type is Scalar.I32
     with pytest.raises(TypeError):
         Lit(True)
+    assert ir.expr_type(Call(Fn.TO_F32, (Lit(0.5),)), _none) is Scalar.F32
+    # ... and the constant is exactly the float32 written.
+    with pytest.raises(ir.PrecisionError, match="not a float32"):
+        Call(Fn.TO_F32, (Lit(0.1),))
+    with pytest.raises(ir.PrecisionError, match="not a float32"):
+        Call(Fn.TO_F32, (Lit(1e300),))
+    Call(Fn.TO_F32, (Lit(3),))  # an I32 converts, as C converts it
+
+
+# ---------------------------------------------------------------------------
+# Precision hygiene (#338): which operands may mix, and the cast rule
+# ---------------------------------------------------------------------------
+
+
+def _none(name: str) -> None:
+    return None
+
+
+_TYPES = {"f": Scalar.F32, "g": Scalar.F32, "PQ_x": Scalar.F32,
+          "D": Scalar.F64, "E": Scalar.F64, "PQ_y": Scalar.F64, "i": Scalar.I32}
+
+
+def _ty(e: ir.Expr) -> Scalar | None:
+    return ir.expr_type(e, lambda n: _TYPES.get(n))
+
+
+def _bin(fn: Fn, a: str, b: str) -> Call:
+    return Call(fn, (Var(a), Var(b)))
+
+
+@pytest.mark.parametrize("fn", [Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV, Fn.LT])
+def test_arithmetic_types(fn: Fn) -> None:
+    out = Scalar.I32 if fn is Fn.LT else None
+    assert _ty(_bin(fn, "f", "g")) is (out or Scalar.F32)
+    assert _ty(_bin(fn, "D", "E")) is (out or Scalar.F64)
+    assert _ty(_bin(fn, "i", "i")) is Scalar.I32
+    assert _ty(_bin(fn, "f", "i")) is (out or Scalar.F32)  # the int converts
+    assert _ty(_bin(fn, "i", "D")) is (out or Scalar.F64)
+    for a, b in (("f", "D"), ("D", "f")):
+        with pytest.raises(ir.PrecisionError, match="mixes F32 with F64"):
+            _ty(_bin(fn, a, b))
+    # a float literal is F64, so it does not mix with an F32 silently either
+    with pytest.raises(ir.PrecisionError):
+        _ty(Call(fn, (Var("f"), Lit(2.0))))
+    assert _ty(Call(fn, (Var("f"), Lit(2)))) is (out or Scalar.F32)
+
+
+def test_the_cast_rule() -> None:
+    to32 = Call(Fn.TO_F32, (Var("D"),))
+    to64 = Call(Fn.TO_F64, (Var("f"),))
+    assert _ty(to32) is Scalar.F32 and _ty(to64) is Scalar.F64
+    assert _ty(Call(Fn.ADD, (Var("f"), to32))) is Scalar.F32
+    assert _ty(Call(Fn.ADD, (Var("D"), to64))) is Scalar.F64
+    assert _ty(Call(Fn.TO_F64, (Var("i"),))) is Scalar.F64
+    # a cast says a precision changes; a cast to the value's own type is noise
+    with pytest.raises(ir.PrecisionError, match="already F32"):
+        _ty(Call(Fn.TO_F32, (Var("f"),)))
+    with pytest.raises(ir.PrecisionError, match="already F64"):
+        _ty(Call(Fn.TO_F64, (Var("D"),)))
+    # an unknown name hides the answer; no rule fires on it
+    assert _ty(Call(Fn.TO_F32, (Var("raw_name"),))) is Scalar.F32
+    assert _ty(Call(Fn.ADD, (Var("f"), Var("raw_name")))) is None
+
+
+def test_special_functions_keep_or_refuse_the_type() -> None:
+    for fn in (Fn.SQRT, Fn.EXP):
+        assert _ty(Call(fn, (Var("f"),))) is Scalar.F32
+        assert _ty(Call(fn, (Var("D"),))) is Scalar.F64
+        assert _ty(Call(fn, (Var("i"),))) is Scalar.F64
+    assert _ty(Call(Fn.BOYS, (Lit(2), Var("D")))) is Scalar.F64
+    with pytest.raises(ir.PrecisionError, match="no fp32 Boys"):
+        _ty(Call(Fn.BOYS, (Lit(2), Var("f"))))
+
+
+def test_a_weighted_sum_has_one_float_type() -> None:
+    f32 = Weighted((Term(2, Factor.PQ_X, Var("f")), Term(1, Factor.ONE, Var("g"))))
+    f64 = Weighted((Term(2, Factor.PQ_Y, Var("D")), Term(1, Factor.ONE, Var("E"))))
+    assert _ty(f32) is Scalar.F32 and _ty(f64) is Scalar.F64
+    for terms in ((Term(1, Factor.PQ_X, Var("D")),),          # F32 factor, F64 src
+                  (Term(1, Factor.PQ_Y, Var("f")),),          # F64 factor, F32 src
+                  (Term(1, Factor.ONE, Var("f")), Term(1, Factor.ONE, Var("D")))):
+        with pytest.raises(ir.PrecisionError, match="Weighted"):
+            _ty(Weighted(terms))
+
+
+def _k(*body: ir.Stmt) -> Kernel:
+    return Kernel("k", (Param("f", Scalar.F32), Param("D", Scalar.F64),
+                        Param("i", Scalar.I32),
+                        Param("o32", Scalar.F32, array=True, intent=Intent.OUT),
+                        Param("o64", Scalar.F64, array=True, intent=Intent.OUT)),
+                  body)
+
+
+O32, O64 = Index("o32", (Lit(0),)), Index("o64", (Lit(0),))
+
+
+def test_a_kernel_refuses_every_silent_store() -> None:
+    # stores that keep or widen-from-int are fine
+    _k(Assign(O32, Var("f")), Assign(O32, Var("i")), Assign(O64, Var("D")),
+       Assign(O64, Var("i")), Assign(O64, Call(Fn.TO_F64, (Var("f"),))),
+       Decl("x", Scalar.F32, init=Call(Fn.TO_F32, (Lit(1.5),))),
+       AtomicAdd(O32, Var("f")), WarpReduce(O64, Var("D")))
+    bad = [
+        Assign(O64, Var("f")),                       # F32 -> F64, no cast
+        Assign(O32, Var("D")),                       # F64 -> F32, no cast
+        Assign(O32, Lit(1.5)),                       # a float literal is F64
+        Decl("x", Scalar.F32, init=Var("D")),
+        Decl("x", Scalar.F64, init=Var("f")),
+        Decl("x", Scalar.I32, init=Var("f")),        # F32 -> I32
+        AtomicAdd(O64, Var("f")),
+        WarpReduce(O32, Var("D")),
+        Assign(O32, Call(Fn.ADD, (Var("f"), Var("D")))),  # mixed operands
+        For("q", Lit(0), Var("f"), Lit(1), ()),      # an F32 loop bound
+        If(Call(Fn.LT, (Var("f"), Var("D"))), ()),
+    ]
+    for s in bad:
+        with pytest.raises(ir.PrecisionError):
+            _k(s)
+
+
+def test_scopes_and_fragments_are_typed() -> None:
+    # A Decl's type holds in its scope and shadows outside it.
+    _k(Decl("x", Scalar.F32, init=Var("f")),
+       If(Lit(1), (Decl("x", Scalar.F64, init=Var("D")), Assign(O64, Var("x")))),
+       Assign(O32, Var("x")))
+    with pytest.raises(ir.PrecisionError):
+        _k(Decl("x", Scalar.F32, init=Var("f")),
+           If(Lit(1), (Decl("y", Scalar.F64, init=Var("D")),)),
+           Assign(O64, Var("x")))
+    # A fragment's scalar bind takes its binding's type; checked alone, a bind
+    # is unknown and only the fragment's own locals are held to the rules.
+    frag = Fragment("fr", ("u", "out"), (
+        Decl("w", Scalar.F32, init=Var("u")),
+        Assign(Index("out", (Lit(0),)), Var("w"))))
+    _k(Inline(frag, {"u": Var("f"), "out": Var("o32")}))
+    with pytest.raises(ir.PrecisionError):
+        _k(Inline(frag, {"u": Var("D"), "out": Var("o32")}))   # F64 bind
+    with pytest.raises(ir.PrecisionError):
+        _k(Inline(frag, {"u": Var("f"), "out": Var("o64")}))   # F64 array
+    with pytest.raises(ir.PrecisionError):
+        Fragment("bad", ("u",), (Decl("w", Scalar.F32, init=Var("u")),
+                                 Decl("z", Scalar.F64, init=Var("w"))))
+
+
+def test_no_built_fp64_kernel_declares_f32() -> None:
+    # Every refusal involves F32, so the hygiene check can refuse no kernel
+    # that declares none -- and none of the built kernels declares one.
+    for k in _built_kernels():
+        declared = {p.type for p in k.params} | {
+            s.type for s in walk(k.body) if isinstance(s, Decl)}
+        assert Scalar.F32 not in declared, k.name
 
 
 def test_call_vocabulary_and_arity() -> None:

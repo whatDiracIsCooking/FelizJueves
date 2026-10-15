@@ -28,10 +28,19 @@ term is dropped, not emitted.
 
 CLOSED VOCABULARIES, all named here and nowhere else:
 
-- `Scalar`: `F64` and `I32`. **The floating type is fp64 and that is an IR
-  fact** -- the oracle (#20) is float64, and the claim made this milestone is
-  "the algorithm is right"; fp32 would fold an accuracy question into it.
-  Precision as a lever belongs in `Spec.levers`, not in a backend flag.
+- `Scalar`: `F64`, `F32` and `I32`. **Every value's precision is an IR
+  fact** -- declared on its `Param` or `Decl`, never a backend flag. Until
+  #338 this line read "the floating type is fp64 and that is an IR fact": the
+  oracle (#20) is float64, and the claim of the first milestones was "the
+  algorithm is right", which fp32 would have folded an accuracy question
+  into. That claim is now made (both engines, on both cards), and milestone
+  13's mixed-precision levers (#346, #347, #355) need an fp32 value to be
+  SPELLABLE -- with F64 the only floating type, mixed precision could not be
+  written at all. So the fact was widened rather than dropped: what stays an
+  IR fact is that precision is declared per value and changes only where the
+  IR says so (the cast rule below). The F64/I32 rules are what they were, so
+  no fp64 kernel is refused or spelled differently. Choosing fp32 for a
+  kernel is still a lever's decision (`Spec.levers`), never the IR's.
 - `Factor`: the recurrence's `g_k`.
 - `Fn`: what a `Call` may call -- the arithmetic, comparison and special
   functions the [p|q] contract (#25) needs, and the launch geometry
@@ -55,6 +64,35 @@ interpreter ignores it.
 pass and to the interpreter, and **counted** (test/test_ir.py's census over
 src/). Raise the count only with a reason.
 
+PRECISION HYGIENE (#338). Every expression has a type (`expr_type`), and a
+`Kernel` checks every statement against these rules when it is built:
+
+- A float literal (`Lit(1.5)`) is F64 and an int literal I32, always: no
+  literal takes its type from its context. An F32 constant is spelled
+  `Call(Fn.TO_F32, (Lit(x),))`, and `x` must be exactly a float32, so the
+  constant is the value written (the backends spell it `xf`).
+- Arithmetic (`ADD SUB MUL DIV LT`): I32 with I32 is I32; I32 with a float
+  type converts to that type, as C converts it; F64 with F64 is F64 and F32
+  with F32 is F32. **F32 with F64 is refused**: C would silently widen the
+  F32 operand, and an "fp32" computation would run in fp64 without saying so.
+- A `Weighted`'s factor scalars and sources share one float type; F32 and
+  F64 in one sum is refused. Its int coefficients take the sum's type.
+- `SQRT` and `EXP` keep their argument's float type (an I32 argument is F64,
+  as before); `BOYS` is fp64 only and refuses an F32 `T` -- there is no fp32
+  Boys function.
+- A store (`Assign`, a `Decl`'s init, `AtomicAdd`, `WarpReduce`) of F32 into
+  F64, of F64 into F32, or of F32 into I32 is refused; an I32 into either
+  float type converts. `For` bounds may not be F32.
+- **The cast rule:** the only way between F32 and F64 is an explicit
+  `Fn.TO_F32` / `Fn.TO_F64`, and a cast to the type its value already has is
+  refused (it would say a precision changes where none does).
+
+A name the checker cannot type (one a `Raw` introduces, or a fragment's bind
+when the fragment is checked alone) is unknown, and no rule fires on an
+unknown: the rules refuse what is known to mix, never what cannot be seen.
+Every refusal involves F32, so the check cannot refuse a kernel that
+declares none.
+
 `Fragment` is the opposite of `Raw`: a block of IR whose binding contract is
 checked by construction. Its `binds` are exactly the names its body uses
 without declaring; `Inline` binds each to a host `Expr`, once; and the
@@ -67,7 +105,8 @@ from __future__ import annotations
 
 import keyword
 import re
-from collections.abc import Iterator
+import struct
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -77,10 +116,19 @@ from enum import Enum
 
 
 class Scalar(Enum):
-    """Element types. fp64 is the floating type, as an IR fact."""
+    """Element types. A value's precision is an IR fact (#338): the module
+    docstring's "PRECISION HYGIENE" says which may mix, and how."""
 
     F64 = "f64"
+    F32 = "f32"
     I32 = "i32"
+
+
+FLOATS = (Scalar.F64, Scalar.F32)
+
+
+class PrecisionError(TypeError):
+    """F32 and F64 meet where the IR has not said a precision changes."""
 
 
 class Factor(Enum):
@@ -247,6 +295,9 @@ class Fn(Enum):
     - THREAD_X THREAD_Y BLOCK_X BLOCK_DIM_X BLOCK_DIM_Y: launch geometry. The
       bra index is `THREAD_X + BLOCK_X * BLOCK_DIM_X`; kets are strip-mined
       from `THREAD_Y` with stride `BLOCK_DIM_Y`.
+    - TO_F32 TO_F64: the cast rule (#338) -- the only way a value crosses
+      between F32 and F64. A `Call`, not a node of its own, so every pass
+      that walks a `Call`'s arguments already sees through it.
     """
 
     ADD = ("add", 2)
@@ -262,6 +313,8 @@ class Fn(Enum):
     BLOCK_X = ("block_x", 0)
     BLOCK_DIM_X = ("block_dim_x", 0)
     BLOCK_DIM_Y = ("block_dim_y", 0)
+    TO_F32 = ("to_f32", 1)
+    TO_F64 = ("to_f64", 1)
 
     @property
     def arity(self) -> int:
@@ -394,6 +447,20 @@ class Call:
             )
         for a in args:
             _expr(a, f"a {self.fn.name} argument")
+        if self.fn is Fn.TO_F32 and isinstance(args[0], Lit) \
+                and args[0].type is Scalar.F64 and not is_f32(args[0].value):
+            raise PrecisionError(
+                f"TO_F32 of the literal {args[0].value!r}, which is not a "
+                "float32: write the float32 value, so the constant is what "
+                "it says")
+
+
+def is_f32(v: float) -> bool:
+    """True when the float `v` is exactly a float32 (finite, in range)."""
+    try:
+        return struct.unpack("f", struct.pack("f", v))[0] == v
+    except OverflowError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -421,7 +488,8 @@ class Term:
 class Weighted:
     """The recurrence instruction: `SUM_k c_k * g_k * src_k`.
 
-    `[JEngine, v2, eqs. 10-12]` in reduction form. Interpreted in fp64.
+    `[JEngine, v2, eqs. 10-12]` in reduction form. Interpreted in its
+    terms' float type (`expr_type`): F32 when they are F32, else fp64.
     """
 
     terms: tuple[Term, ...]
@@ -724,6 +792,9 @@ class Fragment:
         object.__setattr__(self, "array_binds", frozenset(
             b for b in binds if free[b] == "array"))
         object.__setattr__(self, "declared", frozenset(declared))
+        # Its own locals are typed even alone; its binds are typed by the
+        # host, so here they are unknown and the Kernel checks them (#338).
+        _check_types((), self.body, unknown=binds)
 
 
 @dataclass(frozen=True)
@@ -921,13 +992,146 @@ def _check_inlines(params: tuple[Param, ...], body: tuple[Stmt, ...]) -> None:
                                  f"bound to the host array {e.name!r}")
 
 
+# ---------------------------------------------------------------------------
+# Precision hygiene (#338): the module docstring's rules, in one place
+# ---------------------------------------------------------------------------
+
+_ARITH = (Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV, Fn.LT)
+_CASTS = {Fn.TO_F32: Scalar.F32, Fn.TO_F64: Scalar.F64}
+
+
+def _mix(a: Scalar | None, b: Scalar | None, what: str) -> Scalar | None:
+    """The type of an arithmetic on `a` and `b`, or a refusal."""
+    if a is None or b is None:
+        return None
+    if a is b:
+        return a
+    if Scalar.I32 in (a, b):
+        return b if a is Scalar.I32 else a  # the integer converts, as in C
+    raise PrecisionError(f"{what} mixes F32 with F64: say which precision "
+                         "with Fn.TO_F32 or Fn.TO_F64")
+
+
+def expr_type(e: Expr, lookup: Callable[[str], Scalar | None]) -> Scalar | None:
+    """The type of `e`, given each name's type by `lookup` (None: unknown).
+
+    Raises `PrecisionError` where the module docstring's PRECISION HYGIENE
+    refuses; returns None where an unknown name hides the answer.
+    """
+    if isinstance(e, Lit):
+        return e.type
+    if isinstance(e, Var):
+        return lookup(e.name)
+    if isinstance(e, Index):
+        for i in e.at:
+            expr_type(i, lookup)
+        return lookup(e.array)
+    if isinstance(e, Weighted):
+        t: Scalar | None = Scalar.I32
+        for term in e.terms:
+            if term.g.name_in_kernel is not None:
+                t = _mix(t, lookup(term.g.name_in_kernel), "a Weighted sum")
+            t = _mix(t, expr_type(term.src, lookup), "a Weighted sum")
+        return Scalar.F64 if t is Scalar.I32 else t
+    if isinstance(e, Call):
+        fn = e.fn
+        args = [expr_type(a, lookup) for a in e.args]
+        if fn in _ARITH:
+            t = _mix(args[0], args[1], f"{fn.name}")
+            return Scalar.I32 if fn is Fn.LT else t
+        if fn in (Fn.SQRT, Fn.EXP):
+            (a,) = args
+            return Scalar.F64 if a is Scalar.I32 else a
+        if fn is Fn.BOYS:
+            if args[1] is Scalar.F32:
+                raise PrecisionError("Fn.BOYS is fp64 only: there is no fp32 "
+                                     "Boys function; TO_F64 its T")
+            return Scalar.F64
+        if fn in _CASTS:
+            to = _CASTS[fn]
+            if args[0] is to:
+                raise PrecisionError(f"{fn.name} of a value that is already "
+                                     f"{to.name}: a cast must change precision")
+            return to
+        return Scalar.I32  # launch geometry
+    raise TypeError(f"not an Expr: {e!r}")  # pragma: no cover
+
+
+def check_store(dst: Scalar | None, value: Scalar | None, what: str) -> None:
+    """Refuse a store the hygiene rules refuse (F32 into anything but F32,
+    F64 into F32). The F64/I32 cases are the interpreter's, as before."""
+    if dst is None or value is None or dst is value:
+        return
+    if Scalar.F32 in (dst, value) and value is not Scalar.I32:
+        raise PrecisionError(f"{what}: storing {value.name} into {dst.name} "
+                             "needs Fn.TO_F32 or Fn.TO_F64")
+
+
+def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
+                 unknown: tuple[str, ...] = ()) -> None:
+    """Walk `body` in scope order and apply the hygiene rules to every
+    statement. `unknown` names are in scope with no known type."""
+    scopes: list[dict[str, Scalar | None]] = [
+        {**{n: None for n in unknown}, **{p.name: p.type for p in params}}]
+
+    def lookup(name: str) -> Scalar | None:
+        for sc in reversed(scopes):
+            if name in sc:
+                return sc[name]
+        return None
+
+    def ty(e: Expr | None) -> Scalar | None:
+        return None if e is None else expr_type(e, lookup)
+
+    def run(stmts: tuple[Stmt, ...], fresh: dict[str, Scalar | None]) -> None:
+        scopes.append(fresh)
+        try:
+            for s in stmts:
+                one(s)
+        finally:
+            scopes.pop()
+
+    def one(s: Stmt) -> None:
+        if isinstance(s, Decl):
+            for d in s.shape:
+                ty(d)
+            check_store(s.type, ty(s.init), f"Decl {s.name!r}")
+            scopes[-1][s.name] = s.type
+        elif isinstance(s, (Assign, WarpReduce, AtomicAdd)):
+            check_store(ty(s.dst), ty(s.value), f"{type(s).__name__} to {s.dst!r}")
+        elif isinstance(s, For):
+            for b in (s.start, s.stop, s.step):
+                if ty(b) is Scalar.F32:
+                    raise PrecisionError(f"For {s.var!r}: an F32 bound; "
+                                         "loop bounds are I32")
+            run(s.body, {s.var: Scalar.I32})
+        elif isinstance(s, If):
+            ty(s.cond)
+            run(s.then, {})
+            run(s.orelse, {})
+        elif isinstance(s, Inline):
+            binds: dict[str, Scalar | None] = {}
+            for name, e in s.bindings:
+                binds[name] = (lookup(e.name) if name in s.fragment.array_binds
+                               else ty(e))
+            host = scopes[:]
+            scopes[:] = [binds]  # the fragment sees its binds and nothing else
+            try:
+                run(s.fragment.body, {})
+            finally:
+                scopes[:] = host
+
+    run(body, {})
+
+
 @dataclass(frozen=True)
 class Kernel:
     """One device kernel: a name, its parameters, and an ordered body.
 
     Validated on construction: parameter names are unique, every `Break` sits
     inside a `For`, and every non-unit `Factor` a `Weighted` uses is bound by
-    name to a `Param` or `Decl`. Frozen and hashable.
+    name to a `Param` or `Decl`, and every statement obeys the precision
+    hygiene rules (#338, the module docstring). Frozen and hashable.
 
     `wide_boys` (#266) is a property of the kernel, not of a call: the domain
     its `Fn.BOYS` must hold on. False (the default, every J-chain kernel) is
@@ -979,6 +1183,7 @@ class Kernel:
         _check_breaks(self.body, False)
 
         _check_inlines(params, self.body)
+        _check_types(params, self.body)
 
         bound = set(names) | {s.name for s in walk(self.body) if isinstance(s, Decl)}
         bound |= {b for s in walk(self.body) if isinstance(s, Inline)
