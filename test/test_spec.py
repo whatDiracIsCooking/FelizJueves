@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import itertools
 
 import pytest
 
@@ -346,3 +348,25 @@ PRE_272_ONE_ELECTRON_KEYS = [
 @pytest.mark.parametrize(("args", "key"), PRE_272_ONE_ELECTRON_KEYS)
 def test_every_one_electron_key_is_byte_identical_after_f(args, key) -> None:
     assert Spec(*args).key() == key
+
+
+# #337 puts a lever-legality check into `Spec.__post_init__`. It is a
+# refusal, never a respelling: every key of this enumeration -- every target,
+# every class up to l = 2, the plan and lowering levers, an unknown name and
+# every legal batch count -- is digested here, the digest computed on
+# origin/main before #337.
+KEYS_BEFORE_337 = (
+    3672, "e744293fb16ed978c9b6574c0e020451ae9300d5e5e35ae9aad2ef25e2244bca")
+
+
+def test_every_key_is_byte_identical_after_the_lever_vocabulary() -> None:
+    keys = []
+    for t in Target:
+        n = AM_LENGTH[t]
+        for am in itertools.product(range(3), repeat=n):
+            for lv in ((), ("no-sieve",), ("recycle",), ("tuned",),
+                       ("no-sieve", "recycle"), ("x",)):
+                for b in ((1, 3, 6) if n == 4 and t is not Target.F else (1,)):
+                    keys.append(Spec(OPERATOR_OF[t], 0, am, t, lv, b).key())
+    digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
+    assert (len(keys), digest) == KEYS_BEFORE_337

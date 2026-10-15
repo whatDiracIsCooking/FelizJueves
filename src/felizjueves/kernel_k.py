@@ -198,10 +198,9 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
+from felizjueves.kernel import builder_plan, lever_notes, split
 from felizjueves.kernel import launch_shape as _j_launch_shape
-from felizjueves.kernel import split
 from felizjueves.passes import atomize
-from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import (
@@ -337,11 +336,13 @@ def build_k_kernel(cls: tuple[int, int, int, int] | Spec, *,
     """The exchange kernel of one K class, one batch (module docstring).
 
     `cls` is `(la, lc, lb, ld)` -- the Hermite pairing, bra first, NOT the AO
-    quartet order -- or a `Target.K` `Spec`.
+    quartet order -- or a `Target.K` `Spec`. A kernel-body lever
+    (`levers.VOCABULARY`, #337) is kept from the plan (`kernel.builder_plan`)
+    and recorded in the kernel as a `Note` (`kernel.lever_notes`).
     """
     spec = _spec_of(cls)
     la, lc, lb, ld = spec.am
-    (dag,) = plan(spec).dags
+    (dag,) = builder_plan(spec).dags
     if name is None:
         name = f"k_{la}{lc}_{lb}{ld}"
     return _k_kernel(spec, dag, name, None)
@@ -371,7 +372,7 @@ def build_k_kernels(spec: Spec) -> tuple[Kernel, ...]:
         return (build_k_kernel(spec),)
     la, lc, lb, ld = spec.am
     out = []
-    for i, dag in enumerate(plan(spec).dags):
+    for i, dag in enumerate(builder_plan(spec).dags):
         direction, a, b = dag.batch
         name = f"k_{la}{lc}_{lb}{ld}_{direction}{a}_{b}"
         head = (f"batch {i + 1} of {spec.n_batches}, "
@@ -527,6 +528,7 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None) -> Kernel:
              f"(la,lc|lb,ld) = ({la},{lc}|{lb},{ld}), lp={lp} lq={lq} "
              f"(L={lp + lq}), {what}: milestone 10's staged "
              "contraction (this repo's design; [Fock, §4.3.2] prior art)"),
+        *lever_notes(spec),
         Note(SORTED_BY_IQ),
         Note(NO_DENSITY_KEY),
         Note("launch: blockDim = (1, warp width), one warp per bra record"),

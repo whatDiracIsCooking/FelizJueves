@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from felizjueves import measured
+from felizjueves import levers, measured
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.hgp import cost as hgp_cost
@@ -547,6 +547,16 @@ def test_the_lever_is_named_in_the_key_and_not_shown_to_the_plan_layer() -> None
     with pytest.raises(ValueError, match="no lever"):
         build_pq_kernels(spec)
     assert len(measured.cell_kernels(spec)) == 3
+
+
+def test_recycle_is_lowering_s_not_a_kernel_body_lever() -> None:
+    """#337: the kernel-body vocabulary may not take a lowering name, and
+    `recycle` keeps reaching the builder's plan (and its refusal) as before."""
+    assert LEVERS <= set(levers.OTHER_LAYERS)
+    assert not any(levers.is_kernel_lever(lv) for lv in LEVERS)
+    assert levers.split((RECYCLE,)) == ((), (RECYCLE,))
+    with pytest.raises(ValueError, match=r"owned by the lowering \(lower.py"):
+        levers.Lever.of(RECYCLE, 337, "dummy", {"j"})
 
 
 def test_the_default_arm_is_untouched() -> None:
