@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Install Node and Claude Code AT AN EXPLICIT VERSION.
 #
-# Called by docker/Dockerfile.{cuda,hip,combined} as their last root layer --
-# the second script, after install-rocm.sh, that more than one Dockerfile
-# drives. Deliberately NOT in Dockerfile.base, and that is the whole point:
-# base is the parent of every GPU image, so a bump there would invalidate the
-# CUDA toolkit and the ROCm install downstream of it. Pinned at the leaves, a
-# bump re-runs this script and the two trivial layers after it, nothing else.
+# Called by docker/Dockerfile.{cuda,hip,combined} as the first of their two
+# agent layers, install-agy.sh being the second -- the second script, after
+# install-rocm.sh, that more than one Dockerfile drives. Deliberately NOT in
+# Dockerfile.base, and that is the whole point: base is the parent of every
+# GPU image, so a bump there would invalidate the CUDA toolkit and the ROCm
+# install downstream of it. Pinned at the leaves, a bump re-runs this script
+# and the handful of layers after it, nothing else.
 #
 # WHY THIS EXISTS AT ALL -- the drift it ends
 # This replaces ghcr.io/anthropics/devcontainer-features/claude-code, which the

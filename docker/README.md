@@ -51,6 +51,7 @@ build.
 | `GPU_TARGETS` | `gfx1200` | `Dockerfile.hip`, `.combined` | RX 9060 XT (RDNA4). `install-rocm.sh` compiles a probe for it, so a target with no device bitcode fails the **build**. |
 | `ROCM_PACKAGES` | *(the compiler + profilers)* | `Dockerfile.hip`, `.combined` | See below. |
 | `CLAUDE_CODE_VERSION` | pinned | all three GPU files | Bump with `devtools/claude-version.sh --apply`, which rewrites all three. |
+| `AGY_RELEASE`, `AGY_SHA512` | pinned | all three GPU files | The Antigravity CLI, by *release* (version plus build id) and the sha512 of that exact tarball. **Two lines, bumped as one** — `devtools/agy-version.sh --apply` rewrites both in all three. |
 | `UBUNTU_TAG`, `CMAKE_VERSION`, `NINJA_VERSION`, `SCCACHE_VERSION` | pinned | `Dockerfile.base` | |
 | `GH_VERSION` | `2.102.0` | `Dockerfile.base` | The GitHub CLI, for the PR / issue / milestone skills. Upstream tarball, not noble's 2.45.0. Bumping it reparents every GPU child, so the CUDA and ROCm installs rebuild — bump it when a flow needs the newer `gh`. |
 
@@ -131,6 +132,61 @@ like a machine with no AMD card, and has been misread as one.
 `devtools/devcontainer.sh` and `devtools/kernel-tier.sh` both resolve these with
 `getent`; `compose.yaml` reads `FJ_RENDER_GID`/`FJ_VIDEO_GID`.
 
+## The Antigravity CLI is pinned by *release*, not version
+
+Each GPU file ends with `docker/install-agy.sh`, the layer after Claude Code's.
+It installs Google's Antigravity CLI as `/usr/local/bin/agy`: download the
+pinned tarball, verify its sha512, extract the one binary, then check
+`agy --version` and that `agy` on `PATH` is the copy just installed. A 404 or
+a renamed archive member fails the build rather than producing a container
+with no `agy` in it.
+
+```bash
+devtools/agy-version.sh                    # pinned / upstream / installed here
+devtools/agy-version.sh --apply            # rewrite the pin to upstream's current release
+devtools/agy-version.sh --apply 1.3.3-5524738307653632
+devtools/agy-version.sh --apply --rebuild  # ...and rebuild the images already built here
+devtools/agy-version.sh --verify           # re-hash the pinned tarball against the pin
+```
+
+**The pin is a release id — `1.3.3-5524738307653632` — and two lines, not one.**
+Upstream's updater endpoint serves only the *current* release, so a version on
+its own is not addressable the way `claude-code@2.1.300` is; what is addressable
+is the storage URL, whose path carries the version plus an opaque build id. So
+`ARG AGY_RELEASE` pins that segment and `ARG AGY_SHA512` pins the tarball it
+names, `install-agy.sh` verifies the hash, and `agy-version.sh --apply` rewrites
+both in all three files. The build then needs no manifest at all: an upstream
+release neither changes what the image installs nor breaks the build.
+
+Three consequences worth knowing:
+
+- **Rolling back needs a release id you already have** — a previous value of the
+  pin, which is in git. Upstream publishes no index of older releases.
+  `--apply <release>` downloads that tarball to hash it (~62MB), because the
+  manifest carries a hash for the current release only.
+- **`ENV AGY_CLI_DISABLE_AUTO_UPDATE=1` is load-bearing.** `agy` self-updates in
+  the background during normal runs, which would walk the container away from
+  its pin; the binary is root-owned so the attempt fails anyway, but failing
+  quietly on every run is not the same as not being attempted. This is the same
+  decision as `autoUpdates: false` in `.devcontainer/seed-claude-config.sh`.
+  Bump with `devtools/agy-version.sh`, not `agy update`.
+- **Release and hash can drift out of step**, which is worse than an obvious
+  version gap: two images would install different bytes under one release id.
+  `agy-version.sh` treats the pair as one unit, reports a file whose hash
+  disagrees as `sha-differs`, and refuses to rewrite either alone.
+
+`Dockerfile.combined` runs the script on top of the `cuda` image, which already
+ran it, and the binary is 214MB — so `install-agy.sh` **inherits** a copy that is
+already at the pinned release instead of laying down a second 214MB layer. The
+early exit is keyed on the version matching, so a `combined` pinned to something
+other than its parent still gets its own.
+
+**`agy` in a container is installed, not logged in.** Its state lives in
+`$HOME/.gemini/antigravity-cli/`, and nothing here provides or binds it — the
+devcontainers bind `~/.claude` and `~/.claude.json` only
+(`.devcontainer/*/devcontainer.json`). Adding a `.gemini` bind means editing
+those three files by hand, which `devtools/config.sh` cannot reach.
+
 ## Files
 
 | | |
@@ -139,4 +195,5 @@ like a machine with no AMD card, and has been misread as one.
 | `install-cuda.sh` | the CUDA toolkit from apt, then an `nvcc -cubin` probe for `CUDA_ARCH` |
 | `install-rocm.sh` | the ROCm repo and keyring, the package set above, the loader path, the device groups, then a `hipcc` compile-and-link probe for `GPU_TARGETS` |
 | `install-claude-code.sh` | Node 22 and Claude Code at an explicit version, with a check that what landed is what was asked for |
+| `install-agy.sh` | the Antigravity CLI from a pinned tarball: sha512 verified, then `agy --version` and `command -v agy` checked against what was asked for |
 | `compose.yaml` | the batch services |

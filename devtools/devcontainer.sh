@@ -481,6 +481,31 @@ report_claude_pin() {
   fi
 }
 
+# The same, for the Antigravity CLI. A separate function rather than a loop
+# over both pins: the two differ in what "behind" even means -- claude's pin is
+# a version the npm registry serves on demand, agy's is a release id plus the
+# sha512 of one tarball, and only the second can be internally inconsistent
+# (a release rewritten without its hash). That case gets its own line, because
+# a build would refuse the download and report a corrupt-or-compromised
+# payload, which reads like an attack rather than a half-finished bump.
+report_agy_pin() {
+  local av out pinned upstream files
+  av="$REPO_ROOT/devtools/agy-version.sh"
+  [ -x "$av" ] || return 0
+  [ -n "${AGY_PIN_FILES:-}" ] || return 0
+  out=$(AGY_REGISTRY_TIMEOUT=${AGY_REGISTRY_TIMEOUT:-3} "$av" --porcelain 2>/dev/null)
+  pinned=$(printf '%s\n' "$out" | sed -n 's/^pinned //p')
+  upstream=$(printf '%s\n' "$out" | sed -n 's/^upstream //p')
+  files=$(printf '%s\n' "$out" | sed -n 's/^files //p')
+  if [ -z "$pinned" ] || [ "$pinned" = "-" ]; then
+    echo "agy: the release pin disagrees across the Dockerfiles -- $files" >&2
+    echo "     fix: devtools/agy-version.sh --apply <release>" >&2
+  elif [ -n "$upstream" ] && [ "$upstream" != "-" ] && [ "$pinned" != "$upstream" ]; then
+    echo "agy: image pins $pinned, upstream has $upstream" >&2
+    echo "     bump: devtools/agy-version.sh --apply, then $0 rebuild" >&2
+  fi
+}
+
 # The CLI prints the whole `docker run` invocation on failure, GH_TOKEN and
 # all. Everything below routes through this so a secret cannot reach the
 # terminal; the exit status is the CLI's, not sed's.
@@ -512,6 +537,7 @@ case "${1:-}" in
     tag_variant_image
     apply_cpu_limits
     report_claude_pin
+    report_agy_pin
     ;;
   rebuild)
     # Needed after editing devcontainer.json or the Dockerfile: a plain `up`
@@ -531,6 +557,7 @@ case "${1:-}" in
     tag_variant_image
     apply_cpu_limits
     report_claude_pin
+    report_agy_pin
     ;;
   shell)
     shift

@@ -261,10 +261,23 @@ grain**, because it caches nvcc and hipcc output and the kernel tier recompiles
 the same generated translation units across runs. Add a library only with the
 code that links it, and say what does.
 
-**Claude Code is pinned in the three GPU files**, each ending with
-`docker/install-claude-code.sh`. The version is therefore declared three times —
-bump it with `devtools/claude-version.sh --apply`, which rewrites all three;
-`doctor.sh` reports when they disagree or the pin is behind the registry.
+**Two agents are pinned in the three GPU files**, as the last two installs in
+each — `docker/install-claude-code.sh`, then `docker/install-agy.sh`, with only
+the `USER ubuntu` switch and a toolchain check after them. So each
+version is declared three times — bump Claude Code with
+`devtools/claude-version.sh --apply`, which rewrites all three, and `agy` with
+`devtools/agy-version.sh --apply`; `doctor.sh` reports when either disagrees
+across the files or has fallen behind upstream.
+
+`agy`'s pin is **two lines per file** (`ARG AGY_RELEASE` plus `ARG AGY_SHA512`)
+because upstream's manifest serves only the current release: a version alone is
+not addressable, so the pin is a release id — version plus an opaque build id —
+and the sha512 of that exact tarball, which `install-agy.sh` verifies rather
+than records. `agy-version.sh` rewrites the pair as one unit and reports a file
+whose hash drifted from its release as `sha-differs`; `--verify` re-hashes the
+pinned tarball (~62MB) without touching an image. `agy` is installed in the
+images but **not logged in** — its state lives in `$HOME/.gemini`, which
+nothing here binds.
 
 `docker/README.md` has the build args, the compose services and the AMD
 passthrough; the **devbox** skill drives it.

@@ -10,9 +10,11 @@
 #
 # The pin is `ARG CLAUDE_CODE_VERSION=` in each file named by CLAUDE_PIN_FILES
 # in devtools/config.sh -- the three GPU Dockerfiles, which each install
-# docker/install-claude-code.sh as their last layer. That script's header has
-# why the pin exists; this one keeps the copies in step, because a bump that
+# docker/install-claude-code.sh as a leaf layer. That script's header has why
+# the pin exists; this one keeps the copies in step, because a bump that
 # reaches two files out of three is exactly the drift it was meant to end.
+# devtools/agy-version.sh is its sibling, for the Antigravity CLI pinned in
+# the same three files.
 #
 # Exit status: 0 when every file agrees with every other (and, for --apply,
 # when the rewrite landed), 1 otherwise. Being BEHIND the registry is not a

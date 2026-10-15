@@ -346,9 +346,10 @@ DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-}
 
 # Where the Claude Code version pin lives, one path per line, relative to the
 # repo root: every file carrying an `ARG CLAUDE_CODE_VERSION=` line. These are
-# the GPU Dockerfiles, each of which runs docker/install-claude-code.sh as its
-# last layer -- NOT Dockerfile.base, because a bump there would rebuild the
-# CUDA toolkit and the ROCm install downstream of it.
+# the GPU Dockerfiles, each of which runs docker/install-claude-code.sh as a
+# leaf layer -- NOT Dockerfile.base, because a bump there would rebuild the
+# CUDA toolkit and the ROCm install downstream of it. See AGY_PIN_FILES below
+# for the other agent, pinned the same way in the same three files.
 #
 # devtools/claude-version.sh reads, compares and rewrites exactly these, and
 # doctor.sh warns when they disagree or have fallen behind the npm registry.
@@ -363,3 +364,42 @@ docker/Dockerfile.combined"}
 # before giving up and reporting the pin alone.
 CLAUDE_NPM_PACKAGE=${CLAUDE_NPM_PACKAGE:-@anthropic-ai/claude-code}
 CLAUDE_REGISTRY_TIMEOUT=${CLAUDE_REGISTRY_TIMEOUT:-8}
+
+# --- the OTHER agent in the images ------------------------------------------
+
+# Where the Antigravity CLI pin lives, one path per line: every file carrying
+# an `ARG AGY_RELEASE=` line. The same three GPU Dockerfiles as
+# CLAUDE_PIN_FILES above, and for the same reason -- install-agy.sh is a leaf
+# layer, not a Dockerfile.base one, so a bump never invalidates the toolkits.
+#
+# devtools/agy-version.sh reads, compares and rewrites exactly these, and
+# doctor.sh warns when they disagree or have fallen behind upstream. Set it
+# empty to drop both checks; a listed path that does not exist is an error.
+AGY_PIN_FILES=${AGY_PIN_FILES:-"docker/Dockerfile.cuda
+docker/Dockerfile.hip
+docker/Dockerfile.combined"}
+
+# TWO pinned lines per file, not one: the sha512 belongs to the exact tarball
+# the release names. agy-version.sh treats them as one unit and refuses to
+# rewrite either alone, because a release bumped without its hash is a build
+# that fails its own checksum -- which reads like a compromised download.
+AGY_RELEASE_ARG=${AGY_RELEASE_ARG:-AGY_RELEASE}
+AGY_SHA512_ARG=${AGY_SHA512_ARG:-AGY_SHA512}
+
+# Upstream serves ONE release -- the current one -- from a per-platform
+# manifest carrying its version, tarball URL and sha512 together. That triple
+# arriving from a single document is what makes `--apply` safe: the hash is
+# never paired with a release it does not belong to.
+#
+# TWO platform spellings, and they are not interchangeable: the manifest is
+# keyed `linux_amd64` (upstream's installer's own naming), while the storage
+# path segment and tarball are spelled `linux-x64`. install-agy.sh reads the
+# second as AGY_PLATFORM; this is the first.
+AGY_MANIFEST_BASE=${AGY_MANIFEST_BASE:-https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests}
+AGY_MANIFEST_PLATFORM=${AGY_MANIFEST_PLATFORM:-linux_amd64}
+AGY_REGISTRY_TIMEOUT=${AGY_REGISTRY_TIMEOUT:-8}
+
+# How long `agy-version.sh --verify` may spend pulling the pinned tarball. It
+# is ~62MB compressed (a 214MB binary), so this is a download timeout rather
+# than an API one -- nothing on the report path uses it.
+AGY_DOWNLOAD_TIMEOUT=${AGY_DOWNLOAD_TIMEOUT:-900}
