@@ -3,11 +3,12 @@
 Three things are asserted, the issue's acceptance in order:
 
 1. THE LITERAL KERNEL IS BYTE-IDENTICAL. The emitted CUDA and HIP text of
-   every K kernel the builders make through L = 4 -- every class at one
-   batch, and every class at 3 and 6 batches where the plan admits the
-   split -- digested, against a digest computed from the tree BEFORE #367
-   (`main` at 6a57a32, the same enumeration run over its `src/`). The K
-   subgrid cells through L = 10 are the same check, `slow`.
+   every K kernel the builders make through L = 4 (milestone 13's cap) --
+   every class at one batch, and every class at 3 and 6 batches where the
+   plan admits the split -- digested, against a digest computed from the
+   tree BEFORE #367 (`main` at 6a57a32, the same enumeration run over its
+   `src/`), pinned at L <= 2 and at L <= 4. The K subgrid cells through
+   L = 10, above the cap, are the same check, `slow`.
 2. EVERY HOOK HAS A DEFAULT, AND THE DEFAULT IS THE FROZEN PATH: the
    resolution of a literal spec is `DEFAULT_HOOKS`; each hook, wrapped by a
    spy that delegates to its default, is CALLED by the builder and changes
@@ -58,15 +59,18 @@ Am = tuple[int, int, int, int]
 # 1. Byte-identity of the literal kernel, against the pre-#367 tree
 # ---------------------------------------------------------------------------
 
-LADDER: list[Am] = [am for am in itertools.product(range(5), repeat=4)
-                    if sum(am) <= 4]
+def _ladder(lmax: int) -> list[Am]:
+    return [am for am in itertools.product(range(lmax + 1), repeat=4)
+            if sum(am) <= lmax]
 
 
-def _ladder_specs() -> list[Spec]:
-    """Every K class through L = 4 at one batch, then at 3 and 6 batches
-    where the plan admits the split (an empty batch is refused by `plan`)."""
-    out = [k_class_spec(*am) for am in LADDER]
-    for am in LADDER:
+def _ladder_specs(lmax: int) -> list[Spec]:
+    """Every K class through L = `lmax` at one batch, then at 3 and 6
+    batches where the plan admits the split (an empty batch is refused by
+    `plan`)."""
+    ladder = _ladder(lmax)
+    out = [k_class_spec(*am) for am in ladder]
+    for am in ladder:
         for n in (3, 6):
             spec = Spec(Operator.COULOMB, 0, am, Target.K, n_batches=n)
             try:
@@ -90,14 +94,23 @@ def digest(specs: list[Spec]) -> tuple[int, str]:
 
 
 # Computed by `digest` over the pre-#367 tree's src/ (main at 6a57a32).
-LADDER_PIN = (607, "ae2c63aa770d4257a81382e81fde53dcd8d5a8ff0609871eab9d4e9299e274f0")
+# Fast: the ladder at L <= 2 and at L <= 4 (milestone 13's cap). The
+# subgrid through L = 10 is above the cap: `slow`.
+LADDER_PIN_2 = (57, "05801b52e91bdf1fd98f79da245e580b0e240f2889aef7c64979b736d7ebccca")
+LADDER_PIN_4 = (607, "ae2c63aa770d4257a81382e81fde53dcd8d5a8ff0609871eab9d4e9299e274f0")
 SUBGRID_PIN = (62, "7fff10a0d78d89ab4f4805dbda7878ed12c2f6c619952bb92370c09504e31cef")
 
 
 def test_the_literal_ladder_is_byte_identical_to_before_the_seams() -> None:
-    specs = _ladder_specs()
+    specs = _ladder_specs(2)
+    assert len([s for s in specs if s.n_batches == 1]) == 15
+    assert digest(specs) == LADDER_PIN_2
+
+
+def test_the_literal_ladder_through_l4_is_byte_identical() -> None:
+    specs = _ladder_specs(4)
     assert len([s for s in specs if s.n_batches == 1]) == 70
-    assert digest(specs) == LADDER_PIN
+    assert digest(specs) == LADDER_PIN_4
 
 
 @pytest.mark.slow
@@ -141,8 +154,8 @@ def test_a_literal_spec_resolves_to_the_defaults_and_nothing_is_registered(
                                                         hooks=DEFAULT_HOOKS)
 
 
-SPY_SPECS = [k_class_spec(1, 1, 1, 0),
-             Spec(Operator.COULOMB, 0, (1, 1, 1, 0), Target.K, n_batches=3)]
+SPY_SPECS = [k_class_spec(1, 0, 1, 0),
+             Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.K, n_batches=3)]
 
 
 @pytest.mark.parametrize("hook", HOOKS)
@@ -203,7 +216,7 @@ def test_a_fan_out_is_refused_by_the_one_kernel_builder() -> None:
     with pytest.raises(ValueError, match="fans out into 2 kernels"):
         build_k_kernel(SPY_SPECS[0], hooks=fan)
     names = [k.name for k in build_k_kernels(SPY_SPECS[0], hooks=fan)]
-    assert names == ["k_11_10_x", "k_11_10_y"]
+    assert names == ["k_10_10_x", "k_10_10_y"]
     with pytest.raises(TypeError, match="KHooks"):
         build_k_kernel(SPY_SPECS[0], hooks=object())  # type: ignore[arg-type]
 
@@ -330,7 +343,7 @@ def test_an_e_ac_rebinding_moves_the_binding_and_its_reads_together() -> None:
     hooks = dataclasses.replace(
         DEFAULT_HOOKS, bind_e_ac=bind,
         e_ac=lambda ctx, rac, i: Index("Eac2", (Lit(rac), Lit(i))))
-    for am in [(1, 1, 1, 0), (2, 0, 0, 0), (0, 1, 1, 0)]:
+    for am in [(1, 0, 1, 0), (2, 0, 0, 0), (0, 1, 1, 0)]:
         kern = build_k_kernel(am, hooks=hooks)
         assert kern != build_k_kernel(am)
         assert not any(isinstance(s, Decl) and s.name == "Eac"
