@@ -13,9 +13,9 @@ WHAT IS PINNED, all interpreted, nothing compiled or launched:
    its updates: one target live at a time, and `lower.KernelCost`'s
    `peak_live` is no larger than the literal kernel's at any L, and strictly
    smaller from L = 2.
-4. THE NUMBERS, one batch (L = 0..2 fast, 3..8 `slow`) and split
-   (`passes.atomize`d batch kernels: every admitted (L <= 2, n_batches)
-   fast; L = 3, 4 and L = 7 x {3, 6} `slow`), against `reference.pq.one_centre`
+4. THE NUMBERS, one batch (L = 0..4 fast, 5..8 `slow`) and split
+   (`passes.atomize`d batch kernels: every admitted (L <= 4, n_batches)
+   fast, L = 7 x {3, 6} `slow`), against `reference.pq.one_centre`
    contracted with the same `D_q` -- eqs. 20-22 -- at test_kernel.py's
    tolerance, UNCHANGED: `|J_p - want_p| <= 1e-12 * SUM |[p|q] D_q|`.
 
@@ -77,18 +77,9 @@ def _admitted(L: int, n: int) -> bool:
     return True
 
 
-CAP = 2  # the milestone's per-PR kernel cap (user's rule); above it, `slow`
-
-
-def _ls(top: int) -> list:
-    """L = 0..top, every L above CAP marked `slow`."""
-    return [pytest.param(L, marks=pytest.mark.slow) if L > CAP else L
-            for L in range(top + 1)]
-
-
-ONE_BATCH = _ls(8)
-SPLIT = [pytest.param(L, n, marks=pytest.mark.slow) if L > CAP else (L, n)
-         for L in range(5) for n in (3, 6, 9) if _admitted(L, n)]
+ONE_BATCH = [pytest.param(L, marks=pytest.mark.slow) if L > 4 else L
+             for L in range(9)]
+SPLIT = [(L, n) for L in range(5) for n in (3, 6, 9) if _admitted(L, n)]
 SPLIT_SLOW = [pytest.param(7, n, marks=pytest.mark.slow) for n in (3, 6)]
 
 
@@ -179,19 +170,18 @@ def test_fused_is_a_j_only_kernel_body_lever() -> None:
     assert (lever.name, lever.issue, lever.legal) == (FUSED, 344,
                                                      frozenset({"j"}))
     assert levers.is_kernel_lever(FUSED)
-    assert pq_spec(2, (FUSED,)).kernel_body_levers() == (FUSED,)
-
+    assert pq_spec(4, (FUSED,)).kernel_body_levers() == (FUSED,)
     def dags(p) -> tuple:
         return tuple((d.batch, d.targets, dict(d.parents)) for d in p.dags)
 
-    assert dags(builder_plan(pq_spec(2, (FUSED,)))) == dags(plan(pq_spec(2)))
+    assert dags(builder_plan(pq_spec(4, (FUSED,)))) == dags(plan(pq_spec(4)))
     with pytest.raises(ValueError, match="staged through both E fragments"):
-        Spec(pq_spec(2).operator, 0, (1, 0, 1, 0), Target.K, (FUSED,))
+        Spec(pq_spec(4).operator, 0, (1, 1, 1, 1), Target.K, (FUSED,))
 
 
 def test_the_lever_is_in_the_key() -> None:
-    assert pq_spec(2, (FUSED,)).key() != pq_spec(2).key()
-    assert FUSED in pq_spec(2, (FUSED,)).key()
+    assert pq_spec(4, (FUSED,)).key() != pq_spec(4).key()
+    assert FUSED in pq_spec(4, (FUSED,)).key()
 
 
 # ---------------------------------------------------------------------------
@@ -223,14 +213,14 @@ def _names(e) -> set[str]:
     return out
 
 
-@pytest.mark.parametrize("L", _ls(4))
+@pytest.mark.parametrize("L", range(5))
 def test_no_lever_is_the_literal_kernel(L: int) -> None:
     assert build_pq_kernel(pq_spec(L)) == build_pq_kernel(L)
     assert not any(isinstance(s, Note) and s.prov == FUSED_NOTE
                    for s in walk(build_pq_kernel(L).body))
 
 
-@pytest.mark.parametrize("L", _ls(8))
+@pytest.mark.parametrize("L", range(9))
 def test_only_the_ket_loop_tail_changes(L: int) -> None:
     lit, fus = build_pq_kernel(L), build_pq_kernel(_fused(L))
     assert lit.name == fus.name and lit.params == fus.params
@@ -259,7 +249,7 @@ def test_only_the_ket_loop_tail_changes(L: int) -> None:
     assert len(_jsh_updates(fb)) == pairs
 
 
-@pytest.mark.parametrize("L", _ls(8))
+@pytest.mark.parametrize("L", range(9))
 def test_each_target_is_consumed_right_after_it_is_formed(L: int) -> None:
     body = list(_loop(build_pq_kernel(_fused(L))).body)
     targets = {node_name((r, 0)) for r in hermite_targets(L)}
@@ -278,7 +268,7 @@ def test_each_target_is_consumed_right_after_it_is_formed(L: int) -> None:
         assert not later, f"{name} is still read after its contraction"
 
 
-@pytest.mark.parametrize("L", _ls(8))
+@pytest.mark.parametrize("L", range(9))
 def test_peak_live_never_grows_and_falls_from_l2(L: int) -> None:
     lit = kernel_cost(build_pq_kernel(L), registers=64).peak_live
     fus = kernel_cost(build_pq_kernel(_fused(L)), registers=64).peak_live
@@ -299,9 +289,8 @@ def test_fuse_refuses_a_target_the_recurrence_never_forms() -> None:
 
 
 def test_the_split_form_is_atomized_and_keeps_the_lever() -> None:
-    ks = _kernels(_fused(2, 3))
-    lit = _kernels(pq_spec(2, n_batches=3))
-    assert len(ks) == 3
+    ks = _kernels(_fused(4, 3))
+    lit = _kernels(pq_spec(4, n_batches=3))
     assert [k.name for k in ks] == [k.name for k in lit]
     for k in ks:
         provs = [s.prov for s in walk(k.body) if isinstance(s, Note)]
@@ -327,7 +316,7 @@ def test_split_class_matches_the_reference(L: int, n_batches: int) -> None:
 
 
 def test_a_wide_warp_and_screened_kets() -> None:
-    spec = _fused(2)
+    spec = _fused(4)
     args = _inputs(spec, n_bra=3, n_ket=40, seed=44)
     args["tau"] = float(np.median(args["Ip"][1] * args["Iq"] * args["Dmax"]))
     got = _run(spec, args, lanes=32)
