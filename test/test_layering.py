@@ -1617,3 +1617,38 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
         for banned in ("kernel_k", _REF, "ao", "interp", "emit", "device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #344 (milestone 13): `j_levers/`, the J kernel-body levers' behaviour, one
+# module per lever (`fused` first; #346's mixed precision follows). The
+# vocabulary entry is `levers`'; the IR the lever builds is here, reached
+# from `kernel._pq_kernel` by one hook. Builder-side, so the `builder` rule's
+# bans hold: no reference/, no interpreter, no backend, no card.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "j_lever": _rule(
+        "j_levers/ (#344): the [p|q] kernel's kernel-body levers, IR in and "
+        "IR out, called by `kernel.py`'s hook when `Spec.kernel_body_levers` "
+        "names one. It reads the recurrence's node names and the targets' "
+        "type; the plan, the batch and the contraction arrive as arguments",
+        ("ir", "recurrence", "plan.targets"),
+        kernel="`kernel.py` calls the lever; the reverse is a cycle",
+        levers="the builder reads the vocabulary through `spec`; a lever's "
+               "behaviour does not re-read it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        interp="the lever is checked by the interpreter, never built on it",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {"j_levers": "j_lever", "j_levers.fused": "j_lever"}
+EDGES |= {k: frozenset(v) for k, v in {
+    "j_levers": (),
+    "j_levers.fused": ("ir", "plan.targets", "recurrence"),
+}.items()}
+RULES["builder"] = Rule(RULES["builder"].why + "; its J kernel-body levers' "
+                        "behaviour lives in `j_levers/` (#344)",
+                        RULES["builder"].may | frozenset(("j_levers",)),
+                        RULES["builder"].must_not)
+EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",))
