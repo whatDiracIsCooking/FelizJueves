@@ -11,6 +11,12 @@ default, which stays 37 units with every pinned `source_sha256`. The fused
 Fock kernel (`--fock-class` / `--fock-l`, #287) is a separate path, tested
 in test/test_emit_fock.py; here only its absence from the default.
 
+THE LEVER LADDERS (#339) are flags read from a registry
+(`lever_ladder.flags()`, over `levers.VOCABULARY`): `--klever-<name>-pq` and
+`--klever-<name>-k` add lever units beside the J ladders, and
+`--klever-<name>-fock-l` sits on the F path. The vocabulary ships empty, so
+the tests below declare a probe lever; none is in the bare default.
+
 THE SELECTOR writes, per `(class, n_batches)` cell, the chain one class
 needs -- its ket's `DQ`, its `[p|q]` batch kernels, its bra's `JAB` -- with
 an `order` file naming them in that launch order.
@@ -24,17 +30,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from test_ao_j_interpreted import _case, _classes, _shell_ams
 
+from felizjueves import lever_ladder, levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels
+from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel_k import build_k_kernel
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
@@ -277,3 +286,102 @@ def test_the_selector_order_is_dq_batches_jab_for_a_split_cell(tmp_path):
     pq = build_pq_kernels(emit_cli.class_spec(am, 3))
     assert len(pq) == 3
     assert order == ["dq_1_1.cu", *(f"{k.name}.cu" for k in pq), "jab_11.cu"]
+
+
+# --- the lever ladders (#339) -------------------------------------------------
+#
+# The flags are DATA: one per (kernel-body lever, family), read from
+# `levers.VOCABULARY` through `lever_ladder.flags()` each time the parser is
+# built. The vocabulary ships empty, so these tests declare a PROBE lever
+# (`monkeypatch.setitem`), the way a lever issue declares its entry -- and the
+# CLI is never edited for it.
+
+PROBE = "probe"
+
+
+def _declare(monkeypatch, legal, name=PROBE):
+    monkeypatch.setitem(levers.VOCABULARY, name, levers.Lever.of(
+        name, 339, "the ladder's witness; no statement changes", legal))
+
+
+def test_with_the_vocabulary_empty_there_is_no_lever_flag(tmp_path):
+    assert levers.VOCABULARY == {}
+    assert lever_ladder.flags() == ()
+    assert _run(tmp_path, "cuda", "--klever-probe-pq", "1") == 2
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_a_declared_lever_gets_its_flags_and_the_default_is_unmoved(
+        backend, monkeypatch, tmp_path):
+    """Declaring a lever adds its flags and nothing else: the bare command
+    still writes the 37 J-chain units, byte for byte (the pins above)."""
+    _declare(monkeypatch, {"j", "k", "f"})
+    assert [lf.flag for lf in lever_ladder.flags()] == [
+        "--klever-probe-pq", "--klever-probe-k", "--klever-probe-fock-l"]
+    _, _, ext = BACKEND[backend]
+    assert _run(tmp_path, backend) == 0
+    assert _names(tmp_path) == _pq_names(ext) | _pair_names(ext)
+    for L in range(17):
+        k = build_pq_kernel(L)
+        assert (tmp_path / f"{k.name}.{ext}").read_text() == \
+            BACKEND[backend][0](k, BACKEND[backend][1])
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_pq_lever_ladder_adds_its_units_beside_the_literal(
+        backend, monkeypatch, tmp_path):
+    _declare(monkeypatch, {"j"})
+    emit, arch, ext = BACKEND[backend]
+    lit = tmp_path / "lit"
+    assert _run(lit, backend, "--L", "1", "2") == 0
+    assert _run(tmp_path / "lv", backend, "--L", "1", "2",
+                "--klever-probe-pq", "1", "3") == 0
+    lv = tmp_path / "lv"
+    assert _names(lv) == _names(lit) | {f"pq_L1_p1_q0_lv_probe.{ext}",
+                                        f"pq_L3_p2_q1_lv_probe.{ext}"}
+    for n in _names(lit):  # the literal units did not move
+        assert (lv / n).read_bytes() == (lit / n).read_bytes()
+    for L in (1, 3):
+        k = build_pq_kernel(pq_spec(L, levers=(PROBE,)))
+        k = replace(k, name=f"{k.name}_lv_probe")
+        assert (lv / f"{k.name}.{ext}").read_text() == emit(k, arch)
+        assert "lever probe (#339)" in emit(k, arch)  # the builder's Note
+
+
+def test_a_lever_flag_alone_adds_to_the_default_ladders(monkeypatch, tmp_path):
+    _declare(monkeypatch, {"j", "k"})
+    assert _run(tmp_path, "cuda", "--klever-probe-pq", "0",
+                "--klever-probe-k", "2") == 0
+    k2 = build_k_kernel(replace(k_spec(2), levers=(PROBE,)))
+    assert _names(tmp_path) == (_pq_names("cu") | _pair_names("cu")
+                                | {"pq_L0_p0_q0_lv_probe.cu",
+                                   f"{k2.name}_lv_probe.cu"})
+    assert k2.name.startswith("k_")
+
+
+def test_the_f_lever_flag_is_on_the_fock_path(monkeypatch, tmp_path):
+    _declare(monkeypatch, {"f"})
+    assert [lf.flag for lf in lever_ladder.flags()] == ["--klever-probe-fock-l"]
+    assert _run(tmp_path / "a", "cuda", "--klever-probe-fock-l", "0") == 0
+    assert _names(tmp_path / "a") == {"f_0000_lv_probe.cu"}
+    assert _run(tmp_path / "b", "hip", "--fock-l", "0",
+                "--klever-probe-fock-l", "1") == 0
+    assert _names(tmp_path / "b") == {"f_0000.hip"} | {
+        f"f_{''.join(map(str, c))}_lv_probe.hip"
+        for c in emit_cli.fock_classes(1)}
+
+
+@pytest.mark.parametrize("argv", [
+    ["--klever-probe-k", "1"],  # illegal on K: no flag at all
+    ["--klever-probe-pq", "-1"],
+    ["--klever-probe-pq", "x"],
+    ["--klever-probe-pq", "1", "--class", "0", "0", "0", "0"],
+    ["--klever-probe-pq", "1", "--fock-l", "0"],
+    ["--klever-probe-fock-l", str(emit_cli.FOCK_L_MAX + 1)],
+    ["--klever-probe-fock-l", "0", "--L", "0"],
+    ["--klever-probe-fock-l", "0", "--one-e-l", "0"],
+])
+def test_a_lever_flag_it_cannot_honour_is_a_2(argv, monkeypatch, tmp_path):
+    _declare(monkeypatch, {"j", "f"})
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())

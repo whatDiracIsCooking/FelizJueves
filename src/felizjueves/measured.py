@@ -19,6 +19,9 @@
                 [--subgrid-ls 7 10] [--compile-timeout S]  # #205's K cells
     python -m felizjueves.measured --remeasure --target f --L 0 1 2
                                                         # #288's F cells
+    python -m felizjueves.measured --remeasure --lever <kernel lever>
+                [--L ... | --subgrid [--target k] | --target f --L ...]
+                                                        # #339's lever rows
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -106,6 +109,19 @@ F CELL). Its one shared array, `ab_sh`, has a literal extent, so nvcc's
 default tier runs on the cards; the clock beside each is written by
 test/test_fock_ondevice.py's opt-in sweep, behind the gate.
 
+THE LEVER ROWS (#339) go through the store's one recording path
+(`measured_store.lever_arm`, then `merge`): `--lever NAME` with a
+kernel-body lever (`levers.VOCABULARY`) adds the lever to whatever cell set
+the rest of the command selects -- the one-batch J classes of `--L`,
+`--subgrid`'s J cells or, with `--target k`, its K cells, or `--target f
+--L ...`'s F classes -- and each row is keyed by the full lever-carrying
+`Spec.key()`. `cell_kernels` passes a kernel-body lever to the builder (J,
+K and F alike; `Spec` has already refused an illegal (target, lever)), and
+names each unit `lever_ladder.unit_name` of its literal name, the name the
+generator CLI's lever ladder writes, so a row's `source_sha256` is the
+emitted file's. A plan or lowering arm (`ARMS`) is still `--subgrid`'s J
+cells only (`ab_cells`), as #55, #162 and #163 recorded it.
+
 COUNTERS (#110) are read here too: `profile` runs a built binary under the
 vendor's profiler and `parse_ncu_csv` / `parse_rocprof_csv` read what it
 wrote, one `KernelCounters` per launch; `counter_rows` files one cell's
@@ -183,12 +199,14 @@ from felizjueves.ir import Decl, Kernel, Lit, Space
 from felizjueves.kernel import build_pq_kernels, pq_spec
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_k import build_k_kernels
+from felizjueves.lever_ladder import unit_name
 from felizjueves.lower import LEVERS, RECYCLE, lower
 from felizjueves.measured_store import (
     GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: test_kernel_device's sweep
 )
 from felizjueves.measured_store import (
     K_SUBGRID,
+    KERNEL,
     MEASUREMENTS,
     NO_SIEVE,
     NOT_MEASURABLE,
@@ -204,7 +222,9 @@ from felizjueves.measured_store import (
     combine,
     kernel_key,
     kernel_roofline,
+    kind_of,
     lever_ab,
+    lever_arm,
     load,
     load_counters,
     merge,
@@ -251,18 +271,34 @@ def cell_kernels(spec: Spec | AsymCell) -> tuple[Kernel, ...]:
     partial-sum form, one kernel per batch, atomized when split. No lever is
     declared for K, so a K Spec carrying one is refused, never built as
     something else. A `Target.F` cell (#288) is `kernel_f.build_f_kernel
-    (spec)`, one unit, and refuses a lever the same way."""
+    (spec)`, one unit, and refuses a lever the same way.
+
+    A KERNEL-BODY lever (`levers.VOCABULARY`, #339) is the builder's: it is
+    passed to the builder on every target (only a lever outside the
+    vocabulary is refused on K and F), and every unit of such a cell is
+    named `lever_ladder.unit_name` of its literal name -- the generator
+    CLI's lever-ladder name. A cell without one keeps its builder's names."""
     if isinstance(spec, AsymCell):
         return spec.kernels()
+    body = spec.kernel_body_levers()
+    if not body:
+        return _built(spec)
+    return tuple(replace(k, name=unit_name(k.name, body))
+                 for k in _built(spec))
+
+
+def _built(spec: Spec) -> tuple[Kernel, ...]:
+    other = tuple(lv for lv in spec.levers
+                  if lv not in spec.kernel_body_levers())
     if spec.target is Target.F:  # #288: one unit, the fused kernel
-        if spec.levers:
+        if other:
             raise ValueError(f"{spec.key()}: no lever is declared for an F "
-                             "cell (#278)")
+                             "cell (#278) but a kernel-body one (#339)")
         return (build_f_kernel(spec),)
     if spec.target is Target.K:
-        if spec.levers:
+        if other:
             raise ValueError(f"{spec.key()}: no lever is declared for a K "
-                             "cell (#205)")
+                             "cell (#205) but a kernel-body one (#339)")
         return build_k_kernels(spec)
     rest = tuple(lv for lv in spec.levers if lv not in LEVERS)
     if rest == spec.levers:
@@ -1060,7 +1096,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--lever", default=None,
                     help="with --subgrid: the A/B cells of this lever "
                          "(#55; ab_cells: no-sieve adds L = 11, #162; "
-                         "tuned drops its NOT_MEASURABLE cells, #163)")
+                         "tuned drops its NOT_MEASURABLE cells, #163); a "
+                         "kernel-body lever (#339) is added to whichever "
+                         "cells --L / --subgrid / --target select")
     ap.add_argument("--lever-ab", default=None, metavar="LEVER",
                     help="print #55's A/B of LEVER against literal, per arch "
                          "and cell")
@@ -1094,24 +1132,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.remeasure:
         names = ("cuda", "hip") if args.backend == "both" else (args.backend,)
         try:
-            if args.lever and not args.subgrid:
+            # #339: a kernel-body lever rides on any cell set; a plan or
+            # lowering arm is the J subgrid's A/B (ab_cells), as before
+            body = bool(args.lever) and kind_of(args.lever) == KERNEL
+            arm = args.lever if not body else None
+            if arm and not args.subgrid:
                 raise ValueError("--lever needs --subgrid")
             if args.asym and (args.subgrid or args.lever):
                 raise ValueError("--asym is its own cell set")
-            if args.target == "k" and (args.lever or args.asym
-                                       or not args.subgrid):
+            if args.target == "k" and (arm or args.asym or not args.subgrid):
                 raise ValueError("--target k is K_SUBGRID: it needs "
-                                 "--subgrid, and takes no lever")
-            if args.target == "f" and (args.lever or args.asym or args.subgrid
+                                 "--subgrid, and takes no plan or lowering "
+                                 "lever")
+            if args.target == "f" and (arm or args.asym or args.subgrid
                                        or args.n_batches or args.subgrid_ls):
                 raise ValueError("--target f is the F ladder by --L: one "
-                                 "batch, no lever, no subgrid")
-            grid = (ab_cells(args.lever) if args.lever
+                                 "batch, no plan or lowering lever, no "
+                                 "subgrid")
+            grid = (ab_cells(arm) if arm
                     else K_SUBGRID if args.target == "k" else SUBGRID)
             cells = (grid if args.subgrid else f_cells(args.Ls)
                      if args.target == "f" else args.Ls)
             if not cells:
                 raise ValueError(f"--L {args.Ls} selects no cell")
+            if body:  # the store's one recording path (lever_arm)
+                grid = tuple(lever_arm(s, args.lever) for s in grid)
+                cells = [lever_arm(pq_spec(c) if isinstance(c, int) else c,
+                                   args.lever) for c in cells]
             if args.asym:
                 grid = cells = ASYM_CELLS
             if (args.subgrid or args.asym) and args.n_batches:
@@ -1120,8 +1167,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if not args.subgrid:
                     raise ValueError("--subgrid-ls needs --subgrid")
                 cells = [s for s in cells if s.total_am in args.subgrid_ls]
-            if args.lever:  # #163: said, never silently skipped
-                for s, why in NOT_MEASURABLE.get(args.lever, {}).items():
+            if arm:  # #163: said, never silently skipped
+                for s, why in NOT_MEASURABLE.get(arm, {}).items():
                     print(f"measured: {s.key()} NOT MEASURABLE -- {why}",
                           file=sys.stderr)
             if args.compile_timeout != COMPILE_TIMEOUT_S:

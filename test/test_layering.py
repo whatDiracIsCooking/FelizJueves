@@ -1663,3 +1663,41 @@ EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",))
 
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.split",))
 EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
+
+
+# ---------------------------------------------------------------------------
+# #339 (milestone 13): the lever ladder as a registry. `lever_ladder` is a
+# leaf beside `levers` (data only: the families and the unit name; no
+# builder), read by both drivers; the generator CLI now also composes
+# `kernel_k` (the K lever ladder) and names `ir.Kernel`; and the store reads
+# the kernel-body vocabulary to know a KERNEL arm (`measured_store.kind_of`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "lever_ladder": _rule(
+        "lever_ladder.py (#339): which flags a kernel-body lever gets on the "
+        "generator CLI -- the families (J, K, F), their flags and the lever "
+        "unit's name -- as data read off `levers.VOCABULARY`. A leaf beside "
+        "`levers`, so both drivers read one table",
+        ("levers",),
+        kernel="the registry names no builder: the CLI maps each family to "
+               "its builder, so the table stays data",
+        emit="a registry spells no text",
+        measured_store="the store reads the vocabulary itself; the ladder "
+                       "is the CLI's"),
+}
+RULE_OF["lever_ladder"] = "lever_ladder"
+EDGES["lever_ladder"] = frozenset(("levers",))
+RULES["driver"] = Rule(RULES["driver"].why + ", and #339's lever ladders "
+                       "through `lever_ladder`",
+                       RULES["driver"].may | frozenset(("lever_ladder",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("ir", "kernel_k", "lever_ladder"))
+EDGES["measured"] = EDGES["measured"] | frozenset(("lever_ladder",))
+RULES["store"] = Rule(RULES["store"].why + "; and the kernel-body lever "
+                      "vocabulary (`levers`, a leaf), whose entries are its "
+                      "KERNEL arms (#339)",
+                      RULES["store"].may | frozenset(("levers",)),
+                      RULES["store"].must_not)
+EDGES["measured_store"] = EDGES["measured_store"] | frozenset(("levers",))
