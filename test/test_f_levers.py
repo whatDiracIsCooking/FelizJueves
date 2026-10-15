@@ -84,6 +84,14 @@ def test_a_lever_not_naming_f_is_refused_on_f_with_its_reason(
                               f"{levers.DEFAULT_REFUSALS['f']}")
 
 
+def test_every_declared_lever_not_naming_f_is_refused_on_f() -> None:
+    # The real vocabulary (#344's `fused` among it), not a probe.
+    for name, lever in levers.VOCABULARY.items():
+        if "f" not in lever.legal:
+            with pytest.raises(ValueError, match="lever .* on target f: "):
+                f_class_spec(1, 0, 1, 0, (name,))
+
+
 def test_a_lever_naming_f_alone_is_refused_on_every_other_target(
         f_probe) -> None:
     for target in Target:
