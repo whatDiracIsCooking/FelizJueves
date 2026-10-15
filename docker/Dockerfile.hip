@@ -73,7 +73,7 @@ ENV PATH=${PATH}:/opt/rocm/bin
 # Dockerfile.cuda, .hip and .combined, so bump it with
 # `devtools/claude-version.sh --apply`, which rewrites all three at once --
 # doctor.sh warns when they have drifted apart.
-ARG CLAUDE_CODE_VERSION=2.1.292
+ARG CLAUDE_CODE_VERSION=2.1.300
 ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
 RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
     bash /tmp/install-claude-code.sh

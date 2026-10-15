@@ -65,3 +65,8 @@ scratch/
 *.ncu-rep
 *.qdrep
 *.sqlite
+# rocprofv3 drops a .rocprofv3/ cache directory in whatever cwd it ran from.
+# Every caller in the tree already keeps it out of the checkout -- measured.py
+# profiles from its workdir, and test_toolchain.py / test_ceilings_device.py
+# from a tmp_path -- so this line is for the hand-run probe that did not.
+.rocprofv3/

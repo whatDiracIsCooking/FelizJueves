@@ -51,7 +51,7 @@ ENV PATH=${PATH}:/opt/rocm/bin
 # this image -- the `cuda` parent already ran it -- which is why its keyring
 # step passes `gpg --batch --yes`: a bare dearmor over an existing file prompts,
 # opens /dev/tty to do it, and dies in a build that has none.
-ARG CLAUDE_CODE_VERSION=2.1.292
+ARG CLAUDE_CODE_VERSION=2.1.300
 ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
 RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
     bash /tmp/install-claude-code.sh
