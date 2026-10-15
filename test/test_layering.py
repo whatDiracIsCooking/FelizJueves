@@ -457,7 +457,7 @@ RULES: dict[str, Rule] = {
         "a split class's kernels are built then `passes.atomize`d (#203), "
         "as the `builder` rule lets `kernel.py` do",
         ("spec", "plan", "ir", "recurrence", "e_fragment", "kernel",
-         "passes"),
+         "passes", "k_levers"),
         ao="`ao.k.k_quartet` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
            "importing either shares ancestry with its witness (#20); both "
@@ -633,8 +633,10 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
     # #337: the plan reached through `kernel.builder_plan`, which strips the
     # kernel-body levers, so `plan.pipeline` is no longer imported here.
-    "kernel_k": ("e_fragment", "ir", "kernel", "passes",
-                 "plan.schedule", "plan.targets", "recurrence", "spec"),
+    # #367: the lever seams (`k_levers.seams`, the frozen defaults moved
+    # there) and the registry that composes a spec's levers (`k_levers`).
+    "kernel_k": ("ir", "k_levers", "k_levers.seams", "kernel", "passes",
+                 "recurrence", "spec"),
     "levers": (),
 }.items()}
 
@@ -1564,3 +1566,54 @@ def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
 
 GENERATORS["measured"] = frozenset(("kernel", "kernel_f"))
 EDGES["measured"] = EDGES["measured"] | frozenset(("kernel_f",))
+
+
+# ---------------------------------------------------------------------------
+# #367 (milestone 13, SK): the K kernel's lever seams. `k_levers.seams` holds
+# `KHooks`, `KContext` and the frozen defaults `kernel_k`'s skeleton calls;
+# `k_levers` is the registry a lever module plugs into. Both sit BELOW
+# `kernel_k` (it imports them), so neither may reach it back, and they keep
+# the `k_builder` rule's prohibitions: what they build is part of the K
+# kernel. A K lever module (`k_levers/<name>.py`) is ruled `k_lever` too.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "k_lever": _rule(
+        "k_levers/ (#367): the K kernel's lever seams (`seams`: the hooks, "
+        "their context and the frozen defaults, statements built from the "
+        "plan's targets and schedule, the recurrence's node names and the "
+        "`E` fragments) and the registry composing a spec's K levers, one "
+        "module per lever",
+        ("spec", "plan", "ir", "recurrence", "e_fragment", "k_levers"),
+        kernel_k="the skeleton imports the seams: a seam or a lever reaching "
+                 "back into `kernel_k` is a cycle",
+        ao=RULES["k_builder"].must_not["ao"],
+        interp=RULES["k_builder"].must_not["interp"],
+        emit=RULES["k_builder"].must_not["emit"],
+        device=RULES["k_builder"].must_not["device"],
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {m: "k_lever" for m in _modules() if _under(m, "k_levers")}
+EDGES |= {k: frozenset(v) for k, v in {
+    "k_levers": ("k_levers.seams", "spec"),
+    "k_levers.seams": ("e_fragment", "ir", "plan.schedule", "plan.targets",
+                       "recurrence", "spec"),
+}.items()}
+
+
+def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
+    # #367, TRANSITIVELY: from the seams and the registry no chain of
+    # imports reaches `kernel_k` (the cycle), the K witness in `ao/`, the
+    # interpreter, reference/, a backend or a card.
+    graph = _graph()
+    for root in ("k_levers", "k_levers.seams"):
+        seen: set[str] = set()
+        todo = [root]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        for banned in ("kernel_k", _REF, "ao", "interp", "emit", "device"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{root} reaches {hit}"
