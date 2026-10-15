@@ -10,9 +10,10 @@ lane, bounded by `(n - 1) u * scale`: far inside J_REL, as test/
 test_kernel_fused.py shows interpreted. FMA contraction on the device rounds
 once where the interpreter rounds twice, which only tightens that bound.
 
-Cells: one batch at L = 0..4 and the split cell L = 4 x 3 batches (atomic
-write-back), fast; one batch at L = 7, 10 and the subgrid's 3-batch L = 7
-cell `slow` (the milestone's final tier, #364, runs them).
+Cells: one batch at L = 0..2 and the split cell L = 2 x 3 batches (atomic
+write-back), within the milestone's per-PR cap; one batch at L = 3, 4, 7, 10
+and the 3-batch cells at L = 4 and 7 are `slow` (the milestone's final tier,
+#364, runs them).
 """
 
 from __future__ import annotations
@@ -25,11 +26,11 @@ from felizjueves.kernel import pq_spec
 
 CELLS = [
     *(pytest.param(pq_spec(L, (FUSED,)), id=f"L{L}-b1-fused")
-      for L in range(5)),
-    pytest.param(pq_spec(4, (FUSED,), 3), id="L4-b3-fused"),
+      for L in range(3)),
+    pytest.param(pq_spec(2, (FUSED,), 3), id="L2-b3-fused"),
     *(pytest.param(pq_spec(L, (FUSED,), n), id=f"L{L}-b{n}-fused",
                    marks=pytest.mark.slow)
-      for L, n in ((7, 1), (7, 3), (10, 1))),
+      for L, n in ((3, 1), (4, 1), (4, 3), (7, 1), (7, 3), (10, 1))),
 ]
 
 
