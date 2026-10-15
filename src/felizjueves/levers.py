@@ -161,7 +161,17 @@ class Lever:
 
 # THE VOCABULARY. Empty at #337, by design: each lever issue adds its entry,
 # e.g. `"fused": Lever.of("fused", 344, "...", {"j"})`.
-VOCABULARY: dict[str, Lever] = {}
+VOCABULARY: dict[str, Lever] = {
+    "fused": Lever.of(
+        "fused", 344,
+        "each [r]^(0) is contracted into J_p as the recurrence forms it, one "
+        "target live at a time (j_levers/fused.py)",
+        {"j"},
+        k=("the K kernel's contraction is staged through both E fragments "
+           "per bra record, not J_p += (-1)^|q| [p+q]^(0) D_q; fusing it is "
+           "a separate lever nobody has declared"),
+    ),
+}
 
 
 def is_kernel_lever(name: str) -> bool:

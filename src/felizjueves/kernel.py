@@ -89,6 +89,7 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
+from felizjueves.j_levers import fused
 from felizjueves.passes import atomize
 from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
@@ -331,6 +332,18 @@ def batch_contraction(spec: Spec, dag: BatchDag) -> Contraction:
     return tuple(out)
 
 
+def _recurrence_and_contraction(spec, dag, order, fundamental, contract,
+                                touched, jsh, ket) -> tuple[Stmt, ...]:
+    """The ket loop's tail: the recurrence region, then the contraction --
+    or, under the `fused` lever (#344, `j_levers.fused`), the two
+    interleaved so each target is contracted as it is formed."""
+    body = recurrence_body(dag, order, fundamental)
+    if fused.FUSED in spec.kernel_body_levers():
+        return fused.fuse(body, touched, jsh=jsh,
+                          density=lambda j: ket("D", Lit(j)))
+    return (*body, *contract)
+
+
 def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
     """The [p|q] kernel over one batch's DAG, with the plain lane-0 write."""
     lp, lq = split(spec)
@@ -389,8 +402,8 @@ def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
             Fn.DIV, _c(Fn.MUL, Var("ze"), Var("et")),
             _c(Fn.ADD, Var("ze"), Var("et"))))),
         *prelude,
-        *recurrence_body(dag, order, fundamental),
-        *contract,
+        *_recurrence_and_contraction(spec, dag, order, fundamental, contract,
+                                     touched, jsh, ket),
     )
 
     # --- one bra index: zero, strip-mine the kets, reduce, write ------------

@@ -76,7 +76,8 @@ def test_every_declared_lever_is_well_formed() -> None:
 
 
 def test_no_lever_behaviour_lands_with_the_seam() -> None:
-    assert levers.VOCABULARY == {}
+    # Empty at #337; every entry since is a later lever issue's own.
+    assert all(lv.issue != 337 for lv in levers.VOCABULARY.values())
 
 
 # ---------------------------------------------------------------------------
