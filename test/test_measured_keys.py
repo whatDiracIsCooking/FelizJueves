@@ -192,3 +192,46 @@ def test_an_f_key_reads_back_as_an_f_target_and_its_parts() -> None:
     assert not _SPEC_KEY.fullmatch(spec.key())
     assert not _K_KEY.fullmatch(spec.key())
     assert len(load()) == N_ROWS + N_K_ROWS + N_F_ROWS
+
+
+# --- #339: a lever-keyed row, through the store's one recording path --------
+
+
+def test_a_lever_keyed_row_round_trips_and_rederives(monkeypatch,
+                                                      tmp_path) -> None:
+    """A kernel-body lever's row is keyed by its full lever-carrying
+    `Spec.key()` -- the lever in the last segment, as every arm before it --
+    and round-trips through `merge`, `save` and `load` byte for byte. Its key
+    re-derives through the same independent parser and constructors as the
+    tracked rows (`_derive`), and no tracked key moves (the tests above)."""
+    import json
+
+    from felizjueves import levers, measured_store
+
+    monkeypatch.setitem(levers.VOCABULARY, "probe", levers.Lever.of(
+        "probe", 339, "the round trip's witness", {"j", "k", "f"}))
+    prov = dict(toolchain="nvcc 13.0", arch="sm_86", host="h", gpu="g",
+                date="2026-10-15")
+    cells = (measured_store.SUBGRID[5], pq_spec(9), k_spec(7, n_batches=3),
+             Spec(Operator.COULOMB, 0, (1, 1, 0, 1), Target.F))
+    store = {}
+    for c in cells:
+        key = MeasuredKey(measured_store.lever_arm(c, "probe"),
+                          by_name("sm_86"), "nvcc 13.0")
+        store = measured_store.merge(store, key, measured_store.Measured(
+            registers=64, spill_store=0, spill_load=0, **prov))
+    keys = sorted(store)
+    assert all(split_key(k)[0].endswith("/probe") for k in keys)
+    j_key = MeasuredKey(pq_spec(9, levers=("probe",)), by_name("sm_86"),
+                        "nvcc 13.0").key()
+    assert j_key == "coulomb/d0/(5,0|4,0)/b1/j/probe@sm_86/nvcc 13.0"
+    assert _derive(j_key, "sm_86", "nvcc 13.0") == j_key
+    p, q = tmp_path / "a.json", tmp_path / "b.json"
+    measured_store.save(store, p)
+    back = measured_store.load(p)
+    assert back == store and sorted(back) == keys
+    assert {r.arm_kind for r in back.values()} == {measured_store.KERNEL}
+    assert {target_of(k).value for k in keys} == {"j", "k", "f"}
+    measured_store.save(back, q)
+    assert q.read_bytes() == p.read_bytes()
+    assert set(json.loads(p.read_text())["rows"]) == set(keys)

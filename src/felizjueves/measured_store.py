@@ -460,6 +460,31 @@ is not to be tuned after reading one.
   resolve) with the per-cell verdicts; CONTRADICTED is a disagreement with
   [JEngine, v2, §3.3], recorded as the result.
 
+THE LEVER ROW (#339). A kernel-body lever (`levers.VOCABULARY`, #337)
+is the third arm KIND, `KERNEL`, beside `LOWERING` and `PLAN`: the builder
+itself reads it, so the kernel differs. It is DECLARED BY ITS VOCABULARY
+ENTRY, not here -- `kind_of` reads the vocabulary at call time, so a lever
+issue adds no entry to `ARMS` and no row format of its own. Every lever row
+of every kind goes through ONE recording path:
+
+- THE CELL is `lever_arm(spec, lever)`: the literal cell `spec` (any target
+  -- a SUBGRID or `K_SUBGRID` cell, a one-batch class, an F class) with the
+  lever added. It refuses an undeclared lever, a cell that already carries
+  one (ONE ARM AT A TIME), and, through `Spec` itself, a (target, lever) the
+  lever's legality table refuses, with its reason. `lever_cells(lever,
+  cells)` is that over a set of cells (SUBGRID by default, as #55 had it).
+- THE KEY is the full lever-carrying `Spec.key()` in a `MeasuredKey`: the
+  lever is the key's last segment, exactly as `no-sieve` and `recycle` have
+  always been spelled -- no new field, no new key shape.
+- THE ROW is written by `merge`, which stamps `arm_kind` = `KERNEL` (a
+  `KERNEL` row without it is refused on load, as a `PLAN` row is), and an F
+  key may carry a kernel-body lever (THE F CELL's "no lever" is now "no lever
+  outside the vocabulary"). The driver names a kernel lever row's units
+  `lever_ladder.unit_name`, so its `source_sha256` is the emitted file's.
+- THE HEADER gains its "kernel_levers" entry only once the store holds a
+  `KERNEL` row (`save`), as "f" did: a store without one is written byte for
+  byte as before.
+
 THE SPLIT (#94). This module is the store and nothing else: the record, the
 file, the read path, the declared subgrid, and the two verdicts read off the
 rows. It knows no toolchain -- it runs no compiler, reads no config.sh,
@@ -485,6 +510,7 @@ from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from types import MappingProxyType
 
+from felizjueves import levers as _levers
 from felizjueves.device import (
     MEMORY_BOUND,
     Arch,
@@ -570,18 +596,34 @@ ARMS: Mapping[str, str] = MappingProxyType({
 })
 
 
+# THE LEVER ROW (#339; module docstring): a kernel-body lever's kind. Its
+# declaration is its `levers.VOCABULARY` entry, read when asked, not here.
+KERNEL = "kernel"
+
+
+def kind_of(lever: str) -> str:
+    """The arm kind of `lever`: `ARMS[lever]` (LOWERING or PLAN), or KERNEL
+    for a kernel-body lever (`levers.VOCABULARY`, #337). Anything else is
+    refused: the store never records an arm nothing can reproduce."""
+    if lever in ARMS:
+        return ARMS[lever]
+    if _levers.is_kernel_lever(lever):
+        return KERNEL
+    declared = sorted({*ARMS, *_levers.VOCABULARY})
+    raise ValueError(f"lever {lever!r} is not a declared arm lever "
+                     f"({', '.join(declared)})")
+
+
 def _declared(lever: str) -> str:
-    if lever not in ARMS:
-        raise ValueError(f"lever {lever!r} is not a declared arm lever "
-                         f"({', '.join(sorted(ARMS))})")
+    kind_of(lever)
     return lever
 
 
 def arm_of(spec: Spec) -> str | None:
     """The one declared arm lever `spec` carries, or None for a literal cell.
 
-    Refuses a lever outside `ARMS`, and a Spec carrying two arms at once,
-    naming both (module docstring, THE ARMS)."""
+    Refuses a lever outside `ARMS` and the kernel-body vocabulary, and a Spec
+    carrying two arms at once, naming both (module docstring, THE ARMS)."""
     for lv in spec.levers:
         _declared(lv)
     if len(spec.levers) > 1:
@@ -592,18 +634,34 @@ def arm_of(spec: Spec) -> str | None:
 
 
 def arm_kind(spec: Spec) -> str | None:
-    """`ARMS[arm_of(spec)]`: LOWERING or PLAN, or None for a literal cell."""
+    """`kind_of(arm_of(spec))`: LOWERING, PLAN or KERNEL, or None for a
+    literal cell."""
     lever = arm_of(spec)
-    return None if lever is None else ARMS[lever]
+    return None if lever is None else kind_of(lever)
 
 
-def lever_cells(lever: str) -> tuple[Spec, ...]:
-    """#55's A/B cells for `lever`: every SUBGRID cell with the lever added
-    (module docstring, A LEVER A/B). Only a declared arm (`ARMS`) is
-    accepted, of either kind."""
+def lever_arm(spec: Spec, lever: str) -> Spec:
+    """THE LEVER ROW's cell (#339; module docstring): the literal cell `spec`
+    with the declared arm `lever` added -- the one way every lever row of
+    every kind and target is named. Raises `ValueError` for an undeclared
+    lever, a cell already carrying a lever, and a (target, lever) the
+    lever's legality table refuses (`Spec`'s own refusal, its reason kept).
+    """
     _declared(lever)
-    return tuple(replace(s, levers=tuple(sorted({*s.levers, lever})))
-                 for s in SUBGRID)
+    if spec.levers:
+        raise ValueError(f"{spec.key()}: already carries "
+                         f"{', '.join(spec.levers)}; an A/B arm is one lever "
+                         "added to a literal cell")
+    return replace(spec, levers=(lever,))
+
+
+def lever_cells(lever: str,
+                cells: tuple[Spec, ...] | None = None) -> tuple[Spec, ...]:
+    """`lever_arm` of every cell of `cells` -- by default #55's A/B cells,
+    every SUBGRID cell (module docstring, A LEVER A/B). Only a declared arm
+    is accepted, of any kind."""
+    return tuple(lever_arm(s, lever)
+                 for s in (SUBGRID if cells is None else cells))
 
 
 # Cells an A/B adds beyond the subgrid, per arm (#162; module docstring, THE
@@ -775,6 +833,19 @@ F_ABOUT = (
     "against [Fock]'s A100 timings, and there is no published register "
     "table for its §3.2 kernel.")
 
+# THE LEVER ROW (#339; module docstring): written into the header as
+# "kernel_levers" only once the store holds a KERNEL row (`save`).
+KERNEL_LEVERS_ABOUT = (
+    "#339: a row whose arm_kind is 'kernel' is a kernel-body lever's arm "
+    "(levers.VOCABULARY, #337): the cell keyed by its full lever-carrying "
+    "Spec.key() (the lever in the key's last segment), built by the "
+    "builder with that lever pulled -- the kernel itself differs -- and "
+    "its units named <literal name>_lv_<lever> (lever_ladder.unit_name), "
+    "the names python -m felizjueves.emit's lever ladder writes. Recorded "
+    "through measured_store.lever_arm and merge, by python -m "
+    "felizjueves.measured --remeasure --lever <name>; what the lever "
+    "changes is its vocabulary entry's 'what', and its issue says why.")
+
 MEASUREMENTS = ("registers", "spill_store", "spill_load", "shared_bytes",
                 "compile_s", "runtime_ns", "repeats", "spread_ns", *COUNTERS)
 PROVENANCE = ("toolchain", "arch", "host", "gpu", "date")
@@ -828,7 +899,7 @@ class Measured:
     raw: Mapping[str, int | None] = field(default_factory=dict)
     counter_tool: str = ""  # the profiler as it reports itself (#110)
     counter_unit: str = ""  # what the counter fields mean on this vendor
-    arm_kind: str = ""  # an A/B arm's kind, LOWERING or PLAN (#159)
+    arm_kind: str = ""  # an arm's kind: LOWERING, PLAN (#159), KERNEL (#339)
     target: str = ""  # the key's Spec.target, required unless J (#201)
 
     def __post_init__(self) -> None:
@@ -848,9 +919,9 @@ class Measured:
         for n in PROVENANCE:
             if not isinstance(getattr(self, n), str) or not getattr(self, n):
                 raise ValueError(f"{n} must be a non-empty string")
-        if self.arm_kind not in ("", LOWERING, PLAN):
+        if self.arm_kind not in ("", LOWERING, PLAN, KERNEL):
             raise ValueError(f"arm_kind = {self.arm_kind!r} must be "
-                             f"{LOWERING!r}, {PLAN!r} or empty")
+                             f"{LOWERING!r}, {PLAN!r}, {KERNEL!r} or empty")
         if self.target and self.target not in _TARGETS:
             raise ValueError(f"target = {self.target!r} must be one of "
                              f"{', '.join(sorted(_TARGETS))} or empty")
@@ -945,11 +1016,12 @@ def _row(path: Path, key: str, v: object) -> Measured:
 
 def _key_arms(key: str) -> tuple[str, ...]:
     """The declared arm levers a row key's Spec carries, read off its last
-    segment (`Spec.key()`'s levers). Anything undeclared there -- "literal",
-    #113's "asym" -- is not an arm and is not this check's business."""
+    segment (`Spec.key()`'s levers): `ARMS`' and the kernel-body
+    vocabulary's (#339). Anything undeclared there -- "literal", #113's
+    "asym" -- is not an arm and is not this check's business."""
     spec_key, _, _ = split_key(key)
     return tuple(lv for lv in spec_key.rsplit("/", 1)[-1].split("+")
-                 if lv in ARMS)
+                 if lv in ARMS or _levers.is_kernel_lever(lv))
 
 
 def _check_arm_kind(key: str, row: Measured) -> None:
@@ -958,12 +1030,13 @@ def _check_arm_kind(key: str, row: Measured) -> None:
     if len(arms) > 1:
         raise ValueError(f"row {key!r} carries {len(arms)} arms at once "
                          f"({', '.join(arms)})")
-    kind = ARMS[arms[0]] if arms else ""
+    kind = kind_of(arms[0]) if arms else ""
     if row.arm_kind and row.arm_kind != kind:
         raise ValueError(f"row {key!r} records arm_kind {row.arm_kind!r}, "
                          f"but its key's arm kind is {kind or 'none'!r}")
-    if kind == PLAN and not row.arm_kind:
-        raise ValueError(f"row {key!r} is a plan arm and records no arm_kind")
+    if kind in (PLAN, KERNEL) and not row.arm_kind:
+        raise ValueError(f"row {key!r} is a {kind} arm and records no "
+                         "arm_kind")
 
 
 def target_of(key: str) -> Target:
@@ -993,9 +1066,11 @@ _F_KEY = re.compile(
 
 
 def _check_f(key: str, row: Measured) -> None:
-    """THE F CELL (module docstring): an F key names a legal one-batch,
-    lever-free `Target.F` spec, and a timed F row carries every gate reading
-    as a reading. A key of any other target is not this check's business."""
+    """THE F CELL (module docstring): an F key names a legal one-batch
+    `Target.F` spec, lever-free or carrying kernel-body levers only (#339,
+    each legal on F by its own table), and a timed F row carries every gate
+    reading as a reading. A key of any other target is not this check's
+    business."""
     if target_of(key) is not Target.F:
         return
     spec_key, _, _ = split_key(key)
@@ -1004,12 +1079,14 @@ def _check_f(key: str, row: Measured) -> None:
         raise ValueError(f"row {key!r} is an 'f' row whose key is not "
                          "coulomb/d0/(la,lb|lc,ld)/b<n>/f/<levers>")
     *am, n, levers = m.groups()
-    if levers != "literal":
+    lv = () if levers == "literal" else tuple(levers.split("+"))
+    if not all(_levers.is_kernel_lever(x) for x in lv):
         raise ValueError(f"row {key!r}: no lever is declared for an F cell "
-                         f"(the key carries {levers!r})")
+                         "but a kernel-body one (#339; the key carries "
+                         f"{levers!r})")
     try:
         spec = Spec(Operator.COULOMB, 0, tuple(map(int, am)), Target.F,
-                    n_batches=int(n))
+                    lv, n_batches=int(n))
     except ValueError as e:
         raise ValueError(f"row {key!r} names no legal F spec: {e}") from e
     if spec.key() != spec_key:
@@ -1122,6 +1199,9 @@ def save(store: Mapping[str, Measured], path: Path = STORE) -> None:
     # F row, so a store without one is rewritten byte for byte.
     header = (HEADER if not any(target_of(k) is Target.F for k in store)
               else {**HEADER, "f": F_ABOUT})
+    # #339: likewise "kernel_levers", once the store holds a KERNEL row
+    if any(r.arm_kind == KERNEL for r in store.values()):
+        header = {**header, "kernel_levers": KERNEL_LEVERS_ABOUT}
     doc = {"schema": SCHEMA, "about": ABOUT, "header": header,
            "rows": {k: as_record(store[k]) for k in sorted(store, key=_order)}}
     path.write_text(json.dumps(doc, indent=2) + "\n")
@@ -1556,9 +1636,10 @@ class LeverAB:
 
     @property
     def kind(self) -> str:
-        """The arm's kind, `ARMS[lever]` (#159). A property, not a field, so
-        #55's recorded `LeverAB`s compare and print exactly as before."""
-        return ARMS[self.lever]
+        """The arm's kind, `kind_of(lever)` (#159, #339). A property, not a
+        field, so #55's recorded `LeverAB`s compare and print exactly as
+        before."""
+        return kind_of(self.lever)
 
     @property
     def wide_sign(self) -> str:

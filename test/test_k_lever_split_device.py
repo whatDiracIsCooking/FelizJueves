@@ -18,10 +18,9 @@ TWO PARTS, the issue's acceptance on the device side:
    test_kernel_device.py's K harness (`_run_k`: its inputs, its host
    staging `ao.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of
    the quartet scale, unchanged). The harness builds a cell from
-   `measured.cell_kernels`, which refuses a K lever (#205's store has no
-   lever rows); here it is pointed at `build_k_kernels` for the test's
-   duration, so the lever's kernels are what is compiled and run. Nothing
-   is recorded.
+   `measured.cell_kernels`, which since #339 passes a kernel-body K lever to
+   `build_k_kernels` (renaming each unit `<name>_lv_split`), so the lever's
+   kernels are what is compiled and run. Nothing is recorded.
 
 Run part 2 as (each backend; the generator capped at L = 4):
 
@@ -158,17 +157,23 @@ def _device_cells() -> list:
 DEVICE_CELLS = _device_cells()
 
 
-def _cell_kernels(spec: Spec) -> tuple[Kernel, ...]:
-    if spec.target is Target.K and spec.levers == (SPLIT,):
-        return build_k_kernels(spec)
-    raise AssertionError(f"{spec.key()}: not a split cell")
+def test_the_driver_builds_a_split_cell_as_build_k_kernels() -> None:
+    # #339: `measured.cell_kernels` passes a kernel-body K lever to the
+    # builder, so the harness compiles the lever's kernels as they are --
+    # only renamed `<name>_lv_split`, the generator's lever-unit names.
+    for spec in (k_spec(2), k_spec(4, n_batches=3)):
+        spec = dataclasses.replace(spec, levers=(SPLIT,))
+        want = build_k_kernels(spec)
+        got = measured.cell_kernels(spec)
+        assert [k.name for k in got] == [f"{k.name}_lv_split" for k in want]
+        assert [dataclasses.replace(k, name=w.name)
+                for k, w in zip(got, want, strict=True)] == list(want)
 
 
 def _run(backend: str, spec: Spec, request, compile_device_source,
-         run_device_binary, tmp_path, monkeypatch) -> None:
+         run_device_binary, tmp_path) -> None:
     import test_kernel_device as tkd
 
-    monkeypatch.setattr(measured, "cell_kernels", _cell_kernels)
     tkd._run_k(backend, spec, request, compile_device_source,
                run_device_binary, tmp_path)
 
@@ -178,11 +183,11 @@ def _run(backend: str, spec: Spec, request, compile_device_source,
 @pytest.mark.parametrize("spec", DEVICE_CELLS)
 def test_cuda_k_lever_split_matches_the_host(spec, request,
                                              compile_device_source,
-                                             run_device_binary, tmp_path,
-                                             monkeypatch) -> None:
+                                             run_device_binary,
+                                             tmp_path) -> None:
     """The split cell's element kernels on the RTX 3080, against the host."""
     _run("cuda", spec, request, compile_device_source, run_device_binary,
-         tmp_path, monkeypatch)
+         tmp_path)
 
 
 @pytest.mark.hip
@@ -190,11 +195,11 @@ def test_cuda_k_lever_split_matches_the_host(spec, request,
 @pytest.mark.parametrize("spec", DEVICE_CELLS)
 def test_hip_k_lever_split_matches_the_host(spec, request,
                                             compile_device_source,
-                                            run_device_binary, tmp_path,
-                                            monkeypatch) -> None:
+                                            run_device_binary,
+                                            tmp_path) -> None:
     """The split cell's element kernels on the RX 9060 XT, against the host."""
     _run("hip", spec, request, compile_device_source, run_device_binary,
-         tmp_path, monkeypatch)
+         tmp_path)
 
 
 def test_the_device_cells_are_l_at_most_4() -> None:

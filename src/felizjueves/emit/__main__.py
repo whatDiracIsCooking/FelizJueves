@@ -81,6 +81,25 @@ classes: ptxas `8192 bytes smem` on the NVIDIA arch (48 KiB static per
 block) and `LDS Size [bytes/block]: 8192` on the AMD one (64 KiB per
 workgroup), pinned by test/test_emit_fock.py's compile cases.
 
+THE LEVER LADDERS (#339) are a REGISTRY, not CLI code: one flag per
+`(kernel-body lever, family)`, read from `levers.VOCABULARY` through
+`lever_ladder.flags()` each time the parser is built, so a lever issue adds
+its vocabulary entry and gets its flags without editing this file:
+
+    --klever-<name>-pq L [L ...]   the [p|q] ladder with the lever (Target.J)
+    --klever-<name>-k L [L ...]    the K ladder with the lever (Target.K)
+    --klever-<name>-fock-l LMAX    the F path's classes with the lever
+
+A lever gets a family's flag exactly when that family's target is in its
+legality table's `legal` set (`lever_ladder.FAMILIES`). The `-pq` and `-k`
+flags ADD units beside whichever J ladders the rest of the command selects,
+as `--one-e-l` does; the `-fock-l` flag belongs to the F path, beside
+`--fock-l` / `--fock-class`, and alone writes only the lever units. Every
+lever unit is named `<literal name>_lv_<lever>` (`lever_ladder.unit_name`),
+so it never overwrites its literal twin, and none is in the no-flag
+default. Today the vocabulary holds `fused` (#344, J only), so the one
+lever flag is `--klever-fused-pq`.
+
 The two vendors' texts differ only in the backend hooks
 (test/test_emit_hip.py), and HIP's shuffle needs a 64-bit mask that the CUDA
 text does not carry, so each backend writes its own spelling; nothing here
@@ -146,18 +165,22 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from felizjueves.device import Arch, Vendor, by_name, from_env
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels
+from felizjueves.ir import Kernel
+from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
 from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_f import build_f_kernel
+from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel_k import build_k_kernels
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
+from felizjueves.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.spec import Operator, Spec, Target
 
 BACKENDS = {
@@ -297,6 +320,53 @@ def generate_fock(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The lever ladders (#339): one builder per FAMILY, never per lever
+# ---------------------------------------------------------------------------
+
+
+def _pq_lever_specs(lever: str, Ls: Sequence[int]) -> list[Spec]:
+    return [pq_spec(L, levers=(lever,)) for L in Ls]
+
+
+def _k_lever_specs(lever: str, Ls: Sequence[int]) -> list[Spec]:
+    return [replace(k_spec(L), levers=(lever,)) for L in Ls]
+
+
+def _f_lever_specs(lever: str, lmax: int) -> list[Spec]:
+    return [replace(f_class_spec(*c), levers=(lever,))
+            for c in fock_classes(lmax)]
+
+
+# family slot -> (the lever's specs from the flag's argument, the builder):
+# `lever_ladder.FAMILIES`' keys exactly (test/test_lever_ladder.py)
+# Each builder returns EVERY kernel of its one-batch cell: a lever may fan a
+# class out into several (#341's K `split`, `_e{i}_{j}` element kernels).
+LEVER_FAMILIES: dict[str, tuple[Callable[..., list[Spec]],
+                                Callable[[Spec], Sequence[Kernel]]]] = {
+    "j": (_pq_lever_specs, build_pq_kernels),
+    "k": (_k_lever_specs, build_k_kernels),
+    "f": (_f_lever_specs, lambda s: (build_f_kernel(s),)),
+}
+
+
+def lever_kernels(flag: LadderFlag, arg) -> list[Kernel]:
+    """The units one lever flag writes: its family's specs with the lever,
+    built (every kernel of each), each named `lever_ladder.unit_name` of its
+    literal name. Raises `ValueError` for an argument or a (target, lever)
+    the key refuses."""
+    specs_of, build = LEVER_FAMILIES[flag.family.slot]
+    return [replace(k, name=unit_name(k.name, s.kernel_body_levers()))
+            for s in specs_of(flag.lever, arg) for k in build(s)]
+
+
+def generate_levers(backend: str, arch: Arch, out: Path,
+                    kernels: Sequence[Kernel]) -> list[Path]:
+    """Emit each lever unit into `out`; return the paths."""
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The class selector (#89)
 # ---------------------------------------------------------------------------
 
@@ -405,20 +475,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--shell-ls", type=int, nargs="+", default=None)
     ap.add_argument("--n-batches", type=int, nargs="+", default=[1])
     ap.add_argument("--admitted-only", action="store_true")
+    lever_flags = flags()  # #339: the registry, read now
+    for lf in lever_flags:
+        many = lf.family.metavar == "L"
+        ap.add_argument(lf.flag, dest=lf.dest, type=int,
+                        nargs="+" if many else None, default=None,
+                        metavar=lf.family.metavar, help=lf.family.what)
     try:
         args = ap.parse_args(argv)
     except SystemExit as e:
         return 0 if e.code == 0 else 2
+    given = [(lf, getattr(args, lf.dest)) for lf in lever_flags
+             if getattr(args, lf.dest) is not None]
+    ladder_levers = [(lf, a) for lf, a in given if lf.family.path == LADDER]
+    fock_levers = [(lf, a) for lf, a in given if lf.family.path == FOCK]
     if args.backend is None or args.out is None:
         print("emit: --backend and --out are required (or KERNEL_TIER_BACKEND / "
               "KERNEL_TIER_OUT)", file=sys.stderr)
         return 2
     selector = bool(args.classes or args.shell_ls)
-    fock = args.fock_l is not None or bool(args.fock_classes)
+    fock = (args.fock_l is not None or bool(args.fock_classes)
+            or bool(fock_levers))
     if fock and (selector or args.Ls is not None or args.pair_l is not None
-                 or args.one_e_l is not None):
-        print("emit: --fock-l / --fock-class is a separate path from --L / "
-              "--pair-l / --one-e-l / --class / --shell-ls; give one",
+                 or args.one_e_l is not None or ladder_levers):
+        print("emit: --fock-l / --fock-class (and an F lever flag) is a "
+              "separate path from --L / --pair-l / --one-e-l / --class / "
+              "--shell-ls and the J / K lever flags; give one",
               file=sys.stderr)
         return 2
     if fock and (args.n_batches != [1] or args.admitted_only):
@@ -434,9 +516,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"emit: {e}", file=sys.stderr)
             return 2
     if selector and (args.Ls is not None or args.pair_l is not None
-                     or args.one_e_l is not None):
-        print("emit: --L / --pair-l / --one-e-l and --class / --shell-ls are "
-              "separate paths; give one", file=sys.stderr)
+                     or args.one_e_l is not None or ladder_levers):
+        print("emit: --L / --pair-l / --one-e-l (and a lever flag) and "
+              "--class / --shell-ls are separate paths; give one",
+              file=sys.stderr)
         return 2
     if not selector and (args.n_batches != [1] or args.admitted_only):
         print("emit: --n-batches / --admitted-only need --class or --shell-ls",
@@ -452,6 +535,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
+        lever_units = [k for lf, a in given for k in lever_kernels(lf, a)]
     except ValueError as e:
         print(f"emit: {e}", file=sys.stderr)
         return 2
@@ -459,6 +543,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _main_classes(args, arch)
     if fock:
         written = generate_fock(args.backend, arch, args.out, fock_cls)
+        written += generate_levers(args.backend, arch, args.out, lever_units)
         print(f"emit: {len(written)} {args.backend} Fock translation unit(s) "
               f"for {arch.name} -> {args.out}")
         for p in written:
@@ -473,6 +558,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         written += generate_pairs(args.backend, arch, args.out, pair_l)
     if args.one_e_l is not None:  # beside the J chain, never by default
         written += generate_one_e(args.backend, arch, args.out, args.one_e_l)
+    # #339: the J / K lever ladders, beside the J chain, never by default
+    written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "
           f"{arch.name} -> {args.out}")
     for p in written:

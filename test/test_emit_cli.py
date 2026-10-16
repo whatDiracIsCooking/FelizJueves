@@ -11,6 +11,13 @@ default, which stays 37 units with every pinned `source_sha256`. The fused
 Fock kernel (`--fock-class` / `--fock-l`, #287) is a separate path, tested
 in test/test_emit_fock.py; here only its absence from the default.
 
+THE LEVER LADDERS (#339) are flags read from a registry
+(`lever_ladder.flags()`, over `levers.VOCABULARY`): `--klever-<name>-pq` and
+`--klever-<name>-k` add lever units beside the J ladders, and
+`--klever-<name>-fock-l` sits on the F path. Beside the shipped `fused`
+lever (#344, its units checked against its goldens), the tests below declare
+a probe lever; no lever unit is in the bare default.
+
 THE SELECTOR writes, per `(class, n_batches)` cell, the chain one class
 needs -- its ket's `DQ`, its `[p|q]` batch kernels, its bra's `JAB` -- with
 an `order` file naming them in that launch order.
@@ -24,17 +31,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from test_ao_j_interpreted import _case, _classes, _shell_ams
 
+from felizjueves import lever_ladder, levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels
+from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
@@ -277,3 +287,207 @@ def test_the_selector_order_is_dq_batches_jab_for_a_split_cell(tmp_path):
     pq = build_pq_kernels(emit_cli.class_spec(am, 3))
     assert len(pq) == 3
     assert order == ["dq_1_1.cu", *(f"{k.name}.cu" for k in pq), "jab_11.cu"]
+
+
+# --- the lever ladders (#339) -------------------------------------------------
+#
+# The flags are DATA: one per (kernel-body lever, family), read from
+# `levers.VOCABULARY` through `lever_ladder.flags()` each time the parser is
+# built. Beside the shipped `fused`, these tests declare a PROBE lever
+# (`monkeypatch.setitem`), the way a lever issue declares its entry -- and the
+# CLI is never edited for it.
+
+PROBE = "probe"
+
+
+def _declare(monkeypatch, legal, name=PROBE):
+    monkeypatch.setitem(levers.VOCABULARY, name, levers.Lever.of(
+        name, 339, "the ladder's witness; no statement changes", legal))
+
+
+def _probe_flags() -> list[str]:
+    return [lf.flag for lf in lever_ladder.flags() if lf.lever == PROBE]
+
+
+def test_only_a_declared_lever_has_a_flag(tmp_path):
+    # The shipped vocabulary: one flag per (lever, family it is legal on) --
+    # `fused` (#344) on J, `split` (#341) on K, and whatever follows.
+    suffix = {s: f.suffix for s, f in lever_ladder.FAMILIES.items()}
+    assert [lf.flag for lf in lever_ladder.flags()] == [
+        f"--klever-{name}-{suffix[s]}" for name in sorted(levers.VOCABULARY)
+        for s in lever_ladder.FAMILIES if s in levers.VOCABULARY[name].legal]
+    got = {lf.flag for lf in lever_ladder.flags()}
+    assert {"--klever-fused-pq", "--klever-split-k"} <= got
+    assert _run(tmp_path, "cuda", "--klever-probe-pq", "1") == 2
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_fused_ladder_writes_the_fused_goldens_under_lever_names(
+        backend, tmp_path):
+    """`--klever-fused-pq 4` writes #344's fused golden for (2,0|2,0) --
+    the same text, its kernel renamed `<literal>_lv_fused` -- beside the
+    literal unit, which does not move."""
+    emit, arch, ext = BACKEND[backend]
+    assert _run(tmp_path / "lit", backend, "--L", "4") == 0
+    assert _run(tmp_path / "lv", backend, "--L", "4",
+                "--klever-fused-pq", "4") == 0
+    lv = tmp_path / "lv"
+    assert _names(lv) == {f"pq_L4_p2_q2.{ext}", f"pq_L4_p2_q2_lv_fused.{ext}"}
+    assert (lv / f"pq_L4_p2_q2.{ext}").read_bytes() == \
+        (tmp_path / "lit" / f"pq_L4_p2_q2.{ext}").read_bytes()
+    golden = (ROOT / "test" / "golden" / backend / "fused"
+              / f"pq_L4_p2_q2.{ext}").read_text()
+    got = (lv / f"pq_L4_p2_q2_lv_fused.{ext}").read_text()
+    # the kernel's name, in its header comment and its signature, is the
+    # only difference
+    assert golden.count("pq_L4_p2_q2") == 2
+    assert got == golden.replace("pq_L4_p2_q2", "pq_L4_p2_q2_lv_fused")
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_a_declared_lever_moves_no_unflagged_unit(backend, monkeypatch,
+                                                  tmp_path):
+    """Declaring a lever adds its flags and nothing else: an unflagged
+    command writes the same units, byte for byte (L <= 2 here; the bare
+    37-unit default is the `slow` twin below)."""
+    argv = ("--L", "0", "1", "2", "--pair-l", "1")
+    assert _run(tmp_path / "before", backend, *argv) == 0
+    _declare(monkeypatch, {"j", "k", "f"})
+    assert _probe_flags() == [
+        "--klever-probe-pq", "--klever-probe-k", "--klever-probe-fock-l"]
+    assert _run(tmp_path / "after", backend, *argv) == 0
+    names = _names(tmp_path / "before")
+    assert _names(tmp_path / "after") == names and len(names) == 9
+    for n in names:
+        assert (tmp_path / "after" / n).read_bytes() == \
+            (tmp_path / "before" / n).read_bytes()
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_a_declared_lever_gets_its_flags_and_the_default_is_unmoved(
+        backend, monkeypatch, tmp_path):
+    """Declaring a lever adds its flags and nothing else: the bare command
+    still writes the 37 J-chain units, byte for byte (the pins above)."""
+    _declare(monkeypatch, {"j", "k", "f"})
+    _, _, ext = BACKEND[backend]
+    assert _run(tmp_path, backend) == 0
+    assert _names(tmp_path) == _pq_names(ext) | _pair_names(ext)
+    for L in range(17):
+        k = build_pq_kernel(L)
+        assert (tmp_path / f"{k.name}.{ext}").read_text() == \
+            BACKEND[backend][0](k, BACKEND[backend][1])
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_pq_lever_ladder_adds_its_units_beside_the_literal(
+        backend, monkeypatch, tmp_path):
+    _declare(monkeypatch, {"j"})
+    emit, arch, ext = BACKEND[backend]
+    lit = tmp_path / "lit"
+    assert _run(lit, backend, "--L", "1", "2") == 0
+    assert _run(tmp_path / "lv", backend, "--L", "1", "2",
+                "--klever-probe-pq", "0", "2") == 0
+    lv = tmp_path / "lv"
+    assert _names(lv) == _names(lit) | {f"pq_L0_p0_q0_lv_probe.{ext}",
+                                        f"pq_L2_p1_q1_lv_probe.{ext}"}
+    for n in _names(lit):  # the literal units did not move
+        assert (lv / n).read_bytes() == (lit / n).read_bytes()
+    for L in (0, 2):
+        k = build_pq_kernel(pq_spec(L, levers=(PROBE,)))
+        k = replace(k, name=f"{k.name}_lv_probe")
+        assert (lv / f"{k.name}.{ext}").read_text() == emit(k, arch)
+        assert "lever probe (#339)" in emit(k, arch)  # the builder's Note
+
+
+def test_the_k_lever_ladder_adds_beside_the_selected_ladders(monkeypatch,
+                                                            tmp_path):
+    _declare(monkeypatch, {"j", "k"})
+    assert _run(tmp_path, "hip", "--L", "0", "--klever-probe-k", "1", "2") == 0
+    ks = [build_k_kernel(replace(k_spec(L), levers=(PROBE,))) for L in (1, 2)]
+    assert _names(tmp_path) == {"pq_L0_p0_q0.hip"} | {
+        f"{k.name}_lv_probe.hip" for k in ks}
+    for k in ks:
+        assert "lever probe (#339)" in (
+            tmp_path / f"{k.name}_lv_probe.hip").read_text()
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
+def test_a_lever_flag_alone_adds_to_the_default_ladders(monkeypatch, tmp_path):
+    _declare(monkeypatch, {"j", "k"})
+    assert _run(tmp_path, "cuda", "--klever-probe-pq", "0",
+                "--klever-probe-k", "2") == 0
+    k2 = build_k_kernel(replace(k_spec(2), levers=(PROBE,)))
+    assert _names(tmp_path) == (_pq_names("cu") | _pair_names("cu")
+                                | {"pq_L0_p0_q0_lv_probe.cu",
+                                   f"{k2.name}_lv_probe.cu"})
+    assert k2.name.startswith("k_")
+
+
+def test_the_f_lever_flag_is_on_the_fock_path(monkeypatch, tmp_path):
+    _declare(monkeypatch, {"f"})
+    assert _probe_flags() == ["--klever-probe-fock-l"]
+    assert _run(tmp_path / "a", "cuda", "--klever-probe-fock-l", "0") == 0
+    assert _names(tmp_path / "a") == {"f_0000_lv_probe.cu"}
+    assert _run(tmp_path / "b", "hip", "--fock-l", "0",
+                "--klever-probe-fock-l", "1") == 0
+    assert _names(tmp_path / "b") == {"f_0000.hip"} | {
+        f"f_{''.join(map(str, c))}_lv_probe.hip"
+        for c in emit_cli.fock_classes(1)}
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_split_k_ladder_writes_every_element_kernel(backend, tmp_path):
+    """#341's `split` fans a K class out into `_e{i}_{j}` element kernels;
+    `--klever-split-k` writes every one, `build_k_kernels`' text renamed
+    `<name>_lv_split`."""
+    emit, arch, ext = BACKEND[backend]
+    assert _run(tmp_path, backend, "--L", "0", "--klever-split-k", "1", "2") == 0
+    want = [k for L in (1, 2)
+            for k in build_k_kernels(replace(k_spec(L), levers=("split",)))]
+    assert len(want) > 2 and all("_e" in k.name for k in want)
+    assert _names(tmp_path) == {"pq_L0_p0_q0." + ext} | {
+        f"{k.name}_lv_split.{ext}" for k in want}
+    for k in want:
+        lv = replace(k, name=f"{k.name}_lv_split")
+        assert (tmp_path / f"{lv.name}.{ext}").read_text() == emit(lv, arch)
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_an_f_lever_unit_differs_from_literal_by_its_note_and_name(
+        backend, monkeypatch, tmp_path):
+    """#340's CLI half: an F-legal lever's F units through the ladder are
+    `kernel_f`'s literal text plus the lever's provenance Note (#340) --
+    and, as every lever unit, the `_lv_` name. Nothing else moves."""
+    _declare(monkeypatch, {"f"})
+    emit, arch, ext = BACKEND[backend]
+    assert _run(tmp_path / "lit", backend, "--fock-l", "1") == 0
+    assert _run(tmp_path / "lv", backend, "--klever-probe-fock-l", "1") == 0
+    note = "lever probe (#339): the ladder's witness; no statement changes"
+    for c in emit_cli.fock_classes(1):
+        name = "f_" + "".join(map(str, c))
+        lit = (tmp_path / "lit" / f"{name}.{ext}").read_text()
+        got = (tmp_path / "lv" / f"{name}_lv_probe.{ext}").read_text()
+        assert note not in lit and got.count(note) == 1
+        renamed = got.replace(f"{name}_lv_probe", name)
+        dropped = [ln for ln in renamed.splitlines()
+                   if ln not in lit.splitlines()]
+        assert dropped == [ln for ln in renamed.splitlines() if note in ln]
+        assert [ln for ln in renamed.splitlines() if note not in ln] == \
+            lit.splitlines()
+
+
+@pytest.mark.parametrize("argv", [
+    ["--klever-probe-k", "1"],  # illegal on K: no flag at all
+    ["--klever-probe-pq", "-1"],
+    ["--klever-probe-pq", "x"],
+    ["--klever-probe-pq", "1", "--class", "0", "0", "0", "0"],
+    ["--klever-probe-pq", "1", "--fock-l", "0"],
+    ["--klever-probe-fock-l", str(emit_cli.FOCK_L_MAX + 1)],
+    ["--klever-probe-fock-l", "0", "--L", "0"],
+    ["--klever-probe-fock-l", "0", "--one-e-l", "0"],
+])
+def test_a_lever_flag_it_cannot_honour_is_a_2(argv, monkeypatch, tmp_path):
+    _declare(monkeypatch, {"j", "f"})
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
