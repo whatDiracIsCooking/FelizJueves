@@ -642,7 +642,10 @@ def test_a_wall_clock_row_is_its_own_quartiles() -> None:
         assert w["cpu_busy_permille_before"] <= 100, key
         assert w["near:cpu_busy_permille_before"] <= 100, key
         names = r.kernel.split(",")
-        assert all(f"{n}:events_median_ns" in w for n in names), key
+        # #363's lever clock reads the host clock only (no GPU events; the
+        # store's header "lever_clock" says so); every other sweep keeps them
+        if r.arm_kind != measured_store.KERNEL:
+            assert all(f"{n}:events_median_ns" in w for n in names), key
         assert w["n_bra"] > 0 and w["n_ket"] > 0 and w["warmup"] > 0, key
 
 
@@ -2869,7 +2872,10 @@ def test_the_f_rule_was_declared_in_the_store() -> None:
                                "f": measured_store.F_ABOUT,
                                # #362's KERNEL rows bring #339's entry
                                "kernel_levers":
-                                   measured_store.KERNEL_LEVERS_ABOUT}
+                                   measured_store.KERNEL_LEVERS_ABOUT,
+                               # #363's timed KERNEL rows bring its entry
+                               "lever_clock":
+                                   measured_store.LEVER_CLOCK_ABOUT}
 
 
 def test_a_synthetic_f_row_round_trips_through_the_store(
