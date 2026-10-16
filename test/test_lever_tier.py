@@ -41,7 +41,9 @@ EXTRA_ARMS = {"fused+mixed"}
 
 def lever_device_files() -> list[str]:
     t = ROOT / "test"
-    files = sorted(t.glob("test_*lever*_device.py")) + [
+    # #363's lever clock times the arms; it is not a correctness file
+    files = sorted(f for f in t.glob("test_*lever*_device.py")
+                   if f.name != "test_lever_clock_device.py") + [
         t / "test_kernel_fused_device.py", t / "test_kernel_mixed_device.py"]
     return sorted(str(f.relative_to(ROOT)) for f in files)
 
