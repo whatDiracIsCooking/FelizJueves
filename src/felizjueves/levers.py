@@ -439,6 +439,21 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel is MMD: it has no sliced HGP HRR and no reduced "
            "Fock-buffer set whose slice interior could be cut"),
     ),
+    "scatter": Lever.of(
+        "scatter", 358,
+        "no atomics in the fused F kernel: block-fab's reduced f_ab and each "
+        "quartet's five ket-dependent blocks stored to a per-launch slot "
+        "buffer W sized by the launch (n_bra x n_ket), then the "
+        "class-agnostic f_scatter kernel sums W into F, one thread per "
+        "element, in a fixed order, so F is deterministic "
+        "(f_levers/scatter.py, kernel_f_scatter.py)",
+        {"f"},
+        j=("the [p|q] kernel's J_p write is one lane-0 store per bra record "
+           "at one batch (atomics only for a split class, passes.atomize); "
+           "it has no per-thread F buffers for a slot buffer to replace"),
+        k=("the K kernel's write-back is K's own seam (#345's coalesced "
+           "store); it has no fused six-block digestion into F to scatter"),
+    ),
 }
 
 

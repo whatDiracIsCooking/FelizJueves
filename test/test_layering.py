@@ -1962,3 +1962,64 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
 EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.block_fab",))
 EDGES["f_levers.block_fab"] = frozenset(("f_levers.seams", "hgp.vrr", "ir",
                                          "spec"))
+
+
+# ---------------------------------------------------------------------------
+# #358 (milestone 13, H8): the atomic-free write-back. The lever module
+# (`f_levers.scatter`) composes block-fab's reduction and moves the two
+# flushes and the params; the scatter kernel and its host map
+# (`kernel_f_scatter`) are a second builder beside `kernel_f`, under the
+# same bans (no plan layer, no AO layer, no reference/, no interpreter, no
+# backend, no card), reading the lever's slot layout. `walk_f` launches the
+# scatter after a `scatter` launch, so it reaches the scatter builder; the
+# plan builder restates the lever's name and declares the footprint itself.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "f_scatter": _rule(
+        "kernel_f_scatter.py (#358): the atomic-free F write-back's scatter "
+        "kernel (class-agnostic: one thread per element of F, summing its "
+        "slots of the launch's buffer W in a fixed order) and its host map, "
+        "the slot layout read off `f_levers.scatter`",
+        ("spec", "ir", "hgp", "f_levers"),
+        plan=RULES["f_builder"].must_not["plan"],
+        ao=RULES["f_builder"].must_not["ao"],
+        interp=RULES["f_builder"].must_not["interp"],
+        emit=RULES["f_builder"].must_not["emit"],
+        device=RULES["f_builder"].must_not["device"],
+        launch_f="the map is built from packed AO offsets, as `kernel_f.pack` "
+                 "takes records; the plan declares its footprint itself",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["kernel_f_scatter"] = "f_scatter"
+EDGES["kernel_f_scatter"] = frozenset(("f_levers.scatter", "f_levers.seams",
+                                       "hgp.vrr", "ir"))
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.scatter",))
+EDGES["f_levers.scatter"] = frozenset(("f_levers.block_fab", "f_levers.seams",
+                                       "hgp.vrr", "ir", "spec"))
+RULES["f_walk"] = Rule(RULES["f_walk"].why + "; a `scatter` launch's "
+                       "scatter kernel and map through `kernel_f_scatter` "
+                       "(#358)",
+                       RULES["f_walk"].may | frozenset(("kernel_f_scatter",)),
+                       RULES["f_walk"].must_not)
+EDGES["walk_f"] = EDGES["walk_f"] | frozenset(("kernel_f_scatter",))
+
+
+def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    # #358, TRANSITIVELY: from the scatter builder no chain of imports
+    # reaches `kernel_f`, the plan layer, the AO layer, reference/, the
+    # interpreter, a backend, a card or `launch_f`.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_f_scatter"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "f_levers.scatter" in seen
+    for banned in ("kernel_f", "plan", _REF, "ao", "interp", "emit",
+                   "device", "launch_f"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_f_scatter reaches {hit}"

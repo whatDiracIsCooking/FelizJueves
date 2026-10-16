@@ -6,6 +6,8 @@
     run_on_card(prog, binary, recs, n_ao, run, *, timing=) -> [run] F
     interpret(recs, n_ao)                          -> F (not closed)
     synthetic_launch(cls, *, side, seed)           -> (FRec, basis)
+    fock_scatter_program / fock_scatter_stage / interpret_scatter
+                                     the #358 scatter path (end of file)
 
 THE LAUNCHES ARE `walk_f`'s, RECORDED. `record` walks `launch_f`'s plan with
 `walk_f` (#286) and an injected `run` that only RECORDS each call -- the
@@ -74,7 +76,10 @@ from plan_driver import UPLOAD_INT, Program, _unit
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import kernel_f as KF
+from felizjueves import kernel_f_scatter as FS
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.f_levers import scatter as SC
+from felizjueves.hgp import vrr
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.reference.boys import boys
@@ -529,3 +534,244 @@ int main(int argc, char** argv) {{
     return 0;
 }}
 """
+
+
+# --- #358: the atomic-free write-back's launch path --------------------------
+#
+# ADDITIVE: everything above is the default path, unchanged. A `scatter`
+# lever kernel (f_levers/scatter.py) writes no F: it stores into a slot
+# buffer W, and the class-agnostic `f_scatter` kernel (kernel_f_scatter.py)
+# sums W into F. So each launch of the scatter program is THREE device
+# steps, in stream order: zero W (`devMemset`, inside the sequence and so
+# inside the clock -- it is the lever's cost), the F kernel, then the
+# scatter over that launch's map. The program is FOCK_PROGRAM itself with
+# other `cases` and a longer per-launch header:
+#
+#     per launch: kernel-index n_bra n_ket k_ab k_cd diag threads nd ni
+#                 n_el n_slot                       (SCATTER_PER = 11)
+#     ints:       bra_sh bra_ao ket_sh ket_ao, then the map: el (2 n_el),
+#                 ptr (n_el + 1), src (n_slot)
+#
+# W is one device buffer grown to the largest launch's n_slot. `f_only=True`
+# builds the same program without the scatter launch (W written, F left
+# zero): the tail measurement's arm, never checked against F.
+
+SCATTER_THREADS = 128  # the scatter kernel's block width; not numerical
+SCATTER_PER = PER_LAUNCH + 2
+
+
+def _cls_of(k: Kernel) -> tuple[int, int, int, int]:
+    """The F class of an F unit, from its name (`f_<la><lb><lc><ld>...`)."""
+    digits = k.name.split("_")[1]
+    if not (k.name.startswith("f_") and len(digits) == 4
+            and digits.isdigit()):
+        raise ValueError(f"{k.name} is not an F unit's name")
+    return tuple(int(c) for c in digits)  # type: ignore[return-value]
+
+
+def _check_scatter_signature(k: Kernel) -> None:
+    names = [p.name for p in k.params]
+    want = [n for n in (*SCALARS, "bra_prim", "AB", "G_ab", "bra_sh",
+                        "bra_ao", "ket_prim", "CD", "G_cd", "ket_sh",
+                        "ket_ao", *SHARED, FS.SLOTS) if n in names]
+    if names != want or [p.name for p in k.params
+                         if p.intent is Intent.OUT] != [FS.SLOTS]:
+        raise ValueError(f"{k.name}: signature {names} is not the scatter "
+                         "lever's F kernel (F replaced by W, no tap)")
+
+
+def scatter_map_np(cls, n_ket: int, bra_ao, ket_ao) -> FS.ScatterMap:
+    """`kernel_f_scatter.scatter_map`, vectorised for the timing launches
+    (millions of slots); held equal to it on small launches by
+    test_f_lever_scatter_device.py's fast tier."""
+    n = [len(vrr.cartesians(x)) for x in cls]
+    bao = np.asarray(bra_ao, dtype=np.int64).reshape(-1, 2)
+    kao = np.asarray(ket_ao, dtype=np.int64).reshape(-1, 2)
+    nb, nk = len(bao), len(kao)
+    assert nk == n_ket
+    n_slot = FS.n_slot(tuple(cls), nb, nk)
+    row_w = SC.row_width(tuple(cls), nk)
+    rows = np.empty(n_slot, dtype=np.int64)
+    cols = np.empty(n_slot, dtype=np.int64)
+    base = np.arange(nb, dtype=np.int64) * row_w
+    ab = KF.BLOCKS[0]
+    for i in range(n[ab[0]]):
+        for j in range(n[ab[1]]):
+            s = base + i * n[ab[1]] + j
+            rows[s], cols[s] = bao[:, 0] + i, bao[:, 1] + j
+    off = SC.ket_offsets(tuple(cls))
+    o = [bao[:, 0][:, None], bao[:, 1][:, None], kao[:, 0][None, :],
+         kao[:, 1][None, :]]
+    k = np.arange(nk, dtype=np.int64)[None, :]
+    for b in KF.BLOCKS[1:]:
+        for i in range(n[b[0]]):
+            for j in range(n[b[1]]):
+                s = (base[:, None] + SC.n_ab(tuple(cls))
+                     + (off[b] + i * n[b[1]] + j) * nk + k)
+                rows[s] = np.broadcast_to(o[b[0]] + i, s.shape)
+                cols[s] = np.broadcast_to(o[b[1]] + j, s.shape)
+    width = int(max(rows.max(), cols.max())) + 1
+    key = rows * width + cols
+    src = np.argsort(key, kind="stable")  # ascending slots within an element
+    uniq, counts = np.unique(key[src], return_counts=True)
+    ptr = np.concatenate([[0], np.cumsum(counts)])
+    el = np.stack([uniq // width, uniq % width], axis=1).ravel()
+    # numpy arrays in the map's tuple fields: what staging reads is the same
+    return FS.ScatterMap(len(uniq), n_slot, el, ptr, src)
+
+
+def interpret_scatter(recs: Sequence[FRec], n_ao: int, *,
+                      threads: int = SCATTER_THREADS) -> np.ndarray:
+    """The recorded `scatter` launches through the interpreter, each F
+    launch then its scatter, in order, into one zeroed `F` (NOT closed)."""
+    F = np.zeros(n_ao * n_ao)
+    sk = FS.build_scatter_kernel()
+    for r in recs:
+        cls = _cls_of(r.kernel)
+        n_slot = FS.n_slot(cls, r.args["n_bra"], r.args["n_ket"])
+        a = {}
+        for p in r.kernel.params:
+            v = np.zeros(n_slot) if p.name == FS.SLOTS else r.args[p.name]
+            if p.array:
+                v = np.array(v, dtype=np.int32 if p.type is Scalar.I32
+                             else float)
+            a[p.name] = v
+        W = Interpreter(r.kernel, launch=Launch(r.grid, (r.threads, 1), 32),
+                        boys=boys).run(**a)[FS.SLOTS]
+        m = FS.scatter_map(cls, r.args["n_ket"], r.args["bra_ao"],
+                           r.args["ket_ao"])
+        grid, block = FS.launch_shape(m.n_el, threads)
+        sa = {n: (np.array(v, dtype=np.int32) if n in ("el", "ptr", "src")
+                  else v) for n, v in m.args(W, F, n_ao).items()}
+        F = Interpreter(sk, launch=Launch(grid, block, 32)).run(**sa)[KF.FOCK]
+    return np.asarray(F, dtype=float).reshape(n_ao, n_ao)
+
+
+def _scatter_case(i: int, k: Kernel, ns: str, f_only: bool) -> str:
+    has = {p.name for p in k.params}
+    rec = len(KF.REC)
+    size = {"bra_prim": f"(size_t)nb * kab * {rec}", "AB": "(size_t)nb * 3",
+            "G_ab": "(size_t)nb", "ket_prim": f"(size_t)nk * kcd * {rec}",
+            "CD": "(size_t)nk * 3", "G_cd": "(size_t)nk",
+            "bra_sh": "(size_t)2 * nb", "bra_ao": "(size_t)2 * nb",
+            "ket_sh": "(size_t)2 * nk", "ket_ao": "(size_t)2 * nk"}
+    lines = [f"        case {i}: {{  // {k.name}, then f_scatter"]
+    at_i = "0"
+    for buf, names, ty in (("pd", DOUBLES, "double"), ("pi", INTS, "int")):
+        at = "0"
+        for n in names:
+            if n not in has:
+                continue
+            lines.append(f"            const {ty}* a_{n} = {buf}[l] + {at};")
+            at = f"{at} + {size[n]}"
+        at_i = at
+    head = "in[HEAD + (size_t)PER * l"
+    lines.append(f"            const size_t nslot = (size_t){head} + 10];")
+    if not f_only:  # the map is read only by the scatter launch
+        lines += [
+            f"            const int nel = (int){head} + 9];",
+            f"            const int* a_el = pi[l] + {at_i};",
+            "            const int* a_ptr = a_el + (size_t)2 * nel;",
+            "            const int* a_src = a_ptr + (size_t)nel + 1;",
+        ]
+    lines += [
+        "            if (nslot > fj_wcap) {",
+        "                if (fj_w) CHECK(devFree(fj_w));",
+        "                fj_w = nullptr;",
+        "                CHECK(devMalloc(&fj_w, nslot * sizeof(double)));",
+        "                fj_wcap = nslot;",
+        "            }",
+        "            CHECK(devMemset(fj_w, 0, nslot * sizeof(double)));",
+    ]
+    arg = {"n_bra": "nb", "n_ket": "nk", "k_ab": "kab", "k_cd": "kcd",
+           "n_sh": "NSH", "n_ao": "NAO", "diag": "dg", "tau": "TAU",
+           "Dsh": "dDsh", "D": "dD", FS.SLOTS: "fj_w"}
+    args = [arg.get(p.name, f"a_{p.name}") for p in k.params]
+    lines += [
+        f"            {ns}::{k.name}<<<dim3(nb), dim3(th, 1)>>>(",
+        f"                {', '.join(args)});",
+    ]
+    if not f_only:
+        lines += [
+            "            CHECK(devGetLastError());",
+            f"            fj_sc::{FS.NAME}<<<dim3((nel + {SCATTER_THREADS} - 1)"
+            f" / {SCATTER_THREADS}), dim3({SCATTER_THREADS}, 1)>>>(",
+            "                nel, (int)nslot, NAO, a_el, a_ptr, a_src, fj_w, "
+            "dF);",
+        ]
+    lines += ["            break;", "        }"]
+    return "\n".join(lines)
+
+
+def fock_scatter_program(kernels: Sequence[Kernel], backend: str,
+                         workdir: Path, *, f_only: bool = False,
+                         units: Mapping[str, Path] | None = None,
+                         name: str = "fock_scatter") -> Program:
+    """The scatter path's `main()` around `kernels` (each a `scatter` lever
+    F kernel) and the `f_scatter` unit (the block comment above)."""
+    if not kernels or len({k.name for k in kernels}) != len(kernels):
+        raise ValueError("fock_scatter_program takes distinct kernels")
+    _, _, ext = BACKEND[backend]
+    workdir.mkdir(parents=True, exist_ok=True)
+    sk = FS.build_scatter_kernel()
+    includes, paths, cases, ptrs = [], [], [], []
+    for i, k in enumerate(kernels):
+        _check_scatter_signature(k)
+        path = _unit(k, backend, workdir, units)
+        paths.append(path)
+        ns = f"fj_f{i}"
+        includes.append(f'namespace {ns} {{\n#include "{path}"\n}}')
+        cases.append(_scatter_case(i, k, ns, f_only))
+        ptrs.append(f"(const void*){ns}::{k.name}")
+    spath = _unit(sk, backend, workdir, units)
+    paths.append(spath)
+    includes += [f'namespace fj_sc {{\n#include "{spath}"\n}}',
+                 "static double* fj_w = nullptr;  // W, grown per launch",
+                 "static size_t fj_wcap = 0;"]
+    ptrs.append(f"(const void*)fj_sc::{FS.NAME}")
+    src = FOCK_PROGRAM.format(
+        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
+        portable=PORTABLE, includes="\n".join(includes),
+        upload_int=UPLOAD_INT, n_k=len(kernels), runs=RUNS,
+        header=HEADER, per=SCATTER_PER, vram_kernels=", ".join(ptrs),
+        cases="\n".join(cases))
+    if name in {k.name for k in kernels} | {FS.NAME}:
+        raise ValueError(f"the program {name!r} would overwrite its unit")
+    main = workdir / f"{name}.{ext}"
+    main.write_text(src)
+    return Program(backend, src, main, tuple(paths))
+
+
+def fock_scatter_stage(recs: Sequence[FRec], kernels: Sequence[Kernel], *,
+                       mapper=None) -> np.ndarray:
+    """The scatter program's input for `recs` (each a `scatter` lever F
+    launch of one of `kernels`), every launch's map computed here by
+    `mapper` (`kernel_f_scatter.scatter_map` unless given)."""
+    if not recs:
+        raise ValueError("no launch to stage")
+    mapper = FS.scatter_map if mapper is None else mapper
+    index = {k.name: i for i, k in enumerate(kernels)}
+    n_sh, n_ao = int(_global(recs, "n_sh")[0]), int(_global(recs, "n_ao")[0])
+    tau = float(_global(recs, "tau")[0])
+    Dsh, D = _global(recs, "Dsh"), _global(recs, "D")
+    head = [len(recs), n_sh, n_ao, tau]
+    body: list[np.ndarray] = []
+    for r in recs:
+        if r.name not in index or r.kernel != kernels[index[r.name]]:
+            raise ValueError(f"{r.name} is not one of the program's kernels")
+        has = {p.name for p in r.kernel.params}
+        a = r.args
+        m = mapper(_cls_of(r.kernel), a["n_ket"], a["bra_ao"], a["ket_ao"])
+        assert m.n_slot == FS.n_slot(_cls_of(r.kernel), a["n_bra"], a["n_ket"])
+        dd = [np.ravel(np.asarray(a[n], dtype=float))
+              for n in DOUBLES if n in has]
+        ii = [np.ravel(np.asarray(a[n], dtype=float)) for n in INTS]
+        ii += [np.asarray(m.el, dtype=float), np.asarray(m.ptr, dtype=float),
+               np.asarray(m.src, dtype=float)]
+        nd, ni = sum(x.size for x in dd), sum(x.size for x in ii)
+        head += [index[r.name], a["n_bra"], a["n_ket"], a["k_ab"], a["k_cd"],
+                 a["diag"], r.threads, nd, ni, m.n_el, m.n_slot]
+        assert r.grid == a["n_bra"], (r.grid, a["n_bra"])
+        body += [*dd, *ii]
+    return np.concatenate([np.array(head, dtype=np.float64), Dsh, D,
+                           *body]).astype(np.float64)

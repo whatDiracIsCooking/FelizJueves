@@ -28,6 +28,7 @@ from felizjueves.f_levers import (
     batched_vrr,
     block_fab,
     ket_break,
+    scatter,
     sliced_hrr,
     slim_fock,
     struct_reads,
@@ -52,6 +53,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     subdag_vrr.NAME: subdag_vrr.apply,  # #357: each group scheduled alone
     slim_fock.NAME: slim_fock.apply,  # #360: the reduced per-slice set
     sub_slice.NAME: sub_slice.apply,  # #361: each slice's HRR sub-sliced
+    scatter.NAME: scatter.apply,  # #358: the atomic-free write-back
 }
 
 
