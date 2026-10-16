@@ -1658,6 +1658,11 @@ RULES["f_builder"] = Rule(RULES["f_builder"].why + "; its lever seams live "
                           RULES["f_builder"].must_not)
 EDGES["kernel_f"] = EDGES["kernel_f"] | frozenset(
     ("f_levers", "f_levers.seams"))
+# #352: the monotone ket key's early break, an F lever module on the seams.
+# Its key lives in `launch_f` and its dominating factor in `walk_f`, which
+# restate its two names rather than import it (test_f_lever_ket_break.py).
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.ket_break",))
+EDGES["f_levers.ket_break"] = frozenset(("f_levers.seams", "ir", "spec"))
 
 
 def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:

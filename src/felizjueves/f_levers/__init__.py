@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.f_levers import batched_vrr, block_fab
+from felizjueves.f_levers import batched_vrr, block_fab, ket_break
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.spec import Spec
 
@@ -35,6 +35,7 @@ __all__ = ["REGISTRY", "hooks_for"]
 REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     batched_vrr.NAME: batched_vrr.apply,  # #350: the grouped, staged boundary
     "block-fab": block_fab.apply,  # #351
+    ket_break.NAME: ket_break.apply,  # #352: the monotone ket key's break
 }
 
 

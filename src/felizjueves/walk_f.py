@@ -3,7 +3,8 @@
 
     walk_f(plan, basis, D, *, run, threads=4) -> FWalk
     FWalk(F, launched, kernel_screened, prelaunch_screened, deleted,
-          n_prim_pruned, n_launches)
+          n_prim_pruned, n_launches, kernel_broken)
+    dominating_factors(Dsh, n_sh, bra_pairs, ket_pairs) -> M_ab per bra
     pair_record(basis, a, b, *, G, prims)     -> kernel_f.PairRec
     quartets(P_set, Q_set, *, diagonal)       the unordered quartets met
 
@@ -53,7 +54,7 @@ build_f_kernel`), packs the two sides (`kernel_f.pack`), and calls
 
     run(kernel, grid, block, args) -> {name: flat sequence}
 
-with `args` every parameter by name (`kernel_f.params_of`), arrays flat
+with `args` every parameter of the kernel by name, arrays flat
 and row-major as plain tuples, and `F` the running two-electron matrix
 carried from launch to launch; `run` returns at least `F`. After the last
 launch the host closes once: `F <- F + F^T` (`kernel_f.close`). `diag = 1`
@@ -69,6 +70,28 @@ records the quartet when `bound < tau`. It is a PREDICTION of a skip the
 kernel makes on its own; the test holds it to the answer (the kept
 quartets alone reproduce the walk's `F`) and holds every skipped quartet,
 of all three kinds, to the exact ERIs.
+
+THE EARLY BREAK, WALKED (#352). A launch whose `Spec` carries the
+`ket-break` lever (`KET_BREAK`; f_levers/ket_break.py has the proof) runs a
+kernel that ends each thread's strided ket loop at the first ket with
+
+    brk = G_ab (G_cd M_ab) < tau
+
+before the six-block screen. The walker (a) REFUSES such a launch unless its
+ket batch's `G` is non-increasing -- the order the proof needs, read off the
+plan's pairs, so an unsorted stream never reaches the kernel through here;
+(b) forms the kernel's extra argument `M_ab` itself, from `basis` and `D`
+(`dominating_factors`: per bra pair the largest of `|w_ab| Dsh_ab`, `|w_x|
+R_a` and `|w_x| R_b` over the cross blocks, `R_s` the row maximum of `Dsh`,
+and `|w_cd|` times the ket batch's largest `Dsh_cd`); and (c) PREDICTS the
+break per thread -- thread `t` takes kets `t, t + threads, ...` past the
+canonical half, and once its `brk` is under `tau` every later ket of it is
+dropped -- in the kernel's operation order, recording the dropped quartets
+in `kernel_broken` (and in `kernel_screened`, which is every launched
+quartet the kernel does not compute). The test holds `kernel_broken` to the
+six-block prediction (a subset of what the six-block screen skips, which is
+the proof) and to the exact ERIs. With no `ket-break` launch nothing here
+changes: `kernel_broken` is empty and every argument is the literal one.
 
 Plain tuples and floats; `D` is `ao.j`'s density contract (square,
 symmetric, finite), shared.
@@ -93,6 +116,12 @@ Run = Callable[[Kernel, int, tuple[int, int], Mapping[str, object]],
 
 THREADS = 4  # the default block width; the answer does not depend on it
 
+# #352: the lever a launch's `Spec` names to break (f_levers/ket_break.py's
+# NAME) and the argument its kernel reads (its BOUND); restated, not
+# imported, so the walker stays off the kernel's levers (a test pins both).
+KET_BREAK = "ket-break"
+BREAK_ARG = "M_ab"
+
 
 @dataclass(frozen=True)
 class FWalk:
@@ -107,6 +136,9 @@ class FWalk:
     deleted: frozenset[Quartet]
     n_prim_pruned: int
     n_launches: int
+    # #352: the launched quartets a `ket-break` kernel's loop exit drops (a
+    # subset of `kernel_screened`); empty with no such launch
+    kernel_broken: frozenset[Quartet] = frozenset()
 
     @property
     def computed(self) -> frozenset[Quartet]:
@@ -225,6 +257,38 @@ def _check_batch_pairs(plan: object) -> None:
                           f"Target.F {cls}")
 
 
+def dominating_factors(Dsh: Sequence[float], n_sh: int,
+                       bras: Sequence[ShellPair], kets: Sequence[ShellPair]
+                       ) -> tuple[float, ...]:
+    """`M_ab` per bra pair of a `ket-break` launch (module docstring): an
+    upper bound, as floats, on the six-block `dmax` of that bra with EVERY
+    ket of `kets`. `Dsh` flat `n_sh x n_sh`, `kernel_f.WEIGHTS`' `|w|`."""
+    w = {b: abs(KF.WEIGHTS.of(b)) for b in KF.BLOCKS}
+    ab, cd, ac, ad, bc, bd = KF.BLOCKS
+    row = [max(Dsh[s * n_sh:(s + 1) * n_sh]) for s in range(n_sh)]
+    ket_max = max(Dsh[c * n_sh + d] for c, d in kets)
+    out = []
+    for a, b in bras:
+        out.append(max(w[ab] * Dsh[a * n_sh + b], w[ac] * row[a],
+                       w[ad] * row[a], w[bc] * row[b], w[bd] * row[b],
+                       w[cd] * ket_max))
+    return tuple(out)
+
+
+def _check_break_order(plan: object) -> None:
+    for L in plan.launches:
+        if KET_BREAK not in tuple(L.spec.levers):
+            continue
+        G = [float(p.G) for p in plan.batches[L.ket].pairs]
+        bad = [i for i in range(1, len(G)) if G[i - 1] < G[i]]
+        if bad:
+            raise _refuse(
+                f"launch ({L.bra}, {L.ket}) breaks ({KET_BREAK}) but its ket "
+                f"batch is not sorted descending by G (G[{bad[0] - 1}] = "
+                f"{G[bad[0] - 1]!r} < G[{bad[0]}] = {G[bad[0]]!r}): the "
+                "break would drop kets it cannot bound")
+
+
 def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
            threads: int = THREADS) -> FWalk:
     """Walk `plan` (module docstring): check it against `basis`, run every
@@ -234,6 +298,7 @@ def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
     tau = float(plan.tau)
     n_pruned = _check_pairs(plan, basis)
     _check_batch_pairs(plan)
+    _check_break_order(plan)
     sh, n_sh, n_ao = basis.shells, len(basis.shells), basis.n_ao
     batches = plan.batches
     side = [[(p.a, p.b) for p in b.pairs] for b in batches]
@@ -273,19 +338,32 @@ def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
 
     records = [[pair_record(basis, p.a, p.b, G=p.G, prims=p.prims)
                 for p in b.pairs] for b in batches]
-    kernels: dict[tuple[int, ...], Kernel] = {}
+    kernels: dict[tuple[tuple[int, ...], tuple[str, ...]], Kernel] = {}
     F: tuple[float, ...] = (0.0,) * (n_ao * n_ao)
     kscreen: set[Quartet] = set()
+    kbroken: set[Quartet] = set()
     D_flat = tuple(x for r in rows for x in r)
     for L in plan.launches:
         diag = int(L.bra == L.ket)
         bras, kets = records[L.bra], records[L.ket]
+        brk = KET_BREAK in tuple(L.spec.levers)
+        M = (dominating_factors(Dsh, n_sh, [b.sh for b in bras],
+                                [k.sh for k in kets]) if brk else ())
         for ib, br in enumerate(bras):
-            for ik in range(ib if diag else 0, len(kets)):
-                kt = kets[ik]
-                if six_block(br.sh, br.G, kt.sh, kt.G):
-                    kscreen.add(_quartet(br.sh, kt.sh))
-        am = tuple(L.spec.am)
+            for t in range(threads if brk else 1):
+                broken = False
+                for ik in range(t, len(kets), threads if brk else 1):
+                    if ik < (ib if diag else 0):
+                        continue  # the canonical half
+                    kt = kets[ik]
+                    if brk and not broken:
+                        broken = br.G * (kt.G * M[ib]) < tau
+                    if broken:
+                        kbroken.add(_quartet(br.sh, kt.sh))
+                        kscreen.add(_quartet(br.sh, kt.sh))
+                    elif six_block(br.sh, br.G, kt.sh, kt.G):
+                        kscreen.add(_quartet(br.sh, kt.sh))
+        am = (tuple(L.spec.am), tuple(L.spec.levers))
         if am not in kernels:
             kernels[am] = KF.build_f_kernel(L.spec)
         pb, pk = KF.pack(bras), KF.pack(kets)
@@ -297,9 +375,11 @@ def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
             "CD": pk.sep, "G_cd": pk.G, "ket_sh": pk.sh, "ket_ao": pk.ao,
             "Dsh": Dsh, "D": D_flat, KF.FOCK: F,
         }
+        if brk:
+            args[BREAK_ARG] = M
         grid, block = KF.launch_shape(pb.n, threads)
         out = run(kernels[am], grid, block,
-                  {n: args[n] for n in KF.params_of(am)})
+                  {p.name: args[p.name] for p in kernels[am].params})
         F = tuple(float(x) for x in out[KF.FOCK])
         if len(F) != n_ao * n_ao:
             raise ValueError(f"run returned F of {len(F)} elements, not "
@@ -307,4 +387,4 @@ def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
     square = [F[i * n_ao:(i + 1) * n_ao] for i in range(n_ao)]
     return FWalk(KF.close(square), frozenset(launched), frozenset(kscreen),
                  prelaunch, deleted, n_pruned,
-                 len(plan.launches))
+                 len(plan.launches), frozenset(kbroken))

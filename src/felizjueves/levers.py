@@ -320,6 +320,18 @@ VOCABULARY: dict[str, Lever] = {
            "the E fragments per bra record, with no HGP VRR boundary held "
            "across a primitive nest to stage or group"),
     ),
+    "ket-break": Lever.of(
+        "ket-break", 352,
+        "the fused F kernel's ket loop ends at the first ket whose separable "
+        "bound Gb (G_cd Mb) is under tau -- kets sorted descending by G_cd, "
+        "Mb = M_ab[bra] dominating every ket's six-block dmax -- before the "
+        "six-block skip, which stays (f_levers/ket_break.py)",
+        {"f"},
+        j=("the [p|q] kernel already breaks: its kets arrive sorted by "
+           "I_q max|D_q| and its screen is that product (kernel.py)"),
+        k=("the K kernel already breaks: its kets arrive sorted by I_bd "
+           "alone with a global max|D| (kernel_k.py, NO_DENSITY_KEY)"),
+    ),
 }
 
 
