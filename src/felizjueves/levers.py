@@ -379,6 +379,19 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel is MMD: it has no HGP HRR on contracted values to "
            "slice, its bra transform is the E fragment per bra record"),
     ),
+    # #355: the F precision lever. A name of its own, not `mixed`: that
+    # entry's `what` is J's text and is in every J `mixed` unit's provenance.
+    "fmixed": Lever.of(
+        "fmixed", 355,
+        "the fused F kernel's VRR, contracted boundary accumulators and HRR "
+        "in FP32, Boys evaluated in fp64 on TO_F64(T) and narrowed; the "
+        "screen, the density reads, the six Fock buffers, the parameters "
+        "and the atomics stay FP64 (f_levers/mixed.py)",
+        {"f"},
+        j="the J instance of the precision lever is `mixed` (#346)",
+        k=("the K instance of the precision lever is #347's: `kmixed` and "
+           "`kmixed-de`"),
+    ),
 }
 
 
