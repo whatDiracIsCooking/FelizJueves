@@ -89,7 +89,7 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
-from felizjueves.j_levers import fused
+from felizjueves.j_levers import fused, mixed
 from felizjueves.passes import atomize
 from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
@@ -332,16 +332,57 @@ def batch_contraction(spec: Spec, dag: BatchDag) -> Contraction:
     return tuple(out)
 
 
-def _recurrence_and_contraction(spec, dag, order, fundamental, contract,
-                                touched, jsh, ket) -> tuple[Stmt, ...]:
-    """The ket loop's tail: the recurrence region, then the contraction --
+def _contraction(touched, jsh, ket, target=Var) -> list[Stmt]:
+    """The contraction block: one shared update per touched `p`, reading
+    each target `[p+q]^(0)` as `target(name)` (a plain `Var`, or `mixed`'s
+    widening of an F32 one)."""
+    contract: list[Stmt] = [
+        Note("J_p += SUM_q (-1)^|q| [p+q]^(0) D_q, [JEngine, v2, eqs. 7-9, "
+             "20-22]: the only shell-quartet-level contraction; [ab|cd] is "
+             "never formed"),
+    ]
+    for slot, (_, p, pairs) in enumerate(touched):
+        plus: list[Expr] = []
+        minus: list[Expr] = []
+        for j, q in pairs:
+            r = (p[0] + q[0], p[1] + q[1], p[2] + q[2])
+            term = _c(Fn.MUL, target(node_name((r, 0))), ket("D", Lit(j)))
+            (minus if sum(q) % 2 else plus).append(term)
+        value: Expr = jsh(slot)
+        if plus:
+            value = _c(Fn.ADD, value, _tree(plus))
+        if minus:
+            value = _c(Fn.SUB, value, _tree(minus))
+        contract.append(Assign(jsh(slot), value))
+    return contract
+
+
+def _pair_region(spec, dag, order, operands, touched, jsh,
+                 ket) -> tuple[Stmt, ...]:
+    """The ket loop's tail: the pair operands (`PQ_d`, `eta`, `theta`), the
+    fundamentals' prelude, the recurrence region, then the contraction --
     or, under the `fused` lever (#344, `j_levers.fused`), the two
-    interleaved so each target is contracted as it is formed."""
-    body = recurrence_body(dag, order, fundamental)
-    if fused.FUSED in spec.kernel_body_levers():
-        return fused.fuse(body, touched, jsh=jsh,
-                          density=lambda j: ket("D", Lit(j)))
-    return (*body, *contract)
+    interleaved so each target is contracted as it is formed; under the
+    `mixed` lever (#346, `j_levers.mixed`), the operands narrowed and the
+    prelude and recurrence F32 inside the FP64 boundary. The two compose."""
+    levers = spec.kernel_body_levers()
+    is_fused = fused.FUSED in levers
+    ms = [m for (r, m) in order if not any(r)]
+    target = Var
+    if mixed.MIXED in levers:
+        prelude, fundamental = mixed.prelude(ms)
+        head = (*mixed.operands(operands), *prelude)
+        body = mixed.narrow(recurrence_body(dag, order, fundamental),
+                            dag.targets, widen_targets=is_fused)
+        target = mixed.widen
+    else:
+        prelude, fundamental = fundamental_prelude(ms)
+        head = (*operands, *prelude)
+        body = recurrence_body(dag, order, fundamental)
+    if is_fused:
+        return (*head, *fused.fuse(body, touched, jsh=jsh,
+                                   density=lambda j: ket("D", Lit(j))))
+    return (*head, *body, *_contraction(touched, jsh, ket, target))
 
 
 def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
@@ -363,37 +404,11 @@ def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
         return Index(arr, (k, *more))
 
     # --- one (bra, ket) pair: the screen, PQ and theta, the recurrence ------
-    prelude, fundamental = fundamental_prelude(
-        [m for (r, m) in order if not any(r)])
     pq_decls = [
         Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"), ket("Q", Lit(d))))
         for d, n in enumerate(PQ_PARAMS)
     ]
-    contract: list[Stmt] = [
-        Note("J_p += SUM_q (-1)^|q| [p+q]^(0) D_q, [JEngine, v2, eqs. 7-9, "
-             "20-22]: the only shell-quartet-level contraction; [ab|cd] is "
-             "never formed"),
-    ]
-    for slot, (_, p, pairs) in enumerate(touched):
-        plus: list[Expr] = []
-        minus: list[Expr] = []
-        for j, q in pairs:
-            r = (p[0] + q[0], p[1] + q[1], p[2] + q[2])
-            term = _c(Fn.MUL, Var(node_name((r, 0))), ket("D", Lit(j)))
-            (minus if sum(q) % 2 else plus).append(term)
-        value: Expr = jsh(slot)
-        if plus:
-            value = _c(Fn.ADD, value, _tree(plus))
-        if minus:
-            value = _c(Fn.SUB, value, _tree(minus))
-        contract.append(Assign(jsh(slot), value))
-
-    ket_body: tuple[Stmt, ...] = (
-        Decl("bound", Scalar.F64,
-             init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ket("Iq"), ket("Dmax")))),
-        Note("screen: Dmax * Ip * Iq < tau, and every later ket is under it "
-             "too (sorted) -- so break"),
-        If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
+    operands: tuple[Stmt, ...] = (
         *pq_decls,
         Decl("et", Scalar.F64, init=ket("eta")),
         Note("theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in "
@@ -401,9 +416,15 @@ def _pq_kernel(spec: Spec, dag: BatchDag, name: str, head: str) -> Kernel:
         Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
             Fn.DIV, _c(Fn.MUL, Var("ze"), Var("et")),
             _c(Fn.ADD, Var("ze"), Var("et"))))),
-        *prelude,
-        *_recurrence_and_contraction(spec, dag, order, fundamental, contract,
-                                     touched, jsh, ket),
+    )
+
+    ket_body: tuple[Stmt, ...] = (
+        Decl("bound", Scalar.F64,
+             init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ket("Iq"), ket("Dmax")))),
+        Note("screen: Dmax * Ip * Iq < tau, and every later ket is under it "
+             "too (sorted) -- so break"),
+        If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
+        *_pair_region(spec, dag, order, operands, touched, jsh, ket),
     )
 
     # --- one bra index: zero, strip-mine the kets, reduce, write ------------
