@@ -431,6 +431,76 @@ class Index:
 
 
 @dataclass(frozen=True)
+class Record:
+    """A typed view of one row of a flat array (#353): a C struct of
+    `members`, each of type `scalar`, in order.
+
+    A row of an array whose LAST extent is `len(members)` is one `Record`:
+    with one scalar type and no padding (the backends `static_assert` the
+    size), member `i` sits at element `i` of the row, so the view names the
+    layout the flat array already has and changes none of it. The writer
+    spells it once per kernel as `struct fj_<name>`.
+    """
+
+    name: str
+    scalar: Scalar
+    members: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _ident(self.name, "Record name")
+        if not isinstance(self.scalar, Scalar):
+            raise TypeError(f"Record scalar {self.scalar!r} is not a Scalar")
+        members = _tuple(self, "members", self.members)
+        if not members:
+            raise ValueError(f"Record {self.name!r} has no members")
+        for m in members:
+            _ident(m, "Record member")
+        if len(set(members)) != len(members):
+            raise ValueError(f"Record {self.name!r}: duplicate members "
+                             f"{members}")
+
+    def offset(self, member: str) -> int:
+        """The element of the row `member` names."""
+        return self.members.index(member)
+
+
+@dataclass(frozen=True)
+class Member(Index):
+    """`array[i0, ..., member]` READ THROUGH `record` (#353): the element an
+    `Index` with the same `at` names, spelled by the backends as a member of
+    the struct view of its row, `((const fj_<rec>*)array)[row].<member>`.
+
+    It IS an `Index` -- the same element, the same type (the array's), the
+    same free uses -- so every pass, census and the interpreter read it as
+    one; only the spelling differs. The last subscript is the member's
+    literal offset in the row; the array's last extent must be the record's
+    width and its type the record's scalar (the writer checks both, against
+    the declared shape).
+    """
+
+    record: Record
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.record, Record):
+            raise TypeError(f"Member record {self.record!r} is not a Record")
+        last = self.at[-1]
+        if not (isinstance(last, Lit) and last.type is Scalar.I32
+                and 0 <= last.value < len(self.record.members)):
+            raise ValueError(
+                f"Member {self.array!r}: the last subscript {last!r} must be "
+                f"a literal offset into {self.record.name!r}'s "
+                f"{len(self.record.members)} members")
+        if len(self.at) < 2:
+            raise ValueError(f"Member {self.array!r}: a row index and a "
+                             "member offset, at least")
+
+    @property
+    def member(self) -> str:
+        return self.record.members[self.at[-1].value]
+
+
+@dataclass(frozen=True)
 class Call:
     """`fn(args...)` with `fn` from the closed `Fn` vocabulary."""
 

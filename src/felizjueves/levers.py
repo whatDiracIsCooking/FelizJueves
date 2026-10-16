@@ -332,6 +332,24 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel already breaks: its kets arrive sorted by I_bd "
            "alone with a global max|D| (kernel_k.py, NO_DENSITY_KEY)"),
     ),
+    "struct-reads": Lever.of(
+        "struct-reads", 353,
+        "every packed pair-record read (bra_prim, ab_sh, ket_prim, AB, CD, "
+        "the shell indices and AO offsets) through a struct view of its row "
+        "instead of a positional index into the flat array; the layout and "
+        "the arithmetic unchanged (f_levers/struct_reads.py)",
+        {"f"},
+        j=("the views are the fused F kernel's packed pair stream "
+           "(kernel_f.pack's 8-field primitive-pair row), read through the F "
+           "seams' field hook; the [p|q] kernel's per-field record arrays "
+           "(P[n,3], zeta, Ip; Q, eta, Iq, D_q) pass through no such hook, "
+           "and typing them would be a J lever of its own"),
+        k=("the views are the fused F kernel's packed pair stream "
+           "(kernel_f.pack's 8-field primitive-pair row), read through the F "
+           "seams' field hook; the K kernel's per-field record arrays (P, "
+           "XPA, XPC, Q, XQB, XQD, ...) pass through no such hook in "
+           "k_levers.seams, and typing them would be a K lever of its own"),
+    ),
 }
 
 

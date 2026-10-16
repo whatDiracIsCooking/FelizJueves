@@ -1774,6 +1774,14 @@ EDGES["k_levers.mixed"] = frozenset(("e_fragment", "ir", "j_levers.mixed",
                                      "k_levers.seams", "recurrence", "spec"))
 
 
+# #353 (milestone 13, H10): struct-typed pair-record reads, an F lever
+# module. It moves the `field` hook only (its records are `ir.Record`s, its
+# reads `ir.Member`s), so it reaches the seams, the IR and `Spec`, nothing
+# below `f_lever`'s prohibitions; the spelling of the view is `emit/_c.py`'s.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.struct_reads",))
+EDGES["f_levers.struct_reads"] = frozenset(("f_levers.seams", "ir", "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #339 (milestone 13): the lever ladder as a registry. `lever_ladder` is a
 # leaf beside `levers` (data only: the families and the unit name; no
