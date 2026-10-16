@@ -44,7 +44,7 @@ from felizjueves.emit import cuda, hip
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_jab import build_jab_kernel
-from felizjueves.kernel_k import build_k_kernel
+from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
@@ -310,10 +310,14 @@ def _probe_flags() -> list[str]:
 
 
 def test_only_a_declared_lever_has_a_flag(tmp_path):
-    # The shipped vocabulary: `fused` (#344), legal on J only, so one flag.
+    # The shipped vocabulary: one flag per (lever, family it is legal on) --
+    # `fused` (#344) on J, `split` (#341) on K, and whatever follows.
+    suffix = {s: f.suffix for s, f in lever_ladder.FAMILIES.items()}
     assert [lf.flag for lf in lever_ladder.flags()] == [
-        f"--klever-{lv}-pq" for lv in sorted(levers.VOCABULARY)]
-    assert "--klever-fused-pq" in {lf.flag for lf in lever_ladder.flags()}
+        f"--klever-{name}-{suffix[s]}" for name in sorted(levers.VOCABULARY)
+        for s in lever_ladder.FAMILIES if s in levers.VOCABULARY[name].legal]
+    got = {lf.flag for lf in lever_ladder.flags()}
+    assert {"--klever-fused-pq", "--klever-split-k"} <= got
     assert _run(tmp_path, "cuda", "--klever-probe-pq", "1") == 2
 
 
@@ -430,6 +434,23 @@ def test_the_f_lever_flag_is_on_the_fock_path(monkeypatch, tmp_path):
     assert _names(tmp_path / "b") == {"f_0000.hip"} | {
         f"f_{''.join(map(str, c))}_lv_probe.hip"
         for c in emit_cli.fock_classes(1)}
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_split_k_ladder_writes_every_element_kernel(backend, tmp_path):
+    """#341's `split` fans a K class out into `_e{i}_{j}` element kernels;
+    `--klever-split-k` writes every one, `build_k_kernels`' text renamed
+    `<name>_lv_split`."""
+    emit, arch, ext = BACKEND[backend]
+    assert _run(tmp_path, backend, "--L", "0", "--klever-split-k", "1", "2") == 0
+    want = [k for L in (1, 2)
+            for k in build_k_kernels(replace(k_spec(L), levers=("split",)))]
+    assert len(want) > 2 and all("_e" in k.name for k in want)
+    assert _names(tmp_path) == {"pq_L0_p0_q0." + ext} | {
+        f"{k.name}_lv_split.{ext}" for k in want}
+    for k in want:
+        lv = replace(k, name=f"{k.name}_lv_split")
+        assert (tmp_path / f"{lv.name}.{ext}").read_text() == emit(lv, arch)
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))

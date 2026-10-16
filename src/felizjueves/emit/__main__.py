@@ -176,7 +176,7 @@ from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spe
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_jab import build_jab_kernel
-from felizjueves.kernel_k import build_k_kernel
+from felizjueves.kernel_k import build_k_kernels
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
@@ -339,21 +339,24 @@ def _f_lever_specs(lever: str, lmax: int) -> list[Spec]:
 
 # family slot -> (the lever's specs from the flag's argument, the builder):
 # `lever_ladder.FAMILIES`' keys exactly (test/test_lever_ladder.py)
+# Each builder returns EVERY kernel of its one-batch cell: a lever may fan a
+# class out into several (#341's K `split`, `_e{i}_{j}` element kernels).
 LEVER_FAMILIES: dict[str, tuple[Callable[..., list[Spec]],
-                                Callable[[Spec], Kernel]]] = {
-    "j": (_pq_lever_specs, build_pq_kernel),
-    "k": (_k_lever_specs, build_k_kernel),
-    "f": (_f_lever_specs, build_f_kernel),
+                                Callable[[Spec], Sequence[Kernel]]]] = {
+    "j": (_pq_lever_specs, build_pq_kernels),
+    "k": (_k_lever_specs, build_k_kernels),
+    "f": (_f_lever_specs, lambda s: (build_f_kernel(s),)),
 }
 
 
 def lever_kernels(flag: LadderFlag, arg) -> list[Kernel]:
     """The units one lever flag writes: its family's specs with the lever,
-    built, each named `lever_ladder.unit_name` of its literal name. Raises
-    `ValueError` for an argument or a (target, lever) the key refuses."""
+    built (every kernel of each), each named `lever_ladder.unit_name` of its
+    literal name. Raises `ValueError` for an argument or a (target, lever)
+    the key refuses."""
     specs_of, build = LEVER_FAMILIES[flag.family.slot]
     return [replace(k, name=unit_name(k.name, s.kernel_body_levers()))
-            for s in specs_of(flag.lever, arg) for k in (build(s),)]
+            for s in specs_of(flag.lever, arg) for k in build(s)]
 
 
 def generate_levers(backend: str, arch: Arch, out: Path,
