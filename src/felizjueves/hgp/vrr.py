@@ -256,3 +256,126 @@ def build(cls: AmClass, prune: bool = True) -> VrrDag:
         terms = {n: t for n, t in terms.items() if n in keep}
     order = tuple(sorted(terms, key=order_key))
     return VrrDag(cls, prune, tg, MappingProxyType(terms), order)
+
+
+# ---------------------------------------------------------------------------
+# Grouping the boundary along the build order (#350, the batched VRR)
+# ---------------------------------------------------------------------------
+#
+# ADDITIVE: nothing above reads these, so `build`'s DAGs, their pinned counts
+# (test/test_hgp_vrr.py) and hgp/cost.json are unchanged.
+#
+# THE CUT. `scheduled_targets(dag)` is the targets in the order the DAG's
+# `order` produces them; `group_targets(dag, n)` cuts that sequence into `n`
+# CONTIGUOUS runs of near-equal length (`round(g |T| / n)`), so each group is
+# a stretch of the schedule, and the groups partition the targets.
+#
+# THE SUB-DAG. `group_dag(dag, group)` is the closure of one group's targets
+# under the parent DAG's own terms -- every node some target of the group
+# reaches -- as a `VrrDag` whose `targets` are the group and whose `order` is
+# the PARENT's order filtered to the closure (a topological order, since a
+# filter of one is). Every node keeps its parent's terms, so a node a group
+# shares with another is the SAME expression in both: the recompute is exact
+# and the kernel's values are the literal ones bit for bit. `order=` takes
+# another order of the closure (#357's per-group schedule), checked
+# complete and topological. `hgp.recurrence.vrr_body` builds a sub-DAG's
+# statements unchanged.
+#
+# THE LIVE MODEL (`peak_live`). The register demand the group-count rule
+# reads (f_levers/batched_vrr.py) is a STATEMENT-ORDER model: executing
+# `order` one node per step, a value is live from the step that defines it
+# to the last step that reads it, and a value in `live_out` (read after the
+# phase: the targets, by the accumulation) to the end. The peak is the most
+# values live at once. It models the emitted text, not a compiler's
+# schedule (which may reorder); it is the quantity the rule is stated in,
+# and nothing more is claimed for it.
+
+
+def peak_live(order: Iterable, reads, live_out: Iterable = ()) -> int:
+    """Peak simultaneous live values executing `order` (the text above).
+
+    `reads(node)` is the nodes `node` reads; each must precede it in
+    `order`. A node in `live_out` stays live to the end; any other is dead
+    after its last reader (or at once, if nothing reads it)."""
+    order = tuple(order)
+    at = {n: i for i, n in enumerate(order)}
+    if len(at) != len(order):
+        raise ValueError("an order lists a node twice")
+    last = dict(at)
+    for i, n in enumerate(order):
+        for c in reads(n):
+            if at.get(c, i) >= i:
+                raise ValueError(f"{n} reads {c}, not produced before it")
+            last[c] = i
+    end = len(order)
+    for n in live_out:
+        if n not in at:
+            raise ValueError(f"live-out {n} is not in the order")
+        last[n] = end
+    delta = [0] * (end + 2)
+    for n, i in at.items():
+        delta[i] += 1
+        delta[last[n] + 1] -= 1
+    cur = best = 0
+    for d in delta[:end + 1]:
+        cur += d
+        best = max(best, cur)
+    return best
+
+
+def vrr_peak(dag: VrrDag) -> int:
+    """`peak_live` of `dag` in its own order, its targets live out."""
+    return peak_live(dag.order, lambda n: (t.child for t in dag.terms[n]),
+                     dag.targets)
+
+
+def scheduled_targets(dag: VrrDag) -> tuple[Node, ...]:
+    """`dag`'s targets in the order its `order` produces them."""
+    tg = frozenset(dag.targets)
+    return tuple(n for n in dag.order if n in tg)
+
+
+def group_targets(dag: VrrDag, n: int) -> tuple[tuple[Node, ...], ...]:
+    """The scheduled targets cut into `n` contiguous, near-equal runs.
+
+    `1 <= n <= len(dag.targets)`; every run is non-empty and the runs
+    partition the targets, in schedule order."""
+    seq = scheduled_targets(dag)
+    if type(n) is not int or not 1 <= n <= len(seq):
+        raise ValueError(f"{dag.cls}: {n!r} groups of {len(seq)} targets; "
+                         f"a group count is an int in 1..{len(seq)}")
+    cut = [round(g * len(seq) / n) for g in range(n + 1)]
+    return tuple(seq[a:b] for a, b in zip(cut, cut[1:], strict=False))
+
+
+def group_dag(dag: VrrDag, group: Iterable[Node],
+              order: Iterable[Node] | None = None) -> VrrDag:
+    """The closure of `group` (a subset of `dag.targets`) as a `VrrDag`: the
+    parent's terms, `targets = group`, and the parent's order filtered to
+    the closure unless `order` (the closure, topologically) is given."""
+    group = tuple(group)
+    stray = set(group) - set(dag.targets)
+    if not group or stray or len(set(group)) != len(group):
+        raise ValueError(f"{dag.cls}: group {group!r} is not a non-empty "
+                         "set of the DAG's targets")
+    keep = reachable(dag.terms, group)
+    terms = {n: t for n, t in dag.terms.items() if n in keep}
+    if order is None:
+        order = tuple(n for n in dag.order if n in keep)
+    else:
+        order = tuple(order)
+        if len(order) != len(keep) or set(order) != keep:
+            raise ValueError(f"{dag.cls}: the order is not the group's "
+                             "closure")
+        seen: set[Node] = set()
+        for n in order:
+            if any(t.child not in seen for t in terms[n]):
+                raise ValueError(f"{dag.cls}: {n} precedes a node it reads")
+            seen.add(n)
+    return VrrDag(dag.cls, dag.pruned, group, MappingProxyType(terms), order)
+
+
+def groups(cls: AmClass, n: int) -> tuple[VrrDag, ...]:
+    """The pruned DAG of `cls` as `n` schedule-contiguous group sub-DAGs."""
+    dag = build(cls)
+    return tuple(group_dag(dag, g) for g in group_targets(dag, n))
