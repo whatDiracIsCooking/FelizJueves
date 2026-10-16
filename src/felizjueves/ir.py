@@ -7,7 +7,7 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 
     Kernel(name, params, body)
     Stmt = Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-         | Inline
+         | Inline | Barrier
     Expr = Weighted | Index | Call | Lit | Var
     Fragment(name, binds, body)   -- spliced into a kernel by Inline(fragment, bindings)
 
@@ -598,6 +598,21 @@ class Break:
 
 
 @dataclass(frozen=True)
+class Barrier:
+    """Every thread of the block waits here until all of them have arrived,
+    and every SHARED write made before it is visible to every thread after
+    it (#351; the barrier #333 named as missing).
+
+    It must be reached by EVERY thread of the block at the same statement: a
+    barrier under thread-dependent control flow is undefined behaviour on
+    both vendors, not a shorter wait, and the interpreter refuses it (a
+    thread that has finished, or waits at another statement, while one waits
+    here). Block-uniform control flow -- an `If` on the block index -- is
+    legal. Like `Break` it has no fields: the spelling is the backend's.
+    """
+
+
+@dataclass(frozen=True)
 class WarpReduce:
     """`dst = SUM over the lanes of this thread's warp of value`.
 
@@ -842,9 +857,9 @@ class Inline:
 
 
 Stmt = (Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-        | Inline)
+        | Inline | Barrier)
 STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, AtomicAdd, Note, Raw,
-              Inline)
+              Inline, Barrier)
 
 
 # ---------------------------------------------------------------------------

@@ -1879,3 +1879,16 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
     for banned in (_REF, "ao", "interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #351 (milestone 13, H7): the block-level f_ab reduction, an F lever
+# module. `f_levers` imports it to register it; it moves `shared_decl` and
+# `flush_bra` only, so it reaches the seams, the IR (`Barrier`,
+# `WarpReduce`), `hgp.vrr` (the bra block's Cartesian counts, for the
+# declared footprint) and `Spec`.
+# ---------------------------------------------------------------------------
+
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.block_fab",))
+EDGES["f_levers.block_fab"] = frozenset(("f_levers.seams", "hgp.vrr", "ir",
+                                         "spec"))
