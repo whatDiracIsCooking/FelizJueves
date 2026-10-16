@@ -341,8 +341,11 @@ def max_boys_T(basis: Basis, side: float) -> float:
 
 
 def synthetic_launch(cls: tuple[int, int, int, int], *, side: float,
-                     seed: int) -> tuple[FRec, Basis]:
-    """The timing launch of `cls` (module docstring, THE SYNTHETIC LAUNCH)."""
+                     seed: int, n_ket: int = TIMING_N_KET
+                     ) -> tuple[FRec, Basis]:
+    """The timing launch of `cls` (module docstring, THE SYNTHETIC LAUNCH);
+    `n_ket` ket pairs, the last of the canonical list (#363's lever clock
+    asks fewer than the F rows' TIMING_N_KET)."""
     la, lb, lc, ld = cls
     for counts in (SYNTHETIC_COUNTS, DEFERRED_COUNTS):
         basis = synthetic_basis(side=side, seed=seed, counts=counts)
@@ -352,11 +355,11 @@ def synthetic_launch(cls: tuple[int, int, int, int], *, side: float,
         bra_all = _canonical_pairs(idx, la, lb)
         ket_all = _canonical_pairs(idx, lc, ld)
         bras = bra_all[:TIMING_N_BRA]
-        kets = ket_all[-TIMING_N_KET:]
-        if len(bras) == TIMING_N_BRA and len(kets) == TIMING_N_KET \
+        kets = ket_all[-n_ket:]
+        if len(bras) == TIMING_N_BRA and len(kets) == n_ket \
                 and not set(bras) & set(kets):
             break
-    assert len(bras) == TIMING_N_BRA and len(kets) == TIMING_N_KET
+    assert len(bras) == TIMING_N_BRA and len(kets) == n_ket
     assert not set(bras) & set(kets), "the bra and ket pairs must differ"
 
     def rec(a: int, b: int) -> KF.PairRec:
