@@ -2,7 +2,7 @@
 the boundary, HRR after the loop (#282), and the six-block predigest with
 its 8-fold weights, DERIVED (#283).
 
-    build_f_kernel((la, lb, lc, ld) | spec, *, weights=, eris=) -> Kernel
+    build_f_kernel((la, lb, lc, ld) | spec, *, weights=, eris=, hooks=) -> Kernel
     f_class_spec(la, lb, lc, ld)            -> Spec        the class's key
     pack(pairs)                             -> Packed      one side's staged record
     PrimRec(P, X, zeta, U) / PairRec(sep, G, prims, sh, ao)  what pack takes
@@ -272,6 +272,20 @@ it (pin 11) and lowering's `recycle` is [p|q]-only -- so admitting one would
 build the literal kernel under a lever's key. With no lever every emitted
 byte is unchanged (the 21 goldens and `fock_digests.json`).
 
+THE SEAMS (#368). `build_f_kernel` is a SKELETON: it writes the head notes,
+the lever notes, the launch note, the bra index and the `bra < n_bra` guard,
+and asks an `f_levers.seams.FHooks` for everything else -- the shared
+staging, the bra setup, the ket loop, the screen, the boundary, the
+primitive nest, the VRR, the accumulation, the HRR, the tap, the digestion
+(setup, zeroing, predigest, per-ERI predigest, both flushes), every packed
+record read, the floating type per region, the params and a last rewrite.
+Each hook's default is this file's code before #368, moved statement for
+statement, so the literal kernel is byte-identical (test/test_f_seams.py
+pins the text of every class through L = 4, both backends, against the
+pre-#368 tree). An F lever is its own module, `f_levers/<name>.py`,
+registered in `f_levers.REGISTRY`; `f_levers.hooks_for` composes a spec's
+levers onto the defaults and this file does not change for one.
+
 Nothing here imports `plan/` (pin 11: it keys on a `[JEngine]` row an HGP
 class does not have), `ao/` (the witness; its two fractions are restated
 below and held equal to `ao.fock`'s by the test), `reference/`, the
@@ -283,39 +297,39 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from felizjueves.hgp import hrr, vrr
-from felizjueves.hgp.recurrence import (
-    PAIR,
-    PQ_PARAMS,
-    THETA,
-    boundary_order,
-    fundamental_prelude,
-    hgp_class,
-    hrr_body,
-    hrr_name,
-    vrr_body,
-    vrr_name,
+from felizjueves.f_levers import hooks_for
+from felizjueves.f_levers.seams import (
+    AB_SH,
+    BLOCKS,
+    FOCK,
+    HALF,
+    KAB,
+    KCD,
+    KET,
+    MAX_PRIM_PAIRS,
+    OUT,
+    REC,
+    SIX_BLOCK,
+    SKIP,
+    STAGE,
+    STAGING,
+    FContext,
+    FHooks,
+    params_of,
 )
-from felizjueves.hgp.vrr import AmClass, Cart
+from felizjueves.hgp import hrr, vrr
+from felizjueves.hgp.recurrence import hgp_class
+from felizjueves.hgp.vrr import AmClass
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
     Call,
     Decl,
-    Expr,
-    Factor,
     Fn,
-    For,
     If,
-    Index,
-    Intent,
     Kernel,
-    Lit,
     Note,
-    Param,
     Scalar,
-    Space,
-    Stmt,
     Var,
     Weighted,
     walk,
@@ -330,12 +344,20 @@ __all__ = [
     "EXCHANGE_FRACTION",
     "FOCK",
     "F_NO_OUTER_LAYER",
+    "FContext",
+    "FHooks",
     "HALF",
+    "KAB",
+    "KCD",
+    "KET",
     "MAX_PRIM_PAIRS",
     "N_SPIN",
     "OUT",
     "REC",
+    "SIX_BLOCK",
     "SKIP",
+    "STAGE",
+    "STAGING",
     "WEIGHTS",
     "Packed",
     "PairRec",
@@ -356,7 +378,6 @@ __all__ = [
     "six_block_size",
 ]
 
-MAX_PRIM_PAIRS = 128  # the shared staging cap (module docstring)
 # Why a non-kernel-body lever is refused on an F spec (module docstring).
 F_NO_OUTER_LAYER = (
     "is not a kernel-body lever, and no layer around the fused F kernel "
@@ -364,30 +385,9 @@ F_NO_OUTER_LAYER = (
     "recycle is applied to [p|q] only, so the build would be the literal "
     "kernel under a lever's key"
 )
-REC = ("P_x", "P_y", "P_z", "X_x", "X_y", "X_z", "zeta", "U")
-AB_SH = "ab_sh"  # the staged |ab) record, Space.SHARED
-OUT = "g"  # the ERI tap (eris=True)
-FOCK = "F"  # the two-electron Fock matrix, AtomicAdd-ed, closed on the host
-KET = "k"  # the strided ket loop: one thread per contracted quartet
-KCD, KAB = "kcd", "kab"  # the primitive loops, ket outer, bra inner
-STAGE = "i"
-
-_P, _X, _ZETA, _U = 0, 3, 6, 7  # field offsets in REC
-
-SKIP = (
-    "screen: skip this quartet, never break ([Fock] §3.2; fock/skip-not-"
-    "break). The six-block D_max is not monotone along the batch sort, so a "
-    "screened quartet says nothing of the kets after it")
-
-HALF = (
-    "the canonical half: in a diagonal launch (diag = 1, one batch on both "
-    "sides) the quartet (bra, k < bra) is the thread for (k, bra)'s; skip it, "
-    "never break")
-
-SIX_BLOCK = (
-    "the six-block screen: dmax is the largest |w| Dsh over the six density "
-    "blocks the quartet digests into (ab, cd, ac, ad, bc, bd), so G_ab G_cd "
-    "dmax bounds every term it deposits")
+# MAX_PRIM_PAIRS, REC, AB_SH, OUT, FOCK, KET, KCD, KAB, STAGE, SKIP, HALF,
+# SIX_BLOCK, STAGING and BLOCKS live in `f_levers.seams` (#368), which the
+# kernel's statements are built in; they are re-exported here unchanged.
 
 
 # --- the weights, derived from the permutation orbit (module docstring) ------
@@ -396,10 +396,6 @@ N_SPIN = 2  # closed shell: D = P^alpha + P^beta (ao/fock.py's derivation)
 COULOMB_FRACTION = 1.0  # G = J - K / N_SPIN; held equal to ao.fock's
 EXCHANGE_FRACTION = 1.0 / N_SPIN
 
-# The six blocks, as unordered pairs of positions in (a, b, c, d) = (0, 1, 2,
-# 3), each written in order; the kernel's buffer names follow them.
-BLOCKS = ((0, 1), (2, 3), (0, 2), (0, 3), (1, 2), (1, 3))
-_LETTER = "abcd"
 
 Quartet = tuple[int, int, int, int]
 
@@ -484,11 +480,6 @@ def degeneracy(a: int, b: int, c: int, d: int) -> float:
     stab = sum(1 for g in orbit_group() if tuple(q[i] for i in g) == q)
     return 1.0 / stab
 
-STAGING = (
-    "stage |ab) in shared memory: every thread copies the whole record (the "
-    "IR has no barrier, so a cooperative load could not be read safely); "
-    f"the degree k_ab is at most MAX_PRIM_PAIRS = {MAX_PRIM_PAIRS}, which "
-    "kernel_f.pack enforces")
 
 
 def f_class_spec(la: int, lb: int, lc: int, ld: int,
@@ -639,303 +630,45 @@ def six_block_size(cls: AmClass) -> int:
     return sum(n[i] * n[j] for i, j in BLOCKS)
 
 
-# --- the kernel --------------------------------------------------------------
+# --- the kernel: a skeleton over f_levers.seams (#368) -----------------------
 
 
-def _c(fn: Fn, *args: Expr) -> Call:
+def _c(fn: Fn, *args) -> Call:
     return Call(fn, args)
 
 
-def _acc_name(e: Cart, f: Cart) -> str:
-    """The contracted accumulator of boundary `(e0|f0)`: `C{e}__{f}`."""
-    return "C" + "__".join("_".join(map(str, v)) for v in (e, f))
-
-
-def _factors(stmts: Sequence[Stmt]) -> set[str]:
-    """Every non-unit factor name a `Weighted` in `stmts` reads."""
-    out: set[str] = set()
-    for s in stmts:
-        if isinstance(s, Decl) and isinstance(s.init, Weighted):
-            out |= {t.g.name_in_kernel for t in s.init.terms
-                    if t.g.name_in_kernel is not None}
-    return out
-
-
-def params_of(cls: AmClass, *, eris: bool = False) -> tuple[str, ...]:
-    """The kernel's parameter names, in order. `AB` only when `lb > 0` (the
-    bra HRR reads it), `CD` only when `ld > 0`; `g` only with the tap."""
-    _, lb, _, ld = cls
-    return ("n_bra", "n_ket", "k_ab", "k_cd", "n_sh", "n_ao", "diag", "tau",
-            "bra_prim", *(("AB",) if lb else ()), "G_ab", "bra_sh", "bra_ao",
-            "ket_prim", *(("CD",) if ld else ()), "G_cd", "ket_sh", "ket_ao",
-            "Dsh", "D", FOCK, *((OUT,) if eris else ()))
-
-
-def _cart_names(cls: AmClass) -> tuple[tuple[int, ...], ...]:
-    """Per ERI target, its four component indices within their shells."""
-    pos = [{c: i for i, c in enumerate(vrr.cartesians(x))} for x in cls]
-    return tuple(tuple(pos[s][v] for s, v in enumerate(t))
-                 for t in hrr.targets(cls))
+def _hooks(spec: Spec, hooks: FHooks | None) -> FHooks:
+    """`hooks` when given (a test's sketch), else the spec's levers composed
+    through `f_levers.REGISTRY` -- `DEFAULT_HOOKS` for a literal spec."""
+    if hooks is None:
+        return hooks_for(spec)
+    if not isinstance(hooks, FHooks):
+        raise TypeError(f"hooks= takes an FHooks, not {hooks!r}")
+    return hooks
 
 
 def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None,
-                   weights: Weights = WEIGHTS, eris: bool = False) -> Kernel:
+                   weights: Weights = WEIGHTS, eris: bool = False,
+                   hooks: FHooks | None = None) -> Kernel:
     """The fused Fock kernel of one F class (module docstring). `cls` is
     `(la, lb, lc, ld)` in AO order or a `Target.F` `Spec`. `weights` is the
     derived `WEIGHTS` unless a test substitutes a wrong one to watch it
     fail; `eris=True` adds the ERI tap `g` (the same body plus its writes).
     A kernel-body lever on the spec is recorded as a provenance `Note`
-    under the head line (#340); any other lever is refused."""
+    under the head line (#340), and a registered one also moves its hooks
+    (`f_levers`, #368); any other lever is refused. `hooks=` overrides the
+    spec's resolution (a test's sketch of a lever)."""
     spec = _spec_of(cls)
     cls = hgp_class(spec)
     if not isinstance(weights, Weights):
         raise TypeError(f"weights {weights!r} is not a Weights")
+    hooks = _hooks(spec, hooks)
     la, lb, lc, ld = cls
-    vdag, hdag = vrr.build(cls), hrr.build(cls)
-    bnd = boundary_order(cls)
-    if set(bnd) != hdag.boundary:  # #274 holds this; refuse, never misread
-        raise ValueError(f"{cls}: HRR boundary is not the VRR target set")
     if name is None:
         name = "f_" + "".join(map(str, cls))
-
-    prelude, fundamental = fundamental_prelude()
-    vbody = vrr_body(vdag, fundamental)
-    hbody = hrr_body(hdag, lambda e, f: Var(_acc_name(e, f)))
-    vneed, hneed = _factors(vbody), _factors(hbody)
-
-    bra, k = Var("bra"), Var(KET)
-
-    def sh(f: int) -> Index:
-        return Index(AB_SH, (Var(KAB), Lit(f)))
-
-    def ket(f: int) -> Index:
-        return Index("ket_prim", (k, Var(KCD), Lit(f)))
-
-    # --- one primitive quartet: geometry, scalars, F_m(T), the VRR --------
-    def scalar(n: str, e: Expr) -> Decl:
-        return Decl(n, Scalar.F64, init=e)
-
-    wp = [Factor.wp(d).value for d in range(3)]
-    wq = [Factor.wq(d).value for d in range(3)]
-    quartet: list[Stmt] = [
-        Note("the bra primitive pair, from shared memory"),
-        *(scalar(f"Pb{d}", sh(_P + d)) for d in range(3)),
-        *(scalar(Factor.pa(d).value, sh(_X + d)) for d in range(3)
-          if Factor.pa(d).value in vneed),
-        scalar("p", sh(_ZETA)),
-        scalar("Ub", sh(_U)),
-        Note("quartet geometry ([Fock] §3.1; hgp/recurrence.py, 'WHAT THE "
-             "SCALARS ARE'): W - P and W - Q with the DERIVED sign"),
-        *(scalar(n, _c(Fn.SUB, Var(f"Pb{d}"), Var(f"Qk{d}")))
-          for d, n in enumerate(PQ_PARAMS)),
-        scalar("ppq", _c(Fn.ADD, Var("p"), Var("q"))),
-        scalar("rho", _c(Fn.DIV, _c(Fn.MUL, Var("p"), Var("q")), Var("ppq"))),
-        scalar(THETA, _c(Fn.SQRT, Var("rho"))),
-    ]
-    if vneed & set(wp):
-        quartet.append(scalar("q_ppq", _c(Fn.DIV, Var("q"), Var("ppq"))))
-    if vneed & set(wq):
-        quartet.append(scalar("p_ppq", _c(Fn.DIV, Var("p"), Var("ppq"))))
-    for d in range(3):
-        if wp[d] in vneed:
-            quartet.append(scalar(wp[d], _c(Fn.SUB, Lit(0.0), _c(
-                Fn.MUL, Var("q_ppq"), Var(PQ_PARAMS[d])))))
-        if wq[d] in vneed:
-            quartet.append(scalar(wq[d], _c(
-                Fn.MUL, Var("p_ppq"), Var(PQ_PARAMS[d]))))
-    derived = ((Factor.INV2P_ALPHA_OVER_P.value, Factor.INV2P.value, "p"),
-               (Factor.INV2Q_ALPHA_OVER_Q.value, Factor.INV2Q.value, "q"))
-    # a derived product needs its 1/(2x) even where no term reads it alone
-    vneed = vneed | {inv2 for n, inv2, _ in derived if n in vneed}
-    for n, x in ((Factor.INV2P.value, "p"), (Factor.INV2Q.value, "q"),
-                 (Factor.INV2PQ.value, "ppq")):
-        if n in vneed:
-            quartet.append(scalar(n, _c(Fn.DIV, Lit(0.5), Var(x))))
-    for n, inv2, x in derived:
-        if n in vneed:
-            quartet.append(scalar(n, _c(Fn.MUL, Var(inv2), _c(
-                Fn.DIV, Var("rho"), Var(x)))))
-    quartet += [
-        scalar(PAIR, _c(Fn.MUL, Var("Ub"), Var("Uq"))),
-        *prelude,
-        *vbody,
-        Note("eq 27: c += [e0|f0]^(0), every boundary value, contracted in "
-             "registers before the HRR (pin 5)"),
-        *(Assign(Var(_acc_name(e, f)), _c(
-            Fn.ADD, Var(_acc_name(e, f)), Var(vrr_name((e, f, 0)))))
-          for e, f in bnd),
-    ]
-
-    # --- one ket primitive pair: read it, then the bra primitives ---------
-    per_kcd: list[Stmt] = [
-        Note("the ket primitive pair, from global memory (this thread's |cd))"),
-        *(scalar(f"Qk{d}", ket(_P + d)) for d in range(3)),
-        *(scalar(Factor.qc(d).value, ket(_X + d)) for d in range(3)
-          if Factor.qc(d).value in vneed),
-        scalar("q", ket(_ZETA)),
-        scalar("Uq", ket(_U)),
-        For(KAB, Lit(0), Var("k_ab"), Lit(1), tuple(quartet)),
-    ]
-
-    # --- the digestion's names (module docstring, "THE BUFFERS") -----------
-    ncart = [len(vrr.cartesians(x)) for x in cls]
-    comps = _cart_names(cls)
-    sh_of = ("sa", "sb", "sc", "sd")
-    ao_of = ("oa", "ob", "oc", "od")
-    wj, wk = float(weights.coulomb), float(weights.exchange)
-
-    def index(n: str, e: Expr) -> Decl:  # a shell index or an AO offset
-        return Decl(n, Scalar.I32, init=e)
-
-    def blk(b: tuple[int, int]) -> str:
-        return _LETTER[b[0]] + _LETTER[b[1]]
-
-    def comp(b: tuple[int, int]) -> tuple[int, int]:
-        return tuple(sorted({0, 1, 2, 3} - set(b)))  # type: ignore[return-value]
-
-    def elems(b: tuple[int, int]):
-        return ((i, j) for i in range(ncart[b[0]]) for j in range(ncart[b[1]]))
-
-    def buf(b, i, j) -> str:
-        return f"f_{blk(b)}_{i}_{j}"
-
-    def dens(b, i, j) -> str:  # the weighted density element w deg D
-        return f"w_{blk(b)}_{i}_{j}"
-
-    def raw(i, j) -> str:  # the bra's own block, loaded once per bra
-        return f"d_ab_{i}_{j}"
-
-    def ao(b, i, j) -> tuple[Expr, Expr]:
-        return (_c(Fn.ADD, Var(ao_of[b[0]]), Lit(i)),
-                _c(Fn.ADD, Var(ao_of[b[1]]), Lit(j)))
-
-    def one_half_if_same(flag: str, s: str, t: str) -> list[Stmt]:
-        """`flag = 1/2` when shells `s == t`: neither `s < t` nor `t < s`."""
-        return [scalar(flag, Lit(0.5)),
-                If(_c(Fn.LT, Var(s), Var(t)), (Assign(Var(flag), Lit(1.0)),)),
-                If(_c(Fn.LT, Var(t), Var(s)), (Assign(Var(flag), Lit(1.0)),))]
-
-    deg_bra = weights.degeneracy and la == lb  # else a != b at build time
-    deg_ket = weights.degeneracy and lc == ld
-    deg_pq = weights.degeneracy and (la, lb) == (lc, ld)  # else P != Q
-    flags = [f for f, on in (("hb", deg_bra), ("hk", deg_ket)) if on]
-    deg_init: Expr = Lit(1.0)
-    for f in flags:
-        deg_init = Var(f) if deg_init == Lit(1.0) else _c(
-            Fn.MUL, deg_init, Var(f))
-
-    # --- one contracted quartet: accumulate, HRR, digest -----------------
-    digest: list[Stmt] = [
-        Note("the degeneracy factor 1/|Stab| (module docstring): 1/2 for "
-             "a = b, for c = d, and for P = Q"),
-        *(one_half_if_same("hk", "sc", "sd") if deg_ket else ()),
-        scalar("deg", deg_init),
-    ]
-    if deg_pq:
-        digest.append(If(_c(Fn.LT, k, _c(Fn.ADD, Var("kmin"), Var("diag"))),
-                         (Note("P = Q: the diagonal launch at k == bra"),
-                          Assign(Var("deg"), _c(Fn.MUL, Var("deg"),
-                                                Lit(0.5))))))
-    digest += [
-        scalar("s_j", _c(Fn.MUL, Lit(wj), Var("deg"))),
-        scalar("s_k", _c(Fn.MUL, Lit(wk), Var("deg"))),
-        *(index(ao_of[s], Index("ket_ao", (k, Lit(s - 2)))) for s in (2, 3)),
-        Note("the weighted densities: w = (fraction x in-order members) deg "
-             "D, the weight folded in once per quartet"),
-    ]
-    for b in BLOCKS:
-        s = "s_j" if b in BLOCKS[:2] else "s_k"
-        for i, j in elems(b):
-            src: Expr = Var(raw(i, j)) if b == (0, 1) else Index("D", ao(b, i, j))
-            digest.append(scalar(dens(b, i, j), _c(Fn.MUL, Var(s), src)))
-    digest.append(Note("the five ket-dependent buffers, zeroed per quartet"))
-    for b in BLOCKS[1:]:
-        digest += [scalar(buf(b, i, j), Lit(0.0)) for i, j in elems(b)]
-    digest.append(Note("the predigest: six multiply-adds per ERI, one per "
-                       "block, each reading the complementary density"))
-    for t, idx in zip(hdag.targets, comps, strict=True):
-        x = Var(hrr_name(t))
-        for b in BLOCKS:
-            c = comp(b)
-            f = Var(buf(b, idx[b[0]], idx[b[1]]))
-            digest.append(Assign(f, _c(Fn.ADD, f, _c(
-                Fn.MUL, Var(dens(c, idx[c[0]], idx[c[1]])), x))))
-    digest.append(Note("flush the five ket-dependent buffers: AtomicAdd, the "
-                       "only atomics besides f_ab's one flush"))
-    for b in BLOCKS[1:]:
-        digest += [AtomicAdd(Index(FOCK, ao(b, i, j)), Var(buf(b, i, j)))
-                   for i, j in elems(b)]
-
-    work: list[Stmt] = [
-        *(scalar(Factor.cd(d).value, Index("CD", (k, Lit(d))))
-          for d in range(3) if Factor.cd(d).value in hneed),
-        Note(f"the {len(bnd)} contracted boundary accumulators "
-             "(hgp.vrr.target_set, the HRR's leaves), zeroed per ket"),
-        *(scalar(_acc_name(e, f), Lit(0.0)) for e, f in bnd),
-        Note("the K_CD x K_AB primitive nest: ket outer (global), bra inner "
-             "(shared)"),
-        For(KCD, Lit(0), Var("k_cd"), Lit(1), tuple(per_kcd)),
-        *hbody,
-    ]
-    if eris:
-        work += [
-            Note("the ERI tap: every (ab|cd), hgp.hrr.targets order"),
-            *(Assign(Index(OUT, (bra, k, Lit(i))), Var(hrr_name(t)))
-              for i, t in enumerate(hdag.targets)),
-        ]
-    work += digest
-
-    def weighted_block(b: tuple[int, int]) -> Expr:
-        return _c(Fn.MUL, Lit(abs(weights.of(b))),
-                  Index("Dsh", (Var(sh_of[b[0]]), Var(sh_of[b[1]]))))
-
-    screen: list[Stmt] = [
-        *(index(sh_of[s], Index("ket_sh", (k, Lit(s - 2)))) for s in (2, 3)),
-        Note(SIX_BLOCK),
-        scalar("dmax", weighted_block(BLOCKS[0])),
-    ]
-    for b in BLOCKS[1:]:
-        t = f"dmax_{blk(b)}"
-        screen += [scalar(t, weighted_block(b)),
-                   If(_c(Fn.LT, Var("dmax"), Var(t)),
-                      (Assign(Var("dmax"), Var(t)),))]
-    screen += [
-        scalar("bound", _c(Fn.MUL, Var("Gb"), _c(
-            Fn.MUL, Index("G_cd", (k,)), Var("dmax")))),
-        If(_c(Fn.LT, Var("bound"), Var("tau")), (Note(SKIP),), tuple(work)),
-    ]
-    per_ket: list[Stmt] = [
-        If(_c(Fn.LT, k, Var("kmin")), (Note(HALF),), tuple(screen)),
-    ]
-
-    stage = For(STAGE, Lit(0), Var("k_ab"), Lit(1), tuple(
-        Assign(Index(AB_SH, (Var(STAGE), Lit(f))),
-               Index("bra_prim", (bra, Var(STAGE), Lit(f))))
-        for f in range(len(REC))))
-    ab = BLOCKS[0]
-    per_bra: list[Stmt] = [
-        *(scalar(Factor.ab(d).value, Index("AB", (bra, Lit(d))))
-          for d in range(3) if Factor.ab(d).value in hneed),
-        scalar("Gb", Index("G_ab", (bra,))),
-        *(index(sh_of[s], Index("bra_sh", (bra, Lit(s)))) for s in (0, 1)),
-        *(index(ao_of[s], Index("bra_ao", (bra, Lit(s)))) for s in (0, 1)),
-        *(one_half_if_same("hb", "sa", "sb") if deg_bra else ()),
-        Decl("kmin", Scalar.I32, init=_c(Fn.MUL, Var("diag"), bra)),
-        Note("the bra's own density block, read once; f_ab spans the ket "
-             "loop and is flushed once"),
-        *(scalar(raw(i, j), Index("D", ao(ab, i, j))) for i, j in elems(ab)),
-        *(scalar(buf(ab, i, j), Lit(0.0)) for i, j in elems(ab)),
-        Note(STAGING),
-        stage,
-        Note("one thread per contracted quartet: consecutive threads take "
-             "consecutive |cd) ([Fock] §3.2, pin 7)"),
-        For(KET, Call(Fn.THREAD_X), Var("n_ket"), Call(Fn.BLOCK_DIM_X),
-            tuple(per_ket)),
-        Note("flush f_ab: once per thread, after its whole ket loop"),
-        *(AtomicAdd(Index(FOCK, ao(ab, i, j)), Var(buf(ab, i, j)))
-          for i, j in elems(ab)),
-    ]
-    body: tuple[Stmt, ...] = (
+    ctx = FContext.of(spec, cls, name, weights, eris, hooks)
+    bra = ctx.bra
+    body: tuple = (
         Note(f"(ab|cd) by the HGP recurrence, F class ({la}{lb}|{lc}{ld}) in "
              "AO order: [Fock] §3.2's fused kernel (#282) and its six-block "
              "predigest (#283); VRR eqs 25-26 inside the K_CD x K_AB nest, "
@@ -944,38 +677,10 @@ def build_f_kernel(cls: AmClass | Spec, *, name: str | None = None,
         Note("launch: grid = n_bra, blockDim = (threads, 1); one block per "
              "bra shell pair; the host closes F <- F + F^T after every launch"),
         Decl("bra", Scalar.I32, init=Call(Fn.BLOCK_X)),
-        Decl(AB_SH, Scalar.F64, (Lit(MAX_PRIM_PAIRS), Lit(len(REC))),
-             Space.SHARED),
-        If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
+        *hooks.shared_decl(ctx),
+        If(_c(Fn.LT, bra, Var("n_bra")), tuple(hooks.per_bra(ctx))),
     )
-
-    nb, nk, kab, kcd = (Var(n) for n in ("n_bra", "n_ket", "k_ab", "k_cd"))
-    nsh, nao = Var("n_sh"), Var("n_ao")
-
-    def f64(n: str, *shape: Expr, intent: Intent = Intent.IN) -> Param:
-        return Param(n, Scalar.F64, array=True, intent=intent, shape=shape)
-
-    def i32(n: str, *shape: Expr) -> Param:
-        return Param(n, Scalar.I32, array=True, shape=shape)
-
-    params = (
-        Param("n_bra", Scalar.I32), Param("n_ket", Scalar.I32),
-        Param("k_ab", Scalar.I32), Param("k_cd", Scalar.I32),
-        Param("n_sh", Scalar.I32), Param("n_ao", Scalar.I32),
-        Param("diag", Scalar.I32), Param("tau", Scalar.F64),
-        f64("bra_prim", nb, kab, Lit(len(REC))),
-        *((f64("AB", nb, Lit(3)),) if lb else ()),
-        f64("G_ab", nb), i32("bra_sh", nb, Lit(2)), i32("bra_ao", nb, Lit(2)),
-        f64("ket_prim", nk, kcd, Lit(len(REC))),
-        *((f64("CD", nk, Lit(3)),) if ld else ()),
-        f64("G_cd", nk), i32("ket_sh", nk, Lit(2)), i32("ket_ao", nk, Lit(2)),
-        f64("Dsh", nsh, nsh), f64("D", nao, nao),
-        f64(FOCK, nao, nao, intent=Intent.OUT),
-        *((f64(OUT, nb, nk, Lit(hdag.n_eri), intent=Intent.OUT),)
-          if eris else ()),
-    )
-    assert tuple(p.name for p in params) == params_of(cls, eris=eris)
-    return Kernel(name, params, body)
+    return hooks.finish(ctx, Kernel(name, hooks.params(ctx), body))
 
 
 # --- the counts --------------------------------------------------------------
