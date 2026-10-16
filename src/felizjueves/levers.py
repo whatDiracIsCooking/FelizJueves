@@ -474,7 +474,8 @@ VOCABULARY: dict[str, Lever] = {
     # on accuracy) picks; f_levers/etr.py.
     "etr": Lever.of(
         "etr", 354,
-        "on the classes the declared cost-model rule picks, the fused F "
+        "on the classes the declared rule picks (the cost model, gated on "
+        "a recorded accuracy check against the sweep), the fused F "
         "kernel's boundary is formed by eq 25 to |e| = L and the "
         "electron-transfer relation at m = 0 instead of the ket cascade "
         "(eq 26); the other classes keep the literal VRR "

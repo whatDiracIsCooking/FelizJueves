@@ -45,10 +45,11 @@ extern "C" __global__ void f_0101(
     // (ab|cd) by the HGP recurrence, F class (01|01) in AO order: [Fock] §3.2's
     // fused kernel (#282) and its six-block predigest (#283); VRR eqs 25-26 inside
     // the K_CD x K_AB nest, HRR eq 28 after it, then the digestion into F
-    // lever etr (#354): on the classes the declared cost-model rule picks, the
-    // fused F kernel's boundary is formed by eq 25 to |e| = L and the electron-
-    // transfer relation at m = 0 instead of the ket cascade (eq 26); the other
-    // classes keep the literal VRR (f_levers/etr.py)
+    // lever etr (#354): on the classes the declared rule picks (the cost model,
+    // gated on a recorded accuracy check against the sweep), the fused F kernel's
+    // boundary is formed by eq 25 to |e| = L and the electron-transfer relation at
+    // m = 0 instead of the ket cascade (eq 26); the other classes keep the literal
+    // VRR (f_levers/etr.py)
     // launch: grid = n_bra, blockDim = (threads, 1); one block per bra shell pair;
     // the host closes F <- F + F^T after every launch
     int bra = (int)blockIdx.x;

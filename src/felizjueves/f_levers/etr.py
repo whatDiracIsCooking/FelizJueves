@@ -100,6 +100,10 @@ COMPOSITION.
   - `subdag-vrr` (#357): REFUSED (`SUBDAG_REFUSAL`). It re-schedules the
     cascade group's closure and hands the reordered DAG to the `vrr` hook;
     the ETR replaces that DAG, so the schedule would be silently discarded.
+  - `fmixed` (#355): REFUSED (`FMIXED_REFUSAL`). The accuracy gate is an
+    fp64 record; the ETR's cancellation in fp32 is unmeasured.
+  - `sliced-hrr` (#356, on `batched-vrr`): composes; it moves the HRR, the
+    ETR only the VRR (held to the sweep, test/test_f_lever_etr.py).
   - Levers that move other hooks (`block-fab`, `ket-break`,
     `struct-reads`) are untouched by this one; the record reads it adds go
     through `ctx.read`, so `struct-reads`' `field` hook sees them.
@@ -156,6 +160,7 @@ __all__ = [
     "ADMITTED",
     "CASCADE",
     "ETR",
+    "FMIXED_REFUSAL",
     "NAME",
     "OVERRIDES",
     "PQ",
@@ -200,6 +205,14 @@ SUBDAG_REFUSAL = (
     "hands it to the vrr hook; the ETR replaces that DAG with its own, so the "
     "dedicated schedule would be silently discarded. A per-group schedule of "
     "the ETR's closure is a lever nobody has declared")
+
+FMIXED_REFUSAL = (
+    "etr + fmixed: the accuracy gate (ACCURACY) is an fp64 record, and the "
+    "transfer's -p/q cancellation already misses the fp64 F tolerance on "
+    "two classes; in fp32 it is unmeasured, so the ETR is not shipped "
+    "narrowed (and the transfer's integer multipliers are fp64 literals, "
+    "which fmixed's F32 VRR refuses to mix). A precision arm of the ETR is "
+    "a lever nobody has declared")
 
 # Per-class overrides of the rule (class -> ETR or CASCADE). Empty: every
 # class ships the rule's choice. An entry is a decision, stated beside it.
@@ -509,6 +522,8 @@ def forced(recurrence: str | None = None):
     def apply_r(hooks: FHooks, spec: Spec) -> FHooks:
         if "subdag-vrr" in spec.levers:
             raise ValueError(SUBDAG_REFUSAL)
+        if "fmixed" in spec.levers:
+            raise ValueError(FMIXED_REFUSAL)
         which = choice(tuple(spec.am)) if recurrence is None else recurrence
         if which == CASCADE:
             return hooks

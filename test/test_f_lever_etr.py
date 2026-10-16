@@ -41,7 +41,8 @@ What is asserted:
    L <= 4) through `walk_f` against the sweep and libcint's `vj - vk/2`.
    Not bitwise against the literal kernel: a different recurrence.
 7. COMPOSITION: with `batched-vrr` (#350) the ETR kernel's `F` and tap bit
-   for bit; with `subdag-vrr` (#357) refused, with the reason.
+   for bit; with `sliced-hrr` (#356) on it, the sweep's to TOL; with
+   `subdag-vrr` (#357) and `fmixed` (#355) refused, with the reasons.
 8. THE GOLDENS: `(sp|sp)` with the lever, one unit per backend.
 
 Fast tier: no compiler, no card, no PySCF. Nothing above L = 4 is built or
@@ -762,14 +763,40 @@ def test_with_batched_vrr_it_is_the_etr_kernel_bitwise(
 
 
 def test_with_subdag_vrr_it_is_refused() -> None:
-    # `subdag-vrr` (#357) is another PR's vocabulary; a Spec carrying an
-    # unknown name passes through, so the refusal is the module's own.
+    # the refusal is the module's own (`etr` sorts before `subdag-vrr`)
     spec = Spec(Operator.COULOMB, 0, (0, 1, 0, 1), Target.F,
                 ("etr", "subdag-vrr"))
     with pytest.raises(ValueError, match="silently discarded"):
         E.apply(DEFAULT_HOOKS, spec)
     with pytest.raises(ValueError, match="subdag-vrr"):
         E.forced(E.CASCADE)(DEFAULT_HOOKS, spec)
+    with pytest.raises(ValueError, match="silently discarded"):
+        build_f_kernel(lever_spec((0, 1, 0, 1), ("batched-vrr",
+                                                 "subdag-vrr")))
+
+
+def test_with_fmixed_it_is_refused() -> None:
+    """The accuracy gate is an fp64 record: the ETR is not shipped in fp32
+    (`FMIXED_REFUSAL`), on a cascade class too (the refusal is the
+    composition's, not the class's)."""
+    for cls in ((0, 1, 0, 1), (0, 0, 1, 1)):
+        with pytest.raises(ValueError, match="fp64 record"):
+            build_f_kernel(lever_spec(cls, ("fmixed",)))
+
+
+@pytest.mark.parametrize("cls", ETR_CAPPED, ids=str)
+def test_with_batched_vrr_and_sliced_hrr_it_is_the_sweep(
+        cls, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`sliced-hrr` (#356, on `batched-vrr`) moves the HRR, the ETR the
+    VRR: the composed kernel keeps the ETR's VRR and its F is the sweep's
+    to TOL (one orbit, test_kernel_f's shells)."""
+    kern = build_f_kernel(lever_spec(cls, ("batched-vrr", "sliced-hrr")))
+    assert any(isinstance(s, Decl) and s.name == E.PQ
+               for s in walk(kern.body))
+    basis = Basis(tuple(tk._shells(cls)))
+    worst = _against_sweep(kern, cls, basis, tk._density(basis.n_ao),
+                           [(0, 1)], [(2, 3)], 0, monkeypatch)
+    assert worst <= tk.TOL, worst
 
 
 # ---------------------------------------------------------------------------
