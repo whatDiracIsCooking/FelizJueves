@@ -24,7 +24,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.f_levers import batched_vrr, block_fab, ket_break, struct_reads
+from felizjueves.f_levers import (
+    batched_vrr,
+    block_fab,
+    ket_break,
+    sliced_hrr,
+    struct_reads,
+)
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.spec import Spec
 
@@ -37,6 +43,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     "block-fab": block_fab.apply,  # #351
     ket_break.NAME: ket_break.apply,  # #352: the monotone ket key's break
     struct_reads.NAME: struct_reads.apply,  # #353: typed pair-record reads
+    sliced_hrr.NAME: sliced_hrr.apply,  # #356: one HRR per bra pair
 }
 
 
