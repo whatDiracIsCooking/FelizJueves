@@ -172,7 +172,11 @@ def _device_cells() -> list:
             except ValueError:
                 continue  # L = 0 at 3 batches: an empty batch, refused
             out.append(pytest.param(spec, id=f"L{L}-b{b}-k-stage-eac"))
-    out.append(pytest.param(_spec((2, 2, 0, 0)), id="dd-ss-b1-k-stage-eac"))
+    # Only k_spec(L)'s classes: the shared K harness (`_k_check`) builds its
+    # inputs from `total_am` alone, as k_spec(L)'s class, so another class at
+    # the same L -- (dd|ss) at L = 4 -- gets an input of the wrong length and
+    # the harness refuses it ("size mismatch") before any launch. (dd|ss)
+    # stays a compile cell above.
     return out
 
 
@@ -228,5 +232,5 @@ def test_hip_k_lever_stage_eac_matches_the_host(spec, request,
 
 def test_the_device_cells_are_l_at_most_4() -> None:
     assert [s.values[0].total_am for s in DEVICE_CELLS] == [0, 1, 1, 2, 2, 3,
-                                                            3, 4, 4, 4]
+                                                            3, 4, 4]
     assert all(sum(am) <= 4 for am, _ in COMPILE_CELLS)
