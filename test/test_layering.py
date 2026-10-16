@@ -1762,3 +1762,14 @@ RULES["store"] = Rule(RULES["store"].why + "; and the kernel-body lever "
                       RULES["store"].may | frozenset(("levers",)),
                       RULES["store"].must_not)
 EDGES["measured_store"] = EDGES["measured_store"] | frozenset(("levers",))
+
+
+# ---------------------------------------------------------------------------
+# #343 (milestone 13, M3): interleaved I_p, the warp arm. It replaces the
+# contraction region, so beside the seams and the IR it reads the
+# recurrence's node names (`recurrence.node_name`), as the seams do.
+# ---------------------------------------------------------------------------
+
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.interleave",))
+EDGES["k_levers.interleave"] = frozenset(("ir", "k_levers.seams",
+                                          "recurrence", "spec"))
