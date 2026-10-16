@@ -470,6 +470,25 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel is MMD: it has no HGP HRR slices and no six-block "
            "predigest, its K contraction is staged through the E fragments"),
     ),
+    # #354: the ETR on the classes its declared rule (the cost model, gated
+    # on accuracy) picks; f_levers/etr.py.
+    "etr": Lever.of(
+        "etr", 354,
+        "on the classes the declared cost-model rule picks, the fused F "
+        "kernel's boundary is formed by eq 25 to |e| = L and the "
+        "electron-transfer relation at m = 0 instead of the ket cascade "
+        "(eq 26); the other classes keep the literal VRR "
+        "(f_levers/etr.py)",
+        {"f"},
+        j=("the ETR is an HGP recurrence ([e0|f0] from the bra by "
+           "translational invariance); the [p|q] kernel's MMD recurrence "
+           "builds Hermite [r]^(0) from PQ alone, with no bra/ket "
+           "Cartesian split to transfer across"),
+        k=("the ETR is an HGP recurrence ([e0|f0] from the bra by "
+           "translational invariance); the K kernel's MMD recurrence builds "
+           "Hermite [r]^(0) from PQ alone, with no bra/ket Cartesian split "
+           "to transfer across"),
+    ),
 }
 
 

@@ -27,6 +27,7 @@ from collections.abc import Callable
 from felizjueves.f_levers import (
     batched_vrr,
     block_fab,
+    etr,
     ket_break,
     scatter,
     sliced_hrr,
@@ -56,6 +57,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     sub_slice.NAME: sub_slice.apply,  # #361: each slice's HRR sub-sliced
     scatter.NAME: scatter.apply,  # #358: the atomic-free write-back
     sliced_site_digest.NAME: sliced_site_digest.apply,  # #359: per-slice digest
+    etr.NAME: etr.apply,  # #354: the ETR as a second VRR, per class
 }
 
 

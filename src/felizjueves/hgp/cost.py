@@ -82,7 +82,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from felizjueves.hgp import hrr, vrr
+from felizjueves.hgp import etr, hrr, vrr
 from felizjueves.hgp.vrr import CLASSES, AmClass
 
 TIERS = ("K4", "K2", "K0")
@@ -165,15 +165,17 @@ _COEF_STEP = {**{c: c for c in vrr.BRA + vrr.KET},
               **{f"CD_{k}": "CD" for k in hrr.AXES}}
 
 
-def needed(roots: Iterable[str]) -> frozenset[str]:
-    """The geometry steps `roots` read, transitively, roots included."""
+def needed(roots: Iterable[str],
+           table: Mapping[str, Step] = GEOMETRY) -> frozenset[str]:
+    """The geometry steps `roots` read, transitively, roots included
+    (`table` is `GEOMETRY` unless a second recurrence adds steps, #354)."""
     seen: set[str] = set()
     todo = list(roots)
     while todo:
         s = todo.pop()
         if s not in seen:
             seen.add(s)
-            todo.extend(GEOMETRY[s].needs)
+            todo.extend(table[s].needs)
     return frozenset(seen)
 
 
@@ -234,33 +236,41 @@ class Cost:
         return self.x * k**4 + self.y * k**2 + self.z
 
 
-def _geometry(steps: frozenset[str], tier: str, side: str = "") -> int:
-    return sum(GEOMETRY[s].flops for s in steps
-               if GEOMETRY[s].tier == tier and GEOMETRY[s].side == side)
+def _geometry(steps: frozenset[str], tier: str, side: str = "",
+              table: Mapping[str, Step] = GEOMETRY) -> int:
+    return sum(table[s].flops for s in steps
+               if table[s].tier == tier and table[s].side == side)
 
 
 def cost(cls: AmClass, prune: bool = True) -> Cost:
     """The tiered FLOPs of `(la lb | lc ld)`: the VRR DAG (pruned unless
     `prune=False`) and the default (bra-first) HRR DAG."""
-    v = vrr.build(cls, prune=prune)
+    return _cost(cls, vrr.build(cls, prune=prune), prune, GEOMETRY,
+                 _COEF_STEP)
+
+
+def _cost(cls: AmClass, v: vrr.VrrDag, prune: bool,
+          table: Mapping[str, Step], coef_step: Mapping[str, str]) -> Cost:
+    """`cost`'s count over the VRR-side DAG `v` (the ket cascade's, or the
+    ETR's, #354), with its geometry `table` and coefficient map."""
     h = hrr.build(cls)
     coefs = {t.coef for ts in v.terms.values() for t in ts}
     coefs |= {t.coef for ts in h.terms.values() for t in ts} - {"1"}
-    steps = needed([*ALWAYS, *(_COEF_STEP[c] for c in coefs)])
+    steps = needed([*ALWAYS, *(coef_step[c] for c in coefs)], table)
     leaves = [n for n in v.terms if vrr.is_leaf(n)]
     k4 = {
-        "geometry": _geometry(steps, "K4"),
+        "geometry": _geometry(steps, "K4", table=table),
         "seed": len(leaves),
         "vrr": sum(vrr_node_flops(t) for t in v.terms.values()),
         "accumulate": len(v.targets),
     }
-    k2 = {"bra": _geometry(steps, "K2", "bra"),
-          "ket": _geometry(steps, "K2", "ket")}
-    k0 = {"geometry": _geometry(steps, "K0"),
+    k2 = {"bra": _geometry(steps, "K2", "bra", table),
+          "ket": _geometry(steps, "K2", "ket", table)}
+    k0 = {"geometry": _geometry(steps, "K0", table=table),
           "hrr": sum(hrr_node_flops(t) for t in h.terms.values())}
     trans: dict[str, dict[str, int]] = {t: {} for t in TIERS}
     for s in sorted(steps):
-        st = GEOMETRY[s]
+        st = table[s]
         if st.transcendental:
             d = trans[st.tier]
             d[st.transcendental] = d.get(st.transcendental, 0) + 1
@@ -269,6 +279,38 @@ def cost(cls: AmClass, prune: bool = True) -> Cost:
                 MappingProxyType({t: MappingProxyType(d)
                                   for t, d in trans.items()}),
                 max(n[2] for n in leaves), steps)
+
+
+# ---------------------------------------------------------------------------
+# The ETR as a second VRR (#354): its FLOPs, additive
+# ---------------------------------------------------------------------------
+#
+# `hgp.etr.build(cls)` reaches the same boundary as `hgp.vrr.build(cls)` by
+# eq 25 to |e| = L and the electron-transfer relation at m = 0. Its count is
+# `cost`'s convention, unchanged: a node is one multiply per term (two when
+# |mult| > 1) plus n - 1 adds, the transfer's -p/q a sign (free). Two
+# quartet steps are new and live only in `ETR_GEOMETRY` (so `GEOMETRY`,
+# `cost`, `report` and data/hgp/cost.json are untouched): `p/q` (one
+# multiply by the ket pair's `1/q`; the kernel's one divide) and `etr_c_k =
+# QC_k + (p/q) PA_k` (a multiply and an add per axis), both K^4. The ket's
+# `1/(2q)` is `GEOMETRY`'s K^2 ket step, read by both lowering terms.
+
+ETR_GEOMETRY: Mapping[str, Step] = MappingProxyType({
+    **GEOMETRY,
+    "p_over_q": Step("K4", 1, ("p", "inv_q"),
+                     formula="p/q: the ETR's transfer coefficient"),
+    "etr_c": Step("K4", 6, ("p_over_q", "PA", "QC"),
+                  formula="etr_c_k = QC_k + (p/q) PA_k, 3 axes x (1 mul + "
+                          "1 add)"),
+})
+_ETR_COEF_STEP = {**_COEF_STEP, **{c: c for c in etr.ETR}}
+
+
+def etr_cost(cls: AmClass, prune: bool = True) -> Cost:
+    """`cost` with the VRR side replaced by the ETR DAG (`hgp.etr.build`):
+    the same HRR, the same boundary, the same convention (above)."""
+    return _cost(cls, etr.build(cls, prune=prune), prune, ETR_GEOMETRY,
+                 _ETR_COEF_STEP)
 
 
 ABOUT = (

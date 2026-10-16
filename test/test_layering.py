@@ -2033,3 +2033,19 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
                    "device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f_scatter reaches {hit}"
+
+
+# #354 (milestone 13, H11): the ETR as a second VRR. `hgp.etr` is a sibling
+# DAG under rule "hgp" (package-wide; it reads `hgp.vrr` only), and
+# `hgp.cost` counts it with new functions (`etr_cost`), so it now reaches
+# `hgp.etr` too. `f_levers.etr` is the F lever: it moves `vrr`, `ket_prim`
+# and `quartet_scalars`, arbitrating per class on `hgp.cost` and the live
+# model in `hgp.vrr`, so it reaches the seams, `hgp`, the IR and `Spec`,
+# nothing below `f_lever`'s prohibitions.
+# ---------------------------------------------------------------------------
+
+EDGES["hgp.etr"] = frozenset(("hgp.vrr",))
+EDGES["hgp.cost"] = EDGES["hgp.cost"] | frozenset(("hgp.etr",))
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.etr",))
+EDGES["f_levers.etr"] = frozenset(("f_levers.seams", "hgp.cost", "hgp.etr",
+                                   "hgp.recurrence", "hgp.vrr", "ir", "spec"))
