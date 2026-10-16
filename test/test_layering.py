@@ -1725,6 +1725,11 @@ EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.split",))
 EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
 
+# #345 (milestone 13, M6): the coalesced K write-back, a K lever module that
+# moves `write_back` only; the same reach as #341's.
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.coalesced",))
+EDGES["k_levers.coalesced"] = frozenset(("ir", "k_levers.seams", "spec"))
+
 
 # #342 (milestone 13, M2): `E^ac` staged in shared memory, a K lever module.
 # It moves `bind_e_ac` / `e_ac` only, inlining the `E` fragment it reads off

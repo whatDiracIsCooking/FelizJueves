@@ -210,6 +210,20 @@ VOCABULARY: dict[str, Lever] = {
            "digests into G; it has no K[a, b] warp accumulator to tile "
            "(and Target.F's lever surface is #340's)"),
     ),
+    "coalesced": Lever.of(
+        "coalesced", 345,
+        "the K[a,b] block reduced in place in each lane's Ksh column, then "
+        "stored lane-parallel (lane t writes K[bra, t + k*warp]) instead of "
+        "by lane 0 one store at a time; no extra shared memory, no warp "
+        "sync (k_levers/coalesced.py)",
+        {"k"},
+        j=("the coalesced write-back moves K's K[a, b] block store; a [p|q] "
+           "kernel's lane-0 J_p write is J's own and nobody has declared a "
+           "J instance"),
+        f=("the fused F kernel maps one thread per contracted quartet and "
+           "flushes G atomically; it has no warp-reduced K[a, b] block to "
+           "store (and Target.F's lever surface is #340's)"),
+    ),
     "mixed": Lever.of(
         "mixed", 346,
         "the [p|q] recurrence, its [0]^(m) and the Boys argument in FP32; "
