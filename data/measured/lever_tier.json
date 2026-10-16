@@ -1,0 +1,890 @@
+{
+ "schema": 1,
+ "issue": 364,
+ "max_L": 4,
+ "about": "The lever device tier at L <= 4 (#364, under the user's milestone-13 rule that every test is restricted to total L <= 4): every lever's device file run on both cards, one consolidated session per card, through devtools/kernel-tier.sh with -m 'gpu and <backend> and not slow'. 'files' transcribes each session's pytest counts (its junit XML); 'spilling' is DERIVED from data/measured/lever_ledger.json (#362: the compile half, registers and spills of every arm at every L <= 4 class on both arches, complete by its own test) and recomputed by test/test_lever_tier.py; its units are the ledger's (sm_86 spill-store bytes, gfx1200 spilled registers), so compare within one arch only. Correctness only: no wall-clock, no counters (#363). No worst-error figure is recorded: the device tests assert their tolerances and print figures only under -s, which these sessions did not pass, so none is claimed.",
+ "session": {
+  "date": "2026-10-16",
+  "main_commit": "249990b",
+  "host": "710f554eae09 (container)",
+  "kernel_gen_cmd": "env PYTHONPATH=src python -m felizjueves.emit --L 0 1 2 3 4 --pair-l 2 --one-e-l 2",
+  "command": "devtools/kernel-tier.sh --backend <cuda|hip> -j 12 -- -m 'gpu and <backend> and not slow' <the 21 lever device files> -rs",
+  "excluded_by_marker": "3 'slow' cases per backend: test_kernel_fused_device.py at L = 7 (b1, b3) and L = 10 (b1), above the L <= 4 rule"
+ },
+ "backends": {
+  "cuda": {
+   "arch": "sm_86",
+   "card": "NVIDIA GeForce RTX 3080",
+   "toolchain": "nvcc 13.0",
+   "device": "present",
+   "exit": 0,
+   "collected": 290,
+   "passed": 289,
+   "skipped": 1,
+   "failed": 0,
+   "errors": 0,
+   "units_compiled": 35,
+   "device_wallclock_s": 405.4,
+   "opt_in_skips": [
+    {
+     "case": "test/test_f_lever_scatter_device.py::test_<backend>_f_lever_scatter_tail",
+     "reason": "the write-back tail is opt-in and must run alone, uncontended (FJ_WALLCLOCK_F_SCATTER=1): a timed measurement, #363's, not this tier's"
+    }
+   ]
+  },
+  "hip": {
+   "arch": "gfx1200",
+   "card": "AMD Radeon RX 9060 XT",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "device": "present",
+   "exit": 0,
+   "collected": 290,
+   "passed": 289,
+   "skipped": 1,
+   "failed": 0,
+   "errors": 0,
+   "units_compiled": 35,
+   "device_wallclock_s": 246.8,
+   "opt_in_skips": [
+    {
+     "case": "test/test_f_lever_scatter_device.py::test_<backend>_f_lever_scatter_tail",
+     "reason": "the write-back tail is opt-in and must run alone, uncontended (FJ_WALLCLOCK_F_SCATTER=1): a timed measurement, #363's, not this tier's"
+    }
+   ],
+   "earlier_session": {
+    "exit": 1,
+    "collected": 290,
+    "passed": 288,
+    "failed": 1,
+    "skipped": 1,
+    "what": "The first HIP session of the day (run beside the CUDA session, each on its own card) failed one case: test_k_lever_split_interleave_device.py::test_hip_k_lever_split_interleave_matches_the_host[L3-b3-k-split-interleave], the host binary kcell exiting -11 (SIGSEGV) with empty stdout and stderr on the k-wide-screened input, before any comparison. It did not reproduce: 13 isolated reruns of the case, 3 reruns of the K interleave, split and interleave+split files under -n 8 (27/27 each), 300 direct reruns of the compiled binary, and the recorded full session all passed. An intermittent host-side crash, cause unknown; recorded, not counted as a pass."
+   }
+  }
+ },
+ "files": [
+  {
+   "file": "test/test_f_lever_batched_vrr_device.py",
+   "arms": [
+    "batched-vrr"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_block_fab_device.py",
+   "arms": [
+    "block-fab"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 26,
+     "passed": 26,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 26,
+     "passed": 26,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_etr_device.py",
+   "arms": [
+    "etr"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 14,
+     "passed": 14,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 14,
+     "passed": 14,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_ket_break_device.py",
+   "arms": [
+    "ket-break"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 2,
+     "passed": 2,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 2,
+     "passed": 2,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_mixed_device.py",
+   "arms": [
+    "fmixed"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_scatter_device.py",
+   "arms": [
+    "scatter"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 30,
+     "passed": 29,
+     "skipped": 1
+    },
+    "hip": {
+     "run": 30,
+     "passed": 29,
+     "skipped": 1
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_sliced_hrr_device.py",
+   "arms": [
+    "batched-vrr+sliced-hrr"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_sliced_site_digest_device.py",
+   "arms": [
+    "batched-vrr+sliced-hrr+sliced-site-digest"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_slim_fock_device.py",
+   "arms": [
+    "batched-vrr+sliced-hrr+slim-fock"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_struct_reads_device.py",
+   "arms": [
+    "struct-reads"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_sub_slice_device.py",
+   "arms": [
+    "batched-vrr+sliced-hrr+slim-fock+sub-slice"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_f_lever_subdag_vrr_device.py",
+   "arms": [
+    "batched-vrr+subdag-vrr"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 16,
+     "passed": 16,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_coalesced_device.py",
+   "arms": [
+    "coalesced"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_interleave_device.py",
+   "arms": [
+    "interleave"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_mixed_device.py",
+   "arms": [
+    "kmixed",
+    "kmixed-de"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 18,
+     "passed": 18,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 18,
+     "passed": 18,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_shuffle_device.py",
+   "arms": [
+    "shuffle"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_split_device.py",
+   "arms": [
+    "split"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_split_interleave_device.py",
+   "arms": [
+    "interleave+split"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_k_lever_stage_eac_device.py",
+   "arms": [
+    "stage-eac"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 9,
+     "passed": 9,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_kernel_fused_device.py",
+   "arms": [
+    "fused"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 6,
+     "passed": 6,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 6,
+     "passed": 6,
+     "skipped": 0
+    }
+   }
+  },
+  {
+   "file": "test/test_kernel_mixed_device.py",
+   "arms": [
+    "mixed",
+    "fused+mixed"
+   ],
+   "cases": {
+    "cuda": {
+     "run": 12,
+     "passed": 12,
+     "skipped": 0
+    },
+    "hip": {
+     "run": 12,
+     "passed": 12,
+     "skipped": 0
+    }
+   }
+  }
+ ],
+ "not_run": [
+  {
+   "what": "MMD J and K classes above L = 4: the (dd|dd), (dp|dp) and (21|21) family the issue names, with every J and K lever arm on them",
+   "why": "the user's milestone-13 rule (every test at total L <= 4): neither compiled into the ledger nor run on either card; #366 records it"
+  },
+  {
+   "what": "HGP F classes above L = 4: (dp|dp) (L = 6) and (dd|dd) (L = 8), with every F lever arm on them; the issue's other four, (pp|ps), (ds|ps), (pp|pp) and (ds|ds), are at L <= 4 and ran",
+   "why": "the same rule: the F ledger and device tests stop at the 13 classes with L <= 4; #366 records it"
+  },
+  {
+   "what": "test_kernel_fused_device.py at L = 7 and 10",
+   "why": "marked 'slow' and above L = 4; excluded by -m 'not slow'"
+  },
+  {
+   "what": "every opt-in timed test (the F scatter write-back tail; the FJ_WALLCLOCK_* sweeps)",
+   "why": "wall-clock is #363's"
+  }
+ ],
+ "spilling": {
+  "sm_86": [
+   {
+    "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 255,
+    "literal_spill_store": 104,
+    "relieves": {
+     "batched-vrr+sliced-hrr": 72,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 72,
+     "fmixed": 0
+    },
+    "worsens": {
+     "batched-vrr": 208,
+     "batched-vrr+sliced-hrr+slim-fock": 232,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 232,
+     "batched-vrr+subdag-vrr": 768
+    },
+    "unchanged": [
+     "block-fab",
+     "etr",
+     "ket-break",
+     "scatter",
+     "struct-reads"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 255,
+    "literal_spill_store": 1264,
+    "relieves": {
+     "batched-vrr": 1168,
+     "batched-vrr+sliced-hrr": 528,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 528,
+     "batched-vrr+sliced-hrr+slim-fock": 528,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 528,
+     "fmixed": 0
+    },
+    "worsens": {
+     "batched-vrr+subdag-vrr": 1400
+    },
+    "unchanged": [
+     "block-fab",
+     "etr",
+     "ket-break",
+     "scatter",
+     "struct-reads"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 255,
+    "literal_spill_store": 1136,
+    "relieves": {
+     "batched-vrr": 816,
+     "batched-vrr+sliced-hrr": 272,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 272,
+     "batched-vrr+sliced-hrr+slim-fock": 504,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 512,
+     "fmixed": 8
+    },
+    "worsens": {
+     "batched-vrr+subdag-vrr": 1168,
+     "etr": 1144
+    },
+    "unchanged": [
+     "block-fab",
+     "ket-break",
+     "scatter",
+     "struct-reads"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 255,
+    "literal_spill_store": 1264,
+    "relieves": {
+     "batched-vrr": 1080,
+     "batched-vrr+sliced-hrr": 544,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 544,
+     "batched-vrr+sliced-hrr+slim-fock": 764,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 772,
+     "batched-vrr+subdag-vrr": 1144,
+     "fmixed": 608,
+     "scatter": 1256
+    },
+    "worsens": {
+     "etr": 1272
+    },
+    "unchanged": [
+     "block-fab",
+     "ket-break",
+     "struct-reads"
+    ]
+   }
+  ],
+  "gfx1200": [
+   {
+    "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 46,
+    "literal_spill_store": 0,
+    "relieves": {},
+    "worsens": {
+     "ket-break": 2,
+     "struct-reads": 2
+    },
+    "unchanged": [
+     "batched-vrr",
+     "batched-vrr+sliced-hrr",
+     "batched-vrr+sliced-hrr+sliced-site-digest",
+     "batched-vrr+sliced-hrr+slim-fock",
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+     "batched-vrr+subdag-vrr",
+     "block-fab",
+     "etr",
+     "fmixed",
+     "scatter"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 83,
+    "literal_spill_store": 2,
+    "relieves": {
+     "scatter": 0
+    },
+    "worsens": {
+     "struct-reads": 4
+    },
+    "unchanged": [
+     "batched-vrr",
+     "batched-vrr+sliced-hrr",
+     "batched-vrr+sliced-hrr+sliced-site-digest",
+     "batched-vrr+sliced-hrr+slim-fock",
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+     "batched-vrr+subdag-vrr",
+     "block-fab",
+     "etr",
+     "fmixed",
+     "ket-break"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 103,
+    "literal_spill_store": 2,
+    "relieves": {},
+    "worsens": {
+     "scatter": 14,
+     "struct-reads": 4
+    },
+    "unchanged": [
+     "batched-vrr",
+     "batched-vrr+sliced-hrr",
+     "batched-vrr+sliced-hrr+sliced-site-digest",
+     "batched-vrr+sliced-hrr+slim-fock",
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+     "batched-vrr+subdag-vrr",
+     "block-fab",
+     "etr",
+     "fmixed",
+     "ket-break"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 104,
+    "literal_spill_store": 2,
+    "relieves": {},
+    "worsens": {
+     "batched-vrr": 4,
+     "batched-vrr+sliced-hrr": 4,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 4,
+     "batched-vrr+sliced-hrr+slim-fock": 4,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 4,
+     "batched-vrr+subdag-vrr": 4,
+     "fmixed": 4,
+     "scatter": 20,
+     "struct-reads": 4
+    },
+    "unchanged": [
+     "block-fab",
+     "etr",
+     "ket-break"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 162,
+    "literal_spill_store": 4,
+    "relieves": {
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 2,
+     "block-fab": 2,
+     "fmixed": 2,
+     "ket-break": 2
+    },
+    "worsens": {
+     "scatter": 78
+    },
+    "unchanged": [
+     "batched-vrr",
+     "batched-vrr+sliced-hrr",
+     "batched-vrr+sliced-hrr+sliced-site-digest",
+     "batched-vrr+sliced-hrr+slim-fock",
+     "batched-vrr+subdag-vrr",
+     "etr",
+     "struct-reads"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 191,
+    "literal_spill_store": 68,
+    "relieves": {
+     "batched-vrr": 64,
+     "batched-vrr+sliced-hrr": 64,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 64,
+     "batched-vrr+sliced-hrr+slim-fock": 64,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 64,
+     "batched-vrr+subdag-vrr": 64,
+     "fmixed": 52,
+     "ket-break": 66
+    },
+    "worsens": {
+     "block-fab": 70,
+     "scatter": 271
+    },
+    "unchanged": [
+     "etr",
+     "struct-reads"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 125,
+    "literal_spill_store": 2,
+    "relieves": {
+     "block-fab": 0,
+     "ket-break": 0
+    },
+    "worsens": {
+     "scatter": 30,
+     "struct-reads": 4
+    },
+    "unchanged": [
+     "batched-vrr",
+     "batched-vrr+sliced-hrr",
+     "batched-vrr+sliced-hrr+sliced-site-digest",
+     "batched-vrr+sliced-hrr+slim-fock",
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+     "batched-vrr+subdag-vrr",
+     "etr",
+     "fmixed"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 192,
+    "literal_spill_store": 32,
+    "relieves": {
+     "batched-vrr": 8,
+     "batched-vrr+sliced-hrr": 8,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 8,
+     "batched-vrr+sliced-hrr+slim-fock": 12,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 12,
+     "batched-vrr+subdag-vrr": 6,
+     "block-fab": 30,
+     "etr": 18,
+     "fmixed": 2,
+     "ket-break": 22,
+     "struct-reads": 30
+    },
+    "worsens": {
+     "scatter": 104
+    },
+    "unchanged": []
+   },
+   {
+    "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 192,
+    "literal_spill_store": 16,
+    "relieves": {
+     "batched-vrr": 10,
+     "batched-vrr+sliced-hrr": 10,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 10,
+     "batched-vrr+sliced-hrr+slim-fock": 8,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 8,
+     "batched-vrr+subdag-vrr": 10,
+     "block-fab": 10,
+     "fmixed": 2
+    },
+    "worsens": {
+     "ket-break": 18,
+     "scatter": 86,
+     "struct-reads": 17
+    },
+    "unchanged": [
+     "etr"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 192,
+    "literal_spill_store": 410,
+    "relieves": {
+     "batched-vrr": 276,
+     "batched-vrr+sliced-hrr": 186,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 186,
+     "batched-vrr+sliced-hrr+slim-fock": 158,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 158,
+     "batched-vrr+subdag-vrr": 244,
+     "block-fab": 396,
+     "fmixed": 104,
+     "ket-break": 402,
+     "struct-reads": 406
+    },
+    "worsens": {
+     "scatter": 516
+    },
+    "unchanged": [
+     "etr"
+    ]
+   },
+   {
+    "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 192,
+    "literal_spill_store": 639,
+    "relieves": {
+     "batched-vrr": 464,
+     "batched-vrr+sliced-hrr": 275,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 275,
+     "batched-vrr+sliced-hrr+slim-fock": 223,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 223,
+     "batched-vrr+subdag-vrr": 424,
+     "etr": 517,
+     "fmixed": 136,
+     "struct-reads": 638
+    },
+    "worsens": {
+     "block-fab": 657,
+     "ket-break": 650,
+     "scatter": 686
+    },
+    "unchanged": []
+   },
+   {
+    "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 192,
+    "literal_spill_store": 538,
+    "relieves": {
+     "batched-vrr": 360,
+     "batched-vrr+sliced-hrr": 231,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 231,
+     "batched-vrr+sliced-hrr+slim-fock": 207,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 207,
+     "batched-vrr+subdag-vrr": 383,
+     "etr": 458,
+     "fmixed": 136,
+     "struct-reads": 537
+    },
+    "worsens": {
+     "block-fab": 550,
+     "ket-break": 546,
+     "scatter": 749
+    },
+    "unchanged": []
+   },
+   {
+    "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+    "target": "f",
+    "literal_registers": 192,
+    "literal_spill_store": 525,
+    "relieves": {
+     "batched-vrr+sliced-hrr": 247,
+     "batched-vrr+sliced-hrr+sliced-site-digest": 247,
+     "batched-vrr+sliced-hrr+slim-fock": 221,
+     "batched-vrr+sliced-hrr+slim-fock+sub-slice": 221,
+     "block-fab": 510,
+     "etr": 455,
+     "fmixed": 186,
+     "struct-reads": 520
+    },
+    "worsens": {
+     "batched-vrr": 583,
+     "batched-vrr+subdag-vrr": 623,
+     "ket-break": 528,
+     "scatter": 656
+    },
+    "unchanged": []
+   },
+   {
+    "class": "coulomb/d0/(1,1|1,1)/b1/k/literal",
+    "target": "k",
+    "literal_registers": 192,
+    "literal_spill_store": 70,
+    "relieves": {
+     "interleave+split": 0,
+     "kmixed": 51,
+     "kmixed-de": 30,
+     "split": 0
+    },
+    "worsens": {
+     "coalesced": 71,
+     "interleave": 123,
+     "shuffle": 71,
+     "stage-eac": 186
+    },
+    "unchanged": []
+   }
+  ]
+ }
+}
