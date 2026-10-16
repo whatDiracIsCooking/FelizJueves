@@ -216,9 +216,34 @@ VOCABULARY: dict[str, Lever] = {
         "the parameters, D_q, the J_p accumulator, the reduction and the "
         "write stay FP64 (j_levers/mixed.py)",
         {"j"},
-        k=("the K instance of the precision lever is #347's (FP32 "
-           "recurrence plus D/E operand narrowing), with its own staged E "
-           "contraction to decide; until it lands this name is J's only"),
+        k=("the K instance of the precision lever is #347's, two arms under "
+           "names of their own: `kmixed` (FP32 recurrence) and `kmixed-de` "
+           "(plus D/E operand narrowing)"),
+    ),
+    # #347: the K precision lever, TWO arms of one axis (the issue builds and
+    # measures both points; a spec carrying both is refused by the module).
+    # Names of their own, not `mixed`: that entry's `what` is J's text and is
+    # in every J `mixed` unit's provenance Note.
+    "kmixed": Lever.of(
+        "kmixed", 347,
+        "the compute-only arm: the K kernel's [p|q] recurrence, its [0]^(m) "
+        "and the Boys argument in FP32; E^ac, E^bd, D_cd, the parameters, "
+        "the I column, the K accumulator, the reduction and the write stay "
+        "FP64 (k_levers/mixed.py)",
+        {"k"},
+        j="the J instance of the precision lever is `mixed` (#346)",
+        f="the F instance of the precision lever is #355's",
+    ),
+    "kmixed-de": Lever.of(
+        "kmixed-de", 347,
+        "the fully narrowed arm: kmixed, plus the D and E operands -- XPA XPC "
+        "XQB XQD and Dcd as const float* packed by the host, E^ac and E^bd "
+        "formed in FP32; every accumulation stays FP64 (k_levers/mixed.py)",
+        {"k"},
+        j=("the D/E operand narrowing is K's: a [p|q] kernel reads no E "
+           "block and its D_q is pre-contracted; J's precision lever is "
+           "`mixed` (#346)"),
+        f="the F instance of the precision lever is #355's",
     ),
     "interleave": Lever.of(
         "interleave", 343,

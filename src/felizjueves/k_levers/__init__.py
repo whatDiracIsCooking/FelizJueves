@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.k_levers import interleave, split, stage_eac
+from felizjueves.k_levers import interleave, mixed, split, stage_eac
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KHooks
 from felizjueves.spec import Spec
 
@@ -34,6 +34,7 @@ REGISTRY: dict[str, Callable[[KHooks, Spec], KHooks]] = {
     split.NAME: split.apply,  # #341: one kernel per K[a_i, b_j]
     interleave.NAME: interleave.apply,  # #343: interleaved I_p, warp arm
     stage_eac.NAME: stage_eac.apply,  # #342: E^ac staged in shared
+    **dict.fromkeys(mixed.ARMS, mixed.apply),  # #347: kmixed, kmixed-de
 }
 
 
