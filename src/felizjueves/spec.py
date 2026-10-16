@@ -77,6 +77,16 @@ matrix `sqrt((mn|mn))` over every AO pair `(m, n)`, the Schwarz factor of
 table row, and the plan is asked for the `Target.J` quartet, never for this
 key (`kernel_schwarz.schwarz_plan`).
 
+A CROSS-OVERLAP CLASS IS AN ORDERED PAIR ACROSS TWO BASES. `Target.SX` is
+the rectangular overlap `S_{B1,B2}[m, n] = <m|n>` with `m` an AO of one
+basis and `n` of another (the same molecule in two basis sets, or two
+molecules). Its class `(la, lb)` is ORDERED -- `la` the row basis's shell,
+`lb` the column basis's -- because no symmetry relates `(la, lb)` to
+`(lb, la)` across two bases; its operator is `OVERLAP`, as `Target.S`'s,
+and it is a separate target because the MATRIX differs (rectangular, no
+mirror, no diagonal rule), not the integral (kernel_sx.py). Unbatched for
+`S`'s structural reason (`_PAIR_BATCH_REFUSAL`).
+
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
 partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
@@ -154,6 +164,10 @@ class Target(StrEnum):
     # (la, lb) whose kernel runs the quartet (la lb|la lb)'s recurrence
     # (kernel_schwarz.py, module docstring "A SCHWARZ CLASS").
     SCHWARZ = "schwarz"
+    # The rectangular overlap S_{B1,B2} between two bases, an ORDERED pair
+    # class (la in B1, lb in B2) (kernel_sx.py; module docstring "A
+    # CROSS-OVERLAP CLASS").
+    SX = "sx"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -164,6 +178,7 @@ class Target(StrEnum):
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
+    Target.SX: 2,
 }
 
 
@@ -174,7 +189,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
     Target.F: Operator.COULOMB, Target.SCHWARZ: Operator.COULOMB,
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
-    Target.V: Operator.NUCLEAR,
+    Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
 }
 
 
@@ -189,6 +204,7 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
     Target.DQ: _STRUCTURAL,
     Target.JAB: _STRUCTURAL,
     Target.S: _STRUCTURAL,
+    Target.SX: _STRUCTURAL,
     Target.T: _STRUCTURAL,
     Target.V: (
         "unbatched by milestone 11's decision -- V does have Hermite targets "

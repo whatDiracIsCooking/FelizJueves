@@ -245,7 +245,53 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
     assert skipped == {"hf_ccpvtz_eri", *(f"hf_ccpvtz_eri_l{L}"
                                           for L in (9, 10, 11, 12)),
                        "h2_sto3g_schwarz", "h2o_sto3g_schwarz",
-                       "h2o_631g_schwarz"}
+                       "h2o_631g_schwarz",
+                       "h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz"}
+
+
+def test_the_cross_overlap_fixtures_name_their_rows_and_fit_them():
+    """Every `int1e_ovlp_cross:<rows>` array names a tracked fixture with a
+    converted basis, and is `(rows' nao, nao)`; `cross_overlap` refuses one
+    whose rows are absent or the wrong size."""
+    paths = manifest.cross_fixtures()
+    assert {p.stem for p in paths} == {
+        "h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz", "h2o_sto3g_x_631g_moved"}
+    for p in paths:
+        fx = load(p)
+        rows, S = manifest.cross_overlap(fx)
+        assert rows.name == "h2o_sto3g_j"
+        assert S.shape == (rows.nao, fx.nao)
+
+
+def test_a_cross_overlap_array_that_cannot_be_read_is_refused(tmp_path):
+    import json
+    import shutil
+
+    src = manifest.FIXTURES / "h2o_sto3g_x_631g.json"
+    raw = json.loads(src.read_text())
+    (name,) = [n for n in raw["arrays"]
+               if n.startswith(manifest.CROSS_PREFIX)]
+    # absent rows
+    bad = dict(raw, arrays={**raw["arrays"]})
+    bad["arrays"][manifest.CROSS_PREFIX + "nope"] = bad["arrays"].pop(name)
+    path = tmp_path / src.name
+    path.write_text(json.dumps(bad))
+    with pytest.raises(manifest.FixtureError, match="no fixture"):
+        manifest.cross_overlap(load(path))
+    # wrong row count: rows of another size beside it
+    shutil.copy(manifest.FIXTURES / "h2o_631g_j.json", tmp_path)
+    bad["arrays"] = {**raw["arrays"]}
+    bad["arrays"][manifest.CROSS_PREFIX + "h2o_631g_j"] = bad["arrays"].pop(
+        name)
+    path.write_text(json.dumps(bad))
+    with pytest.raises(manifest.FixtureError, match="expected"):
+        manifest.cross_overlap(load(path))
+    # wrong column count is refused at load
+    bad["arrays"] = {**raw["arrays"]}
+    bad["arrays"][name] = {"shape": [7, 2], "values": [0.0] * 14}
+    path.write_text(json.dumps(bad))
+    with pytest.raises(manifest.FixtureError, match="expected"):
+        load(path)
 
 
 @pytest.mark.parametrize(

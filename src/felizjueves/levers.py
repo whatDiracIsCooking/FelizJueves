@@ -61,7 +61,7 @@ __all__ = [
 
 # Every `spec.Target`'s key slot, in the enum's order (pinned by a test).
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
-                                 "schwarz")
+                                 "schwarz", "sx")
 
 # The `Spec.levers` names owned by layers other than the kernel builder.
 OTHER_LAYERS: Mapping[str, str] = MappingProxyType({
@@ -125,6 +125,7 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "is one thread per shell pair, one batch, by decision, and a "
         "Schwarz lever is a follow-up nobody has declared"
     ),
+    "sx": f"the cross-overlap kernel {_ONE_THREAD_PER_RECORD}",
 })
 
 

@@ -35,6 +35,7 @@ from typing import Any
 import numpy as np
 
 from .manifest import (
+    CROSS_PREFIX,
     ERI_PREFIX,
     FIXTURES,
     HCORE_ARRAY,
@@ -98,6 +99,12 @@ class Case:
     # the square of the Schwarz factor (`ao/schwarz.py`). Needs
     # `record_basis`, as `record_j` does.
     record_schwarz: bool = False
+    # Write `int1e_ovlp_cross:<rows>`: libcint's rectangular overlap
+    # `<m|n>` with `m` an AO of case `rows` (another case, whose molecule
+    # and basis are the ROWS) and `n` of this case (the COLUMNS) --
+    # `gto.intor_cross`, the oracle of `S_{B1,B2}` (`Target.SX`). Needs
+    # `record_basis` here and on `rows`.
+    cross_rows: str | None = None
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -356,6 +363,47 @@ CASES.update({
 })
 
 
+def _cross_case(rows: str, cols: str, description: str, *,
+                atom: str | None = None) -> Case:
+    """`cols`' molecule, basis and `cart` (or the same basis at `atom`),
+    with libcint's overlap against `rows`' AOs. Its own one-electron arrays
+    are left to its `_j` twin when the inputs are the twin's exactly."""
+    c = CASES[cols]
+    return replace(
+        c,
+        description=description,
+        atom=atom or c.atom,
+        record_j=False,
+        record_one_e=atom is not None,
+        cross_rows=rows,
+    )
+
+
+# The cross-basis overlap cases (`Target.SX`): rows H2O/STO-3G (s, p), columns
+# a larger basis -- the minimal-to-larger projection's overlap. Both
+# orientations of every class are reached by the test reading the transpose.
+CASES.update({
+    "h2o_sto3g_x_631g": _cross_case(
+        "h2o_sto3g_j", "h2o_631g_j",
+        "S_{B1,B2}: H2O, rows STO-3G (h2o_sto3g_j's AOs), columns 6-31G "
+        "(h2o_631g_j's inputs exactly), Cartesian: libcint's "
+        "gto.intor_cross('int1e_ovlp'), one molecule in two bases."),
+    "h2o_sto3g_x_ccpvdz": _cross_case(
+        "h2o_sto3g_j", "h2o_ccpvdz_j",
+        "S_{B1,B2}: H2O, rows STO-3G (h2o_sto3g_j's AOs), columns cc-pVDZ "
+        "(h2o_ccpvdz_j's inputs exactly, d included), Cartesian: libcint's "
+        "gto.intor_cross('int1e_ovlp')."),
+    "h2o_sto3g_x_631g_moved": _cross_case(
+        "h2o_sto3g_j", "h2o_631g_j",
+        "S_{B1,B2} across two geometries: rows H2O/STO-3G (h2o_sto3g_j's "
+        "AOs), columns H2O/6-31G displaced and distorted, so no column "
+        "shell sits on a row shell's centre: libcint's "
+        "gto.intor_cross('int1e_ovlp'). Carries its own one-electron arrays "
+        "(no twin has its inputs).",
+        atom="O 0.31 -0.22 0.47; H 1.62 0.55 -0.71; H -1.05 0.18 -0.93"),
+})
+
+
 def _host() -> str:
     # The same marking felizjueves.measured uses: a container's hostname is
     # its id, not the box's.
@@ -444,18 +492,24 @@ def eri_arrays(mol: Any, converted: dict[str, Any],
     return out
 
 
-def build(name: str) -> dict[str, Any]:
-    """The fixture object for `name`, computed now by PySCF/libcint."""
-    import pyscf
+def _mole(case: Case) -> Any:
+    """The PySCF `Mole` of `case`."""
     from pyscf import gto
 
-    case = CASES[name]
     basis: Any = case.basis
     if "\n" in case.basis:  # inline NWChem text, not a library name
         symbols = {s.split()[0] for s in case.atom.split(";") if s.strip()}
         basis = {s: gto.basis.parse(case.basis, symb=s) for s in sorted(symbols)}
-    mol = gto.M(atom=case.atom, unit=case.unit, basis=basis, cart=case.cart,
-                charge=case.charge, spin=case.spin, verbose=0)
+    return gto.M(atom=case.atom, unit=case.unit, basis=basis, cart=case.cart,
+                 charge=case.charge, spin=case.spin, verbose=0)
+
+
+def build(name: str) -> dict[str, Any]:
+    """The fixture object for `name`, computed now by PySCF/libcint."""
+    import pyscf
+
+    case = CASES[name]
+    mol = _mole(case)
 
     coords = mol.atom_coords(unit="Bohr")
     atoms = [{"symbol": mol.atom_pure_symbol(i),
@@ -530,9 +584,35 @@ def build(name: str) -> dict[str, Any]:
         if not case.record_basis:
             raise ValueError(f"{name}: record_schwarz needs record_basis")
         out["arrays"][SCHWARZ_ARRAY] = encode_array(schwarz_array(mol))
+    if case.cross_rows is not None:
+        rows = CASES[case.cross_rows]
+        if not (case.record_basis and rows.record_basis):
+            raise ValueError(f"{name}: cross_rows needs record_basis on both")
+        if rows.cart != case.cart:
+            raise ValueError(f"{name}: rows and columns differ in cart")
+        out["arrays"][CROSS_PREFIX + case.cross_rows] = encode_array(
+            cross_overlap_array(_mole(rows), mol))
     if case.record_basis and case.record_one_e:
         out["arrays"].update(one_e_arrays(mol))
     return out
+
+
+def cross_overlap_array(rows: Any, cols: Any) -> np.ndarray:
+    """libcint's `<m|n>`, `m` an AO of `rows` and `n` of `cols`:
+    `gto.intor_cross('int1e_ovlp', rows, cols)`. Cross-checked, before it is
+    written, against a second route -- the two molecules concatenated
+    (`gto.conc_mol`) and the off-diagonal block of its `int1e_ovlp` -- to
+    1e-14 of the largest element; what is RECORDED is `intor_cross`'s."""
+    from pyscf import gto
+
+    s = np.ascontiguousarray(gto.intor_cross("int1e_ovlp", rows, cols))
+    na = int(rows.nao_nr())
+    other = gto.conc_mol(rows, cols).intor("int1e_ovlp")[:na, na:]
+    err = float(np.max(np.abs(s - other)))
+    if err > 1e-14 * float(np.max(np.abs(s))):
+        raise ValueError(f"intor_cross and conc_mol's block differ by "
+                         f"{err:.3e}")
+    return s
 
 
 def one_e_arrays(mol: Any) -> dict[str, Any]:

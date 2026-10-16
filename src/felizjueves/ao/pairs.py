@@ -495,6 +495,30 @@ def pair_list(basis: Basis, *, tau: float, bound: Bound) -> PairList:
     return PairList(float(tau), tuple(kept), tuple(dropped))
 
 
+def cross_pair_list(basis_a: Basis, basis_b: Basis, *, tau: float,
+                    bound: Bound) -> PairList:
+    """Screen every ORDERED shell pair `(i in basis_a, j in basis_b)` --
+    the cross-basis overlap's (`ao.one_electron.rectangular`) -- as
+    `pair_list` screens `i <= j` of one basis: dropped when `bound(sa, sb)
+    < tau`, in row-major order (`i` outer). `PairList`'s `i <= j` reading
+    does not apply here; its two lists index the two bases."""
+    for name, b in (("basis_a", basis_a), ("basis_b", basis_b)):
+        if not isinstance(b, Basis):
+            raise ValueError(f"{name} {b!r} is not a Basis")
+    if not _finite_non_negative(tau):
+        raise ValueError(f"tau = {tau!r} is not a finite number >= 0")
+    kept, dropped = [], []
+    for i, sa in enumerate(basis_a.shells):
+        for j, sb in enumerate(basis_b.shells):
+            b = bound(sa, sb)
+            if not _finite_non_negative(b):
+                raise ValueError(
+                    f"bound(shell {i} of A, shell {j} of B) = {b!r} is not a "
+                    "finite number >= 0")
+            (kept if b >= tau else dropped).append((i, j))
+    return PairList(float(tau), tuple(kept), tuple(dropped))
+
+
 # ---------------------------------------------------------------------------
 # The contracted Schwarz bound of [Fock] and primitive pruning (#285; module
 # docstring, "THE CONTRACTED SCHWARZ BOUND OF [Fock]")

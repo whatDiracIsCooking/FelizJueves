@@ -112,13 +112,14 @@ PAIR_TARGETS = (Target.DQ, Target.JAB)
 def test_the_target_enum_is_widened_not_renamed() -> None:
     # #196 appends `k`; the earlier members keep their place and value.
     # #232 appends `s`, `t` and `v` the same way, and #272 appends `f`.
-    # The Schwarz matrix appends `schwarz`, a pair class.
+    # The Schwarz matrix appends `schwarz`, a pair class, and the
+    # cross-basis overlap `sx`, an ordered pair class.
     assert [t.value for t in Target] == [
-        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz"]
+        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
-        Target.SCHWARZ: 2,
+        Target.SCHWARZ: 2, Target.SX: 2,
     }
 
 
@@ -217,7 +218,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
         Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
         Target.V: Operator.NUCLEAR, Target.F: Operator.COULOMB,
-        Target.SCHWARZ: Operator.COULOMB,
+        Target.SCHWARZ: Operator.COULOMB, Target.SX: Operator.OVERLAP,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -377,3 +378,21 @@ def test_every_key_is_byte_identical_after_the_lever_vocabulary() -> None:
                     keys.append(Spec(OPERATOR_OF[t], 0, am, t, lv, b).key())
     digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
     assert (len(keys), digest) == KEYS_BEFORE_337
+
+
+# The cross-basis overlap S_{B1,B2}: an ORDERED pair class of the overlap
+# operator, never batched for S's structural reason, its key a pair's.
+
+
+def test_the_cross_overlap_key_is_an_ordered_overlap_pair() -> None:
+    a = Spec(Operator.OVERLAP, 0, (2, 1), Target.SX)
+    b = Spec(Operator.OVERLAP, 0, (1, 2), Target.SX)
+    assert a.key() == "overlap/d0/(2,1)/b1/sx/literal"
+    assert a.key() != b.key()
+    assert a.key() != Spec(Operator.OVERLAP, 0, (2, 1), Target.S).key()
+    with pytest.raises(ValueError, match="never batched"):
+        Spec(Operator.OVERLAP, 0, (1, 1), Target.SX, n_batches=3)
+    with pytest.raises(ValueError, match="built from operator"):
+        Spec(Operator.COULOMB, 0, (1, 1), Target.SX)
+    with pytest.raises(ValueError, match="pair"):
+        Spec(Operator.OVERLAP, 0, (1, 1, 1, 1), Target.SX)
