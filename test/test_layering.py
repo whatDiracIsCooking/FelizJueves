@@ -2049,3 +2049,20 @@ EDGES["hgp.cost"] = EDGES["hgp.cost"] | frozenset(("hgp.etr",))
 EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.etr",))
 EDGES["f_levers.etr"] = frozenset(("f_levers.seams", "hgp.cost", "hgp.etr",
                                    "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+
+
+# ---------------------------------------------------------------------------
+# #362 (milestone 13, X1): the lever ledger, an ANALYSIS beside batchreport
+# and kernelrank -- it reads the store's lever rows against the literal ones
+# and feeds nothing. The driver (`measured --remeasure --ledger`) rewrites
+# the ledger file through it after recording the rows, as a writer of a
+# report, never the reverse: the analysis still may not import the driver.
+# ---------------------------------------------------------------------------
+
+RULE_OF["leverledger"] = "analysis"
+EDGES["leverledger"] = frozenset(("device", "measured_store", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and rewrites #362's lever "
+                       "ledger (`leverledger`) from the rows it recorded",
+                       RULES["driver"].may | frozenset(("leverledger",)),
+                       RULES["driver"].must_not)
+EDGES["measured"] = EDGES["measured"] | frozenset(("leverledger",))

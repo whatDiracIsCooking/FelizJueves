@@ -20,13 +20,40 @@ from felizjueves.device import MeasuredKey, by_name
 from felizjueves.kernel import k_spec, pq_spec, split
 from felizjueves.lower import RECYCLE
 from felizjueves.measured_store import (
+    KERNEL,
     SUBGRID,
     TUNED_CELLS,
-    load,
+    ledger_cells,
+    ledger_classes,
     split_key,
     target_of,
 )
+from felizjueves.measured_store import load as _load_all
 from felizjueves.spec import Operator, Spec, Target
+
+
+def _is_ledger(key: str, row) -> bool:
+    """#362's lever-ledger rows: a kernel lever arm (KERNEL), or a K literal
+    class at L <= 4 it is read against."""
+    return row.arm_kind == KERNEL or split_key(key)[0] in {
+        c.key() for c in ledger_classes(Target.K)}
+
+
+def load():
+    """The store as the tests below pin it: every row but #362's ledger
+    rows, which `test_the_ledger_rows_are_its_declared_cells` holds."""
+    return {k: r for k, r in _load_all().items() if not _is_ledger(k, r)}
+
+
+def test_the_ledger_rows_are_its_declared_cells() -> None:
+    # #362 ADDS its rows; each is keyed on a ledger cell, by the driver's
+    # MeasuredKey, on one of the two cards
+    rows = {k: r for k, r in _load_all().items() if _is_ledger(k, r)}
+    assert rows
+    cells = {c.key(): c for c in ledger_cells()}
+    for key, row in rows.items():
+        spec = cells[split_key(key)[0]]
+        assert MeasuredKey(spec, by_name(row.arch), row.toolchain).key() == key
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
 _SPEC_KEY = re.compile(
