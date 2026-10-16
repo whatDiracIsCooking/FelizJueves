@@ -741,16 +741,16 @@ def ab_cells(lever: str) -> tuple[Spec, ...]:
 LEDGER_MAX_L = 4
 
 # The levers a kernel-body lever only BUILDS with (its builder refuses it
-# alone, with its reason): its ledger arm is the composition. Declared ahead
-# for the levers still in review (#393-#397's slim-fock, sub-slice and
-# sliced-site-digest); an entry whose lever is not in the vocabulary is
-# inert, so adding such a lever is one re-run of `measured --ledger`.
+# alone, with its reason): its ledger arm is the composition. An entry whose
+# lever is not in the vocabulary is inert, so a lever can be declared here
+# ahead of its merge; adding a lever is one re-run of `measured --ledger`.
+# test/test_lever_ledger.py builds each lever alone (refused) and composed.
 REQUIRES: Mapping[str, tuple[str, ...]] = MappingProxyType({
     "sliced-hrr": ("batched-vrr",),  # #356
     "subdag-vrr": ("batched-vrr",),  # #357
-    "slim-fock": ("batched-vrr", "sliced-hrr"),  # #360 (PR #395)
-    "sliced-site-digest": ("batched-vrr", "sliced-hrr"),  # (PR #397)
-    "sub-slice": ("batched-vrr", "sliced-hrr", "slim-fock"),  # #361 (#396)
+    "slim-fock": ("batched-vrr", "sliced-hrr"),  # #360
+    "sliced-site-digest": ("batched-vrr", "sliced-hrr"),  # #359
+    "sub-slice": ("batched-vrr", "sliced-hrr", "slim-fock"),  # #361
 })
 
 # Arms that are compositions BY DECLARATION, beside each lever's own arm:

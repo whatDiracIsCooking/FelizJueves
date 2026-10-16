@@ -39,6 +39,15 @@
         345
       ]
     },
+    "etr": {
+      "target": "f",
+      "levers": [
+        "etr"
+      ],
+      "issues": [
+        354
+      ]
+    },
     "fmixed": {
       "target": "f",
       "levers": [
@@ -102,6 +111,15 @@
         346
       ]
     },
+    "scatter": {
+      "target": "f",
+      "levers": [
+        "scatter"
+      ],
+      "issues": [
+        358
+      ]
+    },
     "shuffle": {
       "target": "k",
       "levers": [
@@ -120,6 +138,32 @@
       "issues": [
         350,
         356
+      ]
+    },
+    "batched-vrr+sliced-hrr+sliced-site-digest": {
+      "target": "f",
+      "levers": [
+        "batched-vrr",
+        "sliced-hrr",
+        "sliced-site-digest"
+      ],
+      "issues": [
+        350,
+        356,
+        359
+      ]
+    },
+    "batched-vrr+sliced-hrr+slim-fock": {
+      "target": "f",
+      "levers": [
+        "batched-vrr",
+        "sliced-hrr",
+        "slim-fock"
+      ],
+      "issues": [
+        350,
+        356,
+        360
       ]
     },
     "split": {
@@ -149,6 +193,21 @@
         353
       ]
     },
+    "batched-vrr+sliced-hrr+slim-fock+sub-slice": {
+      "target": "f",
+      "levers": [
+        "batched-vrr",
+        "sliced-hrr",
+        "slim-fock",
+        "sub-slice"
+      ],
+      "issues": [
+        350,
+        356,
+        360,
+        361
+      ]
+    },
     "batched-vrr+subdag-vrr": {
       "target": "f",
       "levers": [
@@ -172,11 +231,7 @@
       ]
     }
   },
-  "declared_ahead": [
-    "sliced-site-digest",
-    "slim-fock",
-    "sub-slice"
-  ],
+  "declared_ahead": [],
   "rows": [
     {
       "target": "f",
@@ -2282,6 +2337,890 @@
         "spill_store": 1,
         "spill_load": 1,
         "scratch": 4,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 104,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 104,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 191,
+        "spill_store": 68,
+        "spill_load": 68,
+        "scratch": 260,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 191,
+        "spill_store": 68,
+        "spill_load": 68,
+        "scratch": 260,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 158,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 133,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 125,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 8,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 236,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 212,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 24,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 18,
+        "spill_load": 18,
+        "scratch": 68,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 32,
+        "spill_load": 32,
+        "scratch": 100,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -14,
+        "spill_load": -14,
+        "scratch": -32,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 228,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 208,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 20,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 16,
+        "spill_load": 16,
+        "scratch": 52,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 16,
+        "spill_load": 16,
+        "scratch": 52,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 410,
+        "spill_load": 410,
+        "scratch": 900,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 410,
+        "spill_load": 410,
+        "scratch": 900,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 880,
+        "scratch": 480,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 872,
+        "scratch": 464,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 8,
+        "scratch": 16,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 517,
+        "spill_load": 517,
+        "scratch": 1028,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 639,
+        "spill_load": 639,
+        "scratch": 1484,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -122,
+        "spill_load": -122,
+        "scratch": -456,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 1144,
+        "spill_load": 808,
+        "scratch": 456,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1136,
+        "spill_load": 792,
+        "scratch": 432,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 8,
+        "spill_load": 16,
+        "scratch": 24,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 458,
+        "spill_load": 458,
+        "scratch": 924,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 538,
+        "spill_load": 538,
+        "scratch": 1116,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -80,
+        "spill_load": -80,
+        "scratch": -192,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/etr@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 1272,
+        "spill_load": 992,
+        "scratch": 600,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 976,
+        "scratch": 584,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 8,
+        "spill_load": 16,
+        "scratch": 16,
+        "shared_bytes": 0,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/etr@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 455,
+        "spill_load": 455,
+        "scratch": 860,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 525,
+        "spill_load": 525,
+        "scratch": 1052,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -70,
+        "spill_load": -70,
+        "scratch": -192,
         "shared_bytes": 0,
         "units": 0
       }
@@ -5755,6 +6694,890 @@
       }
     },
     {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 66,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 20,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 106,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 4,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 83,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -2,
+        "spill_load": -2,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 124,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 104,
+        "spill_store": 14,
+        "spill_load": 14,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 1,
+        "spill_store": 12,
+        "spill_load": 12,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -6,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 98,
+        "spill_store": 20,
+        "spill_load": 20,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 104,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -6,
+        "spill_store": 18,
+        "spill_load": 18,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 160,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 6,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 137,
+        "spill_store": 78,
+        "spill_load": 78,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -25,
+        "spill_store": 74,
+        "spill_load": 74,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 271,
+        "spill_load": 271,
+        "scratch": 260,
+        "shared_bytes": 8448,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 191,
+        "spill_store": 68,
+        "spill_load": 68,
+        "scratch": 260,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 1,
+        "spill_store": 203,
+        "spill_load": 203,
+        "scratch": 0,
+        "shared_bytes": 256,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 117,
+        "spill_store": 30,
+        "spill_load": 30,
+        "scratch": 0,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 125,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -8,
+        "spill_store": 28,
+        "spill_load": 28,
+        "scratch": 0,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 212,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 212,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 104,
+        "spill_load": 104,
+        "scratch": 108,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 32,
+        "spill_load": 32,
+        "scratch": 100,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 72,
+        "spill_load": 72,
+        "scratch": 8,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 206,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 208,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 191,
+        "spill_store": 86,
+        "spill_load": 86,
+        "scratch": 52,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 16,
+        "spill_load": 16,
+        "scratch": 52,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -1,
+        "spill_store": 70,
+        "spill_load": 70,
+        "scratch": 0,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 516,
+        "spill_load": 516,
+        "scratch": 752,
+        "shared_bytes": 8960,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 410,
+        "spill_load": 410,
+        "scratch": 900,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 106,
+        "spill_load": 106,
+        "scratch": -148,
+        "shared_bytes": 768,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 872,
+        "scratch": 464,
+        "shared_bytes": 9728,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 872,
+        "scratch": 464,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 1536,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 686,
+        "spill_load": 686,
+        "scratch": 1436,
+        "shared_bytes": 9728,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 639,
+        "spill_load": 639,
+        "scratch": 1484,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 47,
+        "spill_load": 47,
+        "scratch": -48,
+        "shared_bytes": 1536,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 1136,
+        "spill_load": 792,
+        "scratch": 432,
+        "shared_bytes": 9728,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1136,
+        "spill_load": 792,
+        "scratch": 432,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 1536,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 749,
+        "spill_load": 749,
+        "scratch": 1080,
+        "shared_bytes": 9728,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 538,
+        "spill_load": 538,
+        "scratch": 1116,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 211,
+        "spill_load": 211,
+        "scratch": -36,
+        "shared_bytes": 1536,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/scatter@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 1256,
+        "spill_load": 968,
+        "scratch": 512,
+        "shared_bytes": 10496,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 976,
+        "scratch": 584,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -8,
+        "spill_load": -8,
+        "scratch": -72,
+        "shared_bytes": 2304,
+        "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/scatter@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 656,
+        "spill_load": 656,
+        "scratch": 960,
+        "shared_bytes": 10496,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 525,
+        "spill_load": 525,
+        "scratch": 1052,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 131,
+        "spill_load": 131,
+        "scratch": -92,
+        "shared_bytes": 2304,
+        "units": 0
+      }
+    },
+    {
       "target": "k",
       "class": "coulomb/d0/(0,0|0,0)/b1/k/literal",
       "arm": "shuffle",
@@ -7233,6 +9056,2710 @@
           "spill_store": -336,
           "spill_load": -336,
           "scratch": -160,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 106,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 104,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 2,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 191,
+        "spill_store": 64,
+        "spill_load": 64,
+        "scratch": 244,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 191,
+        "spill_store": 68,
+        "spill_load": 68,
+        "scratch": 260,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -4,
+        "spill_load": -4,
+        "scratch": -16,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 123,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 125,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 203,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 212,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -9,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -7,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 8,
+        "spill_load": 8,
+        "scratch": 28,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 32,
+        "spill_load": 32,
+        "scratch": 100,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -24,
+        "spill_load": -24,
+        "scratch": -72,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 209,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 208,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 1,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -1,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 10,
+        "spill_load": 10,
+        "scratch": 36,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 16,
+        "spill_load": 16,
+        "scratch": 52,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -6,
+        "spill_load": -6,
+        "scratch": -16,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 253,
+        "spill_store": 72,
+        "spill_load": 48,
+        "scratch": 24,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": -32,
+        "spill_load": -40,
+        "scratch": -32,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -2,
+          "spill_store": -136,
+          "spill_load": -132,
+          "scratch": -104,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 186,
+        "spill_load": 186,
+        "scratch": 684,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 410,
+        "spill_load": 410,
+        "scratch": 900,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -224,
+        "spill_load": -224,
+        "scratch": -216,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -90,
+          "spill_load": -90,
+          "scratch": -96,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 528,
+        "spill_load": 396,
+        "scratch": 224,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 872,
+        "scratch": 464,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -736,
+        "spill_load": -476,
+        "scratch": -240,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -640,
+          "spill_load": -416,
+          "scratch": -208,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 275,
+        "spill_load": 275,
+        "scratch": 892,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 639,
+        "spill_load": 639,
+        "scratch": 1484,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -364,
+        "spill_load": -364,
+        "scratch": -592,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -189,
+          "spill_load": -189,
+          "scratch": -152,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 272,
+        "spill_load": 228,
+        "scratch": 144,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1136,
+        "spill_load": 792,
+        "scratch": 432,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -864,
+        "spill_load": -564,
+        "scratch": -288,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -544,
+          "spill_load": -352,
+          "scratch": -176,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 231,
+        "spill_load": 231,
+        "scratch": 796,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 538,
+        "spill_load": 538,
+        "scratch": 1116,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -307,
+        "spill_load": -307,
+        "scratch": -320,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -129,
+          "spill_load": -129,
+          "scratch": -96,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 544,
+        "spill_load": 472,
+        "scratch": 328,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 976,
+        "scratch": 584,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -720,
+        "spill_load": -504,
+        "scratch": -256,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -536,
+          "spill_load": -536,
+          "scratch": -272,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+sliced-site-digest",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/batched-vrr+sliced-hrr+sliced-site-digest@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 247,
+        "spill_load": 247,
+        "scratch": 852,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 525,
+        "spill_load": 525,
+        "scratch": 1052,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -278,
+        "spill_load": -278,
+        "scratch": -200,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -336,
+          "spill_load": -336,
+          "scratch": -160,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 106,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 104,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 2,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 164,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 10,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 10,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 10,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 244,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 76,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 76,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 76,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 191,
+        "spill_store": 64,
+        "spill_load": 64,
+        "scratch": 244,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 191,
+        "spill_store": 68,
+        "spill_load": 68,
+        "scratch": 260,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -4,
+        "spill_load": -4,
+        "scratch": -16,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 123,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 125,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 203,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 212,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -9,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -7,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 12,
+        "spill_load": 12,
+        "scratch": 44,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 32,
+        "spill_load": 32,
+        "scratch": 100,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -20,
+        "spill_load": -20,
+        "scratch": -56,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 4,
+          "spill_load": 4,
+          "scratch": 16,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 4,
+          "spill_load": 4,
+          "scratch": 16,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 244,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 208,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 36,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 34,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 35,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 8,
+        "spill_load": 8,
+        "scratch": 28,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 16,
+        "spill_load": 16,
+        "scratch": 52,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -8,
+        "spill_load": -8,
+        "scratch": -24,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": -8,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": -8,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 232,
+        "spill_load": 208,
+        "scratch": 176,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 128,
+        "spill_load": 120,
+        "scratch": 120,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 24,
+          "spill_load": 28,
+          "scratch": 48,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 2,
+          "spill_store": 160,
+          "spill_load": 160,
+          "scratch": 152,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 158,
+        "spill_load": 158,
+        "scratch": 612,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 410,
+        "spill_load": 410,
+        "scratch": 900,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -252,
+        "spill_load": -252,
+        "scratch": -288,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -118,
+          "spill_load": -118,
+          "scratch": -168,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -28,
+          "spill_load": -28,
+          "scratch": -72,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 528,
+        "spill_load": 396,
+        "scratch": 224,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 872,
+        "scratch": 464,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -736,
+        "spill_load": -476,
+        "scratch": -240,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -640,
+          "spill_load": -416,
+          "scratch": -208,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 223,
+        "spill_load": 223,
+        "scratch": 852,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 639,
+        "spill_load": 639,
+        "scratch": 1484,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -416,
+        "spill_load": -416,
+        "scratch": -632,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -241,
+          "spill_load": -241,
+          "scratch": -192,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -52,
+          "spill_load": -52,
+          "scratch": -40,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 504,
+        "spill_load": 484,
+        "scratch": 344,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1136,
+        "spill_load": 792,
+        "scratch": 432,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -632,
+        "spill_load": -308,
+        "scratch": -88,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -312,
+          "spill_load": -96,
+          "scratch": 24,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 232,
+          "spill_load": 256,
+          "scratch": 200,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 207,
+        "spill_load": 207,
+        "scratch": 756,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 538,
+        "spill_load": 538,
+        "scratch": 1116,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -331,
+        "spill_load": -331,
+        "scratch": -360,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -153,
+          "spill_load": -153,
+          "scratch": -136,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -24,
+          "spill_load": -24,
+          "scratch": -40,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 764,
+        "spill_load": 700,
+        "scratch": 624,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 976,
+        "scratch": 584,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -500,
+        "spill_load": -276,
+        "scratch": 40,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -316,
+          "spill_load": -308,
+          "scratch": 24,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 220,
+          "spill_load": 228,
+          "scratch": 296,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 221,
+        "spill_load": 221,
+        "scratch": 764,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 525,
+        "spill_load": 525,
+        "scratch": 1052,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -304,
+        "spill_load": -304,
+        "scratch": -288,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -362,
+          "spill_load": -362,
+          "scratch": -248,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -26,
+          "spill_load": -26,
+          "scratch": -88,
           "shared_bytes": 0,
           "units": 0
         }
@@ -8800,6 +13327,1566 @@
         "scratch": -16,
         "shared_bytes": 0,
         "units": 0
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 72,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,0)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,0)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,0)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 46,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 102,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 83,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 122,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 103,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 128,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 106,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 104,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 2,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 164,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 10,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 10,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 10,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 162,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 162,
+        "spill_store": 4,
+        "spill_load": 4,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -2,
+        "spill_load": -2,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 254,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 168,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 86,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 86,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 86,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 10,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,0|2,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,0|2,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,0|2,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 191,
+        "spill_store": 64,
+        "spill_load": 64,
+        "scratch": 244,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 191,
+        "spill_store": 68,
+        "spill_load": 68,
+        "scratch": 260,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -4,
+        "spill_load": -4,
+        "scratch": -16,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 154,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 156,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 123,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 125,
+        "spill_store": 2,
+        "spill_load": 2,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -2,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -2,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 203,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 212,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": -9,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": -7,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 12,
+        "spill_load": 12,
+        "scratch": 44,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 32,
+        "spill_load": 32,
+        "scratch": 100,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -20,
+        "spill_load": -20,
+        "scratch": -56,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 4,
+          "spill_load": 4,
+          "scratch": 16,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 4,
+          "spill_load": 4,
+          "scratch": 16,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 244,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 208,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 36,
+        "spill_store": 0,
+        "spill_load": 0,
+        "scratch": 0,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 34,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 35,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 8,
+        "spill_load": 8,
+        "scratch": 28,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 16,
+        "spill_load": 16,
+        "scratch": 52,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -8,
+        "spill_load": -8,
+        "scratch": -24,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": -8,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -2,
+          "spill_load": -2,
+          "scratch": -8,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 232,
+        "spill_load": 208,
+        "scratch": 176,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 104,
+        "spill_load": 88,
+        "scratch": 56,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": 128,
+        "spill_load": 120,
+        "scratch": 120,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": 24,
+          "spill_load": 28,
+          "scratch": 48,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 2,
+          "spill_store": 160,
+          "spill_load": 160,
+          "scratch": 152,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,1|1,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,1|1,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 158,
+        "spill_load": 158,
+        "scratch": 612,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 410,
+        "spill_load": 410,
+        "scratch": 900,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -252,
+        "spill_load": -252,
+        "scratch": -288,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -118,
+          "spill_load": -118,
+          "scratch": -168,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -28,
+          "spill_load": -28,
+          "scratch": -72,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 528,
+        "spill_load": 396,
+        "scratch": 224,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 872,
+        "scratch": 464,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -736,
+        "spill_load": -476,
+        "scratch": -240,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -640,
+          "spill_load": -416,
+          "scratch": -208,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|0,2)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|0,2)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 223,
+        "spill_load": 223,
+        "scratch": 852,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 639,
+        "spill_load": 639,
+        "scratch": 1484,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -416,
+        "spill_load": -416,
+        "scratch": -632,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -241,
+          "spill_load": -241,
+          "scratch": -192,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -52,
+          "spill_load": -52,
+          "scratch": -40,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 512,
+        "spill_load": 492,
+        "scratch": 352,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1136,
+        "spill_load": 792,
+        "scratch": 432,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -624,
+        "spill_load": -300,
+        "scratch": -80,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -304,
+          "spill_load": -88,
+          "scratch": 32,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 240,
+          "spill_load": 264,
+          "scratch": 208,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 8,
+          "spill_load": 8,
+          "scratch": 8,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(0,2|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(0,2|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 207,
+        "spill_load": 207,
+        "scratch": 756,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 538,
+        "spill_load": 538,
+        "scratch": 1116,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -331,
+        "spill_load": -331,
+        "scratch": -360,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -153,
+          "spill_load": -153,
+          "scratch": -136,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -24,
+          "spill_load": -24,
+          "scratch": -40,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "sm_86",
+      "toolchain": "nvcc 13.0",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@sm_86/nvcc 13.0",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@sm_86/nvcc 13.0",
+      "spill_unit": "bytes (ptxas -v: spill stores / spill loads)",
+      "arm_readings": {
+        "registers": 255,
+        "spill_store": 772,
+        "spill_load": 708,
+        "scratch": 600,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 255,
+        "spill_store": 1264,
+        "spill_load": 976,
+        "scratch": 584,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -492,
+        "spill_load": -268,
+        "scratch": 16,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -308,
+          "spill_load": -300,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": 228,
+          "spill_load": 236,
+          "scratch": 272,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 8,
+          "spill_load": 8,
+          "scratch": -24,
+          "shared_bytes": 0,
+          "units": 0
+        }
+      }
+    },
+    {
+      "target": "f",
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "arch": "gfx1200",
+      "toolchain": "hipcc / ROCm 7.2.4",
+      "key": "coulomb/d0/(1,1|1,1)/b1/f/batched-vrr+sliced-hrr+slim-fock+sub-slice@gfx1200/hipcc / ROCm 7.2.4",
+      "baseline": "coulomb/d0/(1,1|1,1)/b1/f/literal@gfx1200/hipcc / ROCm 7.2.4",
+      "spill_unit": "registers (hipcc kernel-resource-usage: VGPRs Spill + SGPRs Spill; no store/load split, both fields carry it)",
+      "arm_readings": {
+        "registers": 192,
+        "spill_store": 221,
+        "spill_load": 221,
+        "scratch": 764,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "literal_readings": {
+        "registers": 192,
+        "spill_store": 525,
+        "spill_load": 525,
+        "scratch": 1052,
+        "shared_bytes": 8192,
+        "units": 1
+      },
+      "delta": {
+        "registers": 0,
+        "spill_store": -304,
+        "spill_load": -304,
+        "scratch": -288,
+        "shared_bytes": 0,
+        "units": 0
+      },
+      "vs": {
+        "batched-vrr": {
+          "registers": 0,
+          "spill_store": -362,
+          "spill_load": -362,
+          "scratch": -248,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr": {
+          "registers": 0,
+          "spill_store": -26,
+          "spill_load": -26,
+          "scratch": -88,
+          "shared_bytes": 0,
+          "units": 0
+        },
+        "batched-vrr+sliced-hrr+slim-fock": {
+          "registers": 0,
+          "spill_store": 0,
+          "spill_load": 0,
+          "scratch": 0,
+          "shared_bytes": 0,
+          "units": 0
+        }
       }
     },
     {
@@ -10553,6 +16640,62 @@
       "gfx1200": "-"
     },
     {
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "etr",
+      "field": "spill_load",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,2|0,2)/b1/f/literal",
+      "arm": "etr",
+      "field": "scratch",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "etr",
+      "field": "spill_store",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "etr",
+      "field": "spill_load",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,2|1,1)/b1/f/literal",
+      "arm": "etr",
+      "field": "scratch",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "field": "spill_store",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "field": "spill_load",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "etr",
+      "field": "scratch",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
       "class": "coulomb/d0/(1,0|0,0)/b1/k/literal",
       "arm": "interleave",
       "field": "registers",
@@ -10570,6 +16713,83 @@
       "class": "coulomb/d0/(0,1|1,1)/b1/f/literal",
       "arm": "ket-break",
       "field": "registers",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,0|1,2)/b1/f/literal",
+      "arm": "scatter",
+      "field": "registers",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "field": "spill_store",
+      "sm_86": "-",
+      "gfx1200": "+"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "scatter",
+      "field": "spill_load",
+      "sm_86": "-",
+      "gfx1200": "+"
+    },
+    {
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "field": "spill_store",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "field": "spill_load",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "field": "scratch",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock",
+      "field": "scratch",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "field": "spill_store",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "field": "spill_load",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(0,1|1,2)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "field": "scratch",
+      "sm_86": "+",
+      "gfx1200": "-"
+    },
+    {
+      "class": "coulomb/d0/(1,1|1,1)/b1/f/literal",
+      "arm": "batched-vrr+sliced-hrr+slim-fock+sub-slice",
+      "field": "scratch",
       "sm_86": "+",
       "gfx1200": "-"
     },
