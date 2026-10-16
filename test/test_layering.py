@@ -1758,6 +1758,16 @@ EDGES["f_levers.batched_vrr"] = frozenset(("f_levers.seams", "hgp.hrr",
                                            "spec"))
 
 
+# #356 (milestone 13, H2): the sliced HRR, an F lever module composed on
+# #350's. It slices with `hgp.hrr`'s new (additive) functions and re-cuts
+# `batched_vrr`'s groups at its floor, so it reaches that sibling lever, the
+# seams, `hgp`, the IR and `Spec`, nothing below `f_lever`'s prohibitions.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.sliced_hrr",))
+EDGES["f_levers.sliced_hrr"] = frozenset(("f_levers.batched_vrr",
+                                          "f_levers.seams", "hgp.hrr",
+                                          "hgp.vrr", "ir", "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
 # `j_levers.mixed`'s F32 prelude and node narrowing, so the two engines'

@@ -123,6 +123,7 @@ __all__ = [
     "hrr_floor",
     "literal_phase",
     "n_groups",
+    "nest_at",
     "rule",
     "slot",
     "vrr_phase",
@@ -184,10 +185,11 @@ def rule(cls: AmClass, floor: int | None = None) -> int:
     return best[1]
 
 
-def n_groups(cls: AmClass) -> int:
-    """The shipped group count of `cls`: `OVERRIDES`, else `rule`."""
+def n_groups(cls: AmClass, floor: int | None = None) -> int:
+    """The shipped group count of `cls`: `OVERRIDES`, else `rule` (at
+    `floor`, which a composing lever passes: #356's sliced HRR)."""
     cls = tuple(cls)
-    return OVERRIDES[cls] if cls in OVERRIDES else rule(cls)
+    return OVERRIDES[cls] if cls in OVERRIDES else rule(cls, floor)
 
 
 # ---------------------------------------------------------------------------
@@ -272,10 +274,17 @@ def with_groups(n: int | None = None):
                              "boundary values")
         return dataclasses.replace(
             hooks, boundary_init=boundary_init, accumulate=accumulate,
-            nest=lambda ctx: _nest(ctx, count),
+            nest=nest_at(count),
             boundary_read=lambda ctx, e, f: cell(ctx, e, f))
 
     return apply_n
+
+
+def nest_at(n: int):
+    """The `nest` hook at `n` groups: what `with_groups(n)` installs, for a
+    composing lever that re-cuts the groups (#356 installs the count
+    `n_groups(cls, floor=)` gives at its sliced HRR's floor)."""
+    return lambda ctx: _nest(ctx, n)
 
 
 apply = with_groups()

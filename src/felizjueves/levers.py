@@ -350,6 +350,20 @@ VOCABULARY: dict[str, Lever] = {
            "XPA, XPC, Q, XQB, XQD, ...) pass through no such hook in "
            "k_levers.seams, and typing them would be a K lever of its own"),
     ),
+    # #356: a composition, legal on F only WITH batched-vrr in the same spec
+    # (f_levers/sliced_hrr.py refuses it alone, with its reason).
+    "sliced-hrr": Lever.of(
+        "sliced-hrr", 356,
+        "the HRR run once per bra pair (a, b) on #350's staged boundary, each "
+        "slice's ERIs digested before the next slice, so one slice's "
+        "interior is live at a time; requires batched-vrr, whose group count "
+        "it re-cuts at the sliced floor (f_levers/sliced_hrr.py)",
+        {"f"},
+        j=("the [p|q] kernel has no HGP HRR on contracted values: its J_p is "
+           "contracted inside the recurrence, with no bra-pair HRR to slice"),
+        k=("the K kernel is MMD: it has no HGP HRR on contracted values to "
+           "slice, its bra transform is the E fragment per bra record"),
+    ),
 }
 
 
