@@ -93,6 +93,16 @@ six-block prediction (a subset of what the six-block screen skips, which is
 the proof) and to the exact ERIs. With no `ket-break` launch nothing here
 changes: `kernel_broken` is empty and every argument is the literal one.
 
+THE ATOMIC-FREE WRITE-BACK, WALKED (#358). A launch whose `Spec` carries
+the `scatter` lever (`SCATTER`; f_levers/scatter.py) runs a kernel that
+writes no `F`: it is handed a zeroed slot buffer `W` of the declared size
+(`kernel_f_scatter.n_slot`) in `F`'s place and returns it, and the walker
+then runs the scatter kernel (`kernel_f_scatter.build_scatter_kernel`)
+through the same `run`, over that launch's map (`scatter_map`, from the
+two sides' packed AO offsets), with the running `F` -- the scatter after
+its batch, before the next launch. Everything else is unchanged; with no
+`scatter` launch nothing here changes.
+
 Plain tuples and floats; `D` is `ao.j`'s density contract (square,
 symmetric, finite), shared.
 """
@@ -104,6 +114,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from felizjueves import kernel_f as KF
+from felizjueves import kernel_f_scatter as FS
 from felizjueves.ao.j import _density
 from felizjueves.ao.shell import Basis
 from felizjueves.ir import Kernel
@@ -121,6 +132,9 @@ THREADS = 4  # the default block width; the answer does not depend on it
 # imported, so the walker stays off the kernel's levers (a test pins both).
 KET_BREAK = "ket-break"
 BREAK_ARG = "M_ab"
+# #358: the atomic-free write-back's lever (f_levers/scatter.py's NAME),
+# restated as KET_BREAK is (a test pins it).
+SCATTER = "scatter"
 
 
 @dataclass(frozen=True)
@@ -343,6 +357,7 @@ def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
     kscreen: set[Quartet] = set()
     kbroken: set[Quartet] = set()
     D_flat = tuple(x for r in rows for x in r)
+    scatter_kernel = None
     for L in plan.launches:
         diag = int(L.bra == L.ket)
         bras, kets = records[L.bra], records[L.ket]
@@ -377,9 +392,19 @@ def walk_f(plan: object, basis: Basis, D: object, *, run: Run,
         }
         if brk:
             args[BREAK_ARG] = M
+        sc = SCATTER in tuple(L.spec.levers)
+        if sc:
+            args[FS.SLOTS] = (0.0,) * FS.n_slot(tuple(L.spec.am), pb.n, pk.n)
         grid, block = KF.launch_shape(pb.n, threads)
         out = run(kernels[am], grid, block,
                   {p.name: args[p.name] for p in kernels[am].params})
+        if sc:  # #358: the scatter after its F launch, before the next
+            if scatter_kernel is None:
+                scatter_kernel = FS.build_scatter_kernel()
+            m = FS.scatter_map(tuple(L.spec.am), pk.n, pb.ao, pk.ao)
+            sgrid, sblock = FS.launch_shape(m.n_el, threads)
+            out = run(scatter_kernel, sgrid, sblock,
+                      m.args(tuple(float(x) for x in out[FS.SLOTS]), F, n_ao))
         F = tuple(float(x) for x in out[KF.FOCK])
         if len(F) != n_ao * n_ao:
             raise ValueError(f"run returned F of {len(F)} elements, not "
