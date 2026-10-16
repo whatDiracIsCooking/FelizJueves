@@ -15,6 +15,12 @@ as a `Note`.
 
 THE WARP ARM. This is the lever on `kernel_k`'s warp-per-bra mapping; the
 same lever on #341's per-element split kernels is #348 (the split arm). The
+split arm is NOT a lever of its own: it is the COMPOSITION `("interleave",
+"split")` in one spec (key `.../k/interleave+split`), which `hooks_for`
+builds by applying this lever and then `split`. The one thing the
+composition adds is a `Note`, `SPLIT_ARM`, after `TRADE` in each element
+kernel's region (`arm(spec)` says which arm a spec is); the arithmetic is
+this lever's region on `split`'s narrowed context, unchanged. The
 predecessor measured this arm as a REGRESSION (spill +79% at `(dp|dp)`,
 +58% at `(21|21)`) and kept it pinned as a falsified hypothesis; reproducing
 that is this issue's expected outcome, and the lever is not tuned toward a
@@ -41,9 +47,10 @@ construction in either application order (#348): the split keeps one
 element, `KContext.of` narrows `s1` / `s2` and `k_outs`, and this lever's
 region and slots follow them.
 
-THE INTERFACE (#348 builds on it): `NAME`, `TRADE`, `k_only(ctx)`,
-`contract(ctx)` and `apply(hooks, spec)`. Like the seams, nothing here
-imports `ao/`, the interpreter, `reference/`, a backend or a device.
+THE INTERFACE (#348 builds on it): `NAME`, `TRADE`, `SPLIT_ARM`,
+`arm(spec)`, `k_only(ctx)`, `contract(ctx)` and `apply(hooks, spec)`. Like
+the seams, nothing here imports `ao/`, the interpreter, `reference/`, a
+backend or a device (`split`, a sibling lever, for its `NAME` only).
 """
 
 from __future__ import annotations
@@ -64,12 +71,13 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
+from felizjueves.k_levers import split
 from felizjueves.k_levers.seams import KContext, KHooks, plus
 from felizjueves.recurrence import node_name
 from felizjueves.spec import Spec
 
-__all__ = ["NAME", "TRADE", "apply", "contract", "i_name", "k_only",
-           "v_name"]
+__all__ = ["NAME", "SPLIT", "SPLIT_ARM", "TRADE", "WARP", "apply", "arm",
+           "contract", "i_name", "k_only", "v_name"]
 
 NAME = "interleave"
 
@@ -81,6 +89,23 @@ TRADE = (
     "the literal kernel digests. The I column leaves shared memory; one I_p "
     "and one running V per (a,c) row are live instead (the literal kernel's "
     "folds, in its order: bitwise the same K)")
+
+
+WARP, SPLIT = "warp", "split"  # the two arms `arm(spec)` names
+
+SPLIT_ARM = (
+    "split arm (#348): the interleave above on ONE element kernel of #341's "
+    "split -- not a lever of its own, the composition interleave+split. "
+    "The split cuts the accumulator set to K[a_i,b_j]'s one slot; the "
+    "interleave cuts the live I set to one I_p; only the (b,d) rows and "
+    "I_p this element reads are formed (the literal folds: bitwise the "
+    "same K)")
+
+
+def arm(spec: Spec) -> str:
+    """`SPLIT` when `spec` also carries #341's `split` (the element kernels,
+    #348), else `WARP` (#343's warp-per-bra kernel)."""
+    return SPLIT if split.NAME in spec.kernel_body_levers() else WARP
 
 
 def _c(fn: Fn, *args: Expr) -> Call:
@@ -113,6 +138,8 @@ def contract(ctx: KContext) -> tuple[Stmt, ...]:
     e_ac, e_bd = ctx.hooks.e_ac, ctx.hooks.e_bd
     slots = k_only(ctx)
     out: list[Stmt] = [Note(TRADE)]
+    if arm(ctx.spec) == SPLIT:
+        out.append(Note(SPLIT_ARM))
     for rbd in range(len(ctx.rows_bd)):
         racs = [rac for rac in range(len(ctx.rows_ac))
                 if (rbd, rac) in ctx.s2]

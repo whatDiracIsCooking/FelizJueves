@@ -1782,3 +1782,10 @@ EDGES["measured_store"] = EDGES["measured_store"] | frozenset(("levers",))
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.interleave",))
 EDGES["k_levers.interleave"] = frozenset(("ir", "k_levers.seams",
                                           "recurrence", "spec"))
+
+# #348 (milestone 13, M4): the split arm is the composition interleave+split,
+# not a lever of its own. `interleave` reads `split.NAME` to name the arm in
+# the element kernels' region (`interleave.arm`); `split` imports nothing of
+# `interleave`, so the edge is one way.
+EDGES["k_levers.interleave"] = EDGES["k_levers.interleave"] | frozenset(
+    ("k_levers.split",))
