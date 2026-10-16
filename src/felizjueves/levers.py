@@ -60,7 +60,8 @@ __all__ = [
 ]
 
 # Every `spec.Target`'s key slot, in the enum's order (pinned by a test).
-TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f")
+TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
+                                 "schwarz")
 
 # The `Spec.levers` names owned by layers other than the kernel builder.
 OTHER_LAYERS: Mapping[str, str] = MappingProxyType({
@@ -119,6 +120,11 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "nobody has declared"
     ),
     "f": _F_REFUSAL,
+    "schwarz": (
+        "the Schwarz kernel has the J recurrence but no option surface: it "
+        "is one thread per shell pair, one batch, by decision, and a "
+        "Schwarz lever is a follow-up nobody has declared"
+    ),
 })
 
 

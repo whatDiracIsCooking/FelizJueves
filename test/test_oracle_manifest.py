@@ -217,9 +217,10 @@ def test_the_one_e_arrays_are_named_and_shaped_by_cartesian_aos():
 
 
 def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
-    """The five HF/cc-pVTZ ERI files are the declared exception
-    (`Case.record_one_e`), and `hf_ccpvtz` -- same molecule, basis, Cartesian
-    flag -- carries the four for them."""
+    """The five HF/cc-pVTZ ERI files and the three `_schwarz` files are the
+    declared exceptions (`Case.record_one_e`), and a twin -- same molecule,
+    basis, Cartesian flag (`hf_ccpvtz`, the `_j` cases) -- carries the four
+    for them."""
     from oracle import generate
 
     fixtures = [load(p) for p in manifest.tracked()]
@@ -242,7 +243,9 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
             assert not has and key(fx) in carriers, fx.name
             skipped.add(fx.name)
     assert skipped == {"hf_ccpvtz_eri", *(f"hf_ccpvtz_eri_l{L}"
-                                          for L in (9, 10, 11, 12))}
+                                          for L in (9, 10, 11, 12)),
+                       "h2_sto3g_schwarz", "h2o_sto3g_schwarz",
+                       "h2o_631g_schwarz"}
 
 
 @pytest.mark.parametrize(

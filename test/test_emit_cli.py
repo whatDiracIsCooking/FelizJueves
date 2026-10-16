@@ -220,6 +220,49 @@ def test_the_one_e_names_cannot_collide_with_the_j_chain() -> None:
     assert all(n[:2] in ("s_", "t_", "v_") for n in one_e)
 
 
+# --- the Schwarz ladder -------------------------------------------------------
+
+
+def test_the_schwarz_ladder_is_one_unit_per_pair_class_through_gg():
+    assert emit_cli.schwarz_classes(1) == [(0, 0), (0, 1), (1, 1)]
+    assert len(emit_cli.schwarz_classes(emit_cli.SCHWARZ_L_MAX)) == 15
+    assert emit_cli.SCHWARZ_L_MAX == 4  # (gg|gg) at L = 16, [p|q]'s top
+    with pytest.raises(ValueError):
+        emit_cli.schwarz_classes(emit_cli.SCHWARZ_L_MAX + 1)
+
+
+def test_schwarz_l_adds_its_units_beside_the_ladder_flags(tmp_path):
+    from felizjueves.kernel_schwarz import build_schwarz_kernel
+
+    assert _run(tmp_path / "a", "cuda", "--L", "0", "--schwarz-l", "1") == 0
+    assert _names(tmp_path / "a") == {"pq_L0_p0_q0.cu", "schwarz_00.cu",
+                                      "schwarz_01.cu", "schwarz_11.cu"}
+    emit, arch, _ = BACKEND["cuda"]
+    assert (tmp_path / "a" / "schwarz_01.cu").read_text() == emit(
+        build_schwarz_kernel((0, 1)), arch)
+    assert _run(tmp_path / "b", "hip", "--pair-l", "0", "--schwarz-l") == 0
+    assert _names(tmp_path / "b") == {"dq_0_0.hip", "jab_00.hip"} | {
+        f"schwarz_{a}{b}.hip" for a, b in emit_cli.schwarz_classes(
+            emit_cli.DEFAULT_SCHWARZ_L)}
+
+
+@pytest.mark.parametrize("backend", ["cuda", "hip"])
+def test_the_bare_default_writes_no_schwarz_unit(backend, tmp_path):
+    assert _run(tmp_path, backend) == 0
+    assert not any(n.startswith("schwarz_") for n in _names(tmp_path))
+
+
+@pytest.mark.parametrize("argv", [
+    ["--schwarz-l", "-1"],
+    ["--schwarz-l", str(emit_cli.SCHWARZ_L_MAX + 1)],
+    ["--schwarz-l", "1", "--class", "0", "0", "0", "0"],
+    ["--schwarz-l", "1", "--fock-l", "0"],
+])
+def test_a_schwarz_l_it_cannot_honour_is_a_2(argv, tmp_path):
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
+
+
 @pytest.mark.parametrize("argv", [
     ["--one-e-l", "-1"],
     ["--one-e-l", str(emit_cli.ONE_E_L_MAX + 1)],
