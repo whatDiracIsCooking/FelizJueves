@@ -44,6 +44,12 @@ THE SHAPE (schema 2), one JSON object per file under `fixtures/`:
                  and PySCF's `get_hcore` (`T + V`), nao x nao, AO order.
                  `int1e_ovlp` is the same `intor` call as `ovlp` and must
                  equal it exactly; the legacy `ovlp` stays in every file.
+                 `int1e_ovlp_cross:<rows>` (OPTIONAL; needs `converted`) is
+                 libcint's rectangular overlap `<m|n>`, shape
+                 (rows' nao, nao): `m` an AO of the tracked fixture `<rows>`
+                 (which must carry `converted` and the same `cart`), `n` of
+                 this one -- the oracle of `S_{B1,B2}` (`Target.SX`);
+                 `cross_overlap(fx)` loads the partner and checks it.
     density_recipe  how the recorded density was made
     converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
                  (`ao.shell.Shell`, one entry per contraction, in AO order) as
@@ -113,6 +119,8 @@ KIN_ARRAY = "int1e_kin"
 NUC_ARRAY = "int1e_nuc"
 HCORE_ARRAY = "hcore"
 SCHWARZ_ARRAY = "int2e_diag"  # libcint's (mn|mn) for every AO pair
+# libcint's <m|n>, m an AO of the named fixture (rows), n of this one
+CROSS_PREFIX = "int1e_ovlp_cross:"
 ONE_E_ARRAYS = (OVLP_ARRAY, KIN_ARRAY, NUC_ARRAY, HCORE_ARRAY)
 
 
@@ -388,6 +396,19 @@ def validate(path: Path, raw: Any) -> Fixture:
         if np.any(q < 0.0):
             raise _fail(path, f"arrays.{SCHWARZ_ARRAY} has a negative "
                               "(mn|mn)")
+    for name, a in arrays.items():
+        if not name.startswith(CROSS_PREFIX):
+            continue
+        rows = name[len(CROSS_PREFIX):]
+        if not rows or rows != Path(rows).name or rows == raw["name"]:
+            raise _fail(path, f"arrays.{name} must name another fixture "
+                              "(its stem) as its rows")
+        if converted is None:
+            raise _fail(path, f"arrays.{name} needs the converted basis "
+                              "its columns are in")
+        if a.ndim != 2 or a.shape[1] != nao:
+            raise _fail(path, f"arrays.{name} has shape {a.shape}, expected "
+                              f"(rows' nao, {nao})")
     if one_e and not np.array_equal(arrays[OVLP_ARRAY], arrays["ovlp"]):
         raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
 
@@ -486,6 +507,41 @@ def load(path: Path | str) -> Fixture:
 def tracked() -> list[Path]:
     """Every tracked fixture file, sorted."""
     return sorted(FIXTURES.glob("*.json"))
+
+
+# --- the cross-basis overlap ------------------------------------------------
+
+
+def cross_overlap(fx: Fixture) -> tuple[Fixture, np.ndarray]:
+    """`(rows, S)` of a fixture carrying `int1e_ovlp_cross:<rows>`: the row
+    fixture, loaded from beside `fx`, and the `rows.nao x fx.nao` array.
+    Refuses a row fixture that is absent, has no converted basis, differs in
+    `cart`, or whose `nao` is not the array's row count."""
+    names = [n for n in fx.arrays if n.startswith(CROSS_PREFIX)]
+    if len(names) != 1:
+        raise _fail(fx.path, f"carries {len(names)} {CROSS_PREFIX}* arrays, "
+                             "not one")
+    (name,) = names
+    rpath = fx.path.parent / f"{name[len(CROSS_PREFIX):]}.json"
+    if not rpath.exists():
+        raise _fail(fx.path, f"arrays.{name}: no fixture {rpath.name}")
+    rows = load(rpath)
+    S = fx.arrays[name]
+    if rows.converted is None:
+        raise _fail(fx.path, f"arrays.{name}: {rpath.name} has no converted "
+                             "basis")
+    if rows.provenance.cart != fx.provenance.cart:
+        raise _fail(fx.path, f"arrays.{name}: {rpath.name} differs in cart")
+    if S.shape != (rows.nao, fx.nao):
+        raise _fail(fx.path, f"arrays.{name} has shape {S.shape}, expected "
+                             f"({rows.nao}, {fx.nao})")
+    return rows, S
+
+
+def cross_fixtures() -> list[Path]:
+    """Every tracked fixture carrying a cross-basis overlap, sorted."""
+    return [p for p in tracked()
+            if any(n.startswith(CROSS_PREFIX) for n in load(p).arrays)]
 
 
 # --- the Fock pair (#280) ----------------------------------------------------

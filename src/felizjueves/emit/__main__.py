@@ -10,6 +10,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --one-e-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --fock-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --schwarz-l 2
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --sx-l 2
 
 ONE LADDER PER KERNEL FAMILY (#156), one translation unit per class, each
 emitted by the backend for the arch to `<out>/<kernel name>.<ext>` (`.cu`
@@ -38,6 +39,15 @@ for CUDA, `.hip` for HIP):
   is (gg|gg) at L = 16, the `[p|q]` ladder's top. It ADDS units beside the J
   ladders, as `--one-e-l` does, and is NEVER in the no-flag default. Only
   `la <= lb`: `ao.schwarz.schwarz_classes` stages every shell pair that way.
+
+- the cross-basis overlap ladder, `--sx-l [LMAX]`: for every ORDERED pair
+  class `(la, lb)`, `la, lb <= LMAX` (2 when the flag is given bare,
+  accepted 0..`ONE_E_L_MAX`), `kernel_sx.build_sx_kernel` (`sx_{la}{lb}`,
+  `Target.SX`): the rectangular overlap `S_{B1,B2}` between two bases, `la`
+  the row basis's shell. Every ordered class, not `la <= lb`: across two
+  bases `(la, lb)` and `(lb, la)` are both reached and neither is the
+  other's mirror. It ADDS units beside the J ladders, as `--one-e-l` does,
+  and is NEVER in the no-flag default.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
@@ -189,6 +199,7 @@ from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_schwarz import build_schwarz_kernel
+from felizjueves.kernel_sx import build_sx_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
 from felizjueves.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
@@ -205,6 +216,7 @@ DEFAULT_ONE_E_L = 3  # `--one-e-l` given bare: (ss) through (ff), 30 units
 ONE_E_L_MAX = PAIR_L_MAX  # the range the pair ladder accepts
 DEFAULT_SCHWARZ_L = 2  # `--schwarz-l` given bare: (ss) through (dd), 6 units
 SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
+DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -312,6 +324,27 @@ def generate_schwarz(backend: str, arch: Arch, out: Path,
     """Emit the Schwarz unit of every pair class through `lmax` into `out`;
     return the paths."""
     kernels = [build_schwarz_kernel(c) for c in schwarz_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The cross-basis overlap ladder
+# ---------------------------------------------------------------------------
+
+
+def sx_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every ORDERED pair class `(la, lb)`, `la, lb <= lmax`, over
+    `0..ONE_E_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= ONE_E_L_MAX:
+        raise ValueError(f"--sx-l {lmax!r} is outside 0..{ONE_E_L_MAX}")
+    return [(la, lb) for la in range(lmax + 1) for lb in range(lmax + 1)]
+
+
+def generate_sx(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]:
+    """Emit the cross-basis overlap unit of every ordered class through
+    `lmax` into `out`; return the paths."""
+    kernels = [build_sx_kernel(c) for c in sx_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -503,6 +536,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--schwarz-l", dest="schwarz_l", type=int, nargs="?",
                     const=DEFAULT_SCHWARZ_L, default=None, metavar="LMAX")
+    ap.add_argument("--sx-l", dest="sx_l", type=int, nargs="?",
+                    const=DEFAULT_SX_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
@@ -535,10 +570,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             or bool(fock_levers))
     if fock and (selector or args.Ls is not None or args.pair_l is not None
                  or args.one_e_l is not None or args.schwarz_l is not None
-                 or ladder_levers):
+                 or args.sx_l is not None or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
-              "--class / --shell-ls and the J / K lever flags; give one",
+              "--sx-l / --class / --shell-ls and the J / K lever flags; give "
+              "one",
               file=sys.stderr)
         return 2
     if fock and (args.n_batches != [1] or args.admitted_only):
@@ -555,9 +591,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
     if selector and (args.Ls is not None or args.pair_l is not None
                      or args.one_e_l is not None or args.schwarz_l is not None
-                     or ladder_levers):
-        print("emit: --L / --pair-l / --one-e-l / --schwarz-l (and a lever "
-              "flag) and "
+                     or args.sx_l is not None or ladder_levers):
+        print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l (and a "
+              "lever flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
         return 2
@@ -577,6 +613,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not 0 <= args.schwarz_l <= SCHWARZ_L_MAX):
         print(f"emit: --schwarz-l {args.schwarz_l} is outside "
               f"0..{SCHWARZ_L_MAX}", file=sys.stderr)
+        return 2
+    if args.sx_l is not None and not 0 <= args.sx_l <= ONE_E_L_MAX:
+        print(f"emit: --sx-l {args.sx_l} is outside 0..{ONE_E_L_MAX}",
+              file=sys.stderr)
         return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
@@ -606,6 +646,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.schwarz_l is not None:  # beside the J chain, never by default
         written += generate_schwarz(args.backend, arch, args.out,
                                     args.schwarz_l)
+    if args.sx_l is not None:  # beside the J chain, never by default
+        written += generate_sx(args.backend, arch, args.out, args.sx_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "

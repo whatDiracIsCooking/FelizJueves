@@ -2066,3 +2066,54 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and rewrites #362's lever "
                        RULES["driver"].may | frozenset(("leverledger",)),
                        RULES["driver"].must_not)
 EDGES["measured"] = EDGES["measured"] | frozenset(("leverledger",))
+
+
+# ---------------------------------------------------------------------------
+# The cross-basis overlap S_{B1,B2} (`Target.SX`): the host reference
+# (`ao.overlap.cross_overlap_matrix` over `ao.one_electron.rectangular`, no
+# new edge), the cross launch and its walker (in `launch`, no new edge), and
+# the kernel builder (`kernel_sx`, `kernel_s`'s rule plus `kernel_s` itself,
+# whose per-record statements it reuses unchanged). The generator CLI writes
+# its ladder (`--sx-l`), so the driver composes it.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "sx_builder": _rule(
+        "kernel_sx.py: the cross-basis overlap kernel, `Target.SX` -- key -> "
+        "IR, `kernel_s.record_values`' per-record statements (the `E` "
+        "fragment's `t = 0` column) reused and a rectangular scatter of its "
+        "own",
+        ("spec", "ir", "e_fragment", "kernel_s"),
+        ao="`ao.overlap.cross_overlap_matrix` is the witness the kernel is "
+           "interpreted against: importing it shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "kernel_sx": "sx_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_sx": ("e_fragment", "ir", "kernel_s", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the cross-basis overlap "
+                       "ladder through `kernel_sx`",
+                       RULES["driver"].may | frozenset(("kernel_sx",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_sx",))
+
+
+def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_sx"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"e_fragment", "kernel_s"} <= seen
+    for banned in (_REF, "ao", "interp", "emit", "device", "launch"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_sx reaches {hit}"

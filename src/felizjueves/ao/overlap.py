@@ -2,6 +2,7 @@
 
     overlap_block(sa, sb) -> S_ab    n_cart(sa) rows of n_cart(sb) floats
     overlap_matrix(basis) -> S       ao.one_electron.matrix over overlap_block
+    cross_overlap_matrix(basis_a, basis_b) -> S_AB    n_a x n_b, rectangular
 
 THE IDENTITY (milestone 11, #233). A Cartesian primitive product expands in
 Hermite Gaussians, `G_a G_b = SUM_t E^{ab}_t Lambda_t(zeta, P)`
@@ -29,6 +30,13 @@ TWO THINGS THE PREDECESSOR DOES THAT MUST NOT BE DONE HERE.
       primitives and any normalisation is already in them (#85,
       ao/shell.py's module docstring).
 
+ACROSS TWO BASES. `overlap_block(sa, sb)` reads only the two shells, so it
+is already the block of `S_{B1,B2}` for `sa` in one basis and `sb` in
+another; `cross_overlap_matrix` places it with `ao.one_electron.rectangular`
+(every ordered shell pair, no mirror). Of one basis with itself it is
+`overlap_matrix` exactly off the diagonal shell pairs, and on them it reads
+the full block where `matrix` reads the upper triangle and mirrors it.
+
 THE SUM ORDER. Primitive pairs in `primitive_pairs` order (`i` outer), added
 left to right from `0.0` -- one record at a time, the order a one-thread-per-
 record kernel accumulates in when it is interpreted, so that kernel can be
@@ -39,7 +47,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from felizjueves.ao.one_electron import matrix
+from felizjueves.ao.one_electron import matrix, rectangular
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
 
@@ -62,3 +70,12 @@ def overlap_matrix(basis: Basis, *,
     """`S`, `basis.n_ao x basis.n_ao`, exactly symmetric
     (`ao.one_electron.matrix`); `pairs` screens it (#236)."""
     return matrix(basis, overlap_block, pairs=pairs)
+
+
+def cross_overlap_matrix(basis_a: Basis, basis_b: Basis, *,
+                         pairs: Iterable[tuple[int, int]] | None = None
+                         ) -> list[list[float]]:
+    """`S_{B1,B2}[m][n] = <m|n>`, `basis_a.n_ao x basis_b.n_ao`, `m` an AO
+    of `basis_a` and `n` of `basis_b` (`ao.one_electron.rectangular`);
+    `pairs` screens it (`ao.pairs.cross_pair_list`)."""
+    return rectangular(basis_a, basis_b, overlap_block, pairs=pairs)

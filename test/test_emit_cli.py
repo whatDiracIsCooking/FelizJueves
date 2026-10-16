@@ -263,6 +263,48 @@ def test_a_schwarz_l_it_cannot_honour_is_a_2(argv, tmp_path):
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
+# --- the cross-basis overlap ladder -------------------------------------------
+
+
+def test_the_sx_ladder_is_every_ordered_class():
+    assert emit_cli.sx_classes(1) == [(0, 0), (0, 1), (1, 0), (1, 1)]
+    assert len(emit_cli.sx_classes(emit_cli.DEFAULT_SX_L)) == 9
+    with pytest.raises(ValueError):
+        emit_cli.sx_classes(emit_cli.ONE_E_L_MAX + 1)
+
+
+def test_sx_l_adds_its_units_beside_the_ladder_flags(tmp_path):
+    from felizjueves.kernel_sx import build_sx_kernel
+
+    assert _run(tmp_path / "a", "cuda", "--L", "0", "--sx-l", "1") == 0
+    assert _names(tmp_path / "a") == {"pq_L0_p0_q0.cu", "sx_00.cu",
+                                      "sx_01.cu", "sx_10.cu", "sx_11.cu"}
+    emit, arch, _ = BACKEND["cuda"]
+    assert (tmp_path / "a" / "sx_10.cu").read_text() == emit(
+        build_sx_kernel((1, 0)), arch)
+    assert _run(tmp_path / "b", "hip", "--pair-l", "0", "--sx-l") == 0
+    assert _names(tmp_path / "b") == {"dq_0_0.hip", "jab_00.hip"} | {
+        f"sx_{a}{b}.hip" for a, b in emit_cli.sx_classes(
+            emit_cli.DEFAULT_SX_L)}
+
+
+@pytest.mark.parametrize("backend", ["cuda", "hip"])
+def test_the_bare_default_writes_no_sx_unit(backend, tmp_path):
+    assert _run(tmp_path, backend) == 0
+    assert not any(n.startswith("sx_") for n in _names(tmp_path))
+
+
+@pytest.mark.parametrize("argv", [
+    ["--sx-l", "-1"],
+    ["--sx-l", str(emit_cli.ONE_E_L_MAX + 1)],
+    ["--sx-l", "1", "--class", "0", "0", "0", "0"],
+    ["--sx-l", "1", "--fock-l", "0"],
+])
+def test_an_sx_l_it_cannot_honour_is_a_2(argv, tmp_path):
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
+
+
 @pytest.mark.parametrize("argv", [
     ["--one-e-l", "-1"],
     ["--one-e-l", str(emit_cli.ONE_E_L_MAX + 1)],

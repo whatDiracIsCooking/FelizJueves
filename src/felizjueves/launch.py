@@ -103,6 +103,19 @@ J-shaped (a bra side, a density-keyed sorted ket side, a batch count), and
 `OneEClass`'s docstring says why a sibling type was the right call. None of
 `PairRec`, `ClassLaunch`, `LaunchPlan` or `launches` changed for it.
 
+THE CROSS-BASIS OVERLAP LAUNCH (`Target.SX`) is the last sibling:
+
+    cross_overlap_launch(basis_a, basis_b, *, tau, bound) -> XLaunch
+    XClass(la, lb, recs, blocks)                one ORDERED pair class
+    XRec(i, j, prim, zeta, XPA, XPB, s, off_a, off_b)
+    walk_cross_overlap(plan, basis_a, basis_b)  -> S_{B1,B2}
+
+Not a `OneELaunch`: that record set is ONE basis's `i <= j` pairs, its
+diagonal read from `off_a == off_b`, and it carries the nuclei and the ket
+exponent for `T` and `V`. A cross build has two bases, every ordered pair
+`(i in A, j in B)`, two offsets into different index sets (so no
+`diagonal`), one operator and no nuclei.
+
 THE ORACLE (#142) -- the plan WALKED, in Python:
 
     walk(plan, basis, D, *, pq)                       -> ao.j.Screened
@@ -159,8 +172,13 @@ from felizjueves.ao.j import (
     pair_bound_pq,
 )
 from felizjueves.ao.kinetic import kinetic_axis
-from felizjueves.ao.one_electron import matrix
-from felizjueves.ao.pairs import OneCentre, pair_list, primitive_pairs
+from felizjueves.ao.one_electron import matrix, rectangular
+from felizjueves.ao.pairs import (
+    OneCentre,
+    cross_pair_list,
+    pair_list,
+    primitive_pairs,
+)
 from felizjueves.ao.potential import _check_nuclei
 from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.ir import Kernel
@@ -169,8 +187,10 @@ from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["Bound", "ClassLaunch", "LaunchPlan", "OneEClass", "OneELaunch",
-           "OneERec", "PairRec", "class_spec", "coulomb_launched", "launches",
-           "one_electron_launch", "walk", "walk_one_electron"]
+           "OneERec", "PairRec", "XClass", "XLaunch", "XRec", "class_spec",
+           "coulomb_launched", "cross_overlap_launch", "launches",
+           "one_electron_launch", "walk", "walk_cross_overlap",
+           "walk_one_electron"]
 
 Bound = Callable[[float, int], float]  # (zeta, L) -> I_pair >= 0
 
@@ -758,3 +778,155 @@ def walk_one_electron(plan: OneELaunch, basis: Basis, target: Target, *,
         return out[(i, j)]
 
     return matrix(basis, block, pairs=plan.kept)
+
+
+# --- the cross-basis overlap launch (Target.SX), BESIDE OneELaunch ----------
+
+
+@dataclass(frozen=True)
+class XRec:
+    """One primitive-pair record of a cross-basis overlap build: `i` a
+    shell of the ROW basis `A`, `j` of the COLUMN basis `B`, `prim` the
+    index in `ao.pairs.primitive_pairs(A.shells[i], B.shells[j])`; `zeta`,
+    `XPA = P - A`, `XPB = P - B`, `s = c_a c_b (pi/zeta)^{3/2}`
+    (`ao.j.epair`'s); `off_a` the AO offset of `i` in `A`, `off_b` of `j`
+    in `B` -- offsets into DIFFERENT index sets, so a record has no
+    diagonal (`kernel_sx`)."""
+
+    i: int
+    j: int
+    prim: int
+    zeta: float
+    XPA: Vec3
+    XPB: Vec3
+    s: float
+    off_a: int
+    off_b: int
+
+    @property
+    def shell_pair(self) -> tuple[int, int]:
+        return (self.i, self.j)
+
+
+@dataclass(frozen=True)
+class XClass:
+    """Every record of one ORDERED pair class `(la in A, lb in B)`, in pair
+    order (`i` outer, then `j`, then `primitive_pairs` order); `blocks` is
+    `(i, j, start, stop)` per shell pair, `recs[start:stop]` its records."""
+
+    la: int
+    lb: int
+    recs: tuple[XRec, ...]
+    blocks: tuple[tuple[int, int, int, int], ...]
+
+    def __post_init__(self) -> None:
+        if not self.recs:
+            raise ValueError(f"pair class ({self.la}, {self.lb}) has no "
+                             "records: an absent class is absent, not empty")
+        if (sum(stop - start for _, _, start, stop in self.blocks)
+                != len(self.recs)):
+            raise ValueError(f"pair class ({self.la}, {self.lb}): the blocks "
+                             "do not cover the records")
+
+    def spec(self) -> Spec:
+        """`kernel_sx.sx_spec(la, lb)`, restated (a test pins it equal)."""
+        return Spec(Operator.OVERLAP, 0, (self.la, self.lb), Target.SX)
+
+    def arrays(self) -> dict[str, list]:
+        """`kernel_sx`'s per-record parameter arrays, in its parameter
+        block's order and under its names, as plain lists."""
+        rs = self.recs
+        return {"zeta_ab": [r.zeta for r in rs],
+                "XPA": [list(r.XPA) for r in rs],
+                "XPB": [list(r.XPB) for r in rs],
+                "s": [r.s for r in rs],
+                "off_a": [r.off_a for r in rs],
+                "off_b": [r.off_b for r in rs]}
+
+
+@dataclass(frozen=True)
+class XLaunch:
+    """`cross_overlap_launch()`'s value: one `XClass` per ordered pair
+    class with a kept shell pair, sorted by `(la, lb)`; the two AO counts;
+    and the screen (`ao.pairs.cross_pair_list`'s `tau`, `kept`,
+    `dropped`, row-major over `(i in A, j in B)`)."""
+
+    classes: tuple[XClass, ...]
+    n_a: int
+    n_b: int
+    tau: float
+    kept: tuple[tuple[int, int], ...]
+    dropped: tuple[tuple[int, int], ...]
+
+    def __iter__(self) -> Iterator[XClass]:
+        return iter(self.classes)
+
+    def __len__(self) -> int:
+        return len(self.classes)
+
+
+def cross_overlap_launch(basis_a: Basis, basis_b: Basis, *, tau: float,
+                         bound: PairBound) -> XLaunch:
+    """The cross-basis overlap launch of rows `basis_a`, columns `basis_b`
+    (`XClass`'s docstring). The ordered shell pairs are screened by
+    `ao.pairs.cross_pair_list(basis_a, basis_b, tau=tau, bound=bound)`,
+    `bound` injected (`overlap_bound`); `tau = 0` drops nothing. THE PLAN
+    IS DATA: no kernel is built and no integral is evaluated."""
+    pl = cross_pair_list(basis_a, basis_b, tau=tau, bound=bound)
+    sha, shb = basis_a.shells, basis_b.shells
+    recs: dict[tuple[int, int], list[XRec]] = {}
+    blocks: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {}
+    for i, j in pl.kept:
+        sa, sb = sha[i], shb[j]
+        ep = epair(sa, sb)
+        side = recs.setdefault((sa.l, sb.l), [])
+        start = len(side)
+        for k, (P, zeta, s) in enumerate(ep.recs):
+            side.append(XRec(
+                i, j, k, zeta,
+                (P[0] - sa.centre[0], P[1] - sa.centre[1],
+                 P[2] - sa.centre[2]),
+                (P[0] - sb.centre[0], P[1] - sb.centre[1],
+                 P[2] - sb.centre[2]),
+                s, basis_a.offsets[i], basis_b.offsets[j]))
+        blocks.setdefault((sa.l, sb.l), []).append((i, j, start, len(side)))
+    return XLaunch(
+        tuple(XClass(la, lb, tuple(recs[(la, lb)]), tuple(blocks[(la, lb)]))
+              for la, lb in sorted(recs)),
+        basis_a.n_ao, basis_b.n_ao, pl.tau, pl.kept, pl.dropped)
+
+
+def walk_cross_overlap(plan: XLaunch, basis_a: Basis, basis_b: Basis
+                       ) -> list[list[float]]:
+    """`S_{B1,B2}` from the PLAN alone: each record's `s E^{ab}_0` from its
+    own fields, a shell pair's records summed in order from `0.0`, the
+    blocks placed by `ao.one_electron.rectangular` over `plan.kept` -- so
+    the walk equals `cross_overlap_matrix(basis_a, basis_b,
+    pairs=plan.kept)` TO 0. The bases supply only the momenta and layout."""
+    sha, shb = basis_a.shells, basis_b.shells
+    out: dict[tuple[int, int], tuple[tuple[float, ...], ...]] = {}
+    for c in plan:
+        ca, cb = cartesians(c.la), cartesians(c.lb)
+        carts = [(a, b) for a in ca for b in cb]
+        nb = len(cb)
+        for i, j, start, stop in c.blocks:
+            if (sha[i].l, shb[j].l) != (c.la, c.lb):
+                raise ValueError(f"the plan's block ({i}, {j}) is not class "
+                                 f"({c.la}, {c.lb}) in these bases")
+            acc = [0.0] * len(carts)
+            for r in c.recs[start:stop]:
+                for n, v in enumerate(_s_rec(carts, r)):
+                    acc[n] += v
+            out[(i, j)] = tuple(tuple(acc[k * nb:(k + 1) * nb])
+                                for k in range(len(ca)))
+    if sorted(out) != sorted(plan.kept):
+        raise ValueError("the plan's classes do not cover its kept pairs")
+    order = iter(plan.kept)
+
+    def block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:
+        i, j = next(order)
+        if sha[i] is not sa or shb[j] is not sb:
+            raise ValueError(f"the kept pair ({i}, {j}) is out of order")
+        return out[(i, j)]
+
+    return rectangular(basis_a, basis_b, block, pairs=plan.kept)

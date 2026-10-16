@@ -263,7 +263,8 @@ to `emit(...)`. Ordered ladder classes are a named follow-up.
 
 **Host against libcint** (#240):
 
-The fixtures are at schema 2. Each of 11 fixtures carries libcint's
+The fixtures are at schema 2. Each of 12 fixtures (11 at #240; the
+cross-overlap's `h2o_sto3g_x_631g_moved` is the twelfth) carries libcint's
 `int1e_ovlp`, `int1e_kin` and `int1e_nuc` (point nuclei) and PySCF's
 `hcore`, or none of the four. Every element is compared within
 `1e-12 · scale`, where `scale` is the absolute-value sum the build adds,
@@ -333,6 +334,88 @@ PRs #297 and #298 (nvcc `-Xptxas -v` in bytes; hipcc
 The test plan's `kernel-tier` / `high-L` markers are not registered in
 `pyproject.toml`. The deferred cells use the registered `slow` marker,
 which keeps them off the pre-push gate.
+
+## The cross-basis overlap `S_{B1,B2}`
+
+**Status: implemented, and run on both cards.** This section covers the
+rectangular overlap `S_{B1,B2}[m, n] = <m|n>`, where `m` is an AO of the
+**row** basis `B1` and `n` an AO of the **column** basis `B2`. The two can
+be one molecule in two basis sets (a minimal-to-larger projection's
+overlap) or two geometries. The integral is `S`'s, the `t = 0` column of
+the dressed block. Only the **matrix** differs: it is `n_a × n_b`, it has no
+mirror, and it has no diagonal rule. That is why it is its own target and
+not a lever on `S`. Like the rest of this note, nothing here is scored or
+measured.
+
+**The key.** `Target.SX` (`sx`, operator `OVERLAP`) is an **ordered** pair
+class `(la, lb)`, where `la` is always the row basis's shell. No symmetry
+relates `(la, lb)` to `(lb, la)` across two bases, and both are reached. Its
+batching refusal is `S`'s structural one. It has no kernel-body lever (its
+`levers.DEFAULT_REFUSALS` row). An example key is
+`overlap/d0/(2,1)/b1/sx/literal`, and every pre-existing key is unchanged.
+
+**The host.** `ao.overlap.cross_overlap_matrix(basis_a, basis_b, *,
+pairs=)` reuses `overlap_block` unchanged. Its blocks are placed by
+`ao.one_electron.rectangular`, which calls `block` once per **ordered**
+shell pair `(i ∈ A, j ∈ B)` in row-major order and writes every element
+once, nothing mirrored. `ao.pairs.cross_pair_list` is `pair_list`'s screen
+over those pairs, with the bound injected (`overlap_bound`). A basis
+against itself is `overlap_matrix` exactly wherever `matrix` reads the same
+block entry: the upper triangle by shell, and a diagonal pair's upper
+triangle. Elsewhere it agrees within `8 ε` of scale, because `matrix`
+mirrors while `rectangular` computes `<b|a>` along the other `E` path.
+
+**The launch.** `launch.cross_overlap_launch(basis_a, basis_b, *, tau,
+bound) → XLaunch` builds `XClass(la, lb, recs, blocks)` over `XRec`s. This
+is a sibling of `OneELaunch`, not a widening of it: that record set is one
+basis's `i ≤ j` pairs, its diagonal is read from `off_a == off_b`, and it
+carries nuclei and the ket exponent. Here `off_a` and `off_b` index
+different matrices, so a record has no diagonal. `walk_cross_overlap`
+rebuilds the matrix from the records and equals the host to 0.
+
+**The kernel.** `kernel_sx.build_sx_kernel((la, lb))` emits `sx_{la}{lb}`.
+It reuses `kernel_s.record_values` (the per-record statements, factored out
+of `kernel_s` with `S`'s emitted text byte-identical through (gg) on both
+backends). Its scatter is one `AtomicAdd` per element,
+`S[off_a+i, off_b+j] += v`, with no offset comparison. The parameter block
+is `S`'s with `n_ao` split: `n_rec n_a n_b | zeta_ab XPA[,3] XPB[,3] s
+off_a off_b | S[n_a, n_b]`. Interpreted, the whole rectangular matrix is
+**bitwise `==`** to `cross_overlap_matrix`, which is a stronger statement
+than `S`'s, because no triangle is read. Its layering rule `sx_builder` is
+`kernel_s`'s plus `kernel_s` itself.
+
+**The generator.** `python -m felizjueves.emit --sx-l [LMAX]` (2 when bare,
+accepted 0..8) **adds** every ordered class `(la, lb)` with
+`la, lb ≤ LMAX` beside the J ladders. It is never in the no-flag output,
+and `KERNEL_GEN_CMD` does not ask for it.
+
+**The witnesses.**
+
+- *libcint.* Three tracked fixtures each carry
+  `int1e_ovlp_cross:<rows>`, libcint's `gto.intor_cross('int1e_ovlp',
+  rows, cols)`. It is cross-checked at generation against
+  `gto.conc_mol`'s off-diagonal block. The fixtures are
+  `h2o_sto3g_x_631g` and `h2o_sto3g_x_ccpvdz` (rows `h2o_sto3g_j`'s AOs,
+  columns the `_j` twin's inputs exactly) and `h2o_sto3g_x_631g_moved`
+  (the columns at another geometry). `oracle.manifest.cross_overlap`
+  loads the row fixture and checks it. Each fixture is read in both
+  orientations, so every ordered class through d is reached. The
+  tolerance is `ONE_E_TOL` of the element's absolute-value scale,
+  Cauchy-Schwarz completed from each basis's own diagonal; the host's
+  worst is about `3e-16`.
+- *Fast tier.* `test_ao_cross_overlap.py` covers the host, the screen,
+  the launch and the walk. `test_kernel_sx.py` checks the kernel
+  interpreted, every ordered class (ss) through (ff) on HF/cc-pVTZ
+  against itself and the three cases whole, all `np.array_equal`.
+- *Both cards.* `test_sx_device.py` (generator `test/sx_driver.py`) runs
+  the same cases under `S`'s device bound, `2 γ_{N+K} Mabs` with
+  `N = 4L + 9`, and checks run-to-run spread within `2 γ_K Mabs`. On the
+  RTX 3080 and the RX 9060 XT all 7 cases passed. The worst result was
+  `0.103` of the bound (HF/cc-pVTZ through (ff)), and every case agreed
+  with libcint to at most `3.3e-16` of scale.
+
+**Not built:** the projection that would consume it (for example
+`C_B = S_BB⁻¹ S_BA C_A`), a cross-basis `T` or `V`, and any measurement.
 
 ## Named follow-ups
 

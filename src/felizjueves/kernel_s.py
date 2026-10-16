@@ -111,6 +111,7 @@ __all__ = [
     "ZEROED_S",
     "build_s_kernel",
     "launch_shape",
+    "record_values",
     "s_spec",
 ]
 
@@ -168,16 +169,14 @@ def _i32(name: str, shape: tuple[Expr, ...]) -> Param:
     return Param(name, Scalar.I32, array=True, shape=shape)
 
 
-def build_s_kernel(cls: Spec | tuple[int, int], *,
-                   name: str | None = None) -> Kernel:
-    """The overlap kernel of one pair class.
-
-    `cls` is a `Target.S` `Spec` or `(la, lb)`. See the module docstring.
-    """
-    la, lb = _class(cls)
+def record_values(la: int, lb: int) -> tuple[list[Stmt], list[Stmt]]:
+    """The per-record statements of class `(la, lb)` up to the scatter:
+    `head` reads record `rec`'s inputs into locals (`zeta`, `sk`, `oa`,
+    `ob`) and inlines `E^{ab}_0`; `values` forms `v{r} = sk * E0[r]` for
+    every Cartesian pair `r` of `block_rows(la, lb)`. Shared, unchanged, by
+    `kernel_sx` (the cross-basis overlap), whose scatter alone differs."""
     frag = ef.overlap_fragment(la, lb)
     n_rows_cart = len(ef.block_rows(la, lb))
-    nb = len(ef.cartesians(lb))
     rec = Var(REC)
 
     # --- the record's inputs, and E^{ab}_0 from the fragment --------------
@@ -211,6 +210,19 @@ def build_s_kernel(cls: Spec | tuple[int, int], *,
     for r in range(n_rows_cart):
         values.append(Decl(f"v{r}", Scalar.F64, init=_c(
             Fn.MUL, Var("sk"), Index(ef.E0_ARRAY, (Lit(r),)))))
+    return head, values
+
+
+def build_s_kernel(cls: Spec | tuple[int, int], *,
+                   name: str | None = None) -> Kernel:
+    """The overlap kernel of one pair class.
+
+    `cls` is a `Target.S` `Spec` or `(la, lb)`. See the module docstring.
+    """
+    la, lb = _class(cls)
+    nb = len(ef.cartesians(lb))
+    rec = Var(REC)
+    head, values = record_values(la, lb)
 
     # --- the scatter: kernel_jab's rule ------------------------------------
     def at(row: Expr, col: Expr) -> Index:
