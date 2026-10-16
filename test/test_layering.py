@@ -1742,6 +1742,17 @@ EDGES["k_levers.stage_eac"] = frozenset(("e_fragment", "ir", "k_levers.seams",
                                          "spec"))
 
 
+# #350 (milestone 13, H1): the batched VRR, the first F lever module. It
+# moves four F hooks, groups the boundary with `hgp.vrr`'s new (additive)
+# functions and reads `hgp.hrr`'s DAG for its group-count rule's floor, so
+# it reaches the seams, `hgp`, the IR and `Spec`, nothing below `f_lever`'s
+# prohibitions.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.batched_vrr",))
+EDGES["f_levers.batched_vrr"] = frozenset(("f_levers.seams", "hgp.hrr",
+                                           "hgp.recurrence", "hgp.vrr", "ir",
+                                           "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
 # `j_levers.mixed`'s F32 prelude and node narrowing, so the two engines'

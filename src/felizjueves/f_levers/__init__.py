@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from felizjueves.f_levers import batched_vrr
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.spec import Spec
 
@@ -31,7 +32,9 @@ __all__ = ["REGISTRY", "hooks_for"]
 
 # lever name -> its module's `apply`. Empty at #368: each F lever issue adds
 # its line, e.g. `"batched-vrr": batched_vrr.apply` (#350).
-REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {}
+REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
+    batched_vrr.NAME: batched_vrr.apply,  # #350: the grouped, staged boundary
+}
 
 
 def hooks_for(spec: Spec, base: FHooks = DEFAULT_HOOKS) -> FHooks:

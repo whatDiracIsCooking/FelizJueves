@@ -285,6 +285,21 @@ VOCABULARY: dict[str, Lever] = {
         f=("the fused F kernel is the HGP engine: it has no E transform, so "
            "no E^ac block to stage (and Target.F's lever surface is #340's)"),
     ),
+    "batched-vrr": Lever.of(
+        "batched-vrr", 350,
+        "the boundary accumulators staged in a thread-private local array, "
+        "the VRR cut into schedule-contiguous groups along hgp.vrr's order "
+        "and the primitive nest run once per group (recompute for "
+        "registers); the group count a declared rule of the class "
+        "(f_levers/batched_vrr.py)",
+        {"f"},
+        j=("the [p|q] kernel contracts each [r]^(0) into J_p inside its "
+           "recurrence and carries no HGP boundary across a primitive nest; "
+           "it has no contracted-value HRR for a staged boundary to feed"),
+        k=("the K kernel is MMD: its [p|q] targets are contracted through "
+           "the E fragments per bra record, with no HGP VRR boundary held "
+           "across a primitive nest to stage or group"),
+    ),
 }
 
 

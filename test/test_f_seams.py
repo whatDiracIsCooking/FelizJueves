@@ -122,7 +122,7 @@ def test_every_hook_defaults_to_the_frozen_function() -> None:
 
 def test_a_literal_spec_resolves_to_the_defaults_and_nothing_is_registered(
 ) -> None:
-    assert f_levers.REGISTRY == {}
+    assert all("f" in levers.VOCABULARY[n].legal for n in f_levers.REGISTRY)
     for am in ((0, 1, 0, 1), (1, 1, 1, 1)):
         spec = f_class_spec(*am)
         assert f_levers.hooks_for(spec) is DEFAULT_HOOKS
