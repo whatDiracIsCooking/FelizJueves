@@ -147,7 +147,8 @@ def test_lever_arm_refuses_with_the_legality_table_s_reason(
         probe_j_only) -> None:
     with pytest.raises(ValueError, match="the probe's own reason for K"):
         measured_store.lever_arm(k_spec(2), PROBE)
-    with pytest.raises(ValueError, match="#340"):  # F's default refusal
+    with pytest.raises(ValueError, match="the fused F kernel is the HGP "
+                       "engine"):  # F's default refusal (#340)
         measured_store.lever_arm(f_class_spec(0, 0, 0, 0), PROBE)
     with pytest.raises(ValueError, match="already carries no-sieve"):
         measured_store.lever_arm(pq_spec(4, ("no-sieve",)), PROBE)

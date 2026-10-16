@@ -432,6 +432,30 @@ def test_the_f_lever_flag_is_on_the_fock_path(monkeypatch, tmp_path):
         for c in emit_cli.fock_classes(1)}
 
 
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_an_f_lever_unit_differs_from_literal_by_its_note_and_name(
+        backend, monkeypatch, tmp_path):
+    """#340's CLI half: an F-legal lever's F units through the ladder are
+    `kernel_f`'s literal text plus the lever's provenance Note (#340) --
+    and, as every lever unit, the `_lv_` name. Nothing else moves."""
+    _declare(monkeypatch, {"f"})
+    emit, arch, ext = BACKEND[backend]
+    assert _run(tmp_path / "lit", backend, "--fock-l", "1") == 0
+    assert _run(tmp_path / "lv", backend, "--klever-probe-fock-l", "1") == 0
+    note = "lever probe (#339): the ladder's witness; no statement changes"
+    for c in emit_cli.fock_classes(1):
+        name = "f_" + "".join(map(str, c))
+        lit = (tmp_path / "lit" / f"{name}.{ext}").read_text()
+        got = (tmp_path / "lv" / f"{name}_lv_probe.{ext}").read_text()
+        assert note not in lit and got.count(note) == 1
+        renamed = got.replace(f"{name}_lv_probe", name)
+        dropped = [ln for ln in renamed.splitlines()
+                   if ln not in lit.splitlines()]
+        assert dropped == [ln for ln in renamed.splitlines() if note in ln]
+        assert [ln for ln in renamed.splitlines() if note not in ln] == \
+            lit.splitlines()
+
+
 @pytest.mark.parametrize("argv", [
     ["--klever-probe-k", "1"],  # illegal on K: no flag at all
     ["--klever-probe-pq", "-1"],
