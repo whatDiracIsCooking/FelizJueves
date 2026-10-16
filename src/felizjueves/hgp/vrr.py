@@ -379,3 +379,115 @@ def groups(cls: AmClass, n: int) -> tuple[VrrDag, ...]:
     """The pruned DAG of `cls` as `n` schedule-contiguous group sub-DAGs."""
     dag = build(cls)
     return tuple(group_dag(dag, g) for g in group_targets(dag, n))
+
+
+# ---------------------------------------------------------------------------
+# A dedicated schedule per group (#357, the per-group VRR schedule)
+# ---------------------------------------------------------------------------
+#
+# ADDITIVE, like the grouping: nothing above reads these, so `build`'s DAGs,
+# their pinned counts and hgp/cost.json are unchanged, and `group_dag`'s
+# default (the parent's order filtered) is untouched.
+#
+# THE QUESTION. `group_dag` orders a group's closure by the PARENT's order
+# filtered to it: a priority that reflects what the whole DAG needs, not
+# what the group needs. `dedicated_order` schedules the closure FOR ITSELF:
+# a greedy list schedule over the closure's own edges, its consumer counts
+# taken INSIDE the closure (`consumers`), so a value whose last in-group
+# reader has run is dead even where the parent DAG still reads it.
+#
+# THE LIST SCHEDULE (`list_schedule`). Ready = every unscheduled node whose
+# children are all scheduled (initially the leaves). Each step emits the
+# ready node of greatest GAIN = the values it frees, where a child is freed
+# when this node is its last unscheduled in-closure reader and it is not a
+# target (the targets are live out: the accumulation reads them after the
+# VRR). Every node emitted adds one live value, so the gain is the net
+# change plus one, and ranking by it ranks by the net change. Ties go to a
+# secondary key, `tie` (`TIES`), then to the parent order's position, so the
+# result is a function of the DAG alone:
+#
+#     "position"   none: the parent's position decides
+#     "closeness"  the larger sum over its children of 1/remaining readers
+#                  (prefer consuming values nearest their death)
+#     "fan-in"     the more distinct children
+#
+# THE CHOICE (`dedicated_order`). Every candidate -- the parent's filtered
+# order first, then one list schedule per tie in `TIES` order -- is scored by
+# `order_peak` (`peak_live`, the targets live out: `vrr_peak`'s model), and
+# the first of least peak wins. So the dedicated order is NEVER worse than
+# the filtered one in that model, and is the filtered one where no list
+# schedule is strictly better (a null result, recorded as one). The
+# statements are the same nodes with the same terms in another topological
+# order: no value changes and no sum is reassociated (each node is its own
+# declaration, its terms in `reduce`'s order).
+
+TIES: tuple[str, ...] = ("position", "closeness", "fan-in")
+
+
+def consumers(dag: VrrDag) -> Mapping[Node, frozenset[Node]]:
+    """Every node's readers INSIDE `dag` (its closure's own edges)."""
+    out: dict[Node, set[Node]] = {n: set() for n in dag.terms}
+    for n, ts in dag.terms.items():
+        for t in ts:
+            out[t.child].add(n)
+    return MappingProxyType({n: frozenset(r) for n, r in out.items()})
+
+
+def list_schedule(dag: VrrDag, tie: str = "position") -> tuple[Node, ...]:
+    """The greedy live-minimising topological order of `dag` (text above),
+    its secondary key `tie` (one of `TIES`)."""
+    if tie not in TIES:
+        raise ValueError(f"tie {tie!r} is not one of {TIES}")
+    pos = {n: i for i, n in enumerate(dag.order)}
+    kids = {n: tuple(dict.fromkeys(t.child for t in dag.terms[n]))
+            for n in dag.terms}
+    readers = consumers(dag)
+    left = {n: len(readers[n]) for n in dag.terms}
+    need = {n: len(kids[n]) for n in dag.terms}
+    live_out = frozenset(dag.targets)
+    ready = {n for n in dag.terms if not need[n]}
+
+    def key(n: Node) -> tuple:
+        gain = sum(1 for c in kids[n] if left[c] == 1 and c not in live_out)
+        if tie == "closeness":
+            second = -sum(1.0 / left[c] for c in kids[n])
+        elif tie == "fan-in":
+            second = -len(kids[n])
+        else:
+            second = 0
+        return (-gain, second, pos[n])
+
+    order: list[Node] = []
+    while ready:
+        n = min(ready, key=key)
+        ready.remove(n)
+        order.append(n)
+        for c in kids[n]:
+            left[c] -= 1
+        for p in readers[n]:
+            need[p] -= 1
+            if not need[p]:
+                ready.add(p)
+    if len(order) != len(dag.terms):
+        raise ValueError(f"{dag.cls}: the DAG has a cycle")
+    return tuple(order)
+
+
+def order_peak(dag: VrrDag, order: Iterable[Node]) -> int:
+    """`peak_live` of `dag`'s nodes in `order`, its targets live out."""
+    return peak_live(order, lambda n: (t.child for t in dag.terms[n]),
+                     dag.targets)
+
+
+def dedicated_order(dag: VrrDag) -> tuple[Node, ...]:
+    """The first of least `order_peak` among `dag.order` and one
+    `list_schedule` per tie in `TIES` (text above)."""
+    cands = (tuple(dag.order), *(list_schedule(dag, t) for t in TIES))
+    peaks = [order_peak(dag, c) for c in cands]
+    return cands[peaks.index(min(peaks))]
+
+
+def dedicated(dag: VrrDag) -> VrrDag:
+    """`dag` (a group's closure, or a whole pruned DAG) in its
+    `dedicated_order`, checked complete and topological by `group_dag`."""
+    return group_dag(dag, dag.targets, order=dedicated_order(dag))

@@ -1782,6 +1782,17 @@ EDGES["f_levers.sliced_hrr"] = frozenset(("f_levers.batched_vrr",
                                           "hgp.vrr", "ir", "spec"))
 
 
+# #357 (milestone 13, H6): the dedicated sub-DAG VRR schedule, an F lever
+# module that wraps the `vrr` hook only. It composes on #350 (requires it,
+# reads its name and group count), schedules with `hgp.vrr`'s new (additive)
+# functions, and reaches the seams and `Spec`, nothing below `f_lever`'s
+# prohibitions.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.subdag_vrr",))
+EDGES["f_levers.subdag_vrr"] = frozenset(("f_levers.batched_vrr",
+                                          "f_levers.seams", "hgp.vrr",
+                                          "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
 # `j_levers.mixed`'s F32 prelude and node narrowing, so the two engines'

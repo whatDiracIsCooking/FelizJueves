@@ -392,6 +392,21 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K instance of the precision lever is #347's: `kmixed` and "
            "`kmixed-de`"),
     ),
+    # #357: a composition on batched-vrr, like #356's sliced-hrr
+    # (f_levers/subdag_vrr.py refuses it alone, with its reason).
+    "subdag-vrr": Lever.of(
+        "subdag-vrr", 357,
+        "each of #350's VRR groups emitted in a live-minimising list "
+        "schedule of its own closure (in-closure consumer counts), kept "
+        "where it lowers the group's peak live; the same statements in "
+        "another topological order; requires batched-vrr, whose groups it "
+        "leaves as cut (f_levers/subdag_vrr.py)",
+        {"f"},
+        j=("the [p|q] kernel's recurrence is MMD's (r, m) DAG, scheduled by "
+           "plan/schedule.py, with no HGP VRR groups to schedule per group"),
+        k=("the K kernel is MMD: its [p|q] recurrence is the plan layer's "
+           "DAG, with no HGP VRR groups to schedule per group"),
+    ),
 }
 
 
