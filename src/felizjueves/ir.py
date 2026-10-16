@@ -6,8 +6,8 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 `==`: a pass is checked by structural equality on IR, never on text.
 
     Kernel(name, params, body)
-    Stmt = Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-         | Inline | Barrier
+    Stmt = Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
+         | AtomicAdd | Note | Raw | Inline | Barrier
     Expr = Weighted | Index | Call | Lit | Var
     Fragment(name, binds, body)   -- spliced into a kernel by Inline(fragment, bindings)
 
@@ -700,6 +700,35 @@ class WarpReduce:
 
 
 @dataclass(frozen=True)
+class LaneBroadcast:
+    """`dst = value AS HELD BY lane `source` of this thread's warp` (#349).
+
+    Every lane evaluates `value` and `source`; lane `i` then receives the
+    `value` of the lane ITS OWN `source` names. With a warp-uniform `source`
+    (e.g. `Lit(0)`) that is a broadcast from that lane; with a lane-varying
+    one it is the general indexed shuffle. `source` is an I32 in
+    `[0, warp width)` -- the interpreter refuses one outside it rather than
+    wrapping it as the hardware does, since a wrapped index is a bug in the
+    builder, not a lane. (The field is not called `lane`: test_ir.py's
+    no-vendor census keeps that word out of the IR's field names.)
+
+    Vendor-neutral as `WarpReduce` is: the width, the mask and the shuffle's
+    spelling (`__shfl_sync` on both backends) are the backend's. Like a
+    `WarpReduce` it is a warp collective: every lane of a full warp must
+    reach it together (the interpreter raises on divergence).
+    """
+
+    dst: Var | Index
+    value: Expr
+    source: Expr
+
+    def __post_init__(self) -> None:
+        _lvalue(self.dst, "LaneBroadcast dst")
+        _expr(self.value, "LaneBroadcast value")
+        _expr(self.source, "LaneBroadcast source")
+
+
+@dataclass(frozen=True)
 class AtomicAdd:
     """`dst += value`, atomically. `dst` is an element of an array."""
 
@@ -799,6 +828,10 @@ def _free_uses(body: tuple[Stmt, ...]) -> tuple[dict[str, str], set[str], set[st
                 declared.add(s.name)
             elif isinstance(s, (Assign, WarpReduce)):
                 read(s.value)
+                write(s.dst)
+            elif isinstance(s, LaneBroadcast):
+                read(s.value)
+                read(s.source)
                 write(s.dst)
             elif isinstance(s, AtomicAdd):
                 read(s.value)
@@ -926,10 +959,10 @@ class Inline:
                            tuple((b, given[b]) for b in binds))
 
 
-Stmt = (Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-        | Inline | Barrier)
-STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, AtomicAdd, Note, Raw,
-              Inline, Barrier)
+Stmt = (Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
+        | AtomicAdd | Note | Raw | Inline | Barrier)
+STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, LaneBroadcast,
+              AtomicAdd, Note, Raw, Inline, Barrier)
 
 
 # ---------------------------------------------------------------------------
@@ -996,6 +1029,8 @@ def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
         return (*s.shape, s.init)
     if isinstance(s, (Assign, WarpReduce, AtomicAdd)):
         return (s.dst, s.value)
+    if isinstance(s, LaneBroadcast):
+        return (s.dst, s.value, s.source)
     if isinstance(s, For):
         return (s.start, s.stop, s.step)
     if isinstance(s, If):
@@ -1184,6 +1219,12 @@ def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
             scopes[-1][s.name] = s.type
         elif isinstance(s, (Assign, WarpReduce, AtomicAdd)):
             check_store(ty(s.dst), ty(s.value), f"{type(s).__name__} to {s.dst!r}")
+        elif isinstance(s, LaneBroadcast):
+            check_store(ty(s.dst), ty(s.value), f"LaneBroadcast to {s.dst!r}")
+            lane = ty(s.source)
+            if lane is not None and lane is not Scalar.I32:
+                raise PrecisionError(f"LaneBroadcast to {s.dst!r}: its lane is "
+                                     f"{lane.name}, not I32")
         elif isinstance(s, For):
             for b in (s.start, s.stop, s.step):
                 if ty(b) is Scalar.F32:

@@ -886,3 +886,60 @@ def test_the_raw_census_is_unchanged_by_the_k_kernel() -> None:
     for am in [(0, 0, 0, 0), (1, 0, 0, 1), (1, 1, 0, 0)]:
         assert not any(isinstance(s, Raw)
                        for s in walk(build_k_kernel(am).body))
+
+
+# ---------------------------------------------------------------------------
+# LaneBroadcast (#349): the indexed shuffle, validated as WarpReduce is
+# ---------------------------------------------------------------------------
+
+
+def _bcast_kernel(*body, extra=()) -> Kernel:
+    return Kernel("b", (Param("out", Scalar.F64, array=True, intent=Intent.OUT),
+                        *extra), tuple(body))
+
+
+def test_lane_broadcast_validates_its_operands() -> None:
+    LaneBroadcast = ir.LaneBroadcast
+    s = LaneBroadcast(Var("x"), Var("v"), Lit(0))
+    assert (s.dst, s.value, s.source) == (Var("x"), Var("v"), Lit(0))
+    assert LaneBroadcast in ir.STMT_TYPES
+    with pytest.raises(TypeError, match="LaneBroadcast dst"):
+        LaneBroadcast(Lit(1.0), Var("v"), Lit(0))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="LaneBroadcast value"):
+        LaneBroadcast(Var("x"), "v", Lit(0))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="LaneBroadcast source"):
+        LaneBroadcast(Var("x"), Var("v"), 0)  # type: ignore[arg-type]
+    # a statement like any other: frozen, hashable, a Stmt a body may hold
+    assert hash(s) == hash(LaneBroadcast(Var("x"), Var("v"), Lit(0)))
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        s.source = Lit(1)  # type: ignore[misc]
+
+
+def test_lane_broadcast_obeys_the_precision_rules() -> None:
+    LaneBroadcast = ir.LaneBroadcast
+    ty = Call(Fn.THREAD_Y, ())
+    ok = _bcast_kernel(Decl("x", Scalar.F64),
+                       LaneBroadcast(Var("x"), Lit(1.5), ty),
+                       Assign(Index("out", (ty,)), Var("x")))
+    assert any(isinstance(s, LaneBroadcast) for s in walk(ok.body))
+    # the source is a lane index: I32, never a float
+    with pytest.raises(ir.PrecisionError, match="its lane is F64"):
+        _bcast_kernel(Decl("x", Scalar.F64),
+                      LaneBroadcast(Var("x"), Lit(1.5), Lit(0.0)))
+    # the value moves unchanged: F32 into an F64 dst is refused, as a store
+    with pytest.raises(ir.PrecisionError, match="LaneBroadcast to"):
+        _bcast_kernel(Decl("x", Scalar.F64), LaneBroadcast(
+            Var("x"), Call(Fn.TO_F32, (Lit(1.5),)), Lit(0)))
+
+
+def test_lane_broadcast_reads_its_source_in_a_fragment() -> None:
+    LaneBroadcast = ir.LaneBroadcast
+    body = (Decl("x", Scalar.F64),
+            LaneBroadcast(Var("x"), Var("v"), Var("src")))
+    frag = Fragment("bc", ("v", "src"), body)
+    assert set(frag.binds) == {"v", "src"}
+    with pytest.raises(ValueError, match="src"):  # the source is a read
+        Fragment("bc", ("v",), body)
+    # the source expression is one of the statement's expressions
+    s = LaneBroadcast(Var("x"), Var("v"), Var("src"))
+    assert ir._exprs_of(s) == (Var("x"), Var("v"), Var("src"))

@@ -230,6 +230,21 @@ VOCABULARY: dict[str, Lever] = {
            "flushes G atomically; it has no warp-reduced K[a, b] block to "
            "store (and Target.F's lever surface is #340's)"),
     ),
+    "shuffle": Lever.of(
+        "shuffle", 349,
+        "for a K[a,b] block no wider than the warp, the reduced values kept "
+        "in registers and the owner lane of element o selecting Kab[o], then "
+        "stored lane-parallel; no in-place Ksh stores, no extra shared "
+        "memory; a wider block falls back to coalesced's write-back "
+        "(k_levers/shuffle.py)",
+        {"k"},
+        j=("the register write-back moves K's K[a, b] block store; a [p|q] "
+           "kernel's lane-0 J_p write is J's own and nobody has declared a "
+           "J instance"),
+        f=("the fused F kernel maps one thread per contracted quartet and "
+           "flushes G atomically; it has no warp-reduced K[a, b] block to "
+           "store (and Target.F's lever surface is #340's)"),
+    ),
     "mixed": Lever.of(
         "mixed", 346,
         "the [p|q] recurrence, its [0]^(m) and the Boys argument in FP32; "
