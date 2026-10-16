@@ -44,6 +44,7 @@ from .manifest import (
     NUC_ARRAY,
     OVLP_ARRAY,
     SCHEMA,
+    SCHWARZ_ARRAY,
     dumps,
     encode_array,
     load,
@@ -93,6 +94,10 @@ class Case:
     # exactly, which carries the four, and four 50 x 50 arrays would put
     # four of the five over the 512 KB hook (test_ao_eri.py pins it).
     record_one_e: bool = True
+    # Write the `int2e_diag` array: libcint's `(mn|mn)` for every AO pair,
+    # the square of the Schwarz factor (`ao/schwarz.py`). Needs
+    # `record_basis`, as `record_j` does.
+    record_schwarz: bool = False
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -325,6 +330,32 @@ CASES.update({
 })
 
 
+def _schwarz_case(j_name: str) -> Case:
+    """The `_j` case's molecule, basis and `cart` exactly (so the converted
+    basis is the `_j` fixture's, bit for bit), with libcint's `(mn|mn)` for
+    every AO pair in place of J and no one-electron arrays -- the oracle of
+    the Schwarz matrix, kept small."""
+    j = CASES[j_name]
+    return replace(
+        j,
+        description=(
+            f"{j_name}'s molecule and basis, with libcint's (mn|mn) for every "
+            "Cartesian AO pair (int2e's diagonal, int2e_diag): the square of "
+            "the Schwarz factor."
+        ),
+        record_j=False,
+        record_one_e=False,
+        record_schwarz=True,
+    )
+
+
+# The Schwarz cases: s and p only, every class at L = 2 (la + lb) <= 4.
+CASES.update({
+    j[:-1] + "schwarz": _schwarz_case(j)
+    for j in ("h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_j")
+})
+
+
 def _host() -> str:
     # The same marking felizjueves.measured uses: a container's hostname is
     # its id, not the box's.
@@ -495,6 +526,10 @@ def build(name: str) -> dict[str, Any]:
         if not case.record_basis:
             raise ValueError(f"{name}: record_k needs record_basis")
         out["arrays"][K_ARRAY] = encode_array(k_array(mol))
+    if case.record_schwarz:
+        if not case.record_basis:
+            raise ValueError(f"{name}: record_schwarz needs record_basis")
+        out["arrays"][SCHWARZ_ARRAY] = encode_array(schwarz_array(mol))
     if case.record_basis and case.record_one_e:
         out["arrays"].update(one_e_arrays(mol))
     return out
@@ -558,6 +593,29 @@ def k_array(mol: Any) -> np.ndarray:
     if err > 1e-13 * float(np.max(np.abs(full))):
         raise ValueError(f"get_jk and einsum(int2e, dm) differ by {err:.3e}")
     return vk
+
+
+def schwarz_array(mol: Any) -> np.ndarray:
+    """libcint's `(mn|mn)` for every AO pair: the full `int2e` tensor's
+    diagonal `einsum("ijij->ij")`. Cross-checked, before it is written,
+    against a second route through libcint -- one `shls_slice` call per shell
+    pair `(i, j)` against itself, its component diagonal -- to 1e-14 of the
+    largest element; what is RECORDED is the full tensor's."""
+    full = np.ascontiguousarray(np.einsum("ijij->ij", mol.intor("int2e")))
+    loc = mol.ao_loc_nr()
+    other = np.zeros_like(full)
+    for i in range(mol.nbas):
+        for j in range(mol.nbas):
+            blk = mol.intor("int2e", shls_slice=(i, i + 1, j, j + 1,
+                                                 i, i + 1, j, j + 1))
+            ni, nj = loc[i + 1] - loc[i], loc[j + 1] - loc[j]
+            other[loc[i]:loc[i + 1], loc[j]:loc[j + 1]] = np.einsum(
+                "ijij->ij", blk.reshape(ni, nj, ni, nj))
+    err = float(np.max(np.abs(full - other)))
+    if err > 1e-14 * float(np.max(np.abs(full))):
+        raise ValueError(f"int2e's diagonal and the per-pair slices differ "
+                         f"by {err:.3e}")
+    return full
 
 
 def comparable(obj: dict[str, Any]) -> str:

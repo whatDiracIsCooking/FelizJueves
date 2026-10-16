@@ -1823,3 +1823,59 @@ EDGES["k_levers.interleave"] = frozenset(("ir", "k_levers.seams",
 # `interleave`, so the edge is one way.
 EDGES["k_levers.interleave"] = EDGES["k_levers.interleave"] | frozenset(
     ("k_levers.split",))
+
+
+# ---------------------------------------------------------------------------
+# The Schwarz matrix sqrt((mn|mn)): the host reference and staging
+# (`ao.schwarz`, under the `ao` rule, `pq` injected) and the kernel builder
+# (`kernel_schwarz`, `kernel_v`'s rule restated: the plan layer's DAG for the
+# J quartet (la lb|la lb), the recurrence statements, the `E` fragment). The
+# generator CLI writes its ladder (`--schwarz-l`), so the driver composes it.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "schwarz_builder": _rule(
+        "kernel_schwarz.py: the Schwarz kernel, `Target.SCHWARZ` -- key -> "
+        "IR, with the plan layer's DAG and schedule for the J quartet "
+        "(la lb|la lb) (`plan`), the J engine's prelude and recurrence "
+        "statements (`recurrence`), the `E` block fragment inlined twice "
+        "(`e_fragment`) and `kernel_jab`'s scatter rule restated",
+        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ao="`ao.schwarz` (through `ao.eri`) is the witness the kernel is "
+           "interpreted against: importing it shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "ao.schwarz": "ao",
+    "kernel_schwarz": "schwarz_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.schwarz": ("ao.eri", "ao.j", "ao.shell"),
+    "kernel_schwarz": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
+                       "plan.schedule", "plan.targets", "recurrence", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the Schwarz ladder "
+                       "through `kernel_schwarz`",
+                       RULES["driver"].may | frozenset(("kernel_schwarz",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("kernel_schwarz",))
+
+
+def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_schwarz"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_schwarz reaches {hit}"

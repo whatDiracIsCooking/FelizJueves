@@ -112,6 +112,7 @@ OVLP_ARRAY = "int1e_ovlp"
 KIN_ARRAY = "int1e_kin"
 NUC_ARRAY = "int1e_nuc"
 HCORE_ARRAY = "hcore"
+SCHWARZ_ARRAY = "int2e_diag"  # libcint's (mn|mn) for every AO pair
 ONE_E_ARRAYS = (OVLP_ARRAY, KIN_ARRAY, NUC_ARRAY, HCORE_ARRAY)
 
 
@@ -367,7 +368,7 @@ def validate(path: Path, raw: Any) -> Fixture:
     if one_e and len(one_e) != len(ONE_E_ARRAYS):
         raise _fail(path, f"arrays has {one_e} of the one-electron arrays "
                           f"{list(ONE_E_ARRAYS)}: all four or none")
-    for name in (J_ARRAY, K_ARRAY, *ONE_E_ARRAYS):
+    for name in (J_ARRAY, K_ARRAY, SCHWARZ_ARRAY, *ONE_E_ARRAYS):
         if name not in arrays:
             continue
         if converted is None:
@@ -377,6 +378,16 @@ def validate(path: Path, raw: Any) -> Fixture:
             raise _fail(path, f"arrays.{name} has shape "
                               f"{arrays[name].shape}, expected "
                               f"({nao}, {nao})")
+    if SCHWARZ_ARRAY in arrays:
+        q = arrays[SCHWARZ_ARRAY]
+        # (mn|mn) and (nm|nm) are equal exactly but computed apart, so the
+        # record is symmetric to rounding, not bitwise
+        if not np.all(np.abs(q - q.T) <= 1e-14 * np.max(np.abs(q))):
+            raise _fail(path, f"arrays.{SCHWARZ_ARRAY} is not symmetric to "
+                              "1e-14 of its largest element")
+        if np.any(q < 0.0):
+            raise _fail(path, f"arrays.{SCHWARZ_ARRAY} has a negative "
+                              "(mn|mn)")
     if one_e and not np.array_equal(arrays[OVLP_ARRAY], arrays["ovlp"]):
         raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
 

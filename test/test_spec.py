@@ -112,11 +112,13 @@ PAIR_TARGETS = (Target.DQ, Target.JAB)
 def test_the_target_enum_is_widened_not_renamed() -> None:
     # #196 appends `k`; the earlier members keep their place and value.
     # #232 appends `s`, `t` and `v` the same way, and #272 appends `f`.
+    # The Schwarz matrix appends `schwarz`, a pair class.
     assert [t.value for t in Target] == [
-        "j", "dq", "jab", "k", "s", "t", "v", "f"]
+        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
+        Target.SCHWARZ: 2,
     }
 
 
@@ -215,6 +217,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
         Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
         Target.V: Operator.NUCLEAR, Target.F: Operator.COULOMB,
+        Target.SCHWARZ: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -357,11 +360,15 @@ def test_every_one_electron_key_is_byte_identical_after_f(args, key) -> None:
 # origin/main before #337.
 KEYS_BEFORE_337 = (
     3672, "e744293fb16ed978c9b6574c0e020451ae9300d5e5e35ae9aad2ef25e2244bca")
+# The targets the digest was taken over: a later widening (`Target.SCHWARZ`)
+# adds keys of its own and must move none of these.
+PRE_337_TARGETS = (Target.J, Target.DQ, Target.JAB, Target.K, Target.S,
+                   Target.T, Target.V, Target.F)
 
 
 def test_every_key_is_byte_identical_after_the_lever_vocabulary() -> None:
     keys = []
-    for t in Target:
+    for t in PRE_337_TARGETS:
         n = AM_LENGTH[t]
         for am in itertools.product(range(3), repeat=n):
             for lv in ((), ("no-sieve",), ("recycle",), ("tuned",),

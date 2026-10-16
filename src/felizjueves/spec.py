@@ -68,6 +68,15 @@ shells therefore give different specs and different keys under `F` and `K`.
 4): every pre-existing key is byte-identical. The trigger that would force a
 `scheme` field is named: the first fused MMD `F`, or the first HGP `J`/`K`.
 
+A SCHWARZ CLASS IS A PAIR THAT RUNS A QUARTET. `Target.SCHWARZ` is the
+matrix `sqrt((mn|mn))` over every AO pair `(m, n)`, the Schwarz factor of
+`|(mn|rs)| <= sqrt((mn|mn)) sqrt((rs|rs))`. Its class is the shell pair
+`(la, lb)` -- one kernel per pair class, `am` a pair, unbatched by decision
+(`_PAIR_BATCH_REFUSAL`) -- but the recurrence it runs is the quartet
+`(la lb|la lb)`'s, at L = 2 (la + lb). So `total_am` is la + lb and indexes no
+table row, and the plan is asked for the `Target.J` quartet, never for this
+key (`kernel_schwarz.schwarz_plan`).
+
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
 partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
@@ -141,6 +150,10 @@ class Target(StrEnum):
     # (la, lb, lc, ld), the AO order -- NOT K's Hermite pairing (#272,
     # module docstring).
     F = "f"
+    # The Schwarz factor sqrt((mn|mn)) of every AO pair, a PAIR class
+    # (la, lb) whose kernel runs the quartet (la lb|la lb)'s recurrence
+    # (kernel_schwarz.py, module docstring "A SCHWARZ CLASS").
+    SCHWARZ = "schwarz"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -150,7 +163,7 @@ class Target(StrEnum):
 # (la, lb | lc, ld) in AO order for the fused Fock build (#272).
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
-    Target.S: 2, Target.T: 2, Target.V: 2,
+    Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
 }
 
 
@@ -159,7 +172,7 @@ AM_LENGTH: dict[Target, int] = {
 OPERATOR_OF: dict[Target, Operator] = {
     Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
-    Target.F: Operator.COULOMB,
+    Target.F: Operator.COULOMB, Target.SCHWARZ: Operator.COULOMB,
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
     Target.V: Operator.NUCLEAR,
 }
@@ -181,6 +194,12 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
         "unbatched by milestone 11's decision -- V does have Hermite targets "
         "(every t with |t| <= la + lb), so the structural reason does not "
         "apply; a batched V kernel is a follow-up"
+    ),
+    Target.SCHWARZ: (
+        "unbatched by decision -- the class runs the quartet (la lb|la lb)'s "
+        "recurrence, whose Hermite targets could be partitioned, but the "
+        "kernel is one thread per shell pair and a batched Schwarz kernel "
+        "is a follow-up nobody has declared"
     ),
 }
 
