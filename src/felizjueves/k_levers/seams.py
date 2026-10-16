@@ -32,6 +32,11 @@ THE HOOKS, and the lever each was cut for (milestone 13, lane SK):
     params(ctx)               the parameter list (#347's narrowed D and E)
     finish(ctx, kernel)       a last rewrite of the built `Kernel` (#347's
                               precision, or anything the above cannot reach)
+    atomize(ctx, kernel)      a BATCH kernel's write made atomic, after
+                              `finish` (the partial-sum form, #203: default
+                              `passes.atomize(kernel, array="K")`, the lane-0
+                              form only; #345's lane-parallel atomics). Never
+                              called for the one-batch kernel
 
 A hook receives the `KContext`, which carries everything the skeleton derived
 from `(spec, dag)` -- the term lists `s1` / `s2`, the shared slots, the
@@ -76,6 +81,7 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
+from felizjueves.passes import atomize as _atomize
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import node_name
@@ -438,6 +444,12 @@ def finish(ctx: KContext, kernel: Kernel) -> Kernel:
     return kernel
 
 
+def atomize(ctx: KContext, kernel: Kernel) -> Kernel:
+    """A batch kernel's lane-0 `K` write made atomic: `passes.atomize`, the
+    call `kernel_k.build_k_kernels` made before #345 (SPLIT_WRITE)."""
+    return _atomize(kernel, array="K")
+
+
 @dataclass(frozen=True)
 class KHooks:
     """Every point a K lever may intervene, each defaulting to the frozen
@@ -458,6 +470,7 @@ class KHooks:
     write_back: Callable[[KContext], tuple[Stmt, ...]] = write_back
     params: Callable[[KContext], tuple[Param, ...]] = params
     finish: Callable[[KContext, Kernel], Kernel] = finish
+    atomize: Callable[[KContext, Kernel], Kernel] = atomize
 
     def is_default(self, hook: str) -> bool:
         """True when `hook` is still the frozen path's."""

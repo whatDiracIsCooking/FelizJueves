@@ -635,7 +635,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     # kernel-body levers, so `plan.pipeline` is no longer imported here.
     # #367: the lever seams (`k_levers.seams`, the frozen defaults moved
     # there) and the registry that composes a spec's levers (`k_levers`).
-    "kernel_k": ("ir", "k_levers", "k_levers.seams", "kernel", "passes",
+    "kernel_k": ("ir", "k_levers", "k_levers.seams", "kernel",
                  "recurrence", "spec"),
     "levers": (),
 }.items()}
@@ -1583,8 +1583,10 @@ RULES |= {
         "their context and the frozen defaults, statements built from the "
         "plan's targets and schedule, the recurrence's node names and the "
         "`E` fragments) and the registry composing a spec's K levers, one "
-        "module per lever",
-        ("spec", "plan", "ir", "recurrence", "e_fragment", "k_levers"),
+        "module per lever; since #345 also the batch kernel's atomic "
+        "write (`seams.atomize`, the `passes.atomize` default)",
+        ("spec", "plan", "ir", "recurrence", "e_fragment", "k_levers",
+         "passes"),
         kernel_k="the skeleton imports the seams: a seam or a lever reaching "
                  "back into `kernel_k` is a cycle",
         ao=RULES["k_builder"].must_not["ao"],
@@ -1596,8 +1598,8 @@ RULES |= {
 RULE_OF |= {m: "k_lever" for m in _modules() if _under(m, "k_levers")}
 EDGES |= {k: frozenset(v) for k, v in {
     "k_levers": ("k_levers.seams", "spec"),
-    "k_levers.seams": ("e_fragment", "ir", "plan.schedule", "plan.targets",
-                       "recurrence", "spec"),
+    "k_levers.seams": ("e_fragment", "ir", "passes", "plan.schedule",
+                       "plan.targets", "recurrence", "spec"),
 }.items()}
 
 
@@ -1724,6 +1726,11 @@ EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",
 
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.split",))
 EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
+
+# #345 (milestone 13, M6): the coalesced K write-back, a K lever module that
+# moves `write_back` only; the same reach as #341's.
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.coalesced",))
+EDGES["k_levers.coalesced"] = frozenset(("ir", "k_levers.seams", "spec"))
 
 
 # #342 (milestone 13, M2): `E^ac` staged in shared memory, a K lever module.
