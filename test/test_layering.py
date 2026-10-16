@@ -1803,6 +1803,18 @@ EDGES["f_levers.slim_fock"] = frozenset(("f_levers.seams",
                                           "ir", "spec"))
 
 
+# #361 (milestone 13, H5): slice-interior sub-slicing, an F lever module
+# composed on #360's reduced buffers (it wraps `slim_fock.contracted_over`
+# with a body of #356's `slice_body`s), cutting with `hgp.hrr`'s new
+# (additive) `sub_slices`; it reaches those two sibling levers, the seams,
+# `hgp`, the IR and `Spec`.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.sub_slice",))
+EDGES["f_levers.sub_slice"] = frozenset(("f_levers.seams",
+                                          "f_levers.sliced_hrr",
+                                          "f_levers.slim_fock", "hgp.hrr",
+                                          "hgp.vrr", "ir", "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
 # `j_levers.mixed`'s F32 prelude and node narrowing, so the two engines'

@@ -274,3 +274,38 @@ def hrr_peak(dag: HrrDag) -> int:
     (the digestion reads them after it): `hgp.vrr.peak_live`'s model."""
     return peak_live(dag.order, lambda n: (t.child for t in dag.terms[n]),
                      dag.targets)
+
+
+# ---------------------------------------------------------------------------
+# Sub-slicing (#361, milestone 13 lane H5; additive: `build`, `slices` and
+# every count above are unchanged)
+# ---------------------------------------------------------------------------
+#
+# A SUB-SLICE is a contiguous run of one slice's ERIs, in the slice's (and
+# so the parent's) target order, and its closure under the parent DAG's
+# terms, in the parent's order filtered (`sub_dag` unchanged). Contiguity in
+# TARGET order is what keeps the digestion's visiting order the slice's: the
+# sub-slices of a slice, in order, visit its ERIs exactly as the slice does.
+# A node two sub-slices share (a bra-HRR `(a b | f 0)`, a leaf) is
+# recomputed by both from the same terms, as #356's slices share theirs.
+
+
+def runs(seq: Iterable[Node], n: int) -> tuple[tuple[Node, ...], ...]:
+    """`seq` cut into `n` contiguous, near-equal, non-empty runs, in order
+    (`hgp.vrr.group_targets`'s cut on a given sequence)."""
+    seq = tuple(seq)
+    if type(n) is not int or not 1 <= n <= len(seq):
+        raise ValueError(f"{n!r} runs of {len(seq)} nodes; a run count is an "
+                         f"int in 1..{len(seq)}")
+    cut = [round(g * len(seq) / n) for g in range(n + 1)]
+    return tuple(seq[a:b] for a, b in zip(cut, cut[1:], strict=False))
+
+
+def sub_slices(cls: AmClass, n_sub: int, first: str = "bra"
+               ) -> tuple[tuple[HrrDag, ...], ...]:
+    """Each of `slices(cls)`'s slices cut into `n_sub` sub-DAGs of the
+    WHOLE HRR (`sub_dag(build(cls), run)` per `runs(slice.targets, n_sub)`),
+    in `(a, b)` order then run order."""
+    dag = build(cls, first)
+    return tuple(tuple(sub_dag(dag, r) for r in runs(t, n_sub))
+                 for t in slice_targets(cls))
