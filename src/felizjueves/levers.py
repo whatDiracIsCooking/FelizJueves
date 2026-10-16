@@ -23,13 +23,14 @@ WHO READS IT.
     always has (`plan.dag.build`: "no lever is implemented in the plan
     layer"); every pre-existing `Spec` and `Spec.key()` is unchanged.
   - The kernel builders (`kernel.build_pq_kernel(s)`,
-    `kernel_k.build_k_kernel(s)`) split a spec's levers through the key
-    (`Spec.kernel_body_levers`, `Spec.without_kernel_body_levers`, which
-    call `split`; a builder never imports this module): the kernel-body
-    ones stay with the builder, which records each in the built `Kernel` as
-    a `Note` (`provenance`), and the rest go to the plan, which never sees
-    a kernel lever. With no kernel lever the builders' output is
-    byte-identical to before.
+    `kernel_k.build_k_kernel(s)`, and since #340 `kernel_f.build_f_kernel`,
+    which has no plan to hand the rest to and so refuses them) split a
+    spec's levers through the key (`Spec.kernel_body_levers`,
+    `Spec.without_kernel_body_levers`, which call `split`; a builder never
+    imports this module): the kernel-body ones stay with the builder,
+    which records each in the built `Kernel` as a `Note` (`provenance`),
+    and the rest go to the plan, which never sees a kernel lever. With no kernel
+    lever the builders' output is byte-identical to before.
 
 THE NAMES ARE ONE NAMESPACE. A kernel lever may not reuse a name another
 layer owns (`OTHER_LAYERS`, restated here so this module stays a leaf; a test
@@ -74,6 +75,34 @@ _ONE_THREAD_PER_RECORD = (
     "act on"
 )
 
+# F'S LEGALITY (#340). The fused Fock kernel (`kernel_f`, [Fock] §3.2) is the
+# HGP engine: one block per bra pair, one thread per contracted quartet, the
+# VRR inside the K_CD x K_AB nest, the HRR on contracted values after it, the
+# six-block predigest and an atomic flush. It has NO [p|q] region, no Hermite
+# targets and no E transform, so a lever written for the MMD kernels (J, K)
+# has nothing there to act on, and F refuses it by default -- the J/K
+# defaults' "unless its entry says so", with the HGP reason spelled out. F's
+# own levers (#350-#361) each add "f" to their entry's `legal`: VRR boundary
+# grouping (#350), the block-level Fab reduction (#351), a monotone ket key
+# and break (#352), struct-typed pair reads (#353), the ETR recurrence
+# (#354), mixed precision (#355; one name with the J instance where that
+# declares it), the sliced HRR (#356), the per-group VRR schedule (#357),
+# the atomic-free write-back (#358), the interleaved digest (#359), the
+# per-bra-element buffer split (#360) and slice sub-slicing (#361). None is
+# batch-shaped: `Spec.n_batches` stays 1 for F (`spec._F_BATCH_REFUSAL`),
+# and #350's group count is that lever's own parameter, not the batch field.
+# A NON-vocabulary lever (`OTHER_LAYERS`, or any other name) is refused by
+# `kernel_f` itself (`kernel_f.F_NO_OUTER_LAYER`): the plan layer refuses an
+# F spec and lowering's `recycle` is applied to [p|q] only, so no layer
+# around the fused kernel would read it and the build would silently be the
+# literal one.
+_F_REFUSAL = (
+    "the fused F kernel is the HGP engine ([Fock] §3.2): it has no [p|q] "
+    "region, no Hermite targets and no E transform for an MMD lever to act "
+    "on, so a lever is admitted on Target.F only when its entry names F "
+    "(#350-#361); none is batch-shaped, n_batches stays 1"
+)
+
 # Why each target refuses a kernel-body lever unless the lever's own table
 # says otherwise. A `Lever` that is illegal on a target may give its own,
 # sharper reason; these are the defaults a declaration starts from.
@@ -89,10 +118,7 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "11 shipped it one batch, by decision, and a V lever is a follow-up "
         "nobody has declared"
     ),
-    "f": (
-        "Target.F's lever surface is #340's to declare: until it lands, no "
-        "kernel-body lever reaches kernel_f"
-    ),
+    "f": _F_REFUSAL,
 })
 
 
