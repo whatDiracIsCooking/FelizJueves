@@ -23,6 +23,13 @@ uniformly; nothing depends on what the kernel computes:
   array with a launch-time extent is the block's dynamic shared memory
   (`extern __shared__`, row-major), and there may be at most one, because
   laying out two would be a decision;
+- an `ir.Member` (#353) is a read through a typed view of its row:
+  `reinterpret_cast<const fj_<record>*>(array)[row].<member>`, the row
+  linearised as above over every extent but the last, which must be the
+  record's width; each `Record` a kernel reads through is spelled once,
+  ahead of the kernel, as `struct fj_<record>` with a `static_assert` that
+  it is the unpadded row. A kernel with no `Member` takes none of this, so
+  its text is unchanged;
 - `Note` is a `//` comment beside the statement it precedes;
 - a scalar parameter the body never reads -- one that exists only as an
   array's leading extent, which row-major indexing never needs -- is cast
@@ -86,9 +93,11 @@ from felizjueves.ir import (
     Intent,
     Kernel,
     Lit,
+    Member,
     Note,
     Param,
     Raw,
+    Record,
     Scalar,
     Space,
     Stmt,
@@ -228,6 +237,9 @@ class CWriter:
         head = self.prologue(k)
         if any(isinstance(e, Call) and e.fn is Fn.BOYS for e in _exprs(k)):
             head += "\n" + (BOYS_DEVICE_WIDE if k.wide_boys else BOYS_DEVICE)
+        records = _records(k)
+        if records:
+            head += "\n" + "".join(record_struct(r) for r in records)
         return (
             f"{head}\n"
             f'extern "C" __global__ void {k.name}(\n{sig})\n'
@@ -384,6 +396,9 @@ class CWriter:
     # --- expressions --------------------------------------------------------
 
     def lvalue(self, e: Var | Index) -> str:
+        if isinstance(e, Member):
+            raise EmitError(f"{e.array}: a Member is a read through a const "
+                            "typed view, never a store target")
         return self.expr(e)
 
     def expr(self, e: Expr) -> str:
@@ -414,6 +429,8 @@ class CWriter:
         arr = self._lookup(e.array)
         if arr is None:
             raise EmitError(f"{e.array!r} is a scalar, indexed as an array")
+        if isinstance(e, Member):
+            return self.member(e, arr)
         at = [self.expr(i) for i in e.at]
         if not arr.flat:
             return e.array + "".join(f"[{i}]" for i in at)
@@ -427,6 +444,30 @@ class CWriter:
         for d, i in zip(arr.shape[1:], at[1:], strict=True):
             flat = f"({flat} * {self.expr(d)} + {i})"
         return f"{e.array}[{flat}]"
+
+    def member(self, e: Member, arr: _Array) -> str:
+        """`reinterpret_cast<const fj_<rec>*>(array)[row].<member>` (#353):
+        the row is the leading subscripts linearised row-major by the
+        leading extents, as `index` linearises the whole; the last extent
+        must be the record's width and the array's type its scalar, so the
+        view is the layout the flat array already has."""
+        rec = e.record
+        width = arr.shape[-1] if arr.shape else None
+        if len(arr.shape) != len(e.at) or not (
+                isinstance(width, Lit) and width.value == len(rec.members)):
+            raise EmitError(
+                f"{e.array}: a {rec.name} view needs a declared shape whose "
+                f"last extent is the literal {len(rec.members)}, one subscript "
+                f"per extent; the shape is {arr.shape}")
+        if self._type_of(e.array) is not rec.scalar:
+            raise EmitError(f"{e.array} is {self._type_of(e.array)}, its "
+                            f"{rec.name} view {rec.scalar}")
+        at = [self.expr(i) for i in e.at[:-1]]
+        row = at[0]
+        for d, i in zip(arr.shape[1:-1], at[1:], strict=True):
+            row = f"({row} * {self.expr(d)} + {i})"
+        return (f"reinterpret_cast<const {RESERVED}{rec.name}*>({e.array})"
+                f"[{row}].{e.member}")
 
     def weighted(self, e: Weighted) -> str:
         parts = []
@@ -525,6 +566,36 @@ def precision(k: Kernel) -> str:
     if Scalar.F32 in declared:
         return "fp32 and fp64 as declared"
     return "fp64 throughout"
+
+
+def record_struct(rec: Record) -> str:
+    """The C struct of one `Record` view (#353), and the size check that
+    makes the view's layout the flat row's: one scalar type, so a struct of
+    exactly `len(members)` of them has no padding and member `i` at element
+    `i` (declaration order is layout order for a standard-layout struct).
+    Natural alignment only: the view asks no more of a base pointer than
+    the flat array does."""
+    t, name = CTYPE[rec.scalar], RESERVED + rec.name
+    members = "".join(f"{INDENT}{t} {m};\n" for m in rec.members)
+    return (
+        f"// {name}: a typed view of one packed row of {len(rec.members)} "
+        f"{t}s (#353)\n"
+        f"struct {name} {{\n{members}}};\n"
+        f"static_assert(sizeof({name}) == {len(rec.members)} * sizeof({t}), "
+        f'"{name} must be the packed row, unpadded");\n')
+
+
+def _records(k: Kernel) -> tuple[Record, ...]:
+    """Every `Record` a `Member` of `k` reads through, in first-use order;
+    two records of one name must be one record."""
+    out: dict[str, Record] = {}
+    for e in _exprs(k):
+        if isinstance(e, Member):
+            seen = out.setdefault(e.record.name, e.record)
+            if seen != e.record:
+                raise EmitError(f"two Records named {e.record.name!r}: "
+                                f"{seen} and {e.record}")
+    return tuple(out.values())
 
 
 def _exprs(k: Kernel):
