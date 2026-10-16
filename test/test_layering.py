@@ -1764,6 +1764,13 @@ EDGES["f_levers.batched_vrr"] = frozenset(("f_levers.seams", "hgp.hrr",
                                            "hgp.recurrence", "hgp.vrr", "ir",
                                            "spec"))
 
+# #355 (milestone 13, H12): mixed-precision F. It moves the `real` / `cast`
+# precision hooks and wraps `quartet_scalars`, `vrr`, `hrr` and `eri`; it
+# reaches the seams, the IR and `Spec` only (its F32 literal rounding is its
+# own, not `j_levers.mixed`'s: `f_lever` does not admit `j_levers`).
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.mixed",))
+EDGES["f_levers.mixed"] = frozenset(("f_levers.seams", "ir", "spec"))
+
 
 # #356 (milestone 13, H2): the sliced HRR, an F lever module composed on
 # #350's. It slices with `hgp.hrr`'s new (additive) functions and re-cuts

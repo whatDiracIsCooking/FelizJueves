@@ -31,6 +31,7 @@ from felizjueves.f_levers import (
     sliced_hrr,
     struct_reads,
 )
+from felizjueves.f_levers import mixed as fmixed
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.spec import Spec
 
@@ -44,6 +45,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     ket_break.NAME: ket_break.apply,  # #352: the monotone ket key's break
     struct_reads.NAME: struct_reads.apply,  # #353: typed pair-record reads
     sliced_hrr.NAME: sliced_hrr.apply,  # #356: one HRR per bra pair
+    fmixed.NAME: fmixed.apply,  # #355: the VRR, boundary and HRR in FP32
 }
 
 
