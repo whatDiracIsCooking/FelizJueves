@@ -30,6 +30,7 @@ from felizjueves.f_levers import (
     ket_break,
     scatter,
     sliced_hrr,
+    sliced_site_digest,
     slim_fock,
     struct_reads,
     sub_slice,
@@ -54,6 +55,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     slim_fock.NAME: slim_fock.apply,  # #360: the reduced per-slice set
     sub_slice.NAME: sub_slice.apply,  # #361: each slice's HRR sub-sliced
     scatter.NAME: scatter.apply,  # #358: the atomic-free write-back
+    sliced_site_digest.NAME: sliced_site_digest.apply,  # #359: per-slice digest
 }
 
 
