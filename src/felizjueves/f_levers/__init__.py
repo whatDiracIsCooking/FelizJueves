@@ -31,6 +31,7 @@ from felizjueves.f_levers import (
     sliced_hrr,
     slim_fock,
     struct_reads,
+    sub_slice,
     subdag_vrr,
 )
 from felizjueves.f_levers import mixed as fmixed
@@ -50,6 +51,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     fmixed.NAME: fmixed.apply,  # #355: the VRR, boundary and HRR in FP32
     subdag_vrr.NAME: subdag_vrr.apply,  # #357: each group scheduled alone
     slim_fock.NAME: slim_fock.apply,  # #360: the reduced per-slice set
+    sub_slice.NAME: sub_slice.apply,  # #361: each slice's HRR sub-sliced
 }
 
 

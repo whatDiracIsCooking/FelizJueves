@@ -424,6 +424,21 @@ VOCABULARY: dict[str, Lever] = {
            "warp; it has no six-block Fock digestion, and no sliced HRR, "
            "whose per-slice buffer set could be reduced"),
     ),
+    # #361: a composition, legal on F only WITH slim-fock (and so sliced-hrr
+    # and batched-vrr) in the same spec (f_levers/sub_slice.py refuses it).
+    "sub-slice": Lever.of(
+        "sub-slice", 361,
+        "each sliced-HRR slice's HRR cut into n_sub ordered sub-slices -- "
+        "contiguous runs of its ERIs, each its own HRR sub-DAG, tapped and "
+        "digested into #360's reduced buffers before the next -- so fewer of "
+        "the slice's values are live at once; atomic traffic unchanged; "
+        "requires slim-fock (f_levers/sub_slice.py)",
+        {"f"},
+        j=("the [p|q] kernel has no HGP HRR on contracted values, so no "
+           "sliced-HRR slice whose interior could be cut"),
+        k=("the K kernel is MMD: it has no sliced HGP HRR and no reduced "
+           "Fock-buffer set whose slice interior could be cut"),
+    ),
 }
 
 
