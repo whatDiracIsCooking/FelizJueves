@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.k_levers import split
+from felizjueves.k_levers import interleave, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KHooks
 from felizjueves.spec import Spec
 
@@ -32,6 +32,7 @@ __all__ = ["REGISTRY", "hooks_for"]
 # its line, e.g. `"split": split.apply` (#341).
 REGISTRY: dict[str, Callable[[KHooks, Spec], KHooks]] = {
     split.NAME: split.apply,  # #341: one kernel per K[a_i, b_j]
+    interleave.NAME: interleave.apply,  # #343: interleaved I_p, warp arm
 }
 
 

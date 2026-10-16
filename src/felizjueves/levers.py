@@ -220,6 +220,21 @@ VOCABULARY: dict[str, Lever] = {
            "recurrence plus D/E operand narrowing), with its own staged E "
            "contraction to decide; until it lands this name is J's only"),
     ),
+    "interleave": Lever.of(
+        "interleave", 343,
+        "per (b,d) row, one Hermite index's I_p is formed in a register, "
+        "contracted into each (a,c) row's running V and discarded, instead "
+        "of the whole I column staged in shared memory "
+        "(k_levers/interleave.py)",
+        {"k"},
+        j=("interleaving I_p reorders K's two-sided staged contraction "
+           "(I[p] over E^bd, then V over E^ac); a [p|q] kernel contracts "
+           "one side, J_p += (-1)^|q| [p+q]^(0) D_q, and stages no I column "
+           "to interleave"),
+        f=("the fused F kernel contracts HGP's contracted ERIs after the "
+           "HRR, with no Hermite I[p] column to interleave (and Target.F's "
+           "lever surface is #340's)"),
+    ),
 }
 
 
