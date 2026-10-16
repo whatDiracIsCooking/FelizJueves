@@ -136,7 +136,7 @@ def test_every_hook_defaults_to_the_frozen_function() -> None:
     assert HOOKS == ("keep", "fan_out", "shared_decl", "bind_e_ac", "e_ac",
                      "bind_e_bd", "e_bd", "contract", "ket_stage",
                      "bra_digest", "init_acc", "write_back", "params",
-                     "finish")
+                     "finish", "atomize")
     for h in HOOKS:
         assert getattr(DEFAULT_HOOKS, h) is DEFAULT_OF[h], h
         assert DEFAULT_HOOKS.is_default(h)
@@ -172,7 +172,10 @@ def test_each_hook_is_on_the_path_and_its_default_is_the_literal(
 
     built = build_k_kernels(spec, hooks=dataclasses.replace(
         DEFAULT_HOOKS, **{hook: spy}))
-    assert calls, f"{hook} was never called"
+    if hook == "atomize" and spec.n_batches == 1:
+        assert not calls  # #345: a batch kernel's hook, never the one-batch
+    else:
+        assert calls, f"{hook} was never called"
     assert built == build_k_kernels(spec)
 
 
@@ -199,13 +202,15 @@ REPLACEMENTS = {
     "write_back": lambda ctx: (Note("MARK"), *seams.write_back(ctx)),
     "params": lambda ctx: seams.params(ctx)[::-1],
     "finish": lambda ctx, kern: dataclasses.replace(kern, name="renamed"),
+    "atomize": lambda ctx, kern: dataclasses.replace(
+        seams.atomize(ctx, kern), name="renamed"),
 }
 
 
 @pytest.mark.parametrize("hook", HOOKS)
 def test_each_hook_replaced_changes_the_kernel(hook: str) -> None:
     assert set(REPLACEMENTS) == set(HOOKS)
-    spec = SPY_SPECS[0]
+    spec = SPY_SPECS[1] if hook == "atomize" else SPY_SPECS[0]  # batch-only
     built = build_k_kernels(spec, hooks=dataclasses.replace(
         DEFAULT_HOOKS, **{hook: REPLACEMENTS[hook]}))
     assert built != build_k_kernels(spec)

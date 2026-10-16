@@ -18,10 +18,13 @@ accumulator column. What is asserted:
    literal kernel bit for bit at 1, 4 and 32 lanes -- the same butterfly on
    the same values, so the lever moves no bit. Above L = 2 within the cap of
    L = 4, a sample, `slow`.
-4. THE SPLIT CLASS IS REFUSED, with the reason (`passes.atomize` admits only
-   the lane-0 form, after the hooks); composed with #341's split (one
+4. THE SPLIT CLASS (3 batches, the atomic write-back mode): every batch
+   kernel stores through lane-parallel `AtomicAdd`s with no lane-0 guard,
+   through the `atomize` seam (#345); onto a zeroed `K` the batches in order
+   are the literal batched kernels' `K` bit for bit at 1, 4 and 32 lanes
+   (L <= 2 fast, a sample to L = 4 `slow`). Composed with #341's split (one
    element per kernel) the loop is a run of one and the union is still the
-   literal block.
+   literal block, at one batch and at three.
 
 Fast tier unless `slow`: no compiler, no card, no PySCF.
 """
@@ -113,7 +116,7 @@ def test_coalesced_is_registered_keyed_and_moves_write_back_only() -> None:
     hooks = k_levers.hooks_for(spec)
     moved = {f.name for f in dataclasses.fields(KHooks)
              if not hooks.is_default(f.name)}
-    assert moved == {"write_back"}
+    assert moved == {"write_back", "atomize"}
     assert hooks.write_back is coalesced.write_back
     assert k_levers.hooks_for(dataclasses.replace(spec, levers=())) is (
         DEFAULT_HOOKS)
@@ -242,12 +245,76 @@ def test_an_uncontracted_bra_is_the_whole_quartet_bitwise(am: Am) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_split_class_is_refused_with_the_reason() -> None:
-    with pytest.raises(ValueError, match="passes.atomize"):
-        build_k_kernels(lever_spec((1, 0, 1, 0), 3))
-    # the one-batch class through either builder is the same one kernel
+def test_the_one_batch_class_through_either_builder_is_one_kernel() -> None:
     spec = lever_spec((1, 0, 1, 0))
     assert build_k_kernels(spec) == (build_k_kernel(spec),)
+
+
+def run_all(kernels, am: Am, lanes: int) -> np.ndarray:
+    """The kernels in order onto one ZEROED `K` (the batch contract)."""
+    bra, ket = tk._pairs(am)
+    args = tk.k_args(am, bra, [(ket, 0)], [tk._dcd(am[1], am[3])])
+    args["K"] = np.zeros_like(args["K"])
+    grid, block = launch_shape(args["n_bra"], lanes)
+    for kern in kernels:
+        args["K"] = Interpreter(kern, launch=Launch(grid, block, lanes),
+                                boys=boys).run(**args)["K"]
+    return args["K"]
+
+
+SPLIT3 = ([pytest.param(a, id=tk._id(a)) for a in FAST if sum(a) > 0]
+          + [pytest.param(a, id=tk._id(a), marks=pytest.mark.slow)
+             for a in SLOW_SAMPLE])
+
+
+@pytest.mark.parametrize("am", SPLIT3)
+def test_a_split_class_writes_by_lane_parallel_atomics(am: Am) -> None:
+    kernels = build_k_kernels(lever_spec(am, 3))
+    literal = build_k_kernels(Spec(Operator.COULOMB, 0, am, Target.K, (), 3))
+    assert [k.name for k in kernels] == [k.name for k in literal]
+    for kern in kernels:
+        assert not any(isinstance(s, If) and s.cond == LANE0
+                       for s in walk(kern.body))
+        writes = _k_writes(kern)
+        assert writes and all(isinstance(s, AtomicAdd) for s in writes)
+        loops = [s for s in walk(kern.body) if isinstance(s, For)
+                 and s.var == coalesced.LANE_VAR]
+        assert [s for lp in loops for s in lp.body] == writes
+        notes = [s.prov for s in walk(kern.body) if isinstance(s, Note)]
+        assert coalesced.ATOMIC_WRITE in notes
+        assert coalesced.PLAIN_WRITE not in notes
+        assert not any("NOT atomic" in n for n in notes)
+        # the batch writes what the literal batch kernel writes, each once
+        lit = next(k for k in literal if k.name == kern.name)
+        lit_slots = sorted(s.dst.at[1].value for s in _k_writes(lit))
+        mine = sum(lp.stop.value for lp in loops)
+        assert mine == len(lit_slots)
+
+
+@pytest.mark.parametrize("lanes", [1, 4, 32])
+@pytest.mark.parametrize("am", SPLIT3)
+def test_a_split_class_is_the_literal_batched_kernels_bitwise(
+        am: Am, lanes: int) -> None:
+    got = run_all(build_k_kernels(lever_spec(am, 3)), am, lanes)
+    want = run_all(build_k_kernels(
+        Spec(Operator.COULOMB, 0, am, Target.K, (), 3)), am, lanes)
+    assert got.tolist() == want.tolist()
+    assert np.any(got != 0.0)
+
+
+def test_the_atomize_seam_hands_a_lane_0_kernel_to_the_prior() -> None:
+    """Composition: a kernel whose write is still the lane-0 form (another
+    lever's write-back) goes to the `atomize` the lever was handed."""
+    spec = lever_spec((1, 0, 1, 0), 3)
+    hooks = k_levers.hooks_for(spec)
+    plain = build_k_kernels(Spec(Operator.COULOMB, 0, (1, 0, 1, 0),
+                                 Target.K, (), 3))
+    # a kernel whose K writes are all atomic already is accepted as it is
+    assert hooks.atomize(None, plain[0]) is plain[0]
+    lane0 = build_k_kernels(dataclasses.replace(spec, levers=()),
+                            hooks=dataclasses.replace(
+                                DEFAULT_HOOKS, atomize=lambda c, k: k))[0]
+    assert hooks.atomize(None, lane0) == plain[0]
 
 
 def test_composed_with_split_each_element_is_a_run_of_one() -> None:
@@ -268,6 +335,20 @@ def test_composed_with_split_each_element_is_a_run_of_one() -> None:
         args["K"] = Interpreter(kern, launch=Launch(grid, block, 4),
                                 boys=boys).run(**args)["K"]
     assert args["K"].tolist() == run(build_k_kernel(am), am, 4).tolist()
+
+
+def test_composed_with_split_at_three_batches() -> None:
+    am = (1, 0, 1, 0)
+    kernels = build_k_kernels(lever_spec(am, 3, split.NAME))
+    plain = build_k_kernels(Spec(Operator.COULOMB, 0, am, Target.K,
+                                 (split.NAME,), 3))
+    assert [k.name for k in kernels] == [k.name for k in plain]
+    for kern in kernels:
+        (write,) = _k_writes(kern)
+        assert isinstance(write, AtomicAdd)
+    assert (run_all(kernels, am, 4).tolist()
+            == run_all(build_k_kernels(Spec(Operator.COULOMB, 0, am, Target.K,
+                                            (), 3)), am, 4).tolist())
 
 
 def test_runs_are_one_run_of_the_whole_block_at_every_ladder_l() -> None:

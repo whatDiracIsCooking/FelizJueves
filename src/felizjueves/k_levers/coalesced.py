@@ -42,41 +42,53 @@ are consecutive too; each run is one strided loop. With every element kept
 (the literal mapping) that is ONE run, `s = 0 .. n_a n_b - 1`; composed with
 #341's split (one element kept) it is a run of one, written by lane 0.
 
-THE SPLIT CLASS IS REFUSED (`SPLIT_REFUSAL`). A batch kernel's write is made
-atomic AFTER the hooks, by `kernel_k.build_k_kernels`' call to
-`passes.atomize`, which admits only the lane-0 form (every plain write into
-`K` directly under the `THREAD_Y < 1` guard) and refuses a kernel that
-already atomics into `K`. So the coalesced form cannot reach a split class
-through the seams: `write_back` raises for a batch kernel rather than
-falling back to the lane-0 path under this lever's name. Lifting it needs a
-seam after the atomize (a hook for the batch form), not a change here.
+THE SPLIT CLASS (`n_batches > 1`): LANE-PARALLEL ATOMICS. A batch kernel
+adds its partial `K[a, b]` to a `K` other batch kernels also add to (the
+partial-sum form, #203), so its store is an `AtomicAdd`, issued by the same
+strided loop: lane `t` adds `K[bra, s0 + t + k W]`, once per element per
+warp (each element is stored by exactly one lane, so nothing is added once
+per lane -- the reason the literal form keeps the lane-0 guard). A batch
+writes only the `K[a, b]` it reaches (`KContext.k_outs`), which may be
+several runs; each run is one loop. The default batch form,
+`passes.atomize`, admits only the lane-0 write, so this lever also moves the
+`atomize` seam (#345): `atomize` below accepts a kernel whose `K` writes are
+already all atomic and hands any other kernel to the `atomize` it was given.
+Onto a zeroed `K`, interpreted, the batches in order are the literal batched
+kernels' `K` bit for bit at any lane count (the same partials, added in the
+same batch order); on a card, as for the literal form, atomics add in
+hardware order.
 
-THE HOOK IT MOVES: `write_back`, nothing else. Like the seams, nothing here
-imports `ao/`, the interpreter, `reference/`, a backend or a device.
+THE HOOKS IT MOVES: `write_back` and `atomize`, nothing else. Like the
+seams, nothing here imports `ao/`, the interpreter, `reference/`, a backend
+or a device.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 
 from felizjueves.ir import (
     Assign,
+    AtomicAdd,
     Call,
     Expr,
     Fn,
     For,
     Index,
+    Kernel,
     Lit,
     Note,
     Stmt,
     Var,
     WarpReduce,
+    walk,
 )
 from felizjueves.k_levers.seams import KSH, KContext, KHooks
 from felizjueves.spec import Spec
 
 __all__ = ["EXTRA_SHARED_BYTES", "LANE_VAR", "NAME", "PLAIN_WRITE",
-           "REDUCE_NOTE", "SPLIT_REFUSAL", "apply", "runs", "write_back"]
+           "REDUCE_NOTE", "ATOMIC_WRITE", "apply", "runs", "write_back"]
 
 NAME = "coalesced"
 
@@ -99,12 +111,13 @@ PLAIN_WRITE = (
     "stores K[bra, s0 + t + k*blockDim.y] from its own Ksh column, the "
     "warp's stores in parallel, not lane 0's one after another")
 
-SPLIT_REFUSAL = (
-    "the coalesced write-back (#345) is refused on a split class: a batch "
-    "kernel's K write is made atomic after the hooks by passes.atomize "
-    "(kernel_k.build_k_kernels), which admits only the lane-0 form, so the "
-    "parallel atomics need a seam after the atomize that k_levers.seams "
-    "does not have")
+ATOMIC_WRITE = (
+    "atomic write, lane-parallel (#345): the partial-sum form (#203) -- a "
+    "batch holds only some targets r = p + q, so every batch kernel of the "
+    "class adds its partial K[a,b] to the same K[a,b] and the write must "
+    "accumulate. Lane t adds K[bra, s0 + t + k*blockDim.y] from its own Ksh "
+    "column: each element is added by exactly ONE lane, so no lane-0 guard "
+    "is needed (the warp sum is not added once per lane)")
 
 
 def _c(fn: Fn, *args: Expr) -> Call:
@@ -131,22 +144,45 @@ def runs(ctx: KContext) -> tuple[tuple[int, int, int], ...]:
 
 def write_back(ctx: KContext) -> tuple[Stmt, ...]:
     """In-place `WarpReduce` per `K[a, b]`, then one lane-strided store loop
-    per run of `runs(ctx)` (module docstring)."""
-    if ctx.head is not None:
-        raise ValueError(f"{ctx.spec.key()}: {SPLIT_REFUSAL}")
+    per run of `runs(ctx)`: a plain store for the one-batch kernel, an
+    `AtomicAdd` for a batch kernel (module docstring)."""
+    batch = ctx.head is not None
     ty, step = ctx.ty, Call(Fn.BLOCK_DIM_Y)
     out: list[Stmt] = [Note(REDUCE_NOTE)]
     out += [WarpReduce(ctx.sh(ctx.kslot[s]), ctx.sh(ctx.kslot[s]))
             for s in ctx.k_outs]
-    out.append(Note(PLAIN_WRITE))
+    out.append(Note(ATOMIC_WRITE if batch else PLAIN_WRITE))
+    store = AtomicAdd if batch else Assign
     w = Var(LANE_VAR)
     for s0, slot0, n in runs(ctx):
         out.append(For(LANE_VAR, ty, Lit(n), step, (
-            Assign(Index("K", (ctx.bra, _plus(s0, w))),
-                   Index(KSH, (_plus(slot0, w), ty))),)))
+            store(Index("K", (ctx.bra, _plus(s0, w))),
+                  Index(KSH, (_plus(slot0, w), ty))),)))
     return tuple(out)
 
 
+def _k_writes(kernel: Kernel) -> list[Stmt]:
+    return [s for s in walk(kernel.body) if isinstance(s, Assign | AtomicAdd)
+            and isinstance(s.dst, Index) and s.dst.array == "K"]
+
+
+def _atomize(prior: Callable[[KContext, Kernel], Kernel]
+             ) -> Callable[[KContext, Kernel], Kernel]:
+    def atomize(ctx: KContext, kernel: Kernel) -> Kernel:
+        writes = _k_writes(kernel)
+        if not any(isinstance(s, AtomicAdd) for s in writes):
+            return prior(ctx, kernel)  # not this lever's write: as given
+        plain = [s for s in writes if not isinstance(s, AtomicAdd)]
+        if plain:
+            raise ValueError(
+                f"kernel {kernel.name!r} mixes atomic and plain writes into "
+                "K: the coalesced batch form is all atomic")
+        return kernel
+    return atomize
+
+
 def apply(hooks: KHooks, spec: Spec) -> KHooks:
-    """`hooks` with the coalesced `write_back`; every other hook as given."""
-    return dataclasses.replace(hooks, write_back=write_back)
+    """`hooks` with the coalesced `write_back` and the `atomize` that admits
+    its atomic batch form; every other hook as given."""
+    return dataclasses.replace(hooks, write_back=write_back,
+                               atomize=_atomize(hooks.atomize))

@@ -172,9 +172,10 @@ milestone-13 lever moves are laid out here, and every part a lever does move
 -- the accumulator slicing, a fan-out into several kernels, the shared
 array, the `E^ac` / `E^bd` bindings and reads, the contraction region (stage
 1, stages 2 and 3), the accumulator's zeroing, the write-back, the parameters
-and a last rewrite -- is asked of a `k_levers.seams.KHooks`, whose defaults
-are this module's code before #367, moved statement for statement (the
-literal kernel is byte-identical: test/test_k_seams.py). A K lever lands as
+and a last rewrite, and (#345) a batch kernel's atomic form -- is asked of
+a `k_levers.seams.KHooks`, whose defaults are this module's code before
+#367, moved statement for statement (the literal kernel is byte-identical:
+test/test_k_seams.py). A K lever lands as
 its own module, `k_levers/<name>.py`, registered in `k_levers.REGISTRY`; the
 builders resolve a spec's levers through `k_levers.hooks_for` and this file
 does not change for a new lever.
@@ -215,7 +216,6 @@ from felizjueves.k_levers.seams import (
 )
 from felizjueves.kernel import builder_plan, lever_notes, split
 from felizjueves.kernel import launch_shape as _j_launch_shape
-from felizjueves.passes import atomize
 from felizjueves.recurrence import (
     PQ_PARAMS,
     THETA,
@@ -388,8 +388,7 @@ def build_k_kernels(spec: Spec, *,
         for suffix, h in variants:
             kern = variant(dag, name + suffix, head, h)
             if kern is not None:
-                out.append(kern if head is None
-                           else atomize(kern, array="K"))
+                out.append(kern)  # a batch kernel arrives atomized
     return tuple(out)
 
 
@@ -468,4 +467,7 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None,
         hooks.shared_decl(ctx),
         If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
     )
-    return hooks.finish(ctx, Kernel(name, hooks.params(ctx), body))
+    kernel = hooks.finish(ctx, Kernel(name, hooks.params(ctx), body))
+    # a batch kernel's write made atomic, after `finish` (the `atomize` hook,
+    # #345: by default `passes.atomize(kernel, array="K")`, the lane-0 form)
+    return kernel if head is None else hooks.atomize(ctx, kernel)
