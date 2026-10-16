@@ -1736,6 +1736,22 @@ EDGES["k_levers.stage_eac"] = frozenset(("e_fragment", "ir", "k_levers.seams",
 
 
 # ---------------------------------------------------------------------------
+# #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
+# `j_levers.mixed`'s F32 prelude and node narrowing, so the two engines'
+# fp32 recurrence is one spelling: the `k_lever` rule admits `j_levers` (a
+# sibling lever package, builder-side, under the same bans).
+# ---------------------------------------------------------------------------
+
+RULES["k_lever"] = Rule(RULES["k_lever"].why + "; a K lever may reuse a J "
+                        "lever's IR (`j_levers`, #347's fp32 recurrence)",
+                        RULES["k_lever"].may | frozenset(("j_levers",)),
+                        RULES["k_lever"].must_not)
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.mixed",))
+EDGES["k_levers.mixed"] = frozenset(("e_fragment", "ir", "j_levers.mixed",
+                                     "k_levers.seams", "recurrence", "spec"))
+
+
+# ---------------------------------------------------------------------------
 # #339 (milestone 13): the lever ladder as a registry. `lever_ladder` is a
 # leaf beside `levers` (data only: the families and the unit name; no
 # builder), read by both drivers; the generator CLI now also composes

@@ -12,6 +12,7 @@
     primitive_schwarz_bound(pp, *, one_centre)  -> G_[ab] of one primitive pair
     primitive_schwarz_bounds(sa, sb, *, one_centre) -> G_[ab] per primitive pair
     prune(bounds, *, eps)                 -> the kept prefix, bound-descending
+    narrowed(values)                      -> an operand's fp32 packing (#347)
 
 A *primitive pair* of an ordered shell pair `(sa, sb)` is one exponent from
 each, `alpha = sa.exponents[i]`, `beta = sb.exponents[j]`; it becomes one bra
@@ -205,7 +206,8 @@ dependencies.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+import struct
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
 from felizjueves.ao.hermite import e_axis, e_block, hermite_order
@@ -532,3 +534,23 @@ def prune(bounds: Sequence[float], *, eps: float) -> tuple[int, ...]:
     while cut and math.fsum(bounds[k] for k in order[cut - 1:]) < eps:
         cut -= 1
     return tuple(order[:cut])
+
+
+def narrowed(values: Iterable[float]) -> tuple[float, ...]:
+    """The host's FP32 packing of an operand array (#347's `kmixed-de`): each
+    value rounded ONCE to the nearest float32 (ties to even, as C's
+    `(float)x`), returned as the Python floats that are exactly those
+    float32s -- a narrowed COPY, the fp64 values untouched. Flat, in the
+    given order; a caller lays it out as the fp64 array it narrows. Refuses
+    a value outside float32's finite range (it would overflow, not round)."""
+    out = []
+    for k, x in enumerate(values):
+        x = float(x)
+        try:
+            f = struct.unpack("f", struct.pack("f", x))[0]
+        except OverflowError:
+            f = math.inf
+        if math.isfinite(x) and not math.isfinite(f):
+            raise ValueError(f"values[{k}] = {x!r} overflows float32")
+        out.append(f)
+    return tuple(out)
