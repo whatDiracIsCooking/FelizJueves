@@ -85,6 +85,7 @@ from felizjueves.ir import (
     Inline,
     Intent,
     Kernel,
+    LaneBroadcast,
     Lit,
     Note,
     Param,
@@ -298,6 +299,8 @@ class CWriter:
         elif isinstance(s, WarpReduce):
             for line in self.warp_reduce(self.lvalue(s.dst), self.expr(s.value)):
                 self._emit(depth, line)
+        elif isinstance(s, LaneBroadcast):
+            self._lane_broadcast(s, depth)
         elif isinstance(s, AtomicAdd):
             self._emit(depth, self.atomic_add(self.lvalue(s.dst),
                                               self.expr(s.value)))
@@ -308,6 +311,11 @@ class CWriter:
                 self._emit(depth, line)
         else:  # pragma: no cover
             raise EmitError(f"not a Stmt: {s!r}")
+
+    def _lane_broadcast(self, s: LaneBroadcast, depth: int) -> None:
+        """#349's indexed shuffle, through the vendor hook."""
+        self._emit(depth, self.lane_broadcast(
+            self.lvalue(s.dst), self.expr(s.value), self.expr(s.source)))
 
     def inline(self, s: Inline, depth: int) -> None:
         """The fragment's statements in place, in a block of their own.
@@ -516,6 +524,10 @@ class CWriter:
 
     def atomic_add(self, dst: str, value: str) -> str:
         return f"atomicAdd(&{dst}, {value});"
+
+    def lane_broadcast(self, dst: str, value: str, lane: str) -> str:
+        """The line that sets `dst` to `value` as held by lane `lane` (#349)."""
+        raise NotImplementedError
 
 
 def precision(k: Kernel) -> str:

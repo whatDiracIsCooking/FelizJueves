@@ -5,7 +5,7 @@
 A pure function: no decisions, no I/O. It is `emit/cuda.py`'s twin, and the
 point of it (#27) is that it needs exactly what the CUDA backend needed from the
 IR and nothing more: everything the two vendors spell alike is `emit/_c.py`'s
-`CWriter`, and this module supplies only the three hooks, spelled HIP's way:
+`CWriter`, and this module supplies only the vendor hooks, spelled HIP's way:
 
 - the prologue: a header comment naming the kernel and the arch, and
   `#include <hip/hip_runtime.h>` -- hipcc does not pre-include the whole HIP
@@ -15,6 +15,8 @@ IR and nothing more: everything the two vendors spell alike is `emit/_c.py`'s
   mask of the arch's wavefront. HIP's `_sync` shuffles take a 64-bit mask
   (ROCm's header static-asserts it), so the mask carries `ull`, not CUDA's `u`;
   the width is read off the `Arch`, never spelled here;
+- `LaneBroadcast` (#349) as `__shfl_sync(mask, value, source, width)`, the
+  same 64-bit mask and width;
 - `AtomicAdd` as `atomicAdd` (the shared default; HIP declares it for double).
 
 The arch string is what hipcc is driven at (`--offload-arch=<arch.name>`); it
@@ -56,6 +58,12 @@ class HipWriter(CWriter):
             f"    {dst} = fj_v;",
             "}",
         ]
+
+    def lane_broadcast(self, dst: str, value: str, lane: str) -> str:
+        # #349: the indexed shuffle over the full mask of the arch's width.
+        w = self.arch.wavefront
+        mask = f"0x{(1 << w) - 1:x}ull"
+        return f"{dst} = __shfl_sync({mask}, {value}, {lane}, {w});"
 
 
 def emit(kernel: Kernel, arch: Arch) -> str:

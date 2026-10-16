@@ -654,3 +654,92 @@ def test_an_f32_fragment_runs_alone_and_inlined_alike() -> None:
     spliced = interpret(k, a=np.ones(1, f), out=np.zeros(1, f))["out"]
     # 1 + 2^24 rounds (ties to even) to 2^24, so w - u is 2^24 - 1
     assert alone["dst"].tolist() == spliced.tolist() == [16777215.0]
+
+
+# ---------------------------------------------------------------------------
+# LaneBroadcast (#349): lane i receives the value of the lane it names
+# ---------------------------------------------------------------------------
+
+
+def _shuffled(source: Call | Lit) -> Kernel:
+    """Each lane loads `v[ty]`, takes the value of lane `source`, writes it."""
+    from felizjueves.ir import LaneBroadcast
+    ty = Call(Fn.THREAD_Y, ())
+    return Kernel("shuffled", (_f64("v"), _f64("out", Intent.OUT)), (
+        Decl("mine", Scalar.F64, init=Index("v", (ty,))),
+        Decl("got", Scalar.F64),
+        LaneBroadcast(Var("got"), Var("mine"), source),
+        Assign(Index("out", (ty,)), Var("got")),
+    ))
+
+
+@pytest.mark.parametrize("lanes", [1, 2, 4, 32, 64])
+def test_a_lane_broadcast_from_lane_0_reaches_every_lane(lanes: int) -> None:
+    v = np.random.default_rng(lanes).uniform(-1.0, 1.0, lanes)
+    out = interpret(_shuffled(Lit(0)), launch=Launch(block=(1, lanes),
+                                                     lanes=lanes),
+                    v=v, out=np.zeros(lanes))["out"]
+    assert out.tolist() == [v[0]] * lanes  # moved, not recomputed: bitwise
+
+
+@pytest.mark.parametrize("lanes", [2, 4, 32])
+def test_a_lane_varying_source_is_the_indexed_shuffle(lanes: int) -> None:
+    ty = Call(Fn.THREAD_Y, ())
+    # source = (ty + 1) mod lanes, spelled without a mod: ty + 1 - lanes*(...)
+    nxt = Call(Fn.ADD, (ty, Lit(1)))
+    wrap = Call(Fn.SUB, (nxt, Call(Fn.MUL, (Lit(lanes), Call(Fn.DIV, (
+        nxt, Lit(lanes)))))))
+    v = np.arange(10.0, 10.0 + lanes)
+    out = interpret(_shuffled(wrap), launch=Launch(block=(1, lanes),
+                                                   lanes=lanes),
+                    v=v, out=np.zeros(lanes))["out"]
+    assert out.tolist() == np.roll(v, -1).tolist()
+
+
+def test_a_lane_broadcast_is_per_warp() -> None:
+    """Two warps in one block: lane 0 of EACH warp is the source."""
+    v = np.arange(64.0)
+    out = interpret(_shuffled(Lit(0)), launch=Launch(block=(1, 64), lanes=32),
+                    v=v, out=np.zeros(64))["out"]
+    assert out.tolist() == [0.0] * 32 + [32.0] * 32
+
+
+def test_a_lane_broadcast_refuses_a_source_outside_the_warp() -> None:
+    v = np.arange(4.0)
+    for bad in (Lit(4), Lit(-1)):
+        with pytest.raises(InterpError, match="outside"):
+            interpret(_shuffled(bad), launch=Launch(block=(1, 4), lanes=4),
+                      v=v, out=np.zeros(4))
+
+
+def test_a_divergent_or_partial_lane_broadcast_raises() -> None:
+    from felizjueves.ir import LaneBroadcast
+    with pytest.raises(InterpError, match="LaneBroadcast in a partial warp"):
+        interpret(_shuffled(Lit(0)), launch=Launch(block=(1, 6), lanes=4),
+                  v=np.arange(6.0), out=np.zeros(6))
+    diverge = Kernel("diverge", (_f64("out", Intent.OUT),), (
+        Decl("s", Scalar.F64),
+        If(Call(Fn.LT, (Call(Fn.THREAD_Y, ()), Lit(1))),
+           (LaneBroadcast(Var("s"), Lit(1.0), Lit(0)),)),
+    ))
+    with pytest.raises(InterpError, match="diverged at a LaneBroadcast"):
+        interpret(diverge, launch=Launch(block=(1, 2), lanes=2),
+                  out=np.zeros(1))
+    frag = Fragment("r", ("a",), (Decl("s", Scalar.F64),
+                                  LaneBroadcast(Var("s"), Var("a"), Lit(0))))
+    with pytest.raises(InterpError, match="LaneBroadcast in a fragment run "
+                                          "alone: there is no warp"):
+        interpret_fragment(frag, a=1.0)
+
+
+def test_a_lane_broadcast_moves_an_f32_without_rounding_it_again() -> None:
+    from felizjueves.ir import LaneBroadcast
+    f = np.float32
+    ty = Call(Fn.THREAD_Y, ())
+    k = _f32_kernel(Decl("g", Scalar.F32),
+                    LaneBroadcast(Var("g"), Index("a", (ty,)), Lit(1)),
+                    Assign(Index("out", (ty,)), Var("g")))
+    a = np.array([0.1, 0.3], dtype=f)
+    out = interpret(k, launch=Launch(block=(1, 2), lanes=2), a=a,
+                    out=np.zeros(2, f))["out"]
+    assert out.dtype == np.float32 and out.tolist() == [a[1], a[1]]
