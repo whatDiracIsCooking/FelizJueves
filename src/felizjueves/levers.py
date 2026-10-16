@@ -197,6 +197,19 @@ VOCABULARY: dict[str, Lever] = {
            "per bra record, not J_p += (-1)^|q| [p+q]^(0) D_q; fusing it is "
            "a separate lever nobody has declared"),
     ),
+    "split": Lever.of(
+        "split", 341,
+        "one kernel per Cartesian element K[a_i, b_j], each carrying only "
+        "that element's accumulator; n_a*n_b kernels per batch tile the "
+        "block, each re-running the recurrence (k_levers/split.py)",
+        {"k"},
+        j=("the per-element split tiles K's K[a, b] accumulator block; a "
+           "[p|q] kernel's output is J_p, one Hermite row per bra record, "
+           "with no Cartesian element block to tile"),
+        f=("the fused F kernel maps one thread per contracted quartet and "
+           "digests into G; it has no K[a, b] warp accumulator to tile "
+           "(and Target.F's lever surface is #340's)"),
+    ),
 }
 
 

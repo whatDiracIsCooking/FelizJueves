@@ -145,7 +145,8 @@ def test_every_hook_defaults_to_the_frozen_function() -> None:
 
 def test_a_literal_spec_resolves_to_the_defaults_and_nothing_is_registered(
 ) -> None:
-    assert k_levers.REGISTRY == {}
+    # Since #341 lever modules register; each is a vocabulary lever legal on K.
+    assert all("k" in levers.VOCABULARY[n].legal for n in k_levers.REGISTRY)
     for spec in (k_class_spec(1, 0, 1, 0),
                  Spec(Operator.COULOMB, 0, (1, 1, 0, 0), Target.K,
                       n_batches=3)):
