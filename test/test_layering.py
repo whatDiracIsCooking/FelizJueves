@@ -1620,6 +1620,64 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
 
 
 # ---------------------------------------------------------------------------
+# #368 (milestone 13, SF): the fused F kernel's lever seams, K's (#367) shape.
+# `f_levers.seams` holds `FHooks`, `FContext` and the frozen defaults
+# `kernel_f`'s skeleton calls; `f_levers` is the registry an F lever module
+# plugs into. Both sit BELOW `kernel_f` (it imports them), so neither may
+# reach it back, and they keep the `f_builder` rule's prohibitions (no plan
+# layer, pin 11): what they build is part of the F kernel. An F lever module
+# (`f_levers/<name>.py`) is ruled `f_lever` too.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "f_lever": _rule(
+        "f_levers/ (#368): the fused F kernel's lever seams (`seams`: the "
+        "hooks, their context and the frozen defaults, statements built from "
+        "`hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs) and the registry "
+        "composing a spec's F levers, one module per lever",
+        ("spec", "ir", "hgp", "f_levers"),
+        kernel_f="the skeleton imports the seams: a seam or a lever reaching "
+                 "back into `kernel_f` is a cycle",
+        plan=RULES["f_builder"].must_not["plan"],
+        ao=RULES["f_builder"].must_not["ao"],
+        interp=RULES["f_builder"].must_not["interp"],
+        emit=RULES["f_builder"].must_not["emit"],
+        device=RULES["f_builder"].must_not["device"],
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {m: "f_lever" for m in _modules() if _under(m, "f_levers")}
+EDGES |= {k: frozenset(v) for k, v in {
+    "f_levers": ("f_levers.seams", "spec"),
+    "f_levers.seams": ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"),
+}.items()}
+RULES["f_builder"] = Rule(RULES["f_builder"].why + "; its lever seams live "
+                          "in `f_levers/` (#368)",
+                          RULES["f_builder"].may | frozenset(("f_levers",)),
+                          RULES["f_builder"].must_not)
+EDGES["kernel_f"] = EDGES["kernel_f"] | frozenset(
+    ("f_levers", "f_levers.seams"))
+
+
+def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
+    # #368, TRANSITIVELY: from the seams and the registry no chain of
+    # imports reaches `kernel_f` (the cycle), the plan layer, the AO layer,
+    # reference/, the interpreter, a backend, a card or `launch_f`.
+    graph = _graph()
+    for root in ("f_levers", "f_levers.seams"):
+        seen: set[str] = set()
+        todo = [root]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        for banned in ("kernel_f", "plan", _REF, "ao", "interp", "emit",
+                       "device", "launch_f"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{root} reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
 # #344 (milestone 13): `j_levers/`, the J kernel-body levers' behaviour, one
 # module per lever (`fused` first; #346's mixed precision follows). The
 # vocabulary entry is `levers`'; the IR the lever builds is here, reached
