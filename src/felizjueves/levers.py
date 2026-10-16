@@ -210,6 +210,16 @@ VOCABULARY: dict[str, Lever] = {
            "digests into G; it has no K[a, b] warp accumulator to tile "
            "(and Target.F's lever surface is #340's)"),
     ),
+    "mixed": Lever.of(
+        "mixed", 346,
+        "the [p|q] recurrence, its [0]^(m) and the Boys argument in FP32; "
+        "the parameters, D_q, the J_p accumulator, the reduction and the "
+        "write stay FP64 (j_levers/mixed.py)",
+        {"j"},
+        k=("the K instance of the precision lever is #347's (FP32 "
+           "recurrence plus D/E operand narrowing), with its own staged E "
+           "contraction to decide; until it lands this name is J's only"),
+    ),
 }
 
 

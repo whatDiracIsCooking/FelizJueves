@@ -1642,16 +1642,19 @@ RULES |= {
         interp="the lever is checked by the interpreter, never built on it",
         reference=_GROUND_TRUTH),
 }
-RULE_OF |= {"j_levers": "j_lever", "j_levers.fused": "j_lever"}
+RULE_OF |= {"j_levers": "j_lever", "j_levers.fused": "j_lever",
+            "j_levers.mixed": "j_lever"}
 EDGES |= {k: frozenset(v) for k, v in {
     "j_levers": (),
     "j_levers.fused": ("ir", "plan.targets", "recurrence"),
+    "j_levers.mixed": ("ir", "recurrence"),
 }.items()}
 RULES["builder"] = Rule(RULES["builder"].why + "; its J kernel-body levers' "
                         "behaviour lives in `j_levers/` (#344)",
                         RULES["builder"].may | frozenset(("j_levers",)),
                         RULES["builder"].must_not)
-EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",))
+EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",
+                                                "j_levers.mixed"))
 
 
 # ---------------------------------------------------------------------------
