@@ -407,6 +407,23 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel is MMD: its [p|q] recurrence is the plan layer's "
            "DAG, with no HGP VRR groups to schedule per group"),
     ),
+    # #360: a composition, legal on F only WITH sliced-hrr (and so
+    # batched-vrr) in the same spec (f_levers/slim_fock.py refuses it alone).
+    "slim-fock": Lever.of(
+        "slim-fock", 360,
+        "each sliced-HRR slice (a, b) keeps a reduced Fock-buffer set -- the "
+        "a rows of f_ac / f_ad and the b rows of f_bc / f_bd, zeroed and "
+        "AtomicAdd-flushed per slice -- and f_cd is streamed by one "
+        "AtomicAdd per ERI; f_ab is unchanged; requires sliced-hrr "
+        "(f_levers/slim_fock.py)",
+        {"f"},
+        j=("the [p|q] kernel's output is J_p, one Hermite row per bra "
+           "record; it has no six-block Fock digestion whose buffers a "
+           "per-bra-element split could reduce"),
+        k=("the K kernel accumulates one K[a, b] block per bra record in a "
+           "warp; it has no six-block Fock digestion, and no sliced HRR, "
+           "whose per-slice buffer set could be reduced"),
+    ),
 }
 
 

@@ -1793,6 +1793,16 @@ EDGES["f_levers.subdag_vrr"] = frozenset(("f_levers.batched_vrr",
                                           "spec"))
 
 
+# #360 (milestone 13, H4): the per-bra-element Fock-buffer split, an F lever
+# module composed on #356's slices (it wraps `sliced_hrr.contracted_with`),
+# so it reaches that sibling lever, the seams, `hgp.vrr` (the Cartesian
+# counts of its declared buffer sizes), the IR and `Spec`.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.slim_fock",))
+EDGES["f_levers.slim_fock"] = frozenset(("f_levers.seams",
+                                          "f_levers.sliced_hrr", "hgp.vrr",
+                                          "ir", "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
 # `j_levers.mixed`'s F32 prelude and node narrowing, so the two engines'

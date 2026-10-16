@@ -29,6 +29,7 @@ from felizjueves.f_levers import (
     block_fab,
     ket_break,
     sliced_hrr,
+    slim_fock,
     struct_reads,
     subdag_vrr,
 )
@@ -48,6 +49,7 @@ REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     sliced_hrr.NAME: sliced_hrr.apply,  # #356: one HRR per bra pair
     fmixed.NAME: fmixed.apply,  # #355: the VRR, boundary and HRR in FP32
     subdag_vrr.NAME: subdag_vrr.apply,  # #357: each group scheduled alone
+    slim_fock.NAME: slim_fock.apply,  # #360: the reduced per-slice set
 }
 
 
