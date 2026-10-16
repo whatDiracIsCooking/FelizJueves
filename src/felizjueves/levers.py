@@ -454,6 +454,22 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel's write-back is K's own seam (#345's coalesced "
            "store); it has no fused six-block digestion into F to scatter"),
     ),
+    # #359: a composition on #356, legal on F only WITH sliced-hrr (and so
+    # batched-vrr) in the same spec; the name sorts after sliced-hrr so
+    # hooks_for applies it on the slices (f_levers/sliced_site_digest.py).
+    "sliced-site-digest": Lever.of(
+        "sliced-site-digest", 359,
+        "each ERI of a sliced-HRR slice tapped and digested into the Fock "
+        "buffers at its production site instead of after the slice's whole "
+        "HRR, in the same order, so it dies there; requires sliced-hrr "
+        "(f_levers/sliced_site_digest.py)",
+        {"f"},
+        j=("the [p|q] kernel has no HGP HRR on contracted values and no "
+           "six-block predigest: its J_p is contracted inside the "
+           "recurrence, with no slice digest to interleave"),
+        k=("the K kernel is MMD: it has no HGP HRR slices and no six-block "
+           "predigest, its K contraction is staged through the E fragments"),
+    ),
 }
 
 

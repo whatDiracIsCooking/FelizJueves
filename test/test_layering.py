@@ -1781,6 +1781,16 @@ EDGES["f_levers.sliced_hrr"] = frozenset(("f_levers.batched_vrr",
                                           "f_levers.seams", "hgp.hrr",
                                           "hgp.vrr", "ir", "spec"))
 
+# #359 (milestone 13, H3): the interleaved digest per slice, an F lever
+# module composed on #356's. It supplies #356's slice body and re-installs
+# #350's nest at its floor, naming the HRR nodes it digests after, so it
+# reaches both sibling levers, the seams, `hgp`, the IR and `Spec`.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset((
+    "f_levers.sliced_site_digest",))
+EDGES["f_levers.sliced_site_digest"] = frozenset((
+    "f_levers.batched_vrr", "f_levers.seams", "f_levers.sliced_hrr",
+    "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+
 
 # #357 (milestone 13, H6): the dedicated sub-DAG VRR schedule, an F lever
 # module that wraps the `vrr` hook only. It composes on #350 (requires it,
