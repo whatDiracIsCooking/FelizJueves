@@ -72,6 +72,7 @@ from felizjueves.device import Arch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Barrier,
     Break,
     Call,
     Decl,
@@ -292,6 +293,8 @@ class CWriter:
             self._emit(depth, "}")
         elif isinstance(s, Break):
             self._emit(depth, "break;")
+        elif isinstance(s, Barrier):
+            self._emit(depth, "__syncthreads();")  # both vendors spell it so
         elif isinstance(s, WarpReduce):
             for line in self.warp_reduce(self.lvalue(s.dst), self.expr(s.value)):
                 self._emit(depth, line)

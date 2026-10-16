@@ -17,14 +17,14 @@ hooks compose by construction (#356's sliced HRR on #350's staged boundary),
 and one that wraps a hook another moved sees that one's version. A
 kernel-body lever with no entry here moves no F hook: `build_f_kernel`
 records it as a `Note` and nothing else (#340's contract, unchanged).
-`REGISTRY` ships EMPTY.
+`REGISTRY` shipped EMPTY at #368; each F lever adds its line (#351 first).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.f_levers import batched_vrr
+from felizjueves.f_levers import batched_vrr, block_fab
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.spec import Spec
 
@@ -34,6 +34,7 @@ __all__ = ["REGISTRY", "hooks_for"]
 # its line, e.g. `"batched-vrr": batched_vrr.apply` (#350).
 REGISTRY: dict[str, Callable[[FHooks, Spec], FHooks]] = {
     batched_vrr.NAME: batched_vrr.apply,  # #350: the grouped, staged boundary
+    "block-fab": block_fab.apply,  # #351
 }
 
 

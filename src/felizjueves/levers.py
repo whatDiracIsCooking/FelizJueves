@@ -280,6 +280,20 @@ VOCABULARY: dict[str, Lever] = {
            "HRR, with no Hermite I[p] column to interleave (and Target.F's "
            "lever surface is #340's)"),
     ),
+    "block-fab": Lever.of(
+        "block-fab", 351,
+        "the bra block's f_ab partial sums reduced across the block (warp "
+        "shuffle, lane 0 into __shared__, a barrier, a column sum) and "
+        "flushed with one AtomicAdd per element per block instead of one "
+        "per thread (f_levers/block_fab.py)",
+        {"f"},
+        j=("the [p|q] kernel writes J_p by one lane-0 store or atomic per "
+           "bra record already (a WarpReduce per p); it has no per-thread "
+           "bra buffer flushed by every thread"),
+        k=("the K kernel reduces its K[a, b] accumulator across its one "
+           "warp already (WarpReduce, then lane 0); it has no per-thread "
+           "bra buffer flushed by every thread of a block"),
+    ),
     "stage-eac": Lever.of(
         "stage-eac", 342,
         "the bra record's E^ac block, block-uniform under one warp per bra "
