@@ -235,6 +235,17 @@ VOCABULARY: dict[str, Lever] = {
            "HRR, with no Hermite I[p] column to interleave (and Target.F's "
            "lever surface is #340's)"),
     ),
+    "stage-eac": Lever.of(
+        "stage-eac", 342,
+        "the bra record's E^ac block, block-uniform under one warp per bra "
+        "record, staged once per block in __shared__ instead of per lane; "
+        "the arithmetic unchanged (k_levers/stage_eac.py)",
+        {"k"},
+        j=("the [p|q] kernel contracts D_q on the ket and has no bra E^ac "
+           "block to stage; J's E transforms are the DQ and JAB kernels'"),
+        f=("the fused F kernel is the HGP engine: it has no E transform, so "
+           "no E^ac block to stage (and Target.F's lever surface is #340's)"),
+    ),
 }
 
 

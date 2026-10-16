@@ -1726,6 +1726,15 @@ EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.split",))
 EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
 
 
+# #342 (milestone 13, M2): `E^ac` staged in shared memory, a K lever module.
+# It moves `bind_e_ac` / `e_ac` only, inlining the `E` fragment it reads off
+# the context (and checking it is write-once), so it reaches the seams, the
+# IR, the `E` fragment and `Spec`.
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.stage_eac",))
+EDGES["k_levers.stage_eac"] = frozenset(("e_fragment", "ir", "k_levers.seams",
+                                         "spec"))
+
+
 # ---------------------------------------------------------------------------
 # #339 (milestone 13): the lever ladder as a registry. `lever_ladder` is a
 # leaf beside `levers` (data only: the families and the unit name; no
