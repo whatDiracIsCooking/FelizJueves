@@ -1,0 +1,572 @@
+{
+ "about": "Per-class arbitration of the F kernel's VRR side between the ket cascade (hgp.vrr, [Fock] eqs 25-26) and the electron-transfer relation (hgp.etr, #354), from src/felizjueves/f_levers/etr.py. Rule: per class, score the ket cascade (hgp.vrr.build) and the ETR (hgp.etr.build) on (peak, x): peak = hgp.vrr.vrr_peak, the statement-order live model (#350's), x = hgp.cost's K^4 FLOPs per primitive quartet (cost / etr_cost); the ETR when its (peak, x) is lexicographically lower, else the cascade (a tie on both keeps the literal kernel); then THE ACCURACY GATE: the ETR ships only on a class whose interpreted ETR F is recorded within the F tolerance (ACCURACY, ACCURACY_TOL), else the cascade; OVERRIDES wins. The cost half is a model's opinion, not a measurement: a measured selector (#362) may override it. peak_margin and x_margin are cascade minus ETR (positive: the ETR saves); opinions_agree is whether the two point the same way; rule is the model's choice. accuracy is the ETR forced, worst error / scale on H2O/cc-pVDZ, launch_f's plan at tau = 0, n = 1 (test_fock_ondevice.py's PART1): every launch of the class, the kernel the ETR forced (`forced(ETR)`), interpreted, against ao.fock's sweep restricted to the quartets those launches meet, worst |F - G| / scale_G (scale_G: the sweep on |D| with ao.eri's absolute-value twin); gate is admitted when it is within 1e-13, refused when not, unverified with no record (L > 4, milestone 13's cap); choice ships the ETR only where rule says etr and gate is admitted. Model numbers only, calibrated against nothing: the compiler's registers and spills for both recurrences are printed by test/test_f_lever_etr_device.py, not stored here.",
+ "classes": [
+  {
+   "class": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "cascade": {
+    "peak": 1,
+    "x": 18,
+    "total": 74,
+    "nodes": 1
+   },
+   "etr": {
+    "peak": 1,
+    "x": 18,
+    "total": 74,
+    "nodes": 1
+   },
+   "peak_margin": 0,
+   "x_margin": 0,
+   "opinions_agree": true,
+   "rule": "cascade",
+   "accuracy": 8.54e-16,
+   "gate": "admitted",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "cascade": {
+    "peak": 5,
+    "x": 35,
+    "total": 100,
+    "nodes": 5
+   },
+   "etr": {
+    "peak": 5,
+    "x": 50,
+    "total": 118,
+    "nodes": 8
+   },
+   "peak_margin": 0,
+   "x_margin": -15,
+   "opinions_agree": true,
+   "rule": "cascade",
+   "accuracy": 4.69e-15,
+   "gate": "admitted",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    0,
+    0,
+    2
+   ],
+   "cascade": {
+    "peak": 12,
+    "x": 82,
+    "total": 172,
+    "nodes": 15
+   },
+   "etr": {
+    "peak": 14,
+    "x": 145,
+    "total": 239,
+    "nodes": 30
+   },
+   "peak_margin": -2,
+   "x_margin": -63,
+   "opinions_agree": true,
+   "rule": "cascade",
+   "accuracy": 1.89e-14,
+   "gate": "admitted",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "cascade": {
+    "peak": 12,
+    "x": 81,
+    "total": 159,
+    "nodes": 15
+   },
+   "etr": {
+    "peak": 14,
+    "x": 144,
+    "total": 226,
+    "nodes": 30
+   },
+   "peak_margin": -2,
+   "x_margin": -63,
+   "opinions_agree": true,
+   "rule": "cascade",
+   "accuracy": 2.9e-15,
+   "gate": "admitted",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    0,
+    1,
+    2
+   ],
+   "cascade": {
+    "peak": 21,
+    "x": 191,
+    "total": 333,
+    "nodes": 35
+   },
+   "etr": {
+    "peak": 30,
+    "x": 398,
+    "total": 544,
+    "nodes": 80
+   },
+   "peak_margin": -9,
+   "x_margin": -207,
+   "opinions_agree": true,
+   "rule": "cascade",
+   "accuracy": 3.19e-14,
+   "gate": "admitted",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    0,
+    2,
+    2
+   ],
+   "cascade": {
+    "peak": 34,
+    "x": 400,
+    "total": 618,
+    "nodes": 70
+   },
+   "etr": {
+    "peak": 57,
+    "x": 931,
+    "total": 1153,
+    "nodes": 175
+   },
+   "peak_margin": -23,
+   "x_margin": -531,
+   "opinions_agree": true,
+   "rule": "cascade",
+   "accuracy": 5.99e-13,
+   "gate": "refused",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    1,
+    0,
+    1
+   ],
+   "cascade": {
+    "peak": 18,
+    "x": 103,
+    "total": 207,
+    "nodes": 21
+   },
+   "etr": {
+    "peak": 17,
+    "x": 136,
+    "total": 242,
+    "nodes": 27
+   },
+   "peak_margin": 1,
+   "x_margin": -33,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 3.33e-15,
+   "gate": "admitted",
+   "choice": "etr"
+  },
+  {
+   "class": [
+    0,
+    1,
+    0,
+    2
+   ],
+   "cascade": {
+    "peak": 43,
+    "x": 312,
+    "total": 525,
+    "nodes": 61
+   },
+   "etr": {
+    "peak": 41,
+    "x": 431,
+    "total": 645,
+    "nodes": 85
+   },
+   "peak_margin": 2,
+   "x_margin": -119,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 1.66e-14,
+   "gate": "admitted",
+   "choice": "etr"
+  },
+  {
+   "class": [
+    0,
+    1,
+    1,
+    1
+   ],
+   "cascade": {
+    "peak": 40,
+    "x": 308,
+    "total": 479,
+    "nodes": 61
+   },
+   "etr": {
+    "peak": 38,
+    "x": 427,
+    "total": 599,
+    "nodes": 85
+   },
+   "peak_margin": 2,
+   "x_margin": -119,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 1.11e-14,
+   "gate": "admitted",
+   "choice": "etr"
+  },
+  {
+   "class": [
+    0,
+    1,
+    1,
+    2
+   ],
+   "cascade": {
+    "peak": 80,
+    "x": 792,
+    "total": 1215,
+    "nodes": 141
+   },
+   "etr": {
+    "peak": 77,
+    "x": 1106,
+    "total": 1530,
+    "nodes": 205
+   },
+   "peak_margin": 3,
+   "x_margin": -314,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 6.92e-13,
+   "gate": "refused",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    1,
+    2,
+    2
+   ],
+   "cascade": {
+    "peak": 138,
+    "x": 1702,
+    "total": 2425,
+    "nodes": 281
+   },
+   "etr": {
+    "peak": 137,
+    "x": 2401,
+    "total": 3125,
+    "nodes": 420
+   },
+   "peak_margin": 1,
+   "x_margin": -699,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    2,
+    0,
+    2
+   ],
+   "cascade": {
+    "peak": 103,
+    "x": 845,
+    "total": 1389,
+    "nodes": 155
+   },
+   "etr": {
+    "peak": 101,
+    "x": 1006,
+    "total": 1550,
+    "nodes": 185
+   },
+   "peak_margin": 2,
+   "x_margin": -161,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 2.98e-14,
+   "gate": "admitted",
+   "choice": "etr"
+  },
+  {
+   "class": [
+    0,
+    2,
+    1,
+    1
+   ],
+   "cascade": {
+    "peak": 96,
+    "x": 835,
+    "total": 1277,
+    "nodes": 155
+   },
+   "etr": {
+    "peak": 92,
+    "x": 996,
+    "total": 1438,
+    "nodes": 185
+   },
+   "peak_margin": 4,
+   "x_margin": -161,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 1.47e-14,
+   "gate": "admitted",
+   "choice": "etr"
+  },
+  {
+   "class": [
+    0,
+    2,
+    1,
+    2
+   ],
+   "cascade": {
+    "peak": 204,
+    "x": 2136,
+    "total": 3262,
+    "nodes": 355
+   },
+   "etr": {
+    "peak": 191,
+    "x": 2421,
+    "total": 3547,
+    "nodes": 420
+   },
+   "peak_margin": 13,
+   "x_margin": -285,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    0,
+    2,
+    2,
+    2
+   ],
+   "cascade": {
+    "peak": 348,
+    "x": 4562,
+    "total": 6504,
+    "nodes": 705
+   },
+   "etr": {
+    "peak": 311,
+    "x": 4992,
+    "total": 6934,
+    "nodes": 826
+   },
+   "peak_margin": 37,
+   "x_margin": -430,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "cascade": {
+    "peak": 87,
+    "x": 787,
+    "total": 1175,
+    "nodes": 146
+   },
+   "etr": {
+    "peak": 83,
+    "x": 963,
+    "total": 1351,
+    "nodes": 179
+   },
+   "peak_margin": 4,
+   "x_margin": -176,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": 3.9e-16,
+   "gate": "admitted",
+   "choice": "etr"
+  },
+  {
+   "class": [
+    1,
+    1,
+    1,
+    2
+   ],
+   "cascade": {
+    "peak": 185,
+    "x": 2018,
+    "total": 3162,
+    "nodes": 336
+   },
+   "etr": {
+    "peak": 172,
+    "x": 2357,
+    "total": 3501,
+    "nodes": 410
+   },
+   "peak_margin": 13,
+   "x_margin": -339,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    1,
+    1,
+    2,
+    2
+   ],
+   "cascade": {
+    "peak": 317,
+    "x": 4335,
+    "total": 6379,
+    "nodes": 671
+   },
+   "etr": {
+    "peak": 283,
+    "x": 4890,
+    "total": 6934,
+    "nodes": 811
+   },
+   "peak_margin": 34,
+   "x_margin": -555,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    1,
+    2,
+    1,
+    2
+   ],
+   "cascade": {
+    "peak": 389,
+    "x": 4423,
+    "total": 7521,
+    "nodes": 696
+   },
+   "etr": {
+    "peak": 362,
+    "x": 4488,
+    "total": 7586,
+    "nodes": 741
+   },
+   "peak_margin": 27,
+   "x_margin": -65,
+   "opinions_agree": false,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    1,
+    2,
+    2,
+    2
+   ],
+   "cascade": {
+    "peak": 661,
+    "x": 9390,
+    "total": 14840,
+    "nodes": 1381
+   },
+   "etr": {
+    "peak": 590,
+    "x": 8948,
+    "total": 14398,
+    "nodes": 1420
+   },
+   "peak_margin": 71,
+   "x_margin": 442,
+   "opinions_agree": true,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  },
+  {
+   "class": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "cascade": {
+    "peak": 1078,
+    "x": 16427,
+    "total": 27077,
+    "nodes": 2330
+   },
+   "etr": {
+    "peak": 962,
+    "x": 14447,
+    "total": 25097,
+    "nodes": 2220
+   },
+   "peak_margin": 116,
+   "x_margin": 1980,
+   "opinions_agree": true,
+   "rule": "etr",
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
+  }
+ ]
+}
