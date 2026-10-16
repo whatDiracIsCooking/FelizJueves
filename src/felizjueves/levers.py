@@ -231,6 +231,21 @@ VOCABULARY: dict[str, Lever] = {
            "flushes G atomically; it has no warp-reduced K[a, b] block to "
            "store (and Target.F's lever surface is #340's)"),
     ),
+    "shuffle": Lever.of(
+        "shuffle", 349,
+        "for a K[a,b] block no wider than the warp, the reduced values kept "
+        "in registers and the owner lane of element o selecting Kab[o], then "
+        "stored lane-parallel; no in-place Ksh stores, no extra shared "
+        "memory; a wider block falls back to coalesced's write-back "
+        "(k_levers/shuffle.py)",
+        {"k"},
+        j=("the register write-back moves K's K[a, b] block store; a [p|q] "
+           "kernel's lane-0 J_p write is J's own and nobody has declared a "
+           "J instance"),
+        f=("the fused F kernel maps one thread per contracted quartet and "
+           "flushes G atomically; it has no warp-reduced K[a, b] block to "
+           "store (and Target.F's lever surface is #340's)"),
+    ),
     "mixed": Lever.of(
         "mixed", 346,
         "the [p|q] recurrence, its [0]^(m) and the Boys argument in FP32; "
@@ -281,6 +296,20 @@ VOCABULARY: dict[str, Lever] = {
            "HRR, with no Hermite I[p] column to interleave (and Target.F's "
            "lever surface is #340's)"),
     ),
+    "block-fab": Lever.of(
+        "block-fab", 351,
+        "the bra block's f_ab partial sums reduced across the block (warp "
+        "shuffle, lane 0 into __shared__, a barrier, a column sum) and "
+        "flushed with one AtomicAdd per element per block instead of one "
+        "per thread (f_levers/block_fab.py)",
+        {"f"},
+        j=("the [p|q] kernel writes J_p by one lane-0 store or atomic per "
+           "bra record already (a WarpReduce per p); it has no per-thread "
+           "bra buffer flushed by every thread"),
+        k=("the K kernel reduces its K[a, b] accumulator across its one "
+           "warp already (WarpReduce, then lane 0); it has no per-thread "
+           "bra buffer flushed by every thread of a block"),
+    ),
     "stage-eac": Lever.of(
         "stage-eac", 342,
         "the bra record's E^ac block, block-uniform under one warp per bra "
@@ -306,6 +335,161 @@ VOCABULARY: dict[str, Lever] = {
         k=("the K kernel is MMD: its [p|q] targets are contracted through "
            "the E fragments per bra record, with no HGP VRR boundary held "
            "across a primitive nest to stage or group"),
+    ),
+    "ket-break": Lever.of(
+        "ket-break", 352,
+        "the fused F kernel's ket loop ends at the first ket whose separable "
+        "bound Gb (G_cd Mb) is under tau -- kets sorted descending by G_cd, "
+        "Mb = M_ab[bra] dominating every ket's six-block dmax -- before the "
+        "six-block skip, which stays (f_levers/ket_break.py)",
+        {"f"},
+        j=("the [p|q] kernel already breaks: its kets arrive sorted by "
+           "I_q max|D_q| and its screen is that product (kernel.py)"),
+        k=("the K kernel already breaks: its kets arrive sorted by I_bd "
+           "alone with a global max|D| (kernel_k.py, NO_DENSITY_KEY)"),
+    ),
+    "struct-reads": Lever.of(
+        "struct-reads", 353,
+        "every packed pair-record read (bra_prim, ab_sh, ket_prim, AB, CD, "
+        "the shell indices and AO offsets) through a struct view of its row "
+        "instead of a positional index into the flat array; the layout and "
+        "the arithmetic unchanged (f_levers/struct_reads.py)",
+        {"f"},
+        j=("the views are the fused F kernel's packed pair stream "
+           "(kernel_f.pack's 8-field primitive-pair row), read through the F "
+           "seams' field hook; the [p|q] kernel's per-field record arrays "
+           "(P[n,3], zeta, Ip; Q, eta, Iq, D_q) pass through no such hook, "
+           "and typing them would be a J lever of its own"),
+        k=("the views are the fused F kernel's packed pair stream "
+           "(kernel_f.pack's 8-field primitive-pair row), read through the F "
+           "seams' field hook; the K kernel's per-field record arrays (P, "
+           "XPA, XPC, Q, XQB, XQD, ...) pass through no such hook in "
+           "k_levers.seams, and typing them would be a K lever of its own"),
+    ),
+    # #356: a composition, legal on F only WITH batched-vrr in the same spec
+    # (f_levers/sliced_hrr.py refuses it alone, with its reason).
+    "sliced-hrr": Lever.of(
+        "sliced-hrr", 356,
+        "the HRR run once per bra pair (a, b) on #350's staged boundary, each "
+        "slice's ERIs digested before the next slice, so one slice's "
+        "interior is live at a time; requires batched-vrr, whose group count "
+        "it re-cuts at the sliced floor (f_levers/sliced_hrr.py)",
+        {"f"},
+        j=("the [p|q] kernel has no HGP HRR on contracted values: its J_p is "
+           "contracted inside the recurrence, with no bra-pair HRR to slice"),
+        k=("the K kernel is MMD: it has no HGP HRR on contracted values to "
+           "slice, its bra transform is the E fragment per bra record"),
+    ),
+    # #355: the F precision lever. A name of its own, not `mixed`: that
+    # entry's `what` is J's text and is in every J `mixed` unit's provenance.
+    "fmixed": Lever.of(
+        "fmixed", 355,
+        "the fused F kernel's VRR, contracted boundary accumulators and HRR "
+        "in FP32, Boys evaluated in fp64 on TO_F64(T) and narrowed; the "
+        "screen, the density reads, the six Fock buffers, the parameters "
+        "and the atomics stay FP64 (f_levers/mixed.py)",
+        {"f"},
+        j="the J instance of the precision lever is `mixed` (#346)",
+        k=("the K instance of the precision lever is #347's: `kmixed` and "
+           "`kmixed-de`"),
+    ),
+    # #357: a composition on batched-vrr, like #356's sliced-hrr
+    # (f_levers/subdag_vrr.py refuses it alone, with its reason).
+    "subdag-vrr": Lever.of(
+        "subdag-vrr", 357,
+        "each of #350's VRR groups emitted in a live-minimising list "
+        "schedule of its own closure (in-closure consumer counts), kept "
+        "where it lowers the group's peak live; the same statements in "
+        "another topological order; requires batched-vrr, whose groups it "
+        "leaves as cut (f_levers/subdag_vrr.py)",
+        {"f"},
+        j=("the [p|q] kernel's recurrence is MMD's (r, m) DAG, scheduled by "
+           "plan/schedule.py, with no HGP VRR groups to schedule per group"),
+        k=("the K kernel is MMD: its [p|q] recurrence is the plan layer's "
+           "DAG, with no HGP VRR groups to schedule per group"),
+    ),
+    # #360: a composition, legal on F only WITH sliced-hrr (and so
+    # batched-vrr) in the same spec (f_levers/slim_fock.py refuses it alone).
+    "slim-fock": Lever.of(
+        "slim-fock", 360,
+        "each sliced-HRR slice (a, b) keeps a reduced Fock-buffer set -- the "
+        "a rows of f_ac / f_ad and the b rows of f_bc / f_bd, zeroed and "
+        "AtomicAdd-flushed per slice -- and f_cd is streamed by one "
+        "AtomicAdd per ERI; f_ab is unchanged; requires sliced-hrr "
+        "(f_levers/slim_fock.py)",
+        {"f"},
+        j=("the [p|q] kernel's output is J_p, one Hermite row per bra "
+           "record; it has no six-block Fock digestion whose buffers a "
+           "per-bra-element split could reduce"),
+        k=("the K kernel accumulates one K[a, b] block per bra record in a "
+           "warp; it has no six-block Fock digestion, and no sliced HRR, "
+           "whose per-slice buffer set could be reduced"),
+    ),
+    # #361: a composition, legal on F only WITH slim-fock (and so sliced-hrr
+    # and batched-vrr) in the same spec (f_levers/sub_slice.py refuses it).
+    "sub-slice": Lever.of(
+        "sub-slice", 361,
+        "each sliced-HRR slice's HRR cut into n_sub ordered sub-slices -- "
+        "contiguous runs of its ERIs, each its own HRR sub-DAG, tapped and "
+        "digested into #360's reduced buffers before the next -- so fewer of "
+        "the slice's values are live at once; atomic traffic unchanged; "
+        "requires slim-fock (f_levers/sub_slice.py)",
+        {"f"},
+        j=("the [p|q] kernel has no HGP HRR on contracted values, so no "
+           "sliced-HRR slice whose interior could be cut"),
+        k=("the K kernel is MMD: it has no sliced HGP HRR and no reduced "
+           "Fock-buffer set whose slice interior could be cut"),
+    ),
+    "scatter": Lever.of(
+        "scatter", 358,
+        "no atomics in the fused F kernel: block-fab's reduced f_ab and each "
+        "quartet's five ket-dependent blocks stored to a per-launch slot "
+        "buffer W sized by the launch (n_bra x n_ket), then the "
+        "class-agnostic f_scatter kernel sums W into F, one thread per "
+        "element, in a fixed order, so F is deterministic "
+        "(f_levers/scatter.py, kernel_f_scatter.py)",
+        {"f"},
+        j=("the [p|q] kernel's J_p write is one lane-0 store per bra record "
+           "at one batch (atomics only for a split class, passes.atomize); "
+           "it has no per-thread F buffers for a slot buffer to replace"),
+        k=("the K kernel's write-back is K's own seam (#345's coalesced "
+           "store); it has no fused six-block digestion into F to scatter"),
+    ),
+    # #359: a composition on #356, legal on F only WITH sliced-hrr (and so
+    # batched-vrr) in the same spec; the name sorts after sliced-hrr so
+    # hooks_for applies it on the slices (f_levers/sliced_site_digest.py).
+    "sliced-site-digest": Lever.of(
+        "sliced-site-digest", 359,
+        "each ERI of a sliced-HRR slice tapped and digested into the Fock "
+        "buffers at its production site instead of after the slice's whole "
+        "HRR, in the same order, so it dies there; requires sliced-hrr "
+        "(f_levers/sliced_site_digest.py)",
+        {"f"},
+        j=("the [p|q] kernel has no HGP HRR on contracted values and no "
+           "six-block predigest: its J_p is contracted inside the "
+           "recurrence, with no slice digest to interleave"),
+        k=("the K kernel is MMD: it has no HGP HRR slices and no six-block "
+           "predigest, its K contraction is staged through the E fragments"),
+    ),
+    # #354: the ETR on the classes its declared rule (the cost model, gated
+    # on accuracy) picks; f_levers/etr.py.
+    "etr": Lever.of(
+        "etr", 354,
+        "on the classes the declared rule picks (the cost model, gated on "
+        "a recorded accuracy check against the sweep), the fused F "
+        "kernel's boundary is formed by eq 25 to |e| = L and the "
+        "electron-transfer relation at m = 0 instead of the ket cascade "
+        "(eq 26); the other classes keep the literal VRR "
+        "(f_levers/etr.py)",
+        {"f"},
+        j=("the ETR is an HGP recurrence ([e0|f0] from the bra by "
+           "translational invariance); the [p|q] kernel's MMD recurrence "
+           "builds Hermite [r]^(0) from PQ alone, with no bra/ket "
+           "Cartesian split to transfer across"),
+        k=("the ETR is an HGP recurrence ([e0|f0] from the bra by "
+           "translational invariance); the K kernel's MMD recurrence builds "
+           "Hermite [r]^(0) from PQ alone, with no bra/ket Cartesian split "
+           "to transfer across"),
     ),
 }
 

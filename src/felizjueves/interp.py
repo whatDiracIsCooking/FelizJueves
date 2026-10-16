@@ -3,7 +3,8 @@
     interpret(kernel, **inputs) -> {out_param: ndarray}
 
 An instruction set machine for ir.py and nothing more. It executes Decl,
-Assign, For, If, Break, WarpReduce, AtomicAdd and Inline; it skips Note; it
+Assign, For, If, Break, WarpReduce, LaneBroadcast, Barrier, AtomicAdd and
+Inline; it skips Note; it
 refuses Raw (opaque by definition). **It does not know what McMurchie-Davidson is**:
 `Weighted` is `SUM_k c_k * g_k * src_k` in fp64, a `Factor` is the scalar of
 that name, and no recurrence, index set or integral appears here. The moment
@@ -32,9 +33,20 @@ THE MACHINE.
 - The reduction is the xor butterfly a shuffle reduction performs
   (`v[i] += v[i ^ o]` for o = lanes/2 .. 1), so every lane sees the same sum,
   rounded as the device would round it.
-- Warps of a block run one after another, sharing the block's SHARED arrays.
-  The IR has no barrier, so communication through shared memory between
-  threads is not modelled beyond sequential consistency.
+- A `LaneBroadcast` (#349) is the other warp collective, under the same
+  arrival rule: lane `i` receives the `value` lane `src_i` evaluated, where
+  `src_i` is lane `i`'s own `source`. A source lane outside `[0, lanes)`
+  raises (the hardware would wrap it modulo the width; a builder that relies
+  on that is wrong). The value moves unchanged, so no rounding happens.
+- Warps of a block run one after another, sharing the block's SHARED arrays,
+  each to completion or to its next `Barrier` (#351). At a barrier the block
+  waits until every warp has arrived -- every thread at the SAME `Barrier`,
+  else it raises (a finished thread, or one at another statement, is
+  undefined behaviour on the device) -- and then the warps resume, again one
+  after another. A kernel with no `Barrier` therefore runs in exactly the
+  order it ran before #351. Shared memory is sequentially consistent; a race
+  that a missing barrier would leave (a read of a row another warp has not
+  yet written) shows as a read of a never-written element, which raises.
 
 STRICTNESS, because a lax machine passes broken kernels:
 
@@ -111,6 +123,7 @@ import numpy as np
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Barrier,
     Break,
     Call,
     Decl,
@@ -124,6 +137,7 @@ from felizjueves.ir import (
     Inline,
     Intent,
     Kernel,
+    LaneBroadcast,
     Lit,
     Note,
     Raw,
@@ -316,7 +330,8 @@ def _coerce(type_: Scalar, v: Any, what: str) -> int | float:
 class _Thread:
     """One thread's execution of the body, as a coroutine.
 
-    It yields `(stmt, value)` at a WarpReduce and is sent the warp's sum.
+    It yields `(stmt, value)` at a WarpReduce and is sent the warp's sum, and
+    `(stmt, (value, source))` at a LaneBroadcast and is sent its source's value.
     """
 
     def __init__(self, interp: Interpreter, globals_: dict[str, Any],
@@ -492,6 +507,11 @@ class _Thread:
         elif isinstance(s, WarpReduce):
             total = yield (s, self.eval(s.value))
             self.store(s.dst, total)
+        elif isinstance(s, LaneBroadcast):
+            got = yield (s, (self.eval(s.value), self.eval(s.source)))
+            self.store(s.dst, got)
+        elif isinstance(s, Barrier):
+            yield (s, None)  # the block resumes every thread together
         elif isinstance(s, Inline):
             yield from self.inline(s)
         elif isinstance(s, Raw):
@@ -563,6 +583,18 @@ class _Thread:
 # ---------------------------------------------------------------------------
 # The launch
 # ---------------------------------------------------------------------------
+
+
+def _broadcast(arrived: list[tuple[Any, Any]]) -> list[Any]:
+    """The indexed shuffle: lane `i` gets the value of lane `arrived[i][1]`."""
+    n = len(arrived)
+    out = []
+    for i, (_, src) in enumerate(arrived):
+        if type(src) is not int or not 0 <= src < n:
+            raise InterpError(f"LaneBroadcast: lane {i} names source lane "
+                              f"{src!r}, outside [0, {n})")
+        out.append(arrived[src][0])
+    return out
 
 
 def _butterfly(values: list[float | int]) -> int | float:
@@ -673,29 +705,61 @@ class Interpreter:
                         else v for k, v in globals_.items()}
                 t = _Thread(self, mine, shared, geometry)
                 threads.append(t.run(self.kernel.body))
-            for w in range(0, len(threads), lanes):
-                self._warp(threads[w:w + lanes], full=len(threads) - w >= lanes)
+            warps = [_Warp(threads[w:w + lanes], full=len(threads) - w >= lanes)
+                     for w in range(0, len(threads), lanes)]
+            while True:  # one pass per Barrier the block meets
+                at = [w.advance() for w in warps]
+                if all(a is None for a in at):
+                    break
+                if len({id(a) for a in at}) != 1:
+                    raise InterpError(
+                        "a Barrier not reached by every thread of the block: "
+                        "a warp finished, or waits at another statement")
         return outs
 
-    def _warp(self, lanes: list[Generator], *, full: bool) -> None:
-        sends: list[Any] = [None] * len(lanes)
+
+class _Warp:
+    """One warp's lanes, advanced together (module docstring, THE MACHINE):
+    to completion, or to the next `Barrier`, which `advance` returns."""
+
+    def __init__(self, lanes: list[Generator], *, full: bool) -> None:
+        self.lanes, self.full = lanes, full
+        self.sends: list[Any] = [None] * len(lanes)
+
+    def advance(self) -> Barrier | None:
+        lanes = self.lanes
         while True:
             arrived = []
             for i, g in enumerate(lanes):
                 try:
-                    arrived.append(g.send(sends[i]))
+                    arrived.append(g.send(self.sends[i]))
                 except StopIteration:
                     arrived.append(None)
+            self.sends = [None] * len(lanes)
             if all(a is None for a in arrived):
-                return
+                return None
             stmts = {id(a[0]) if a is not None else None for a in arrived}
+            barrier = any(a is not None and isinstance(a[0], Barrier)
+                          for a in arrived)
             if len(stmts) != 1:
-                raise InterpError("warp diverged at a WarpReduce: lanes are "
+                if barrier:
+                    raise InterpError(
+                        "a Barrier not reached by every thread of the block: "
+                        "lanes of one warp are not all at it")
+                what = next(type(a[0]).__name__ for a in arrived
+                            if a is not None)
+                raise InterpError(f"warp diverged at a {what}: lanes are "
                                   "not all at the same statement")
-            if not full:
-                raise InterpError("WarpReduce in a partial warp")
-            total = _butterfly([a[1] for a in arrived])
-            sends = [total] * len(lanes)
+            if barrier:
+                return arrived[0][0]
+            what = type(arrived[0][0]).__name__
+            if not self.full:
+                raise InterpError(f"{what} in a partial warp")
+            if isinstance(arrived[0][0], LaneBroadcast):
+                self.sends = _broadcast([a[1] for a in arrived])
+            else:
+                total = _butterfly([a[1] for a in arrived])
+                self.sends = [total] * len(lanes)
 
 
 def interpret(kernel: Kernel, *, launch: Launch | None = None,
@@ -754,8 +818,12 @@ def interpret_fragment(fragment: Fragment, *,
     thread = _Thread(_Alone(boys), binds, {}, geometry)  # type: ignore[arg-type]
     local: dict[str, Any] = {}
     thread.scopes.append(local)
-    for _ in thread.run(fragment.body):
-        raise InterpError("WarpReduce in a fragment run alone: there is no warp")
+    for at in thread.run(fragment.body):
+        if isinstance(at[0], Barrier):
+            raise InterpError("Barrier in a fragment run alone: there is no "
+                              "block")
+        raise InterpError(f"{type(at[0]).__name__} in a fragment run alone: "
+                          "there is no warp")
     out: dict[str, Any] = {}
     for name, slot in local.items():
         out[name] = slot.value if isinstance(slot, _Scalar) else slot.data.copy()

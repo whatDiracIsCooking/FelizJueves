@@ -11,6 +11,8 @@ way:
 - `WarpReduce` as the xor butterfly the interpreter models (`v += shfl_xor(v,
   o)` for o = width/2 .. 1), with `__shfl_xor_sync` over the full mask of the
   arch's wavefront -- the width is read off the `Arch`, never spelled here;
+- `LaneBroadcast` (#349) as `__shfl_sync(mask, value, source, width)`, the
+  same full mask and width;
 - `AtomicAdd` as `atomicAdd` (the shared default; double is native on sm_60+).
 
 The arch string is what nvcc is driven at (`-arch=<arch.name>`); it is not in
@@ -51,6 +53,12 @@ class CudaWriter(CWriter):
             f"    {dst} = fj_v;",
             "}",
         ]
+
+    def lane_broadcast(self, dst: str, value: str, lane: str) -> str:
+        # #349: the indexed shuffle over the full mask of the arch's width.
+        w = self.arch.wavefront
+        mask = f"0x{(1 << w) - 1:x}u"
+        return f"{dst} = __shfl_sync({mask}, {value}, {lane}, {w});"
 
 
 def emit(kernel: Kernel, arch: Arch) -> str:

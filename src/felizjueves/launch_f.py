@@ -1,6 +1,8 @@
 """The fused Fock build's pair stream, as a value (#285; [Fock] §3.2).
 
-    f_launches(basis, D, *, bound, tau, n)        -> FPlan
+    f_launches(basis, D, *, bound, tau, n, ket_break=False, scatter=False)
+                                                  -> FPlan
+    launch_footprint(plan, launch, basis)         -> FFootprint (#358)
     FPlan      iterable of FLaunch, plus batches / screened / deleted / counts
     FBatch(la, lb, degree, mag, magnitude, pairs) one bin of contracted pairs
     FPair(a, b, la, lb, n_prim, prims, prim_G, G, dmax, key, mag)
@@ -110,6 +112,43 @@ batch. On milestone 12's ladder (every `l <= 2`) those are the 21 classes.
 `I == J` is a launch too: which quartets of it a kernel computes (the
 canonical half) is the digestion's business (#283), not the plan's.
 
+THE MONOTONE KET KEY (#352), opt-in: `ket_break=True`. Everything above
+is unchanged except the order inside a batch and the launches' `Spec`: the
+pairs sit descending by `G` ALONE (`FPair.key = G`, stably, the same
+`launch._sorted_desc`), and every launch names its class with the
+`KET_BREAK` lever, whose kernel ends a thread's ket loop at the first ket
+whose separable bound `G_ab (G_cd M_ab)` is under `tau` (f_levers/
+ket_break.py has the dominating factor `M_ab` and the proof). `G * dmax`
+cannot be that key: the six-block `dmax` is not monotone along it (pin 8),
+and `G` is the only factor of the bound that every ket carries alone --
+`Target.K`'s precedent (`launch_k`: kets sorted by `I_bd` alone). The bins,
+the magnitudes, pruning and eq. 29's pre-launch screen read `G`, not the
+order, so they are the default stream's exactly. The default
+(`ket_break=False`) stream is byte-for-byte the one before #352.
+
+THE ATOMIC-FREE WRITE-BACK (#358), opt-in: `scatter=True`. The stream is
+the default's (or `ket_break`'s) exactly -- pairs, bins, order, screens --
+and every launch names its class with the `SCATTER` lever too, whose
+kernel stores its contributions to a per-launch slot buffer `W` and leaves
+`F` to a second kernel (f_levers/scatter.py, kernel_f_scatter.py). Such a
+launch needs host buffers the default does not, so the plan DECLARES them,
+from the plan and the basis alone (`launch_footprint`), derived here
+independently of the kernel's layout (a test holds the two equal):
+
+    n_slot  = n_bra (n_a n_b + n_ket S5),  S5 = n_c n_d + n_a n_c + n_a n_d
+                                                + n_b n_c + n_b n_d
+    n_el   <= n_bra n_a n_b + n_ket n_c n_d + |A_bra| |A_ket|
+
+`n_slot` the slots of `W` -- per bra its block-reduced `f_ab` and per
+quartet its five ket-dependent blocks, the only units with one writer
+without an atomic -- and `n_el` the elements of `F` the scatter writes:
+the bra blocks, the ket blocks, and the cross blocks, whose rows are the
+AOs `A_bra` of the bra batch's shells and columns the AOs `A_ket` of the
+ket batch's. A buffer smaller than either is a wrong answer, never a
+dropped term, so the kernel declares `W`'s extent and the host's map
+refuses a footprint past the bound. With `scatter=False` nothing here
+changes.
+
 THE COUNTS. `FPlan` counts what fired -- pairs deleted, primitive pairs
 pruned, batch pairs removed before launch -- and nothing more: on this
 repo's compact fixtures those counts are facts about the fixtures, not about
@@ -134,6 +173,14 @@ from felizjueves.launch import _nonneg, _sorted_desc
 from felizjueves.spec import Operator, Spec, Target
 
 Bound = Callable[[Shell, Shell], Sequence[float]]
+
+# #352: the kernel-body lever a `ket_break=True` stream's launches name; the
+# same string as `f_levers.ket_break.NAME` (this module may not import the
+# kernel's levers; test/test_f_lever_ket_break.py pins the two equal).
+KET_BREAK = "ket-break"
+# #358: the atomic-free write-back's lever, `f_levers.scatter.NAME` restated
+# (test/test_f_lever_scatter.py pins the two equal).
+SCATTER = "scatter"
 
 
 # --- eq. 29 ------------------------------------------------------------------
@@ -327,10 +374,12 @@ class FPlan:
         }
 
 
-def f_class_spec(bra: FBatch, ket: FBatch) -> Spec:
-    """`Target.F`, `am = (la, lb, lc, ld)` in AO order, one batch."""
+def f_class_spec(bra: FBatch, ket: FBatch, *,
+                 levers: tuple[str, ...] = ()) -> Spec:
+    """`Target.F`, `am = (la, lb, lc, ld)` in AO order, one batch; `levers`
+    the kernel-body levers its kernel is built with (none by default)."""
     return Spec(Operator.COULOMB, 0, (bra.la, bra.lb, ket.la, ket.lb),
-                Target.F)
+                Target.F, levers=levers)
 
 
 def _canonical(shells: Sequence[Shell], i: int, j: int) -> tuple[int, int]:
@@ -338,10 +387,17 @@ def _canonical(shells: Sequence[Shell], i: int, j: int) -> tuple[int, int]:
 
 
 def f_launches(basis: Basis, D: object, *, bound: Bound, tau: float,
-               n: int) -> FPlan:
+               n: int, ket_break: bool = False,
+               scatter: bool = False) -> FPlan:
     """The pair stream of `basis` and the symmetric density `D` (module
     docstring). `bound(sa, sb)` returns `G_[ab]` per primitive pair of the
-    ordered shell pair, in `primitive_pairs` order; injected."""
+    ordered shell pair, in `primitive_pairs` order; injected. `ket_break`:
+    the monotone ket key and its lever (module docstring, #352). `scatter`:
+    every launch names the atomic-free write-back's lever (#358)."""
+    if type(ket_break) is not bool:
+        raise ValueError(f"ket_break = {ket_break!r} is not a bool")
+    if type(scatter) is not bool:
+        raise ValueError(f"scatter = {scatter!r} is not a bool")
     rows = _density(basis, D)
     tau = _tau(tau)
     n = _n(n)
@@ -375,7 +431,8 @@ def f_launches(basis: Basis, D: object, *, bound: Bound, tau: float,
                    for m in range(off[a], off[a] + sa.n_cart)
                    for k in range(off[b], off[b] + sb.n_cart))
         kept_pairs.append(FPair(a, b, sa.l, sb.l, len(g), keep,
-                                tuple(g[k] for k in keep), G, dmax, G * dmax,
+                                tuple(g[k] for k in keep), G, dmax,
+                                G if ket_break else G * dmax,
                                 magnitude_index(G, mags)))
 
     bins: dict[tuple[int, int, int, int], list[FPair]] = {}
@@ -385,6 +442,8 @@ def f_launches(basis: Basis, D: object, *, bound: Bound, tau: float,
         FBatch(*k, mags[k[3]], tuple(_sorted_desc(bins[k])))
         for k in sorted(bins))
 
+    levers = tuple(sorted(((KET_BREAK,) if ket_break else ())
+                          + ((SCATTER,) if scatter else ())))
     launches, screened = [], []
     for bi, bra in enumerate(batches):
         for ki in range(bi, len(batches)):
@@ -399,7 +458,48 @@ def f_launches(basis: Basis, D: object, *, bound: Bound, tau: float,
                         "screen would not be sound")
                 screened.append((bi, ki))
             else:
-                launches.append(FLaunch(bi, ki, f_class_spec(bra, ket)))
+                launches.append(FLaunch(bi, ki, f_class_spec(
+                    bra, ket, levers=levers)))
 
     return FPlan(tau, n, mags, eps, g_max, batches, tuple(launches),
                  tuple(screened), tuple(deleted), n_prim_total)
+
+
+# --- #358: the atomic-free write-back's host buffers, declared ---------------
+
+
+@dataclass(frozen=True)
+class FFootprint:
+    """One launch's host buffers for the `scatter` lever (module docstring,
+    "THE ATOMIC-FREE WRITE-BACK"): `n_slot` slots of `W`, and at most
+    `n_elem_bound` elements of `F` written by the scatter; `bra_aos` and
+    `ket_aos` the AOs of the two sides' shells, sorted."""
+
+    n_bra: int
+    n_ket: int
+    n_slot: int
+    bra_aos: tuple[int, ...]
+    ket_aos: tuple[int, ...]
+    n_elem_bound: int
+
+
+def launch_footprint(plan: FPlan, launch: FLaunch,
+                     basis: Basis) -> FFootprint:
+    """`launch`'s declared footprint, from the plan and `basis` alone."""
+    if launch not in plan.launches:
+        raise ValueError(f"{launch} is not one of the plan's launches")
+    bra, ket = plan.batches[launch.bra], plan.batches[launch.ket]
+    shells, off = basis.shells, basis.offsets
+    na, nb = shells[bra.pairs[0].a].n_cart, shells[bra.pairs[0].b].n_cart
+    nc, nd = shells[ket.pairs[0].a].n_cart, shells[ket.pairs[0].b].n_cart
+    s5 = nc * nd + na * nc + na * nd + nb * nc + nb * nd
+
+    def aos(batch: FBatch) -> tuple[int, ...]:
+        return tuple(sorted({off[s] + i for p in batch.pairs
+                             for s in (p.a, p.b)
+                             for i in range(shells[s].n_cart)}))
+
+    A, B = aos(bra), aos(ket)
+    n_bra, n_ket = len(bra.pairs), len(ket.pairs)
+    return FFootprint(n_bra, n_ket, n_bra * (na * nb + n_ket * s5), A, B,
+                      n_bra * na * nb + n_ket * nc * nd + len(A) * len(B))

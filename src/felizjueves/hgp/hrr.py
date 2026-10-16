@@ -63,7 +63,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from felizjueves.hgp.vrr import ZERO, AmClass, Cart, cartesians, target_set
+from felizjueves.hgp.vrr import (
+    ZERO,
+    AmClass,
+    Cart,
+    cartesians,
+    peak_live,
+    target_set,
+)
 
 Node = tuple[Cart, Cart, Cart, Cart]  # (a, b, c, d): (a b | c d), contracted
 
@@ -191,3 +198,114 @@ def build(cls: AmClass, first: str = "bra") -> HrrDag:
         todo.extend(t.child for t in terms[n])
     order = tuple(sorted(terms, key=lambda n: order_key(n, first)))
     return HrrDag(tuple(cls), first, tg, MappingProxyType(terms), order)
+
+
+# ---------------------------------------------------------------------------
+# Slicing (#356, milestone 13 lane H2; additive: `build` and every count
+# above are unchanged, test/test_hgp_hrr.py and hgp/cost.json pin them)
+# ---------------------------------------------------------------------------
+#
+# A SLICE is the HRR of one bra pair `(a, b)`: the ERIs `(a b | c d)` for
+# every `c, d`, and their closure under the parent DAG's own terms, in the
+# parent's order filtered. `targets` lists `a` outermost, then `b`, so slice
+# `s` is the contiguous run `targets[s n_cd : (s + 1) n_cd]`, and the slices,
+# in `(a, b)` order, visit the targets in the parent's order. A node two
+# slices share (a bra-HRR intermediate `(a' b' | f 0)`, a boundary leaf) is
+# in both closures and is recomputed by both from the same terms.
+
+
+def closure(terms: Mapping[Node, tuple[Term, ...]],
+            roots: Iterable[Node]) -> frozenset[Node]:
+    """Every node `roots` read, transitively, themselves included."""
+    seen: set[Node] = set()
+    todo = list(roots)
+    while todo:
+        n = todo.pop()
+        if n not in seen:
+            seen.add(n)
+            todo.extend(t.child for t in terms[n])
+    return frozenset(seen)
+
+
+def sub_dag(dag: HrrDag, targets: Iterable[Node],
+            order: Iterable[Node] | None = None) -> HrrDag:
+    """The closure of `targets` (a non-empty subset of `dag.targets`, kept
+    in the given order) as an `HrrDag`: the parent's terms, and the
+    parent's order filtered to the closure unless `order` (the closure,
+    topologically) is given -- the shape #361's sub-slices reuse."""
+    targets = tuple(targets)
+    stray = set(targets) - set(dag.targets)
+    if not targets or stray or len(set(targets)) != len(targets):
+        raise ValueError(f"{dag.cls}: {targets!r} is not a non-empty set of "
+                         "the DAG's targets")
+    keep = closure(dag.terms, targets)
+    terms = {n: t for n, t in dag.terms.items() if n in keep}
+    if order is None:
+        order = tuple(n for n in dag.order if n in keep)
+    else:
+        order = tuple(order)
+        if len(order) != len(keep) or set(order) != keep:
+            raise ValueError(f"{dag.cls}: the order is not the closure")
+        seen: set[Node] = set()
+        for n in order:
+            if any(t.child not in seen for t in terms[n]):
+                raise ValueError(f"{dag.cls}: {n} precedes a node it reads")
+            seen.add(n)
+    return HrrDag(dag.cls, dag.first, targets, MappingProxyType(terms), order)
+
+
+def slice_targets(cls: AmClass) -> tuple[tuple[Node, ...], ...]:
+    """`targets(cls)` cut per bra pair `(a, b)`, in `(a, b)` order: the
+    `n_a n_b` contiguous runs of `n_c n_d` ERIs each."""
+    tg = targets(cls)
+    _, _, lc, ld = cls
+    n_cd = len(cartesians(lc)) * len(cartesians(ld))
+    return tuple(tg[i:i + n_cd] for i in range(0, len(tg), n_cd))
+
+
+def slices(cls: AmClass, first: str = "bra") -> tuple[HrrDag, ...]:
+    """The HRR of `cls` as one sub-DAG per bra pair (`slice_targets`)."""
+    dag = build(cls, first)
+    return tuple(sub_dag(dag, t) for t in slice_targets(cls))
+
+
+def hrr_peak(dag: HrrDag) -> int:
+    """Peak live values of `dag` in its own order, its ERIs live to the end
+    (the digestion reads them after it): `hgp.vrr.peak_live`'s model."""
+    return peak_live(dag.order, lambda n: (t.child for t in dag.terms[n]),
+                     dag.targets)
+
+
+# ---------------------------------------------------------------------------
+# Sub-slicing (#361, milestone 13 lane H5; additive: `build`, `slices` and
+# every count above are unchanged)
+# ---------------------------------------------------------------------------
+#
+# A SUB-SLICE is a contiguous run of one slice's ERIs, in the slice's (and
+# so the parent's) target order, and its closure under the parent DAG's
+# terms, in the parent's order filtered (`sub_dag` unchanged). Contiguity in
+# TARGET order is what keeps the digestion's visiting order the slice's: the
+# sub-slices of a slice, in order, visit its ERIs exactly as the slice does.
+# A node two sub-slices share (a bra-HRR `(a b | f 0)`, a leaf) is
+# recomputed by both from the same terms, as #356's slices share theirs.
+
+
+def runs(seq: Iterable[Node], n: int) -> tuple[tuple[Node, ...], ...]:
+    """`seq` cut into `n` contiguous, near-equal, non-empty runs, in order
+    (`hgp.vrr.group_targets`'s cut on a given sequence)."""
+    seq = tuple(seq)
+    if type(n) is not int or not 1 <= n <= len(seq):
+        raise ValueError(f"{n!r} runs of {len(seq)} nodes; a run count is an "
+                         f"int in 1..{len(seq)}")
+    cut = [round(g * len(seq) / n) for g in range(n + 1)]
+    return tuple(seq[a:b] for a, b in zip(cut, cut[1:], strict=False))
+
+
+def sub_slices(cls: AmClass, n_sub: int, first: str = "bra"
+               ) -> tuple[tuple[HrrDag, ...], ...]:
+    """Each of `slices(cls)`'s slices cut into `n_sub` sub-DAGs of the
+    WHOLE HRR (`sub_dag(build(cls), run)` per `runs(slice.targets, n_sub)`),
+    in `(a, b)` order then run order."""
+    dag = build(cls, first)
+    return tuple(tuple(sub_dag(dag, r) for r in runs(t, n_sub))
+                 for t in slice_targets(cls))

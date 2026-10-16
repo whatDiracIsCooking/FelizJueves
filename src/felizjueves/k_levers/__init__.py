@@ -22,7 +22,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.k_levers import coalesced, interleave, mixed, split, stage_eac
+from felizjueves.k_levers import (
+    coalesced,
+    interleave,
+    mixed,
+    shuffle,
+    split,
+    stage_eac,
+)
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KHooks
 from felizjueves.spec import Spec
 
@@ -36,6 +43,7 @@ REGISTRY: dict[str, Callable[[KHooks, Spec], KHooks]] = {
     stage_eac.NAME: stage_eac.apply,  # #342: E^ac staged in shared
     **dict.fromkeys(mixed.ARMS, mixed.apply),  # #347: kmixed, kmixed-de
     coalesced.NAME: coalesced.apply,  # #345: lane-parallel K write-back
+    shuffle.NAME: shuffle.apply,  # #349: register write-back, small blocks
 }
 
 

@@ -485,6 +485,61 @@ of every kind goes through ONE recording path:
   `KERNEL` row (`save`), as "f" did: a store without one is written byte for
   byte as before.
 
+THE LEVER LEDGER (#362). `felizjueves.leverledger` reads, per (class, arm,
+arch), a kernel lever row beside the literal row of its class; the cells it
+reads are declared HERE, so the driver that records them and the report that
+reads them name one set:
+
+- THE CLASSES (`ledger_classes`): J `pq_spec(L)`, K `k_spec(L)`, one batch,
+  and every class of the 21-class F ladder, at total L <= `LEDGER_MAX_L`.
+  The literal classes are the baseline, recorded compile-only like every
+  ledger row (no K or F literal row at these L carries or needs a clock).
+- THE ARMS (`ledger_arms`): every kernel-body lever of `levers.VOCABULARY`,
+  read when asked. A lever whose builder refuses it alone (`REQUIRES`) is
+  recorded as its COMPOSITION (`batched-vrr+sliced-hrr`), and `COMPOSITIONS`
+  adds the arms that are compositions by declaration (`interleave+split`,
+  #348). A composition of kernel-body levers is ONE arm of kind KERNEL
+  (`is_composition`): `lever_arm` takes its key spelling, `arm_of` returns
+  it, and a row keyed by it is not "two arms at once" -- a plan or lowering
+  lever still never composes with anything.
+- A COMPILE-ONLY KERNEL ROW is admitted on every target, F included: #278's
+  gate binds a TIMED F row (its readings may not be null), and a ledger row
+  is not timed.
+
+THE LEVER CLOCK (#363). Every ledger arm against its literal class, on the
+clock, both cards. DECLARED BEFORE ANY TIMED KERNEL ROW EXISTED, and not to
+be tuned after reading one: the predecessor's lesson is that a spill win is
+not a wall-clock win, so the ledger's compiler readings are never the
+verdict.
+
+- THE CELLS are `lever_clock_cells()`: every ledger arm on every class of
+  its target at total L <= LEDGER_MAX_L (the ledger's cells less its
+  literal baselines) -- the losers are cells like the winners.
+- THE ROW is the ledger row itself: the clock is ADDED to the arm's
+  compile row by `combine` (the same emitted text, `source_sha256`), so no
+  key, row or field changes shape and the literal rows are not rewritten.
+  It carries `runtime_ns` (the arm's wide-input median), `spread_ns` (its
+  IQR), `repeats`, raw `wallclock:near:*` (the near input) and, timed in
+  the SAME gated phase, the literal class's statistics as
+  `wallclock:control:*` / `wallclock:control:near:*` -- #55's shape, so
+  `lever_ab` reads it unchanged. The contention state is on the row: every
+  `GPU_UTIL_FIELDS` reading (and the control's), the CPU busy fraction
+  before, the 1-minute load, and `wallclock:gate_discarded_phases`.
+- THE GATE (`felizjueves.gate`): one phase per cell -- control near, arm
+  near, arm wide, control wide, back to back -- behind `gate.wait_quiet`
+  and closed by `gate.after_reading`; a phase the gate refuses, or whose
+  after-reading is non-idle or UNKNOWN, is discarded and retaken, never
+  recorded. A cell whose every take is refused has NO ROW.
+- PER CELL, `lever_ab`'s rule (#60, both inputs; WIN / LOSS / NEUTRAL /
+  MIXED), unchanged.
+- PER (ARM, ARCH), `lever_clock_verdict`: FASTER iff the arm WINS at some
+  class and LOSES or is MIXED at none; SLOWER iff it LOSES at some class
+  and WINS or is MIXED at none; NOT SHOWN otherwise (neutral everywhere, or
+  both signs). A cell not timed is refused (KeyError), never skipped.
+- THE DEFAULT (`lever_may_become_the_default`): only an arm that WINS at
+  every class on BOTH cards, and then in its own commit; nothing here
+  moves a default.
+
 THE SPLIT (#94). This module is the store and nothing else: the record, the
 file, the read path, the declared subgrid, and the two verdicts read off the
 rows. It knows no toolchain -- it runs no compiler, reads no config.sh,
@@ -607,7 +662,8 @@ def kind_of(lever: str) -> str:
     refused: the store never records an arm nothing can reproduce."""
     if lever in ARMS:
         return ARMS[lever]
-    if _levers.is_kernel_lever(lever):
+    if _levers.is_kernel_lever(lever) or is_composition(
+            tuple(lever.split("+"))):
         return KERNEL
     declared = sorted({*ARMS, *_levers.VOCABULARY})
     raise ValueError(f"lever {lever!r} is not a declared arm lever "
@@ -619,13 +675,28 @@ def _declared(lever: str) -> str:
     return lever
 
 
+def is_composition(levers: tuple[str, ...]) -> bool:
+    """True when `levers` is a KERNEL COMPOSITION (#362; module docstring,
+    THE LEVER LEDGER): two or more levers, every one a kernel-body lever
+    (`levers.VOCABULARY`). Such a set is ONE arm of kind KERNEL -- a lever
+    that only builds with another (`sliced-hrr` on `batched-vrr`, #356) or a
+    declared composition (`interleave+split`, #348) -- never two arms at
+    once. A plan or lowering lever never composes."""
+    return len(levers) > 1 and all(_levers.is_kernel_lever(lv)
+                                   for lv in levers)
+
+
 def arm_of(spec: Spec) -> str | None:
     """The one declared arm lever `spec` carries, or None for a literal cell.
 
     Refuses a lever outside `ARMS` and the kernel-body vocabulary, and a Spec
-    carrying two arms at once, naming both (module docstring, THE ARMS)."""
+    carrying two arms at once, naming both (module docstring, THE ARMS). A
+    kernel COMPOSITION (`is_composition`, #362) is one arm, returned in its
+    key spelling (`"interleave+split"`)."""
     for lv in spec.levers:
         _declared(lv)
+    if is_composition(spec.levers):
+        return "+".join(spec.levers)
     if len(spec.levers) > 1:
         raise ValueError(f"{spec.key()}: carries {len(spec.levers)} arms at "
                          f"once ({', '.join(spec.levers)}); an A/B arm is "
@@ -646,13 +717,15 @@ def lever_arm(spec: Spec, lever: str) -> Spec:
     every kind and target is named. Raises `ValueError` for an undeclared
     lever, a cell already carrying a lever, and a (target, lever) the
     lever's legality table refuses (`Spec`'s own refusal, its reason kept).
+    `lever` may be a kernel COMPOSITION in its key spelling ("a+b", #362):
+    one arm, its levers added sorted, as `Spec` requires.
     """
     _declared(lever)
     if spec.levers:
         raise ValueError(f"{spec.key()}: already carries "
                          f"{', '.join(spec.levers)}; an A/B arm is one lever "
                          "added to a literal cell")
-    return replace(spec, levers=(lever,))
+    return replace(spec, levers=tuple(sorted(lever.split("+"))))
 
 
 def lever_cells(lever: str,
@@ -693,6 +766,112 @@ def ab_cells(lever: str) -> tuple[Spec, ...]:
     gone = NOT_MEASURABLE.get(lever, {})
     return (tuple(s for s in lever_cells(lever) if s not in gone)
             + ADDED_CELLS.get(lever, ()))
+
+
+# THE LEVER LEDGER (#362; module docstring): the cells the ledger reads.
+# Its classes are every target's ladder at total L <= LEDGER_MAX_L (the
+# milestone's cap); its arms every kernel-body lever of `levers.VOCABULARY`,
+# read when asked, closed over REQUIRES, plus the declared COMPOSITIONS.
+LEDGER_MAX_L = 4
+
+# The levers a kernel-body lever only BUILDS with (its builder refuses it
+# alone, with its reason): its ledger arm is the composition. An entry whose
+# lever is not in the vocabulary is inert, so a lever can be declared here
+# ahead of its merge; adding a lever is one re-run of `measured --ledger`.
+# test/test_lever_ledger.py builds each lever alone (refused) and composed.
+REQUIRES: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "sliced-hrr": ("batched-vrr",),  # #356
+    "subdag-vrr": ("batched-vrr",),  # #357
+    "slim-fock": ("batched-vrr", "sliced-hrr"),  # #360
+    "sliced-site-digest": ("batched-vrr", "sliced-hrr"),  # #359
+    "sub-slice": ("batched-vrr", "sliced-hrr", "slim-fock"),  # #361
+})
+
+# Arms that are compositions BY DECLARATION, beside each lever's own arm:
+# #348's split arm of interleaved I_p is `interleave+split`, not a lever.
+COMPOSITIONS: tuple[tuple[str, ...], ...] = (("interleave", "split"),)
+
+LEDGER_TARGETS = (Target.J, Target.K, Target.F)
+
+# Milestone 12's 21-class F ladder (`measured.F_CLASSES`, restated: the
+# store names no HGP builder; test/test_lever_ledger.py holds them equal).
+_F_PAIRS = tuple((a, b) for a in range(3) for b in range(a, 3))
+_F_LADDER = tuple(bra + ket for i, bra in enumerate(_F_PAIRS)
+                  for ket in _F_PAIRS[i:])
+
+
+def _closure(lever: str) -> tuple[str, ...]:
+    out, todo = set(), [lever]
+    while todo:
+        lv = todo.pop()
+        if lv not in out:
+            out.add(lv)
+            todo.extend(REQUIRES.get(lv, ()))
+    return tuple(sorted(out))
+
+
+def ledger_arms() -> tuple[str, ...]:
+    """Every arm the ledger reads, in key spelling: each kernel-body lever's
+    own arm (`_closure` over REQUIRES, so `sliced-hrr` is
+    `batched-vrr+sliced-hrr`), then the declared COMPOSITIONS whose levers
+    are all in the vocabulary. Read from the vocabulary when called."""
+    arms = [_closure(lv) for lv in sorted(_levers.VOCABULARY)]
+    arms += [c for c in COMPOSITIONS
+             if all(_levers.is_kernel_lever(lv) for lv in c)]
+    seen: dict[tuple[str, ...], None] = {}
+    for a in arms:
+        if not all(_levers.is_kernel_lever(lv) for lv in a):
+            raise ValueError(f"ledger arm {'+'.join(a)}: requires a lever "
+                             "outside the vocabulary")
+        seen.setdefault(tuple(sorted(a)), None)
+    return tuple("+".join(a) for a in seen)
+
+
+def lever_issue(lever: str) -> int:
+    """The issue that built kernel-body lever `lever` (its vocabulary entry)."""
+    return _levers.VOCABULARY[lever].issue
+
+
+def declared_ahead() -> list[str]:
+    """REQUIRES' levers not (yet) in the vocabulary: inert until they land."""
+    return sorted(lv for lv in REQUIRES if not _levers.is_kernel_lever(lv))
+
+
+def arm_target(arm: str) -> Target:
+    """The ONE target `arm` is legal on: every lever's `legal` set
+    intersected; anything but exactly one ledger target is refused."""
+    legal = set.intersection(*(set(_levers.VOCABULARY[lv].legal)
+                               for lv in arm.split("+")))
+    got = [t for t in LEDGER_TARGETS if t.value in legal]
+    if len(got) != 1:
+        raise ValueError(f"ledger arm {arm!r} is legal on "
+                         f"{sorted(legal) or 'nothing'}: the ledger needs "
+                         "exactly one of j, k, f")
+    return got[0]
+
+
+def ledger_classes(target: Target) -> tuple[Spec, ...]:
+    """The literal classes of `target` the ledger reads, total L <=
+    LEDGER_MAX_L: `pq_spec(L)` (J), `k_spec(L)` (K), one batch; every class
+    of the 21-class F ladder, in ladder order."""
+    Ls = range(LEDGER_MAX_L + 1)
+    if target is Target.J:
+        return tuple(pq_spec(L) for L in Ls)
+    if target is Target.K:
+        return tuple(k_spec(L) for L in Ls)
+    if target is Target.F:
+        return tuple(Spec(Operator.COULOMB, 0, c, Target.F) for c in _F_LADDER
+                     if sum(c) <= LEDGER_MAX_L)
+    raise ValueError(f"the ledger reads no {target.value!r} class")
+
+
+def ledger_cells() -> tuple[Spec, ...]:
+    """Every cell the ledger reads a row of: each target's literal classes
+    (the baseline), then every arm on each class of its target."""
+    out = [c for t in LEDGER_TARGETS for c in ledger_classes(t)]
+    for arm in ledger_arms():
+        out += [lever_arm(c, arm) for c in ledger_classes(arm_target(arm))]
+    return tuple(out)
 
 
 SCHEMA = 2  # 2: a timed row carries GPU_UTIL_FIELDS, a reading or null (#93)
@@ -845,6 +1024,27 @@ KERNEL_LEVERS_ABOUT = (
     "through measured_store.lever_arm and merge, by python -m "
     "felizjueves.measured --remeasure --lever <name>; what the lever "
     "changes is its vocabulary entry's 'what', and its issue says why.")
+
+# THE LEVER CLOCK (#363; module docstring): written into the header as
+# "lever_clock" only once a KERNEL row carries a runtime_ns (`save`).
+LEVER_CLOCK_ABOUT = (
+    "#363: a KERNEL row (a ledger arm, total L <= 4) that carries runtime_ns "
+    "was timed by test/test_lever_clock_device.py's opt-in sweep "
+    "(FJ_WALLCLOCK_STORE + FJ_WALLCLOCK_LEVERS=1), its clock ADDED to the "
+    "ledger's compile row of the same text: runtime_ns / spread_ns are the "
+    "arm's median / IQR on the wide input over `repeats` timed sequences "
+    "after raw 'wallclock:warmup', raw 'wallclock:near:*' the near input, "
+    "and raw 'wallclock:control:*' / 'wallclock:control:near:*' the LITERAL "
+    "class timed in the same gated phase (control near, arm near, arm wide, "
+    "control wide); the host steady clock only, no GPU-event times in raw. "
+    "Every gpu_util reading is the phase's (felizjueves.gate: "
+    "wait_quiet before, after_reading after); a refused phase was discarded "
+    "and retaken (raw 'wallclock:gate_discarded_phases'), never recorded. "
+    "Inputs, tau = 0 (no screen fires): J 2048 x 128 (the J sweep's), K "
+    "2048 x 32 (the K sweep's), F one synthetic off-diagonal launch of 2048 "
+    "x 32 contracted quartets (raw 'wallclock:n_ket'). The verdict is "
+    "measured_store.lever_clock_verdict (#60's IQR rule per input, per "
+    "class, per arm). Compare within one arch only.")
 
 MEASUREMENTS = ("registers", "spill_store", "spill_load", "shared_bytes",
                 "compile_s", "runtime_ns", "repeats", "spread_ns", *COUNTERS)
@@ -1027,6 +1227,8 @@ def _key_arms(key: str) -> tuple[str, ...]:
 def _check_arm_kind(key: str, row: Measured) -> None:
     """THE KIND IS ON THE ROW (module docstring, THE ARMS)."""
     arms = _key_arms(key)
+    if is_composition(arms):  # #362: one KERNEL arm
+        arms = ("+".join(arms),)
     if len(arms) > 1:
         raise ValueError(f"row {key!r} carries {len(arms)} arms at once "
                          f"({', '.join(arms)})")
@@ -1202,6 +1404,10 @@ def save(store: Mapping[str, Measured], path: Path = STORE) -> None:
     # #339: likewise "kernel_levers", once the store holds a KERNEL row
     if any(r.arm_kind == KERNEL for r in store.values()):
         header = {**header, "kernel_levers": KERNEL_LEVERS_ABOUT}
+    # #363: likewise "lever_clock", once a KERNEL row carries a clock
+    if any(r.arm_kind == KERNEL and r.runtime_ns is not None
+           for r in store.values()):
+        header = {**header, "lever_clock": LEVER_CLOCK_ABOUT}
     doc = {"schema": SCHEMA, "about": ABOUT, "header": header,
            "rows": {k: as_record(store[k]) for k in sorted(store, key=_order)}}
     path.write_text(json.dumps(doc, indent=2) + "\n")
@@ -1784,6 +1990,52 @@ def tuned_may_become_the_default(store: Mapping[str, Measured],
     cell on every arch in `arches` (both cards by default)."""
     return all(ab.verdict == WIN for a in arches
                for ab in tuned_ab(store, a, cells).values())
+
+
+# #363: every ledger arm on the clock (module docstring, THE LEVER CLOCK),
+# its rule declared here before any timed KERNEL row.
+FASTER_ARM, SLOWER_ARM = "faster", "slower"
+
+
+def lever_clock_cells(arm: str | None = None) -> tuple[Spec, ...]:
+    """Every cell #363 times: each ledger arm (or only `arm`) on every
+    ledger class of its target, in `ledger_arms()` then ladder order."""
+    arms = ledger_arms() if arm is None else (arm,)
+    out = []
+    for a in arms:
+        if a not in ledger_arms():
+            raise ValueError(f"{a!r} is not a ledger arm")
+        out += [lever_arm(c, a) for c in ledger_classes(arm_target(a))]
+    return tuple(out)
+
+
+def lever_clock_ab(store: Mapping[str, Measured], arch: str,
+                   arm: str) -> dict[Spec, LeverAB]:
+    """`lever_ab` of every class of `arm` on `arch`. Raises KeyError, as
+    `lever_ab` does, for a cell not timed against its control."""
+    return {c: lever_ab(store, arch, c) for c in lever_clock_cells(arm)}
+
+
+def lever_clock_verdict(store: Mapping[str, Measured], arch: str,
+                        arm: str) -> str:
+    """THE LEVER CLOCK, PER (ARM, ARCH): FASTER_ARM, SLOWER_ARM or
+    NOT_SHOWN, read off `lever_clock_ab`'s per-class verdicts."""
+    got = {ab.verdict for ab in lever_clock_ab(store, arch, arm).values()}
+    if MIXED not in got and WIN in got and LOSS not in got:
+        return FASTER_ARM
+    if MIXED not in got and LOSS in got and WIN not in got:
+        return SLOWER_ARM
+    return NOT_SHOWN
+
+
+def lever_may_become_the_default(store: Mapping[str, Measured], arm: str,
+                                 arches: tuple[str, ...] = ("sm_86",
+                                                            "gfx1200"),
+                                 ) -> bool:
+    """THE LEVER CLOCK, THE DEFAULT: True iff `arm` WINS at every class on
+    every arch in `arches` (both cards by default)."""
+    return all(ab.verdict == WIN for a in arches
+               for ab in lever_clock_ab(store, a, arm).values())
 
 
 

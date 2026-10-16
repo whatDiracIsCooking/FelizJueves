@@ -1658,6 +1658,11 @@ RULES["f_builder"] = Rule(RULES["f_builder"].why + "; its lever seams live "
                           RULES["f_builder"].must_not)
 EDGES["kernel_f"] = EDGES["kernel_f"] | frozenset(
     ("f_levers", "f_levers.seams"))
+# #352: the monotone ket key's early break, an F lever module on the seams.
+# Its key lives in `launch_f` and its dominating factor in `walk_f`, which
+# restate its two names rather than import it (test_f_lever_ket_break.py).
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.ket_break",))
+EDGES["f_levers.ket_break"] = frozenset(("f_levers.seams", "ir", "spec"))
 
 
 def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
@@ -1732,6 +1737,13 @@ EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.coalesced",))
 EDGES["k_levers.coalesced"] = frozenset(("ir", "k_levers.seams", "spec"))
 
+# #349 (milestone 13, M7): the register write-back for small K blocks. It
+# moves `write_back` and `atomize` and falls back to (and reuses the atomize
+# of) #345's `coalesced`, so it reaches that module too.
+EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.shuffle",))
+EDGES["k_levers.shuffle"] = frozenset(("ir", "k_levers.coalesced",
+                                       "k_levers.seams", "spec"))
+
 
 # #342 (milestone 13, M2): `E^ac` staged in shared memory, a K lever module.
 # It moves `bind_e_ac` / `e_ac` only, inlining the `E` fragment it reads off
@@ -1752,6 +1764,66 @@ EDGES["f_levers.batched_vrr"] = frozenset(("f_levers.seams", "hgp.hrr",
                                            "hgp.recurrence", "hgp.vrr", "ir",
                                            "spec"))
 
+# #355 (milestone 13, H12): mixed-precision F. It moves the `real` / `cast`
+# precision hooks and wraps `quartet_scalars`, `vrr`, `hrr` and `eri`; it
+# reaches the seams, the IR and `Spec` only (its F32 literal rounding is its
+# own, not `j_levers.mixed`'s: `f_lever` does not admit `j_levers`).
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.mixed",))
+EDGES["f_levers.mixed"] = frozenset(("f_levers.seams", "ir", "spec"))
+
+
+# #356 (milestone 13, H2): the sliced HRR, an F lever module composed on
+# #350's. It slices with `hgp.hrr`'s new (additive) functions and re-cuts
+# `batched_vrr`'s groups at its floor, so it reaches that sibling lever, the
+# seams, `hgp`, the IR and `Spec`, nothing below `f_lever`'s prohibitions.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.sliced_hrr",))
+EDGES["f_levers.sliced_hrr"] = frozenset(("f_levers.batched_vrr",
+                                          "f_levers.seams", "hgp.hrr",
+                                          "hgp.vrr", "ir", "spec"))
+
+# #359 (milestone 13, H3): the interleaved digest per slice, an F lever
+# module composed on #356's. It supplies #356's slice body and re-installs
+# #350's nest at its floor, naming the HRR nodes it digests after, so it
+# reaches both sibling levers, the seams, `hgp`, the IR and `Spec`.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset((
+    "f_levers.sliced_site_digest",))
+EDGES["f_levers.sliced_site_digest"] = frozenset((
+    "f_levers.batched_vrr", "f_levers.seams", "f_levers.sliced_hrr",
+    "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+
+
+# #357 (milestone 13, H6): the dedicated sub-DAG VRR schedule, an F lever
+# module that wraps the `vrr` hook only. It composes on #350 (requires it,
+# reads its name and group count), schedules with `hgp.vrr`'s new (additive)
+# functions, and reaches the seams and `Spec`, nothing below `f_lever`'s
+# prohibitions.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.subdag_vrr",))
+EDGES["f_levers.subdag_vrr"] = frozenset(("f_levers.batched_vrr",
+                                          "f_levers.seams", "hgp.vrr",
+                                          "spec"))
+
+
+# #360 (milestone 13, H4): the per-bra-element Fock-buffer split, an F lever
+# module composed on #356's slices (it wraps `sliced_hrr.contracted_with`),
+# so it reaches that sibling lever, the seams, `hgp.vrr` (the Cartesian
+# counts of its declared buffer sizes), the IR and `Spec`.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.slim_fock",))
+EDGES["f_levers.slim_fock"] = frozenset(("f_levers.seams",
+                                          "f_levers.sliced_hrr", "hgp.vrr",
+                                          "ir", "spec"))
+
+
+# #361 (milestone 13, H5): slice-interior sub-slicing, an F lever module
+# composed on #360's reduced buffers (it wraps `slim_fock.contracted_over`
+# with a body of #356's `slice_body`s), cutting with `hgp.hrr`'s new
+# (additive) `sub_slices`; it reaches those two sibling levers, the seams,
+# `hgp`, the IR and `Spec`.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.sub_slice",))
+EDGES["f_levers.sub_slice"] = frozenset(("f_levers.seams",
+                                          "f_levers.sliced_hrr",
+                                          "f_levers.slim_fock", "hgp.hrr",
+                                          "hgp.vrr", "ir", "spec"))
+
 
 # ---------------------------------------------------------------------------
 # #347 (milestone 13, M9): mixed-precision K. `k_levers.mixed` reuses
@@ -1767,6 +1839,14 @@ RULES["k_lever"] = Rule(RULES["k_lever"].why + "; a K lever may reuse a J "
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.mixed",))
 EDGES["k_levers.mixed"] = frozenset(("e_fragment", "ir", "j_levers.mixed",
                                      "k_levers.seams", "recurrence", "spec"))
+
+
+# #353 (milestone 13, H10): struct-typed pair-record reads, an F lever
+# module. It moves the `field` hook only (its records are `ir.Record`s, its
+# reads `ir.Member`s), so it reaches the seams, the IR and `Spec`, nothing
+# below `f_lever`'s prohibitions; the spelling of the view is `emit/_c.py`'s.
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.struct_reads",))
+EDGES["f_levers.struct_reads"] = frozenset(("f_levers.seams", "ir", "spec"))
 
 
 # ---------------------------------------------------------------------------
@@ -1879,6 +1959,113 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
     for banned in (_REF, "ao", "interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #351 (milestone 13, H7): the block-level f_ab reduction, an F lever
+# module. `f_levers` imports it to register it; it moves `shared_decl` and
+# `flush_bra` only, so it reaches the seams, the IR (`Barrier`,
+# `WarpReduce`), `hgp.vrr` (the bra block's Cartesian counts, for the
+# declared footprint) and `Spec`.
+# ---------------------------------------------------------------------------
+
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.block_fab",))
+EDGES["f_levers.block_fab"] = frozenset(("f_levers.seams", "hgp.vrr", "ir",
+                                         "spec"))
+
+
+# ---------------------------------------------------------------------------
+# #358 (milestone 13, H8): the atomic-free write-back. The lever module
+# (`f_levers.scatter`) composes block-fab's reduction and moves the two
+# flushes and the params; the scatter kernel and its host map
+# (`kernel_f_scatter`) are a second builder beside `kernel_f`, under the
+# same bans (no plan layer, no AO layer, no reference/, no interpreter, no
+# backend, no card), reading the lever's slot layout. `walk_f` launches the
+# scatter after a `scatter` launch, so it reaches the scatter builder; the
+# plan builder restates the lever's name and declares the footprint itself.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "f_scatter": _rule(
+        "kernel_f_scatter.py (#358): the atomic-free F write-back's scatter "
+        "kernel (class-agnostic: one thread per element of F, summing its "
+        "slots of the launch's buffer W in a fixed order) and its host map, "
+        "the slot layout read off `f_levers.scatter`",
+        ("spec", "ir", "hgp", "f_levers"),
+        plan=RULES["f_builder"].must_not["plan"],
+        ao=RULES["f_builder"].must_not["ao"],
+        interp=RULES["f_builder"].must_not["interp"],
+        emit=RULES["f_builder"].must_not["emit"],
+        device=RULES["f_builder"].must_not["device"],
+        launch_f="the map is built from packed AO offsets, as `kernel_f.pack` "
+                 "takes records; the plan declares its footprint itself",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["kernel_f_scatter"] = "f_scatter"
+EDGES["kernel_f_scatter"] = frozenset(("f_levers.scatter", "f_levers.seams",
+                                       "hgp.vrr", "ir"))
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.scatter",))
+EDGES["f_levers.scatter"] = frozenset(("f_levers.block_fab", "f_levers.seams",
+                                       "hgp.vrr", "ir", "spec"))
+RULES["f_walk"] = Rule(RULES["f_walk"].why + "; a `scatter` launch's "
+                       "scatter kernel and map through `kernel_f_scatter` "
+                       "(#358)",
+                       RULES["f_walk"].may | frozenset(("kernel_f_scatter",)),
+                       RULES["f_walk"].must_not)
+EDGES["walk_f"] = EDGES["walk_f"] | frozenset(("kernel_f_scatter",))
+
+
+def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    # #358, TRANSITIVELY: from the scatter builder no chain of imports
+    # reaches `kernel_f`, the plan layer, the AO layer, reference/, the
+    # interpreter, a backend, a card or `launch_f`.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_f_scatter"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "f_levers.scatter" in seen
+    for banned in ("kernel_f", "plan", _REF, "ao", "interp", "emit",
+                   "device", "launch_f"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_f_scatter reaches {hit}"
+
+
+# #354 (milestone 13, H11): the ETR as a second VRR. `hgp.etr` is a sibling
+# DAG under rule "hgp" (package-wide; it reads `hgp.vrr` only), and
+# `hgp.cost` counts it with new functions (`etr_cost`), so it now reaches
+# `hgp.etr` too. `f_levers.etr` is the F lever: it moves `vrr`, `ket_prim`
+# and `quartet_scalars`, arbitrating per class on `hgp.cost` and the live
+# model in `hgp.vrr`, so it reaches the seams, `hgp`, the IR and `Spec`,
+# nothing below `f_lever`'s prohibitions.
+# ---------------------------------------------------------------------------
+
+EDGES["hgp.etr"] = frozenset(("hgp.vrr",))
+EDGES["hgp.cost"] = EDGES["hgp.cost"] | frozenset(("hgp.etr",))
+EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.etr",))
+EDGES["f_levers.etr"] = frozenset(("f_levers.seams", "hgp.cost", "hgp.etr",
+                                   "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+
+
+# ---------------------------------------------------------------------------
+# #362 (milestone 13, X1): the lever ledger, an ANALYSIS beside batchreport
+# and kernelrank -- it reads the store's lever rows against the literal ones
+# and feeds nothing. The driver (`measured --remeasure --ledger`) rewrites
+# the ledger file through it after recording the rows, as a writer of a
+# report, never the reverse: the analysis still may not import the driver.
+# ---------------------------------------------------------------------------
+
+RULE_OF["leverledger"] = "analysis"
+EDGES["leverledger"] = frozenset(("device", "measured_store", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and rewrites #362's lever "
+                       "ledger (`leverledger`) from the rows it recorded",
+                       RULES["driver"].may | frozenset(("leverledger",)),
+                       RULES["driver"].must_not)
+EDGES["measured"] = EDGES["measured"] | frozenset(("leverledger",))
 
 
 # ---------------------------------------------------------------------------

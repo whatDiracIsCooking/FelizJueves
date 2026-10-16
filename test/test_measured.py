@@ -145,7 +145,17 @@ TUNED_CELLS = measured_store.TUNED_CELLS
 SPECS = {s.key(): s for s in (*(pq_spec(L) for L in range(17)), *measured_store.SUBGRID,
                               *RECYCLE_CELLS, *asym.ASYM_CELLS, *SIEVE_CELLS,
                               *TUNED_CELLS, *measured_store.K_SUBGRID,
-                              *measured.f_cells())}
+                              *measured.f_cells(),
+                              *measured_store.ledger_cells())}  # #362
+
+# #362: the lever ledger's rows, ADDED beside every row above -- each kernel
+# lever arm at L <= 4 (arm_kind KERNEL), and the K literal classes at L <= 4
+# it reads them against. The checks below that pin the store as it was
+# before them read the store without these.
+_K_LEDGER = {c.key() for c in measured_store.ledger_classes(Target.K)}
+LEDGER_KEYS = frozenset(
+    k for k, r in ROWS.items() if r.arm_kind == measured_store.KERNEL
+    or measured_store.split_key(k)[0] in _K_LEDGER)
 ARCHS = {a.name: a for a in (SM_86, GFX1200)}
 BACKEND_OF = {"sm_86": "cuda", "gfx1200": "hip"}
 
@@ -207,7 +217,9 @@ def test_the_recorded_source_is_what_the_generator_writes_today() -> None:
         assert measured.cell_sha256(units) == row.source_sha256, (
             f"{key}: the emitted text changed since it was measured -- "
             "python -m felizjueves.measured --remeasure")
-        if spec.n_batches == 1:  # the one-batch hash is the one text's
+        # the one-unit hash is the one text's (#362: K's `split` lever
+        # emits several units for one batch)
+        if spec.n_batches == 1 and len(units) == 1:
             emit, arch = (cuda.emit, SM_86) if row.arch == "sm_86" else (
                 hip.emit, GFX1200)
             (k,) = measured.cell_kernels(spec)  # build_pq_kernel, lowered
@@ -630,7 +642,10 @@ def test_a_wall_clock_row_is_its_own_quartiles() -> None:
         assert w["cpu_busy_permille_before"] <= 100, key
         assert w["near:cpu_busy_permille_before"] <= 100, key
         names = r.kernel.split(",")
-        assert all(f"{n}:events_median_ns" in w for n in names), key
+        # #363's lever clock reads the host clock only (no GPU events; the
+        # store's header "lever_clock" says so); every other sweep keeps them
+        if r.arm_kind != measured_store.KERNEL:
+            assert all(f"{n}:events_median_ns" in w for n in names), key
         assert w["n_bra"] > 0 and w["n_ket"] > 0 and w["warmup"] > 0, key
 
 
@@ -2286,7 +2301,8 @@ PRE_SIEVE_SHA256 = (
 def test_the_sieve_ab_added_rows_and_moved_none() -> None:
     old = {k: v for k, v in STORE["rows"].items()
            if NO_SIEVE not in k and f"/{TUNED}@" not in k  # #163's, below
-           and measured_store.target_of(k) is Target.J}  # #205's K rows
+           and measured_store.target_of(k) is Target.J  # #205's K rows
+           and k not in LEDGER_KEYS}  # #362's
     assert len(old) == PRE_SIEVE_ROWS
     got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
     assert got == PRE_SIEVE_SHA256
@@ -2536,7 +2552,8 @@ def test_the_tuned_verdict_is_declared_before_its_rows() -> None:
 
 def test_the_tuned_ab_added_rows_and_moved_none() -> None:
     old = {k: v for k, v in STORE["rows"].items() if f"/{TUNED}@" not in k
-           and measured_store.target_of(k) is Target.J}  # #205's K rows
+           and measured_store.target_of(k) is Target.J  # #205's K rows
+           and k not in LEDGER_KEYS}  # #362's
     assert len(old) == PRE_TUNED_ROWS
     got = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
     assert got == PRE_TUNED_SHA256
@@ -2726,11 +2743,18 @@ def test_every_tracked_row_is_a_j_k_or_f_row_and_the_j_rows_did_not_move(
     # cell of F_RECORDED.
     assert len(ROWS) == len(STORE["rows"])
     j_rows = {k: v for k, v in STORE["rows"].items()
-              if measured_store.target_of(k) is Target.J}
+              if measured_store.target_of(k) is Target.J
+              and k not in LEDGER_KEYS}  # #362's are added beside them
     assert (len(j_rows), hashlib.sha256(json.dumps(
         j_rows, sort_keys=True).encode()).hexdigest()) == J_ROWS_BEFORE_K
+    ledger = {c.key() for c in measured_store.ledger_cells()}
     for key, row in ROWS.items():
-        if measured_store.target_of(key) is Target.J:
+        if key in LEDGER_KEYS:  # #362: a ledger cell, its target stamped
+            assert measured_store.split_key(key)[0] in ledger, key
+            assert row.target == ("" if measured_store.target_of(key)
+                                  is Target.J else
+                                  measured_store.target_of(key).value), key
+        elif measured_store.target_of(key) is Target.J:
             assert row.target == "" and "target" not in STORE["rows"][key], key
         elif measured_store.target_of(key) is Target.F:
             assert row.target == "f" == STORE["rows"][key]["target"], key
@@ -2741,7 +2765,9 @@ def test_every_tracked_row_is_a_j_k_or_f_row_and_the_j_rows_did_not_move(
             assert any(key.startswith(s.key() + "@")
                        for s in measured_store.K_SUBGRID), key
     assert measured_store.rows(store=ROWS, target=Target.J) == {
-        k: ROWS[k] for k in j_rows}
+        k: ROWS[k] for k in (*j_rows, *(k for k in LEDGER_KEYS
+                                        if measured_store.target_of(k)
+                                        is Target.J))}
     for k, r in measured_store.load_counters().items():
         cell, _ = measured_store.split_kernel_key(k)
         assert measured_store.target_of(cell) is Target.J, k
@@ -2843,7 +2869,13 @@ def test_the_f_rule_was_declared_in_the_store() -> None:
     # since #288's rows, the tracked store's -- and is never in HEADER itself
     assert "f" not in measured_store.HEADER
     assert STORE["header"] == {**measured_store.HEADER,
-                               "f": measured_store.F_ABOUT}
+                               "f": measured_store.F_ABOUT,
+                               # #362's KERNEL rows bring #339's entry
+                               "kernel_levers":
+                                   measured_store.KERNEL_LEVERS_ABOUT,
+                               # #363's timed KERNEL rows bring its entry
+                               "lever_clock":
+                                   measured_store.LEVER_CLOCK_ABOUT}
 
 
 def test_a_synthetic_f_row_round_trips_through_the_store(
@@ -3304,7 +3336,9 @@ def test_an_f_cell_is_built_by_kernel_f_and_takes_no_lever() -> None:
 
 
 def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
-    got = measured_store.rows(target=Target.F, store=ROWS)
+    got = {k: r for k, r in measured_store.rows(target=Target.F,
+                                                store=ROWS).items()
+           if k not in LEDGER_KEYS}  # #362's lever arms, compile-only
     want = {measured.measured_key(s, by_arch, ROWS_TOOLCHAIN[by_arch.name])
             .key(): s for s in F_RECORDED for by_arch in (SM_86, GFX1200)}
     assert set(got) == set(want)

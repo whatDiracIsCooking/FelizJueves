@@ -22,6 +22,8 @@
     python -m felizjueves.measured --remeasure --lever <kernel lever>
                 [--L ... | --subgrid [--target k] | --target f --L ...]
                                                         # #339's lever rows
+    python -m felizjueves.measured --remeasure --ledger [--backend ...]
+                                                        # #362's lever ledger
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -122,6 +124,18 @@ generator CLI's lever ladder writes, so a row's `source_sha256` is the
 emitted file's. A plan or lowering arm (`ARMS`) is still `--subgrid`'s J
 cells only (`ab_cells`), as #55, #162 and #163 recorded it.
 
+THE LEVER LEDGER (#362) is `--remeasure --ledger`: every cell of
+`measured_store.ledger_cells()` -- the literal classes at total L <= 4 of
+J, K and F, and every ledger arm (each kernel-body lever, a lever that only
+builds with another as its composition, and the declared compositions) on
+its target's classes -- that has NO row under this toolchain, or whose row's
+`source_sha256` is not the text the generator emits today, is compiled
+through the same `remeasure` (compile-only: no card, no clock), and then
+`felizjueves.leverledger` rewrites data/measured/lever_ledger.json from the
+store. A row whose text is unchanged is never recompiled, so a new lever
+(one `levers.VOCABULARY` entry, and a `measured_store.REQUIRES` entry if it
+only builds with another) is ONE re-run of this command.
+
 COUNTERS (#110) are read here too: `profile` runs a built binary under the
 vendor's profiler and `parse_ncu_csv` / `parse_rocprof_csv` read what it
 wrote, one `KernelCounters` per launch; `counter_rows` files one cell's
@@ -186,6 +200,7 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from felizjueves import leverledger
 from felizjueves.asym import (
     ASYM_CELLS,
     AsymCell,
@@ -223,6 +238,7 @@ from felizjueves.measured_store import (
     kernel_key,
     kernel_roofline,
     kind_of,
+    ledger_cells,
     lever_ab,
     lever_arm,
     load,
@@ -706,6 +722,39 @@ def remeasure(names: Sequence[str], cells: Sequence[int | Spec], jobs: int,
     return got
 
 
+def ledger_todo(backend: Backend, toolchain: str,
+                store: Mapping[str, Measured]) -> list[Spec]:
+    """THE LEVER LEDGER's cells (#362; module docstring) that `backend` under
+    `toolchain` must compile: no row at their key, or a row whose
+    `source_sha256` is not today's emitted text."""
+    out = []
+    for spec in ledger_cells():
+        row = store.get(MeasuredKey(spec, backend.arch, toolchain).key())
+        if row is None or row.source_sha256 != cell_sha256(
+                backend.units(spec)):
+            out.append(spec)
+    return out
+
+
+def remeasure_ledger(names: Sequence[str], jobs: int, path: Path = STORE,
+                     ledger: Path | None = None) -> dict[str, Measured]:
+    """`--remeasure --ledger`: the missing or stale ledger rows on each
+    backend through `remeasure`, then the ledger file rewritten from the
+    store (`leverledger.write`). A failed cell gets no row and fails the
+    run -- and the ledger, which refuses a missing row."""
+    got = load(path) if path.exists() else {}
+    for bname in names:
+        b = BACKENDS[bname]
+        todo = ledger_todo(b, b.toolchain(b.compiler()), got)
+        print(f"measured: ledger {bname}: {len(todo)} cells to compile",
+              flush=True)
+        if todo:
+            got = remeasure([bname], todo, jobs, path)
+    leverledger.write(load(path),
+                      leverledger.LEDGER if ledger is None else ledger)
+    return got
+
+
 # ---------------------------------------------------------------------------
 # #110: reading the card's performance counters (module docstring, COUNTERS)
 # ---------------------------------------------------------------------------
@@ -1099,6 +1148,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                          "tuned drops its NOT_MEASURABLE cells, #163); a "
                          "kernel-body lever (#339) is added to whichever "
                          "cells --L / --subgrid / --target select")
+    ap.add_argument("--ledger", action="store_true",
+                    help="with --remeasure: every lever-ledger cell (#362) "
+                         "with no row or a stale one, then rewrite "
+                         "data/measured/lever_ledger.json")
     ap.add_argument("--lever-ab", default=None, metavar="LEVER",
                     help="print #55's A/B of LEVER against literal, per arch "
                          "and cell")
@@ -1129,6 +1182,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = ap.parse_args(argv)
     except SystemExit as e:
         return 0 if e.code == 0 else 2
+    if args.ledger:  # #362: its own cell set, nothing else selects
+        if not args.remeasure or args.lever or args.subgrid or args.asym:
+            print("measured: --ledger needs --remeasure, and takes no "
+                  "--lever, --subgrid or --asym", file=sys.stderr)
+            return 2
+        names = ("cuda", "hip") if args.backend == "both" else (args.backend,)
+        try:
+            remeasure_ledger(names, args.j, args.store)
+        except (RuntimeError, ValueError) as e:
+            print(f"measured: {e}", file=sys.stderr)
+            return 2
+        return 0
     if args.remeasure:
         names = ("cuda", "hip") if args.backend == "both" else (args.backend,)
         try:

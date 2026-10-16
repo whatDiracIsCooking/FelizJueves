@@ -6,8 +6,8 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 `==`: a pass is checked by structural equality on IR, never on text.
 
     Kernel(name, params, body)
-    Stmt = Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-         | Inline
+    Stmt = Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
+         | AtomicAdd | Note | Raw | Inline | Barrier
     Expr = Weighted | Index | Call | Lit | Var
     Fragment(name, binds, body)   -- spliced into a kernel by Inline(fragment, bindings)
 
@@ -431,6 +431,76 @@ class Index:
 
 
 @dataclass(frozen=True)
+class Record:
+    """A typed view of one row of a flat array (#353): a C struct of
+    `members`, each of type `scalar`, in order.
+
+    A row of an array whose LAST extent is `len(members)` is one `Record`:
+    with one scalar type and no padding (the backends `static_assert` the
+    size), member `i` sits at element `i` of the row, so the view names the
+    layout the flat array already has and changes none of it. The writer
+    spells it once per kernel as `struct fj_<name>`.
+    """
+
+    name: str
+    scalar: Scalar
+    members: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _ident(self.name, "Record name")
+        if not isinstance(self.scalar, Scalar):
+            raise TypeError(f"Record scalar {self.scalar!r} is not a Scalar")
+        members = _tuple(self, "members", self.members)
+        if not members:
+            raise ValueError(f"Record {self.name!r} has no members")
+        for m in members:
+            _ident(m, "Record member")
+        if len(set(members)) != len(members):
+            raise ValueError(f"Record {self.name!r}: duplicate members "
+                             f"{members}")
+
+    def offset(self, member: str) -> int:
+        """The element of the row `member` names."""
+        return self.members.index(member)
+
+
+@dataclass(frozen=True)
+class Member(Index):
+    """`array[i0, ..., member]` READ THROUGH `record` (#353): the element an
+    `Index` with the same `at` names, spelled by the backends as a member of
+    the struct view of its row, `((const fj_<rec>*)array)[row].<member>`.
+
+    It IS an `Index` -- the same element, the same type (the array's), the
+    same free uses -- so every pass, census and the interpreter read it as
+    one; only the spelling differs. The last subscript is the member's
+    literal offset in the row; the array's last extent must be the record's
+    width and its type the record's scalar (the writer checks both, against
+    the declared shape).
+    """
+
+    record: Record
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.record, Record):
+            raise TypeError(f"Member record {self.record!r} is not a Record")
+        last = self.at[-1]
+        if not (isinstance(last, Lit) and last.type is Scalar.I32
+                and 0 <= last.value < len(self.record.members)):
+            raise ValueError(
+                f"Member {self.array!r}: the last subscript {last!r} must be "
+                f"a literal offset into {self.record.name!r}'s "
+                f"{len(self.record.members)} members")
+        if len(self.at) < 2:
+            raise ValueError(f"Member {self.array!r}: a row index and a "
+                             "member offset, at least")
+
+    @property
+    def member(self) -> str:
+        return self.record.members[self.at[-1].value]
+
+
+@dataclass(frozen=True)
 class Call:
     """`fn(args...)` with `fn` from the closed `Fn` vocabulary."""
 
@@ -598,6 +668,21 @@ class Break:
 
 
 @dataclass(frozen=True)
+class Barrier:
+    """Every thread of the block waits here until all of them have arrived,
+    and every SHARED write made before it is visible to every thread after
+    it (#351; the barrier #333 named as missing).
+
+    It must be reached by EVERY thread of the block at the same statement: a
+    barrier under thread-dependent control flow is undefined behaviour on
+    both vendors, not a shorter wait, and the interpreter refuses it (a
+    thread that has finished, or waits at another statement, while one waits
+    here). Block-uniform control flow -- an `If` on the block index -- is
+    legal. Like `Break` it has no fields: the spelling is the backend's.
+    """
+
+
+@dataclass(frozen=True)
 class WarpReduce:
     """`dst = SUM over the lanes of this thread's warp of value`.
 
@@ -612,6 +697,35 @@ class WarpReduce:
     def __post_init__(self) -> None:
         _lvalue(self.dst, "WarpReduce dst")
         _expr(self.value, "WarpReduce value")
+
+
+@dataclass(frozen=True)
+class LaneBroadcast:
+    """`dst = value AS HELD BY lane `source` of this thread's warp` (#349).
+
+    Every lane evaluates `value` and `source`; lane `i` then receives the
+    `value` of the lane ITS OWN `source` names. With a warp-uniform `source`
+    (e.g. `Lit(0)`) that is a broadcast from that lane; with a lane-varying
+    one it is the general indexed shuffle. `source` is an I32 in
+    `[0, warp width)` -- the interpreter refuses one outside it rather than
+    wrapping it as the hardware does, since a wrapped index is a bug in the
+    builder, not a lane. (The field is not called `lane`: test_ir.py's
+    no-vendor census keeps that word out of the IR's field names.)
+
+    Vendor-neutral as `WarpReduce` is: the width, the mask and the shuffle's
+    spelling (`__shfl_sync` on both backends) are the backend's. Like a
+    `WarpReduce` it is a warp collective: every lane of a full warp must
+    reach it together (the interpreter raises on divergence).
+    """
+
+    dst: Var | Index
+    value: Expr
+    source: Expr
+
+    def __post_init__(self) -> None:
+        _lvalue(self.dst, "LaneBroadcast dst")
+        _expr(self.value, "LaneBroadcast value")
+        _expr(self.source, "LaneBroadcast source")
 
 
 @dataclass(frozen=True)
@@ -714,6 +828,10 @@ def _free_uses(body: tuple[Stmt, ...]) -> tuple[dict[str, str], set[str], set[st
                 declared.add(s.name)
             elif isinstance(s, (Assign, WarpReduce)):
                 read(s.value)
+                write(s.dst)
+            elif isinstance(s, LaneBroadcast):
+                read(s.value)
+                read(s.source)
                 write(s.dst)
             elif isinstance(s, AtomicAdd):
                 read(s.value)
@@ -841,10 +959,10 @@ class Inline:
                            tuple((b, given[b]) for b in binds))
 
 
-Stmt = (Decl | Assign | For | If | Break | WarpReduce | AtomicAdd | Note | Raw
-        | Inline)
-STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, AtomicAdd, Note, Raw,
-              Inline)
+Stmt = (Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
+        | AtomicAdd | Note | Raw | Inline | Barrier)
+STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, LaneBroadcast,
+              AtomicAdd, Note, Raw, Inline, Barrier)
 
 
 # ---------------------------------------------------------------------------
@@ -911,6 +1029,8 @@ def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
         return (*s.shape, s.init)
     if isinstance(s, (Assign, WarpReduce, AtomicAdd)):
         return (s.dst, s.value)
+    if isinstance(s, LaneBroadcast):
+        return (s.dst, s.value, s.source)
     if isinstance(s, For):
         return (s.start, s.stop, s.step)
     if isinstance(s, If):
@@ -1099,6 +1219,12 @@ def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
             scopes[-1][s.name] = s.type
         elif isinstance(s, (Assign, WarpReduce, AtomicAdd)):
             check_store(ty(s.dst), ty(s.value), f"{type(s).__name__} to {s.dst!r}")
+        elif isinstance(s, LaneBroadcast):
+            check_store(ty(s.dst), ty(s.value), f"LaneBroadcast to {s.dst!r}")
+            lane = ty(s.source)
+            if lane is not None and lane is not Scalar.I32:
+                raise PrecisionError(f"LaneBroadcast to {s.dst!r}: its lane is "
+                                     f"{lane.name}, not I32")
         elif isinstance(s, For):
             for b in (s.start, s.stop, s.step):
                 if ty(b) is Scalar.F32:
