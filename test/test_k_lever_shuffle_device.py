@@ -100,7 +100,11 @@ def _device_cells() -> list:
     out = []
     specs = [(f"L{L}-b{b}", k_spec(L, n_batches=b))
              for L in range(5) for b in (1, 3)]
-    specs += [(f"ds-ds-b{b}", _spec(WIDE, b, None)) for b in (1, 3)]
+    # Only k_spec(L)'s classes on the card: the shared K harness
+    # (`_k_check`) builds its inputs from `total_am` alone, as k_spec(L)'s
+    # class, so WIDE (ds|ds) at L = 4 gets a wrong-length input and the
+    # harness refuses it ("size mismatch") before any launch (as at #342).
+    # WIDE's fallback path stays covered interpreted and compile-only.
     for label, spec in specs:
         spec = dataclasses.replace(spec, levers=(SHUFFLE,))
         try:
@@ -154,6 +158,5 @@ def test_the_device_cells_are_l_at_most_4() -> None:
             for s in DEVICE_CELLS] == [
         ((0, 0, 0, 0), 1), ((1, 0, 0, 0), 1), ((1, 0, 0, 0), 3),
         ((1, 0, 1, 0), 1), ((1, 0, 1, 0), 3), ((1, 1, 1, 0), 1),
-        ((1, 1, 1, 0), 3), ((1, 1, 1, 1), 1), ((1, 1, 1, 1), 3),
-        (WIDE, 1), (WIDE, 3)]
+        ((1, 1, 1, 0), 3), ((1, 1, 1, 1), 1), ((1, 1, 1, 1), 3)]
     assert all(sum(am) <= 4 for am, _ in COMPILE_CELLS)
