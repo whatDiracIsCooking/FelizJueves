@@ -19,7 +19,12 @@ What is asserted:
    `ETR_GEOMETRY`, and `data/hgp/cost.json` untouched (test_hgp_cost.py).
 4. THE ARBITRATION: the rule recomputed from its definition and pinned for
    the 21 classes (no build), `OVERRIDES` winning, `forced` arms, and
-   `data/hgp/etr_arbitration.json` equal to `render()`.
+   `data/hgp/etr_arbitration.json` equal to `render()`. THE ACCURACY GATE:
+   its tolerance the F `TOL`; its record recomputed per class with L <= 4
+   by interpreting the per-class device cells' own launches (H2O/cc-pVDZ,
+   the ETR forced) against the restricted sweep -- the inputs the first
+   interpreted tests missed and #354's device run failed on; the two
+   refused classes, `(ss|dd)` and `(sp|pd)`, pinned as the finding.
 5. THE SAME INTEGRALS, ANOTHER PATH (the issue's "the ETR DAG reaches the
    same ERIs as the ket cascade on the host"): the standalone ETR VRR
    kernel interpreted per primitive quartet with `hgp.recurrence`'s HRR on
@@ -56,7 +61,7 @@ import pytest
 import test_kernel_f as tk
 from oracle import basis as ob
 from oracle import manifest
-from test_fock_build import BOUND, LIBCINT_TOL, molecule, run, sweep
+from test_fock_build import BOUND, LIBCINT_TOL, TOL, molecule, run, sweep
 
 from felizjueves import f_levers, levers, walk_f
 from felizjueves.ao import hgp_drive
@@ -70,7 +75,7 @@ from felizjueves.hgp import cost, etr, hrr, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.interp import Interpreter
 from felizjueves.ir import Decl, Note, walk
-from felizjueves.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.kernel_f import build_f_kernel, close, f_class_spec
 from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
@@ -316,7 +321,10 @@ def test_the_arbitration_table_is_the_rule() -> None:
         assert ep == vrr.vrr_peak(etr.build(cls))
         assert (cx, ex) == (cost.cost(cls).x, cost.etr_cost(cls).x)
         assert rule == ("etr" if (ep, ex) < (cp, cx) else "cascade")
-        assert s.rule == E.choice(cls) == rule
+        assert s.rule == rule
+        # the shipped choice: the model's rule AND the accuracy gate
+        assert E.choice(cls) == ("etr" if rule == "etr" and E.gate(cls)
+                                 == E.ADMITTED else "cascade")
         assert s.peak_margin == cp - ep and s.x_margin == cx - ex
     # the arbitration does real work: both outcomes, and the two opinions
     # disagree on most ETR classes (the model's choice is an opinion)
@@ -324,7 +332,7 @@ def test_the_arbitration_table_is_the_rule() -> None:
     assert rules == {"etr", "cascade"}
     disagree = [c for c in vrr.CLASSES if not E.score(c).opinions_agree]
     assert disagree == [c for c in vrr.CLASSES
-                        if E.choice(c) == "etr" and c not in
+                        if E.score(c).rule == "etr" and c not in
                         ((1, 2, 2, 2), (2, 2, 2, 2))]
     # the issue's reference points: wins on (sp|sp), (pp|pp), (sd|sd);
     # losses on the pure-ket (ss|pp), (ss|dd)
@@ -356,7 +364,69 @@ def test_the_arbitration_data_is_render() -> None:
     assert path.read_text() == E.render()
     rows = E.report()["classes"]
     assert [tuple(r["class"]) for r in rows] == list(vrr.CLASSES)
-    assert all(r["choice"] == r["rule"] for r in rows)  # no override ships
+    # no override ships: the choice is the rule through the gate
+    assert all(r["choice"] == ("etr" if r["rule"] == "etr"
+                               and r["gate"] == E.ADMITTED else "cascade")
+               for r in rows)
+    assert all(r["accuracy"] == E.ACCURACY.get(tuple(r["class"]))
+               for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# 4b. The accuracy gate, recomputed on the device cells' inputs
+# ---------------------------------------------------------------------------
+
+# THE GAP #354's first device run found: the interpreted tests above held
+# the ETR's F on synthetic shells and on s/p molecules only, while the
+# per-class device cells run H2O/cc-pVDZ's contracted shells, where the
+# transfer's -p/q term cancels. These tests interpret exactly the device
+# cells' launches (test_fock_ondevice's `_class_recs`, the ETR forced, the
+# device test's own `forced_kernel`) against the same restricted sweep, at
+# the F tolerance, so the interpreted tier sees what the cards saw.
+REFUSED = ((0, 0, 2, 2), (0, 1, 1, 2))  # (ss|dd), (sp|pd): the finding
+
+
+def test_the_gate_is_held_to_the_f_tolerance_and_covers_the_cap() -> None:
+    assert E.ACCURACY_TOL == TOL  # test_fock_build's, never loosened
+    assert set(E.ACCURACY) == set(CAPPED)
+    assert all(E.gate(c) == E.UNVERIFIED and E.choice(c) == E.CASCADE
+               for c in vrr.CLASSES if sum(c) > CAP)
+    assert tuple(c for c in CAPPED if E.gate(c) == E.REFUSED) == REFUSED
+    # the finding, pinned: both refused by a wide margin, one of them a
+    # class the model alone would ship with the ETR
+    assert all(E.ACCURACY[c] > 5 * TOL for c in REFUSED)
+    assert E.score((0, 1, 1, 2)).rule == E.ETR
+    assert E.choice((0, 1, 1, 2)) == E.CASCADE
+    assert ETR_CAPPED == [(0, 1, 0, 1), (0, 1, 0, 2), (0, 1, 1, 1),
+                          (0, 2, 0, 2), (0, 2, 1, 1), (1, 1, 1, 1)]
+
+
+def _gate_error(cls) -> float:
+    import test_f_lever_etr_device as ed
+    import test_fock_ondevice as fo
+    from fock_driver import interpret
+
+    recs = ed._swap(fo._class_recs(cls), ed.forced_kernel)
+    assert {r.kernel.name for r in recs} == {ed.forced_kernel(cls).name}
+    basis, _, _ = molecule(fo.PART1)
+    F = np.array(close(interpret(recs, basis.n_ao)))
+    G, scale = fo.restricted_sweep(fo.PART1, fo._met(recs))
+    assert np.max(np.abs(G)) > 0
+    return fo._worst(F, G, scale)
+
+
+@pytest.mark.parametrize("cls", CAPPED, ids=str)
+def test_the_gates_record_is_the_interpreted_etr_on_the_device_inputs(
+        cls) -> None:
+    """The ETR forced on every class with L <= 4, interpreted over
+    H2O/cc-pVDZ's launches of the class, against `ao.fock`'s restricted
+    sweep: the recorded error to 1%, and so the gate's verdict exactly.
+    On the two refused classes this is the failure #354's device run saw."""
+    w = _gate_error(cls)
+    print(f"\n{cls} ETR forced on the device inputs: worst / scale {w:.3e}"
+          f" (recorded {E.ACCURACY[cls]:.3e}, tol {TOL:g}) -> {E.gate(cls)}")
+    assert w == pytest.approx(E.ACCURACY[cls], rel=1e-2)
+    assert (w <= TOL) == (E.gate(cls) == E.ADMITTED)
 
 
 # ---------------------------------------------------------------------------
@@ -709,7 +779,7 @@ def test_with_subdag_vrr_it_is_refused() -> None:
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
+#   from felizjueves.kernel_f import build_f_kernel, close, f_class_spec; \
 #   from felizjueves.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, ('etr',))); \

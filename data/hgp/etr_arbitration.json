@@ -1,5 +1,5 @@
 {
- "about": "Per-class arbitration of the F kernel's VRR side between the ket cascade (hgp.vrr, [Fock] eqs 25-26) and the electron-transfer relation (hgp.etr, #354), from src/felizjueves/f_levers/etr.py. Rule: per class, score the ket cascade (hgp.vrr.build) and the ETR (hgp.etr.build) on (peak, x): peak = hgp.vrr.vrr_peak, the statement-order live model (#350's), x = hgp.cost's K^4 FLOPs per primitive quartet (cost / etr_cost); the ETR when its (peak, x) is lexicographically lower, else the cascade (a tie on both keeps the literal kernel); OVERRIDES wins. A model's opinion, not a measurement: a measured selector (#362) may override it. peak_margin and x_margin are cascade minus ETR (positive: the ETR saves); opinions_agree is whether the two point the same way. Model numbers only, calibrated against nothing: the compiler's registers and spills for both recurrences are printed by test/test_f_lever_etr_device.py, not stored here.",
+ "about": "Per-class arbitration of the F kernel's VRR side between the ket cascade (hgp.vrr, [Fock] eqs 25-26) and the electron-transfer relation (hgp.etr, #354), from src/felizjueves/f_levers/etr.py. Rule: per class, score the ket cascade (hgp.vrr.build) and the ETR (hgp.etr.build) on (peak, x): peak = hgp.vrr.vrr_peak, the statement-order live model (#350's), x = hgp.cost's K^4 FLOPs per primitive quartet (cost / etr_cost); the ETR when its (peak, x) is lexicographically lower, else the cascade (a tie on both keeps the literal kernel); then THE ACCURACY GATE: the ETR ships only on a class whose interpreted ETR F is recorded within the F tolerance (ACCURACY, ACCURACY_TOL), else the cascade; OVERRIDES wins. The cost half is a model's opinion, not a measurement: a measured selector (#362) may override it. peak_margin and x_margin are cascade minus ETR (positive: the ETR saves); opinions_agree is whether the two point the same way; rule is the model's choice. accuracy is the ETR forced, worst error / scale on H2O/cc-pVDZ, launch_f's plan at tau = 0, n = 1 (test_fock_ondevice.py's PART1): every launch of the class, the kernel the ETR forced (`forced(ETR)`), interpreted, against ao.fock's sweep restricted to the quartets those launches meet, worst |F - G| / scale_G (scale_G: the sweep on |D| with ao.eri's absolute-value twin); gate is admitted when it is within 1e-13, refused when not, unverified with no record (L > 4, milestone 13's cap); choice ships the ETR only where rule says etr and gate is admitted. Model numbers only, calibrated against nothing: the compiler's registers and spills for both recurrences are printed by test/test_f_lever_etr_device.py, not stored here.",
  "classes": [
   {
    "class": [
@@ -24,6 +24,8 @@
    "x_margin": 0,
    "opinions_agree": true,
    "rule": "cascade",
+   "accuracy": 8.54e-16,
+   "gate": "admitted",
    "choice": "cascade"
   },
   {
@@ -49,6 +51,8 @@
    "x_margin": -15,
    "opinions_agree": true,
    "rule": "cascade",
+   "accuracy": 4.69e-15,
+   "gate": "admitted",
    "choice": "cascade"
   },
   {
@@ -74,6 +78,8 @@
    "x_margin": -63,
    "opinions_agree": true,
    "rule": "cascade",
+   "accuracy": 1.89e-14,
+   "gate": "admitted",
    "choice": "cascade"
   },
   {
@@ -99,6 +105,8 @@
    "x_margin": -63,
    "opinions_agree": true,
    "rule": "cascade",
+   "accuracy": 2.9e-15,
+   "gate": "admitted",
    "choice": "cascade"
   },
   {
@@ -124,6 +132,8 @@
    "x_margin": -207,
    "opinions_agree": true,
    "rule": "cascade",
+   "accuracy": 3.19e-14,
+   "gate": "admitted",
    "choice": "cascade"
   },
   {
@@ -149,6 +159,8 @@
    "x_margin": -531,
    "opinions_agree": true,
    "rule": "cascade",
+   "accuracy": 5.99e-13,
+   "gate": "refused",
    "choice": "cascade"
   },
   {
@@ -174,6 +186,8 @@
    "x_margin": -33,
    "opinions_agree": false,
    "rule": "etr",
+   "accuracy": 3.33e-15,
+   "gate": "admitted",
    "choice": "etr"
   },
   {
@@ -199,6 +213,8 @@
    "x_margin": -119,
    "opinions_agree": false,
    "rule": "etr",
+   "accuracy": 1.66e-14,
+   "gate": "admitted",
    "choice": "etr"
   },
   {
@@ -224,6 +240,8 @@
    "x_margin": -119,
    "opinions_agree": false,
    "rule": "etr",
+   "accuracy": 1.11e-14,
+   "gate": "admitted",
    "choice": "etr"
   },
   {
@@ -249,7 +267,9 @@
    "x_margin": -314,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": 6.92e-13,
+   "gate": "refused",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -274,7 +294,9 @@
    "x_margin": -699,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -299,6 +321,8 @@
    "x_margin": -161,
    "opinions_agree": false,
    "rule": "etr",
+   "accuracy": 2.98e-14,
+   "gate": "admitted",
    "choice": "etr"
   },
   {
@@ -324,6 +348,8 @@
    "x_margin": -161,
    "opinions_agree": false,
    "rule": "etr",
+   "accuracy": 1.47e-14,
+   "gate": "admitted",
    "choice": "etr"
   },
   {
@@ -349,7 +375,9 @@
    "x_margin": -285,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -374,7 +402,9 @@
    "x_margin": -430,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -399,6 +429,8 @@
    "x_margin": -176,
    "opinions_agree": false,
    "rule": "etr",
+   "accuracy": 3.9e-16,
+   "gate": "admitted",
    "choice": "etr"
   },
   {
@@ -424,7 +456,9 @@
    "x_margin": -339,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -449,7 +483,9 @@
    "x_margin": -555,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -474,7 +510,9 @@
    "x_margin": -65,
    "opinions_agree": false,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -499,7 +537,9 @@
    "x_margin": 442,
    "opinions_agree": true,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   },
   {
    "class": [
@@ -524,7 +564,9 @@
    "x_margin": 1980,
    "opinions_agree": true,
    "rule": "etr",
-   "choice": "etr"
+   "accuracy": null,
+   "gate": "unverified",
+   "choice": "cascade"
   }
  ]
 }

@@ -11,8 +11,8 @@ RELATION at `m = 0`,
     etr_pq = p / q,   etr_c_d = QC_d + etr_pq PA_d          (per quartet)
 
 (`hgp/etr.py` derives it). This lever swaps the VRR body for the ETR's on
-the classes where the model says so, and leaves the literal kernel alone on
-the others.
+the classes where the model prefers it and the accuracy gate admits it, and
+leaves the literal kernel alone on the others.
 
 THE ARBITRATION, DECLARED (`RULE`, `choice`). Per class, the two VRR DAGs
 are scored on two numbers of this tree's own models:
@@ -23,25 +23,45 @@ are scored on two numbers of this tree's own models:
     x      hgp.cost's K^4 FLOPs per primitive quartet (`cost` for the
            cascade, `etr_cost` for the ETR): the work opinion
 
-and the ETR is chosen when `(peak, x)` is LEXICOGRAPHICALLY LOWER for it;
-a tie on both keeps the cascade (the literal kernel). The HRR, the boundary
-and its accumulation are identical under both, so only the VRR side is
-compared. `OVERRIDES` (empty) names a class whose choice is decided
-otherwise, beside its reason. The result on the 21 classes
-(`data/hgp/etr_arbitration.json`, held to `render()` by
-test/test_f_lever_etr.py, which names the command that rewrites it): the
-ETR on every class with a non-`s` bra
-shell, the cascade on the six `(ss|..)` classes -- the pure-ket classes,
-where the ETR raises `|e|` to `lc + ld` only to transfer it all back.
+and the model prefers the ETR (`Score.rule`) when `(peak, x)` is
+LEXICOGRAPHICALLY LOWER for it; a tie on both keeps the cascade (the
+literal kernel). The HRR, the boundary and its accumulation are identical
+under both, so only the VRR side is compared. The model's preference: the
+ETR on every class with a non-`s` bra shell, the cascade on the six
+`(ss|..)` classes -- the pure-ket classes, where the ETR raises `|e|` to
+`lc + ld` only to transfer it all back.
 
-THE CHOICE IS A MODEL'S OPINION, NOT A MEASUREMENT. On most classes the two
+THE ACCURACY GATE, DECLARED (`ACCURACY`, `ACCURACY_TOL`, `gate`). The
+transfer's `- (p/q) [e+1_d|f]` term cancels against the others when the
+bra's exponent sum is large beside the ket's (a tight bra, a diffuse ket),
+and every transfer step multiplies what was lost by `p/q`; no rewrite of
+the coefficients removes that (the cancellation is between the terms, not
+inside one). On H2O/cc-pVDZ's contracted shells -- the per-class device
+cells' inputs, which the synthetic shells and the s/p molecules of the
+first interpreted tests did not reach -- the ETR forced misses the F
+tolerance on `(ss|dd)` (5.99e-13 of scale) and `(sp|pd)` (6.92e-13), the
+one a cascade class and the other a class the model ships with the ETR;
+#354's first device run failed on exactly those two, on both cards. So the
+ETR SHIPS ONLY WHERE THE MODEL PREFERS IT AND `gate` ADMITS IT: a class
+whose interpreted ETR F is recorded within `ACCURACY_TOL` (the fused F's
+`TOL`) on those inputs. A refused class keeps the cascade; so does a class
+with no record (`UNVERIFIED`: every class above L = 4, milestone 13's cap
+-- unchecked, so not shipped). `OVERRIDES` (empty) wins over both. The
+result on the 21 classes (`data/hgp/etr_arbitration.json`, held to
+`render()` by test/test_f_lever_etr.py, which names the command that
+rewrites it, and the record recomputed there): the ETR on the six classes
+with L <= 4 the model prefers and the gate admits, `(sp|sp)`, `(sp|sd)`,
+`(sp|pp)`, `(sd|sd)`, `(sd|pp)` and `(pp|pp)`; the cascade on the rest.
+
+THE COST HALF IS A MODEL'S OPINION, NOT A MEASUREMENT. On most classes the two
 opinions DISAGREE: the ETR lowers the peak but costs more FLOPs (it carries
 `|e|` to `L`, and each transfer step reads four values) until `(pd|dd)`
 and `(dd|dd)`, where it wins both. Neither number is a register count; the
 compiler's (ptxas / the AMDGPU backend) is, and test/test_f_lever_etr_device.py
 prints both recurrences' figures on every class with L <= 4 so the
 disagreement is measured rather than assumed. A measured selector (#362)
-may override any entry; the rule here is what ships until one does.
+may override any entry (but not ship the ETR past the accuracy gate's
+refusal); the rule here is what ships until one does.
 
 THE KERNEL, when the class arbitrates to the ETR. The `vrr` hook emits, in
 the ETR DAG's order: the per-quartet `etr_pq` and the `etr_c_d` of every
@@ -65,7 +85,8 @@ NOT BITWISE: the ETR is the same integrals by a different recurrence, so
 the boundary differs from the literal one in rounding. It is held, with the
 existing tolerances (never loosened), to `ao/eri.py`'s MMD integrals and to
 libcint (through the tracked fixtures), and its `F` to `ao.fock`'s sweep,
-on every class with L <= 4 (test/test_f_lever_etr.py).
+on every class with L <= 4 (test/test_f_lever_etr.py) -- and on H2O/cc-pVDZ,
+where it does not hold on two classes, which is THE ACCURACY GATE above.
 
 COMPOSITION.
   - `batched-vrr` (#350): composes. #350's nest hands the `vrr` hook a
@@ -129,20 +150,27 @@ from felizjueves.ir import (
 from felizjueves.spec import Spec
 
 __all__ = [
+    "ACCURACY",
+    "ACCURACY_INPUT",
+    "ACCURACY_TOL",
+    "ADMITTED",
     "CASCADE",
     "ETR",
     "NAME",
     "OVERRIDES",
     "PQ",
+    "REFUSED",
     "RULE",
     "SUBDAG_REFUSAL",
     "Score",
+    "UNVERIFIED",
     "apply",
     "build_etr_vrr_kernel",
     "choice",
     "closure",
     "etr_body",
     "forced",
+    "gate",
     "needs",
     "render",
     "report",
@@ -161,8 +189,11 @@ RULE = (
     "statement-order live model (#350's), x = hgp.cost's K^4 FLOPs per "
     "primitive quartet (cost / etr_cost); the ETR when its (peak, x) is "
     "lexicographically lower, else the cascade (a tie on both keeps the "
-    "literal kernel); OVERRIDES wins. A model's opinion, not a "
-    "measurement: a measured selector (#362) may override it")
+    "literal kernel); then THE ACCURACY GATE: the ETR ships only on a "
+    "class whose interpreted ETR F is recorded within the F tolerance "
+    "(ACCURACY, ACCURACY_TOL), else the cascade; OVERRIDES wins. The cost "
+    "half is a model's opinion, not a measurement: a measured selector "
+    "(#362) may override it")
 
 SUBDAG_REFUSAL = (
     "etr + subdag-vrr: #357 re-schedules the ket cascade's group closure and "
@@ -173,6 +204,49 @@ SUBDAG_REFUSAL = (
 # Per-class overrides of the rule (class -> ETR or CASCADE). Empty: every
 # class ships the rule's choice. An entry is a decision, stated beside it.
 OVERRIDES: Mapping[AmClass, str] = MappingProxyType({})
+
+# THE ACCURACY GATE (module docstring). The F tolerance it is held to: the
+# fused F's `TOL` of `scale_G` (test/test_fock_build.py; equality asserted by
+# test/test_f_lever_etr.py), never loosened.
+ACCURACY_TOL = 1e-13
+ACCURACY_INPUT = (
+    "H2O/cc-pVDZ, launch_f's plan at tau = 0, n = 1 (test_fock_ondevice.py's "
+    "PART1): every launch of the class, the kernel the ETR forced "
+    "(`forced(ETR)`), interpreted, against ao.fock's sweep restricted to the "
+    "quartets those launches meet, worst |F - G| / scale_G (scale_G: the "
+    "sweep on |D| with ao.eri's absolute-value twin)")
+# The gate's record: class -> that worst error, recomputed by
+# test/test_f_lever_etr.py (to 1%; the verdict exactly). Only the classes
+# with L <= 4 (milestone 13's cap); a class absent is UNVERIFIED and never
+# ships the ETR. Interpreted fp64, no FMA contraction: the card's figure
+# differs in rounding (#354's device run, ETR forced: (ss|dd) 3.4e-13 and
+# (sp|pd) 7.8e-13 of scale on both cards, the other eleven at most 5.9e-14).
+ACCURACY: Mapping[AmClass, float] = MappingProxyType({
+    (0, 0, 0, 0): 8.54e-16,
+    (0, 0, 0, 1): 4.69e-15,
+    (0, 0, 0, 2): 1.89e-14,
+    (0, 0, 1, 1): 2.90e-15,
+    (0, 0, 1, 2): 3.19e-14,
+    (0, 0, 2, 2): 5.99e-13,  # REFUSED
+    (0, 1, 0, 1): 3.33e-15,
+    (0, 1, 0, 2): 1.66e-14,
+    (0, 1, 1, 1): 1.11e-14,
+    (0, 1, 1, 2): 6.92e-13,  # REFUSED
+    (0, 2, 0, 2): 2.98e-14,
+    (0, 2, 1, 1): 1.47e-14,
+    (1, 1, 1, 1): 3.90e-16,
+})
+ADMITTED, REFUSED, UNVERIFIED = "admitted", "refused", "unverified"
+
+
+def gate(cls: AmClass) -> str:
+    """The accuracy gate's verdict on the ETR for `cls`: `ADMITTED` when
+    its recorded error is within `ACCURACY_TOL`, `REFUSED` when not,
+    `UNVERIFIED` when there is no record (L > 4)."""
+    cls = tuple(cls)
+    if cls not in ACCURACY:
+        return UNVERIFIED
+    return ADMITTED if ACCURACY[cls] <= ACCURACY_TOL else REFUSED
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +299,14 @@ def score(cls: AmClass) -> Score:
 
 
 def choice(cls: AmClass) -> str:
-    """The shipped recurrence of `cls`: `OVERRIDES`, else the rule's."""
+    """The shipped recurrence of `cls`: `OVERRIDES`, else the model's rule
+    AND the accuracy gate -- the ETR only where the model prefers it and
+    `gate` admits it."""
     cls = tuple(cls)
-    return OVERRIDES[cls] if cls in OVERRIDES else score(cls).rule
+    if cls in OVERRIDES:
+        return OVERRIDES[cls]
+    return (ETR if score(cls).rule == ETR and gate(cls) == ADMITTED
+            else CASCADE)
 
 
 ABOUT = (
@@ -235,7 +314,12 @@ ABOUT = (
     "cascade (hgp.vrr, [Fock] eqs 25-26) and the electron-transfer "
     "relation (hgp.etr, #354), from src/felizjueves/f_levers/etr.py. Rule: "
     + RULE + ". peak_margin and x_margin are cascade minus ETR (positive: "
-    "the ETR saves); opinions_agree is whether the two point the same way. "
+    "the ETR saves); opinions_agree is whether the two point the same way; "
+    "rule is the model's choice. accuracy is the ETR forced, worst error / "
+    "scale on " + ACCURACY_INPUT + "; gate is admitted when it is within "
+    f"{ACCURACY_TOL:g}, refused when not, unverified with no record (L > "
+    "4, milestone 13's cap); choice ships the ETR only where rule says etr "
+    "and gate is admitted. "
     "Model numbers only, calibrated against nothing: the compiler's "
     "registers and spills for both recurrences are printed by "
     "test/test_f_lever_etr_device.py, not stored here.")
@@ -255,6 +339,8 @@ def report() -> dict:
             "x_margin": s.x_margin,
             "opinions_agree": s.opinions_agree,
             "rule": s.rule,
+            "accuracy": ACCURACY.get(cls),
+            "gate": gate(cls),
             "choice": choice(cls),
         })
     return {"about": ABOUT, "classes": rows}

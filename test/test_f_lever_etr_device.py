@@ -20,14 +20,19 @@ cap; 13 of the 21):
 2. ON THE CARD (`gpu` + `cuda` / `hip`): test_fock_ondevice.py's launches
    (`fock_driver.record`: launch_f's plan walked by walk_f), every kernel
    swapped:
-   (a) per class, H2O/cc-pVDZ's launches of that class at `tau = 0`, the
-   kernel the ETR FORCED (so the ETR runs on all 13 classes, the cascade
-   ones included), against those launches interpreted with the literal
-   kernel and `ao.fock`'s restricted sweep, with test_fock_ondevice's
-   `_check_class` and its stated tolerances unchanged (`TOL` against the
-   sweep; `2 TOL` against the literal interpreted launches -- the ETR and
-   the cascade each within `TOL` of the sweep, test_f_lever_etr.py -- and
-   between runs);
+   (a) per class THE ACCURACY GATE ADMITS (`etr.gate`: 11 of the 13),
+   H2O/cc-pVDZ's launches of that class at `tau = 0`, the kernel the ETR
+   FORCED (so the ETR runs on the cascade classes too), against those
+   launches interpreted with the literal kernel and `ao.fock`'s restricted
+   sweep, with test_fock_ondevice's `_check_class` and its stated
+   tolerances unchanged (`TOL` against the sweep; `2 TOL` against the
+   literal interpreted launches -- the ETR and the cascade each within
+   `TOL` of the sweep, test_f_lever_etr.py -- and between runs). The two
+   classes the gate REFUSES, `(ss|dd)` and `(sp|pd)`, are excluded: #354's
+   first device run (both cards, the same figures) put the ETR forced there
+   at 3.4e-13 and 7.8e-13 of scale against `TOL = 1e-13`;
+   test_f_lever_etr.py pins them interpreted on these inputs, and the rule
+   ships the cascade on both;
    (b) per molecule, the SHIPPED lever (`etr`, the rule's choice per class)
    on H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and H2O/6-31G at
    `tau = 0` (s and p shells only: every class L <= 4), every launch of
@@ -75,6 +80,9 @@ NAME = E.NAME
 CAP = 4
 CAPPED = tuple(c for c in CLASSES if sum(c) <= CAP)
 CLASS_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in CAPPED]
+# part 2(a)'s cells: the classes the accuracy gate admits
+GATED = tuple(c for c in CAPPED if E.gate(c) == E.ADMITTED)
+GATED_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in GATED]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
@@ -203,7 +211,7 @@ def _program_kernels(cell) -> tuple[list[Kernel], str]:
 
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
-      for c in CAPPED),
+      for c in GATED),
     *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
 ]
 
@@ -247,7 +255,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-@pytest.mark.parametrize("cls", CLASS_PARAMS)
+@pytest.mark.parametrize("cls", GATED_PARAMS)
 def test_cuda_f_lever_etr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
     _per_class("cuda", cls, request, run_device_binary, tmp_path)
@@ -255,7 +263,7 @@ def test_cuda_f_lever_etr_each_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
-@pytest.mark.parametrize("cls", CLASS_PARAMS)
+@pytest.mark.parametrize("cls", GATED_PARAMS)
 def test_hip_f_lever_etr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
     _per_class("hip", cls, request, run_device_binary, tmp_path)
@@ -312,6 +320,11 @@ def test_hip_f_lever_etr_whole_molecule_matches(
 
 def test_the_cells_are_l_at_most_4_and_the_swaps_are_the_levers() -> None:
     assert len(CAPPED) == 13 and all(sum(c) <= CAP for c in CAPPED)
+    # the per-class device cells are the gate's admitted classes; the two
+    # it refuses (#354's failed device run) are left out, never loosened
+    assert len(GATED) == 11
+    assert set(CAPPED) - set(GATED) == {(0, 0, 2, 2), (0, 1, 1, 2)}
+    assert all(E.gate(c) == E.REFUSED for c in set(CAPPED) - set(GATED))
     for p in MOLECULES:
         recs = _swap(fo._plan(*p.values)[0])
         assert {sum(_cls_of(r.kernel)) for r in recs} <= set(range(CAP + 1))
