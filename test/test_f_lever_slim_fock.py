@@ -47,6 +47,7 @@ import numpy as np
 import pytest
 import test_kernel_f as tk
 from test_f_lever_block_fab import _gamma, _Recorder
+from tiers import split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves import kernel_f as KF
@@ -68,13 +69,7 @@ NAME = sf.NAME
 STACK = (bv.NAME, sh.NAME, NAME)
 CAP = 4  # milestone 13: every test at L <= 4
 
-
-def _speed(cls):
-    return pytest.param(cls, id="".join(map(str, cls)),
-                        marks=(pytest.mark.slow,) if sum(cls) > CAP else ())
-
-
-LADDER = [_speed(c) for c in vrr.CLASSES]
+LADDER = split_by_l(vrr.CLASSES, sum, ids=lambda c: "".join(map(str, c)))
 CAPPED = [c for c in vrr.CLASSES if sum(c) <= CAP]
 
 

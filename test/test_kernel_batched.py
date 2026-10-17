@@ -12,8 +12,11 @@ THE TOLERANCE IS test_kernel.py's, PROPAGATED, NOT LOOSENED:
 
     |J_p - want_p| <= 1e-12 * SUM_k SUM_q |[p|q] D_q|
 
-The whole grid interprets in seconds on this host, so it is in the fast tier
-unshrunk; no cell is marked `slow`.
+THE FAST TIER STOPS AT L = FAST_L_MAX (test/tiers.py). Every cell above it
+is the same test marked `slow`, and so is every whole test whose class is
+above it. The grid above the cut is listed at collection by `partition` --
+the plan layer's batch rule, cheap -- not by planning each class, and a
+`slow` test asserts that `plan` admits exactly those cells.
 
 Nothing compiles and nothing launches on a card: interpreting is not emitting.
 """
@@ -24,6 +27,7 @@ from functools import cache
 
 import numpy as np
 import pytest
+from tiers import by_l, is_fast
 
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
@@ -56,6 +60,7 @@ from felizjueves.kernel import (
     split,
 )
 from felizjueves.passes import ATOMIC_NOTE
+from felizjueves.plan.batching import partition
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import node_name
@@ -74,18 +79,43 @@ def _admitted(L: int, n_batches: int) -> bool:
     return True
 
 
-GRID = tuple((L, n) for L in range(17) for n in BATCH_COUNTS if _admitted(L, n))
+def _partitions(L: int, n_batches: int) -> bool:
+    """`partition`'s half of `_admitted`, without planning the class."""
+    try:
+        partition(L, n_batches)
+    except ValueError:
+        return False
+    return True
+
+
+CELLS = tuple((L, n) for L in range(17) for n in BATCH_COUNTS)
+# Planned below the cut; above it only partitioned, so collection plans no
+# L > FAST_L_MAX class. `test_the_grid_above_l4_is_what_plan_admits` holds
+# the two rules to the same answer.
+FAST_GRID = tuple((L, n) for L, n in CELLS if is_fast(L) and _admitted(L, n))
+HIGH_GRID = tuple((L, n) for L, n in CELLS
+                  if not is_fast(L) and _partitions(L, n))
+GRID = FAST_GRID + HIGH_GRID
+# One `cell` per (L, n_batches), `slow` above the cut; the ids are the
+# two-argument ones (`4-3`), so node ids did not move.
+GRID_PARAMS = [by_l(c, c[0], id=f"{c[0]}-{c[1]}") for c in GRID]
 
 
 def test_the_grid_is_what_the_plan_layer_admits() -> None:
     """59 of 68 since #64; the nine refused pairs are refused, not dropped."""
     assert len(GRID) == 59
-    refused = {(L, n) for L in range(17) for n in BATCH_COUNTS} - set(GRID)
+    refused = set(CELLS) - set(GRID)
     assert refused == {(0, 3), (1, 6), (2, 6), (2, 9), (3, 9), (5, 9),
                        (0, 6), (0, 9), (1, 9)}
     for L, n in refused:
         with pytest.raises(ValueError):
             build_pq_kernels(pq_spec(L, n_batches=n))
+
+
+@pytest.mark.slow  # plans every L > FAST_L_MAX cell (tiers.py)
+def test_the_grid_above_l4_is_what_plan_admits() -> None:
+    above = [(L, n) for L, n in CELLS if not is_fast(L)]
+    assert HIGH_GRID == tuple(c for c in above if _admitted(*c))
 
 
 @cache
@@ -157,8 +187,9 @@ def _assert_matches(got: np.ndarray, want: np.ndarray, scale: np.ndarray) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("L", "n_batches"), GRID)
-def test_j_p_matches_the_reference_across_the_batch_axis(L: int, n_batches: int):
+@pytest.mark.parametrize("cell", GRID_PARAMS)
+def test_j_p_matches_the_reference_across_the_batch_axis(cell: tuple[int, int]):
+    L, n_batches = cell
     spec = pq_spec(L, n_batches=n_batches)
     assert len(_kernels(spec)) == len(plan(spec).dags) == n_batches
     args = _inputs(spec, n_bra=2, n_ket=3, seed=1000 * n_batches + L)
@@ -166,6 +197,7 @@ def test_j_p_matches_the_reference_across_the_batch_axis(L: int, n_batches: int)
     _assert_matches(got, *_reference(spec, args))
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_a_split_class_on_a_wide_warp() -> None:
     spec = pq_spec(7, n_batches=6)
     args = _inputs(spec, n_bra=3, n_ket=40, seed=7)
@@ -195,8 +227,9 @@ def _contracted(k: Kernel) -> set[tuple[int, int, int]]:
     return out
 
 
-@pytest.mark.parametrize(("L", "n_batches"), GRID)
-def test_every_target_is_contracted_by_exactly_one_batch(L: int, n_batches: int):
+@pytest.mark.parametrize("cell", GRID_PARAMS)
+def test_every_target_is_contracted_by_exactly_one_batch(cell: tuple[int, int]):
+    L, n_batches = cell
     spec = pq_spec(L, n_batches=n_batches)
     dags = plan(spec).dags
     kernels = _kernels(spec)
@@ -210,6 +243,7 @@ def test_every_target_is_contracted_by_exactly_one_batch(L: int, n_batches: int)
     assert set(seen) == set(hermite_targets(L))
 
 
+@pytest.mark.slow  # L = 6 > FAST_L_MAX (tiers.py)
 def test_the_split_happened() -> None:
     """Not inferred from n_batches: nine kernels, nine disjoint proper subsets."""
     spec = pq_spec(6, n_batches=9)
@@ -227,9 +261,9 @@ def test_the_split_happened() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _untouched_cases() -> list[tuple[Spec, int]]:
+def _untouched_cases(cells: tuple[tuple[int, int], ...]) -> list[tuple[Spec, int]]:
     out = []
-    for L, n in GRID:
+    for L, n in cells:
         spec = pq_spec(L, n_batches=n)
         for b, dag in enumerate(plan(spec).dags):
             if len(batch_contraction(spec, dag)) < len(bra_functions(spec)):
@@ -237,8 +271,8 @@ def _untouched_cases() -> list[tuple[Spec, int]]:
     return out
 
 
-def test_an_untouched_p_gets_no_slot_no_reduce_and_no_atomic() -> None:
-    cases = _untouched_cases()
+def _assert_untouched_p_gets_nothing(cells: tuple[tuple[int, int], ...]) -> None:
+    cases = _untouched_cases(cells)
     assert cases, "no (class, n_batches) leaves a bra function untouched"
     for spec, b in cases:
         dag, k = plan(spec).dags[b], _kernels(spec)[b]
@@ -253,9 +287,18 @@ def test_an_untouched_p_gets_no_slot_no_reduce_and_no_atomic() -> None:
         assert [a.dst.at[1] for a in atomics] == [Lit(i) for i in touched]
 
 
+def test_an_untouched_p_gets_no_slot_no_reduce_and_no_atomic() -> None:
+    _assert_untouched_p_gets_nothing(FAST_GRID)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_an_untouched_p_gets_no_slot_no_reduce_and_no_atomic_above_l4() -> None:
+    _assert_untouched_p_gets_nothing(HIGH_GRID)
+
+
 def test_an_untouched_p_is_left_exactly_alone() -> None:
     """Interpreted: one batch kernel onto a zeroed J writes only its p."""
-    spec, b = _untouched_cases()[0]
+    spec, b = _untouched_cases(FAST_GRID)[0]  # GRID's first; GRID is L-ordered
     dag, k = plan(spec).dags[b], _kernels(spec)[b]
     touched = {i for i, _, _ in batch_contraction(spec, dag)}
     args = _inputs(spec, n_bra=2, n_ket=3, seed=11)
@@ -267,12 +310,21 @@ def test_an_untouched_p_is_left_exactly_alone() -> None:
     assert np.any(J[:, sorted(touched)] != 0.0)
 
 
+def _assert_no_batch_is_empty(cells: tuple[tuple[int, int], ...]) -> None:
+    for L, n in cells:
+        spec = pq_spec(L, n_batches=n)
+        assert all(batch_contraction(spec, d) for d in plan(spec).dags)
+
+
 def test_an_untouched_p_and_an_empty_batch_are_different_things() -> None:
     """Every batch the plan admits touches at least one p; a batch with no
     target is refused by the plan (#64), not built as an empty kernel."""
-    for L, n in GRID:
-        spec = pq_spec(L, n_batches=n)
-        assert all(batch_contraction(spec, d) for d in plan(spec).dags)
+    _assert_no_batch_is_empty(FAST_GRID)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_no_admitted_batch_is_empty_above_l4() -> None:
+    _assert_no_batch_is_empty(HIGH_GRID)
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +350,7 @@ def test_the_screen_is_a_break_in_every_batch(lanes: int) -> None:
         assert it.iterations[KET] == want < args["n_bra"] * n
 
 
+@pytest.mark.slow  # L = 9 > FAST_L_MAX (tiers.py)
 def test_every_batch_carries_the_sort_precondition() -> None:
     for k in _kernels(pq_spec(9, n_batches=9)):
         assert Note(SORTED_KETS) in list(walk(k.body))
@@ -308,8 +361,10 @@ def test_every_batch_carries_the_sort_precondition() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("L", "n_batches"), [(4, 3), (9, 6), (16, 9)])
-def test_the_shared_accumulator_is_the_only_array(L: int, n_batches: int) -> None:
+@pytest.mark.parametrize("cell", [
+    by_l(c, c[0], id=f"{c[0]}-{c[1]}") for c in ((4, 3), (9, 6), (16, 9))])
+def test_the_shared_accumulator_is_the_only_array(cell: tuple[int, int]) -> None:
+    L, n_batches = cell
     spec = pq_spec(L, n_batches=n_batches)
     for dag, k in zip(plan(spec).dags, _kernels(spec), strict=True):
         arrays = [s for s in walk(k.body) if isinstance(s, Decl) and s.shape]
@@ -330,8 +385,9 @@ def _writes(k: Kernel, kind: type) -> list:
             and isinstance(s.dst, Index) and s.dst.array == "J"]
 
 
-@pytest.mark.parametrize(("L", "n_batches"), GRID)
-def test_a_batch_kernel_atomics_into_j_and_never_assigns(L: int, n_batches: int):
+@pytest.mark.parametrize("cell", GRID_PARAMS)
+def test_a_batch_kernel_atomics_into_j_and_never_assigns(cell: tuple[int, int]):
+    L, n_batches = cell
     spec = pq_spec(L, n_batches=n_batches)
     for dag, k in zip(plan(spec).dags, _kernels(spec), strict=True):
         assert not any(isinstance(s, Raw) for s in walk(k.body))
@@ -348,16 +404,26 @@ def test_a_batch_kernel_atomics_into_j_and_never_assigns(L: int, n_batches: int)
         assert lane0.then
 
 
+def _assert_one_batch_delegates(L: int) -> None:
+    spec = pq_spec(L)
+    assert build_pq_kernels(spec) == (build_pq_kernel(spec),)
+
+
 def test_one_batch_delegates_to_build_pq_kernel() -> None:
-    for L in (0, 4, 16):
-        spec = pq_spec(L)
-        assert build_pq_kernels(spec) == (build_pq_kernel(spec),)
+    for L in (0, 4):
+        _assert_one_batch_delegates(L)
     with pytest.raises(ValueError, match="atomics"):
         build_pq_kernel(pq_spec(7, n_batches=3))
     with pytest.raises(TypeError):
         build_pq_kernels(7)  # type: ignore[arg-type]
 
 
+@pytest.mark.slow  # L = 16 > FAST_L_MAX (tiers.py)
+def test_one_batch_delegates_to_build_pq_kernel_above_l4() -> None:
+    _assert_one_batch_delegates(16)
+
+
+@pytest.mark.slow  # L = 6 > FAST_L_MAX (tiers.py)
 def test_kernel_names_follow_the_recurrence_convention() -> None:
     spec = pq_spec(6, n_batches=9)
     names = [k.name for k in _kernels(spec)]

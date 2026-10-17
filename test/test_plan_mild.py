@@ -7,7 +7,8 @@ opposite convention to MILD's", and is asserted beside MILD's own.
 
 Johnson, Gill & Pople (doi:10.1002/qua.560400610) give five rules an optimal
 tree obeys. `[JEngine, v2, §4.1]` claims MILD keeps 1, 2, 3 and 5; those are
-asserted here as properties over every node up to L = 16. Rule 4 is NOT
+asserted here as properties over every node up to L = 16 (above
+FAST_L_MAX, test/tiers.py, in each test's `slow` twin). Rule 4 is NOT
 asserted: it is exhibited failing, because it is a graph property and MILD is a
 pure function of `r` (docs/implementation/mild.md, "MILD against the exact
 rules").
@@ -21,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from tiers import FAST_L_MAX, is_fast
 
 from felizjueves.plan.batching import batch_direction
 from felizjueves.plan.mild import AXES, R, mild_direction
@@ -28,13 +30,20 @@ from felizjueves.plan.mild import AXES, R, mild_direction
 L_MAX = 16
 
 
-def _every_r(L: int) -> Iterator[R]:
-    """Every Hermite index with 0 < |r| <= L -- every node MILD is asked about."""
+def _every_r(L: int, above: int = 0) -> Iterator[R]:
+    """Every Hermite index with above < |r| <= L -- every node MILD is asked
+    about, or, with `above`, the ones a fast test left to its slow twin."""
     for x in range(L + 1):
         for y in range(L + 1 - x):
             for z in range(L + 1 - x - y):
-                if x + y + z:
+                if x + y + z > above:
                     yield (x, y, z)
+
+
+# Each property below runs twice: over |r| <= FAST_L_MAX in the fast tier, and
+# over FAST_L_MAX < |r| <= L_MAX in its `slow` twin (tiers.py).
+FAST = (FAST_L_MAX, 0)
+ABOVE = (L_MAX, FAST_L_MAX)
 
 
 def _reduced(r: R) -> int:
@@ -78,14 +87,32 @@ def test_a_node_with_no_direction_raises(r) -> None:
         mild_direction(r)
 
 
-def test_the_direction_is_always_reducible() -> None:
-    for r in _every_r(L_MAX):
+def _always_reducible(nodes: tuple[int, int]) -> None:
+    for r in _every_r(*nodes):
         assert _reduced(r) > 0
 
 
-def test_the_direction_is_the_minimum_non_zero_component() -> None:
-    for r in _every_r(L_MAX):
+def test_the_direction_is_always_reducible() -> None:
+    _always_reducible(FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_direction_is_always_reducible_above_l4() -> None:
+    _always_reducible(ABOVE)
+
+
+def _minimum_non_zero(nodes: tuple[int, int]) -> None:
+    for r in _every_r(*nodes):
         assert _reduced(r) == min(c for c in r if c)
+
+
+def test_the_direction_is_the_minimum_non_zero_component() -> None:
+    _minimum_non_zero(FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_direction_is_the_minimum_non_zero_component_above_l4() -> None:
+    _minimum_non_zero(ABOVE)
 
 
 def _tied(r: R, value: int) -> list[int]:
@@ -93,14 +120,13 @@ def _tied(r: R, value: int) -> list[int]:
     return [i for i in range(3) if r[i] == value]
 
 
-@pytest.mark.claim("jengine/mild-tie-break")
-def test_the_whole_tie_break_on_every_node() -> None:
+def _whole_tie_break(nodes: tuple[int, int]) -> None:
     # Restated as the claim states it, not as mild.py computes it: the axes
     # holding the smallest non-zero value; one wins outright, two go to the
     # cyclic successor of the pair, three go to z.
     successor = {(0, 1): 1, (1, 2): 2, (0, 2): 0}
     seen = {1: 0, 2: 0, 3: 0}
-    for r in _every_r(L_MAX):
+    for r in _every_r(*nodes):
         tied = _tied(r, min(c for c in r if c))
         seen[len(tied)] += 1
         want = tied[0] if len(tied) == 1 else successor.get(tuple(tied), 2)
@@ -108,8 +134,23 @@ def test_the_whole_tie_break_on_every_node() -> None:
     assert all(seen.values())
 
 
-@pytest.mark.claim("jengine/batch-tie-break")
-def test_mild_and_the_batching_pass_break_ties_oppositely() -> None:
+@pytest.mark.claim("jengine/mild-tie-break")
+def test_the_whole_tie_break_on_every_node() -> None:
+    _whole_tie_break(FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_whole_tie_break_on_every_node_above_l4() -> None:
+    _whole_tie_break(ABOVE)
+
+
+def _disagreements(L: int) -> int:
+    """Nodes with |r| <= L where the two rules face a real tie: (a, a, 0) in
+    three rotations and (a, a, a), for every a."""
+    return 3 * (L // 2) + L // 3
+
+
+def _opposite_tie_breaks(nodes: tuple[int, int]) -> None:
     """[JEngine, v2, Alg. 2] against Alg. 4: MILD minimises, the batching pass
     maximises, and their tie-breaks are deliberately inverse -- successor and
     z for MILD, predecessor and x for batching (j_engine.md, "The scheme").
@@ -123,7 +164,7 @@ def test_mild_and_the_batching_pass_break_ties_oppositely() -> None:
     predecessor = {(0, 1): 0, (1, 2): 1, (0, 2): 2}
     successor = {(0, 1): 1, (1, 2): 2, (0, 2): 0}
     disagreed = 0
-    for r in _every_r(L_MAX):
+    for r in _every_r(*nodes):
         hi = _tied(r, max(r))
         want = hi[0] if len(hi) == 1 else predecessor.get(tuple(hi), 0)
         assert batch_direction(r) == AXES[want], r
@@ -137,8 +178,18 @@ def test_mild_and_the_batching_pass_break_ties_oppositely() -> None:
         disagreed += 1
         assert batch_direction(r) == AXES[predecessor.get(tuple(lo), 0)], r
         assert mild_direction(r) == AXES[successor.get(tuple(lo), 2)], r
-    # (a, a, 0) in three rotations and (a, a, a), for every a with |r| <= 16
-    assert disagreed == 3 * (L_MAX // 2) + L_MAX // 3
+    top, above = nodes
+    assert disagreed == _disagreements(top) - _disagreements(above)
+
+
+@pytest.mark.claim("jengine/batch-tie-break")
+def test_mild_and_the_batching_pass_break_ties_oppositely() -> None:
+    _opposite_tie_breaks(FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_mild_and_the_batching_pass_break_ties_oppositely_above_l4() -> None:
+    _opposite_tie_breaks(ABOVE)
 
 
 # -- Johnson, Gill & Pople's rules ---------------------------------------------
@@ -159,12 +210,10 @@ JOHNSON_RULES = {
 }
 
 
-@pytest.mark.claim("jengine/mild-keeps-rules-1-2-3-5")
-@pytest.mark.parametrize("rule", sorted(JOHNSON_RULES))
-def test_johnsons_rule_holds_on_every_node(rule: int) -> None:
+def _johnsons_rule(rule: int, nodes: tuple[int, int]) -> None:
     (lo_mid, j_min, reduced) = JOHNSON_RULES[rule]
     seen = 0
-    for r in _every_r(L_MAX):
+    for r in _every_r(*nodes):
         lo, mid, hi = sorted(r)
         if (lo, mid) != lo_mid or hi < j_min:
             continue
@@ -174,6 +223,27 @@ def test_johnsons_rule_holds_on_every_node(rule: int) -> None:
         else:
             assert _reduced(r) == reduced, r
     assert seen  # no rule passes vacuously
+
+
+def _first_l(rule: int) -> int:
+    """The smallest |r| the rule speaks about: rule 5's {0 2 3} is L = 5, so
+    it has no node in the fast tier and runs in the slow twin only."""
+    (lo, mid), j_min, _ = JOHNSON_RULES[rule]
+    return lo + mid + j_min
+
+
+@pytest.mark.claim("jengine/mild-keeps-rules-1-2-3-5")
+@pytest.mark.parametrize(
+    "rule", [r for r in sorted(JOHNSON_RULES) if is_fast(_first_l(r))]
+)
+def test_johnsons_rule_holds_on_every_node(rule: int) -> None:
+    _johnsons_rule(rule, FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("rule", sorted(JOHNSON_RULES))
+def test_johnsons_rule_holds_on_every_node_above_l4(rule: int) -> None:
+    _johnsons_rule(rule, ABOVE)
 
 
 # -- rule 4, exhibited rather than asserted ------------------------------------
@@ -210,6 +280,7 @@ def _mild_tree(L: int) -> tuple[set[Node], dict[Node, set[Node]]]:
     return nodes, children
 
 
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
 def test_mild_ignores_common_parents_and_the_sieve_recovers_them() -> None:
     """Johnson's rule 4 does not hold under MILD, and this is not an oversight.
 

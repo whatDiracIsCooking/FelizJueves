@@ -38,6 +38,7 @@ def _spec(L: int, n_batches: int, levers: tuple[str, ...] = ()) -> Spec:
 # -- the pipeline --------------------------------------------------------------
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("sieved", [True, False], ids=["sieve", "no-sieve"])
 @pytest.mark.parametrize("n_batches", [1, 3, 6, 9])
 @pytest.mark.parametrize("L", range(7, 17))
@@ -51,6 +52,7 @@ def test_plan_matches_the_stages_by_hand(L: int, n_batches: int, sieved: bool):
     assert [d.batch for d in got.dags] == [d.batch for d in dags]
 
 
+@pytest.mark.slow  # L = 12 > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("levers", [(), (NO_SIEVE,)])
 def test_the_batch_report_adds_up_to_the_cost(levers: tuple[str, ...]) -> None:
     p = plan(_spec(12, 6, levers))
@@ -61,6 +63,7 @@ def test_the_batch_report_adds_up_to_the_cost(levers: tuple[str, ...]) -> None:
     assert [(b.direction, b.a, b.b) for b in p.batches] == [d.batch for d in p.dags]
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_the_report_is_plain_json() -> None:
     report = plan(_spec(7, 3)).report()
     assert json.loads(json.dumps(report)) == report
@@ -99,6 +102,7 @@ def test_the_exit_codes_are_distinct() -> None:
 # -- the CLI, in-process -------------------------------------------------------
 
 
+@pytest.mark.slow  # replays a board: every cell is L 7..16 > FAST_L_MAX
 def test_replay_literal(capsys: pytest.CaptureFixture[str]) -> None:
     # Every Agreement passes at its measured threshold. Table 3's
     # exact_given_inputs passes from the inputs #14 recorded; Tables 1-2's
@@ -124,6 +128,7 @@ def data(tmp_path: Path) -> Path:
     return tmp_path / "data"
 
 
+@pytest.mark.slow  # replays a board: every cell is L 7..16 > FAST_L_MAX
 def test_replay_literal_fails_on_a_raised_floor(
     data: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -143,6 +148,7 @@ def test_replay_searched_without_cuts_is_unset(
     assert "no candidates yet" in capsys.readouterr().out
 
 
+@pytest.mark.slow  # replays a board: every cell is L 7..16 > FAST_L_MAX
 def test_replay_searched(capsys: pytest.CaptureFixture[str]) -> None:
     # #13's recorded choices (since #172 explicit per-batch seed orders
     # climbed from the 58 rules, selected from a frontier by #171's rule),
@@ -166,6 +172,7 @@ def test_replay_searched_with_an_unread_cuts_file_could_not_run(
     assert "could not run" in capsys.readouterr().err
 
 
+@pytest.mark.slow  # L = 9 > FAST_L_MAX (tiers.py)
 def test_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["report", "9", "3", "--no-sieve"]) == EXIT_PASS
     report = json.loads(capsys.readouterr().out)

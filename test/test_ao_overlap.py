@@ -4,7 +4,8 @@ The witnesses here are the Hermite identity (`S` IS element 0 of the block
 `ao.pairs.primitive_pairs` dresses, summed) and closed forms derivable by
 hand, and, since #240, libcint's `int1e_ovlp` through the tracked fixtures
 (the block at the end of this file; s/p fast, `slow` from l = 2). Fast tier
-otherwise, no marker, no PySCF.
+otherwise, no marker, no PySCF -- except a case that reaches a class above
+`la + lb = 4` (test/tiers.py's cut), which is `slow`.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from tiers import by_l, is_fast, split_by_l
 
 from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.one_electron import matrix
@@ -32,6 +34,9 @@ SHELLS = (
     Shell(3, C, (0.55, 0.12), (0.8, 0.3)),
     Shell(1, C, (0.9,), (1.0,)),
 )
+# SHELLS without its f shell: every pair at L <= FAST_L_MAX (tiers.py), for
+# the fast tier's whole-matrix checks; SHELLS itself reaches (ff), `slow`.
+SHELLS_THROUGH_D = tuple(s for s in SHELLS if s.l <= 2)
 
 
 def test_t0_is_index_zero_of_every_hermite_order() -> None:
@@ -39,9 +44,11 @@ def test_t0_is_index_zero_of_every_hermite_order() -> None:
         assert hermite_order(L)[0] == (0, 0, 0)
 
 
-@pytest.mark.parametrize("ia", range(len(SHELLS)))
-@pytest.mark.parametrize("ib", range(len(SHELLS)))
-def test_overlap_block_is_the_summed_t0_column(ia: int, ib: int) -> None:
+@pytest.mark.parametrize("pair", [
+    by_l((ia, ib), SHELLS[ia].l + SHELLS[ib].l, id=f"{ib}-{ia}")
+    for ia in range(len(SHELLS)) for ib in range(len(SHELLS))])
+def test_overlap_block_is_the_summed_t0_column(pair) -> None:
+    ia, ib = pair
     # Asserted directly, bitwise: a drift in `dress` or the block layout
     # surfaces here rather than in a device test.
     sa, sb = SHELLS[ia], SHELLS[ib]
@@ -98,7 +105,7 @@ def test_p_against_s_on_one_centre_is_zero_by_parity() -> None:
         assert abs(v) <= 1e-14 * scale
 
 
-@pytest.mark.parametrize("l", range(4))
+@pytest.mark.parametrize("l", split_by_l(range(4), lambda n: 2 * n, ids=str))
 def test_normalised_axis_components_have_unit_self_overlap(l: int) -> None:  # noqa: E741
     # ao/shell.py: primitive_norm normalises the AXIS component x^l, so with
     # it folded into the coefficient by the caller, S_xx = 1. Nothing in
@@ -109,8 +116,7 @@ def test_normalised_axis_components_have_unit_self_overlap(l: int) -> None:  # n
     assert blk[0][0] == pytest.approx(1.0, rel=1e-14)
 
 
-def test_overlap_matrix_is_exactly_symmetric_and_n_ao_square() -> None:
-    basis = Basis(SHELLS)
+def _symmetric_and_n_ao_square(basis: Basis) -> None:
     S = overlap_matrix(basis)
     n = basis.n_ao
     assert len(S) == n and all(len(r) == n for r in S)
@@ -120,12 +126,21 @@ def test_overlap_matrix_is_exactly_symmetric_and_n_ao_square() -> None:
     assert all(S[i][i] > 0.0 for i in range(n))
 
 
-def test_overlap_matrix_places_each_block_at_its_offsets() -> None:
-    basis = Basis(SHELLS)
+def test_overlap_matrix_is_exactly_symmetric_and_n_ao_square() -> None:
+    _symmetric_and_n_ao_square(Basis(SHELLS_THROUGH_D))
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_overlap_matrix_is_exactly_symmetric_and_n_ao_square_with_f() -> None:
+    _symmetric_and_n_ao_square(Basis(SHELLS))
+
+
+def _places_each_block(shells) -> None:
+    basis = Basis(shells)
     S = overlap_matrix(basis)
     off = basis.offsets
-    for i, sa in enumerate(SHELLS):
-        for j, sb in enumerate(SHELLS):
+    for i, sa in enumerate(shells):
+        for j, sb in enumerate(shells):
             if j < i:
                 continue
             blk = overlap_block(sa, sb)
@@ -136,8 +151,8 @@ def test_overlap_matrix_places_each_block_at_its_offsets() -> None:
                     assert S[off[i] + r][off[j] + c] == blk[r][c]
     # the lower triangle by shell agrees with the recomputed transpose to
     # rounding (it is copied, so this witnesses <a|b> = <b|a>, not the copy)
-    for i, sa in enumerate(SHELLS):
-        for j, sb in enumerate(SHELLS[:i]):
+    for i, sa in enumerate(shells):
+        for j, sb in enumerate(shells[:i]):
             blk = overlap_block(sa, sb)
             for r in range(sa.n_cart):
                 for c in range(sb.n_cart):
@@ -145,8 +160,17 @@ def test_overlap_matrix_places_each_block_at_its_offsets() -> None:
                         blk[r][c], rel=1e-13, abs=1e-16)
 
 
-def test_matrix_calls_block_once_per_unordered_shell_pair() -> None:
-    basis = Basis(SHELLS)
+def test_overlap_matrix_places_each_block_at_its_offsets() -> None:
+    _places_each_block(SHELLS_THROUGH_D)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_overlap_matrix_places_each_block_at_its_offsets_with_f() -> None:
+    _places_each_block(SHELLS)
+
+
+def _calls_block_once_per_unordered_shell_pair(shells) -> None:
+    basis = Basis(shells)
     calls: list[tuple[int, int]] = []
     index = {id(s): k for k, s in enumerate(basis.shells)}
 
@@ -155,8 +179,17 @@ def test_matrix_calls_block_once_per_unordered_shell_pair() -> None:
         return overlap_block(sa, sb)
 
     matrix(basis, block)
-    n = len(SHELLS)
+    n = len(shells)
     assert calls == [(i, j) for i in range(n) for j in range(i, n)]
+
+
+def test_matrix_calls_block_once_per_unordered_shell_pair() -> None:
+    _calls_block_once_per_unordered_shell_pair(SHELLS_THROUGH_D)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_matrix_calls_block_once_per_unordered_shell_pair_with_f() -> None:
+    _calls_block_once_per_unordered_shell_pair(SHELLS)
 
 
 def test_matrix_reads_only_the_upper_triangle_of_a_diagonal_block() -> None:
@@ -214,23 +247,37 @@ def _chain_236(n: int) -> Basis:
                        for m in range(n) for dz in (0.0, 1.4)))
 
 
-def _bases_236() -> dict[str, Basis]:
+def _bases_236(fast: bool | None = None) -> dict[str, Basis]:
+    """The cases; with `fast`, those on that side of test/tiers.py's cut (a
+    basis reaches the pair class `2 l_max`: SHELLS and HF/cc-pVTZ, (ff))."""
     out = {"SHELLS": Basis(SHELLS), "h2_chain_8": _chain_236(8)}
     for name in ("h2o_sto3g_j", "hf_ccpvtz"):
         out[name] = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES
                                                     / f"{name}.json"))
-    return out
+    if fast is None:
+        return out
+    return {n: b for n, b in out.items()
+            if is_fast(2 * max(s.l for s in b.shells)) == fast}
 
 
-def test_236_screened_overlap_at_tau_zero_is_the_unscreened() -> None:
-    for name, basis in _bases_236().items():
+def _236_at_tau_zero(fast: bool) -> None:
+    for name, basis in _bases_236(fast).items():
         pl = pair_list(basis, tau=0.0, bound=overlap_bound)
         assert pl.dropped == ()
         assert overlap_matrix(basis, pairs=pl.kept) == overlap_matrix(basis), name
 
 
-def test_236_screened_overlap_drops_only_blocks_below_tau() -> None:
-    for name, basis in _bases_236().items():
+def test_236_screened_overlap_at_tau_zero_is_the_unscreened() -> None:
+    _236_at_tau_zero(fast=True)
+
+
+@pytest.mark.slow  # SHELLS and HF/cc-pVTZ reach (ff) (tiers.py)
+def test_236_screened_overlap_at_tau_zero_is_the_unscreened_above_l4() -> None:
+    _236_at_tau_zero(fast=False)
+
+
+def _236_drops_only_blocks_below_tau(fast: bool) -> None:
+    for name, basis in _bases_236(fast).items():
         S0 = overlap_matrix(basis)
         off, sh = basis.offsets, basis.shells
         for tau in _TAUS_236:
@@ -249,18 +296,36 @@ def test_236_screened_overlap_drops_only_blocks_below_tau() -> None:
                                     name, tau, key)
                             else:
                                 assert got == want, (name, tau, key)
+
+
+def test_236_screened_overlap_drops_only_blocks_below_tau() -> None:
+    _236_drops_only_blocks_below_tau(fast=True)
     # the chain really drops something at the loosest rung
     assert pair_list(_chain_236(8), tau=1e-6, bound=overlap_bound).dropped
 
 
-def test_236_matrix_refuses_a_pair_outside_the_upper_triangle() -> None:
-    basis = Basis(SHELLS)
-    n = len(SHELLS)
+@pytest.mark.slow  # SHELLS and HF/cc-pVTZ reach (ff) (tiers.py)
+def test_236_screened_overlap_drops_only_blocks_below_tau_above_l4() -> None:
+    _236_drops_only_blocks_below_tau(fast=False)
+
+
+def _236_refuses_a_pair_outside_the_upper_triangle(shells) -> None:
+    basis = Basis(shells)
+    n = len(shells)
     assert matrix(basis, overlap_block, pairs=[
         (i, j) for i in range(n) for j in range(i, n)]) == overlap_matrix(basis)
     for bad in ((1, 0), (0, n), (-1, 0), (0.0, 1)):
         with pytest.raises(ValueError, match="pair"):
             matrix(basis, overlap_block, pairs=[bad])
+
+
+def test_236_matrix_refuses_a_pair_outside_the_upper_triangle() -> None:
+    _236_refuses_a_pair_outside_the_upper_triangle(SHELLS_THROUGH_D)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_236_matrix_refuses_a_pair_outside_the_upper_triangle_with_f() -> None:
+    _236_refuses_a_pair_outside_the_upper_triangle(SHELLS)
 
 # --- #240: S against libcint's int1e_ovlp, every fixture that carries it ----
 #

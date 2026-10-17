@@ -1,9 +1,10 @@
 """`hgp/vrr.py` (#273): the HGP vertical recurrence as an `(e, f, m)` DAG.
 
-Fast tier: pure Python, no toolchain, no card. The counts below are what this
-tree computes under `hgp.vrr`'s stated target set, reduction direction and
-pruning; the predecessor's (a3) table is not on this box, so they are pinned
-from the code, with the one published figure reconciled in
+Fast tier for `L <= FAST_L_MAX` (tiers.py), `slow` above: pure Python, no
+toolchain, no card. The counts below are what this tree computes under
+`hgp.vrr`'s stated target set, reduction direction and pruning; the
+predecessor's (a3) table is not on this box, so they are pinned from the
+code, with the one published figure reconciled in
 `test_dd_dd_has_961_targets_and_the_issues_1225_is_the_unbounded_count`.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 from math import comb
 
 import pytest
+from tiers import is_fast, split_by_l
 
 from felizjueves.ao.shell import cartesians as ao_cartesians
 from felizjueves.hgp import vrr
@@ -44,6 +46,8 @@ PINNED: dict[tuple[int, int, int, int], tuple[int, ...]] = {
     (2, 2, 2, 2): (961, 2330, 8122, 1089, 3675, 12856, 1225),
 }
 
+LADDER = split_by_l(CLASSES, sum)
+
 
 def _ncart(lo: int, hi: int) -> int:
     return sum(comb(n + 2, 2) for n in range(lo, hi + 1))
@@ -65,7 +69,7 @@ def test_cartesians_restate_the_ao_layer() -> None:
         assert vrr.cartesians(l) == ao_cartesians(l)
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_counts_are_pinned(cls) -> None:
     dag, fwd = build(cls), build(cls, prune=False)
     got = (len(dag.targets), dag.n_nodes, dag.n_edges, len(dag.at_m(0)),
@@ -74,7 +78,7 @@ def test_counts_are_pinned(cls) -> None:
     assert dag.pruned and not fwd.pruned
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_target_set_is_the_bounded_boundary_set(cls) -> None:
     la, lb, lc, ld = cls
     ts = target_set(cls)
@@ -87,6 +91,7 @@ def test_target_set_is_the_bounded_boundary_set(cls) -> None:
     assert len(dag.targets) == len(ts)
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_dd_dd_has_961_targets_and_the_issues_1225_is_the_unbounded_count() -> None:
     # #273 and #274 print "1,225" targets / boundary values for (dd|dd), and
     # both define the set as la <= |e| <= la+lb, lc <= |f| <= lc+ld. That
@@ -105,7 +110,7 @@ def test_dd_dd_has_961_targets_and_the_issues_1225_is_the_unbounded_count() -> N
     assert len(build(dd).at_m(0)) == 1089 == 31 * 35 + 4
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_the_dag_is_closed_and_ends_in_boys_leaves(cls) -> None:
     for prune in (True, False):
         dag = build(cls, prune=prune)
@@ -115,6 +120,13 @@ def test_the_dag_is_closed_and_ends_in_boys_leaves(cls) -> None:
             assert len({t.child for t in ts}) == len(ts)  # one edge per term
         leaves = {n for n, ts in dag.terms.items() if not ts}
         assert {m for *_, m in leaves} == set(range(sum(cls) + 1))
+
+
+def _steps_are_0_and_1(classes) -> None:
+    for cls in classes:
+        dag = build(cls)
+        steps = {c[2] - p[2] for p, c in dag.edges()}
+        assert steps == {0, 1}, cls
 
 
 def test_the_dag_is_not_graded_by_m() -> None:
@@ -127,10 +139,12 @@ def test_the_dag_is_not_graded_by_m() -> None:
             assert child[1] == node[1] + 1
             todo.append(child)
     # ... HGP: same-m edges exist (the PA/QC terms), and so do +1 edges.
-    for cls in CLASSES[1:]:
-        dag = build(cls)
-        steps = {c[2] - p[2] for p, c in dag.edges()}
-        assert steps == {0, 1}, cls
+    _steps_are_0_and_1(c for c in CLASSES[1:] if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_dag_is_not_graded_by_m_above_l4() -> None:
+    _steps_are_0_and_1(c for c in CLASSES[1:] if not is_fast(sum(c)))
     dd = build((2, 2, 2, 2))
     same = [(p, t) for p, ts in dd.terms.items() for t in ts
             if t.child[2] == p[2]]
@@ -138,7 +152,7 @@ def test_the_dag_is_not_graded_by_m() -> None:
     assert ((((1, 0, 0), ZERO, 0)), vrr.Term("PA", 1, (ZERO, ZERO, 0))) in same
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_the_build_order_is_bra_first_and_topological(cls) -> None:
     dag = build(cls)
     assert set(dag.order) == dag.nodes and len(dag.order) == dag.n_nodes
@@ -154,6 +168,7 @@ def test_the_build_order_is_bra_first_and_topological(cls) -> None:
         assert names <= set(vrr.KET if n[1] != ZERO else vrr.BRA)
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_ket_recurrence_reads_lower_bra_indices() -> None:
     # The paper's reason for the order: eq 26's e_d/(2(p+q)) term reads
     # [e-1_d, 0 | f, 0]^(m+1), a lower bra, so the bra must be built first.
@@ -185,7 +200,7 @@ def test_terms_follow_eqs_25_and_26() -> None:
     assert vrr.reduce((ZERO, ZERO, 3)) == ()
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_pruning_removes_only_nodes_no_target_reaches(cls) -> None:
     fwd, dag = build(cls, prune=False), build(cls)
     assert dag.nodes <= fwd.nodes
@@ -200,6 +215,7 @@ def test_pruning_removes_only_nodes_no_target_reaches(cls) -> None:
     assert all(dag.terms[n] == fwd.terms[n] for n in dag.nodes)
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_pruning_is_on_by_default_and_removes_something_at_dd_dd() -> None:
     dd = (2, 2, 2, 2)
     assert build(dd).pruned

@@ -19,7 +19,8 @@ there is no threshold and no ratchet. What is tested:
             file's flags reproduces its row -- the check #290 re-runs; (dd|dd)
             is also `slow`.
 
-Fast tier, except the `cuda` cases at the bottom.
+Fast tier, except the `cuda` cases at the bottom and the source check of a
+row above L = FAST_L_MAX (tiers.py), which builds and emits it: `slow`.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tiers import by_l
 
 from felizjueves.device import SM_86
 from felizjueves.emit import cuda
@@ -223,7 +225,8 @@ def _source(cls) -> str:
     return cuda.emit(build_f_kernel(tuple(cls)), SM_86)
 
 
-@pytest.mark.parametrize("row", _rows(), ids=lambda r: r["label"])
+@pytest.mark.parametrize("row", [by_l(r, r["L"], id=r["label"])
+                                 for r in _rows()])
 def test_each_row_measured_the_unit_this_tree_emits(row) -> None:
     sha = hashlib.sha256(_source(row["class"]).encode()).hexdigest()
     assert row["this_tree"]["source_sha256"] == sha

@@ -14,8 +14,10 @@ interpret(k)` for every batch kernel of a cell. Both must agree BITWISE,
 since the arithmetic and its order are unchanged.
 
 TIMING: the fixture tests (L = 7..16 on both DAGs) run in ~10 s on the dev
-box. The #55 interpreted cells take ~1-4 s each; those at L >= 13 are marked
-`slow`, so the pre-push gate runs L <= 10 and the rest run by hand.
+box. The #55 interpreted cells take ~1-4 s each. Every class above
+test/tiers.py's FAST_L_MAX is `slow` -- the whole fixture grid, the subgrid's
+#55 cells, and the L > 4 halves of the MMD pins and the fused classes -- so
+the pre-push gate runs L <= 4 and the rest run in the slow tier.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tiers import by_l, is_fast, split_by_l
 
 from felizjueves import levers, measured
 from felizjueves.device import GFX1200, SM_86
@@ -156,7 +159,9 @@ def _kernel(L: int, which: str) -> tuple[Kernel, tuple[Node, ...]]:
 
 
 grid = pytest.mark.parametrize(
-    ("L", "which"), [(L, w) for L in GRID_L for w in WHICH]
+    ("L", "which"),
+    [pytest.param(L, w, marks=() if is_fast(L) else (pytest.mark.slow,))
+     for L in GRID_L for w in WHICH],
 )
 
 
@@ -341,6 +346,7 @@ def test_recycling_uses_exactly_peak_live_slots(L: int, which: str) -> None:
     assert n_slots == Lit(liveness(kernel).peak)
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_recycling_is_off_by_default() -> None:
     kernel, _ = _kernel(7, "mild")
     assert lower(kernel) is kernel
@@ -416,6 +422,7 @@ def test_nothing_under_hgp_imports_lower() -> None:
                            for n in names), path
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_the_register_budget_has_no_default() -> None:
     kernel, _ = _kernel(7, "mild")
     with pytest.raises(TypeError):
@@ -461,10 +468,8 @@ def test_n_instructions_counts_the_computing_statements(L: int, which: str) -> N
 # is stored. The interpreter refuses a read of a local element nothing wrote,
 # so a slot read before its writer is an error here, not a wrong number.
 
-LEVER_CELLS = [
-    pytest.param(s, id=s.key(),
-                 marks=[pytest.mark.slow] if s.total_am >= 13 else [])
-    for s in (*(pq_spec(L) for L in (0, 1, 4)), *measured.SUBGRID)]
+LEVER_CELLS = [by_l(s, s.total_am, id=s.key())
+               for s in (*(pq_spec(L) for L in (0, 1, 4)), *measured.SUBGRID)]
 GOLDEN = Path(__file__).resolve().parent / "golden"
 EMITTERS = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
 
@@ -546,7 +551,11 @@ def test_the_lever_is_named_in_the_key_and_not_shown_to_the_plan_layer() -> None
         plan(spec)
     with pytest.raises(ValueError, match="no lever"):
         build_pq_kernels(spec)
-    assert len(measured.cell_kernels(spec)) == 3
+
+
+@pytest.mark.slow  # L = 10 > FAST_L_MAX (tiers.py)
+def test_the_driver_strips_the_lever_builds_and_lowers() -> None:
+    assert len(measured.cell_kernels(pq_spec(10, (RECYCLE,), n_batches=3))) == 3
 
 
 def test_recycle_is_lowering_s_not_a_kernel_body_lever() -> None:
@@ -559,15 +568,24 @@ def test_recycle_is_lowering_s_not_a_kernel_body_lever() -> None:
         levers.Lever.of(RECYCLE, 337, "dummy", {"j"})
 
 
+def _assert_not_lowered(L: int) -> None:
+    assert build_pq_kernel(L) == build_pq_kernel(pq_spec(L, ()))
+    assert not any(isinstance(s, Decl) and s.name == "slot"
+                   for s in walk(build_pq_kernel(L).body))
+
+
 def test_the_default_arm_is_untouched() -> None:
     """No lever: the kernel is NOT lowered, and the existing goldens hold."""
-    for L in (0, 4, 10):
-        assert build_pq_kernel(L) == build_pq_kernel(pq_spec(L, ()))
-        assert not any(isinstance(s, Decl) and s.name == "slot"
-                       for s in walk(build_pq_kernel(L).body))
+    for L in (0, 4):
+        _assert_not_lowered(L)
     for backend, (emit, arch, ext) in EMITTERS.items():
         assert emit(build_pq_kernel(4), arch) == (
             GOLDEN / backend / f"pq_L4_p2_q2.{ext}").read_text()
+
+
+@pytest.mark.slow  # L = 10 > FAST_L_MAX (tiers.py)
+def test_the_default_arm_is_untouched_above_l4() -> None:
+    _assert_not_lowered(10)
 
 
 # THE LEVER GOLDENS are the recycle arm of the class the literal goldens pin,
@@ -629,29 +647,57 @@ MMD_PINS = {
 }
 
 
-def _mmd_kernels() -> dict[str, Kernel]:
-    ks = [build_pq_kernel(L) for L in range(11)]
+def _mmd_kernels(fast: bool) -> dict[str, Kernel]:
+    """The kernels at or under FAST_L_MAX (`fast`), or the rest; a pair
+    class's L is la + lb."""
+    def pick(L: int) -> bool:
+        return is_fast(L) == fast
+
+    ks = [build_pq_kernel(L) for L in range(11) if pick(L)]
     ks += [build_dq_kernel((la, lb)) for la, lb in ((0, 0), (0, 1), (1, 1),
-                                                     (2, 2), (3, 3))]
-    ks += [build_jab_kernel((la, la)) for la in range(4)]
-    ks += [k for L in range(5) for k in build_k_kernels(k_spec(L))]
+                                                     (2, 2), (3, 3))
+           if pick(la + lb)]
+    ks += [build_jab_kernel((la, la)) for la in range(4) if pick(2 * la)]
+    ks += [k for L in range(5) if pick(L) for k in build_k_kernels(k_spec(L))]
     return {k.name: k for k in ks}
 
 
-def test_the_mmd_kernel_cost_numbers_are_byte_identical() -> None:
-    ks = _mmd_kernels()
-    for name, want in MMD_PINS.items():
+def _assert_pins(ks: dict[str, Kernel]) -> None:
+    pins = {name: want for name, want in MMD_PINS.items() if name in ks}
+    assert pins
+    for name, want in pins.items():
         c = kernel_cost(ks[name], registers=64)
         assert (c.peak_live, c.traffic, c.n_instructions) == want, name
+
+
+def _assert_nothing_carried(ks: dict[str, Kernel]) -> None:
+    for name, k in ks.items():
+        c = kernel_cost(k, registers=0)
+        assert c.carried == 0 and not loop_carried(k), name
+        assert sum(n for _, n in c.nest) == c.n_instructions, name
+
+
+def test_the_mmd_kernel_cost_numbers_are_byte_identical() -> None:
+    _assert_pins(_mmd_kernels(fast=True))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_mmd_kernel_cost_numbers_are_byte_identical_above_l4() -> None:
+    high = _mmd_kernels(fast=False)
+    _assert_pins(high)
+    # every pin is built by one half or the other
+    assert set(MMD_PINS) <= set(high) | set(_mmd_kernels(fast=True))
 
 
 def test_the_mmd_kernels_carry_nothing_across_a_loop() -> None:
     # The issue's premise, asserted: no MMD kernel declares a value before a
     # loop and writes it inside (K accumulates in a SHARED array, not a value).
-    for name, k in _mmd_kernels().items():
-        c = kernel_cost(k, registers=0)
-        assert c.carried == 0 and not loop_carried(k), name
-        assert sum(n for _, n in c.nest) == c.n_instructions, name
+    _assert_nothing_carried(_mmd_kernels(fast=True))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_mmd_kernels_carry_nothing_across_a_loop_above_l4() -> None:
+    _assert_nothing_carried(_mmd_kernels(fast=False))
 
 
 @grid
@@ -752,10 +798,10 @@ def _f_report() -> dict:
     return {"about": F_ABOUT, "loops": F_LOOPS, "classes": rows}
 
 
-F_IDS = ["".join(map(str, c)) for c in CLASSES]
+F_CLASSES = split_by_l(CLASSES, sum, ids=lambda c: "".join(map(str, c)))
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=F_IDS)
+@pytest.mark.parametrize("cls", F_CLASSES)
 def test_the_fused_kernel_holds_its_boundary_live(cls) -> None:
     k = build_f_kernel(cls)
     boundary = kernel_counts(cls).boundary
@@ -772,7 +818,7 @@ def test_the_fused_kernel_holds_its_boundary_live(cls) -> None:
     assert c.carried >= boundary and c.peak_live >= boundary
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=F_IDS)
+@pytest.mark.parametrize("cls", F_CLASSES)
 def test_the_fused_tiers_sum_to_the_flat_count(cls) -> None:
     c, t = _f_cost(cls), _f_tiers(cls)
     assert set(t) == {*TIERS, "outside"}
@@ -782,11 +828,13 @@ def test_the_fused_tiers_sum_to_the_flat_count(cls) -> None:
     assert t["K4"] >= n.vrr + n.boundary
 
 
-def test_the_tiered_counts_are_recorded() -> None:
+def _assert_recorded(fast: bool) -> None:
+    """Each recorded row at or under FAST_L_MAX (`fast`), or the rest,
+    against its kernel rebuilt."""
     doc = json.loads(F_DATA.read_text())
-    assert doc["about"] == F_ABOUT and doc["loops"] == F_LOOPS
-    assert [r["class"] for r in doc["classes"]] == [list(c) for c in CLASSES]
-    for r in doc["classes"]:
+    rows = [r for r in doc["classes"] if is_fast(sum(r["class"])) == fast]
+    assert rows
+    for r in rows:
         cls = tuple(r["class"])
         assert sum(r["tiers"].values()) == r["n_instructions"]
         assert sum(n for _, n in r["nest"]) == r["n_instructions"]
@@ -796,6 +844,18 @@ def test_the_tiered_counts_are_recorded() -> None:
         assert r["boundary"] == kernel_counts(cls).boundary
         h = hgp_cost.cost(cls)
         assert r["hgp_cost"] == {"x": h.x, "y": h.y, "z": h.z}
+
+
+def test_the_tiered_counts_are_recorded() -> None:
+    doc = json.loads(F_DATA.read_text())
+    assert doc["about"] == F_ABOUT and doc["loops"] == F_LOOPS
+    assert [r["class"] for r in doc["classes"]] == [list(c) for c in CLASSES]
+    _assert_recorded(fast=True)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_tiered_counts_are_recorded_above_l4() -> None:
+    _assert_recorded(fast=False)
 
 
 if __name__ == "__main__":

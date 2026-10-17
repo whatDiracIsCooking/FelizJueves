@@ -46,13 +46,15 @@ What is asserted:
 8. THE GOLDENS: `(sp|sp)` with the lever, one unit per backend.
 
 Fast tier: no compiler, no card, no PySCF. Nothing above L = 4 is built or
-run (milestone 13's cap).
+run there (milestone 13's cap); the DAG, cost and arbitration checks over the
+whole ladder run their L > FAST_L_MAX classes (tiers.py) in `slow` twins.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import itertools
+import json
 from dataclasses import replace
 from functools import cache
 from pathlib import Path
@@ -63,6 +65,7 @@ import test_kernel_f as tk
 from oracle import basis as ob
 from oracle import manifest
 from test_fock_build import BOUND, LIBCINT_TOL, TOL, molecule, run, sweep
+from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers, walk_f
 from felizjueves.ao import hgp_drive
@@ -86,6 +89,8 @@ NAME = E.NAME
 CAP = 4  # milestone 13: every test at L <= 4
 CAPPED = [c for c in vrr.CLASSES if sum(c) <= CAP]
 ETR_CAPPED = [c for c in CAPPED if E.choice(c) == E.ETR]
+FAST = [c for c in vrr.CLASSES if is_fast(sum(c))]
+ABOVE = [c for c in vrr.CLASSES if not is_fast(sum(c))]
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -182,15 +187,25 @@ COUNTS = {
 }
 
 
-def test_the_counts_cover_the_ladder_and_are_the_dags() -> None:
-    assert tuple(COUNTS) == vrr.CLASSES
-    for cls, (n, e, fwd) in COUNTS.items():
+def _counts_are_the_dags(classes) -> None:
+    for cls in classes:
+        n, e, fwd = COUNTS[cls]
         d = etr.build(cls)
         assert (d.n_nodes, d.n_edges, etr.build(cls, prune=False).n_nodes
                 ) == (n, e, fwd), cls
 
 
-@pytest.mark.parametrize("cls", vrr.CLASSES, ids=str)
+def test_the_counts_cover_the_ladder_and_are_the_dags() -> None:
+    assert tuple(COUNTS) == vrr.CLASSES
+    _counts_are_the_dags(FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_counts_are_the_dags_above_l4() -> None:
+    _counts_are_the_dags(ABOVE)
+
+
+@pytest.mark.parametrize("cls", split_by_l(vrr.CLASSES, sum, ids=str))
 def test_the_etr_dag_has_the_cascades_targets_and_the_relation(cls) -> None:
     d, c = etr.build(cls), vrr.build(cls)
     assert d.targets == c.targets == etr.targets(cls)
@@ -261,15 +276,24 @@ ETR_TRIPLES = {
 }
 
 
-def test_the_etr_cost_is_pinned_and_counts_its_own_dag() -> None:
-    assert tuple(ETR_TRIPLES) == vrr.CLASSES
-    for cls, triple in ETR_TRIPLES.items():
+def _etr_cost_is_pinned(classes) -> None:
+    for cls in classes:
         c, k = cost.etr_cost(cls), cost.cost(cls)
-        assert c.triple == triple, cls
+        assert c.triple == ETR_TRIPLES[cls], cls
         assert c.k0 == k.k0, cls  # the same HRR and separations
         assert c.k4["vrr"] == sum(cost.vrr_node_flops(t) for t in
                                   etr.build(cls).terms.values())
         assert c.k4["accumulate"] == k.k4["accumulate"]
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_etr_cost_is_pinned_above_l4() -> None:
+    _etr_cost_is_pinned(ABOVE)
+
+
+def test_the_etr_cost_is_pinned_and_counts_its_own_dag() -> None:
+    assert tuple(ETR_TRIPLES) == vrr.CLASSES
+    _etr_cost_is_pinned(FAST)
     assert cost.etr_cost((0, 0, 0, 0)).triple == cost.cost((0, 0, 0, 0)).triple
     # (ss|sp): [0|1_d] = etr_c [0|0] - p/q [1_d|0], 3 FLOPs each; the bra
     # [1_d|0]^(0) by eq 25, 3 each; one more K^4 step: p/q and etr_c (7)
@@ -311,9 +335,9 @@ ARBITRATION = {
 }
 
 
-def test_the_arbitration_table_is_the_rule() -> None:
-    assert tuple(ARBITRATION) == vrr.CLASSES
-    for cls, (cp, ep, cx, ex, rule) in ARBITRATION.items():
+def _arbitration_is_the_rule(classes) -> None:
+    for cls in classes:
+        cp, ep, cx, ex, rule = ARBITRATION[cls]
         s = E.score(cls)
         assert (s.cascade_peak, s.etr_peak, s.cascade_x, s.etr_x) == (
             cp, ep, cx, ex), cls
@@ -327,14 +351,25 @@ def test_the_arbitration_table_is_the_rule() -> None:
         assert E.choice(cls) == ("etr" if rule == "etr" and E.gate(cls)
                                  == E.ADMITTED else "cascade")
         assert s.peak_margin == cp - ep and s.x_margin == cx - ex
-    # the arbitration does real work: both outcomes, and the two opinions
-    # disagree on most ETR classes (the model's choice is an opinion)
-    rules = {r[-1] for r in ARBITRATION.values()}
-    assert rules == {"etr", "cascade"}
-    disagree = [c for c in vrr.CLASSES if not E.score(c).opinions_agree]
-    assert disagree == [c for c in vrr.CLASSES
+    # the two opinions disagree on most ETR classes (the model's choice is
+    # an opinion): on all but (pd|dd) and (dd|dd)
+    disagree = [c for c in classes if not E.score(c).opinions_agree]
+    assert disagree == [c for c in classes
                         if E.score(c).rule == "etr" and c not in
                         ((1, 2, 2, 2), (2, 2, 2, 2))]
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_arbitration_table_is_the_rule_above_l4() -> None:
+    _arbitration_is_the_rule(ABOVE)
+
+
+def test_the_arbitration_table_is_the_rule() -> None:
+    assert tuple(ARBITRATION) == vrr.CLASSES
+    _arbitration_is_the_rule(FAST)
+    # the arbitration does real work: both outcomes
+    rules = {r[-1] for r in ARBITRATION.values()}
+    assert rules == {"etr", "cascade"}
     # the issue's reference points: wins on (sp|sp), (pp|pp), (sd|sd);
     # losses on the pure-ket (ss|pp), (ss|dd)
     for c in ((0, 1, 0, 1), (1, 1, 1, 1), (0, 2, 0, 2)):
@@ -357,12 +392,27 @@ def test_an_override_wins_and_forced_fixes_the_recurrence(
         E.forced("hrr")
 
 
+ARBITRATION_DATA = ROOT / "data" / "hgp" / "etr_arbitration.json"
+
+
+def test_the_arbitration_data_rows_at_fast_l_are_report(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    # The L <= FAST_L_MAX rows only, recomputed through `report()`; the
+    # byte-for-byte file is the `slow` test below.
+    monkeypatch.setattr(E._vrr, "CLASSES", tuple(FAST))
+    want = E.report()
+    doc = json.loads(ARBITRATION_DATA.read_text())
+    assert doc["about"] == want["about"]
+    assert [r for r in doc["classes"] if tuple(r["class"]) in FAST] == \
+        want["classes"]
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_arbitration_data_is_render() -> None:
     # Regenerate (never hand-edit):
     #   PYTHONPATH=src uv run python -c "from felizjueves.f_levers import \
     #   etr; print(etr.render(), end='')" > data/hgp/etr_arbitration.json
-    path = ROOT / "data" / "hgp" / "etr_arbitration.json"
-    assert path.read_text() == E.render()
+    assert ARBITRATION_DATA.read_text() == E.render()
     rows = E.report()["classes"]
     assert [tuple(r["class"]) for r in rows] == list(vrr.CLASSES)
     # no override ships: the choice is the rule through the gate
@@ -390,7 +440,7 @@ REFUSED = ((0, 0, 2, 2), (0, 1, 1, 2))  # (ss|dd), (sp|pd): the finding
 def test_the_gate_is_held_to_the_f_tolerance_and_covers_the_cap() -> None:
     assert E.ACCURACY_TOL == TOL  # test_fock_build's, never loosened
     assert set(E.ACCURACY) == set(CAPPED)
-    assert all(E.gate(c) == E.UNVERIFIED and E.choice(c) == E.CASCADE
+    assert all(E.gate(c) == E.UNVERIFIED
                for c in vrr.CLASSES if sum(c) > CAP)
     assert tuple(c for c in CAPPED if E.gate(c) == E.REFUSED) == REFUSED
     # the finding, pinned: both refused by a wide margin, one of them a
@@ -400,6 +450,12 @@ def test_the_gate_is_held_to_the_f_tolerance_and_covers_the_cap() -> None:
     assert E.choice((0, 1, 1, 2)) == E.CASCADE
     assert ETR_CAPPED == [(0, 1, 0, 1), (0, 1, 0, 2), (0, 1, 1, 1),
                           (0, 2, 0, 2), (0, 2, 1, 1), (1, 1, 1, 1)]
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py): `choice` scores the class
+def test_above_the_cap_the_choice_is_the_cascade() -> None:
+    assert all(E.choice(c) == E.CASCADE
+               for c in vrr.CLASSES if sum(c) > CAP)
 
 
 def _gate_error(cls) -> float:

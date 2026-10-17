@@ -44,6 +44,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from tiers import by_l, is_fast, split_by_l
 
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
@@ -118,17 +119,26 @@ def test_the_deferred_classes_are_the_measured_ones() -> None:
     assert SLOW == {(1, 2, 2, 2), (2, 2, 2, 2)}
 
 
-def test_no_raw_escape_hatch() -> None:
-    for cls in CLASSES:
+def _no_raw(classes) -> None:
+    for cls in classes:
         k = build_f_kernel(cls)
         assert not any(isinstance(s, Raw) for s in walk(k.body)), k.name
+
+
+def test_no_raw_escape_hatch() -> None:
+    _no_raw(c for c in CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_no_raw_escape_hatch_above_l4() -> None:
+    _no_raw(c for c in CLASSES if not is_fast(sum(c)))
 
 
 # --- the goldens --------------------------------------------------------------
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
-@pytest.mark.parametrize("cls", CLASSES, ids=_name)
+@pytest.mark.parametrize("cls", split_by_l(CLASSES, sum, ids=_name))
 def test_the_fock_golden_is_unchanged(cls, backend: str) -> None:
     text = _text(cls, backend)
     path = GOLDEN / backend / f"{_name(cls)}.{BACKEND[backend][2]}"
@@ -152,8 +162,8 @@ def test_the_golden_set_is_exactly_the_ladder() -> None:
             assert p.stat().st_size <= GOLDEN_CAP, p
 
 
-@pytest.mark.parametrize("cls", [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)],
-                         ids=_name)
+@pytest.mark.parametrize("cls", split_by_l(
+    [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)], sum, ids=_name))
 def test_the_vendors_differ_only_in_the_prologue(cls) -> None:
     c, h = _text(cls, "cuda"), _text(cls, "hip")
     assert c.split("\n")[2:] == h.split("\n")[3:]
@@ -181,8 +191,10 @@ def _run(out: Path, backend: str, *argv: str) -> int:
     return emit_cli.main(["--backend", backend, "--out", str(out), *argv])
 
 
-@pytest.mark.parametrize(("lmax", "n"), [(0, 1), (1, 6), (2, 21)])
-def test_fock_l_writes_the_ladder_through_lmax(lmax, n, tmp_path) -> None:
+# `--fock-l lmax` builds every class through (lmax lmax|lmax lmax), L = 4 lmax.
+@pytest.mark.parametrize("lmax", [by_l(m, 4 * m) for m in (0, 1, 2)])
+def test_fock_l_writes_the_ladder_through_lmax(lmax, tmp_path) -> None:
+    n = {0: 1, 1: 6, 2: 21}[lmax]
     assert _run(tmp_path, "hip", "--fock-l", str(lmax)) == 0
     want = [c for c in CLASSES if max(c) <= lmax]
     assert len(want) == n

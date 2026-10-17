@@ -75,9 +75,9 @@ seed (`fock/eq14-seed-inconsistent`) needs a seed the kernel's prelude does
 not spell, so its contracted twin would be a second harness; #279's
 primitive-quartet test stands for it.
 
-Fast tier: no compiler, no card. The whole file runs in about ten seconds
-(the slowest quartet, HF/cc-pVTZ `(dd|dd)`, a fraction of a second), so
-nothing is `slow`.
+Fast tier for `L <= FAST_L_MAX` (tiers.py): no compiler, no card. Every
+integral of a class above the cut is `slow`; the coverage checks above, which
+read only the fixtures' shells, stay fast for all 21.
 """
 
 from __future__ import annotations
@@ -90,6 +90,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, split_by_l
 
 from felizjueves.ao import hgp_drive
 from felizjueves.ao.eri import eri_block_and_scale as mmd_eri
@@ -226,7 +227,7 @@ def test_the_rounding_budget_covers_every_quartet() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=_name)
+@pytest.mark.parametrize("cls", split_by_l(CLASSES, sum, ids=_name))
 @pytest.mark.parametrize("mol", MOLECULES)
 def test_hgp_matches_mmd_on_contracted_quartets(mol, cls) -> None:
     q = pick(mol, cls)
@@ -236,7 +237,7 @@ def test_hgp_matches_mmd_on_contracted_quartets(mol, cls) -> None:
     assert w <= TOL, (mol, cls, q, w)
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=_name)
+@pytest.mark.parametrize("cls", split_by_l(CLASSES, sum, ids=_name))
 def test_the_hrr_side_order_does_not_change_the_integrals(cls) -> None:
     """`first="ket"` (`hgp.hrr.build`'s other order) on HF/cc-pVTZ."""
     q = pick("hf_ccpvtz", cls)
@@ -244,14 +245,15 @@ def test_the_hrr_side_order_does_not_change_the_integrals(cls) -> None:
     assert worst(ket_first, want, scale) <= TOL
 
 
-def test_the_scale_bounds_the_block() -> None:
+@pytest.mark.parametrize("cls", split_by_l(
+    [(1, 1, 1, 1), (1, 2, 1, 2), (2, 2, 2, 2)], sum, ids=_name))
+def test_the_scale_bounds_the_block(cls) -> None:
     """The |.|-twin is >= |value| everywhere, and strictly larger somewhere
     on a class with a ket VRR and an HRR (it sees cancellation)."""
-    for cls in ((1, 1, 1, 1), (1, 2, 1, 2), (2, 2, 2, 2)):
-        bra, ket = _quartet("hf_ccpvtz", pick("hf_ccpvtz", cls))
-        h, hs = (np.array(x) for x in hgp_eri(bra, ket, boys=boys))
-        assert np.all(hs >= np.abs(h))
-        assert np.any(hs > 1.5 * np.abs(h))
+    bra, ket = _quartet("hf_ccpvtz", pick("hf_ccpvtz", cls))
+    h, hs = (np.array(x) for x in hgp_eri(bra, ket, boys=boys))
+    assert np.all(hs >= np.abs(h))
+    assert np.any(hs > 1.5 * np.abs(h))
 
 
 def test_absolute_kernel_flips_only_the_signed_coefficients() -> None:
@@ -287,7 +289,9 @@ def _libcint_params():
         for q in sorted(manifest.eri_blocks(_fixture(name))):
             ls = tuple(sh[s].l for s in q)
             if max(ls) <= 2:
-                out.append(pytest.param(name, q, id=f"{name}-{_name(ls)}-{q}"))
+                p = by_l(None, sum(ls))
+                out.append(pytest.param(name, q, id=f"{name}-{_name(ls)}-{q}",
+                                        marks=p.marks))
     return out
 
 
@@ -345,18 +349,19 @@ def _plain(name: str, cls):
     return np.array(hgp_block(bra, ket, boys=boys)).ravel(), want, scale
 
 
-def test_perturbing_one_hgp_coefficient_breaks_the_pin(monkeypatch) -> None:
-    for cls in ((1, 1, 1, 1), (0, 2, 1, 2)):
-        got, want, scale = _plain("hf_ccpvtz", cls)
-        assert worst(got, want, scale) <= TOL
+@pytest.mark.parametrize("cls", split_by_l([(1, 1, 1, 1), (0, 2, 1, 2)], sum,
+                                            ids=_name))
+def test_perturbing_one_hgp_coefficient_breaks_the_pin(monkeypatch,
+                                                         cls) -> None:
+    got, want, scale = _plain("hf_ccpvtz", cls)
+    assert worst(got, want, scale) <= TOL
     _perturbed(monkeypatch, "inv2pq", lambda v: v * (1.0 + 1e-6))
-    for cls in ((1, 1, 1, 1), (0, 2, 1, 2)):
-        got, want, scale = _plain("hf_ccpvtz", cls)
-        assert worst(got, want, scale) > 1e3 * TOL, cls
+    got, want, scale = _plain("hf_ccpvtz", cls)
+    assert worst(got, want, scale) > 1e3 * TOL, cls
 
 
-@pytest.mark.parametrize("cls", [(0, 0, 0, 1), (1, 1, 1, 1), (0, 2, 1, 2),
-                                 (2, 2, 2, 2)], ids=_name)
+@pytest.mark.parametrize("cls", split_by_l(
+    [(0, 0, 0, 1), (1, 1, 1, 1), (0, 2, 1, 2), (2, 2, 2, 2)], sum, ids=_name))
 def test_eq26s_printed_ket_sign_fails_contracted(monkeypatch, cls) -> None:
     """`fock/eq26-ket-vrr-sign`, on real contracted shells with `P != Q`:
     the derived `W - Q = +p/(p+q) PQ` passes, eq 26's printed `-p/(p+q) PQ`

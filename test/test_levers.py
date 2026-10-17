@@ -169,7 +169,12 @@ def test_the_plan_layer_never_sees_a_kernel_lever(probe) -> None:
     with pytest.raises(ValueError, match="no lever"):
         plan(spec)  # the plan layer owns no kernel lever, and says so
     assert _dags(builder_plan(spec)) == _dags(plan(pq_spec(4)))
-    # A plan lever beside it still reaches the plan (at L = 7 the sieve bites).
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_a_plan_lever_beside_a_kernel_lever_still_reaches_the_plan(
+        probe) -> None:
+    # at L = 7 the sieve bites
     both = pq_spec(7, (NO_SIEVE, PROBE))
     assert _dags(builder_plan(both)) == _dags(plan(pq_spec(7, (NO_SIEVE,))))
     assert _dags(plan(pq_spec(7, (NO_SIEVE,)))) != _dags(plan(pq_spec(7)))

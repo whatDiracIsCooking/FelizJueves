@@ -13,6 +13,8 @@ MEASURED WALL-CLOCK (this dev host's CPU, serial `pytest -n0 --durations=0`,
 2026-10-11): the n_batches = 1, L = 0..16 sieved pin -- every schedulable
 class, four geometries each -- takes 1.6 s; the no-sieve pin 1.5 s; the
 batched grid (L = 7..16 x {3, 6, 9}) 5.1 s; the whole module about 8.5 s.
+Every class above test/tiers.py's FAST_L_MAX is `slow`: the fast tier pins
+L = 0..4.
 Nothing compiles and nothing launches on a card.
 
 THE GEOMETRIES ARE THE WELL-CONDITIONED ONES, AND THAT IS A MEASUREMENT, NOT A
@@ -39,6 +41,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from test_ir import synthetic_fragment, synthetic_inline_kernel
+from tiers import split_by_l
 
 from felizjueves.interp import (
     InterpError,
@@ -126,22 +129,24 @@ def _pin(L: int, n_batches: int, levers: tuple[str, ...] = ()) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("L", range(0, 17))
+@pytest.mark.parametrize("L", split_by_l(range(0, 17), lambda L: L))
 def test_the_interpreted_ir_reproduces_the_reference(L: int) -> None:
     _pin(L, 1)
 
 
-@pytest.mark.parametrize("L", range(0, 17))
+@pytest.mark.parametrize("L", split_by_l(range(0, 17), lambda L: L))
 def test_the_unsieved_dag_reproduces_the_reference(L: int) -> None:
     _pin(L, 1, (NO_SIEVE,))
 
 
+@pytest.mark.slow  # L = 7..16 > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize(("L", "n_batches"),
                          [(L, b) for L in range(7, 17) for b in (3, 6, 9)])
 def test_every_batch_reproduces_the_reference(L: int, n_batches: int) -> None:
     _pin(L, n_batches)
 
 
+@pytest.mark.slow  # L = 16 > FAST_L_MAX (tiers.py)
 def test_the_ill_conditioned_geometry_is_conditioning() -> None:
     """At ILL the element-wise gap to reference/ is ~1e-10; this shows why.
 

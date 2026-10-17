@@ -1,8 +1,9 @@
 """plan/optimum.py (#106): the exact frontier, its pruning, its ceiling, the beam.
 
-Everything here is fast tier: no compiler, no card, and no test runs the exact
-search above `EXACT_MAX_L` (the L = 6 search does not finish; the module
-refuses it, and the refusal is what is tested).
+No compiler, no card, and no test runs the exact search above `EXACT_MAX_L`
+(the L = 6 search does not finish; the module refuses it, and the refusal is
+what is tested). The L = 5 cases and the beam above the ceiling are `slow`
+(L > FAST_L_MAX, test/tiers.py); the rest is fast tier.
 
 The pruning is checked against `_brute`, written here and sharing nothing with
 the module but `cost.node_flops` (the instrument both must use): every
@@ -18,6 +19,7 @@ from itertools import permutations, product
 
 import pytest
 from test_layering import EDGES, _graph
+from tiers import split_by_l
 
 from felizjueves.plan import optimum as opt
 from felizjueves.plan.cost import cost, node_flops
@@ -26,6 +28,7 @@ from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
 EXACT_LS = range(opt.EXACT_MAX_L + 1)
+TIERED_LS = split_by_l(EXACT_LS, lambda L: L)  # L = 5 is `slow`
 
 # The exact frontier per L, as this module computed it (#106). Below L = 5 it
 # equals MILD's own one-batch plan; at L = 5 MILD is (51, 161).
@@ -147,7 +150,7 @@ def test_the_trade_layer_has_a_real_frontier() -> None:
     assert _is_frontier(fr)
 
 
-@pytest.mark.parametrize("L", EXACT_LS)
+@pytest.mark.parametrize("L", TIERED_LS)
 def test_optimum_is_a_frontier_and_pinned(L) -> None:
     fr = opt.optimum(L)
     assert _is_frontier(fr)
@@ -159,7 +162,7 @@ def test_pareto_drops_dominated_and_duplicate_points() -> None:
     assert opt.pareto(pts) == ((2, 20), (3, 12), (5, 10), (6, 9))
 
 
-@pytest.mark.parametrize("L", EXACT_LS)
+@pytest.mark.parametrize("L", TIERED_LS)
 def test_mild_is_a_point_in_the_space(L) -> None:
     # Same cost convention as plan/cost.py, reached by a separate path: MILD's
     # one-batch plan is weakly dominated, and equal to the optimum below L = 5.
@@ -173,7 +176,7 @@ def test_mild_is_a_point_in_the_space(L) -> None:
 # --- the beam ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("L", EXACT_LS)
+@pytest.mark.parametrize("L", TIERED_LS)
 @pytest.mark.parametrize("width", [1, 4, 16, 64])
 def test_beam_is_never_cheaper_than_the_optimum(L, width) -> None:
     b = opt.beam(L, width)
@@ -181,11 +184,12 @@ def test_beam_is_never_cheaper_than_the_optimum(L, width) -> None:
     assert opt.dominated_by(b, opt.optimum(L))
 
 
-@pytest.mark.parametrize("L", EXACT_LS)
+@pytest.mark.parametrize("L", TIERED_LS)
 def test_a_wide_beam_reaches_the_optimum(L) -> None:
     assert opt.beam(L, 64) == opt.optimum(L)
 
 
+@pytest.mark.slow  # L = 6 > FAST_L_MAX (tiers.py)
 def test_beam_runs_above_the_ceiling() -> None:
     b = opt.beam(opt.EXACT_MAX_L + 1, 4)
     assert _is_frontier(b)

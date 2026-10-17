@@ -30,9 +30,12 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves.ao.schwarz import (
+    _place,
+    diagonal_and_scale,
     diagonal_matrix,
     scale_matrix,
     schwarz_classes,
@@ -126,6 +129,23 @@ def _owned(basis, done):
     return m | m.T
 
 
+def _host_on(basis, done):
+    """`diagonal_matrix` and `scale_matrix` on the launched classes' shell
+    pairs only, 0.0 elsewhere: `_check` reads only those elements, and the
+    whole of SYNTHETIC reaches (dd|dd) at L = 8 > FAST_L_MAX (tiers.py)."""
+    sh = basis.shells
+    keep = {frozenset((id(sh[a]), id(sh[b]))) for c in done for a, b in c.pairs}
+
+    def part(k):
+        def value(sa, sb):
+            if frozenset((id(sa), id(sb))) not in keep:
+                return [0.0] * (sa.n_cart * sb.n_cart)
+            return diagonal_and_scale(sa, sb, pq=pq)[k]
+        return np.array(_place(basis, value))
+
+    return part(0), part(1)
+
+
 def _check(Q, want, scale, owned, label):
     err = np.abs(Q[owned] ** 2 - want[owned])
     worst = float(np.max(err / (EPS * scale[owned])))
@@ -151,8 +171,7 @@ def test_the_synthetic_basis_reaches_every_class_swapped_and_diagonal():
 def test_one_launch_over_the_class_agrees_with_the_host(cls):
     Q, done = _build(SYNTHETIC, {cls})
     assert [(c.la, c.lb) for c in done] == [cls]
-    want = np.array(diagonal_matrix(SYNTHETIC, pq=pq))
-    scale = np.array(scale_matrix(SYNTHETIC, pq=pq))
+    want, scale = _host_on(SYNTHETIC, done)
     _check(Q, want, scale, _owned(SYNTHETIC, done),
            f"({cls[0]}{cls[1]}), synthetic")
 
@@ -193,8 +212,9 @@ def test_the_whole_matrix_against_the_host_and_libcint(name):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", [(0, 0), (0, 1), (1, 1), (0, 2), (1, 2),
-                                 (2, 2)], ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", split_by_l(
+    [(0, 0), (0, 1), (1, 1), (0, 2), (1, 2), (2, 2)],
+    lambda c: 2 * sum(c), ids=lambda c: f"{c[0]}{c[1]}"))
 def test_the_recurrence_is_the_quartets_plan_minus_dead_targets(cls):
     """Every recurrence `Decl` is the J quartet `(la lb|la lb)`'s node, and
     the kept target set is exactly what the diagonal rows read: `[r]` with
@@ -222,6 +242,7 @@ def test_the_recurrence_is_the_quartets_plan_minus_dead_targets(cls):
     assert decls & nodes  # the tower is there
 
 
+@pytest.mark.slow  # (12|12) at L = 6 > FAST_L_MAX (tiers.py)
 def test_both_e_blocks_are_the_block_fragment_inlined():
     k = build_schwarz_kernel((1, 2))
     inl = [s for s in walk(k.body, into_inline=False) if isinstance(s, Inline)]

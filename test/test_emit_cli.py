@@ -24,7 +24,10 @@ an `order` file naming them in that launch order.
 
 Exit status: 0 written, 2 could not run -- no third meaning.
 
-Fast tier: nothing here compiles anything.
+Fast tier: nothing here compiles anything. The bare default builds the
+`[p|q]` ladder through L = 16, so every test that runs it is `slow`, and the
+rest are split at `tiers.FAST_L_MAX` by their classes' L (`la + lb` for a
+pair unit, `2 (la + lb)` for a Schwarz one).
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ from pathlib import Path
 
 import pytest
 from test_ao_j_interpreted import _case, _classes, _shell_ams
+from tiers import by_l, is_fast, split_by_l
 
 from felizjueves import lever_ladder, levers
 from felizjueves.device import GFX1200, SM_86
@@ -85,6 +89,7 @@ def test_the_pair_ladder_is_ss_through_ff() -> None:
     assert all(la <= lb for la, lb in emit_cli.pair_classes(emit_cli.PAIR_L_MAX))
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_the_default_writes_both_ladders_and_nothing_else(backend, tmp_path):
     emit, arch, ext = BACKEND[backend]
@@ -97,10 +102,21 @@ def test_the_default_writes_both_ladders_and_nothing_else(backend, tmp_path):
             assert (tmp_path / f"{k.name}.{ext}").read_text() == emit(k, arch)
 
 
-def test_the_pair_names_cannot_collide_with_the_pq_naming() -> None:
+def _assert_no_pair_name_is_pq(keep) -> None:
     for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX):
+        if not keep(sum(c)):
+            continue
         for k in (build_dq_kernel(c), build_jab_kernel(c)):
             assert not k.name.startswith("pq_")
+
+
+def test_the_pair_names_cannot_collide_with_the_pq_naming() -> None:
+    _assert_no_pair_name_is_pq(is_fast)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_pair_names_cannot_collide_with_the_pq_naming_above_l4() -> None:
+    _assert_no_pair_name_is_pq(lambda L: not is_fast(L))
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
@@ -110,14 +126,14 @@ def test_l_alone_writes_only_the_pq_ladder(backend, tmp_path):
     assert _names(tmp_path) == {f"pq_L1_p1_q0.{ext}"}
 
 
+@pytest.mark.parametrize("lmax", split_by_l(
+    [1, 3], lambda lmax: 2 * lmax, ids=lambda lmax: f"pair-l{lmax}"))
 @pytest.mark.parametrize("backend", sorted(BACKEND))
-def test_pair_l_alone_writes_only_the_pair_ladder(backend, tmp_path):
+def test_pair_l_alone_writes_only_the_pair_ladder(backend, lmax, tmp_path):
     _, _, ext = BACKEND[backend]
-    assert _run(tmp_path, backend, "--pair-l", "1") == 0
-    assert _names(tmp_path) == _pair_names(ext, [(0, 0), (0, 1), (1, 1)])
-    other = tmp_path / "f"
-    assert _run(other, backend, "--pair-l", "3") == 0
-    assert _names(other) == _pair_names(ext)
+    assert _run(tmp_path, backend, "--pair-l", str(lmax)) == 0
+    want = {1: [(0, 0), (0, 1), (1, 1)], 3: PAIR_CLASSES_F}[lmax]
+    assert _names(tmp_path) == _pair_names(ext, want)
 
 
 def test_l_and_pair_l_together_write_both(tmp_path):
@@ -125,6 +141,7 @@ def test_l_and_pair_l_together_write_both(tmp_path):
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "dq_0_0.cu", "jab_00.cu"}
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("extra", [[], ["--one-e-l", "2"]],
                          ids=["bare", "one-e-l"])
 def test_the_pq_ladder_still_matches_the_measured_pins(extra, tmp_path):
@@ -163,6 +180,7 @@ def test_the_one_e_ladder_is_s_t_v_per_pair_class() -> None:
     assert len(names) == 18
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_the_bare_default_is_still_37_units_and_no_one_e_unit(backend, tmp_path):
     _, _, ext = BACKEND[backend]
@@ -172,6 +190,7 @@ def test_the_bare_default_is_still_37_units_and_no_one_e_unit(backend, tmp_path)
     assert not got & _one_e_names(ext, emit_cli.ONE_E_L_MAX)
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_the_default_ladder_holds_no_fock_unit(backend, tmp_path):
     """#287: the fused Fock kernel is behind `--fock-class` / `--fock-l`
@@ -186,6 +205,7 @@ def test_the_default_ladder_holds_no_fock_unit(backend, tmp_path):
     assert _names(tmp_path / "bare") == _pq_names(ext) | _pair_names(ext)
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_one_e_l_adds_the_ladder_beside_the_j_chain(backend, tmp_path):
     """`--one-e-l 2` (KERNEL_GEN_CMD's) writes the 37 J units, byte for byte
@@ -203,21 +223,37 @@ def test_one_e_l_adds_the_ladder_beside_the_j_chain(backend, tmp_path):
         assert (flagged / f"{k.name}.{ext}").read_text() == emit(k, arch)
 
 
-def test_one_e_l_bare_is_through_ff_and_adds_to_the_ladder_flags(tmp_path):
-    assert _run(tmp_path / "a", "cuda", "--L", "0", "--one-e-l") == 0
-    assert _names(tmp_path / "a") == {"pq_L0_p0_q0.cu"} | _one_e_names("cu", 3)
-    assert _run(tmp_path / "b", "cuda", "--pair-l", "0", "--one-e-l", "0") == 0
-    assert _names(tmp_path / "b") == {"dq_0_0.cu", "jab_00.cu", "s_00.cu",
-                                      "t_00.cu", "v_00.cu"}
+@pytest.mark.slow  # bare `--one-e-l` is through (ff), L = 6
+def test_one_e_l_bare_is_through_ff(tmp_path):
+    assert _run(tmp_path, "cuda", "--L", "0", "--one-e-l") == 0
+    assert _names(tmp_path) == {"pq_L0_p0_q0.cu"} | _one_e_names("cu", 3)
+
+
+def test_one_e_l_adds_to_the_ladder_flags(tmp_path):
+    assert _run(tmp_path, "cuda", "--pair-l", "0", "--one-e-l", "0") == 0
+    assert _names(tmp_path) == {"dq_0_0.cu", "jab_00.cu", "s_00.cu",
+                                "t_00.cu", "v_00.cu"}
+
+
+def _assert_one_e_names_miss_the_j_chain(keep) -> None:
+    pairs = [c for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
+             if keep(sum(c))]
+    j = ({build_pq_kernel(L).name for L in range(17) if keep(L)}
+         | {k.name for c in pairs
+            for k in (build_dq_kernel(c), build_jab_kernel(c))})
+    one_e = {build(c).name for c in pairs for build in emit_cli.ONE_E_BUILDERS}
+    assert not j & one_e
+    assert all(n[:2] in ("s_", "t_", "v_") for n in one_e)
 
 
 def test_the_one_e_names_cannot_collide_with_the_j_chain() -> None:
-    j = ({build_pq_kernel(L).name for L in range(17)}
-         | {k.name for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
-            for k in (build_dq_kernel(c), build_jab_kernel(c))})
-    one_e = {k.name for k in emit_cli.one_e_kernels(emit_cli.ONE_E_L_MAX)}
-    assert not j & one_e
-    assert all(n[:2] in ("s_", "t_", "v_") for n in one_e)
+    _assert_one_e_names_miss_the_j_chain(is_fast)
+
+
+@pytest.mark.slow  # the whole ladders, L up to 16
+def test_the_one_e_names_cannot_collide_with_the_j_chain_at_any_l() -> None:
+    assert emit_cli.ONE_E_L_MAX == emit_cli.PAIR_L_MAX  # one class list
+    _assert_one_e_names_miss_the_j_chain(lambda L: True)
 
 
 # --- the Schwarz ladder -------------------------------------------------------
@@ -234,18 +270,23 @@ def test_the_schwarz_ladder_is_one_unit_per_pair_class_through_gg():
 def test_schwarz_l_adds_its_units_beside_the_ladder_flags(tmp_path):
     from felizjueves.kernel_schwarz import build_schwarz_kernel
 
-    assert _run(tmp_path / "a", "cuda", "--L", "0", "--schwarz-l", "1") == 0
-    assert _names(tmp_path / "a") == {"pq_L0_p0_q0.cu", "schwarz_00.cu",
-                                      "schwarz_01.cu", "schwarz_11.cu"}
+    assert _run(tmp_path, "cuda", "--L", "0", "--schwarz-l", "1") == 0
+    assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "schwarz_00.cu",
+                                "schwarz_01.cu", "schwarz_11.cu"}
     emit, arch, _ = BACKEND["cuda"]
-    assert (tmp_path / "a" / "schwarz_01.cu").read_text() == emit(
+    assert (tmp_path / "schwarz_01.cu").read_text() == emit(
         build_schwarz_kernel((0, 1)), arch)
-    assert _run(tmp_path / "b", "hip", "--pair-l", "0", "--schwarz-l") == 0
-    assert _names(tmp_path / "b") == {"dq_0_0.hip", "jab_00.hip"} | {
+
+
+@pytest.mark.slow  # bare `--schwarz-l` is through (dd), (dd|dd) at L = 8
+def test_schwarz_l_bare_is_through_dd(tmp_path):
+    assert _run(tmp_path, "hip", "--pair-l", "0", "--schwarz-l") == 0
+    assert _names(tmp_path) == {"dq_0_0.hip", "jab_00.hip"} | {
         f"schwarz_{a}{b}.hip" for a, b in emit_cli.schwarz_classes(
             emit_cli.DEFAULT_SCHWARZ_L)}
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("backend", ["cuda", "hip"])
 def test_the_bare_default_writes_no_schwarz_unit(backend, tmp_path):
     assert _run(tmp_path, backend) == 0
@@ -288,6 +329,7 @@ def test_sx_l_adds_its_units_beside_the_ladder_flags(tmp_path):
             emit_cli.DEFAULT_SX_L)}
 
 
+@pytest.mark.slow  # the bare default builds L up to 16
 @pytest.mark.parametrize("backend", ["cuda", "hip"])
 def test_the_bare_default_writes_no_sx_unit(backend, tmp_path):
     assert _run(tmp_path, backend) == 0
@@ -335,7 +377,8 @@ def test_a_pair_l_it_cannot_honour_is_a_2(argv, tmp_path):
 # --- the selector writes the chain ------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["h2o_sto3g_j", "h2o_ccpvdz_j"])
+@pytest.mark.parametrize("name", [  # the basis's top class: (pp|pp), (dd|dd)
+    by_l("h2o_sto3g_j", 4), by_l("h2o_ccpvdz_j", 8)])
 @pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_the_selector_writes_every_kernel_the_chain_needs(name, backend, tmp_path):
     """Each cell holds its ket's DQ, its [p|q] batches and its bra's JAB, and

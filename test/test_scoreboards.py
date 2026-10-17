@@ -4,7 +4,11 @@ Every literal Agreement threshold is set, each to what the plan layer
 measured: Table 3 from the batch partition, Tables 1 and 2 from the sieved
 plan. Table 3's exact_given_inputs records the recovered cut (#14); Tables
 1 and 2's are refused under the rules-only doctrine (#108), each refusal
-naming the StructuralLimit in limits.json that holds the evidence."""
+naming the StructuralLimit in limits.json that holds the evidence.
+
+Every check that plans the tables' cells (L = 7..16: the partition, the
+sieved plan, the searched replay) is `slow`, above `tiers.FAST_L_MAX`; the
+boards scored against the printed values stay fast."""
 
 from __future__ import annotations
 
@@ -157,6 +161,7 @@ def _table3_candidate() -> Candidate:
     )
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_table3_scores_on_the_literal_board() -> None:
     t3 = TABLES["jengine/table3"]
     board = _board("literal")
@@ -191,6 +196,7 @@ def _plan_candidates() -> dict[str, Candidate]:
     }
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_tables_1_and_2_score_post_sieve_on_the_literal_board() -> None:
     # What the sieved plan measures, pinned so a change to it is a diff here.
     # Exact cells -- Table 1: (7,3) (7,6) (8,6) (8,9) (9,6) (9,9) (11,9);
@@ -212,6 +218,7 @@ def test_tables_1_and_2_score_post_sieve_on_the_literal_board() -> None:
     assert by_table["jengine/table3", "agreement"].status is Status.PASS
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_full_board_with_the_plan_layers_candidates() -> None:
     # Every table has a candidate, so nothing FAILs for want of one: every
     # Agreement passes; exact_given_inputs is UNSET on Tables 1-2 and
@@ -249,6 +256,7 @@ def _searched_limit() -> StructuralLimit:
     return lim
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_searched_board_with_the_searched_plans() -> None:
     # #13's outcome, pinned so a change to it is a diff here. Since #172
     # (explicit per-batch seed orders, climbed from the 58 rules) all three
@@ -270,6 +278,7 @@ def test_the_searched_board_with_the_searched_plans() -> None:
     assert value["unreachable_in_space"] == [] and value["selection_price"] == []
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_searched_board_scores_the_replay_not_the_records_counts(
     tmp_path: Path,
 ) -> None:
@@ -294,6 +303,7 @@ def test_the_searched_board_scores_the_replay_not_the_records_counts(
     assert doctored["jengine/table3"].cells[15, 9] == 116  # not 58
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_previous_residual_cells_are_reached_only_by_the_climb() -> None:
     # The limit's previous_residual, re-checked where it is cheap: in its
     # 1- and 3-batch cells there is no cut, so #171's space was the 58 seed

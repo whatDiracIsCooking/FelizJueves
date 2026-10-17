@@ -36,6 +36,7 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 from test_layering import _graph, _under
+from tiers import split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves.ao.drive import KernelJAB
@@ -279,7 +280,8 @@ def test_the_key_is_a_pair_class():
                               ("recycle",)))
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize(
+    "cls", split_by_l(CLASSES, sum, ids=lambda c: f"{c[0]}{c[1]}"))
 def test_every_write_to_J_is_an_atomic_add_with_its_reason(cls):
     k = build_jab_kernel(cls)
     stmts = list(walk(k.body))

@@ -1,11 +1,12 @@
 """plan/order_search.py (#170): the frontier, the pruned product, the climb.
 
-Fast tier. Every claim is checked where the answer is checkable by
+Every claim is checked where the answer is checkable by
 enumeration: the frontier and the product against brute force over random
 point sets and over the real plan's rule-seeded batches, the neighbourhood
 against every permutation of a short order, and the climb on a real batch of
 (L = 8, 3 batches), where the worst of the 58 rules is one intermediate and
-one FLOP behind the best.
+one FLOP behind the best. The three checks on that real batch are `slow`
+(L = 8 > FAST_L_MAX, test/tiers.py); the rest is fast.
 """
 
 from __future__ import annotations
@@ -129,6 +130,7 @@ def _rule_items(L: int, nb: int, i: int) -> tuple[Evaluated, ...]:
     return tuple(out)
 
 
+@pytest.mark.slow  # L = 8 > FAST_L_MAX (tiers.py)
 def test_combine_is_plan_costs_max_and_sum():
     """The cell point the product assumes is the one cost.py counts."""
     for name, rule in list(seed_orders(widened=True))[:6]:
@@ -138,6 +140,7 @@ def test_combine_is_plan_costs_max_and_sum():
         assert combine(per_batch) == point(cost(sieved)), name
 
 
+@pytest.mark.slow  # L = 8 > FAST_L_MAX (tiers.py)
 def test_product_on_the_real_plan_matches_the_cross_product():
     """(L = 8, 3 batches), every batch seeded by each of the 58 rules on its
     own: the pruned product against all 58^3 combinations."""
@@ -258,6 +261,7 @@ def test_the_sweep_runs_from_pure_intermediates_to_pure_flops():
     assert by_w[Fraction(0)][1] <= by_w[Fraction(1)][1]
 
 
+@pytest.mark.slow  # L = 8 > FAST_L_MAX (tiers.py)
 def test_a_climb_from_the_worst_rule_reaches_the_best_rules_point():
     """(L = 8, 3 batches), batch 1: the 58 rules reach two points, (70, 211)
     and (71, 212). Started from the worst rule alone, the climb's frontier

@@ -16,8 +16,9 @@ pairs' `(zeta, P - A, P - B)`, the host's one scalar `s` per record
   and HF/cc-pVTZ.
 
 The widest table is (ff)'s, read at `lb + 2 = 5`: Hermite order 8 on an
-axis, within the run's `L <= 8` cap. All of it is fast tier: no Boys, no
-`[r]` tower.
+axis, within the run's `L <= 8` cap. No Boys, no `[r]` tower; still, every
+case that builds a class above `la + lb = 4` (the d-f and f-f classes, and
+HF/cc-pVTZ's whole matrix) is `slow`, by test/tiers.py's cut.
 
 EXACT, NOT A TOLERANCE, against the block. Interpreted with the records in
 order, the kernel performs `kinetic_block`'s multiplications in its
@@ -50,6 +51,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves.ao.j import epair
@@ -89,7 +91,7 @@ DIAG_BOUND = 8 # x eps max|T_blk|: see the module docstring
 
 
 def _cls_param(cls):
-    return pytest.param(cls, id=f"{cls[0]}{cls[1]}")
+    return by_l(cls, sum(cls), id=f"{cls[0]}{cls[1]}")
 
 
 @cache
@@ -202,7 +204,7 @@ def test_one_launch_over_the_class_equals_the_host_block(cls):
 # ---------------------------------------------------------------------------
 
 WHOLE = [pytest.param("h2o_sto3g_j", id="h2o_sto3g"),
-         pytest.param("hf_ccpvtz", id="hf_ccpvtz")]
+         by_l("hf_ccpvtz", 6, id="hf_ccpvtz")]  # f shells: (ff) at L = 6
 
 
 @pytest.mark.parametrize("name", WHOLE)
@@ -234,7 +236,8 @@ def test_the_whole_matrix(name):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("l", range(LMAX + 1))
+@pytest.mark.parametrize("l", split_by_l(range(LMAX + 1), lambda n: 2 * n,
+                                         ids=str))
 def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E741
     """ONE record of a diagonal shell pair leaves `T` equal to that
     record's dressed bracket, lower triangle mirrored."""
@@ -301,7 +304,7 @@ def test_launch_shape():
             launch_shape(*bad)
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
 def test_no_prefactor_is_formed_in_the_kernel(cls):
     """`s` is the host's one scalar per record. No power, no square root, no
     Boys, no `pi`; the float literals are `0.5` (`1/2zeta`) and the shift's
@@ -337,7 +340,7 @@ def test_no_prefactor_is_formed_in_the_kernel(cls):
                 and "pi" in p.name.lower()]
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
 def test_every_write_to_T_is_an_atomic_add_with_its_reason(cls):
     k = build_t_kernel(cls)
     stmts = list(walk(k.body))
@@ -367,7 +370,7 @@ def test_it_inlines_the_kinetic_fragment_and_binds_eb_from_eb_ket():
     assert eb.init == Index("eb_ket", (Var("rec"),))
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
 def test_the_widened_table_is_read_only_through_the_shift(cls):
     """The fragment declares `E{d}_i_j_0` up to `j = lb + 2`; an entry above
     `lb` is read by a `K_ij` and by nothing the kernel adds into `T`."""

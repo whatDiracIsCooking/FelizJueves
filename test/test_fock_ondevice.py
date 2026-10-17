@@ -135,6 +135,7 @@ from test_kernel_device import (
     _toolchain,
     check_vram,
 )
+from tiers import is_fast
 
 from felizjueves import gate, measured
 from felizjueves import kernel_f as KF
@@ -652,6 +653,7 @@ def test_the_wallclock_sweep_selects_its_classes_by_total_L() -> None:
         _wallclock_classes({WALLCLOCK_F_L: "9"})
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py): walks every class's kernel
 def test_part1s_plan_reaches_every_class() -> None:
     recs, _ = _plan(PART1, 0.0, 1)
     assert {r.name for r in recs} == {_class_name(c) for c in CLASSES}
@@ -734,8 +736,19 @@ def test_the_staged_data_through_the_interpreter_is_the_walk() -> None:
 
 
 def test_the_timing_inputs_stay_in_the_witnessed_boys_range() -> None:
-    # #290: every class of the ladder, the deferred sixteen included
-    for cls in CLASSES:
+    # #290: every class of the ladder, the deferred sixteen included -- those
+    # above L = FAST_L_MAX (tiers.py) in the `slow` twin below
+    _timing_inputs(c for c in CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_timing_inputs_stay_in_the_witnessed_boys_range_above_l4(
+        ) -> None:
+    _timing_inputs(c for c in CLASSES if not is_fast(sum(c)))
+
+
+def _timing_inputs(classes) -> None:
+    for cls in classes:
         for side in (NEAR_SIDE, WIDE_SIDE):
             rec, basis = synthetic_launch(cls, side=side, seed=288_000)
             assert max_boys_T(basis, side) <= BOYS_T_WITNESSED

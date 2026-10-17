@@ -5,6 +5,7 @@ from __future__ import annotations
 from itertools import combinations
 
 import pytest
+from tiers import is_fast, split_by_l
 
 from felizjueves.plan.batching import (
     ALL,
@@ -37,6 +38,7 @@ Y_12 = {
 
 
 @pytest.mark.claim("jengine/y12-example")
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_y_1_2_batch_is_the_papers_eight_targets() -> None:
     got = {r for r in hermite_targets(5) if in_batch(r, "y", 1, 2)}
     assert got == Y_12
@@ -65,7 +67,7 @@ def test_ties_go_to_the_cyclic_predecessor(r, direction) -> None:
     assert batch_direction(r) == direction
 
 
-@pytest.mark.parametrize("L", range(0, 21))
+@pytest.mark.parametrize("L", split_by_l(range(0, 21), lambda L: L))
 def test_the_enumeration_matches_the_closed_form(L: int) -> None:
     targets = hermite_targets(L)
     assert len(targets) == len(set(targets)) == n_targets(L)
@@ -80,6 +82,7 @@ def test_the_target_order_is_fixed() -> None:
     )
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("L", range(7, 17))
 @pytest.mark.parametrize("n_batches", (1, 3, 6, 9))
 def test_the_partition_covers_every_target_exactly_once(L, n_batches) -> None:
@@ -124,7 +127,7 @@ def _too_many(L: int, n_batches: int) -> bool:
     return n_batches > 1 and n_batches // 3 > L + 1
 
 
-@pytest.mark.parametrize("L", range(0, 17))
+@pytest.mark.parametrize("L", split_by_l(range(0, 17), lambda L: L))
 @pytest.mark.parametrize("n_batches", LEGAL_COUNTS)
 def test_the_feasibility_map_is_asserted(L: int, n_batches: int) -> None:
     # Every pair either partitions into n_batches non-empty batches covering
@@ -149,7 +152,13 @@ def test_the_feasibility_map_is_asserted(L: int, n_batches: int) -> None:
         assert sorted(seen) == sorted(targets)
 
 
-@pytest.mark.parametrize(("L", "n_batches"), sorted(EMPTY))
+@pytest.mark.parametrize(
+    ("L", "n_batches"),
+    [
+        pytest.param(L, b, marks=() if is_fast(L) else pytest.mark.slow)
+        for L, b in sorted(EMPTY)
+    ],
+)
 def test_an_empty_batch_is_refused_at_the_partition_not_the_sieve(
     L: int, n_batches: int
 ) -> None:
@@ -173,23 +182,41 @@ def test_the_six_grid_cells_are_the_ones_the_issue_names() -> None:
 def test_legality_is_not_monotone_in_either_argument() -> None:
     # Pinned so nobody "simplifies" the rule to a threshold: each minimax cut
     # is chosen on its own counts, and only a first cut at 1 empties a batch.
-    with pytest.raises(ValueError, match="no targets"):
-        partition(5, 9)
-    assert len(partition(6, 9)) == 9  # larger L, same n_batches: plans
-    assert len(partition(5, 12)) == 12  # same L, more batches: plans
-    assert len(partition(4, 9)) == 9  # and smaller L plans too
+    # The L = 5, 6 half is the slow twin below.
+    assert len(partition(4, 9)) == 9  # smaller L than L = 5's refusal: plans
     with pytest.raises(ValueError, match="no targets"):
         partition(4, 12)
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_legality_is_not_monotone_in_either_argument_above_l4() -> None:
+    with pytest.raises(ValueError, match="no targets"):
+        partition(5, 9)
+    assert len(partition(6, 9)) == 9  # larger L, same n_batches: plans
+    assert len(partition(5, 12)) == 12  # same L, more batches: plans
+
+
+def _only_a_cut_at_1_empties(L: int) -> None:
+    c = target_counts(L)
+    for cut in combinations(range(1, L + 1), 1):
+        assert bool(empty_batches(c, cut)) == (cut[0] == 1)
+
+
 def test_empty_batches_names_only_y_and_z_at_zero() -> None:
+    counts = target_counts(4)
+    assert empty_batches(counts, (1,)) == (("y", 0, 0), ("z", 0, 0))
+    assert empty_batches(counts, (2,)) == ()
+    for L in filter(is_fast, range(1, 17)):
+        _only_a_cut_at_1_empties(L)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_empty_batches_names_only_y_and_z_at_zero_above_l4() -> None:
     counts = target_counts(7)
     assert empty_batches(counts, (1,)) == (("y", 0, 0), ("z", 0, 0))
     assert empty_batches(counts, (2,)) == ()
-    for L in range(1, 17):
-        c = target_counts(L)
-        for cut in combinations(range(1, L + 1), 1):
-            assert bool(empty_batches(c, cut)) == (cut[0] == 1)
+    for L in filter(lambda L: not is_fast(L), range(1, 17)):
+        _only_a_cut_at_1_empties(L)
 
 
 def test_an_unknown_direction_raises() -> None:
@@ -197,13 +224,14 @@ def test_an_unknown_direction_raises() -> None:
         in_batch((1, 0, 0), "w", 0, 1)
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("L", range(7, 17))
 def test_the_one_batch_count_is_the_closed_form(L: int) -> None:
     assert partition(L, 1) == ((ALL, 0, L),)
     assert max_targets_per_batch(L, 1) == n_targets(L)
 
 
-@pytest.mark.parametrize("L", range(0, 17))
+@pytest.mark.parametrize("L", split_by_l(range(0, 17), lambda L: L))
 def test_the_direction_groups_differ_only_in_their_tie_class(L: int) -> None:
     targets = hermite_targets(L)
     groups = {d: [r for r in targets if batch_direction(r) == d] for d in AXES}
@@ -241,6 +269,7 @@ def test_the_direction_groups_differ_only_in_their_tie_class(L: int) -> None:
 
 
 @pytest.mark.claim("jengine/fig4-l6-six-batches")
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_figure_4s_cut_at_l_6() -> None:
     # [JEngine, v2, Fig. 4]: X_{0,2}, X_{3,6}, Y_{1,2}, Y_{3,6}, Z_{1,2},
     # Z_{3,6}. Y_{0,2} and Y_{1,2} hold the same targets (nothing in Y has a
@@ -255,7 +284,7 @@ def test_figure_4s_cut_at_l_6() -> None:
     assert batch_size(6, ("y", 0, 0)) == batch_size(6, ("z", 0, 0)) == 0
 
 
-@pytest.mark.parametrize("L", range(2, 11))
+@pytest.mark.parametrize("L", split_by_l(range(2, 11), lambda L: L))
 @pytest.mark.parametrize("k", (2, 3))
 def test_the_cut_is_minimax_by_brute_force(L: int, k: int) -> None:
     # Every contiguous cut, measured by counting targets directly through
@@ -283,6 +312,7 @@ def test_the_cut_is_minimax_by_brute_force(L: int, k: int) -> None:
     assert largest_batch(target_counts(L), chosen) == best
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_cut_rule_is_a_seam() -> None:
     def highest(counts, k):
         L = len(counts["x"]) - 1
