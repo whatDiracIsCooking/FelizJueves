@@ -7,10 +7,10 @@ static_assert(FJ_WAVEFRONT == 32, "pq_L4_p2_q2 was emitted for a 32-lane wavefro
 // series ([JEngine, v2, eqs. 13, 18]): every term positive, summed until it
 // no longer changes the sum. Its accuracy on reference.boys's domain is a
 // kernel-tier question, not this file's.
-__device__ double fj_boys(int m, double T) {
+__device__ double fj_boys(int32_t m, double T) {
     double term = 1.0 / (double)(2 * m + 1);
     double sum = term;
-    for (int k = 1; k < 4096; ++k) {
+    for (int32_t k = 1; k < 4096; ++k) {
         term = term * ((2.0 * T) / (double)(2 * m + 2 * k + 1));
         double next = sum + term;
         if (next == sum) {
@@ -22,8 +22,8 @@ __device__ double fj_boys(int m, double T) {
 }
 
 extern "C" __global__ void pq_L4_p2_q2(
-    int n_bra,
-    int n_ket,
+    int32_t n_bra,
+    int32_t n_ket,
     double tau,
     const double* P,
     const double* zeta,
@@ -42,28 +42,28 @@ extern "C" __global__ void pq_L4_p2_q2(
     // under it too. Unsorted kets make the break a wrong answer, not a slow one
     // ([JEngine, v2, Alg. 1]; j_engine.md, 'The [p|q] kernel contract')
     // launch: blockDim = (1, warp width), one warp per bra index
-    int bra = ((int)threadIdx.x + ((int)blockIdx.x * (int)blockDim.x));
-    // Jsh: dynamic shared memory, row-major, 10 x (int)blockDim.y doubles
+    int32_t bra = ((int32_t)threadIdx.x + ((int32_t)blockIdx.x * (int32_t)blockDim.x));
+    // Jsh: dynamic shared memory, row-major, 10 x (int32_t)blockDim.y doubles
     extern __shared__ double Jsh[];
     if (bra < n_bra) {
         // accumulate J_p in shared memory, one slot per lane
-        Jsh[(0 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(1 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(2 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(3 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(4 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(5 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(6 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(7 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(8 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
-        Jsh[(9 * (int)blockDim.y + (int)threadIdx.y)] = 0.0;
+        Jsh[(0 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(1 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(2 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(3 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(4 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(5 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(6 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(7 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(8 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
+        Jsh[(9 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = 0.0;
         double P0 = P[(bra * 3 + 0)];
         double P1 = P[(bra * 3 + 1)];
         double P2 = P[(bra * 3 + 2)];
         double ze = zeta[bra];
         double Ib = Ip[bra];
         // kets strip-mined over threadIdx.y, stride blockDim.y
-        for (int k = (int)threadIdx.y; k < n_ket; k += (int)blockDim.y) {
+        for (int32_t k = (int32_t)threadIdx.y; k < n_ket; k += (int32_t)blockDim.y) {
             double bound = (Ib * (Iq[k] * Dmax[k]));
             // screen: Dmax * Ip * Iq < tau, and every later ket is under it too (sorted)
             // -- so break
@@ -150,94 +150,94 @@ extern "C" __global__ void pq_L4_p2_q2(
             double R4_0_0_0 = ((PQ_x * R3_0_0_1) + (3.0 * R2_0_0_1));
             // J_p += SUM_q (-1)^|q| [p+q]^(0) D_q, [JEngine, v2, eqs. 7-9, 20-22]: the
             // only shell-quartet-level contraction; [ab|cd] is never formed
-            Jsh[(0 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(0 * (int)blockDim.y + (int)threadIdx.y)] + (((R0_0_0_0 * D[(k * 10 + 0)]) + ((R2_0_0_0 * D[(k * 10 + 4)]) + (R1_1_0_0 * D[(k * 10 + 5)]))) + (((R1_0_1_0 * D[(k * 10 + 6)]) + (R0_2_0_0 * D[(k * 10 + 7)])) + ((R0_1_1_0 * D[(k * 10 + 8)]) + (R0_0_2_0 * D[(k * 10 + 9)]))))) - ((R1_0_0_0 * D[(k * 10 + 1)]) + ((R0_1_0_0 * D[(k * 10 + 2)]) + (R0_0_1_0 * D[(k * 10 + 3)]))));
-            Jsh[(1 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(1 * (int)blockDim.y + (int)threadIdx.y)] + (((R1_0_0_0 * D[(k * 10 + 0)]) + ((R3_0_0_0 * D[(k * 10 + 4)]) + (R2_1_0_0 * D[(k * 10 + 5)]))) + (((R2_0_1_0 * D[(k * 10 + 6)]) + (R1_2_0_0 * D[(k * 10 + 7)])) + ((R1_1_1_0 * D[(k * 10 + 8)]) + (R1_0_2_0 * D[(k * 10 + 9)]))))) - ((R2_0_0_0 * D[(k * 10 + 1)]) + ((R1_1_0_0 * D[(k * 10 + 2)]) + (R1_0_1_0 * D[(k * 10 + 3)]))));
-            Jsh[(2 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(2 * (int)blockDim.y + (int)threadIdx.y)] + (((R0_1_0_0 * D[(k * 10 + 0)]) + ((R2_1_0_0 * D[(k * 10 + 4)]) + (R1_2_0_0 * D[(k * 10 + 5)]))) + (((R1_1_1_0 * D[(k * 10 + 6)]) + (R0_3_0_0 * D[(k * 10 + 7)])) + ((R0_2_1_0 * D[(k * 10 + 8)]) + (R0_1_2_0 * D[(k * 10 + 9)]))))) - ((R1_1_0_0 * D[(k * 10 + 1)]) + ((R0_2_0_0 * D[(k * 10 + 2)]) + (R0_1_1_0 * D[(k * 10 + 3)]))));
-            Jsh[(3 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(3 * (int)blockDim.y + (int)threadIdx.y)] + (((R0_0_1_0 * D[(k * 10 + 0)]) + ((R2_0_1_0 * D[(k * 10 + 4)]) + (R1_1_1_0 * D[(k * 10 + 5)]))) + (((R1_0_2_0 * D[(k * 10 + 6)]) + (R0_2_1_0 * D[(k * 10 + 7)])) + ((R0_1_2_0 * D[(k * 10 + 8)]) + (R0_0_3_0 * D[(k * 10 + 9)]))))) - ((R1_0_1_0 * D[(k * 10 + 1)]) + ((R0_1_1_0 * D[(k * 10 + 2)]) + (R0_0_2_0 * D[(k * 10 + 3)]))));
-            Jsh[(4 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(4 * (int)blockDim.y + (int)threadIdx.y)] + (((R2_0_0_0 * D[(k * 10 + 0)]) + ((R4_0_0_0 * D[(k * 10 + 4)]) + (R3_1_0_0 * D[(k * 10 + 5)]))) + (((R3_0_1_0 * D[(k * 10 + 6)]) + (R2_2_0_0 * D[(k * 10 + 7)])) + ((R2_1_1_0 * D[(k * 10 + 8)]) + (R2_0_2_0 * D[(k * 10 + 9)]))))) - ((R3_0_0_0 * D[(k * 10 + 1)]) + ((R2_1_0_0 * D[(k * 10 + 2)]) + (R2_0_1_0 * D[(k * 10 + 3)]))));
-            Jsh[(5 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(5 * (int)blockDim.y + (int)threadIdx.y)] + (((R1_1_0_0 * D[(k * 10 + 0)]) + ((R3_1_0_0 * D[(k * 10 + 4)]) + (R2_2_0_0 * D[(k * 10 + 5)]))) + (((R2_1_1_0 * D[(k * 10 + 6)]) + (R1_3_0_0 * D[(k * 10 + 7)])) + ((R1_2_1_0 * D[(k * 10 + 8)]) + (R1_1_2_0 * D[(k * 10 + 9)]))))) - ((R2_1_0_0 * D[(k * 10 + 1)]) + ((R1_2_0_0 * D[(k * 10 + 2)]) + (R1_1_1_0 * D[(k * 10 + 3)]))));
-            Jsh[(6 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(6 * (int)blockDim.y + (int)threadIdx.y)] + (((R1_0_1_0 * D[(k * 10 + 0)]) + ((R3_0_1_0 * D[(k * 10 + 4)]) + (R2_1_1_0 * D[(k * 10 + 5)]))) + (((R2_0_2_0 * D[(k * 10 + 6)]) + (R1_2_1_0 * D[(k * 10 + 7)])) + ((R1_1_2_0 * D[(k * 10 + 8)]) + (R1_0_3_0 * D[(k * 10 + 9)]))))) - ((R2_0_1_0 * D[(k * 10 + 1)]) + ((R1_1_1_0 * D[(k * 10 + 2)]) + (R1_0_2_0 * D[(k * 10 + 3)]))));
-            Jsh[(7 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(7 * (int)blockDim.y + (int)threadIdx.y)] + (((R0_2_0_0 * D[(k * 10 + 0)]) + ((R2_2_0_0 * D[(k * 10 + 4)]) + (R1_3_0_0 * D[(k * 10 + 5)]))) + (((R1_2_1_0 * D[(k * 10 + 6)]) + (R0_4_0_0 * D[(k * 10 + 7)])) + ((R0_3_1_0 * D[(k * 10 + 8)]) + (R0_2_2_0 * D[(k * 10 + 9)]))))) - ((R1_2_0_0 * D[(k * 10 + 1)]) + ((R0_3_0_0 * D[(k * 10 + 2)]) + (R0_2_1_0 * D[(k * 10 + 3)]))));
-            Jsh[(8 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(8 * (int)blockDim.y + (int)threadIdx.y)] + (((R0_1_1_0 * D[(k * 10 + 0)]) + ((R2_1_1_0 * D[(k * 10 + 4)]) + (R1_2_1_0 * D[(k * 10 + 5)]))) + (((R1_1_2_0 * D[(k * 10 + 6)]) + (R0_3_1_0 * D[(k * 10 + 7)])) + ((R0_2_2_0 * D[(k * 10 + 8)]) + (R0_1_3_0 * D[(k * 10 + 9)]))))) - ((R1_1_1_0 * D[(k * 10 + 1)]) + ((R0_2_1_0 * D[(k * 10 + 2)]) + (R0_1_2_0 * D[(k * 10 + 3)]))));
-            Jsh[(9 * (int)blockDim.y + (int)threadIdx.y)] = ((Jsh[(9 * (int)blockDim.y + (int)threadIdx.y)] + (((R0_0_2_0 * D[(k * 10 + 0)]) + ((R2_0_2_0 * D[(k * 10 + 4)]) + (R1_1_2_0 * D[(k * 10 + 5)]))) + (((R1_0_3_0 * D[(k * 10 + 6)]) + (R0_2_2_0 * D[(k * 10 + 7)])) + ((R0_1_3_0 * D[(k * 10 + 8)]) + (R0_0_4_0 * D[(k * 10 + 9)]))))) - ((R1_0_2_0 * D[(k * 10 + 1)]) + ((R0_1_2_0 * D[(k * 10 + 2)]) + (R0_0_3_0 * D[(k * 10 + 3)]))));
+            Jsh[(0 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(0 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R0_0_0_0 * D[(k * 10 + 0)]) + ((R2_0_0_0 * D[(k * 10 + 4)]) + (R1_1_0_0 * D[(k * 10 + 5)]))) + (((R1_0_1_0 * D[(k * 10 + 6)]) + (R0_2_0_0 * D[(k * 10 + 7)])) + ((R0_1_1_0 * D[(k * 10 + 8)]) + (R0_0_2_0 * D[(k * 10 + 9)]))))) - ((R1_0_0_0 * D[(k * 10 + 1)]) + ((R0_1_0_0 * D[(k * 10 + 2)]) + (R0_0_1_0 * D[(k * 10 + 3)]))));
+            Jsh[(1 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(1 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R1_0_0_0 * D[(k * 10 + 0)]) + ((R3_0_0_0 * D[(k * 10 + 4)]) + (R2_1_0_0 * D[(k * 10 + 5)]))) + (((R2_0_1_0 * D[(k * 10 + 6)]) + (R1_2_0_0 * D[(k * 10 + 7)])) + ((R1_1_1_0 * D[(k * 10 + 8)]) + (R1_0_2_0 * D[(k * 10 + 9)]))))) - ((R2_0_0_0 * D[(k * 10 + 1)]) + ((R1_1_0_0 * D[(k * 10 + 2)]) + (R1_0_1_0 * D[(k * 10 + 3)]))));
+            Jsh[(2 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(2 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R0_1_0_0 * D[(k * 10 + 0)]) + ((R2_1_0_0 * D[(k * 10 + 4)]) + (R1_2_0_0 * D[(k * 10 + 5)]))) + (((R1_1_1_0 * D[(k * 10 + 6)]) + (R0_3_0_0 * D[(k * 10 + 7)])) + ((R0_2_1_0 * D[(k * 10 + 8)]) + (R0_1_2_0 * D[(k * 10 + 9)]))))) - ((R1_1_0_0 * D[(k * 10 + 1)]) + ((R0_2_0_0 * D[(k * 10 + 2)]) + (R0_1_1_0 * D[(k * 10 + 3)]))));
+            Jsh[(3 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(3 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R0_0_1_0 * D[(k * 10 + 0)]) + ((R2_0_1_0 * D[(k * 10 + 4)]) + (R1_1_1_0 * D[(k * 10 + 5)]))) + (((R1_0_2_0 * D[(k * 10 + 6)]) + (R0_2_1_0 * D[(k * 10 + 7)])) + ((R0_1_2_0 * D[(k * 10 + 8)]) + (R0_0_3_0 * D[(k * 10 + 9)]))))) - ((R1_0_1_0 * D[(k * 10 + 1)]) + ((R0_1_1_0 * D[(k * 10 + 2)]) + (R0_0_2_0 * D[(k * 10 + 3)]))));
+            Jsh[(4 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(4 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R2_0_0_0 * D[(k * 10 + 0)]) + ((R4_0_0_0 * D[(k * 10 + 4)]) + (R3_1_0_0 * D[(k * 10 + 5)]))) + (((R3_0_1_0 * D[(k * 10 + 6)]) + (R2_2_0_0 * D[(k * 10 + 7)])) + ((R2_1_1_0 * D[(k * 10 + 8)]) + (R2_0_2_0 * D[(k * 10 + 9)]))))) - ((R3_0_0_0 * D[(k * 10 + 1)]) + ((R2_1_0_0 * D[(k * 10 + 2)]) + (R2_0_1_0 * D[(k * 10 + 3)]))));
+            Jsh[(5 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(5 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R1_1_0_0 * D[(k * 10 + 0)]) + ((R3_1_0_0 * D[(k * 10 + 4)]) + (R2_2_0_0 * D[(k * 10 + 5)]))) + (((R2_1_1_0 * D[(k * 10 + 6)]) + (R1_3_0_0 * D[(k * 10 + 7)])) + ((R1_2_1_0 * D[(k * 10 + 8)]) + (R1_1_2_0 * D[(k * 10 + 9)]))))) - ((R2_1_0_0 * D[(k * 10 + 1)]) + ((R1_2_0_0 * D[(k * 10 + 2)]) + (R1_1_1_0 * D[(k * 10 + 3)]))));
+            Jsh[(6 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(6 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R1_0_1_0 * D[(k * 10 + 0)]) + ((R3_0_1_0 * D[(k * 10 + 4)]) + (R2_1_1_0 * D[(k * 10 + 5)]))) + (((R2_0_2_0 * D[(k * 10 + 6)]) + (R1_2_1_0 * D[(k * 10 + 7)])) + ((R1_1_2_0 * D[(k * 10 + 8)]) + (R1_0_3_0 * D[(k * 10 + 9)]))))) - ((R2_0_1_0 * D[(k * 10 + 1)]) + ((R1_1_1_0 * D[(k * 10 + 2)]) + (R1_0_2_0 * D[(k * 10 + 3)]))));
+            Jsh[(7 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(7 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R0_2_0_0 * D[(k * 10 + 0)]) + ((R2_2_0_0 * D[(k * 10 + 4)]) + (R1_3_0_0 * D[(k * 10 + 5)]))) + (((R1_2_1_0 * D[(k * 10 + 6)]) + (R0_4_0_0 * D[(k * 10 + 7)])) + ((R0_3_1_0 * D[(k * 10 + 8)]) + (R0_2_2_0 * D[(k * 10 + 9)]))))) - ((R1_2_0_0 * D[(k * 10 + 1)]) + ((R0_3_0_0 * D[(k * 10 + 2)]) + (R0_2_1_0 * D[(k * 10 + 3)]))));
+            Jsh[(8 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(8 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R0_1_1_0 * D[(k * 10 + 0)]) + ((R2_1_1_0 * D[(k * 10 + 4)]) + (R1_2_1_0 * D[(k * 10 + 5)]))) + (((R1_1_2_0 * D[(k * 10 + 6)]) + (R0_3_1_0 * D[(k * 10 + 7)])) + ((R0_2_2_0 * D[(k * 10 + 8)]) + (R0_1_3_0 * D[(k * 10 + 9)]))))) - ((R1_1_1_0 * D[(k * 10 + 1)]) + ((R0_2_1_0 * D[(k * 10 + 2)]) + (R0_1_2_0 * D[(k * 10 + 3)]))));
+            Jsh[(9 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] = ((Jsh[(9 * (int32_t)blockDim.y + (int32_t)threadIdx.y)] + (((R0_0_2_0 * D[(k * 10 + 0)]) + ((R2_0_2_0 * D[(k * 10 + 4)]) + (R1_1_2_0 * D[(k * 10 + 5)]))) + (((R1_0_3_0 * D[(k * 10 + 6)]) + (R0_2_2_0 * D[(k * 10 + 7)])) + ((R0_1_3_0 * D[(k * 10 + 8)]) + (R0_0_4_0 * D[(k * 10 + 9)]))))) - ((R1_0_2_0 * D[(k * 10 + 1)]) + ((R0_1_2_0 * D[(k * 10 + 2)]) + (R0_0_3_0 * D[(k * 10 + 3)]))));
         }
         // reduce J_p across the warp: every lane sees the sum
         double Jp0;
         {
-            auto fj_v = Jsh[(0 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(0 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp0 = fj_v;
         }
         double Jp1;
         {
-            auto fj_v = Jsh[(1 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(1 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp1 = fj_v;
         }
         double Jp2;
         {
-            auto fj_v = Jsh[(2 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(2 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp2 = fj_v;
         }
         double Jp3;
         {
-            auto fj_v = Jsh[(3 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(3 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp3 = fj_v;
         }
         double Jp4;
         {
-            auto fj_v = Jsh[(4 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(4 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp4 = fj_v;
         }
         double Jp5;
         {
-            auto fj_v = Jsh[(5 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(5 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp5 = fj_v;
         }
         double Jp6;
         {
-            auto fj_v = Jsh[(6 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(6 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp6 = fj_v;
         }
         double Jp7;
         {
-            auto fj_v = Jsh[(7 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(7 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp7 = fj_v;
         }
         double Jp8;
         {
-            auto fj_v = Jsh[(8 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(8 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp8 = fj_v;
         }
         double Jp9;
         {
-            auto fj_v = Jsh[(9 * (int)blockDim.y + (int)threadIdx.y)];
-            for (int fj_o = 16; fj_o > 0; fj_o /= 2) {
+            auto fj_v = Jsh[(9 * (int32_t)blockDim.y + (int32_t)threadIdx.y)];
+            for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {
                 fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffull), fj_v, fj_o, 32);
             }
             Jp9 = fj_v;
@@ -245,7 +245,7 @@ extern "C" __global__ void pq_L4_p2_q2(
         // plain write, NOT atomic: one batch per class, so this kernel is the only
         // writer of J_p. [JEngine, v2, Alg. 1] line 10 is atomic-free; §5 corrects it
         // once a class is split (milestone 3)
-        if ((int)threadIdx.y < 1) {
+        if ((int32_t)threadIdx.y < 1) {
             J[(bra * 10 + 0)] = Jp0;
             J[(bra * 10 + 1)] = Jp1;
             J[(bra * 10 + 2)] = Jp2;

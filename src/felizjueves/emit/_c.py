@@ -73,6 +73,7 @@ Names starting `fj_` are the writer's own and are refused in a kernel.
 
 from __future__ import annotations
 
+import re
 import textwrap
 
 from felizjueves.device import Arch
@@ -120,11 +121,11 @@ _CAST = {Fn.TO_F32: "float", Fn.TO_F64: "double"}
 
 _BINARY = {Fn.ADD: "+", Fn.SUB: "-", Fn.MUL: "*", Fn.DIV: "/", Fn.LT: "<"}
 _GEOMETRY = {
-    Fn.THREAD_X: "(int)threadIdx.x",
-    Fn.THREAD_Y: "(int)threadIdx.y",
-    Fn.BLOCK_X: "(int)blockIdx.x",
-    Fn.BLOCK_DIM_X: "(int)blockDim.x",
-    Fn.BLOCK_DIM_Y: "(int)blockDim.y",
+    Fn.THREAD_X: "threadIdx.x",
+    Fn.THREAD_Y: "threadIdx.y",
+    Fn.BLOCK_X: "blockIdx.x",
+    Fn.BLOCK_DIM_X: "blockDim.x",
+    Fn.BLOCK_DIM_Y: "blockDim.y",
 }
 
 BOYS_DEVICE = """\
@@ -208,6 +209,12 @@ class _Array:
 class CWriter:
     """Spell a `Kernel` as device C++; subclass per vendor for the hooks."""
 
+    # The spelling of `Scalar.I32` -- declarations, loop counters, the
+    # geometry casts and `fj_boys`'s integers. A backend may name the width
+    # (`emit/gpu.py`: `int32_t`); the vendor backends keep `int`, so their
+    # text, goldens and `source_sha256` pins do not move.
+    INT = "int"
+
     def __init__(self, arch: Arch) -> None:
         if not isinstance(arch, Arch):
             raise TypeError(f"emit takes a device.Arch, not {arch!r}")
@@ -237,18 +244,27 @@ class CWriter:
                 *(f"{INDENT}(void){n};\n" for n in unread)]
         head = self.prologue(k)
         if any(isinstance(e, Call) and e.fn is Fn.BOYS for e in _exprs(k)):
-            head += "\n" + (BOYS_DEVICE_WIDE if k.wide_boys else BOYS_DEVICE)
+            head += "\n" + self.spell_int(
+                BOYS_DEVICE_WIDE if k.wide_boys else BOYS_DEVICE)
         records = _records(k)
         if records:
-            head += "\n" + "".join(record_struct(r) for r in records)
+            head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
+                                    for r in records)
         return (
             f"{head}\n"
             f'extern "C" __global__ void {k.name}(\n{sig})\n'
             "{\n" + "".join(self._lines) + "}\n"
         )
 
+    def ctype(self, t: Scalar) -> str:
+        return self.INT if t is Scalar.I32 else CTYPE[t]
+
+    def spell_int(self, text: str) -> str:
+        """`text` (fixed C, such as `fj_boys`) with `int` spelled `INT`."""
+        return text if self.INT == "int" else re.sub(r"\bint\b", self.INT, text)
+
     def param(self, p: Param) -> str:
-        t = CTYPE[p.type]
+        t = self.ctype(p.type)
         if not p.array:
             return f"{t} {p.name}"
         const = "const " if p.intent is Intent.IN else ""
@@ -283,7 +299,7 @@ class CWriter:
             self._emit(depth, f"{self.lvalue(s.dst)} = {self.expr(s.value)};")
         elif isinstance(s, For):
             v = s.var
-            self._emit(depth, f"for (int {v} = {self.expr(s.start)}; "
+            self._emit(depth, f"for ({self.INT} {v} = {self.expr(s.start)}; "
                               f"{v} < {self.expr(s.stop)}; "
                               f"{v} += {self.expr(s.step)}) {{")
             self._scopes.append({v: None})
@@ -369,7 +385,7 @@ class CWriter:
         self._emit(depth, "}")
 
     def decl(self, s: Decl, depth: int) -> None:
-        t = CTYPE[s.type]
+        t = self.ctype(s.type)
         if not s.shape:
             if s.space is Space.SHARED:
                 if s.init is not None:
@@ -498,7 +514,7 @@ class CWriter:
     def call(self, e: Call) -> str:
         fn = e.fn
         if fn in _GEOMETRY:
-            return _GEOMETRY[fn]
+            return f"({self.INT}){_GEOMETRY[fn]}"
         if fn is Fn.TO_F32 and isinstance(e.args[0], Lit) \
                 and e.args[0].type is Scalar.F64:
             text = self.lit(e.args[0])  # ir: exactly a float32
@@ -580,14 +596,14 @@ def precision(k: Kernel) -> str:
     return "fp64 throughout"
 
 
-def record_struct(rec: Record) -> str:
+def record_struct(rec: Record, t: str | None = None) -> str:
     """The C struct of one `Record` view (#353), and the size check that
     makes the view's layout the flat row's: one scalar type, so a struct of
     exactly `len(members)` of them has no padding and member `i` at element
     `i` (declaration order is layout order for a standard-layout struct).
     Natural alignment only: the view asks no more of a base pointer than
     the flat array does."""
-    t, name = CTYPE[rec.scalar], RESERVED + rec.name
+    t, name = t or CTYPE[rec.scalar], RESERVED + rec.name
     members = "".join(f"{INDENT}{t} {m};\n" for m in rec.members)
     return (
         f"// {name}: a typed view of one packed row of {len(rec.members)} "
