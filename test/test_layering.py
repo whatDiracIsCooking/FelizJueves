@@ -174,7 +174,8 @@ RULES: dict[str, Rule] = {
         device="the IR is arch-neutral",
         reference=_GROUND_TRUTH),
     "emit": _rule(
-        "IR -> text, one backend per vendor sharing emit/_c.py (#26/#27). Reads "
+        "IR -> text, one backend per vendor sharing emit/_c.py (#26/#27), and "
+        "`gpu`, one text for both over FelizJueves's own headers. Reads "
         "a finished `Kernel` and an `Arch`",
         ("ir", "device", "emit"),
         reference="#20's hazard: a reference an emitter can reach is a "
@@ -508,6 +509,7 @@ RULE_OF: dict[str, str] = {
     "emit._c": "emit",
     "emit.cuda": "emit",
     "emit.hip": "emit",
+    "emit.gpu": "emit",
     "emit.__main__": "driver",
     "measured": "driver",
     "measured_store": "store",
@@ -592,6 +594,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit._c": ("device", "ir"),
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
+    "emit.gpu": ("device", "emit._c", "ir"),
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "kernel_dq",
                       "kernel_jab", "spec"),
     "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "kernel",
