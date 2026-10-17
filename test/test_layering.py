@@ -2087,6 +2087,70 @@ EDGES |= {k: frozenset(v) for k, v in {
 
 
 # ---------------------------------------------------------------------------
+# The DF metric kernel (#414): the builder (`kernel_metric`, the Schwarz
+# builder's rule restated: the plan layer's DAG for the J quartet
+# (lP 0|lQ 0), the recurrence statements, `center_fragment` inlined twice)
+# and its interpreted adapter (`ao.metric_drive`, the `ao/drive.py` pattern:
+# builder + interp + ao, Boys injected). No emission yet (#415), so no
+# driver edge.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "metric_builder": _rule(
+        "kernel_metric.py: the DF Coulomb metric kernel, `Target.METRIC` -- "
+        "key -> IR, with the plan layer's DAG and schedule for the J quartet "
+        "(lP 0|lQ 0) (`plan`), the J engine's prelude and recurrence "
+        "statements (`recurrence`), the single-center `E` fragment inlined "
+        "twice (`e_fragment`) and `kernel_jab`'s scatter rule restated",
+        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ao="`ao.metric` is the witness the kernel is interpreted against: "
+           "importing it shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+    "metric_adapter": _rule(
+        "ao/metric_drive.py (#414): the metric kernel run in the interpreter "
+        "over `ao.metric`'s staging -- builder + interp + ao, producing "
+        "numbers, as `ao/drive.py` does for the J chain",
+        ("spec", "ir", "interp", "ao", "kernel_metric"),
+        reference="the kernel's numbers are compared against reference/; "
+                  "Boys arrives by injection (`boys=`), so the adapter "
+                  "shares no ancestry with its witness (#20)",
+        emit="it produces numbers, not text: a backend's spelling is the "
+             "kernel tier's to check, not this adapter's",
+        plan="the builder asks the plan; the adapter only runs what it built",
+        kernel="the J builder is another kernel's; the metric has its own"),
+}
+RULE_OF |= {
+    "kernel_metric": "metric_builder",
+    "ao.metric_drive": "metric_adapter",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_metric": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
+                      "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "ao.metric_drive": ("ao.metric", "ao.shell", "interp", "ir",
+                        "kernel_metric"),
+}.items()}
+
+
+def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_metric"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_metric reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
 # The cross-basis overlap S_{B1,B2} (`Target.SX`): the host reference
 # (`ao.overlap.cross_overlap_matrix` over `ao.one_electron.rectangular`, no
 # new edge), the cross launch and its walker (in `launch`, no new edge), and
