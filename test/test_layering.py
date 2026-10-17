@@ -2150,6 +2150,15 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
         assert not hit, f"kernel_metric reaches {hit}"
 
 
+# The generator CLI writes the metric ladder (`--metric-l`, #415), so the
+# driver composes the builder.
+RULES["driver"] = Rule(RULES["driver"].why + ", and the DF metric ladder "
+                       "through `kernel_metric`",
+                       RULES["driver"].may | frozenset(("kernel_metric",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_metric",))
+
+
 # ---------------------------------------------------------------------------
 # The cross-basis overlap S_{B1,B2} (`Target.SX`): the host reference
 # (`ao.overlap.cross_overlap_matrix` over `ao.one_electron.rectangular`, no
