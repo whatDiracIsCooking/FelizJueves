@@ -2072,6 +2072,21 @@ EDGES["measured"] = EDGES["measured"] | frozenset(("leverledger",))
 
 
 # ---------------------------------------------------------------------------
+# The DF Coulomb metric (P|Q) (#412): the host reference and staging
+# (`ao.metric`, under the `ao` rule, `pq` injected). The single-center `E` is
+# `ao.hermite.e_block` at `X_PA = 0`; no `ao.eri` (its dummy-shell route
+# normalises to 0) and no `ao.pairs` (`aux_dress` is the aux record's own).
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "ao.metric": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.metric": ("ao.hermite", "ao.shell"),
+}.items()}
+
+
+# ---------------------------------------------------------------------------
 # The cross-basis overlap S_{B1,B2} (`Target.SX`): the host reference
 # (`ao.overlap.cross_overlap_matrix` over `ao.one_electron.rectangular`, no
 # new edge), the cross launch and its walker (in `launch`, no new edge), and
