@@ -206,6 +206,14 @@ Five failures that look like something else entirely:
    container are the right ones: a wrong `--group-add` looks exactly like
    having no card.
 
+   It *does* now separate the other AMD lookalike (#431): `/dev/kfd` present
+   with no GPU node in kfd's topology means `amdgpu` bound no card on the
+   **host**, not that a mount is missing, and doctor says so -- naming the
+   unbound PCI device and, when `amdgpu`'s DKMS module is built for a kernel
+   other than the running one, the `dkms autoinstall` that fixes it. Reach for
+   doctor FIRST when HIP goes dark while CUDA still works: that asymmetry is
+   the signature, because NVIDIA's DKMS module gets rebuilt and AMD's did not.
+
 ## Reporting
 
 Say what is degraded and what it costs, not just the counts: "no failures, 21

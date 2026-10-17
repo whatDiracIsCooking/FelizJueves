@@ -145,3 +145,40 @@ find_venv() {
   done
   return 1
 }
+
+# Does amdkfd have an actual GPU node? Echoes nothing; returns 0 when at least
+# one node in kfd's topology is a GPU, 1 otherwise.
+#
+# WHY NOT `[ -e /dev/kfd ]`, which is what kernel-tier.sh asked before #431:
+# that node exists whenever the amdkfd/amdgpu module is LOADED, whether or not
+# the driver bound a card. The module binds by PCI id, so an amdgpu that
+# predates the card -- kernel 6.8's in-tree one does not know the RX 9060 XT's
+# 1002:7590 (gfx1200, RDNA4), which is why this box gets amdgpu from DKMS --
+# loads happily and claims nothing, and /dev/kfd is still there. The tier then
+# printed `device: present` on a box with no usable AMD card, every `gpu` test
+# failed instead of skipping, and from inside a container that reads as broken
+# passthrough rather than as an unbound driver on the host. It is the same
+# reading either way: the topology below is identical on the host and inside a
+# container given `--device=/dev/kfd`, which is the property that makes it the
+# right probe.
+#
+# WHY NOT `rocminfo | grep gfx`, which #431 suggested: rocminfo is ROCm's, and
+# ROCm lives in the hip/combined image -- so on a host that has the card but no
+# ROCm, a vendor-tool probe answers "absent" about a perfectly good card.
+# Reading the kernel's own topology needs nothing installed, which is the same
+# reason _has_nvidia_device (test/conftest.py) reads /dev/nvidiactl rather than
+# calling nvidia-smi.
+#
+# Node 0 is the CPU and reports gfx_target_version 0; a GPU reports its ISA
+# version there (gfx1200 -> 120000). doctor.sh has always skipped the CPU node
+# on exactly this field -- this is that rule, lifted to where every caller can
+# reach it.
+amd_gpu_present() {
+  local props gfxver
+  for props in /sys/class/kfd/kfd/topology/nodes/*/properties; do
+    [ -r "$props" ] || continue
+    gfxver=$(sed -n 's/^gfx_target_version //p' "$props" | head -1)
+    [ -n "$gfxver" ] && [ "$gfxver" != 0 ] && return 0
+  done
+  return 1
+}

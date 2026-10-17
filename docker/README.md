@@ -117,20 +117,46 @@ repo on this box would share.
 | `FJ_RENDER_GID`, `FJ_VIDEO_GID` | `109`, `44` | this box's `getent group render video` |
 | `COMPUTE_SANITIZER_TOOL` | `memcheck` | `racecheck` for the other sweep |
 
-## The AMD passthrough, and its one failure mode
+## The AMD passthrough, and its two failure modes
 
 NVIDIA needs `--gpus all` and the container runtime does the rest. AMD has no
 equivalent: `/dev/kfd` and `/dev/dri` are passed in directly, and the container
 user must be in the **host** groups that own them.
 
-**Always pass a numeric gid, never a group name.** `--group-add render` resolves
-`render` *inside* the container, where `install-rocm.sh` created it as gid 110,
-while the bind-mounted nodes keep their host ownership (109 here). The container
-then starts cleanly and the first device call fails with
-`hipErrorNoDevice (no ROCm-capable device is detected)` — which reads exactly
-like a machine with no AMD card, and has been misread as one.
-`devtools/devcontainer.sh` and `devtools/kernel-tier.sh` both resolve these with
-`getent`; `compose.yaml` reads `FJ_RENDER_GID`/`FJ_VIDEO_GID`.
+Both failure modes below present as *the same symptom* — `rocminfo` lists no
+`gfx` agent, `rocm-smi` says "No AMD GPUs specified", `hipErrorNoDevice` — so
+the first question is always **which one**. `devtools/doctor.sh` answers it and
+names the fix; it is cheaper than reading this.
+
+**1. The gid: always pass a numeric one, never a group name.**
+`--group-add render` resolves `render` *inside* the container, where
+`install-rocm.sh` created it as gid 110, while the bind-mounted nodes keep their
+host ownership (109 here). The container then starts cleanly and the first
+device call fails with `hipErrorNoDevice (no ROCm-capable device is detected)` —
+which reads exactly like a machine with no AMD card, and has been misread as
+one. `devtools/devcontainer.sh` and `devtools/kernel-tier.sh` both resolve these
+with `getent`; `compose.yaml` reads `FJ_RENDER_GID`/`FJ_VIDEO_GID`.
+
+**2. The host driver bound no card — and this one is not about the container
+at all** (#431). `amdgpu` binds by PCI id, so an `amdgpu` that predates the
+card loads happily and claims nothing: kernel 6.8's in-tree module does not
+know the RX 9060 XT's `1002:7590` (gfx1200, RDNA4), which is why this box takes
+`amdgpu` from **DKMS**. A kernel upgrade that DKMS did not rebuild for drops
+the card silently — NVIDIA's module is rebuilt, so CUDA keeps working and only
+HIP goes dark.
+
+The tell is that **`/dev/kfd` is still there** while kfd's topology holds only
+the CPU node, so every probe that keys on the device node's existence reports a
+card that is not there. Read the topology instead — `amd_gpu_present` in
+`devtools/lib.sh`, `_has_amd_device` in `test/conftest.py`, and the enumeration
+in `doctor.sh`, all on one rule: a node whose `gfx_target_version` is nonzero.
+It needs no ROCm installed and reads the same inside a container as on the host.
+
+```bash
+dkms status                             # amdgpu built for the RUNNING kernel?
+lspci -nnk | grep -A3 1002:             # a 'Kernel driver in use:' line?
+sudo dkms autoinstall -k "$(uname -r)"  # the fix, then reload amdgpu or reboot
+```
 
 ## The Antigravity CLI is pinned by *release*, not version
 

@@ -113,8 +113,42 @@ def _has_nvidia_device() -> bool:
     return Path("/dev/nvidiactl").exists() or Path("/proc/driver/nvidia/gpus").is_dir()
 
 
+KFD_NODES = Path("/sys/class/kfd/kfd/topology/nodes")
+
+
 def _has_amd_device() -> bool:
-    return Path("/dev/kfd").exists()
+    # An enumerated GPU node in amdkfd's topology, NOT `/dev/kfd` exists --
+    # which is what this asked before #431. That node is there whenever the
+    # amdgpu/amdkfd module is LOADED, bound card or not: the module binds by
+    # PCI id, so an amdgpu that predates the card (kernel 6.8's in-tree one
+    # does not know the RX 9060 XT's 1002:7590) loads and claims nothing while
+    # /dev/kfd stays put. `hip_device` then did not skip, so every `gpu` test
+    # FAILED on a machine with no usable card -- against this repo's rule that
+    # a missing card skips -- and inside a container it read as broken
+    # passthrough rather than as an unbound driver on the host.
+    #
+    # Node 0 is the CPU and reports gfx_target_version 0; a GPU reports its
+    # ISA there (gfx1200 -> 120000). Same rule, same field, as doctor.sh and
+    # lib.sh's amd_gpu_present. Read through the kernel's own topology so the
+    # answer needs no ROCm installed and is identical on the host and inside a
+    # container given --device=/dev/kfd -- the same reason _has_nvidia_device
+    # reads /dev/nvidiactl instead of calling nvidia-smi.
+    try:
+        nodes = sorted(KFD_NODES.iterdir())
+    except OSError:
+        return False
+    for node in nodes:
+        try:
+            props = (node / "properties").read_text()
+        except OSError:
+            continue
+        for line in props.splitlines():
+            field, _, value = line.partition(" ")
+            if field == "gfx_target_version":
+                if value.strip() not in ("", "0"):
+                    return True
+                break
+    return False
 
 
 @pytest.fixture(scope="session")
@@ -339,10 +373,27 @@ def cuda_device(request: pytest.FixtureRequest):
     yield from _card(request, "cuda", "no NVIDIA device on this machine")
 
 
+def _no_amd_reason() -> str:
+    """Why there is no AMD card -- the two causes read very differently.
+
+    `/dev/kfd` missing is a passthrough question (a container started without
+    `--device=/dev/kfd --device=/dev/dri`). `/dev/kfd` present with an empty
+    topology is a HOST driver question, and saying so is the point: that is
+    the case that sent agents hunting through devcontainer.json for a mount
+    bug when amdgpu had simply bound no card (#431).
+    """
+    if not Path("/dev/kfd").exists():
+        return ("no AMD device on this machine (/dev/kfd absent -- a container "
+                "needs --device=/dev/kfd --device=/dev/dri)")
+    return ("no AMD device on this machine: /dev/kfd is here but amdkfd lists "
+            "no GPU node, so amdgpu bound no card on the HOST (not a container "
+            "passthrough problem -- see `dkms status` and devtools/doctor.sh)")
+
+
 @pytest.fixture(scope="session")
 def hip_device(request: pytest.FixtureRequest):
     """Presence (skip), then the card's lock for the session (module docstring)."""
-    yield from _card(request, "hip", "no AMD device on this machine (/dev/kfd absent)")
+    yield from _card(request, "hip", _no_amd_reason())
 
 
 def card_processes(backend: str) -> str:

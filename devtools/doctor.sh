@@ -442,6 +442,11 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
         # /sys/class/kfd is amdkfd's own topology, the same source rocminfo
         # reads, and it is visible inside a container given --device=/dev/kfd.
         # Node 0 is the CPU node and reports gfx_target_version 0; skip it.
+        #
+        # This is the rule lib.sh's amd_gpu_present now carries for callers
+        # that only need the yes/no (kernel-tier.sh, test/conftest.py -- #431).
+        # Kept as a loop here rather than delegated to it because this report
+        # wants each node's ISA, PCI id and name, not just whether one exists.
         amd_listed=0
         for props in /sys/class/kfd/kfd/topology/nodes/*/properties; do
           [ -r "$props" ] || continue
@@ -493,6 +498,42 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
           counter_tool_state hip
         else
           note "no amd device -- hipcc still compiles, but no kernel can run"
+          # WHICH no: the two causes have completely different fixes, and
+          # before #431 neither was said out loud. `/dev/kfd` absent is a
+          # passthrough (or module) question; `/dev/kfd` present with an empty
+          # topology is a HOST driver question -- amdgpu loaded and bound
+          # nothing -- and that is the one that got read as a broken
+          # devcontainer mount for days.
+          if [ ! -e /dev/kfd ]; then
+            note "/dev/kfd absent -- in a container, pass --device=/dev/kfd --device=/dev/dri"
+            note "(outside one, the amdgpu/amdkfd module is not loaded at all)"
+          else
+            warn "/dev/kfd is here but amdkfd lists no GPU node -- amdgpu bound no card"
+            note "this is NOT container passthrough: the same emptiness is on the host"
+            # The card the driver should have claimed. An AMD VGA/display
+            # function with no `Kernel driver in use:` line is the signature.
+            if command -v lspci >/dev/null 2>&1; then
+              while IFS= read -r slot; do
+                [ -n "$slot" ] || continue
+                [ -e "/sys/bus/pci/devices/$slot/driver" ] && continue
+                note "pci $slot is an unbound AMD display device -- nothing claimed it"
+              done < <(lspci -Dn 2>/dev/null |
+                       sed -n 's/^\([0-9a-f:.]*\) 03[0-9a-f][0-9a-f]: 1002:.*/\1/p')
+            fi
+            # The usual cause on this box: a kernel upgrade that NVIDIA's DKMS
+            # module was rebuilt for and AMD's was not, so amdgpu silently
+            # falls back to an in-tree one that does not know the card's PCI
+            # id (6.8's does not know gfx1200's 1002:7590).
+            if command -v dkms >/dev/null 2>&1; then
+              amd_dkms=$(dkms status 2>/dev/null | sed -n 's/^\(amdgpu\/[^,]*\),.*/\1/p' | head -1)
+              if [ -n "$amd_dkms" ] &&
+                 ! dkms status 2>/dev/null | grep -q "^amdgpu/.*, $(uname -r),"; then
+                warn "$amd_dkms is built for another kernel, not the running $(uname -r)"
+                note "fix (host, needs root): sudo dkms autoinstall -k $(uname -r)"
+                note "then reload: sudo modprobe -r amdgpu && sudo modprobe amdgpu (or reboot)"
+              fi
+            fi
+          fi
         fi
         ;;
       *) note "unknown vendor '$vendor' in DOCTOR_GPU_VENDORS; skipping" ;;

@@ -110,6 +110,15 @@ reason (`hipcc not found -- it lives in the fj:hip / fj:combined image`, versus
 same way: asking for `cuda_device` in a compile-only test makes it skip on a
 machine that could have run it.
 
+**Read the AMD skip to the end — it says which of two things is wrong** (#431).
+`/dev/kfd absent` is a container passthrough question. `/dev/kfd is here but
+amdkfd lists no GPU node` is a **host** question: `amdgpu` bound no card, so
+nothing in the container can fix it and there is no point reading
+`devcontainer.json`. Usual cause is a kernel upgrade that `amdgpu`'s DKMS
+module was not rebuilt for, which leaves CUDA working and only HIP dark —
+`dkms status` and `devtools/doctor.sh` name it and print the fix. The tier is
+blunter still: `device: ABSENT` and exit **2**, never a pass.
+
 `test/conftest.py` holds `compile_device_source` and `run_device_binary` — the
 compile-and-run machinery every device test shares. Put kernel text in the
 test; put plumbing there.
