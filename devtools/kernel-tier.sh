@@ -200,16 +200,30 @@ note "${compiler_version%%$'\n'*}"
 
 # The card, probed through the kernel rather than a vendor tool so the answer
 # is the same on the host and inside a container.
+#
+# The AMD side asks amd_gpu_present (lib.sh) for an enumerated GPU node and
+# NOT `[ -e /dev/kfd ]`, which is what it asked before #431: that node is
+# there whenever the module is loaded, bound card or not, so this printed
+# `device: present` on a box whose amdgpu had claimed nothing. lib.sh carries
+# the why; the extra line below is for the case that actually happens, because
+# "ABSENT" alone sends you looking at the container's passthrough when the
+# answer is on the host.
 device_present=0
 case $backend in
   cuda) [ -e /dev/nvidiactl ] || [ -d /proc/driver/nvidia/gpus ] && device_present=1 ;;
-  hip)  [ -e /dev/kfd ] && device_present=1 ;;
+  hip)  amd_gpu_present && device_present=1 ;;
 esac
 if [ "$device_present" = 1 ]; then
   note "device: present"
 else
   note "device: ABSENT -- the compile phase still runs and proves nothing about"
   note "        a number; every \`gpu\` test will SKIP, not fail."
+  if [ "$backend" = hip ] && [ -e /dev/kfd ]; then
+    note "        /dev/kfd IS here but kfd lists no GPU node, so this is NOT a"
+    note "        container passthrough problem: amdgpu bound no card on the"
+    note "        HOST. Usual cause is a kernel upgrade the DKMS module was"
+    note "        not rebuilt for -- 'dkms status' and devtools/doctor.sh say."
+  fi
 fi
 
 PYTEST=$(find_pytest) || cannot "no pytest in $VENV_PATHS or on PATH -- run 'uv sync'"

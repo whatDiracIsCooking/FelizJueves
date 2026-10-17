@@ -276,6 +276,20 @@ runner has a GPU. Two consequences worth internalising:
 `kernel-tier.sh` exits **2** for "could not run" (no compiler, no image, no
 device group). Never read a 2 as a pass.
 
+**A card is present when the kernel enumerates it, not when its device node
+exists** (#431). `/dev/kfd` is there whenever `amdgpu` is loaded, bound card or
+not — the module binds by PCI id, and kernel 6.8's in-tree one does not know
+the RX 9060 XT's `1002:7590`, so this box takes `amdgpu` from DKMS and a kernel
+upgrade it was not rebuilt for drops the card while leaving CUDA untouched. So
+AMD presence is **an enumerated GPU node in kfd's topology** (a nonzero
+`gfx_target_version`), asked in one rule by `lib.sh`'s `amd_gpu_present`,
+`conftest._has_amd_device` and `doctor.sh`'s enumeration — no ROCm needed, and
+the same answer inside a container as on the host. Before that, HIP reported
+`device: present` with no usable card and every `gpu` test failed instead of
+skipping, which from inside a container reads as broken passthrough. When HIP
+goes dark while CUDA works, run **doctor** first: it names the unbound device
+and the `dkms autoinstall` that fixes it.
+
 ## What is gated, and what is not
 
 - **`git push`** runs the fast pytest tier, and only when the push touches a

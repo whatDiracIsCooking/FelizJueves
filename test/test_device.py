@@ -92,6 +92,95 @@ def test_conftest_reads_the_arch_from_this_module() -> None:
     assert conftest.HIP_ARCH == from_env(Vendor.AMD).name
 
 
+def _kfd_tree(root: Path, *gfx_target_versions: int) -> Path:
+    """An amdkfd topology with one node per argument, in kfd's own layout."""
+    nodes = root / "nodes"
+    for i, gfxver in enumerate(gfx_target_versions):
+        node = nodes / str(i)
+        node.mkdir(parents=True)
+        # The real file carries ~60 fields; the two that matter here, in kfd's
+        # `name value` spelling, plus one whose prefix could be mis-matched.
+        (node / "properties").write_text(
+            f"cpu_cores_count 24\nsimd_count 0\n"
+            f"gfx_target_version_prefix_trap 999\ngfx_target_version {gfxver}\n"
+        )
+    return nodes
+
+
+def test_an_amd_card_is_an_enumerated_kfd_node_not_just_dev_kfd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#431: `/dev/kfd` exists whenever the module is loaded, bound card or not.
+
+    An amdgpu that does not know the card's PCI id -- kernel 6.8's in-tree one
+    against gfx1200's 1002:7590 -- loads, claims nothing, and leaves kfd with
+    only the CPU node. Keying presence on the device node therefore reported a
+    card on a box that had none: `hip_device` did not skip, so every `gpu`
+    test FAILED instead of skipping, and in a container that read as broken
+    passthrough. Presence is an enumerated GPU node, and nothing else.
+    """
+    import conftest
+
+    cpu_only = _kfd_tree(tmp_path / "cpu-only", 0)
+    monkeypatch.setattr(conftest, "KFD_NODES", cpu_only)
+    assert conftest._has_amd_device() is False
+
+    # The CPU node is still node 0 when a GPU is there; gfx1200 -> 120000.
+    with_gpu = _kfd_tree(tmp_path / "with-gpu", 0, 120000)
+    monkeypatch.setattr(conftest, "KFD_NODES", with_gpu)
+    assert conftest._has_amd_device() is True
+
+
+def test_no_kfd_topology_at_all_is_simply_no_card(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import conftest
+
+    monkeypatch.setattr(conftest, "KFD_NODES", tmp_path / "absent")
+    assert conftest._has_amd_device() is False
+
+
+def test_the_two_reasons_for_no_amd_card_read_differently(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fix differs, so the skip reason has to: a missing `/dev/kfd` is a
+    passthrough question, an empty topology is a HOST driver question (#431)."""
+    import conftest
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        conftest.Path, "exists", lambda self: (seen.append(str(self)), False)[1]
+    )
+    absent = conftest._no_amd_reason()
+    assert "/dev/kfd" in seen and "--device=/dev/kfd" in absent
+
+    monkeypatch.setattr(conftest.Path, "exists", lambda self: True)
+    unbound = conftest._no_amd_reason()
+    assert "no GPU node" in unbound and "HOST" in unbound
+    assert "passthrough" in unbound and absent != unbound
+
+
+def test_the_shell_probe_asks_the_same_question_as_conftest() -> None:
+    """The tier's reading and the test suite's must not drift (#431).
+
+    lib.sh cannot import Python, so assert the shared rule textually, the way
+    test_config_sh_spells_the_same_defaults does for the arch defaults.
+    """
+    devtools = Path(__file__).resolve().parent.parent / "devtools"
+    lib = (devtools / "lib.sh").read_text()
+    tier = (devtools / "kernel-tier.sh").read_text()
+
+    # One rule, in one place: the same sysfs path and the same field.
+    assert "amd_gpu_present()" in lib
+    assert "/sys/class/kfd/kfd/topology/nodes" in lib
+    assert "gfx_target_version" in lib
+
+    # And the tier asks for it, rather than for the device node that is there
+    # whether or not a card is bound.
+    assert "hip)  amd_gpu_present && device_present=1" in tier
+    assert "hip)  [ -e /dev/kfd ] && device_present=1" not in tier
+
+
 def test_two_rows_differing_only_in_card_do_not_collide() -> None:
     # The #28 hazard, asserted before any data file exists: Spec alone cannot
     # tell an sm_86 row from a gfx1200 one for the same class and batch count.
