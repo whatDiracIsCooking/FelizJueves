@@ -1,10 +1,11 @@
 """`hgp/cost.py` (#276): FLOPs read off the HGP DAGs, tiered `K^4 / K^2 / K^0`.
 
-Fast tier: pure Python, no toolchain, no card. The model is calibrated
-against nothing (`[Fock]` publishes no FLOP table), so the triples are pinned
-from the code in `data/hgp/cost.json`; what is checked here is that the file
-is what the code computes, that the tiers sum and are attributable, that the
-default counts the pruned DAG, and that the module stays off the IR side.
+Fast tier for `L <= FAST_L_MAX` (tiers.py), `slow` above: pure Python, no
+toolchain, no card. The model is calibrated against nothing (`[Fock]`
+publishes no FLOP table), so the triples are pinned from the code in
+`data/hgp/cost.json`; what is checked here is that the file is what the code
+computes, that the tiers sum and are attributable, that the default counts
+the pruned DAG, and that the module stays off the IR side.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import json
 from pathlib import Path
 
 import pytest
+from tiers import is_fast, split_by_l
 
 from felizjueves.hgp import cost, hrr, vrr
 from felizjueves.hgp.cost import GEOMETRY, Cost
@@ -22,8 +24,24 @@ from felizjueves.hgp.vrr import CLASSES
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "hgp" / "cost.json"
 SRC = ROOT / "src" / "felizjueves" / "hgp" / "cost.py"
+LADDER = split_by_l(CLASSES, sum)
+FAST = tuple(c for c in CLASSES if is_fast(sum(c)))
 
 
+def test_the_tracked_file_rows_at_fast_l_are_what_the_code_computes(
+        monkeypatch) -> None:
+    # The `L <= FAST_L_MAX` rows only, recomputed through `report()`; the
+    # byte-for-byte file is the `slow` test below.
+    monkeypatch.setattr(cost, "CLASSES", FAST)
+    want = cost.report()
+    doc = json.loads(DATA.read_text())
+    assert {k: v for k, v in doc.items() if k != "classes"} == {
+        k: v for k, v in want.items() if k != "classes"}
+    assert [r for r in doc["classes"] if tuple(r["class"]) in FAST] == \
+        want["classes"]
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_tracked_file_is_what_the_code_computes() -> None:
     # Regenerate with `PYTHONPATH=src python -m felizjueves.hgp.cost`.
     assert DATA.read_text() == cost.render()
@@ -41,7 +59,7 @@ def test_the_file_pins_all_21_classes_with_the_convention_stated() -> None:
     assert doc["hrr_first"] == "bra"
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_the_tiers_sum_to_the_total(cls: tuple[int, int, int, int]) -> None:
     for prune in (True, False):
         c = cost.cost(cls, prune=prune)
@@ -104,7 +122,7 @@ def test_a_vrr_step_costs_its_terms() -> None:
     assert cost.vrr_node_flops(()) == 0
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_each_tier_is_attributable_to_its_dag(cls) -> None:
     c = cost.cost(cls)
     v, h = vrr.build(cls), hrr.build(cls)
@@ -116,12 +134,13 @@ def test_each_tier_is_attributable_to_its_dag(cls) -> None:
     assert c.k0["geometry"] == 16
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_dd_dd_hrr_tier_is_274s_statement_count() -> None:
     # #274: 5,293 two-term updates at (dd|dd) under the bra-first order.
     assert cost.cost((2, 2, 2, 2)).k0["hrr"] == 2 * 5293
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_pruning_is_on_by_default_and_only_the_k4_tier_moves(cls) -> None:
     p, u = cost.cost(cls), cost.cost(cls, prune=False)
     assert p.pruned and not u.pruned
@@ -133,12 +152,22 @@ def test_pruning_is_on_by_default_and_only_the_k4_tier_moves(cls) -> None:
     assert row["saving"] == u.total - p.total
 
 
-def test_the_saving_is_reported_not_asserted() -> None:
+def _savings(classes) -> dict:
     # Classes with no bra VRR have nothing to prune; every other has some.
     saving = {cls: cost.cost(cls, prune=False).total - cost.cost(cls).total
-              for cls in CLASSES}
+              for cls in classes}
     assert {c for c, s in saving.items() if s == 0} == {
-        c for c in CLASSES if c[0] + c[1] == 0}
+        c for c in classes if c[0] + c[1] == 0}
+    return saving
+
+
+def test_the_saving_is_reported_not_asserted() -> None:
+    _savings(FAST)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_saving_is_reported_not_asserted_above_l4() -> None:
+    saving = _savings([c for c in CLASSES if not is_fast(sum(c))])
     assert saving[(2, 2, 2, 2)] == 9001
 
 

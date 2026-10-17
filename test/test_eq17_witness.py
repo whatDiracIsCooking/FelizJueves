@@ -21,6 +21,7 @@ not see an x component smuggled into the shift.
 from __future__ import annotations
 
 import pytest
+from tiers import FAST_L_MAX
 
 from felizjueves.ir import Factor, Term, Var
 from felizjueves.kernel import pq_spec
@@ -61,13 +62,9 @@ def _witness(dag: BatchDag, node: Node) -> None:
     assert list(terms) == want, (dag.batch, node, terms)
 
 
-@pytest.mark.claim("jengine/eq17-1y-misprint")
-@pytest.mark.parametrize("levers", [(), (NO_SIEVE,)], ids=["sieved", "no-sieve"])
-def test_y_reduction_shifts_by_the_unit_vector_0_1_0(
-    levers: tuple[str, ...],
-) -> None:
+def _witness_plans(levers: tuple[str, ...], Ls: range, two_term_L: int) -> None:
     seen = 0
-    for L in range(2, 9):
+    for L in Ls:
         for n_batches in (1, 3):
             for dag in plan(pq_spec(L, levers, n_batches)).dags:
                 for node in _y_nodes_where_the_misprint_bites(dag):
@@ -77,9 +74,29 @@ def test_y_reduction_shifts_by_the_unit_vector_0_1_0(
     assert seen > 0
     two_term = [
         n
-        for L in (4, 8)
+        for L in (two_term_L,)
         for dag in plan(pq_spec(L, levers)).dags
         for n in _y_nodes_where_the_misprint_bites(dag)
         if n[0][Y] >= 2
     ]
     assert two_term, "no y-reduced node with r_y >= 2 and r_x >= 1 was reached"
+
+
+# The plans at L = 2..8 are split at test/tiers.py's cut: the fast half
+# witnesses L = 2..4 (both terms reached at L = 4), the `slow` half L = 5..8
+# (both terms reached at L = 8). The claim marks the fast half, the test
+# claims.json names; test_claims.py refuses one id on two tests.
+@pytest.mark.claim("jengine/eq17-1y-misprint")
+@pytest.mark.parametrize("levers", [(), (NO_SIEVE,)], ids=["sieved", "no-sieve"])
+def test_y_reduction_shifts_by_the_unit_vector_0_1_0(
+    levers: tuple[str, ...],
+) -> None:
+    _witness_plans(levers, range(2, FAST_L_MAX + 1), 4)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("levers", [(), (NO_SIEVE,)], ids=["sieved", "no-sieve"])
+def test_y_reduction_shifts_by_the_unit_vector_0_1_0_above_l4(
+    levers: tuple[str, ...],
+) -> None:
+    _witness_plans(levers, range(FAST_L_MAX + 1, 9), 8)

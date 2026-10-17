@@ -57,6 +57,7 @@ def _orders(L: int) -> list[tuple[str, tuple[R, ...]]]:
     return out
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize(
     ("L", "n_batches"), [(L, b) for L in GRID_L for b in GRID_B]
 )
@@ -77,6 +78,7 @@ def test_the_pre_sieve_dag_is_independent_of_target_order(
         assert cost(dags) == ref_cost, label
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_targets_must_be_a_permutation_of_the_class() -> None:
     order = hermite_targets(7)
     with pytest.raises(ValueError, match="permutation"):

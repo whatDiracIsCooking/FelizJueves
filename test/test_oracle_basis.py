@@ -7,7 +7,8 @@ fast-tier; PySCF is needed only to regenerate one):
 - fast tier, numpy only: our shells are built from each fixture's `converted`
   record and their overlap -- computed here by Obara-Saika, which shares no
   code with libcint or with `ao/hermite.py` -- is compared with the `int1e_ovlp`
-  libcint wrote into the same fixture; the recorded constants are compared
+  libcint wrote into the same fixture (both cases reach (ff), so that
+  comparison is `slow` by test/tiers.py's cut); the recorded constants are compared
   with `common_factor`; AO order is read off PySCF's own `ao_labels`.
 - `oracle`-marked: the same statements against a live PySCF, plus the two
   things only PySCF can show -- what a spherical `Mole` does, and that
@@ -31,6 +32,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import is_fast
 
 from felizjueves.ao.shell import Basis, Shell, cartesians, primitive_norm
 
@@ -90,19 +92,32 @@ def overlap(b: Basis) -> np.ndarray:
     return out
 
 
-def test_the_independent_overlap_normalises_by_primitive_norm():
-    """The reference itself, checked: N^2 <x^l|x^l> = 1, so a shell whose
-    coefficient is primitive_norm has unit axis self-overlap at every l."""
+def _unit_axis_self_overlap(fast: bool) -> None:
     for l in range(5):  # noqa: E741
+        if is_fast(2 * l) != fast:  # the pair (l, l)
+            continue
         a = 0.37 + l
         s = overlap(Basis((Shell(l, (0.1, -0.2, 0.3), (a,),
                                  (primitive_norm(l, a),)),)))
         assert s[0, 0] == pytest.approx(1.0, abs=TOL)
 
 
+def test_the_independent_overlap_normalises_by_primitive_norm():
+    """The reference itself, checked: N^2 <x^l|x^l> = 1, so a shell whose
+    coefficient is primitive_norm has unit axis self-overlap at every l
+    (through d here; (ff) and (gg) in the `slow` twin)."""
+    _unit_axis_self_overlap(fast=True)
+
+
+@pytest.mark.slow  # (ff) and (gg), L > FAST_L_MAX (tiers.py)
+def test_the_independent_overlap_normalises_by_primitive_norm_above_l4():
+    _unit_axis_self_overlap(fast=False)
+
+
 # --- fast tier: the tracked fixtures, no PySCF -----------------------------
 
 
+@pytest.mark.slow  # both cases reach (ff), L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("name", CASES)
 def test_overlap_of_our_shells_matches_libcint(name):
     """THE witness: all three conventions right, or a per-l constant appears."""
@@ -215,6 +230,7 @@ def test_libcint_normalisation_against_ours(name):
             assert d[off + m] == pytest.approx(want, rel=1e-13), (s.l, (i, j, k))
 
 
+@pytest.mark.slow  # prim_spdf's overlap reaches (ff) (tiers.py)
 def test_double_normalisation_is_caught_by_the_overlap():
     """The hazard: `_env` already carries gto_norm, so primitive_norm on top
     normalises twice -- and the overlap sees it."""

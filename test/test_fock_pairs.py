@@ -1,6 +1,9 @@
 """The fused Fock build's pair stream (#285): `launch_f` and the bound it reads.
 
 Fast tier, no device markers: pure Python, no compiler, no card, no PySCF.
+A plan of a fixture whose bound reaches L > FAST_L_MAX (tiers.py) -- the
+Schwarz bound of its highest pair `(ab|ab)`, L = 2 (la + lb), so any d shell
+-- is `slow`.
 The bases and densities come from tracked fixtures' `converted` records;
 `reference/` is imported HERE, by the test, for the evaluator the bound is
 injected with and for the ERIs the screens are checked against -- `launch_f`
@@ -53,6 +56,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, is_fast
 
 from felizjueves.ao.eri import _quartet
 from felizjueves.ao.hermite import hermite_order
@@ -99,6 +103,17 @@ def _fixture(name: str) -> tuple[Basis, np.ndarray]:
 def _plan(name: str, tau: float, n: int) -> FPlan:
     basis, D = _fixture(name)
     return f_launches(basis, D, bound=BOUND, tau=tau, n=n)
+
+
+def _schwarz_l(name: str) -> int:
+    """The L of the highest pair bound `name`'s plan computes: `(ll|ll)`."""
+    return 4 * max(s.l for s in _fixture(name)[0].shells)
+
+
+def _by_fixture(name: str, *rest):
+    """`(name, *rest)` as a parameter, `slow` above the cut."""
+    return pytest.param(name, *rest,
+                        marks=by_l(None, _schwarz_l(name)).marks)
 
 
 def _block(basis: Basis, bra: tuple[int, int], ket: tuple[int, int],
@@ -256,9 +271,9 @@ def test_an_insignificant_pair_is_deleted_whole() -> None:
 # -- degree-uniform batches --------------------------------------------------
 
 
-@pytest.mark.parametrize("name,tau", [("h2o_sto3g_j", 1e-2),
-                                      ("h2o_631g_j", 1e-10),
-                                      ("h2o_ccpvdz_j", 1e-10)])
+@pytest.mark.parametrize("name,tau", [_by_fixture("h2o_sto3g_j", 1e-2),
+                                      _by_fixture("h2o_631g_j", 1e-10),
+                                      _by_fixture("h2o_ccpvdz_j", 1e-10)])
 def test_every_batch_is_uniform_and_its_record_unpadded(name, tau) -> None:
     basis, _ = _fixture(name)
     plan = _plan(name, tau, 2)
@@ -304,6 +319,7 @@ def test_pruning_does_split_degrees_on_the_fixtures() -> None:
 # -- the sort ----------------------------------------------------------------
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py): cc-pVDZ's d pairs
 def test_pairs_sit_descending_by_g_times_their_density_block_max() -> None:
     basis, D = _fixture("h2o_ccpvdz_j")
     plan = _plan("h2o_ccpvdz_j", 1e-10, 2)
@@ -357,10 +373,10 @@ def test_the_assignment_is_the_upper_bound_one() -> None:
 
 
 @pytest.mark.claim("fock/prelaunch-screening-removes-launches")
-@pytest.mark.parametrize("name,tau", [("h2o_sto3g_j", 1e-2),
-                                      ("h2o_631g_j", 1e-3),
-                                      ("h2o_631g_j", 1e-2),
-                                      ("h2o_ccpvdz_j", 1e-3)])
+@pytest.mark.parametrize("name,tau", [_by_fixture("h2o_sto3g_j", 1e-2),
+                                      _by_fixture("h2o_631g_j", 1e-3),
+                                      _by_fixture("h2o_631g_j", 1e-2),
+                                      _by_fixture("h2o_ccpvdz_j", 1e-3)])
 def test_the_prelaunch_screen_removes_exactly_i_plus_j_at_least_n(name,
                                                                    tau) -> None:
     # fock/prelaunch-screening-removes-launches, the mechanism only: on eq.
@@ -419,8 +435,8 @@ def test_fig1_kernel_launches_at_n_2() -> None:
                for i in range(2) for j in range(2))
 
 
-@pytest.mark.parametrize("name,tau", [("h2o_ccpvdz_j", 1e-10),
-                                      ("h2o_631g_j", 1e-2)])
+@pytest.mark.parametrize("name,tau", [_by_fixture("h2o_ccpvdz_j", 1e-10),
+                                      _by_fixture("h2o_631g_j", 1e-2)])
 def test_launches_are_the_upper_triangle_and_name_the_f_class(name,
                                                               tau) -> None:
     plan = _plan(name, tau, 2)
@@ -513,13 +529,23 @@ def _pair_stream_record() -> dict:
 
 
 def test_limits_records_the_counts_that_fire_on_the_fixtures() -> None:
+    _the_counts_that_fire(lambda name: is_fast(_schwarz_l(name)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py): every fixture, cc-pVDZ's too
+def test_limits_records_the_counts_that_fire_on_every_fixture() -> None:
+    _the_counts_that_fire(lambda name: True)
+
+
+def _the_counts_that_fire(keep) -> None:
     rec = _pair_stream_record()
     value = rec["asserted_value"]
     assert value["measured"] is False and value["n"] == 2
+    fixtures = {k: v for k, v in value["fixtures"].items() if keep(k)}
     got = {name: {f"{tau:g}": _plan(name, tau, value["n"]).counts()
                   for tau in value["taus"]}
-           for name in value["fixtures"]}
-    assert got == value["fixtures"]
+           for name in fixtures}
+    assert got == fixtures
     # what the record says, recomputed: at the SCF-like tau nothing is
     # screened before launch on any fixture, though pruning already fires
     at = f"{min(value['taus']):g}"
@@ -528,5 +554,5 @@ def test_limits_records_the_counts_that_fire_on_the_fixtures() -> None:
     assert any(c[at]["primitive_pairs_pruned"] for c in got.values())
     # "the smallest contracted G_ab is above 0.02 on every fixture"
     assert all(min(p.G for p in _plan(name, 0.0, 2).pairs) > 0.02
-               for name in value["fixtures"])
+               for name in fixtures)
     assert "follow-up" in rec["mechanism"]

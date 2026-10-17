@@ -70,6 +70,7 @@ from test_ao_screening import _case as _ladder_case
 from test_ao_screening import _h2_chain, _hilbert
 from test_launch_staged import HOST_TOL, _tiny
 from test_launch_staged import _taus as _staged_taus
+from tiers import split_by_l
 
 from felizjueves import measured_store
 from felizjueves.ao.j import (
@@ -420,6 +421,15 @@ def _case_1e(name: str):
     return _fixture_case(name)
 
 
+def _pair_l(name: str) -> int:
+    """The largest pair class a case's basis reaches, `2 l_max`."""
+    return 2 * max(s.l for s in _case_1e(name)[0].shells)
+
+
+def _by_pair_l(names) -> list:
+    return split_by_l(names, _pair_l, ids=str)
+
+
 def _host_1e(op: str, basis, nuclei, pairs=None):
     if op == "S":
         return overlap_matrix(basis, pairs=pairs)
@@ -443,7 +453,7 @@ def test_every_converted_fixture_is_a_case_1e():
             assert ob.from_fixture(fx) in listed, p.name
 
 
-@pytest.mark.parametrize("name", [*BASES_1E, "h2_chain_8"])
+@pytest.mark.parametrize("name", _by_pair_l([*BASES_1E, "h2_chain_8"]))
 def test_the_walk_reproduces_the_three_host_matrices_exactly(name):
     basis, nuclei = _case_1e(name)
     # ONE plan, built with the overlap's bound at tau = 0, serves all three.
@@ -455,7 +465,7 @@ def test_the_walk_reproduces_the_three_host_matrices_exactly(name):
 
 
 @pytest.mark.parametrize("op", ["S", "T", "V"])
-@pytest.mark.parametrize("name", LADDER_1E)
+@pytest.mark.parametrize("name", _by_pair_l(LADDER_1E))
 def test_the_screened_plan_drops_only_blocks_below_tau(name, op):
     basis, nuclei = _case_1e(name)
     block, bound = _block_and_bound(op, nuclei)
@@ -491,7 +501,7 @@ PLAN_SKIPS_1E = {
 
 
 @pytest.mark.parametrize("op", ["S", "T", "V"])
-@pytest.mark.parametrize("name", LADDER_1E)
+@pytest.mark.parametrize("name", _by_pair_l(LADDER_1E))
 def test_the_plans_skip_fractions_are_as_recorded(name, op):
     basis, nuclei = _case_1e(name)
     _, bound = _block_and_bound(op, nuclei)

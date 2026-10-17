@@ -176,14 +176,24 @@ def test_hip_sx_programs_compile(case, hipcc, tmp_path):
                     tmp_path / "bin")
 
 
+@pytest.mark.slow  # plans (ff), L > FAST_L_MAX (tiers.py)
 def test_part1_reaches_every_ordered_class_through_f():
     assert [(c.la, c.lb) for c in _launch("hf_self")] == [
         (la, lb) for la in range(4) for lb in range(4)]
 
 
-def test_the_bound_is_not_vacuous():
-    for case in CASES:
+def _bound_is_not_vacuous(cases) -> None:
+    for case in cases:
         tol, _ = _bound(case)
         S = np.abs(_host(case))
         big = S > 1e-6
         assert np.max(tol[big] / S[big]) < 1e-10, case  # Schwarz's bar
+
+
+def test_the_bound_is_not_vacuous():
+    _bound_is_not_vacuous([c for c in CASES if c != "hf_self"])
+
+
+@pytest.mark.slow  # hf_self reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_the_bound_is_not_vacuous_above_l4():
+    _bound_is_not_vacuous(["hf_self"])

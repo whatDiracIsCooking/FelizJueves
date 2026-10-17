@@ -14,9 +14,10 @@ scatter is `kernel_jab`'s rule. Against it:
 - THE WHOLE MATRIX, one launch per class into one zeroed `S`, on H2O/STO-3G
   and HF/cc-pVTZ.
 
-All of it is fast tier, nothing `slow`: `S` has no Boys and no `[r]` tower,
-and the whole file, every class through (ff) and HF/cc-pVTZ's whole matrix
-included, interprets in under a second.
+`S` has no Boys and no `[r]` tower, and the whole file, every class through
+(ff) and HF/cc-pVTZ's whole matrix included, interprets in under a second;
+still, every case that builds a class above `la + lb = 4` (the d-f and f-f
+classes, and HF/cc-pVTZ's whole matrix) is `slow`, by test/tiers.py's cut.
 
 EXACT, NOT A TOLERANCE, against the block. Interpreted with the records in
 order, the kernel performs `overlap_block`'s multiplications in its
@@ -47,6 +48,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves.ao.j import epair
@@ -86,7 +88,7 @@ DIAG_BOUND = 8  # x eps |S|: see the module docstring
 
 
 def _cls_param(cls):
-    return pytest.param(cls, id=f"{cls[0]}{cls[1]}")
+    return by_l(cls, sum(cls), id=f"{cls[0]}{cls[1]}")
 
 
 @cache
@@ -205,7 +207,7 @@ def test_one_launch_over_the_class_equals_the_host_block(cls):
 # ---------------------------------------------------------------------------
 
 WHOLE = [pytest.param("h2o_sto3g_j", id="h2o_sto3g"),
-         pytest.param("hf_ccpvtz", id="hf_ccpvtz")]
+         by_l("hf_ccpvtz", 6, id="hf_ccpvtz")]  # f shells: (ff) at L = 6
 
 
 @pytest.mark.parametrize("name", WHOLE)
@@ -232,7 +234,8 @@ def test_the_whole_matrix(name):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("l", range(LMAX + 1))
+@pytest.mark.parametrize("l", split_by_l(range(LMAX + 1), lambda n: 2 * n,
+                                         ids=str))
 def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E741
     """Structurally: the diagonal branch's destinations are the block's
     `n^2` elements, each exactly once. Numerically: ONE record of a
@@ -303,7 +306,7 @@ def test_launch_shape():
             launch_shape(*bad)
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
 def test_no_prefactor_is_formed_in_the_kernel(cls):
     """`s` is the host's one scalar per record. Read off the `Decl` set
     (fragment included): no power, no square root, no Boys, no `pi` -- the
@@ -335,7 +338,7 @@ def test_no_prefactor_is_formed_in_the_kernel(cls):
                 and "pi" in p.name.lower()]
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
 def test_every_write_to_S_is_an_atomic_add_with_its_reason(cls):
     k = build_s_kernel(cls)
     stmts = list(walk(k.body))

@@ -39,6 +39,8 @@ from felizjueves.plan.sieve import plan, sieve
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
+# Every cell of Tables 1-3 is L = 7..16 > FAST_L_MAX (tiers.py): a test that
+# plans, partitions or counts one is `slow`; one that reads a record stays fast.
 DATA = Path(__file__).resolve().parents[1] / "data"
 JENGINE = DATA / "literature" / "jengine"
 TABLES = {
@@ -56,15 +58,23 @@ def candidates() -> dict[str, Candidate]:
 # -- the cut rule ---------------------------------------------------------------
 
 
+L7_X = [1, 3, 7, 11, 10, 6, 3, 1]
+
+
 def test_two_ended_cuts_by_hand() -> None:
     # L = 7, X: [1, 3, 7, 11, 10, 6, 3, 1], 42 targets, T = 14 at k = 3.
     # Bottom: 1+3+7 = 11 (|11-14| = 3) beats 22 (8) -> m 0..2.
     # Top:    1+3+6 = 10 (4) beats 20 (6)          -> m 5..7. Middle 3..4 = 21.
-    x = target_counts(7)["x"]
-    assert x == [1, 3, 7, 11, 10, 6, 3, 1]
+    # That those are L = 7's counts is the slow twin below.
+    x = L7_X
     assert two_ended_cuts(x, 3) == (3, 5)
     assert two_ended_cuts(x, 2) == (4,)  # 22 (|22-21| = 1) beats 11
     assert two_ended_cuts(x, 1) == ()
+
+
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
+def test_the_hand_counts_are_l7s() -> None:
+    assert target_counts(7)["x"] == L7_X
 
 
 def test_a_tie_takes_the_shorter_run() -> None:
@@ -77,6 +87,7 @@ def test_too_many_sub_batches_is_refused() -> None:
         two_ended_cuts([5, 0, 0], 3)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("L", "nb"), CELLS)
 def test_recovered_batches_cover_every_target_once(L: int, nb: int) -> None:
     batches = recovered_batches(L, nb)
@@ -85,12 +96,14 @@ def test_recovered_batches_cover_every_target_once(L: int, nb: int) -> None:
         assert sum(in_batch(r, *b) for b in batches) == 1
 
 
+@pytest.mark.slow
 def test_one_and_three_batches_are_the_literal_partition() -> None:
     for L in range(7, 17):
         for nb in (1, 3):
             assert recovered_batches(L, nb) == partition(L, nb)
 
 
+@pytest.mark.slow
 def test_the_cut_is_per_direction_and_y_differs_from_x_at_10_9() -> None:
     # Table 3 cannot see this (max targets is 39 either way); Tables 1-2 can.
     by_dir = {d: [(a, b) for dd, a, b in recovered_batches(10, 9) if dd == d]
@@ -102,12 +115,14 @@ def test_the_cut_is_per_direction_and_y_differs_from_x_at_10_9() -> None:
 # -- Table 3: found -------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_the_cut_reproduces_all_of_table3() -> None:
     got = {(L, nb): max(batch_size(L, b) for b in recovered_batches(L, nb))
            for L, nb in CELLS}
     assert got == dict(T3.cells)
 
 
+@pytest.mark.slow
 def test_minimax_misses_exactly_the_two_cells_the_rule_recovers() -> None:
     # The lead in #14: the paper's 9-batch cut at L = 7 and 15 is not minimax.
     def mm(L: int, nb: int) -> int:
@@ -115,6 +130,7 @@ def test_minimax_misses_exactly_the_two_cells_the_rule_recovers() -> None:
     assert {c for c in CELLS if mm(*c) != T3.cells[c]} == {(7, 9), (15, 9)}
 
 
+@pytest.mark.slow
 def test_table3_exact_given_inputs_passes_with_the_recorded_inputs(
     candidates: dict[str, Candidate],
 ) -> None:
@@ -154,6 +170,7 @@ def test_tables_1_and_2_record_no_inputs_and_a_limit_each() -> None:
 # -- Tables 1-2: what the recovered cut moves, and the limit -------------------
 
 
+@pytest.mark.slow
 def test_the_recovered_cut_reproduces_all_three_tables_at_7_9_and_10_9() -> None:
     for L, nb in ((7, 9), (10, 9)):
         c = cost(recovered_plan(L, nb))
@@ -162,6 +179,7 @@ def test_the_recovered_cut_reproduces_all_three_tables_at_7_9_and_10_9() -> None
         )
 
 
+@pytest.mark.slow
 def test_the_limits_name_exactly_the_cells_still_unreproduced(
     candidates: dict[str, Candidate],
 ) -> None:
@@ -172,6 +190,7 @@ def test_the_limits_name_exactly_the_cells_still_unreproduced(
         assert [list(c) for c in wrong] == lim.asserted_value["unreproduced_cells"]
 
 
+@pytest.mark.slow
 def test_the_bounded_seed_order_search() -> None:
     # The structured family limits.json reports: 26 orders, best 17/40 on
     # Table 1 and 29/40 on Table 2 (different orders), and Table 3 never moves.
@@ -210,6 +229,7 @@ def best_widened_costs():
     return recovered_costs(CELLS, order)
 
 
+@pytest.mark.slow
 def test_the_best_widened_rule_and_its_residual(best_widened_costs) -> None:
     # limits.json's (5): 33/40 and 38/40, Table 3 untouched, and a residual
     # with one sign per table -- every Table 1 miss over, every Table 2 miss
@@ -236,6 +256,7 @@ def test_the_best_widened_rule_and_its_residual(best_widened_costs) -> None:
         assert "58 seed-order rules" in rule.refused
 
 
+@pytest.mark.slow
 def test_the_batching_exceptions_under_the_widened_family(
     best_widened_costs,
 ) -> None:
@@ -255,8 +276,8 @@ def test_the_batching_exceptions_under_the_widened_family(
 @pytest.mark.slow
 def test_the_widened_seed_order_search() -> None:
     # Every number limits.json's (5) and claims.json quote about the 58
-    # orders, recomputed (about 30 s, hence slow; the best rule's numbers
-    # are checked in the fast tier above).
+    # orders, recomputed (about 30 s; the best rule's numbers are checked
+    # alone above).
     costs = {name: recovered_costs(CELLS, order)
              for name, order in seed_orders(widened=True)}
     results = {name: exact_counts(TABLES, c) for name, c in costs.items()}
@@ -276,6 +297,7 @@ def test_the_widened_seed_order_search() -> None:
 # -- nothing literal moves -------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("nb", [1, 3, 6, 9])
 @pytest.mark.parametrize("L", [7, 12, 16])
 def test_the_seed_order_default_is_the_literal_sieve(L: int, nb: int) -> None:
@@ -293,7 +315,8 @@ def test_the_seed_order_default_is_the_literal_sieve(L: int, nb: int) -> None:
 # recovered cut, per cell of the Tables 1-3 grid. The record is
 # data/literature/jengine/seed_order_spread.json; its `orders`, `summary` and
 # `rows` are recomputed here, never retyped (every cell in the slow test
-# above, the L = 7..9 cells and the summary in the fast tier), and rewritten
+# above, the L = 7..9 cells alone, and the summary from the record in the fast
+# tier), and rewritten
 # with `PYTHONPATH=src uv run python test/test_plan_recovery.py --write`
 # (about 30 s), which keeps every other key as written by hand.
 
@@ -353,8 +376,9 @@ def _spread_record() -> dict:
     return json.loads(SPREAD.read_text())
 
 
+@pytest.mark.slow
 def test_the_spread_on_the_cheap_cells_is_recomputed() -> None:
-    # L = 7..9, all 58 rules (a couple of seconds); every cell is the slow
+    # L = 7..9, all 58 rules (a couple of seconds); every cell is
     # test_the_widened_seed_order_search.
     rec = _spread_record()
     want = spread_rows(FAST_SPREAD_CELLS, _spread_costs(FAST_SPREAD_CELLS))
@@ -375,6 +399,7 @@ def test_the_spread_record_is_its_grid_its_family_and_its_summary() -> None:
             assert (e["distinct"] == 1) == (e["spread_percent"] == 0)
 
 
+@pytest.mark.slow
 def test_the_spreads_literal_column_is_the_literal_sieve() -> None:
     lit = recovered_costs(CELLS)
     for r in _spread_record()["rows"]:

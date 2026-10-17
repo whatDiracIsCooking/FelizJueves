@@ -223,7 +223,7 @@ on THIS host the CUDA 13.0 toolkit happens to be installed natively, so
 | Tier | Command | What a green run means |
 |---|---|---|
 | lint | `ruff check .` | `E,F,I,UP,B`, no formatter. |
-| fast | `pytest -m "not cuda and not hip and not gpu and not slow and not oracle"` (`FAST_TEST_ARGS`; a bare `pytest` applies no marker filter) | the Python side agrees with itself — and, through tracked fixtures, with libcint. Compiles nothing, launches nothing, needs no PySCF. |
+| fast | `pytest -m "not cuda and not hip and not gpu and not slow and not oracle"` (`FAST_TEST_ARGS`; a bare `pytest` applies no marker filter) | the Python side agrees with itself — and, through tracked fixtures, with libcint — **for classes with L ≤ 4** (`test/tiers.py`'s `FAST_L_MAX`, #419): anything that builds, emits, plans or integrates a class above it is `slow`, and a parametrized test is split at the cut, so the `[JEngine]` board replays and the plan search (every cell L 7–16) are slow-tier only; reads of stored rows and keys stay fast. Compiles nothing, launches nothing, needs no PySCF. |
 | kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler (a warning located in generated text fails the compile phase, exit 1 — #92) → run on the card → compare against the host reference, and against libcint for `J_µν` (`test_ao_j_ondevice.py`). |
 | oracle | `uv sync --group oracle`, then `pytest -m oracle` | the tracked fixtures in `test/oracle/fixtures/` still equal what PySCF computes today. Without the group these tests skip; a drift is news about PySCF until proven otherwise. |
 

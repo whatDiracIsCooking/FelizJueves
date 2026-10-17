@@ -12,7 +12,7 @@ WHAT IS PINNED, all interpreted, nothing compiled or launched:
    after the `Decl` of its target `[p+q]^(0)`. Nothing reads a target after
    its updates: one target live at a time, and `lower.KernelCost`'s
    `peak_live` is no larger than the literal kernel's at any L, and strictly
-   smaller from L = 2.
+   smaller from L = 2 (L = 0..4 fast, 5..8 `slow`).
 4. THE NUMBERS, one batch (L = 0..4 fast, 5..8 `slow`) and split
    (`passes.atomize`d batch kernels: every admitted (L <= 4, n_batches)
    fast, L = 7 x {3, 6} `slow`), against `reference.pq.one_centre`
@@ -38,6 +38,7 @@ from functools import cache
 
 import numpy as np
 import pytest
+from tiers import FAST_L_MAX, split_by_l
 
 from felizjueves import levers
 from felizjueves.interp import Interpreter, Launch
@@ -77,9 +78,11 @@ def _admitted(L: int, n: int) -> bool:
     return True
 
 
-ONE_BATCH = [pytest.param(L, marks=pytest.mark.slow) if L > 4 else L
-             for L in range(9)]
-SPLIT = [(L, n) for L in range(5) for n in (3, 6, 9) if _admitted(L, n)]
+# L = 0..8, `slow` above test/tiers.py's cut: the numbers (4.) and the IR
+# checks (3.) alike build the class.
+ONE_BATCH = split_by_l(range(9), lambda L: L)
+SPLIT = [(L, n) for L in range(FAST_L_MAX + 1) for n in (3, 6, 9)
+         if _admitted(L, n)]
 SPLIT_SLOW = [pytest.param(7, n, marks=pytest.mark.slow) for n in (3, 6)]
 
 
@@ -220,7 +223,7 @@ def test_no_lever_is_the_literal_kernel(L: int) -> None:
                    for s in walk(build_pq_kernel(L).body))
 
 
-@pytest.mark.parametrize("L", range(9))
+@pytest.mark.parametrize("L", ONE_BATCH)
 def test_only_the_ket_loop_tail_changes(L: int) -> None:
     lit, fus = build_pq_kernel(L), build_pq_kernel(_fused(L))
     assert lit.name == fus.name and lit.params == fus.params
@@ -249,7 +252,7 @@ def test_only_the_ket_loop_tail_changes(L: int) -> None:
     assert len(_jsh_updates(fb)) == pairs
 
 
-@pytest.mark.parametrize("L", range(9))
+@pytest.mark.parametrize("L", ONE_BATCH)
 def test_each_target_is_consumed_right_after_it_is_formed(L: int) -> None:
     body = list(_loop(build_pq_kernel(_fused(L))).body)
     targets = {node_name((r, 0)) for r in hermite_targets(L)}
@@ -268,7 +271,7 @@ def test_each_target_is_consumed_right_after_it_is_formed(L: int) -> None:
         assert not later, f"{name} is still read after its contraction"
 
 
-@pytest.mark.parametrize("L", range(9))
+@pytest.mark.parametrize("L", ONE_BATCH)
 def test_peak_live_never_grows_and_falls_from_l2(L: int) -> None:
     lit = kernel_cost(build_pq_kernel(L), registers=64).peak_live
     fus = kernel_cost(build_pq_kernel(_fused(L)), registers=64).peak_live

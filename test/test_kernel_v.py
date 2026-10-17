@@ -53,6 +53,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves.ao.hermite import hermite_order
@@ -103,8 +104,7 @@ CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]
 
 
 def _cls_param(cls):
-    marks = (pytest.mark.slow,) if sum(cls) > 4 else ()
-    return pytest.param(cls, id=f"{cls[0]}{cls[1]}", marks=marks)
+    return by_l(cls, sum(cls), id=f"{cls[0]}{cls[1]}")
 
 
 A = (0.0, 0.0, 0.0)
@@ -317,9 +317,9 @@ def test_nuclei_add_and_the_sign_is_attractive():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", [(0, 0), (1, 0), (1, 1), (2, 1), (2, 2),
-                                 (3, 1), (3, 3)],
-                         ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in
+                                 [(0, 0), (1, 0), (1, 1), (2, 1), (2, 2),
+                                  (3, 1), (3, 3)]])
 def test_the_recurrence_is_the_plan_layers_statements_unchanged(cls):
     """The nucleus loop's body contains, contiguously, exactly
     `fundamental_prelude(ms) + recurrence_body(dag, schedule(dag), f)` for
@@ -398,8 +398,8 @@ def test_the_nuclei_are_one_serial_loop_inside_the_record():
     assert not [s for s in inside if isinstance(s, (Inline, AtomicAdd))]
 
 
-@pytest.mark.parametrize("cls", [(0, 0), (1, 1), (2, 1), (2, 2), (3, 2)],
-                         ids=lambda c: f"{c[0]}{c[1]}")
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in
+                                 [(0, 0), (1, 1), (2, 1), (2, 2), (3, 2)]])
 def test_no_prefactor_is_formed_in_the_kernel(cls):
     """`s_ab` is the host's one scalar per record. Read off every `Decl`,
     `Assign` and bind: one `sqrt` (theta), the three `E` seeds' `exp`, no

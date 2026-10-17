@@ -26,6 +26,8 @@ from felizjueves.plan.sieve import NO_SIEVE, plan
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
+# Every grid cell is L > FAST_L_MAX (tiers.py), so a test that plans one is
+# `slow`.
 GRID_L = range(7, 17)
 GRID_B = (1, 3, 6, 9)
 SIEVES = ("mild", "sieved")
@@ -48,6 +50,7 @@ grid = pytest.mark.parametrize(
 )
 
 
+@pytest.mark.slow
 @grid
 def test_every_node_follows_its_parents(L: int, n_batches: int, which: str) -> None:
     for dag in _dags(L, n_batches, which):
@@ -57,6 +60,7 @@ def test_every_node_follows_its_parents(L: int, n_batches: int, which: str) -> N
                 assert pos[parent] < pos[node], (node, parent)
 
 
+@pytest.mark.slow
 @grid
 def test_the_schedule_is_a_permutation_of_the_dag(
     L: int, n_batches: int, which: str
@@ -67,6 +71,7 @@ def test_the_schedule_is_a_permutation_of_the_dag(
         assert sorted(order) == sorted(dag.nodes())
 
 
+@pytest.mark.slow
 @grid
 def test_every_edge_raises_m_by_exactly_one(
     L: int, n_batches: int, which: str
@@ -88,6 +93,7 @@ def _shuffled(dag: BatchDag, rng: random.Random) -> BatchDag:
     return BatchDag(dag.batch, frozenset(targets), MappingProxyType(dict(items)))
 
 
+@pytest.mark.slow
 @grid
 def test_the_order_is_deterministic(L: int, n_batches: int, which: str) -> None:
     rng = random.Random(f"{L}-{n_batches}-{which}")
@@ -97,6 +103,7 @@ def test_the_order_is_deterministic(L: int, n_batches: int, which: str) -> None:
             assert schedule(_shuffled(dag, rng)) == want
 
 
+@pytest.mark.slow  # L = 9 > FAST_L_MAX (tiers.py)
 def test_the_order_does_not_depend_on_the_target_visiting_order() -> None:
     # The pre-sieve DAG is independent of the visiting order (test_plan_order),
     # so its schedule is too. Not to be confused with the property above.
@@ -110,8 +117,12 @@ def test_the_order_does_not_depend_on_the_target_visiting_order() -> None:
 
 def test_the_stated_tie_break_key() -> None:
     # The docstring's key, spelled out: descending m, ascending |r|, then
-    # lexicographic r.
+    # lexicographic r. The schedule it sorts is the slow twin below.
     assert tie_break_key(((1, 2, 3), 4)) == (-4, 6, 1, 2, 3)
+
+
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
+def test_the_schedule_sorts_by_the_stated_tie_break_key() -> None:
     (dag,) = build(_spec(7, 1))
     order = schedule(dag)
     assert order[0] == ((0, 0, 0), 7)
@@ -121,6 +132,7 @@ def test_the_stated_tie_break_key() -> None:
     assert schedule(dag, strategy=DESCENDING_M) == order
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_a_strategy_is_a_seam_and_is_checked() -> None:
     (dag,) = build(_spec(7, 1))
 
@@ -135,6 +147,7 @@ def test_a_strategy_is_a_seam_and_is_checked() -> None:
         check(dag, DESCENDING_M(dag) + DESCENDING_M(dag)[:1])
 
 
+@pytest.mark.slow  # L = 8 > FAST_L_MAX (tiers.py)
 def test_no_sieve_is_the_mild_dag() -> None:
     # The "mild" leg of the grid is what a Spec naming no-sieve schedules.
     a = plan(_spec(8, 3, (NO_SIEVE,)))

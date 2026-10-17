@@ -1,9 +1,10 @@
 """`KernelCost` against `Measured` (kernelrank.py), and data/measured/limits.json;
 and the cross-read of the model, the clock and the counters (crossread.py, #115).
 
-FAST TIER: reads recorded rows and builds kernels as IR; compiles nothing,
-launches nothing. The whole module costs a few seconds (L = 16, b = 9 is the
-largest IR the liveness sweep walks).
+FAST TIER: reads recorded rows; compiles nothing, launches nothing. Every
+check that builds the subgrid's kernels as IR (`rank_claim`, and the
+cross-read's model) is `slow`: the subgrid is L = 7..16, above
+`tiers.FAST_L_MAX`. The wall-clock claim reads rows alone and stays fast.
 
 WHAT IS ASSERTED, AND WHAT IS NOT. The rank claim is a RESULT, not a target:
 no test here asserts that the model ranks correctly. Instead
@@ -144,6 +145,7 @@ def test_the_rank_claim_states_its_budget_and_n(doc) -> None:
         kernelrank.BUDGET.values())
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_recorded_rank_claim_is_what_the_code_computes(doc, store) -> None:
     claim = doc["rank_claim"]
     fresh = kernelrank.rank_claim(store, claim["n_batches"])
@@ -163,21 +165,32 @@ def _is_cross_read(limit: dict) -> bool:
     return bool(limit["asserted_value"].get("cross_read"))
 
 
-def test_every_limit_cell_is_recomputed_and_is_still_a_miss(doc, store) -> None:
+def _limits(doc: dict, *, ranked: bool) -> list[dict]:
     # the cross-read's records (#115) are checked in their own section below
-    for limit in (x for x in doc["limits"] if not _is_cross_read(x)):
+    return [x for x in doc["limits"] if not _is_cross_read(x)
+            and ("registers" in x["asserted_value"]) == ranked]
+
+
+def test_every_limit_cell_is_recomputed_and_is_still_a_miss(doc, store) -> None:
+    for limit in _limits(doc, ranked=False):  # the rows alone
         value = limit["asserted_value"]
-        bs = value["n_batches"]
         cells = value["cells"]
         assert cells, limit["claim"]
-        if "registers" in value:
-            fresh = kernelrank.rank_claim(store, bs)
-            _check(cells, fresh)
-            assert all(e["discordant"] > 0 for e in cells), limit["claim"]
-        else:
-            fresh = kernelrank.wallclock_claim(store, bs)
-            _check(cells, fresh)
-            assert not any(e["spill_win_is_fastest"] for e in cells)
+        fresh = kernelrank.wallclock_claim(store, value["n_batches"])
+        _check(cells, fresh)
+        assert not any(e["spill_win_is_fastest"] for e in cells)
+
+
+@pytest.mark.slow  # rank_claim builds the subgrid, L > FAST_L_MAX (tiers.py)
+def test_every_rank_limit_cell_is_recomputed_and_is_still_a_miss(
+        doc, store) -> None:
+    for limit in _limits(doc, ranked=True):
+        value = limit["asserted_value"]
+        cells = value["cells"]
+        assert cells, limit["claim"]
+        fresh = kernelrank.rank_claim(store, value["n_batches"])
+        _check(cells, fresh)
+        assert all(e["discordant"] > 0 for e in cells), limit["claim"]
 
 
 # --- coverage over the CURRENT subgrid ---------------------------------------
@@ -188,6 +201,7 @@ def _covered(doc: dict) -> set[tuple]:
             for e in lim["asserted_value"]["cells"]}
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_every_mis_ranking_over_subgrid_has_a_record(doc, store) -> None:
     covered = _covered(doc)
     missing = [_key(e) for e in kernelrank.rank_claim(store)
@@ -220,6 +234,7 @@ def counters() -> dict:
 
 @pytest.fixture(scope="module")
 def cross(store, counters) -> dict:
+    # the model's column builds the subgrid: every user is `slow`
     return crossread.report(store, counters)
 
 
@@ -228,6 +243,7 @@ def _row(rows: list[dict], arch: str, L: int) -> dict:
     return r
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_crossread_file_is_the_table_recomputed(cross) -> None:
     assert cross == CROSSREAD_DOC, (
         "rerun `python -m felizjueves.crossread --write`")
@@ -250,6 +266,7 @@ def test_first_compute_bound_reads_the_declared_answers() -> None:
         c(ridge.COULD_NOT_MEASURE, None)) is None
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_measured_outranks_cost_the_choice_is_the_clocks_alone(
         store, counters, cross) -> None:
     # The choice is the clock's best on each input, everywhere ...
@@ -272,6 +289,7 @@ def test_measured_outranks_cost_the_choice_is_the_clocks_alone(
                 assert r["choice"][w] not in r["model"]["pick"]
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_an_unmeasured_card_has_null_crossing_flags_never_false(cross) -> None:
     for L in measured.SUBGRID_LS:
         r = _row(cross["rows"], "gfx1200", L)
@@ -293,6 +311,7 @@ def _canon(d: dict) -> str:
     return json.dumps(d, sort_keys=True)
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_every_cross_read_disagreement_has_a_record_and_is_still_one(
         doc, cross) -> None:
     fresh = {_canon(d) for d in crossread.disagreements(cross["rows"])}
@@ -315,6 +334,7 @@ def test_every_cross_read_disagreement_has_a_record_and_is_still_one(
     assert not missing, f"cross-read disagreements with no record: {missing}"
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_cross_read_on_the_tracked_rows(cross, store, counters) -> None:
     """The outcome the records and j_engine.md quote, recomputed. A
     re-measurement that moves one is news, not a test to edit."""

@@ -20,6 +20,8 @@ from felizjueves.plan.mild import mild_direction
 from felizjueves.plan.sieve import NO_SIEVE, parents_along, plan, sieve
 from felizjueves.spec import Operator, Spec, Target
 
+# Every grid cell is L > FAST_L_MAX (tiers.py), so a test that plans one is
+# `slow`.
 GRID_L = range(7, 17)
 GRID_B = (1, 3, 6, 9)
 
@@ -51,6 +53,7 @@ grid = pytest.mark.parametrize(
 # -- structure -----------------------------------------------------------------
 
 
+@pytest.mark.slow
 @grid
 def test_the_sieved_dag_is_closed(L: int, n_batches: int) -> None:
     # Every non-fundamental node has its parents recorded, and every recorded
@@ -61,6 +64,7 @@ def test_the_sieved_dag_is_closed(L: int, n_batches: int) -> None:
         assert all(p in nodes for ps in d.parents.values() for p in ps)
 
 
+@pytest.mark.slow
 @grid
 def test_every_target_is_still_produced(L: int, n_batches: int) -> None:
     for before, after in zip(_mild(L, n_batches), _sieved(L, n_batches), strict=True):
@@ -69,6 +73,7 @@ def test_every_target_is_still_produced(L: int, n_batches: int) -> None:
         assert all(t in after.parents for t in after.targets if not is_fundamental(t))
 
 
+@pytest.mark.slow
 @grid
 def test_every_edge_is_a_recurrence_and_m_rises(L: int, n_batches: int) -> None:
     # A node may now deviate from MILD, but only to another legal reduction:
@@ -79,6 +84,7 @@ def test_every_edge_is_a_recurrence_and_m_rises(L: int, n_batches: int) -> None:
             assert all(p[1] == n[1] + 1 for p in ps)
 
 
+@pytest.mark.slow
 @grid
 def test_every_node_is_still_needed(L: int, n_batches: int) -> None:
     # The upward sweep leaves nothing that no target reaches.
@@ -92,6 +98,7 @@ def test_every_node_is_still_needed(L: int, n_batches: int) -> None:
         assert reached == d.nodes()
 
 
+@pytest.mark.slow
 @grid
 def test_the_sieve_never_grows_a_dag(L: int, n_batches: int) -> None:
     for before, after in zip(_mild(L, n_batches), _sieved(L, n_batches), strict=True):
@@ -99,6 +106,7 @@ def test_the_sieve_never_grows_a_dag(L: int, n_batches: int) -> None:
         assert len(after.intermediates()) <= len(before.intermediates())
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("L", GRID_L)
 def test_the_sieve_prunes_something_at_one_batch(L: int) -> None:
     # Not a vacuous pass: at one batch, every L of the grid loses nodes.
@@ -106,6 +114,7 @@ def test_the_sieve_prunes_something_at_one_batch(L: int) -> None:
     assert len(after.nodes()) < len(before.nodes())
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize(("L", "n_batches"), [(7, 1), (12, 3), (16, 9)])
 def test_the_sieve_is_deterministic_and_pure(L: int, n_batches: int) -> None:
     fresh = build(_spec(L, n_batches))
@@ -121,6 +130,7 @@ def test_the_sieve_is_deterministic_and_pure(L: int, n_batches: int) -> None:
 # -- the lever -----------------------------------------------------------------
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize(("L", "n_batches"), [(7, 1), (10, 3), (16, 9)])
 def test_no_sieve_is_milds_dag(L: int, n_batches: int) -> None:
     off = plan(_spec(L, n_batches, (NO_SIEVE,)))
@@ -131,6 +141,7 @@ def test_no_sieve_is_milds_dag(L: int, n_batches: int) -> None:
         assert all(ps == mild_parents(n) for n, ps in d.parents.items())
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_literal_is_sieve_on_and_the_lever_changes_the_key() -> None:
     on, off = _spec(7, 1), _spec(7, 1, (NO_SIEVE,))
     assert on.levers == ()
@@ -237,6 +248,7 @@ def _contested(L: int, n_batches: int) -> list[tuple[Node, bool]]:
     return contested
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize(("L", "n_batches"), [(10, 1), (12, 3), (16, 9)])
 def test_reexpansion_end_to_end_takes_the_cheaper_direction(
     L: int, n_batches: int
@@ -249,6 +261,7 @@ def test_reexpansion_end_to_end_takes_the_cheaper_direction(
     assert all(ok for _, ok in contested), [n for n, ok in contested if not ok]
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_reexpansion_is_first_contested_at_l10() -> None:
     # In the literal one-batch plans, line 12's choice never arises below
     # L = 10 (one qualifying direction at most); at L = 10 it first does.
@@ -281,6 +294,7 @@ def test_deletion_sweeps_the_childs_other_old_parent() -> None:
 
 
 @pytest.mark.claim("jengine/rule-4-needs-the-sieve")
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
 def test_the_sieve_recovers_common_parents_where_mild_cannot() -> None:
     """Johnson's rule 4: reduce to a parent and grandparent already in the tree.
 
@@ -309,6 +323,7 @@ def test_the_sieve_recovers_common_parents_where_mild_cannot() -> None:
 # -- batching, post-sieve -------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("L", GRID_L)
 def test_batching_post_sieve(L: int) -> None:
     """Across 1 -> 3 -> 6 -> 9 batches, post-sieve: targets and intermediates
@@ -338,6 +353,7 @@ ANCHORS = {
 }
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("cell", sorted(ANCHORS))
 def test_the_anchors_post_sieve(cell: tuple[int, int]) -> None:
     """(7, 3) now reproduces in all three columns. (7, 1) is one intermediate

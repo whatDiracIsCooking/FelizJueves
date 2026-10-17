@@ -42,6 +42,7 @@ import numpy as np
 import pytest
 import test_f_lever_slim_fock as tsf
 import test_kernel_f as tk
+from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves import kernel_f as KF
@@ -203,7 +204,19 @@ def test_the_sub_slice_table_covers_the_ladder_and_is_the_definition(
         ) -> None:
     assert tuple(SUB_TABLE) == vrr.CLASSES
     assert not ss.OVERRIDES
-    for cls, (n, slice_pk, sub_pk, st0, st1) in SUB_TABLE.items():
+    _sub_slice_table_is_the_definition(c for c in vrr.CLASSES if is_fast(sum(c)))
+    # (dd|dd): the slice peak 125 -> 41, 3.05x; HRR recompute 1.71x
+    assert round(125 / 41, 2) == 3.05
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_sub_slice_table_is_the_definition_above_l4() -> None:
+    _sub_slice_table_is_the_definition(c for c in vrr.CLASSES if not is_fast(sum(c)))
+
+
+def _sub_slice_table_is_the_definition(classes) -> None:
+    for cls in classes:
+        n, slice_pk, sub_pk, st0, st1 = SUB_TABLE[cls]
         nc, nd = (len(vrr.cartesians(x)) for x in cls[2:])
         assert ss.n_sub(cls) == ss.rule(cls) == n == (nc if nc > 1 else nd)
         assert sh.hrr_phase(cls) == slice_pk, cls
@@ -212,11 +225,9 @@ def test_the_sub_slice_table_covers_the_ladder_and_is_the_definition(
         assert len(ss.sub_peaks(cls)) == sh.n_slices(cls) * n, cls
         assert ss.statements(cls, lever=False) == st0, cls
         assert ss.statements(cls, lever=True) == st1 >= st0, cls
-    # (dd|dd): the slice peak 125 -> 41, 3.05x; HRR recompute 1.71x
-    assert round(125 / 41, 2) == 3.05
 
 
-@pytest.mark.parametrize("cls", vrr.CLASSES, ids=str)
+@pytest.mark.parametrize("cls", split_by_l(vrr.CLASSES, sum, ids=str))
 def test_the_sub_slices_partition_each_slice_in_order(cls) -> None:
     n = ss.n_sub(cls)
     whole = hrr.build(cls)

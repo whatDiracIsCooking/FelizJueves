@@ -31,6 +31,7 @@ import numpy as np
 import pytest
 from oracle import basis as _ob
 from oracle import manifest as _manifest
+from tiers import FAST_L_MAX, by_l, is_fast, split_by_l
 
 from felizjueves.ao import hermite, pairs
 from felizjueves.ao.hermite import e_block, hermite_order
@@ -60,6 +61,11 @@ from felizjueves.reference.pq import fundamental, one_centre, pq, theta_of
 REL = 1e-14
 LMAX = 3
 N_CASES = 60
+# THE TIERS. A Hermite bound `I_p` is the root of the self-integral `[p|p]`,
+# so it costs a class at `2 |p|` (Target.SCHWARZ's rule in test/tiers.py);
+# a `[p|q]` table costs `lp + lq`. A test over Hermite orders through `lmax`
+# runs at `2 lmax`: through (dd) fast, through LMAX's (ff) `slow`.
+LMAX_PARAMS = [by_l(lm, 2 * lm, id=f"l{lm}") for lm in (FAST_L_MAX // 2, LMAX)]
 
 
 def _exp(rng: random.Random) -> float:
@@ -107,29 +113,34 @@ def test_the_sweep_spans_four_orders_of_magnitude() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_bounds_are_non_negative() -> None:
+@pytest.mark.parametrize("pmax", [by_l(pm, 2 * pm, id=f"p{pm}")
+                                  for pm in (FAST_L_MAX // 2, 2 * LMAX)])
+def test_bounds_are_non_negative(pmax: int) -> None:
     # Over every zeta in the sweep; hermite_bound raises (never abs-es) on a
     # negative radicand, so reaching the assert means the sign came out right.
     for zeta, _, eta, _, _ in SWEEP:
         for z in (zeta, eta):
-            for p in hermite_order(2 * LMAX):
+            for p in hermite_order(pmax):
                 assert hermite_bound(z, p, one_centre=one_centre) >= 0.0
 
 
-def test_the_bound_bounds_elementwise() -> None:
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
+def test_the_bound_bounds_elementwise(lmax: int) -> None:
     for zeta, _, eta, _, PQ in SWEEP:
         theta = theta_of(zeta, eta)
-        Ip = np.array(hermite_bounds(zeta, LMAX, one_centre=one_centre))
-        Iq = np.array(hermite_bounds(eta, LMAX, one_centre=one_centre))
-        G = _pq_table(LMAX, LMAX, PQ, theta)
+        Ip = np.array(hermite_bounds(zeta, lmax, one_centre=one_centre))
+        Iq = np.array(hermite_bounds(eta, lmax, one_centre=one_centre))
+        G = _pq_table(lmax, lmax, PQ, theta)
         bound = np.outer(Ip, Iq)
         worst = np.max(np.abs(G) / bound)
         assert worst <= 1.0 + REL, (zeta, eta, PQ, worst)
 
 
-@pytest.mark.parametrize("lp,lq", [(lp, lq) for lp in range(LMAX + 1)
-                                   for lq in range(LMAX + 1)])
-def test_the_bound_bounds_a_contraction(lp: int, lq: int) -> None:
+@pytest.mark.parametrize("cls", split_by_l(
+    [(lp, lq) for lp in range(LMAX + 1) for lq in range(LMAX + 1)],
+    lambda c: 2 * max(c), ids=lambda c: f"{c[0]}-{c[1]}"))  # I_p at 2 lp
+def test_the_bound_bounds_a_contraction(cls) -> None:
+    lp, lq = cls
     rng = np.random.default_rng(1000 + 10 * lp + lq)
     nq = len(hermite_order(lq))
     for zeta, _, eta, _, PQ in SWEEP:
@@ -143,19 +154,21 @@ def test_the_bound_bounds_a_contraction(lp: int, lq: int) -> None:
         assert np.all(np.abs(J) <= rhs * (1.0 + REL)), (zeta, eta, PQ)
 
 
-def test_the_bound_is_attained_at_the_self_integral() -> None:
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
+def test_the_bound_is_attained_at_the_self_integral(lmax: int) -> None:
     # PQ = 0, zeta = eta, p = q: Cauchy-Schwarz with equality. If the bound
     # had slack built in, this would show it; it must be tight to rounding.
     for zeta, *_ in SWEEP:
         theta = theta_of(zeta, zeta)
-        for p in hermite_order(LMAX):
+        for p in hermite_order(lmax):
             Ip = hermite_bound(zeta, p, one_centre=one_centre)
             v = pq(p, p, (0.0, 0.0, 0.0), theta)
             assert v > 0.0
             assert abs(v / (Ip * Ip) - 1.0) <= REL, (zeta, p)
 
 
-def test_the_sweep_catches_theta_equal_zeta() -> None:
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
+def test_the_sweep_catches_theta_equal_zeta(lmax: int) -> None:
     # The hazard: theta = zeta instead of sqrt(zeta/2). It is a valid bound
     # for compact pairs (zeta > 1/2) and a wrong one for diffuse pairs, so a
     # sweep that did not span the exponents would pass it. This one must not.
@@ -166,9 +179,9 @@ def test_the_sweep_catches_theta_equal_zeta() -> None:
 
     violated = 0
     for zeta, _, eta, _, PQ in SWEEP:
-        G = _pq_table(LMAX, LMAX, PQ, theta_of(zeta, eta))
-        Ip = np.array([wrong(zeta, p) for p in hermite_order(LMAX)])
-        Iq = np.array([wrong(eta, q) for q in hermite_order(LMAX)])
+        G = _pq_table(lmax, lmax, PQ, theta_of(zeta, eta))
+        Ip = np.array([wrong(zeta, p) for p in hermite_order(lmax)])
+        Iq = np.array([wrong(eta, q) for q in hermite_order(lmax)])
         violated += int(np.any(np.abs(G) > np.outer(Ip, Iq) * (1.0 + REL)))
     assert violated > 0
 
@@ -213,10 +226,12 @@ def _shell(rng: random.Random, l: int, n: int) -> Shell:  # noqa: E741
                  tuple(rng.uniform(-1.0, 1.0) for _ in range(n)))
 
 
-@pytest.mark.parametrize("la,lb,lc,ld", [(0, 0, 0, 0), (1, 0, 1, 1),
-                                         (1, 1, 2, 0), (2, 1, 1, 2),
-                                         (1, 2, 3, 0)])
-def test_the_bound_bounds_with_dressed_kets(la, lb, lc, ld) -> None:
+@pytest.mark.parametrize("am", split_by_l(
+    [(0, 0, 0, 0), (1, 0, 1, 1), (1, 1, 2, 0), (2, 1, 1, 2), (1, 2, 3, 0)],
+    lambda a: 2 * max(a[0] + a[1], a[2] + a[3]),  # I_p and I_q
+    ids=lambda a: "-".join(map(str, a))))
+def test_the_bound_bounds_with_dressed_kets(am) -> None:
+    la, lb, lc, ld = am
     rng = random.Random(8300 + la * 1000 + lb * 100 + lc * 10 + ld)
     nrng = np.random.default_rng(8300 + la * 1000 + lb * 100 + lc * 10 + ld)
     for _ in range(4):
@@ -334,14 +349,25 @@ def test_the_dressed_t0_column_is_the_dressed_overlap() -> None:
                                                    abs=1e-14 * abs(coef))
 
 
-def test_an_axis_primitive_has_unit_self_overlap() -> None:
+def _unit_self_overlap(fast: bool) -> None:
     for l in range(5):  # noqa: E741
+        if is_fast(2 * l) != fast:  # the pair (l, l)
+            continue
         for alpha in (0.01, 1.0, 100.0):
             # The normalisation is the coefficient's to carry (#85).
             s = Shell(l, (0.3, -0.2, 1.1), (alpha,),
                       (primitive_norm(l, alpha),))
             (rec,) = primitive_pairs(s, s)
             assert rec.block[0][0] == pytest.approx(1.0, rel=1e-14)
+
+
+def test_an_axis_primitive_has_unit_self_overlap() -> None:
+    _unit_self_overlap(fast=True)
+
+
+@pytest.mark.slow  # (ff) and (gg), L > FAST_L_MAX (tiers.py)
+def test_an_axis_primitive_has_unit_self_overlap_above_l4() -> None:
+    _unit_self_overlap(fast=False)
 
 
 def test_the_block_is_the_dressed_pure_block() -> None:
@@ -401,17 +427,22 @@ def _h2_chain_1e(n: int):
     return basis, tuple((1.0, c) for c in centres)
 
 
-def _cases_1e(op: str):
+def _cases_1e(op: str, fast: bool | None = None):
     """The tracked cases per operator. `V` stops at H2O/STO-3G and three H2:
     from 6-31G up the O core's `zeta |P - C|^2` passes `reference.boys`'
     T_MAX = 2000, and so does a fourth H2 -- the evaluator refuses, so the
-    computed block the claim needs does not exist there."""
+    computed block the claim needs does not exist there. With `fast`, only
+    the cases on that side of test/tiers.py's cut: a basis reaches the pair
+    class `2 l_max`."""
     if op == "V":
         return {"h2o_sto3g_j": _fixture_case("h2o_sto3g_j"),
                 "h2_chain_3": _h2_chain_1e(3)}
     out = {n: _fixture_case(n) for n in COMPACT_1E}
     out["h2_chain_8"] = _h2_chain_1e(8)
-    return out
+    if fast is None:
+        return out
+    return {n: c for n, c in out.items()
+            if is_fast(2 * max(s.l for s in c[0].shells)) == fast}
 
 
 def _block_and_bound(op: str, nuclei):
@@ -441,7 +472,7 @@ def test_abs_normal_moments_are_bounded_and_exact_when_even() -> None:
         abs_normal_moment_bound(-1)
 
 
-@pytest.mark.parametrize("L", range(7))
+@pytest.mark.parametrize("L", split_by_l(range(7), int, ids=str))
 def test_point_charge_bounds_bound_the_evaluator_everywhere(L: int) -> None:
     rng = random.Random(236 + L)
     ts = hermite_order(L)
@@ -461,13 +492,14 @@ def test_point_charge_bounds_bound_the_evaluator_everywhere(L: int) -> None:
                 assert abs(one_centre(t, 0, x, theta)) <= b * (1 + 1e-13)
 
 
-def test_point_charge_bounds_are_attained_at_the_centre() -> None:
+@pytest.mark.parametrize("L", [by_l(L, L, id=str(L)) for L in (FAST_L_MAX, 6)])
+def test_point_charge_bounds_are_attained_at_the_centre(L: int) -> None:
     # t = 0 is the evaluator's own value; t = (2k, 0, 0) at x = 0 is
     # |d^2k exp(-a x^2)| = (2a)^k (2k-1)!! exactly, so equality too.
     for zeta in (0.05, 1.0, 30.0):
         theta = math.sqrt(zeta)
-        B = point_charge_bounds(zeta, 6, one_centre=one_centre)
-        for t, b in zip(hermite_order(6), B, strict=True):
+        B = point_charge_bounds(zeta, L, one_centre=one_centre)
+        for t, b in zip(hermite_order(L), B, strict=True):
             r = abs(one_centre(t, 0, (0.0, 0.0, 0.0), theta))
             if t == (0, 0, 0):
                 assert r == b
@@ -482,9 +514,11 @@ def test_point_charge_bounds_refuse() -> None:
         point_charge_bounds(1.0, 1, one_centre=lambda r, m, pq, th: -1.0)
 
 
-@pytest.mark.parametrize("la,lb", [(la, lb) for la in range(4)
-                                   for lb in range(4)])
-def test_the_one_electron_bounds_bound_random_pairs(la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", split_by_l(
+    [(la, lb) for la in range(4) for lb in range(4)], sum,
+    ids=lambda c: f"{c[0]}-{c[1]}"))
+def test_the_one_electron_bounds_bound_random_pairs(cls) -> None:
+    la, lb = cls
     # No margin: S and T by the floating-point argument, V because its slack
     # (B_t, and F_0(T) < 1 off the centre) dwarfs rounding.
     rng = random.Random(2360 + 10 * la + lb)
@@ -526,10 +560,8 @@ def test_the_bound_carries_the_pair_decay() -> None:
     assert vals[3] / vals[0] == pytest.approx(math.exp(-mu * 64.0), rel=1e-12)
 
 
-@pytest.mark.parametrize("op", ["S", "T", "V"])
-def test_the_bound_bounds_every_tracked_pair(op: str) -> None:
-    # Claim (4): the dropped blocks are COMPUTED, at every tau of the ladder.
-    for name, (basis, nuclei) in _cases_1e(op).items():
+def _bound_bounds_every_tracked_pair(op: str, fast: bool) -> None:
+    for name, (basis, nuclei) in _cases_1e(op, fast).items():
         block, bound = _block_and_bound(op, nuclei)
         sh = basis.shells
         for tau in TAUS_1E:
@@ -539,6 +571,18 @@ def test_the_bound_bounds_every_tracked_pair(op: str) -> None:
         for i in range(len(sh)):
             for j in range(i, len(sh)):
                 assert _max_abs(block(sh[i], sh[j])) <= bound(sh[i], sh[j])
+
+
+@pytest.mark.parametrize("op", ["S", "T", "V"])
+def test_the_bound_bounds_every_tracked_pair(op: str) -> None:
+    # Claim (4): the dropped blocks are COMPUTED, at every tau of the ladder.
+    _bound_bounds_every_tracked_pair(op, fast=True)
+
+
+@pytest.mark.slow  # HF/cc-pVTZ's (ff), L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("op", ["S", "T"])  # V has no case above the cut
+def test_the_bound_bounds_every_tracked_pair_above_l4(op: str) -> None:
+    _bound_bounds_every_tracked_pair(op, fast=False)
 
 
 # Claim (5), RECORDED: dropped pairs out of all `i <= j`, per tau of TAUS_1E,
@@ -584,7 +628,14 @@ def _skips(op: str, name: str, basis, nuclei):
 
 @pytest.mark.parametrize("op", ["S", "T", "V"])
 def test_the_skip_fractions_are_as_recorded(op: str) -> None:
-    for name, (basis, nuclei) in _cases_1e(op).items():
+    for name, (basis, nuclei) in _cases_1e(op, fast=True).items():
+        assert _skips(op, name, basis, nuclei) == SKIPS_1E[op][name], name
+
+
+@pytest.mark.slow  # HF/cc-pVTZ's (ff), L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("op", ["S", "T"])  # V has no case above the cut
+def test_the_skip_fractions_are_as_recorded_above_l4(op: str) -> None:
+    for name, (basis, nuclei) in _cases_1e(op, fast=False).items():
         assert _skips(op, name, basis, nuclei) == SKIPS_1E[op][name], name
 
 

@@ -13,6 +13,7 @@ from functools import cache
 
 import numpy as np
 import pytest
+from tiers import by_l, split_by_l
 
 from felizjueves.interp import Launch, interpret
 from felizjueves.ir import (
@@ -87,8 +88,10 @@ def _j_writes(k: Kernel) -> tuple[list[Assign], list[AtomicAdd]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("L", "lanes"), [(0, 1), (3, 2), (4, 4), (7, 2)])
-def test_atomize_onto_zeros_is_bit_exact(L: int, lanes: int) -> None:
+@pytest.mark.parametrize("case", [
+    by_l(c, c[0], id=f"{c[0]}-{c[1]}") for c in ((0, 1), (3, 2), (4, 4), (7, 2))])
+def test_atomize_onto_zeros_is_bit_exact(case: tuple[int, int]) -> None:
+    L, lanes = case
     k, ak = _pair(L)
     args = _inputs(L, n_bra=3, n_ket=5, seed=48 + L)
     plain, atomic = _J(k, args, lanes), _J(ak, args, lanes)
@@ -112,6 +115,7 @@ def test_atomize_accumulates_where_the_plain_write_overwrites() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow  # L = 6 > FAST_L_MAX (tiers.py)
 @pytest.mark.claim("jengine/alg1-line10-atomic-free")
 def test_atomize_writes_j_only_by_atomic_add() -> None:
     """Alg. 1 line 10 is a plain write; §5 corrects it, and so does atomize:
@@ -136,6 +140,7 @@ def test_atomize_writes_j_only_by_atomic_add() -> None:
     assert not any("NOT atomic" in n or "no atomics" in n for n in notes)
 
 
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
 def test_only_the_write_and_its_notes_change() -> None:
     k, ak = _pair(5)
     assert (ak.name, ak.params) == (k.name, k.params)
@@ -147,7 +152,7 @@ def test_only_the_write_and_its_notes_change() -> None:
         assert isinstance(b, (AtomicAdd, Note, If)), b
 
 
-@pytest.mark.parametrize("L", [0, 6, 16])
+@pytest.mark.parametrize("L", split_by_l([0, 6, 16], lambda L: L))
 def test_the_census_does_not_move(L: int) -> None:
     """build_pq_kernel stays atomic-free (test_kernel.py's census, mirrored);
     atomize adds only AtomicAdds into J, and no Raw anywhere."""

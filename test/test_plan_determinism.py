@@ -48,6 +48,9 @@ finding nothing is not obvious; the plan layer applies it once and relies on
 the result being a fixed point. Checked for every rule of
 `seed_orders(widened=True)` at small L, in node set and in each node's
 parents (its reduction direction).
+
+TIERS. Every probe plans a class above FAST_L_MAX (test/tiers.py), so the
+probe test is `slow`; the sieve's fixed point is split at the cut.
 """
 
 from __future__ import annotations
@@ -61,6 +64,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tiers import is_fast
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -191,6 +195,7 @@ def run_probe(name: str, hash_seed: str) -> str:
     return done.stdout
 
 
+@pytest.mark.slow  # every probe plans L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("name", list(PROBES))
 def test_a_probe_is_the_same_under_every_hash_seed(name: str) -> None:
     outputs = {s: run_probe(name, s) for s in SEEDS}
@@ -222,6 +227,15 @@ def test_the_child_really_runs_under_the_seed_it_is_given() -> None:
 
 
 def test_the_cells_are_in_the_record() -> None:
+    # From the JSON; that the record loads (load_cuts builds every cell's
+    # batches) is the slow twin.
+    cells = {tuple(int(x) for x in k.split("/"))
+             for k in json.loads(CUTS.read_text())["cuts"]}
+    assert set(CELLS) <= cells
+
+
+@pytest.mark.slow  # load_cuts builds every cell's batches: L > FAST_L_MAX
+def test_the_cells_are_in_the_loaded_record() -> None:
     from felizjueves.plan.search import load_cuts
 
     assert set(CELLS) <= set(load_cuts(CUTS))
@@ -233,7 +247,10 @@ def test_the_cells_are_in_the_record() -> None:
 SIEVE_CELLS = ((4, 1), (4, 3), (4, 6), (4, 9), (5, 1), (5, 6), (6, 1), (6, 9))
 
 
-@pytest.mark.parametrize(("L", "nb"), SIEVE_CELLS)
+@pytest.mark.parametrize(("L", "nb"), [
+    pytest.param(L, nb, marks=() if is_fast(L) else pytest.mark.slow)
+    for L, nb in SIEVE_CELLS
+])
 def test_the_sieve_is_idempotent_under_every_seed_order(L: int, nb: int) -> None:
     from felizjueves.plan.batching import partition
     from felizjueves.plan.dag import batch_dag

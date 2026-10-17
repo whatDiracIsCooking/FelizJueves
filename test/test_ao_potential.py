@@ -5,7 +5,9 @@ The `[t]^(0)` evaluator (`reference.pq.one_centre`) and the Boys function
 closed forms, so this file shares no ancestry with the recurrence it checks.
 Since #240, `V` is also held to libcint's `int1e_nuc`, and `T + V` to PySCF's
 `hcore`, through the tracked fixtures (the block at the end of this file; s/p
-fast, `slow` from l = 2). Fast tier otherwise, no marker, no PySCF.
+fast, `slow` from l = 2). Fast tier otherwise, no marker, no PySCF -- except
+a case that reaches a class above `la + lb = 4` (test/tiers.py's cut), which
+is `slow`.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import math
 import random
 
 import pytest
+from tiers import by_l, is_fast
 
 from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.pairs import dress, primitive_pairs
@@ -34,6 +37,9 @@ SHELLS = (
     Shell(1, C, (0.9,), (1.0,)),
 )
 NUCLEI = ((8.0, A), (1.0, B), (1.0, (0.5, 0.5, -0.4)))
+# SHELLS without its f shell: every pair at L <= FAST_L_MAX (tiers.py), for
+# the fast tier's whole-matrix checks; SHELLS itself reaches (ff), `slow`.
+SHELLS_THROUGH_D = tuple(s for s in SHELLS if s.l <= 2)
 
 
 def _ss(alpha, Aa, beta, Bb, Cc) -> float:
@@ -110,9 +116,11 @@ def test_p_s_against_the_derivative_of_the_closed_form() -> None:
         assert row[0] == pytest.approx(-fd / (2 * alpha), rel=1e-7)
 
 
-@pytest.mark.parametrize(("ia", "ib"), [(2, 0), (2, 1), (2, 2), (0, 2),
-                                        (4, 2), (2, 4)])
-def test_a_d_pair_reads_its_structural_zeros_as_zeros(ia: int, ib: int) -> None:
+@pytest.mark.parametrize("pair", [
+    by_l((ia, ib), SHELLS[ia].l + SHELLS[ib].l, id=f"{ia}-{ib}")
+    for ia, ib in [(2, 0), (2, 1), (2, 2), (0, 2), (4, 2), (2, 4)]])
+def test_a_d_pair_reads_its_structural_zeros_as_zeros(pair) -> None:
+    ia, ib = pair
     # The first consumer of the FULL block. A column t with t_d > a_d + b_d on
     # some axis is exactly 0.0 in every dressed row, and summing only the
     # reachable columns gives the same block BITWISE: they contribute nothing.
@@ -145,8 +153,8 @@ def test_a_d_pair_reads_its_structural_zeros_as_zeros(ia: int, ib: int) -> None:
     assert len(got) == sa.n_cart and all(len(r) == nb for r in got)
 
 
-def test_potential_matrix_is_exactly_symmetric() -> None:
-    basis = Basis(SHELLS)
+def _exactly_symmetric(shells) -> None:
+    basis = Basis(shells)
     V = potential_matrix(basis, NUCLEI, one_centre=one_centre)
     n = basis.n_ao
     assert len(V) == n and all(len(r) == n for r in V)
@@ -156,8 +164,8 @@ def test_potential_matrix_is_exactly_symmetric() -> None:
     # the lower triangle by shell agrees with the recomputed transpose to
     # rounding: a witness of <a|V|b> = <b|V|a>, not of the copy
     off = basis.offsets
-    for i, sa in enumerate(SHELLS):
-        for j, sb in enumerate(SHELLS[:i]):
+    for i, sa in enumerate(shells):
+        for j, sb in enumerate(shells[:i]):
             blk = potential_block(sa, sb, NUCLEI, one_centre=one_centre)
             for r in range(sa.n_cart):
                 for c in range(sb.n_cart):
@@ -165,12 +173,30 @@ def test_potential_matrix_is_exactly_symmetric() -> None:
                         blk[r][c], rel=1e-12, abs=1e-14)
 
 
-def test_a_positive_charge_attracts() -> None:
+def test_potential_matrix_is_exactly_symmetric() -> None:
+    _exactly_symmetric(SHELLS_THROUGH_D)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_potential_matrix_is_exactly_symmetric_with_f() -> None:
+    _exactly_symmetric(SHELLS)
+
+
+def _a_positive_charge_attracts(shells) -> None:
     # -Z is folded in: one positive charge gives a negative diagonal.
-    basis = Basis(SHELLS)
+    basis = Basis(shells)
     V = potential_matrix(basis, ((1.0, (0.2, 0.1, -0.3)),),
                          one_centre=one_centre)
     assert all(V[i][i] < 0.0 for i in range(basis.n_ao))
+
+
+def test_a_positive_charge_attracts() -> None:
+    _a_positive_charge_attracts(SHELLS_THROUGH_D)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_a_positive_charge_attracts_with_f() -> None:
+    _a_positive_charge_attracts(SHELLS)
 
 
 def test_no_nuclei_is_the_zero_matrix_and_bad_nuclei_are_refused() -> None:
@@ -209,15 +235,21 @@ def _chain_236(n: int):
             tuple((1.0, c) for c in centres))
 
 
-def _cases_236():
+def _cases_236(fast: bool | None = None):
+    """The cases; with `fast`, those on that side of test/tiers.py's cut (a
+    basis reaches the pair class `2 l_max`: SHELLS, (ff))."""
     fx = _mf236.load(_mf236.FIXTURES / "h2o_sto3g_j.json")
-    return {
+    out = {
         "SHELLS": (Basis(SHELLS), NUCLEI),
         "h2_chain_3": _chain_236(3),
         "h2o_sto3g_j": (_ob236.from_fixture(fx),
                         tuple((float(a.charge), tuple(a.coord))
                               for a in fx.atoms)),
     }
+    if fast is None:
+        return out
+    return {n: c for n, c in out.items()
+            if is_fast(2 * max(s.l for s in c[0].shells)) == fast}
 
 
 def _bound_236(nuclei):
@@ -225,8 +257,8 @@ def _bound_236(nuclei):
                                           one_centre=one_centre)
 
 
-def test_236_screened_potential_at_tau_zero_is_the_unscreened() -> None:
-    for name, (basis, nuc) in _cases_236().items():
+def _236_at_tau_zero(fast: bool) -> None:
+    for name, (basis, nuc) in _cases_236(fast).items():
         pl = pair_list(basis, tau=0.0, bound=_bound_236(nuc))
         assert pl.dropped == ()
         assert potential_matrix(basis, nuc, one_centre=one_centre,
@@ -234,8 +266,17 @@ def test_236_screened_potential_at_tau_zero_is_the_unscreened() -> None:
             basis, nuc, one_centre=one_centre), name
 
 
-def test_236_screened_potential_drops_only_blocks_below_tau() -> None:
-    for name, (basis, nuc) in _cases_236().items():
+def test_236_screened_potential_at_tau_zero_is_the_unscreened() -> None:
+    _236_at_tau_zero(fast=True)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_236_screened_potential_at_tau_zero_is_the_unscreened_above_l4() -> None:
+    _236_at_tau_zero(fast=False)
+
+
+def _236_drops_only_blocks_below_tau(fast: bool) -> None:
+    for name, (basis, nuc) in _cases_236(fast).items():
         V0 = potential_matrix(basis, nuc, one_centre=one_centre)
         off, sh = basis.offsets, basis.shells
         for tau in _TAUS_236:
@@ -255,8 +296,17 @@ def test_236_screened_potential_drops_only_blocks_below_tau() -> None:
                                     name, tau, key)
                             else:
                                 assert got == want, (name, tau, key)
+
+
+def test_236_screened_potential_drops_only_blocks_below_tau() -> None:
+    _236_drops_only_blocks_below_tau(fast=True)
     basis, nuc = _chain_236(3)
     assert pair_list(basis, tau=1e-6, bound=_bound_236(nuc)).dropped
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_236_screened_potential_drops_only_blocks_below_tau_above_l4() -> None:
+    _236_drops_only_blocks_below_tau(fast=False)
 
 # --- #240: V against libcint's int1e_nuc, and T + V against hcore ----------
 #

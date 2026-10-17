@@ -18,6 +18,8 @@ from felizjueves.plan.dag import BatchDag, Node, batch_dag, build, is_fundamenta
 from felizjueves.plan.mild import mild_direction
 from felizjueves.spec import Operator, Spec, Target
 
+# Every grid cell is L > FAST_L_MAX (tiers.py), so a test that plans one is
+# `slow`.
 GRID_L = range(7, 17)
 GRID_B = (1, 3, 6, 9)
 
@@ -60,6 +62,7 @@ grid = pytest.mark.parametrize(
 # -- structure -----------------------------------------------------------------
 
 
+@pytest.mark.slow
 @grid
 def test_the_dag_is_closed(L: int, n_batches: int) -> None:
     for dag in _dags(L, n_batches):
@@ -73,6 +76,7 @@ def test_the_dag_is_closed(L: int, n_batches: int) -> None:
             assert set(ps) <= nodes
 
 
+@pytest.mark.slow
 @grid
 def test_m_rises_parent_ward_so_there_is_no_cycle(L: int, n_batches: int) -> None:
     for dag in _dags(L, n_batches):
@@ -81,6 +85,7 @@ def test_m_rises_parent_ward_so_there_is_no_cycle(L: int, n_batches: int) -> Non
             assert all(sum(pr) < sum(r) for pr, _ in ps)
 
 
+@pytest.mark.slow
 @grid
 def test_every_edge_is_milds_before_the_sieve(L: int, n_batches: int) -> None:
     for dag in _dags(L, n_batches):
@@ -88,6 +93,7 @@ def test_every_edge_is_milds_before_the_sieve(L: int, n_batches: int) -> None:
             assert ps == _expected_parents(node), node
 
 
+@pytest.mark.slow
 @grid
 def test_every_node_is_needed(L: int, n_batches: int) -> None:
     # Nothing in the DAG is unreachable from the batch's own targets.
@@ -102,6 +108,7 @@ def test_every_node_is_needed(L: int, n_batches: int) -> None:
         assert reached == dag.nodes()
 
 
+@pytest.mark.slow
 @grid
 def test_max_targets_is_table_3s_quantity(L: int, n_batches: int) -> None:
     assert _cost(L, n_batches).max_targets == max_targets_per_batch(L, n_batches)
@@ -115,6 +122,7 @@ def _axial(node: Node) -> bool:
 
 
 @pytest.mark.claim("jengine/batch-overlap-is-fundamentals-and-axials")
+@pytest.mark.slow
 @pytest.mark.parametrize("L", GRID_L)
 @pytest.mark.parametrize("n_batches", (3, 6, 9))
 def test_batches_share_only_fundamentals_across_and_axials_within(
@@ -144,6 +152,7 @@ def test_batches_share_only_fundamentals_across_and_axials_within(
         assert within and within_axials
 
 
+@pytest.mark.slow  # L = 10 > FAST_L_MAX (tiers.py)
 def test_sharing_between_batches_is_counted_once_per_batch() -> None:
     # Each batch is its own kernel: a fundamental every batch needs is in
     # every batch's intermediates, so the max over batches is not the size of
@@ -154,6 +163,7 @@ def test_sharing_between_batches_is_counted_once_per_batch() -> None:
     assert all(((0, 0, 0), 1) in d.intermediates() for d in dags)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("L", GRID_L)
 def test_batching_trades_flops_for_intermediates(L: int) -> None:
     """Across 1 -> 3 -> 6 -> 9 batches: targets and intermediates per batch do
@@ -244,6 +254,7 @@ def test_every_plan_layer_entry_refuses_target_f(levers) -> None:
             sieved(spec)
 
 
+@pytest.mark.slow  # L = 8 > FAST_L_MAX (tiers.py)
 def test_build_follows_the_spec_batch_count() -> None:
     assert [d.batch for d in build(_spec(8, 6))] == [
         ("x", 0, 3), ("x", 4, 8),
@@ -264,6 +275,7 @@ ANCHORS = {
 }
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("cell", sorted(ANCHORS))
 def test_the_anchors_pre_sieve(cell: tuple[int, int]) -> None:
     """Targets reproduce at all four; FLOPs at (7, 3) only; intermediates at

@@ -35,8 +35,9 @@ on `|D|` with `hgp_drive`'s absolute-value twin -- this file's ERI bound
 digestion's sums by the triangle inequality. Against libcint, `1e-12` of
 the same scale (test_ao_fock.py's LIBCINT_TOL).
 
-Fast tier for `L <= 4`, `slow` above (#282, #283). No compiler, no card,
-no emission (#287): the interpreter is the whole check at this stage.
+Fast tier for `L <= FAST_L_MAX` (tiers.py), `slow` above (#282, #283). No
+compiler, no card, no emission (#287): the interpreter is the whole check at
+this stage.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, is_fast, split_by_l
 
 from felizjueves import kernel_f as KF
 from felizjueves.ao import fock
@@ -84,15 +86,7 @@ from felizjueves.reference.pq import one_centre, pq
 from felizjueves.spec import Operator, Spec, Target
 
 CLASSES = vrr.CLASSES
-
-
-def _speed(cls):
-    """Fast for `L <= 4`, `slow` above (#282)."""
-    return pytest.param(cls, id=str(cls),
-                        marks=(pytest.mark.slow,) if sum(cls) > 4 else ())
-
-
-LADDER = [_speed(c) for c in CLASSES]
+LADDER = split_by_l(CLASSES, sum, ids=str)
 
 # ---------------------------------------------------------------------------
 # The pinned statement counts: the plan, not silently re-derived
@@ -147,7 +141,7 @@ def test_the_count_tables_cover_the_ladder() -> None:
     assert tuple(ATOMICS) == CLASSES
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=str)
+@pytest.mark.parametrize("cls", LADDER)
 def test_emitted_statement_counts_are_the_dags(cls) -> None:
     """Read off the BUILT kernel by statement kind, equal to the pinned table
     and to `hgp.vrr` / `hgp.hrr`'s own node counts (#273, #274)."""
@@ -166,6 +160,7 @@ def test_emitted_statement_counts_are_the_dags(cls) -> None:
     assert len(acc) == h.n_boundary
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_dd_dd_is_961_boundary_values_not_1225() -> None:
     """The orchestrator's reading of #282's 1,225 (35^2) as a misprint for
     the bounded set's 31^2: only 961 fits #274's 6,254 HRR statements."""
@@ -174,6 +169,7 @@ def test_dd_dd_is_961_boundary_values_not_1225() -> None:
     assert c.boundary == 31 * 31 != 35 * 35
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_dd_dd_builds_and_its_construction_time_is_immaterial() -> None:
     t = time.perf_counter()
     k = KF.build_f_kernel((2, 2, 2, 2))
@@ -267,8 +263,8 @@ def _kernel_text(kernel: Kernel, backend: str) -> str:
 
 
 @pytest.mark.claim("fock/skip-not-break")
-@pytest.mark.parametrize("cls", [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)],
-                         ids=str)
+@pytest.mark.parametrize("cls", split_by_l(
+    [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)], sum, ids=str))
 def test_fock_skip_not_break_the_screen_is_a_skip(cls) -> None:
     """`fock/skip-not-break`: the in-kernel screen guards the quartet's work
     and exits nothing. In the IR its `then` holds only a `Note`, its
@@ -345,8 +341,8 @@ def test_six_two_index_outputs_and_atomics_only_into_them() -> None:
 @pytest.mark.claim("fock/fused-six-block-digest")
 def test_one_thread_per_contracted_quartet_evaluates_every_eri_into_six_blocks(
 ) -> None:
-    """`fock/fused-six-block-digest`, on the built IR of all 21 classes (the
-    builds are cheap: ~0.4 s at `(dd|dd)`, so no class is deferred):
+    """`fock/fused-six-block-digest`, on the built IR of every class at
+    `L <= FAST_L_MAX`; the rest of the 21 run in the `slow` twin below:
 
     * the thread mapping is one block per bra pair (`bra = blockIdx.x`,
       `launch_shape`'s grid is the bra count) and one thread per contracted
@@ -360,8 +356,17 @@ def test_one_thread_per_contracted_quartet_evaluates_every_eri_into_six_blocks(
       in `F` at one of the six blocks' offset pairs, each block takes
       exactly its `n_i n_j` elements, and nothing else reaches global
       memory."""
+    _six_block_digest(c for c in CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_one_thread_per_contracted_quartet_six_blocks_above_l4() -> None:
+    _six_block_digest(c for c in CLASSES if not is_fast(sum(c)))
+
+
+def _six_block_digest(classes) -> None:
     o = ("oa", "ob", "oc", "od")
-    for cls in CLASSES:
+    for cls in classes:
         k = _kernel(cls)
         n = [len(vrr.cartesians(x)) for x in cls]
         assert any(isinstance(s, Decl) and s.name == "bra"
@@ -714,7 +719,8 @@ def _moved(dx):
                  for j, c in enumerate(CENTRES))
 
 
-@pytest.mark.parametrize("cls", [_speed((0, 1, 1, 1)), _speed((1, 2, 1, 2))])
+@pytest.mark.parametrize("cls", split_by_l([(0, 1, 1, 1), (1, 2, 1, 2)], sum,
+                                            ids=str))
 def test_a_multi_quartet_ket_loop_is_bitwise_and_the_screen_skips(cls) -> None:
     """Two bra pairs (two blocks) by three ket pairs strided over two
     threads. The MIDDLE ket is screened (`G_cd = 0 < tau`): its `g` row is
@@ -846,8 +852,7 @@ COINCIDENCE = {
 
 
 @pytest.mark.parametrize("case", [
-    pytest.param(c, id=c, marks=(pytest.mark.slow,)
-                 if sum(COINCIDENCE[c][0]) > 4 else ()) for c in COINCIDENCE])
+    by_l(c, sum(COINCIDENCE[c][0]), id=c) for c in COINCIDENCE])
 def test_every_degeneracy_case_equals_the_sweep(case) -> None:
     """`a = b`, `c = d`, `(ab) = (cd)`, the first two together, and all
     three, each run explicitly (and a diagonal batch, where the canonical
@@ -952,17 +957,29 @@ def test_predigest_bounds_atomics_recorded() -> None:
     falls strictly whenever a class grows in any shell (componentwise larger
     Cartesian counts), from 6 at `(ss|ss)` to 1/6 at `(dd|dd)`. Below the
     crossing the atomics outnumber the ERIs (ATOMICS' comment); the claim
-    held is the scaling, not a saving at every class."""
+    held is the scaling, not a saving at every class. Here over the classes
+    at `L <= FAST_L_MAX`; the `slow` twin below holds all 21."""
+    ratio = _predigest(tuple(c for c in CLASSES if is_fast(sum(c))))
+    assert ratio[(0, 0, 0, 0)] == 6.0
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_predigest_bounds_atomics_recorded_all_21() -> None:
+    ratio = _predigest(CLASSES)
+    assert ratio[(0, 0, 0, 0)] == 6.0 and ratio[(2, 2, 2, 2)] == 1 / 6
+
+
+def _predigest(classes) -> dict:
     ratio = {}
-    for cls in CLASSES:
+    for cls in classes:
         c = KF.counted(_kernel(cls))
         assert c.atomic == KF.six_block_size(cls) == ATOMICS[cls]
         ratio[cls] = c.atomic / c.eri
-    n = {c: [len(vrr.cartesians(x)) for x in c] for c in CLASSES}
-    for c1, c2 in itertools.permutations(CLASSES, 2):
+    n = {c: [len(vrr.cartesians(x)) for x in c] for c in classes}
+    for c1, c2 in itertools.permutations(classes, 2):
         if all(x <= y for x, y in zip(n[c1], n[c2], strict=True)):
             assert ratio[c2] < ratio[c1], (c1, c2)
-    assert ratio[(0, 0, 0, 0)] == 6.0 and ratio[(2, 2, 2, 2)] == 1 / 6
+    return ratio
 
 
 # ---------------------------------------------------------------------------

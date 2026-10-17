@@ -46,6 +46,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import test_kernel_f as tk
+from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
@@ -63,13 +64,7 @@ from felizjueves.spec import Operator, Spec, Target
 NAME = bv.NAME
 CAP = 4  # milestone 13: every test at L <= 4
 
-
-def _speed(cls):
-    return pytest.param(cls, id="".join(map(str, cls)),
-                        marks=(pytest.mark.slow,) if sum(cls) > CAP else ())
-
-
-LADDER = [_speed(c) for c in vrr.CLASSES]
+LADDER = split_by_l(vrr.CLASSES, sum, ids=lambda c: "".join(map(str, c)))
 L2 = [c for c in vrr.CLASSES if sum(c) <= 2]
 CAPPED = [c for c in vrr.CLASSES if sum(c) <= CAP]
 
@@ -248,9 +243,9 @@ RULE_TABLE = {
 }
 
 
-def test_the_rule_table_covers_the_ladder_and_is_the_rule() -> None:
-    assert tuple(RULE_TABLE) == vrr.CLASSES
-    for cls, (floor, lit, n, phase) in RULE_TABLE.items():
+def _rule_table_is_the_rule(classes) -> None:
+    for cls in classes:
+        floor, lit, n, phase = RULE_TABLE[cls]
         assert bv.hrr_floor(cls) == floor, cls
         assert bv.literal_phase(cls) == lit, cls
         assert bv.rule(cls) == bv.n_groups(cls) == n, cls
@@ -259,6 +254,16 @@ def test_the_rule_table_covers_the_ladder_and_is_the_rule() -> None:
         assert n == 1 or bv.vrr_phase(cls, n - 1) > floor, cls
         # the staging alone (one group) never raises the VRR phase
         assert bv.vrr_phase(cls, 1) == lit - len(vrr.targets(cls)), cls
+
+
+def test_the_rule_table_covers_the_ladder_and_is_the_rule() -> None:
+    assert tuple(RULE_TABLE) == vrr.CLASSES
+    _rule_table_is_the_rule(c for c in vrr.CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_rule_table_is_the_rule_above_l4() -> None:
+    _rule_table_is_the_rule(c for c in vrr.CLASSES if not is_fast(sum(c)))
 
 
 def test_the_floor_is_the_composition_point() -> None:

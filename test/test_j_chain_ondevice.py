@@ -150,6 +150,7 @@ from test_j_launched_ondevice import (
     _gamma,
 )
 from test_kernel_device import BACKEND, _toolchain
+from tiers import FAST_L_MAX, is_fast
 
 from felizjueves.ao.drive import _chain_plan, _unique_pairs
 from felizjueves.ao.hermite import _raise, e_block, hermite_order
@@ -732,15 +733,29 @@ def test_hip_a_warning_in_a_pair_unit_fails(hipcc, tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _ladder_is_emits_text(tmp_path, lmax: int) -> dict[str, str]:
+    """The pair ladder through `lmax`, written, is `emit`'s text per unit."""
+    emit, arch, ext = BACKEND["cuda"]
+    written = emit_cli.generate_pairs("cuda", arch, tmp_path, lmax)
+    want = {f"{k.name}.{ext}": emit(k, arch)
+            for c in emit_cli.pair_classes(lmax)
+            for k in (build_dq_kernel(c), build_jab_kernel(c))}
+    assert {p.name: p.read_text() for p in written} == want
+    return want
+
+
+def test_part1_reads_the_pair_ladder_through_d(tmp_path):
+    """The ladder through (dd), every class at L <= FAST_L_MAX: `emit`'s
+    text per unit. The default ladder, through (ff), is the `slow` twin."""
+    want = _ladder_is_emits_text(tmp_path, FAST_L_MAX // 2)
+    assert len(want) == 12
+
+
+@pytest.mark.slow  # the ladder reaches (ff), L > FAST_L_MAX (tiers.py)
 def test_part1_reads_the_pair_ladders_units(tmp_path):
     """The ladder KERNEL_GEN_CMD writes by default is exactly the 20 units
     part 1 looks for in KERNEL_TIER_OUT, with `emit`'s text."""
-    emit, arch, ext = BACKEND["cuda"]
-    written = emit_cli.generate_pairs("cuda", arch, tmp_path,
-                                      emit_cli.DEFAULT_PAIR_L)
-    want = {f"{k.name}.{ext}": emit(k, arch) for c in PAIR_CLASSES
-            for k in (build_dq_kernel(c), build_jab_kernel(c))}
-    assert {p.name: p.read_text() for p in written} == want
+    want = _ladder_is_emits_text(tmp_path, emit_cli.DEFAULT_PAIR_L)
     assert len(want) == 20 and PAIR_CLASSES[-1] == (3, 3)
 
 
@@ -827,14 +842,27 @@ def test_the_chain_driver_is_the_plans_shape_plus_jab(tmp_path):
     assert data.size == drv.n_input
 
 
-def test_e_abs_bounds_e():
+def _e_abs_bounds_e(fast: bool) -> None:
+    """Over the classes on one side of the cut, each drawing the geometry
+    it drew when one test walked them all."""
     rng = np.random.default_rng(5)
     for la, lb in PAIR_CLASSES:
         zeta = float(rng.uniform(0.2, 3.0))
         P, A, B = (tuple(rng.uniform(-2, 2, 3)) for _ in range(3))
+        if is_fast(la + lb) != fast:
+            continue
         xpa = [P[d] - A[d] for d in range(3)]
         xpb = [P[d] - B[d] for d in range(3)]
         Ea = _e_abs(la, lb, zeta, xpa, xpb)
         for r, (a, b) in enumerate(_carts(la, lb)):
             e = np.array(e_block(a, b, zeta, P, A, B))
             assert np.all(np.abs(e) <= Ea[r] * (1 + 1e-12)), (la, lb, r)
+
+
+def test_e_abs_bounds_e():
+    _e_abs_bounds_e(fast=True)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_e_abs_bounds_e_above_l4():
+    _e_abs_bounds_e(fast=False)
