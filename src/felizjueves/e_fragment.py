@@ -64,6 +64,25 @@ identity it is checked by (test/test_e_fragment.py).
   `S_d` at `j <= lb`), and dead entries are dropped by `_live` as in the
   overlap fragment.
 
+- `center_fragment(l)` (#410): the SINGLE-CENTER `E^{i}_t` of one
+  auxiliary primitive -- a Hermite "pair" with `zeta = alpha`, `P = A`, so
+  `X_PA = 0` and no `K_AB` -- per axis, one local `C{x,y,z}_i_t`, then the
+  products `E^{a}_t = (C_x C_y) C_z` written into the array bind
+  `E[row, col]`, rows `cartesians(l)`, columns `hermite_targets(l)`. The
+  recurrence is eq. 2.20 at `X_PA = 0`,
+
+      E^{i+1}_t = (1/2zeta) E^{i}_{t-1} + (t+1) E^{i}_{t+1},   E^0_0 = 1,
+
+  the `X_PA` term ABSENT, not a zero weight. Then `E^i_t` is exactly zero
+  whenever `i - t` is odd (each step moves `t` by one), and such an entry is
+  never declared, nor read, nor written: the consumer owns those slots, as
+  it owns the block's `t_d > a_d + b_d` ones. The seed is the literal `1`
+  (no `exp`, so no `zeta` bind). It is a SECOND axis recurrence beside
+  `_axis_body`, deliberately: `_axis_body` at `X_PA = 0` would compute
+  every parity zero, and the general body has no way to drop them short
+  of a rewrite. Its locals are `C`, not `E`, so it can be inlined beside
+  the block fragment (the `(mn|P)` follow-up) without a name collision.
+
 ONE LEVEL, COMPOSED AT BUILD TIME. `ir.Fragment` admits no `Inline` inside a
 fragment (#149: one level, names only), so the block does not `Inline` the
 axis fragment three times. Instead both are built from the one function that
@@ -84,6 +103,8 @@ Binds: `zeta` (the seed's exponent), `half_inv_zeta` (`1/2zeta`, a
 is raised), and each axis's `PA_d` / `PB_d` (`Factor`s, read by the seed as
 plain scalars too); the block adds the array `E`, the overlap fragment
 the array `E0`, the kinetic fragment the scalar `eb` and the array `KE`.
+The center fragment binds only `half_inv_zeta` (when `l >= 1`; there
+`zeta` is the aux primitive's own exponent) and the array `E`.
 
 This is a builder: it produces vendor-neutral IR. It must not import
 `ao.hermite` (the reference it is checked against) nor the interpreter.
@@ -334,3 +355,71 @@ def kinetic_fragment(la: int, lb: int) -> Fragment:
     kept, read = _live(body)
     binds = [b for b in _scalar_binds(la, lb + 2, (0, 1, 2)) if b in read]
     return Fragment(f"e_kinetic_{la}{lb}", (*binds, EB, KE_ARRAY), kept)
+
+
+_CENTER_PROVENANCE = (
+    "McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), "
+    "eq. 2.20 at X_PA = 0 (a single-center primitive, zeta = alpha, P = A): "
+    "E^{i+1}_t from E^0_0 = 1; undressed; i - t odd entries absent")
+
+
+def c_name(d: int, i: int, t: int) -> str:
+    """The local holding the single-center `E^{i}_t` on axis `d`: `Cx_2_0`."""
+    return f"C{_AXES[d]}_{i}_{t}"
+
+
+def center_live(i: int, t: int) -> bool:
+    """True when the single-center `E^{i}_t` is not a structural zero:
+    `0 <= t <= i` and `i - t` even."""
+    return 0 <= t <= i and (i - t) % 2 == 0
+
+
+def _center_axis_body(l: int, d: int) -> list[Stmt]:  # noqa: E741
+    """The single-center recurrence on axis `d`, every live `E^{i}_t` for
+    `i <= l` (module doc): the seed `1`, then one `Weighted` per entry."""
+    body: list[Stmt] = [Decl(c_name(d, 0, 0), Scalar.F64, init=Lit(1.0))]
+    for i in range(1, l + 1):
+        for t in range(i + 1):
+            if not center_live(i, t):
+                continue  # a parity zero: never declared
+            terms = []
+            if t >= 1:  # E^{i-1}_{t-1}: live, the parity is the same
+                terms.append(Term(1, Factor.HALF_INV_ZETA,
+                                  Var(c_name(d, i - 1, t - 1))))
+            if t + 1 <= i - 1:  # E^{i-1}_{t+1}
+                terms.append(Term(t + 1, Factor.ONE,
+                                  Var(c_name(d, i - 1, t + 1))))
+            body.append(Decl(c_name(d, i, t), Scalar.F64,
+                             init=Weighted(terms)))
+    return body
+
+
+def center_shape(l: int) -> tuple[int, int]:  # noqa: E741
+    """`(rows, columns)` of the block `center_fragment(l)` writes `E` into."""
+    return len(cartesians(l)), len(hermite_targets(l))
+
+
+def center_absent(a: tuple[int, int, int], t: tuple[int, int, int]) -> bool:
+    """True when `E^{a}_t` is a structural zero: on some axis `t_d > a_d` or
+    `a_d - t_d` odd. Such an entry is never written."""
+    return not all(center_live(a[d], t[d]) for d in range(3))
+
+
+def center_fragment(l: int) -> Fragment:  # noqa: E741
+    """The undressed single-center block `E^{a}_t`, written into the array
+    bind `E` (rows `cartesians(l)`, columns `hermite_targets(l)`); only the
+    structurally nonzero entries are declared or written (module doc)."""
+    _check_am("l", l)
+    body: list[Stmt] = [Note(_CENTER_PROVENANCE)]
+    for d in range(3):
+        body += _center_axis_body(l, d)
+    for row, a in enumerate(cartesians(l)):
+        for col, t in enumerate(hermite_targets(l)):
+            if center_absent(a, t):
+                continue  # exactly zero: absent, not a computed zero
+            x, y, z = (Var(c_name(d, a[d], t[d])) for d in range(3))
+            body.append(Assign(Index(E_ARRAY, (Lit(row), Lit(col))),
+                               _mul(_mul(x, y), z)))
+    kept, read = _live(body)
+    binds = [b for b in (HALF_INV_ZETA,) if b in read]
+    return Fragment(f"e_center_{l}", (*binds, E_ARRAY), kept)

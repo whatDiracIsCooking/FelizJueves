@@ -87,6 +87,18 @@ and it is a separate target because the MATRIX differs (rectangular, no
 mirror, no diagonal rule), not the integral (kernel_sx.py). Unbatched for
 `S`'s structural reason (`_PAIR_BATCH_REFUSAL`).
 
+A METRIC CLASS IS A PAIR OF SINGLE-CENTER SHELLS (#410). `Target.METRIC` is
+the two-center Coulomb metric `(P|Q) = INT INT P(r1) Q(r2) / r12` of an
+auxiliary (density-fitting) basis, Cartesian. Its class is the pair of aux
+shells `(lP, lQ)` -- `am` a pair, operator `COULOMB`, key
+``coulomb/d0/(lP,lQ)/b1/metric/literal`` -- and the recurrence it runs is the
+`Target.J` quartet `(lP 0|lQ 0)`'s at L = lP + lQ: an aux primitive is a
+Hermite "pair" with `zeta = alpha`, `P = A` and `X_PA = 0`, whose `E` is
+`e_fragment.center_fragment`. So `total_am` is lP + lQ, the L of that
+quartet, but the key indexes no table row; the plan is asked for the quartet,
+never for this key. Unbatched by DECISION, like `V` and `SCHWARZ`
+(`_PAIR_BATCH_REFUSAL`): it has Hermite targets that could be partitioned.
+
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
 partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
@@ -168,28 +180,34 @@ class Target(StrEnum):
     # class (la in B1, lb in B2) (kernel_sx.py; module docstring "A
     # CROSS-OVERLAP CLASS").
     SX = "sx"
+    # The two-center Coulomb metric (P|Q) of an auxiliary basis, a PAIR class
+    # (lP, lQ) of single-center shells whose recurrence is the quartet
+    # (lP 0|lQ 0)'s (#410; module docstring "A METRIC CLASS").
+    METRIC = "metric"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
 # [p|q] kernel, a pair (la, lb) for the two per-pair families (#150), and a
 # quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196),
 # and a pair (la, lb) for each one-electron matrix (#232), and a quartet
-# (la, lb | lc, ld) in AO order for the fused Fock build (#272).
+# (la, lb | lc, ld) in AO order for the fused Fock build (#272), and a pair
+# (lP, lQ) of auxiliary shells for the Coulomb metric (#410).
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
-    Target.SX: 2,
+    Target.SX: 2, Target.METRIC: 2,
 }
 
 
 # The one operator each target is built from (#232); any other pairing is
-# refused. The five two-electron targets are Coulomb's.
+# refused. The two-electron targets are Coulomb's, the metric among them.
 OPERATOR_OF: dict[Target, Operator] = {
     Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
     Target.F: Operator.COULOMB, Target.SCHWARZ: Operator.COULOMB,
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
+    Target.METRIC: Operator.COULOMB,
 }
 
 
@@ -216,6 +234,13 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
         "recurrence, whose Hermite targets could be partitioned, but the "
         "kernel is one thread per shell pair and a batched Schwarz kernel "
         "is a follow-up nobody has declared"
+    ),
+    Target.METRIC: (
+        "unbatched by decision -- the metric (P|Q) runs the quartet "
+        "(lP 0|lQ 0)'s recurrence, whose Hermite targets (every t with "
+        "|t| <= lP + lQ) could be partitioned, so the structural reason does "
+        "not apply; a batched metric kernel is a follow-up nobody has "
+        "declared"
     ),
 }
 
@@ -340,6 +365,10 @@ class Spec:
         so its sum names no Tables 1-3 row, and it must never be scored
         against one. The plan layer, which keys on this sum, refuses an F
         spec (`plan.dag.refuse_hgp`).
+
+        A METRIC pair (`Target.METRIC`, `am = (lP, lQ)`) sums to lP + lQ,
+        the L of the `Target.J` quartet `(lP 0|lQ 0)` whose recurrence it
+        runs; the pair key itself still indexes NO table row.
         """
         return sum(self.am)
 

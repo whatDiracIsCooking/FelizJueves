@@ -221,6 +221,31 @@ def test_an_f_key_reads_back_as_an_f_target_and_its_parts() -> None:
     assert len(load()) == N_ROWS + N_K_ROWS + N_F_ROWS
 
 
+def test_target_metric_moves_no_measured_key_and_joins_no_row() -> None:
+    # #410: `Target.METRIC` widens the enum; the re-derivation tests above
+    # hold all 196 J keys (and the K and F rows) byte for byte. A metric key
+    # is a pair class with target slot `metric`: the J, K and F parsers
+    # reject it, it reads back as `Target.METRIC`, and no tracked row --
+    # nothing about the metric is measured -- carries one.
+    rows = _load_all()
+    assert len(_j_rows(load())) == N_ROWS
+    assert not any(target_of(k) is Target.METRIC for k in rows)
+    arches = {r.arch: r.toolchain for r in rows.values()}
+    for lp in range(5):
+        for lq in range(5):
+            spec = Spec(Operator.COULOMB, 0, (lp, lq), Target.METRIC)
+            for regex in (_SPEC_KEY, _K_KEY, _F_KEY):
+                assert not regex.fullmatch(spec.key())
+            for arch, tc in arches.items():
+                key = MeasuredKey(spec, by_name(arch), tc).key()
+                assert key not in rows
+                assert split_key(key) == (spec.key(), arch, tc)
+                assert target_of(key) is Target.METRIC
+    assert MeasuredKey(Spec(Operator.COULOMB, 0, (2, 1), Target.METRIC),
+                       by_name("sm_86"), "nvcc 13.0").key() == (
+        "coulomb/d0/(2,1)/b1/metric/literal@sm_86/nvcc 13.0")
+
+
 # --- #339: a lever-keyed row, through the store's one recording path --------
 
 
