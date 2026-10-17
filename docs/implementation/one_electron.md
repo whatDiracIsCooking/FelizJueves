@@ -166,7 +166,10 @@ and hands it to every family. Inside the kernel, and to the interpreter,
 each field is still the array `Param` of its own name. The `gpu` backend
 includes `include/felizjueves/prim_pair.h`; the vendor backends spell the
 same text in the unit (`emit._c.bundle_struct`, which `test_emit_gpu.py`
-holds the header to). The Schwarz and two-electron kernels still take
+holds the header to). Since #422 the Schwarz kernel (`schwarz_{la}{lb}`)
+takes the same struct, binding `zeta s XP..ZPB`; its `off_a` / `off_b` are
+per shell pair, not per record, so they stay plain arguments beside `rec0` /
+`rec1` (`kernel_schwarz`'s docstring). The two-electron kernels still take
 interleaved `[n_rec, 3]` arrays.
 
 The names are chosen for hygiene. `zeta_ab` is not `zeta` because the
