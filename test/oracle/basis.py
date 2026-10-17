@@ -58,7 +58,7 @@ from typing import Any
 
 from felizjueves.ao.shell import Basis, Shell, primitive_norm
 
-from .manifest import Fixture
+from .manifest import Fixture, MetricSet
 
 # libcint's CINTcommon_fac_sp: l = 0 and 1 carry the real-solid-harmonic
 # prefactor, l >= 2 nothing. Pinned against PySCF's data, per l, by
@@ -119,8 +119,10 @@ def from_mole_file_coefficients(mol: Any) -> Basis:
     return _shells(mol, mol.bas_ctr_coeff)
 
 
-def from_fixture(fx: Fixture) -> Basis:
-    """Our shells from a fixture's `converted` record. Numpy only, no PySCF."""
+def from_fixture(fx: Fixture | MetricSet) -> Basis:
+    """Our shells from a fixture's `converted` record -- or, for a metric set
+    (#411, `manifest.metric_set`), the aux basis its pieces record. Numpy
+    only, no PySCF."""
     if fx.converted is None:
         raise ValueError(f"{fx.path}: records no converted basis")
     return Basis(tuple(Shell(s.l, s.centre, s.exponents, s.coefficients)

@@ -35,6 +35,8 @@ from typing import Any
 import numpy as np
 
 from .manifest import (
+    AO_SCHEMA,
+    AUX_OVLP_ARRAY,
     CROSS_PREFIX,
     ERI_PREFIX,
     FIXTURES,
@@ -42,8 +44,10 @@ from .manifest import (
     J_ARRAY,
     K_ARRAY,
     KIN_ARRAY,
+    METRIC_ARRAY,
     NUC_ARRAY,
     OVLP_ARRAY,
+    ROWS_SEP,
     SCHEMA,
     SCHWARZ_ARRAY,
     dumps,
@@ -105,6 +109,15 @@ class Case:
     # `gto.intor_cross`, the oracle of `S_{B1,B2}` (`Target.SX`). Needs
     # `record_basis` here and on `rows`.
     cross_rows: str | None = None
+    # #411, a metric piece (manifest: THE METRIC PIECES): this case's
+    # molecule and basis are the PARENT's (`parent`, a tracked case), and the
+    # fixture is `df.make_auxmol(parent, aux_basis)`'s -- its shells, AOs and
+    # rows [r0, r1) of libcint's `int2c2e_cart` and `int1e_ovlp`, full width.
+    # No density and no AO arrays.
+    aux_basis: str | None = None
+    aux_rows: tuple[int, int] | None = None
+    metric_set: str | None = None
+    parent: str | None = None
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -404,6 +417,40 @@ CASES.update({
 })
 
 
+def _metric_piece(parent: str, aux_basis: str, set_name: str,
+                  rows: tuple[int, int]) -> Case:
+    """Rows [r0, r1) of `aux_basis`'s metric on `parent`'s molecule."""
+    c = CASES[parent]
+    r0, r1 = rows
+    return replace(
+        c,
+        description=(
+            f"#411: the auxiliary basis {aux_basis} on {parent}'s molecule "
+            f"(df.make_auxmol, Cartesian): rows [{r0}, {r1}) of libcint's "
+            "two-centre Coulomb metric int2c2e_cart and of its overlap "
+            f"int1e_ovlp, full width. With the other {set_name} pieces, the "
+            "whole matrices, each file under the 512 KB hook "
+            "(manifest.metric_set reassembles them)."
+        ),
+        record_basis=False, record_eri=False, record_j=False,
+        record_k=False, record_one_e=False, record_schwarz=False,
+        cross_rows=None, aux_basis=aux_basis, aux_rows=rows,
+        metric_set=set_name, parent=parent,
+    )
+
+
+# #411's metric set: cc-pVTZ-jkfit (O to g, H to f; 45 shells, 166 AOs) on
+# H2O/cc-pVDZ, split by row block at shell boundaries (ao_loc 43, 81, 121)
+# into four files, each well under the 512 KB cap the whole matrix is over.
+JKFIT_SET = "h2o_ccpvtz_jkfit_metric"
+JKFIT_ROWS = ((0, 43), (43, 81), (81, 121), (121, 166))
+CASES.update({
+    f"{JKFIT_SET}{ROWS_SEP}{r0}_{r1}": _metric_piece(
+        "h2o_ccpvdz_j", "cc-pvtz-jkfit", JKFIT_SET, (r0, r1))
+    for r0, r1 in JKFIT_ROWS
+})
+
+
 def _host() -> str:
     # The same marking felizjueves.measured uses: a container's hostname is
     # its id, not the box's.
@@ -510,6 +557,12 @@ def build(name: str) -> dict[str, Any]:
 
     case = CASES[name]
     mol = _mole(case)
+    if case.aux_basis is not None:
+        from pyscf import df
+
+        mol = df.make_auxmol(mol, case.aux_basis)
+        if not mol.cart:
+            raise ValueError(f"{name}: make_auxmol did not inherit cart")
 
     coords = mol.atom_coords(unit="Bohr")
     atoms = [{"symbol": mol.atom_pure_symbol(i),
@@ -537,7 +590,7 @@ def build(name: str) -> dict[str, Any]:
     nao = int(mol.nao_nr())
     ao_loc = mol.ao_loc_nr(cart=case.cart)
     out = {
-        "schema": SCHEMA,
+        "schema": AO_SCHEMA,
         "name": name,
         "description": case.description,
         "provenance": {
@@ -549,7 +602,7 @@ def build(name: str) -> dict[str, Any]:
             "command": f"{COMMAND} {name}",
             "mol": {"atom": case.atom, "unit": case.unit,
                     "charge": case.charge, "spin": case.spin},
-            "basis": case.basis,
+            "basis": case.aux_basis or case.basis,
             "cart": case.cart,
         },
         "atoms": atoms,
@@ -563,6 +616,8 @@ def build(name: str) -> dict[str, Any]:
         },
         "density_recipe": DENSITY_RECIPE,
     }
+    if case.aux_basis is not None:
+        return _metric_fixture(name, case, mol, out)
     if case.record_basis:
         from .basis import converted_record
 
@@ -594,6 +649,33 @@ def build(name: str) -> dict[str, Any]:
             cross_overlap_array(_mole(rows), mol))
     if case.record_basis and case.record_one_e:
         out["arrays"].update(one_e_arrays(mol))
+    return out
+
+
+def _metric_fixture(name: str, case: Case, mol: Any,
+                    out: dict[str, Any]) -> dict[str, Any]:
+    """`out` (the aux basis's common fixture fields) as a schema-3 metric
+    piece: no density, the `metric` record, and rows [r0, r1) of libcint's
+    `int2c2e_cart` and `int1e_ovlp`. `int2c2e_cart` is checked bitwise
+    against `int2c2e` (cart=True, so they must be the same call) before it
+    is written; what is RECORDED is `int2c2e_cart`'s."""
+    from .basis import converted_record
+
+    if case.aux_rows is None or case.metric_set is None or case.parent is None:
+        raise ValueError(f"{name}: a metric piece needs rows, set and parent")
+    r0, r1 = case.aux_rows
+    m = np.ascontiguousarray(mol.intor("int2c2e_cart"))
+    if not np.array_equal(m, mol.intor("int2c2e")):
+        raise ValueError(f"{name}: int2c2e_cart and int2c2e differ")
+    s = np.ascontiguousarray(mol.intor("int1e_ovlp"))
+    out["schema"] = SCHEMA
+    out["density_recipe"] = ("none: a metric piece is not an AO fixture and "
+                             "records no density (#411)")
+    out["metric"] = {"set": case.metric_set, "rows": [r0, r1],
+                     "parent": case.parent,
+                     "converted": converted_record(mol)}
+    out["arrays"] = {METRIC_ARRAY: encode_array(m[r0:r1]),
+                     AUX_OVLP_ARRAY: encode_array(s[r0:r1])}
     return out
 
 
