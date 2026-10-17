@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from felizjueves.device import Arch
 from felizjueves.emit._c import CWriter, precision
-from felizjueves.ir import Kernel
+from felizjueves.ir import Bundle, Kernel
 
 __all__ = ["HEADER", "emit"]
 
@@ -68,12 +68,18 @@ class GpuWriter(CWriter):
             f"// {width}; {precision(k)}; nvcc and hipcc alike.\n"
             f'#include "{HEADER}"\n'
         )
+        if k.bundled is not None:
+            head += f'#include "{k.bundled.bundle.header}"\n'
+
         if self._width_used:
             head += (
                 f"static_assert(FJ_WAVEFRONT == {w}, "
                 f'"{k.name} was emitted for a {w}-lane wavefront");\n'
             )
         return head
+
+    def bundle_decl(self, bundle: Bundle) -> str:
+        return ""  # the prologue includes its header
 
     def _mask(self) -> str:
         self._width_used = True

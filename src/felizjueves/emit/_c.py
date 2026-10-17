@@ -30,6 +30,12 @@ uniformly; nothing depends on what the kernel computes:
   ahead of the kernel, as `struct fj_<record>` with a `static_assert` that
   it is the unpadded row. A kernel with no `Member` takes none of this, so
   its text is unchanged;
+- a kernel with a `Bundled` takes the params it carries as ONE by-value
+  struct argument, `<Bundle> <arg>`, at the place of the first of them, and
+  its body opens with `const T* const <param> = <arg>.<field>;` per bind --
+  so the body below is the unbundled kernel's, character for character.
+  The struct is spelled ahead of the kernel (`bundle_struct`); the `gpu`
+  backend includes `Bundle.header` instead;
 - `Note` is a `//` comment beside the statement it precedes;
 - a scalar parameter the body never reads -- one that exists only as an
   array's leading extent, which row-major indexing never needs -- is cast
@@ -82,6 +88,8 @@ from felizjueves.ir import (
     AtomicAdd,
     Barrier,
     Break,
+    Bundle,
+    Bundled,
     Call,
     Decl,
     Expr,
@@ -234,8 +242,10 @@ class CWriter:
         for p in k.params:
             self._bind(p.name, _Array(p.shape, True) if p.array else None,
                        p.type)
-        sig = ",\n".join(INDENT + self.param(p) for p in k.params)
+        sig = ",\n".join(INDENT + a for a in self.signature(k))
         self._block(k.body, 1)
+        if k.bundled is not None:
+            self._lines[:0] = self.unbundle(k.bundled, k.params)
         unread = [p.name for p in k.params
                   if not p.array and p.name not in self._used]
         if unread:
@@ -250,6 +260,8 @@ class CWriter:
         if records:
             head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
                                     for r in records)
+        if k.bundled is not None:
+            head += self.bundle_decl(k.bundled.bundle)
         return (
             f"{head}\n"
             f'extern "C" __global__ void {k.name}(\n{sig})\n'
@@ -262,6 +274,37 @@ class CWriter:
     def spell_int(self, text: str) -> str:
         """`text` (fixed C, such as `fj_boys`) with `int` spelled `INT`."""
         return text if self.INT == "int" else re.sub(r"\bint\b", self.INT, text)
+
+    def signature(self, k: Kernel) -> list[str]:
+        """Each argument's declaration, in `k.params` order -- except that
+        the params a `Bundled` carries are one by-value struct argument, at
+        the place of the first of them."""
+        b = k.bundled
+        out: list[str] = []
+        placed = False
+        for p in k.params:
+            if b is None or b.field_of(p.name) is None:
+                out.append(self.param(p))
+            elif not placed:
+                out.append(f"{b.bundle.name} {b.arg}")
+                placed = True
+        return out
+
+    def unbundle(self, b: Bundled, params: tuple[Param, ...]) -> list[str]:
+        """The body's first lines: each param the struct carries, by its own
+        name, so the body indexes it exactly as it would an argument."""
+        types = {p.name: p.type for p in params}
+        lines = [f"{INDENT}// the record arrays, from {b.bundle.name} "
+                 f"{b.arg}\n"]
+        for f, p in b.binds:
+            lines.append(f"{INDENT}const {self.ctype(types[p])}* const {p} = "
+                         f"{b.arg}.{f};\n")
+        return lines
+
+    def bundle_decl(self, bundle: Bundle) -> str:
+        """The struct's definition ahead of the kernel: spelled in the unit
+        (`bundle_struct`). The `gpu` backend includes its header instead."""
+        return "\n" + bundle_struct(bundle, self.INT)
 
     def param(self, p: Param) -> str:
         t = self.ctype(p.type)
@@ -611,6 +654,19 @@ def record_struct(rec: Record, t: str | None = None) -> str:
         f"struct {name} {{\n{members}}};\n"
         f"static_assert(sizeof({name}) == {len(rec.members)} * sizeof({t}), "
         f'"{name} must be the packed row, unpadded");\n')
+
+
+def bundle_struct(bundle: Bundle, int_type: str = "int") -> str:
+    """The C struct of one `Bundle`: a `const <scalar>*` per field, in field
+    order, an I32 field spelled `int_type` (the writer's `INT`).
+    `include/felizjueves/prim_pair.h` carries this text for `PrimPairSoA`
+    with `int32_t`, verbatim (test_emit_gpu.py)."""
+    members = "".join(
+        f"{INDENT}const {int_type if t is Scalar.I32 else CTYPE[t]}* {n};\n"
+        for n, t in bundle.fields)
+    return (f"// {bundle.name}: the record arrays, one pointer per field, "
+            "passed by value\n"
+            f"struct {bundle.name} {{\n{members}}};\n")
 
 
 def _records(k: Kernel) -> tuple[Record, ...]:

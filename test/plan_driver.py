@@ -111,7 +111,17 @@ from felizjueves.ao.staged import (
     _kets_checked,
     _transform,
 )
-from felizjueves.ir import AtomicAdd, For, If, Kernel, Note, Stmt, walk
+from felizjueves.ir import (
+    AtomicAdd,
+    For,
+    If,
+    Intent,
+    Kernel,
+    Note,
+    Scalar,
+    Stmt,
+    walk,
+)
 from felizjueves.kernel import bra_functions, ket_functions, launch_shape
 from felizjueves.kernel_dq import PARAMS as DQ_PARAMS
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
@@ -572,6 +582,33 @@ def _unit(kern: Kernel, backend: str, workdir: Path,
     path = workdir / f"{kern.name}.{ext}"
     path.write_text(emit(kern, arch))
     return path
+
+
+def kernel_args(kern: Kernel, at: Mapping[str, str], ns: str,
+                out: str) -> list[str]:
+    """The launch's arguments in `kern`'s signature order: `at[name]` per
+    param, `out` for the OUT matrix, and -- for a kernel with a `Bundled`
+    (the one-electron `PrimPairSoA`) -- one `ns::<struct>{...}` aggregate in
+    place of the params it carries, every field in declaration order and a
+    field the kernel does not read `nullptr`."""
+    b = kern.bundled
+    carried = dict(b.binds) if b is not None else {}
+    args: list[str] = []
+    placed = False
+    for p in kern.params:
+        if b is not None and b.field_of(p.name) is not None:
+            if not placed:
+                fields = ", ".join(at[carried[f]] if f in carried else "nullptr"
+                                   for f, _ in b.bundle.fields)
+                args.append(f"{ns}::{b.bundle.name}{{{fields}}}")
+                placed = True
+        elif p.intent is Intent.OUT:
+            args.append(out)
+        elif p.array or p.type is Scalar.I32:
+            args.append(at[p.name])
+        else:
+            raise ValueError(f"{kern.name}: no argument for {p.name}")
+    return args
 
 
 def dq_program(classes: list[DQClass], backend: str, workdir: Path, *,

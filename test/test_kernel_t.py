@@ -82,6 +82,7 @@ from felizjueves.kernel_t import (
     launch_shape,
     t_spec,
 )
+from felizjueves.prim_pair import AXES
 from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3
@@ -123,8 +124,9 @@ def _records(basis, pairs):
             eb.append(sh[j].exponents[pp.j])  # the KET primitive's exponent
             oa.append(off[i])
             obb.append(off[j])
-    return dict(zeta_ab=np.array(zeta), XPA=np.array(xpa), XPB=np.array(xpb),
-                s=np.array(s), eb_ket=np.array(eb),
+    return dict(zeta_ab=np.array(zeta), s=np.array(s), eb_ket=np.array(eb),
+                **{f"{a}PA": np.array(xpa)[:, d] for d, a in enumerate(AXES)},
+                **{f"{a}PB": np.array(xpb)[:, d] for d, a in enumerate(AXES)},
                 off_a=np.array(oa, dtype=np.int32),
                 off_b=np.array(obb, dtype=np.int32))
 
@@ -291,7 +293,7 @@ def test_the_parameter_block_is_kernel_s_plus_the_ket_exponent():
     k = build_t_kernel((1, 2))
     s_names = [p.name for p in build_s_kernel((1, 2)).params]
     names = [p.name for p in k.params]
-    assert names == [*s_names[:6], "eb_ket", *s_names[6:-1], "T"]
+    assert names == [*s_names[:4], "eb_ket", *s_names[4:-1], "T"]
     (T,) = [p for p in k.params if p.name == "T"]
     assert T.intent.name == "OUT"
 

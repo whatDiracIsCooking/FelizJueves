@@ -2,18 +2,42 @@
 // arch gfx1200, wavefront 32; fp64 throughout.
 #include <hip/hip_runtime.h>
 
+// PrimPairSoA: the record arrays, one pointer per field, passed by value
+struct PrimPairSoA {
+    const double* zeta;
+    const double* s;
+    const double* eb;
+    const double* XP;
+    const double* YP;
+    const double* ZP;
+    const double* XPA;
+    const double* YPA;
+    const double* ZPA;
+    const double* XPB;
+    const double* YPB;
+    const double* ZPB;
+    const int* off_a;
+    const int* off_b;
+};
+
 extern "C" __global__ void t_12(
     int n_rec,
     int n_ao,
-    const double* zeta_ab,
-    const double* XPA,
-    const double* XPB,
-    const double* s,
-    const double* eb_ket,
-    const int* off_a,
-    const int* off_b,
+    PrimPairSoA pp,
     double* T)
 {
+    // the record arrays, from PrimPairSoA pp
+    const double* const zeta_ab = pp.zeta;
+    const double* const s = pp.s;
+    const double* const eb_ket = pp.eb;
+    const double* const XPA = pp.XPA;
+    const double* const YPA = pp.YPA;
+    const double* const ZPA = pp.ZPA;
+    const double* const XPB = pp.XPB;
+    const double* const YPB = pp.YPB;
+    const double* const ZPB = pp.ZPB;
+    const int* const off_a = pp.off_a;
+    const int* const off_b = pp.off_b;
     // kinetic energy, class (la, lb) = (1, 2): T_ab by the fixed ket shift on the
     // E axis tables read at lb + 2 (ao/kinetic.py)
     // PRECONDITION: T is zeroed by the caller before the first T launch of a
@@ -33,12 +57,12 @@ extern "C" __global__ void t_12(
         double KE[18];
         {
             // fragment e_kinetic_12
-            const auto PA_x = XPA[(rec * 3 + 0)];
-            const auto PB_x = XPB[(rec * 3 + 0)];
-            const auto PA_y = XPA[(rec * 3 + 1)];
-            const auto PB_y = XPB[(rec * 3 + 1)];
-            const auto PA_z = XPA[(rec * 3 + 2)];
-            const auto PB_z = XPB[(rec * 3 + 2)];
+            const auto PA_x = XPA[rec];
+            const auto PB_x = XPB[rec];
+            const auto PA_y = YPA[rec];
+            const auto PB_y = YPB[rec];
+            const auto PA_z = ZPA[rec];
+            const auto PB_z = ZPB[rec];
             // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
             // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
             // undressed
