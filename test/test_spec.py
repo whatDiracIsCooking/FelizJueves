@@ -8,7 +8,15 @@ import itertools
 
 import pytest
 
-from felizjueves.spec import AM_LENGTH, OPERATOR_OF, Operator, Spec, Target
+from felizjueves.measured_store import target_of
+from felizjueves.spec import (
+    _PAIR_BATCH_REFUSAL,
+    AM_LENGTH,
+    OPERATOR_OF,
+    Operator,
+    Spec,
+    Target,
+)
 
 
 def _spec(**kw) -> Spec:
@@ -113,13 +121,14 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # #196 appends `k`; the earlier members keep their place and value.
     # #232 appends `s`, `t` and `v` the same way, and #272 appends `f`.
     # The Schwarz matrix appends `schwarz`, a pair class, and the
-    # cross-basis overlap `sx`, an ordered pair class.
+    # cross-basis overlap `sx`, an ordered pair class, and #410 the
+    # Coulomb metric `metric`, a pair of aux shells.
     assert [t.value for t in Target] == [
-        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx"]
+        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
-        Target.SCHWARZ: 2, Target.SX: 2,
+        Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2,
     }
 
 
@@ -219,6 +228,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
         Target.V: Operator.NUCLEAR, Target.F: Operator.COULOMB,
         Target.SCHWARZ: Operator.COULOMB, Target.SX: Operator.OVERLAP,
+        Target.METRIC: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -396,3 +406,66 @@ def test_the_cross_overlap_key_is_an_ordered_overlap_pair() -> None:
         Spec(Operator.COULOMB, 0, (1, 1), Target.SX)
     with pytest.raises(ValueError, match="pair"):
         Spec(Operator.OVERLAP, 0, (1, 1, 1, 1), Target.SX)
+
+
+# #410: the two-center Coulomb metric (P|Q), a pair (lP, lQ) of auxiliary
+# shells on the Coulomb operator, unbatched by decision.
+
+
+def _metric(am=(2, 1), **kw) -> Spec:
+    return Spec(Operator.COULOMB, 0, am, Target.METRIC, **kw)
+
+
+def test_the_metric_key_is_a_coulomb_pair_and_round_trips() -> None:
+    a = _metric()
+    assert a.key() == "coulomb/d0/(2,1)/b1/metric/literal"
+    assert a.total_am == 3  # the L of the quartet (2 0|1 0) it runs
+    assert _metric((1, 2)).key() == "coulomb/d0/(1,2)/b1/metric/literal"
+    # Read back by a parser that does not call Spec.key(): the class and
+    # the target slot recover the Spec exactly.
+    for lp in range(5):
+        for lq in range(5):
+            s = _metric((lp, lq))
+            op, d, cls, b, t, lv = s.key().split("/")
+            assert cls == f"({lp},{lq})" and t == "metric" and lv == "literal"
+            back = Spec(Operator(op), int(d[1:]),
+                        tuple(int(x) for x in cls[1:-1].split(",")),
+                        Target(t), n_batches=int(b[1:]))
+            assert back == s and back.key() == s.key()
+            assert target_of(f"{s.key()}@sm_86/nvcc 13.0") is Target.METRIC
+    assert "Target.METRIC" in Spec.total_am.__doc__
+
+
+def test_a_metric_key_never_collides_with_any_other_target_key() -> None:
+    ls = range(5)
+    metric = {_metric((a, b)).key() for a in ls for b in ls}
+    assert len(metric) == 25
+    others = set()
+    for t in Target:
+        if t is Target.METRIC:
+            continue
+        shapes = itertools.product(ls, repeat=AM_LENGTH[t])
+        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+    assert metric.isdisjoint(others)
+    # The quartet it runs, (lP 0|lQ 0), is a different key, and the class
+    # field alone tells them apart (no `|` in a pair).
+    assert _metric((2, 1)).key() != _spec(am=(2, 0, 1, 0)).key()
+    assert all("|" not in k.split("/")[2] for k in metric)
+
+
+@pytest.mark.parametrize("n", [3, 6, 9, 12])
+def test_a_batched_metric_spec_is_refused_by_decision(n: int) -> None:
+    with pytest.raises(ValueError, match="unbatched by decision") as err:
+        _metric(n_batches=n)
+    assert "pair target metric" in str(err.value)
+    assert "Hermite targets" in _PAIR_BATCH_REFUSAL[Target.METRIC]
+    assert _metric().n_batches == 1
+
+
+def test_the_metric_takes_a_pair_on_coulomb_only() -> None:
+    for op in (Operator.OVERLAP, Operator.KINETIC, Operator.NUCLEAR):
+        with pytest.raises(ValueError, match="built from operator coulomb"):
+            Spec(op, 0, (1, 1), Target.METRIC)
+    for am in ((1, 0, 1, 0), (1, 0, 1), (1,), (1, -1), (1, 1.0)):
+        with pytest.raises(ValueError):
+            _metric(am)

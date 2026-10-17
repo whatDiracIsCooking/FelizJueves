@@ -17,6 +17,10 @@ fragment against the identity directly as well:
   `e_axis` at `lb + 2` by `ao.kinetic.kinetic_axis`, for every class (ss)
   through (ff), its axis entries a dead-free subsequence of
   `_axis_body(la, lb + 2, d)`'s and its `j(j-1)` term absent for `j < 2`;
+- the single-CENTER fragment (#410) equals the products of
+  `e_axis(i, 0, alpha, 0, .)` bitwise for l = 0..4 over randomised `alpha`,
+  every entry with `i - t` odd (or `t > i`) on some axis neither declared
+  nor written, every non-seed entry one `Weighted` with no `X_PA` term;
 - dressed by `ao.pairs.dress` -- the one module that dresses -- the block is
   `ao.pairs.PrimitivePair.block`, row for row, so the layout is the pair
   record's and no dressing is inside the fragment.
@@ -569,3 +573,128 @@ def test_the_cuda_probe_compiles(nvcc, compile_device_source) -> None:
 @pytest.mark.hip
 def test_the_hip_probe_compiles(hipcc, compile_device_source) -> None:
     compile_device_source(hipcc, hip.emit(e_block_probe(), GFX1200), link=False)
+
+
+# ---------------------------------------------------------------------------
+# The single-center fragment: one aux primitive, X_PA = 0, no K_AB (#410)
+# ---------------------------------------------------------------------------
+
+CENTER_LMAX = 4  # (P|Q)'s aux shells reach g; every l here is L <= 4, fast
+
+
+def _center_absent(l: int) -> np.ndarray:  # noqa: E741
+    """True where `t_d > a_d` or `a_d - t_d` is odd on some axis -- stated
+    here from the parity rule, not read from the builder."""
+    rows = cartesians(l)
+    cols = hermite_order(l)
+    mask = np.zeros((len(rows), len(cols)), bool)
+    for r, a in enumerate(rows):
+        for c, t in enumerate(cols):
+            mask[r, c] = any(t[d] > a[d] or (a[d] - t[d]) % 2
+                             for d in range(3))
+    return mask
+
+
+def _center_want(l: int, alpha: float, pb: float) -> np.ndarray:  # noqa: E741
+    """`e_axis(i, 0, alpha, 0, pb)` products, `e_block`'s multiplication
+    order (`v = 1.0`, then `v * E_d` per axis), zero where `t_d > a_d`."""
+    axes = [[e_axis(i, 0, alpha, 0.0, pb) for i in range(l + 1)]
+            for _ in range(3)]
+    out = []
+    for a in cartesians(l):
+        row = []
+        for t in hermite_order(l):
+            v = 1.0
+            for d in range(3):
+                ax = axes[d][a[d]]
+                v = v * ax[t[d]] if t[d] < len(ax) else 0.0
+            row.append(v)
+        out.append(row)
+    return np.array(out)
+
+
+def _run_center(l: int, alpha: float) -> np.ndarray:  # noqa: E741
+    frag = ef.center_fragment(l)
+    E = np.full(ef.center_shape(l), np.nan)
+    scalars = {"half_inv_zeta": 0.5 / alpha} if l else {}
+    return interpret_fragment(frag, E=E, **scalars)["E"]
+
+
+@pytest.mark.parametrize("l", range(CENTER_LMAX + 1))
+def test_the_center_fragment_is_e_axis_at_x_pa_zero(l: int) -> None:  # noqa: E741
+    rng = random.Random(410 + l)
+    absent = _center_absent(l)
+    for _ in range(20):
+        alpha = rng.uniform(0.02, 50.0)
+        pb = rng.uniform(-2.0, 2.0)  # j = 0: X_PB enters only exp(0) = 1
+        got = _run_center(l, alpha)
+        want = _center_want(l, alpha, pb)
+        assert np.all(np.isnan(got[absent]))  # never written
+        assert not np.any(np.isnan(got[~absent]))  # every other entry is
+        assert np.all(want[absent] == 0.0)  # what the absence stands for
+        assert np.array_equal(got[~absent], want[~absent]), alpha  # bitwise
+
+
+@pytest.mark.parametrize("l", range(CENTER_LMAX + 1))
+def test_every_center_structural_zero_is_absent(l: int) -> None:  # noqa: E741
+    frag = ef.center_fragment(l)
+    names = {s.name for s in frag.body if isinstance(s, Decl)}
+    # Declared: exactly the live entries, i - t even, on each axis.
+    assert names == {ef.c_name(d, i, t) for d in range(3)
+                     for i in range(l + 1) for t in range(i + 1)
+                     if (i - t) % 2 == 0}
+    # Written: exactly the entries the parity rule leaves.
+    assigns = [s for s in frag.body if isinstance(s, Assign)]
+    wrote = {(s.dst.at[0].value, s.dst.at[1].value) for s in assigns}
+    assert wrote == {tuple(map(int, rc))
+                     for rc in np.argwhere(~_center_absent(l))}
+    assert len(assigns) == len(wrote)
+    # Nothing reads an odd-parity entry, and nothing is read but a declared
+    # local or a bind: no zero is computed anywhere.
+    read = {e.name for s in frag.body if isinstance(s, (Decl, Assign))
+            for e in ir._subexprs(s.init if isinstance(s, Decl) else s.value)
+            if isinstance(e, Var)}
+    assert read == names  # every local read (#92), none undeclared
+
+
+@pytest.mark.parametrize("l", range(CENTER_LMAX + 1))
+def test_every_center_entry_is_one_weighted(l: int) -> None:  # noqa: E741
+    frag = ef.center_fragment(l)
+    decls = [s for s in frag.body if isinstance(s, Decl)]
+    seeds = [s for s in decls if isinstance(s.init, Lit)]
+    # The seed is the literal 1 on each axis -- no exp, no K_AB.
+    assert [s.name for s in seeds] == [ef.c_name(d, 0, 0) for d in range(3)]
+    assert all(s.init.value == 1.0 for s in seeds)
+    rest = [s for s in decls if s not in seeds]
+    assert all(isinstance(s.init, Weighted) for s in rest)
+    for s in rest:
+        # The X_PA term ABSENT, not a zero weight: only 1/2zeta and (t+1).
+        assert {t.g for t in s.init.terms} <= {Factor.HALF_INV_ZETA,
+                                                Factor.ONE}
+        assert all(t.c != 0 for t in s.init.terms)
+    assigns = [s for s in frag.body if isinstance(s, Assign)]
+    assert assigns and all(
+        isinstance(s.value, Call) and s.value.fn is Fn.MUL for s in assigns)
+    assert not any(isinstance(s, (Raw, Inline)) for s in walk(frag.body))
+    assert not any(isinstance(e, Call) and e.fn is Fn.EXP
+                   for s in decls for e in ir._subexprs(s.init))
+    notes = [s for s in walk(frag.body) if isinstance(s, Note)]
+    assert len(notes) == 1 and "X_PA = 0" in notes[0].prov
+
+
+def test_the_center_binds_are_the_contract() -> None:
+    assert ef.center_fragment(0).binds == ("E",)  # (s) raises nothing
+    for l in range(1, CENTER_LMAX + 1):  # noqa: E741
+        frag = ef.center_fragment(l)
+        assert frag.binds == ("half_inv_zeta", "E")
+        assert frag.array_binds == {"E"}
+        assert frag.name == f"e_center_{l}"
+        assert ef.center_shape(l) == (len(cartesians(l)),
+                                      len(hermite_order(l)))
+    # Its locals never collide with the block fragment's (the (mn|P)
+    # follow-up inlines both into one kernel).
+    assert ef.center_fragment(2).declared.isdisjoint(
+        ef.block_fragment(1, 1).declared)
+    for bad in (-1, 1.0, None):
+        with pytest.raises(ValueError):
+            ef.center_fragment(bad)  # type: ignore[arg-type]
