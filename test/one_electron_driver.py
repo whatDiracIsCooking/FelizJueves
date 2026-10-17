@@ -33,7 +33,8 @@ double-valued record arrays (`arrays(target)` minus the offsets, each
 row-major, concatenated in parameter order) and one of its two `int`
 offsets; for `V`, the launch's nuclei `Z[n_nuc]` and `Cnuc[n_nuc, 3]`, once.
 A kernel argument is a pointer into those buffers, read off the kernel's
-own parameter list, so the call cannot drift from the signature.
+own parameter list, so the call cannot drift from the signature; the record
+arrays travel in one `PrimPairSoA` (`plan_driver.kernel_args`).
 
 THE UNITS. `units` maps a kernel name to a file already written -- under
 devtools/kernel-tier.sh, the generate phase's own (`tier_units`, which
@@ -50,10 +51,17 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
+from plan_driver import (
+    RUNS,
+    UPLOAD_INT,
+    Program,
+    _unit,
+    compile_checked,
+    kernel_args,
+)
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves.ir import Intent, Kernel, Scalar
+from felizjueves.ir import Intent, Kernel
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_s import launch_shape as s_launch_shape
 from felizjueves.kernel_t import build_t_kernel
@@ -110,14 +118,7 @@ def _call(kern: Kernel, c: int, ns: str, cls: OneEClass,
     at.update({"off_a": f"di[{c}]", "off_b": f"di[{c}] + {n}",
                "Z": "dZ", "Cnuc": "dC", "n_rec": str(n), "n_ao": "NAO",
                "n_nuc": "NNUC"})
-    args = []
-    for p in kern.params:
-        if p.intent is Intent.OUT:
-            args.append("dM")
-        elif p.array or p.type is Scalar.I32:
-            args.append(at[p.name])
-        else:
-            raise ValueError(f"{kern.name}: no argument for {p.name}")
+    args = kernel_args(kern, at, ns, "dM")
     grid, (lanes, _) = SHAPE[target](n, THREADS)
     return (f"        // pair class ({cls.la}, {cls.lb}), {n} records\n"
             f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"

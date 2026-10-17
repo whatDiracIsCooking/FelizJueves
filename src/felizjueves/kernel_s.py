@@ -23,9 +23,15 @@ reusing it is what lets the interpreted kernel be bitwise `==` to the host.
 THE PARAMETER BLOCK:
 
     params  n_rec n_ao (I32)
-            zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]   per record
-            off_a[n_rec]  off_b[n_rec]  (I32)
+            zeta_ab  s  XPA YPA ZPA  XPB YPB ZPB  [n_rec]   per record
+            off_a  off_b  [n_rec]  (I32)
             S[n_ao, n_ao]  (OUT, read and AtomicAdd-ed)
+
+- Every per-record array is flat, one per scalar -- `P - A` is three arrays,
+  one per axis, not `XPA[n_rec, 3]` -- and all of them cross the call as
+  one `PrimPairSoA` (`prim_pair.py`), so the signature is
+  `s_{la}{lb}(int n_rec, int n_ao, PrimPairSoA pp, double* S)`. Inside the
+  kernel each is still the array of its own name.
 
 - `zeta_ab`, not `zeta`, for the hygiene reason `kernel_jab` documents: the
   fragment binds a SCALAR named `zeta`, and `ir` refuses a host array of the
@@ -103,6 +109,7 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
+from felizjueves.prim_pair import AXES, bundled
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
@@ -116,6 +123,10 @@ __all__ = [
 ]
 
 REC = "rec"  # the record index: one thread per primitive-pair record
+
+# The record arrays arrive in one `PrimPairSoA` (prim_pair.py); `SX` shares it.
+BUNDLED = bundled("s", *(f"{a}P{c}" for c in "AB" for a in AXES),
+                  "off_a", "off_b", zeta="zeta_ab")
 
 ATOMIC_REASON = (
     "AtomicAdd: several primitive records of one shell pair, and both mirror "
@@ -189,9 +200,9 @@ def record_values(la: int, lb: int) -> tuple[list[Stmt], list[Stmt]]:
         head.append(Decl(ef.HALF_INV_ZETA, Scalar.F64,
                          init=_c(Fn.DIV, Lit(0.5), Var(ef.ZETA))))
         binds[ef.HALF_INV_ZETA] = Var(ef.HALF_INV_ZETA)
-    for d in range(3):
-        binds[Factor.pa(d).name_in_kernel] = Index("XPA", (rec, Lit(d)))
-        binds[Factor.pb(d).name_in_kernel] = Index("XPB", (rec, Lit(d)))
+    for d, a in enumerate(AXES):
+        binds[Factor.pa(d).name_in_kernel] = Index(f"{a}PA", (rec,))
+        binds[Factor.pb(d).name_in_kernel] = Index(f"{a}PB", (rec,))
     head += [
         Decl("sk", Scalar.F64, init=Index("s", (rec,))),
         Decl("oa", Scalar.I32, init=Index("off_a", (rec,))),
@@ -268,11 +279,11 @@ def build_s_kernel(cls: Spec | tuple[int, int], *,
         Param("n_rec", Scalar.I32),
         Param("n_ao", Scalar.I32),
         _f64("zeta_ab", (nr,)),
-        _f64("XPA", (nr, Lit(3))),
-        _f64("XPB", (nr, Lit(3))),
         _f64("s", (nr,)),
+        *(_f64(f"{a}PA", (nr,)) for a in AXES),
+        *(_f64(f"{a}PB", (nr,)) for a in AXES),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),
         Param("S", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or f"s_{la}{lb}", params, body)
+    return Kernel(name or f"s_{la}{lb}", params, body, bundled=BUNDLED)

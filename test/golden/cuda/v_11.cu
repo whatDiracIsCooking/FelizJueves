@@ -30,21 +30,47 @@ __device__ double fj_boys(int m, double T) {
     return exp(-T) * sum;
 }
 
+// PrimPairSoA: the record arrays, one pointer per field, passed by value
+struct PrimPairSoA {
+    const double* zeta;
+    const double* s;
+    const double* eb;
+    const double* XP;
+    const double* YP;
+    const double* ZP;
+    const double* XPA;
+    const double* YPA;
+    const double* ZPA;
+    const double* XPB;
+    const double* YPB;
+    const double* ZPB;
+    const int* off_a;
+    const int* off_b;
+};
+
 extern "C" __global__ void v_11(
     int n_rec,
     int n_ao,
     int n_nuc,
-    const double* zeta_ab,
-    const double* P,
-    const double* XPA,
-    const double* XPB,
-    const double* s_ab,
-    const int* off_a,
-    const int* off_b,
+    PrimPairSoA pp,
     const double* Z,
     const double* Cnuc,
     double* V)
 {
+    // the record arrays, from PrimPairSoA pp
+    const double* const zeta_ab = pp.zeta;
+    const double* const s_ab = pp.s;
+    const double* const XP = pp.XP;
+    const double* const YP = pp.YP;
+    const double* const ZP = pp.ZP;
+    const double* const XPA = pp.XPA;
+    const double* const YPA = pp.YPA;
+    const double* const ZPA = pp.ZPA;
+    const double* const XPB = pp.XPB;
+    const double* const YPB = pp.YPB;
+    const double* const ZPB = pp.ZPB;
+    const int* const off_a = pp.off_a;
+    const int* const off_b = pp.off_b;
     // nuclear attraction, class (la, lb) = (1, 1): V_ab = -SUM_C Z_C SUM_t
     // E^{ab}_t [t]^(0)(P - C, sqrt(zeta)), the J engine's recurrence at Hermite
     // order 2 with the ket a unit point charge (ao/potential.py)
@@ -58,21 +84,21 @@ extern "C" __global__ void v_11(
         double sk = s_ab[rec];
         int oa = off_a[rec];
         int ob = off_b[rec];
-        double P0 = P[(rec * 3 + 0)];
-        double P1 = P[(rec * 3 + 1)];
-        double P2 = P[(rec * 3 + 2)];
+        double P0 = XP[rec];
+        double P1 = YP[rec];
+        double P2 = ZP[rec];
         // the undressed block E^{ab}_t of this record, from the fragment: rows
         // cartesians(la) x cartesians(lb), columns hermite_order(la + lb); a
         // structurally zero entry is never written nor read
         double E[9][10];
         {
             // fragment e_block_11
-            const auto PA_x = XPA[(rec * 3 + 0)];
-            const auto PB_x = XPB[(rec * 3 + 0)];
-            const auto PA_y = XPA[(rec * 3 + 1)];
-            const auto PB_y = XPB[(rec * 3 + 1)];
-            const auto PA_z = XPA[(rec * 3 + 2)];
-            const auto PB_z = XPB[(rec * 3 + 2)];
+            const auto PA_x = XPA[rec];
+            const auto PB_x = XPB[rec];
+            const auto PA_y = YPA[rec];
+            const auto PB_y = YPB[rec];
+            const auto PA_z = ZPA[rec];
+            const auto PB_z = ZPB[rec];
             // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
             // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
             // undressed

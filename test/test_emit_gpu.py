@@ -3,9 +3,10 @@
 THE SEAM, a third time. The `gpu` backend consumes the identical `Kernel` the
 vendor backends do, and its text differs from CUDA's only in the hooks: the
 prologue (FelizJueves's own header instead of nothing, and the width assert
-when the text has a width) and the shuffle mask, cast to the header's
-`FJ_LANE_MASK_T` instead of spelled per vendor -- and in one spelling: every
-integer is `int32_t`, never a bare `int` (`CWriter.INT`).
+when the text has a width; for a one-electron unit, `prim_pair.h` where
+CUDA spells `PrimPairSoA` in the unit) and the shuffle mask, cast to the
+header's `FJ_LANE_MASK_T` instead of spelled per vendor -- and in one
+spelling: every integer is `int32_t`, never a bare `int` (`CWriter.INT`).
 `test_it_differs_from_cuda_only_in_the_hooks` pins exactly which lines differ,
 once `int32_t` is read back as `int`.
 
@@ -41,9 +42,13 @@ from test_k_lever_shuffle import _bcast
 
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, gpu
+from felizjueves.emit._c import bundle_struct
 from felizjueves.kernel import build_pq_kernel
 from felizjueves.kernel_s import build_s_kernel
+from felizjueves.kernel_sx import build_sx_kernel
+from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
+from felizjueves.prim_pair import PRIM_PAIR_SOA
 
 REPO = Path(__file__).resolve().parent.parent
 GOLDEN = REPO / "test" / "golden" / "gpu"
@@ -70,6 +75,24 @@ def test_the_header_it_includes_is_ours() -> None:
     assert (REPO / "include" / "felizjueves" / "backend.h").is_file()
     for k in (build_pq_kernel(4), build_s_kernel((1, 1))):
         assert gpu.emit(k, SM_86).splitlines()[2] == f'#include "{gpu.HEADER}"'
+
+
+def test_the_prim_pair_header_is_the_struct_the_writer_spells() -> None:
+    # include/felizjueves/prim_pair.h is the gpu units' PrimPairSoA, and a
+    # host's: its struct is bundle_struct's text, byte for byte, so the
+    # vendor units' inline copy and the header cannot drift apart.
+    header = (REPO / "include" / PRIM_PAIR_SOA.header).read_text()
+    struct = bundle_struct(PRIM_PAIR_SOA, gpu.GpuWriter.INT)
+    assert header.count(struct) == 1 and header.endswith(struct)
+    # plain C++: a host TU includes it with no vendor runtime behind it
+    includes = [x for x in header.split("*/", 1)[1].splitlines()
+                if x.startswith("#include")]
+    assert "#pragma once" in header and includes == ["#include <stdint.h>"]
+    for b in (build_s_kernel, build_t_kernel, build_v_kernel, build_sx_kernel):
+        k = b((1, 2))
+        assert k.bundled.bundle == PRIM_PAIR_SOA
+        assert gpu.emit(k, SM_86).splitlines()[3] == (
+            f'#include "{PRIM_PAIR_SOA.header}"')
 
 
 def test_it_differs_from_cuda_only_in_the_hooks() -> None:
@@ -101,9 +124,17 @@ def test_a_unit_with_no_shuffle_has_no_width() -> None:
         assert "static_assert(FJ_WAVEFRONT" not in text
         assert text.splitlines()[1].startswith("// any wavefront;")
         assert gpu.emit(k, WAVE64) == text
-        # and only the prologue separates it from CUDA's text
-        assert cuda.emit(k, SM_86).splitlines()[2:] == \
-            [as_int(x) for x in text.splitlines()[3:]]
+        # and only the prologue separates it from CUDA's text: CUDA spells a
+        # bundle's struct in the unit, the gpu text includes its header
+        vendor = cuda.emit(k, SM_86)
+        lines = 3
+        if k.bundled is not None:
+            vendor = vendor.replace("\n" + bundle_struct(k.bundled.bundle), "")
+            lines += 1
+            assert text.splitlines()[3] == (
+                f'#include "{k.bundled.bundle.header}"')
+        assert vendor.splitlines()[2:] == \
+            [as_int(x) for x in text.splitlines()[lines:]]
 
 
 def test_the_width_is_read_off_the_arch_and_asserted() -> None:
