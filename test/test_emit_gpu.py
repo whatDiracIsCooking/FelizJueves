@@ -4,8 +4,10 @@ THE SEAM, a third time. The `gpu` backend consumes the identical `Kernel` the
 vendor backends do, and its text differs from CUDA's only in the hooks: the
 prologue (FelizJueves's own header instead of nothing, and the width assert
 when the text has a width) and the shuffle mask, cast to the header's
-`FJ_LANE_MASK_T` instead of spelled per vendor.
-`test_it_differs_from_cuda_only_in_the_hooks` pins exactly which lines differ.
+`FJ_LANE_MASK_T` instead of spelled per vendor -- and in one spelling: every
+integer is `int32_t`, never a bare `int` (`CWriter.INT`).
+`test_it_differs_from_cuda_only_in_the_hooks` pins exactly which lines differ,
+once `int32_t` is read back as `int`.
 
 THE WIDTH. A unit with a shuffle carries `static_assert(FJ_WAVEFRONT == w)`;
 a unit with none has no width in its text at all, so it is byte-identical
@@ -30,6 +32,7 @@ needs no card, so these prove nothing about a number.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -47,6 +50,12 @@ GOLDEN = REPO / "test" / "golden" / "gpu"
 WAVE64 = Arch(Vendor.AMD, "gfx_test", wavefront=64)
 CUDA_MASK = "0xffffffffu"
 GPU_MASK = "((FJ_LANE_MASK_T)0xffffffffull)"
+BARE_INT = re.compile(r"\bint\b")
+
+
+def as_int(line: str) -> str:
+    """A gpu line with its fixed-width integers read back as CUDA's `int`."""
+    return re.sub(r"\bint32_t\b", "int", line)
 
 
 @pytest.mark.parametrize("kernel", [build_pq_kernel(4), build_s_kernel((1, 1))],
@@ -75,7 +84,7 @@ def test_it_differs_from_cuda_only_in_the_hooks() -> None:
         '"pq_L4_p2_q2 was emitted for a 32-lane wavefront");',
     ]
     assert c[1] == "// arch sm_86, wavefront 32; fp64 throughout."
-    body_c, body_g = c[2:], g[4:]
+    body_c, body_g = c[2:], [as_int(x) for x in g[4:]]
     assert len(body_c) == len(body_g)
     changed = {(a.strip(), b.strip())
                for a, b in zip(body_c, body_g, strict=True) if a != b}
@@ -93,7 +102,8 @@ def test_a_unit_with_no_shuffle_has_no_width() -> None:
         assert text.splitlines()[1].startswith("// any wavefront;")
         assert gpu.emit(k, WAVE64) == text
         # and only the prologue separates it from CUDA's text
-        assert cuda.emit(k, SM_86).splitlines()[2:] == text.splitlines()[3:]
+        assert cuda.emit(k, SM_86).splitlines()[2:] == \
+            [as_int(x) for x in text.splitlines()[3:]]
 
 
 def test_the_width_is_read_off_the_arch_and_asserted() -> None:
@@ -109,8 +119,8 @@ def test_the_width_is_read_off_the_arch_and_asserted() -> None:
          '"pq_L4_p2_q2 was emitted for a 32-lane wavefront");',
          'static_assert(FJ_WAVEFRONT == 64, '
          '"pq_L4_p2_q2 was emitted for a 64-lane wavefront");'),
-        ("for (int fj_o = 16; fj_o > 0; fj_o /= 2) {",
-         "for (int fj_o = 32; fj_o > 0; fj_o /= 2) {"),
+        ("for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {",
+         "for (int32_t fj_o = 32; fj_o > 0; fj_o /= 2) {"),
         (f"fj_v += __shfl_xor_sync({GPU_MASK}, fj_v, fj_o, 32);",
          "fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffffffffffull), "
          "fj_v, fj_o, 64);"),
@@ -119,9 +129,23 @@ def test_the_width_is_read_off_the_arch_and_asserted() -> None:
 
 def test_the_lane_broadcast_takes_the_mask_and_the_assert() -> None:
     lines = gpu.emit(_bcast(), SM_86).splitlines()
-    assert f"    got = __shfl_sync({GPU_MASK}, v[(int)threadIdx.y], 0, 32);" \
+    assert f"    got = __shfl_sync({GPU_MASK}, v[(int32_t)threadIdx.y], 0, 32);" \
         in lines
     assert lines[3].startswith("static_assert(FJ_WAVEFRONT == 32,")
+
+
+@pytest.mark.parametrize("unit", ["pq_L4", "s_11", "v_11", "bcast", "inline"])
+def test_no_integer_is_a_bare_int(unit: str) -> None:
+    # Declarations, loop counters, the geometry casts and fj_boys (narrow
+    # and wide) alike; comments included, since none of them says `int`.
+    text = gpu.emit(UNITS[unit](), SM_86)
+    assert "int32_t" in text
+    assert [x for x in text.splitlines() if BARE_INT.search(x)] == []
+
+
+def test_the_vendor_backends_still_spell_int() -> None:
+    # kernels.json's pins hash the cuda / hip text, which must not move.
+    assert "int32_t" not in cuda.emit(build_pq_kernel(4), SM_86)
 
 
 def test_any_vendors_arch_of_one_width_writes_one_text() -> None:

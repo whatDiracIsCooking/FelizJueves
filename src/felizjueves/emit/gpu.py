@@ -17,7 +17,11 @@ behind them), which the unit includes and the compiler resolves:
   `__shfl_xor_sync` / `__shfl_sync`, the full mask cast to
   `FJ_LANE_MASK_T` -- CUDA's 32-bit mask type or HIP's 64-bit one, chosen by
   the header, so the literal is the one thing written here;
-- `AtomicAdd` as `atomicAdd` (the shared default).
+- `AtomicAdd` as `atomicAdd` (the shared default);
+- every integer as `int32_t`, never a bare `int` -- declarations, loop
+  counters, the thread-geometry casts and `fj_boys` alike (`CWriter.INT`).
+  The header brings in `<stdint.h>`. The vendor backends still spell `int`,
+  so their text and its pins are unchanged.
 
 THE WIDTH IS NOT ERASED. The shuffle hooks read the wavefront off the `Arch`,
 as the vendor backends do, and fix it in the text. A unit that calls either
@@ -46,6 +50,8 @@ HEADER = "felizjueves/runtime.h"
 
 
 class GpuWriter(CWriter):
+    INT = "int32_t"  # fixed width; <stdint.h> comes in through HEADER
+
     def __init__(self, arch: Arch) -> None:
         super().__init__(arch)
         self._width_used = False
@@ -78,7 +84,7 @@ class GpuWriter(CWriter):
         return [
             "{",
             f"    auto fj_v = {value};",
-            f"    for (int fj_o = {w // 2}; fj_o > 0; fj_o /= 2) {{",
+            f"    for ({self.INT} fj_o = {w // 2}; fj_o > 0; fj_o /= 2) {{",
             f"        fj_v += __shfl_xor_sync({mask}, fj_v, fj_o, {w});",
             "    }",
             f"    {dst} = fj_v;",

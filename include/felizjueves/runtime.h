@@ -6,12 +6,13 @@
  * almost everything a generated kernel says identically -- the thread
  * builtins, the qualifiers, __syncthreads, atomicAdd on double, libm, the
  * __shfl_*_sync shuffles -- and this header covers the three places they
- * do not:
+ * do not, plus <stdint.h>, since a unit spells every integer int32_t:
  *
  *   the runtime     hipcc does not pre-include the HIP runtime the way nvcc
  *                   pre-includes CUDA's for a .cu, and the shuffles live there;
- *   FJ_LANE_MASK_T  the type of a _sync shuffle's lane mask: `unsigned int`
- *                   under CUDA, 64-bit under HIP (ROCm static-asserts it);
+ *   FJ_LANE_MASK_T  the type of a _sync shuffle's lane mask: uint32_t
+ *                   under CUDA, uint64_t under HIP (ROCm static-asserts
+ *                   that it is 8 bytes);
  *   FJ_WAVEFRONT    the lanes per warp / wavefront of the arch being compiled
  *                   for: 32 on every NVIDIA arch and on RDNA, 64 on CDNA.
  *                   Defaults to 32; pass -DFJ_WAVEFRONT=64 for a wave64 arch.
@@ -34,12 +35,14 @@
 
 #include "backend.h"
 
+#include <stdint.h>
+
 #if defined(FJ_SELECTED_HIP)
 #include <hip/hip_runtime.h>
-#define FJ_LANE_MASK_T unsigned long long
+#define FJ_LANE_MASK_T uint64_t
 #else
 // nvcc pre-includes cuda_runtime.h, which declares the shuffles.
-#define FJ_LANE_MASK_T unsigned int
+#define FJ_LANE_MASK_T uint32_t
 #endif
 
 #ifndef FJ_WAVEFRONT

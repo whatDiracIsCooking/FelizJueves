@@ -3,14 +3,14 @@
 #include "felizjueves/runtime.h"
 
 extern "C" __global__ void s_11(
-    int n_rec,
-    int n_ao,
+    int32_t n_rec,
+    int32_t n_ao,
     const double* zeta_ab,
     const double* XPA,
     const double* XPB,
     const double* s,
-    const int* off_a,
-    const int* off_b,
+    const int32_t* off_a,
+    const int32_t* off_b,
     double* S)
 {
     // overlap, class (la, lb) = (1, 1): S_ab as the t = 0 column of the dressed E
@@ -18,13 +18,13 @@ extern "C" __global__ void s_11(
     // PRECONDITION: S is zeroed by the caller before the first S launch of a
     // build; this kernel only adds
     // launch: one thread per primitive-pair record
-    int rec = ((int)threadIdx.x + ((int)blockIdx.x * (int)blockDim.x));
+    int32_t rec = ((int32_t)threadIdx.x + ((int32_t)blockIdx.x * (int32_t)blockDim.x));
     if (rec < n_rec) {
         double zeta = zeta_ab[rec];
         double half_inv_zeta = (0.5 / zeta);
         double sk = s[rec];
-        int oa = off_a[rec];
-        int ob = off_b[rec];
+        int32_t oa = off_a[rec];
+        int32_t ob = off_b[rec];
         // the undressed t = 0 column E^{ab}_0 of this record, from the fragment: rows
         // cartesians(la) x cartesians(lb)
         double E0[9];
