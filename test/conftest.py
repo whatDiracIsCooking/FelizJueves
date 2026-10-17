@@ -136,6 +136,9 @@ def hipcc() -> Toolchain:
 # -- the card gate (#91) ------------------------------------------------------
 
 REPO = Path(__file__).resolve().parent.parent
+# FelizJueves's own headers: what a `gpu`-backend unit's
+# `#include "felizjueves/runtime.h"` resolves against, as a consumer's -I.
+INCLUDE = REPO / "include"
 PRESENT = {"cuda": _has_nvidia_device, "hip": _has_amd_device}
 LOCK_REPORT_EVERY_S = 60.0
 
@@ -452,13 +455,15 @@ def compile_device_source(tmp_path: Path):
     the whole batching exercise rather than a sign something hung.
 
     Through the compiler cache (#186, test/devcache.py): every quoted
-    `#include` is carried into a content-addressed directory and the compile
-    runs there through sccache, so an unchanged unit is a hit on a re-run;
-    the binary is copied to `tmp_path/probe` (or `probe.o`).
+    `#include` -- relative to `tmp_path`, else to `INCLUDE`, which a `gpu`
+    unit's header resolves against -- is carried into a content-addressed
+    directory and the compile runs there through sccache, so an unchanged
+    unit is a hit on a re-run; the binary is copied to `tmp_path/probe` (or
+    `probe.o`).
     """
 
     def _compile(toolchain: Toolchain, source: str, *, link: bool = True) -> Path:
-        text, units = devcache.localize(source, tmp_path)
+        text, units = devcache.localize(source, tmp_path, (INCLUDE,))
         out = tmp_path / ("probe" if link else "probe.o")
         mode = "link" if link else ("-cubin" if toolchain.name == "nvcc" else "-c")
         got = devcache.compile_unit(

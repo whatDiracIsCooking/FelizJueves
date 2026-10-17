@@ -1,7 +1,7 @@
 """Test-side device compiles through the compiler cache (#186) -- harness.
 
     launcher(env=, which=, venv_paths=)        -> ["/path/sccache"] or []
-    localize(text, base)                       -> text, {unit name: bytes}
+    localize(text, base, search=)              -> text, {unit name: bytes}
     unit_key(compiler, flags, main, units)     -> hex digest of every input
     compile_unit(compiler, flags, main, text, units, out, ...) -> Compiled
     stats(env=)                                -> {"hits": n, "misses": n}
@@ -58,7 +58,7 @@ import re
 import shutil
 import subprocess
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -155,9 +155,11 @@ def _link_flags(flags: list[str]) -> list[str]:
 _QUOTED = re.compile(r'^(\s*#\s*include\s+)"([^"]+)"', re.MULTILINE)
 
 
-def localize(text: str, base: Path | None) -> tuple[str, dict[str, bytes]]:
+def localize(text: str, base: Path | None,
+             search: Sequence[Path] = ()) -> tuple[str, dict[str, bytes]]:
     """Every quoted `#include "X"` of `text`, carried: X (absolute, or
-    relative to `base`) is read, its own quoted includes carried the same
+    relative to `base`, or failing that to each of `search` in turn, as a
+    compiler's `-I` would) is read, its own quoted includes carried the same
     way, and the directive rewritten to a bare name in one flat directory.
     Returns the rewritten text and `{name: bytes}` of every carried unit --
     which is what `unit_key` must see, so a unit that does not resolve is an
@@ -174,8 +176,12 @@ def localize(text: str, base: Path | None) -> tuple[str, dict[str, bytes]]:
     def carry(src: str, here: Path | None) -> str:
         def one(m: re.Match[str]) -> str:
             spelled = Path(m[2])
-            path = spelled if spelled.is_absolute() else (
-                here / spelled if here is not None else None)
+            if spelled.is_absolute():
+                path = spelled
+            else:
+                dirs = ([here] if here is not None else []) + list(search)
+                path = next((d / spelled for d in dirs
+                             if (d / spelled).is_file()), None)
             if path is None or not path.is_file():
                 raise ValueError(f'#include "{m[2]}": no such unit '
                                  f"(relative to {here}) to carry into the key")

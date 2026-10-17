@@ -127,6 +127,27 @@ def test_two_units_with_one_basename_both_reach_the_key(tmp_path: Path) -> None:
     assert len(set(units)) == 2 and all(f'"{n}"' in text for n in units)
 
 
+def test_a_search_directory_resolves_what_base_does_not(tmp_path: Path) -> None:
+    # The gpu backend's `#include "felizjueves/runtime.h"`: not beside the
+    # unit, but under a search directory, as a compiler's -I finds it -- and
+    # still carried, so the header's bytes reach the key.
+    inc = tmp_path / "include"
+    (inc / "lib").mkdir(parents=True)
+    (inc / "lib" / "r.h").write_text('#include "s.h"\nint r;\n')
+    (inc / "lib" / "s.h").write_text("int s;\n")
+    main = '#include "lib/r.h"\n'
+    with pytest.raises(ValueError, match="no such unit"):
+        devcache.localize(main, tmp_path)
+    text, units = devcache.localize(main, tmp_path, (inc,))
+    assert text == '#include "r.h"\n'
+    assert units == {"r.h": b'#include "s.h"\nint r;\n', "s.h": b"int s;\n"}
+    # base wins over a search directory, as the compiler's quoted lookup does
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "r.h").write_text("int local;\n")
+    _, units = devcache.localize(main, tmp_path, (inc,))
+    assert units == {"r.h": b"int local;\n"}
+
+
 def test_an_include_that_does_not_resolve_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no such unit"):
         devcache.localize('#include "missing.h"\n', tmp_path)
