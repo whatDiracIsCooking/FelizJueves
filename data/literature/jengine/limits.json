@@ -620,6 +620,42 @@
         ]
       },
       "source": "not [JEngine]: ct5c00775 is J only; E from McMurchie & Davidson (docs/references.md entry 46); milestone 11, issue #245"
+    },
+    {
+      "claim": "The DF Coulomb metric (P|Q) = INT INT P(r1) Q(r2) / r12 of a Cartesian auxiliary basis (Target.METRIC, spec.py, #410; kernel_metric.py, #414; ao/metric.py, #412; milestone 15) has NO PUBLISHED BOARD. [JEngine] (ct5c00775) is J only: it prints no metric table, count or claim. The recurrence is McMurchie & Davidson's (docs/references.md entries 39 and 46) with one Gaussian on each side, and the auxiliary basis of the oracle is Weigend's cc-pVTZ-jkfit (entry 47), an input and not a table. The kernel and its host reference are THIS REPO'S OWN DESIGN on it, as the one-electron family is (the #245 record above). Nothing about the metric is scored and nothing is measured: no tables.json cell, no scoreboard, no floor, no claims.json record and no data/measured/ row was added, changed or scored for it.",
+      "mechanism": "(1) WHY THERE IS NOTHING TO SCORE. A metric Spec's am is the pair (lP, lQ); its total_am lP + lQ is the L of the Target.J quartet (lP 0|lQ 0) whose plan it runs (kernel_metric.metric_plan, the Schwarz pattern), but it indexes no row of [JEngine, v2, Tables 1-3], so no rule in literature/rules.py applies. The external witness is libcint's int2c2e_cart on df.make_auxmol(mol, 'cc-pvtz-jkfit') (45 shells, 166 Cartesian functions, O to g and H to f), tracked as four schema-3 row pieces without density (test/oracle/fixtures/h2o_ccpvtz_jkfit_metric_rows*.json, #411). Agreement shows the design is CORRECT, not how fast it is. (2) THE CONTRACT. The aux record weight is s = c (pi/alpha)^{3/2} with NO extra primitive normalisation: c already carries libcint's (test/oracle/basis.py), so the issue's c N (pi/alpha)^{3/2} would normalise twice; (2/sqrt(pi)) theta is the prelude's W0, and the product is 2 pi^{5/2} / (alpha_i alpha_k sqrt(alpha_i + alpha_k)). The single-center E^a_t vanishes when a_d - t_d is odd, so the parity-dead targets of the quartet's tower are DROPPED by a backward liveness pass (correcting the issue's 'nothing is dead'). Against the host the bound is 16 eps over the TOWER's absolute-value twin (test_kernel_metric.pq_tower); a per-target scale (each [t+tau] one atom) was tried and found unsound, reading an honest rounding as 122.9-229.3 eps on single-primitive (p|p) pairs because it cannot see the cancellation inside the tower. (3) WHAT DOES NOT REACH. Correctness is tested at lP + lQ <= 4 only, the nine classes lP <= lQ (s|s) through (d|d), by the milestone's decision; the builder and --metric-l accept any L, and the one class above the cap any test touches, L = 5, is built and emitted (slow), never interpreted, compiled or launched. Cartesian aux functions only. One batch by decision (spec._PAIR_BATCH_REFUSAL), no lever (levers.DEFAULT_REFUSALS). The card run is the RTX 3080 (sm_86) ONLY: on the RX 9060 XT (gfx1200) the units and both device programs were compiled with hipcc, but the card was not enumerated in the container (/dev/kfd present, rocminfo showing no gfx agent), so no HIP number exists (#431). (4) THE NAMED FOLLOW-UPS. The three-center (mn|P), for which the aux record and e_fragment.center_fragment (C-named locals) are shaped; the RX 9060 XT run and kernel-tier.sh's HIP device check (#431). Out of scope: DF-J and DF-K themselves, spherical aux functions, any measurement.",
+      "evidence": "docs/implementation/metric.md (the derived note). Host: test/test_ao_metric.py -- every L <= 4 block against int2c2e_cart within 1e-12 of max|M| (~96.5; worst 2.6e-14 at (d|d)) and within 1e-12 of its own absolute-value scale (worst 1.3e-13), the aux overlap against int1e_ovlp (worst 8.0e-16 of max|S|), the (s|s) closed form, the dressing identity to 4 eps (#412). Fragment: test/test_e_fragment.py pins center_fragment bitwise to ao.hermite.e_axis at X_PA = 0, l = 0..4 (#410). Interpreted: test/test_kernel_metric.py -- the nine classes against the host within 16 eps of the tower-twin scale (worst 1.78 synthetic, 2.60 on the fixture) and against libcint (2.6e-14 of max|M|), and the kept targets pinned to live_targets and to the parity formula (#414). Emitted: test/test_emit_metric.py, nine goldens per backend, compiled by nvcc (sm_86) and hipcc (gfx1200) with #92's filter (#415). On the RTX 3080 (sm_86, nvcc 13.0), PR #430: devtools/kernel-tier.sh --backend cuda -- -k metric exited 0, 2 passed / 0 skipped (test/test_metric_device.py): worst 2.61e-14 of max|M| against int2c2e_cart over the fixture's 962 L <= 4 pairs, and 7.17 eps of the tower-twin scale against the host (2.09 on the synthetic basis), runs bit-identical, the matrix exactly symmetric. No RX 9060 XT device run (#431).",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "subject": "DF Coulomb metric (P|Q)",
+        "own_design": [
+          "Target.METRIC"
+        ],
+        "published_board": null,
+        "source_of_E": "docs/references.md entries 39 and 46",
+        "aux_basis": "cc-pVTZ-jkfit, docs/references.md entry 47",
+        "aux_record_weight": "s = c (pi/alpha)^{3/2}, no extra N",
+        "claims_added": 0,
+        "cells_moved": 0,
+        "held_to": "ao/metric.py (16 eps of the tower-twin scale) and libcint's int2c2e_cart (1e-12 of max|M|)",
+        "tested_l_max": 4,
+        "cartesian_only": true,
+        "measured_rows": 0,
+        "n_batches": 1,
+        "ran_on": [
+          "sm_86"
+        ],
+        "not_run_on": [
+          "gfx1200"
+        ],
+        "follow_ups": [
+          "(mn|P)",
+          431
+        ]
+      },
+      "source": "not [JEngine]: ct5c00775 is J only; the recurrence from McMurchie & Davidson (docs/references.md entries 39 and 46), the aux basis from Weigend (entry 47); milestone 15, issue #417"
     }
   ]
 }
