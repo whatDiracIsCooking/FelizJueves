@@ -28,8 +28,9 @@ products `(E_x E_y) E_z`), and the interpreter is fp64 Python, so fp64
 round-off between them is zero. A mismatch is a defect, not noise. The
 identity check carries `test_ao_hermite`'s stated `K * eps * scale` bound.
 
-The reach is f by the issue's budget; every class runs in the fast tier
-(the (ff) block interprets in well under a second).
+The reach is f by the issue's budget. The (ff) block interprets in well
+under a second, but every case that builds a fragment above `la + lb = 4`
+is `slow` by test/tiers.py's cut, and the fast tier runs the rest.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ import numpy as np
 import pytest
 from test_ao_hermite import EPS, K, _derived, _lambda, _pair
 from test_ir import HGP_FACTORS
+from tiers import FAST_L_MAX, by_l, is_fast, split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves import ir
@@ -73,6 +75,9 @@ from felizjueves.ir import (
 
 LMAX = 3  # (ss) through (ff)
 CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]
+CLASS_PARAMS = split_by_l(CLASSES, sum, ids=lambda c: f"{c[0]}-{c[1]}")
+# The axis fragments' reach: (dd) in the fast tier, (ff) `slow`.
+AXIS_LMAX = [by_l(lm, 2 * lm, id=f"l{lm}") for lm in (FAST_L_MAX // 2, LMAX)]
 NEW_FACTORS = {Factor.HALF_INV_ZETA, Factor.PA_X, Factor.PA_Y, Factor.PA_Z,
                Factor.PB_X, Factor.PB_Y, Factor.PB_Z}
 
@@ -118,24 +123,26 @@ def _run_block(la: int, lb: int, zeta, P, A, B, fill=np.nan) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("lmax", AXIS_LMAX)
 @pytest.mark.parametrize("d", [0, 1, 2])
-def test_the_axis_fragment_is_e_axis(d: int) -> None:
-    frag = ef.axis_fragment(LMAX, LMAX, d)
+def test_the_axis_fragment_is_e_axis(d: int, lmax: int) -> None:
+    frag = ef.axis_fragment(lmax, lmax, d)
     rng = random.Random(152 + d)
     for _ in range(20):
         _, _, zeta, P, A, B = _geometry(rng)
-        out = interpret_fragment(frag, **_scalars(LMAX, LMAX, zeta, P, A, B, (d,)))
+        out = interpret_fragment(frag, **_scalars(lmax, lmax, zeta, P, A, B, (d,)))
         pa, pb = P[d] - A[d], P[d] - B[d]
-        for i in range(LMAX + 1):
-            for j in range(LMAX + 1):
+        for i in range(lmax + 1):
+            for j in range(lmax + 1):
                 want = e_axis(i, j, zeta, pa, pb)
                 got = tuple(out[ef.e_name(d, i, j, t)] for t in range(i + j + 1))
                 assert got == want, (d, i, j, zeta, pa, pb)  # bitwise
 
 
-def test_the_axis_fragment_satisfies_the_hermite_identity() -> None:
+@pytest.mark.parametrize("lmax", AXIS_LMAX)
+def test_the_axis_fragment_satisfies_the_hermite_identity(lmax: int) -> None:
     # The independent check, applied to the fragment's own output.
-    frag = ef.axis_fragment(LMAX, LMAX, 0)
+    frag = ef.axis_fragment(lmax, lmax, 0)
     rng = random.Random(1520)
     for _ in range(10):
         alpha, beta, A, B = _pair(rng)
@@ -143,8 +150,8 @@ def test_the_axis_fragment_satisfies_the_hermite_identity() -> None:
         out = interpret_fragment(frag, zeta=zeta, half_inv_zeta=0.5 / zeta,
                                  PA_x=P - A, PB_x=P - B)
         x = P + np.array([rng.uniform(-2.5, 2.5) for _ in range(9)]) / math.sqrt(zeta)
-        for i in range(LMAX + 1):
-            for j in range(LMAX + 1):
+        for i in range(lmax + 1):
+            for j in range(lmax + 1):
                 lhs = (x - A) ** i * (x - B) ** j * np.exp(-alpha * (x - A) ** 2) \
                     * np.exp(-beta * (x - B) ** 2)
                 terms = np.array([out[ef.e_name(0, i, j, t)] * _lambda(t, zeta, P, x)
@@ -153,8 +160,9 @@ def test_the_axis_fragment_satisfies_the_hermite_identity() -> None:
                 assert np.all(np.abs(lhs - terms.sum(axis=0)) <= K * EPS * scale)
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_entries_above_i_plus_j_are_absent_not_zeroed(la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_entries_above_i_plus_j_are_absent_not_zeroed(cls) -> None:
+    la, lb = cls
     frag = ef.axis_fragment(la, lb, 1)
     names = {s.name for s in frag.body if isinstance(s, Decl)}
     assert names == {ef.e_name(1, i, j, t) for i in range(la + 1)
@@ -168,8 +176,9 @@ def test_entries_above_i_plus_j_are_absent_not_zeroed(la: int, lb: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_the_block_fragment_is_e_block(la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_block_fragment_is_e_block(cls) -> None:
+    la, lb = cls
     rng = random.Random(1000 * la + lb)
     absent = _absent(la, lb)
     rows = ef.block_rows(la, lb)
@@ -215,8 +224,9 @@ def _seed_ok(e: ir.Expr) -> bool:
     return isinstance(e, Call) and e.fn is Fn.EXP
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_every_recurrence_step_is_weighted(la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_every_recurrence_step_is_weighted(cls) -> None:
+    la, lb = cls
     # The structural result: no step needed a Call tree or a Raw. Seeds are
     # the one EXP each axis; products are the block's MUL pairs; every other
     # value is one Weighted.
@@ -261,6 +271,7 @@ def test_the_binds_are_the_contract() -> None:
         "zeta", "half_inv_zeta", "PA_z", "PB_z")
 
 
+@pytest.mark.slow  # (2, 3) at L = 5 > FAST_L_MAX (tiers.py)
 def test_the_axis_body_is_the_one_source_of_the_block() -> None:
     # No nested Inline (#149): the block is composed at build time from the
     # same axis builder, so its axis statements ARE the axis fragments'.
@@ -294,8 +305,9 @@ def _run_overlap(la: int, lb: int, zeta, P, A, B) -> np.ndarray:
     return interpret_fragment(frag, E0=E0, **s)["E0"]
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_the_overlap_fragment_is_column_zero_of_e_block(la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_overlap_fragment_is_column_zero_of_e_block(cls) -> None:
+    la, lb = cls
     rng = random.Random(237 + 10 * la + lb)
     rows = ef.block_rows(la, lb)
     for _ in range(3):
@@ -308,9 +320,9 @@ def test_the_overlap_fragment_is_column_zero_of_e_block(la: int, lb: int) -> Non
         assert np.array_equal(got, _run_block(la, lb, zeta, P, A, B)[:, 0])
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_the_overlap_fragment_is_the_axis_body_minus_dead_entries(
-        la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_overlap_fragment_is_the_axis_body_minus_dead_entries(cls) -> None:
+    la, lb = cls
     # One source: its axis statements are `_axis_body`'s, in order, with
     # the entries nothing reads dropped -- a subsequence, never a rewrite.
     frag = ef.overlap_fragment(la, lb)
@@ -351,15 +363,24 @@ def test_the_overlap_binds_are_the_contract() -> None:
         ef.overlap_fragment(-1, 0)
 
 
-def test_the_overlap_fragment_leaves_the_block_and_axis_unchanged() -> None:
-    # The new entry point shares `_axis_body`; the block's text is pinned by
-    # the probe goldens below, and the axis fragment is that body plus its
-    # Note (test_the_axis_body_is_the_one_source_of_the_block).
-    for la, lb in CLASSES:
+def _block_and_axis_unchanged(classes) -> None:
+    for la, lb in classes:
         body = ef.block_fragment(la, lb).body
         heads = [s for d in range(3) for s in ef._axis_body(la, lb, d)]
         assert list(body[1:1 + len(heads)]) == heads
         assert ef.axis_fragment(la, lb, 0).body[1:] == ef._axis_body(la, lb, 0)
+
+
+def test_the_overlap_fragment_leaves_the_block_and_axis_unchanged() -> None:
+    # The new entry point shares `_axis_body`; the block's text is pinned by
+    # the probe goldens below, and the axis fragment is that body plus its
+    # Note (test_the_axis_body_is_the_one_source_of_the_block).
+    _block_and_axis_unchanged([c for c in CLASSES if is_fast(sum(c))])
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_block_and_axis_are_unchanged_above_l4() -> None:
+    _block_and_axis_unchanged([c for c in CLASSES if not is_fast(sum(c))])
 
 
 # ---------------------------------------------------------------------------
@@ -389,9 +410,9 @@ def _bracket(la: int, lb: int, zeta, P, A, B, beta) -> list[float]:
     return out
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_the_kinetic_fragment_is_the_shift_on_e_axis_at_lb_plus_2(
-        la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_kinetic_fragment_is_the_shift_on_e_axis_at_lb_plus_2(cls) -> None:
+    la, lb = cls
     rng = random.Random(238 + 10 * la + lb)
     for _ in range(3):
         _, beta, zeta, P, A, B = _geometry(rng)
@@ -400,8 +421,9 @@ def test_the_kinetic_fragment_is_the_shift_on_e_axis_at_lb_plus_2(
         assert np.array_equal(got, _bracket(la, lb, zeta, P, A, B, beta))
 
 
-@pytest.mark.parametrize("la,lb", CLASSES)
-def test_the_kinetic_fragment_is_the_widened_axis_body(la: int, lb: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_kinetic_fragment_is_the_widened_axis_body(cls) -> None:
+    la, lb = cls
     # One source: its E statements are `_axis_body(la, lb + 2, d)`'s, in
     # order, dead ones dropped -- and the table reaches j = lb + 2 on every
     # axis, while i never passes la.

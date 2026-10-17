@@ -19,8 +19,9 @@ basis reaching f, and it puts same-centre shell pairs (`off_a == off_b`
 whenever `i == j`) through a kernel with no diagonal rule, so a scatter that
 special-cased equal offsets would fail here; and the whole matrix of the
 three tracked libcint cross cases, both orientations. libcint itself is the
-host's witness (test_ao_cross_overlap.py), not this file's. Fast tier:
-nothing compiles and nothing launches on a card.
+host's witness (test_ao_cross_overlap.py), not this file's. Nothing
+compiles and nothing launches on a card; a class above `la + lb = 4` (the
+d-f and f-f classes) is `slow`, by test/tiers.py's cut.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, split_by_l
 
 from felizjueves.ao.overlap import cross_overlap_matrix
 from felizjueves.ao.pairs import overlap_bound
@@ -51,6 +53,7 @@ from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3
 CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]
+CLASS_PARAMS = split_by_l(CLASSES, sum, ids=lambda c: f"{c[0]}{c[1]}")
 
 
 @cache
@@ -95,13 +98,14 @@ def _hf_plan() -> XLaunch:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow  # plans (ff), L > FAST_L_MAX (tiers.py)
 def test_hf_against_itself_reaches_every_ordered_class_and_equal_offsets():
     plan = _hf_plan()
     assert [(c.la, c.lb) for c in plan] == CLASSES
     assert any(r.off_a == r.off_b for c in plan for r in c.recs)
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=[f"{a}{b}" for a, b in CLASSES])
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_one_launch_over_the_class_equals_the_host(cls):
     plan = _hf_plan()
     b = _basis("hf_ccpvtz")
@@ -169,7 +173,7 @@ def test_the_parameter_block():
     assert {ZEROED_S, ATOMIC_REASON} <= notes
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=[f"{a}{b}" for a, b in CLASSES])
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_one_add_per_element_no_mirror_no_diagonal_branch(cls):
     la, lb = cls
     k = build_sx_kernel(cls)
@@ -184,7 +188,7 @@ def test_one_add_per_element_no_mirror_no_diagonal_branch(cls):
     assert len([s for s in walk(k.body) if isinstance(s, If)]) == 1
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=[f"{a}{b}" for a, b in CLASSES])
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_the_record_statements_are_the_s_kernels(cls):
     head, values = record_values(*cls)
     sx = build_sx_kernel(cls).body
@@ -195,8 +199,8 @@ def test_the_record_statements_are_the_s_kernels(cls):
     assert tuple(gx.then[:n]) == tuple(gs.then[:n]) == (*head, *values)
 
 
-@pytest.mark.parametrize("cls", [(0, 0), (2, 1), (1, 2), (3, 3)],
-                         ids=["00", "21", "12", "33"])
+@pytest.mark.parametrize("cls", [by_l(c, sum(c), id=f"{c[0]}{c[1]}")
+                                 for c in [(0, 0), (2, 1), (1, 2), (3, 3)]])
 def test_both_backends_emit_it(cls):
     k = build_sx_kernel(cls)
     for text in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)):

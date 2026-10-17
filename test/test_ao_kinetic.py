@@ -6,7 +6,9 @@ is NOT symmetric in `i <-> j`, the `j >= 2` guard of the `S_{i,j-2}` term, and
 an independent one-dimensional quadrature of `1/2 <a'|b'>` (integration by
 parts: no ket shift, no `E` table), and, since #240, libcint's `int1e_kin`
 through the tracked fixtures (the block at the end of this file; s/p fast,
-`slow` from l = 2). Fast tier otherwise, no marker, no PySCF.
+`slow` from l = 2). Fast tier otherwise, no marker, no PySCF -- except a
+case that reaches a class above `la + lb = 4` (test/tiers.py's cut), which
+is `slow`.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from tiers import by_l, is_fast
 
 from felizjueves.ao.kinetic import kinetic_axis, kinetic_block, kinetic_matrix
 from felizjueves.ao.overlap import overlap_block
@@ -30,6 +33,13 @@ SHELLS = (
     Shell(3, C, (0.55, 0.12), (0.8, 0.3)),
     Shell(1, C, (0.9,), (1.0,)),
 )
+# SHELLS without its f shell: every pair at L <= FAST_L_MAX (tiers.py), for
+# the fast tier's whole-matrix checks; SHELLS itself reaches (ff), `slow`.
+SHELLS_THROUGH_D = tuple(s for s in SHELLS if s.l <= 2)
+
+
+def _pair_param(ia: int, ib: int, id: str):
+    return by_l((ia, ib), SHELLS[ia].l + SHELLS[ib].l, id=id)
 
 
 # --- closed forms -----------------------------------------------------------
@@ -149,9 +159,11 @@ def _quad_1d(i, j, alpha, beta, a, b):
     return s * h, 0.5 * t * h
 
 
-@pytest.mark.parametrize(("ia", "ib"), [(1, 2), (2, 4), (4, 2), (2, 2),
-                                        (5, 4), (0, 4)])
-def test_block_against_quadrature(ia: int, ib: int) -> None:
+@pytest.mark.parametrize("pair", [_pair_param(ia, ib, f"{ia}-{ib}") for ia, ib
+                                  in [(1, 2), (2, 4), (4, 2), (2, 2), (5, 4),
+                                      (0, 4)]])
+def test_block_against_quadrature(pair) -> None:
+    ia, ib = pair
     sa, sb = SHELLS[ia], SHELLS[ib]
     want = [[0.0] * sb.n_cart for _ in range(sa.n_cart)]
     for alpha, ca in zip(sa.exponents, sa.coefficients, strict=True):
@@ -180,9 +192,11 @@ def test_block_against_quadrature(ia: int, ib: int) -> None:
 # --- self-adjointness and the matrix ---------------------------------------
 
 
-@pytest.mark.parametrize("ia", range(len(SHELLS)))
-@pytest.mark.parametrize("ib", range(len(SHELLS)))
-def test_swapped_block_is_the_transpose(ia: int, ib: int) -> None:
+@pytest.mark.parametrize("pair", [_pair_param(ia, ib, f"{ib}-{ia}")
+                                  for ia in range(len(SHELLS))
+                                  for ib in range(len(SHELLS))])
+def test_swapped_block_is_the_transpose(pair) -> None:
+    ia, ib = pair
     # The recurrence shifts only the ket, so (sb, sa) runs a different
     # computation from (sa, sb); agreement is the operator's self-adjointness.
     sa, sb = SHELLS[ia], SHELLS[ib]
@@ -196,8 +210,7 @@ def test_swapped_block_is_the_transpose(ia: int, ib: int) -> None:
             assert abs(ab[r][c] - ba[c][r]) <= 1e-13 * scale, (r, c)
 
 
-def test_kinetic_matrix_is_exactly_symmetric_and_n_ao_square() -> None:
-    basis = Basis(SHELLS)
+def _symmetric_and_n_ao_square(basis: Basis) -> None:
     T = kinetic_matrix(basis)
     n = basis.n_ao
     assert len(T) == n and all(len(r) == n for r in T)
@@ -207,19 +220,37 @@ def test_kinetic_matrix_is_exactly_symmetric_and_n_ao_square() -> None:
     assert all(T[i][i] > 0.0 for i in range(n))  # kinetic energy is positive
 
 
-def test_kinetic_matrix_places_each_block_at_its_offsets() -> None:
-    basis = Basis(SHELLS)
+def test_kinetic_matrix_is_exactly_symmetric_and_n_ao_square() -> None:
+    _symmetric_and_n_ao_square(Basis(SHELLS_THROUGH_D))
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_kinetic_matrix_is_exactly_symmetric_and_n_ao_square_with_f() -> None:
+    _symmetric_and_n_ao_square(Basis(SHELLS))
+
+
+def _places_each_block(shells) -> None:
+    basis = Basis(shells)
     T = kinetic_matrix(basis)
     off = basis.offsets
-    for i, sa in enumerate(SHELLS):
-        for j in range(i, len(SHELLS)):
-            sb = SHELLS[j]
+    for i, sa in enumerate(shells):
+        for j in range(i, len(shells)):
+            sb = shells[j]
             blk = kinetic_block(sa, sb)
             for r in range(sa.n_cart):
                 for c in range(sb.n_cart):
                     if i == j and c < r:
                         continue
                     assert T[off[i] + r][off[j] + c] == blk[r][c]
+
+
+def test_kinetic_matrix_places_each_block_at_its_offsets() -> None:
+    _places_each_block(SHELLS_THROUGH_D)
+
+
+@pytest.mark.slow  # SHELLS reaches (ff), L > FAST_L_MAX (tiers.py)
+def test_kinetic_matrix_places_each_block_at_its_offsets_with_f() -> None:
+    _places_each_block(SHELLS)
 
 
 
@@ -246,23 +277,37 @@ def _chain_236(n: int) -> Basis:
                        for m in range(n) for dz in (0.0, 1.4)))
 
 
-def _bases_236() -> dict[str, Basis]:
+def _bases_236(fast: bool | None = None) -> dict[str, Basis]:
+    """The cases; with `fast`, those on that side of test/tiers.py's cut (a
+    basis reaches the pair class `2 l_max`: SHELLS and HF/cc-pVTZ, (ff))."""
     out = {"SHELLS": Basis(SHELLS), "h2_chain_8": _chain_236(8)}
     for name in ("h2o_sto3g_j", "hf_ccpvtz"):
         out[name] = _ob236.from_fixture(_mf236.load(_mf236.FIXTURES
                                                     / f"{name}.json"))
-    return out
+    if fast is None:
+        return out
+    return {n: b for n, b in out.items()
+            if is_fast(2 * max(s.l for s in b.shells)) == fast}
 
 
-def test_236_screened_kinetic_at_tau_zero_is_the_unscreened() -> None:
-    for name, basis in _bases_236().items():
+def _236_at_tau_zero(fast: bool) -> None:
+    for name, basis in _bases_236(fast).items():
         pl = pair_list(basis, tau=0.0, bound=kinetic_bound)
         assert pl.dropped == ()
         assert kinetic_matrix(basis, pairs=pl.kept) == kinetic_matrix(basis), name
 
 
-def test_236_screened_kinetic_drops_only_blocks_below_tau() -> None:
-    for name, basis in _bases_236().items():
+def test_236_screened_kinetic_at_tau_zero_is_the_unscreened() -> None:
+    _236_at_tau_zero(fast=True)
+
+
+@pytest.mark.slow  # SHELLS and HF/cc-pVTZ reach (ff) (tiers.py)
+def test_236_screened_kinetic_at_tau_zero_is_the_unscreened_above_l4() -> None:
+    _236_at_tau_zero(fast=False)
+
+
+def _236_drops_only_blocks_below_tau(fast: bool) -> None:
+    for name, basis in _bases_236(fast).items():
         T0 = kinetic_matrix(basis)
         off, sh = basis.offsets, basis.shells
         for tau in _TAUS_236:
@@ -281,7 +326,16 @@ def test_236_screened_kinetic_drops_only_blocks_below_tau() -> None:
                                     name, tau, key)
                             else:
                                 assert got == want, (name, tau, key)
+
+
+def test_236_screened_kinetic_drops_only_blocks_below_tau() -> None:
+    _236_drops_only_blocks_below_tau(fast=True)
     assert pair_list(_chain_236(8), tau=1e-6, bound=kinetic_bound).dropped
+
+
+@pytest.mark.slow  # SHELLS and HF/cc-pVTZ reach (ff) (tiers.py)
+def test_236_screened_kinetic_drops_only_blocks_below_tau_above_l4() -> None:
+    _236_drops_only_blocks_below_tau(fast=False)
 
 # --- #240: T against libcint's int1e_kin, every fixture that carries it -----
 #

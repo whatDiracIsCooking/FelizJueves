@@ -39,6 +39,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import test_kernel_f as tk
+from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
@@ -58,13 +59,7 @@ NAME = sv.NAME
 BOTH = (bv.NAME, NAME)
 CAP = 4  # milestone 13: every test at L <= 4
 
-
-def _speed(cls):
-    return pytest.param(cls, id="".join(map(str, cls)),
-                        marks=(pytest.mark.slow,) if sum(cls) > CAP else ())
-
-
-LADDER = [_speed(c) for c in vrr.CLASSES]
+LADDER = split_by_l(vrr.CLASSES, sum, ids=lambda c: "".join(map(str, c)))
 CAPPED = [c for c in vrr.CLASSES if sum(c) <= CAP]
 
 
@@ -221,13 +216,23 @@ GROUP_TABLE = {
 }
 
 
-def test_the_group_table_covers_the_ladder_and_is_the_schedule() -> None:
-    assert tuple(GROUP_TABLE) == vrr.CLASSES
-    for cls, rows in GROUP_TABLE.items():
+def _group_table_is_the_schedule(classes) -> None:
+    for cls in classes:
+        rows = GROUP_TABLE[cls]
         assert sv.group_peaks(cls) == rows, cls
         assert len(rows) == bv.n_groups(cls), cls
         assert max(r[1] for r in rows) == bv.vrr_phase(cls, len(rows)), cls
         assert all(d <= f for _, f, d in rows), cls  # one-directional
+
+
+def test_the_group_table_covers_the_ladder_and_is_the_schedule() -> None:
+    assert tuple(GROUP_TABLE) == vrr.CLASSES
+    _group_table_is_the_schedule(c for c in vrr.CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_group_table_is_the_schedule_above_l4() -> None:
+    _group_table_is_the_schedule(c for c in vrr.CLASSES if not is_fast(sum(c)))
 
 
 # ---------------------------------------------------------------------------

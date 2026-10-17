@@ -47,6 +47,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import test_kernel_f as tk
+from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
@@ -67,13 +68,7 @@ NAME = sh.NAME
 BOTH = (bv.NAME, NAME)
 CAP = 4  # milestone 13: every test at L <= 4
 
-
-def _speed(cls):
-    return pytest.param(cls, id="".join(map(str, cls)),
-                        marks=(pytest.mark.slow,) if sum(cls) > CAP else ())
-
-
-LADDER = [_speed(c) for c in vrr.CLASSES]
+LADDER = split_by_l(vrr.CLASSES, sum, ids=lambda c: "".join(map(str, c)))
 CAPPED = [c for c in vrr.CLASSES if sum(c) <= CAP]
 
 
@@ -263,9 +258,9 @@ SLICE_TABLE = {
 }
 
 
-def test_the_slice_table_covers_the_ladder_and_is_the_definition() -> None:
-    assert tuple(SLICE_TABLE) == vrr.CLASSES
-    for cls, (n, phase, groups, stmts) in SLICE_TABLE.items():
+def _slice_table_is_the_definition(classes) -> None:
+    for cls in classes:
+        n, phase, groups, stmts = SLICE_TABLE[cls]
         na, nb = (len(vrr.cartesians(x)) for x in cls[:2])
         assert sh.n_slices(cls) == n == na * nb, cls
         assert sh.slice_peaks(cls) == tuple(
@@ -276,6 +271,16 @@ def test_the_slice_table_covers_the_ladder_and_is_the_definition() -> None:
         assert sh.n_groups(cls) == groups == bv.rule(cls, floor=phase), cls
         assert groups >= bv.n_groups(cls), cls  # a lower floor, more groups
         assert sum(s.n_statements for s in hrr.slices(cls)) == stmts, cls
+
+
+def test_the_slice_table_covers_the_ladder_and_is_the_definition() -> None:
+    assert tuple(SLICE_TABLE) == vrr.CLASSES
+    _slice_table_is_the_definition(c for c in vrr.CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_slice_table_is_the_definition_above_l4() -> None:
+    _slice_table_is_the_definition(c for c in vrr.CLASSES if not is_fast(sum(c)))
 
 
 def test_an_override_of_350_s_count_wins_under_the_composition(

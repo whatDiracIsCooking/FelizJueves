@@ -1,11 +1,14 @@
 """plan/search.py: the cut and seed-order search behind the `searched` board.
 
-Fast tests replay the recorded choices (data/scoreboards/jengine/
+Tests replay the recorded choices (data/scoreboards/jengine/
 searched_cuts.json, schema 3 since #172: one explicit seed order per batch)
 and check what the record must satisfy, and that a doctored record is
-refused. The `slow` test re-runs the build step and asserts it reproduces
-the record byte for byte. How the replayed plans score on the searched
-board is pinned in test_scoreboards.py.
+refused. Every cell is L = 7..16 > FAST_L_MAX (test/tiers.py), and loading
+the record builds each cell's batches to check its orders, so all of that is
+`slow`; the fast tier keeps what reads the record's JSON and the code's
+constants. test_the_build_step_reproduces_the_record re-runs the build step
+and asserts it reproduces the record byte for byte. How the replayed plans
+score on the searched board is pinned in test_scoreboards.py.
 """
 
 from __future__ import annotations
@@ -153,9 +156,15 @@ def _at_or_under_all_three(L: int, nb: int, c) -> bool:
 
 
 def test_the_record_covers_exactly_the_table_grid() -> None:
-    assert set(_recorded()) == set(GRID)
+    # From the JSON; that it loads, and its batches check, is the slow twin.
+    assert {tuple(int(x) for x in k.split("/")) for k in _doc()["cuts"]} == set(GRID)
     for t in TABLES:
         assert set(t.cells) == set(GRID)
+
+
+@pytest.mark.slow  # load_cuts builds every cell's batches: L > FAST_L_MAX
+def test_the_loaded_record_covers_exactly_the_table_grid() -> None:
+    assert set(_recorded()) == set(GRID)
 
 
 # #171's rule, as the issue body states it (line breaks aside). It was
@@ -206,6 +215,7 @@ def test_the_record_states_the_space_the_code_searches() -> None:
     assert "58" in space["starts"] and len(SEED_ORDERS) == 58
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("L", "nb"), GRID)
 def test_each_recorded_frontier_replays_and_selects_the_recorded_plan(
     L: int, nb: int
@@ -232,6 +242,7 @@ def test_each_recorded_frontier_replays_and_selects_the_recorded_plan(
         front[k].cuts, front[k].starts)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("L", "nb"), GRID)
 def test_each_recorded_cut_is_within_the_minimax_tolerance(L: int, nb: int) -> None:
     cuts, orders = _recorded()[L, nb]
@@ -248,6 +259,7 @@ def test_each_recorded_cut_is_within_the_minimax_tolerance(L: int, nb: int) -> N
     assert feasible(_replayed(L, nb), _minimax(L, nb))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("L", "nb"), GRID)
 def test_the_climbed_frontier_dominates_every_rule_plan(L: int, nb: int) -> None:
     # Every start is evaluated, so every plan of the 58-rule space (#168) on
@@ -277,6 +289,7 @@ def test_the_frontier_is_order_searchs_frontier() -> None:
     assert search_module.product is order_search.product
     assert search_module.point is order_search.point
 
+@pytest.mark.slow
 
 def test_the_literal_plan_is_the_hermite_seed_of_the_literal_cut() -> None:
     assert SEED_ORDERS[LITERAL_SEED] is next(iter(seed_orders()))[1]
@@ -290,6 +303,7 @@ def test_the_literal_plan_is_the_hermite_seed_of_the_literal_cut() -> None:
         assert [(d.batch, d.targets, dict(d.parents)) for d in again] == [
             (d.batch, d.targets, dict(d.parents)) for d in dags]
 
+@pytest.mark.slow
 
 def test_the_search_space_is_bounded_and_counted() -> None:
     # Every cut but those whose first point is 1 (#64: they empty Y_{0,0} and
@@ -316,6 +330,7 @@ def test_the_search_space_is_bounded_and_counted() -> None:
     assert {(L, nb) for L, nb in GRID if len(feasible_cuts(L, nb)) > 1} == {
         (7, 9), (8, 9), (15, 9)}
 
+@pytest.mark.slow
 
 def test_starts_are_the_distinct_rule_orders_of_a_batch() -> None:
     dag = searched_plan(8, 3, ())[1]
@@ -329,6 +344,7 @@ def test_starts_are_the_distinct_rule_orders_of_a_batch() -> None:
     # every rule's order is one of the starts, under its first namer
     assert {rule_order(8, dag, n) for n in SEED_ORDERS} == set(starts.values())
 
+@pytest.mark.slow
 
 def test_a_search_does_not_depend_on_the_worker_count() -> None:
     # The build step spreads climbs over processes; each is a pure function
@@ -338,6 +354,7 @@ def test_a_search_does_not_depend_on_the_worker_count() -> None:
     assert dump_cuts({(7, 3): serial}, budget=3) == dump_cuts(
         build([(7, 3)], workers=1, budget=3), budget=3)
 
+@pytest.mark.slow
 
 def test_a_cut_that_empties_a_batch_is_refused() -> None:
     # A first cut at 1 leaves Y_{0,0} and Z_{0,0} empty ([JEngine, v2, Fig. 4]
@@ -347,6 +364,7 @@ def test_a_cut_that_empties_a_batch_is_refused() -> None:
     with pytest.raises(ValueError, match=r"Y_\{0,0\}, Z_\{0,0\}"):
         searched_plan(7, 6, (1,))
 
+@pytest.mark.slow
 
 def test_an_unknown_seed_order_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="seed order 'nope'"):
@@ -371,6 +389,7 @@ def _doctor(tmp_path: Path, key: str, edit) -> Path:
     return bad
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("edit", "message"), [
     (lambda o: o[0].pop(), r"cell 9/3, batch 0 \(x0\.\.9\): the seed order "
      r"is not a permutation"),
@@ -392,6 +411,7 @@ def test_a_doctored_permutation_is_refused(tmp_path: Path, edit, message) -> Non
         load_frontiers(bad)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("key", "edit", "message"), [
     # A permutation of the wrong batch where the two batches are the same
     # size: x5..10's and y5..10's orders swapped (55 targets each), so only
@@ -410,6 +430,7 @@ def test_a_permutation_of_another_batch_is_refused(
         load_cuts(bad)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("key", "cut", "message"), [
     # The recorded orders are the batches of cut (5,); the doctored point
     # names a cut that does not produce them (#173), one point lower or
@@ -436,6 +457,7 @@ def test_a_record_naming_batches_its_cut_does_not_produce_is_refused(
     with pytest.raises(ValueError, match=message):
         load_frontiers(bad)
 
+@pytest.mark.slow
 
 def test_the_recorded_counts_are_not_believed(tmp_path: Path) -> None:
     # #173: nothing the record says about a plan's COST is read. Every count
@@ -457,6 +479,7 @@ def test_the_recorded_counts_are_not_believed(tmp_path: Path) -> None:
         assert c == _replayed(L, nb)
         assert (c.flops, c.max_intermediates, c.max_targets) != (1, 1, 1)
 
+@pytest.mark.slow
 
 def test_searched_plan_refuses_what_is_not_a_permutation() -> None:
     cut, orders = _recorded()[9, 3]
@@ -466,6 +489,7 @@ def test_searched_plan_refuses_what_is_not_a_permutation() -> None:
         check_orders(9, 3, cut, orders[:1])
     assert check_orders(9, 3, cut, [[list(r) for r in o] for o in orders]) == orders
 
+@pytest.mark.slow
 
 def test_a_selected_index_that_is_not_the_recorded_plan_is_refused(
     tmp_path: Path,
@@ -501,6 +525,7 @@ def _searched_limit_value() -> dict:
     )
     return lim.asserted_value
 
+@pytest.mark.slow
 
 def test_the_searched_plans_are_at_or_under_all_three_everywhere() -> None:
     # #172's outcome: no residual. 22 cells land on the printed triple
@@ -526,6 +551,7 @@ PREVIOUS_RESIDUAL = {
     (16, 6): ((6426, 405, 164), (6414, 402, 164)),
 }
 
+@pytest.mark.slow
 
 def test_the_previous_residual_cells_cell_by_cell() -> None:
     value = _searched_limit_value()
@@ -562,6 +588,7 @@ STRICTLY_BETTER = {
     (16, 6): (6447, 402), (16, 9): (7104, 324),
 }
 
+@pytest.mark.slow
 
 def test_where_the_climb_beats_the_rule_selection() -> None:
     value = _searched_limit_value()
@@ -582,6 +609,7 @@ def test_where_the_climb_beats_the_rule_selection() -> None:
 # never lower it. #172 measured 14.
 N_STRICTLY_BETTER = 14
 
+@pytest.mark.slow
 
 def test_the_search_is_not_the_best_of_the_58() -> None:
     better = _strictly_better(_recorded())
@@ -591,6 +619,7 @@ def test_the_search_is_not_the_best_of_the_58() -> None:
     for (L, nb), (f, i) in STRICTLY_BETTER.items():
         assert _rule_selection(L, nb) == (i, f), (L, nb)
 
+@pytest.mark.slow
 
 def test_the_guard_catches_a_search_degenerated_to_the_best_of_the_58() -> None:
     # The degenerate record, built here: in every cell the 58-rule selection,
@@ -614,6 +643,7 @@ def test_the_guard_catches_a_search_degenerated_to_the_best_of_the_58() -> None:
 MIXED_RULES_ONLY = {(14, 6), (15, 6), (16, 9)}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("L", "nb"), sorted(STRICTLY_BETTER))
 def test_the_strictly_better_plans_leave_the_rule_space(L: int, nb: int) -> None:
     # No one of the 58 rules seeds every batch of the recorded plan.
@@ -627,6 +657,7 @@ def test_the_strictly_better_plans_leave_the_rule_space(L: int, nb: int) -> None
     climbed = any(o not in s for o, s in zip(orders, starts, strict=True))
     assert climbed == ((L, nb) not in MIXED_RULES_ONLY)
 
+@pytest.mark.slow
 
 def test_the_tolerance_still_takes_the_one_target_off_cut_at_15_9() -> None:
     # The cell that motivated MINIMAX_TOLERANCE: (6, 9) at L = 15 holds 116

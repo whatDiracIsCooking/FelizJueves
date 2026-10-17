@@ -13,6 +13,9 @@ need a compiler (no card): they recompile a few recorded classes, and every
 says -- when the toolchain is the one the row was keyed on. A different
 compiler version is a different key, and the check SKIPS naming it rather
 than comparing across compilers. The subgrid's L >= 13 cells are also `slow`.
+Of the fast tier, every check that builds, emits or plans a class above
+`tiers.FAST_L_MAX` is `slow` too, beside a fast twin over the rest; reads of
+the rows and keys stay fast.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
+from tiers import is_fast
 
 from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
@@ -173,26 +177,56 @@ def test_the_store_says_what_its_rows_are_keyed_on() -> None:
     assert "--remeasure" in h["remeasure"]
 
 
-# #205: a K cell of L >= 13 takes minutes of Python to BUILD (its stage-2
-# digest unrolled: 40 to 520 MB of text a cell), so the fast tier reads the
-# rest of the store and leaves those to the `slow` cases below.
+# The two whole-store checks build every row's cell. The fast tier builds
+# the rows at L <= FAST_L_MAX (tiers.py); the `_above_l4` twins the rest,
+# but for #205's K cells of L >= 13, which take minutes of Python to BUILD
+# (their stage-2 digest unrolled: 40 to 520 MB of text a cell) and are
+# test_a_high_l_k_row_hashes_todays_text's alone. Each runs one chunk of
+# the store per (arch, target), so xdist spreads the building.
 K_SLOW_L = 13
+TARGETS = (Target.J, Target.K, Target.F)  # every target a row has
+CHUNKS = [pytest.param(a, t, id=f"{a}-{t.value}") for a in ARCHS
+          for t in TARGETS]
+
+
+def _chunk(arch: str, target: Target):
+    for key, row in ROWS.items():
+        if row.arch == arch and measured_store.target_of(key) is target:
+            yield key, row
 
 
 def _fast(spec) -> bool:
-    return (getattr(spec, "target", Target.J) is not Target.K
-            or spec.total_am < K_SLOW_L)  # an AsymCell has no target
+    return is_fast(spec.total_am)
 
 
-def test_every_row_is_keyed_on_its_measured_key() -> None:
-    assert ROWS, "no Measured rows recorded"
-    for key, row in ROWS.items():
+def _above_l4(spec) -> bool:
+    return not _fast(spec) and not (
+        getattr(spec, "target", Target.J) is Target.K
+        and spec.total_am >= K_SLOW_L)  # an AsymCell has no target
+
+
+def _check_keys(keep, arch: str, target: Target) -> None:
+    for key, row in _chunk(arch, target):
         spec = _spec_of(key)
-        if not _fast(spec):
+        if not keep(spec):
             continue
         assert row.kernel == ",".join(k.name for k in measured.cell_kernels(spec))
         mk = measured.measured_key(spec, ARCHS[row.arch], row.toolchain)
         assert mk.key() == key
+
+
+@pytest.mark.parametrize("arch, target", CHUNKS)
+def test_every_row_is_keyed_on_its_measured_key(arch, target) -> None:
+    assert ROWS, "no Measured rows recorded"
+    assert all(r.arch in ARCHS and measured_store.target_of(k) in TARGETS
+               for k, r in ROWS.items())  # the chunks cover the store
+    _check_keys(_fast, arch, target)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("arch, target", CHUNKS)
+def test_every_row_above_l4_is_keyed_on_its_measured_key(arch, target) -> None:
+    _check_keys(_above_l4, arch, target)
 
 
 def test_every_row_carries_its_provenance() -> None:
@@ -205,14 +239,11 @@ def test_every_row_carries_its_provenance() -> None:
         assert "fast-math" not in row.command and "fast_math" not in row.command
 
 
-def test_the_recorded_source_is_what_the_generator_writes_today() -> None:
-    """A row describes THIS emitter's text: regenerate-and-remeasure on a diff."""
-    import hashlib
-
-    for key, row in ROWS.items():
+def _check_sources(keep, arch: str, target: Target) -> None:
+    for key, row in _chunk(arch, target):
         spec = _spec_of(key)
-        if not _fast(spec):
-            continue  # test_a_high_l_k_row_hashes_todays_text, `slow`
+        if not keep(spec):
+            continue
         units = measured.BACKENDS[BACKEND_OF[row.arch]].units(spec)
         assert measured.cell_sha256(units) == row.source_sha256, (
             f"{key}: the emitted text changed since it was measured -- "
@@ -227,13 +258,40 @@ def test_the_recorded_source_is_what_the_generator_writes_today() -> None:
             assert hashlib.sha256(text.encode()).hexdigest() == row.source_sha256
 
 
-def test_both_cards_and_every_default_class_are_recorded() -> None:
+@pytest.mark.parametrize("arch, target", CHUNKS)
+def test_the_recorded_source_is_what_the_generator_writes_today(
+        arch, target) -> None:
+    """A row describes THIS emitter's text: regenerate-and-remeasure on a diff."""
+    _check_sources(_fast, arch, target)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("arch, target", CHUNKS)
+def test_the_recorded_source_above_l4_is_what_the_generator_writes_today(
+        arch, target) -> None:
+    _check_sources(_above_l4, arch, target)  # K at L >= 13: the high-L twin
+
+
+def _check_default_classes(keep) -> None:
     for arch in ("sm_86", "gfx1200"):
-        kernels = {r.kernel for k, r in ROWS.items()
-                   if r.arch == arch and _spec_of(k).n_batches == 1
-                   and not _spec_of(k).levers
-                   and _spec_of(k).target is Target.J}
-        assert kernels == {build_pq_kernel(L).name for L in range(17)}, arch
+        kernels = {}
+        for k, r in ROWS.items():
+            s = _spec_of(k)
+            if (r.arch == arch and s.n_batches == 1 and not s.levers
+                    and s.target is Target.J):
+                kernels.setdefault(s.total_am, set()).add(r.kernel)
+        assert set(kernels) == set(range(17)), arch
+        for L in filter(keep, range(17)):
+            assert kernels[L] == {build_pq_kernel(L).name}, (arch, L)
+
+
+def test_both_cards_and_every_default_class_are_recorded() -> None:
+    _check_default_classes(is_fast)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_both_cards_and_every_default_class_above_l4_are_recorded() -> None:
+    _check_default_classes(lambda L: not is_fast(L))
 
 
 # --- #52: the declared subgrid ----------------------------------------------
@@ -247,6 +305,7 @@ def test_the_subgrid_is_the_declared_l_by_n_batches_product() -> None:
                for s in measured_store.SUBGRID)
 
 
+@pytest.mark.slow  # the subgrid is L = 7..16 > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("spec", measured_store.SUBGRID, ids=lambda s: s.key())
 def test_every_subgrid_cell_is_admitted_by_the_plan_layer(spec) -> None:
     # #64 made partition refuse an empty batch; a refused cell is not a cell.
@@ -1465,6 +1524,10 @@ def test_recycle_stays_opt_in() -> None:
         for k in LEVER_AB}
     assert "win" not in verdicts.values()
     assert "stays opt-in" in STORE["header"]["levers"]  # the data says so too
+
+
+@pytest.mark.slow  # L = 7 and 10 > FAST_L_MAX (tiers.py)
+def test_a_spec_without_recycle_is_built_exactly_as_before() -> None:
     for s in measured_store.SUBGRID[:5]:
         assert measured.cell_kernels(s) == build_pq_kernels(s)
     assert "double slot[" not in cuda.emit(build_pq_kernel(10), SM_86)
@@ -1527,11 +1590,13 @@ def test_the_split_is_minimax_then_the_next_largest() -> None:
     want = {4: (2, 1, 1), 5: (2, 2, 1), 7: (3, 2, 2), 8: (3, 3, 2)}
     for c in asym.ASYM_CELLS:
         assert c.ks == want[c.n_batches], c.key()
-        assert len(c.batches) == c.n_batches == sum(c.ks)
+        assert c.n_batches == sum(c.ks)  # the batches: the `slow` test below
 
 
+@pytest.mark.slow  # L = 13, 16 > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("cell", asym.ASYM_CELLS, ids=lambda c: c.key())
 def test_every_asym_cell_partitions_its_class(cell) -> None:
+    assert len(cell.batches) == cell.n_batches
     asym.check_partition(cell.L, cell.batches)  # the study's own check
     owners = {r: [b for b in cell.batches if in_batch(r, *b)]
               for r in hermite_targets(cell.L)}
@@ -1549,6 +1614,7 @@ def test_a_bad_partition_is_refused_by_the_study() -> None:
                                  ("z", 0, 4)))
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("L,k", [(5, 2), (13, 2), (13, 3), (16, 3)])
 def test_a_symmetric_split_built_by_the_study_is_the_literal_one(L, k) -> None:
     """For (k, k, k) the study's cut and builder reproduce build_pq_kernels
@@ -1567,15 +1633,19 @@ def test_an_asym_cell_is_keyed_as_its_own_arm() -> None:
     k = measured.measured_key(c, SM_86, "nvcc 13.0")
     assert k.key() == "coulomb/d0/(7,0|6,0)/b4/j/asym@sm_86/nvcc 13.0"
     assert measured_store.split_key(k.key())[1:] == ("sm_86", "nvcc 13.0")
-    assert [x.name for x in measured.cell_kernels(c)] == [
-        "pq_L13_p7_q6_x0_6", "pq_L13_p7_q6_x7_13", "pq_L13_p7_q6_y0_13",
-        "pq_L13_p7_q6_z0_13"]
     # its rows sit beside the literal ones and are invisible to their readers
     lit = MeasuredKey(pq_spec(13, n_batches=3), SM_86, "nvcc 13.0")
     row = measured_store.Measured(registers=1, **PROV)
     store = measured_store.merge(measured_store.merge({}, lit, row), k, row)
     assert list(measured_store.rows(spec=pq_spec(13, n_batches=3),
                                     store=store)) == [lit.key()]
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_an_asym_cell_builds_its_own_batch_kernels() -> None:
+    assert [x.name for x in measured.cell_kernels(asym.AsymCell(13, 4))] == [
+        "pq_L13_p7_q6_x0_6", "pq_L13_p7_q6_x7_13", "pq_L13_p7_q6_y0_13",
+        "pq_L13_p7_q6_z0_13"]
 
 
 def _asym_store(lo: tuple, a: tuple, hi: tuple, *, spill=(30, 20, 10),
@@ -1668,7 +1738,6 @@ def test_every_asym_cell_is_compiled_and_timed_against_both_neighbours(
     (r,) = measured_store.rows(spec=cell, arch=arch, store=ROWS).values()
     assert r.registers is not None and r.spill_store is not None
     assert _timed(r) and r.repeats == 31 and r.gpu != "ABSENT"
-    assert r.kernel == ",".join(k.name for k in cell.kernels())
     assert r.raw["wallclock:gate_discarded_phases"] >= 0
     for n in cell.neighbours:
         p = asym.control_prefix(n)
@@ -1683,6 +1752,14 @@ def test_every_asym_cell_is_compiled_and_timed_against_both_neighbours(
                 assert v is not None and v <= GPU_BUSY_MAX, (p, q, when, v)
     for f in measured_store.GPU_UTIL_FIELDS:
         assert r.raw[f] is not None and r.raw[f] <= GPU_BUSY_MAX, f
+
+
+@pytest.mark.slow  # L = 13, 16 > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
+@pytest.mark.parametrize("cell", asym.ASYM_CELLS, ids=lambda c: c.key())
+def test_every_asym_row_names_its_cells_batch_kernels(cell, arch) -> None:
+    (r,) = measured_store.rows(spec=cell, arch=arch, store=ROWS).values()
+    assert r.kernel == ",".join(k.name for k in cell.kernels())
 
 
 # What the declared rule (felizjueves.asym's docstring, committed before any
@@ -2206,6 +2283,7 @@ def _dags(dags) -> tuple:
     return tuple((d.batch, d.targets, dict(d.parents)) for d in dags)
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("spec", NO_SIEVE_CELLS[:5], ids=lambda s: s.key())
 def test_the_driver_passes_a_plan_lever_to_the_builder(spec) -> None:
     """The driver strips only lower.LEVERS: a no-sieve cell's kernels are
@@ -2221,6 +2299,7 @@ def test_the_driver_passes_a_plan_lever_to_the_builder(spec) -> None:
         assert got != measured.cell_kernels(literal)  # ...so the kernel moves
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_the_sieve_changes_the_kernel_somewhere_on_the_subgrid() -> None:
     """A plan arm is not a lowering arm: its kernel differs from the
     control's (#162's premise), at least at one subgrid cell."""
@@ -2319,8 +2398,6 @@ def test_the_sieve_cells_are_the_subgrid_and_l11() -> None:
     (l11,) = SIEVE_CELLS[20:]
     assert l11 == pq_spec(11, levers=(NO_SIEVE,))
     assert (l11.total_am, l11.n_batches, l11.am) == (11, 1, (6, 0, 5, 0))
-    # [5|6] and [6|5] are one plan: the plan layer counts by L alone
-    assert plan(l11).cost == plan(replace(l11, am=(5, 0, 6, 0))).cost
     # its literal control is the store's one-batch L = 11 row, on both cards
     for a in ARCHS:
         assert len(measured_store.rows(spec=pq_spec(11), arch=a,
@@ -2329,6 +2406,13 @@ def test_the_sieve_cells_are_the_subgrid_and_l11() -> None:
     assert measured_store.ab_cells(RECYCLE) == RECYCLE_CELLS
     assert measured_store.ab_cells(NO_SIEVE) == SIEVE_CELLS
     assert measured_store.sieve_ab.__defaults__ == (None,)
+
+
+@pytest.mark.slow  # L = 11 > FAST_L_MAX (tiers.py)
+def test_the_l11_cell_is_one_plan_either_way_round() -> None:
+    (l11,) = SIEVE_CELLS[20:]
+    # [5|6] and [6|5] are one plan: the plan layer counts by L alone
+    assert plan(l11).cost == plan(replace(l11, am=(5, 0, 6, 0))).cost
 
 
 @pytest.mark.parametrize("arch", ("sm_86", "gfx1200"))
@@ -2476,6 +2560,7 @@ def test_the_tuned_spelling_is_the_plan_layers() -> None:
     assert measured_store.ARMS[TUNED] == measured_store.PLAN
 
 
+@pytest.mark.slow  # the subgrid, L = 7..16 > FAST_L_MAX (tiers.py)
 def test_the_not_measurable_cells_are_exactly_the_ones_the_lever_refuses(
         ) -> None:
     """Every `lever_cells(TUNED)` cell is planned: the ones `tuned_plan`
@@ -3225,6 +3310,7 @@ def test_every_k_row_is_timed_beside_its_j_twin_or_recorded_untimed() -> None:
                     assert r.raw["wallclock:gate_discarded_phases"] >= 0
 
 
+@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_the_k_rows_hash_the_text_the_generator_writes_today() -> None:
     # the compile row's source_sha256 is measured.cell_sha256 of today's
     # emitted batch texts (cheap at L = 7; the rechecks below cover the rest)
@@ -3289,7 +3375,8 @@ K_RECHECK_TIMEOUT_S = 6 * 3600
                                   if s.total_am >= K_SLOW_L],
                          ids=lambda s: s.key())
 def test_a_high_l_k_row_hashes_todays_text(spec) -> None:
-    """The fast tier's two whole-store reads, for the K cells it skips."""
+    """The two whole-store reads, for the K cells of L >= 13 their
+    `_above_l4` twins skip."""
     got = measured_store.rows(spec=spec, store=ROWS)
     if not got:
         pytest.skip(f"{spec.key()}: no row on either card (K_REFUSED)")
@@ -3335,7 +3422,7 @@ def test_an_f_cell_is_built_by_kernel_f_and_takes_no_lever() -> None:
         assert u.name == "f_0001" and u.jsh_dynamic_bytes == 0
 
 
-def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
+def _check_f_rows(keep) -> None:
     got = {k: r for k, r in measured_store.rows(target=Target.F,
                                                 store=ROWS).items()
            if k not in LEDGER_KEYS}  # #362's lever arms, compile-only
@@ -3344,10 +3431,12 @@ def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
     assert set(got) == set(want)
     for key, row in got.items():
         spec = want[key]
-        b = measured.BACKENDS[BACKEND_OF[row.arch]]
-        units = b.units(spec)
-        assert row.target == "f" and row.kernel == units[0].name, key
-        assert row.source_sha256 == measured.cell_sha256(units), key
+        if keep(spec.total_am):  # the emitted text: built per class
+            b = measured.BACKENDS[BACKEND_OF[row.arch]]
+            units = b.units(spec)
+            assert row.kernel == units[0].name, key
+            assert row.source_sha256 == measured.cell_sha256(units), key
+        assert row.target == "f", key
         assert row.registers is not None and row.spill_store is not None, key
         assert row.shared_bytes == 8192, key  # ab_sh: 128 x 8 doubles
         assert row.raw["jsh_dynamic_bytes"] == 0, key
@@ -3356,6 +3445,16 @@ def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
         assert row.runtime_ns is not None, key
         assert all(row.raw[f] is not None
                    for f in measured_store.GPU_UTIL_FIELDS), key
+
+
+def test_the_tracked_f_rows_are_the_recorded_cells_on_both_cards() -> None:
+    _check_f_rows(is_fast)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_tracked_f_rows_above_l4_are_the_recorded_cells_on_both_cards(
+        ) -> None:
+    _check_f_rows(lambda L: not is_fast(L))
 
 
 ROWS_TOOLCHAIN = {"sm_86": "nvcc 13.0", "gfx1200": "hipcc / ROCm 7.2.4"}

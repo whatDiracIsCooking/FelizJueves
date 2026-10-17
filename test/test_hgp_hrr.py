@@ -1,10 +1,11 @@
 """`hgp/hrr.py` (#274): the HGP horizontal recurrence as an `(a, b, c, d)` DAG.
 
-Fast tier: pure Python, no toolchain, no card. The counts are what this tree
-computes under `hgp.hrr`'s stated boundary set, side order and statement
-convention; the predecessor's (a3) table is not on this box, so they are
-pinned from the code, with #274's three printed `(dd|dd)` figures reconciled
-in `test_dd_dd_the_issues_figures`.
+Fast tier for `L <= FAST_L_MAX` (tiers.py), `slow` above: pure Python, no
+toolchain, no card. The counts are what this tree computes under `hgp.hrr`'s
+stated boundary set, side order and statement convention; the predecessor's
+(a3) table is not on this box, so they are pinned from the code, with #274's
+three printed `(dd|dd)` figures reconciled in
+`test_dd_dd_the_issues_figures`.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from tiers import split_by_l
 
 from felizjueves.ao.eri import eri_block
 from felizjueves.ao.shell import Shell
@@ -46,12 +48,14 @@ PINNED: dict[tuple[int, int, int, int], tuple[int, int, int, int]] = {
     (2, 2, 2, 2): (1296, 961, 5293, 5293),
 }
 
+LADDER = split_by_l(CLASSES, sum)
+
 
 def test_the_pins_cover_the_ladder() -> None:
     assert set(PINNED) == set(CLASSES)
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_counts(cls) -> None:
     n_eri, n_bd, n_bra, n_ket = PINNED[cls]
     for first, n_int in (("bra", n_bra), ("ket", n_ket)):
@@ -62,7 +66,7 @@ def test_counts(cls) -> None:
         assert dag.n_statements == n_bd + n_int
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 @pytest.mark.parametrize("first", hrr.SIDES)
 def test_boundary_is_the_vrr_target_set(cls, first) -> None:
     # #274's acceptance: the set the HRR asks for IS the set the VRR builds.
@@ -71,6 +75,7 @@ def test_boundary_is_the_vrr_target_set(cls, first) -> None:
     assert dag.boundary == {(e, f) for e, f, _ in vrr.targets(cls)}
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_dd_dd_the_issues_figures() -> None:
     # #274 prints 6,254 statements, 1,296 ERIs and 1,225 boundary values.
     # The first two hold; the third is the boundary with its lower bound
@@ -93,7 +98,7 @@ def test_side_order_is_cheaper_or_equal_except_pp_pd() -> None:
     assert len(cheaper) == 9
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 def test_no_node_carries_an_m(cls) -> None:
     # Structural: a node is four Cartesian 3-vectors and nothing else -- no
     # Boys index anywhere, on any node or child.
@@ -107,7 +112,7 @@ def test_no_node_carries_an_m(cls) -> None:
     assert set(hrr.Term.__dataclass_fields__) == {"coef", "child"}
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 @pytest.mark.parametrize("first", hrr.SIDES)
 def test_dag_shape_and_order(cls, first) -> None:
     dag = build(cls, first)
@@ -190,7 +195,7 @@ def _evaluate(dag, boundary):
     return val
 
 
-@pytest.mark.parametrize("cls", CLASSES)
+@pytest.mark.parametrize("cls", LADDER)
 @pytest.mark.parametrize("first", hrr.SIDES)
 def test_hrr_on_contracted_values_matches_ao_eri(cls, first) -> None:
     la, lb, lc, ld = cls

@@ -1,7 +1,10 @@
 """`PlanCost` against `Measured`: does the cheaper plan make a better kernel? (#165)
 
 FAST TIER: reads recorded rows and counts plans on the host; compiles
-nothing, launches nothing.
+nothing, launches nothing. Every check that plans the tracked cells (L = 7
+and up: `planrank.report`, `verdict` and `table`) is `slow`, above
+`tiers.FAST_L_MAX`; the synthetic joins and the reads of the data file stay
+fast.
 
 WHAT IS ASSERTED, AND WHAT IS NOT. That the plan's counts predict the kernel
 is a RESULT, not a target: no test here asks for agreement. Instead
@@ -57,6 +60,7 @@ def store() -> dict:
 
 @pytest.fixture(scope="module")
 def fresh(store) -> dict:
+    # plans every cell, L = 7..16: every user is `slow`
     return planrank.report(store)
 
 
@@ -249,13 +253,17 @@ def test_an_uncharacterised_card_gets_no_verdict(store) -> None:
     bare = Arch(Vendor.NVIDIA, "sm_86", 32)  # no measured ceilings
     with pytest.raises(Uncharacterised, match="not characterised"):
         planrank.verdict(store, bare)
-    # a characterised card gets the recorded one
+
+
+@pytest.mark.slow  # plans every cell, L > FAST_L_MAX (tiers.py)
+def test_a_characterised_card_gets_the_recorded_verdict(store) -> None:
     assert planrank.verdict(store, "sm_86") == DOC["summary"]["sm_86"]
 
 
 # --- the record: recomputed --------------------------------------------------
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_data_file_is_the_report_recomputed(fresh) -> None:
     assert fresh == DOC, "rerun: PYTHONPATH=src uv run python -m " \
                          "felizjueves.planrank --write"
@@ -264,6 +272,7 @@ def test_the_data_file_is_the_report_recomputed(fresh) -> None:
         for c in planrank.CELLS]
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_counts_are_the_plan_layers_own(fresh) -> None:
     for r in fresh["rows"][:len(planrank.CELLS)]:
         cell = pq_spec(r["L"], n_batches=r["n_batches"])
@@ -276,6 +285,7 @@ def test_the_counts_are_the_plan_layers_own(fresh) -> None:
                                  "max_targets": c.max_targets}
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_spill_side_is_the_stores_and_the_clock_side_lever_ab(
         store, fresh) -> None:
     for r in fresh["rows"]:
@@ -426,6 +436,7 @@ def test_the_reading_reaches_no_floor_and_no_driver() -> None:
     assert "felizjueves.measured" not in names
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_reading_leaves_the_store_and_the_plan_unchanged(store) -> None:
     before = {k: replace(r) for k, r in store.items()}
     planrank.report(store)

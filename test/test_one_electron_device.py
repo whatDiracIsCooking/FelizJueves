@@ -114,6 +114,7 @@ from test_ao_kinetic import kinetic_scale_block
 from test_ao_overlap import ONE_E_TOL, _overlap_scale_block, one_e_scale
 from test_ao_potential import potential_scale_block
 from test_kernel_device import BACKEND, WIDE_BOYS_REL, _toolchain
+from tiers import by_l, is_fast
 
 from felizjueves.ao.hermite import _raise, e_axis, hermite_order
 from felizjueves.ao.kinetic import kinetic_matrix
@@ -540,7 +541,8 @@ def test_hip_one_electron_programs_compile(name, target, lmax, hipcc,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("lmax", [LMAX, LMAX_DEFERRED])
+@pytest.mark.parametrize("lmax", [by_l(lm, 2 * lm, id=str(lm))
+                                  for lm in (LMAX, LMAX_DEFERRED)])
 def test_part1_reaches_every_ordered_class(lmax: int) -> None:
     """Through (dd) restricted, and through (ff) the whole launch: every
     ordered class `(la, lb)`, none above."""
@@ -551,14 +553,16 @@ def test_part1_reaches_every_ordered_class(lmax: int) -> None:
         assert launch.kept == _launch(PART1).kept
 
 
-@pytest.mark.parametrize(("lmax", "n_units"), [(LMAX, 18),
-                                               (LMAX_DEFERRED, 30)])
-def test_the_tier_writes_the_ladders_classes_and_no_other(lmax, n_units,
+@pytest.mark.parametrize("cell", [by_l((lm, n), 2 * lm, id=f"{lm}-{n}")
+                                  for lm, n in ((LMAX, 18),
+                                                (LMAX_DEFERRED, 30))])
+def test_the_tier_writes_the_ladders_classes_and_no_other(cell,
                                                           tmp_path) -> None:
     """KERNEL_GEN_CMD's `--one-e-l 2` (and #244's `--one-e-l 3`) writes every
     `la <= lb` class's three units through (dd) (and (ff)), `emit`'s text;
     the `la > lb` classes the launch also reaches are the driver's to
     emit."""
+    lmax, n_units = cell
     emit, arch, ext = BACKEND["cuda"]
     written = emit_cli.generate_one_e("cuda", arch, tmp_path, lmax)
     assert len(written) == n_units
@@ -632,11 +636,15 @@ def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
     assert np.all(err <= tol), _ratio(err, tol)
 
 
-def test_r_abs_bounds_one_centre_and_e_abs_bounds_e() -> None:
+def _r_abs_and_e_abs_bound(fast: bool) -> None:
+    """Over the orders on one side of the cut (`L`, and `i + j` for `E`),
+    each drawing what it drew when one test walked them all."""
     rng = np.random.default_rng(242)
     for L in range(2 * LMAX_DEFERRED + 1):
         pc = rng.uniform(-2, 2, 3)
         theta = float(rng.uniform(0.3, 2.0))
+        if is_fast(L) != fast:
+            continue
         ra = _r_abs(L, pc, theta)
         for t in hermite_order(L):
             assert abs(one_centre(t, 0, pc, theta)) <= ra[t] * (1 + 1e-12)
@@ -644,7 +652,18 @@ def test_r_abs_bounds_one_centre_and_e_abs_bounds_e() -> None:
         for j in range(LMAX_DEFERRED + 3):
             zeta = float(rng.uniform(0.2, 3.0))
             xa, xb = rng.uniform(-1.5, 1.5, 2)
+            if is_fast(i + j) != fast:
+                continue
             e = e_axis(i, j, zeta, xa, xb)
             ea = _axis_abs(i, j, zeta, xa, xb)
             assert all(abs(x) <= y * (1 + 1e-12) for x, y in zip(e, ea,
                                                                   strict=True))
+
+
+def test_r_abs_bounds_one_centre_and_e_abs_bounds_e() -> None:
+    _r_abs_and_e_abs_bound(fast=True)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_r_abs_bounds_one_centre_and_e_abs_bounds_e_above_l4() -> None:
+    _r_abs_and_e_abs_bound(fast=False)

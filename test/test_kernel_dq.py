@@ -40,6 +40,7 @@ import test_emit_hip
 import test_measured
 from oracle import basis as ob
 from oracle import manifest
+from tiers import split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves import kernel_dq
@@ -75,6 +76,7 @@ CLASSES = [(lc, ld) for lc in range(LMAX + 1) for ld in range(LMAX + 1)]
 CLASS_PARAMS = [pytest.param(c, id=f"{c[0]}{c[1]}",
                              marks=() if max(c) <= 1 else pytest.mark.slow)
                 for c in CLASSES]
+CLASS_GRID = split_by_l(CLASSES, sum, ids=lambda c: f"{c[0]}-{c[1]}")
 JK_TOL = 1e-12  # vs libcint, times scale_J: test_ao_j.py's, inherited
 
 
@@ -112,8 +114,9 @@ def _by_class(name: str):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("lc,ld", CLASSES)
-def test_rows_and_columns_are_the_hosts(lc: int, ld: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_GRID)
+def test_rows_and_columns_are_the_hosts(cls) -> None:
+    lc, ld = cls
     assert list(ef.block_rows(lc, ld)) == _carts(lc, ld)
     assert hermite_targets(lc + ld) == hermite_order(lc + ld)
     n_cd, n_q = dq_shape(lc, ld)
@@ -143,11 +146,12 @@ def test_the_key_is_a_pair_class() -> None:
         build_dq_kernel(4)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("lc,ld", CLASSES)
-def test_the_kernel_decides_no_weight_and_no_dressing(lc: int, ld: int) -> None:
+@pytest.mark.parametrize("cls", CLASS_GRID)
+def test_the_kernel_decides_no_weight_and_no_dressing(cls) -> None:
     """The only floating literals are `0.0` (accumulators, `|x|`, `max`) and
     the `0.5` of `1/2eta`: no `2.0` that could be a weight, no `pi`, no
     contraction coefficient. `w` and `s` are read from their params."""
+    lc, ld = cls
     k = build_dq_kernel((lc, ld))
     lits = {e.value for s in walk(k.body) for root in _exprs_of(s)
             if root is not None for e in _subexprs(root)

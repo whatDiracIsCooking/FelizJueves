@@ -30,6 +30,7 @@ import random
 import numpy as np
 import pytest
 from numpy.polynomial import hermite as H
+from tiers import split_by_l
 
 from felizjueves.ao.hermite import e_axis, e_block, hermite_order
 from felizjueves.plan.targets import hermite_targets, n_targets
@@ -37,6 +38,7 @@ from felizjueves.plan.targets import hermite_targets, n_targets
 EPS = np.finfo(np.float64).eps
 K = 64
 IJ = [(i, j) for i in range(5) for j in range(5)]
+IJ_PARAMS = split_by_l(IJ, sum, ids=lambda c: f"{c[0]}-{c[1]}")  # i+j > 4 slow
 
 
 def _pair(rng: random.Random) -> tuple[float, float, float, float]:
@@ -58,8 +60,9 @@ def _lambda(t: int, zeta: float, P: float, x: np.ndarray) -> np.ndarray:
     return zeta ** (t / 2) * H.hermval(y, c) * np.exp(-y * y)
 
 
-@pytest.mark.parametrize("i,j", IJ)
-def test_expansion_identity_pointwise(i: int, j: int) -> None:
+@pytest.mark.parametrize("ij", IJ_PARAMS)
+def test_expansion_identity_pointwise(ij) -> None:
+    i, j = ij
     rng = random.Random(1000 * i + j)
     for _ in range(20):
         alpha, beta, A, B = _pair(rng)
@@ -74,8 +77,9 @@ def test_expansion_identity_pointwise(i: int, j: int) -> None:
         assert np.all(np.abs(lhs - rhs) <= K * EPS * scale), (alpha, beta, A, B)
 
 
-@pytest.mark.parametrize("i,j", IJ)
-def test_moments_by_gauss_hermite(i: int, j: int) -> None:
+@pytest.mark.parametrize("ij", IJ_PARAMS)
+def test_moments_by_gauss_hermite(ij) -> None:
+    i, j = ij
     # int x^n Omega dx == sum_t E_t int x^n Lambda_t dx for n = 0..i+j. With
     # x = P + y/sqrt(zeta) every integrand is (polynomial of degree <= n+i+j)
     # times exp(-y^2), which an N-point rule integrates exactly for
@@ -112,8 +116,9 @@ def test_e00_is_the_gaussian_product_prefactor() -> None:
     assert e_axis(0, 0, 1.3, 0.0, 0.0) == (1.0,)
 
 
-@pytest.mark.parametrize("i,j", IJ)
-def test_nothing_above_i_plus_j(i: int, j: int) -> None:
+@pytest.mark.parametrize("ij", IJ_PARAMS)
+def test_nothing_above_i_plus_j(ij) -> None:
+    i, j = ij
     # E^{ij}_t == 0 for t > i+j is enforced by the table's LENGTH; the top entry
     # is exactly (2 zeta)^{-(i+j)} E^{00}_0 -- only the 1/2zeta term reaches it
     # -- so an off-by-one at the top of the table shows here at every i+j >= 1.
@@ -125,8 +130,9 @@ def test_nothing_above_i_plus_j(i: int, j: int) -> None:
     assert abs(E[-1] - top) <= K * EPS * top
 
 
-@pytest.mark.parametrize("i,j", IJ)
-def test_same_centre_odd_parity_vanishes(i: int, j: int) -> None:
+@pytest.mark.parametrize("ij", IJ_PARAMS)
+def test_same_centre_odd_parity_vanishes(ij) -> None:
+    i, j = ij
     # A == B puts P on both centres: X_PA = X_PB = 0, and x^{i+j} has parity
     # i+j, so only t with i+j-t even survive -- exactly, not to a tolerance.
     E = e_axis(i, j, 2.3, 0.0, 0.0)
@@ -137,8 +143,9 @@ def test_same_centre_odd_parity_vanishes(i: int, j: int) -> None:
             assert v > 0.0
 
 
-@pytest.mark.parametrize("i,j", IJ)
-def test_not_symmetric_unless_the_centres_swap(i: int, j: int) -> None:
+@pytest.mark.parametrize("ij", IJ_PARAMS)
+def test_not_symmetric_unless_the_centres_swap(ij) -> None:
+    i, j = ij
     # Swapped with the centres, equal up to rounding (the two raise in a
     # different order); swapped alone, different by O(1).
     zeta, pa, pb = 1.1, 0.37, -0.53

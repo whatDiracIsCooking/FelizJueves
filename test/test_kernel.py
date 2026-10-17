@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tiers import split_by_l
 
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
@@ -157,7 +158,7 @@ def test_the_reference_contraction_is_reference_pq() -> None:
             assert (-1.0) ** sum(q) * one_centre(r, 0, PQ, th) == pq(p, q, PQ, th)
 
 
-@pytest.mark.parametrize("L", range(0, 17))
+@pytest.mark.parametrize("L", split_by_l(range(0, 17), lambda L: L))
 def test_j_p_matches_the_reference_for_every_schedulable_class(L: int) -> None:
     splits = {split(pq_spec(L)), (L, 0), (0, L)}
     for lp, lq in sorted(splits):
@@ -167,7 +168,7 @@ def test_j_p_matches_the_reference_for_every_schedulable_class(L: int) -> None:
         _assert_matches(got, *_reference(spec, args))
 
 
-@pytest.mark.parametrize("L", [0, 5, 12])
+@pytest.mark.parametrize("L", split_by_l([0, 5, 12], lambda L: L))
 def test_the_unsieved_dag_gives_the_same_j_p(L: int) -> None:
     lp, lq = split(pq_spec(L))
     spec = _spec(lp, lq, (NO_SIEVE,))
@@ -176,6 +177,7 @@ def test_the_unsieved_dag_gives_the_same_j_p(L: int) -> None:
     _assert_matches(got, *_reference(spec, args))
 
 
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
 def test_the_split_is_the_sum_of_each_side() -> None:
     spec = Spec(Operator.COULOMB, 0, (2, 1, 1, 1), Target.J)
     assert split(spec) == (3, 2)
@@ -241,6 +243,7 @@ def _loops(k: Kernel) -> list[For]:
     return [s for s in walk(k.body) if isinstance(s, For)]
 
 
+@pytest.mark.slow  # L = 6 > FAST_L_MAX (tiers.py)
 def test_the_contract_is_ir_nodes() -> None:
     k = build_pq_kernel(6)
     n_p = len(bra_functions(pq_spec(6)))
@@ -290,7 +293,7 @@ def test_the_sort_precondition_is_in_the_kernel() -> None:
     assert "break" in SORTED_KETS and "wrong answer" in SORTED_KETS
 
 
-@pytest.mark.parametrize("L", [4, 9, 16])
+@pytest.mark.parametrize("L", split_by_l([4, 9, 16], lambda L: L))
 def test_ab_cd_is_never_materialised(L: int) -> None:
     """The only array is the shared J_p accumulator; per-quartet values are
     the recurrence's scalars, one per DAG node, and nothing of rank 4."""
@@ -311,13 +314,17 @@ def test_ab_cd_is_never_materialised(L: int) -> None:
 
 
 def test_the_kernel_is_deterministic_and_single_batch() -> None:
-    assert build_pq_kernel(5) == build_pq_kernel(5)
-    assert build_pq_kernel(5) == build_pq_kernel(pq_spec(5))
     assert hash(build_pq_kernel(2)) == hash(build_pq_kernel(2))
     with pytest.raises(ValueError, match="atomics"):
         build_pq_kernel(Spec(Operator.COULOMB, 0, (4, 0, 3, 0), Target.J, (), 3))
     with pytest.raises(ValueError):
         pq_spec(-1)
+
+
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
+def test_the_kernel_is_deterministic_above_l4() -> None:
+    assert build_pq_kernel(5) == build_pq_kernel(5)
+    assert build_pq_kernel(5) == build_pq_kernel(pq_spec(5))
 
 
 def test_the_kernel_module_is_vendor_neutral() -> None:
@@ -397,7 +404,7 @@ def test_s_is_declared_only_when_a_weight_reads_it() -> None:
     assert names([0, 1]) == ["t2", "T", "s", "W0", "W1"]
 
 
-@pytest.mark.parametrize("L", range(17))
+@pytest.mark.parametrize("L", split_by_l(range(17), lambda L: L))
 def test_no_statement_declares_a_name_nothing_references(L: int) -> None:
     """The property #177-D is one instance of: every Decl (and every For
     variable) of the generated [p|q] kernel is mentioned by some statement."""
@@ -436,6 +443,11 @@ def _same(a: tuple[BatchDag, ...], b: tuple[BatchDag, ...]) -> bool:
     return [key(d) for d in a] == [key(d) for d in b]
 
 
+# Every recorded cell is L >= 7: the tests that plan, build or interpret one
+# are `slow` (tiers.py); the refusals, which raise before any work, stay fast.
+
+
+@pytest.mark.slow  # recorded cells are L > FAST_L_MAX (tiers.py)
 def test_tuned_plan_cost_is_the_searched_boards_recorded_counts() -> None:
     """The plan the board replayed, not a third thing: every recorded cell's
     `PlanCost` under `("tuned",)` is its selected frontier point's counts."""
@@ -452,6 +464,7 @@ def test_tuned_plan_cost_is_the_searched_boards_recorded_counts() -> None:
             L, n)
 
 
+@pytest.mark.slow  # recorded cells are L > FAST_L_MAX (tiers.py)
 def test_the_tuned_lever_moves_the_kernel_somewhere() -> None:
     """Otherwise the lever is a no-op, and that is the finding."""
     for L, n in _recorded_cells():
@@ -460,6 +473,7 @@ def test_the_tuned_lever_moves_the_kernel_somewhere() -> None:
     pytest.fail("no recorded cell's tuned kernel differs from literal")
 
 
+@pytest.mark.slow  # recorded cells are L > FAST_L_MAX (tiers.py)
 def test_no_lever_is_still_the_literal_plan() -> None:
     """The default does not move: `()` is `sieve.plan` (the goldens and
     kernels.json's source_sha256 pin the emitted text itself)."""
@@ -478,6 +492,7 @@ def _run_batches(spec: Spec, args: dict, lanes: int) -> np.ndarray:
     return J
 
 
+@pytest.mark.slow  # recorded cells are L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("n", [1, 3, 6, 9])
 def test_the_tuned_kernel_interprets_against_the_reference(n: int) -> None:
     L = _recorded_cells()[0][0]
@@ -507,5 +522,12 @@ def test_tuned_is_its_own_arm() -> None:
         plan(pq_spec(L, ("recycle", TUNED), n))
     with pytest.raises(ValueError, match="needs the 'tuned' lever"):
         tuned_plan(pq_spec(L, (), n))
+
+
+@pytest.mark.slow  # recorded cells are L > FAST_L_MAX (tiers.py)
+def test_no_sieve_beside_a_recorded_cell_is_the_sieve_plan() -> None:
+    """`tuned_is_its_own_arm`'s planning half: `no-sieve` alone on a
+    recorded cell is `sieve.plan`'s, not the recorded choice."""
+    L, n = _recorded_cells()[0]
     spec = pq_spec(L, (NO_SIEVE,), n)
     assert _same(plan(spec).dags, sieved_dags(spec))

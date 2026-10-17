@@ -24,7 +24,8 @@ matches_the_measured_pins` (the CLI's own ladder); the goldens are
 `test_emit_{cuda,hip,batched}.py`. Nothing is re-asserted here that those
 already hold.
 
-Fast tier: nothing here compiles anything.
+Fast tier: nothing here compiles anything. The shipped-path check emits
+the subgrid's L = 7..16 classes and is `slow` (`tiers.FAST_L_MAX`).
 """
 
 from __future__ import annotations
@@ -179,6 +180,7 @@ def test_the_default_spec_is_literal() -> None:
     assert "--lever" not in emit_cli.__doc__ and "tuned" not in emit_cli.__doc__
 
 
+@pytest.mark.slow  # L = 7..16 > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("backend", ["cuda", "hip"])
 def test_the_shipped_path_writes_literal_text_not_tuned(
         backend, tmp_path, monkeypatch) -> None:

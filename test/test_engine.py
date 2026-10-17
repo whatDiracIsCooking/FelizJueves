@@ -32,6 +32,7 @@ import numpy as np
 import pytest
 from oracle import manifest
 from test_hgp_eri import CLASSES, TOL, _fixture, _name, _quartet, _shells, pick
+from tiers import split_by_l
 
 import felizjueves.engine as E
 from felizjueves.ao.fock import coulomb_exchange_reference
@@ -135,7 +136,7 @@ def test_eri_is_the_first_half_of_eri_and_scale(engine) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=_name)
+@pytest.mark.parametrize("cls", split_by_l(CLASSES, sum, ids=_name))
 @pytest.mark.parametrize("pair", PAIRS, ids=_ids)
 def test_every_pair_of_engines_agrees_on_contracted_quartets(pair, cls) -> None:
     a, b = pair

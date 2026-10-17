@@ -41,6 +41,7 @@ import numpy as np
 import pytest
 import test_f_lever_sliced_hrr as tsh
 import test_kernel_f as tk
+from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
@@ -161,7 +162,7 @@ def test_356_and_the_literal_kernel_are_untouched(cls) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", vrr.CLASSES, ids=str)
+@pytest.mark.parametrize("cls", split_by_l(vrr.CLASSES, sum, ids=str))
 def test_within_a_slice_the_eris_are_its_last_nodes_in_targets_order(cls
                                                                      ) -> None:
     for sub in hrr.slices(cls):
@@ -174,7 +175,16 @@ LOWER = {(0, 0, 1, 1): 10}
 
 
 def test_the_interleaved_phase_and_group_count_against_356() -> None:
-    for cls in vrr.CLASSES:
+    _against_356(c for c in vrr.CLASSES if is_fast(sum(c)))
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_the_interleaved_phase_and_group_count_against_356_above_l4() -> None:
+    _against_356(c for c in vrr.CLASSES if not is_fast(sum(c)))
+
+
+def _against_356(classes) -> None:
+    for cls in classes:
         ip, sp = si.interleaved_peaks(cls), sh.slice_peaks(cls)
         assert len(ip) == len(sp) == sh.n_slices(cls), cls
         assert all(a <= b for a, b in zip(ip, sp, strict=True)), cls

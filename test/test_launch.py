@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from tiers import by_l, is_fast
 
 from felizjueves.ao import drive
 from felizjueves.ao import j as aoj
@@ -460,7 +461,7 @@ def test_j_shaped_types_keep_their_fields():
                                  "density_sort", "refused"]
 
 
-@pytest.mark.parametrize("case", ["h2o", "spdf"])
+@pytest.mark.parametrize("case", ["h2o", by_l("spdf", 6, id="spdf")])  # (ff)
 def test_every_record_of_every_kept_pair_once_in_pair_order(case):
     basis, nuclei = _h2o_1e() if case == "h2o" else _spdf()
     plan = _plan_1e(basis, nuclei)
@@ -487,13 +488,15 @@ def test_every_record_of_every_kept_pair_once_in_pair_order(case):
         len(primitive_pairs(sh[i], sh[j])) for i, j in plan.kept)
 
 
-@pytest.mark.parametrize("target", [Target.S, Target.T, Target.V])
-def test_one_record_set_carries_exactly_what_each_kernel_reads(target):
+def _carries_exactly_what_each_kernel_reads(target, fast: bool):
+    """Over the plan's classes on one side of the cut."""
     spec_of, build, records = _ONE_E[target]
     basis, nuclei = _spdf()
     plan = _plan_1e(basis, nuclei)
     sh = basis.shells
     for c in plan:
+        if is_fast(c.la + c.lb) != fast:
+            continue
         assert c.spec(target) == spec_of(c.la, c.lb)
         got = c.arrays(target)
         params = [p.name for p in build(c.spec(target)).params
@@ -506,9 +509,22 @@ def test_one_record_set_carries_exactly_what_each_kernel_reads(target):
         for k in want:
             assert np.array_equal(np.asarray(got[k], dtype=want[k].dtype),
                                   want[k]), (target, c.la, c.lb, k)
+    return plan, nuclei
+
+
+@pytest.mark.parametrize("target", [Target.S, Target.T, Target.V])
+def test_one_record_set_carries_exactly_what_each_kernel_reads(target):
+    plan, nuclei = _carries_exactly_what_each_kernel_reads(target, True)
     if target is Target.V:
         assert plan.Z == [z for z, _ in nuclei]
         assert plan.Cnuc == [list(cn) for _, cn in nuclei]
+
+
+@pytest.mark.slow  # the d-f and f-f classes, L > FAST_L_MAX (tiers.py)
+@pytest.mark.parametrize("target", [Target.S, Target.T, Target.V])
+def test_one_record_set_carries_exactly_what_each_kernel_reads_above_l4(
+        target):
+    _carries_exactly_what_each_kernel_reads(target, False)
 
 
 def test_the_records_do_not_depend_on_the_matrix():

@@ -20,8 +20,8 @@ Three kinds of witness, from the inside out:
    their `claim` marks). The contracted, cross-engine pin with
    libcint fixtures is #281's.
 
-Fast tier: no compiler, no card. Every class here interprets in well under a
-second, so none is `slow`.
+Fast tier for `L <= FAST_L_MAX` (tiers.py), `slow` above: no compiler, no
+card.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from functools import cache
 
 import numpy as np
 import pytest
+from tiers import split_by_l
 
 from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.shell import Shell
@@ -56,6 +57,7 @@ from felizjueves.reference.pq import theta_of
 from felizjueves.spec import Operator, Spec, Target
 
 CLASSES = vrr.CLASSES
+LADDER = split_by_l(CLASSES, sum, ids=str)
 TWO_OVER_SQRT_PI = 2.0 / math.sqrt(math.pi)
 
 
@@ -226,7 +228,7 @@ def direct_hrr(s: dict, bnd: dict, first="bra"):
     return h
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=str)
+@pytest.mark.parametrize("cls", LADDER)
 def test_vrr_kernel_is_eqs_25_26_bitwise(cls) -> None:
     s = quartet()
     got = run_vrr(cls, s)
@@ -236,7 +238,7 @@ def test_vrr_kernel_is_eqs_25_26_bitwise(cls) -> None:
 
 
 @pytest.mark.parametrize("first", hrr.SIDES)
-@pytest.mark.parametrize("cls", CLASSES, ids=str)
+@pytest.mark.parametrize("cls", LADDER)
 def test_hrr_kernel_is_eq_28_bitwise_fed_by_the_vrr(cls, first) -> None:
     s = quartet()
     bnd = run_vrr(cls, s)
@@ -313,7 +315,7 @@ TOL = 1e-13
 
 
 @pytest.mark.parametrize("geom", GEOMS)
-@pytest.mark.parametrize("cls", CLASSES, ids=str)
+@pytest.mark.parametrize("cls", LADDER)
 def test_hgp_matches_mmd_on_a_primitive_quartet(cls, geom) -> None:
     got = hgp_block(cls, quartet(*GEOMS[geom]))
     want, scale = mmd_block(cls, *GEOMS[geom])
@@ -323,8 +325,8 @@ def test_hgp_matches_mmd_on_a_primitive_quartet(cls, geom) -> None:
 
 
 @pytest.mark.claim("fock/eq26-ket-vrr-sign")
-@pytest.mark.parametrize("cls", [(0, 0, 0, 1), (0, 1, 0, 1), (1, 1, 1, 1),
-                                 (2, 2, 2, 2)], ids=str)
+@pytest.mark.parametrize("cls", split_by_l(
+    [(0, 0, 0, 1), (0, 1, 0, 1), (1, 1, 1, 1), (2, 2, 2, 2)], sum, ids=str))
 def test_eq26s_printed_ket_sign_fails_and_the_derived_one_passes(cls) -> None:
     """`fock/eq26-ket-vrr-sign`: with `P != Q`, binding `WQ = -p/(p+q) PQ`
     (eq 26 as printed) gets the integrals wrong; `W - Q = +p/(p+q) PQ`
@@ -398,7 +400,7 @@ def test_eq14s_printed_seed_fails_and_the_derived_one_passes() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", CLASSES, ids=str)
+@pytest.mark.parametrize("cls", LADDER)
 def test_one_decl_per_dag_node_in_build_order(cls) -> None:
     v = vrr.build(cls)
     h = hrr.build(cls)

@@ -16,7 +16,10 @@ THE TWO RANGES.
 
 - EXACT, L = 0..EXACT_MAX_L: the gap against `optimum(L)`. The claim test
   recomputes it (about 2 s) and pins it exactly, inside a stated band, so a
-  worse MILD fails it (`test_a_degraded_mild_leaves_the_band`). It holds
+  worse MILD fails it (`test_a_degraded_mild_leaves_the_band`). L = 5 is
+  above FAST_L_MAX (test/tiers.py), so each exact test runs L <= 4 in the
+  fast tier and the whole range in a `slow` test -- the claim test among
+  those, since L = 5 is where the claim lives. It holds
   `jengine/mild-suboptimal-from-l5` and NOT `jengine/mild-vs-exact-tradeoff`
   (#116): it pins OUR gap, which disagrees with §4.1's percentages, so it
   would fail if they held here rather than when they are false. That record
@@ -27,14 +30,14 @@ THE TWO RANGES.
   the optimum and a LOWER bound on MILD's gap. It can prove MILD far from
   optimal and never close. A lower bound is recorded only where the beam's
   reference strictly dominates MILD; elsewhere the beam proves nothing and the
-  row says so. L <= 10 is recomputed in the fast tier, L = 11..16 (about a
-  minute) is `slow`.
+  row says so. Every beam row is L > FAST_L_MAX, so `slow`: L <= 10 in a
+  few seconds, L = 11..16 in about a minute.
 
 Both MILD as built (`dag.build`, no sieve: the heuristic §4.1 is about) and
 MILD followed by the sieve (`sieve.plan`, the pipeline's literal plan, seeded
 in hermite_targets order) are measured; the claim is about the first.
 
-Fast tier: no compiler, no card. `plan/cost.py` is read, never changed.
+No compiler, no card. `plan/cost.py` is read, never changed.
 Rewrite the data with
 `PYTHONPATH=src uv run python test/test_mild_vs_optimum.py --write`
 (about 70 s; the slow test checks every cell it writes).
@@ -50,6 +53,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from tiers import is_fast
 
 import felizjueves.plan.dag as dag
 from felizjueves.literature.claims import ClaimStatus, load_claims
@@ -65,6 +69,7 @@ DATA = JENGINE / "mild_vs_optimum.json"
 CLAIM = "jengine/mild-vs-exact-tradeoff"
 
 EXACT_LS = range(opt.EXACT_MAX_L + 1)
+FAST_EXACT_LS = [L for L in EXACT_LS if is_fast(L)]  # the rest is `slow`
 BEAM_WIDTH = 16
 BEAM_LS = range(opt.EXACT_MAX_L + 1, 17)
 FAST_BEAM_LS = range(opt.EXACT_MAX_L + 1, 11)
@@ -241,16 +246,29 @@ def ties_to_predecessor(r) -> str:
 # -- the claim ----------------------------------------------------------------
 
 
-@pytest.mark.claim("jengine/mild-suboptimal-from-l5")  # equal to L = 4, behind at 5
-def test_mild_against_the_exact_optimum() -> None:
-    # Recomputed, not read back: every L the exact search reaches, MILD's gap
-    # on each axis against the stated reference point, pinned to the record,
-    # inside the stated band, with the direction in words.
+def _exact_rows(Ls) -> list[dict]:
+    # Recomputed, not read back: MILD's gap on each axis against the stated
+    # reference point at each L of `Ls`, pinned to the record, inside the
+    # stated band. Every exact frontier is a single point.
     rec = _record()["exact"]
-    rows = [exact_row(L) for L in EXACT_LS]
-    assert rows == rec["rows"]
+    rows = [exact_row(L) for L in Ls]
+    assert rows == [r for r in rec["rows"] if r["L"] in Ls]
     assert BAND == rec["band"]
     assert in_band(rows)
+    assert all(len(r["frontier"]) == 1 for r in rows)
+    return rows
+
+
+def test_mild_against_the_exact_optimum_through_l4() -> None:
+    rows = _exact_rows(FAST_EXACT_LS)
+    assert [r["direction"] for r in rows] == ["equal to the reference"] * 5
+
+
+@pytest.mark.claim("jengine/mild-suboptimal-from-l5")  # equal to L = 4, behind at 5
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
+def test_mild_against_the_exact_optimum() -> None:
+    # Every L the exact search reaches, with the direction in words.
+    rows = _exact_rows(EXACT_LS)
     # The finding, spelled out: equal through L = 4; at L = 5 behind on BOTH
     # axes -- not §4.1's "behind on FLOPs, ahead on intermediates".
     assert [r["direction"] for r in rows] == (
@@ -258,28 +276,50 @@ def test_mild_against_the_exact_optimum() -> None:
     assert rows[5]["mild"] == [51, 161] and rows[5]["reference"] == [48, 160]
     assert rows[5]["gap_percent"] == {"intermediates": 6.25, "flops": 0.625}
     # Ahead on intermediates cannot happen here: every exact frontier is a
-    # single point, which no scheme in the space beats on either axis.
-    assert all(len(r["frontier"]) == 1 for r in rows)
+    # single point (_exact_rows), which no scheme in the space beats on
+    # either axis.
 
 
-@pytest.mark.parametrize("rule", [
+DEGRADED = pytest.mark.parametrize("rule", [
     ties_to_lowest_axis, ties_to_highest_axis, largest_component,
 ], ids=lambda f: f.__name__)
-def test_a_degraded_mild_leaves_the_band(rule) -> None:
+
+
+def _leaves_the_band(rule, Ls) -> None:
     # The claim test is a witness only if it fails for a worse MILD: each of
     # these moves the recorded gap outside the band (and off the pins).
-    rows = [exact_row(L, rule) for L in EXACT_LS]
+    rows = [exact_row(L, rule) for L in Ls]
     assert not in_band(rows)
-    assert rows != _record()["exact"]["rows"]
+    assert rows != [r for r in _record()["exact"]["rows"] if r["L"] in Ls]
 
 
-def test_the_mirror_tie_break_is_indistinguishable_by_cost() -> None:
+@DEGRADED
+def test_a_degraded_mild_leaves_the_band(rule) -> None:
+    _leaves_the_band(rule, FAST_EXACT_LS)
+
+
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
+@DEGRADED
+def test_a_degraded_mild_leaves_the_band_through_l5(rule) -> None:
+    _leaves_the_band(rule, EXACT_LS)
+
+
+def _mirror_is_indistinguishable(Ls) -> None:
     # A symmetry, not a blind spot: reversing the axis order maps MILD's
     # successor tie-break onto the predecessor one, and the targets and the
     # cost are invariant under it, so the gap cannot tell them apart.
     # test_plan_mild.py pins the tie-break itself.
-    assert [exact_row(L, ties_to_predecessor) for L in EXACT_LS] == (
-        _record()["exact"]["rows"])
+    assert [exact_row(L, ties_to_predecessor) for L in Ls] == (
+        [r for r in _record()["exact"]["rows"] if r["L"] in Ls])
+
+
+def test_the_mirror_tie_break_is_indistinguishable_by_cost() -> None:
+    _mirror_is_indistinguishable(FAST_EXACT_LS)
+
+
+@pytest.mark.slow  # L = 5 > FAST_L_MAX (tiers.py)
+def test_the_mirror_tie_break_is_indistinguishable_by_cost_through_l5() -> None:
+    _mirror_is_indistinguishable(EXACT_LS)
 
 
 # -- the beam, above the exact ceiling -----------------------------------------
@@ -289,6 +329,7 @@ def _beam_rows() -> dict[int, dict]:
     return {r["L"]: r for r in _record()["beam"]["rows"]}
 
 
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 @pytest.mark.parametrize("L", FAST_BEAM_LS)
 def test_beam_bound_cheap_cells(L) -> None:
     assert beam_row(L) == _beam_rows()[L]
