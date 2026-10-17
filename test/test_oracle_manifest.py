@@ -39,7 +39,12 @@ def test_tracked_fixture_loads_and_is_canonical(path):
     # Byte-for-byte what the one serialiser writes: full-precision floats, and
     # no hand edit the generator would undo.
     assert manifest.dumps(json.loads(path.read_text())) == path.read_text()
-    assert set(fx.arrays) >= set(manifest.REQUIRED_ARRAYS)
+    if fx.metric is None:
+        assert set(fx.arrays) >= set(manifest.REQUIRED_ARRAYS)
+        assert json.loads(path.read_text())["schema"] == manifest.AO_SCHEMA
+    else:  # #411: a metric piece, schema 3, its two row blocks only
+        assert sorted(fx.arrays) == sorted(manifest.METRIC_ARRAYS)
+        assert json.loads(path.read_text())["schema"] == manifest.SCHEMA
     for a in fx.arrays.values():
         assert not a.flags.writeable
 
@@ -121,7 +126,7 @@ def _write(tmp_path, mutate):
         (lambda r: r.update(ao_loc=[0, 2, 2]), "ao_loc gives shell 0"),
         (lambda r: r["shells"][0]["coefficients"].pop(), "one row per primitive"),
         (lambda r: r["provenance"].update(cart="yes"), "cart must be"),
-        (lambda r: r.update(schema=3), "schema 3"),
+        (lambda r: r.update(schema=4), "schema 4"),
     ],
     ids=["no-libcint", "no-date", "density-short", "ovlp-short", "asymmetric",
          "no-density", "no-ao_loc", "bad-ao_loc", "ragged-shell", "cart-str",
@@ -200,7 +205,7 @@ def test_a_schema_1_file_is_refused_naming_the_bump(tmp_path):
 
 
 def test_the_one_e_arrays_are_named_and_shaped_by_cartesian_aos():
-    assert manifest.SCHEMA == 2
+    assert (manifest.AO_SCHEMA, manifest.SCHEMA) == (2, 3)
     assert manifest.ONE_E_ARRAYS == ("int1e_ovlp", "int1e_kin", "int1e_nuc",
                                      "hcore")
     fx = load(ONE_E_FIXTURE)
@@ -291,6 +296,90 @@ def test_a_cross_overlap_array_that_cannot_be_read_is_refused(tmp_path):
     bad["arrays"][name] = {"shape": [7, 2], "values": [0.0] * 14}
     path.write_text(json.dumps(bad))
     with pytest.raises(manifest.FixtureError, match="expected"):
+        load(path)
+
+
+# --- #411: schema 3 and the metric pieces, both directions -----------------
+
+PIECE = manifest.FIXTURES / "h2o_ccpvtz_jkfit_metric_rows0_43.json"
+
+
+def test_schema_2_and_3_files_load_side_by_side():
+    """Every AO fixture is still schema 2, unchanged; the metric pieces are
+    schema 3 and the only files that are."""
+    by_schema = {}
+    for p in manifest.tracked():
+        by_schema.setdefault(json.loads(p.read_text())["schema"], set()).add(
+            p.stem)
+    assert set(by_schema) == {2, 3}
+    assert all(load(manifest.FIXTURES / f"{n}.json").metric is not None
+               for n in by_schema[3])
+    assert by_schema[3] == {p.stem for p in manifest.tracked()
+                            if p.stem.startswith("h2o_ccpvtz_jkfit_metric")}
+
+
+def test_a_schema_2_fixture_still_requires_its_density(tmp_path):
+    path = _write(tmp_path, lambda r: r["arrays"].pop("density"))
+    with pytest.raises(FixtureError, match=re.escape("missing ['density']")):
+        load(path)
+
+
+def test_a_schema_3_ao_fixture_still_requires_its_density(tmp_path):
+    """Schema 3 lifts the density requirement for a metric piece only."""
+    ok = _write(tmp_path, lambda r: r.update(schema=3))
+    assert load(ok).metric is None
+    path = _write(tmp_path, lambda r: (r.update(schema=3),
+                                       r["arrays"].pop("density")))
+    with pytest.raises(FixtureError, match=re.escape("missing ['density']")):
+        load(path)
+
+
+def test_a_metric_piece_loads_without_density_and_refuses_one():
+    fx = load(PIECE)
+    assert fx.metric is not None and fx.converted is None
+    assert "density" not in fx.arrays
+    with pytest.raises(FixtureError, match="records no density"):
+        _ = fx.density
+
+
+def _write_piece(tmp_path, mutate, src=PIECE):
+    raw = json.loads(src.read_text())
+    mutate(raw)
+    path = tmp_path / src.name
+    path.write_text(json.dumps(raw))
+    return path
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r.update(schema=2), "a metric piece is schema 3"),
+        (lambda r: r["arrays"].update(density={"shape": [1], "values": [1.0]}),
+         "exactly the arrays"),
+        (lambda r: r["arrays"].pop(manifest.AUX_OVLP_ARRAY),
+         "exactly the arrays"),
+        (lambda r: r["metric"].update(rows=[0, 42]), "shell boundaries"),
+        (lambda r: r["metric"].update(rows=[0, 81]), "is named"),
+        (lambda r: r["metric"].pop("parent"), "exactly the keys"),
+        (lambda r: r.update(converted=r["metric"]["converted"]),
+         "metric.converted, not in converted"),
+        (lambda r: r["arrays"][manifest.METRIC_ARRAY].update(
+            shape=[43, 165], values=[0.0] * 43 * 165), "has shape (43, 165)"),
+    ],
+    ids=["schema-2", "with-density", "one-array", "mid-shell", "misnamed",
+         "no-parent", "top-converted", "narrow"],
+)
+def test_a_bad_metric_piece_fails_naming_the_file(tmp_path, mutate, says):
+    path = _write_piece(tmp_path, mutate)
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value) and says in str(e.value)
+
+
+def test_an_ao_fixture_cannot_carry_a_metric_array(tmp_path):
+    path = _write(tmp_path, lambda r: r["arrays"].update(
+        {manifest.METRIC_ARRAY: r["arrays"]["ovlp"]}))
+    with pytest.raises(FixtureError, match="belong to a metric piece only"):
         load(path)
 
 

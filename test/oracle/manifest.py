@@ -5,10 +5,14 @@ tracked fixture on a box where the `oracle` group was never installed. The
 writer is `generate.py`; this module only defines what a fixture IS and refuses
 anything that is not one, with a message naming the file.
 
-THE SHAPE (schema 2), one JSON object per file under `fixtures/`:
+THE SHAPE (schema 2 or 3), one JSON object per file under `fixtures/`:
 
-    schema       2 (#240: schema 1 had no one-electron arrays; a schema-1
-                 file is refused by name, not read as one with them absent)
+    schema       2 or 3 (#240: schema 1 had no one-electron arrays; a
+                 schema-1 file is refused by name, not read as one with them
+                 absent). Schema 3 (#411) adds one optional key, `metric`
+                 (THE METRIC PIECES, below); an AO fixture is still written
+                 as schema 2, unchanged, and a `metric` key in a schema-2
+                 file is refused.
     name         the file's stem
     description  free text: what the case is for
     provenance   {pyscf, libcint, numpy, date, host, command, mol, basis, cart}
@@ -60,6 +64,37 @@ THE SHAPE (schema 2), one JSON object per file under `fixtures/`:
                  data yields it. Present only where a case records it; it lets
                  a later test build our shells with no PySCF. Cartesian only.
 
+THE METRIC PIECES (#411, schema 3). An auxiliary (density-fitting) basis's
+two-centre Coulomb metric `(P|Q)` -- libcint's `int2c2e_cart` -- and its
+overlap `int1e_ovlp`, nao_aux x nao_aux, are each over the repo's 512 KiB
+`check-added-large-files` cap on their own (166 x 166 for cc-pVTZ-jkfit on
+H2O: ~556 KB for the metric alone), so, as #121 split HF/cc-pVTZ's ERIs by
+L, the WHOLE matrices are split across files by row block. A piece carries
+
+    metric       {set, rows, parent, converted}: `set` the name every piece
+                 of one matrix shares, `rows` = [r0, r1) the aux AOs whose
+                 rows it holds (r0, r1 on shell boundaries, `ao_loc`),
+                 `parent` the tracked AO fixture whose molecule the aux basis
+                 was put on (`df.make_auxmol(parent, basis)`), and
+                 `converted` the aux basis in our convention
+                 ({common_factor, shells}, as the top-level slot). It is kept
+                 HERE and not in the top-level `converted` slot because it is
+                 not an AO basis: every consumer that walks the converted
+                 fixtures as AO bases (`Fixture.converted`) must not meet it.
+    arrays       exactly `int2c2e_cart:rows` and `int1e_ovlp:rows`, each
+                 (r1 - r0, nao), full width -- NO `density` (a piece is not
+                 an AO fixture; `Fixture.density` refuses one).
+
+and its stem is `<set>_rows<r0>_<r1>`. The rest of the shape (provenance,
+atoms, shells, nao, ao_labels, ao_loc) is the aux basis's, the same in every
+piece. `metric_set(set)` reassembles the whole matrices and, the way
+`fock_pair` does, refuses a missing piece (a row gap), an overlapping one,
+and a piece whose inputs (provenance but its date / host / command, atoms,
+shells, nao, ao_labels, ao_loc, parent, converted) differ from the first's,
+by name, never by a tolerance; the reassembled matrices must be symmetric to
+1e-14 of their largest element (libcint computes both triangles).
+`metric_sets()` names every tracked set.
+
 THE FOCK PAIR (#280, milestone 12 pin 10). No fixture records the
 two-electron Fock matrix; it is COMBINED, never stored, from a `<m>_j` /
 `<m>_k` pair, which `fock_pair(m)` loads and `check_pair` asserts share
@@ -97,7 +132,9 @@ from typing import Any
 
 import numpy as np
 
-SCHEMA = 2
+SCHEMA = 3  # the newest this loader reads (#411: the metric pieces)
+AO_SCHEMA = 2  # what an AO fixture is written as, unchanged since #240
+SCHEMAS = (AO_SCHEMA, SCHEMA)
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 PROVENANCE_KEYS = (
@@ -108,7 +145,7 @@ TOP_KEYS = (
     "schema", "name", "description", "provenance", "atoms", "shells", "nao",
     "ao_labels", "ao_loc", "arrays", "density_recipe",
 )
-OPTIONAL_KEYS = ("converted",)
+OPTIONAL_KEYS = ("converted", "metric")
 REQUIRED_ARRAYS = ("density",)
 ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
 J_ARRAY = "vj"  # PySCF get_jk's Coulomb matrix for `density` (#86)
@@ -122,6 +159,12 @@ SCHWARZ_ARRAY = "int2e_diag"  # libcint's (mn|mn) for every AO pair
 # libcint's <m|n>, m an AO of the named fixture (rows), n of this one
 CROSS_PREFIX = "int1e_ovlp_cross:"
 ONE_E_ARRAYS = (OVLP_ARRAY, KIN_ARRAY, NUC_ARRAY, HCORE_ARRAY)
+# #411: a metric piece's two row blocks (THE METRIC PIECES)
+METRIC_ARRAY = "int2c2e_cart:rows"
+AUX_OVLP_ARRAY = "int1e_ovlp:rows"
+METRIC_ARRAYS = (METRIC_ARRAY, AUX_OVLP_ARRAY)
+METRIC_KEYS = ("converted", "parent", "rows", "set")
+ROWS_SEP = "_rows"
 
 
 class FixtureError(ValueError):
@@ -179,6 +222,16 @@ class Converted:
 
 
 @dataclass(frozen=True)
+class MetricPiece:
+    """A schema-3 file's `metric` record: rows [r0, r1) of set `set`."""
+
+    set: str
+    rows: tuple[int, int]
+    parent: str
+    converted: Converted
+
+
+@dataclass(frozen=True)
 class Fixture:
     path: Path
     name: str
@@ -192,9 +245,12 @@ class Fixture:
     arrays: dict[str, np.ndarray]  # read-only
     density_recipe: str
     converted: Converted | None = None
+    metric: MetricPiece | None = None
 
     @property
     def density(self) -> np.ndarray:
+        if self.metric is not None:
+            raise _fail(self.path, "a metric piece records no density")
         return self.arrays["density"]
 
 
@@ -253,10 +309,11 @@ def _provenance(path: Path, p: Any) -> Provenance:
     return Provenance(**{k: p[k] for k in PROVENANCE_KEYS})
 
 
-def _arrays(path: Path, raw: Any) -> dict[str, np.ndarray]:
+def _arrays(path: Path, raw: Any, required: tuple[str, ...] = REQUIRED_ARRAYS,
+            ) -> dict[str, np.ndarray]:
     if not isinstance(raw, dict):
         raise _fail(path, "arrays must be an object")
-    missing = [k for k in REQUIRED_ARRAYS if k not in raw]
+    missing = [k for k in required if k not in raw]
     if missing:
         raise _fail(path, f"arrays is missing {missing}")
     out = {}
@@ -296,8 +353,12 @@ def validate(path: Path, raw: Any) -> Fixture:
                           "2 (#240) added the one-electron arrays -- "
                           "regenerate it (python -m oracle.generate "
                           "--regenerate)")
-    if raw["schema"] != SCHEMA:
-        raise _fail(path, f"schema {raw['schema']!r}, this loader reads {SCHEMA}")
+    if raw["schema"] not in SCHEMAS:
+        raise _fail(path, f"schema {raw['schema']!r}, this loader reads "
+                          f"{list(SCHEMAS)}")
+    if "metric" in raw and raw["schema"] < SCHEMA:
+        raise _fail(path, f"a metric piece is schema {SCHEMA} (#411), and "
+                          f"this file says schema {raw['schema']}")
     if raw["name"] != path.stem:
         raise _fail(path, f"name {raw['name']!r} is not the file's stem")
 
@@ -358,15 +419,30 @@ def validate(path: Path, raw: Any) -> Fixture:
             and all(isinstance(x, str) for x in labels)):
         raise _fail(path, f"ao_labels must be {nao} strings")
 
+    for k in ("description", "density_recipe"):
+        if not isinstance(raw[k], str) or not raw[k]:
+            raise _fail(path, f"{k} must be a non-empty string")
+    if "metric" in raw:
+        if "converted" in raw:
+            raise _fail(path, "a metric piece keeps its aux basis in "
+                              "metric.converted, not in converted")
+        arrays = _arrays(path, raw["arrays"], required=())
+        metric = _metric(path, raw, prov, len(atoms), shells, nao,
+                         tuple(ao_loc), arrays)
+        return Fixture(path, raw["name"], raw["description"], prov,
+                       tuple(atoms), tuple(shells), nao, tuple(labels),
+                       tuple(ao_loc), arrays, raw["density_recipe"], None,
+                       metric)
+
     arrays = _arrays(path, raw["arrays"])
     d = arrays["density"]
     if d.shape != (nao, nao):
         raise _fail(path, f"density has shape {d.shape}, expected ({nao}, {nao})")
     if not np.array_equal(d, d.T):
         raise _fail(path, "density is not exactly symmetric")
-    for k in ("description", "density_recipe"):
-        if not isinstance(raw[k], str) or not raw[k]:
-            raise _fail(path, f"{k} must be a non-empty string")
+    stray = sorted(n for n in arrays if n in METRIC_ARRAYS)
+    if stray:
+        raise _fail(path, f"arrays {stray} belong to a metric piece only")
 
     converted = (_converted(path, raw["converted"], prov, len(atoms), shells,
                             nao)
@@ -451,6 +527,43 @@ def _converted(path: Path, c: Any, prov: Provenance, n_atoms: int,
     if n != nao:
         raise _fail(path, f"converted shells give {n} AOs, nao is {nao}")
     return Converted(common, tuple(out))
+
+
+def _metric(path: Path, raw: dict[str, Any], prov: Provenance, n_atoms: int,
+            shells: list[Shell], nao: int, ao_loc: tuple[int, ...],
+            arrays: dict[str, np.ndarray]) -> MetricPiece:
+    m = raw["metric"]
+    if not isinstance(m, dict) or sorted(m) != sorted(METRIC_KEYS):
+        raise _fail(path, f"metric must have exactly the keys "
+                          f"{sorted(METRIC_KEYS)}")
+    for k in ("set", "parent"):
+        if not isinstance(m[k], str) or not m[k] or m[k] != Path(m[k]).name:
+            raise _fail(path, f"metric.{k} must be a fixture-style name")
+    rows = m["rows"]
+    if not (isinstance(rows, list) and len(rows) == 2
+            and all(isinstance(r, int) and not isinstance(r, bool)
+                    for r in rows)
+            and 0 <= rows[0] < rows[1] <= nao):
+        raise _fail(path, f"metric.rows must be [r0, r1] with "
+                          f"0 <= r0 < r1 <= nao={nao}")
+    r0, r1 = rows
+    if r0 not in ao_loc or r1 not in ao_loc:
+        raise _fail(path, f"metric.rows [{r0}, {r1}) does not fall on shell "
+                          "boundaries (ao_loc)")
+    want = f"{m['set']}{ROWS_SEP}{r0}_{r1}"
+    if raw["name"] != want:
+        raise _fail(path, f"a metric piece of set {m['set']!r}, rows "
+                          f"[{r0}, {r1}) is named {want!r}")
+    if sorted(arrays) != sorted(METRIC_ARRAYS):
+        raise _fail(path, f"a metric piece carries exactly the arrays "
+                          f"{sorted(METRIC_ARRAYS)}, not {sorted(arrays)}")
+    for name in METRIC_ARRAYS:
+        if arrays[name].shape != (r1 - r0, nao):
+            raise _fail(path, f"arrays.{name} has shape "
+                              f"{arrays[name].shape}, expected "
+                              f"({r1 - r0}, {nao})")
+    converted = _converted(path, m["converted"], prov, n_atoms, shells, nao)
+    return MetricPiece(m["set"], (r0, r1), m["parent"], converted)
 
 
 def _eri_quartet(name: str) -> tuple[int, ...] | None:
@@ -542,6 +655,109 @@ def cross_fixtures() -> list[Path]:
     """Every tracked fixture carrying a cross-basis overlap, sorted."""
     return [p for p in tracked()
             if any(n.startswith(CROSS_PREFIX) for n in load(p).arrays)]
+
+
+# --- the metric pieces (#411) -----------------------------------------------
+
+
+@dataclass(frozen=True)
+class MetricSet:
+    """A metric set `metric_set` reassembled: the WHOLE matrices."""
+
+    name: str
+    pieces: tuple[Fixture, ...]  # in row order
+    metric: np.ndarray  # libcint's int2c2e_cart, nao x nao, read-only
+    ovlp: np.ndarray  # libcint's int1e_ovlp, nao x nao, read-only
+    converted: Converted  # the aux basis (oracle.basis.from_fixture reads it)
+
+    @property
+    def path(self) -> Path:
+        return self.pieces[0].path
+
+    @property
+    def nao(self) -> int:
+        return self.pieces[0].nao
+
+    @property
+    def parent(self) -> str:
+        assert self.pieces[0].metric is not None
+        return self.pieces[0].metric.parent
+
+
+# Provenance a piece may differ in from its siblings: when and where it was
+# written, and the command naming it. Everything else is an input.
+_PIECE_FREE = ("date", "host", "command")
+
+
+def _inputs(fx: Fixture) -> tuple[tuple[str, Any], ...]:
+    assert fx.metric is not None
+    pv = fx.provenance
+    return (
+        *((f"provenance.{k}", getattr(pv, k)) for k in PROVENANCE_KEYS
+          if k not in _PIECE_FREE),
+        ("atoms", fx.atoms), ("shells", fx.shells), ("nao", fx.nao),
+        ("ao_labels", fx.ao_labels), ("ao_loc", fx.ao_loc),
+        ("metric.parent", fx.metric.parent),
+        ("metric.converted", fx.metric.converted),
+    )
+
+
+def metric_set(name: str, fixtures: Path = FIXTURES) -> MetricSet:
+    """Load every `<name>_rows*` piece and reassemble the whole matrices.
+
+    Refuses, naming the files: no piece; a piece of another set; two pieces
+    whose rows overlap; a row gap (a missing piece) at the start, between
+    two pieces or at the end; a piece whose inputs differ from the first's;
+    and reassembled matrices that are not symmetric to 1e-14 of their
+    largest element. Every input comparison is exact."""
+    paths = sorted(fixtures.glob(f"{name}{ROWS_SEP}*.json"))
+    if not paths:
+        raise FixtureError(f"{fixtures}: no metric piece {name}{ROWS_SEP}*")
+    pieces = []
+    for p in paths:
+        fx = load(p)
+        if fx.metric is None or fx.metric.set != name:
+            raise _fail(p, f"is not a piece of metric set {name!r}")
+        pieces.append(fx)
+    pieces.sort(key=lambda f: f.metric.rows)  # type: ignore[union-attr]
+    first = pieces[0]
+    ref = _inputs(first)
+    for fx in pieces[1:]:
+        for (field, a), (_, b) in zip(ref, _inputs(fx), strict=True):
+            if a != b:
+                raise FixtureError(f"{first.path} / {fx.path}: not one metric "
+                                   f"set: {field} differ")
+    end = 0
+    for fx in pieces:
+        r0, r1 = fx.metric.rows  # type: ignore[union-attr]
+        if r0 < end:
+            raise _fail(fx.path, f"rows [{r0}, {r1}) overlap a piece "
+                                 f"ending at row {end}")
+        if r0 > end:
+            raise _fail(fx.path, f"rows [{end}, {r0}) of set {name!r} are "
+                                 "in no piece (one is missing)")
+        end = r1
+    if end != first.nao:
+        raise FixtureError(f"{fixtures}: rows [{end}, {first.nao}) of set "
+                           f"{name!r} are in no piece (one is missing)")
+    out = {}
+    for array in METRIC_ARRAYS:
+        a = np.vstack([fx.arrays[array] for fx in pieces])
+        if not np.all(np.abs(a - a.T) <= 1e-14 * np.max(np.abs(a))):
+            raise FixtureError(f"{first.path}: set {name!r}'s {array} is not "
+                               "symmetric to 1e-14 of its largest element")
+        a.setflags(write=False)
+        out[array] = a
+    assert first.metric is not None
+    return MetricSet(name, tuple(pieces), out[METRIC_ARRAY],
+                     out[AUX_OVLP_ARRAY], first.metric.converted)
+
+
+def metric_sets(fixtures: Path = FIXTURES) -> list[str]:
+    """Every tracked metric set's name, sorted."""
+    names = {fx.metric.set for p in sorted(fixtures.glob("*.json"))
+             if (fx := load(p)).metric is not None}
+    return sorted(names)
 
 
 # --- the Fock pair (#280) ----------------------------------------------------

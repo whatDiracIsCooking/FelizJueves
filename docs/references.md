@@ -177,3 +177,10 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
     UCRL-13791 (1976). doi:10.2172/5184486 — the authors' report of entry 39,
     and an openly readable text of it. Equation numbers cited against this
     entry are the report's; the journal version may renumber.
+47. F. Weigend, "A fully direct RI-HF algorithm: Implementation, optimised
+    auxiliary basis sets, demonstration of accuracy and efficiency," Physical
+    Chemistry Chemical Physics **4**, 4285–4291 (2002). doi:10.1039/b204199p
+    — the paper defining the cc-pVXZ JK-fitting auxiliary sets, among them
+    cc-pVTZ-jkfit (the Basis Set Exchange's reference for that set, and the
+    citation in PySCF's `cc-pvtz-jkfit.dat`), the auxiliary basis of the
+    `h2o_ccpvtz_jkfit_metric` fixture (#411).
