@@ -73,28 +73,10 @@ sit apart (`alpha = 1000` on A against `beta = 1` and `beta = 1000` on B two
 bohr away is `T ~ 2000`), so the kernel sets `Kernel.wide_boys`, as `V` does.
 
     params  n_pair n_rec n_ao (I32)
-            zeta_ab  s_ab  XP YP ZP  XPA YPA ZPA  XPB YPB ZPB
-                                                  [n_rec]  per record
-            rec0  rec1  off_a  off_b  [n_pair]  (I32)  per shell pair
+            zeta_ab[n_rec]  P[n_rec, 3]  XPA[n_rec, 3]  XPB[n_rec, 3]
+            s_ab[n_rec]                                   per record
+            rec0[n_pair]  rec1[n_pair]  off_a[n_pair]  off_b[n_pair]  (I32)
             schwarz_bound[n_ao, n_ao]  (OUT, written once per element)
-
-THE RECORDS ARE `PrimPairSoA` (#422, `prim_pair.py`): one flat array per
-scalar and per axis of every vector, carried across the call by value in
-the SAME struct `S`, `T`, `V` and `SX` take, so the signature is
-
-    schwarz_11(int n_pair, int n_rec, int n_ao, PrimPairSoA pp,
-               const int* rec0, ..., double* schwarz_bound)
-
-The fields bound are `zeta` (as `zeta_ab`), `s` (as `s_ab`, `V`'s name, for
-`V`'s reason: the prelude declares a local `s`) and `XP`..`ZPB`; `eb` is
-unread. `off_a` / `off_b` are NOT bound, though the struct has fields of
-those names: there they are PER RECORD (`n_rec` long, a one-electron thread
-owns one record), here PER SHELL PAIR (`n_pair` long, indexed by `pair`,
-beside `rec0` / `rec1`, which the struct does not carry). Binding them would
-put an `n_pair` array in an `n_rec` field, so one struct value could no
-longer serve every family. Whether the split helps this kernel's loads --
-one thread per shell pair walking its records serially, not one per record
--- is unmeasured; nothing about the kernel is.
 
 `schwarz_bound` is symmetric and every element of the pairs launched is
 written, so `schwarz_bound[m + n * n_ao]` and `schwarz_bound[n + m * n_ao]` are
@@ -133,7 +115,6 @@ from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import Order, schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.prim_pair import AXES, bundled
 from felizjueves.recurrence import (
     PQ_PARAMS,
     THETA,
@@ -159,11 +140,6 @@ PAIR = "pair"  # one thread per contracted shell pair
 BRA = "ib"  # the bra record, serial
 KET = "ik"  # the ket record, serial inside the bra
 OUT = "schwarz_bound"
-
-# The record arrays arrive in one `PrimPairSoA` (prim_pair.py); the per-pair
-# offsets do not (the parameter block's note).
-BUNDLED = bundled(*(f"{a}P{c}" for c in ("", "A", "B") for a in AXES),
-                  zeta="zeta_ab", s="s_ab")
 
 _DIAGONAL = (
     "diagonal shell pair (off_a == off_b): the lower triangle a >= b only, "
@@ -257,9 +233,9 @@ def _binds(frag, zeta: Expr, at: Expr, array: str) -> dict[str, Expr]:
     out: dict[str, Expr] = {ef.ZETA: zeta, ef.E_ARRAY: Var(array)}
     if ef.HALF_INV_ZETA in frag.binds:
         out[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), zeta)
-    for d, a in enumerate(AXES):
-        out[Factor.pa(d).name_in_kernel] = Index(f"{a}PA", (at,))
-        out[Factor.pb(d).name_in_kernel] = Index(f"{a}PB", (at,))
+    for d in range(3):
+        out[Factor.pa(d).name_in_kernel] = Index("XPA", (at, Lit(d)))
+        out[Factor.pb(d).name_in_kernel] = Index("XPB", (at, Lit(d)))
     return out
 
 
@@ -308,8 +284,8 @@ def build_schwarz_kernel(cls: Spec | tuple[int, int], *,
     ket_body: tuple[Stmt, ...] = (
         Decl("et", Scalar.F64, init=Index("zeta_ab", (ik,))),
         *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
-                                      Index(f"{a}P", (ik,))))
-          for d, (n, a) in enumerate(zip(PQ_PARAMS, AXES, strict=True))),
+                                      Index("P", (ik, Lit(d)))))
+          for d, n in enumerate(PQ_PARAMS)),
         Note("theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in "
              "the source'"),
         Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
@@ -331,8 +307,8 @@ def build_schwarz_kernel(cls: Spec | tuple[int, int], *,
     )
     bra_body: tuple[Stmt, ...] = (
         Decl("ze", Scalar.F64, init=Index("zeta_ab", (ib,))),
-        *(Decl(f"P{d}", Scalar.F64, init=Index(f"{a}P", (ib,)))
-          for d, a in enumerate(AXES)),
+        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (ib, Lit(d))))
+          for d in range(3)),
         Decl("sb", Scalar.F64, init=Index("s_ab", (ib,))),
         Note("the undressed E block of this bra record, once: "
              "e_fragment.block_fragment, inlined"),
@@ -415,8 +391,10 @@ def build_schwarz_kernel(cls: Spec | tuple[int, int], *,
         Param("n_rec", Scalar.I32),
         Param("n_ao", Scalar.I32),
         f64("zeta_ab", (nrec,)),
+        f64("P", (nrec, Lit(3))),
+        f64("XPA", (nrec, Lit(3))),
+        f64("XPB", (nrec, Lit(3))),
         f64("s_ab", (nrec,)),
-        *(f64(f"{a}P{c}", (nrec,)) for c in ("", "A", "B") for a in AXES),
         i32("rec0", (npair,)),
         i32("rec1", (npair,)),
         i32("off_a", (npair,)),
@@ -424,5 +402,4 @@ def build_schwarz_kernel(cls: Spec | tuple[int, int], *,
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nao, nao)),
     )
-    return Kernel(name or f"schwarz_{la}{lb}", params, body, wide_boys=True,
-                  bundled=BUNDLED)
+    return Kernel(name or f"schwarz_{la}{lb}", params, body, wide_boys=True)

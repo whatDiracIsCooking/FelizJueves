@@ -54,10 +54,7 @@ vendors spell differently. `WarpReduce` says "sum across the warp"; how wide a
 warp is, and how a shuffle is spelled, is the device target's (#37) and the
 backend's business. The IR knowing an arch is how the seam #27 validates stops
 being a seam. Likewise there are no pointers, templates or classes: an array
-is a name you `Index`. The one struct is at the call boundary, not in the
-body: a `Bundle` (`Kernel.bundled`) says which array params arrive inside a
-by-value struct of pointers, and the writer unpacks them under their own
-names before the body runs.
+is a name you `Index`.
 
 `Note(prov)` is metadata -- an equation or algorithm line a backend renders as
 a comment, so a citation lives in one place. It never affects semantics: an
@@ -1010,94 +1007,6 @@ class Param:
             _expr(d, "a Param extent")
 
 
-@dataclass(frozen=True)
-class Bundle:
-    """A fixed C struct of IN array pointers, passed to a kernel BY VALUE.
-
-    The ABI a kernel family shares with its host: `fields` are the struct's
-    members in declaration order, each `(name, scalar)` a
-    `const <scalar>*`. One `Bundle` is one type -- every kernel that carries
-    it takes the same struct, whichever of its fields it reads -- so a host
-    fills it once per record class and hands the same value to every family.
-    `header` is where the `gpu` backend's unit finds its definition
-    (`include/<header>`); the vendor backends spell it in the unit instead.
-
-    It is a property of the call boundary only. Inside the kernel each field
-    a `Bundled` maps is still an ordinary 1-D array `Param` -- indexed by
-    name, read by the interpreter under that name, checked like any other --
-    so a bundled kernel computes exactly what its unbundled twin does.
-    """
-
-    name: str
-    header: str
-    fields: tuple[tuple[str, Scalar], ...]
-
-    def __post_init__(self) -> None:
-        _ident(self.name, "Bundle name")
-        if not isinstance(self.header, str) or not self.header.endswith(".h"):
-            raise ValueError(f"Bundle header {self.header!r} is not a .h path")
-        fields = _tuple(self, "fields", self.fields)
-        if not fields:
-            raise ValueError(f"Bundle {self.name!r} has no fields")
-        for f in fields:
-            if not (isinstance(f, tuple) and len(f) == 2
-                    and isinstance(f[1], Scalar)):
-                raise ValueError(f"Bundle {self.name!r}: field {f!r} is not "
-                                 "a (name, Scalar) pair")
-            _ident(f[0], "Bundle field")
-        names = [f[0] for f in fields]
-        if len(set(names)) != len(names):
-            raise ValueError(f"Bundle {self.name!r}: duplicate fields {names}")
-
-    def type_of(self, field_name: str) -> Scalar:
-        for n, t in self.fields:
-            if n == field_name:
-                return t
-        raise ValueError(f"{field_name!r} is not a field of {self.name!r}")
-
-
-@dataclass(frozen=True)
-class Bundled:
-    """Which of a kernel's array `Param`s arrive through a `Bundle`.
-
-    `arg` is the struct argument's name in the signature; `binds` pairs a
-    field with the `Param` it carries, `(field, param)`. The two names may
-    differ (`kernel_v` reads the field `s` as `s_ab`, because its
-    recurrence declares a local `s`). A field the kernel does not read is
-    simply not bound: the struct still carries it, unread.
-    """
-
-    bundle: Bundle
-    arg: str
-    binds: tuple[tuple[str, str], ...]
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.bundle, Bundle):
-            raise TypeError(f"Bundled bundle {self.bundle!r} is not a Bundle")
-        _ident(self.arg, "Bundled arg")
-        binds = _tuple(self, "binds", self.binds)
-        if not binds:
-            raise ValueError(f"Bundled {self.arg!r} binds no field")
-        for b in binds:
-            if not (isinstance(b, tuple) and len(b) == 2):
-                raise ValueError(f"Bundled bind {b!r} is not a (field, param) "
-                                 "pair")
-            self.bundle.type_of(b[0])
-            _ident(b[1], "Bundled param")
-        fields = [b[0] for b in binds]
-        params = [b[1] for b in binds]
-        if len(set(fields)) != len(fields) or len(set(params)) != len(params):
-            raise ValueError(f"Bundled {self.arg!r}: a field or param bound "
-                             f"twice in {binds}")
-
-    def field_of(self, param: str) -> str | None:
-        """The field that carries `param`, or None if it is a plain argument."""
-        for f, p in self.binds:
-            if p == param:
-                return f
-        return None
-
-
 def walk(body: tuple[Stmt, ...], *, into_inline: bool = True) -> Iterator[Stmt]:
     """Every statement in `body`, nested ones included, in source order.
 
@@ -1359,50 +1268,18 @@ class Kernel:
     so the interpreter, whose Boys is injected, does not read it. A kernel
     that sets it without calling `Fn.BOYS` is refused: the flag would widen
     nothing.
-
-    `bundled` is likewise the writer's business only: which array params
-    cross the call boundary inside a `Bundle` struct. Each one it binds must
-    be an IN array of the field's scalar with at most one extent -- a struct
-    of pointers to flat arrays, so the layout behind a field is never a
-    question -- and its `arg` must not be a param's name. It may be a
-    TUPLE of `Bundled` (K's bra and ket records are two values of one
-    `Bundle`, #421): their `arg`s differ and no param is carried twice.
-    `bundles` is the tuple either way. The interpreter ignores it; the params
-    are the params.
     """
 
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
     wide_boys: bool = False
-    bundled: Bundled | tuple[Bundled, ...] | None = None
-
-    @property
-    def bundles(self) -> tuple[Bundled, ...]:
-        """`bundled` as a tuple: empty when unset, one element when a
-        single `Bundled` was given."""
-        if self.bundled is None:
-            return ()
-        if isinstance(self.bundled, Bundled):
-            return (self.bundled,)
-        return self.bundled
-
-    def bundled_by(self, param: str) -> tuple[Bundled, str] | None:
-        """The `Bundled` that carries `param` and its field, or None."""
-        for b in self.bundles:
-            f = b.field_of(param)
-            if f is not None:
-                return b, f
-        return None
 
     def __repr__(self) -> str:
-        # The dataclass's own spelling, with `wide_boys` and `bundled` shown
-        # only when set: every kernel that existed before #266 keeps its repr
-        # byte for byte, and with it every hash taken of one (test_launch.py's
-        # J plans).
+        # The dataclass's own spelling, with `wide_boys` shown only when set:
+        # every kernel that existed before #266 keeps its repr byte for byte,
+        # and with it every hash taken of one (test_launch.py's J plans).
         wide = ", wide_boys=True" if self.wide_boys else ""
-        if self.bundled is not None:
-            wide += f", bundled={self.bundled!r}"
         return (f"Kernel(name={self.name!r}, params={self.params!r}, "
                 f"body={self.body!r}{wide})")
 
@@ -1451,53 +1328,9 @@ class Kernel:
                                 f"Factor {t.g.name} needs a Param or Decl "
                                 f"named {need!r}"
                             )
-        if self.bundled is not None:
-            self._check_bundled(params)
         if self.wide_boys and not any(
                 isinstance(e, Call) and e.fn is Fn.BOYS
                 for s in walk(self.body) for root in _exprs_of(s)
                 if root is not None for e in _subexprs(root)):
             raise ValueError(f"Kernel {self.name!r} sets wide_boys but never "
                              "calls Fn.BOYS")
-
-    def _check_bundled(self, params: tuple[Param, ...]) -> None:
-        bs = self.bundled
-        if isinstance(bs, tuple):
-            if not bs:
-                raise ValueError(f"Kernel {self.name!r}: bundled is an empty "
-                                 "tuple (leave it None)")
-        else:
-            bs = (bs,)
-        for b in bs:
-            if not isinstance(b, Bundled):
-                raise TypeError(f"Kernel bundled {b!r} is not a Bundled")
-        args = [b.arg for b in bs]
-        if len(set(args)) != len(args):
-            raise ValueError(f"Kernel {self.name!r}: two bundles share an "
-                             f"argument name in {args}")
-        carried = [p for b in bs for _, p in b.binds]
-        if len(set(carried)) != len(carried):
-            raise ValueError(f"Kernel {self.name!r}: a param is carried by "
-                             f"two bundles in {carried}")
-        by_name = {p.name: p for p in params}
-        for b in bs:
-            self._check_one_bundled(b, by_name)
-
-    def _check_one_bundled(self, b: Bundled, by_name: dict[str, Param]
-                           ) -> None:
-        if b.arg in by_name:
-            raise ValueError(f"Kernel {self.name!r}: the {b.bundle.name} "
-                             f"argument {b.arg!r} is also a Param")
-        for f, pname in b.binds:
-            p = by_name.get(pname)
-            if p is None:
-                raise ValueError(f"Kernel {self.name!r}: {b.bundle.name}.{f} "
-                                 f"carries {pname!r}, which is not a Param")
-            if not p.array or p.intent is not Intent.IN or len(p.shape) > 1:
-                raise ValueError(
-                    f"Kernel {self.name!r}: {pname!r} is not a flat IN array, "
-                    f"so {b.bundle.name}.{f} cannot carry it")
-            if p.type is not b.bundle.type_of(f):
-                raise ValueError(
-                    f"Kernel {self.name!r}: {pname!r} is {p.type}, "
-                    f"{b.bundle.name}.{f} {b.bundle.type_of(f)}")

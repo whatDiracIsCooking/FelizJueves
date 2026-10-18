@@ -108,8 +108,7 @@ def schwarz_matrix(basis: Basis, *, pq: PQ) -> Matrix:
 @dataclass(frozen=True)
 class SchwarzClass:
     """Every shell pair of one pair class `(la, lb)`, `la <= lb`, and its
-    primitive-pair records; `arrays()` is them in `kernel_schwarz`'s
-    parameter order.
+    primitive-pair records, in `kernel_schwarz`'s parameter order.
 
     `pairs[k]` is the shell pair `(A, B)` as staged (`l_A <= l_B`, so possibly
     swapped from basis order); its records are `[rec0[k], rec1[k])`, its AO
@@ -136,22 +135,14 @@ class SchwarzClass:
     def n_rec(self) -> int:
         return len(self.zeta_ab)
 
-    # The kernel's record arrays (#422, `prim_pair.PrimPairSoA`): one flat
-    # `n_rec` array per scalar and one per axis of each vector, `XP YP ZP`
-    # for `P`, `XPA YPA ZPA` for `XPA`, `XPB YPB ZPB` for `XPB`.
-    RECORD_ARRAYS = ("zeta_ab", "s_ab",
-                     *(f"{a}{v}" for v in ("P", "PA", "PB") for a in "XYZ"))
+    RECORD_ARRAYS = ("zeta_ab", "P", "XPA", "XPB", "s_ab")
     PAIR_ARRAYS = ("rec0", "rec1", "off_a", "off_b")
 
     def arrays(self) -> dict[str, list]:
-        """The kernel's array parameters, in its parameter order, as flat
-        lists: each record vector split per axis."""
-        out: dict[str, list] = {"zeta_ab": list(self.zeta_ab),
-                                "s_ab": list(self.s_ab)}
-        for vec, tail in (("P", "P"), ("XPA", "PA"), ("XPB", "PB")):
-            for d, a in enumerate("XYZ"):
-                out[f"{a}{tail}"] = [v[d] for v in getattr(self, vec)]
-        return out | {k: list(getattr(self, k)) for k in self.PAIR_ARRAYS}
+        """The kernel's array parameters, in its parameter order, as lists."""
+        return {k: [list(v) if isinstance(v, tuple) else v
+                    for v in getattr(self, k)]
+                for k in (*self.RECORD_ARRAYS, *self.PAIR_ARRAYS)}
 
 
 def _sub(p: Sequence[float], c: Sequence[float]) -> tuple[float, float, float]:
@@ -168,7 +159,7 @@ def schwarz_classes(basis: Basis) -> tuple[SchwarzClass, ...]:
             a, b = (i, j) if sh[i].l <= sh[j].l else (j, i)
             sa, sb = sh[a], sh[b]
             c = cols.setdefault((sa.l, sb.l), {k: [] for k in (
-                "pairs", "zeta_ab", "P", "XPA", "XPB", "s_ab",
+                "pairs", *SchwarzClass.RECORD_ARRAYS,
                 *SchwarzClass.PAIR_ARRAYS)})
             c["pairs"].append((a, b))
             c["rec0"].append(len(c["zeta_ab"]))

@@ -589,16 +589,8 @@ def test_the_program_reads_the_kernels_parameters(target, tmp_path) -> None:
     for c in launch:
         k = kernel_of(c, target)
         at = prog.source.index(">>>(", prog.source.index(f"::{k.name}<<<"))
-        call = prog.source[at + 4:prog.source.index(");", at)]
-        # the record arrays are one PrimPairSoA aggregate, every field filled
-        head, struct = call.split(f"::{k.bundled.bundle.name}{{")
-        struct, tail = struct.split("}")
-        fields = struct.split(", ")
-        assert len(fields) == len(k.bundled.bundle.fields), k.name
-        assert fields.count("nullptr") == (len(k.bundled.bundle.fields)
-                                           - len(k.bundled.binds)), k.name
-        n_args = head.count(",") + 1 + tail.count(",")
-        assert n_args == len(k.params) - len(k.bundled.binds) + 1, k.name
+        call = prog.source[at:prog.source.index(");", at)]
+        assert call.count(",") == len(k.params) - 1, k.name
     data = one_e_stage(launch, target)
     n_nuc = len(launch.nuclei) if target is Target.V else 0
     nd = {Target.S: 8, Target.T: 9, Target.V: 11}[target]
@@ -632,8 +624,10 @@ def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
         for p in k.params:
             if not p.array or p.name in kw or p.name in ("off_a", "off_b", mat):
                 continue
-            args[p.name] = data[at:at + nr].copy()  # every record array flat
-            at += nr
+            w = 3 if p.name in ("P", "XPA", "XPB") else 1
+            args[p.name] = data[at:at + w * nr].reshape(nr, w) if w == 3 \
+                else data[at:at + nr].copy()
+            at += w * nr
         args["off_a"] = data[at:at + nr].astype(np.int32)
         args["off_b"] = data[at + nr:at + 2 * nr].astype(np.int32)
         at += 2 * nr

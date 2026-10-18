@@ -184,7 +184,6 @@ from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.ir import Kernel
 from felizjueves.kernel import build_pq_kernels
 from felizjueves.plan.pipeline import plan
-from felizjueves.prim_pair import AXES
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["Bound", "ClassLaunch", "LaunchPlan", "OneEClass", "OneELaunch",
@@ -585,13 +584,13 @@ class OneEClass:
         self.spec(target)
         rs = self.recs
         out: dict[str, list] = {"zeta_ab": [r.zeta for r in rs]}
+        if target is Target.V:
+            out["P"] = [list(r.P) for r in rs]
+        out["XPA"] = [list(r.XPA) for r in rs]
+        out["XPB"] = [list(r.XPB) for r in rs]
         out["s_ab" if target is Target.V else "s"] = [r.s for r in rs]
         if target is Target.T:
             out["eb_ket"] = [r.eb for r in rs]
-        if target is Target.V:
-            out |= _per_axis("P", [r.P for r in rs])
-        out |= _per_axis("PA", [r.XPA for r in rs])
-        out |= _per_axis("PB", [r.XPB for r in rs])
         out["off_a"] = [r.off_a for r in rs]
         out["off_b"] = [r.off_b for r in rs]
         return out
@@ -838,17 +837,11 @@ class XClass:
         block's order and under its names, as plain lists."""
         rs = self.recs
         return {"zeta_ab": [r.zeta for r in rs],
+                "XPA": [list(r.XPA) for r in rs],
+                "XPB": [list(r.XPB) for r in rs],
                 "s": [r.s for r in rs],
-                **_per_axis("PA", [r.XPA for r in rs]),
-                **_per_axis("PB", [r.XPB for r in rs]),
                 "off_a": [r.off_a for r in rs],
                 "off_b": [r.off_b for r in rs]}
-
-
-def _per_axis(name: str, vecs: Sequence[Vec3]) -> dict[str, list[float]]:
-    """A record vector as the one-electron kernels take it: one flat array
-    per axis, `X<name>`, `Y<name>`, `Z<name>` (`prim_pair.py`)."""
-    return {f"{a}{name}": [v[d] for v in vecs] for d, a in enumerate(AXES)}
 
 
 @dataclass(frozen=True)

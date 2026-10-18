@@ -872,21 +872,20 @@
     "class": "coulomb/d0/(1,1|1,1)/b1/k/literal",
     "target": "k",
     "literal_registers": 192,
-    "literal_spill_store": 71,
+    "literal_spill_store": 70,
     "relieves": {
      "interleave+split": 0,
-     "kmixed": 50,
-     "kmixed-de": 31,
+     "kmixed": 51,
+     "kmixed-de": 30,
      "split": 0
     },
     "worsens": {
-     "interleave": 125,
-     "stage-eac": 192
+     "coalesced": 71,
+     "interleave": 123,
+     "shuffle": 71,
+     "stage-eac": 186
     },
-    "unchanged": [
-     "coalesced",
-     "shuffle"
-    ]
+    "unchanged": []
    }
   ]
  }

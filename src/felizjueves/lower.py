@@ -91,7 +91,6 @@ which refuses it, exactly as before.
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -408,7 +407,7 @@ def recycle(kernel: Kernel, *, array: str = "slot") -> Kernel:
 
     n_slots = max(slot.values()) + 1
     decl = Decl(array, Scalar.F64, (Lit(n_slots),), Space.LOCAL)
-    return dataclasses.replace(kernel, body=(decl, *st(kernel.body)))
+    return Kernel(kernel.name, kernel.params, (decl, *st(kernel.body)))
 
 
 def lower(kernel: Kernel, *, recycle_slots: bool = False) -> Kernel:

@@ -32,7 +32,7 @@ pair by shell index; here there is no `i <= j` to begin with.
 THE PARAMETER BLOCK:
 
     params  n_rec n_a n_b (I32)
-            zeta_ab  s  XPA YPA ZPA  XPB YPB ZPB  [n_rec]   per record
+            zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]   per record
             off_a[n_rec]  off_b[n_rec]  (I32)
             S[n_a, n_b]  (OUT, read and AtomicAdd-ed)
 
@@ -73,8 +73,7 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.kernel_s import BUNDLED, REC, launch_shape, record_values
-from felizjueves.prim_pair import AXES
+from felizjueves.kernel_s import REC, launch_shape, record_values
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
@@ -161,12 +160,12 @@ def build_sx_kernel(cls: Spec | tuple[int, int], *,
         Param("n_a", Scalar.I32),
         Param("n_b", Scalar.I32),
         _f64("zeta_ab", (nr,)),
+        _f64("XPA", (nr, Lit(3))),
+        _f64("XPB", (nr, Lit(3))),
         _f64("s", (nr,)),
-        *(_f64(f"{a}PA", (nr,)) for a in AXES),
-        *(_f64(f"{a}PB", (nr,)) for a in AXES),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),
         Param("S", Scalar.F64, array=True, intent=Intent.OUT,
               shape=(na, nbv)),
     )
-    return Kernel(name or f"sx_{la}{lb}", params, body, bundled=BUNDLED)
+    return Kernel(name or f"sx_{la}{lb}", params, body)

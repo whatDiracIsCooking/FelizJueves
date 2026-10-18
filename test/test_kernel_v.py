@@ -91,7 +91,6 @@ from felizjueves.kernel_v import (
 )
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
-from felizjueves.prim_pair import AXES
 from felizjueves.recurrence import fundamental_prelude, recurrence_body
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
@@ -155,12 +154,8 @@ def _records(basis, pairs):
             cols["s_ab"].append(sk)
             cols["off_a"].append(off[i])
             cols["off_b"].append(off[j])
-    out = {k: np.array(v, dtype=np.int32 if k.startswith("off") else float)
-           for k, v in cols.items()}
-    for vec, tail in (("P", "P"), ("XPA", "PA"), ("XPB", "PB")):
-        col = out.pop(vec)  # one flat array per axis (prim_pair.py)
-        out |= {f"{a}{tail}": col[:, d] for d, a in enumerate(AXES)}
-    return out
+    return {k: np.array(v, dtype=np.int32 if k.startswith("off") else float)
+            for k, v in cols.items()}
 
 
 def _nuc_arrays(nuclei):
@@ -378,8 +373,8 @@ def test_the_key_is_a_pair_class():
 def test_the_parameter_block():
     k = build_v_kernel((1, 2))
     assert [p.name for p in k.params] == [
-        "n_rec", "n_ao", "n_nuc", "zeta_ab", "s_ab", "XP", "YP", "ZP", "XPA",
-        "YPA", "ZPA", "XPB", "YPB", "ZPB", "off_a", "off_b", "Z", "Cnuc", "V"]
+        "n_rec", "n_ao", "n_nuc", "zeta_ab", "P", "XPA", "XPB", "s_ab",
+        "off_a", "off_b", "Z", "Cnuc", "V"]
     (V,) = [p for p in k.params if p.name == "V"]
     assert V.intent.name == "OUT"
 

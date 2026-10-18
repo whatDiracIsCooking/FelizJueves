@@ -16,8 +16,8 @@ not taken on the predecessor's word).
 THE STAGING PATTERN, AND WHY THERE IS NO BARRIER. The IR has no barrier
 (#333), and adding one is outside this lever's reach. So the staging is
 BLOCK-UNIFORM AND REDUNDANT: every lane runs the same inlined fragment, from
-the same block-uniform scalars (`zeta_ac[bra]`, `XPA[bra]` ...,
-`XPC[bra]` ...), and stores every entry of the block into the one shared
+the same block-uniform scalars (`zeta_ac[bra]`, `XPA[bra, :]`,
+`XPC[bra, :]`), and stores every entry of the block into the one shared
 array `EacS[n_ac][n_p]` -- the literal kernel's arithmetic, its target moved.
 Two facts make that correct without synchronisation, and both are checked
 when the kernel is built (`_write_once`):
@@ -176,7 +176,7 @@ def bind_e_ac(ctx: KContext) -> tuple[Stmt, ...]:
              "e_fragment.block_fragment(la, lc), inlined; s_ac is the host's"),
         Decl(ARRAY, Scalar.F64, (Lit(len(ctx.rows_ac)), Lit(len(ctx.ps))),
              Space.SHARED),
-        Inline(ctx.frag_ac, {**bindings(ctx.frag_ac, Var("ze"), "PA", "PC",
+        Inline(ctx.frag_ac, {**bindings(ctx.frag_ac, Var("ze"), "XPA", "XPC",
                                         ctx.bra),
                              ef.E_ARRAY: Var(ARRAY)}),
     )

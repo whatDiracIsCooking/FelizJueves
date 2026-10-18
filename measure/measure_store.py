@@ -157,14 +157,7 @@ def test_every_row_above_l4_is_keyed_on_its_measured_key(arch, target) -> None:
 def test_every_row_carries_its_provenance() -> None:
     for key, row in ROWS.items():
         assert row.host and row.gpu and row.date and row.command, key
-        # One declared exception (#421): a compile row of a CLOCK_PENDING
-        # (arch, target), recompiled while that card was not visible -- its
-        # registers and spills need no card, it carries no clock, and #436
-        # re-measures it with the card present.
-        pending = (row.arch, measured_store.target_of(key).value) in (
-            measured_store.CLOCK_PENDING) and row.runtime_ns is None
-        assert row.gpu != "ABSENT" or pending, (
-            f"{key}: measured with no card visible")
+        assert row.gpu != "ABSENT", f"{key}: measured with no card visible"
         assert row.spill_unit and row.raw, key
         assert len(row.source_sha256) == 64, key
         # The flags are config.sh's, and none of them relaxes floating point.
@@ -177,9 +170,6 @@ def _check_sources(keep, arch: str, target: Target) -> None:
         if not keep(spec):
             continue
         units = measured.BACKENDS[BACKEND_OF[row.arch]].units(spec)
-        if ((spec.target.value, spec.total_am) in measured_store.SOURCE_PENDING
-                and measured.cell_sha256(units) != row.source_sha256):
-            continue  # declared stale (#421), re-measured by #436
         assert measured.cell_sha256(units) == row.source_sha256, (
             f"{key}: the emitted text changed since it was measured -- "
             "python -m felizjueves.measured --remeasure")

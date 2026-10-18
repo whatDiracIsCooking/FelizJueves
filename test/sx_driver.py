@@ -21,10 +21,9 @@ synchronize and the read-back. Every element is owned by exactly one
 ordered shell pair, whose records add into it atomically.
 
 THE UPLOADS, once: per class one buffer of its double record arrays
-(`zeta_ab | s | XPA | YPA | ZPA | XPB | YPB | ZPB`, each flat) and one of
-its two int offsets (`off_a | off_b`). A kernel argument is a pointer into
-those buffers, read off the kernel's own parameter list; the record arrays
-travel in one `PrimPairSoA` (`plan_driver.kernel_args`).
+(`zeta_ab | XPA | XPB | s`, each row-major) and one of its two int offsets
+(`off_a | off_b`). A kernel argument is a pointer into those buffers, read
+off the kernel's own parameter list.
 
 THE UNITS. `units` maps a kernel name to a file already written (the kernel
 tier's generate phase, when `KERNEL_GEN_CMD` asks for `--sx-l`; it does not
@@ -38,23 +37,15 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from plan_driver import (
-    RUNS,
-    UPLOAD_INT,
-    Program,
-    _unit,
-    compile_checked,
-    kernel_args,
-)
+from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves.ir import Intent, Kernel
+from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.kernel_sx import build_sx_kernel, launch_shape
 from felizjueves.launch import XClass, XLaunch
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
-WIDTH = dict.fromkeys(("zeta_ab", "s", "XPA", "YPA", "ZPA", "XPB", "YPB",
-                       "ZPB"), 1)  # every record array flat (prim_pair.py)
+WIDTH = {"zeta_ab": 1, "XPA": 3, "XPB": 3, "s": 1}
 ND = sum(WIDTH.values())  # doubles per record
 INTS = ("off_a", "off_b")
 
@@ -76,7 +67,14 @@ def _call(kern: Kernel, c: int, ns: str, cls: XClass) -> str:
         off += width * n
     at.update({"off_a": f"di[{c}]", "off_b": f"di[{c}] + {n}",
                "n_rec": str(n), "n_a": "NA", "n_b": "NB"})
-    args = kernel_args(kern, at, ns, "dM")
+    args = []
+    for p in kern.params:
+        if p.intent is Intent.OUT:
+            args.append("dM")
+        elif p.array or p.type is Scalar.I32:
+            args.append(at[p.name])
+        else:
+            raise ValueError(f"{kern.name}: no argument for {p.name}")
     grid, (lanes, _) = launch_shape(n, THREADS)
     return (f"        // ordered class ({cls.la}, {cls.lb}), {n} records\n"
             f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"

@@ -48,16 +48,16 @@ per axis. The attractive sign enters as `acc - Z u`, a subtraction, which is
 THE PARAMETER BLOCK:
 
     params  n_rec n_ao n_nuc (I32)
-            zeta_ab  s_ab  XP YP ZP  XPA YPA ZPA  XPB YPB ZPB
-                                                      [n_rec]  per record
-            off_a  off_b  [n_rec]  (I32)
+            zeta_ab[n_rec]  P[n_rec, 3]  XPA[n_rec, 3]  XPB[n_rec, 3]
+            s_ab[n_rec]                               per record
+            off_a[n_rec]  off_b[n_rec]  (I32)
             Z[n_nuc]  Cnuc[n_nuc, 3]                  per nucleus
             V[n_ao, n_ao]  (OUT, read and AtomicAdd-ed)
 
 `kernel_s`'s block, with three changes, each for a reason:
 
-- `P` is added, as `XP YP ZP`: `PQ = P - C` needs the product centre, and
-  `XPA` / `XPB` without `A` cannot give it.
+- `P` is added: `PQ = P - C` needs the product centre, and `XPA` / `XPB`
+  without `A` cannot give it.
 - `s` is spelled `s_ab`: `recurrence.fundamental_prelude` declares a local
   `s` (`-2 theta^2`) inside the nucleus loop, and a local shadowing a host
   array of the same name is the hazard `zeta_ab` already avoids
@@ -116,7 +116,6 @@ from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import Order, schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.prim_pair import AXES, bundled
 from felizjueves.recurrence import (
     PQ_PARAMS,
     THETA,
@@ -139,11 +138,6 @@ __all__ = [
 ]
 
 REC = "rec"  # the record index: one thread per primitive-pair record
-
-# The record arrays arrive in one `PrimPairSoA` (prim_pair.py); the field
-# `s` is read as `s_ab` (the parameter block's note on the name).
-BUNDLED = bundled(*(f"{a}P{c}" for c in ("", "A", "B") for a in AXES),
-                  "off_a", "off_b", zeta="zeta_ab", s="s_ab")
 NUC = "c"  # the nucleus index, serial inside the record
 
 ATOMIC_REASON = (
@@ -237,15 +231,15 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
         head.append(Decl(ef.HALF_INV_ZETA, Scalar.F64,
                          init=_c(Fn.DIV, Lit(0.5), Var(ef.ZETA))))
         binds[ef.HALF_INV_ZETA] = Var(ef.HALF_INV_ZETA)
-    for d, a in enumerate(AXES):
-        binds[Factor.pa(d).name_in_kernel] = Index(f"{a}PA", (rec,))
-        binds[Factor.pb(d).name_in_kernel] = Index(f"{a}PB", (rec,))
+    for d in range(3):
+        binds[Factor.pa(d).name_in_kernel] = Index("XPA", (rec, Lit(d)))
+        binds[Factor.pb(d).name_in_kernel] = Index("XPB", (rec, Lit(d)))
     head += [
         Decl("sk", Scalar.F64, init=Index("s_ab", (rec,))),
         Decl("oa", Scalar.I32, init=Index("off_a", (rec,))),
         Decl("ob", Scalar.I32, init=Index("off_b", (rec,))),
-        *(Decl(f"P{d}", Scalar.F64, init=Index(f"{a}P", (rec,)))
-          for d, a in enumerate(AXES)),
+        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (rec, Lit(d))))
+          for d in range(3)),
         Note("the undressed block E^{ab}_t of this record, from the fragment: "
              "rows cartesians(la) x cartesians(lb), columns hermite_order"
              "(la + lb); a structurally zero entry is never written nor read"),
@@ -345,10 +339,10 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
         Param("n_ao", Scalar.I32),
         Param("n_nuc", Scalar.I32),
         _f64("zeta_ab", (nr,)),
+        _f64("P", (nr, Lit(3))),
+        _f64("XPA", (nr, Lit(3))),
+        _f64("XPB", (nr, Lit(3))),
         _f64("s_ab", (nr,)),
-        *(_f64(f"{a}P", (nr,)) for a in AXES),
-        *(_f64(f"{a}PA", (nr,)) for a in AXES),
-        *(_f64(f"{a}PB", (nr,)) for a in AXES),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),
         _f64("Z", (nn,)),
@@ -357,5 +351,4 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
     )
     # wide_boys (#266): a point-charge ket has no eta to damp T = zeta |P-C|^2
     # (~1.25e5 on HF/cc-pVTZ), so this kernel asks for the wide fj_boys.
-    return Kernel(name or v_name(spec), params, body, wide_boys=True,
-                  bundled=BUNDLED)
+    return Kernel(name or v_name(spec), params, body, wide_boys=True)

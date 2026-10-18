@@ -147,32 +147,9 @@ not necessarily bitwise, so the full host matrix is held to a stated
 
 | kernel | scalars | per record | per nucleus | out |
 |---|---|---|---|---|
-| `s_{la}{lb}` | `n_rec n_ao` | `zeta_ab s XPA YPA ZPA XPB YPB ZPB off_a off_b` | — | `S[n_ao,n_ao]` |
-| `t_{la}{lb}` | `n_rec n_ao` | `zeta_ab s eb_ket XPA YPA ZPA XPB YPB ZPB off_a off_b` | — | `T[n_ao,n_ao]` |
-| `v_{la}{lb}` | `n_rec n_ao n_nuc` | `zeta_ab s_ab XP YP ZP XPA YPA ZPA XPB YPB ZPB off_a off_b` | `Z Cnuc[,3]` | `V[n_ao,n_ao]` |
-
-**The record arrays are structure of arrays, and travel as one struct.**
-Every per-record array is flat and `n_rec` long. A Cartesian quantity is
-split per axis (`XPA YPA ZPA`, not an interleaved `XPA[n_rec, 3]`), so with
-one thread per record a warp's lanes read consecutive doubles on every load.
-The arrays cross the call as one `PrimPairSoA` (`prim_pair.py`, an
-`ir.Bundle`), a struct of 14 pointers passed by value, so the signature is
-`s_{la}{lb}(int n_rec, int n_ao, PrimPairSoA pp, double* S)`. The struct
-is the superset of what the four families read (`zeta s eb XP YP ZP XPA YPA
-ZPA XPB YPB ZPB off_a off_b`). A kernel binds the fields it reads, at the
-top of its body, under its own parameter names (`const double* const s_ab =
-pp.s;`), and leaves the rest unread, so a host fills one value per class
-and hands it to every family. Inside the kernel, and to the interpreter,
-each field is still the array `Param` of its own name. The `gpu` backend
-includes `include/felizjueves/prim_pair.h`; the vendor backends spell the
-same text in the unit (`emit._c.bundle_struct`, which `test_emit_gpu.py`
-holds the header to). Since #422 the Schwarz kernel (`schwarz_{la}{lb}`)
-takes the same struct, binding `zeta s XP..ZPB`; its `off_a` / `off_b` are
-per shell pair, not per record, so they stay plain arguments beside `rec0` /
-`rec1` (`kernel_schwarz`'s docstring). Since #421 the J chain's pair kernels
-(`DQ`, `JAB`) take it too, and `K` two values of it (its bra and ket
-records); `[p|q]` and the DF metric still take interleaved `[n_rec, 3]`
-arrays.
+| `s_{la}{lb}` | `n_rec n_ao` | `zeta_ab XPA[,3] XPB[,3] s off_a off_b` | — | `S[n_ao,n_ao]` |
+| `t_{la}{lb}` | `n_rec n_ao` | `zeta_ab XPA[,3] XPB[,3] s eb_ket off_a off_b` | — | `T[n_ao,n_ao]` |
+| `v_{la}{lb}` | `n_rec n_ao n_nuc` | `zeta_ab P[,3] XPA[,3] XPB[,3] s_ab off_a off_b` | `Z Cnuc[,3]` | `V[n_ao,n_ao]` |
 
 The names are chosen for hygiene. `zeta_ab` is not `zeta` because the
 fragment binds a scalar `zeta`. `eb_ket` is not `eb` because the kinetic
@@ -401,9 +378,8 @@ It reuses `kernel_s.record_values` (the per-record statements, factored out
 of `kernel_s` with `S`'s emitted text byte-identical through (gg) on both
 backends). Its scatter is one `AtomicAdd` per element,
 `S[off_a+i, off_b+j] += v`, with no offset comparison. The parameter block
-is `S`'s with `n_ao` split: `n_rec n_a n_b | zeta_ab s XPA YPA ZPA XPB
-YPB ZPB off_a off_b | S[n_a, n_b]`, the record arrays in `S`'s
-`PrimPairSoA`. Interpreted, the whole rectangular matrix is
+is `S`'s with `n_ao` split: `n_rec n_a n_b | zeta_ab XPA[,3] XPB[,3] s
+off_a off_b | S[n_a, n_b]`. Interpreted, the whole rectangular matrix is
 **bitwise `==`** to `cross_overlap_matrix`, which is a stronger statement
 than `S`'s, because no triangle is read. Its layering rule `sx_builder` is
 `kernel_s`'s plus `kernel_s` itself.
