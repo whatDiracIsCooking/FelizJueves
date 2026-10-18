@@ -141,7 +141,6 @@ from plan_driver import (
     stage,
     transform,
 )
-from soa import axes
 from test_j_launched_ondevice import (
     BOUND,
     JK_TOL,
@@ -785,8 +784,7 @@ def test_the_programs_data_is_the_interpreted_kernels(name):
         got = Interpreter(build_dq_kernel(dc.cls),
                           launch=Launch(grid, block, 32)).run(
             n_rec=dc.n_rec, n_pair=len(dc.members), eta=d[:, 0],
-            **axes("PA", d[:, 1:4]), **axes("PB", d[:, 4:7]), s=d[:, 7],
-            w=d[:, 8],
+            XPA=d[:, 1:4].copy(), XPB=d[:, 4:7].copy(), s=d[:, 7], w=d[:, 8],
             pair=dc.pair.astype(np.int32), Dcd=dc.dcd,
             D=np.zeros((dc.n_rec, dq_shape(*dc.cls)[1])), Dmax=np.zeros(dc.n_rec))
         Dh, _ = _dq_host(basis, dc)
@@ -803,8 +801,8 @@ def test_the_programs_data_is_the_interpreted_kernels(name):
         J = Interpreter(build_jab_kernel((la, lb)),
                         launch=Launch(grid, block, 1)).run(
             n_rec=len(data), n_ao=basis.n_ao, n_rows=jps[lp].shape[0],
-            zeta_ab=data[:, 0], **axes("PA", data[:, 1:4]),
-            **axes("PB", data[:, 4:7]), s=data[:, 7],
+            zeta_ab=data[:, 0], XPA=data[:, 1:4].copy(),
+            XPB=data[:, 4:7].copy(), s=data[:, 7],
             off_a=ints[:, 0].astype(np.int32), off_b=ints[:, 1].astype(np.int32),
             row=ints[:, 2].astype(np.int32), Jp=jps[lp], J=J)["J"]
     host = [[0.0] * basis.n_ao for _ in range(basis.n_ao)]

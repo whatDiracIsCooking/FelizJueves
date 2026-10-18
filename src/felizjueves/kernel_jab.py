@@ -17,24 +17,14 @@ added into the AO matrix by the scatter rule:
     diagonal     (off_a == off_b):  only i >= j;  J[off_a+i, off_a+j] += v,
                                     and for i != j also J[off_a+j, off_a+i] += v
 
-THE PARAMETER BLOCK is the contract's, with two spellings forced by the IR
-and one layout chosen (#421):
+THE PARAMETER BLOCK is the contract's, with two spellings forced by the IR:
 
     params  n_rec n_ao n_rows (I32)
-            zeta_ab  s  XPA YPA ZPA  XPB YPB ZPB  [n_rec]   per record
-            off_a  off_b  row  [n_rec]  (I32)
+            zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]   per record
+            off_a[n_rec]  off_b[n_rec]  row[n_rec]  (I32)
             Jp[n_rows, n_p]                     the bra class's J_p buffer
             J[n_ao, n_ao]  (OUT, read and AtomicAdd-ed)
 
-- Every per-record array is flat, one per scalar and one per axis (`P - A`
-  is `XPA YPA ZPA`, not `XPA[n_rec, 3]`), and the record's own arrays --
-  `zeta_ab`, `s`, `P - A`, `P - B`, `off_a`, `off_b` -- cross the call as
-  one `PrimPairSoA` (`prim_pair.py`, the one-electron kernels' struct), so
-  the signature is `jab_{la}{lb}(int n_rec, int n_ao, int n_rows,
-  PrimPairSoA pp, const int* row, const double* Jp, double* J)`. `row` is
-  this kernel's (the record's row of the bra class's `J_p` buffer), not the
-  record's, so it stays an argument. Inside the kernel each field is still
-  the array of its own name.
 - `zeta_ab`, not the contract's `zeta`: the `E` block fragment binds a
   SCALAR named `zeta`, and `ir`'s hygiene (#149) refuses a host array of the
   same name -- a fragment is not a macro, nothing is renamed. The kernel
@@ -110,12 +100,10 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.prim_pair import AXES, bundled
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
     "ATOMIC_REASON",
-    "BUNDLED",
     "REC",
     "ZEROED_J",
     "build_jab_kernel",
@@ -125,10 +113,6 @@ __all__ = [
 ]
 
 REC = "rec"  # the record index: one thread per bra primitive-pair record
-
-# The record arrays arrive in one `PrimPairSoA` (prim_pair.py), as in `S`.
-BUNDLED = bundled("s", *(f"{a}P{c}" for c in "AB" for a in AXES),
-                  "off_a", "off_b", zeta="zeta_ab")
 
 ATOMIC_REASON = (
     "AtomicAdd: several primitive records of one bra shell pair, and both "
@@ -213,9 +197,9 @@ def build_jab_kernel(cls: Spec | tuple[int, int], *,
         head.append(Decl(ef.HALF_INV_ZETA, Scalar.F64,
                          init=_c(Fn.DIV, Lit(0.5), Var(ef.ZETA))))
         binds[ef.HALF_INV_ZETA] = Var(ef.HALF_INV_ZETA)
-    for d, a in enumerate(AXES):
-        binds[Factor.pa(d).name_in_kernel] = Index(f"{a}PA", (rec,))
-        binds[Factor.pb(d).name_in_kernel] = Index(f"{a}PB", (rec,))
+    for d in range(3):
+        binds[Factor.pa(d).name_in_kernel] = Index("XPA", (rec, Lit(d)))
+        binds[Factor.pb(d).name_in_kernel] = Index("XPB", (rec, Lit(d)))
     head += [
         Decl("sk", Scalar.F64, init=Index("s", (rec,))),
         Decl("jr", Scalar.I32, init=Index("row", (rec,))),
@@ -289,14 +273,13 @@ def build_jab_kernel(cls: Spec | tuple[int, int], *,
         Param("n_ao", Scalar.I32),
         Param("n_rows", Scalar.I32),
         _f64("zeta_ab", (nr,)),
+        _f64("XPA", (nr, Lit(3))),
+        _f64("XPB", (nr, Lit(3))),
         _f64("s", (nr,)),
-        *(_f64(f"{a}PA", (nr,)) for a in AXES),
-        *(_f64(f"{a}PB", (nr,)) for a in AXES),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),
         _i32("row", (nr,)),
         _f64("Jp", (Var("n_rows"), Lit(n_p))),
         Param("J", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or jab_name((la, lb)), params, body,
-                  bundled=BUNDLED)
+    return Kernel(name or jab_name((la, lb)), params, body)

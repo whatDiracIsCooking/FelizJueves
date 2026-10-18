@@ -125,9 +125,8 @@ def _device_cells() -> list:
 
 DEVICE_CELLS = _device_cells()
 
-# kmixed-de's operands: the host input each narrows (`_k_inputs`' key, one
-# `[n, 3]` vector or `Dcd`) and its harness upload index (K_HARNESS's
-# `sizes[]` order). A vector's three per-axis parameters (#421) share it.
+# kmixed-de's parameters: the harness's upload index of each (K_HARNESS's
+# `sizes[]` order) and its `const float*` spelling.
 _FLOAT_SLOTS = {"XPA": 2, "XPC": 3, "XQB": 9, "XQD": 10, "Dcd": 14}
 
 _UPLOAD_FLOATS = r"""
@@ -152,12 +151,11 @@ def _swap(text: str, old: str, new: str) -> str:
 
 
 def _full_harness(tkd) -> dict[str, str]:
-    """K_HARNESS with `kmixed-de`'s float uploads. The declaration and the
-    launch need no rewrite: both are derived from the kernel, a parameter
-    it declares F32 read from `df[...]` (`tkd.k_launch_args`)."""
-    tkd_regions = {r: n for r, n in enumerate(tkd.K_REGIONS)}
-    assert {n for i in _FLOAT_SLOTS.values() for n in tkd_regions[i]} == set(
-        mixed.NARROWED_PARAMS)
+    """K_SIGNATURE, K_HARNESS and K_LAUNCH for `kmixed-de`'s parameters."""
+    assert set(_FLOAT_SLOTS) == set(mixed.NARROWED_PARAMS)
+    sig = tkd.K_SIGNATURE
+    for name in _FLOAT_SLOTS:
+        sig = _swap(sig, f"const double* {name},", f"const float* {name},")
     floats = " || ".join(f"i == {i}" for i in sorted(_FLOAT_SLOTS.values()))
     harness = _swap(tkd.K_HARNESS, "\n// usage: `limits`", _UPLOAD_FLOATS)
     harness = _swap(harness, "    int* di[15] = {{nullptr}};\n",
@@ -171,13 +169,16 @@ def _full_harness(tkd) -> dict[str, str]:
         " return 1; }}\n"
         "            d[i] = nullptr;\n"
         "        }} else if (i == 6 || i == 13) {{")
-    return {"K_HARNESS": harness}
+    launch = tkd.K_LAUNCH
+    for i in sorted(_FLOAT_SLOTS.values()):
+        launch = _swap(launch, f"d[{i}],", f"df[{i}],")
+    return {"K_SIGNATURE": sig, "K_HARNESS": harness, "K_LAUNCH": launch}
 
 
 def _packed(k: dict) -> dict:
     """`k` with the five operands replaced by the host's narrowed copies."""
     out = dict(k)
-    for name in _FLOAT_SLOTS:
+    for name in mixed.NARROWED_PARAMS:
         name_in = name
         a = np.asarray(k[name_in], dtype=np.float64)
         out[name_in] = np.array(narrowed(a.ravel())).reshape(a.shape)
@@ -275,24 +276,18 @@ def test_the_driver_builds_an_arm_as_build_k_kernels() -> None:
 
 
 def test_the_full_harness_matches_the_kernel_signature() -> None:
-    """The launch passes every F32 parameter of `kmixed-de` from a float
-    upload (`df[...]`), every other array from a double or int one, and the
-    declaration is the unit's own signature, `float` exactly where the
-    kernel declares F32 (#421: derived, never restated)."""
+    """The rewritten signature names the kernel's parameters in order, with
+    `float` exactly where `kmixed-de` declares F32."""
     import test_kernel_device as tkd
 
-    from felizjueves.device import SM_86
-    from felizjueves.emit import cuda
     from felizjueves.ir import Scalar
 
+    sig = _full_harness(tkd)["K_SIGNATURE"]
     (kern,) = build_k_kernels(dataclasses.replace(k_spec(2),
                                                   levers=(mixed.FULL,)))
-    args = tkd.k_launch_args(kern)
-    f32 = [p.name for p in kern.params if p.array and p.type is Scalar.F32]
-    assert sorted(f32) == sorted(mixed.NARROWED_PARAMS)
-    loose = [a for a in args if "PrimPairSoA" not in a]
-    assert sum(a.startswith("df[") for a in loose) == len(f32)
-    assert all("df[" not in a for a in args if "PrimPairSoA" in a)
-    decl = tkd.k_declaration(cuda.emit(kern, SM_86), kern.name)
-    assert decl.count("const float*") == len(f32)
-    assert decl.count("PrimPairSoA ") == 2
+    args = sig.split(", ")
+    assert [a.split()[-1].lstrip("*") for a in args] == [
+        p.name for p in kern.params]
+    for a, p in zip(args, kern.params, strict=True):
+        assert a.startswith("const float*") == (p.type is Scalar.F32
+                                                and p.array)

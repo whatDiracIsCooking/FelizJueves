@@ -742,22 +742,18 @@ def test_the_row_raw_carries_both_arms_and_the_contention_state() -> None:
 
 
 # The recorded result (#363's two sessions, one per card): every arm's
-# verdict per arch, read off the tracked store by the declared rule. The K
-# arms' sm_86 entries are #421's re-time on the new text (interleave and
-# kmixed were FASTER, shuffle and stage-eac SLOWER, under #363: all four are
-# NOT SHOWN now); their gfx1200 entries are #363's, unread while
-# `CLOCK_PENDING` holds them (#436 re-times them).
+# verdict per arch, read off the tracked store by the declared rule.
 _F, _S, _N = (measured_store.FASTER_ARM, measured_store.SLOWER_ARM,
               measured_store.NOT_SHOWN)
 RECORDED = {  # arm: (sm_86, gfx1200)
     "batched-vrr": (_S, _S), "block-fab": (_F, _N), "coalesced": (_N, _N),
     "etr": (_N, _S), "fmixed": (_F, _F), "fused": (_F, _N),
-    "interleave": (_N, _F), "ket-break": (_N, _N), "kmixed": (_N, _N),
+    "interleave": (_F, _F), "ket-break": (_N, _N), "kmixed": (_F, _N),
     "kmixed-de": (_F, _F), "mixed": (_F, _S), "scatter": (_N, _S),
-    "shuffle": (_N, _N), "batched-vrr+sliced-hrr": (_S, _S),
+    "shuffle": (_S, _N), "batched-vrr+sliced-hrr": (_S, _S),
     "batched-vrr+sliced-hrr+sliced-site-digest": (_S, _S),
     "batched-vrr+sliced-hrr+slim-fock": (_S, _S), "split": (_S, _S),
-    "stage-eac": (_N, _S), "struct-reads": (_N, _S),
+    "stage-eac": (_S, _S), "struct-reads": (_N, _S),
     "batched-vrr+sliced-hrr+slim-fock+sub-slice": (_S, _S),
     "batched-vrr+subdag-vrr": (_S, _S), "interleave+split": (_S, _S),
 }
@@ -767,36 +763,20 @@ def test_every_cell_is_timed_gated_on_both_cards_and_the_verdicts_hold(
         ) -> None:
     """The rows prove both cards (not a green run): every lever clock cell
     has a gated, same-session-controlled row on sm_86 and gfx1200, and the
-    declared rule reads RECORDED off them -- losers included. A cell in
-    `measured_store.CLOCK_PENDING` (#421: K on gfx1200, re-timed by #436)
-    is the one exception, declared: its compile row is today's text and it
-    carries NO clock, and its verdict is refused, never read."""
+    declared rule reads RECORDED off them -- losers included."""
     store = measured_store.load()
-    pending = measured_store.CLOCK_PENDING
     assert set(RECORDED) == set(measured_store.ledger_arms())
     for arch in ("sm_86", "gfx1200"):
         for spec in measured_store.lever_clock_cells():
             (r,) = measured_store.rows(spec, arch, store=store).values()
-            if (arch, spec.target.value) in pending:
-                assert r.runtime_ns is None and r.registers is not None
-                assert not any(k.startswith("wallclock:") for k in r.raw)
-                continue
             assert r.runtime_ns is not None and r.repeats == REPEATS
             assert "wallclock:control:median_ns" in r.raw
             assert "wallclock:gate_discarded_phases" in r.raw
             for f in measured_store.GPU_UTIL_FIELDS:
                 assert r.raw[f] is not None and r.raw[f] <= gate.GPU_BUSY_MAX
-    timed = []
     for arm, want in RECORDED.items():
-        t = measured_store.arm_target(arm).value
-        for a, w in zip(("sm_86", "gfx1200"), want, strict=True):
-            if (a, t) in pending:
-                with pytest.raises(KeyError):
-                    measured_store.lever_clock_verdict(store, a, arm)
-            else:
-                assert measured_store.lever_clock_verdict(store, a, arm) == w, (
-                    arm, a)
-        if not any((a, t) in pending for a in ("sm_86", "gfx1200")):
-            timed.append(arm)
-    assert [a for a in timed if measured_store.lever_may_become_the_default(
+        got = tuple(measured_store.lever_clock_verdict(store, a, arm)
+                    for a in ("sm_86", "gfx1200"))
+        assert got == want, arm
+    assert [a for a in RECORDED if measured_store.lever_may_become_the_default(
         store, a)] == ["fmixed"]

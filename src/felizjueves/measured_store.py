@@ -1046,33 +1046,6 @@ LEVER_CLOCK_ABOUT = (
     "measured_store.lever_clock_verdict (#60's IQR rule per input, per "
     "class, per arm). Compare within one arch only.")
 
-# THE LEVER CLOCK'S PENDING CELLS (#421), per (arch, target value): the
-# lever-clock rows whose text changed after they were timed, recompiled
-# (registers and spills of today's text) but NOT yet re-timed, so `combine`
-# dropped the clock measured on the old text and the row carries none. NOT
-# final, unlike `K_UNTIMED`: each entry names the issue that re-times it,
-# and is removed when it does. A verdict over such a cell is refused
-# (`lever_clock_verdict` raises KeyError), never read off the old clock.
-CLOCK_PENDING: Mapping[tuple[str, str], str] = MappingProxyType({
-    ("gfx1200", "k"): (
-        "#421 moved K's bra and ket records into two PrimPairSoA values of "
-        "per-axis arrays, which changed every K unit's text; the 40 K "
-        "lever-clock rows were recompiled on both arches and re-timed on "
-        "the RTX 3080, but the RX 9060 XT was not exposed to the container "
-        "(no gfx agent), so their gfx1200 wall-clock is re-timed by #436"),
-})
-
-# THE ROWS MEASURED ON A TEXT THE GENERATOR NO LONGER WRITES (#421): K_SUBGRID
-# cells of these L, both arches, recompiled by #436, not by #421 (their
-# compile runs for hours, and the user deferred it). Their registers and
-# spills are the OLD text's, kept as history; a check that a row is today's
-# text names them instead of passing them. Only (2,2|2,1) at one batch on
-# sm_86 was recompiled before the deferral, so its row IS today's text.
-SOURCE_PENDING: Mapping[tuple[str, int], str] = MappingProxyType({
-    ("k", L): ("#421 changed every K unit's text (PrimPairSoA records); the "
-               f"L = {L} K subgrid rows are re-measured by #436")
-    for L in (7, 10)})
-
 MEASUREMENTS = ("registers", "spill_store", "spill_load", "shared_bytes",
                 "compile_s", "runtime_ns", "repeats", "spread_ns", *COUNTERS)
 PROVENANCE = ("toolchain", "arch", "host", "gpu", "date")

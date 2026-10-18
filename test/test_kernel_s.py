@@ -79,7 +79,6 @@ from felizjueves.kernel_s import (
     launch_shape,
     s_spec,
 )
-from felizjueves.prim_pair import AXES
 from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3
@@ -118,10 +117,8 @@ def _records(basis, pairs):
             s.append(sk)
             oa.append(off[i])
             obb.append(off[j])
-    return dict(zeta_ab=np.array(zeta), s=np.array(s),
-                **{f"{a}PA": np.array(xpa)[:, d] for d, a in enumerate(AXES)},
-                **{f"{a}PB": np.array(xpb)[:, d] for d, a in enumerate(AXES)},
-                off_a=np.array(oa, dtype=np.int32),
+    return dict(zeta_ab=np.array(zeta), XPA=np.array(xpa), XPB=np.array(xpb),
+                s=np.array(s), off_a=np.array(oa, dtype=np.int32),
                 off_b=np.array(obb, dtype=np.int32))
 
 
@@ -296,8 +293,7 @@ def test_the_key_is_a_pair_class():
 def test_the_parameter_block():
     k = build_s_kernel((1, 2))
     assert [p.name for p in k.params] == [
-        "n_rec", "n_ao", "zeta_ab", "s", "XPA", "YPA", "ZPA", "XPB", "YPB",
-        "ZPB", "off_a", "off_b", "S"]
+        "n_rec", "n_ao", "zeta_ab", "XPA", "XPB", "s", "off_a", "off_b", "S"]
     (S,) = [p for p in k.params if p.name == "S"]
     assert S.intent.name == "OUT"
 

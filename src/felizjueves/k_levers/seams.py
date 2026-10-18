@@ -84,15 +84,11 @@ from felizjueves.ir import (
 from felizjueves.passes import atomize as _atomize
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.prim_pair import AXES, bundled
 from felizjueves.recurrence import node_name
 from felizjueves.spec import Spec
 
 __all__ = [
-    "BRA_FIELDS",
-    "BUNDLED",
     "DEFAULT_HOOKS",
-    "KET_FIELDS",
     "EmptyKernel",
     "KET",
     "KSH",
@@ -108,34 +104,10 @@ __all__ = [
 KET = "k"  # the strip-mined ket loop's variable, as in kernel.py
 KSH = "Ksh"  # the shared I column and K accumulator, one array
 
-def _axes(*vecs: str) -> tuple[str, ...]:
-    """Each record vector as its three flat per-axis arrays, `X<v> Y<v>
-    Z<v>` (`prim_pair.py`)."""
-    return tuple(f"{a}{v}" for v in vecs for a in AXES)
-
-
-# The bra record (a,c) and the ket record (b,d), each a `PrimPairSoA`
-# (`prim_pair.py`, #421): the product centre, the exponent, the dressing and
-# the two `P - X` vectors are fields; `Ip` / `Iq` and `dc` / `dd` are the
-# kernel's own and stay arguments.
-BRA_FIELDS = ("zeta_ac", "s_ac", *_axes("P", "PA", "PC"))
-KET_FIELDS = ("eta", "s_bd", *_axes("Q", "QB", "QD"))
-
 PARAMS = ("n_bra", "n_ket", "n_dc", "tau", "maxD",
-          *BRA_FIELDS, "Ip", "dc",
-          *KET_FIELDS, "Iq", "dd",
+          "P", "zeta_ac", "XPA", "XPC", "s_ac", "Ip", "dc",
+          "Q", "eta", "XQB", "XQD", "s_bd", "Iq", "dd",
           "Dcd", "K")
-
-BUNDLED = (
-    bundled(arg="pp_ac", zeta="zeta_ac", s="s_ac",
-            **{f"{a}P{c}": f"{a}{v}" for c, v in (("", "P"), ("A", "PA"),
-                                                  ("B", "PC"))
-               for a in AXES}),
-    bundled(arg="pp_bd", zeta="eta", s="s_bd",
-            **{f"{a}P{c}": f"{a}{v}" for c, v in (("", "Q"), ("A", "QB"),
-                                                  ("B", "QD"))
-               for a in AXES}),
-)
 
 SPLIT_WRITE = (
     "atomic write, by lane 0 only: the partial-sum form (#203). A batch "
@@ -167,14 +139,13 @@ def _c(fn: Fn, *args: Expr) -> Call:
 
 def bindings(frag, zeta: Expr, pa: str, pb: str, at: Expr
              ) -> dict[str, Expr]:
-    """One fragment's binds: `zeta`, `1/2zeta`, `PA_d`, `PB_d`, the array.
-    `pa` / `pb` name a record vector (`"PA"`), read per axis (`XPA[at]`)."""
+    """One fragment's binds: `zeta`, `1/2zeta`, `PA_d`, `PB_d`, the array."""
     out: dict[str, Expr] = {ef.ZETA: zeta}
     if ef.HALF_INV_ZETA in frag.binds:
         out[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), zeta)
-    for d, a in enumerate(AXES):
-        out[Factor.pa(d).name_in_kernel] = Index(f"{a}{pa}", (at,))
-        out[Factor.pb(d).name_in_kernel] = Index(f"{a}{pb}", (at,))
+    for d in range(3):
+        out[Factor.pa(d).name_in_kernel] = Index(pa, (at, Lit(d)))
+        out[Factor.pb(d).name_in_kernel] = Index(pb, (at, Lit(d)))
     return out
 
 
@@ -338,7 +309,7 @@ def bind_e_ac(ctx: KContext) -> tuple[Stmt, ...]:
         Note("the undressed E^ac block of this bra record, once: "
              "e_fragment.block_fragment(la, lc), inlined; s_ac is the host's"),
         Decl("Eac", Scalar.F64, (Lit(len(ctx.rows_ac)), Lit(len(ctx.ps)))),
-        Inline(ctx.frag_ac, {**bindings(ctx.frag_ac, Var("ze"), "PA", "PC",
+        Inline(ctx.frag_ac, {**bindings(ctx.frag_ac, Var("ze"), "XPA", "XPC",
                                         ctx.bra),
                              ef.E_ARRAY: Var("Eac")}),
     )
@@ -354,7 +325,7 @@ def bind_e_bd(ctx: KContext) -> tuple[Stmt, ...]:
         Note("the undressed E^bd block of this ket record: "
              "e_fragment.block_fragment(lb, ld), inlined; s_bd is the host's"),
         Decl("Ebd", Scalar.F64, (Lit(len(ctx.rows_bd)), Lit(len(ctx.qs)))),
-        Inline(ctx.frag_bd, {**bindings(ctx.frag_bd, Var("et"), "QB", "QD",
+        Inline(ctx.frag_bd, {**bindings(ctx.frag_bd, Var("et"), "XQB", "XQD",
                                         Var(KET)),
                              ef.E_ARRAY: Var("Ebd")}),
     )
@@ -455,10 +426,12 @@ def params(ctx: KContext) -> tuple[Param, ...]:
         Param("n_bra", Scalar.I32), Param("n_ket", Scalar.I32),
         Param("n_dc", Scalar.I32),
         Param("tau", Scalar.F64), Param("maxD", Scalar.F64),
-        *(f64(n, nbv) for n in BRA_FIELDS),
-        f64("Ip", nbv), i32("dc", nbv),
-        *(f64(n, nkv) for n in KET_FIELDS),
-        f64("Iq", nkv), i32("dd", nkv),
+        f64("P", nbv, Lit(3)), f64("zeta_ac", nbv),
+        f64("XPA", nbv, Lit(3)), f64("XPC", nbv, Lit(3)),
+        f64("s_ac", nbv), f64("Ip", nbv), i32("dc", nbv),
+        f64("Q", nkv, Lit(3)), f64("eta", nkv),
+        f64("XQB", nkv, Lit(3)), f64("XQD", nkv, Lit(3)),
+        f64("s_bd", nkv), f64("Iq", nkv), i32("dd", nkv),
         f64("Dcd", ndc, Lit(ctx.nc * ctx.nd)),
         f64("K", nbv, Lit(ctx.n_ab), intent=Intent.OUT),
     )

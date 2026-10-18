@@ -1911,8 +1911,7 @@ and `n_cd = ncart(lc) · ncart(ld)`:
 
 ```
 params  n_rec (I32)  n_pair (I32)
-        eta  s  XPA YPA ZPA  XPB YPB ZPB  [n_rec]   per record, one PrimPairSoA
-        w[n_rec]                             the host's weight
+        eta[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]  w[n_rec]   per record
         pair[n_rec] (I32)                    the record's row of Dcd
         Dcd[n_pair, n_cd]                    D_cd per ket shell pair, row order above
         D[n_rec, n_q]  (OUT)   Dmax[n_rec]  (OUT)
@@ -1982,9 +1981,8 @@ One kernel per bra pair class `(la, lb)`. With `n_p = |hermite_order(la+lb)|`:
 
 ```
 params  n_rec (I32)  n_ao (I32)  n_rows (I32)
-        zeta_ab  s  XPA YPA ZPA  XPB YPB ZPB  [n_rec]   per record, and
-        off_a[n_rec]  off_b[n_rec]  (I32)    the record's shells' AO offsets,
-                                             together one PrimPairSoA
+        zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]            per record
+        off_a[n_rec]  off_b[n_rec]  (I32)    the record's shells' AO offsets
         row[n_rec] (I32)                     the record's row of Jp
         Jp[n_rows, n_p]                      the bra class's J_p buffer (step 3)
         J[n_ao, n_ao]  (IN/OUT, AtomicAdd)

@@ -39,8 +39,6 @@ is `x` exactly, which is what the pass's test asserts.
 
 from __future__ import annotations
 
-import dataclasses
-
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -129,5 +127,4 @@ def atomize(kernel: Kernel, *, array: str = "J") -> Kernel:
                 out.append(s)
         return tuple(out)
 
-    # `replace`, so the call boundary (`bundled`, `wide_boys`) is kept
-    return dataclasses.replace(kernel, body=st(kernel.body))
+    return Kernel(kernel.name, kernel.params, st(kernel.body))

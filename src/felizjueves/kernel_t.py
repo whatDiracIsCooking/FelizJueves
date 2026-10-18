@@ -24,8 +24,9 @@ scatter rule, UNCHANGED (as in `kernel_s.py`):
 THE PARAMETER BLOCK: `kernel_s`'s, plus the ket exponent per record.
 
     params  n_rec n_ao (I32)
-            zeta_ab  s  eb_ket  XPA YPA ZPA  XPB YPB ZPB  [n_rec]  per record
-            off_a  off_b  [n_rec]  (I32)
+            zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]
+            eb_ket[n_rec]                                        per record
+            off_a[n_rec]  off_b[n_rec]  (I32)
             T[n_ao, n_ao]  (OUT, read and AtomicAdd-ed)
 
 - `eb_ket` is the KET primitive's exponent `beta`. The shift is the one
@@ -91,7 +92,6 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.prim_pair import AXES, bundled
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
@@ -105,10 +105,6 @@ __all__ = [
 ]
 
 REC = "rec"  # the record index: one thread per primitive-pair record
-
-# The record arrays arrive in one `PrimPairSoA` (prim_pair.py).
-BUNDLED = bundled("s", *(f"{a}P{c}" for c in "AB" for a in AXES),
-                  "off_a", "off_b", zeta="zeta_ab", eb="eb_ket")
 
 ATOMIC_REASON = (
     "AtomicAdd: several primitive records of one shell pair, and both mirror "
@@ -191,10 +187,10 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         head.append(Decl(ef.HALF_INV_ZETA, Scalar.F64,
                          init=_c(Fn.DIV, Lit(0.5), Var(ef.ZETA))))
         binds[ef.HALF_INV_ZETA] = Var(ef.HALF_INV_ZETA)
-    for d, a in enumerate(AXES):
-        for f, arr in ((Factor.pa(d), f"{a}PA"), (Factor.pb(d), f"{a}PB")):
+    for d in range(3):
+        for f, arr in ((Factor.pa(d), "XPA"), (Factor.pb(d), "XPB")):
             if f.name_in_kernel in frag.binds:
-                binds[f.name_in_kernel] = Index(arr, (rec,))
+                binds[f.name_in_kernel] = Index(arr, (rec, Lit(d)))
     head += [
         Decl(ef.EB, Scalar.F64, init=Index("eb_ket", (rec,))),
         Decl("sk", Scalar.F64, init=Index("s", (rec,))),
@@ -261,12 +257,12 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         Param("n_rec", Scalar.I32),
         Param("n_ao", Scalar.I32),
         _f64("zeta_ab", (nr,)),
+        _f64("XPA", (nr, Lit(3))),
+        _f64("XPB", (nr, Lit(3))),
         _f64("s", (nr,)),
         _f64("eb_ket", (nr,)),
-        *(_f64(f"{a}PA", (nr,)) for a in AXES),
-        *(_f64(f"{a}PB", (nr,)) for a in AXES),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),
         Param("T", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or t_name((la, lb)), params, body, bundled=BUNDLED)
+    return Kernel(name or t_name((la, lb)), params, body)
