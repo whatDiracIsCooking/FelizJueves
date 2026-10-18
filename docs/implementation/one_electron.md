@@ -169,8 +169,10 @@ same text in the unit (`emit._c.bundle_struct`, which `test_emit_gpu.py`
 holds the header to). Since #422 the Schwarz kernel (`schwarz_{la}{lb}`)
 takes the same struct, binding `zeta s XP..ZPB`; its `off_a` / `off_b` are
 per shell pair, not per record, so they stay plain arguments beside `rec0` /
-`rec1` (`kernel_schwarz`'s docstring). The two-electron kernels still take
-interleaved `[n_rec, 3]` arrays.
+`rec1` (`kernel_schwarz`'s docstring). Since #421 the J chain's pair kernels
+(`DQ`, `JAB`) take it too, and `K` two values of it (its bra and ket
+records); `[p|q]` and the DF metric still take interleaved `[n_rec, 3]`
+arrays.
 
 The names are chosen for hygiene. `zeta_ab` is not `zeta` because the
 fragment binds a scalar `zeta`. `eb_ket` is not `eb` because the kinetic

@@ -32,18 +32,31 @@ sum over a bra shell pair's records, and the scatter into `K_mn`, are the
 host's (the launch plan's, D1), not this kernel's.
 
     params  n_bra n_ket n_dc (I32)  tau maxD (F64)
-            P[n_bra, 3]  zeta_ac[n_bra]  XPA[n_bra, 3]  XPC[n_bra, 3]
-            s_ac[n_bra]  Ip[n_bra]  dc[n_bra] (I32)                bra side
-            Q[n_ket, 3]  eta[n_ket]  XQB[n_ket, 3]  XQD[n_ket, 3]
-            s_bd[n_ket]  Iq[n_ket]  dd[n_ket] (I32)                ket side
-            Dcd[n_dc, n_c n_d]                                     density
+            zeta_ac s_ac  XP YP ZP  XPA YPA ZPA  XPC YPC ZPC  [n_bra]
+                                              bra side, PrimPairSoA pp_ac
+            Ip[n_bra]  dc[n_bra] (I32)        bra side
+            eta s_bd  XQ YQ ZQ  XQB YQB ZQB  XQD YQD ZQD  [n_ket]
+                                              ket side, PrimPairSoA pp_bd
+            Iq[n_ket]  dd[n_ket] (I32)        ket side
+            Dcd[n_dc, n_c n_d]                density
             K[n_bra, n_a n_b]  (OUT)
 
+- THE RECORDS ARE STRUCTURE OF ARRAYS (#421): one flat array per scalar and
+  per axis (`XPA YPA ZPA`, not `XPA[n_bra, 3]`), and each side's record
+  geometry crosses the call as one `PrimPairSoA` (`prim_pair.py`, the
+  one-electron kernels' struct): two values of one type, `pp_ac` for the
+  bra and `pp_bd` for the ket, their fields `zeta`, `s`, `XP..ZP` (the
+  centre), `XPA..ZPA` and `XPB..ZPB` (the two `P - X`) read under the names
+  above (`seams.BUNDLED`). `Ip` / `Iq` and `dc` / `dd` are this kernel's
+  and stay arguments. Inside the kernel each field is still the array of
+  its own name. The bra loads are warp-uniform (one warp per bra record),
+  so only the ket loads walk records across lanes; no gain from the layout
+  is claimed or measured (#421).
 - `zeta_ac`, not `zeta`: both inlined `E` fragments bind a SCALAR named
   `zeta`, and `ir`'s hygiene (#149) refuses a host array of that name
   (`kernel_jab.py`'s `zeta_ab`, the same reason). `XPA = P - A`,
-  `XPC = P - C`, `XQB = Q - B`, `XQD = Q - D` arrive from the host, as
-  `kernel_dq.py`'s `XPA` / `XPB` do.
+  `XPC = P - C`, `XQB = Q - B`, `XQD = Q - D` (each per axis) arrive from
+  the host, as `kernel_dq.py`'s `XPA` / `XPB` do.
 - THE DENSITY STRADDLES THE TWO RECORDS: `D_cd` has its `c` on the bra and
   its `d` on the ket. Its row is `dc[bra] + dd[k]` -- the host lays `Dcd`
   out so that sum names the `(c shell, d shell)` block (one row per shell
@@ -197,7 +210,6 @@ from felizjueves.ir import (
     If,
     Index,
     Kernel,
-    Lit,
     Note,
     Scalar,
     Stmt,
@@ -205,6 +217,7 @@ from felizjueves.ir import (
 )
 from felizjueves.k_levers import hooks_for
 from felizjueves.k_levers.seams import (
+    BUNDLED,
     KET,
     KSH,
     PARAMS,
@@ -216,6 +229,7 @@ from felizjueves.k_levers.seams import (
 )
 from felizjueves.kernel import builder_plan, lever_notes, split
 from felizjueves.kernel import launch_shape as _j_launch_shape
+from felizjueves.prim_pair import AXES
 from felizjueves.recurrence import (
     PQ_PARAMS,
     THETA,
@@ -418,8 +432,8 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None,
              "too (sorted by Iq) -- so break"),
         If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
         *(Decl(n, Scalar.F64,
-               init=_c(Fn.SUB, Var(f"P{d}"), ctx.ket("Q", Lit(d))))
-          for d, n in enumerate(PQ_PARAMS)),
+               init=_c(Fn.SUB, Var(f"P{d}"), ctx.ket(f"{a}Q")))
+          for d, (n, a) in enumerate(zip(PQ_PARAMS, AXES, strict=True))),
         Decl("et", Scalar.F64, init=ctx.ket("eta")),
         Note("theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in "
              "the source'"),
@@ -438,8 +452,8 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None,
 
     # --- one bra record: E^ac, zero, strip-mine the kets, reduce, write ----
     per_bra: list[Stmt] = [
-        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (bra, Lit(d))))
-          for d in range(3)),
+        *(Decl(f"P{d}", Scalar.F64, init=Index(f"{a}P", (bra,)))
+          for d, a in enumerate(AXES)),
         Decl("ze", Scalar.F64, init=Index("zeta_ac", (bra,))),
         Decl("Ib", Scalar.F64, init=Index("Ip", (bra,))),
         Decl("sb", Scalar.F64, init=Index("s_ac", (bra,))),
@@ -467,7 +481,8 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None,
         hooks.shared_decl(ctx),
         If(_c(Fn.LT, bra, Var("n_bra")), tuple(per_bra)),
     )
-    kernel = hooks.finish(ctx, Kernel(name, hooks.params(ctx), body))
+    kernel = hooks.finish(ctx, Kernel(name, hooks.params(ctx), body,
+                                      bundled=BUNDLED))
     # a batch kernel's write made atomic, after `finish` (the `atomize` hook,
     # #345: by default `passes.atomize(kernel, array="K")`, the lane-0 form)
     return kernel if head is None else hooks.atomize(ctx, kernel)

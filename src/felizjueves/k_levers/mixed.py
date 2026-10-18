@@ -19,10 +19,11 @@ as two levers, and nothing in between:
                 both blocks are formed in F32 by the SAME fragment
                 (`e_fragment.block_fragment`, every `Decl` F32, `exp` F32)
                 from F32 inputs, into F32 local arrays `Eac` / `Ebd`; the
-                fragments' per-record inputs `XPA XPC XQB XQD` arrive as
+                fragments' per-record inputs, the per-axis `P - X` arrays
+                `XPA..ZPA XPC..ZPC XQB..ZQB XQD..ZQD`, arrive as
                 `const float*` (the `E`-only operands: `zeta_ac` / `eta` feed
                 `theta` too and stay fp64, narrowed in-kernel for `E`). `D` --
-                `Dcd` arrives as `const float*`. All five are packed by the
+                `Dcd` arrives as `const float*`. All thirteen are packed by the
                 host as narrowed COPIES (`ao.pairs.narrowed`, one
                 round-to-nearest per value; the fp64 arrays are untouched).
 
@@ -111,6 +112,7 @@ from felizjueves.ir import (
 )
 from felizjueves.j_levers import mixed as jmixed
 from felizjueves.k_levers.seams import KET, KContext, KHooks, bindings
+from felizjueves.prim_pair import AXES
 from felizjueves.recurrence import (
     PQ_PARAMS,
     THETA,
@@ -130,7 +132,8 @@ FULL = "kmixed-de"
 
 ARMS = (COMPUTE, FULL)
 
-NARROWED_PARAMS = ("XPA", "XPC", "XQB", "XQD", "Dcd")
+NARROWED_PARAMS = (*(f"{a}{v}" for v in ("PA", "PC", "QB", "QD")
+                     for a in AXES), "Dcd")
 """The `const float*` parameters of `kmixed-de`: the `E` fragments' inputs
 and the density. The host packs each as a narrowed copy."""
 
@@ -142,7 +145,8 @@ COMPUTE_NOTE = (
 
 FULL_NOTE = (
     "kmixed-de (#347): as kmixed, and the D and E operands narrowed -- "
-    "XPA XPC XQB XQD and Dcd are const float*, packed by the host; E^ac and "
+    "the per-axis XPA..ZPA XPC..ZPC XQB..ZQB XQD..ZQD and Dcd are const "
+    "float*, packed by the host, outside the fp64 PrimPairSoA; E^ac and "
     "E^bd are formed in F32 into F32 arrays. Every accumulation stays F64: "
     "an E entry and a D_cd are read through TO_F64")
 
@@ -304,6 +308,14 @@ def narrow_finish(ctx: KContext, kernel: Kernel, *, note: str,
             raise ValueError(f"kmixed-de: parameters {absent} are not there")
         params = tuple(dataclasses.replace(p, type=Scalar.F32)
                        if p.name in packed else p for p in params)
+        # a narrowed copy is a `const float*`: it leaves the fp64
+        # `PrimPairSoA` and crosses the call as an argument of its own
+        bundles = tuple(
+            dataclasses.replace(b, binds=tuple(
+                (f, p) for f, p in b.binds if p not in packed))
+            for b in kernel.bundles)
+        return dataclasses.replace(kernel, params=params, body=body,
+                                   bundled=bundles or None)
     return dataclasses.replace(kernel, params=params, body=body)
 
 
@@ -354,7 +366,7 @@ def _bind_e_ac(ctx: KContext) -> tuple[Stmt, ...]:
              "every Decl F32, from the host's narrowed XPA / XPC; s_ac is "
              "the host's, fp64"),
         Decl("Eac", Scalar.F32, (Lit(len(ctx.rows_ac)), Lit(len(ctx.ps)))),
-        Inline(frag, {**_bind32(frag, Var("ze"), "XPA", "XPC", ctx.bra),
+        Inline(frag, {**_bind32(frag, Var("ze"), "PA", "PC", ctx.bra),
                       ef.E_ARRAY: Var("Eac")}),
     )
 
@@ -367,7 +379,7 @@ def _bind_e_bd(ctx: KContext) -> tuple[Stmt, ...]:
              "every Decl F32, from the host's narrowed XQB / XQD; s_bd is "
              "the host's, fp64"),
         Decl("Ebd", Scalar.F32, (Lit(len(ctx.rows_bd)), Lit(len(ctx.qs)))),
-        Inline(frag, {**_bind32(frag, Var("et"), "XQB", "XQD", Var(KET)),
+        Inline(frag, {**_bind32(frag, Var("et"), "QB", "QD", Var(KET)),
                       ef.E_ARRAY: Var("Ebd")}),
     )
 

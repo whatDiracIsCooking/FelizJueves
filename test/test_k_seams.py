@@ -93,12 +93,19 @@ def digest(specs: list[Spec]) -> tuple[int, str]:
     return n, h.hexdigest()
 
 
-# Computed by `digest` over the pre-#367 tree's src/ (main at 6a57a32).
+# Computed by `digest` over the pre-#367 tree's src/ (main at 6a57a32),
+# and RE-PINNED once since, by #421: the bra and ket records became two
+# `PrimPairSoA` values of per-axis arrays (`pp_ac`, `pp_bd`), which changes
+# every K signature and the record loads (`XP[bra]`, not `P[bra * 3 + d]`)
+# and nothing else -- the arithmetic is held bitwise by the interpreted K
+# tests, unchanged in substance, and `same_program` (test_kernel_k.py)
+# still finds J's `[p|q]` program in every K kernel. A new digest needs a
+# change of that kind and its own reason.
 # Fast: the ladder at L <= 2 and at L <= 4 (milestone 13's cap). The
 # subgrid through L = 10 is above the cap: `slow`.
-LADDER_PIN_2 = (57, "05801b52e91bdf1fd98f79da245e580b0e240f2889aef7c64979b736d7ebccca")
-LADDER_PIN_4 = (607, "ae2c63aa770d4257a81382e81fde53dcd8d5a8ff0609871eab9d4e9299e274f0")
-SUBGRID_PIN = (62, "7fff10a0d78d89ab4f4805dbda7878ed12c2f6c619952bb92370c09504e31cef")
+LADDER_PIN_2 = (57, "91ad33a9bb190f95279528f27c9931879b9615de9f28cfff9cdf98ef6ca714c9")
+LADDER_PIN_4 = (607, "bd5fef18cf7bb178f48ea89b505c409ffc3a9096c43fe23259f7f198c6bfa1f3")
+SUBGRID_PIN = (62, "f98725c8b978db90930c2906e13f1fe015fbe260aa7ce71ba56e1db1d6fe6793")
 
 
 def test_the_literal_ladder_is_byte_identical_to_before_the_seams() -> None:

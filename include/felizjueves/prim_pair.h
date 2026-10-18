@@ -1,5 +1,5 @@
 /*
- * felizjueves/prim_pair.h -- PrimPairSoA, the one-electron kernels' records
+ * felizjueves/prim_pair.h -- PrimPairSoA, the kernels' primitive-pair records
  *
  * A primitive-pair class reaches every one-electron kernel (S, T, V and the
  * cross-basis SX) as structure of arrays: one flat n_rec-long array per
@@ -12,7 +12,9 @@
  *
  * It is the superset the four families read; a kernel leaves the fields it
  * does not need unread, so a host fills one value per class and hands it to
- * every family. The fields (felizjueves/prim_pair.py is their definition):
+ * every family. Since #421 the J chain's DQ and JAB kernels take it too,
+ * and K two values of it (pp_ac and pp_bd: its bra and its ket records).
+ * The fields (felizjueves/prim_pair.py is their definition):
  *
  *     zeta           alpha + beta
  *     s              c_a c_b (pi / zeta)^{3/2}

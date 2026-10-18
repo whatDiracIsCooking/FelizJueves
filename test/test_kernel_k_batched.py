@@ -369,7 +369,7 @@ def test_each_batch_runs_the_j_batch_s_recurrence(cell) -> None:
         jl, kl = _ket_loop(jk), _ket_loop(kk)
         end = next(i for i, s in enumerate(jl)
                    if isinstance(s, Note) and s.prov.startswith("J_p +="))
-        assert kl[3:end] == jl[3:end]
+        assert tk.same_program(jl, kl, end)
 
 
 # ---------------------------------------------------------------------------

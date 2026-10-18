@@ -35,6 +35,7 @@ import numpy as np
 import pytest
 from oracle import basis as ob
 from oracle import manifest
+from soa import axes
 from test_layering import _graph, _under
 from tiers import split_by_l
 
@@ -217,8 +218,8 @@ def test_one_launch_over_the_whole_class(cls):
                       launch=Launch(grid, block, 1)).run(
         n_rec=n_rec, n_ao=basis.n_ao, n_rows=n_rec,
         zeta_ab=np.array([r[1] for r in recs]),
-        XPA=np.array([[r[0][d] - r[3][d] for d in range(3)] for r in recs]),
-        XPB=np.array([[r[0][d] - r[4][d] for d in range(3)] for r in recs]),
+        **axes("PA", [[r[0][d] - r[3][d] for d in range(3)] for r in recs]),
+        **axes("PB", [[r[0][d] - r[4][d] for d in range(3)] for r in recs]),
         s=np.array([r[2] for r in recs]),
         off_a=np.array([o[0] for o in offs], dtype=np.int32),
         off_b=np.array([o[1] for o in offs], dtype=np.int32),
