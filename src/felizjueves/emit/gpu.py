@@ -1,7 +1,7 @@
 """The vendor-neutral backend: a `Kernel` as one text both device compilers take.
 
     emit(kernel, arch, specialization=None) -> str
-    emit_classes(name, classes) -> str
+    emit_template(kernel, arch, specialization, classes) -> str
 
 A pure function: no decisions, no I/O. Where `emit/cuda.py` and `emit/hip.py`
 each spell a kernel for one vendor, this spells it once for both: the text
@@ -46,30 +46,43 @@ so a consumer can take `&s<la, lb>` from a compile-time `(la, lb)` and build its
 dispatch table with no name written per class. Only the declarator moves; the
 body is the same text, character for character.
 
-The template's primary is declared once, in a header of its own:
-`emit_template` writes it as `{template}.h`, and every unit of the template
-includes it by that name, so the consumer writes the header beside the units.
-It is defined nowhere, so a class whose unit was not compiled in is a link
-error, never a launch through a null pointer; and a unit whose parameters have
-drifted from the header's no longer specializes it, a compile error. Its
-parameters are `uint8_t La, uint8_t Lb, ...`, one per `args` entry, lettered
-by position (an angular momentum fits a byte; `Specialization` refuses one
-that does not), and fixed in number: nvcc 13.0 miscompiles the host stub of an
-explicit specialization of a variadic `__global__` template (`'__T0' was not
-declared`), where clang takes both.
+The template is declared in a header of its own, `{template}.h`, which
+`emit_template` writes from the classes the consumer emitted and every unit
+of the template includes by that name, so the consumer writes it beside the
+units. It holds, in order:
 
-A specialization's units are meant to share one translation unit, so its text
+- the primary, defined nowhere, so a class whose unit was not compiled in is
+  a link error, never a launch through a null pointer; and a unit whose
+  parameters have drifted from the header's no longer specializes it, a
+  compile error. Its parameters are `uint8_t La, uint8_t Lb, ...`, one per
+  `args` entry, lettered by position (an angular momentum fits a byte;
+  `Specialization` refuses one that does not), and fixed in number: nvcc 13.0
+  miscompiles the host stub of an explicit specialization of a variadic
+  `__global__` template (`'__T0' was not declared`), where clang takes both;
+- one explicit specialization declared per class, which C++ requires before
+  the table below names it: a specialization first used undeclared is an
+  implicit instantiation, and the unit that then defines it is ill-formed;
+- `{template}_kernels`, the consumer's dispatch table: an array indexed by
+  the class's `args`, each extent one past the largest value at that
+  position, holding `&{template}<args...>` for every class emitted and
+  `nullptr` elsewhere. The classes are written once, here, so the table, the
+  declarations and the units the consumer compiles are one list.
+
+Each unit is its own translation unit, and the consumer launches it from
+another through the table. Build it as relocatable device code
+(`-rdc=true`) under nvcc: in whole-program mode nvcc 13.0's static template
+stubs want a `__global__` specialization defined in every TU that names it,
+and it says so (warning #20280, an error under `-Werror`). hipcc takes it
+either way. `fj_boys` is `static` in a specialization, so the
+same routine in every unit is never a duplicate symbol at the device link.
+
+A specialization's units may still share one translation unit, so its text
 is what can be included beside its siblings: `fj_boys` sits behind an include
 guard (`FJ_BOYS_NARROW` / `FJ_BOYS_WIDE`, so a unit of each spelling in one
 TU is a redefinition, not a silent pick), and a kernel with a record struct
 or a dynamically sized shared array is refused, both being per-unit
 declarations a second unit would repeat. The C spelling is unchanged and
 still means one unit per TU, or one namespace each.
-
-`emit_classes` writes the list of classes a consumer emitted, as a header of
-one `constexpr` array, in either spelling: the units a consumer compiled are
-then a fact its code can `static_assert` against, not a second list kept in
-step by hand.
 """
 
 from __future__ import annotations
@@ -91,7 +104,7 @@ from felizjueves.emit._c import (
 )
 from felizjueves.ir import Call, Expr, Fn, Kernel, _ident
 
-__all__ = ["HEADER", "Specialization", "emit", "emit_classes", "emit_template"]
+__all__ = ["HEADER", "Specialization", "emit", "emit_template"]
 
 # The one include every unit carries; resolved against FelizJueves's include/.
 HEADER = "felizjueves/runtime.h"
@@ -137,13 +150,26 @@ def _class(args: object, what: str) -> tuple[int, ...]:
     return args
 
 
+def _table(extents: list[int], at: tuple[int, ...], cells: dict[tuple[int, ...], str],
+           indent: str) -> str:
+    """The braced initializer of the dispatch table from position `at` down:
+    one row per line at the innermost level, `nullptr` where no class is."""
+    if len(at) + 1 == len(extents):
+        return "{" + ", ".join(cells.get((*at, i), "nullptr")
+                               for i in range(extents[-1])) + "}"
+    inner = indent + INDENT
+    rows = "".join(f"{inner}{_table(extents, (*at, i), cells, inner)},\n"
+                   for i in range(extents[len(at)]))
+    return "{\n" + rows + indent + "}"
+
+
 @dataclass(frozen=True)
 class Specialization:
     """One explicit specialization, `template<args...>`, of a kernel template.
 
     Every unit of one template gives the same number of `args`: the primary
     `{template}.h` declares (`emit_template`) and each unit includes is
-    `template <int32_t L0, ..., int32_t Ln>`.
+    `template <uint8_t La, ..., uint8_t Ln>`.
     """
 
     template: str
@@ -224,22 +250,44 @@ class GpuWriter(CWriter):
             return super().signature(k, sig)
         return f"template <>\n__global__ void {spec}(\n{sig})"
 
-    def primary(self, k: Kernel) -> str:
-        """`{template}.h`: the primary the specialization's units share."""
+    def primary(self, k: Kernel, classes: Sequence[tuple[int, ...]]) -> str:
+        """`{template}.h`: the primary, each class's declaration, and the
+        dispatch table over `classes`."""
         spec = self.specialization
         if spec is None:
             raise TypeError("a primary needs a gpu.Specialization")
+        name = spec.template
+        rows = [Specialization(name, _class(c, "class")) for c in classes]
+        if not rows:
+            raise ValueError(f"{name}: no classes")
+        if any(len(r.args) != len(spec.args) for r in rows):
+            raise ValueError(f"{name}: classes of other than {len(spec.args)} "
+                             f"args in {[r.args for r in rows]!r}")
+        if len(set(rows)) != len(rows):
+            raise ValueError(f"{name}: a class is listed twice in "
+                             f"{[r.args for r in rows]!r}")
         sig = ",\n".join(INDENT + self.param(p) for p in k.params)
+        declared = "".join(f"template <>\n__global__ void {r}(\n{sig});\n\n"
+                           for r in rows)
+        extents = [max(r.args[i] for r in rows) + 1 for i in range(len(spec.args))]
+        cells = {r.args: f"&{r}" for r in rows}
+        dims = "".join(f"[{n}]" for n in extents)
         return (
-            f"// {spec.template}: generated by felizjueves.emit.gpu -- do not edit.\n"
-            f"// the kernel template every {spec.template}<...> unit specializes:\n"
-            "// declared here and defined in none, so a class whose unit is not\n"
+            f"// {name}: generated by felizjueves.emit.gpu -- do not edit.\n"
+            f"// the kernel template every {name}<...> unit specializes, one\n"
+            "// declaration per class emitted, and its dispatch table: the\n"
+            "// primary is defined in no unit, so a class whose unit is not\n"
             "// compiled in fails to link.\n"
             "#pragma once\n"
             f'#include "{HEADER}"\n'
             "\n"
             f"{spec.primary()}\n"
-            f"__global__ void {spec.template}(\n{sig});\n"
+            f"__global__ void {name}(\n{sig});\n"
+            "\n"
+            f"{declared}"
+            f"// indexed by the class's args; nullptr where no class was emitted.\n"
+            f"inline constexpr decltype({cells[rows[0].args]}) {name}_kernels{dims} = "
+            f"{_table(extents, (), cells, '')};\n"
         )
 
     def call(self, e: Call) -> str:
@@ -254,6 +302,9 @@ class GpuWriter(CWriter):
         spelled = _C_CAST.sub(r"static_cast<\1>(\2)", super().boys(text))
         if self.specialization is None:
             return spelled
+        # internal linkage: every unit of a template carries its own copy
+        spelled = spelled.replace("__device__ double fj_boys(",
+                                  "static __device__ double fj_boys(", 1)
         guard = "FJ_BOYS_WIDE" if text == BOYS_DEVICE_WIDE else "FJ_BOYS_NARROW"
         return f"#ifndef {guard}\n#define {guard}\n{spelled}#endif\n"
 
@@ -284,41 +335,17 @@ def emit(kernel: Kernel, arch: Arch,
     return GpuWriter(arch, specialization).kernel(kernel)
 
 
-def emit_template(kernel: Kernel, arch: Arch,
-                  specialization: Specialization) -> str:
-    """`specialization.header`'s text: the template's primary, declared once.
+def emit_template(kernel: Kernel, arch: Arch, specialization: Specialization,
+                  classes: Sequence[tuple[int, ...]]) -> str:
+    """`specialization.header`'s text: the template's primary, one
+    specialization declared per class, and the dispatch table over them.
 
     The parameters are `kernel`'s, as any of the template's units spells them;
-    a unit whose parameters differ no longer specializes it.
+    a unit whose parameters differ no longer specializes it. `classes` are
+    the `args` of every unit the consumer emitted, in emission order, each as
+    many as `specialization`'s and none twice.
     """
     if not isinstance(specialization, Specialization):
         raise TypeError(f"specialization is a gpu.Specialization, "
                         f"not {specialization!r}")
-    return GpuWriter(arch, specialization).primary(kernel)
-
-
-def emit_classes(name: str, classes: Sequence[tuple[int, ...]]) -> str:
-    """The header `{name}_classes`: one row per class a consumer emitted.
-
-    `classes` in emission order, every row the same length and none twice.
-    The text names no kernel, so it is the same under either spelling.
-    """
-    _name(name, "class list name")
-    rows = [_class(c, "class") for c in classes]
-    if not rows:
-        raise ValueError(f"{name}: no classes")
-    if len({len(r) for r in rows}) != 1:
-        raise ValueError(f"{name}: classes of different lengths {rows!r}")
-    if len(set(rows)) != len(rows):
-        raise ValueError(f"{name}: a class is listed twice in {rows!r}")
-    body = "".join(f"    {{{', '.join(map(str, r))}}},\n" for r in rows)
-    return (
-        f"// {name}_classes: generated by felizjueves.emit.gpu -- do not edit.\n"
-        "// one row per emitted unit, in emission order.\n"
-        "#pragma once\n"
-        f'#include "{HEADER}"\n'
-        "\n"
-        f"inline constexpr int32_t {name}_classes[{len(rows)}][{len(rows[0])}] "
-        "= {\n"
-        f"{body}}};\n"
-    )
+    return GpuWriter(arch, specialization).primary(kernel, classes)

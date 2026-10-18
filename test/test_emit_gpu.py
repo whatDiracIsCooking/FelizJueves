@@ -19,8 +19,9 @@ for any wavefront and carries no assert.
 THE GOLDEN FILES are `test/golden/gpu/pq_L4_p2_q2.cu` (a warp reduction: the
 width assert) and `s_11.cu` (no shuffle: none), and `s_11.specialized.cu`
 and `s.h`, the same kernel as `gpu.Specialization("s", (1, 1))` and the
-primary that unit includes (`emit(k, SM_86, spec)` and
-`emit_template(k, SM_86, spec)`). Regenerate after an intended
+header that unit includes, over the classes (0, 0), (0, 1) and (1, 1)
+(`emit(k, SM_86, spec)` and `emit_template(k, SM_86, spec, classes)`).
+Regenerate after an intended
 change (never hand-edit) and review the diff:
 
     PYTHONPATH=src uv run python -c "from pathlib import Path; \
@@ -39,9 +40,11 @@ needs no card, so these prove nothing about a number.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import INCLUDE
 from test_ir import synthetic_inline_kernel
 from test_k_lever_shuffle import _bcast
 
@@ -250,12 +253,20 @@ def test_nvcc_refuses_a_wave64_build(nvcc, compile_device_source) -> None:
 # --- the template spelling (gpu.Specialization) ------------------------------
 
 S11 = gpu.Specialization("s", (1, 1))
+S_CLASSES = [(0, 0), (0, 1), (1, 1)]
+
+
+def _params(k) -> str:
+    """The C spelling's parameter lines, through the closing `)`."""
+    c = gpu.emit(k, SM_86).splitlines()
+    start = c.index(f'extern "C" __global__ void {k.name}(') + 1
+    return "\n".join(c[start:c.index("{")])
 
 
 def test_the_specialized_goldens_are_unchanged() -> None:
     k = build_s_kernel((1, 1))
     assert gpu.emit(k, SM_86, S11) == (GOLDEN / "s_11.specialized.cu").read_text()
-    assert gpu.emit_template(k, SM_86, S11) == (GOLDEN / "s.h").read_text()
+    assert gpu.emit_template(k, SM_86, S11, S_CLASSES) == (GOLDEN / "s.h").read_text()
 
 
 def test_a_specialization_moves_only_the_declarator() -> None:
@@ -272,45 +283,88 @@ def test_a_specialization_moves_only_the_declarator() -> None:
     assert c[i_c + 1:] == t[i_t + 2:]
 
 
-def test_the_primary_is_declared_once_in_its_header() -> None:
+def test_the_header_declares_the_primary_and_every_class() -> None:
     k = build_s_kernel((1, 1))
-    c = gpu.emit(k, SM_86).splitlines()
-    sig = c[c.index('extern "C" __global__ void s_11(') + 1:c.index("{")]
-    h = gpu.emit_template(k, SM_86, S11).splitlines()
+    params = _params(k)
+    text = gpu.emit_template(k, SM_86, S11, S_CLASSES)
+    blocks = text.split("\n\n")
     assert S11.header == "s.h"
-    assert h[4:6] == ["#pragma once", '#include "felizjueves/runtime.h"']
-    assert h[7:] == [
-        # uint8_t, lettered by position; fixed arity, never a pack: nvcc 13.0
-        # miscompiles the host stub of a variadic __global__ template's
-        # explicit specialization
-        "template <uint8_t La, uint8_t Lb>",
-        "__global__ void s(", *sig[:-1], sig[-1] + ";",
-    ]
+    assert blocks[0].endswith('#pragma once\n#include "felizjueves/runtime.h"')
+    # uint8_t, lettered by position; fixed arity, never a pack: nvcc 13.0
+    # miscompiles the host stub of a variadic __global__ template's
+    # explicit specialization
+    assert blocks[1] == ("template <uint8_t La, uint8_t Lb>\n"
+                         f"__global__ void s(\n{params};")
+    # each class declared before the table names it, in emission order
+    assert blocks[2:5] == [f"template <>\n__global__ void s<{a}, {b}>(\n{params};"
+                           for a, b in S_CLASSES]
+    assert blocks[5] == (
+        "// indexed by the class's args; nullptr where no class was emitted.\n"
+        "inline constexpr decltype(&s<0, 0>) s_kernels[2][2] = {\n"
+        "    {&s<0, 0>, &s<0, 1>},\n"
+        "    {nullptr, &s<1, 1>},\n"
+        "};\n"
+    )
     # any unit of the template writes the same header
-    assert gpu.emit_template(build_s_kernel((0, 2)), SM_86,
-                             gpu.Specialization("s", (0, 2))) == "\n".join(h) + "\n"
+    assert gpu.emit_template(build_s_kernel((0, 1)), SM_86,
+                             gpu.Specialization("s", (0, 1)), S_CLASSES) == text
     with pytest.raises(TypeError, match="gpu.Specialization"):
-        gpu.emit_template(k, SM_86, None)  # type: ignore[arg-type]
+        gpu.emit_template(k, SM_86, None, S_CLASSES)  # type: ignore[arg-type]
+
+
+def test_each_extent_is_one_past_the_largest_arg_at_its_position() -> None:
+    text = gpu.emit_template(build_s_kernel((1, 1)), SM_86, S11, [(0, 2), (1, 1)])
+    assert text.endswith(
+        "inline constexpr decltype(&s<0, 2>) s_kernels[2][3] = {\n"
+        "    {nullptr, nullptr, &s<0, 2>},\n"
+        "    {nullptr, &s<1, 1>, nullptr},\n"
+        "};\n"
+    )
 
 
 def test_the_arity_follows_the_args() -> None:
     k = build_f_kernel(f_class_spec(0, 0, 0, 0))
     spec = gpu.Specialization("f", (0, 0, 0, 0))
-    assert ("template <uint8_t La, uint8_t Lb, uint8_t Lc, uint8_t Ld>"
-            in gpu.emit_template(k, SM_86, spec))
+    h = gpu.emit_template(k, SM_86, spec, [(0, 0, 0, 0)])
+    assert "template <uint8_t La, uint8_t Lb, uint8_t Lc, uint8_t Ld>" in h
+    assert h.endswith(
+        "f_kernels[1][1][1][1] = {\n"
+        "    {\n"
+        "        {\n"
+        "            {&f<0, 0, 0, 0>},\n"
+        "        },\n"
+        "    },\n"
+        "};\n"
+    )
     assert "__global__ void f<0, 0, 0, 0>(" in gpu.emit(k, SM_86, spec)
 
 
-def test_fj_boys_is_guarded_only_in_a_specialization() -> None:
+@pytest.mark.parametrize(("classes", "match"), [
+    ([], "no classes"),
+    ([(0, 0), (0,)], "other than 2 args"),
+    ([(0, 1), (0, 1)], "listed twice"),
+    ([(0, 1.0)], "nonempty tuple of ints"),
+    ([(0, 256)], "uint8_t"),
+])
+def test_the_header_is_refused_when_its_classes_are_not_a_list(
+        classes, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        gpu.emit_template(build_s_kernel((1, 1)), SM_86, S11, classes)
+
+
+def test_fj_boys_is_guarded_and_static_only_in_a_specialization() -> None:
     v = build_v_kernel((1, 1))
     f = build_f_kernel(f_class_spec(0, 0, 0, 0))
-    assert "#ifndef" not in gpu.emit(v, SM_86)
+    c = gpu.emit(v, SM_86)
+    assert "#ifndef" not in c and "static __device__" not in c
     wide = gpu.emit(v, SM_86, gpu.Specialization("v", (1, 1)))
     narrow = gpu.emit(f, SM_86, gpu.Specialization("f", (0, 0, 0, 0)))
     assert "#ifndef FJ_BOYS_WIDE\n#define FJ_BOYS_WIDE\n" in wide
     assert "#ifndef FJ_BOYS_NARROW\n#define FJ_BOYS_NARROW\n" in narrow
-    # inside the guard, the routine the C spelling carries
-    assert gpu.emit(v, SM_86).split("\n\n")[1] in wide
+    # inside the guard, the routine the C spelling carries, with internal
+    # linkage: every unit of the template has its own
+    assert c.split("\n\n")[1].replace(
+        "__device__ double fj_boys(", "static __device__ double fj_boys(") in wide
 
 
 def test_a_specialization_refuses_what_its_siblings_would_repeat() -> None:
@@ -343,105 +397,96 @@ def test_emit_takes_a_specialization_value() -> None:
         gpu.emit(build_s_kernel((1, 1)), SM_86, ("s", (1, 1)))  # type: ignore[arg-type]
 
 
-# --- the class list (gpu.emit_classes) ----------------------------------------
-
-
-def test_the_class_list_is_one_constexpr_array() -> None:
-    assert gpu.emit_classes("s", [(0, 0), (0, 1), (1, 1)]) == (
-        "// s_classes: generated by felizjueves.emit.gpu -- do not edit.\n"
-        "// one row per emitted unit, in emission order.\n"
-        "#pragma once\n"
-        '#include "felizjueves/runtime.h"\n'
-        "\n"
-        "inline constexpr int32_t s_classes[3][2] = {\n"
-        "    {0, 0},\n"
-        "    {0, 1},\n"
-        "    {1, 1},\n"
-        "};\n"
-    )
-
-
-@pytest.mark.parametrize(("classes", "match"), [
-    ([], "no classes"),
-    ([(0, 0), (0,)], "different lengths"),
-    ([(0, 1), (0, 1)], "listed twice"),
-    ([(0, 1.0)], "nonempty tuple of ints"),
-])
-def test_the_class_list_is_refused_when_it_is_not_one(classes, match) -> None:
-    with pytest.raises(ValueError, match=match):
-        gpu.emit_classes("s", classes)
-
-
-# --- one TU, every class: what a consumer builds -------------------------------
+# --- what a consumer builds: each unit its own TU, launched through the table --
 
 LMAX = 2
 PAIRS = [(la, lb) for la in range(LMAX + 1) for lb in range(la, LMAX + 1)]
+FAMILIES = {"s": build_s_kernel, "v": build_v_kernel}  # v: six wide fj_boys
 
-
-def _family(name: str, build, pairs) -> str:
-    return "".join(gpu.emit(build(c), SM_86, gpu.Specialization(name, c))
-                   for c in pairs)
-
-
-def _primaries(where: Path, *families) -> None:
-    # `{template}.h` beside the units, as a consumer writes it
-    for name, build in families:
-        spec = gpu.Specialization(name, (0, 0))
-        (where / spec.header).write_text(
-            gpu.emit_template(build((0, 0)), SM_86, spec))
-
-
-def _consumer(pairs, listed=PAIRS) -> str:
-    # The dispatch table a consumer derives from (la, lb) alone: every
-    # la <= lb cell takes &s<la, lb>, and the class list must name it.
-    return (
-        "#include <array>\n#include <utility>\n"
-        + _family("s", build_s_kernel, pairs)
-        + _family("v", build_v_kernel, pairs)  # six wide fj_boys, one TU
-        + gpu.emit_classes("s", listed) + f"""
-constexpr bool emitted(int32_t la, int32_t lb) {{
-    for (const auto& c : s_classes) {{
-        if (c[0] == la && c[1] == lb) return true;
-    }}
-    return false;
-}}
-
-using S = decltype(&s<0, 0>);
-// int32_t class indices, as a consumer's are: each converts to the primary's
-// uint8_t as a constant that fits
-template <int32_t la, int32_t lb>
-constexpr S pick() {{
-    if constexpr (la <= lb) {{
-        static_assert(emitted(la, lb), "a class the table names was not emitted");
-        return &s<la, lb>;
-    }} else {{
-        return nullptr;
-    }}
-}}
-
-// Built from the sequence, never written per cell, and read at run time, as
-// a launcher reads it to launch: that read is what makes each cell a symbol
-// to link. Through a volatile, since a function's address is never null and
-// -O2 would otherwise fold the comparison (hipcc does) and link nothing.
-template <int32_t... I>
-constexpr std::array<S, sizeof...(I)> table(std::integer_sequence<int32_t, I...>) {{
-    return {{pick<I / {LMAX + 1}, I % {LMAX + 1}>()...}};
-}}
-constexpr auto kTable = table(std::make_integer_sequence<int32_t, {(LMAX + 1) ** 2}>());
+# Read at run time, as a launcher reads it to launch: that read is what makes
+# each cell a symbol to link. Through a volatile, since a function's address
+# is never null and -O2 would otherwise fold the comparison (hipcc does) and
+# link nothing.
+LAUNCHER = f"""\
+#include "s.h"
+#include "v.h"
 
 int main(int argc, char**) {{
-    S volatile kernel = kTable[argc % kTable.size()];
-    return kernel == nullptr;
+    const int i = argc % {LMAX + 1}, j = (argc / {LMAX + 1}) % {LMAX + 1};
+    volatile auto s = s_kernels[i][j];
+    volatile auto v = v_kernels[i][j];
+    return s == nullptr || v == nullptr;
 }}
-""")
+"""
+
+
+def _headers(where: Path, pairs=PAIRS) -> None:
+    # `{template}.h` beside the units, as a consumer writes it
+    for name, build in FAMILIES.items():
+        spec = gpu.Specialization(name, pairs[0])
+        (where / spec.header).write_text(
+            gpu.emit_template(build(pairs[0]), SM_86, spec, pairs))
+
+
+def _units(ext: str, pairs=PAIRS) -> dict[str, str]:
+    return {f"{name}_{la}{lb}.{ext}":
+            gpu.emit(build((la, lb)), SM_86, gpu.Specialization(name, (la, lb)))
+            for name, build in FAMILIES.items() for la, lb in pairs}
+
+
+def _link(tc, where: Path, units: dict[str, str], *, rdc: bool = True):
+    """Every unit and the launcher as separate sources of one executable --
+    the device-library build a consumer runs. nvcc needs -rdc for it."""
+    for name, text in {**units, f"main.{tc.ext}": LAUNCHER}.items():
+        (where / name).write_text(text)
+    flags = [*tc.compile_flags(), f"-I{INCLUDE}", f"-I{where}"]
+    if tc.name == "nvcc" and rdc:
+        flags.append("-rdc=true")
+    return subprocess.run(
+        [tc.path, *flags, *units, f"main.{tc.ext}", "-o", "probe"],
+        cwd=where, capture_output=True, text=True, timeout=600)
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
-def test_every_class_of_two_families_links_in_one_tu(
+def test_every_class_of_two_families_links_as_its_own_unit(
+        request, tmp_path, tool: str) -> None:
+    tc = request.getfixturevalue(tool)
+    _headers(tmp_path)
+    done = _link(tc, tmp_path, _units(tc.ext))
+    assert done.returncode == 0, done.stderr
+    assert "20280" not in done.stderr
+
+
+@pytest.mark.cuda
+def test_nvcc_warns_on_a_unit_of_its_own_without_relocatable_device_code(
+        nvcc, tmp_path) -> None:
+    # whole-program mode's static template stubs want every specialization
+    # the launcher names defined in the launcher's own TU: nvcc 13.0 links,
+    # but says so (#20280), and -Werror makes it an error
+    _headers(tmp_path)
+    done = _link(nvcc, tmp_path, _units(nvcc.ext), rdc=False)
+    assert "must have a definition in the current translation unit" in done.stderr
+
+
+@pytest.mark.parametrize("tool", TOOLCHAINS)
+def test_a_class_not_compiled_in_fails_to_link(
+        request, tmp_path, tool: str) -> None:
+    # The header still declares (1, 2) and its table names it, but its units
+    # are left out: the primary has no definition to fall back on.
+    tc = request.getfixturevalue(tool)
+    _headers(tmp_path)
+    units = {n: t for n, t in _units(tc.ext).items() if "_12." not in n}
+    done = _link(tc, tmp_path, units)
+    assert done.returncode != 0
+    assert re.search(r"[Uu]ndefined (reference|symbol)", done.stderr), done.stderr
+
+
+@pytest.mark.parametrize("tool", TOOLCHAINS)
+def test_every_class_of_two_families_still_links_in_one_tu(
         request, tmp_path, compile_device_source, tool: str) -> None:
     tc = request.getfixturevalue(tool)
-    _primaries(tmp_path, ("s", build_s_kernel), ("v", build_v_kernel))
-    compile_device_source(tc, _consumer(PAIRS))
+    _headers(tmp_path)
+    compile_device_source(tc, "".join(_units(tc.ext).values()) + LAUNCHER)
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
@@ -450,7 +495,7 @@ def test_a_unit_whose_parameters_drifted_fails_to_compile(
     # The header declares S's parameters; a T unit spelled as s<1, 1> has
     # T's (eb_ket besides), so it specializes nothing.
     tc = request.getfixturevalue(tool)
-    _primaries(tmp_path, ("s", build_s_kernel))
+    _headers(tmp_path)
     text = gpu.emit(build_t_kernel((1, 1)), SM_86, S11)
     with pytest.raises(AssertionError,
                        match="no function template matches|no instance of function "
@@ -460,37 +505,15 @@ def test_a_unit_whose_parameters_drifted_fails_to_compile(
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
-def test_a_class_the_list_does_not_name_fails_to_compile(
-        request, tmp_path, compile_device_source, tool: str) -> None:
-    tc = request.getfixturevalue(tool)
-    _primaries(tmp_path, ("s", build_s_kernel), ("v", build_v_kernel))
-    listed = [c for c in PAIRS if c != (1, 2)]
-    with pytest.raises(AssertionError, match="was not emitted"):
-        compile_device_source(tc, _consumer(PAIRS, listed), link=False)
-
-
-@pytest.mark.parametrize("tool", TOOLCHAINS)
-def test_a_class_not_compiled_in_fails_to_link(
-        request, tmp_path, compile_device_source, tool: str) -> None:
-    # The class list still names (1, 2) but its unit is left out, and the
-    # assert is dropped: the primary has no definition to fall back on.
-    tc = request.getfixturevalue(tool)
-    _primaries(tmp_path, ("s", build_s_kernel), ("v", build_v_kernel))
-    text = _consumer([c for c in PAIRS if c != (1, 2)]).replace(
-        "static_assert(emitted(la, lb)", "(void)(emitted(la, lb)")
-    with pytest.raises(AssertionError, match=r"undefined (reference|symbol)"):
-        compile_device_source(tc, text)
-
-
-@pytest.mark.parametrize("tool", TOOLCHAINS)
 def test_the_two_fj_boys_in_one_tu_are_a_redefinition(
         request, tmp_path, compile_device_source, tool: str) -> None:
     tc = request.getfixturevalue(tool)
-    _primaries(tmp_path, ("v", build_v_kernel),
-               ("f", lambda c: build_f_kernel(f_class_spec(*c, *c))))
+    _headers(tmp_path)
+    f = gpu.Specialization("f", (0, 0, 0, 0))
+    fk = build_f_kernel(f_class_spec(0, 0, 0, 0))
+    (tmp_path / f.header).write_text(gpu.emit_template(fk, SM_86, f, [f.args]))
     text = (gpu.emit(build_v_kernel((0, 0)), SM_86,
                      gpu.Specialization("v", (0, 0)))
-            + gpu.emit(build_f_kernel(f_class_spec(0, 0, 0, 0)), SM_86,
-                       gpu.Specialization("f", (0, 0, 0, 0))))
+            + gpu.emit(fk, SM_86, f))
     with pytest.raises(AssertionError, match="redefinition|already been defined"):
         compile_device_source(tc, text, link=False)
