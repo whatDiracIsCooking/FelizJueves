@@ -51,7 +51,7 @@ it (see "What is not done").
 `(lP, lQ)` (`AM_LENGTH` 2), on `Operator.COULOMB` (`OPERATOR_OF`), and its
 key is `coulomb/d0/(lP,lQ)/b1/metric/literal`. Every pre-existing key is
 unchanged, all 196 measured `J` keys among them (`test_spec.py`,
-`test_measured_keys.py`).
+`measure/measure_measured_keys.py`).
 
 It is unbatched **by decision** (`spec._PAIR_BATCH_REFUSAL`). The structural
 pair rule does not apply, because the metric has Hermite targets, as `V` and

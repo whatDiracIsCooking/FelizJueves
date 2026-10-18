@@ -37,7 +37,6 @@ import pytest
 import test_emit_batched
 import test_emit_cuda
 import test_emit_hip
-import test_measured
 from oracle import basis as ob
 from oracle import manifest
 from soa import axes
@@ -316,11 +315,6 @@ def test_the_pq_goldens_are_untouched() -> None:
         for i in range(test_emit_batched.N_BATCHES):
             test_emit_batched.test_the_batched_golden_is_unchanged(backend, i)
 
-
-@pytest.mark.slow
-def test_every_recorded_pq_source_sha256_is_untouched() -> None:
-    """Every `source_sha256` row of data/measured/kernels.json still hashes
-    the text the generator writes today (~50 s: every recorded cell is
-    re-emitted). The fast tier runs the same check in test_measured.py;
-    here it is the issue's named assertion."""
-    test_measured.test_the_recorded_source_is_what_the_generator_writes_today()
+# That every recorded `source_sha256` row of data/measured/kernels.json still
+# hashes today's text is a check of the measured store, not of this kernel:
+# measure/measure_kernel_dq.py (`devtools/measure.sh check`).

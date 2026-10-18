@@ -2,8 +2,8 @@
 # Generate the kernels, compile them with the real device compiler, run them on
 # a real card, and report what each phase actually proved.
 #
-#   devtools/kernel-tier.sh [--backend cuda|hip] [--fresh] [--no-cache]
-#                           [--no-test] [-j N] [--report DIR]
+#   devtools/kernel-tier.sh [--backend cuda|hip] [--full] [--fresh]
+#                           [--no-cache] [--no-test] [-j N] [--report DIR]
 #                           [-- <pytest args>]
 #
 # THIS IS THE ONLY PLACE A NUMERICAL CLAIM CAN BE MADE. No hosted CI runner has
@@ -33,7 +33,9 @@
 #              COMPILE FAILED), naming the kernel and the line; one in a
 #              vendor header is reported and does not (config.sh,
 #              NVCC_FLAGS / HIPCC_FLAGS).
-#   device    the `gpu`-marked pytest suite (KERNEL_TEST_ARGS), which is what
+#   device    the `gpu`-marked pytest suite (KERNEL_TEST_ARGS: not `slow`, the
+#              PR gate, under five minutes per card; --full takes
+#              KERNEL_FULL_TEST_ARGS, every `gpu` test), which is what
 #              compares a kernel's output against the host reference (the
 #              one-electron units: test/test_one_electron_device.py, which
 #              includes the very files the generate phase wrote). Its
@@ -91,12 +93,14 @@ run_tests=1
 jobs=${JOBS:-}
 report=$KERNEL_TIER_REPORTS
 pytest_extra=()
+test_args=$KERNEL_TEST_ARGS
 
 while [ $# -gt 0 ]; do
   case $1 in
     --backend) backend=${2:?--backend needs cuda or hip}; shift 2 ;;
     --cuda)    backend=cuda; shift ;;
     --hip)     backend=hip;  shift ;;
+    --full)    test_args=$KERNEL_FULL_TEST_ARGS; shift ;;
     --fresh)   fresh=1; shift ;;
     --no-cache) no_cache=1; shift ;;
     --no-test) run_tests=0; shift ;;
@@ -448,7 +452,7 @@ if [ "$run_tests" = 0 ]; then
   note "--no-test: skipped"
 else
   xdist_args
-  config_args "${KERNEL_TEST_ARGS//\{backend\}/$backend}"
+  config_args "${test_args//\{backend\}/$backend}"
   cc_dev0=$(cache_counts)
   t_dev0=$(date +%s.%N)
   set +e
@@ -465,7 +469,7 @@ note "backend   $backend ($target_desc)"
 note "device    $([ "$device_present" = 1 ] && echo present || echo ABSENT -- numbers unproven)"
 note "generated $([ -n "$KERNEL_GEN_CMD" ] && echo "$KERNEL_GEN_CMD" || echo "nothing (KERNEL_GEN_CMD empty)")"
 note "compiled  ${#sources[@]} translation unit(s) from ${src_dir#"$REPO_ROOT"/}"
-note "tests     ${KERNEL_TEST_ARGS//\{backend\}/$backend}$([ "$run_tests" = 1 ] || echo ' (NOT RUN: --no-test)')"
+note "tests     ${test_args//\{backend\}/$backend}$([ "$run_tests" = 1 ] || echo ' (NOT RUN: --no-test)')"
 # What the compiler cache did, per phase (#186): the tier's own units, and
 # every compile the device suite issued (test/devcache.py). Counts from the
 # shared sccache server, so a concurrent run's compiles would land here too.

@@ -51,8 +51,9 @@ touches a `.py`.
 ### Kernel tier — `devtools/kernel-tier.sh`
 
 ```bash
-devtools/kernel-tier.sh --backend cuda          # nvcc + the RTX 3080
-devtools/kernel-tier.sh --backend hip           # hipcc + the RX 9060 XT
+devtools/kernel-tier.sh --backend cuda          # nvcc + the RTX 3080 (PR gate)
+devtools/kernel-tier.sh --backend hip           # hipcc + the RX 9060 XT (PR gate)
+devtools/kernel-tier.sh --backend cuda --full   # every gpu test, slow included
 devtools/kernel-tier.sh --backend cuda --fresh  # wipe .kernel-tier/ first
 devtools/kernel-tier.sh --backend cuda -- -k saxpy    # extra pytest args
 ```
@@ -64,7 +65,7 @@ Four phases, and **the report at the end says which of them did anything**:
 | preflight | the compiler is here; whether a card is |
 | generate | `KERNEL_GEN_CMD` (`python -m felizjueves.emit --one-e-l 2`) writes 55 units into `.kernel-tier/src-<backend>/`: the J chain's 37 (the `[p\|q]` kernels, L = 0..16, and the `dq_`/`jab_` pair ladder through (ff) — all the bare command writes) and the one-electron ladder's 18 (`s_`, `t_`, `v_` for `la ≤ lb ≤ 2`, #242) — **dormant** if that variable is set empty. To cap it, set it yourself, e.g. `KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit --L 0 1 2 3 4 --pair-l 3 --one-e-l 2"` |
 | compile | every emitted translation unit survives the real device compiler. The CUDA side takes `*.cu`; the **HIP side takes `*.hip` AND `*.cu`** (with `-x hip`), so one generated source can be checked against both compilers — which is the point |
-| device | the `gpu`-marked suite **for that backend** (`-m "gpu and <backend>"`) agrees with the host reference — among others `test_kernel_device.py` (the generated kernels' `J_p` and both `fj_boys` spellings), the J chain and launch-plan builds, `test_one_electron_device.py` and `test_hcore_device.py` (`S`, `T`, `V` and `h`, milestone 11), plus `test_toolchain.py`'s saxpy |
+| device | the `gpu`-marked suite **for that backend**, `slow` excluded (`-m "gpu and <backend> and not slow"`, the PR gate: L ≤ 4 on H₂ / H₂O/STO-3G, 3m44s cold on CUDA; `--full` drops the `not slow`, 72 min) agrees with the host reference — among others `test_kernel_device.py` (the generated kernels' `J_p` and both `fj_boys` spellings), the J chain and launch-plan builds, `test_one_electron_device.py` and `test_hcore_device.py` (`S`, `T`, `V` and `h`, milestone 11), plus `test_toolchain.py`'s saxpy |
 
 **The cache covers the tests' compiles too (#186).** `test/devcache.py` puts
 the same sccache in front of every compile a test issues
@@ -89,6 +90,16 @@ unresolvable device group. On a host with no `hipcc`, `--backend hip` re-execs
 itself inside `fj:combined` with the device nodes and host gids passed in; with
 no such image it exits 2 and names `docker/build.sh combined`.
 
+### Measurement is not a tier — `devtools/measure.sh`
+
+No test times, profiles or reads back a stored measurement. The timed sweeps,
+the profiler witnesses, the recompile-against-`kernels.json` check and the
+tracked reports recomputed live in `measure/` (`measure_*.py`, outside
+`testpaths`) and run only through `devtools/measure.sh <sweep>`
+(`measure.sh list`). `measure.sh check` (~20 s, no compiler, no card) is the
+one to run after a re-measure, or when a kernel-text change has moved a
+stored `source_sha256`. None of it blocks a PR.
+
 ## The markers, and why a test skips
 
 The two axes are independent, and conflating them is how a green-and-empty run
@@ -99,7 +110,7 @@ gets reported as a pass:
 | `cuda` | nvcc — **no card required** | `nvcc` |
 | `hip` | hipcc — **no card required** | `hipcc` |
 | `gpu` | a live device | `cuda_device` / `hip_device` |
-| `slow` | nothing; costs minutes (an exhaustive search re-run, or a deferred high-L device cell such as the one-electron (ff) classes); off the pre-push gate via `FAST_TEST_ARGS` | — |
+| `slow` | nothing; costs minutes (an exhaustive search re-run, a class above `FAST_L_MAX`, or a large input: 6-31G, cc-pVDZ, cc-pVTZ); off the pre-push gate via `FAST_TEST_ARGS` and off the kernel tier unless `--full` | — |
 
 Those are the registered markers (with `oracle` and `claim(id)`). An issue that
 names a `kernel-tier` or `high-L` marker means `slow`: neither is registered.

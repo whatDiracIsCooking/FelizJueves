@@ -24,8 +24,8 @@ What is asserted, nothing compiled or launched:
 4. THE NUMBERS, at THE fp32 tier, `F32_REL` of `scale_G`
    (test/oracle/tolerance.py's one declared fp32 tier, never widened):
    one orbit against `ao.fock`'s sweep on every class with L <= 4, the
-   degeneracy cases within the cap, and H2O/STO-3G's (and, `slow`, s and p
-   shells only, 6-31G's) whole `F` from
+   degeneracy cases within the cap, and (`slow`: 7 s and more, interpreted)
+   H2O/STO-3G's and 6-31G's (s and p shells only) whole `F` from
    `launch_f`'s plan (every kernel the lever's) against the sweep and
    libcint's `vj - vk/2`; each comparison is also shown to MISS the fp64
    tier (`test_kernel_f.TOL`), so the build really is fp32. The interpreter
@@ -40,7 +40,9 @@ WHY `F32_REL` AND NOT `assert_within`: `F` is an F64 array by the boundary
 is what shows the build is not an fp64 one (test_k_lever_mixed.py says the
 same for K).
 
-Fast tier unless `slow`: no compiler, no card, no PySCF.
+Fast tier unless `slow`: no compiler, no card, no PySCF. The whole-molecule
+check is the device tier's in the PR gate (test_f_lever_mixed_device.py's
+H2O/STO-3G cells).
 """
 
 from __future__ import annotations
@@ -266,8 +268,8 @@ def _lever_run(kernel, grid, block, args):
     return fb.run(lev, grid, block, args)
 
 
-@pytest.mark.parametrize("name", [
-    "h2o_sto3g", pytest.param("h2o_631g", marks=pytest.mark.slow)])
+@pytest.mark.slow  # 7 s at STO-3G, interpreted: past the fast tier's ~3 s
+@pytest.mark.parametrize("name", ["h2o_sto3g", "h2o_631g"])
 def test_a_whole_molecule_is_the_sweep_and_libcint_at_fp32(name) -> None:
     basis, D, libcint = fb.molecule(name)
     plan = f_launches(basis, D, bound=fb.BOUND, tau=0.0, n=1)

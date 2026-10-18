@@ -185,7 +185,8 @@ ends.
 |---|---|---|
 | lint | `ruff check .` | narrow by design: `E,F,I,UP,B`, no formatter. |
 | fast | `pytest -m "not cuda and not hip and not gpu and not slow and not oracle"` | the Python side agrees with itself, and with libcint through tracked fixtures. Compiles nothing, launches nothing, needs no PySCF. This is the push gate, and `FAST_TEST_ARGS` is that marker expression: it excludes every marker that would reach a compiler, a card, PySCF (`oracle`) or minutes (`slow`). A bare `pytest` applies no marker filter. |
-| kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler (a warning in generated text fails it) → run on the card → compare against the host reference, and `J_µν` against libcint. |
+| kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler (a warning in generated text fails it) → run on the card → compare against the host reference, and `J_µν` against libcint. Without `--full` the device phase skips `slow` (the PR gate, under five minutes per card); `--full` runs everything. |
+| measure | `devtools/measure.sh <sweep>` | not a test tier: wall-clock, counters, ceilings and the stored `data/measured` reports, in `measure/`. Never a gate. |
 | oracle | `uv sync --group oracle`, then `pytest -m oracle` | the tracked fixtures still equal what PySCF computes today. |
 
 **The kernel tier is the only place a claim about a card can be made.** No

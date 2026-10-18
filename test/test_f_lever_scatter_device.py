@@ -1,60 +1,52 @@
 """The atomic-free F write-back (#358) through the compilers and on the cards.
 
-FOUR PARTS, the issue's acceptance on the device side:
+THREE PARTS, the issue's acceptance on the device side:
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): every F class with L <= 4
    (milestone 13's cap), the literal kernel, block-fab's (#351, H7) and the
    scatter lever's each its own translation unit, and the class-agnostic
-   `f_scatter` unit once, compiled with the tier's flags plus the
-   measurement flag (`measured.Backend.command`). A warning in generated
-   text fails (#92). The figures -- registers, spill, static shared bytes
-   -- are PRINTED (`-s`) as observations, never store rows; the lever's
-   static shared bytes ARE asserted equal to block-fab's (the same two
-   shared arrays). The scatter programs (per class and per molecule) are
-   compiled too, so a spelling problem shows without the card.
-2. ON THE CARD, PER CLASS (`gpu` + `cuda` / `hip`): every F class with
-   L <= 4, its launches in H2O/cc-pVDZ's plan at `tau = 0`
+   `f_scatter` unit once, compiled with the tier's flags (test_f_lever_
+   batched_vrr_device.py's `compile_unit`). A warning in generated text
+   fails (#92). One reading is asserted, a property of the launch: the
+   lever's static shared bytes equal block-fab's (the same two shared
+   arrays; `shared_bytes`, the resource report). Registers and spills are
+   the lever ledger's (`measured --remeasure ... --ledger`), not this
+   file's. The scatter programs (per class and per molecule) are compiled
+   too, so a spelling problem shows without the card.
+2. ON THE CARD, PER CLASS (`gpu` + `cuda` / `hip`, `slow`): every F class
+   with L <= 4, its launches in H2O/cc-pVDZ's plan at `tau = 0`
    (test_fock_ondevice.py's `_class_recs`: the same packed records, `diag`,
    `Dsh` and `D`), each relaunched with the lever's kernel at 32 and 128
    threads and followed by the scatter over its map, held by
    test_fock_ondevice.py's own `_check_class` -- `TOL = 1e-13` of `scale_G`
    against the restricted sweep, `2 TOL` against the literal launches
    interpreted -- and, the lever's point, the two runs of one binary
-   BIT-IDENTICAL (`F` is deterministic: no atomic anywhere).
+   BIT-IDENTICAL (`F` is deterministic: no atomic anywhere). `slow` because
+   cc-pVDZ is not a small input: its host references cost 15-30 s a class.
 3. ON THE CARD, PER MOLECULE: H2O/STO-3G at `tau = 0` and `tau = 0.1, n =
-   4`, H2O/6-31G at `tau = 0` (every class L <= 4), every launch of the plan
-   through the scatter path into one `F`, against walk_f's interpreted
-   literal build at `2 TOL`, at `tau = 0` against the sweep at `TOL` and
-   libcint at `LIBCINT_TOL`, the two runs bit-identical.
-4. THE WRITE-BACK TAIL, MEASURED BEFORE THE VERDICT (the issue's order;
-   opt-in, ALONE, behind the gate): per class, one synthetic off-diagonal
-   launch (`fock_driver.synthetic_launch`, 2048 x 128 contracted quartets,
-   the F rows' wide input) timed under four programs -- the literal kernel,
-   block-fab's, the scatter lever's F kernel ALONE (`f_only`: W zeroed and
-   written, no scatter) and the whole scatter path -- and the fractions
-   printed: block-fab's atomic tail `(t_H7 - t_Fonly) / t_H7` (what plain
-   stores save over its atomics, the zeroing of W charged to the stores),
-   the scatter kernel's share of the path `(t_path - t_Fonly) / t_path`,
-   and the net `t_path / t_H7 - 1`. Printed only, never a store row (#362
-   is the ledger), no threshold:
+   4` (the PR tier's), and, `slow`, H2O/6-31G at `tau = 0` (every class
+   L <= 4), every launch of the plan through the scatter path into one `F`,
+   against walk_f's interpreted literal build at `2 TOL`, at `tau = 0`
+   against the sweep at `TOL` and libcint at `LIBCINT_TOL`, the two runs
+   bit-identical -- the PR tier's witness of the lever's determinism.
 
-    FJ_WALLCLOCK_F_SCATTER=1 [FJ_WALLCLOCK_F_L="2 3 4"] \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
-        -k f_lever_scatter_tail -s
+The write-back tail's clock (#358's "measured before the verdict") is not a
+test: it is measure/measure_f_scatter_tail.py, run by `devtools/measure.sh
+scatter-tail --backend cuda|hip`, and imports this file's helpers.
 
-Run parts 2 and 3 as (each backend; nothing above L = 4 and nothing `slow`
-is selected; the generator capped at L = 4):
+Run parts 2 and 3 as (each backend; the generator capped at L = 4):
 
     KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit \\
         --L 0 1 2 3 4 --pair-l 2 --one-e-l 2" \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
-        -k "f_lever_scatter and not tail"
+        devtools/kernel-tier.sh --backend cuda|hip --full -j 6 -- \\
+        -k f_lever_scatter
+
+(without `--full` only part 3's STO-3G cells are selected, nothing `slow`).
 """
 
 from __future__ import annotations
 
 import dataclasses
-import os
 from functools import cache
 from pathlib import Path
 
@@ -63,30 +55,16 @@ import pytest
 import test_fock_ondevice as tfo
 from fock_driver import (
     FRec,
-    fock_program,
     fock_scatter_program,
     fock_scatter_stage,
-    fock_stage,
     interpret_scatter,
-    max_boys_T,
-    reps,
     run_on_card,
     scatter_map_np,
-    synthetic_launch,
 )
 from plan_driver import compile_checked
-from test_f_lever_block_fab_device import _compile
+from test_f_lever_batched_vrr_device import compile_unit, shared_bytes
 from test_fock_build import LIBCINT_TOL, TOL, sweep, walk
-from test_kernel_device import (
-    BACKEND,
-    GPU_BUSY_MAX,
-    REPEATS,
-    STUDY_RETAKES,
-    WARMUP,
-    check_vram,
-)
 
-from felizjueves import gate
 from felizjueves import kernel_f as KF
 from felizjueves import kernel_f_scatter as FS
 from felizjueves.f_levers import block_fab, scatter
@@ -102,9 +80,9 @@ WAVEFRONT = 32  # both cards' (device.SM_86, device.GFX1200)
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0"),
+    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
-TAIL = "FJ_WALLCLOCK_F_SCATTER"
 
 
 def _named(spec_levers, cls) -> Kernel:
@@ -145,54 +123,39 @@ def _build(backend: str, tc, kernels, tmp_path: Path, name: str, *,
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: the figures, and the programs
+# 1. Compile-only: the units, the shared footprint, and the programs
 # ---------------------------------------------------------------------------
 
 
-def _figures(backend: str, compiler: str, cls, tmp_path: Path) -> None:
-    lit = _compile(backend, compiler, KF.build_f_kernel(cls),
-                   tmp_path / "literal")
-    h7 = _compile(backend, compiler, _named((block_fab.NAME,), cls),
-                  tmp_path / "block_fab")
-    lev = _compile(backend, compiler, lever(cls), tmp_path / "scatter")
-    assert lev[2] == h7[2], (h7, lev)  # ab_sh + fab_sh, both
-    unit = ("registers/spill-store bytes/smem" if backend == "cuda"
-            else "VGPRs/spilled registers/LDS")
-    print(f"\n{backend} {cls} ({unit}): literal {lit[0]}/{lit[1]}/{lit[2]}, "
-          f"block-fab {h7[0]}/{h7[1]}/{h7[2]} -> {NAME} "
-          f"{lev[0]}/{lev[1]}/{lev[2]}; W slots per bra "
-          f"{scatter.n_ab(cls)} + {scatter.ket_width(cls)} n_ket",
-          flush=True)
+def _compiles(backend: str, compiler: str, cls, tmp_path: Path) -> None:
+    compile_unit(backend, compiler, KF.build_f_kernel(cls),
+                 tmp_path / "literal")
+    h7 = shared_bytes(backend, compiler, _named((block_fab.NAME,), cls),
+                      tmp_path / "block_fab")
+    lev = shared_bytes(backend, compiler, lever(cls), tmp_path / "scatter")
+    assert lev == h7, (h7, lev)  # ab_sh + fab_sh, both
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_cuda_scatter_kernels_compile_with_their_figures(cls, nvcc,
-                                                         tmp_path) -> None:
-    _figures("cuda", nvcc.path, cls, tmp_path)
+def test_cuda_scatter_kernels_compile(cls, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, cls, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_hip_scatter_kernels_compile_with_their_figures(cls, hipcc,
-                                                        tmp_path) -> None:
-    _figures("hip", hipcc.path, cls, tmp_path)
-
-
-def _scatter_unit(backend: str, compiler: str, tmp_path: Path) -> None:
-    f = _compile(backend, compiler, FS.build_scatter_kernel(), tmp_path)
-    print(f"\n{backend} {FS.NAME}: {f[0]}/{f[1]}/{f[2]}", flush=True)
-    assert f[1] == 0  # the scatter spills nothing
+def test_hip_scatter_kernels_compile(cls, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, cls, tmp_path)
 
 
 @pytest.mark.cuda
 def test_cuda_the_scatter_unit_compiles(nvcc, tmp_path) -> None:
-    _scatter_unit("cuda", nvcc.path, tmp_path)
+    compile_unit("cuda", nvcc.path, FS.build_scatter_kernel(), tmp_path)
 
 
 @pytest.mark.hip
 def test_hip_the_scatter_unit_compiles(hipcc, tmp_path) -> None:
-    _scatter_unit("hip", hipcc.path, tmp_path)
+    compile_unit("hip", hipcc.path, FS.build_scatter_kernel(), tmp_path)
 
 
 @cache
@@ -204,7 +167,8 @@ def _molecule_recs(name: str, tau: float, n: int) -> tuple[FRec, ...]:
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in L4),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -260,6 +224,7 @@ DEVICE_PARAMS = [pytest.param(c, t, id=f"{''.join(map(str, c))}-t{t}")
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize(("cls", "threads"), DEVICE_PARAMS)
 def test_cuda_f_lever_scatter_class_matches_the_host(
         cls, threads, request, run_device_binary, tmp_path) -> None:
@@ -269,6 +234,7 @@ def test_cuda_f_lever_scatter_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize(("cls", "threads"), DEVICE_PARAMS)
 def test_hip_f_lever_scatter_class_matches_the_host(
         cls, threads, request, run_device_binary, tmp_path) -> None:
@@ -326,104 +292,6 @@ def test_hip_f_lever_scatter_molecule_matches_walk_and_libcint(
 
 
 # ---------------------------------------------------------------------------
-# 4. The write-back tail, measured (opt-in, alone)
-# ---------------------------------------------------------------------------
-
-
-def _tail_classes(env=os.environ) -> tuple:
-    text = env.get(tfo.WALLCLOCK_F_L, "").strip()
-    Ls = {int(x) for x in text.split()} if text else {0, 1, 2, 3, 4}
-    got = tuple(c for c in L4 if sum(c) in Ls)
-    assert got, f"{tfo.WALLCLOCK_F_L}={text!r} selects no class with L <= 4"
-    return got
-
-
-def _timed(backend: str, binary: Path, data: np.ndarray, n_ao: int,
-           label: str, run_device_binary, tmp_path: Path):
-    work = tmp_path / "timing"
-    work.mkdir(exist_ok=True)
-    src = work / "timing.in"
-    data.tofile(src)
-    check_vram(binary, (str(src), str(work / "timing.out")), backend)
-    for take in range(1 + STUDY_RETAKES):
-        try:
-            gate.wait_quiet(backend, say=lambda line: print(line, flush=True))
-        except gate.Contended as e:
-            print(f"  DISCARDED {label}: {e} (take {take + 1})", flush=True)
-            continue
-        Fs, out = run_on_card(binary, data, n_ao, work, run_device_binary,
-                              backend=backend, timing=(WARMUP, REPEATS),
-                              tag="timing")
-        after = gate.after_reading(backend)
-        if after is not None and after <= GPU_BUSY_MAX:
-            break
-        print(f"  DISCARDED {label}: card {after}% after (take {take + 1})",
-              flush=True)
-    else:
-        pytest.fail(f"{label}: contended through {STUDY_RETAKES + 1} takes")
-    wall, events = reps(out)
-    assert len(events) == REPEATS and np.all(np.isfinite(Fs)), label
-    return float(np.median(events)), float(np.median(wall)), Fs
-
-
-def _tail(backend: str, request, run_device_binary, tmp_path: Path) -> None:
-    if not os.environ.get(TAIL, "").strip():
-        pytest.skip(f"the write-back tail is opt-in and must run alone, "
-                    f"uncontended: set {TAIL}=1 (see the module docstring)")
-    tc = tfo._toolchain(backend, request)
-    for cls in _tail_classes():
-        rec, basis = synthetic_launch(cls, side=tfo.WIDE_SIDE,
-                                      seed=358_000 + sum(cls))
-        assert max_boys_T(basis, tfo.WIDE_SIDE) <= tfo.BOYS_T_WITNESSED
-        work = tmp_path / "".join(map(str, cls))
-        arms = {}
-        for arm, levs in (("literal", ()), ("block-fab", (block_fab.NAME,))):
-            k = _named(levs, cls)
-            r = FRec(k, rec.grid, rec.threads, rec.args)
-            prog = fock_program([k], backend, work / arm, name=f"prog_{arm}")
-            binary = compile_checked(tc, prog, work / arm / "bin")
-            arms[arm] = (binary, fock_stage([r], [k]))
-        (r,) = as_lever([rec])
-        data = fock_scatter_stage([r], [r.kernel], mapper=scatter_map_np)
-        for arm, f_only in (("f-only", True), ("path", False)):
-            binary = _build(backend, tc, [r.kernel], work / arm, arm,
-                            f_only=f_only)
-            arms[arm] = (binary, data)
-        t, bitwise = {}, None
-        for arm, (binary, staged) in arms.items():
-            ev, wall, Fs = _timed(backend, binary, staged, basis.n_ao,
-                                  f"{cls} {arm}", run_device_binary, work)
-            t[arm] = ev
-            if arm == "path":
-                bitwise = bool(np.array_equal(Fs[0], Fs[1]))
-        print(f"\n{backend} {BACKEND[backend][1].name} {cls} tail, 2048 x 128 "
-              f"wide, median events ms: " + ", ".join(
-                  f"{a} {v / 1e6:.3f}" for a, v in t.items())
-              + f"; block-fab's atomic tail (t_H7 - t_Fonly) / t_H7 "
-              f"{(t['block-fab'] - t['f-only']) / t['block-fab']:+.4f}; "
-              f"scatter share {(t['path'] - t['f-only']) / t['path']:.4f}; "
-              f"net vs H7 {t['path'] / t['block-fab'] - 1:+.4f}; "
-              f"path bit-identical runs {bitwise}", flush=True)
-        assert bitwise, f"{cls}: the scatter path is not deterministic"
-
-
-@pytest.mark.cuda
-@pytest.mark.gpu
-def test_cuda_f_lever_scatter_tail(request, run_device_binary,
-                                   tmp_path) -> None:
-    """The write-back tail on the RTX 3080 (opt-in, alone)."""
-    _tail("cuda", request, run_device_binary, tmp_path)
-
-
-@pytest.mark.hip
-@pytest.mark.gpu
-def test_hip_f_lever_scatter_tail(request, run_device_binary,
-                                  tmp_path) -> None:
-    """The write-back tail on the RX 9060 XT (opt-in, alone)."""
-    _tail("hip", request, run_device_binary, tmp_path)
-
-
-# ---------------------------------------------------------------------------
 # Fast tier: the cells, the staged input, the vectorised map, the host path
 # ---------------------------------------------------------------------------
 
@@ -432,9 +300,6 @@ def test_the_device_cells_are_l_at_most_4_and_cover_it() -> None:
     assert all(sum(c) <= 4 for c in L4)
     assert len(L4) == sum(1 for c in CLASSES if sum(c) <= 4)
     assert all(t % WAVEFRONT == 0 for t in DEVICE_THREADS)
-    assert all(sum(c) <= 4 for c in _tail_classes({}))
-    with pytest.raises(AssertionError, match="selects no class"):
-        _tail_classes({tfo.WALLCLOCK_F_L: "5"})
 
 
 def test_the_relaunched_records_differ_only_in_kernel_and_block() -> None:

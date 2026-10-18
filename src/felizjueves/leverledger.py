@@ -42,7 +42,7 @@ against): a vocabulary lever with no rows is never silently absent. A
 regression never fails it.
 
 ROWS COME FROM THE STORE (`measured_store`), never from a model, a file the
-generator wrote or a compiler: test/test_lever_ledger.py recomputes LEDGER
+generator wrote or a compiler: measure/measure_lever_ledger.py recomputes LEDGER
 from data/measured/kernels.json with no device and no toolchain, and
 test/test_layering.py holds this module to the store and `device`.
 """

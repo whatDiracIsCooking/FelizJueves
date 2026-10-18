@@ -463,11 +463,8 @@ def test_the_jgen_difference_is_one_item_and_the_plan_a_decision() -> None:
             assert stale not in text, (name, stale)
         assert "replicates `jgen`" not in text.replace(
             '"this repo replicates `jgen`" is not true', ""), name
-    # the decision those sentences cite is the one the store reads
-    from felizjueves import measured_store
-    store = measured_store.load()
-    assert measured_store.tuned_may_become_the_default(store) is False
-    assert measured_store.sieve_may_leave_the_default(store) is False
+    # That the decision those sentences cite is the one the tracked store
+    # reads is a check of the measured rows: measure/measure_claims.py.
 
 
 @pytest.mark.parametrize(

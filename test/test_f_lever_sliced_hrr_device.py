@@ -5,37 +5,35 @@ so every unit here carries both levers. TWO PARTS, every F class with
 L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): each class's literal kernel,
-   #350's alone and the composition, each its own translation unit,
-   compiled with the tier's flags plus the measurement flag (the helper of
-   test_f_lever_batched_vrr_device.py: `-Xptxas -v` on nvcc, the AMD
-   `kernel-resource-usage` remark on hipcc). A warning in generated text
-   fails (#92's rule). The figures -- registers, spill-store bytes and the
-   stack frame (nvcc), VGPRs, spilled VGPRs and scratch bytes (hipcc) --
-   literal, #350 alone and the composition are PRINTED (run with `-s`), so
-   the slicing's contribution is separable from #350's (the issue's
-   acceptance): compiler readings, never store rows, no threshold (#362 is
-   the ledger). The harness programs part 2 runs are compiled too.
+   #350's alone and the composition, each its own translation unit, compiled
+   with the tier's flags (test_f_lever_batched_vrr_device.py's
+   `compile_unit`). A warning in generated text fails (#92's rule). Nothing
+   is read off the compiler: the arms' registers, spills and frames are the
+   lever ledger's (`measured --remeasure ... --ledger`, #362), not a test's.
+   The harness programs part 2 runs are compiled too.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): test_fock_ondevice.py's launches
    with every kernel swapped for the composition's kernel of its class
-   (`f_0101_lv_batched_vrr_lv_sliced_hrr`): (a) per class, H2O/cc-pVDZ's
-   launches of that class at `tau = 0`, against those launches interpreted
-   with the LITERAL kernel -- which the composition equals bit for bit on
-   the host (test_f_lever_sliced_hrr.py) -- and `ao.fock`'s restricted
-   sweep, by test_fock_ondevice's `_check_class` and its stated tolerances
-   unchanged; (b) per molecule, H2O/STO-3G at `tau = 0` and `tau = 0.1,
-   n = 4` and H2O/6-31G at `tau = 0`, every launch of the plan, against
-   walk_f's interpreted build and, at `tau = 0`, the sweep and libcint.
-   Nothing is recorded.
+   (`f_0101_lv_batched_vrr_lv_sliced_hrr`): (a) `slow` (cc-pVDZ is not a
+   small input: its host references cost 15-30 s a class): per class,
+   H2O/cc-pVDZ's launches of that class at `tau = 0`, against those launches
+   interpreted with the LITERAL kernel -- which the composition equals bit
+   for bit on the host (test_f_lever_sliced_hrr.py) -- and `ao.fock`'s
+   restricted sweep, by test_fock_ondevice's `_check_class` and its stated
+   tolerances unchanged; (b) per molecule, H2O/STO-3G at `tau = 0` and
+   `tau = 0.1, n = 4` and, `slow`, H2O/6-31G at `tau = 0`, every launch of the
+   plan, against walk_f's interpreted build and, at `tau = 0`, the sweep and
+   libcint. Nothing is recorded.
 
 Run as (each backend; no F unit is on KERNEL_GEN_CMD's ladder, the driver
 emits its own, so the generator is only capped):
 
     KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit \\
         --L 0 1 2 3 4 --pair-l 2 --one-e-l 2" \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
+        devtools/kernel-tier.sh --backend cuda|hip --full -j 6 -- \\
         -k f_lever_sliced_hrr
 
-which selects parts 1 and 2 and nothing `slow` or above L = 4.
+which selects part 2 and nothing above L = 4; without `--full`, only 2(b)'s
+H2O/STO-3G cells (nothing `slow`), the PR tier's.
 """
 
 from __future__ import annotations
@@ -49,7 +47,7 @@ import numpy as np
 import pytest
 import test_fock_ondevice as fo
 from fock_driver import fock_stage, run_on_card
-from test_f_lever_batched_vrr_device import _compile
+from test_f_lever_batched_vrr_device import compile_unit
 from test_fock_build import LIBCINT_TOL, TOL, molecule, sweep, walk
 from test_kernel_device import BACKEND, _toolchain
 
@@ -67,7 +65,8 @@ CLASS_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in CAPPED]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0"),
+    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 SUFFIX = unit_name("", BOTH)  # "_lv_batched_vrr_lv_sliced_hrr"
 
@@ -101,32 +100,26 @@ def _swap(recs) -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def _figures(backend: str, compiler: str, cls, tmp_path: Path) -> None:
+def _compiles(backend: str, compiler: str, cls, tmp_path: Path) -> None:
     arms = (("literal", KF.build_f_kernel(cls)),
             (bv.NAME, _kernel(cls, (bv.NAME,))),
             ("+".join(BOTH), lever_kernel(cls)))
-    got = [_compile(backend, compiler, k, tmp_path / arm) for arm, k in arms]
-    unit = ("registers/spill-store bytes/stack frame" if backend == "cuda"
-            else "VGPRs/spilled VGPRs/scratch bytes")
-    print(f"\n{backend} {cls} ({unit}): " + " -> ".join(
-        f"{arm} {a}/{b}/{c}" for (arm, _), (a, b, c) in zip(arms, got,
-                                                            strict=True))
-        + f" ({sh.n_slices(cls)} slices, {sh.n_groups(cls)} groups against "
-        f"#350's {bv.n_groups(cls)})", flush=True)
+    for arm, k in arms:
+        compile_unit(backend, compiler, k, tmp_path / arm)
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_cuda_f_lever_sliced_hrr_compiles_with_its_figures(cls, nvcc,
+def test_cuda_f_lever_sliced_hrr_compiles(cls, nvcc,
                                                           tmp_path) -> None:
-    _figures("cuda", nvcc.path, cls, tmp_path)
+    _compiles("cuda", nvcc.path, cls, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_hip_f_lever_sliced_hrr_compiles_with_its_figures(cls, hipcc,
+def test_hip_f_lever_sliced_hrr_compiles(cls, hipcc,
                                                          tmp_path) -> None:
-    _figures("hip", hipcc.path, cls, tmp_path)
+    _compiles("hip", hipcc.path, cls, tmp_path)
 
 
 def _program_kernels(cell) -> tuple[list[Kernel], str]:
@@ -139,7 +132,8 @@ def _program_kernels(cell) -> tuple[list[Kernel], str]:
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in CAPPED),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -184,6 +178,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_cuda_f_lever_sliced_hrr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
@@ -192,6 +187,7 @@ def test_cuda_f_lever_sliced_hrr_each_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_hip_f_lever_sliced_hrr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:

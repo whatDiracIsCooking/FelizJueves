@@ -5,18 +5,14 @@ TWO PARTS, the issue's acceptance on the device side:
 1. COMPILE-ONLY (`cuda` / `hip`, no card): the FOUR ARMS of a set of K
    classes with L <= 4 (milestone 13's cap) -- literal, interleave, split,
    split+interleave -- every kernel its own translation unit, compiled with
-   the tier's flags plus the measurement flag (`measured.Backend.command`:
-   `-Xptxas -v` on nvcc, the AMD `kernel-resource-usage` remark on hipcc). A
-   warning in generated text fails (#92's rule). Per element kernel `e` of
-   batch kernel `b` the figures are read as deltas against the literal
-   batch kernel: `dI = I_b - L_b`, `dS = S_e - L_b`, `dB = B_e - L_b`, and
-   the composition's INTERACTION `dB - (dS + dI)` (zero when the two levers'
-   effects add). Registers and spill-store bytes on nvcc, VGPRs and spilled
-   registers on hipcc; the per-arm spill totals (summed over a cell's
-   kernels: the predecessor's ledger compared split against split+interleave
-   so) are printed beside them. PRINTED (run with `-s`) as observations:
-   compiler readings, never store rows, no threshold and no assertion on any
-   sign (#362 is the ledger).
+   the tier's flags (test_f_lever_batched_vrr_device.py's `compile_unit`). A
+   warning in generated text fails (#92's rule). The arms' kernel names are
+   asserted to pair up (every element kernel `e` fanned out of one literal
+   batch kernel `b`, interleave's batches the literal's). Nothing is read
+   off the compiler: registers and spills are the lever ledger's (`measured
+   --remeasure ... --ledger`, #362), not a test's. The composition's
+   interaction, `dB - (dS + dI)` against the literal batch kernel, is a
+   ledger reading too.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): `k_spec(L)`'s class for L = 0..4,
    at one batch and, where the plan admits it, three, with interleave+split:
    the element kernels launched in order onto one zeroed `K` by
@@ -37,16 +33,13 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from test_f_lever_batched_vrr_device import compile_unit
 
 from felizjueves import measured
-from felizjueves.device import GFX1200, SM_86
-from felizjueves.emit import cuda, hip
-from felizjueves.ir import Kernel
 from felizjueves.k_levers import interleave, split
 from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import build_k_kernels
@@ -74,35 +67,8 @@ def _spec(am, n_batches: int, levers: tuple[str, ...]) -> Spec:
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: the four arms, and the composition against the sum
+# 1. Compile-only: the four arms
 # ---------------------------------------------------------------------------
-
-EMIT = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}
-WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
-
-
-def _compile(backend: str, compiler: str, kern: Kernel, workdir: Path
-             ) -> tuple[int, int]:
-    """(registers or VGPRs, spill bytes or spilled registers) of one unit."""
-    be = measured.BACKENDS[backend]
-    emit, arch = EMIT[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    src = workdir / f"{kern.name}.{be.ext}"
-    obj = workdir / f"{kern.name}.o"
-    src.write_text(emit(kern, arch))
-    done = subprocess.run(be.command(compiler, src, obj), capture_output=True,
-                          text=True, timeout=1800)
-    report = done.stdout + done.stderr
-    assert done.returncode == 0, f"{kern.name}:\n{report[-4000:]}"
-    warned = [m[0] for m in WARNING.finditer(report)
-              if Path(m["file"]).name == src.name]
-    assert not warned, f"{kern.name}: warning in generated text (#92): {warned}"
-    if backend == "cuda":
-        raw = measured.parse_ptxas(report, kern.name)
-        return raw["registers"], raw["spill_store_bytes"]
-    raw = measured.parse_amd_remarks(report, kern.name)
-    return raw["VGPRs"], raw["VGPRs Spill"] + raw.get("SGPRs Spill", 0)
-
 
 def _parent(name: str, batch_names: list[str]) -> str:
     """The batch kernel an element kernel `<batch>_e{i}_{j}` was fanned out of."""
@@ -111,59 +77,31 @@ def _parent(name: str, batch_names: list[str]) -> str:
     return p
 
 
-def _figures(backend: str, compiler: str, am, n: int, tmp_path: Path
-             ) -> None:
+def _compiles(backend: str, compiler: str, am, n: int, tmp_path: Path
+              ) -> None:
     built = {a: build_k_kernels(_spec(am, n, lv)) for a, lv in ARMS.items()}
     assert [k.name for k in built["S"]] == [k.name for k in built["B"]]
     assert [k.name for k in built["L"]] == [k.name for k in built["I"]]
+    batches = [k.name for k in built["L"]]
+    assert all(_parent(k.name, batches) for k in built["B"])
     jobs = [(a, k) for a, ks in built.items() for k in ks]
     with ThreadPoolExecutor(max_workers=6) as pool:
-        got = list(pool.map(lambda job: _compile(
+        list(pool.map(lambda job: compile_unit(
             backend, compiler, job[1], tmp_path / job[0]), jobs))
-    fig = {(a, k.name): g for (a, k), g in zip(jobs, got, strict=True)}
-    batches = [k.name for k in built["L"]]
-    rows, inter = [], [0, 0]
-    for k in built["B"]:
-        b = _parent(k.name, batches)
-        lit, ilv = fig["L", b], fig["I", b]
-        spl, both = fig["S", k.name], fig["B", k.name]
-        d = [tuple(x[t] - lit[t] for t in (0, 1)) for x in (ilv, spl, both)]
-        ix = tuple(d[2][t] - d[1][t] - d[0][t] for t in (0, 1))
-        inter = [inter[0] + ix[0], inter[1] + ix[1]]
-        rows.append(f"{k.name} L {lit[0]}/{lit[1]} I {ilv[0]}/{ilv[1]} "
-                    f"S {spl[0]}/{spl[1]} B {both[0]}/{both[1]} "
-                    f"dI {d[0][0]:+d}/{d[0][1]:+d} dS {d[1][0]:+d}/"
-                    f"{d[1][1]:+d} dB {d[2][0]:+d}/{d[2][1]:+d} "
-                    f"dB-(dS+dI) {ix[0]:+d}/{ix[1]:+d}")
-    total = {a: sum(fig[a, k.name][1] for k in ks) for a, ks in built.items()}
-    worst = {a: max(fig[a, k.name][0] for k in ks) for a, ks in built.items()}
-    ne = len(built["B"])
-    b_minus_s = sum(fig["B", k.name][0] - fig["S", k.name][0]
-                    for k in built["B"]) / ne
-    d_i = sum(fig["I", b][0] - fig["L", b][0] for b in batches) / len(batches)
-    unit = ("registers/spill-store bytes" if backend == "cuda"
-            else "VGPRs/spilled registers")
-    print(f"\n{backend} {_id(am)} b{n} ({unit}): worst regs "
-          + " ".join(f"{a}={t}" for a, t in worst.items())
-          + "; spill totals " + " ".join(f"{a}={t}" for a, t in total.items())
-          + f"; mean regs B-S {b_minus_s:+.1f} vs mean dI {d_i:+.1f}; "
-          f"interaction summed over {ne} elements {inter[0]:+d}/{inter[1]:+d}"
-          "\n  " + "\n  ".join(rows), flush=True)
-    assert len(rows) == len(built["S"])
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_cuda_split_interleave_arms_compile_with_their_figures(
+def test_cuda_split_interleave_arms_compile(
         am, n, nvcc, tmp_path) -> None:
-    _figures("cuda", nvcc.path, am, n, tmp_path)
+    _compiles("cuda", nvcc.path, am, n, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_hip_split_interleave_arms_compile_with_their_figures(
+def test_hip_split_interleave_arms_compile(
         am, n, hipcc, tmp_path) -> None:
-    _figures("hip", hipcc.path, am, n, tmp_path)
+    _compiles("hip", hipcc.path, am, n, tmp_path)
 
 
 # ---------------------------------------------------------------------------

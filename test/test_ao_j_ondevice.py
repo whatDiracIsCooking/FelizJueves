@@ -239,7 +239,11 @@ class DeviceJ:
 # J_mn on the card
 # ---------------------------------------------------------------------------
 
-DEVICE = [pytest.param(name, n, id=f"{name}-b{n}")
+# H2O/STO-3G at 6 and 9 batches are `slow`: ~15 s each on the RTX 3080 for
+# the split the 1- and 3-batch cells already carry through the same driver.
+DEVICE = [pytest.param(name, n, id=f"{name}-b{n}",
+                       marks=(pytest.mark.slow,)
+                       if name != "h2_sto3g_j" and n > 3 else ())
           for name in CASES for n in BATCH_COUNTS]
 
 

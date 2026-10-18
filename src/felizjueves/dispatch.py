@@ -127,7 +127,7 @@ def _require_timed(store: Store, arch: Arch) -> None:
         raise Uncharacterised(
             f"{arch.name} has no wall-clock row in the store: a card nobody "
             "timed gets no dispatch choice (time measured_store.SUBGRID on "
-            "it: FJ_WALLCLOCK_STORE, test/test_kernel_device.py)")
+            "it: devtools/measure.sh wallclock)")
 
 
 def _choose(lp: int, lq: int, arch: Arch, which: str, store: Store) -> Choice:

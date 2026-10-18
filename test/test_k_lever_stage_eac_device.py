@@ -4,22 +4,19 @@ TWO PARTS, the issue's acceptance on the device side:
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): a set of K classes with L <= 4
    (milestone 13's cap), the literal kernel and the lever's kernel each its
-   own translation unit, compiled with the tier's flags plus the measurement
-   flag (`measured.Backend.command`: `-Xptxas -v` on nvcc, the AMD
-   `kernel-resource-usage` remark on hipcc). A warning in generated text
-   fails (#92's rule). The figures -- registers, spill stores and static
-   shared bytes (nvcc's `smem`), VGPRs and spilled registers and LDS bytes
-   (hipcc) -- literal against lever, and the DIRECTION of the change per
-   compiler, are PRINTED (run with `-s`) as observations: compiler readings,
-   never store rows, no threshold (#362 is the ledger). The static shared
-   bytes ARE asserted: the literal kernel has none, and the lever's are at
-   most `stage_eac.staged_bytes(am)`, the declared footprint, on both
-   compilers. AT MOST, not equal: nvcc may drop staged entries nothing
-   reads, and -- the IR having no barrier, so nothing orders one lane's
-   stores before another's loads -- a compiler may forward a lane's own
-   stores and promote the block back to registers (hipcc does at the
-   smallest classes, LDS 0). The declared figure is the bound a launch
-   must budget for; what was allocated is printed beside it.
+   own translation unit, compiled with the tier's flags and the resource
+   report (test_f_lever_batched_vrr_device.py's `shared_bytes`). A warning
+   in generated text fails (#92's rule). One reading is asserted, because it
+   is what a launch must budget for, not a figure of merit: the static
+   shared bytes (nvcc's `smem`, hipcc's LDS) -- the literal kernel has none,
+   and the lever's are at most `stage_eac.staged_bytes(am)`, the declared
+   footprint, on both compilers. AT MOST, not equal: nvcc may drop staged
+   entries nothing reads, and -- the IR having no barrier, so nothing orders
+   one lane's stores before another's loads -- a compiler may forward a
+   lane's own stores and promote the block back to registers (hipcc does at
+   the smallest classes, LDS 0). Nothing else is read off the compiler:
+   registers and spills are the lever ledger's (`measured --remeasure ... --ledger`,
+   #362), not a test's.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): `k_spec(L)`'s class for L = 0..4,
    at one batch and, where the plan admits it, three, plus `(dd|ss)` (the
    largest `E^ac` block within the cap), with the lever, launched by
@@ -41,16 +38,12 @@ Run part 2 as (each backend; the generator capped at L = 4):
 from __future__ import annotations
 
 import dataclasses
-import re
-import subprocess
 from pathlib import Path
 
 import pytest
+from test_f_lever_batched_vrr_device import shared_bytes
 
 from felizjueves import measured
-from felizjueves.device import GFX1200, SM_86
-from felizjueves.emit import cuda, hip
-from felizjueves.ir import Kernel
 from felizjueves.k_levers import stage_eac
 from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import build_k_kernels
@@ -79,82 +72,37 @@ def _spec(am, n_batches: int = 1, lever: bool = True) -> Spec:
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: registers, spill and shared, literal vs lever
+# 1. Compile-only: literal and lever, and the staged block's shared bytes
 # ---------------------------------------------------------------------------
 
-EMIT = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}
-WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
-
-
-def _compile(backend: str, compiler: str, kern: Kernel, workdir: Path
-             ) -> tuple[int, int, int]:
-    """(registers or VGPRs, spill bytes or spilled registers, static shared
-    bytes) of one unit."""
-    be = measured.BACKENDS[backend]
-    emit, arch = EMIT[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    src = workdir / f"{kern.name}.{be.ext}"
-    obj = workdir / f"{kern.name}.o"
-    src.write_text(emit(kern, arch))
-    done = subprocess.run(be.command(compiler, src, obj), capture_output=True,
-                          text=True, timeout=1800)
-    report = done.stdout + done.stderr
-    assert done.returncode == 0, f"{kern.name}:\n{report[-4000:]}"
-    warned = [m[0] for m in WARNING.finditer(report)
-              if Path(m["file"]).name == src.name]
-    assert not warned, f"{kern.name}: warning in generated text (#92): {warned}"
-    if backend == "cuda":
-        raw = measured.parse_ptxas(report, kern.name)
-        return (raw["registers"], raw["spill_store_bytes"],
-                raw.get("smem_bytes", 0))
-    raw = measured.parse_amd_remarks(report, kern.name)
-    return (raw["VGPRs"], raw["VGPRs Spill"] + raw.get("SGPRs Spill", 0),
-            raw.get("LDS Size", 0))
-
-
-def _direction(lit: int, lev: int) -> str:
-    return "=" if lit == lev else ("down" if lev < lit else "up")
-
-
-def _figures(backend: str, compiler: str, am, n: int, tmp_path: Path
-             ) -> None:
+def _compiles(backend: str, compiler: str, am, n: int, tmp_path: Path
+              ) -> None:
     literal = build_k_kernels(_spec(am, n, lever=False))
     lever = build_k_kernels(_spec(am, n))
     assert [k.name for k in literal] == [k.name for k in lever]
-    unit = ("registers/spill-store bytes/smem" if backend == "cuda"
-            else "VGPRs/spilled registers/LDS")
-    rows = []
+    declared = stage_eac.staged_bytes(tuple(am))
     for a, b in zip(literal, lever, strict=True):
-        lit = _compile(backend, compiler, a, tmp_path / "literal")
-        lev = _compile(backend, compiler, b, tmp_path / "lever")
+        lit = shared_bytes(backend, compiler, a, tmp_path / "literal")
+        lev = shared_bytes(backend, compiler, b, tmp_path / "lever")
         # the literal kernel has no static shared (Ksh is dynamic, reported
         # as 0), and the declared footprint BOUNDS what the compiler
         # allocates for the staged block: it may drop entries nothing reads
         # (nvcc) or, with no barrier to stop it, promote the whole block
         # back to registers (hipcc, small classes) -- never exceed it
-        assert lit[2] == 0, lit
-        assert 0 <= lev[2] <= stage_eac.staged_bytes(tuple(am)), (lit, lev)
-        rows.append(f"{a.name} {lit[0]}/{lit[1]}/{lit[2]} -> "
-                    f"{lev[0]}/{lev[1]}/{lev[2]} of "
-                    f"{stage_eac.staged_bytes(tuple(am))} declared (regs "
-                    f"{_direction(lit[0], lev[0])}, spill "
-                    f"{_direction(lit[1], lev[1])})")
-    print(f"\n{backend} {_id(am)} b{n} ({unit}), literal -> {NAME}: "
-          + "; ".join(rows), flush=True)
+        assert lit == 0, (a.name, lit)
+        assert 0 <= lev <= declared, (b.name, lev, declared)
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_cuda_stage_eac_kernels_compile_with_their_figures(am, n, nvcc,
-                                                           tmp_path) -> None:
-    _figures("cuda", nvcc.path, am, n, tmp_path)
+def test_cuda_stage_eac_kernels_compile(am, n, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, am, n, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_hip_stage_eac_kernels_compile_with_their_figures(am, n, hipcc,
-                                                          tmp_path) -> None:
-    _figures("hip", hipcc.path, am, n, tmp_path)
+def test_hip_stage_eac_kernels_compile(am, n, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, am, n, tmp_path)
 
 
 # ---------------------------------------------------------------------------

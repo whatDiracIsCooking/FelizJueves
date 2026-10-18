@@ -34,7 +34,7 @@ module is the half that knows a toolchain: it emits each cell's translation
 units, runs nvcc / hipcc on them with a report flag, parses the report, and
 merges one row per cell into the store. It compiles; it launches nothing on
 a card and times nothing -- the wall-clock side of a row is written by
-test/test_kernel_device.py's sweep. The `--nine-vs-twelve` and `--lever-ab`
+measure/measure_kernel_device.py's sweep. The `--nine-vs-twelve` and `--lever-ab`
 views print the store's verdicts.
 
 WHERE THE NUMBERS COME FROM, per vendor -- they are not the same quantity:
@@ -109,7 +109,7 @@ F CELL). Its one shared array, `ab_sh`, has a literal extent, so nvcc's
 `smem` and hipcc's `LDS Size` report it as `shared_bytes` and `raw`'s
 `jsh_dynamic_bytes` is 0. #288 recorded `--L 0 1 2`, the five classes its
 default tier runs on the cards; the clock beside each is written by
-test/test_fock_ondevice.py's opt-in sweep, behind the gate.
+measure/measure_fock_ondevice.py's opt-in sweep, behind the gate.
 
 THE LEVER ROWS (#339) go through the store's one recording path
 (`measured_store.lever_arm`, then `merge`): `--lever NAME` with a
@@ -217,7 +217,7 @@ from felizjueves.kernel_k import build_k_kernels
 from felizjueves.lever_ladder import unit_name
 from felizjueves.lower import LEVERS, RECYCLE, lower
 from felizjueves.measured_store import (
-    GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: test_kernel_device's sweep
+    GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: measure_kernel_device's sweep
 )
 from felizjueves.measured_store import (
     K_SUBGRID,
@@ -255,7 +255,7 @@ from felizjueves.measured_store import (
     lever_cells as lever_cells,  # re-exported: test_kernel_device's cells
 )
 from felizjueves.measured_store import (
-    save_counters as save_counters,  # re-exported: test_kernel_device's sweep
+    save_counters as save_counters,  # re-exported: measure_kernel_device's sweep
 )
 from felizjueves.spec import Spec, Target
 

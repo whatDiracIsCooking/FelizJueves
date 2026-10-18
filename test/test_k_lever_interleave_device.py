@@ -2,18 +2,14 @@
 
 TWO PARTS, the issue's acceptance on the device side:
 
-1. COMPILE-ONLY (`cuda` / `hip`, no card): every K class of a set with
-   L <= 4 (milestone 13's cap), the literal kernel and the interleaved one,
-   each its own translation unit, compiled with the tier's flags plus the
-   measurement flag (`measured.Backend.command`: `-Xptxas -v` on nvcc, the
-   AMD `kernel-resource-usage` remark on hipcc). A warning in generated text
-   fails (#92's rule). The figures -- registers and spill-store bytes
-   (nvcc), VGPRs and spilled registers (hipcc), literal against interleave,
-   and the delta WITH ITS SIGN -- are PRINTED (run with `-s`) as
-   observations: compiler readings, never store rows, no threshold, and no
-   assertion on the sign (#343's guardrail: the predecessor measured this
-   arm as a regression, and a regression is still a pass; #362 is the
-   ledger).
+1. COMPILE-ONLY (`cuda` / `hip`, no card): every K class of a set with L <=
+   4 (milestone 13's cap), the literal kernel and the interleaved one, each
+   its own translation unit, compiled with the tier's flags
+   (test_f_lever_batched_vrr_device.py's `compile_unit`). A warning in
+   generated text fails (#92's rule). Nothing is read off the compiler:
+   registers and spills are the lever ledger's (`measured --remeasure ...
+   --ledger`, #362), not a test's. (#343's guardrail stands: the predecessor
+   measured this arm as a regression, and a regression is still a pass.)
 2. ON THE CARD (`gpu` + `cuda` / `hip`): `k_spec(L)`'s class for L = 0..4,
    at one batch and, where the plan admits it, three, with the interleave
    lever: the cell's kernels launched in order onto one zeroed `K` by
@@ -34,16 +30,13 @@ Run part 2 as (each backend; the generator capped at L = 4):
 from __future__ import annotations
 
 import dataclasses
-import re
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from test_f_lever_batched_vrr_device import compile_unit
 
 from felizjueves import measured
-from felizjueves.device import GFX1200, SM_86
-from felizjueves.emit import cuda, hip
 from felizjueves.ir import Kernel
 from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import build_k_kernels
@@ -74,69 +67,30 @@ def _spec(am, n_batches: int = 1, levers: tuple[str, ...] = (INTERLEAVE,)
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: registers and spill, literal vs interleave, signed
+# 1. Compile-only: literal and interleave, signed
 # ---------------------------------------------------------------------------
 
-EMIT = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}
-WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
-
-
-def _compile(backend: str, compiler: str, kern: Kernel, workdir: Path
-             ) -> tuple[int, int]:
-    """(registers or VGPRs, spill bytes or spilled registers) of one unit."""
-    be = measured.BACKENDS[backend]
-    emit, arch = EMIT[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    src = workdir / f"{kern.name}.{be.ext}"
-    obj = workdir / f"{kern.name}.o"
-    src.write_text(emit(kern, arch))
-    done = subprocess.run(be.command(compiler, src, obj), capture_output=True,
-                          text=True, timeout=1800)
-    report = done.stdout + done.stderr
-    assert done.returncode == 0, f"{kern.name}:\n{report[-4000:]}"
-    warned = [m[0] for m in WARNING.finditer(report)
-              if Path(m["file"]).name == src.name]
-    assert not warned, f"{kern.name}: warning in generated text (#92): {warned}"
-    if backend == "cuda":
-        raw = measured.parse_ptxas(report, kern.name)
-        return raw["registers"], raw["spill_store_bytes"]
-    raw = measured.parse_amd_remarks(report, kern.name)
-    return raw["VGPRs"], raw["VGPRs Spill"] + raw.get("SGPRs Spill", 0)
-
-
-def _figures(backend: str, compiler: str, am, n: int, tmp_path: Path
-             ) -> None:
+def _compiles(backend: str, compiler: str, am, n: int, tmp_path: Path
+              ) -> None:
     literal = build_k_kernels(_spec(am, n, ()))
     lever = build_k_kernels(_spec(am, n))
     assert [k.name for k in literal] == [k.name for k in lever]
     jobs = ([(k, tmp_path / "literal") for k in literal]
             + [(k, tmp_path / "interleave") for k in lever])
     with ThreadPoolExecutor(max_workers=6) as pool:
-        got = list(pool.map(lambda kw: _compile(backend, compiler, *kw),
-                            jobs))
-    lit, ilv = got[:len(literal)], got[len(literal):]
-    unit = ("registers/spill-store bytes" if backend == "cuda"
-            else "VGPRs/spilled registers")
-    rows = []
-    for k, (r0, s0), (r1, s1) in zip(literal, lit, ilv, strict=True):
-        rows.append(f"{k.name} literal {r0}/{s0} interleave {r1}/{s1} "
-                    f"delta {r1 - r0:+d}/{s1 - s0:+d}")
-    print(f"\n{backend} {_id(am)} b{n} ({unit}): " + "; ".join(rows),
-          flush=True)
+        list(pool.map(lambda kw: compile_unit(backend, compiler, *kw), jobs))
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_cuda_interleave_kernels_compile_with_their_figures(am, n, nvcc,
-                                                            tmp_path) -> None:
-    _figures("cuda", nvcc.path, am, n, tmp_path)
+def test_cuda_interleave_kernels_compile(am, n, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, am, n, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_hip_interleave_kernels_compile_with_their_figures(am, n, hipcc,
-                                                           tmp_path) -> None:
-    _figures("hip", hipcc.path, am, n, tmp_path)
+def test_hip_interleave_kernels_compile(am, n, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, am, n, tmp_path)
 
 
 # ---------------------------------------------------------------------------

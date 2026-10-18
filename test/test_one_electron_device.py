@@ -137,7 +137,11 @@ PART1 = "hf_ccpvtz"
 LMAX = 2  # through (dd): the default tier's ceiling (the issue)
 LMAX_DEFERRED = 3  # through (ff): #244's deferred tier, `slow`
 MOLECULES = ("h2o_sto3g_j", "h2o_ccpvdz_j")
-MOLECULE_CELLS = [pytest.param(m, t, id=f"{m}-{t.name}")
+# H2O/cc-pVDZ is `slow`: the PR gate holds S, T and V to libcint on
+# H2O/STO-3G, and the d shells to the host in part 1.
+MOLECULE_CELLS = [pytest.param(m, t, id=f"{m}-{t.name}",
+                               marks=(pytest.mark.slow,)
+                               if m == "h2o_ccpvdz_j" else ())
                   for m in MOLECULES for t in TARGETS]
 FIXTURE_ARRAY = {Target.S: manifest.OVLP_ARRAY, Target.T: manifest.KIN_ARRAY,
                  Target.V: manifest.NUC_ARRAY}

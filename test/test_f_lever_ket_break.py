@@ -29,7 +29,10 @@ f_levers/ket_break.py and its pieces held one by one:
     the launches' lever.
 
 Every class here has L <= 4 (milestone 13's cap). Interpreter only: no
-compiler, no card.
+compiler, no card. H2O/6-31G is not a small input: everything on it -- the
+rising-bound counterexample, the wrong-answer test, its walks -- is `slow`,
+so the fast tier holds the lever on H2O/STO-3G (the walks bit for bit, the
+broken quartets against the exact ERIs) and per class.
 """
 
 from __future__ import annotations
@@ -61,8 +64,10 @@ from felizjueves.spec import Operator, Spec, Target
 
 NAME = ket_break.NAME
 CLASSES = [c for c in vrr.CLASSES if sum(c) <= 4]  # the milestone's cap
+SLOW = pytest.mark.slow
+# H2O/6-31G's walk is 9-17 s interpreted: not a small input, so `slow`
 WALKS = [("h2o_sto3g", 0.1, 4), ("h2o_sto3g", 0.1, 1),
-         ("h2o_631g", 1e-3, 4)]
+         pytest.param("h2o_631g", 1e-3, 4, marks=SLOW)]
 
 
 def _spec(cls, levers=()) -> Spec:
@@ -191,6 +196,7 @@ def _bounds(basis, D, plan):
     return out, Dsh
 
 
+@pytest.mark.slow  # H2O/6-31G's plan against its exact ERIs: 17 s
 def test_the_literal_streams_six_block_bound_rises_after_a_screened_ket(
         ) -> None:
     """A concrete counterexample: H2O/6-31G, `tau = 0.03`, `n = 1`. In the
@@ -405,6 +411,7 @@ def _reversed(plan):
         replace(b, pairs=b.pairs[::-1]) for b in plan.batches))
 
 
+@pytest.mark.slow  # two H2O/6-31G walks interpreted: 5 s
 def test_an_unsorted_stream_is_refused_and_forced_gives_a_wrong_f(
         monkeypatch) -> None:
     """H2O/6-31G, `tau = 0.03`, `n = 1`, every batch reversed (ascending

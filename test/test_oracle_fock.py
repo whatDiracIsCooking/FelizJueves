@@ -235,7 +235,10 @@ def test_fock_matches_the_pair_whole(m):
     _compare(m, truncate=False)
 
 
-@pytest.mark.parametrize("m", FAST_SS)
+# H2O/6-31G is `slow` by cost (~13 s interpreted), not by L: off the gate.
+@pytest.mark.parametrize("m", [pytest.param(m, id=m, marks=(pytest.mark.slow,)
+                                            if m == "h2o_631g" else ())
+                               for m in FAST_SS])
 def test_fock_matches_the_pair_ss_block(m):
     """`G`'s s-s block against the pair's, L <= 2 throughout (docstring)."""
     _compare(m, truncate=True)

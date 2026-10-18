@@ -84,7 +84,9 @@ from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Target
 
 U = 2.0 ** -53
-MOLECULES = ("h2o_sto3g_j", "h2o_ccpvdz_j")  # classes through (dd)
+# classes through (dd); H2O/cc-pVDZ is `slow`, off the PR gate
+MOLECULES = ("h2o_sto3g_j",
+             pytest.param("h2o_ccpvdz_j", marks=pytest.mark.slow))
 LMAX = 2  # the tier's `--one-e-l 2`
 SENSITIVITY = 1e6  # each slip moves Tr(D h) by at least this many tolerances
 D_SLIP = 1.01  # the shared normalisation slip: every d function, T and V

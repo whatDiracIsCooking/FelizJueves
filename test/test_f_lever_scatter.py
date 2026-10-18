@@ -1,7 +1,8 @@
 """The atomic-free F write-back (#358): slot buffers, then a scatter kernel.
 
 Held here, the issue's acceptance in order (the tail fraction is a card's,
-test_f_lever_scatter_device.py's opt-in timing):
+and a clock: measure/measure_f_scatter_tail.py, `devtools/measure.sh
+scatter-tail`, not a test):
 
 1. THE LEVER IS A MODULE ON THE SEAMS: one `levers.VOCABULARY` entry legal
    on `"f"` alone, one `f_levers.REGISTRY` line; it contains block-fab's
@@ -14,11 +15,13 @@ test_f_lever_scatter_device.py's opt-in timing):
    writes, from the plan and the basis; `f_levers.scatter`'s layout and
    `kernel_f_scatter.scatter_map` derive them again from the class and the
    packed AO offsets; the two are held equal on every launch of H2O's
-   three plans, the map's elements under the bound and AT it for an
-   off-diagonal launch of distinct shells. A buffer TOO SMALL is refused --
-   by the interpreter at launch (`W`'s declared extent), by the map -- and
-   the reason it is slots and not an AO tile is shown: two kets of one
-   launch share a shell, so an AO-indexed tile would have two writers.
+   three plans (STO-3G's in the fast tier; 6-31G's and cc-pVDZ's, 1,200
+   launches of host arithmetic, `slow`), the map's elements under the
+   bound and AT it for an off-diagonal launch of distinct shells. A buffer
+   TOO SMALL is refused -- by the interpreter at launch (`W`'s declared
+   extent), by the map -- and the reason it is slots and not an AO tile is
+   shown: two kets of one launch share a shell, so an AO-indexed tile would
+   have two writers.
 3. PARITY, interpreted, on EVERY F class with L <= 4 (milestone 13's cap;
    the issue asks L <= 2), off the diagonal and on it, at one warp and two:
    against block-fab's atomic path (H7) by the DERIVED re-association bound
@@ -29,13 +32,16 @@ test_f_lever_scatter_device.py's opt-in timing):
    of distinct shells is BITWISE the literal kernel.
 4. THE WALK (`walk_f`, #286): H2O/STO-3G and H2O/6-31G (every class L <= 4)
    built through `scatter` streams -- the scatter after each F launch --
-   against the sweep and libcint at `tau = 0`, and against the literal walk
-   at `2 TOL` with the same fates when the screens fire; with `ket-break`
-   too, the two levers composed.
+   against the sweep and libcint at `tau = 0` (both `slow`: 6 s and 26 s
+   interpreted), and against the literal walk at `2 TOL` with the same fates
+   when the screens fire (H2O/STO-3G in the fast tier, the lever's whole-
+   molecule check there; 6-31G `slow`); with `ket-break` too, the two
+   levers composed.
 
 The goldens (`test/golden/{cuda,hip}/f_scatter/`) pin `(ps|ss)` and
 `(pp|pp)` with the lever and the scatter unit. Fast tier: no compiler, no
-card, no PySCF.
+card, no PySCF; any test over about 3 s is `slow`, so the fast tier keeps
+the per-class parity (part 3) and STO-3G's screened walk.
 """
 
 from __future__ import annotations
@@ -67,6 +73,7 @@ NAME = scatter.NAME
 L4 = [c for c in vrr.CLASSES if sum(c) <= 4]
 THREADS = (32, 64)  # one warp, two (32 lanes, as tk.fused)
 H2O = ("h2o_sto3g", "h2o_631g")  # every class L <= 4
+SLOW = pytest.mark.slow
 
 
 def lever(cls, extra: tuple[str, ...] = ()) -> Kernel:
@@ -159,20 +166,27 @@ def _lits(s):
 # ---------------------------------------------------------------------------
 
 
-def _plans():
-    for name in (*H2O, "h2o_ccpvdz"):
+def _plans(names=(*H2O, "h2o_ccpvdz")):
+    for name in names:
         basis, D, _ = tfb.molecule(name)
         for tau, n in ((0.0, 1), (0.1, 4)):
             yield name, basis, f_launches(basis, D, bound=tfb.BOUND, tau=tau,
                                           n=n, scatter=True)
 
 
-def test_the_declared_footprint_is_the_kernels_on_every_launch() -> None:
-    """Every launch of H2O's three plans (cc-pVDZ's d classes too: this is
-    host arithmetic, nothing runs): `launch_f`'s declaration, derived from
-    the plan and the basis, against the lever's layout and the map."""
+# STO-3G's 39 launches in the fast tier; 6-31G's 354 and cc-pVDZ's 845 (its
+# d classes too: host arithmetic, nothing runs) are 7 s, so `slow`
+FOOTPRINT_MOLECULES = ["h2o_sto3g", pytest.param("h2o_631g", marks=SLOW),
+                       pytest.param("h2o_ccpvdz", marks=SLOW)]
+
+
+@pytest.mark.parametrize("name", FOOTPRINT_MOLECULES)
+def test_the_declared_footprint_is_the_kernels_on_every_launch(name) -> None:
+    """Every launch of one of H2O's three plans: `launch_f`'s declaration,
+    derived from the plan and the basis, against the lever's layout and the
+    map."""
     n = 0
-    for _, basis, plan in _plans():
+    for _, basis, plan in _plans((name,)):
         for L in plan.launches:
             fp = launch_footprint(plan, L, basis)
             cls = tuple(L.spec.am)
@@ -193,7 +207,7 @@ def test_the_declared_footprint_is_the_kernels_on_every_launch() -> None:
             assert m.ptr[0] == 0 and m.ptr[-1] == m.n_slot
             assert all(a < b for a, b in zip(m.ptr, m.ptr[1:], strict=False))
             n += 1
-    assert n > 50
+    assert n > 30
 
 
 @pytest.mark.parametrize("cls", L4, ids=str)
@@ -370,6 +384,7 @@ def _walk(name, tau, n, *, scatter_on, ket_break=False):
     return walk_f.walk_f(plan, basis, D, run=tfb.run, threads=32), plan
 
 
+@pytest.mark.slow  # 6 s (STO-3G) and 26 s (6-31G) interpreted
 @pytest.mark.parametrize("name", H2O)
 def test_the_scatter_walk_is_the_sweep_and_libcint(name) -> None:
     _, _, libcint = tfb.molecule(name)

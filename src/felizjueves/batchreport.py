@@ -22,7 +22,7 @@ keyed on another Spec and never read. test/test_layering.py holds this module's
 imports to `measured_store` (the store, not its driver: #94) and `device`,
 so it cannot reach the cost model.
 
-TWO INPUTS, TWO ANSWERS. The sweep (test/test_kernel_device.py) times every
+TWO INPUTS, TWO ANSWERS. The sweep (measure/measure_kernel_device.py) times every
 cell on a WIDE-T input (`runtime_ns`, the row's number; T up to ~430, a long
 Boys series) and a NEAR-T one (`wallclock:near:*`, T < ~2). Each batch
 recomputes its fundamentals, so the Boys cost weighs on the batch-count

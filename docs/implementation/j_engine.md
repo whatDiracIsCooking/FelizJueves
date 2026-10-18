@@ -536,7 +536,7 @@ evidence. Since #93 every margin below is same-sweep.
 The data is `data/measured/batch_recommendation.json`, written by
 `PYTHONPATH=src uv run python -m felizjueves.batchreport --write` from
 `data/measured/kernels.json`; the tables below are its `--markdown`, and
-`test/test_batchreport.py` recomputes both from the store and fails if either
+`measure/measure_batchreport.py` (`devtools/measure.sh check`) recomputes both from the store and fails if either
 has moved.
 
 *wide-T input:*
@@ -605,7 +605,7 @@ What it says:
   moved the default ("What the generator ships, and why (#166)" above).
 
 **This does not change `Spec`'s default, by decision.** `n_batches` defaults
-to 1 and stays there (`test/test_batchreport.py` holds it, and its
+to 1 and stays there (`measure/measure_batchreport.py` holds it, and its
 `about` field gives these rows as the grounds; "The batch count it ships"
 above has the override recipe). Choosing a count per class at
 generation time is **dispatch**. Since #145 it is `src/felizjueves/dispatch.py`:
@@ -652,7 +652,7 @@ faster on none. Medians in ms, asymmetric arm against its best neighbour:
 Every cell is WORSE on both cards — slower than the best legal count on wide-T
 everywhere, never faster on either input — so
 `jengine/symmetry-breaking-splits-are-worse` is **asserted**
-(`test_measured.py::test_asymmetric_splits_are_worse_on_both_cards`). The
+(`measure/measure_store.py::test_asymmetric_splits_are_worse_on_both_cards`). The
 three near-T neutrals on `gfx1200` are where its near-T clock is flat in the
 batch count (80–85 ms at L = 13, 304–310 ms at L = 16): there an asymmetric
 split ties, and the wide-T loss decides. Spills and registers are reported
@@ -661,8 +661,8 @@ sits strictly between its two neighbours'. Timed on 2026-10-12
 behind the gate, one session per cell set; a phase whose after-reading showed
 the card taken by something outside the container was discarded and retaken
 (raw `wallclock:gate_discarded_phases`). Reproduce with
-`python -m felizjueves.measured --remeasure --asym`, then the opt-in sweep with
-`FJ_WALLCLOCK_ASYM=1`.
+`devtools/measure.sh remeasure --asym`, then the wall-clock sweep with
+`FJ_WALLCLOCK_ASYM=1 devtools/measure.sh wallclock --backend <backend>`.
 
 ### Measured: each card's roofline ceilings (#109)
 
@@ -687,10 +687,9 @@ phase the gate does not let through, or whose after-reading is non-idle or
 unparseable, is **not recorded**, and that card stays uncharacterised. Each
 record carries the probe, its source hash, the compile line, the toolchain,
 host, date and the two card readings (`raw.gpu_util_before` / `_after`).
-Reproduce with the record's `command`:
-`env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest
-test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and <backend>' -k
-record`, run alone.
+Reproduce with `devtools/measure.sh ceilings --backend <backend>`, run
+alone (the records' `command` field still names the pre-`measure/` pytest
+line it was taken with).
 
 **Achievable, not peak.** Each value is what a streaming / FMA-only kernel
 reaches, recorded as `kind: "achievable"`, with its ratio to the vendor's
@@ -764,10 +763,8 @@ literal rows are untouched: one row is still one cell there.
 `data/measured/roofline.json` holds **124 counter rows**: every batch kernel
 of every `SUBGRID` cell on the RTX 3080 (`sm_86`, `nvcc 13.0`, `ncu
 2025.3.1.0`). They were written by the opt-in sweep
-`test_cuda_roofline_over_the_subgrid` (`env
-FJ_ROOFLINE_STORE=data/measured/roofline.json uv run pytest
-test/test_kernel_device.py -p no:xdist -s -rs -m "gpu and cuda" -k
-roofline`, run alone). The sweep works as follows:
+`test_cuda_roofline_over_the_subgrid` (`devtools/measure.sh roofline
+--backend cuda`, run alone; `measure/measure_kernel_device.py`). The sweep works as follows:
 
 - It compiles each cell's batched harness, the binary the wall-clock sweep
   times. A cell whose emitted text differs from the text the `kernels.json`
@@ -910,7 +907,7 @@ roofline agrees with the clock: at 9 there is no ridge left to cross. On
 `gfx1200`, where 12 wins on near-T at L = 16, the roofline can say nothing.
 
 The record is the claim `jengine/batching-crosses-our-ridge` (asserted by
-`test/test_ridge.py`, which recomputes every number above) and its entry in
+`measure/measure_ridge.py`, which recomputes every number above) and its entry in
 `data/literature/jengine/limits.json`. That entry names what the comparison
 cannot see: the ridge is the card's; the AMD answer is absent; the DRAM bytes
 come from one input, with L2-resident batches; `[6|6]` is unmeasured. The
@@ -931,7 +928,7 @@ its own test:
 
 `src/felizjueves/crossread.py` reads them against each other per
 `(L, arch)`. `data/measured/crossread.json` is the table, and
-`test/test_kernelrank.py` recomputes it. The counters were taken on the
+`measure/measure_kernelrank.py` recomputes it. The counters were taken on the
 **wide-T** input only, so only the wide clock flag compares like with like.
 The near flag sets a near-T clock against a wide-T verdict. `gfx1200` has no
 counter rows (`measured_store.UNMEASURED`). Its crossing column says *could
@@ -1119,7 +1116,7 @@ With literal shipped they remain observations of the kernel the generator
 writes, so they need neither re-derivation nor a narrower scope. Likewise no
 `source_sha256`, golden, `builds.json`, `roofline.json` or `crossread.json`
 row moves. The refusal is the last record in `limits.json`.
-`test/test_shipped_plan.py` recomputes that record from the stores and
+`measure/measure_shipped_plan.py` recomputes that record from the stores and
 asserts that the shipped path's text is the literal rows' text and not the
 tuned rows'.
 
@@ -1270,7 +1267,7 @@ The table below is rendered from `claims.json` and checked verbatim:
 | asserted | `jengine/batch-count-multiple-of-3` | shape | `test/test_plan_batching.py::test_an_illegal_batch_count_raises` |
 | asserted | `jengine/batch-overlap-is-fundamentals-and-axials` | shape | `test/test_plan_dag.py::test_batches_share_only_fundamentals_across_and_axials_within` |
 | asserted | `jengine/batch-tie-break` | ordering | `test/test_plan_mild.py::test_mild_and_the_batching_pass_break_ties_oppositely` |
-| asserted | `jengine/batching-crosses-our-ridge` | monotonicity | `test/test_ridge.py::test_batching_crosses_our_ridge_on_sm_86_and_gfx1200_could_not_measure` |
+| asserted | `jengine/batching-crosses-our-ridge` | monotonicity | `measure/measure_ridge.py::test_batching_crosses_our_ridge_on_sm_86_and_gfx1200_could_not_measure` |
 | asserted | `jengine/eq17-1y-misprint` | defect | `test/test_eq17_witness.py::test_y_reduction_shifts_by_the_unit_vector_0_1_0` |
 | asserted | `jengine/fig4-l6-six-batches` | membership | `test/test_plan_batching.py::test_figure_4s_cut_at_l_6` |
 | asserted | `jengine/ket-sort-key-is-the-product` | ordering | `test/test_launch.py::test_the_ket_sort_key_is_the_product_and_the_break_needs_it` |
@@ -1280,7 +1277,7 @@ The table below is rendered from `claims.json` and checked verbatim:
 | asserted | `jengine/mild-tie-break` | ordering | `test/test_plan_mild.py::test_the_whole_tie_break_on_every_node` |
 | asserted | `jengine/prefactor-factorisation` | shape | `test/test_ao_eri.py::test_block_matches_libcint` |
 | asserted | `jengine/rule-4-needs-the-sieve` | shape | `test/test_plan_sieve.py::test_the_sieve_recovers_common_parents_where_mild_cannot` |
-| asserted | `jengine/symmetry-breaking-splits-are-worse` | monotonicity | `test/test_measured.py::test_asymmetric_splits_are_worse_on_both_cards` |
+| asserted | `jengine/symmetry-breaking-splits-are-worse` | monotonicity | `measure/measure_store.py::test_asymmetric_splits_are_worse_on_both_cards` |
 | asserted | `jengine/theta-undefined` | defect | `test/test_ao_j_interpreted.py::test_interpreted_j_matches_reference_and_libcint` |
 | asserted | `jengine/y12-example` | membership | `test/test_plan_batching.py::test_the_y_1_2_batch_is_the_papers_eight_targets` |
 | unverifiable | `jengine/batch-count-is-hardware-dependent` | monotonicity | no test: the reason is in `claims.json` |
@@ -1319,7 +1316,7 @@ has the detail):
   `(6,0|5,0)`, spills less on both and the per-class mean falls on gfx1200
   only, so the pattern fails on both cards. A test asserting it would fail on
   our rows without making the paper's claim false, so `limits.json` records
-  the mechanism instead and `test/test_sieve_spill_claim.py` holds the
+  the mechanism instead and `measure/measure_sieve_spill_claim.py` holds the
   reading.
 - *A comparison with a search that is not here*: `mild-vs-exact-tradeoff`.
   #111 replaced it with this tree's own optimum, and the measurement

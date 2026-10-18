@@ -15,7 +15,7 @@ tests that cite it:
   test_plan_recovery.py);
 - data/measured/limits.json: where `lower.KernelCost` mis-ranks the batch
   counts of `measured.SUBGRID` against the Measured rows, and where spill wins
-  do not pick the fastest count (#54, #60; test/test_kernelrank.py). A record
+  do not pick the fastest count (#54, #60; measure/measure_kernelrank.py). A record
   there is read by tests only and never feeds a literature floor.
 """
 

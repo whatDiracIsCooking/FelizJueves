@@ -6,13 +6,11 @@ TWO PARTS, the issue's acceptance on the device side:
    (milestone 13's cap), each built three ways -- the literal kernel, the
    compute-only arm `kmixed` and the fully narrowed arm `kmixed-de` -- each
    batch kernel its own translation unit, compiled with the tier's flags
-   plus the measurement flag (`measured.Backend.command`: `-Xptxas -v` on
-   nvcc, the AMD `kernel-resource-usage` remark on hipcc). A warning in
-   generated text fails (#92's rule). The figures -- registers and spill
-   bytes (nvcc), VGPRs and spilled registers (hipcc), worst batch kernel per
-   arm -- are PRINTED (run with `-s`) as observations: compiler readings,
-   never store rows, no threshold. The clock is X2's (#362), and the
-   issue's expectation -- compute-only REGRESSES, full narrowing WINS (the
+   (test_f_lever_batched_vrr_device.py's `compile_unit`). A warning in
+   generated text fails (#92's rule). Nothing is read off the compiler:
+   registers and spills are the lever ledger's (`measured --remeasure ...
+   --ledger`, #362), not a test's. The clock is X2's (#362), and the issue's
+   expectation -- compute-only REGRESSES, full narrowing WINS (the
    predecessor's +71% / -73% at `(dp|dp)`) -- is a PREDICTION to be tested
    there, not asserted here.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): `k_spec(L)`'s class for L = 0..4,
@@ -48,6 +46,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from oracle.tolerance import F32_REL, F64_REL
+from test_f_lever_batched_vrr_device import compile_unit
 
 from felizjueves import measured
 from felizjueves.ao.pairs import narrowed
@@ -65,7 +64,7 @@ def _id(am) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: literal vs kmixed vs kmixed-de
+# 1. Compile-only: literal, kmixed and kmixed-de
 # ---------------------------------------------------------------------------
 
 COMPILE_CELLS = ([(k_spec(L).am, 1) for L in range(1, 5)]
@@ -79,40 +78,29 @@ def _spec(am, levers: tuple[str, ...] = (), n_batches: int = 1) -> Spec:
     return Spec(Operator.COULOMB, 0, tuple(am), Target.K, levers, n_batches)
 
 
-def _figures(backend: str, compiler: str, am, n: int, tmp_path: Path) -> None:
-    import test_k_lever_split_device as sd
-
+def _compiles(backend: str, compiler: str, am, n: int, tmp_path: Path) -> None:
     arms = {"literal": build_k_kernels(_spec(am, (), n))}
     for arm in ARMS:
         tag = arm.replace("-", "_")
         arms[arm] = tuple(dataclasses.replace(k, name=f"{k.name}_lv_{tag}")
                           for k in build_k_kernels(_spec(am, (arm,), n)))
     kernels = [k for ks in arms.values() for k in ks]
+    assert len({k.name for k in kernels}) == len(kernels)
     with ThreadPoolExecutor(max_workers=6) as pool:
-        got = dict(zip((k.name for k in kernels), pool.map(
-            lambda k: sd._compile(backend, compiler, k, tmp_path), kernels),
-            strict=True))
-    unit = ("registers/spill-store bytes" if backend == "cuda"
-            else "VGPRs/spilled registers")
-    line = "; ".join(
-        f"{name} worst {sd._worst([k.name for k in ks], [got[k.name] for k in ks])}"
-        for name, ks in arms.items())
-    print(f"\n{backend} {_id(am)} b{n} ({unit}): {line}", flush=True)
-    assert len(got) == len(kernels)
+        list(pool.map(lambda k: compile_unit(backend, compiler, k, tmp_path),
+                      kernels))
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_cuda_k_mixed_kernels_compile_with_their_figures(am, n, nvcc,
-                                                         tmp_path) -> None:
-    _figures("cuda", nvcc.path, am, n, tmp_path)
+def test_cuda_k_mixed_kernels_compile(am, n, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, am, n, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_hip_k_mixed_kernels_compile_with_their_figures(am, n, hipcc,
-                                                        tmp_path) -> None:
-    _figures("hip", hipcc.path, am, n, tmp_path)
+def test_hip_k_mixed_kernels_compile(am, n, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, am, n, tmp_path)
 
 
 # ---------------------------------------------------------------------------

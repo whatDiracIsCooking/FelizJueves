@@ -245,7 +245,10 @@ def _ss(basis: Basis):
     return [basis.offsets[i] for i, s in enumerate(basis.shells) if s.l == 0]
 
 
-@pytest.mark.parametrize("m", LIBCINT_FAST_SS)
+# H2O/6-31G is `slow` by cost (~13 s interpreted), not by L: off the gate.
+@pytest.mark.parametrize("m", [pytest.param(m, id=m, marks=(pytest.mark.slow,)
+                                            if m == "h2o_631g" else ())
+                               for m in LIBCINT_FAST_SS])
 def test_fock_matches_libcint_ss_block(m):
     """`G`'s s-s block against `vj - vk/2`'s, through the truncating hook
     (module docstring: the block is exact, L <= 2 throughout)."""
@@ -254,7 +257,9 @@ def test_fock_matches_libcint_ss_block(m):
     _check_libcint(m, G[s], ref[s], scale[s], "s-s block")
 
 
-@pytest.mark.parametrize("m", LIBCINT_FAST_WHOLE + LIBCINT_FAST_SS)
+@pytest.mark.parametrize("m", [pytest.param(m, id=m, marks=(pytest.mark.slow,)
+                                            if m == "h2o_631g" else ())
+                               for m in LIBCINT_FAST_WHOLE + LIBCINT_FAST_SS])
 def test_the_wrong_combinations_miss(m):
     """The comparison can tell the derived `J - K/2` from the combinations a
     re-typing would ship: `J - K` (exchange over both spins), `2J - K`
