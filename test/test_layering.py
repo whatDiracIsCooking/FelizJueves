@@ -2213,7 +2213,8 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # ---------------------------------------------------------------------------
 # PrimPairSoA: the one-electron kernels' records as one by-value struct of
 # flat arrays (`prim_pair.py`, an `ir.Bundle`). An ABI value over `ir` and
-# nothing else: the four builders bind it, and `launch` splits its record
+# nothing else: the four one-electron builders and the Schwarz builder
+# (#422) bind it, and `launch` splits its record
 # vectors per axis by the same `AXES`. Emission reads the `Bundle` off the
 # `Kernel`, so no backend imports it.
 # ---------------------------------------------------------------------------
@@ -2235,10 +2236,11 @@ EDGES |= {k: frozenset(v) for k, v in {
     "prim_pair": ("ir",),
 }.items()}
 for _rule_name in ("s_builder", "t_builder", "v_builder", "sx_builder",
-                   "launch"):
+                   "schwarz_builder", "launch"):
     RULES[_rule_name] = Rule(RULES[_rule_name].why + ", and `prim_pair`'s "
                              "PrimPairSoA",
                              RULES[_rule_name].may | frozenset(("prim_pair",)),
                              RULES[_rule_name].must_not)
-for _module in ("kernel_s", "kernel_t", "kernel_v", "kernel_sx", "launch"):
+for _module in ("kernel_s", "kernel_t", "kernel_v", "kernel_sx",
+                "kernel_schwarz", "launch"):
     EDGES[_module] = EDGES[_module] | frozenset(("prim_pair",))

@@ -22,10 +22,12 @@ synchronize and the read-back. Each element is owned by one shell pair and
 written by a plain store, so every run must be bit-identical.
 
 THE UPLOADS, once: per class one buffer of its double record arrays
-(`zeta_ab | P | XPA | XPB | s_ab`, each row-major) and one of its four int
-pair arrays (`rec0 | rec1 | off_a | off_b`). A kernel argument is a pointer
-into those buffers, read off the kernel's own parameter list, so the call
-cannot drift from the signature.
+(`zeta_ab | s_ab | XP YP ZP | XPA YPA ZPA | XPB YPB ZPB`, each flat, `n_rec`
+long) and one of its four int pair arrays (`rec0 | rec1 | off_a | off_b`).
+A kernel argument is a pointer into those buffers, read off the kernel's own
+parameter list by `plan_driver.kernel_args` -- the record pointers as one
+`PrimPairSoA` aggregate (#422) -- so the call cannot drift from the
+signature.
 """
 
 from __future__ import annotations
@@ -35,7 +37,14 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
+from plan_driver import (
+    RUNS,
+    UPLOAD_INT,
+    Program,
+    _unit,
+    compile_checked,
+    kernel_args,
+)
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves.ao.schwarz import SchwarzClass
@@ -43,8 +52,7 @@ from felizjueves.ir import Intent, Kernel
 from felizjueves.kernel_schwarz import OUT, build_schwarz_kernel, launch_shape
 
 THREADS = 32  # lanes per block, one shell pair per thread; not numerical
-WIDTH = {"zeta_ab": 1, "P": 3, "XPA": 3, "XPB": 3, "s_ab": 1}
-ND = sum(WIDTH.values())  # doubles per record
+ND = len(SchwarzClass.RECORD_ARRAYS)  # doubles per record, one per array
 NI = len(SchwarzClass.PAIR_ARRAYS)  # ints per shell pair
 
 
@@ -52,21 +60,21 @@ def _check_signature(kern: Kernel) -> None:
     names = [p.name for p in kern.params]
     want = ["n_pair", "n_rec", "n_ao", *SchwarzClass.RECORD_ARRAYS,
             *SchwarzClass.PAIR_ARRAYS, OUT]
-    if names != want or kern.params[-1].intent is not Intent.OUT:
+    if (names != want or kern.params[-1].intent is not Intent.OUT
+            or kern.bundled is None):
         raise ValueError(f"{kern.name}: signature {names}, the records "
                          f"want {want}")
 
 
 def _call(kern: Kernel, c: int, ns: str, cls: SchwarzClass) -> str:
-    at, off = {}, 0
-    for name in SchwarzClass.RECORD_ARRAYS:
-        at[name] = f"dd[{c}] + {off}" if off else f"dd[{c}]"
-        off += WIDTH[name] * cls.n_rec
+    at = {}
+    for k, name in enumerate(SchwarzClass.RECORD_ARRAYS):
+        at[name] = f"dd[{c}] + {k * cls.n_rec}" if k else f"dd[{c}]"
     for k, name in enumerate(SchwarzClass.PAIR_ARRAYS):
         at[name] = f"di[{c}] + {k * cls.n_pair}" if k else f"di[{c}]"
     at.update({"n_pair": str(cls.n_pair), "n_rec": str(cls.n_rec),
-               "n_ao": "NAO", OUT: "dQ"})
-    args = [at[p.name] for p in kern.params]
+               "n_ao": "NAO"})
+    args = kernel_args(kern, at, ns, "dQ")
     grid, (lanes, _) = launch_shape(cls.n_pair, THREADS)
     return (f"        // pair class ({cls.la}, {cls.lb}), {cls.n_pair} "
             f"pairs, {cls.n_rec} records\n"
@@ -110,7 +118,7 @@ def schwarz_stage(classes: Sequence[SchwarzClass]) -> np.ndarray:
     for cls in classes:
         arr = cls.arrays()
         for name in SchwarzClass.RECORD_ARRAYS:
-            parts.append(np.ravel(np.asarray(arr[name], dtype=np.float64)))
+            parts.append(np.asarray(arr[name], dtype=np.float64))
         for name in SchwarzClass.PAIR_ARRAYS:
             parts.append(np.asarray(arr[name], dtype=np.float64))
     return np.concatenate(parts)
