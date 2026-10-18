@@ -32,8 +32,8 @@ pair by shell index; here there is no `i <= j` to begin with.
 THE PARAMETER BLOCK:
 
     params  n_rec n_a n_b (I32)
-            zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]   per record
-            off_a[n_rec]  off_b[n_rec]  (I32)
+            zeta_ab  pa_x pa_y pa_z  pb_x pb_y pb_z  s  [n_rec]   per record
+            off_a  off_b  [n_rec]  (I32)
             S[n_a, n_b]  (OUT, read and AtomicAdd-ed)
 
 `kernel_s`'s, with `n_ao` split into the row and column counts. `S` is
@@ -73,7 +73,13 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.kernel_s import REC, launch_shape, record_values
+from felizjueves.kernel_s import (
+    REC,
+    launch_shape,
+    pa_name,
+    pb_name,
+    record_values,
+)
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
@@ -160,8 +166,8 @@ def build_sx_kernel(cls: Spec | tuple[int, int], *,
         Param("n_a", Scalar.I32),
         Param("n_b", Scalar.I32),
         _f64("zeta_ab", (nr,)),
-        _f64("XPA", (nr, Lit(3))),
-        _f64("XPB", (nr, Lit(3))),
+        *(_f64(pa_name(d), (nr,)) for d in range(3)),
+        *(_f64(pb_name(d), (nr,)) for d in range(3)),
         _f64("s", (nr,)),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),

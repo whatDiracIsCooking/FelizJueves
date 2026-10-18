@@ -147,16 +147,23 @@ not necessarily bitwise, so the full host matrix is held to a stated
 
 | kernel | scalars | per record | per nucleus | out |
 |---|---|---|---|---|
-| `s_{la}{lb}` | `n_rec n_ao` | `zeta_ab XPA[,3] XPB[,3] s off_a off_b` | — | `S[n_ao,n_ao]` |
-| `t_{la}{lb}` | `n_rec n_ao` | `zeta_ab XPA[,3] XPB[,3] s eb_ket off_a off_b` | — | `T[n_ao,n_ao]` |
-| `v_{la}{lb}` | `n_rec n_ao n_nuc` | `zeta_ab P[,3] XPA[,3] XPB[,3] s_ab off_a off_b` | `Z Cnuc[,3]` | `V[n_ao,n_ao]` |
+| `s_{la}{lb}` | `n_rec n_ao` | `zeta_ab pa_{x,y,z} pb_{x,y,z} s off_a off_b` | — | `S[n_ao,n_ao]` |
+| `t_{la}{lb}` | `n_rec n_ao` | `zeta_ab pa_{x,y,z} pb_{x,y,z} s eb_ket off_a off_b` | — | `T[n_ao,n_ao]` |
+| `v_{la}{lb}` | `n_rec n_ao n_nuc` | `zeta_ab p_{x,y,z} pa_{x,y,z} pb_{x,y,z} s_ab off_a off_b` | `Z Cnuc[,3]` | `V[n_ao,n_ao]` |
+
+Every per-record array is flat, one pointer per scalar: a record vector is
+three parameters, one per axis (`pa_x pa_y pa_z` is `P − A`), so with one
+thread per record a warp's lanes read consecutive doubles on every load.
+They are plain positional parameters, not a struct (#424's `PrimPairSoA`
+was reverted). The per-nucleus `Cnuc` stays `[n_nuc, 3]`: every lane reads
+the same nucleus.
 
 The names are chosen for hygiene. `zeta_ab` is not `zeta` because the
 fragment binds a scalar `zeta`. `eb_ket` is not `eb` because the kinetic
 fragment binds `eb`, and it is passed rather than rebuilt from `ζ`, which
 would need `α` too and would round. `V`'s `s_ab` is not `s` because the
 reused prelude declares a local `s = −2θ²`. `V` needs `P` because
-`PQ = P − C` cannot be formed from `XPA`/`XPB` alone.
+`PQ = P − C` cannot be formed from `P − A` and `P − B` alone.
 
 **What each kernel inlines:**
 
@@ -378,8 +385,8 @@ It reuses `kernel_s.record_values` (the per-record statements, factored out
 of `kernel_s` with `S`'s emitted text byte-identical through (gg) on both
 backends). Its scatter is one `AtomicAdd` per element,
 `S[off_a+i, off_b+j] += v`, with no offset comparison. The parameter block
-is `S`'s with `n_ao` split: `n_rec n_a n_b | zeta_ab XPA[,3] XPB[,3] s
-off_a off_b | S[n_a, n_b]`. Interpreted, the whole rectangular matrix is
+is `S`'s with `n_ao` split: `n_rec n_a n_b | zeta_ab pa_{x,y,z}
+pb_{x,y,z} s off_a off_b | S[n_a, n_b]`. Interpreted, the whole rectangular matrix is
 **bitwise `==`** to `cross_overlap_matrix`, which is a stronger statement
 than `S`'s, because no triangle is read. Its layering rule `sx_builder` is
 `kernel_s`'s plus `kernel_s` itself.

@@ -69,6 +69,7 @@ from felizjueves.ir import (
     Lit,
     Note,
     Param,
+    Var,
     _subexprs,
     walk,
 )
@@ -79,6 +80,7 @@ from felizjueves.kernel_s import (
     launch_shape,
     s_spec,
 )
+from felizjueves.launch import per_axis
 from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3
@@ -103,6 +105,11 @@ def _pairs_of(basis, cls):
             if (sh[i].l, sh[j].l) == cls]
 
 
+def _axes(name, vecs):
+    """A record vector as the kernel takes it, one flat array per axis."""
+    return {k: np.array(v) for k, v in per_axis(name, vecs).items()}
+
+
 def _records(basis, pairs):
     """The kernel's per-record arrays for `pairs`, records in pair order and,
     within a pair, in `primitive_pairs` order."""
@@ -117,7 +124,7 @@ def _records(basis, pairs):
             s.append(sk)
             oa.append(off[i])
             obb.append(off[j])
-    return dict(zeta_ab=np.array(zeta), XPA=np.array(xpa), XPB=np.array(xpb),
+    return dict(zeta_ab=np.array(zeta), **_axes("pa", xpa), **_axes("pb", xpb),
                 s=np.array(s), off_a=np.array(oa, dtype=np.int32),
                 off_b=np.array(obb, dtype=np.int32))
 
@@ -293,7 +300,10 @@ def test_the_key_is_a_pair_class():
 def test_the_parameter_block():
     k = build_s_kernel((1, 2))
     assert [p.name for p in k.params] == [
-        "n_rec", "n_ao", "zeta_ab", "XPA", "XPB", "s", "off_a", "off_b", "S"]
+        "n_rec", "n_ao", "zeta_ab", "pa_x", "pa_y", "pa_z",
+        "pb_x", "pb_y", "pb_z", "s", "off_a", "off_b", "S"]
+    assert all(p.shape == (Var("n_rec"),) for p in k.params
+               if p.name.startswith(("pa_", "pb_")))
     (S,) = [p for p in k.params if p.name == "S"]
     assert S.intent.name == "OUT"
 

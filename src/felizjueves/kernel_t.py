@@ -24,11 +24,14 @@ scatter rule, UNCHANGED (as in `kernel_s.py`):
 THE PARAMETER BLOCK: `kernel_s`'s, plus the ket exponent per record.
 
     params  n_rec n_ao (I32)
-            zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]
-            eb_ket[n_rec]                                        per record
-            off_a[n_rec]  off_b[n_rec]  (I32)
+            zeta_ab  pa_x pa_y pa_z  pb_x pb_y pb_z  s  eb_ket
+                                                         [n_rec]  per record
+            off_a  off_b  [n_rec]  (I32)
             T[n_ao, n_ao]  (OUT, read and AtomicAdd-ed)
 
+- Every record vector is one flat array per axis, as in `kernel_s`
+  (`P - A` is `pa_x pa_y pa_z`); the spelling is restated here, not
+  imported.
 - `eb_ket` is the KET primitive's exponent `beta`. The shift is the one
   place in this tree a single primitive's exponent enters a fragment, so it
   is a parameter of its own, read into the fragment's scalar bind `eb` --
@@ -187,10 +190,10 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         head.append(Decl(ef.HALF_INV_ZETA, Scalar.F64,
                          init=_c(Fn.DIV, Lit(0.5), Var(ef.ZETA))))
         binds[ef.HALF_INV_ZETA] = Var(ef.HALF_INV_ZETA)
-    for d in range(3):
-        for f, arr in ((Factor.pa(d), "XPA"), (Factor.pb(d), "XPB")):
+    for d, a in enumerate("xyz"):
+        for f, arr in ((Factor.pa(d), f"pa_{a}"), (Factor.pb(d), f"pb_{a}")):
             if f.name_in_kernel in frag.binds:
-                binds[f.name_in_kernel] = Index(arr, (rec, Lit(d)))
+                binds[f.name_in_kernel] = Index(arr, (rec,))
     head += [
         Decl(ef.EB, Scalar.F64, init=Index("eb_ket", (rec,))),
         Decl("sk", Scalar.F64, init=Index("s", (rec,))),
@@ -257,8 +260,8 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         Param("n_rec", Scalar.I32),
         Param("n_ao", Scalar.I32),
         _f64("zeta_ab", (nr,)),
-        _f64("XPA", (nr, Lit(3))),
-        _f64("XPB", (nr, Lit(3))),
+        *(_f64(f"pa_{a}", (nr,)) for a in "xyz"),
+        *(_f64(f"pb_{a}", (nr,)) for a in "xyz"),
         _f64("s", (nr,)),
         _f64("eb_ket", (nr,)),
         _i32("off_a", (nr,)),
