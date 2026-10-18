@@ -244,7 +244,7 @@ class CWriter:
                 *(f"{INDENT}(void){n};\n" for n in unread)]
         head = self.prologue(k)
         if any(isinstance(e, Call) and e.fn is Fn.BOYS for e in _exprs(k)):
-            head += "\n" + self.spell_int(
+            head += "\n" + self.boys(
                 BOYS_DEVICE_WIDE if k.wide_boys else BOYS_DEVICE)
         records = _records(k)
         if records:
@@ -252,9 +252,17 @@ class CWriter:
                                     for r in records)
         return (
             f"{head}\n"
-            f'extern "C" __global__ void {k.name}(\n{sig})\n'
+            f"{self.signature(k, sig)}\n"
             "{\n" + "".join(self._lines) + "}\n"
         )
+
+    def signature(self, k: Kernel, sig: str) -> str:
+        """The text that opens the kernel, `sig` its spelled parameters."""
+        return f'extern "C" __global__ void {k.name}(\n{sig})'
+
+    def boys(self, text: str) -> str:
+        """`fj_boys` as this unit carries it, `text` its fixed C."""
+        return self.spell_int(text)
 
     def ctype(self, t: Scalar) -> str:
         return self.INT if t is Scalar.I32 else CTYPE[t]
