@@ -2,13 +2,28 @@
 // arch gfx1200, wavefront 32; fp64 throughout.
 #include <hip/hip_runtime.h>
 
+// PrimPairSoA: the record arrays, one pointer per field, passed by value
+struct PrimPairSoA {
+    const double* zeta;
+    const double* s;
+    const double* eb;
+    const double* XP;
+    const double* YP;
+    const double* ZP;
+    const double* XPA;
+    const double* YPA;
+    const double* ZPA;
+    const double* XPB;
+    const double* YPB;
+    const double* ZPB;
+    const int* off_a;
+    const int* off_b;
+};
+
 extern "C" __global__ void dq_1_1(
     int n_rec,
     int n_pair,
-    const double* eta,
-    const double* XPA,
-    const double* XPB,
-    const double* s,
+    PrimPairSoA pp,
     const double* w,
     const int* pair,
     const double* Dcd,
@@ -17,6 +32,15 @@ extern "C" __global__ void dq_1_1(
 {
     // an extent only (a leading dimension, never read):
     (void)n_pair;
+    // the record arrays, from PrimPairSoA pp
+    const double* const eta = pp.zeta;
+    const double* const s = pp.s;
+    const double* const XPA = pp.XPA;
+    const double* const YPA = pp.YPA;
+    const double* const ZPA = pp.ZPA;
+    const double* const XPB = pp.XPB;
+    const double* const YPB = pp.YPB;
+    const double* const ZPB = pp.ZPB;
     // D_q = w SUM_cd D_cd s E^cd_q and Dmax = max_q |D_q|, ket pair class (1,1):
     // j_engine.md 'Step 2: the pre-contraction kernel'; [JEngine, v2, eq. 20]
     // PRECONDITION: w[k] is 2.0 for an off-diagonal ket shell pair (c != d) and
@@ -37,12 +61,12 @@ extern "C" __global__ void dq_1_1(
             // fragment e_block_11
             const auto zeta = eta[k];
             const auto half_inv_zeta = (0.5 / eta[k]);
-            const auto PA_x = XPA[(k * 3 + 0)];
-            const auto PB_x = XPB[(k * 3 + 0)];
-            const auto PA_y = XPA[(k * 3 + 1)];
-            const auto PB_y = XPB[(k * 3 + 1)];
-            const auto PA_z = XPA[(k * 3 + 2)];
-            const auto PB_z = XPB[(k * 3 + 2)];
+            const auto PA_x = XPA[k];
+            const auto PB_x = XPB[k];
+            const auto PA_y = YPA[k];
+            const auto PB_y = YPB[k];
+            const auto PA_z = ZPA[k];
+            const auto PB_z = ZPB[k];
             // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
             // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
             // undressed

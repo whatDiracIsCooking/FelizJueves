@@ -40,6 +40,7 @@ import test_emit_hip
 import test_measured
 from oracle import basis as ob
 from oracle import manifest
+from soa import axes
 from tiers import split_by_l
 
 from felizjueves import e_fragment as ef
@@ -222,8 +223,8 @@ def test_the_guard_leaves_spare_lanes_idle() -> None:
     args = dict(
         n_rec=3, n_pair=1,
         eta=np.array([z for _, z, _ in recs]),
-        XPA=np.array([[P[d] - ket.A[d] for d in range(3)] for P, _, _ in recs]),
-        XPB=np.array([[P[d] - ket.B[d] for d in range(3)] for P, _, _ in recs]),
+        **axes("PA", [[P[d] - ket.A[d] for d in range(3)] for P, _, _ in recs]),
+        **axes("PB", [[P[d] - ket.B[d] for d in range(3)] for P, _, _ in recs]),
         s=np.array([s for _, _, s in recs]), w=np.full(3, w),
         pair=np.zeros(3, np.int32), Dcd=np.array([dcd]),
         D=np.full((3, 1), np.nan), Dmax=np.full(3, np.nan))

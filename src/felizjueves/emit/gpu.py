@@ -68,8 +68,8 @@ class GpuWriter(CWriter):
             f"// {width}; {precision(k)}; nvcc and hipcc alike.\n"
             f'#include "{HEADER}"\n'
         )
-        if k.bundled is not None:
-            head += f'#include "{k.bundled.bundle.header}"\n'
+        for header in dict.fromkeys(b.bundle.header for b in k.bundles):
+            head += f'#include "{header}"\n'
 
         if self._width_used:
             head += (

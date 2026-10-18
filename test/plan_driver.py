@@ -118,7 +118,6 @@ from felizjueves.ir import (
     Intent,
     Kernel,
     Note,
-    Scalar,
     Stmt,
     walk,
 )
@@ -133,6 +132,7 @@ from felizjueves.launch import LaunchPlan, PairRec, class_spec
 from felizjueves.launch_k import KLaunchPlan
 from felizjueves.passes import atomize
 from felizjueves.plan.targets import hermite_targets
+from felizjueves.prim_pair import AXES
 
 RUNS = 2  # whole-plan runs per process: the run-to-run witness
 # The kernel's signature, in the order every launch below passes it.
@@ -335,10 +335,11 @@ def read_back_j(drv: Driver, raw: np.ndarray) -> list[np.ndarray]:
 
 DQ_LANES = 32  # one thread per record (kernel_dq.launch_shape); not numerical
 JAB_THREADS = 32  # one thread per record (kernel_jab.jab_launch_shape)
-JAB_PARAMS = ("n_rec", "n_ao", "n_rows", "zeta_ab", "XPA", "XPB", "s", "off_a",
-              "off_b", "row", "Jp", "J")
-DQ_DOUBLES = 10  # per record: eta XPA(3) XPB(3) s w pair
-JAB_DOUBLES = 11  # per record: zeta_ab XPA(3) XPB(3) s off_a off_b row
+JAB_PARAMS = ("n_rec", "n_ao", "n_rows", "zeta_ab", "s",
+              *(f"{a}P{c}" for c in "AB" for a in AXES), "off_a", "off_b",
+              "row", "Jp", "J")
+DQ_DOUBLES = 10  # per record: eta XPA..ZPA XPB..ZPB s w pair
+JAB_DOUBLES = 11  # per record: zeta_ab XPA..ZPA XPB..ZPB s off_a off_b row
 
 
 @dataclass(frozen=True)
@@ -400,9 +401,18 @@ def jab_records(plan: LaunchPlan, basis: Basis):
 
 
 def _jab_parts(x: JabLaunch) -> list[np.ndarray]:
-    """One JAB class's input, in the order the generated `main()` reads it."""
-    return [x.data[:, 0], x.data[:, 1:4].ravel(), x.data[:, 4:7].ravel(),
+    """One JAB class's input, in the order the generated `main()` reads it:
+    every record vector per axis (`.T`: all X, then all Y, then all Z), the
+    kernel's `PrimPairSoA` layout (#421)."""
+    return [x.data[:, 0], x.data[:, 1:4].T.ravel(), x.data[:, 4:7].T.ravel(),
             x.data[:, 7], x.ints[:, 0], x.ints[:, 1], x.ints[:, 2]]
+
+
+def _soa_at(base: str, n: int, start: int, *vecs: str) -> dict[str, str]:
+    """`{X<v>: base + start*n, Y<v>: ..., ...}`: the per-axis arrays of
+    each record vector `v`, consecutive `n`-long runs of one buffer."""
+    names = [f"{a}{v}" for v in vecs for a in AXES]
+    return {nm: f"{base} + {(start + i) * n}" for i, nm in enumerate(names)}
 
 
 CHAIN_SLOTS = ("jab_helpers", "jab_count", "jab_need", "jab_upload",
@@ -425,11 +435,14 @@ static int* upload_int(const double* h, size_t n) {
 def _jab_call(x: JabLaunch, c: int, jp: str, n_rows: str) -> str:
     n = x.n_rec
     grid, (threads, _) = jab_launch_shape(n, JAB_THREADS)
+    at = {"n_rec": str(n), "n_ao": "NAO", "n_rows": n_rows,
+          "zeta_ab": f"jd[{c}]", **_soa_at(f"jd[{c}]", n, 1, "PA", "PB"),
+          "s": f"jd[{c}] + {7 * n}", "off_a": f"ji[{c}]",
+          "off_b": f"ji[{c}] + {n}", "row": f"ji[{c}] + {2 * n}", "Jp": jp}
+    args = ", ".join(kernel_args(x.kernel, at, x.ns, "dJmn"))
     return (f"        // bra pair class ({x.la}, {x.lb}): J_p[{x.lp}] -> J_mn\n"
             f"        {x.ns}::{x.kernel.name}<<<dim3({grid}), dim3({threads})>>>(\n"
-            f"            {n}, NAO, {n_rows}, jd[{c}], jd[{c}] + {n}, "
-            f"jd[{c}] + {4 * n}, jd[{c}] + {7 * n},\n"
-            f"            ji[{c}], ji[{c}] + {n}, ji[{c}] + {2 * n}, {jp}, dJmn);\n"
+            f"            {args});\n"
             f"        CHECK(devGetLastError());\n")
 
 
@@ -587,24 +600,27 @@ def _unit(kern: Kernel, backend: str, workdir: Path,
 def kernel_args(kern: Kernel, at: Mapping[str, str], ns: str,
                 out: str) -> list[str]:
     """The launch's arguments in `kern`'s signature order: `at[name]` per
-    param, `out` for the OUT matrix, and -- for a kernel with a `Bundled`
-    (the one-electron `PrimPairSoA`) -- one `ns::<struct>{...}` aggregate in
-    place of the params it carries, every field in declaration order and a
-    field the kernel does not read `nullptr`."""
-    b = kern.bundled
-    carried = dict(b.binds) if b is not None else {}
+    param, `out` for the OUT matrix (or `at[name]` for an OUT param `at`
+    names: `DQ` has two), and -- for each `Bundled` the kernel
+    carries (`PrimPairSoA`: one for the one-electron kernels, `DQ` and
+    `JAB`, two for `K`, #421) -- one `ns::<struct>{...}` aggregate in place
+    of the params it carries, every field in declaration order and a field
+    the kernel does not read `nullptr`."""
     args: list[str] = []
-    placed = False
+    placed: set[str] = set()
     for p in kern.params:
-        if b is not None and b.field_of(p.name) is not None:
-            if not placed:
+        by = kern.bundled_by(p.name)
+        if by is not None:
+            b = by[0]
+            if b.arg not in placed:
+                carried = dict(b.binds)
                 fields = ", ".join(at[carried[f]] if f in carried else "nullptr"
                                    for f, _ in b.bundle.fields)
                 args.append(f"{ns}::{b.bundle.name}{{{fields}}}")
-                placed = True
+                placed.add(b.arg)
         elif p.intent is Intent.OUT:
-            args.append(out)
-        elif p.array or p.type is Scalar.I32:
+            args.append(at.get(p.name, out))
+        elif p.name in at:
             args.append(at[p.name])
         else:
             raise ValueError(f"{kern.name}: no argument for {p.name}")
@@ -633,12 +649,16 @@ def dq_program(classes: list[DQClass], backend: str, workdir: Path, *,
         kernels.append(f"(const void*){ns}::{kern.name}")
         n = dc.n_rec
         grid, (lanes, _) = dq_launch_shape(n, DQ_LANES)
+        at = {"n_rec": f"nr[{c}]", "n_pair": f"npair[{c}]",
+              "eta": f"dd[{c}]", **_soa_at(f"dd[{c}]", n, 1, "PA", "PB"),
+              "s": f"dd[{c}] + {7 * n}", "w": f"dd[{c}] + {8 * n}",
+              "pair": f"dp[{c}]", "Dcd": f"dc[{c}]", "D": f"dD[{c}]",
+              "Dmax": f"dM[{c}]"}
+        args = kernel_args(kern, at, ns, "")
         calls.append(
             f"        // ket pair class ({dc.lc}, {dc.ld})\n"
             f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
-            f"            nr[{c}], npair[{c}], dd[{c}], dd[{c}] + {n}, "
-            f"dd[{c}] + {4 * n}, dd[{c}] + {7 * n},\n"
-            f"            dd[{c}] + {8 * n}, dp[{c}], dc[{c}], dD[{c}], dM[{c}]);\n"
+            f"            {', '.join(args)});\n"
             f"        CHECK(devGetLastError());\n"
             f"        ++launches;")
     nq = [dq_shape(*dc.cls)[1] for dc in classes]
@@ -657,11 +677,12 @@ def dq_program(classes: list[DQClass], backend: str, workdir: Path, *,
 
 
 def dq_stage(classes: list[DQClass]) -> np.ndarray:
-    """`dq_program`'s input: per class `eta XPA XPB s w | pair | Dcd`."""
+    """`dq_program`'s input: per class `eta XPA..ZPA XPB..ZPB s w | pair |
+    Dcd`, each record vector per axis (`.T`), the `PrimPairSoA` layout."""
     parts = []
     for dc in classes:
         d = dc.data
-        parts += [d[:, 0], d[:, 1:4].ravel(), d[:, 4:7].ravel(), d[:, 7],
+        parts += [d[:, 0], d[:, 1:4].T.ravel(), d[:, 4:7].T.ravel(), d[:, 7],
                   d[:, 8], dc.pair, dc.dcd.ravel()]
     return np.concatenate([np.asarray(p, dtype=np.float64) for p in parts])
 
@@ -1170,6 +1191,12 @@ K_HARNESS_WRITE = (
     "first add is exact. The lane-0 guard stays: every lane holds the warp sum")
 K_BRA_DOUBLES = 12  # per bra record: P(3) zeta_ac XPA(3) XPC(3) s_ac Ip
 K_KET_DOUBLES = 12  # per ket record: Q(3) eta XQB(3) XQD(3) s_bd Iq
+# The same 12, by kernel parameter, in the upload order (`_k_rows`).
+K_BRA = (*(f"{a}P" for a in AXES), "zeta_ac",
+         *(f"{a}P{c}" for c in "AC" for a in AXES), "s_ac", "Ip")
+K_KET = (*(f"{a}Q" for a in AXES), "eta",
+         *(f"{a}Q{c}" for c in "BD" for a in AXES), "s_bd", "Iq")
+assert len(K_BRA) == K_BRA_DOUBLES and len(K_KET) == K_KET_DOUBLES
 _K_PLAIN = "plain write, NOT atomic"
 
 
@@ -1340,23 +1367,20 @@ def k_driver(plan: KLaunchPlan, basis: Basis, backend: str,
             for b, (s, m) in segs[kls].items():
                 q = bidx[bls, b]
                 launches.append(KLaunch(cl.am, bt, b, s, m, q, ns, kern))
+                at = {"n_bra": f"nb[{i}]", "n_ket": str(m), "n_dc": "NDC",
+                      "tau": "tau", "maxD": "maxD",
+                      **_k_at(f"bp[{i}]", f"nb[{i}]", 0, K_BRA),
+                      "dc": f"bi[{i}]",
+                      **_k_at(f"kp[{j}]", f"nk[{j}]", s, K_KET),
+                      "dd": f"ki[{j}] + {s}", "Dcd": f"dp[{e}]"}
+                args = kernel_args(kern, at, ns, f"dK + {blocks[q].offset}")
                 body.append(
                     f"        // class ({la}{lc}|{lb}{ld}), batch {bt + 1} of "
                     f"{len(cl.kernels)}, ket shell {b}: kets [{s}, {s + m}) "
                     f"of ket class {j} -> block {q}\n"
                     f"        {ns}::{kern.name}<<<dim3(nb[{i}]), dim3(1, LANES), "
                     f"(size_t){shared} * LANES * sizeof(double)>>>(\n"
-                    f"            nb[{i}], {m}, NDC, tau, maxD,\n"
-                    f"            bp[{i}], bp[{i}] + 3 * nb[{i}], "
-                    f"bp[{i}] + 4 * nb[{i}], bp[{i}] + 7 * nb[{i}],\n"
-                    f"            bp[{i}] + 10 * nb[{i}], bp[{i}] + 11 * nb[{i}], "
-                    f"bi[{i}],\n"
-                    f"            kp[{j}] + {3 * s}, kp[{j}] + 3 * nk[{j}] + {s}, "
-                    f"kp[{j}] + 4 * nk[{j}] + {3 * s},\n"
-                    f"            kp[{j}] + 7 * nk[{j}] + {3 * s}, "
-                    f"kp[{j}] + 10 * nk[{j}] + {s}, kp[{j}] + 11 * nk[{j}] + {s}, "
-                    f"ki[{j}] + {s},\n"
-                    f"            dp[{e}], dK + {blocks[q].offset});\n"
+                    f"            {', '.join(args)});\n"
                     f"        CHECK(devGetLastError());\n"
                     f"        ++launches;")
     drv_partial = KDriver(backend, "", workdir, (), plan.tau, plan.dm, n_sh,
@@ -1378,10 +1402,19 @@ def k_driver(plan: KLaunchPlan, basis: Basis, backend: str,
     return replace(drv_partial, source=src, path=path, units=tuple(units))
 
 
+def _k_at(base: str, n: str, s: int, names: tuple[str, ...]) -> dict[str, str]:
+    """Each of a side's 12 per-record arrays (`K_BRA` / `K_KET`, the upload
+    order) at `base + col * n + s`: the class's buffer is one `n`-long run
+    per array, so a ket subsequence starting at `s` is `+ s` on every one."""
+    return {nm: f"{base} + {col} * {n} + {s}" for col, nm in enumerate(names)}
+
+
 def _k_rows(basis: Basis, recs: tuple[PairRec, ...], *,
             bra: bool) -> list[np.ndarray]:
-    """One class's upload, in the order `main()` reads it: P(3n) zeta(n)
-    X_PA(3n) X_PB(3n) s(n) I(n), then the n ints (`dc = c * n_sh` on the
+    """One class's upload, in the order `main()` reads it (`K_BRA` /
+    `K_KET`): P(3n) zeta(n) X_PA(3n) X_PB(3n) s(n) I(n), every vector per
+    axis (all X, then all Y, then all Z: the `PrimPairSoA` layout, #421),
+    then the n ints (`dc = c * n_sh` on the
     bra, `dd = d` on the ket) -- `test_kernel_k.k_args`' values: `X_PA =
     P - A`, `X_PB = P - B` of `epair(shells[i], shells[j])`, `s` its
     dressing, `I` the plan's bound `G`."""
@@ -1397,8 +1430,9 @@ def _k_rows(basis: Basis, recs: tuple[PairRec, ...], *,
                      *(P[d] - ep.B[d] for d in range(3)), s, r.G])
         ints.append(r.j * n_sh if bra else r.j)
     a = np.array(data, dtype=np.float64).reshape(-1, K_BRA_DOUBLES)
-    return [a[:, 0:3].ravel(), a[:, 3], a[:, 4:7].ravel(), a[:, 7:10].ravel(),
-            a[:, 10], a[:, 11], np.array(ints, dtype=np.float64)]
+    return [a[:, 0:3].T.ravel(), a[:, 3], a[:, 4:7].T.ravel(),
+            a[:, 7:10].T.ravel(), a[:, 10], a[:, 11],
+            np.array(ints, dtype=np.float64)]
 
 
 def k_stage(drv: KDriver, basis: Basis, D: object) -> np.ndarray:
@@ -1492,7 +1526,8 @@ static const size_t NKBUF = {n_kbuf};  // the one K buffer, every block
 
 // usage: in out. `in` is tau maxD | per bra class P zeta_ac XPA XPC s_ac Ip
 // | dc | per ket class (grouped by b shell) Q eta XQB XQD s_bd Iq | dd | per
-// density class Dcd; `out` is each run's K buffer.
+// density class Dcd, every vector per axis (all X, all Y, all Z); `out` is
+// each run's K buffer.
 int main(int argc, char** argv) {{
     if (argc != 3) {{ std::fprintf(stderr, "usage: in out\n"); return 2; }}
     std::vector<double> in;

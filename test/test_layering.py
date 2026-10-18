@@ -2244,3 +2244,17 @@ for _rule_name in ("s_builder", "t_builder", "v_builder", "sx_builder",
 for _module in ("kernel_s", "kernel_t", "kernel_v", "kernel_sx",
                 "kernel_schwarz", "launch"):
     EDGES[_module] = EDGES[_module] | frozenset(("prim_pair",))
+
+# #421: the J chain's pair kernels and K take the same `PrimPairSoA` -- `DQ`
+# and `JAB` one value, K two (its bra and its ket record) -- through the
+# K lever seams, which declare the K parameter block.
+# `ao.drive` splits the interpreted kernels' record vectors by its `AXES`.
+for _rule_name in ("dq_builder", "jab_builder", "k_builder", "k_lever",
+                   "adapter"):
+    RULES[_rule_name] = Rule(RULES[_rule_name].why + ", and `prim_pair`'s "
+                             "PrimPairSoA (#421)",
+                             RULES[_rule_name].may | frozenset(("prim_pair",)),
+                             RULES[_rule_name].must_not)
+for _module in ("kernel_dq", "kernel_jab", "kernel_k", "k_levers.seams",
+                "k_levers.mixed", "ao.drive"):
+    EDGES[_module] = EDGES[_module] | frozenset(("prim_pair",))

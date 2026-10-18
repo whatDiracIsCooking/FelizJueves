@@ -9,10 +9,21 @@ per ket PAIR class `(lc, ld)`, keyed `Spec(COULOMB, 0, (lc, ld), DQ)`. With
 `n_q = |hermite_targets(lc + ld)|` and `n_cd = ncart(lc) ncart(ld)`:
 
     params  n_rec n_pair (I32)
-            eta[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s[n_rec]  w[n_rec]
+            eta  s  XPA YPA ZPA  XPB YPB ZPB  [n_rec]   in one PrimPairSoA
+            w[n_rec]
             pair[n_rec] (I32)                    the record's row of Dcd
             Dcd[n_pair, n_cd]                    D_cd per ket shell pair
             D[n_rec, n_q]  (OUT)   Dmax[n_rec]  (OUT)
+
+The record geometry is structure of arrays, one flat array per scalar and
+per axis (`XPA YPA ZPA`, not `XPA[n_rec, 3]`), and crosses the call as one
+`PrimPairSoA` (`prim_pair.py`, the one-electron kernels' struct, #421):
+the fields `zeta` (read as `eta`), `s`, `XPA..ZPB`. So the signature is
+`dq_{lc}_{ld}(int n_rec, int n_pair, PrimPairSoA pp, const double* w,
+const int* pair, const double* Dcd, double* D, double* Dmax)`; the weight,
+the pair index and the density stay arguments of their own, because they
+are this kernel's, not the record's. Inside the kernel each field is still
+the array of its own name.
 
 `n_pair` is the one parameter the specification's block does not spell: it
 is the extent `Dcd[n_pair, n_cd]` is declared with, and an extent may only
@@ -104,9 +115,11 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.plan.targets import hermite_targets
+from felizjueves.prim_pair import AXES, bundled
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
+    "BUNDLED",
     "PARAMS",
     "WEIGHT_IS_THE_HOSTS",
     "build_dq_kernel",
@@ -116,8 +129,14 @@ __all__ = [
 ]
 
 # The parameter block, in order: the specification's, plus `n_pair`.
-PARAMS = ("n_rec", "n_pair", "eta", "XPA", "XPB", "s", "w", "pair", "Dcd",
-          "D", "Dmax")
+PARAMS = ("n_rec", "n_pair", "eta", "s",
+          *(f"{a}P{c}" for c in "AB" for a in AXES),
+          "w", "pair", "Dcd", "D", "Dmax")
+
+# The record arrays arrive in one `PrimPairSoA` (prim_pair.py), its `zeta`
+# read as `eta`: the ket pair's exponent, the name the specification spells.
+BUNDLED = bundled("s", *(f"{a}P{c}" for c in "AB" for a in AXES),
+                  zeta="eta")
 
 REC = "k"  # the record index: one thread per record
 
@@ -191,9 +210,9 @@ def build_dq_kernel(cls: tuple[int, int] | Spec, *,
     bindings: dict[str, Expr] = {ZETA: rec("eta"), E_ARRAY: Var(E_ARRAY)}
     if HALF_INV_ZETA in frag.binds:
         bindings[HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), rec("eta"))
-    for d in range(3):
-        bindings[Factor.pa(d).name_in_kernel] = rec("XPA", Lit(d))
-        bindings[Factor.pb(d).name_in_kernel] = rec("XPB", Lit(d))
+    for d, a in enumerate(AXES):
+        bindings[Factor.pa(d).name_in_kernel] = rec(f"{a}PA")
+        bindings[Factor.pb(d).name_in_kernel] = rec(f"{a}PB")
 
     def acc(j: int) -> Var:
         return Var(f"acc{j}")
@@ -261,12 +280,13 @@ def build_dq_kernel(cls: tuple[int, int] | Spec, *,
     params = (
         Param("n_rec", Scalar.I32),
         Param("n_pair", Scalar.I32),
-        f64("eta", nr), f64("XPA", nr, Lit(3)), f64("XPB", nr, Lit(3)),
-        f64("s", nr), f64("w", nr),
+        f64("eta", nr), f64("s", nr),
+        *(f64(f"{a}P{c}", nr) for c in "AB" for a in AXES),
+        f64("w", nr),
         Param("pair", Scalar.I32, array=True, shape=(nr,)),
         f64("Dcd", npair, Lit(n_cd)),
         f64("D", nr, Lit(n_q), intent=Intent.OUT),
         f64("Dmax", nr, intent=Intent.OUT),
     )
     assert tuple(p.name for p in params) == PARAMS
-    return Kernel(name, params, body)
+    return Kernel(name, params, body, bundled=BUNDLED)

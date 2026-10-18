@@ -95,6 +95,8 @@ import test_ao_j_ondevice
 import test_ao_k
 from oracle import manifest
 from plan_driver import (
+    K_BRA,
+    K_KET,
     RUNS,
     KDriver,
     compile_checked,
@@ -527,17 +529,14 @@ def _interp_buffer(drv: KDriver, staged: np.ndarray, *, lanes: int
         n, nk, s, m = len(drv.bra[i][1]), len(drv.ket[j][1]), x.start, x.n_ket
         b, k = bp[i], kp[j]
         blk = drv.blocks[x.block]
+        # each upload one `n`-long run per array, in K_BRA / K_KET order
+        # (per axis, #421): a ket subsequence is `[s, s + m)` of every run
         args = dict(
             n_bra=n, n_ket=m, n_dc=n_dc, tau=tau, maxD=maxD,
-            P=b[0:3 * n].reshape(n, 3), zeta_ac=b[3 * n:4 * n],
-            XPA=b[4 * n:7 * n].reshape(n, 3), XPC=b[7 * n:10 * n].reshape(n, 3),
-            s_ac=b[10 * n:11 * n], Ip=b[11 * n:12 * n], dc=bi[i],
-            Q=k[3 * s:3 * s + 3 * m].reshape(m, 3),
-            eta=k[3 * nk + s:3 * nk + s + m],
-            XQB=k[4 * nk + 3 * s:4 * nk + 3 * s + 3 * m].reshape(m, 3),
-            XQD=k[7 * nk + 3 * s:7 * nk + 3 * s + 3 * m].reshape(m, 3),
-            s_bd=k[10 * nk + s:10 * nk + s + m],
-            Iq=k[11 * nk + s:11 * nk + s + m], dd=ki[j][s:s + m],
+            **{nm: b[c * n:(c + 1) * n] for c, nm in enumerate(K_BRA)},
+            dc=bi[i],
+            **{nm: k[c * nk + s:c * nk + s + m] for c, nm in enumerate(K_KET)},
+            dd=ki[j][s:s + m],
             Dcd=dp[e].reshape(n_dc, -1),
             K=k_block(drv, buf, x.block).copy())
         grid, block = k_launch_shape(n, lanes)

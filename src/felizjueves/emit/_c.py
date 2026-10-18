@@ -244,8 +244,8 @@ class CWriter:
                        p.type)
         sig = ",\n".join(INDENT + a for a in self.signature(k))
         self._block(k.body, 1)
-        if k.bundled is not None:
-            self._lines[:0] = self.unbundle(k.bundled, k.params)
+        for b in reversed(k.bundles):
+            self._lines[:0] = self.unbundle(b, k.params)
         unread = [p.name for p in k.params
                   if not p.array and p.name not in self._used]
         if unread:
@@ -260,8 +260,8 @@ class CWriter:
         if records:
             head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
                                     for r in records)
-        if k.bundled is not None:
-            head += self.bundle_decl(k.bundled.bundle)
+        for bundle in dict.fromkeys(b.bundle for b in k.bundles):
+            head += self.bundle_decl(bundle)
         return (
             f"{head}\n"
             f'extern "C" __global__ void {k.name}(\n{sig})\n'
@@ -278,16 +278,16 @@ class CWriter:
     def signature(self, k: Kernel) -> list[str]:
         """Each argument's declaration, in `k.params` order -- except that
         the params a `Bundled` carries are one by-value struct argument, at
-        the place of the first of them."""
-        b = k.bundled
+        the place of the first of them (one per `Bundled`, #421)."""
         out: list[str] = []
-        placed = False
+        placed: set[str] = set()
         for p in k.params:
-            if b is None or b.field_of(p.name) is None:
+            by = k.bundled_by(p.name)
+            if by is None:
                 out.append(self.param(p))
-            elif not placed:
-                out.append(f"{b.bundle.name} {b.arg}")
-                placed = True
+            elif by[0].arg not in placed:
+                out.append(f"{by[0].bundle.name} {by[0].arg}")
+                placed.add(by[0].arg)
         return out
 
     def unbundle(self, b: Bundled, params: tuple[Param, ...]) -> list[str]:

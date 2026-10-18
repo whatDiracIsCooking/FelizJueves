@@ -996,3 +996,52 @@ def test_bundle_and_bundled_refuse_malformed_values():
         ir.Bundled(_B, "pp", (("x", "xs"), ("y", "xs")))
     with pytest.raises(ValueError, match="binds no field"):
         ir.Bundled(_B, "pp", ())
+
+
+# --- two values of one Bundle (#421: K's bra and ket records) --------------
+
+_YS = Param("ys", Scalar.F64, array=True)
+
+
+def _two(binds_a, binds_b, arg_a="pa", arg_b="pb", params=(_XS, _YS)):
+    body = (Decl("v", Scalar.F64, init=Index("xs", (Lit(0),))),
+            Decl("w", Scalar.F64, init=Index("ys", (Lit(0),))))
+    return Kernel("k", tuple(params), body, bundled=(
+        ir.Bundled(_B, arg_a, tuple(binds_a)),
+        ir.Bundled(_B, arg_b, tuple(binds_b))))
+
+
+def test_a_kernel_may_carry_two_values_of_one_bundle():
+    k = _two([("x", "xs")], [("x", "ys")])
+    assert [b.arg for b in k.bundles] == ["pa", "pb"]
+    assert k.bundled_by("xs") == (k.bundles[0], "x")
+    assert k.bundled_by("ys") == (k.bundles[1], "x")
+    one = _bundled_kernel([_XS], [("x", "xs")])
+    assert one.bundles == (one.bundled,)
+    assert Kernel("k", (_XS,), one.body).bundles == ()
+
+
+@pytest.mark.parametrize("a, b, arg_b, match", [
+    ([("x", "xs")], [("y", "xs")], "pb", "two bundles"),
+    ([("x", "xs")], [("x", "ys")], "pa", "share an argument"),
+    ([("x", "xs")], [("x", "nope")], "pb", "not a Param"),
+])
+def test_two_bundles_refuse(a, b, arg_b, match):
+    with pytest.raises(ValueError, match=match):
+        _two(a, b, arg_b=arg_b)
+
+
+def test_an_empty_bundle_tuple_is_refused():
+    with pytest.raises(ValueError, match="empty"):
+        Kernel("k", (_XS,), (), bundled=())
+
+
+def test_two_bundles_spell_two_struct_arguments_and_one_struct():
+    from felizjueves.device import SM_86
+    from felizjueves.emit import cuda
+
+    text = cuda.emit(_two([("x", "xs")], [("x", "ys")]), SM_86)
+    assert text.count("struct Pair {") == 1
+    assert "    Pair pa,\n    Pair pb)" in text
+    assert "const double* const xs = pa.x;" in text
+    assert "const double* const ys = pb.x;" in text

@@ -43,6 +43,7 @@ from functools import cache
 
 import numpy as np
 import pytest
+from soa import axes
 
 from felizjueves import e_fragment as ef
 from felizjueves import kernel_k
@@ -56,11 +57,13 @@ from felizjueves.ir import (
     Decl,
     Fn,
     For,
+    Index,
     Inline,
     Lit,
     Note,
     Raw,
     Space,
+    Var,
     WarpReduce,
     _exprs_of,
     _subexprs,
@@ -82,7 +85,12 @@ from felizjueves.kernel_k import (
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import build_recurrence_kernel, target_order
+from felizjueves.prim_pair import AXES
+from felizjueves.recurrence import (
+    PQ_PARAMS,
+    build_recurrence_kernel,
+    target_order,
+)
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -218,15 +226,15 @@ def k_args(am: Am, bra: EPair, kets: list[tuple[EPair, int]],
     Q = [rec[0] for rec, _, _ in krecs]
     args = dict(
         n_bra=n_bra, n_ket=n_ket, n_dc=len(dcd_rows), tau=tau, maxD=maxD,
-        P=np.array(P), zeta_ac=np.array([z for _, z, _ in bra.recs]),
-        XPA=diff(P, bra.A), XPC=diff(P, bra.B),
+        **axes("P", P), zeta_ac=np.array([z for _, z, _ in bra.recs]),
+        **axes("PA", diff(P, bra.A)), **axes("PC", diff(P, bra.B)),
         s_ac=np.array([s for _, _, s in bra.recs]),
         Ip=np.array(Ip if Ip is not None else [1.0] * n_bra),
         dc=np.full(n_bra, dc, np.int32),
-        Q=np.array(Q), eta=np.array([rec[1] for rec, _, _ in krecs]),
-        XQB=np.array([[rec[0][d] - ket.A[d] for d in range(3)]
+        **axes("Q", Q), eta=np.array([rec[1] for rec, _, _ in krecs]),
+        **axes("QB", [[rec[0][d] - ket.A[d] for d in range(3)]
                       for rec, ket, _ in krecs]),
-        XQD=np.array([[rec[0][d] - ket.B[d] for d in range(3)]
+        **axes("QD", [[rec[0][d] - ket.B[d] for d in range(3)]
                       for rec, ket, _ in krecs]),
         s_bd=np.array([rec[2] for rec, _, _ in krecs]),
         Iq=np.array(Iq if Iq is not None else [1.0] * n_ket),
@@ -359,6 +367,23 @@ def _ket_loop(kern) -> tuple:
     return loop.body
 
 
+def same_program(jl: tuple, kl: tuple, end: int) -> bool:
+    """`kl[3:end] == jl[3:end]`, the `[p|q]` program, except for one thing
+    #421 moved: the ket centre is read per axis in K (`PQ_d = P_d - XQ[k]`,
+    from its `PrimPairSoA`), interleaved in J (`P_d - Q[k, d]`). Every other
+    statement, the plan's, is `==`."""
+    def norm(s):
+        if (isinstance(s, Decl) and s.name in PQ_PARAMS
+                and isinstance(s.init, Call) and s.init.fn is Fn.SUB):
+            p, q = s.init.args
+            d = PQ_PARAMS.index(s.name)
+            if q == Index(f"{AXES[d]}Q", (Var(KET),)):
+                q = Index("Q", (Var(KET), Lit(d)))
+            return dataclasses.replace(s, init=Call(Fn.SUB, (p, q)))
+        return s
+    return [norm(s) for s in kl[3:end]] == list(jl[3:end])
+
+
 @pytest.mark.parametrize("am", CLASSES)
 def test_the_plan_is_untouched(am: Am) -> None:
     """The plan of `Target.K` with `am` is the plan of `Target.J` with the
@@ -381,7 +406,7 @@ def test_the_plan_is_untouched(am: Am) -> None:
                if isinstance(s, Note) and s.prov.startswith("J_p +="))
     program = jl[3:end]
     assert any(isinstance(s, Decl) and s.name.startswith("R") for s in program)
-    assert kl[3:end] == program
+    assert same_program(jl, kl, end)
 
 
 # ---------------------------------------------------------------------------

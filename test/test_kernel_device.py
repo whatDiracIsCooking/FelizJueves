@@ -108,7 +108,12 @@ from conftest import VRAM_PROBE, check_vram
 from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
-from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE, BOYS_SWITCH
+from felizjueves.emit._c import (
+    BOYS_DEVICE,
+    BOYS_DEVICE_WIDE,
+    BOYS_SWITCH,
+    bundle_struct,
+)
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
@@ -1682,13 +1687,17 @@ K_CASES = {
     "near": (False, None, 2, 37),
     "wide-screened": (True, 0.4, 2, 37),
 }
-K_SIGNATURE = (
-    "int n_bra, int n_ket, int n_dc, double tau, double maxD, const double* P, "
-    "const double* zeta_ac, const double* XPA, const double* XPC, "
-    "const double* s_ac, const double* Ip, const int* dc, const double* Q, "
-    "const double* eta, const double* XQB, const double* XQD, "
-    "const double* s_bd, const double* Iq, const int* dd, const double* Dcd, "
-    "double* K")
+# The harness's 15 uploads, in `_k_pack`'s order (`sizes[]` below): the
+# parameters each holds, a record vector's three per-axis arrays (#421)
+# consecutive `n`-long runs of its one upload. The kernel's own signature is
+# read off its emitted text and its `PrimPairSoA` arguments are built by
+# `plan_driver.kernel_args`, so nothing here restates the parameter list.
+K_REGIONS = (
+    ("XP", "YP", "ZP"), ("zeta_ac",), ("XPA", "YPA", "ZPA"),
+    ("XPC", "YPC", "ZPC"), ("s_ac",), ("Ip",), ("dc",),
+    ("XQ", "YQ", "ZQ"), ("eta",), ("XQB", "YQB", "ZQB"),
+    ("XQD", "YQD", "ZQD"), ("s_bd",), ("Iq",), ("dd",), ("Dcd",))
+K_INT_REGIONS = (6, 13)  # `dc`, `dd`: uploaded as int
 
 K_HARNESS = r"""
 {portable}
@@ -1745,7 +1754,8 @@ int main(int argc, char** argv) {{
               lanes = (int)in[5];
     const double tau = in[3], maxD = in[4];
     const size_t nb = (size_t)n_bra, nk = (size_t)n_ket;
-    // bra: P XPA XPC (3n), zeta s_ac Ip (n), dc (n); ket alike; then Dcd
+    // bra: P XPA XPC (3n, per axis), zeta s_ac Ip (n), dc (n); ket alike;
+    // then Dcd
     const size_t sizes[] = {{nb * 3, nb, nb * 3, nb * 3, nb, nb, nb,
                             nk * 3, nk, nk * 3, nk * 3, nk, nk, nk,
                             (size_t)n_dc * {n_cd}}};
@@ -1810,11 +1820,36 @@ int main(int argc, char** argv) {{
 
 K_LAUNCH = ("        {name}<<<dim3(n_bra), dim3(1, lanes), "
             "(size_t){slots} * lanes * sizeof(double)>>>(\n"
-            "            n_bra, n_ket, n_dc, tau, maxD, d[0], d[1], d[2], d[3], "
-            "d[4], d[5], di[6],\n"
-            "            d[7], d[8], d[9], d[10], d[11], d[12], di[13], d[14], "
-            "dK);\n"
+            "            {args});\n"
             "        CHECK(devEventRecord(ev[{next}]));")
+
+
+def k_launch_args(kern) -> list[str]:
+    """`kern`'s launch arguments in K_HARNESS: each parameter at its
+    upload (`K_REGIONS`; `di[...]` for an int region, `df[...]` for a
+    parameter the kernel declares F32, `d[...]` otherwise), the record
+    geometry as two `PrimPairSoA` aggregates (`plan_driver.kernel_args`)."""
+    from plan_driver import kernel_args
+
+    from felizjueves.ir import Scalar
+
+    types = {p.name: p.type for p in kern.params}
+    at = {n: n for n in ("n_bra", "n_ket", "n_dc", "tau", "maxD")}
+    for i, names in enumerate(K_REGIONS):
+        n = "nb" if i < 7 else "nk"
+        for j, name in enumerate(names):
+            base = ("di" if i in K_INT_REGIONS
+                    else "df" if types[name] is Scalar.F32 else "d")
+            at[name] = f"{base}[{i}]" + (f" + {j} * {n}" if j else "")
+    return kernel_args(kern, at, "", "dK")
+
+
+def k_declaration(text: str, name: str) -> str:
+    """The `extern "C"` declaration of kernel `name`, read off its emitted
+    unit `text`: the signature the unit compiles, never restated."""
+    head = f'extern "C" __global__ void {name}('
+    start = text.index(head)
+    return text[start:text.index(")\n{", start) + 1] + ";"
 
 
 def _k_dims(spec: Spec) -> tuple[int, int]:
@@ -1846,8 +1881,11 @@ def _k_build(backend: str, spec: Spec, tc, workdir: Path) -> _KCell:
     import devcache
 
     from felizjueves.kernel_k import PARAMS
-    assert PARAMS == tuple(
-        a.split()[-1].lstrip("*") for a in K_SIGNATURE.split(", ")), PARAMS
+    from felizjueves.prim_pair import PRIM_PAIR_SOA
+    # every parameter but the scalars and K has exactly one upload
+    held = [n for r in K_REGIONS for n in r]
+    assert sorted(held) == sorted(set(PARAMS) - {
+        "n_bra", "n_ket", "n_dc", "tau", "maxD", "K"}), (held, PARAMS)
     emit, arch, ext = BACKEND[backend]
     kernels = measured.cell_kernels(spec)
     texts = [emit(k, arch) for k in kernels]
@@ -1878,11 +1916,13 @@ def _k_build(backend: str, spec: Spec, tc, workdir: Path) -> _KCell:
     slots = tuple(measured.jsh_slots(k) for k in kernels)
     src = K_HARNESS.format(
         portable=PORTABLE, n_cd=n_cd, n_ab=n_ab, n_batches=len(kernels),
-        decls="\n".join(f'extern "C" __global__ void {k.name}({K_SIGNATURE});'
-                        for k in kernels),
-        launches="\n".join(K_LAUNCH.format(name=k.name, slots=s, next=i + 1)
-                           for i, (k, s) in enumerate(zip(kernels, slots,
-                                                          strict=True))),
+        decls=bundle_struct(PRIM_PAIR_SOA) + "\n".join(
+            k_declaration(t, k.name) for k, t in zip(kernels, texts,
+                                                     strict=True)),
+        launches="\n".join(
+            K_LAUNCH.format(name=k.name, slots=s, next=i + 1,
+                            args=", ".join(k_launch_args(k)))
+            for i, (k, s) in enumerate(zip(kernels, slots, strict=True))),
         vram_kernels=", ".join(f"(const void*){k.name}" for k in kernels))
     main_o = workdir / "k_main.o"
     got = devcache.compile_unit(tc.path, flags, f"k_main.{ext}", src, {},
@@ -1944,8 +1984,11 @@ def _k_inputs(spec: Spec, a: dict, seed: int) -> dict:
 def _k_pack(k: dict, lanes: int) -> np.ndarray:
     nb, nk = k["n_bra"], k["n_ket"]
     head = [nb, nk, 1, k["tau"], k["maxD"], lanes]
-    body = [k["P"], k["zeta"], k["XPA"], k["XPC"], k["s_ac"], k["Ip"],
-            np.zeros(nb), k["Q"], k["eta"], k["XQB"], k["XQD"], k["s_bd"],
+    # K_REGIONS' order; a record vector per axis (`.T`: all X, all Y, all Z)
+    soa = [np.asarray(k[n], dtype=np.float64).T
+           for n in ("P", "XPA", "XPC", "Q", "XQB", "XQD")]
+    body = [soa[0], k["zeta"], soa[1], soa[2], k["s_ac"], k["Ip"],
+            np.zeros(nb), soa[3], k["eta"], soa[4], soa[5], k["s_bd"],
             k["Iq"], np.zeros(nk), k["Dcd"]]
     return np.concatenate([np.array(head, dtype=np.float64),
                            *(np.asarray(x, dtype=np.float64).ravel()

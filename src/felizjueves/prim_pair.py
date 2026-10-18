@@ -1,4 +1,4 @@
-"""`PrimPairSoA`: the one-electron kernels' primitive-pair records, as a struct.
+"""`PrimPairSoA`: a kernel's primitive-pair records, as a struct.
 
     PRIM_PAIR_SOA                      the `ir.Bundle`
     AXES                               ("X", "Y", "Z")
@@ -20,6 +20,13 @@ and not fourteen positional pointers a host can transpose without a
 diagnostic (every one is a `const double*`). The struct is the SUPERSET the
 four families read: a kernel binds the fields it uses and leaves the rest
 unread, so one value, filled once per class, serves every family.
+
+Since #421 the two-electron kernels take it too: the J chain's `DQ` (its
+`zeta` read as `eta`) and `JAB` one value, and `K` TWO -- its bra record
+`(a, c)` as `pp_ac` and its ket record `(b, d)` as `pp_bd`, the centre `XP`
+and the two `P - X` vectors read under K's names (`kernel_k.py`). A field
+is the record's; what a kernel computes per record on its own account (a
+weight, a row index, a Schwarz factor) stays an argument of its own.
 
 `include/felizjueves/prim_pair.h` is its C spelling for a `gpu` unit, and a
 test holds that header to `emit._c.bundle_struct(PRIM_PAIR_SOA)` byte for

@@ -97,6 +97,7 @@ from felizjueves.launch import (
 from felizjueves.launch import _kernels as _plan_kernels
 from felizjueves.launch import class_spec as launch_class_spec
 from felizjueves.plan.pipeline import plan
+from felizjueves.prim_pair import AXES
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["BATCH_COUNTS", "KernelJAB", "KernelJP", "admitted_batches",
@@ -104,6 +105,13 @@ __all__ = ["BATCH_COUNTS", "KernelJAB", "KernelJP", "admitted_batches",
 
 BATCH_COUNTS = (1, 3, 6, 9)
 Am = tuple[int, int, int, int]
+
+
+def _axes(name: str, vecs: np.ndarray) -> dict[str, np.ndarray]:
+    """An `[n, 3]` record vector as the kernels take it (#421): one flat
+    array per axis, `X<name>`, `Y<name>`, `Z<name>` (`prim_pair.py`)."""
+    vecs = np.asarray(vecs, dtype=np.float64).reshape(-1, 3)
+    return {f"{a}{name}": vecs[:, d].copy() for d, a in enumerate(AXES)}
 
 
 def class_spec(am: Am, n_batches: int = 1) -> Spec:
@@ -220,10 +228,10 @@ class KernelJAB:
         out = it.run(
             n_rec=n_rec, n_ao=n_ao, n_rows=n_rec,
             zeta_ab=np.array([z for _, z, _ in bra.recs], dtype=np.float64),
-            XPA=np.array([[P[d] - bra.A[d] for d in range(3)]
-                          for P, _, _ in bra.recs], dtype=np.float64),
-            XPB=np.array([[P[d] - bra.B[d] for d in range(3)]
-                          for P, _, _ in bra.recs], dtype=np.float64),
+            **_axes("PA", np.array([[P[d] - bra.A[d] for d in range(3)]
+                          for P, _, _ in bra.recs], dtype=np.float64)),
+            **_axes("PB", np.array([[P[d] - bra.B[d] for d in range(3)]
+                          for P, _, _ in bra.recs], dtype=np.float64)),
             s=np.array([s for _, _, s in bra.recs], dtype=np.float64),
             off_a=np.full(n_rec, oa, dtype=np.int32),
             off_b=np.full(n_rec, ob, dtype=np.int32),
@@ -309,8 +317,8 @@ class KernelDQ:
                           launch=Launch(grid, block, self.lanes)).run(
             n_rec=n_rec, n_pair=len(items),
             eta=np.array(eta, dtype=np.float64),
-            XPA=np.array(xpa, dtype=np.float64),
-            XPB=np.array(xpb, dtype=np.float64),
+            **_axes("PA", np.array(xpa, dtype=np.float64)),
+            **_axes("PB", np.array(xpb, dtype=np.float64)),
             s=np.array(s, dtype=np.float64), w=np.array(w, dtype=np.float64),
             pair=np.array(pair, dtype=np.int32),
             Dcd=np.array([[float(x) for x in dcd] for _, dcd, _ in items],
@@ -584,10 +592,10 @@ def _jab_launches(basis: Basis, eps, blocks, jps, threads: int):
                         launch=Launch(grid, block, 1)).run(
             n_rec=n_rec, n_ao=n_ao, n_rows=Jp.shape[0],
             zeta_ab=np.array([r[1] for _, r in recs], dtype=np.float64),
-            XPA=np.array([[r[0][d] - ep.A[d] for d in range(3)]
-                          for ep, r in recs], dtype=np.float64),
-            XPB=np.array([[r[0][d] - ep.B[d] for d in range(3)]
-                          for ep, r in recs], dtype=np.float64),
+            **_axes("PA", np.array([[r[0][d] - ep.A[d] for d in range(3)]
+                          for ep, r in recs], dtype=np.float64)),
+            **_axes("PB", np.array([[r[0][d] - ep.B[d] for d in range(3)]
+                          for ep, r in recs], dtype=np.float64)),
             s=np.array([r[2] for _, r in recs], dtype=np.float64),
             off_a=np.array(oa, dtype=np.int32),
             off_b=np.array(ob, dtype=np.int32),

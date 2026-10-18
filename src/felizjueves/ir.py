@@ -1364,15 +1364,36 @@ class Kernel:
     cross the call boundary inside a `Bundle` struct. Each one it binds must
     be an IN array of the field's scalar with at most one extent -- a struct
     of pointers to flat arrays, so the layout behind a field is never a
-    question -- and its `arg` must not be a param's name. The interpreter
-    ignores it; the params are the params.
+    question -- and its `arg` must not be a param's name. It may be a
+    TUPLE of `Bundled` (K's bra and ket records are two values of one
+    `Bundle`, #421): their `arg`s differ and no param is carried twice.
+    `bundles` is the tuple either way. The interpreter ignores it; the params
+    are the params.
     """
 
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
     wide_boys: bool = False
-    bundled: Bundled | None = None
+    bundled: Bundled | tuple[Bundled, ...] | None = None
+
+    @property
+    def bundles(self) -> tuple[Bundled, ...]:
+        """`bundled` as a tuple: empty when unset, one element when a
+        single `Bundled` was given."""
+        if self.bundled is None:
+            return ()
+        if isinstance(self.bundled, Bundled):
+            return (self.bundled,)
+        return self.bundled
+
+    def bundled_by(self, param: str) -> tuple[Bundled, str] | None:
+        """The `Bundled` that carries `param` and its field, or None."""
+        for b in self.bundles:
+            f = b.field_of(param)
+            if f is not None:
+                return b, f
+        return None
 
     def __repr__(self) -> str:
         # The dataclass's own spelling, with `wide_boys` and `bundled` shown
@@ -1440,10 +1461,30 @@ class Kernel:
                              "calls Fn.BOYS")
 
     def _check_bundled(self, params: tuple[Param, ...]) -> None:
-        b = self.bundled
-        if not isinstance(b, Bundled):
-            raise TypeError(f"Kernel bundled {b!r} is not a Bundled")
+        bs = self.bundled
+        if isinstance(bs, tuple):
+            if not bs:
+                raise ValueError(f"Kernel {self.name!r}: bundled is an empty "
+                                 "tuple (leave it None)")
+        else:
+            bs = (bs,)
+        for b in bs:
+            if not isinstance(b, Bundled):
+                raise TypeError(f"Kernel bundled {b!r} is not a Bundled")
+        args = [b.arg for b in bs]
+        if len(set(args)) != len(args):
+            raise ValueError(f"Kernel {self.name!r}: two bundles share an "
+                             f"argument name in {args}")
+        carried = [p for b in bs for _, p in b.binds]
+        if len(set(carried)) != len(carried):
+            raise ValueError(f"Kernel {self.name!r}: a param is carried by "
+                             f"two bundles in {carried}")
         by_name = {p.name: p for p in params}
+        for b in bs:
+            self._check_one_bundled(b, by_name)
+
+    def _check_one_bundled(self, b: Bundled, by_name: dict[str, Param]
+                           ) -> None:
         if b.arg in by_name:
             raise ValueError(f"Kernel {self.name!r}: the {b.bundle.name} "
                              f"argument {b.arg!r} is also a Param")

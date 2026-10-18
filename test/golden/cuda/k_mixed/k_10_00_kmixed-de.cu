@@ -19,24 +19,46 @@ __device__ double fj_boys(int m, double T) {
     return exp(-T) * sum;
 }
 
+// PrimPairSoA: the record arrays, one pointer per field, passed by value
+struct PrimPairSoA {
+    const double* zeta;
+    const double* s;
+    const double* eb;
+    const double* XP;
+    const double* YP;
+    const double* ZP;
+    const double* XPA;
+    const double* YPA;
+    const double* ZPA;
+    const double* XPB;
+    const double* YPB;
+    const double* ZPB;
+    const int* off_a;
+    const int* off_b;
+};
+
 extern "C" __global__ void k_10_00(
     int n_bra,
     int n_ket,
     int n_dc,
     double tau,
     double maxD,
-    const double* P,
-    const double* zeta_ac,
+    PrimPairSoA pp_ac,
     const float* XPA,
+    const float* YPA,
+    const float* ZPA,
     const float* XPC,
-    const double* s_ac,
+    const float* YPC,
+    const float* ZPC,
     const double* Ip,
     const int* dc,
-    const double* Q,
-    const double* eta,
+    PrimPairSoA pp_bd,
     const float* XQB,
+    const float* YQB,
+    const float* ZQB,
     const float* XQD,
-    const double* s_bd,
+    const float* YQD,
+    const float* ZQD,
     const double* Iq,
     const int* dd,
     const float* Dcd,
@@ -44,6 +66,18 @@ extern "C" __global__ void k_10_00(
 {
     // an extent only (a leading dimension, never read):
     (void)n_dc;
+    // the record arrays, from PrimPairSoA pp_ac
+    const double* const zeta_ac = pp_ac.zeta;
+    const double* const s_ac = pp_ac.s;
+    const double* const XP = pp_ac.XP;
+    const double* const YP = pp_ac.YP;
+    const double* const ZP = pp_ac.ZP;
+    // the record arrays, from PrimPairSoA pp_bd
+    const double* const eta = pp_bd.zeta;
+    const double* const s_bd = pp_bd.s;
+    const double* const XQ = pp_bd.XP;
+    const double* const YQ = pp_bd.YP;
+    const double* const ZQ = pp_bd.ZP;
     // K[a,b] += D[c,d] SUM_p E^ac_p SUM_q [p|q] E^bd_q, K class (la,lc|lb,ld) =
     // (1,0|0,0), lp=1 lq=0 (L=1), one batch, no atomics: milestone 10's staged
     // contraction (this repo's design; [Fock, §4.3.2] prior art)
@@ -64,9 +98,9 @@ extern "C" __global__ void k_10_00(
     // Ksh: dynamic shared memory, row-major, 7 x (int)blockDim.y doubles
     extern __shared__ double Ksh[];
     if (bra < n_bra) {
-        double P0 = P[(bra * 3 + 0)];
-        double P1 = P[(bra * 3 + 1)];
-        double P2 = P[(bra * 3 + 2)];
+        double P0 = XP[bra];
+        double P1 = YP[bra];
+        double P2 = ZP[bra];
         double ze = zeta_ac[bra];
         double Ib = Ip[bra];
         double sb = s_ac[bra];
@@ -79,12 +113,12 @@ extern "C" __global__ void k_10_00(
             // fragment e_block_10_f32
             const auto zeta = ((float)ze);
             const auto half_inv_zeta = ((float)(0.5 / ze));
-            const auto PA_x = XPA[(bra * 3 + 0)];
-            const auto PB_x = XPC[(bra * 3 + 0)];
-            const auto PA_y = XPA[(bra * 3 + 1)];
-            const auto PB_y = XPC[(bra * 3 + 1)];
-            const auto PA_z = XPA[(bra * 3 + 2)];
-            const auto PB_z = XPC[(bra * 3 + 2)];
+            const auto PA_x = XPA[bra];
+            const auto PB_x = XPC[bra];
+            const auto PA_y = YPA[bra];
+            const auto PB_y = YPC[bra];
+            const auto PA_z = ZPA[bra];
+            const auto PB_z = ZPC[bra];
             auto* const E = Eac;
             // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
             // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
@@ -118,18 +152,19 @@ extern "C" __global__ void k_10_00(
             if (bound < tau) {
                 break;
             }
-            float PQ_x = ((float)(P0 - Q[(k * 3 + 0)]));
-            float PQ_y = ((float)(P1 - Q[(k * 3 + 1)]));
-            float PQ_z = ((float)(P2 - Q[(k * 3 + 2)]));
+            float PQ_x = ((float)(P0 - XQ[k]));
+            float PQ_y = ((float)(P1 - YQ[k]));
+            float PQ_z = ((float)(P2 - ZQ[k]));
             double et = eta[k];
             // theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in the source'
             float theta = ((float)sqrt(((ze * et) / (ze + et))));
             // [0]^(m) = (2/sqrt(pi)) theta (-2 theta^2)^m F_m(theta^2 |PQ|^2), j_engine.md
             // 'Two defects in the source'
-            // kmixed-de (#347): as kmixed, and the D and E operands narrowed -- XPA XPC
-            // XQB XQD and Dcd are const float*, packed by the host; E^ac and E^bd are
-            // formed in F32 into F32 arrays. Every accumulation stays F64: an E entry and
-            // a D_cd are read through TO_F64
+            // kmixed-de (#347): as kmixed, and the D and E operands narrowed -- the per-
+            // axis XPA..ZPA XPC..ZPC XQB..ZQB XQD..ZQD and Dcd are const float*, packed by
+            // the host, outside the fp64 PrimPairSoA; E^ac and E^bd are formed in F32 into
+            // F32 arrays. Every accumulation stays F64: an E entry and a D_cd are read
+            // through TO_F64
             float t2 = (theta * theta);
             float T = (t2 * (((PQ_x * PQ_x) + (PQ_y * PQ_y)) + (PQ_z * PQ_z)));
             float s = ((-2.0f) * t2);
@@ -148,12 +183,12 @@ extern "C" __global__ void k_10_00(
             {
                 // fragment e_block_00_f32
                 const auto zeta = ((float)et);
-                const auto PA_x = XQB[(k * 3 + 0)];
-                const auto PB_x = XQD[(k * 3 + 0)];
-                const auto PA_y = XQB[(k * 3 + 1)];
-                const auto PB_y = XQD[(k * 3 + 1)];
-                const auto PA_z = XQB[(k * 3 + 2)];
-                const auto PB_z = XQD[(k * 3 + 2)];
+                const auto PA_x = XQB[k];
+                const auto PB_x = XQD[k];
+                const auto PA_y = YQB[k];
+                const auto PB_y = YQD[k];
+                const auto PA_z = ZQB[k];
+                const auto PB_z = ZQD[k];
                 auto* const E = Ebd;
                 // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
                 // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
