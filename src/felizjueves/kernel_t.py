@@ -1,6 +1,7 @@
 """The kinetic-energy kernel, `Target.T`, built as a `Kernel` (#238).
 
     build_t_kernel(spec | (la, lb)) -> Kernel     one per pair class
+    t_name(spec | (la, lb))         -> str        its name, unbuilt
     t_spec(la, lb)                  -> Spec       the class's key
     launch_shape(n_rec, threads)    -> (grid, block)
 
@@ -98,6 +99,7 @@ __all__ = [
     "REC",
     "ZEROED_T",
     "build_t_kernel",
+    "t_name",
     "launch_shape",
     "t_spec",
 ]
@@ -158,6 +160,13 @@ def _f64(name: str, shape: tuple[Expr, ...]) -> Param:
 
 def _i32(name: str, shape: tuple[Expr, ...]) -> Param:
     return Param(name, Scalar.I32, array=True, shape=shape)
+
+
+def t_name(cls: Spec | tuple[int, int]) -> str:
+    """The name `build_t_kernel(cls)` gives its kernel, without building
+    it (#419)."""
+    la, lb = _class(cls)
+    return f"t_{la}{lb}"
 
 
 def build_t_kernel(cls: Spec | tuple[int, int], *,
@@ -260,4 +269,4 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         _i32("off_b", (nr,)),
         Param("T", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or f"t_{la}{lb}", params, body, bundled=BUNDLED)
+    return Kernel(name or t_name((la, lb)), params, body, bundled=BUNDLED)

@@ -27,7 +27,9 @@ Exit status: 0 written, 2 could not run -- no third meaning.
 Fast tier: nothing here compiles anything. The bare default builds the
 `[p|q]` ladder through L = 16, so every test that runs it is `slow`, and the
 rest are split at `tiers.FAST_L_MAX` by their classes' L (`la + lb` for a
-pair unit, `2 (la + lb)` for a Schwarz one).
+pair unit, `2 (la + lb)` for a Schwarz one). Names are the exception: they
+come from each builder's name function, unbuilt, so the collision checks
+cover every L in the fast tier (#419).
 """
 
 from __future__ import annotations
@@ -45,9 +47,15 @@ from felizjueves import lever_ladder, levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
-from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel import (
+    build_pq_kernel,
+    build_pq_kernels,
+    k_spec,
+    pq_name,
+    pq_spec,
+)
+from felizjueves.kernel_dq import build_dq_kernel, dq_name
+from felizjueves.kernel_jab import build_jab_kernel, jab_name
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -71,12 +79,44 @@ def _names(d: Path) -> set[str]:
 
 
 def _pq_names(ext: str) -> set[str]:
-    return {f"{build_pq_kernel(L).name}.{ext}" for L in range(17)}
+    return {f"{pq_name(L)}.{ext}" for L in range(17)}
 
 
 def _pair_names(ext: str, classes=PAIR_CLASSES_F) -> set[str]:
-    return ({f"{build_dq_kernel(c).name}.{ext}" for c in classes}
-            | {f"{build_jab_kernel(c).name}.{ext}" for c in classes})
+    return ({f"{dq_name(c)}.{ext}" for c in classes}
+            | {f"{jab_name(c)}.{ext}" for c in classes})
+
+
+# --- the names, without building (#419) ---------------------------------------
+#
+# Each builder names its kernel through a name function beside it (`pq_name`,
+# `dq_name`, `jab_name`, `emit.ONE_E_NAMES`), so the names of every rung, L
+# up to 16 and pair classes through `PAIR_L_MAX`, are checked here without
+# building one IR. That the builder uses its name function is checked by
+# building, so it is split at the cut.
+
+
+def _assert_the_names_are_the_builders(keep) -> None:
+    for L in range(17):
+        if keep(L):
+            assert pq_name(L) == build_pq_kernel(L).name
+    for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX):
+        if not keep(sum(c)):
+            continue
+        assert dq_name(c) == build_dq_kernel(c).name
+        assert jab_name(c) == build_jab_kernel(c).name
+        for name, build in zip(emit_cli.ONE_E_NAMES, emit_cli.ONE_E_BUILDERS,
+                               strict=True):
+            assert name(c) == build(c).name
+
+
+def test_each_name_function_is_its_builders_name() -> None:
+    _assert_the_names_are_the_builders(is_fast)
+
+
+@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
+def test_each_name_function_is_its_builders_name_above_l4() -> None:
+    _assert_the_names_are_the_builders(lambda L: not is_fast(L))
 
 
 # --- the ladders ------------------------------------------------------------
@@ -102,21 +142,12 @@ def test_the_default_writes_both_ladders_and_nothing_else(backend, tmp_path):
             assert (tmp_path / f"{k.name}.{ext}").read_text() == emit(k, arch)
 
 
-def _assert_no_pair_name_is_pq(keep) -> None:
-    for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX):
-        if not keep(sum(c)):
-            continue
-        for k in (build_dq_kernel(c), build_jab_kernel(c)):
-            assert not k.name.startswith("pq_")
 
 
 def test_the_pair_names_cannot_collide_with_the_pq_naming() -> None:
-    _assert_no_pair_name_is_pq(is_fast)
-
-
-@pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
-def test_the_pair_names_cannot_collide_with_the_pq_naming_above_l4() -> None:
-    _assert_no_pair_name_is_pq(lambda L: not is_fast(L))
+    for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX):
+        for name in (dq_name(c), jab_name(c)):
+            assert not name.startswith("pq_")
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
@@ -168,7 +199,8 @@ def test_the_pq_ladder_still_matches_the_measured_pins(extra, tmp_path):
 
 
 def _one_e_names(ext: str, lmax: int) -> set[str]:
-    return {f"{k.name}.{ext}" for k in emit_cli.one_e_kernels(lmax)}
+    return {f"{name(c)}.{ext}" for c in emit_cli.one_e_classes(lmax)
+            for name in emit_cli.ONE_E_NAMES}
 
 
 def test_the_one_e_ladder_is_s_t_v_per_pair_class() -> None:
@@ -235,25 +267,14 @@ def test_one_e_l_adds_to_the_ladder_flags(tmp_path):
                                 "t_00.cu", "v_00.cu"}
 
 
-def _assert_one_e_names_miss_the_j_chain(keep) -> None:
-    pairs = [c for c in emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
-             if keep(sum(c))]
-    j = ({build_pq_kernel(L).name for L in range(17) if keep(L)}
-         | {k.name for c in pairs
-            for k in (build_dq_kernel(c), build_jab_kernel(c))})
-    one_e = {build(c).name for c in pairs for build in emit_cli.ONE_E_BUILDERS}
+def test_the_one_e_names_cannot_collide_with_the_j_chain() -> None:
+    assert emit_cli.ONE_E_L_MAX == emit_cli.PAIR_L_MAX  # one class list
+    pairs = emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
+    j = ({pq_name(L) for L in range(17)}
+         | {name(c) for c in pairs for name in (dq_name, jab_name)})
+    one_e = {name(c) for c in pairs for name in emit_cli.ONE_E_NAMES}
     assert not j & one_e
     assert all(n[:2] in ("s_", "t_", "v_") for n in one_e)
-
-
-def test_the_one_e_names_cannot_collide_with_the_j_chain() -> None:
-    _assert_one_e_names_miss_the_j_chain(is_fast)
-
-
-@pytest.mark.slow  # the whole ladders, L up to 16
-def test_the_one_e_names_cannot_collide_with_the_j_chain_at_any_l() -> None:
-    assert emit_cli.ONE_E_L_MAX == emit_cli.PAIR_L_MAX  # one class list
-    _assert_one_e_names_miss_the_j_chain(lambda L: True)
 
 
 # --- the Schwarz ladder -------------------------------------------------------
