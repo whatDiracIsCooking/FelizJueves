@@ -44,12 +44,18 @@ one C name per class. With a `Specialization` it is one explicit
 specialization of a kernel template, `template <> __global__ void s<0, 1>(...)`,
 so a consumer can take `&s<la, lb>` from a compile-time `(la, lb)` and build its
 dispatch table with no name written per class. Only the declarator moves; the
-body is the same text, character for character. The template's primary is
-declared in every unit and defined in none, so a class whose unit was not
-compiled in is a link error, never a launch through a null pointer. Its
-parameters are fixed in number, `int32_t L0, int32_t L1, ...`, one per
-`args` entry: nvcc 13.0 miscompiles the host stub of an explicit
-specialization of a variadic `__global__` template (`'__T0' was not
+body is the same text, character for character.
+
+The template's primary is declared once, in a header of its own:
+`emit_template` writes it as `{template}.h`, and every unit of the template
+includes it by that name, so the consumer writes the header beside the units.
+It is defined nowhere, so a class whose unit was not compiled in is a link
+error, never a launch through a null pointer; and a unit whose parameters have
+drifted from the header's no longer specializes it, a compile error. Its
+parameters are `uint8_t La, uint8_t Lb, ...`, one per `args` entry, lettered
+by position (an angular momentum fits a byte; `Specialization` refuses one
+that does not), and fixed in number: nvcc 13.0 miscompiles the host stub of an
+explicit specialization of a variadic `__global__` template (`'__T0' was not
 declared`), where clang takes both.
 
 A specialization's units are meant to share one translation unit, so its text
@@ -68,24 +74,54 @@ step by hand.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from felizjueves.device import Arch
 from felizjueves.emit._c import (
+    _GEOMETRY,
     BOYS_DEVICE_WIDE,
+    INDENT,
     RESERVED,
     CWriter,
     EmitError,
     _records,
     precision,
 )
-from felizjueves.ir import Kernel, _ident
+from felizjueves.ir import Call, Expr, Fn, Kernel, _ident
 
-__all__ = ["HEADER", "Specialization", "emit", "emit_classes"]
+__all__ = ["HEADER", "Specialization", "emit", "emit_classes", "emit_template"]
 
 # The one include every unit carries; resolved against FelizJueves's include/.
 HEADER = "felizjueves/runtime.h"
+
+
+# The primary's parameters, by position: `La, Lb, ...`.
+_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+
+# A C cast in `fj_boys`'s fixed text, `(double)(2 * m + 1)`.
+_C_CAST = re.compile(r"\((double|float)\)\(([^()]*)\)")
+
+
+def _geometry_only(e: Expr) -> bool:
+    """Launch geometry and `+`/`*` of it, nothing else: unsigned throughout."""
+    if not isinstance(e, Call):
+        return False
+    if e.fn in _GEOMETRY:
+        return True
+    return e.fn in (Fn.ADD, Fn.MUL) and all(_geometry_only(a) for a in e.args)
+
+
+def _geometry(e: Call) -> str:
+    """A `_geometry_only` expression in the hardware's own unsigned values."""
+    if e.fn in _GEOMETRY:
+        return _GEOMETRY[e.fn]
+    if e.fn is Fn.ADD:
+        return " + ".join(_geometry(x) for x in e.args)
+    # `*` binds tighter than `+`, so only a sum under a product is bracketed
+    return " * ".join(f"({_geometry(x)})" if x.fn is Fn.ADD else _geometry(x)
+                      for x in e.args)
 
 
 def _name(name: str, what: str) -> None:
@@ -106,7 +142,8 @@ class Specialization:
     """One explicit specialization, `template<args...>`, of a kernel template.
 
     Every unit of one template gives the same number of `args`: the primary
-    each unit declares is `template <int32_t L0, ..., int32_t Ln>`.
+    `{template}.h` declares (`emit_template`) and each unit includes is
+    `template <int32_t L0, ..., int32_t Ln>`.
     """
 
     template: str
@@ -115,9 +152,26 @@ class Specialization:
     def __post_init__(self) -> None:
         _name(self.template, "template name")
         _class(self.args, "Specialization args")
+        if not all(0 <= a <= 255 for a in self.args):
+            raise ValueError(f"Specialization args {self.args!r} do not fit "
+                             "the primary's uint8_t parameters")
+        if len(self.args) > len(_LETTERS):
+            raise ValueError(f"Specialization args {self.args!r}: more than "
+                             f"{len(_LETTERS)} parameters")
 
     def __str__(self) -> str:
         return f"{self.template}<{', '.join(map(str, self.args))}>"
+
+    @property
+    def header(self) -> str:
+        """The file the primary is declared in, beside the units."""
+        return f"{self.template}.h"
+
+    def primary(self) -> str:
+        """The primary's template head: one `uint8_t` per `args` entry,
+        lettered by position, `La, Lb, ...`."""
+        params = ", ".join(f"uint8_t L{c}" for c in _LETTERS[:len(self.args)])
+        return f"template <{params}>"
 
 
 class GpuWriter(CWriter):
@@ -155,6 +209,8 @@ class GpuWriter(CWriter):
             f"// {width}; {precision(k)}; nvcc and hipcc alike{named}.\n"
             f'#include "{HEADER}"\n'
         )
+        if spec is not None:
+            head += f'#include "{spec.header}"  // the primary\n'
         if self._width_used:
             head += (
                 f"static_assert(FJ_WAVEFRONT == {w}, "
@@ -166,19 +222,36 @@ class GpuWriter(CWriter):
         spec = self.specialization
         if spec is None:
             return super().signature(k, sig)
-        params = ", ".join(f"{self.INT} L{i}" for i in range(len(spec.args)))
+        return f"template <>\n__global__ void {spec}(\n{sig})"
+
+    def primary(self, k: Kernel) -> str:
+        """`{template}.h`: the primary the specialization's units share."""
+        spec = self.specialization
+        if spec is None:
+            raise TypeError("a primary needs a gpu.Specialization")
+        sig = ",\n".join(INDENT + self.param(p) for p in k.params)
         return (
-            "// the primary is declared in every unit and defined in none: a\n"
-            "// class whose unit is not compiled in fails to link\n"
-            f"template <{params}>\n"
-            f"__global__ void {spec.template}(\n{sig});\n"
+            f"// {spec.template}: generated by felizjueves.emit.gpu -- do not edit.\n"
+            f"// the kernel template every {spec.template}<...> unit specializes:\n"
+            "// declared here and defined in none, so a class whose unit is not\n"
+            "// compiled in fails to link.\n"
+            "#pragma once\n"
+            f'#include "{HEADER}"\n'
             "\n"
-            "template <>\n"
-            f"__global__ void {spec}(\n{sig})"
+            f"{spec.primary()}\n"
+            f"__global__ void {spec.template}(\n{sig});\n"
         )
 
+    def call(self, e: Call) -> str:
+        if _geometry_only(e):
+            return f"static_cast<{self.INT}>({_geometry(e)})"
+        return super().call(e)
+
+    def cast(self, t: str, text: str) -> str:
+        return f"static_cast<{t}>({text})"
+
     def boys(self, text: str) -> str:
-        spelled = super().boys(text)
+        spelled = _C_CAST.sub(r"static_cast<\1>(\2)", super().boys(text))
         if self.specialization is None:
             return spelled
         guard = "FJ_BOYS_WIDE" if text == BOYS_DEVICE_WIDE else "FJ_BOYS_NARROW"
@@ -186,7 +259,7 @@ class GpuWriter(CWriter):
 
     def _mask(self) -> str:
         self._width_used = True
-        return f"((FJ_LANE_MASK_T)0x{(1 << self.arch.wavefront) - 1:x}ull)"
+        return f"static_cast<FJ_LANE_MASK_T>(0x{(1 << self.arch.wavefront) - 1:x}ull)"
 
     def warp_reduce(self, dst: str, value: str) -> list[str]:
         w, mask = self.arch.wavefront, self._mask()
@@ -209,6 +282,19 @@ def emit(kernel: Kernel, arch: Arch,
          specialization: Specialization | None = None) -> str:
     """Render a Kernel as vendor-neutral GPU C++. No decisions."""
     return GpuWriter(arch, specialization).kernel(kernel)
+
+
+def emit_template(kernel: Kernel, arch: Arch,
+                  specialization: Specialization) -> str:
+    """`specialization.header`'s text: the template's primary, declared once.
+
+    The parameters are `kernel`'s, as any of the template's units spells them;
+    a unit whose parameters differ no longer specializes it.
+    """
+    if not isinstance(specialization, Specialization):
+        raise TypeError(f"specialization is a gpu.Specialization, "
+                        f"not {specialization!r}")
+    return GpuWriter(arch, specialization).primary(kernel)
 
 
 def emit_classes(name: str, classes: Sequence[tuple[int, ...]]) -> str:

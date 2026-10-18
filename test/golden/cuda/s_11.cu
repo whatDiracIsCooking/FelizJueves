@@ -11,7 +11,7 @@ extern "C" __global__ void s_11(
     const double* pb_x,
     const double* pb_y,
     const double* pb_z,
-    const double* s,
+    const double* s_ab,
     const int* off_a,
     const int* off_b,
     double* S)
@@ -25,7 +25,7 @@ extern "C" __global__ void s_11(
     if (rec < n_rec) {
         double zeta = zeta_ab[rec];
         double half_inv_zeta = (0.5 / zeta);
-        double sk = s[rec];
+        double sk = s_ab[rec];
         int oa = off_a[rec];
         int ob = off_b[rec];
         // the undressed t = 0 column E^{ab}_0 of this record, from the fragment: rows

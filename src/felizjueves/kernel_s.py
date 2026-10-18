@@ -218,7 +218,7 @@ def record_values(la: int, lb: int) -> tuple[list[Stmt], list[Stmt]]:
         binds[Factor.pa(d).name_in_kernel] = Index(pa_name(d), (rec,))
         binds[Factor.pb(d).name_in_kernel] = Index(pb_name(d), (rec,))
     head += [
-        Decl("sk", Scalar.F64, init=Index("s", (rec,))),
+        Decl("sk", Scalar.F64, init=Index("s_ab", (rec,))),
         Decl("oa", Scalar.I32, init=Index("off_a", (rec,))),
         Decl("ob", Scalar.I32, init=Index("off_b", (rec,))),
         Note("the undressed t = 0 column E^{ab}_0 of this record, from the "
@@ -302,7 +302,7 @@ def build_s_kernel(cls: Spec | tuple[int, int], *,
         _f64("zeta_ab", (nr,)),
         *(_f64(pa_name(d), (nr,)) for d in range(3)),
         *(_f64(pb_name(d), (nr,)) for d in range(3)),
-        _f64("s", (nr,)),
+        _f64("s_ab", (nr,)),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),
         Param("S", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),

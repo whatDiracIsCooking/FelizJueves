@@ -4,19 +4,23 @@ THE SEAM, a third time. The `gpu` backend consumes the identical `Kernel` the
 vendor backends do, and its text differs from CUDA's only in the hooks: the
 prologue (FelizJueves's own header instead of nothing, and the width assert
 when the text has a width) and the shuffle mask, cast to the header's
-`FJ_LANE_MASK_T` instead of spelled per vendor -- and in one spelling: every
-integer is `int32_t`, never a bare `int` (`CWriter.INT`).
+`FJ_LANE_MASK_T` instead of spelled per vendor -- and in two spellings: every
+integer is `int32_t`, never a bare `int` (`CWriter.INT`), and every cast is a
+`static_cast`, a sum of launch geometry taking one over its unsigned
+arithmetic (`CWriter.cast`; the vendor backends keep C casts, as they keep
+`int`, so `kernels.json`'s pins do not move).
 `test_it_differs_from_cuda_only_in_the_hooks` pins exactly which lines differ,
-once `int32_t` is read back as `int`.
+once its casts and `int32_t` are read back in CUDA's spelling (`as_cuda`).
 
 THE WIDTH. A unit with a shuffle carries `static_assert(FJ_WAVEFRONT == w)`;
 a unit with none has no width in its text at all, so it is byte-identical
 for any wavefront and carries no assert.
 
 THE GOLDEN FILES are `test/golden/gpu/pq_L4_p2_q2.cu` (a warp reduction: the
-width assert) and `s_11.cu` (no shuffle: none), and `s_11.specialized.cu`,
-the same kernel as `gpu.Specialization("s", (1, 1))` (written by the same
-command with that third argument to `emit`). Regenerate after an intended
+width assert) and `s_11.cu` (no shuffle: none), and `s_11.specialized.cu`
+and `s.h`, the same kernel as `gpu.Specialization("s", (1, 1))` and the
+primary that unit includes (`emit(k, SM_86, spec)` and
+`emit_template(k, SM_86, spec)`). Regenerate after an intended
 change (never hand-edit) and review the diff:
 
     PYTHONPATH=src uv run python -c "from pathlib import Path; \
@@ -47,18 +51,27 @@ from felizjueves.emit._c import EmitError
 from felizjueves.kernel import build_pq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_s import build_s_kernel
+from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
 
 REPO = Path(__file__).resolve().parent.parent
 GOLDEN = REPO / "test" / "golden" / "gpu"
 WAVE64 = Arch(Vendor.AMD, "gfx_test", wavefront=64)
 CUDA_MASK = "0xffffffffu"
-GPU_MASK = "((FJ_LANE_MASK_T)0xffffffffull)"
+GPU_MASK = "static_cast<FJ_LANE_MASK_T>(0xffffffffull)"
 BARE_INT = re.compile(r"\bint\b")
+C_CAST = re.compile(r"\((?:int|int32_t|double|float|FJ_LANE_MASK_T)\)")
+GEOMETRY = r"((?:threadIdx|blockIdx|blockDim)\.[xy])"
 
 
-def as_int(line: str) -> str:
-    """A gpu line with its fixed-width integers read back as CUDA's `int`."""
+def as_cuda(line: str) -> str:
+    """A gpu line read back in CUDA's spelling: its `static_cast`s as C casts,
+    a sum of launch geometry under one cast as one cast per term (the IR's
+    tree, as CUDA spells it), and its fixed-width integers as `int`."""
+    line = re.sub(rf"static_cast<int32_t>\({GEOMETRY} \+ {GEOMETRY} \* {GEOMETRY}\)",
+                  r"((int)\1 + ((int)\2 * (int)\3))", line)
+    line = re.sub(rf"static_cast<int32_t>\({GEOMETRY}\)", r"(int)\1", line)
+    line = re.sub(r"static_cast<double>\(([^()]*)\)", r"(double)(\1)", line)
     return re.sub(r"\bint32_t\b", "int", line)
 
 
@@ -88,7 +101,7 @@ def test_it_differs_from_cuda_only_in_the_hooks() -> None:
         '"pq_L4_p2_q2 was emitted for a 32-lane wavefront");',
     ]
     assert c[1] == "// arch sm_86, wavefront 32; fp64 throughout."
-    body_c, body_g = c[2:], [as_int(x) for x in g[4:]]
+    body_c, body_g = c[2:], [as_cuda(x) for x in g[4:]]
     assert len(body_c) == len(body_g)
     changed = {(a.strip(), b.strip())
                for a, b in zip(body_c, body_g, strict=True) if a != b}
@@ -107,7 +120,7 @@ def test_a_unit_with_no_shuffle_has_no_width() -> None:
         assert gpu.emit(k, WAVE64) == text
         # and only the prologue separates it from CUDA's text
         assert cuda.emit(k, SM_86).splitlines()[2:] == \
-            [as_int(x) for x in text.splitlines()[3:]]
+            [as_cuda(x) for x in text.splitlines()[3:]]
 
 
 def test_the_width_is_read_off_the_arch_and_asserted() -> None:
@@ -126,15 +139,15 @@ def test_the_width_is_read_off_the_arch_and_asserted() -> None:
         ("for (int32_t fj_o = 16; fj_o > 0; fj_o /= 2) {",
          "for (int32_t fj_o = 32; fj_o > 0; fj_o /= 2) {"),
         (f"fj_v += __shfl_xor_sync({GPU_MASK}, fj_v, fj_o, 32);",
-         "fj_v += __shfl_xor_sync(((FJ_LANE_MASK_T)0xffffffffffffffffull), "
+         "fj_v += __shfl_xor_sync(static_cast<FJ_LANE_MASK_T>(0xffffffffffffffffull), "
          "fj_v, fj_o, 64);"),
     }
 
 
 def test_the_lane_broadcast_takes_the_mask_and_the_assert() -> None:
     lines = gpu.emit(_bcast(), SM_86).splitlines()
-    assert f"    got = __shfl_sync({GPU_MASK}, v[(int32_t)threadIdx.y], 0, 32);" \
-        in lines
+    assert (f"    got = __shfl_sync({GPU_MASK}, "
+            "v[static_cast<int32_t>(threadIdx.y)], 0, 32);") in lines
     assert lines[3].startswith("static_assert(FJ_WAVEFRONT == 32,")
 
 
@@ -145,6 +158,26 @@ def test_no_integer_is_a_bare_int(unit: str) -> None:
     text = gpu.emit(UNITS[unit](), SM_86)
     assert "int32_t" in text
     assert [x for x in text.splitlines() if BARE_INT.search(x)] == []
+
+
+@pytest.mark.parametrize("unit", ["pq_L4", "s_11", "v_11", "bcast", "inline"])
+def test_every_cast_is_a_static_cast(unit: str) -> None:
+    # The geometry, Fn.TO_F32 / TO_F64, the shuffle mask and fj_boys's own
+    # text alike. `(void)n;` discards a value; it converts nothing.
+    text = gpu.emit(UNITS[unit](), SM_86)
+    assert [x for x in text.splitlines() if C_CAST.search(x)] == []
+
+
+def test_a_sum_of_launch_geometry_takes_one_cast() -> None:
+    # Unsigned arithmetic throughout, then one conversion: the hardware's own
+    # values, and no mixing of signed and unsigned under the cast.
+    lines = gpu.emit(build_s_kernel((1, 1)), SM_86).splitlines()
+    assert ("    int32_t rec = static_cast<int32_t>("
+            "threadIdx.x + blockIdx.x * blockDim.x);") in lines
+    # a sum that also reads a signed value casts each geometry term instead
+    assert "Jsh[(0 * static_cast<int32_t>(blockDim.y) + " \
+        "static_cast<int32_t>(threadIdx.y))] = 0.0;" in \
+        [x.strip() for x in gpu.emit(build_pq_kernel(4), SM_86).splitlines()]
 
 
 def test_the_vendor_backends_still_spell_int() -> None:
@@ -217,15 +250,12 @@ def test_nvcc_refuses_a_wave64_build(nvcc, compile_device_source) -> None:
 # --- the template spelling (gpu.Specialization) ------------------------------
 
 S11 = gpu.Specialization("s", (1, 1))
-PRIMARY_NOTE = [
-    "// the primary is declared in every unit and defined in none: a",
-    "// class whose unit is not compiled in fails to link",
-]
 
 
-def test_the_specialized_golden_is_unchanged() -> None:
-    text = gpu.emit(build_s_kernel((1, 1)), SM_86, S11)
-    assert text == (GOLDEN / "s_11.specialized.cu").read_text()
+def test_the_specialized_goldens_are_unchanged() -> None:
+    k = build_s_kernel((1, 1))
+    assert gpu.emit(k, SM_86, S11) == (GOLDEN / "s_11.specialized.cu").read_text()
+    assert gpu.emit_template(k, SM_86, S11) == (GOLDEN / "s.h").read_text()
 
 
 def test_a_specialization_moves_only_the_declarator() -> None:
@@ -233,28 +263,42 @@ def test_a_specialization_moves_only_the_declarator() -> None:
     c = gpu.emit(k, SM_86).splitlines()
     t = gpu.emit(k, SM_86, S11).splitlines()
     assert t[1] == c[1].removesuffix(".") + "; specialization s<1, 1>."
-    i_c, i_t = c.index('extern "C" __global__ void s_11('), t.index(PRIMARY_NOTE[0])
-    assert c[2:i_c] == t[2:i_t]
-    sig = c[i_c + 1:c.index("{")]
-    assert t[i_t:t.index("{")] == [
-        *PRIMARY_NOTE,
-        # fixed arity, never `int32_t...`: nvcc 13.0 miscompiles the host stub
-        # of a variadic __global__ template's explicit specialization
-        "template <int32_t L0, int32_t L1>",
+    assert t[3] == '#include "s.h"  // the primary'
+    i_c = c.index('extern "C" __global__ void s_11(')
+    i_t = t.index("template <>")
+    assert c[2:i_c] == [t[2], *t[4:i_t]]
+    assert t[i_t + 1] == "__global__ void s<1, 1>("
+    # the parameters and the body, character for character
+    assert c[i_c + 1:] == t[i_t + 2:]
+
+
+def test_the_primary_is_declared_once_in_its_header() -> None:
+    k = build_s_kernel((1, 1))
+    c = gpu.emit(k, SM_86).splitlines()
+    sig = c[c.index('extern "C" __global__ void s_11(') + 1:c.index("{")]
+    h = gpu.emit_template(k, SM_86, S11).splitlines()
+    assert S11.header == "s.h"
+    assert h[4:6] == ["#pragma once", '#include "felizjueves/runtime.h"']
+    assert h[7:] == [
+        # uint8_t, lettered by position; fixed arity, never a pack: nvcc 13.0
+        # miscompiles the host stub of a variadic __global__ template's
+        # explicit specialization
+        "template <uint8_t La, uint8_t Lb>",
         "__global__ void s(", *sig[:-1], sig[-1] + ";",
-        "",
-        "template <>",
-        "__global__ void s<1, 1>(", *sig,
     ]
-    # the body, character for character
-    assert c[c.index("{"):] == t[t.index("{"):]
+    # any unit of the template writes the same header
+    assert gpu.emit_template(build_s_kernel((0, 2)), SM_86,
+                             gpu.Specialization("s", (0, 2))) == "\n".join(h) + "\n"
+    with pytest.raises(TypeError, match="gpu.Specialization"):
+        gpu.emit_template(k, SM_86, None)  # type: ignore[arg-type]
 
 
 def test_the_arity_follows_the_args() -> None:
     k = build_f_kernel(f_class_spec(0, 0, 0, 0))
-    text = gpu.emit(k, SM_86, gpu.Specialization("f", (0, 0, 0, 0)))
-    assert "template <int32_t L0, int32_t L1, int32_t L2, int32_t L3>" in text
-    assert "__global__ void f<0, 0, 0, 0>(" in text
+    spec = gpu.Specialization("f", (0, 0, 0, 0))
+    assert ("template <uint8_t La, uint8_t Lb, uint8_t Lc, uint8_t Ld>"
+            in gpu.emit_template(k, SM_86, spec))
+    assert "__global__ void f<0, 0, 0, 0>(" in gpu.emit(k, SM_86, spec)
 
 
 def test_fj_boys_is_guarded_only_in_a_specialization() -> None:
@@ -285,6 +329,8 @@ def test_a_specialization_refuses_what_its_siblings_would_repeat() -> None:
     ("s", (), "nonempty tuple of ints"),
     ("s", [1, 1], "nonempty tuple of ints"),
     ("s", (1, True), "nonempty tuple of ints"),
+    ("s", (0, 256), "uint8_t"),
+    ("s", (-1, 0), "uint8_t"),
 ])
 def test_a_specialization_is_refused_when_it_cannot_be_spelled(
         template, args, match) -> None:
@@ -337,6 +383,14 @@ def _family(name: str, build, pairs) -> str:
                    for c in pairs)
 
 
+def _primaries(where: Path, *families) -> None:
+    # `{template}.h` beside the units, as a consumer writes it
+    for name, build in families:
+        spec = gpu.Specialization(name, (0, 0))
+        (where / spec.header).write_text(
+            gpu.emit_template(build((0, 0)), SM_86, spec))
+
+
 def _consumer(pairs, listed=PAIRS) -> str:
     # The dispatch table a consumer derives from (la, lb) alone: every
     # la <= lb cell takes &s<la, lb>, and the class list must name it.
@@ -353,6 +407,8 @@ constexpr bool emitted(int32_t la, int32_t lb) {{
 }}
 
 using S = decltype(&s<0, 0>);
+// int32_t class indices, as a consumer's are: each converts to the primary's
+// uint8_t as a constant that fits
 template <int32_t la, int32_t lb>
 constexpr S pick() {{
     if constexpr (la <= lb) {{
@@ -382,15 +438,32 @@ int main(int argc, char**) {{
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
 def test_every_class_of_two_families_links_in_one_tu(
-        request, compile_device_source, tool: str) -> None:
+        request, tmp_path, compile_device_source, tool: str) -> None:
     tc = request.getfixturevalue(tool)
+    _primaries(tmp_path, ("s", build_s_kernel), ("v", build_v_kernel))
     compile_device_source(tc, _consumer(PAIRS))
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
-def test_a_class_the_list_does_not_name_fails_to_compile(
-        request, compile_device_source, tool: str) -> None:
+def test_a_unit_whose_parameters_drifted_fails_to_compile(
+        request, tmp_path, compile_device_source, tool: str) -> None:
+    # The header declares S's parameters; a T unit spelled as s<1, 1> has
+    # T's (eb_ket besides), so it specializes nothing.
     tc = request.getfixturevalue(tool)
+    _primaries(tmp_path, ("s", build_s_kernel))
+    text = gpu.emit(build_t_kernel((1, 1)), SM_86, S11)
+    with pytest.raises(AssertionError,
+                       match="no function template matches|no instance of function "
+                             "template|does not match|"
+                             "not an entity that can be explicitly specialized"):
+        compile_device_source(tc, text, link=False)
+
+
+@pytest.mark.parametrize("tool", TOOLCHAINS)
+def test_a_class_the_list_does_not_name_fails_to_compile(
+        request, tmp_path, compile_device_source, tool: str) -> None:
+    tc = request.getfixturevalue(tool)
+    _primaries(tmp_path, ("s", build_s_kernel), ("v", build_v_kernel))
     listed = [c for c in PAIRS if c != (1, 2)]
     with pytest.raises(AssertionError, match="was not emitted"):
         compile_device_source(tc, _consumer(PAIRS, listed), link=False)
@@ -398,10 +471,11 @@ def test_a_class_the_list_does_not_name_fails_to_compile(
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
 def test_a_class_not_compiled_in_fails_to_link(
-        request, compile_device_source, tool: str) -> None:
+        request, tmp_path, compile_device_source, tool: str) -> None:
     # The class list still names (1, 2) but its unit is left out, and the
     # assert is dropped: the primary has no definition to fall back on.
     tc = request.getfixturevalue(tool)
+    _primaries(tmp_path, ("s", build_s_kernel), ("v", build_v_kernel))
     text = _consumer([c for c in PAIRS if c != (1, 2)]).replace(
         "static_assert(emitted(la, lb)", "(void)(emitted(la, lb)")
     with pytest.raises(AssertionError, match=r"undefined (reference|symbol)"):
@@ -410,8 +484,10 @@ def test_a_class_not_compiled_in_fails_to_link(
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
 def test_the_two_fj_boys_in_one_tu_are_a_redefinition(
-        request, compile_device_source, tool: str) -> None:
+        request, tmp_path, compile_device_source, tool: str) -> None:
     tc = request.getfixturevalue(tool)
+    _primaries(tmp_path, ("v", build_v_kernel),
+               ("f", lambda c: build_f_kernel(f_class_spec(*c, *c))))
     text = (gpu.emit(build_v_kernel((0, 0)), SM_86,
                      gpu.Specialization("v", (0, 0)))
             + gpu.emit(build_f_kernel(f_class_spec(0, 0, 0, 0)), SM_86,

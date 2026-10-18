@@ -130,7 +130,7 @@ def _records(basis, pairs):
             oa.append(off[i])
             obb.append(off[j])
     return dict(zeta_ab=np.array(zeta), **_axes("pa", xpa), **_axes("pb", xpb),
-                s=np.array(s), eb_ket=np.array(eb),
+                s_ab=np.array(s), eb_ket=np.array(eb),
                 off_a=np.array(oa, dtype=np.int32),
                 off_b=np.array(obb, dtype=np.int32))
 
@@ -138,7 +138,7 @@ def _records(basis, pairs):
 def _launch(cls, basis, pairs, T, threads=5):
     """One launch of class `cls` over every record of `pairs`, into `T`."""
     rec = _records(basis, pairs)
-    n_rec = len(rec["s"])
+    n_rec = len(rec["s_ab"])
     grid, block = launch_shape(n_rec, threads)
     return Interpreter(build_t_kernel(t_spec(*cls)),
                        launch=Launch(grid, block, 1)).run(
@@ -262,7 +262,7 @@ def test_a_diagonal_pair_adds_into_every_element_once_per_record(l):  # noqa: E7
     sh, off = basis.shells, basis.offsets
     i = next(m for m, s in enumerate(sh) if s.l == l and len(s.exponents) == 1)
     one = _records(basis, [(i, i)])
-    assert len(one["s"]) == 1
+    assert len(one["s_ab"]) == 1
     N = basis.n_ao
     got = Interpreter(k, launch=Launch(1, (1, 1), 1)).run(
         n_rec=1, n_ao=N, T=np.zeros((N, N)), **one)["T"]
@@ -297,7 +297,7 @@ def test_the_parameter_block_is_kernel_s_plus_the_ket_exponent():
     k = build_t_kernel((1, 2))
     s_names = [p.name for p in build_s_kernel((1, 2)).params]
     names = [p.name for p in k.params]
-    at = s_names.index("s") + 1
+    at = s_names.index("s_ab") + 1
     assert names == [*s_names[:at], "eb_ket", *s_names[at:-1], "T"]
     (T,) = [p for p in k.params if p.name == "T"]
     assert T.intent.name == "OUT"
