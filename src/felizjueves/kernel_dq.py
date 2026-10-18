@@ -1,6 +1,7 @@
 """The ket pre-contraction kernel, `Target.DQ`: `D_q` and `Dmax` (#153).
 
     build_dq_kernel((lc, ld) | spec) -> Kernel     one per ket pair class
+    dq_name((lc, ld) | spec)         -> str        its name, unbuilt
     launch_shape(n_rec, lanes)       -> (grid, (lanes, 1))
 
 Step 2 of the J chain (docs/implementation/j_engine.md, "The J chain as
@@ -123,6 +124,7 @@ __all__ = [
     "PARAMS",
     "WEIGHT_IS_THE_HOSTS",
     "build_dq_kernel",
+    "dq_name",
     "dq_spec",
     "dq_shape",
     "launch_shape",
@@ -190,6 +192,13 @@ def _c(fn: Fn, *args: Expr) -> Call:
     return Call(fn, args)
 
 
+def dq_name(cls: tuple[int, int] | Spec) -> str:
+    """The name `build_dq_kernel(cls)` gives its kernel, without building it
+    (#419)."""
+    lc, ld = _spec_of(cls).am
+    return f"dq_{lc}_{ld}"
+
+
 def build_dq_kernel(cls: tuple[int, int] | Spec, *,
                     name: str | None = None) -> Kernel:
     """The pre-contraction kernel of the ket pair class `cls` (module doc)."""
@@ -200,7 +209,7 @@ def build_dq_kernel(cls: tuple[int, int] | Spec, *,
     rows = block_rows(lc, ld)
     ts = hermite_targets(lc + ld)
     if name is None:
-        name = f"dq_{lc}_{ld}"
+        name = dq_name(spec)
 
     k = Var(REC)
 

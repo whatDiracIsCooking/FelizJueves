@@ -1,6 +1,7 @@
 """The nuclear-attraction kernel, `Target.V`, built as a `Kernel` (#239).
 
     build_v_kernel(spec | (la, lb)) -> Kernel     one per pair class
+    v_name(spec | (la, lb))         -> str        its name, unbuilt
     v_spec(la, lb)                  -> Spec       the class's key
     v_plan(spec | (la, lb))         -> (dag, order)  the plan layer's answer
     launch_shape(n_rec, threads)    -> (grid, block)
@@ -131,6 +132,7 @@ __all__ = [
     "REC",
     "ZEROED_V",
     "build_v_kernel",
+    "v_name",
     "launch_shape",
     "v_plan",
     "v_spec",
@@ -201,6 +203,13 @@ def _f64(name: str, shape: tuple[Expr, ...]) -> Param:
 
 def _i32(name: str, shape: tuple[Expr, ...]) -> Param:
     return Param(name, Scalar.I32, array=True, shape=shape)
+
+
+def v_name(cls: Spec | tuple[int, int]) -> str:
+    """The name `build_v_kernel(cls)` gives its kernel, without building it
+    (#419)."""
+    la, lb = _spec(cls).am
+    return f"v_{la}{lb}"
 
 
 def build_v_kernel(cls: Spec | tuple[int, int], *,
@@ -348,5 +357,5 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
     )
     # wide_boys (#266): a point-charge ket has no eta to damp T = zeta |P-C|^2
     # (~1.25e5 on HF/cc-pVTZ), so this kernel asks for the wide fj_boys.
-    return Kernel(name or f"v_{la}{lb}", params, body, wide_boys=True,
+    return Kernel(name or v_name(spec), params, body, wide_boys=True,
                   bundled=BUNDLED)

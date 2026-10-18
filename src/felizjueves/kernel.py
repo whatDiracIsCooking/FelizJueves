@@ -2,6 +2,7 @@
 
     build_pq_kernel(L | spec) -> Kernel              n_batches = 1
     build_pq_kernels(spec)    -> tuple[Kernel, ...]  one per batch, atomized
+    pq_name(L | spec)         -> str                 build_pq_kernel's name, unbuilt
 
 `build_pq_kernel` is one kernel per class, ONE BATCH (n_batches = 1), no
 atomics; `build_pq_kernels` is a split class as a set of kernels, one per
@@ -113,6 +114,7 @@ __all__ = [
     "lever_notes",
     "build_pq_kernel",
     "build_pq_kernels",
+    "pq_name",
     "bra_functions",
     "ket_functions",
     "launch_shape",
@@ -170,6 +172,14 @@ def split(spec: Spec) -> tuple[int, int]:
     For a K class, `am = (la, lc, lb, ld)`, that is (la + lc, lb + ld)."""
     l1, l2, l3, l4 = spec.am
     return l1 + l2, l3 + l4
+
+
+def pq_name(cls: int | Spec) -> str:
+    """The name `build_pq_kernel(cls)` gives its kernel, without building it:
+    `pq_L{L}_p{lp}_q{lq}`, a fixed function of the class (#419)."""
+    spec = pq_spec(cls) if isinstance(cls, int) else cls
+    lp, lq = split(spec)
+    return f"pq_L{lp + lq}_p{lp}_q{lq}"
 
 
 def bra_functions(spec: Spec) -> tuple[R, ...]:
@@ -243,10 +253,9 @@ def build_pq_kernel(cls: int | Spec, *, name: str | None = None) -> Kernel:
             f"n_batches = {spec.n_batches}: a split class writes J_p from "
             "several kernels and needs atomics ([JEngine, v2, §5]); "
             "build_pq_kernels builds it")
-    lp, lq = split(spec)
     (dag,) = builder_plan(spec).dags
     if name is None:
-        name = f"pq_L{lp + lq}_p{lp}_q{lq}"
+        name = pq_name(spec)
     return _pq_kernel(spec, dag, name, "one batch")
 
 

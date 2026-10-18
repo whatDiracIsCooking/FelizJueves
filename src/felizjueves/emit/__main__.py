@@ -203,17 +203,23 @@ from pathlib import Path
 from felizjueves.device import Arch, Vendor, by_name, from_env
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Kernel
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
+from felizjueves.kernel import (
+    build_pq_kernel,
+    build_pq_kernels,
+    k_spec,
+    pq_name,
+    pq_spec,
+)
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.kernel_metric import build_metric_kernel
-from felizjueves.kernel_s import build_s_kernel
+from felizjueves.kernel_s import build_s_kernel, s_name
 from felizjueves.kernel_schwarz import build_schwarz_kernel
 from felizjueves.kernel_sx import build_sx_kernel
-from felizjueves.kernel_t import build_t_kernel
-from felizjueves.kernel_v import build_v_kernel
+from felizjueves.kernel_t import build_t_kernel, t_name
+from felizjueves.kernel_v import build_v_kernel, v_name
 from felizjueves.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.spec import Operator, Spec, Target
 
@@ -242,7 +248,7 @@ Am = tuple[int, int, int, int]
 
 def source_name(L: int, backend: str) -> str:
     """The file `build_pq_kernel(L)` is written to for `backend`."""
-    return f"{build_pq_kernel(L).name}.{BACKENDS[backend][2]}"
+    return f"{pq_name(L)}.{BACKENDS[backend][2]}"
 
 
 def resolve_arch(backend: str, arch: str | None) -> Arch:
@@ -295,6 +301,8 @@ def generate_pairs(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]
 # ---------------------------------------------------------------------------
 
 ONE_E_BUILDERS = (build_s_kernel, build_t_kernel, build_v_kernel)
+# each builder's name, without building it (#419), in ONE_E_BUILDERS' order
+ONE_E_NAMES = (s_name, t_name, v_name)
 
 
 def one_e_classes(lmax: int) -> list[tuple[int, int]]:

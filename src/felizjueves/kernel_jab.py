@@ -1,6 +1,7 @@
 """The bra-transform-and-scatter kernel, `Target.JAB`, built as a `Kernel` (#154).
 
     build_jab_kernel(spec | (la, lb)) -> Kernel     one per bra pair class
+    jab_name(spec | (la, lb))         -> str        its name, unbuilt
     jab_spec(la, lb)                  -> Spec       the class's key
     jab_launch_shape(n_rec, threads)  -> (grid, block)
 
@@ -118,6 +119,7 @@ __all__ = [
     "REC",
     "ZEROED_J",
     "build_jab_kernel",
+    "jab_name",
     "jab_launch_shape",
     "jab_spec",
 ]
@@ -179,6 +181,13 @@ def _f64(name: str, shape: tuple[Expr, ...]) -> Param:
 
 def _i32(name: str, shape: tuple[Expr, ...]) -> Param:
     return Param(name, Scalar.I32, array=True, shape=shape)
+
+
+def jab_name(cls: Spec | tuple[int, int]) -> str:
+    """The name `build_jab_kernel(cls)` gives its kernel, without building
+    it (#419)."""
+    la, lb = _class(cls)
+    return f"jab_{la}{lb}"
 
 
 def build_jab_kernel(cls: Spec | tuple[int, int], *,
@@ -289,5 +298,5 @@ def build_jab_kernel(cls: Spec | tuple[int, int], *,
         _f64("Jp", (Var("n_rows"), Lit(n_p))),
         Param("J", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or f"jab_{la}{lb}", params, body,
+    return Kernel(name or jab_name((la, lb)), params, body,
                   bundled=BUNDLED)

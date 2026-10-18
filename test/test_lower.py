@@ -13,11 +13,12 @@ kernel the generator ships, by interp.py: `interpret(recycle(k)) ==
 interpret(k)` for every batch kernel of a cell. Both must agree BITWISE,
 since the arithmetic and its order are unchanged.
 
-TIMING: the fixture tests (L = 7..16 on both DAGs) run in ~10 s on the dev
-box. The #55 interpreted cells take ~1-4 s each. Every class above
-test/tiers.py's FAST_L_MAX is `slow` -- the whole fixture grid, the subgrid's
-#55 cells, and the L > 4 halves of the MMD pins and the fused classes -- so
-the pre-push gate runs L <= 4 and the rest run in the slow tier.
+TIMING: the fixture tests (L = 1..4 and 7..16 on both DAGs) run in ~10 s on
+the dev box. The #55 interpreted cells take ~1-4 s each. Every class above
+test/tiers.py's FAST_L_MAX is `slow` -- the fixture grid's L = 7..16, the
+subgrid's #55 cells, and the L > 4 halves of the MMD pins and the fused
+classes -- so the pre-push gate runs L <= 4 (the grid's L = 1..4 were added
+for it, #419) and the rest run in the slow tier.
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ from felizjueves.plan.sieve import plan
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
-GRID_L = range(7, 17)
+GRID_L = (*range(1, 5), *range(7, 17))  # L <= 4 is the fast tier's share (#419)
 WHICH = ("mild", "sieved")
 SRC = Path(__file__).resolve().parents[1] / "src" / "felizjueves"
 
@@ -346,9 +347,8 @@ def test_recycling_uses_exactly_peak_live_slots(L: int, which: str) -> None:
     assert n_slots == Lit(liveness(kernel).peak)
 
 
-@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_recycling_is_off_by_default() -> None:
-    kernel, _ = _kernel(7, "mild")
+    kernel, _ = _kernel(4, "mild")
     assert lower(kernel) is kernel
     assert lower(kernel, recycle_slots=False) is kernel
     assert lower(kernel, recycle_slots=True) == recycle(kernel)
@@ -422,9 +422,8 @@ def test_nothing_under_hgp_imports_lower() -> None:
                            for n in names), path
 
 
-@pytest.mark.slow  # L = 7 > FAST_L_MAX (tiers.py)
 def test_the_register_budget_has_no_default() -> None:
-    kernel, _ = _kernel(7, "mild")
+    kernel, _ = _kernel(4, "mild")
     with pytest.raises(TypeError):
         kernel_cost(kernel)  # type: ignore[call-arg]
     for bad in (-1, 1.5, None):

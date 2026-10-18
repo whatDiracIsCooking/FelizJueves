@@ -1,6 +1,7 @@
 """The overlap kernel, `Target.S`, built as a `Kernel` (#237).
 
     build_s_kernel(spec | (la, lb)) -> Kernel     one per pair class
+    s_name(spec | (la, lb))         -> str        its name, unbuilt
     s_spec(la, lb)                  -> Spec       the class's key
     launch_shape(n_rec, threads)    -> (grid, block)
 
@@ -117,6 +118,7 @@ __all__ = [
     "REC",
     "ZEROED_S",
     "build_s_kernel",
+    "s_name",
     "launch_shape",
     "record_values",
     "s_spec",
@@ -224,6 +226,13 @@ def record_values(la: int, lb: int) -> tuple[list[Stmt], list[Stmt]]:
     return head, values
 
 
+def s_name(cls: Spec | tuple[int, int]) -> str:
+    """The name `build_s_kernel(cls)` gives its kernel, without building
+    it (#419)."""
+    la, lb = _class(cls)
+    return f"s_{la}{lb}"
+
+
 def build_s_kernel(cls: Spec | tuple[int, int], *,
                    name: str | None = None) -> Kernel:
     """The overlap kernel of one pair class.
@@ -286,4 +295,4 @@ def build_s_kernel(cls: Spec | tuple[int, int], *,
         _i32("off_b", (nr,)),
         Param("S", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or f"s_{la}{lb}", params, body, bundled=BUNDLED)
+    return Kernel(name or s_name((la, lb)), params, body, bundled=BUNDLED)
