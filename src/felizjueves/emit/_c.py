@@ -531,7 +531,7 @@ class CWriter:
         if fn in _BINARY:
             return f"({args[0]} {_BINARY[fn]} {args[1]})"
         if fn in _CAST:
-            return f"(({_CAST[fn]}){args[0]})"
+            return self.cast(_CAST[fn], args[0])
         f = "f" if fn in (Fn.SQRT, Fn.EXP) and \
             self._type(e.args[0]) is Scalar.F32 else ""
         if fn is Fn.SQRT:
@@ -541,6 +541,10 @@ class CWriter:
         if fn is Fn.BOYS:
             return f"fj_boys({args[0]}, {args[1]})"
         raise EmitError(f"no spelling for {fn}")  # pragma: no cover
+
+    def cast(self, t: str, text: str) -> str:
+        """`Fn.TO_F32` / `Fn.TO_F64` of `text`, already spelled."""
+        return f"(({t}){text})"
 
     # --- names --------------------------------------------------------------
 

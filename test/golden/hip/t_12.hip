@@ -12,7 +12,7 @@ extern "C" __global__ void t_12(
     const double* pb_x,
     const double* pb_y,
     const double* pb_z,
-    const double* s,
+    const double* s_ab,
     const double* eb_ket,
     const int* off_a,
     const int* off_b,
@@ -28,7 +28,7 @@ extern "C" __global__ void t_12(
         double zeta = zeta_ab[rec];
         double half_inv_zeta = (0.5 / zeta);
         double eb = eb_ket[rec];
-        double sk = s[rec];
+        double sk = s_ab[rec];
         int oa = off_a[rec];
         int ob = off_b[rec];
         // the undressed kinetic bracket K_x S_y S_z + S_x K_y S_z + S_x S_y K_z of

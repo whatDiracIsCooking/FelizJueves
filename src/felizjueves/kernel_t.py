@@ -196,7 +196,7 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
                 binds[f.name_in_kernel] = Index(arr, (rec,))
     head += [
         Decl(ef.EB, Scalar.F64, init=Index("eb_ket", (rec,))),
-        Decl("sk", Scalar.F64, init=Index("s", (rec,))),
+        Decl("sk", Scalar.F64, init=Index("s_ab", (rec,))),
         Decl("oa", Scalar.I32, init=Index("off_a", (rec,))),
         Decl("ob", Scalar.I32, init=Index("off_b", (rec,))),
         Note("the undressed kinetic bracket K_x S_y S_z + S_x K_y S_z + "
@@ -262,7 +262,7 @@ def build_t_kernel(cls: Spec | tuple[int, int], *,
         _f64("zeta_ab", (nr,)),
         *(_f64(f"pa_{a}", (nr,)) for a in "xyz"),
         *(_f64(f"pb_{a}", (nr,)) for a in "xyz"),
-        _f64("s", (nr,)),
+        _f64("s_ab", (nr,)),
         _f64("eb_ket", (nr,)),
         _i32("off_a", (nr,)),
         _i32("off_b", (nr,)),

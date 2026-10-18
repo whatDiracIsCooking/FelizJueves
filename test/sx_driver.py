@@ -46,7 +46,7 @@ from felizjueves.launch import XClass, XLaunch
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
 WIDTH = dict.fromkeys(("zeta_ab", "pa_x", "pa_y", "pa_z",
-                       "pb_x", "pb_y", "pb_z", "s"), 1)
+                       "pb_x", "pb_y", "pb_z", "s_ab"), 1)
 ND = sum(WIDTH.values())  # doubles per record
 INTS = ("off_a", "off_b")
 

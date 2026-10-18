@@ -588,7 +588,7 @@ class OneEClass:
             out |= per_axis("p", [r.P for r in rs])
         out |= per_axis("pa", [r.XPA for r in rs])
         out |= per_axis("pb", [r.XPB for r in rs])
-        out["s_ab" if target is Target.V else "s"] = [r.s for r in rs]
+        out["s_ab"] = [r.s for r in rs]
         if target is Target.T:
             out["eb_ket"] = [r.eb for r in rs]
         out["off_a"] = [r.off_a for r in rs]
@@ -839,7 +839,7 @@ class XClass:
         return {"zeta_ab": [r.zeta for r in rs],
                 **per_axis("pa", [r.XPA for r in rs]),
                 **per_axis("pb", [r.XPB for r in rs]),
-                "s": [r.s for r in rs],
+                "s_ab": [r.s for r in rs],
                 "off_a": [r.off_a for r in rs],
                 "off_b": [r.off_b for r in rs]}
 

@@ -165,7 +165,7 @@ def test_the_parameter_block():
     k = build_sx_kernel((1, 2))
     assert [p.name for p in k.params] == [
         "n_rec", "n_a", "n_b", "zeta_ab", "pa_x", "pa_y", "pa_z",
-        "pb_x", "pb_y", "pb_z", "s", "off_a", "off_b", "S"]
+        "pb_x", "pb_y", "pb_z", "s_ab", "off_a", "off_b", "S"]
     (out,) = [p for p in k.params if p.intent is Intent.OUT]
     assert out.name == "S"
     assert [d.name for d in out.shape] == ["n_a", "n_b"]  # rectangular

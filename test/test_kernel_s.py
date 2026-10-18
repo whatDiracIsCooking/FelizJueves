@@ -125,14 +125,14 @@ def _records(basis, pairs):
             oa.append(off[i])
             obb.append(off[j])
     return dict(zeta_ab=np.array(zeta), **_axes("pa", xpa), **_axes("pb", xpb),
-                s=np.array(s), off_a=np.array(oa, dtype=np.int32),
+                s_ab=np.array(s), off_a=np.array(oa, dtype=np.int32),
                 off_b=np.array(obb, dtype=np.int32))
 
 
 def _launch(cls, basis, pairs, S, threads=5):
     """One launch of class `cls` over every record of `pairs`, into `S`."""
     rec = _records(basis, pairs)
-    n_rec = len(rec["s"])
+    n_rec = len(rec["s_ab"])
     grid, block = launch_shape(n_rec, threads)
     return Interpreter(build_s_kernel(s_spec(*cls)),
                        launch=Launch(grid, block, 1)).run(
@@ -301,7 +301,7 @@ def test_the_parameter_block():
     k = build_s_kernel((1, 2))
     assert [p.name for p in k.params] == [
         "n_rec", "n_ao", "zeta_ab", "pa_x", "pa_y", "pa_z",
-        "pb_x", "pb_y", "pb_z", "s", "off_a", "off_b", "S"]
+        "pb_x", "pb_y", "pb_z", "s_ab", "off_a", "off_b", "S"]
     assert all(p.shape == (Var("n_rec"),) for p in k.params
                if p.name.startswith(("pa_", "pb_")))
     (S,) = [p for p in k.params if p.name == "S"]

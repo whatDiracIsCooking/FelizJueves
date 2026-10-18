@@ -12,7 +12,7 @@ extern "C" __global__ void s_11(
     const double* pb_x,
     const double* pb_y,
     const double* pb_z,
-    const double* s,
+    const double* s_ab,
     const int32_t* off_a,
     const int32_t* off_b,
     double* S)
@@ -22,11 +22,11 @@ extern "C" __global__ void s_11(
     // PRECONDITION: S is zeroed by the caller before the first S launch of a
     // build; this kernel only adds
     // launch: one thread per primitive-pair record
-    int32_t rec = ((int32_t)threadIdx.x + ((int32_t)blockIdx.x * (int32_t)blockDim.x));
+    int32_t rec = static_cast<int32_t>(threadIdx.x + blockIdx.x * blockDim.x);
     if (rec < n_rec) {
         double zeta = zeta_ab[rec];
         double half_inv_zeta = (0.5 / zeta);
-        double sk = s[rec];
+        double sk = s_ab[rec];
         int32_t oa = off_a[rec];
         int32_t ob = off_b[rec];
         // the undressed t = 0 column E^{ab}_0 of this record, from the fragment: rows
