@@ -174,7 +174,8 @@ The kernel contract:
   `kernel_jab`'s rule. A swapped pair needs no flag, because with the mirror
   both elements are written either way. Runs are bit-reproducible.
 - **Arguments.** The record arrays are `kernel_schwarz`'s interleaved
-  `[n_rec, 3]` layout for `A`, the layout every kernel takes. They are named after `MetricClass.arrays()`, with one
+  `[n_rec, 3]` layout for `A`, the layout every two-electron kernel takes
+  (the one-electron `S`, `T`, `V` and `SX` take one array per axis). They are named after `MetricClass.arrays()`, with one
   exception: `s` is the parameter `s_aux`, because the prelude declares a
   local `s = −2θ²` (`PARAM_OF` maps the name). `n_rec` is cast to `(void)`.
 

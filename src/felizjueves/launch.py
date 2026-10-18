@@ -189,7 +189,7 @@ from felizjueves.spec import Operator, Spec, Target
 __all__ = ["Bound", "ClassLaunch", "LaunchPlan", "OneEClass", "OneELaunch",
            "OneERec", "PairRec", "XClass", "XLaunch", "XRec", "class_spec",
            "coulomb_launched", "cross_overlap_launch", "launches",
-           "one_electron_launch", "walk", "walk_cross_overlap",
+           "one_electron_launch", "per_axis", "walk", "walk_cross_overlap",
            "walk_one_electron"]
 
 Bound = Callable[[float, int], float]  # (zeta, L) -> I_pair >= 0
@@ -585,9 +585,9 @@ class OneEClass:
         rs = self.recs
         out: dict[str, list] = {"zeta_ab": [r.zeta for r in rs]}
         if target is Target.V:
-            out["P"] = [list(r.P) for r in rs]
-        out["XPA"] = [list(r.XPA) for r in rs]
-        out["XPB"] = [list(r.XPB) for r in rs]
+            out |= per_axis("p", [r.P for r in rs])
+        out |= per_axis("pa", [r.XPA for r in rs])
+        out |= per_axis("pb", [r.XPB for r in rs])
         out["s_ab" if target is Target.V else "s"] = [r.s for r in rs]
         if target is Target.T:
             out["eb_ket"] = [r.eb for r in rs]
@@ -837,11 +837,17 @@ class XClass:
         block's order and under its names, as plain lists."""
         rs = self.recs
         return {"zeta_ab": [r.zeta for r in rs],
-                "XPA": [list(r.XPA) for r in rs],
-                "XPB": [list(r.XPB) for r in rs],
+                **per_axis("pa", [r.XPA for r in rs]),
+                **per_axis("pb", [r.XPB for r in rs]),
                 "s": [r.s for r in rs],
                 "off_a": [r.off_a for r in rs],
                 "off_b": [r.off_b for r in rs]}
+
+
+def per_axis(name: str, vecs: Sequence[Vec3]) -> dict[str, list[float]]:
+    """A record vector as the one-electron kernels take it: one flat array
+    per axis, `<name>_x`, `<name>_y`, `<name>_z` (`kernel_s.pa_name`)."""
+    return {f"{name}_{a}": [v[d] for v in vecs] for d, a in enumerate("xyz")}
 
 
 @dataclass(frozen=True)

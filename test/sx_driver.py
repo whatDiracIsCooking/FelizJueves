@@ -21,9 +21,9 @@ synchronize and the read-back. Every element is owned by exactly one
 ordered shell pair, whose records add into it atomically.
 
 THE UPLOADS, once: per class one buffer of its double record arrays
-(`zeta_ab | XPA | XPB | s`, each row-major) and one of its two int offsets
-(`off_a | off_b`). A kernel argument is a pointer into those buffers, read
-off the kernel's own parameter list.
+(`zeta_ab | pa_x pa_y pa_z | pb_x pb_y pb_z | s`, one flat array each)
+and one of its two int offsets (`off_a | off_b`). A kernel argument is a
+pointer into those buffers, read off the kernel's own parameter list.
 
 THE UNITS. `units` maps a kernel name to a file already written (the kernel
 tier's generate phase, when `KERNEL_GEN_CMD` asks for `--sx-l`; it does not
@@ -45,7 +45,8 @@ from felizjueves.kernel_sx import build_sx_kernel, launch_shape
 from felizjueves.launch import XClass, XLaunch
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
-WIDTH = {"zeta_ab": 1, "XPA": 3, "XPB": 3, "s": 1}
+WIDTH = dict.fromkeys(("zeta_ab", "pa_x", "pa_y", "pa_z",
+                       "pb_x", "pb_y", "pb_z", "s"), 1)
 ND = sum(WIDTH.values())  # doubles per record
 INTS = ("off_a", "off_b")
 

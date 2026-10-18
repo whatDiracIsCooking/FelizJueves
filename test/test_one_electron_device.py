@@ -624,10 +624,8 @@ def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
         for p in k.params:
             if not p.array or p.name in kw or p.name in ("off_a", "off_b", mat):
                 continue
-            w = 3 if p.name in ("P", "XPA", "XPB") else 1
-            args[p.name] = data[at:at + w * nr].reshape(nr, w) if w == 3 \
-                else data[at:at + nr].copy()
-            at += w * nr
+            args[p.name] = data[at:at + nr].copy()
+            at += nr
         args["off_a"] = data[at:at + nr].astype(np.int32)
         args["off_b"] = data[at + nr:at + 2 * nr].astype(np.int32)
         at += 2 * nr

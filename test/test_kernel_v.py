@@ -89,6 +89,7 @@ from felizjueves.kernel_v import (
     v_plan,
     v_spec,
 )
+from felizjueves.launch import per_axis
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.recurrence import fundamental_prelude, recurrence_body
@@ -143,17 +144,19 @@ def _records(basis, pairs):
     within a pair, in `primitive_pairs` order."""
     sh, off = basis.shells, basis.offsets
     cols: dict[str, list] = {k: [] for k in (
-        "zeta_ab", "P", "XPA", "XPB", "s_ab", "off_a", "off_b")}
+        "zeta_ab", "P", "PA", "PB", "s_ab", "off_a", "off_b")}
     for i, j in pairs:
         ep = epair(sh[i], sh[j])
         for P, z, sk in ep.recs:
             cols["zeta_ab"].append(z)
             cols["P"].append(list(P))
-            cols["XPA"].append([P[d] - ep.A[d] for d in range(3)])
-            cols["XPB"].append([P[d] - ep.B[d] for d in range(3)])
+            cols["PA"].append([P[d] - ep.A[d] for d in range(3)])
+            cols["PB"].append([P[d] - ep.B[d] for d in range(3)])
             cols["s_ab"].append(sk)
             cols["off_a"].append(off[i])
             cols["off_b"].append(off[j])
+    for vec, name in (("P", "p"), ("PA", "pa"), ("PB", "pb")):
+        cols |= per_axis(name, cols.pop(vec))
     return {k: np.array(v, dtype=np.int32 if k.startswith("off") else float)
             for k, v in cols.items()}
 
@@ -373,7 +376,8 @@ def test_the_key_is_a_pair_class():
 def test_the_parameter_block():
     k = build_v_kernel((1, 2))
     assert [p.name for p in k.params] == [
-        "n_rec", "n_ao", "n_nuc", "zeta_ab", "P", "XPA", "XPB", "s_ab",
+        "n_rec", "n_ao", "n_nuc", "zeta_ab", "p_x", "p_y", "p_z",
+        "pa_x", "pa_y", "pa_z", "pb_x", "pb_y", "pb_z", "s_ab",
         "off_a", "off_b", "Z", "Cnuc", "V"]
     (V,) = [p for p in k.params if p.name == "V"]
     assert V.intent.name == "OUT"
