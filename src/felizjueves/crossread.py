@@ -51,7 +51,7 @@ prediction interval or a score averaged over cells.
 A DISAGREEMENT IS A RECORD. data/measured/limits.json holds one
 `StructuralLimit` per kind of disagreement found here (its asserted_value
 carries `"cross_read": true` and the table rows it covers), each with a
-mechanism. test/test_kernelrank.py recomputes every recorded row and fails
+mechanism. measure/measure_kernelrank.py recomputes every recorded row and fails
 on a disagreement no record covers.
 
 NOTHING HERE FEEDS A LITERATURE FLOOR. This module reads the three analysis

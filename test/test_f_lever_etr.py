@@ -21,7 +21,8 @@ What is asserted:
    the 21 classes (no build), `OVERRIDES` winning, `forced` arms, and
    `data/hgp/etr_arbitration.json` equal to `render()`. THE ACCURACY GATE:
    its tolerance the F `TOL`; its record recomputed per class with L <= 4
-   by interpreting the per-class device cells' own launches (H2O/cc-pVDZ,
+   (`slow` but for `(ss|dd)`: cc-pVDZ is not a small input) by
+   interpreting the per-class device cells' own launches (H2O/cc-pVDZ,
    the ETR forced) against the restricted sweep -- the inputs the first
    interpreted tests missed and #354's device run failed on; the two
    refused classes, `(ss|dd)` and `(sp|pd)`, pinned as the finding.
@@ -37,8 +38,9 @@ What is asserted:
    class with L <= 4 under the shipped choice AND with the ETR forced
    everywhere (both recurrences on every class); `F` against `ao.fock`'s
    sweep (one orbit per class, the degeneracy cases within the cap) to
-   `TOL`; whole molecules (H2/STO-3G, H2O/STO-3G, H2O/6-31G, every class
-   L <= 4) through `walk_f` against the sweep and libcint's `vj - vk/2`.
+   `TOL`; whole molecules (H2/STO-3G, and, `slow`, H2O/STO-3G and
+   H2O/6-31G, every class L <= 4) through `walk_f` against the sweep and
+   libcint's `vj - vk/2`.
    Not bitwise against the literal kernel: a different recurrence.
 7. COMPOSITION: with `batched-vrr` (#350) the ETR kernel's `F` and tap bit
    for bit; with `sliced-hrr` (#356) on it, the sweep's to TOL; with
@@ -472,7 +474,14 @@ def _gate_error(cls) -> float:
     return fo._worst(F, G, scale)
 
 
-@pytest.mark.parametrize("cls", CAPPED, ids=str)
+# H2O/cc-pVDZ's launches of a class interpreted: 4-30 s each, not a small
+# input, so `slow` -- but for `(ss|dd)`, a REFUSED class and the cheapest
+# (4 s), the fast tier's one witness that the record is the interpretation
+GATE_PARAMS = [pytest.param(c, id=str(c), marks=() if c == REFUSED[0]
+                            else pytest.mark.slow) for c in CAPPED]
+
+
+@pytest.mark.parametrize("cls", GATE_PARAMS)
 def test_the_gates_record_is_the_interpreted_etr_on_the_device_inputs(
         cls) -> None:
     """The ETR forced on every class with L <= 4, interpreted over
@@ -761,7 +770,11 @@ def test_every_degeneracy_case_within_the_cap_equals_the_sweep(
         assert worst <= tk.TOL, (case, worst)
 
 
-SMALL = ("h2_sto3g", "h2o_sto3g", "h2o_631g")  # s and p only: L <= 4
+# s and p only: L <= 4. H2O's walks are 6 s (STO-3G) and 23 s (6-31G)
+# interpreted, past the fast tier's ~3 s, so `slow`; H2/STO-3G (no ETR
+# class: it reaches (ss|ss) only) stays
+SMALL = ("h2_sto3g", pytest.param("h2o_sto3g", marks=pytest.mark.slow),
+         pytest.param("h2o_631g", marks=pytest.mark.slow))
 
 
 def _with_lever(plan):

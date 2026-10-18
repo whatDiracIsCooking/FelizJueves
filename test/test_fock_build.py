@@ -172,7 +172,8 @@ def _worst(got, want, scale) -> float:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", [*SMALL,
+@pytest.mark.parametrize("name", [*SMALL[:-1],  # 6-31G: ~6 s, slow by cost
+                                  pytest.param("h2o_631g", marks=SLOW),
                                   pytest.param("h2o_ccpvdz", marks=SLOW)])
 def test_the_walked_plan_is_the_sweep_and_libcint(name) -> None:
     """`tau = 0`: every unique quartet launched exactly once and none
@@ -195,8 +196,8 @@ def test_the_walked_plan_is_the_sweep_and_libcint(name) -> None:
 
 SCREENED = [
     ("h2o_sto3g", 0.1, 4),
-    ("h2o_631g", 1e-3, 4),
-    ("h2o_631g", 0.1, 4),
+    pytest.param("h2o_631g", 1e-3, 4, marks=SLOW),  # 4-18 s each, by cost
+    pytest.param("h2o_631g", 0.1, 4, marks=SLOW),
     pytest.param("h2o_ccpvdz", 1e-3, 4, marks=SLOW),
     pytest.param("h2o_ccpvdz", 0.1, 4, marks=SLOW),
 ]

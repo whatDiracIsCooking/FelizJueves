@@ -5,32 +5,30 @@ L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): each class's literal (untyped)
    kernel and the lever's (typed), each its own translation unit, compiled
-   with the tier's flags plus the measurement flag
-   (`measured.Backend.command`: `-Xptxas -v` on nvcc, the AMD
-   `kernel-resource-usage` remark on hipcc). A warning in generated text
-   fails (#92's rule); the typed unit's `static_assert`s are compiled, so a
-   struct that is not the packed row fails here. The figures -- registers,
-   spill-store bytes and the stack frame (nvcc), VGPRs, spilled VGPRs and
-   scratch bytes (hipcc) -- untyped against typed, and their direction, are
-   PRINTED (run with `-s`): the issue's "ptxas/VGPR both cards for both
-   modes", as compiler readings, never store rows, no threshold (#362 is
-   the ledger). The harness programs part 2 runs are compiled too (each
-   unit in its own namespace there, so its structs are too).
+   with the tier's flags (test_f_lever_batched_vrr_device.py's
+   `compile_unit`). A warning in generated text fails (#92's rule). The
+   typed unit's `static_assert`s are compiled, so a struct that is not the
+   packed row fails here. Nothing is read off the compiler: the arms'
+   registers, spills and frames are the lever ledger's (`measured
+   --remeasure ... --ledger`, #362), not a test's. The harness programs part
+   2 runs are compiled too (each unit in its own namespace there, so its
+   structs are too).
 2. ON THE CARD (`gpu` + `cuda` / `hip`): test_fock_ondevice.py's launches
    (`fock_driver.record`: launch_f's plan walked by walk_f), every kernel
    swapped for the lever's kernel of its class, named
    `lever_ladder.unit_name` of the literal name (`f_0101_lv_struct_reads`).
    The views ask nothing more of a base pointer than the flat arrays do
-   (natural alignment, f_levers/struct_reads.py), so the driver's packing
-   is used unchanged. (a) Per class, H2O/cc-pVDZ's launches of that class at
-   `tau = 0`, against those launches INTERPRETED WITH THE LITERAL KERNEL --
-   which the typed kernel equals bit for bit on the host
+   (natural alignment, f_levers/struct_reads.py), so the driver's packing is
+   used unchanged. (a) `slow` (cc-pVDZ is not a small input: its host
+   references cost 15-30 s a class): per class, H2O/cc-pVDZ's launches of
+   that class at `tau = 0`, against those launches INTERPRETED WITH THE
+   LITERAL KERNEL -- which the typed kernel equals bit for bit on the host
    (test_f_lever_struct_reads.py) -- and `ao.fock`'s restricted sweep, with
    test_fock_ondevice's `_check_class` and its stated tolerances unchanged;
-   (b) per molecule, H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and
-   H2O/6-31G at `tau = 0` (s and p shells only: every class L <= 4), every
-   launch of the plan, against walk_f's interpreted build and, at `tau = 0`,
-   the sweep and libcint, by test_fock_ondevice's `_part2` checks and
+   (b) per molecule, H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and,
+   `slow`, H2O/6-31G at `tau = 0` (s and p shells only: every class L <= 4),
+   every launch of the plan, against walk_f's interpreted build and, at
+   `tau = 0`, the sweep and libcint, by test_fock_ondevice's `_part2` checks and
    tolerances. Nothing is recorded.
 
 Run as (each backend; no F unit is on KERNEL_GEN_CMD's ladder, the driver
@@ -38,17 +36,17 @@ emits its own, so the generator is only capped):
 
     KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit \\
         --L 0 1 2 3 4 --pair-l 2 --one-e-l 2" \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
+        devtools/kernel-tier.sh --backend cuda|hip --full -j 6 -- \\
         -k f_lever_struct_reads
 
-which selects parts 1 and 2 and nothing `slow` or above L = 4.
+which selects part 2 and nothing above L = 4; without `--full`, only 2(b)'s
+H2O/STO-3G cells (nothing `slow`), the PR tier's.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import re
-import subprocess
 from functools import cache
 from pathlib import Path
 
@@ -56,13 +54,11 @@ import numpy as np
 import pytest
 import test_fock_ondevice as fo
 from fock_driver import fock_stage, run_on_card
+from test_f_lever_batched_vrr_device import compile_unit
 from test_fock_build import LIBCINT_TOL, TOL, molecule, sweep, walk
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import kernel_f as KF
-from felizjueves import measured
-from felizjueves.device import GFX1200, SM_86
-from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import struct_reads as sr
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
@@ -76,7 +72,8 @@ CLASS_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in CAPPED]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0"),
+    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 
 
@@ -104,66 +101,24 @@ def _swap(recs) -> tuple:
 # 1. Compile-only: registers, spill and local memory, untyped vs typed
 # ---------------------------------------------------------------------------
 
-EMIT = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}
-WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
-
-
-def _compile(backend: str, compiler: str, kern: Kernel, workdir: Path
-             ) -> tuple[int, int, int]:
-    """(registers or VGPRs, spill-store bytes or spilled VGPRs, stack frame
-    or scratch bytes) of one unit."""
-    be = measured.BACKENDS[backend]
-    emit, arch = EMIT[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    src = workdir / f"{kern.name}.{be.ext}"
-    obj = workdir / f"{kern.name}.o"
-    src.write_text(emit(kern, arch))
-    done = subprocess.run(be.command(compiler, src, obj), capture_output=True,
-                          text=True, timeout=1800)
-    report = done.stdout + done.stderr
-    assert done.returncode == 0, f"{kern.name}:\n{report[-4000:]}"
-    warned = [m[0] for m in WARNING.finditer(report)
-              if Path(m["file"]).name == src.name]
-    assert not warned, f"{kern.name}: warning in generated text (#92): {warned}"
-    if backend == "cuda":
-        raw = measured.parse_ptxas(report, kern.name)
-        return (raw["registers"], raw["spill_store_bytes"],
-                raw["stack_frame_bytes"])
-    raw = measured.parse_amd_remarks(report, kern.name)
-    return (raw["VGPRs"], raw["VGPRs Spill"],
-            raw.get("ScratchSize", raw.get("Private Segment Size", -1)))
-
-
-def _direction(lit: int, lev: int) -> str:
-    return "=" if lit == lev else ("down" if lev < lit else "up")
-
-
-def _figures(backend: str, compiler: str, cls, tmp_path: Path) -> None:
-    literal = KF.build_f_kernel(cls)
-    lever = lever_kernel(cls)
-    lit = _compile(backend, compiler, literal, tmp_path / "untyped")
-    lev = _compile(backend, compiler, lever, tmp_path / "typed")
-    unit = ("registers/spill-store bytes/stack frame" if backend == "cuda"
-            else "VGPRs/spilled VGPRs/scratch bytes")
-    print(f"\n{backend} {cls} ({unit}), untyped -> {NAME}: "
-          f"{lit[0]}/{lit[1]}/{lit[2]} -> {lev[0]}/{lev[1]}/{lev[2]} "
-          f"(regs {_direction(lit[0], lev[0])}, spill "
-          f"{_direction(lit[1], lev[1])}, local {_direction(lit[2], lev[2])})",
-          flush=True)
+def _compiles(backend: str, compiler: str, cls, tmp_path: Path) -> None:
+    for arm, k in (("untyped", KF.build_f_kernel(cls)),
+                   ("typed", lever_kernel(cls))):
+        compile_unit(backend, compiler, k, tmp_path / arm)
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_cuda_f_lever_struct_reads_compiles_with_its_figures(
+def test_cuda_f_lever_struct_reads_compiles(
         cls, nvcc, tmp_path) -> None:
-    _figures("cuda", nvcc.path, cls, tmp_path)
+    _compiles("cuda", nvcc.path, cls, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_hip_f_lever_struct_reads_compiles_with_its_figures(
+def test_hip_f_lever_struct_reads_compiles(
         cls, hipcc, tmp_path) -> None:
-    _figures("hip", hipcc.path, cls, tmp_path)
+    _compiles("hip", hipcc.path, cls, tmp_path)
 
 
 def _program_kernels(cell) -> tuple[list[Kernel], str]:
@@ -176,7 +131,8 @@ def _program_kernels(cell) -> tuple[list[Kernel], str]:
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in CAPPED),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -220,6 +176,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_cuda_f_lever_struct_reads_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
@@ -228,6 +185,7 @@ def test_cuda_f_lever_struct_reads_each_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_hip_f_lever_struct_reads_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:

@@ -61,17 +61,26 @@ THE PROTOCOL, per card, in one test so no phase overlaps another:
 
 OPT-IN, AND RUN ALONE, in the foreground, with nothing else on the box:
 
-    REQUIRE_GPU=1 FJ_WALLCLOCK_STORE=data/measured/kernels.json \\
-        FJ_WALLCLOCK_LEVERS=1 uv run pytest test/test_lever_clock_device.py \\
-        -p no:xdist -s -rs -m "gpu and cuda" -k lever_clock
+    REQUIRE_GPU=1 devtools/measure.sh levers --backend cuda
 
-(`hip` for the RX 9060 XT). FJ_WALLCLOCK_ARMS="a,b" restricts the arms.
-REQUIRE_GPU=1 turns a missing card (a skip) into a failure.
+(`hip` for the RX 9060 XT), which sets FJ_WALLCLOCK_STORE (the tracked
+data/measured/kernels.json unless already set) and FJ_WALLCLOCK_LEVERS=1
+and selects `-k "lever_clock and gpu"` here, without xdist.
+FJ_WALLCLOCK_ARMS="a,b" restricts the arms. REQUIRE_GPU=1 turns a missing
+card (a skip) into a failure.
+
+MOVED FROM test/ (test_lever_clock_device.py): nothing here is a correctness
+claim. The J and K harnesses, inputs and checks are test_kernel_device.py's
+and the timing constants measure_kernel_device.py's, imported, not copied.
+The declared verdict rule on synthetic rows stayed behind, as
+test/test_lever_clock.py.
 
 COMPILE-ONLY COMPANIONS (`cuda` / `hip` + `slow`, no card) build every
 cell's programs, so a spelling problem shows without the card and the
-compiler cache is warm for the session. The fast tier holds the cell list,
-the fp32 set and the harness's hashes against the ledger rows.
+compiler cache is warm for the session (`devtools/measure.sh recheck
+--full`). The no-compiler cases below hold the cell list, the fp32 set, the
+sweep's own phase and row helpers, and the harness's hashes and the recorded
+verdicts against the tracked ledger rows (`devtools/measure.sh check`).
 """
 
 from __future__ import annotations
@@ -86,6 +95,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import fock_driver as FD
+import measure_kernel_device as mkd
 import numpy as np
 import pytest
 import test_f_lever_ket_break_device as kbd
@@ -106,7 +116,7 @@ from felizjueves.walk_f import dominating_factors
 LEVERS_ENV = "FJ_WALLCLOCK_LEVERS"
 ARMS_ENV = "FJ_WALLCLOCK_ARMS"
 REQUIRE_GPU = "REQUIRE_GPU"
-WARMUP, REPEATS = tkd.WARMUP, tkd.REPEATS  # 5 and 31, the sweeps'
+WARMUP, REPEATS = mkd.WARMUP, mkd.REPEATS  # 5 and 31, the sweeps'
 F_N_KET = 32
 F_THREADS = FD.THREADS  # 32: the literal F launch's block
 NEAR_SIDE, WIDE_SIDE = 0.25, 5.0  # test_fock_ondevice's cubes (asserted)
@@ -254,18 +264,18 @@ def build_cells(builder: _Builder, cells) -> tuple[dict, dict]:
 def _j_input(spec: Spec, wide: bool, lanes: int) -> tuple[np.ndarray, int]:
     L = spec.total_am
     a = tkd._inputs(L, wide=wide, tau_quantile=None, seed=53_000 + L,
-                    n_bra=tkd.TIMING_N_BRA, n_ket=tkd.TIMING_N_KET)
-    return tkd._pack(L, a, lanes), tkd.TIMING_N_KET
+                    n_bra=mkd.TIMING_N_BRA, n_ket=mkd.TIMING_N_KET)
+    return tkd._pack(L, a, lanes), mkd.TIMING_N_KET
 
 
 def _k_input(spec: Spec, wide: bool, lanes: int) -> tuple[np.ndarray, int]:
     L = spec.total_am
     a = tkd._inputs(L, wide=wide, tau_quantile=None, seed=53_000 + L,
-                    n_bra=tkd.K_TIMING_N_BRA, n_ket=tkd.K_TIMING_N_KET)
+                    n_bra=mkd.K_TIMING_N_BRA, n_ket=mkd.K_TIMING_N_KET)
     k = tkd._k_inputs(literal(spec), a, seed=54_000 + L + int(wide))
     if kmixed.FULL in spec.levers:  # both arms on the narrowed operands
         k = kmd._packed(k)
-    return tkd._k_pack(k, lanes), tkd.K_TIMING_N_KET
+    return tkd._k_pack(k, lanes), mkd.K_TIMING_N_KET
 
 
 def f_launch(spec: Spec, wide: bool) -> tuple[FD.FRec, int]:
@@ -307,10 +317,10 @@ def stage(r: Runnable, cell: Spec, lanes: int, monkeypatch,
     for label, wide in (("near", False), ("wide", True)):
         if cell.target is Target.J:
             data, _ = _j_input(cell, wide, lanes)
-            r.reshape = lambda a: a.reshape(2, tkd.TIMING_N_BRA, -1)[0]
+            r.reshape = lambda a: a.reshape(2, mkd.TIMING_N_BRA, -1)[0]
         elif cell.target is Target.K:
             data, _ = _k_input(cell, wide, lanes)
-            r.reshape = lambda a: a.reshape(2, tkd.K_TIMING_N_BRA, -1)[0]
+            r.reshape = lambda a: a.reshape(2, mkd.K_TIMING_N_BRA, -1)[0]
         else:
             data, n_ao = _f_stage(r.spec, wide, monkeypatch)
             r.reshape = (lambda n: lambda a: a.reshape(2, n, n)[0])(n_ao)
@@ -331,7 +341,7 @@ def _run(r: Runnable, label: str, run_device_binary) -> tuple:
     if r.spec.target is Target.F:
         wall, _ = FD.reps(out)
     else:
-        wall, _, _ = tkd._parse_reps(out, len(r.names))
+        wall, _, _ = mkd._parse_reps(out, len(r.names))
     assert len(wall) == REPEATS, out
     res = r.reshape(np.fromfile(dst, dtype=np.float64))
     assert np.all(np.isfinite(res)), f"{r.spec.key()} {label}: non-finite"
@@ -339,7 +349,7 @@ def _run(r: Runnable, label: str, run_device_binary) -> tuple:
 
 
 def gated_phase(backend: str, arm: Runnable, ctl: Runnable,
-                run_device_binary, retakes: int = tkd.STUDY_RETAKES):
+                run_device_binary, retakes: int = mkd.STUDY_RETAKES):
     """The cell's one gated phase (module docstring, step 3): (CPU busy
     before, (card before, card after), discarded, {(who, input): (wall,
     result)}), or (None, None, discarded, None) when every take was refused."""
@@ -401,9 +411,9 @@ def row_raw(spec: Spec, got: dict, busy: float, card: tuple, discarded: int,
         raw[f"{prefix}gpu_util_before"] = card[0]
         raw[f"{prefix}gpu_util_after"] = card[1]
         raw[f"{prefix}cpu_busy_permille_before"] = round(1000 * busy)
-    n_ket = {Target.J: tkd.TIMING_N_KET, Target.K: tkd.K_TIMING_N_KET,
+    n_ket = {Target.J: mkd.TIMING_N_KET, Target.K: mkd.K_TIMING_N_KET,
              Target.F: F_N_KET}[spec.target]
-    n_bra = {Target.J: tkd.TIMING_N_BRA, Target.K: tkd.K_TIMING_N_BRA,
+    n_bra = {Target.J: mkd.TIMING_N_BRA, Target.K: mkd.K_TIMING_N_BRA,
              Target.F: FD.TIMING_N_BRA}[spec.target]
     raw |= {"wallclock:warmup": WARMUP, "wallclock:n_bra": n_bra,
             "wallclock:n_ket": n_ket, "wallclock:lanes": lanes,
@@ -435,10 +445,10 @@ def _done(store, key: str) -> bool:
 
 def _lever_clock(backend: str, request, compile_device_source,
                  run_device_binary, monkeypatch, tmp_path: Path) -> None:
-    store_path = os.environ.get(tkd.WALLCLOCK_STORE)
+    store_path = os.environ.get(mkd.WALLCLOCK_STORE)
     if not store_path or not os.environ.get(LEVERS_ENV, "").strip():
         pytest.skip(f"the lever clock is opt-in and must run alone, "
-                    f"uncontended: set {tkd.WALLCLOCK_STORE} and "
+                    f"uncontended: set {mkd.WALLCLOCK_STORE} and "
                     f"{LEVERS_ENV}=1 (see the module docstring)")
     tc = _toolchain_or_fail(backend, request)
     arch: Arch = tkd.BACKEND[backend][1]
@@ -451,7 +461,7 @@ def _lever_clock(backend: str, request, compile_device_source,
     # 1. CPU bounds
     cpuset = measured.config_value("CPUSET")
     if cpuset:
-        os.sched_setaffinity(0, tkd._cpu_list(cpuset))
+        os.sched_setaffinity(0, mkd._cpu_list(cpuset))
     print(f"\nCPUSET={cpuset or '(empty)'}; {REQUIRE_GPU}="
           f"{os.environ.get(REQUIRE_GPU, '')!r}", flush=True)
 
@@ -459,13 +469,13 @@ def _lever_clock(backend: str, request, compile_device_source,
         return measured.measured_key(spec, arch, toolchain).key()
 
     cells = list(selected_cells())
-    if os.environ.get(tkd.WALLCLOCK_RESUME, "").strip():
+    if os.environ.get(mkd.WALLCLOCK_RESUME, "").strip():
         n0 = len(cells)
         cells = [s for s in cells if not _done(store, key(s))]
-        print(f"{tkd.WALLCLOCK_RESUME}: {n0 - len(cells)} cells already "
+        print(f"{mkd.WALLCLOCK_RESUME}: {n0 - len(cells)} cells already "
               "timed, skipped", flush=True)
         if not cells:
-            pytest.skip(f"{tkd.WALLCLOCK_RESUME}: every cell already timed")
+            pytest.skip(f"{mkd.WALLCLOCK_RESUME}: every cell already timed")
     for s in cells:  # the ledger's compile rows must exist, of this text
         for c in (s, literal(s)):
             assert c in measured_store.ledger_cells(), c.key()
@@ -731,56 +741,6 @@ def test_the_row_raw_carries_both_arms_and_the_contention_state() -> None:
     assert all(type(v) is int for v in raw.values())
 
 
-def _synthetic_store(arm: str, verdicts: list[str]) -> dict:
-    """A store of `arm`'s classes on sm_86, each timed so that `lever_ab`
-    reads the given per-class verdict (win, loss, neutral, mixed)."""
-    from felizjueves.device import SM_86, MeasuredKey
-    prov = dict(toolchain="nvcc 13.0", arch="sm_86", host="h", gpu="g",
-                date="2026-10-16")
-    # (control wide, arm wide, control near, arm near) medians, IQR 10
-    shape = {"win": (1000, 500, 1000, 1000), "loss": (500, 1000, 500, 500),
-             "neutral": (1000, 1005, 1000, 1000),
-             "mixed": (1000, 500, 500, 1000)}
-    cells = measured_store.lever_clock_cells(arm)
-    assert len(cells) == len(verdicts)
-    store: dict = {}
-
-    def st(p, m):
-        return {f"{p}median_ns": m, f"{p}q1_ns": m - 5, f"{p}q3_ns": m + 5}
-
-    for spec, v in zip(cells, verdicts, strict=True):
-        cw, aw, cn, an = shape[v]
-        raw = {**st("wallclock:control:", cw), **st("wallclock:near:", an),
-               **st("wallclock:control:near:", cn),
-               **dict.fromkeys(measured_store.GPU_UTIL_FIELDS, 1)}
-        lit = measured_store.Measured(registers=1, spill_store=0,
-                                      spill_load=0, **prov)
-        row = measured_store.Measured(registers=1, spill_store=0,
-                                      spill_load=0, runtime_ns=aw,
-                                      spread_ns=10, repeats=31, raw=raw,
-                                      **prov)
-        for s, r in ((literal(spec), lit), (spec, row)):
-            store = measured_store.merge(
-                store, MeasuredKey(s, SM_86, "nvcc 13.0"), r)
-    return store
-
-
-@pytest.mark.parametrize(("verdicts", "want"), [
-    (["win", "neutral", "win", "neutral", "neutral"], "faster"),
-    (["loss", "neutral", "neutral", "neutral", "loss"], "slower"),
-    (["neutral"] * 5, "not shown"),
-    (["win", "loss", "neutral", "neutral", "neutral"], "not shown"),
-    (["win", "mixed", "win", "win", "win"], "not shown"),
-])
-def test_the_declared_verdict_rule(verdicts, want) -> None:
-    store = _synthetic_store("fused", verdicts)
-    got = measured_store.lever_clock_ab(store, "sm_86", "fused")
-    assert [ab.verdict for ab in got.values()] == verdicts
-    assert measured_store.lever_clock_verdict(store, "sm_86", "fused") == want
-    assert not measured_store.lever_may_become_the_default(
-        store, "fused", arches=("sm_86",))
-
-
 # The recorded result (#363's two sessions, one per card): every arm's
 # verdict per arch, read off the tracked store by the declared rule. The K
 # arms' sm_86 entries are #421's re-time on the new text (interleave and
@@ -840,14 +800,3 @@ def test_every_cell_is_timed_gated_on_both_cards_and_the_verdicts_hold(
             timed.append(arm)
     assert [a for a in timed if measured_store.lever_may_become_the_default(
         store, a)] == ["fmixed"]
-
-
-def test_an_untimed_cell_is_refused_never_skipped() -> None:
-    store = _synthetic_store("fused", ["win"] * 5)
-    assert measured_store.lever_may_become_the_default(
-        store, "fused", arches=("sm_86",))
-    with pytest.raises(KeyError):  # gfx1200: nothing timed there
-        measured_store.lever_may_become_the_default(store, "fused")
-    store.pop(next(k for k in store if "/fused@" in k))
-    with pytest.raises(KeyError):
-        measured_store.lever_clock_verdict(store, "sm_86", "fused")

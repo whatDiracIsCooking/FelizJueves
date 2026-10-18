@@ -10,7 +10,9 @@ re-run a card); its `spilling` half is DERIVED from
 data/measured/lever_ledger.json (#362) and recomputed here, never written
 by hand.
 
-All fast-tier (no compiler, no card):
+A CHECK OF MEASUREMENT ARTEFACTS, moved from test/test_lever_tier.py
+(`devtools/measure.sh check`; no compiler, no card): it reads two tracked
+records under data/measured/, and a correctness run never needs it.
 
 - the run half's shape: both backends, per-file counts that sum to the
   session's, no failure, and a skip only as a named opt-in (timed, #363);
@@ -20,8 +22,8 @@ All fast-tier (no compiler, no card):
 - the spilling half equals `derive_spilling(lever_ledger.json)`;
 - what the L <= 4 rule left unrun is stated, by name.
 
-`PYTHONPATH=src uv run python test/test_lever_tier.py --write` rewrites the
-`spilling` half only.
+`PYTHONPATH=src uv run python measure/measure_lever_tier.py --write` rewrites
+the `spilling` half only.
 """
 
 from __future__ import annotations
@@ -40,8 +42,11 @@ EXTRA_ARMS = {"fused+mixed"}
 
 
 def lever_device_files() -> list[str]:
+    # The correctness files under test/, globbed there from here (ROOT is the
+    # repo root). #363's lever clock, which times the arms rather than
+    # checking them, left test/ for measure/ and so needs no exclusion; the
+    # name is still refused, in case a timed file is ever put back.
     t = ROOT / "test"
-    # #363's lever clock times the arms; it is not a correctness file
     files = sorted(f for f in t.glob("test_*lever*_device.py")
                    if f.name != "test_lever_clock_device.py") + [
         t / "test_kernel_fused_device.py", t / "test_kernel_mixed_device.py"]
@@ -92,6 +97,12 @@ def test_the_run_half_has_both_backends_and_every_case_passed() -> None:
         # a skip is allowed only as a named opt-in (timed: #363), never silent
         assert s["skipped"] == len(s["opt_in_skips"])
         assert all(k["reason"] for k in s["opt_in_skips"])
+        # each skipped opt-in has since left test/: `now` names where it runs
+        for k in s["opt_in_skips"]:
+            path, name = k["now"].split(",")[0].split("::")
+            src = (ROOT / path).read_text()
+            for b in BACKENDS:
+                assert f"def {name.replace('<backend>', b)}(" in src, k
         assert s["passed"] + s["skipped"] == s["collected"] > 0
         per = [f["cases"][be] for f in DOC["files"]]
         assert sum(c["run"] for c in per) == s["collected"]
@@ -116,7 +127,8 @@ def test_every_ledger_arm_is_exercised_and_nothing_else() -> None:
 def test_the_spilling_half_is_the_ledger_derived() -> None:
     ledger = json.loads(LEDGER.read_text())
     assert DOC["spilling"] == derive_spilling(ledger), (
-        "rerun: PYTHONPATH=src uv run python test/test_lever_tier.py --write")
+        "rerun: PYTHONPATH=src uv run python measure/measure_lever_tier.py "
+        "--write")
     assert DOC["max_L"] == ledger["max_L"] == 4
 
 

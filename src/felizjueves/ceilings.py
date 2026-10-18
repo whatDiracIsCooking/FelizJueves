@@ -5,7 +5,8 @@ WHAT THIS IS. `device.Arch` carries `fp64_flops_per_s` and
 their values from `data/measured/ceilings.json`. This module is the other side:
 the probe that produces them, the record's shape, and the refusal to record a
 phase the card gate (`felizjueves.gate`) did not let through. The recording run
-is `test/test_ceilings_device.py`'s opt-in test (its docstring has the command);
+is `measure/measure_ceilings_device.py`'s opt-in test, run by
+`devtools/measure.sh ceilings` (its docstring has the command);
 the probe source is here so that the record's `source_sha256` is of text the
 repo tracks.
 
@@ -88,7 +89,10 @@ FMA_ITERS = 1 << 14
 OVERSUBSCRIBE = 4
 TRIAD_N = 1 << 25  # 32 Mi doubles = 256 MiB per array
 
-# The named command a ceiling is reproduced by (test/test_ceilings_device.py).
+# The named command each TRACKED ceiling record carries, as it was taken:
+# provenance, so not rewritten when the probe left test/ for
+# measure/measure_ceilings_device.py (`devtools/measure.sh ceilings` is the
+# same selection today). Re-spell it with the next recording.
 COMMAND = ("env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest "
            "test/test_ceilings_device.py -p no:xdist -s -rs "
            "-m 'gpu and {backend}' -k record")

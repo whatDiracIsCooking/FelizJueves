@@ -5,26 +5,22 @@ L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): each class's literal kernel and
    the `fmixed` kernel, each its own translation unit, compiled with the
-   tier's flags plus the measurement flag (`measured.Backend.command`:
-   `-Xptxas -v` on nvcc, the AMD `kernel-resource-usage` remark on hipcc;
-   test_f_lever_batched_vrr_device.py's `_compile`). A warning in generated
-   text fails (#92's rule). The figures -- registers, spill-store bytes and
-   the stack frame (nvcc), VGPRs, spilled VGPRs and scratch bytes (hipcc)
-   -- literal against lever, their direction, and WHETHER THE CLASS STOPS
-   SPILLING (the issue's "which classes stop spilling stated explicitly")
-   are PRINTED (run with `-s`) as observations: compiler readings, never
-   store rows, no threshold (#362 is the ledger). The harness programs part
-   2 runs are compiled too.
+   tier's flags (test_f_lever_batched_vrr_device.py's `compile_unit`). A
+   warning in generated text fails (#92's rule). Nothing is read off the
+   compiler: the arms' registers, spills and frames are the lever ledger's
+   (`measured --remeasure ... --ledger`, #362), not a test's. The harness
+   programs part 2 runs are compiled too.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): test_fock_ondevice.py's recorded
    launches (`fock_driver.record`: launch_f's plan walked by walk_f), every
    kernel swapped for the `fmixed` kernel of its class
-   (`lever_ladder.unit_name`: `f_0101_lv_fmixed`): (a) per class,
+   (`lever_ladder.unit_name`: `f_0101_lv_fmixed`): (a) `slow` (cc-pVDZ is
+   not a small input: its host references cost 15-30 s a class): per class,
    H2O/cc-pVDZ's launches of that class at `tau = 0`, against `ao.fock`'s
    restricted sweep and against the same launches INTERPRETED WITH THE
    LEVER'S KERNEL (`fock_driver.interpret`, whose F32 arithmetic rounds as
    the card's does), and run against run; (b) per molecule, H2O/STO-3G at
-   `tau = 0` and `tau = 0.1, n = 4` and H2O/6-31G at `tau = 0` (s and p
-   shells only: every class L <= 4), every launch of the plan, against
+   `tau = 0` and `tau = 0.1, n = 4` and, `slow`, H2O/6-31G at `tau = 0` (s
+   and p shells only: every class L <= 4), every launch of the plan, against
    walk_f's build interpreted with the lever's kernels and, at `tau = 0`,
    the sweep and libcint. EVERY comparison is at `F32_REL` of `scale_G`
    (test/oracle/tolerance.py's one fp32 tier, never widened); none at an
@@ -36,11 +32,12 @@ driver emits its own, so the generator is only capped):
 
     KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit \\
         --L 0 1 2 3 4 --pair-l 2 --one-e-l 2" \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
+        devtools/kernel-tier.sh --backend cuda|hip --full -j 6 -- \\
         -k f_lever_mixed
 
-which selects parts 1 and 2 and nothing `slow` or above L = 4 (the
-pattern does not match test_k_lever_mixed*.py or test_kernel_mixed*.py).
+which selects part 2 and nothing above L = 4; without `--full`, only 2(b)'s
+H2O/STO-3G cells (nothing `slow`), the PR tier's (the pattern does not match
+test_k_lever_mixed*.py or test_kernel_mixed*.py).
 """
 
 from __future__ import annotations
@@ -55,7 +52,7 @@ import pytest
 import test_fock_ondevice as fo
 from fock_driver import fock_stage, interpret, run_on_card
 from oracle.tolerance import F32_REL
-from test_f_lever_batched_vrr_device import _compile, _direction
+from test_f_lever_batched_vrr_device import compile_unit
 from test_fock_build import molecule, sweep
 from test_fock_build import run as interp_run
 from test_kernel_device import BACKEND, _toolchain
@@ -75,7 +72,8 @@ CLASS_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in CAPPED]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0"),
+    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 SUFFIX = "_lv_" + NAME
 
@@ -105,33 +103,24 @@ def _swap(recs) -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def _figures(backend: str, compiler: str, cls, tmp_path: Path) -> None:
-    lit = _compile(backend, compiler, KF.build_f_kernel(cls),
-                   tmp_path / "literal")
-    lev = _compile(backend, compiler, lever_kernel(cls), tmp_path / "lever")
-    unit = ("registers/spill-store bytes/stack frame" if backend == "cuda"
-            else "VGPRs/spilled VGPRs/scratch bytes")
-    stops = "STOPS SPILLING" if lit[1] > 0 and lev[1] == 0 else (
-        "still spills" if lev[1] > 0 else "never spilled")
-    print(f"\n{backend} {cls} ({unit}), literal -> {NAME}: "
-          f"{lit[0]}/{lit[1]}/{lit[2]} -> {lev[0]}/{lev[1]}/{lev[2]} "
-          f"(regs {_direction(lit[0], lev[0])}, spill "
-          f"{_direction(lit[1], lev[1])}, local {_direction(lit[2], lev[2])}"
-          f"; {stops})", flush=True)
+def _compiles(backend: str, compiler: str, cls, tmp_path: Path) -> None:
+    for arm, k in (("literal", KF.build_f_kernel(cls)),
+                   ("lever", lever_kernel(cls))):
+        compile_unit(backend, compiler, k, tmp_path / arm)
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_cuda_f_lever_mixed_compiles_with_its_figures(cls, nvcc,
+def test_cuda_f_lever_mixed_compiles(cls, nvcc,
                                                       tmp_path) -> None:
-    _figures("cuda", nvcc.path, cls, tmp_path)
+    _compiles("cuda", nvcc.path, cls, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_hip_f_lever_mixed_compiles_with_its_figures(cls, hipcc,
+def test_hip_f_lever_mixed_compiles(cls, hipcc,
                                                      tmp_path) -> None:
-    _figures("hip", hipcc.path, cls, tmp_path)
+    _compiles("hip", hipcc.path, cls, tmp_path)
 
 
 def _program_kernels(cell) -> tuple[list[Kernel], str]:
@@ -144,7 +133,8 @@ def _program_kernels(cell) -> tuple[list[Kernel], str]:
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in CAPPED),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -202,6 +192,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_cuda_f_lever_mixed_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
@@ -210,6 +201,7 @@ def test_cuda_f_lever_mixed_each_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_hip_f_lever_mixed_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:

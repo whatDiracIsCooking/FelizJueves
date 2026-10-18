@@ -462,7 +462,10 @@ def test_exchange_matrix_matches_libcint(name):
     _report(name, K, fx.arrays[manifest.K_ARRAY], scale, "whole")
 
 
-@pytest.mark.parametrize("name", K_FAST_SS)
+# H2O/6-31G is `slow` by cost (~12 s interpreted), not by L: off the gate.
+@pytest.mark.parametrize("name", [pytest.param(n, id=n, marks=(pytest.mark.slow,)
+                                               if n == "h2o_631g_k" else ())
+                                  for n in K_FAST_SS])
 def test_the_s_block_matches_libcint_at_l_le_2(name):
     """The s-s block of K over the WHOLE basis (`c`, `d` over every shell,
     `p` included), from `exchange_matrix` with every quartet above L = 2

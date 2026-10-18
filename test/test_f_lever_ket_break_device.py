@@ -21,17 +21,19 @@ one more operation order (FMA contraction and the fp64 atomics' order) --
 and two runs of one binary to `2 TOL`. The break's decisions are the same
 IEEE products on both sides (`Gb (G_cd Mb)`, no addition to contract), as
 the six-block screen's are. Molecules: H2O/STO-3G at `tau = 0.1`, `n = 4`
-and H2O/6-31G at `tau = 1e-3`, `n = 4` -- every class they reach has
-L <= 4 (asserted), the milestone's cap.
+(the PR tier's) and, `slow` because it is not a small input, H2O/6-31G at
+`tau = 1e-3`, `n = 4` -- every class they reach has L <= 4 (asserted), the
+milestone's cap.
 
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build the same programs
 and one program per F class with L <= 4 with the lever, failing on a warning
 in generated text (#92).
 
-Run on a card (selects nothing `slow`, nothing above L = 4):
+Run on a card (nothing above L = 4; without `--full` only H2O/STO-3G,
+nothing `slow`):
 
-    devtools/kernel-tier.sh --backend cuda -j 6 -- -k ket_break
-    devtools/kernel-tier.sh --backend hip  -j 6 -- -k ket_break
+    devtools/kernel-tier.sh --backend cuda --full -j 6 -- -k ket_break
+    devtools/kernel-tier.sh --backend hip  --full -j 6 -- -k ket_break
 """
 
 from __future__ import annotations
@@ -59,7 +61,8 @@ NAME, M = ket_break.NAME, ket_break.BOUND
 CLASSES = [c for c in vrr.CLASSES if sum(c) <= 4]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 1e-3, 4, id="h2o_631g-tau1e-3"),
+    pytest.param("h2o_631g", 1e-3, 4, id="h2o_631g-tau1e-3",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 
 _SIZES = {"bra_prim": f"(size_t)nb * kab * {len(KF.REC)}",
@@ -187,7 +190,8 @@ def test_hip_ket_break_matches_the_interpreted_walks(
 COMPILE_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in CLASSES),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -221,7 +225,7 @@ def test_hip_ket_break_programs_compile(cell, hipcc, tmp_path,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name,tau,n", [p.values for p in MOLECULES])
+@pytest.mark.parametrize(("name", "tau", "n"), MOLECULES)
 def test_the_device_molecules_reach_only_l_le_4_and_break(name, tau, n
                                                          ) -> None:
     recs, kernels, w = _recorded(name, tau, n)

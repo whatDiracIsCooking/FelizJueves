@@ -50,7 +50,7 @@ the fewest-spill batch count is the fastest.
 
 A MIS-RANKING IS A RECORD, NOT A TEST. data/measured/limits.json holds one
 `literature.limits.StructuralLimit` per mis-ranking found here, with its
-mechanism written out; test/test_kernelrank.py recomputes every number it
+mechanism written out; measure/measure_kernelrank.py recomputes every number it
 records, and fails on a mis-ranking over SUBGRID that no record covers.
 
 NOTHING HERE FEEDS A LITERATURE FLOOR. This module reads `measured_store`

@@ -2,11 +2,14 @@
 
 Two tests per backend, both `gpu` plus `cuda`/`hip`, so they skip without the
 card and the compiler -- the recorded ceilings themselves are data
-(`data/measured/ceilings.json`), and test/test_ceilings.py checks them, and the
-gate's refusal, in the fast tier.
+(`data/measured/ceilings.json`): measure/measure_ceilings.py checks them
+(`devtools/measure.sh check`), and test/test_ceilings.py the gate's refusal
+and the recorder's rules, in the fast tier. Moved from
+test/test_ceilings_device.py: both tests measure a card's rate, which is not a
+correctness claim about any kernel.
 
-- `test_*_probe_is_bounded_by_the_published_peak` runs in the kernel tier:
-  it compiles `ceilings.PROBE_SOURCE` with devtools/config.sh's flag set, runs
+- `test_*_probe_is_bounded_by_the_published_peak` is `devtools/measure.sh
+  probes`: it compiles `ceilings.PROBE_SOURCE` with devtools/config.sh's flag set, runs
   both probes (the triad checks every element on the device) and asserts each
   configuration's best rate is at or under the vendor's published peak --
   or, for a quantity the card bounds PER CLOCK (gfx1200's fp64, #141), runs
@@ -16,19 +19,20 @@ gate's refusal, in the fast tier.
   card; it records nothing.
 
 - `test_*_record_ceilings` is the RECORDING run, opt-in exactly as the
-  wall-clock sweep is (test_kernel_device.py's section comment): it skips
+  wall-clock sweep is (measure_kernel_device.py's section comment): it skips
   unless FJ_CEILINGS_STORE names the store, and it must run alone, uncontended.
   Each probe phase goes through `gate.gated` -- the card's settled reading
   before, the reading after -- and a phase the gate does not let through is
   REFUSED: that quantity is not recorded, and the arch stays uncharacterised
   (device.py: no ridge, no verdict). The command, per backend:
 
-    env FJ_CEILINGS_STORE=data/measured/ceilings.json uv run pytest \\
-        test/test_ceilings_device.py -p no:xdist -s -rs -m 'gpu and cuda' \\
-        -k record
+    devtools/measure.sh ceilings --backend cuda
 
-  (`ceilings.COMMAND`, which each record carries.) The card's lock is the
-  device fixture's (test/conftest.py, #91).
+  which sets FJ_CEILINGS_STORE to the tracked file and selects `-k record`
+  here, alone. `ceilings.COMMAND`, which each tracked record carries, is the
+  spelling those records were taken with, before this file left test/; it is
+  their provenance and is not rewritten. The card's lock is the device
+  fixture's (test/conftest.py, #91, through measure/conftest.py).
 """
 
 from __future__ import annotations

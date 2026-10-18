@@ -6,21 +6,18 @@ cap; 13 of the 21):
 1. COMPILE-ONLY (`cuda` / `hip`, no card): BOTH RECURRENCES ON EVERY CLASS
    -- the literal kernel (the ket cascade) and the ETR forced
    (`etr.forced(etr.ETR)`), each its own translation unit -- compiled with
-   the tier's flags plus the measurement flag (`measured.Backend.command`:
-   `-Xptxas -v` on nvcc, the AMD `kernel-resource-usage` remark on hipcc).
-   A warning in generated text fails (#92's rule). The figures (registers,
-   spill-store bytes, stack frame on nvcc; VGPRs, spilled VGPRs, scratch
-   bytes on hipcc), cascade against ETR, are PRINTED (run with `-s`) beside
-   the model's choice and margins (`etr.score`), and each line says whether
-   the compiler's direction ((registers, spill, frame) lexicographically:
-   the spill decides at the register cap) AGREES with the model -- the
-   issue's "the disagreement is measured rather than assumed". Compiler
-   readings, never store rows, no threshold (#362 is the ledger). The
+   the tier's flags (test_f_lever_batched_vrr_device.py's `compile_unit`).
+   A warning in generated text fails (#92's rule). Nothing is read off the
+   compiler: the cascade-against-ETR registers and spills, and whether the
+   compiler's direction agrees with the model (`etr.score`), are the lever
+   ledger's (`measured --remeasure ... --ledger`, #362), not a test's. The
    harness programs part 2 runs are compiled too.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): test_fock_ondevice.py's launches
    (`fock_driver.record`: launch_f's plan walked by walk_f), every kernel
    swapped:
-   (a) per class THE ACCURACY GATE ADMITS (`etr.gate`: 11 of the 13),
+   (a) `slow` (cc-pVDZ is not a small input: its host references cost
+   15-30 s a class): per class THE ACCURACY GATE ADMITS (`etr.gate`: 11
+   of the 13),
    H2O/cc-pVDZ's launches of that class at `tau = 0`, the kernel the ETR
    FORCED (so the ETR runs on the cascade classes too), against those
    launches interpreted with the literal kernel and `ao.fock`'s restricted
@@ -34,8 +31,10 @@ cap; 13 of the 21):
    test_f_lever_etr.py pins them interpreted on these inputs, and the rule
    ships the cascade on both;
    (b) per molecule, the SHIPPED lever (`etr`, the rule's choice per class)
-   on H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and H2O/6-31G at
-   `tau = 0` (s and p shells only: every class L <= 4), every launch of
+   on H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` (the PR tier's: the
+   rule ships the ETR on the (sp|sp), (sp|pp) and (pp|pp) it meets) and,
+   `slow`, H2O/6-31G at `tau = 0` (s and p shells only: every class
+   L <= 4), every launch of
    the plan, against walk_f's interpreted literal build (`2 TOL`) and, at
    `tau = 0`, the sweep (`TOL`) and libcint (`LIBCINT_TOL`), by
    test_fock_ondevice's checks. Nothing is recorded.
@@ -45,17 +44,17 @@ emits its own, so the generator is only capped):
 
     KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit \\
         --L 0 1 2 3 4 --pair-l 2 --one-e-l 2" \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
-        -s -k f_lever_etr
+        devtools/kernel-tier.sh --backend cuda|hip --full -j 6 -- \\
+        -k f_lever_etr
 
-which selects parts 1 and 2 and nothing `slow` or above L = 4.
+which selects part 2 (without `--full`, only 2(b)'s STO-3G cells: nothing
+`slow`) and nothing above L = 4.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import re
-import subprocess
 from functools import cache
 from pathlib import Path
 
@@ -63,13 +62,11 @@ import numpy as np
 import pytest
 import test_fock_ondevice as fo
 from fock_driver import fock_stage, run_on_card
+from test_f_lever_batched_vrr_device import compile_unit
 from test_fock_build import LIBCINT_TOL, TOL, molecule, sweep, walk
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import kernel_f as KF
-from felizjueves import measured
-from felizjueves.device import GFX1200, SM_86
-from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import etr as E
 from felizjueves.f_levers.seams import DEFAULT_HOOKS
 from felizjueves.hgp.vrr import CLASSES
@@ -86,7 +83,8 @@ GATED_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in GATED]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0"),
+    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 _UNIT = re.compile(r"f_(\d)(\d)(\d)(\d)(_lv_etr)?(_forced)?")
 
@@ -130,76 +128,25 @@ def _swap(recs, which=lever_kernel) -> tuple:
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: both recurrences on every class, against the model
+# 1. Compile-only: both recurrences on every class
 # ---------------------------------------------------------------------------
 
-EMIT = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}
-WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
-
-
-def _compile(backend: str, compiler: str, kern: Kernel, workdir: Path
-             ) -> tuple[int, int, int]:
-    """(registers or VGPRs, spill-store bytes or spilled VGPRs, stack frame
-    or scratch bytes) of one unit."""
-    be = measured.BACKENDS[backend]
-    emit, arch = EMIT[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    src = workdir / f"{kern.name}.{be.ext}"
-    obj = workdir / f"{kern.name}.o"
-    src.write_text(emit(kern, arch))
-    done = subprocess.run(be.command(compiler, src, obj), capture_output=True,
-                          text=True, timeout=1800)
-    report = done.stdout + done.stderr
-    assert done.returncode == 0, f"{kern.name}:\n{report[-4000:]}"
-    warned = [m[0] for m in WARNING.finditer(report)
-              if Path(m["file"]).name == src.name]
-    assert not warned, f"{kern.name}: warning in generated text (#92): {warned}"
-    if backend == "cuda":
-        raw = measured.parse_ptxas(report, kern.name)
-        return (raw["registers"], raw["spill_store_bytes"],
-                raw["stack_frame_bytes"])
-    raw = measured.parse_amd_remarks(report, kern.name)
-    return (raw["VGPRs"], raw["VGPRs Spill"],
-            raw.get("ScratchSize", raw.get("Private Segment Size", -1)))
-
-
-def _verdict(cascade: tuple, etr: tuple) -> str:
-    """The compiler's opinion: (registers, spill, frame) lexicographically
-    -- the spill decides once both sit at the register cap."""
-    return "tie" if cascade == etr else (E.ETR if etr < cascade
-                                         else E.CASCADE)
-
-
-def _figures(backend: str, compiler: str, cls, tmp_path: Path) -> None:
-    lit = _compile(backend, compiler, KF.build_f_kernel(cls),
-                   tmp_path / "cascade")
-    lev = _compile(backend, compiler, forced_kernel(cls), tmp_path / "etr")
-    s = E.score(cls)
-    unit = ("registers/spill-store bytes/stack frame" if backend == "cuda"
-            else "VGPRs/spilled VGPRs/scratch bytes")
-    by_regs = _verdict(lit, lev)
-    agree = "tie" if by_regs == "tie" else (
-        "agrees" if by_regs == E.choice(cls) else "DISAGREES")
-    print(f"\n{backend} {cls} ({unit}) cascade {lit[0]}/{lit[1]}/{lit[2]} "
-          f"etr {lev[0]}/{lev[1]}/{lev[2]}; model: choice {E.choice(cls)}, "
-          f"peak {s.cascade_peak}->{s.etr_peak}, x {s.cascade_x}->{s.etr_x}; "
-          f"the compiler's (regs, spill, frame) favour {by_regs} ({agree} "
-          "with the model)",
-          flush=True)
+def _compiles(backend: str, compiler: str, cls, tmp_path: Path) -> None:
+    compile_unit(backend, compiler, KF.build_f_kernel(cls),
+                 tmp_path / "cascade")
+    compile_unit(backend, compiler, forced_kernel(cls), tmp_path / "etr")
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_cuda_f_lever_etr_compiles_both_recurrences(cls, nvcc,
-                                                    tmp_path) -> None:
-    _figures("cuda", nvcc.path, cls, tmp_path)
+def test_cuda_f_lever_etr_compiles(cls, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, cls, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_hip_f_lever_etr_compiles_both_recurrences(cls, hipcc,
-                                                   tmp_path) -> None:
-    _figures("hip", hipcc.path, cls, tmp_path)
+def test_hip_f_lever_etr_compiles(cls, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, cls, tmp_path)
 
 
 def _program_kernels(cell) -> tuple[list[Kernel], str]:
@@ -212,7 +159,8 @@ def _program_kernels(cell) -> tuple[list[Kernel], str]:
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in GATED),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -255,6 +203,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", GATED_PARAMS)
 def test_cuda_f_lever_etr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
@@ -263,6 +212,7 @@ def test_cuda_f_lever_etr_each_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", GATED_PARAMS)
 def test_hip_f_lever_etr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:

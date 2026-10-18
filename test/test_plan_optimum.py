@@ -13,7 +13,6 @@ the RAW layer -- no canonical form, no dominance.
 
 from __future__ import annotations
 
-import time
 from functools import cache
 from itertools import permutations, product
 
@@ -205,10 +204,11 @@ def test_beam_refuses_a_bad_width() -> None:
 
 @pytest.mark.parametrize("L", [opt.EXACT_MAX_L + 1, 7, 16])
 def test_optimum_refuses_above_the_ceiling_without_running(L) -> None:
-    t0 = time.monotonic()
+    # "Without running" is the refusal coming first, before any search --
+    # held by its message naming the ceiling, not by a clock: a timing
+    # bound is a measurement, and a loaded box would fail it at random.
     with pytest.raises(opt.BeyondExactCeiling) as err:
         opt.optimum(L)
-    assert time.monotonic() - t0 < 1.0
     assert isinstance(err.value, ValueError)
     msg = str(err.value)
     assert f"L = {L}" in msg and "EXACT_MAX_L" in msg

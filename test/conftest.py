@@ -31,10 +31,11 @@ probe, and is split by what a test needs -- the two are not the same gate:
   a reason to refuse: a correct answer does not care how fast it arrives, and
   a gate on it would make every correctness test hostage to an outside
   process.
-- TIMING (the opt-in wall-clock sweep in test_kernel_device.py, and the
-  ceiling probes' recording run in test_ceilings_device.py): the same lock,
-  plus the utilisation wait of `felizjueves.gate` (#109; it lived in
-  test_kernel_device.py and here until a second measurement needed it).
+- TIMING (every sweep under measure/, run by devtools/measure.sh -- the
+  wall-clock sweeps, the counter sweep, the ceiling probes' recording run):
+  the same lock, plus the utilisation wait of `felizjueves.gate` (#109; it
+  lived in test_kernel_device.py and here until a second measurement needed
+  it). Nothing under test/ times anything.
 
 UNDER XDIST THE CONTROLLER HOLDS THE LOCK and the workers run under it. A
 session fixture in each worker cannot hold it: the first worker's lock would
@@ -46,8 +47,12 @@ worker's fixture then finds the lock held by an ANCESTOR (the controller, or a
 that is not an ancestor is another run, and is waited for.
 
 `claim_marked_tests` is the other half of `test/test_claims.py`'s registry
-check: every `@pytest.mark.claim(id)` under test/, read from source so that a
-narrowed run cannot hide one.
+check: every `@pytest.mark.claim(id)` under test/ and measure/, read from
+source so that a narrowed run cannot hide one.
+
+measure/conftest.py loads this file by path and re-exports all of it, so the
+measurement sweeps (devtools/measure.sh) get these very fixtures, hooks and
+card lock.
 """
 
 from __future__ import annotations
@@ -570,8 +575,14 @@ def _is_claim_mark(node: ast.AST) -> bool:
     )
 
 
-def scan_claim_marks(test_dir: Path) -> dict[str, str]:
+def scan_claim_marks(*test_dirs: Path) -> dict[str, str]:
     """Map each claim id to the node id of the one test marked with it.
+
+    Every directory given is scanned, each node id spelled relative to its
+    directory's parent (`test/...`, `measure/...`): a claim may be
+    discharged by a correctness test or by a check of the measured rows
+    (measure/), and one id marked in both trees is the same error as one id
+    marked twice in one.
 
     Read from the SOURCE, not from the session's collected items, on purpose:
     a run narrowed by `-k`, `-m` or a path collects a subset, and a registry
@@ -581,8 +592,8 @@ def scan_claim_marks(test_dir: Path) -> dict[str, str]:
     not something to skip, since the point is that nothing drifts silently.
     """
     found: dict[str, str] = {}
-    root = test_dir.parent
-    for path in sorted(test_dir.rglob("*.py")):
+    paths = [(d.parent, p) for d in test_dirs for p in sorted(d.rglob("*.py"))]
+    for root, path in paths:
         tree = ast.parse(path.read_text(), filename=str(path))
         rel = path.relative_to(root).as_posix()
         placed = list(_marks_on_tests(tree.body, f"{rel}::"))
@@ -626,7 +637,14 @@ def _marks_on_tests(body: list[ast.stmt], prefix: str):
                     yield f"{prefix}{stmt.name}", deco
 
 
+# measure/ (devtools/measure.sh): the claims a stored row discharges -- a
+# verdict read off data/measured/ -- are marked there, beside the checks that
+# recompute those rows; the registry check itself is correctness and stays.
+MEASURE_DIR = REPO / "measure"
+
+
 @pytest.fixture(scope="session")
 def claim_marked_tests() -> dict[str, str]:
-    """Every `@pytest.mark.claim(id)` under test/, as {claim id: node id}."""
-    return scan_claim_marks(TEST_DIR)
+    """Every `@pytest.mark.claim(id)` under test/ and measure/, as
+    {claim id: node id}."""
+    return scan_claim_marks(TEST_DIR, MEASURE_DIR)

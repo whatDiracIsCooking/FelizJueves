@@ -5,40 +5,38 @@ L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): each class's literal kernel and
    the lever's (at the rule's group count, `batched_vrr.n_groups`), each its
-   own translation unit, compiled with the tier's flags plus the measurement
-   flag (`measured.Backend.command`: `-Xptxas -v` on nvcc, the AMD
-   `kernel-resource-usage` remark on hipcc). A warning in generated text
-   fails (#92's rule). The figures -- registers, spill-store bytes and the
-   stack frame (nvcc; the staged `boundary[]` lives there), VGPRs, spilled
-   registers and private-segment bytes (hipcc) -- literal against lever,
-   and their direction, are PRINTED (run with `-s`) as observations:
-   compiler readings, never store rows, no threshold (#362 is the ledger).
-   The harness programs part 2 runs are compiled too.
+   own translation unit, compiled with the tier's flags (`compile_unit`
+   below, the helper every lever device file, F and K, compiles a unit
+   with). A warning in generated text fails (#92's rule). Nothing is read
+   off the compiler: the arms' registers, spills and frames are the lever
+   ledger's (`measured --remeasure ... --ledger`, #362), not a test's. The
+   harness programs part 2 runs are compiled too.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): test_fock_ondevice.py's launches
    (`fock_driver.record`: launch_f's plan walked by walk_f), every kernel
    swapped for the lever's kernel of its class, named
    `lever_ladder.unit_name` of the literal name (`f_0101_lv_batched_vrr`):
-   (a) per class, H2O/cc-pVDZ's launches of that class at `tau = 0`,
+   (a) `slow` (cc-pVDZ is not a small input: its host references cost
+M-30 s a class): per class, H2O/cc-pVDZ's launches of that class at `tau = 0`,
    against those launches INTERPRETED WITH THE LITERAL KERNEL -- which the
    lever's kernel equals bit for bit on the host
    (test_f_lever_batched_vrr.py) -- and `ao.fock`'s restricted sweep, with
    test_fock_ondevice's `_check_class` and its stated tolerances unchanged
-   (`TOL`, `2 TOL`, the run-to-run `2 TOL`); (b) per molecule, H2O/STO-3G
-   at `tau = 0` and `tau = 0.1, n = 4` and H2O/6-31G at `tau = 0` (s and p
-   shells only: every class L <= 4), every launch of the plan, against
+   (`TOL`, `2 TOL`, the run-to-run `2 TOL`); (b) per molecule, H2O/STO-3G at
+   `tau = 0` and `tau = 0.1, n = 4` and, `slow`, H2O/6-31G at `tau = 0` (s
+   and p shells only: every class L <= 4), every launch of the plan, against
    walk_f's interpreted build and, at `tau = 0`, the sweep and libcint, by
-   test_fock_ondevice's `_part2` checks and tolerances. Nothing is
-   recorded.
+   test_fock_ondevice's `_part2` checks and tolerances. Nothing is recorded.
 
 Run part 2 as (each backend; no F unit is on KERNEL_GEN_CMD's ladder, the
 driver emits its own, so the generator is only capped):
 
     KERNEL_GEN_CMD="env PYTHONPATH=src python -m felizjueves.emit \\
         --L 0 1 2 3 4 --pair-l 2 --one-e-l 2" \\
-        devtools/kernel-tier.sh --backend cuda|hip -j 6 -- \\
+        devtools/kernel-tier.sh --backend cuda|hip --full -j 6 -- \\
         -k f_lever_batched_vrr
 
-which selects parts 1 and 2 and nothing `slow` or above L = 4.
+which selects part 2 and nothing above L = 4; without `--full`, only 2(b)'s
+H2O/STO-3G cells (nothing `slow`), the PR tier's.
 """
 
 from __future__ import annotations
@@ -72,7 +70,8 @@ CLASS_PARAMS = [pytest.param(c, id="".join(map(str, c))) for c in CAPPED]
 MOLECULES = [
     pytest.param("h2o_sto3g", 0.0, 1, id="h2o_sto3g-tau0"),
     pytest.param("h2o_sto3g", 0.1, 4, id="h2o_sto3g-tau0.1"),
-    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0"),
+    pytest.param("h2o_631g", 0.0, 1, id="h2o_631g-tau0",
+                 marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 
 
@@ -97,69 +96,81 @@ def _swap(recs) -> tuple:
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: registers, spill and local memory, literal vs lever
+# 1. Compile-only: literal and lever, each its own unit
 # ---------------------------------------------------------------------------
 
 EMIT = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}
 WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
+# `measured.Backend.command`'s measurement flag per backend: what turns a
+# compile into a resource report. Left out unless a caller asks for the
+# report, because what the lever files assert is that each unit COMPILES;
+# registers, spills and frames are the lever ledger's (`python -m
+# felizjueves.measured --remeasure ... --ledger`), never a test's.
+REPORT_FLAGS = {"cuda": ("-Xptxas", "-v"),
+                "hip": ("-Rpass-analysis=kernel-resource-usage",)}
 
 
-def _compile(backend: str, compiler: str, kern: Kernel, workdir: Path
-             ) -> tuple[int, int, int]:
-    """(registers or VGPRs, spill-store bytes or spilled VGPRs, stack frame
-    or private-segment bytes) of one unit."""
+def _without(cmd: list[str], seq: tuple[str, ...]) -> list[str]:
+    for i in range(len(cmd) - len(seq) + 1):
+        if tuple(cmd[i:i + len(seq)]) == seq:
+            return cmd[:i] + cmd[i + len(seq):]
+    raise AssertionError(f"{seq} not in {cmd}")
+
+
+def compile_unit(backend: str, compiler: str, kern: Kernel, workdir: Path, *,
+                 report: bool = False) -> str:
+    """Compile one emitted unit with the tier's flags (`measured.Backend.
+    command`: `NVCC_FLAGS` / `HIPCC_FLAGS`, the card's arch, `-c`), FAIL on
+    an error or on a warning located in generated text (#92), and return
+    the compiler's output. `report=True` keeps the measurement flag, for the
+    one reading a lever test may assert: a launch-configuration property
+    (`shared_bytes` against a declared bound), never a register or spill
+    figure."""
     be = measured.BACKENDS[backend]
     emit, arch = EMIT[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     src = workdir / f"{kern.name}.{be.ext}"
     obj = workdir / f"{kern.name}.o"
     src.write_text(emit(kern, arch))
-    done = subprocess.run(be.command(compiler, src, obj), capture_output=True,
-                          text=True, timeout=1800)
-    report = done.stdout + done.stderr
-    assert done.returncode == 0, f"{kern.name}:\n{report[-4000:]}"
-    warned = [m[0] for m in WARNING.finditer(report)
+    cmd = be.command(compiler, src, obj)
+    if not report:
+        cmd = _without(cmd, REPORT_FLAGS[backend])
+    done = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    out = done.stdout + done.stderr
+    assert done.returncode == 0, f"{kern.name}:\n{out[-4000:]}"
+    warned = [m[0] for m in WARNING.finditer(out)
               if Path(m["file"]).name == src.name]
     assert not warned, f"{kern.name}: warning in generated text (#92): {warned}"
+    return out
+
+
+def shared_bytes(backend: str, compiler: str, kern: Kernel, workdir: Path
+                 ) -> int:
+    """One unit's static shared bytes (nvcc's `smem`, hipcc's LDS), from
+    `compile_unit` with the report: the block's shared footprint, which a
+    launch must fit, not a figure of merit."""
+    out = compile_unit(backend, compiler, kern, workdir, report=True)
     if backend == "cuda":
-        raw = measured.parse_ptxas(report, kern.name)
-        return (raw["registers"], raw["spill_store_bytes"],
-                raw["stack_frame_bytes"])
-    raw = measured.parse_amd_remarks(report, kern.name)
-    return (raw["VGPRs"], raw["VGPRs Spill"],
-            raw.get("ScratchSize", raw.get("Private Segment Size", -1)))
+        return measured.parse_ptxas(out, kern.name).get("smem_bytes", 0)
+    return measured.parse_amd_remarks(out, kern.name).get("LDS Size", 0)
 
 
-def _direction(lit: int, lev: int) -> str:
-    return "=" if lit == lev else ("down" if lev < lit else "up")
-
-
-def _figures(backend: str, compiler: str, cls, tmp_path: Path) -> None:
-    literal = KF.build_f_kernel(cls)
-    lever = lever_kernel(cls)
-    lit = _compile(backend, compiler, literal, tmp_path / "literal")
-    lev = _compile(backend, compiler, lever, tmp_path / "lever")
-    unit = ("registers/spill-store bytes/stack frame" if backend == "cuda"
-            else "VGPRs/spilled VGPRs/scratch bytes")
-    print(f"\n{backend} {cls} ({unit}), literal -> {NAME} "
-          f"({bv.n_groups(cls)} groups): {lit[0]}/{lit[1]}/{lit[2]} -> "
-          f"{lev[0]}/{lev[1]}/{lev[2]} (regs {_direction(lit[0], lev[0])}, "
-          f"spill {_direction(lit[1], lev[1])}, local "
-          f"{_direction(lit[2], lev[2])})", flush=True)
+def _compiles(backend: str, compiler: str, cls, tmp_path: Path) -> None:
+    compile_unit(backend, compiler, KF.build_f_kernel(cls),
+                 tmp_path / "literal")
+    compile_unit(backend, compiler, lever_kernel(cls), tmp_path / "lever")
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_cuda_f_lever_batched_vrr_compiles_with_its_figures(cls, nvcc,
-                                                           tmp_path) -> None:
-    _figures("cuda", nvcc.path, cls, tmp_path)
+def test_cuda_f_lever_batched_vrr_compiles(cls, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, cls, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
-def test_hip_f_lever_batched_vrr_compiles_with_its_figures(cls, hipcc,
-                                                          tmp_path) -> None:
-    _figures("hip", hipcc.path, cls, tmp_path)
+def test_hip_f_lever_batched_vrr_compiles(cls, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, cls, tmp_path)
 
 
 def _program_kernels(cell) -> tuple[list[Kernel], str]:
@@ -172,7 +183,8 @@ def _program_kernels(cell) -> tuple[list[Kernel], str]:
 PROGRAM_CELLS = [
     *(pytest.param(("class", c), id=f"class-{''.join(map(str, c))}")
       for c in CAPPED),
-    *(pytest.param(("molecule", *p.values), id=p.id) for p in MOLECULES),
+    *(pytest.param(("molecule", *p.values), id=p.id, marks=p.marks)
+      for p in MOLECULES),
 ]
 
 
@@ -217,6 +229,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_cuda_f_lever_batched_vrr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:
@@ -225,6 +238,7 @@ def test_cuda_f_lever_batched_vrr_each_class_matches_the_host(
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.slow  # H2O/cc-pVDZ's launches: not a small input
 @pytest.mark.parametrize("cls", CLASS_PARAMS)
 def test_hip_f_lever_batched_vrr_each_class_matches_the_host(
         cls, request, run_device_binary, tmp_path) -> None:

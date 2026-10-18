@@ -45,7 +45,6 @@ from __future__ import annotations
 import itertools
 import math
 import re
-import time
 from dataclasses import astuple, replace
 from functools import cache, partial
 
@@ -170,14 +169,12 @@ def test_dd_dd_is_961_boundary_values_not_1225() -> None:
 
 
 @pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
-def test_dd_dd_builds_and_its_construction_time_is_immaterial() -> None:
-    t = time.perf_counter()
+def test_dd_dd_builds() -> None:
+    # The build, not its duration: #282 asked that a material construction
+    # time be reported (~0.4 s with the digestion), and a clock is not a
+    # correctness check, so none is asserted here.
     k = KF.build_f_kernel((2, 2, 2, 2))
-    dt = time.perf_counter() - t
     assert k.name == "f_2222"
-    # ~0.4 s with the digestion; the bound only says "not material" (#282
-    # asks that a material one be reported)
-    assert dt < 10.0, dt
 
 
 # ---------------------------------------------------------------------------

@@ -64,6 +64,10 @@ from felizjueves.launch import XLaunch, cross_overlap_launch
 
 CROSS = ("h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz", "h2o_sto3g_x_631g_moved")
 CASES = ["hf_self", *(f"{n}:{o}" for n in CROSS for o in ("AB", "BA"))]
+# On the card, hf_self reaches (ff) (L > FAST_L_MAX, tiers.py): `slow`, off the
+# PR gate; the three cross fixtures stay on it.
+CASE_PARAMS = [pytest.param(c, id=c, marks=(pytest.mark.slow,)
+                            if c == "hf_self" else ()) for c in CASES]
 
 
 @cache
@@ -143,7 +147,7 @@ def _run(backend: str, case: str, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-@pytest.mark.parametrize("case", CASES)
+@pytest.mark.parametrize("case", CASE_PARAMS)
 def test_cuda_cross_overlap_matches_the_host_and_libcint(
         case, request, run_device_binary, tmp_path):
     _run("cuda", case, request, run_device_binary, tmp_path)
@@ -151,7 +155,7 @@ def test_cuda_cross_overlap_matches_the_host_and_libcint(
 
 @pytest.mark.hip
 @pytest.mark.gpu
-@pytest.mark.parametrize("case", CASES)
+@pytest.mark.parametrize("case", CASE_PARAMS)
 def test_hip_cross_overlap_matches_the_host_and_libcint(
         case, request, run_device_binary, tmp_path):
     _run("hip", case, request, run_device_binary, tmp_path)

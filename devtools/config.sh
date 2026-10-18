@@ -176,7 +176,45 @@ KERNEL_TIER_REPORTS=${KERNEL_TIER_REPORTS:-.kernel-tier-reports}
 # not the AMD ones (in a combined container both compilers are present, and
 # without this one backend's run would compile and launch the other's too).
 # Single quotes load-bearing, as for FAST_TEST_ARGS below.
-KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:-'-m "gpu and {backend}"'}
+#
+# TWO SELECTIONS, because the tier is a PR gate and a gate that costs an hour
+# is one nobody runs. KERNEL_TEST_ARGS, the default, excludes `slow`: classes
+# with L <= FAST_L_MAX (test/tiers.py) on small inputs (H2, two H2,
+# H2O/STO-3G), under five minutes per card. `--full` takes
+# KERNEL_FULL_TEST_ARGS instead -- every `gpu` test of the backend, the high-L
+# cells and the 6-31G / cc-pVDZ / cc-pVTZ builds included (72 min on the RTX
+# 3080 before the cut, most of it the K subgrid) -- for a milestone's close or
+# a change to kernel text above the cut. Neither selection measures anything:
+# timing, counters and the stored rows are devtools/measure.sh's.
+KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:-'-m "gpu and {backend} and not slow"'}
+KERNEL_FULL_TEST_ARGS=${KERNEL_FULL_TEST_ARGS:-'-m "gpu and {backend}"'}
+
+# --- measurement ------------------------------------------------------------
+#
+# devtools/measure.sh runs everything that MEASURES rather than checks: the
+# timed and profiled sweeps, the probes, the recompiles against the stored
+# rows, and the checks that data/measured/ is what its rows recompute to.
+# Those live in MEASURE_DIR, which pyproject's `testpaths` does not name, so
+# no correctness run (bare pytest, the push gate, the kernel tier) collects
+# them. Files there are `measure_*.py`; measure.sh passes MEASURE_PYTEST_ARGS
+# so pytest collects that spelling.
+MEASURE_DIR=${MEASURE_DIR:-measure}
+MEASURE_PYTEST_ARGS=${MEASURE_PYTEST_ARGS:-'-c pyproject.toml -o "python_files=measure_*.py"'}
+
+# Where each timed sweep writes, when its variable is not already set: the
+# TRACKED stores, because a sweep run through measure.sh is a deliberate
+# re-measurement (git shows what it moved). Point one elsewhere for a dry run:
+#   FJ_WALLCLOCK_STORE=/tmp/k.json devtools/measure.sh wallclock --backend cuda
+# (a store must exist before a sweep merges into it: copy the tracked one).
+MEASURE_KERNELS_STORE=${MEASURE_KERNELS_STORE:-data/measured/kernels.json}
+MEASURE_ROOFLINE_STORE=${MEASURE_ROOFLINE_STORE:-data/measured/roofline.json}
+MEASURE_BUILDS_STORE=${MEASURE_BUILDS_STORE:-data/measured/builds.json}
+MEASURE_CEILINGS_STORE=${MEASURE_CEILINGS_STORE:-data/measured/ceilings.json}
+
+# How a timed or profiled sweep runs: ALONE (no xdist -- a worker compiling
+# beside a timing makes it a different experiment), its prints shown, its
+# skips named. Single quotes load-bearing, as for FAST_TEST_ARGS below.
+MEASURE_TIMED_ARGS=${MEASURE_TIMED_ARGS:-'-p no:xdist -s -rs'}
 
 # --- the AMD device passthrough -------------------------------------------
 #
@@ -303,8 +341,8 @@ clang-format:formatting generated kernel text so a golden file stays reviewable
 sccache:warm recompiles of generated kernels; without it every kernel-tier run is a cold compile
 compute-sanitizer:the GPU memcheck/racecheck sweep (docker compose run --rm compute-sanitizer)
 nsys:Nsight Systems timelines (launch order, overlap, host gaps) -- a timeline, NOT counters: it gives no FLOP or DRAM-byte count, so no arithmetic intensity
-ncu:Nsight Compute counters on NVIDIA -- fp64 FLOPs and DRAM bytes per kernel (felizjueves.measured.profile), i.e. every sm_86 counter row and its arithmetic intensity; the cuda counter witness in test_toolchain.py SKIPS
-rocprofv3:counter mode on AMD -- the two hip counter witnesses in test_toolchain.py and the per-clock check of gfx1200's fp64 ceiling (GRBM_GUI_ACTIVE, #141) SKIP; loaded, it still gives gfx1200 no counter row (gfx12 defines no fp64 counter, and the byte counters read 0 on this box: measured_store.UNMEASURED, final since #140)
+ncu:Nsight Compute counters on NVIDIA -- fp64 FLOPs and DRAM bytes per kernel (felizjueves.measured.profile), i.e. every sm_86 counter row and its arithmetic intensity; devtools/measure.sh roofline cannot run and the cuda counter witness of measure.sh probes (measure/measure_toolchain.py) SKIPS
+rocprofv3:counter mode on AMD -- the two hip counter witnesses of devtools/measure.sh probes (measure/measure_toolchain.py) and its per-clock check of gfx1200's fp64 ceiling (GRBM_GUI_ACTIVE, #141) SKIP; loaded, it still gives gfx1200 no counter row (gfx12 defines no fp64 counter, and the byte counters read 0 on this box: measured_store.UNMEASURED, final since #140)
 cmake:building a reference implementation from source to compare against
 ninja:the generator cmake drives for that
 shellcheck:the devtools/ and docker/ lint pass (pre-commit brings its own on the host)"}

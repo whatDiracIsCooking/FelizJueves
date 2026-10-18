@@ -68,7 +68,7 @@ and 10) -- and not to be tuned after reading one.
   `kernel_k.build_k_kernels`, aggregated into one row as a J cell's batch
   kernels are (spill SUMMED, registers MAXED, `source_sha256` of the batch
   texts concatenated; `raw`'s `jsh_dynamic_bytes` is the K kernel's `Ksh`).
-- THE CLOCK is test/test_kernel_device.py's opt-in K sweep: each K cell
+- THE CLOCK is measure/measure_kernel_device.py's opt-in K sweep: each K cell
   and its J twin (`j_twin`: the J subgrid cell of the same L and
   n_batches) compiled, checked and timed BACK TO BACK in one session
   behind the gate, near-T J then K, wide-T K then J (#55's alternation);
@@ -89,7 +89,7 @@ and 10) -- and not to be tuned after reading one.
   otherwise MIXED. Compiler output, so no tolerance. The worst batch
   kernel's spill (`kernel_spills`) is reported beside it, never judged.
   The J rows are the store's, recompiled in the K session by
-  test/test_measured.py's rechecks (the same text, the same counts).
+  measure/measure_store.py's rechecks (the same text, the same counts).
 - WALL-CLOCK (`k_gain`), per (arch, L) and input: each target's best-median
   gain over its one-batch cell, median(b = 1) / min_b median(b), K off the
   K rows and J off the same rows' same-session controls -- the quantity
@@ -134,7 +134,7 @@ measured here and no F row is tracked. What an F row is:
   tracked file, which holds none, is rewritten byte for byte.
 
 WALL-CLOCK (#53) is `runtime_ns`, `repeats` and `spread_ns`, written by the
-opt-in, `gpu`-marked sweep in test/test_kernel_device.py
+opt-in, `gpu`-marked sweep in measure/measure_kernel_device.py
 (`test_<backend>_wallclock_over_the_subgrid`, run alone and uncontended; its
 docstring is the protocol). What one cell's number IS: the host
 `steady_clock` time of the cell's WHOLE launch sequence -- every batch kernel
@@ -370,7 +370,7 @@ belongs in `kernels.json`, a timing in its `runtime_ns`), and the loader
 refuses anything else in it.
 
 THE ROOFLINE ROWS (#112) are those counter rows, filled over `SUBGRID` by
-test/test_kernel_device.py's opt-in counter sweep (FJ_ROOFLINE_STORE) behind
+measure/measure_kernel_device.py's opt-in counter sweep (FJ_ROOFLINE_STORE) behind
 the card gate (`felizjueves.gate`). Each row carries the card's state around
 its phase in `raw` -- ROOFLINE_STATE_FIELDS: the gate's settled reading
 before, the reading after (both KNOWN: a phase whose after-reading is
@@ -393,7 +393,7 @@ ZERO, and not a missing file either.
 THE BUILD ROWS (#146) are the first measurement of a BUILD rather than a
 kernel: the host wall-clock of one whole-molecule `J_p` from a
 `launch.LaunchPlan` on one card, timed behind the card gate by
-test/test_j_launched_ondevice.py's opt-in sweep (FJ_LAUNCH_WALLCLOCK_STORE).
+measure/measure_j_launched_ondevice.py's opt-in sweep (FJ_LAUNCH_WALLCLOCK_STORE).
 They live in their own file, `data/measured/builds.json` (`BuildRow`,
 `build_key`, `load_builds` / `save_builds`), because no `Spec` names a
 molecule's plan and a kernels.json row is never widened; `BUILD_TIMED_REGION`
@@ -547,7 +547,7 @@ queries no card and spells no kernel -- so the fast tier, `kernelrank` and
 `batchreport` read it without one. The driver that compiles, parses what the
 compilers print and fills rows is `felizjueves.measured` (`python -m
 felizjueves.measured --remeasure`), which writes INTO this; the wall-clock
-side is written by test/test_kernel_device.py's sweep. test/test_layering.py
+side is written by measure/measure_kernel_device.py's sweep. test/test_layering.py
 holds the direction: the store may not import the driver, `emit/` or a
 toolchain module, and the analyses may import the store but not the driver.
 
@@ -1498,7 +1498,7 @@ ROOFLINE_STATE_FIELDS = ("roofline:gpu_util_before", "roofline:gpu_util_after",
 # (ROCm 7.2.4, share/rocprofiler-sdk/counter_defs.yaml) DOES define them for
 # -- CDNA only; the derived TOTAL_64_OPS and SQ_INSTS_VALU_FLOPS_FP64 are
 # defined for that set too (gfx950 alone for the latter). The refusal's
-# mechanism, as data: test/test_toolchain.py reads the card's own
+# mechanism, as data: measure/measure_toolchain.py reads the card's own
 # `rocprofv3 --list-avail` and fails if one of these, or any fp64 / FLOP
 # counter, appears on it.
 MISSING_COUNTERS = {

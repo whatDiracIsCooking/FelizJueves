@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import ast
 import dataclasses
-import json
 from pathlib import Path
 
 import pytest
 
 from felizjueves.device import (
     ARCHS,
-    CEILINGS_PATH,
     COMPUTE_BOUND,
     GFX1200,
     MEMORY_BOUND,
@@ -252,22 +250,6 @@ def test_the_declared_archs_read_their_ceilings_from_the_record() -> None:
     for arch in ARCHS:
         assert {q: getattr(arch, q) for q in QUANTITIES} == recorded_ceilings(
             arch.name)
-
-
-def test_the_ridge_reads_the_measured_values_and_no_published_figure(
-        tmp_path: Path) -> None:
-    # #141's acceptance: no verdict rests on an unstated assumption. The
-    # published block (vendor figures, gfx1200's per-clock bound) may change
-    # or vanish without moving a ceiling, a ridge or a verdict.
-    data = json.loads(CEILINGS_PATH.read_text())
-    data["published"] = {}
-    stripped = tmp_path / "ceilings.json"
-    stripped.write_text(json.dumps(data))
-    for arch in ARCHS:
-        got = recorded_ceilings(arch.name, stripped)
-        assert got == recorded_ceilings(arch.name)
-        assert Arch(arch.vendor, arch.name, arch.wavefront, **got).ridge == (
-            arch.ridge)
 
 
 def test_a_missing_record_is_uncharacterised(tmp_path: Path) -> None:

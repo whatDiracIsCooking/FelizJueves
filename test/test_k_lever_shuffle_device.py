@@ -4,14 +4,13 @@ TWO PARTS, the issue's acceptance on the device side:
 
 1. COMPILE-ONLY (`cuda` / `hip`, no card): the lever's kernel of a set of K
    classes with L <= 4 (milestone 13's cap), each its own translation unit,
-   compiled beside the class's literal kernel AND its #345 `coalesced`
-   kernel with the tier's flags plus the measurement flag
-   (`measured.Backend.command`). A warning in generated text fails (#92).
-   The figures (registers and spill-store bytes on nvcc, VGPRs and spilled
-   registers on hipcc; literal, coalesced, shuffle) are PRINTED (run with
-   `-s`) as observations: compiler readings, never store rows, no threshold
-   (#362 is the ledger). `(d s|d s)` (36 elements) is the INELIGIBLE class
-   at wave 32 on both cards: its shuffle kernel is the coalesced one.
+   beside the class's literal kernel AND its #345 `coalesced` kernel,
+   compiled with the tier's flags (test_f_lever_batched_vrr_device.py's
+   `compile_unit`). A warning in generated text fails (#92's rule). Nothing
+   is read off the compiler: registers and spills are the lever ledger's
+   (`measured --remeasure ... --ledger`, #362), not a test's. `(d s|d s)`
+   (36 elements) is the INELIGIBLE class at wave 32 on both cards: its
+   shuffle kernel is the coalesced one.
 2. ON THE CARD (`gpu` + `cuda` / `hip`): `k_spec(L)`'s class for L = 0..4
    at one batch and, where the plan admits it, three, plus the ineligible
    `(d s|d s)` at one and three batches, with the lever, through
@@ -32,6 +31,7 @@ import dataclasses
 
 import pytest
 import test_k_lever_coalesced_device as cd
+from test_f_lever_batched_vrr_device import compile_unit
 
 from felizjueves import measured
 from felizjueves.kernel import k_spec
@@ -53,42 +53,33 @@ def _spec(am, n_batches: int, lever: str | None) -> Spec:
 
 
 # ---------------------------------------------------------------------------
-# 1. Compile-only: registers and spill, literal / coalesced / shuffle
+# 1. Compile-only: literal / coalesced / shuffle
 # ---------------------------------------------------------------------------
 
 
-def _figures(backend: str, compiler: str, am, n: int, tmp_path) -> None:
+def _compiles(backend: str, compiler: str, am, n: int, tmp_path) -> None:
     arms = {arm: build_k_kernels(_spec(am, n, lever))
             for arm, lever in (("literal", None), (COALESCED, COALESCED),
                                (SHUFFLE, SHUFFLE))}
     names = [k.name for k in arms["literal"]]
     assert all([k.name for k in ks] == names for ks in arms.values())
-    unit = ("registers/spill-store bytes" if backend == "cuda"
-            else "VGPRs/spilled registers")
-    got: dict[str, list] = {}
     for arm, kernels in arms.items():
-        (d := tmp_path / arm).mkdir()
-        got[arm] = [cd._compile(backend, compiler, k if arm == "literal" else
-                                dataclasses.replace(k, name=f"{k.name}_lv_{arm}"),
-                                d) for k in kernels]
-    for i, name in enumerate(names):
-        print(f"\n{backend} {name} b{n} ({unit}): " + ", ".join(
-            f"{arm} {got[arm][i][0]}/{got[arm][i][1]}" for arm in arms),
-            flush=True)
+        for k in kernels:
+            compile_unit(backend, compiler, k if arm == "literal" else
+                         dataclasses.replace(k, name=f"{k.name}_lv_{arm}"),
+                         tmp_path / arm)
 
 
 @pytest.mark.cuda
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_cuda_shuffle_kernels_compile_with_their_figures(am, n, nvcc,
-                                                         tmp_path) -> None:
-    _figures("cuda", nvcc.path, am, n, tmp_path)
+def test_cuda_shuffle_kernels_compile(am, n, nvcc, tmp_path) -> None:
+    _compiles("cuda", nvcc.path, am, n, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize(("am", "n"), COMPILE_PARAMS)
-def test_hip_shuffle_kernels_compile_with_their_figures(am, n, hipcc,
-                                                        tmp_path) -> None:
-    _figures("hip", hipcc.path, am, n, tmp_path)
+def test_hip_shuffle_kernels_compile(am, n, hipcc, tmp_path) -> None:
+    _compiles("hip", hipcc.path, am, n, tmp_path)
 
 
 # ---------------------------------------------------------------------------

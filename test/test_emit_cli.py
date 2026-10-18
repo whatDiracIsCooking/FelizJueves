@@ -34,8 +34,6 @@ cover every L in the fast tier (#419).
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -170,29 +168,6 @@ def test_pair_l_alone_writes_only_the_pair_ladder(backend, lmax, tmp_path):
 def test_l_and_pair_l_together_write_both(tmp_path):
     assert _run(tmp_path, "cuda", "--L", "0", "--pair-l", "0") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "dq_0_0.cu", "jab_00.cu"}
-
-
-@pytest.mark.slow  # the bare default builds L up to 16
-@pytest.mark.parametrize("extra", [[], ["--one-e-l", "2"]],
-                         ids=["bare", "one-e-l"])
-def test_the_pq_ladder_still_matches_the_measured_pins(extra, tmp_path):
-    """Every literal one-batch row's `source_sha256` is the text the default
-    writes -- and the text KERNEL_GEN_CMD's `--one-e-l 2` writes: the
-    `[p|q]` ladder's bytes did not move."""
-    rows = json.loads(
-        (ROOT / "data" / "measured" / "kernels.json").read_text())["rows"]
-    for backend in BACKEND:
-        assert _run(tmp_path / backend, backend, *extra) == 0
-    checked = 0
-    for key, row in rows.items():
-        if "/b1/j/literal@" not in key:
-            continue  # a split cell, or a lever's arm: not the ladder's unit
-        backend = {"sm_86": "cuda", "gfx1200": "hip"}[row["arch"]]
-        path = tmp_path / backend / f"{row['kernel']}.{BACKEND[backend][2]}"
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == \
-            row["source_sha256"], key
-        checked += 1
-    assert checked == 34  # L = 0..16 on both arches
 
 
 # --- the one-electron ladder (#242) ------------------------------------------

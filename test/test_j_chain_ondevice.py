@@ -151,7 +151,7 @@ from test_j_launched_ondevice import (
     _gamma,
 )
 from test_kernel_device import BACKEND, _toolchain
-from tiers import FAST_L_MAX, is_fast
+from tiers import FAST_L_MAX, by_l, is_fast
 
 from felizjueves.ao.drive import _chain_plan, _unique_pairs
 from felizjueves.ao.hermite import _raise, e_block, hermite_order
@@ -173,15 +173,21 @@ from felizjueves.reference.pq import pq as ref_pq
 
 PART1 = "hf_ccpvtz"
 PAIR_CLASSES = tuple(emit_cli.pair_classes(emit_cli.DEFAULT_PAIR_L))
-PAIR_PARAMS = [pytest.param(c, id=f"{c[0]}{c[1]}") for c in PAIR_CLASSES]
-# (fixture, n_batches): part 2, through d
+# A pair class's L is la + lb (tiers.py): (ss) through (pd), (dd) included,
+# are the PR gate; (df) and (ff) are `slow`.
+PAIR_PARAMS = [by_l(c, sum(c), id=f"{c[0]}{c[1]}") for c in PAIR_CLASSES]
+# (fixture, n_batches, slow): part 2, through d. H2O/cc-pVDZ's whole chain is
+# ~110 s on the RTX 3080 -- a third of the gate on its own -- so it is `slow`;
+# H2O/STO-3G reaches every class it runs below L = 4.
 CHAIN_CELLS = (
-    ("h2_sto3g_j", 1),
-    ("h2o_sto3g_j", 1),
-    ("h2o_sto3g_j", 3),
-    ("h2o_ccpvdz_j", 1),
+    ("h2_sto3g_j", 1, False),
+    ("h2o_sto3g_j", 1, False),
+    ("h2o_sto3g_j", 3, False),
+    ("h2o_ccpvdz_j", 1, True),
 )
-CHAIN_PARAMS = [pytest.param(*c, id=f"{c[0]}-b{c[1]}") for c in CHAIN_CELLS]
+CHAIN_PARAMS = [pytest.param(name, n, id=f"{name}-b{n}",
+                             marks=(pytest.mark.slow,) if slow else ())
+                for name, n, slow in CHAIN_CELLS]
 L_MAX_DRIVER = 8  # milestone 6's reach: no [p|q] above it enters a driver
 
 

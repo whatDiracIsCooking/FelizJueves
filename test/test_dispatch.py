@@ -1,9 +1,11 @@
 """`dispatch`: the batch count of a class, from measured wall-clock (#145).
 
-Fast tier, no device markers: no compiler, no card. The tracked case
-recomputes from data/measured/kernels.json and compares against
-data/measured/batch_recommendation.json -- the test_batchreport.py pattern:
-the answer is never re-typed here. The synthetic cases build `Measured` rows.
+Fast tier, no device markers: no compiler, no card, and no tracked row --
+every case builds its own `Measured` rows. The tracked cases (the resolver
+recomputing data/measured/batch_recommendation.json from kernels.json, the
+default store being the tracked one, the tracked answer's input dependence,
+and the tracked cards being characterised) are checks of measurement
+artefacts: measure/measure_dispatch.py (`devtools/measure.sh check`).
 
 DEFERRED to #144: running one on-device cell at the dispatched count; that
 issue writes the on-device whole-molecule test, and `dispatch.choose(lp, lq,
@@ -12,7 +14,6 @@ arch, input)` is the entry point it calls.
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from functools import cache, partial
 
@@ -25,21 +26,16 @@ from felizjueves import batchreport, dispatch
 from felizjueves import measured_store as measured
 from felizjueves.ao.pairs import pair_bound
 from felizjueves.device import (
-    ARCHS,
-    GFX1200,
     SM_86,
     Arch,
     MeasuredKey,
     Uncharacterised,
     Vendor,
-    by_name,
 )
 from felizjueves.kernel import build_pq_kernels, pq_spec
 from felizjueves.launch import class_spec, launches
 from felizjueves.reference.pq import one_centre
 
-ROWS = measured.load()
-DOC = json.loads(batchreport.RECOMMENDATION.read_text())
 BATCHES = batchreport.BATCHES
 
 
@@ -134,33 +130,18 @@ def test_a_partly_timed_class_is_refused_not_chosen_over_the_rest() -> None:
         dispatch.choose(*_split(13), SM_86, "wide", store=gone)
 
 
-# --- refusal: an uncharacterised card gets no choice --------------------------
-
-
-def test_the_tracked_cards_are_characterised() -> None:
-    # so the refusal below is a distinct branch, not every card's fate
-    assert all(a.characterised for a in ARCHS)
-
-
 @pytest.mark.parametrize("which", dispatch.INPUTS)
 def test_an_uncharacterised_card_gets_no_choice(which) -> None:
     bare = Arch(Vendor.NVIDIA, "sm_86", wavefront=32)  # 0.0: not characterised
     assert not bare.characterised
+    rows = _store({b: (1000 + b, 1) for b in BATCHES}, arch=bare)
     for lp, lq in [*dispatch.measured_classes(), (0, 0)]:
         with pytest.raises(Uncharacterised):
-            dispatch.choose(lp, lq, bare, which, store=ROWS)
+            dispatch.choose(lp, lq, bare, which, store=rows)
     with pytest.raises(Uncharacterised):
-        dispatch.Resolver(bare, which, store=ROWS)
+        dispatch.Resolver(bare, which, store=rows)
     with pytest.raises(Uncharacterised):
-        dispatch.table(bare, which, store=ROWS)
-
-
-def test_a_characterised_card_nobody_timed_gets_no_choice() -> None:
-    other = {k: r for k, r in ROWS.items() if r.arch != GFX1200.name}
-    with pytest.raises(Uncharacterised, match="no wall-clock row"):
-        dispatch.Resolver(GFX1200, "near", store=other)
-    with pytest.raises(Uncharacterised):
-        dispatch.choose(0, 0, GFX1200, "near", store={})
+        dispatch.table(bare, which, store=rows)
 
 
 # --- the tracked file, recomputed from the store ------------------------------
@@ -169,46 +150,6 @@ def test_a_characterised_card_nobody_timed_gets_no_choice() -> None:
 def test_the_measured_classes_are_the_subgrid_splits() -> None:
     assert dispatch.measured_classes() == {
         _split(L): L for L in measured.SUBGRID_LS}
-
-
-@pytest.mark.parametrize("which", dispatch.INPUTS)
-def test_the_resolver_reproduces_the_recommendation_file(which) -> None:
-    by_cell = {(c["arch"], c["L"]): c[which] for c in DOC["cells"]}
-    assert set(by_cell) == {(a.name, L) for a in ARCHS
-                            for L in measured.SUBGRID_LS}
-    for name in {a for a, _ in by_cell}:
-        arch = by_name(name)
-        tab = dispatch.table(arch, which, store=ROWS)
-        res = dispatch.Resolver(arch, which, store=ROWS)
-        assert set(tab) == set(dispatch.measured_classes())
-        for (lp, lq), c in tab.items():
-            want = by_cell[(name, lp + lq)]
-            assert c.measured
-            assert (c.n_batches, c.median_ns, c.iqr_ns, c.repeats,
-                    c.runner_up, c.margin_ns, c.resolved,
-                    list(c.within_spread)) == (
-                want["n_batches"], want["median_ns"], want["iqr_ns"],
-                want["repeats"], want["runner_up"], want["margin_ns"],
-                want["resolved"], want["within_spread"])
-            assert res(lp, lq) == c.n_batches and res.choice(lp, lq) == c
-
-
-def test_the_default_store_is_the_tracked_one() -> None:
-    lp, lq = _split(16)
-    assert (dispatch.choose(lp, lq, SM_86, "near")
-            == dispatch.choose(lp, lq, SM_86, "near", store=ROWS))
-
-
-def test_the_tracked_answer_is_input_dependent_and_the_cards_disagree() -> None:
-    # The hazard the explicit axis exists for, read off the resolver.
-    lp, lq = _split(16)
-    wide = {a.name: dispatch.choose(lp, lq, a, "wide", store=ROWS).n_batches
-            for a in ARCHS}
-    near = {a.name: dispatch.choose(lp, lq, a, "near", store=ROWS).n_batches
-            for a in ARCHS}
-    assert set(wide.values()) == {1}
-    assert near[SM_86.name] != near[GFX1200.name]
-    assert all(n > 1 for n in near.values())
 
 
 # --- injected into the launch plan --------------------------------------------
@@ -259,7 +200,8 @@ def test_an_injected_count_the_plan_refuses_is_refused_as_a_fixed_one() -> None:
 def test_the_dispatch_resolver_on_h2o_falls_back_everywhere() -> None:
     # STO-3G reaches no measured split (L <= 4): every class is built at 1,
     # and the resolver says why for each.
-    res = dispatch.Resolver(SM_86, "near", store=ROWS)
+    res = dispatch.Resolver(SM_86, "near", store=_store(
+        {b: (1000 + b, 1) for b in BATCHES}))  # a measured L = 13 class
     P = _plan(resolve=res)
     assert P == _plan()
     assert all(not res.choice(c.lp, c.lq).measured for c in P)
