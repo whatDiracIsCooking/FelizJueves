@@ -53,6 +53,7 @@ from felizjueves.kernel import (
     pq_spec,
 )
 from felizjueves.kernel_dq import build_dq_kernel, dq_name
+from felizjueves.kernel_eri3 import eri3_name
 from felizjueves.kernel_jab import build_jab_kernel, jab_name
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 
@@ -415,17 +416,41 @@ def test_the_eri3_names_cannot_collide_with_any_other_ladder():
               | {"metric_" + "".join(map(str, c)) + ".cu"
                  for c in emit_cli.metric_classes(16)}
               | {f"f_{''.join(map(str, c))}.cu" for c in emit_cli.FOCK_CLASSES})
-    classes = emit_cli.eri3_classes(16)
-    eri3 = [f"{emit_cli.eri3_name(c)}.cu" for c in classes]
+    classes = emit_cli.eri3_classes(40)
+    eri3 = [f"{eri3_name(c)}.cu" for c in classes]
+    assert len(set(eri3)) == len(eri3)  # no two classes share a file
     assert not set(eri3) & others
-    # One digit per l, unseparated: the ladder's names are unique through a
-    # total L of 10, and at 11 two classes first share one -- (0,11,0) and
-    # (0,1,10) are both `eri3_0110`. Pinned so a naming change sees it.
-    upto10 = [emit_cli.eri3_name(c) for c in emit_cli.eri3_classes(10)]
-    assert len(set(upto10)) == len(upto10)
-    assert emit_cli.eri3_name((0, 11, 0)) == emit_cli.eri3_name((0, 1, 10))
     assert all(n.startswith("eri3_") for n in eri3)
     assert not any(n.startswith("eri3_") for n in others)
+
+
+def test_the_eri3_name_separates_its_ls_only_above_nine():
+    # Every l <= 9: three digits run together, the L <= 4 goldens' spelling.
+    assert eri3_name((2, 2, 0)) == "eri3_220"
+    assert eri3_name((9, 9, 9)) == "eri3_999"
+    # Once any l is two digits the ls are `_`-separated, so the classes
+    # that ran together as `eri3_0110` are two names.
+    assert eri3_name((0, 11, 0)) == "eri3_0_11_0"
+    assert eri3_name((0, 1, 10)) == "eri3_0_1_10"
+    assert eri3_name((1, 10, 0)) != eri3_name((11, 0, 0))
+
+
+def test_eri3_l_11_writes_every_class_to_its_own_file(tmp_path, monkeypatch):
+    # The overwrite #456 had: (0,11,0) and (0,1,10) to one file. Names
+    # only -- the builder is stubbed, so no IR is built at L = 11.
+    import types
+
+    from felizjueves.kernel_eri3 import eri3_spec
+
+    monkeypatch.setattr(emit_cli, "build_eri3_kernel", lambda c: (
+        types.SimpleNamespace(name=eri3_name(eri3_spec(*c)))))
+    monkeypatch.setattr(emit_cli, "_write", lambda backend, arch, d, k: (
+        d / f"{k.name}.cu").open("x").close() or d / f"{k.name}.cu")
+    assert _run(tmp_path, "cuda", "--L", "0", "--eri3-l", "11") == 0
+    want = {f"{eri3_name(c)}.cu" for c in emit_cli.eri3_classes(11)}
+    assert len(want) == len(emit_cli.eri3_classes(11))
+    assert _names(tmp_path) == want | {"pq_L0_p0_q0.cu"}
+    assert {"eri3_0_11_0.cu", "eri3_0_1_10.cu"} <= want
 
 
 def test_eri3_l_adds_its_units_beside_the_ladder_flags(tmp_path):

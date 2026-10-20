@@ -154,6 +154,7 @@ __all__ = [
     "OUT",
     "PARAM_OF",
     "build_eri3_kernel",
+    "eri3_name",
     "eri3_plan",
     "eri3_spec",
     "launch_shape",
@@ -172,6 +173,16 @@ PARAM_OF = {"s": S_AUX}
 _DIAGONAL = (
     "diagonal AO shell pair (off_a == off_b): a >= b only, each mirrored "
     "once -- kernel_jab's diagonal rule, so (mn|P) and (nm|P) are one value")
+
+
+def eri3_name(cls: Spec | tuple[int, int, int]) -> str:
+    """The kernel name of a class: `eri3_` and its three `l`s, run
+    together while every `l <= 9` (`eri3_220`) and `_`-separated once any
+    is two digits (`eri3_0_11_0`), so `(0, 11, 0)` and `(0, 1, 10)` never
+    share a name (#445)."""
+    am = cls.am if isinstance(cls, Spec) else tuple(cls)
+    sep = "_" if max(am) > 9 else ""
+    return "eri3_" + sep.join(map(str, am))
 
 
 def eri3_spec(la: int, lb: int, lP: int) -> Spec:
@@ -491,4 +502,4 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nao, nao, naux)),
     )
-    return Kernel(name or f"eri3_{la}{lb}{lP}", params, body, wide_boys=True)
+    return Kernel(name or eri3_name(spec), params, body, wide_boys=True)

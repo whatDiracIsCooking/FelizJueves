@@ -70,8 +70,9 @@ for CUDA, `.hip` for HIP):
   `fj_boys`. LMAX bounds the class's TOTAL L, as `--metric-l`'s does; any
   LMAX >= 0 is accepted, correctness is tested at L <= 4 only. It ADDS
   units beside the J ladders and is NEVER in the no-flag default nor in
-  KERNEL_GEN_CMD. Every name is `eri3_` plus three digits (`eri3_name`),
-  so none collides with another ladder's.
+  KERNEL_GEN_CMD. Every name is `eri3_` and the three `l`s
+  (`kernel_eri3.eri3_name`, `_`-separated once any `l > 9`), so no two
+  classes share a file and none collides with another ladder's.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
@@ -422,12 +423,6 @@ def eri3_classes(lmax: int) -> list[tuple[int, int, int]]:
     return [(la, lb, lp) for la in range(lmax // 2 + 1)
             for lb in range(la, lmax - la + 1)
             for lp in range(lmax - la - lb + 1)]
-
-
-def eri3_name(cls: tuple[int, int, int]) -> str:
-    """The kernel name `build_eri3_kernel(cls)` gives, without building
-    it (#419's shape)."""
-    return "eri3_" + "".join(map(str, cls))
 
 
 def generate_eri3(backend: str, arch: Arch, out: Path,

@@ -38,7 +38,7 @@ from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Raw, walk
-from felizjueves.kernel_eri3 import build_eri3_kernel
+from felizjueves.kernel_eri3 import build_eri3_kernel, eri3_name
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "test" / "golden"
@@ -111,7 +111,8 @@ def test_the_ladder_accepts_any_l_without_building() -> None:
 
 def test_eri3_name_is_the_builders_name() -> None:
     for cls in CLASSES:
-        assert emit_cli.eri3_name(cls) == build_eri3_kernel(cls).name
+        assert eri3_name(cls) == build_eri3_kernel(cls).name
+        assert eri3_name(cls) == _name(cls)  # the goldens' spelling
 
 
 def test_no_raw_escape_hatch() -> None:
