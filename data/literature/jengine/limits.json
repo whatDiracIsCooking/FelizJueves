@@ -656,6 +656,42 @@
         ]
       },
       "source": "not [JEngine]: ct5c00775 is J only; the recurrence from McMurchie & Davidson (docs/references.md entries 39 and 46), the aux basis from Weigend (entry 47); milestone 15, issue #417"
+    },
+    {
+      "claim": "The three-center DF integral (mn|P) = INT INT m(r1) n(r1) P(r2) / r12 of an ordinary Cartesian AO basis against a Cartesian auxiliary basis (Target.ERI3, spec.py, #441; ao/eri3.py, #443; kernel_eri3.py, #444; emit --eri3-l, #445; milestone 16) has NO PUBLISHED BOARD. [JEngine] (ct5c00775) is J only: it prints no three-center table, count or claim. The recurrence is McMurchie & Davidson's (docs/references.md entries 39 and 46) with an ordinary Hermite pair on the bra and one aux Gaussian on the ket, and the auxiliary basis of the oracle is Weigend's cc-pVTZ-jkfit (entry 47), an input and not a table. The kernel and its host reference are THIS REPO'S OWN DESIGN on it, as the one-electron family (#245) and the metric (#417) records above are. Nothing about (mn|P) is scored and nothing is measured: no tables.json cell, no scoreboard, no floor, no claims.json record and no data/measured/ row was added, changed or scored for it.",
+      "mechanism": "(1) WHY THERE IS NOTHING TO SCORE. An ERI3 Spec's am is the triple (la, lb, lP), the first three-shell class; its total_am la + lb + lP is the L of the Target.J quartet (la lb|lP 0) whose plan it runs (kernel_eri3.eri3_plan, the Schwarz and metric pattern), but it indexes no row of [JEngine, v2, Tables 1-3], so no rule in literature/rules.py applies. The external witness is libcint's int3c2e_cart (df.incore.aux_e2, aosym s1) on h2o_sto3g_j's molecule (7 Cartesian AOs, s and p) against df.make_auxmol(mol, 'cc-pvtz-jkfit') (45 shells, 166 functions, O to g and H to f), tracked as ONE schema-4 piece without density (test/oracle/fixtures/h2o_sto3g_jkfit_3c_cols0_166.json, #442). Agreement shows the design is CORRECT, not how fast it is. (2) THE CONTRACT. The bra is ao.pairs' dressed record (c_i c_j (pi/p)^{3/2} by ao.pairs.dress; K_AB in E's seed, ao.hermite.e_axis, not in dress); the ket is the metric's aux record unchanged, s = c (pi/alpha)^{3/2} with no extra N. The single-center E^P vanishes when q_d - tau_d is odd, so the quartet tower's unread targets are DROPPED by a backward liveness pass (live_targets: every |r| <= L with |r| >= lP mod 2, and only |r| = lP mod 2 when the bra is (ss)); one ket sign per class; one thread per (AO shell pair, aux shell) cell; Kernel.wide_boys; a plain store mirrored in (m, n), no atomics. Two decisions recorded: the name eri3 (units eri3_{la}{lb}{lP}, '_'-separated once any l > 9, kernel_eri3.eri3_name, so names are unique at any L), and the layout [m][n][P], aux index fastest, with a future DF-J's preference for aux-major slabs the known trade. Against the host the bound is 16 eps over the TOWER's absolute-value twin (test_kernel_metric.pq_tower, the metric's), because no class is bitwise against the host (different association: the host's reference.pq recursion against the plan's MILD DAG). libcint's s1 tensor is (m, n)-symmetric only to rounding (1,998 of 8,134 entries differ, worst 4.4e-16), so by the user's decision the fixture's symmetry is asserted to 1e-14 of max|(mn|P)|, not bitwise. The ao.eri internal twin (an exponent-0 s shell) is not built: ao.shell.Shell refuses exponent 0, and a test pins the refusal. (3) WHAT DOES NOT REACH. Correctness is tested at la + lb + lP <= 4 only, the 22 classes la <= lb (ss|s) through (dd|s), by the milestone's decision; the builder and --eri3-l accept any L, and above the cap the tests only build (pd|d) at L = 5 and write --eri3-l 5 (slow), never interpreted, compiled or launched; the fixture's (sp|g), (pp|f) and (pp|g) are not launched. Cartesian aux functions only. One batch by decision (spec._PAIR_BATCH_REFUSAL), no lever (levers.DEFAULT_REFUSALS). No screening: a (mn|P) Schwarz bound is unbuilt. One thread holds nA x nB x nP accumulators (540 at (dd|g)), so high classes will spill; no batched or blocked kernel exists for them. The card run is the RTX 3080 (sm_86) ONLY: on the RX 9060 XT (gfx1200) the 22 units and both device programs were compiled with hipcc, but kfd did not enumerate the card (gfx_target_version 0), kernel-tier.sh exited 2, and no HIP number exists; by the user's decision that run is attached to #431. (4) THE NAMED FOLLOW-UPS. The RX 9060 XT run (#431); above L = 4; spherical aux functions; a (mn|P) Schwarz screen; a batched or blocked kernel for the classes that spill. Out of scope: DF-J and DF-K themselves and anything that factors or inverts the metric, any measurement.",
+      "evidence": "docs/implementation/three_center.md (the derived note). Oracle: test/test_oracle_three_center_fixture.py -- the piece reassembled to (7, 7, 166), the (m, n) symmetry to 1e-14 of max|(mn|P)| with the 1,998 mismatches and the 4.4e-16 worst pinned, the reassembly's refusals (#442). Host: test/test_ao_eri3.py -- every L <= 4 block, both bra orders, against int3c2e_cart within 1e-12 of max|(mn|P)| (~7.21; worst 3.3e-14) and within 1e-12 of its own absolute-value scale (worst 6.6e-14), the whole tensor over an aux sub-basis capped at l <= 1 and l <= 2, the (ss|s) closed form, the staging, and the internal twin's refusal (#443). Interpreted: test/test_kernel_eri3.py -- the 22 classes on the synthetic bases against the host within 16 eps of the tower-twin scale (worst 1.80), against libcint (2.06e-14 and 3.31e-14 of max|(mn|P)| over aux l <= 1 and l <= 2), the kept targets pinned to the parity formula, no class bitwise (#444). Emitted: test/test_emit_eri3.py, 22 goldens per backend (the largest, eri3_220.hip, 58,818 B; no digests file), compiled by nvcc (sm_86) and hipcc (gfx1200) with #92's filter; test/test_emit_cli.py, the names unique through L = 40 (#445). On the RTX 3080 (sm_86, nvcc 13.0), PR #457: devtools/kernel-tier.sh --backend cuda -- -k eri3 exited 0, 2 passed / 0 skipped (test/test_eri3_device.py): worst 3.30e-14 of max|(mn|P)| against int3c2e_cart over the fixture's twelve L <= 4 classes, and 4.77 eps of the tower-twin scale against the host (4.66 on the synthetic bases), runs bit-identical, the tensor exactly (m, n)-symmetric. No RX 9060 XT device run (#431).",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "subject": "three-center DF integral (mn|P)",
+        "own_design": [
+          "Target.ERI3"
+        ],
+        "published_board": null,
+        "source_of_E": "docs/references.md entries 39 and 46",
+        "aux_basis": "cc-pVTZ-jkfit, docs/references.md entry 47",
+        "aux_record_weight": "s = c (pi/alpha)^{3/2}, no extra N",
+        "layout": "[m][n][P], aux index fastest",
+        "claims_added": 0,
+        "cells_moved": 0,
+        "held_to": "ao/eri3.py (16 eps of the tower-twin scale) and libcint's int3c2e_cart (1e-12 of max|(mn|P)|)",
+        "tested_l_max": 4,
+        "cartesian_only": true,
+        "measured_rows": 0,
+        "n_batches": 1,
+        "ran_on": [
+          "sm_86"
+        ],
+        "not_run_on": [
+          "gfx1200"
+        ],
+        "follow_ups": [
+          431
+        ]
+      },
+      "source": "not [JEngine]: ct5c00775 is J only; the recurrence from McMurchie & Davidson (docs/references.md entries 39 and 46), the aux basis from Weigend (entry 47); milestone 16, issue #447"
     }
   ]
 }
