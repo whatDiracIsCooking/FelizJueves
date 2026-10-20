@@ -961,6 +961,53 @@ EDGES |= {k: frozenset(v) for k, v in {
 }.items()}
 
 
+# ---------------------------------------------------------------------------
+# The record bound kernel, `Target.PAIR_BOUND`: each record's `Ip` / `Iq` in
+# its closed form at PQ = 0. A builder like `kernel_s`: the key, IR and the
+# Hermite order. It is checked against `ao.pairs.pair_bound` through
+# `reference.pq` in the interpreter, so neither may be its ancestor.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "pair_bound_builder": _rule(
+        "kernel_pair_bound.py: the record bound kernel, `Target.PAIR_BOUND` "
+        "-- key -> IR, the closed form of `ao.pairs.pair_bound` at PQ = 0, "
+        "its coefficients folded from the Hermite order (`plan.targets`)",
+        ("spec", "ir", "plan.targets"),
+        ao="`ao.pairs.pair_bound` is the witness the kernel is interpreted "
+           "against: importing it shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "kernel_pair_bound": "pair_bound_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_pair_bound": ("ir", "plan.targets", "spec"),
+}.items()}
+
+
+def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    # TRANSITIVELY: no chain of imports from `kernel_pair_bound` reaches the
+    # AO layer that holds its witness, reference/, the interpreter, a backend
+    # or a card.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_pair_bound"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "plan.targets" in seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_pair_bound reaches {hit}"
+
+
 def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # #237, TRANSITIVELY: no chain of imports from `kernel_s` reaches the AO
     # layer it is checked against, the interpreter, reference/, a backend or

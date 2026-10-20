@@ -61,7 +61,8 @@ __all__ = [
 
 # Every `spec.Target`'s key slot, in the enum's order (pinned by a test).
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
-                                 "schwarz", "sx", "metric", "eri3")
+                                 "schwarz", "sx", "metric", "eri3",
+                                 "pair_bound")
 
 # The `Spec.levers` names owned by layers other than the kernel builder.
 OTHER_LAYERS: Mapping[str, str] = MappingProxyType({
@@ -135,6 +136,12 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "the three-center (mn|P) has the J recurrence but no option surface: "
         "it is one batch, by decision, and a three-center lever is a "
         "follow-up nobody has declared"
+    ),
+    "pair_bound": (
+        "the record bound kernel has no kernel-body lever surface: it is one "
+        "thread per record over a closed form, two roots and a Horner fold, "
+        "with no E fragment, no [p|q] recurrence region and no batch for a "
+        "lever to act on"
     ),
 })
 

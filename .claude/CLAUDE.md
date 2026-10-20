@@ -53,7 +53,14 @@ pair kernels through (ff), `J` through d, on both cards). The plan's order is
 witnessed by the launch oracle (pure Python) and by libcint (`j_engine.md`,
 "The launch plan"). **Still host-side:** the pair list and each record's
 inputs, the Schwarz bound, the sort (it reads `Dmax` back), the staging, and
-the launch code, a test-side driver run from Python. **Nothing about `DQ` or
+the launch code, a test-side driver run from Python. The record bound is now
+also generated, for a consumer whose records are on the device:
+`Target.PAIR_BOUND` (`kernel_pair_bound.py`; `am` a pair `(la, lb)`, text a
+function of `la + lb` only, never batched), one thread per record, the
+closed form of `ao.pairs.pair_bound` at `PQ = 0` (two `SQRT`s and a Horner
+fold in `sqrt(ζ)`), within 16 eps of the host through `reference.pq` for
+every class `la ≤ lb ≤ 4`, interpreted (`test_kernel_pair_bound.py`) and on
+the RTX 3080 (`test_pair_bound_device.py`; the RX 9060 XT run is #431's). **Nothing about `DQ` or
 `JAB` is measured.** `j_engine.md`, "The J chain as device code", is the one
 place that says which steps are generated and on which cards they ran.
 Dispatch (`dispatch.py`, #145) chooses `n_batches` per class from measured

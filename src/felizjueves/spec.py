@@ -205,6 +205,10 @@ class Target(StrEnum):
     # pair on the bra, one aux shell on the ket, whose recurrence is the
     # quartet (la lb|lP 0)'s (#441; module docstring "AN ERI3 CLASS").
     ERI3 = "eri3"
+    # The record bound I = ao.pairs.pair_bound(zeta, la + lb) of each
+    # primitive-pair record, the [p|q] kernel's Ip / Iq, a PAIR class (la, lb)
+    # (kernel_pair_bound.py, module docstring "THE CLASS IS A PAIR").
+    PAIR_BOUND = "pair_bound"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -218,7 +222,7 @@ class Target(StrEnum):
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
-    Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
+    Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
 }
 
 
@@ -232,6 +236,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
     Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
+    Target.PAIR_BOUND: Operator.COULOMB,
 }
 
 
@@ -246,6 +251,7 @@ _STRUCTURAL = (
 _PAIR_BATCH_REFUSAL: dict[Target, str] = {
     Target.DQ: _STRUCTURAL,
     Target.JAB: _STRUCTURAL,
+    Target.PAIR_BOUND: _STRUCTURAL,
     Target.S: _STRUCTURAL,
     Target.SX: _STRUCTURAL,
     Target.T: _STRUCTURAL,
