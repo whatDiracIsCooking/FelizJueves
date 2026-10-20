@@ -254,7 +254,7 @@ def test_the_fp64_boundary(L: int, arm: str) -> None:
         assert f32 == {*PQ_PARAMS, THETA} | prelude | nodes
     f64 = {s.name for s in walk(_loop(mix).body)
            if isinstance(s, Decl) and s.type is Scalar.F64}
-    assert f64 == {"bound", "et"} | (
+    assert f64 == {"bound", "et", "boys"} | (  # boys: fp64, no fp32 Boys
         {node_name(t) for t in dag.targets} if FUSED in spec.levers else set())
     # every J_p update is F64 and reads its targets through TO_F64
     updates = [s for s in walk(_loop(mix).body) if isinstance(s, Assign)

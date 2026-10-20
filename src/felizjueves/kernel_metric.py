@@ -79,9 +79,11 @@ triangle `a >= b`, mirrored. A pair staged SWAPPED (`ao.metric.
 metric_classes`) needs no flag here: with the mirror, the transposed
 placement `place_staged` makes writes the same two elements.
 
-THE WIDE BOYS (#266). Tight aux exponents far apart (`alpha = 1000` against
-`alpha = 1000` two bohr away is `T = 2000`) pass the narrow series' overflow
-near 709, so the kernel sets `Kernel.wide_boys`, as `V` and Schwarz do.
+THE BOYS DOMAIN. Tight aux exponents far apart (`alpha = 1000` against
+`alpha = 1000` two bohr away is `T = 2000`) reach far past where the old
+narrow series overflowed (near 709); the one `fj_boys` every kernel carries
+since #301 holds on all of `reference.boys`' domain, so nothing here asks
+for a wider one.
 
     params  n_pair n_rec n_aux (I32)
             A[n_rec, 3]  alpha[n_rec]  s_aux[n_rec]           per aux record
@@ -103,6 +105,7 @@ from __future__ import annotations
 from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     Assign,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -247,8 +250,9 @@ def _reads(e: object) -> set[str]:
 
 
 def _live(body: tuple[Stmt, ...], wanted: set[str]) -> tuple[Stmt, ...]:
-    """`body` (`Decl`s and `Note`s) without the `Decl`s that neither `wanted`
-    nor a kept later `Decl` reads: one backward pass."""
+    """`body` (`Decl`s, `Note`s and the prelude's `Boys` fill) without the
+    `Decl`s that neither `wanted` nor a kept later statement reads, and
+    without a `Boys` whose array nothing kept reads: one backward pass."""
     kept: list[Stmt] = []
     live = set(wanted)
     for st in reversed(body):
@@ -256,8 +260,12 @@ def _live(body: tuple[Stmt, ...], wanted: set[str]) -> tuple[Stmt, ...]:
             if st.name not in live:
                 continue
             live |= _reads(st.init)
+        elif isinstance(st, Boys):
+            if st.dst not in live:
+                continue
+            live |= _reads(st.t)
         elif not isinstance(st, Note):
-            raise TypeError(f"_live takes Decls and Notes, got "
+            raise TypeError(f"_live takes Decls, Notes and Boys, got "
                             f"{type(st).__name__}")
         kept.append(st)
     return tuple(reversed(kept))
@@ -427,4 +435,4 @@ def build_metric_kernel(cls: Spec | tuple[int, int], *,
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
               shape=(naux, naux)),
     )
-    return Kernel(name or f"metric_{lP}{lQ}", params, body, wide_boys=True)
+    return Kernel(name or f"metric_{lP}{lQ}", params, body)

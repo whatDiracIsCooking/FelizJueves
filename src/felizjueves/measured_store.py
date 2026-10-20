@@ -422,14 +422,14 @@ is not to be tuned after reading one.
   not #88/#122's four: test/test_ao_screening.py's `_h2_chain(2)` (bond 1.4,
   centres 6 bohr apart, its hilbert density). The four-H2 chain's sweep
   asks for T = theta^2 |PQ|^2 up to 1289 -- inside reference.boys' T <=
-  2000, but past the card's `fj_boys` (emit/_c.py's Kummer series), which
-  is witnessed on [0, 500] only (test/test_kernel_device.py) and overflows
-  near T = 700; three H2 reach 615. Two H2 reach 188, inside the device
-  Boys' witnessed domain under either key: the Schwarz screen does not see
-  the bra-ket distance, so the product key's screen removes no large-T pair
-  either. The four-H2 chain's skip counts are still read off the launch
-  oracle in the fast tier (test/test_launch_oracle.py), where no card is
-  needed.
+  2000, but past the card's `fj_boys` as it was then (the Kummer series
+  alone, witnessed on [0, 500] and overflowing near T = 700; #301 later
+  gave it reference.boys' whole domain); three H2 reach 615. Two H2 reach
+  188, inside the device Boys' witnessed domain under either key: the
+  Schwarz screen does not see the bra-ket distance, so the product key's
+  screen removes no large-T pair either. The four-H2 chain's skip counts
+  are still read off the launch oracle in the fast tier
+  (test/test_launch_oracle.py), where no card is needed.
 - BOTH ARMS IN ONE SESSION, behind the gate, per card: one `time_builds`
   call times every cell's two arms (alternating which arm runs first from
   cell to cell), and each row carries raw 'build:session', the session's

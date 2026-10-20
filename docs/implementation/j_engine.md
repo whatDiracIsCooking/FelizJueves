@@ -1489,7 +1489,8 @@ asymptote `Γ(m+½)/(2T^(m+½))` from `T = 125`, where its truncation for every
 `m ≤ 40` is under 1e-18, to `T = 2000`, its error under 8e-16 against the
 Kummer series — and the ladder was re-run. The bound that bites is `T_MAX`,
 not `M_MAX`: the chain is all s shells, so only `F_0` is ever asked for. The
-device-side `fj_boys` is untouched by that widening.)
+device-side `fj_boys` was untouched by that widening; #301 later gave it
+`reference.boys`' whole domain.)
 
 **Measured** (`data/ao/screening.json`; `err/scale` is the maximum over
 elements of `|J(τ) − J(0)| / scale`, and the claim is that it is `≤ τ`):
@@ -1643,10 +1644,12 @@ cc-pVDZ adds d (up to L = 8). The dispatched cell injects
 is 1 at every L, so all 25 classes run at 1: 24 by fallback, and `(4, 3)` from
 its measured row (`pq_spec(7)`'s split). No tracked fixture reaches a class
 whose measured choice is above 1 (near-T: `(5, 5)` on `gfx1200`, `(7, 6)` on
-both). The card's `fj_boys` is witnessed on `T ∈ [0, 500]` and overflows near
-`T ≈ 700`, far below `reference.boys`' `T_MAX = 1e6` (#265), so #88's four-H₂ chain
-(`T` up to 1289) has no on-card build. Its skip counts come from the oracle.
-Both limits are in `limits.json`.
+both). When this was recorded the card's `fj_boys` was witnessed on
+`T ∈ [0, 500]` and overflowed near `T ≈ 700`, so #88's four-H₂ chain (`T` up to
+1289) had no on-card build. Since #301 the one `fj_boys<M>` template is
+witnessed on `T ∈ [0, 1e6]` (on `sm_86`), but no on-card build of the four-H₂
+chain has been added; its skip counts still come from the oracle. Both limits
+are in `limits.json`.
 
 ### Measured: the whole build, behind the gate (#146)
 

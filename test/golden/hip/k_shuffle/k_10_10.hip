@@ -2,22 +2,44 @@
 // arch gfx1200, wavefront 32; fp64 throughout.
 #include <hip/hip_runtime.h>
 
-// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1)), the Kummer
-// series ([JEngine, v2, eqs. 13, 18]): every term positive, summed until it
-// no longer changes the sum. Its accuracy on reference.boys's domain is a
-// kernel-tier question, not this file's.
-__device__ double fj_boys(int m, double T) {
-    double term = 1.0 / (double)(2 * m + 1);
+// F_m(T) = integral_0^1 u^(2m) exp(-T u^2) du ([JEngine, v2, eqs. 13, 18]),
+// F[m] for every m in 0..M (#301). From T = M + 8: F_0 = (1/2) sqrt(pi/T)
+// erf(sqrt(T)) and upward, F_(m+1) = ((2m+1) F_m - exp(-T)) / (2T). Below:
+// the Kummer series F_M = exp(-T) SUM_k (2T)^k / ((2M+1)(2M+3)...(2M+2k+1)),
+// every term positive, summed until it no longer changes the sum, and
+// downward, F_m = (2T F_(m+1) + exp(-T)) / (2m+1). Its accuracy on
+// reference.boys's domain is a kernel-tier question, not this file's.
+template <int M>
+__device__ __forceinline__ void fj_boys(double T, double (&F)[M + 1]) {
+    const double e = exp(-T);
+    if (T >= (double)(M + 8)) {
+        const double h = 0.5 / T;
+        double f = 0.5 * sqrt(3.141592653589793 / T) * erf(sqrt(T));
+        F[0] = f;
+#pragma unroll
+        for (int m = 1; m <= M; ++m) {
+            f = ((double)(2 * m - 1) * f - e) * h;
+            F[m] = f;
+        }
+        return;
+    }
+    double term = 1.0 / (double)(2 * M + 1);
     double sum = term;
     for (int k = 1; k < 4096; ++k) {
-        term = term * ((2.0 * T) / (double)(2 * m + 2 * k + 1));
+        term = term * ((2.0 * T) / (double)(2 * M + 2 * k + 1));
         double next = sum + term;
         if (next == sum) {
             break;
         }
         sum = next;
     }
-    return exp(-T) * sum;
+    double f = e * sum;
+    F[M] = f;
+#pragma unroll
+    for (int m = M - 1; m >= 0; --m) {
+        f = (2.0 * T * f + e) * (1.0 / (double)(2 * m + 1));
+        F[m] = f;
+    }
 }
 
 extern "C" __global__ void k_10_10(
@@ -139,13 +161,15 @@ extern "C" __global__ void k_10_10(
             double W0 = (1.1283791670955126 * theta);
             double W1 = (W0 * s);
             double W2 = (W1 * s);
+            double boys[3];
+            fj_boys<2>(T, boys);
             // [JEngine, v2, eqs. 10-12], reduction form
-            double R0_0_0_2 = (W2 * fj_boys(2, T));
-            double R0_0_0_1 = (W1 * fj_boys(1, T));
+            double R0_0_0_2 = (W2 * boys[2]);
+            double R0_0_0_1 = (W1 * boys[1]);
             double R0_0_1_1 = (PQ_z * R0_0_0_2);
             double R0_1_0_1 = (PQ_y * R0_0_0_2);
             double R1_0_0_1 = (PQ_x * R0_0_0_2);
-            double R0_0_0_0 = (W0 * fj_boys(0, T));
+            double R0_0_0_0 = (W0 * boys[0]);
             double R0_0_1_0 = (PQ_z * R0_0_0_1);
             double R0_1_0_0 = (PQ_y * R0_0_0_1);
             double R1_0_0_0 = (PQ_x * R0_0_0_1);

@@ -1,30 +1,30 @@
 {
   "cuda": {
     "f_1212": {
-      "bytes": 576420,
-      "sha256": "931d0420cab4c75c4411a71a8486f564d30d97785d142ae61edbeec6472286ed"
+      "bytes": 577256,
+      "sha256": "e952d6f5a919268800992b531d533cd8e0478bfdb9b5ee2547cf717f27eb94c4"
     },
     "f_1222": {
-      "bytes": 1068682,
-      "sha256": "4688dc2c2bc0e0a9b1344270620b73f22e029786f04192ff40dad581ea8a523a"
+      "bytes": 1069512,
+      "sha256": "c04e1fba29e46d5685c68d9b8dd84e02c534a250d11fd5dd0a82d96cd9273b65"
     },
     "f_2222": {
-      "bytes": 1986893,
-      "sha256": "9fe66eb4c9e6ec9399cca62f9adea2c18fc29a546f182c73ddc6e9eb17ae4c70"
+      "bytes": 1987717,
+      "sha256": "b1ce2d95ddf182bbc677a751dc4d21abb31f9b3019a2d77295da2e9adf01cc07"
     }
   },
   "hip": {
     "f_1212": {
-      "bytes": 576450,
-      "sha256": "65459f90fc6f07a95ad940f9d83b9b5f2dfcad9be30353da1257039c430458c6"
+      "bytes": 577286,
+      "sha256": "bd9a4e6a67cd4db6ac8d1495d9a0c778df0efb90704fa988231ec8a820ef8e7e"
     },
     "f_1222": {
-      "bytes": 1068712,
-      "sha256": "e45bd5400f4fd6c6c358af2415e29b7e7cae3c1400bde0e86f0a3c46b7ddaf9f"
+      "bytes": 1069542,
+      "sha256": "73371e4c1e19c6c12c6a8f1ceac9885ef27f4ff97d62ec8c45ed4bd5f658fd01"
     },
     "f_2222": {
-      "bytes": 1986923,
-      "sha256": "9030d66a6b5777b19c7a2aa8c18f0b0d290fc188067189d1653c27de530fe2cd"
+      "bytes": 1987747,
+      "sha256": "bfbabacc700f4bbdfaf6ce9768548107c469c1ded79528eb18c1450a346cf6d8"
     }
   }
 }

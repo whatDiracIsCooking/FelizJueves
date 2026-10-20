@@ -177,14 +177,13 @@ def test_one_launch_over_the_class_agrees_with_the_host(cls):
 
 
 def test_a_tight_pair_past_the_narrow_boys_range():
-    """`T` reaches ~2000 here, past the narrow series' overflow near 709:
-    the kernel asks for the wide `fj_boys` (`Kernel.wide_boys`)."""
+    """`T` reaches ~2000 here, past where the old narrow series overflowed
+    (near 709): the one `fj_boys` (#301) holds there."""
     c = next(c for c in schwarz_classes(TIGHT) if (c.la, c.lb) == (0, 1))
     T = max((c.zeta_ab[i] * c.zeta_ab[k] / (c.zeta_ab[i] + c.zeta_ab[k]))
             * sum((c.P[i][d] - c.P[k][d]) ** 2 for d in range(3))
             for i in range(c.n_rec) for k in range(c.n_rec))
     assert T > 709.0
-    assert build_schwarz_kernel((0, 1)).wide_boys
     Q, done = _build(TIGHT)
     _check(Q, np.array(diagonal_matrix(TIGHT, pq=pq)),
            np.array(scale_matrix(TIGHT, pq=pq)), _owned(TIGHT, done), "tight")

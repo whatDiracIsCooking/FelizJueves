@@ -98,6 +98,7 @@ from types import MappingProxyType
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -187,6 +188,8 @@ def _refs(s: Stmt) -> tuple[list[str], list[str]]:
         return [n for e in (s.start, s.stop, s.step) for n in _reads(e)], []
     if isinstance(s, If):
         return list(_reads(s.cond)), []
+    if isinstance(s, Boys):
+        return list(_reads(s.t)), []  # it writes an array, never a value
     return [], []
 
 
@@ -401,6 +404,8 @@ def recycle(kernel: Kernel, *, array: str = "slot") -> Kernel:
                 )
             elif isinstance(s, If):
                 out.append(If(ex(s.cond), st(s.then), st(s.orelse)))
+            elif isinstance(s, Boys):
+                out.append(Boys(s.dst, s.top, ex(s.t)))
             else:
                 out.append(s)  # Break, Note, Raw: nothing to rewrite
         return tuple(out)
@@ -526,6 +531,9 @@ def kernel_cost(kernel: Kernel, *, registers: int) -> KernelCost:
     """
     live = liveness(kernel)
     out = spilled(live, registers)
+    # A `Boys` fill is not counted: the fundamentals' `Decl`s that read it
+    # are, as they were when each held its own Boys call (#301), so the
+    # model's numbers did not move with the spelling.
     computing = (Assign, WarpReduce, AtomicAdd)
     flat, loops, _ = _positions(kernel.body)
     nest: dict[tuple[str, ...], int] = {}

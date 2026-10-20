@@ -89,9 +89,9 @@ exactly one cell, so runs are bit-reproducible. A pair staged SWAPPED needs
 no flag here: with the mirror, the transposed placement `ao.eri3.
 place_staged` makes writes the same two elements.
 
-THE WIDE BOYS (#266). A tight aux exponent far from a bra centre puts `T`
-past the narrow series' overflow near 709, so the kernel sets
-`Kernel.wide_boys`, as `V`, Schwarz and the metric do.
+THE BOYS DOMAIN. A tight aux exponent far from a bra centre puts `T` far
+past where the old narrow series overflowed (near 709); the one `fj_boys`
+every kernel carries since #301 holds on all of `reference.boys`' domain.
 
     params  n_cell n_bra_rec n_aux_rec n_ao n_aux (I32)
             zeta_ab[n_bra_rec]  P XPA XPB[n_bra_rec, 3]  s_ab[n_bra_rec]
@@ -115,6 +115,7 @@ from __future__ import annotations
 from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     Assign,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -281,8 +282,9 @@ def _reads(e: object) -> set[str]:
 
 
 def _live(body: tuple[Stmt, ...], wanted: set[str]) -> tuple[Stmt, ...]:
-    """`body` (`Decl`s and `Note`s) without the `Decl`s that neither `wanted`
-    nor a kept later `Decl` reads: one backward pass."""
+    """`body` (`Decl`s, `Note`s and the prelude's `Boys` fill) without the
+    `Decl`s that neither `wanted` nor a kept later statement reads, and
+    without a `Boys` whose array nothing kept reads: one backward pass."""
     kept: list[Stmt] = []
     live = set(wanted)
     for st in reversed(body):
@@ -290,8 +292,12 @@ def _live(body: tuple[Stmt, ...], wanted: set[str]) -> tuple[Stmt, ...]:
             if st.name not in live:
                 continue
             live |= _reads(st.init)
+        elif isinstance(st, Boys):
+            if st.dst not in live:
+                continue
+            live |= _reads(st.t)
         elif not isinstance(st, Note):
-            raise TypeError(f"_live takes Decls and Notes, got "
+            raise TypeError(f"_live takes Decls, Notes and Boys, got "
                             f"{type(st).__name__}")
         kept.append(st)
     return tuple(reversed(kept))
@@ -502,4 +508,4 @@ def build_eri3_kernel(cls: Spec | tuple[int, int, int], *,
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nao, nao, naux)),
     )
-    return Kernel(name or eri3_name(spec), params, body, wide_boys=True)
+    return Kernel(name or eri3_name(spec), params, body)

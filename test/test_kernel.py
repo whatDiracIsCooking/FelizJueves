@@ -34,6 +34,7 @@ from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Boys,
     Break,
     Call,
     Decl,
@@ -295,22 +296,26 @@ def test_the_sort_precondition_is_in_the_kernel() -> None:
 
 @pytest.mark.parametrize("L", split_by_l([4, 9, 16], lambda L: L))
 def test_ab_cd_is_never_materialised(L: int) -> None:
-    """The only array is the shared J_p accumulator; per-quartet values are
-    the recurrence's scalars, one per DAG node, and nothing of rank 4."""
+    """The only arrays are the shared J_p accumulator and the prelude's
+    `boys` (F_0..F_L, local, #301); per-quartet values are the recurrence's
+    scalars, one per DAG node, and nothing of rank 4."""
     spec = pq_spec(L)
     k = build_pq_kernel(spec)
     decls = [s for s in walk(k.body) if isinstance(s, Decl)]
     arrays = [d for d in decls if d.shape]
-    assert [d.name for d in arrays] == [JSH]
+    assert [d.name for d in arrays] == [JSH, "boys"]
     assert arrays[0].shape[0] == Lit(len(bra_functions(spec)))
+    assert arrays[1].space is Space.LOCAL and arrays[1].shape == (Lit(L + 1),)
     (dag,) = plan(spec).dags
     (loop,) = _loops(k)
     in_loop = [s for s in walk(loop.body) if isinstance(s, Decl)]
-    assert all(not d.shape for d in in_loop)
+    # one quartet's F_0..F_L is the one array in the loop, never of rank 4
+    assert all(not d.shape for d in in_loop if d.name != "boys")
     # The DAG's nodes, plus a fixed handful: bound, PQ_x/y/z, eta, theta,
-    # t2, T, s (present for L >= 1), and one Boys weight W{m} per fundamental [0]^(m).
+    # t2, T, s (present for L >= 1), the `boys` array, and one Boys weight
+    # W{m} per fundamental [0]^(m).
     n_fund = sum(1 for (r, _) in dag.nodes() if not any(r))
-    assert len(in_loop) == len(dag.nodes()) + 9 + n_fund
+    assert len(in_loop) == len(dag.nodes()) + 10 + n_fund
 
 
 def test_the_kernel_is_deterministic_and_single_batch() -> None:
@@ -379,6 +384,8 @@ def _referenced(body: tuple[Stmt, ...]) -> set[str]:
             exprs = (s.start, s.stop, s.step)
         elif isinstance(s, If):
             exprs = (s.cond,)
+        elif isinstance(s, Boys):
+            exprs = (Var(s.dst), s.t)  # it writes its array and reads T
         else:
             exprs = ()
         for e in exprs:
@@ -400,8 +407,8 @@ def test_s_is_declared_only_when_a_weight_reads_it() -> None:
         stmts, _ = fundamental_prelude(ms)
         return [s.name for s in stmts if isinstance(s, Decl)]
 
-    assert names([0]) == ["t2", "T", "W0"]
-    assert names([0, 1]) == ["t2", "T", "s", "W0", "W1"]
+    assert names([0]) == ["t2", "T", "W0", "boys"]
+    assert names([0, 1]) == ["t2", "T", "s", "W0", "W1", "boys"]
 
 
 @pytest.mark.parametrize("L", split_by_l(range(17), lambda L: L))

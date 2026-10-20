@@ -120,7 +120,7 @@ MOLECULES = [
 # tier's L <= 2 -- #288's five cells, exactly as before
 WALLCLOCK_F_L = "FJ_WALLCLOCK_F_L"
 NEAR_SIDE, WIDE_SIDE = 0.25, 5.0  # bohr: the timing inputs' cubes
-BOYS_T_WITNESSED = 500.0  # the narrow fj_boys's witnessed range (limits.json)
+BOYS_T_WITNESSED = 1e6  # fj_boys's witnessed range (#301, test_kernel_device)
 
 
 def _worst(got, want, scale) -> float:

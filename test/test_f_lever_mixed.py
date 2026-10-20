@@ -68,6 +68,7 @@ from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import vrr
 from felizjueves.ir import (
     AtomicAdd,
+    Boys,
     Call,
     Decl,
     Fn,
@@ -194,13 +195,19 @@ def test_the_fp64_boundary_is_the_fock_region(cls) -> None:
     assert any(n.startswith("V") for n in f32)  # the VRR
     assert any(n.startswith("C") for n in f32)  # the boundary
     assert any(n.startswith("H") for n in f32)  # the HRR
-    # Boys: fp64 on TO_F64(T), narrowed
-    boys = _calls(kern, Fn.BOYS)
-    assert boys and all(b.args[1] == Call(Fn.TO_F64, (Var("T"),))
-                        for b in boys)
-    # every widening is an ERI into the digestion (or T for Boys)
+    # Boys: an fp64 array filled from TO_F64(T), each order narrowed at
+    # its read
+    fills = [s for s in walk(kern.body) if isinstance(s, Boys)]
+    assert fills and all(b.t == Call(Fn.TO_F64, (Var("T"),)) for b in fills)
+    (arr,) = [s for s in walk(kern.body)
+              if isinstance(s, Decl) and s.name == fills[0].dst]
+    assert arr.type is Scalar.F64
+    narrowed = {x.args[0] for x in _calls(kern, Fn.TO_F32)
+                if isinstance(x.args[0], Index)}
+    assert narrowed and {e.array for e in narrowed} >= {fills[0].dst}
+    # every widening is an ERI into the digestion
     widened = {x.args[0].name for x in _calls(kern, Fn.TO_F64)}
-    assert widened - {"T"} and all(n.startswith("H") for n in widened - {"T"})
+    assert widened and all(n.startswith("H") for n in widened)
     # the atomics store fp64 buffers
     adds = [s for s in walk(kern.body) if isinstance(s, AtomicAdd)]
     assert adds and all(isinstance(s.value, Var) and s.value.name in f64
@@ -332,5 +339,6 @@ def test_the_fmixed_goldens_are_unchanged(backend: str) -> None:
     text = emit(kern, arch)
     assert text == (where / f"{kern.name}.{ext}").read_text()
     assert "float C0_0_0__0_0_0 = 0.0f;" in text
-    assert "((float)fj_boys(0, ((double)T)))" in text
+    assert "fj_boys<2>(((double)T), boys);" in text  # fp64 Boys, #301
+    assert "((float)boys[0])" in text  # each order narrowed at its read
     assert "const float*" not in text

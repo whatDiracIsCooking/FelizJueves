@@ -67,10 +67,11 @@ its mirror; a diagonal one writes its lower triangle `a >= b`, mirrored. A
 staged pair has `la <= lb` (`ao.schwarz.schwarz_classes`), so the ladder needs
 no `la > lb` class.
 
-THE WIDE BOYS (#266). `T = theta^2 |P_i - P_k|^2` reaches past the narrow
-series' overflow near 709 whenever two tight primitive pairs of one shell pair
-sit apart (`alpha = 1000` on A against `beta = 1` and `beta = 1000` on B two
-bohr away is `T ~ 2000`), so the kernel sets `Kernel.wide_boys`, as `V` does.
+THE BOYS DOMAIN. `T = theta^2 |P_i - P_k|^2` reaches far past where the old
+narrow series overflowed (near 709) whenever two tight primitive pairs of one
+shell pair sit apart (`alpha = 1000` on A against `beta = 1` and `beta =
+1000` on B two bohr away is `T ~ 2000`); the one `fj_boys` every kernel
+carries since #301 holds on all of `reference.boys`' domain.
 
     params  n_pair n_rec n_ao (I32)
             zeta_ab[n_rec]  P[n_rec, 3]  XPA[n_rec, 3]  XPB[n_rec, 3]
@@ -92,6 +93,7 @@ from __future__ import annotations
 from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     Assign,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -208,8 +210,9 @@ def _reads(e: object) -> set[str]:
 
 
 def _live(body: tuple[Stmt, ...], wanted: set[str]) -> tuple[Stmt, ...]:
-    """`body` (`Decl`s and `Note`s) without the `Decl`s that neither `wanted`
-    nor a kept later `Decl` reads: one backward pass."""
+    """`body` (`Decl`s, `Note`s and the prelude's `Boys` fill) without the
+    `Decl`s that neither `wanted` nor a kept later statement reads, and
+    without a `Boys` whose array nothing kept reads: one backward pass."""
     kept: list[Stmt] = []
     live = set(wanted)
     for st in reversed(body):
@@ -217,8 +220,12 @@ def _live(body: tuple[Stmt, ...], wanted: set[str]) -> tuple[Stmt, ...]:
             if st.name not in live:
                 continue
             live |= _reads(st.init)
+        elif isinstance(st, Boys):
+            if st.dst not in live:
+                continue
+            live |= _reads(st.t)
         elif not isinstance(st, Note):
-            raise TypeError(f"_live takes Decls and Notes, got "
+            raise TypeError(f"_live takes Decls, Notes and Boys, got "
                             f"{type(st).__name__}")
         kept.append(st)
     return tuple(reversed(kept))
@@ -402,4 +409,4 @@ def build_schwarz_kernel(cls: Spec | tuple[int, int], *,
         Param(OUT, Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nao, nao)),
     )
-    return Kernel(name or f"schwarz_{la}{lb}", params, body, wide_boys=True)
+    return Kernel(name or f"schwarz_{la}{lb}", params, body)

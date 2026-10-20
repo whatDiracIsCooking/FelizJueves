@@ -105,6 +105,7 @@ from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp.vrr import AmClass, Cart
 from felizjueves.ir import (
     Assign,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -293,13 +294,21 @@ def _add(a: Expr, b: Expr) -> Call:
     return Call(Fn.ADD, (a, b))
 
 
-def fundamental_prelude() -> tuple[tuple[Stmt, ...], Fundamental]:
-    """Statements forming `T` and the seed scale `S`, and the `Fundamental`.
+# The local array the prelude's `Boys` fills: `boys[m] = F_m(T)` (#301).
+# `recurrence.BOYS_ARRAY`'s name, spelled here because `hgp/` stays off the
+# MMD recurrence (test_layering.py).
+BOYS_ARRAY = "boys"
+
+
+def fundamental_prelude(top: int) -> tuple[tuple[Stmt, ...], Fundamental]:
+    """Statements forming `T`, the seed scale `S` and every Boys order to
+    `top`, and the `Fundamental`.
 
         T = (theta theta) |PQ|^2,   S = pair ((2/sqrt(pi)) theta),
-        [00|00]^(m) = S F_m(T)
+        boys[m] = F_m(T), m = 0..top,   [00|00]^(m) = S boys[m]
 
-    (module docstring, "THE FUNDAMENTAL")."""
+    (module docstring, "THE FUNDAMENTAL"). `top` is the class's L, the
+    highest leaf order its VRR reaches; a leaf above it is refused."""
     pqx, pqy, pqz = (Var(n) for n in PQ_PARAMS)
     theta = Var(THETA)
     stmts: tuple[Stmt, ...] = (
@@ -309,10 +318,14 @@ def fundamental_prelude() -> tuple[tuple[Stmt, ...], Fundamental]:
             _add(_mul(pqx, pqx), _mul(pqy, pqy)), _mul(pqz, pqz)))),
         Decl("S", Scalar.F64, init=_mul(Var(PAIR), _mul(
             Lit(_TWO_OVER_SQRT_PI), theta))),
+        Decl(BOYS_ARRAY, Scalar.F64, shape=(Lit(top + 1),)),
+        Boys(BOYS_ARRAY, top, Var("T")),
     )
 
     def fundamental(m: int) -> Expr:
-        return _mul(Var("S"), Call(Fn.BOYS, (Lit(m), Var("T"))))
+        if not 0 <= m <= top:
+            raise ValueError(f"Boys order {m} above the prelude's top {top}")
+        return _mul(Var("S"), Index(BOYS_ARRAY, (Lit(m),)))
 
     return stmts, fundamental
 
@@ -342,7 +355,7 @@ def build_vrr_kernel(spec: Spec, *, name: str | None = None) -> Kernel:
     PQ_z theta pair` for the fundamental), and `out` (F64, OUT)."""
     cls = hgp_class(spec)
     dag = vrr.build(cls)
-    prelude, fundamental = fundamental_prelude()
+    prelude, fundamental = fundamental_prelude(sum(cls))
     body: list[Stmt] = [*prelude, *vrr_body(dag, fundamental)]
     for i, (e, f) in enumerate(boundary_order(cls)):
         body.append(Assign(Index(OUT, (Lit(i),)), Var(vrr_name((e, f, 0)))))

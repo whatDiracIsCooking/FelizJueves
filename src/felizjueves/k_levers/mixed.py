@@ -11,7 +11,7 @@ as two levers, and nothing in between:
                 exactly as in J's `mixed`: `PQ_d` and `theta` narrowed once
                 (`TO_F32` of their fp64 values), the prelude `t2`, `T`, `s`,
                 `W{m}`, and every `[r]^(m)` node. `F_m` is evaluated in fp64
-                on `TO_F64(T)` and narrowed back (`Fn.BOYS` is fp64 only: the
+                on `TO_F64(T)` and narrowed back (`Boys` is fp64 only: the
                 IR refuses an F32 `T`, and there is no fp32 Boys routine; a
                 narrower `fj_boys` is a separate change, as for J). The
                 `E^ac` / `E^bd` blocks, `D_cd` and every parameter stay FP64.
@@ -90,6 +90,7 @@ from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -245,6 +246,8 @@ def _rewrite(body: tuple[Stmt, ...], *, swap: Callable, scalars: frozenset[str],
         elif isinstance(s, (Assign, WarpReduce, AtomicAdd)):
             s = dataclasses.replace(s, dst=_lvalue(s.dst, scalars, arrays),
                                     value=w(s.value))
+        elif isinstance(s, Boys):
+            s = dataclasses.replace(s, t=w(s.t))  # TO_F64 of the F32 `T`
         elif isinstance(s, For):
             s = dataclasses.replace(
                 s, start=w(s.start), stop=w(s.stop), step=w(s.step),

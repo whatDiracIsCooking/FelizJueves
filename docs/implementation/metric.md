@@ -166,9 +166,9 @@ The kernel contract:
   `(−1)^{|τ|} = (−1)^{lQ}`. The inner sum is spelled unsigned, and the
   sign is applied once, as `acc − w v` or `acc + w v`. Negation is exact.
 - **No prefactor in the kernel.** `s_i s_k` is multiplied once per
-  (bra, ket), and `(2/√π) θ` is inside `[0]^(m)`. `Kernel.wide_boys` is set,
-  so `fj_boys` takes the asymptote from `T = 125`, as in `V` and the
-  Schwarz units.
+  (bra, ket), and `(2/√π) θ` is inside `[0]^(m)`. Its `fj_boys` is the
+  one template every unit carries (#301), which holds on all of
+  `reference.boys`' domain, as tight aux pairs need.
 - **Plain mirrored store, no atomics.** Each element belongs to exactly one
   aux shell pair. An off-diagonal pair writes `(a, b)` and its mirror. A
   diagonal pair (only when `lP == lQ`) writes `a ≥ b`, mirrored, which is

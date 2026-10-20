@@ -35,7 +35,8 @@
 #              NVCC_FLAGS / HIPCC_FLAGS).
 #   device    the `gpu`-marked pytest suite (KERNEL_TEST_ARGS: not `slow`, the
 #              PR gate, under five minutes per card; --full takes
-#              KERNEL_FULL_TEST_ARGS, every `gpu` test), which is what
+#              KERNEL_FULL_TEST_ARGS, every `gpu` test with L <= 8, both
+#              excluding `high_l`, test/tiers.py), which is what
 #              compares a kernel's output against the host reference (the
 #              one-electron units: test/test_one_electron_device.py, which
 #              includes the very files the generate phase wrote). Its

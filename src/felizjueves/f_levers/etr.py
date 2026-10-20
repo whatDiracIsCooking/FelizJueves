@@ -557,7 +557,7 @@ def build_etr_vrr_kernel(spec: Spec, *, name: str | None = None,
     rounding, whose `- p/q` transfer cancels where the cascade's does not."""
     cls = hgp_class(spec)
     dag = _etr_dag(cls)
-    prelude, fundamental = fundamental_prelude()
+    prelude, fundamental = fundamental_prelude(sum(cls))
     pq = _c(Fn.DIV, Var(Factor.INV2Q.value), Var(Factor.INV2P.value))
     body: list[Stmt] = [*prelude, *etr_body(dag, fundamental, pq,
                                             absolute=absolute)]

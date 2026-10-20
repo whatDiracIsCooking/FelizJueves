@@ -15,6 +15,7 @@ from felizjueves import ir
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Boys,
     Break,
     Call,
     Decl,
@@ -359,9 +360,18 @@ def test_special_functions_keep_or_refuse_the_type() -> None:
         assert _ty(Call(fn, (Var("f"),))) is Scalar.F32
         assert _ty(Call(fn, (Var("D"),))) is Scalar.F64
         assert _ty(Call(fn, (Var("i"),))) is Scalar.F64
-    assert _ty(Call(Fn.BOYS, (Lit(2), Var("D")))) is Scalar.F64
-    with pytest.raises(ir.PrecisionError, match="no fp32 Boys"):
-        _ty(Call(Fn.BOYS, (Lit(2), Var("f"))))
+    # Boys is a statement now (#301), fp64 only: ir.Kernel refuses an F32 T
+    out = Param("out", Scalar.F64, array=True, intent=Intent.OUT)
+    for t, ok in ((Scalar.F64, True), (Scalar.F32, False)):
+        body = (Decl("boys", Scalar.F64, shape=(Lit(3),)),
+                Boys("boys", 2, Var("T")),
+                Assign(Index("out", (Lit(0),)), Index("boys", (Lit(2),))))
+        params = (Param("T", t), out)
+        if ok:
+            Kernel("k", params, body)
+        else:
+            with pytest.raises(ir.PrecisionError, match="no fp32 Boys"):
+                Kernel("k", params, body)
 
 
 def test_a_weighted_sum_has_one_float_type() -> None:
@@ -445,8 +455,9 @@ def test_no_built_fp64_kernel_declares_f32() -> None:
 
 def test_call_vocabulary_and_arity() -> None:
     assert Call(Fn.THREAD_X).args == ()
-    Call(Fn.BOYS, (Lit(3), Var("T")))
     Call(Fn.EXP, (Var("x"),))  # #152: E^{00}_0's seed
+    with pytest.raises(AttributeError):
+        Fn.BOYS  # noqa: B018 -- a statement since #301, never a Call
     with pytest.raises(ValueError, match="takes 1 args"):
         Call(Fn.EXP, (Var("x"), Var("y")))
     with pytest.raises(ValueError, match="takes 2 args"):
@@ -524,7 +535,9 @@ def contract_shaped_kernel() -> Kernel:
                 Scalar.F64,
                 init=_mul(Var("PQ_x"), Var("PQ_x")),
             ),
-            Decl("F1", Scalar.F64, init=Call(Fn.BOYS, (Lit(1), Var("T")))),
+            Decl("boys", Scalar.F64, shape=(Lit(2),)),
+            Boys("boys", 1, Var("T")),
+            Decl("F1", Scalar.F64, init=Index("boys", (Lit(1),))),
             Note("[JEngine, v2, eq. 11]"),
             Decl(
                 "pq",
@@ -569,7 +582,7 @@ def test_every_contract_construct_is_expressible() -> None:
     k = contract_shaped_kernel()
     kinds = {type(s) for s in walk(k.body)}
     # Everything but AtomicAdd (milestone 3) and Raw (counted, and zero).
-    assert kinds == {Decl, Assign, For, If, Break, WarpReduce, Note}
+    assert kinds == {Decl, Assign, For, If, Break, WarpReduce, Note, Boys}
     shared = [
         s for s in walk(k.body) if isinstance(s, Decl) and s.space is Space.SHARED
     ]

@@ -16,11 +16,12 @@ WHERE THE CASTS ARE, and nowhere else:
   PQ_d    = TO_F32(P_d - Q_d)               the difference in fp64, then
   theta   = TO_F32(sqrt(ze et / (ze + et)))  narrowed: an fp32 subtraction of
                                              two nearby centres would cancel
-  F_m(T)  = TO_F32(BOYS(m, TO_F64(T)))      `Fn.BOYS` is fp64 only (`ir`
-                                             refuses an F32 `T`): there is no
+  F_m(T)  = TO_F32(boys[m]),               `Boys` is fp64 only (`ir`
+            Boys(boys, top, TO_F64(T))       refuses an F32 `T`): there is no
                                              fp32 Boys routine, so `T` is
                                              formed in fp32 and widened for
-                                             the call, the value narrowed back
+                                             the fill, each order narrowed
+                                             back at its read
   J_p    += TO_F64([p+q]^(0)) * D_q         the contraction, in fp64
 
 So "the fundamentals run in FP32" holds for `W_m = (2/sqrt(pi)) theta
@@ -66,7 +67,14 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.recurrence import PQ_PARAMS, THETA, Fundamental, node_name
+from felizjueves.recurrence import (
+    PQ_PARAMS,
+    THETA,
+    Fundamental,
+    boys_fill,
+    boys_read,
+    node_name,
+)
 
 __all__ = ["MIXED", "MIXED_NOTE", "WIDENED", "narrow", "operands", "prelude",
            "widen"]
@@ -125,8 +133,8 @@ def operands(stmts: Sequence[Stmt]) -> tuple[Stmt, ...]:
 
 def prelude(ms: Sequence[int]) -> tuple[tuple[Stmt, ...], Fundamental]:
     """`recurrence.fundamental_prelude` in F32: `t2`, `T`, `s` and the `W{m}`
-    F32 from the narrowed `theta` and `PQ_d`, and `[0]^(m) = W{m} *
-    TO_F32(F_m(TO_F64(T)))`."""
+    F32 from the narrowed `theta` and `PQ_d`, the fp64 `boys` filled from
+    `TO_F64(T)`, and `[0]^(m) = W{m} * TO_F32(boys[m])`."""
     pqx, pqy, pqz = (Var(n) for n in PQ_PARAMS)
     theta = Var(THETA)
     top = max(ms, default=0)
@@ -143,10 +151,10 @@ def prelude(ms: Sequence[int]) -> tuple[tuple[Stmt, ...], Fundamental]:
     for m in range(1, top + 1):
         stmts.append(Decl(f"W{m}", Scalar.F32,
                           init=_mul(Var(f"W{m - 1}"), Var("s"))))
+    stmts.extend(boys_fill(top, Call(Fn.TO_F64, (Var("T"),))))
 
     def fundamental(m: int) -> Expr:
-        boys = Call(Fn.BOYS, (Lit(m), Call(Fn.TO_F64, (Var("T"),))))
-        return _mul(Var(f"W{m}"), Call(Fn.TO_F32, (boys,)))
+        return _mul(Var(f"W{m}"), Call(Fn.TO_F32, (boys_read(m),)))
 
     return tuple(stmts), fundamental
 

@@ -78,10 +78,9 @@ same routine in every unit is never a duplicate symbol at the device link.
 
 A specialization's units may still share one translation unit, so its text
 is what can be included beside its siblings: `fj_boys` sits behind an include
-guard (`FJ_BOYS_NARROW` / `FJ_BOYS_WIDE`, so a unit of each spelling in one
-TU is a redefinition, not a silent pick), and a kernel with a record struct
-or a dynamically sized shared array is refused, both being per-unit
-declarations a second unit would repeat. The C spelling is unchanged and
+guard (`FJ_BOYS`; there is one spelling since #301), and a kernel with a
+record struct or a dynamically sized shared array is refused, both being
+per-unit declarations a second unit would repeat. The C spelling is unchanged and
 still means one unit per TU, or one namespace each.
 """
 
@@ -94,7 +93,6 @@ from dataclasses import dataclass
 from felizjueves.device import Arch
 from felizjueves.emit._c import (
     _GEOMETRY,
-    BOYS_DEVICE_WIDE,
     INDENT,
     RESERVED,
     CWriter,
@@ -303,10 +301,10 @@ class GpuWriter(CWriter):
         if self.specialization is None:
             return spelled
         # internal linkage: every unit of a template carries its own copy
-        spelled = spelled.replace("__device__ double fj_boys(",
-                                  "static __device__ double fj_boys(", 1)
-        guard = "FJ_BOYS_WIDE" if text == BOYS_DEVICE_WIDE else "FJ_BOYS_NARROW"
-        return f"#ifndef {guard}\n#define {guard}\n{spelled}#endif\n"
+        spelled = spelled.replace("__device__ __forceinline__ void fj_boys(",
+                                  "static __device__ __forceinline__ void "
+                                  "fj_boys(", 1)
+        return f"#ifndef FJ_BOYS\n#define FJ_BOYS\n{spelled}#endif\n"
 
     def _mask(self) -> str:
         self._width_used = True

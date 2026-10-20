@@ -269,14 +269,13 @@ def test_a_diagonal_pair_is_its_own_symmetric_block(cls):
 
 
 def test_a_tight_pair_past_the_narrow_boys_range():
-    """`T` reaches 2000 here, past the narrow series' overflow near 709: the
-    kernel asks for the wide `fj_boys` (`Kernel.wide_boys`)."""
+    """`T` reaches 2000 here, past where the old narrow series overflowed
+    (near 709): the one `fj_boys` (#301) holds there."""
     c = next(c for c in metric_classes(TIGHT) if (c.lP, c.lQ) == (0, 1))
     T = max((c.alpha[i] * c.alpha[k] / (c.alpha[i] + c.alpha[k]))
             * sum((c.A[i][d] - c.A[k][d]) ** 2 for d in range(3))
             for i in range(c.n_rec) for k in range(c.n_rec))
     assert T > 709.0
-    assert build_metric_kernel((0, 1)).wide_boys
     run = metric_matrix_kernel(TIGHT, boys=boys)
     want, scale, owned = _host(TIGHT, set(run.ran))
     assert owned.all()
@@ -404,7 +403,7 @@ def test_a_class_above_the_cap_builds():
     """The emitter is arbitrary-L: (d|f) at L = 5 builds, its kept targets the
     parity set. NOT checked numerically (the milestone's L <= 4 cap)."""
     k = build_metric_kernel((2, 3))
-    assert isinstance(k, Kernel) and k.wide_boys and k.name == "metric_23"
+    assert isinstance(k, Kernel) and k.name == "metric_23"
     decls = {s.name for s in walk(k.body) if isinstance(s, Decl)}
     assert {r for r in hermite_targets(5)
             if node_name((r, 0)) in decls} == _parity_targets(2, 3)

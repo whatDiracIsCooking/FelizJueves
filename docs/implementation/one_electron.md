@@ -191,12 +191,12 @@ rule. It also applies `s` once per row after the nucleus sum. The bound is
 `16 ε M`, where `M` is the absolute-value sum the element is built from;
 the worst observed is `1.7 ε M`.
 
-**`V` carries the wide `fj_boys`** (#266). `build_v_kernel` sets
-`Kernel.wide_boys`, so its Boys function is `emit/_c.py`'s
-`BOYS_DEVICE_WIDE`: the Kummer series below `T = 125` and the asymptote
-from there. Every `J`-chain unit keeps the narrow series, because its text
-is pinned by `kernels.json`. `limits.json` records why there are two
-spellings, and the follow-up to unify them when `J` is next re-measured.
+**`V`'s Boys function.** `T = ζ |P − C|²` is undamped (~1.25e5 on
+HF/cc-pVTZ), so `V` was the first kernel to need more than the Kummer
+series, and #266 gave it a second, wide `fj_boys`. Since #301 there is one:
+`emit/_c.py`'s `fj_boys<M>` template, every order `F_0..F_M` of one `T` from
+one `exp(−T)`, witnessed on the card over `reference.boys`' whole domain
+(`T ∈ [0, 1e6]`). `limits.json` (the #266 record) has the history.
 
 ## Reused verbatim, and deliberately not
 
@@ -218,7 +218,7 @@ builder):
   `V` is the plan layer's first non-`J` consumer. `S` and `T` use none of
   it: no Boys, no `[r]` tower, no DAG and no schedule.
 - `kernel_jab`'s scatter rule, and `emit/` itself, which already emits
-  `fj_boys` whenever a kernel calls `Fn.BOYS`.
+  `fj_boys` whenever a kernel holds a Boys fill.
 
 **Deliberately not reused:**
 
@@ -434,7 +434,7 @@ and `KERNEL_GEN_CMD` does not ask for it.
   be answered.
 - **One-electron derivatives** (gradients and Hessians), excluded by this
   milestone's scope.
-- **One `fj_boys` spelling** (the #266 record): unify on the wide routine
-  when `J` is next re-measured.
+- **One `fj_boys` spelling** (the #266 record): done in #301, one
+  template for every unit.
 - **Ordered ladder classes** (`la > lb`), so the generator, rather than the
   test-side driver, writes every class a real basis reaches.

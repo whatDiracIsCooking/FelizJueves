@@ -23,7 +23,7 @@ with `pairs=` those shell pairs. Every element is owned by exactly one shell
 pair, so each class is checked on its own elements, and every element no
 kept pair owns must come back exactly 0.0. Its nuclei are the fixture's
 atoms; V's Boys argument reaches T ~ 1.25e5 there (F 1s against H), inside
-the wide `fj_boys` the V units carry (#266) and inside `reference.boys`.
+the one `fj_boys` every unit carries (#301) and inside `reference.boys`.
 
 PART 1 THROUGH (ff), `slow` (#244). The same launch, unrestricted: all
 sixteen ordered classes `(0..3, 0..3)` (F's f against H's s, p and d, and
@@ -70,7 +70,7 @@ twice that; FMA contraction only removes roundings. `N`, per target:
      at most `L` recurrence levels a product and an add and a scaling (3L),
      the `n_t`-term contraction over `t`, the `n_nuc`-term nucleus sum, and
      the products by `Z` and `s`;
-     `delta = WIDE_BOYS_REL` (1e-13, test_kernel_device.py): the device
+     `delta = BOYS_REL` (1e-13, test_kernel_device.py): the device
      `fj_boys` is held within it of `reference.boys` at every point, and
      every `[t]^(0)` is a non-negative combination of `F_m` in `Rabs`, so an
      `F` difference moves an element by at most `delta Mabs`. S and T have
@@ -113,7 +113,7 @@ from plan_driver import compile_checked
 from test_ao_kinetic import kinetic_scale_block
 from test_ao_overlap import ONE_E_TOL, _overlap_scale_block, one_e_scale
 from test_ao_potential import potential_scale_block
-from test_kernel_device import BACKEND, WIDE_BOYS_REL, _toolchain
+from test_kernel_device import BACKEND, BOYS_REL, _toolchain
 from tiers import by_l, is_fast
 
 from felizjueves.ao.hermite import _raise, e_axis, hermite_order
@@ -330,7 +330,7 @@ def _scale(name: str, target: Target, lmax: int | None):
 def _bound(name: str, target: Target, lmax: int | None):
     M, K, N, cls_of = _scale(name, target, lmax)
     g = np.vectorize(_gamma)
-    delta = WIDE_BOYS_REL if target is Target.V else 0.0
+    delta = BOYS_REL if target is Target.V else 0.0
     tol = (2.0 * g((N + K).astype(int)) + delta) * M
     r2r = 2.0 * g(K.astype(int)) * M
     return tol, r2r, M, K, cls_of

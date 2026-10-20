@@ -2,22 +2,44 @@
 // arch gfx1200, wavefront 32; fp64 throughout.
 #include <hip/hip_runtime.h>
 
-// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1)), the Kummer
-// series ([JEngine, v2, eqs. 13, 18]): every term positive, summed until it
-// no longer changes the sum. Its accuracy on reference.boys's domain is a
-// kernel-tier question, not this file's.
-__device__ double fj_boys(int m, double T) {
-    double term = 1.0 / (double)(2 * m + 1);
+// F_m(T) = integral_0^1 u^(2m) exp(-T u^2) du ([JEngine, v2, eqs. 13, 18]),
+// F[m] for every m in 0..M (#301). From T = M + 8: F_0 = (1/2) sqrt(pi/T)
+// erf(sqrt(T)) and upward, F_(m+1) = ((2m+1) F_m - exp(-T)) / (2T). Below:
+// the Kummer series F_M = exp(-T) SUM_k (2T)^k / ((2M+1)(2M+3)...(2M+2k+1)),
+// every term positive, summed until it no longer changes the sum, and
+// downward, F_m = (2T F_(m+1) + exp(-T)) / (2m+1). Its accuracy on
+// reference.boys's domain is a kernel-tier question, not this file's.
+template <int M>
+__device__ __forceinline__ void fj_boys(double T, double (&F)[M + 1]) {
+    const double e = exp(-T);
+    if (T >= (double)(M + 8)) {
+        const double h = 0.5 / T;
+        double f = 0.5 * sqrt(3.141592653589793 / T) * erf(sqrt(T));
+        F[0] = f;
+#pragma unroll
+        for (int m = 1; m <= M; ++m) {
+            f = ((double)(2 * m - 1) * f - e) * h;
+            F[m] = f;
+        }
+        return;
+    }
+    double term = 1.0 / (double)(2 * M + 1);
     double sum = term;
     for (int k = 1; k < 4096; ++k) {
-        term = term * ((2.0 * T) / (double)(2 * m + 2 * k + 1));
+        term = term * ((2.0 * T) / (double)(2 * M + 2 * k + 1));
         double next = sum + term;
         if (next == sum) {
             break;
         }
         sum = next;
     }
-    return exp(-T) * sum;
+    double f = e * sum;
+    F[M] = f;
+#pragma unroll
+    for (int m = M - 1; m >= 0; --m) {
+        f = (2.0 * T * f + e) * (1.0 / (double)(2 * m + 1));
+        F[m] = f;
+    }
 }
 
 extern "C" __global__ void f_0212(
@@ -369,14 +391,16 @@ extern "C" __global__ void f_0212(
                             // [0]^(m), reference/pq.py's fundamental
                             double T = ((theta * theta) * (((PQ_x * PQ_x) + (PQ_y * PQ_y)) + (PQ_z * PQ_z)));
                             double S = (pair * (1.1283791670955126 * theta));
+                            double boys[6];
+                            fj_boys<5>(T, boys);
                             // [Fock] eqs 25-26, the HGP VRR (reduction form; W - Q derived, not eq 26's
                             // printed sign)
-                            double V0_0_0__0_0_0__5 = (S * fj_boys(5, T));
-                            double V0_0_0__0_0_0__4 = (S * fj_boys(4, T));
-                            double V0_0_0__0_0_0__3 = (S * fj_boys(3, T));
-                            double V0_0_0__0_0_0__2 = (S * fj_boys(2, T));
-                            double V0_0_0__0_0_0__1 = (S * fj_boys(1, T));
-                            double V0_0_0__0_0_0__0 = (S * fj_boys(0, T));
+                            double V0_0_0__0_0_0__5 = (S * boys[5]);
+                            double V0_0_0__0_0_0__4 = (S * boys[4]);
+                            double V0_0_0__0_0_0__3 = (S * boys[3]);
+                            double V0_0_0__0_0_0__2 = (S * boys[2]);
+                            double V0_0_0__0_0_0__1 = (S * boys[1]);
+                            double V0_0_0__0_0_0__0 = (S * boys[0]);
                             double V1_0_0__0_0_0__4 = ((PA_x * V0_0_0__0_0_0__4) + (WP_x * V0_0_0__0_0_0__5));
                             double V0_1_0__0_0_0__4 = ((PA_y * V0_0_0__0_0_0__4) + (WP_y * V0_0_0__0_0_0__5));
                             double V0_0_1__0_0_0__4 = ((PA_z * V0_0_0__0_0_0__4) + (WP_z * V0_0_0__0_0_0__5));

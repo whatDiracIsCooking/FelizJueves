@@ -63,11 +63,12 @@ from felizjueves.ao.potential import potential_block
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
+from felizjueves.emit._c import BOYS_DEVICE
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Boys,
     Call,
     Decl,
     Fn,
@@ -423,7 +424,7 @@ def test_no_prefactor_is_formed_in_the_kernel(cls):
     assert sum(e.fn is Fn.SQRT for e in calls) == 1
     assert sum(e.fn is Fn.EXP for e in calls) == 3
     assert {e.fn for e in calls} <= {
-        Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV, Fn.LT, Fn.SQRT, Fn.EXP, Fn.BOYS,
+        Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV, Fn.LT, Fn.SQRT, Fn.EXP,
         Fn.THREAD_X, Fn.BLOCK_X, Fn.BLOCK_DIM_X}
     floats = {e.value for e in subs
               if isinstance(e, Lit) and isinstance(e.value, float)}
@@ -478,15 +479,13 @@ def test_every_write_to_V_is_an_atomic_add_with_its_reason(cls):
 @pytest.mark.parametrize("cls", [(0, 0), (2, 1)], ids=lambda c: f"{c[0]}{c[1]}")
 def test_the_emitted_text_carries_fj_boys_exactly_once(cls):
     k = build_v_kernel(cls)
-    assert any(isinstance(e, Call) and e.fn is Fn.BOYS
-               for s in walk(k.body) if isinstance(s, Decl) and s.init
-               for e in _subexprs(s.init))
-    assert k.wide_boys  # #266: T = zeta |P - C|^2 is undamped
+    (fill,) = [s for s in walk(k.body) if isinstance(s, Boys)]
+    assert fill.top == sum(cls)  # one fill, every order of the class
     for text in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)):
-        assert text.count("double fj_boys(int m, double T)") == 1
-        assert "fj_boys(0, T)" in text
-        # the wide spelling (the asymptote from T = 125), never the narrow
-        assert BOYS_DEVICE_WIDE in text and BOYS_DEVICE not in text
+        # the one template every kernel carries (#301): T = zeta |P - C|^2
+        # is undamped, and it holds on all of reference.boys's domain
+        assert text.count(BOYS_DEVICE) == 1
+        assert text.count(f"fj_boys<{sum(cls)}>(T, boys);") == 1
 
 
 GOLDEN = Path(__file__).resolve().parent / "golden"

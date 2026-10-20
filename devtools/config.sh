@@ -186,8 +186,11 @@ KERNEL_TIER_REPORTS=${KERNEL_TIER_REPORTS:-.kernel-tier-reports}
 # 3080 before the cut, most of it the K subgrid) -- for a milestone's close or
 # a change to kernel text above the cut. Neither selection measures anything:
 # timing, counters and the stored rows are devtools/measure.sh's.
-KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:-'-m "gpu and {backend} and not slow"'}
-KERNEL_FULL_TEST_ARGS=${KERNEL_FULL_TEST_ARGS:-'-m "gpu and {backend}"'}
+# Both exclude `high_l`, every case with L > DEVICE_L_MAX = 8 (test/tiers.py,
+# #301): above it one K unit's compile alone outlasted an hour. Run those
+# by hand with -m "gpu and {backend} and high_l".
+KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:-'-m "gpu and {backend} and not slow and not high_l"'}
+KERNEL_FULL_TEST_ARGS=${KERNEL_FULL_TEST_ARGS:-'-m "gpu and {backend} and not high_l"'}
 
 # --- measurement ------------------------------------------------------------
 #

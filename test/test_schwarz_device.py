@@ -30,7 +30,7 @@ fundamental's `T`, `theta`, power and prefactor and two roundings per
 reduction level), the two folds over `p` and `q` (at most `n_t` adds each),
 the products by `Ebra`, `w = s_i s_k` and `s_i s_k` itself, the `K^2`-term
 record fold, and the root and its square (2). FMA contraction only removes
-roundings. `delta = WIDE_BOYS_REL` (1e-13, test_kernel_device.py): the
+roundings. `delta = BOYS_REL` (1e-13, test_kernel_device.py): the
 device `fj_boys` is held within it of `reference.boys`, and every term is a
 combination of `F_m` with its absolute value in `scale`.
 
@@ -50,7 +50,7 @@ from oracle import basis as ob
 from oracle import manifest
 from plan_driver import compile_checked
 from schwarz_driver import build_on_card, schwarz_program
-from test_kernel_device import BACKEND, WIDE_BOYS_REL, _toolchain
+from test_kernel_device import BACKEND, BOYS_REL, _toolchain
 from test_kernel_schwarz import L_MAX, SYNTHETIC
 
 from felizjueves.ao.hermite import hermite_order
@@ -103,7 +103,7 @@ def _bound(name: str) -> tuple[np.ndarray, np.ndarray]:
             N = 2 * (4 * L + 8) + (6 * L + 12) + 2 * n_t + 3 + K * K + 2
             blk = (slice(off[a], off[a] + sh[a].n_cart),
                    slice(off[b], off[b] + sh[b].n_cart))
-            t = (2 * _gamma(N) + WIDE_BOYS_REL) * scale[blk]
+            t = (2 * _gamma(N) + BOYS_REL) * scale[blk]
             tol[blk] = t
             tol[blk[::-1]] = t.T
             owned[blk] = True
