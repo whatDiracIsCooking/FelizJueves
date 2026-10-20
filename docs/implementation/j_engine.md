@@ -2054,7 +2054,15 @@ stated where the device test asserts, and not here.
   weight `w`;
 - the **density check**;
 - the **Schwarz bound** `I = Σ_p I_p` per record (`ao/pairs.py`,
-  pair-factor-free, so it needs no `D` and no dressing);
+  pair-factor-free, so it needs no `D` and no dressing). Since
+  `Target.PAIR_BOUND` it is also generated, for a consumer whose records are
+  on the device: `kernel_pair_bound.py`, one thread per record, the bound's
+  closed form at `PQ = 0`, `sqrt(x) Σ_n D_n x^n` with `x = sqrt(ζ)` and
+  `D_n` constants of `L = la + lb` folded at build time. It agrees with
+  `ao.pairs.pair_bound` through `reference.pq`, a derivation that shares no
+  code with it, within 16 eps, interpreted for every class `la ≤ lb ≤ 4` and
+  on the RTX 3080 (`test_kernel_pair_bound.py`, `test_pair_bound_device.py`);
+  the RX 9060 XT run is #431's. The launch code here still forms it host-side;
 - the **sort** of each ket class, descending by `I_q · Dmax`, stable
   (`launch.launches`);
 - the **staging**: class-grouped buffers, one upload per bra class and one per
