@@ -20,6 +20,7 @@ from felizjueves.ir import (
     Assign,
     AtomicAdd,
     Call,
+    Decl,
     Fn,
     If,
     Index,
@@ -30,6 +31,7 @@ from felizjueves.ir import (
     Param,
     Raw,
     Scalar,
+    Var,
     walk,
 )
 from felizjueves.kernel import (
@@ -39,7 +41,9 @@ from felizjueves.kernel import (
     launch_shape,
     pq_spec,
 )
-from felizjueves.passes import ATOMIC_NOTE, LANE0, atomize
+from felizjueves.kernel_dq import build_dq_kernel
+from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.passes import ATOMIC_NOTE, LANE0, atomize, split_axes
 from felizjueves.reference.boys import boys
 
 
@@ -202,3 +206,114 @@ def test_a_guarded_write_is_atomized() -> None:
 def test_atomize_takes_a_kernel() -> None:
     with pytest.raises(TypeError):
         atomize("kernel")  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# split_axes: the same bits, laid out per axis
+# ---------------------------------------------------------------------------
+
+PA = {"XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}
+PQ = {"P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}
+
+
+def _split_args(args: dict, axes: dict) -> dict:
+    """`args` with each [n, 3] array handed over as its three columns."""
+    out = {k: v for k, v in args.items() if k not in axes}
+    for name, three in axes.items():
+        for d, n in enumerate(three):
+            out[n] = np.ascontiguousarray(args[name][:, d])
+    return out
+
+
+def _both(k: Kernel, axes: dict, args: dict, launch: Launch, **kw) -> tuple:
+    a = interpret(k, launch=launch, **kw, **args)
+    b = interpret(split_axes(k, axes), launch=launch, **kw,
+                  **_split_args(args, axes))
+    return a, b
+
+
+def _dq_args(n_rec: int, seed: int) -> dict:
+    rng = np.random.default_rng(seed)
+    return dict(
+        n_rec=n_rec, n_pair=2, eta=rng.uniform(0.6, 1.4, n_rec),
+        XPA=rng.uniform(-0.5, 0.5, (n_rec, 3)),
+        XPB=rng.uniform(-0.5, 0.5, (n_rec, 3)),
+        s=rng.uniform(0.5, 1.0, n_rec), w=np.where(np.arange(n_rec) % 2, 2.0, 1.0),
+        pair=(np.arange(n_rec) % 2).astype(np.int32),
+        Dcd=rng.uniform(-1.0, 1.0, (2, 9)),
+        D=np.zeros((n_rec, 10)), Dmax=np.zeros(n_rec))
+
+
+def _jab_args(seed: int) -> dict:
+    # three records of (pp): two of an off-diagonal shell pair, one diagonal
+    rng = np.random.default_rng(seed)
+    return dict(
+        n_rec=3, n_ao=6, n_rows=3, zeta_ab=rng.uniform(0.6, 1.4, 3),
+        XPA=rng.uniform(-0.5, 0.5, (3, 3)), XPB=rng.uniform(-0.5, 0.5, (3, 3)),
+        s=rng.uniform(0.5, 1.0, 3),
+        off_a=np.array([3, 3, 0], np.int32), off_b=np.array([0, 0, 0], np.int32),
+        row=np.arange(3, dtype=np.int32), Jp=rng.uniform(-1.0, 1.0, (3, 10)),
+        J=np.zeros((6, 6)))
+
+
+def test_split_axes_dq_is_bit_exact() -> None:
+    a, b = _both(build_dq_kernel((1, 1)), PA, _dq_args(5, 421),
+                 Launch(1, (32, 1), 32))
+    assert np.any(a["D"] != 0.0)
+    assert np.array_equal(a["D"], b["D"]) and np.array_equal(a["Dmax"], b["Dmax"])
+
+
+def test_split_axes_jab_is_bit_exact() -> None:
+    a, b = _both(build_jab_kernel((1, 1)), PA, _jab_args(422),
+                 Launch(1, (32, 1), 32))
+    assert np.any(a["J"][3:, :3] != 0.0) and np.any(a["J"][:3, :3] != 0.0)
+    assert np.array_equal(a["J"], b["J"])
+
+
+@pytest.mark.parametrize("L", [2, 4])
+def test_split_axes_pq_is_bit_exact(L: int) -> None:
+    args = _inputs(L, n_bra=3, n_ket=5, seed=424 + L)
+    grid, block = launch_shape(args["n_bra"], 4)
+    a, b = _both(build_pq_kernel(L), PQ, args, Launch(grid, block, 4), boys=boys)
+    assert np.any(a["J"] != 0.0)
+    assert np.array_equal(a["J"], b["J"])
+
+
+def test_split_axes_moves_only_the_arrays_it_names() -> None:
+    k = build_dq_kernel((1, 1))
+    s = split_axes(k, {"XPB": ("pb_x", "pb_y", "pb_z")})
+    names = [p.name for p in s.params]
+    i = names.index("pb_x")
+    assert names[i:i + 3] == ["pb_x", "pb_y", "pb_z"] and "XPA" in names
+    assert [p.name for p in k.params] == [*names[:i], "XPB", *names[i + 3:]]
+    assert all(p.shape == (Var("n_rec"),) for p in s.params[i:i + 3])
+    # the builder's kernel is untouched: interleaved stays the default
+    assert "XPB" in [p.name for p in build_dq_kernel((1, 1)).params]
+
+
+@pytest.mark.parametrize(("axes", "match"), [
+    ({}, "nonempty mapping"),
+    ({"eta": ("a", "b", "c")}, r"extents \(n, 3\)"),
+    ({"Dcd": ("a", "b", "c")}, r"extents \(n, 3\)"),
+    ({"nope": ("a", "b", "c")}, r"extents \(n, 3\)"),
+    ({"XPA": ("a", "b")}, "three distinct names"),
+    ({"XPA": ("a", "a", "b")}, "three distinct names"),
+    ({"XPA": ("eta", "b", "c")}, "already uses"),
+    ({"XPA": ("PA_x", "b", "c")}, "already uses"),  # a fragment's bind
+    ({"XPA": ("a", "b", "c"), "XPB": ("c", "d", "e")}, "already uses"),
+])
+def test_split_axes_refuses_what_it_cannot_do_exactly(axes, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        split_axes(build_dq_kernel((1, 1)), axes)
+
+
+def test_split_axes_refuses_an_array_not_read_by_a_literal_axis() -> None:
+    n = Var("n")
+    k = Kernel("probe", (
+        Param("n", Scalar.I32),
+        Param("X", Scalar.F64, array=True, shape=(n, Lit(3))),
+        Param("Y", Scalar.F64, array=True, intent=Intent.OUT)), (
+        Decl("d", Scalar.I32, init=Lit(1)),
+        Assign(Index("Y", (Lit(0),)), Index("X", (Lit(0), Var("d")))),))
+    with pytest.raises(ValueError, match="not a literal 0, 1 or 2"):
+        split_axes(k, {"X": ("x0", "x1", "x2")})

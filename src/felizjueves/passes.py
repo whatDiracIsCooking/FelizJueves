@@ -1,6 +1,7 @@
 """Kernel -> Kernel passes: the levers, each checked by interpretation.
 
     atomize(kernel) -> Kernel
+    split_axes(kernel, axes) -> Kernel
 
 A pass takes a finished `Kernel` and returns another; it never reads a plan
 and never writes text. It is checked the way a builder is -- by running both
@@ -35,26 +36,64 @@ order, so a batched `J` is not bit-reproducible run to run. The interpreter
 runs blocks in order and cannot see that; a device comparison of a batched
 class needs a tolerance for it. Onto a zeroed `J`, a single atomic add of `x`
 is `x` exactly, which is what the pass's test asserts.
+
+SPLIT_AXES. Every kernel but `S`, `T`, `V` and `SX` takes a vector per record
+interleaved, one `[n, 3]` array (`XPA`, `XPB`, `P`, `Q`), read at a literal
+axis: `XPA[k, 0]`. A consumer whose records are three flat arrays, one per
+axis -- FreeBreakfast's `pa_x pa_y pa_z`, as the one-electron kernels take
+them -- asks for that layout here, one array at a time and under names it
+chooses: `split_axes(k, {"XPA": ("pa_x", "pa_y", "pa_z")})`. The pass makes
+that one change and no other:
+
+- the `[n, 3]` parameter becomes three 1-D parameters of extent `n`, in its
+  place in the list, in axis order, with its type and intent;
+- each `XPA[i, d]` becomes `pa_{d}[i]`, the same subscript `i`.
+
+So the work per record is the same arithmetic on the same values, and the
+kernel writes the same bits: its test runs both in the interpreter on one
+input, laid out each way, and compares with `==`. It is a pass and not an
+emitter option because a backend spells a `Kernel` and never rewrites one
+(test_layering's `emit` rule); a consumer composes
+`gpu.emit(split_axes(k, axes), ...)`, and `emit_template` of the same kernel.
+#421 moved these kernels to per-axis arrays by building them so, inside one
+by-value `PrimPairSoA` struct, and #440 reverted that; here the builders and
+their interleaved default are untouched, there is no struct, and the arrays
+stay plain positional parameters.
+
+It REFUSES (raises) rather than guesses: a name that is not an array
+parameter of extents `(n, 3)`; an axis subscript that is not a literal 0, 1
+or 2; any other use of the array (a whole-array `Var`, as a fragment's array
+bind takes it, or a `Member` read); a new name already used in the kernel;
+and three names that are not distinct.
 """
 
 from __future__ import annotations
+
+import dataclasses
+from collections.abc import Mapping
 
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
     Call,
+    Decl,
     Fn,
     For,
+    Fragment,
     If,
     Index,
+    Inline,
     Kernel,
     Lit,
+    Member,
     Note,
+    Param,
     Stmt,
+    Var,
     walk,
 )
 
-__all__ = ["ATOMIC_NOTE", "LANE0", "atomize"]
+__all__ = ["ATOMIC_NOTE", "LANE0", "atomize", "split_axes"]
 
 LANE0 = Call(Fn.LT, (Call(Fn.THREAD_Y), Lit(1)))
 """The lane-0 guard `THREAD_Y < 1` the write-back sits under."""
@@ -128,3 +167,77 @@ def atomize(kernel: Kernel, *, array: str = "J") -> Kernel:
         return tuple(out)
 
     return Kernel(kernel.name, kernel.params, st(kernel.body))
+
+
+def _names(kernel: Kernel) -> set[str]:
+    """Every name the kernel binds: its params, its Decls, its fragments'."""
+    names = {p.name for p in kernel.params}
+    for s in walk(kernel.body):
+        if isinstance(s, Decl):
+            names.add(s.name)
+        elif isinstance(s, Inline):
+            names |= set(s.fragment.binds) | set(s.fragment.declared)
+    return names
+
+
+def split_axes(kernel: Kernel,
+               axes: Mapping[str, tuple[str, str, str]]) -> Kernel:
+    """Each `[n, 3]` array parameter in `axes` becomes three flat ones.
+
+    `axes` maps the array's name to its three new names, x, y, z; every
+    `array[i, d]` reads or writes `axes[array][d][i]` instead. Raises
+    `ValueError` as the module docstring says, before building anything.
+    """
+    if not isinstance(kernel, Kernel):
+        raise TypeError(f"split_axes takes a Kernel, not {type(kernel).__name__}")
+    if not isinstance(axes, Mapping) or not axes:
+        raise ValueError(f"split_axes takes a nonempty mapping, not {axes!r}")
+    params = {p.name: p for p in kernel.params}
+    taken = _names(kernel)
+    new: list[str] = []
+    for name, three in axes.items():
+        p = params.get(name)
+        if p is None or not p.array or len(p.shape) != 2 \
+                or p.shape[1] != Lit(3):
+            raise ValueError(f"kernel {kernel.name!r}: {name!r} is not an "
+                             "array parameter of extents (n, 3)")
+        if not isinstance(three, tuple) or len(three) != 3 \
+                or len(set(three)) != 3:
+            raise ValueError(f"{name!r} splits into three distinct names, "
+                             f"not {three!r}")
+        new.extend(three)
+    clash = sorted((set(new) & taken) | {n for n in new if new.count(n) > 1})
+    if clash:
+        raise ValueError(f"kernel {kernel.name!r} already uses {clash}")
+
+    def expr(e: object) -> object:
+        if isinstance(e, Member) and e.array in axes:
+            raise ValueError(f"{e.array!r} is read as a record, not by axis")
+        if isinstance(e, Var) and e.name in axes:
+            raise ValueError(f"{e.name!r} is used whole, not by axis")
+        if isinstance(e, Index) and e.array in axes:
+            if len(e.at) != 2 or not isinstance(e.at[1], Lit) \
+                    or e.at[1].type is not Lit(0).type \
+                    or e.at[1].value not in (0, 1, 2):
+                raise ValueError(f"{e.array!r}'s axis subscript {e.at!r} is "
+                                 "not a literal 0, 1 or 2")
+            return Index(axes[e.array][e.at[1].value], (expr(e.at[0]),))
+        if isinstance(e, Fragment):
+            # hygienic: it names host arrays only through its array binds,
+            # which are Vars in the Inline and refused above
+            return e
+        if isinstance(e, tuple):
+            return tuple(expr(x) for x in e)
+        if dataclasses.is_dataclass(e) and not isinstance(e, type):
+            return type(e)(**{f.name: expr(getattr(e, f.name))
+                              for f in dataclasses.fields(e)})
+        return e
+
+    out: list[Param] = []
+    for p in kernel.params:
+        if p.name in axes:
+            out.extend(Param(n, p.type, array=True, intent=p.intent,
+                             shape=(p.shape[0],)) for n in axes[p.name])
+        else:
+            out.append(p)
+    return Kernel(kernel.name, tuple(out), expr(kernel.body))
