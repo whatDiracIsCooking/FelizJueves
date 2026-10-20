@@ -223,6 +223,8 @@ UNITS = {
     "pq_L4": lambda: build_pq_kernel(4),
     "pq_L4_split": lambda: split_axes(build_pq_kernel(4), {
         "P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}),
+    "dq_12_ao": lambda: split_axes(build_dq_kernel((1, 2), density="ao"), {
+        "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
     "dq_11_split": lambda: split_axes(build_dq_kernel((1, 1)), {
         "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
     "s_11": lambda: build_s_kernel((1, 1)),

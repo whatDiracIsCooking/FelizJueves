@@ -1947,6 +1947,18 @@ output. It is not the AO density's largest element and cannot be computed
 from it. Lanes may map one thread per record; the mapping is not part of the
 numerical contract.
 
+**The AO-density variant** (opt-in, `build_dq_kernel(cls, density="ao")`,
+unit `dq_{lc}_{ld}_ao`). It reads `D_cd` where the density already is,
+`Dao[off_c[k] + i, off_d[k] + j]` for row `r = (i, j)`, with the record's own
+shell offsets. This is the addressing `JAB` uses to write `J`. `pair`, `Dcd`
+and `n_pair` give way to `off_c`, `off_d`, `Dao[n_ao, n_ao]` and `n_ao`.
+The values and their order are the gather's, so the two variants are `==`,
+interpreted, for every class (ss)–(ff) on HF/cc-pVTZ (`test_kernel_dq.py`).
+A consumer whose density is on the device needs no gather kernel and no `Dcd`
+buffer. A pair stored swapped (`c` the shell of momentum `lc`, whatever its
+index) reads its own orientation of the symmetric `D`, with no transposed
+copy. `w` is still the host's. Not measured, and not run on a card.
+
 **Equality.** In the operation order above, an interpreted kernel is `==` to
 `ao.j.dq_from_host`. That reference also skips `D_cd = 0` terms, which changes
 no bit, because adding `±0` to an accumulator that started at `+0.0` is the

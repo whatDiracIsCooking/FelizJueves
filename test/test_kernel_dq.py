@@ -60,6 +60,7 @@ from felizjueves.ir import (
     Inline,
     Lit,
     Raw,
+    Var,
     WarpReduce,
     _exprs_of,
     _subexprs,
@@ -317,3 +318,102 @@ def test_the_pq_goldens_are_untouched() -> None:
 # That every recorded `source_sha256` row of data/measured/kernels.json still
 # hashes today's text is a check of the measured store, not of this kernel:
 # measure/measure_kernel_dq.py (`devtools/measure.sh check`).
+
+
+# ---------------------------------------------------------------------------
+# density="ao": the AO density read in place, the same bits as the gather
+# ---------------------------------------------------------------------------
+
+
+def _records(pairs, off) -> dict:
+    """Per-record arrays of every (c, d, w, ket) in `pairs`, both variants'
+    addressing: `pair` (the item index) and `off_c` / `off_d`."""
+    a: dict[str, list] = {n: [] for n in (
+        "eta", "XPA", "XPB", "s", "w", "pair", "off_c", "off_d")}
+    for i, (c, d, w, ket) in enumerate(pairs):
+        for P, zeta, sk in ket.recs:
+            a["eta"].append(zeta)
+            a["XPA"].append([P[x] - ket.A[x] for x in range(3)])
+            a["XPB"].append([P[x] - ket.B[x] for x in range(3)])
+            a["s"].append(sk)
+            a["w"].append(w)
+            a["pair"].append(i)
+            a["off_c"].append(off[c])
+            a["off_d"].append(off[d])
+    ints = ("pair", "off_c", "off_d")
+    return {n: np.array(v, dtype=np.int32 if n in ints else np.float64)
+            for n, v in a.items()}
+
+
+def _both(cls, pairs, dcds, density_ao) -> tuple[dict, dict]:
+    """`D`, `Dmax` from the gathered kernel and from the AO-density one."""
+    lc, ld = cls
+    _, basis = _fixture("hf_ccpvtz")
+    a = _records(pairs, basis.offsets)
+    n_rec, n_q = len(a["eta"]), dq_shape(lc, ld)[1]
+    common = dict(n_rec=n_rec, eta=a["eta"], XPA=a["XPA"], XPB=a["XPB"],
+                  s=a["s"], w=a["w"])
+    launch = Launch(*kernel_dq.launch_shape(n_rec, 32), 32)
+
+    def out() -> dict:
+        return dict(D=np.zeros((n_rec, n_q)), Dmax=np.zeros(n_rec))
+
+    gathered = interpret(build_dq_kernel(cls), launch=launch, **common,
+                         n_pair=len(pairs), pair=a["pair"],
+                         Dcd=np.array(dcds, dtype=np.float64), **out())
+    ao = interpret(build_dq_kernel(cls, density="ao"), launch=launch,
+                   **common, n_ao=density_ao.shape[0], off_c=a["off_c"],
+                   off_d=a["off_d"], Dao=density_ao, **out())
+    return gathered, ao
+
+
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_ao_density_is_the_gather_bitwise(cls) -> None:
+    """Every ket shell pair of the class, one launch each way, against each
+    other and against `dq_from_host`, `==`."""
+    fx, _ = _fixture("hf_ccpvtz")
+    items = _by_class("hf_ccpvtz")[cls]
+    dense = np.array(fx.density, dtype=np.float64)
+    gathered, ao = _both(cls, [(c, d, w, ket) for c, d, w, ket, _ in items],
+                         [dcd for *_, dcd in items], dense)
+    want = [row for _, _, w, ket, dcd in items
+            for row in dq_from_host(ket, dcd, w)]
+    assert ao["D"].tolist() == gathered["D"].tolist() == [list(r) for r in want]
+    assert ao["Dmax"].tolist() == gathered["Dmax"].tolist()
+
+
+def test_a_pair_stored_swapped_reads_its_own_orientation() -> None:
+    """A (d, c) record of an (s|p) pair stored as (p, s)'s mirror -- a
+    consumer that keeps every class la <= lb (FreeBreakfast's mmd) stores
+    (p|s) so -- reads D[off_d + i][off_c + j] with no transposed copy: the
+    AO kernel equals the host on the transposed gather, `==`."""
+    fx, basis = _fixture("hf_ccpvtz")
+    dense = np.array(fx.density, dtype=np.float64)
+    off = basis.offsets
+    swapped = []
+    for c, d, w, _, _ in _by_class("hf_ccpvtz")[(1, 0)]:
+        sd, sc = basis.shells[d], basis.shells[c]
+        dcd_t = [float(dense[off[d] + i][off[c] + j])
+                 for i in range(sd.n_cart) for j in range(sc.n_cart)]
+        swapped.append((d, c, w, epair(sd, sc), dcd_t))
+    assert swapped and all(ket.la == 0 and ket.lb == 1
+                           for _, _, _, ket, _ in swapped)
+    gathered, ao = _both((0, 1), [(d, c, w, ket) for d, c, w, ket, _ in swapped],
+                         [dcd for *_, dcd in swapped], dense)
+    want = [row for _, _, w, ket, dcd in swapped
+            for row in dq_from_host(ket, dcd, w)]
+    assert ao["D"].tolist() == gathered["D"].tolist() == [list(r) for r in want]
+
+
+def test_the_ao_variant_is_its_own_parameter_block() -> None:
+    k = build_dq_kernel((2, 1), density="ao")
+    assert k.name == "dq_2_1_ao" == kernel_dq.dq_name((2, 1), density="ao")
+    assert tuple(p.name for p in k.params) == kernel_dq.AO_PARAMS
+    shape = {p.name: p.shape for p in k.params}
+    assert shape["Dao"] == (Var("n_ao"), Var("n_ao"))
+    assert "Dcd" not in shape and "pair" not in shape
+    # the default is untouched, and named as before
+    assert build_dq_kernel((2, 1), density="pairs") == build_dq_kernel((2, 1))
+    assert build_dq_kernel((2, 1)).name == "dq_2_1"
+    with pytest.raises(ValueError, match="density is one of"):
+        build_dq_kernel((2, 1), density="dense")
