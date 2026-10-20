@@ -82,6 +82,21 @@ guard (`FJ_BOYS`; there is one spelling since #301), and a kernel with a
 record struct or a dynamically sized shared array is refused, both being
 per-unit declarations a second unit would repeat. The C spelling is unchanged and
 still means one unit per TU, or one namespace each.
+
+A FIXED BLOCK, chosen by the consumer and never by the kernel: with
+`block_dim=(x, y)`, a SHARED array whose extents are literals and the block's
+own dimensions (`BLOCK_DIM_X`, `BLOCK_DIM_Y`, and `+`/`*` of them) is sized
+at emit time and declared `__shared__ T name[n];`, flat, in place of the
+block's dynamic shared memory. The body is the same text, character for
+character -- it still indexes by `blockDim`, row-major -- so the unit is
+correct only when launched with exactly that block, which its declaration's
+comment names and `emit_template(..., block_dim=)` writes into the header
+as `{template}_block_dim`, for the launcher to read rather than restate. A
+kernel left with no dynamic shared array is no longer refused as a
+specialization: `[p|q]` (`Jsh`, `n_p x blockDim.y`) becomes one with
+`block_dim=(1, wavefront)`, its `launch_shape`. An extent of anything else
+(a parameter, say) stays dynamic. A kernel with no launch-time extent
+ignores the option, so its text does not move.
 """
 
 from __future__ import annotations
@@ -97,10 +112,11 @@ from felizjueves.emit._c import (
     RESERVED,
     CWriter,
     EmitError,
+    _Array,
     _records,
     precision,
 )
-from felizjueves.ir import Call, Expr, Fn, Kernel, _ident
+from felizjueves.ir import Call, Decl, Expr, Fn, Kernel, Lit, Space, _ident
 
 __all__ = ["HEADER", "Specialization", "emit", "emit_template"]
 
@@ -122,6 +138,35 @@ def _geometry_only(e: Expr) -> bool:
     if e.fn in _GEOMETRY:
         return True
     return e.fn in (Fn.ADD, Fn.MUL) and all(_geometry_only(a) for a in e.args)
+
+
+def _block_extent(e: Expr, block_dim: tuple[int, int]) -> int | None:
+    """`e`'s value under a fixed block, or None when it is not literals and
+    the block's dimensions under `+`/`*`."""
+    if isinstance(e, Lit):
+        return e.value if type(e.value) is int else None
+    if not isinstance(e, Call):
+        return None
+    if e.fn is Fn.BLOCK_DIM_X:
+        return block_dim[0]
+    if e.fn is Fn.BLOCK_DIM_Y:
+        return block_dim[1]
+    if e.fn not in (Fn.ADD, Fn.MUL):
+        return None
+    a, b = (_block_extent(x, block_dim) for x in e.args)
+    if a is None or b is None:
+        return None
+    return a + b if e.fn is Fn.ADD else a * b
+
+
+def _block_dim(block_dim: object) -> tuple[int, int] | None:
+    if block_dim is None:
+        return None
+    if (not isinstance(block_dim, tuple) or len(block_dim) != 2
+            or any(type(d) is not int or d < 1 for d in block_dim)):
+        raise ValueError(f"block_dim is (x, y), two positive ints, "
+                         f"not {block_dim!r}")
+    return block_dim
 
 
 def _geometry(e: Call) -> str:
@@ -202,13 +247,15 @@ class GpuWriter(CWriter):
     INT = "int32_t"  # fixed width; <stdint.h> comes in through HEADER
 
     def __init__(self, arch: Arch,
-                 specialization: Specialization | None = None) -> None:
+                 specialization: Specialization | None = None, *,
+                 block_dim: tuple[int, int] | None = None) -> None:
         super().__init__(arch)
         if specialization is not None and not isinstance(specialization,
                                                          Specialization):
             raise TypeError(f"specialization is a gpu.Specialization, "
                             f"not {specialization!r}")
         self.specialization = specialization
+        self.block_dim = _block_dim(block_dim)
         self._width_used = False
 
     def kernel(self, k: Kernel) -> str:
@@ -242,6 +289,25 @@ class GpuWriter(CWriter):
             )
         return head
 
+    def decl(self, s: Decl, depth: int) -> None:
+        if (self.block_dim is None or s.space is not Space.SHARED
+                or not s.shape or all(isinstance(d, Lit) for d in s.shape)):
+            return super().decl(s, depth)
+        extents = [_block_extent(d, self.block_dim) for d in s.shape]
+        if None in extents:
+            return super().decl(s, depth)
+        n = 1
+        for e in extents:
+            n *= e
+        t = self.ctype(s.type)
+        x, y = self.block_dim
+        dims = " x ".join(self.expr(d) for d in s.shape)
+        self._bind(s.name, _Array(s.shape, True), s.type)
+        self._emit(depth, f"// {s.name}: fixed shared memory, row-major, "
+                          f"{dims} {t}s, sized for blockDim = ({x}, {y}): "
+                          "launch with exactly that block")
+        self._emit(depth, f"__shared__ {t} {s.name}[{n}];")
+
     def signature(self, k: Kernel, sig: str) -> str:
         spec = self.specialization
         if spec is None:
@@ -270,6 +336,11 @@ class GpuWriter(CWriter):
         extents = [max(r.args[i] for r in rows) + 1 for i in range(len(spec.args))]
         cells = {r.args: f"&{r}" for r in rows}
         dims = "".join(f"[{n}]" for n in extents)
+        block = "" if self.block_dim is None else (
+            "// the block every unit's fixed shared memory was sized for: "
+            "launch with it.\n"
+            f"inline constexpr uint32_t {name}_block_dim[2] = "
+            f"{{{self.block_dim[0]}, {self.block_dim[1]}}};\n\n")
         return (
             f"// {name}: generated by felizjueves.emit.gpu -- do not edit.\n"
             f"// the kernel template every {name}<...> unit specializes, one\n"
@@ -283,6 +354,7 @@ class GpuWriter(CWriter):
             f"__global__ void {name}(\n{sig});\n"
             "\n"
             f"{declared}"
+            f"{block}"
             f"// indexed by the class's args; nullptr where no class was emitted.\n"
             f"inline constexpr decltype({cells[rows[0].args]}) {name}_kernels{dims} = "
             f"{_table(extents, (), cells, '')};\n"
@@ -328,22 +400,28 @@ class GpuWriter(CWriter):
 
 
 def emit(kernel: Kernel, arch: Arch,
-         specialization: Specialization | None = None) -> str:
-    """Render a Kernel as vendor-neutral GPU C++. No decisions."""
-    return GpuWriter(arch, specialization).kernel(kernel)
+         specialization: Specialization | None = None, *,
+         block_dim: tuple[int, int] | None = None) -> str:
+    """Render a Kernel as vendor-neutral GPU C++. No decisions: `block_dim`
+    (x, y) is the consumer's, and fixes the shared arrays the block sizes
+    (the module docstring, "A fixed block")."""
+    return GpuWriter(arch, specialization, block_dim=block_dim).kernel(kernel)
 
 
 def emit_template(kernel: Kernel, arch: Arch, specialization: Specialization,
-                  classes: Sequence[tuple[int, ...]]) -> str:
+                  classes: Sequence[tuple[int, ...]], *,
+                  block_dim: tuple[int, int] | None = None) -> str:
     """`specialization.header`'s text: the template's primary, one
     specialization declared per class, and the dispatch table over them.
 
     The parameters are `kernel`'s, as any of the template's units spells them;
     a unit whose parameters differ no longer specializes it. `classes` are
     the `args` of every unit the consumer emitted, in emission order, each as
-    many as `specialization`'s and none twice.
+    many as `specialization`'s and none twice. `block_dim`, the one the
+    units were emitted with, is written as `{template}_block_dim`.
     """
     if not isinstance(specialization, Specialization):
         raise TypeError(f"specialization is a gpu.Specialization, "
                         f"not {specialization!r}")
-    return GpuWriter(arch, specialization).primary(kernel, classes)
+    return GpuWriter(arch, specialization,
+                     block_dim=block_dim).primary(kernel, classes)

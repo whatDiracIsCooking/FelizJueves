@@ -20,7 +20,10 @@ THE GOLDEN FILES are `test/golden/gpu/pq_L4_p2_q2.cu` (a warp reduction: the
 width assert) and `s_11.cu` (no shuffle: none), and `s_11.specialized.cu`
 and `s.h`, the same kernel as `gpu.Specialization("s", (1, 1))` and the
 header that unit includes, over the classes (0, 0), (0, 1) and (1, 1)
-(`emit(k, SM_86, spec)` and `emit_template(k, SM_86, spec, classes)`).
+(`emit(k, SM_86, spec)` and `emit_template(k, SM_86, spec, classes)`), and
+`pq_22.specialized.cu` and `pq.h`, `build_pq_kernel(4)` as
+`gpu.Specialization("pq", (2, 2))` under a fixed block, `block_dim = (1, 32)`,
+over every `(lp, lq)` with both at most 2.
 Regenerate after an intended
 change (never hand-edit) and review the diff:
 
@@ -56,6 +59,7 @@ from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
+from felizjueves.spec import Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parent.parent
 GOLDEN = REPO / "test" / "golden" / "gpu"
@@ -378,6 +382,71 @@ def test_a_specialization_refuses_what_its_siblings_would_repeat() -> None:
     gpu.emit(rec, SM_86)  # the C spelling still takes it
 
 
+# --- a fixed block (block_dim): pq's shared array sized at emit time ---------
+
+PQ22 = gpu.Specialization("pq", (2, 2))
+PQ_CLASSES = [(lp, lq) for lp in range(3) for lq in range(3)]
+PQ_BLOCK = (1, SM_86.wavefront)  # kernel.launch_shape's block
+
+
+def _pq(lp: int, lq: int):
+    """The [p|q] kernel of Hermite class (lp, lq), one batch."""
+    am = ((lp + 1) // 2, lp // 2, (lq + 1) // 2, lq // 2)
+    return build_pq_kernel(Spec(Operator.COULOMB, 0, am, Target.J))
+
+
+def test_the_fixed_block_goldens_are_unchanged() -> None:
+    k = build_pq_kernel(4)
+    assert gpu.emit(k, SM_86, PQ22, block_dim=PQ_BLOCK) == (
+        GOLDEN / "pq_22.specialized.cu").read_text()
+    assert gpu.emit_template(k, SM_86, PQ22, PQ_CLASSES, block_dim=PQ_BLOCK) == (
+        GOLDEN / "pq.h").read_text()
+
+
+def test_a_fixed_block_moves_only_the_shared_declaration() -> None:
+    k = build_pq_kernel(4)  # Jsh: 10 x blockDim.y
+    dynamic = gpu.emit(k, SM_86).splitlines()
+    fixed = gpu.emit(k, SM_86, block_dim=PQ_BLOCK).splitlines()
+    i = dynamic.index("    extern __shared__ double Jsh[];")
+    assert fixed[i] == "    __shared__ double Jsh[320];"
+    assert "sized for blockDim = (1, 32)" in fixed[i - 1]
+    # the body still indexes by blockDim.y, character for character
+    assert dynamic[:i - 1] == fixed[:i - 1]
+    assert dynamic[i + 1:] == fixed[i + 1:]
+
+
+def test_a_fixed_block_makes_pq_a_specialization() -> None:
+    k = build_pq_kernel(4)
+    with pytest.raises(EmitError, match="dynamic shared array"):
+        gpu.emit(k, SM_86, PQ22)
+    text = gpu.emit(k, SM_86, PQ22, block_dim=PQ_BLOCK)
+    assert "template <>\n__global__ void pq<2, 2>(" in text
+    assert "extern __shared__" not in text
+    # fj_boys guarded and static, as in every specialization
+    assert "#ifndef FJ_BOYS" in text and "static __device__" in text
+
+
+def test_the_header_names_the_block_the_units_were_sized_for() -> None:
+    k = build_pq_kernel(4)
+    fixed = gpu.emit_template(k, SM_86, PQ22, PQ_CLASSES, block_dim=PQ_BLOCK)
+    assert "inline constexpr uint32_t pq_block_dim[2] = {1, 32};" in fixed
+    assert "block_dim" not in gpu.emit_template(k, SM_86, PQ22, PQ_CLASSES)
+
+
+def test_a_kernel_with_no_launch_time_extent_ignores_the_block() -> None:
+    for k in (build_s_kernel((1, 1)), build_v_kernel((1, 1))):
+        assert gpu.emit(k, SM_86, block_dim=PQ_BLOCK) == gpu.emit(k, SM_86)
+    k = build_s_kernel((1, 1))
+    assert gpu.emit(k, SM_86, S11, block_dim=PQ_BLOCK) == gpu.emit(k, SM_86, S11)
+
+
+@pytest.mark.parametrize("block_dim", [(32,), (1, 32, 1), (0, 32), (1, 32.0),
+                                       [1, 32], (1, True)])
+def test_a_block_is_refused_when_it_is_not_two_positive_ints(block_dim) -> None:
+    with pytest.raises(ValueError, match="two positive ints"):
+        gpu.emit(build_pq_kernel(4), SM_86, block_dim=block_dim)
+
+
 @pytest.mark.parametrize(("template", "args", "match"), [
     ("s<1>", (1,), "not an identifier"),
     ("fj_s", (1,), "prefix"),
@@ -503,6 +572,38 @@ def test_a_unit_whose_parameters_drifted_fails_to_compile(
                              "template|does not match|"
                              "not an entity that can be explicitly specialized"):
         compile_device_source(tc, text, link=False)
+
+
+PQ_LAUNCHER = """\
+#include "pq.h"
+
+int main(int argc, char**) {
+    const int i = argc % 3, j = (argc / 3) % 3;
+    volatile auto pq = pq_kernels[i][j];
+    return pq == nullptr || pq_block_dim[1] != 32;
+}
+"""
+
+
+@pytest.mark.parametrize("tool", TOOLCHAINS)
+def test_every_pq_class_links_as_its_own_unit_under_a_fixed_block(
+        request, tmp_path, tool: str) -> None:
+    tc = request.getfixturevalue(tool)
+    (tmp_path / PQ22.header).write_text(gpu.emit_template(
+        build_pq_kernel(4), SM_86, PQ22, PQ_CLASSES, block_dim=PQ_BLOCK))
+    units = {f"pq_{lp}{lq}.{tc.ext}": gpu.emit(
+                 _pq(lp, lq), SM_86, gpu.Specialization("pq", (lp, lq)),
+                 block_dim=PQ_BLOCK)
+             for lp, lq in PQ_CLASSES}
+    for name, text in {**units, f"main.{tc.ext}": PQ_LAUNCHER}.items():
+        (tmp_path / name).write_text(text)
+    flags = [*tc.compile_flags(), f"-I{INCLUDE}", f"-I{tmp_path}"]
+    if tc.name == "nvcc":
+        flags.append("-rdc=true")
+    done = subprocess.run(
+        [tc.path, *flags, *units, f"main.{tc.ext}", "-o", "probe"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stderr
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
