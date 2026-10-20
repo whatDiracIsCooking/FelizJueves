@@ -2165,6 +2165,70 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
         assert not hit, f"kernel_metric reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The three-center kernel (mn|P) (#444): the builder (`kernel_eri3`, the
+# metric builder's rule restated: the plan layer's DAG for the J quartet
+# (la lb|lP 0), the recurrence statements, `block_fragment` and
+# `center_fragment` inlined) and its interpreted adapter (`ao.eri3_drive`,
+# the `ao/metric_drive.py` pattern, Boys injected). No emission yet (#445),
+# so no driver edge.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "eri3_builder": _rule(
+        "kernel_eri3.py: the three-center DF integral kernel, `Target.ERI3` "
+        "-- key -> IR, with the plan layer's DAG and schedule for the J "
+        "quartet (la lb|lP 0) (`plan`), the J engine's prelude and "
+        "recurrence statements (`recurrence`), the bra `E` block and the "
+        "single-center `E` fragment inlined (`e_fragment`) and `kernel_jab`'s "
+        "scatter rule restated",
+        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ao="`ao.eri3` is the witness the kernel is interpreted against: "
+           "importing it shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+    "eri3_adapter": _rule(
+        "ao/eri3_drive.py (#444): the three-center kernel run in the "
+        "interpreter over `ao.eri3`'s staging -- builder + interp + ao, "
+        "producing numbers, as `ao/metric_drive.py` does for the metric",
+        ("spec", "ir", "interp", "ao", "kernel_eri3"),
+        reference="the kernel's numbers are compared against reference/; "
+                  "Boys arrives by injection (`boys=`), so the adapter "
+                  "shares no ancestry with its witness (#20)",
+        emit="it produces numbers, not text: a backend's spelling is the "
+             "kernel tier's to check, not this adapter's",
+        plan="the builder asks the plan; the adapter only runs what it built",
+        kernel="the J builder is another kernel's; ERI3 has its own"),
+}
+RULE_OF |= {
+    "kernel_eri3": "eri3_builder",
+    "ao.eri3_drive": "eri3_adapter",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_eri3": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
+                    "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "ao.eri3_drive": ("ao.eri3", "ao.shell", "interp", "ir", "kernel_eri3"),
+}.items()}
+
+
+def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_eri3"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_eri3 reaches {hit}"
+
+
 # The generator CLI writes the metric ladder (`--metric-l`, #415), so the
 # driver composes the builder.
 RULES["driver"] = Rule(RULES["driver"].why + ", and the DF metric ladder "
