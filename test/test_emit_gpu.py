@@ -55,10 +55,12 @@ from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, gpu
 from felizjueves.emit._c import EmitError
 from felizjueves.kernel import build_pq_kernel
+from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
+from felizjueves.passes import split_axes
 from felizjueves.spec import Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parent.parent
@@ -216,6 +218,10 @@ TOOLCHAINS = [pytest.param("nvcc", marks=pytest.mark.cuda),
 UNITS = {
     "pq_L0": lambda: build_pq_kernel(0),
     "pq_L4": lambda: build_pq_kernel(4),
+    "pq_L4_split": lambda: split_axes(build_pq_kernel(4), {
+        "P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}),
+    "dq_11_split": lambda: split_axes(build_dq_kernel((1, 1)), {
+        "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
     "s_11": lambda: build_s_kernel((1, 1)),
     "v_11": lambda: build_v_kernel((1, 1)),
     "bcast": _bcast,
@@ -585,14 +591,25 @@ int main(int argc, char**) {
 """
 
 
+PQ_AXES = {"P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["interleaved", "split"])
 @pytest.mark.parametrize("tool", TOOLCHAINS)
 def test_every_pq_class_links_as_its_own_unit_under_a_fixed_block(
-        request, tmp_path, tool: str) -> None:
+        request, tmp_path, tool: str, split: bool) -> None:
+    # split: passes.split_axes before both emitters, as a per-axis consumer
+    # composes them; the header and every unit then agree on p_x ... q_z
     tc = request.getfixturevalue(tool)
+
+    def pq(lp: int, lq: int):
+        k = _pq(lp, lq)
+        return split_axes(k, PQ_AXES) if split else k
+
     (tmp_path / PQ22.header).write_text(gpu.emit_template(
-        build_pq_kernel(4), SM_86, PQ22, PQ_CLASSES, block_dim=PQ_BLOCK))
+        pq(2, 2), SM_86, PQ22, PQ_CLASSES, block_dim=PQ_BLOCK))
     units = {f"pq_{lp}{lq}.{tc.ext}": gpu.emit(
-                 _pq(lp, lq), SM_86, gpu.Specialization("pq", (lp, lq)),
+                 pq(lp, lq), SM_86, gpu.Specialization("pq", (lp, lq)),
                  block_dim=PQ_BLOCK)
              for lp, lq in PQ_CLASSES}
     for name, text in {**units, f"main.{tc.ext}": PQ_LAUNCHER}.items():
