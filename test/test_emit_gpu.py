@@ -23,7 +23,9 @@ header that unit includes, over the classes (0, 0), (0, 1) and (1, 1)
 (`emit(k, SM_86, spec)` and `emit_template(k, SM_86, spec, classes)`), and
 `pq_22.specialized.cu` and `pq.h`, `build_pq_kernel(4)` as
 `gpu.Specialization("pq", (2, 2))` under a fixed block, `block_dim = (1, 32)`,
-over every `(lp, lq)` with both at most 2.
+over every `(lp, lq)` with both at most 2; and `pq_22.any_wavefront.cu` and
+`pq.any_wavefront.h`, the same pair emitted `any_wavefront=True` with
+`block_dim = (1, gpu.WAVEFRONT)`: one text for both widths.
 Regenerate after an intended
 change (never hand-edit) and review the diff:
 
@@ -42,6 +44,7 @@ needs no card, so these prove nothing about a number.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import subprocess
 from pathlib import Path
@@ -447,7 +450,7 @@ def test_a_kernel_with_no_launch_time_extent_ignores_the_block() -> None:
 
 
 @pytest.mark.parametrize("block_dim", [(32,), (1, 32, 1), (0, 32), (1, 32.0),
-                                       [1, 32], (1, True)])
+                                       [1, 32], (1, True), (1, "FJ_WAVEFRONT")])
 def test_a_block_is_refused_when_it_is_not_two_positive_ints(block_dim) -> None:
     with pytest.raises(ValueError, match="two positive ints"):
         gpu.emit(build_pq_kernel(4), SM_86, block_dim=block_dim)
@@ -580,13 +583,97 @@ def test_a_unit_whose_parameters_drifted_fails_to_compile(
         compile_device_source(tc, text, link=False)
 
 
+# --- any_wavefront: one text, the width chosen by -DFJ_WAVEFRONT -------------
+
+ANY = (1, gpu.WAVEFRONT)
+
+
+def test_the_any_wavefront_goldens_are_unchanged() -> None:
+    k = build_pq_kernel(4)
+    assert gpu.emit(k, SM_86, PQ22, block_dim=ANY, any_wavefront=True) == (
+        GOLDEN / "pq_22.any_wavefront.cu").read_text()
+    assert gpu.emit_template(k, SM_86, PQ22, PQ_CLASSES, block_dim=ANY,
+                             any_wavefront=True) == (
+        GOLDEN / "pq.any_wavefront.h").read_text()
+
+
+def test_wavefront_in_a_block_is_the_archs_width_by_default() -> None:
+    k = build_pq_kernel(4)
+    assert gpu.emit(k, SM_86, PQ22, block_dim=ANY) == gpu.emit(
+        k, SM_86, PQ22, block_dim=PQ_BLOCK)
+    assert "Jsh[640]" in gpu.emit(k, WAVE64, block_dim=ANY)
+
+
+def test_any_wavefront_is_one_text_for_every_arch() -> None:
+    k = build_pq_kernel(4)
+    texts = {gpu.emit(k, a, PQ22, block_dim=ANY, any_wavefront=True)
+             for a in (SM_86, GFX1200, WAVE64)}
+    assert len(texts) == 1
+    (text,) = texts
+    assert "static_assert" not in text and "0xffffffff" not in text
+    assert ", 32)" not in text and "= 16;" not in text
+
+
+def test_any_wavefront_moves_only_the_width() -> None:
+    """Read back at width 32, the text is the fixed unit's, less its assert
+    and with the banner naming the width as chosen at compile time."""
+    k = build_pq_kernel(4)
+    fixed = gpu.emit(k, SM_86, PQ22, block_dim=PQ_BLOCK).splitlines()
+    anyw = gpu.emit(k, SM_86, PQ22, block_dim=ANY,
+                    any_wavefront=True).splitlines()
+    assert anyw[1] == fixed[1].replace(
+        "wavefront 32", "wavefront FJ_WAVEFRONT, chosen at compile time")
+    assert [ln for ln in fixed if ln.startswith("static_assert")] == [
+        'static_assert(FJ_WAVEFRONT == 32, "pq_L4_p2_q2 was emitted for a '
+        '32-lane wavefront");']
+    fixed = [ln for ln in fixed[2:] if not ln.startswith("static_assert")]
+    read = [ln.replace("FJ_WAVEFRONT / 2", "16")
+              .replace("FJ_FULL_LANE_MASK", GPU_MASK)
+              .replace("10 * FJ_WAVEFRONT", "320")
+              .replace("FJ_WAVEFRONT", "32") for ln in anyw[2:]]
+    assert read == fixed
+
+
+@pytest.mark.parametrize("build", [lambda: build_s_kernel((1, 1)),
+                                   lambda: build_v_kernel((1, 1)),
+                                   lambda: build_dq_kernel((1, 1))],
+                         ids=["s", "v", "dq"])
+def test_a_unit_with_no_width_is_one_text_either_way(build) -> None:
+    k = build()
+    assert gpu.emit(k, SM_86, any_wavefront=True) == gpu.emit(k, SM_86)
+
+
+def test_any_wavefront_is_a_bool() -> None:
+    with pytest.raises(TypeError, match="any_wavefront is a bool"):
+        gpu.emit(build_pq_kernel(4), SM_86, any_wavefront=1)  # type: ignore[arg-type]
+
+
+WIDTHS = [pytest.param("nvcc", None, 32, marks=pytest.mark.cuda, id="nvcc-32"),
+          pytest.param("hipcc", None, 32, marks=pytest.mark.hip, id="gfx1200-32"),
+          pytest.param("hipcc", "gfx942", 64, marks=pytest.mark.hip,
+                       id="gfx942-64")]
+
+
+@pytest.mark.parametrize(("tool", "arch", "width"), WIDTHS)
+def test_one_any_wavefront_text_compiles_at_either_width(
+        request, compile_device_source, tool, arch, width) -> None:
+    # The define stands in for the build's -DFJ_WAVEFRONT; gfx942 is CDNA 3,
+    # wave64. Compile only: no wave64 card here.
+    tc = request.getfixturevalue(tool)
+    if arch is not None:
+        tc = dataclasses.replace(tc, arch=arch)
+    text = gpu.emit(build_pq_kernel(4), SM_86, any_wavefront=True)
+    compile_device_source(tc, f"#define FJ_WAVEFRONT {width}\n" + text,
+                          link=False)
+
+
 PQ_LAUNCHER = """\
 #include "pq.h"
 
 int main(int argc, char**) {
     const int i = argc % 3, j = (argc / 3) % 3;
     volatile auto pq = pq_kernels[i][j];
-    return pq == nullptr || pq_block_dim[1] != 32;
+    return pq == nullptr || pq_block_dim[1] != FJ_WAVEFRONT;
 }
 """
 
@@ -594,10 +681,12 @@ int main(int argc, char**) {
 PQ_AXES = {"P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}
 
 
+@pytest.mark.parametrize("any_wavefront", [False, True],
+                         ids=["fixed-width", "any-width"])
 @pytest.mark.parametrize("split", [False, True], ids=["interleaved", "split"])
 @pytest.mark.parametrize("tool", TOOLCHAINS)
 def test_every_pq_class_links_as_its_own_unit_under_a_fixed_block(
-        request, tmp_path, tool: str, split: bool) -> None:
+        request, tmp_path, tool: str, split: bool, any_wavefront: bool) -> None:
     # split: passes.split_axes before both emitters, as a per-axis consumer
     # composes them; the header and every unit then agree on p_x ... q_z
     tc = request.getfixturevalue(tool)
@@ -607,10 +696,11 @@ def test_every_pq_class_links_as_its_own_unit_under_a_fixed_block(
         return split_axes(k, PQ_AXES) if split else k
 
     (tmp_path / PQ22.header).write_text(gpu.emit_template(
-        pq(2, 2), SM_86, PQ22, PQ_CLASSES, block_dim=PQ_BLOCK))
+        pq(2, 2), SM_86, PQ22, PQ_CLASSES, block_dim=ANY,
+        any_wavefront=any_wavefront))
     units = {f"pq_{lp}{lq}.{tc.ext}": gpu.emit(
                  pq(lp, lq), SM_86, gpu.Specialization("pq", (lp, lq)),
-                 block_dim=PQ_BLOCK)
+                 block_dim=ANY, any_wavefront=any_wavefront)
              for lp, lq in PQ_CLASSES}
     for name, text in {**units, f"main.{tc.ext}": PQ_LAUNCHER}.items():
         (tmp_path / name).write_text(text)

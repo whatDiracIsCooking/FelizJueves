@@ -37,6 +37,27 @@ a spelling of what the kernel contains, not a decision about it.
 The `Arch` is taken for its wavefront only: any vendor's arch is accepted,
 and the text names no arch, so one emission serves every arch of that width.
 
+UNLESS THE CONSUMER ERASES IT: `any_wavefront=True` writes one text for
+both widths. The shuffle hooks then spell the width as the header's
+`FJ_WAVEFRONT` -- the reduction's first offset `FJ_WAVEFRONT / 2`, every
+shuffle's width `FJ_WAVEFRONT`, its mask `FJ_FULL_LANE_MASK` -- and the unit
+carries no `static_assert`: the build's `-DFJ_WAVEFRONT` (32, or 64 for
+CDNA) chooses the width at compile time, as WarpWraps's `WWR_WARP_SIZE`
+does for its own device code. A configure-time `-D` is the one spelling
+that is the same in both of HIP's compile passes: the vendors'
+(`__AMDGCN_WAVEFRONT_SIZE__`, which reads 64 in the host pass and 32 in an
+RDNA device pass and which clang 20 deprecates; `warpSize`, which is not
+a constant expression) are not. The price is the guarantee above: such a
+unit's text no longer fixes the width its machine code has, so a build that
+passes the wrong `-DFJ_WAVEFRONT` for its arch computes a wrong sum rather
+than failing to compile. That is why it is opt-in and the default text,
+every golden and every `source_sha256` pin are unchanged. `gpu.WAVEFRONT`
+stands for the width in a `block_dim` (`(1, gpu.WAVEFRONT)`, `[p|q]`'s
+`launch_shape`): under `any_wavefront` a block-sized shared array is
+`Jsh[10 * FJ_WAVEFRONT]` and the header's `{template}_block_dim` is
+`{1, FJ_WAVEFRONT}`; without it, `gpu.WAVEFRONT` is the arch's own width.
+A unit with no shuffle and no block-sized array is the same text either way.
+
 TWO SPELLINGS OF THE KERNEL'S NAME, chosen by the consumer and never by the
 kernel: the IR has no templates, and which spelling a tree links is not a fact
 about the kernel. By default a unit is `extern "C" __global__ void s_01(...)`,
@@ -118,10 +139,25 @@ from felizjueves.emit._c import (
 )
 from felizjueves.ir import Call, Decl, Expr, Fn, Kernel, Lit, Space, _ident
 
-__all__ = ["HEADER", "Specialization", "emit", "emit_template"]
+__all__ = ["HEADER", "WAVEFRONT", "Specialization", "emit", "emit_template"]
 
 # The one include every unit carries; resolved against FelizJueves's include/.
 HEADER = "felizjueves/runtime.h"
+
+# The header's spellings of the width and of a full mask (any_wavefront).
+_WIDTH = "FJ_WAVEFRONT"
+_FULL_MASK = "FJ_FULL_LANE_MASK"
+
+
+class _Wavefront:
+    """The lanes of a warp, as a `block_dim` entry: the arch's width, or
+    `FJ_WAVEFRONT` under `any_wavefront`."""
+
+    def __repr__(self) -> str:
+        return "gpu.WAVEFRONT"
+
+
+WAVEFRONT = _Wavefront()
 
 
 # The primary's parameters, by position: `La, Lb, ...`.
@@ -140,9 +176,23 @@ def _geometry_only(e: Expr) -> bool:
     return e.fn in (Fn.ADD, Fn.MUL) and all(_geometry_only(a) for a in e.args)
 
 
-def _block_extent(e: Expr, block_dim: tuple[int, int]) -> int | None:
-    """`e`'s value under a fixed block, or None when it is not literals and
-    the block's dimensions under `+`/`*`."""
+def _arith(fn: Fn, a: int | str, b: int | str) -> int | str:
+    """`a + b` or `a * b`: folded when both are ints, else spelled, a sum
+    parenthesised so a product of it reads right."""
+    if isinstance(a, int) and isinstance(b, int):
+        return a + b if fn is Fn.ADD else a * b
+    if fn is Fn.ADD:
+        return f"({a} + {b})"
+    if a == 1 or b == 1:
+        return b if a == 1 else a
+    return f"{a} * {b}"
+
+
+def _block_extent(e: Expr, block_dim: tuple[int | str, int | str]
+                  ) -> int | str | None:
+    """`e`'s value under a fixed block -- an int, or C text when the block
+    names `FJ_WAVEFRONT` -- or None when it is not literals and the block's
+    dimensions under `+`/`*`."""
     if isinstance(e, Lit):
         return e.value if type(e.value) is int else None
     if not isinstance(e, Call):
@@ -156,17 +206,21 @@ def _block_extent(e: Expr, block_dim: tuple[int, int]) -> int | None:
     a, b = (_block_extent(x, block_dim) for x in e.args)
     if a is None or b is None:
         return None
-    return a + b if e.fn is Fn.ADD else a * b
+    return _arith(e.fn, a, b)
 
 
-def _block_dim(block_dim: object) -> tuple[int, int] | None:
+def _block_dim(block_dim: object, width: int | str
+               ) -> tuple[int | str, int | str] | None:
+    """`block_dim` with `WAVEFRONT` resolved to `width`."""
     if block_dim is None:
         return None
     if (not isinstance(block_dim, tuple) or len(block_dim) != 2
-            or any(type(d) is not int or d < 1 for d in block_dim)):
-        raise ValueError(f"block_dim is (x, y), two positive ints, "
-                         f"not {block_dim!r}")
-    return block_dim
+            or any(d is not WAVEFRONT and (type(d) is not int or d < 1)
+                   for d in block_dim)):
+        raise ValueError(f"block_dim is (x, y), two positive ints or "
+                         f"gpu.WAVEFRONT, not {block_dim!r}")
+    x, y = (width if d is WAVEFRONT else d for d in block_dim)
+    return x, y
 
 
 def _geometry(e: Call) -> str:
@@ -248,14 +302,20 @@ class GpuWriter(CWriter):
 
     def __init__(self, arch: Arch,
                  specialization: Specialization | None = None, *,
-                 block_dim: tuple[int, int] | None = None) -> None:
+                 block_dim: tuple[int, int] | None = None,
+                 any_wavefront: bool = False) -> None:
         super().__init__(arch)
         if specialization is not None and not isinstance(specialization,
                                                          Specialization):
             raise TypeError(f"specialization is a gpu.Specialization, "
                             f"not {specialization!r}")
+        if type(any_wavefront) is not bool:
+            raise TypeError(f"any_wavefront is a bool, not {any_wavefront!r}")
         self.specialization = specialization
-        self.block_dim = _block_dim(block_dim)
+        self.any_wavefront = any_wavefront
+        # the width as the text spells it: the arch's, or the header's macro
+        self.width: int | str = _WIDTH if any_wavefront else arch.wavefront
+        self.block_dim = _block_dim(block_dim, self.width)
         self._width_used = False
 
     def kernel(self, k: Kernel) -> str:
@@ -271,8 +331,13 @@ class GpuWriter(CWriter):
         return text
 
     def prologue(self, k: Kernel) -> str:
-        w = self.arch.wavefront
-        width = f"wavefront {w}" if self._width_used else "any wavefront"
+        w = self.width
+        if not self._width_used:
+            width = "any wavefront"
+        elif self.any_wavefront:
+            width = f"wavefront {_WIDTH}, chosen at compile time"
+        else:
+            width = f"wavefront {w}"
         spec = self.specialization
         named = "" if spec is None else f"; specialization {spec}"
         head = (
@@ -282,7 +347,7 @@ class GpuWriter(CWriter):
         )
         if spec is not None:
             head += f'#include "{spec.header}"  // the primary\n'
-        if self._width_used:
+        if self._width_used and not self.any_wavefront:
             head += (
                 f"static_assert(FJ_WAVEFRONT == {w}, "
                 f'"{k.name} was emitted for a {w}-lane wavefront");\n'
@@ -296,9 +361,9 @@ class GpuWriter(CWriter):
         extents = [_block_extent(d, self.block_dim) for d in s.shape]
         if None in extents:
             return super().decl(s, depth)
-        n = 1
+        n: int | str = 1
         for e in extents:
-            n *= e
+            n = _arith(Fn.MUL, n, e)
         t = self.ctype(s.type)
         x, y = self.block_dim
         dims = " x ".join(self.expr(d) for d in s.shape)
@@ -380,14 +445,17 @@ class GpuWriter(CWriter):
 
     def _mask(self) -> str:
         self._width_used = True
+        if self.any_wavefront:
+            return _FULL_MASK
         return f"static_cast<FJ_LANE_MASK_T>(0x{(1 << self.arch.wavefront) - 1:x}ull)"
 
     def warp_reduce(self, dst: str, value: str) -> list[str]:
-        w, mask = self.arch.wavefront, self._mask()
+        w, mask = self.width, self._mask()
+        half = f"{w} / 2" if self.any_wavefront else w // 2
         return [
             "{",
             f"    auto fj_v = {value};",
-            f"    for ({self.INT} fj_o = {w // 2}; fj_o > 0; fj_o /= 2) {{",
+            f"    for ({self.INT} fj_o = {half}; fj_o > 0; fj_o /= 2) {{",
             f"        fj_v += __shfl_xor_sync({mask}, fj_v, fj_o, {w});",
             "    }",
             f"    {dst} = fj_v;",
@@ -395,33 +463,39 @@ class GpuWriter(CWriter):
         ]
 
     def lane_broadcast(self, dst: str, value: str, lane: str) -> str:
-        w, mask = self.arch.wavefront, self._mask()
+        w, mask = self.width, self._mask()
         return f"{dst} = __shfl_sync({mask}, {value}, {lane}, {w});"
 
 
 def emit(kernel: Kernel, arch: Arch,
          specialization: Specialization | None = None, *,
-         block_dim: tuple[int, int] | None = None) -> str:
+         block_dim: tuple[int, int] | None = None,
+         any_wavefront: bool = False) -> str:
     """Render a Kernel as vendor-neutral GPU C++. No decisions: `block_dim`
     (x, y) is the consumer's, and fixes the shared arrays the block sizes
-    (the module docstring, "A fixed block")."""
-    return GpuWriter(arch, specialization, block_dim=block_dim).kernel(kernel)
+    (the module docstring, "A fixed block"); `any_wavefront` spells the
+    width as `FJ_WAVEFRONT` instead of the arch's ("Unless the consumer
+    erases it")."""
+    return GpuWriter(arch, specialization, block_dim=block_dim,
+                     any_wavefront=any_wavefront).kernel(kernel)
 
 
 def emit_template(kernel: Kernel, arch: Arch, specialization: Specialization,
                   classes: Sequence[tuple[int, ...]], *,
-                  block_dim: tuple[int, int] | None = None) -> str:
+                  block_dim: tuple[int, int] | None = None,
+                  any_wavefront: bool = False) -> str:
     """`specialization.header`'s text: the template's primary, one
     specialization declared per class, and the dispatch table over them.
 
     The parameters are `kernel`'s, as any of the template's units spells them;
     a unit whose parameters differ no longer specializes it. `classes` are
     the `args` of every unit the consumer emitted, in emission order, each as
-    many as `specialization`'s and none twice. `block_dim`, the one the
-    units were emitted with, is written as `{template}_block_dim`.
+    many as `specialization`'s and none twice. `block_dim` and
+    `any_wavefront`, the ones the units were emitted with, write
+    `{template}_block_dim`.
     """
     if not isinstance(specialization, Specialization):
         raise TypeError(f"specialization is a gpu.Specialization, "
                         f"not {specialization!r}")
-    return GpuWriter(arch, specialization,
-                     block_dim=block_dim).primary(kernel, classes)
+    return GpuWriter(arch, specialization, block_dim=block_dim,
+                     any_wavefront=any_wavefront).primary(kernel, classes)
