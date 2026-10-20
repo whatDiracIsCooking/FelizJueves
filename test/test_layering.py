@@ -2170,8 +2170,8 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
 # metric builder's rule restated: the plan layer's DAG for the J quartet
 # (la lb|lP 0), the recurrence statements, `block_fragment` and
 # `center_fragment` inlined) and its interpreted adapter (`ao.eri3_drive`,
-# the `ao/metric_drive.py` pattern, Boys injected). No emission yet (#445),
-# so no driver edge.
+# the `ao/metric_drive.py` pattern, Boys injected). Its emission (#445)
+# adds the driver edge at the end of this file.
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -2287,3 +2287,12 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     for banned in (_REF, "ao", "interp", "emit", "device", "launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
+
+
+# The generator CLI writes the three-center ladder (`--eri3-l`, #445), so the
+# driver composes the builder, as it does the metric's.
+RULES["driver"] = Rule(RULES["driver"].why + ", and the three-center ladder "
+                       "through `kernel_eri3`",
+                       RULES["driver"].may | frozenset(("kernel_eri3",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_eri3",))

@@ -12,6 +12,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --schwarz-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --sx-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --metric-l 4
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --eri3-l 4
 
 ONE LADDER PER KERNEL FAMILY (#156), one translation unit per class, each
 emitted by the backend for the arch to `<out>/<kernel name>.<ext>` (`.cu`
@@ -59,6 +60,18 @@ for CUDA, `.hip` for HIP):
   is arbitrary-L -- but correctness is tested at L <= 4 only (milestone 15).
   It ADDS units beside the J ladders, as `--one-e-l` does, and is NEVER in
   the no-flag default nor in KERNEL_GEN_CMD.
+
+- the three-center ladder, `--eri3-l [LMAX]` (#445): for every class
+  `(la, lb, lP)`, `la <= lb`, `la + lb + lP <= LMAX` (4 when the flag is
+  given bare: 22 classes, (ss|s) through (dd|s)),
+  `kernel_eri3.build_eri3_kernel` (`eri3_{la}{lb}{lP}`, `Target.ERI3`):
+  `(mn|P)` of an AO pair and one auxiliary shell, the quartet
+  `(la lb|lP 0)`'s recurrence at `L = la + lb + lP`, with the wide
+  `fj_boys`. LMAX bounds the class's TOTAL L, as `--metric-l`'s does; any
+  LMAX >= 0 is accepted, correctness is tested at L <= 4 only. It ADDS
+  units beside the J ladders and is NEVER in the no-flag default nor in
+  KERNEL_GEN_CMD. Every name is `eri3_` plus three digits (`eri3_name`),
+  so none collides with another ladder's.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
@@ -211,6 +224,7 @@ from felizjueves.kernel import (
     pq_spec,
 )
 from felizjueves.kernel_dq import build_dq_kernel
+from felizjueves.kernel_eri3 import build_eri3_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
@@ -236,6 +250,7 @@ DEFAULT_SCHWARZ_L = 2  # `--schwarz-l` given bare: (ss) through (dd), 6 units
 SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
 DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
+DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 units
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -389,6 +404,37 @@ def generate_metric(backend: str, arch: Arch, out: Path,
     """Emit the metric unit of every aux class through total `lmax` into
     `out`; return the paths."""
     kernels = [build_metric_kernel(c) for c in metric_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The three-center ladder (#445)
+# ---------------------------------------------------------------------------
+
+
+def eri3_classes(lmax: int) -> list[tuple[int, int, int]]:
+    """Every class `(la, lb, lP)`, `la <= lb`, `la + lb + lP <= lmax`, `la`
+    outer, then `lb`, then `lP`; any `lmax >= 0` (the builder is
+    arbitrary-L)."""
+    if type(lmax) is not int or lmax < 0:
+        raise ValueError(f"--eri3-l {lmax!r} is not a non-negative int")
+    return [(la, lb, lp) for la in range(lmax // 2 + 1)
+            for lb in range(la, lmax - la + 1)
+            for lp in range(lmax - la - lb + 1)]
+
+
+def eri3_name(cls: tuple[int, int, int]) -> str:
+    """The kernel name `build_eri3_kernel(cls)` gives, without building
+    it (#419's shape)."""
+    return "eri3_" + "".join(map(str, cls))
+
+
+def generate_eri3(backend: str, arch: Arch, out: Path,
+                  lmax: int) -> list[Path]:
+    """Emit the three-center unit of every class through total `lmax` into
+    `out`; return the paths."""
+    kernels = [build_eri3_kernel(c) for c in eri3_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -584,6 +630,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_SX_L, default=None, metavar="LMAX")
     ap.add_argument("--metric-l", dest="metric_l", type=int, nargs="?",
                     const=DEFAULT_METRIC_L, default=None, metavar="LMAX")
+    ap.add_argument("--eri3-l", dest="eri3_l", type=int, nargs="?",
+                    const=DEFAULT_ERI3_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
@@ -617,10 +665,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if fock and (selector or args.Ls is not None or args.pair_l is not None
                  or args.one_e_l is not None or args.schwarz_l is not None
                  or args.sx_l is not None or args.metric_l is not None
-                 or ladder_levers):
+                 or args.eri3_l is not None or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
-              "--sx-l / --metric-l / --class / --shell-ls and the J / K "
+              "--sx-l / --metric-l / --eri3-l / --class / --shell-ls and "
+              "the J / K "
               "lever flags; give one",
               file=sys.stderr)
         return 2
@@ -639,9 +688,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if selector and (args.Ls is not None or args.pair_l is not None
                      or args.one_e_l is not None or args.schwarz_l is not None
                      or args.sx_l is not None or args.metric_l is not None
-                     or ladder_levers):
+                     or args.eri3_l is not None or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
-              "--metric-l (and a lever flag) and "
+              "--metric-l / --eri3-l (and a lever flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
         return 2
@@ -668,6 +717,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.metric_l is not None and args.metric_l < 0:
         print(f"emit: --metric-l {args.metric_l} is negative; LMAX is the "
+              "class's total L, any value >= 0", file=sys.stderr)
+        return 2
+    if args.eri3_l is not None and args.eri3_l < 0:
+        print(f"emit: --eri3-l {args.eri3_l} is negative; LMAX is the "
               "class's total L, any value >= 0", file=sys.stderr)
         return 2
     try:
@@ -703,6 +756,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.metric_l is not None:  # beside the J chain, never by default
         written += generate_metric(args.backend, arch, args.out,
                                    args.metric_l)
+    if args.eri3_l is not None:  # beside the J chain, never by default
+        written += generate_eri3(args.backend, arch, args.out, args.eri3_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "
