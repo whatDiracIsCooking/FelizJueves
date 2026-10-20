@@ -37,8 +37,10 @@ defects in the source"):
     [0]^(m) = (2/sqrt(pi)) theta (-2 theta^2)^m F_m(theta^2 |PQ|^2)
 
 with `(-2 theta^2)^m` formed as a running product (`Fn` has no power) and
-F_m as `Call(BOYS, (m, T))`. The pair factors (pi/zeta)^(3/2) etc. are not
-here, as they are not in the reference.
+every F_m, m = 0..top, by ONE `Boys` statement into the local array `boys`
+(`boys_fill`, #301): one evaluation of the top order and a recurrence give
+them all, where a call per order summed a series per order. The pair factors
+(pi/zeta)^(3/2) etc. are not here, as they are not in the reference.
 
 fp64 throughout, as an IR fact (ir.Scalar).
 """
@@ -50,6 +52,7 @@ from collections.abc import Callable
 
 from felizjueves.ir import (
     Assign,
+    Boys,
     Call,
     Decl,
     Expr,
@@ -142,11 +145,28 @@ def _add(a: Expr, b: Expr) -> Call:
     return Call(Fn.ADD, (a, b))
 
 
+# The local array every `Boys` of a prelude fills: `boys[m] = F_m(T)`.
+BOYS_ARRAY = "boys"
+
+
+def boys_fill(top: int, t: Expr) -> tuple[Stmt, ...]:
+    """`boys[m] = F_m(t)` for m = 0..top: the array's `Decl` and the one
+    `Boys` that fills it (#301)."""
+    return (Decl(BOYS_ARRAY, Scalar.F64, shape=(Lit(top + 1),)),
+            Boys(BOYS_ARRAY, top, t))
+
+
+def boys_read(m: int) -> Index:
+    """`F_m(T)`, as a prelude's `boys_fill` left it."""
+    return Index(BOYS_ARRAY, (Lit(m),))
+
+
 def fundamental_prelude(ms: list[int]) -> tuple[tuple[Stmt, ...], Fundamental]:
     """Statements forming `T` and the weights `W{m}`, and the `Fundamental`.
 
         t2 = theta^2,  T = t2 |PQ|^2,  W0 = (2/sqrt(pi)) theta,
-        W{m+1} = W{m} * (-2 t2),       [0]^(m) = W{m} * F_m(T)
+        W{m+1} = W{m} * (-2 t2),       boys[m] = F_m(T), m = 0..max(ms),
+        [0]^(m) = W{m} * boys[m]
     """
     pqx, pqy, pqz = (Var(n) for n in PQ_PARAMS)
     theta = Var(THETA)
@@ -165,9 +185,10 @@ def fundamental_prelude(ms: list[int]) -> tuple[tuple[Stmt, ...], Fundamental]:
     stmts.append(Decl("W0", Scalar.F64, init=_mul(Lit(_TWO_OVER_SQRT_PI), theta)))
     for m in range(1, top + 1):
         stmts.append(Decl(f"W{m}", Scalar.F64, init=_mul(Var(f"W{m - 1}"), Var("s"))))
+    stmts.extend(boys_fill(top, Var("T")))
 
     def fundamental(m: int) -> Expr:
-        return _mul(Var(f"W{m}"), Call(Fn.BOYS, (Lit(m), Var("T"))))
+        return _mul(Var(f"W{m}"), boys_read(m))
 
     return tuple(stmts), fundamental
 

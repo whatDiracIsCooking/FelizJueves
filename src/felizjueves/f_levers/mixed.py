@@ -27,9 +27,10 @@ narrowed at its read). An ERI enters the digestion only through
 `TO_F64(H...)` at the `eri` hook, so each multiply-add of the predigest is
 `f += w * TO_F64(x)` in fp64.
 
-BOYS STAYS FP64, as in J's and K's levers: `Fn.BOYS` is fp64 only (the IR
-refuses an F32 `T`, and there is no fp32 Boys routine), so the fundamental
-is `S * TO_F32(BOYS(m, TO_F64(T)))` with `T` and `S` formed in fp32. The
+BOYS STAYS FP64, as in J's and K's levers: `Boys` is fp64 only (the IR
+refuses an F32 `T`, and there is no fp32 Boys routine), so the prelude's
+`boys` array is filled from `TO_F64(T)` and the fundamental is
+`S * TO_F32(boys[m])`, with `T` and `S` formed in fp32. The
 constant `2/sqrt(pi)` is the nearest float32.
 
 THE ACCUMULATION IS NOT KEPT FP64, AND THAT IS THE ISSUE'S CHOICE, NOT J'S
@@ -64,7 +65,7 @@ each record read and each float literal of an F32 region's scalar is
 `TO_F32`-ed; a local of the region already has its type -- the seams'
 contract, #368), `quartet_scalars` (the Boys prelude `T`, `S`, which the
 default emits from `ctx.prelude` in fp64, retyped), `vrr` and `hrr` (every
-F64 `Decl` of the recurrence retyped F32, each `BOYS` read rewritten as
+F64 `Decl` of the recurrence retyped F32, each `boys` read narrowed as
 above) and `eri` (`TO_F64` of the prior hook's value). Each wraps the hook
 it replaces, so it narrows whatever another lever built there: #350's
 grouped nest runs these same hooks on each group's context and reads the
@@ -95,8 +96,20 @@ import dataclasses
 import struct
 from collections.abc import Callable
 
-from felizjueves.f_levers.seams import FContext, FHooks
-from felizjueves.ir import Call, Decl, Expr, Fn, Lit, Note, Scalar, Stmt, Var
+from felizjueves.f_levers.seams import BOYS_ARRAY, FContext, FHooks
+from felizjueves.ir import (
+    Boys,
+    Call,
+    Decl,
+    Expr,
+    Fn,
+    Index,
+    Lit,
+    Note,
+    Scalar,
+    Stmt,
+    Var,
+)
 from felizjueves.spec import Spec
 
 __all__ = ["F32_REGIONS", "NAME", "NOTE", "apply", "narrow_sources"]
@@ -158,18 +171,17 @@ def _cast(prior: Callable[[FContext, Expr, str], Expr]
 
 
 def _boys32(e: Expr) -> Expr:
-    """Every `BOYS(m, T)` in `e` as `TO_F32(BOYS(m, TO_F64(T)))`."""
+    """Every read of the prelude's fp64 `boys[m]` in `e` as `TO_F32` of it."""
+    if isinstance(e, Index) and e.array == BOYS_ARRAY:
+        return _f32(e)
     if isinstance(e, Call):
-        if e.fn is Fn.BOYS:
-            m, t = e.args
-            return _f32(Call(Fn.BOYS, (m, Call(Fn.TO_F64, (t,)))))
         return Call(e.fn, tuple(_boys32(a) for a in e.args))
     return e
 
 
 def _retype(stmts, what: str) -> tuple[Stmt, ...]:
-    """A recurrence's statements with every F64 `Decl` F32 and its `BOYS`
-    reads rewritten. Refuses a statement it does not know how to narrow."""
+    """A recurrence's statements with every F64 `Decl` F32 and its `boys`
+    reads narrowed. Refuses a statement it does not know how to narrow."""
     out: list[Stmt] = []
     for s in stmts:
         if isinstance(s, Note):
@@ -201,10 +213,11 @@ def _hrr(prior: Callable[[FContext], tuple[Stmt, ...]]
 def _quartet_scalars(prior: Callable[[FContext], tuple[Stmt, ...]]
                      ) -> Callable[[FContext], tuple[Stmt, ...]]:
     """The Boys prelude (`ctx.prelude`: `T`, `S`), fp64 in the default,
-    retyped F32 with its literal narrowed, and `NOTE` before it. Refused
-    when the prior hook did not emit the prelude."""
+    retyped F32 with its literal narrowed, and `NOTE` before it; its `boys`
+    array stays fp64 and is filled from `TO_F64(T)` (there is no fp32 Boys).
+    Refused when the prior hook did not emit the prelude."""
     def quartet_scalars(ctx: FContext) -> tuple[Stmt, ...]:
-        pre = {s for s in ctx.prelude if isinstance(s, Decl)}
+        pre = {s for s in ctx.prelude if isinstance(s, Decl) and not s.shape}
         out: list[Stmt] = []
         seen = 0
         for s in prior(ctx):
@@ -214,6 +227,9 @@ def _quartet_scalars(prior: Callable[[FContext], tuple[Stmt, ...]]
                 seen += 1
                 out.append(dataclasses.replace(
                     s, type=Scalar.F32, init=narrow_sources(s.init)))
+            elif isinstance(s, Boys) and s in ctx.prelude:
+                out.append(dataclasses.replace(
+                    s, t=Call(Fn.TO_F64, (s.t,))))
             else:
                 out.append(s)
         if seen != len(pre):

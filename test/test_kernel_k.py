@@ -400,7 +400,8 @@ def _counts(am: Am) -> dict[str, int]:
 @pytest.mark.parametrize("am", [pytest.param(a, id=_id(a)) for a in FAST])
 def test_the_decl_set_holds_no_materialised_v(am: Am) -> None:
     """The arrays are exactly `E^ac` and `E^bd` (local, one bra / one ket
-    record) and the shared `I` + `K` column; there is no array whose extent
+    record), the prelude's `boys` (local, F_0..F_L, #301) and the shared
+    `I` + `K` column; there is no array whose extent
     is a product of the two Cartesian pair-block sizes (`V`, `n_ac x n_bd`)
     nor an `I` over the `(b,d)` rows (`n_p x n_bd`), and no `V` at all."""
     c = _counts(am)
@@ -412,6 +413,7 @@ def test_the_decl_set_holds_no_materialised_v(am: Am) -> None:
         ("Ebd", (Lit(c["n_bd"]), Lit(c["n_q"])), Space.LOCAL),
         (KSH, (Lit(c["n_p"] + c["n_ab"]), Call(Fn.BLOCK_DIM_Y, ())),
          Space.SHARED),
+        ("boys", (Lit(sum(am) + 1),), Space.LOCAL),
     }
     assert c["n_p"] + c["n_ab"] == shared_doubles(am)
     assert not any(s.name.startswith("V") for s in decls)

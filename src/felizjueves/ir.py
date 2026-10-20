@@ -7,7 +7,7 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 
     Kernel(name, params, body)
     Stmt = Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
-         | AtomicAdd | Note | Raw | Inline | Barrier
+         | AtomicAdd | Note | Raw | Inline | Barrier | Boys
     Expr = Weighted | Index | Call | Lit | Var
     Fragment(name, binds, body)   -- spliced into a kernel by Inline(fragment, bindings)
 
@@ -78,8 +78,8 @@ PRECISION HYGIENE (#338). Every expression has a type (`expr_type`), and a
 - A `Weighted`'s factor scalars and sources share one float type; F32 and
   F64 in one sum is refused. Its int coefficients take the sum's type.
 - `SQRT` and `EXP` keep their argument's float type (an I32 argument is F64,
-  as before); `BOYS` is fp64 only and refuses an F32 `T` -- there is no fp32
-  Boys function.
+  as before). `Boys` is fp64 only: its `T` may not be F32 and its `dst` must
+  be an F64 array -- there is no fp32 Boys function.
 - A store (`Assign`, a `Decl`'s init, `AtomicAdd`, `WarpReduce`) of F32 into
   F64, of F64 into F32, or of F32 into I32 is refused; an I32 into either
   float type converts. `For` bounds may not be F32.
@@ -287,8 +287,6 @@ class Fn(Enum):
       the `D_max * I_p * I_q` bound, the `[p|q] D_q` contraction.
     - LT: the screening test `bound < tau`, whose `If` holds the `Break`.
     - SQRT: `theta` in the fundamental `(2/sqrt(pi)) theta (-2 theta^2)^m F_m`.
-    - BOYS: `F_m(T)`, `Call(BOYS, (m, T))` -- the fundamentals' special
-      function; the recurrences never reduce it.
     - EXP: `E^{00}_0 = exp(zeta X_PA X_PB)` (`= exp(-mu X_AB^2)`), the seed
       of each axis of the `E` recurrence (#152), formed from the pair
       `(X_PA, X_PB)` exactly as `ao/hermite.py` forms it.
@@ -307,7 +305,6 @@ class Fn(Enum):
     LT = ("lt", 2)
     SQRT = ("sqrt", 1)
     EXP = ("exp", 1)
-    BOYS = ("boys", 2)
     THREAD_X = ("thread_x", 0)
     THREAD_Y = ("thread_y", 0)
     BLOCK_X = ("block_x", 0)
@@ -763,6 +760,33 @@ class Raw:
             raise ValueError("Raw needs non-empty text")
 
 
+@dataclass(frozen=True)
+class Boys:
+    """`dst[m] = F_m(t)` for every `m` in `0..top`: the fundamentals' special
+    function, every order of one `T` at once (#301).
+
+        F_m(T) = integral_0^1 u^(2m) exp(-T u^2) du    ([JEngine, v2, eqs. 13, 18])
+
+    One statement and not a `Call` per order because the orders are not
+    independent: one evaluation at `top` and a recurrence give all of them,
+    with one `exp(-T)`, where a call per order would sum a series per order.
+    `dst` is a LOCAL F64 array `Decl`'d with the one extent `top + 1`, which
+    the `Kernel` checks; `top` is an int, so the order is fixed when the
+    kernel is built (the writer spells it as a template argument). `t` is
+    fp64: there is no fp32 Boys function. The recurrences never reduce it.
+    """
+
+    dst: str
+    top: int
+    t: Expr
+
+    def __post_init__(self) -> None:
+        _ident(self.dst, "Boys dst")
+        if type(self.top) is not int or self.top < 0:
+            raise ValueError(f"Boys top must be an int >= 0, not {self.top!r}")
+        _expr(self.t, "Boys t")
+
+
 # ---------------------------------------------------------------------------
 # Fragments: a device-code block with a checked binding contract
 # ---------------------------------------------------------------------------
@@ -836,6 +860,9 @@ def _free_uses(body: tuple[Stmt, ...]) -> tuple[dict[str, str], set[str], set[st
             elif isinstance(s, AtomicAdd):
                 read(s.value)
                 read(s.dst)
+            elif isinstance(s, Boys):
+                read(s.t)
+                use(s.dst, "array")
             elif isinstance(s, For):
                 read(s.start)
                 read(s.stop)
@@ -960,9 +987,9 @@ class Inline:
 
 
 Stmt = (Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
-        | AtomicAdd | Note | Raw | Inline | Barrier)
+        | AtomicAdd | Note | Raw | Inline | Barrier | Boys)
 STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, LaneBroadcast,
-              AtomicAdd, Note, Raw, Inline, Barrier)
+              AtomicAdd, Note, Raw, Inline, Barrier, Boys)
 
 
 # ---------------------------------------------------------------------------
@@ -1037,6 +1064,8 @@ def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
         return (s.cond,)
     if isinstance(s, Inline):
         return tuple(e for _, e in s.bindings)
+    if isinstance(s, Boys):
+        return (s.t,)
     return ()
 
 
@@ -1162,11 +1191,6 @@ def expr_type(e: Expr, lookup: Callable[[str], Scalar | None]) -> Scalar | None:
         if fn in (Fn.SQRT, Fn.EXP):
             (a,) = args
             return Scalar.F64 if a is Scalar.I32 else a
-        if fn is Fn.BOYS:
-            if args[1] is Scalar.F32:
-                raise PrecisionError("Fn.BOYS is fp64 only: there is no fp32 "
-                                     "Boys function; TO_F64 its T")
-            return Scalar.F64
         if fn in _CASTS:
             to = _CASTS[fn]
             if args[0] is to:
@@ -1235,6 +1259,14 @@ def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
             ty(s.cond)
             run(s.then, {})
             run(s.orelse, {})
+        elif isinstance(s, Boys):
+            if ty(s.t) is Scalar.F32:
+                raise PrecisionError(f"Boys into {s.dst!r} is fp64 only: there "
+                                     "is no fp32 Boys function; TO_F64 its T")
+            dst = lookup(s.dst)
+            if dst is not None and dst is not Scalar.F64:
+                raise PrecisionError(f"Boys into {s.dst!r}: an {dst.name} "
+                                     "array, not F64")
         elif isinstance(s, Inline):
             binds: dict[str, Scalar | None] = {}
             for name, e in s.bindings:
@@ -1257,37 +1289,17 @@ class Kernel:
     Validated on construction: parameter names are unique, every `Break` sits
     inside a `For`, and every non-unit `Factor` a `Weighted` uses is bound by
     name to a `Param` or `Decl`, and every statement obeys the precision
-    hygiene rules (#338, the module docstring). Frozen and hashable.
-
-    `wide_boys` (#266) is a property of the kernel, not of a call: the domain
-    its `Fn.BOYS` must hold on. False (the default, every J-chain kernel) is
-    the narrow domain a quartet's `T` stays in; True asks the writer for the
-    wide spelling, valid out to the asymptote's range, which a point-charge
-    ket (`Target.V`) needs because nothing damps its `T`. The meaning of
-    `F_m(T)` is the same either way -- only how far it must hold changes --
-    so the interpreter, whose Boys is injected, does not read it. A kernel
-    that sets it without calling `Fn.BOYS` is refused: the flag would widen
-    nothing.
+    hygiene rules (#338, the module docstring), and every `Boys` writes a
+    LOCAL F64 array `Decl`'d with the one extent `top + 1`. Frozen and
+    hashable.
     """
 
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
-    wide_boys: bool = False
-
-    def __repr__(self) -> str:
-        # The dataclass's own spelling, with `wide_boys` shown only when set:
-        # every kernel that existed before #266 keeps its repr byte for byte,
-        # and with it every hash taken of one (test_launch.py's J plans).
-        wide = ", wide_boys=True" if self.wide_boys else ""
-        return (f"Kernel(name={self.name!r}, params={self.params!r}, "
-                f"body={self.body!r}{wide})")
 
     def __post_init__(self) -> None:
         _ident(self.name, "Kernel name")
-        if type(self.wide_boys) is not bool:
-            raise TypeError(f"Kernel wide_boys must be a bool, not "
-                            f"{self.wide_boys!r}")
         params = _tuple(self, "params", self.params)
         for p in params:
             if not isinstance(p, Param):
@@ -1328,9 +1340,14 @@ class Kernel:
                                 f"Factor {t.g.name} needs a Param or Decl "
                                 f"named {need!r}"
                             )
-        if self.wide_boys and not any(
-                isinstance(e, Call) and e.fn is Fn.BOYS
-                for s in walk(self.body) for root in _exprs_of(s)
-                if root is not None for e in _subexprs(root)):
-            raise ValueError(f"Kernel {self.name!r} sets wide_boys but never "
-                             "calls Fn.BOYS")
+        arrays = {s.name: s for s in walk(self.body) if isinstance(s, Decl)}
+        for s in walk(self.body):
+            if not isinstance(s, Boys):
+                continue
+            d = arrays.get(s.dst)
+            if (d is None or d.space is not Space.LOCAL or d.type is not Scalar.F64
+                    or len(d.shape) != 1 or not isinstance(d.shape[0], Lit)
+                    or d.shape[0].value != s.top + 1):
+                raise ValueError(
+                    f"Boys into {s.dst!r} needs a LOCAL F64 array Decl'd "
+                    f"with the one extent {s.top + 1} (top + 1)")

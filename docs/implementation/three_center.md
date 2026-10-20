@@ -174,10 +174,10 @@ The kernel contract:
   metric's, so the rounding is too.
 - **No prefactor in the kernel.** `s_ij s_k` is multiplied once per
   (bra, aux) record pair, and `(2/√π) θ` is inside `[0]^(m)`.
-- **`Kernel.wide_boys` is set**, as in `V`, Schwarz and the metric: a tight
-  aux exponent far from a bra centre puts `T` past the narrow series'
-  overflow near 709 (`test_kernel_eri3.py`'s tight triple reaches
-  `T ≈ 2667`).
+- **The Boys domain.** A tight aux exponent far from a bra centre puts `T`
+  past where the old narrow series overflowed (near 709;
+  `test_kernel_eri3.py`'s tight triple reaches `T ≈ 2667`). The one
+  `fj_boys<M>` every unit carries since #301 holds there.
 - **Plain mirrored store, no atomics**, into `eri3[n_ao, n_ao, n_aux]`. An
   off-diagonal pair writes `(a, b, q)` and its `(m, n)` mirror; a diagonal
   pair (only when `la == lb`) writes `a ≥ b`, mirrored, which is

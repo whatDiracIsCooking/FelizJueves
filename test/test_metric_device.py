@@ -28,8 +28,8 @@ replaced by its TOWER's absolute-value twin (`test_kernel_metric.pq_tower`,
 whose docstring says why the per-target `|[t+tau]|` is not enough). The
 device runs the same IR as the interpreter; what differs is the vendor's
 FMA contraction (which only removes roundings) and the device `fj_boys`
-(wide, `Kernel.wide_boys`) in place of `reference.boys`. The latter is held
-within `WIDE_BOYS_REL = 1e-13` relative by test_kernel_device.py, which this
+(#301's one template) in place of `reference.boys`. The latter is held
+within `BOYS_REL = 1e-13` relative by test_kernel_device.py, which this
 bound does NOT add (Schwarz's device bound does): the card is held to the
 interpreter's yardstick as it stands, so a Boys error that mattered would
 fail here rather than be absorbed. An element whose scale is 0 must come

@@ -368,11 +368,13 @@ def test_the_shared_accumulator_is_the_only_array(cell: tuple[int, int]) -> None
     spec = pq_spec(L, n_batches=n_batches)
     for dag, k in zip(plan(spec).dags, _kernels(spec), strict=True):
         arrays = [s for s in walk(k.body) if isinstance(s, Decl) and s.shape]
-        assert [d.name for d in arrays] == [JSH]
+        assert [d.name for d in arrays] == [JSH, "boys"]  # boys: local, #301
         assert arrays[0].space is Space.SHARED
+        assert arrays[1].space is Space.LOCAL
         assert arrays[0].shape[0] == Lit(len(batch_contraction(spec, dag)))
         (loop,) = [s for s in walk(k.body) if isinstance(s, For)]
-        assert all(not d.shape for d in walk(loop.body) if isinstance(d, Decl))
+        assert all(not d.shape for d in walk(loop.body)
+                   if isinstance(d, Decl) and d.name != "boys")  # F_0..F_L
 
 
 # ---------------------------------------------------------------------------

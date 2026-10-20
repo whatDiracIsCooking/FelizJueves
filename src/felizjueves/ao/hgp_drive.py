@@ -78,6 +78,7 @@ from felizjueves.hgp import hrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.interp import Interpreter
 from felizjueves.ir import Assign, Decl, Kernel, Note, Term, Weighted
+from felizjueves.ir import Boys as BoysFill
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["absolute_kernel", "eri_block", "eri_block_and_scale", "f_spec",
@@ -98,14 +99,14 @@ def absolute_kernel(kernel: Kernel) -> Kernel:
     """`kernel` with every `Weighted` term's `c` replaced by `|c|`.
 
     Only the statement kinds `hgp.recurrence`'s standalone kernels hold are
-    accepted (`Note`, `Decl`, `Assign`); anything else is refused, so a
-    kernel this transform does not understand cannot yield a scale that is
-    silently not one. The non-`Weighted` inits (`T`, `S`, the seed `S
-    F_m(T)`) are products of the bound scalars and Boys values, already
-    nonnegative when those are."""
+    accepted (`Note`, `Decl`, `Assign`, and the prelude's `Boys` fill);
+    anything else is refused, so a kernel this transform does not understand
+    cannot yield a scale that is silently not one. The non-`Weighted` inits
+    (`T`, `S`, the seed `S boys[m]`) are products of the bound scalars and
+    Boys values, already nonnegative when those are, and `F_m(T) > 0`."""
     body = []
     for st in kernel.body:
-        if not isinstance(st, (Note, Decl, Assign)):
+        if not isinstance(st, (Note, Decl, Assign, BoysFill)):
             raise ValueError(f"absolute_kernel: {type(st).__name__} in "
                              f"{kernel.name} is not a recurrence statement")
         if isinstance(st, Decl) and isinstance(st.init, Weighted):

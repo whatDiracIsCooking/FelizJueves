@@ -268,15 +268,14 @@ def test_a_diagonal_pair_is_its_own_symmetric_block(cls):
 
 
 def test_a_tight_triple_past_the_narrow_boys_range():
-    """`T` reaches ~2667 here, past the narrow series' overflow near 709: the
-    kernel asks for the wide `fj_boys` (`Kernel.wide_boys`)."""
+    """`T` reaches ~2667 here, past where the old narrow series overflowed
+    (near 709): the one `fj_boys` (#301) holds there."""
     c = next(c for c in eri3_classes(TIGHT, TIGHT_AUX)
              if (c.la, c.lb, c.lP) == (0, 0, 0))
     T = max((c.zeta_ab[i] * c.alpha[k] / (c.zeta_ab[i] + c.alpha[k]))
             * sum((c.P[i][d] - c.A[k][d]) ** 2 for d in range(3))
             for i in range(c.n_bra_rec) for k in range(c.n_aux_rec))
     assert T > 709.0
-    assert build_eri3_kernel((0, 0, 0)).wide_boys
     run = eri3_tensor_kernel(TIGHT, TIGHT_AUX, boys=boys)
     want, scale, owned = _host(TIGHT, TIGHT_AUX, set(run.ran))
     assert owned.all()
@@ -417,7 +416,7 @@ def test_a_class_above_the_cap_builds():
     """The builder is arbitrary-L: (pd|d) at L = 5 builds, its kept targets
     the parity set. NOT checked numerically (the milestone's L <= 4 cap)."""
     k = build_eri3_kernel((1, 2, 2))
-    assert isinstance(k, Kernel) and k.wide_boys and k.name == "eri3_122"
+    assert isinstance(k, Kernel) and k.name == "eri3_122"
     decls = {s.name for s in walk(k.body) if isinstance(s, Decl)}
     assert {r for r in hermite_targets(5)
             if node_name((r, 0)) in decls} == _parity_targets(1, 2, 2)

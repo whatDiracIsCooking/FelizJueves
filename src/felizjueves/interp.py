@@ -91,10 +91,12 @@ F32 never meets F64 without a cast (`ir.expr_type`'s rules, which the
 `Kernel` already checked); at run time the machine refuses it again rather
 than guess. An I32 meeting an F32 converts to F32 (rounded), as in C.
 
-`Fn.BOYS` is the one special function. Its semantics, F_m(T), are INJECTED:
+`Boys` is the one special function. Its semantics, F_m(T), are INJECTED:
 the caller passes `boys=` (the pins pass `reference.boys.boys`, quadrature),
-and a kernel that calls `Fn.BOYS` without one raises. A kernel that calls it
-is therefore checked on everything *but* its Boys function. There is no
+each order of a `Boys` statement is one call of it, and a kernel that runs
+a `Boys` without one raises. A kernel with a `Boys` is therefore checked on
+everything *but* its Boys function: the writer's `fj_boys` (emit/_c.py) is
+the kernel tier's, on the card. There is no
 default, on purpose: a default would be an import of `reference/` from here,
 and the interpreter must not share ancestry with the reference its own pins
 compare against (test/test_layering.py).
@@ -124,6 +126,7 @@ from felizjueves.ir import (
     Assign,
     AtomicAdd,
     Barrier,
+    Boys,
     Break,
     Call,
     Decl,
@@ -446,15 +449,6 @@ class _Thread:
         if fn in self.geometry:
             return self.geometry[fn]
         args = [self.eval(a) for a in e.args]
-        if fn is Fn.BOYS:
-            m, T = args
-            if self.interp.boys is None:
-                raise InterpError("BOYS called but no boys= evaluator injected")
-            if type(m) is not int:
-                raise InterpError(f"BOYS order {m!r} is not an I32")
-            if type(T) is F32:
-                raise InterpError("BOYS of an F32: there is no fp32 Boys")
-            return float(self.interp.boys(m, float(T)))
         if fn is Fn.TO_F32:
             (x,) = args
             if _kind(x, fn.name) is Scalar.F32:
@@ -512,12 +506,31 @@ class _Thread:
             self.store(s.dst, got)
         elif isinstance(s, Barrier):
             yield (s, None)  # the block resumes every thread together
+        elif isinstance(s, Boys):
+            self.boys(s)
         elif isinstance(s, Inline):
             yield from self.inline(s)
         elif isinstance(s, Raw):
             raise InterpError("Raw is opaque to the interpreter")
         else:  # pragma: no cover
             raise InterpError(f"not a Stmt: {s!r}")
+
+    def boys(self, s: Boys) -> None:
+        """`dst[m] = F_m(T)`, m = 0..top, each order from the injected
+        evaluator (module docstring): what the `Boys` statement means, not
+        how the writer's `fj_boys` gets there."""
+        if self.interp.boys is None:
+            raise InterpError("Boys run but no boys= evaluator injected")
+        T = self.eval(s.t)
+        if type(T) is F32:
+            raise InterpError("Boys of an F32: there is no fp32 Boys")
+        arr = self.array(s.dst)
+        if arr.type is not Scalar.F64 or arr.data.shape != (s.top + 1,):
+            raise InterpError(f"Boys into {s.dst!r}: not an F64 array of "
+                              f"{s.top + 1}")
+        for m in range(s.top + 1):
+            self.store(Index(s.dst, (Lit(m),)),
+                       float(self.interp.boys(m, float(T))))
 
     def inline(self, s: Inline) -> Generator[Any, Any, None]:
         """Bind the names in the host's scopes, then run the body in isolation.

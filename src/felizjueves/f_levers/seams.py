@@ -99,6 +99,7 @@ from functools import cached_property
 from felizjueves.hgp import hrr as _hrr
 from felizjueves.hgp import vrr as _vrr
 from felizjueves.hgp.recurrence import (
+    BOYS_ARRAY,
     PAIR,
     PQ_PARAMS,
     THETA,
@@ -138,6 +139,7 @@ __all__ = [
     "AB_SH",
     "AO_OF",
     "BLOCKS",
+    "BOYS_ARRAY",
     "DEFAULT_HOOKS",
     "FOCK",
     "HALF",
@@ -276,7 +278,7 @@ class FContext:
         bnd = boundary_order(am)
         if set(bnd) != hdag.boundary:  # #274 holds this; refuse, never misread
             raise ValueError(f"{am}: HRR boundary is not the VRR target set")
-        prelude, fundamental = fundamental_prelude()
+        prelude, fundamental = fundamental_prelude(sum(am))
         return cls(spec=spec, cls=am, name=name, weights=weights, eris=eris,
                    hooks=hooks, vdag=vdag, hdag=hdag, bnd=bnd,
                    prelude=tuple(prelude), fundamental=fundamental)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pytest
 from test_kernel_device import _run_batched
+from tiers import by_l
 
 from felizjueves.j_levers.fused import FUSED
 from felizjueves.kernel import pq_spec
@@ -27,8 +28,7 @@ CELLS = [
     *(pytest.param(pq_spec(L, (FUSED,)), id=f"L{L}-b1-fused")
       for L in range(5)),
     pytest.param(pq_spec(4, (FUSED,), 3), id="L4-b3-fused"),
-    *(pytest.param(pq_spec(L, (FUSED,), n), id=f"L{L}-b{n}-fused",
-                   marks=pytest.mark.slow)
+    *(by_l(pq_spec(L, (FUSED,), n), L, id=f"L{L}-b{n}-fused")
       for L, n in ((7, 1), (7, 3), (10, 1))),
 ]
 

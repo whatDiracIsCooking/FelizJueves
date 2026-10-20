@@ -53,20 +53,14 @@ interpreter. A kernel that declares no F32 takes none of these paths, so
 its text is byte-identical to before #338 (the goldens and
 `kernels.json`'s `source_sha256` are the check).
 
-`Fn.BOYS` has no vendor intrinsic, so the writer emits one fixed device
-routine, `fj_boys` (`BOYS_DEVICE`), when the kernel calls it -- the spelling
-of `F_m(T)` in the way `sqrt` is the spelling of `SQRT`. Whether it is
-accurate enough is a numerical question, and numerical questions are the
-kernel tier's (#28), against `reference.boys`, which this module does not
-import.
-
-It has two spellings, and the KERNEL picks one, never its name or target
-(#266): a kernel with `wide_boys` set gets `BOYS_DEVICE_WIDE` (the Kummer
-series below T = 125, the asymptote from there), every other kernel the
-narrow `BOYS_DEVICE`. The narrow text is what every J-chain unit carries and
-what `data/measured/kernels.json` pins by `source_sha256`, so it does not
-change; data/literature/jengine/limits.json records the two spellings and
-the follow-up that unifies them when J is next re-measured.
+A `Boys` statement has no vendor intrinsic, so the writer emits one fixed
+device template, `fj_boys<M>` (`BOYS_DEVICE`), when the kernel holds one, and
+spells the statement `fj_boys<top>(T, dst);` -- the spelling of every
+`F_m(T)`, m = 0..top, in the way `sqrt` is the spelling of `SQRT`. Whether
+it is accurate enough is a numerical question, and numerical questions are
+the kernel tier's (#28), against `reference.boys`, which this module does
+not import. Every kernel carries the same text (#301): the narrow and wide
+spellings of #266, and `Kernel.wide_boys` that picked between them, are gone.
 
 Names starting `fj_` are the writer's own and are refused in a kernel.
 """
@@ -81,6 +75,7 @@ from felizjueves.ir import (
     Assign,
     AtomicAdd,
     Barrier,
+    Boys,
     Break,
     Call,
     Decl,
@@ -128,66 +123,68 @@ _GEOMETRY = {
     Fn.BLOCK_DIM_Y: "blockDim.y",
 }
 
+# `fj_boys<M>(T, F)` fills `F[m] = F_m(T)` for m = 0..M (#301): every order
+# a `Boys` statement asks for, from one exp(-T). Two branches, one switch:
+#
+# - From T = M + BOYS_SWITCH_PAD, F_0 = (1/2) sqrt(pi/T) erf(sqrt(T)) and the
+#   upward recurrence F_(m+1) = ((2m+1) F_m - exp(-T)) / (2T). Both are exact
+#   (unlike the bare asymptote, there is no truncation Q(m+1/2, T) to wait
+#   out), so the switch is set by the subtraction alone, which cancels only
+#   where T is near m: from T = m + 8 it costs nothing measurable.
+# - Below it, the Kummer series for F_M alone, every term positive, summed
+#   until it no longer changes the sum, then the downward recurrence
+#   F_m = (2T F_(m+1) + exp(-T)) / (2m+1), stable for every T. The series
+#   runs at most ~75 terms (M = 40), where the narrow routine it replaces
+#   ran ~2T + 40 per order and overflowed near T = 709.
+#
+# M is a template argument, the kernel's top order, fixed when the kernel is
+# built: both recurrences unroll, each 1/(2m+1) is a constant, and F is a
+# local array the compiler keeps in registers once it is inlined. Measured in
+# float64 against mpmath's incomplete gamma over T in [0, 1e6] before it was
+# written (#301): worst (M + 3) ulp, the upward recurrence's accumulation.
+# Its accuracy on the card is the kernel tier's question (test_kernel_device.py).
+# The pad and pi are spelled as literals below; test_emit_cuda.py holds them
+# to BOYS_SWITCH_PAD and repr(math.pi).
+BOYS_SWITCH_PAD = 8
 BOYS_DEVICE = """\
-// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1)), the Kummer
-// series ([JEngine, v2, eqs. 13, 18]): every term positive, summed until it
-// no longer changes the sum. Its accuracy on reference.boys's domain is a
-// kernel-tier question, not this file's.
-__device__ double fj_boys(int m, double T) {
-    double term = 1.0 / (double)(2 * m + 1);
+// F_m(T) = integral_0^1 u^(2m) exp(-T u^2) du ([JEngine, v2, eqs. 13, 18]),
+// F[m] for every m in 0..M (#301). From T = M + 8: F_0 = (1/2) sqrt(pi/T)
+// erf(sqrt(T)) and upward, F_(m+1) = ((2m+1) F_m - exp(-T)) / (2T). Below:
+// the Kummer series F_M = exp(-T) SUM_k (2T)^k / ((2M+1)(2M+3)...(2M+2k+1)),
+// every term positive, summed until it no longer changes the sum, and
+// downward, F_m = (2T F_(m+1) + exp(-T)) / (2m+1). Its accuracy on
+// reference.boys's domain is a kernel-tier question, not this file's.
+template <int M>
+__device__ __forceinline__ void fj_boys(double T, double (&F)[M + 1]) {
+    const double e = exp(-T);
+    if (T >= (double)(M + 8)) {
+        const double h = 0.5 / T;
+        double f = 0.5 * sqrt(3.141592653589793 / T) * erf(sqrt(T));
+        F[0] = f;
+#pragma unroll
+        for (int m = 1; m <= M; ++m) {
+            f = ((double)(2 * m - 1) * f - e) * h;
+            F[m] = f;
+        }
+        return;
+    }
+    double term = 1.0 / (double)(2 * M + 1);
     double sum = term;
     for (int k = 1; k < 4096; ++k) {
-        term = term * ((2.0 * T) / (double)(2 * m + 2 * k + 1));
+        term = term * ((2.0 * T) / (double)(2 * M + 2 * k + 1));
         double next = sum + term;
         if (next == sum) {
             break;
         }
         sum = next;
     }
-    return exp(-T) * sum;
-}
-"""
-
-# The wide spelling (#266), for a kernel with `wide_boys` set (`Target.V`: a
-# point-charge ket has no eta to damp T, which reaches ~1.25e5 on the tracked
-# fixtures, and BOYS_DEVICE's exp(-T) * sum overflows near T = 709). The same
-# routine, the same name and signature, with one branch: from T_SWITCH = 125
-# (reference.boys's switch, kept equal so device and reference change branch
-# at the same T) the asymptote, formed in reference.boys.asymptote's order --
-# 0.5 sqrt(pi/T) times (2k-1)/(2T), k = 1..m, no power of T ever formed. Below
-# the switch it is BOYS_DEVICE's Kummer series, word for word. Its accuracy
-# against reference.boys is the kernel tier's question (#266's witness). The
-# switch and pi are spelled as literals below; test_emit_cuda.py holds them to
-# BOYS_SWITCH (== reference.boys.T_SWITCH) and repr(math.pi).
-BOYS_SWITCH = 125.0
-BOYS_DEVICE_WIDE = """\
-// F_m(T), wide (#266): below T = 125 the Kummer series
-// F_m(T) = exp(-T) SUM_k (2T)^k / ((2m+1)(2m+3)...(2m+2k+1))
-// ([JEngine, v2, eqs. 13, 18]), every term positive, summed until it no
-// longer changes the sum; from T = 125 (reference.boys's switch) the
-// asymptote Gamma(m+1/2) / (2 T^(m+1/2)) = 0.5 sqrt(pi/T) PROD_k (2k-1)/(2T),
-// whose relative truncation Q(m+1/2, T) is under 4e-19 there for m <= 40.
-// Its accuracy on reference.boys's domain is a kernel-tier question, not
-// this file's.
-__device__ double fj_boys(int m, double T) {
-    if (T >= 125.0) {
-        double a = 0.5 * sqrt(3.141592653589793 / T);
-        for (int k = 1; k <= m; ++k) {
-            a = a * ((double)(2 * k - 1) / (2.0 * T));
-        }
-        return a;
+    double f = e * sum;
+    F[M] = f;
+#pragma unroll
+    for (int m = M - 1; m >= 0; --m) {
+        f = (2.0 * T * f + e) * (1.0 / (double)(2 * m + 1));
+        F[m] = f;
     }
-    double term = 1.0 / (double)(2 * m + 1);
-    double sum = term;
-    for (int k = 1; k < 4096; ++k) {
-        term = term * ((2.0 * T) / (double)(2 * m + 2 * k + 1));
-        double next = sum + term;
-        if (next == sum) {
-            break;
-        }
-        sum = next;
-    }
-    return exp(-T) * sum;
 }
 """
 
@@ -243,9 +240,8 @@ class CWriter:
                 f"{INDENT}// an extent only (a leading dimension, never read):\n",
                 *(f"{INDENT}(void){n};\n" for n in unread)]
         head = self.prologue(k)
-        if any(isinstance(e, Call) and e.fn is Fn.BOYS for e in _exprs(k)):
-            head += "\n" + self.boys(
-                BOYS_DEVICE_WIDE if k.wide_boys else BOYS_DEVICE)
+        if any(isinstance(s, Boys) for s in walk(k.body)):
+            head += "\n" + self.boys(BOYS_DEVICE)
         records = _records(k)
         if records:
             head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
@@ -340,6 +336,11 @@ class CWriter:
         elif isinstance(s, AtomicAdd):
             self._emit(depth, self.atomic_add(self.lvalue(s.dst),
                                               self.expr(s.value)))
+        elif isinstance(s, Boys):
+            if self._type(s.t) is not Scalar.F64 or self._lookup(s.dst) is None:
+                raise EmitError(f"Boys into {s.dst!r}: an F64 T and a local "
+                                "array, or no fj_boys")
+            self._emit(depth, f"fj_boys<{s.top}>({self.expr(s.t)}, {s.dst});")
         elif isinstance(s, Inline):
             self.inline(s, depth)
         elif isinstance(s, Raw):
@@ -538,8 +539,6 @@ class CWriter:
             return f"sqrt{f}({args[0]})"
         if fn is Fn.EXP:
             return f"exp{f}({args[0]})"
-        if fn is Fn.BOYS:
-            return f"fj_boys({args[0]}, {args[1]})"
         raise EmitError(f"no spelling for {fn}")  # pragma: no cover
 
     def cast(self, t: str, text: str) -> str:

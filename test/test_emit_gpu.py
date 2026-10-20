@@ -156,8 +156,8 @@ def test_the_lane_broadcast_takes_the_mask_and_the_assert() -> None:
 
 @pytest.mark.parametrize("unit", ["pq_L4", "s_11", "v_11", "bcast", "inline"])
 def test_no_integer_is_a_bare_int(unit: str) -> None:
-    # Declarations, loop counters, the geometry casts and fj_boys (narrow
-    # and wide) alike; comments included, since none of them says `int`.
+    # Declarations, loop counters, the geometry casts and fj_boys alike;
+    # comments included, since none of them says `int`.
     text = gpu.emit(UNITS[unit](), SM_86)
     assert "int32_t" in text
     assert [x for x in text.splitlines() if BARE_INT.search(x)] == []
@@ -213,7 +213,7 @@ UNITS = {
     "pq_L0": lambda: build_pq_kernel(0),
     "pq_L4": lambda: build_pq_kernel(4),
     "s_11": lambda: build_s_kernel((1, 1)),
-    "v_11": lambda: build_v_kernel((1, 1)),  # the wide fj_boys
+    "v_11": lambda: build_v_kernel((1, 1)),
     "bcast": _bcast,
     "inline": synthetic_inline_kernel,
 }
@@ -357,14 +357,15 @@ def test_fj_boys_is_guarded_and_static_only_in_a_specialization() -> None:
     f = build_f_kernel(f_class_spec(0, 0, 0, 0))
     c = gpu.emit(v, SM_86)
     assert "#ifndef" not in c and "static __device__" not in c
-    wide = gpu.emit(v, SM_86, gpu.Specialization("v", (1, 1)))
-    narrow = gpu.emit(f, SM_86, gpu.Specialization("f", (0, 0, 0, 0)))
-    assert "#ifndef FJ_BOYS_WIDE\n#define FJ_BOYS_WIDE\n" in wide
-    assert "#ifndef FJ_BOYS_NARROW\n#define FJ_BOYS_NARROW\n" in narrow
+    vs = gpu.emit(v, SM_86, gpu.Specialization("v", (1, 1)))
+    fs = gpu.emit(f, SM_86, gpu.Specialization("f", (0, 0, 0, 0)))
+    for text in (vs, fs):  # one spelling, one guard (#301)
+        assert "#ifndef FJ_BOYS\n#define FJ_BOYS\n" in text
     # inside the guard, the routine the C spelling carries, with internal
     # linkage: every unit of the template has its own
     assert c.split("\n\n")[1].replace(
-        "__device__ double fj_boys(", "static __device__ double fj_boys(") in wide
+        "__device__ __forceinline__ void fj_boys(",
+        "static __device__ __forceinline__ void fj_boys(") in vs
 
 
 def test_a_specialization_refuses_what_its_siblings_would_repeat() -> None:
@@ -401,7 +402,7 @@ def test_emit_takes_a_specialization_value() -> None:
 
 LMAX = 2
 PAIRS = [(la, lb) for la in range(LMAX + 1) for lb in range(la, LMAX + 1)]
-FAMILIES = {"s": build_s_kernel, "v": build_v_kernel}  # v: six wide fj_boys
+FAMILIES = {"s": build_s_kernel, "v": build_v_kernel}  # v: six fj_boys
 
 # Read at run time, as a launcher reads it to launch: that read is what makes
 # each cell a symbol to link. Through a volatile, since a function's address
@@ -505,7 +506,7 @@ def test_a_unit_whose_parameters_drifted_fails_to_compile(
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
-def test_the_two_fj_boys_in_one_tu_are_a_redefinition(
+def test_two_units_with_fj_boys_share_one_tu(
         request, tmp_path, compile_device_source, tool: str) -> None:
     tc = request.getfixturevalue(tool)
     _headers(tmp_path)
@@ -515,5 +516,5 @@ def test_the_two_fj_boys_in_one_tu_are_a_redefinition(
     text = (gpu.emit(build_v_kernel((0, 0)), SM_86,
                      gpu.Specialization("v", (0, 0)))
             + gpu.emit(fk, SM_86, f))
-    with pytest.raises(AssertionError, match="redefinition|already been defined"):
-        compile_device_source(tc, text, link=False)
+    # one spelling behind one guard (#301): the second unit's is skipped
+    compile_device_source(tc, text, link=False)

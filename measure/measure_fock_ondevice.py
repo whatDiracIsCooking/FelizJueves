@@ -30,8 +30,8 @@ to the tracked data/measured/kernels.json).
    off-diagonal launch, `TIMING_N_BRA x TIMING_N_KET` = 2048 x 128
    contracted quartets of 3-primitive shells, `K_AB = K_CD = 9`, `tau = 0`),
    NEAR (centres in a 0.25-bohr cube: Boys `T` below ~1) then WIDE (a
-   5-bohr cube: `T` up to ~250, inside the narrow `fj_boys`'s witnessed
-   `[0, 500]`, asserted): `WARMUP` untimed and `REPEATS` timed sequences,
+   5-bohr cube: `T` up to ~250, inside `fj_boys`'s witnessed domain,
+   asserted): `WARMUP` untimed and `REPEATS` timed sequences,
    each the launch and its synchronize under the host's steady clock, the
    zeroing outside it. WIDE is the row's `runtime_ns` (median) and
    `spread_ns` (IQR); NEAR is raw `wallclock:near:*`.

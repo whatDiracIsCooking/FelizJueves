@@ -53,6 +53,7 @@ from felizjueves.interp import (
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
+    Boys,
     Break,
     Call,
     Decl,
@@ -410,7 +411,8 @@ def test_the_machine_refuses_what_has_no_meaning() -> None:
         run()
     # Boys is injected, never defaulted from reference/ (test/test_layering.py).
     with pytest.raises(InterpError, match="no boys= evaluator"):
-        run(Assign(Index("out", (Lit(0),)), Call(Fn.BOYS, (Lit(0), Lit(1.0)))), a=a)
+        run(Decl("boys", Scalar.F64, shape=(Lit(1),)), Boys("boys", 0, Lit(1.0)),
+            a=a)
     # Integer division truncates toward zero, as C does.
     got = run(Assign(Index("out", (Lit(0),)), Call(Fn.DIV, (Lit(-7), Lit(2)))), a=a)
     assert got["out"][0] == -3.0

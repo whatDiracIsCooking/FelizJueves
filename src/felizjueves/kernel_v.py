@@ -72,12 +72,10 @@ ONE THREAD PER RECORD, `rec = THREAD_X + BLOCK_X * BLOCK_DIM_X`, guarded by
 `rec < n_rec`; the nuclei are SERIAL inside the record (the milestone's
 mapping pin: a warp per record with the nuclei strip-mined is a follow-up).
 
-THE WIDE BOYS (#266). The kernel sets `Kernel.wide_boys`, so its `fj_boys`
-is `emit/_c.py`'s `BOYS_DEVICE_WIDE`: the Kummer series below T = 125 and
-the asymptote from there, because `T = zeta |P - C|^2` reaches ~1.25e5 on
-the tracked fixtures and the narrow series overflows near 709. Every J-chain
-unit keeps the narrow text (its `kernels.json` pins); limits.json records
-why there are two.
+THE BOYS DOMAIN. `T = zeta |P - C|^2` reaches ~1.25e5 on the tracked
+fixtures: a point-charge ket has no eta to damp it. Until #301 that made V
+the first kernel to need the wide `fj_boys` (#266); since #301 every kernel
+carries the one `fj_boys`, which holds on all of `reference.boys`' domain.
 
 ROUND-OFF, NOT BITWISE, against `ao.potential.potential_block`. The host
 recurses `[t]^(0)` along `reference.pq.one_centre`'s fixed rule; this kernel
@@ -352,6 +350,4 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
         _f64("Cnuc", (nn, Lit(3))),
         Param("V", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    # wide_boys (#266): a point-charge ket has no eta to damp T = zeta |P-C|^2
-    # (~1.25e5 on HF/cc-pVTZ), so this kernel asks for the wide fj_boys.
-    return Kernel(name or v_name(spec), params, body, wide_boys=True)
+    return Kernel(name or v_name(spec), params, body)

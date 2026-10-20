@@ -41,28 +41,31 @@ THE TOLERANCES ARE DERIVED, NOT TUNED TO GREEN.
   sum, not a defect in either; the pin is not loosened for it. If a change
   pushes the wide case over, measure against the decimal recurrence before
   concluding either side is wrong.
-- `fj_boys`: the routine emit/_c.py writes (the Kummer series, BOYS_DEVICE),
-  evaluated by itself on the card over m = 0..16 and T across [0, 500] --
-  `reference.boys`'s measured domain. A forward error bound, per point:
-  each of the N series steps rounds one division and one product into
-  `term` (<= 2u each step, compounding to <= 2N u on the last), the sum of
-  N positive terms adds <= N u, `exp` <= 1 ulp and the final product 1 u, so
-  `|fj - F| / F <= (3N + 2) u + 1e-14`, the last term being reference.boys's
-  own asserted error (test/test_reference_boys.py), u = 2^-53 and N the
-  series length (recomputed on the host by the same loop). No FMA can form
-  inside it (no `a*b + c` appears), so the bound is the same on both cards.
-  Measured worst: printed by the test (`-s`), and recorded in the PR.
-- the WIDE `fj_boys` (#266, `BOYS_DEVICE_WIDE`, what a `V` unit carries):
-  the same routine below T = 125 (held to the same bound) and the asymptote
-  from there, on m = 0..16 (the (ff) V tower is m <= 6) and T across
-  [0, 1.25e5] -- the tracked fixtures' largest V argument -- with the switch's
-  neighbourhood sampled on both sides down to the adjacent doubles. Above the
-  switch: `a = 0.5 sqrt(pi/T)` rounds a division and a square root (<= 2u),
-  and each of the m factors rounds a division and a product (<= 2u), so the
-  device is within (2m + 2) u of the asymptote, whose truncation from the
-  switch is under 4e-19 for m <= 40 (reference.boys); the per-point bound is
-  `(2m + 2) u + 4e-19 + 1e-14`. Every point is also held to one stated
-  tolerance, WIDE_BOYS_REL = 1e-13, which both branches' bounds sit under.
+- `fj_boys<M>`: the one template emit/_c.py writes (#301, BOYS_DEVICE),
+  every order `F[0..M]` of a top `M`, evaluated by itself on the card for
+  every `M` in 0..16 (a class's fundamentals run m = 0..L, L <= 16) and T
+  across [0, 1e6] -- `reference.boys`' whole domain, every fixture's reach
+  (V's 1.25e5 on HF/cc-pVTZ, the four-H2 chain's 1289) and the old narrow
+  routine's overflow near 709 -- with each switch `T = M + 8` sampled on both
+  sides down to the adjacent doubles. A forward error bound per point
+  (`boys_bound`), plus reference.boys's own asserted error 1e-14
+  (test/test_reference_boys.py), u = 2^-53:
+  * below the switch, the series for F_M takes N steps, each rounding a
+    division and a product into `term` (<= 2u a step, <= 2N u on the last),
+    the sum of N positive terms adds <= N u, `exp` <= 2u and the product 1u:
+    (3N + 3) u at M; each downward step `(2T f + e) * (1/(2m+1))` rounds four
+    times (the reciprocal, the products and the sum of two positives) and
+    passes the error it is given on with weight <= 1 (all terms positive),
+    so F_m is within (3N + 3 + 4 (M - m)) u;
+  * from the switch, F_0 = 0.5 sqrt(pi/T) erf(sqrt(T)) is within 8u (a
+    division, two square roots, the product, and erf's 2 ulp; erf's
+    sensitivity to its argument is below 1e-3 there), and each upward step
+    `((2m-1) f - e) * h` rounds four times (the product, the difference, h =
+    0.5/T and the last product) and divides the error it is given by
+    `1 - r`, r = exp(-T) / ((2m-1) F_(m-1)) the subtraction's cancellation,
+    which the bound computes from reference.boys at that point.
+  Every point is also held to one stated tolerance, BOYS_REL = 1e-13, which
+  every bound sits under. Measured worst: printed by the test (`-s`).
 
 SPLIT CELLS (#53), at the bottom: every `measured.SUBGRID` cell with
 n_batches > 1 runs as its whole atomic launch sequence and is held to the
@@ -110,7 +113,7 @@ from tiers import by_l
 from felizjueves import asym, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
-from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE, BOYS_SWITCH
+from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
@@ -245,15 +248,21 @@ int main(int argc, char** argv) {{
 }}
 """
 
-# The Boys harness: fj_boys exactly as emit/_c.py writes it, one thread per
-# (m, T) point. Input: n | m[n] | T[n]; output F[n].
+# The Boys harness: fj_boys<M> exactly as emit/_c.py writes it, one thread
+# per T, every order 0..M of every top M in BOYS_TOPS. Input: n | T[n];
+# output, top by top, F[n][M + 1].
 BOYS_HARNESS = r"""
 {prologue}
 {portable}
 {boys}
-__global__ void fj_boys_grid(int n, const double* m, const double* T, double* F) {{
+template <int M>
+__global__ void fj_boys_grid(int n, const double* T, double* F) {{
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) F[i] = fj_boys((int)m[i], T[i]);
+    if (i < n) {{
+        double f[M + 1];
+        fj_boys<M>(T[i], f);
+        for (int m = 0; m <= M; ++m) F[(size_t)i * (M + 1) + m] = f[m];
+    }}
 }}
 
 int main(int argc, char** argv) {{
@@ -261,21 +270,26 @@ int main(int argc, char** argv) {{
     std::vector<double> in;
     if (!slurp(argv[1], in) || in.empty()) return 2;
     const int n = (int)in[0];
-    if (fj_vram_probe((size_t)3 * n * sizeof(double) + 16,
-                      {{(const void*)fj_boys_grid}})) return 0;
-    double* dm = upload(in.data() + 1, n);
-    double* dT = upload(in.data() + 1 + n, n);
-    double* dF = nullptr;
-    if (!dm || !dT) return 1;
-    CHECK(devMalloc(&dF, (size_t)n * sizeof(double)));
-    fj_boys_grid<<<(n + 63) / 64, 64>>>(n, dm, dT, dF);
-    CHECK(devGetLastError());
-    CHECK(devSynchronize());
-    std::vector<double> F(n);
-    CHECK(devMemcpy(F.data(), dF, F.size() * sizeof(double), devMemcpyD2H));
-    return spill(argv[2], F) ? 0 : 1;
+    if (fj_vram_probe((size_t)n * ({width} + 1) * sizeof(double) + 16,
+                      {{(const void*)fj_boys_grid<0>}})) return 0;
+    double* dT = upload(in.data() + 1, n);
+    if (!dT) return 1;
+    std::vector<double> out;
+{launches}
+    return spill(argv[2], out) ? 0 : 1;
 }}
 """
+BOYS_LAUNCH = """\
+    {{
+        double* dF = nullptr;
+        CHECK(devMalloc(&dF, (size_t)n * {w} * sizeof(double)));
+        fj_boys_grid<{M}><<<(n + 63) / 64, 64>>>(n, dT, dF);
+        CHECK(devGetLastError());
+        CHECK(devSynchronize());
+        std::vector<double> F((size_t)n * {w});
+        CHECK(devMemcpy(F.data(), dF, F.size() * sizeof(double), devMemcpyD2H));
+        out.insert(out.end(), F.begin(), F.end());
+    }}"""
 
 BACKEND = {
     "cuda": (cuda.emit, SM_86, "cu"),
@@ -448,63 +462,96 @@ def test_hip_j_p_matches_the_reference(L, request, compile_device_source,
 # fj_boys on the card
 # ---------------------------------------------------------------------------
 
-BOYS_M = range(0, 17)  # the fundamentals of a class run m = 0..L, L <= 16
-BOYS_T = sorted({0.0, 1e-12, 1e-6, 1e-3, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0,
-                 30.0, 50.0, 75.0, 100.0, 150.0, 200.0, 300.0, 400.0, 500.0,
-                 *np.random.default_rng(28).uniform(0.0, 500.0, 40).tolist(),
-                 *np.random.default_rng(29).uniform(0.0, 3.0, 20).tolist()})
+BOYS_TOPS = range(0, 17)  # a class's fundamentals run m = 0..L, L <= 16
+BOYS_REL = 1e-13  # the stated tolerance; every per-point bound sits under it
+_SWITCHES = [float(M + BOYS_SWITCH_PAD) for M in BOYS_TOPS]
+BOYS_T = sorted({
+    0.0, 1e-300, 1e-12, 1e-6, 1e-3, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0,
+    50.0, 75.0, 100.0, 125.0, 150.0, 200.0, 300.0, 400.0, 500.0,
+    # each switch's neighbourhood, down to the adjacent doubles
+    *(t for sw in _SWITCHES for t in (
+        sw - 0.5, math.nextafter(sw, 0.0), sw, math.nextafter(sw, math.inf),
+        sw + 0.5)),
+    # the old narrow routine's overflow, the four-H2 chain (#88), every V
+    # fixture's reach (H2O/STO-3G 858, 6-31G 3.6e4, cc-pVDZ 7.7e4, cc-pVTZ
+    # 1.25e5), and reference.boys's T_MAX
+    700.0, 709.0, 710.0, 858.0, 1289.0, 2000.0, 3.6e4, 7.7e4, 1.25e5, 1e6,
+    *np.geomspace(500.0, 1e6, 40).tolist(),
+    *np.random.default_rng(28).uniform(0.0, 500.0, 40).tolist(),
+    *np.random.default_rng(29).uniform(0.0, 3.0, 20).tolist(),
+    *np.random.default_rng(301).uniform(0.0, 30.0, 40).tolist(),
+    *np.random.default_rng(302).uniform(0.0, 1e6, 20).tolist(),
+})
 
 
-def series_length(m: int, T: float) -> int:
-    """How many steps BOYS_DEVICE's loop takes for (m, T): the same loop, here."""
-    term = 1.0 / (2 * m + 1)
+def series_length(M: int, T: float) -> int:
+    """How many steps BOYS_DEVICE's series takes for F_M(T): the same loop."""
+    term = 1.0 / (2 * M + 1)
     s = term
     for k in range(1, 4096):
-        term = term * ((2.0 * T) / (2 * m + 2 * k + 1))
+        term = term * ((2.0 * T) / (2 * M + 2 * k + 1))
         if s + term == s:
             return k
         s = s + term
     return 4096
 
 
+def boys_bound(M: int, T: float) -> list[float]:
+    """The per-order forward error bound of `fj_boys<M>(T)`, F_0..F_M
+    (module docstring), reference.boys's own error included."""
+    if T < M + BOYS_SWITCH_PAD:
+        top = 3 * series_length(M, T) + 3
+        return [(top + 4 * (M - m)) * U + BOYS_REF_ERR for m in range(M + 1)]
+    err = [8 * U]
+    e = math.exp(-T)
+    for m in range(1, M + 1):
+        r = e / ((2 * m - 1) * boys(m - 1, T))
+        assert r < 0.5, (M, T, m, r)  # the switch's whole point
+        err.append((err[-1] + 2 * U) / (1 - r) + 2 * U)
+    return [x + BOYS_REF_ERR for x in err]
+
+
 def _run_boys(backend: str, request, compile_device_source, run_device_binary,
               tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
+    launches = "\n".join(BOYS_LAUNCH.format(M=M, w=M + 1) for M in BOYS_TOPS)
     binary = compile_device_source(tc, BOYS_HARNESS.format(
-        prologue=prologue, portable=PORTABLE, boys=BOYS_DEVICE))
-    pts = [(m, T) for m in BOYS_M for T in BOYS_T]
-    ms = np.array([m for m, _ in pts], dtype=np.float64)
-    Ts = np.array([T for _, T in pts], dtype=np.float64)
+        prologue=prologue, portable=PORTABLE, boys=BOYS_DEVICE,
+        launches=launches, width=sum(M + 1 for M in BOYS_TOPS)))
     src, dst = tmp_path / "boys.in", tmp_path / "boys.out"
-    np.concatenate([[float(len(pts))], ms, Ts]).tofile(src)
+    np.concatenate([[float(len(BOYS_T))], BOYS_T]).tofile(src)
     run_device_binary(binary, str(src), str(dst), vram=backend)
     got = np.fromfile(dst, dtype=np.float64)
-    assert got.shape == (len(pts),)
-    worst = (0.0, 0.0, None)
+    assert got.shape == (len(BOYS_T) * sum(M + 1 for M in BOYS_TOPS),)
+    worst = {"series": (0.0, None), "upward": (0.0, None)}
     bad = []
-    for (m, T), g in zip(pts, got, strict=True):
-        ref = boys(m, T)
-        rel = abs(g - ref) / ref
-        bound = (3 * series_length(m, T) + 2) * U + BOYS_REF_ERR
-        if not rel <= bound:
-            bad.append((m, T, rel, bound))
-        if rel / bound > worst[1]:
-            worst = (rel, rel / bound, (m, T))
-    worst_rel = max(abs(g - boys(m, T)) / boys(m, T)
-                    for (m, T), g in zip(pts, got, strict=True))
-    print(f"\n{backend} fj_boys: {len(pts)} points, worst rel err "
-          f"{worst_rel:.2e}; worst against its bound {worst[1]:.3f} at "
-          f"(m, T) = {worst[2]}")
+    at = 0
+    for M in BOYS_TOPS:
+        for T in BOYS_T:
+            bounds = boys_bound(M, T)
+            branch = "series" if T < M + BOYS_SWITCH_PAD else "upward"
+            for m in range(M + 1):
+                g, ref = got[at + m], boys(m, T)
+                rel = abs(g - ref) / ref
+                assert bounds[m] < BOYS_REL
+                if not (math.isfinite(g) and rel <= bounds[m]):
+                    bad.append((M, m, T, g, rel, bounds[m]))
+                if rel > worst[branch][0]:
+                    worst[branch] = (rel, (M, m, T))
+            at += M + 1
+    print(f"\n{backend} fj_boys<M>: M in 0..16, {len(BOYS_T)} T in [0, 1e6]; "
+          f"worst rel err {worst['series'][0]:.2e} at (M, m, T) = "
+          f"{worst['series'][1]} below the switch, {worst['upward'][0]:.2e} "
+          f"at {worst['upward'][1]} from it")
     assert not bad, f"fj_boys outside its forward error bound at {bad[:5]}"
-    assert math.isfinite(worst_rel)
 
 
 @pytest.mark.cuda
 @pytest.mark.gpu
 def test_cuda_fj_boys_matches_reference_boys(request, compile_device_source,
                                              run_device_binary, tmp_path) -> None:
-    """The emitted Boys routine on the RTX 3080, against quadrature."""
+    """The emitted Boys template on the RTX 3080, T across [0, 1e6] (#301)."""
     _run_boys("cuda", request, compile_device_source, run_device_binary, tmp_path)
 
 
@@ -512,85 +559,8 @@ def test_cuda_fj_boys_matches_reference_boys(request, compile_device_source,
 @pytest.mark.gpu
 def test_hip_fj_boys_matches_reference_boys(request, compile_device_source,
                                             run_device_binary, tmp_path) -> None:
-    """The emitted Boys routine on the RX 9060 XT, against quadrature."""
+    """The emitted Boys template on the RX 9060 XT, T across [0, 1e6] (#301)."""
     _run_boys("hip", request, compile_device_source, run_device_binary, tmp_path)
-
-
-# The wide spelling (#266): what a V unit carries. T across [0, 1.25e5] (the
-# tracked fixtures' largest V argument, HF/cc-pVTZ), both sides of the switch.
-WIDE_BOYS_REL = 1e-13  # the stated tolerance; both branches' bounds sit under
-ASYM_TRUNC = 4e-19  # Q(m+1/2, 125) for m <= 40 (reference.boys, measured)
-_SW = BOYS_SWITCH
-WIDE_BOYS_T = sorted({
-    *BOYS_T,
-    # the switch's neighbourhood, down to the adjacent doubles
-    100.0, 110.0, 120.0, 124.0, 124.9, 124.99, 124.999999,
-    math.nextafter(_SW, 0.0), _SW, math.nextafter(_SW, math.inf),
-    125.000001, 125.01, 125.1, 126.0, 130.0,
-    # every fixture's reach: H2O/STO-3G 858, 6-31G 3.6e4, cc-pVDZ 7.7e4,
-    # cc-pVTZ 1.25e5
-    709.0, 710.0, 858.0, 2000.0, 3.6e4, 7.7e4, 1.25e5,
-    *np.geomspace(500.0, 1.25e5, 40).tolist(),
-    *np.random.default_rng(266).uniform(0.0, 1.25e5, 40).tolist(),
-    *np.random.default_rng(267).uniform(100.0, 150.0, 20).tolist(),
-})
-
-
-def _wide_bound(m: int, T: float) -> float:
-    if T >= _SW:
-        return (2 * m + 2) * U + ASYM_TRUNC + BOYS_REF_ERR
-    return (3 * series_length(m, T) + 2) * U + BOYS_REF_ERR
-
-
-def _run_wide_boys(backend: str, request, compile_device_source,
-                   run_device_binary, tmp_path: Path) -> None:
-    tc = _toolchain(backend, request)
-    prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
-    binary = compile_device_source(tc, BOYS_HARNESS.format(
-        prologue=prologue, portable=PORTABLE, boys=BOYS_DEVICE_WIDE))
-    pts = [(m, T) for m in BOYS_M for T in WIDE_BOYS_T]
-    ms = np.array([m for m, _ in pts], dtype=np.float64)
-    Ts = np.array([T for _, T in pts], dtype=np.float64)
-    src, dst = tmp_path / "boys.in", tmp_path / "boys.out"
-    np.concatenate([[float(len(pts))], ms, Ts]).tofile(src)
-    run_device_binary(binary, str(src), str(dst), vram=backend)
-    got = np.fromfile(dst, dtype=np.float64)
-    assert got.shape == (len(pts),)
-    worst = {"below": (0.0, None), "above": (0.0, None)}
-    bad = []
-    for (m, T), g in zip(pts, got, strict=True):
-        ref = boys(m, T)
-        rel = abs(g - ref) / ref
-        bound = _wide_bound(m, T)
-        assert bound < WIDE_BOYS_REL
-        if not (math.isfinite(g) and rel <= bound):
-            bad.append((m, T, g, rel, bound))
-        side = "above" if T >= _SW else "below"
-        if rel > worst[side][0]:
-            worst[side] = (rel, (m, T))
-    print(f"\n{backend} wide fj_boys: {len(pts)} points, worst rel err "
-          f"{worst['below'][0]:.2e} at {worst['below'][1]} below the switch, "
-          f"{worst['above'][0]:.2e} at {worst['above'][1] or 'every point'} "
-          "from it")
-    assert not bad, f"wide fj_boys outside its bound at {bad[:5]}"
-
-
-@pytest.mark.cuda
-@pytest.mark.gpu
-def test_cuda_wide_fj_boys_matches_reference_boys(
-        request, compile_device_source, run_device_binary, tmp_path) -> None:
-    """The V units' fj_boys on the RTX 3080, T across [0, 1.25e5] (#266)."""
-    _run_wide_boys("cuda", request, compile_device_source, run_device_binary,
-                   tmp_path)
-
-
-@pytest.mark.hip
-@pytest.mark.gpu
-def test_hip_wide_fj_boys_matches_reference_boys(
-        request, compile_device_source, run_device_binary, tmp_path) -> None:
-    """The V units' fj_boys on the RX 9060 XT, T across [0, 1.25e5] (#266)."""
-    _run_wide_boys("hip", request, compile_device_source, run_device_binary,
-                   tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1033,7 +1003,6 @@ class _Configured:
 # against libcint (test_k_ondevice.py), so it is not loosened for high L.
 
 K_SUBGRID = measured_store.K_SUBGRID
-FJ_BOYS_HOST = "_Z7fj_boysid"  # nvcc's host shadow of `fj_boys(int, double)`
 K_REL = 1e-12  # test_ao_k.KJ_TOL (module section comment)
 K_JOBS = "FJ_K_JOBS"  # parallel unit compiles (default: every core)
 K_COMPILE_TIMEOUT_S = 6 * 3600  # per unit: an unrolled L = 13 unit is slow
@@ -1224,13 +1193,6 @@ def _k_build(backend: str, spec: Spec, tc, workdir: Path) -> _KCell:
             mode="-c", timeout=K_COMPILE_TIMEOUT_S)
         assert got.returncode == 0, (
             f"{tc.name} failed on {kernels[i].name}:\n{got.diagnostics[-4000:]}")
-        if backend == "cuda":
-            # nvcc gives every unit's `__device__ fj_boys` a HOST shadow
-            # definition, so two units would not link: make it local to its
-            # object (the device code is untouched; the host never calls it)
-            done = subprocess.run(["objcopy", f"--localize-symbol={FJ_BOYS_HOST}",
-                                   str(out)], capture_output=True, text=True)
-            assert done.returncode == 0, done.stderr
         return out
 
     jobs = int(os.environ.get(K_JOBS, "0") or 0) or (os.cpu_count() or 1)
@@ -1449,8 +1411,8 @@ def _run_k(backend: str, spec: Spec, request, compile_device_source,
     _k_check(backend, cell, run_device_binary, tmp_path)
 
 
-K_CELLS = [pytest.param(s, id=f"L{s.total_am}-b{s.n_batches}-k",
-                        marks=[pytest.mark.slow]) for s in K_SUBGRID]
+K_CELLS = [by_l(s, s.total_am, id=f"L{s.total_am}-b{s.n_batches}-k")
+           for s in K_SUBGRID]  # every K_SUBGRID L is above FAST_L_MAX
 
 
 @pytest.mark.cuda

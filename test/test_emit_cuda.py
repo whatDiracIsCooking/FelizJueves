@@ -33,8 +33,10 @@ from felizjueves.emit._c import EmitError
 from felizjueves.emit.cuda import emit
 from felizjueves.ir import (
     Assign,
+    Boys,
     Call,
     Decl,
+    Expr,
     Fn,
     Fragment,
     Index,
@@ -44,6 +46,7 @@ from felizjueves.ir import (
     Lit,
     Note,
     Param,
+    PrecisionError,
     Scalar,
     Space,
     Var,
@@ -237,80 +240,62 @@ def test_the_pair_goldens_compile(nvcc, compile_device_source, name: str) -> Non
                           link=False)
 
 
-# --- the two fj_boys spellings (#266) -----------------------------------------
-# The kernel picks the spelling (`Kernel.wide_boys`), never its name: a J unit
-# keeps the narrow Kummer text its kernels.json `source_sha256` pins, and a V
-# unit carries the wide one (the series below T = 125, the asymptote from
-# there). Each carries `fj_boys` exactly once.
+# --- the one fj_boys template (#301) ------------------------------------------
+# Every kernel with a `Boys` carries the same `fj_boys<M>` text exactly once,
+# and spells the statement as one call, its top order the template argument.
+# #266's narrow and wide spellings, and `Kernel.wide_boys`, are gone.
 
-FJ_BOYS_DEF = "__device__ double fj_boys(int m, double T)"
+FJ_BOYS_DEF = ("__device__ __forceinline__ void fj_boys(double T, "
+               "double (&F)[M + 1])")
 
 
-def _boys_kernel(*, wide: bool) -> Kernel:
+def _boys_kernel(top: int = 3, *, extent: int | None = None,
+                 t: Expr | None = None) -> Kernel:
     return Kernel("boys_probe", (
         Param("T", Scalar.F64),
         Param("out", Scalar.F64, array=True, intent=Intent.OUT),
-    ), (Assign(Index("out", (Lit(0),)), Call(Fn.BOYS, (Lit(3), Var("T")))),),
-        wide_boys=wide)
+    ), (Decl("boys", Scalar.F64, shape=(Lit(extent or top + 1),)),
+        Boys("boys", top, Var("T") if t is None else t),
+        Assign(Index("out", (Lit(0),)), Index("boys", (Lit(top),)))))
 
 
-def test_a_j_unit_carries_the_narrow_fj_boys_unchanged() -> None:
-    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
+def test_every_unit_carries_the_one_template() -> None:
+    from felizjueves.emit._c import BOYS_DEVICE
+    from felizjueves.kernel_v import build_v_kernel
 
-    k = build_pq_kernel(L)
-    text = emit(k, SM_86)
-    assert not k.wide_boys
-    assert text.count(FJ_BOYS_DEF) == 1
-    assert BOYS_DEVICE in text and BOYS_DEVICE_WIDE not in text
-    assert "T >= 125.0" not in text
-
-
-def test_the_kernel_flag_picks_the_wide_spelling() -> None:
-    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE
-
-    narrow, wide = (emit(_boys_kernel(wide=w), SM_86) for w in (False, True))
-    assert BOYS_DEVICE in narrow and BOYS_DEVICE_WIDE not in narrow
-    assert BOYS_DEVICE_WIDE in wide and BOYS_DEVICE not in wide
-    assert wide.count(FJ_BOYS_DEF) == 1 and narrow.count(FJ_BOYS_DEF) == 1
-    # only the routine differs: the kernel, and its call site, are the same
-    assert narrow.replace(BOYS_DEVICE, BOYS_DEVICE_WIDE) == wide
-    # a narrow kernel's repr is the pre-#266 one (hashes of it stay put)
-    n, w = _boys_kernel(wide=False), _boys_kernel(wide=True)
-    assert "wide_boys" not in repr(n) and repr(w).endswith(", wide_boys=True)")
-    assert n != w
+    for k, top in ((build_pq_kernel(L), L), (build_v_kernel((1, 1)), 2),
+                   (_boys_kernel(), 3)):
+        text = emit(k, SM_86)
+        assert text.count(FJ_BOYS_DEF) == 1 and text.count(BOYS_DEVICE) == 1
+        assert text.count(f"fj_boys<{top}>(") == 1  # one fill, every order
+    assert "fj_boys" not in emit(_pair_kernel(PAIR_GOLDENS[
+        sorted(PAIR_GOLDENS)[0]]), SM_86)  # no Boys, no routine
 
 
-def test_the_wide_spelling_is_the_narrow_series_plus_one_branch() -> None:
-    from felizjueves.emit._c import BOYS_DEVICE, BOYS_DEVICE_WIDE, BOYS_SWITCH
-    from felizjueves.reference.boys import T_SWITCH
+def test_the_switch_and_pi_are_spelled_as_declared() -> None:
+    from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD
 
-    narrow_body = BOYS_DEVICE.split(FJ_BOYS_DEF + " {\n")[1]
-    wide_body = BOYS_DEVICE_WIDE.split(FJ_BOYS_DEF + " {\n")[1]
-    assert wide_body.endswith(narrow_body)  # the series, word for word
-    branch = wide_body[: -len(narrow_body)]
-    assert branch.startswith(f"    if (T >= {BOYS_SWITCH!r}) {{\n")
-    assert f"0.5 * sqrt({math.pi!r} / T)" in branch  # pi, round-tripped
-    assert "exp" not in branch and "pow" not in branch  # no T^(m+1/2) formed
-    assert BOYS_SWITCH == T_SWITCH  # the reference's switch, the same T
+    assert f"if (T >= (double)(M + {BOYS_SWITCH_PAD})) {{" in BOYS_DEVICE
+    assert f"0.5 * sqrt({math.pi!r} / T) * erf(sqrt(T))" in BOYS_DEVICE
+    assert BOYS_DEVICE.count("= exp(-T);") == 1  # one exp(-T), every order
+    assert "pow" not in BOYS_DEVICE  # no T^(m+1/2) formed
 
 
-def test_wide_boys_is_refused_where_it_widens_nothing() -> None:
-    out = Param("out", Scalar.F64, array=True, intent=Intent.OUT)
-    with pytest.raises(ValueError, match="never calls Fn.BOYS"):
-        Kernel("k", (out,), (Assign(Index("out", (Lit(0),)), Lit(1.0)),),
-               wide_boys=True)
-    with pytest.raises(TypeError, match="wide_boys must be a bool"):
-        Kernel("k", (Param("T", Scalar.F64), out),
-               (Assign(Index("out", (Lit(0),)),
-                       Call(Fn.BOYS, (Lit(0), Var("T")))),), wide_boys=1)
+def test_a_boys_fill_writes_its_declared_f64_array() -> None:
+    with pytest.raises(ValueError, match="extent 4"):
+        _boys_kernel(3, extent=5)
+    with pytest.raises(PrecisionError, match="no fp32 Boys"):
+        _boys_kernel(t=Call(Fn.TO_F32, (Var("T"),)))
+    with pytest.raises(ValueError, match="top must be an int"):
+        Boys("boys", -1, Var("T"))
 
 
 @pytest.mark.cuda
-def test_the_wide_spelling_compiles(nvcc, compile_device_source) -> None:
-    # Compile only (a device compiler needs no card), under #92's warning filter.
-    from felizjueves.kernel_v import build_v_kernel
-
-    compile_device_source(nvcc, emit(build_v_kernel((1, 1)), SM_86), link=False)
+@pytest.mark.parametrize("top", [0, 1, 16])
+def test_the_template_compiles(nvcc, compile_device_source, top: int) -> None:
+    # Compile only (a device compiler needs no card), under #92's warning
+    # filter: M = 0 empties both recurrences, M = 16 is the ladder's top.
+    compile_device_source(nvcc, emit(_boys_kernel(top), SM_86), link=False)
 
 
 # --- the one-electron ladder (#242) -------------------------------------------

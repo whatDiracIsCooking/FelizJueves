@@ -612,7 +612,8 @@ def test_the_recycle_golden_is_unchanged(backend: str) -> None:
     named = {line.split()[1] for line in text.splitlines()
              if line.strip().startswith("double ") and "=" in line
              and "fj_boys" not in line}
-    assert named <= {"PQ_x", "PQ_y", "PQ_z", "term", "sum", "next", "fj_v"}, named
+    assert named <= {"PQ_x", "PQ_y", "PQ_z", "term", "sum", "next", "f",
+                     "fj_v"}, named  # term..f: fj_boys's own locals
 
 
 # ---------------------------------------------------------------------------
@@ -631,13 +632,17 @@ def test_the_recycle_golden_is_unchanged(backend: str) -> None:
 
 # (peak_live, traffic, n_instructions) at registers = 64, recorded on main
 # before #284 (477874c) from the same builders: any drift is a regression.
+# One deliberate move since, #301: `T` is read once by the `Boys` fill instead
+# of by every fundamental, so it dies earlier and three high-L traffic counts
+# fell (L = 8: 1391 -> 1387, L = 9: 2490 -> 2479, L = 10: 4141 -> 4129); the
+# `boys` array, like every array, is outside the value model.
 MMD_PINS = {
     "pq_L0_p0_q0": (12, 0, 20), "pq_L1_p1_q0": (13, 0, 38),
     "pq_L2_p1_q1": (19, 0, 49), "pq_L3_p2_q1": (29, 0, 92),
     "pq_L4_p2_q2": (44, 0, 121), "pq_L5_p3_q2": (66, 30, 205),
     "pq_L6_p3_q3": (94, 193, 267), "pq_L7_p4_q3": (130, 512, 409),
-    "pq_L8_p4_q4": (175, 1391, 513), "pq_L9_p5_q4": (231, 2490, 733),
-    "pq_L10_p5_q5": (299, 4141, 904),
+    "pq_L8_p4_q4": (175, 1387, 513), "pq_L9_p5_q4": (231, 2479, 733),
+    "pq_L10_p5_q5": (299, 4129, 904),
     "dq_0_0": (5, 0, 13), "dq_0_1": (8, 0, 36), "dq_1_1": (14, 0, 99),
     "dq_2_2": (39, 0, 552), "dq_3_3": (88, 495, 2430),
     "jab_00": (5, 0, 10), "jab_11": (13, 0, 43), "jab_22": (40, 0, 151),

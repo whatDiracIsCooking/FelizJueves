@@ -359,9 +359,11 @@ def test_the_ket_sort_key_is_the_product_and_the_break_needs_it(monkeypatch):
 # repr, so bit for bit), every class's batch count and bra blocks, each
 # class's kernels (by the sha256 of their repr), and the plan's tau, batch
 # count, density_sort and refusals, over both bounds, both sort keys, two
-# taus and two batch counts on H2O/STO-3G, and the dimer.
+# taus and two batch counts on H2O/STO-3G, and the dimer. Re-taken at #301,
+# whose one `Boys` fill changed every [p|q] kernel's repr (and so the
+# kernels' sha256 in the dump) and nothing else in it.
 J_PLANS_SHA256 = (
-    "27ec51f766a2e629a827ed2ef1d07dc5d2417cbece5fbb7755550816688a7ce5")
+    "13846dbadcaeb228e03bdbe5a5d867804ccfae21c0738563f5deaa396f974c84")
 
 
 def _j_plans_dump() -> str:

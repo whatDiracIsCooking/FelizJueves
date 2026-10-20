@@ -30,8 +30,8 @@ for CUDA, `.hip` for HIP):
   `(la, lb)`, `la <= lb <= LMAX` (3 when the flag is given bare), the
   overlap, kinetic and nuclear-attraction kernels `kernel_s.build_s_kernel`
   (`s_{la}{lb}`, `Target.S`), `kernel_t.build_t_kernel` (`t_{la}{lb}`,
-  `Target.T`) and `kernel_v.build_v_kernel` (`v_{la}{lb}`, `Target.V`, the
-  one that carries the wide `fj_boys`). NEVER in the no-flag default.
+  `Target.T`) and `kernel_v.build_v_kernel` (`v_{la}{lb}`, `Target.V`).
+  NEVER in the no-flag default.
 
 - the Schwarz ladder, `--schwarz-l [LMAX]`: for every pair class `(la, lb)`,
   `la <= lb <= LMAX` (2 when the flag is given bare, accepted
@@ -66,13 +66,13 @@ for CUDA, `.hip` for HIP):
   given bare: 22 classes, (ss|s) through (dd|s)),
   `kernel_eri3.build_eri3_kernel` (`eri3_{la}{lb}{lP}`, `Target.ERI3`):
   `(mn|P)` of an AO pair and one auxiliary shell, the quartet
-  `(la lb|lP 0)`'s recurrence at `L = la + lb + lP`, with the wide
-  `fj_boys`. LMAX bounds the class's TOTAL L, as `--metric-l`'s does; any
-  LMAX >= 0 is accepted, correctness is tested at L <= 4 only. It ADDS
-  units beside the J ladders and is NEVER in the no-flag default nor in
-  KERNEL_GEN_CMD. Every name is `eri3_` and the three `l`s
-  (`kernel_eri3.eri3_name`, `_`-separated once any `l > 9`), so no two
-  classes share a file and none collides with another ladder's.
+  `(la lb|lP 0)`'s recurrence at `L = la + lb + lP`. LMAX bounds the
+  class's TOTAL L, as `--metric-l`'s does; any LMAX >= 0 is accepted,
+  correctness is tested at L <= 4 only. It ADDS units beside the J ladders
+  and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name is
+  `eri3_` and the three `l`s (`kernel_eri3.eri3_name`, `_`-separated once
+  any `l > 9`), so no two classes share a file and none collides with
+  another ladder's.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain

@@ -96,9 +96,11 @@ def digest(specs: list[Spec]) -> tuple[int, str]:
 # Computed by `digest` over the pre-#367 tree's src/ (main at 6a57a32).
 # Fast: the ladder at L <= 2 and at L <= 4 (milestone 13's cap). The
 # subgrid through L = 10 is above the cap: `slow`.
-LADDER_PIN_2 = (57, "05801b52e91bdf1fd98f79da245e580b0e240f2889aef7c64979b736d7ebccca")
-LADDER_PIN_4 = (607, "ae2c63aa770d4257a81382e81fde53dcd8d5a8ff0609871eab9d4e9299e274f0")
-SUBGRID_PIN = (62, "7fff10a0d78d89ab4f4805dbda7878ed12c2f6c619952bb92370c09504e31cef")
+# Re-taken at #301, the one deliberate text change since: every unit's Boys
+# became one `fj_boys<M>` fill (the counts are unchanged).
+LADDER_PIN_2 = (57, "caecd99cdbacf695cf5af814e0d23a7611aed3436f202f3c79d7220e59c34638")
+LADDER_PIN_4 = (607, "88e7e3f8c6e470055a42286798b48b3211fc5b8bfa6a58e897116d4c7e81ccce")
+SUBGRID_PIN = (62, "f3083fc0e13442bb658768ad594269b45cf741a9b4c58e4ec3e51561a176962e")
 
 
 def test_the_literal_ladder_is_byte_identical_to_before_the_seams() -> None:

@@ -115,9 +115,9 @@ damp T = zeta |P - C|^2: over (primitive pair, nucleus) the tracked fixtures
 reach T ~ 1.25e5 (HF/cc-pVTZ; H2O/cc-pVDZ 7.7e4, H2O/6-31G 3.6e4), so the
 measurement was carried to 1e6, eight times the largest fixture. Widening the
 domain again means re-measuring, not just raising the constant. Nothing in the
-emitted kernel's `fj_boys` (the Kummer series, emit/_c.py) follows this
-module's domain: widening the reference is not permission to widen the device
-call's.
+emitted kernel's `fj_boys` (emit/_c.py's one template since #301) follows
+this module's domain: widening the reference is not permission to widen the
+device call's, which is witnessed on the card on its own (test_kernel_device).
 
 float64 throughout. The device's precision is the kernel tier's business.
 Nothing that emits kernel text may import this module.

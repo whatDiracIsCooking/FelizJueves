@@ -2,7 +2,9 @@
 
     FAST_L_MAX                       -> 4
     is_fast(L)                       -> L <= FAST_L_MAX
-    by_l(value, L, id=None)          -> pytest.param, `slow` when L > FAST_L_MAX
+    DEVICE_L_MAX                     -> 8
+    by_l(value, L, id=None)          -> pytest.param, `slow` when L > FAST_L_MAX,
+                                        and `high_l` too when L > DEVICE_L_MAX
     split_by_l(values, l_of, ids=)   -> [by_l(v, l_of(v)) for v in values]
 
 WHY. The fast tier is the pre-push gate (`FAST_TEST_ARGS`), and a gate that
@@ -21,8 +23,18 @@ order), and `la + lb` for a pair kernel's class (`DQ`, `JAB`, `S`, `T`, `V`,
 `SX`) -- except `Target.SCHWARZ`, whose pair `(la, lb)` runs the quartet
 `(la lb|la lb)` at `2 (la + lb)`.
 
-The `slow` tier still runs everything moved here; `kernel-tier.sh` and the
-device tests are untouched by this cut.
+The `slow` tier still runs everything moved here.
+
+THE DEVICE CAP. `DEVICE_L_MAX` is the second cut, the kernel tier's: a case
+above it is also marked `high_l`, and both kernel-tier selections
+(`KERNEL_TEST_ARGS`, `KERNEL_FULL_TEST_ARGS` in devtools/config.sh) exclude
+that marker, so `--full` runs every `gpu` test with L <= 8. The cases above it
+(the J subgrid's L = 10, 13 and 16 cells, the K subgrid's, #113's asymmetric
+cells, the [p|q] ladder's L = 9..16) were where `--full` spent its hours: a
+single L = 10 K unit sat in nvcc's front end for over an hour (#301). They
+are kept, not deleted: `pytest -m "gpu and cuda and high_l"` still runs
+them. Only the device selection reads the marker; a bare `pytest` and the
+`slow` tier still collect every host case above the cap.
 """
 
 from __future__ import annotations
@@ -33,6 +45,7 @@ from typing import Any
 import pytest
 
 FAST_L_MAX = 4
+DEVICE_L_MAX = 8
 
 
 def is_fast(L: int) -> bool:
@@ -40,8 +53,11 @@ def is_fast(L: int) -> bool:
 
 
 def by_l(value: Any, L: int, id: str | None = None) -> Any:
-    """`value` as a parameter, marked `slow` when its class's L is above the cut."""
+    """`value` as a parameter, marked `slow` when its class's L is above the
+    fast cut and `high_l` when it is above the device cap."""
     marks = () if is_fast(L) else (pytest.mark.slow,)
+    if L > DEVICE_L_MAX:
+        marks = (*marks, pytest.mark.high_l)
     return pytest.param(value, id=id, marks=marks)
 
 

@@ -339,7 +339,7 @@ def test_the_ir_is_the_literal_kernel_with_its_record_reads_typed(
     assert members and all(e.record is sr.VIEWS[e.array] for e in members)
     untyped = {e.array for e in reads if not isinstance(e, Member)}
     assert not untyped & set(sr.VIEWS), sorted(untyped & set(sr.VIEWS))
-    assert untyped <= {"G_ab", "G_cd", "D", "Dsh"}
+    assert untyped <= {"G_ab", "G_cd", "D", "Dsh", "boys"}  # boys: a local
     # the member named is the one the literal offset meant
     for e in members:
         assert e.record.members[e.at[-1].value] == e.member

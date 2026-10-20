@@ -99,6 +99,7 @@ markers = [
   "hip: needs the ROCm toolchain (hipcc) to compile",
   "gpu: launches a kernel -- needs a live device, not merely a compiler",
   "slow: seconds to minutes; kept off the pre-push gate",
+  "high_l: a class above tiers.DEVICE_L_MAX (L > 8); kept off both kernel-tier selections",
   "oracle: needs PySCF (the `oracle` dependency group) to regenerate a tracked fixture; a comparison AGAINST a fixture is fast-tier and carries no marker",
   "claim(id): discharges a registered claim in data/literature/*/claims.json; test/test_claims.py checks the registry both ways",
 ]

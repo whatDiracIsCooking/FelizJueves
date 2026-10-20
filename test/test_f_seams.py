@@ -85,8 +85,10 @@ def digest(lmax: int) -> tuple[int, str]:
 
 
 # Computed by `digest` over the pre-#368 tree's src/ (main at 83e29b1).
-LADDER_PIN_2 = (15, "ae0428643ed06a61903e0f811e245fb229d8f70e2bbea2312ccaeb90a54b549d")
-LADDER_PIN_4 = (39, "ccf7eef2b06d4543854cba0ad4cd50262b0ff4c5eaf1e437111cbea40202c0c4")
+# Re-taken at #301, the one deliberate text change since: every unit's Boys
+# became one `fj_boys<M>` fill (the counts are unchanged).
+LADDER_PIN_2 = (15, "877c180635231b24c5804d6cc4b2eaa8b23ada3fba1111a14b61d3ae3f567277")
+LADDER_PIN_4 = (39, "1b9245d4121db3ca573ec35243cafed01d78b6bb414e27368838269b7bcf042c")
 
 
 def test_the_literal_ladder_is_byte_identical_to_before_the_seams() -> None:
