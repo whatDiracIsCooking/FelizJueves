@@ -37,6 +37,7 @@ import numpy as np
 from .manifest import (
     AO_SCHEMA,
     AUX_OVLP_ARRAY,
+    COLS_SEP,
     CROSS_PREFIX,
     ERI_PREFIX,
     FIXTURES,
@@ -45,11 +46,13 @@ from .manifest import (
     K_ARRAY,
     KIN_ARRAY,
     METRIC_ARRAY,
+    METRIC_SCHEMA,
     NUC_ARRAY,
     OVLP_ARRAY,
     ROWS_SEP,
-    SCHEMA,
     SCHWARZ_ARRAY,
+    THREE_CENTER_PREFIX,
+    THREE_CENTER_SCHEMA,
     dumps,
     encode_array,
     load,
@@ -118,6 +121,12 @@ class Case:
     aux_rows: tuple[int, int] | None = None
     metric_set: str | None = None
     parent: str | None = None
+    # #442, a three-center piece (manifest: THE THREE-CENTER PIECES): as a
+    # metric piece, the fixture is the aux basis's, on `parent`'s molecule;
+    # it records aux columns [c0, c1) of libcint's `int3c2e_cart` (`(mn|P)`,
+    # m, n AOs of `parent`), full AO width. `aux_rows` stays None.
+    three_center_set: str | None = None
+    aux_cols: tuple[int, int] | None = None
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -451,6 +460,40 @@ CASES.update({
 })
 
 
+def _three_center_piece(parent: str, aux_basis: str, set_name: str,
+                        cols: tuple[int, int]) -> Case:
+    """Aux columns [c0, c1) of `(mn|P)`, m, n of `parent`, P of
+    `aux_basis` on `parent`'s molecule."""
+    c = CASES[parent]
+    c0, c1 = cols
+    return replace(
+        c,
+        description=(
+            f"#442: the auxiliary basis {aux_basis} on {parent}'s molecule "
+            f"(df.make_auxmol, Cartesian): aux columns [{c0}, {c1}) of "
+            f"libcint's three-center Coulomb integral int3c2e_cart (mn|P), "
+            f"m and n AOs of {parent}, full AO width "
+            "(manifest.three_center_set reassembles the tensor)."
+        ),
+        record_basis=False, record_eri=False, record_j=False,
+        record_k=False, record_one_e=False, record_schwarz=False,
+        cross_rows=None, aux_basis=aux_basis, aux_cols=cols,
+        three_center_set=set_name, parent=parent,
+    )
+
+
+# #442's three-center set: cc-pVTZ-jkfit (166 aux AOs) against
+# H2O/STO-3G's 7 AOs. 7 x 7 x 166 values are ~200 KB, under the 512 KB cap,
+# so the set is one piece.
+THREE_CENTER_SET = "h2o_sto3g_jkfit_3c"
+THREE_CENTER_COLS = ((0, 166),)
+CASES.update({
+    f"{THREE_CENTER_SET}{COLS_SEP}{c0}_{c1}": _three_center_piece(
+        "h2o_sto3g_j", "cc-pvtz-jkfit", THREE_CENTER_SET, (c0, c1))
+    for c0, c1 in THREE_CENTER_COLS
+})
+
+
 def _host() -> str:
     # The same marking felizjueves.measured uses: a container's hostname is
     # its id, not the box's.
@@ -556,7 +599,7 @@ def build(name: str) -> dict[str, Any]:
     import pyscf
 
     case = CASES[name]
-    mol = _mole(case)
+    mol = parent_mol = _mole(case)
     if case.aux_basis is not None:
         from pyscf import df
 
@@ -616,6 +659,8 @@ def build(name: str) -> dict[str, Any]:
         },
         "density_recipe": DENSITY_RECIPE,
     }
+    if case.aux_basis is not None and case.three_center_set is not None:
+        return _three_center_fixture(name, case, parent_mol, mol, out)
     if case.aux_basis is not None:
         return _metric_fixture(name, case, mol, out)
     if case.record_basis:
@@ -668,7 +713,7 @@ def _metric_fixture(name: str, case: Case, mol: Any,
     if not np.array_equal(m, mol.intor("int2c2e")):
         raise ValueError(f"{name}: int2c2e_cart and int2c2e differ")
     s = np.ascontiguousarray(mol.intor("int1e_ovlp"))
-    out["schema"] = SCHEMA
+    out["schema"] = METRIC_SCHEMA
     out["density_recipe"] = ("none: a metric piece is not an AO fixture and "
                              "records no density (#411)")
     out["metric"] = {"set": case.metric_set, "rows": [r0, r1],
@@ -676,6 +721,41 @@ def _metric_fixture(name: str, case: Case, mol: Any,
                      "converted": converted_record(mol)}
     out["arrays"] = {METRIC_ARRAY: encode_array(m[r0:r1]),
                      AUX_OVLP_ARRAY: encode_array(s[r0:r1])}
+    return out
+
+
+def _three_center_fixture(name: str, case: Case, mol: Any, auxmol: Any,
+                          out: dict[str, Any]) -> dict[str, Any]:
+    """`out` (the aux basis's common fixture fields) as a schema-4
+    three-center piece: no density, the `three_center` record, and aux
+    columns [c0, c1) of libcint's `int3c2e_cart` through
+    `df.incore.aux_e2(mol, auxmol, aosym="s1")`, shape (nao, nao, c1 - c0).
+    Checked bitwise against `int3c2e` (cart=True, so the same call) before
+    it is written; what is RECORDED is `int3c2e_cart`'s."""
+    from pyscf import df
+
+    from .basis import converted_record
+
+    if case.aux_cols is None or case.parent is None:
+        raise ValueError(f"{name}: a three-center piece needs cols and parent")
+    c0, c1 = case.aux_cols
+    t = np.ascontiguousarray(df.incore.aux_e2(mol, auxmol,
+                                              intor="int3c2e_cart",
+                                              aosym="s1"))
+    nao = int(mol.nao_nr())
+    if t.shape != (nao, nao, int(auxmol.nao_nr())):
+        raise ValueError(f"{name}: int3c2e_cart has shape {t.shape}")
+    if not np.array_equal(t, df.incore.aux_e2(mol, auxmol, intor="int3c2e",
+                                              aosym="s1")):
+        raise ValueError(f"{name}: int3c2e_cart and int3c2e differ")
+    out["schema"] = THREE_CENTER_SCHEMA
+    out["density_recipe"] = ("none: a three-center piece is not an AO "
+                             "fixture and records no density (#442)")
+    out["three_center"] = {"set": case.three_center_set, "cols": [c0, c1],
+                           "parent": case.parent,
+                           "converted": converted_record(auxmol)}
+    out["arrays"] = {THREE_CENTER_PREFIX + case.parent:
+                     encode_array(t[:, :, c0:c1])}
     return out
 
 

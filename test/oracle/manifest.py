@@ -5,14 +5,16 @@ tracked fixture on a box where the `oracle` group was never installed. The
 writer is `generate.py`; this module only defines what a fixture IS and refuses
 anything that is not one, with a message naming the file.
 
-THE SHAPE (schema 2 or 3), one JSON object per file under `fixtures/`:
+THE SHAPE (schema 2, 3 or 4), one JSON object per file under `fixtures/`:
 
-    schema       2 or 3 (#240: schema 1 had no one-electron arrays; a
+    schema       2, 3 or 4 (#240: schema 1 had no one-electron arrays; a
                  schema-1 file is refused by name, not read as one with them
                  absent). Schema 3 (#411) adds one optional key, `metric`
-                 (THE METRIC PIECES, below); an AO fixture is still written
-                 as schema 2, unchanged, and a `metric` key in a schema-2
-                 file is refused.
+                 (THE METRIC PIECES, below), and schema 4 (#442) another,
+                 `three_center` (THE THREE-CENTER PIECES); an AO fixture is
+                 still written as schema 2 and a metric piece as schema 3,
+                 unchanged, and a `metric` key in a schema-2 file or a
+                 `three_center` key in a file below schema 4 is refused.
     name         the file's stem
     description  free text: what the case is for
     provenance   {pyscf, libcint, numpy, date, host, command, mol, basis, cart}
@@ -95,6 +97,35 @@ by name, never by a tolerance; the reassembled matrices must be symmetric to
 1e-14 of their largest element (libcint computes both triangles).
 `metric_sets()` names every tracked set.
 
+THE THREE-CENTER PIECES (#442, schema 4). libcint's three-center Coulomb
+integral `(mn|P)` -- `int3c2e_cart`, through `df.incore.aux_e2(mol, auxmol,
+aosym="s1")` -- with `m, n` AOs of a tracked AO fixture (the `parent`) and
+`P` an AO of the auxiliary basis `df.make_auxmol(parent, basis)`. A piece
+carries
+
+    three_center {set, cols, parent, converted}: `set` the name every piece
+                 of one tensor shares, `cols` = [c0, c1) the aux AOs whose
+                 columns it holds (on aux shell boundaries, `ao_loc`),
+                 `parent` the tracked AO fixture whose molecule and basis are
+                 the bra side, and `converted` the aux basis in our
+                 convention (kept here, not top-level, for the metric's
+                 reason).
+    arrays       exactly `int3c2e_cart:<parent>`, shape
+                 (parent's nao, parent's nao, c1 - c0) -- NO `density`.
+
+and its stem is `<set>_cols<c0>_<c1>`. The rest of the shape (provenance,
+atoms, shells, nao, ao_labels, ao_loc) is the AUX basis's, as a metric
+piece's is. `three_center_set(set)` reassembles the whole
+(nao_parent, nao_parent, nao_aux) tensor and refuses a column gap, an
+overlapping or duplicate piece, a piece whose inputs differ from the
+first's (as `metric_set` compares them), and a parent that is absent, has
+no converted basis, or does not match what the piece carries: its atoms,
+`provenance.mol` and `cart`, and the array's AO width as the parent's
+`nao`. The tensor must be symmetric in `m, n` to 1e-14 of its largest
+element -- NOT bitwise: libcint computes both triangles separately (1,998 of
+the 8,134 entries of the tracked set differ from their transpose, by at most
+4.4e-16). `three_center_sets()` names every tracked set.
+
 THE FOCK PAIR (#280, milestone 12 pin 10). No fixture records the
 two-electron Fock matrix; it is COMBINED, never stored, from a `<m>_j` /
 `<m>_k` pair, which `fock_pair(m)` loads and `check_pair` asserts share
@@ -132,9 +163,11 @@ from typing import Any
 
 import numpy as np
 
-SCHEMA = 3  # the newest this loader reads (#411: the metric pieces)
+SCHEMA = 4  # the newest this loader reads (#442: the three-center pieces)
 AO_SCHEMA = 2  # what an AO fixture is written as, unchanged since #240
-SCHEMAS = (AO_SCHEMA, SCHEMA)
+METRIC_SCHEMA = 3  # what a metric piece is written as, unchanged since #411
+THREE_CENTER_SCHEMA = 4  # what a three-center piece is written as (#442)
+SCHEMAS = (AO_SCHEMA, METRIC_SCHEMA, THREE_CENTER_SCHEMA)
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 PROVENANCE_KEYS = (
@@ -145,7 +178,7 @@ TOP_KEYS = (
     "schema", "name", "description", "provenance", "atoms", "shells", "nao",
     "ao_labels", "ao_loc", "arrays", "density_recipe",
 )
-OPTIONAL_KEYS = ("converted", "metric")
+OPTIONAL_KEYS = ("converted", "metric", "three_center")
 REQUIRED_ARRAYS = ("density",)
 ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
 J_ARRAY = "vj"  # PySCF get_jk's Coulomb matrix for `density` (#86)
@@ -165,6 +198,10 @@ AUX_OVLP_ARRAY = "int1e_ovlp:rows"
 METRIC_ARRAYS = (METRIC_ARRAY, AUX_OVLP_ARRAY)
 METRIC_KEYS = ("converted", "parent", "rows", "set")
 ROWS_SEP = "_rows"
+# #442: a three-center piece's one array, `int3c2e_cart:<parent>`
+THREE_CENTER_PREFIX = "int3c2e_cart:"
+THREE_CENTER_KEYS = ("cols", "converted", "parent", "set")
+COLS_SEP = "_cols"
 
 
 class FixtureError(ValueError):
@@ -232,6 +269,21 @@ class MetricPiece:
 
 
 @dataclass(frozen=True)
+class ThreeCenterPiece:
+    """A schema-4 file's `three_center` record: aux columns [c0, c1) of set
+    `set`, the bra side the tracked fixture `parent`."""
+
+    set: str
+    cols: tuple[int, int]
+    parent: str
+    converted: Converted
+
+    @property
+    def array(self) -> str:
+        return f"{THREE_CENTER_PREFIX}{self.parent}"
+
+
+@dataclass(frozen=True)
 class Fixture:
     path: Path
     name: str
@@ -246,11 +298,14 @@ class Fixture:
     density_recipe: str
     converted: Converted | None = None
     metric: MetricPiece | None = None
+    three_center: ThreeCenterPiece | None = None
 
     @property
     def density(self) -> np.ndarray:
         if self.metric is not None:
             raise _fail(self.path, "a metric piece records no density")
+        if self.three_center is not None:
+            raise _fail(self.path, "a three-center piece records no density")
         return self.arrays["density"]
 
 
@@ -356,9 +411,16 @@ def validate(path: Path, raw: Any) -> Fixture:
     if raw["schema"] not in SCHEMAS:
         raise _fail(path, f"schema {raw['schema']!r}, this loader reads "
                           f"{list(SCHEMAS)}")
-    if "metric" in raw and raw["schema"] < SCHEMA:
-        raise _fail(path, f"a metric piece is schema {SCHEMA} (#411), and "
-                          f"this file says schema {raw['schema']}")
+    if "metric" in raw and raw["schema"] < METRIC_SCHEMA:
+        raise _fail(path, f"a metric piece is schema {METRIC_SCHEMA} (#411), "
+                          f"and this file says schema {raw['schema']}")
+    if "three_center" in raw and raw["schema"] < THREE_CENTER_SCHEMA:
+        raise _fail(path, f"a three-center piece is schema "
+                          f"{THREE_CENTER_SCHEMA} (#442), and this file says "
+                          f"schema {raw['schema']}")
+    if "metric" in raw and "three_center" in raw:
+        raise _fail(path, "a file is a metric piece or a three-center piece, "
+                          "not both")
     if raw["name"] != path.stem:
         raise _fail(path, f"name {raw['name']!r} is not the file's stem")
 
@@ -433,6 +495,17 @@ def validate(path: Path, raw: Any) -> Fixture:
                        tuple(atoms), tuple(shells), nao, tuple(labels),
                        tuple(ao_loc), arrays, raw["density_recipe"], None,
                        metric)
+    if "three_center" in raw:
+        if "converted" in raw:
+            raise _fail(path, "a three-center piece keeps its aux basis in "
+                              "three_center.converted, not in converted")
+        arrays = _arrays(path, raw["arrays"], required=())
+        tc = _three_center(path, raw, prov, len(atoms), shells, nao,
+                           tuple(ao_loc), arrays)
+        return Fixture(path, raw["name"], raw["description"], prov,
+                       tuple(atoms), tuple(shells), nao, tuple(labels),
+                       tuple(ao_loc), arrays, raw["density_recipe"], None,
+                       None, tc)
 
     arrays = _arrays(path, raw["arrays"])
     d = arrays["density"]
@@ -443,6 +516,10 @@ def validate(path: Path, raw: Any) -> Fixture:
     stray = sorted(n for n in arrays if n in METRIC_ARRAYS)
     if stray:
         raise _fail(path, f"arrays {stray} belong to a metric piece only")
+    stray = sorted(n for n in arrays if n.startswith(THREE_CENTER_PREFIX))
+    if stray:
+        raise _fail(path, f"arrays {stray} belong to a three-center piece "
+                          "only")
 
     converted = (_converted(path, raw["converted"], prov, len(atoms), shells,
                             nao)
@@ -564,6 +641,44 @@ def _metric(path: Path, raw: dict[str, Any], prov: Provenance, n_atoms: int,
                               f"({r1 - r0}, {nao})")
     converted = _converted(path, m["converted"], prov, n_atoms, shells, nao)
     return MetricPiece(m["set"], (r0, r1), m["parent"], converted)
+
+
+def _three_center(path: Path, raw: dict[str, Any], prov: Provenance,
+                  n_atoms: int, shells: list[Shell], nao: int,
+                  ao_loc: tuple[int, ...], arrays: dict[str, np.ndarray],
+                  ) -> ThreeCenterPiece:
+    t = raw["three_center"]
+    if not isinstance(t, dict) or sorted(t) != sorted(THREE_CENTER_KEYS):
+        raise _fail(path, f"three_center must have exactly the keys "
+                          f"{sorted(THREE_CENTER_KEYS)}")
+    for k in ("set", "parent"):
+        if not isinstance(t[k], str) or not t[k] or t[k] != Path(t[k]).name:
+            raise _fail(path, f"three_center.{k} must be a fixture-style name")
+    cols = t["cols"]
+    if not (isinstance(cols, list) and len(cols) == 2
+            and all(isinstance(c, int) and not isinstance(c, bool)
+                    for c in cols)
+            and 0 <= cols[0] < cols[1] <= nao):
+        raise _fail(path, f"three_center.cols must be [c0, c1] with "
+                          f"0 <= c0 < c1 <= nao={nao}")
+    c0, c1 = cols
+    if c0 not in ao_loc or c1 not in ao_loc:
+        raise _fail(path, f"three_center.cols [{c0}, {c1}) does not fall on "
+                          "shell boundaries (ao_loc)")
+    want = f"{t['set']}{COLS_SEP}{c0}_{c1}"
+    if raw["name"] != want:
+        raise _fail(path, f"a three-center piece of set {t['set']!r}, cols "
+                          f"[{c0}, {c1}) is named {want!r}")
+    name = f"{THREE_CENTER_PREFIX}{t['parent']}"
+    if sorted(arrays) != [name]:
+        raise _fail(path, f"a three-center piece carries exactly the array "
+                          f"{name!r}, not {sorted(arrays)}")
+    a = arrays[name]
+    if a.ndim != 3 or a.shape[0] != a.shape[1] or a.shape[2] != c1 - c0:
+        raise _fail(path, f"arrays.{name} has shape {a.shape}, expected "
+                          f"(parent's nao, parent's nao, {c1 - c0})")
+    converted = _converted(path, t["converted"], prov, n_atoms, shells, nao)
+    return ThreeCenterPiece(t["set"], (c0, c1), t["parent"], converted)
 
 
 def _eri_quartet(name: str) -> tuple[int, ...] | None:
@@ -689,16 +804,18 @@ class MetricSet:
 _PIECE_FREE = ("date", "host", "command")
 
 
-def _inputs(fx: Fixture) -> tuple[tuple[str, Any], ...]:
-    assert fx.metric is not None
+def _inputs(fx: Fixture, record: str = "metric",
+            ) -> tuple[tuple[str, Any], ...]:
+    rec = getattr(fx, record)
+    assert rec is not None
     pv = fx.provenance
     return (
         *((f"provenance.{k}", getattr(pv, k)) for k in PROVENANCE_KEYS
           if k not in _PIECE_FREE),
         ("atoms", fx.atoms), ("shells", fx.shells), ("nao", fx.nao),
         ("ao_labels", fx.ao_labels), ("ao_loc", fx.ao_loc),
-        ("metric.parent", fx.metric.parent),
-        ("metric.converted", fx.metric.converted),
+        (f"{record}.parent", rec.parent),
+        (f"{record}.converted", rec.converted),
     )
 
 
@@ -757,6 +874,114 @@ def metric_sets(fixtures: Path = FIXTURES) -> list[str]:
     """Every tracked metric set's name, sorted."""
     names = {fx.metric.set for p in sorted(fixtures.glob("*.json"))
              if (fx := load(p)).metric is not None}
+    return sorted(names)
+
+
+# --- the three-center pieces (#442) ----------------------------------------
+
+
+@dataclass(frozen=True)
+class ThreeCenterSet:
+    """A three-center set `three_center_set` reassembled: the WHOLE tensor."""
+
+    name: str
+    pieces: tuple[Fixture, ...]  # in column order
+    parent: Fixture  # the bra side's AO fixture
+    tensor: np.ndarray  # int3c2e_cart, (parent nao, parent nao, aux nao)
+    converted: Converted  # the aux basis (oracle.basis.from_fixture reads it)
+
+    @property
+    def path(self) -> Path:
+        return self.pieces[0].path
+
+    @property
+    def nao(self) -> int:
+        """The aux basis's AO count."""
+        return self.pieces[0].nao
+
+
+def three_center_set(name: str, fixtures: Path = FIXTURES) -> ThreeCenterSet:
+    """Load every `<name>_cols*` piece and reassemble the whole tensor
+    (`assemble_three_center` refuses, naming the files)."""
+    paths = sorted(fixtures.glob(f"{name}{COLS_SEP}*.json"))
+    return assemble_three_center(name, [load(p) for p in paths], fixtures)
+
+
+def assemble_three_center(name: str, pieces: list[Fixture],
+                          fixtures: Path = FIXTURES) -> ThreeCenterSet:
+    """Reassemble already-loaded pieces of set `name`, the parent read from
+    `fixtures`. Refuses: no piece; a piece of another set; two pieces over
+    the same columns (a duplicate) or overlapping ones; a column gap at the
+    start, between two pieces or at the end; a piece whose inputs differ
+    from the first's; a parent that is absent, has no converted basis, or
+    differs from what the pieces carry (atoms, provenance.mol and cart, the
+    array's AO width as its nao); and a tensor not symmetric in m, n to
+    1e-14 of its largest element. Every input comparison is exact."""
+    if not pieces:
+        raise FixtureError(f"{fixtures}: no three-center piece "
+                           f"{name}{COLS_SEP}*")
+    for fx in pieces:
+        if fx.three_center is None or fx.three_center.set != name:
+            raise _fail(fx.path, f"is not a piece of three-center set "
+                                 f"{name!r}")
+    pieces = sorted(pieces, key=lambda f: f.three_center.cols)  # type: ignore[union-attr]
+    first = pieces[0]
+    ref = _inputs(first, "three_center")
+    for fx in pieces[1:]:
+        for (field, a), (_, b) in zip(ref, _inputs(fx, "three_center"),
+                                      strict=True):
+            if a != b:
+                raise FixtureError(f"{first.path} / {fx.path}: not one "
+                                   f"three-center set: {field} differ")
+    end, prev = 0, None
+    for fx in pieces:
+        c0, c1 = fx.three_center.cols  # type: ignore[union-attr]
+        if prev == (c0, c1):
+            raise _fail(fx.path, f"cols [{c0}, {c1}) is a duplicate piece")
+        if c0 < end:
+            raise _fail(fx.path, f"cols [{c0}, {c1}) overlap a piece "
+                                 f"ending at column {end}")
+        if c0 > end:
+            raise _fail(fx.path, f"cols [{end}, {c0}) of set {name!r} are "
+                                 "in no piece (one is missing)")
+        end, prev = c1, (c0, c1)
+    if end != first.nao:
+        raise FixtureError(f"{fixtures}: cols [{end}, {first.nao}) of set "
+                           f"{name!r} are in no piece (one is missing)")
+    tc = first.three_center
+    assert tc is not None
+    ppath = fixtures / f"{tc.parent}.json"
+    if not ppath.exists():
+        raise _fail(first.path, f"three_center.parent: no fixture "
+                                f"{ppath.name}")
+    parent = load(ppath)
+    a = np.concatenate([fx.arrays[tc.array] for fx in pieces], axis=2)
+    checks = (
+        ("atoms", first.atoms, parent.atoms),
+        ("provenance.mol", first.provenance.mol, parent.provenance.mol),
+        ("provenance.cart", first.provenance.cart, parent.provenance.cart),
+        ("nao", a.shape[0], parent.nao),
+    )
+    for field, mine, theirs in checks:
+        if mine != theirs:
+            raise FixtureError(f"{first.path} / {ppath}: not its parent: "
+                               f"{field} differ")
+    if parent.converted is None:
+        raise _fail(first.path, f"three_center.parent {ppath.name} has no "
+                                "converted basis")
+    # libcint computes both triangles: symmetric to rounding, not bitwise
+    if not np.all(np.abs(a - a.transpose(1, 0, 2))
+                  <= 1e-14 * np.max(np.abs(a))):
+        raise FixtureError(f"{first.path}: set {name!r}'s {tc.array} is not "
+                           "symmetric in m, n to 1e-14 of its largest element")
+    a.setflags(write=False)
+    return ThreeCenterSet(name, tuple(pieces), parent, a, tc.converted)
+
+
+def three_center_sets(fixtures: Path = FIXTURES) -> list[str]:
+    """Every tracked three-center set's name, sorted."""
+    names = {fx.three_center.set for p in sorted(fixtures.glob("*.json"))
+             if (fx := load(p)).three_center is not None}
     return sorted(names)
 
 
