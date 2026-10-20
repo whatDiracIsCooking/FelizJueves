@@ -2087,6 +2087,21 @@ EDGES |= {k: frozenset(v) for k, v in {
 
 
 # ---------------------------------------------------------------------------
+# The three-center integral (mn|P) (#443): the host reference and staging
+# (`ao.eri3`, under the `ao` rule, `pq` injected). The bra is `ao.pairs`'
+# dressed primitive pair, the ket `ao.metric`'s aux record unchanged; no
+# `ao.eri` (its exponent-0 twin is refused by `ao.shell`).
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "ao.eri3": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "ao.eri3": ("ao.hermite", "ao.metric", "ao.pairs", "ao.shell"),
+}.items()}
+
+
+# ---------------------------------------------------------------------------
 # The DF metric kernel (#414): the builder (`kernel_metric`, the Schwarz
 # builder's rule restated: the plan layer's DAG for the J quartet
 # (lP 0|lQ 0), the recurrence statements, `center_fragment` inlined twice)
