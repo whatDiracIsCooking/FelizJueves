@@ -99,6 +99,23 @@ quartet, but the key indexes no table row; the plan is asked for the quartet,
 never for this key. Unbatched by DECISION, like `V` and `SCHWARZ`
 (`_PAIR_BATCH_REFUSAL`): it has Hermite targets that could be partitioned.
 
+AN ERI3 CLASS IS A TRIPLE THAT RUNS A QUARTET (#441). `Target.ERI3` is the
+three-center Coulomb integral `(mn|P) = INT INT m(r1) n(r1) P(r2) / r12` of
+density fitting: an AO shell pair `(m, n)` on the bra and ONE auxiliary
+(single-center) shell `P` on the ket. Its class is the TRIPLE
+`(la, lb, lP)` -- the first target whose class names three shells, `am` of
+length 3, operator `COULOMB`, key ``coulomb/d0/(la,lb|lP)/b1/eri3/literal``
+-- and the recurrence it runs is the `Target.J` quartet `(la lb|lP 0)`'s at
+L = la + lb + lP: the bra is an ordinary Hermite pair, the ket an aux
+primitive as in `Target.METRIC` (`zeta = alpha`, `P = A`, `X_PA = 0`). The
+triple is NOT an AO quartet with a shell dropped: its third shell is an aux
+shell of another basis, not an AO, and no fourth shell was ever there to
+drop. So `total_am` is la + lb + lP, the L of that quartet, but the key
+indexes no [JEngine] table row; the plan is asked for the quartet, never for
+this key. Unbatched by DECISION, like `METRIC` (`_PAIR_BATCH_REFUSAL`): its
+Hermite targets (every `t` with `|t| <= la + lb + lP`) could be partitioned,
+and a batched three-center kernel is a follow-up nobody has filed.
+
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
 partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
@@ -184,6 +201,10 @@ class Target(StrEnum):
     # (lP, lQ) of single-center shells whose recurrence is the quartet
     # (lP 0|lQ 0)'s (#410; module docstring "A METRIC CLASS").
     METRIC = "metric"
+    # The three-center DF integral (mn|P), a TRIPLE class (la, lb, lP): an AO
+    # pair on the bra, one aux shell on the ket, whose recurrence is the
+    # quartet (la lb|lP 0)'s (#441; module docstring "AN ERI3 CLASS").
+    ERI3 = "eri3"
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -191,29 +212,33 @@ class Target(StrEnum):
 # quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196),
 # and a pair (la, lb) for each one-electron matrix (#232), and a quartet
 # (la, lb | lc, ld) in AO order for the fused Fock build (#272), and a pair
-# (lP, lQ) of auxiliary shells for the Coulomb metric (#410).
+# (lP, lQ) of auxiliary shells for the Coulomb metric (#410), and a triple
+# (la, lb | lP) -- an AO pair and one aux shell -- for the three-center
+# integral (#441).
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
-    Target.SX: 2, Target.METRIC: 2,
+    Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
 }
 
 
 # The one operator each target is built from (#232); any other pairing is
-# refused. The two-electron targets are Coulomb's, the metric among them.
+# refused. The two-electron targets are Coulomb's, the metric and the
+# three-center integral among them.
 OPERATOR_OF: dict[Target, Operator] = {
     Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
     Target.F: Operator.COULOMB, Target.SCHWARZ: Operator.COULOMB,
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
-    Target.METRIC: Operator.COULOMB,
+    Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
 }
 
 
-# Why a pair target refuses `n_batches > 1`, per target (#232, module
-# docstring): a structural reason for the targets with no Hermite targets to
-# partition, and a decision for `V`, of which the structural reason is false.
+# Why a pair (or, since #441, a triple) target refuses `n_batches > 1`, per
+# target (#232, module docstring): a structural reason for the targets with no
+# Hermite targets to partition, and a decision for `V`, `SCHWARZ`, `METRIC`
+# and `ERI3`, of which the structural reason is false.
 _STRUCTURAL = (
     "never batched -- batching partitions the Hermite targets of a quartet, "
     "and this pair kernel has none to partition"
@@ -242,7 +267,18 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
         "not apply; a batched metric kernel is a follow-up nobody has "
         "declared"
     ),
+    Target.ERI3: (
+        "unbatched by decision -- the three-center (mn|P) runs the quartet "
+        "(la lb|lP 0)'s recurrence, whose Hermite targets (every t with "
+        "|t| <= la + lb + lP) could be partitioned, so the structural reason "
+        "does not apply; a batched three-center kernel is a follow-up nobody "
+        "has filed"
+    ),
 }
+
+
+# The word a validator message uses for a class of `n` shells.
+_SHAPE: dict[int, str] = {2: "pair", 3: "triple", 4: "quartet"}
 
 
 # Why `Target.F` refuses `n_batches > 1` (#272, module docstring): its own
@@ -271,8 +307,9 @@ class Spec:
     # four shells; (la, lc | lb, ld) for `Target.K` -- the Hermite pairing,
     # bra first, NOT the AO order (la, lb, lc, ld); (la, lb | lc, ld) for
     # `Target.F` -- the AO order, NOT K's pairing; (la, lb) for a pair
-    # target (`AM_LENGTH`).
-    am: tuple[int, int, int, int] | tuple[int, int]
+    # target; (la, lb, lP) for `Target.ERI3`, an AO pair and one aux shell
+    # (`AM_LENGTH`).
+    am: tuple[int, int, int, int] | tuple[int, int, int] | tuple[int, int]
     target: Target
     # Named departures from the paper, sorted and unique. () is the literal
     # [JEngine] reconstruction. A kernel-body lever (`levers.VOCABULARY`)
@@ -300,18 +337,21 @@ class Spec:
                 f"derivative order {self.derivative_order!r} not in "
                 f"{DERIVATIVE_ORDERS}"
             )
-        if len(self.am) not in (2, 4) or not all(
+        if len(self.am) not in (2, 3, 4) or not all(
             type(x) is int and x >= 0 for x in self.am
         ):
-            raise ValueError(f"am {self.am!r} is not two or four non-negative ints")
+            raise ValueError(
+                f"am {self.am!r} is not two, three or four non-negative ints")
         want = AM_LENGTH[self.target]
         if len(self.am) != want:
-            shape = "pair" if want == 2 else "quartet"
+            shape = _SHAPE[want]
             hermite = (
                 " in Hermite order (la, lc | lb, ld)"
                 if self.target is Target.K
                 else " in AO order (la, lb | lc, ld)"
-                if self.target is Target.F else ""
+                if self.target is Target.F
+                else " (la, lb | lP), an AO pair and one aux shell"
+                if self.target is Target.ERI3 else ""
             )
             raise ValueError(
                 f"target {self.target} takes a {shape} class ({want} shells)"
@@ -337,9 +377,10 @@ class Spec:
                 f"n_batches {self.n_batches!r} for target {self.target}: "
                 f"{_F_BATCH_REFUSAL}"
             )
-        if want == 2 and self.n_batches != 1:
+        if want in (2, 3) and self.n_batches != 1:
             raise ValueError(
-                f"n_batches {self.n_batches!r} for pair target {self.target}: "
+                f"n_batches {self.n_batches!r} for {_SHAPE[want]} target "
+                f"{self.target}: "
                 f"{_PAIR_BATCH_REFUSAL[self.target]}"
             )
 
@@ -369,6 +410,10 @@ class Spec:
         A METRIC pair (`Target.METRIC`, `am = (lP, lQ)`) sums to lP + lQ,
         the L of the `Target.J` quartet `(lP 0|lQ 0)` whose recurrence it
         runs; the pair key itself still indexes NO table row.
+
+        An ERI3 triple (`Target.ERI3`, `am = (la, lb, lP)`) sums to
+        la + lb + lP, the L of the `Target.J` quartet `(la lb|lP 0)` whose
+        recurrence it runs; the triple key itself indexes NO table row.
         """
         return sum(self.am)
 
@@ -380,11 +425,16 @@ class Spec:
         ``overlap/d0/(2,1)/b1/s/literal``. A quartet key is
         byte-identical to the one before #150: it is the join key of every
         measured row. An F class spells ``coulomb/d0/(2,1|1,0)/b1/f/literal``
-        -- the AO order, target slot ``f`` (#272).
+        -- the AO order, target slot ``f`` (#272). An ERI3 triple spells
+        ``coulomb/d0/(2,1|3)/b1/eri3/literal`` -- the bra pair, ``|``, the
+        one aux shell (#441).
         """
         if len(self.am) == 4:
             l1, l2, l3, l4 = self.am
             cls = f"({l1},{l2}|{l3},{l4})"
+        elif len(self.am) == 3:
+            la, lb, lp = self.am
+            cls = f"({la},{lb}|{lp})"
         else:
             la, lb = self.am
             cls = f"({la},{lb})"

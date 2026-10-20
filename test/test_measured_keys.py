@@ -14,6 +14,8 @@ measure/measure_measured_keys.py (`devtools/measure.sh check`), which imports
 
 from __future__ import annotations
 
+import hashlib
+import itertools
 import re
 
 from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
@@ -92,3 +94,53 @@ def test_a_lever_keyed_row_round_trips_and_rederives(monkeypatch,
     measured_store.save(back, q)
     assert q.read_bytes() == p.read_bytes()
     assert set(json.loads(p.read_text())["rows"]) == set(keys)
+
+
+# --- #441: Target.ERI3 widens the enum and `am` without moving a J key -----
+
+# Every MeasuredKey a J row of the store can carry -- the default class of
+# each L = 0..16 at every legal batch count, literal and the two older
+# arms, on both cards -- spelled by the code before #441 and pinned here.
+# The tracked rows themselves are re-derived byte for byte by
+# measure/measure_measured_keys.py (`devtools/measure.sh check`).
+_CARDS = (("sm_86", "nvcc 13.0"), ("gfx1200", "hipcc / ROCm 7.2.4"))
+J_KEYS_BEFORE_441 = (
+    510, "227c0b260e0ff87b157e2ebb4a883a6c2060c2ffdf81e2a197eb70d2e6694cf5")
+
+
+def _j_keys() -> list[str]:
+    keys = []
+    for L in range(17):
+        for n in (1, 3, 6, 9, 12):
+            for lv in ((), ("recycle",), ("no-sieve",)):
+                try:
+                    spec = pq_spec(L, levers=lv, n_batches=n)
+                except ValueError:
+                    continue
+                keys += [MeasuredKey(spec, by_name(a), tc).key()
+                         for a, tc in _CARDS]
+    return keys
+
+
+def test_target_eri3_moves_no_j_key() -> None:
+    keys = _j_keys()
+    digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
+    assert (len(keys), digest) == J_KEYS_BEFORE_441
+    assert all(target_of(k) is Target.J for k in keys)
+
+
+def test_an_eri3_key_is_never_read_as_a_j_row() -> None:
+    # A triple key has one shell after `|`: the J parser rejects it, it
+    # reads back as `Target.ERI3` and its parts, and no J key equals one.
+    j = set(_j_keys())
+    for am in itertools.product(range(5), repeat=3):
+        spec = Spec(Operator.COULOMB, 0, am, Target.ERI3)
+        assert not _SPEC_KEY.fullmatch(spec.key())
+        for a, tc in _CARDS:
+            key = MeasuredKey(spec, by_name(a), tc).key()
+            assert key not in j
+            assert split_key(key) == (spec.key(), a, tc)
+            assert target_of(key) is Target.ERI3
+    assert MeasuredKey(Spec(Operator.COULOMB, 0, (2, 1, 3), Target.ERI3),
+                       by_name("sm_86"), "nvcc 13.0").key() == (
+        "coulomb/d0/(2,1|3)/b1/eri3/literal@sm_86/nvcc 13.0")

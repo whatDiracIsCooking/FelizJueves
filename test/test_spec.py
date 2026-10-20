@@ -122,13 +122,15 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # #232 appends `s`, `t` and `v` the same way, and #272 appends `f`.
     # The Schwarz matrix appends `schwarz`, a pair class, and the
     # cross-basis overlap `sx`, an ordered pair class, and #410 the
-    # Coulomb metric `metric`, a pair of aux shells.
+    # Coulomb metric `metric`, a pair of aux shells, and #441 the
+    # three-center integral `eri3`, a triple.
     assert [t.value for t in Target] == [
-        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric"]
+        "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric",
+        "eri3"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
-        Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2,
+        Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
     }
 
 
@@ -228,7 +230,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
         Target.V: Operator.NUCLEAR, Target.F: Operator.COULOMB,
         Target.SCHWARZ: Operator.COULOMB, Target.SX: Operator.OVERLAP,
-        Target.METRIC: Operator.COULOMB,
+        Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -469,3 +471,104 @@ def test_the_metric_takes_a_pair_on_coulomb_only() -> None:
     for am in ((1, 0, 1, 0), (1, 0, 1), (1,), (1, -1), (1, 1.0)):
         with pytest.raises(ValueError):
             _metric(am)
+
+
+# #441: the three-center integral (mn|P), a TRIPLE (la, lb, lP) -- an AO pair
+# on the bra, one aux shell on the ket -- running the quartet (la lb|lP 0).
+
+
+def _eri3(am=(2, 1, 3), **kw) -> Spec:
+    return Spec(Operator.COULOMB, 0, am, Target.ERI3, **kw)
+
+
+def test_the_eri3_key_is_a_coulomb_triple_and_round_trips() -> None:
+    a = _eri3()
+    assert a.key() == "coulomb/d0/(2,1|3)/b1/eri3/literal"
+    assert Target.ERI3 == "eri3" and AM_LENGTH[Target.ERI3] == 3
+    assert OPERATOR_OF[Target.ERI3] is Operator.COULOMB
+    for am in itertools.product(range(4), repeat=3):
+        s = _eri3(am)
+        op, d, cls, b, t, lv = s.key().split("/")
+        la, lb, lp = am
+        assert cls == f"({la},{lb}|{lp})" and t == "eri3" and lv == "literal"
+        bra, ket = cls[1:-1].split("|")
+        back = Spec(Operator(op), int(d[1:]),
+                    (*(int(x) for x in bra.split(",")), int(ket)),
+                    Target(t), n_batches=int(b[1:]))
+        assert back == s and back.key() == s.key()
+        assert target_of(f"{s.key()}@sm_86/nvcc 13.0") is Target.ERI3
+
+
+def test_eri3_total_am_is_the_quartet_it_runs_and_no_table_row() -> None:
+    # L of the J quartet (la lb|lP 0), exactly as SCHWARZ and METRIC.
+    assert _eri3((2, 1, 3)).total_am == 6
+    assert _eri3((2, 1, 3)).total_am == _spec(am=(2, 1, 3, 0)).total_am
+    assert _eri3((0, 0, 0)).total_am == 0
+    doc = Spec.total_am.__doc__
+    assert "Target.ERI3" in doc and "indexes NO table row" in doc
+
+
+def test_eri3_is_built_from_coulomb_only() -> None:
+    for op in (Operator.OVERLAP, Operator.KINETIC, Operator.NUCLEAR):
+        with pytest.raises(ValueError, match="built from operator coulomb"):
+            Spec(op, 0, (1, 1, 1), Target.ERI3)
+
+
+@pytest.mark.parametrize("am", [(2, 1), (2, 1, 3, 0), (1, 0, 1, 0)])
+def test_eri3_refuses_a_pair_or_a_quartet_naming_triple(am) -> None:
+    with pytest.raises(ValueError, match=r"takes a triple class \(3 shells\)"):
+        _eri3(am)
+
+
+@pytest.mark.parametrize("am", [(2,), (2, 1, -1), (2, 1, 1.0), ()])
+def test_eri3_refuses_a_malformed_am(am) -> None:
+    with pytest.raises(ValueError):
+        _eri3(am)
+
+
+def test_a_triple_is_refused_by_every_other_target_naming_its_shape() -> None:
+    # Both directions: a three-shell am on a pair or quartet target names
+    # that target's shape, never "triple".
+    for t in Target:
+        if t is Target.ERI3:
+            continue
+        shape = {2: "pair", 4: "quartet"}[AM_LENGTH[t]]
+        with pytest.raises(ValueError, match=f"takes a {shape} class") as err:
+            Spec(OPERATOR_OF[t], 0, (1, 1, 1), t)
+        assert "triple" not in str(err.value)
+
+
+@pytest.mark.parametrize("n", [3, 6, 9, 12])
+def test_a_batched_eri3_spec_is_refused_by_decision(n: int) -> None:
+    with pytest.raises(ValueError, match="unbatched by decision") as err:
+        _eri3(n_batches=n)
+    assert "triple target eri3" in str(err.value)
+    why = _PAIR_BATCH_REFUSAL[Target.ERI3]
+    assert "Hermite targets" in why and "structural reason does not" in why
+    assert "never batched" not in str(err.value)  # not the structural one
+    assert _eri3().n_batches == 1
+
+
+def test_an_eri3_key_never_collides_with_any_other_target_key() -> None:
+    ls = range(4)
+    eri3 = {_eri3(am).key() for am in itertools.product(ls, repeat=3)}
+    assert len(eri3) == 64
+    others = set()
+    for t in Target:
+        if t is Target.ERI3:
+            continue
+        shapes = itertools.product(ls, repeat=AM_LENGTH[t])
+        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+    assert eri3.isdisjoint(others)
+    # The quartet it runs, (la lb|lP 0), is a different key: a triple's ket
+    # holds one shell, a quartet's two.
+    assert _eri3((2, 1, 3)).key() != _spec(am=(2, 1, 3, 0)).key()
+    assert all(k.split("/")[2].count(",") == 1 for k in eri3)
+
+
+def test_the_docstring_says_the_triple_is_not_a_quartet_minus_a_shell() -> None:
+    import felizjueves.spec as spec_module
+
+    doc = spec_module.__doc__
+    assert "AN ERI3 CLASS IS A TRIPLE THAT RUNS A QUARTET" in doc
+    assert "NOT an AO quartet with a shell dropped" in doc

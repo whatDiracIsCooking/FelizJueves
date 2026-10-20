@@ -109,7 +109,7 @@ def test_an_f_key_never_collides_with_any_other_target_key() -> None:
     for t in Target:
         if t is Target.F:
             continue
-        shapes = quartets if AM_LENGTH[t] == 4 else itertools.product(ls, repeat=2)
+        shapes = itertools.product(ls, repeat=AM_LENGTH[t])
         others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
     assert f.isdisjoint(others)
 

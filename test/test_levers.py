@@ -48,7 +48,7 @@ def probe_j_only(monkeypatch: pytest.MonkeyPatch) -> levers.Lever:
 
 
 def _spec(target: Target, *lv: str, n_batches: int = 1) -> Spec:
-    am = (2, 1) if AM_LENGTH[target] == 2 else (1, 0, 1, 0)
+    am = {2: (2, 1), 3: (2, 1, 1), 4: (1, 0, 1, 0)}[AM_LENGTH[target]]
     return Spec(OPERATOR_OF[target], 0, am, target, tuple(lv), n_batches)
 
 
