@@ -355,7 +355,30 @@ LIMITS = CLAIMS.parent / "limits.json"
 _WORDS = ("zero one two three four five six seven eight nine ten eleven twelve "
           "thirteen fourteen fifteen sixteen seventeen eighteen nineteen "
           "twenty").split()
-_LIMIT_COUNT = re.compile(r"\b(\w+) `StructuralLimit`s")
+_TENS = {"twenty": 20, "thirty": 30}
+# Hyphens are read with the word, so "twenty-one" is 21 and not "one" (#447).
+_LIMIT_COUNT = re.compile(r"(?<![\w-])([\w-]+) `StructuralLimit`s")
+
+
+def _count_word(word: str) -> int:
+    """A count spelled in digits, as a word to twenty, or as a hyphenated
+    compound ("twenty-one"); anything else raises, so a spelling this
+    reader does not know fails loudly instead of being skipped."""
+    word = word.lower()
+    if word.isdigit():
+        return int(word)
+    if word in _WORDS:
+        return _WORDS.index(word)
+    tens, _, unit = word.partition("-")
+    return _TENS[tens] + _WORDS.index(unit) if unit else _TENS[tens]
+
+
+def test_the_count_reader_reads_compounds() -> None:
+    assert [_count_word(w) for w in
+            ("7", "nineteen", "Twenty", "twenty-one", "thirty-nine")] == \
+        [7, 19, 20, 21, 39]
+    assert _LIMIT_COUNT.search("holds twenty-one `StructuralLimit`s")[1] == \
+        "twenty-one"
 
 
 def test_every_limits_count_a_doc_spells_matches_the_file() -> None:
@@ -363,8 +386,7 @@ def test_every_limits_count_a_doc_spells_matches_the_file() -> None:
     quoted = 0
     for doc in TALLY_DOCS:
         for m in _LIMIT_COUNT.finditer(doc.read_text()):
-            word = m[1].lower()
-            got = int(word) if word.isdigit() else _WORDS.index(word)
+            got = _count_word(m[1])
             quoted += 1
             assert got == n, (doc.relative_to(ROOT).as_posix(), m[0], n)
     assert quoted  # CLAUDE.md and the data README spell one each

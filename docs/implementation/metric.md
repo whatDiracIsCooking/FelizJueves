@@ -41,9 +41,9 @@ input here, not a table to score against. Milestone 15 added no
 but it indexes no row of `[JEngine]` Tables 1–3.
 
 **Out of scope:** DF-J and DF-K themselves, spherical aux functions, and any
-measurement. The three-center `(mn|P)` is the named follow-up. It is not
-filed as an issue, but the aux record and `center_fragment` are shaped for
-it (see "What is not done").
+measurement. The three-center `(mn|P)`, this note's named follow-up, was
+built in milestone 16 on the same aux record and `center_fragment`:
+`three_center.md` is the one place with its detail.
 
 ## The family, as a key
 
@@ -104,7 +104,8 @@ The device spelling of `E` is `e_fragment.center_fragment(l)` (#410):
 - every other entry is one `Weighted` over `HALF_INV_ZETA` and `ONE`.
 
 Its locals are named `C{x,y,z}_i_t`, not `E…`, so that `(mn|P)` can inline
-it beside `block_fragment` without a clash. It is pinned bitwise to
+it beside `block_fragment` without a clash; `kernel_eri3` now inlines
+the two side by side (`three_center.md`). It is pinned bitwise to
 `ao.hermite.e_axis` at `X_PA = 0` for `l = 0..4` (`test_e_fragment.py`).
 The host's `ao.metric.center_e` is `ao.hermite.e_block` at that point, the
 same arithmetic.
@@ -310,8 +311,9 @@ and printed `device: present` with no usable card.
 - **Spherical aux functions.** Only Cartesian aux functions are handled.
 - **DF-J and DF-K themselves**, and anything that factors or inverts the
   metric.
-- **The three-center `(mn|P)`**, the named follow-up. The aux record
-  (`AuxRec`, one primitive with `s` and no pair factor) and
-  `center_fragment` (its `C…` locals) are shaped so that it can inline the
-  single-center block beside `block_fragment`.
+- **The three-center `(mn|P)`** was the named follow-up and is now built
+  (milestone 16, #441–#447): it reuses the aux record (`AuxRec`, one
+  primitive with `s` and no pair factor) unchanged and inlines
+  `center_fragment` beside `block_fragment`. Its status,
+  tests and what it does not reach are in `three_center.md`, not here.
 - **A batched metric kernel, a metric lever, and derivatives.**
