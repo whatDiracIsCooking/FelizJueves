@@ -53,6 +53,7 @@ from felizjueves.kernel import (
     pq_spec,
 )
 from felizjueves.kernel_dq import build_dq_kernel, dq_name
+from felizjueves.kernel_eri3 import eri3_name
 from felizjueves.kernel_jab import build_jab_kernel, jab_name
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 
@@ -388,6 +389,108 @@ def test_the_bare_default_writes_no_metric_unit(backend, tmp_path):
     ["--metric-l", "1", "--fock-l", "0"],
 ])
 def test_a_metric_l_it_cannot_honour_is_a_2(argv, tmp_path):
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
+
+
+# --- the three-center ladder (#445; goldens in test/test_emit_eri3.py) --------
+
+
+def test_the_eri3_ladder_bounds_the_total_l():
+    assert emit_cli.eri3_classes(1) == [(0, 0, 0), (0, 0, 1), (0, 1, 0)]
+    assert len(emit_cli.eri3_classes(emit_cli.DEFAULT_ERI3_L)) == 22
+    assert emit_cli.eri3_classes(40)  # any L: listed, never built here
+
+
+def test_the_eri3_names_cannot_collide_with_any_other_ladder():
+    # #419's shape: every name from its name function, no IR built, every
+    # rung of every ladder the CLI writes beside it.
+    pairs = emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
+    others = ({emit_cli.source_name(L, "cuda") for L in range(17)}
+              | {f"{name(c)}.cu" for c in pairs
+                 for name in (dq_name, jab_name, *emit_cli.ONE_E_NAMES)}
+              | {f"schwarz_{a}{b}.cu" for a, b in emit_cli.schwarz_classes(
+                  emit_cli.SCHWARZ_L_MAX)}
+              | {f"sx_{a}{b}.cu" for a, b in emit_cli.sx_classes(
+                  emit_cli.ONE_E_L_MAX)}
+              | {"metric_" + "".join(map(str, c)) + ".cu"
+                 for c in emit_cli.metric_classes(16)}
+              | {f"f_{''.join(map(str, c))}.cu" for c in emit_cli.FOCK_CLASSES})
+    classes = emit_cli.eri3_classes(40)
+    eri3 = [f"{eri3_name(c)}.cu" for c in classes]
+    assert len(set(eri3)) == len(eri3)  # no two classes share a file
+    assert not set(eri3) & others
+    assert all(n.startswith("eri3_") for n in eri3)
+    assert not any(n.startswith("eri3_") for n in others)
+
+
+def test_the_eri3_name_separates_its_ls_only_above_nine():
+    # Every l <= 9: three digits run together, the L <= 4 goldens' spelling.
+    assert eri3_name((2, 2, 0)) == "eri3_220"
+    assert eri3_name((9, 9, 9)) == "eri3_999"
+    # Once any l is two digits the ls are `_`-separated, so the classes
+    # that ran together as `eri3_0110` are two names.
+    assert eri3_name((0, 11, 0)) == "eri3_0_11_0"
+    assert eri3_name((0, 1, 10)) == "eri3_0_1_10"
+    assert eri3_name((1, 10, 0)) != eri3_name((11, 0, 0))
+
+
+def test_eri3_l_11_writes_every_class_to_its_own_file(tmp_path, monkeypatch):
+    # The overwrite #456 had: (0,11,0) and (0,1,10) to one file. Names
+    # only -- the builder is stubbed, so no IR is built at L = 11.
+    import types
+
+    from felizjueves.kernel_eri3 import eri3_spec
+
+    monkeypatch.setattr(emit_cli, "build_eri3_kernel", lambda c: (
+        types.SimpleNamespace(name=eri3_name(eri3_spec(*c)))))
+    monkeypatch.setattr(emit_cli, "_write", lambda backend, arch, d, k: (
+        d / f"{k.name}.cu").open("x").close() or d / f"{k.name}.cu")
+    assert _run(tmp_path, "cuda", "--L", "0", "--eri3-l", "11") == 0
+    want = {f"{eri3_name(c)}.cu" for c in emit_cli.eri3_classes(11)}
+    assert len(want) == len(emit_cli.eri3_classes(11))
+    assert _names(tmp_path) == want | {"pq_L0_p0_q0.cu"}
+    assert {"eri3_0_11_0.cu", "eri3_0_1_10.cu"} <= want
+
+
+def test_eri3_l_adds_its_units_beside_the_ladder_flags(tmp_path):
+    from felizjueves.kernel_eri3 import build_eri3_kernel
+
+    assert _run(tmp_path, "hip", "--pair-l", "0", "--eri3-l", "1") == 0
+    assert _names(tmp_path) == {"dq_0_0.hip", "jab_00.hip", "eri3_000.hip",
+                                "eri3_001.hip", "eri3_010.hip"}
+    emit, arch, _ = BACKEND["hip"]
+    assert (tmp_path / "eri3_010.hip").read_text() == emit(
+        build_eri3_kernel((0, 1, 0)), arch)
+
+
+def test_kernel_gen_cmd_asks_for_no_eri3_unit():
+    cfg = (ROOT / "devtools" / "config.sh").read_text()
+    (line,) = [ln for ln in cfg.splitlines()
+               if ln.lstrip().startswith("KERNEL_GEN_CMD=")]
+    assert "felizjueves.emit" in line and "--eri3-l" not in line
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_bare_default_writes_no_eri3_unit(backend, tmp_path):
+    _, _, ext = BACKEND[backend]
+    assert _run(tmp_path, backend) == 0
+    got = _names(tmp_path)
+    assert len(got) == 37 and got == _pq_names(ext) | _pair_names(ext)
+    assert not any(n.startswith("eri3_") for n in got)
+
+
+@pytest.mark.parametrize("argv", [
+    ["--eri3-l", "-1"],
+    ["--eri3-l", "x"],
+    ["--eri3-l", "1", "--class", "0", "0", "0", "0"],
+    ["--eri3-l", "1", "--shell-ls", "0"],
+    ["--eri3-l", "1", "--fock-l", "0"],
+    ["--eri3-l", "1", "--fock-class", "0", "0", "0", "0"],
+    ["--eri3-l", "1", "--n-batches", "3"],
+])
+def test_an_eri3_l_it_cannot_honour_is_a_2(argv, tmp_path):
     assert _run(tmp_path, "cuda", *argv) == 2
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
