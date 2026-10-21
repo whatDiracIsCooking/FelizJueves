@@ -1,9 +1,10 @@
 """The launch plan of the one-block-per-`K_AB` exchange kernel, as a value (#481).
 
-    kb_launches(basis, D, *, bound, tau, build=None)    -> KBLaunchPlan
+    kb_launches(basis, D, *, bound, tau, build=None, decay=None)
+                                                         -> KBLaunchPlan
     KBLaunchPlan   iterable of KBClassLaunch, plus tau / dm
     KBClassLaunch(am, bras, kets, blocks, kernel)
-    KBlock(a, b, bra0, bra1, ket0, ket1)
+    KBlock(a, b, bra0, bra1, ket0, ket1, dmax)
     walk_kb(plan, basis, D, *, pq)                       -> ao.k.KScreened
 
 `launch_k.py`'s counterpart for `kernel_kblock` (opt-UM's mapping): which
@@ -26,28 +27,36 @@ contract (`kernel_kblock.py`):
   subsequence of `k_launches`' sorted list, so still sorted (the regrouping
   `plan_driver.k_driver` does for `kernel_k`).
 
-A `KBlock(a, b, bra0, bra1, ket0, ket1)` is one `(a group, b group)` pair:
-the kernel's block `blk` contracts `bras[bra0:bra1]` against
-`kets[ket0:ket1]` into `K[a][b]`. Every `(a, b)` of the class is a block,
-once; so one launch of the class's kernel writes each `K[a][b]` from one
-block. A screen that drops whole blocks (#481's question, [Fock, §4.3]'s
-eqs 41-49) would drop entries of `blocks` here and change nothing else: it
-is a launch filter, not built (`kernel_kblock`'s docstring).
+A `KBlock(a, b, bra0, bra1, ket0, ket1, dmax)` is one `(a group, b group)`
+pair: the kernel's block `blk` contracts `bras[bra0:bra1]` against
+`kets[ket0:ket1]` into `K[a][b]`, screened with the density factor
+`dmax`. Every `(a, b)` of the class is a block, once; so one launch of the
+class's kernel writes each `K[a][b]` from one block. A screen that drops
+whole blocks would drop entries of `blocks` here and change nothing else:
+a launch filter, not built (`kernel_kblock`'s docstring).
+
+THE DENSITY FACTOR PER BLOCK (#484). With `decay=None` every block's `dmax`
+is `max|D|`, the plan's `dm`: #481's screen exactly. With `decay`
+(`ao.k.density_decay` at the plan's `tau` and density) each block carries
+`decay.factor(a, b, lc, ld)`, [Fock, §4.3.1]'s `F_ab`, never above `dm`.
 
 THE WALK (`walk_kb`): the plan in Python, the kernel's loops. Per class, per
-block, per bra in order: when screening, a bra with `(G_bra * G_ket0) * dm
-< tau` (`ket0` the block's first, largest ket) ends the block's bra loop
-and every pair of it and of every later bra is skipped; else down the
-block's kets with `launch_k.walk_k`'s `break`. Each surviving pair adds
-`ao.k._k_quartet` of that one record pair (the host's staged arithmetic)
-to `K[a][b]`, every element summed with `math.fsum`. Both bounds use
-`walk_k`'s association `(G_bra * G_ket) * dm`, and both breaks are sound
-because the products are monotone in a sorted factor, so the walk skips
+block, per bra in order: when screening, a bra with `(G_bra * G_ket0) *
+dmax < tau` (`ket0` the block's first, largest ket; `dmax` the block's)
+ends the block's bra loop and every pair of it and of every later bra is
+skipped; else down the block's kets with `launch_k.walk_k`'s `break`.
+Each surviving pair adds `ao.k._k_quartet` of that one record pair (the
+host's staged arithmetic) to `K[a][b]`, every element summed with
+`math.fsum`. Both bounds use `walk_k`'s association `(G_bra * G_ket) *
+dmax`, and both breaks are sound because the products are monotone in a
+sorted factor (the block's `dmax` is one constant), so the walk skips
 EXACTLY the ordered record pairs `walk_k` skips at the same `tau` -- the
 same terms, fsummed: its `K` is `walk_k`'s to 0, and so `ao.k`'s to
-rounding (test/test_launch_kblock.py). `n_examined` counts every bound
-test, the bra loop's included; `scale` is counted from the plan, as
-`walk_k`'s.
+rounding (test/test_launch_kblock.py) -- with every `dmax = dm`; a
+per-block factor skips more (#484), within `KScreened.bound`, which the
+walk fills (per element, each skipped pair's `(G_bra G_ket) max|D_cd|`).
+`n_examined` counts every bound test, the bra loop's included; `scale` is
+counted from the plan, as `walk_k`'s.
 """
 
 from __future__ import annotations
@@ -57,7 +66,15 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 
 from felizjueves.ao.j import _density, epair
-from felizjueves.ao.k import PQ, KScreened, _dcd, _dm, _k_quartet
+from felizjueves.ao.k import (
+    PQ,
+    DensityDecay,
+    KScreened,
+    _check_decay,
+    _dcd,
+    _dm,
+    _k_quartet,
+)
 from felizjueves.ao.shell import Basis
 from felizjueves.ir import Kernel
 from felizjueves.launch import PairRec
@@ -74,7 +91,8 @@ Am = tuple[int, int, int, int]
 @dataclass(frozen=True)
 class KBlock:
     """One `K[a][b]` block: bras `[bra0, bra1)` (first shell `a`) against
-    kets `[ket0, ket1)` (first shell `b`) of its class's lists."""
+    kets `[ket0, ket1)` (first shell `b`) of its class's lists, screened
+    with the density factor `dmax` (`kb_launches` always sets it)."""
 
     a: int
     b: int
@@ -82,6 +100,7 @@ class KBlock:
     bra1: int
     ket0: int
     ket1: int
+    dmax: float | None = None
 
     def __post_init__(self) -> None:
         if not (0 <= self.bra0 < self.bra1 and 0 <= self.ket0 < self.ket1):
@@ -113,6 +132,9 @@ class KBClassLaunch:
                                                  strict=False)):
                     raise ValueError(f"K class {self.am}: block {blk} is "
                                      "not sorted descending by G")
+            if blk.dmax is None or not blk.dmax >= 0.0:
+                raise ValueError(f"K class {self.am}: block {blk} carries "
+                                 "no density factor >= 0")
 
     @property
     def L(self) -> int:
@@ -165,17 +187,24 @@ def _schwarz(b: int, d: int, i_bd: float) -> float:
 
 
 def kb_launches(basis: Basis, D: object, *, bound: KBound, tau: float,
-                build: KBBuild | None = None) -> KBLaunchPlan:
+                build: KBBuild | None = None,
+                decay: DensityDecay | None = None) -> KBLaunchPlan:
     """The block kernel's launch plan of `K` for `basis` and the symmetric
     density `D` (module docstring): `bound(epair) -> I per record` injected,
-    `build(spec) -> Kernel` the block-kernel builder, or none."""
+    `build(spec) -> Kernel` the block-kernel builder, or none; `decay` the
+    per-block density factor, or `max|D|` for every block."""
     kp = k_launches(basis, D, bound=bound, key=_schwarz, tau=tau)
+    if decay is not None:
+        _check_decay(decay, kp.tau, kp.dm, len(basis.shells))
     built: dict[Spec, Kernel] = {}
     out = []
     for c in kp:
         bras, brng = _groups(c.bras, sort=True)
         kets, krng = _groups(c.kets, sort=False)
-        blocks = tuple(KBlock(a, b, *brng[a], *krng[b])
+        lc, ld = c.am[1], c.am[3]
+        blocks = tuple(KBlock(a, b, *brng[a], *krng[b],
+                              kp.dm if decay is None
+                              else decay.factor(a, b, lc, ld))
                        for a in brng for b in krng)
         kernel = None
         if build is not None:
@@ -194,7 +223,7 @@ def walk_kb(plan: KBLaunchPlan, basis: Basis, D: object, *,
     if _dm(rows) != plan.dm:
         raise ValueError(f"max|D| = {_dm(rows)!r} is not the plan's dm "
                          f"{plan.dm!r}: planned from another density")
-    tau, dm = plan.tau, plan.dm
+    tau = plan.tau
     screen = tau > 0.0
     shells, off = basis.shells, basis.offsets
     sides = sorted({(r.i, r.j) for c in plan for r in (*c.bras, *c.kets)})
@@ -205,6 +234,14 @@ def walk_kb(plan: KBLaunchPlan, basis: Basis, D: object, *,
     n = basis.n_ao
     terms: list[list[list[float]]] = [[[] for _ in range(n)] for _ in range(n)]
     cover = [[0] * len(shells) for _ in shells]
+    dcd_max: dict[tuple[int, int], float] = {}
+
+    def dmax_cd(c: int, d: int) -> float:
+        if (c, d) not in dcd_max:
+            dcd_max[c, d] = max(abs(v) for v in _dcd(basis, rows, c, d))
+        return dcd_max[c, d]
+
+    lost = [[[] for _ in shells] for _ in shells]
     n_pairs = n_skipped = n_examined = 0
     dropped: list[float] = []
     for c in plan:
@@ -213,24 +250,29 @@ def walk_kb(plan: KBLaunchPlan, basis: Basis, D: object, *,
             kets = c.kets[blk.ket0:blk.ket1]
             n_pairs += len(bras) * len(kets)
             cover[blk.a][blk.b] += len(bras) * len(kets)
-            g0 = kets[0].G
+            g0, fb = kets[0].G, blk.dmax
+            lb = lost[blk.a][blk.b]
             for ib, br in enumerate(bras):
                 if screen:
                     n_examined += 1
-                    if (br.G * g0) * dm < tau:  # every later bra too
+                    if (br.G * g0) * fb < tau:  # every later bra too
                         rest = bras[ib:]
                         n_skipped += len(rest) * len(kets)
-                        dropped.extend((r.G * k.G) * dm
+                        dropped.extend((r.G * k.G) * fb
                                        for r in rest for k in kets)
+                        lb.extend((r.G * k.G) * dmax_cd(r.j, k.j)
+                                  for r in rest for k in kets)
                         break
                 bra = one[br.i, br.j, br.prim]
                 for ik, kr in enumerate(kets):
                     if screen:
                         n_examined += 1
-                        if (br.G * kr.G) * dm < tau:  # every later ket too
+                        if (br.G * kr.G) * fb < tau:  # every later ket too
                             rest = kets[ik:]
                             n_skipped += len(rest)
-                            dropped.extend((br.G * r.G) * dm for r in rest)
+                            dropped.extend((br.G * r.G) * fb for r in rest)
+                            lb.extend((br.G * r.G) * dmax_cd(br.j, r.j)
+                                      for r in rest)
                             break
                     X = _k_quartet(bra, one[kr.i, kr.j, kr.prim],
                                    _dcd(basis, rows, br.j, kr.j), pq=pq,
@@ -243,5 +285,8 @@ def walk_kb(plan: KBLaunchPlan, basis: Basis, D: object, *,
     sh_of = [x for x in range(len(shells)) for _ in range(shells[x].n_cart)]
     S = tuple(tuple(float(cover[sh_of[m]][sh_of[v]]) for v in range(n))
               for m in range(n))
+    lsum = [[math.fsum(x) for x in r] for r in lost]
+    B = tuple(tuple(lsum[sh_of[m]][sh_of[v]] for v in range(n))
+              for m in range(n))
     return KScreened(K, S, n_pairs, n_skipped, n_examined,
-                     max(dropped, default=0.0), math.fsum(dropped))
+                     max(dropped, default=0.0), math.fsum(dropped), B)

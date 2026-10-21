@@ -129,16 +129,27 @@ seams fix the launch shape, the parameters and the output, which this
 changes. Its plan is `launch_kblock.py` (`kb_launches` → `KBLaunchPlan` of
 `KBClassLaunch` with one `KBlock` per `(a, b)`; `k_launches`' records
 regrouped, bras sorted by `I_ac` within their first shell) and `walk_kb`,
-whose screen (a bra-loop `break` on `Ib · Iq[ket0] · maxD` beside the
-per-pair one) skips **exactly** `walk_k`'s pairs, so its `K` is `walk_k`'s to
-0. **[Fock]'s linear-scaling block screen (eqs 41–49) is not built**, by
-decision: it would drop blocks from the launch (a launch filter), and the
-kernel's parameters already take any block list. Interpreted, one bra
+whose screen (a bra-loop `break` on `Ib · Iq[ket0] · dmax[blk]` beside the
+per-pair one) skips, with every block's `dmax = max|D|` (the default),
+**exactly** `walk_k`'s pairs, so its `K` is `walk_k`'s to 0. **Since #484
+each block carries its own density factor** `dmax[blk]` (a seventh
+block-table field; `maxD` left the parameter list): `[Fock, §4.3.1]`'s
+`F_ab`, from `ao.k.density_decay` (`R` per shell and partner `l` cut by the
+block kernel's own exit test, `Λ` a clamped least-squares fit of the binned
+off-atom `|D|`, `H_off` an exact reduction, `F_ab = max|D|` when
+`|AB| − R_a − R_b ≤ 0`), passed as `kb_launches(decay=)`, also taken by
+`exchange_matrix_screened(decay=)`. K stays at `τ`, never `τ*`, and every
+skipped pair's own bound `I_ac I_bd max|D_cd|` is under `τ`
+(`test_ao_k_decay.py`, no tolerance, on a decaying six-H₂ chain with a
+synthetic density, where it skips 18,154 of 20,736 record pairs against
+17,980; `F_ab = max|D|` exactly on H₂O/STO-3G at every `τ`). Dropping whole
+blocks from the launch (a launch filter) is not built. Interpreted, one bra
 record per block is `kernel_k`'s row bitwise for every class through
 `(dd|dd)`; `test/kblock_driver.py` runs either kernel on one upload, and on
 the RTX 3080 both matched `walk_kb` and libcint's `vk` on H₂O/STO-3G (τ 0 and
-1e-8), two H₂ and H₂O/cc-pVDZ (`slow`); the RX 9060 XT is compile-only
-(#431). **Nothing about it is measured yet:** `devtools/measure.sh kblock`
+1e-8), two H₂ and H₂O/cc-pVDZ (`slow`), and since #484 the decaying chain
+with its per-block factors (against `walk_kb`, 2.60e-16 of max); the RX
+9060 XT is compile-only (#431). **Nothing about it is measured yet:** `devtools/measure.sh kblock`
 would time both per class on H₂O/cc-pVDZ into `data/measured/kblock.json`,
 and its one attempt was refused by the card gate (the RTX 3080 busy from
 outside the container), so that file does not exist.

@@ -5,9 +5,10 @@
     exchange_matrix_and_scale(basis, D, *, pq)          -> (K, scale)
     k_from_eris(basis, D, *, pq)                        -> K   via ao.eri
     k_quartet(bra_pair, ket_pair, D_cd, *, pq)          the seam's reference
-    exchange_matrix_screened(basis, D, *, pq, tau, order="sorted")
-                                                        -> KScreened (#200)
+    exchange_matrix_screened(basis, D, *, pq, tau, order="sorted",
+                             decay=None)                -> KScreened (#200)
     record_bounds(pair, *, pq)                          -> I per record
+    density_decay(basis, D, *, bound, tau, width=1.0)   -> DensityDecay (#484)
 
 `K_ab = sum_{cd} D_cd (ac|bd)`, never by forming `(ac|bd)`. The BRA pair
 record is `(a, c)` and the KET pair record is `(b, d)` -- the two Hermite
@@ -146,8 +147,8 @@ misapplied -- `I_bd * max|D_bd|`, the ket pair's own density block, J's
 its `break` skips kets the `continue` keeps (a test shows it on real
 bounds). The break's precondition is the Schwarz-only order. (A tighter
 density factor that stays bra-side, the max over `D`'s `c` rows, would keep
-the break exact too; it is not taken, and [Fock]'s density-decay bound is
-out of this milestone's scope.)
+the break exact too; it is not taken. [Fock]'s density-decay factor, one
+per `K_ab` block, is `density_decay` below, #484.)
 
   `exchange_matrix(tau=)`, `exchange_matrix_reference(tau=)`  the unsorted
       `continue`, inside the quartet contraction; the two sweeps skip the
@@ -186,6 +187,64 @@ through the seam (`functools.partial(k_quartet, pq=pq)`), and with it
 `exchange_matrix` is `==` to itself without it. The seam is unscreened:
 `k` with `tau > 0` is refused.
 
+THE PER-BLOCK DENSITY FACTOR (#484; [Fock, §4.3.1], eqs 41-49 and Figure
+3's three exit tests, read from arXiv:2407.21445v1). `Dm` bounds `|D_cd|`
+over the whole matrix; the factor `F_ab` bounds it over every `(c, d)` a
+`K_ab` block can VISIT, and replaces `Dm` in that block's screen
+(`kernel_kblock`'s `dmax[blk]`). Per density, at the screen's `tau`, with
+`G_max` the largest record bound in the basis:
+
+  `R(a, l)`   the largest `|AC|` over the records `(a, c)`, `c` any shell of
+      angular momentum `l` (the bra group of `a` in a class with that `lc`;
+      the ket group of `b` with `ld` alike), whose bound passes the CUTOFF
+      `I * (G_max * Dm) >= tau (1 - DECAY_MARGIN)`. A record under it is
+      never visited under any factor `F <= Dm`: its every product is under
+      `tau`, so a sorted group's `break` fires first. No record passing it:
+      no `R`, and the block visits nothing.
+  `Lambda`    the least-squares slope of `log(max |D_mn| per |MN| bin)` over
+      the OFF-ATOM elements (centres apart), bins `width` wide, negated and
+      clamped to `>= 0`; under two non-empty bins, 0. A molecule with no
+      visible decay gets `Lambda = 0` and with it `F_ab = Dm` exactly.
+  `H_off`     `max |D_mn| e^{Lambda |MN|}` over the off-atom elements: an
+      EXACT reduction, not the paper's regression intercept, so the bound
+      holds for every element whatever the fit (and `width` moves only how
+      tight it is).
+  `F_ab`      `Dm` when `d = |AB| - R(a, lc) - R(b, ld) <= 0` or an `R` is
+      absent, else `min(Dm, H_off e^{-Lambda d} (1 + DECAY_MARGIN))`.
+
+WHY IT BOUNDS. A visited bra `(a, c)` has `|AC| <= R(a, lc)` and a visited
+ket `(b, d)` has `|BD| <= R(b, ld)`, so `|CD| >= |AB| - |AC| - |BD| >= d`.
+When `d > 0` the pair is therefore off-atom ([Fock]'s eq. 44 made exact:
+the same-atom element, which Figure 4 shows ABOVE the fitted line, never
+enters such a block) and `|D_cd| <= H_off e^{-Lambda |CD|} <= H_off
+e^{-Lambda d}`. A skipped pair's term is then under `tau` either way: both
+records inside the cutoff, `|X| <= I_ac I_bd F < tau`; one outside it,
+`|X| <= I_ac I_bd Dm < tau` by the cutoff itself. So K stays at `tau`
+(#484's decision 1: `tau`, never [Fock]'s `tau* = tau / N*`). `F` is
+symmetric, `F(a, b, lc, ld) = F(b, a, ld, lc)`, so the unique sweep's
+mirrored partner shares its pair's factor. `DECAY_MARGIN = 2^-40` is
+rounding room, never a tolerance: it widens the cutoff (a larger `R`) and
+raises `F`, both only loosening the bound, against the few-ulp rounding of
+the products, distances and exponentials.
+
+THE CUTOFF IS THE SCREEN'S, NOT A PAIR LIST'S (#484's decision 4: [Fock]'s
+eq. 42 printed `<` read as `>=`). As printed `R_a` ranges over the
+insignificant pairs; a consumer whose pair list is not pre-screened would
+then make `R_a` the farthest shell and turn the screen off. Stated against
+the block kernel's own exit test it holds for any list.
+
+  `exchange_matrix_screened(decay=)` screens the unique sweep with the
+      per-block factor: the bound `I_ac * (I_bd * F)`, the kets of a bra
+      record sorted descending by `I_bd * F` (each bra fixes `a` and `c`,
+      so the key is the ket's), which keeps the sorted `break` exact. With
+      `decay=None` nothing moves.
+
+`KScreened.bound` is, per element, the `math.fsum` of every skipped record
+pair's `I_ac I_bd max|D_cd|` (the proof's own per-pair bound, the block's
+density maximum, not the screen's factor) over the pairs whose block covers
+it, the partner's included: `|K(tau) - K(0)|` is under it element by
+element, to the rounding of two fsums.
+
 MEMOISE NOTHING across calls. Pure Python floats; `D` is anything
 indexable as `D[m][n]`, and `K` is a tuple of rows.
 """
@@ -193,7 +252,7 @@ indexable as `D[m][n]`, and `K` is a tuple of rows.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from felizjueves.ao.eri import eri_block
@@ -471,7 +530,9 @@ class KScreened:
     the count of (bra record, ket record) pairs of the unique sweep, total,
     skipped and examined (whose screen test was evaluated: 0 at `tau = 0`),
     and the largest and the `math.fsum` of every skipped bound
-    `I_ac I_bd Dm`."""
+    `I_ac I_bd Dm` (`F` in place of `Dm` with a per-block factor). `bound`,
+    where the producer fills it, is the per-element sum of the skipped
+    pairs' `I_ac I_bd max|D_cd|` (module docstring, #484)."""
 
     K: Matrix
     scale: Matrix
@@ -480,6 +541,7 @@ class KScreened:
     n_examined: int
     max_skipped: float
     dropped: float
+    bound: Matrix | None = None
 
     @property
     def skip_fraction(self) -> float:
@@ -497,10 +559,12 @@ def _schwarz_key(b: int, d: int, i_bd: float) -> float:
 
 
 def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
-              ket_key: KetKey = _schwarz_key) -> KScreened:
+              ket_key: KetKey = _schwarz_key,
+              decay: DensityDecay | None = None) -> KScreened:
     """The unique sweep, per bra record over its kets in `order`. `ket_key`
     is the sort key: `_schwarz_key`, except where a test shows what another
-    key does to the break (module docstring)."""
+    key does to the break (module docstring). `decay` replaces `Dm` by the
+    block's factor, the bound `I_ac * (I_bd * F)` and the key `I_bd * F`."""
     if order not in ORDERS:
         raise ValueError(f"order = {order!r} is not one of {ORDERS}")
     rows = _density(basis, D)
@@ -513,10 +577,15 @@ def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
     bnd = ({xy: record_bounds(ep, pq=pq) for xy, ep in eps.items()}
            if screen else {})
     dm = _dm(rows) if screen else 0.0
+    if decay is not None:
+        _check_decay(decay, tau, _dm(rows), n_sh)
     dcds = {(x, y): _dcd(basis, rows, x, y)
             for x in range(n_sh) for y in range(n_sh)}
+    dmax = {xy: max((abs(v) for v in blk), default=0.0)
+            for xy, blk in dcds.items()}
     n = basis.n_ao
     terms: list[list[list[float]]] = [[[] for _ in range(n)] for _ in range(n)]
+    lost: dict[tuple[int, int], list[float]] = {}
     n_pairs = n_skipped = n_examined = 0
     dropped: list[float] = []
     for a in range(n_sh):
@@ -526,10 +595,36 @@ def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
             kets = [(b, d, j) for b in range(a + 1) for d in range(n_sh)
                     if not (b == a and d > c)  # its partner is visited
                     for j in range(len(eps[b, d].recs))]
+            fac = ({(b, d): decay.factor(a, b, shells[c].l, shells[d].l)
+                    for b in range(a + 1) for d in range(n_sh)}
+                   if screen and decay is not None else None)
             if screen and order == "sorted":  # descending, stable
-                kets.sort(key=lambda t: ket_key(t[0], t[1],
-                                                bnd[t[0], t[1]][t[2]]),
-                          reverse=True)
+                if fac is None:
+                    kets.sort(key=lambda t: ket_key(t[0], t[1],
+                                                    bnd[t[0], t[1]][t[2]]),
+                              reverse=True)
+                else:
+                    kets.sort(key=lambda t: bnd[t[0], t[1]][t[2]]
+                              * fac[t[0], t[1]], reverse=True)
+
+            def test(i: int, t: tuple[int, int, int], a: int = a, c: int = c,
+                     fac: dict | None = fac) -> float:
+                b, d, j = t
+                if fac is None:
+                    return (bnd[a, c][i] * bnd[b, d][j]) * dm
+                return bnd[a, c][i] * (bnd[b, d][j] * fac[b, d])
+
+            def skip(i: int, ts: Sequence[tuple[int, int, int]], a: int = a,
+                     c: int = c) -> None:
+                for t in ts:
+                    b, d, j = t
+                    dropped.append(test(i, t))
+                    lost.setdefault((a, b), []).append(
+                        (bnd[a, c][i] * bnd[b, d][j]) * dmax[c, d])
+                    if not (a == b and c == d):  # the partner's block
+                        lost.setdefault((b, a), []).append(
+                            (bnd[a, c][i] * bnd[b, d][j]) * dmax[c, d])
+
             n_ket = len(kets)
             for i, brec in enumerate(bra.recs):
                 one_bra = replace(bra, recs=(brec,))
@@ -537,16 +632,14 @@ def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
                 for idx, (b, d, j) in enumerate(kets):
                     if screen:
                         n_examined += 1
-                        if (bnd[a, c][i] * bnd[b, d][j]) * dm < tau:
+                        if test(i, (b, d, j)) < tau:
                             if order == "sorted":  # every later ket too
                                 rest = kets[idx:]
                                 n_skipped += len(rest)
-                                dropped.extend(
-                                    (bnd[a, c][i] * bnd[y, z][w]) * dm
-                                    for y, z, w in rest)
+                                skip(i, rest)
                                 break
                             n_skipped += 1
-                            dropped.append((bnd[a, c][i] * bnd[b, d][j]) * dm)
+                            skip(i, ((b, d, j),))
                             continue
                     ket = eps[b, d]
                     X = _k_quartet(one_bra, replace(ket, recs=(ket.recs[j],)),
@@ -564,14 +657,125 @@ def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
     sh_of = [x for x in range(n_sh) for _ in range(shells[x].n_cart)]
     S = tuple(tuple(float(R[sh_of[m]] * R[sh_of[v]]) for v in range(n))
               for m in range(n))
+    lb = {xy: math.fsum(v) for xy, v in lost.items()}
+    B = tuple(tuple(lb.get((sh_of[m], sh_of[v]), 0.0) for v in range(n))
+              for m in range(n))
     return KScreened(K, S, n_pairs, n_skipped, n_examined,
-                     max(dropped, default=0.0), math.fsum(dropped))
+                     max(dropped, default=0.0), math.fsum(dropped), B)
 
 
 def exchange_matrix_screened(basis: Basis, D: object, *, pq: PQ, tau: float,
-                             order: str = "sorted") -> KScreened:
+                             order: str = "sorted",
+                             decay: DensityDecay | None = None) -> KScreened:
     """`K_mn` by the unique sweep, screened at `tau` as the kernel's sorted
     `break` (`order="sorted"`: kets descending by `I_bd` alone, stable) or as
     the unsorted `continue` (`order="unsorted"`); module docstring, "THE
-    SCREEN". At `tau = 0` no bound is evaluated and nothing is skipped."""
-    return _screened(basis, D, pq=pq, tau=tau, order=order)
+    SCREEN". At `tau = 0` no bound is evaluated and nothing is skipped.
+    `decay` (`density_decay`'s, at this `tau` and density) screens each
+    block with its own factor, "THE PER-BLOCK DENSITY FACTOR"."""
+    return _screened(basis, D, pq=pq, tau=tau, order=order, decay=decay)
+
+
+# --- the per-block density factor (#484) ---------------------------------
+
+DECAY_MARGIN = 2.0 ** -40  # rounding room, only ever loosening (docstring)
+
+KBound = Callable[[EPair], Sequence[float]]  # one I >= 0 per record
+
+
+def _dist(x: Vec, y: Vec) -> float:
+    return math.sqrt(math.fsum((x[i] - y[i]) ** 2 for i in range(3)))
+
+
+@dataclass(frozen=True)
+class DensityDecay:
+    """`density_decay`'s value (module docstring, "THE PER-BLOCK DENSITY
+    FACTOR"): the `tau` and `Dm` it was cut at, `G_max`, the fitted `lam`
+    (`Lambda >= 0`), the exact `h_off`, the bin `width`, `radius[(x, l)]`
+    (absent when no record of the group passes the cutoff) and the shell
+    centres."""
+
+    tau: float
+    dm: float
+    g_max: float
+    lam: float
+    h_off: float
+    width: float
+    radius: Mapping[tuple[int, int], float]
+    centres: tuple[Vec, ...]
+
+    def distance(self, a: int, b: int, lc: int, ld: int) -> float | None:
+        """`d = |AB| - R(a, lc) - R(b, ld)`, or None without both `R`."""
+        ra, rb = self.radius.get((a, lc)), self.radius.get((b, ld))
+        if ra is None or rb is None:
+            return None
+        return _dist(self.centres[a], self.centres[b]) - ra - rb
+
+    def factor(self, a: int, b: int, lc: int, ld: int) -> float:
+        """`F_ab` of block `(a, b)` in a class with `(lc, ld)`."""
+        d = self.distance(a, b, lc, ld)
+        if d is None or d <= 0.0:
+            return self.dm
+        return min(self.dm, self.h_off * math.exp(-self.lam * d)
+                   * (1.0 + DECAY_MARGIN))
+
+
+def _check_decay(decay: DensityDecay, tau: float, dm: float,
+                 n_sh: int) -> None:
+    if decay.tau != tau or decay.dm != dm or len(decay.centres) != n_sh:
+        raise ValueError(
+            f"decay cut at tau = {decay.tau!r}, Dm = {decay.dm!r} over "
+            f"{len(decay.centres)} shells, not tau = {tau!r}, Dm = {dm!r} "
+            f"over {n_sh}: built from another density, tau or basis")
+
+
+def _fit_lambda(points: Sequence[tuple[float, float]], width: float
+                ) -> float:
+    """`Lambda`: the negated least-squares slope of `log(max |D| per bin)`
+    against the bin's centre, clamped to `>= 0`; 0 under two bins."""
+    top: dict[int, float] = {}
+    for r, v in points:
+        k = int(r // width)
+        top[k] = max(top.get(k, 0.0), v)
+    xy = [((k + 0.5) * width, math.log(v)) for k, v in sorted(top.items())
+          if v > 0.0]
+    if len(xy) < 2:
+        return 0.0
+    mx = math.fsum(x for x, _ in xy) / len(xy)
+    my = math.fsum(y for _, y in xy) / len(xy)
+    sxx = math.fsum((x - mx) ** 2 for x, _ in xy)
+    sxy = math.fsum((x - mx) * (y - my) for x, y in xy)
+    return max(0.0, -sxy / sxx)
+
+
+def density_decay(basis: Basis, D: object, *, bound: KBound, tau: float,
+                  width: float = 1.0) -> DensityDecay:
+    """`R`, `Lambda`, `H_off` and with them `F_ab` for `basis`, the symmetric
+    density `D` and the screen's `tau` (module docstring, "THE PER-BLOCK
+    DENSITY FACTOR"); `bound(epair) -> I per record` injected, as the launch
+    plans take it (`functools.partial(record_bounds, pq=pq)`)."""
+    if not (width > 0.0 and math.isfinite(width)):
+        raise ValueError(f"width = {width!r}: a positive bin width")
+    rows = _density(basis, D)
+    tau = _tau(tau)
+    dm = _dm(rows)
+    shells = basis.shells
+    n_sh = len(shells)
+    centres = tuple(tuple(s.centre) for s in shells)
+    G = {(x, y): tuple(bound(epair(shells[x], shells[y])))
+         for x in range(n_sh) for y in range(n_sh)}
+    g_max = max((g for gs in G.values() for g in gs), default=0.0)
+    cut = tau * (1.0 - DECAY_MARGIN)
+    radius: dict[tuple[int, int], float] = {}
+    for (x, y), gs in G.items():
+        if any(g * (g_max * dm) >= cut for g in gs):
+            key = (x, shells[y].l)
+            radius[key] = max(radius.get(key, 0.0),
+                              _dist(centres[x], centres[y]))
+    sh_of = [x for x in range(n_sh) for _ in range(shells[x].n_cart)]
+    off_atom = [(_dist(centres[sh_of[m]], centres[sh_of[n]]), abs(v))
+                for m, r in enumerate(rows) for n, v in enumerate(r)
+                if centres[sh_of[m]] != centres[sh_of[n]]]
+    lam = _fit_lambda(off_atom, width)
+    h_off = max((v * math.exp(lam * r) for r, v in off_atom), default=0.0)
+    return DensityDecay(tau, dm, g_max, lam, h_off, width, radius, centres)

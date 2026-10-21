@@ -27,10 +27,16 @@ skipped pair moves an element by less than `tau` (#200's bound).
                docstring). MODE 1's two runs are within #206's fp64-atomic
                bound, so only printed here.
 
+THE PER-BLOCK FACTOR (#484): the `decay` cell plans test_ao_k_decay.py's
+chain with `ao.k.density_decay`, so the block kernel screens each block
+with its own `dmax`; MODE 1 (`kernel_k`) still takes the scalar `max|D|`
+and skips fewer pairs, so there it is held to the host and not to the walk.
+
 THE CELLS: H2O/STO-3G whole (every class through (pp|pp), L = 4) at tau 0
-and at a tau that screens, and two H2 6 bohr apart screened -- the PR
-gate's; H2O/cc-pVDZ whole (every class through (dd|dd), L = 8) at tau 0 is
-`slow`, the kernel tier's `--full`.
+and at a tau that screens, two H2 6 bohr apart screened, and the decaying
+chain with the per-block factor -- the PR gate's; H2O/cc-pVDZ whole (every
+class through (dd|dd), L = 8) at tau 0 is `slow`, the kernel tier's
+`--full`.
 
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`): the H2O/STO-3G driver
 compiled where no card is; a warning in generated text fails it (#92).
@@ -49,11 +55,16 @@ import test_ao_k
 from kblock_driver import MODES, class_binaries, kb_driver, run_classes
 from oracle import manifest
 from plan_driver import compile_checked
+from test_ao_k_decay import TAU, chain
 from test_k_ondevice import ORACLE_TOL
 from test_kernel_device import BACKEND, _toolchain
 from test_launch_k import _case as _launch_case
 
-from felizjueves.ao.k import exchange_matrix_and_scale, record_bounds
+from felizjueves.ao.k import (
+    density_decay,
+    exchange_matrix_and_scale,
+    record_bounds,
+)
 from felizjueves.kernel_kblock import build_kblock_kernel
 from felizjueves.launch_kblock import KBLaunchPlan, kb_launches, walk_kb
 from felizjueves.reference.pq import pq
@@ -65,14 +76,16 @@ KJ_TOL = test_ao_k.KJ_TOL
 class Cell:
     case: str
     tau: float
+    decay: bool = False
 
     @property
     def id(self) -> str:
-        return f"{self.case}-tau{self.tau:g}"
+        return f"{self.case}-tau{self.tau:g}" + ("-decay" if self.decay
+                                                  else "")
 
 
 FAST = (Cell("h2o_sto3g_k", 0.0), Cell("h2o_sto3g_k", 1e-8),
-        Cell("two_h2", 1e-6))
+        Cell("two_h2", 1e-6), Cell("chain", TAU, decay=True))
 SLOW = (Cell("h2o_ccpvdz_k", 0.0),)
 PARAMS = ([pytest.param(c, id=c.id) for c in FAST]
           + [pytest.param(c, id=c.id, marks=pytest.mark.slow) for c in SLOW])
@@ -84,6 +97,8 @@ def _case(name: str):
     if name.endswith("_k"):
         fx, basis = test_ao_k._kfx(name)
         return fx, basis, np.array(fx.density)
+    if name == "chain":
+        return None, *chain()
     basis, D = _launch_case(name)
     return None, basis, D
 
@@ -91,8 +106,15 @@ def _case(name: str):
 @cache
 def _plan(cell: Cell) -> KBLaunchPlan:
     _, basis, D = _case(cell.case)
-    return kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
-                       tau=cell.tau, build=build_kblock_kernel)
+    bound = partial(record_bounds, pq=pq)
+    decay = (density_decay(basis, D, bound=bound, tau=cell.tau)
+             if cell.decay else None)
+    if decay is not None:
+        assert any(b.dmax < decay.dm for c in kb_launches(
+            basis, D, bound=bound, tau=cell.tau, decay=decay)
+            for b in c.blocks), "no block's factor is under max|D|"
+    return kb_launches(basis, D, bound=bound, tau=cell.tau,
+                       build=build_kblock_kernel, decay=decay)
 
 
 @cache
@@ -129,11 +151,15 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
         K = Ks[0]
         assert np.all(np.isfinite(K))
         rel_w = float(np.max(np.abs(K - Kw)) / np.max(np.abs(Kw)))
-        assert rel_w <= ORACLE_TOL, f"{mode}: K vs walk_kb {rel_w:.2e}"
+        if not (cell.decay and mode == "k"):  # kernel_k: the scalar max|D|
+            assert rel_w <= ORACLE_TOL, f"{mode}: K vs walk_kb {rel_w:.2e}"
         big0 = float(np.max(np.abs(K0)))
         assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0 + tau_scale), (
             f"{mode}: K vs exchange_matrix "
             f"{float(np.max(np.abs(K - K0))) / big0:.2e}")
+        if cell.decay and mode == "kb":  # within the skipped pairs' bounds
+            assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0
+                          + np.array(w.bound)), f"{mode}: K vs the bound"
         lib = "none"
         if fx is not None:
             vk = np.array(fx.arrays[manifest.K_ARRAY])

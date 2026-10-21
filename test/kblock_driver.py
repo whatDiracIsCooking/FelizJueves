@@ -66,6 +66,7 @@ from felizjueves.launch_kblock import KBLaunchPlan
 
 REC_DOUBLES = 12  # per record: P(3) zeta XPA(3) XPC(3) s I, then one int
 BLK_INTS = 6  # per block: bra0 bra1 ket0 ket1 ko_a ko_b
+BLK_DOUBLES = 1  # per block: dmax, the block's density factor (#484)
 MODES = {"kb": 0, "k": 1}
 
 
@@ -86,7 +87,7 @@ class KBClass:
     @property
     def doubles(self) -> int:
         return (REC_DOUBLES + 1) * (self.n_bra + self.n_ket) + (
-            BLK_INTS * self.n_blk)
+            (BLK_DOUBLES + BLK_INTS) * self.n_blk)
 
 
 @dataclass(frozen=True)
@@ -186,8 +187,9 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                     f"{ki} + {s}"]
 
         kb_args = [str(len(cl.blocks)), str(nb), str(nk), "NDC", str(basis.n_ao),
-                   "tau", "maxD",
+                   "tau",
                    *(f"{blk} + {j * len(cl.blocks)}" for j in range(BLK_INTS)),
+                   f"bp[{c}] + {12 * (nb + nk)}",
                    *bra_args, *ket_args(0), f"dp[{e}]", "dK"]
         kb_body.append(
             f"        // class ({la}{lc}|{lb}{ld}): {len(cl.blocks)} blocks\n"
@@ -258,8 +260,9 @@ def _dcd(drv: KBDriver, basis: Basis, rows: np.ndarray, lc: int, ld: int
 
 def kb_stage(drv: KBDriver, plan: KBLaunchPlan, basis: Basis, D: object
              ) -> np.ndarray:
-    """`tau maxD | per class: bra doubles, ket doubles, bra ints, ket ints,
-    block ints (bra0.. ko_b, each n_blk) | per density class Dcd`."""
+    """`tau maxD | per class: bra doubles, ket doubles, dmax[n_blk], bra
+    ints, ket ints, block ints (bra0.. ko_b, each n_blk) | per density class
+    Dcd`. `maxD` is `kernel_k`'s (mode 1); the block kernel reads `dmax`."""
     rows = np.array(_density(basis, D), dtype=np.float64)
     if float(np.max(np.abs(rows))) != drv.dm:
         raise ValueError("planned from another density")
@@ -272,7 +275,8 @@ def kb_stage(drv: KBDriver, plan: KBLaunchPlan, basis: Basis, D: object
                         [b.ket0 for b in cl.blocks], [b.ket1 for b in cl.blocks],
                         [off[b.a] for b in cl.blocks],
                         [off[b.b] for b in cl.blocks]], dtype=np.float64)
-        parts += [bd, kd, bi, ki, blk.ravel()]
+        dmax = np.array([b.dmax for b in cl.blocks], dtype=np.float64)
+        parts += [bd, kd, dmax, bi, ki, blk.ravel()]
     for lc, ld in drv.dcd:
         parts.append(_dcd(drv, basis, rows, lc, ld).ravel())
     out = np.concatenate(parts)
@@ -288,7 +292,8 @@ def class_args(drv: KBDriver, staged: np.ndarray, c: int) -> dict:
     nb, nk, ng = x.n_bra, x.n_ket, x.n_blk
     b = staged[h:h + 12 * nb]
     k = staged[h + 12 * nb:h + 12 * (nb + nk)]
-    ints = staged[h + 12 * (nb + nk):h + x.doubles].astype(np.int32)
+    dmax = staged[h + 12 * (nb + nk):h + 12 * (nb + nk) + ng]
+    ints = staged[h + 12 * (nb + nk) + ng:h + x.doubles].astype(np.int32)
     e = 2 + sum(y.doubles for y in drv.classes)
     lc, ld = x.am[1], x.am[3]
     for y in drv.dcd[:drv.dcd.index((lc, ld))]:
@@ -297,9 +302,9 @@ def class_args(drv: KBDriver, staged: np.ndarray, c: int) -> dict:
     blk = ints[nb + nk:]
     return dict(
         n_blk=ng, n_bra=nb, n_ket=nk, n_dc=drv.n_sh * drv.n_sh,
-        n_ao=drv.n_ao, tau=drv.tau, maxD=drv.dm,
+        n_ao=drv.n_ao, tau=drv.tau,
         **{n: blk[j * ng:(j + 1) * ng] for j, n in enumerate(
-            ("bra0", "bra1", "ket0", "ket1", "ko_a", "ko_b"))},
+            ("bra0", "bra1", "ket0", "ket1", "ko_a", "ko_b"))}, dmax=dmax,
         P=b[0:3 * nb].reshape(nb, 3), zeta_ac=b[3 * nb:4 * nb],
         XPA=b[4 * nb:7 * nb].reshape(nb, 3),
         XPC=b[7 * nb:10 * nb].reshape(nb, 3),
