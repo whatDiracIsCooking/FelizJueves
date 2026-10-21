@@ -2349,3 +2349,67 @@ EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_eri3",))
 # cheapest orientation, under rule "hgp" (package-wide): it ranks members on
 # `hgp.hrr` / `hgp.vrr`'s DAGs and reaches nothing else.
 EDGES["hgp.orbits"] = frozenset(("hgp.hrr", "hgp.vrr"))
+
+
+# ---------------------------------------------------------------------------
+# #403 (milestone 14): the split HGP build's ordered pair stream,
+# `launch_hjk`, as a VALUE beside `launch_f`: every ordered shell pair,
+# degree-uniform batches, every ordered batch pair launched, routed to its
+# own class or its orbit representative's (`hgp.orbits`), and the J and K
+# one-block screens. Its bound is injected (`bound=`), so it reaches no
+# reference/; it builds no kernel and evaluates no ERI. It restates the
+# density / tau checks and the stable sort rather than borrow `launch`'s or
+# `ao.j`'s privates (#328), so it imports neither.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hjk_launch": _rule(
+        "launch_hjk.py (#403): the split HGP build's ordered pair stream as "
+        "a VALUE -- ordered contracted pairs, degree-uniform batches, every "
+        "ordered batch pair launched and routed to a kernel class (its own, "
+        "or its orbit representative's through `hgp.orbits`), and the two "
+        "one-block screens. Its records come from the AO layer's basis, the "
+        "routing from `hgp.orbits`; the bound arrives injected (`bound=`)",
+        ("ao.shell", "hgp.orbits"),
+        reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
+                  "in launch_f",
+        launch_f="the fused build's stream is a sibling, not a base: its "
+                 "privates stay its own (#328)",
+        launch="the J plan's privates are not borrowed (#328); the stable "
+               "sort is restated",
+        plan="the plan layer keys on `total_am` and refuses an HGP class "
+             "(milestone 12, pin 11)",
+        kernel_f="the staging cap is restated, and a test pins it equal; a "
+                 "launch plan does not import a kernel builder",
+        emit="the plan is data: no text is emitted",
+        dispatch="nothing measured may reach a launch plan by import (#145)",
+        measured="a launch plan is data, never a toolchain's reading",
+        measured_store="nothing measured may reach a launch plan by import "
+                       "(#145)"),
+}
+RULE_OF |= {
+    "launch_hjk": "hjk_launch",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "launch_hjk": ("ao.shell", "hgp.orbits"),
+}.items()}
+
+
+def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
+    # #403, TRANSITIVELY: no chain of imports from `launch_hjk` reaches
+    # reference/ (its bound is injected), the plan layer, a backend, the
+    # measured layer, the dispatch policy, a kernel builder or launch_f.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["launch_hjk"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "hgp.orbits" in seen
+    for banned in (_REF, "plan", "interp", "emit", "ao.drive", "ao.staged",
+                   "dispatch", "measured", "measured_store", "launch_f",
+                   "kernel_f"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"launch_hjk reaches {hit}"
