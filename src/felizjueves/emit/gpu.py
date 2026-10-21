@@ -2,7 +2,7 @@
 
     emit(kernel, arch, specialization=None) -> str
     emit_template(kernel, arch, specialization, classes) -> str
-    emit_boys() -> str
+    emit_boys() -> dict[str, str]
 
 A pure function: no decisions, no I/O. Where `emit/cuda.py` and `emit/hip.py`
 each spell a kernel for one vendor, this spells it once for both: the text
@@ -25,12 +25,26 @@ behind them), which the unit includes and the compiler resolves:
   The header brings in `<stdint.h>`. The vendor backends still spell `int`,
   so their text and its pins are unchanged;
 - the device Boys routine, `eval_boys<M>`, as a header of its own,
-  `eval_boys.h` (`BOYS_HEADER`, written by `emit_boys`), which a unit with a
-  fundamental includes after the runtime and calls by that name. It is
-  `_c.py`'s one `BOYS_DEVICE` text in this backend's spelling, `static`, so
-  every unit that includes it carries its own copy and none is a duplicate
-  symbol at the device link. The vendor backends still carry it inline as
+  `eval_boys.h` (`BOYS_HEADER`, written by `emit_boys` with the per-order
+  headers it includes), which a unit with a fundamental includes after the
+  runtime and calls by that name. `static`, so every unit that includes it
+  carries its own copy and none is a duplicate symbol at the device link.
+  It is `_c.py`'s `BOYS_DEVICE` with the series loop replaced ("THE BOYS
+  SERIES", below); the vendor backends still carry that text inline as
   `fj_boys`, so their text and its pins are unchanged.
+
+THE BOYS SERIES, below the switch `T = M + BOYS_SWITCH_PAD`, is a polynomial
+of fixed degree, not a loop. `F_M(T) = exp(-T) SUM_k c_k x^k` with `x = 2T`
+and `c_k = 1 / ((2M+1)(2M+3)...(2M+2k+1))`, and M is fixed when the kernel
+is built, so each `c_k` is a constant: `eval_boys_series<M>(x)` in
+`eval_boys_{M}.h`, one header per order `M <= BOYS_MAX`, is Horner in `x`,
+one `fma` a step from `c_n` down to `c_0`, each `c_k` the double nearest the
+exact rational. `n` is the least degree whose tail is under 2^-53 of the
+whole sum at `T = M + BOYS_SWITCH_PAD`, the most the branch is given (every
+`c_k` and `x` positive, the tail's share of the sum grows with `x`): 40 at
+M = 0, 61 at M = 20. Where the loop took up to that many dependent
+divisions and a data-dependent exit, every lane now runs the same fma
+chain. `eval_boys<M>` for `M > BOYS_MAX` is refused at compile time.
 
 THE WIDTH IS NOT ERASED. The shuffle hooks read the wavefront off the `Arch`,
 as the vendor backends do, and fix it in the text. A unit that calls either
@@ -129,14 +143,16 @@ ignores the option, so its text does not move.
 
 from __future__ import annotations
 
-import re
+import functools
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 
 from felizjueves.device import Arch
 from felizjueves.emit._c import (
     _GEOMETRY,
-    BOYS_DEVICE,
+    BOYS_SWITCH_PAD,
     INDENT,
     RESERVED,
     CWriter,
@@ -149,16 +165,19 @@ from felizjueves.emit._c import (
 )
 from felizjueves.ir import Call, Decl, Expr, Fn, Kernel, Lit, Space, _ident
 
-__all__ = ["BOYS_HEADER", "HEADER", "WAVEFRONT", "Specialization", "emit",
-           "emit_boys", "emit_template"]
+__all__ = ["BOYS_HEADER", "BOYS_MAX", "HEADER", "WAVEFRONT", "Specialization",
+           "boys_series", "emit", "emit_boys", "emit_template"]
 
 # The one include every unit carries; resolved against FelizJueves's include/.
 HEADER = "felizjueves/runtime.h"
 
 # The device Boys routine's header (`emit_boys`), which the consumer writes
-# beside the units or on their include path, and its one name.
+# beside the units or on their include path, and its one name; the series
+# it calls, one header per order 0..BOYS_MAX ("The Boys series").
 BOYS_HEADER = "eval_boys.h"
+BOYS_MAX = 20
 _BOYS = "eval_boys"
+_SERIES = "eval_boys_series"
 
 # The header's spellings of the width and of a full mask (any_wavefront).
 _WIDTH = "FJ_WAVEFRONT"
@@ -178,9 +197,6 @@ WAVEFRONT = _Wavefront()
 
 # The primary's parameters, by position: `La, Lb, ...`.
 _LETTERS = "abcdefghijklmnopqrstuvwxyz"
-
-# A C cast in the Boys routine's fixed text, `(double)(2 * m + 1)`.
-_C_CAST = re.compile(r"\((double|float)\)\(([^()]*)\)")
 
 
 def _geometry_only(e: Expr) -> bool:
@@ -337,8 +353,10 @@ class GpuWriter(CWriter):
 
     def kernel(self, k: Kernel) -> str:
         self._width_used = False
-        if _BOYS in kernel_names(k):
-            raise EmitError(f"{k.name}: the name {_BOYS!r} is {BOYS_HEADER}'s")
+        taken = {_BOYS, _SERIES} & set(kernel_names(k))
+        if taken:
+            raise EmitError(f"{k.name}: the names {sorted(taken)} are "
+                            f"{BOYS_HEADER}'s")
         if self.specialization is not None and _records(k):
             raise EmitError(f"{k.name}: a specialization shares its TU, and "
                             "its record structs would be declared per unit")
@@ -494,28 +512,113 @@ def emit(kernel: Kernel, arch: Arch,
                      any_wavefront=any_wavefront).kernel(kernel)
 
 
-def emit_boys() -> str:
-    """`BOYS_HEADER`'s text: the device Boys routine `eval_boys<M>`, which
-    every unit with a fundamental includes. One text for every kernel, arch
-    and option; the consumer writes it once, beside the units or on their
-    include path."""
-    spelled = _C_CAST.sub(r"static_cast<\1>(\2)",
-                          re.sub(r"\bint\b", GpuWriter.INT, BOYS_DEVICE))
-    old = "__device__ __forceinline__ void fj_boys("
-    if spelled.count(old) != 1:
-        raise EmitError("BOYS_DEVICE no longer declares fj_boys once")
-    # internal linkage: every unit that includes it carries its own copy
-    spelled = spelled.replace(old,
-                              f"static __device__ __forceinline__ void {_BOYS}(")
-    return (
-        f"// {_BOYS}: generated by felizjueves.emit.gpu -- do not edit.\n"
-        "// the device Boys routine every unit with a fundamental includes;\n"
-        "// fp64 throughout; nvcc and hipcc alike.\n"
-        "#pragma once\n"
-        f'#include "{HEADER}"\n'
-        "\n"
-        f"{spelled}"
-    )
+@functools.cache
+def boys_series(m: int) -> tuple[float, ...]:
+    """`c_0..c_n` of `eval_boys_series<m>` ("The Boys series"): each the
+    double nearest `1 / ((2m+1)(2m+3)...(2m+2k+1))`, `n` the least degree
+    whose tail is under 2^-53 of the sum at `x = 2 (m + BOYS_SWITCH_PAD)`.
+    Exact rational arithmetic throughout; only the coefficients are rounded."""
+    if not (isinstance(m, int) and 0 <= m <= BOYS_MAX):
+        raise ValueError(f"the Boys series is written for 0 <= M <= {BOYS_MAX}, "
+                         f"not {m!r}")
+    x = 2 * (m + BOYS_SWITCH_PAD)
+    terms = [Fraction(1, 2 * m + 1)]
+    # Past k with x / (2m + 2k + 3) <= 1/2 the tail after k is at most the
+    # k-th term, so stopping there with that term under 2^-80 of the sum
+    # leaves an unsummed remainder that cannot move the degree.
+    while not (2 * x <= 2 * m + 2 * len(terms) + 1
+               and terms[-1] * 2**80 < sum(terms)):
+        terms.append(terms[-1] * x / (2 * m + 2 * len(terms) + 1))
+    whole = sum(terms) + terms[-1]  # the remainder's bound included
+    tail = whole
+    for n, t in enumerate(terms):
+        tail -= t
+        if tail * 2**53 < whole:
+            return tuple(float(Fraction(1, _odd_product(m, k)))
+                         for k in range(n + 1))
+    raise AssertionError("unreachable: the remainder is under 2^-80")
+
+
+def _odd_product(m: int, k: int) -> int:
+    """`(2m+1)(2m+3)...(2m+2k+1)`."""
+    p = 1
+    for j in range(k + 1):
+        p *= 2 * m + 2 * j + 1
+    return p
+
+
+def emit_boys() -> dict[str, str]:
+    """Every header of the device Boys routine, by file name: `BOYS_HEADER`
+    (`eval_boys<M>`, which every unit with a fundamental includes) and the
+    `eval_boys_{M}.h` it includes, one series per order 0..BOYS_MAX. One text
+    for every kernel, arch and option; the consumer writes them all once, in
+    one directory, beside the units or on their include path."""
+    banner = "generated by felizjueves.emit.gpu -- do not edit.\n"
+    fp64 = "// fp64 throughout; nvcc and hipcc alike.\n"
+    orders = "".join(f'#include "{_BOYS}_{m}.h"\n' for m in range(BOYS_MAX + 1))
+    pad = BOYS_SWITCH_PAD
+    headers = {BOYS_HEADER: f"""\
+// {_BOYS}: {banner}\
+// the device Boys routine every unit with a fundamental includes;
+{fp64}\
+#pragma once
+#include "{HEADER}"
+
+// F_m(T) = integral_0^1 u^(2m) exp(-T u^2) du ([JEngine, v2, eqs. 13, 18]),
+// F[m] for every m in 0..M, M <= {BOYS_MAX}. From T = M + {pad}: F_0 = (1/2)
+// sqrt(pi/T) erf(sqrt(T)) and upward, F_(m+1) = ((2m+1) F_m - exp(-T)) / (2T).
+// Below: F_M = exp(-T) {_SERIES}<M>(2T), the Kummer series
+// SUM_k x^k / ((2M+1)(2M+3)...(2M+2k+1)) as a polynomial of fixed degree
+// ({_BOYS}_M.h), and downward, F_m = (2T F_(m+1) + exp(-T)) / (2m+1).
+template <int32_t M>
+static __device__ __forceinline__ double {_SERIES}(double x);
+
+{orders}
+template <int32_t M>
+static __device__ __forceinline__ void {_BOYS}(double T, double (&F)[M + 1]) {{
+    static_assert(M >= 0 && M <= {BOYS_MAX},
+                  "{_BOYS}_M.h is written for M in 0..{BOYS_MAX}");
+    const double e = exp(-T);
+    if (T >= static_cast<double>(M + {pad})) {{
+        const double h = 0.5 / T;
+        double f = 0.5 * sqrt({math.pi!r} / T) * erf(sqrt(T));
+        F[0] = f;
+#pragma unroll
+        for (int32_t m = 1; m <= M; ++m) {{
+            f = (static_cast<double>(2 * m - 1) * f - e) * h;
+            F[m] = f;
+        }}
+        return;
+    }}
+    double f = e * {_SERIES}<M>(2.0 * T);
+    F[M] = f;
+#pragma unroll
+    for (int32_t m = M - 1; m >= 0; --m) {{
+        f = (2.0 * T * f + e) * (1.0 / static_cast<double>(2 * m + 1));
+        F[m] = f;
+    }}
+}}
+"""}
+    for m in range(BOYS_MAX + 1):
+        c = boys_series(m)
+        steps = "".join(f"{INDENT}s = fma(s, x, {ck!r});\n"
+                        for ck in reversed(c[:-1]))
+        headers[f"{_BOYS}_{m}.h"] = f"""\
+// {_BOYS}_{m}: {banner}\
+// {_SERIES}<{m}>(x), x = 2T < {2 * (m + pad)}: SUM_(k=0..{len(c) - 1}) c_k x^k,
+// c_k the double nearest 1 / ({2 * m + 1} * {2 * m + 3} * ... * (2k + {2 * m + 1})),
+// by Horner; past degree {len(c) - 1} the tail is under 2^-53 of the sum.
+// Included by {BOYS_HEADER}, which declares the template; not on its own.
+{fp64}\
+#pragma once
+
+template <>
+__device__ __forceinline__ double {_SERIES}<{m}>(double x) {{
+{INDENT}double s = {c[-1]!r};
+{steps}{INDENT}return s;
+}}
+"""
+    return headers
 
 
 def emit_template(kernel: Kernel, arch: Arch, specialization: Specialization,

@@ -27,8 +27,8 @@ over every `(lp, lq)` with both at most 2; and `pq_22.any_wavefront.cu` and
 `pq.any_wavefront.h`, the same pair emitted `any_wavefront=True` with
 `block_dim = (1, gpu.WAVEFRONT)`: one text for both widths; and
 `pair_bound_11.cu`, the record bound (no shuffle, no width); and
-`eval_boys.h`, the device Boys routine every unit with a fundamental includes
-(`gpu.emit_boys()`).
+`eval_boys.h`, the device Boys routine every unit with a fundamental includes,
+and the `eval_boys_{M}.h` it includes, one series per order (`gpu.emit_boys()`).
 Regenerate after an intended
 change (never hand-edit) and review the diff:
 
@@ -48,8 +48,10 @@ needs no card, so these prove nothing about a number.
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 import subprocess
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -59,7 +61,7 @@ from test_k_lever_shuffle import _bcast
 
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, gpu
-from felizjueves.emit._c import BOYS_DEVICE, EmitError
+from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD, EmitError
 from felizjueves.kernel import build_pq_kernel
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
@@ -84,8 +86,10 @@ BOYS_INCLUDE = f'#include "{gpu.BOYS_HEADER}"'
 
 
 def _boys(where: Path) -> None:
-    """`eval_boys.h` beside the units, as a consumer writes it."""
-    (where / gpu.BOYS_HEADER).write_text(gpu.emit_boys())
+    """`eval_boys.h` and its per-order headers beside the units, as a
+    consumer writes them."""
+    for name, text in gpu.emit_boys().items():
+        (where / name).write_text(text)
 
 
 def cuda_lines(k) -> list[str]:
@@ -118,8 +122,12 @@ def test_the_goldens_are_unchanged(kernel) -> None:
     assert gpu.emit(kernel, SM_86) == (GOLDEN / f"{kernel.name}.cu").read_text()
 
 
-def test_the_boys_golden_is_unchanged() -> None:
-    assert gpu.emit_boys() == (GOLDEN / gpu.BOYS_HEADER).read_text()
+def test_the_boys_goldens_are_unchanged() -> None:
+    headers = gpu.emit_boys()
+    assert sorted(headers) == sorted(
+        [gpu.BOYS_HEADER, *(f"eval_boys_{m}.h" for m in range(gpu.BOYS_MAX + 1))])
+    for name, text in headers.items():
+        assert text == (GOLDEN / name).read_text(), name
 
 
 def test_the_header_it_includes_is_ours() -> None:
@@ -284,8 +292,10 @@ def test_a_transposed_d_is_read_with_the_ket_fastest() -> None:
 
 
 def _text(unit: str) -> str:
-    """A unit's gpu text, or `eval_boys.h`'s."""
-    return gpu.emit_boys() if unit == "eval_boys" else gpu.emit(UNITS[unit](), SM_86)
+    """A unit's gpu text, or every Boys header's."""
+    if unit == "eval_boys":
+        return "".join(gpu.emit_boys().values())
+    return gpu.emit(UNITS[unit](), SM_86)
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
@@ -441,25 +451,107 @@ def test_a_unit_with_a_fundamental_includes_eval_boys() -> None:
     assert BOYS_INCLUDE not in gpu.emit(build_s_kernel((1, 1)), SM_86)
 
 
-def test_eval_boys_is_the_vendor_routine_renamed_and_static() -> None:
-    # one routine (#301): the text the vendor backends inline as fj_boys, in
-    # this backend's spelling, with internal linkage, so every unit that
-    # includes it carries its own copy and none is a duplicate device symbol
-    h = gpu.emit_boys()
+def test_eval_boys_is_the_vendor_routine_with_the_series_replaced() -> None:
+    # The erf branch and both recurrences are fj_boys's (#301), in this
+    # backend's spelling, with internal linkage, so every unit that includes
+    # it carries its own copy and none is a duplicate device symbol; only the
+    # series loop is a call, to the polynomial of its order.
+    h = gpu.emit_boys()[gpu.BOYS_HEADER]
     assert h.splitlines()[3:5] == ["#pragma once", f'#include "{gpu.HEADER}"']
     assert h.count("static __device__ __forceinline__ void eval_boys(") == 1
     assert "fj_boys" not in h
-    body = h.split("\n\n", 1)[1].replace(
-        "static __device__ __forceinline__ void eval_boys(",
-        "__device__ __forceinline__ void fj_boys(")
-    assert [as_cuda(x) for x in body.splitlines()] == BOYS_DEVICE.splitlines()
+    orders = [x for x in h.splitlines() if x.startswith("#include \"eval_boys_")]
+    assert orders == [f'#include "eval_boys_{m}.h"'
+                      for m in range(gpu.BOYS_MAX + 1)]
+    ours = [as_cuda(x) for x in h.split(
+        "static __device__ __forceinline__ void eval_boys(", 1)[1].splitlines()]
+    vendor = BOYS_DEVICE.split(
+        "__device__ __forceinline__ void fj_boys(", 1)[1].splitlines()
+    loop = vendor.index("    double term = 1.0 / (double)(2 * M + 1);")
+    end = vendor.index("    double f = e * sum;")
+    assert ours[0] == vendor[0]
+    assert ours[1:3] == ["    static_assert(M >= 0 && M <= 20,",
+                         '                  "eval_boys_M.h is written for M in '
+                         '0..20");']
+    assert ours[3:] == [*vendor[1:loop],
+                        "    double f = e * eval_boys_series<M>(2.0 * T);",
+                        *vendor[end + 1:]]
 
 
-def test_a_kernel_may_not_take_eval_boyss_name() -> None:
-    k = dataclasses.replace(build_s_kernel((1, 1)), name="eval_boys")
+def _tail_degree(m: int) -> int:
+    """The least n whose tail is under 2^-53 of the Kummer sum at the switch,
+    by 400 exact terms (far past where any term matters)."""
+    x = Fraction(2 * (m + BOYS_SWITCH_PAD))
+    terms = [Fraction(1, 2 * m + 1)]
+    for k in range(1, 400):
+        terms.append(terms[-1] * x / (2 * m + 2 * k + 1))
+    whole = sum(terms)
+    tail = whole
+    for n, t in enumerate(terms):
+        tail -= t
+        if tail * 2**53 < whole:
+            return n
+    raise AssertionError(m)
+
+
+@pytest.mark.parametrize("m", range(gpu.BOYS_MAX + 1))
+def test_each_series_is_the_exact_coefficients_rounded_once(m: int) -> None:
+    c = gpu.boys_series(m)
+    assert len(c) - 1 == _tail_degree(m)
+    want = [1.0 / (2 * m + 1)]
+    exact = Fraction(1, 2 * m + 1)
+    for k in range(1, len(c)):
+        exact /= 2 * m + 2 * k + 1
+        want.append(float(exact))  # the correctly rounded quotient
+    assert list(c) == want
+    # the header spells exactly these, highest first, one fma a step
+    lines = gpu.emit_boys()[f"eval_boys_{m}.h"].splitlines()
+    first = lines.index("    double s = " + repr(c[-1]) + ";")
+    steps = lines[first + 1:lines.index("    return s;")]
+    assert steps == [f"    s = fma(s, x, {ck!r});" for ck in reversed(c[:-1])]
+    assert lines[first - 1] == ("__device__ __forceinline__ double "
+                                f"eval_boys_series<{m}>(double x) {{")
+
+
+def test_the_degrees_grow_with_the_switch() -> None:
+    # 40 at M = 0 to 61 at M = 20: the switch T = M + 8 moves with M
+    degrees = [len(gpu.boys_series(m)) - 1 for m in range(gpu.BOYS_MAX + 1)]
+    assert degrees[0] == 40 and degrees[-1] == 61
+    assert degrees == sorted(degrees)
+
+
+@pytest.mark.parametrize("m", [-1, gpu.BOYS_MAX + 1, 2.0])
+def test_a_series_past_the_written_orders_is_refused(m) -> None:
+    with pytest.raises(ValueError, match="0 <= M <= 20"):
+        gpu.boys_series(m)
+
+
+def test_the_series_reproduces_the_kummer_sum_below_the_switch() -> None:
+    # Horner over the rounded coefficients, in float64 without fma, against
+    # the exact series: within (2n + 2) u at every sampled x below the switch.
+    for m in range(gpu.BOYS_MAX + 1):
+        c = gpu.boys_series(m)
+        for t in (0.0, 0.25, 1.0, 3.0, m + 2.0, m + BOYS_SWITCH_PAD - 1e-9):
+            x = 2.0 * t
+            s = c[-1]
+            for ck in reversed(c[:-1]):
+                s = s * x + ck
+            xe, exact, term, k = Fraction(x), Fraction(0), Fraction(1, 2 * m + 1), 0
+            while term * 2**80 > exact or k < 2:
+                exact += term
+                k += 1
+                term = term * xe / (2 * m + 2 * k + 1)
+            rel = abs(Fraction(s) - exact) / exact
+            assert rel <= (2 * len(c) + 2) * Fraction(1, 2**53), (m, t, float(rel))
+            assert math.isfinite(s)
+
+
+@pytest.mark.parametrize("name", ["eval_boys", "eval_boys_series"])
+def test_a_kernel_may_not_take_eval_boyss_names(name: str) -> None:
+    k = dataclasses.replace(build_s_kernel((1, 1)), name=name)
     with pytest.raises(EmitError, match="eval_boys.h"):
         gpu.emit(k, SM_86)
-    assert "eval_boys" in cuda.emit(k, SM_86)  # the vendors carry fj_boys
+    assert name in cuda.emit(k, SM_86)  # the vendors carry fj_boys
 
 
 def test_a_specialization_refuses_what_its_siblings_would_repeat() -> None:
@@ -810,3 +902,20 @@ def test_two_units_with_eval_boys_share_one_tu(
             + gpu.emit(fk, SM_86, f))
     # one routine, #pragma once (#301): the second unit's include is skipped
     compile_device_source(tc, text, link=False)
+
+
+@pytest.mark.parametrize("tool", TOOLCHAINS)
+def test_an_order_past_the_headers_is_a_compile_error(
+        request, tmp_path, compile_device_source, tool: str) -> None:
+    tc = request.getfixturevalue(tool)
+    _boys(tmp_path)
+    probe = (f'#include "{gpu.BOYS_HEADER}"\n'
+             "__global__ void probe(double T, double* out) {\n"
+             "    double F[{m} + 1];\n"
+             "    eval_boys<{m}>(T, F);\n"
+             "    *out = F[0];\n"
+             "}\n")
+    compile_device_source(tc, probe.replace("{m}", str(gpu.BOYS_MAX)), link=False)
+    with pytest.raises(AssertionError, match="written for M in 0..20"):
+        compile_device_source(tc, probe.replace("{m}", str(gpu.BOYS_MAX + 1)),
+                              link=False)
