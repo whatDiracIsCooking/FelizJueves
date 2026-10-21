@@ -189,3 +189,59 @@ def test_every_engine_fills_the_fock_witness_slot(pair) -> None:
     assert np.all(np.abs(aj - bj) <= TOL * sj)
     assert np.all(np.abs(ak - bk) <= TOL * sk)
     assert np.max(np.abs(aj)) > 0.1
+
+
+# ---------------------------------------------------------------------------
+# The widened protocol (#406): `j` and `k`, the split build's kernels
+# ---------------------------------------------------------------------------
+
+SPLIT = {Target.J: "j", Target.K: "k"}
+
+
+@pytest.mark.parametrize("engine", ENGINES, ids=_ids)
+@pytest.mark.parametrize("target", list(SPLIT), ids=lambda t: t.value)
+def test_j_and_k_build_this_engines_split_kernel(engine, target) -> None:
+    """`j` / `k` take a `Target.J` / `Target.K` spec on the engine's OWN
+    recurrence (`Spec.engine`, #401) and build exactly the kernel the
+    member's named callable builds; the other engine's spec, the other split
+    target and `F` are refused, as is a non-Spec."""
+    member = getattr(engine, SPLIT[target])
+    own = E.RECURRENCE[engine.name]
+    spec = Spec(Operator.COULOMB, 0, (0, 1, 0, 1), target, engine=own)
+    k = member(spec)
+    assert isinstance(k, Kernel)
+    side = [e.name for e in ENGINES].index(engine.name)
+    mod, attr = E.MEMBERS[SPLIT[target]][side].split(":")
+    built = getattr(importlib.import_module(f"felizjueves.{mod}"), attr)(spec)
+    assert k == built
+    for other in ENGINES:
+        if other.name != engine.name:
+            with pytest.raises(ValueError, match="builds Target"):
+                member(Spec(Operator.COULOMB, 0, (0, 1, 0, 1), target,
+                            engine=E.RECURRENCE[other.name]))
+    wrong = Target.K if target is Target.J else Target.J
+    with pytest.raises(ValueError, match="builds Target"):
+        member(Spec(Operator.COULOMB, 0, (0, 1, 0, 1), wrong, engine=own))
+    with pytest.raises(ValueError, match="builds Target"):
+        member(Spec(Operator.COULOMB, 0, (0, 1, 0, 1), Target.F))
+    with pytest.raises(TypeError):
+        member((0, 1, 0, 1))
+
+
+def test_hgp_j_and_k_are_the_split_kernels_beside_f() -> None:
+    """HGP builds three targets: `kernel` its native fused `F`, unchanged by
+    the widening, and `j` / `k` the split `hj_` / `hk_` kernels (#404,
+    #405) in both class modes."""
+    from felizjueves import kernel_hj, kernel_hk
+    (hgp,) = (e for e in ENGINES if e.name == "hgp")
+    assert hgp.target is Target.F
+    assert hgp.kernel(Spec(Operator.COULOMB, 0, (0, 1, 0, 1),
+                           Target.F)).name.startswith("f_")
+    for ordered in (False, True):
+        j = hgp.j(kernel_hj.hj_class_spec(1, 0, 0, 0, ordered=ordered))
+        k = hgp.k(kernel_hk.hk_class_spec(1, 0, 0, 0, ordered=ordered))
+        assert j.name == ("hj_o_1000" if ordered else "hj_0010")
+        assert k.name == kernel_hk.hk_name(
+            kernel_hk.hk_class_spec(1, 0, 0, 0, ordered=ordered))
+        assert k.name.startswith("hk_o_" if ordered else "hk_")
+    assert set(E.RECURRENCE) == {e.name for e in ENGINES}

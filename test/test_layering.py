@@ -2535,3 +2535,80 @@ def test_the_generator_reaches_the_hgp_jk_by_entry_point_only() -> None:
     graph = _graph()
     assert {"kernel_hj", "kernel_hk"} <= graph["emit.__main__"]
     assert not any(_under(e, "hgp") for e in graph["emit.__main__"])
+
+
+# ---------------------------------------------------------------------------
+# #406 (milestone 14): `walk_hjk`, the split HGP build's ordered pair stream
+# WALKED -- `walk_f`'s discipline for `launch_hjk`'s plan and the `kernel_hj`
+# / `kernel_hk` kernels. It reads the plan by duck type and must not import
+# `launch_hjk`; it rebuilds the records from the AO layer's shells, packs
+# through `kernel_f`, checks the routing against `hgp.orbits`' GROUP and the
+# builders' own `built_class` / `orientations`, and runs each launch through
+# an INJECTED executor (`run=`), so it reaches no interpreter and no
+# reference/. Nor may it reach the witnesses it is held to (`ao.j`, `ao.k`,
+# `ao.fock`, `ao.eri`, `ao.hgp_drive`): it restates the density contract
+# rather than borrow `ao.j`'s private (#328).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hjk_walk": _rule(
+        "walk_hjk.py (#406): `launch_hjk`'s plan walked with `kernel_hj` / "
+        "`kernel_hk`'s kernels -- the plan checked against the basis, the "
+        "launch's `Spec` formed from its class (#401's bridge), the records "
+        "rebuilt from the shells, every launch run through an injected "
+        "executor (`run=`), and every ordered quartet's fate recorded",
+        ("spec", "ir", "ao.shell", "kernel_f", "kernel_hj", "kernel_hk",
+         "hgp.orbits"),
+        launch_hjk="the walker is independent of the plan builder (m6's "
+                   "discipline, #406): it reads the plan by duck type",
+        launch_f="the fused build's stream is a sibling, not a base",
+        reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
+                  "injected (`run=`)",
+        interp="the kernel runs through the injected `run=`; the walker "
+               "evaluates nothing itself",
+        plan=RULES["hgp"].must_not["plan"],
+        emit="the walk interprets; no text is emitted",
+        device="the walk runs no card",
+        dispatch="nothing measured may reach a launch plan by import (#145)",
+        measured="a walk is not a toolchain's reading",
+        measured_store="nothing measured may reach a walk by import"),
+}
+RULE_OF["walk_hjk"] = "hjk_walk"
+EDGES["walk_hjk"] = frozenset(("ao.shell", "hgp.orbits", "ir", "kernel_f",
+                               "kernel_hj", "kernel_hk", "spec"))
+
+
+def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
+) -> None:
+    # #406, TRANSITIVELY: no chain of imports from `walk_hjk` reaches the
+    # plan builder, reference/, the interpreter, a backend, the dispatch
+    # policy, or the witnesses the walk is held to.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["walk_hjk"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"kernel_hj", "kernel_hk", "kernel_f"} <= seen
+    for banned in ("launch_hjk", "launch_f", "launch", _REF, "interp", "emit",
+                   "device", "dispatch", "measured", "ao.j", "ao.k",
+                   "ao.fock", "ao.eri", "ao.hgp_drive", "engine", "walk_f"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"walk_hjk reaches {hit}"
+
+
+# #406: the `Engine` protocol widens by `j` and `k` (both engines build a J
+# and a K kernel since milestone 14), so `engine` names each engine's split
+# builders by their entry points: MMD's `kernel_k`, HGP's `kernel_hj` and
+# `kernel_hk` -- never the machinery behind them (`hgp/`, `plan/`).
+RULES["engine"] = Rule(RULES["engine"].why + ", and since #406 `j` / `k`: "
+                       "the split J / K builders `kernel_k`, `kernel_hj` and "
+                       "`kernel_hk`, by their entry points",
+                       RULES["engine"].may | frozenset(("kernel_k",
+                                                        "kernel_hj",
+                                                        "kernel_hk")),
+                       RULES["engine"].must_not)
+EDGES["engine"] = EDGES["engine"] | frozenset(("kernel_k", "kernel_hj",
+                                               "kernel_hk"))

@@ -1,7 +1,7 @@
 """`Engine`: what BOTH ERI engines turned out to have (#292, milestone 12 G1).
 
     Engine                      the protocol: name, target, eri, eri_and_scale,
-                                kernel
+                                kernel, j, k
     Mmd(pq=...)                 engine #1, McMurchie-Davidson ([JEngine])
     Hgp(boys=...)               engine #2, Head-Gordon-Pople ([Fock] §3)
     engines(*, pq, boys)        both, in that order -- what a cross-engine
@@ -50,6 +50,24 @@ names the two callables; test/test_engine.py resolves every one):
                      contract (`J_p` over Hermite targets, one warp per bra)
                      and F's (`kernel_f.pack`'s records, one thread per
                      contracted quartet, pin 7) are engine-private.
+  `j(spec)`, `k(spec)`  (#406, milestone 14) `Spec -> ir.Kernel` for the
+                     SPLIT build's `Target.J` / `Target.K` class on THIS
+                     engine's recurrence (`spec.engine`, #401): MMD's
+                     `kernel.build_pq_kernel` (the [p|q] kernel, `J_p`) and
+                     `kernel_k.build_k_kernel` (one batch); HGP's
+                     `kernel_hj.build_hj_kernel` and
+                     `kernel_hk.build_hk_kernel` (#404, #405: every ordered
+                     quartet, `J` / `K` by atomic add). Admitted on the
+                     rule every member is: since milestone 14 BOTH engines
+                     build a J and a K kernel. A spec of the other engine
+                     (`Spec.engine`) or of another target is refused HERE.
+                     `kernel(spec)` stays each engine's NATIVE target (`J`
+                     for MMD, `F` for HGP), so its callers are unchanged.
+                     As with `kernel`, nothing is promised about the
+                     parameters: MMD's `j` is the J chain's middle step
+                     (`J_p`, between `DQ` and `JAB`) while HGP's deposits
+                     `J` itself, and the two K kernels share `am`'s Hermite
+                     pairing `(la, lc | lb, ld)` and nothing else.
 
 The special function is NOT a member: MMD's `eri` takes the signed Hermite
 integral `pq(p, q, PQ, theta) = [p|q]` and HGP's takes the Boys function
@@ -100,7 +118,40 @@ from the MMD engine's own modules, and from no member of this protocol.
      sort) and the F pair stream (`launch_f.py`) are each their engine's.
   8. The pre- and post-kernels of the J chain (`Target.DQ`, `Target.JAB`,
      the `E` fragment): the MMD digestion is a Hermite back-transform; F
-     digests contracted quartets in-kernel (pin 1).
+     digests contracted quartets in-kernel (pin 1), and so do the split HGP
+     `J` and `K` (#404, #405).
+
+THE SPLIT HGP CELL (milestone 14, #406): what it REUSES, from where, and
+what it does not.
+
+  Reused from the MMD side, as targets and witnesses, not as machinery:
+     `Target.J` / `Target.K` and `am`'s pairing (`K` is `(la, lc | lb, ld)`
+     under both engines, #401); the host references it is held to
+     (`ao/j.py`, `ao/k.py`: every ordered quartet, weight 1); the density
+     contract; and the pair-factor-free Schwarz bound, still injected
+     (`ao.pairs.primitive_schwarz_bounds` as `launch_hjk`'s `bound=`), so
+     `pair_bound` stays out of the protocol for the reason above.
+  Reused from the fused F: the HGP VRR / HRR (`hgp/`), `[Fock]` §3.2's
+     mapping (one block per bra pair, one thread per contracted quartet,
+     the `K^4` contraction in registers before the HRR), `kernel_f`'s
+     staged record, `pack` and `MAX_PRIM_PAIRS`, and the screen as a SKIP,
+     never a break.
+  NOT reused, each kept with the build that has it:
+     9. the 8-fold digestion (`kernel_f.WEIGHTS`, the degeneracy factor,
+        the canonical half, `close`): the split stream (`launch_hjk`)
+        visits every ORDERED quartet once and deposits at weight 1;
+    10. `launch_f`'s eq. 29 machinery (pruning, the pre-launch screen) and
+        F's levers (`ket-break`, `scatter`, ...): the split stream prunes
+        nothing and screens with one density block per build;
+    11. MMD `K`'s sorted `break` (`launch_k`, `NO_DENSITY_KEY`) and MMD
+        `J`'s `I_q max|D_q|` ket sort (`launch.py`): the split HGP kets sit
+        by `G` and are skipped, never broken on;
+    12. the class mode -- one kernel per ERI orbit through a runtime `perm`
+        (`hgp.orbits`, the literal) or one per ordered class (the `ordered`
+        lever) -- is HGP-private: an MMD class has no orbit representative.
+     Each split build has its own stream and walker (`launch_hjk` /
+     `walk_hjk`, beside `launch_f` / `walk_f` and `launch` / `launch_k`),
+     and neither is a member: one contract per build, as item 7 says.
 
 THE RULE THAT NAMES NO ENGINE (test/test_layering.py, rule "engine" and
 `test_nothing_above_the_engines_names_an_engine`): this module is the one
@@ -131,6 +182,10 @@ from felizjueves.ao.shell import Shell
 from felizjueves.ir import Kernel
 from felizjueves.kernel import build_pq_kernel
 from felizjueves.kernel_f import build_f_kernel
+from felizjueves.kernel_hj import build_hj_kernel
+from felizjueves.kernel_hk import build_hk_kernel
+from felizjueves.kernel_k import build_k_kernel
+from felizjueves.spec import Engine as Recurrence
 from felizjueves.spec import Spec, Target
 
 ShellPair = tuple[Shell, Shell]
@@ -160,6 +215,14 @@ class Engine(Protocol):
         """The vendor-neutral kernel of one class of `self.target`."""
         ...
 
+    def j(self, spec: Spec) -> Kernel:
+        """The split build's `Target.J` kernel on this engine's recurrence."""
+        ...
+
+    def k(self, spec: Spec) -> Kernel:
+        """The split build's `Target.K` kernel on this engine's recurrence."""
+        ...
+
 
 # Each member, and the callable on each side that justifies it, as
 # "module:attribute" relative to `felizjueves` (resolved by test/test_engine.py).
@@ -172,7 +235,14 @@ MEMBERS: dict[str, tuple[str, str]] = {
     "eri_and_scale": ("ao.eri:eri_block_and_scale",
                       "ao.hgp_drive:eri_block_and_scale"),
     "kernel": ("kernel:build_pq_kernel", "kernel_f:build_f_kernel"),
+    "j": ("kernel:build_pq_kernel", "kernel_hj:build_hj_kernel"),
+    "k": ("kernel_k:build_k_kernel", "kernel_hk:build_hk_kernel"),
 }
+
+# The recurrence each engine runs (`spec.Engine`, #401): what `j` and `k`
+# require of a spec's `engine` field.
+RECURRENCE: dict[str, Recurrence] = {"mmd": Recurrence.MMD,
+                                     "hgp": Recurrence.HGP}
 
 
 def _own(engine: Engine, spec: Spec) -> Spec:
@@ -182,6 +252,20 @@ def _own(engine: Engine, spec: Spec) -> Spec:
         raise ValueError(
             f"{spec.key()}: engine {engine.name!r} builds Target."
             f"{engine.target.name} kernels, not Target.{spec.target.name}")
+    return spec
+
+
+def _split(engine: Engine, spec: Spec, target: Target) -> Spec:
+    """`spec`, if it is a `target` class on `engine`'s recurrence (`j`, `k`)."""
+    if not isinstance(spec, Spec):
+        raise TypeError(f"{engine.name}.{target.value} takes a Spec, not "
+                        f"{spec!r}")
+    want = RECURRENCE[engine.name]
+    if spec.target is not target or spec.engine is not want:
+        raise ValueError(
+            f"{spec.key()}: engine {engine.name!r}.{target.value} builds "
+            f"Target.{target.name} on Engine.{want.name}, not "
+            f"Target.{spec.target.name} on Engine.{spec.engine.name}")
     return spec
 
 
@@ -204,6 +288,12 @@ class Mmd:
     def kernel(self, spec: Spec) -> Kernel:
         return build_pq_kernel(_own(self, spec))
 
+    def j(self, spec: Spec) -> Kernel:
+        return build_pq_kernel(_split(self, spec, Target.J))
+
+    def k(self, spec: Spec) -> Kernel:
+        return build_k_kernel(_split(self, spec, Target.K))
+
 
 @dataclass(frozen=True)
 class Hgp:
@@ -224,6 +314,12 @@ class Hgp:
 
     def kernel(self, spec: Spec) -> Kernel:
         return build_f_kernel(_own(self, spec))
+
+    def j(self, spec: Spec) -> Kernel:
+        return build_hj_kernel(_split(self, spec, Target.J))
+
+    def k(self, spec: Spec) -> Kernel:
+        return build_hk_kernel(_split(self, spec, Target.K))
 
 
 def engines(*, pq: PQ, boys: Boys) -> tuple[Engine, ...]:
