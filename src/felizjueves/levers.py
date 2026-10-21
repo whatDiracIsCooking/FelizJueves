@@ -38,7 +38,10 @@ pins it to `plan.sieve.NO_SIEVE`, `plan.pipeline.TUNED` and `lower.LEVERS`).
 
 A leaf: it imports nothing from the package, so `spec` may import it. Targets
 are named by their key slot (`Target.J == "j"`, a `StrEnum`), and
-`TARGET_SLOTS` is pinned to `spec.Target` by a test.
+`TARGET_SLOTS` is pinned to `spec.Target` by a test. Since #401 a target on a
+non-native recurrence is a slot of its own (`ENGINE_SLOTS`: `j.hgp`,
+`k.hgp`, `spec.Spec.target_slot`), so legality is per SLOT (`SLOTS`) and
+`refusal` takes the spec's `target_slot`.
 """
 
 from __future__ import annotations
@@ -49,7 +52,9 @@ from types import MappingProxyType
 
 __all__ = [
     "DEFAULT_REFUSALS",
+    "ENGINE_SLOTS",
     "OTHER_LAYERS",
+    "SLOTS",
     "TARGET_SLOTS",
     "VOCABULARY",
     "Lever",
@@ -63,6 +68,18 @@ __all__ = [
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
                                  "schwarz", "sx", "metric", "eri3",
                                  "pair_bound")
+
+# THE ENGINE SLOTS (#401). A target built on a recurrence other than its
+# native one keys as `<target>.<engine>` (`spec.Spec.target_slot`), and the
+# same lever can mean nothing there: an MMD J lever acts on the [p|q] tower,
+# which an HGP J kernel never runs. So legality is per SLOT, and every
+# legality table covers these too. Only the off-native pairings `spec`
+# admits are slots (HGP J and HGP K; a test pins this to `spec`).
+ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp")
+
+# Every slot a legality table covers: each target's native slot, then the
+# engine slots.
+SLOTS: tuple[str, ...] = TARGET_SLOTS + ENGINE_SLOTS
 
 # The `Spec.levers` names owned by layers other than the kernel builder.
 OTHER_LAYERS: Mapping[str, str] = MappingProxyType({
@@ -143,6 +160,17 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "with no E fragment, no [p|q] recurrence region and no batch for a "
         "lever to act on"
     ),
+    "j.hgp": (
+        "no kernel-body lever is admitted on an HGP Target.J unless its "
+        "entry says so: the MMD J levers act on the [p|q] tower and the F "
+        "levers on the fused digestion, and an HGP J kernel runs neither"
+    ),
+    "k.hgp": (
+        "no kernel-body lever is admitted on an HGP Target.K unless its "
+        "entry says so: the MMD K levers act on the [p|q] tower and the E "
+        "fragments, and the F levers on the fused digestion; an HGP K kernel "
+        "runs neither"
+    ),
 })
 
 
@@ -184,11 +212,11 @@ class Lever:
             raise ValueError(f"lever {self.name!r}: {sorted(both)} both legal "
                              "and refused")
         covered = self.legal | set(self.refusals)
-        if covered != set(TARGET_SLOTS):
+        if covered != set(SLOTS):
             raise ValueError(
                 f"lever {self.name!r}: the legality table must cover every "
-                f"target exactly; missing {sorted(set(TARGET_SLOTS) - covered)}"
-                f", unknown {sorted(covered - set(TARGET_SLOTS))}")
+                f"target exactly; missing {sorted(set(SLOTS) - covered)}"
+                f", unknown {sorted(covered - set(SLOTS))}")
         for slot, why in self.refusals.items():
             if not isinstance(why, str) or not why:
                 raise ValueError(f"lever {self.name!r}: refusal on {slot!r} "
@@ -201,7 +229,7 @@ class Lever:
         `DEFAULT_REFUSALS`' reason unless `why_not[slot]` gives its own."""
         legal = frozenset(legal)
         refusals = {s: why_not.get(s, DEFAULT_REFUSALS[s])
-                    for s in TARGET_SLOTS if s not in legal}
+                    for s in SLOTS if s not in legal}
         unknown = set(why_not) - set(refusals)
         if unknown:
             raise ValueError(f"lever {name!r}: a reason given for "
@@ -507,6 +535,28 @@ VOCABULARY: dict[str, Lever] = {
            "translational invariance); the K kernel's MMD recurrence builds "
            "Hermite [r]^(0) from PQ alone, with no bra/ket Cartesian split "
            "to transfer across"),
+    ),
+    # #401: the HGP split J/K's class mode (milestone 14). The literal is the
+    # CANONICAL class mode (one kernel per canonical class, its permutations
+    # mapped onto it); `ordered` is one kernel per ORDERED class. Declared
+    # here with its legality; its builder behaviour lands in the HGP J/K
+    # kernel issues.
+    "ordered": Lever.of(
+        "ordered", 401,
+        "one HGP kernel per ORDERED class (la, lb | lc, ld) instead of one "
+        "per canonical class with its permutations mapped onto it (the "
+        "literal class mode); the recurrence unchanged",
+        {"j.hgp", "k.hgp"},
+        j=("an MMD [p|q] kernel is keyed by its Hermite split (lp, lq), not "
+           "by an HGP class's shell order, so it has no canonical/ordered "
+           "class mode to choose between"),
+        k=("an MMD K kernel is keyed by its Hermite pairs (la + lc, lb + "
+           "ld), not by an HGP class's shell order, so it has no "
+           "canonical/ordered class mode to choose between"),
+        f=("the fused F kernel digests each canonical quartet into all of "
+           "its 8-fold orbit (degeneracy weights derived from |orbit|); an "
+           "ordered mode would undo the digestion its weights are derived "
+           "for (and Target.F's lever surface is #340's)"),
     ),
 }
 

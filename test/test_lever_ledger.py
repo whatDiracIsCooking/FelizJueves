@@ -29,7 +29,12 @@ from felizjueves.spec import Target
 
 def test_every_vocabulary_lever_is_in_an_arm_on_its_one_target() -> None:
     arms = store.ledger_arms()
-    assert set(levers.VOCABULARY) == {lv for a in arms for lv in a.split("+")}
+    assert set(store.ledger_levers()) == {
+        lv for a in arms for lv in a.split("+")}
+    # #401: a lever left out is one legal only on an engine slot (j.hgp,
+    # k.hgp), which has no ledger class yet.
+    for lv in set(levers.VOCABULARY) - set(store.ledger_levers()):
+        assert levers.VOCABULARY[lv].legal <= set(levers.ENGINE_SLOTS), lv
     for a in arms:
         t = store.arm_target(a)
         assert t.value in set.intersection(

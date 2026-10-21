@@ -56,7 +56,10 @@ K cell never equals).
   target is written exactly as before (`as_record`) -- the #159 pattern of
   `arm_kind`.
 - THE READ PATH is `rows(..., target=)`: a filter on the key's target slot,
-  beside the spec, arch and toolchain ones. `target_of` reads that slot.
+  beside the spec, arch and toolchain ones. `target_of` reads that slot,
+  past the `.<engine>` suffix a non-native engine adds (#401: `j.hgp`), and
+  `engine_of` reads the suffix (the target's native engine without one). No
+  stored key carries a suffix.
 
 THE K ROWS (#205) fill K_SUBGRID on both cards, ADDED beside the J rows
 (no J row is rewritten). DECLARED BEFORE ANY SPLIT K ROW EXISTED -- the
@@ -576,7 +579,7 @@ from felizjueves.device import (
 )
 from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.lower import LEVERS
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import NATIVE_ENGINE, Engine, Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parents[2]
 STORE = REPO / "data" / "measured" / "kernels.json"
@@ -810,12 +813,25 @@ def _closure(lever: str) -> tuple[str, ...]:
     return tuple(sorted(out))
 
 
+def ledger_levers() -> tuple[str, ...]:
+    """The kernel-body levers the ledger reads, sorted: every one legal on a
+    LEDGER_TARGETS slot (`j`, `k`, `f`, each on its native engine). A lever
+    legal only on an engine slot (`levers.ENGINE_SLOTS`, #401) is not one."""
+    slots = {t.value for t in LEDGER_TARGETS}
+    return tuple(lv for lv in sorted(_levers.VOCABULARY)
+                 if slots & _levers.VOCABULARY[lv].legal)
+
+
 def ledger_arms() -> tuple[str, ...]:
     """Every arm the ledger reads, in key spelling: each kernel-body lever's
     own arm (`_closure` over REQUIRES, so `sliced-hrr` is
     `batched-vrr+sliced-hrr`), then the declared COMPOSITIONS whose levers
-    are all in the vocabulary. Read from the vocabulary when called."""
-    arms = [_closure(lv) for lv in sorted(_levers.VOCABULARY)]
+    are all in the vocabulary. Read from the vocabulary when called.
+
+    A lever legal on no LEDGER_TARGETS slot -- one declared for an engine
+    slot only, as #401's `ordered` on `j.hgp` / `k.hgp` -- has no ledger
+    class to build and gets no arm (`ledger_levers`)."""
+    arms = [_closure(lv) for lv in ledger_levers()]
     arms += [c for c in COMPOSITIONS
              if all(_levers.is_kernel_lever(lv) for lv in c)]
     seen: dict[tuple[str, ...], None] = {}
@@ -1241,15 +1257,38 @@ def _check_arm_kind(key: str, row: Measured) -> None:
                          "arm_kind")
 
 
-def target_of(key: str) -> Target:
-    """The `Spec.target` a row key names, read off its target slot (the fifth
-    segment of `Spec.key()`, `.../b<n>/<target>/<levers>`)."""
+def _slot_of(key: str) -> tuple[Target, Engine]:
+    """`(target, engine)` read off a row key's target slot (the fifth segment
+    of `Spec.key()`, `.../b<n>/<target>[.<engine>]/<levers>`). A slot with no
+    `.<engine>` suffix names the target's native engine (#401)."""
     spec_key, _, _ = split_key(key)
     parts = spec_key.split("/")
     try:
-        return Target(parts[4])
+        slot = parts[4]
+        name, dot, eng = slot.partition(".")
+        target = Target(name)
+        if not dot:
+            return target, NATIVE_ENGINE[target]
+        engine = Engine(eng)
     except (IndexError, ValueError) as e:
         raise ValueError(f"{key!r} names no target") from e
+    if engine is NATIVE_ENGINE[target]:
+        raise ValueError(f"{key!r} spells {target.value}'s native engine "
+                         f"{engine.value}, which a Spec key never does")
+    return target, engine
+
+
+def target_of(key: str) -> Target:
+    """The `Spec.target` a row key names, read off its target slot (the fifth
+    segment of `Spec.key()`, `.../b<n>/<target>/<levers>`), past any
+    `.<engine>` suffix (#401)."""
+    return _slot_of(key)[0]
+
+
+def engine_of(key: str) -> Engine:
+    """The `Spec.engine` a row key names: the suffix of its target slot, or
+    the target's native engine when there is none (#401)."""
+    return _slot_of(key)[1]
 
 
 def _check_target(key: str, row: Measured) -> None:

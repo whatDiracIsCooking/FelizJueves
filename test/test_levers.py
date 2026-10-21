@@ -26,7 +26,14 @@ from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 from felizjueves.lower import LEVERS as LOWERING
 from felizjueves.plan.pipeline import TUNED, plan
 from felizjueves.plan.sieve import NO_SIEVE
-from felizjueves.spec import AM_LENGTH, OPERATOR_OF, Spec, Target
+from felizjueves.spec import (
+    AM_LENGTH,
+    NATIVE_ENGINE,
+    OPERATOR_OF,
+    Engine,
+    Spec,
+    Target,
+)
 
 PROBE = "probe"
 K_REASON = "the probe's own reason for K"
@@ -47,9 +54,11 @@ def probe_j_only(monkeypatch: pytest.MonkeyPatch) -> levers.Lever:
     return lever
 
 
-def _spec(target: Target, *lv: str, n_batches: int = 1) -> Spec:
+def _spec(target: Target, *lv: str, n_batches: int = 1,
+          engine: Engine | None = None) -> Spec:
     am = {2: (2, 1), 3: (2, 1, 1), 4: (1, 0, 1, 0)}[AM_LENGTH[target]]
-    return Spec(OPERATOR_OF[target], 0, am, target, tuple(lv), n_batches)
+    return Spec(OPERATOR_OF[target], 0, am, target, tuple(lv), n_batches,
+                engine)
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +68,25 @@ def _spec(target: Target, *lv: str, n_batches: int = 1) -> Spec:
 
 def test_the_target_slots_are_spec_s_targets() -> None:
     assert levers.TARGET_SLOTS == tuple(t.value for t in Target)
-    assert set(levers.DEFAULT_REFUSALS) == set(levers.TARGET_SLOTS)
+    assert levers.SLOTS == levers.TARGET_SLOTS + levers.ENGINE_SLOTS
+    assert set(levers.DEFAULT_REFUSALS) == set(levers.SLOTS)
     assert all(levers.DEFAULT_REFUSALS.values())
+
+
+def test_the_engine_slots_are_spec_s_legal_off_native_pairings() -> None:
+    # #401: every (target, engine) Spec admits off its native engine is an
+    # engine slot, spelled as the key spells it, and nothing else is.
+    off_native = set()
+    for target in Target:
+        for engine in Engine:
+            if engine is NATIVE_ENGINE[target]:
+                continue
+            try:
+                spec = _spec(target, engine=engine)
+            except ValueError:
+                continue
+            off_native.add(spec.target_slot)
+    assert off_native == set(levers.ENGINE_SLOTS) == {"j.hgp", "k.hgp"}
 
 
 def test_the_other_layers_names_are_their_owners() -> None:
@@ -72,7 +98,7 @@ def test_every_declared_lever_is_well_formed() -> None:
     for name, lever in levers.VOCABULARY.items():
         assert lever.name == name
         assert name not in levers.OTHER_LAYERS
-        assert lever.legal | set(lever.refusals) == set(levers.TARGET_SLOTS)
+        assert lever.legal | set(lever.refusals) == set(levers.SLOTS)
 
 
 def test_no_lever_behaviour_lands_with_the_seam() -> None:
@@ -102,18 +128,22 @@ def test_a_malformed_declaration_is_refused(args, match) -> None:
 def test_an_incomplete_or_overlapping_table_is_refused() -> None:
     with pytest.raises(ValueError, match=r"missing \['f'\]"):
         levers.Lever("p", 1, "x", frozenset({"j"}),
-                     {s: "no" for s in levers.TARGET_SLOTS
+                     {s: "no" for s in levers.SLOTS
                       if s not in ("j", "f")})
+    with pytest.raises(ValueError, match=r"missing \['k.hgp'\]"):
+        levers.Lever("p", 1, "x", frozenset({"j"}),
+                     {s: "no" for s in levers.SLOTS
+                      if s not in ("j", "k.hgp")})
     with pytest.raises(ValueError, match="unknown \\['z'\\]"):
         levers.Lever("p", 1, "x", frozenset({"j"}),
-                     {**{s: "no" for s in levers.TARGET_SLOTS if s != "j"},
+                     {**{s: "no" for s in levers.SLOTS if s != "j"},
                       "z": "no"})
     with pytest.raises(ValueError, match="both legal and refused"):
         levers.Lever("p", 1, "x", frozenset({"j"}),
-                     {s: "no" for s in levers.TARGET_SLOTS})
+                     {s: "no" for s in levers.SLOTS})
     with pytest.raises(ValueError, match="states no reason"):
         levers.Lever("p", 1, "x", frozenset({"j"}),
-                     {s: "" for s in levers.TARGET_SLOTS if s != "j"})
+                     {s: "" for s in levers.SLOTS if s != "j"})
     with pytest.raises(ValueError, match="legal or no target"):
         levers.Lever.of("p", 1, "x", {"j"}, j="but it is legal")
 
@@ -228,3 +258,80 @@ def test_a_lever_reaches_the_k_kernel_as_provenance(probe, n_batches) -> None:
         assert _without_lever_notes(got, spec) == want.body
     if n_batches == 1:
         assert build_k_kernel(spec) == built[0]
+
+
+# ---------------------------------------------------------------------------
+# #401: legality sees the engine; `ordered` is legal exactly on HGP J / K
+# ---------------------------------------------------------------------------
+
+ORDERED = "ordered"
+
+
+def _every_spec_slot() -> list[tuple[Target, Engine]]:
+    """Every (target, engine) a lever-free Spec admits."""
+    out = []
+    for target in Target:
+        for engine in Engine:
+            try:
+                _spec(target, engine=engine)
+            except ValueError:
+                continue
+            out.append((target, engine))
+    return out
+
+
+def test_ordered_is_declared_on_the_engine_slots_only() -> None:
+    lever = levers.VOCABULARY[ORDERED]
+    assert (lever.name, lever.issue) == ("ordered", 401)
+    assert lever.legal == {"j.hgp", "k.hgp"}
+    for slot in ("j", "k", "f"):
+        assert lever.refusals[slot] != levers.DEFAULT_REFUSALS[slot]
+    for slot in set(levers.TARGET_SLOTS) - {"j", "k", "f"}:
+        assert lever.refusals[slot] == levers.DEFAULT_REFUSALS[slot]
+
+
+def test_ordered_is_legal_exactly_on_hgp_j_and_k() -> None:
+    legal = set()
+    for target, engine in _every_spec_slot():
+        try:
+            spec = _spec(target, ORDERED, engine=engine)
+        except ValueError as err:
+            slot = _spec(target, engine=engine).target_slot
+            assert str(err) == (f"lever {ORDERED!r} on target {slot}: "
+                                f"{levers.VOCABULARY[ORDERED].refusals[slot]}")
+            continue
+        legal.add((target, engine))
+        assert spec.key().endswith(f"/{spec.target_slot}/ordered")
+    assert legal == {(Target.J, Engine.HGP), (Target.K, Engine.HGP)}
+
+
+@pytest.mark.parametrize(("target", "match"), [
+    (Target.J, "Hermite split"),
+    (Target.K, "Hermite pairs"),
+    (Target.F, "8-fold orbit"),
+])
+def test_ordered_is_refused_on_mmd_j_k_and_on_f_with_its_reason(
+        target, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        _spec(target, ORDERED)
+
+
+@pytest.mark.parametrize("name", sorted(set(levers.VOCABULARY) - {ORDERED}))
+@pytest.mark.parametrize("target", [Target.J, Target.K])
+def test_no_other_kernel_lever_is_legal_on_an_hgp_split_slot(
+        name, target) -> None:
+    # Each earlier lever is MMD's (J, K) or the fused F's: an HGP J / K
+    # kernel has neither surface, so its slot's default refusal stands.
+    slot = f"{target.value}.hgp"
+    assert levers.refusal(slot, name) == levers.DEFAULT_REFUSALS[slot]
+    with pytest.raises(ValueError, match=f"on target {slot}: "):
+        _spec(target, name, engine=Engine.HGP)
+
+
+def test_legality_is_per_slot_not_per_target(probe) -> None:
+    # The probe is legal on MMD j / k (its `legal`), and refused on the same
+    # targets under HGP: the slot, not the target, is what the table keys.
+    assert _spec(Target.J, PROBE).levers == (PROBE,)
+    for target in (Target.J, Target.K):
+        with pytest.raises(ValueError, match=f"on target {target.value}.hgp"):
+            _spec(target, PROBE, engine=Engine.HGP)
