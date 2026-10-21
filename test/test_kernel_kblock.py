@@ -74,7 +74,8 @@ def run_kb(am: Am, bra, kets, dcd_rows, *, lanes: int = 1, tau: float = 0.0,
     blk = {k: np.array([v], np.int32) for k, v in dict(
         bra0=0, bra1=a["n_bra"] if n_bra is None else n_bra, ket0=0,
         ket1=a["n_ket"], ko_a=0, ko_b=na).items()}
-    args = {**{k: v for k, v in a.items() if k != "K"}, **blk,
+    blk["dmax"] = np.array([a["maxD"]])  # #484: the block's own factor
+    args = {**{k: v for k, v in a.items() if k not in ("K", "maxD")}, **blk,
             "n_blk": 1, "n_ao": n, "K": np.zeros((n, n))}
     grid, block = launch_shape(1, lanes)
     return Interpreter(build_kblock_kernel(am),
@@ -225,6 +226,70 @@ def test_the_interpreted_plan_is_the_walk_screened(tmp_path):
                for b in c.blocks for r in c.bras[b.bra0:b.bra1])
     drv = kb_driver(plan, basis, "hip", tmp_path)
     K = _interp_K(plan, drv, kb_stage(drv, plan, basis, D), lanes=1)
+    Kw = np.array(w.K)
+    assert float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * float(
+        np.max(np.abs(Kw)))
+
+
+# ---------------------------------------------------------------------------
+# The per-block density factor (#484)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("am", [(0, 0, 0, 0), (1, 0, 1, 1), (1, 1, 0, 1)])
+@pytest.mark.parametrize("tau", [0.0, 1.0])
+def test_dmax_max_d_is_the_scalar_screen_bitwise(am: Am, tau: float) -> None:
+    """`dmax[blk] = maxD`: the block is `kernel_k`'s row under the scalar
+    `maxD`, bit for bit, unscreened and with the ket screen firing."""
+    bra, ket = _pairs(am, contracted=False)
+    dcd = _dcd(am[1], am[3])
+    Ip, Iq, maxD = [4.0], [2.0, 1.5, 1.0, 0.2], 0.7
+    row, _ = run_k(am, bra, [(ket, 0)], [dcd], tau=tau, maxD=maxD, Ip=Ip,
+                   Iq=Iq)
+    got = _block(am, run_kb(am, bra, [(ket, 0)], [dcd], tau=tau, maxD=maxD,
+                            Ip=Ip, Iq=Iq))
+    assert got.tolist() == row[0].tolist()
+    if tau > 0.0:  # the ket screen fired: Ib Iq maxD = 0.56 < 1
+        full, _ = run_k(am, bra, [(ket, 0)], [dcd], maxD=maxD, Ip=Ip, Iq=Iq)
+        assert row[0].tolist() != full[0].tolist()
+
+
+def test_the_block_reads_its_own_factor() -> None:
+    """A factor under the scalar's, in one block: the screen tightens to it
+    (`Ib Iq dmax` against `tau`) and to nothing else."""
+    am = (1, 0, 1, 0)
+    bra, ket = _pairs(am, contracted=False)
+    dcd = _dcd(0, 0)
+    kw = dict(tau=1.0, Ip=[4.0], Iq=[2.0, 1.5, 1.0, 0.2])
+    loose = run_kb(am, bra, [(ket, 0)], [dcd], maxD=1.0, **kw)
+    tight = run_kb(am, bra, [(ket, 0)], [dcd], maxD=0.2, **kw)
+    # 4 Iq 0.2 < 1 for Iq < 1.25: two kets survive, against three
+    row2, _ = run_k(am, bra, [(ket, 0)], [dcd], maxD=0.2, **kw)
+    assert _block(am, tight).tolist() == row2[0].tolist()
+    assert _block(am, tight).tolist() != _block(am, loose).tolist()
+
+
+def test_the_interpreted_plan_is_the_walk_with_the_decay(tmp_path):
+    """The chain of test_ao_k_decay.py, its per-block factors staged as
+    `dmax`: the interpreted plan against the walk over the same plan, and
+    the factor skipping more than `max|D|`."""
+    from test_ao_k_decay import TAU, chain
+
+    from felizjueves.ao.k import density_decay
+
+    basis, D = chain()
+    bound = partial(record_bounds, pq=pq)
+    dec = density_decay(basis, D, bound=bound, tau=TAU)
+    plan = kb_launches(basis, D, bound=bound, tau=TAU,
+                       build=build_kblock_kernel, decay=dec)
+    (c,) = plan
+    assert any(b.dmax < plan.dm for b in c.blocks)
+    w = walk_kb(plan, basis, D, pq=pq)
+    drv = kb_driver(plan, basis, "cuda", tmp_path)
+    staged = kb_stage(drv, plan, basis, D)
+    assert class_args(drv, staged, 0)["dmax"].tolist() == [
+        b.dmax for b in c.blocks]
+    K = _interp_K(plan, drv, staged, lanes=1)
     Kw = np.array(w.K)
     assert float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * float(
         np.max(np.abs(Kw)))

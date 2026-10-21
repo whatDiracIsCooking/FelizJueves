@@ -41,9 +41,9 @@ import: `KContext` and the default hooks for every statement inside the
 ket loop, and `kernel_k.bra_scalars` / `kernel_k.ket_body`, the bra
 record's scalars and the per-pair body, so the two kernels cannot drift.
 
-    params  n_blk n_bra n_ket n_dc n_ao (I32)  tau maxD (F64)
+    params  n_blk n_bra n_ket n_dc n_ao (I32)  tau (F64)
             bra0[n_blk] bra1[n_blk] ket0[n_blk] ket1[n_blk]
-            ko_a[n_blk] ko_b[n_blk] (I32)                       per block
+            ko_a[n_blk] ko_b[n_blk] (I32)  dmax[n_blk] (F64)    per block
             P[n_bra, 3]  zeta_ac[n_bra]  XPA[n_bra, 3]  XPC[n_bra, 3]
             s_ac[n_bra]  Ip[n_bra]  dc[n_bra] (I32)             bra side
             Q[n_ket, 3]  eta[n_ket]  XQB[n_ket, 3]  XQD[n_ket, 3]
@@ -52,16 +52,20 @@ record's scalars and the per-pair body, so the two kernels cannot drift.
             K[n_ao, n_ao]  (OUT, ADDED INTO)
 
 Block `blk` (`BLOCK_X`) contracts bras `[bra0, bra1)` against kets `[ket0,
-ket1)` into `K[ko_a + i, ko_b + j]`. Every name of `kernel_k`'s parameter
-list keeps its meaning there (`dc[bra] + dd[k]` is still the `Dcd` row, so
-the host lays `Dcd` out exactly as for `kernel_k`).
+ket1)` into `K[ko_a + i, ko_b + j]`, screened with the density factor
+`dmax[blk]`. Every other name of `kernel_k`'s parameter list keeps its
+meaning there (`dc[bra] + dd[k]` is still the `Dcd` row, so the host lays
+`Dcd` out exactly as for `kernel_k`); `kernel_k`'s scalar `maxD` is not a
+parameter here (#484): the block reads its own factor into a local of that
+name, once, so `kernel_k.ket_body` is shared unchanged.
 
 THE GROUPING IS THE LAUNCH PLAN'S (`launch_kblock.py`): the bras of one
 class grouped by first shell `A`, the kets by first shell `B`, each group
 SORTED DESCENDING BY ITS BOUND (`Ip`, `Iq`), stably. A block is one
 `(A group, B group)` pair; one launch holds each `(A, B)` once.
 
-THE SCREEN, two `break`s on `kernel_k`'s bound `Ib * (Iq * maxD) < tau`:
+THE SCREEN, two `break`s on `kernel_k`'s bound `Ib * (Iq * maxD) < tau`,
+`maxD = dmax[blk]` the block's density factor:
 
 - the per-pair one, inside the ket loop, `kernel_k`'s statement (the kets
   of a block sorted by `Iq`);
@@ -70,17 +74,22 @@ THE SCREEN, two `break`s on `kernel_k`'s bound `Ib * (Iq * maxD) < tau`:
   later (smaller) bra is under `tau` too. It is uniform across the warp
   (no lane-dependent term), so the warp leaves the loop together. A block
   whose FIRST bra fails it does no integral at all: the Schwarz-level
-  block skip, `G_A G_B max|D| < tau`, falls out of the sort.
+  block skip, `G_A G_B dmax < tau`, falls out of the sort.
 
-THE BLOCK SCREEN OF [Fock, §4.3] (eqs 41-49, the density-decay fit
-`|D_cd| <= H exp(-Lambda |CD|)` and the block test on `|AB| - R_a - R_b`)
-is NOT part of this kernel's contract, by decision (#481's design
-question): a block it skips is a block the host does not put in the launch,
-and the per-block parameters above take any block list, so it is a LAUNCH
-FILTER that needs no parameter here. Its in-loop tightenings `G_a -> G_[ac]`,
-`G_b -> G_[bd]` are the two sorted `break`s above with the global `maxD`;
-a per-block density bound would only replace `maxD`, a scalar, by a
-per-block array. Not built; the gain measured first is the mapping alone.
+The factor is constant within a block, so both exits stay valid and the
+sorted-group precondition does not move. `dmax[blk] = max|D|` for every
+block is #481's screen exactly (the plan's default).
+
+THE BLOCK SCREEN OF [Fock, §4.3.1] (#484). Figure 3's three exit tests --
+block, bra loop, ket loop, each `H e^{-Lambda(|AB| - R_a - R_b)} G G < tau`
+-- are this kernel's two `break`s with `dmax[blk]` the density-decay factor
+`F_ab` (`ao.k.density_decay`, its rule and proof; `launch_kblock` carries
+it per block): the block test is the bra exit at the first bra, so a
+separate block drop adds nothing (a failing block costs one warp, two loads
+and a branch). The threshold is `tau`, never [Fock]'s `tau* = tau / N*`, so
+every skipped term stays under `tau`. Dropping blocks from the launch
+altogether would be a LAUNCH FILTER, which the block table already admits;
+not built.
 
 THE WRITE. Lane 0 ADDS each reduced element, `AtomicAdd(K[ko_a + i, ko_b +
 j])`. Within one launch no two blocks share an `(A, B)` (the plan's), so
@@ -151,9 +160,9 @@ __all__ = [
     "shared_doubles",
 ]
 
-BLOCK_PARAMS = ("bra0", "bra1", "ket0", "ket1", "ko_a", "ko_b")
+BLOCK_PARAMS = ("bra0", "bra1", "ket0", "ket1", "ko_a", "ko_b", "dmax")
 
-PARAMS = ("n_blk", "n_bra", "n_ket", "n_dc", "n_ao", "tau", "maxD",
+PARAMS = ("n_blk", "n_bra", "n_ket", "n_dc", "n_ao", "tau",
           *BLOCK_PARAMS,
           "P", "zeta_ac", "XPA", "XPC", "s_ac", "Ip", "dc",
           "Q", "eta", "XQB", "XQD", "s_bd", "Iq", "dd",
@@ -162,8 +171,9 @@ PARAMS = ("n_blk", "n_bra", "n_ket", "n_dc", "n_ao", "tau", "maxD",
 SORTED_GROUPS = (
     "PRECONDITION: a block's bras [bra0, bra1) arrive sorted by Ip ALONE and "
     "its kets [ket0, ket1) by Iq ALONE, each descending. Both screens are "
-    "breaks: once Ib * Iq * maxD < tau every later ket is under it, and once "
-    "Ib * Iq[ket0] * maxD < tau every later bra is. Unsorted groups make a "
+    "breaks on the block's own factor maxD = dmax[blk]: once Ib * Iq * maxD "
+    "< tau every later ket is under it, and once Ib * Iq[ket0] * maxD < tau "
+    "every later bra is. Unsorted groups make a "
     "break a wrong answer, not a slow one (launch_kblock's plan sorts them)")
 
 WRITE_NOTE = (
@@ -220,16 +230,18 @@ def _c(fn: Fn, *args: Expr) -> Call:
 
 
 def _params(ctx: KContext) -> tuple[Param, ...]:
-    """`PARAMS`: the block ranges, then `kernel_k`'s record and density
-    parameters unchanged, then `K` as the AO matrix."""
+    """`PARAMS`: the block table (ranges, offsets, the density factor), then
+    `kernel_k`'s record and density parameters unchanged but `maxD`, then
+    `K` as the AO matrix."""
     nblk, nao = Var("n_blk"), Var("n_ao")
     k = {p.name: p for p in k_params(ctx)}
     out = (
         Param("n_blk", Scalar.I32), k["n_bra"], k["n_ket"], k["n_dc"],
-        Param("n_ao", Scalar.I32), k["tau"], k["maxD"],
-        *(Param(n, Scalar.I32, array=True, shape=(nblk,))
+        Param("n_ao", Scalar.I32), k["tau"],
+        *(Param(n, Scalar.F64 if n == "dmax" else Scalar.I32, array=True,
+                shape=(nblk,))
           for n in BLOCK_PARAMS),
-        *(k[n] for n in PARAMS[7 + len(BLOCK_PARAMS):-1]),
+        *(k[n] for n in PARAMS[6 + len(BLOCK_PARAMS):-1]),
         Param("K", Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nao, nao)),
     )
@@ -289,6 +301,10 @@ def build_kblock_kernel(cls: tuple[int, int, int, int] | Spec, *,
         *(Decl(v, Scalar.I32, init=Index(p, (blk,)))
           for v, p in (("b0", "bra0"), ("b1", "bra1"), ("k0", "ket0"),
                        ("k1", "ket1"), ("ka", "ko_a"), ("kb", "ko_b"))),
+        Note("the block's density factor, read once: both breaks test "
+             "against it, kernel_k's per-pair statement by its name maxD "
+             "(#484)"),
+        Decl("maxD", Scalar.F64, init=Index("dmax", (blk,))),
         Note("the block's largest ket bound: its kets are sorted, and a "
              "block in the launch has at least one"),
         Decl("Iq0", Scalar.F64, init=Index("Iq", (Var("k0"),))),
