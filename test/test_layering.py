@@ -2413,3 +2413,55 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                    "kernel_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_hjk reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #404 (milestone 14): `kernel_hj`, the HGP Coulomb kernel, split -- a builder
+# beside `kernel_f`, under `f_builder`'s prohibitions: key -> IR, the HGP
+# statements of `hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs, the
+# orientation from `hgp.orbits`, and `kernel_f`'s packed record layout reused
+# as it is. It is interpreted against `ao/hgp_drive.py` (bitwise) and
+# `ao/j.py`'s sweep, so neither the AO layer nor reference/ may be its
+# ancestor; and it reads #403's pair stream only as packed data.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hj_builder": _rule(
+        "kernel_hj.py (#404): the HGP J kernel, split -- every ordered "
+        "quartet, J_ab += D_cd (ab|cd) by atomic add; the in-kernel K^4 "
+        "contraction, VRR / HRR statements from `hgp.recurrence`, the "
+        "canonical class mode through `hgp.orbits`, `kernel_f`'s staged "
+        "record (`REC`, `MAX_PRIM_PAIRS`) reused, keyed on a `Target.J` "
+        "`Engine.HGP` `Spec`",
+        ("spec", "ir", "hgp", "kernel_f"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao="`ao/hgp_drive.py` (the ERIs) and `ao/j.py` (the J sweep) are the "
+           "kernel's witnesses: importing either shares ancestry (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["kernel_hj"] = "hj_builder"
+EDGES["kernel_hj"] = frozenset(
+    ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "kernel_f",
+     "spec"))
+
+
+def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
+    # #404, TRANSITIVELY: no chain of imports from `kernel_hj` reaches the
+    # plan layer, the AO layer, reference/, the interpreter, a backend, a
+    # card, or a pair stream (`launch_f`, #403's `launch_hjk`).
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_hj"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
+    for banned in ("plan", _REF, "ao", "interp", "emit", "device",
+                   "launch_f", "launch_hjk"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hj reaches {hit}"
