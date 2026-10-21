@@ -100,7 +100,11 @@ fragments inlined, the contraction staged so neither `(ac\|bd)` nor its
 half-transform is an array, one warp per bra record as in `J`) and its split
 class as atomic partial-sum batch kernels (#203), the launch plan
 (`launch_k.py`, #204: a sibling of `ClassLaunch`, which is J-shaped, its kets
-sorted by `I_bd` alone because J's density key cannot be formed for `K`), the
+sorted by `I_bd` alone because J's density key cannot be formed for `K`;
+since #480 also an opt-in bra–ket-symmetric sweep, `sweep="symmetric"`: per
+ket group `b` the bras cut to the shell prefix `a <= b`, the `a < b` blocks
+mirrored, walked interpreted only, the ordered default pinned by a
+fingerprint), the
 duplicated-work count (`kdup.py`, #202) and the libcint `vk` fixtures (#199).
 On both cards, `K_mn` from the launch plan ran **only for classes with
 L ≤ 2** (#206: H₂, two H₂, H₂O/STO-3G's s shells and its L ≤ 2 classes,

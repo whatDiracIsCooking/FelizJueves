@@ -507,3 +507,185 @@ def test_the_walk_with_p_shells_at_l_le_2():
     big = np.max(np.abs(K0))
     assert np.max(np.abs(np.array(w.K) - K0)) <= SWEEP_TOL * big
     assert big > 0.0
+
+
+# --- #480: the bra-ket-symmetric sweep, at shell granularity ------------------
+#
+# `sweep="symmetric"` keeps, per orbit `{(a,c|b,d), (b,d|a,c)}`, the member
+# with `a <= b` -- both when `a == b` -- by cutting each ket group `b`'s bras
+# to the prefix `a <= b`, and mirrors the `a < b` blocks. The ordered sweep,
+# the default, is pinned by the fingerprint below, taken before #480.
+
+import hashlib  # noqa: E402
+
+ORDERED_SHA256 = (
+    "6d192cb5c83be78f95f94210a4ff6530a2412ed027bdce2f2c4fab7fc681f3ff")
+
+
+def _plan_dump(P: KLaunchPlan) -> str:
+    out = [repr((P.tau, P.dm, P.n_batches, P.refused))]
+    for c in P:
+        out.append(repr((c.am, c.n_batches, c.bra_blocks, c.kernels)))
+        for side in (c.bras, c.kets):
+            out.append(";".join(repr((r.i, r.j, r.prim, r.L, r.G, r.key))
+                                for r in side))
+    return "\n".join(out)
+
+
+def _ordered_plans() -> list[KLaunchPlan]:
+    basis, D = _case("h2o_sto3g_j")
+    plans = [k_launches(basis, D, bound=_stub, key=schwarz, tau=0.0),
+             k_launches(basis, D, bound=_stub, key=schwarz, tau=1e-6,
+                        n_batches=3, strict=False)]
+    for name in FAST:
+        basis, D = _case(name)
+        plans.append(k_launches(basis, D, bound=BOUND, key=schwarz,
+                                tau=1e-8))
+    return plans
+
+
+def test_the_ordered_sweep_is_unchanged_by_the_symmetric_one():
+    plans = _ordered_plans()
+    for P in plans:
+        assert P.sweep == "ordered" and not P.mirrors
+        assert all(c.ket_groups == () for c in P)
+    got = hashlib.sha256("\n#\n".join(map(_plan_dump, plans)).encode())
+    assert got.hexdigest() == ORDERED_SHA256
+
+
+def _pair_id(r: PairRec) -> tuple[int, int, int]:
+    return (r.i, r.j, r.prim)
+
+
+def test_the_symmetric_plan_is_the_shell_prefix():
+    """Per class: the ordered bras unchanged; the kets regrouped per first
+    shell `b`, each group the ordered list filtered (so sorted, stably);
+    `n_bra` the prefix `a <= b`. Over the plan: every ordered record pair
+    computed once or covered once by a mirror, never both, never twice."""
+    basis, D = _case("h2o_sto3g_j")
+    Op = _h2o_plan()
+    Sp = _h2o_plan(sweep="symmetric")
+    assert Sp.sweep == "symmetric" and Sp.mirrors
+    ordered = {c.am: c for c in Op}
+    assert {c.am for c in Sp} <= set(ordered)
+    computed: list[tuple] = []
+    for c in Sp:
+        o = ordered[c.am]
+        assert (c.bras, c.bra_blocks, c.n_batches) == (
+            o.bras, o.bra_blocks, o.n_batches)
+        assert [g[0] for g in c.ket_groups] == sorted(
+            {g[0] for g in c.ket_groups})
+        for b, start, stop, n_bra in c.ket_groups:
+            assert c.kets[start:stop] == tuple(r for r in o.kets if r.i == b)
+            assert all(r.i <= b for r in c.bras[:n_bra])
+            assert all(r.i > b for r in c.bras[n_bra:])
+        for bras, kets in c.launches():
+            computed.extend((_pair_id(x), _pair_id(y))
+                            for x in bras for y in kets)
+    assert len(computed) == len(set(computed)) == Sp.n_quartets
+    mirrored = [(y, x) for x, y in computed if x[0] != y[0]]
+    assert not set(mirrored) & set(computed)
+    every = [(_pair_id(x), _pair_id(y)) for c in Op
+             for x in c.bras for y in c.kets]
+    assert sorted(computed + mirrored) == sorted(every)
+    n_diag = sum(x[0] == y[0] for x, y in every)
+    assert 2 * Sp.n_quartets == Op.n_quartets + n_diag
+    assert Sp.n_quartets < Op.n_quartets
+    print(f"\nh2o_sto3g: {Sp.n_quartets} of {Op.n_quartets} ordered record "
+          f"pairs computed ({n_diag} in a == b blocks)")
+
+
+def test_the_symmetric_sweep_refusals():
+    basis, D = _case("h2_sto3g_j")
+    with pytest.raises(ValueError, match="sweep"):
+        k_launches(basis, D, bound=BOUND, key=schwarz, tau=0.0,
+                   sweep="unique")
+    with pytest.raises(ValueError):  # the mirror needs D_cd = D_dc
+        bad = D.copy()
+        bad[0, 1] += 1.0
+        k_launches(basis, bad, bound=BOUND, key=schwarz, tau=0.0,
+                   sweep="symmetric")
+    c = _h2o_plan(sweep="symmetric").classes[0]
+    b, start, stop, n_bra = c.ket_groups[0]
+    for groups in (((b, start, stop, 0),), ((b, start + 1, stop, n_bra),),
+                   ((b + 1, start, stop, n_bra),)):
+        with pytest.raises(ValueError, match="ket group"):
+            replace(c, ket_groups=groups + c.ket_groups[1:])
+    if len(c.ket_groups) > 1:
+        with pytest.raises(ValueError, match="tile"):
+            replace(c, ket_groups=c.ket_groups[:1])
+
+
+@pytest.mark.parametrize("name", PARAMS)
+def test_the_symmetric_walk_reproduces_exchange_matrix(name):
+    """At tau = 0: the mirrored walk is K, the ordered walk's K to
+    rounding, ao.k's scale exactly, over the halved record-pair set."""
+    basis, D = _case(name)
+    pq = _pq_for(name)
+    P = k_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                   key=schwarz, tau=0.0, sweep="symmetric")
+    w = walk_k(P, basis, D, pq=pq)
+    K = np.array(w.K)
+    K0 = np.array(exchange_matrix(basis, D, pq=pq))
+    big = np.max(np.abs(K0))
+    for got in (K0, exchange_matrix_reference(basis, D, pq=pq),
+                exchange_launched(basis, D, pq=pq, tau=0.0).K):
+        assert np.max(np.abs(K - np.array(got))) <= SWEEP_TOL * big
+    assert w.scale == exchange_matrix_screened(basis, D, pq=pq,
+                                               tau=0.0).scale
+    assert w.n_pairs == P.n_quartets
+    assert (w.n_skipped, w.n_examined) == (0, 0)
+    print(f"\n{name}: symmetric sweep, {P.n_quartets} record pairs, "
+          f"max|K - K_unique| / max|K| = "
+          f"{float(np.max(np.abs(K - K0)) / big):.2e}")
+
+
+def _brute_skips_symmetric(basis, D, tau, pq) -> int:
+    """`_brute_skips` over the record pairs with bra shell `a <= b`."""
+    sh = basis.shells
+    dm = float(np.max(np.abs(D)))
+    Is = [(a, g) for a in range(len(sh)) for c in range(len(sh))
+          for g in record_bounds(epair(sh[a], sh[c]), pq=pq)]
+    return sum((x * y) * dm < tau for a, x in Is for b, y in Is if a <= b)
+
+
+@pytest.mark.parametrize("name", PARAMS)
+def test_the_symmetric_screened_walk_is_the_ordered_one(name):
+    """On the tau ladder: break == continue to 0, the skips are the halved
+    set's brute-force count, and K is the ordered walk's to rounding (the
+    screen is symmetric under the swap) and within `tau * scale` of K(0)."""
+    basis, D = _case(name)
+    pq = _pq_for(name)
+    rungs = _ladder(name)
+    big = np.max(np.abs(np.array(rungs[0][1].K)))
+    K0 = None  # the symmetric walk's own K(0): the mirror rounds differently
+    for tau, ordered, _ in rungs:
+        P = k_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       key=schwarz, tau=tau, sweep="symmetric")
+        a = walk_k(P, basis, D, pq=pq)
+        b = walk_k(P, basis, D, pq=pq, order="unsorted")
+        assert a.K == b.K and a.n_skipped == b.n_skipped, (name, tau)
+        assert a.n_skipped == _brute_skips_symmetric(basis, D, tau, pq)
+        if K0 is None:
+            K0 = np.array(a.K)
+        assert a.scale == ordered.scale
+        assert np.max(np.abs(np.array(a.K) - np.array(ordered.K))) <= (
+            SWEEP_TOL * big), (name, tau)
+        assert np.all(np.abs(np.array(a.K) - K0)
+                      <= tau * np.array(a.scale)), (name, tau)
+    assert a.n_skipped > 0
+
+
+def test_the_symmetric_walk_with_p_shells_at_l_le_2():
+    """`test_the_walk_with_p_shells_at_l_le_2`, mirrored: a class and its
+    partner share `L`, so the truncation is the same set of orbits."""
+    basis, D = _case("h2o_sto3g_j")
+    P = _h2o_plan(sweep="symmetric")
+    low = tuple(c for c in P if c.L <= L_MAX_RUN)
+    assert len(low) < len(P) and any(1 in c.am for c in low)
+    w = walk_k(replace(P, classes=low), basis, D, pq=pq)
+    calls: list[int] = []
+    K0 = np.array(exchange_matrix(basis, D, pq=pq, k=_truncated(calls)))
+    big = np.max(np.abs(K0))
+    assert np.max(np.abs(np.array(w.K) - K0)) <= SWEEP_TOL * big
+    assert big > 0.0
