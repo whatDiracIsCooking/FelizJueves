@@ -1,0 +1,183 @@
+"""The whole molecule's `K` on the card, block kernel and `kernel_k` (#481).
+
+WHAT RUNS. `launch_kblock.kb_launches` plans the molecule with
+`kernel_kblock.build_kblock_kernel` injected; test/kblock_driver.py writes
+ONE DRIVER PER CLASS (`class_binaries`, compiled in parallel), uploads the
+class once and runs it, in two processes of the same binary, in MODE 0 (the
+block kernel: one launch per class into `K_mn`, no scratch, no scatter) and
+MODE 1 (`kernel_k`, #206's launch per (class, b shell) into a per-record
+scratch, scattered on the host). Both read the same bytes; the classes'
+`K_mn` are summed on the host.
+
+THE ASSERTIONS, each for both modes, tolerances INHERITED from
+test_k_ondevice.py and not loosened:
+
+  the walk     `launch_kblock.walk_kb` over the same plan: `|K - K_walk| <=
+               ORACLE_TOL max|K_walk|` (1e-13);
+  the host     `ao.k.exchange_matrix_and_scale` (the unique sweep), `|K -
+               K0| <= ORACLE_TOL max|K0| + tau R`;
+  libcint      the tracked `get_jk` fixture's `vk`, `|K - vk| <= KJ_TOL
+               scale_K + tau R` (1e-12), the whole matrix;
+
+`R` is the walk's `scale`, the record pairs covering each element: every
+skipped pair moves an element by less than `tau` (#200's bound).
+  run to run   MODE 0 is bit-identical across its two runs: within a launch
+               no two blocks share an element and the launches serialize on
+               one stream, so its atomics meet nothing (kernel_kblock's
+               docstring). MODE 1's two runs are within #206's fp64-atomic
+               bound, so only printed here.
+
+THE CELLS: H2O/STO-3G whole (every class through (pp|pp), L = 4) at tau 0
+and at a tau that screens, and two H2 6 bohr apart screened -- the PR
+gate's; H2O/cc-pVDZ whole (every class through (dd|dd), L = 8) at tau 0 is
+`slow`, the kernel tier's `--full`.
+
+COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`): the H2O/STO-3G driver
+compiled where no card is; a warning in generated text fails it (#92).
+Without a card the `gpu` tests SKIP: green and empty.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import cache, partial
+from pathlib import Path
+
+import numpy as np
+import pytest
+import test_ao_k
+from kblock_driver import MODES, class_binaries, kb_driver, run_classes
+from oracle import manifest
+from plan_driver import compile_checked
+from test_k_ondevice import ORACLE_TOL
+from test_kernel_device import BACKEND, _toolchain
+from test_launch_k import _case as _launch_case
+
+from felizjueves.ao.k import exchange_matrix_and_scale, record_bounds
+from felizjueves.kernel_kblock import build_kblock_kernel
+from felizjueves.launch_kblock import KBLaunchPlan, kb_launches, walk_kb
+from felizjueves.reference.pq import pq
+
+KJ_TOL = test_ao_k.KJ_TOL
+
+
+@dataclass(frozen=True)
+class Cell:
+    case: str
+    tau: float
+
+    @property
+    def id(self) -> str:
+        return f"{self.case}-tau{self.tau:g}"
+
+
+FAST = (Cell("h2o_sto3g_k", 0.0), Cell("h2o_sto3g_k", 1e-8),
+        Cell("two_h2", 1e-6))
+SLOW = (Cell("h2o_ccpvdz_k", 0.0),)
+PARAMS = ([pytest.param(c, id=c.id) for c in FAST]
+          + [pytest.param(c, id=c.id, marks=pytest.mark.slow) for c in SLOW])
+
+
+@cache
+def _case(name: str):
+    """(libcint fixture or None, basis, D)."""
+    if name.endswith("_k"):
+        fx, basis = test_ao_k._kfx(name)
+        return fx, basis, np.array(fx.density)
+    basis, D = _launch_case(name)
+    return None, basis, D
+
+
+@cache
+def _plan(cell: Cell) -> KBLaunchPlan:
+    _, basis, D = _case(cell.case)
+    return kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=cell.tau, build=build_kblock_kernel)
+
+
+@cache
+def _host(case: str):
+    _, basis, D = _case(case)
+    return tuple(np.array(x) for x in exchange_matrix_and_scale(basis, D,
+                                                                pq=pq))
+
+
+@cache
+def _walk(cell: Cell):
+    _, basis, D = _case(cell.case)
+    return walk_kb(_plan(cell), basis, D, pq=pq)
+
+
+def _check(backend: str, cell: Cell, request, run_device_binary,
+           workdir: Path) -> None:
+    tc = _toolchain(backend, request)
+    fx, basis, D = _case(cell.case)
+    plan = _plan(cell)
+    parts = class_binaries(tc, plan, basis, D, backend, workdir)
+    w = _walk(cell)
+    Kw = np.array(w.K)
+    K0, scale = _host(cell.case)
+    tau_scale = cell.tau * np.array(w.scale)  # #200: < tau per skipped pair
+    if cell.tau > 0.0:
+        assert w.n_skipped > 0, "the screen never fired"
+    lines = []
+    for mode in MODES:
+        Ks, _, same = run_classes(parts, basis, mode, run_device_binary,
+                                  backend)
+        if mode == "kb":
+            assert same, "the block kernel's two runs differ: its atomics met"
+        K = Ks[0]
+        assert np.all(np.isfinite(K))
+        rel_w = float(np.max(np.abs(K - Kw)) / np.max(np.abs(Kw)))
+        assert rel_w <= ORACLE_TOL, f"{mode}: K vs walk_kb {rel_w:.2e}"
+        big0 = float(np.max(np.abs(K0)))
+        assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0 + tau_scale), (
+            f"{mode}: K vs exchange_matrix "
+            f"{float(np.max(np.abs(K - K0))) / big0:.2e}")
+        lib = "none"
+        if fx is not None:
+            vk = np.array(fx.arrays[manifest.K_ARRAY])
+            err = np.abs(K - vk)
+            assert np.all(err <= KJ_TOL * scale + tau_scale), (
+                f"{mode}: K vs libcint, worst "
+                f"{float(np.max(err / scale)):.2e} of scale_K")
+            lib = f"{float(np.max(err / scale)):.2e} of scale_K"
+        lines.append(f"{mode}: vs walk {rel_w:.2e}, vs libcint {lib}, runs "
+                     f"bit-identical {same}")
+    arch = BACKEND[backend][1]
+    print(f"\n{backend} {arch.name} {cell.id}: {len(plan)} classes, "
+          f"{sum(len(c.blocks) for c in plan)} blocks, walk skipped "
+          f"{w.n_skipped} of {w.n_pairs}; " + "; ".join(lines))
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("cell", PARAMS)
+def test_cuda_kblock_from_the_launch_plan(cell, request, run_device_binary,
+                                          tmp_path) -> None:
+    _check("cuda", cell, request, run_device_binary, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("cell", PARAMS)
+def test_hip_kblock_from_the_launch_plan(cell, request, run_device_binary,
+                                         tmp_path) -> None:
+    _check("hip", cell, request, run_device_binary, tmp_path)
+
+
+def _compile_only(backend: str, tc, tmp_path: Path) -> None:
+    cell = FAST[0]
+    _, basis, _ = _case(cell.case)
+    drv = kb_driver(_plan(cell), basis, backend, tmp_path / "gen")
+    compile_checked(tc, drv, tmp_path / "kb_driver")
+
+
+@pytest.mark.cuda
+def test_cuda_kblock_driver_compiles(nvcc, tmp_path) -> None:
+    _compile_only("cuda", nvcc, tmp_path)
+
+
+@pytest.mark.hip
+def test_hip_kblock_driver_compiles(hipcc, tmp_path) -> None:
+    _compile_only("hip", hipcc, tmp_path)

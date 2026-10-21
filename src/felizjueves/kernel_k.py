@@ -405,49 +405,14 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None,
     ctx = KContext.of(spec, dag, name, head, hooks)
     if head is None and hooks.is_default("keep"):
         assert ctx.n_shared == shared_doubles(spec.am)
+
     ty, bra = ctx.ty, ctx.bra
-
-    # --- one (bra, ket) pair: the screen, the recurrence, E^bd -------------
-    prelude, fundamental = fundamental_prelude(
-        [m for (r, m) in ctx.order if not any(r)])
-    ket_body: list[Stmt] = [
-        Decl("bound", Scalar.F64,
-             init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ctx.ket("Iq"),
-                                           Var("maxD")))),
-        Note("screen: Ip * Iq * maxD < tau, and every later ket is under it "
-             "too (sorted by Iq) -- so break"),
-        If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
-        *(Decl(n, Scalar.F64,
-               init=_c(Fn.SUB, Var(f"P{d}"), ctx.ket("Q", Lit(d))))
-          for d, n in enumerate(PQ_PARAMS)),
-        Decl("et", Scalar.F64, init=ctx.ket("eta")),
-        Note("theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in "
-             "the source'"),
-        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
-            Fn.DIV, _c(Fn.MUL, Var("ze"), Var("et")),
-            _c(Fn.ADD, Var("ze"), Var("et"))))),
-        *prelude,
-        *recurrence_body(dag, list(ctx.order), fundamental),
-        *hooks.bind_e_bd(ctx),
-        Decl("sq", Scalar.F64, init=ctx.ket("s_bd")),
-        Note("the row of Dcd: D_cd straddles the records, c on the bra and d "
-             "on the ket"),
-        Decl("dk", Scalar.I32, init=_c(Fn.ADD, Var("dcb"), ctx.ket("dd"))),
-        *hooks.contract(ctx),
-    ]
-
-    # --- one bra record: E^ac, zero, strip-mine the kets, reduce, write ----
     per_bra: list[Stmt] = [
-        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (bra, Lit(d))))
-          for d in range(3)),
-        Decl("ze", Scalar.F64, init=Index("zeta_ac", (bra,))),
-        Decl("Ib", Scalar.F64, init=Index("Ip", (bra,))),
-        Decl("sb", Scalar.F64, init=Index("s_ac", (bra,))),
-        Decl("dcb", Scalar.I32, init=Index("dc", (bra,))),
+        *bra_scalars(ctx),
         *hooks.bind_e_ac(ctx),
         *hooks.init_acc(ctx),
         Note("kets strip-mined over threadIdx.y, stride blockDim.y"),
-        For(KET, ty, Var("n_ket"), Call(Fn.BLOCK_DIM_Y), tuple(ket_body)),
+        For(KET, ty, Var("n_ket"), Call(Fn.BLOCK_DIM_Y), ket_body(ctx)),
         *hooks.write_back(ctx),
     ]
 
@@ -471,3 +436,51 @@ def _k_kernel(spec: Spec, dag, name: str, head: str | None,
     # a batch kernel's write made atomic, after `finish` (the `atomize` hook,
     # #345: by default `passes.atomize(kernel, array="K")`, the lane-0 form)
     return kernel if head is None else hooks.atomize(ctx, kernel)
+
+
+def bra_scalars(ctx: KContext) -> tuple[Stmt, ...]:
+    """The bra record's scalars at `ctx.bra`: `P{d}`, `ze`, `Ib`, `sb` and
+    `dcb`, the names `ket_body` and the hooks read (#481 shares them)."""
+    bra = ctx.bra
+    return (
+        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (bra, Lit(d))))
+          for d in range(3)),
+        Decl("ze", Scalar.F64, init=Index("zeta_ac", (bra,))),
+        Decl("Ib", Scalar.F64, init=Index("Ip", (bra,))),
+        Decl("sb", Scalar.F64, init=Index("s_ac", (bra,))),
+        Decl("dcb", Scalar.I32, init=Index("dc", (bra,))),
+    )
+
+
+def ket_body(ctx: KContext) -> tuple[Stmt, ...]:
+    """One (bra, ket) pair at ket `k`: the screen's `break`, the recurrence,
+    `E^bd` and the contraction -- the strip-mined loop's body (#481 shares
+    it)."""
+    hooks = ctx.hooks
+    prelude, fundamental = fundamental_prelude(
+        [m for (r, m) in ctx.order if not any(r)])
+    return (
+        Decl("bound", Scalar.F64,
+             init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ctx.ket("Iq"),
+                                           Var("maxD")))),
+        Note("screen: Ip * Iq * maxD < tau, and every later ket is under it "
+             "too (sorted by Iq) -- so break"),
+        If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
+        *(Decl(n, Scalar.F64,
+               init=_c(Fn.SUB, Var(f"P{d}"), ctx.ket("Q", Lit(d))))
+          for d, n in enumerate(PQ_PARAMS)),
+        Decl("et", Scalar.F64, init=ctx.ket("eta")),
+        Note("theta^2 = zeta eta / (zeta + eta), j_engine.md 'Two defects in "
+             "the source'"),
+        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
+            Fn.DIV, _c(Fn.MUL, Var("ze"), Var("et")),
+            _c(Fn.ADD, Var("ze"), Var("et"))))),
+        *prelude,
+        *recurrence_body(ctx.dag, list(ctx.order), fundamental),
+        *hooks.bind_e_bd(ctx),
+        Decl("sq", Scalar.F64, init=ctx.ket("s_bd")),
+        Note("the row of Dcd: D_cd straddles the records, c on the bra and d "
+             "on the ket"),
+        Decl("dk", Scalar.I32, init=_c(Fn.ADD, Var("dcb"), ctx.ket("dd"))),
+        *hooks.contract(ctx),
+    )
