@@ -2343,3 +2343,9 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the three-center ladder "
                        RULES["driver"].may | frozenset(("kernel_eri3",)),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_eri3",))
+
+
+# #402 (milestone 14): `hgp.orbits`, the ERI symmetry orbits and their
+# cheapest orientation, under rule "hgp" (package-wide): it ranks members on
+# `hgp.hrr` / `hgp.vrr`'s DAGs and reaches nothing else.
+EDGES["hgp.orbits"] = frozenset(("hgp.hrr", "hgp.vrr"))
