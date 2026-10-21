@@ -65,8 +65,13 @@ both directions -- a K class spelled in AO order, or an F class spelled in
 Hermite order, is a legal `Spec` naming a different class. The same four
 shells therefore give different specs and different keys under `F` and `K`.
 `Target.F` is a widening of the enum, not a `scheme` field (milestone 12, pin
-4): every pre-existing key is byte-identical. The trigger that would force a
-`scheme` field is named: the first fused MMD `F`, or the first HGP `J`/`K`.
+4): every pre-existing key is byte-identical. Pin 4 named the trigger that
+would force a second axis: the first fused MMD `F`, or the first HGP
+`J`/`K`. It fired with milestone 14's HGP `J`/`K` and is RESOLVED, by an
+`engine` field rather than a `scheme` field, because `Target` already
+names the scheme (below). The first fused MMD `F` (#326) needs no further
+field: it is `Spec(Target.F, ..., engine=Engine.MMD)`, refused until it is
+built.
 
 THE RECURRENCE IS A FIELD, `engine` (#401). That trigger has come: milestone
 14 builds the first HGP `J`/`K`. [Fock] confounds the recurrence with the

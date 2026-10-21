@@ -232,13 +232,18 @@ unread array parameter would be one too. `(ss|ss)` reads none of the eight.
 FRAGMENT: NOT USED, and why. `ir.Fragment` pays off where one block is
 spliced at two sites (`kernel_k` inlines the `E` block twice). Here the VRR
 body occurs once -- the innermost loop -- and the HRR once, after it; the
-fused kernel has no second site (a split HGP `J`/`K`, pin 1's follow-up,
-would be the first). Reuse is already at BUILD time: the statements come
-from `hgp.recurrence.vrr_body` / `hrr_body`, as `kernel_k` takes J's
-`recurrence_body`, so the kernel cannot drift from the standalone kernels
-#279 pins. A Fragment would add only a per-class bind list (the factors a
-class reads differ) and a hygiene check over ~2,300 + 6,254 names, and buy
-nothing it does not already have.
+fused kernel has no second site. The split HGP `J` / `K` (milestone 14,
+`kernel_hj` / `kernel_hk`) does not make one either: they are two KERNELS,
+each with its own single VRR site and single HRR site, not two splice
+sites in one body. A Fragment's two sites share one binding inside one
+kernel; three kernels sharing one recurrence is BUILD-time reuse, and that
+is what they have: the statements come from `hgp.recurrence.vrr_body` /
+`hrr_body` in all three (and in `kernel_hj` / `kernel_hk` with no
+`ir.Fragment`), as `kernel_k` takes J's `recurrence_body`, so none can
+drift from the standalone kernels #279 pins. A Fragment would add only a
+per-class bind list (the factors a class reads differ) and a hygiene check
+over ~2,300 + 6,254 names at `(dd|dd)`, and buy nothing the builders do not
+already have.
 
 THE STATEMENT COUNTS (`kernel_counts`) are read off the built kernel by the
 test and cross-checked against `hgp.vrr` / `hgp.hrr`'s pinned node counts:
