@@ -5,10 +5,16 @@ PRs #303–#324).** This is the derived note for engine #2. It covers the
 Head-Gordon–Pople (HGP) recurrence of `[Fock]` §3.1 and the **fused** Fock
 kernel of §3.2 built on it, which digests every contracted ERI straight
 into the two-electron Fock matrix `G = J − K/2` and uses 8-fold
-permutational symmetry. That symmetry is used nowhere else in this repo. It
-is the contract the code was built against, and the one place that says
-what is generated, what is host-side, where it ran, and what it does not
-reach. **Energy order only**, for one density, rebuilt on every call.
+permutational symmetry. No other build in this repo digests through that
+symmetry. It is the contract the code was built against, and the one place
+that says what is generated, what is host-side, where it ran, and what it
+does not reach. **Energy order only**, for one density, rebuilt on every
+call.
+
+**Since milestone 14 (#401–#408, PRs #469–#477) it also holds the 2x2's
+(HGP, split) cell**: `Target.J` and `Target.K` on `Engine.HGP`, every ordered
+quartet at weight 1. It was interpreted at every class with L ≤ 4 and run on
+the **RTX 3080 only** ("The split cell", below). Nothing about it is timed.
 
 **Nothing here is scored against a published table.** `[Fock]` is
 `docs/references.md` entry 23 (ct4c00994). The text read is the arXiv
@@ -36,7 +42,7 @@ the diagonal of a 2x2 table:
 | | split `J` / `K`, every ordered quartet | fused `F`, 8-fold symmetry |
 |---|---|---|
 | **MMD** | **held**: `Target.J` (milestones 2–7), `Target.K` (milestone 10, still open) | follow-up, #326 |
-| **HGP** | follow-up, #325 | **held**: `Target.F` (milestone 12) |
+| **HGP** | **held**: `Target.J` / `Target.K` on `Engine.HGP` (milestone 14) | **held**: `Target.F` (milestone 12) |
 
 **FJ now holds both of the paper's diagonal cells under one IR (`ir.py`),
 one harness (`interp.py`, `emit/`, the tracked fixtures, the measured store
@@ -45,13 +51,16 @@ The two cells have not reached the cards equally. The MMD split cell's `J`
 is generated end to end and ran through d on both cards. Its `K` has run on
 both cards only for classes with L ≤ 2 (#206, and one `(dd|dd)` cell on the
 3080, #259), and its deferred tier is #231. The HGP fused cell ran every
-class through `(dd|dd)` on both cards (#288, #290). **The two off-diagonal
-cells are named follow-ups and do not exist:** a split HGP `J`/`K` (#325;
-pin 1 kept it out, because it is the predecessor's `brc26` row JK, not §3)
-and a fused MMD `F` (#326). Until one of them exists, a timing of `Target.F`
-against `Target.J + Target.K` would change the recurrence and the scheme
-together. That is why `fock/symmetry-vs-screening` is unverifiable here
-(#331).
+class through `(dd|dd)` on both cards (#288, #290). **One off-diagonal
+cell now exists:** the split HGP `J`/`K` (milestone 14). Pin 1 had kept it
+out of milestone 12, because it is the predecessor's `brc26` row JK, not
+§3. It ran every class with L ≤ 4 on the RTX 3080 only, and its RX 9060 XT
+run is attached to #431. **The fused MMD `F` (#326) does not exist.** The
+HGP row now holds both schemes on one recurrence, so timing `Target.F`
+against HGP `Target.J + Target.K` would no longer confound the recurrence
+with the scheme. **Nothing has been timed**, every fixture is compact, and
+the cards are not the paper's, so `fock/symmetry-vs-screening` stays
+unverifiable (#331).
 
 ## The key: `Target.F`
 
@@ -297,7 +306,8 @@ quartet is checked against the exact contracted ERIs.
 
 The protocol was written after both engines existed (pin 12), so it is a
 residue: `name`, `target`, `eri`, `eri_and_scale` and `kernel(spec)`, with
-`Mmd(pq=)` and `Hgp(boys=)`. `pair_bound` is not a member, because only MMD
+`Mmd(pq=)` and `Hgp(boys=)`. Milestone 14 (#406) adds `j(spec)` and
+`k(spec)`, because both engines now build a split `J` and `K`. `pair_bound` is not a member, because only MMD
 has one. **The milestone's primary report is what was pushed back down**
 into the MMD engine as engine-private: the `[JEngine]` batch partition,
 MILD, the sieve and its levers, the graded `(r, m)` DAG, the
@@ -406,6 +416,117 @@ tree's `la ≤ lb` through an asserted bijection.
   mirrored-orientation kernel was built, and neither allocation was read
   past `ptxas -v` (#332).
 
+## The split cell: HGP `J` and `K` (milestone 14)
+
+**The key, `Spec.engine`** (#401, PR #470). `Target` names the digestion
+(`J`/`K` split, `F` fused), so the field a `Spec` lacked was the recurrence:
+`Engine.MMD` or `Engine.HGP`. `NATIVE_ENGINE` maps `F` to HGP and every
+other target to MMD. `engine=None` resolves to the native engine, and the
+key spells an engine only when it is off-native, as a suffix of the target
+slot: `coulomb/d0/(1,1|1,0)/b1/j.hgp/literal`. Every stored key is
+byte-identical. HGP is legal on `J` and `K` only. Every other off-native
+pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F` among them
+until #326. **`am` is the pairing the recurrence uses.** HGP `J` is
+`(la, lb | lc, ld)`. HGP `K` is `(la, lc | lb, ld)`, the same as MMD `K` and
+not `F`'s AO order. The `ordered` lever is legal on the slots `j.hgp` and
+`k.hgp` only, and `measured_store.ledger_levers()` keeps it out of the lever
+ledger.
+
+**The two class modes** (`hgp/orbits.py`, #402, PR #469). The 8-fold ERI
+group splits the ordered classes into orbits. `representative` picks each
+orbit's cheapest member, ranked by HRR statements, then pruned VRR nodes,
+then lexicographic order. `to_representative` returns the shell map and the
+block transpose back to the ordered class. At L ≤ 4 there are 50 ordered
+classes in 13 orbits when every shell has `l ≤ 2`, and 70 in 17 with no
+cap. Neither engine is bitwise-symmetric under the permutations, so the
+permutation check is two checks. The index map is checked exactly, on a
+symbolic label tensor. `ao/eri.py`'s blocks are checked within
+`1e-12·(scale_rep + scale_ordered)`, worst 2.6e-16. The issue's HRR example
+named the wrong class: its "(ds|ss) 16/34 against (sd|ss) 19/60" is really
+(dp|ss) against (pd|ss).
+
+- **canonical** (the literal): one kernel per orbit, built on the
+  representative and named `hj_{rep}` / `hk_{rep}`. A launch passes the
+  runtime scalar `perm`, the `GROUP` index of its ordered class's
+  orientation. The kernel holds one deposit per orientation the orbit
+  reaches, and any other `perm` deposits nothing.
+- **ordered** (the `ordered` lever): one kernel per ordered class, with the
+  identity deposit and no `perm`, named `hj_o_{class}` / `hk_o_{class}`.
+
+**The kernels** (`kernel_hj.py`, #404, PR #473; `kernel_hk.py`, #405,
+PR #474). Both use §3.2's mapping, as `kernel_f` does: one block per bra
+pair, one thread per contracted quartet, the `K⁴` contraction in registers
+before the HRR, the per-thread staging, and `kernel_f`'s record, `pack` and
+`MAX_PRIM_PAIRS`. `kernel_hk` imports its nest and modes from `kernel_hj`.
+The primitive nest is bra outer and ket inner, the opposite of `kernel_f`'s,
+so the ERI tap is `==` `ao/hgp_drive.eri_block` bit for bit. The deposit is
+`J_ab += D_cd (ab|cd)` or `K_ac += D_bd (ac|bd)` by `AtomicAdd`, with no
+weights, no degeneracy factor, no canonical half and no `close`. Two
+engines do not agree bitwise, so each class's deposit is held to `ao/j.py`
+or `ao/k.py` within `1e-12·(s_hgp + s_mmd)`. That bound is derived from
+`test_hgp_eri.py`'s per-ERI `TOL`, and no bound was widened. All 70 L ≤ 4
+classes are tested interpreted, in both modes.
+
+**The stream and its screens** (`launch_hjk.py`, #403, PR #471). There is
+no symmetry pruning. Every ordered shell pair is a pair and every ordered
+batch pair is a launch, so each ordered quartet is visited exactly once.
+Batches are degree-uniform and sorted by `Q` alone. The canonical mode
+routes a launch to its representative's class and carries the
+`Orientation`. Each build screens on **one** density block: the `j` key is
+`Q_ab Q_cd max|D_cd|` and the `k` key is `Q_ab Q_cd max|D_bd|`. A screen
+**skips, never breaks**, and `τ = 0` skips nothing. On a `τ` ladder every
+skipped quartet is proved against exact `ao/eri.py` ERIs, and J's key used
+for K is shown to skip a quartet K needs. The stream borrows no private
+helper (#328).
+
+**The walker** (`walk_hjk.py`, #406, PR #476) assembles the whole `J` or `K`
+from the stream through the interpreted kernels, in both modes, and refuses
+any plan it cannot account for. It was run interpreted on H₂/STO-3G,
+H₂O/STO-3G and H₂O/6-31G, against `ao/j.py` / `ao/k.py` and libcint's
+`vj` / `vk`. The worst error against libcint was 3.82e-15 of the scale
+(6-31G `J`). The H₂O cases are `slow` and were run once by hand (32
+passed). cc-pVDZ was not run.
+
+**The generator** (#407, PR #475). `python -m felizjueves.emit --hgp-j-l
+LMAX`, `--hgp-k-l LMAX` or `--hgp-class L0 L1 L2 L3` (repeatable), with
+`--ordered` for the ordered mode, is its own path. It refuses every other
+ladder, the selector, the lever flags and `--n-batches`, and it is not in
+`KERNEL_GEN_CMD`. The goldens are 126 units per backend: per target, 13
+canonical and 50 ordered, every shell `l ≤ 2`. All 252 compiled under nvcc
+(`sm_86`) and hipcc (`gfx1200`) with no warning in generated text. hipcc's
+`-Wunused-parameter` led to one emitter change: `emit/_c.py` now casts an
+unread **array** parameter to `(void)`, and no existing unit's text moved.
+`measured_store` refuses any HGP `J`/`K` row (`HGP_JK_REFUSED`), because
+nothing is timed.
+
+**Where it ran: the RTX 3080 only** (#408, PR #477; `test/hjk_driver.py`,
+`test/test_hjk_ondevice.py`). Part 1 ran all 70 L ≤ 4 ordered classes and
+all 17 canonical kernels, for each screen. Each ran on a synthetic basis
+holding only its own shells, against `ao.fock`'s weight-1 sweep. Part 2 ran
+H₂/STO-3G and H₂O/STO-3G at `τ = 0`, in both modes for both screens, against
+the walk, the host and libcint. It also ran H₂O/STO-3G canonical at
+`τ = 1e-2`, where the screen fires. The result was **184 passed, 0
+skipped**. The worst error against the host was 5.90e-16 of the scale
+(`hj_o_2100`), and against libcint 2.59e-15 (H₂O/STO-3G). **The RX 9060 XT
+did not run it**, because the card is not enumerated on this box. The HIP
+side is compile-only (182 passed), and by the user's decision the card run
+is attached to #431.
+
+**What the split cell does not reach** (`data/literature/fock/limits.json`):
+
+- **Nothing above L = 4 is tested.** The builders and the emitter accept any
+  L, and the goldens stop at shell `l ≤ 2`.
+- **Nothing is timed or stored.** The store holds no registers, spills or
+  wall-clock for it, and it has not been timed against `Target.F` (#331).
+- **Nothing persists across SCF iterations.** `J` and `K` are rebuilt from
+  the density on every call. The pair list, bounds and staging are
+  host-side, and the launch code is test-side.
+- **One batch and one lever.** `n_batches` is 1, because an HGP class has no
+  Hermite targets, and `ordered` is the only lever.
+- **The screens' efficacy is unmeasured**, for the compact-fixture reason
+  of #329.
+- **No fused MMD `F`** (#326), the 2x2's last cell.
+
 ## What milestone 12 did not do
 
 Said plainly, and recorded in `data/literature/fock/limits.json`:
@@ -413,7 +534,8 @@ Said plainly, and recorded in `data/literature/fock/limits.json`:
 - **No published cell is scored.** There is no `tables.json`, no floor and
   no ratchet, and no `[JEngine]` cell, floor, claim or status moved.
 - **No HGP `J`/`K` split** (#325), and **no fused MMD `F`** (#326): the
-  2x2's off-diagonal cells.
+  2x2's off-diagonal cells. Milestone 14 built the first ("The split cell",
+  above), and #325 was closed into it.
 - **No gradient.** `derivative_order` stays 0.
 - **No lever.** The store refuses a lever on an F key, and `n_batches` is 1
   by `Target.F`'s own refusal.
@@ -433,7 +555,8 @@ Said plainly, and recorded in `data/literature/fock/limits.json`:
 
 Filed as issues by #293:
 
-- #325: the split HGP `J`/`K`, the (HGP, split) cell.
+- #325: the split HGP `J`/`K`, the (HGP, split) cell. It was closed into
+  milestone 14, which built the cell.
 - #326: the fused MMD `F`, the (MMD, fused) cell.
 - #327: `engine.py`'s pushed-back-down list, an HGP analogue for each item
   or a recorded reason why not.

@@ -173,26 +173,26 @@
     },
     {
       "claim": "Which side of [Fock]'s symmetry-versus-screening trade gives up less -- full 8-fold symmetry with a six-block density screen (§3, opt-Brc), or every ordered quartet with a one-block screen (§4, opt-UM) -- is not decided here (fock/symmetry-vs-screening, UNVERIFIABLE).",
-      "mechanism": "The trade is settled by wall-clock, and [Fock]'s is whole-program timings on A100 (and V100) cards; a screen's payoff also grows with how extended the molecule is. This box has an RTX 3080 (sm_86) and an RX 9060 XT (gfx1200), every fixture is compact, and the two cells milestone 12 holds differ in the recurrence as well as the scheme (HGP fused against MMD split), so a timing of one against the other would confound the two decisions the paper itself says it confounds (§1, §4.3).",
-      "evidence": "What is held is structural, in claims.json's reason for fock/symmetry-vs-screening: Target.F reads six weighted density blocks and any one can keep a quartet (test/test_kernel_f.py), Target.J and Target.K visit every ordered quartet (test/test_ao_fock.py) and Target.J's screen reads one block (test/test_kernel.py). What would settle it on our cards: the fused F and the split J + K builds timed end to end behind the card gate on both cards, over an extended molecule set (a follow-up, pin 9), ideally with an off-diagonal cell (a fused MMD F or a split HGP J/K, follow-ups) so the scheme is not confounded with the recurrence. [Fock]'s own conclusion needs an A100 and its benchmark set.",
+      "mechanism": "The trade is settled by wall-clock, and [Fock]'s is whole-program timings on A100 (and V100) cards; a screen's payoff also grows with how extended the molecule is. This box has an RTX 3080 (sm_86) and an RX 9060 XT (gfx1200), every fixture is compact, and nothing has been timed. Milestone 14 removed the confound milestone 12 had: its two cells differed in the recurrence as well as the scheme (HGP fused against MMD split), but the (HGP, split) cell now exists (Target.J and Target.K on Engine.HGP, kernel_hj / kernel_hk), so the HGP row holds both schemes on one recurrence and a timing of Target.F against HGP Target.J + Target.K would not confound the two decisions the paper itself says it confounds (§1, §4.3). That timing is not made (#331): the store refuses an HGP J/K row (measured_store.HGP_JK_REFUSED), and the split cell ran on the RTX 3080 only.",
+      "evidence": "What is held is structural, in claims.json's reason for fock/symmetry-vs-screening: Target.F reads six weighted density blocks and any one can keep a quartet (test/test_kernel_f.py), Target.J and Target.K visit every ordered quartet (test/test_ao_fock.py) and Target.J's screen reads one block (test/test_kernel.py). What would settle it on our cards: the fused F and the split J + K builds timed end to end behind the card gate on both cards, over an extended molecule set (a follow-up, pin 9), on one recurrence: HGP fused (Target.F) against HGP split (milestone 14; test/test_hjk_build.py and test/test_hjk_ondevice.py hold its J and K to the ordered sweep and libcint), so the scheme is not confounded with the recurrence. [Fock]'s own conclusion needs an A100 and its benchmark set.",
       "asserted_value": {
         "verdict": "unverifiable",
         "cells_held": [
           "HGP fused (Target.F)",
-          "MMD split (Target.J, Target.K)"
+          "MMD split (Target.J, Target.K)",
+          "HGP split (Target.J, Target.K on Engine.HGP)"
         ],
         "cells_missing": [
-          "MMD fused",
-          "HGP split"
+          "MMD fused"
         ],
         "timed": false
       },
       "source": "[Fock, §1, §2.3, §4, §4.3.1]"
     },
     {
-      "claim": "What milestone 12's fused F does not reach (#293). It is the two-electron G = J - K/2 of one density, built once per call on the 21-class ladder (every shell l <= 2, up to (dd|dd)): no f or higher shell reaches the HGP engine, nothing is kept on the card across SCF iterations, there is no gradient, no lever (measured_store refuses a lever on an F key) and no batch count other than 1 (spec._F_BATCH_REFUSAL). The bra record is staged into shared memory per thread, not cooperatively, so section 3.2's staging bandwidth is not reproduced. Neither off-diagonal cell of the paper's 2x2 exists here: no split HGP J/K and no fused MMD F.",
+      "claim": "What milestone 12's fused F does not reach (#293). It is the two-electron G = J - K/2 of one density, built once per call on the 21-class ladder (every shell l <= 2, up to (dd|dd)): no f or higher shell reaches the HGP engine, nothing is kept on the card across SCF iterations, there is no gradient, no lever (measured_store refuses a lever on an F key) and no batch count other than 1 (spec._F_BATCH_REFUSAL). The bra record is staged into shared memory per thread, not cooperatively, so section 3.2's staging bandwidth is not reproduced. Milestone 12 built neither off-diagonal cell of the paper's 2x2. The split HGP J/K was built by milestone 14 (the next record); the fused MMD F does not exist.",
       "mechanism": "Each is a scope decision of milestone 12, not a defect of the paper. Pin 3 fixes the ladder at l <= 2, and on sm_86 whether a class fits its registers follows its HRR boundary count (hgp.vrr.target_set): every class with at most 40 targets fits and every class with 76 or more spills (#290), while (ff|ff)'s set is 5,476 against (dd|dd)'s 961. Pin 4 makes n_batches = 1 because an HGP class has no Hermite targets to partition. Pin 1 keeps the split HGP J/K out of section 3, and the fused MMD F was never in scope. The IR has no barrier (ir.py), so a cooperative load cannot be spelled. kernel_f.MAX_PRIM_PAIRS = 128 is a refusal past the cap, never an overflow.",
-      "evidence": "hgp.vrr.CLASSES and test/test_hgp_vrr.py (the 21 classes); emit's --fock-l accepts 0..2 and --fock-class refuses a class off the ladder (test/test_emit_fock.py, test/test_emit_cli.py); test/test_spec_f.py (the batch refusal); test/test_measured.py (an F key with a lever is refused); kernel_f.py's docstring, 'THE STAGING IS PER THREAD, BECAUSE THE IR HAS NO BARRIER'; data/measured/kernels.json's 42 F rows (#288, #290). The follow-ups are filed: #325 (split HGP J/K), #326 (fused MMD F), #330 (f and above), #333 (a barrier and the cooperative staging).",
+      "evidence": "hgp.vrr.CLASSES and test/test_hgp_vrr.py (the 21 classes); emit's --fock-l accepts 0..2 and --fock-class refuses a class off the ladder (test/test_emit_fock.py, test/test_emit_cli.py); test/test_spec_f.py (the batch refusal); test/test_measured.py (an F key with a lever is refused); kernel_f.py's docstring, 'THE STAGING IS PER THREAD, BECAUSE THE IR HAS NO BARRIER'; data/measured/kernels.json's 42 F rows (#288, #290). The follow-ups are filed: #325 (split HGP J/K, closed into milestone 14, which built it), #326 (fused MMD F), #330 (f and above), #333 (a barrier and the cooperative staging).",
       "asserted_value": {
         "ladder": "21 classes, every shell l <= 2",
         "n_batches": 1,
@@ -201,8 +201,7 @@
         "derivative_order": 0,
         "cooperative_staging": false,
         "cells_missing": [
-          "MMD fused",
-          "HGP split"
+          "MMD fused"
         ],
         "follow_ups": [
           325,
@@ -212,6 +211,41 @@
         ]
       },
       "source": "[Fock, §3.2]"
+    },
+    {
+      "claim": "What milestone 14's split HGP J/K does not reach (#409). It is Target.J and Target.K on Engine.HGP: every ordered quartet visited once and deposited at weight 1, in two class modes (canonical: one kernel per 8-fold orbit through a runtime perm; ordered: one per class, the `ordered` lever), with one density block screened per build, a skip and never a break. Nothing above L = 4 is tested: the 70 ordered classes and 17 orbits with L <= 4 are interpreted and run, and the goldens stop at shell l <= 2 (50 ordered classes and 13 orbits, 126 units per backend). Nothing is timed or stored, nothing is kept on the card across SCF iterations, n_batches is 1 and `ordered` is the only lever. It ran on the RTX 3080 only; on the RX 9060 XT it is compiled only. The screens' efficacy is unmeasured, and the fused MMD F, the 2x2's last cell, does not exist.",
+      "mechanism": "Each is a scope decision of milestone 14 or a fact of this box, not a defect of the paper. Every test is capped at L <= 4 (the milestone's run limit), though the builders and the emitter accept any L. measured_store refuses an HGP J/K row (HGP_JK_REFUSED) until the issue that times these kernels admits the row, its cells and its header together, as #278 did for F. An HGP class has no Hermite targets to partition, so the builders refuse n_batches != 1. The RX 9060 XT was not enumerated by kfd, so its device run is attached to #431 by the user's decision. The fixtures are compact, so a screen's removals would be a fact about the fixture (pin 9, #329).",
+      "evidence": "test/test_hgp_orbits.py (50 / 13 at shell l <= 2 and 70 / 17 uncapped at L <= 4; the index map exact and ao/eri.py within 1e-12 of the summed scale, worst 2.6e-16; PR #469); test/test_spec_engine.py (PR #470); test/test_hjk_pairs.py (PR #471); test/test_kernel_hj.py and test/test_kernel_hk.py (all 70 classes, both modes, interpreted; PRs #473, #474); test/test_emit_hjk.py (126 goldens per backend, compiled under nvcc sm_86 and hipcc gfx1200; PR #475); test/test_hjk_build.py (H2/STO-3G, H2O/STO-3G and H2O/6-31G interpreted, worst 3.82e-15 of the scale against libcint; cc-pVDZ not run; PR #476); test/test_hjk_ondevice.py (RTX 3080: 184 passed, worst 5.90e-16 of the scale against the host and 2.59e-15 against libcint; HIP compile-only, 182 passed; PR #477).",
+      "asserted_value": {
+        "cell": "HGP split (Target.J, Target.K on Engine.HGP)",
+        "l_max_total_tested": 4,
+        "classes_tested": 70,
+        "orbits_tested": 17,
+        "golden_shell_l_max": 2,
+        "units_per_backend": 126,
+        "n_batches": 1,
+        "levers": [
+          "ordered"
+        ],
+        "timed": false,
+        "resident_across_scf": false,
+        "ran_on": [
+          "sm_86"
+        ],
+        "compile_only": [
+          "gfx1200"
+        ],
+        "cells_missing": [
+          "MMD fused"
+        ],
+        "follow_ups": [
+          326,
+          329,
+          331,
+          431
+        ]
+      },
+      "source": "[Fock, §1, §3.2, §4]"
     }
   ]
 }
