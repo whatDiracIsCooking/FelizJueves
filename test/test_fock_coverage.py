@@ -47,8 +47,10 @@ UNITS = (
     "§6.4.2", "§6.4.3", "§7", "§8",
 )
 # Read beyond §3 because §3 depends on their notation or a §3 claim is stated
-# there; every other unit outside §3 is not read.
-READ_OUTSIDE = {"§1", "§2", "§2.1", "§2.2", "§2.3", "§4", "§4.3", "§4.3.1"}
+# there, or (§4.2) for passes.transpose's D_q layout; every other unit outside
+# §3 is not read.
+READ_OUTSIDE = {"§1", "§2", "§2.1", "§2.2", "§2.3", "§4", "§4.2", "§4.3",
+                "§4.3.1"}
 
 # The issue's minimum: these five, with their kinds.
 REQUIRED = {

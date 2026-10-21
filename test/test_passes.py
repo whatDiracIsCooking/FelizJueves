@@ -1,4 +1,5 @@
-"""passes.py: `atomize`, the atomic write-back of `[JEngine, v2, §5]`, as a pass.
+"""passes.py: `atomize`, the atomic write-back of `[JEngine, v2, §5]`, as a pass;
+`split_axes` and `transpose`, two layouts of the same values.
 
 The property is bit-exact: onto a zeroed `J`, one atomic add of `x` is `x`, so
 `interpret(atomize(k))` and `interpret(k)` agree under `np.array_equal`, with
@@ -9,6 +10,7 @@ census). Nothing compiles and nothing launches on a card.
 
 from __future__ import annotations
 
+import dataclasses
 from functools import cache
 
 import numpy as np
@@ -43,7 +45,7 @@ from felizjueves.kernel import (
 )
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_jab import build_jab_kernel
-from felizjueves.passes import ATOMIC_NOTE, LANE0, atomize, split_axes
+from felizjueves.passes import ATOMIC_NOTE, LANE0, atomize, split_axes, transpose
 from felizjueves.reference.boys import boys
 
 
@@ -317,3 +319,122 @@ def test_split_axes_refuses_an_array_not_read_by_a_literal_axis() -> None:
         Assign(Index("Y", (Lit(0),)), Index("X", (Lit(0), Var("d")))),))
     with pytest.raises(ValueError, match="not a literal 0, 1 or 2"):
         split_axes(k, {"X": ("x0", "x1", "x2")})
+
+
+# ---------------------------------------------------------------------------
+# transpose: the same bits, D stored q-major
+# ---------------------------------------------------------------------------
+
+def _transposed(args: dict, arrays: tuple[str, ...]) -> dict:
+    """`args` with each named 2-D array handed over transposed."""
+    return {k: np.ascontiguousarray(v.T) if k in arrays else v
+            for k, v in args.items()}
+
+
+def _dq_ao_args(seed: int) -> dict:
+    # four records of (pd): c a p shell at AO 0, d a d shell at AO 3
+    rng = np.random.default_rng(seed)
+    dao = rng.uniform(-1.0, 1.0, (9, 9))
+    return dict(
+        n_rec=4, n_ao=9, eta=rng.uniform(0.6, 1.4, 4),
+        XPA=rng.uniform(-0.5, 0.5, (4, 3)), XPB=rng.uniform(-0.5, 0.5, (4, 3)),
+        s=rng.uniform(0.5, 1.0, 4), w=np.full(4, 2.0),
+        off_c=np.zeros(4, np.int32), off_d=np.full(4, 3, np.int32),
+        Dao=dao + dao.T, D=np.zeros((4, 20)), Dmax=np.zeros(4))
+
+
+@pytest.mark.parametrize("kernel_args", [
+    pytest.param(lambda: (build_dq_kernel((1, 1)), _dq_args(5, 465)),
+                 id="dq-pairs"),
+    pytest.param(lambda: (build_dq_kernel((1, 2), density="ao"),
+                          _dq_ao_args(466)), id="dq-ao"),
+])
+def test_transpose_dq_writes_the_same_bits_q_major(kernel_args) -> None:
+    k, args = kernel_args()
+    launch = Launch(1, (32, 1), 32)
+    a = interpret(k, launch=launch, **args)
+    b = interpret(transpose(k, ("D",)), launch=launch,
+                  **_transposed(args, ("D",)))
+    assert np.any(a["D"] != 0.0)
+    assert np.array_equal(a["D"], b["D"].T)
+    assert np.array_equal(a["Dmax"], b["Dmax"])
+
+
+@pytest.mark.parametrize("L", [2, 4])
+def test_transpose_pq_reads_the_same_bits_q_major(L: int) -> None:
+    args = _inputs(L, n_bra=3, n_ket=5, seed=467 + L)
+    k = build_pq_kernel(L)
+    a = _J(k, args, 4)
+    b = _J(transpose(k, ("D",)), _transposed(args, ("D",)), 4)
+    assert np.any(a != 0.0)
+    assert np.array_equal(a, b)
+
+
+def test_transpose_composes_with_split_axes_and_atomize() -> None:
+    # FreeBreakfast's e_hermite: split P and Q, atomic J_p, D q-major
+    args = _inputs(4, n_bra=3, n_ket=5, seed=470)
+    k = build_pq_kernel(4)
+    a = _J(atomize(k), args, 4)
+    t = transpose(split_axes(atomize(k), PQ), ("D",))
+    b = _J(t, _split_args(_transposed(args, ("D",)), PQ), 4)
+    assert np.array_equal(a, b)
+
+
+def test_transpose_twice_is_the_kernel() -> None:
+    k = build_dq_kernel((1, 2), density="ao")
+    assert transpose(transpose(k, ("D",)), ("D",)) == k
+
+
+def test_transpose_moves_only_the_arrays_it_names() -> None:
+    k = build_pq_kernel(4)
+    t = transpose(k, ("D",))
+    shapes = {p.name: p.shape for p in t.params}
+    n_q = len(ket_functions(pq_spec(4)))
+    assert shapes["D"] == (Lit(n_q), Var("n_ket"))
+    assert [p.name for p in t.params] == [p.name for p in k.params]
+    assert all(p == q for p, q in zip(k.params, t.params, strict=True)
+               if p.name != "D")
+    reads = {e.at for s in walk(t.body) for e in _indices(s) if e.array == "D"}
+    assert reads and all(len(at) == 2 and isinstance(at[0], Lit) for at in reads)
+    # the builder's kernel is untouched: a row per ket stays the default
+    assert dict((p.name, p.shape) for p in build_pq_kernel(4).params)["D"] \
+        == (Var("n_ket"), Lit(n_q))
+
+
+def _indices(e: object):
+    """Every `Index` in `e`, recursively."""
+    if isinstance(e, Index):
+        yield e
+        for x in e.at:
+            yield from _indices(x)
+    elif isinstance(e, tuple):
+        for x in e:
+            yield from _indices(x)
+    elif dataclasses.is_dataclass(e) and not isinstance(e, type) \
+            and not isinstance(e, Kernel):
+        for f in dataclasses.fields(e):
+            yield from _indices(getattr(e, f.name))
+
+
+@pytest.mark.parametrize(("arrays", "match"), [
+    ((), "nonempty tuple of distinct names"),
+    (("D", "D"), "nonempty tuple of distinct names"),
+    (["D"], "nonempty tuple of distinct names"),
+    (("eta",), "array parameter of two extents"),
+    (("nope",), "array parameter of two extents"),
+    (("n_rec",), "array parameter of two extents"),
+])
+def test_transpose_refuses_what_it_cannot_do_exactly(arrays, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        transpose(build_dq_kernel((1, 1)), arrays)
+
+
+def test_transpose_refuses_an_index_without_two_subscripts() -> None:
+    n = Var("n")
+    k = Kernel("probe", (
+        Param("n", Scalar.I32),
+        Param("X", Scalar.F64, array=True, shape=(n, Lit(2))),
+        Param("Y", Scalar.F64, array=True, intent=Intent.OUT)), (
+        Assign(Index("Y", (Lit(0),)), Index("X", (Lit(0),))),))
+    with pytest.raises(ValueError, match="not by two subscripts"):
+        transpose(k, ("X",))
