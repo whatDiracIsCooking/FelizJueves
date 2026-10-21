@@ -243,6 +243,11 @@ class Target(StrEnum):
     # primitive-pair record, the [p|q] kernel's Ip / Iq, a PAIR class (la, lb)
     # (kernel_pair_bound.py, module docstring "THE CLASS IS A PAIR").
     PAIR_BOUND = "pair_bound"
+    # K's DRESSED record bound, ao.k.record_bounds: max over the first
+    # shell's Cartesians of SUM_{k, p} |s E^{a_i b_k}_p| I_p(zeta), an
+    # ORDERED pair class (la, lb) (kernel_record_bound.py, module docstring
+    # "THE CLASS IS AN ORDERED PAIR").
+    RECORD_BOUND = "record_bound"
 
 
 class Engine(StrEnum):
@@ -264,6 +269,7 @@ AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
     Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
+    Target.RECORD_BOUND: 2,
 }
 
 
@@ -277,7 +283,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
     Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
-    Target.PAIR_BOUND: Operator.COULOMB,
+    Target.PAIR_BOUND: Operator.COULOMB, Target.RECORD_BOUND: Operator.COULOMB,
 }
 
 
@@ -314,6 +320,10 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
         "the record bound is a closed form per primitive-pair record, with "
         "no ERI recurrence for HGP to replace"
     ),
+    (Target.RECORD_BOUND, Engine.HGP): (
+        "the dressed record bound is the E fragment and a closed form per "
+        "primitive-pair record, with no ERI recurrence for HGP to replace"
+    ),
     (Target.S, Engine.HGP): _NO_HGP_ONE_E,
     (Target.T, Engine.HGP): _NO_HGP_ONE_E,
     (Target.SX, Engine.HGP): _NO_HGP_ONE_E,
@@ -345,6 +355,7 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
     Target.DQ: _STRUCTURAL,
     Target.JAB: _STRUCTURAL,
     Target.PAIR_BOUND: _STRUCTURAL,
+    Target.RECORD_BOUND: _STRUCTURAL,
     Target.S: _STRUCTURAL,
     Target.SX: _STRUCTURAL,
     Target.T: _STRUCTURAL,

@@ -26,7 +26,9 @@ header that unit includes, over the classes (0, 0), (0, 1) and (1, 1)
 over every `(lp, lq)` with both at most 2; and `pq_22.any_wavefront.cu` and
 `pq.any_wavefront.h`, the same pair emitted `any_wavefront=True` with
 `block_dim = (1, gpu.WAVEFRONT)`: one text for both widths; and
-`pair_bound_11.cu`, the record bound (no shuffle, no width); and
+`pair_bound_11.cu`, the record bound (no shuffle, no width), and
+`record_bound_10.cu`, K's dressed record bound of the ordered class (p, s)
+(#499; no shuffle, no width); and
 `eval_boys.h`, the device Boys routine every unit with a fundamental includes,
 and the `eval_boys_{M}.h` it includes, one series per order (`gpu.emit_boys()`).
 Regenerate after an intended
@@ -66,6 +68,7 @@ from felizjueves.kernel import build_pq_kernel
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_pair_bound import build_pair_bound_kernel
+from felizjueves.kernel_record_bound import build_record_bound_kernel
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
@@ -116,7 +119,8 @@ def as_cuda(line: str) -> str:
 
 
 @pytest.mark.parametrize("kernel", [build_pq_kernel(4), build_s_kernel((1, 1)),
-                                    build_pair_bound_kernel((1, 1))],
+                                    build_pair_bound_kernel((1, 1)),
+                                    build_record_bound_kernel((1, 0))],
                          ids=lambda k: k.name)
 def test_the_goldens_are_unchanged(kernel) -> None:
     assert gpu.emit(kernel, SM_86) == (GOLDEN / f"{kernel.name}.cu").read_text()
@@ -262,6 +266,11 @@ UNITS = {
     "pq_L4_split": lambda: split_axes(build_pq_kernel(4), {
         "P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}),
     "pair_bound_22": lambda: build_pair_bound_kernel((2, 2)),
+    # K's dressed record bound, as FreeBreakfast stages an ordered record
+    # (pa_* / pb_* per axis, #499)
+    "record_bound_21_split": lambda: split_axes(
+        build_record_bound_kernel((2, 1)), {
+            "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
     "dq_12_ao": lambda: split_axes(build_dq_kernel((1, 2), density="ao"), {
         "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
     "dq_11_split": lambda: split_axes(build_dq_kernel((1, 1)), {

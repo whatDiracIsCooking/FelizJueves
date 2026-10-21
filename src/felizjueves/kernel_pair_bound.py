@@ -4,6 +4,7 @@
     pair_bound_spec(la, lb)                  -> Spec     the class's key
     pair_bound_name(spec | (la, lb))         -> str      its name, unbuilt
     pair_bound_coefficients(L)               -> (D_0, ..., D_L)
+    hermite_bound_coefficients(L)            -> (C_p for p in Hermite order)
     launch_shape(n_rec, threads)             -> (grid, block)
 
 The `[p|q]` kernel screens a (bra, ket) record pair on `Dmax * Ip * Iq < tau`
@@ -87,6 +88,7 @@ from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
     "build_pair_bound_kernel",
+    "hermite_bound_coefficients",
     "launch_shape",
     "pair_bound_coefficients",
     "pair_bound_name",
@@ -161,6 +163,22 @@ def pair_bound_coefficients(L: int) -> tuple[float, ...]:
         by_order[n].append(math.sqrt(c))
     k = math.sqrt(2.0 / math.sqrt(math.pi)) * 2.0 ** -0.25
     return tuple(k * math.fsum(terms) for terms in by_order)
+
+
+def hermite_bound_coefficients(L: int) -> tuple[float, ...]:
+    """`C_p` for each `p` in `hermite_targets(L)` order: the ONE-`p` terms of
+    the closed form, `I_p = C_p x^{|p|} sqrt(x)` with `x = sqrt(zeta)` and
+    `C_p = (2/sqrt(pi))^{1/2} 2^{-1/4} sqrt(PROD_d (2 p_d - 1)!! / (2|p| +
+    1))` (module docstring). `pair_bound_coefficients` sums these per order;
+    `kernel_record_bound` weights each `I_p` by a dressed `|E_p|`, so it
+    needs them apart."""
+    if type(L) is not int or L < 0:
+        raise ValueError(f"L = {L!r} is not a non-negative int")
+    k = math.sqrt(2.0 / math.sqrt(math.pi)) * 2.0 ** -0.25
+    return tuple(
+        k * math.sqrt(Fraction(math.prod(_double_factorial(2 * x - 1)
+                                         for x in p), 2 * sum(p) + 1))
+        for p in hermite_targets(L))
 
 
 def _c(fn: Fn, *args: Expr) -> Call:
