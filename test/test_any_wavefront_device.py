@@ -36,6 +36,7 @@ def _run(backend: str, L: int, request, compile_device_source,
     k = build_pq_kernel(L)
     kpath = tmp_path / f"{k.name}.{tc.ext}"
     kpath.write_text(gpu.emit(k, SM_86, any_wavefront=True))
+    (tmp_path / gpu.BOYS_HEADER).write_text(gpu.emit_boys())
     binary = compile_device_source(tc, PQ_HARNESS.format(
         kernel=kpath, portable=PORTABLE, kernel_name=k.name))
     for case, (wide, tq, n_bra, n_ket) in CASES.items():
