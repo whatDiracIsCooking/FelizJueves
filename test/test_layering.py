@@ -2465,3 +2465,53 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                    "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #405 (milestone 14): `kernel_hk`, the HGP exchange kernel, split -- the
+# sibling of `kernel_hj`, under `hj_builder`'s prohibitions. It imports the
+# shared pieces (the nest's scalars, the membership chain, the orientation
+# record) from `kernel_hj` rather than copying them, so hj and hk stay one
+# kernel with two deposits; it is interpreted against `ao/hgp_drive.py`
+# (bitwise) and `ao/k.py`, so neither the AO layer nor reference/ may be its
+# ancestor.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hk_builder": _rule(
+        "kernel_hk.py (#405): the HGP K kernel, split -- every ordered "
+        "quartet, K_ab += D_cd (ac|bd) by atomic add, `am` in K's Hermite "
+        "pairing (la, lc | lb, ld); `kernel_hj`'s nest, staging, scalars and "
+        "class modes reused, keyed on a `Target.K` `Engine.HGP` `Spec`",
+        ("spec", "ir", "hgp", "kernel_f", "kernel_hj"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao="`ao/hgp_drive.py` (the ERIs) and `ao/k.py` (the K sweep) are the "
+           "kernel's witnesses: importing either shares ancestry (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["kernel_hk"] = "hk_builder"
+EDGES["kernel_hk"] = frozenset(
+    ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "kernel_f",
+     "kernel_hj", "spec"))
+
+
+def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
+    # #405, TRANSITIVELY: no chain of imports from `kernel_hk` reaches the
+    # plan layer, the AO layer, reference/, the interpreter, a backend, a
+    # card, or a pair stream (`launch_f`, #403's `launch_hjk`).
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_hk"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.recurrence", "hgp.orbits", "kernel_f", "kernel_hj"} <= seen
+    for banned in ("plan", _REF, "ao", "interp", "emit", "device",
+                   "launch_f", "launch_hjk"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hk reaches {hit}"
