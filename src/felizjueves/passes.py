@@ -2,6 +2,7 @@
 
     atomize(kernel) -> Kernel
     split_axes(kernel, axes) -> Kernel
+    transpose(kernel, arrays) -> Kernel
 
 A pass takes a finished `Kernel` and returns another; it never reads a plan
 and never writes text. It is checked the way a builder is -- by running both
@@ -65,6 +66,31 @@ parameter of extents `(n, 3)`; an axis subscript that is not a literal 0, 1
 or 2; any other use of the array (a whole-array `Var`, as a fragment's array
 bind takes it, or a `Member` read); a new name already used in the kernel;
 and three names that are not distinct.
+
+TRANSPOSE. A 2-D array parameter is row-major by its `Param.shape`, so
+`D[n_ket, n_q]` puts one ket's `D_q` row together. In the `[p|q]` kernel
+the lanes of a warp are consecutive kets (strip-mined over `THREAD_Y`), so
+one read of `D[k, q]` across a warp is `n_q` doubles apart per lane: the
+reads do not coalesce. `[Fock, §4.2]`: "Dq is transposed before kernel
+launches to ensure contiguous reads". A consumer that wants that layout asks
+for it here, one array at a time, on every kernel that reads or writes the
+array -- `DQ`, which writes `D`, and `[p|q]`, which reads it -- so they
+agree: `transpose(k, ("D",))`. The pass makes that one change and no other:
+
+- the `(a, b)` parameter becomes `(b, a)`, in its place in the list, with
+  its name, type and intent;
+- each `D[i, j]` becomes `D[j, i]`, the same two subscripts swapped.
+
+So each element is the same value at another address, and the kernel writes
+the same bits: its test runs both in the interpreter on one input, laid out
+each way, and compares with `==`. `transpose(transpose(k, a), a) == k`. It
+is a pass and not a builder option for `split_axes`' reason, and the
+builders' row-per-record default is untouched.
+
+It REFUSES (raises) rather than guesses: an empty or repeated name; a name
+that is not an array parameter of exactly two extents; an index into it
+without exactly two subscripts; and any other use of the array (a
+whole-array `Var` or a `Member` read).
 """
 
 from __future__ import annotations
@@ -93,7 +119,7 @@ from felizjueves.ir import (
     walk,
 )
 
-__all__ = ["ATOMIC_NOTE", "LANE0", "atomize", "split_axes"]
+__all__ = ["ATOMIC_NOTE", "LANE0", "atomize", "split_axes", "transpose"]
 
 LANE0 = Call(Fn.LT, (Call(Fn.THREAD_Y), Lit(1)))
 """The lane-0 guard `THREAD_Y < 1` the write-back sits under."""
@@ -241,3 +267,50 @@ def split_axes(kernel: Kernel,
         else:
             out.append(p)
     return Kernel(kernel.name, tuple(out), expr(kernel.body))
+
+
+def transpose(kernel: Kernel, arrays: tuple[str, ...]) -> Kernel:
+    """Each 2-D array parameter in `arrays` is stored with its extents swapped.
+
+    Its shape `(a, b)` becomes `(b, a)`, and every `array[i, j]` reads or
+    writes `array[j, i]` instead. Raises `ValueError` as the module docstring
+    says, before building anything.
+    """
+    if not isinstance(kernel, Kernel):
+        raise TypeError(f"transpose takes a Kernel, not {type(kernel).__name__}")
+    if not isinstance(arrays, tuple) or not arrays \
+            or len(set(arrays)) != len(arrays):
+        raise ValueError(f"transpose takes a nonempty tuple of distinct names, "
+                         f"not {arrays!r}")
+    params = {p.name: p for p in kernel.params}
+    for name in arrays:
+        p = params.get(name)
+        if p is None or not p.array or len(p.shape) != 2:
+            raise ValueError(f"kernel {kernel.name!r}: {name!r} is not an "
+                             "array parameter of two extents")
+    swap = set(arrays)
+
+    def expr(e: object) -> object:
+        if isinstance(e, Member) and e.array in swap:
+            raise ValueError(f"{e.array!r} is read as a record, not by index")
+        if isinstance(e, Var) and e.name in swap:
+            raise ValueError(f"{e.name!r} is used whole, not by index")
+        if isinstance(e, Index) and e.array in swap:
+            if len(e.at) != 2:
+                raise ValueError(f"{e.array!r} is indexed by {e.at!r}, not by "
+                                 "two subscripts")
+            return Index(e.array, (expr(e.at[1]), expr(e.at[0])))
+        if isinstance(e, Fragment):
+            # hygienic: it names host arrays only through its array binds,
+            # which are Vars in the Inline and refused above
+            return e
+        if isinstance(e, tuple):
+            return tuple(expr(x) for x in e)
+        if dataclasses.is_dataclass(e) and not isinstance(e, type):
+            return type(e)(**{f.name: expr(getattr(e, f.name))
+                              for f in dataclasses.fields(e)})
+        return e
+
+    out = tuple(dataclasses.replace(p, shape=(p.shape[1], p.shape[0]))
+                if p.name in swap else p for p in kernel.params)
+    return Kernel(kernel.name, out, expr(kernel.body))

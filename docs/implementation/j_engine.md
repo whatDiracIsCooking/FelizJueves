@@ -1947,6 +1947,14 @@ output. It is not the AO density's largest element and cannot be computed
 from it. Lanes may map one thread per record; the mapping is not part of the
 numerical contract.
 
+**The q-major layout** (opt-in, `passes.transpose(kernel, ("D",))` on both
+this kernel and `[p|q]`): `D[n_q, n_ket]` instead. `[p|q]`'s lanes are
+consecutive kets, so row-per-ket puts one warp's read of `D[k, q]` `n_q`
+doubles apart per lane, and q-major makes it contiguous, as `[Fock, §4.2]`
+does ("Dq is transposed before kernel launches to ensure contiguous reads").
+The two kernels must agree on the layout; the values and the bits are the
+same (`test_passes.py`). Not run on a card here.
+
 **The AO-density variant** (opt-in, `build_dq_kernel(cls, density="ao")`,
 unit `dq_{lc}_{ld}_ao`). It reads `D_cd` where the density already is,
 `Dao[off_c[k] + i, off_d[k] + j]` for row `r = (i, j)`, with the record's own

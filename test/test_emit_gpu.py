@@ -65,7 +65,7 @@ from felizjueves.kernel_pair_bound import build_pair_bound_kernel
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
-from felizjueves.passes import split_axes
+from felizjueves.passes import split_axes, transpose
 from felizjueves.spec import Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parent.parent
@@ -231,11 +231,29 @@ UNITS = {
         "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
     "dq_11_split": lambda: split_axes(build_dq_kernel((1, 1)), {
         "XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}),
+    # D q-major, as FreeBreakfast writes it (dq) and reads it ([p|q])
+    "pq_L4_transposed": lambda: transpose(split_axes(build_pq_kernel(4), {
+        "P": ("p_x", "p_y", "p_z"), "Q": ("q_x", "q_y", "q_z")}), ("D",)),
+    "dq_12_ao_transposed": lambda: transpose(split_axes(
+        build_dq_kernel((1, 2), density="ao"), {
+            "XPA": ("pa_x", "pa_y", "pa_z"),
+            "XPB": ("pb_x", "pb_y", "pb_z")}), ("D",)),
     "s_11": lambda: build_s_kernel((1, 1)),
     "v_11": lambda: build_v_kernel((1, 1)),
     "bcast": _bcast,
     "inline": synthetic_inline_kernel,
 }
+
+
+def test_a_transposed_d_is_read_with_the_ket_fastest() -> None:
+    # the point of passes.transpose: consecutive lanes (kets k) read
+    # consecutive doubles, D[q * n_ket + k], where the default is n_q apart
+    row = gpu.emit(build_pq_kernel(2), SM_86)
+    col = gpu.emit(UNITS["pq_L4_transposed"](), SM_86)
+    assert "D[(k * 4 + 1)]" in row
+    assert "D[(1 * n_ket + k)]" in col and "D[(k * " not in col
+    dq = gpu.emit(UNITS["dq_12_ao_transposed"](), SM_86)
+    assert "D[(1 * n_rec + k)] = dq1;" in dq
 
 
 @pytest.mark.parametrize("tool", TOOLCHAINS)
