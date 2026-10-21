@@ -767,3 +767,58 @@ def test_a_lever_flag_it_cannot_honour_is_a_2(argv, monkeypatch, tmp_path):
     _declare(monkeypatch, {"j", "f"})
     assert _run(tmp_path, "cuda", *argv) == 2
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
+
+
+# --- the HGP split J / K path (#407; goldens in test/test_emit_hjk.py) --------
+
+
+def test_the_bare_default_never_enters_the_hgp_path(monkeypatch, tmp_path):
+    # The bare command's 37 units are built elsewhere (slow); here the J
+    # ladders are stubbed and the HGP writer made to fail if reached.
+    def boom(*a, **k):
+        raise AssertionError("the bare default reached the HGP path")
+
+    monkeypatch.setattr(emit_cli, "generate_hgp", boom)
+    monkeypatch.setattr(emit_cli, "hgp_selection", boom)
+    monkeypatch.setattr(emit_cli, "generate", lambda *a: [])
+    monkeypatch.setattr(emit_cli, "generate_pairs", lambda *a: [])
+    assert _run(tmp_path, "cuda") == 0
+    assert _run(tmp_path, "hip", "--one-e-l", "0") == 0
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_bare_default_writes_no_hgp_jk_unit(backend, tmp_path):
+    _, _, ext = BACKEND[backend]
+    assert _run(tmp_path, backend) == 0
+    got = _names(tmp_path)
+    assert len(got) == 37 and got == _pq_names(ext) | _pair_names(ext)
+    assert not any(n.startswith(("hj_", "hk_")) for n in got)
+
+
+def test_kernel_gen_cmd_asks_for_no_hgp_jk_unit():
+    cfg = (ROOT / "devtools" / "config.sh").read_text()
+    (line,) = [ln for ln in cfg.splitlines()
+               if ln.lstrip().startswith("KERNEL_GEN_CMD=")]
+    assert "felizjueves.emit" in line and "--hgp" not in line
+
+
+def test_the_hgp_jk_names_cannot_collide_with_any_other_ladder():
+    from felizjueves.kernel_hj import hj_class_spec, hj_name
+    from felizjueves.kernel_hk import hk_class_spec, hk_name
+
+    # Ordered names only (no DAG built); a canonical name is an ordered
+    # class's digits behind `hj_` / `hk_`, the same prefix test.
+    classes = emit_cli.hgp_ordered_classes(4)
+    names = [n(key(*c, ordered=o)) for c in classes for o in (False, True)
+             for n, key in ((hj_name, hj_class_spec), (hk_name, hk_class_spec))
+             if o or sum(c) <= 2]
+    assert all(n.startswith(("hj_", "hk_")) for n in names)
+    pairs = emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
+    others = ({emit_cli.source_name(L, "cuda")[:-3] for L in range(17)}
+              | {name(c) for c in pairs
+                 for name in (dq_name, jab_name, *emit_cli.ONE_E_NAMES)}
+              | {eri3_name(c) for c in emit_cli.eri3_classes(8)}
+              | {f"f_{''.join(map(str, c))}" for c in emit_cli.FOCK_CLASSES})
+    assert not set(names) & others
+    assert not any(n.startswith(("hj_", "hk_")) for n in others)

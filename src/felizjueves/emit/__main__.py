@@ -13,6 +13,9 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --sx-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --metric-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --eri3-l 4
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --hgp-j-l 1
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
+            --hgp-k-l 1 --hgp-class 2 0 1 1 --ordered
 
 ONE LADDER PER KERNEL FAMILY (#156), one translation unit per class, each
 emitted by the backend for the arch to `<out>/<kernel name>.<ext>` (`.cu`
@@ -126,6 +129,53 @@ classes: ptxas `8192 bytes smem` on the NVIDIA arch (48 KiB static per
 block) and `LDS Size [bytes/block]: 8192` on the AMD one (64 KiB per
 workgroup), pinned by test/test_emit_fock.py's compile cases.
 
+THE HGP SPLIT J / K PATH, `--hgp-j-l LMAX` / `--hgp-k-l LMAX` /
+`--hgp-class L0 L1 L2 L3` [`--ordered`] (#407, milestone 14): the split
+Coulomb and exchange kernels on the HGP recurrence, `kernel_hj.build_hj_kernel`
+(`Target.J` on `Engine.HGP`, #404) and `kernel_hk.build_hk_kernel`
+(`Target.K` on `Engine.HGP`, #405), one unit per class, named by the
+builders: `hj_{rep}` / `hk_{rep}` canonical, `hj_o_{class}` / `hk_o_{class}`
+ordered (`_`-separated once any `l` is above 9).
+
+- `--hgp-j-l LMAX` writes the J units of every class whose shells are each
+  `l <= LMAX` (so LMAX = 1 is through (pp|pp) at L = 4, LMAX = 2 through
+  (dd|dd) at L = 8); `--hgp-k-l LMAX` the same for K. Any LMAX >= 0 is
+  accepted, with no ladder cap: the generator emits whatever is asked, and
+  correctness is tested at L <= 4 only (milestone 14). A negative one is a 2.
+- `--hgp-class L0 L1 L2 L3` (repeatable) names a class by its ERI positions
+  `(x0 x1 | x2 x3)`, the tuple both builders take, and writes BOTH its J and
+  its K unit: J reads it as `(la lb | lc ld)`, K as its Hermite pairing
+  `(la lc | lb ld)` (#196) -- the same recurrence, two deposits. Any four
+  `l >= 0`. Given with `--hgp-j-l` / `--hgp-k-l`, each target writes the
+  union, deduplicated by unit.
+- THE CLASS MODE. Bare, the CANONICAL mode (the literal): every class is
+  mapped to its orbit's representative (`built_class`, the builders' entry
+  point onto `hgp.orbits`), and one unit is written per representative,
+  built from the representative's own key, so a ladder of 16 ordered
+  classes at LMAX = 1 is 6 canonical units. `--ordered` writes the
+  ORDERED-class units INSTEAD: one per ordered class, its own recurrence,
+  the identity deposit. Units are written J then K, each sorted by the
+  class built.
+
+THE `ordered` FLAG IS A PLAIN `--ordered`, NOT A LEVER-LADDER FLAG (#407's
+decision). `levers.VOCABULARY["ordered"]` is legal on the engine slots
+`j.hgp` / `k.hgp` only, and `lever_ladder.FAMILIES` (j, k, f) holds no
+engine slot, so the registry gives it no flag; giving it one would mean an
+HGP family there and units named `<literal>_lv_ordered`, while the builders
+already name the ordered units `hj_o_` / `hk_o_` (the class mode changes
+which classes exist, not one class's body). So the flag is the path's own,
+it selects the mode for every unit the command writes, and it is a 2
+without an HGP selector.
+
+It is a SEPARATE path, like the F path: never combined with `--L`,
+`--pair-l`, `--one-e-l`, `--schwarz-l`, `--sx-l`, `--metric-l`, `--eri3-l`,
+`--class`, `--shell-ls`, `--fock-l`, `--fock-class`, a lever flag,
+`--n-batches` or `--admitted-only` (each a 2), NEVER in the no-flag default
+and not in KERNEL_GEN_CMD. This driver names the HGP J / K kernels by their
+entry points (`kernel_hj`, `kernel_hk`), never `hgp.orbits` behind them
+(test/test_layering.py). Every unit's name starts `hj_` or `hk_`, so none
+collides with another ladder's.
+
 THE LEVER LADDERS (#339) are a REGISTRY, not CLI code: one flag per
 `(kernel-body lever, family)`, read from `levers.VOCABULARY` through
 `lever_ladder.flags()` each time the parser is built, so a lever issue adds
@@ -227,6 +277,10 @@ from felizjueves.kernel import (
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_eri3 import build_eri3_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
+from felizjueves.kernel_hj import built_class as hj_built_class
+from felizjueves.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
+from felizjueves.kernel_hk import built_class as hk_built_class
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.kernel_metric import build_metric_kernel
@@ -473,6 +527,82 @@ def generate_fock(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The HGP split J / K path (#407)
+# ---------------------------------------------------------------------------
+
+# target -> (its key, its builder, its unit name, the class it builds):
+# `kernel_hj` / `kernel_hk`'s entry points, nothing behind them (#292's
+# rule: the orbits are read through `built_class`, never `hgp.orbits`).
+HGP_TARGETS: dict[str, tuple[Callable[..., Spec], Callable[[Spec], Kernel],
+                             Callable[[Spec], str], Callable[[Spec], Am]]] = {
+    "j": (hj_class_spec, build_hj_kernel, hj_name, hj_built_class),
+    "k": (hk_class_spec, build_hk_kernel, hk_name, hk_built_class),
+}
+
+
+def hgp_ordered_classes(lmax: int) -> list[Am]:
+    """Every ORDERED class, each shell `l <= lmax`, lexicographic; any
+    `lmax >= 0` (the builders are arbitrary-l). Builds nothing."""
+    if type(lmax) is not int or lmax < 0:
+        raise ValueError(f"--hgp-j-l / --hgp-k-l {lmax!r} is not an int >= 0")
+    r = range(lmax + 1)
+    return [(a, b, c, d) for a in r for b in r for c in r for d in r]
+
+
+def _hgp_check(cls: Sequence[int]) -> Am:
+    cls = tuple(cls)
+    if len(cls) != 4 or any(type(x) is not int or x < 0 for x in cls):
+        raise ValueError(f"--hgp-class {' '.join(map(str, cls))} is not four "
+                         "ints >= 0")
+    return cls  # type: ignore[return-value]
+
+
+def hgp_specs(target: str, classes: Sequence[Sequence[int]], *,
+              ordered: bool = False) -> list[Spec]:
+    """One `Spec` per UNIT the classes need on `target` (`"j"` or `"k"`),
+    sorted by the class built, duplicates dropped. Canonical (`ordered`
+    False): each class is mapped to its orbit's representative and the
+    unit is built from the representative's own key, so two members of one
+    orbit are one unit, spelled one way. Ordered: the class itself."""
+    key, _, _, built = HGP_TARGETS[target]
+    out: dict[Am, Spec] = {}
+    for c in classes:
+        rep = built(key(*_hgp_check(c), ordered=ordered))
+        out.setdefault(rep, key(*rep, ordered=ordered))
+    return [out[c] for c in sorted(out)]
+
+
+def hgp_selection(j_l: int | None, k_l: int | None,
+                  classes: Sequence[Sequence[int]] = (), *,
+                  ordered: bool = False) -> list[Spec]:
+    """The HGP path's units, J then K: `--hgp-j-l` / `--hgp-k-l`'s ladder
+    on its own target, and each `--hgp-class` on BOTH targets (module
+    docstring), the union per target. Raises `ValueError` on a bad class
+    or LMAX."""
+    named = [_hgp_check(c) for c in classes]
+    specs: list[Spec] = []
+    for target, lmax in (("j", j_l), ("k", k_l)):
+        want = [*(hgp_ordered_classes(lmax) if lmax is not None else ()),
+                *named]
+        if want:
+            specs += hgp_specs(target, want, ordered=ordered)
+    return specs
+
+
+def hgp_kernel(spec: Spec) -> Kernel:
+    """The unit of one `hgp_specs` key, by its target's builder."""
+    target = "j" if spec.target is Target.J else "k"
+    return HGP_TARGETS[target][1](spec)
+
+
+def generate_hgp(backend: str, arch: Arch, out: Path,
+                 specs: Sequence[Spec]) -> list[Path]:
+    """Emit the HGP J / K unit of every key into `out`; return the paths."""
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, hgp_kernel(s)) for s in specs]
+
+
+# ---------------------------------------------------------------------------
 # The lever ladders (#339): one builder per FAMILY, never per lever
 # ---------------------------------------------------------------------------
 
@@ -606,6 +736,45 @@ def _main_classes(args: argparse.Namespace, arch: Arch) -> int:
     return 0
 
 
+def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
+    """The HGP J / K path (#407; module docstring): refuses every other
+    path's flag, then writes."""
+    if (other_path or args.Ls is not None or args.pair_l is not None
+            or args.one_e_l is not None or args.schwarz_l is not None
+            or args.sx_l is not None or args.metric_l is not None
+            or args.eri3_l is not None):
+        print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
+              "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
+              "--sx-l / --metric-l / --eri3-l / --class / --shell-ls / "
+              "--fock-l / --fock-class and every lever flag; give one",
+              file=sys.stderr)
+        return 2
+    if args.n_batches != [1] or args.admitted_only:
+        print("emit: an HGP J / K class is one batch (kernel_hj / kernel_hk: "
+              "no Hermite targets to batch); --n-batches / --admitted-only "
+              "belong to --class or --shell-ls", file=sys.stderr)
+        return 2
+    for flag, v in (("--hgp-j-l", args.hgp_j_l), ("--hgp-k-l", args.hgp_k_l)):
+        if v is not None and v < 0:
+            print(f"emit: {flag} {v} is negative; LMAX bounds each shell's "
+                  "l, any value >= 0", file=sys.stderr)
+            return 2
+    try:
+        arch = resolve_arch(args.backend, args.arch)
+        specs = hgp_selection(args.hgp_j_l, args.hgp_k_l,
+                              args.hgp_classes or (), ordered=args.ordered)
+    except ValueError as e:
+        print(f"emit: {e}", file=sys.stderr)
+        return 2
+    written = generate_hgp(args.backend, arch, args.out, specs)
+    mode = "ordered" if args.ordered else "canonical"
+    print(f"emit: {len(written)} {args.backend} HGP J / K ({mode}) "
+          f"translation unit(s) for {arch.name} -> {args.out}")
+    for p in written:
+        print(f"   {p.name}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     env = os.environ
     ap = argparse.ArgumentParser(prog="python -m felizjueves.emit",
@@ -631,6 +800,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
                     action="append", metavar=("LA", "LB", "LC", "LD"))
+    ap.add_argument("--hgp-j-l", dest="hgp_j_l", type=int, default=None,
+                    metavar="LMAX")
+    ap.add_argument("--hgp-k-l", dest="hgp_k_l", type=int, default=None,
+                    metavar="LMAX")
+    ap.add_argument("--hgp-class", dest="hgp_classes", type=int, nargs=4,
+                    action="append", metavar=("L0", "L1", "L2", "L3"))
+    ap.add_argument("--ordered", action="store_true")
     ap.add_argument("--class", dest="classes", type=int, nargs=4, action="append",
                     metavar=("LA", "LB", "LC", "LD"))
     ap.add_argument("--shell-ls", type=int, nargs="+", default=None)
@@ -657,6 +833,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     selector = bool(args.classes or args.shell_ls)
     fock = (args.fock_l is not None or bool(args.fock_classes)
             or bool(fock_levers))
+    hgp = (args.hgp_j_l is not None or args.hgp_k_l is not None
+           or bool(args.hgp_classes))
+    if args.ordered and not hgp:
+        print("emit: --ordered is the HGP J / K path's class mode; it needs "
+              "--hgp-j-l, --hgp-k-l or --hgp-class", file=sys.stderr)
+        return 2
+    if hgp:
+        return _main_hgp(args, bool(given or selector or fock))
     if fock and (selector or args.Ls is not None or args.pair_l is not None
                  or args.one_e_l is not None or args.schwarz_l is not None
                  or args.sx_l is not None or args.metric_l is not None

@@ -34,7 +34,12 @@ uniformly; nothing depends on what the kernel computes:
 - a scalar parameter the body never reads -- one that exists only as an
   array's leading extent, which row-major indexing never needs -- is cast
   to `(void)` at the top of the body, so hipcc's `-Wextra` has no unused
-  parameter to warn of (#156; nvcc's `-Wall` does not ask);
+  parameter to warn of (#156; nvcc's `-Wall` does not ask); likewise an
+  ARRAY parameter the body never indexes, binds or reads (#407: the HGP
+  J / K kernels keep one signature per target, and a class whose deposits
+  need no bra shell index never reads `bra_sh`), after the scalars, under
+  its own comment -- a kernel that reads every array has no such line, so
+  its text is unchanged;
 - an `Inline` is a `{ ... }` block headed `// fragment <name>`, its bindings
   `const` declarations, then the fragment's statements in place. Nothing is
   renamed: `Kernel` has already refused any name the block could shadow.
@@ -244,10 +249,19 @@ class CWriter:
         self._block(k.body, 1)
         unread = [p.name for p in k.params
                   if not p.array and p.name not in self._used]
+        unread_arrays = [p.name for p in k.params
+                         if p.array and p.name not in self._used]
+        top: list[str] = []
         if unread:
-            self._lines[:0] = [
+            top += [
                 f"{INDENT}// an extent only (a leading dimension, never read):\n",
                 *(f"{INDENT}(void){n};\n" for n in unread)]
+        if unread_arrays:  # #407: a fixed signature this class does not read
+            top += [
+                f"{INDENT}// an array this class never reads (one signature "
+                "for every class):\n",
+                *(f"{INDENT}(void){n};\n" for n in unread_arrays)]
+        self._lines[:0] = top
         head = self.prologue(k)
         boys = self.boys(BOYS_DEVICE) if has_boys(k) else ""
         if boys:
@@ -385,8 +399,10 @@ class CWriter:
             if t is not None:
                 types[name] = t
             if e == Var(name):
+                self._used.add(name)
                 scope[name] = self._lookup(name)
             elif name in frag.array_binds:
+                self._used.add(e.name)
                 arr = self._lookup(e.name)
                 if arr is None:
                     raise EmitError(f"array bind {name!r} is bound to the "
@@ -474,6 +490,7 @@ class CWriter:
         arr = self._lookup(e.array)
         if arr is None:
             raise EmitError(f"{e.array!r} is a scalar, indexed as an array")
+        self._used.add(e.array)
         if isinstance(e, Member):
             return self.member(e, arr)
         at = [self.expr(i) for i in e.at]
