@@ -2,6 +2,7 @@
 
     emit(kernel, arch, specialization=None) -> str
     emit_template(kernel, arch, specialization, classes) -> str
+    emit_boys() -> str
 
 A pure function: no decisions, no I/O. Where `emit/cuda.py` and `emit/hip.py`
 each spell a kernel for one vendor, this spells it once for both: the text
@@ -20,9 +21,16 @@ behind them), which the unit includes and the compiler resolves:
   the header, so the literal is the one thing written here;
 - `AtomicAdd` as `atomicAdd` (the shared default);
 - every integer as `int32_t`, never a bare `int` -- declarations, loop
-  counters, the thread-geometry casts and `fj_boys` alike (`CWriter.INT`).
+  counters, the thread-geometry casts and `eval_boys` alike (`CWriter.INT`).
   The header brings in `<stdint.h>`. The vendor backends still spell `int`,
-  so their text and its pins are unchanged.
+  so their text and its pins are unchanged;
+- the device Boys routine, `eval_boys<M>`, as a header of its own,
+  `eval_boys.h` (`BOYS_HEADER`, written by `emit_boys`), which a unit with a
+  fundamental includes after the runtime and calls by that name. It is
+  `_c.py`'s one `BOYS_DEVICE` text in this backend's spelling, `static`, so
+  every unit that includes it carries its own copy and none is a duplicate
+  symbol at the device link. The vendor backends still carry it inline as
+  `fj_boys`, so their text and its pins are unchanged.
 
 THE WIDTH IS NOT ERASED. The shuffle hooks read the wavefront off the `Arch`,
 as the vendor backends do, and fix it in the text. A unit that calls either
@@ -31,7 +39,7 @@ include, and the header's `FJ_WAVEFRONT` (32 unless the build passes
 `-DFJ_WAVEFRONT=64`) refuses a mismatched compile. A unit that calls neither
 -- `S`, `T`, `V`, `DQ`, `JAB` -- has no width in its text, carries no
 assert, and its banner says so. Whether a hook was called is read after the
-body is written, as `CWriter.kernel` already does for `fj_boys` and records:
+body is written, as `CWriter.kernel` already does for Boys and records:
 a spelling of what the kernel contains, not a decision about it.
 
 The `Arch` is taken for its wavefront only: any vendor's arch is accepted,
@@ -94,15 +102,14 @@ another through the table. Build it as relocatable device code
 (`-rdc=true`) under nvcc: in whole-program mode nvcc 13.0's static template
 stubs want a `__global__` specialization defined in every TU that names it,
 and it says so (warning #20280, an error under `-Werror`). hipcc takes it
-either way. `fj_boys` is `static` in a specialization, so the
-same routine in every unit is never a duplicate symbol at the device link.
+either way. `eval_boys` is `static`, so the same routine in every unit is
+never a duplicate symbol at the device link.
 
 A specialization's units may still share one translation unit, so its text
-is what can be included beside its siblings: `fj_boys` sits behind an include
-guard (`FJ_BOYS`; there is one spelling since #301), and a kernel with a
-record struct or a dynamically sized shared array is refused, both being
-per-unit declarations a second unit would repeat. The C spelling is unchanged and
-still means one unit per TU, or one namespace each.
+is what can be included beside its siblings: `eval_boys.h` is `#pragma once`,
+and a kernel with a record struct or a dynamically sized shared array is
+refused, both being per-unit declarations a second unit would repeat. The C
+spelling is unchanged and still means one unit per TU, or one namespace each.
 
 A FIXED BLOCK, chosen by the consumer and never by the kernel: with
 `block_dim=(x, y)`, a SHARED array whose extents are literals and the block's
@@ -129,20 +136,29 @@ from dataclasses import dataclass
 from felizjueves.device import Arch
 from felizjueves.emit._c import (
     _GEOMETRY,
+    BOYS_DEVICE,
     INDENT,
     RESERVED,
     CWriter,
     EmitError,
     _Array,
     _records,
+    has_boys,
+    kernel_names,
     precision,
 )
 from felizjueves.ir import Call, Decl, Expr, Fn, Kernel, Lit, Space, _ident
 
-__all__ = ["HEADER", "WAVEFRONT", "Specialization", "emit", "emit_template"]
+__all__ = ["BOYS_HEADER", "HEADER", "WAVEFRONT", "Specialization", "emit",
+           "emit_boys", "emit_template"]
 
 # The one include every unit carries; resolved against FelizJueves's include/.
 HEADER = "felizjueves/runtime.h"
+
+# The device Boys routine's header (`emit_boys`), which the consumer writes
+# beside the units or on their include path, and its one name.
+BOYS_HEADER = "eval_boys.h"
+_BOYS = "eval_boys"
 
 # The header's spellings of the width and of a full mask (any_wavefront).
 _WIDTH = "FJ_WAVEFRONT"
@@ -163,7 +179,7 @@ WAVEFRONT = _Wavefront()
 # The primary's parameters, by position: `La, Lb, ...`.
 _LETTERS = "abcdefghijklmnopqrstuvwxyz"
 
-# A C cast in `fj_boys`'s fixed text, `(double)(2 * m + 1)`.
+# A C cast in the Boys routine's fixed text, `(double)(2 * m + 1)`.
 _C_CAST = re.compile(r"\((double|float)\)\(([^()]*)\)")
 
 
@@ -299,6 +315,7 @@ class Specialization:
 
 class GpuWriter(CWriter):
     INT = "int32_t"  # fixed width; <stdint.h> comes in through HEADER
+    BOYS = _BOYS  # from BOYS_HEADER, never carried in the unit
 
     def __init__(self, arch: Arch,
                  specialization: Specialization | None = None, *,
@@ -320,6 +337,8 @@ class GpuWriter(CWriter):
 
     def kernel(self, k: Kernel) -> str:
         self._width_used = False
+        if _BOYS in kernel_names(k):
+            raise EmitError(f"{k.name}: the name {_BOYS!r} is {BOYS_HEADER}'s")
         if self.specialization is not None and _records(k):
             raise EmitError(f"{k.name}: a specialization shares its TU, and "
                             "its record structs would be declared per unit")
@@ -347,6 +366,8 @@ class GpuWriter(CWriter):
         )
         if spec is not None:
             head += f'#include "{spec.header}"  // the primary\n'
+        if has_boys(k):
+            head += f'#include "{BOYS_HEADER}"\n'
         if self._width_used and not self.any_wavefront:
             head += (
                 f"static_assert(FJ_WAVEFRONT == {w}, "
@@ -434,14 +455,7 @@ class GpuWriter(CWriter):
         return f"static_cast<{t}>({text})"
 
     def boys(self, text: str) -> str:
-        spelled = _C_CAST.sub(r"static_cast<\1>(\2)", super().boys(text))
-        if self.specialization is None:
-            return spelled
-        # internal linkage: every unit of a template carries its own copy
-        spelled = spelled.replace("__device__ __forceinline__ void fj_boys(",
-                                  "static __device__ __forceinline__ void "
-                                  "fj_boys(", 1)
-        return f"#ifndef FJ_BOYS\n#define FJ_BOYS\n{spelled}#endif\n"
+        return ""  # the prologue includes BOYS_HEADER instead
 
     def _mask(self) -> str:
         self._width_used = True
@@ -478,6 +492,30 @@ def emit(kernel: Kernel, arch: Arch,
     erases it")."""
     return GpuWriter(arch, specialization, block_dim=block_dim,
                      any_wavefront=any_wavefront).kernel(kernel)
+
+
+def emit_boys() -> str:
+    """`BOYS_HEADER`'s text: the device Boys routine `eval_boys<M>`, which
+    every unit with a fundamental includes. One text for every kernel, arch
+    and option; the consumer writes it once, beside the units or on their
+    include path."""
+    spelled = _C_CAST.sub(r"static_cast<\1>(\2)",
+                          re.sub(r"\bint\b", GpuWriter.INT, BOYS_DEVICE))
+    old = "__device__ __forceinline__ void fj_boys("
+    if spelled.count(old) != 1:
+        raise EmitError("BOYS_DEVICE no longer declares fj_boys once")
+    # internal linkage: every unit that includes it carries its own copy
+    spelled = spelled.replace(old,
+                              f"static __device__ __forceinline__ void {_BOYS}(")
+    return (
+        f"// {_BOYS}: generated by felizjueves.emit.gpu -- do not edit.\n"
+        "// the device Boys routine every unit with a fundamental includes;\n"
+        "// fp64 throughout; nvcc and hipcc alike.\n"
+        "#pragma once\n"
+        f'#include "{HEADER}"\n'
+        "\n"
+        f"{spelled}"
+    )
 
 
 def emit_template(kernel: Kernel, arch: Arch, specialization: Specialization,

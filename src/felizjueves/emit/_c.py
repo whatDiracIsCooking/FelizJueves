@@ -61,6 +61,8 @@ it is accurate enough is a numerical question, and numerical questions are
 the kernel tier's (#28), against `reference.boys`, which this module does
 not import. Every kernel carries the same text (#301): the narrow and wide
 spellings of #266, and `Kernel.wide_boys` that picked between them, are gone.
+`emit/gpu.py` carries none: it writes the same text once, as the header
+`eval_boys.h`, and its units include it and call `eval_boys` (`CWriter.BOYS`).
 
 Names starting `fj_` are the writer's own and are refused in a kernel.
 """
@@ -212,6 +214,11 @@ class CWriter:
     # text, goldens and `source_sha256` pins do not move.
     INT = "int"
 
+    # The name a `Boys` statement calls. The vendor backends carry the
+    # routine in each unit under the writer's own prefix; `emit/gpu.py`
+    # includes it from a header of its own and names it there.
+    BOYS = "fj_boys"
+
     def __init__(self, arch: Arch) -> None:
         if not isinstance(arch, Arch):
             raise TypeError(f"emit takes a device.Arch, not {arch!r}")
@@ -240,8 +247,9 @@ class CWriter:
                 f"{INDENT}// an extent only (a leading dimension, never read):\n",
                 *(f"{INDENT}(void){n};\n" for n in unread)]
         head = self.prologue(k)
-        if any(isinstance(s, Boys) for s in walk(k.body)):
-            head += "\n" + self.boys(BOYS_DEVICE)
+        boys = self.boys(BOYS_DEVICE) if has_boys(k) else ""
+        if boys:
+            head += "\n" + boys
         records = _records(k)
         if records:
             head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
@@ -257,7 +265,8 @@ class CWriter:
         return f'extern "C" __global__ void {k.name}(\n{sig})'
 
     def boys(self, text: str) -> str:
-        """`fj_boys` as this unit carries it, `text` its fixed C."""
+        """`fj_boys` as this unit carries it, `text` its fixed C; empty
+        when the unit includes it instead."""
         return self.spell_int(text)
 
     def ctype(self, t: Scalar) -> str:
@@ -339,8 +348,9 @@ class CWriter:
         elif isinstance(s, Boys):
             if self._type(s.t) is not Scalar.F64 or self._lookup(s.dst) is None:
                 raise EmitError(f"Boys into {s.dst!r}: an F64 T and a local "
-                                "array, or no fj_boys")
-            self._emit(depth, f"fj_boys<{s.top}>({self.expr(s.t)}, {s.dst});")
+                                f"array, or no {self.BOYS}")
+            self._emit(depth,
+                       f"{self.BOYS}<{s.top}>({self.expr(s.t)}, {s.dst});")
         elif isinstance(s, Inline):
             self.inline(s, depth)
         elif isinstance(s, Raw):
@@ -568,15 +578,7 @@ class CWriter:
 
     @staticmethod
     def _check_names(k: Kernel) -> None:
-        names = [k.name, *(p.name for p in k.params)]
-        for s in walk(k.body):
-            if isinstance(s, Decl):
-                names.append(s.name)
-            elif isinstance(s, For):
-                names.append(s.var)
-            elif isinstance(s, Inline):
-                names.extend(s.fragment.binds)
-        bad = sorted({n for n in names if n.startswith(RESERVED)})
+        bad = sorted({n for n in kernel_names(k) if n.startswith(RESERVED)})
         if bad:
             raise EmitError(f"names {bad} use the writer's {RESERVED!r} prefix")
 
@@ -596,6 +598,25 @@ class CWriter:
     def lane_broadcast(self, dst: str, value: str, lane: str) -> str:
         """The line that sets `dst` to `value` as held by lane `lane` (#349)."""
         raise NotImplementedError
+
+
+def kernel_names(k: Kernel) -> list[str]:
+    """Every name `k` declares: itself, its parameters, its locals, its loop
+    counters and what its fragments bind."""
+    names = [k.name, *(p.name for p in k.params)]
+    for s in walk(k.body):
+        if isinstance(s, Decl):
+            names.append(s.name)
+        elif isinstance(s, For):
+            names.append(s.var)
+        elif isinstance(s, Inline):
+            names.extend(s.fragment.binds)
+    return names
+
+
+def has_boys(k: Kernel) -> bool:
+    """Whether `k` holds a `Boys` statement, so its unit needs the routine."""
+    return any(isinstance(s, Boys) for s in walk(k.body))
 
 
 def precision(k: Kernel) -> str:
