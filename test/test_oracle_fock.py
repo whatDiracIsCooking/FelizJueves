@@ -49,10 +49,18 @@ from felizjueves.reference.pq import pq
 LIBCINT_TOL = 1e-12
 L_MAX_RUN = 2
 
-MOLECULES = ("h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
+MOLECULES = ("h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz",
+             "h10_chain_ccpvdz")
 FAST_WHOLE = ("h2_sto3g",)
 FAST_SS = ("h2o_sto3g", "h2o_631g")
 SLOW_WHOLE = ("h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
+# #486's H10 chain (50 AOs, 30 shells) is tracked for its decaying RHF
+# density, a consumer's input; it is NOT run whole here, by cost: an
+# interpreted sweep over every quartet grows ~(30/12)^4 ~ 40x over
+# H2O/cc-pVDZ (12 shells), already the slowest case. Its vj / vk are
+# libcint's, cross-checked against einsum over the full int2e when
+# written (oracle.generate).
+NOT_RUN_WHOLE = ("h10_chain_ccpvdz",)
 
 
 @cache
@@ -67,7 +75,8 @@ def test_the_pairs_are_discovered_not_listed():
     """Every tracked molecule with both halves is one of the four, and the
     split covers each: whole fast or whole slow, s-s fast only without `d`."""
     assert manifest.fock_pairs() == sorted(MOLECULES)
-    assert set(FAST_WHOLE) | set(SLOW_WHOLE) == set(MOLECULES)
+    assert set(FAST_WHOLE) | set(SLOW_WHOLE) | set(NOT_RUN_WHOLE) \
+        == set(MOLECULES)
     for m in FAST_WHOLE:
         assert 4 * max(s.l for s in ob.from_fixture(_pair(m).j).shells) \
             <= L_MAX_RUN, m

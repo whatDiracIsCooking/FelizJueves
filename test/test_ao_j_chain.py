@@ -59,6 +59,13 @@ JK_TOL = 1e-12  # vs libcint, times scale_J: test_ao_j.py's, inherited
 
 FAST = ("h2_sto3g_j", "h2o_sto3g_j")
 SLOW = ("h2o_631g_j", "h2o_ccpvdz_j")
+# #486's H10 chain (50 AOs, 30 shells) is tracked for its decaying RHF
+# density, a consumer's input; it is NOT run through the chain, by cost:
+# 30 shells to H2O/cc-pVDZ's 12, already the slowest case, so the
+# interpreted chain grows ~(30/12)^4 ~ 40x. Its vj is libcint's,
+# cross-checked against einsum over the full int2e when written
+# (oracle.generate).
+NOT_RUN = ("h10_chain_ccpvdz_j",)
 CASES = [pytest.param(n, id=n) for n in FAST] + [
     pytest.param(n, id=n, marks=pytest.mark.slow) for n in SLOW]
 
@@ -95,7 +102,7 @@ def _n_records(basis) -> int:
 def test_the_cases_are_every_tracked_j_fixture():
     tracked = {p.stem for p in manifest.FIXTURES.glob("*.json")
                if manifest.J_ARRAY in manifest.load(p).arrays}
-    assert tracked == set(FAST) | set(SLOW)
+    assert tracked == set(FAST) | set(SLOW) | set(NOT_RUN)
 
 
 # --- the answer, and the report ---------------------------------------------
