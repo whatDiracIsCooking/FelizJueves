@@ -23,6 +23,8 @@
 #     sort-key      #147's sort-key A/B                 FJ_LAUNCH_WALLCLOCK_STORE
 #     roofline      ncu counter rows (#112; sm_86 only) FJ_ROOFLINE_STORE
 #     ceilings      the fp64 / triad ceilings (#109)    FJ_CEILINGS_STORE
+#     kblock        the block K kernel against kernel_k,
+#                   per class on H2O/cc-pVDZ (#481)     FJ_KBLOCK_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -71,6 +73,7 @@ SWEEPS=(
   "sort-key|timed|#147's sort-key A/B -> builds.json"
   "roofline|timed|ncu counter rows of every subgrid batch kernel -> roofline.json"
   "ceilings|timed|fp64 and triad ceilings behind the gate -> ceilings.json"
+  "kblock|timed|block K kernel vs kernel_k per class (H2O/cc-pVDZ) -> kblock.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -142,6 +145,8 @@ case $sweep in
                 envs=("FJ_ROOFLINE_STORE=${FJ_ROOFLINE_STORE:-$MEASURE_ROOFLINE_STORE}") ;;
   ceilings)     files=("$M/measure_ceilings_device.py"); select=(-k record_ceilings)
                 envs=("FJ_CEILINGS_STORE=${FJ_CEILINGS_STORE:-$MEASURE_CEILINGS_STORE}") ;;
+  kblock)       files=("$M/measure_kblock_device.py"); select=(-k kblock_clock)
+                envs=("FJ_KBLOCK_STORE=${FJ_KBLOCK_STORE:-$MEASURE_KBLOCK_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
                 select=(-k "not record_ceilings") ;;

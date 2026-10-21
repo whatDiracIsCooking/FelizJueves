@@ -115,6 +115,33 @@ L = 2, host-side or on a card, the whole H₂O/STO-3G `K` among them, is
 written `slow` and **not yet run** (#231). **Nothing about `K` is timed or scored:**
 `kernels.json`'s 20 `K` rows are compile-only (#205, partial), and the three
 `K` claims are pending (#207). `KERNEL_GEN_CMD` writes no `K` unit.
+**Beside `kernel_k`, a block exchange kernel on opt-UM's mapping** (#481;
+`[Fock, §4.3]`): `kernel_kblock.py` (`build_kblock_kernel`, `kb_{la}{lc}_{lb}{ld}`,
+one batch and no lever, both refused) runs `kernel_k`'s arithmetic unchanged
+(`kernel_k.ket_body` / `bra_scalars`, extracted with its text byte-identical,
+and the K seams' default hooks) in another loop nest: **one block (one warp)
+per contracted `K_AB` block**, every lane walking the block's bra range,
+the lanes taking its kets, one accumulator zeroed once, one warp reduction,
+and lane 0 adding the block straight into `K[n_ao, n_ao]` at AO offsets: no
+per-record scratch, no scatter, `n_a n_b` atomics per block that never meet
+inside a launch, so a build is bit-reproducible. A sibling, not a lever: the
+seams fix the launch shape, the parameters and the output, which this
+changes. Its plan is `launch_kblock.py` (`kb_launches` → `KBLaunchPlan` of
+`KBClassLaunch` with one `KBlock` per `(a, b)`; `k_launches`' records
+regrouped, bras sorted by `I_ac` within their first shell) and `walk_kb`,
+whose screen (a bra-loop `break` on `Ib · Iq[ket0] · maxD` beside the
+per-pair one) skips **exactly** `walk_k`'s pairs, so its `K` is `walk_k`'s to
+0. **[Fock]'s linear-scaling block screen (eqs 41–49) is not built**, by
+decision: it would drop blocks from the launch (a launch filter), and the
+kernel's parameters already take any block list. Interpreted, one bra
+record per block is `kernel_k`'s row bitwise for every class through
+`(dd|dd)`; `test/kblock_driver.py` runs either kernel on one upload, and on
+the RTX 3080 both matched `walk_kb` and libcint's `vk` on H₂O/STO-3G (τ 0 and
+1e-8), two H₂ and H₂O/cc-pVDZ (`slow`); the RX 9060 XT is compile-only
+(#431). **Nothing about it is measured yet:** `devtools/measure.sh kblock`
+would time both per class on H₂O/cc-pVDZ into `data/measured/kblock.json`,
+and its one attempt was refused by the card gate (the RTX 3080 busy from
+outside the container), so that file does not exist.
 **Since milestone 12 the repo has a second ERI engine and the first `F`**
 (`docs/implementation/hgp_fock.md` is the one place with the detail): the
 Head-Gordon–Pople recurrence of `[Fock]` §3.1 and the **fused** Fock kernel

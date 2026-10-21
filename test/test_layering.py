@@ -2612,3 +2612,75 @@ RULES["engine"] = Rule(RULES["engine"].why + ", and since #406 `j` / `k`: "
                        RULES["engine"].must_not)
 EDGES["engine"] = EDGES["engine"] | frozenset(("kernel_k", "kernel_hj",
                                                "kernel_hk"))
+
+
+# ---------------------------------------------------------------------------
+# #481: the block exchange kernel (opt-UM's mapping, one block per K_AB) and
+# its launch plan, siblings of `kernel_k` and `launch_k`. The builder shares
+# `kernel_k`'s per-pair body and the K seams' default hooks by import, and
+# keeps `k_builder`'s prohibitions: `ao.k` and the walk are its witnesses.
+# The plan is `launch_k.k_launches` regrouped, under `k_launch`'s
+# prohibitions; the builder arrives injected (`build=`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "kblock_builder": _rule(
+        "kernel_kblock.py (#481): the exchange kernel on opt-UM's mapping, "
+        "one block per contracted K_AB block -- `kernel_k`'s per-pair body "
+        "(`kernel_k.ket_body`) and the K seams' default hooks in another "
+        "loop nest, keyed on a `Target.K` `Spec`",
+        ("spec", "ir", "kernel", "kernel_k", "k_levers"),
+        **RULES["k_builder"].must_not,
+        launch_k="a launch plan is the kernel's consumer, never its ancestor",
+        launch_kblock="a launch plan is the kernel's consumer, never its "
+                      "ancestor"),
+    "kblock_launch": _rule(
+        "launch_kblock.py (#481): the block kernel's launch plan as a VALUE "
+        "-- `launch_k.k_launches`' records regrouped by first shell into "
+        "one block per (a, b) -- and its walk in Python on ao.k's staged "
+        "arithmetic; the bound and the builder arrive injected",
+        ("spec", "ir", "ao", "launch", "launch_k"),
+        **{k: v for k, v in RULES["k_launch"].must_not.items()
+           if k not in ("kernel", "ao")},
+        kernel="the builders arrive injected as `build=`: this plan names a "
+               "class's `Spec`, it does not build it",
+        kernel_k="the builders arrive injected as `build=`",
+        kernel_kblock="the builders arrive injected as `build=`"),
+}
+RULE_OF |= {
+    "kernel_kblock": "kblock_builder",
+    "launch_kblock": "kblock_launch",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_kblock": ("ir", "k_levers.seams", "kernel", "kernel_k", "spec"),
+    "launch_kblock": ("ao.j", "ao.k", "ao.shell", "ir", "launch", "launch_k",
+                      "spec"),
+}.items()}
+
+
+def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
+    # #481, TRANSITIVELY: the builder reaches no `ao/`, reference/, the
+    # interpreter, a backend, a card or a launch plan; the plan reaches no
+    # reference/, interpreter, backend, measured layer or kernel builder.
+    graph = _graph()
+
+    def reach(m: str) -> set[str]:
+        seen: set[str] = set()
+        todo = [m]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        return seen
+
+    for root, banned in (
+            ("kernel_kblock", (_REF, "ao", "interp", "emit", "device",
+                               "launch", "launch_k", "launch_kblock")),
+            ("launch_kblock", (_REF, "interp", "emit", "ao.drive",
+                               "ao.staged", "dispatch", "measured",
+                               "measured_store", "kernel_k",
+                               "kernel_kblock"))):
+        seen = reach(root)
+        hit = sorted(e for e in seen if any(_under(e, b) for b in banned))
+        assert not hit, f"{root} reaches {hit}"

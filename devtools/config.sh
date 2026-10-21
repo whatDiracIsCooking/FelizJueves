@@ -213,6 +213,7 @@ MEASURE_KERNELS_STORE=${MEASURE_KERNELS_STORE:-data/measured/kernels.json}
 MEASURE_ROOFLINE_STORE=${MEASURE_ROOFLINE_STORE:-data/measured/roofline.json}
 MEASURE_BUILDS_STORE=${MEASURE_BUILDS_STORE:-data/measured/builds.json}
 MEASURE_CEILINGS_STORE=${MEASURE_CEILINGS_STORE:-data/measured/ceilings.json}
+MEASURE_KBLOCK_STORE=${MEASURE_KBLOCK_STORE:-data/measured/kblock.json}
 
 # How a timed or profiled sweep runs: ALONE (no xdist -- a worker compiling
 # beside a timing makes it a different experiment), its prints shown, its
