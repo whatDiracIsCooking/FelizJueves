@@ -163,7 +163,8 @@ def test_mmd_f_is_refused_until_326() -> None:
 @pytest.mark.parametrize("target", [Target.DQ, Target.JAB, Target.S,
                                     Target.T, Target.V, Target.SX,
                                     Target.SCHWARZ, Target.METRIC,
-                                    Target.ERI3, Target.PAIR_BOUND])
+                                    Target.ERI3, Target.PAIR_BOUND,
+                                    Target.RECORD_BOUND])
 def test_hgp_is_refused_on_every_target_but_j_k_f(target) -> None:
     with pytest.raises(ValueError, match=f"engine hgp on target {target}"):
         _spec(target, Engine.HGP)

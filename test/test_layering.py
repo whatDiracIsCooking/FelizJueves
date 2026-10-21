@@ -1008,6 +1008,54 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
         assert not hit, f"kernel_pair_bound reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# #499: K's dressed record bound kernel, `Target.RECORD_BOUND`: each ordered
+# record's `ao.k.record_bounds`. A builder like `kernel_dq`: the key, IR and
+# the `E` fragment inlined, with `kernel_pair_bound`'s per-`p` closed form.
+# It is checked against `ao.k.record_bounds` through `reference.pq` in the
+# interpreter, so neither may be its ancestor.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "record_bound_builder": _rule(
+        "kernel_record_bound.py (#499): K's dressed record bound kernel, "
+        "`Target.RECORD_BOUND` -- key -> IR, the `E` fragment inlined "
+        "(`e_fragment`) and each `I_p` in `kernel_pair_bound`'s closed form",
+        ("spec", "ir", "plan.targets", "e_fragment", "kernel_pair_bound"),
+        ao="`ao.k.record_bounds` is the witness the kernel is interpreted "
+           "against, and `ao.pairs.dress` the prefactor it must not form: "
+           "importing either shares ancestry with it (#20)",
+        interp="the builder is checked by the interpreter, never built on it",
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "kernel_record_bound": "record_bound_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "kernel_record_bound": ("e_fragment", "ir", "kernel_pair_bound",
+                            "plan.targets", "spec"),
+}.items()}
+
+
+def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    # TRANSITIVELY, as for `kernel_pair_bound`, whose closed form it reuses.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["kernel_record_bound"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"e_fragment", "kernel_pair_bound"} <= seen
+    for banned in (_REF, "ao", "interp", "emit", "device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_record_bound reaches {hit}"
+
+
 def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # #237, TRANSITIVELY: no chain of imports from `kernel_s` reaches the AO
     # layer it is checked against, the interpreter, reference/, a backend or

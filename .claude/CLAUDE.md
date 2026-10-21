@@ -60,7 +60,17 @@ function of `la + lb` only, never batched), one thread per record, the
 closed form of `ao.pairs.pair_bound` at `PQ = 0` (two `SQRT`s and a Horner
 fold in `sqrt(ζ)`), within 16 eps of the host through `reference.pq` for
 every class `la ≤ lb ≤ 4`, interpreted (`test_kernel_pair_bound.py`) and on
-the RTX 3080 (`test_pair_bound_device.py`; the RX 9060 XT run is #431's). **Nothing about `DQ` or
+the RTX 3080 (`test_pair_bound_device.py`; the RX 9060 XT run is #431's).
+That is J's undressed bound; `K`'s screen is proved against the dressed one,
+`ao.k.record_bounds`, generated as `Target.RECORD_BOUND`
+(`kernel_record_bound.py`, #499; `am` an **ordered** pair `(la, lb)`, the max
+over the first shell's Cartesians, never batched): one thread per record,
+`e_fragment.block_fragment` inlined and each `I_p` in the same closed form
+(`kernel_pair_bound.hermite_bound_coefficients`), within 16 eps of the host
+for every ordered class `la, lb ≤ 3` and every record of H₂O/cc-pVDZ and
+the H₁₀ chain, interpreted (`test_kernel_record_bound.py`) and on the RX
+9060 XT (`test_record_bound_device.py`; the RTX 3080 was down in that
+session, so on CUDA it is compiled only). **Nothing about `DQ` or
 `JAB` is measured.** `j_engine.md`, "The J chain as device code", is the one
 place that says which steps are generated and on which cards they ran.
 Dispatch (`dispatch.py`, #145) chooses `n_batches` per class from measured

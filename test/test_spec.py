@@ -124,15 +124,16 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # cross-basis overlap `sx`, an ordered pair class, and #410 the
     # Coulomb metric `metric`, a pair of aux shells, and #441 the
     # three-center integral `eri3`, a triple, and the record bound
-    # `pair_bound`, a pair class.
+    # `pair_bound`, a pair class, and #499 K's dressed `record_bound`, an
+    # ordered pair class.
     assert [t.value for t in Target] == [
         "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric",
-        "eri3", "pair_bound"]
+        "eri3", "pair_bound", "record_bound"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
         Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
-        Target.PAIR_BOUND: 2,
+        Target.PAIR_BOUND: 2, Target.RECORD_BOUND: 2,
     }
 
 
@@ -234,6 +235,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.SCHWARZ: Operator.COULOMB, Target.SX: Operator.OVERLAP,
         Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
         Target.PAIR_BOUND: Operator.COULOMB,
+        Target.RECORD_BOUND: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
