@@ -61,8 +61,10 @@ it is accurate enough is a numerical question, and numerical questions are
 the kernel tier's (#28), against `reference.boys`, which this module does
 not import. Every kernel carries the same text (#301): the narrow and wide
 spellings of #266, and `Kernel.wide_boys` that picked between them, are gone.
-`emit/gpu.py` carries none: it writes the same text once, as the header
-`eval_boys.h`, and its units include it and call `eval_boys` (`CWriter.BOYS`).
+`emit/gpu.py` carries none: it writes the routine once, as the header
+`eval_boys.h`, and its units include it and call `eval_boys` (`CWriter.BOYS`);
+there the series loop is a fixed polynomial per order (gpu.py, "The Boys
+series"), the rest of the text this one.
 
 Names starting `fj_` are the writer's own and are refused in a kernel.
 """
