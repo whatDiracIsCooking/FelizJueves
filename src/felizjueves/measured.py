@@ -220,6 +220,7 @@ from felizjueves.measured_store import (
     GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: measure_kernel_device's sweep
 )
 from felizjueves.measured_store import (
+    HGP_JK_REFUSED,
     K_SUBGRID,
     KERNEL,
     MEASUREMENTS,
@@ -257,7 +258,7 @@ from felizjueves.measured_store import (
 from felizjueves.measured_store import (
     save_counters as save_counters,  # re-exported: measure_kernel_device's sweep
 )
-from felizjueves.spec import Spec, Target
+from felizjueves.spec import NATIVE_ENGINE, Spec, Target
 
 DEFAULT_LS = tuple(range(0, 17))
 
@@ -304,6 +305,8 @@ def cell_kernels(spec: Spec | AsymCell) -> tuple[Kernel, ...]:
 
 
 def _built(spec: Spec) -> tuple[Kernel, ...]:
+    if spec.engine is not NATIVE_ENGINE[spec.target]:  # #407: not admitted
+        raise ValueError(f"{spec.key()}: {HGP_JK_REFUSED}")
     other = tuple(lv for lv in spec.levers
                   if lv not in spec.kernel_body_levers())
     if spec.target is Target.F:  # #288: one unit, the fused kernel

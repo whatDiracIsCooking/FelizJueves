@@ -2515,3 +2515,23 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                    "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
+
+
+# #407 (milestone 14): the generator CLI writes the HGP split J / K behind
+# `--hgp-j-l` / `--hgp-k-l` / `--hgp-class` [`--ordered`], so the driver
+# composes `kernel_hj` and `kernel_hk` with the backends -- by their entry
+# points (the builders, `*_class_spec`, `*_name`, `built_class`), never
+# `hgp.orbits` behind them (#292's rule).
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP split J / K "
+                       "through `kernel_hj` / `kernel_hk`",
+                       RULES["driver"].may | frozenset(("kernel_hj",
+                                                        "kernel_hk")),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("kernel_hj", "kernel_hk"))
+
+
+def test_the_generator_reaches_the_hgp_jk_by_entry_point_only() -> None:
+    graph = _graph()
+    assert {"kernel_hj", "kernel_hk"} <= graph["emit.__main__"]
+    assert not any(_under(e, "hgp") for e in graph["emit.__main__"])

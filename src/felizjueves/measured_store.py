@@ -136,6 +136,15 @@ measured here and no F row is tracked. What an F row is:
   command that writes the rows) only when the store holds an F row, so the
   tracked file, which holds none, is rewritten byte for byte.
 
+THE HGP SPLIT J / K IS REFUSED (#407). Unlike F (#278), no `j.hgp` /
+`k.hgp` row is admitted ahead of its measurement: milestone 14 emits the
+`hj_` / `hk_` kernels (`python -m felizjueves.emit --hgp-*`) and times
+nothing, so a row now would be registers and spills with no clock beside
+them and no declared cell set to belong to. `merge` and `load` refuse any
+key on a non-native engine with `HGP_JK_REFUSED`, and the measured driver
+refuses to build such a cell; the issue that measures the HGP J / K admits
+the row, its cells and its header together.
+
 WALL-CLOCK (#53) is `runtime_ns`, `repeats` and `spread_ns`, written by the
 opt-in, `gpu`-marked sweep in measure/measure_kernel_device.py
 (`test_<backend>_wallclock_over_the_subgrid`, run alone and uncontended; its
@@ -1213,6 +1222,7 @@ def _row(path: Path, key: str, v: object) -> Measured:
         raise ValueError(f"{path}: row {key!r} records arch/toolchain "
                          f"{row.arch!r}/{row.toolchain!r}, not its key's")
     try:
+        _check_engine(key)
         _check_arm_kind(key, row)
         _check_target(key, row)
         _check_f(key, row)
@@ -1289,6 +1299,26 @@ def engine_of(key: str) -> Engine:
     """The `Spec.engine` a row key names: the suffix of its target slot, or
     the target's native engine when there is none (#401)."""
     return _slot_of(key)[1]
+
+
+# THE HGP SPLIT J / K IS NOT ADMITTED (#407's decision). A key whose target
+# slot carries a non-native engine (`j.hgp`, `k.hgp`; #401) is refused on
+# `merge` and on `load`, with this reason, until a later issue admits it.
+HGP_JK_REFUSED = (
+    "no HGP split J / K row is admitted yet (#407): milestone 14 emits and "
+    "checks the hj_ / hk_ kernels and times nothing, so a registers-and-spills "
+    "row would have no clock beside it and no declared cell to belong to; "
+    "the issue that measures them admits the row, its cell set and its "
+    "header together, as #278 did for F")
+
+
+def _check_engine(key: str) -> None:
+    """THE HGP SPLIT J / K IS NOT ADMITTED (`HGP_JK_REFUSED`): a key on a
+    non-native engine is refused. Every admitted target is on its native
+    engine (`f` is HGP's own)."""
+    target, engine = _slot_of(key)
+    if engine is not NATIVE_ENGINE[target]:
+        raise ValueError(f"row {key!r}: {HGP_JK_REFUSED}")
 
 
 def _check_target(key: str, row: Measured) -> None:
@@ -1374,6 +1404,7 @@ def merge(store: Mapping[str, Measured], key: MeasuredKey,
     a key of any target but J stamps the target (#201)."""
     if (key.arch.name, key.toolchain) != (row.arch, row.toolchain):
         raise ValueError(f"row is {row.arch}/{row.toolchain}, key {key.key()!r}")
+    _check_engine(key.key())
     if isinstance(key, MeasuredKey):
         kind = arm_kind(key.spec)  # refuses an undeclared lever or two arms
         if kind is not None and not row.arm_kind:
