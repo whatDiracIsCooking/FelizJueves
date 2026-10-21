@@ -410,7 +410,8 @@ from felizjueves.spec import Target  # noqa: E402
 
 # Every tracked fixture that records a converted basis, once per basis.
 BASES_1E = ("h2_sto3g_j", "h2o_sto3g_j", "prim_spdf", "h2o_631g_j",
-            "h2o_ccpvdz_j", "hf_ccpvtz", "h2o_sto3g_x_631g_moved")
+            "h2o_ccpvdz_j", "hf_ccpvtz", "h2o_sto3g_x_631g_moved",
+            "h10_chain_ccpvdz_j")
 LADDER_1E = ("h2o_sto3g_j", "prim_spdf", "h2_chain_8")
 
 

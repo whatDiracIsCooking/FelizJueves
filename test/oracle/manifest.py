@@ -56,7 +56,10 @@ THE SHAPE (schema 2, 3 or 4), one JSON object per file under `fixtures/`:
                  (which must carry `converted` and the same `cart`), `n` of
                  this one -- the oracle of `S_{B1,B2}` (`Target.SX`);
                  `cross_overlap(fx)` loads the partner and checks it.
-    density_recipe  how the recorded density was made
+    density_recipe  how the recorded density was made: "hilbert: ..."
+                 (1/(i+j+1), every case but one pair) or "rhf: ..."
+                 (#486, PySCF's converged RHF density, recorded and
+                 from then on the input; oracle.generate.case_density)
     converted    OPTIONAL. {common_factor, shells}: the basis in OUR convention
                  (`ao.shell.Shell`, one entry per contraction, in AO order) as
                  `oracle.basis` converts it -- coefficients are libcint's

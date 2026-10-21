@@ -18,6 +18,13 @@ and say so in the PR that changes the file.
 Adding a case is an entry in `CASES` plus `--regenerate <name>`. A case's
 inputs (`mol`, `basis`, `cart`) are part of what `--check` compares; the
 volatile provenance (versions, date, host) is not.
+
+An "rhf" density (#486, `Case.density`) is the one input not recomputed on
+`--check`: it is converged when its owner is regenerated, recorded, and read
+back from the tracked file thereafter (`case_density`), so every array stays
+bitwise reproducible; `--check` holds a fresh SCF to `RHF_DENSITY_TOL` of it.
+Regenerate the owner (`h10_chain_ccpvdz_j`) and its `_k` together, in that
+order: the `_k` reads the `_j`'s recorded density.
 """
 
 from __future__ import annotations
@@ -127,6 +134,15 @@ class Case:
     # m, n AOs of `parent`), full AO width. `aux_rows` stays None.
     three_center_set: str | None = None
     aux_cols: tuple[int, int] | None = None
+    # #486: the recorded density's recipe -- "hilbert" (every case before
+    # #486: `hilbert_density`, a function of nao alone) or "rhf" (PySCF's
+    # converged RHF density, which decays with distance). An "rhf" density
+    # is RECORDED and is the input from then on (`case_density`).
+    density: str = "hilbert"
+    # "rhf" only: the case whose tracked fixture owns the density. A `_k`
+    # names its `_j`, so the pair's densities are one matrix, bit for bit
+    # (`manifest.check_pair`); None means this case converges its own.
+    density_from: str | None = None
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -170,6 +186,23 @@ def hilbert_density(nao: int) -> np.ndarray:
 
 DENSITY_RECIPE = ("hilbert: D[i][j] = 1/(i+j+1) -- symmetric positive "
                   "definite, no RNG, reproducible bit-for-bit on any host")
+
+# #486: the converged RHF density. Converging an SCF is not bit-reproducible
+# (a thread count or a BLAS reorders the sums), so the density is RECORDED
+# when its owner case is regenerated and is an input from then on: every
+# array is computed from the recorded matrix, exactly as from a hilbert one.
+# `--check` re-converges and holds the fresh density to RHF_DENSITY_TOL of
+# the recorded one, a tolerance and never bitwise.
+RHF_CONV_TOL = 1e-12  # energy, Eh
+RHF_CONV_TOL_GRAD = 1e-10  # orbital gradient
+RHF_DENSITY_TOL = 1e-8  # max |D_fresh - D_recorded|, --check only
+RHF_DENSITY_RECIPE = (
+    f"rhf: PySCF's converged closed-shell RHF density (total, 2 C_occ "
+    f"C_occ^T, symmetrised as (D + D^T) / 2; conv_tol {RHF_CONV_TOL:g}, "
+    f"conv_tol_grad {RHF_CONV_TOL_GRAD:g}), recorded; every array is "
+    "computed from the recorded matrix, which --check holds to "
+    f"{RHF_DENSITY_TOL:g} of a fresh SCF, not bitwise")
+DENSITY_RECIPES = {"hilbert": DENSITY_RECIPE, "rhf": RHF_DENSITY_RECIPE}
 
 _H2O = "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12"
 
@@ -357,6 +390,32 @@ CASES.update({
     j[:-1] + "k": _k_case(j)
     for j in ("h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_j", "h2o_ccpvdz_j")
 })
+
+# #486: five H2 on z (bond 1.4 bohr, 4.0 bohr between molecules), the
+# atoms at z = 5.4 k + {0, 1.4}. Ten electrons, 50 Cartesian AOs; H20 would
+# be 100 AOs, whose `_k` alone (density, ovlp, vk) is ~660 KB, over the
+# 512 KB hook.
+_H10_CHAIN = "; ".join(f"H 0 0 {round(5.4 * k + d, 1)}"
+                       for k in range(5) for d in (0.0, 1.4))
+
+CASES["h10_chain_ccpvdz_j"] = Case(
+    description=(
+        "#486: an H10 chain -- five H2 on z, bond 1.4 bohr, 4.0 bohr "
+        "between molecules -- in cc-pVDZ, Cartesian, with PySCF's converged "
+        "RHF density recorded: the first fixture whose density decays with "
+        "distance (#484's per-block density factor can fire on it). Records "
+        "the converted basis and PySCF's get_jk J for the recorded density."
+    ),
+    atom=_H10_CHAIN,
+    unit="Bohr",
+    basis="cc-pvdz",
+    cart=True,
+    record_basis=True,
+    record_j=True,
+    density="rhf",
+)
+CASES["h10_chain_ccpvdz_k"] = replace(
+    _k_case("h10_chain_ccpvdz_j"), density_from="h10_chain_ccpvdz_j")
 
 
 def _schwarz_case(j_name: str) -> Case:
@@ -594,8 +653,60 @@ def _mole(case: Case) -> Any:
                  charge=case.charge, spin=case.spin, verbose=0)
 
 
-def build(name: str) -> dict[str, Any]:
-    """The fixture object for `name`, computed now by PySCF/libcint."""
+def rhf_density(mol: Any) -> np.ndarray:
+    """#486: PySCF's converged closed-shell RHF density (the total density,
+    `make_rdm1`), symmetrised so it is exactly symmetric -- `(D + D^T) / 2`
+    is, because floating-point addition commutes. Refuses an SCF that did
+    not converge."""
+    from pyscf import scf
+
+    mf = scf.RHF(mol)
+    mf.conv_tol = RHF_CONV_TOL
+    mf.conv_tol_grad = RHF_CONV_TOL_GRAD
+    mf.kernel()
+    if not mf.converged:
+        raise ValueError("RHF did not converge")
+    dm = np.asarray(mf.make_rdm1(), dtype=np.float64)
+    return 0.5 * (dm + dm.T)
+
+
+def _tracked_density(name: str) -> np.ndarray | None:
+    path = FIXTURES / f"{name}.json"
+    return np.array(load(path).density) if path.exists() else None
+
+
+def case_density(name: str, mol: Any, *, fresh: bool = False) -> np.ndarray:
+    """The density `name`'s arrays are computed from.
+
+    hilbert: `hilbert_density(nao)`. rhf: the RECORDED matrix -- the tracked
+    fixture of `density_from` (a `_k`'s `_j`, which must be tracked first),
+    or of `name` itself; a fresh `rhf_density` only for an owner regenerated
+    (`fresh`) or not yet tracked.
+    """
+    case = CASES[name]
+    nao = int(mol.nao_nr())
+    if case.density == "hilbert":
+        return hilbert_density(nao)
+    if case.density != "rhf":
+        raise ValueError(f"{name}: unknown density recipe {case.density!r}")
+    if case.density_from is not None:
+        dm = _tracked_density(case.density_from)
+        if dm is None:
+            raise ValueError(f"{name}: its density is {case.density_from}'s "
+                             f"recorded one; regenerate {case.density_from} "
+                             "first")
+    else:
+        dm = None if fresh else _tracked_density(name)
+        if dm is None:
+            dm = rhf_density(mol)
+    if dm.shape != (nao, nao):
+        raise ValueError(f"{name}: density has shape {dm.shape}, nao {nao}")
+    return dm
+
+
+def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
+    """The fixture object for `name`, computed now by PySCF/libcint, from
+    `case_density(name, mol, fresh=fresh_density)`."""
     import pyscf
 
     case = CASES[name]
@@ -632,6 +743,7 @@ def build(name: str) -> dict[str, Any]:
 
     nao = int(mol.nao_nr())
     ao_loc = mol.ao_loc_nr(cart=case.cart)
+    dm = case_density(name, mol, fresh=fresh_density)
     out = {
         "schema": AO_SCHEMA,
         "name": name,
@@ -654,10 +766,10 @@ def build(name: str) -> dict[str, Any]:
         "ao_labels": list(mol.ao_labels()),
         "ao_loc": [int(x) for x in ao_loc],
         "arrays": {
-            "density": encode_array(hilbert_density(nao)),
+            "density": encode_array(dm),
             "ovlp": encode_array(mol.intor("int1e_ovlp")),
         },
-        "density_recipe": DENSITY_RECIPE,
+        "density_recipe": DENSITY_RECIPES[case.density],
     }
     if case.aux_basis is not None and case.three_center_set is not None:
         return _three_center_fixture(name, case, parent_mol, mol, out)
@@ -675,11 +787,11 @@ def build(name: str) -> dict[str, Any]:
     if case.record_j:
         if not case.record_basis:
             raise ValueError(f"{name}: record_j needs record_basis")
-        out["arrays"][J_ARRAY] = encode_array(j_array(mol))
+        out["arrays"][J_ARRAY] = encode_array(j_array(mol, dm))
     if case.record_k:
         if not case.record_basis:
             raise ValueError(f"{name}: record_k needs record_basis")
-        out["arrays"][K_ARRAY] = encode_array(k_array(mol))
+        out["arrays"][K_ARRAY] = encode_array(k_array(mol, dm))
     if case.record_schwarz:
         if not case.record_basis:
             raise ValueError(f"{name}: record_schwarz needs record_basis")
@@ -798,8 +910,9 @@ def one_e_arrays(mol: Any) -> dict[str, Any]:
             NUC_ARRAY: encode_array(v), HCORE_ARRAY: encode_array(h)}
 
 
-def j_array(mol: Any) -> np.ndarray:
-    """PySCF's Coulomb matrix for the recorded density: `scf.hf.get_jk` with
+def j_array(mol: Any, dm: np.ndarray) -> np.ndarray:
+    """PySCF's Coulomb matrix for the recorded density `dm`: `scf.hf.get_jk`
+    with
     `hermi=1` (the density is exactly symmetric) and no `vhfopt`, so no
     integral screening on PySCF's side either. Cross-checked against the full
     `int2e` tensor contracted by `einsum`, to 1e-13 of the largest element,
@@ -807,7 +920,6 @@ def j_array(mol: Any) -> np.ndarray:
     libcint's own integrals; what is RECORDED is `get_jk`'s."""
     from pyscf import scf
 
-    dm = hilbert_density(int(mol.nao_nr()))
     vj, _ = scf.hf.get_jk(mol, dm, hermi=1, with_k=False)
     vj = np.asarray(vj, dtype=np.float64)
     full = np.einsum("ijkl,kl->ij", mol.intor("int2e"), dm)
@@ -817,8 +929,9 @@ def j_array(mol: Any) -> np.ndarray:
     return vj
 
 
-def k_array(mol: Any) -> np.ndarray:
-    """PySCF's exchange matrix for the recorded density: `scf.hf.get_jk` with
+def k_array(mol: Any, dm: np.ndarray) -> np.ndarray:
+    """PySCF's exchange matrix for the recorded density `dm`: `scf.hf.get_jk`
+    with
     `hermi=1` and no `vhfopt`, as `j_array`, keeping the K half. PySCF's
     convention is `vk_il = sum_jk (ij|kl) D_jk`, which by the ERI's
     symmetry is `ao.k`'s `K_ab = sum_cd D_cd (ac|bd)`. Cross-checked against
@@ -827,7 +940,6 @@ def k_array(mol: Any) -> np.ndarray:
     RECORDED is `get_jk`'s."""
     from pyscf import scf
 
-    dm = hilbert_density(int(mol.nao_nr()))
     _, vk = scf.hf.get_jk(mol, dm, hermi=1, with_j=False)
     vk = np.asarray(vk, dtype=np.float64)
     full = np.einsum("acbd,cd->ab", mol.intor("int2e"), dm)
@@ -876,9 +988,22 @@ def drift(name: str) -> str | None:
     tracked = json.loads(path.read_text())
     load(path)  # the tracked file must itself be valid
     fresh = build(name)
-    if comparable(fresh) == comparable(tracked):
-        return None
     tp, fp = tracked["provenance"], fresh["provenance"]
+    if comparable(fresh) == comparable(tracked):
+        case = CASES[name]
+        if case.density != "rhf" or case.density_from is not None:
+            return None
+        # #486: the arrays are the recorded density's exactly; the density
+        # itself is held to a fresh SCF within a tolerance, never bitwise.
+        err = float(np.max(np.abs(rhf_density(_mole(case))
+                                  - np.array(load(path).density))))
+        if err <= RHF_DENSITY_TOL:
+            return None
+        return (f"{path}: PySCF {fp['pyscf']} now converges an RHF density "
+                f"{err:.3e} (max abs) from the one recorded by pyscf "
+                f"{tp['pyscf']} on {tp['date']} ({tp['host']}), over "
+                f"RHF_DENSITY_TOL = {RHF_DENSITY_TOL:g}. Decide which is "
+                f"right before running `{COMMAND} {name}`.")
     diffs = [k for k in fresh if k != "provenance" and fresh[k] != tracked[k]]
     diffs += [f"provenance.{k}" for k in fp
               if k not in VOLATILE and fp[k] != tp[k]]
@@ -922,7 +1047,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.regenerate:
             path = FIXTURES / f"{name}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(dumps(build(name)))
+            path.write_text(dumps(build(name, fresh_density=True)))
             load(path)
             print(f"wrote {path}")
         else:

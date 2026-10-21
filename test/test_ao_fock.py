@@ -137,10 +137,18 @@ PARAMS = ([pytest.param(n, id=n) for n in FAST]
           + [pytest.param(n, id=n, marks=pytest.mark.slow) for n in SLOW])
 
 # every tracked molecule with a density and both PySCF matrices
-PAIRS = ("h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
+PAIRS = ("h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz",
+         "h10_chain_ccpvdz")
 LIBCINT_FAST_WHOLE = ("h2_sto3g",)
 LIBCINT_FAST_SS = ("h2o_sto3g", "h2o_631g")
 LIBCINT_SLOW_WHOLE = ("h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
+# #486's H10 chain (50 AOs, 30 shells) is tracked for its decaying RHF
+# density, a consumer's input; it is NOT run whole here, by cost: an
+# interpreted sweep over every quartet grows ~(30/12)^4 ~ 40x over
+# H2O/cc-pVDZ (12 shells), already the slowest case. Its vj / vk are
+# libcint's, cross-checked against einsum over the full int2e when
+# written (oracle.generate).
+LIBCINT_NOT_RUN = ("h10_chain_ccpvdz",)
 
 
 def test_the_fast_cases_keep_to_the_rule():
@@ -155,7 +163,8 @@ def test_the_fast_cases_keep_to_the_rule():
     for m in LIBCINT_FAST_SS:
         basis = _fixture(f"{m}_j")[1]
         assert max(s.l for s in basis.shells) == 1, m
-    assert set(LIBCINT_FAST_WHOLE) | set(LIBCINT_SLOW_WHOLE) == set(PAIRS)
+    assert (set(LIBCINT_FAST_WHOLE) | set(LIBCINT_SLOW_WHOLE)
+            | set(LIBCINT_NOT_RUN)) == set(PAIRS)
     # every tracked fixture carrying both `vj` (in `_j`) and `vk` (in `_k`)
     with_both = {p.name[:-len("_j.json")] for p in manifest.tracked()
                  if p.name.endswith("_j.json")
