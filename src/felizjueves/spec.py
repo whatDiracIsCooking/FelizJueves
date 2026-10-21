@@ -68,6 +68,31 @@ shells therefore give different specs and different keys under `F` and `K`.
 4): every pre-existing key is byte-identical. The trigger that would force a
 `scheme` field is named: the first fused MMD `F`, or the first HGP `J`/`K`.
 
+THE RECURRENCE IS A FIELD, `engine` (#401). That trigger has come: milestone
+14 builds the first HGP `J`/`K`. [Fock] confounds the recurrence with the
+digestion (§1, §4.3); `Target` already names the digestion (`J`/`K` split,
+`F` fused), so the axis a `Spec` could not spell was the RECURRENCE --
+`Engine.MMD` (McMurchie-Davidson, [JEngine]) or `Engine.HGP`
+(Head-Gordon-Pople, [Fock] §3.1). Every target has a NATIVE engine
+(`NATIVE_ENGINE`: `F` -> HGP, every other target -> MMD), and
+`Spec(..., engine=None)`, the default, resolves to it, so every existing
+constructor builds the spec it always did. The key spells the engine ONLY
+when it is not the native one, as a suffix of the target slot
+(`Spec.target_slot`): ``coulomb/d0/(1,1|1,0)/b1/j.hgp/literal``,
+``.../k.hgp/...``, and (#326, not yet legal) ``.../f.mmd/...``. Still the
+same six segments; `.` and not `@`, which separates the arch in
+`MeasuredKey`. So every pre-existing key is byte-identical and no stored key
+carries a suffix. A non-native engine is legal only where it is being built:
+HGP on `J` and `K`. Every other non-native pairing is refused with its reason
+(`_ENGINE_REFUSAL`), MMD `F` among them until #326.
+
+`am` IS THE PAIRING THE RECURRENCE USES -- one rule, under either engine. A
+J class is `(la, lb | lc, ld)`: its ERI is (ab|cd), bra (a, b), under MMD
+and HGP alike. A K class is `(la, lc | lb, ld)` under BOTH engines: its ERI
+is (ac|bd), so the HGP bra pair is (a, c) exactly as MMD's Hermite bra pair
+is -- an HGP `K` is NOT spelled in `F`'s AO order. An F class is
+`(la, lb | lc, ld)`: the fused build digests (ab|cd) itself.
+
 A SCHWARZ CLASS IS A PAIR THAT RUNS A QUARTET. `Target.SCHWARZ` is the
 matrix `sqrt((mn|mn))` over every AO pair `(m, n)`, the Schwarz factor of
 `|(mn|rs)| <= sqrt((mn|mn)) sqrt((rs|rs))`. Its class is the shell pair
@@ -139,13 +164,17 @@ positive multiple of 3 -- finer splits break the three-way symmetry
 ([JEngine, v2, §5]). `is_batch_count` is that rule, stated once; for a
 pair target the count is 1 and only 1 (above).
 
-A KERNEL-BODY LEVER IS LEGAL PER TARGET (#337). `levers` holds names from
-several layers: the plan's (`no-sieve`, `tuned`), lowering's (`recycle`)
-and, since milestone 13, the kernel builders' own (`levers.VOCABULARY`). The
-last kind is checked HERE, against each lever's legality table, and an
-illegal `(target, lever)` is refused with the table's stated reason; a name
-outside the vocabulary passes through to its own layer, as before. The key
-spells every lever alike, so every pre-existing key is byte-identical.
+A KERNEL-BODY LEVER IS LEGAL PER TARGET SLOT (#337, #401). `levers` holds
+names from several layers: the plan's (`no-sieve`, `tuned`), lowering's
+(`recycle`) and, since milestone 13, the kernel builders' own
+(`levers.VOCABULARY`). The last kind is checked HERE, against each lever's
+legality table, and an illegal `(slot, lever)` is refused with the table's
+stated reason; a name outside the vocabulary passes through to its own
+layer, as before. The table is keyed by `target_slot`, not by the target
+alone, because `j` and `k` now exist under both engines and a lever written
+for one engine's kernel has nothing to act on in the other's: `ordered` is
+legal on `j.hgp` / `k.hgp` only. The key spells every lever alike, so every
+pre-existing key is byte-identical.
 
 Values only, plus two derived reads: `total_am` above, and `key`, a string
 form of the key for file names and JSON, where a dataclass cannot go.
@@ -211,6 +240,13 @@ class Target(StrEnum):
     PAIR_BOUND = "pair_bound"
 
 
+class Engine(StrEnum):
+    """The RECURRENCE a kernel runs (#401, module docstring)."""
+
+    MMD = "mmd"  # McMurchie-Davidson: the [p|q] tower of [JEngine]
+    HGP = "hgp"  # Head-Gordon-Pople: the VRR/HRR of [Fock] §3.1
+
+
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
 # [p|q] kernel, a pair (la, lb) for the two per-pair families (#150), and a
 # quartet (la, lc | lb, ld) in Hermite order for the exchange matrix (#196),
@@ -237,6 +273,58 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
     Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
     Target.PAIR_BOUND: Operator.COULOMB,
+}
+
+
+# Each target's NATIVE engine (#401): the one its key does not spell. `F` is
+# the fused build on HGP (#272); every other target is MMD's.
+NATIVE_ENGINE: dict[Target, Engine] = {
+    t: Engine.HGP if t is Target.F else Engine.MMD for t in Target
+}
+
+
+# Why a (target, engine) other than the native one is refused (#401). Only
+# HGP `J` and HGP `K` are legal off-native: milestone 14 builds them.
+_NO_HGP_PAIR = (
+    "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
+    "this pair kernel runs no ERI recurrence at all, so there is nothing "
+    "for HGP to replace"
+)
+_NO_HGP_ONE_E = (
+    "the HGP engine is the two-electron VRR/HRR of [Fock] §3.1; this "
+    "one-electron kernel is McMurchie-Davidson's E fragment, not an ERI"
+)
+
+
+def _mmd_only(what: str) -> str:
+    return (f"{what} runs the Target.J quartet's MMD plan by construction "
+            "(its Hermite targets, the parity-dead drop, the E fragment "
+            "inlined); an HGP instance is a follow-up nobody has declared")
+
+
+_ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
+    (Target.DQ, Engine.HGP): _NO_HGP_PAIR,
+    (Target.JAB, Engine.HGP): _NO_HGP_PAIR,
+    (Target.PAIR_BOUND, Engine.HGP): (
+        "the record bound is a closed form per primitive-pair record, with "
+        "no ERI recurrence for HGP to replace"
+    ),
+    (Target.S, Engine.HGP): _NO_HGP_ONE_E,
+    (Target.T, Engine.HGP): _NO_HGP_ONE_E,
+    (Target.SX, Engine.HGP): _NO_HGP_ONE_E,
+    (Target.V, Engine.HGP): (
+        "V is the MMD J engine with the ket a unit point charge "
+        "(theta -> sqrt(zeta)); the HGP VRR/HRR has no point-charge ket, "
+        "and an HGP V is a follow-up nobody has declared"
+    ),
+    (Target.SCHWARZ, Engine.HGP): _mmd_only(
+        "the Schwarz kernel (la lb|la lb)"),
+    (Target.METRIC, Engine.HGP): _mmd_only("the metric (lP 0|lQ 0)"),
+    (Target.ERI3, Engine.HGP): _mmd_only("the three-center (la lb|lP 0)"),
+    (Target.F, Engine.MMD): (
+        "the fused F is built on HGP only ([Fock] §3.2); a fused MMD F is "
+        "#326, not yet built"
+    ),
 }
 
 
@@ -324,6 +412,10 @@ class Spec:
     # 1, or a multiple of 3: finer splits break the three-way symmetry
     # ([JEngine, v2, §5]).
     n_batches: int = 1
+    # The recurrence (#401). None, the default, resolves to the target's
+    # native engine (`NATIVE_ENGINE`), so after construction it is always an
+    # `Engine`; the key spells it only when it is not the native one.
+    engine: Engine | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.operator, Operator):
@@ -335,6 +427,14 @@ class Spec:
                 f"target {self.target} is built from operator "
                 f"{OPERATOR_OF[self.target]}, not {self.operator}"
             )
+        if self.engine is None:
+            object.__setattr__(self, "engine", NATIVE_ENGINE[self.target])
+        if not isinstance(self.engine, Engine):
+            raise ValueError(f"engine {self.engine!r} is not an Engine")
+        why = _ENGINE_REFUSAL.get((self.target, self.engine))
+        if why is not None:
+            raise ValueError(
+                f"engine {self.engine} on target {self.target}: {why}")
         if (
             type(self.derivative_order) is not int
             or self.derivative_order not in DERIVATIVE_ORDERS
@@ -369,10 +469,10 @@ class Spec:
         if tuple(sorted(set(self.levers))) != self.levers:
             raise ValueError(f"levers {self.levers!r} must be sorted and unique")
         for lever in self.levers:
-            why = _levers.refusal(self.target, lever)
+            why = _levers.refusal(self.target_slot, lever)
             if why is not None:
                 raise ValueError(
-                    f"lever {lever!r} on target {self.target}: {why}")
+                    f"lever {lever!r} on target {self.target_slot}: {why}")
         if not is_batch_count(self.n_batches):
             raise ValueError(
                 f"n_batches {self.n_batches!r} is neither 1 nor a positive "
@@ -389,6 +489,16 @@ class Spec:
                 f"{self.target}: "
                 f"{_PAIR_BATCH_REFUSAL[self.target]}"
             )
+
+    @property
+    def target_slot(self) -> str:
+        """The key's target segment (#401): the target's slot, plus
+        ``.<engine>`` when the engine is not the target's native one --
+        ``j``, ``f``, ``j.hgp``, ``k.hgp``. Kernel-body lever legality is
+        per slot (`levers.SLOTS`)."""
+        if self.engine is NATIVE_ENGINE[self.target]:
+            return self.target.value
+        return f"{self.target.value}.{self.engine.value}"
 
     @property
     def total_am(self) -> int:
@@ -433,7 +543,8 @@ class Spec:
         measured row. An F class spells ``coulomb/d0/(2,1|1,0)/b1/f/literal``
         -- the AO order, target slot ``f`` (#272). An ERI3 triple spells
         ``coulomb/d0/(2,1|3)/b1/eri3/literal`` -- the bra pair, ``|``, the
-        one aux shell (#441).
+        one aux shell (#441). A non-native engine suffixes the target slot:
+        ``coulomb/d0/(1,1|1,0)/b1/j.hgp/literal`` (#401, `target_slot`).
         """
         if len(self.am) == 4:
             l1, l2, l3, l4 = self.am
@@ -447,7 +558,7 @@ class Spec:
         levers = "+".join(self.levers) or "literal"
         return (
             f"{self.operator}/d{self.derivative_order}/{cls}/"
-            f"b{self.n_batches}/{self.target}/{levers}"
+            f"b{self.n_batches}/{self.target_slot}/{levers}"
         )
 
     def kernel_body_levers(self) -> tuple[str, ...]:
@@ -463,7 +574,7 @@ class Spec:
         if not body:
             return self
         return Spec(self.operator, self.derivative_order, self.am,
-                    self.target, rest, self.n_batches)
+                    self.target, rest, self.n_batches, self.engine)
 
 
 def lever_provenance(name: str) -> str:

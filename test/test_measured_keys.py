@@ -9,23 +9,26 @@ does not call `Spec.key()`, the card and compiler from the row's own fields
 key of the TRACKED data/measured/kernels.json, and that no new target's key
 joins a tracked row, are checks of a measurement artefact:
 measure/measure_measured_keys.py (`devtools/measure.sh check`), which imports
-`_derive` from here.
+`_derive` from here. One read of the tracked keys stays here (#401): that no
+stored key carries an engine suffix -- a read of keys, not a re-derivation.
 """
 
 from __future__ import annotations
 
 import hashlib
 import itertools
+import json
 import re
 
 from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
 from felizjueves.device import MeasuredKey, by_name
 from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.measured_store import (
+    engine_of,
     split_key,
     target_of,
 )
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import NATIVE_ENGINE, Engine, Operator, Spec, Target
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
 _SPEC_KEY = re.compile(
@@ -144,3 +147,39 @@ def test_an_eri3_key_is_never_read_as_a_j_row() -> None:
     assert MeasuredKey(Spec(Operator.COULOMB, 0, (2, 1, 3), Target.ERI3),
                        by_name("sm_86"), "nvcc 13.0").key() == (
         "coulomb/d0/(2,1|3)/b1/eri3/literal@sm_86/nvcc 13.0")
+
+
+# --- #401: Spec.engine moves no key ------------------------------------------
+
+
+def test_spec_engine_moves_no_j_key() -> None:
+    # The same 510 keys and digest as before #401: a native engine is never
+    # spelled, so `engine=None` and the explicit native engine key alike.
+    keys = _j_keys()
+    digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
+    assert (len(keys), digest) == J_KEYS_BEFORE_441
+    assert all(engine_of(k) is Engine.MMD for k in keys)
+
+
+def test_no_stored_key_carries_an_engine_suffix() -> None:
+    # The tracked store's keys, read raw (no loader, no rewrite): every one's
+    # target slot is a bare target, its engine the native one.
+    from felizjueves.measured_store import STORE
+    keys = list(json.loads(STORE.read_text())["rows"])
+    assert keys
+    for key in keys:
+        slot = split_key(key)[0].split("/")[4]
+        assert "." not in slot, key
+        assert engine_of(key) is NATIVE_ENGINE[target_of(key)], key
+
+
+def test_an_hgp_key_is_never_read_as_an_mmd_j_row() -> None:
+    j = set(_j_keys())
+    for L in range(5):
+        spec = pq_spec(L)
+        hgp = Spec(spec.operator, 0, spec.am, Target.J, (), 1, Engine.HGP)
+        for a, tc in _CARDS:
+            key = MeasuredKey(hgp, by_name(a), tc).key()
+            assert key not in j
+            assert not _SPEC_KEY.fullmatch(split_key(key)[0])
+            assert (target_of(key), engine_of(key)) == (Target.J, Engine.HGP)

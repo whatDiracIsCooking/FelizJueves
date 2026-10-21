@@ -26,6 +26,7 @@ def test_k_is_a_widening_not_a_new_field() -> None:
     assert Target.K == "k" and AM_LENGTH[Target.K] == 4
     assert [f.name for f in dataclasses.fields(Spec)] == [
         "operator", "derivative_order", "am", "target", "levers", "n_batches",
+        "engine",  # #401's field, the recurrence; K added none
     ]
 
 
