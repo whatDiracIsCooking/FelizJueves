@@ -64,7 +64,9 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import FAST_L_MAX
 
-from felizjueves.ao.eri3 import (
+from felizjueves.ao.pairs import dress, primitive_pairs
+from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.eri.density_fit.eri3 import (
     Eri3Class,
     class_block,
     eri3_block,
@@ -74,9 +76,7 @@ from felizjueves.ao.eri3 import (
     place_staged,
     scale_tensor,
 )
-from felizjueves.ao.metric import aux_records
-from felizjueves.ao.pairs import dress, primitive_pairs
-from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.eri.density_fit.metric import aux_records
 from felizjueves.reference.pq import pq
 
 SET = "h2o_sto3g_jkfit_3c"

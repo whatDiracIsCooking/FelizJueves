@@ -36,8 +36,8 @@ import pytest
 
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.density_fit.kernel_eri3 import build_eri3_kernel, eri3_name
 from felizjueves.ir import Raw, walk
-from felizjueves.kernel_eri3 import build_eri3_kernel, eri3_name
 from felizjueves.performance.device import GFX1200, SM_86
 
 ROOT = Path(__file__).resolve().parent.parent

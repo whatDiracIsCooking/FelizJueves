@@ -43,14 +43,23 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import FAST_L_MAX, by_l
 
-from felizjueves.ao.metric import (
+from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.density_fit.kernel_metric import (
+    OUT,
+    build_metric_kernel,
+    launch_shape,
+    live_targets,
+    metric_plan,
+    metric_spec,
+    quartet_spec,
+)
+from felizjueves.eri.density_fit.metric import (
     class_block,
     metric_block_and_scale,
     metric_classes,
     place_staged,
 )
-from felizjueves.ao.metric_drive import metric_kernel, metric_matrix_kernel
-from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.density_fit.metric_drive import metric_kernel, metric_matrix_kernel
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -60,15 +69,6 @@ from felizjueves.ir import (
     Inline,
     Kernel,
     walk,
-)
-from felizjueves.kernel_metric import (
-    OUT,
-    build_metric_kernel,
-    launch_shape,
-    live_targets,
-    metric_plan,
-    metric_spec,
-    quartet_spec,
 )
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.recurrence import node_name

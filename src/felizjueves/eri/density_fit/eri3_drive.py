@@ -28,16 +28,16 @@ from functools import cache
 
 import numpy as np
 
-from felizjueves.ao.eri3 import Eri3Class, eri3_classes
 from felizjueves.ao.shell import Basis
-from felizjueves.ir import Kernel
-from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_eri3 import (
+from felizjueves.eri.density_fit.eri3 import Eri3Class, eri3_classes
+from felizjueves.eri.density_fit.kernel_eri3 import (
     OUT,
     PARAM_OF,
     build_eri3_kernel,
     launch_shape,
 )
+from felizjueves.ir import Kernel
+from felizjueves.ir.interp import Interpreter, Launch
 
 Boys = Callable[[int, float], float]
 

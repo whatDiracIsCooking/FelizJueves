@@ -76,8 +76,8 @@ from test_kernel_eri3 import (
 )
 from tiers import FAST_L_MAX
 
-from felizjueves.ao.eri3 import eri3_classes
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.density_fit.eri3 import eri3_classes
 
 L_CAP = FAST_L_MAX  # 4, the milestone's cap
 BASES = ("synthetic", "fixture")

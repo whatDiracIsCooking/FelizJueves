@@ -42,14 +42,23 @@ from oracle import manifest
 from test_kernel_metric import pq_tower
 from tiers import FAST_L_MAX, by_l
 
-from felizjueves.ao.eri3 import (
+from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.density_fit.eri3 import (
     class_block,
     eri3_block_and_scale,
     eri3_classes,
     place_staged,
 )
-from felizjueves.ao.eri3_drive import eri3_kernel, eri3_tensor_kernel
-from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.density_fit.eri3_drive import eri3_kernel, eri3_tensor_kernel
+from felizjueves.eri.density_fit.kernel_eri3 import (
+    OUT,
+    build_eri3_kernel,
+    eri3_plan,
+    eri3_spec,
+    launch_shape,
+    live_targets,
+    quartet_spec,
+)
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -59,15 +68,6 @@ from felizjueves.ir import (
     Inline,
     Kernel,
     walk,
-)
-from felizjueves.kernel_eri3 import (
-    OUT,
-    build_eri3_kernel,
-    eri3_plan,
-    eri3_spec,
-    launch_shape,
-    live_targets,
-    quartet_spec,
 )
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.recurrence import node_name

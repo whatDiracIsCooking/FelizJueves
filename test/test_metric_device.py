@@ -71,8 +71,8 @@ from test_kernel_metric import (
 )
 from tiers import FAST_L_MAX
 
-from felizjueves.ao.metric import metric_classes
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.density_fit.metric import metric_classes
 
 L_CAP = FAST_L_MAX  # 4, the milestone's cap
 BASES = ("synthetic", "fixture")

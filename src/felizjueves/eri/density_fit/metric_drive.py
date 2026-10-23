@@ -27,16 +27,16 @@ from functools import cache
 
 import numpy as np
 
-from felizjueves.ao.metric import MetricClass, metric_classes
 from felizjueves.ao.shell import Basis
-from felizjueves.ir import Kernel
-from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_metric import (
+from felizjueves.eri.density_fit.kernel_metric import (
     OUT,
     PARAM_OF,
     build_metric_kernel,
     launch_shape,
 )
+from felizjueves.eri.density_fit.metric import MetricClass, metric_classes
+from felizjueves.ir import Kernel
+from felizjueves.ir.interp import Interpreter, Launch
 
 Boys = Callable[[int, float], float]
 
