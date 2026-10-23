@@ -96,7 +96,7 @@ import dataclasses
 import struct
 from collections.abc import Callable
 
-from felizjueves.f_levers.seams import BOYS_ARRAY, FContext, FHooks
+from felizjueves.eri.fock.levers.seams import BOYS_ARRAY, FContext, FHooks
 from felizjueves.ir import (
     Boys,
     Call,

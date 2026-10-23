@@ -81,7 +81,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from felizjueves.f_levers.seams import FContext, FHooks
+from felizjueves.eri.fock.levers.seams import FContext, FHooks
 from felizjueves.ir import Break, Call, Fn, If, Index, Note, Param, Scalar, Stmt, Var
 from felizjueves.spec import Spec
 

@@ -69,19 +69,21 @@ from oracle import manifest
 from test_fock_build import BOUND, LIBCINT_TOL, TOL, molecule, run, sweep
 from tiers import is_fast, split_by_l
 
-from felizjueves import f_levers, levers, walk_f
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import cuda, hip
 from felizjueves.eri import hgp_drive
 from felizjueves.eri.eri import eri_block_and_scale as mmd_eri
-from felizjueves.f_levers import etr as E
-from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock import walk_f
+from felizjueves.eri.fock.kernel_f import build_f_kernel, close, f_class_spec
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.levers import etr as E
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import cost, etr, hrr, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import Decl, Note, walk
 from felizjueves.ir.interp import Interpreter
-from felizjueves.kernel_f import build_f_kernel, close, f_class_spec
-from felizjueves.launch_f import f_launches
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
@@ -412,7 +414,7 @@ def test_the_arbitration_data_rows_at_fast_l_are_report(
 @pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_arbitration_data_is_render() -> None:
     # Regenerate (never hand-edit):
-    #   PYTHONPATH=src uv run python -c "from felizjueves.f_levers import \
+    #   PYTHONPATH=src uv run python -c "from felizjueves.eri.fock.levers import \
     #   etr; print(etr.render(), end='')" > data/hgp/etr_arbitration.json
     assert ARBITRATION_DATA.read_text() == E.render()
     rows = E.report()["classes"]
@@ -875,7 +877,7 @@ def test_with_batched_vrr_and_sliced_hrr_it_is_the_sweep(
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, close, f_class_spec; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel, close, f_class_spec; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, ('etr',))); \

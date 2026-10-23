@@ -54,12 +54,13 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, is_fast, split_by_l
 
-from felizjueves import kernel_f as KF
-from felizjueves.ao import fock
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri import hgp_drive as HD
 from felizjueves.eri.eri import eri_block_and_scale
+from felizjueves.eri.fock import fock
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.launch_f import f_launches
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import (
@@ -79,7 +80,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch, interpret
-from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq
 from felizjueves.spec import Operator, Spec, Target

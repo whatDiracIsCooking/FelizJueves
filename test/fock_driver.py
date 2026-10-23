@@ -75,16 +75,16 @@ import numpy as np
 from plan_driver import UPLOAD_INT, Program, _unit
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves import kernel_f as KF
-from felizjueves import kernel_f_scatter as FS
 from felizjueves.ao.density import checked_density
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.f_levers import scatter as SC
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import kernel_f_scatter as FS
+from felizjueves.eri.fock.levers import scatter as SC
+from felizjueves.eri.fock.walk_f import KET_BREAK, FWalk, pair_record, walk_f
 from felizjueves.hgp import vrr
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
-from felizjueves.walk_f import KET_BREAK, FWalk, pair_record, walk_f
 
 THREADS = 32  # block width: kets strided over 32 lanes; not numerical
 RUNS = 2  # runs per check-mode process: the run-to-run witness

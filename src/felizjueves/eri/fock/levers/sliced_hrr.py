@@ -87,8 +87,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 
-from felizjueves.f_levers import batched_vrr as _bv
-from felizjueves.f_levers.seams import OUT, FContext, FHooks, cart_names
+from felizjueves.eri.fock.levers import batched_vrr as _bv
+from felizjueves.eri.fock.levers.seams import OUT, FContext, FHooks, cart_names
 from felizjueves.hgp import hrr as _hrr
 from felizjueves.hgp.vrr import AmClass, cartesians
 from felizjueves.ir import Assign, For, Index, Lit, Note, Stmt

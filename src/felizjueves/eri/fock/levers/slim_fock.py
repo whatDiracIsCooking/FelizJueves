@@ -85,8 +85,8 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 
-from felizjueves.f_levers import sliced_hrr as _sh
-from felizjueves.f_levers.seams import BLOCKS, FOCK, FContext, FHooks
+from felizjueves.eri.fock.levers import sliced_hrr as _sh
+from felizjueves.eri.fock.levers.seams import BLOCKS, FOCK, FContext, FHooks
 from felizjueves.hgp.vrr import AmClass, cartesians
 from felizjueves.ir import Assign, AtomicAdd, Call, Fn, Index, Lit, Note, Stmt, Var
 from felizjueves.spec import Spec

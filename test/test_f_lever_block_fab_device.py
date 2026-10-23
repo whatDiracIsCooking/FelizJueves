@@ -54,8 +54,8 @@ from fock_driver import FRec, fock_stage, run_on_card
 from test_f_lever_batched_vrr_device import shared_bytes
 from test_fock_build import LIBCINT_TOL, TOL, molecule, sweep, walk
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import block_fab
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.levers import block_fab
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import unit_name

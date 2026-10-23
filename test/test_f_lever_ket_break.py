@@ -47,16 +47,17 @@ import numpy as np
 import pytest
 from test_fock_build import BOUND, TOL, _six_terms, members, molecule, run, sweep
 
-from felizjueves import kernel_f as KF
-from felizjueves import launch_f, levers, walk_f
+from felizjueves import levers
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.emit import cuda, hip
-from felizjueves.f_levers import REGISTRY, hooks_for, ket_break
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import launch_f, walk_f
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.levers import REGISTRY, hooks_for, ket_break
 from felizjueves.hgp import vrr
 from felizjueves.ir import Break, For, If, walk
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.launch_f import f_launches
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
@@ -137,7 +138,7 @@ BACKENDS = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
 #   PYTHONPATH=src python -c "from pathlib import Path; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
-#   from felizjueves.kernel_f import build_f_kernel; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel; \
 #   from felizjueves.spec import Operator, Spec, Target; \
 #   k = build_f_kernel(Spec(Operator.COULOMB, 0, (0, 1, 0, 1), Target.F, \
 #   levers=('ket-break',))); \

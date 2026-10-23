@@ -43,15 +43,17 @@ import test_f_lever_sliced_hrr as tsh
 import test_kernel_f as tk
 from tiers import is_fast, split_by_l
 
-from felizjueves import f_levers, levers
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.f_levers import batched_vrr as bv
-from felizjueves.f_levers import seams
-from felizjueves.f_levers import sliced_hrr as sh
-from felizjueves.f_levers import sliced_site_digest as si
-from felizjueves.f_levers.seams import FHooks
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.fock.levers import batched_vrr as bv
+from felizjueves.eri.fock.levers import seams
+from felizjueves.eri.fock.levers import sliced_hrr as sh
+from felizjueves.eri.fock.levers import sliced_site_digest as si
+from felizjueves.eri.fock.levers.seams import FHooks
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp.recurrence import hrr_name
 from felizjueves.ir import (
@@ -65,7 +67,6 @@ from felizjueves.ir import (
     Var,
     walk,
 )
-from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
@@ -314,7 +315,7 @@ def test_every_degeneracy_case_within_the_cap_equals_the_sweep(
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, \

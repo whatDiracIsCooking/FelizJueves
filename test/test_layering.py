@@ -70,9 +70,12 @@ _DF_HOST = ("eri.density_fit.metric", "eri.density_fit.metric_drive",
 # #510: the shared ERI host modules, which lived under `ao/` the same way
 # until they moved into `eri/`.
 _ERI_HOST = ("eri.eri", "eri.hgp_drive", "eri.schwarz")
+# #513: the fused Fock build's host sweep, `ao/fock.py`, which moved into
+# `eri/fock/` with the rest of the fused build.
+_FOCK_HOST = ("eri.fock.fock",)
 # Every module that left the `ao` prefix: a rule or a transitive check that
 # says `ao` names these too, so its reach is unchanged.
-_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST)
+_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST, *_FOCK_HOST)
 
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
@@ -1494,10 +1497,10 @@ def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
-    "ao.fock": "ao",
+    "eri.fock.fock": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.fock": ("ao.density", "ao.shell"),
+    "eri.fock.fock": ("ao.density", "ao.shell"),
 }.items()}
 
 
@@ -1534,10 +1537,10 @@ RULES |= {
                        "(#145)"}),
 }
 RULE_OF |= {
-    "launch_f": "f_launch",
+    "eri.fock.launch_f": "f_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "launch_f": ("ao.density", "ao.pairs", "ao.shell", "eri.launch_common",
+    "eri.fock.launch_f": ("ao.density", "ao.pairs", "ao.shell", "eri.launch_common",
                  "spec"),
 }.items()}
 
@@ -1548,7 +1551,7 @@ def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
     # dispatch policy, or the adapters that run kernels.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["launch_f"]
+    todo = ["eri.fock.launch_f"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -1589,8 +1592,8 @@ RULES |= {
             "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
-RULE_OF["kernel_f"] = "f_builder"
-EDGES["kernel_f"] = frozenset(
+RULE_OF["eri.fock.kernel_f"] = "f_builder"
+EDGES["eri.fock.kernel_f"] = frozenset(
     ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
 
 
@@ -1600,7 +1603,7 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # card -- nor `launch_f`, whose records it consumes only as packed data.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_f"]
+    todo = ["eri.fock.kernel_f"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -1608,7 +1611,7 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 todo.append(e)
     assert "hgp.recurrence" in seen
     for banned in ("plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                   "performance.device", "launch_f"):
+                   "performance.device", "eri.fock.launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f reaches {hit}"
 
@@ -1629,10 +1632,11 @@ RULES |= {
         "kernel -- the plan checked against the basis, the records rebuilt "
         "from the shells, every launch run through an injected executor "
         "(`run=`), `F` closed, and every unique quartet's fate recorded",
-        ("spec", "=ir", "ao", "mmd.hermite", "kernel_f"),
-        launch_f="the walker is independent of the plan builder (m6's "
+        ("spec", "=ir", "ao", "mmd.hermite", "eri.fock.kernel_f"),
+        **{"eri.fock.launch_f":
+            "the walker is independent of the plan builder (m6's "
                  "discipline, #286): it reads the plan by duck type, never "
-                 "a second call into, or a type from, the module that made it",
+                 "a second call into, or a type from, the module that made it"},
         reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
                   "injected (`run=`)",
         **{"ir.interp":
@@ -1649,9 +1653,9 @@ RULES |= {
         **{"performance.measured_store":
             "nothing measured may reach a walk by import"}),
 }
-RULE_OF["walk_f"] = "f_walk"
-EDGES["walk_f"] = frozenset(("ao.density", "ao.shell", "ir", "kernel_f",
-                             "spec"))
+RULE_OF["eri.fock.walk_f"] = "f_walk"
+EDGES["eri.fock.walk_f"] = frozenset(("ao.density", "ao.shell", "ir",
+                                      "eri.fock.kernel_f", "spec"))
 
 
 def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None:
@@ -1661,16 +1665,16 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
     # `ao.hgp_drive`).
     graph = _graph()
     seen: set[str] = set()
-    todo = ["walk_f"]
+    todo = ["eri.fock.walk_f"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "kernel_f" in seen
-    for banned in ("launch_f", "launch", _REF, "ir.interp", "emit",
+    assert "eri.fock.kernel_f" in seen
+    for banned in ("eri.fock.launch_f", "launch", _REF, "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
-                   "performance.measured", "ao.fock", "eri.eri",
+                   "performance.measured", "eri.fock.fock", "eri.eri",
                    "eri.hgp_drive", "engine"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"walk_f reaches {hit}"
@@ -1706,9 +1710,9 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
 
 ENGINES: dict[str, tuple[str, ...]] = {
     "mmd": ("plan", "mmd.recurrence", "mmd.kernel", "eri.eri"),
-    "hgp": ("hgp", "kernel_f", "eri.hgp_drive"),
+    "hgp": ("hgp", "eri.fock.kernel_f", "eri.hgp_drive"),
 }
-DECLARED_ABOVE = ("ao.fock",)
+DECLARED_ABOVE = ("eri.fock.fock",)
 _ENGINE_WHY = ("the protocol names the engines' ENTRY POINTS (`ao.eri`, "
                "`ao.hgp_drive`, `kernel`, `kernel_f`) and nothing behind "
                "them: reaching {} would make an engine's private machinery "
@@ -1722,7 +1726,7 @@ RULES |= {
         "The one module in src/ that names both engines; each engine's "
         "special function is injected at construction",
         ("spec", "=ir", "ao.shell", "eri.eri", "eri.hgp_drive", "mmd.kernel",
-         "kernel_f"),
+         "eri.fock.kernel_f"),
         reference=_GROUND_TRUTH + "; `pq=` and `boys=` arrive injected, as "
                   "`interp` takes `boys=`",
         plan=_ENGINE_WHY.format("plan/ (MILD, the sieve, the partition, "
@@ -1739,7 +1743,7 @@ RULES |= {
 }
 RULE_OF["engine"] = "engine"
 EDGES["engine"] = frozenset(("eri.eri", "eri.hgp_drive", "ao.shell", "ir",
-                             "mmd.kernel", "kernel_f", "spec"))
+                             "mmd.kernel", "eri.fock.kernel_f", "spec"))
 
 
 def _engine_of(module: str) -> str | None:
@@ -1796,12 +1800,12 @@ def test_the_engine_rule_can_fail() -> None:
     # A module above (it imports `engine`) that also imports `hgp.vrr`, and
     # the declared `ao.fock` reaching `ao.eri` through two hops: both are
     # caught; the route through `engine` itself is not a breach.
-    graph = {"engine": {"eri.eri", "kernel_f"}, "eri.eri": set(),
-             "kernel_f": {"hgp.vrr"}, "hgp.vrr": set(),
+    graph = {"engine": {"eri.eri", "eri.fock.kernel_f"}, "eri.eri": set(),
+             "eri.fock.kernel_f": {"hgp.vrr"}, "hgp.vrr": set(),
              "consumer": {"engine", "hgp.vrr"}, "via": {"mid"},
-             "mid": {"eri.eri"}, "ao.fock": {"via"}, "clean": {"engine"}}
+             "mid": {"eri.eri"}, "eri.fock.fock": {"via"}, "clean": {"engine"}}
     assert engines_named_from_above(graph) == {
-        "ao.fock": ["eri.eri"], "consumer": ["hgp.vrr"]}
+        "eri.fock.fock": ["eri.eri"], "consumer": ["hgp.vrr"]}
 
 
 # ---------------------------------------------------------------------------
@@ -1816,12 +1820,12 @@ def test_the_engine_rule_can_fail() -> None:
 # it (`plan/`, `recurrence`, `hgp/`, the AO layer).
 # ---------------------------------------------------------------------------
 
-GENERATORS = {"emit.__main__": frozenset(("mmd.kernel", "kernel_f"))}
+GENERATORS = {"emit.__main__": frozenset(("mmd.kernel", "eri.fock.kernel_f"))}
 RULES["driver"] = Rule(RULES["driver"].why + ", and #287's fused Fock "
                        "kernel through `kernel_f`, by its entry point only",
-                       RULES["driver"].may | frozenset(("kernel_f",)),
+                       RULES["driver"].may | frozenset(("eri.fock.kernel_f",)),
                        RULES["driver"].must_not)
-EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_f",))
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("eri.fock.kernel_f",))
 
 
 def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
@@ -1842,8 +1846,9 @@ def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
 # (`kernel`, `kernel_f`), never `hgp/` or the plan behind them.
 # ---------------------------------------------------------------------------
 
-GENERATORS["performance.measured"] = frozenset(("mmd.kernel", "kernel_f"))
-EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(("kernel_f",))
+GENERATORS["performance.measured"] = frozenset(("mmd.kernel",
+                                                "eri.fock.kernel_f"))
+EDGES["performance.measured"] |= frozenset(("eri.fock.kernel_f",))
 
 
 # ---------------------------------------------------------------------------
@@ -1918,9 +1923,10 @@ RULES |= {
         "hooks, their context and the frozen defaults, statements built from "
         "`hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs) and the registry "
         "composing a spec's F levers, one module per lever",
-        ("spec", "=ir", "hgp", "f_levers"),
-        kernel_f="the skeleton imports the seams: a seam or a lever reaching "
-                 "back into `kernel_f` is a cycle",
+        ("spec", "=ir", "hgp", "eri.fock.levers"),
+        **{"eri.fock.kernel_f":
+            "the skeleton imports the seams: a seam or a lever reaching "
+                 "back into `kernel_f` is a cycle"},
         plan=RULES["f_builder"].must_not["plan"],
         ao=RULES["f_builder"].must_not["ao"],
         **{"ir.interp":
@@ -1930,22 +1936,22 @@ RULES |= {
             RULES["f_builder"].must_not["performance.device"]},
         reference=_GROUND_TRUTH),
 }
-RULE_OF |= {m: "f_lever" for m in _modules() if _under(m, "f_levers")}
+RULE_OF |= {m: "f_lever" for m in _modules() if _under(m, "eri.fock.levers")}
 EDGES |= {k: frozenset(v) for k, v in {
-    "f_levers": ("f_levers.seams", "spec"),
-    "f_levers.seams": ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"),
+    "eri.fock.levers": ("eri.fock.levers.seams", "spec"),
+    "eri.fock.levers.seams": ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"),
 }.items()}
 RULES["f_builder"] = Rule(RULES["f_builder"].why + "; its lever seams live "
                           "in `f_levers/` (#368)",
-                          RULES["f_builder"].may | frozenset(("f_levers",)),
+                          RULES["f_builder"].may | frozenset(("eri.fock.levers",)),
                           RULES["f_builder"].must_not)
-EDGES["kernel_f"] = EDGES["kernel_f"] | frozenset(
-    ("f_levers", "f_levers.seams"))
+EDGES["eri.fock.kernel_f"] = EDGES["eri.fock.kernel_f"] | frozenset(
+    ("eri.fock.levers", "eri.fock.levers.seams"))
 # #352: the monotone ket key's early break, an F lever module on the seams.
 # Its key lives in `launch_f` and its dominating factor in `walk_f`, which
 # restate its two names rather than import it (test_f_lever_ket_break.py).
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.ket_break",))
-EDGES["f_levers.ket_break"] = frozenset(("f_levers.seams", "ir", "spec"))
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.ket_break",))
+EDGES["eri.fock.levers.ket_break"] = frozenset(("eri.fock.levers.seams", "ir", "spec"))
 
 
 def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
@@ -1953,7 +1959,7 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
     # imports reaches `kernel_f` (the cycle), the plan layer, the AO layer,
     # reference/, the interpreter, a backend, a card or `launch_f`.
     graph = _graph()
-    for root in ("f_levers", "f_levers.seams"):
+    for root in ("eri.fock.levers", "eri.fock.levers.seams"):
         seen: set[str] = set()
         todo = [root]
         while todo:
@@ -1961,8 +1967,8 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_f", "plan", _REF, "ao", *_LEFT_AO, "ir.interp",
-                       "emit", "performance.device", "launch_f"):
+        for banned in ("eri.fock.kernel_f", "plan", _REF, "ao", *_LEFT_AO, "ir.interp",
+                       "emit", "performance.device", "eri.fock.launch_f"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -2045,8 +2051,8 @@ EDGES["k_levers.stage_eac"] = frozenset(("mmd.e_fragment", "ir", "k_levers.seams
 # functions and reads `hgp.hrr`'s DAG for its group-count rule's floor, so
 # it reaches the seams, `hgp`, the IR and `Spec`, nothing below `f_lever`'s
 # prohibitions.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.batched_vrr",))
-EDGES["f_levers.batched_vrr"] = frozenset(("f_levers.seams", "hgp.hrr",
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.batched_vrr",))
+EDGES["eri.fock.levers.batched_vrr"] = frozenset(("eri.fock.levers.seams", "hgp.hrr",
                                            "hgp.recurrence", "hgp.vrr", "ir",
                                            "spec"))
 
@@ -2054,28 +2060,28 @@ EDGES["f_levers.batched_vrr"] = frozenset(("f_levers.seams", "hgp.hrr",
 # precision hooks and wraps `quartet_scalars`, `vrr`, `hrr` and `eri`; it
 # reaches the seams, the IR and `Spec` only (its F32 literal rounding is its
 # own, not `j_levers.mixed`'s: `f_lever` does not admit `j_levers`).
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.mixed",))
-EDGES["f_levers.mixed"] = frozenset(("f_levers.seams", "ir", "spec"))
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.mixed",))
+EDGES["eri.fock.levers.mixed"] = frozenset(("eri.fock.levers.seams", "ir", "spec"))
 
 
 # #356 (milestone 13, H2): the sliced HRR, an F lever module composed on
 # #350's. It slices with `hgp.hrr`'s new (additive) functions and re-cuts
 # `batched_vrr`'s groups at its floor, so it reaches that sibling lever, the
 # seams, `hgp`, the IR and `Spec`, nothing below `f_lever`'s prohibitions.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.sliced_hrr",))
-EDGES["f_levers.sliced_hrr"] = frozenset(("f_levers.batched_vrr",
-                                          "f_levers.seams", "hgp.hrr",
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.sliced_hrr",))
+EDGES["eri.fock.levers.sliced_hrr"] = frozenset(("eri.fock.levers.batched_vrr",
+                                          "eri.fock.levers.seams", "hgp.hrr",
                                           "hgp.vrr", "ir", "spec"))
 
 # #359 (milestone 13, H3): the interleaved digest per slice, an F lever
 # module composed on #356's. It supplies #356's slice body and re-installs
 # #350's nest at its floor, naming the HRR nodes it digests after, so it
 # reaches both sibling levers, the seams, `hgp`, the IR and `Spec`.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset((
-    "f_levers.sliced_site_digest",))
-EDGES["f_levers.sliced_site_digest"] = frozenset((
-    "f_levers.batched_vrr", "f_levers.seams", "f_levers.sliced_hrr",
-    "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+EDGES["eri.fock.levers"] = EDGES["eri.fock.levers"] | frozenset((
+    "eri.fock.levers.sliced_site_digest",))
+EDGES["eri.fock.levers.sliced_site_digest"] = frozenset((
+    "eri.fock.levers.batched_vrr", "eri.fock.levers.seams",
+    "eri.fock.levers.sliced_hrr", "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
 
 
 # #357 (milestone 13, H6): the dedicated sub-DAG VRR schedule, an F lever
@@ -2083,9 +2089,9 @@ EDGES["f_levers.sliced_site_digest"] = frozenset((
 # reads its name and group count), schedules with `hgp.vrr`'s new (additive)
 # functions, and reaches the seams and `Spec`, nothing below `f_lever`'s
 # prohibitions.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.subdag_vrr",))
-EDGES["f_levers.subdag_vrr"] = frozenset(("f_levers.batched_vrr",
-                                          "f_levers.seams", "hgp.vrr",
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.subdag_vrr",))
+EDGES["eri.fock.levers.subdag_vrr"] = frozenset(("eri.fock.levers.batched_vrr",
+                                          "eri.fock.levers.seams", "hgp.vrr",
                                           "spec"))
 
 
@@ -2093,9 +2099,9 @@ EDGES["f_levers.subdag_vrr"] = frozenset(("f_levers.batched_vrr",
 # module composed on #356's slices (it wraps `sliced_hrr.contracted_with`),
 # so it reaches that sibling lever, the seams, `hgp.vrr` (the Cartesian
 # counts of its declared buffer sizes), the IR and `Spec`.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.slim_fock",))
-EDGES["f_levers.slim_fock"] = frozenset(("f_levers.seams",
-                                          "f_levers.sliced_hrr", "hgp.vrr",
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.slim_fock",))
+EDGES["eri.fock.levers.slim_fock"] = frozenset(("eri.fock.levers.seams",
+                                          "eri.fock.levers.sliced_hrr", "hgp.vrr",
                                           "ir", "spec"))
 
 
@@ -2104,10 +2110,10 @@ EDGES["f_levers.slim_fock"] = frozenset(("f_levers.seams",
 # with a body of #356's `slice_body`s), cutting with `hgp.hrr`'s new
 # (additive) `sub_slices`; it reaches those two sibling levers, the seams,
 # `hgp`, the IR and `Spec`.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.sub_slice",))
-EDGES["f_levers.sub_slice"] = frozenset(("f_levers.seams",
-                                          "f_levers.sliced_hrr",
-                                          "f_levers.slim_fock", "hgp.hrr",
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.sub_slice",))
+EDGES["eri.fock.levers.sub_slice"] = frozenset(("eri.fock.levers.seams",
+                                          "eri.fock.levers.sliced_hrr",
+                                          "eri.fock.levers.slim_fock", "hgp.hrr",
                                           "hgp.vrr", "ir", "spec"))
 
 
@@ -2131,8 +2137,9 @@ EDGES["k_levers.mixed"] = frozenset(("mmd.e_fragment", "ir", "j_levers.mixed",
 # module. It moves the `field` hook only (its records are `ir.Record`s, its
 # reads `ir.Member`s), so it reaches the seams, the IR and `Spec`, nothing
 # below `f_lever`'s prohibitions; the spelling of the view is `emit/_c.py`'s.
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.struct_reads",))
-EDGES["f_levers.struct_reads"] = frozenset(("f_levers.seams", "ir", "spec"))
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.struct_reads",))
+EDGES["eri.fock.levers.struct_reads"] = frozenset(("eri.fock.levers.seams",
+                                                    "ir", "spec"))
 
 
 # ---------------------------------------------------------------------------
@@ -2261,9 +2268,9 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
 # declared footprint) and `Spec`.
 # ---------------------------------------------------------------------------
 
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.block_fab",))
-EDGES["f_levers.block_fab"] = frozenset(("f_levers.seams", "hgp.vrr", "ir",
-                                         "spec"))
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.block_fab",))
+EDGES["eri.fock.levers.block_fab"] = frozenset(("eri.fock.levers.seams",
+                                                 "hgp.vrr", "ir", "spec"))
 
 
 # ---------------------------------------------------------------------------
@@ -2283,7 +2290,7 @@ RULES |= {
         "kernel (class-agnostic: one thread per element of F, summing its "
         "slots of the launch's buffer W in a fixed order) and its host map, "
         "the slot layout read off `f_levers.scatter`",
-        ("spec", "=ir", "hgp", "f_levers"),
+        ("spec", "=ir", "hgp", "eri.fock.levers"),
         plan=RULES["f_builder"].must_not["plan"],
         ao=RULES["f_builder"].must_not["ao"],
         **{"ir.interp":
@@ -2291,22 +2298,24 @@ RULES |= {
         emit=RULES["f_builder"].must_not["emit"],
         **{"performance.device":
             RULES["f_builder"].must_not["performance.device"]},
-        launch_f="the map is built from packed AO offsets, as `kernel_f.pack` "
-                 "takes records; the plan declares its footprint itself",
+        **{"eri.fock.launch_f":
+            "the map is built from packed AO offsets, as `kernel_f.pack` "
+                 "takes records; the plan declares its footprint itself"},
         reference=_GROUND_TRUTH),
 }
-RULE_OF["kernel_f_scatter"] = "f_scatter"
-EDGES["kernel_f_scatter"] = frozenset(("f_levers.scatter", "f_levers.seams",
-                                       "hgp.vrr", "ir"))
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.scatter",))
-EDGES["f_levers.scatter"] = frozenset(("f_levers.block_fab", "f_levers.seams",
-                                       "hgp.vrr", "ir", "spec"))
+RULE_OF["eri.fock.kernel_f_scatter"] = "f_scatter"
+EDGES["eri.fock.kernel_f_scatter"] = frozenset((
+    "eri.fock.levers.scatter", "eri.fock.levers.seams", "hgp.vrr", "ir"))
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.scatter",))
+EDGES["eri.fock.levers.scatter"] = frozenset((
+    "eri.fock.levers.block_fab", "eri.fock.levers.seams", "hgp.vrr", "ir",
+    "spec"))
 RULES["f_walk"] = Rule(RULES["f_walk"].why + "; a `scatter` launch's "
                        "scatter kernel and map through `kernel_f_scatter` "
                        "(#358)",
-                       RULES["f_walk"].may | frozenset(("kernel_f_scatter",)),
+                       RULES["f_walk"].may | frozenset(("eri.fock.kernel_f_scatter",)),
                        RULES["f_walk"].must_not)
-EDGES["walk_f"] = EDGES["walk_f"] | frozenset(("kernel_f_scatter",))
+EDGES["eri.fock.walk_f"] |= frozenset(("eri.fock.kernel_f_scatter",))
 
 
 def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
@@ -2316,15 +2325,16 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
     # interpreter, a backend, a card or `launch_f`.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_f_scatter"]
+    todo = ["eri.fock.kernel_f_scatter"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "f_levers.scatter" in seen
-    for banned in ("kernel_f", "plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                   "performance.device", "launch_f"):
+    assert "eri.fock.levers.scatter" in seen
+    for banned in ("eri.fock.kernel_f", "plan", _REF, "ao", *_LEFT_AO,
+                   "ir.interp", "emit", "performance.device",
+                   "eri.fock.launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f_scatter reaches {hit}"
 
@@ -2340,9 +2350,10 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
 
 EDGES["hgp.etr"] = frozenset(("hgp.vrr",))
 EDGES["hgp.cost"] = EDGES["hgp.cost"] | frozenset(("hgp.etr",))
-EDGES["f_levers"] = EDGES["f_levers"] | frozenset(("f_levers.etr",))
-EDGES["f_levers.etr"] = frozenset(("f_levers.seams", "hgp.cost", "hgp.etr",
-                                   "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+EDGES["eri.fock.levers"] |= frozenset(("eri.fock.levers.etr",))
+EDGES["eri.fock.levers.etr"] = frozenset((
+    "eri.fock.levers.seams", "hgp.cost", "hgp.etr", "hgp.recurrence", "hgp.vrr",
+    "ir", "spec"))
 
 
 # ---------------------------------------------------------------------------
@@ -2640,14 +2651,16 @@ RULES |= {
         ("ao.shell", "hgp.orbits"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "in launch_f",
-        launch_f="the fused build's stream is a sibling, not a base: its "
-                 "privates stay its own (#328)",
+        **{"eri.fock.launch_f":
+            "the fused build's stream is a sibling, not a base: its "
+                 "privates stay its own (#328)"},
         launch="the J plan's privates are not borrowed (#328); the stable "
                "sort is restated",
         plan="the plan layer keys on `total_am` and refuses an HGP class "
              "(milestone 12, pin 11)",
-        kernel_f="the staging cap is restated, and a test pins it equal; a "
-                 "launch plan does not import a kernel builder",
+        **{"eri.fock.kernel_f":
+            "the staging cap is restated, and a test pins it equal; a "
+                 "launch plan does not import a kernel builder"},
         emit="the plan is data: no text is emitted",
         **{"performance.dispatch":
             "nothing measured may reach a launch plan by import (#145)"},
@@ -2680,7 +2693,8 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
     assert "hgp.orbits" in seen
     for banned in (_REF, "plan", "ir.interp", "emit", "ao.drive", "ao.staged",
                    "performance.dispatch", "performance.measured",
-                   "performance.measured_store", "launch_f", "kernel_f"):
+                   "performance.measured_store", "eri.fock.launch_f",
+                   "eri.fock.kernel_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_hjk reaches {hit}"
 
@@ -2703,7 +2717,7 @@ RULES |= {
         "canonical class mode through `hgp.orbits`, `kernel_f`'s staged "
         "record (`REC`, `MAX_PRIM_PAIRS`) reused, keyed on a `Target.J` "
         "`Engine.HGP` `Spec`",
-        ("spec", "=ir", "hgp", "kernel_f"),
+        ("spec", "=ir", "hgp", "eri.fock.kernel_f"),
         plan=RULES["hgp"].must_not["plan"],
         ao="`ao/hgp_drive.py` (the ERIs) and `ao/j.py` (the J sweep) are the "
            "kernel's witnesses: importing either shares ancestry (#20)",
@@ -2716,7 +2730,7 @@ RULES |= {
 }
 RULE_OF["eri.hjk.kernel_hj"] = "hj_builder"
 EDGES["eri.hjk.kernel_hj"] = frozenset(
-    ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "kernel_f",
+    ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "eri.fock.kernel_f",
      "spec"))
 
 
@@ -2732,9 +2746,9 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
+    assert {"hgp.recurrence", "hgp.orbits", "eri.fock.kernel_f"} <= seen
     for banned in ("plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                   "performance.device", "launch_f", "eri.hjk.launch_hjk"):
+                   "performance.device", "eri.fock.launch_f", "eri.hjk.launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
 
@@ -2755,7 +2769,7 @@ RULES |= {
         "quartet, K_ab += D_cd (ac|bd) by atomic add, `am` in K's Hermite "
         "pairing (la, lc | lb, ld); `kernel_hj`'s nest, staging, scalars and "
         "class modes reused, keyed on a `Target.K` `Engine.HGP` `Spec`",
-        ("spec", "=ir", "hgp", "kernel_f", "eri.hjk.kernel_hj"),
+        ("spec", "=ir", "hgp", "eri.fock.kernel_f", "eri.hjk.kernel_hj"),
         plan=RULES["hgp"].must_not["plan"],
         ao="`ao/hgp_drive.py` (the ERIs) and `ao/k.py` (the K sweep) are the "
            "kernel's witnesses: importing either shares ancestry (#20)",
@@ -2768,7 +2782,7 @@ RULES |= {
 }
 RULE_OF["eri.hjk.kernel_hk"] = "hk_builder"
 EDGES["eri.hjk.kernel_hk"] = frozenset(
-    ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "kernel_f",
+    ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "eri.fock.kernel_f",
      "eri.hjk.kernel_hj", "spec"))
 
 
@@ -2784,10 +2798,10 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"hgp.recurrence", "hgp.orbits", "kernel_f",
+    assert {"hgp.recurrence", "hgp.orbits", "eri.fock.kernel_f",
             "eri.hjk.kernel_hj"} <= seen
     for banned in ("plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                   "performance.device", "launch_f", "eri.hjk.launch_hjk"):
+                   "performance.device", "eri.fock.launch_f", "eri.hjk.launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
 
@@ -2833,12 +2847,13 @@ RULES |= {
         "launch's `Spec` formed from its class (#401's bridge), the records "
         "rebuilt from the shells, every launch run through an injected "
         "executor (`run=`), and every ordered quartet's fate recorded",
-        ("spec", "=ir", "ao.shell", "kernel_f", "eri.hjk.kernel_hj",
+        ("spec", "=ir", "ao.shell", "eri.fock.kernel_f", "eri.hjk.kernel_hj",
          "eri.hjk.kernel_hk", "hgp.orbits"),
         **{"eri.hjk.launch_hjk":
             "the walker is independent of the plan builder (m6's "
             "discipline, #406): it reads the plan by duck type"},
-        launch_f="the fused build's stream is a sibling, not a base",
+        **{"eri.fock.launch_f":
+            "the fused build's stream is a sibling, not a base"},
         reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
                   "injected (`run=`)",
         **{"ir.interp":
@@ -2857,7 +2872,7 @@ RULES |= {
 }
 RULE_OF["eri.hjk.walk_hjk"] = "hjk_walk"
 EDGES["eri.hjk.walk_hjk"] = frozenset(
-    ("ao.shell", "hgp.orbits", "ir", "kernel_f", "eri.hjk.kernel_hj",
+    ("ao.shell", "hgp.orbits", "ir", "eri.fock.kernel_f", "eri.hjk.kernel_hj",
      "eri.hjk.kernel_hk", "spec"))
 
 
@@ -2874,12 +2889,13 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"eri.hjk.kernel_hj", "eri.hjk.kernel_hk", "kernel_f"} <= seen
-    for banned in ("eri.hjk.launch_hjk", "launch_f", "launch", _REF,
+    assert {"eri.hjk.kernel_hj", "eri.hjk.kernel_hk", "eri.fock.kernel_f"} <= seen
+    for banned in ("eri.hjk.launch_hjk", "eri.fock.launch_f", "launch", _REF,
                    "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
                    "performance.measured", "ao.j", "ao.k",
-                   "ao.fock", "eri.eri", "eri.hgp_drive", "engine", "walk_f"):
+                   "eri.fock.fock", "eri.eri", "eri.hgp_drive", "engine",
+                   "eri.fock.walk_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"walk_hjk reaches {hit}"
 
@@ -2994,7 +3010,8 @@ RULES |= {
         launch="`launch` imports this module; the reverse is a cycle",
         launch_k="a launch plan imports this module, never the reverse",
         launch_kblock="a launch plan imports this module, never the reverse",
-        launch_f="a launch plan imports this module, never the reverse",
+        **{"eri.fock.launch_f":
+            "a launch plan imports this module, never the reverse"},
         **{"mmd.kernel":
             "no kernel is built here: the builders are the plans' "
                "business"},
@@ -3030,6 +3047,12 @@ def test_launch_common_is_no_wider_than_launch() -> None:
 # #510: the shared ERI layer moved into `eri/`; the three host modules that
 # left `ao/` (`_ERI_HOST`) join the same pass through `_LEFT_AO`. No new
 # package (`eri/__init__.py` came with #514).
+#
+# #513: the fused Fock build moved into `eri/fock/` (`ao/fock.py`, kernel_f,
+# kernel_f_scatter, launch_f, walk_f, and `f_levers/` as `eri/fock/levers/`),
+# each module keeping its rule; `ao/fock.py` (`_FOCK_HOST`) joins the same
+# pass through `_LEFT_AO`, and the package marker `eri.fock` is the one new
+# module.
 # ---------------------------------------------------------------------------
 
 for _rn, _r in list(RULES.items()):
@@ -3059,6 +3082,16 @@ RULES |= {
 }
 RULE_OF["eri.density_fit"] = "eri_density_fit_package"
 EDGES["eri.density_fit"] = frozenset()
+
+RULES |= {
+    "eri_fock_package": _rule(
+        "eri/fock/__init__.py (#513): the fused Fock build's package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.fock"] = "eri_fock_package"
+EDGES["eri.fock"] = frozenset()
 
 
 # ---------------------------------------------------------------------------

@@ -21,9 +21,9 @@ import pytest
 from fock_driver import record, record_plan
 from test_fock_build import BOUND, molecule
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import block_fab
-from felizjueves.launch_f import f_launches
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.levers import block_fab
 
 
 def _same(a, b) -> bool:

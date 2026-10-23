@@ -302,8 +302,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from felizjueves.f_levers import hooks_for
-from felizjueves.f_levers.seams import (
+from felizjueves.eri.fock.levers import hooks_for
+from felizjueves.eri.fock.levers.seams import (
     AB_SH,
     BLOCKS,
     FOCK,

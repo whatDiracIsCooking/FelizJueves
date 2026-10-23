@@ -48,10 +48,10 @@ import test_f_lever_sliced_hrr_device as h2d
 import test_fock_ondevice as fo
 from test_f_lever_batched_vrr_device import compile_unit
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import batched_vrr as bv
-from felizjueves.f_levers import sliced_hrr as sh
-from felizjueves.f_levers import sliced_site_digest as si
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.levers import batched_vrr as bv
+from felizjueves.eri.fock.levers import sliced_hrr as sh
+from felizjueves.eri.fock.levers import sliced_site_digest as si
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import unit_name
 

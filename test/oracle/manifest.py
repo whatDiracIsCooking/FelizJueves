@@ -157,7 +157,7 @@ numerically on a small case and be meaningless, so a mismatch is a
 `FixtureError` naming both files and the field, never a tolerance. The
 combined quantity is `FockPair.two_electron() = vj - vk / 2`: PySCF's RHF
 `vj - 0.5 vk` for the total closed-shell density, `FOCK_EXCHANGE_FRACTION`
-= 1/2 (derived in `felizjueves.ao.fock`, which this module must not import;
+= 1/2 (derived in `felizjueves.eri.fock.fock`, which this module must not import;
 test/test_oracle_fock.py asserts the two constants agree). `fock_pairs()`
 names every tracked molecule that has both halves.
 
@@ -1067,7 +1067,7 @@ def three_center_sets(fixtures: Path = FIXTURES) -> list[str]:
 # --- the Fock pair (#280) ----------------------------------------------------
 
 J_SUFFIX, K_SUFFIX = "_j", "_k"
-# G = J - K / N_SPIN for the total closed-shell density (felizjueves.ao.fock's
+# G = J - K / N_SPIN for the total closed-shell density (felizjueves.eri.fock.fock's
 # derivation; PySCF's RHF vj - 0.5 vk). Not imported: this module stays numpy.
 FOCK_EXCHANGE_FRACTION = 0.5
 

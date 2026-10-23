@@ -50,11 +50,11 @@ from test_f_lever_ket_break import _walks
 from test_fock_build import BOUND, TOL, molecule, sweep
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import ket_break
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.levers import ket_break
 from felizjueves.hgp import vrr
 from felizjueves.ir import Kernel
-from felizjueves.launch_f import f_launches
 from felizjueves.spec import Operator, Spec, Target
 
 NAME, M = ket_break.NAME, ket_break.BOUND

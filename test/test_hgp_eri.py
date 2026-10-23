@@ -92,10 +92,10 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, split_by_l
 
-from felizjueves.ao.fock import coulomb_exchange_reference
 from felizjueves.ao.shell import cartesians
 from felizjueves.eri import hgp_drive
 from felizjueves.eri.eri import eri_block_and_scale as mmd_eri
+from felizjueves.eri.fock.fock import coulomb_exchange_reference
 from felizjueves.eri.hgp_drive import absolute_kernel, f_spec
 from felizjueves.eri.hgp_drive import eri_block as hgp_block
 from felizjueves.eri.hgp_drive import eri_block_and_scale as hgp_eri

@@ -65,9 +65,9 @@ from plan_driver import compile_checked
 from test_f_lever_batched_vrr_device import compile_unit, shared_bytes
 from test_fock_build import LIBCINT_TOL, TOL, sweep, walk
 
-from felizjueves import kernel_f as KF
-from felizjueves import kernel_f_scatter as FS
-from felizjueves.f_levers import block_fab, scatter
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import kernel_f_scatter as FS
+from felizjueves.eri.fock.levers import block_fab, scatter
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import unit_name

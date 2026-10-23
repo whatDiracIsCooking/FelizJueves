@@ -80,9 +80,9 @@ from __future__ import annotations
 import dataclasses
 from functools import cache
 
-from felizjueves.f_levers import batched_vrr as _bv
-from felizjueves.f_levers import sliced_hrr as _sh
-from felizjueves.f_levers.seams import OUT, FContext, FHooks, cart_names
+from felizjueves.eri.fock.levers import batched_vrr as _bv
+from felizjueves.eri.fock.levers import sliced_hrr as _sh
+from felizjueves.eri.fock.levers.seams import OUT, FContext, FHooks, cart_names
 from felizjueves.hgp import hrr as _hrr
 from felizjueves.hgp.recurrence import hrr_name
 from felizjueves.hgp.vrr import AmClass, peak_live

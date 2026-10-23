@@ -39,12 +39,13 @@ import numpy as np
 import pytest
 import test_kernel_f as tk
 
-from felizjueves import f_levers, levers
-from felizjueves import kernel_f as KF
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import cuda, hip
-from felizjueves.f_levers import block_fab
-from felizjueves.f_levers.seams import DEFAULT_HOOKS
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock.levers import block_fab
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS
 from felizjueves.hgp import vrr
 from felizjueves.ir import (
     Assign,
@@ -368,7 +369,7 @@ def test_one_bra_one_ket_is_bitwise(cls, monkeypatch) -> None:
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   [(Path(f'test/golden/cuda/f_block_fab/{k.name}.cu').write_text( \

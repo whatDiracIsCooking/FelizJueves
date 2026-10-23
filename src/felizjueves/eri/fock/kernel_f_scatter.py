@@ -59,8 +59,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from felizjueves.f_levers import scatter as _sc
-from felizjueves.f_levers.seams import BLOCKS, FOCK
+from felizjueves.eri.fock.levers import scatter as _sc
+from felizjueves.eri.fock.levers.seams import BLOCKS, FOCK
 from felizjueves.hgp import vrr as _vrr
 from felizjueves.ir import (
     Assign,

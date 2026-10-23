@@ -68,16 +68,16 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves import kernel_f as KF
-from felizjueves.ao import fock
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.eri.eri import eri_block_and_scale
+from felizjueves.eri.fock import fock
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.walk_f import FWalk, walk_f
 from felizjueves.ir import Scalar
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq
-from felizjueves.walk_f import FWalk, walk_f
 
 BOUND = partial(primitive_schwarz_bounds, one_centre=one_centre)
 TOL = 1e-13  # test_kernel_f.py's, per ERI, carried by the triangle inequality
