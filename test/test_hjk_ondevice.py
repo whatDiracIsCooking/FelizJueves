@@ -110,14 +110,14 @@ from test_hjk_build import LIBCINT_TOL, TOL, molecule, plan, reference, sweep, w
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import kernel_f as KF
-from felizjueves import walk_hjk as W
 from felizjueves.ao import fock
 from felizjueves.ao import hgp_drive as HD
 from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.hjk import walk_hjk as W
+from felizjueves.eri.hjk.launch_hjk import hjk_launches
 from felizjueves.hgp import orbits
 from felizjueves.ir import Kernel
-from felizjueves.launch_hjk import hjk_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 

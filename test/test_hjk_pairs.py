@@ -44,14 +44,14 @@ from felizjueves import kernel_f
 from felizjueves.ao.eri import eri_block
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.hgp.orbits import apply, representative
-from felizjueves.launch_hjk import (
+from felizjueves.eri.hjk.launch_hjk import (
     MAX_PRIM_PAIRS,
     MODES,
     SCREENS,
     HPlan,
     hjk_launches,
 )
+from felizjueves.hgp.orbits import apply, representative
 from felizjueves.reference.pq import one_centre, pq
 
 BOUND = partial(primitive_schwarz_bounds, one_centre=one_centre)
