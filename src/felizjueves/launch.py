@@ -5,6 +5,7 @@
     LaunchPlan    iterable of ClassLaunch, plus tau / n_batches / refused
     ClassLaunch(lp, lq, n_batches, bras, kets, kernels, bra_blocks)
     PairRec(i, j, prim, L, G, key)                one index record
+                                                  (`launch_common`, #504)
 
 The counterpart of the predecessor's `jgen/launch.py` `launches()`: which
 `[p|q]` kernels run, over which bra and ket index records, in which order --
@@ -74,7 +75,8 @@ THE BATCH COUNT is asked of the plan per class, `ao.drive.KernelJP`'s
 `strict` contract: a count `plan.pipeline.plan` refuses (#64) raises with the
 class and the count (`strict=True`, the default), or the class is built at
 ONE batch and `(lp, lq, n_batches)` recorded in `LaunchPlan.refused`
-(`strict=False`). `_batches_for` is the one place a count is chosen: with
+(`strict=False`). `launch_common.batches_for` is the one place a count is
+chosen: with
 `resolve=` (#145) the count of class `(lp, lq)` is `resolve(lp, lq)` instead
 of `n_batches` -- a policy injected, never imported (`dispatch.Resolver` is
 one), and asked of the plan exactly as a fixed count is. Without it the plan
@@ -85,8 +87,9 @@ is today's; `LaunchPlan.n_batches` records the argument either way, and each
 argument, and the plan itself skips nothing.
 
 THE K PLAN (#204) sits BESIDE this one, in `launch_k.py`: it shares
-`PairRec`, the stable descending sort (`_sorted_desc`), the bound's value
-check (`_nonneg`) and the batch-count admission (`_batches_for`), and none
+`PairRec`, the stable descending sort (`sorted_desc`), the bound's value
+check (`nonneg`) and the batch-count admission (`batches_for`), all in
+`launch_common.py` since #504 (#328), and none
 of `ClassLaunch`, `LaunchPlan` or `launches`, which are J-shaped -- why is
 `launch_k`'s module docstring. Nothing here changed behaviour for it: the J
 plans are pinned by a fingerprint taken before #204 (test/test_launch.py).
@@ -179,40 +182,17 @@ from felizjueves.ao.potential import _check_nuclei
 from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.ir import Kernel
 from felizjueves.kernel import build_pq_kernels
-from felizjueves.plan.pipeline import plan
+from felizjueves.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["Bound", "ClassLaunch", "LaunchPlan", "OneEClass", "OneELaunch",
-           "OneERec", "PairRec", "XClass", "XLaunch", "XRec", "class_spec",
-           "coulomb_launched", "cross_overlap_launch", "launches",
+           "OneERec", "XClass", "XLaunch", "XRec", "bound_value",
+           "class_kernels", "class_spec", "coulomb_launched",
+           "cross_overlap_launch", "launches",
            "one_electron_launch", "per_axis", "walk", "walk_cross_overlap",
            "walk_one_electron"]
 
 Bound = Callable[[float, int], float]  # (zeta, L) -> I_pair >= 0
-
-
-@dataclass(frozen=True)
-class PairRec:
-    """One bra or ket index record (module docstring, "THE KEYS").
-
-    `i, j` the shell pair (`i >= j` in a J plan; any ORDERED pair in a K
-    plan, `launch_k`, where `G` is K's record bound and `key` the injected
-    ket key), `prim` its primitive pair's index in
-    `ao.pairs.primitive_pairs(shells[i], shells[j])`, `L` the pair momentum,
-    `G` the injected bound `I_pair`, `key` = `G * Dmax` for a ket, `G` for a
-    bra.
-    """
-
-    i: int
-    j: int
-    prim: int
-    L: int
-    G: float
-    key: float
-
-    @property
-    def shell_pair(self) -> tuple[int, int]:
-        return (self.i, self.j)
 
 
 @dataclass(frozen=True)
@@ -273,43 +253,13 @@ def class_spec(lp: int, lq: int, n_batches: int = 1) -> Spec:
 
 
 @cache
-def _admits(lp: int, lq: int, n_batches: int) -> bool:
-    try:
-        plan(class_spec(lp, lq, n_batches))
-    except ValueError:
-        return False
-    return True
-
-
-@cache
-def _kernels(spec: Spec) -> tuple[Kernel, ...]:
+def class_kernels(spec: Spec) -> tuple[Kernel, ...]:
     return build_pq_kernels(spec)
 
 
-def _batches_for(lp: int, lq: int, n_batches: int, *, strict: bool,
-                 refused: list[tuple[int, int, int]],
-                 resolve: Callable[[int, int], int] | None = None) -> int:
-    if resolve is not None:
-        n_batches = resolve(lp, lq)
-    if _admits(lp, lq, n_batches):
-        return n_batches
-    if strict:
-        raise ValueError(f"the plan refuses n_batches = {n_batches} for class "
-                         f"(lp, lq) = ({lp}, {lq})")
-    refused.append((lp, lq, n_batches))
-    return 1
-
-
-def _nonneg(g: object, what: str) -> float:
-    """A bound's value, refused unless a finite float >= 0 -- shared with the
-    K plan (`launch_k`, #204), whose bound has another signature."""
-    if not (isinstance(g, int | float) and math.isfinite(g) and g >= 0.0):
-        raise ValueError(f"{what} = {g!r} is not a finite float >= 0")
-    return float(g)
-
-
-def _g(bound: Bound, zeta: float, L: int) -> float:
-    return _nonneg(bound(zeta, L), f"bound({zeta!r}, {L})")
+def bound_value(bound: Bound, zeta: float, L: int) -> float:
+    """`bound(zeta, L)`, refused unless a finite float >= 0."""
+    return nonneg(bound(zeta, L), f"bound({zeta!r}, {L})")
 
 
 def _no_pq(p, q, PQv, theta) -> float:
@@ -334,7 +284,7 @@ def launches(basis: Basis, D: object, *, bound: Bound, n_batches: int,
     ket_all: list[PairRec] = []
     for a, b in pairs:
         L = shells[a].l + shells[b].l
-        gs = [_g(bound, r.zeta, L)
+        gs = [bound_value(bound, r.zeta, L)
               for r in primitive_pairs(shells[a], shells[b])]
         side = bras.setdefault(L, [])
         start = len(side)
@@ -359,19 +309,14 @@ def launches(basis: Basis, D: object, *, bound: Bound, n_batches: int,
     out = []
     for lp in sorted(bras):
         for lq in sorted(kets):
-            n = _batches_for(lp, lq, n_batches, strict=strict,
-                             refused=refused, resolve=resolve)
+            n = batches_for(lp, lq, n_batches, strict=strict,
+                            refused=refused, resolve=resolve)
             out.append(ClassLaunch(
                 lp, lq, n, tuple(bras[lp]),
-                tuple(_sorted_desc(kets[lq])),
-                _kernels(class_spec(lp, lq, n)), tuple(blocks[lp])))
+                tuple(sorted_desc(kets[lq])),
+                class_kernels(class_spec(lp, lq, n)), tuple(blocks[lp])))
     return LaunchPlan(tuple(out), tau, n_batches, density_sort,
                       tuple(refused))
-
-
-def _sorted_desc(recs: Sequence[PairRec]) -> list[PairRec]:
-    """Descending by `key`, STABLE -- `ao.j._sorted_kets`' form exactly."""
-    return sorted(recs, key=lambda r: r.key, reverse=True)
 
 
 # --- the oracle (#142): the plan walked in Python ---------------------------

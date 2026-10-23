@@ -60,7 +60,7 @@ has exactly `degree` primitive pairs, so the staged record
 (`FBatch.packed`) is `len(pairs)` rows of `degree` real entries: no padding,
 no sentinel. Batches are ordered by `(la, lb, degree, mag)`; inside one the
 pairs sit descending by `key = G * dmax`, `dmax` the largest `|D_mn|` over
-the pair's density block, stably (pair order on ties: `launch._sorted_desc`,
+the pair's density block, stably (pair order on ties: `launch_common.sorted_desc`,
 the J plan's sort) -- [Fock]'s "sorted by G_ab times the largest element of
 the pair's density block" (decision 2), the ordering Fig. 1 shades
 "decreasing size".
@@ -115,7 +115,7 @@ canonical half) is the digestion's business (#283), not the plan's.
 THE MONOTONE KET KEY (#352), opt-in: `ket_break=True`. Everything above
 is unchanged except the order inside a batch and the launches' `Spec`: the
 pairs sit descending by `G` ALONE (`FPair.key = G`, stably, the same
-`launch._sorted_desc`), and every launch names its class with the
+`launch_common.sorted_desc`), and every launch names its class with the
 `KET_BREAK` lever, whose kernel ends a thread's ket loop at the first ket
 whose separable bound `G_ab (G_cd M_ab)` is under `tau` (f_levers/
 ket_break.py has the dominating factor `M_ab` and the proof). `G * dmax`
@@ -170,7 +170,7 @@ from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.density import checked_tau as _tau
 from felizjueves.ao.pairs import prune
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.launch import _nonneg, _sorted_desc
+from felizjueves.launch_common import nonneg, sorted_desc
 from felizjueves.spec import Operator, Spec, Target
 
 Bound = Callable[[Shell, Shell], Sequence[float]]
@@ -211,7 +211,7 @@ def magnitudes(tau: float, n: int) -> tuple[float, ...]:
 def magnitude_index(G: float, mags: Sequence[float]) -> int:
     """The UPPER-bound assignment (module docstring): the largest `i >= 1`
     with `G < mags[i]`, else 0."""
-    G = _nonneg(G, "G")
+    G = nonneg(G, "G")
     for i in range(len(mags) - 1, 0, -1):
         if G < mags[i]:
             return i
@@ -228,7 +228,7 @@ def printed_magnitude_index(G: float, mags: Sequence[float]) -> int:
     less than its G_ab value" -- the smallest `i` with `mags[i] < G`, a
     LOWER bound; the last batch when none is (`fock/batch-magnitude-bound-
     direction`)."""
-    G = _nonneg(G, "G")
+    G = nonneg(G, "G")
     for i, m in enumerate(mags):
         if m < G:
             return i
@@ -415,7 +415,7 @@ def f_launches(basis: Basis, D: object, *, bound: Bound, tau: float,
             if len(g) != want:
                 raise ValueError(f"bound(shell {a}, shell {b}) gave {len(g)} "
                                  f"values, not K_a K_b = {want}")
-            g = tuple(_nonneg(x, f"bound(shell {a}, shell {b})") for x in g)
+            g = tuple(nonneg(x, f"bound(shell {a}, shell {b})") for x in g)
             raw.append((a, b, g, math.fsum(g)))
     g_max = max((r[3] for r in raw), default=0.0)
     eps = tau / (2.0 * g_max) if tau > 0.0 and g_max > 0.0 else 0.0
@@ -440,7 +440,7 @@ def f_launches(basis: Basis, D: object, *, bound: Bound, tau: float,
     for p in kept_pairs:
         bins.setdefault((p.la, p.lb, p.degree, p.mag), []).append(p)
     batches = tuple(
-        FBatch(*k, mags[k[3]], tuple(_sorted_desc(bins[k])))
+        FBatch(*k, mags[k[3]], tuple(sorted_desc(bins[k])))
         for k in sorted(bins))
 
     levers = tuple(sorted(((KET_BREAK,) if ket_break else ())

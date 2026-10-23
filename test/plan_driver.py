@@ -119,7 +119,8 @@ from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
 from felizjueves.kernel_k import PARAMS as K_PARAMS
 from felizjueves.kernel_k import launch_shape as k_launch_shape
-from felizjueves.launch import LaunchPlan, PairRec, class_spec
+from felizjueves.launch import LaunchPlan, class_spec
+from felizjueves.launch_common import PairRec
 from felizjueves.launch_k import KLaunchPlan
 from felizjueves.passes import atomize
 from felizjueves.plan.targets import hermite_targets

@@ -167,7 +167,7 @@ from felizjueves.interp import Interpreter, Launch
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.launch import LaunchPlan, _g, walk
+from felizjueves.launch import LaunchPlan, bound_value, walk
 from felizjueves.reference.pq import pq as ref_pq
 
 PART1 = "hf_ccpvtz"
@@ -486,7 +486,8 @@ def _plan_from(basis, dq_rows, n: int) -> LaunchPlan:
     """`ao.drive._chain_plan` over `dq_rows` (`(i, j, prim) -> (D_q,
     Dmax)`): kets keyed `G * Dmax` with THAT `Dmax`, sorted."""
     pairs = _unique_pairs(basis)
-    gs = {(a, b): [_g(BOUND, zeta, basis.shells[a].l + basis.shells[b].l)
+    gs = {(a, b): [bound_value(BOUND, zeta,
+                               basis.shells[a].l + basis.shells[b].l)
                    for _, zeta, _ in epair(basis.shells[a],
                                            basis.shells[b]).recs]
           for a, b in pairs}

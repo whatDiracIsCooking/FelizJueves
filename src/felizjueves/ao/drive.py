@@ -84,17 +84,10 @@ from felizjueves.kernel import (
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.launch import (
-    Bound,
-    ClassLaunch,
-    LaunchPlan,
-    PairRec,
-    _batches_for,
-    _g,
-    _sorted_desc,
-)
-from felizjueves.launch import _kernels as _plan_kernels
+from felizjueves.launch import Bound, ClassLaunch, LaunchPlan, bound_value
+from felizjueves.launch import class_kernels as _plan_kernels
 from felizjueves.launch import class_spec as launch_class_spec
+from felizjueves.launch_common import PairRec, batches_for, sorted_desc
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
 
@@ -429,7 +422,7 @@ def coulomb_matrix_chain(basis: Basis, D: object, *, bound: Bound,
         sa, sb = shells[a], shells[b]
         eps[(a, b)] = ep = epair(sa, sb)
         L = sa.l + sb.l
-        gs[(a, b)] = [_g(bound, zeta, L) for _, zeta, _ in ep.recs]
+        gs[(a, b)] = [bound_value(bound, zeta, L) for _, zeta, _ in ep.recs]
 
     # --- step 2: D_q and Dmax, one DQ launch per ket pair class -------------
     kdq = KernelDQ(lanes=dq_lanes)
@@ -536,10 +529,10 @@ def _chain_plan(basis: Basis, pairs, gs, dq_rows, *, n_batches: int,
     out = []
     for lp in sorted(bras):
         for lq in sorted(kets):
-            n = _batches_for(lp, lq, n_batches, strict=strict,
-                             refused=refused, resolve=resolve)
+            n = batches_for(lp, lq, n_batches, strict=strict,
+                            refused=refused, resolve=resolve)
             out.append(ClassLaunch(
-                lp, lq, n, tuple(bras[lp]), tuple(_sorted_desc(kets[lq])),
+                lp, lq, n, tuple(bras[lp]), tuple(sorted_desc(kets[lq])),
                 _plan_kernels(launch_class_spec(lp, lq, n)),
                 tuple(blocks[lp])))
     return LaunchPlan(tuple(out), tau, n_batches, True, tuple(refused))

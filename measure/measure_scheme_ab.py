@@ -108,7 +108,7 @@ from felizjueves.ao.shell import Basis
 from felizjueves.f_levers import block_fab
 from felizjueves.gate import GPU_BUSY_MAX
 from felizjueves.kernel_kblock import build_kblock_kernel
-from felizjueves.launch import _g
+from felizjueves.launch import bound_value
 from felizjueves.launch_f import f_launches
 from felizjueves.launch_kblock import kb_launches
 from felizjueves.reference.pq import pq
@@ -244,7 +244,8 @@ def build(tc, backend: str, n: int, cls: str, tau: float, run,
     dq_runs = dq_read_back(classes, np.fromfile(wd / "dq.out"))
     rows = _rows_of(classes, dq_runs[0])
     pairs = _unique_pairs(basis)
-    gs = {(a, b): [_g(J_BOUND, zeta, basis.shells[a].l + basis.shells[b].l)
+    gs = {(a, b): [bound_value(J_BOUND, zeta,
+                               basis.shells[a].l + basis.shells[b].l)
                    for _, zeta, _ in epair(basis.shells[a],
                                            basis.shells[b]).recs]
           for a, b in pairs}

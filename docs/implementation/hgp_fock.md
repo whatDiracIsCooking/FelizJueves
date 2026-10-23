@@ -646,8 +646,9 @@ Filed as issues by #293:
 - #326: the fused MMD `F`, the (MMD, fused) cell.
 - #327: `engine.py`'s pushed-back-down list, an HGP analogue for each item
   or a recorded reason why not.
-- #328: push `launch._sorted_desc` / `_nonneg` up out of their MMD-named
-  module (the density and `tau` checks moved to `ao.density` in #503).
+- #328: push the launch plan's stable sort and bound check up out of their
+  MMD-named module: done, they are `launch_common.sorted_desc` / `nonneg`
+  since #504 (the density and `tau` checks moved to `ao.density` in #503).
 - #329: the fused `F`'s screens measured on an extended molecule.
 - #330: `f` and above.
 - #331: settle `fock/symmetry-vs-screening`, fused `F` against split

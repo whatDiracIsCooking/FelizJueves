@@ -24,19 +24,15 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, is_fast
 
+from felizjueves import launch_common
 from felizjueves.ao import drive
 from felizjueves.ao import j as aoj
 from felizjueves.ao.density import checked_density, make_kets
 from felizjueves.ao.pairs import pair_bound, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.kernel import build_pq_kernels
-from felizjueves.launch import (
-    ClassLaunch,
-    PairRec,
-    _admits,
-    class_spec,
-    launches,
-)
+from felizjueves.launch import ClassLaunch, class_spec, launches
+from felizjueves.launch_common import PairRec, admits
 from felizjueves.reference.pq import one_centre, pq
 
 BOUND = partial(pair_bound, one_centre=one_centre)
@@ -210,11 +206,19 @@ def test_one_kernel_build_serves_every_shell_class_of_a_class():
             am = (la, lp - la, lc, lq - lc)
             assert build_pq_kernels(drive.class_spec(am, n)) == mine
             assert drive.admitted_batches(am, (1, 3, 6)) == tuple(
-                m for m in (1, 3, 6)
-                if _admits(lp, lq, m))
+                m for m in (1, 3, 6) if admits(lp, lq, m))
     for c in _plan(n_batches=3, strict=False):
         assert c.kernels == build_pq_kernels(class_spec(c.lp, c.lq,
                                                         c.n_batches))
+
+
+def test_the_shared_admission_asks_the_j_class_spec():
+    """`launch_common.admits` restates `launch.class_spec`'s key (`launch`
+    imports `launch_common`, so the reverse import is a cycle, #504): the
+    two must stay equal, or the J, K and F plans' admission drifts."""
+    for lp, lq, n in itertools.product(range(5), range(5), (1, 3, 6, 9)):
+        assert launch_common._admission_spec(lp, lq, n) == class_spec(lp, lq,
+                                                                      n)
 
 
 def test_a_refused_batch_count_raises_or_is_recorded():

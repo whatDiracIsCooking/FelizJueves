@@ -18,15 +18,18 @@ the only thing called, and it is injected).
 
 THE ANSWER (#204's question): OUTCOME 2. A `KClassLaunch` sits BESIDE
 `ClassLaunch`, and the shared part is extracted into `launch.py` and
-imported from it, unchanged in behaviour (the J plans are pinned by a
+imported from it (since #504 from `launch_common.py`), unchanged in
+behaviour (the J plans are pinned by a
 fingerprint taken before this module existed, test/test_launch.py):
 
-  SHARED   `launch.PairRec` (one index record: shell pair, primitive index,
-           pair momentum, bound `G`, sort `key`); `launch._sorted_desc` (the
-           stable descending sort by `key` -- the injected key is written
-           into `PairRec.key`, so the one sort serves both); `launch._nonneg`
-           (a bound's value refused unless a finite float >= 0); and
-           `launch._batches_for` (a class's batch count, asked of the plan,
+  SHARED   `launch_common.PairRec` (one index record: shell pair, primitive
+           index, pair momentum, bound `G`, sort `key`);
+           `launch_common.sorted_desc` (the stable descending sort by `key`
+           -- the injected key is written into `PairRec.key`, so the one
+           sort serves both); `launch_common.nonneg` (a bound's value
+           refused unless a finite float >= 0); and
+           `launch_common.batches_for` (a class's batch count, asked of
+           the plan,
            `strict` raising or recording -- admission depends on
            `(lp, lq, n_batches)` only, and test/test_launch_k.py pins that the
            plan admits a K `Spec` exactly when it admits the J class of the
@@ -179,7 +182,7 @@ from felizjueves.ao.k import (
 )
 from felizjueves.ao.shell import Basis
 from felizjueves.ir import Kernel
-from felizjueves.launch import PairRec, _batches_for, _nonneg, _sorted_desc
+from felizjueves.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["KBound", "KBuild", "KClassLaunch", "KLaunchPlan", "ORDERS",
@@ -328,7 +331,7 @@ def k_launches(basis: Basis, D: object, *, bound: KBound, key: KetKey,
             if len(gs) != len(ep.recs):
                 raise ValueError(f"bound gave {len(gs)} values for the "
                                  f"{len(ep.recs)} records of pair {(x, y)}")
-            gs = tuple(_nonneg(g, f"bound(pair {(x, y)})[{k}]")
+            gs = tuple(nonneg(g, f"bound(pair {(x, y)})[{k}]")
                        for k, g in enumerate(gs))
             side = bras.setdefault(ls, [])
             start = len(side)
@@ -336,9 +339,9 @@ def k_launches(basis: Basis, D: object, *, bound: KBound, key: KetKey,
             blocks.setdefault(ls, []).append((x, y, start, len(side)))
             kets.setdefault(ls, []).extend(
                 PairRec(x, y, k, L, g,
-                        _nonneg(key(x, y, g), f"key{(x, y, g)}"))
+                        nonneg(key(x, y, g), f"key{(x, y, g)}"))
                 for k, g in enumerate(gs))
-    sorted_kets = {ls: tuple(_sorted_desc(rs)) for ls, rs in kets.items()}
+    sorted_kets = {ls: tuple(sorted_desc(rs)) for ls, rs in kets.items()}
     # the symmetric sweep's ket groups: per ket class, per first shell `b`
     # in basis order; filtering the stably sorted list IS each group's own
     # stable descending sort
@@ -354,7 +357,7 @@ def k_launches(basis: Basis, D: object, *, bound: KBound, key: KetKey,
             am = (*bls, *kls)
             lp, lq = bls[0] + bls[1], kls[0] + kls[1]
             r: list[tuple[int, int, int]] = []
-            n = _batches_for(lp, lq, n_batches, strict=strict, refused=r)
+            n = batches_for(lp, lq, n_batches, strict=strict, refused=r)
             refused.extend((*am, nb) for *_, nb in r)
             kernels: tuple[Kernel, ...] = ()
             if build is not None:
