@@ -39,12 +39,12 @@ from test_layering import _graph, _under
 from tiers import split_by_l
 
 from felizjueves import e_fragment as ef
+from felizjueves.ao.density import epair
 from felizjueves.ao.drive import KernelJAB
 from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.j import (
     coulomb_matrix,
     coulomb_matrix_and_scale,
-    epair,
     jab_from_host,
 )
 from felizjueves.interp import Interpreter, Launch

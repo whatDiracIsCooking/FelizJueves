@@ -14,7 +14,7 @@ THREE WITNESSES, each of a different claim:
    new data. The factor `1 + 1e-12` is the rounding of a computed product,
    stated, not fitted.
 3. THE STAGING (`schwarz_classes`): every shell pair `i <= j` staged exactly
-   once, `la <= lb`, its records `ao.j.epair`'s, the ranges contiguous.
+   once, `la <= lb`, its records `ao.density.epair`'s, the ranges contiguous.
 
 Fast tier: no compiler, no card, no PySCF (the drift test is `oracle`).
 """
@@ -29,7 +29,7 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao.j import epair
+from felizjueves.ao.density import epair
 from felizjueves.ao.schwarz import (
     diagonal_and_scale,
     diagonal_matrix,

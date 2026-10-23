@@ -12,7 +12,7 @@ written: worst 2.82 eps on H2O/cc-pVDZ, 2.39 eps on the H10 chain.
 
 THE INPUTS, as a consumer stages an ordered record of `(sa, sb)`: `zeta_ab`,
 `XPA = P - A` (A the FIRST shell's centre), `XPB = P - B`, and `s_ab = c_a
-c_b (pi/zeta)^{3/2}` (`ao.j.epair`'s `s`).
+c_b (pi/zeta)^{3/2}` (`ao.density.epair`'s `s`).
 
 Cases: every ordered class `la, lb <= 3` on contracted shells with signed
 coefficients, `la + lb` above `tiers.FAST_L_MAX` in the slow tier; and every
@@ -32,7 +32,7 @@ from oracle import manifest
 from tiers import split_by_l
 
 from felizjueves import kernel_record_bound as krb
-from felizjueves.ao.j import epair
+from felizjueves.ao.density import epair
 from felizjueves.ao.k import record_bounds
 from felizjueves.ao.pairs import hermite_bound, pair_bound
 from felizjueves.ao.shell import Shell
@@ -299,4 +299,3 @@ def test_the_guard_leaves_spare_lanes_idle() -> None:
     )]).items()
     assert len(want) == 9
     assert worst(run(cls, args, threads=32), want) <= REL_TOL
-

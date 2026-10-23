@@ -152,13 +152,13 @@ from test_j_launched_ondevice import (
 from test_kernel_device import BACKEND, _toolchain
 from tiers import FAST_L_MAX, by_l, is_fast
 
+from felizjueves.ao.density import epair
 from felizjueves.ao.drive import _chain_plan, _unique_pairs
 from felizjueves.ao.hermite import _raise, e_block, hermite_order
 from felizjueves.ao.j import (
-    _carts,
+    cart_pairs,
     coulomb_matrix_and_scale,
     dq_from_host,
-    epair,
     jab_from_host,
 )
 from felizjueves.ao.staged import KetData
@@ -221,7 +221,7 @@ def _n_e(L: int) -> int:
 
 def _e_abs(la: int, lb: int, zeta: float, xpa, xpb) -> np.ndarray:
     """`Eabs[r, t]`: the recurrence over `|X_PA|`, `|X_PB|` from the same
-    `E^{00}_0`, rows `_carts(la, lb)`, columns `hermite_order(la + lb)`;
+    `E^{00}_0`, rows `cart_pairs(la, lb)`, columns `hermite_order(la + lb)`;
     `|E| <= Eabs` entry by entry (positive coefficients throughout)."""
     h = 0.5 / zeta
     axes: dict[tuple[int, int, int], list[float]] = {}
@@ -237,8 +237,8 @@ def _e_abs(la: int, lb: int, zeta: float, xpa, xpb) -> np.ndarray:
         return axes[(d, i, j)]
 
     ts = hermite_order(la + lb)
-    out = np.zeros((len(_carts(la, lb)), len(ts)))
-    for r, (a, b) in enumerate(_carts(la, lb)):
+    out = np.zeros((len(cart_pairs(la, lb)), len(ts)))
+    for r, (a, b) in enumerate(cart_pairs(la, lb)):
         ex = [axis(d, a[d], b[d]) for d in range(3)]
         for c, t in enumerate(ts):
             if all(t[d] <= a[d] + b[d] for d in range(3)):
@@ -860,7 +860,7 @@ def _e_abs_bounds_e(fast: bool) -> None:
         xpa = [P[d] - A[d] for d in range(3)]
         xpb = [P[d] - B[d] for d in range(3)]
         Ea = _e_abs(la, lb, zeta, xpa, xpb)
-        for r, (a, b) in enumerate(_carts(la, lb)):
+        for r, (a, b) in enumerate(cart_pairs(la, lb)):
             e = np.array(e_block(a, b, zeta, P, A, B))
             assert np.all(np.abs(e) <= Ea[r] * (1 + 1e-12)), (la, lb, r)
 

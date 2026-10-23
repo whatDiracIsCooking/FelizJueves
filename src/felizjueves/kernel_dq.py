@@ -49,7 +49,7 @@ decides it. It is folded into `D_q` and so into `Dmax`. A weight of 1 off
 the diagonal is the order-unity error this design is most likely to ship.
 
 THE DRESSING `s = c_c c_d (pi/eta)^{3/2}` is host-supplied too, from
-`ao.pairs.dress` through `ao.j.epair`; no kernel forms a contraction
+`ao.pairs.dress` through `ao.density.epair`; no kernel forms a contraction
 coefficient or `(pi/eta)^{3/2}`, so the inlined `E` stays the undressed `E`
 its pointwise Hermite identity checks.
 

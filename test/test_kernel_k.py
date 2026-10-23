@@ -46,7 +46,7 @@ import pytest
 
 from felizjueves import e_fragment as ef
 from felizjueves import kernel_k
-from felizjueves.ao.j import EPair, epair
+from felizjueves.ao.density import EPair, epair
 from felizjueves.ao.k import k_quartet
 from felizjueves.ao.shell import Shell
 from felizjueves.interp import Interpreter, Launch

@@ -1286,7 +1286,7 @@ def _k_timing_tau(k: dict, quantile: float | None) -> float:
 def _k_case(L: int, case: str):
     """A K_CASES input of class L and its host reference (want, scale, T
     max) -- shared by every n_batches of L, as `_case` is for J."""
-    from felizjueves.ao.j import EPair
+    from felizjueves.ao.density import EPair
     from felizjueves.ao.k import _k_quartet
     from felizjueves.kernel import k_spec
 

@@ -29,7 +29,7 @@ digested the moment it is formed. That is the device kernel's shape
 (`kernel_k.py`, #198), so the host is its bit-for-bit witness; it is forced
 by the shared-memory budget, not chosen (the milestone description). `E` is
 the DRESSED coefficient of `ao.pairs.primitive_pairs` on both sides, formed
-as `s * E` with `s` from `pairs.dress` (via `ao.j.epair`, exactly as `ao.j`'s
+as `s * E` with `s` from `pairs.dress` (via `ao.density.epair`, exactly as `ao.j`'s
 seams form it), so `(pi/zeta)^{3/2}` rides the bra `E` and `(pi/eta)^{3/2}`
 the ket `E`, once each, and this module multiplies no constant in. `[p|q]`
 carries `(2/sqrt(pi)) theta` and `(-1)^{|q|}` inside the injected evaluator,
@@ -177,7 +177,7 @@ tau`, so `|K(tau) - K(0)| <= tau * scale` element by element.
 THE `K` SEAM, `k=` (the shape #151 set for `dq=` / `jab=`). `exchange_matrix`
 takes an optional `k(bra, ket, dcd) -> block`, called once per unique
 quadruple in sweep order, with `bra = epair(sa, sc)` and `ket = epair(sb,
-sd)` (`ao.j.EPair`: the angular momenta, the centres, and per primitive pair
+sd)` (`ao.density.EPair`: the angular momenta, the centres, and per primitive pair
 `(P, zeta, s)`), `dcd` the density block `D_cd` over `cartesians(lc) x
 cartesians(ld)`, c outer, and returning `X` as `n_a` rows of `n_b` values.
 The quadruple list, the density's extraction and symmetry check, the
@@ -255,9 +255,9 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from felizjueves.ao.density import EPair, checked_density, checked_tau, epair
 from felizjueves.ao.eri import eri_block
 from felizjueves.ao.hermite import e_block, hermite_order
-from felizjueves.ao.j import EPair, _density, _tau, epair
 from felizjueves.ao.shell import Basis, cartesians
 
 Vec = tuple[float, float, float]
@@ -426,8 +426,8 @@ def _quadruples(n_sh: int, *, ordered: bool):
 def _sweep(basis: Basis, D: object, *, pq: PQ, ordered: bool,
            want_scale: bool, k: KQ | None = None,
            tau: float = 0.0) -> tuple[Matrix, Matrix]:
-    rows = _density(basis, D)
-    tau = _tau(tau)
+    rows = checked_density(basis, D)
+    tau = checked_tau(tau)
     if k is not None and tau > 0.0:
         raise ValueError(f"tau = {tau!r}: the k seam is unscreened; only "
                          "tau = 0 is accepted with k (ao/k.py's module "
@@ -500,7 +500,7 @@ def exchange_matrix_and_scale(basis: Basis, D: object, *,
 def k_from_eris(basis: Basis, D: object, *, pq: PQ) -> Matrix:
     """`K_mn = sum_{ls} D_ls (ml|ns)` from `ao.eri.eri_block` of every ordered
     quadruple -- the full ERI block, contracted element by element."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     shells, off = basis.shells, basis.offsets
     n_sh = len(shells)
     n = basis.n_ao
@@ -567,8 +567,8 @@ def _screened(basis: Basis, D: object, *, pq: PQ, tau: float, order: str,
     block's factor, the bound `I_ac * (I_bd * F)` and the key `I_bd * F`."""
     if order not in ORDERS:
         raise ValueError(f"order = {order!r} is not one of {ORDERS}")
-    rows = _density(basis, D)
-    tau = _tau(tau)
+    rows = checked_density(basis, D)
+    tau = checked_tau(tau)
     shells, off = basis.shells, basis.offsets
     n_sh = len(shells)
     eps = {(x, y): epair(shells[x], shells[y])
@@ -756,8 +756,8 @@ def density_decay(basis: Basis, D: object, *, bound: KBound, tau: float,
     plans take it (`functools.partial(record_bounds, pq=pq)`)."""
     if not (width > 0.0 and math.isfinite(width)):
         raise ValueError(f"width = {width!r}: a positive bin width")
-    rows = _density(basis, D)
-    tau = _tau(tau)
+    rows = checked_density(basis, D)
+    tau = checked_tau(tau)
     dm = _dm(rows)
     shells = basis.shells
     n_sh = len(shells)

@@ -109,8 +109,8 @@ from test_kernel_device import BACKEND, _toolchain
 from test_launch_k import _case as _launch_case
 from test_launch_k import _guarded, _stub, _truncated, schwarz
 
+from felizjueves.ao.density import checked_density, epair
 from felizjueves.ao.eri import eri_block_and_scale
-from felizjueves.ao.j import _density, epair
 from felizjueves.ao.k import (
     _dcd,
     _k_quartet,
@@ -239,7 +239,7 @@ def _host_blocks(drv: KDriver, basis: Basis, D, pq):
     per bra record, `ao.k._k_quartet` over the segment's kets in launch
     order -- `X` screened with the KERNEL's association `Ib * (Iq * maxD)
     < tau`, a `break`; `A` the absolute-value twin over EVERY ket."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     shells = basis.shells
     bras, kets = dict(drv.bra), dict(drv.ket)
     one: dict = {}

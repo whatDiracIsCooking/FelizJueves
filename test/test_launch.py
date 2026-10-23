@@ -26,6 +26,7 @@ from tiers import by_l, is_fast
 
 from felizjueves.ao import drive
 from felizjueves.ao import j as aoj
+from felizjueves.ao.density import checked_density, make_kets
 from felizjueves.ao.pairs import pair_bound, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.kernel import build_pq_kernels
@@ -135,7 +136,7 @@ def test_the_ket_key_is_the_host_sweeps_bound_bit_for_bit():
     n_sh = len(basis.shells)
     pairs = [(a, b, 1.0 if a == b else 2.0)
              for a in range(n_sh) for b in range(a + 1)]
-    host = aoj._kets(basis, aoj._density(basis, D), pairs, pq=pq, tau=1.0)
+    host = make_kets(basis, checked_density(basis, D), pairs, pq=pq, tau=1.0)
     rec = _unique_records(basis)
     want = {r: k.bound for r, k in zip(rec, host, strict=True)}
     got = {(r.i, r.j, r.prim, r.L): r.key for c in P for r in c.kets}
@@ -293,7 +294,7 @@ def test_the_ket_sort_key_is_the_product_and_the_break_needs_it(monkeypatch):
     n_sh = len(basis.shells)
     pairs = [(a, b, 1.0 if a == b else 2.0)
              for a in range(n_sh) for b in range(a + 1)]
-    host = aoj._kets(basis, aoj._density(basis, D), pairs, pq=pq, tau=1.0)
+    host = make_kets(basis, checked_density(basis, D), pairs, pq=pq, tau=1.0)
     rec = _unique_records(basis)  # the host's ket records, in its order
     dmax = {r: max(abs(v) for v in k.dq)
             for r, k in zip(rec, host, strict=True)}

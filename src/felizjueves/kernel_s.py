@@ -42,7 +42,7 @@ THE PARAMETER BLOCK:
   before the first `S` launch of a build, carried as a `Note`.
 
 NO PREFACTOR IS FORMED HERE. `s` is the host's one scalar per record,
-`c_a c_b (pi/zeta)^{3/2}` as `ao.pairs.dress` forms it (`ao.j.epair`'s
+`c_a c_b (pi/zeta)^{3/2}` as `ao.pairs.dress` forms it (`ao.density.epair`'s
 `s`); the kernel neither raises to a power nor names `pi`. And no `K_AB`
 is reinstated: the fragment's seed `exp(zeta X_PA X_PB)` per axis already
 carries it (milestone 11's design pin). `1/2zeta` is a local `0.5 / zeta`,

@@ -88,7 +88,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from felizjueves.ao.j import Matrix, _density, _kets
+from felizjueves.ao.density import Matrix, checked_density, make_kets
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis
 from felizjueves.interp import Interpreter, Launch
@@ -193,7 +193,7 @@ def _ket_vectors(basis: Basis, rows, recs) -> list:
     for r in recs:
         if r.shell_pair not in by_pair:
             w = 1.0 if r.i == r.j else 2.0
-            by_pair[r.shell_pair] = _kets(basis, rows, [(r.i, r.j, w)],
+            by_pair[r.shell_pair] = make_kets(basis, rows, [(r.i, r.j, w)],
                                           pq=_no_pq, tau=0.0)
         out.append(by_pair[r.shell_pair][r.prim])
     return out
@@ -281,7 +281,7 @@ def coulomb_matrix_staged(plan: LaunchPlan, basis: Basis, D: object, *,
             f"plan is a {type(plan).__name__}, not a J `LaunchPlan`: this "
             "driver stages J only (a K plan, `launch_k.KLaunchPlan`, has "
             "quartet classes, no ket Dmax and no eq. 20; module docstring)")
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     builds: Counter[str] = Counter()
     sizes: list[BufferSize] = []

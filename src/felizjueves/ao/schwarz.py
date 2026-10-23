@@ -41,7 +41,7 @@ THE RECORDS (`schwarz_classes`). One `SchwarzClass` per pair class `(la, lb)`
 with `la <= lb`: a shell pair whose first shell has the higher `l` is staged
 SWAPPED (`(j, i)`), which changes no element of a symmetric matrix and keeps the
 ladder at `la <= lb` (the emit CLI's `--schwarz-l`). Each shell pair contributes
-its primitive pairs (`ao.j.epair`: `P`, `zeta`, `s = c_a c_b (pi/zeta)^{3/2}`,
+its primitive pairs (`ao.density.epair`: `P`, `zeta`, `s = c_a c_b (pi/zeta)^{3/2}`,
 and `XPA = P - A`, `XPB = P - B`) as one contiguous record range
 `[rec0, rec1)`, which is both the bra and the ket side of its quartet.
 
@@ -54,8 +54,8 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from felizjueves.ao.density import epair
 from felizjueves.ao.eri import PQ, eri_block_and_scale
-from felizjueves.ao.j import epair
 from felizjueves.ao.shell import Basis, Shell
 
 Matrix = list[list[float]]

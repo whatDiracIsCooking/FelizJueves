@@ -100,7 +100,7 @@ from conftest import Toolchain
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import measured
-from felizjueves.ao.j import _density, epair
+from felizjueves.ao.density import checked_density, epair
 from felizjueves.ao.shell import Basis, n_cartesians
 from felizjueves.ao.staged import (
     KetDataHook,
@@ -268,7 +268,7 @@ def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver, *,
     `ao.staged`'s hook (#155): a ket class's `Q eta D Dmax` from it -- the
     DQ kernel's, in the chain -- instead of the host pre-contraction, through
     the same `_kets_checked` (every `Iq * Dmax` its plan key, bit for bit)."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     bras, kets = {}, {}
     for cl in plan:
@@ -535,7 +535,7 @@ def dq_classes(basis: Basis, D: object) -> list[DQClass]:
     """Every ket pair class of `basis`, sorted, with its unique shell pairs
     `c >= d` in sweep order and the host's weight -- the grouping and the
     arguments of `ao.drive.coulomb_matrix_chain`'s DQ step."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     shells, off = basis.shells, basis.offsets
     by: dict[tuple[int, int], list[tuple[int, int]]] = {}
     for c in range(len(shells)):
@@ -1401,7 +1401,7 @@ def _k_rows(basis: Basis, recs: tuple[PairRec, ...], *,
 def k_stage(drv: KDriver, basis: Basis, D: object) -> np.ndarray:
     """The packed input: `tau maxD | per bra class (12 + 1) n | per ket
     class (12 + 1) n | per density class Dcd`."""
-    rows = np.array(_density(basis, D), dtype=np.float64)
+    rows = np.array(checked_density(basis, D), dtype=np.float64)
     dm = max(abs(float(x)) for x in rows.ravel())
     if dm != drv.dm:
         raise ValueError(f"max|D| = {dm!r} is not the plan's {drv.dm!r}")

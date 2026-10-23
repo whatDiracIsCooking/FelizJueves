@@ -206,9 +206,9 @@ def test_no_host_arithmetic_step_is_reached(monkeypatch):
     host references and the host-keyed launch plan are tripwires: the chain
     reaches none of them and still gives the same `J`."""
     want = _chain("h2o_sto3g_j").J
-    for mod, names in ((aoj, ("_kets", "dq_from_host", "jab_from_host",
+    for mod, names in ((aoj, ("make_kets", "dq_from_host", "jab_from_host",
                               "_record_jp", "jp_from_pq")),
-                       (aostaged, ("_kets", "_ket_buffers", "_ket_vectors",
+                       (aostaged, ("make_kets", "_ket_buffers", "_ket_vectors",
                                    "_transform", "_dglobal")),
                        (drive, ("KernelJP",))):
         for n in names:

@@ -34,7 +34,7 @@ import pytest
 from test_launch_k import TAUS
 from test_launch_k import _case as _launch_case
 
-from felizjueves.ao.j import _density
+from felizjueves.ao.density import checked_density
 from felizjueves.ao.k import (
     DECAY_MARGIN,
     density_decay,
@@ -127,7 +127,7 @@ def test_the_factor_is_max_d_on_compact_molecules(name):
 
 def test_the_bound_holds_with_no_tolerance():
     basis, D = chain()
-    rows = np.array(_density(basis, D))
+    rows = np.array(checked_density(basis, D))
     dec = _decay()
     (c,) = _plan(True)
     cut = TAU * (1.0 - DECAY_MARGIN)

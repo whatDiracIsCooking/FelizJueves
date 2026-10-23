@@ -2,6 +2,29 @@
  "allowed": {
   "__init__": [],
   "ao": [
+   "ao.density",
+   "ao.drive",
+   "ao.eri",
+   "ao.eri3",
+   "ao.eri3_drive",
+   "ao.fock",
+   "ao.hermite",
+   "ao.hgp_drive",
+   "ao.j",
+   "ao.k",
+   "ao.kinetic",
+   "ao.metric",
+   "ao.metric_drive",
+   "ao.one_electron",
+   "ao.overlap",
+   "ao.pairs",
+   "ao.potential",
+   "ao.schwarz",
+   "ao.shell",
+   "ao.staged"
+  ],
+  "ao.density": [
+   "ao",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -24,6 +47,7 @@
   ],
   "ao.drive": [
    "ao",
+   "ao.density",
    "ao.eri",
    "ao.eri3",
    "ao.eri3_drive",
@@ -67,6 +91,7 @@
   ],
   "ao.eri": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri3",
    "ao.eri3_drive",
@@ -88,6 +113,7 @@
   ],
   "ao.eri3": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3_drive",
@@ -109,6 +135,7 @@
   ],
   "ao.eri3_drive": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -134,6 +161,7 @@
   ],
   "ao.fock": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -155,6 +183,7 @@
   ],
   "ao.hermite": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -176,6 +205,7 @@
   ],
   "ao.hgp_drive": [
    "ao",
+   "ao.density",
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
@@ -205,6 +235,7 @@
   ],
   "ao.j": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -226,6 +257,7 @@
   ],
   "ao.k": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -247,6 +279,7 @@
   ],
   "ao.kinetic": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -268,6 +301,7 @@
   ],
   "ao.metric": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -289,6 +323,7 @@
   ],
   "ao.metric_drive": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -314,6 +349,7 @@
   ],
   "ao.one_electron": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -335,6 +371,7 @@
   ],
   "ao.overlap": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -356,6 +393,7 @@
   ],
   "ao.pairs": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -377,6 +415,7 @@
   ],
   "ao.potential": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -398,6 +437,7 @@
   ],
   "ao.schwarz": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -419,6 +459,7 @@
   ],
   "ao.shell": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -440,6 +481,7 @@
   ],
   "ao.staged": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -1585,6 +1627,7 @@
   ],
   "launch": [
    "ao",
+   "ao.density",
    "ao.eri",
    "ao.eri3",
    "ao.eri3_drive",
@@ -1622,6 +1665,7 @@
   ],
   "launch_f": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",
@@ -1650,6 +1694,7 @@
   ],
   "launch_k": [
    "ao",
+   "ao.density",
    "ao.eri",
    "ao.eri3",
    "ao.eri3_drive",
@@ -1673,6 +1718,7 @@
   ],
   "launch_kblock": [
    "ao",
+   "ao.density",
    "ao.eri",
    "ao.eri3",
    "ao.eri3_drive",
@@ -2171,6 +2217,7 @@
   ],
   "walk_f": [
    "ao",
+   "ao.density",
    "ao.drive",
    "ao.eri",
    "ao.eri3",

@@ -68,7 +68,7 @@ THE DIGESTION, in the host's order (`ao.k.k_quartet`):
   into `Ebd[n_bd, n_q]`, from `block_fragment(lb, ld)` inlined -- the first
   kernel to inline two. Both are the UNDRESSED `E`; the dressings
   `s_ac = c_a c_c (pi/zeta)^{3/2}` and `s_bd` arrive as one host scalar per
-  record per side (`ao.pairs.dress` via `ao.j.epair`), and every use is
+  record per side (`ao.pairs.dress` via `ao.density.epair`), and every use is
   `s * E[r, t]`, as the host forms `s * e`. Neither fragment forms a
   contraction coefficient or a `(pi/zeta)^{3/2}`: m7's dressing pin, on two
   sides at once.

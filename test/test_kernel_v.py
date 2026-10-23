@@ -3,7 +3,7 @@
 THE WITNESS is `ao.potential.potential_block` (#235) with
 `reference.pq.one_centre` injected, placed into the matrix by `kernel_jab`'s
 scatter rule (the diagonal shell pair's lower triangle, mirrored). The
-kernel's records are `ao.j.epair`'s `(P, zeta, s)` per primitive pair, plus
+kernel's records are `ao.density.epair`'s `(P, zeta, s)` per primitive pair, plus
 `P - A` and `P - B`; its Boys function is `reference.boys.boys`, injected
 into the interpreter.
 
@@ -56,8 +56,8 @@ from oracle import manifest
 from tiers import by_l
 
 from felizjueves import e_fragment as ef
+from felizjueves.ao.density import epair
 from felizjueves.ao.hermite import hermite_order
-from felizjueves.ao.j import epair
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.potential import potential_block
 from felizjueves.ao.shell import Basis, Shell

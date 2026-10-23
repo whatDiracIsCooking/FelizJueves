@@ -166,7 +166,8 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 
-from felizjueves.ao.j import _density, _tau
+from felizjueves.ao.density import checked_density as _density
+from felizjueves.ao.density import checked_tau as _tau
 from felizjueves.ao.pairs import prune
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.launch import _nonneg, _sorted_desc

@@ -1,7 +1,7 @@
 """`kernel_dq`: the ket pre-contraction kernel, `D_q` and `Dmax` (#153).
 
 The kernel is checked against the HOST pre-contraction it replaces --
-`ao.j.dq_from_host` (the `dq=` seam's reference) and `ao.j._kets` (the sweep's
+`ao.j.dq_from_host` (the `dq=` seam's reference) and `ao.density.make_kets` (the sweep's
 own) -- interpreted, on real primitive-pair records. The reference is the host
 path, so the f class needs no `J` fixture: `hf_ccpvtz` (s-f on F, s-d on H,
 the F s shells a general contraction of 8 primitives) reaches every ordered
@@ -43,16 +43,14 @@ from tiers import split_by_l
 
 from felizjueves import e_fragment as ef
 from felizjueves import kernel_dq
+from felizjueves.ao.density import epair, make_kets
 from felizjueves.ao.drive import KernelDQ
 from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.j import (
-    _carts,
-    _kets,
-    _no_pq,
+    cart_pairs,
     coulomb_matrix,
     coulomb_matrix_and_scale,
     dq_from_host,
-    epair,
 )
 from felizjueves.interp import Launch, interpret
 from felizjueves.ir import (
@@ -78,6 +76,10 @@ CLASS_PARAMS = [pytest.param(c, id=f"{c[0]}{c[1]}",
                 for c in CLASSES]
 CLASS_GRID = split_by_l(CLASSES, sum, ids=lambda c: f"{c[0]}-{c[1]}")
 JK_TOL = 1e-12  # vs libcint, times scale_J: test_ao_j.py's, inherited
+
+
+def _no_pq(p, q, PQv, theta) -> float:
+    raise AssertionError("no [p|q] is evaluated building kets at tau = 0")
 
 
 @cache
@@ -117,10 +119,10 @@ def _by_class(name: str):
 @pytest.mark.parametrize("cls", CLASS_GRID)
 def test_rows_and_columns_are_the_hosts(cls) -> None:
     lc, ld = cls
-    assert list(ef.block_rows(lc, ld)) == _carts(lc, ld)
+    assert list(ef.block_rows(lc, ld)) == cart_pairs(lc, ld)
     assert hermite_targets(lc + ld) == hermite_order(lc + ld)
     n_cd, n_q = dq_shape(lc, ld)
-    assert (n_cd, n_q) == (len(_carts(lc, ld)), len(hermite_order(lc + ld)))
+    assert (n_cd, n_q) == (len(cart_pairs(lc, ld)), len(hermite_order(lc + ld)))
     k = build_dq_kernel((lc, ld))
     shape = {p.name: p.shape for p in k.params}
     assert shape["Dcd"][1] == Lit(n_cd) and shape["D"][1] == Lit(n_q)
@@ -193,7 +195,7 @@ def test_one_launch_per_class_is_the_host_pre_contraction(cls) -> None:
     want = [row for _, _, w, ket, dcd in items
             for row in dq_from_host(ket, dcd, w)]
     sweep = [k.dq for c, d, w, _, _ in items
-             for k in _kets(basis, rows, [(c, d, w)], pq=_no_pq, tau=0.0)]
+             for k in make_kets(basis, rows, [(c, d, w)], pq=_no_pq, tau=0.0)]
     assert want == sweep  # the two host forms agree (#151)
     assert D.tolist() == [list(r) for r in want]  # bitwise
     assert Dmax.tolist() == [max(abs(v) for v in r) for r in want]
