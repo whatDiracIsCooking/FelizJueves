@@ -39,7 +39,7 @@ import numpy as np
 import pytest
 import test_kernel_f as tk
 
-from felizjueves import f_levers, interp, levers
+from felizjueves import f_levers, levers
 from felizjueves import kernel_f as KF
 from felizjueves.ao.shell import Basis
 from felizjueves.device import GFX1200, SM_86
@@ -47,7 +47,6 @@ from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import block_fab
 from felizjueves.f_levers.seams import DEFAULT_HOOKS
 from felizjueves.hgp import vrr
-from felizjueves.interp import InterpError, Interpreter, Launch, interpret_fragment
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -66,8 +65,10 @@ from felizjueves.ir import (
     Space,
     Var,
     WarpReduce,
+    interp,
     walk,
 )
+from felizjueves.ir.interp import InterpError, Interpreter, Launch, interpret_fragment
 from felizjueves.spec import Target
 
 NAME = block_fab.NAME

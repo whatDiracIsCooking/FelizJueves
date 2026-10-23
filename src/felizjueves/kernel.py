@@ -90,8 +90,8 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
+from felizjueves.ir.passes import atomize
 from felizjueves.j_levers import fused, mixed
-from felizjueves.passes import atomize
 from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule

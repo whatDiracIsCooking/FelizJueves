@@ -14,6 +14,7 @@ import pytest
 
 from felizjueves import levers
 from felizjueves.ir import Note
+from felizjueves.ir.lower import LEVERS as LOWERING
 from felizjueves.kernel import (
     build_pq_kernel,
     build_pq_kernels,
@@ -23,7 +24,6 @@ from felizjueves.kernel import (
     pq_spec,
 )
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels
-from felizjueves.lower import LEVERS as LOWERING
 from felizjueves.plan.pipeline import TUNED, plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import (

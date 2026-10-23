@@ -36,7 +36,7 @@ from felizjueves.ao.density import epair
 from felizjueves.ao.k import record_bounds
 from felizjueves.ao.pairs import hermite_bound, pair_bound
 from felizjueves.ao.shell import Shell
-from felizjueves.interp import Launch, interpret
+from felizjueves.ir.interp import Launch, interpret
 from felizjueves.kernel_pair_bound import (
     hermite_bound_coefficients,
     pair_bound_coefficients,

@@ -62,7 +62,6 @@ from felizjueves.ao.k import _k_quartet
 from felizjueves.ao.pairs import narrowed
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     Call,
@@ -80,6 +79,7 @@ from felizjueves.ir import (
     WarpReduce,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.k_levers import mixed, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KET, KSH
 from felizjueves.kernel import builder_plan

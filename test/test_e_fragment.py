@@ -57,7 +57,6 @@ from felizjueves.ao.pairs import dress, primitive_pairs
 from felizjueves.ao.shell import Shell, cartesians
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import interpret, interpret_fragment
 from felizjueves.ir import (
     Assign,
     Call,
@@ -76,6 +75,7 @@ from felizjueves.ir import (
     Weighted,
     walk,
 )
+from felizjueves.ir.interp import interpret, interpret_fragment
 
 LMAX = 3  # (ss) through (ff)
 CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]
@@ -488,7 +488,7 @@ def test_the_kinetic_binds_are_the_contract() -> None:
 
 def test_the_interpreter_does_not_know_what_e_is() -> None:
     src = (Path(__file__).resolve().parents[1] / "src" / "felizjueves"
-           / "interp.py").read_text().lower()
+           / "ir" / "interp.py").read_text().lower()
     assert "hermite" not in src and "e_fragment" not in src
 
 

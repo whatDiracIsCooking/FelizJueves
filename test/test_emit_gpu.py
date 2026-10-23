@@ -64,6 +64,7 @@ from test_k_lever_shuffle import _bcast
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, gpu
 from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD, EmitError
+from felizjueves.ir.passes import split_axes, transpose
 from felizjueves.kernel import build_pq_kernel
 from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
@@ -72,7 +73,6 @@ from felizjueves.kernel_record_bound import build_record_bound_kernel
 from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
-from felizjueves.passes import split_axes, transpose
 from felizjueves.spec import Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parent.parent

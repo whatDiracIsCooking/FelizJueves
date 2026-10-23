@@ -61,7 +61,7 @@ from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import batched_vrr as bv
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 NAME = bv.NAME
 CAP = 4

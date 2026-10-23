@@ -70,7 +70,7 @@ from felizjueves import kernel_f_scatter as FS
 from felizjueves.f_levers import block_fab, scatter
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 NAME = scatter.NAME
 L4 = tuple(c for c in CLASSES if sum(c) <= 4)

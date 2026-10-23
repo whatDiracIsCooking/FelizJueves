@@ -36,8 +36,8 @@ from tiers import by_l
 
 from felizjueves import kernel_k
 from felizjueves.ao.k import record_bounds
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Assign, AtomicAdd, Index, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_k import k_class_spec
 from felizjueves.kernel_kblock import (
     PARAMS,

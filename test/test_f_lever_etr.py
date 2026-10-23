@@ -79,8 +79,8 @@ from felizjueves.f_levers import etr as E
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import cost, etr, hrr, vrr
 from felizjueves.hgp import recurrence as R
-from felizjueves.interp import Interpreter
 from felizjueves.ir import Decl, Note, walk
+from felizjueves.ir.interp import Interpreter
 from felizjueves.kernel_f import build_f_kernel, close, f_class_spec
 from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys

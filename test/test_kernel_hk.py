@@ -82,7 +82,6 @@ from felizjueves.ao.density import epair
 from felizjueves.ao.k import exchange_matrix_reference, k_quartet
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp import recurrence as R
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -98,6 +97,7 @@ from felizjueves.ir import (
     Var,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_f import pack
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq

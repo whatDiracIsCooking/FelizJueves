@@ -59,7 +59,7 @@ from felizjueves.device import GFX1200, SM_86
 from felizjueves.f_levers import block_fab
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 NAME = block_fab.NAME
 L4 = tuple(c for c in CLASSES if sum(c) <= 4)

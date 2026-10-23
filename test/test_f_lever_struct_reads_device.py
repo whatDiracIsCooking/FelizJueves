@@ -62,7 +62,7 @@ from felizjueves import kernel_f as KF
 from felizjueves.f_levers import struct_reads as sr
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 NAME = sr.NAME
 SUFFIX = "_lv_struct_reads"

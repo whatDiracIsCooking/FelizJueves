@@ -61,8 +61,8 @@ from felizjueves import kernel_f as KF
 from felizjueves.f_levers import mixed
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
+from felizjueves.ir.lever_ladder import unit_name
 from felizjueves.launch_f import f_launches
-from felizjueves.lever_ladder import unit_name
 from felizjueves.walk_f import walk_f
 
 NAME = mixed.NAME

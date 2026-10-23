@@ -112,6 +112,7 @@ from felizjueves.ao.staged import (
     _transform,
 )
 from felizjueves.ir import AtomicAdd, For, If, Kernel, Note, Stmt, walk
+from felizjueves.ir.passes import atomize
 from felizjueves.kernel import bra_functions, ket_functions, launch_shape
 from felizjueves.kernel_dq import PARAMS as DQ_PARAMS
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
@@ -122,7 +123,6 @@ from felizjueves.kernel_k import launch_shape as k_launch_shape
 from felizjueves.launch import LaunchPlan, class_spec
 from felizjueves.launch_common import PairRec
 from felizjueves.launch_k import KLaunchPlan
-from felizjueves.passes import atomize
 from felizjueves.plan.targets import hermite_targets
 
 RUNS = 2  # whole-plan runs per process: the run-to-run witness

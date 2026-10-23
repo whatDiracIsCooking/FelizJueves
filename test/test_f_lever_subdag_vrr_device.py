@@ -59,7 +59,7 @@ from felizjueves.f_levers import batched_vrr as bv
 from felizjueves.f_levers import subdag_vrr as sv
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 NAME = sv.NAME
 BOTH = (bv.NAME, NAME)

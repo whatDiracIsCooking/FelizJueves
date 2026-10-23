@@ -211,11 +211,11 @@ from felizjueves.asym import (
 from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Lit, Space
+from felizjueves.ir.lever_ladder import unit_name
+from felizjueves.ir.lower import LEVERS, RECYCLE, lower
 from felizjueves.kernel import build_pq_kernels, pq_spec
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_k import build_k_kernels
-from felizjueves.lever_ladder import unit_name
-from felizjueves.lower import LEVERS, RECYCLE, lower
 from felizjueves.measured_store import (
     GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: measure_kernel_device's sweep
 )

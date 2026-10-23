@@ -74,7 +74,8 @@ RULES: dict[str, Rule] = {
         spec="`spec` imports this module to validate; the reverse is a cycle",
         plan="the plan layer's levers are its own; this vocabulary is the "
              "builders'",
-        lower="lowering's levers are its own (`lower.LEVERS`)"),
+        **{"ir.lower":
+            "lowering's levers are its own (`lower.LEVERS`)"}),
     "literature": _rule(
         "published tables and the rules that score against them; self-contained "
         "so that a score cannot be bent by the code it scores",
@@ -85,7 +86,7 @@ RULES: dict[str, Rule] = {
         "host-side planning, [JEngine, v2, sec. 6] steps 1-3; it reads the key "
         "and the published tables, and knows nothing of IR or devices",
         ("spec", "plan", "literature"),
-        ir="the plan counts; it emits no instructions",
+        **{"=ir": "the plan counts; it emits no instructions"},
         dispatch="nothing measured may reach the plan's cost model: a "
                  "dispatch choice is admitted by the plan, never imported "
                  "by it (#145)",
@@ -96,14 +97,14 @@ RULES: dict[str, Rule] = {
         ("reference",),
         spec="ground truth takes plain numbers, not the generation key",
         plan="the reference must not share the MILD/DAG/sieve path it checks",
-        ir="the reference is not built from the IR it checks",
+        **{"=ir": "the reference is not built from the IR it checks"},
         recurrence="the reference is the recurrence run directly, not the "
                    "builder's version of it"),
     "device": _rule(
         "the hardware vocabulary, `Arch` and `MeasuredKey` (#37): data, keyed "
         "on `Spec`",
         ("spec",),
-        ir="an arch is data about a card, not about a kernel",
+        **{"=ir": "an arch is data about a card, not about a kernel"},
         emit="backends read `Arch`; `Arch` does not know the backends",
         reference=_GROUND_TRUTH),
     "gate": _rule(
@@ -130,7 +131,7 @@ RULES: dict[str, Rule] = {
     "interp": _rule(
         "an instruction-set machine for ir.py and nothing more (#23); Boys is "
         "injected (`boys=`), not imported",
-        ("ir",),
+        ("=ir",),
         reference="same ancestry as its own pin: the interpreter would be "
                   "checked against the module it was built on (#23)",
         plan="it executes instructions; it does not know the recurrence (#23)",
@@ -141,7 +142,7 @@ RULES: dict[str, Rule] = {
     "lower": _rule(
         "IR -> IR rewrites: lower.py (register recycling, #24) and passes.py "
         "(the levers, first `atomize`, #48)",
-        ("ir",),
+        ("=ir",),
         reference=_GROUND_TRUTH,
         emit="lowering is backend-neutral; a backend consumes its output",
         plan="lowering rewrites instructions, not plans"),
@@ -152,26 +153,28 @@ RULES: dict[str, Rule] = {
         "class's kernels are built then `passes.atomize`d (#49), so a "
         "builder may apply a pass. It reads the kernel-body levers through "
         "the key (`Spec.kernel_body_levers`, #337), never `levers` directly",
-        ("spec", "plan", "ir", "recurrence", "passes"),
+        ("spec", "plan", "=ir", "recurrence", "ir.passes"),
         levers="the builder reads the lever vocabulary through `spec`, its "
                "one key (#337); the vendor-neutral import set is pinned",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific "
              "(#25)",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         reference=_GROUND_TRUTH),
     "fragment": _rule(
         "e_fragment.py (#152): device-code `Fragment`s for the AO side's "
         "quantities, first the McMurchie-Davidson `E`. It builds IR (`ir`) "
         "and reads the Hermite order from the plan's targets, which "
         "`ao.hermite` restates and a test pins equal",
-        ("ir", "plan.targets"),
+        ("=ir", "plan.targets"),
         ao="`ao.hermite` is the reference the fragment is interpreted "
            "against, and `ao.shell` the layout it is pinned to: importing "
            "either shares ancestry with its witness (#20); the Cartesian "
            "order is restated and a test asserts the two equal",
-        interp="the fragment is checked by the interpreter, never built on "
-               "it; and the interpreter must not know what `E` is (#152)",
+        **{"ir.interp":
+            "the fragment is checked by the interpreter, never built on "
+               "it; and the interpreter must not know what `E` is (#152)"},
         emit="a fragment is vendor-neutral IR; the arch enters at emission",
         device="the IR is arch-neutral",
         reference=_GROUND_TRUTH),
@@ -179,11 +182,12 @@ RULES: dict[str, Rule] = {
         "IR -> text, one backend per vendor sharing emit/_c.py (#26/#27), and "
         "`gpu`, one text for both over FelizJueves's own headers. Reads "
         "a finished `Kernel` and an `Arch`",
-        ("ir", "device", "emit"),
+        ("=ir", "device", "emit"),
         reference="#20's hazard: a reference an emitter can reach is a "
                   "reference an emitter can be derived from",
-        interp="emitting is not interpreting; the golden files and the kernel "
-               "tier check the text",
+        **{"ir.interp":
+            "emitting is not interpreting; the golden files and the kernel "
+               "tier check the text"},
         plan="a backend spells a `Kernel`; it does not decide one",
         kernel="a backend takes any `Kernel`; composing builder + backend is "
                "a driver's job, not a backend's",
@@ -198,11 +202,12 @@ RULES: dict[str, Rule] = {
         "`measured` writes its rows into `measured_store` (#94), and compiles "
         "#113's asymmetric study cells through `asym`, and #205's K cells "
         "through `kernel_k`",
-        ("spec", "device", "ir", "kernel", "lower", "emit", "measured_store",
+        ("spec", "device", "=ir", "kernel", "ir.lower", "emit", "measured_store",
          "asym", "kernel_dq", "kernel_jab", "kernel_k"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
-        interp="a driver ships kernels; it does not check them -- the tests do",
+        **{"ir.interp":
+            "a driver ships kernels; it does not check them -- the tests do"},
         plan="a driver goes through the builder, so the kernel it writes is "
              "the kernel the tests built"),
     "analysis": _rule(
@@ -215,7 +220,7 @@ RULES: dict[str, Rule] = {
         "each other (#115; the one analysis that may import its siblings, "
         "and only the three it cross-reads). It reads both sides and feeds "
         "neither",
-        ("spec", "device", "kernel", "lower", "measured_store",
+        ("spec", "device", "kernel", "ir.lower", "measured_store",
          "kernelrank", "batchreport", "ridge"),
         measured="an analysis reads the STORE (`measured_store`), never the "
                  "driver that compiles into it: a ranking must not need a "
@@ -253,8 +258,9 @@ RULES: dict[str, Rule] = {
         "feeds the launch plan, by injection. It reads the store and the "
         "card, nothing else",
         ("device", "measured_store", "batchreport"),
-        lower="measured rows only, never a model: `lower.KernelCost` is the "
-              "model #54's limits record mis-ranking the hardware (#145)",
+        **{"ir.lower":
+            "measured rows only, never a model: `lower.KernelCost` is the "
+              "model #54's limits record mis-ranking the hardware (#145)"},
         kernelrank="a model-vs-measurement ranking is not a choice: the "
                    "clock arbitrates, never a model or byte proxy (#145)",
         ridge="a counter/roofline verdict is a byte proxy, not the clock",
@@ -274,15 +280,16 @@ RULES: dict[str, Rule] = {
         "`passes.atomize`) and judges its rows against the literal ones read "
         "from the store. Not `builder`: it reads the store; not `analysis`: "
         "it plans",
-        ("spec", "device", "ir", "plan", "kernel", "passes", "measured_store"),
+        ("spec", "device", "=ir", "plan", "kernel", "ir.passes", "measured_store"),
         literature="the study's verdict is recorded by hand in claims.json / "
                    "limits.json and read by tests; nothing measured may feed "
                    "a literature floor",
         measured="the study reads the STORE; the driver compiles its cells, "
                  "never the reverse (#94)",
         emit="the study builds kernels; spelling them is the driver's job",
-        interp="the kernel tier checks the study's kernels, not the "
-               "interpreter",
+        **{"ir.interp":
+            "the kernel tier checks the study's kernels, not the "
+               "interpreter"},
         reference=_GROUND_TRUTH),
     "store": _rule(
         "measured_store.py (#94): the `Measured` record, its file and read "
@@ -290,14 +297,15 @@ RULES: dict[str, Rule] = {
         "names cells (`kernel.pq_spec`) and lowering levers (`lower.LEVERS`) "
         "but knows no toolchain, so the fast tier and the analyses read it "
         "without one (`TOOLCHAIN_STDLIB` below holds the runtime half)",
-        ("spec", "device", "kernel", "lower"),
+        ("spec", "device", "kernel", "ir.lower"),
         measured="the driver writes into the store, never the reverse: a store "
                  "that imports its driver drags a toolchain into every reader "
                  "(#94)",
         emit="the store records what a compiler said about text; spelling the "
              "text is the driver's job (#94)",
-        ir="a row is keyed on a Spec, not on instructions",
-        interp="a measurement is not an interpretation",
+        **{"=ir": "a row is keyed on a Spec, not on instructions"},
+        **{"ir.interp":
+            "a measurement is not an interpretation"},
         dispatch="the resolver reads the store; a store that imports it "
                  "is a cycle, and a choice would shape its own evidence "
                  "(#145)",
@@ -318,7 +326,7 @@ RULES: dict[str, Rule] = {
              "and no `key()` (#80)",
         plan="the AO side restates the Cartesian order rather than importing "
              "it; a test asserts the two agree, so neither drifts silently",
-        ir="the AO layer describes basis functions, not instructions",
+        **{"=ir": "the AO layer describes basis functions, not instructions"},
         emit="the definition of the input must not be shaped by how a kernel "
              "is spelled",
         reference="the reference is checked against what the AO layer feeds "
@@ -337,8 +345,8 @@ RULES: dict[str, Rule] = {
         "`Target.JAB` composed over that staging, so the adapter reaches "
         "`ao.staged` and builds its own `launch` plan from the DQ kernel's "
         "read-back `Dmax`",
-        ("spec", "kernel", "ir", "interp", "plan", "ao", "launch",
-         "launch_common", "passes", "kernel_dq", "kernel_jab"),
+        ("spec", "kernel", "=ir", "ir.interp", "plan", "ao", "launch",
+         "launch_common", "ir.passes", "kernel_dq", "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -353,10 +361,11 @@ RULES: dict[str, Rule] = {
         "`ir` for the `Kernel` type it carries; the records, the sort, the "
         "bound check and the batch admission it shares with its siblings "
         "from `launch_common` (#504)",
-        ("spec", "plan", "kernel", "ir", "ao", "launch_common"),
+        ("spec", "plan", "kernel", "=ir", "ao", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
-        interp="the plan is data: nothing is launched or interpreted here",
+        **{"ir.interp":
+            "the plan is data: nothing is launched or interpreted here"},
         **{"ao.drive": "the adapter runs kernels; the staged driver beside "
                        "it imports this plan (#143), so the plan importing "
                        "the adapter is a cycle and drags the interpreter in "
@@ -384,10 +393,11 @@ RULES: dict[str, Rule] = {
         "records and the host's staged contraction; the bound, the ket "
         "sort key and the K kernel builder arrive injected (`bound=`, "
         "`key=`, `build=`)",
-        ("spec", "ir", "ao", "launch", "launch_common"),
+        ("spec", "=ir", "ao", "launch", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound and `pq` are injected",
-        interp="the plan is data and the walk is ao.k's arithmetic; "
-               "nothing is interpreted here",
+        **{"ir.interp":
+            "the plan is data and the walk is ao.k's arithmetic; "
+               "nothing is interpreted here"},
         kernel="J's builder is `launch`'s business, and the K builder "
                "(`kernel_k`, #198) arrives injected as `build=`: this plan "
                "names a class's `Spec`, it does not build it",
@@ -409,10 +419,11 @@ RULES: dict[str, Rule] = {
         "kernel_jab.py (#154): the bra-transform-and-scatter kernel, "
         "`Target.JAB` -- key -> IR, with the `E` block fragment inlined "
         "(`e_fragment`) and the Hermite order from the plan's targets",
-        ("spec", "ir", "e_fragment", "plan.targets"),
+        ("spec", "=ir", "e_fragment", "plan.targets"),
         ao="`ao.j.jab_from_host` is the witness the kernel is interpreted "
            "against; importing the AO layer shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -421,12 +432,13 @@ RULES: dict[str, Rule] = {
         "the key, the `E` block fragment (inlined), the Hermite order from "
         "the plan's targets, and IR. ao/drive.py's `KernelDQ` runs it in "
         "the interpreter as `ao.j`'s `dq=` seam",
-        ("spec", "ir", "e_fragment", "plan.targets"),
+        ("spec", "=ir", "e_fragment", "plan.targets"),
         ao="`ao.j.dq_from_host` is the reference the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
            "importing either shares ancestry with its witness (#20); the "
            "weight and the dressing arrive as host scalars",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="a builder produces vendor-neutral IR; the arch enters at "
              "emission (#156)",
         device="the `Kernel` is arch-neutral",
@@ -443,11 +455,12 @@ RULES: dict[str, Rule] = {
         kernel="the count is the arithmetic half of a claim settled BEFORE "
                "any K kernel is built (#202): `k_spec` is restated and a "
                "test pins the two equal",
-        ir="the count reads no instructions: a builder's output would make "
-           "it a measurement of one kernel, not of the plan",
+        **{"=ir": "the count reads no instructions: a builder's output would make "
+           "it a measurement of one kernel, not of the plan"},
         e_fragment="the `E` nonzero pattern is restated from the plan's "
                    "targets; the fragment is a builder",
-        interp="nothing here is run",
+        **{"ir.interp":
+            "nothing here is run"},
         emit="nothing here is spelled",
         measured="no toolchain: the count is recomputed in the fast tier",
         measured_store="no measured row may shape the arithmetic half; "
@@ -463,13 +476,14 @@ RULES: dict[str, Rule] = {
         "(`kernel`), and two `E` block fragments inlined (`e_fragment`); "
         "a split class's kernels are built then `passes.atomize`d (#203), "
         "as the `builder` rule lets `kernel.py` do",
-        ("spec", "plan", "ir", "recurrence", "e_fragment", "kernel",
-         "passes", "k_levers"),
+        ("spec", "plan", "=ir", "recurrence", "e_fragment", "kernel",
+         "ir.passes", "k_levers"),
         ao="`ao.k.k_quartet` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
            "importing either shares ancestry with its witness (#20); both "
            "dressings arrive as host scalars",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -505,9 +519,9 @@ RULE_OF: dict[str, str] = {
     "gate": "gate",
     "ceilings": "probe",
     "ir": "ir",
-    "interp": "interp",
-    "lower": "lower",
-    "passes": "lower",
+    "ir.interp": "interp",
+    "ir.lower": "lower",
+    "ir.passes": "lower",
     "recurrence": "builder",
     "kernel": "builder",
     "e_fragment": "fragment",
@@ -590,12 +604,12 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "gate": (),
     "ceilings": ("device", "gate"),
     "ir": (),
-    "interp": ("ir",),
-    "lower": ("ir",),
-    "passes": ("ir",),
+    "ir.interp": ("ir",),
+    "ir.lower": ("ir",),
+    "ir.passes": ("ir",),
     "recurrence": ("ir", "plan.dag", "plan.pipeline", "plan.schedule",
                    "plan.targets", "spec"),
-    "kernel": ("ir", "passes", "plan.dag", "plan.pipeline", "plan.schedule",
+    "kernel": ("ir", "ir.passes", "plan.dag", "plan.pipeline", "plan.schedule",
                "plan.targets", "recurrence", "spec"),
     "e_fragment": ("ir", "plan.targets"),
     "emit": (),
@@ -606,11 +620,11 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "kernel_dq",
                       "kernel_jab", "spec"),
     "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "kernel",
-                 "kernel_k", "lower", "measured_store", "spec"),
-    "measured_store": ("device", "kernel", "lower", "spec"),
-    "asym": ("device", "ir", "kernel", "measured_store", "passes",
+                 "kernel_k", "ir.lower", "measured_store", "spec"),
+    "measured_store": ("device", "kernel", "ir.lower", "spec"),
+    "asym": ("device", "ir", "kernel", "measured_store", "ir.passes",
              "plan.batching", "plan.dag", "plan.sieve", "plan.targets", "spec"),
-    "kernelrank": ("device", "kernel", "lower", "measured_store", "spec"),
+    "kernelrank": ("device", "kernel", "ir.lower", "measured_store", "spec"),
     "batchreport": ("device", "measured_store"),
     "ridge": ("device", "measured_store"),
     "dispatch": ("batchreport", "device", "measured_store"),
@@ -632,11 +646,11 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     # #197: K reuses the density contract and EPair (ao.density since #503),
     # and ao.eri for its third index path (`k_from_eris`).
     "ao.k": ("ao.density", "ao.eri", "ao.hermite", "ao.shell"),
-    "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "interp", "ir",
+    "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "ir.interp", "ir",
                  "kernel", "kernel_dq", "kernel_jab", "launch",
                  "launch_common", "plan.pipeline", "spec"),
-    "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "interp", "ir",
-                  "kernel", "launch", "launch_common", "passes"),
+    "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "ir.interp", "ir",
+                  "kernel", "launch", "launch_common", "ir.passes"),
     "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "kernel",
                "launch_common", "spec"),
     # #504: what the launch plans share, out of `launch`; it asks the plan
@@ -754,7 +768,7 @@ def test_the_walk_sees_function_level_imports() -> None:
            "    from felizjueves.emit import cuda\n"
            "    from . import ir\n")
     known = {"reference.boys", "plan.dag", "emit", "emit.cuda", "ir"}
-    assert imports_of(src, "interp", False, known) == {
+    assert imports_of(src, "ir.interp", False, known) == {
         "reference.boys", "plan.dag", "emit.cuda", "ir"}
 
 
@@ -838,7 +852,7 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged",
+        for banned in (_REF, "ir.interp", "emit", "ao.drive", "ao.staged",
                        "dispatch", "measured", "measured_store", *extra):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
@@ -906,7 +920,7 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_dq reaches {hit}"
     assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
@@ -970,11 +984,12 @@ RULES |= {
         "kernel_s.py (#237): the overlap kernel, `Target.S` -- key -> IR, "
         "with the `E` fragment's `t = 0` column inlined (`e_fragment`) and "
         "`kernel_jab`'s scatter rule restated, not imported",
-        ("spec", "ir", "e_fragment"),
+        ("spec", "=ir", "e_fragment"),
         ao="`ao.overlap.overlap_block` is the witness the kernel is "
            "interpreted against, and `ao.pairs.dress` the prefactor it must "
            "not form: importing either shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -999,10 +1014,11 @@ RULES |= {
         "kernel_pair_bound.py: the record bound kernel, `Target.PAIR_BOUND` "
         "-- key -> IR, the closed form of `ao.pairs.pair_bound` at PQ = 0, "
         "its coefficients folded from the Hermite order (`plan.targets`)",
-        ("spec", "ir", "plan.targets"),
+        ("spec", "=ir", "plan.targets"),
         ao="`ao.pairs.pair_bound` is the witness the kernel is interpreted "
            "against: importing it shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -1029,7 +1045,7 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "plan.targets" in seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_pair_bound reaches {hit}"
 
@@ -1047,11 +1063,12 @@ RULES |= {
         "kernel_record_bound.py (#499): K's dressed record bound kernel, "
         "`Target.RECORD_BOUND` -- key -> IR, the `E` fragment inlined "
         "(`e_fragment`) and each `I_p` in `kernel_pair_bound`'s closed form",
-        ("spec", "ir", "plan.targets", "e_fragment", "kernel_pair_bound"),
+        ("spec", "=ir", "plan.targets", "e_fragment", "kernel_pair_bound"),
         ao="`ao.k.record_bounds` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the prefactor it must not form: "
            "importing either shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -1077,7 +1094,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"e_fragment", "kernel_pair_bound"} <= seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_record_bound reaches {hit}"
 
@@ -1095,7 +1112,7 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "e_fragment" in seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_s reaches {hit}"
 
@@ -1113,11 +1130,12 @@ RULES |= {
         "kernel_t.py (#238): the kinetic-energy kernel, `Target.T` -- key -> "
         "IR, with the `E` fragment's kinetic bracket inlined (`e_fragment`) "
         "and `kernel_jab`'s scatter rule restated, not imported",
-        ("spec", "ir", "e_fragment"),
+        ("spec", "=ir", "e_fragment"),
         ao="`ao.kinetic.kinetic_block` is the witness the kernel is "
            "interpreted against, and `ao.pairs.dress` the prefactor it must "
            "not form: importing either shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -1143,7 +1161,7 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "e_fragment" in seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_t reaches {hit}"
 
@@ -1163,11 +1181,12 @@ RULES |= {
         "engine's prelude and recurrence statements (`recurrence`), the `E` "
         "block fragment inlined (`e_fragment`) and `kernel_jab`'s scatter "
         "rule restated, not imported",
-        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
         ao="`ao.potential.potential_block` is the witness the kernel is "
            "interpreted against, and `ao.pairs.dress` the prefactor it must "
            "not form: importing either shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -1194,7 +1213,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_v reaches {hit}"
 
@@ -1228,7 +1247,7 @@ def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"ao.one_electron", "ao.potential"} <= seen
-    for banned in (_REF, "interp", "kernel_s", "kernel_t", "kernel_v"):
+    for banned in (_REF, "ir.interp", "kernel_s", "kernel_t", "kernel_v"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch reaches {hit}"
 
@@ -1288,13 +1307,14 @@ RULES |= {
         "hgp/recurrence.py (#279): the HGP VRR (eqs 25-26) and HRR (eq 28) "
         "as IR -- the statements off `hgp.vrr` / `hgp.hrr`'s DAGs, and "
         "standalone recurrence-only `Kernel`s keyed on a `Target.F` `Spec`",
-        ("ir", "spec", "hgp"),
+        ("=ir", "spec", "hgp"),
         plan=RULES["hgp"].must_not["plan"],
         reference=_GROUND_TRUTH + "; its pins compare against "
                   "reference/pq.py's fundamental and ao/eri.py",
         emit="the builder is vendor-neutral; a backend spells its output",
-        interp="the interpreter is what checks the builder; it must not "
-               "know HGP, and the builder must not lean on it (#23)"),
+        **{"ir.interp":
+            "the interpreter is what checks the builder; it must not "
+               "know HGP, and the builder must not lean on it (#23)"}),
 }
 RULE_OF["hgp.recurrence"] = "hgp_builder"
 EDGES["hgp.recurrence"] = frozenset(("hgp.hrr", "hgp.vrr", "ir", "spec"))
@@ -1312,7 +1332,7 @@ RULES |= {
         "in the interpreter on contracted shell quartets -- the HGP twin of "
         "`ao.eri.eri_block`, same signature, for the cross-engine pin and "
         "for `ao.fock`'s injected `eri=` slot (#286)",
-        ("spec", "ir", "interp", "hgp", "ao"),
+        ("spec", "=ir", "ir.interp", "hgp", "ao"),
         reference=_GROUND_TRUTH + "; Boys arrives by injection (`boys=`), "
                   "and the pin compares against ao/eri.py and libcint",
         plan=RULES["hgp"].must_not["plan"],
@@ -1327,7 +1347,7 @@ RULES |= {
 }
 RULE_OF["ao.hgp_drive"] = "hgp_adapter"
 EDGES["ao.hgp_drive"] = frozenset(("ao.shell", "hgp.hrr", "hgp.recurrence",
-                                   "interp", "ir", "spec"))
+                                   "ir.interp", "ir", "spec"))
 
 
 def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
@@ -1416,7 +1436,7 @@ def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "ao.pairs" in seen
-    for banned in (_REF, "interp", "emit", "ao.drive", "ao.staged",
+    for banned in (_REF, "ir.interp", "emit", "ao.drive", "ao.staged",
                    "dispatch", "measured", "measured_store"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_f reaches {hit}"
@@ -1437,12 +1457,13 @@ RULES |= {
         "ERIs -- the K_CD x K_AB nest, the contracted boundary accumulators "
         "and the HRR after the loop, its statements from `hgp.recurrence` "
         "over `hgp.vrr` / `hgp.hrr`'s DAGs, keyed on a `Target.F` `Spec`",
-        ("spec", "ir", "hgp"),
+        ("spec", "=ir", "hgp"),
         plan=RULES["hgp"].must_not["plan"],
         ao="`ao/eri.py` is the integrals' witness and `launch_f`'s records "
            "come from the AO layer: the kernel takes packed host scalars "
            "(`kernel_f.pack`), and importing either shares ancestry (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -1465,7 +1486,7 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "hgp.recurrence" in seen
-    for banned in ("plan", _REF, "ao", "interp", "emit", "device",
+    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "device",
                    "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f reaches {hit}"
@@ -1487,14 +1508,15 @@ RULES |= {
         "kernel -- the plan checked against the basis, the records rebuilt "
         "from the shells, every launch run through an injected executor "
         "(`run=`), `F` closed, and every unique quartet's fate recorded",
-        ("spec", "ir", "ao", "kernel_f"),
+        ("spec", "=ir", "ao", "kernel_f"),
         launch_f="the walker is independent of the plan builder (m6's "
                  "discipline, #286): it reads the plan by duck type, never "
                  "a second call into, or a type from, the module that made it",
         reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
                   "injected (`run=`)",
-        interp="the kernel runs through the injected `run=`; the walker "
-               "evaluates nothing itself",
+        **{"ir.interp":
+            "the kernel runs through the injected `run=`; the walker "
+               "evaluates nothing itself"},
         plan=RULES["hgp"].must_not["plan"],
         emit="the walk interprets; no text is emitted",
         device="the walk runs no card",
@@ -1521,7 +1543,7 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
                 seen.add(e)
                 todo.append(e)
     assert "kernel_f" in seen
-    for banned in ("launch_f", "launch", _REF, "interp", "emit", "device",
+    for banned in ("launch_f", "launch", _REF, "ir.interp", "emit", "device",
                    "dispatch", "measured", "ao.fock", "ao.eri",
                    "ao.hgp_drive", "engine"):
         hit = sorted(e for e in seen if _under(e, banned))
@@ -1573,7 +1595,7 @@ RULES |= {
         "`ao.eri` + `kernel` and `Hgp` over `ao.hgp_drive` + `kernel_f`. "
         "The one module in src/ that names both engines; each engine's "
         "special function is injected at construction",
-        ("spec", "ir", "ao.shell", "ao.eri", "ao.hgp_drive", "kernel",
+        ("spec", "=ir", "ao.shell", "ao.eri", "ao.hgp_drive", "kernel",
          "kernel_f"),
         reference=_GROUND_TRUTH + "; `pq=` and `boys=` arrive injected, as "
                   "`interp` takes `boys=`",
@@ -1581,8 +1603,9 @@ RULES |= {
                                 "the total_am row)"),
         hgp=_ENGINE_WHY.format("hgp/ (the VRR/HRR DAGs)"),
         recurrence=_ENGINE_WHY.format("the MMD recurrence"),
-        interp="the protocol evaluates nothing itself; HGP's adapter runs "
-               "the interpreter, and the protocol must not lean on it",
+        **{"ir.interp":
+            "the protocol evaluates nothing itself; HGP's adapter runs "
+               "the interpreter, and the protocol must not lean on it"},
         emit="a `Kernel` is vendor-neutral; spelling it is a driver's job",
         device="the `Kernel` is arch-neutral; the arch enters at emission"),
 }
@@ -1712,12 +1735,13 @@ RULES |= {
         "`E` fragments) and the registry composing a spec's K levers, one "
         "module per lever; since #345 also the batch kernel's atomic "
         "write (`seams.atomize`, the `passes.atomize` default)",
-        ("spec", "plan", "ir", "recurrence", "e_fragment", "k_levers",
-         "passes"),
+        ("spec", "plan", "=ir", "recurrence", "e_fragment", "k_levers",
+         "ir.passes"),
         kernel_k="the skeleton imports the seams: a seam or a lever reaching "
                  "back into `kernel_k` is a cycle",
         ao=RULES["k_builder"].must_not["ao"],
-        interp=RULES["k_builder"].must_not["interp"],
+        **{"ir.interp":
+            RULES["k_builder"].must_not["ir.interp"]},
         emit=RULES["k_builder"].must_not["emit"],
         device=RULES["k_builder"].must_not["device"],
         reference=_GROUND_TRUTH),
@@ -1725,7 +1749,7 @@ RULES |= {
 RULE_OF |= {m: "k_lever" for m in _modules() if _under(m, "k_levers")}
 EDGES |= {k: frozenset(v) for k, v in {
     "k_levers": ("k_levers.seams", "spec"),
-    "k_levers.seams": ("e_fragment", "ir", "passes", "plan.schedule",
+    "k_levers.seams": ("e_fragment", "ir", "ir.passes", "plan.schedule",
                        "plan.targets", "recurrence", "spec"),
 }.items()}
 
@@ -1743,7 +1767,7 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_k", _REF, "ao", "interp", "emit", "device"):
+        for banned in ("kernel_k", _REF, "ao", "ir.interp", "emit", "device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -1764,12 +1788,13 @@ RULES |= {
         "hooks, their context and the frozen defaults, statements built from "
         "`hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs) and the registry "
         "composing a spec's F levers, one module per lever",
-        ("spec", "ir", "hgp", "f_levers"),
+        ("spec", "=ir", "hgp", "f_levers"),
         kernel_f="the skeleton imports the seams: a seam or a lever reaching "
                  "back into `kernel_f` is a cycle",
         plan=RULES["f_builder"].must_not["plan"],
         ao=RULES["f_builder"].must_not["ao"],
-        interp=RULES["f_builder"].must_not["interp"],
+        **{"ir.interp":
+            RULES["f_builder"].must_not["ir.interp"]},
         emit=RULES["f_builder"].must_not["emit"],
         device=RULES["f_builder"].must_not["device"],
         reference=_GROUND_TRUTH),
@@ -1805,7 +1830,7 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_f", "plan", _REF, "ao", "interp", "emit",
+        for banned in ("kernel_f", "plan", _REF, "ao", "ir.interp", "emit",
                        "device", "launch_f"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
@@ -1825,13 +1850,14 @@ RULES |= {
         "IR out, called by `kernel.py`'s hook when `Spec.kernel_body_levers` "
         "names one. It reads the recurrence's node names and the targets' "
         "type; the plan, the batch and the contraction arrive as arguments",
-        ("ir", "recurrence", "plan.targets"),
+        ("=ir", "recurrence", "plan.targets"),
         kernel="`kernel.py` calls the lever; the reverse is a cycle",
         levers="the builder reads the vocabulary through `spec`; a lever's "
                "behaviour does not re-read it",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
-        interp="the lever is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the lever is checked by the interpreter, never built on it"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {"j_levers": "j_lever", "j_levers.fused": "j_lever",
@@ -1997,15 +2023,15 @@ RULES |= {
         measured_store="the store reads the vocabulary itself; the ladder "
                        "is the CLI's"),
 }
-RULE_OF["lever_ladder"] = "lever_ladder"
-EDGES["lever_ladder"] = frozenset(("levers",))
+RULE_OF["ir.lever_ladder"] = "lever_ladder"
+EDGES["ir.lever_ladder"] = frozenset(("levers",))
 RULES["driver"] = Rule(RULES["driver"].why + ", and #339's lever ladders "
                        "through `lever_ladder`",
-                       RULES["driver"].may | frozenset(("lever_ladder",)),
+                       RULES["driver"].may | frozenset(("ir.lever_ladder",)),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
-    ("ir", "kernel_k", "lever_ladder"))
-EDGES["measured"] = EDGES["measured"] | frozenset(("lever_ladder",))
+    ("ir", "kernel_k", "ir.lever_ladder"))
+EDGES["measured"] = EDGES["measured"] | frozenset(("ir.lever_ladder",))
 RULES["store"] = Rule(RULES["store"].why + "; and the kernel-body lever "
                       "vocabulary (`levers`, a leaf), whose entries are its "
                       "KERNEL arms (#339)",
@@ -2047,10 +2073,11 @@ RULES |= {
         "(la lb|la lb) (`plan`), the J engine's prelude and recurrence "
         "statements (`recurrence`), the `E` block fragment inlined twice "
         "(`e_fragment`) and `kernel_jab`'s scatter rule restated",
-        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
         ao="`ao.schwarz` (through `ao.eri`) is the witness the kernel is "
            "interpreted against: importing it shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -2083,7 +2110,7 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
 
@@ -2118,10 +2145,11 @@ RULES |= {
         "kernel (class-agnostic: one thread per element of F, summing its "
         "slots of the launch's buffer W in a fixed order) and its host map, "
         "the slot layout read off `f_levers.scatter`",
-        ("spec", "ir", "hgp", "f_levers"),
+        ("spec", "=ir", "hgp", "f_levers"),
         plan=RULES["f_builder"].must_not["plan"],
         ao=RULES["f_builder"].must_not["ao"],
-        interp=RULES["f_builder"].must_not["interp"],
+        **{"ir.interp":
+            RULES["f_builder"].must_not["ir.interp"]},
         emit=RULES["f_builder"].must_not["emit"],
         device=RULES["f_builder"].must_not["device"],
         launch_f="the map is built from packed AO offsets, as `kernel_f.pack` "
@@ -2156,7 +2184,7 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "f_levers.scatter" in seen
-    for banned in ("kernel_f", "plan", _REF, "ao", "interp", "emit",
+    for banned in ("kernel_f", "plan", _REF, "ao", "ir.interp", "emit",
                    "device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f_scatter reaches {hit}"
@@ -2241,10 +2269,11 @@ RULES |= {
         "(lP 0|lQ 0) (`plan`), the J engine's prelude and recurrence "
         "statements (`recurrence`), the single-center `E` fragment inlined "
         "twice (`e_fragment`) and `kernel_jab`'s scatter rule restated",
-        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
         ao="`ao.metric` is the witness the kernel is interpreted against: "
            "importing it shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -2252,7 +2281,7 @@ RULES |= {
         "ao/metric_drive.py (#414): the metric kernel run in the interpreter "
         "over `ao.metric`'s staging -- builder + interp + ao, producing "
         "numbers, as `ao/drive.py` does for the J chain",
-        ("spec", "ir", "interp", "ao", "kernel_metric"),
+        ("spec", "=ir", "ir.interp", "ao", "kernel_metric"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -2268,7 +2297,7 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "kernel_metric": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
                       "plan.schedule", "plan.targets", "recurrence", "spec"),
-    "ao.metric_drive": ("ao.metric", "ao.shell", "interp", "ir",
+    "ao.metric_drive": ("ao.metric", "ao.shell", "ir.interp", "ir",
                         "kernel_metric"),
 }.items()}
 
@@ -2284,7 +2313,7 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_metric reaches {hit}"
 
@@ -2306,10 +2335,11 @@ RULES |= {
         "recurrence statements (`recurrence`), the bra `E` block and the "
         "single-center `E` fragment inlined (`e_fragment`) and `kernel_jab`'s "
         "scatter rule restated",
-        ("spec", "ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
         ao="`ao.eri3` is the witness the kernel is interpreted against: "
            "importing it shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -2317,7 +2347,7 @@ RULES |= {
         "ao/eri3_drive.py (#444): the three-center kernel run in the "
         "interpreter over `ao.eri3`'s staging -- builder + interp + ao, "
         "producing numbers, as `ao/metric_drive.py` does for the metric",
-        ("spec", "ir", "interp", "ao", "kernel_eri3"),
+        ("spec", "=ir", "ir.interp", "ao", "kernel_eri3"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -2333,7 +2363,7 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "kernel_eri3": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
                     "plan.schedule", "plan.targets", "recurrence", "spec"),
-    "ao.eri3_drive": ("ao.eri3", "ao.shell", "interp", "ir", "kernel_eri3"),
+    "ao.eri3_drive": ("ao.eri3", "ao.shell", "ir.interp", "ir", "kernel_eri3"),
 }.items()}
 
 
@@ -2348,7 +2378,7 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_eri3 reaches {hit}"
 
@@ -2377,10 +2407,11 @@ RULES |= {
         "IR, `kernel_s.record_values`' per-record statements (the `E` "
         "fragment's `t = 0` column) reused and a rectangular scatter of its "
         "own",
-        ("spec", "ir", "e_fragment", "kernel_s"),
+        ("spec", "=ir", "e_fragment", "kernel_s"),
         ao="`ao.overlap.cross_overlap_matrix` is the witness the kernel is "
            "interpreted against: importing it shares ancestry with it (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -2408,7 +2439,7 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"e_fragment", "kernel_s"} <= seen
-    for banned in (_REF, "ao", "interp", "emit", "device", "launch"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "device", "launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
 
@@ -2485,7 +2516,7 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "hgp.orbits" in seen
-    for banned in (_REF, "plan", "interp", "emit", "ao.drive", "ao.staged",
+    for banned in (_REF, "plan", "ir.interp", "emit", "ao.drive", "ao.staged",
                    "dispatch", "measured", "measured_store", "launch_f",
                    "kernel_f"):
         hit = sorted(e for e in seen if _under(e, banned))
@@ -2510,11 +2541,12 @@ RULES |= {
         "canonical class mode through `hgp.orbits`, `kernel_f`'s staged "
         "record (`REC`, `MAX_PRIM_PAIRS`) reused, keyed on a `Target.J` "
         "`Engine.HGP` `Spec`",
-        ("spec", "ir", "hgp", "kernel_f"),
+        ("spec", "=ir", "hgp", "kernel_f"),
         plan=RULES["hgp"].must_not["plan"],
         ao="`ao/hgp_drive.py` (the ERIs) and `ao/j.py` (the J sweep) are the "
            "kernel's witnesses: importing either shares ancestry (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -2538,7 +2570,7 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
-    for banned in ("plan", _REF, "ao", "interp", "emit", "device",
+    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "device",
                    "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
@@ -2560,11 +2592,12 @@ RULES |= {
         "quartet, K_ab += D_cd (ac|bd) by atomic add, `am` in K's Hermite "
         "pairing (la, lc | lb, ld); `kernel_hj`'s nest, staging, scalars and "
         "class modes reused, keyed on a `Target.K` `Engine.HGP` `Spec`",
-        ("spec", "ir", "hgp", "kernel_f", "kernel_hj"),
+        ("spec", "=ir", "hgp", "kernel_f", "kernel_hj"),
         plan=RULES["hgp"].must_not["plan"],
         ao="`ao/hgp_drive.py` (the ERIs) and `ao/k.py` (the K sweep) are the "
            "kernel's witnesses: importing either shares ancestry (#20)",
-        interp="the builder is checked by the interpreter, never built on it",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
         device="the `Kernel` is arch-neutral; the arch enters at emission",
         reference=_GROUND_TRUTH),
@@ -2588,7 +2621,7 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f", "kernel_hj"} <= seen
-    for banned in ("plan", _REF, "ao", "interp", "emit", "device",
+    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "device",
                    "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
@@ -2634,15 +2667,16 @@ RULES |= {
         "launch's `Spec` formed from its class (#401's bridge), the records "
         "rebuilt from the shells, every launch run through an injected "
         "executor (`run=`), and every ordered quartet's fate recorded",
-        ("spec", "ir", "ao.shell", "kernel_f", "kernel_hj", "kernel_hk",
+        ("spec", "=ir", "ao.shell", "kernel_f", "kernel_hj", "kernel_hk",
          "hgp.orbits"),
         launch_hjk="the walker is independent of the plan builder (m6's "
                    "discipline, #406): it reads the plan by duck type",
         launch_f="the fused build's stream is a sibling, not a base",
         reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
                   "injected (`run=`)",
-        interp="the kernel runs through the injected `run=`; the walker "
-               "evaluates nothing itself",
+        **{"ir.interp":
+            "the kernel runs through the injected `run=`; the walker "
+               "evaluates nothing itself"},
         plan=RULES["hgp"].must_not["plan"],
         emit="the walk interprets; no text is emitted",
         device="the walk runs no card",
@@ -2669,7 +2703,7 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
                 seen.add(e)
                 todo.append(e)
     assert {"kernel_hj", "kernel_hk", "kernel_f"} <= seen
-    for banned in ("launch_hjk", "launch_f", "launch", _REF, "interp", "emit",
+    for banned in ("launch_hjk", "launch_f", "launch", _REF, "ir.interp", "emit",
                    "device", "dispatch", "measured", "ao.j", "ao.k",
                    "ao.fock", "ao.eri", "ao.hgp_drive", "engine", "walk_f"):
         hit = sorted(e for e in seen if _under(e, banned))
@@ -2706,7 +2740,7 @@ RULES |= {
         "one block per contracted K_AB block -- `kernel_k`'s per-pair body "
         "(`kernel_k.ket_body`) and the K seams' default hooks in another "
         "loop nest, keyed on a `Target.K` `Spec`",
-        ("spec", "ir", "kernel", "kernel_k", "k_levers"),
+        ("spec", "=ir", "kernel", "kernel_k", "k_levers"),
         **RULES["k_builder"].must_not,
         launch_k="a launch plan is the kernel's consumer, never its ancestor",
         launch_kblock="a launch plan is the kernel's consumer, never its "
@@ -2716,7 +2750,7 @@ RULES |= {
         "-- `launch_k.k_launches`' records regrouped by first shell into "
         "one block per (a, b) -- and its walk in Python on ao.k's staged "
         "arithmetic; the bound and the builder arrive injected",
-        ("spec", "ir", "ao", "launch_common", "launch_k"),
+        ("spec", "=ir", "ao", "launch_common", "launch_k"),
         **{k: v for k, v in RULES["k_launch"].must_not.items()
            if k not in ("kernel", "ao")},
         kernel="the builders arrive injected as `build=`: this plan names a "
@@ -2752,9 +2786,9 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         return seen
 
     for root, banned in (
-            ("kernel_kblock", (_REF, "ao", "interp", "emit", "device",
+            ("kernel_kblock", (_REF, "ao", "ir.interp", "emit", "device",
                                "launch", "launch_k", "launch_kblock")),
-            ("launch_kblock", (_REF, "interp", "emit", "ao.drive",
+            ("launch_kblock", (_REF, "ir.interp", "emit", "ao.drive",
                                "ao.staged", "dispatch", "measured",
                                "measured_store", "kernel_k",
                                "kernel_kblock"))):
@@ -2786,7 +2820,7 @@ RULES |= {
         launch_f="a launch plan imports this module, never the reverse",
         kernel="no kernel is built here: the builders are the plans' "
                "business",
-        ir="the shared pieces carry no `Kernel`",
+        **{"=ir": "the shared pieces carry no `Kernel`"},
         ao="the records are the plans' to build from the AO layer; the "
            "shared pieces need none of it"),
 }
@@ -2955,8 +2989,8 @@ def test_the_relation_check_can_fail() -> None:
     assert base != wide and "plan.dag" in set(wide["kernel_jab"]) - set(
         base["kernel_jab"])
     # ... a rename carries the snapshot to the moved names ...
-    moved = apply_renames(base, [{"ir": "ir.core", "interp": "ir.interp"}])
-    assert "ir.interp" in moved and "interp" not in moved
+    moved = apply_renames(base, [{"ir": "ir.core", "ir.interp": "ir.check"}])
+    assert "ir.check" in moved and "ir.interp" not in moved
     assert moved["kernel_jab"] == sorted(
         {"ir.core" if t == "ir" else t for t in base["kernel_jab"]})
     # ... and an exact prefix keeps `ir` from covering what moved under it.
@@ -2966,7 +3000,7 @@ def test_the_relation_check_can_fail() -> None:
 
 def test_a_rename_map_must_name_real_modules() -> None:
     base = effective_relation()
-    for bad in ({"no_such_module": "x"}, {"ir": "interp"}):
+    for bad in ({"no_such_module": "x"}, {"ir": "ir.interp"}):
         try:
             apply_renames(base, [bad])
         except AssertionError:

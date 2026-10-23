@@ -23,8 +23,8 @@ from tiers import split_by_l
 
 from felizjueves import kernel_pair_bound as kpb
 from felizjueves.ao.pairs import pair_bound
-from felizjueves.interp import Launch, interpret
 from felizjueves.ir import Call, Fn, walk
+from felizjueves.ir.interp import Launch, interpret
 from felizjueves.kernel_pair_bound import (
     build_pair_bound_kernel,
     pair_bound_coefficients,

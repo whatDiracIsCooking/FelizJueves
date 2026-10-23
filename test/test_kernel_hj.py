@@ -80,7 +80,6 @@ from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_reference, jp_from_p
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp import recurrence as R
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -96,6 +95,7 @@ from felizjueves.ir import (
     Var,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_f import PairRec, PrimRec, pack
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq

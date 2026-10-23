@@ -76,9 +76,9 @@ import numpy as np
 from felizjueves.ao.shell import Shell
 from felizjueves.hgp import hrr
 from felizjueves.hgp import recurrence as R
-from felizjueves.interp import Interpreter
 from felizjueves.ir import Assign, Decl, Kernel, Note, Term, Weighted
 from felizjueves.ir import Boys as BoysFill
+from felizjueves.ir.interp import Interpreter
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["absolute_kernel", "eri_block", "eri_block_and_scale", "f_spec",

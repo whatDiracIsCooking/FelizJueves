@@ -46,7 +46,6 @@ import pytest
 from oracle.tolerance import F32_REL, F64_REL
 
 from felizjueves import levers
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     Call,
@@ -63,6 +62,7 @@ from felizjueves.ir import (
     WarpReduce,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.j_levers.fused import FUSED
 from felizjueves.j_levers.mixed import MIXED, MIXED_NOTE, WIDENED, narrow, operands
 from felizjueves.kernel import (
@@ -312,7 +312,7 @@ def test_narrow_and_operands_refuse_what_they_cannot_narrow() -> None:
 
 
 def test_the_split_form_is_atomized_and_keeps_the_lever() -> None:
-    from felizjueves.passes import ATOMIC_NOTE
+    from felizjueves.ir.passes import ATOMIC_NOTE
     ks = _kernels(_mixed(4, 3))
     lit = _kernels(pq_spec(4, n_batches=3))
     assert [k.name for k in ks] == [k.name for k in lit]

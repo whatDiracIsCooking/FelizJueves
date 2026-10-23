@@ -37,7 +37,6 @@ from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.shell import Shell
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp import recurrence as R
-from felizjueves.interp import interpret
 from felizjueves.ir import (
     Assign,
     Decl,
@@ -50,6 +49,7 @@ from felizjueves.ir import (
     Scalar,
     Var,
 )
+from felizjueves.ir.interp import interpret
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental as fj_fundamental
 from felizjueves.reference.pq import pq as fj_pq

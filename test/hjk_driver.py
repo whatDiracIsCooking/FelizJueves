@@ -71,8 +71,8 @@ from felizjueves import kernel_hj as HJ
 from felizjueves import kernel_hk as HK
 from felizjueves import walk_hjk as W
 from felizjueves.hgp.orbits import GROUP
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Intent, Kernel, Scalar
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 
 THREADS = 32  # block width: kets strided over 32 lanes; not numerical

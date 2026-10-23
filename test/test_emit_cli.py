@@ -41,10 +41,11 @@ import pytest
 from test_ao_j_interpreted import _case, _classes, _shell_ams
 from tiers import by_l, is_fast, split_by_l
 
-from felizjueves import lever_ladder, levers
+from felizjueves import levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
+from felizjueves.ir import lever_ladder
 from felizjueves.kernel import (
     build_pq_kernel,
     build_pq_kernels,

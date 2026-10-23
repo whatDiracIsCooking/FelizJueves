@@ -88,8 +88,8 @@ from felizjueves.ao.j import coulomb_matrix_reference
 from felizjueves.ao.k import exchange_matrix_reference
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.hgp import orbits
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Scalar
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch_hjk import hjk_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq

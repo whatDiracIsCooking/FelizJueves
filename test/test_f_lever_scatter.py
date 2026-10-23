@@ -64,8 +64,8 @@ from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import block_fab, scatter
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import vrr
-from felizjueves.interp import InterpError
 from felizjueves.ir import AtomicAdd, Barrier, Index, Kernel, Lit, walk
+from felizjueves.ir.interp import InterpError
 from felizjueves.launch_f import f_launches, launch_footprint
 from felizjueves.spec import Operator, Spec, Target
 

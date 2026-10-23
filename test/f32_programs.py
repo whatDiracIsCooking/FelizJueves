@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from felizjueves.interp import Launch, interpret
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -51,6 +50,7 @@ from felizjueves.ir import (
     WarpReduce,
     Weighted,
 )
+from felizjueves.ir.interp import Launch, interpret
 
 BLOCK = 64
 N = 128  # elements: two blocks, four 32-lane warps

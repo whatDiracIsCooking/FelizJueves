@@ -43,13 +43,6 @@ import pytest
 from test_ir import synthetic_fragment, synthetic_inline_kernel
 from tiers import split_by_l
 
-from felizjueves.interp import (
-    InterpError,
-    Interpreter,
-    Launch,
-    interpret,
-    interpret_fragment,
-)
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -78,6 +71,13 @@ from felizjueves.ir import (
     WarpReduce,
     Weighted,
     walk,
+)
+from felizjueves.ir.interp import (
+    InterpError,
+    Interpreter,
+    Launch,
+    interpret,
+    interpret_fragment,
 )
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.recurrence import recurrence_kernels, target_order
@@ -343,7 +343,7 @@ def test_notes_are_inert() -> None:
 
 def test_the_interpreter_does_not_know_mcmurchie_davidson() -> None:
     """Its only felizjueves import is the IR; Boys is injected (`boys=`)."""
-    tree = ast.parse((SRC / "interp.py").read_text())
+    tree = ast.parse((SRC / "ir" / "interp.py").read_text())
     mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     mods |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import)
              for a in n.names}
@@ -617,7 +617,7 @@ def test_every_f32_operation_rounds_as_numpy_float32_does() -> None:
 def test_every_assignment_rounds(monkeypatch: pytest.MonkeyPatch) -> None:
     # An F32 scalar is rounded when it is stored, not only when it reaches a
     # float32 array; with the rounding removed the cancellation survives.
-    from felizjueves import interp as m
+    from felizjueves.ir import interp as m
     k = _f32_kernel(
         Decl("s", Scalar.F32, init=Call(Fn.ADD, (_a(0), _a(1)))),
         Assign(_o(0), Call(Fn.SUB, (Var("s"), _a(0)))))
@@ -628,7 +628,7 @@ def test_every_assignment_rounds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_the_machine_refuses_f32_meeting_f64() -> None:
-    from felizjueves import interp as m
+    from felizjueves.ir import interp as m
     f = np.float32
     k = _f32_kernel(Assign(_o(0), _a(0)))
     with pytest.raises(InterpError, match="ndarray of float32"):
