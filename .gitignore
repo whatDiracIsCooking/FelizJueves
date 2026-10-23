@@ -42,6 +42,12 @@ venv/
 # literature by DOI for that reason.
 .temp/
 
+# --- Measure inputs --------------------------------------------------------
+# Converged densities too large to track (polyglycine/6-31G: up to 643^2
+# doubles), written by `python -m oracle.polyglycine` and read by measure/;
+# each store row pins the file it read by sha256 and E_RHF.
+/.measure-cache/
+
 # --- Local environment -----------------------------------------------------
 # docker/.env holds machine-specific overrides (image tag, UID/GID).
 docker/.env

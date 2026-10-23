@@ -68,7 +68,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -77,13 +77,14 @@ from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import kernel_f as KF
 from felizjueves import kernel_f_scatter as FS
+from felizjueves.ao.j import _density
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.f_levers import scatter as SC
 from felizjueves.hgp import vrr
 from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.reference.boys import boys
-from felizjueves.walk_f import FWalk, pair_record, walk_f
+from felizjueves.walk_f import KET_BREAK, FWalk, pair_record, walk_f
 
 THREADS = 32  # block width: kets strided over 32 lanes; not numerical
 RUNS = 2  # runs per check-mode process: the run-to-run witness
@@ -128,6 +129,50 @@ def record(plan, basis: Basis, D, *, threads: int = THREADS
 
     w = walk_f(plan, basis, D, run=run, threads=threads)
     return recs, w
+
+
+def record_plan(plan, basis: Basis, D, *, threads: int = THREADS,
+                levers: tuple[str, ...] = ()) -> list[FRec]:
+    """The launches `record` would return, packed straight from `plan`:
+    walk_f's per-launch arguments (`pair_record`, `kernel_f.pack`, `Dsh`,
+    `D`) with none of its walk -- no partition of the unique quartets and no
+    six-block replay, which at polyglycine's size are ~1e9 Python set
+    members. Every launch's kernel is built with `levers` added to its own;
+    a plan whose launches name `ket-break` or `scatter` (launch arguments
+    walk_f adds) is refused. `test_fock_record_plan.py` holds it to
+    `record` launch by launch."""
+    rows = _density(basis, D)
+    sh, n_sh, n_ao = basis.shells, len(basis.shells), basis.n_ao
+    Dsh = KF.density_blocks(rows, basis.offsets, [s.n_cart for s in sh])
+    D_flat = tuple(x for r in rows for x in r)
+    records = [[pair_record(basis, p.a, p.b, G=p.G, prims=p.prims)
+                for p in b.pairs] for b in plan.batches]
+    kernels: dict[object, Kernel] = {}
+    out = []
+    for L in plan.launches:
+        own = tuple(L.spec.levers)
+        if set(own) & {KET_BREAK, SC.NAME}:
+            raise ValueError(f"record_plan: launch ({L.bra}, {L.ket}) names "
+                             f"{own}; walk_f's `record` stages those")
+        spec = replace(L.spec, levers=tuple(sorted({*own, *levers})))
+        if spec not in kernels:
+            kernels[spec] = KF.build_f_kernel(spec)
+        k = kernels[spec]
+        pb, pk = KF.pack(records[L.bra]), KF.pack(records[L.ket])
+        args = {
+            "n_bra": pb.n, "n_ket": pk.n, "k_ab": pb.degree,
+            "k_cd": pk.degree, "n_sh": n_sh, "n_ao": n_ao,
+            "diag": int(L.bra == L.ket), "tau": float(plan.tau),
+            "bra_prim": pb.prim, "AB": pb.sep, "G_ab": pb.G,
+            "bra_sh": pb.sh, "bra_ao": pb.ao, "ket_prim": pk.prim,
+            "CD": pk.sep, "G_cd": pk.G, "ket_sh": pk.sh, "ket_ao": pk.ao,
+            "Dsh": Dsh, "D": D_flat,
+        }
+        grid, block = KF.launch_shape(pb.n, threads)
+        out.append(FRec(k, grid, block[0],
+                        {p.name: args[p.name] for p in k.params
+                         if p.name != KF.FOCK}))
+    return out
 
 
 def interpret(recs: Sequence[FRec], n_ao: int) -> np.ndarray:
