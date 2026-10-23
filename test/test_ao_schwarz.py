@@ -30,14 +30,14 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.schwarz import (
+from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.schwarz import (
     diagonal_and_scale,
     diagonal_matrix,
     scale_matrix,
     schwarz_classes,
     schwarz_matrix,
 )
-from felizjueves.ao.shell import Basis, Shell
 from felizjueves.reference.pq import pq
 
 TOL = 1e-12  # x scale: test_ao_eri.py's tolerance, for the same arithmetic
@@ -92,7 +92,7 @@ def test_the_schwarz_matrix_is_the_root_of_the_diagonal(name):
 
 
 def test_the_clamp_takes_a_rounded_negative_to_zero(monkeypatch):
-    import felizjueves.ao.schwarz as hs
+    import felizjueves.eri.schwarz as hs
 
     basis = Basis((Shell(0, (0.0, 0.0, 0.0), (1.0,), (1.0,)),))
     monkeypatch.setattr(hs, "diagonal_and_scale",

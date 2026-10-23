@@ -181,8 +181,8 @@ from felizjueves.ao.k import (
     record_bounds,
 )
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.ir import Kernel
-from felizjueves.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["KBound", "KBuild", "KClassLaunch", "KLaunchPlan", "ORDERS",

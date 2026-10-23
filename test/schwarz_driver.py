@@ -38,9 +38,9 @@ from conftest import Toolchain
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves.ao.schwarz import SchwarzClass
+from felizjueves.eri.kernel_schwarz import OUT, build_schwarz_kernel, launch_shape
+from felizjueves.eri.schwarz import SchwarzClass
 from felizjueves.ir import Intent, Kernel
-from felizjueves.kernel_schwarz import OUT, build_schwarz_kernel, launch_shape
 
 THREADS = 32  # lanes per block, one shell pair per thread; not numerical
 WIDTH = {"zeta_ab": 1, "P": 3, "XPA": 3, "XPB": 3, "s_ab": 1}

@@ -42,8 +42,8 @@ from oracle import manifest
 from oracle.manifest import FixtureError
 
 from felizjueves.ao import fock
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.fock import coulomb_exchange_reference
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.reference.pq import pq
 
 LIBCINT_TOL = 1e-12

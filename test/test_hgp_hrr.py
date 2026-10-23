@@ -15,8 +15,8 @@ import math
 import pytest
 from tiers import split_by_l
 
-from felizjueves.ao.eri import eri_block
 from felizjueves.ao.shell import Shell
+from felizjueves.eri.eri import eri_block
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp.hrr import COEFS, ZERO, build, is_boundary
 from felizjueves.hgp.vrr import CLASSES, cartesians, target_set

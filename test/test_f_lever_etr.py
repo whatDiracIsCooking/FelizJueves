@@ -70,10 +70,10 @@ from test_fock_build import BOUND, LIBCINT_TOL, TOL, molecule, run, sweep
 from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers, walk_f
-from felizjueves.ao import hgp_drive
-from felizjueves.ao.eri import eri_block_and_scale as mmd_eri
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import cuda, hip
+from felizjueves.eri import hgp_drive
+from felizjueves.eri.eri import eri_block_and_scale as mmd_eri
 from felizjueves.f_levers import etr as E
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import cost, etr, hrr, vrr

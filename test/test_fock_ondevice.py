@@ -91,7 +91,7 @@ from test_kernel_device import (
 
 from felizjueves import kernel_f as KF
 from felizjueves.ao import fock
-from felizjueves.ao.eri import eri_block_and_scale
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.launch_f import f_launches

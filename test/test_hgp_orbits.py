@@ -45,8 +45,8 @@ import itertools
 import numpy as np
 import pytest
 
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.shell import Shell, cartesians
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp.orbits import (
     GROUP,

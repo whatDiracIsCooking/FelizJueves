@@ -21,16 +21,16 @@ import numpy as np
 import pytest
 from tiers import split_by_l
 
-from felizjueves import kernel_pair_bound as kpb
 from felizjueves.ao.pairs import pair_bound
-from felizjueves.ir import Call, Fn, walk
-from felizjueves.ir.interp import Launch, interpret
-from felizjueves.kernel_pair_bound import (
+from felizjueves.eri import kernel_pair_bound as kpb
+from felizjueves.eri.kernel_pair_bound import (
     build_pair_bound_kernel,
     pair_bound_coefficients,
     pair_bound_name,
     pair_bound_spec,
 )
+from felizjueves.ir import Call, Fn, walk
+from felizjueves.ir.interp import Launch, interpret
 from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Operator, Spec, Target
 

@@ -53,7 +53,7 @@ from schwarz_driver import build_on_card, schwarz_program
 from test_kernel_device import BACKEND, BOYS_REL, _toolchain
 from test_kernel_schwarz import L_MAX, SYNTHETIC
 
-from felizjueves.ao.schwarz import diagonal_matrix, scale_matrix, schwarz_classes
+from felizjueves.eri.schwarz import diagonal_matrix, scale_matrix, schwarz_classes
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.pq import pq
 

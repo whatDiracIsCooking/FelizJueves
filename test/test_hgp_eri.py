@@ -92,13 +92,13 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, split_by_l
 
-from felizjueves.ao import hgp_drive
-from felizjueves.ao.eri import eri_block_and_scale as mmd_eri
 from felizjueves.ao.fock import coulomb_exchange_reference
-from felizjueves.ao.hgp_drive import absolute_kernel, f_spec
-from felizjueves.ao.hgp_drive import eri_block as hgp_block
-from felizjueves.ao.hgp_drive import eri_block_and_scale as hgp_eri
 from felizjueves.ao.shell import cartesians
+from felizjueves.eri import hgp_drive
+from felizjueves.eri.eri import eri_block_and_scale as mmd_eri
+from felizjueves.eri.hgp_drive import absolute_kernel, f_spec
+from felizjueves.eri.hgp_drive import eri_block as hgp_block
+from felizjueves.eri.hgp_drive import eri_block_and_scale as hgp_eri
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import Decl, For, Lit, Weighted

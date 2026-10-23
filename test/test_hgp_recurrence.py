@@ -33,8 +33,8 @@ import numpy as np
 import pytest
 from tiers import split_by_l
 
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.shell import Shell
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import (
