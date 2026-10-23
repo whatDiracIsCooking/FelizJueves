@@ -58,9 +58,12 @@ out of milestone 12, because it is the predecessor's `brc26` row JK, not
 run is attached to #431. **The fused MMD `F` (#326) does not exist.** The
 HGP row now holds both schemes on one recurrence, so timing `Target.F`
 against HGP `Target.J + Target.K` would no longer confound the recurrence
-with the scheme. **Nothing has been timed**, every fixture is compact, and
-the cards are not the paper's, so `fock/symmetry-vs-screening` stays
-unverifiable (#331).
+with the scheme. **Only the two diagonal cells have been timed against
+each other**, per class, (ss|ss) and (pp|pp) on polyglycine/6-31G ("The
+diagonal cells timed per class", below): the fused HGP `F` was faster in
+every cell on both cards. The HGP split, the comparison that would separate
+the scheme from the recurrence, is untimed, and the cards are not the
+paper's, so `fock/symmetry-vs-screening` stays unverifiable (#331).
 
 ## The key: `Target.F`
 
@@ -526,6 +529,89 @@ is attached to #431.
 - **The screens' efficacy is unmeasured**, for the compact-fixture reason
   of #329.
 - **No fused MMD `F`** (#326), the 2x2's last cell.
+
+## The diagonal cells timed per class: fused HGP `F` against MMD `J` + `K`
+
+**Measured on both cards, 2026-10-23** (`devtools/measure.sh scheme-ab`,
+`measure/measure_scheme_ab.py`, store `data/measured/scheme_ab.json`).
+`[Fock]` §6.1 finds opt-Brc faster than opt-UM below about 3,000 basis
+functions on double-ζ sets. It times whole builds only, and §6.4.2 shows the
+six s/p classes are over 60% of opt-Brc's time. This sweep asks the
+per-class question that whole-build timing leaves open: is the fused HGP `F`
+faster than MMD's `J` + `K` for (ss|ss) and (pp|pp)?
+
+**The inputs.** `[Fock]` §6's polyglycines, gly_n = H(C₂H₃NO)_n OH for
+n = 5, 10, 15 (`data/molecules/gly{n}.xyz`), in Cartesian 6-31G, with a
+converged RHF density. The density decays, so the screens fire as they would
+in an SCF. It comes from `python -m oracle.polyglycine` (PySCF) into an
+untracked cache, because gly15's 643² density is about 9 MB of JSON. Every
+row pins the file by sha256 and E_RHF.
+
+**One class, by its shells.** 6-31G has only s and p shells. So the (ss|ss)
+part of `G` is exactly `G` of the sub-basis of the s shells, and (pp|pp)'s is
+exactly that of the p shells. Each arm plans and screens that sub-basis on
+its own. The one screen input the cut changes is `kb`'s block factor, which
+is `max|D|` of the sub-density.
+
+**The arms.** One gated process per arm, three rounds of 3 warm-up and 11
+timed runs, GPU events around the launches, and `τ = 1e-10` for every arm:
+
+- `f`: `kernel_f`, literal, over `launch_f`'s plan (4 magnitudes), recorded
+  by `fock_driver.record_plan`. This is `walk_f`'s launches without the walk,
+  whose set of every unique quartet is about 1e9 entries at gly15.
+- `f_block_fab`: the same launches with `block-fab`. It is reported only and
+  decides nothing.
+- `mmd`: the sum, per timed run, of `dq` (`Target.DQ`), `j` (every `[p|q]`
+  launch, literal and one batch, plus `JAB`, on #157's chain driver, keyed on
+  the DQ kernel's own `Dmax`) and `k` (`kernel_kblock`, #481).
+
+Before anything is timed, the card's closed `F` is held to the card's
+`J − K/2`. These are two recurrences, with no host reference. At gly5 and
+`τ = 0` they agree to 4.27e-15 (ss) and 1.83e-15 (pp) of `max|G|` on both
+cards, which is also MMD `K`'s first check on a card at (pp|pp), L = 4. At
+`τ = 1e-10` they agree to 1e-10 of `max|G|` or better in every cell.
+
+**The verdict rule was declared in the store before any row**: `fused` when
+`q3(f) < q1(mmd)`. **All 12 cells read `fused`, on both cards.** Median ms,
+with `mmd / f` in brackets:
+
+| class | gly_n (AOs in the class) | `sm_86` `f` | `sm_86` `mmd` | `gfx1200` `f` | `gfx1200` `mmd` |
+|---|---|---|---|---|---|
+| (ss\|ss) | gly5 (97) | 226 | 816 (3.60) | 161 | 871 (5.42) |
+| (ss\|ss) | gly10 (187) | 370 | 3,671 (9.92) | 374 | 4,320 (11.56) |
+| (ss\|ss) | gly15 (277) | 597 | 10,562 (17.69) | 628 | 11,468 (18.26) |
+| (pp\|pp) | gly5 (126) | 40.7 | 72.1 (1.77) | 38.2 | 83.1 (2.17) |
+| (pp\|pp) | gly10 (246) | 73.5 | 320 (4.35) | 75.2 | 367 (4.88) |
+| (pp\|pp) | gly15 (366) | 91.0 | 782 (8.59) | 108 | 950 (8.79) |
+
+**How to read it:**
+
+- **The ratio grows with n in both classes, on both cards.** From gly5 to
+  gly15, `f` grows 2.2–3.9× and `mmd` 11–13×.
+- **MMD's time is mostly `j` for (ss|ss)** (82% at gly15). That is the late
+  contraction `[Fock]` §6.1 names. The 6-31G core 1s has six primitives, so
+  an s pair has up to 36 primitive pairs, and `[p|q]` runs per primitive
+  pair while `f` contracts inside the thread. For (pp|pp), `j` and `k` are
+  about even.
+- **`dq` is noise** (under 0.15 ms).
+- **`block-fab` changes nothing here** (within 5%), unlike its 2–4× on the
+  synthetic `wallclock-f` launch.
+- **On the RTX 3080 the gate saw another tenant**: up to 27% before a phase.
+  One phase was discarded and retaken. The `gfx1200` card read 0–1%.
+
+**What it does not settle:**
+
+- **The scheme is still confounded with the recurrence.** HGP split `J`/`K`
+  is the arm that separates them, and `measured_store` refuses its row
+  (`HGP_JK_REFUSED`), so `fock/symmetry-vs-screening` stays unverifiable
+  (#331).
+- **Every molecule is far under `[Fock]`'s ~3,000-function crossover**, where
+  `fused` was expected.
+- **Each class is timed alone**, not as a whole build.
+- **The sweep records no quartet counts**, so it cannot say whether `f`'s
+  slow growth is fewer surviving quartets or a less-loaded card.
+- **MMD runs at its shipped defaults**: one batch, no lever, `max|D|` block
+  factors (#484's decay factors not passed).
 
 ## What milestone 12 did not do
 

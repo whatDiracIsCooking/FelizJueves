@@ -331,18 +331,35 @@ def _load(path: Path) -> dict:
             "declared": DECLARED, "timed_region": TIMED_REGION, "rows": []}
 
 
-def _resources(backend: str, kernels, workdir: Path) -> dict:
-    """Registers and spills of each distinct kernel (measured's parsers)."""
+def _resources(backend: str, kernels: dict, workdir: Path) -> dict:
+    """Registers and spills of each kernel, keyed by `arm:name` (measured's
+    parsers): the two F arms emit kernels of the same name."""
     b = measured.BACKENDS[backend]
     emit = BACKEND[backend][0]
     out = {}
-    for k in {k.name: k for k in kernels}.values():
+    for label, k in kernels.items():
         unit = measured.Unit(k.name, emit(k, b.arch), 0)
+        wd = workdir / label.replace(":", "_")
+        wd.mkdir(parents=True, exist_ok=True)
         raw, _, _ = measured.compile_unit(b, unit, compiler=b.compiler(),
-                                          workdir=workdir)
+                                          workdir=wd)
         regs, store, load, _ = measured._numbers(b, raw)
-        out[k.name] = {"registers": regs, "spill_store": store,
-                       "spill_load": load}
+        out[label] = {"registers": regs, "spill_store": store,
+                      "spill_load": load}
+    return out
+
+
+def kernels_of(c: Cell) -> dict:
+    """Every distinct kernel a cell launches, `arm:name` -> Kernel."""
+    out = {}
+    for arm in ("f", "f_block_fab"):
+        for r in c.f[arm][2]:
+            out[f"{arm}:{r.name}"] = r.kernel
+    for cl in c.j[3]:
+        for k in cl.kernels:
+            out[f"j:{k.name}"] = k
+    for p in c.k:
+        out[f"k:{p.drv.classes[0].kb.name}"] = p.drv.classes[0].kb
     return out
 
 
@@ -422,10 +439,6 @@ def _measure(backend: str, request, run_device_binary, tmp_path: Path):
                 f"gly{n} ({cls}|{cls}): |F - (J - K/2)| "
                 f"{a['f_vs_mmd_abs']:.3e} over the screens' reach {bound:.3e}")
             stats, readings, discarded = _timed(c, backend)
-            kernels = [r.kernel for arm in ("f", "f_block_fab")
-                       for r in c.f[arm][2]]
-            kernels += [k for cl in c.j[3] for k in cl.kernels]
-            kernels += [p.drv.classes[0].kb for p in c.k]
             work = c.wd / "res"
             work.mkdir()
             row = {
@@ -453,7 +466,7 @@ def _measure(backend: str, request, run_device_binary, tmp_path: Path):
                 "mmd_over_f_block_fab": stats["mmd"]["median_ns"]
                 / stats["f_block_fab"]["median_ns"],
                 "verdict": verdict(stats["f"], stats["mmd"]),
-                "resources": _resources(backend, kernels, work),
+                "resources": _resources(backend, kernels_of(c), work),
             }
             store = _load(path)
             key = (row["arch"], row["toolchain"], row["molecule"],
@@ -488,3 +501,27 @@ def test_cuda_scheme_ab_clock(request, run_device_binary, tmp_path) -> None:
 @pytest.mark.gpu
 def test_hip_scheme_ab_clock(request, run_device_binary, tmp_path) -> None:
     _measure("hip", request, run_device_binary, tmp_path)
+
+
+def test_scheme_ab_store_reads_as_declared() -> None:
+    """`devtools/measure.sh check`: the tracked store's header is `DECLARED`
+    and `TIMED_REGION`, and every row's verdict and ratios are what its own
+    arms recompute to. No card, no compiler."""
+    path = Path(__file__).resolve().parents[1] / "data/measured/scheme_ab.json"
+    if not path.is_file():
+        pytest.skip(f"{path.name} is not written")
+    store = json.loads(path.read_text())
+    assert store["declared"] == DECLARED
+    assert store["timed_region"] == TIMED_REGION
+    assert store["rows"], "an empty store"
+    for r in store["rows"]:
+        a = r["arms"]
+        assert set(a) == {*ARMS, "mmd"}
+        assert r["verdict"] == verdict(a["f"], a["mmd"]), r["molecule"]
+        assert r["mmd_over_f"] == a["mmd"]["median_ns"] / a["f"]["median_ns"]
+        assert r["mmd_over_f_block_fab"] == (a["mmd"]["median_ns"]
+                                             / a["f_block_fab"]["median_ns"])
+        assert r["tau"] == TAU and r["n_mag"] == N_MAG
+        assert (r["agreement"]["f_vs_mmd_abs"]
+                <= r["agreement"]["screen_bound_abs"])
+        assert a["mmd"]["n"] == ROUNDS * REPEATS == a["f"]["n"]
