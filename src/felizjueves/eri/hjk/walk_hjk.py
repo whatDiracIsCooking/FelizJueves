@@ -92,9 +92,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from felizjueves import kernel_f as KF
-from felizjueves import kernel_hj as HJ
-from felizjueves import kernel_hk as HK
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.hjk import kernel_hj as HJ
+from felizjueves.eri.hjk import kernel_hk as HK
 from felizjueves.hgp.orbits import GROUP, apply
 from felizjueves.ir import Kernel
 from felizjueves.spec import Spec

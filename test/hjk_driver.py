@@ -67,9 +67,9 @@ from plan_driver import UPLOAD_INT, Program, _unit
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import kernel_f as KF
-from felizjueves import kernel_hj as HJ
-from felizjueves import kernel_hk as HK
-from felizjueves import walk_hjk as W
+from felizjueves.eri.hjk import kernel_hj as HJ
+from felizjueves.eri.hjk import kernel_hk as HK
+from felizjueves.eri.hjk import walk_hjk as W
 from felizjueves.hgp.orbits import GROUP
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.ir.interp import Interpreter, Launch

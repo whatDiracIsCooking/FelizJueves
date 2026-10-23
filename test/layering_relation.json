@@ -430,14 +430,14 @@
    "emit.cuda",
    "emit.gpu",
    "emit.hip",
+   "eri.hjk.kernel_hj",
+   "eri.hjk.kernel_hk",
    "ir",
    "ir.lever_ladder",
    "ir.lower",
    "kernel_dq",
    "kernel_eri3",
    "kernel_f",
-   "kernel_hj",
-   "kernel_hk",
    "kernel_jab",
    "kernel_k",
    "kernel_metric",
@@ -493,12 +493,52 @@
    "ao.eri",
    "ao.hgp_drive",
    "ao.shell",
+   "eri.hjk.kernel_hj",
+   "eri.hjk.kernel_hk",
    "ir",
    "kernel_f",
-   "kernel_hj",
-   "kernel_hk",
    "kernel_k",
    "mmd.kernel",
+   "spec"
+  ],
+  "eri": [],
+  "eri.hjk": [],
+  "eri.hjk.kernel_hj": [
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "kernel_f",
+   "spec"
+  ],
+  "eri.hjk.kernel_hk": [
+   "eri.hjk.kernel_hj",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "kernel_f",
+   "spec"
+  ],
+  "eri.hjk.launch_hjk": [
+   "ao.shell",
+   "hgp.orbits"
+  ],
+  "eri.hjk.walk_hjk": [
+   "ao.shell",
+   "eri.hjk.kernel_hj",
+   "eri.hjk.kernel_hk",
+   "hgp.orbits",
+   "ir",
+   "kernel_f",
    "spec"
   ],
   "f_levers": [
@@ -1273,31 +1313,6 @@
    "ir",
    "spec"
   ],
-  "kernel_hj": [
-   "hgp",
-   "hgp.cost",
-   "hgp.etr",
-   "hgp.hrr",
-   "hgp.orbits",
-   "hgp.recurrence",
-   "hgp.vrr",
-   "ir",
-   "kernel_f",
-   "spec"
-  ],
-  "kernel_hk": [
-   "hgp",
-   "hgp.cost",
-   "hgp.etr",
-   "hgp.hrr",
-   "hgp.orbits",
-   "hgp.recurrence",
-   "hgp.vrr",
-   "ir",
-   "kernel_f",
-   "kernel_hj",
-   "spec"
-  ],
   "kernel_jab": [
    "ir",
    "mmd.e_fragment",
@@ -1480,10 +1495,6 @@
    "one_electron.overlap",
    "one_electron.potential",
    "spec"
-  ],
-  "launch_hjk": [
-   "ao.shell",
-   "hgp.orbits"
   ],
   "launch_k": [
    "ao",
@@ -1856,14 +1867,14 @@
    "emit.cuda",
    "emit.gpu",
    "emit.hip",
+   "eri.hjk.kernel_hj",
+   "eri.hjk.kernel_hk",
    "ir",
    "ir.lever_ladder",
    "ir.lower",
    "kernel_dq",
    "kernel_eri3",
    "kernel_f",
-   "kernel_hj",
-   "kernel_hk",
    "kernel_jab",
    "kernel_k",
    "kernel_metric",
@@ -2265,16 +2276,7 @@
    "one_electron.overlap",
    "one_electron.potential",
    "spec"
-  ],
-  "walk_hjk": [
-   "ao.shell",
-   "hgp.orbits",
-   "ir",
-   "kernel_f",
-   "kernel_hj",
-   "kernel_hk",
-   "spec"
   ]
  },
- "renames_applied": 4
+ "renames_applied": 5
 }

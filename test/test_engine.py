@@ -232,7 +232,7 @@ def test_hgp_j_and_k_are_the_split_kernels_beside_f() -> None:
     """HGP builds three targets: `kernel` its native fused `F`, unchanged by
     the widening, and `j` / `k` the split `hj_` / `hk_` kernels (#404,
     #405) in both class modes."""
-    from felizjueves import kernel_hj, kernel_hk
+    from felizjueves.eri.hjk import kernel_hj, kernel_hk
     (hgp,) = (e for e in ENGINES if e.name == "hgp")
     assert hgp.target is Target.F
     assert hgp.kernel(Spec(Operator.COULOMB, 0, (0, 1, 0, 1),

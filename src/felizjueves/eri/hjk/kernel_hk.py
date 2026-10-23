@@ -80,6 +80,37 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from felizjueves.eri.hjk.kernel_hj import (
+    _AO,
+    _DERIVED,
+    _F,
+    _I,
+    _P,
+    _SH,
+    _U,
+    _X,
+    _ZETA,
+    AB_SH,
+    KAB,
+    KCD,
+    KET,
+    ORDERED,
+    OUT,
+    PERM,
+    STAGE,
+    STAGING,
+    _ao,
+    _c,
+    _comps,
+    _factors,
+    _membership,
+    _Orient,
+    _quartet_scalars,
+    _record,
+    acc_name,
+    inverse,
+    launch_shape,
+)
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp.recurrence import (
     boundary_order,
@@ -114,37 +145,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.kernel_f import MAX_PRIM_PAIRS, REC
-from felizjueves.kernel_hj import (
-    _AO,
-    _DERIVED,
-    _F,
-    _I,
-    _P,
-    _SH,
-    _U,
-    _X,
-    _ZETA,
-    AB_SH,
-    KAB,
-    KCD,
-    KET,
-    ORDERED,
-    OUT,
-    PERM,
-    STAGE,
-    STAGING,
-    _ao,
-    _c,
-    _comps,
-    _factors,
-    _membership,
-    _Orient,
-    _quartet_scalars,
-    _record,
-    acc_name,
-    inverse,
-    launch_shape,
-)
 from felizjueves.spec import Engine, Operator, Spec, Target, lever_provenance
 
 __all__ = [

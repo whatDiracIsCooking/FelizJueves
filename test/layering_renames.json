@@ -35,5 +35,11 @@
     "kernel_sx": "one_electron.kernel_sx",
     "kernel_t": "one_electron.kernel_t",
     "kernel_v": "one_electron.kernel_v"
+  },
+  {
+    "kernel_hj": "eri.hjk.kernel_hj",
+    "kernel_hk": "eri.hjk.kernel_hk",
+    "launch_hjk": "eri.hjk.launch_hjk",
+    "walk_hjk": "eri.hjk.walk_hjk"
   }
 ]

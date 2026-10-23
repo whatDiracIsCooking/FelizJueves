@@ -77,9 +77,9 @@ from test_kernel_hj import (
 )
 from tiers import split_by_l
 
-from felizjueves import kernel_hk as HK
 from felizjueves.ao.density import epair
 from felizjueves.ao.k import exchange_matrix_reference, k_quartet
+from felizjueves.eri.hjk import kernel_hk as HK
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import (

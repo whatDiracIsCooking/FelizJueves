@@ -805,8 +805,8 @@ def test_kernel_gen_cmd_asks_for_no_hgp_jk_unit():
 
 
 def test_the_hgp_jk_names_cannot_collide_with_any_other_ladder():
-    from felizjueves.kernel_hj import hj_class_spec, hj_name
-    from felizjueves.kernel_hk import hk_class_spec, hk_name
+    from felizjueves.eri.hjk.kernel_hj import hj_class_spec, hj_name
+    from felizjueves.eri.hjk.kernel_hk import hk_class_spec, hk_name
 
     # Ordered names only (no DAG built); a canonical name is an ordered
     # class's digits behind `hj_` / `hk_`, the same prefix test.

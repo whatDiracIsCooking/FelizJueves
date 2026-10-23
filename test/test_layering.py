@@ -1376,6 +1376,26 @@ RULES |= {
 }
 RULE_OF["mmd"] = "mmd_package"
 EDGES["mmd"] = frozenset()
+
+# #514: the split HGP J / K cell moved into `eri/hjk/` (kernel_hj, kernel_hk,
+# launch_hjk, walk_hjk), each keeping its own rule below; the two package
+# markers are the new modules, and import nothing.
+RULES |= {
+    "eri_package": _rule(
+        "eri/__init__.py (#514): the ERI builds' package marker, a docstring "
+        "and no code",
+        (),
+        reference=_GROUND_TRUTH),
+    "eri_hjk_package": _rule(
+        "eri/hjk/__init__.py (#514): the split HGP J / K cell's package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri"] = "eri_package"
+EDGES["eri"] = frozenset()
+RULE_OF["eri.hjk"] = "eri_hjk_package"
+EDGES["eri.hjk"] = frozenset()
 EDGES |= {k: frozenset(v) for k, v in {
     "hgp": (),
     "hgp.vrr": (),
@@ -2616,10 +2636,10 @@ RULES |= {
                        "(#145)"}),
 }
 RULE_OF |= {
-    "launch_hjk": "hjk_launch",
+    "eri.hjk.launch_hjk": "hjk_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "launch_hjk": ("ao.shell", "hgp.orbits"),
+    "eri.hjk.launch_hjk": ("ao.shell", "hgp.orbits"),
 }.items()}
 
 
@@ -2629,7 +2649,7 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
     # measured layer, the dispatch policy, a kernel builder or launch_f.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["launch_hjk"]
+    todo = ["eri.hjk.launch_hjk"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -2672,8 +2692,8 @@ RULES |= {
             "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
-RULE_OF["kernel_hj"] = "hj_builder"
-EDGES["kernel_hj"] = frozenset(
+RULE_OF["eri.hjk.kernel_hj"] = "hj_builder"
+EDGES["eri.hjk.kernel_hj"] = frozenset(
     ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "kernel_f",
      "spec"))
 
@@ -2684,7 +2704,7 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
     # card, or a pair stream (`launch_f`, #403's `launch_hjk`).
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_hj"]
+    todo = ["eri.hjk.kernel_hj"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -2692,7 +2712,7 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
     for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
-                   "performance.device", "launch_f", "launch_hjk"):
+                   "performance.device", "launch_f", "eri.hjk.launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
 
@@ -2713,7 +2733,7 @@ RULES |= {
         "quartet, K_ab += D_cd (ac|bd) by atomic add, `am` in K's Hermite "
         "pairing (la, lc | lb, ld); `kernel_hj`'s nest, staging, scalars and "
         "class modes reused, keyed on a `Target.K` `Engine.HGP` `Spec`",
-        ("spec", "=ir", "hgp", "kernel_f", "kernel_hj"),
+        ("spec", "=ir", "hgp", "kernel_f", "eri.hjk.kernel_hj"),
         plan=RULES["hgp"].must_not["plan"],
         ao="`ao/hgp_drive.py` (the ERIs) and `ao/k.py` (the K sweep) are the "
            "kernel's witnesses: importing either shares ancestry (#20)",
@@ -2724,10 +2744,10 @@ RULES |= {
             "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
-RULE_OF["kernel_hk"] = "hk_builder"
-EDGES["kernel_hk"] = frozenset(
+RULE_OF["eri.hjk.kernel_hk"] = "hk_builder"
+EDGES["eri.hjk.kernel_hk"] = frozenset(
     ("hgp.hrr", "hgp.orbits", "hgp.recurrence", "hgp.vrr", "ir", "kernel_f",
-     "kernel_hj", "spec"))
+     "eri.hjk.kernel_hj", "spec"))
 
 
 def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
@@ -2736,15 +2756,16 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
     # card, or a pair stream (`launch_f`, #403's `launch_hjk`).
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_hk"]
+    todo = ["eri.hjk.kernel_hk"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"hgp.recurrence", "hgp.orbits", "kernel_f", "kernel_hj"} <= seen
+    assert {"hgp.recurrence", "hgp.orbits", "kernel_f",
+            "eri.hjk.kernel_hj"} <= seen
     for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
-                   "performance.device", "launch_f", "launch_hjk"):
+                   "performance.device", "launch_f", "eri.hjk.launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
 
@@ -2756,16 +2777,17 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
 # `hgp.orbits` behind them (#292's rule).
 RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP split J / K "
                        "through `kernel_hj` / `kernel_hk`",
-                       RULES["driver"].may | frozenset(("kernel_hj",
-                                                        "kernel_hk")),
+                       RULES["driver"].may | frozenset(("eri.hjk.kernel_hj",
+                                                        "eri.hjk.kernel_hk")),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
-    ("kernel_hj", "kernel_hk"))
+    ("eri.hjk.kernel_hj", "eri.hjk.kernel_hk"))
 
 
 def test_the_generator_reaches_the_hgp_jk_by_entry_point_only() -> None:
     graph = _graph()
-    assert {"kernel_hj", "kernel_hk"} <= graph["emit.__main__"]
+    assert ({"eri.hjk.kernel_hj", "eri.hjk.kernel_hk"}
+            <= graph["emit.__main__"])
     assert not any(_under(e, "hgp") for e in graph["emit.__main__"])
 
 
@@ -2789,10 +2811,11 @@ RULES |= {
         "launch's `Spec` formed from its class (#401's bridge), the records "
         "rebuilt from the shells, every launch run through an injected "
         "executor (`run=`), and every ordered quartet's fate recorded",
-        ("spec", "=ir", "ao.shell", "kernel_f", "kernel_hj", "kernel_hk",
-         "hgp.orbits"),
-        launch_hjk="the walker is independent of the plan builder (m6's "
-                   "discipline, #406): it reads the plan by duck type",
+        ("spec", "=ir", "ao.shell", "kernel_f", "eri.hjk.kernel_hj",
+         "eri.hjk.kernel_hk", "hgp.orbits"),
+        **{"eri.hjk.launch_hjk":
+            "the walker is independent of the plan builder (m6's "
+            "discipline, #406): it reads the plan by duck type"},
         launch_f="the fused build's stream is a sibling, not a base",
         reference=_GROUND_TRUTH + "; the executor (and its Boys) arrives "
                   "injected (`run=`)",
@@ -2810,9 +2833,10 @@ RULES |= {
         **{"performance.measured_store":
             "nothing measured may reach a walk by import"}),
 }
-RULE_OF["walk_hjk"] = "hjk_walk"
-EDGES["walk_hjk"] = frozenset(("ao.shell", "hgp.orbits", "ir", "kernel_f",
-                               "kernel_hj", "kernel_hk", "spec"))
+RULE_OF["eri.hjk.walk_hjk"] = "hjk_walk"
+EDGES["eri.hjk.walk_hjk"] = frozenset(
+    ("ao.shell", "hgp.orbits", "ir", "kernel_f", "eri.hjk.kernel_hj",
+     "eri.hjk.kernel_hk", "spec"))
 
 
 def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
@@ -2822,14 +2846,15 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
     # policy, or the witnesses the walk is held to.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["walk_hjk"]
+    todo = ["eri.hjk.walk_hjk"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"kernel_hj", "kernel_hk", "kernel_f"} <= seen
-    for banned in ("launch_hjk", "launch_f", "launch", _REF, "ir.interp", "emit",
+    assert {"eri.hjk.kernel_hj", "eri.hjk.kernel_hk", "kernel_f"} <= seen
+    for banned in ("eri.hjk.launch_hjk", "launch_f", "launch", _REF,
+                   "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
                    "performance.measured", "ao.j", "ao.k",
                    "ao.fock", "ao.eri", "ao.hgp_drive", "engine", "walk_f"):
@@ -2845,11 +2870,11 @@ RULES["engine"] = Rule(RULES["engine"].why + ", and since #406 `j` / `k`: "
                        "the split J / K builders `kernel_k`, `kernel_hj` and "
                        "`kernel_hk`, by their entry points",
                        RULES["engine"].may | frozenset(("kernel_k",
-                                                        "kernel_hj",
-                                                        "kernel_hk")),
+                                                        "eri.hjk.kernel_hj",
+                                                        "eri.hjk.kernel_hk")),
                        RULES["engine"].must_not)
-EDGES["engine"] = EDGES["engine"] | frozenset(("kernel_k", "kernel_hj",
-                                               "kernel_hk"))
+EDGES["engine"] = EDGES["engine"] | frozenset(("kernel_k", "eri.hjk.kernel_hj",
+                                               "eri.hjk.kernel_hk"))
 
 
 # ---------------------------------------------------------------------------
