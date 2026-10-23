@@ -43,14 +43,14 @@ from conftest import Toolchain
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves.ao.eri3 import Eri3Class
-from felizjueves.ir import Intent, Kernel
-from felizjueves.kernel_eri3 import (
+from felizjueves.eri.density_fit.eri3 import Eri3Class
+from felizjueves.eri.density_fit.kernel_eri3 import (
     OUT,
     PARAM_OF,
     build_eri3_kernel,
     launch_shape,
 )
+from felizjueves.ir import Intent, Kernel
 
 THREADS = 32  # lanes per block, one cell per thread; not numerical
 WIDTH = {"zeta_ab": 1, "P": 3, "XPA": 3, "XPB": 3, "s_ab": 1,  # per bra rec

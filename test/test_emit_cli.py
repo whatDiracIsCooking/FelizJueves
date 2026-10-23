@@ -44,9 +44,9 @@ from tiers import by_l, is_fast, split_by_l
 from felizjueves import levers
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.density_fit.kernel_eri3 import eri3_name
 from felizjueves.ir import lever_ladder
 from felizjueves.kernel_dq import build_dq_kernel, dq_name
-from felizjueves.kernel_eri3 import eri3_name
 from felizjueves.kernel_jab import build_jab_kernel, jab_name
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 from felizjueves.mmd.kernel import (
@@ -355,7 +355,7 @@ def test_the_metric_ladder_bounds_the_total_l():
 
 
 def test_metric_l_adds_its_units_beside_the_ladder_flags(tmp_path):
-    from felizjueves.kernel_metric import build_metric_kernel
+    from felizjueves.eri.density_fit.kernel_metric import build_metric_kernel
 
     assert _run(tmp_path, "hip", "--pair-l", "0", "--metric-l", "2") == 0
     assert _names(tmp_path) == {"dq_0_0.hip", "jab_00.hip", "metric_00.hip",
@@ -441,7 +441,7 @@ def test_eri3_l_11_writes_every_class_to_its_own_file(tmp_path, monkeypatch):
     # only -- the builder is stubbed, so no IR is built at L = 11.
     import types
 
-    from felizjueves.kernel_eri3 import eri3_spec
+    from felizjueves.eri.density_fit.kernel_eri3 import eri3_spec
 
     monkeypatch.setattr(emit_cli, "build_eri3_kernel", lambda c: (
         types.SimpleNamespace(name=eri3_name(eri3_spec(*c)))))
@@ -455,7 +455,7 @@ def test_eri3_l_11_writes_every_class_to_its_own_file(tmp_path, monkeypatch):
 
 
 def test_eri3_l_adds_its_units_beside_the_ladder_flags(tmp_path):
-    from felizjueves.kernel_eri3 import build_eri3_kernel
+    from felizjueves.eri.density_fit.kernel_eri3 import build_eri3_kernel
 
     assert _run(tmp_path, "hip", "--pair-l", "0", "--eri3-l", "1") == 0
     assert _names(tmp_path) == {"dq_0_0.hip", "jab_00.hip", "eri3_000.hip",

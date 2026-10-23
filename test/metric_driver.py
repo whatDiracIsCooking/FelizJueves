@@ -40,14 +40,14 @@ from conftest import Toolchain
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves.ao.metric import MetricClass
-from felizjueves.ir import Intent, Kernel
-from felizjueves.kernel_metric import (
+from felizjueves.eri.density_fit.kernel_metric import (
     OUT,
     PARAM_OF,
     build_metric_kernel,
     launch_shape,
 )
+from felizjueves.eri.density_fit.metric import MetricClass
+from felizjueves.ir import Intent, Kernel
 
 THREADS = 32  # lanes per block, one aux shell pair per thread; not numerical
 WIDTH = {"A": 3, "alpha": 1, "s": 1}  # by MetricClass.RECORD_ARRAYS name

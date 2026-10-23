@@ -55,7 +55,8 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import FAST_L_MAX, by_l
 
-from felizjueves.ao.metric import (
+from felizjueves.ao.shell import Basis, cartesians
+from felizjueves.eri.density_fit.metric import (
     MetricClass,
     aux_dress,
     aux_records,
@@ -68,7 +69,6 @@ from felizjueves.ao.metric import (
     place_staged,
     scale_matrix,
 )
-from felizjueves.ao.shell import Basis, cartesians
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.one_electron.overlap import overlap_block
 from felizjueves.reference.pq import fundamental, pq

@@ -63,6 +63,13 @@ _GROUND_TRUTH = ("an import from reference/ makes it share ancestry with the "
 # `ao` prefix below reached them) until they moved into `one_electron/`.
 _ONE_E_HOST = ("one_electron.one_electron", "one_electron.overlap",
                "one_electron.kinetic", "one_electron.potential")
+# #509: the DF host references and adapters, which lived under `ao/` too
+# until they moved into `eri/density_fit/`.
+_DF_HOST = ("eri.density_fit.metric", "eri.density_fit.metric_drive",
+            "eri.density_fit.eri3", "eri.density_fit.eri3_drive")
+# Every module that left the `ao` prefix: a rule or a transitive check that
+# says `ao` names these too, so its reach is unchanged.
+_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST)
 
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
@@ -981,7 +988,7 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_dq reaches {hit}"
     assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
@@ -1110,7 +1117,7 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "plan.targets" in seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_pair_bound reaches {hit}"
 
@@ -1160,7 +1167,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "kernel_pair_bound"} <= seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_record_bound reaches {hit}"
 
@@ -1178,7 +1185,7 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "mmd.e_fragment" in seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_s reaches {hit}"
 
@@ -1228,7 +1235,7 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "mmd.e_fragment" in seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_t reaches {hit}"
 
@@ -1282,7 +1289,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_v reaches {hit}"
 
@@ -1597,7 +1604,7 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "hgp.recurrence" in seen
-    for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+    for banned in ("plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                    "performance.device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f reaches {hit}"
@@ -1886,7 +1893,7 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_k", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+        for banned in ("kernel_k", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                        "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
@@ -1951,7 +1958,7 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_f", "plan", _REF, "ao", *_ONE_E_HOST, "ir.interp",
+        for banned in ("kernel_f", "plan", _REF, "ao", *_LEFT_AO, "ir.interp",
                        "emit", "performance.device", "launch_f"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
@@ -2238,7 +2245,7 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
 
@@ -2313,7 +2320,7 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "f_levers.scatter" in seen
-    for banned in ("kernel_f", "plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+    for banned in ("kernel_f", "plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                    "performance.device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f_scatter reaches {hit}"
@@ -2362,10 +2369,10 @@ EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
-    "ao.metric": "ao",
+    "eri.density_fit.metric": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.metric": ("mmd.hermite", "ao.shell"),
+    "eri.density_fit.metric": ("mmd.hermite", "ao.shell"),
 }.items()}
 
 
@@ -2377,10 +2384,11 @@ EDGES |= {k: frozenset(v) for k, v in {
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
-    "ao.eri3": "ao",
+    "eri.density_fit.eri3": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.eri3": ("mmd.hermite", "ao.metric", "ao.pairs", "ao.shell"),
+    "eri.density_fit.eri3": ("mmd.hermite", "eri.density_fit.metric",
+                             "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -2413,7 +2421,8 @@ RULES |= {
         "ao/metric_drive.py (#414): the metric kernel run in the interpreter "
         "over `ao.metric`'s staging -- builder + interp + ao, producing "
         "numbers, as `ao/drive.py` does for the J chain",
-        ("spec", "=ir", "ir.interp", "ao", "mmd.hermite", "kernel_metric"),
+        ("spec", "=ir", "ir.interp", "ao", "mmd.hermite",
+         "eri.density_fit.kernel_metric"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -2424,14 +2433,16 @@ RULES |= {
             "the J builder is another kernel's; the metric has its own"}),
 }
 RULE_OF |= {
-    "kernel_metric": "metric_builder",
-    "ao.metric_drive": "metric_adapter",
+    "eri.density_fit.kernel_metric": "metric_builder",
+    "eri.density_fit.metric_drive": "metric_adapter",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_metric": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
-                      "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
-    "ao.metric_drive": ("ao.metric", "ao.shell", "ir.interp", "ir",
-                        "kernel_metric"),
+    "eri.density_fit.kernel_metric": (
+        "mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+        "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
+    "eri.density_fit.metric_drive": (
+        "eri.density_fit.metric", "ao.shell", "ir.interp", "ir",
+        "eri.density_fit.kernel_metric"),
 }.items()}
 
 
@@ -2439,14 +2450,14 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
         ) -> None:
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_metric"]
+    todo = ["eri.density_fit.kernel_metric"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_metric reaches {hit}"
 
@@ -2481,7 +2492,8 @@ RULES |= {
         "ao/eri3_drive.py (#444): the three-center kernel run in the "
         "interpreter over `ao.eri3`'s staging -- builder + interp + ao, "
         "producing numbers, as `ao/metric_drive.py` does for the metric",
-        ("spec", "=ir", "ir.interp", "ao", "mmd.hermite", "kernel_eri3"),
+        ("spec", "=ir", "ir.interp", "ao", "mmd.hermite",
+         "eri.density_fit.kernel_eri3"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -2492,13 +2504,16 @@ RULES |= {
             "the J builder is another kernel's; ERI3 has its own"}),
 }
 RULE_OF |= {
-    "kernel_eri3": "eri3_builder",
-    "ao.eri3_drive": "eri3_adapter",
+    "eri.density_fit.kernel_eri3": "eri3_builder",
+    "eri.density_fit.eri3_drive": "eri3_adapter",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_eri3": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
-                    "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
-    "ao.eri3_drive": ("ao.eri3", "ao.shell", "ir.interp", "ir", "kernel_eri3"),
+    "eri.density_fit.kernel_eri3": (
+        "mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+        "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
+    "eri.density_fit.eri3_drive": (
+        "eri.density_fit.eri3", "ao.shell", "ir.interp", "ir",
+        "eri.density_fit.kernel_eri3"),
 }.items()}
 
 
@@ -2506,14 +2521,14 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
         ) -> None:
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_eri3"]
+    todo = ["eri.density_fit.kernel_eri3"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_eri3 reaches {hit}"
 
@@ -2522,9 +2537,11 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
 # driver composes the builder.
 RULES["driver"] = Rule(RULES["driver"].why + ", and the DF metric ladder "
                        "through `kernel_metric`",
-                       RULES["driver"].may | frozenset(("kernel_metric",)),
+                       RULES["driver"].may
+                       | frozenset(("eri.density_fit.kernel_metric",)),
                        RULES["driver"].must_not)
-EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_metric",))
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("eri.density_fit.kernel_metric",))
 
 
 # ---------------------------------------------------------------------------
@@ -2575,7 +2592,7 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "one_electron.kernel_s"} <= seen
-    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                    "performance.device", "launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
@@ -2585,9 +2602,11 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # driver composes the builder, as it does the metric's.
 RULES["driver"] = Rule(RULES["driver"].why + ", and the three-center ladder "
                        "through `kernel_eri3`",
-                       RULES["driver"].may | frozenset(("kernel_eri3",)),
+                       RULES["driver"].may
+                       | frozenset(("eri.density_fit.kernel_eri3",)),
                        RULES["driver"].must_not)
-EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_eri3",))
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("eri.density_fit.kernel_eri3",))
 
 
 # #402 (milestone 14): `hgp.orbits`, the ERI symmetry orbits and their
@@ -2711,7 +2730,7 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
-    for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+    for banned in ("plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                    "performance.device", "launch_f", "eri.hjk.launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
@@ -2764,7 +2783,7 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f",
             "eri.hjk.kernel_hj"} <= seen
-    for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+    for banned in ("plan", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                    "performance.device", "launch_f", "eri.hjk.launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
@@ -2939,7 +2958,7 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         return seen
 
     for root, banned in (
-            ("kernel_kblock", (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+            ("kernel_kblock", (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
                                "performance.device", "launch", "launch_k",
                                "launch_kblock")),
             ("launch_kblock", (_REF, "ir.interp", "emit", "ao.drive",
@@ -3000,13 +3019,17 @@ def test_launch_common_is_no_wider_than_launch() -> None:
 # the `ao` prefix: every rule that says `ao` in its `may` or its `must_not`
 # names them explicitly too, so no rule's reach changes. The package marker
 # is the one new module, and imports nothing.
+#
+# #509: the DF integrals moved into `eri/density_fit/` the same way; the four
+# that left `ao/` (`_DF_HOST`) join the same pass through `_LEFT_AO`, and the
+# package marker `eri.density_fit` is the one new module.
 # ---------------------------------------------------------------------------
 
 for _rn, _r in list(RULES.items()):
     _not = dict(_r.must_not)
     if "ao" in _not:
-        _not |= {m: _not["ao"] for m in _ONE_E_HOST if m not in _not}
-    _may = _r.may | frozenset(_ONE_E_HOST) if "ao" in _r.may else _r.may
+        _not |= {m: _not["ao"] for m in _LEFT_AO if m not in _not}
+    _may = _r.may | frozenset(_LEFT_AO) if "ao" in _r.may else _r.may
     RULES[_rn] = Rule(_r.why, _may, _not)
 del _rn, _r, _not, _may
 
@@ -3019,6 +3042,16 @@ RULES |= {
 }
 RULE_OF["one_electron"] = "one_electron_package"
 EDGES["one_electron"] = frozenset()
+
+RULES |= {
+    "eri_density_fit_package": _rule(
+        "eri/density_fit/__init__.py (#509): the DF integrals' package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.density_fit"] = "eri_density_fit_package"
+EDGES["eri.density_fit"] = frozenset()
 
 
 # ---------------------------------------------------------------------------

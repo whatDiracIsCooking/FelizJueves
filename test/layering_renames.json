@@ -41,5 +41,13 @@
     "kernel_hk": "eri.hjk.kernel_hk",
     "launch_hjk": "eri.hjk.launch_hjk",
     "walk_hjk": "eri.hjk.walk_hjk"
+  },
+  {
+    "ao.eri3": "eri.density_fit.eri3",
+    "ao.eri3_drive": "eri.density_fit.eri3_drive",
+    "ao.metric": "eri.density_fit.metric",
+    "ao.metric_drive": "eri.density_fit.metric_drive",
+    "kernel_eri3": "eri.density_fit.kernel_eri3",
+    "kernel_metric": "eri.density_fit.kernel_metric"
   }
 ]
