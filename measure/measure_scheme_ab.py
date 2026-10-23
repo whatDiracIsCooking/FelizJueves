@@ -99,18 +99,18 @@ from test_j_chain_ondevice import _ket_data, _rows_of
 from test_j_launched_ondevice import BOUND as J_BOUND
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import gate, measured
 from felizjueves import kernel_f as KF
 from felizjueves.ao.density import epair
 from felizjueves.ao.drive import _chain_plan, _unique_pairs
 from felizjueves.ao.k import record_bounds
 from felizjueves.ao.shell import Basis
 from felizjueves.f_levers import block_fab
-from felizjueves.gate import GPU_BUSY_MAX
 from felizjueves.kernel_kblock import build_kblock_kernel
 from felizjueves.launch import bound_value
 from felizjueves.launch_f import f_launches
 from felizjueves.launch_kblock import kb_launches
+from felizjueves.performance import gate, measured
+from felizjueves.performance.gate import GPU_BUSY_MAX
 from felizjueves.reference.pq import pq
 
 STORE = "FJ_SCHEME_AB_STORE"

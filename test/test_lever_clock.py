@@ -15,7 +15,7 @@ from dataclasses import replace
 
 import pytest
 
-from felizjueves import measured_store
+from felizjueves.performance import measured_store
 from felizjueves.spec import Spec
 
 
@@ -27,7 +27,7 @@ def literal(spec: Spec) -> Spec:
 def _synthetic_store(arm: str, verdicts: list[str]) -> dict:
     """A store of `arm`'s classes on sm_86, each timed so that `lever_ab`
     reads the given per-class verdict (win, loss, neutral, mixed)."""
-    from felizjueves.device import SM_86, MeasuredKey
+    from felizjueves.performance.device import SM_86, MeasuredKey
     prov = dict(toolchain="nvcc 13.0", arch="sm_86", host="h", gpu="g",
                 date="2026-10-16")
     # (control wide, arm wide, control near, arm near) medians, IQR 10

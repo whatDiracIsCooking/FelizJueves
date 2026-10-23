@@ -51,13 +51,13 @@ from felizjueves import kernel_f as KF
 from felizjueves import launch_f, levers, walk_f
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import REGISTRY, hooks_for, ket_break
 from felizjueves.hgp import vrr
 from felizjueves.ir import Break, For, If, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch_f import f_launches
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Operator, Spec, Target
@@ -135,7 +135,7 @@ GOLDEN_AM = (0, 1, 0, 1)  # both HRRs run, P = Q decided at run time
 BACKENDS = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
 # Regenerate (only when the lever's text is meant to change):
 #   PYTHONPATH=src python -c "from pathlib import Path; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   from felizjueves.kernel_f import build_f_kernel; \
 #   from felizjueves.spec import Operator, Spec, Target; \

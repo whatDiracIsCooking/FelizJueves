@@ -72,7 +72,6 @@ from test_launch_staged import HOST_TOL, _tiny
 from test_launch_staged import _taus as _staged_taus
 from tiers import split_by_l
 
-from felizjueves import measured_store
 from felizjueves.ao.j import (
     Screened,
     coulomb_matrix_and_scale,
@@ -82,6 +81,7 @@ from felizjueves.ao.j import (
 )
 from felizjueves.ao.staged import coulomb_matrix_staged
 from felizjueves.launch import coulomb_launched, launches, walk
+from felizjueves.performance import measured_store
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 

@@ -12,7 +12,7 @@ two can be read side by side. After an intended change, regenerate it (never
 hand-edit) and review the diff:
 
     PYTHONPATH=src uv run python -c "from felizjueves.mmd.kernel import \
-build_pq_kernel; from felizjueves.device import GFX1200; from \
+build_pq_kernel; from felizjueves.performance.device import GFX1200; from \
 felizjueves.emit.hip import emit; print(emit(build_pq_kernel(4), GFX1200), \
 end='')" > test/golden/hip/pq_L4_p2_q2.hip
 
@@ -28,10 +28,10 @@ from pathlib import Path
 import pytest
 from test_ir import synthetic_inline_kernel
 
-from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, hip
 from felizjueves.emit.__main__ import one_e_kernels
 from felizjueves.mmd.kernel import build_pq_kernel
+from felizjueves.performance.device import GFX1200, SM_86, Arch, Vendor
 
 L = 4
 GOLDEN = Path(__file__).resolve().parent / "golden" / "hip" / "pq_L4_p2_q2.hip"
@@ -99,7 +99,8 @@ INLINE_GOLDEN = GOLDEN.parent / "inline_probe.hip"
 def test_the_inline_golden_is_unchanged() -> None:
     # #149: a kernel splicing a synthetic Fragment. Regenerate (never hand-edit):
     #   PYTHONPATH=src:test uv run python -c "from test_ir import \
-    #   synthetic_inline_kernel as k; from felizjueves.device import GFX1200; \
+    #   synthetic_inline_kernel as k; \
+    #   from felizjueves.performance.device import GFX1200; \
     #   from felizjueves.emit.hip import emit; print(emit(k(), GFX1200), \
     #   end='')" > test/golden/hip/inline_probe.hip
     assert hip.emit(synthetic_inline_kernel(), GFX1200) == \

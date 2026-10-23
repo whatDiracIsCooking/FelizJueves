@@ -51,7 +51,6 @@ from tiers import split_by_l
 from felizjueves import f_levers, levers
 from felizjueves import kernel_f as KF
 from felizjueves.ao.shell import Basis
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import EmitError, record_struct
 from felizjueves.f_levers import seams
@@ -79,6 +78,7 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
 NAME = sr.NAME
@@ -505,7 +505,7 @@ def test_a_member_is_validated_on_construction() -> None:
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, ('struct-reads',))); \
 #   Path(f'test/golden/cuda/f_struct_reads/{k.name}.cu').write_text( \

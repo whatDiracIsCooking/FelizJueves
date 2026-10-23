@@ -503,71 +503,16 @@
    "plan.targets",
    "spec"
   ],
-  "asym": [
-   "device",
-   "ir",
-   "ir.passes",
-   "measured_store",
-   "mmd.kernel",
-   "plan",
-   "plan.__main__",
-   "plan.batching",
-   "plan.cost",
-   "plan.dag",
-   "plan.mild",
-   "plan.optimum",
-   "plan.order_search",
-   "plan.pipeline",
-   "plan.recovery",
-   "plan.schedule",
-   "plan.search",
-   "plan.sieve",
-   "plan.targets",
-   "spec"
-  ],
-  "batchreport": [
-   "device",
-   "ir.lower",
-   "kernelrank",
-   "measured_store",
-   "mmd.kernel",
-   "ridge",
-   "spec"
-  ],
-  "ceilings": [
-   "device",
-   "gate"
-  ],
-  "crossread": [
-   "batchreport",
-   "device",
-   "ir.lower",
-   "kernelrank",
-   "measured_store",
-   "mmd.kernel",
-   "ridge",
-   "spec"
-  ],
-  "device": [
-   "spec"
-  ],
-  "dispatch": [
-   "batchreport",
-   "device",
-   "measured_store"
-  ],
   "emit": [
-   "device",
    "emit.__main__",
    "emit._c",
    "emit.cuda",
    "emit.gpu",
    "emit.hip",
-   "ir"
+   "ir",
+   "performance.device"
   ],
   "emit.__main__": [
-   "asym",
-   "device",
    "emit",
    "emit._c",
    "emit.cuda",
@@ -589,46 +534,48 @@
    "kernel_sx",
    "kernel_t",
    "kernel_v",
-   "leverledger",
-   "measured_store",
    "mmd.kernel",
+   "performance.asym",
+   "performance.device",
+   "performance.leverledger",
+   "performance.measured_store",
    "spec"
   ],
   "emit._c": [
-   "device",
    "emit",
    "emit.__main__",
    "emit.cuda",
    "emit.gpu",
    "emit.hip",
-   "ir"
+   "ir",
+   "performance.device"
   ],
   "emit.cuda": [
-   "device",
    "emit",
    "emit.__main__",
    "emit._c",
    "emit.gpu",
    "emit.hip",
-   "ir"
+   "ir",
+   "performance.device"
   ],
   "emit.gpu": [
-   "device",
    "emit",
    "emit.__main__",
    "emit._c",
    "emit.cuda",
    "emit.hip",
-   "ir"
+   "ir",
+   "performance.device"
   ],
   "emit.hip": [
-   "device",
    "emit",
    "emit.__main__",
    "emit._c",
    "emit.cuda",
    "emit.gpu",
-   "ir"
+   "ir",
+   "performance.device"
   ],
   "engine": [
    "ao.eri",
@@ -978,7 +925,6 @@
    "ir",
    "spec"
   ],
-  "gate": [],
   "hgp": [
    "hgp.cost",
    "hgp.etr",
@@ -1044,7 +990,7 @@
    "spec"
   ],
   "ir": [
-   "device",
+   "performance.device",
    "spec"
   ],
   "ir.interp": [
@@ -1578,15 +1524,6 @@
    "plan.targets",
    "spec"
   ],
-  "kernelrank": [
-   "batchreport",
-   "device",
-   "ir.lower",
-   "measured_store",
-   "mmd.kernel",
-   "ridge",
-   "spec"
-  ],
   "launch": [
    "ao",
    "ao.density",
@@ -1722,16 +1659,6 @@
    "mmd.hermite",
    "spec"
   ],
-  "leverledger": [
-   "batchreport",
-   "device",
-   "ir.lower",
-   "kernelrank",
-   "measured_store",
-   "mmd.kernel",
-   "ridge",
-   "spec"
-  ],
   "levers": [],
   "literature": [
    "literature.claims",
@@ -1774,43 +1701,6 @@
    "literature.limits",
    "literature.rules",
    "literature.scoreboard"
-  ],
-  "measured": [
-   "asym",
-   "device",
-   "emit",
-   "emit.__main__",
-   "emit._c",
-   "emit.cuda",
-   "emit.gpu",
-   "emit.hip",
-   "ir",
-   "ir.lever_ladder",
-   "ir.lower",
-   "kernel_dq",
-   "kernel_eri3",
-   "kernel_f",
-   "kernel_hj",
-   "kernel_hk",
-   "kernel_jab",
-   "kernel_k",
-   "kernel_metric",
-   "kernel_s",
-   "kernel_schwarz",
-   "kernel_sx",
-   "kernel_t",
-   "kernel_v",
-   "leverledger",
-   "measured_store",
-   "mmd.kernel",
-   "spec"
-  ],
-  "measured_store": [
-   "device",
-   "ir.lower",
-   "levers",
-   "mmd.kernel",
-   "spec"
   ],
   "mmd": [],
   "mmd.e_fragment": [
@@ -1882,6 +1772,147 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
+   "spec"
+  ],
+  "performance": [],
+  "performance.asym": [
+   "ir",
+   "ir.passes",
+   "mmd.kernel",
+   "performance.device",
+   "performance.measured_store",
+   "plan",
+   "plan.__main__",
+   "plan.batching",
+   "plan.cost",
+   "plan.dag",
+   "plan.mild",
+   "plan.optimum",
+   "plan.order_search",
+   "plan.pipeline",
+   "plan.recovery",
+   "plan.schedule",
+   "plan.search",
+   "plan.sieve",
+   "plan.targets",
+   "spec"
+  ],
+  "performance.batchreport": [
+   "ir.lower",
+   "mmd.kernel",
+   "performance.device",
+   "performance.kernelrank",
+   "performance.measured_store",
+   "performance.ridge",
+   "spec"
+  ],
+  "performance.ceilings": [
+   "performance.device",
+   "performance.gate"
+  ],
+  "performance.crossread": [
+   "ir.lower",
+   "mmd.kernel",
+   "performance.batchreport",
+   "performance.device",
+   "performance.kernelrank",
+   "performance.measured_store",
+   "performance.ridge",
+   "spec"
+  ],
+  "performance.device": [
+   "spec"
+  ],
+  "performance.dispatch": [
+   "performance.batchreport",
+   "performance.device",
+   "performance.measured_store"
+  ],
+  "performance.gate": [],
+  "performance.kernelrank": [
+   "ir.lower",
+   "mmd.kernel",
+   "performance.batchreport",
+   "performance.device",
+   "performance.measured_store",
+   "performance.ridge",
+   "spec"
+  ],
+  "performance.leverledger": [
+   "ir.lower",
+   "mmd.kernel",
+   "performance.batchreport",
+   "performance.device",
+   "performance.kernelrank",
+   "performance.measured_store",
+   "performance.ridge",
+   "spec"
+  ],
+  "performance.measured": [
+   "emit",
+   "emit.__main__",
+   "emit._c",
+   "emit.cuda",
+   "emit.gpu",
+   "emit.hip",
+   "ir",
+   "ir.lever_ladder",
+   "ir.lower",
+   "kernel_dq",
+   "kernel_eri3",
+   "kernel_f",
+   "kernel_hj",
+   "kernel_hk",
+   "kernel_jab",
+   "kernel_k",
+   "kernel_metric",
+   "kernel_s",
+   "kernel_schwarz",
+   "kernel_sx",
+   "kernel_t",
+   "kernel_v",
+   "mmd.kernel",
+   "performance.asym",
+   "performance.device",
+   "performance.leverledger",
+   "performance.measured_store",
+   "spec"
+  ],
+  "performance.measured_store": [
+   "ir.lower",
+   "levers",
+   "mmd.kernel",
+   "performance.device",
+   "spec"
+  ],
+  "performance.planrank": [
+   "performance.device",
+   "performance.gate",
+   "performance.kernelrank",
+   "performance.measured_store",
+   "plan",
+   "plan.__main__",
+   "plan.batching",
+   "plan.cost",
+   "plan.dag",
+   "plan.mild",
+   "plan.optimum",
+   "plan.order_search",
+   "plan.pipeline",
+   "plan.recovery",
+   "plan.schedule",
+   "plan.search",
+   "plan.sieve",
+   "plan.targets",
+   "spec"
+  ],
+  "performance.ridge": [
+   "ir.lower",
+   "mmd.kernel",
+   "performance.batchreport",
+   "performance.device",
+   "performance.kernelrank",
+   "performance.measured_store",
    "spec"
   ],
   "plan": [
@@ -2192,27 +2223,6 @@
    "plan.sieve",
    "spec"
   ],
-  "planrank": [
-   "device",
-   "gate",
-   "kernelrank",
-   "measured_store",
-   "plan",
-   "plan.__main__",
-   "plan.batching",
-   "plan.cost",
-   "plan.dag",
-   "plan.mild",
-   "plan.optimum",
-   "plan.order_search",
-   "plan.pipeline",
-   "plan.recovery",
-   "plan.schedule",
-   "plan.search",
-   "plan.sieve",
-   "plan.targets",
-   "spec"
-  ],
   "reference": [
    "reference.boys",
    "reference.pq"
@@ -2224,15 +2234,6 @@
   "reference.pq": [
    "reference",
    "reference.boys"
-  ],
-  "ridge": [
-   "batchreport",
-   "device",
-   "ir.lower",
-   "kernelrank",
-   "measured_store",
-   "mmd.kernel",
-   "spec"
   ],
   "spec": [
    "levers"
@@ -2274,5 +2275,5 @@
    "spec"
   ]
  },
- "renames_applied": 2
+ "renames_applied": 3
 }

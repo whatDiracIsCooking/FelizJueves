@@ -251,8 +251,8 @@ _SCREEN = re.compile(r"if \(bound < tau\) \{\n((?:\s*//[^\n]*\n)*)\s*\} else \{"
 def _kernel_text(kernel: Kernel, backend: str) -> str:
     """The emitted `__global__` function alone: the device `fj_boys` before
     it has a `break` of its own (the series' convergence exit)."""
-    from felizjueves.device import GFX1200, SM_86
     from felizjueves.emit import cuda, hip
+    from felizjueves.performance.device import GFX1200, SM_86
     emit, arch = {"cuda": (cuda.emit, SM_86), "hip": (hip.emit, GFX1200)}[backend]
     text = emit(kernel, arch)
     assert text.count("__global__") == 1

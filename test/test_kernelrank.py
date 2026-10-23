@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import crossread, kernelrank, ridge
+from felizjueves.performance import crossread, kernelrank, ridge
 
 # --- the arithmetic ----------------------------------------------------------
 

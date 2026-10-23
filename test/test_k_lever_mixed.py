@@ -60,7 +60,6 @@ from oracle.tolerance import F32_REL, F64_REL
 from felizjueves import k_levers, levers
 from felizjueves.ao.k import _k_quartet
 from felizjueves.ao.pairs import narrowed
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
     Assign,
@@ -85,6 +84,7 @@ from felizjueves.k_levers.seams import DEFAULT_HOOKS, KET, KSH
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels, launch_shape
 from felizjueves.mmd.kernel import builder_plan
 from felizjueves.mmd.recurrence import PQ_PARAMS, THETA, node_name
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.schedule import schedule
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq as reference_pq
@@ -448,7 +448,7 @@ def test_narrowed_is_one_round_to_nearest_float32() -> None:
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
 #   from felizjueves.kernel_k import build_k_kernel; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   [(Path(f'test/golden/cuda/k_mixed/k_10_00_{a}.cu').write_text(cuda.emit( \
 #   k, SM_86)), Path(f'test/golden/hip/k_mixed/k_10_00_{a}.hip').write_text( \

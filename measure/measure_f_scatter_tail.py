@@ -57,8 +57,8 @@ from measure_kernel_device import GPU_BUSY_MAX, REPEATS, STUDY_RETAKES, WARMUP
 from plan_driver import compile_checked
 from test_kernel_device import BACKEND
 
-from felizjueves import gate
 from felizjueves.f_levers import block_fab
+from felizjueves.performance import gate
 
 
 def _tail_classes(env=os.environ) -> tuple:

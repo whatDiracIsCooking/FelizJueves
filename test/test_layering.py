@@ -87,9 +87,10 @@ RULES: dict[str, Rule] = {
         "and the published tables, and knows nothing of IR or devices",
         ("spec", "plan", "literature"),
         **{"=ir": "the plan counts; it emits no instructions"},
-        dispatch="nothing measured may reach the plan's cost model: a "
+        **{"performance.dispatch":
+            "nothing measured may reach the plan's cost model: a "
                  "dispatch choice is admitted by the plan, never imported "
-                 "by it (#145)",
+                 "by it (#145)"},
         reference=_GROUND_TRUTH),
     "reference": _rule(
         "numeric ground truth (#20) with independent ancestry: it may use only "
@@ -118,7 +119,7 @@ RULES: dict[str, Rule] = {
     "probe": _rule(
         "ceilings.py (#109): the roofline ceiling probes and their record, "
         "behind the gate. It writes what `device` reads",
-        ("device", "gate"),
+        ("performance.device", "performance.gate"),
         literature="the published tables must never see a ceiling a re-probe "
                    "rewrites (#109's hazard)",
         plan="the plan counts; a card's measured ceiling must not reach it",
@@ -126,7 +127,7 @@ RULES: dict[str, Rule] = {
     "ir": _rule(
         "the instruction set: types only (#22). May reach `spec` and the device "
         "vocabulary; today it needs neither",
-        ("spec", "device"),
+        ("spec", "performance.device"),
         plan="types only -- the IR does not know how a plan is made (#22)",
         reference=_GROUND_TRUTH),
     "interp": _rule(
@@ -161,7 +162,8 @@ RULES: dict[str, Rule] = {
                "one key (#337); the vendor-neutral import set is pinned",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific "
              "(#25)",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         reference=_GROUND_TRUTH),
@@ -183,13 +185,14 @@ RULES: dict[str, Rule] = {
             "the fragment is checked by the interpreter, never built on "
                "it; and the interpreter must not know what `E` is (#152)"},
         emit="a fragment is vendor-neutral IR; the arch enters at emission",
-        device="the IR is arch-neutral",
+        **{"performance.device":
+            "the IR is arch-neutral"},
         reference=_GROUND_TRUTH),
     "emit": _rule(
         "IR -> text, one backend per vendor sharing emit/_c.py (#26/#27), and "
         "`gpu`, one text for both over FelizJueves's own headers. Reads "
         "a finished `Kernel` and an `Arch`",
-        ("=ir", "device", "emit"),
+        ("=ir", "performance.device", "emit"),
         reference="#20's hazard: a reference an emitter can reach is a "
                   "reference an emitter can be derived from",
         **{"ir.interp":
@@ -205,14 +208,16 @@ RULES: dict[str, Rule] = {
     "driver": _rule(
         "CLIs that COMPOSE builder + backend and write or measure the result: "
         "`python -m felizjueves.emit` (KERNEL_GEN_CMD, #28) and "
-        "`python -m felizjueves.measured` (#28). Their own rule, so that emit/*'s "
+        "`python -m felizjueves.performance.measured` (#28). Their own rule, "
+        "so that emit/*'s "
         "stays narrow. A driver also LOWERS what it built when the Spec names "
         "a lowering lever (`measured.cell_kernels`, #55): build -> lower -> emit. "
         "`measured` writes its rows into `measured_store` (#94), and compiles "
         "#113's asymmetric study cells through `asym`, and #205's K cells "
         "through `kernel_k`",
-        ("spec", "device", "=ir", "mmd.kernel", "ir.lower", "emit", "measured_store",
-         "asym", "kernel_dq", "kernel_jab", "kernel_k"),
+        ("spec", "performance.device", "=ir", "mmd.kernel", "ir.lower",
+         "emit", "performance.measured_store", "performance.asym",
+         "kernel_dq", "kernel_jab", "kernel_k"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         **{"ir.interp":
@@ -229,11 +234,13 @@ RULES: dict[str, Rule] = {
         "each other (#115; the one analysis that may import its siblings, "
         "and only the three it cross-reads). It reads both sides and feeds "
         "neither",
-        ("spec", "device", "mmd.kernel", "ir.lower", "measured_store",
-         "kernelrank", "batchreport", "ridge"),
-        measured="an analysis reads the STORE (`measured_store`), never the "
+        ("spec", "performance.device", "mmd.kernel", "ir.lower",
+         "performance.measured_store", "performance.kernelrank",
+         "performance.batchreport", "performance.ridge"),
+        **{"performance.measured":
+            "an analysis reads the STORE (`measured_store`), never the "
                  "driver that compiles into it: a ranking must not need a "
-                 "toolchain to be recomputed (#94)",
+                 "toolchain to be recomputed (#94)"},
         plan="a model-vs-measurement result must never reach the "
              "calibrated instrument the literature floors are measured with",
         literature="nothing in KernelCost may feed a literature floor "
@@ -248,15 +255,18 @@ RULES: dict[str, Rule] = {
         "it (`plan` and `literature` admit no such edge), and a plan chosen "
         "on its reading is #166's hand-recorded decision, not a loop the "
         "code closes. `gate` only for GPU_BUSY_MAX, the clean-phase bound",
-        ("spec", "device", "gate", "plan", "measured_store", "kernelrank"),
+        ("spec", "performance.device", "performance.gate", "plan",
+         "performance.measured_store", "performance.kernelrank"),
         literature="the reading may not feed a literature floor: a floor "
                    "moved by what a card did with a kernel is no longer the "
                    "paper's number (#165's hazard)",
-        measured="an analysis reads the STORE, never the driver that "
+        **{"performance.measured":
+            "an analysis reads the STORE, never the driver that "
                  "compiles into it: the reading must be recomputable "
-                 "without a toolchain (#94)",
-        dispatch="the reading is not a choice; dispatch chooses from the "
-                 "clock alone, and nothing here may become its input",
+                 "without a toolchain (#94)"},
+        **{"performance.dispatch":
+            "the reading is not a choice; dispatch chooses from the "
+                 "clock alone, and nothing here may become its input"},
         launch="the reading is about one class's kernel, not a molecule's "
                "launch plan, and must not reach what the plan launches",
         reference=_GROUND_TRUTH),
@@ -266,20 +276,24 @@ RULES: dict[str, Rule] = {
         "INJECTED into `launch.launches` as `resolve=`. Not `analysis`: it "
         "feeds the launch plan, by injection. It reads the store and the "
         "card, nothing else",
-        ("device", "measured_store", "batchreport"),
+        ("performance.device", "performance.measured_store", "performance.batchreport"),
         **{"ir.lower":
             "measured rows only, never a model: `lower.KernelCost` is the "
               "model #54's limits record mis-ranking the hardware (#145)"},
-        kernelrank="a model-vs-measurement ranking is not a choice: the "
-                   "clock arbitrates, never a model or byte proxy (#145)",
-        ridge="a counter/roofline verdict is a byte proxy, not the clock",
-        crossread="the cross-read reports disagreements; it does not choose",
+        **{"performance.kernelrank":
+            "a model-vs-measurement ranking is not a choice: the "
+                   "clock arbitrates, never a model or byte proxy (#145)"},
+        **{"performance.ridge":
+            "a counter/roofline verdict is a byte proxy, not the clock"},
+        **{"performance.crossread":
+            "the cross-read reports disagreements; it does not choose"},
         plan="nothing measured may reach the plan's cost model; the plan "
              "admits the chosen count in `launch`, not here",
         launch="the resolver is injected into the launch plan; it does not "
                "need the plan, and importing it would invite the reverse",
-        measured="the resolver reads the STORE, never the driver: a choice "
-                 "must not need a toolchain (#94)",
+        **{"performance.measured":
+            "the resolver reads the STORE, never the driver: a choice "
+                 "must not need a toolchain (#94)"},
         literature="a dispatch choice is not scored against the published "
                    "tables, and nothing measured may feed a floor",
         reference=_GROUND_TRUTH),
@@ -289,12 +303,14 @@ RULES: dict[str, Rule] = {
         "`passes.atomize`) and judges its rows against the literal ones read "
         "from the store. Not `builder`: it reads the store; not `analysis`: "
         "it plans",
-        ("spec", "device", "=ir", "plan", "mmd.kernel", "ir.passes", "measured_store"),
+        ("spec", "performance.device", "=ir", "plan", "mmd.kernel",
+         "ir.passes", "performance.measured_store"),
         literature="the study's verdict is recorded by hand in claims.json / "
                    "limits.json and read by tests; nothing measured may feed "
                    "a literature floor",
-        measured="the study reads the STORE; the driver compiles its cells, "
-                 "never the reverse (#94)",
+        **{"performance.measured":
+            "the study reads the STORE; the driver compiles its cells, "
+                 "never the reverse (#94)"},
         emit="the study builds kernels; spelling them is the driver's job",
         **{"ir.interp":
             "the kernel tier checks the study's kernels, not the "
@@ -306,18 +322,20 @@ RULES: dict[str, Rule] = {
         "names cells (`kernel.pq_spec`) and lowering levers (`lower.LEVERS`) "
         "but knows no toolchain, so the fast tier and the analyses read it "
         "without one (`TOOLCHAIN_STDLIB` below holds the runtime half)",
-        ("spec", "device", "mmd.kernel", "ir.lower"),
-        measured="the driver writes into the store, never the reverse: a store "
+        ("spec", "performance.device", "mmd.kernel", "ir.lower"),
+        **{"performance.measured":
+            "the driver writes into the store, never the reverse: a store "
                  "that imports its driver drags a toolchain into every reader "
-                 "(#94)",
+                 "(#94)"},
         emit="the store records what a compiler said about text; spelling the "
              "text is the driver's job (#94)",
         **{"=ir": "a row is keyed on a Spec, not on instructions"},
         **{"ir.interp":
             "a measurement is not an interpretation"},
-        dispatch="the resolver reads the store; a store that imports it "
+        **{"performance.dispatch":
+            "the resolver reads the store; a store that imports it "
                  "is a cycle, and a choice would shape its own evidence "
-                 "(#145)",
+                 "(#145)"},
         plan="a stored measurement must never reach the instrument the "
              "literature floors are measured with",
         literature="nothing measured may feed a literature floor",
@@ -383,13 +401,16 @@ RULES: dict[str, Rule] = {
            "ao.staged": "the staged driver (#143) runs this plan; the plan "
                         "importing it is the same cycle as `ao.drive`"},
         emit="the plan is data: no text is emitted (#138's acceptance)",
-        measured="a batch count is the plan's admission or an injected "
-                 "resolver's (#145), never a toolchain's",
-        dispatch="the resolver is injected (`resolve=`, #145), never "
+        **{"performance.measured":
+            "a batch count is the plan's admission or an injected "
+                 "resolver's (#145), never a toolchain's"},
+        **{"performance.dispatch":
+            "the resolver is injected (`resolve=`, #145), never "
                  "imported: the plan stays data and the policy "
-                 "replaceable",
-        measured_store="nothing measured may reach the plan by import: a "
-                       "dispatch policy arrives injected (#145)",
+                 "replaceable"},
+        **{"performance.measured_store":
+            "nothing measured may reach the plan by import: a "
+                       "dispatch policy arrives injected (#145)"},
         literature="a launch plan is not scored against the published "
                    "tables; nothing here may feed a floor"),
     "k_launch": _rule(
@@ -419,10 +440,13 @@ RULES: dict[str, Rule] = {
                        "the interpreter in",
            "ao.staged": "the staged J driver reads `launch`'s plans; this "
                         "plan importing it is the same cycle as `launch`'s"},
-        measured="no toolchain reaches a plan",
-        dispatch="no K dispatch resolver exists (milestone 10's scope); "
-                 "when one does it is injected, never imported (#145)",
-        measured_store="nothing measured may reach the plan by import",
+        **{"performance.measured":
+            "no toolchain reaches a plan"},
+        **{"performance.dispatch":
+            "no K dispatch resolver exists (milestone 10's scope); "
+                 "when one does it is injected, never imported (#145)"},
+        **{"performance.measured_store":
+            "nothing measured may reach the plan by import"},
         literature="a launch plan is not scored against the published "
                    "tables; nothing here may feed a floor"),
     "jab_builder": _rule(
@@ -435,7 +459,8 @@ RULES: dict[str, Rule] = {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
     "dq_builder": _rule(
         "kernel_dq.py (#153): the ket pre-contraction kernel, `Target.DQ` -- "
@@ -451,7 +476,8 @@ RULES: dict[str, Rule] = {
             "the builder is checked by the interpreter, never built on it"},
         emit="a builder produces vendor-neutral IR; the arch enters at "
              "emission (#156)",
-        device="the `Kernel` is arch-neutral",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral"},
         reference=_GROUND_TRUTH),
     "count": _rule(
         "kdup.py (#202): the duplicated-work count, J against K, per class "
@@ -474,9 +500,11 @@ RULES: dict[str, Rule] = {
         **{"ir.interp":
             "nothing here is run"},
         emit="nothing here is spelled",
-        measured="no toolchain: the count is recomputed in the fast tier",
-        measured_store="no measured row may shape the arithmetic half; "
-                       "`SUBGRID_LS` is restated and a test pins it",
+        **{"performance.measured":
+            "no toolchain: the count is recomputed in the fast tier"},
+        **{"performance.measured_store":
+            "no measured row may shape the arithmetic half; "
+                       "`SUBGRID_LS` is restated and a test pins it"},
         literature="the count scores nothing: the claim is E3's (#207), and "
                    "nothing here may move a floor",
         ao="the AO layer is the K witness's home, not the plan's",
@@ -497,12 +525,14 @@ RULES: dict[str, Rule] = {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 
 RULE_OF: dict[str, str] = {
     "__init__": "root",
+    "performance": "root",  # #507: the package marker of performance/
     "spec": "spec",
     "literature": "literature",
     "literature.claims": "literature",
@@ -527,9 +557,9 @@ RULE_OF: dict[str, str] = {
     "reference": "reference",
     "reference.boys": "reference",
     "reference.pq": "reference",
-    "device": "device",
-    "gate": "gate",
-    "ceilings": "probe",
+    "performance.device": "device",
+    "performance.gate": "gate",
+    "performance.ceilings": "probe",
     "ir": "ir",
     "ir.interp": "interp",
     "ir.lower": "lower",
@@ -543,15 +573,15 @@ RULE_OF: dict[str, str] = {
     "emit.hip": "emit",
     "emit.gpu": "emit",
     "emit.__main__": "driver",
-    "measured": "driver",
-    "measured_store": "store",
-    "asym": "study",
-    "kernelrank": "analysis",
-    "batchreport": "analysis",
-    "ridge": "analysis",
-    "dispatch": "dispatch",
-    "crossread": "analysis",
-    "planrank": "plan_analysis",
+    "performance.measured": "driver",
+    "performance.measured_store": "store",
+    "performance.asym": "study",
+    "performance.kernelrank": "analysis",
+    "performance.batchreport": "analysis",
+    "performance.ridge": "analysis",
+    "performance.dispatch": "dispatch",
+    "performance.crossread": "analysis",
+    "performance.planrank": "plan_analysis",
     "ao": "ao",
     "ao.shell": "ao",
     "mmd.hermite": "ao",
@@ -574,6 +604,7 @@ RULE_OF: dict[str, str] = {
 
 EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "__init__": (),
+    "performance": (),
     "spec": ("levers",),
     "literature": (),
     "literature.claims": (),
@@ -612,9 +643,9 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "reference": (),
     "reference.boys": (),
     "reference.pq": ("reference.boys",),
-    "device": ("spec",),
-    "gate": (),
-    "ceilings": ("device", "gate"),
+    "performance.device": ("spec",),
+    "performance.gate": (),
+    "performance.ceilings": ("performance.device", "performance.gate"),
     "ir": (),
     "ir.interp": ("ir",),
     "ir.lower": ("ir",),
@@ -625,27 +656,39 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                "plan.targets", "mmd.recurrence", "spec"),
     "mmd.e_fragment": ("ir", "plan.targets"),
     "emit": (),
-    "emit._c": ("device", "ir"),
-    "emit.cuda": ("device", "emit._c", "ir"),
-    "emit.hip": ("device", "emit._c", "ir"),
-    "emit.gpu": ("device", "emit._c", "ir"),
-    "emit.__main__": ("device", "emit.cuda", "emit.hip", "mmd.kernel", "kernel_dq",
-                      "kernel_jab", "spec"),
-    "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "mmd.kernel",
-                 "kernel_k", "ir.lower", "measured_store", "spec"),
-    "measured_store": ("device", "mmd.kernel", "ir.lower", "spec"),
-    "asym": ("device", "ir", "mmd.kernel", "measured_store", "ir.passes",
-             "plan.batching", "plan.dag", "plan.sieve", "plan.targets", "spec"),
-    "kernelrank": ("device", "mmd.kernel", "ir.lower", "measured_store", "spec"),
-    "batchreport": ("device", "measured_store"),
-    "ridge": ("device", "measured_store"),
-    "dispatch": ("batchreport", "device", "measured_store"),
-    "crossread": ("batchreport", "device", "kernelrank", "measured_store",
-                  "ridge", "spec"),
+    "emit._c": ("performance.device", "ir"),
+    "emit.cuda": ("performance.device", "emit._c", "ir"),
+    "emit.hip": ("performance.device", "emit._c", "ir"),
+    "emit.gpu": ("performance.device", "emit._c", "ir"),
+    "emit.__main__": ("performance.device", "emit.cuda", "emit.hip",
+                      "mmd.kernel", "kernel_dq", "kernel_jab", "spec"),
+    "performance.measured": ("performance.asym", "performance.device",
+                             "emit.cuda", "emit.hip", "ir", "mmd.kernel",
+                             "kernel_k", "ir.lower",
+                             "performance.measured_store", "spec"),
+    "performance.measured_store": ("performance.device", "mmd.kernel",
+                                   "ir.lower", "spec"),
+    "performance.asym": ("performance.device", "ir", "mmd.kernel",
+                         "performance.measured_store", "ir.passes",
+                         "plan.batching", "plan.dag", "plan.sieve",
+                         "plan.targets", "spec"),
+    "performance.kernelrank": ("performance.device", "mmd.kernel",
+                               "ir.lower", "performance.measured_store",
+                               "spec"),
+    "performance.batchreport": ("performance.device", "performance.measured_store"),
+    "performance.ridge": ("performance.device", "performance.measured_store"),
+    "performance.dispatch": ("performance.batchreport", "performance.device",
+                             "performance.measured_store"),
+    "performance.crossread": ("performance.batchreport", "performance.device",
+                              "performance.kernelrank",
+                              "performance.measured_store",
+                              "performance.ridge", "spec"),
     # #165: PlanCost (plan.pipeline, plan.cost) against the store's rows;
     # kernelrank for its rank statistic, gate for GPU_BUSY_MAX.
-    "planrank": ("device", "gate", "kernelrank", "measured_store", "plan.cost",
-                 "plan.pipeline", "spec"),
+    "performance.planrank": ("performance.device", "performance.gate",
+                             "performance.kernelrank",
+                             "performance.measured_store", "plan.cost",
+                             "plan.pipeline", "spec"),
     "ao": (),
     "ao.shell": (),
     "mmd.hermite": (),
@@ -865,7 +908,8 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
                     seen.add(e)
                     todo.append(e)
         for banned in (_REF, "ir.interp", "emit", "ao.drive", "ao.staged",
-                       "dispatch", "measured", "measured_store", *extra):
+                       "performance.dispatch", "performance.measured",
+                       "performance.measured_store", *extra):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -887,8 +931,8 @@ def test_nothing_measured_reaches_back_through_the_resolver() -> None:
         return seen
 
     for m in sorted(graph):
-        if (_under(m, "plan") or m in ("measured_store", "launch")) and (
-                "dispatch" in reach(m)):
+        if (_under(m, "plan") or m in ("performance.measured_store", "launch")) and (
+                "performance.dispatch" in reach(m)):
             raise AssertionError(f"{m} reaches dispatch")
 
 
@@ -911,12 +955,13 @@ def _stdlib_imports(path: Path) -> set[str]:
 
 
 def test_the_measured_store_imports_no_toolchain() -> None:
-    store = _stdlib_imports(ROOT / "measured_store.py")
+    store = _stdlib_imports(ROOT / "performance" / "measured_store.py")
     assert not store & TOOLCHAIN_STDLIB, (
         f"measured_store imports {sorted(store & TOOLCHAIN_STDLIB)}: running a "
-        "compiler is the driver's (felizjueves.measured), not the store's (#94)")
+        "compiler is the driver's (felizjueves.performance.measured), not the "
+        "store's (#94)")
     # ...and the list names what the driver really uses, so it is not vacuous
-    assert TOOLCHAIN_STDLIB <= _stdlib_imports(ROOT / "measured.py")
+    assert TOOLCHAIN_STDLIB <= _stdlib_imports(ROOT / "performance" / "measured.py")
 
 
 def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
@@ -932,7 +977,7 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_dq reaches {hit}"
     assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
@@ -1003,7 +1048,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -1032,7 +1078,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -1057,7 +1104,7 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "plan.targets" in seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_pair_bound reaches {hit}"
 
@@ -1082,7 +1129,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -1106,7 +1154,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "kernel_pair_bound"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_record_bound reaches {hit}"
 
@@ -1124,7 +1172,7 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "mmd.e_fragment" in seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_s reaches {hit}"
 
@@ -1149,7 +1197,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -1173,7 +1222,7 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "mmd.e_fragment" in seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_t reaches {hit}"
 
@@ -1200,7 +1249,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -1225,7 +1275,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_v reaches {hit}"
 
@@ -1435,10 +1485,13 @@ RULES |= {
              "row an F class does not have, and refuses an F spec "
              "(milestone 12, pin 11)",
         emit="the plan is data: no text is emitted",
-        dispatch="nothing measured may reach a launch plan by import (#145)",
-        measured="a launch plan is data, never a toolchain's reading",
-        measured_store="nothing measured may reach a launch plan by import "
-                       "(#145)"),
+        **{"performance.dispatch":
+            "nothing measured may reach a launch plan by import (#145)"},
+        **{"performance.measured":
+            "a launch plan is data, never a toolchain's reading"},
+        **{"performance.measured_store":
+            "nothing measured may reach a launch plan by import "
+                       "(#145)"}),
 }
 RULE_OF |= {
     "launch_f": "f_launch",
@@ -1463,7 +1516,8 @@ def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                 todo.append(e)
     assert "ao.pairs" in seen
     for banned in (_REF, "ir.interp", "emit", "ao.drive", "ao.staged",
-                   "dispatch", "measured", "measured_store"):
+                   "performance.dispatch", "performance.measured",
+                   "performance.measured_store"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_f reaches {hit}"
 
@@ -1491,7 +1545,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF["kernel_f"] = "f_builder"
@@ -1512,7 +1567,7 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "hgp.recurrence" in seen
-    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "device",
+    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "performance.device",
                    "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f reaches {hit}"
@@ -1545,10 +1600,14 @@ RULES |= {
                "evaluates nothing itself"},
         plan=RULES["hgp"].must_not["plan"],
         emit="the walk interprets; no text is emitted",
-        device="the walk runs no card",
-        dispatch="nothing measured may reach a launch plan by import (#145)",
-        measured="a walk is not a toolchain's reading",
-        measured_store="nothing measured may reach a walk by import"),
+        **{"performance.device":
+            "the walk runs no card"},
+        **{"performance.dispatch":
+            "nothing measured may reach a launch plan by import (#145)"},
+        **{"performance.measured":
+            "a walk is not a toolchain's reading"},
+        **{"performance.measured_store":
+            "nothing measured may reach a walk by import"}),
 }
 RULE_OF["walk_f"] = "f_walk"
 EDGES["walk_f"] = frozenset(("ao.density", "ao.shell", "ir", "kernel_f",
@@ -1569,8 +1628,9 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
                 seen.add(e)
                 todo.append(e)
     assert "kernel_f" in seen
-    for banned in ("launch_f", "launch", _REF, "ir.interp", "emit", "device",
-                   "dispatch", "measured", "ao.fock", "ao.eri",
+    for banned in ("launch_f", "launch", _REF, "ir.interp", "emit",
+                   "performance.device", "performance.dispatch",
+                   "performance.measured", "ao.fock", "ao.eri",
                    "ao.hgp_drive", "engine"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"walk_f reaches {hit}"
@@ -1634,7 +1694,8 @@ RULES |= {
             "the protocol evaluates nothing itself; HGP's adapter runs "
                "the interpreter, and the protocol must not lean on it"},
         emit="a `Kernel` is vendor-neutral; spelling it is a driver's job",
-        device="the `Kernel` is arch-neutral; the arch enters at emission"),
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"}),
 }
 RULE_OF["engine"] = "engine"
 EDGES["engine"] = frozenset(("ao.eri", "ao.hgp_drive", "ao.shell", "ir",
@@ -1741,8 +1802,8 @@ def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
 # (`kernel`, `kernel_f`), never `hgp/` or the plan behind them.
 # ---------------------------------------------------------------------------
 
-GENERATORS["measured"] = frozenset(("mmd.kernel", "kernel_f"))
-EDGES["measured"] = EDGES["measured"] | frozenset(("kernel_f",))
+GENERATORS["performance.measured"] = frozenset(("mmd.kernel", "kernel_f"))
+EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(("kernel_f",))
 
 
 # ---------------------------------------------------------------------------
@@ -1770,7 +1831,8 @@ RULES |= {
         **{"ir.interp":
             RULES["k_builder"].must_not["ir.interp"]},
         emit=RULES["k_builder"].must_not["emit"],
-        device=RULES["k_builder"].must_not["device"],
+        **{"performance.device":
+            RULES["k_builder"].must_not["performance.device"]},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {m: "k_lever" for m in _modules() if _under(m, "k_levers")}
@@ -1794,7 +1856,8 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_k", _REF, "ao", "ir.interp", "emit", "device"):
+        for banned in ("kernel_k", _REF, "ao", "ir.interp", "emit",
+                       "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -1823,7 +1886,8 @@ RULES |= {
         **{"ir.interp":
             RULES["f_builder"].must_not["ir.interp"]},
         emit=RULES["f_builder"].must_not["emit"],
-        device=RULES["f_builder"].must_not["device"],
+        **{"performance.device":
+            RULES["f_builder"].must_not["performance.device"]},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {m: "f_lever" for m in _modules() if _under(m, "f_levers")}
@@ -1858,7 +1922,7 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                     seen.add(e)
                     todo.append(e)
         for banned in ("kernel_f", "plan", _REF, "ao", "ir.interp", "emit",
-                       "device", "launch_f"):
+                       "performance.device", "launch_f"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -1883,7 +1947,8 @@ RULES |= {
         levers="the builder reads the vocabulary through `spec`; a lever's "
                "behaviour does not re-read it",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         **{"ir.interp":
             "the lever is checked by the interpreter, never built on it"},
         reference=_GROUND_TRUTH),
@@ -2049,8 +2114,9 @@ RULES |= {
             "the registry names no builder: the CLI maps each family to "
                "its builder, so the table stays data"},
         emit="a registry spells no text",
-        measured_store="the store reads the vocabulary itself; the ladder "
-                       "is the CLI's"),
+        **{"performance.measured_store":
+            "the store reads the vocabulary itself; the ladder "
+                       "is the CLI's"}),
 }
 RULE_OF["ir.lever_ladder"] = "lever_ladder"
 EDGES["ir.lever_ladder"] = frozenset(("levers",))
@@ -2060,13 +2126,15 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and #339's lever ladders "
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
     ("ir", "kernel_k", "ir.lever_ladder"))
-EDGES["measured"] = EDGES["measured"] | frozenset(("ir.lever_ladder",))
+EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(
+    ("ir.lever_ladder",))
 RULES["store"] = Rule(RULES["store"].why + "; and the kernel-body lever "
                       "vocabulary (`levers`, a leaf), whose entries are its "
                       "KERNEL arms (#339)",
                       RULES["store"].may | frozenset(("levers",)),
                       RULES["store"].must_not)
-EDGES["measured_store"] = EDGES["measured_store"] | frozenset(("levers",))
+EDGES["performance.measured_store"] = (
+    EDGES["performance.measured_store"] | frozenset(("levers",)))
 
 
 # ---------------------------------------------------------------------------
@@ -2108,7 +2176,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -2139,7 +2208,7 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
 
@@ -2180,7 +2249,8 @@ RULES |= {
         **{"ir.interp":
             RULES["f_builder"].must_not["ir.interp"]},
         emit=RULES["f_builder"].must_not["emit"],
-        device=RULES["f_builder"].must_not["device"],
+        **{"performance.device":
+            RULES["f_builder"].must_not["performance.device"]},
         launch_f="the map is built from packed AO offsets, as `kernel_f.pack` "
                  "takes records; the plan declares its footprint itself",
         reference=_GROUND_TRUTH),
@@ -2214,7 +2284,7 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
                 todo.append(e)
     assert "f_levers.scatter" in seen
     for banned in ("kernel_f", "plan", _REF, "ao", "ir.interp", "emit",
-                   "device", "launch_f"):
+                   "performance.device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f_scatter reaches {hit}"
 
@@ -2243,13 +2313,15 @@ EDGES["f_levers.etr"] = frozenset(("f_levers.seams", "hgp.cost", "hgp.etr",
 # report, never the reverse: the analysis still may not import the driver.
 # ---------------------------------------------------------------------------
 
-RULE_OF["leverledger"] = "analysis"
-EDGES["leverledger"] = frozenset(("device", "measured_store", "spec"))
+RULE_OF["performance.leverledger"] = "analysis"
+EDGES["performance.leverledger"] = frozenset(
+    ("performance.device", "performance.measured_store", "spec"))
 RULES["driver"] = Rule(RULES["driver"].why + ", and rewrites #362's lever "
                        "ledger (`leverledger`) from the rows it recorded",
-                       RULES["driver"].may | frozenset(("leverledger",)),
+                       RULES["driver"].may | frozenset(("performance.leverledger",)),
                        RULES["driver"].must_not)
-EDGES["measured"] = EDGES["measured"] | frozenset(("leverledger",))
+EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(
+    ("performance.leverledger",))
 
 
 # ---------------------------------------------------------------------------
@@ -2304,7 +2376,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
     "metric_adapter": _rule(
         "ao/metric_drive.py (#414): the metric kernel run in the interpreter "
@@ -2343,7 +2416,7 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_metric reaches {hit}"
 
@@ -2371,7 +2444,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
     "eri3_adapter": _rule(
         "ao/eri3_drive.py (#444): the three-center kernel run in the "
@@ -2409,7 +2483,7 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_eri3 reaches {hit}"
 
@@ -2444,7 +2518,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
@@ -2470,7 +2545,7 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "kernel_s"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "device", "launch"):
+    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device", "launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
 
@@ -2521,10 +2596,13 @@ RULES |= {
         kernel_f="the staging cap is restated, and a test pins it equal; a "
                  "launch plan does not import a kernel builder",
         emit="the plan is data: no text is emitted",
-        dispatch="nothing measured may reach a launch plan by import (#145)",
-        measured="a launch plan is data, never a toolchain's reading",
-        measured_store="nothing measured may reach a launch plan by import "
-                       "(#145)"),
+        **{"performance.dispatch":
+            "nothing measured may reach a launch plan by import (#145)"},
+        **{"performance.measured":
+            "a launch plan is data, never a toolchain's reading"},
+        **{"performance.measured_store":
+            "nothing measured may reach a launch plan by import "
+                       "(#145)"}),
 }
 RULE_OF |= {
     "launch_hjk": "hjk_launch",
@@ -2548,8 +2626,8 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                 todo.append(e)
     assert "hgp.orbits" in seen
     for banned in (_REF, "plan", "ir.interp", "emit", "ao.drive", "ao.staged",
-                   "dispatch", "measured", "measured_store", "launch_f",
-                   "kernel_f"):
+                   "performance.dispatch", "performance.measured",
+                   "performance.measured_store", "launch_f", "kernel_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_hjk reaches {hit}"
 
@@ -2579,7 +2657,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF["kernel_hj"] = "hj_builder"
@@ -2601,7 +2680,7 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
-    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "device",
+    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "performance.device",
                    "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
@@ -2630,7 +2709,8 @@ RULES |= {
         **{"ir.interp":
             "the builder is checked by the interpreter, never built on it"},
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
-        device="the `Kernel` is arch-neutral; the arch enters at emission",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
         reference=_GROUND_TRUTH),
 }
 RULE_OF["kernel_hk"] = "hk_builder"
@@ -2652,7 +2732,7 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f", "kernel_hj"} <= seen
-    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "device",
+    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "performance.device",
                    "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
@@ -2710,10 +2790,14 @@ RULES |= {
                "evaluates nothing itself"},
         plan=RULES["hgp"].must_not["plan"],
         emit="the walk interprets; no text is emitted",
-        device="the walk runs no card",
-        dispatch="nothing measured may reach a launch plan by import (#145)",
-        measured="a walk is not a toolchain's reading",
-        measured_store="nothing measured may reach a walk by import"),
+        **{"performance.device":
+            "the walk runs no card"},
+        **{"performance.dispatch":
+            "nothing measured may reach a launch plan by import (#145)"},
+        **{"performance.measured":
+            "a walk is not a toolchain's reading"},
+        **{"performance.measured_store":
+            "nothing measured may reach a walk by import"}),
 }
 RULE_OF["walk_hjk"] = "hjk_walk"
 EDGES["walk_hjk"] = frozenset(("ao.shell", "hgp.orbits", "ir", "kernel_f",
@@ -2735,7 +2819,8 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
                 todo.append(e)
     assert {"kernel_hj", "kernel_hk", "kernel_f"} <= seen
     for banned in ("launch_hjk", "launch_f", "launch", _REF, "ir.interp", "emit",
-                   "device", "dispatch", "measured", "ao.j", "ao.k",
+                   "performance.device", "performance.dispatch",
+                   "performance.measured", "ao.j", "ao.k",
                    "ao.fock", "ao.eri", "ao.hgp_drive", "engine", "walk_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"walk_hjk reaches {hit}"
@@ -2818,11 +2903,12 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         return seen
 
     for root, banned in (
-            ("kernel_kblock", (_REF, "ao", "ir.interp", "emit", "device",
+            ("kernel_kblock", (_REF, "ao", "ir.interp", "emit", "performance.device",
                                "launch", "launch_k", "launch_kblock")),
             ("launch_kblock", (_REF, "ir.interp", "emit", "ao.drive",
-                               "ao.staged", "dispatch", "measured",
-                               "measured_store", "kernel_k",
+                               "ao.staged", "performance.dispatch",
+                               "performance.measured",
+                               "performance.measured_store", "kernel_k",
                                "kernel_kblock"))):
         seen = reach(root)
         hit = sorted(e for e in seen if any(_under(e, b) for b in banned))

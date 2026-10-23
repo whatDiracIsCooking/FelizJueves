@@ -23,10 +23,11 @@ from test_measured_keys import (
     _derive,
 )
 
-from felizjueves.asym import ASYM_CELLS, AsymKey
-from felizjueves.device import MeasuredKey, by_name
 from felizjueves.ir.lower import RECYCLE
-from felizjueves.measured_store import (
+from felizjueves.mmd.kernel import k_spec, pq_spec, split
+from felizjueves.performance.asym import ASYM_CELLS, AsymKey
+from felizjueves.performance.device import MeasuredKey, by_name
+from felizjueves.performance.measured_store import (
     KERNEL,
     SUBGRID,
     TUNED_CELLS,
@@ -35,8 +36,7 @@ from felizjueves.measured_store import (
     split_key,
     target_of,
 )
-from felizjueves.measured_store import load as _load_all
-from felizjueves.mmd.kernel import k_spec, pq_spec, split
+from felizjueves.performance.measured_store import load as _load_all
 from felizjueves.spec import Operator, Spec, Target
 
 

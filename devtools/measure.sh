@@ -5,7 +5,7 @@
 #
 #   devtools/measure.sh <sweep> [--backend cuda|hip] [--full] [-- <pytest args>]
 #   devtools/measure.sh list
-#   devtools/measure.sh remeasure [<python -m felizjueves.measured args>]
+#   devtools/measure.sh remeasure [<python -m felizjueves.performance.measured args>]
 #
 # THE SWEEPS (`list` prints them), by what each needs:
 #
@@ -82,7 +82,7 @@ SWEEPS=(
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
   "check|check|tracked stores and reports recomputed (no compiler, no card)"
-  "remeasure|driver|python -m felizjueves.measured --remeasure <args>"
+  "remeasure|driver|python -m felizjueves.performance.measured --remeasure <args>"
 )
 
 [ $# -gt 0 ] || { usage >&2; exit 64; }
@@ -97,7 +97,7 @@ case $sweep in
     exit 0 ;;
   remeasure)
     py=$(find_tool python) || cannot "no python in $VENV_PATHS or on PATH -- run 'uv sync'"
-    exec env PYTHONPATH=src "$py" -m felizjueves.measured --remeasure "$@" ;;
+    exec env PYTHONPATH=src "$py" -m felizjueves.performance.measured --remeasure "$@" ;;
 esac
 
 kind=

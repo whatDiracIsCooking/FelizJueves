@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves.device import (
+from felizjueves.performance.device import (
     ARCHS,
     COMPUTE_BOUND,
     GFX1200,
@@ -266,7 +266,8 @@ def test_a_missing_record_is_uncharacterised(tmp_path: Path) -> None:
 def test_device_spells_no_datasheet_peak() -> None:
     # #109's hazard: the ridge is measured on this box. No float literal of a
     # plausible peak's size (>= 1e9) may appear in device.py.
-    src = Path(__file__).resolve().parent.parent / "src" / "felizjueves" / "device.py"
+    src = (Path(__file__).resolve().parent.parent / "src" / "felizjueves"
+           / "performance" / "device.py")
     big = [n.value for n in ast.walk(ast.parse(src.read_text()))
            if isinstance(n, ast.Constant) and type(n.value) in (int, float)
            and abs(n.value) >= 1e9]

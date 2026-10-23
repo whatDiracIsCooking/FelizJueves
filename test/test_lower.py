@@ -35,8 +35,7 @@ import numpy as np
 import pytest
 from tiers import by_l, is_fast, split_by_l
 
-from felizjueves import levers, measured
-from felizjueves.device import GFX1200, SM_86
+from felizjueves import levers
 from felizjueves.emit import cuda, hip
 from felizjueves.hgp import cost as hgp_cost
 from felizjueves.hgp.vrr import CLASSES
@@ -89,6 +88,8 @@ from felizjueves.mmd.kernel import (
     launch_shape,
     pq_spec,
 )
+from felizjueves.performance import measured
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.dag import BatchDag, Node, build, is_fundamental
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.sieve import plan
@@ -592,8 +593,8 @@ def test_the_default_arm_is_untouched_above_l4() -> None:
 # sees them. Regenerate (and review the diff) with:
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.mmd.kernel import pq_spec; \
-#   from felizjueves.measured import cell_kernels; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.measured import cell_kernels; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   (k,) = cell_kernels(pq_spec(4, ('recycle',))); \
 #   Path('test/golden/cuda/recycle/pq_L4_p2_q2.cu').write_text(cuda.emit(k, SM_86)); \

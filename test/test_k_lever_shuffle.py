@@ -36,8 +36,7 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import device, k_levers, levers
-from felizjueves.device import GFX1200, SM_86
+from felizjueves import k_levers, levers
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
     Assign,
@@ -66,6 +65,8 @@ from felizjueves.k_levers import coalesced, shuffle, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KContext, KHooks, ncart
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels, launch_shape
 from felizjueves.mmd.kernel import builder_plan
+from felizjueves.performance import device
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -356,7 +357,7 @@ def test_composed_with_split_each_element_is_one_owner_store() -> None:
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
 #   from felizjueves.kernel_k import build_k_kernel; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_k_kernel(Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.K, \
 #   ('shuffle',))); \

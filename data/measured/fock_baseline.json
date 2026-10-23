@@ -29,7 +29,7 @@
     "kernel": "felizjueves.emit.cuda.emit(kernel_f.build_f_kernel(cls), SM_86): the unit `python -m felizjueves.emit --backend cuda --fock-class la lb lc ld` writes",
     "host": "dba6c376c0a8 (container), compile only: no card was used",
     "date": "2026-10-14",
-    "parser": "felizjueves.measured.parse_ptxas",
+    "parser": "felizjueves.performance.measured.parse_ptxas",
     "cells_measured": "all eleven: the five L <= 2 cells (#289) and the six above (pp|ps through dd|dd, F5/#290's half) in one session, because a compile needs no card; #290 re-checks them with test_fock_baseline.py's `cuda` cases"
   },
   "rows": [

@@ -49,11 +49,11 @@ from test_measured import (
 )
 from tiers import is_fast
 
-from felizjueves import asym, gate, measured, measured_store
-from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir.lower import RECYCLE
 from felizjueves.mmd.kernel import build_pq_kernel, pq_spec
+from felizjueves.performance import asym, gate, measured, measured_store
+from felizjueves.performance.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.plan.pipeline import TUNED
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import Target
@@ -172,7 +172,7 @@ def _check_sources(keep, arch: str, target: Target) -> None:
         units = measured.BACKENDS[BACKEND_OF[row.arch]].units(spec)
         assert measured.cell_sha256(units) == row.source_sha256, (
             f"{key}: the emitted text changed since it was measured -- "
-            "python -m felizjueves.measured --remeasure")
+            "python -m felizjueves.performance.measured --remeasure")
         # the one-unit hash is the one text's (#362: K's `split` lever
         # emits several units for one batch)
         if spec.n_batches == 1 and len(units) == 1:
@@ -224,7 +224,7 @@ def test_both_cards_and_every_default_class_above_l4_are_recorded() -> None:
 def test_every_subgrid_cell_is_recorded_on_both_cards(spec, arch) -> None:
     got = measured_store.rows(spec=spec, arch=arch, store=ROWS)
     assert len(got) == 1, f"{spec.key()}@{arch}: {len(got)} rows -- " \
-        "python -m felizjueves.measured --remeasure --subgrid"
+        "python -m felizjueves.performance.measured --remeasure --subgrid"
     (row,) = got.values()
     assert row.registers is not None and row.spill_store is not None
     assert row.compile_s is not None
@@ -386,7 +386,8 @@ def test_a_wall_clock_row_is_its_own_quartiles() -> None:
 
 
 # The card gate's threshold (the card at most 30% busy), read from the gate
-# itself (#109 lifted it into felizjueves.gate) rather than spelled again here.
+# itself (#109 lifted it into felizjueves.performance.gate) rather than
+# spelled again here.
 GPU_BUSY_MAX = gate.GPU_BUSY_MAX
 
 
@@ -695,7 +696,7 @@ def test_every_asym_row_names_its_cells_batch_kernels(cell, arch) -> None:
     assert r.kernel == ",".join(k.name for k in cell.kernels())
 
 
-# What the declared rule (felizjueves.asym's docstring, committed before any
+# What the declared rule (felizjueves.performance.asym's docstring, committed before any
 # asymmetric row existed) reads off the rows: (wide sign, near sign) of the
 # asymmetric arm against its best same-session legal neighbour. Pinned as the
 # rule's output, not tuned: a re-timing that moves a sign is news.

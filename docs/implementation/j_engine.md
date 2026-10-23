@@ -57,7 +57,7 @@ kernels interpreted. A device `main()`, generated from the plan by
 `test/plan_driver.py`, uploads each bra and ket class once, keeps one `J_p`
 buffer per bra class and launches every batch kernel into it with fp64
 atomics. That device build ran on **both cards** and was compared against the
-oracle and the libcint fixtures. `src/felizjueves/dispatch.py` chooses a
+oracle and the libcint fixtures. `src/felizjueves/performance/dispatch.py` chooses a
 class's batch count from measured wall-clock and is injected into the plan.
 See "The launch plan" below.
 
@@ -534,7 +534,7 @@ runner-up came from one sweep — #60 measured cross-sweep drift of up to 1.7%
 evidence. Since #93 every margin below is same-sweep.
 
 The data is `data/measured/batch_recommendation.json`, written by
-`PYTHONPATH=src uv run python -m felizjueves.batchreport --write` from
+`PYTHONPATH=src uv run python -m felizjueves.performance.batchreport --write` from
 `data/measured/kernels.json`; the tables below are its `--markdown`, and
 `measure/measure_batchreport.py` (`devtools/measure.sh check`) recomputes both from the store and fails if either
 has moved.
@@ -608,7 +608,7 @@ What it says:
 to 1 and stays there (`measure/measure_batchreport.py` holds it, and its
 `about` field gives these rows as the grounds; "The batch count it ships"
 above has the override recipe). Choosing a count per class at
-generation time is **dispatch**. Since #145 it is `src/felizjueves/dispatch.py`:
+generation time is **dispatch**. Since #145 it is `src/felizjueves/performance/dispatch.py`:
 this table's rule (best median, ties to fewer batches), recomputed from the
 `Measured` rows per `(arch, class, input)`, with 1 for any class that has no
 row. It is injected into a launch plan (`launch.launches(resolve=)`), and the
@@ -619,7 +619,7 @@ generator does not follow it: `KERNEL_GEN_CMD` still writes one-batch
 
 `[JEngine, v2, §5]` calls splits that break the three-way symmetry
 "unnecessary and worse". The generator still **refuses** such a count
-(`spec.is_batch_count`, `partition`); `felizjueves.asym` is a study path that
+(`spec.is_batch_count`, `partition`); `felizjueves.performance.asym` is a study path that
 builds the asymmetric batch list itself, checks it partitions the class, and
 keys its rows `.../b<n>/j/asym@...` beside the literal ones, which it does not
 touch. Its docstring is the rule, committed before any asymmetric row existed:
@@ -672,13 +672,13 @@ from a datasheet. `device.Arch` carries `fp64_flops_per_s` and
 `mem_bandwidth_bytes_per_s`, `0.0` meaning *not characterised*; `Arch.ridge`
 and `device.verdict` **refuse** (`Uncharacterised`) for a card without both.
 The values are read from `data/measured/ceilings.json`, written by the probes
-in `src/felizjueves/ceilings.py` — an fp64 FMA-saturating kernel (8 and 16
+in `src/felizjueves/performance/ceilings.py` — an fp64 FMA-saturating kernel (8 and 16
 independent chains; the faster median wins) and STREAM's triad over three
 256 MiB fp64 arrays, one portable translation unit — compiled with
 `NVCC_FLAGS` / `HIPCC_FLAGS` and timed with device events, 5 warm-up and 31
 timed launches, the median rate recorded.
 
-**Behind the card gate.** `src/felizjueves/gate.py` is the gate the wall-clock
+**Behind the card gate.** `src/felizjueves/performance/gate.py` is the gate the wall-clock
 sweep used (lifted out of `test_kernel_device.py`, which now reads it): card
 utilisation at most 30% and the CPU at most 10% busy before a phase, and the
 settled reading after it. A contended probe does not add noise, it
@@ -735,7 +735,7 @@ over memory bytes — read off the card's performance counters, never a model.
 serialises and replays it — not a timing, never `runtime_ns`); intensity and
 achieved FLOP/s are **derived** properties, never stored. `counter_tool`,
 `counter_unit`, `command` and `raw` (every counter by its exact name) say
-where each number came from. The driver (`felizjueves.measured.profile`) runs
+where each number came from. The driver (`felizjueves.performance.measured.profile`) runs
 `ncu` on NVIDIA (`fp64_flops = dadd + dmul + 2·dfma` thread instructions;
 `dram__bytes_read/write.sum`) and `rocprofv3 --pmc` on AMD (GL2C↔fabric
 requests × their size — L2 misses, an upper bound on DRAM bytes). **`gfx1200`
@@ -775,7 +775,7 @@ of every `SUBGRID` cell on the RTX 3080 (`sm_86`, `nvcc 13.0`, `ncu
   is a **separate run** of the same binary: collection replays each kernel
   and may change occupancy, so `counter_ns` is never `runtime_ns`. No
   wall-clock cell was re-timed.
-- Each profile runs behind `felizjueves.gate`. A phase whose after-reading is
+- Each profile runs behind `felizjueves.performance.gate`. A phase whose after-reading is
   non-idle or unknown is discarded and retaken.
 
 Every row carries the card's state (`raw` `roofline:gpu_util_before` /
@@ -791,7 +791,7 @@ sweep took 9 min 22 s, most of it serial compiles).
 divides `fp64_flops` by the DRAM bytes and asks `device.verdict` against the
 measured ridge (#109: 0.65 FLOP/B on `sm_86`). `kernel_roofline` gives the
 verdict per batch kernel and `cell_roofline` gives it per cell (counts summed).
-`python -m felizjueves.measured --roofline` prints both.
+`python -m felizjueves.performance.measured --roofline` prints both.
 
 | L | b = 1 | b = 3 | b = 6 | b = 9 | b = 12 |
 |---|---|---|---|---|---|
@@ -861,7 +861,7 @@ appears only at L = 16.
 
 **The rule predates the rows; this section's code does not.** The rule is
 issue #114's, created 2026-10-11T18:07:53Z and never edited. PR #134 wrote
-the roofline rows and was merged 2026-10-12T04:27Z. `src/felizjueves/ridge.py`
+the roofline rows and was merged 2026-10-12T04:27Z. `src/felizjueves/performance/ridge.py`
 was written after both, and after #134 had reported its summary. It copies
 the issue's words into a function and adds only readings the repo already
 defined (its docstring lists them). The issue's rule: for one arch and one L,
@@ -926,7 +926,7 @@ its own test:
   count* is 1 when a class is compute-bound already at one batch, and the
   crossing count when it crosses.
 
-`src/felizjueves/crossread.py` reads them against each other per
+`src/felizjueves/performance/crossread.py` reads them against each other per
 `(L, arch)`. `data/measured/crossread.json` is the table, and
 `measure/measure_kernelrank.py` recomputes it. The counters were taken on the
 **wide-T** input only, so only the wide clock flag compares like with like.

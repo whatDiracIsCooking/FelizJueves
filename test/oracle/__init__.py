@@ -12,8 +12,8 @@ arithmetic. The rule this package establishes, and later tests rely on:
   test can load a fixture on a box with no PySCF (`uv sync` never installs it).
 - `generate` is the PySCF-driven writer, run as
   `PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate`
-  -- the shape `felizjueves.measured --remeasure` set. Its `oracle`-marked test
-  rebuilds each fixture and asserts it is what is tracked.
+  -- the shape `felizjueves.performance.measured --remeasure` set. Its
+  `oracle`-marked test rebuilds each fixture and asserts it is what is tracked.
 
 A fixture is DATA WITH PROVENANCE, NOT THE RIGHT ANSWER: it records what
 libcint computed, with which versions, on which host and date. A drift between

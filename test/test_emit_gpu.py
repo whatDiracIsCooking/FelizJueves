@@ -37,7 +37,8 @@ change (never hand-edit) and review the diff:
     PYTHONPATH=src uv run python -c "from pathlib import Path; \
 from felizjueves.mmd.kernel import build_pq_kernel; \
 from felizjueves.kernel_s import build_s_kernel; \
-from felizjueves.device import SM_86; from felizjueves.emit.gpu import emit; \
+from felizjueves.performance.device import SM_86; \
+from felizjueves.emit.gpu import emit; \
 [Path(f'test/golden/gpu/{k.name}.cu').write_text(emit(k, SM_86)) \
 for k in (build_pq_kernel(4), build_s_kernel((1, 1)))]"
 
@@ -61,7 +62,6 @@ from conftest import INCLUDE
 from test_ir import synthetic_inline_kernel
 from test_k_lever_shuffle import _bcast
 
-from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, gpu
 from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD, EmitError
 from felizjueves.ir.passes import split_axes, transpose
@@ -73,6 +73,7 @@ from felizjueves.kernel_s import build_s_kernel
 from felizjueves.kernel_t import build_t_kernel
 from felizjueves.kernel_v import build_v_kernel
 from felizjueves.mmd.kernel import build_pq_kernel
+from felizjueves.performance.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.spec import Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parent.parent

@@ -75,7 +75,6 @@ from oracle import manifest
 from test_ao_j_interpreted import _case, _classes, _expected, _pq_j
 from test_kernel_device import BACKEND, BATCHED_HARNESS, LAUNCH, PORTABLE, _toolchain
 
-from felizjueves import measured
 from felizjueves.ao.drive import BATCH_COUNTS, admitted_batches
 from felizjueves.ao.drive import class_spec as drive_class_spec
 from felizjueves.ao.j import coulomb_matrix
@@ -86,6 +85,7 @@ from felizjueves.mmd.kernel import (
     ket_functions,
     launch_shape,
 )
+from felizjueves.performance import measured
 from felizjueves.reference.pq import pq
 
 CASES = ("h2_sto3g_j", "h2o_sto3g_j")

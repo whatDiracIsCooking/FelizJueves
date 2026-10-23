@@ -13,12 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from felizjueves.device import (
-    ARCHS,
-    CEILINGS_PATH,
-    Arch,
-    recorded_ceilings,
-)
+from felizjueves.performance.device import ARCHS, CEILINGS_PATH, Arch, recorded_ceilings
 
 
 def test_the_ridge_reads_the_measured_values_and_no_published_figure(

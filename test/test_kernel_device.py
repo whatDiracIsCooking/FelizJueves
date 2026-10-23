@@ -110,8 +110,6 @@ import pytest
 from conftest import VRAM_PROBE, check_vram  # noqa: F401 (tkd.check_vram, levers)
 from tiers import by_l
 
-from felizjueves import asym, measured, measured_store
-from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD
 from felizjueves.ir.lower import RECYCLE
@@ -124,6 +122,8 @@ from felizjueves.mmd.kernel import (
     pq_spec,
     split,
 )
+from felizjueves.performance import asym, measured, measured_store
+from felizjueves.performance.device import GFX1200, SM_86, Arch
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, theta_of
@@ -900,7 +900,7 @@ def test_hip_tuned_j_p_matches_the_reference(spec, request,
 # --- the asymmetric split (#113): the same pin, a batch list the generator ----
 # --- refuses -------------------------------------------------------------------
 #
-# `asym.AsymCell` builds an asymmetric batch list (felizjueves.asym's
+# `asym.AsymCell` builds an asymmetric batch list (felizjueves.performance.asym's
 # docstring) through the same `_pq_kernel` + `atomize` as a split SUBGRID
 # cell, and its batches partition the class (checked by the study itself), so
 # its launch sequence is held to the SAME J_REL pin -- the batched comparison's

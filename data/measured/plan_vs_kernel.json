@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "PlanCost across plan variants (literal, no-sieve, tuned) against the measured spills and, where a clean same-session clock phase exists, wall-clock, per (cell, card) (felizjueves.planrank, #165). Does a plan with fewer counted intermediates spill less; does one with fewer FLOPs run faster? Reads both sides, feeds neither: nothing here reaches PlanCost or a literature floor. An order, never a prediction. Recomputed by test/test_planrank.py.",
+ "about": "PlanCost across plan variants (literal, no-sieve, tuned) against the measured spills and, where a clean same-session clock phase exists, wall-clock, per (cell, card) (felizjueves.performance.planrank, #165). Does a plan with fewer counted intermediates spill less; does one with fewer FLOPs run faster? Reads both sides, feeds neither: nothing here reaches PlanCost or a literature floor. An order, never a prediction. Recomputed by test/test_planrank.py.",
  "header": {
   "cells": [
    [
@@ -100,7 +100,7 @@
   "classes": "no_claim: the measurement ties. noise_floor: same text (source_sha256), measured apart. unresolved: the plan ties. concordant: the plan's cheaper variant measures better. discordant: it measures worse -- an inversion, named in summary.",
   "verdict": "per card and claim: predicts iff concordant > 0 and discordant = 0; inverts iff the reverse; mixed iff both; not shown iff neither. The counts predict the kernel on a card iff every claim there predicts. Written after #162's and #163's rows were read: a reading, never a choice (#166 decides the default).",
   "spearman": "kernelrank.spearman: per cell over its variants (spill), and per card over the pairs' relative changes. A handful of points: an order, never a prediction interval or a pooled score.",
-  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.planrank --write"
+  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.performance.planrank --write"
  },
  "summary": {
   "sm_86": {

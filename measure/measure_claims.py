@@ -11,7 +11,7 @@ test_claims.py's `test_the_jgen_difference_is_one_item_and_the_plan_a_decision`.
 
 from __future__ import annotations
 
-from felizjueves import measured_store
+from felizjueves.performance import measured_store
 
 
 def test_the_plan_decision_the_docs_cite_is_the_stores() -> None:

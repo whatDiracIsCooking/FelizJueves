@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "The three ways this repo ranks a batch count (KernelCost's model, #54; the wall-clock recommendation, #56; the counters' ridge crossing, #112/#114) read against each other per (L, arch) of measured.SUBGRID (felizjueves.crossread, #115). The choice is the clock's, everywhere: Measured outranks Cost. Every disagreement is a StructuralLimit in data/measured/limits.json. An order, never a prediction. Recomputed by test/test_kernelrank.py.",
+ "about": "The three ways this repo ranks a batch count (KernelCost's model, #54; the wall-clock recommendation, #56; the counters' ridge crossing, #112/#114) read against each other per (L, arch) of measured.SUBGRID (felizjueves.performance.crossread, #115). The choice is the clock's, everywhere: Measured outranks Cost. Every disagreement is a StructuralLimit in data/measured/limits.json. An order, never a prediction. Recomputed by test/test_kernelrank.py.",
  "header": {
   "model": "kernelrank.model_cell(spec, kernelrank.BUDGET[arch]).traffic_sum: KernelCost.traffic summed over the batch kernels (#54's headline). order = batch counts grouped by value, ascending; pick = the first group (ties kept).",
   "clock": "batchreport.recommend: best median per input, with resolved and within_spread as #56 defines them.",
@@ -9,7 +9,7 @@
   "agree": "model_clock: clock best in model pick. clock_crossing: clock best == first compute-bound count. model_crossing: first compute-bound count in model pick. null = the card could not be measured (measured_store.UNMEASURED): an absence, not a disagreement.",
   "small_sample": "4 L x 2 cards x 5 batch counts. Each cell reports which count each instrument names, never a prediction interval or a pooled score.",
   "disagreements": "Each is covered by a StructuralLimit in data/measured/limits.json whose asserted_value has cross_read = true.",
-  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.crossread --write"
+  "regenerate": "PYTHONPATH=src uv run python -m felizjueves.performance.crossread --write"
  },
  "rows": [
   {

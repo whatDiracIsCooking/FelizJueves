@@ -33,7 +33,7 @@ probe, and is split by what a test needs -- the two are not the same gate:
   process.
 - TIMING (every sweep under measure/, run by devtools/measure.sh -- the
   wall-clock sweeps, the counter sweep, the ceiling probes' recording run):
-  the same lock, plus the utilisation wait of `felizjueves.gate` (#109; it
+  the same lock, plus the utilisation wait of `felizjueves.performance.gate` (#109; it
   lived in test_kernel_device.py and here until a second measurement needed
   it). Nothing under test/ times anything.
 
@@ -73,10 +73,10 @@ from pathlib import Path
 import devcache
 import pytest
 
-from felizjueves.device import Vendor, from_env
+from felizjueves.performance.device import Vendor, from_env
 
 # Architectures the toolchains are driven at, resolved through
-# felizjueves.device -- the single Python source, which reads the same
+# felizjueves.performance.device -- the single Python source, which reads the same
 # environment variables and defaults as devtools/config.sh (so a container's
 # own pin wins; the images export CUDA_ARCH and GPU_TARGETS) and raises on a
 # pin to a card it does not declare. CUDA_ARCH stays the bare compute

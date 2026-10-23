@@ -44,7 +44,6 @@ import re
 import numpy as np
 import pytest
 
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.mmd.kernel import (
@@ -54,6 +53,7 @@ from felizjueves.mmd.kernel import (
     launch_shape,
     pq_spec,
 )
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental, pq, theta_of
 

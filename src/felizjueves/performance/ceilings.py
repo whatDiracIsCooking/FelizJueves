@@ -4,8 +4,8 @@ WHAT THIS IS. `device.Arch` carries `fp64_flops_per_s` and
 `mem_bandwidth_bytes_per_s`, `0.0` meaning NOT CHARACTERISED; `device` reads
 their values from `data/measured/ceilings.json`. This module is the other side:
 the probe that produces them, the record's shape, and the refusal to record a
-phase the card gate (`felizjueves.gate`) did not let through. The recording run
-is `measure/measure_ceilings_device.py`'s opt-in test, run by
+phase the card gate (`felizjueves.performance.gate`) did not let through. The
+recording run is `measure/measure_ceilings_device.py`'s opt-in test, run by
 `devtools/measure.sh ceilings` (its docstring has the command);
 the probe source is here so that the record's `source_sha256` is of text the
 repo tracks.
@@ -78,8 +78,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from felizjueves import gate
-from felizjueves.device import CEILINGS_PATH, QUANTITIES, Arch
+from felizjueves.performance import gate
+from felizjueves.performance.device import CEILINGS_PATH, QUANTITIES, Arch
 
 SCHEMA = 1
 WARMUP = 5

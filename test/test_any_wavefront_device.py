@@ -23,9 +23,9 @@ from test_kernel_device import (
     _toolchain,
 )
 
-from felizjueves.device import SM_86
 from felizjueves.emit import gpu
 from felizjueves.mmd.kernel import build_pq_kernel, launch_shape
+from felizjueves.performance.device import SM_86
 
 LANES = 32  # FJ_WAVEFRONT's default, and both cards' width
 

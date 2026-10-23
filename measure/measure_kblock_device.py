@@ -48,11 +48,11 @@ from test_k_ondevice import ORACLE_TOL
 from test_kblock_ondevice import Cell, _case
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import gate, measured
 from felizjueves.ao.k import record_bounds
-from felizjueves.gate import GPU_BUSY_MAX
 from felizjueves.kernel_kblock import build_kblock_kernel
 from felizjueves.launch_kblock import kb_launches, walk_kb
+from felizjueves.performance import gate, measured
+from felizjueves.performance.gate import GPU_BUSY_MAX
 from felizjueves.reference.pq import pq
 
 STORE = "FJ_KBLOCK_STORE"

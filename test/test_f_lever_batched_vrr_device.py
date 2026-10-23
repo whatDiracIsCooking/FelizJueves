@@ -55,13 +55,13 @@ from test_fock_build import LIBCINT_TOL, TOL, molecule, sweep, walk
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import kernel_f as KF
-from felizjueves import measured
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import batched_vrr as bv
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import unit_name
+from felizjueves.performance import measured
+from felizjueves.performance.device import GFX1200, SM_86
 
 NAME = bv.NAME
 CAP = 4
@@ -105,7 +105,7 @@ WARNING = re.compile(r"^(?P<file>[^\s:]+):\d+:\d+: warning:", re.MULTILINE)
 # compile into a resource report. Left out unless a caller asks for the
 # report, because what the lever files assert is that each unit COMPILES;
 # registers, spills and frames are the lever ledger's (`python -m
-# felizjueves.measured --remeasure ... --ledger`), never a test's.
+# felizjueves.performance.measured --remeasure ... --ledger`), never a test's.
 REPORT_FLAGS = {"cuda": ("-Xptxas", "-v"),
                 "hip": ("-Rpass-analysis=kernel-resource-usage",)}
 

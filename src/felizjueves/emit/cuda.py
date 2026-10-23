@@ -21,9 +21,9 @@ the source, which compiles for any NVIDIA arch with this wavefront.
 
 from __future__ import annotations
 
-from felizjueves.device import Arch, Vendor
 from felizjueves.emit._c import CWriter, precision
 from felizjueves.ir import Kernel
+from felizjueves.performance.device import Arch, Vendor
 
 __all__ = ["emit"]
 

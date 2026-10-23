@@ -36,7 +36,6 @@ import pytest
 import test_kernel_k as tk
 
 from felizjueves import k_levers, levers
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Index, Inline, Kernel, Lit, Note, Var, walk
 from felizjueves.ir.interp import Interpreter, Launch
@@ -50,6 +49,7 @@ from felizjueves.kernel_k import (
     launch_shape,
 )
 from felizjueves.mmd import e_fragment as ef
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -117,7 +117,7 @@ def test_the_literal_ladder_through_l4_is_byte_identical() -> None:
 
 @pytest.mark.slow
 def test_the_k_subgrid_through_l10_is_byte_identical() -> None:
-    from felizjueves.measured_store import K_SUBGRID
+    from felizjueves.performance.measured_store import K_SUBGRID
 
     specs = [s for s in K_SUBGRID if sum(s.am) <= 10]
     assert len(specs) == 10

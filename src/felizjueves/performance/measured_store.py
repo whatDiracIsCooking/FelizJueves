@@ -66,7 +66,7 @@ THE K ROWS (#205) fill K_SUBGRID on both cards, ADDED beside the J rows
 only K numbers seen first were two one-batch calibration compiles (L = 7
 and 10) -- and not to be tuned after reading one.
 
-- THE COMPILE SIDE is `python -m felizjueves.measured --remeasure --subgrid
+- THE COMPILE SIDE is `python -m felizjueves.performance.measured --remeasure --subgrid
   --target k`: `measured.cell_kernels` of a K cell is
   `kernel_k.build_k_kernels`, aggregated into one row as a J cell's batch
   kernels are (spill SUMMED, registers MAXED, `source_sha256` of the batch
@@ -383,7 +383,7 @@ refuses anything else in it.
 
 THE ROOFLINE ROWS (#112) are those counter rows, filled over `SUBGRID` by
 measure/measure_kernel_device.py's opt-in counter sweep (FJ_ROOFLINE_STORE) behind
-the card gate (`felizjueves.gate`). Each row carries the card's state around
+the card gate (`felizjueves.performance.gate`). Each row carries the card's state around
 its phase in `raw` -- ROOFLINE_STATE_FIELDS: the gate's settled reading
 before, the reading after (both KNOWN: a phase whose after-reading is
 non-idle or unknown was discarded and retaken), the CPU's, and how many
@@ -497,7 +497,7 @@ of every kind goes through ONE recording path:
   `KERNEL` row (`save`), as "f" did: a store without one is written byte for
   byte as before.
 
-THE LEVER LEDGER (#362). `felizjueves.leverledger` reads, per (class, arm,
+THE LEVER LEDGER (#362). `felizjueves.performance.leverledger` reads, per (class, arm,
 arch), a kernel lever row beside the literal row of its class; the cells it
 reads are declared HERE, so the driver that records them and the report that
 reads them name one set:
@@ -537,7 +537,7 @@ verdict.
   `lever_ab` reads it unchanged. The contention state is on the row: every
   `GPU_UTIL_FIELDS` reading (and the control's), the CPU busy fraction
   before, the 1-minute load, and `wallclock:gate_discarded_phases`.
-- THE GATE (`felizjueves.gate`): one phase per cell -- control near, arm
+- THE GATE (`felizjueves.performance.gate`): one phase per cell -- control near, arm
   near, arm wide, control wide, back to back -- behind `gate.wait_quiet`
   and closed by `gate.after_reading`; a phase the gate refuses, or whose
   after-reading is non-idle or UNKNOWN, is discarded and retaken, never
@@ -557,8 +557,8 @@ file, the read path, the declared subgrid, and the two verdicts read off the
 rows. It knows no toolchain -- it runs no compiler, reads no config.sh,
 queries no card and spells no kernel -- so the fast tier, `kernelrank` and
 `batchreport` read it without one. The driver that compiles, parses what the
-compilers print and fills rows is `felizjueves.measured` (`python -m
-felizjueves.measured --remeasure`), which writes INTO this; the wall-clock
+compilers print and fills rows is `felizjueves.performance.measured` (`python -m
+felizjueves.performance.measured --remeasure`), which writes INTO this; the wall-clock
 side is written by measure/measure_kernel_device.py's sweep. test/test_layering.py
 holds the direction: the store may not import the driver, `emit/` or a
 toolchain module, and the analyses may import the store but not the driver.
@@ -578,7 +578,9 @@ from pathlib import Path
 from types import MappingProxyType
 
 from felizjueves import levers as _levers
-from felizjueves.device import (
+from felizjueves.ir.lower import LEVERS
+from felizjueves.mmd.kernel import k_spec, pq_spec
+from felizjueves.performance.device import (
     MEMORY_BOUND,
     Arch,
     MeasuredKey,
@@ -586,11 +588,9 @@ from felizjueves.device import (
     require_characterised,
     verdict,
 )
-from felizjueves.ir.lower import LEVERS
-from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.spec import NATIVE_ENGINE, Engine, Operator, Spec, Target
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 STORE = REPO / "data" / "measured" / "kernels.json"
 ROOFLINE = REPO / "data" / "measured" / "roofline.json"  # counter rows (#110)
 
@@ -911,7 +911,7 @@ GPU_UTIL_FIELDS = ("wallclock:gpu_util_before", "wallclock:gpu_util_after",
                    "wallclock:near:gpu_util_before",
                    "wallclock:near:gpu_util_after")
 
-ABOUT = ("Measured rows (felizjueves.measured): what one device toolchain "
+ABOUT = ("Measured rows (felizjueves.performance.measured): what one device toolchain "
          "reported about one emitted translation unit on one card, keyed on "
          "device.MeasuredKey(spec, arch, toolchain).key(). Observations of a "
          "toolchain, not claims about this code. NOT comparable to [JEngine, "
@@ -919,8 +919,8 @@ ABOUT = ("Measured rows (felizjueves.measured): what one device toolchain "
 
 HEADER = {
     "what": "Measured rows: what a device toolchain reported about one "
-            "emitted translation unit (felizjueves.measured).",
-    "key": "Rows are keyed on felizjueves.device.MeasuredKey(spec, arch, "
+            "emitted translation unit (felizjueves.performance.measured).",
+    "key": "Rows are keyed on felizjueves.performance.device.MeasuredKey(spec, arch, "
            "toolchain).key() -- the generation Spec, the card's Arch, the "
            "compiler as it reports itself (#37).",
     "nature": "Observations of a toolchain, not claims about this code: a "
@@ -932,7 +932,7 @@ HEADER = {
              "VGPRs per lane, spilled REGISTER COUNTS (VGPR + SGPR; no "
              "store/load split, so both spill fields carry it). See each "
              "row's spill_unit and raw.",
-    "remeasure": "PYTHONPATH=src uv run python -m felizjueves.measured "
+    "remeasure": "PYTHONPATH=src uv run python -m felizjueves.performance.measured "
                  "--remeasure --backend both",
     "wallclock": "runtime_ns is the MEDIAN host wall-clock of a cell's whole "
                  "batched launch sequence (every build_pq_kernels batch into "
@@ -970,7 +970,7 @@ HEADER = {
               "declared rule reads 4 cells at L <= 10 as SLOWER, on that "
               "identical code -- the A/B's noise floor, not the lever.",
     "asym": "#113: rows keyed .../b<n>/j/asym@... are the asymmetric-split "
-            "STUDY (felizjueves.asym; its docstring is the rule, committed "
+            "STUDY (felizjueves.performance.asym; its docstring is the rule, committed "
             "before any such row existed): L in {13, 16} x n_batches in {4, "
             "5, 7, 8}, a batch list Spec and partition refuse, each timed "
             "against its two nearest legal neighbours in the same session "
@@ -1027,7 +1027,7 @@ F_ABOUT = (
     "compare within one arch only. A timed F row carries every "
     "'wallclock:*gpu_util_*' key as a reading, never null. Written by "
     "#288's measurement (total L <= 2) and #290's (the deferred tier, L = 3 "
-    "to 8): the compile side by python -m felizjueves.measured "
+    "to 8): the compile side by python -m felizjueves.performance.measured "
     "--remeasure --target f --L ..., the clock by test/test_fock_ondevice"
     ".py's opt-in sweep (FJ_WALLCLOCK_F=1, FJ_WALLCLOCK_F_L selecting the "
     "classes by total L, behind the gate; its docstring "
@@ -1047,7 +1047,7 @@ KERNEL_LEVERS_ABOUT = (
     "its units named <literal name>_lv_<lever> (lever_ladder.unit_name), "
     "the names python -m felizjueves.emit's lever ladder writes. Recorded "
     "through measured_store.lever_arm and merge, by python -m "
-    "felizjueves.measured --remeasure --lever <name>; what the lever "
+    "felizjueves.performance.measured --remeasure --lever <name>; what the lever "
     "changes is its vocabulary entry's 'what', and its issue says why.")
 
 # THE LEVER CLOCK (#363; module docstring): written into the header as
@@ -1062,7 +1062,7 @@ LEVER_CLOCK_ABOUT = (
     "and raw 'wallclock:control:*' / 'wallclock:control:near:*' the LITERAL "
     "class timed in the same gated phase (control near, arm near, arm wide, "
     "control wide); the host steady clock only, no GPU-event times in raw. "
-    "Every gpu_util reading is the phase's (felizjueves.gate: "
+    "Every gpu_util reading is the phase's (felizjueves.performance.gate: "
     "wait_quiet before, after_reading after); a refused phase was discarded "
     "and retaken (raw 'wallclock:gate_discarded_phases'), never recorded. "
     "Inputs, tau = 0 (no screen fires): J 2048 x 128 (the J sweep's), K "
@@ -1496,7 +1496,7 @@ def _order(key: str) -> tuple:
 ROOFLINE_SCHEMA = 1
 
 ROOFLINE_ABOUT = (
-    "Counter rows (felizjueves.measured_store, #110): the card's own "
+    "Counter rows (felizjueves.performance.measured_store, #110): the card's own "
     "performance counters, as a profiler reported them for ONE BATCH KERNEL "
     "of one cell, keyed device.MeasuredKey(spec, arch, toolchain).key() + "
     "'#<batch>', the kernel's 0-based position in the cell's plan order. A "
@@ -1507,7 +1507,7 @@ ROOFLINE_ABOUT = (
 ROOFLINE_HEADER = {
     "what": "One row per batch kernel: what a profiler's counters said about "
             "one launch of one emitted kernel on one card "
-            "(felizjueves.measured_store, #110).",
+            "(felizjueves.performance.measured_store, #110).",
     "key": "MeasuredKey(spec, arch, toolchain).key() + '#<batch>': the "
            "generation Spec, the card's Arch, the COMPILER that built the "
            "kernel, and the kernel's 0-based index in the cell's plan order "
@@ -2129,8 +2129,8 @@ DISPATCH_PREFIX = "dispatch:"  # n_batches of a resolved plan: "dispatch:wide"
 BASELINE_ARM = "baseline"  # the plan's default; #147 labels its own arms
 
 # The card's state around the KEPT timing phase, in every build row's raw
-# (the gate's readings, felizjueves.gate; this module imports no gate, so the
-# threshold the phase was judged against is recorded beside the readings):
+# (the gate's readings, felizjueves.performance.gate; this module imports no
+# gate, so the threshold the phase was judged against is recorded beside the readings):
 #   build:gpu_util_before            percent, the settled reading the gate
 #                                    let the phase through at
 #   build:gpu_util_after             percent, gate.after_reading after it
@@ -2171,10 +2171,10 @@ BUILD_TIMED_REGION = (
     "eq. 20 -- not a cold start and not a whole SCF iteration.")
 
 BUILD_ABOUT = (
-    "Build rows (felizjueves.measured_store, #146): the host wall-clock of "
+    "Build rows (felizjueves.performance.measured_store, #146): the host wall-clock of "
     "ONE WHOLE-MOLECULE J_p BUILD from a launch.LaunchPlan on one card -- "
     "every class's batch kernels into one J_p per bra class -- timed behind "
-    "the card gate (felizjueves.gate), keyed by build_key. Its own file: a "
+    "the card gate (felizjueves.performance.gate), keyed by build_key. Its own file: a "
     "build is no MeasuredKey's Spec, and kernels.json's rows are not "
     "widened. Observations of two cards and their toolchains, NOT comparable "
     "to [JEngine]'s A100 figures, nor across vendors.")

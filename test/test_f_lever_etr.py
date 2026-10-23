@@ -73,7 +73,6 @@ from felizjueves import f_levers, levers, walk_f
 from felizjueves.ao import hgp_drive
 from felizjueves.ao.eri import eri_block_and_scale as mmd_eri
 from felizjueves.ao.shell import Basis
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import etr as E
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
@@ -83,6 +82,7 @@ from felizjueves.ir import Decl, Note, walk
 from felizjueves.ir.interp import Interpreter
 from felizjueves.kernel_f import build_f_kernel, close, f_class_spec
 from felizjueves.launch_f import f_launches
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target
@@ -876,7 +876,7 @@ def test_with_batched_vrr_and_sliced_hrr_it_is_the_sweep(
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.kernel_f import build_f_kernel, close, f_class_spec; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, ('etr',))); \
 #   Path(f'test/golden/cuda/f_etr/{k.name}.cu').write_text( \

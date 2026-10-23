@@ -48,8 +48,8 @@ from pathlib import Path
 import pytest
 from conftest import VRAM_PROBE
 
-from felizjueves import ceilings, measured
-from felizjueves.device import GFX1200, SM_86
+from felizjueves.performance import ceilings, measured
+from felizjueves.performance.device import GFX1200, SM_86
 
 STORE = "FJ_CEILINGS_STORE"
 ARCH = {"cuda": SM_86, "hip": GFX1200}

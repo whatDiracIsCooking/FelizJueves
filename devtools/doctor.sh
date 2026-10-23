@@ -312,7 +312,7 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
   # driver can restrict the counters to admins (ncu then fails with
   # ERR_NVGPUCTRPERM), and rocprofv3 can be installed without the libraries
   # its SDK loads (libdw, the AQL profiler). Either reads as "could not
-  # measure" in felizjueves.measured.profile, never as a zero.
+  # measure" in felizjueves.performance.measured.profile, never as a zero.
   #
   #   counter_tool_state <cuda|hip>
   counter_tool_state() {

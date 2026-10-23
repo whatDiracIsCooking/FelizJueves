@@ -1,11 +1,11 @@
 """The lever ledger: per-class register and spill deltas, both cards (#362).
 
-    python -m felizjueves.leverledger            # the ledger, as JSON
-    python -m felizjueves.leverledger --write    # rewrite LEDGER
-    python -m felizjueves.leverledger --table    # one line per row
+    python -m felizjueves.performance.leverledger            # the ledger, as JSON
+    python -m felizjueves.performance.leverledger --write    # rewrite LEDGER
+    python -m felizjueves.performance.leverledger --table    # one line per row
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.) The
-rows it reads are written by `python -m felizjueves.measured --remeasure
+rows it reads are written by `python -m felizjueves.performance.measured --remeasure
 --ledger`, which also rewrites LEDGER.
 
 WHAT IT IS. For every `(class, arm, arch)` -- a class of J, K or F at total
@@ -56,8 +56,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from felizjueves import measured_store as store
-from felizjueves.device import ARCHS, MeasuredKey, by_name
+from felizjueves.performance import measured_store as store
+from felizjueves.performance.device import ARCHS, MeasuredKey, by_name
 from felizjueves.spec import Spec
 
 LEDGER = store.REPO / "data" / "measured" / "lever_ledger.json"
@@ -83,7 +83,7 @@ UNITS = {
 _SCRATCH = {"sm_86": "stack_frame_bytes", "gfx1200": "ScratchSize"}
 
 ABOUT = (
-    "The lever ledger (felizjueves.leverledger, #362): per (class, arm, "
+    "The lever ledger (felizjueves.performance.leverledger, #362): per (class, arm, "
     "arch), the compiler's registers, spills, scratch and shared bytes of "
     "the arm's emitted units beside the LITERAL class under the same "
     "toolchain, and the delta (arm - literal), sign included. Classes: J "
@@ -199,7 +199,7 @@ def ledger(rows: Mapping[str, store.Measured]) -> dict:
         raise MissingRows(
             f"{len(missing)} lever-ledger cells have no row (levers "
             f"{', '.join(levers)}); record them with python -m "
-            "felizjueves.measured --remeasure --ledger:\n"
+            "felizjueves.performance.measured --remeasure --ledger:\n"
             + "\n".join(missing))
     return {
         "schema": SCHEMA,
@@ -256,7 +256,7 @@ def table(doc: Mapping) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m felizjueves.leverledger")
+    ap = argparse.ArgumentParser(prog="python -m felizjueves.performance.leverledger")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--table", action="store_true")
     ap.add_argument("--store", type=Path, default=store.STORE)

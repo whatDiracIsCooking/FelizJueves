@@ -20,9 +20,9 @@ from test_dispatch import (
     _split,
 )
 
-from felizjueves import batchreport, dispatch
-from felizjueves import measured_store as measured
-from felizjueves.device import (
+from felizjueves.performance import batchreport, dispatch
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import (
     ARCHS,
     GFX1200,
     SM_86,

@@ -1,6 +1,6 @@
 """`KernelCost` against `Measured`: does the model RANK batch counts? (#54)
 
-    python -m felizjueves.kernelrank            # the report, as JSON
+    python -m felizjueves.performance.kernelrank            # the report, as JSON
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -66,10 +66,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS, Arch
 from felizjueves.ir.lower import kernel_cost
 from felizjueves.mmd.kernel import build_pq_kernels
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS, Arch
 from felizjueves.spec import Spec
 
 # fp64 values per thread: half the 32-bit register ceiling (module docstring).

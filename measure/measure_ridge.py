@@ -1,4 +1,4 @@
-"""#114: does batching cross OUR ridge? The rule (felizjueves.ridge), scored
+"""#114: does batching cross OUR ridge? The rule (felizjueves.performance.ridge), scored
 on the tracked rows.
 
 A CHECK OF MEASUREMENT ARTEFACTS, moved from test/test_ridge.py (which keeps
@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import measured_store, ridge
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.literature.claims import ClaimStatus, load_claims
 from felizjueves.literature.limits import load_limits
+from felizjueves.performance import measured_store, ridge
+from felizjueves.performance.device import GFX1200, SM_86
 
 # --- the score, on the tracked rows ------------------------------------------
 

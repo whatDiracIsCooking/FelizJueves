@@ -1,8 +1,8 @@
 """A recommended batch count per `(L, arch)`, from wall-clock only (#56).
 
-    python -m felizjueves.batchreport            # the report, as JSON
-    python -m felizjueves.batchreport --write    # rewrite RECOMMENDATION
-    python -m felizjueves.batchreport --markdown # the j_engine.md tables
+    python -m felizjueves.performance.batchreport            # the report, as JSON
+    python -m felizjueves.performance.batchreport --write    # rewrite RECOMMENDATION
+    python -m felizjueves.performance.batchreport --markdown # the j_engine.md tables
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -72,8 +72,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS
 
 RECOMMENDATION = measured.REPO / "data" / "measured" / "batch_recommendation.json"
 SCHEMA = 1
@@ -88,11 +88,12 @@ BATCHES = tuple(sorted({s.n_batches for s in measured.SUBGRID}))
 SESSION: Mapping[int, str] = dict.fromkeys(BATCHES, "#93")
 
 ABOUT = ("A recommended n_batches per (L, arch) of measured.SUBGRID, derived "
-         "from wall-clock ONLY (felizjueves.batchreport, #56), on each of the "
-         "sweep's two inputs. The generator ships n_batches = 1 by decision "
+         "from wall-clock ONLY (felizjueves.performance.batchreport, #56), "
+         "on each of the sweep's two inputs. The generator ships "
+         "n_batches = 1 by decision "
          "(#167), and these rows are its grounds: wide-T picks 1 everywhere, "
          "near-T splits from L = 13 and the two cards disagree at L = 16, so "
-         "following them (felizjueves.dispatch, #145, which resolves per "
+         "following them (felizjueves.performance.dispatch, #145, which resolves per "
          "(arch, input)) would make the shipped unit set arch- and "
          "input-dependent, which it is not. The rows stay evidence: dispatch "
          "reads them for a launch plan. Not a reproduction of "
@@ -292,7 +293,7 @@ def report(store: Mapping[str, measured.Measured]) -> dict:
                           "only, never for the generator, which ships one "
                           "batch by decision (#167).",
             "regenerate": "PYTHONPATH=src uv run python -m "
-                          "felizjueves.batchreport --write",
+                          "felizjueves.performance.batchreport --write",
         },
         "cells": cells,
     }
@@ -331,7 +332,7 @@ def write(store: Mapping[str, measured.Measured],
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m felizjueves.batchreport")
+    ap = argparse.ArgumentParser(prog="python -m felizjueves.performance.batchreport")
     ap.add_argument("--write", action="store_true",
                     help=f"rewrite {RECOMMENDATION.relative_to(measured.REPO)}")
     ap.add_argument("--markdown", action="store_true",

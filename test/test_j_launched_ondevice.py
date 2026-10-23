@@ -124,7 +124,6 @@ from plan_driver import (
 from test_ao_screening import _h2_chain, _hilbert
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import dispatch, measured_store
 from felizjueves.ao.density import checked_density
 from felizjueves.ao.j import (
     coulomb_matrix,
@@ -139,6 +138,7 @@ from felizjueves.ao.staged import (
 )
 from felizjueves.launch import LaunchPlan, class_spec, launches, walk
 from felizjueves.mmd.kernel import bra_functions, ket_functions
+from felizjueves.performance import dispatch, measured_store
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import fundamental
 from felizjueves.reference.pq import pq as ref_pq

@@ -1,5 +1,6 @@
-"""#114: does batching cross OUR ridge? The rule (felizjueves.ridge), declared
-in the issue before any roofline row existed, on SYNTHETIC counter rows.
+"""#114: does batching cross OUR ridge? The rule
+(felizjueves.performance.ridge), declared in the issue before any roofline
+row existed, on SYNTHETIC counter rows.
 
 Fast tier: synthetic counter rows for the rule's every branch. No compiler,
 no card, no profiler, and no tracked row: the score on data/measured/
@@ -12,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from felizjueves import measured_store, ridge
-from felizjueves.device import SM_86, MeasuredKey
 from felizjueves.mmd.kernel import pq_spec
+from felizjueves.performance import measured_store, ridge
+from felizjueves.performance.device import SM_86, MeasuredKey
 
 PROV = {"toolchain": "nvcc 13.0", "arch": "sm_86", "host": "h", "gpu": "g",
         "date": "2026-10-12", "counter_tool": "ncu x", "counter_unit": "u",

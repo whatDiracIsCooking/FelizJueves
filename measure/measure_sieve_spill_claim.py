@@ -23,10 +23,10 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from felizjueves import measured_store
 from felizjueves.literature.claims import ClaimStatus, load_claims
 from felizjueves.literature.limits import load_limits
-from felizjueves.measured_store import (
+from felizjueves.performance import measured_store
+from felizjueves.performance.measured_store import (
     FEWER,
     MORE,
     sieve_spill_claim_holds,

@@ -28,12 +28,11 @@ from dataclasses import replace
 
 import pytest
 
-from felizjueves import measured_store as measured
-from felizjueves import planrank
-from felizjueves.device import ARCHS, Arch, Uncharacterised, Vendor
 from felizjueves.mmd.kernel import pq_spec
-from felizjueves.plan.pipeline import plan
-from felizjueves.planrank import (
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance import planrank
+from felizjueves.performance.device import ARCHS, Arch, Uncharacterised, Vendor
+from felizjueves.performance.planrank import (
     CONCORDANT,
     DISCORDANT,
     MIXED,
@@ -42,6 +41,7 @@ from felizjueves.planrank import (
     PREDICTS,
     UNRESOLVED,
 )
+from felizjueves.plan.pipeline import plan
 
 DOC = json.loads(planrank.PLANRANK.read_text())
 
@@ -74,7 +74,7 @@ def test_a_characterised_card_gets_the_recorded_verdict(store) -> None:
 @pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_data_file_is_the_report_recomputed(fresh) -> None:
     assert fresh == DOC, "rerun: PYTHONPATH=src uv run python -m " \
-                         "felizjueves.planrank --write"
+                         "felizjueves.performance.planrank --write"
     assert [(r["arch"], r["L"], r["n_batches"]) for r in DOC["rows"]] == [
         (a.name, c.total_am, c.n_batches) for a in ARCHS
         for c in planrank.CELLS]

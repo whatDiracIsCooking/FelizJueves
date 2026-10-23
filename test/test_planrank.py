@@ -18,12 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import measured_store as measured
-from felizjueves import planrank
-from felizjueves.device import ARCHS, MeasuredKey
 from felizjueves.mmd.kernel import pq_spec
-from felizjueves.plan.cost import PlanCost
-from felizjueves.planrank import (
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance import planrank
+from felizjueves.performance.device import ARCHS, MeasuredKey
+from felizjueves.performance.planrank import (
     CONCORDANT,
     DISCORDANT,
     INVERTS,
@@ -34,8 +33,9 @@ from felizjueves.planrank import (
     PREDICTS,
     UNRESOLVED,
 )
+from felizjueves.plan.cost import PlanCost
 
-SRC = Path(planrank.__file__).resolve().parent
+SRC = Path(planrank.__file__).resolve().parent.parent  # src/felizjueves
 
 
 # --- one pair ----------------------------------------------------------------
@@ -245,8 +245,9 @@ def test_nothing_imports_the_reading() -> None:
 
 
 def test_the_reading_reaches_no_floor_and_no_driver() -> None:
-    names = _imports(SRC / "planrank.py")
+    names = _imports(SRC / "performance" / "planrank.py")
     assert not any(n.startswith(("felizjueves.literature",
-                                 "felizjueves.measured.",
-                                 "felizjueves.dispatch")) for n in names), names
-    assert "felizjueves.measured" not in names
+                                 "felizjueves.performance.measured.",
+                                 "felizjueves.performance.dispatch"))
+               for n in names), names
+    assert "felizjueves.performance.measured" not in names

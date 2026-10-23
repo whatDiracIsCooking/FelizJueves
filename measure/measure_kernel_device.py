@@ -52,9 +52,9 @@ from test_kernel_device import (
     k_shared_need,
 )
 
-from felizjueves import asym, gate, measured, measured_store
-from felizjueves.device import Arch
 from felizjueves.mmd.kernel import k_spec
+from felizjueves.performance import asym, gate, measured, measured_store
+from felizjueves.performance.device import Arch
 from felizjueves.spec import Spec
 
 # --- the wall-clock sweep -----------------------------------------------------
@@ -85,7 +85,7 @@ from felizjueves.spec import Spec
 # `wallclock:control:*`; the literal rows are not rewritten. measured.py's
 # "A LEVER A/B" is the protocol's rationale and `measured.lever_ab` the
 # verdict (#55). The compile rows of the lever cells must exist first:
-#   python -m felizjueves.measured --remeasure --subgrid --lever recycle
+#   python -m felizjueves.performance.measured --remeasure --subgrid --lever recycle
 # A PLAN arm's sweep (#162: "no-sieve", measured_store's THE ARMS) discards a
 # phase the card was taken during and retakes it, as #113's study does
 # (STUDY_RETAKES), counting the discards in the lever row's raw
@@ -107,7 +107,7 @@ from felizjueves.spec import Spec
 # any asymmetric row existed, and `asym.asym_vs_neighbours` the verdict. A
 # study phase the card was taken during is retaken (STUDY_RETAKES). The
 # compile rows must exist first:
-#   python -m felizjueves.measured --remeasure --asym
+#   python -m felizjueves.performance.measured --remeasure --asym
 #
 # THE PROTOCOL, in order, all inside one test so the phases cannot overlap:
 #
@@ -162,8 +162,9 @@ TIMING_N_BRA = 2048  # one warp each: several waves on either card
 TIMING_N_KET = 128   # four kets per lane at wavefront 32
 # THE TIMING GATE, on top of the correctness gate the device fixtures already
 # hold (test/conftest.py: the card's lock and the free-VRAM probe), is
-# `felizjueves.gate` -- lifted there by #109 so the ceiling probes (and #112's
-# counter sweep) read the same code; its docstring has the readings and why
+# `felizjueves.performance.gate` -- lifted there by #109 so the ceiling
+# probes (and #112's counter sweep) read the same code; its docstring has the
+# readings and why
 # the after-reading is taken the way it is. Utilisation is a reason to WAIT
 # here and nowhere else: #55's timings came out bimodal while a process
 # outside the container held the RTX 3080 at 100%, and a timing on a busy
@@ -548,7 +549,7 @@ def test_hip_wallclock_over_the_subgrid(request, compile_device_source,
 # 3. PROFILE each cell, one launch sequence (no warm-up, one rep: each batch
 #    kernel launched exactly once) on the wide-T timing input -- kernels.json's
 #    row input, TIMING_N_BRA x TIMING_N_KET, tau = 0 -- under
-#    `measured.profile` (ncu), behind the card gate (`felizjueves.gate`, the
+#    `measured.profile` (ncu), behind the card gate (`felizjueves.performance.gate`, the
 #    shared helper): wait for a quiet card and CPU (a deadline FAILS the test,
 #    nothing written), profile, then the after-reading. A phase whose
 #    after-reading is non-idle or unknown was shared with something outside

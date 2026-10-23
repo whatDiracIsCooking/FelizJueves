@@ -53,7 +53,7 @@ both. Two runs of one binary differ only in the order of the atomics: held
 to `2 TOL` of scale too, and whether they repeat bit for bit is printed.
 
 THE MEASURED ROWS (milestone 12; #278's F cell) are not this file's: the
-compile side is `python -m felizjueves.measured --remeasure --target f --L
+compile side is `python -m felizjueves.performance.measured --remeasure --target f --L
 ...`, and the clock is measure/measure_fock_ondevice.py's opt-in sweep
 (`devtools/measure.sh wallclock-f`), which times the binary part 1 below
 checks. The timing inputs' cubes and the narrow `fj_boys`'s witnessed range

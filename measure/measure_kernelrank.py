@@ -34,10 +34,10 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import batchreport, crossread, kernelrank, ridge
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS
 from felizjueves.literature.limits import StructuralLimit, load_limits
+from felizjueves.performance import batchreport, crossread, kernelrank, ridge
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS
 
 LIMITS = Path(__file__).resolve().parents[1] / "data" / "measured" / "limits.json"
 
@@ -221,14 +221,15 @@ def _row(rows: list[dict], arch: str, L: int) -> dict:
 @pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_the_crossread_file_is_the_table_recomputed(cross) -> None:
     assert cross == CROSSREAD_DOC, (
-        "rerun `python -m felizjueves.crossread --write`")
+        "rerun `python -m felizjueves.performance.crossread --write`")
     assert [(r["arch"], r["L"]) for r in cross["rows"]] == [
         (a.name, L) for a in ARCHS for L in measured.SUBGRID_LS]
 
 
 def test_the_j_engine_table_is_the_data_verbatim() -> None:
     assert crossread.markdown(CROSSREAD_DOC) in J_ENGINE, (
-        "paste `python -m felizjueves.crossread --markdown` into j_engine.md")
+        "paste `python -m felizjueves.performance.crossread --markdown` "
+        "into j_engine.md")
 
 
 @pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
