@@ -91,8 +91,9 @@ import numpy as np
 from felizjueves.ao.density import Matrix, checked_density, make_kets
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import AtomicAdd, Kernel, walk
+from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.passes import atomize
 from felizjueves.kernel import (
     KET,
     bra_functions,
@@ -101,7 +102,6 @@ from felizjueves.kernel import (
 )
 from felizjueves.launch import ClassLaunch, LaunchPlan, class_spec
 from felizjueves.launch_common import PairRec
-from felizjueves.passes import atomize
 
 __all__ = ["BufferSize", "KetData", "Staged", "coulomb_matrix_staged"]
 

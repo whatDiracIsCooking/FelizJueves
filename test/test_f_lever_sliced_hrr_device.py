@@ -56,7 +56,7 @@ from felizjueves.f_levers import batched_vrr as bv
 from felizjueves.f_levers import sliced_hrr as sh
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 BOTH = (bv.NAME, sh.NAME)
 CAP = 4

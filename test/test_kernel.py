@@ -30,7 +30,6 @@ import numpy as np
 import pytest
 from tiers import split_by_l
 
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -54,6 +53,7 @@ from felizjueves.ir import (
     Weighted,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel import (
     JSH,
     KET,
@@ -340,7 +340,7 @@ def test_the_kernel_module_is_vendor_neutral() -> None:
     # #344: `j_levers` holds the J kernel-body levers' behaviour (`fused`),
     # reached by one hook in `_pq_kernel`; it is IR in, IR out, as here.
     assert ours == {"felizjueves.ir", "felizjueves.j_levers",
-                    "felizjueves.passes",
+                    "felizjueves.ir.passes",
                     "felizjueves.plan.dag", "felizjueves.plan.pipeline",
                     "felizjueves.plan.schedule", "felizjueves.plan.targets",
                     "felizjueves.recurrence", "felizjueves.spec"}

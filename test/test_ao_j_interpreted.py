@@ -316,5 +316,5 @@ def test_the_adapter_does_not_reach_the_reference():
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "interp" in seen and "kernel" in seen
+    assert "ir.interp" in seen and "kernel" in seen
     assert not [e for e in seen if _under(e, "reference")]

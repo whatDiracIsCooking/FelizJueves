@@ -163,7 +163,7 @@ from felizjueves.ao.j import (
 )
 from felizjueves.ao.staged import KetData
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.interp import Interpreter, Launch
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape

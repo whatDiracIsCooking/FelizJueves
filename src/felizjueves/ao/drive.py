@@ -73,8 +73,8 @@ from felizjueves.ao.density import (
 from felizjueves.ao.j import BraRec, KetRec
 from felizjueves.ao.shell import Basis
 from felizjueves.ao.staged import KetData, Staged, coulomb_matrix_staged
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Kernel
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernels,

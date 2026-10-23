@@ -124,7 +124,7 @@ from felizjueves.ao.pairs import overlap_bound
 from felizjueves.ao.potential import potential_matrix
 from felizjueves.ao.shell import cartesians
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.interp import Interpreter, Launch
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch import OneELaunch, one_electron_launch
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre

@@ -119,8 +119,8 @@ from felizjueves.ao.k import (
     record_bounds,
 )
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Assign, AtomicAdd, Index, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.kernel_k import launch_shape as k_launch_shape
 from felizjueves.launch_k import KLaunchPlan, k_launches, walk_k

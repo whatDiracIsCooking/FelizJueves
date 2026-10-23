@@ -55,8 +55,8 @@ from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import REGISTRY, hooks_for, ket_break
 from felizjueves.hgp import vrr
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Break, For, If, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre

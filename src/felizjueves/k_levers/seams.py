@@ -81,7 +81,7 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
-from felizjueves.passes import atomize as _atomize
+from felizjueves.ir.passes import atomize as _atomize
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import node_name

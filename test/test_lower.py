@@ -40,7 +40,6 @@ from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.hgp import cost as hgp_cost
 from felizjueves.hgp.vrr import CLASSES
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     Call,
@@ -63,6 +62,20 @@ from felizjueves.ir import (
     Weighted,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.lower import (
+    LEVERS,
+    RECYCLE,
+    TIERS,
+    KernelCost,
+    kernel_cost,
+    liveness,
+    loop_carried,
+    lower,
+    recycle,
+    spilled,
+    tiered,
+)
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
@@ -76,19 +89,6 @@ from felizjueves.kernel_dq import build_dq_kernel
 from felizjueves.kernel_f import build_f_kernel, kernel_counts
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
-from felizjueves.lower import (
-    LEVERS,
-    RECYCLE,
-    TIERS,
-    KernelCost,
-    kernel_cost,
-    liveness,
-    loop_carried,
-    lower,
-    recycle,
-    spilled,
-    tiered,
-)
 from felizjueves.plan.dag import BatchDag, Node, build, is_fundamental
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.sieve import plan
@@ -753,7 +753,7 @@ def test_tiered_refuses_what_it_cannot_place() -> None:
 F_LOOPS = {"per": "k", "contraction": ["kcd", "kab"]}
 F_DATA = Path(__file__).resolve().parents[1] / "data" / "hgp" / "kernel_cost.json"
 F_ABOUT = (
-    "KernelCost (src/felizjueves/lower.py, #284) of the fused HGP kernel "
+    "KernelCost (src/felizjueves/ir/lower.py, #284) of the fused HGP kernel "
     "(kernel_f.build_f_kernel, #282) for milestone 12's 21 classes, beside "
     "hgp.cost's FLOP triple (#276) for the same class. 'nest' is every "
     "computing statement (Decl with init, Assign, WarpReduce, AtomicAdd) by "

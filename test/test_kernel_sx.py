@@ -38,8 +38,8 @@ from felizjueves.ao.overlap import cross_overlap_matrix
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import AtomicAdd, If, Intent, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_s import build_s_kernel, record_values
 from felizjueves.kernel_sx import (
     ATOMIC_REASON,

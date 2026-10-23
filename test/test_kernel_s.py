@@ -56,7 +56,6 @@ from felizjueves.ao.overlap import overlap_block, overlap_matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -73,6 +72,7 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_s import (
     ATOMIC_REASON,
     ZEROED_S,

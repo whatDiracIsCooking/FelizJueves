@@ -28,9 +28,9 @@ from felizjueves import asym, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
+from felizjueves.ir.lower import LEVERS, RECYCLE
 from felizjueves.kernel import build_pq_kernel, build_pq_kernels, k_spec, pq_spec
 from felizjueves.kernel import split as hermite_split
-from felizjueves.lower import LEVERS, RECYCLE
 from felizjueves.plan.batching import in_batch, partition
 from felizjueves.plan.dag import build
 from felizjueves.plan.pipeline import TUNED, plan, tuned_plan

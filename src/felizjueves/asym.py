@@ -90,6 +90,7 @@ from itertools import combinations
 
 from felizjueves.device import Arch
 from felizjueves.ir import Kernel
+from felizjueves.ir.passes import atomize
 from felizjueves.kernel import _pq_kernel, pq_spec, split
 from felizjueves.measured_store import (
     FASTER,
@@ -99,7 +100,6 @@ from felizjueves.measured_store import (
     _sign,
     rows,
 )
-from felizjueves.passes import atomize
 from felizjueves.plan.batching import AXES, Batch, in_batch, target_counts
 from felizjueves.plan.dag import batch_dag
 from felizjueves.plan.sieve import sieve

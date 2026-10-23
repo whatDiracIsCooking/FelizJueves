@@ -46,7 +46,7 @@ import pytest
 
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import Interpreter, Launch
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,

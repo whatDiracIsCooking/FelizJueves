@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "interp": "ir.interp",
+    "lever_ladder": "ir.lever_ladder",
+    "lower": "ir.lower",
+    "passes": "ir.passes"
+  }
+]

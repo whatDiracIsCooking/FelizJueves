@@ -47,8 +47,8 @@ from felizjueves.ao.j import (
     coulomb_matrix_and_scale,
     jab_from_host,
 )
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Assign, AtomicAdd, If, Index, Note, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_jab import (
     ATOMIC_REASON,
     ZEROED_J,
@@ -313,5 +313,5 @@ def test_the_builder_reaches_neither_ao_nor_the_interpreter():
                 seen.add(e)
                 todo.append(e)
     assert "e_fragment" in seen
-    for banned in ("ao", "interp", "reference", "emit"):
+    for banned in ("ao", "ir.interp", "reference", "emit"):
         assert not [e for e in seen if _under(e, banned)], banned

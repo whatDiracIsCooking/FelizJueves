@@ -71,7 +71,7 @@ from felizjueves.f_levers import etr as E
 from felizjueves.f_levers.seams import DEFAULT_HOOKS
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 NAME = E.NAME
 CAP = 4

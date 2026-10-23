@@ -267,6 +267,7 @@ from pathlib import Path
 from felizjueves.device import Arch, Vendor, by_name, from_env
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Kernel
+from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.kernel import (
     build_pq_kernel,
     build_pq_kernels,
@@ -289,7 +290,6 @@ from felizjueves.kernel_schwarz import build_schwarz_kernel
 from felizjueves.kernel_sx import build_sx_kernel
 from felizjueves.kernel_t import build_t_kernel, t_name
 from felizjueves.kernel_v import build_v_kernel, v_name
-from felizjueves.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.spec import Operator, Spec, Target
 
 BACKENDS = {

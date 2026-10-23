@@ -52,7 +52,6 @@ import test_kernel_k as tk
 
 from felizjueves import kdup
 from felizjueves.ao.k import k_quartet
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -67,6 +66,8 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.passes import LANE0
 from felizjueves.kernel import build_pq_kernels, k_spec
 from felizjueves.kernel_k import (
     KET,
@@ -79,7 +80,6 @@ from felizjueves.kernel_k import (
     launch_shape,
     shared_doubles,
 )
-from felizjueves.passes import LANE0
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets

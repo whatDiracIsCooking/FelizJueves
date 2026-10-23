@@ -72,8 +72,8 @@ from felizjueves import kernel_f as KF
 from felizjueves.ao import fock
 from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.pairs import primitive_schwarz_bounds
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Scalar
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq

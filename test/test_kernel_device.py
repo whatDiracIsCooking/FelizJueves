@@ -114,6 +114,7 @@ from felizjueves import asym, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD
+from felizjueves.ir.lower import RECYCLE
 from felizjueves.kernel import (
     bra_functions,
     build_pq_kernel,
@@ -123,7 +124,6 @@ from felizjueves.kernel import (
     pq_spec,
     split,
 )
-from felizjueves.lower import RECYCLE
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, theta_of

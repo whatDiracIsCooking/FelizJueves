@@ -64,7 +64,6 @@ from felizjueves.ao.shell import Basis, Shell
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -81,6 +80,7 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_v import (
     ATOMIC_REASON,
     NUC,

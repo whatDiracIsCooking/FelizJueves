@@ -61,7 +61,7 @@ from felizjueves.f_levers import slim_fock as sf
 from felizjueves.f_levers import sub_slice as ss
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 H4 = (bv.NAME, sh.NAME, sf.NAME)
 STACK = (*H4, ss.NAME)

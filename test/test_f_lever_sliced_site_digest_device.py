@@ -53,7 +53,7 @@ from felizjueves.f_levers import batched_vrr as bv
 from felizjueves.f_levers import sliced_hrr as sh
 from felizjueves.f_levers import sliced_site_digest as si
 from felizjueves.ir import Kernel
-from felizjueves.lever_ladder import unit_name
+from felizjueves.ir.lever_ladder import unit_name
 
 H2 = (bv.NAME, sh.NAME)
 ALL = (bv.NAME, sh.NAME, si.NAME)

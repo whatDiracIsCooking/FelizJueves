@@ -41,7 +41,6 @@ import test_kernel_k as tk
 from felizjueves import k_levers, levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -57,6 +56,8 @@ from felizjueves.ir import (
     WarpReduce,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.passes import LANE0
 from felizjueves.k_levers import coalesced, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
 from felizjueves.kernel import k_spec
@@ -66,7 +67,6 @@ from felizjueves.kernel_k import (
     launch_shape,
     shared_bytes,
 )
-from felizjueves.passes import LANE0
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 

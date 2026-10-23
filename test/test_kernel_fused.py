@@ -41,8 +41,10 @@ import pytest
 from tiers import FAST_L_MAX, split_by_l
 
 from felizjueves import levers
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Assign, Decl, For, If, Index, Kernel, Note, Var, walk
+from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.lower import kernel_cost
+from felizjueves.ir.passes import ATOMIC_NOTE
 from felizjueves.j_levers.fused import FUSED, FUSED_NOTE, fuse
 from felizjueves.kernel import (
     JSH,
@@ -57,8 +59,6 @@ from felizjueves.kernel import (
     pq_spec,
     split,
 )
-from felizjueves.lower import kernel_cost
-from felizjueves.passes import ATOMIC_NOTE
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.recurrence import node_name

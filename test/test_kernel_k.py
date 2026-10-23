@@ -49,7 +49,6 @@ from felizjueves import kernel_k
 from felizjueves.ao.density import EPair, epair
 from felizjueves.ao.k import k_quartet
 from felizjueves.ao.shell import Shell
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     AtomicAdd,
     Call,
@@ -66,6 +65,7 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel import build_pq_kernel, k_spec
 from felizjueves.kernel import launch_shape as j_launch_shape
 from felizjueves.kernel_k import (
@@ -486,7 +486,7 @@ def test_the_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in ("reference", "ao", "interp", "emit", "device"):
+    for banned in ("reference", "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if tl._under(e, banned))
         assert not hit, f"kernel_k reaches {hit}"
     assert {"e_fragment", "recurrence", "kernel"} <= seen

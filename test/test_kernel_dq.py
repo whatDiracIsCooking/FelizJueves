@@ -52,7 +52,6 @@ from felizjueves.ao.j import (
     coulomb_matrix_and_scale,
     dq_from_host,
 )
-from felizjueves.interp import Launch, interpret
 from felizjueves.ir import (
     AtomicAdd,
     Inline,
@@ -64,6 +63,7 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
+from felizjueves.ir.interp import Launch, interpret
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape, dq_spec
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import pq

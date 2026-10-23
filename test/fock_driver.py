@@ -81,8 +81,8 @@ from felizjueves.ao.density import checked_density
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.f_levers import scatter as SC
 from felizjueves.hgp import vrr
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Intent, Kernel, Scalar
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 from felizjueves.walk_f import KET_BREAK, FWalk, pair_record, walk_f
 

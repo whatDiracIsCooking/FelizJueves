@@ -29,7 +29,6 @@ import numpy as np
 import pytest
 from tiers import by_l, is_fast
 
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -46,6 +45,8 @@ from felizjueves.ir import (
     WarpReduce,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.passes import ATOMIC_NOTE
 from felizjueves.kernel import (
     JSH,
     KET,
@@ -59,7 +60,6 @@ from felizjueves.kernel import (
     pq_spec,
     split,
 )
-from felizjueves.passes import ATOMIC_NOTE
 from felizjueves.plan.batching import partition
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets

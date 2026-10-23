@@ -41,8 +41,8 @@ from felizjueves.ao.schwarz import (
     schwarz_classes,
 )
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import Assign, AtomicAdd, Decl, Index, Inline, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_schwarz import (
     OUT,
     build_schwarz_kernel,

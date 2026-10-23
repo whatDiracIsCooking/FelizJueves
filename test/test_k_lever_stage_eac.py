@@ -46,7 +46,6 @@ from felizjueves import e_fragment as ef
 from felizjueves import k_levers, levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
-from felizjueves.interp import Interpreter, Launch
 from felizjueves.ir import (
     Assign,
     Decl,
@@ -61,6 +60,7 @@ from felizjueves.ir import (
     Var,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.k_levers import split, stage_eac
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
 from felizjueves.kernel_k import (

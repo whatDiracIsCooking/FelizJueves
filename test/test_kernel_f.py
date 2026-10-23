@@ -62,7 +62,6 @@ from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp import recurrence as R
-from felizjueves.interp import Interpreter, Launch, interpret
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -79,6 +78,7 @@ from felizjueves.ir import (
     Var,
     walk,
 )
+from felizjueves.ir.interp import Interpreter, Launch, interpret
 from felizjueves.launch_f import f_launches
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq
