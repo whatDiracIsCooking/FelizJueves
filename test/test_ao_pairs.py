@@ -33,8 +33,7 @@ from oracle import basis as _ob
 from oracle import manifest as _manifest
 from tiers import FAST_L_MAX, by_l, is_fast, split_by_l
 
-from felizjueves.ao import hermite, pairs
-from felizjueves.ao.hermite import e_block, hermite_order
+from felizjueves.ao import pairs
 from felizjueves.ao.kinetic import kinetic_block
 from felizjueves.ao.overlap import overlap_block
 from felizjueves.ao.pairs import (
@@ -55,6 +54,8 @@ from felizjueves.ao.pairs import (
 )
 from felizjueves.ao.potential import potential_block
 from felizjueves.ao.shell import Basis, Shell, cartesians, primitive_norm
+from felizjueves.mmd import hermite
+from felizjueves.mmd.hermite import e_block, hermite_order
 from felizjueves.reference.boys import T_MAX
 from felizjueves.reference.pq import fundamental, one_centre, pq, theta_of
 

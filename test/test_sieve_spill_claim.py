@@ -20,7 +20,6 @@ import pytest
 
 from felizjueves import measured_store
 from felizjueves.device import MeasuredKey, by_name
-from felizjueves.kernel import pq_spec
 from felizjueves.measured_store import (
     FEWER,
     MORE,
@@ -30,6 +29,7 @@ from felizjueves.measured_store import (
     sieve_spill_claim_holds,
     sieve_spills,
 )
+from felizjueves.mmd.kernel import pq_spec
 
 TOOLCHAIN = {"sm_86": "nvcc 13.0", "gfx1200": "hipcc / ROCm 7.2.4"}
 

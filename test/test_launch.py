@@ -30,9 +30,9 @@ from felizjueves.ao import j as aoj
 from felizjueves.ao.density import checked_density, make_kets
 from felizjueves.ao.pairs import pair_bound, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.kernel import build_pq_kernels
 from felizjueves.launch import ClassLaunch, class_spec, launches
 from felizjueves.launch_common import PairRec, admits
+from felizjueves.mmd.kernel import build_pq_kernels
 from felizjueves.reference.pq import one_centre, pq
 
 BOUND = partial(pair_bound, one_centre=one_centre)

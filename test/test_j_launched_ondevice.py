@@ -137,8 +137,8 @@ from felizjueves.ao.staged import (
     _ket_buffers,
     _kets_checked,
 )
-from felizjueves.kernel import bra_functions, ket_functions
 from felizjueves.launch import LaunchPlan, class_spec, launches, walk
+from felizjueves.mmd.kernel import bra_functions, ket_functions
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import fundamental
 from felizjueves.reference.pq import pq as ref_pq

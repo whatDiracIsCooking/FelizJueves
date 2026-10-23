@@ -59,7 +59,6 @@ from oracle import manifest
 from tiers import by_l, is_fast
 
 from felizjueves.ao.eri import _quartet
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.pairs import (
     hermite_bound,
     primitive_pairs,
@@ -79,6 +78,7 @@ from felizjueves.launch_f import (
     printed_magnitude_index,
     printed_prelaunch_screened,
 )
+from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.pq import one_centre, pq
 from felizjueves.spec import Spec, Target
 

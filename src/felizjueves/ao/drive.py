@@ -75,12 +75,6 @@ from felizjueves.ao.shell import Basis
 from felizjueves.ao.staged import KetData, Staged, coulomb_matrix_staged
 from felizjueves.ir import Kernel
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel import (
-    bra_functions,
-    build_pq_kernels,
-    ket_functions,
-    launch_shape,
-)
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
@@ -88,6 +82,12 @@ from felizjueves.launch import Bound, ClassLaunch, LaunchPlan, bound_value
 from felizjueves.launch import class_kernels as _plan_kernels
 from felizjueves.launch import class_spec as launch_class_spec
 from felizjueves.launch_common import PairRec, batches_for, sorted_desc
+from felizjueves.mmd.kernel import (
+    bra_functions,
+    build_pq_kernels,
+    ket_functions,
+    launch_shape,
+)
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Operator, Spec, Target
 

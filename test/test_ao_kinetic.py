@@ -356,8 +356,8 @@ from oracle import basis as _ob  # noqa: E402
 from oracle import manifest as _manifest  # noqa: E402
 from test_ao_overlap import ONE_E_PARAMS, ONE_E_TOL, one_e_scale  # noqa: E402
 
-from felizjueves.ao.hermite import e_axis  # noqa: E402
 from felizjueves.ao.one_electron import matrix as _matrix  # noqa: E402
+from felizjueves.mmd.hermite import e_axis  # noqa: E402
 
 
 def _abs_k(s, j: int, beta: float) -> float:

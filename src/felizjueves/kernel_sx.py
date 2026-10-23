@@ -55,7 +55,6 @@ checked against) nor the interpreter nor `reference/`.
 
 from __future__ import annotations
 
-from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     AtomicAdd,
     Call,
@@ -80,6 +79,7 @@ from felizjueves.kernel_s import (
     pb_name,
     record_values,
 )
+from felizjueves.mmd import e_fragment as ef
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [

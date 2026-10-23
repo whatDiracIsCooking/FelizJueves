@@ -14,7 +14,7 @@ import itertools
 
 import pytest
 
-from felizjueves.kernel import k_spec, pq_spec, split
+from felizjueves.mmd.kernel import k_spec, pq_spec, split
 from felizjueves.spec import AM_LENGTH, Operator, Spec, Target, is_batch_count
 
 

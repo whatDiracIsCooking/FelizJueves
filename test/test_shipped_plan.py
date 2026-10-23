@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 from felizjueves.spec import Spec
 
 ROOT = Path(__file__).resolve().parent.parent

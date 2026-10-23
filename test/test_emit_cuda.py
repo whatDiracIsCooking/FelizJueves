@@ -8,7 +8,7 @@ the shared accumulator and the warp reduction -- while staying short enough
 to review by eye. A diff in it is the whole signal when the generator
 changes. After an intended change, regenerate it and review the diff:
 
-    PYTHONPATH=src uv run python -c "from felizjueves.kernel import \
+    PYTHONPATH=src uv run python -c "from felizjueves.mmd.kernel import \
 build_pq_kernel; from felizjueves.device import SM_86; from \
 felizjueves.emit.cuda import emit; print(emit(build_pq_kernel(4), SM_86), \
 end='')" > test/golden/cuda/pq_L4_p2_q2.cu
@@ -51,7 +51,7 @@ from felizjueves.ir import (
     Space,
     Var,
 )
-from felizjueves.kernel import build_pq_kernel
+from felizjueves.mmd.kernel import build_pq_kernel
 
 L = 4
 GOLDEN = Path(__file__).resolve().parent / "golden" / "cuda" / "pq_L4_p2_q2.cu"

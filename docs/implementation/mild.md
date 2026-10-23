@@ -10,7 +10,7 @@ since #160, and switchable off by the `no-sieve` lever; `test/test_plan_sieve.py
 that it recovers rule 4. `src/felizjueves/plan/pipeline.py` composes them
 with the batch split into one plan per `Spec`. The plan
 itself is host-side counting, but it is no longer only that: for a one-batch
-class, `build_pq_kernel` (`src/felizjueves/kernel.py`) emits the recurrence
+class, `build_pq_kernel` (`src/felizjueves/mmd/kernel.py`) emits the recurrence
 from the sieved MILD DAG, in `plan/schedule.py`'s order, as the `[p|q]` kernel
 both backends spell ([`j_engine.md`](j_engine.md) has its status). A split
 class gets one kernel per batch from `build_pq_kernels`, each generated from

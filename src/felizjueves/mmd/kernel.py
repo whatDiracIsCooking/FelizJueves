@@ -92,17 +92,17 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.passes import atomize
 from felizjueves.j_levers import fused, mixed
-from felizjueves.plan.dag import BatchDag
-from felizjueves.plan.pipeline import plan
-from felizjueves.plan.schedule import schedule
-from felizjueves.plan.targets import R, hermite_targets
-from felizjueves.recurrence import (
+from felizjueves.mmd.recurrence import (
     PQ_PARAMS,
     THETA,
     fundamental_prelude,
     node_name,
     recurrence_body,
 )
+from felizjueves.plan.dag import BatchDag
+from felizjueves.plan.pipeline import plan
+from felizjueves.plan.schedule import schedule
+from felizjueves.plan.targets import R, hermite_targets
 from felizjueves.spec import Operator, Spec, Target, lever_provenance
 
 __all__ = [

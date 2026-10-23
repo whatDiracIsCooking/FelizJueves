@@ -32,8 +32,8 @@ from felizjueves.device import (
     Uncharacterised,
     Vendor,
 )
-from felizjueves.kernel import build_pq_kernels, pq_spec
 from felizjueves.launch import class_spec, launches
+from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
 from felizjueves.reference.pq import one_centre
 
 BATCHES = batchreport.BATCHES

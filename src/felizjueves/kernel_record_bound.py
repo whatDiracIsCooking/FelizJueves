@@ -65,14 +65,6 @@ Nothing here is CUDA- or HIP-specific, and nothing here imports `ao`,
 
 from __future__ import annotations
 
-from felizjueves.e_fragment import (
-    E_ARRAY,
-    HALF_INV_ZETA,
-    ZETA,
-    block_fragment,
-    block_rows,
-    block_shape,
-)
 from felizjueves.ir import (
     Assign,
     Call,
@@ -93,6 +85,14 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.kernel_pair_bound import hermite_bound_coefficients
+from felizjueves.mmd.e_fragment import (
+    E_ARRAY,
+    HALF_INV_ZETA,
+    ZETA,
+    block_fragment,
+    block_rows,
+    block_shape,
+)
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 

@@ -53,9 +53,9 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.pairs import PrimitivePair, primitive_pairs
 from felizjueves.ao.shell import Shell
+from felizjueves.mmd.hermite import hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]

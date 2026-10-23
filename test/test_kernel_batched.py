@@ -47,7 +47,7 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import ATOMIC_NOTE
-from felizjueves.kernel import (
+from felizjueves.mmd.kernel import (
     JSH,
     KET,
     SORTED_KETS,
@@ -60,10 +60,10 @@ from felizjueves.kernel import (
     pq_spec,
     split,
 )
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.batching import partition
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import node_name
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, theta_of
 from felizjueves.spec import Spec

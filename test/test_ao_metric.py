@@ -55,7 +55,6 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import FAST_L_MAX, by_l
 
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.metric import (
     MetricClass,
     aux_dress,
@@ -71,6 +70,7 @@ from felizjueves.ao.metric import (
 )
 from felizjueves.ao.overlap import overlap_block
 from felizjueves.ao.shell import Basis, cartesians
+from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.pq import fundamental, pq
 
 SET = "h2o_ccpvtz_jkfit_metric"

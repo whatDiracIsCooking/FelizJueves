@@ -115,7 +115,7 @@ from felizjueves.device import GFX1200, SM_86, Arch
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD
 from felizjueves.ir.lower import RECYCLE
-from felizjueves.kernel import (
+from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernel,
     k_spec,
@@ -1288,7 +1288,7 @@ def _k_case(L: int, case: str):
     max) -- shared by every n_batches of L, as `_case` is for J."""
     from felizjueves.ao.density import EPair
     from felizjueves.ao.k import _k_quartet
-    from felizjueves.kernel import k_spec
+    from felizjueves.mmd.kernel import k_spec
 
     spec = k_spec(L)
     wide, tq, n_bra, n_ket = K_CASES[case]

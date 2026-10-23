@@ -54,7 +54,7 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel import (
+from felizjueves.mmd.kernel import (
     JSH,
     KET,
     SORTED_KETS,
@@ -66,13 +66,13 @@ from felizjueves.kernel import (
     pq_spec,
     split,
 )
+from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_kernels
 from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import SEARCHED_CUTS, TUNED, plan, tuned_plan
 from felizjueves.plan.search import load_frontiers, searched_plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.plan.sieve import plan as sieved_dags
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import fundamental_prelude, recurrence_kernels
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre, pq, theta_of
 from felizjueves.spec import Operator, Spec, Target
@@ -334,7 +334,7 @@ def test_the_kernel_is_deterministic_above_l4() -> None:
 
 def test_the_kernel_module_is_vendor_neutral() -> None:
     """No device facts, no reference/, no interpreter: it only builds IR."""
-    tree = ast.parse((SRC / "kernel.py").read_text())
+    tree = ast.parse((SRC / "mmd" / "kernel.py").read_text())
     mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     ours = {m for m in mods if m and m.startswith("felizjueves")}
     # #344: `j_levers` holds the J kernel-body levers' behaviour (`fused`),
@@ -343,7 +343,7 @@ def test_the_kernel_module_is_vendor_neutral() -> None:
                     "felizjueves.ir.passes",
                     "felizjueves.plan.dag", "felizjueves.plan.pipeline",
                     "felizjueves.plan.schedule", "felizjueves.plan.targets",
-                    "felizjueves.recurrence", "felizjueves.spec"}
+                    "felizjueves.mmd.recurrence", "felizjueves.spec"}
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,6 @@ from functools import cache
 import numpy as np
 import pytest
 
-from felizjueves import e_fragment as ef
 from felizjueves import kernel_k
 from felizjueves.ao.density import EPair, epair
 from felizjueves.ao.k import k_quartet
@@ -66,8 +65,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel import build_pq_kernel, k_spec
-from felizjueves.kernel import launch_shape as j_launch_shape
 from felizjueves.kernel_k import (
     KET,
     KSH,
@@ -79,10 +76,13 @@ from felizjueves.kernel_k import (
     shared_bytes,
     shared_doubles,
 )
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.kernel import build_pq_kernel, k_spec
+from felizjueves.mmd.kernel import launch_shape as j_launch_shape
+from felizjueves.mmd.recurrence import build_recurrence_kernel, target_order
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import build_recurrence_kernel, target_order
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -489,7 +489,7 @@ def test_the_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     for banned in ("reference", "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if tl._under(e, banned))
         assert not hit, f"kernel_k reaches {hit}"
-    assert {"e_fragment", "recurrence", "kernel"} <= seen
+    assert {"mmd.e_fragment", "mmd.recurrence", "mmd.kernel"} <= seen
 
 
 def test_one_batch_delegates_and_a_split_is_build_k_kernels() -> None:

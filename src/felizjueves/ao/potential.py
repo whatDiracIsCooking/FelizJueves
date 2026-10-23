@@ -54,10 +54,10 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.one_electron import matrix
 from felizjueves.ao.pairs import OneCentre, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.mmd.hermite import hermite_order
 
 Vec = tuple[float, float, float]
 Nucleus = tuple[float, Vec]

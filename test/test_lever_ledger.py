@@ -22,8 +22,8 @@ import pytest
 from felizjueves import leverledger, levers, measured
 from felizjueves import measured_store as store
 from felizjueves.device import SM_86, MeasuredKey
-from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.kernel_f import f_class_spec
+from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.spec import Target
 
 

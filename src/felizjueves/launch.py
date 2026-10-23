@@ -168,7 +168,6 @@ from felizjueves.ao.density import PQ, epair
 from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.density import checked_tau as _tau
 from felizjueves.ao.density import make_kets as _kets
-from felizjueves.ao.hermite import Ang, e_axis, hermite_order
 from felizjueves.ao.j import Screened, pair_bound_pq
 from felizjueves.ao.kinetic import kinetic_axis
 from felizjueves.ao.one_electron import matrix, rectangular
@@ -181,8 +180,9 @@ from felizjueves.ao.pairs import (
 from felizjueves.ao.potential import _check_nuclei
 from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.ir import Kernel
-from felizjueves.kernel import build_pq_kernels
 from felizjueves.launch_common import PairRec, batches_for, nonneg, sorted_desc
+from felizjueves.mmd.hermite import Ang, e_axis, hermite_order
+from felizjueves.mmd.kernel import build_pq_kernels
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = ["Bound", "ClassLaunch", "LaunchPlan", "OneEClass", "OneELaunch",

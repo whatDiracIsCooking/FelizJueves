@@ -214,9 +214,9 @@ from felizjueves.k_levers.seams import (
     KHooks,
     ncart,
 )
-from felizjueves.kernel import builder_plan, lever_notes, split
-from felizjueves.kernel import launch_shape as _j_launch_shape
-from felizjueves.recurrence import (
+from felizjueves.mmd.kernel import builder_plan, lever_notes, split
+from felizjueves.mmd.kernel import launch_shape as _j_launch_shape
+from felizjueves.mmd.recurrence import (
     PQ_PARAMS,
     THETA,
     fundamental_prelude,

@@ -8,7 +8,7 @@ golden says only that the text has not moved; test/test_kernel_fused.py is
 what says the kernels are right. Regenerate (never hand-edit), then review:
 
     PYTHONPATH=src uv run python -c "from pathlib import Path; \
-from felizjueves.kernel import build_pq_kernels, pq_spec; \
+from felizjueves.mmd.kernel import build_pq_kernels, pq_spec; \
 from felizjueves.device import SM_86, GFX1200; from felizjueves.emit import \
 cuda, hip; [(Path(f'test/golden/cuda/fused/{k.name}.cu').write_text(cuda.emit(\
 k, SM_86)), Path(f'test/golden/hip/fused/{k.name}.hip').write_text(hip.emit(\
@@ -31,7 +31,7 @@ import pytest
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.j_levers.fused import FUSED
-from felizjueves.kernel import build_pq_kernel, build_pq_kernels, pq_spec
+from felizjueves.mmd.kernel import build_pq_kernel, build_pq_kernels, pq_spec
 
 GOLDEN = Path(__file__).resolve().parent / "golden"
 BACKENDS = {

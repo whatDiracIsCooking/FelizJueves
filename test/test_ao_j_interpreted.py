@@ -70,7 +70,7 @@ from felizjueves.ao.j import (
     coulomb_matrix_and_scale,
     jp_from_pq,
 )
-from felizjueves.kernel import split
+from felizjueves.mmd.kernel import split
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 
@@ -316,5 +316,5 @@ def test_the_adapter_does_not_reach_the_reference():
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "ir.interp" in seen and "kernel" in seen
+    assert "ir.interp" in seen and "mmd.kernel" in seen
     assert not [e for e in seen if _under(e, "reference")]

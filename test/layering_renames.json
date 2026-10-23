@@ -4,5 +4,11 @@
     "lever_ladder": "ir.lever_ladder",
     "lower": "ir.lower",
     "passes": "ir.passes"
+  },
+  {
+    "ao.hermite": "mmd.hermite",
+    "e_fragment": "mmd.e_fragment",
+    "kernel": "mmd.kernel",
+    "recurrence": "mmd.recurrence"
   }
 ]

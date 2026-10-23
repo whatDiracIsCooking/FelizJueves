@@ -51,10 +51,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from felizjueves.ao.hermite import e_axis
 from felizjueves.ao.one_electron import matrix
 from felizjueves.ao.pairs import dress
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.mmd.hermite import e_axis
 
 
 def kinetic_axis(s: Sequence[float], j: int, beta: float) -> float:

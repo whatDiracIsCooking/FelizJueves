@@ -43,7 +43,6 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import FAST_L_MAX, by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves.ao.metric import (
     class_block,
     metric_block_and_scale,
@@ -71,9 +70,10 @@ from felizjueves.kernel_metric import (
     metric_spec,
     quartet_spec,
 )
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import node_name
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental, pq
 from felizjueves.spec import Operator, Spec, Target

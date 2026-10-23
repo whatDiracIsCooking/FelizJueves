@@ -55,9 +55,7 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves.ao.density import epair
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.potential import potential_block
 from felizjueves.ao.shell import Basis, Shell
@@ -91,9 +89,11 @@ from felizjueves.kernel_v import (
     v_spec,
 )
 from felizjueves.launch import per_axis
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.hermite import hermite_order
+from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_body
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
-from felizjueves.recurrence import fundamental_prelude, recurrence_body
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Operator, Spec, Target

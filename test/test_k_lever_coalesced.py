@@ -60,13 +60,13 @@ from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import LANE0
 from felizjueves.k_levers import coalesced, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
-from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import (
     build_k_kernel,
     build_k_kernels,
     launch_shape,
     shared_bytes,
 )
+from felizjueves.mmd.kernel import k_spec
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -353,7 +353,7 @@ def test_composed_with_split_at_three_batches() -> None:
 
 def test_runs_are_one_run_of_the_whole_block_at_every_ladder_l() -> None:
     from felizjueves.k_levers.seams import KContext
-    from felizjueves.kernel import builder_plan
+    from felizjueves.mmd.kernel import builder_plan
     for L in range(5):
         spec = dataclasses.replace(k_spec(L), levers=(coalesced.NAME,))
         (dag,) = builder_plan(spec).dags

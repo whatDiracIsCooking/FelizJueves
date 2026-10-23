@@ -14,7 +14,7 @@ import pytest
 
 from felizjueves import measured_store, ridge
 from felizjueves.device import SM_86, MeasuredKey
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 
 PROV = {"toolchain": "nvcc 13.0", "arch": "sm_86", "host": "h", "gpu": "g",
         "date": "2026-10-12", "counter_tool": "ncu x", "counter_unit": "u",

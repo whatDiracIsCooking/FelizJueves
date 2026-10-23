@@ -19,8 +19,8 @@ against this file, not the other way round.
   `cost.py`'s `PlanCost`, composed by `pipeline.plan(spec)`. They compute
   `[JEngine, v2, Tables 1–3]`, scored on the `literal` and `searched` boards.
 - *Step 4, the schedule*, is `plan/schedule.py`; the recurrences below are
-  built from it as IR by `src/felizjueves/recurrence.py`.
-- *Step 5, the kernel*, is `build_pq_kernel` in `src/felizjueves/kernel.py` —
+  built from it as IR by `src/felizjueves/mmd/recurrence.py`.
+- *Step 5, the kernel*, is `build_pq_kernel` in `src/felizjueves/mmd/kernel.py` —
   the `[p|q]` contract below, `J_p = Σ_q [p|q] D_q` — spelled for each vendor
   by `emit/cuda.py` and `emit/hip.py`, for `n_batches = 1` with a plain
   (non-atomic) write-back; `build_pq_kernel` refuses a split class.
@@ -278,11 +278,11 @@ against a threshold `τ`.
 ## The `E` transform
 
 **Status: implemented host-side, and generated as device code (milestone
-7).** The host reference is `src/felizjueves/ao/hermite.py` (`e_axis`,
+7).** The host reference is `src/felizjueves/mmd/hermite.py` (`e_axis`,
 `e_block`), checked by `test/test_ao_hermite.py`; the dressing is
 `ao.pairs.dress`, and it stays host-side; the host bra back-transform
 `J_ab = Σ_p E_p^{ab} J_p` is in `ao/j.py`. The device form is
-`src/felizjueves/e_fragment.py` (#152): an `ir.Fragment` of this recurrence,
+`src/felizjueves/mmd/e_fragment.py` (#152): an `ir.Fragment` of this recurrence,
 undressed, bitwise `==` `e_block` for every class (ss) through (ff) when
 interpreted (`test/test_e_fragment.py`). It is inlined into the `DQ` and `JAB`
 kernels, which ran on both cards ("The J chain as device code" below).

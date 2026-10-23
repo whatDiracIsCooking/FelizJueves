@@ -59,7 +59,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     Assign,
     Call,
@@ -82,9 +81,10 @@ from felizjueves.ir import (
     WarpReduce,
 )
 from felizjueves.ir.passes import atomize as _atomize
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import node_name
 from felizjueves.spec import Spec
 
 __all__ = [

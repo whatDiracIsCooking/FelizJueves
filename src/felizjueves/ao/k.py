@@ -257,8 +257,8 @@ from dataclasses import dataclass, replace
 
 from felizjueves.ao.density import EPair, checked_density, checked_tau, epair
 from felizjueves.ao.eri import eri_block
-from felizjueves.ao.hermite import e_block, hermite_order
 from felizjueves.ao.shell import Basis, cartesians
+from felizjueves.mmd.hermite import e_block, hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]

@@ -42,7 +42,6 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import e_fragment as ef
 from felizjueves import k_levers, levers
 from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
@@ -70,6 +69,7 @@ from felizjueves.kernel_k import (
     launch_shape,
     shared_bytes,
 )
+from felizjueves.mmd import e_fragment as ef
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 

@@ -34,8 +34,8 @@ import test_k_lever_coalesced_device as cd
 from test_f_lever_batched_vrr_device import compile_unit
 
 from felizjueves import measured
-from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import build_k_kernels
+from felizjueves.mmd.kernel import k_spec
 from felizjueves.spec import Operator, Spec, Target
 
 SHUFFLE = "shuffle"

@@ -154,7 +154,6 @@ from tiers import FAST_L_MAX, by_l, is_fast
 
 from felizjueves.ao.density import epair
 from felizjueves.ao.drive import _chain_plan, _unique_pairs
-from felizjueves.ao.hermite import _raise, e_block, hermite_order
 from felizjueves.ao.j import (
     cart_pairs,
     coulomb_matrix_and_scale,
@@ -168,6 +167,7 @@ from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
 from felizjueves.launch import LaunchPlan, bound_value, walk
+from felizjueves.mmd.hermite import _raise, e_block, hermite_order
 from felizjueves.reference.pq import pq as ref_pq
 
 PART1 = "hf_ccpvtz"

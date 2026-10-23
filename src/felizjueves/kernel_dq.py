@@ -94,14 +94,6 @@ A builder: vendor-neutral IR, no `reference/`, no interpreter, no AO layer.
 
 from __future__ import annotations
 
-from felizjueves.e_fragment import (
-    E_ARRAY,
-    HALF_INV_ZETA,
-    ZETA,
-    block_fragment,
-    block_rows,
-    block_shape,
-)
 from felizjueves.ir import (
     Assign,
     Call,
@@ -120,6 +112,14 @@ from felizjueves.ir import (
     Scalar,
     Stmt,
     Var,
+)
+from felizjueves.mmd.e_fragment import (
+    E_ARRAY,
+    HALF_INV_ZETA,
+    ZETA,
+    block_fragment,
+    block_rows,
+    block_shape,
 )
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target

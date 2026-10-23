@@ -46,17 +46,17 @@ from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import lever_ladder
-from felizjueves.kernel import (
+from felizjueves.kernel_dq import build_dq_kernel, dq_name
+from felizjueves.kernel_eri3 import eri3_name
+from felizjueves.kernel_jab import build_jab_kernel, jab_name
+from felizjueves.kernel_k import build_k_kernel, build_k_kernels
+from felizjueves.mmd.kernel import (
     build_pq_kernel,
     build_pq_kernels,
     k_spec,
     pq_name,
     pq_spec,
 )
-from felizjueves.kernel_dq import build_dq_kernel, dq_name
-from felizjueves.kernel_eri3 import eri3_name
-from felizjueves.kernel_jab import build_jab_kernel, jab_name
-from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}

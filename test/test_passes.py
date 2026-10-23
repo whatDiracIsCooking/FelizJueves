@@ -37,15 +37,15 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Launch, interpret
 from felizjueves.ir.passes import ATOMIC_NOTE, LANE0, atomize, split_axes, transpose
-from felizjueves.kernel import (
+from felizjueves.kernel_dq import build_dq_kernel
+from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernel,
     ket_functions,
     launch_shape,
     pq_spec,
 )
-from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.reference.boys import boys
 
 

@@ -11,7 +11,7 @@ CUDA golden (`build_pq_kernel(4)`, (2,0|2,0), one batch), for `GFX1200`, so the
 two can be read side by side. After an intended change, regenerate it (never
 hand-edit) and review the diff:
 
-    PYTHONPATH=src uv run python -c "from felizjueves.kernel import \
+    PYTHONPATH=src uv run python -c "from felizjueves.mmd.kernel import \
 build_pq_kernel; from felizjueves.device import GFX1200; from \
 felizjueves.emit.hip import emit; print(emit(build_pq_kernel(4), GFX1200), \
 end='')" > test/golden/hip/pq_L4_p2_q2.hip
@@ -31,7 +31,7 @@ from test_ir import synthetic_inline_kernel
 from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit import cuda, hip
 from felizjueves.emit.__main__ import one_e_kernels
-from felizjueves.kernel import build_pq_kernel
+from felizjueves.mmd.kernel import build_pq_kernel
 
 L = 4
 GOLDEN = Path(__file__).resolve().parent / "golden" / "hip" / "pq_L4_p2_q2.hip"

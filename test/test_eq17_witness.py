@@ -24,11 +24,11 @@ import pytest
 from tiers import FAST_L_MAX
 
 from felizjueves.ir import Factor, Term, Var
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
+from felizjueves.mmd.recurrence import node_name, reduction
 from felizjueves.plan.dag import BatchDag, Node
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.sieve import NO_SIEVE
-from felizjueves.recurrence import node_name, reduction
 
 # eq. 17's unit vectors, corrected (docs/implementation/j_engine.md, "Two
 # defects in the source"). The printed 1y is (1,1,0).
