@@ -89,14 +89,14 @@ from test_kernel_device import (
     _toolchain,
 )
 
-from felizjueves import kernel_f as KF
-from felizjueves.ao import fock
 from felizjueves.eri.eri import eri_block_and_scale
+from felizjueves.eri.fock import fock
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.walk_f import quartets
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
-from felizjueves.launch_f import f_launches
 from felizjueves.reference.pq import pq
-from felizjueves.walk_f import quartets
 
 PART1 = "h2o_ccpvdz"  # its plan reaches all 21 classes
 DEFAULT_L = 2  # the default tier's ceiling on la + lb + lc + ld (the issue)

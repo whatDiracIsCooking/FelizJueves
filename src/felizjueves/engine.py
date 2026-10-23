@@ -179,10 +179,10 @@ from typing import Protocol, runtime_checkable
 from felizjueves.ao.shell import Shell
 from felizjueves.eri import eri as mmd_eri
 from felizjueves.eri import hgp_drive
+from felizjueves.eri.fock.kernel_f import build_f_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel
 from felizjueves.ir import Kernel
-from felizjueves.kernel_f import build_f_kernel
 from felizjueves.kernel_k import build_k_kernel
 from felizjueves.mmd.kernel import build_pq_kernel
 from felizjueves.spec import Engine as Recurrence
@@ -230,11 +230,11 @@ class Engine(Protocol):
 # two builders accept.
 MEMBERS: dict[str, tuple[str, str]] = {
     "name": ("engine:Mmd", "engine:Hgp"),
-    "target": ("mmd.kernel:build_pq_kernel", "kernel_f:build_f_kernel"),
+    "target": ("mmd.kernel:build_pq_kernel", "eri.fock.kernel_f:build_f_kernel"),
     "eri": ("eri.eri:eri_block", "eri.hgp_drive:eri_block"),
     "eri_and_scale": ("eri.eri:eri_block_and_scale",
                       "eri.hgp_drive:eri_block_and_scale"),
-    "kernel": ("mmd.kernel:build_pq_kernel", "kernel_f:build_f_kernel"),
+    "kernel": ("mmd.kernel:build_pq_kernel", "eri.fock.kernel_f:build_f_kernel"),
     "j": ("mmd.kernel:build_pq_kernel", "eri.hjk.kernel_hj:build_hj_kernel"),
     "k": ("kernel_k:build_k_kernel", "eri.hjk.kernel_hk:build_hk_kernel"),
 }

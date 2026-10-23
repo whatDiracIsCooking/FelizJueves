@@ -43,11 +43,11 @@ import pytest
 
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.fock.kernel_f import MAX_PRIM_PAIRS, REC
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
 from felizjueves.hgp import orbits
 from felizjueves.ir import Raw, walk
-from felizjueves.kernel_f import MAX_PRIM_PAIRS, REC
 from felizjueves.performance import measured, measured_store
 from felizjueves.performance.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.spec import Target
@@ -333,7 +333,7 @@ def test_the_measured_driver_refuses_an_hgp_jk_cell() -> None:
 
 
 def test_an_f_row_is_still_admitted() -> None:
-    from felizjueves.kernel_f import f_class_spec
+    from felizjueves.eri.fock.kernel_f import f_class_spec
 
     mk = MeasuredKey(f_class_spec(0, 0, 0, 0), SM_86, "nvcc 13.0")
     got = measured_store.merge(

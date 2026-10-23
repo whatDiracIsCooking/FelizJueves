@@ -51,9 +51,9 @@ from test_f_lever_batched_vrr_device import compile_unit
 from test_fock_build import LIBCINT_TOL, TOL, molecule, sweep, walk
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import batched_vrr as bv
-from felizjueves.f_levers import sliced_hrr as sh
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.levers import batched_vrr as bv
+from felizjueves.eri.fock.levers import sliced_hrr as sh
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import unit_name

@@ -76,6 +76,7 @@ from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_reference, jp_from_p
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri import hgp_drive as HD
 from felizjueves.eri.eri import eri_block_and_scale as mmd_eri
+from felizjueves.eri.fock.kernel_f import PairRec, PrimRec, pack
 from felizjueves.eri.hjk import kernel_hj as HJ
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp import recurrence as R
@@ -95,7 +96,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_f import PairRec, PrimRec, pack
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq

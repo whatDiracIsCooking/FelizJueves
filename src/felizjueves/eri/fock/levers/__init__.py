@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.f_levers import (
+from felizjueves.eri.fock.levers import (
     batched_vrr,
     block_fab,
     etr,
@@ -37,8 +37,8 @@ from felizjueves.f_levers import (
     sub_slice,
     subdag_vrr,
 )
-from felizjueves.f_levers import mixed as fmixed
-from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
+from felizjueves.eri.fock.levers import mixed as fmixed
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.spec import Spec
 
 __all__ = ["REGISTRY", "hooks_for"]

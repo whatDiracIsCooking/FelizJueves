@@ -113,10 +113,10 @@ import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from felizjueves import kernel_f as KF
-from felizjueves import kernel_f_scatter as FS
 from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import kernel_f_scatter as FS
 from felizjueves.ir import Kernel
 from felizjueves.spec import Target
 

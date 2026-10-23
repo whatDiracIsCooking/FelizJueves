@@ -48,9 +48,9 @@ from tiers import by_l, is_fast, split_by_l
 
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.fock.kernel_f import MAX_PRIM_PAIRS, REC, build_f_kernel
 from felizjueves.hgp import vrr
 from felizjueves.ir import Raw, walk
-from felizjueves.kernel_f import MAX_PRIM_PAIRS, REC, build_f_kernel
 from felizjueves.performance.device import GFX1200, SM_86
 
 ROOT = Path(__file__).resolve().parent.parent

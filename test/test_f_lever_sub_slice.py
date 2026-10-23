@@ -44,19 +44,20 @@ import test_f_lever_slim_fock as tsf
 import test_kernel_f as tk
 from tiers import is_fast, split_by_l
 
-from felizjueves import f_levers, levers
-from felizjueves import kernel_f as KF
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.f_levers import batched_vrr as bv
-from felizjueves.f_levers import block_fab, ket_break, seams, struct_reads
-from felizjueves.f_levers import sliced_hrr as sh
-from felizjueves.f_levers import slim_fock as sf
-from felizjueves.f_levers import sub_slice as ss
-from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.fock.levers import batched_vrr as bv
+from felizjueves.eri.fock.levers import block_fab, ket_break, seams, struct_reads
+from felizjueves.eri.fock.levers import sliced_hrr as sh
+from felizjueves.eri.fock.levers import slim_fock as sf
+from felizjueves.eri.fock.levers import sub_slice as ss
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import hrr, vrr
 from felizjueves.ir import AtomicAdd, Decl, For, walk
-from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.spec import Operator, Spec, Target
 
 NAME = ss.NAME
@@ -374,7 +375,7 @@ def test_every_degeneracy_case_within_the_cap_equals_the_sweep(
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, \

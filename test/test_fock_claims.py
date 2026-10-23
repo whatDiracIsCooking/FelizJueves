@@ -30,7 +30,7 @@ import numpy as np
 import pytest
 import test_fock_build as FB
 
-from felizjueves.launch_f import (
+from felizjueves.eri.fock.launch_f import (
     f_launches,
     magnitude_index,
     prelaunch_screened,

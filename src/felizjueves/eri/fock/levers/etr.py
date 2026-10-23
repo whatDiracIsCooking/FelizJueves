@@ -120,7 +120,7 @@ from collections.abc import Mapping
 from functools import cache
 from types import MappingProxyType
 
-from felizjueves.f_levers.seams import AB_SH, KAB, KCD, REC, FContext, FHooks
+from felizjueves.eri.fock.levers.seams import AB_SH, KAB, KCD, REC, FContext, FHooks
 from felizjueves.hgp import cost as _cost
 from felizjueves.hgp import etr as _etr
 from felizjueves.hgp import vrr as _vrr
@@ -325,7 +325,7 @@ def choice(cls: AmClass) -> str:
 ABOUT = (
     "Per-class arbitration of the F kernel's VRR side between the ket "
     "cascade (hgp.vrr, [Fock] eqs 25-26) and the electron-transfer "
-    "relation (hgp.etr, #354), from src/felizjueves/f_levers/etr.py. Rule: "
+    "relation (hgp.etr, #354), from src/felizjueves/eri/fock/levers/etr.py. Rule: "
     + RULE + ". peak_margin and x_margin are cascade minus ETR (positive: "
     "the ETR saves); opinions_agree is whether the two point the same way; "
     "rule is the model's choice. accuracy is the ETR forced, worst error / "

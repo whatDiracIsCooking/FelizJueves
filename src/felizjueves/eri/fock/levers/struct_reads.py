@@ -49,8 +49,8 @@ import dataclasses
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from felizjueves.f_levers import seams
-from felizjueves.f_levers.seams import FContext, FHooks
+from felizjueves.eri.fock.levers import seams
+from felizjueves.eri.fock.levers.seams import FContext, FHooks
 from felizjueves.ir import Expr, Member, Record, Scalar
 from felizjueves.spec import Spec
 

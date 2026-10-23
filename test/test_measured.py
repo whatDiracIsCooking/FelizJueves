@@ -2019,7 +2019,7 @@ def test_the_f_ladder_is_hgp_vrr_classes_and_every_class_is_recorded(
 
 
 def test_an_f_cell_is_built_by_kernel_f_and_takes_no_lever() -> None:
-    from felizjueves.kernel_f import build_f_kernel
+    from felizjueves.eri.fock.kernel_f import build_f_kernel
     s = F_DEFAULT[1]
     assert measured.cell_kernels(s) == (build_f_kernel(s),)
     with pytest.raises(ValueError, match="no lever is declared for an F"):

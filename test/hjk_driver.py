@@ -66,7 +66,7 @@ from fock_driver import run_on_card as run_on_card  # re-exported: one parser
 from plan_driver import UPLOAD_INT, Program, _unit
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves import kernel_f as KF
+from felizjueves.eri.fock import kernel_f as KF
 from felizjueves.eri.hjk import kernel_hj as HJ
 from felizjueves.eri.hjk import kernel_hk as HK
 from felizjueves.eri.hjk import walk_hjk as W

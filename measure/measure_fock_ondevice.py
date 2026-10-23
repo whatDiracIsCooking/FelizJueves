@@ -94,7 +94,7 @@ from test_kernel_device import (
 )
 from tiers import is_fast
 
-from felizjueves import kernel_f as KF
+from felizjueves.eri.fock import kernel_f as KF
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.performance import gate, measured

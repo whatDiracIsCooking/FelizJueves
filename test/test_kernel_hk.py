@@ -79,6 +79,7 @@ from tiers import split_by_l
 
 from felizjueves.ao.density import epair
 from felizjueves.ao.k import exchange_matrix_reference, k_quartet
+from felizjueves.eri.fock.kernel_f import pack
 from felizjueves.eri.hjk import kernel_hk as HK
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp import recurrence as R
@@ -98,7 +99,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_f import pack
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Engine, Operator, Spec, Target, lever_provenance

@@ -48,14 +48,16 @@ import pytest
 import test_kernel_f as tk
 from tiers import split_by_l
 
-from felizjueves import f_levers, levers
-from felizjueves import kernel_f as KF
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import EmitError, record_struct
-from felizjueves.f_levers import seams
-from felizjueves.f_levers import struct_reads as sr
-from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.fock.levers import seams
+from felizjueves.eri.fock.levers import struct_reads as sr
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import vrr
 from felizjueves.ir import (
     Assign,
@@ -77,7 +79,6 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
-from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
@@ -504,7 +505,7 @@ def test_a_member_is_validated_on_construction() -> None:
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, ('struct-reads',))); \

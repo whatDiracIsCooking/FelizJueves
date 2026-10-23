@@ -41,8 +41,8 @@ from test_fock_baseline import (
 from tiers import by_l
 
 from felizjueves.emit import cuda
+from felizjueves.eri.fock.kernel_f import build_f_kernel
 from felizjueves.hgp import vrr
-from felizjueves.kernel_f import build_f_kernel
 from felizjueves.performance.device import SM_86
 from felizjueves.performance.measured import parse_ptxas
 

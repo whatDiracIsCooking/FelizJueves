@@ -104,15 +104,15 @@ import test_k_lever_mixed_device as kmd
 import test_kernel_device as tkd
 from plan_driver import compile_checked
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import block_fab, ket_break, scatter
-from felizjueves.f_levers import mixed as fmixed
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.levers import block_fab, ket_break, scatter
+from felizjueves.eri.fock.levers import mixed as fmixed
+from felizjueves.eri.fock.walk_f import dominating_factors
 from felizjueves.j_levers import mixed as jmixed
 from felizjueves.k_levers import mixed as kmixed
 from felizjueves.performance import gate, measured, measured_store
 from felizjueves.performance.device import Arch
 from felizjueves.spec import Spec, Target
-from felizjueves.walk_f import dominating_factors
 
 LEVERS_ENV = "FJ_WALLCLOCK_LEVERS"
 ARMS_ENV = "FJ_WALLCLOCK_ARMS"

@@ -91,7 +91,7 @@ from collections.abc import Mapping
 from functools import cache
 from types import MappingProxyType
 
-from felizjueves.f_levers.seams import KAB, KCD, FContext, FHooks
+from felizjueves.eri.fock.levers.seams import KAB, KCD, FContext, FHooks
 from felizjueves.hgp import hrr as _hrr
 from felizjueves.hgp import vrr as _vrr
 from felizjueves.hgp.recurrence import boundary_order, vrr_name

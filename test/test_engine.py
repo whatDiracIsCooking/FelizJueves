@@ -35,7 +35,7 @@ from test_hgp_eri import CLASSES, TOL, _fixture, _name, _quartet, _shells, pick
 from tiers import split_by_l
 
 import felizjueves.engine as E
-from felizjueves.ao.fock import coulomb_exchange_reference
+from felizjueves.eri.fock.fock import coulomb_exchange_reference
 from felizjueves.ir import Kernel
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq

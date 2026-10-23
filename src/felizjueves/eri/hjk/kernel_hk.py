@@ -80,6 +80,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from felizjueves.eri.fock.kernel_f import MAX_PRIM_PAIRS, REC
 from felizjueves.eri.hjk.kernel_hj import (
     _AO,
     _DERIVED,
@@ -144,7 +145,6 @@ from felizjueves.ir import (
     Weighted,
     walk,
 )
-from felizjueves.kernel_f import MAX_PRIM_PAIRS, REC
 from felizjueves.spec import Engine, Operator, Spec, Target, lever_provenance
 
 __all__ = [

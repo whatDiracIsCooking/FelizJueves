@@ -80,7 +80,7 @@ names and flags -- and `ctx.hooks`, so a default calls its siblings through
 the COMPOSED set (a `field` override is seen by every default that reads a
 record; a `boundary_read` override by the default `hrr`).
 
-A LEVER IS A MODULE: `felizjueves/f_levers/<name>.py` exposing
+A LEVER IS A MODULE: `felizjueves/eri/fock/levers/<name>.py` exposing
 `apply(hooks, spec) -> FHooks` (`dataclasses.replace` of the hooks it moves),
 registered by name in `f_levers.REGISTRY`. `kernel_f` resolves a spec's
 kernel-body levers through `f_levers.hooks_for` and never changes for one.

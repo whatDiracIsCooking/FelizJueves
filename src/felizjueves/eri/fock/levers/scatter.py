@@ -76,8 +76,8 @@ from __future__ import annotations
 
 import dataclasses
 
-from felizjueves.f_levers import block_fab
-from felizjueves.f_levers.seams import BLOCKS, FOCK, FContext, FHooks
+from felizjueves.eri.fock.levers import block_fab
+from felizjueves.eri.fock.levers.seams import BLOCKS, FOCK, FContext, FHooks
 from felizjueves.hgp import vrr as _vrr
 from felizjueves.ir import (
     Assign,

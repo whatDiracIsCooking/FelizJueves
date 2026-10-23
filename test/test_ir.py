@@ -222,9 +222,9 @@ def test_every_hgp_dag_term_is_a_term_of_the_vocabulary() -> None:
 def _built_kernels() -> list[Kernel]:
     """One kernel of every family the generator builds today, at a size that
     exercises every factor it can use."""
+    from felizjueves.eri.fock.kernel_f import build_f_kernel
     from felizjueves.hgp.recurrence import build_hrr_kernel, build_vrr_kernel
     from felizjueves.kernel_dq import build_dq_kernel
-    from felizjueves.kernel_f import build_f_kernel
     from felizjueves.kernel_jab import build_jab_kernel
     from felizjueves.kernel_k import build_k_kernel
     from felizjueves.mmd.kernel import build_pq_kernel

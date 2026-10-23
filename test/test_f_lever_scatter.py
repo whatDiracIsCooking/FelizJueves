@@ -55,17 +55,19 @@ import test_fock_build as tfb
 import test_kernel_f as tk
 from test_f_lever_block_fab import _gamma, _Recorder
 
-from felizjueves import f_levers, launch_f, levers, walk_f
-from felizjueves import kernel_f as KF
-from felizjueves import kernel_f_scatter as FS
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import cuda, hip
-from felizjueves.f_levers import block_fab, scatter
-from felizjueves.f_levers.seams import DEFAULT_HOOKS, FHooks
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock import kernel_f_scatter as FS
+from felizjueves.eri.fock import launch_f, walk_f
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock.launch_f import f_launches, launch_footprint
+from felizjueves.eri.fock.levers import block_fab, scatter
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS, FHooks
 from felizjueves.hgp import vrr
 from felizjueves.ir import AtomicAdd, Barrier, Index, Kernel, Lit, walk
 from felizjueves.ir.interp import InterpError
-from felizjueves.launch_f import f_launches, launch_footprint
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
@@ -422,8 +424,8 @@ def test_a_screened_scatter_walk_is_the_literal_walk(name, tau, n,
 # Regenerate (never hand-edit):
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
-#   from felizjueves.kernel_f_scatter import build_scatter_kernel; \
+#   from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec; \
+#   from felizjueves.eri.fock.kernel_f_scatter import build_scatter_kernel; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   ks = [build_f_kernel(f_class_spec(*c, ('scatter',))) for c in \

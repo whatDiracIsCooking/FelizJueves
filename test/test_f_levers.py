@@ -26,16 +26,16 @@ import pytest
 
 from felizjueves import levers
 from felizjueves.emit import cuda, hip
-from felizjueves.hgp import vrr
-from felizjueves.ir import Note
-from felizjueves.ir.lower import LEVERS as LOWERING
-from felizjueves.kernel_f import (
+from felizjueves.eri.fock.kernel_f import (
     F_NO_OUTER_LAYER,
     build_f_kernel,
     counted,
     f_class_spec,
     kernel_counts,
 )
+from felizjueves.hgp import vrr
+from felizjueves.ir import Note
+from felizjueves.ir.lower import LEVERS as LOWERING
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.pipeline import TUNED
 from felizjueves.plan.sieve import NO_SIEVE

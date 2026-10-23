@@ -1,6 +1,6 @@
 """`F` against libcint: `vj` and `vk` from one fixture pair (#280).
 
-The two-electron Fock matrix `G = J - K/2` of `felizjueves.ao.fock` (#275,
+The two-electron Fock matrix `G = J - K/2` of `felizjueves.eri.fock.fock` (#275,
 every ordered quartet, weight 1, no symmetry) against PySCF's `vj - vk/2`,
 combined from the tracked `<m>_j` / `<m>_k` fixtures through the manifest's
 named oracle quantity, `manifest.fock_pair(m).two_electron()`. No new fixture,
@@ -41,9 +41,9 @@ from oracle import basis as ob
 from oracle import manifest
 from oracle.manifest import FixtureError
 
-from felizjueves.ao import fock
-from felizjueves.ao.fock import coulomb_exchange_reference
 from felizjueves.eri.eri import eri_block_and_scale
+from felizjueves.eri.fock import fock
+from felizjueves.eri.fock.fock import coulomb_exchange_reference
 from felizjueves.reference.pq import pq
 
 LIBCINT_TOL = 1e-12

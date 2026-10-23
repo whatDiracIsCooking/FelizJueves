@@ -62,8 +62,8 @@ from __future__ import annotations
 
 import dataclasses
 
-from felizjueves.f_levers import batched_vrr as _bv
-from felizjueves.f_levers.seams import FContext, FHooks
+from felizjueves.eri.fock.levers import batched_vrr as _bv
+from felizjueves.eri.fock.levers.seams import FContext, FHooks
 from felizjueves.hgp import vrr as _vrr
 from felizjueves.spec import Spec
 

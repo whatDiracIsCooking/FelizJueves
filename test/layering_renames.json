@@ -57,5 +57,26 @@
     "kernel_pair_bound": "eri.kernel_pair_bound",
     "kernel_schwarz": "eri.kernel_schwarz",
     "launch_common": "eri.launch_common"
+  },
+  {
+    "ao.fock": "eri.fock.fock",
+    "f_levers": "eri.fock.levers",
+    "f_levers.batched_vrr": "eri.fock.levers.batched_vrr",
+    "f_levers.block_fab": "eri.fock.levers.block_fab",
+    "f_levers.etr": "eri.fock.levers.etr",
+    "f_levers.ket_break": "eri.fock.levers.ket_break",
+    "f_levers.mixed": "eri.fock.levers.mixed",
+    "f_levers.scatter": "eri.fock.levers.scatter",
+    "f_levers.seams": "eri.fock.levers.seams",
+    "f_levers.sliced_hrr": "eri.fock.levers.sliced_hrr",
+    "f_levers.sliced_site_digest": "eri.fock.levers.sliced_site_digest",
+    "f_levers.slim_fock": "eri.fock.levers.slim_fock",
+    "f_levers.struct_reads": "eri.fock.levers.struct_reads",
+    "f_levers.sub_slice": "eri.fock.levers.sub_slice",
+    "f_levers.subdag_vrr": "eri.fock.levers.subdag_vrr",
+    "kernel_f": "eri.fock.kernel_f",
+    "kernel_f_scatter": "eri.fock.kernel_f_scatter",
+    "launch_f": "eri.fock.launch_f",
+    "walk_f": "eri.fock.walk_f"
   }
 ]

@@ -37,6 +37,7 @@ from tiers import by_l, is_fast, split_by_l
 
 from felizjueves import levers
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.fock.kernel_f import build_f_kernel, kernel_counts
 from felizjueves.hgp import cost as hgp_cost
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import (
@@ -76,7 +77,6 @@ from felizjueves.ir.lower import (
     tiered,
 )
 from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_f import build_f_kernel, kernel_counts
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.mmd.kernel import (

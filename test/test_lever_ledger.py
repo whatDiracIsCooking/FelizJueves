@@ -20,7 +20,7 @@ from __future__ import annotations
 import pytest
 
 from felizjueves import levers
-from felizjueves.kernel_f import f_class_spec
+from felizjueves.eri.fock.kernel_f import f_class_spec
 from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.performance import leverledger, measured
 from felizjueves.performance import measured_store as store

@@ -76,7 +76,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from felizjueves.f_levers.seams import (
+from felizjueves.eri.fock.levers.seams import (
     AB_SH,
     AO_OF,
     BLOCKS,

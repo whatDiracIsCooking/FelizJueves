@@ -89,9 +89,9 @@ from collections.abc import Mapping
 from functools import cache
 from types import MappingProxyType
 
-from felizjueves.f_levers import sliced_hrr as _sh
-from felizjueves.f_levers import slim_fock as _sf
-from felizjueves.f_levers.seams import FContext, FHooks
+from felizjueves.eri.fock.levers import sliced_hrr as _sh
+from felizjueves.eri.fock.levers import slim_fock as _sf
+from felizjueves.eri.fock.levers.seams import FContext, FHooks
 from felizjueves.hgp import hrr as _hrr
 from felizjueves.hgp.vrr import AmClass, cartesians
 from felizjueves.ir import For, Lit, Note, Stmt

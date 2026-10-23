@@ -57,13 +57,13 @@ from test_fock_build import molecule, sweep
 from test_fock_build import run as interp_run
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import kernel_f as KF
-from felizjueves.f_levers import mixed
+from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.fock.launch_f import f_launches
+from felizjueves.eri.fock.levers import mixed
+from felizjueves.eri.fock.walk_f import walk_f
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import unit_name
-from felizjueves.launch_f import f_launches
-from felizjueves.walk_f import walk_f
 
 NAME = mixed.NAME
 CAP = 4

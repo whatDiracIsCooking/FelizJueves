@@ -267,6 +267,7 @@ from pathlib import Path
 from felizjueves.emit import cuda, hip
 from felizjueves.eri.density_fit.kernel_eri3 import build_eri3_kernel
 from felizjueves.eri.density_fit.kernel_metric import build_metric_kernel
+from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
@@ -275,7 +276,6 @@ from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.kernel_k import build_k_kernels
 from felizjueves.mmd.kernel import (

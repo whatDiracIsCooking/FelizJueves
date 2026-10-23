@@ -36,11 +36,13 @@ import numpy as np
 import pytest
 import test_kernel_f as tk
 
-from felizjueves import f_levers, levers
+from felizjueves import levers
 from felizjueves.ao.shell import Basis
 from felizjueves.emit import cuda, hip
-from felizjueves.f_levers import seams
-from felizjueves.f_levers.seams import DEFAULT_HOOKS, FContext, FHooks
+from felizjueves.eri.fock import levers as f_levers
+from felizjueves.eri.fock.kernel_f import Weights, build_f_kernel, f_class_spec
+from felizjueves.eri.fock.levers import seams
+from felizjueves.eri.fock.levers.seams import DEFAULT_HOOKS, FContext, FHooks
 from felizjueves.hgp import vrr
 from felizjueves.hgp.recurrence import vrr_name
 from felizjueves.ir import (
@@ -58,7 +60,6 @@ from felizjueves.ir import (
     Var,
     walk,
 )
-from felizjueves.kernel_f import Weights, build_f_kernel, f_class_spec
 from felizjueves.performance.device import GFX1200, SM_86
 
 # ---------------------------------------------------------------------------
