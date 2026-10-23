@@ -25,6 +25,9 @@
 #     ceilings      the fp64 / triad ceilings (#109)    FJ_CEILINGS_STORE
 #     kblock        the block K kernel against kernel_k,
 #                   per class on H2O/cc-pVDZ (#481)     FJ_KBLOCK_STORE
+#     scheme-ab     fused HGP F against MMD J + K, (ss|ss)
+#                   and (pp|pp) on gly5/10/15 / 6-31G   FJ_SCHEME_AB_STORE
+#                   (inputs: python -m oracle.polyglycine, PySCF)
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -74,6 +77,7 @@ SWEEPS=(
   "roofline|timed|ncu counter rows of every subgrid batch kernel -> roofline.json"
   "ceilings|timed|fp64 and triad ceilings behind the gate -> ceilings.json"
   "kblock|timed|block K kernel vs kernel_k per class (H2O/cc-pVDZ) -> kblock.json"
+  "scheme-ab|timed|fused HGP F vs MMD J+K, (ss|ss) (pp|pp), polyglycine -> scheme_ab.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -147,6 +151,8 @@ case $sweep in
                 envs=("FJ_CEILINGS_STORE=${FJ_CEILINGS_STORE:-$MEASURE_CEILINGS_STORE}") ;;
   kblock)       files=("$M/measure_kblock_device.py"); select=(-k kblock_clock)
                 envs=("FJ_KBLOCK_STORE=${FJ_KBLOCK_STORE:-$MEASURE_KBLOCK_STORE}") ;;
+  scheme-ab)    files=("$M/measure_scheme_ab.py"); select=(-k scheme_ab_clock)
+                envs=("FJ_SCHEME_AB_STORE=${FJ_SCHEME_AB_STORE:-$MEASURE_SCHEME_AB_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
                 select=(-k "not record_ceilings") ;;
