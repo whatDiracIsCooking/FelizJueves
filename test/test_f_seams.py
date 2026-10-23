@@ -38,7 +38,6 @@ import test_kernel_f as tk
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import seams
 from felizjueves.f_levers.seams import DEFAULT_HOOKS, FContext, FHooks
@@ -60,6 +59,7 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.kernel_f import Weights, build_f_kernel, f_class_spec
+from felizjueves.performance.device import GFX1200, SM_86
 
 # ---------------------------------------------------------------------------
 # 1. Byte-identity of the literal kernel, against the pre-#368 tree

@@ -22,10 +22,10 @@ from __future__ import annotations
 import dataclasses
 import json
 
-from felizjueves import batchreport
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS
 from felizjueves.mmd.kernel import pq_spec
+from felizjueves.performance import batchreport
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS
 from felizjueves.spec import Operator, Spec, Target
 
 ROWS = measured.load()
@@ -38,12 +38,14 @@ J_ENGINE = (measured.REPO / "docs" / "implementation" / "j_engine.md").read_text
 
 def test_the_data_file_is_the_report_recomputed_from_the_store() -> None:
     assert DOC == batchreport.report(ROWS), (
-        "rerun: PYTHONPATH=src uv run python -m felizjueves.batchreport --write")
+        "rerun: PYTHONPATH=src uv run python -m "
+        "felizjueves.performance.batchreport --write")
 
 
 def test_the_j_engine_tables_are_the_data_verbatim() -> None:
     assert batchreport.markdown(DOC) in J_ENGINE, (
-        "paste `python -m felizjueves.batchreport --markdown` into j_engine.md")
+        "paste `python -m felizjueves.performance.batchreport --markdown` "
+        "into j_engine.md")
 
 
 def test_lever_rows_are_not_read() -> None:

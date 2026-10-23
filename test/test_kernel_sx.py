@@ -36,7 +36,6 @@ from tiers import by_l, split_by_l
 
 from felizjueves.ao.overlap import cross_overlap_matrix
 from felizjueves.ao.pairs import overlap_bound
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import AtomicAdd, If, Intent, walk
 from felizjueves.ir.interp import Interpreter, Launch
@@ -49,6 +48,7 @@ from felizjueves.kernel_sx import (
     sx_spec,
 )
 from felizjueves.launch import XClass, XLaunch, cross_overlap_launch
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3

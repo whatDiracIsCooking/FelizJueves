@@ -28,9 +28,9 @@ from test_kernel_record_bound import (
     worst,
 )
 
-from felizjueves.device import SM_86
 from felizjueves.emit import gpu
 from felizjueves.kernel_record_bound import build_record_bound_kernel
+from felizjueves.performance.device import SM_86
 
 # One flat float64 input file, `n_rec | zeta_ab | XPA | XPB | s_ab` (the two
 # vectors interleaved [n_rec, 3]), the bounds written back raw.

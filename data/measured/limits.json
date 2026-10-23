@@ -1303,7 +1303,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.performance.kernelrank (#54)"
   },
   {
    "claim": "On gfx1200 (hipcc), KernelCost.traffic and peak_live, as the max over a split class's batch kernels, rank n_batches in the order of the worst batch kernel's spill.",
@@ -1465,7 +1465,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.performance.kernelrank (#54)"
   },
   {
    "claim": "Fewer spills -- measured, or KernelCost.traffic, which models them -- pick the fastest n_batches by wall-clock.",
@@ -1868,7 +1868,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52, wall-clock #53, re-timed behind the card gate by #93); model: lower.kernel_cost via felizjueves.performance.kernelrank (#54)"
   },
   {
    "claim": "With n_batches = 12 added to the subgrid (#60), fewer spills still pick the fastest n_batches on the near-T input at L 16 on sm_86 -- the one (L, arch, input) where the spill win WAS the fastest over b in {1, 3, 6, 9}.",
@@ -1918,7 +1918,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52 and #60, wall-clock #53 and #60, re-timed behind the card gate by #93); via felizjueves.kernelrank (#54)"
+   "source": "[measured] data/measured/kernels.json, the measured.SUBGRID rows (compile side #52 and #60, wall-clock #53 and #60, re-timed behind the card gate by #93); via felizjueves.performance.kernelrank (#54)"
   },
   {
    "claim": "KernelCost.traffic, summed over a split class's batch kernels, picks the batch count the wall-clock recommends, per (L, arch) and input (#115's cross-read).",
@@ -2123,7 +2123,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.performance.crossread (#115), table in data/measured/crossread.json"
   },
   {
    "claim": "On the wide-T input -- the input the counters were taken on -- the batch count the clock prefers is the first compute-bound one: the paper's implicit mechanism, that crossing the ridge is why the clock improves.",
@@ -2154,7 +2154,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.performance.crossread (#115), table in data/measured/crossread.json"
   },
   {
    "claim": "On the near-T input the batch count the clock prefers is the first compute-bound one.",
@@ -2203,7 +2203,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.performance.crossread (#115), table in data/measured/crossread.json"
   },
   {
    "claim": "KernelCost.traffic's pick contains the first compute-bound batch count on sm_86.",
@@ -2319,7 +2319,7 @@
      }
     ]
    },
-   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.crossread (#115), table in data/measured/crossread.json"
+   "source": "[measured] data/measured/kernels.json (compile side and wall-clock, #52/#60/#93), data/measured/roofline.json (#112, sm_86 counter rows) and data/measured/ceilings.json (#109, the ridge); via felizjueves.performance.crossread (#115), table in data/measured/crossread.json"
   }
  ]
 }

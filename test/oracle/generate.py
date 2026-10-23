@@ -7,8 +7,8 @@
 `--check` rebuilds in memory and compares against what is tracked, the same
 comparison the `oracle`-marked test makes. Exit 0 agree / written, 1 drift,
 2 could not run (PySCF absent -- `uv sync --group oracle`). The shape is
-`felizjueves.measured --remeasure`'s: one command rewrites the data file, and
-the file carries who wrote it.
+`felizjueves.performance.measured --remeasure`'s: one command rewrites the data
+file, and the file carries who wrote it.
 
 WHAT A FIXTURE IS NOT: the truth. It records what libcint computed, with the
 versions, host and date in its provenance block. A drift is news about PySCF
@@ -601,7 +601,7 @@ CASES.update({
 
 
 def _host() -> str:
-    # The same marking felizjueves.measured uses: a container's hostname is
+    # The same marking felizjueves.performance.measured uses: a container's hostname is
     # its id, not the box's.
     name = socket.gethostname()
     return f"{name} (container)" if Path("/.dockerenv").exists() else name

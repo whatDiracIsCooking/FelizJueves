@@ -11,8 +11,9 @@ says the kernels are right. Regenerate (never hand-edit), then review:
 
     PYTHONPATH=src uv run python -c "from pathlib import Path; \
 from felizjueves.mmd.kernel import build_pq_kernels, pq_spec; \
-from felizjueves.device import SM_86, GFX1200; from felizjueves.emit import \
-cuda, hip; [(Path(f'test/golden/cuda/mixed/{k.name}.cu').write_text(cuda.emit(\
+from felizjueves.performance.device import SM_86, GFX1200; \
+from felizjueves.emit import cuda, hip; \
+[(Path(f'test/golden/cuda/mixed/{k.name}.cu').write_text(cuda.emit(\
 k, SM_86)), Path(f'test/golden/hip/mixed/{k.name}.hip').write_text(hip.emit(\
 k, GFX1200))) for n in (1, 3) for k in build_pq_kernels(pq_spec(4, \
 ('mixed',), n))]"
@@ -30,11 +31,11 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.j_levers.fused import FUSED
 from felizjueves.j_levers.mixed import MIXED
 from felizjueves.mmd.kernel import build_pq_kernel, build_pq_kernels, pq_spec
+from felizjueves.performance.device import GFX1200, SM_86
 
 GOLDEN = Path(__file__).resolve().parent / "golden"
 BACKENDS = {

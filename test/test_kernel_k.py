@@ -486,7 +486,7 @@ def test_the_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in ("reference", "ao", "ir.interp", "emit", "device"):
+    for banned in ("reference", "ao", "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if tl._under(e, banned))
         assert not hit, f"kernel_k reaches {hit}"
     assert {"mmd.e_fragment", "mmd.recurrence", "mmd.kernel"} <= seen

@@ -10,5 +10,20 @@
     "e_fragment": "mmd.e_fragment",
     "kernel": "mmd.kernel",
     "recurrence": "mmd.recurrence"
+  },
+  {
+    "asym": "performance.asym",
+    "batchreport": "performance.batchreport",
+    "ceilings": "performance.ceilings",
+    "crossread": "performance.crossread",
+    "device": "performance.device",
+    "dispatch": "performance.dispatch",
+    "gate": "performance.gate",
+    "kernelrank": "performance.kernelrank",
+    "leverledger": "performance.leverledger",
+    "measured": "performance.measured",
+    "measured_store": "performance.measured_store",
+    "planrank": "performance.planrank",
+    "ridge": "performance.ridge"
   }
 ]

@@ -53,7 +53,6 @@ from felizjueves import ir
 from felizjueves.ao.kinetic import kinetic_axis
 from felizjueves.ao.pairs import dress, primitive_pairs
 from felizjueves.ao.shell import Shell, cartesians
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
     Assign,
@@ -76,6 +75,7 @@ from felizjueves.ir import (
 from felizjueves.ir.interp import interpret, interpret_fragment
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.hermite import e_axis, e_block, hermite_order
+from felizjueves.performance.device import GFX1200, SM_86
 
 LMAX = 3  # (ss) through (ff)
 CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]
@@ -542,7 +542,7 @@ def test_the_probe_kernel_interprets_to_e_block() -> None:
 def test_the_cuda_golden_is_unchanged() -> None:
     # Regenerate (never hand-edit):
     #   PYTHONPATH=src:test uv run python -c "from test_e_fragment import \
-    #   e_block_probe as k; from felizjueves.device import SM_86; \
+    #   e_block_probe as k; from felizjueves.performance.device import SM_86; \
     #   from felizjueves.emit.cuda import emit; print(emit(k(), SM_86), \
     #   end='')" > test/golden/cuda/e_block_probe_11.cu
     assert cuda.emit(e_block_probe(), SM_86) == CUDA_GOLDEN.read_text()

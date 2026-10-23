@@ -1,8 +1,8 @@
 """Three instruments, one subgrid: the cross-read (#115).
 
-    python -m felizjueves.crossread             # the table, as JSON
-    python -m felizjueves.crossread --write     # rewrite CROSSREAD
-    python -m felizjueves.crossread --markdown  # the j_engine.md table
+    python -m felizjueves.performance.crossread             # the table, as JSON
+    python -m felizjueves.performance.crossread --write     # rewrite CROSSREAD
+    python -m felizjueves.performance.crossread --markdown  # the j_engine.md table
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -67,9 +67,9 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from felizjueves import batchreport, kernelrank, ridge
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS
+from felizjueves.performance import batchreport, kernelrank, ridge
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS
 from felizjueves.spec import Spec
 
 CROSSREAD = measured.REPO / "data" / "measured" / "crossread.json"
@@ -92,8 +92,9 @@ def kernelcost(spec: Spec, registers: int) -> int:
 ABOUT = ("The three ways this repo ranks a batch count (KernelCost's model, "
          "#54; the wall-clock recommendation, #56; the counters' ridge "
          "crossing, #112/#114) read against each other per (L, arch) of "
-         "measured.SUBGRID (felizjueves.crossread, #115). The choice is the "
-         "clock's, everywhere: Measured outranks Cost. Every disagreement is "
+         "measured.SUBGRID (felizjueves.performance.crossread, #115). The "
+         "choice is the clock's, everywhere: Measured outranks Cost. Every "
+         "disagreement is "
          "a StructuralLimit in data/measured/limits.json. An order, never a "
          "prediction. Recomputed by test/test_kernelrank.py.")
 
@@ -255,7 +256,7 @@ def report(store: Mapping[str, measured.Measured],
                              "data/measured/limits.json whose asserted_value "
                              "has cross_read = true.",
             "regenerate": "PYTHONPATH=src uv run python -m "
-                          "felizjueves.crossread --write",
+                          "felizjueves.performance.crossread --write",
         },
         "rows": table(store, counters),
     }
@@ -309,7 +310,7 @@ def write(store: Mapping[str, measured.Measured],
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m felizjueves.crossread")
+    ap = argparse.ArgumentParser(prog="python -m felizjueves.performance.crossread")
     ap.add_argument("--write", action="store_true",
                     help=f"rewrite {CROSSREAD.relative_to(measured.REPO)}")
     ap.add_argument("--markdown", action="store_true",

@@ -42,7 +42,6 @@ from test_ao_j_interpreted import _case, _classes, _shell_ams
 from tiers import by_l, is_fast, split_by_l
 
 from felizjueves import levers
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import lever_ladder
@@ -57,6 +56,7 @@ from felizjueves.mmd.kernel import (
     pq_name,
     pq_spec,
 )
+from felizjueves.performance.device import GFX1200, SM_86
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}

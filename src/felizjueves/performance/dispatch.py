@@ -60,9 +60,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from felizjueves import batchreport
-from felizjueves import measured_store as measured
-from felizjueves.device import Arch, Uncharacterised, require_characterised
+from felizjueves.performance import batchreport
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import Arch, Uncharacterised, require_characterised
 
 __all__ = ["FALLBACK", "INPUTS", "Choice", "Resolver", "choose",
            "measured_classes", "table"]

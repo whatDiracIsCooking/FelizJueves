@@ -39,7 +39,6 @@ import pytest
 import test_kernel_k as tk
 
 from felizjueves import k_levers, levers
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
     Assign,
@@ -61,6 +60,7 @@ from felizjueves.kernel_k import (
     build_k_kernels,
     launch_shape,
 )
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -314,7 +314,7 @@ def test_interleave_composes_with_split(am: Am, n_batches: int) -> None:
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
 #   from felizjueves.kernel_k import build_k_kernels; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   [(Path(f'test/golden/cuda/k_interleave/{k.name}.cu').write_text( \
 #   cuda.emit(k, SM_86)), Path(f'test/golden/hip/k_interleave/{k.name}.hip' \

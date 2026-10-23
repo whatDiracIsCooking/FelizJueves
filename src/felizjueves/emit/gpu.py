@@ -149,7 +149,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 
-from felizjueves.device import Arch
 from felizjueves.emit._c import (
     _GEOMETRY,
     BOYS_SWITCH_PAD,
@@ -164,6 +163,7 @@ from felizjueves.emit._c import (
     precision,
 )
 from felizjueves.ir import Call, Decl, Expr, Fn, Kernel, Lit, Space, _ident
+from felizjueves.performance.device import Arch
 
 __all__ = ["BOYS_HEADER", "BOYS_MAX", "HEADER", "WAVEFRONT", "Specialization",
            "boys_series", "emit", "emit_boys", "emit_template"]

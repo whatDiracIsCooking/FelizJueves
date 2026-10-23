@@ -1,33 +1,33 @@
 """The `--remeasure` driver: compile each cell, read what the compiler says.
 
-    python -m felizjueves.measured                      # print the store
-    python -m felizjueves.measured --remeasure [--backend cuda|hip|both]
+    python -m felizjueves.performance.measured                      # print the store
+    python -m felizjueves.performance.measured --remeasure [--backend cuda|hip|both]
                                    [--L 0 4 8] [-j N]   # one-batch classes
-    python -m felizjueves.measured --remeasure --subgrid [-j N]  # SUBGRID
+    python -m felizjueves.performance.measured --remeasure --subgrid [-j N]  # SUBGRID
                                    [--n-batches 12]     # only those cells
-    python -m felizjueves.measured --nine-vs-twelve     # #60's comparison
-    python -m felizjueves.measured --remeasure --subgrid --lever recycle
-    python -m felizjueves.measured --lever-ab recycle   # #55's comparison
-    python -m felizjueves.measured --remeasure --subgrid --lever no-sieve
-    python -m felizjueves.measured --lever-ab no-sieve  # #162's, + verdict
-    python -m felizjueves.measured --remeasure --subgrid --lever tuned
-    python -m felizjueves.measured --lever-ab tuned     # #163's, + verdict
-    python -m felizjueves.measured --remeasure --asym   # #113's study cells
-    python -m felizjueves.measured --asym-verdict       # #113's comparison
-    python -m felizjueves.measured --roofline           # #112's verdicts
-    python -m felizjueves.measured --remeasure --subgrid --target k
+    python -m felizjueves.performance.measured --nine-vs-twelve     # #60's comparison
+    python -m felizjueves.performance.measured --remeasure --subgrid --lever recycle
+    python -m felizjueves.performance.measured --lever-ab recycle   # #55's comparison
+    python -m felizjueves.performance.measured --remeasure --subgrid --lever no-sieve
+    python -m felizjueves.performance.measured --lever-ab no-sieve  # #162's, + verdict
+    python -m felizjueves.performance.measured --remeasure --subgrid --lever tuned
+    python -m felizjueves.performance.measured --lever-ab tuned     # #163's, + verdict
+    python -m felizjueves.performance.measured --remeasure --asym   # #113's study cells
+    python -m felizjueves.performance.measured --asym-verdict       # #113's comparison
+    python -m felizjueves.performance.measured --roofline           # #112's verdicts
+    python -m felizjueves.performance.measured --remeasure --subgrid --target k
                 [--subgrid-ls 7 10] [--compile-timeout S]  # #205's K cells
-    python -m felizjueves.measured --remeasure --target f --L 0 1 2
+    python -m felizjueves.performance.measured --remeasure --target f --L 0 1 2
                                                         # #288's F cells
-    python -m felizjueves.measured --remeasure --lever <kernel lever>
+    python -m felizjueves.performance.measured --remeasure --lever <kernel lever>
                 [--L ... | --subgrid [--target k] | --target f --L ...]
                                                         # #339's lever rows
-    python -m felizjueves.measured --remeasure --ledger [--backend ...]
+    python -m felizjueves.performance.measured --remeasure --ledger [--backend ...]
                                                         # #362's lever ledger
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
-THE STORE IS `felizjueves.measured_store` (#94): the `Measured` record, the
+THE STORE IS `felizjueves.performance.measured_store` (#94): the `Measured` record, the
 file, the read path, the subgrid and the verdicts (#60's NINE AGAINST TWELVE,
 #55's A LEVER A/B -- their definitions are that module's docstring). This
 module is the half that knows a toolchain: it emits each cell's translation
@@ -49,7 +49,7 @@ WHERE THE NUMBERS COME FROM, per vendor -- they are not the same quantity:
   VGPR + SGPR spill count, and `spill_unit` says so. Every number the
   remark printed (ScratchSize, Occupancy, ...) is kept in `raw`.
 
-THE ASYMMETRIC STUDY (#113) is `felizjueves.asym`: its `AsymCell`s are
+THE ASYMMETRIC STUDY (#113) is `felizjueves.performance.asym`: its `AsymCell`s are
 compiled here like any cell (`cell_kernels` builds them through the study,
 `measured_key` keys them `.../asym@...`), and its rule is that module's
 docstring. An `AsymCell` is not a `Spec`; nothing else here accepts one.
@@ -131,7 +131,7 @@ builds with another as its composition, and the declared compositions) on
 its target's classes -- that has NO row under this toolchain, or whose row's
 `source_sha256` is not the text the generator emits today, is compiled
 through the same `remeasure` (compile-only: no card, no clock), and then
-`felizjueves.leverledger` rewrites data/measured/lever_ledger.json from the
+`felizjueves.performance.leverledger` rewrites data/measured/lever_ledger.json from the
 store. A row whose text is unchanged is never recompiled, so a new lever
 (one `levers.VOCABULARY` entry, and a `measured_store.REQUIRES` entry if it
 only builds with another) is ONE re-run of this command.
@@ -200,25 +200,26 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from felizjueves import leverledger
-from felizjueves.asym import (
-    ASYM_CELLS,
-    AsymCell,
-    AsymKey,
-    arch_verdict,
-    asym_vs_neighbours,
-)
-from felizjueves.device import GFX1200, SM_86, Arch, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Lit, Space
 from felizjueves.ir.lever_ladder import unit_name
 from felizjueves.ir.lower import LEVERS, RECYCLE, lower
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.kernel_k import build_k_kernels
-from felizjueves.measured_store import (
+from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
+from felizjueves.performance import leverledger
+from felizjueves.performance.asym import (
+    ASYM_CELLS,
+    AsymCell,
+    AsymKey,
+    arch_verdict,
+    asym_vs_neighbours,
+)
+from felizjueves.performance.device import GFX1200, SM_86, Arch, MeasuredKey
+from felizjueves.performance.measured_store import (
     GPU_UTIL_FIELDS as GPU_UTIL_FIELDS,  # re-exported: measure_kernel_device's sweep
 )
-from felizjueves.measured_store import (
+from felizjueves.performance.measured_store import (
     HGP_JK_REFUSED,
     K_SUBGRID,
     KERNEL,
@@ -250,14 +251,13 @@ from felizjueves.measured_store import (
     split_kernel_key,
     tuned_verdict,
 )
-from felizjueves.measured_store import ROOFLINE as ROOFLINE
-from felizjueves.measured_store import (
+from felizjueves.performance.measured_store import ROOFLINE as ROOFLINE
+from felizjueves.performance.measured_store import (
     lever_cells as lever_cells,  # re-exported: test_kernel_device's cells
 )
-from felizjueves.measured_store import (
+from felizjueves.performance.measured_store import (
     save_counters as save_counters,  # re-exported: measure_kernel_device's sweep
 )
-from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
 from felizjueves.spec import NATIVE_ENGINE, Spec, Target
 
 DEFAULT_LS = tuple(range(0, 17))
@@ -1135,7 +1135,7 @@ def print_roofline(path: Path = ROOFLINE) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m felizjueves.measured")
+    ap = argparse.ArgumentParser(prog="python -m felizjueves.performance.measured")
     ap.add_argument("--remeasure", action="store_true")
     ap.add_argument("--backend", choices=("cuda", "hip", "both"), default="both")
     ap.add_argument("--L", dest="Ls", type=int, nargs="+", default=list(DEFAULT_LS))

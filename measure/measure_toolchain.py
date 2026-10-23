@@ -3,7 +3,7 @@
 Moved from test/test_toolchain.py, which keeps the compilers' and the cards'
 floor: these are the same kind of floor for the counter rows, and nothing
 here checks a kernel's answer. A kernel whose fp64 FLOPs and streamed bytes
-are known before it runs is read through `felizjueves.measured.profile` --
+are known before it runs is read through `felizjueves.performance.measured.profile` --
 ncu on the RTX 3080, rocprofv3's counter mode on the RX 9060 XT -- and a
 profiler that cannot measure SKIPS, naming why, rather than reporting a
 zero. On the RX 9060 XT what the profiler CAN count is pinned instead
@@ -86,7 +86,7 @@ def _counted(backend: str, binary, tmp_path):
     """The probe's one launch under `backend`'s profiler, behind the card
     gate. A profiler that cannot measure SKIPS, naming why -- could not
     measure is not a pass, and never a zero."""
-    from felizjueves import gate, measured
+    from felizjueves.performance import gate, measured
 
     try:
         gate.wait_card(backend)
@@ -135,7 +135,7 @@ def test_rocprofv3_profiles_the_probe_and_its_byte_counters_read_zero(
     GRBM_GUI_ACTIVE is non-zero, so the zero is the byte counters', not a
     failed run's. If the bytes ever count, this fails: gfx1200's UNMEASURED
     reason says they do not, and is then stale (fp64 stays uncounted)."""
-    from felizjueves import gate, measured, measured_store
+    from felizjueves.performance import gate, measured, measured_store
 
     binary = compile_device_source(hipcc, COUNTER_PROBE_SOURCE)
     try:
@@ -187,7 +187,7 @@ def test_rocprofv3_lists_byte_counters_and_no_fp64_counter_on_gfx1200(
     fp64 operations -- not the ones measured_store.MISSING_COUNTERS names,
     nor any other F64 / FLOP counter. If one ever appears, gfx1200's
     UNMEASURED refusal is wrong and this fails: news, to be re-read."""
-    from felizjueves import measured, measured_store
+    from felizjueves.performance import measured, measured_store
 
     tool = measured._which("rocprofv3")
     if tool is None:

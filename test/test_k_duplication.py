@@ -29,9 +29,9 @@ import pytest
 
 from felizjueves import kdup
 from felizjueves.literature.claims import load_claims
-from felizjueves.measured_store import SUBGRID, SUBGRID_LS
 from felizjueves.mmd.hermite import e_block, hermite_order
 from felizjueves.mmd.kernel import k_spec, pq_spec, split
+from felizjueves.performance.measured_store import SUBGRID, SUBGRID_LS
 from felizjueves.plan.batching import in_batch, partition
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Target

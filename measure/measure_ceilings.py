@@ -17,8 +17,8 @@ import json
 import pytest
 from conftest import VRAM_PROBE
 
-from felizjueves import ceilings, gate
-from felizjueves.device import ARCHS, GFX1200, QUANTITIES, SM_86
+from felizjueves.performance import ceilings, gate
+from felizjueves.performance.device import ARCHS, GFX1200, QUANTITIES, SM_86
 
 # -- the recorded data ----------------------------------------------------------
 

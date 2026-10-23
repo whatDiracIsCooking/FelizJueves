@@ -99,7 +99,6 @@ import numpy as np
 from conftest import Toolchain
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves import measured
 from felizjueves.ao.density import checked_density, epair
 from felizjueves.ao.shell import Basis, n_cartesians
 from felizjueves.ao.staged import (
@@ -123,6 +122,7 @@ from felizjueves.launch import LaunchPlan, class_spec
 from felizjueves.launch_common import PairRec
 from felizjueves.launch_k import KLaunchPlan
 from felizjueves.mmd.kernel import bra_functions, ket_functions, launch_shape
+from felizjueves.performance import measured
 from felizjueves.plan.targets import hermite_targets
 
 RUNS = 2  # whole-plan runs per process: the run-to-run witness

@@ -60,7 +60,6 @@ from oracle.tolerance import F32_REL
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import batched_vrr as bv
 from felizjueves.f_levers import mixed
@@ -84,6 +83,7 @@ from felizjueves.ir import (
 )
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.launch_f import f_launches
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 from felizjueves.walk_f import walk_f
 
@@ -317,7 +317,7 @@ def test_with_batched_vrr_it_is_the_fmixed_kernel_bitwise(
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, ('fmixed',))); \
 #   Path(f'test/golden/cuda/f_fmixed/{k.name}.cu').write_text( \

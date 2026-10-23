@@ -45,7 +45,6 @@ from tiers import is_fast, split_by_l
 
 from felizjueves import f_levers, levers
 from felizjueves.ao.shell import Basis
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.f_levers import batched_vrr as bv
@@ -67,6 +66,7 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
 NAME = si.NAME
@@ -315,7 +315,7 @@ def test_every_degeneracy_case_within_the_cap_equals_the_sweep(
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.kernel_f import build_f_kernel, f_class_spec; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_f_kernel(f_class_spec(0, 1, 0, 1, \
 #   ('batched-vrr', 'sliced-hrr', 'sliced-site-digest'))); \

@@ -18,9 +18,9 @@ from test_kernel_device import PORTABLE, _toolchain
 from test_kernel_pair_bound import CLASS_GRID, REL_TOL, ZETAS
 
 from felizjueves.ao.pairs import pair_bound
-from felizjueves.device import SM_86
 from felizjueves.emit import gpu
 from felizjueves.kernel_pair_bound import build_pair_bound_kernel
+from felizjueves.performance.device import SM_86
 from felizjueves.reference.pq import one_centre
 
 # One flat float64 input file, `n_rec | zeta`, the bounds written back raw.

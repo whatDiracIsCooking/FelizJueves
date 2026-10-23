@@ -79,7 +79,6 @@ from __future__ import annotations
 import re
 import textwrap
 
-from felizjueves.device import Arch
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -115,6 +114,7 @@ from felizjueves.ir import (
     expr_type,
     walk,
 )
+from felizjueves.performance.device import Arch
 
 INDENT = "    "
 NOTE_WIDTH = 76

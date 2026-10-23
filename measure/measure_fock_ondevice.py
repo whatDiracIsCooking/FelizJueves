@@ -10,7 +10,7 @@ sweep's own class selector and its inputs, not a kernel.
 THE MEASURED ROWS (milestone 12; #278's F cell). One row per (class, arch,
 toolchain): #288 recorded the five classes the default tier runs, #290 (the
 deferred tier) the sixteen above them. The compile side -- registers,
-spill, static shared bytes -- is `python -m felizjueves.measured
+spill, static shared bytes -- is `python -m felizjueves.performance.measured
 --remeasure --target f --L ...` (`measured.py`, THE F CELLS). The clock
 is this file's opt-in sweep, `test_<backend>_f_wallclock`: it skips unless
 FJ_WALLCLOCK_STORE names the store and FJ_WALLCLOCK_F=1, and must run
@@ -35,7 +35,7 @@ to the tracked data/measured/kernels.json).
    each the launch and its synchronize under the host's steady clock, the
    zeroing outside it. WIDE is the row's `runtime_ns` (median) and
    `spread_ns` (IQR); NEAR is raw `wallclock:near:*`.
-3. THE GATE (`felizjueves.gate`): before each input the card at most
+3. THE GATE (`felizjueves.performance.gate`): before each input the card at most
    GPU_BUSY_MAX busy and the CPU at most BUSY_MAX; one reading GPU_SETTLE_S
    after. A phase the gate refuses, or whose after-reading is non-idle or
    UNKNOWN, is discarded and retaken (up to STUDY_RETAKES, counted in raw
@@ -94,11 +94,11 @@ from test_kernel_device import (
 )
 from tiers import is_fast
 
-from felizjueves import gate, measured
 from felizjueves import kernel_f as KF
-from felizjueves.device import Arch, MeasuredKey
 from felizjueves.hgp.vrr import CLASSES
 from felizjueves.ir import Kernel
+from felizjueves.performance import gate, measured
+from felizjueves.performance.device import Arch, MeasuredKey
 
 WALLCLOCK_F = "FJ_WALLCLOCK_F"
 
@@ -171,7 +171,7 @@ def _f_wallclock(backend: str, request, run_device_binary,
         old = store.get(key(cls).key())
         assert old is not None and old.source_sha256 == sha, (
             f"{key(cls).key()}: no compile row of this text -- run "
-            "`python -m felizjueves.measured --remeasure --target f --L "
+            "`python -m felizjueves.performance.measured --remeasure --target f --L "
             f"{sum(cls)}` first")
         inputs = {}
         for label, side, seed in (("near", NEAR_SIDE, 288_000),

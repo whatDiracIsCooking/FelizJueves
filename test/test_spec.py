@@ -8,7 +8,7 @@ import itertools
 
 import pytest
 
-from felizjueves.measured_store import target_of
+from felizjueves.performance.measured_store import target_of
 from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,

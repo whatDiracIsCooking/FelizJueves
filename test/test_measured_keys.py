@@ -20,14 +20,10 @@ import itertools
 import json
 import re
 
-from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
-from felizjueves.device import MeasuredKey, by_name
-from felizjueves.measured_store import (
-    engine_of,
-    split_key,
-    target_of,
-)
 from felizjueves.mmd.kernel import k_spec, pq_spec
+from felizjueves.performance.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
+from felizjueves.performance.device import MeasuredKey, by_name
+from felizjueves.performance.measured_store import engine_of, split_key, target_of
 from felizjueves.spec import NATIVE_ENGINE, Engine, Operator, Spec, Target
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
@@ -68,7 +64,8 @@ def test_a_lever_keyed_row_round_trips_and_rederives(monkeypatch,
     tracked rows (`_derive`), and no tracked key moves (the tests above)."""
     import json
 
-    from felizjueves import levers, measured_store
+    from felizjueves import levers
+    from felizjueves.performance import measured_store
 
     monkeypatch.setitem(levers.VOCABULARY, "probe", levers.Lever.of(
         "probe", 339, "the round trip's witness", {"j", "k", "f"}))
@@ -164,7 +161,7 @@ def test_spec_engine_moves_no_j_key() -> None:
 def test_no_stored_key_carries_an_engine_suffix() -> None:
     # The tracked store's keys, read raw (no loader, no rewrite): every one's
     # target slot is a bare target, its engine the native one.
-    from felizjueves.measured_store import STORE
+    from felizjueves.performance.measured_store import STORE
     keys = list(json.loads(STORE.read_text())["rows"])
     assert keys
     for key in keys:

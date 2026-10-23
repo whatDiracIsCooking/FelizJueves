@@ -75,8 +75,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from felizjueves.device import ARCHS
-from felizjueves.measured_store import (
+from felizjueves.performance.device import ARCHS
+from felizjueves.performance.measured_store import (
     SUBGRID,
     UNMEASURED,
     Measured,

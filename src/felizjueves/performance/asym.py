@@ -88,10 +88,11 @@ from dataclasses import dataclass
 from functools import cache
 from itertools import combinations
 
-from felizjueves.device import Arch
 from felizjueves.ir import Kernel
 from felizjueves.ir.passes import atomize
-from felizjueves.measured_store import (
+from felizjueves.mmd.kernel import _pq_kernel, pq_spec, split
+from felizjueves.performance.device import Arch
+from felizjueves.performance.measured_store import (
     FASTER,
     NEUTRAL,
     SLOWER,
@@ -99,7 +100,6 @@ from felizjueves.measured_store import (
     _sign,
     rows,
 )
-from felizjueves.mmd.kernel import _pq_kernel, pq_spec, split
 from felizjueves.plan.batching import AXES, Batch, in_batch, target_counts
 from felizjueves.plan.dag import batch_dag
 from felizjueves.plan.sieve import sieve
@@ -215,7 +215,7 @@ def split_kernels(spec: Spec, ks: tuple[int, int, int]) -> tuple[Kernel, ...]:
     # A symmetric ks is built byte-identically to build_pq_kernels (the
     # study's check that only the count differs); an asymmetric one says so.
     note = ("" if len(set(ks)) == 1
-            else f" -- ASYMMETRIC split {ks} (felizjueves.asym, #113)")
+            else f" -- ASYMMETRIC split {ks} (felizjueves.performance.asym, #113)")
     out = []
     for i, batch in enumerate(batches):
         direction, a, b = batch

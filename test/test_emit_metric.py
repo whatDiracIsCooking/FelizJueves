@@ -30,11 +30,11 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Raw, walk
 from felizjueves.kernel_metric import build_metric_kernel
+from felizjueves.performance.device import GFX1200, SM_86
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "test" / "golden"
@@ -182,7 +182,7 @@ FLAGS_VAR = {"cuda": "NVCC_FLAGS", "hip": "HIPCC_FLAGS"}
 def _compile(tc, backend: str, cls, tmp_path: Path) -> None:
     import devcache
 
-    from felizjueves import measured
+    from felizjueves.performance import measured
 
     emit, arch, ext = BACKEND[backend]
     k = build_metric_kernel(cls)

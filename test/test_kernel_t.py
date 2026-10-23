@@ -56,7 +56,6 @@ from tiers import by_l, split_by_l
 from felizjueves.ao.density import epair
 from felizjueves.ao.kinetic import kinetic_block, kinetic_matrix
 from felizjueves.ao.pairs import primitive_pairs
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
     Assign,
@@ -83,6 +82,7 @@ from felizjueves.kernel_t import (
 )
 from felizjueves.launch import per_axis
 from felizjueves.mmd import e_fragment as ef
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3
@@ -415,7 +415,7 @@ GOLDEN_CLASS = (1, 2)  # lb = 2: the j(j-1) term is present
 def test_the_cuda_golden_is_unchanged() -> None:
     # Regenerate (never hand-edit):
     #   PYTHONPATH=src uv run python -c "from felizjueves.kernel_t import \
-    #   build_t_kernel as b; from felizjueves.device import SM_86; \
+    #   build_t_kernel as b; from felizjueves.performance.device import SM_86; \
     #   from felizjueves.emit.cuda import emit; print(emit(b((1, 2)), SM_86), \
     #   end='')" > test/golden/cuda/t_12.cu
     text = cuda.emit(build_t_kernel(GOLDEN_CLASS), SM_86)

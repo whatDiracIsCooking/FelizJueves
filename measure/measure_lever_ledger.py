@@ -24,10 +24,11 @@ from dataclasses import replace
 
 import pytest
 
-from felizjueves import leverledger, levers, measured
-from felizjueves import measured_store as store
-from felizjueves.device import ARCHS
+from felizjueves import levers
 from felizjueves.mmd.kernel import k_spec, pq_spec
+from felizjueves.performance import leverledger, measured
+from felizjueves.performance import measured_store as store
+from felizjueves.performance.device import ARCHS
 from felizjueves.spec import Target
 
 ROWS = store.load()
@@ -37,7 +38,7 @@ PROBE = "probe"
 
 def test_the_data_file_is_the_ledger_recomputed_from_the_store() -> None:
     assert DOC == leverledger.ledger(ROWS), (
-        "rerun: PYTHONPATH=src uv run python -m felizjueves.leverledger "
+        "rerun: PYTHONPATH=src uv run python -m felizjueves.performance.leverledger "
         "--write (or measured --remeasure --ledger, which records the rows)")
 
 

@@ -40,13 +40,13 @@ import pytest
 import test_kernel_k as tk
 
 from felizjueves import k_levers, levers
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Decl, Kernel, Note, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.k_levers import interleave, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH
 from felizjueves.kernel_k import build_k_kernels, launch_shape
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 
@@ -202,7 +202,7 @@ def test_four_arms_with_a_batch_split_are_bitwise_equal(am: Am) -> None:
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
 #   from felizjueves.kernel_k import build_k_kernels; \
-#   from felizjueves.device import SM_86, GFX1200; \
+#   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   [(Path(f'test/golden/cuda/k_split_interleave/{k.name}.cu').write_text( \
 #   cuda.emit(k, SM_86)), Path(f'test/golden/hip/k_split_interleave/' \

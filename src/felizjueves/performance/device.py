@@ -169,7 +169,7 @@ def verdict(arch: Arch, flops_per_byte: float) -> str:
 
 
 # The record the ceilings are read from (written by ceilings.py's probes).
-CEILINGS_PATH = (Path(__file__).resolve().parent.parent.parent
+CEILINGS_PATH = (Path(__file__).resolve().parent.parent.parent.parent
                  / "data" / "measured" / "ceilings.json")
 
 
@@ -199,7 +199,7 @@ def by_name(name: str) -> Arch:
         if arch.name == name:
             return arch
     raise ValueError(
-        f"arch {name!r} is not declared in felizjueves.device "
+        f"arch {name!r} is not declared in felizjueves.performance.device "
         f"(declared: {', '.join(a.name for a in ARCHS)}) -- add an Arch there"
     )
 

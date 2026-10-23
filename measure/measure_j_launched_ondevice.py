@@ -45,9 +45,9 @@ from test_j_launched_ondevice import (
 )
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves import gate, measured_store
-from felizjueves.measured import BACKENDS as MEASURED_BACKENDS
-from felizjueves.measured import host as measured_host
+from felizjueves.performance import gate, measured_store
+from felizjueves.performance.measured import BACKENDS as MEASURED_BACKENDS
+from felizjueves.performance.measured import host as measured_host
 
 # ---------------------------------------------------------------------------
 # #146: the whole-build wall-clock, behind the card gate (opt-in, run alone)

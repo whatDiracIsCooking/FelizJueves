@@ -25,7 +25,6 @@ from __future__ import annotations
 import pytest
 
 from felizjueves import levers
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.hgp import vrr
 from felizjueves.ir import Note
@@ -37,6 +36,7 @@ from felizjueves.kernel_f import (
     f_class_spec,
     kernel_counts,
 )
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.pipeline import TUNED
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import _F_BATCH_REFUSAL, Operator, Spec, Target

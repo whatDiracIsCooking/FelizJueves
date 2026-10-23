@@ -40,8 +40,9 @@ THE PROTOCOL, per card, in one test so no phase overlaps another:
 2. BUILD every cell's arm binary and each class's literal control (once per
    class), compiles through the compiler cache; a warning in generated text
    fails (F, `compile_checked`). Each arm's `source_sha256` must equal its
-   ledger row's (`python -m felizjueves.measured --remeasure --ledger` first).
-3. TIME each cell in ONE GATED PHASE (`felizjueves.gate`): `wait_quiet`
+   ledger row's (`python -m felizjueves.performance.measured --remeasure
+   --ledger` first).
+3. TIME each cell in ONE GATED PHASE (`felizjueves.performance.gate`): `wait_quiet`
    (the card at most GPU_BUSY_MAX busy, the CPU at most BUSY_MAX), then
    control near, arm near, arm wide, control wide -- WARMUP untimed and
    REPEATS timed sequences each (the host steady clock around launch and
@@ -103,13 +104,13 @@ import test_k_lever_mixed_device as kmd
 import test_kernel_device as tkd
 from plan_driver import compile_checked
 
-from felizjueves import gate, measured, measured_store
 from felizjueves import kernel_f as KF
-from felizjueves.device import Arch
 from felizjueves.f_levers import block_fab, ket_break, scatter
 from felizjueves.f_levers import mixed as fmixed
 from felizjueves.j_levers import mixed as jmixed
 from felizjueves.k_levers import mixed as kmixed
+from felizjueves.performance import gate, measured, measured_store
+from felizjueves.performance.device import Arch
 from felizjueves.spec import Spec, Target
 from felizjueves.walk_f import dominating_factors
 
@@ -481,7 +482,7 @@ def _lever_clock(backend: str, request, compile_device_source,
             assert c in measured_store.ledger_cells(), c.key()
             assert key(c) in store, (
                 f"{key(c)}: no ledger row -- run `python -m "
-                "felizjueves.measured --remeasure --ledger` first")
+                "felizjueves.performance.measured --remeasure --ledger` first")
 
     # 2. build everything first
     t0 = time.perf_counter()

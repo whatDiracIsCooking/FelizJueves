@@ -16,10 +16,10 @@ from dataclasses import replace
 
 import pytest
 
-from felizjueves import batchreport
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS, MeasuredKey
 from felizjueves.mmd.kernel import pq_spec
+from felizjueves.performance import batchreport
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS, MeasuredKey
 
 # --- the rule, on synthetic rows ----------------------------------------------
 

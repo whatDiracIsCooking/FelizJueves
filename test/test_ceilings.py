@@ -15,8 +15,8 @@ import json
 
 import pytest
 
-from felizjueves import ceilings, gate
-from felizjueves.device import SM_86
+from felizjueves.performance import ceilings, gate
+from felizjueves.performance.device import SM_86
 
 NO_SLEEP = {"sleep": lambda s: None}
 QUIET_CPU = {"cpu_busy": lambda: 0.01}

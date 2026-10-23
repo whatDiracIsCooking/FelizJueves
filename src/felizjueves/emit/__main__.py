@@ -205,8 +205,8 @@ command it runs, `KERNEL_TIER_BACKEND` (cuda | hip), `KERNEL_TIER_ARCH` (the
 arch the compiler is driven at, a `device.Arch` name) and `KERNEL_TIER_OUT`
 (where it will look for sources). Each flag defaults to its variable, so the
 config line needs no arguments; a flag given on the command line wins. An arch
-this project does not declare (`felizjueves.device.ARCHS`) is an error, not a
-pass-through.
+this project does not declare (`felizjueves.performance.device.ARCHS`) is an
+error, not a pass-through.
 
 THE `[p|q]` CLASSES are L = 0..16 by default: every class the plan layer
 schedules at n_batches = 1 under the default split ([JEngine] Tables 1-3 run
@@ -264,7 +264,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from felizjueves.device import Arch, Vendor, by_name, from_env
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
@@ -290,6 +289,7 @@ from felizjueves.mmd.kernel import (
     pq_name,
     pq_spec,
 )
+from felizjueves.performance.device import Arch, Vendor, by_name, from_env
 from felizjueves.spec import Operator, Spec, Target
 
 BACKENDS = {

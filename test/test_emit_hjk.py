@@ -41,8 +41,6 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import measured, measured_store
-from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.hgp import orbits
@@ -50,6 +48,8 @@ from felizjueves.ir import Raw, walk
 from felizjueves.kernel_f import MAX_PRIM_PAIRS, REC
 from felizjueves.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
+from felizjueves.performance import measured, measured_store
+from felizjueves.performance.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.spec import Target
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -22,18 +22,18 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves import batchreport, dispatch
-from felizjueves import measured_store as measured
 from felizjueves.ao.pairs import pair_bound
-from felizjueves.device import (
+from felizjueves.launch import class_spec, launches
+from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
+from felizjueves.performance import batchreport, dispatch
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import (
     SM_86,
     Arch,
     MeasuredKey,
     Uncharacterised,
     Vendor,
 )
-from felizjueves.launch import class_spec, launches
-from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
 from felizjueves.reference.pq import one_centre
 
 BATCHES = batchreport.BATCHES

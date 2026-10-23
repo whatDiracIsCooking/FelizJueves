@@ -1,8 +1,8 @@
 """`PlanCost` against `Measured`: does the cheaper plan make a better kernel? (#165)
 
-    python -m felizjueves.planrank              # the report, as JSON
-    python -m felizjueves.planrank --write      # rewrite PLANRANK
-    python -m felizjueves.planrank --markdown   # the per-card summary table
+    python -m felizjueves.performance.planrank              # the report, as JSON
+    python -m felizjueves.performance.planrank --write      # rewrite PLANRANK
+    python -m felizjueves.performance.planrank --markdown   # the per-card summary table
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -104,10 +104,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from felizjueves import kernelrank
-from felizjueves import measured_store as measured
-from felizjueves.device import ARCHS, Arch, by_name, require_characterised
-from felizjueves.gate import GPU_BUSY_MAX
+from felizjueves.performance import kernelrank
+from felizjueves.performance import measured_store as measured
+from felizjueves.performance.device import ARCHS, Arch, by_name, require_characterised
+from felizjueves.performance.gate import GPU_BUSY_MAX
 from felizjueves.plan.cost import PlanCost
 from felizjueves.plan.pipeline import plan
 from felizjueves.spec import Spec
@@ -429,8 +429,9 @@ def verdict(store: Mapping[str, measured.Measured], arch: Arch | str,
 
 ABOUT = ("PlanCost across plan variants (literal, no-sieve, tuned) against "
          "the measured spills and, where a clean same-session clock phase "
-         "exists, wall-clock, per (cell, card) (felizjueves.planrank, #165). "
-         "Does a plan with fewer counted intermediates spill less; does one "
+         "exists, wall-clock, per (cell, card) "
+         "(felizjueves.performance.planrank, #165). Does a plan with fewer "
+         "counted intermediates spill less; does one "
          "with fewer FLOPs run faster? Reads both sides, feeds neither: "
          "nothing here reaches PlanCost or a literature floor. An order, "
          "never a prediction. Recomputed by test/test_planrank.py.")
@@ -479,7 +480,7 @@ def report(store: Mapping[str, measured.Measured],
                         "changes. A handful of points: an order, never a "
                         "prediction interval or a pooled score.",
             "regenerate": "PYTHONPATH=src uv run python -m "
-                          "felizjueves.planrank --write",
+                          "felizjueves.performance.planrank --write",
         },
         "summary": {a.name: summary(rows, a.name) for a in ARCHS},
         "rows": rows,
@@ -514,7 +515,7 @@ def write(store: Mapping[str, measured.Measured],
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m felizjueves.planrank")
+    ap = argparse.ArgumentParser(prog="python -m felizjueves.performance.planrank")
     ap.add_argument("--write", action="store_true",
                     help=f"rewrite {PLANRANK.relative_to(measured.REPO)}")
     ap.add_argument("--markdown", action="store_true",

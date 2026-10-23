@@ -43,7 +43,7 @@ one file; the sources are written atomically (same bytes by construction).
 directory too; the sccache store (SCCACHE_DIR) is not touched, and the next
 run recompiles through it.
 
-OUT OF SCOPE, deliberately: `felizjueves.measured --remeasure` compiles stay
+OUT OF SCOPE, deliberately: `felizjueves.performance.measured --remeasure` compiles stay
 COLD. They parse `ptxas -v` and AMD resource remarks from the compiler's own
 output, and a cache replaying a stored stderr there is a provenance question
 that needs its own decision.

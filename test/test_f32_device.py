@@ -47,9 +47,9 @@ from f32_programs import (
 )
 from oracle.tolerance import F32_REL, assert_within
 
-from felizjueves.device import GFX1200, SM_86
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Kernel, Scalar, interp
+from felizjueves.performance.device import GFX1200, SM_86
 
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
 

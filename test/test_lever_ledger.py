@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import pytest
 
-from felizjueves import leverledger, levers, measured
-from felizjueves import measured_store as store
-from felizjueves.device import SM_86, MeasuredKey
+from felizjueves import levers
 from felizjueves.kernel_f import f_class_spec
 from felizjueves.mmd.kernel import k_spec, pq_spec
+from felizjueves.performance import leverledger, measured
+from felizjueves.performance import measured_store as store
+from felizjueves.performance.device import SM_86, MeasuredKey
 from felizjueves.spec import Target
 
 

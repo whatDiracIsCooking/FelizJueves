@@ -9,7 +9,7 @@ to review by eye. A diff in it is the whole signal when the generator
 changes. After an intended change, regenerate it and review the diff:
 
     PYTHONPATH=src uv run python -c "from felizjueves.mmd.kernel import \
-build_pq_kernel; from felizjueves.device import SM_86; from \
+build_pq_kernel; from felizjueves.performance.device import SM_86; from \
 felizjueves.emit.cuda import emit; print(emit(build_pq_kernel(4), SM_86), \
 end='')" > test/golden/cuda/pq_L4_p2_q2.cu
 
@@ -27,7 +27,6 @@ from pathlib import Path
 import pytest
 from test_ir import synthetic_inline_kernel
 
-from felizjueves.device import GFX1200, SM_86, Arch, Vendor
 from felizjueves.emit.__main__ import one_e_kernels
 from felizjueves.emit._c import EmitError
 from felizjueves.emit.cuda import emit
@@ -52,6 +51,7 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.mmd.kernel import build_pq_kernel
+from felizjueves.performance.device import GFX1200, SM_86, Arch, Vendor
 
 L = 4
 GOLDEN = Path(__file__).resolve().parent / "golden" / "cuda" / "pq_L4_p2_q2.cu"
@@ -160,7 +160,8 @@ INLINE_GOLDEN = GOLDEN.parent / "inline_probe.cu"
 def test_the_inline_golden_is_unchanged() -> None:
     # #149: a kernel splicing a synthetic Fragment. Regenerate (never hand-edit):
     #   PYTHONPATH=src:test uv run python -c "from test_ir import \
-    #   synthetic_inline_kernel as k; from felizjueves.device import SM_86; \
+    #   synthetic_inline_kernel as k; \
+    #   from felizjueves.performance.device import SM_86; \
     #   from felizjueves.emit.cuda import emit; print(emit(k(), SM_86), end='')" \
     #   > test/golden/cuda/inline_probe.cu
     assert emit(synthetic_inline_kernel(), SM_86) == INLINE_GOLDEN.read_text()
@@ -211,7 +212,7 @@ def test_it_compiles(nvcc, compile_device_source, L_: int) -> None:
 # block raises on both centres and binds 1/(2 zeta). Regenerate (never
 # hand-edit), then review the diff:
 #   PYTHONPATH=src uv run python -c "from felizjueves.kernel_dq import \
-#   build_dq_kernel; from felizjueves.device import SM_86; from \
+#   build_dq_kernel; from felizjueves.performance.device import SM_86; from \
 #   felizjueves.emit.cuda import emit; print(emit(build_dq_kernel((1, 1)), \
 #   SM_86), end='')" > test/golden/cuda/dq_1_1.cu
 # and likewise `kernel_jab.build_jab_kernel` > test/golden/cuda/jab_11.cu.
