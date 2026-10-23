@@ -21,7 +21,7 @@ import pytest
 from felizjueves import measured_store as measured
 from felizjueves import planrank
 from felizjueves.device import ARCHS, MeasuredKey
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 from felizjueves.plan.cost import PlanCost
 from felizjueves.planrank import (
     CONCORDANT,

@@ -23,9 +23,9 @@ from felizjueves import levers, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.ir import lever_ladder
-from felizjueves.kernel import build_pq_kernels, k_spec, pq_spec
 from felizjueves.kernel_f import f_class_spec
 from felizjueves.kernel_k import build_k_kernels
+from felizjueves.mmd.kernel import build_pq_kernels, k_spec, pq_spec
 
 PROBE = "probe"
 PROV = dict(toolchain="nvcc 13.0", arch="sm_86", host="h", gpu="g",

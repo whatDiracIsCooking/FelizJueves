@@ -42,7 +42,7 @@ from test_kernel_device import (
 
 from felizjueves.j_levers.fused import FUSED
 from felizjueves.j_levers.mixed import MIXED
-from felizjueves.kernel import launch_shape, pq_spec
+from felizjueves.mmd.kernel import launch_shape, pq_spec
 
 
 def _cells():

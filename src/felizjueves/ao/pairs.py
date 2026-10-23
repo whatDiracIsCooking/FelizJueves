@@ -210,8 +210,8 @@ import struct
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
-from felizjueves.ao.hermite import e_axis, e_block, hermite_order
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.mmd.hermite import e_axis, e_block, hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]

@@ -223,7 +223,6 @@ def _built_kernels() -> list[Kernel]:
     """One kernel of every family the generator builds today, at a size that
     exercises every factor it can use."""
     from felizjueves.hgp.recurrence import build_hrr_kernel, build_vrr_kernel
-    from felizjueves.kernel import build_pq_kernel
     from felizjueves.kernel_dq import build_dq_kernel
     from felizjueves.kernel_f import build_f_kernel
     from felizjueves.kernel_jab import build_jab_kernel
@@ -231,6 +230,7 @@ def _built_kernels() -> list[Kernel]:
     from felizjueves.kernel_s import build_s_kernel
     from felizjueves.kernel_t import build_t_kernel
     from felizjueves.kernel_v import build_v_kernel
+    from felizjueves.mmd.kernel import build_pq_kernel
     from felizjueves.spec import Operator, Spec, Target
 
     pppp = Spec(Operator.COULOMB, 0, (1, 1, 1, 1), Target.F)

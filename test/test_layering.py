@@ -98,8 +98,9 @@ RULES: dict[str, Rule] = {
         spec="ground truth takes plain numbers, not the generation key",
         plan="the reference must not share the MILD/DAG/sieve path it checks",
         **{"=ir": "the reference is not built from the IR it checks"},
-        recurrence="the reference is the recurrence run directly, not the "
-                   "builder's version of it"),
+        **{"mmd.recurrence":
+            "the reference is the recurrence run directly, not the "
+                   "builder's version of it"}),
     "device": _rule(
         "the hardware vocabulary, `Arch` and `MeasuredKey` (#37): data, keyed "
         "on `Spec`",
@@ -135,9 +136,11 @@ RULES: dict[str, Rule] = {
         reference="same ancestry as its own pin: the interpreter would be "
                   "checked against the module it was built on (#23)",
         plan="it executes instructions; it does not know the recurrence (#23)",
-        recurrence="recurrence.py is McMurchie-Davidson; interp.py must not "
-                   "know what that is (#23)",
-        kernel="the builder is what the interpreter checks",
+        **{"mmd.recurrence":
+            "recurrence.py is McMurchie-Davidson; interp.py must not "
+                   "know what that is (#23)"},
+        **{"mmd.kernel":
+            "the builder is what the interpreter checks"},
         emit="interpreting is not emitting; neither may lean on the other"),
     "lower": _rule(
         "IR -> IR rewrites: lower.py (register recycling, #24) and passes.py "
@@ -153,7 +156,7 @@ RULES: dict[str, Rule] = {
         "class's kernels are built then `passes.atomize`d (#49), so a "
         "builder may apply a pass. It reads the kernel-body levers through "
         "the key (`Spec.kernel_body_levers`, #337), never `levers` directly",
-        ("spec", "plan", "=ir", "recurrence", "ir.passes"),
+        ("spec", "plan", "=ir", "mmd.recurrence", "ir.passes"),
         levers="the builder reads the lever vocabulary through `spec`, its "
                "one key (#337); the vendor-neutral import set is pinned",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific "
@@ -172,6 +175,10 @@ RULES: dict[str, Rule] = {
            "against, and `ao.shell` the layout it is pinned to: importing "
            "either shares ancestry with its witness (#20); the Cartesian "
            "order is restated and a test asserts the two equal",
+        **{"mmd.hermite":
+            "as `ao`: the host `E` is the reference the fragment is "
+            "interpreted against (#20); it moved beside the fragment (#505), "
+            "not into its reach"},
         **{"ir.interp":
             "the fragment is checked by the interpreter, never built on "
                "it; and the interpreter must not know what `E` is (#152)"},
@@ -189,10 +196,12 @@ RULES: dict[str, Rule] = {
             "emitting is not interpreting; the golden files and the kernel "
                "tier check the text"},
         plan="a backend spells a `Kernel`; it does not decide one",
-        kernel="a backend takes any `Kernel`; composing builder + backend is "
-               "a driver's job, not a backend's",
-        recurrence="as `kernel`: the backend does not know which kernel it is "
-                   "spelling"),
+        **{"mmd.kernel":
+            "a backend takes any `Kernel`; composing builder + backend is "
+               "a driver's job, not a backend's"},
+        **{"mmd.recurrence":
+            "as `kernel`: the backend does not know which kernel it is "
+                   "spelling"}),
     "driver": _rule(
         "CLIs that COMPOSE builder + backend and write or measure the result: "
         "`python -m felizjueves.emit` (KERNEL_GEN_CMD, #28) and "
@@ -202,7 +211,7 @@ RULES: dict[str, Rule] = {
         "`measured` writes its rows into `measured_store` (#94), and compiles "
         "#113's asymmetric study cells through `asym`, and #205's K cells "
         "through `kernel_k`",
-        ("spec", "device", "=ir", "kernel", "ir.lower", "emit", "measured_store",
+        ("spec", "device", "=ir", "mmd.kernel", "ir.lower", "emit", "measured_store",
          "asym", "kernel_dq", "kernel_jab", "kernel_k"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
@@ -220,7 +229,7 @@ RULES: dict[str, Rule] = {
         "each other (#115; the one analysis that may import its siblings, "
         "and only the three it cross-reads). It reads both sides and feeds "
         "neither",
-        ("spec", "device", "kernel", "ir.lower", "measured_store",
+        ("spec", "device", "mmd.kernel", "ir.lower", "measured_store",
          "kernelrank", "batchreport", "ridge"),
         measured="an analysis reads the STORE (`measured_store`), never the "
                  "driver that compiles into it: a ranking must not need a "
@@ -280,7 +289,7 @@ RULES: dict[str, Rule] = {
         "`passes.atomize`) and judges its rows against the literal ones read "
         "from the store. Not `builder`: it reads the store; not `analysis`: "
         "it plans",
-        ("spec", "device", "=ir", "plan", "kernel", "ir.passes", "measured_store"),
+        ("spec", "device", "=ir", "plan", "mmd.kernel", "ir.passes", "measured_store"),
         literature="the study's verdict is recorded by hand in claims.json / "
                    "limits.json and read by tests; nothing measured may feed "
                    "a literature floor",
@@ -297,7 +306,7 @@ RULES: dict[str, Rule] = {
         "names cells (`kernel.pq_spec`) and lowering levers (`lower.LEVERS`) "
         "but knows no toolchain, so the fast tier and the analyses read it "
         "without one (`TOOLCHAIN_STDLIB` below holds the runtime half)",
-        ("spec", "device", "kernel", "ir.lower"),
+        ("spec", "device", "mmd.kernel", "ir.lower"),
         measured="the driver writes into the store, never the reverse: a store "
                  "that imports its driver drags a toolchain into every reader "
                  "(#94)",
@@ -321,7 +330,7 @@ RULES: dict[str, Rule] = {
         "Coulomb matrix (whose `[p|q]` evaluator is injected as `pq=`) -- "
         "input data a "
         "kernel is eventually run on, in plain tuples and floats",
-        ("ao",),
+        ("ao", "mmd.hermite"),
         spec="a shell is input data, not a generation key: no `Spec` field "
              "and no `key()` (#80)",
         plan="the AO side restates the Cartesian order rather than importing "
@@ -345,8 +354,8 @@ RULES: dict[str, Rule] = {
         "`Target.JAB` composed over that staging, so the adapter reaches "
         "`ao.staged` and builds its own `launch` plan from the DQ kernel's "
         "read-back `Dmax`",
-        ("spec", "kernel", "=ir", "ir.interp", "plan", "ao", "launch",
-         "launch_common", "ir.passes", "kernel_dq", "kernel_jab"),
+        ("spec", "mmd.kernel", "=ir", "ir.interp", "plan", "ao", "mmd.hermite",
+         "launch", "launch_common", "ir.passes", "kernel_dq", "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -361,7 +370,7 @@ RULES: dict[str, Rule] = {
         "`ir` for the `Kernel` type it carries; the records, the sort, the "
         "bound check and the batch admission it shares with its siblings "
         "from `launch_common` (#504)",
-        ("spec", "plan", "kernel", "=ir", "ao", "launch_common"),
+        ("spec", "plan", "mmd.kernel", "=ir", "ao", "mmd.hermite", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
         **{"ir.interp":
@@ -393,14 +402,15 @@ RULES: dict[str, Rule] = {
         "records and the host's staged contraction; the bound, the ket "
         "sort key and the K kernel builder arrive injected (`bound=`, "
         "`key=`, `build=`)",
-        ("spec", "=ir", "ao", "launch", "launch_common"),
+        ("spec", "=ir", "ao", "mmd.hermite", "launch", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound and `pq` are injected",
         **{"ir.interp":
             "the plan is data and the walk is ao.k's arithmetic; "
                "nothing is interpreted here"},
-        kernel="J's builder is `launch`'s business, and the K builder "
+        **{"mmd.kernel":
+            "J's builder is `launch`'s business, and the K builder "
                "(`kernel_k`, #198) arrives injected as `build=`: this plan "
-               "names a class's `Spec`, it does not build it",
+               "names a class's `Spec`, it does not build it"},
         plan="the batch admission is `launch_common.batches_for`'s, "
              "shared, not "
              "restated: a second path to the plan could disagree with J's",
@@ -419,7 +429,7 @@ RULES: dict[str, Rule] = {
         "kernel_jab.py (#154): the bra-transform-and-scatter kernel, "
         "`Target.JAB` -- key -> IR, with the `E` block fragment inlined "
         "(`e_fragment`) and the Hermite order from the plan's targets",
-        ("spec", "=ir", "e_fragment", "plan.targets"),
+        ("spec", "=ir", "mmd.e_fragment", "plan.targets"),
         ao="`ao.j.jab_from_host` is the witness the kernel is interpreted "
            "against; importing the AO layer shares ancestry with it (#20)",
         **{"ir.interp":
@@ -432,7 +442,7 @@ RULES: dict[str, Rule] = {
         "the key, the `E` block fragment (inlined), the Hermite order from "
         "the plan's targets, and IR. ao/drive.py's `KernelDQ` runs it in "
         "the interpreter as `ao.j`'s `dq=` seam",
-        ("spec", "=ir", "e_fragment", "plan.targets"),
+        ("spec", "=ir", "mmd.e_fragment", "plan.targets"),
         ao="`ao.j.dq_from_host` is the reference the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
            "importing either shares ancestry with its witness (#20); the "
@@ -452,13 +462,15 @@ RULES: dict[str, Rule] = {
         "It reads the plan and feeds nothing: no module imports it "
         "(test/test_k_duplication.py)",
         ("spec", "plan"),
-        kernel="the count is the arithmetic half of a claim settled BEFORE "
+        **{"mmd.kernel":
+            "the count is the arithmetic half of a claim settled BEFORE "
                "any K kernel is built (#202): `k_spec` is restated and a "
-               "test pins the two equal",
+               "test pins the two equal"},
         **{"=ir": "the count reads no instructions: a builder's output would make "
            "it a measurement of one kernel, not of the plan"},
-        e_fragment="the `E` nonzero pattern is restated from the plan's "
-                   "targets; the fragment is a builder",
+        **{"mmd.e_fragment":
+            "the `E` nonzero pattern is restated from the plan's "
+                   "targets; the fragment is a builder"},
         **{"ir.interp":
             "nothing here is run"},
         emit="nothing here is spelled",
@@ -476,7 +488,7 @@ RULES: dict[str, Rule] = {
         "(`kernel`), and two `E` block fragments inlined (`e_fragment`); "
         "a split class's kernels are built then `passes.atomize`d (#203), "
         "as the `builder` rule lets `kernel.py` do",
-        ("spec", "plan", "=ir", "recurrence", "e_fragment", "kernel",
+        ("spec", "plan", "=ir", "mmd.recurrence", "mmd.e_fragment", "mmd.kernel",
          "ir.passes", "k_levers"),
         ao="`ao.k.k_quartet` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
@@ -522,9 +534,9 @@ RULE_OF: dict[str, str] = {
     "ir.interp": "interp",
     "ir.lower": "lower",
     "ir.passes": "lower",
-    "recurrence": "builder",
-    "kernel": "builder",
-    "e_fragment": "fragment",
+    "mmd.recurrence": "builder",
+    "mmd.kernel": "builder",
+    "mmd.e_fragment": "fragment",
     "emit": "emit",
     "emit._c": "emit",
     "emit.cuda": "emit",
@@ -542,7 +554,7 @@ RULE_OF: dict[str, str] = {
     "planrank": "plan_analysis",
     "ao": "ao",
     "ao.shell": "ao",
-    "ao.hermite": "ao",
+    "mmd.hermite": "ao",
     "ao.pairs": "ao",
     "ao.eri": "ao",
     "ao.density": "ao",
@@ -607,24 +619,24 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ir.interp": ("ir",),
     "ir.lower": ("ir",),
     "ir.passes": ("ir",),
-    "recurrence": ("ir", "plan.dag", "plan.pipeline", "plan.schedule",
+    "mmd.recurrence": ("ir", "plan.dag", "plan.pipeline", "plan.schedule",
                    "plan.targets", "spec"),
-    "kernel": ("ir", "ir.passes", "plan.dag", "plan.pipeline", "plan.schedule",
-               "plan.targets", "recurrence", "spec"),
-    "e_fragment": ("ir", "plan.targets"),
+    "mmd.kernel": ("ir", "ir.passes", "plan.dag", "plan.pipeline", "plan.schedule",
+               "plan.targets", "mmd.recurrence", "spec"),
+    "mmd.e_fragment": ("ir", "plan.targets"),
     "emit": (),
     "emit._c": ("device", "ir"),
     "emit.cuda": ("device", "emit._c", "ir"),
     "emit.hip": ("device", "emit._c", "ir"),
     "emit.gpu": ("device", "emit._c", "ir"),
-    "emit.__main__": ("device", "emit.cuda", "emit.hip", "kernel", "kernel_dq",
+    "emit.__main__": ("device", "emit.cuda", "emit.hip", "mmd.kernel", "kernel_dq",
                       "kernel_jab", "spec"),
-    "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "kernel",
+    "measured": ("asym", "device", "emit.cuda", "emit.hip", "ir", "mmd.kernel",
                  "kernel_k", "ir.lower", "measured_store", "spec"),
-    "measured_store": ("device", "kernel", "ir.lower", "spec"),
-    "asym": ("device", "ir", "kernel", "measured_store", "ir.passes",
+    "measured_store": ("device", "mmd.kernel", "ir.lower", "spec"),
+    "asym": ("device", "ir", "mmd.kernel", "measured_store", "ir.passes",
              "plan.batching", "plan.dag", "plan.sieve", "plan.targets", "spec"),
-    "kernelrank": ("device", "kernel", "ir.lower", "measured_store", "spec"),
+    "kernelrank": ("device", "mmd.kernel", "ir.lower", "measured_store", "spec"),
     "batchreport": ("device", "measured_store"),
     "ridge": ("device", "measured_store"),
     "dispatch": ("batchreport", "device", "measured_store"),
@@ -636,22 +648,22 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                  "plan.pipeline", "spec"),
     "ao": (),
     "ao.shell": (),
-    "ao.hermite": (),
-    "ao.pairs": ("ao.hermite", "ao.shell"),
-    "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
+    "mmd.hermite": (),
+    "ao.pairs": ("mmd.hermite", "ao.shell"),
+    "ao.eri": ("mmd.hermite", "ao.pairs", "ao.shell"),
     # #503: the density contract, `tau`, `EPair` and the ket records, out of
     # ao.j so that K, F, Schwarz and the launch plans need not import J.
-    "ao.density": ("ao.hermite", "ao.pairs", "ao.shell"),
-    "ao.j": ("ao.density", "ao.hermite", "ao.pairs", "ao.shell"),
+    "ao.density": ("mmd.hermite", "ao.pairs", "ao.shell"),
+    "ao.j": ("ao.density", "mmd.hermite", "ao.pairs", "ao.shell"),
     # #197: K reuses the density contract and EPair (ao.density since #503),
     # and ao.eri for its third index path (`k_from_eris`).
-    "ao.k": ("ao.density", "ao.eri", "ao.hermite", "ao.shell"),
+    "ao.k": ("ao.density", "ao.eri", "mmd.hermite", "ao.shell"),
     "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "ir.interp", "ir",
-                 "kernel", "kernel_dq", "kernel_jab", "launch",
+                 "mmd.kernel", "kernel_dq", "kernel_jab", "launch",
                  "launch_common", "plan.pipeline", "spec"),
     "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "ir.interp", "ir",
-                  "kernel", "launch", "launch_common", "ir.passes"),
-    "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "kernel",
+                  "mmd.kernel", "launch", "launch_common", "ir.passes"),
+    "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "mmd.kernel",
                "launch_common", "spec"),
     # #504: what the launch plans share, out of `launch`; it asks the plan
     # which batch counts a class admits.
@@ -661,16 +673,16 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     # records and the host's staged contraction from `ao`.
     "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "launch_common",
                  "spec"),
-    "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
-    "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
+    "kernel_jab": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
+    "kernel_dq": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
     "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
     # #337: the plan reached through `kernel.builder_plan`, which strips the
     # kernel-body levers, so `plan.pipeline` is no longer imported here.
     # #367: the lever seams (`k_levers.seams`, the frozen defaults moved
     # there) and the registry that composes a spec's levers (`k_levers`).
-    "kernel_k": ("ir", "k_levers", "k_levers.seams", "kernel",
-                 "recurrence", "spec"),
+    "kernel_k": ("ir", "k_levers", "k_levers.seams", "mmd.kernel",
+                 "mmd.recurrence", "spec"),
     "levers": (),
 }.items()}
 
@@ -954,7 +966,7 @@ RULE_OF |= {
     "ao.potential": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.potential": ("ao.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
+    "ao.potential": ("mmd.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -968,7 +980,7 @@ RULE_OF |= {
     "ao.kinetic": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.kinetic": ("ao.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
+    "ao.kinetic": ("mmd.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -984,7 +996,7 @@ RULES |= {
         "kernel_s.py (#237): the overlap kernel, `Target.S` -- key -> IR, "
         "with the `E` fragment's `t = 0` column inlined (`e_fragment`) and "
         "`kernel_jab`'s scatter rule restated, not imported",
-        ("spec", "=ir", "e_fragment"),
+        ("spec", "=ir", "mmd.e_fragment"),
         ao="`ao.overlap.overlap_block` is the witness the kernel is "
            "interpreted against, and `ao.pairs.dress` the prefactor it must "
            "not form: importing either shares ancestry with it (#20)",
@@ -998,7 +1010,7 @@ RULE_OF |= {
     "kernel_s": "s_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_s": ("e_fragment", "ir", "spec"),
+    "kernel_s": ("mmd.e_fragment", "ir", "spec"),
 }.items()}
 
 
@@ -1063,7 +1075,7 @@ RULES |= {
         "kernel_record_bound.py (#499): K's dressed record bound kernel, "
         "`Target.RECORD_BOUND` -- key -> IR, the `E` fragment inlined "
         "(`e_fragment`) and each `I_p` in `kernel_pair_bound`'s closed form",
-        ("spec", "=ir", "plan.targets", "e_fragment", "kernel_pair_bound"),
+        ("spec", "=ir", "plan.targets", "mmd.e_fragment", "kernel_pair_bound"),
         ao="`ao.k.record_bounds` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the prefactor it must not form: "
            "importing either shares ancestry with it (#20)",
@@ -1077,7 +1089,7 @@ RULE_OF |= {
     "kernel_record_bound": "record_bound_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_record_bound": ("e_fragment", "ir", "kernel_pair_bound",
+    "kernel_record_bound": ("mmd.e_fragment", "ir", "kernel_pair_bound",
                             "plan.targets", "spec"),
 }.items()}
 
@@ -1093,7 +1105,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"e_fragment", "kernel_pair_bound"} <= seen
+    assert {"mmd.e_fragment", "kernel_pair_bound"} <= seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_record_bound reaches {hit}"
@@ -1111,7 +1123,7 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "e_fragment" in seen
+    assert "mmd.e_fragment" in seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_s reaches {hit}"
@@ -1130,7 +1142,7 @@ RULES |= {
         "kernel_t.py (#238): the kinetic-energy kernel, `Target.T` -- key -> "
         "IR, with the `E` fragment's kinetic bracket inlined (`e_fragment`) "
         "and `kernel_jab`'s scatter rule restated, not imported",
-        ("spec", "=ir", "e_fragment"),
+        ("spec", "=ir", "mmd.e_fragment"),
         ao="`ao.kinetic.kinetic_block` is the witness the kernel is "
            "interpreted against, and `ao.pairs.dress` the prefactor it must "
            "not form: importing either shares ancestry with it (#20)",
@@ -1144,7 +1156,7 @@ RULE_OF |= {
     "kernel_t": "t_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_t": ("e_fragment", "ir", "spec"),
+    "kernel_t": ("mmd.e_fragment", "ir", "spec"),
 }.items()}
 
 
@@ -1160,7 +1172,7 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "e_fragment" in seen
+    assert "mmd.e_fragment" in seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_t reaches {hit}"
@@ -1181,7 +1193,7 @@ RULES |= {
         "engine's prelude and recurrence statements (`recurrence`), the `E` "
         "block fragment inlined (`e_fragment`) and `kernel_jab`'s scatter "
         "rule restated, not imported",
-        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence"),
         ao="`ao.potential.potential_block` is the witness the kernel is "
            "interpreted against, and `ao.pairs.dress` the prefactor it must "
            "not form: importing either shares ancestry with it (#20)",
@@ -1195,8 +1207,8 @@ RULE_OF |= {
     "kernel_v": "v_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_v": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
-                 "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "kernel_v": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+                 "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
 }.items()}
 
 
@@ -1212,7 +1224,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_v reaches {hit}"
@@ -1231,7 +1243,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # ---------------------------------------------------------------------------
 
 EDGES["launch"] = EDGES["launch"] | frozenset(
-    ("ao.hermite", "ao.kinetic", "ao.one_electron", "ao.potential"))
+    ("mmd.hermite", "ao.kinetic", "ao.one_electron", "ao.potential"))
 
 
 def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
@@ -1291,6 +1303,19 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {m: "hgp" for m in _modules() if _under(m, "hgp")}
+
+# #505: engine #1's modules moved into `mmd/` (kernel, recurrence, e_fragment,
+# ao.hermite), each keeping its own rule above; the package marker itself is
+# the one new module, and imports nothing.
+RULES |= {
+    "mmd_package": _rule(
+        "mmd/__init__.py (#505): the McMurchie-Davidson engine's package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["mmd"] = "mmd_package"
+EDGES["mmd"] = frozenset()
 EDGES |= {k: frozenset(v) for k, v in {
     "hgp": (),
     "hgp.vrr": (),
@@ -1332,14 +1357,15 @@ RULES |= {
         "in the interpreter on contracted shell quartets -- the HGP twin of "
         "`ao.eri.eri_block`, same signature, for the cross-engine pin and "
         "for `ao.fock`'s injected `eri=` slot (#286)",
-        ("spec", "=ir", "ir.interp", "hgp", "ao"),
+        ("spec", "=ir", "ir.interp", "hgp", "ao", "mmd.hermite"),
         reference=_GROUND_TRUTH + "; Boys arrives by injection (`boys=`), "
                   "and the pin compares against ao/eri.py and libcint",
         plan=RULES["hgp"].must_not["plan"],
         emit="it produces numbers, not text: a backend's spelling is the "
              "kernel tier's to check",
-        kernel="the MMD builder is the other engine: reaching it would make "
-               "the cross-engine pin share ancestry with its witness",
+        **{"mmd.kernel":
+            "the MMD builder is the other engine: reaching it would make "
+               "the cross-engine pin share ancestry with its witness"},
         **{"ao.eri": "ao/eri.py is the witness this evaluator is pinned "
                      "against; importing it would compare an engine to "
                      "itself",
@@ -1402,7 +1428,7 @@ RULES |= {
         "bound check and stable sort from `launch_common` (#504), the "
         "`Spec` it names from `spec`; the bound arrives injected "
         "(`bound=`)",
-        ("spec", "ao", "launch_common"),
+        ("spec", "ao", "mmd.hermite", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
         plan="the plan layer keys on `total_am`, which indexes a [JEngine] "
@@ -1508,7 +1534,7 @@ RULES |= {
         "kernel -- the plan checked against the basis, the records rebuilt "
         "from the shells, every launch run through an injected executor "
         "(`run=`), `F` closed, and every unique quartet's fate recorded",
-        ("spec", "=ir", "ao", "kernel_f"),
+        ("spec", "=ir", "ao", "mmd.hermite", "kernel_f"),
         launch_f="the walker is independent of the plan builder (m6's "
                  "discipline, #286): it reads the plan by duck type, never "
                  "a second call into, or a type from, the module that made it",
@@ -1579,7 +1605,7 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
 # ---------------------------------------------------------------------------
 
 ENGINES: dict[str, tuple[str, ...]] = {
-    "mmd": ("plan", "recurrence", "kernel", "ao.eri"),
+    "mmd": ("plan", "mmd.recurrence", "mmd.kernel", "ao.eri"),
     "hgp": ("hgp", "kernel_f", "ao.hgp_drive"),
 }
 DECLARED_ABOVE = ("ao.fock",)
@@ -1595,14 +1621,15 @@ RULES |= {
         "`ao.eri` + `kernel` and `Hgp` over `ao.hgp_drive` + `kernel_f`. "
         "The one module in src/ that names both engines; each engine's "
         "special function is injected at construction",
-        ("spec", "=ir", "ao.shell", "ao.eri", "ao.hgp_drive", "kernel",
+        ("spec", "=ir", "ao.shell", "ao.eri", "ao.hgp_drive", "mmd.kernel",
          "kernel_f"),
         reference=_GROUND_TRUTH + "; `pq=` and `boys=` arrive injected, as "
                   "`interp` takes `boys=`",
         plan=_ENGINE_WHY.format("plan/ (MILD, the sieve, the partition, "
                                 "the total_am row)"),
         hgp=_ENGINE_WHY.format("hgp/ (the VRR/HRR DAGs)"),
-        recurrence=_ENGINE_WHY.format("the MMD recurrence"),
+        **{"mmd.recurrence":
+            _ENGINE_WHY.format("the MMD recurrence")},
         **{"ir.interp":
             "the protocol evaluates nothing itself; HGP's adapter runs "
                "the interpreter, and the protocol must not lean on it"},
@@ -1611,7 +1638,7 @@ RULES |= {
 }
 RULE_OF["engine"] = "engine"
 EDGES["engine"] = frozenset(("ao.eri", "ao.hgp_drive", "ao.shell", "ir",
-                             "kernel", "kernel_f", "spec"))
+                             "mmd.kernel", "kernel_f", "spec"))
 
 
 def _engine_of(module: str) -> str | None:
@@ -1688,7 +1715,7 @@ def test_the_engine_rule_can_fail() -> None:
 # it (`plan/`, `recurrence`, `hgp/`, the AO layer).
 # ---------------------------------------------------------------------------
 
-GENERATORS = {"emit.__main__": frozenset(("kernel", "kernel_f"))}
+GENERATORS = {"emit.__main__": frozenset(("mmd.kernel", "kernel_f"))}
 RULES["driver"] = Rule(RULES["driver"].why + ", and #287's fused Fock "
                        "kernel through `kernel_f`, by its entry point only",
                        RULES["driver"].may | frozenset(("kernel_f",)),
@@ -1714,7 +1741,7 @@ def test_a_generator_names_the_engines_by_their_entry_points_only() -> None:
 # (`kernel`, `kernel_f`), never `hgp/` or the plan behind them.
 # ---------------------------------------------------------------------------
 
-GENERATORS["measured"] = frozenset(("kernel", "kernel_f"))
+GENERATORS["measured"] = frozenset(("mmd.kernel", "kernel_f"))
 EDGES["measured"] = EDGES["measured"] | frozenset(("kernel_f",))
 
 
@@ -1735,7 +1762,7 @@ RULES |= {
         "`E` fragments) and the registry composing a spec's K levers, one "
         "module per lever; since #345 also the batch kernel's atomic "
         "write (`seams.atomize`, the `passes.atomize` default)",
-        ("spec", "plan", "=ir", "recurrence", "e_fragment", "k_levers",
+        ("spec", "plan", "=ir", "mmd.recurrence", "mmd.e_fragment", "k_levers",
          "ir.passes"),
         kernel_k="the skeleton imports the seams: a seam or a lever reaching "
                  "back into `kernel_k` is a cycle",
@@ -1749,8 +1776,8 @@ RULES |= {
 RULE_OF |= {m: "k_lever" for m in _modules() if _under(m, "k_levers")}
 EDGES |= {k: frozenset(v) for k, v in {
     "k_levers": ("k_levers.seams", "spec"),
-    "k_levers.seams": ("e_fragment", "ir", "ir.passes", "plan.schedule",
-                       "plan.targets", "recurrence", "spec"),
+    "k_levers.seams": ("mmd.e_fragment", "ir", "ir.passes", "plan.schedule",
+                       "plan.targets", "mmd.recurrence", "spec"),
 }.items()}
 
 
@@ -1850,8 +1877,9 @@ RULES |= {
         "IR out, called by `kernel.py`'s hook when `Spec.kernel_body_levers` "
         "names one. It reads the recurrence's node names and the targets' "
         "type; the plan, the batch and the contraction arrive as arguments",
-        ("=ir", "recurrence", "plan.targets"),
-        kernel="`kernel.py` calls the lever; the reverse is a cycle",
+        ("=ir", "mmd.recurrence", "plan.targets"),
+        **{"mmd.kernel":
+            "`kernel.py` calls the lever; the reverse is a cycle"},
         levers="the builder reads the vocabulary through `spec`; a lever's "
                "behaviour does not re-read it",
         emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
@@ -1864,14 +1892,14 @@ RULE_OF |= {"j_levers": "j_lever", "j_levers.fused": "j_lever",
             "j_levers.mixed": "j_lever"}
 EDGES |= {k: frozenset(v) for k, v in {
     "j_levers": (),
-    "j_levers.fused": ("ir", "plan.targets", "recurrence"),
-    "j_levers.mixed": ("ir", "recurrence"),
+    "j_levers.fused": ("ir", "plan.targets", "mmd.recurrence"),
+    "j_levers.mixed": ("ir", "mmd.recurrence"),
 }.items()}
 RULES["builder"] = Rule(RULES["builder"].why + "; its J kernel-body levers' "
                         "behaviour lives in `j_levers/` (#344)",
                         RULES["builder"].may | frozenset(("j_levers",)),
                         RULES["builder"].must_not)
-EDGES["kernel"] = EDGES["kernel"] | frozenset(("j_levers.fused",
+EDGES["mmd.kernel"] = EDGES["mmd.kernel"] | frozenset(("j_levers.fused",
                                                 "j_levers.mixed"))
 
 
@@ -1903,7 +1931,7 @@ EDGES["k_levers.shuffle"] = frozenset(("ir", "k_levers.coalesced",
 # the context (and checking it is write-once), so it reaches the seams, the
 # IR, the `E` fragment and `Spec`.
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.stage_eac",))
-EDGES["k_levers.stage_eac"] = frozenset(("e_fragment", "ir", "k_levers.seams",
+EDGES["k_levers.stage_eac"] = frozenset(("mmd.e_fragment", "ir", "k_levers.seams",
                                          "spec"))
 
 
@@ -1990,8 +2018,8 @@ RULES["k_lever"] = Rule(RULES["k_lever"].why + "; a K lever may reuse a J "
                         RULES["k_lever"].may | frozenset(("j_levers",)),
                         RULES["k_lever"].must_not)
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.mixed",))
-EDGES["k_levers.mixed"] = frozenset(("e_fragment", "ir", "j_levers.mixed",
-                                     "k_levers.seams", "recurrence", "spec"))
+EDGES["k_levers.mixed"] = frozenset(("mmd.e_fragment", "ir", "j_levers.mixed",
+                                     "k_levers.seams", "mmd.recurrence", "spec"))
 
 
 # #353 (milestone 13, H10): struct-typed pair-record reads, an F lever
@@ -2017,8 +2045,9 @@ RULES |= {
         "unit's name -- as data read off `levers.VOCABULARY`. A leaf beside "
         "`levers`, so both drivers read one table",
         ("levers",),
-        kernel="the registry names no builder: the CLI maps each family to "
-               "its builder, so the table stays data",
+        **{"mmd.kernel":
+            "the registry names no builder: the CLI maps each family to "
+               "its builder, so the table stays data"},
         emit="a registry spells no text",
         measured_store="the store reads the vocabulary itself; the ladder "
                        "is the CLI's"),
@@ -2048,7 +2077,7 @@ EDGES["measured_store"] = EDGES["measured_store"] | frozenset(("levers",))
 
 EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.interleave",))
 EDGES["k_levers.interleave"] = frozenset(("ir", "k_levers.seams",
-                                          "recurrence", "spec"))
+                                          "mmd.recurrence", "spec"))
 
 # #348 (milestone 13, M4): the split arm is the composition interleave+split,
 # not a lever of its own. `interleave` reads `split.NAME` to name the arm in
@@ -2073,7 +2102,7 @@ RULES |= {
         "(la lb|la lb) (`plan`), the J engine's prelude and recurrence "
         "statements (`recurrence`), the `E` block fragment inlined twice "
         "(`e_fragment`) and `kernel_jab`'s scatter rule restated",
-        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence"),
         ao="`ao.schwarz` (through `ao.eri`) is the witness the kernel is "
            "interpreted against: importing it shares ancestry with it (#20)",
         **{"ir.interp":
@@ -2088,8 +2117,8 @@ RULE_OF |= {
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "ao.schwarz": ("ao.density", "ao.eri", "ao.shell"),
-    "kernel_schwarz": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
-                       "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "kernel_schwarz": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+                       "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
 }.items()}
 RULES["driver"] = Rule(RULES["driver"].why + ", and the Schwarz ladder "
                        "through `kernel_schwarz`",
@@ -2109,7 +2138,7 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
@@ -2234,7 +2263,7 @@ RULE_OF |= {
     "ao.metric": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.metric": ("ao.hermite", "ao.shell"),
+    "ao.metric": ("mmd.hermite", "ao.shell"),
 }.items()}
 
 
@@ -2249,7 +2278,7 @@ RULE_OF |= {
     "ao.eri3": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.eri3": ("ao.hermite", "ao.metric", "ao.pairs", "ao.shell"),
+    "ao.eri3": ("mmd.hermite", "ao.metric", "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -2269,7 +2298,7 @@ RULES |= {
         "(lP 0|lQ 0) (`plan`), the J engine's prelude and recurrence "
         "statements (`recurrence`), the single-center `E` fragment inlined "
         "twice (`e_fragment`) and `kernel_jab`'s scatter rule restated",
-        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence"),
         ao="`ao.metric` is the witness the kernel is interpreted against: "
            "importing it shares ancestry with it (#20)",
         **{"ir.interp":
@@ -2281,22 +2310,23 @@ RULES |= {
         "ao/metric_drive.py (#414): the metric kernel run in the interpreter "
         "over `ao.metric`'s staging -- builder + interp + ao, producing "
         "numbers, as `ao/drive.py` does for the J chain",
-        ("spec", "=ir", "ir.interp", "ao", "kernel_metric"),
+        ("spec", "=ir", "ir.interp", "ao", "mmd.hermite", "kernel_metric"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
         emit="it produces numbers, not text: a backend's spelling is the "
              "kernel tier's to check, not this adapter's",
         plan="the builder asks the plan; the adapter only runs what it built",
-        kernel="the J builder is another kernel's; the metric has its own"),
+        **{"mmd.kernel":
+            "the J builder is another kernel's; the metric has its own"}),
 }
 RULE_OF |= {
     "kernel_metric": "metric_builder",
     "ao.metric_drive": "metric_adapter",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_metric": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
-                      "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "kernel_metric": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+                      "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
     "ao.metric_drive": ("ao.metric", "ao.shell", "ir.interp", "ir",
                         "kernel_metric"),
 }.items()}
@@ -2312,7 +2342,7 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_metric reaches {hit}"
@@ -2335,7 +2365,7 @@ RULES |= {
         "recurrence statements (`recurrence`), the bra `E` block and the "
         "single-center `E` fragment inlined (`e_fragment`) and `kernel_jab`'s "
         "scatter rule restated",
-        ("spec", "=ir", "e_fragment", "plan", "recurrence"),
+        ("spec", "=ir", "mmd.e_fragment", "plan", "mmd.recurrence"),
         ao="`ao.eri3` is the witness the kernel is interpreted against: "
            "importing it shares ancestry with it (#20)",
         **{"ir.interp":
@@ -2347,22 +2377,23 @@ RULES |= {
         "ao/eri3_drive.py (#444): the three-center kernel run in the "
         "interpreter over `ao.eri3`'s staging -- builder + interp + ao, "
         "producing numbers, as `ao/metric_drive.py` does for the metric",
-        ("spec", "=ir", "ir.interp", "ao", "kernel_eri3"),
+        ("spec", "=ir", "ir.interp", "ao", "mmd.hermite", "kernel_eri3"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
         emit="it produces numbers, not text: a backend's spelling is the "
              "kernel tier's to check, not this adapter's",
         plan="the builder asks the plan; the adapter only runs what it built",
-        kernel="the J builder is another kernel's; ERI3 has its own"),
+        **{"mmd.kernel":
+            "the J builder is another kernel's; ERI3 has its own"}),
 }
 RULE_OF |= {
     "kernel_eri3": "eri3_builder",
     "ao.eri3_drive": "eri3_adapter",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_eri3": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
-                    "plan.schedule", "plan.targets", "recurrence", "spec"),
+    "kernel_eri3": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+                    "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
     "ao.eri3_drive": ("ao.eri3", "ao.shell", "ir.interp", "ir", "kernel_eri3"),
 }.items()}
 
@@ -2377,7 +2408,7 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"e_fragment", "recurrence", "plan.pipeline"} <= seen
+    assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_eri3 reaches {hit}"
@@ -2407,7 +2438,7 @@ RULES |= {
         "IR, `kernel_s.record_values`' per-record statements (the `E` "
         "fragment's `t = 0` column) reused and a rectangular scatter of its "
         "own",
-        ("spec", "=ir", "e_fragment", "kernel_s"),
+        ("spec", "=ir", "mmd.e_fragment", "kernel_s"),
         ao="`ao.overlap.cross_overlap_matrix` is the witness the kernel is "
            "interpreted against: importing it shares ancestry with it (#20)",
         **{"ir.interp":
@@ -2420,7 +2451,7 @@ RULE_OF |= {
     "kernel_sx": "sx_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_sx": ("e_fragment", "ir", "kernel_s", "spec"),
+    "kernel_sx": ("mmd.e_fragment", "ir", "kernel_s", "spec"),
 }.items()}
 RULES["driver"] = Rule(RULES["driver"].why + ", and the cross-basis overlap "
                        "ladder through `kernel_sx`",
@@ -2438,7 +2469,7 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"e_fragment", "kernel_s"} <= seen
+    assert {"mmd.e_fragment", "kernel_s"} <= seen
     for banned in (_REF, "ao", "ir.interp", "emit", "device", "launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
@@ -2740,7 +2771,7 @@ RULES |= {
         "one block per contracted K_AB block -- `kernel_k`'s per-pair body "
         "(`kernel_k.ket_body`) and the K seams' default hooks in another "
         "loop nest, keyed on a `Target.K` `Spec`",
-        ("spec", "=ir", "kernel", "kernel_k", "k_levers"),
+        ("spec", "=ir", "mmd.kernel", "kernel_k", "k_levers"),
         **RULES["k_builder"].must_not,
         launch_k="a launch plan is the kernel's consumer, never its ancestor",
         launch_kblock="a launch plan is the kernel's consumer, never its "
@@ -2750,11 +2781,12 @@ RULES |= {
         "-- `launch_k.k_launches`' records regrouped by first shell into "
         "one block per (a, b) -- and its walk in Python on ao.k's staged "
         "arithmetic; the bound and the builder arrive injected",
-        ("spec", "=ir", "ao", "launch_common", "launch_k"),
+        ("spec", "=ir", "ao", "mmd.hermite", "launch_common", "launch_k"),
         **{k: v for k, v in RULES["k_launch"].must_not.items()
-           if k not in ("kernel", "ao")},
-        kernel="the builders arrive injected as `build=`: this plan names a "
-               "class's `Spec`, it does not build it",
+           if k not in ("mmd.kernel", "ao")},
+        **{"mmd.kernel":
+            "the builders arrive injected as `build=`: this plan names a "
+               "class's `Spec`, it does not build it"},
         kernel_k="the builders arrive injected as `build=`",
         kernel_kblock="the builders arrive injected as `build=`"),
 }
@@ -2763,7 +2795,7 @@ RULE_OF |= {
     "launch_kblock": "kblock_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_kblock": ("ir", "k_levers.seams", "kernel", "kernel_k", "spec"),
+    "kernel_kblock": ("ir", "k_levers.seams", "mmd.kernel", "kernel_k", "spec"),
     "launch_kblock": ("ao.density", "ao.k", "ao.shell", "ir",
                       "launch_common", "launch_k", "spec"),
 }.items()}
@@ -2818,8 +2850,9 @@ RULES |= {
         launch_k="a launch plan imports this module, never the reverse",
         launch_kblock="a launch plan imports this module, never the reverse",
         launch_f="a launch plan imports this module, never the reverse",
-        kernel="no kernel is built here: the builders are the plans' "
-               "business",
+        **{"mmd.kernel":
+            "no kernel is built here: the builders are the plans' "
+               "business"},
         **{"=ir": "the shared pieces carry no `Kernel`"},
         ao="the records are the plans' to build from the AO layer; the "
            "shared pieces need none of it"),

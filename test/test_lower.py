@@ -76,7 +76,11 @@ from felizjueves.ir.lower import (
     spilled,
     tiered,
 )
-from felizjueves.kernel import (
+from felizjueves.kernel_dq import build_dq_kernel
+from felizjueves.kernel_f import build_f_kernel, kernel_counts
+from felizjueves.kernel_jab import build_jab_kernel
+from felizjueves.kernel_k import build_k_kernels
+from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernel,
     build_pq_kernels,
@@ -85,10 +89,6 @@ from felizjueves.kernel import (
     launch_shape,
     pq_spec,
 )
-from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_f import build_f_kernel, kernel_counts
-from felizjueves.kernel_jab import build_jab_kernel
-from felizjueves.kernel_k import build_k_kernels
 from felizjueves.plan.dag import BatchDag, Node, build, is_fundamental
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.sieve import plan
@@ -591,7 +591,7 @@ def test_the_default_arm_is_untouched_above_l4() -> None:
 # (2,0|2,0) one batch, in their own directory so no literal golden's glob
 # sees them. Regenerate (and review the diff) with:
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
-#   from felizjueves.kernel import pq_spec; \
+#   from felizjueves.mmd.kernel import pq_spec; \
 #   from felizjueves.measured import cell_kernels; \
 #   from felizjueves.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \

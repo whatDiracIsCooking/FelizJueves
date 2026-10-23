@@ -45,8 +45,8 @@ from test_f_lever_batched_vrr_device import shared_bytes
 
 from felizjueves import measured
 from felizjueves.k_levers import stage_eac
-from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import build_k_kernels
+from felizjueves.mmd.kernel import k_spec
 from felizjueves.spec import Operator, Spec, Target
 
 NAME = stage_eac.NAME

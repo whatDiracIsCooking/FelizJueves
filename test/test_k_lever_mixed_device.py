@@ -52,8 +52,8 @@ from felizjueves import measured
 from felizjueves.ao.pairs import narrowed
 from felizjueves.ir import is_f32
 from felizjueves.k_levers import mixed
-from felizjueves.kernel import k_spec
 from felizjueves.kernel_k import build_k_kernels
+from felizjueves.mmd.kernel import k_spec
 from felizjueves.spec import Operator, Spec, Target
 
 ARMS = mixed.ARMS

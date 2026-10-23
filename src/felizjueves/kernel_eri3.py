@@ -112,7 +112,6 @@ interpreter nor `reference/`.
 
 from __future__ import annotations
 
-from felizjueves import e_fragment as ef
 from felizjueves.ir import (
     Assign,
     Boys,
@@ -135,17 +134,18 @@ from felizjueves.ir import (
     Var,
     Weighted,
 )
-from felizjueves.plan.dag import BatchDag
-from felizjueves.plan.pipeline import plan
-from felizjueves.plan.schedule import Order, schedule
-from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import (
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.recurrence import (
     PQ_PARAMS,
     THETA,
     fundamental_prelude,
     node_name,
     recurrence_body,
 )
+from felizjueves.plan.dag import BatchDag
+from felizjueves.plan.pipeline import plan
+from felizjueves.plan.schedule import Order, schedule
+from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [

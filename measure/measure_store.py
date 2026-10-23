@@ -53,7 +53,7 @@ from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import GFX1200, SM_86, MeasuredKey
 from felizjueves.emit import cuda, hip
 from felizjueves.ir.lower import RECYCLE
-from felizjueves.kernel import build_pq_kernel, pq_spec
+from felizjueves.mmd.kernel import build_pq_kernel, pq_spec
 from felizjueves.plan.pipeline import TUNED
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import Target

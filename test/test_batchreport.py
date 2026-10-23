@@ -19,7 +19,7 @@ import pytest
 from felizjueves import batchreport
 from felizjueves import measured_store as measured
 from felizjueves.device import ARCHS, MeasuredKey
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 
 # --- the rule, on synthetic rows ----------------------------------------------
 

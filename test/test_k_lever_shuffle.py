@@ -64,8 +64,8 @@ from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import LANE0
 from felizjueves.k_levers import coalesced, shuffle, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KContext, KHooks, ncart
-from felizjueves.kernel import builder_plan
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels, launch_shape
+from felizjueves.mmd.kernel import builder_plan
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 

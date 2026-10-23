@@ -85,10 +85,10 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from felizjueves.ao.hermite import e_block, hermite_order
 from felizjueves.ao.metric import AuxRec, aux_records, center_e
 from felizjueves.ao.pairs import PrimitivePair, dress, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.mmd.hermite import e_block, hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]

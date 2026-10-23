@@ -53,7 +53,6 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, split_by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves.ao.density import epair
 from felizjueves.ao.kinetic import kinetic_block, kinetic_matrix
 from felizjueves.ao.pairs import primitive_pairs
@@ -83,6 +82,7 @@ from felizjueves.kernel_t import (
     t_spec,
 )
 from felizjueves.launch import per_axis
+from felizjueves.mmd import e_fragment as ef
 from felizjueves.spec import Operator, Spec, Target
 
 LMAX = 3

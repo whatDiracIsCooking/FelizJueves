@@ -31,9 +31,9 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.pairs import PrimitivePair, dress, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.mmd.hermite import hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]

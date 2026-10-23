@@ -31,7 +31,7 @@ import pytest
 from felizjueves import measured_store as measured
 from felizjueves import planrank
 from felizjueves.device import ARCHS, Arch, Uncharacterised, Vendor
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 from felizjueves.plan.pipeline import plan
 from felizjueves.planrank import (
     CONCORDANT,

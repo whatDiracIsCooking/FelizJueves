@@ -18,10 +18,10 @@ import random
 import pytest
 from tiers import by_l, is_fast
 
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.pairs import dress, primitive_pairs
 from felizjueves.ao.potential import potential_block, potential_matrix
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental, one_centre, theta_of
 

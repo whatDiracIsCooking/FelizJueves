@@ -44,7 +44,6 @@ from test_shipped_plan import (
 
 from felizjueves import measured_store
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.kernel import pq_spec
 from felizjueves.measured_store import (
     LOSS,
     MIXED,
@@ -55,6 +54,7 @@ from felizjueves.measured_store import (
     TUNED_CELLS,
     WIN,
 )
+from felizjueves.mmd.kernel import pq_spec
 from felizjueves.spec import Spec
 
 LIMITS = ROOT / "data" / "literature" / "jengine" / "limits.json"

@@ -73,7 +73,7 @@ from felizjueves.ir import (
 )
 from felizjueves.k_levers import split
 from felizjueves.k_levers.seams import KContext, KHooks, plus
-from felizjueves.recurrence import node_name
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.spec import Spec
 
 __all__ = ["NAME", "SPLIT", "SPLIT_ARM", "TRADE", "WARP", "apply", "arm",

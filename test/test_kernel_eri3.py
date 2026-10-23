@@ -42,7 +42,6 @@ from oracle import manifest
 from test_kernel_metric import pq_tower
 from tiers import FAST_L_MAX, by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves.ao.eri3 import (
     class_block,
     eri3_block_and_scale,
@@ -70,9 +69,10 @@ from felizjueves.kernel_eri3 import (
     live_targets,
     quartet_spec,
 )
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import node_name
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target

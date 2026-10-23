@@ -80,7 +80,7 @@ from felizjueves.ao.drive import BATCH_COUNTS, admitted_batches
 from felizjueves.ao.drive import class_spec as drive_class_spec
 from felizjueves.ao.j import coulomb_matrix
 from felizjueves.emit import __main__ as emit_cli
-from felizjueves.kernel import (
+from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernels,
     ket_functions,

@@ -8,51 +8,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
-   "ao.hgp_drive",
-   "ao.j",
-   "ao.k",
-   "ao.kinetic",
-   "ao.metric",
-   "ao.metric_drive",
-   "ao.one_electron",
-   "ao.overlap",
-   "ao.pairs",
-   "ao.potential",
-   "ao.schwarz",
-   "ao.shell",
-   "ao.staged"
-  ],
-  "ao.density": [
-   "ao",
-   "ao.drive",
-   "ao.eri",
-   "ao.eri3",
-   "ao.eri3_drive",
-   "ao.fock",
-   "ao.hermite",
-   "ao.hgp_drive",
-   "ao.j",
-   "ao.k",
-   "ao.kinetic",
-   "ao.metric",
-   "ao.metric_drive",
-   "ao.one_electron",
-   "ao.overlap",
-   "ao.pairs",
-   "ao.potential",
-   "ao.schwarz",
-   "ao.shell",
-   "ao.staged"
-  ],
-  "ao.drive": [
-   "ao",
-   "ao.density",
-   "ao.eri",
-   "ao.eri3",
-   "ao.eri3_drive",
-   "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -66,14 +21,59 @@
    "ao.schwarz",
    "ao.shell",
    "ao.staged",
-   "interp",
+   "mmd.hermite"
+  ],
+  "ao.density": [
+   "ao",
+   "ao.drive",
+   "ao.eri",
+   "ao.eri3",
+   "ao.eri3_drive",
+   "ao.fock",
+   "ao.hgp_drive",
+   "ao.j",
+   "ao.k",
+   "ao.kinetic",
+   "ao.metric",
+   "ao.metric_drive",
+   "ao.one_electron",
+   "ao.overlap",
+   "ao.pairs",
+   "ao.potential",
+   "ao.schwarz",
+   "ao.shell",
+   "ao.staged",
+   "mmd.hermite"
+  ],
+  "ao.drive": [
+   "ao",
+   "ao.density",
+   "ao.eri",
+   "ao.eri3",
+   "ao.eri3_drive",
+   "ao.fock",
+   "ao.hgp_drive",
+   "ao.j",
+   "ao.k",
+   "ao.kinetic",
+   "ao.metric",
+   "ao.metric_drive",
+   "ao.one_electron",
+   "ao.overlap",
+   "ao.pairs",
+   "ao.potential",
+   "ao.schwarz",
+   "ao.shell",
+   "ao.staged",
    "ir",
-   "kernel",
+   "ir.interp",
+   "ir.passes",
    "kernel_dq",
    "kernel_jab",
    "launch",
    "launch_common",
-   "passes",
+   "mmd.hermite",
+   "mmd.kernel",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -97,51 +97,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
-   "ao.hgp_drive",
-   "ao.j",
-   "ao.k",
-   "ao.kinetic",
-   "ao.metric",
-   "ao.metric_drive",
-   "ao.one_electron",
-   "ao.overlap",
-   "ao.pairs",
-   "ao.potential",
-   "ao.schwarz",
-   "ao.shell",
-   "ao.staged"
-  ],
-  "ao.eri3": [
-   "ao",
-   "ao.density",
-   "ao.drive",
-   "ao.eri",
-   "ao.eri3_drive",
-   "ao.fock",
-   "ao.hermite",
-   "ao.hgp_drive",
-   "ao.j",
-   "ao.k",
-   "ao.kinetic",
-   "ao.metric",
-   "ao.metric_drive",
-   "ao.one_electron",
-   "ao.overlap",
-   "ao.pairs",
-   "ao.potential",
-   "ao.schwarz",
-   "ao.shell",
-   "ao.staged"
-  ],
-  "ao.eri3_drive": [
-   "ao",
-   "ao.density",
-   "ao.drive",
-   "ao.eri",
-   "ao.eri3",
-   "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -155,9 +110,54 @@
    "ao.schwarz",
    "ao.shell",
    "ao.staged",
-   "interp",
+   "mmd.hermite"
+  ],
+  "ao.eri3": [
+   "ao",
+   "ao.density",
+   "ao.drive",
+   "ao.eri",
+   "ao.eri3_drive",
+   "ao.fock",
+   "ao.hgp_drive",
+   "ao.j",
+   "ao.k",
+   "ao.kinetic",
+   "ao.metric",
+   "ao.metric_drive",
+   "ao.one_electron",
+   "ao.overlap",
+   "ao.pairs",
+   "ao.potential",
+   "ao.schwarz",
+   "ao.shell",
+   "ao.staged",
+   "mmd.hermite"
+  ],
+  "ao.eri3_drive": [
+   "ao",
+   "ao.density",
+   "ao.drive",
+   "ao.eri",
+   "ao.eri3",
+   "ao.fock",
+   "ao.hgp_drive",
+   "ao.j",
+   "ao.k",
+   "ao.kinetic",
+   "ao.metric",
+   "ao.metric_drive",
+   "ao.one_electron",
+   "ao.overlap",
+   "ao.pairs",
+   "ao.potential",
+   "ao.schwarz",
+   "ao.shell",
+   "ao.staged",
    "ir",
+   "ir.interp",
    "kernel_eri3",
+   "mmd.hermite",
    "spec"
   ],
   "ao.fock": [
@@ -167,7 +167,6 @@
    "ao.eri",
    "ao.eri3",
    "ao.eri3_drive",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -180,29 +179,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
-  ],
-  "ao.hermite": [
-   "ao",
-   "ao.density",
-   "ao.drive",
-   "ao.eri",
-   "ao.eri3",
-   "ao.eri3_drive",
-   "ao.fock",
-   "ao.hgp_drive",
-   "ao.j",
-   "ao.k",
-   "ao.kinetic",
-   "ao.metric",
-   "ao.metric_drive",
-   "ao.one_electron",
-   "ao.overlap",
-   "ao.pairs",
-   "ao.potential",
-   "ao.schwarz",
-   "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.hgp_drive": [
    "ao",
@@ -210,7 +188,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.j",
    "ao.k",
    "ao.kinetic",
@@ -230,8 +207,9 @@
    "hgp.orbits",
    "hgp.recurrence",
    "hgp.vrr",
-   "interp",
    "ir",
+   "ir.interp",
+   "mmd.hermite",
    "spec"
   ],
   "ao.j": [
@@ -242,7 +220,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.k",
    "ao.kinetic",
@@ -254,7 +231,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.k": [
    "ao",
@@ -264,7 +242,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.kinetic",
@@ -276,7 +253,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.kinetic": [
    "ao",
@@ -286,7 +264,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -298,7 +275,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.metric": [
    "ao",
@@ -308,7 +286,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -320,7 +297,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.metric_drive": [
    "ao",
@@ -330,7 +308,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -343,9 +320,10 @@
    "ao.schwarz",
    "ao.shell",
    "ao.staged",
-   "interp",
    "ir",
+   "ir.interp",
    "kernel_metric",
+   "mmd.hermite",
    "spec"
   ],
   "ao.one_electron": [
@@ -356,7 +334,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -368,7 +345,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.overlap": [
    "ao",
@@ -378,7 +356,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -390,7 +367,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.pairs": [
    "ao",
@@ -400,7 +378,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -412,7 +389,8 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.potential": [
    "ao",
@@ -422,7 +400,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -434,7 +411,8 @@
    "ao.pairs",
    "ao.schwarz",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.schwarz": [
    "ao",
@@ -444,7 +422,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -456,7 +433,8 @@
    "ao.pairs",
    "ao.potential",
    "ao.shell",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.shell": [
    "ao",
@@ -466,7 +444,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -478,7 +455,8 @@
    "ao.pairs",
    "ao.potential",
    "ao.schwarz",
-   "ao.staged"
+   "ao.staged",
+   "mmd.hermite"
   ],
   "ao.staged": [
    "ao",
@@ -488,7 +466,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -501,14 +478,15 @@
    "ao.potential",
    "ao.schwarz",
    "ao.shell",
-   "interp",
    "ir",
-   "kernel",
+   "ir.interp",
+   "ir.passes",
    "kernel_dq",
    "kernel_jab",
    "launch",
    "launch_common",
-   "passes",
+   "mmd.hermite",
+   "mmd.kernel",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -528,9 +506,9 @@
   "asym": [
    "device",
    "ir",
-   "kernel",
+   "ir.passes",
    "measured_store",
-   "passes",
+   "mmd.kernel",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -549,10 +527,10 @@
   ],
   "batchreport": [
    "device",
-   "kernel",
+   "ir.lower",
    "kernelrank",
-   "lower",
    "measured_store",
+   "mmd.kernel",
    "ridge",
    "spec"
   ],
@@ -563,10 +541,10 @@
   "crossread": [
    "batchreport",
    "device",
-   "kernel",
+   "ir.lower",
    "kernelrank",
-   "lower",
    "measured_store",
+   "mmd.kernel",
    "ridge",
    "spec"
   ],
@@ -577,10 +555,6 @@
    "batchreport",
    "device",
    "measured_store"
-  ],
-  "e_fragment": [
-   "ir",
-   "plan.targets"
   ],
   "emit": [
    "device",
@@ -600,7 +574,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "kernel",
+   "ir.lever_ladder",
+   "ir.lower",
    "kernel_dq",
    "kernel_eri3",
    "kernel_f",
@@ -614,10 +589,9 @@
    "kernel_sx",
    "kernel_t",
    "kernel_v",
-   "lever_ladder",
    "leverledger",
-   "lower",
    "measured_store",
+   "mmd.kernel",
    "spec"
   ],
   "emit._c": [
@@ -661,11 +635,11 @@
    "ao.hgp_drive",
    "ao.shell",
    "ir",
-   "kernel",
    "kernel_f",
    "kernel_hj",
    "kernel_hk",
    "kernel_k",
+   "mmd.kernel",
    "spec"
   ],
   "f_levers": [
@@ -1069,31 +1043,40 @@
    "hgp.recurrence",
    "spec"
   ],
-  "interp": [
-   "ir"
-  ],
   "ir": [
    "device",
    "spec"
   ],
+  "ir.interp": [
+   "ir"
+  ],
+  "ir.lever_ladder": [
+   "levers"
+  ],
+  "ir.lower": [
+   "ir"
+  ],
+  "ir.passes": [
+   "ir"
+  ],
   "j_levers": [
    "ir",
-   "plan.targets",
-   "recurrence"
+   "mmd.recurrence",
+   "plan.targets"
   ],
   "j_levers.fused": [
    "ir",
-   "plan.targets",
-   "recurrence"
+   "mmd.recurrence",
+   "plan.targets"
   ],
   "j_levers.mixed": [
    "ir",
-   "plan.targets",
-   "recurrence"
+   "mmd.recurrence",
+   "plan.targets"
   ],
   "k_levers": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1104,7 +1087,8 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1119,12 +1103,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.coalesced": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1135,7 +1118,8 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1150,12 +1134,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.interleave": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1166,7 +1149,8 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1181,12 +1165,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.mixed": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1197,7 +1180,8 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1212,12 +1196,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.seams": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1228,7 +1211,8 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1243,12 +1227,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.shuffle": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1259,7 +1242,8 @@
    "k_levers.seams",
    "k_levers.split",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1274,12 +1258,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.split": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1290,7 +1273,8 @@
    "k_levers.seams",
    "k_levers.shuffle",
    "k_levers.stage_eac",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1305,12 +1289,11 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "k_levers.stage_eac": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "j_levers",
    "j_levers.fused",
    "j_levers.mixed",
@@ -1321,7 +1304,8 @@
    "k_levers.seams",
    "k_levers.shuffle",
    "k_levers.split",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1336,7 +1320,6 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "kdup": [
@@ -1356,38 +1339,16 @@
    "plan.targets",
    "spec"
   ],
-  "kernel": [
-   "ir",
-   "j_levers",
-   "j_levers.fused",
-   "j_levers.mixed",
-   "passes",
-   "plan",
-   "plan.__main__",
-   "plan.batching",
-   "plan.cost",
-   "plan.dag",
-   "plan.mild",
-   "plan.optimum",
-   "plan.order_search",
-   "plan.pipeline",
-   "plan.recovery",
-   "plan.schedule",
-   "plan.search",
-   "plan.sieve",
-   "plan.targets",
-   "recurrence",
-   "spec"
-  ],
   "kernel_dq": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
    "plan.targets",
    "spec"
   ],
   "kernel_eri3": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1402,7 +1363,6 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "kernel_f": [
@@ -1481,14 +1441,14 @@
    "spec"
   ],
   "kernel_jab": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
    "plan.targets",
    "spec"
   ],
   "kernel_k": [
-   "e_fragment",
    "ir",
+   "ir.passes",
    "k_levers",
    "k_levers.coalesced",
    "k_levers.interleave",
@@ -1497,8 +1457,9 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "kernel",
-   "passes",
+   "mmd.e_fragment",
+   "mmd.kernel",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1513,7 +1474,6 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "kernel_kblock": [
@@ -1526,13 +1486,14 @@
    "k_levers.shuffle",
    "k_levers.split",
    "k_levers.stage_eac",
-   "kernel",
    "kernel_k",
+   "mmd.kernel",
    "spec"
   ],
   "kernel_metric": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1547,7 +1508,6 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "kernel_pair_bound": [
@@ -1556,20 +1516,21 @@
    "spec"
   ],
   "kernel_record_bound": [
-   "e_fragment",
    "ir",
    "kernel_pair_bound",
+   "mmd.e_fragment",
    "plan.targets",
    "spec"
   ],
   "kernel_s": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
    "spec"
   ],
   "kernel_schwarz": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1584,23 +1545,23 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "kernel_sx": [
-   "e_fragment",
    "ir",
    "kernel_s",
+   "mmd.e_fragment",
    "spec"
   ],
   "kernel_t": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
    "spec"
   ],
   "kernel_v": [
-   "e_fragment",
    "ir",
+   "mmd.e_fragment",
+   "mmd.recurrence",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1615,15 +1576,14 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
-   "recurrence",
    "spec"
   ],
   "kernelrank": [
    "batchreport",
    "device",
-   "kernel",
-   "lower",
+   "ir.lower",
    "measured_store",
+   "mmd.kernel",
    "ridge",
    "spec"
   ],
@@ -1634,7 +1594,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -1648,8 +1607,9 @@
    "ao.schwarz",
    "ao.shell",
    "ir",
-   "kernel",
    "launch_common",
+   "mmd.hermite",
+   "mmd.kernel",
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1691,7 +1651,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -1706,6 +1665,7 @@
    "ao.shell",
    "ao.staged",
    "launch_common",
+   "mmd.hermite",
    "spec"
   ],
   "launch_hjk": [
@@ -1719,7 +1679,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -1735,6 +1694,7 @@
    "ir",
    "launch",
    "launch_common",
+   "mmd.hermite",
    "spec"
   ],
   "launch_kblock": [
@@ -1744,7 +1704,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -1760,18 +1719,16 @@
    "ir",
    "launch_common",
    "launch_k",
+   "mmd.hermite",
    "spec"
-  ],
-  "lever_ladder": [
-   "levers"
   ],
   "leverledger": [
    "batchreport",
    "device",
-   "kernel",
+   "ir.lower",
    "kernelrank",
-   "lower",
    "measured_store",
+   "mmd.kernel",
    "ridge",
    "spec"
   ],
@@ -1818,9 +1775,6 @@
    "literature.rules",
    "literature.scoreboard"
   ],
-  "lower": [
-   "ir"
-  ],
   "measured": [
    "asym",
    "device",
@@ -1831,7 +1785,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "kernel",
+   "ir.lever_ladder",
+   "ir.lower",
    "kernel_dq",
    "kernel_eri3",
    "kernel_f",
@@ -1845,21 +1800,89 @@
    "kernel_sx",
    "kernel_t",
    "kernel_v",
-   "lever_ladder",
    "leverledger",
-   "lower",
    "measured_store",
+   "mmd.kernel",
    "spec"
   ],
   "measured_store": [
    "device",
-   "kernel",
+   "ir.lower",
    "levers",
-   "lower",
+   "mmd.kernel",
    "spec"
   ],
-  "passes": [
-   "ir"
+  "mmd": [],
+  "mmd.e_fragment": [
+   "ir",
+   "plan.targets"
+  ],
+  "mmd.hermite": [
+   "ao",
+   "ao.density",
+   "ao.drive",
+   "ao.eri",
+   "ao.eri3",
+   "ao.eri3_drive",
+   "ao.fock",
+   "ao.hgp_drive",
+   "ao.j",
+   "ao.k",
+   "ao.kinetic",
+   "ao.metric",
+   "ao.metric_drive",
+   "ao.one_electron",
+   "ao.overlap",
+   "ao.pairs",
+   "ao.potential",
+   "ao.schwarz",
+   "ao.shell",
+   "ao.staged"
+  ],
+  "mmd.kernel": [
+   "ir",
+   "ir.passes",
+   "j_levers",
+   "j_levers.fused",
+   "j_levers.mixed",
+   "mmd.recurrence",
+   "plan",
+   "plan.__main__",
+   "plan.batching",
+   "plan.cost",
+   "plan.dag",
+   "plan.mild",
+   "plan.optimum",
+   "plan.order_search",
+   "plan.pipeline",
+   "plan.recovery",
+   "plan.schedule",
+   "plan.search",
+   "plan.sieve",
+   "plan.targets",
+   "spec"
+  ],
+  "mmd.recurrence": [
+   "ir",
+   "ir.passes",
+   "j_levers",
+   "j_levers.fused",
+   "j_levers.mixed",
+   "plan",
+   "plan.__main__",
+   "plan.batching",
+   "plan.cost",
+   "plan.dag",
+   "plan.mild",
+   "plan.optimum",
+   "plan.order_search",
+   "plan.pipeline",
+   "plan.recovery",
+   "plan.schedule",
+   "plan.search",
+   "plan.sieve",
+   "plan.targets",
+   "spec"
   ],
   "plan": [
    "literature",
@@ -2190,28 +2213,6 @@
    "plan.targets",
    "spec"
   ],
-  "recurrence": [
-   "ir",
-   "j_levers",
-   "j_levers.fused",
-   "j_levers.mixed",
-   "passes",
-   "plan",
-   "plan.__main__",
-   "plan.batching",
-   "plan.cost",
-   "plan.dag",
-   "plan.mild",
-   "plan.optimum",
-   "plan.order_search",
-   "plan.pipeline",
-   "plan.recovery",
-   "plan.schedule",
-   "plan.search",
-   "plan.sieve",
-   "plan.targets",
-   "spec"
-  ],
   "reference": [
    "reference.boys",
    "reference.pq"
@@ -2227,10 +2228,10 @@
   "ridge": [
    "batchreport",
    "device",
-   "kernel",
+   "ir.lower",
    "kernelrank",
-   "lower",
    "measured_store",
+   "mmd.kernel",
    "spec"
   ],
   "spec": [
@@ -2244,7 +2245,6 @@
    "ao.eri3",
    "ao.eri3_drive",
    "ao.fock",
-   "ao.hermite",
    "ao.hgp_drive",
    "ao.j",
    "ao.k",
@@ -2261,6 +2261,7 @@
    "ir",
    "kernel_f",
    "kernel_f_scatter",
+   "mmd.hermite",
    "spec"
   ],
   "walk_hjk": [
@@ -2273,5 +2274,5 @@
    "spec"
   ]
  },
- "renames_applied": 0
+ "renames_applied": 2
 }

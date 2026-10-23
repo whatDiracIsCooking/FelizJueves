@@ -32,7 +32,7 @@ import pytest
 from numpy.polynomial import hermite as H
 from tiers import split_by_l
 
-from felizjueves.ao.hermite import e_axis, e_block, hermite_order
+from felizjueves.mmd.hermite import e_axis, e_block, hermite_order
 from felizjueves.plan.targets import hermite_targets, n_targets
 
 EPS = np.finfo(np.float64).eps

@@ -49,9 +49,7 @@ from test_ao_hermite import EPS, K, _derived, _lambda, _pair
 from test_ir import HGP_FACTORS
 from tiers import FAST_L_MAX, by_l, is_fast, split_by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves import ir
-from felizjueves.ao.hermite import e_axis, e_block, hermite_order
 from felizjueves.ao.kinetic import kinetic_axis
 from felizjueves.ao.pairs import dress, primitive_pairs
 from felizjueves.ao.shell import Shell, cartesians
@@ -76,6 +74,8 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import interpret, interpret_fragment
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.hermite import e_axis, e_block, hermite_order
 
 LMAX = 3  # (ss) through (ff)
 CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]

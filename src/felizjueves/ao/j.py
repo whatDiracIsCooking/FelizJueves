@@ -190,9 +190,9 @@ from felizjueves.ao.density import (
     make_kets,
     pair_bound_pq,
 )
-from felizjueves.ao.hermite import e_block, hermite_order
 from felizjueves.ao.pairs import PrimitivePair, primitive_pairs
 from felizjueves.ao.shell import Basis, cartesians
+from felizjueves.mmd.hermite import e_block, hermite_order
 
 BraRec = tuple[Vec, float]  # (P, zeta)
 KetRec = tuple[Vec, float, Sequence[float]]  # (Q, eta, D_q)

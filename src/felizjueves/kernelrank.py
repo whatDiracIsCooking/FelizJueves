@@ -69,7 +69,7 @@ from functools import cache
 from felizjueves import measured_store as measured
 from felizjueves.device import ARCHS, Arch
 from felizjueves.ir.lower import kernel_cost
-from felizjueves.kernel import build_pq_kernels
+from felizjueves.mmd.kernel import build_pq_kernels
 from felizjueves.spec import Spec
 
 # fp64 values per thread: half the 32-bit register ceiling (module docstring).

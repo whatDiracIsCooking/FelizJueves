@@ -22,7 +22,7 @@ from test_kernel_device import _run_batched
 from tiers import by_l
 
 from felizjueves.j_levers.fused import FUSED
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 
 CELLS = [
     *(pytest.param(pq_spec(L, (FUSED,)), id=f"L{L}-b1-fused")

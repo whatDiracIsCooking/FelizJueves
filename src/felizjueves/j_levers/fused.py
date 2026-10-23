@@ -47,8 +47,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from felizjueves.ir import Assign, Call, Decl, Expr, Fn, Index, Note, Stmt, Var
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.targets import R
-from felizjueves.recurrence import node_name
 
 __all__ = ["FUSED", "FUSED_NOTE", "fuse"]
 

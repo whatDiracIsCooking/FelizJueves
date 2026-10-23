@@ -82,10 +82,10 @@ from felizjueves.ir import (
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.k_levers import mixed, split
 from felizjueves.k_levers.seams import DEFAULT_HOOKS, KET, KSH
-from felizjueves.kernel import builder_plan
 from felizjueves.kernel_k import build_k_kernel, build_k_kernels, launch_shape
+from felizjueves.mmd.kernel import builder_plan
+from felizjueves.mmd.recurrence import PQ_PARAMS, THETA, node_name
 from felizjueves.plan.schedule import schedule
-from felizjueves.recurrence import PQ_PARAMS, THETA, node_name
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq as reference_pq
 from felizjueves.spec import Operator, Spec, Target
@@ -303,7 +303,7 @@ def test_a_changed_recurrence_is_refused_not_narrowed(
         monkeypatch: pytest.MonkeyPatch) -> None:
     """`finish` narrows the literal pair region only: a node that is not the
     literal recurrence's statement is refused."""
-    from felizjueves import recurrence
+    from felizjueves.mmd import recurrence
 
     real = recurrence.recurrence_body
 

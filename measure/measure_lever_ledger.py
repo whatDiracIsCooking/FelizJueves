@@ -27,7 +27,7 @@ import pytest
 from felizjueves import leverledger, levers, measured
 from felizjueves import measured_store as store
 from felizjueves.device import ARCHS
-from felizjueves.kernel import k_spec, pq_spec
+from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.spec import Target
 
 ROWS = store.load()

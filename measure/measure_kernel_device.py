@@ -54,9 +54,7 @@ from test_kernel_device import (
 
 from felizjueves import asym, gate, measured, measured_store
 from felizjueves.device import Arch
-from felizjueves.kernel import (
-    k_spec,
-)
+from felizjueves.mmd.kernel import k_spec
 from felizjueves.spec import Spec
 
 # --- the wall-clock sweep -----------------------------------------------------

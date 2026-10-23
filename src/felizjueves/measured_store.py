@@ -587,7 +587,7 @@ from felizjueves.device import (
     verdict,
 )
 from felizjueves.ir.lower import LEVERS
-from felizjueves.kernel import k_spec, pq_spec
+from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.spec import NATIVE_ENGINE, Engine, Operator, Spec, Target
 
 REPO = Path(__file__).resolve().parents[2]

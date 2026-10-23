@@ -32,7 +32,6 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import split_by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves.ao.schwarz import (
     _place,
     diagonal_and_scale,
@@ -51,8 +50,9 @@ from felizjueves.kernel_schwarz import (
     schwarz_plan,
     schwarz_spec,
 )
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.pipeline import plan
-from felizjueves.recurrence import node_name
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target

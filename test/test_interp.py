@@ -3,7 +3,7 @@
 THE PIN. Every class the plan layer can schedule -- L = 0..16 at n_batches = 1,
 plus the table grid's batched counts {3, 6, 9} at L = 7..16, sieved and with
 the `no-sieve` lever -- is built as a recurrence-only Kernel by
-`felizjueves.recurrence` (MILD/sieve DAG -> schedule -> IR), interpreted, and
+`felizjueves.mmd.recurrence` (MILD/sieve DAG -> schedule -> IR), interpreted, and
 compared element by element against `reference.pq.one_centre` at rel = 1e-12.
 `reference.pq.pq` is `(-1)^|q|` times that value, so this is the [p|q] pin
 for every (p, q) splitting of each target. The reference recurses directly
@@ -79,8 +79,8 @@ from felizjueves.ir.interp import (
     interpret,
     interpret_fragment,
 )
+from felizjueves.mmd.recurrence import recurrence_kernels, target_order
 from felizjueves.plan.sieve import NO_SIEVE
-from felizjueves.recurrence import recurrence_kernels, target_order
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental, one_centre
 from felizjueves.spec import Operator, Spec, Target

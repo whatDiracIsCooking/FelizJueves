@@ -15,8 +15,8 @@ import itertools
 import pytest
 
 from felizjueves.device import MeasuredKey, by_name
-from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.measured_store import engine_of, split_key, target_of
+from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.spec import (
     AM_LENGTH,
     NATIVE_ENGINE,

@@ -68,7 +68,6 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import LANE0
-from felizjueves.kernel import build_pq_kernels, k_spec
 from felizjueves.kernel_k import (
     KET,
     KSH,
@@ -80,10 +79,11 @@ from felizjueves.kernel_k import (
     launch_shape,
     shared_doubles,
 )
+from felizjueves.mmd.kernel import build_pq_kernels, k_spec
+from felizjueves.mmd.recurrence import build_recurrence_kernel, node_name, target_order
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.recurrence import build_recurrence_kernel, node_name, target_order
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
 

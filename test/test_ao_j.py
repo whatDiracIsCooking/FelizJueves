@@ -63,7 +63,6 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao.hermite import e_block
 from felizjueves.ao.j import (
     EPair,
     coulomb_matrix,
@@ -77,6 +76,7 @@ from felizjueves.ao.j import (
 )
 from felizjueves.ao.pairs import pair_bound, primitive_pairs
 from felizjueves.ao.shell import cartesians
+from felizjueves.mmd.hermite import e_block
 from felizjueves.reference.pq import one_centre, pq
 
 TAU = 0.0  # no screening: see the module docstring

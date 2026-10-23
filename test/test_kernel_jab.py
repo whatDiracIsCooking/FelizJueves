@@ -38,10 +38,8 @@ from oracle import manifest
 from test_layering import _graph, _under
 from tiers import split_by_l
 
-from felizjueves import e_fragment as ef
 from felizjueves.ao.density import epair
 from felizjueves.ao.drive import KernelJAB
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.j import (
     coulomb_matrix,
     coulomb_matrix_and_scale,
@@ -56,6 +54,8 @@ from felizjueves.kernel_jab import (
     jab_launch_shape,
     jab_spec,
 )
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target
 
@@ -312,6 +312,6 @@ def test_the_builder_reaches_neither_ao_nor_the_interpreter():
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert "e_fragment" in seen
+    assert "mmd.e_fragment" in seen
     for banned in ("ao", "ir.interp", "reference", "emit"):
         assert not [e for e in seen if _under(e, banned)], banned

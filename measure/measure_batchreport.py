@@ -25,7 +25,7 @@ import json
 from felizjueves import batchreport
 from felizjueves import measured_store as measured
 from felizjueves.device import ARCHS
-from felizjueves.kernel import pq_spec
+from felizjueves.mmd.kernel import pq_spec
 from felizjueves.spec import Operator, Spec, Target
 
 ROWS = measured.load()

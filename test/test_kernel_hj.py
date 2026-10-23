@@ -75,7 +75,6 @@ from tiers import split_by_l
 from felizjueves import kernel_hj as HJ
 from felizjueves.ao import hgp_drive as HD
 from felizjueves.ao.eri import eri_block_and_scale as mmd_eri
-from felizjueves.ao.hermite import hermite_order
 from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_reference, jp_from_pq
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.hgp import hrr, orbits, vrr
@@ -97,6 +96,7 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_f import PairRec, PrimRec, pack
+from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Engine, Operator, Spec, Target, lever_provenance

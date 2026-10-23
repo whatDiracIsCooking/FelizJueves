@@ -67,7 +67,7 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.recurrence import (
+from felizjueves.mmd.recurrence import (
     PQ_PARAMS,
     THETA,
     Fundamental,

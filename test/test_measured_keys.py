@@ -22,12 +22,12 @@ import re
 
 from felizjueves.asym import ASYM, ASYM_CELLS, AsymCell, AsymKey
 from felizjueves.device import MeasuredKey, by_name
-from felizjueves.kernel import k_spec, pq_spec
 from felizjueves.measured_store import (
     engine_of,
     split_key,
     target_of,
 )
+from felizjueves.mmd.kernel import k_spec, pq_spec
 from felizjueves.spec import NATIVE_ENGINE, Engine, Operator, Spec, Target
 
 # Independent of Spec.key(): the quartet shape as the store spells it.
