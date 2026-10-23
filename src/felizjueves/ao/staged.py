@@ -99,7 +99,8 @@ from felizjueves.kernel import (
     ket_functions,
     launch_shape,
 )
-from felizjueves.launch import ClassLaunch, LaunchPlan, PairRec, class_spec
+from felizjueves.launch import ClassLaunch, LaunchPlan, class_spec
+from felizjueves.launch_common import PairRec
 from felizjueves.passes import atomize
 
 __all__ = ["BufferSize", "KetData", "Staged", "coulomb_matrix_staged"]

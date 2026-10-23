@@ -337,8 +337,8 @@ RULES: dict[str, Rule] = {
         "`Target.JAB` composed over that staging, so the adapter reaches "
         "`ao.staged` and builds its own `launch` plan from the DQ kernel's "
         "read-back `Dmax`",
-        ("spec", "kernel", "ir", "interp", "plan", "ao", "launch", "passes",
-         "kernel_dq", "kernel_jab"),
+        ("spec", "kernel", "ir", "interp", "plan", "ao", "launch",
+         "launch_common", "passes", "kernel_dq", "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -350,8 +350,10 @@ RULES: dict[str, Rule] = {
         "order. It reads the key, asks the plan which batch counts a class "
         "admits, builds the class's kernels, and takes its records from the "
         "AO layer (milestone 6 (a)); the bound arrives injected (`bound=`). "
-        "`ir` for the `Kernel` type it carries",
-        ("spec", "plan", "kernel", "ir", "ao"),
+        "`ir` for the `Kernel` type it carries; the records, the sort, the "
+        "bound check and the batch admission it shares with its siblings "
+        "from `launch_common` (#504)",
+        ("spec", "plan", "kernel", "ir", "ao", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
         interp="the plan is data: nothing is launched or interpreted here",
@@ -376,19 +378,21 @@ RULES: dict[str, Rule] = {
         "launch_k.py (#204): the K launch plan as a VALUE, BESIDE `launch` "
         "-- which K class kernels run over which ordered bra and ket index "
         "records, in which order -- and its walk in Python. It imports "
-        "from `launch` the part the two plans share (`PairRec`, the stable "
+        "from `launch_common` (#504; `launch` before it) the part the two "
+        "plans share (`PairRec`, the stable "
         "sort, the bound check, the batch admission) and from `ao` its "
         "records and the host's staged contraction; the bound, the ket "
         "sort key and the K kernel builder arrive injected (`bound=`, "
         "`key=`, `build=`)",
-        ("spec", "ir", "ao", "launch"),
+        ("spec", "ir", "ao", "launch", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound and `pq` are injected",
         interp="the plan is data and the walk is ao.k's arithmetic; "
                "nothing is interpreted here",
         kernel="J's builder is `launch`'s business, and the K builder "
                "(`kernel_k`, #198) arrives injected as `build=`: this plan "
                "names a class's `Spec`, it does not build it",
-        plan="the batch admission is `launch._batches_for`'s, shared, not "
+        plan="the batch admission is `launch_common.batches_for`'s, "
+             "shared, not "
              "restated: a second path to the plan could disagree with J's",
         emit="the plan is data: no text is emitted",
         **{"ao.drive": "the adapter runs kernels; a plan importing it drags "
@@ -533,6 +537,7 @@ RULE_OF: dict[str, str] = {
     "ao.drive": "adapter",
     "ao.staged": "adapter",
     "launch": "launch",
+    "launch_common": "launch_common",
     "launch_k": "k_launch",
     "kernel_jab": "jab_builder",
     "kernel_dq": "dq_builder",
@@ -629,14 +634,19 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.k": ("ao.density", "ao.eri", "ao.hermite", "ao.shell"),
     "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "interp", "ir",
                  "kernel", "kernel_dq", "kernel_jab", "launch",
-                 "plan.pipeline", "spec"),
+                 "launch_common", "plan.pipeline", "spec"),
     "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "interp", "ir",
-                  "kernel", "launch", "passes"),
+                  "kernel", "launch", "launch_common", "passes"),
     "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "kernel",
-               "plan.pipeline", "spec"),
-    # #204: the K plan beside J's -- the shared part from `launch`, the
+               "launch_common", "spec"),
+    # #504: what the launch plans share, out of `launch`; it asks the plan
+    # which batch counts a class admits.
+    "launch_common": ("plan.pipeline", "spec"),
+    # #204: the K plan beside J's -- the shared part from `launch` (from
+    # `launch_common` since #504), the
     # records and the host's staged contraction from `ao`.
-    "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "launch", "spec"),
+    "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "launch_common",
+                 "spec"),
     "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
@@ -819,7 +829,8 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
     # #204: the K plan beside it, the same; and it reaches no K builder --
     # `kernel_k` (#198) arrives injected as `build=`.
     graph = _graph()
-    for root, extra in (("launch", ()), ("launch_k", ("kernel_k",))):
+    for root, extra in (("launch", ()), ("launch_common", ("launch",)),
+                        ("launch_k", ("kernel_k",))):
         seen: set[str] = set()
         todo = [root]
         while todo:
@@ -1368,9 +1379,10 @@ RULES |= {
         "-- contracted pairs, pruned primitive pairs, batches keyed by "
         "class, contraction degree and eq. 29 magnitude, and the batch "
         "pairs launched. Its records come from the AO layer, the shared "
-        "bound check and stable sort from `launch`, the `Spec` it names "
-        "from `spec`; the bound arrives injected (`bound=`)",
-        ("spec", "ao", "launch"),
+        "bound check and stable sort from `launch_common` (#504), the "
+        "`Spec` it names from `spec`; the bound arrives injected "
+        "(`bound=`)",
+        ("spec", "ao", "launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
         plan="the plan layer keys on `total_am`, which indexes a [JEngine] "
@@ -1386,7 +1398,8 @@ RULE_OF |= {
     "launch_f": "f_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "launch_f": ("ao.density", "ao.pairs", "ao.shell", "launch", "spec"),
+    "launch_f": ("ao.density", "ao.pairs", "ao.shell", "launch_common",
+                 "spec"),
 }.items()}
 
 
@@ -2703,7 +2716,7 @@ RULES |= {
         "-- `launch_k.k_launches`' records regrouped by first shell into "
         "one block per (a, b) -- and its walk in Python on ao.k's staged "
         "arithmetic; the bound and the builder arrive injected",
-        ("spec", "ir", "ao", "launch", "launch_k"),
+        ("spec", "ir", "ao", "launch_common", "launch_k"),
         **{k: v for k, v in RULES["k_launch"].must_not.items()
            if k not in ("kernel", "ao")},
         kernel="the builders arrive injected as `build=`: this plan names a "
@@ -2717,8 +2730,8 @@ RULE_OF |= {
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "kernel_kblock": ("ir", "k_levers.seams", "kernel", "kernel_k", "spec"),
-    "launch_kblock": ("ao.density", "ao.k", "ao.shell", "ir", "launch",
-                      "launch_k", "spec"),
+    "launch_kblock": ("ao.density", "ao.k", "ao.shell", "ir",
+                      "launch_common", "launch_k", "spec"),
 }.items()}
 
 
@@ -2748,6 +2761,46 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         seen = reach(root)
         hit = sorted(e for e in seen if any(_under(e, b) for b in banned))
         assert not hit, f"{root} reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #504 (the `launch` half of #328): what the launch plans share -- `PairRec`,
+# the stable descending sort, the bound's value check and the batch
+# admission -- out of `launch` into `launch_common`, so that `launch_k`,
+# `launch_kblock`, `launch_f` and `ao.staged` import no `_`-prefixed name
+# from `launch`. Its rule is NO WIDER than `launch`'s: a subset of its `may`
+# (no kernel, no IR, no AO layer) and every one of its prohibitions, plus
+# the launch plans themselves, which import it.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "launch_common": _rule(
+        "launch_common.py (#504): the pieces the launch plans share. It asks "
+        "the plan which batch counts a class admits and names the J class's "
+        "`Spec`; nothing else",
+        ("spec", "plan"),
+        **RULES["launch"].must_not,
+        launch="`launch` imports this module; the reverse is a cycle",
+        launch_k="a launch plan imports this module, never the reverse",
+        launch_kblock="a launch plan imports this module, never the reverse",
+        launch_f="a launch plan imports this module, never the reverse",
+        kernel="no kernel is built here: the builders are the plans' "
+               "business",
+        ir="the shared pieces carry no `Kernel`",
+        ao="the records are the plans' to build from the AO layer; the "
+           "shared pieces need none of it"),
+}
+
+
+def test_launch_common_is_no_wider_than_launch() -> None:
+    # #504's acceptance: the shared module's rule admits nothing `launch`'s
+    # does not, over every module of the tree.
+    common, launch = RULES["launch_common"], RULES["launch"]
+    assert common.may <= launch.may
+    assert set(launch.must_not) <= set(common.must_not)
+    rel = effective_relation()
+    assert set(rel["launch_common"]) <= set(rel["launch"]) | {"launch"}
+    assert "launch" not in rel["launch_common"]
 
 
 # ---------------------------------------------------------------------------

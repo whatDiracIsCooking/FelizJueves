@@ -20,7 +20,7 @@ THE CLAIMS.
   injected   the bound's values are the records' `G`, the key's their ket
              `key`; the builder is called once per `Spec`; none is imported.
   admission  the plan admits a K `Spec` exactly when it admits the J class
-             of the same split -- why `_batches_for` is shared.
+             of the same split -- why `batches_for` is shared.
   walk       the plan walked in Python reproduces `ao.k.exchange_matrix`,
              `exchange_matrix_reference` and `k_from_eris` to rounding on
              THREE molecules (below); its `scale` is ao.k's.
@@ -72,7 +72,7 @@ from felizjueves.ao.k import (
 from felizjueves.ao.shell import Basis, Shell, n_cartesians
 from felizjueves.ao.staged import coulomb_matrix_staged
 from felizjueves.ir import Kernel
-from felizjueves.launch import PairRec, _admits
+from felizjueves.launch_common import PairRec, admits
 from felizjueves.launch_k import (
     KClassLaunch,
     KLaunchPlan,
@@ -290,7 +290,7 @@ def test_the_builder_is_injected_and_called_once_per_spec():
 
 
 def test_the_batch_admission_is_the_j_class_admission():
-    """Why `_batches_for` is shared: the plan admits a K class exactly when
+    """Why `launch_common.batches_for` is shared: the plan admits a K class exactly when
     it admits the J class of the same split (classes with L <= 2: planning,
     not evaluating, but the rule is kept)."""
     for am in itertools.product(range(3), repeat=4):
@@ -303,7 +303,7 @@ def test_the_batch_admission_is_the_j_class_admission():
                 ok = True
             except ValueError:
                 ok = False
-            assert ok == _admits(lp, lq, n), (am, n)
+            assert ok == admits(lp, lq, n), (am, n)
 
 
 def test_a_refused_batch_count_raises_or_is_recorded():

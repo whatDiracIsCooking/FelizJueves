@@ -72,6 +72,7 @@
    "kernel_dq",
    "kernel_jab",
    "launch",
+   "launch_common",
    "passes",
    "plan",
    "plan.__main__",
@@ -506,6 +507,7 @@
    "kernel_dq",
    "kernel_jab",
    "launch",
+   "launch_common",
    "passes",
    "plan",
    "plan.__main__",
@@ -1647,6 +1649,24 @@
    "ao.shell",
    "ir",
    "kernel",
+   "launch_common",
+   "plan",
+   "plan.__main__",
+   "plan.batching",
+   "plan.cost",
+   "plan.dag",
+   "plan.mild",
+   "plan.optimum",
+   "plan.order_search",
+   "plan.pipeline",
+   "plan.recovery",
+   "plan.schedule",
+   "plan.search",
+   "plan.sieve",
+   "plan.targets",
+   "spec"
+  ],
+  "launch_common": [
    "plan",
    "plan.__main__",
    "plan.batching",
@@ -1685,7 +1705,7 @@
    "ao.schwarz",
    "ao.shell",
    "ao.staged",
-   "launch",
+   "launch_common",
    "spec"
   ],
   "launch_hjk": [
@@ -1714,6 +1734,7 @@
    "ao.shell",
    "ir",
    "launch",
+   "launch_common",
    "spec"
   ],
   "launch_kblock": [
@@ -1737,7 +1758,7 @@
    "ao.schwarz",
    "ao.shell",
    "ir",
-   "launch",
+   "launch_common",
    "launch_k",
    "spec"
   ],

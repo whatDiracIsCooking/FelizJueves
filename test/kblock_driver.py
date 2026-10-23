@@ -61,7 +61,7 @@ from felizjueves.kernel_k import build_k_kernel
 from felizjueves.kernel_k import shared_doubles as k_shared_doubles
 from felizjueves.kernel_kblock import PARAMS as KB_PARAMS
 from felizjueves.kernel_kblock import shared_doubles as kb_shared_doubles
-from felizjueves.launch import PairRec
+from felizjueves.launch_common import PairRec
 from felizjueves.launch_kblock import KBLaunchPlan
 
 REC_DOUBLES = 12  # per record: P(3) zeta XPA(3) XPC(3) s I, then one int
