@@ -35,6 +35,7 @@ Names are relative to `felizjueves`; `__init__` is the root package.
 from __future__ import annotations
 
 import ast
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -45,7 +46,8 @@ PKG = "felizjueves"
 @dataclass(frozen=True)
 class Rule:
     why: str
-    may: frozenset[str]  # prefixes: "plan" admits "plan" and "plan.*"
+    may: frozenset[str]  # prefixes: "plan" admits "plan" and "plan.*";
+    #                      "=ir" admits `ir` alone (see `_under`)
     must_not: dict[str, str] = field(default_factory=dict)  # prefix -> reason
 
 
@@ -712,6 +714,14 @@ def _graph() -> dict[str, set[str]]:
 
 
 def _under(module: str, prefix: str) -> bool:
+    """`prefix` covers `module` and all below it; `"=ir"` covers `ir` only.
+
+    The exact form (#502) is for a module that becomes a package: once `ir.py`
+    is `ir/`, `may=("ir",)` would also admit `ir.interp` and `ir.lower`, and
+    `"=ir"` keeps the old reach. In `must_not`, pass it as `**{"=ir": why}`.
+    """
+    if prefix.startswith("="):
+        return module == prefix[1:]
     return module == prefix or module.startswith(prefix + ".")
 
 
@@ -2732,3 +2742,189 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         seen = reach(root)
         hit = sorted(e for e in seen if any(_under(e, b) for b in banned))
         assert not hit, f"{root} reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# #502: a module move must leave the allowed-import relation unchanged
+# ---------------------------------------------------------------------------
+#
+# WHY. Every rule above matches by PREFIX (`_under`), so moving a module can
+# silently widen one: when `ao/` shrinks to `shell`/`pairs`, a builder's "off
+# `ao`" no longer keeps it off the host references that left, and when `ir.py`
+# becomes the `ir/` package, `may=("ir", ...)` starts admitting `ir.interp`.
+# `test_no_import_outside_its_rule` stays green through both. What catches it
+# is the EFFECTIVE relation: for every ordered pair of modules (importer,
+# target) under src/felizjueves -- `reference/` included -- whether the
+# importer's rule allows the import (some `may` prefix covers the target and
+# no `must_not` prefix does). It is recomputed from RULES / RULE_OF / EDGES
+# (EDGES' keys join RULE_OF's to make the module set) and compared with a
+# tracked snapshot carried through every rename landed since.
+#
+# THE TWO FILES.
+#
+# - test/layering_relation.json, the snapshot (written, never hand-edited):
+#     {"renames_applied": N, "allowed": {importer: [target, ...], ...}}
+#   One key per module (the root package is `__init__`), each value the
+#   sorted list of modules it may import; every pair not listed is forbidden.
+#   `renames_applied` is how many maps of the renames file the snapshot was
+#   written AFTER, so only the maps past it are replayed.
+#
+# - test/layering_renames.json, the moves, a JSON list in landing order:
+#     [{"old.dotted": "new.dotted", ...}, ...]
+#   One object per move PR, mapping each moved module's old name to its new
+#   one (names relative to `felizjueves`, EXACT modules, not prefixes: a
+#   package move lists every module in it, the package's own `__init__`
+#   under the package's name). A codemod appends one object and touches
+#   nothing else. Every old name must exist in the relation at that point,
+#   and no two modules may land on one name.
+#
+# WHAT A PR DOES.
+#
+# - A pure MOVE appends its map to layering_renames.json and edits RULES /
+#   RULE_OF / EDGES (with `"=x"` exact prefixes where a prefix would now
+#   cover more) until `test_a_move_leaves_the_relation_unchanged` passes.
+#   It does NOT regenerate the snapshot: the passing test is the proof that
+#   the move changed no permission.
+# - A PR that ADDS a module (or removes one, or changes a permission on
+#   purpose) regenerates the snapshot, after appending its own map first if
+#   it also moves something, and says in its description that the relation
+#   changed and why:
+#
+#       PYTHONPATH=src uv run python test/test_layering.py --write
+#
+#   That records the relation of the current rules with `renames_applied`
+#   set to the length of the renames file. The diff of layering_relation.json
+#   is then the change of permissions, and is what review reads.
+
+RELATION = Path(__file__).resolve().parent / "layering_relation.json"
+RENAMES = Path(__file__).resolve().parent / "layering_renames.json"
+_REGEN = "PYTHONPATH=src uv run python test/test_layering.py --write"
+
+
+def allowed_by(rule: Rule, target: str) -> bool:
+    """Whether `rule` lets its module import `target`, exactly as
+    `test_no_import_outside_its_rule` decides it."""
+    if any(_under(target, p) for p in rule.must_not):
+        return False
+    return any(_under(target, p) for p in rule.may)
+
+
+def effective_relation(rules: dict[str, Rule] | None = None,
+                       rule_of: dict[str, str] | None = None,
+                       edges: dict[str, frozenset[str]] | None = None
+                       ) -> dict[str, list[str]]:
+    """Every module's sorted list of the modules its rule allows it to import.
+
+    The module set is RULE_OF's keys with EDGES' (equal on a passing tree,
+    `test_every_module_has_a_rule`); a module never allows itself.
+    """
+    rules = RULES if rules is None else rules
+    rule_of = RULE_OF if rule_of is None else rule_of
+    edges = EDGES if edges is None else edges
+    mods = sorted(set(rule_of) | set(edges))
+    return {m: [t for t in mods if t != m and allowed_by(rules[rule_of[m]], t)]
+            for m in mods}
+
+
+def apply_renames(allowed: dict[str, list[str]],
+                  maps: list[dict[str, str]]) -> dict[str, list[str]]:
+    """`allowed` with each map applied in order to importers and targets."""
+    for i, rename in enumerate(maps):
+        missing = sorted(set(rename) - set(allowed))
+        assert not missing, (f"rename map {i} moves modules the relation does "
+                             f"not have: {missing}")
+
+        def new(m: str, rename: dict[str, str] = rename) -> str:
+            return rename.get(m, m)
+
+        names = [new(m) for m in allowed]
+        clash = sorted({n for n in names if names.count(n) > 1})
+        assert not clash, f"rename map {i} lands two modules on {clash}"
+        allowed = {new(m): sorted(new(t) for t in ts)
+                   for m, ts in allowed.items()}
+    return dict(sorted(allowed.items()))
+
+
+def _load_renames() -> list[dict[str, str]]:
+    maps = json.loads(RENAMES.read_text())
+    assert isinstance(maps, list) and all(
+        isinstance(m, dict) and all(isinstance(k, str) and isinstance(v, str)
+                                    for k, v in m.items()) for m in maps), (
+        f"{RENAMES.name} must be a JSON list of {{old: new}} objects")
+    return maps
+
+
+def _diff(want: dict[str, list[str]], got: dict[str, list[str]]) -> str:
+    lines = []
+    for m in sorted(set(want) - set(got)):
+        lines.append(f"module gone: {m}")
+    for m in sorted(set(got) - set(want)):
+        lines.append(f"module new: {m}")
+    for m in sorted(set(want) & set(got)):
+        w, g = set(want[m]), set(got[m])
+        if g - w:
+            lines.append(f"{m} now MAY import {sorted(g - w)}")
+        if w - g:
+            lines.append(f"{m} may no longer import {sorted(w - g)}")
+    return "\n".join(lines)
+
+
+def test_a_move_leaves_the_relation_unchanged() -> None:
+    snap = json.loads(RELATION.read_text())
+    maps = _load_renames()
+    done = snap["renames_applied"]
+    assert 0 <= done <= len(maps), (
+        f"the snapshot says {done} renames were applied, the file has "
+        f"{len(maps)}")
+    want = apply_renames(snap["allowed"], maps[done:])
+    got = effective_relation()
+    assert want == got, (
+        "the allowed-import relation changed (snapshot carried through "
+        f"{len(maps) - done} rename map(s) vs. the current rules):\n"
+        f"{_diff(want, got)}\nA move must not change it: fix the rules "
+        "(an exact '=x' prefix where a prefix now covers more). If the change "
+        f"is intended, regenerate with `{_REGEN}` and say so in the PR.")
+
+
+def test_the_relation_check_can_fail() -> None:
+    # Widening one rule's `may` by a prefix moves the relation ...
+    rules = dict(RULES)
+    r = rules[RULE_OF["kernel_jab"]]
+    rules[RULE_OF["kernel_jab"]] = Rule(r.why, r.may | {"plan"}, r.must_not)
+    base = effective_relation()
+    wide = effective_relation(rules=rules)
+    assert base != wide and "plan.dag" in set(wide["kernel_jab"]) - set(
+        base["kernel_jab"])
+    # ... a rename carries the snapshot to the moved names ...
+    moved = apply_renames(base, [{"ir": "ir.core", "interp": "ir.interp"}])
+    assert "ir.interp" in moved and "interp" not in moved
+    assert moved["kernel_jab"] == sorted(
+        {"ir.core" if t == "ir" else t for t in base["kernel_jab"]})
+    # ... and an exact prefix keeps `ir` from covering what moved under it.
+    assert _under("ir.interp", "ir") and not _under("ir.interp", "=ir")
+    assert _under("ir", "=ir") and not _under("irx", "ir")
+
+
+def test_a_rename_map_must_name_real_modules() -> None:
+    base = effective_relation()
+    for bad in ({"no_such_module": "x"}, {"ir": "interp"}):
+        try:
+            apply_renames(base, [bad])
+        except AssertionError:
+            continue
+        raise AssertionError(f"accepted a bad rename map {bad}")
+
+
+def write_relation() -> None:
+    doc = {"renames_applied": len(_load_renames()),
+           "allowed": effective_relation()}
+    RELATION.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+
+
+if __name__ == "__main__":
+    import sys
+
+    if sys.argv[1:] != ["--write"]:
+        sys.exit(f"usage: {_REGEN}")
+    write_relation()
+    print(f"wrote {RELATION}")
