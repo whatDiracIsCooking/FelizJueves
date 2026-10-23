@@ -170,7 +170,7 @@ from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.density import checked_tau as _tau
 from felizjueves.ao.pairs import prune
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.launch_common import nonneg, sorted_desc
+from felizjueves.eri.launch_common import nonneg, sorted_desc
 from felizjueves.spec import Operator, Spec, Target
 
 Bound = Callable[[Shell, Shell], Sequence[float]]

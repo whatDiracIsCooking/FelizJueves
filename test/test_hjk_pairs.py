@@ -41,9 +41,9 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves import kernel_f
-from felizjueves.ao.eri import eri_block
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.eri import eri_block
 from felizjueves.eri.hjk.launch_hjk import (
     MAX_PRIM_PAIRS,
     MODES,

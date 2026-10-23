@@ -49,5 +49,13 @@
     "ao.metric_drive": "eri.density_fit.metric_drive",
     "kernel_eri3": "eri.density_fit.kernel_eri3",
     "kernel_metric": "eri.density_fit.kernel_metric"
+  },
+  {
+    "ao.eri": "eri.eri",
+    "ao.hgp_drive": "eri.hgp_drive",
+    "ao.schwarz": "eri.schwarz",
+    "kernel_pair_bound": "eri.kernel_pair_bound",
+    "kernel_schwarz": "eri.kernel_schwarz",
+    "launch_common": "eri.launch_common"
   }
 ]

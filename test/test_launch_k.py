@@ -71,8 +71,8 @@ from felizjueves.ao.k import (
 )
 from felizjueves.ao.shell import Basis, Shell, n_cartesians
 from felizjueves.ao.staged import coulomb_matrix_staged
+from felizjueves.eri.launch_common import PairRec, admits
 from felizjueves.ir import Kernel
-from felizjueves.launch_common import PairRec, admits
 from felizjueves.launch_k import (
     KClassLaunch,
     KLaunchPlan,

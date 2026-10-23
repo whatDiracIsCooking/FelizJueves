@@ -56,10 +56,10 @@ from tiers import by_l, is_fast, split_by_l
 
 from felizjueves import kernel_f as KF
 from felizjueves.ao import fock
-from felizjueves.ao import hgp_drive as HD
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri import hgp_drive as HD
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.hgp import hrr, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import (

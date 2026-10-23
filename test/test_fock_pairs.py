@@ -58,7 +58,6 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, is_fast
 
-from felizjueves.ao.eri import _quartet
 from felizjueves.ao.pairs import (
     hermite_bound,
     primitive_pairs,
@@ -67,6 +66,7 @@ from felizjueves.ao.pairs import (
     prune,
 )
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.eri import _quartet
 from felizjueves.launch_f import (
     FBatch,
     FPlan,

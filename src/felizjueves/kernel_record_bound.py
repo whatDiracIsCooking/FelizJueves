@@ -65,6 +65,7 @@ Nothing here is CUDA- or HIP-specific, and nothing here imports `ao`,
 
 from __future__ import annotations
 
+from felizjueves.eri.kernel_pair_bound import hermite_bound_coefficients
 from felizjueves.ir import (
     Assign,
     Call,
@@ -84,7 +85,6 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.kernel_pair_bound import hermite_bound_coefficients
 from felizjueves.mmd.e_fragment import (
     E_ARRAY,
     HALF_INV_ZETA,

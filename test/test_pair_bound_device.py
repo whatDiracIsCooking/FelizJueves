@@ -19,7 +19,7 @@ from test_kernel_pair_bound import CLASS_GRID, REL_TOL, ZETAS
 
 from felizjueves.ao.pairs import pair_bound
 from felizjueves.emit import gpu
-from felizjueves.kernel_pair_bound import build_pair_bound_kernel
+from felizjueves.eri.kernel_pair_bound import build_pair_bound_kernel
 from felizjueves.performance.device import SM_86
 from felizjueves.reference.pq import one_centre
 

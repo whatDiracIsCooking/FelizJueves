@@ -77,8 +77,8 @@ from felizjueves.ao.k import (
     _k_quartet,
 )
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.launch_common import PairRec
 from felizjueves.ir import Kernel
-from felizjueves.launch_common import PairRec
 from felizjueves.launch_k import KBound, k_class_spec, k_launches
 from felizjueves.spec import Spec
 

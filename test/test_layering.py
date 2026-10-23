@@ -67,9 +67,12 @@ _ONE_E_HOST = ("one_electron.one_electron", "one_electron.overlap",
 # until they moved into `eri/density_fit/`.
 _DF_HOST = ("eri.density_fit.metric", "eri.density_fit.metric_drive",
             "eri.density_fit.eri3", "eri.density_fit.eri3_drive")
+# #510: the shared ERI host modules, which lived under `ao/` the same way
+# until they moved into `eri/`.
+_ERI_HOST = ("eri.eri", "eri.hgp_drive", "eri.schwarz")
 # Every module that left the `ao` prefix: a rule or a transitive check that
 # says `ao` names these too, so its reach is unchanged.
-_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST)
+_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST)
 
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
@@ -384,7 +387,7 @@ RULES: dict[str, Rule] = {
         "`ao.staged` and builds its own `launch` plan from the DQ kernel's "
         "read-back `Dmax`",
         ("spec", "mmd.kernel", "=ir", "ir.interp", "plan", "ao", "mmd.hermite",
-         "launch", "launch_common", "ir.passes", "kernel_dq", "kernel_jab"),
+         "launch", "eri.launch_common", "ir.passes", "kernel_dq", "kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -399,7 +402,7 @@ RULES: dict[str, Rule] = {
         "`ir` for the `Kernel` type it carries; the records, the sort, the "
         "bound check and the batch admission it shares with its siblings "
         "from `launch_common` (#504)",
-        ("spec", "plan", "mmd.kernel", "=ir", "ao", "mmd.hermite", "launch_common"),
+        ("spec", "plan", "mmd.kernel", "=ir", "ao", "mmd.hermite", "eri.launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
         **{"ir.interp":
@@ -434,7 +437,7 @@ RULES: dict[str, Rule] = {
         "records and the host's staged contraction; the bound, the ket "
         "sort key and the K kernel builder arrive injected (`bound=`, "
         "`key=`, `build=`)",
-        ("spec", "=ir", "ao", "mmd.hermite", "launch", "launch_common"),
+        ("spec", "=ir", "ao", "mmd.hermite", "launch", "eri.launch_common"),
         reference=_GROUND_TRUTH + "; the bound and `pq` are injected",
         **{"ir.interp":
             "the plan is data and the walk is ao.k's arithmetic; "
@@ -597,14 +600,14 @@ RULE_OF: dict[str, str] = {
     "ao.shell": "ao",
     "mmd.hermite": "ao",
     "ao.pairs": "ao",
-    "ao.eri": "ao",
+    "eri.eri": "ao",
     "ao.density": "ao",
     "ao.j": "ao",
     "ao.k": "ao",
     "ao.drive": "adapter",
     "ao.staged": "adapter",
     "launch": "launch",
-    "launch_common": "launch_common",
+    "eri.launch_common": "launch_common",
     "launch_k": "k_launch",
     "kernel_jab": "jab_builder",
     "kernel_dq": "dq_builder",
@@ -704,28 +707,28 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.shell": (),
     "mmd.hermite": (),
     "ao.pairs": ("mmd.hermite", "ao.shell"),
-    "ao.eri": ("mmd.hermite", "ao.pairs", "ao.shell"),
+    "eri.eri": ("mmd.hermite", "ao.pairs", "ao.shell"),
     # #503: the density contract, `tau`, `EPair` and the ket records, out of
     # ao.j so that K, F, Schwarz and the launch plans need not import J.
     "ao.density": ("mmd.hermite", "ao.pairs", "ao.shell"),
     "ao.j": ("ao.density", "mmd.hermite", "ao.pairs", "ao.shell"),
     # #197: K reuses the density contract and EPair (ao.density since #503),
     # and ao.eri for its third index path (`k_from_eris`).
-    "ao.k": ("ao.density", "ao.eri", "mmd.hermite", "ao.shell"),
+    "ao.k": ("ao.density", "eri.eri", "mmd.hermite", "ao.shell"),
     "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "ir.interp", "ir",
                  "mmd.kernel", "kernel_dq", "kernel_jab", "launch",
-                 "launch_common", "plan.pipeline", "spec"),
+                 "eri.launch_common", "plan.pipeline", "spec"),
     "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "ir.interp", "ir",
-                  "mmd.kernel", "launch", "launch_common", "ir.passes"),
+                  "mmd.kernel", "launch", "eri.launch_common", "ir.passes"),
     "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "mmd.kernel",
-               "launch_common", "spec"),
+               "eri.launch_common", "spec"),
     # #504: what the launch plans share, out of `launch`; it asks the plan
     # which batch counts a class admits.
-    "launch_common": ("plan.pipeline", "spec"),
+    "eri.launch_common": ("plan.pipeline", "spec"),
     # #204: the K plan beside J's -- the shared part from `launch` (from
     # `launch_common` since #504), the
     # records and the host's staged contraction from `ao`.
-    "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "launch_common",
+    "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "eri.launch_common",
                  "spec"),
     "kernel_jab": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
     "kernel_dq": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
@@ -909,7 +912,7 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
     # #204: the K plan beside it, the same; and it reaches no K builder --
     # `kernel_k` (#198) arrives injected as `build=`.
     graph = _graph()
-    for root, extra in (("launch", ()), ("launch_common", ("launch",)),
+    for root, extra in (("launch", ()), ("eri.launch_common", ("launch",)),
                         ("launch_k", ("kernel_k",))):
         seen: set[str] = set()
         todo = [root]
@@ -1096,10 +1099,10 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "kernel_pair_bound": "pair_bound_builder",
+    "eri.kernel_pair_bound": "pair_bound_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_pair_bound": ("ir", "plan.targets", "spec"),
+    "eri.kernel_pair_bound": ("ir", "plan.targets", "spec"),
 }.items()}
 
 
@@ -1110,7 +1113,7 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
     # or a card.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_pair_bound"]
+    todo = ["eri.kernel_pair_bound"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -1135,7 +1138,7 @@ RULES |= {
         "kernel_record_bound.py (#499): K's dressed record bound kernel, "
         "`Target.RECORD_BOUND` -- key -> IR, the `E` fragment inlined "
         "(`e_fragment`) and each `I_p` in `kernel_pair_bound`'s closed form",
-        ("spec", "=ir", "plan.targets", "mmd.e_fragment", "kernel_pair_bound"),
+        ("spec", "=ir", "plan.targets", "mmd.e_fragment", "eri.kernel_pair_bound"),
         ao="`ao.k.record_bounds` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the prefactor it must not form: "
            "importing either shares ancestry with it (#20)",
@@ -1150,7 +1153,7 @@ RULE_OF |= {
     "kernel_record_bound": "record_bound_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_record_bound": ("mmd.e_fragment", "ir", "kernel_pair_bound",
+    "kernel_record_bound": ("mmd.e_fragment", "ir", "eri.kernel_pair_bound",
                             "plan.targets", "spec"),
 }.items()}
 
@@ -1166,7 +1169,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"mmd.e_fragment", "kernel_pair_bound"} <= seen
+    assert {"mmd.e_fragment", "eri.kernel_pair_bound"} <= seen
     for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_record_bound reaches {hit}"
@@ -1453,14 +1456,14 @@ RULES |= {
         **{"mmd.kernel":
             "the MMD builder is the other engine: reaching it would make "
                "the cross-engine pin share ancestry with its witness"},
-        **{"ao.eri": "ao/eri.py is the witness this evaluator is pinned "
+        **{"eri.eri": "ao/eri.py is the witness this evaluator is pinned "
                      "against; importing it would compare an engine to "
                      "itself",
            "ao.drive": "the MMD adapter runs the other engine"}),
 }
-RULE_OF["ao.hgp_drive"] = "hgp_adapter"
-EDGES["ao.hgp_drive"] = frozenset(("ao.shell", "hgp.hrr", "hgp.recurrence",
-                                   "ir.interp", "ir", "spec"))
+RULE_OF["eri.hgp_drive"] = "hgp_adapter"
+EDGES["eri.hgp_drive"] = frozenset(("ao.shell", "hgp.hrr", "hgp.recurrence",
+                                    "ir.interp", "ir", "spec"))
 
 
 def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
@@ -1515,7 +1518,7 @@ RULES |= {
         "bound check and stable sort from `launch_common` (#504), the "
         "`Spec` it names from `spec`; the bound arrives injected "
         "(`bound=`)",
-        ("spec", "ao", "mmd.hermite", "launch_common"),
+        ("spec", "ao", "mmd.hermite", "eri.launch_common"),
         reference=_GROUND_TRUTH + "; the bound is injected (`bound=`), as "
                   "ao/pairs.py takes its `one_centre=`",
         plan="the plan layer keys on `total_am`, which indexes a [JEngine] "
@@ -1534,7 +1537,7 @@ RULE_OF |= {
     "launch_f": "f_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "launch_f": ("ao.density", "ao.pairs", "ao.shell", "launch_common",
+    "launch_f": ("ao.density", "ao.pairs", "ao.shell", "eri.launch_common",
                  "spec"),
 }.items()}
 
@@ -1667,8 +1670,8 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
     assert "kernel_f" in seen
     for banned in ("launch_f", "launch", _REF, "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
-                   "performance.measured", "ao.fock", "ao.eri",
-                   "ao.hgp_drive", "engine"):
+                   "performance.measured", "ao.fock", "eri.eri",
+                   "eri.hgp_drive", "engine"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"walk_f reaches {hit}"
 
@@ -1702,8 +1705,8 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
 # ---------------------------------------------------------------------------
 
 ENGINES: dict[str, tuple[str, ...]] = {
-    "mmd": ("plan", "mmd.recurrence", "mmd.kernel", "ao.eri"),
-    "hgp": ("hgp", "kernel_f", "ao.hgp_drive"),
+    "mmd": ("plan", "mmd.recurrence", "mmd.kernel", "eri.eri"),
+    "hgp": ("hgp", "kernel_f", "eri.hgp_drive"),
 }
 DECLARED_ABOVE = ("ao.fock",)
 _ENGINE_WHY = ("the protocol names the engines' ENTRY POINTS (`ao.eri`, "
@@ -1718,7 +1721,7 @@ RULES |= {
         "`ao.eri` + `kernel` and `Hgp` over `ao.hgp_drive` + `kernel_f`. "
         "The one module in src/ that names both engines; each engine's "
         "special function is injected at construction",
-        ("spec", "=ir", "ao.shell", "ao.eri", "ao.hgp_drive", "mmd.kernel",
+        ("spec", "=ir", "ao.shell", "eri.eri", "eri.hgp_drive", "mmd.kernel",
          "kernel_f"),
         reference=_GROUND_TRUTH + "; `pq=` and `boys=` arrive injected, as "
                   "`interp` takes `boys=`",
@@ -1735,7 +1738,7 @@ RULES |= {
             "the `Kernel` is arch-neutral; the arch enters at emission"}),
 }
 RULE_OF["engine"] = "engine"
-EDGES["engine"] = frozenset(("ao.eri", "ao.hgp_drive", "ao.shell", "ir",
+EDGES["engine"] = frozenset(("eri.eri", "eri.hgp_drive", "ao.shell", "ir",
                              "mmd.kernel", "kernel_f", "spec"))
 
 
@@ -1793,12 +1796,12 @@ def test_the_engine_rule_can_fail() -> None:
     # A module above (it imports `engine`) that also imports `hgp.vrr`, and
     # the declared `ao.fock` reaching `ao.eri` through two hops: both are
     # caught; the route through `engine` itself is not a breach.
-    graph = {"engine": {"ao.eri", "kernel_f"}, "ao.eri": set(),
+    graph = {"engine": {"eri.eri", "kernel_f"}, "eri.eri": set(),
              "kernel_f": {"hgp.vrr"}, "hgp.vrr": set(),
              "consumer": {"engine", "hgp.vrr"}, "via": {"mid"},
-             "mid": {"ao.eri"}, "ao.fock": {"via"}, "clean": {"engine"}}
+             "mid": {"eri.eri"}, "ao.fock": {"via"}, "clean": {"engine"}}
     assert engines_named_from_above(graph) == {
-        "ao.fock": ["ao.eri"], "consumer": ["hgp.vrr"]}
+        "ao.fock": ["eri.eri"], "consumer": ["hgp.vrr"]}
 
 
 # ---------------------------------------------------------------------------
@@ -2218,27 +2221,27 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "ao.schwarz": "ao",
-    "kernel_schwarz": "schwarz_builder",
+    "eri.schwarz": "ao",
+    "eri.kernel_schwarz": "schwarz_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.schwarz": ("ao.density", "ao.eri", "ao.shell"),
-    "kernel_schwarz": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
-                       "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
+    "eri.schwarz": ("ao.density", "eri.eri", "ao.shell"),
+    "eri.kernel_schwarz": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
+                           "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
 }.items()}
 RULES["driver"] = Rule(RULES["driver"].why + ", and the Schwarz ladder "
                        "through `kernel_schwarz`",
-                       RULES["driver"].may | frozenset(("kernel_schwarz",)),
+                       RULES["driver"].may | frozenset(("eri.kernel_schwarz",)),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
-    ("kernel_schwarz",))
+    ("eri.kernel_schwarz",))
 
 
 def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
         ) -> None:
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_schwarz"]
+    todo = ["eri.kernel_schwarz"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -2876,7 +2879,7 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
                    "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
                    "performance.measured", "ao.j", "ao.k",
-                   "ao.fock", "ao.eri", "ao.hgp_drive", "engine", "walk_f"):
+                   "ao.fock", "eri.eri", "eri.hgp_drive", "engine", "walk_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"walk_hjk reaches {hit}"
 
@@ -2921,7 +2924,7 @@ RULES |= {
         "-- `launch_k.k_launches`' records regrouped by first shell into "
         "one block per (a, b) -- and its walk in Python on ao.k's staged "
         "arithmetic; the bound and the builder arrive injected",
-        ("spec", "=ir", "ao", "mmd.hermite", "launch_common", "launch_k"),
+        ("spec", "=ir", "ao", "mmd.hermite", "eri.launch_common", "launch_k"),
         **{k: v for k, v in RULES["k_launch"].must_not.items()
            if k not in ("mmd.kernel", "ao")},
         **{"mmd.kernel":
@@ -2937,7 +2940,7 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "kernel_kblock": ("ir", "k_levers.seams", "mmd.kernel", "kernel_k", "spec"),
     "launch_kblock": ("ao.density", "ao.k", "ao.shell", "ir",
-                      "launch_common", "launch_k", "spec"),
+                      "eri.launch_common", "launch_k", "spec"),
 }.items()}
 
 
@@ -3008,8 +3011,8 @@ def test_launch_common_is_no_wider_than_launch() -> None:
     assert common.may <= launch.may
     assert set(launch.must_not) <= set(common.must_not)
     rel = effective_relation()
-    assert set(rel["launch_common"]) <= set(rel["launch"]) | {"launch"}
-    assert "launch" not in rel["launch_common"]
+    assert set(rel["eri.launch_common"]) <= set(rel["launch"]) | {"launch"}
+    assert "launch" not in rel["eri.launch_common"]
 
 
 # ---------------------------------------------------------------------------
@@ -3023,6 +3026,10 @@ def test_launch_common_is_no_wider_than_launch() -> None:
 # #509: the DF integrals moved into `eri/density_fit/` the same way; the four
 # that left `ao/` (`_DF_HOST`) join the same pass through `_LEFT_AO`, and the
 # package marker `eri.density_fit` is the one new module.
+#
+# #510: the shared ERI layer moved into `eri/`; the three host modules that
+# left `ao/` (`_ERI_HOST`) join the same pass through `_LEFT_AO`. No new
+# package (`eri/__init__.py` came with #514).
 # ---------------------------------------------------------------------------
 
 for _rn, _r in list(RULES.items()):

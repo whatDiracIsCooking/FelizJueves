@@ -55,8 +55,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.eri import PQ, eri_block_and_scale
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.eri import PQ, eri_block_and_scale
 
 Matrix = list[list[float]]
 

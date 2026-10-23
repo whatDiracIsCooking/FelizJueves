@@ -266,7 +266,7 @@ def test_the_schwarz_ladder_is_one_unit_per_pair_class_through_gg():
 
 
 def test_schwarz_l_adds_its_units_beside_the_ladder_flags(tmp_path):
-    from felizjueves.kernel_schwarz import build_schwarz_kernel
+    from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 
     assert _run(tmp_path, "cuda", "--L", "0", "--schwarz-l", "1") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "schwarz_00.cu",

@@ -58,7 +58,6 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.eri import eri_block, eri_block_and_scale
 from felizjueves.ao.k import (
     exchange_matrix,
     exchange_matrix_and_scale,
@@ -67,6 +66,7 @@ from felizjueves.ao.k import (
     k_quartet,
 )
 from felizjueves.ao.shell import Basis, n_cartesians
+from felizjueves.eri.eri import eri_block, eri_block_and_scale
 from felizjueves.reference.pq import pq
 
 SWEEP_TOL = 1e-14

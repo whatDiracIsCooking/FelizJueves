@@ -111,9 +111,9 @@ from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import kernel_f as KF
 from felizjueves.ao import fock
-from felizjueves.ao import hgp_drive as HD
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri import hgp_drive as HD
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.eri.hjk import walk_hjk as W
 from felizjueves.eri.hjk.launch_hjk import hjk_launches
 from felizjueves.hgp import orbits

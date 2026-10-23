@@ -32,17 +32,8 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import split_by_l
 
-from felizjueves.ao.schwarz import (
-    _place,
-    diagonal_and_scale,
-    diagonal_matrix,
-    scale_matrix,
-    schwarz_classes,
-)
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.ir import Assign, AtomicAdd, Decl, Index, Inline, walk
-from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_schwarz import (
+from felizjueves.eri.kernel_schwarz import (
     OUT,
     build_schwarz_kernel,
     launch_shape,
@@ -50,6 +41,15 @@ from felizjueves.kernel_schwarz import (
     schwarz_plan,
     schwarz_spec,
 )
+from felizjueves.eri.schwarz import (
+    _place,
+    diagonal_and_scale,
+    diagonal_matrix,
+    scale_matrix,
+    schwarz_classes,
+)
+from felizjueves.ir import Assign, AtomicAdd, Decl, Index, Inline, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.recurrence import node_name
 from felizjueves.plan.pipeline import plan

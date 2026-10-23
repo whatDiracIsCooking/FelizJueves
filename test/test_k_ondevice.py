@@ -110,7 +110,6 @@ from test_launch_k import _case as _launch_case
 from test_launch_k import _guarded, _stub, _truncated, schwarz
 
 from felizjueves.ao.density import checked_density, epair
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.k import (
     _dcd,
     _k_quartet,
@@ -119,6 +118,7 @@ from felizjueves.ao.k import (
     record_bounds,
 )
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.ir import Assign, AtomicAdd, Index, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.kernel_k import build_k_kernels

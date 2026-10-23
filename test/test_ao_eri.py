@@ -60,7 +60,7 @@ from oracle import manifest
 from oracle.generate import CASES as CASE_OF
 from oracle.generate import eri_quartets
 
-from felizjueves.ao.eri import eri_block, eri_block_and_scale
+from felizjueves.eri.eri import eri_block, eri_block_and_scale
 from felizjueves.reference.pq import pq
 
 TOL = 1e-12

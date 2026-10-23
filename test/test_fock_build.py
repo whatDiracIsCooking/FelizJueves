@@ -70,8 +70,8 @@ from oracle import manifest
 
 from felizjueves import kernel_f as KF
 from felizjueves.ao import fock
-from felizjueves.ao.eri import eri_block_and_scale
 from felizjueves.ao.pairs import primitive_schwarz_bounds
+from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.ir import Scalar
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch_f import f_launches

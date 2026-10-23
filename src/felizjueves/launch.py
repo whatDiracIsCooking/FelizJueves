@@ -176,8 +176,8 @@ from felizjueves.ao.pairs import (
     primitive_pairs,
 )
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.eri.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.ir import Kernel
-from felizjueves.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.mmd.hermite import Ang, e_axis, hermite_order
 from felizjueves.mmd.kernel import build_pq_kernels
 from felizjueves.one_electron.kinetic import kinetic_axis
