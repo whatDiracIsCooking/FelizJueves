@@ -25,5 +25,15 @@
     "measured_store": "performance.measured_store",
     "planrank": "performance.planrank",
     "ridge": "performance.ridge"
+  },
+  {
+    "ao.kinetic": "one_electron.kinetic",
+    "ao.one_electron": "one_electron.one_electron",
+    "ao.overlap": "one_electron.overlap",
+    "ao.potential": "one_electron.potential",
+    "kernel_s": "one_electron.kernel_s",
+    "kernel_sx": "one_electron.kernel_sx",
+    "kernel_t": "one_electron.kernel_t",
+    "kernel_v": "one_electron.kernel_v"
   }
 ]

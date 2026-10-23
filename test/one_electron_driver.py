@@ -54,13 +54,13 @@ from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves.ir import Intent, Kernel, Scalar
-from felizjueves.kernel_s import build_s_kernel
-from felizjueves.kernel_s import launch_shape as s_launch_shape
-from felizjueves.kernel_t import build_t_kernel
-from felizjueves.kernel_t import launch_shape as t_launch_shape
-from felizjueves.kernel_v import build_v_kernel
-from felizjueves.kernel_v import launch_shape as v_launch_shape
 from felizjueves.launch import OneEClass, OneELaunch
+from felizjueves.one_electron.kernel_s import build_s_kernel
+from felizjueves.one_electron.kernel_s import launch_shape as s_launch_shape
+from felizjueves.one_electron.kernel_t import build_t_kernel
+from felizjueves.one_electron.kernel_t import launch_shape as t_launch_shape
+from felizjueves.one_electron.kernel_v import build_v_kernel
+from felizjueves.one_electron.kernel_v import launch_shape as v_launch_shape
 from felizjueves.spec import Target
 
 THREADS = 32  # lanes per block, one record per thread; not numerical

@@ -34,20 +34,20 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, split_by_l
 
-from felizjueves.ao.overlap import cross_overlap_matrix
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import AtomicAdd, If, Intent, walk
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_s import build_s_kernel, record_values
-from felizjueves.kernel_sx import (
+from felizjueves.launch import XClass, XLaunch, cross_overlap_launch
+from felizjueves.one_electron.kernel_s import build_s_kernel, record_values
+from felizjueves.one_electron.kernel_sx import (
     ATOMIC_REASON,
     ZEROED_S,
     build_sx_kernel,
     launch_shape,
     sx_spec,
 )
-from felizjueves.launch import XClass, XLaunch, cross_overlap_launch
+from felizjueves.one_electron.overlap import cross_overlap_matrix
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 

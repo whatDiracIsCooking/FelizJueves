@@ -51,7 +51,6 @@ from oracle import manifest
 from tiers import by_l, split_by_l
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.overlap import overlap_block, overlap_matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
@@ -71,15 +70,16 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_s import (
+from felizjueves.launch import per_axis
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.one_electron.kernel_s import (
     ATOMIC_REASON,
     ZEROED_S,
     build_s_kernel,
     launch_shape,
     s_spec,
 )
-from felizjueves.launch import per_axis
-from felizjueves.mmd import e_fragment as ef
+from felizjueves.one_electron.overlap import overlap_block, overlap_matrix
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
@@ -384,7 +384,7 @@ GOLDEN_CLASS = (1, 1)
 
 def test_the_cuda_golden_is_unchanged() -> None:
     # Regenerate (never hand-edit):
-    #   PYTHONPATH=src uv run python -c "from felizjueves.kernel_s import \
+    #   PYTHONPATH=src uv run python -c "from felizjueves.one_electron.kernel_s import \
     #   build_s_kernel as b; from felizjueves.performance.device import SM_86; \
     #   from felizjueves.emit.cuda import emit; print(emit(b((1, 1)), SM_86), \
     #   end='')" > test/golden/cuda/s_11.cu

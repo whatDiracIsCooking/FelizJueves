@@ -116,16 +116,16 @@ from test_ao_potential import potential_scale_block
 from test_kernel_device import BACKEND, BOYS_REL, _toolchain
 from tiers import by_l, is_fast
 
-from felizjueves.ao.kinetic import kinetic_matrix
-from felizjueves.ao.one_electron import matrix
-from felizjueves.ao.overlap import overlap_matrix
 from felizjueves.ao.pairs import overlap_bound
-from felizjueves.ao.potential import potential_matrix
 from felizjueves.ao.shell import cartesians
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.launch import OneELaunch, one_electron_launch
 from felizjueves.mmd.hermite import _raise, e_axis, hermite_order
+from felizjueves.one_electron.kinetic import kinetic_matrix
+from felizjueves.one_electron.one_electron import matrix
+from felizjueves.one_electron.overlap import overlap_matrix
+from felizjueves.one_electron.potential import potential_matrix
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Target

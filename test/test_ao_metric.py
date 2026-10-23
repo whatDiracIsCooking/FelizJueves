@@ -68,9 +68,9 @@ from felizjueves.ao.metric import (
     place_staged,
     scale_matrix,
 )
-from felizjueves.ao.overlap import overlap_block
 from felizjueves.ao.shell import Basis, cartesians
 from felizjueves.mmd.hermite import hermite_order
+from felizjueves.one_electron.overlap import overlap_block
 from felizjueves.reference.pq import fundamental, pq
 
 SET = "h2o_ccpvtz_jkfit_metric"

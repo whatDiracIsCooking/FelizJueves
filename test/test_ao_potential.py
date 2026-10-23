@@ -19,9 +19,9 @@ import pytest
 from tiers import by_l, is_fast
 
 from felizjueves.ao.pairs import dress, primitive_pairs
-from felizjueves.ao.potential import potential_block, potential_matrix
 from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.mmd.hermite import hermite_order
+from felizjueves.one_electron.potential import potential_block, potential_matrix
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import fundamental, one_centre, theta_of
 
@@ -338,8 +338,8 @@ from oracle import manifest as _manifest  # noqa: E402
 from test_ao_kinetic import kinetic_scale_block  # noqa: E402
 from test_ao_overlap import ONE_E_PARAMS, ONE_E_TOL, one_e_scale  # noqa: E402
 
-from felizjueves.ao.kinetic import kinetic_matrix  # noqa: E402
-from felizjueves.ao.one_electron import matrix as _matrix  # noqa: E402
+from felizjueves.one_electron.kinetic import kinetic_matrix  # noqa: E402
+from felizjueves.one_electron.one_electron import matrix as _matrix  # noqa: E402
 
 
 def _nuclei(fx) -> tuple:

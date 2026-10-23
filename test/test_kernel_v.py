@@ -57,7 +57,6 @@ from tiers import by_l
 
 from felizjueves.ao.density import epair
 from felizjueves.ao.pairs import primitive_pairs
-from felizjueves.ao.potential import potential_block
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
@@ -78,7 +77,11 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_v import (
+from felizjueves.launch import per_axis
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.mmd.hermite import hermite_order
+from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_body
+from felizjueves.one_electron.kernel_v import (
     ATOMIC_REASON,
     NUC,
     ZEROED_V,
@@ -87,10 +90,7 @@ from felizjueves.kernel_v import (
     v_plan,
     v_spec,
 )
-from felizjueves.launch import per_axis
-from felizjueves.mmd import e_fragment as ef
-from felizjueves.mmd.hermite import hermite_order
-from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_body
+from felizjueves.one_electron.potential import potential_block
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import schedule
@@ -494,7 +494,7 @@ GOLDEN_CLASS = (1, 1)
 
 def test_the_cuda_golden_is_unchanged() -> None:
     # Regenerate (never hand-edit):
-    #   PYTHONPATH=src uv run python -c "from felizjueves.kernel_v import \
+    #   PYTHONPATH=src uv run python -c "from felizjueves.one_electron.kernel_v import \
     #   build_v_kernel as b; from felizjueves.performance.device import SM_86; \
     #   from felizjueves.emit.cuda import emit; print(emit(b((1, 1)), SM_86), \
     #   end='')" > test/golden/cuda/v_11.cu

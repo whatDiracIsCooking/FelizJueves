@@ -313,7 +313,7 @@ def test_the_sx_ladder_is_every_ordered_class():
 
 
 def test_sx_l_adds_its_units_beside_the_ladder_flags(tmp_path):
-    from felizjueves.kernel_sx import build_sx_kernel
+    from felizjueves.one_electron.kernel_sx import build_sx_kernel
 
     assert _run(tmp_path / "a", "cuda", "--L", "0", "--sx-l", "1") == 0
     assert _names(tmp_path / "a") == {"pq_L0_p0_q0.cu", "sx_00.cu",

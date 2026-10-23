@@ -397,14 +397,14 @@ from test_ao_pairs import (  # noqa: E402
     _h2_chain_1e,
 )
 
-from felizjueves.ao.kinetic import kinetic_matrix  # noqa: E402
-from felizjueves.ao.overlap import overlap_matrix  # noqa: E402
 from felizjueves.ao.pairs import overlap_bound, pair_list  # noqa: E402
-from felizjueves.ao.potential import potential_matrix  # noqa: E402
 from felizjueves.launch import (  # noqa: E402
     one_electron_launch,
     walk_one_electron,
 )
+from felizjueves.one_electron.kinetic import kinetic_matrix  # noqa: E402
+from felizjueves.one_electron.overlap import overlap_matrix  # noqa: E402
+from felizjueves.one_electron.potential import potential_matrix  # noqa: E402
 from felizjueves.reference.pq import one_centre  # noqa: E402
 from felizjueves.spec import Target  # noqa: E402
 
