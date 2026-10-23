@@ -56,6 +56,21 @@ THE SHAPE (schema 2, 3 or 4), one JSON object per file under `fixtures/`:
                  (which must carry `converted` and the same `cart`), `n` of
                  this one -- the oracle of `S_{B1,B2}` (`Target.SX`);
                  `cross_overlap(fx)` loads the partner and checks it.
+                 The dipole arrays (OPTIONAL, #517; need `converted`, all
+                 seven or none): `int1e_r_cart:origin` and
+                 `int1e_r_cart:zero`, libcint's `<m|r - C|n>` under
+                 `mol.with_common_orig(C)` at the recorded origin and at
+                 `C = 0`, shape (3, nao, nao), components x, y, z
+                 (`DIPOLE_COMPONENTS`); `dipole_origin`, that `C` (3,),
+                 Bohr, every component non-zero and their magnitudes
+                 pairwise distinct, so `X_PC` is exercised and no axis is
+                 interchangeable with another; `dip_moment:origin` and
+                 `dip_moment:zero`, PySCF's RHF `dip_moment` (a.u.,
+                 nuclear minus electronic) for `density` at each origin,
+                 shape (3,); and `dip_moment:charges` / `dip_moment:coords`,
+                 the nuclear charges (natm,) and coordinates (natm, 3), Bohr,
+                 it used, which must equal `atoms` exactly. THE DIPOLE
+                 FIXTURES, below.
     density_recipe  how the recorded density was made: "hilbert: ..."
                  (1/(i+j+1), every case but one pair) or "rhf: ..."
                  (#486, PySCF's converged RHF density, recorded and
@@ -146,6 +161,15 @@ combined quantity is `FockPair.two_electron() = vj - vk / 2`: PySCF's RHF
 test/test_oracle_fock.py asserts the two constants agree). `fock_pairs()`
 names every tracked molecule that has both halves.
 
+THE DIPOLE FIXTURES (#517). `<m>_dipole` is the `_schwarz` pattern: the
+`<m>_j` fixture's molecule, Cartesian basis and recorded density exactly,
+carrying the dipole arrays (above) and, besides `density` and `ovlp`,
+nothing else. `dipole_pair(m)` loads it with its `<m>_j` sibling and
+`check_dipole` asserts their inputs are one, the way `check_pair` does for a
+Fock pair (the same fields, each exactly, plus every array both carry), so a
+dipole integral is never read against a basis or density it was not computed
+from. `dipole_pairs()` names every tracked molecule with both files.
+
 FULL PRECISION. Floats are written by `json`, i.e. by `repr`, which is the
 shortest string that round-trips the double exactly, so "the numbers match"
 can mean `==` and not a tolerance. `dumps` is the one serialiser, and a
@@ -205,6 +229,17 @@ ROWS_SEP = "_rows"
 THREE_CENTER_PREFIX = "int3c2e_cart:"
 THREE_CENTER_KEYS = ("cols", "converted", "parent", "set")
 COLS_SEP = "_cols"
+# #517: the dipole arrays (THE DIPOLE FIXTURES)
+DIPOLE_ORIGIN_ARRAY = "dipole_origin"  # C, (3,), Bohr
+R_ARRAY = "int1e_r_cart:origin"  # with_common_orig(C), (3, nao, nao)
+R0_ARRAY = "int1e_r_cart:zero"  # with_common_orig(0), (3, nao, nao)
+DIP_ARRAY = "dip_moment:origin"  # PySCF's RHF dip_moment at C, (3,), a.u.
+DIP0_ARRAY = "dip_moment:zero"  # ... at 0
+DIP_CHARGES_ARRAY = "dip_moment:charges"  # nuclear charges it used, (natm,)
+DIP_COORDS_ARRAY = "dip_moment:coords"  # nuclear coordinates, (natm, 3), Bohr
+DIPOLE_ARRAYS = (DIPOLE_ORIGIN_ARRAY, R_ARRAY, R0_ARRAY, DIP_ARRAY,
+                 DIP0_ARRAY, DIP_CHARGES_ARRAY, DIP_COORDS_ARRAY)
+DIPOLE_COMPONENTS = ("x", "y", "z")  # libcint's int1e_r component order
 
 
 class FixtureError(ValueError):
@@ -567,6 +602,7 @@ def validate(path: Path, raw: Any) -> Fixture:
                               f"(rows' nao, {nao})")
     if one_e and not np.array_equal(arrays[OVLP_ARRAY], arrays["ovlp"]):
         raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
+    _check_dipole_arrays(path, arrays, converted, atoms, nao)
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,
@@ -682,6 +718,46 @@ def _three_center(path: Path, raw: dict[str, Any], prov: Provenance,
                           f"(parent's nao, parent's nao, {c1 - c0})")
     converted = _converted(path, t["converted"], prov, n_atoms, shells, nao)
     return ThreeCenterPiece(t["set"], (c0, c1), t["parent"], converted)
+
+
+def _check_dipole_arrays(path: Path, arrays: dict[str, np.ndarray],
+                         converted: Converted | None, atoms: list[Atom],
+                         nao: int) -> None:
+    """#517: the seven dipole arrays, all or none, shaped, the origin
+    non-zero and non-symmetric, the nuclei `dip_moment` used `atoms`'."""
+    has = [n for n in DIPOLE_ARRAYS if n in arrays]
+    if not has:
+        return
+    if len(has) != len(DIPOLE_ARRAYS):
+        raise _fail(path, f"arrays has {has} of the dipole arrays "
+                          f"{list(DIPOLE_ARRAYS)}: all seven or none")
+    if converted is None:
+        raise _fail(path, "the dipole arrays need the converted basis their "
+                          "AOs are in")
+    natm, ncomp = len(atoms), len(DIPOLE_COMPONENTS)
+    shapes = {DIPOLE_ORIGIN_ARRAY: (ncomp,), R_ARRAY: (ncomp, nao, nao),
+              R0_ARRAY: (ncomp, nao, nao), DIP_ARRAY: (ncomp,),
+              DIP0_ARRAY: (ncomp,), DIP_CHARGES_ARRAY: (natm,),
+              DIP_COORDS_ARRAY: (natm, ncomp)}
+    for name, want in shapes.items():
+        if arrays[name].shape != want:
+            raise _fail(path, f"arrays.{name} has shape {arrays[name].shape}, "
+                              f"expected {want}")
+    c = arrays[DIPOLE_ORIGIN_ARRAY]
+    mags = [abs(float(x)) for x in c]
+    if min(mags) == 0.0 or len(set(mags)) != ncomp:
+        raise _fail(path, f"arrays.{DIPOLE_ORIGIN_ARRAY} {tuple(c.tolist())} "
+                          "must be non-zero in every component with pairwise "
+                          "distinct magnitudes (X_PC exercised, no axis "
+                          "interchangeable)")
+    if not np.array_equal(arrays[DIP_CHARGES_ARRAY],
+                          np.array([float(a.charge) for a in atoms])):
+        raise _fail(path, f"arrays.{DIP_CHARGES_ARRAY} are not the atoms' "
+                          "charges")
+    if not np.array_equal(arrays[DIP_COORDS_ARRAY],
+                          np.array([a.coord for a in atoms])):
+        raise _fail(path, f"arrays.{DIP_COORDS_ARRAY} are not the atoms' "
+                          "coordinates")
 
 
 def _eri_quartet(name: str) -> tuple[int, ...] | None:
@@ -1038,6 +1114,16 @@ def check_pair(fj: Fixture, fk: Fixture) -> None:
         raise _pair_fail(fj, fk, f"the second carries no {K_ARRAY}")
     if fj.converted is None or fk.converted is None:
         raise _pair_fail(fj, fk, "both must record the converted basis")
+    field = _input_difference(fj, fk)
+    if field is not None:
+        raise _pair_fail(fj, fk, f"{field} differ")
+
+
+def _input_difference(fj: Fixture, fk: Fixture) -> str | None:
+    """The first input field two converted AO fixtures differ in, or None:
+    the issue's five first (#280), then the density, the rest, and every
+    array both carry -- each compared exactly."""
+    assert fj.converted is not None and fk.converted is not None
     pj, pk = fj.provenance, fk.provenance
     fields = (  # the issue's five first, so the message names the first rot
         ("shells", fj.shells, fk.shells),
@@ -1055,16 +1141,17 @@ def check_pair(fj: Fixture, fk: Fixture) -> None:
     )
     for name, a, b in fields[:3]:
         if a != b:
-            raise _pair_fail(fj, fk, f"{name} differ")
+            return name
     if not np.array_equal(fj.density, fk.density):
-        raise _pair_fail(fj, fk, "density differ")
+        return "density"
     for name, a, b in fields[3:]:
         if a != b:
-            raise _pair_fail(fj, fk, f"{name} differ")
+            return name
     shared = sorted(set(fj.arrays) & set(fk.arrays) - {"density"})
     for name in shared:
         if not np.array_equal(fj.arrays[name], fk.arrays[name]):
-            raise _pair_fail(fj, fk, f"arrays.{name} differ")
+            return f"arrays.{name}"
+    return None
 
 
 def fock_pair(name: str, fixtures: Path = FIXTURES) -> FockPair:
@@ -1082,6 +1169,86 @@ def fock_pairs() -> list[str]:
     return sorted(s[:-len(J_SUFFIX)] for s in stems
                   if s.endswith(J_SUFFIX)
                   and s[:-len(J_SUFFIX)] + K_SUFFIX in stems)
+
+
+# --- the dipole fixtures (#517) ----------------------------------------------
+
+DIPOLE_SUFFIX = "_dipole"
+
+
+@dataclass(frozen=True)
+class DipolePair:
+    """A `<name>_j` / `<name>_dipole` pair that `check_dipole` accepted."""
+
+    name: str
+    j: Fixture
+    dipole: Fixture
+
+    @property
+    def density(self) -> np.ndarray:
+        return self.j.density
+
+    @property
+    def origin(self) -> np.ndarray:
+        """The non-zero origin `C`, Bohr."""
+        return self.dipole.arrays[DIPOLE_ORIGIN_ARRAY]
+
+    @property
+    def r(self) -> np.ndarray:
+        """libcint's `<m|r - C|n>`, (3, nao, nao), x, y, z."""
+        return self.dipole.arrays[R_ARRAY]
+
+    @property
+    def r0(self) -> np.ndarray:
+        """libcint's `<m|r|n>` (`C = 0`), (3, nao, nao), x, y, z."""
+        return self.dipole.arrays[R0_ARRAY]
+
+    @property
+    def dip(self) -> np.ndarray:
+        """PySCF's RHF `dip_moment` at `C`, a.u."""
+        return self.dipole.arrays[DIP_ARRAY]
+
+    @property
+    def dip0(self) -> np.ndarray:
+        """PySCF's RHF `dip_moment` at the origin, a.u."""
+        return self.dipole.arrays[DIP0_ARRAY]
+
+
+def _dipole_fail(fj: Fixture, fd: Fixture, msg: str) -> FixtureError:
+    return FixtureError(f"{fj.path} / {fd.path}: not a dipole pair: {msg}")
+
+
+def check_dipole(fj: Fixture, fd: Fixture) -> None:
+    """Refuse, naming both files and the field, unless `fd` (carrying the
+    dipole arrays) was computed from `fj`'s inputs (`fj` its `_j` sibling,
+    carrying `vj`). Every comparison is exact (THE DIPOLE FIXTURES)."""
+    if J_ARRAY not in fj.arrays:
+        raise _dipole_fail(fj, fd, f"the first carries no {J_ARRAY}")
+    missing = [n for n in DIPOLE_ARRAYS if n not in fd.arrays]
+    if missing:
+        raise _dipole_fail(fj, fd, f"the second carries no {missing}")
+    if fj.converted is None or fd.converted is None:
+        raise _dipole_fail(fj, fd, "both must record the converted basis")
+    field = _input_difference(fj, fd)
+    if field is not None:
+        raise _dipole_fail(fj, fd, f"{field} differ")
+
+
+def dipole_pair(name: str, fixtures: Path = FIXTURES) -> DipolePair:
+    """Load `<name>_j` and `<name>_dipole` and check them as a pair."""
+    fj = load(fixtures / f"{name}{J_SUFFIX}.json")
+    fd = load(fixtures / f"{name}{DIPOLE_SUFFIX}.json")
+    check_dipole(fj, fd)
+    return DipolePair(name, fj, fd)
+
+
+def dipole_pairs() -> list[str]:
+    """Every tracked molecule with both a `_j` and a `_dipole` fixture,
+    sorted. By file name only; `dipole_pair` is what checks one."""
+    stems = {p.stem for p in tracked()}
+    return sorted(s[:-len(DIPOLE_SUFFIX)] for s in stems
+                  if s.endswith(DIPOLE_SUFFIX)
+                  and s[:-len(DIPOLE_SUFFIX)] + J_SUFFIX in stems)
 
 
 def main(argv: list[str] | None = None) -> int:

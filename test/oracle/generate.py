@@ -46,6 +46,11 @@ from .manifest import (
     AUX_OVLP_ARRAY,
     COLS_SEP,
     CROSS_PREFIX,
+    DIP0_ARRAY,
+    DIP_ARRAY,
+    DIP_CHARGES_ARRAY,
+    DIP_COORDS_ARRAY,
+    DIPOLE_ORIGIN_ARRAY,
     ERI_PREFIX,
     FIXTURES,
     HCORE_ARRAY,
@@ -56,6 +61,8 @@ from .manifest import (
     METRIC_SCHEMA,
     NUC_ARRAY,
     OVLP_ARRAY,
+    R0_ARRAY,
+    R_ARRAY,
     ROWS_SEP,
     SCHWARZ_ARRAY,
     THREE_CENTER_PREFIX,
@@ -113,6 +120,10 @@ class Case:
     # the square of the Schwarz factor (`ao/schwarz.py`). Needs
     # `record_basis`, as `record_j` does.
     record_schwarz: bool = False
+    # #517: write the dipole arrays (manifest: THE DIPOLE FIXTURES) --
+    # libcint's `int1e_r_cart` at `DIPOLE_ORIGIN` and at 0, and PySCF's RHF
+    # `dip_moment` for the recorded density at both. Needs `record_basis`.
+    record_dipole: bool = False
     # Write `int1e_ovlp_cross:<rows>`: libcint's rectangular overlap
     # `<m|n>` with `m` an AO of case `rows` (another case, whose molecule
     # and basis are the ROWS) and `n` of this case (the COLUMNS) --
@@ -441,6 +452,42 @@ def _schwarz_case(j_name: str) -> Case:
 CASES.update({
     j[:-1] + "schwarz": _schwarz_case(j)
     for j in ("h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_j")
+})
+
+
+# #517: the dipole fixtures' non-zero origin C, Bohr: every component
+# non-zero, their magnitudes pairwise distinct and no atom on it, so `X_PC`
+# is exercised and a swapped component order cannot pass.
+DIPOLE_ORIGIN = (0.37, -0.81, 1.23)
+
+
+def _dipole_case(j_name: str) -> Case:
+    """#517, the `_schwarz` pattern: the `_j` case's molecule, basis, `cart`
+    and density recipe exactly (so the converted basis and the recorded
+    density are the `_j` fixture's, bit for bit; `manifest.check_dipole`
+    asserts it), with the dipole arrays in place of J and no one-electron
+    arrays."""
+    j = CASES[j_name]
+    return replace(
+        j,
+        description=(
+            f"#517: {j_name}'s molecule, basis and recorded density, with "
+            "libcint's int1e_r_cart (<m|r - C|n>, components x, y, z) under "
+            f"mol.with_common_orig(C) at C = {DIPOLE_ORIGIN} bohr and at "
+            "C = 0, and PySCF's RHF dip_moment (a.u., nuclear minus "
+            "electronic) for the recorded density at both, with the nuclear "
+            "charges and coordinates it used."
+        ),
+        record_j=False,
+        record_one_e=False,
+        record_dipole=True,
+    )
+
+
+# The dipole cases: one beside each H2O `_j` case, s/p to d.
+CASES.update({
+    j[:-1] + "dipole": _dipole_case(j)
+    for j in ("h2o_sto3g_j", "h2o_631g_j", "h2o_ccpvdz_j")
 })
 
 
@@ -796,6 +843,11 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
         if not case.record_basis:
             raise ValueError(f"{name}: record_schwarz needs record_basis")
         out["arrays"][SCHWARZ_ARRAY] = encode_array(schwarz_array(mol))
+    if case.record_dipole:
+        if not (case.record_basis and case.cart):
+            raise ValueError(f"{name}: record_dipole needs record_basis and "
+                             "cart")
+        out["arrays"].update(dipole_arrays(mol, dm, DIPOLE_ORIGIN))
     if case.cross_rows is not None:
         rows = CASES[case.cross_rows]
         if not (case.record_basis and rows.record_basis):
@@ -908,6 +960,62 @@ def one_e_arrays(mol: Any) -> dict[str, Any]:
                          f"{err:.3e}")
     return {OVLP_ARRAY: encode_array(s), KIN_ARRAY: encode_array(t),
             NUC_ARRAY: encode_array(v), HCORE_ARRAY: encode_array(h)}
+
+
+def r_array(mol: Any, origin: Sequence[float]) -> np.ndarray:
+    """libcint's `<m|r - C|n>` at common origin `C`, (3, nao, nao), x, y, z:
+    `int1e_r_cart` under `mol.with_common_orig(C)`, checked bitwise against
+    `int1e_r` (cart=True, so the same call) before it is returned."""
+    with mol.with_common_orig(origin):
+        r = np.ascontiguousarray(mol.intor("int1e_r_cart", comp=3))
+        if not np.array_equal(r, mol.intor("int1e_r", comp=3)):
+            raise ValueError("int1e_r_cart and int1e_r differ")
+    nao = int(mol.nao_nr())
+    if r.shape != (3, nao, nao):
+        raise ValueError(f"int1e_r_cart has shape {r.shape}")
+    return r
+
+
+def dipole_arrays(mol: Any, dm: np.ndarray,
+                  origin: Sequence[float]) -> dict[str, Any]:
+    """#517: `int1e_r_cart` at `origin` and at 0, and PySCF's RHF
+    `scf.hf.dip_moment(mol, dm, unit="AU", origin=...)` at both, with the
+    nuclear charges and coordinates it reads (`atom_charges`,
+    `atom_coords`). Cross-checked before they are written: the origin shift
+    `r_C = r_0 - C S` per component to 1e-14 of the largest `|r_0|` (which
+    pins the component order against the origin), and each `dip_moment`
+    against `sum_A Z_A (R_A - C) - einsum("xij,ji->x", r_C, dm)` from the
+    RECORDED `r_C` to 1e-13 of its scale; what is RECORDED is libcint's and
+    `dip_moment`'s own."""
+    from pyscf import scf
+
+    c = np.asarray(origin, dtype=np.float64)
+    zero = np.zeros(3)
+    r, r0 = r_array(mol, c), r_array(mol, zero)
+    s = mol.intor("int1e_ovlp")
+    shifted = r0 - c[:, None, None] * s[None]
+    err = float(np.max(np.abs(r - shifted)))
+    if err > 1e-14 * float(np.max(np.abs(r0))):
+        raise ValueError(f"int1e_r_cart at C and at 0 - C S differ by "
+                         f"{err:.3e}")
+    charges = np.asarray(mol.atom_charges(), dtype=np.float64)
+    coords = np.asarray(mol.atom_coords(unit="Bohr"), dtype=np.float64)
+    out = {DIPOLE_ORIGIN_ARRAY: encode_array(c), R_ARRAY: encode_array(r),
+           R0_ARRAY: encode_array(r0),
+           DIP_CHARGES_ARRAY: encode_array(charges),
+           DIP_COORDS_ARRAY: encode_array(coords)}
+    for name, at, ints in ((DIP_ARRAY, c, r), (DIP0_ARRAY, zero, r0)):
+        dip = np.asarray(scf.hf.dip_moment(mol, dm, unit="AU", origin=at,
+                                           verbose=0), dtype=np.float64)
+        nuc = np.einsum("i,ix->x", charges, coords - at[None, :])
+        el = np.einsum("xij,ji->x", ints, dm)
+        scale = float(np.max(np.abs(nuc)) + np.max(np.abs(el)))
+        err = float(np.max(np.abs(dip - (nuc - el))))
+        if err > 1e-13 * scale:
+            raise ValueError(f"dip_moment and nuc - Tr(r D) differ by "
+                             f"{err:.3e}")
+        out[name] = encode_array(dip)
+    return out
 
 
 def j_array(mol: Any, dm: np.ndarray) -> np.ndarray:
