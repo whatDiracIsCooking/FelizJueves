@@ -63,15 +63,14 @@ from functools import cache
 
 import numpy as np
 
-from felizjueves.ao.j import (
-    BraRec,
+from felizjueves.ao.density import (
     EPair,
-    KetRec,
     Matrix,
-    _density,
-    _tau,
+    checked_density,
+    checked_tau,
     epair,
 )
+from felizjueves.ao.j import BraRec, KetRec
 from felizjueves.ao.shell import Basis
 from felizjueves.ao.staged import KetData, Staged, coulomb_matrix_staged
 from felizjueves.interp import Interpreter, Launch
@@ -409,7 +408,7 @@ def coulomb_matrix_chain(basis: Basis, D: object, *, bound: Bound,
     every pair class a step, or this raises.
 
     The host still forms `P`, `zeta`, `X_PA`, `X_PB` and the dressing scalar
-    `s` per record (`ao.j.epair`, `ao.pairs`): pair data and the contract's
+    `s` per record (`ao.density.epair`, `ao.pairs`): pair data and the contract's
     host-supplied inputs, not steps of `J` (j_engine.md, "What stays
     host-side"). `ao.pairs.primitive_pairs` also forms each record's dressed
     `E` block as a side effect of building the record; no value of it
@@ -418,8 +417,8 @@ def coulomb_matrix_chain(basis: Basis, D: object, *, bound: Bound,
     `tau` is the `[p|q]` kernel's screen (real, as in `ao.staged`); the
     libcint witness is at `tau = 0`.
     """
-    rows = _density(basis, D)
-    tau = _tau(tau)
+    rows = checked_density(basis, D)
+    tau = checked_tau(tau)
     shells, off = basis.shells, basis.offsets
     pairs = _unique_pairs(basis)
 

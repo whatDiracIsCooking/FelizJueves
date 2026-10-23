@@ -66,7 +66,7 @@ fingerprint taken before this module existed, test/test_launch.py):
      `bra_blocks` is `(a, c, start, stop)`, the bra shell pair's rows, and
      the scatter is keyed by both sides.
   4. THE KEY'S FACTORS. J's ket key IS the screen's ket factor, `G * Dmax`,
-     the density riding the ket (`ao.j._Ket.bound`; ao/staged.py checks it
+     the density riding the ket (`ao.density.Ket.bound`; ao/staged.py checks it
      bit for bit). K's density factor `Dm = max|D|` is GLOBAL -- `D_cd`
      straddles the records (ao/k.py, "THE KEY THE J ENGINE USES IS
      UNAVAILABLE FOR K") -- so it is carried once, on `KLaunchPlan.dm`, and
@@ -92,7 +92,7 @@ fingerprint taken before this module existed, test/test_launch.py):
 
 THE RECORDS. `PairRec(i, j, prim, L, G, key)` with `(i, j)` an ORDERED shell
 pair -- `(a, c)` on the bra, `(b, d)` on the ket -- and `prim` the index into
-`ao.j.epair(shells[i], shells[j]).recs` (`primitive_pairs` order, i outer).
+`ao.density.epair(shells[i], shells[j]).recs` (`primitive_pairs` order, i outer).
 `G` is the injected `bound(epair) -> per-record I` (tests pass
 `functools.partial(ao.k.record_bounds, pq=pq)`), the SAME function on both
 sides (rows over the first shell, the output index). A bra's `key` is `G`;
@@ -165,7 +165,9 @@ import math
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 
-from felizjueves.ao.j import EPair, _density, _tau, epair
+from felizjueves.ao.density import EPair, epair
+from felizjueves.ao.density import checked_density as _density
+from felizjueves.ao.density import checked_tau as _tau
 from felizjueves.ao.k import (
     PQ,
     KetKey,

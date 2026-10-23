@@ -3,7 +3,7 @@
 THE WITNESS is `ao.overlap.overlap_block` (#233), the host's `S` block: the
 summed `t = 0` column of the blocks `ao.pairs.primitive_pairs` dresses. The
 kernel's records are those pairs' `(zeta, P - A, P - B)` and the host's one
-scalar `s` per record (`ao.j.epair`, `pairs.dress`'s own `scale`), and its
+scalar `s` per record (`ao.density.epair`, `pairs.dress`'s own `scale`), and its
 scatter is `kernel_jab`'s rule. Against it:
 
 - PER CLASS, every ordered pair class (ss) through (ff) on the tracked
@@ -51,7 +51,7 @@ from oracle import manifest
 from tiers import by_l, split_by_l
 
 from felizjueves import e_fragment as ef
-from felizjueves.ao.j import epair
+from felizjueves.ao.density import epair
 from felizjueves.ao.overlap import overlap_block, overlap_matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.device import GFX1200, SM_86

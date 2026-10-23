@@ -125,8 +125,8 @@ from test_ao_screening import _h2_chain, _hilbert
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import dispatch, measured_store
+from felizjueves.ao.density import checked_density
 from felizjueves.ao.j import (
-    _density,
     coulomb_matrix,
     coulomb_matrix_and_scale,
     pair_bound_pq,
@@ -232,7 +232,7 @@ def _abs_jp(plan: LaunchPlan, name: str, *, basis=None, D=None,
     `basis` / `D` then give the molecule, and `name` is only a label."""
     if basis is None:
         _, basis, D = _fixture(name)
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     # None under the product key, and with ket_data (the chain's own Dmax)
     dglobal = None if ket_data is not None else _dglobal(plan, basis, rows)
     out: dict[int, np.ndarray] = {}
@@ -548,7 +548,7 @@ def test_the_staged_input_is_the_plans():
     _, basis, D = _fixture("h2o_sto3g_j")
     plan = launches(basis, D, bound=BOUND, n_batches=1, tau=1e-3,
                     strict=False)
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     first = {}
     for cl in plan:
         first.setdefault(cl.lq, cl)
@@ -580,7 +580,7 @@ def test_transform_of_the_oracles_jp_is_the_oracle():
     plan = launches(basis, D, bound=BOUND, n_batches=1, tau=0.0)
     (cl,) = plan.classes
     b = _bra_buffers(basis, cl.bras)
-    k = _ket_buffers(basis, _density(basis, D), cl.kets, 1, None)
+    k = _ket_buffers(basis, checked_density(basis, D), cl.kets, 1, None)
     jp = np.zeros((len(cl.bras), 1))
     for i in range(len(cl.bras)):
         for j in range(len(cl.kets)):
@@ -600,7 +600,7 @@ def test_abs_jp_bounds_the_signed_jp():
     (cl,) = plan.classes
     A = _abs_jp(plan, "h2_sto3g_j")[0]
     b = _bra_buffers(basis, cl.bras)
-    k = _ket_buffers(basis, _density(basis, D), cl.kets, 1, None)
+    k = _ket_buffers(basis, checked_density(basis, D), cl.kets, 1, None)
     want = np.zeros_like(A)
     for i in range(len(cl.bras)):
         for j in range(len(cl.kets)):

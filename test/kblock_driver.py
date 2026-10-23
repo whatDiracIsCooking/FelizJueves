@@ -53,7 +53,7 @@ import numpy as np
 from plan_driver import UPLOAD_INT, k_accumulating
 from test_kernel_device import BACKEND, PORTABLE
 
-from felizjueves.ao.j import _density, epair
+from felizjueves.ao.density import checked_density, epair
 from felizjueves.ao.shell import Basis, n_cartesians
 from felizjueves.ir import Kernel
 from felizjueves.kernel_k import PARAMS as K_PARAMS
@@ -263,7 +263,7 @@ def kb_stage(drv: KBDriver, plan: KBLaunchPlan, basis: Basis, D: object
     """`tau maxD | per class: bra doubles, ket doubles, dmax[n_blk], bra
     ints, ket ints, block ints (bra0.. ko_b, each n_blk) | per density class
     Dcd`. `maxD` is `kernel_k`'s (mode 1); the block kernel reads `dmax`."""
-    rows = np.array(_density(basis, D), dtype=np.float64)
+    rows = np.array(checked_density(basis, D), dtype=np.float64)
     if float(np.max(np.abs(rows))) != drv.dm:
         raise ValueError("planned from another density")
     off = basis.offsets

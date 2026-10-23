@@ -41,7 +41,7 @@ with `reference.pq.pq`; this module reaches `reference/` nowhere). It is the
 real bound on the BRA side as well -- not `1.0`, which is the `jp=` seam's
 deliberate unscreened placeholder -- because the kernel screens on
 `Ib * Iq * Dmax`. A ket's `key` is `G * Dmax`, `Dmax = max_q |D_q|` over its
-weighted, dressed ket vector: exactly `ao.j._Ket.bound`, the factor the
+weighted, dressed ket vector: exactly `ao.density.Ket.bound`, the factor the
 screen multiplies `I_bra` by. A bra's `key` is its `G`; the bra list stays in
 pair order, because the kernel maps one warp per bra BY INDEX.
 
@@ -147,7 +147,7 @@ oracle examines `n_pairs - n_skipped` plus one per row that broke.
 
 The walk rebuilds the per-pair data the plan does not carry (`P`, `zeta`,
 the dressed `E` block, `Q`, `eta`, `D_q`) from `basis` and `D` -- once per
-call and dropped, through `ao.j._kets` and `ao.pairs.primitive_pairs`, the
+call and dropped, through `ao.density.make_kets` and `ao.pairs.primitive_pairs`, the
 host's own constructors. NOTHING IS MEMOISED: the tau ladder must measure
 the screen, not a cache. `plan` must have been planned from the same
 `basis` and `D`; a record that does not name a primitive pair of `basis`
@@ -161,16 +161,12 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import cache
 
+from felizjueves.ao.density import PQ, epair
+from felizjueves.ao.density import checked_density as _density
+from felizjueves.ao.density import checked_tau as _tau
+from felizjueves.ao.density import make_kets as _kets
 from felizjueves.ao.hermite import Ang, e_axis, hermite_order
-from felizjueves.ao.j import (
-    PQ,
-    Screened,
-    _density,
-    _kets,
-    _tau,
-    epair,
-    pair_bound_pq,
-)
+from felizjueves.ao.j import Screened, pair_bound_pq
 from felizjueves.ao.kinetic import kinetic_axis
 from felizjueves.ao.one_electron import matrix, rectangular
 from felizjueves.ao.pairs import (
@@ -488,7 +484,7 @@ class OneERec:
     `i <= j` the shell pair (`ao.one_electron.matrix`'s upper triangle by
     shell), `prim` its index in `ao.pairs.primitive_pairs(shells[i],
     shells[j])`; `zeta`, `P`, `XPA = P - A`, `XPB = P - B`; `s = c_a c_b
-    (pi/zeta)^{3/2}` (`ao.j.epair`'s, the kernels' `s` / `s_ab`); `eb` the
+    (pi/zeta)^{3/2}` (`ao.density.epair`'s, the kernels' `s` / `s_ab`); `eb` the
     KET primitive's exponent (`kernel_t`'s `eb_ket`); `off_a`, `off_b` the
     AO offsets of shells `i` and `j`. The diagonal weight is `diagonal`:
     the kernels read it from `off_a == off_b` (`kernel_jab`'s scatter rule,
@@ -789,7 +785,7 @@ class XRec:
     shell of the ROW basis `A`, `j` of the COLUMN basis `B`, `prim` the
     index in `ao.pairs.primitive_pairs(A.shells[i], B.shells[j])`; `zeta`,
     `XPA = P - A`, `XPB = P - B`, `s = c_a c_b (pi/zeta)^{3/2}`
-    (`ao.j.epair`'s); `off_a` the AO offset of `i` in `A`, `off_b` of `j`
+    (`ao.density.epair`'s); `off_a` the AO offset of `i` in `A`, `off_b` of `j`
     in `B` -- offsets into DIFFERENT index sets, so a record has no
     diagonal (`kernel_sx`)."""
 

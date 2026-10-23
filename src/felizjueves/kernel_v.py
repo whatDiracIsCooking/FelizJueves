@@ -39,7 +39,7 @@ left to right in `hermite_order` order, starting from the first term (not
 from a `0.0`).
 
 NO PREFACTOR. `(pi/zeta)^{3/2}` is inside the host's `s` (`ao.pairs.dress`,
-`ao.j.epair`'s `s`), and `(2/sqrt(pi)) sqrt(zeta)` is inside `[0]^(m)` (the
+`ao.density.epair`'s `s`), and `(2/sqrt(pi)) sqrt(zeta)` is inside `[0]^(m)` (the
 prelude's `W0`); their product is `2 pi / zeta`, the one-electron prefactor,
 so the kernel forms neither. No `K_AB` is reinstated: the `E` seed carries it
 per axis. The attractive sign enters as `acc - Z u`, a subtraction, which is

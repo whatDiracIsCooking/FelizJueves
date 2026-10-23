@@ -66,7 +66,7 @@ places:
 - `(2/√π) θ` is the prelude's `W0`, the same statement the `[p|q]`
   kernel runs.
 - `(π/ζ)^{3/2}` is inside the host's per-record scalar `s`
-  (`ao.pairs.dress`, `ao.j.epair`'s `s`). In `V` it is passed as `s_ab`.
+  (`ao.pairs.dress`, `ao.density.epair`'s `s`). In `V` it is passed as `s_ab`.
 
 So `V_ab = −Σ_C Z_C Σ_pp Σ_t s E^{ab}_t [t]^(0)(P − C, √ζ)`, summed over
 the dressed block and nothing else. **No kernel and no host module forms a

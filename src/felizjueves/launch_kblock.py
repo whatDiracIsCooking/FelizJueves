@@ -65,7 +65,8 @@ import math
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 
-from felizjueves.ao.j import _density, epair
+from felizjueves.ao.density import checked_density as _density
+from felizjueves.ao.density import epair
 from felizjueves.ao.k import (
     PQ,
     DensityDecay,

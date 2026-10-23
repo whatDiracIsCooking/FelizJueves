@@ -93,7 +93,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from felizjueves.ao.j import _density
+from felizjueves.ao.density import checked_density
 from felizjueves.ao.shell import Basis, Shell
 
 ShellPair = tuple[Shell, Shell]
@@ -125,7 +125,7 @@ def coulomb_exchange_reference(basis: Basis, D: object, *,
     """`J[D]` and `K[D]` from ONE sweep over every ordered shell quartet,
     each block digested once into `J` and once into `K`, weight 1, no
     symmetry (module docstring)."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     shells, off = basis.shells, basis.offsets
     n_sh = len(shells)
     n = basis.n_ao

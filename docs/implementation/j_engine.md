@@ -1564,7 +1564,7 @@ every shell class `(la, lb | lc, ld)` with those sums.
   per shell pair.
 - **The sweep** is `ao.j`'s unique one: shell pairs `a ≥ b` on both sides,
   with the ket off-diagonal weight 2 folded into `D_q` and so into `Dmax`.
-  The ket pre-contraction is `ao.j._kets` itself, not a restatement.
+  The ket pre-contraction is `ao.density.make_kets` itself, not a restatement.
 - **The sort key, `[JEngine, v2, §3.3]`.** Bras stay in pair order, because
   the kernel maps warps to bras by index. Kets are sorted **descending by
   `key = I_q · max_q |D_q|`, stably** (`sorted(..., reverse=True)`,
@@ -1786,7 +1786,7 @@ reconstruction of anything published (`limits.json`).
 | step | computes, per primitive-pair record | keyed by | built by | interpreted | on the cards (#157) | host equivalent |
 |---|---|---|---|---|---|---|
 | 1. `E` | `E^{ab}_t`, undressed, over `hermite_order(la+lb)` | inlined, not launched | `e_fragment.block_fragment` (#152; an `ir.Fragment`, #149) | bitwise `==` `ao.hermite.e_block`, (ss)–(ff) (`test_e_fragment.py`) | inside steps 2 and 4 | `ao.hermite.e_block` |
-| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | `kernel_dq.build_dq_kernel` (#153), unit `dq_{lc}_{ld}` | bitwise `==` `ao.j.dq_from_host`, (ss)–(ff) (`test_kernel_dq.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.j._kets`; through the seam, `ao.j.dq_from_host` |
+| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | `kernel_dq.build_dq_kernel` (#153), unit `dq_{lc}_{ld}` | bitwise `==` `ao.j.dq_from_host`, (ss)–(ff) (`test_kernel_dq.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.density.make_kets`; through the seam, `ao.j.dq_from_host` |
 | 3. `[p\|q]` | `J_p = Σ_k Σ_q [p\|q] D_q` | class `(lp, lq)`, `Target.J` | `kernel.build_pq_kernel(s)` | against `reference/` | L = 0..16 against `reference/`; in `J` up to L = 8 | `ao.j.jp_from_pq` |
 | 4. bra transform + scatter | `J_ab += Σ_p s E^{ab}_p J_p`, written into `J_µν` | bra pair class `(la, lb)`, `Target.JAB` | `kernel_jab.build_jab_kernel` (#154), unit `jab_{la}{lb}` | bitwise `==` `ao.j.jab_from_host`, (ss)–(ff) (`test_kernel_jab.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.j`'s transform and mirror; through the seam, `ao.j.jab_from_host` |
 
@@ -1889,10 +1889,10 @@ else.** The dressing reaches the kernel as **one host-supplied scalar per
 record**:
 
 ```
-s = c_a c_b (π/ζ)^{3/2}         # ao.pairs.dress's scale; ao.j.EPair carries it
+s = c_a c_b (π/ζ)^{3/2}         # ao.pairs.dress's scale; ao.density.EPair carries it
 ```
 
-`ao.j.epair` takes `s` from `ao.pairs.dress` itself (`dress((1.0,), …)[0]`,
+`ao.density.epair` takes `s` from `ao.pairs.dress` itself (`dress((1.0,), …)[0]`,
 the scale times 1.0, which is exact). So the dressing stays one function's
 decision. No kernel forms `(π/ζ)^{3/2}` or a contraction coefficient. A
 dressing inside the fragment breaks the pointwise Hermite identity, which is
@@ -1930,7 +1930,7 @@ Dmax[k] = max_q |D[k, q]|
 
 **Preconditions.**
 
-- `D` is symmetric. The host checks this (`ao.j._density`) and rejects an
+- `D` is symmetric. The host checks this (`ao.density.checked_density`) and rejects an
   asymmetric `D`; the kernel never symmetrises.
 - `w` is 2.0 for an off-diagonal ket shell pair (`c ≠ d`) and 1.0 for a
   diagonal one. **The host decides it**, and it is folded into `D_q` and so
@@ -2100,9 +2100,9 @@ into the driver's ket buffers by the host.
 tau=0.0, jp=None, dq=None, jab=None)` follows `jp=`'s discipline (#87). Each
 seam replaces one step, so a disagreement in a `J` built through it is
 localised to that one kernel. A single combined "device chain" hook would make
-a disagreement impossible to localise. Both seams receive an `ao.j.EPair`
+a disagreement impossible to localise. Both seams receive an `ao.density.EPair`
 (`la, lb, A, B`, and per record `(P, ζ, s)` in `primitive_pairs` order), built
-by `ao.j.epair`.
+by `ao.density.epair`.
 
 | seam | called | signature | the module keeps |
 |---|---|---|---|

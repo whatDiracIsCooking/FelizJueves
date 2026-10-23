@@ -8,6 +8,11 @@
                                                         -> Screened (#88)
     jp_from_pq(pq), dq_from_host, jab_from_host         the seams' references
 
+The helpers other builds share -- the density and `tau` checks, `EPair` /
+`epair`, the ket records (`Ket`, `make_kets`) and `pair_bound_pq`, which
+`make_kets` evaluates -- live in `ao/density.py` (#503) and are imported
+back here; their contracts are still stated below.
+
 `J_mn = sum_{ls} (mn|ls) D_ls`, never by forming `(mn|ls)`. For a bra
 primitive pair (index record) of an ordered shell pair `(a, b)` and a ket
 primitive pair `k` of `(c, d)` ([JEngine, v2, eqs. 20-22]; j_engine.md, "Why
@@ -71,7 +76,7 @@ triangle inequality: the J tolerance is inherited, not chosen.
 
 THE SORTED `break` (#88, `coulomb_matrix_screened`) -- the kernel's form, on
 real bounds. The ket records are sorted DESCENDING by `I_ket * Dmax`
-(`_Ket.bound`, exactly the factor the screen multiplies by `I_bra`), with a
+(`Ket.bound`, exactly the factor the screen multiplies by `I_bra`), with a
 STABLE sort, and each bra record stops at its first ket under `tau`. That is
 exact, not approximate: `I_bra >= 0`, and a rounded product with a fixed
 non-negative factor is monotone non-decreasing in the other, so every ket
@@ -172,130 +177,34 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from felizjueves.ao.density import (
+    PQ,
+    Ang,
+    EPair,
+    Ket,
+    Matrix,
+    Vec,
+    checked_density,
+    checked_tau,
+    epair,
+    make_kets,
+    pair_bound_pq,
+)
 from felizjueves.ao.hermite import e_block, hermite_order
-from felizjueves.ao.pairs import PrimitivePair, dress, primitive_pairs
-from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.ao.pairs import PrimitivePair, primitive_pairs
+from felizjueves.ao.shell import Basis, cartesians
 
-Vec = tuple[float, float, float]
-Ang = tuple[int, int, int]
-PQ = Callable[[Ang, Ang, Vec, float], float]
 BraRec = tuple[Vec, float]  # (P, zeta)
 KetRec = tuple[Vec, float, Sequence[float]]  # (Q, eta, D_q)
 JP = Callable[[tuple[int, int], tuple[int, int], Sequence[BraRec],
                Sequence[KetRec]], Sequence[Sequence[float]]]
-Matrix = tuple[tuple[float, ...], ...]
-ERec = tuple[Vec, float, float]  # (P, zeta, s = c_a c_b (pi/zeta)^{3/2})
-
-
-@dataclass(frozen=True)
-class EPair:
-    """One shell pair as the `dq=` / `jab=` seams receive it (module
-    docstring): `(la, lb)`, the centres, and per primitive pair, in
-    `primitive_pairs` order, `(P, zeta, s)` with `s` from `pairs.dress`."""
-
-    la: int
-    lb: int
-    A: Vec
-    B: Vec
-    recs: tuple[ERec, ...]
-
 
 DQ = Callable[[EPair, Sequence[float], float], Sequence[Sequence[float]]]
 JAB = Callable[[EPair, Sequence[Sequence[float]], tuple[int, int],
                 list[list[float]]], object]
 
-_ORIGIN = (0.0, 0.0, 0.0)
 
-
-@dataclass(frozen=True)
-class _Ket:
-    """One ket index record: `Q`, `eta`, the weighted dressed `D_q` (and its
-    |.| twin), its Hermite indices, and the screen's `I_ket * Dmax`."""
-
-    Q: Vec
-    eta: float
-    qs: tuple[Ang, ...]
-    dq: tuple[float, ...]
-    dq_abs: tuple[float, ...]
-    bound: float  # I_ket * Dmax; 0.0 (unused) when tau == 0
-
-
-def _density(basis: Basis, D: object) -> list[list[float]]:
-    n = basis.n_ao
-    try:
-        rows = [[float(D[i][j]) for j in range(n)] for i in range(n)]  # type: ignore[index]
-        extra = len(D) != n or any(len(D[i]) != n for i in range(n))  # type: ignore[arg-type,index]
-    except (TypeError, IndexError, KeyError):
-        raise ValueError(f"D is not an {n} x {n} matrix") from None
-    if extra:
-        raise ValueError(f"D is not an {n} x {n} matrix")
-    if not all(math.isfinite(x) for r in rows for x in r):
-        raise ValueError("D has a non-finite entry")
-    for i in range(n):
-        for j in range(i):
-            if rows[i][j] != rows[j][i]:
-                raise ValueError(
-                    f"D is not symmetric: D[{i}][{j}] = {rows[i][j]!r} but "
-                    f"D[{j}][{i}] = {rows[j][i]!r}. An asymmetric density is "
-                    "rejected, not symmetrised (ao/j.py's module docstring)")
-    return rows
-
-
-def _tau(tau: float) -> float:
-    if not (isinstance(tau, int | float) and math.isfinite(tau) and tau >= 0.0):
-        raise ValueError(f"tau = {tau!r} is not a finite float >= 0")
-    return float(tau)
-
-
-def pair_bound_pq(zeta: float, L: int, *, pq: PQ) -> float:
-    """`I = sum_p sqrt([p|p](PQ = 0, theta = sqrt(zeta/2)))` over
-    `hermite_order(L)` -- `ao.pairs.pair_bound` through the `[p|q]` evaluator
-    (module docstring). Raises on a negative radicand, never `abs`es it."""
-    theta = math.sqrt(zeta / 2.0)
-    out = []
-    for p in hermite_order(L):
-        s = pq(p, p, _ORIGIN, theta)
-        if s < 0.0:
-            raise ValueError(
-                f"[p|p](0) = {s!r} < 0 at p = {p}, zeta = {zeta!r}: a diagonal "
-                "of a positive-definite form, so the evaluator's sign "
-                "convention is wrong")
-        out.append(math.sqrt(s))
-    return math.fsum(out)
-
-
-def _kets(basis: Basis, D: list[list[float]], pairs, *, pq: PQ,
-          tau: float) -> list[_Ket]:
-    """The ket records of the shell pairs `pairs` = [(c, d, w)], `D_q`
-    pre-contracted with weight `w`."""
-    shells, off = basis.shells, basis.offsets
-    out = []
-    for c, d, w in pairs:
-        sc, sd = shells[c], shells[d]
-        # D_cd over this pair's Cartesian pairs, c outer: the block's row order.
-        dcd = [D[off[c] + i][off[d] + j]
-               for i in range(sc.n_cart) for j in range(sd.n_cart)]
-        qs = hermite_order(sc.l + sd.l)
-        for k in primitive_pairs(sc, sd):
-            dq = [0.0] * len(qs)
-            da = [0.0] * len(qs)
-            for x, row in zip(dcd, k.block, strict=True):
-                if x:
-                    ax = abs(x)
-                    for t, e in enumerate(row):
-                        dq[t] += x * e
-                        da[t] += ax * abs(e)
-            dq = tuple(w * v for v in dq)
-            da = tuple(w * v for v in da)
-            bound = 0.0
-            if tau > 0.0:
-                bound = (pair_bound_pq(k.zeta, k.L, pq=pq)
-                         * max(abs(v) for v in dq))
-            out.append(_Ket(k.P, k.zeta, qs, dq, da, bound))
-    return out
-
-
-def _record_jp(bra: PrimitivePair, kets: Sequence[_Ket], *, pq: PQ,
+def _record_jp(bra: PrimitivePair, kets: Sequence[Ket], *, pq: PQ,
                tau: float, want_scale: bool):
     """`J_p` (and its |.| twin) of one bra record, over `kets` in order."""
     ps = hermite_order(bra.L)
@@ -321,7 +230,7 @@ def _record_jp(bra: PrimitivePair, kets: Sequence[_Ket], *, pq: PQ,
     return jp, jp_abs
 
 
-def _bra_block(bra_recs: Sequence[PrimitivePair], kets: Sequence[_Ket], *,
+def _bra_block(bra_recs: Sequence[PrimitivePair], kets: Sequence[Ket], *,
                pq: PQ, tau: float, want_scale: bool):
     """`J_ab` (rows `ab`, a outer) and its |.| twin, for one bra shell pair."""
     nrow = len(bra_recs[0].block)
@@ -369,27 +278,16 @@ def _no_pq(p: Ang, q: Ang, PQv: Vec, theta: float) -> float:
     raise AssertionError("no [p|q] is evaluated building kets at tau = 0")
 
 
-def epair(sa: Shell, sb: Shell,
-          recs: Sequence[PrimitivePair] | None = None) -> EPair:
-    """The `EPair` of the ordered shell pair `(sa, sb)` (module docstring);
-    `recs` is `primitive_pairs(sa, sb)`, passed when the caller has it."""
-    if recs is None:
-        recs = primitive_pairs(sa, sb)
-    return EPair(sa.l, sb.l, sa.centre, sb.centre, tuple(
-        (k.P, k.zeta, dress((1.0,), ca=sa.coefficients[k.i],
-                            cb=sb.coefficients[k.j], zeta=k.zeta)[0])
-        for k in recs))
-
-
-def _carts(la: int, lb: int) -> list[tuple[Ang, Ang]]:
+def cart_pairs(la: int, lb: int) -> list[tuple[Ang, Ang]]:
+    """The Cartesian pairs of `(la, lb)`, `a` outer: a block's row order."""
     return [(a, b) for a in cartesians(la) for b in cartesians(lb)]
 
 
 def dq_from_host(ket: EPair, dcd: Sequence[float],
                  w: float) -> list[tuple[float, ...]]:
-    """The host pre-contraction as a `DQ`: `_kets`' arithmetic in its order,
-    the dressed `E` re-formed as `s * E` exactly as `pairs.dress` forms it."""
-    carts = _carts(ket.la, ket.lb)
+    """The host pre-contraction as a `DQ`: `make_kets`' arithmetic in its
+    order, the dressed `E` re-formed as `s * E` exactly as `pairs.dress` forms it."""
+    carts = cart_pairs(ket.la, ket.lb)
     n_q = len(hermite_order(ket.la + ket.lb))
     out = []
     for P, zeta, s in ket.recs:
@@ -407,7 +305,7 @@ def jab_from_host(bra: EPair, jps: Sequence[Sequence[float]],
     """The host bra transform and scatter as a `JAB`: the transform in the
     sweeps' order, then the one-write-per-element scatter (module
     docstring), added into the zeroed `J`."""
-    carts = _carts(bra.la, bra.lb)
+    carts = cart_pairs(bra.la, bra.lb)
     jab = [0.0] * len(carts)
     for (P, zeta, s), jp_row in zip(bra.recs, jps, strict=True):
         for r, (a, b) in enumerate(carts):
@@ -429,11 +327,11 @@ def jab_from_host(bra: EPair, jps: Sequence[Sequence[float]],
 
 
 def _ket_records(basis: Basis, rows: list[list[float]], c: int, d: int,
-                 w: float, dq: DQ | None) -> list[_Ket]:
-    """One ket shell pair's records: `_kets` without a hook; with one, `D_q`
+                 w: float, dq: DQ | None) -> list[Ket]:
+    """One ket shell pair's records: `make_kets` without a hook; with one, `D_q`
     from `dq`, and `Q`, `eta` and the Hermite indices still this module's."""
     if dq is None:
-        return _kets(basis, rows, [(c, d, w)], pq=_no_pq, tau=0.0)
+        return make_kets(basis, rows, [(c, d, w)], pq=_no_pq, tau=0.0)
     shells, off = basis.shells, basis.offsets
     sc, sd = shells[c], shells[d]
     recs = primitive_pairs(sc, sd)
@@ -445,7 +343,7 @@ def _ket_records(basis: Basis, rows: list[list[float]], c: int, d: int,
         raise ValueError(f"dq returned the wrong shape for ket "
                          f"{(sc.l, sd.l)}")
     zero = (0.0,) * len(qs)
-    return [_Ket(k.P, k.zeta, qs, tuple(float(v) for v in g), zero, 0.0)
+    return [Ket(k.P, k.zeta, qs, tuple(float(v) for v in g), zero, 0.0)
             for k, g in zip(recs, got, strict=True)]
 
 
@@ -455,12 +353,12 @@ def _seam_sweep(basis: Basis, D: object, *, pq: PQ, jp: JP | None,
     transform and mirror as `_sweep(ordered=False)`. With `jp`, the kets are
     grouped by class and `J_p` comes from it; without, `J_p` is `pq`'s, per
     record over every ket in sweep order, exactly as `_bra_block` forms it."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     shells, off = basis.shells, basis.offsets
     n_sh = len(shells)
     pairs = [(a, b, 1.0 if a == b else 2.0)
              for a in range(n_sh) for b in range(a + 1)]
-    all_kets: list[_Ket] = []
+    all_kets: list[Ket] = []
     groups: dict[tuple[int, int], list[KetRec]] = {}
     for c, d, w in pairs:
         ks = _ket_records(basis, rows, c, d, w, dq)
@@ -507,15 +405,15 @@ def _seam_sweep(basis: Basis, D: object, *, pq: PQ, jp: JP | None,
 
 def _sweep(basis: Basis, D: object, *, pq: PQ, tau: float, ordered: bool,
            want_scale: bool) -> tuple[Matrix, Matrix]:
-    rows = _density(basis, D)
-    tau = _tau(tau)
+    rows = checked_density(basis, D)
+    tau = checked_tau(tau)
     n_sh = len(basis.shells)
     if ordered:
         pairs = [(a, b, 1.0) for a in range(n_sh) for b in range(n_sh)]
     else:
         pairs = [(a, b, 1.0 if a == b else 2.0)
                  for a in range(n_sh) for b in range(a + 1)]
-    kets = _kets(basis, rows, pairs, pq=pq, tau=tau)
+    kets = make_kets(basis, rows, pairs, pq=pq, tau=tau)
     n = basis.n_ao
     J = [[0.0] * n for _ in range(n)]
     S = [[0.0] * n for _ in range(n)]
@@ -544,7 +442,7 @@ def coulomb_matrix(basis: Basis, D: object, *, pq: PQ,
     if jp is None and dq is None and jab is None:
         return _sweep(basis, D, pq=pq, tau=tau, ordered=False,
                       want_scale=False)[0]
-    if _tau(tau) != 0.0:
+    if checked_tau(tau) != 0.0:
         given = ", ".join(n for n, h in (("jp", jp), ("dq", dq),
                                           ("jab", jab)) if h is not None)
         raise ValueError(f"tau = {tau!r}: the {given} seam is unscreened; "
@@ -592,14 +490,14 @@ class Screened:
 ORDERS = ("sorted", "unsorted")
 
 
-def _sorted_kets(kets: Sequence[_Ket]) -> list[_Ket]:
+def _sorted_kets(kets: Sequence[Ket]) -> list[Ket]:
     """Descending by `bound` (= `I_ket * Dmax`), STABLE: `sorted` is stable,
     and `reverse=True` keeps equal keys in their original order."""
     return sorted(kets, key=lambda k: k.bound, reverse=True)
 
 
 def _bra_block_screened(bra_recs: Sequence[PrimitivePair],
-                        kets: Sequence[_Ket], *, pq: PQ, tau: float,
+                        kets: Sequence[Ket], *, pq: PQ, tau: float,
                         brk: bool):
     nrow = len(bra_recs[0].block)
     jab = [0.0] * nrow
@@ -648,14 +546,14 @@ def coulomb_matrix_screened(basis: Basis, D: object, *, pq: PQ, tau: float,
     `tau = 0` nothing is skipped, since the product is >= 0."""
     if order not in ORDERS:
         raise ValueError(f"order = {order!r} is not one of {ORDERS}")
-    rows = _density(basis, D)
-    tau = _tau(tau)
+    rows = checked_density(basis, D)
+    tau = checked_tau(tau)
     n_sh = len(basis.shells)
     pairs = [(a, b, 1.0 if a == b else 2.0)
              for a in range(n_sh) for b in range(a + 1)]
-    # `_kets` evaluates the bound only when its tau is > 0; this one is
+    # `make_kets` evaluates the bound only when its tau is > 0; this one is
     # passed to switch it on and is used for nothing else.
-    kets = _kets(basis, rows, pairs, pq=pq, tau=1.0)
+    kets = make_kets(basis, rows, pairs, pq=pq, tau=1.0)
     if order == "sorted":
         kets = _sorted_kets(kets)
     n = basis.n_ao

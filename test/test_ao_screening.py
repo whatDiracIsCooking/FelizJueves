@@ -72,6 +72,7 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao import j as aoj
+from felizjueves.ao.density import checked_density, make_kets
 from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_screened
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
@@ -249,7 +250,7 @@ def test_the_break_needs_the_sort():
     n_sh = len(basis.shells)
     pairs = [(a, b, 1.0 if a == b else 2.0)
              for a in range(n_sh) for b in range(a + 1)]
-    kets = aoj._kets(basis, aoj._density(basis, D), pairs, pq=pq, tau=1.0)
+    kets = make_kets(basis, checked_density(basis, D), pairs, pq=pq, tau=1.0)
     srt = aoj._sorted_kets(kets)
     pos = {id(k): i for i, k in enumerate(kets)}
     assert all(x.bound >= y.bound for x, y in zip(srt, srt[1:], strict=False))

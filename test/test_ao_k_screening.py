@@ -62,7 +62,7 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao import k as aok
-from felizjueves.ao.j import epair
+from felizjueves.ao.density import epair
 from felizjueves.ao.k import (
     exchange_matrix,
     exchange_matrix_reference,

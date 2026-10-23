@@ -101,8 +101,8 @@ from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves import gate, measured
 from felizjueves import kernel_f as KF
+from felizjueves.ao.density import epair
 from felizjueves.ao.drive import _chain_plan, _unique_pairs
-from felizjueves.ao.j import epair
 from felizjueves.ao.k import record_bounds
 from felizjueves.ao.shell import Basis
 from felizjueves.f_levers import block_fab

@@ -77,7 +77,7 @@ from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves import kernel_f as KF
 from felizjueves import kernel_f_scatter as FS
-from felizjueves.ao.j import _density
+from felizjueves.ao.density import checked_density
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.f_levers import scatter as SC
 from felizjueves.hgp import vrr
@@ -141,7 +141,7 @@ def record_plan(plan, basis: Basis, D, *, threads: int = THREADS,
     a plan whose launches name `ket-break` or `scatter` (launch arguments
     walk_f adds) is refused. `test_fock_record_plan.py` holds it to
     `record` launch by launch."""
-    rows = _density(basis, D)
+    rows = checked_density(basis, D)
     sh, n_sh, n_ao = basis.shells, len(basis.shells), basis.n_ao
     Dsh = KF.density_blocks(rows, basis.offsets, [s.n_cart for s in sh])
     D_flat = tuple(x for r in rows for x in r)

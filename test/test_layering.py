@@ -527,6 +527,7 @@ RULE_OF: dict[str, str] = {
     "ao.hermite": "ao",
     "ao.pairs": "ao",
     "ao.eri": "ao",
+    "ao.density": "ao",
     "ao.j": "ao",
     "ao.k": "ao",
     "ao.drive": "adapter",
@@ -619,19 +620,23 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.hermite": (),
     "ao.pairs": ("ao.hermite", "ao.shell"),
     "ao.eri": ("ao.hermite", "ao.pairs", "ao.shell"),
-    "ao.j": ("ao.hermite", "ao.pairs", "ao.shell"),
-    # #197: K reuses ao.j's density contract and EPair, and ao.eri for its
-    # third index path (`k_from_eris`).
-    "ao.k": ("ao.eri", "ao.hermite", "ao.j", "ao.shell"),
-    "ao.drive": ("ao.j", "ao.shell", "ao.staged", "interp", "ir", "kernel",
-                 "kernel_dq", "kernel_jab", "launch", "plan.pipeline", "spec"),
-    "ao.staged": ("ao.j", "ao.pairs", "ao.shell", "interp", "ir", "kernel",
-                  "launch", "passes"),
-    "launch": ("ao.j", "ao.pairs", "ao.shell", "ir", "kernel", "plan.pipeline",
-               "spec"),
+    # #503: the density contract, `tau`, `EPair` and the ket records, out of
+    # ao.j so that K, F, Schwarz and the launch plans need not import J.
+    "ao.density": ("ao.hermite", "ao.pairs", "ao.shell"),
+    "ao.j": ("ao.density", "ao.hermite", "ao.pairs", "ao.shell"),
+    # #197: K reuses the density contract and EPair (ao.density since #503),
+    # and ao.eri for its third index path (`k_from_eris`).
+    "ao.k": ("ao.density", "ao.eri", "ao.hermite", "ao.shell"),
+    "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "interp", "ir",
+                 "kernel", "kernel_dq", "kernel_jab", "launch",
+                 "plan.pipeline", "spec"),
+    "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "interp", "ir",
+                  "kernel", "launch", "passes"),
+    "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "kernel",
+               "plan.pipeline", "spec"),
     # #204: the K plan beside J's -- the shared part from `launch`, the
     # records and the host's staged contraction from `ao`.
-    "launch_k": ("ao.j", "ao.k", "ao.shell", "ir", "launch", "spec"),
+    "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "launch", "spec"),
     "kernel_jab": ("e_fragment", "ir", "plan.targets", "spec"),
     "kernel_dq": ("e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
@@ -1186,7 +1191,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # ---------------------------------------------------------------------------
 # #241 (milestone 11): the one-electron launch, BESIDE `ClassLaunch` in
 # `launch.py`. Its records come from the AO layer (`ao.pairs.pair_list` and
-# `primitive_pairs`, `ao.j.epair`), and its walker reproduces the host's
+# `primitive_pairs`, `ao.density.epair`), and its walker reproduces the host's
 # `S`, `T` and `V` from the plan with the host's own axis pieces
 # (`ao.hermite.e_axis`, `ao.kinetic.kinetic_axis`), the host's placement
 # (`ao.one_electron.matrix`) and nucleus check (`ao.potential`). Still
@@ -1337,15 +1342,15 @@ def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
 # ---------------------------------------------------------------------------
 # #275 (milestone 12): the two-electron Fock witness, under the `ao` rule.
 # `ao.fock` sweeps every ordered quartet with the ERI block function
-# INJECTED (`eri=`), so it imports no engine: only `ao.j`'s density contract
-# and `ao.shell`'s basis.
+# INJECTED (`eri=`), so it imports no engine: only the density contract
+# (`ao.density` since #503) and `ao.shell`'s basis.
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
     "ao.fock": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.fock": ("ao.j", "ao.shell"),
+    "ao.fock": ("ao.density", "ao.shell"),
 }.items()}
 
 
@@ -1381,7 +1386,7 @@ RULE_OF |= {
     "launch_f": "f_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "launch_f": ("ao.j", "ao.pairs", "ao.shell", "launch", "spec"),
+    "launch_f": ("ao.density", "ao.pairs", "ao.shell", "launch", "spec"),
 }.items()}
 
 
@@ -1485,7 +1490,8 @@ RULES |= {
         measured_store="nothing measured may reach a walk by import"),
 }
 RULE_OF["walk_f"] = "f_walk"
-EDGES["walk_f"] = frozenset(("ao.j", "ao.shell", "ir", "kernel_f", "spec"))
+EDGES["walk_f"] = frozenset(("ao.density", "ao.shell", "ir", "kernel_f",
+                             "spec"))
 
 
 def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None:
@@ -2041,7 +2047,7 @@ RULE_OF |= {
     "kernel_schwarz": "schwarz_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.schwarz": ("ao.eri", "ao.j", "ao.shell"),
+    "ao.schwarz": ("ao.density", "ao.eri", "ao.shell"),
     "kernel_schwarz": ("e_fragment", "ir", "plan.dag", "plan.pipeline",
                        "plan.schedule", "plan.targets", "recurrence", "spec"),
 }.items()}
@@ -2711,8 +2717,8 @@ RULE_OF |= {
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "kernel_kblock": ("ir", "k_levers.seams", "kernel", "kernel_k", "spec"),
-    "launch_kblock": ("ao.j", "ao.k", "ao.shell", "ir", "launch", "launch_k",
-                      "spec"),
+    "launch_kblock": ("ao.density", "ao.k", "ao.shell", "ir", "launch",
+                      "launch_k", "spec"),
 }.items()}
 
 

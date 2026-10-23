@@ -4,7 +4,7 @@ THE WITNESS is `ao.kinetic.kinetic_block` (#234), the host's `T` block: the
 fixed ket shift on the axis tables at `lb + 2`, dressed by `ao.pairs.dress`
 and summed over `primitive_pairs` order. The kernel's records are those
 pairs' `(zeta, P - A, P - B)`, the host's one scalar `s` per record
-(`ao.j.epair`, `pairs.dress`'s own `scale`) and the ket exponent `beta`
+(`ao.density.epair`, `pairs.dress`'s own `scale`) and the ket exponent `beta`
 (`eb_ket`), and its scatter is `kernel_jab`'s rule. Against it:
 
 - PER CLASS, every ordered pair class (ss) through (ff) on the tracked
@@ -54,7 +54,7 @@ from oracle import manifest
 from tiers import by_l, split_by_l
 
 from felizjueves import e_fragment as ef
-from felizjueves.ao.j import epair
+from felizjueves.ao.density import epair
 from felizjueves.ao.kinetic import kinetic_block, kinetic_matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.device import GFX1200, SM_86

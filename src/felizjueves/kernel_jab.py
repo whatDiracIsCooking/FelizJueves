@@ -51,7 +51,7 @@ undressed block into a LOCAL array `E[n_rows_cart, n_p]`, from `zeta`,
 entries the fragment writes are read: an entry with `t_d > a_d + b_d` on some
 axis is exactly zero, and its term is OMITTED from `v`, not multiplied in --
 the interpreter refuses a read of an unwritten local, so a stray read fails.
-The dressing is the host's one scalar per record, `s` (`ao.j.EPair`); no
+The dressing is the host's one scalar per record, `s` (`ao.density.EPair`); no
 `(pi/zeta)^{3/2}` is formed here.
 
 THE DIAGONAL. On a diagonal bra shell pair the host's assign-then-mirror

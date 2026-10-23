@@ -57,8 +57,8 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
+from felizjueves.ao.density import epair
 from felizjueves.ao.eri import eri_block, eri_block_and_scale
-from felizjueves.ao.j import epair
 from felizjueves.ao.k import (
     exchange_matrix,
     exchange_matrix_and_scale,
