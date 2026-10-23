@@ -228,10 +228,10 @@ def test_the_one_e_arrays_are_named_and_shaped_by_cartesian_aos():
 
 
 def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
-    """The five HF/cc-pVTZ ERI files and the three `_schwarz` files are the
-    declared exceptions (`Case.record_one_e`), and a twin -- same molecule,
-    basis, Cartesian flag (`hf_ccpvtz`, the `_j` cases) -- carries the four
-    for them."""
+    """The five HF/cc-pVTZ ERI files, the three `_schwarz` files and the
+    three `_dipole` files (#517) are the declared exceptions
+    (`Case.record_one_e`), and a twin -- same molecule, basis, Cartesian
+    flag (`hf_ccpvtz`, the `_j` cases) -- carries the four for them."""
     from oracle import generate
 
     fixtures = [load(p) for p in manifest.tracked()]
@@ -257,7 +257,9 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
                                           for L in (9, 10, 11, 12)),
                        "h2_sto3g_schwarz", "h2o_sto3g_schwarz",
                        "h2o_631g_schwarz",
-                       "h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz"}
+                       "h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz",
+                       "h2o_sto3g_dipole", "h2o_631g_dipole",
+                       "h2o_ccpvdz_dipole"}
 
 
 def test_the_cross_overlap_fixtures_name_their_rows_and_fit_them():
@@ -481,6 +483,162 @@ def test_a_bad_one_e_array_fails_naming_the_file(tmp_path, mutate, says):
         load(path)
     assert str(path) in str(e.value)
     assert says in str(e.value)
+
+
+# --- #517: the dipole fixtures, siblings of the `_j` files ----------------
+
+DIPOLE_MOLECULES = ("h2o_631g", "h2o_ccpvdz", "h2o_sto3g")
+DIPOLE_SRC = manifest.FIXTURES / "h2o_sto3g_dipole.json"
+# libcint computes <m|r - C|n> directly, not as r_0 - C S: the two agree to
+# rounding of the largest |r_0| (measured 5.0e-16 of it at worst).
+SHIFT_TOL = 1e-14
+# dip_moment contracts PySCF's intor_symmetric copy of the same integrals.
+DIP_TOL = 1e-13
+
+
+def test_the_dipole_fixtures_are_the_three_h2o_j_siblings():
+    assert manifest.dipole_pairs() == list(DIPOLE_MOLECULES)
+    assert manifest.DIPOLE_COMPONENTS == ("x", "y", "z")
+    from oracle import generate
+
+    for name in DIPOLE_MOLECULES:
+        p = manifest.dipole_pair(name)
+        fd, fj = p.dipole, p.j
+        assert fd.name == f"{name}_dipole" and fj.name == f"{name}_j"
+        assert sorted(fd.arrays) == sorted(
+            {"density", "ovlp", *manifest.DIPOLE_ARRAYS})
+        assert fd.converted == fj.converted
+        assert np.array_equal(fd.density, fj.density)
+        n = fd.nao
+        assert p.r.shape == p.r0.shape == (3, n, n)
+        assert p.dip.shape == p.dip0.shape == (3,)
+        assert p.origin.tolist() == list(generate.DIPOLE_ORIGIN)
+        # non-zero and non-symmetric: X_PC is exercised on every axis
+        assert len({abs(c) for c in p.origin}) == 3 and all(p.origin)
+        # each component is symmetric in (m, n), to rounding
+        for r in (p.r, p.r0):
+            assert np.max(np.abs(r - r.transpose(0, 2, 1))) <= (
+                SHIFT_TOL * np.max(np.abs(r)))
+
+
+@pytest.mark.parametrize("name", DIPOLE_MOLECULES)
+def test_the_dipole_component_order_is_x_y_z(name):
+    """Pinned twice. Against the origin: `r_C[k] = r_0[k] - C_k S`, and C's
+    components differ, so a permuted axis fails. Against the geometry: an
+    s AO on a hydrogen has `<s|r|s> = R_H <s|s>` (with `C = 0`)."""
+    p = manifest.dipole_pair(name)
+    S = p.dipole.arrays["ovlp"]
+    scale = np.max(np.abs(p.r0))
+    shifted = p.r0 - p.origin[:, None, None] * S[None]
+    assert np.max(np.abs(p.r - shifted)) <= SHIFT_TOL * scale
+    swapped = p.r[[1, 0, 2]]
+    assert np.max(np.abs(swapped - shifted)) > 1e3 * SHIFT_TOL * scale
+    h_s = [i for i, lab in enumerate(p.dipole.ao_labels)
+           if lab.split()[1] == "H" and lab.split()[2].endswith("s")]
+    assert h_s
+    for i in h_s:
+        atom = p.dipole.atoms[int(p.dipole.ao_labels[i].split()[0])]
+        for k in range(3):
+            assert abs(p.r0[k, i, i] - atom.coord[k] * S[i, i]) <= (
+                SHIFT_TOL * scale), (i, k)
+
+
+@pytest.mark.parametrize("name", DIPOLE_MOLECULES)
+def test_the_recorded_dip_moment_is_nuclear_minus_electronic(name):
+    """`dip_moment` from the recorded integrals and nuclei, at both origins,
+    and the two origins related by the charge left over:
+    `mu_C = mu_0 - (sum Z - Tr(D S)) C`."""
+    p = manifest.dipole_pair(name)
+    D, S = p.density, p.dipole.arrays["ovlp"]
+    Z = p.dipole.arrays[manifest.DIP_CHARGES_ARRAY]
+    R = p.dipole.arrays[manifest.DIP_COORDS_ARRAY]
+    for dip, ints, c in ((p.dip, p.r, p.origin), (p.dip0, p.r0, np.zeros(3))):
+        nuc = Z @ (R - c[None, :])
+        el = np.einsum("xij,ji->x", ints, D)
+        scale = np.max(np.abs(nuc)) + np.max(np.abs(el))
+        assert np.max(np.abs(dip - (nuc - el))) <= DIP_TOL * scale
+    q = Z.sum() - np.trace(D @ S)
+    assert abs(q) > 1.0  # the hilbert density is not neutral: C matters
+    scale = np.max(np.abs(p.dip0)) + abs(q) * np.max(np.abs(p.origin))
+    assert np.max(np.abs(p.dip - (p.dip0 - q * p.origin))) <= DIP_TOL * scale
+
+
+def _sym_set(r, i, j, v):
+    n = r["nao"]
+    vals = r["arrays"]["density"]["values"]
+    vals[i * n + j] = vals[j * n + i] = v
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: _sym_set(r, 0, 1, 0.25), "density differ"),
+        (lambda r: r["shells"][0]["exponents"].__setitem__(0, 130.0),
+         "shells differ"),
+        (lambda r: r["provenance"]["mol"].update(charge=1),
+         "provenance.mol differ"),
+        (lambda r: r["provenance"].update(basis="6-31g"),
+         "provenance.basis differ"),
+        (lambda r: r["arrays"]["ovlp"]["values"].__setitem__(0, 0.5),
+         "arrays.ovlp differ"),
+        (lambda r: r.update(density_recipe="rhf: something else"),
+         "density_recipe differ"),
+    ],
+    ids=["density", "shells", "mol", "basis", "ovlp", "recipe"],
+)
+def test_a_dipole_file_off_its_j_sibling_is_refused(tmp_path, mutate, says):
+    import shutil
+
+    shutil.copy(manifest.FIXTURES / "h2o_sto3g_j.json", tmp_path)
+    raw = json.loads(DIPOLE_SRC.read_text())
+    mutate(raw)
+    (tmp_path / DIPOLE_SRC.name).write_text(json.dumps(raw))
+    with pytest.raises(FixtureError) as e:
+        manifest.dipole_pair("h2o_sto3g", tmp_path)
+    msg = str(e.value)
+    assert "not a dipole pair" in msg and says in msg
+    assert "h2o_sto3g_j.json" in msg and DIPOLE_SRC.name in msg
+
+
+def test_check_dipole_refuses_the_wrong_halves():
+    p = manifest.dipole_pair("h2o_sto3g")
+    k = load(manifest.FIXTURES / "h2o_sto3g_k.json")
+    with pytest.raises(FixtureError, match="the first carries no vj"):
+        manifest.check_dipole(k, p.dipole)
+    with pytest.raises(FixtureError, match="the second carries no"):
+        manifest.check_dipole(p.j, p.j)
+    other = manifest.dipole_pair("h2o_631g")
+    with pytest.raises(FixtureError, match="not a dipole pair: shells"):
+        manifest.check_dipole(p.j, other.dipole)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r["arrays"].pop(manifest.DIP0_ARRAY),
+         "all seven or none"),
+        (lambda r: r["arrays"][manifest.R_ARRAY].update(
+            shape=[7, 7, 3]), "expected (3, 7, 7)"),
+        (lambda r: r["arrays"][manifest.DIP_ARRAY].update(
+            shape=[1, 3]), "expected (3,)"),
+        (lambda r: r["arrays"][manifest.DIPOLE_ORIGIN_ARRAY].update(
+            values=[0.37, 0.0, 1.23]), "must be non-zero"),
+        (lambda r: r["arrays"][manifest.DIPOLE_ORIGIN_ARRAY].update(
+            values=[0.5, -0.5, 1.0]), "pairwise distinct"),
+        (lambda r: r["arrays"][manifest.DIP_CHARGES_ARRAY]["values"]
+         .__setitem__(0, 7.0), "not the atoms' charges"),
+        (lambda r: r["arrays"][manifest.DIP_COORDS_ARRAY]["values"]
+         .__setitem__(3, 1.0), "not the atoms' coordinates"),
+        (lambda r: r.pop("converted"), "need the converted basis"),
+    ],
+    ids=["six-of-seven", "r-shape", "dip-shape", "origin-zero",
+         "origin-symmetric", "charges", "coords", "no-converted"],
+)
+def test_a_bad_dipole_array_fails_naming_the_file(tmp_path, mutate, says):
+    path = _write_piece(tmp_path, mutate, src=DIPOLE_SRC)
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value) and says in str(e.value)
 
 
 # --- the drift check: needs PySCF ------------------------------------------
