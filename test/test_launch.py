@@ -419,9 +419,6 @@ from felizjueves.ao.pairs import (  # noqa: E402
     overlap_bound,
     potential_bound,
 )
-from felizjueves.kernel_s import build_s_kernel, s_spec  # noqa: E402
-from felizjueves.kernel_t import build_t_kernel, t_spec  # noqa: E402
-from felizjueves.kernel_v import build_v_kernel, v_spec  # noqa: E402
 from felizjueves.launch import (  # noqa: E402
     LaunchPlan,
     OneEClass,
@@ -430,6 +427,9 @@ from felizjueves.launch import (  # noqa: E402
     one_electron_launch,
     walk_one_electron,
 )
+from felizjueves.one_electron.kernel_s import build_s_kernel, s_spec  # noqa: E402
+from felizjueves.one_electron.kernel_t import build_t_kernel, t_spec  # noqa: E402
+from felizjueves.one_electron.kernel_v import build_v_kernel, v_spec  # noqa: E402
 from felizjueves.spec import Target  # noqa: E402
 
 _ONE_E = {Target.S: (s_spec, build_s_kernel, _s_records),

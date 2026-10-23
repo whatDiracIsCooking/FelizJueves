@@ -41,8 +41,8 @@ from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves.ir import Intent, Kernel, Scalar
-from felizjueves.kernel_sx import build_sx_kernel, launch_shape
 from felizjueves.launch import XClass, XLaunch
+from felizjueves.one_electron.kernel_sx import build_sx_kernel, launch_shape
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
 WIDTH = dict.fromkeys(("zeta_ab", "pa_x", "pa_y", "pa_z",

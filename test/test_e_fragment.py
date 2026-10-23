@@ -50,7 +50,6 @@ from test_ir import HGP_FACTORS
 from tiers import FAST_L_MAX, by_l, is_fast, split_by_l
 
 from felizjueves import ir
-from felizjueves.ao.kinetic import kinetic_axis
 from felizjueves.ao.pairs import dress, primitive_pairs
 from felizjueves.ao.shell import Shell, cartesians
 from felizjueves.emit import cuda, hip
@@ -75,6 +74,7 @@ from felizjueves.ir import (
 from felizjueves.ir.interp import interpret, interpret_fragment
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.hermite import e_axis, e_block, hermite_order
+from felizjueves.one_electron.kinetic import kinetic_axis
 from felizjueves.performance.device import GFX1200, SM_86
 
 LMAX = 3  # (ss) through (ff)

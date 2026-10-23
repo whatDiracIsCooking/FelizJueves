@@ -54,7 +54,6 @@ from oracle import manifest
 from tiers import by_l, split_by_l
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.kinetic import kinetic_block, kinetic_matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import (
@@ -73,15 +72,16 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_t import (
+from felizjueves.launch import per_axis
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.one_electron.kernel_t import (
     ATOMIC_REASON,
     ZEROED_T,
     build_t_kernel,
     launch_shape,
     t_spec,
 )
-from felizjueves.launch import per_axis
-from felizjueves.mmd import e_fragment as ef
+from felizjueves.one_electron.kinetic import kinetic_block, kinetic_matrix
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.spec import Operator, Spec, Target
 
@@ -292,7 +292,7 @@ def test_the_key_is_a_pair_class():
 
 
 def test_the_parameter_block_is_kernel_s_plus_the_ket_exponent():
-    from felizjueves.kernel_s import build_s_kernel
+    from felizjueves.one_electron.kernel_s import build_s_kernel
 
     k = build_t_kernel((1, 2))
     s_names = [p.name for p in build_s_kernel((1, 2)).params]
@@ -414,7 +414,7 @@ GOLDEN_CLASS = (1, 2)  # lb = 2: the j(j-1) term is present
 
 def test_the_cuda_golden_is_unchanged() -> None:
     # Regenerate (never hand-edit):
-    #   PYTHONPATH=src uv run python -c "from felizjueves.kernel_t import \
+    #   PYTHONPATH=src uv run python -c "from felizjueves.one_electron.kernel_t import \
     #   build_t_kernel as b; from felizjueves.performance.device import SM_86; \
     #   from felizjueves.emit.cuda import emit; print(emit(b((1, 2)), SM_86), \
     #   end='')" > test/golden/cuda/t_12.cu

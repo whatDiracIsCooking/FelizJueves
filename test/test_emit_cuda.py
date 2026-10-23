@@ -262,7 +262,7 @@ def _boys_kernel(top: int = 3, *, extent: int | None = None,
 
 def test_every_unit_carries_the_one_template() -> None:
     from felizjueves.emit._c import BOYS_DEVICE
-    from felizjueves.kernel_v import build_v_kernel
+    from felizjueves.one_electron.kernel_v import build_v_kernel
 
     for k, top in ((build_pq_kernel(L), L), (build_v_kernel((1, 1)), 2),
                    (_boys_kernel(), 3)):

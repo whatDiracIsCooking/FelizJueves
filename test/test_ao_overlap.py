@@ -15,11 +15,11 @@ import math
 import pytest
 from tiers import by_l, is_fast, split_by_l
 
-from felizjueves.ao.one_electron import matrix
-from felizjueves.ao.overlap import overlap_block, overlap_matrix
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell, primitive_norm
 from felizjueves.mmd.hermite import hermite_order
+from felizjueves.one_electron.one_electron import matrix
+from felizjueves.one_electron.overlap import overlap_block, overlap_matrix
 
 # A small, deliberately asymmetric basis: contracted shells of l = 0..3 on
 # three centres, unequal contraction lengths.

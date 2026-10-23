@@ -30,15 +30,15 @@ from oracle import basis as ob
 from oracle import manifest
 from test_ao_overlap import ONE_E_TOL, _overlap_scale_block
 
-from felizjueves.ao.one_electron import matrix, rectangular
-from felizjueves.ao.overlap import (
+from felizjueves.ao.pairs import cross_pair_list, overlap_bound
+from felizjueves.launch import cross_overlap_launch, walk_cross_overlap
+from felizjueves.one_electron.kernel_sx import sx_spec
+from felizjueves.one_electron.one_electron import matrix, rectangular
+from felizjueves.one_electron.overlap import (
     cross_overlap_matrix,
     overlap_block,
     overlap_matrix,
 )
-from felizjueves.ao.pairs import cross_pair_list, overlap_bound
-from felizjueves.kernel_sx import sx_spec
-from felizjueves.launch import cross_overlap_launch, walk_cross_overlap
 
 EPS = 2.0 ** -52
 CROSS = sorted(p.stem for p in manifest.cross_fixtures())
@@ -225,7 +225,7 @@ def test_the_walk_of_the_launch_is_the_host_to_zero(name, swapped, fraction):
 
 
 def test_the_launch_restates_the_kernel_key_and_its_parameter_order():
-    from felizjueves.kernel_sx import build_sx_kernel
+    from felizjueves.one_electron.kernel_sx import build_sx_kernel
 
     A, B, _ = _cross("h2o_sto3g_x_ccpvdz")
     plan = cross_overlap_launch(A, B, tau=0.0, bound=overlap_bound)

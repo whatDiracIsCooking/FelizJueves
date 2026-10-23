@@ -59,6 +59,10 @@ _REF = "reference"
 _GROUND_TRUTH = ("an import from reference/ makes it share ancestry with the "
                  "ground truth it is checked against, and the pin compares a "
                  "thing to itself (#20)")
+# #508: the one-electron host references, which lived under `ao/` (so every
+# `ao` prefix below reached them) until they moved into `one_electron/`.
+_ONE_E_HOST = ("one_electron.one_electron", "one_electron.overlap",
+               "one_electron.kinetic", "one_electron.potential")
 
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
@@ -977,7 +981,7 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_dq reaches {hit}"
     assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
@@ -991,12 +995,12 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
-    "ao.one_electron": "ao",
-    "ao.overlap": "ao",
+    "one_electron.one_electron": "ao",
+    "one_electron.overlap": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.one_electron": ("ao.shell",),
-    "ao.overlap": ("ao.one_electron", "ao.pairs", "ao.shell"),
+    "one_electron.one_electron": ("ao.shell",),
+    "one_electron.overlap": ("one_electron.one_electron", "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -1008,10 +1012,11 @@ EDGES |= {k: frozenset(v) for k, v in {
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
-    "ao.potential": "ao",
+    "one_electron.potential": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.potential": ("mmd.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
+    "one_electron.potential": ("mmd.hermite", "one_electron.one_electron",
+                               "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -1022,10 +1027,11 @@ EDGES |= {k: frozenset(v) for k, v in {
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
-    "ao.kinetic": "ao",
+    "one_electron.kinetic": "ao",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "ao.kinetic": ("mmd.hermite", "ao.one_electron", "ao.pairs", "ao.shell"),
+    "one_electron.kinetic": ("mmd.hermite", "one_electron.one_electron",
+                             "ao.pairs", "ao.shell"),
 }.items()}
 
 
@@ -1053,10 +1059,10 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "kernel_s": "s_builder",
+    "one_electron.kernel_s": "s_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_s": ("mmd.e_fragment", "ir", "spec"),
+    "one_electron.kernel_s": ("mmd.e_fragment", "ir", "spec"),
 }.items()}
 
 
@@ -1104,7 +1110,7 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "plan.targets" in seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_pair_bound reaches {hit}"
 
@@ -1154,7 +1160,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "kernel_pair_bound"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_record_bound reaches {hit}"
 
@@ -1165,14 +1171,14 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # a card.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_s"]
+    todo = ["one_electron.kernel_s"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
     assert "mmd.e_fragment" in seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_s reaches {hit}"
 
@@ -1202,10 +1208,10 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "kernel_t": "t_builder",
+    "one_electron.kernel_t": "t_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_t": ("mmd.e_fragment", "ir", "spec"),
+    "one_electron.kernel_t": ("mmd.e_fragment", "ir", "spec"),
 }.items()}
 
 
@@ -1215,14 +1221,14 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # a card.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_t"]
+    todo = ["one_electron.kernel_t"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
     assert "mmd.e_fragment" in seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_t reaches {hit}"
 
@@ -1254,11 +1260,12 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "kernel_v": "v_builder",
+    "one_electron.kernel_v": "v_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_v": ("mmd.e_fragment", "ir", "plan.dag", "plan.pipeline",
-                 "plan.schedule", "plan.targets", "mmd.recurrence", "spec"),
+    "one_electron.kernel_v": ("mmd.e_fragment", "ir", "plan.dag",
+                              "plan.pipeline", "plan.schedule", "plan.targets",
+                              "mmd.recurrence", "spec"),
 }.items()}
 
 
@@ -1268,14 +1275,14 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # a card -- and it does reach the plan layer, through `recurrence`.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_v"]
+    todo = ["one_electron.kernel_v"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_v reaches {hit}"
 
@@ -1293,7 +1300,8 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # ---------------------------------------------------------------------------
 
 EDGES["launch"] = EDGES["launch"] | frozenset(
-    ("mmd.hermite", "ao.kinetic", "ao.one_electron", "ao.potential"))
+    ("mmd.hermite", "one_electron.kinetic", "one_electron.one_electron",
+     "one_electron.potential"))
 
 
 def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
@@ -1308,8 +1316,9 @@ def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"ao.one_electron", "ao.potential"} <= seen
-    for banned in (_REF, "ir.interp", "kernel_s", "kernel_t", "kernel_v"):
+    assert {"one_electron.one_electron", "one_electron.potential"} <= seen
+    for banned in (_REF, "ir.interp", "one_electron.kernel_s",
+                   "one_electron.kernel_t", "one_electron.kernel_v"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch reaches {hit}"
 
@@ -1321,7 +1330,8 @@ def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
 # it builds and emits; the builders' own rules keep them off `ao`.
 # ---------------------------------------------------------------------------
 
-_ONE_E_BUILDERS = ("kernel_s", "kernel_t", "kernel_v")
+_ONE_E_BUILDERS = ("one_electron.kernel_s", "one_electron.kernel_t",
+                   "one_electron.kernel_v")
 RULES["driver"] = Rule(RULES["driver"].why + ", and #242's one-electron "
                        "ladder through `kernel_s`, `kernel_t`, `kernel_v`",
                        RULES["driver"].may | frozenset(_ONE_E_BUILDERS),
@@ -1567,8 +1577,8 @@ def test_the_f_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "hgp.recurrence" in seen
-    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "performance.device",
-                   "launch_f"):
+    for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+                   "performance.device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f reaches {hit}"
 
@@ -1856,7 +1866,7 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_k", _REF, "ao", "ir.interp", "emit",
+        for banned in ("kernel_k", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
                        "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
@@ -1921,8 +1931,8 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_f", "plan", _REF, "ao", "ir.interp", "emit",
-                       "performance.device", "launch_f"):
+        for banned in ("kernel_f", "plan", _REF, "ao", *_ONE_E_HOST, "ir.interp",
+                       "emit", "performance.device", "launch_f"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -2208,7 +2218,7 @@ def test_the_schwarz_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_schwarz reaches {hit}"
 
@@ -2283,7 +2293,7 @@ def test_the_scatter_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert "f_levers.scatter" in seen
-    for banned in ("kernel_f", "plan", _REF, "ao", "ir.interp", "emit",
+    for banned in ("kernel_f", "plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
                    "performance.device", "launch_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_f_scatter reaches {hit}"
@@ -2416,7 +2426,7 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_metric reaches {hit}"
 
@@ -2483,7 +2493,7 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
                 seen.add(e)
                 todo.append(e)
     assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device"):
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_eri3 reaches {hit}"
 
@@ -2512,7 +2522,7 @@ RULES |= {
         "IR, `kernel_s.record_values`' per-record statements (the `E` "
         "fragment's `t = 0` column) reused and a rectangular scatter of its "
         "own",
-        ("spec", "=ir", "mmd.e_fragment", "kernel_s"),
+        ("spec", "=ir", "mmd.e_fragment", "one_electron.kernel_s"),
         ao="`ao.overlap.cross_overlap_matrix` is the witness the kernel is "
            "interpreted against: importing it shares ancestry with it (#20)",
         **{"ir.interp":
@@ -2523,29 +2533,30 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "kernel_sx": "sx_builder",
+    "one_electron.kernel_sx": "sx_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_sx": ("mmd.e_fragment", "ir", "kernel_s", "spec"),
+    "one_electron.kernel_sx": ("mmd.e_fragment", "ir", "one_electron.kernel_s", "spec"),
 }.items()}
 RULES["driver"] = Rule(RULES["driver"].why + ", and the cross-basis overlap "
                        "ladder through `kernel_sx`",
-                       RULES["driver"].may | frozenset(("kernel_sx",)),
+                       RULES["driver"].may | frozenset(("one_electron.kernel_sx",)),
                        RULES["driver"].must_not)
-EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("kernel_sx",))
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("one_electron.kernel_sx",))
 
 
 def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_sx"]
+    todo = ["one_electron.kernel_sx"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
                 seen.add(e)
                 todo.append(e)
-    assert {"mmd.e_fragment", "kernel_s"} <= seen
-    for banned in (_REF, "ao", "ir.interp", "emit", "performance.device", "launch"):
+    assert {"mmd.e_fragment", "one_electron.kernel_s"} <= seen
+    for banned in (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+                   "performance.device", "launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
 
@@ -2680,8 +2691,8 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f"} <= seen
-    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "performance.device",
-                   "launch_f", "launch_hjk"):
+    for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+                   "performance.device", "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hj reaches {hit}"
 
@@ -2732,8 +2743,8 @@ def test_the_hk_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert {"hgp.recurrence", "hgp.orbits", "kernel_f", "kernel_hj"} <= seen
-    for banned in ("plan", _REF, "ao", "ir.interp", "emit", "performance.device",
-                   "launch_f", "launch_hjk"):
+    for banned in ("plan", _REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+                   "performance.device", "launch_f", "launch_hjk"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hk reaches {hit}"
 
@@ -2903,8 +2914,9 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         return seen
 
     for root, banned in (
-            ("kernel_kblock", (_REF, "ao", "ir.interp", "emit", "performance.device",
-                               "launch", "launch_k", "launch_kblock")),
+            ("kernel_kblock", (_REF, "ao", *_ONE_E_HOST, "ir.interp", "emit",
+                               "performance.device", "launch", "launch_k",
+                               "launch_kblock")),
             ("launch_kblock", (_REF, "ir.interp", "emit", "ao.drive",
                                "ao.staged", "performance.dispatch",
                                "performance.measured",
@@ -2954,6 +2966,34 @@ def test_launch_common_is_no_wider_than_launch() -> None:
     rel = effective_relation()
     assert set(rel["launch_common"]) <= set(rel["launch"]) | {"launch"}
     assert "launch" not in rel["launch_common"]
+
+
+# ---------------------------------------------------------------------------
+# #508: the one-electron family moved into `one_electron/` (the host
+# references from `ao/`, the kernels from the top level), each module keeping
+# its rule. The host references keep the `ao` rule, but no longer sit under
+# the `ao` prefix: every rule that says `ao` in its `may` or its `must_not`
+# names them explicitly too, so no rule's reach changes. The package marker
+# is the one new module, and imports nothing.
+# ---------------------------------------------------------------------------
+
+for _rn, _r in list(RULES.items()):
+    _not = dict(_r.must_not)
+    if "ao" in _not:
+        _not |= {m: _not["ao"] for m in _ONE_E_HOST if m not in _not}
+    _may = _r.may | frozenset(_ONE_E_HOST) if "ao" in _r.may else _r.may
+    RULES[_rn] = Rule(_r.why, _may, _not)
+del _rn, _r, _not, _may
+
+RULES |= {
+    "one_electron_package": _rule(
+        "one_electron/__init__.py (#508): the one-electron family's package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["one_electron"] = "one_electron_package"
+EDGES["one_electron"] = frozenset()
 
 
 # ---------------------------------------------------------------------------

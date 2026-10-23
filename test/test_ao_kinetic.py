@@ -18,9 +18,9 @@ import math
 import pytest
 from tiers import by_l, is_fast
 
-from felizjueves.ao.kinetic import kinetic_axis, kinetic_block, kinetic_matrix
-from felizjueves.ao.overlap import overlap_block
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.one_electron.kinetic import kinetic_axis, kinetic_block, kinetic_matrix
+from felizjueves.one_electron.overlap import overlap_block
 
 A = (0.0, 0.0, 0.0)
 B = (0.3, -0.7, 1.1)
@@ -356,8 +356,8 @@ from oracle import basis as _ob  # noqa: E402
 from oracle import manifest as _manifest  # noqa: E402
 from test_ao_overlap import ONE_E_PARAMS, ONE_E_TOL, one_e_scale  # noqa: E402
 
-from felizjueves.ao.one_electron import matrix as _matrix  # noqa: E402
 from felizjueves.mmd.hermite import e_axis  # noqa: E402
+from felizjueves.one_electron.one_electron import matrix as _matrix  # noqa: E402
 
 
 def _abs_k(s, j: int, beta: float) -> float:

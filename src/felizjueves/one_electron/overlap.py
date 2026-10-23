@@ -47,9 +47,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from felizjueves.ao.one_electron import matrix, rectangular
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.one_electron.one_electron import matrix, rectangular
 
 
 def overlap_block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:

@@ -72,14 +72,14 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.kernel_s import (
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.one_electron.kernel_s import (
     REC,
     launch_shape,
     pa_name,
     pb_name,
     record_values,
 )
-from felizjueves.mmd import e_fragment as ef
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [

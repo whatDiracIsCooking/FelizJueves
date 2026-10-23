@@ -181,7 +181,7 @@ def test_the_pair_goldens_compile(hipcc, compile_device_source, name: str) -> No
 
 def test_a_j_unit_and_a_v_unit_carry_the_same_template() -> None:
     from felizjueves.emit._c import BOYS_DEVICE
-    from felizjueves.kernel_v import build_v_kernel
+    from felizjueves.one_electron.kernel_v import build_v_kernel
 
     j = hip.emit(build_pq_kernel(L), GFX1200)
     v = hip.emit(build_v_kernel((1, 1)), GFX1200)
@@ -192,7 +192,7 @@ def test_a_j_unit_and_a_v_unit_carry_the_same_template() -> None:
 @pytest.mark.hip
 def test_a_v_unit_compiles(hipcc, compile_device_source) -> None:
     # Compile only (a device compiler needs no card), under #92's warning filter.
-    from felizjueves.kernel_v import build_v_kernel
+    from felizjueves.one_electron.kernel_v import build_v_kernel
 
     compile_device_source(hipcc, hip.emit(build_v_kernel((1, 1)), GFX1200),
                           link=False)
