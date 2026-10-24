@@ -146,6 +146,32 @@ def test_an_eri3_key_is_never_read_as_a_j_row() -> None:
         "coulomb/d0/(2,1|3)/b1/eri3/literal@sm_86/nvcc 13.0")
 
 
+# --- #518: Target.DIPOLE widens the enums without moving a J key -----------
+
+
+def test_target_dipole_moves_no_j_key() -> None:
+    keys = _j_keys()
+    digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
+    assert (len(keys), digest) == J_KEYS_BEFORE_441
+    assert all(target_of(k) is Target.J for k in keys)
+
+
+def test_a_dipole_key_is_never_read_as_a_j_row() -> None:
+    j = set(_j_keys())
+    for am in itertools.product(range(5), repeat=2):
+        spec = Spec(Operator.DIPOLE, 0, am, Target.DIPOLE)
+        assert not _SPEC_KEY.fullmatch(spec.key())
+        for a, tc in _CARDS:
+            key = MeasuredKey(spec, by_name(a), tc).key()
+            assert key not in j
+            assert split_key(key) == (spec.key(), a, tc)
+            assert target_of(key) is Target.DIPOLE
+            assert engine_of(key) is Engine.MMD
+    assert MeasuredKey(Spec(Operator.DIPOLE, 0, (2, 1), Target.DIPOLE),
+                       by_name("gfx1200"), "hipcc / ROCm 7.2.4").key() == (
+        "dipole/d0/(2,1)/b1/dipole/literal@gfx1200/hipcc / ROCm 7.2.4")
+
+
 # --- #401: Spec.engine moves no key ------------------------------------------
 
 

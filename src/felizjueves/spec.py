@@ -146,6 +146,28 @@ this key. Unbatched by DECISION, like `METRIC` (`_PAIR_BATCH_REFUSAL`): its
 Hermite targets (every `t` with `|t| <= la + lb + lP`) could be partitioned,
 and a batched three-center kernel is a follow-up nobody has filed.
 
+A DIPOLE CLASS IS A ONE-ELECTRON PAIR; ITS ORDER IS NOT IN THE KEY (#518).
+`Target.DIPOLE` is the matrix of Cartesian dipole moment integrals
+`mu^d_ab = <a| q (r_d - C_d) |b>`, d in {x, y, z}, of operator
+`Operator.DIPOLE` -- the multipole moments of order `e = 1` about a point
+`C`, scaled by a charge `q` (both runtime inputs, not key fields). Its class
+is the shell pair `(la, lb)`, `am` a pair, key
+``dipole/d0/(la,lb)/b1/dipole/literal``, and one kernel writes all three
+components. The integrals are McMurchie-Davidson's `E` (`dress`'s
+`sqrt(pi/zeta)` aside) contracted with the Hermite moments
+`M^e_t = INT x_C^e Lambda_t dx`, which obey
+`M^{e+1}_t = t M^e_{t-1} + X_PC M^e_t + M^e_{t+1} / (2 zeta)`
+(`e_fragment.multipole_fragment`, #519): Helgaker, Jorgensen & Olsen,
+*Molecular Electronic-Structure Theory*, §9.5 (docs/references.md entry
+48). The equation number inside §9.5 was not checked against the text, and
+entries 39 / 46 (McMurchie & Davidson) were not found to state the moments.
+The ORDER `e` IS A BUILDER ARGUMENT, NOT A KEY FIELD: a quadrupole would be
+its own `Target.QUADRUPOLE` sharing the builder, so `Spec` gains no field
+and no stored key moves. Unbatched for `S`'s structural reason
+(`_PAIR_BATCH_REFUSAL`): one thread per record over an E fragment, no [p|q]
+tower, so no Hermite targets of a quartet to partition. HGP is refused as
+for `S` (`_NO_HGP_ONE_E`).
+
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
 partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
@@ -199,6 +221,8 @@ class Operator(StrEnum):
     OVERLAP = "overlap"  # 1: S_ab = <a|b>
     KINETIC = "kinetic"  # -1/2 nabla^2: T_ab
     NUCLEAR = "nuclear"  # -SUM_C Z_C / r_C: V_ab
+    # The dipole moment operator (#518, milestone 19).
+    DIPOLE = "dipole"  # q (r - C): mu_ab = <a|q (r - C)|b>, e = 1
 
 
 class Target(StrEnum):
@@ -248,6 +272,11 @@ class Target(StrEnum):
     # ORDERED pair class (la, lb) (kernel_record_bound.py, module docstring
     # "THE CLASS IS AN ORDERED PAIR").
     RECORD_BOUND = "record_bound"
+    # The Cartesian dipole moment integrals <a| q (r - C) |b>, all three
+    # components, a PAIR class (la, lb); the multipole order e = 1 is the
+    # builder's argument, not a key field (#518; module docstring "A
+    # DIPOLE CLASS").
+    DIPOLE = "dipole"
 
 
 class Engine(StrEnum):
@@ -264,18 +293,18 @@ class Engine(StrEnum):
 # (la, lb | lc, ld) in AO order for the fused Fock build (#272), and a pair
 # (lP, lQ) of auxiliary shells for the Coulomb metric (#410), and a triple
 # (la, lb | lP) -- an AO pair and one aux shell -- for the three-center
-# integral (#441).
+# integral (#441), and a pair (la, lb) for the dipole matrix (#518).
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
     Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
-    Target.RECORD_BOUND: 2,
+    Target.RECORD_BOUND: 2, Target.DIPOLE: 2,
 }
 
 
 # The one operator each target is built from (#232); any other pairing is
 # refused. The two-electron targets are Coulomb's, the metric and the
-# three-center integral among them.
+# three-center integral among them; the dipole is its own operator (#518).
 OPERATOR_OF: dict[Target, Operator] = {
     Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
@@ -284,6 +313,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
     Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
     Target.PAIR_BOUND: Operator.COULOMB, Target.RECORD_BOUND: Operator.COULOMB,
+    Target.DIPOLE: Operator.DIPOLE,
 }
 
 
@@ -327,6 +357,7 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
     (Target.S, Engine.HGP): _NO_HGP_ONE_E,
     (Target.T, Engine.HGP): _NO_HGP_ONE_E,
     (Target.SX, Engine.HGP): _NO_HGP_ONE_E,
+    (Target.DIPOLE, Engine.HGP): _NO_HGP_ONE_E,
     (Target.V, Engine.HGP): (
         "V is the MMD J engine with the ket a unit point charge "
         "(theta -> sqrt(zeta)); the HGP VRR/HRR has no point-charge ket, "
@@ -358,6 +389,7 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
     Target.RECORD_BOUND: _STRUCTURAL,
     Target.S: _STRUCTURAL,
     Target.SX: _STRUCTURAL,
+    Target.DIPOLE: _STRUCTURAL,
     Target.T: _STRUCTURAL,
     Target.V: (
         "unbatched by milestone 11's decision -- V does have Hermite targets "
