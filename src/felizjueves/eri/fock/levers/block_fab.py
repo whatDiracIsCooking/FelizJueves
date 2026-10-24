@@ -19,7 +19,7 @@ reduces across the block first and flushes once per element:
         AtomicAdd(F[oa + e / n_b, ob + e % n_b], s)
 
 THE WIDTH IS MEASURED, NOT KNOWN. The IR deliberately does not know the
-wavefront (ir.py, "WHAT IS DELIBERATELY NOT HERE"; test_ir pins that no
+wavefront (ir/__init__.py, "WHAT IS DELIBERATELY NOT HERE"; test_ir pins that no
 vocabulary names it), and the fused kernel's block is `(threads, 1)` with
 the kets strided over `threadIdx.x` (`kernel_f.launch_shape`), so the warp
 index is not a launch coordinate either. `WarpReduce(1)` -- the sum of 1
@@ -63,7 +63,7 @@ is the literal kernel's value, bit for bit; only the order in which they
 differs. So the lever is held to the literal kernel by a DERIVED bound,
 `|F_lever - F_literal| <= 2 gamma_{n-1} SUM |a_i|` per element over its `n`
 addends (both are sum trees over the same leaves), never bitwise, and to
-`ao.fock`'s sweep at the literal kernel's own `TOL`.
+`eri.fock.fock`'s sweep at the literal kernel's own `TOL`.
 
 What is NOT here: the ket-dependent buffers' reduction (each thread's
 `c`, `d` differ, so there is nothing block-uniform to reduce), the

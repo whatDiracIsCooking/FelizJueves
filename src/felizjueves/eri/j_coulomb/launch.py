@@ -25,19 +25,19 @@ record -> shell pair map, and `ClassLaunch.bra_blocks` is its inverse on the
 bra side: `(a, b, start, stop)`, the rows of the bra list (hence of `J_p`)
 that eq. 20 transforms into the block `J[a][b]`.
 
-WHICH SHELL PAIRS: the UNIQUE sweep of `ao.j.coulomb_matrix` /
+WHICH SHELL PAIRS: the UNIQUE sweep of `eri.j_coulomb.j.coulomb_matrix` /
 `coulomb_matrix_screened`, `a >= b` by shell index, on both sides, with the
 ket off-diagonal weight `w = 2` folded into `D_q` (and so into `Dmax`), and
 each bra block mirrored by the scatter. That is the sweep #142's oracle must
 equal to `0`, so it is the only one whose screen decisions -- which depend
 on `key` -- can match; an all-ordered-pairs plan at `w = 1` halves every
 off-diagonal `Dmax` and screens differently. The ket pre-contraction is
-`ao.j`'s own (`_kets`), not a restatement, so `Dmax` here is bit-identical to
+`eri.j_coulomb.j`'s own (`_kets`), not a restatement, so `Dmax` here is bit-identical to
 the host sweep's.
 
 THE KEYS. A record's `G` is `I_pair`, the pair-factor-free Schwarz bound of
 `ao/pairs.py`, from the INJECTED `bound(zeta, L) -> float` (tests pass
-`ao.pairs.pair_bound` with `reference.pq.one_centre`, or `ao.j.pair_bound_pq`
+`ao.pairs.pair_bound` with `reference.pq.one_centre`, or `eri.j_coulomb.j.pair_bound_pq`
 with `reference.pq.pq`; this module reaches `reference/` nowhere). It is the
 real bound on the BRA side as well -- not `1.0`, which is the `jp=` seam's
 deliberate unscreened placeholder -- because the kernel screens on
@@ -47,7 +47,8 @@ screen multiplies `I_bra` by. A bra's `key` is its `G`; the bra list stays in
 pair order, because the kernel maps one warp per bra BY INDEX.
 
 THE SORT. Each class's kets are sorted DESCENDING by `key`, STABLY --
-`sorted(..., key=..., reverse=True)`, `ao.j._sorted_kets`' choice, matched and
+`sorted(..., key=..., reverse=True)`, `eri.j_coulomb.j._sorted_kets`' choice, matched
+and
 not re-decided (`key=lambda r: -r.key` is not the same on ties). That is the
 precondition of Alg. 1's `break`: a fixed non-negative `G_bra` times a
 non-increasing `key` is non-increasing, so the first ket under `tau` ends the
@@ -68,10 +69,10 @@ present and empty (`ClassLaunch` refuses an empty side). Its kernels are
 function of `(lp, lq)` and `n_batches` only, so ONE build serves every shell
 class `(la, lb | lc, ld)` that sums to it, and one launch carries every batch
 kernel. Kernels are memoised per Spec (building is pure); records are not
-(#142's hazard: `ao.j` memoises nothing, and the tau ladder must measure the
+(#142's hazard: `eri.j_coulomb.j` memoises nothing, and the tau ladder must measure the
 screen, not a cache).
 
-THE BATCH COUNT is asked of the plan per class, `ao.drive.KernelJP`'s
+THE BATCH COUNT is asked of the plan per class, `eri.j_coulomb.drive.KernelJP`'s
 `strict` contract: a count `plan.pipeline.plan` refuses (#64) raises with the
 class and the count (`strict=True`, the default), or the class is built at
 ONE batch and `(lp, lq, n_batches)` recorded in `LaunchPlan.refused`
@@ -121,9 +122,9 @@ exponent for `T` and `V`. A cross build has two bases, every ordered pair
 
 THE ORACLE (#142) -- the plan WALKED, in Python:
 
-    walk(plan, basis, D, *, pq)                       -> ao.j.Screened
+    walk(plan, basis, D, *, pq)                       -> eri.j_coulomb.j.Screened
     coulomb_launched(basis, D, *, pq, tau, n_batches=1, bound=None,
-                     density_sort=True, strict=True)  -> ao.j.Screened
+                     density_sort=True, strict=True)  -> eri.j_coulomb.j.Screened
 
 `jgen`'s `coulomb_launched`. Per `ClassLaunch`, per bra record (pair order),
 down that class's sorted ket list, Alg. 1's `break` at the first ket with
@@ -131,14 +132,14 @@ down that class's sorted ket list, Alg. 1's `break` at the first ket with
 `sum_q [p|q] D_q` per `p` (eq. 21, `pq` injected), every class's
 contributions to one bra record are summed with `math.fsum`, and eq. 20
 transforms the record's `J_p` into its block `J[a][b]`, mirrored (eq. 22's
-scatter). The result is `ao.j.Screened`, the ONE screening record both paths
-fill (`ao/j.py`, "THE SORTED `break`"). It is the independent witness the
+scatter). The result is `eri.j_coulomb.j.Screened`, the ONE screening record both paths
+fill (`eri/j_coulomb/j.py`, "THE SORTED `break`"). It is the independent witness the
 staged device driver (#143) must reproduce, and it is pure Python, so it
 runs in the push gate.
 
-WHAT EQUALS WHAT. With `bound` defaulted to `ao.j.pair_bound_pq` through the
+WHAT EQUALS WHAT. With `bound` defaulted to `eri.j_coulomb.j.pair_bound_pq` through the
 same `pq`, every key is bit-identical to the host sweep's, so the oracle
-skips EXACTLY the pairs `ao.j.coulomb_matrix_screened` skips -- the
+skips EXACTLY the pairs `eri.j_coulomb.j.coulomb_matrix_screened` skips -- the
 partition of the one global ket list into per-class lists cannot change
 which kets clear the threshold for a given bra -- and, each per-ket term
 being computed by the host's own arithmetic and each `J_p` accumulated with
@@ -245,7 +246,7 @@ class LaunchPlan:
 
 
 def class_spec(lp: int, lq: int, n_batches: int = 1) -> Spec:
-    """The generation key of class `(lp, lq)`: `ao.drive.class_spec` of the
+    """The generation key of class `(lp, lq)`: `eri.j_coulomb.drive.class_spec` of the
     canonical shell class `(lp, 0 | lq, 0)` -- the kernel reads only the sums
     (`kernel.split`), so every shell class with these sums builds the same
     kernels (test/test_launch.py pins it)."""
@@ -290,7 +291,7 @@ def launches(basis: Basis, D: object, *, bound: Bound, n_batches: int,
         start = len(side)
         side.extend(PairRec(a, b, k, L, g, g) for k, g in enumerate(gs))
         blocks.setdefault(L, []).append((a, b, start, len(side)))
-        # ao.j's pre-contraction, one record per primitive pair in the same
+        # eri.j_coulomb.j's pre-contraction, one record per primitive pair in the same
         # (i outer) order, with the unique sweep's weight folded in.
         w = 1.0 if a == b else 2.0
         kts = _kets(basis, rows, [(a, b, w)], pq=_no_pq, tau=0.0)
@@ -404,7 +405,7 @@ def coulomb_launched(basis: Basis, D: object, *, pq: PQ, tau: float,
                      density_sort: bool = True,
                      strict: bool = True) -> Screened:
     """`walk(launches(...), basis, D, pq=pq)`. `bound` defaults to
-    `ao.j.pair_bound_pq` through `pq` -- the host sweep's own bound, so the
+    `eri.j_coulomb.j.pair_bound_pq` through `pq` -- the host sweep's own bound, so the
     two screen identically (module docstring, "WHAT EQUALS WHAT")."""
     if bound is None:
         def bound(zeta: float, L: int) -> float:
@@ -426,7 +427,7 @@ class OneERec:
     """One primitive-pair record of a one-electron build: EVERYTHING the
     `S`, `T` and `V` kernels read per record, and nothing else.
 
-    `i <= j` the shell pair (`ao.one_electron.matrix`'s upper triangle by
+    `i <= j` the shell pair (`one_electron.one_electron.matrix`'s upper triangle by
     shell), `prim` its index in `ao.pairs.primitive_pairs(shells[i],
     shells[j])`; `zeta`, `P`, `XPA = P - A`, `XPB = P - B`; `s = c_a c_b
     (pi/zeta)^{3/2}` (`ao.density.epair`'s, the kernels' `s` / `s_ab`); `eb` the
@@ -590,7 +591,7 @@ def one_electron_launch(basis: Basis, nuclei: Sequence[Nucleus], *,
     shells, off = basis.shells, basis.offsets
     recs: dict[tuple[int, int], list[OneERec]] = {}
     blocks: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {}
-    for i, j in pl.kept:  # row-major, i outer: ao.one_electron.matrix's
+    for i, j in pl.kept:  # row-major, i outer: one_electron.one_electron.matrix's
         sa, sb = shells[i], shells[j]
         pps = primitive_pairs(sa, sb)
         ep = epair(sa, sb, pps)
@@ -617,7 +618,7 @@ def one_electron_launch(basis: Basis, nuclei: Sequence[Nucleus], *,
 
 
 def _e_rec(a: Ang, b: Ang, r: OneERec) -> tuple[float, ...]:
-    """`ao.hermite.e_block` from the RECORD's `XPA` / `XPB` (the block reads
+    """`mmd.hermite.e_block` from the RECORD's `XPA` / `XPB` (the block reads
     only `P - A` and `P - B`), in its order and association."""
     axes = [e_axis(a[d], b[d], r.zeta, r.XPA[d], r.XPB[d]) for d in range(3)]
     out = []
@@ -649,7 +650,7 @@ def _t_rec(la: int, lb: int, carts, r: OneERec) -> list[float]:
 def _v_rec(la: int, lb: int, carts, r: OneERec, nuclei: Sequence[Nucleus],
            one_centre: OneCentre, acc: list[float]) -> None:
     """Adds INTO the shell pair's `acc`, one `-Z v` per (nucleus, row):
-    `ao.potential.potential_block` keeps ONE accumulator chain over the
+    `one_electron.potential.potential_block` keeps ONE accumulator chain over the
     records AND the nuclei, and a per-record partial sum would reassociate
     it (one ulp apart on H2 when tried)."""
     block = [tuple(r.s * x for x in _e_rec(a, b, r)) for a, b in carts]
@@ -673,9 +674,10 @@ def walk_one_electron(plan: OneELaunch, basis: Basis, target: Target, *,
     Each record's contribution is computed from the record's own fields
     (for `V` also the launch's nuclei and the INJECTED `one_centre`, the
     signature `ao.pairs.OneCentre`), the contributions of one shell pair
-    are summed in record order from `0.0` -- `ao.overlap`, `ao.kinetic` and
-    `ao.potential`'s arithmetic, in their order -- and the blocks are placed
-    by `ao.one_electron.matrix` over `plan.kept`. So the walk equals
+    are summed in record order from `0.0` -- `one_electron.overlap`,
+    `one_electron.kinetic` and
+    `one_electron.potential`'s arithmetic, in their order -- and the blocks are placed
+    by `one_electron.one_electron.matrix` over `plan.kept`. So the walk equals
     `overlap_matrix(basis, pairs=plan.kept)` (and the other two) TO 0: a
     difference means a record carries a wrong value, never a rounding.
     `basis` supplies only the momenta and the AO layout. Nothing is
@@ -847,7 +849,7 @@ def walk_cross_overlap(plan: XLaunch, basis_a: Basis, basis_b: Basis
                        ) -> list[list[float]]:
     """`S_{B1,B2}` from the PLAN alone: each record's `s E^{ab}_0` from its
     own fields, a shell pair's records summed in order from `0.0`, the
-    blocks placed by `ao.one_electron.rectangular` over `plan.kept` -- so
+    blocks placed by `one_electron.one_electron.rectangular` over `plan.kept` -- so
     the walk equals `cross_overlap_matrix(basis_a, basis_b,
     pairs=plan.kept)` TO 0. The bases supply only the momenta and layout."""
     sha, shb = basis_a.shells, basis_b.shells

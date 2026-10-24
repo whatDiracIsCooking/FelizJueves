@@ -15,7 +15,7 @@ where it ran and what is not done.
   `(lP, lQ)` (`kernel_metric.py`, #414), emitted by
   `python -m felizjueves.emit --metric-l [LMAX]` as `metric_{lP}{lQ}` (#415).
   The ladder is never in the bare default and is not in `KERNEL_GEN_CMD`.
-- **Host reference:** `ao/metric.py` (#412), with its `[p|q]` evaluator
+- **Host reference:** `eri/density_fit/metric.py` (#412), with its `[p|q]` evaluator
   injected.
 - **Oracle:** libcint's `int2c2e_cart` on PySCF's
   `df.make_auxmol(mol, 'cc-pvtz-jkfit')`, tracked as four schema-3 row
@@ -78,7 +78,7 @@ corrects the issue text's `c·N·(π/α)^{3/2}`. A `Shell`'s coefficients
 multiply **unnormalised** primitives (`ao/shell.py`), and
 `test/oracle/basis.py` already puts libcint's normalisation into `c`.
 Multiplying `ao.shell.primitive_norm` in again would normalise twice.
-`ao.metric.aux_dress` is the one place a dressing is applied. Two
+`eri.density_fit.metric.aux_dress` is the one place a dressing is applied. Two
 witnesses check it:
 
 - the aux overlap from the same shells against the fixture's `int1e_ovlp`
@@ -106,16 +106,16 @@ The device spelling of `E` is `e_fragment.center_fragment(l)` (#410):
 Its locals are named `C{x,y,z}_i_t`, not `E…`, so that `(mn|P)` can inline
 it beside `block_fragment` without a clash; `kernel_eri3` now inlines
 the two side by side (`three_center.md`). It is pinned bitwise to
-`ao.hermite.e_axis` at `X_PA = 0` for `l = 0..4` (`test_e_fragment.py`).
-The host's `ao.metric.center_e` is `ao.hermite.e_block` at that point, the
+`mmd.hermite.e_axis` at `X_PA = 0` for `l = 0..4` (`test_e_fragment.py`).
+The host's `eri.density_fit.metric.center_e` is `mmd.hermite.e_block` at that point, the
 same arithmetic.
 
-## The host reference, `ao/metric.py`
+## The host reference, `eri/density_fit/metric.py`
 
 `metric_block` and `metric_block_and_scale` compute one ordered aux shell
 pair, the second with its absolute-value twin. `metric_matrix` and
 `scale_matrix` place every pair `i ≤ j`, mirrored. A diagonal shell pair
-writes its lower triangle only, which is `ao.schwarz`'s rule. `ao` imports
+writes its lower triangle only, which is `eri.schwarz`'s rule. `ao` imports
 neither `reference/` nor `plan/`: the evaluator arrives as `pq=`.
 
 `metric_classes(aux)` is the staging. It returns one `MetricClass` per
@@ -180,8 +180,8 @@ The kernel contract:
   exception: `s` is the parameter `s_aux`, because the prelude declares a
   local `s = −2θ²` (`PARAM_OF` maps the name). `n_rec` is cast to `(void)`.
 
-`ao/metric_drive.py` is the interpreted adapter (`metric_matrix_kernel`,
-with Boys injected), after `ao/drive.py`. Layering rules `metric_builder`
+`eri/density_fit/metric_drive.py` is the interpreted adapter (`metric_matrix_kernel`,
+with Boys injected), after `eri/j_coulomb/drive.py`. Layering rules `metric_builder`
 (off `ao`, `interp`, `reference/`, `emit` and `device`) and
 `metric_adapter` keep the two apart (`test_layering.py`).
 

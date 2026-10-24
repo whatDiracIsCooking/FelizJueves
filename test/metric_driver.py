@@ -5,7 +5,7 @@
     build_on_card(classes, n_aux, backend, tc, workdir,
                   run_device_binary)                 -> [run] -> M
 
-The records are `ao.metric.metric_classes`' (every aux shell pair `P <= Q`
+The records are `eri.density_fit.metric.metric_classes`' (every aux shell pair `P <= Q`
 staged with `lP <= lQ`, swapped when the basis order has the higher `l`
 first; per class one record table and two record ranges per pair), the
 kernels `kernel_metric.build_metric_kernel`'s, emitted by `emit/cuda.py` /

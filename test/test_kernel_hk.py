@@ -6,18 +6,18 @@ read as K's Hermite `am`) -- in BOTH class modes: canonical (the orbit
 representative's kernel, launched with the class's permutation) and
 `ordered` (the class's own kernel). Nothing above L = 4 is built or run.
 
-THE ERIs, BITWISE. The tap `g` (`eris=True`) is `==` `ao/hgp_drive.py`'s
+THE ERIs, BITWISE. The tap `g` (`eris=True`) is `==` `eri/hgp_drive.py`'s
 `eri_block` on the same built-order shells, bit for bit: the nest and the
 quartet scalars are `kernel_hj`'s (bra outer, the drive's operation order),
 and the records are formed by the drive's own expressions
 (`test_kernel_hj.records`).
 
-THE DEPOSIT, AGAINST `ao/k.py` FOR THAT CLASS. The witness is
-`ao.k.k_quartet` -- the MMD staged contraction `X[a][b] = sum_cd D_cd
+THE DEPOSIT, AGAINST `eri/k_exchange/k.py` FOR THAT CLASS. The witness is
+`eri.k_exchange.k.k_quartet` -- the MMD staged contraction `X[a][b] = sum_cd D_cd
 (ac|bd)`, a different recurrence and a different contraction order -- summed
 over exactly the class's ordered quadruples (`a` of `l = la`, `c` of `lc`,
 `b` of `lb`, `d` of `ld`) into `K[a][b]`, which is the class's share of
-`ao.k.exchange_matrix_reference` (every ordered quadruple at weight 1, no
+`eri.k_exchange.k.exchange_matrix_reference` (every ordered quadruple at weight 1, no
 symmetry). Every `K` element outside the class's (row `l = la`, column
 `l = lb`) blocks must be exactly 0. A whole s/p build -- every class
 together -- is held to `exchange_matrix_reference` itself.
@@ -30,11 +30,11 @@ comparison is
 by the triangle inequality through the exact `K` of the class:
 `|K_kernel - K| <= 1e-12 s_hgp` and `|ref - K| <= 1e-12 s_mmd`. Each `s` is
 its engine's absolute-value ERI twin carried through `K`'s linear sum on
-`|D|`: `s_hgp = SUM_q |D_cd| scale_hgp(ac|bd)` with `ao.hgp_drive`'s twin in
-the orientation the kernel ran, `s_mmd` the same with `ao.eri`'s twin --
-which `ao/k.py`'s docstring ("THE SCALE") and test_ao_k.py (to 1e-14
+`|D|`: `s_hgp = SUM_q |D_cd| scale_hgp(ac|bd)` with `eri.hgp_drive`'s twin in
+the orientation the kernel ran, `s_mmd` the same with `eri.eri`'s twin --
+which `eri/k_exchange/k.py`'s docstring ("THE SCALE") and test_ao_k.py (to 1e-14
 relative) state is exactly `k_quartet`'s own `K` scale, and test_ao_k.py
-holds `k_quartet` to the `ao.eri` contraction within `1e-14` of it. `1e-12`
+holds `k_quartet` to the `eri.eri` contraction within `1e-14` of it. `1e-12`
 is test/test_hgp_eri.py's `TOL`: `gamma_n` for `n` about 9000 roundings, the
 per-ERI cross-engine bound it pins (HGP against MMD within `1e-12
 (scale_mmd + scale_hgp)`); the deposit adds at most `n_cd x n_quartets`
@@ -49,7 +49,7 @@ class whenever `lb != lc` -- another recurrence, other `K` blocks -- and its
 `K` misses the class's reference by orders of magnitude beyond the bound.
 
 CAN FAIL: a deposit reading the wrong density block (`density=` mutation:
-J's `(2, 3)`, or `(0, 1)`) misses `ao/k.py` far beyond the tolerance.
+J's `(2, 3)`, or `(0, 1)`) misses `eri/k_exchange/k.py` far beyond the tolerance.
 
 Fast tier: every case here is `L <= FAST_L_MAX` (tiers.py). No compiler,
 no card, no emission (#407 emits).
@@ -356,7 +356,7 @@ def deposit_scale(basis, D, xs, gidx, scale_flat, out) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The ERIs, bitwise against ao/hgp_drive
+# The ERIs, bitwise against eri/hgp_drive
 # ---------------------------------------------------------------------------
 
 
@@ -372,7 +372,7 @@ def test_the_tap_is_hgp_drive_bitwise(cls, mode) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The deposit against ao/k.py, the class's quadruples
+# The deposit against eri/k_exchange/k.py, the class's quadruples
 # ---------------------------------------------------------------------------
 
 
@@ -387,8 +387,8 @@ def _mask(basis, la, lb) -> np.ndarray:
 
 @cache
 def reference(cls):
-    """`(ref, s_mmd, mask)`: `ao.k.k_quartet` over the K class's ordered
-    quadruples, its `ao.eri` twin, and the (row l = la, column l = lb)
+    """`(ref, s_mmd, mask)`: `eri.k_exchange.k.k_quartet` over the K class's ordered
+    quadruples, its `eri.eri` twin, and the (row l = la, column l = lb)
     blocks (module docstring)."""
     basis = basis_for(cls)
     D = density(basis.n_ao)
@@ -456,7 +456,7 @@ def test_canonical_and_ordered_agree(cls) -> None:
                          ids=str)
 def test_a_wrong_density_block_fails(cls, mode) -> None:
     """The mutation: K_ab reading J's `D` block (ERI positions (2, 3), the
-    ket pair `b, d`) or the bra pair's `(0, 1)` misses `ao/k.py` by far
+    ket pair `b, d`) or the bra pair's `(0, 1)` misses `eri/k_exchange/k.py` by far
     more than the tolerance."""
     want, s_mmd, mask = reference(cls)
     for wrong in ((2, 3), (0, 1)):
@@ -473,7 +473,7 @@ def test_an_ao_order_am_builds_a_different_wrong_class(ao) -> None:
     """The AO-order trap (#196, #401): shells `(la, lb, lc, ld)` with
     `lb != lc`. K's class is `(la, lc | lb, ld)`; spelling `am` in AO
     order builds a DIFFERENT class (another orbit, another kernel) whose
-    `K` lands on other blocks and misses `ao/k.py` far beyond the bound,
+    `K` lands on other blocks and misses `eri/k_exchange/k.py` far beyond the bound,
     in both modes -- while the Hermite spelling passes."""
     la, lb, lc, ld = ao
     assert lb != lc
@@ -547,7 +547,7 @@ def test_a_perm_outside_the_orbit_deposits_nothing() -> None:
 @pytest.mark.parametrize("mode", MODES)
 def test_every_class_together_is_the_whole_ordered_sweep(mode) -> None:
     """On an s/p basis (every class L <= 4): the sum of all 16 K classes'
-    launches is `ao.k.exchange_matrix_reference` (every ordered quadruple,
+    launches is `eri.k_exchange.k.exchange_matrix_reference` (every ordered quadruple,
     weight 1), within the same derived bound; symmetric with no mirror."""
     basis = _sp_basis()
     D = density(basis.n_ao, 7)

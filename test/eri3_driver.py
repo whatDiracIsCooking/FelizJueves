@@ -5,7 +5,7 @@
     build_on_card(classes, n_ao, n_aux, backend, tc, workdir,
                   run_device_binary)                     -> [run] -> T
 
-The records are `ao.eri3.eri3_classes`' (every AO shell pair `i <= j`
+The records are `eri.density_fit.eri3.eri3_classes`' (every AO shell pair `i <= j`
 staged `la <= lb`, swapped when the basis order has the higher `l` first,
 crossed with every aux shell; per class one bra record table, one aux record
 table, and two record ranges and three offsets per cell), the kernels

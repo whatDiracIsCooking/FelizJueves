@@ -28,7 +28,7 @@ scatter-tail`, not a test):
    -- each slot holds the value block-fab adds atomically, so the two `F`s
    are sum trees over the same addends and `|F_scatter - F_H7| <= 2
    gamma_{n-1} SUM |a_i|` per element over H7's `n` addends -- and against
-   `ao.fock`'s sweep at the literal kernel's own `TOL`. One bra by one ket
+   `eri.fock.fock`'s sweep at the literal kernel's own `TOL`. One bra by one ket
    of distinct shells is BITWISE the literal kernel.
 4. THE WALK (`walk_f`, #286): H2O/STO-3G and H2O/6-31G (every class L <= 4)
    built through `scatter` streams -- the scatter after each F launch --

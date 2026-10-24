@@ -1,6 +1,6 @@
 """Mixed-precision K, and the `D` / `E` operand narrowing (#347, lane M9).
 
-The K twin of #346's `mixed` (`j_levers/mixed.py`), with the predecessor's
+The K twin of #346's `mixed` (`eri/j_coulomb/levers/mixed.py`), with the predecessor's
 finding attached: on `jgen`, FP32 COMPUTE ALONE regressed the clock (+71% at
 `(dp|dp)`) although it won on spill, and the measured cause was the FP64 `D`
 and `E` operand traffic; narrowing those operands too flipped it to -73%,
@@ -71,7 +71,7 @@ and the narrowed region is the literal one's. A lever that REPLACES
 here and is #342's to decide.
 
 NOT BITWISE against the literal kernel, by construction: held to
-`ao.k.k_quartet` at THE fp32 tier, `F32_REL` of the quartet's own scale
+`eri.k_exchange.k.k_quartet` at THE fp32 tier, `F32_REL` of the quartet's own scale
 (test/oracle/tolerance.py), never a tier loosened for it, and shown to
 MISS the fp64 tier (the build really is fp32). Without either lever the
 built kernel is the literal one, byte for byte (test/test_k_seams.py).

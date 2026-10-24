@@ -1,7 +1,7 @@
 """The dedicated sub-DAG VRR schedule: each VRR group scheduled for itself
 (#357, milestone 13 lane H6).
 
-#350's batched VRR (`f_levers/batched_vrr.py`) cuts the boundary into
+#350's batched VRR (`eri/fock/levers/batched_vrr.py`) cuts the boundary into
 schedule-contiguous groups and runs each group's closure of the VRR DAG
 inside its own primitive nest, in the PARENT DAG's order filtered to the
 closure (`hgp.vrr.group_dag`'s default). That order's priorities are the

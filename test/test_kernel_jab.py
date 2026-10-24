@@ -1,6 +1,6 @@
 """`kernel_jab`: the bra transform and scatter, `Target.JAB`, interpreted (#154).
 
-THE WITNESS is `ao.j.jab_from_host`, the host's own bra transform and
+THE WITNESS is `eri.j_coulomb.j.jab_from_host`, the host's own bra transform and
 scatter through the `jab=` seam (#151), which `coulomb_matrix` is `==` to
 itself with (test_ao_j.py). Against it:
 
@@ -303,7 +303,7 @@ def test_every_write_to_J_is_an_atomic_add_with_its_reason(cls):
 
 
 def test_the_builder_reaches_neither_ao_nor_the_interpreter():
-    """The kernel is checked against `ao.j` in the interpreter: neither may
+    """The kernel is checked against `eri.j_coulomb.j` in the interpreter: neither may
     be its ancestor, nor `reference/` (test_layering.py holds the rule)."""
     graph = _graph()
     seen, todo = set(), ["eri.j_coulomb.kernel_jab"]

@@ -1,4 +1,5 @@
-"""The register K write-back lever, `k_levers/shuffle.py` (#349), interpreted.
+"""The register K write-back lever, `eri/k_exchange/levers/shuffle.py` (#349),
+interpreted.
 
 The lever keeps each reduced `K[a, b]` in a register and has the lane that
 owns element `o` select `Kab[o]` and store it, one lane-parallel store per
@@ -16,7 +17,7 @@ falls back to #345's write-back statement for statement. What is asserted:
    the owner guard, the literal `Ksh` (zero extra bytes), no `Raw`, and no
    `LaneBroadcast` (the butterfly already leaves the sum on every lane; the
    module docstring says why).
-4. PARITY: per bra record against `ao.k.k_quartet` bit for bit at one lane;
+4. PARITY: per bra record against `eri.k_exchange.k.k_quartet` bit for bit at one lane;
    against the literal kernel and against `coalesced` bit for bit at 1, 4
    and 32 lanes (the same butterfly on the same values); the 3-batch split
    as lane-parallel atomics, bit for bit the literal batched kernels; the

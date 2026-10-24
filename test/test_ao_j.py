@@ -1,4 +1,4 @@
-"""`ao.j`: the Coulomb matrix `J_mn`, by two sweeps that must agree, against
+"""`eri.j_coulomb.j`: the Coulomb matrix `J_mn`, by two sweeps that must agree, against
 PySCF's `get_jk`.
 
 THE TWO WITNESSES.
@@ -16,7 +16,7 @@ THE TWO WITNESSES.
             against `einsum(int2e, dm)` before writing it.
 
 TAU = 0.0 THROUGHOUT, and that is the reason screening cannot hide an error
-here: at `tau = 0` `ao.j` evaluates no bound and takes no screening branch
+here: at `tau = 0` `eri.j_coulomb.j` evaluates no bound and takes no screening branch
 (its module docstring), and the bound product is >= 0 anyway, so every
 (bra, ket) record pair is summed. The screen's own tests are at the bottom,
 and #88 is the tau ladder.
@@ -34,7 +34,7 @@ THE TOLERANCES, stated and not tuned.
             sweep `J[a][b]` and `J[b][a]` are computed independently, so
             that is where the 1e-15 says something.
   get_jk    |J - J_pyscf| <= 1e-12 scale_J, element by element, DERIVED:
-            `scale_J` (`ao.j.coulomb_matrix_and_scale`) is the same sum with
+            `scale_J` (`eri.j_coulomb.j.coulomb_matrix_and_scale`) is the same sum with
             every factor in absolute value, which equals
             sum_{ls} scale_eri(mn|ls) |D_ls| for #85's per-element ERI scale.
             #85 holds every ERI to 1e-12 scale_eri against libcint, so by the

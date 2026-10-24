@@ -2,10 +2,10 @@
 
 `launch.walk` / `launch.coulomb_launched` walk `launches()` -- per class, per
 bra record, down the class's sorted ket list, Alg. 1's `break` at the first
-`G_bra * key < tau` -- and return `ao.j.Screened`, the one screening record
+`G_bra * key < tau` -- and return `eri.j_coulomb.j.Screened`, the one screening record
 both paths fill. Three witnesses, three ancestries:
 
-  host      `ao.j.coulomb_matrix_screened`: the same screen and the same
+  host      `eri.j_coulomb.j.coulomb_matrix_screened`: the same screen and the same
             break over ONE global sorted ket list, where the oracle walks
             per-class lists. Equality is TO 0, and is a statement about
             WHICH terms were summed: each `J_p` is an `fsum` on both paths, and
@@ -13,7 +13,7 @@ both paths fill. Three witnesses, three ancestries:
             disagree the partition or the key is wrong, never the tolerance.
             The counts (`n_pairs`, `n_skipped`) and the skipped bounds
             (`max_skipped`, the `fsum` `dropped`) are equal too.
-  ordered   `ao.j.coulomb_matrix_reference` (every ordered shell pair, weight
+  ordered   `eri.j_coulomb.j.coulomb_matrix_reference` (every ordered shell pair, weight
             1) at `tau = 0`: the off-diagonal-weight check. A different sum
             of the same terms, so not bit-equal; held to test_ao_j.py's
             stated SWEEP_TOL (1e-14 of max|J|), the bound that comparison
@@ -21,7 +21,8 @@ both paths fill. Three witnesses, three ancestries:
   libcint   the tracked `get_jk` fixtures for H2 and H2O/STO-3G, to
             test_ao_j.py's inherited `1e-12 scale_J`. No PySCF is imported.
 
-THE STAGED DRIVER (#143's deferred comparison). `ao.staged.coulomb_matrix_staged`
+THE STAGED DRIVER (#143's deferred comparison).
+`eri.j_coulomb.staged.coulomb_matrix_staged`
 over the SAME plan, at several `tau` (0 and three that skip a real share):
 
   exact     the ket-loop count. The kernel screens `Ib * (Iq * Dmax)`, and
@@ -378,8 +379,9 @@ def test_the_tau_ladder_through_the_oracle(name):
 #
 # `launch.walk_one_electron` reproduces `S`, `T` and `V` from the PLAN alone
 # (each record's contribution from the record's own fields), against the
-# host builds `ao.overlap.overlap_matrix`, `ao.kinetic.kinetic_matrix` and
-# `ao.potential.potential_matrix` -- TO 0, on every tracked basis with a
+# host builds `one_electron.overlap.overlap_matrix`,
+# `one_electron.kinetic.kinetic_matrix` and
+# `one_electron.potential.potential_matrix` -- TO 0, on every tracked basis with a
 # converted record, plus test_ao_pairs.py's H2 chain of eight. With #265's
 # `reference.boys` T_MAX = 1e6, V reaches every one of them. Then the
 # screen, per operator with its own bound (`ao.pairs`' three): at tau = 0

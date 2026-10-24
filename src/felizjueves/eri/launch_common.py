@@ -9,14 +9,14 @@
 These were `launch.py`'s internals (`PairRec`, `_sorted_desc`, `_nonneg`,
 `_admits`, `_batches_for`), borrowed by its siblings: `launch_k` (#204) took
 all of them, `launch_kblock` (#481) `PairRec`, `launch_f` (#285) the sort and
-the bound check, and `ao/staged` (#143) `PairRec`. They are moved here
+the bound check, and `eri/j_coulomb/staged` (#143) `PairRec`. They are moved here
 unchanged in behaviour and made public, so no module imports a `_`-prefixed
 name from `launch`. The J-only plan (`ClassLaunch`, `LaunchPlan`,
 `class_spec`, `launches`, `walk`) stays in `launch.py`, which imports this
 module; this module imports no launch plan.
 
 THE SORT is `sorted(..., key=lambda r: r.key, reverse=True)`,
-`ao.j._sorted_kets`' form exactly: STABLE, so ties keep pair order
+`eri.j_coulomb.j._sorted_kets`' form exactly: STABLE, so ties keep pair order
 (`key=lambda r: -r.key` is not the same on ties). Every plan writes its own
 key into `PairRec.key` (J's `G * Dmax`, K's injected key, F's density
 block), so the one sort serves them all.
@@ -71,7 +71,7 @@ class PairRec:
 
 
 def sorted_desc(recs: Sequence[PairRec]) -> list[PairRec]:
-    """Descending by `key`, STABLE -- `ao.j._sorted_kets`' form exactly."""
+    """Descending by `key`, STABLE -- `eri.j_coulomb.j._sorted_kets`' form exactly."""
     return sorted(recs, key=lambda r: r.key, reverse=True)
 
 

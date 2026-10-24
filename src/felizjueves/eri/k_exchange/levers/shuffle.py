@@ -37,7 +37,7 @@ ELIGIBILITY IS THE WARP'S. The ladder is a single round when `n_a n_b <=`
 the warp width, and `ceil(n_a n_b / W)` rounds otherwise (each round re-runs
 the reductions), so a block wider than the warp falls back to `coalesced`'s
 write-back, statement for statement (`write_back_at`). The IR does not know
-the width (`ir.py`), and a K lever may not import `device` (test_layering's
+the width (`ir/__init__.py`), and a K lever may not import `device` (test_layering's
 `k_lever` rule), so the width it builds for is `MIN_WAVEFRONT`, the
 narrowest wavefront the kernel is emitted for -- 32 on both cards
 (`device.ARCHS`, pinned by a test) -- and `write_back_at(64)` is the wave64
@@ -49,7 +49,7 @@ rounds and the same bits.
 THE ARITHMETIC IS THE LITERAL KERNEL'S: the same `WarpReduce` of the same
 `Ksh` slot into the same `Kab{s}`, copied unchanged into `K` -- bit for bit
 the literal kernel's `K` at any lane count, and with one lane
-`ao.k.k_quartet`'s (test/test_k_lever_shuffle.py).
+`eri.k_exchange.k.k_quartet`'s (test/test_k_lever_shuffle.py).
 
 THE SPLIT CLASS (`n_batches > 1`): the owner lane's store is an `AtomicAdd`,
 each element added by exactly one lane, so no lane-0 guard is needed (as in

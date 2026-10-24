@@ -1,4 +1,5 @@
-"""`ao.k.density_decay`: the per-block density factor of [Fock, §4.3.1] (#484).
+"""`eri.k_exchange.k.density_decay`: the per-block density factor of [Fock, §4.3.1]
+(#484).
 
 THE CLAIMS, on a molecule whose density decays -- `chain()`, six H2 4 bohr
 apart, one s primitive per atom, and a synthetic density `D_mn = 0.6

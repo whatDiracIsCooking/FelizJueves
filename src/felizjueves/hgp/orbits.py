@@ -43,7 +43,7 @@ is not that member (`(ss|ps)`, not the ladder's `(ss|sp)`; `(ds|ps)`, not
 `(sp|sd)`). `F` is left as it is (milestone 14, #402: recorded, not changed).
 
 THE PERMUTATION (`Orientation`). A block is laid out `[a][b][c][d]`, each
-shell's Cartesians in `cartesians` order, the first index outer (`ao.eri`'s
+shell's Cartesians in `cartesians` order, the first index outer (`eri.eri`'s
 and `hgp.hrr.targets`' layout). To get the ordered quartet's block from the
 representative's: evaluate the representative on the shells
 `shells[j] for j in Orientation.shells` (the ordered quartet's shells, put in

@@ -21,13 +21,13 @@ THE CLAIMS.
              `key`; the builder is called once per `Spec`; none is imported.
   admission  the plan admits a K `Spec` exactly when it admits the J class
              of the same split -- why `batches_for` is shared.
-  walk       the plan walked in Python reproduces `ao.k.exchange_matrix`,
+  walk       the plan walked in Python reproduces `eri.k_exchange.k.exchange_matrix`,
              `exchange_matrix_reference` and `k_from_eris` to rounding on
-             THREE molecules (below); its `scale` is ao.k's.
+             THREE molecules (below); its `scale` is eri.k_exchange.k's.
   screen     on the tau ladder the walk's `break` == its `continue` TO 0
              (fsum), skips exactly the ordered record pairs whose bound
              `(I_ac I_bd) Dm` is under tau (counted here by brute force),
-             agrees with ao.k's screened sweeps to rounding, and stays
+             agrees with eri.k_exchange.k's screened sweeps to rounding, and stays
              within `tau * scale` of K(0).
   the J key  injected as the sort key (`I_bd * max|D_bd|`, J's `Dmax`
              shape), it is REFUSED by the walk; walked anyway
@@ -343,7 +343,7 @@ def test_the_inputs_contracts():
 
 
 def test_the_staged_j_driver_refuses_a_k_plan():
-    """Why `KClassLaunch` is its own type: ao/staged.py's J driver would
+    """Why `KClassLaunch` is its own type: eri/j_coulomb/staged.py's J driver would
     otherwise read a K class as `(lp, lq)`, upload its kets with a `Dmax`
     and run eq. 20 over its bra blocks. It refuses, before any work."""
     basis, D = _case("h2_sto3g_j")
@@ -373,7 +373,7 @@ def test_the_walk_reproduces_exchange_matrix(name):
             SWEEP_TOL * big), f.__name__
     assert np.max(np.abs(K - K0)) <= SWEEP_TOL * big
     host = exchange_matrix_screened(basis, D, pq=pq, tau=0.0)
-    assert w.scale == host.scale  # counted from the plan; ao.k's R(a) R(b)
+    assert w.scale == host.scale  # counted from the plan; eri.k_exchange.k's R(a) R(b)
     assert (w.n_skipped, w.n_examined) == (0, 0)
     n_rec = len(_ordered_records(basis))
     assert w.n_pairs == n_rec * n_rec
@@ -436,7 +436,7 @@ def test_the_screened_walk_is_exact_and_bounded(name):
 
 
 def _j_key(basis: Basis, D: np.ndarray):
-    """The J engine's key, misapplied: `I_bd * max|D_bd|` (ao/k.py)."""
+    """The J engine's key, misapplied: `I_bd * max|D_bd|` (eri/k_exchange/k.py)."""
     off, sh = basis.offsets, basis.shells
 
     def key(b: int, d: int, i_bd: float) -> float:
@@ -619,7 +619,7 @@ def test_the_symmetric_sweep_refusals():
 @pytest.mark.parametrize("name", PARAMS)
 def test_the_symmetric_walk_reproduces_exchange_matrix(name):
     """At tau = 0: the mirrored walk is K, the ordered walk's K to
-    rounding, ao.k's scale exactly, over the halved record-pair set."""
+    rounding, eri.k_exchange.k's scale exactly, over the halved record-pair set."""
     basis, D = _case(name)
     pq = _pq_for(name)
     P = k_launches(basis, D, bound=partial(record_bounds, pq=pq),

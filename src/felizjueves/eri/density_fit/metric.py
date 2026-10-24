@@ -24,7 +24,7 @@ the single-center expansion
     E^{i+1}_t = (1/2alpha) E^i_{t-1} + (t+1) E^i_{t+1},   E^0_0 = 1,
 
 `E^i_t = 0` whenever `i - t` is odd (`e_fragment.center_fragment`, #410, the
-kernel's spelling of the same recurrence). Here it is `ao.hermite.e_block`
+kernel's spelling of the same recurrence). Here it is `mmd.hermite.e_block`
 at `(a, (0, 0, 0))` with `A = B = P`: the seed is `exp(alpha * 0 * 0) = 1`,
 the `X_PA` term contributes `0 * E`, and `X_PB` is never read (`j = 0`), so
 it is the single-center `E` exactly; test_e_fragment.py pins the fragment to
@@ -39,7 +39,7 @@ THE INTEGRAL. For aux primitives `i` of `P` (centre `A`) and `k` of `Q`
     theta^2 = alpha_i alpha_k / (alpha_i + alpha_k),
 
 with `[t|tau]` the INJECTED evaluator's (`pq(t, tau, PQ, theta)`, as in
-`ao.eri`; `ao` imports neither `reference/` nor `plan/`), so the sign and
+`eri.eri`; `ao` imports neither `reference/` nor `plan/`), so the sign and
 `(2/sqrt(pi)) theta` are the evaluator's, inside its `[0]^(m)`.
 
 WHERE THE DRESSING GOES, decided once, as `ao.pairs.dress` decides it for a
@@ -61,19 +61,19 @@ normalisation `N` -- written `s = c N (pi/alpha)^{3/2}` in #412 -- is already
 in `c` (put there by `test/oracle/basis.py` from libcint's), and multiplying
 `ao.shell.primitive_norm` in here as well would normalise twice. The aux
 overlap from the same shells against the fixture's `int1e_ovlp` is the
-witness (test_ao_metric.py, first). And `ao.eri` with an exponent-0 dummy
+witness (test_ao_metric.py, first). And `eri.eri` with an exponent-0 dummy
 `s` shell is NOT this integral's route: its primitive normalisation goes to
 0 with the exponent.
 
 THE SCALE. `scale` is the same sum with every term replaced by its absolute
-value (as `ao.eri`'s), so a tolerance relative to it is a statement about
+value (as `eri.eri`'s), so a tolerance relative to it is a statement about
 rounding, not about how much the sum happened to cancel.
 
 THE LAYOUT. A block's rows run over `cartesians(lP)`, columns over
 `cartesians(lQ)` -- AO order on each side. `metric_matrix` places every aux
 shell pair `i <= j` in basis order at `[off_i + a][off_j + b]` and its
 mirror; a DIAGONAL shell pair writes its lower triangle `a >= b` only,
-mirrored (`ao.schwarz`'s and `kernel_jab`'s rule), so the matrix is exactly
+mirrored (`eri.schwarz`'s and `kernel_jab`'s rule), so the matrix is exactly
 symmetric and `(P|Q)`, `(Q|P)` -- equal exactly, not always bitwise -- are
 one value.
 
@@ -105,7 +105,7 @@ from felizjueves.mmd.hermite import e_block, hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]
-PQ = Callable[[Ang, Ang, Vec, float], float]  # ao.eri's, restated
+PQ = Callable[[Ang, Ang, Vec, float], float]  # eri.eri's, restated
 Block = tuple[tuple[float, ...], ...]
 Matrix = list[list[float]]
 

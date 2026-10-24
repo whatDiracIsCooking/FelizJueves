@@ -53,7 +53,7 @@ BIT (test/test_f_lever_ket_break.py, interpreted, every F class through
 L = 4 and H2O/STO-3G whole); the six-block skip stays, unchanged, after the
 break, for the kets the separable bound is too loose to drop. Every skipped
 quartet is still held to the exact ERIs (`walk_f` predicts the break,
-`FWalk.kernel_broken`, and the test checks each against `ao.eri`).
+`FWalk.kernel_broken`, and the test checks each against `eri.eri`).
 
 THE STREAM MUST BE THE SORTED ONE. The proof needs `G_cd` non-increasing
 along the ket batch; `walk_f` REFUSES a `ket-break` launch whose ket batch is

@@ -6,14 +6,14 @@
     launch_shape(n_pair, threads)         -> (grid, block)
 
 `(mn|mn)` is the component diagonal of the quartet `(la lb|la lb)` of one shell
-pair against itself, by McMurchie & Davidson's Hermite path (`ao/eri.py`'s
+pair against itself, by McMurchie & Davidson's Hermite path (`eri/eri.py`'s
 module docstring, its witness):
 
     (mn|mn) = SUM_{bra rec i} SUM_{ket rec k} s_i s_k
               SUM_p E^{mn}_p(i) SUM_q (-1)^{|q|} [p+q]^(0)(P_i - P_k) E^{mn}_q(k)
 
 with BOTH record sums over the SAME shell pair's primitive pairs. Then
-`Q[m, n] = sqrt(max((mn|mn), 0))` (`ao/schwarz.py`, "THE CLAMP").
+`Q[m, n] = sqrt(max((mn|mn), 0))` (`eri/schwarz.py`, "THE CLAMP").
 
 A SCHWARZ CLASS IS A PAIR THAT RUNS A QUARTET (`spec.py`). The key is the pair
 `(la, lb)`; the recurrence is the `Target.J` quartet `(la, lb | la, lb)`'s, at
@@ -57,14 +57,14 @@ coefficients are inside the host's `s` (`ao.pairs.dress`), `(2/sqrt(pi))
 theta` inside `[0]^(m)` (the prelude's `W0`), and their product is McMurchie
 & Davidson's `lambda`.
 
-ROUND-OFF, NOT BITWISE, against `ao.schwarz`: the host's `[p|q]` is
+ROUND-OFF, NOT BITWISE, against `eri.schwarz`: the host's `[p|q]` is
 `reference.pq`'s fixed recursion, the kernel's the plan's MILD DAG, and the
 host dresses each `E` entry where the kernel multiplies `s_i s_k` once.
 
 THE SCATTER, `kernel_jab`'s rule with a plain store: an off-diagonal shell
 pair (`off_a != off_b`) writes row `(a, b)` to `Q[off_a + a, off_b + b]` and
 its mirror; a diagonal one writes its lower triangle `a >= b`, mirrored. A
-staged pair has `la <= lb` (`ao.schwarz.schwarz_classes`), so the ladder needs
+staged pair has `la <= lb` (`eri.schwarz.schwarz_classes`), so the ladder needs
 no `la > lb` class.
 
 THE BOYS DOMAIN. `T = theta^2 |P_i - P_k|^2` reaches far past where the old

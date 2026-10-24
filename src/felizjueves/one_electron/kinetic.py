@@ -2,7 +2,8 @@
 
     kinetic_axis(s, j, beta)   -> K_ij  one axis, from the overlap row S_{i,.}
     kinetic_block(sa, sb)      -> T_ab  n_cart(sa) rows of n_cart(sb) floats
-    kinetic_matrix(basis)      -> T     ao.one_electron.matrix over kinetic_block
+    kinetic_matrix(basis)      -> T     one_electron.one_electron.matrix over
+    kinetic_block
 
 THE IDENTITY (milestone 11, #234). The Laplacian is separable, and on one
 axis of a Cartesian ket `x_B^j exp(-beta x_B^2)`
@@ -20,7 +21,7 @@ The `S_{i,j-2}` term EXISTS only for `j >= 2`; for `j = 0, 1` it is absent,
 not multiplied by a zero weight (`kinetic_axis` never reads column `j - 2`
 there, so a negative index cannot wrap round to the far end of the row).
 
-THE AXIS TABLES. Per axis, `S_{ij}` is `ao.hermite.e_axis(i, j, zeta, pa,
+THE AXIS TABLES. Per axis, `S_{ij}` is `mmd.hermite.e_axis(i, j, zeta, pa,
 pb)[0]` -- the `t = 0` entry, every other `Lambda_t` integrating to zero --
 for `i = 0..la` and `j = 0..lb + 2`: the table is built at `lb + 2` so that
 `S_{i,j+2}` is in range, and the overlap is its first `lb + 1` columns. Only
@@ -43,7 +44,7 @@ form catches it). No `primitive_norm` either: normalisation is already in a
 
 THE SUM ORDER. Primitive pairs in `ao.pairs.primitive_pairs` order (`i`
 outer), each pair's dressed block added left to right from `0.0` -- the order
-`ao.overlap` uses, and the one a one-thread-per-record kernel accumulates in
+`one_electron.overlap` uses, and the one a one-thread-per-record kernel accumulates in
 when interpreted.
 """
 
@@ -114,5 +115,5 @@ def kinetic_matrix(basis: Basis, *,
                    pairs: Iterable[tuple[int, int]] | None = None
                    ) -> list[list[float]]:
     """`T`, `basis.n_ao x basis.n_ao`, exactly symmetric
-    (`ao.one_electron.matrix`); `pairs` screens it (#236)."""
+    (`one_electron.one_electron.matrix`); `pairs` screens it (#236)."""
     return matrix(basis, kinetic_block, pairs=pairs)

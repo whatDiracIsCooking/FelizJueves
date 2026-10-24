@@ -26,7 +26,7 @@ against this file, not the other way round.
   (non-atomic) write-back; `build_pq_kernel` refuses a split class.
 - *A split class* (`n_batches > 1`) is `build_pq_kernels(spec)`: one kernel
   per batch of the plan, each contracting only its batch's targets and writing
-  `J_p` by atomic add (`passes.atomize`, `[JEngine, v2, §5]`), launched one
+  `J_p` by atomic add (`ir.passes.atomize`, `[JEngine, v2, §5]`), launched one
   after another into one zeroed `J`. Interpreted against `reference/` over
   every cell the plan admits for L = 0..16 × {1, 3, 6, 9}
   (`test/test_kernel_batched.py`); golden text for L = 4, `n_batches = 3`
@@ -40,7 +40,7 @@ against this file, not the other way round.
 dressing function and the Schwarz bound (`pairs.py`), the ERI block
 (`eri.py`), and `J_µν` — ket pre-contraction, `J_p`, bra back-transform
 `J_ab = Σ_p E_p^{ab} J_p` and the scatter — by two sweeps (`j.py`), all pure
-Python on the host. `J_p` can come from `reference.pq` or, through `ao.j`'s
+Python on the host. `J_p` can come from `reference.pq` or, through `eri.j_coulomb.j`'s
 `jp=` seam, from the **generated** kernel: interpreted (`drive.py`), or
 compiled and launched on both cards (`test/test_ao_j_ondevice.py`, kernels
 written by `python -m felizjueves.emit --class …`). Every one of those paths is
@@ -52,7 +52,7 @@ outside" below.
 value. It has one `ClassLaunch` per `(lp, lq)`: bra records in pair order,
 ket records sorted descending by `I_q · max|D_q|` (`[JEngine, v2, §3.3]`'s
 key), and the class's batch kernels. Three things walk it. The launch oracle
-(`launch.walk`) is pure Python. The staged driver (`ao/staged.py`) runs the
+(`launch.walk`) is pure Python. The staged driver (`eri/j_coulomb/staged.py`) runs the
 kernels interpreted. A device `main()`, generated from the plan by
 `test/plan_driver.py`, uploads each bra and ket class once, keeps one `J_p`
 buffer per bra class and launches every batch kernel into it with fp64
@@ -281,7 +281,7 @@ against a threshold `τ`.
 7).** The host reference is `src/felizjueves/mmd/hermite.py` (`e_axis`,
 `e_block`), checked by `test/test_ao_hermite.py`; the dressing is
 `ao.pairs.dress`, and it stays host-side; the host bra back-transform
-`J_ab = Σ_p E_p^{ab} J_p` is in `ao/j.py`. The device form is
+`J_ab = Σ_p E_p^{ab} J_p` is in `eri/j_coulomb/j.py`. The device form is
 `src/felizjueves/mmd/e_fragment.py` (#152): an `ir.Fragment` of this recurrence,
 undressed, bitwise `==` `e_block` for every class (ss) through (ff) when
 interpreted (`test/test_e_fragment.py`). It is inlined into the `DQ` and `JAB`
@@ -349,7 +349,7 @@ check, `E^{00}_0`, the empty top of the table, parity at `A = B`, and that
   dressing: a `Shell`'s coefficients multiply unnormalised primitives
   (`ao/shell.py`), so it is already in them, and applying it again in the
   dressing normalised twice — caught against libcint's `int2e` by #85.
-- `ao/hermite.py` carries **none** of these. Any of them there breaks the
+- `mmd/hermite.py` carries **none** of these. Any of them there breaks the
   pointwise identity above, which is the only independent check `E` has: if
   that identity needs a fudge factor to hold, the factor is in the wrong module.
 
@@ -1360,7 +1360,7 @@ through the split above, with every piece but `J_p` in
 undressed `E` (`hermite.py`), primitive-pair records, `dress` and the Schwarz
 bound (`pairs.py`), and `J` by two sweeps that must agree (`j.py`). `J_p`
 comes from one of three places, all behind the same `jp=` seam:
-`reference.pq`; the generated kernel **interpreted** (`ao/drive.py`'s
+`reference.pq`; the generated kernel **interpreted** (`eri/j_coulomb/drive.py`'s
 `KernelJP`); or the generated kernel **compiled and launched** on the RTX 3080
 and the RX 9060 XT (`test/test_ao_j_ondevice.py`, from the kernels
 `python -m felizjueves.emit --class LA LB LC LD` writes). PySCF is never
@@ -1386,7 +1386,7 @@ them. Every comparison runs at `τ = 0`; the screen has its own section below.
   bases (`m > 0`); the on-device test corroborates on both cards but skips,
   green and empty, wherever there is none. **It fails when the claim is
   false:** with `θ` perturbed at every site that forms it — the kernel's
-  prelude, `ao/j.py`, `ao/eri.py`, so the internal comparison against
+  prelude, `eri/j_coulomb/j.py`, `eri/eri.py`, so the internal comparison against
   `reference.pq` still agrees to 0 — libcint alone catches it. A relative
   error of 1e-9 in `θ` gives `8.85e-10·scale_J` on H₂ and ~3.5e-9 on H₂O
   (STO-3G and 6-31G), against the `1e-12` tolerance, so the comparison
@@ -1441,7 +1441,7 @@ not a structural limit, and it is stated here instead:
 
 ## The screen as an error claim: a `τ` ladder (#88)
 
-**Implemented, host-side.** `ao.j.coulomb_matrix_screened(basis, D, *, pq,
+**Implemented, host-side.** `eri.j_coulomb.j.coulomb_matrix_screened(basis, D, *, pq,
 tau, order)` is the unique-pairs `J` sweep with the kernel's screen: a
 (bra record, ket record) pair is skipped when `I_bra · (I_ket · Dmax) < τ`,
 `I` the pair-factor-free bound of `ao/pairs.py` and `Dmax` over the weighted,
@@ -1562,13 +1562,13 @@ every shell class `(la, lb | lc, ld)` with those sums.
   defect). The plan carries the record → shell pair map (`PairRec.shell_pair`,
   and `ClassLaunch.bra_blocks` on the bra side) because eq. 20 accumulates
   per shell pair.
-- **The sweep** is `ao.j`'s unique one: shell pairs `a ≥ b` on both sides,
+- **The sweep** is `eri.j_coulomb.j`'s unique one: shell pairs `a ≥ b` on both sides,
   with the ket off-diagonal weight 2 folded into `D_q` and so into `Dmax`.
   The ket pre-contraction is `ao.density.make_kets` itself, not a restatement.
 - **The sort key, `[JEngine, v2, §3.3]`.** Bras stay in pair order, because
   the kernel maps warps to bras by index. Kets are sorted **descending by
   `key = I_q · max_q |D_q|`, stably** (`sorted(..., reverse=True)`,
-  `ao.j._sorted_kets`' choice). With a fixed `I_bra ≥ 0`, `I_bra · key` is
+  `eri.j_coulomb.j._sorted_kets`' choice). With a fixed `I_bra ≥ 0`, `I_bra · key` is
   then non-increasing, so Alg. 1's `break` at the first ket under `τ` loses
   nothing. `density_sort=False` replaces every ket's `Dmax` with one global
   value, the largest per-record `Dmax`. The ket order is then by `I_q` alone:
@@ -1578,15 +1578,15 @@ every shell class `(la, lb | lc, ld)` with those sums.
   `continue` to 0, and under `I_q` alone or pair order the same `break` puts
   `J` outside `τ · scale`.
 - **The batch count** is asked of the plan per class, with
-  `ao.drive.KernelJP`'s `strict` contract (raise, or build at 1 and record
+  `eri.j_coulomb.drive.KernelJP`'s `strict` contract (raise, or build at 1 and record
   the class in `refused`). `resolve=` injects a policy per class (#145).
 
 ### Three walkers, and what each one witnesses (#142, #143, #144)
 
 | walker | where | what runs `[p\|q]` | held against |
 |---|---|---|---|
-| the launch oracle, `launch.walk` / `coulomb_launched` | pure Python (`src/`) | `reference.pq`, injected | `ao.j.coulomb_matrix_screened` **to 0** (same `J`, `n_pairs`, `n_skipped`, `max_skipped`, `dropped`) on H₂, H₂O/STO-3G and the four-H₂ chain at `τ` from 0 to 1e-1; the ordered reference within `1e-14·max\|J\|`; libcint within `1e-12·scale_J` |
-| the staged driver, `ao.staged.coulomb_matrix_staged` | interpreted (`interp`) | the generated kernels | the host sweep within `1e-13·max\|J\|`, libcint within `1e-12·scale_J`, and the oracle's ket-loop count per class **exactly** |
+| the launch oracle, `launch.walk` / `coulomb_launched` | pure Python (`src/`) | `reference.pq`, injected | `eri.j_coulomb.j.coulomb_matrix_screened` **to 0** (same `J`, `n_pairs`, `n_skipped`, `max_skipped`, `dropped`) on H₂, H₂O/STO-3G and the four-H₂ chain at `τ` from 0 to 1e-1; the ordered reference within `1e-14·max\|J\|`; libcint within `1e-12·scale_J` |
+| the staged driver, `eri.j_coulomb.staged.coulomb_matrix_staged` | interpreted (`interp`) | the generated kernels | the host sweep within `1e-13·max\|J\|`, libcint within `1e-12·scale_J`, and the oracle's ket-loop count per class **exactly** |
 | the device build, `test/plan_driver.py` | compiled with `NVCC_FLAGS` / `HIPCC_FLAGS`, run on each card | the generated kernels | the oracle on the same plan within `1e-13·max\|J\|`; libcint within `1e-12·scale_J` (plus `τ·scale` when `τ > 0`) |
 
 The oracle rebuilds its per-pair data on every call and memoises nothing, so
@@ -1606,7 +1606,7 @@ Within **one build** of `J_p`:
   `(lp, lq)` batch kernel is launched into its bra class's buffer, in plan
   order, and accumulates with **fp64 atomics** across ket classes. Split
   classes are atomised by the builder. One-batch kernels are atomised by the
-  driver (`passes.atomize`), because there the kernel is no longer its
+  driver (`ir.passes.atomize`), because there the kernel is no longer its
   buffer's only writer. The builder, its goldens and every `source_sha256` in
   `kernels.json` are unchanged.
 - **The screen is real.** The kernels read the plan's `Ip`, `Iq`, `Dmax` and
@@ -1731,7 +1731,7 @@ reading, gated measurement provenance, and an outside witness (libcint).
 **The one difference: Table 4 is declined, by decision**
 (`data/literature/jengine/README.md`). `jgen` scores a static
 register-pressure proxy against Table 4's 40 cells. This repo uses a
-different instrument on purpose: `lower.KernelCost`, plus real ptxas / hipcc
+different instrument on purpose: `ir.lower.KernelCost`, plus real ptxas / hipcc
 rows from two cards and `kernelrank`'s ranking against them. So "this repo
 replicates `jgen`" is not true while Table 4 is declined.
 
@@ -1778,17 +1778,17 @@ generator.
 
 `[JEngine, v2]` defers pre- and post-contraction to `[Fock]`, which this repo
 has not read. So the `DQ` and `JAB` kernels below are **this repo's own
-design**, built to equal `ao/j.py`'s host arithmetic, and not a
+design**, built to equal `eri/j_coulomb/j.py`'s host arithmetic, and not a
 reconstruction of anything published (`limits.json`).
 
 ### The four steps
 
 | step | computes, per primitive-pair record | keyed by | built by | interpreted | on the cards (#157) | host equivalent |
 |---|---|---|---|---|---|---|
-| 1. `E` | `E^{ab}_t`, undressed, over `hermite_order(la+lb)` | inlined, not launched | `e_fragment.block_fragment` (#152; an `ir.Fragment`, #149) | bitwise `==` `ao.hermite.e_block`, (ss)–(ff) (`test_e_fragment.py`) | inside steps 2 and 4 | `ao.hermite.e_block` |
-| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | `kernel_dq.build_dq_kernel` (#153), unit `dq_{lc}_{ld}` | bitwise `==` `ao.j.dq_from_host`, (ss)–(ff) (`test_kernel_dq.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.density.make_kets`; through the seam, `ao.j.dq_from_host` |
-| 3. `[p\|q]` | `J_p = Σ_k Σ_q [p\|q] D_q` | class `(lp, lq)`, `Target.J` | `kernel.build_pq_kernel(s)` | against `reference/` | L = 0..16 against `reference/`; in `J` up to L = 8 | `ao.j.jp_from_pq` |
-| 4. bra transform + scatter | `J_ab += Σ_p s E^{ab}_p J_p`, written into `J_µν` | bra pair class `(la, lb)`, `Target.JAB` | `kernel_jab.build_jab_kernel` (#154), unit `jab_{la}{lb}` | bitwise `==` `ao.j.jab_from_host`, (ss)–(ff) (`test_kernel_jab.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.j`'s transform and mirror; through the seam, `ao.j.jab_from_host` |
+| 1. `E` | `E^{ab}_t`, undressed, over `hermite_order(la+lb)` | inlined, not launched | `e_fragment.block_fragment` (#152; an `ir.Fragment`, #149) | bitwise `==` `mmd.hermite.e_block`, (ss)–(ff) (`test_e_fragment.py`) | inside steps 2 and 4 | `mmd.hermite.e_block` |
+| 2. pre-contraction | `D_q = w Σ_cd D_cd s E^{cd}_q` and `Dmax = max_q \|D_q\|` | ket pair class `(lc, ld)`, `Target.DQ` | `kernel_dq.build_dq_kernel` (#153), unit `dq_{lc}_{ld}` | bitwise `==` `eri.j_coulomb.j.dq_from_host`, (ss)–(ff) (`test_kernel_dq.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `ao.density.make_kets`; through the seam, `eri.j_coulomb.j.dq_from_host` |
+| 3. `[p\|q]` | `J_p = Σ_k Σ_q [p\|q] D_q` | class `(lp, lq)`, `Target.J` | `kernel.build_pq_kernel(s)` | against `reference/` | L = 0..16 against `reference/`; in `J` up to L = 8 | `eri.j_coulomb.j.jp_from_pq` |
+| 4. bra transform + scatter | `J_ab += Σ_p s E^{ab}_p J_p`, written into `J_µν` | bra pair class `(la, lb)`, `Target.JAB` | `kernel_jab.build_jab_kernel` (#154), unit `jab_{la}{lb}` | bitwise `==` `eri.j_coulomb.j.jab_from_host`, (ss)–(ff) (`test_kernel_jab.py`) | every class (ss)–(ff) alone; in `J` through (dd) | `eri.j_coulomb.j`'s transform and mirror; through the seam, `eri.j_coulomb.j.jab_from_host` |
 
 Steps 2 and 4 contain step 1: the `E` fragment is inlined into both. It is not
 a kernel and has no buffer of its own. #149's rule is one level only (a
@@ -1798,10 +1798,10 @@ nest the axis fragment. Every recurrence entry is one `Weighted`. The only
 `Call`s are the three `EXP` seeds and the block's `MUL` products, and there
 is no `Raw` (`limits.json`, the instruction form's reach).
 
-**Composed in the interpreter** (#155). `ao.drive.coulomb_matrix_chain` builds
+**Composed in the interpreter** (#155). `eri.j_coulomb.drive.coulomb_matrix_chain` builds
 `J_µν` with every step a generated kernel run by `interp.py`. It runs `DQ`
 per ket class, reads `Dmax` back, sorts, runs `[p|q]` through milestone 6's
-staging (`ao.staged`, with its `ket_data=` and `transform=` hooks), then runs
+staging (`eri.j_coulomb.staged`, with its `ket_data=` and `transform=` hooks), then runs
 `JAB` per bra class. A missing step raises. It is within `1e-12·scale_J` of
 libcint on every tracked `J` fixture (H₂, H₂O/STO-3G, 6-31G, cc-pVDZ; worst
 1.3e-14), and `==` the staged host path (`test/test_ao_j_chain.py`).
@@ -1812,7 +1812,7 @@ libcint on every tracked `J` fixture (H₂, H₂O/STO-3G, 6-31G, cc-pVDZ; worst
 - *Part 1, per pair class, (ss) through (ff).* Each `dq_{la}_{lb}` and
   `jab_{la}{lb}` unit that the kernel tier's generate phase wrote is compiled
   alone into a small harness and run over every record of its class in
-  HF/cc-pVTZ, against `ao.j.dq_from_host` / `jab_from_host` on the same
+  HF/cc-pVTZ, against `eri.j_coulomb.j.dq_from_host` / `jab_from_host` on the same
   inputs. Worst: `DQ` 5.45e-16 `S`, `JAB` 4.04e-16 `T`, against bounds of
   2.66e-15 to 3.00e-14 by class (the error analysis is in the test module's
   docstring).
@@ -1878,13 +1878,13 @@ Each record gives the fragment `ζ` and, per axis `d`, `X_PA = P_d − A_d` and
 one in "The `E` transform" above (MD report eqs. 2.20–2.21), with
 `E^{00}_0 = exp(+ζ X_PA X_PB)`, which is `exp(−μ X_AB²)` because
 `X_PA X_PB = −(αβ/ζ²) X_AB²`. (#152's issue text wrote the seed with a minus
-sign. That was a slip: the fragment follows `ao/hermite.py`, and the Hermite
+sign. That was a slip: the fragment follows `mmd/hermite.py`, and the Hermite
 identity test holds the sign.) The fragment forms no `X_AB` and no `μ`.
 It binds `zeta` as well as `half_inv_zeta` (`1/2ζ`) so that the seed costs no
 extra division; a class with no raised entry, `(ss)`, binds no
 `half_inv_zeta`.
 
-**The fragment computes the undressed `E` of `ao/hermite.py` and nothing
+**The fragment computes the undressed `E` of `mmd/hermite.py` and nothing
 else.** The dressing reaches the kernel as **one host-supplied scalar per
 record**:
 
@@ -1947,7 +1947,7 @@ output. It is not the AO density's largest element and cannot be computed
 from it. Lanes may map one thread per record; the mapping is not part of the
 numerical contract.
 
-**The q-major layout** (opt-in, `passes.transpose(kernel, ("D",))` on both
+**The q-major layout** (opt-in, `ir.passes.transpose(kernel, ("D",))` on both
 this kernel and `[p|q]`): `D[n_q, n_ket]` instead. `[p|q]`'s lanes are
 consecutive kets, so row-per-ket puts one warp's read of `D[k, q]` `n_q`
 doubles apart per lane, and q-major makes it contiguous, as `[Fock, §4.2]`
@@ -1968,7 +1968,7 @@ index) reads its own orientation of the symmetric `D`, with no transposed
 copy. `w` is still the host's. Not measured, and not run on a card.
 
 **Equality.** In the operation order above, an interpreted kernel is `==` to
-`ao.j.dq_from_host`. That reference also skips `D_cd = 0` terms, which changes
+`eri.j_coulomb.j.dq_from_host`. That reference also skips `D_cd = 0` terms, which changes
 no bit, because adding `±0` to an accumulator that started at `+0.0` is the
 identity. A kernel that factors `s · w` out of the sum is admitted. It agrees
 with the host to fp64 round-off and not bitwise, and its test says which
@@ -2021,7 +2021,7 @@ diagonal     (off_a = off_b):  only i ≥ j;  J[off_a+i][off_a+j] += v,
 ```
 
 **The diagonal rule** reproduces the host bit for bit. It is not a choice made
-for the kernel. `ao.j`'s host scatter assigns `J[a][b]` and then, transposed,
+for the kernel. `eri.j_coulomb.j`'s host scatter assigns `J[a][b]` and then, transposed,
 `J[b][a]`, row by row. On a diagonal block, element `(x, y)` is assigned twice
 and keeps the later value, which is `J_ab[max(x, y), min(x, y)]`. So the
 block's lower triangle, mirrored, is the host's result. Writing the whole
@@ -2048,7 +2048,7 @@ add into the same elements. The write is an `AtomicAdd`, with that reason as
 its `Note`.
 
 **Equality.** Interpreted with records in order, the kernel is `==` to
-`ao.j.jab_from_host`. The `+=` chain starting from a zeroed `J` is the host's
+`eri.j_coulomb.j.jab_from_host`. The `+=` chain starting from a zeroed `J` is the host's
 `jab[r] += …` starting from `0.0`, and `+0.0 + v` is `v` (it differs only in
 the sign of a zero, which `==` does not distinguish). On a card, fp64 atomics
 make the summation order differ from run to run. The tolerance for that is
@@ -2074,7 +2074,7 @@ stated where the device test asserts, and not here.
 - the **sort** of each ket class, descending by `I_q · Dmax`, stable
   (`launch.launches`);
 - the **staging**: class-grouped buffers, one upload per bra class and one per
-  ket class (`ao/staged.py`, #143; `test/plan_driver.py`, #144);
+  ket class (`eri/j_coulomb/staged.py`, #143; `test/plan_driver.py`, #144);
 - the **launches** and their order;
 - each record's **inputs** to the kernels: `ζ` or `η`, `X_PA`, `X_PB`, the
   dressing scale `s`, and the AO offsets.
@@ -2094,9 +2094,9 @@ host-side sort;** removing it is out of this milestone's scope. On the cards
 driver are separate programs, so `D_q` is read back with `Dmax` and staged
 into the driver's ket buffers by the host.
 
-### The seams: `ao.j`'s `dq=` and `jab=`
+### The seams: `eri.j_coulomb.j`'s `dq=` and `jab=`
 
-**Status: implemented** (#151). `ao.j.coulomb_matrix(basis, D, *, pq,
+**Status: implemented** (#151). `eri.j_coulomb.j.coulomb_matrix(basis, D, *, pq,
 tau=0.0, jp=None, dq=None, jab=None)` follows `jp=`'s discipline (#87). Each
 seam replaces one step, so a disagreement in a `J` built through it is
 localised to that one kernel. A single combined "device chain" hook would make
@@ -2111,7 +2111,7 @@ by `ao.density.epair`.
 
 - **Both seams are unscreened.** `tau > 0` with either one is refused, as with
   `jp=`.
-- **The references.** `ao.j.dq_from_host` and `ao.j.jab_from_host` are each
+- **The references.** `eri.j_coulomb.j.dq_from_host` and `eri.j_coulomb.j.jab_from_host` are each
   step's host arithmetic in the host's own order. With them, `coulomb_matrix`
   is `==` to itself without them, for each seam alone and for both, on the
   `pq` path and on the `jp=` path (`test/test_ao_j.py`).

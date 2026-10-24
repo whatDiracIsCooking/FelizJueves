@@ -1,4 +1,5 @@
-"""`ao.overlap` and `ao.one_electron`: `S` as the `t = 0` column, and its assembly.
+"""`one_electron.overlap` and `one_electron.one_electron`: `S` as the `t = 0` column,
+and its assembly.
 
 The witnesses here are the Hermite identity (`S` IS element 0 of the block
 `ao.pairs.primitive_pairs` dresses, summed) and closed forms derivable by
@@ -109,7 +110,7 @@ def test_p_against_s_on_one_centre_is_zero_by_parity() -> None:
 def test_normalised_axis_components_have_unit_self_overlap(l: int) -> None:  # noqa: E741
     # ao/shell.py: primitive_norm normalises the AXIS component x^l, so with
     # it folded into the coefficient by the caller, S_xx = 1. Nothing in
-    # ao.overlap normalises; this checks it multiplies nothing in either.
+    # one_electron.overlap normalises; this checks it multiplies nothing in either.
     alpha = 0.83
     s = Shell(l, C, (alpha,), (primitive_norm(l, alpha),))
     blk = overlap_block(s, s)

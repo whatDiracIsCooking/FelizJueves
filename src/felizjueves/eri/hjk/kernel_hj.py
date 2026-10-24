@@ -16,7 +16,7 @@ stream: no symmetry pruning) and deposits
     J[a_i][b_j] += D[c_k][d_l] (a_i b_j | c_k d_l)
 
 by atomic add -- that and nothing else: no 8-fold weights, no degeneracy
-factor, no canonical half, no host-side `close`. It is `ao/j.py`'s ordered
+factor, no canonical half, no host-side `close`. It is `eri/j_coulomb/j.py`'s ordered
 sweep (`coulomb_matrix_reference`: every ordered bra and ket pair, weight
 1, `J[a][b]` written only from its own block), one class at a time, on
 another engine. The fused `F` (`kernel_f.py`) is the other diagonal cell of
@@ -45,7 +45,7 @@ THE CONTRACTION IS INSIDE THE KERNEL, and that is forced, as in `kernel_f`
 sum completes in registers before the HRR reads it.
 
 THE PRIMITIVE NEST IS BRA OUTER, KET INNER -- the opposite of `kernel_f`'s
--- and the quartet scalars are spelled in `ao/hgp_drive.py`'s operation
+-- and the quartet scalars are spelled in `eri/hgp_drive.py`'s operation
 order (`W = (p P + q Q)/(p + q)` then `W - P`, `1/(2p)`, ...), so the tap
 is `==` `hgp_drive.eri_block` bit for bit (#404's acceptance): the drive
 sums its VRR outputs over `(i, j, k, l)` with the bra pair outer, and a
@@ -85,7 +85,7 @@ as `kernel_eri3.eri3_name` does, so no two classes share a name.
 
 THE DEPOSIT READS `D` WHERE THE ORDERED QUARTET PUTS IT: `D[c][d]` at the
 ordered quartet's own ket positions, in every orientation, so no index
-assumes a symmetric `D` (a symmetric `D` is `ao/j.py`'s contract, the
+assumes a symmetric `D` (a symmetric `D` is `eri/j_coulomb/j.py`'s contract, the
 witness's). `J[a][b]` is written only from its own block; the sweep over
 every ordered quartet makes `J` symmetric, and nothing here mirrors it.
 
@@ -104,8 +104,8 @@ included, `HrrDag.n_statements`), every ERI read once per orientation's
 deposit, and one `AtomicAdd` per `J` element per orientation -- read off the
 built kernel and cross-checked against `hgp.vrr` / `hgp.hrr` by the test.
 
-Nothing here imports `plan/`, `ao/` (the witnesses: `ao/hgp_drive.py` for
-the ERIs, `ao/j.py` for `J`), `reference/`, the interpreter, a backend or
+Nothing here imports `plan/`, `ao/` (the witnesses: `eri/hgp_drive.py` for
+the ERIs, `eri/j_coulomb/j.py` for `J`), `reference/`, the interpreter, a backend or
 a device (test/test_layering.py, rule `hj_builder`).
 """
 
@@ -343,7 +343,7 @@ def _ao(pos: int, i: int) -> Expr:
 
 
 def _quartet_scalars(vneed: frozenset[str]) -> list[Stmt]:
-    """The scalars the VRR reads, in `ao/hgp_drive.primitive_scalars`'
+    """The scalars the VRR reads, in `eri/hgp_drive.primitive_scalars`'
     operation order (module docstring), from the bra (`Pb`, `p`, `Ub`) and
     ket (`Qk`, `q`, `Uq`) primitive records."""
     wp = [Factor.wp(d).value for d in range(3)]

@@ -6,12 +6,12 @@
                   refused / sweep
     KClassLaunch(am, n_batches, bras, kets, kernels, bra_blocks, ket_groups)
     walk_k(plan, basis, D, *, pq, order="sorted", check_sorted=True)
-                                                   -> ao.k.KScreened
+                                                   -> eri.k_exchange.k.KScreened
     exchange_launched(basis, D, *, pq, tau, n_batches=1, strict=True,
-                      sweep="ordered")             -> ao.k.KScreened
+                      sweep="ordered")             -> eri.k_exchange.k.KScreened
 
 `launch.py`'s counterpart for the exchange matrix `K_ab = sum_cd D_cd
-(ac|bd)` (ao/k.py): which K class kernels run, over which bra and ket index
+(ac|bd)` (eri/k_exchange/k.py): which K class kernels run, over which bra and ket index
 records, in which order -- and nothing else. THE PLAN IS DATA: no text is
 emitted, nothing compiled or launched, no `[p|q]` evaluated (the bound is
 the only thing called, and it is injected).
@@ -50,11 +50,11 @@ fingerprint taken before this module existed, test/test_launch.py):
      ket's off-diagonal weight `w = 2` folded into `D_q`: J's symmetry is
      INSIDE a pair, so every bra walks the same ket list. K has no symmetry
      inside a pair (each record holds one output and one summed index); its
-     one symmetry is the bra-ket swap (ao/k.py, "THE TWO SWEEPS"), and the
+     one symmetry is the bra-ket swap (eri/k_exchange/k.py, "THE TWO SWEEPS"), and the
      unique sweep it gives hands each bra shell pair `(a, c)` a TRIANGULAR
      ket set (`b < a`, or `b = a` and `d <= c`) that one per-class ket list
      cannot hold. So the K plan is the ORDERED sweep --
-     `ao.k.exchange_matrix_reference`'s set: bras and kets every ORDERED
+     `eri.k_exchange.k.exchange_matrix_reference`'s set: bras and kets every ORDERED
      shell pair, every quadruple once at weight 1, nothing mirrored -- the
      exact analogue of J's plan, which uses no bra-ket symmetry either. It
      visits every orbit of the unique sweep twice (`n_quartets` below
@@ -69,13 +69,15 @@ fingerprint taken before this module existed, test/test_launch.py):
      `bra_blocks` is `(a, c, start, stop)`, the bra shell pair's rows, and
      the scatter is keyed by both sides.
   4. THE KEY'S FACTORS. J's ket key IS the screen's ket factor, `G * Dmax`,
-     the density riding the ket (`ao.density.Ket.bound`; ao/staged.py checks it
+     the density riding the ket (`ao.density.Ket.bound`; eri/j_coulomb/staged.py checks
+     it
      bit for bit). K's density factor `Dm = max|D|` is GLOBAL -- `D_cd`
-     straddles the records (ao/k.py, "THE KEY THE J ENGINE USES IS
+     straddles the records (eri/k_exchange/k.py, "THE KEY THE J ENGINE USES IS
      UNAVAILABLE FOR K") -- so it is carried once, on `KLaunchPlan.dm`, and
-     the screen is ao.k's `(I_ac * I_bd) * Dm < tau`, associated as ao.k
+     the screen is eri.k_exchange.k's `(I_ac * I_bd) * Dm < tau`, associated as
+     eri.k_exchange.k
      associates it. The ket key is INJECTED (`key(b, d, I_bd) -> float`,
-     ao.k's `KetKey`); the sound one is `I_bd` alone, and `walk_k` refuses
+     eri.k_exchange.k's `KetKey`); the sound one is `I_bd` alone, and `walk_k` refuses
      (`check_sorted`) a ket list that is not non-increasing in `G`, the
      factor the `break` reads -- so the J key misapplied is refused, not run.
 
@@ -86,7 +88,7 @@ fingerprint taken before this module existed, test/test_launch.py):
   `spec` names what would be built.
 
   Why not outcome 1 (`ClassLaunch` generalised): a `ClassLaunch` carrying a
-  K class would be accepted by ao/staged.py's J driver -- one ket upload per
+  K class would be accepted by eri/j_coulomb/staged.py's J driver -- one ket upload per
   `lq`, one `J_p` per `lp`, eq. 20 over `bra_blocks` -- and run as J. Every
   field it would need changed (the identity, the block map's meaning, the
   ket set, the key's factors) changes what that consumer reads; generalising
@@ -97,7 +99,7 @@ THE RECORDS. `PairRec(i, j, prim, L, G, key)` with `(i, j)` an ORDERED shell
 pair -- `(a, c)` on the bra, `(b, d)` on the ket -- and `prim` the index into
 `ao.density.epair(shells[i], shells[j]).recs` (`primitive_pairs` order, i outer).
 `G` is the injected `bound(epair) -> per-record I` (tests pass
-`functools.partial(ao.k.record_bounds, pq=pq)`), the SAME function on both
+`functools.partial(eri.k_exchange.k.record_bounds, pq=pq)`), the SAME function on both
 sides (rows over the first shell, the output index). A bra's `key` is `G`;
 a ket's is `key(b, d, G)`. Bras stay in pair order (`a` outer, `c` inner,
 `prim` ascending): the kernel maps one warp per bra record BY INDEX.
@@ -112,16 +114,16 @@ THE WALK (`walk_k`), the plan in Python (#142's oracle, for K): per class,
 per launch (the class, or each of its ket groups), per bra record, down
 the launch's kets -- `order="sorted"` breaks at the
 first `(G_bra * G_ket) * dm < tau`, `"unsorted"` continues past it -- each
-surviving pair contributing ao.k's own staged contraction of that one record
-pair (`ao.k._k_quartet`, the host's arithmetic) to the block `K[a][b]`
+surviving pair contributing eri.k_exchange.k's own staged contraction of that one record
+pair (`eri.k_exchange.k._k_quartet`, the host's arithmetic) to the block `K[a][b]`
 (and, when the plan `mirrors` and `a != b`, `X^T` to `K[b][a]`), and every
 element summed with `math.fsum`. So break and continue give the same
-`K` to 0 when they skip the same set, and against `ao.k.exchange_matrix` /
+`K` to 0 when they skip the same set, and against `eri.k_exchange.k.exchange_matrix` /
 `exchange_matrix_reference` it agrees to rounding (the unique sweep's
 mirrored `X^T` is the ordered sweep's partner block computed directly). The
-result is `ao.k.KScreened`; its `scale` is counted FROM THE PLAN (ordered
+result is `eri.k_exchange.k.KScreened`; its `scale` is counted FROM THE PLAN (ordered
 record pairs covering each element, a mirrored pair covering both of its
-blocks), and equals ao.k's `R(a) R(b)` in either sweep. At
+blocks), and equals eri.k_exchange.k's `R(a) R(b)` in either sweep. At
 `tau = 0` no screen test is evaluated. `plan` must have been planned from
 the same `basis` and `D` (`dm` is recomputed and checked).
 
@@ -140,7 +142,7 @@ partner class's mirror. The plan then covers, per orbit `{(a,c|b,d),
 (b,d|a,c)}` of the ordered sweep:
 
   `a < b`   ONE member, computed once and MIRRORED: its block `X` lands in
-            `K[a][b]` and `X^T` in `K[b][a]` (ao/k.py, "THE TWO SWEEPS":
+            `K[a][b]` and `X^T` in `K[b][a]` (eri/k_exchange/k.py, "THE TWO SWEEPS":
             `X(b,d|a,c) = X(a,c|b,d)^T`). The partner, `a' = b > b' = a`,
             is outside every prefix.
   `a == b`  BOTH members, computed in full and NOT mirrored: both land in
@@ -153,7 +155,7 @@ counts the halved set. A device consumer applies the mirror as one
 post-pass, `K = H + offdiag(H)^T` with `H` the computed blocks (all
 `a <= b`) and `offdiag` zeroing the diagonal shell blocks. THE DENSITY
 MUST BE SYMMETRIC -- the transpose identity holds only for `D_cd = D_dc`
--- and `_density` rejects an asymmetric one, as everywhere in ao.k. The
+-- and `_density` rejects an asymmetric one, as everywhere in eri.k_exchange.k. The
 screen `(G_bra * G_ket) * dm` is symmetric under the swap, so a skipped
 mirrored pair skips exactly its partner: the screened walk equals the
 ordered one's to rounding at every `tau`, with half the record pairs.
@@ -470,14 +472,14 @@ def walk_k(plan: KLaunchPlan, basis: Basis, D: object, *, pq: PQ,
 
 
 def _schwarz(b: int, d: int, i_bd: float) -> float:
-    """K's ket key: `I_bd` alone (ao/k.py, "THE SCREEN")."""
+    """K's ket key: `I_bd` alone (eri/k_exchange/k.py, "THE SCREEN")."""
     return i_bd
 
 
 def exchange_launched(basis: Basis, D: object, *, pq: PQ, tau: float,
                       n_batches: int = 1, strict: bool = True,
                       sweep: str = "ordered") -> KScreened:
-    """`walk_k(k_launches(...), basis, D, pq=pq)` with ao.k's own bound
+    """`walk_k(k_launches(...), basis, D, pq=pq)` with eri.k_exchange.k's own bound
     (`record_bounds` through `pq`) and the Schwarz-only key -- the host
     sweep's screen, so the walk skips exactly what
     `exchange_matrix_reference(tau=)` skips."""

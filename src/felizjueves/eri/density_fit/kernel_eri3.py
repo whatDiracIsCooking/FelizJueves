@@ -10,15 +10,15 @@
 `(mn|P) = INT INT m(r1) n(r1) P(r2) / r12`, `m`, `n` Cartesian AOs of an
 ordinary basis and `P` a Cartesian function of an auxiliary one, by
 McMurchie & Davidson's Hermite path with the ket's Hermite "pair" a single
-Gaussian (`ao/eri3.py`'s module docstring, its witness):
+Gaussian (`eri/density_fit/eri3.py`'s module docstring, its witness):
 
     (mn|P) = SUM_{ij in mn} SUM_{k in P} s_ij s_k
              SUM_t E^{mn}_t(ij) SUM_tau (-1)^{|tau|} [t+tau]^(0)(P_ij - A_k)
              E^P_tau(k)
 
 with `s_ij = c_i c_j (pi/p)^{3/2}` on each bra record (`ao.pairs.dress`'s
-factor, `ao.eri3`'s `s_ab`), `s_k = c_k (pi/alpha_k)^{3/2}` on each aux
-record (`ao.metric.aux_dress`) and `theta^2 = p alpha_k / (p + alpha_k)`.
+factor, `eri.density_fit.eri3`'s `s_ab`), `s_k = c_k (pi/alpha_k)^{3/2}` on each aux
+record (`eri.density_fit.metric.aux_dress`) and `theta^2 = p alpha_k / (p + alpha_k)`.
 
 AN ERI3 CLASS IS A TRIPLE THAT RUNS A QUARTET (`spec.py`, #441). The key is
 the triple `(la, lb, lP)`; the recurrence is the `Target.J` quartet
@@ -46,7 +46,7 @@ unsigned and the class's sign is applied once, `acc - w v` for odd `lP`
 (`acc + w v` for even). Negation is exact.
 
 THE THREAD MAPPING: ONE THREAD PER CELL, a cell one (AO shell pair, aux
-shell) of `ao.eri3.eri3_classes`' staging, `cell = THREAD_X + BLOCK_X *
+shell) of `eri.density_fit.eri3.eri3_classes`' staging, `cell = THREAD_X + BLOCK_X *
 BLOCK_DIM_X`, guarded by `cell < n_cell`. The thread walks its cell's two
 record ranges serially -- bra `[ab_rec0, ab_rec1)` outer, the `mn` block
 formed once per bra record; aux `[p_rec0, p_rec1)` inner, the tower and the
@@ -76,17 +76,17 @@ NO PREFACTOR: `(pi/p)^{3/2}`, `(pi/alpha)^{3/2}` and the coefficients are
 inside the host's `s_ab` and `s`, `(2/sqrt(pi)) theta` inside `[0]^(m)` (the
 prelude's `W0`).
 
-ROUND-OFF, NOT BITWISE, against `ao.eri3`: the host's `[t|tau]` is
+ROUND-OFF, NOT BITWISE, against `eri.density_fit.eri3`: the host's `[t|tau]` is
 `reference.pq`'s fixed recursion, the kernel's the plan's MILD DAG, and the
 host dresses each `E` entry where the kernel multiplies `s_ij s_k` once.
 
 THE SCATTER, a plain store mirrored in `(m, n)`, into `[m][n][P]` (aux
-fastest, `ao.eri3`'s layout): an off-diagonal shell pair (`off_a != off_b`)
+fastest, `eri.density_fit.eri3`'s layout): an off-diagonal shell pair (`off_a != off_b`)
 writes element `(a, b, q)` to `eri3[off_a + a, off_b + b, off_p + q]` and
 `eri3[off_b + b, off_a + a, off_p + q]`; a diagonal one (only when
 `la == lb`) writes `a >= b`, mirrored. No atomics: each element belongs to
 exactly one cell, so runs are bit-reproducible. A pair staged SWAPPED needs
-no flag here: with the mirror, the transposed placement `ao.eri3.
+no flag here: with the mirror, the transposed placement `eri.density_fit.eri3.
 place_staged` makes writes the same two elements.
 
 THE BOYS DOMAIN. A tight aux exponent far from a bra centre puts `T` far
@@ -99,7 +99,7 @@ every kernel carries since #301 holds on all of `reference.boys`' domain.
             ab_rec0 ab_rec1 p_rec0 p_rec1 off_a off_b off_p [n_cell]  (I32)
             eri3[n_ao, n_ao, n_aux]  (OUT, written once per element)
 
-The record and cell arrays are `ao.eri3.Eri3Class.arrays()`' by name,
+The record and cell arrays are `eri.density_fit.eri3.Eri3Class.arrays()`' by name,
 interleaved `[n_rec, 3]` and passed as plain positional parameters, except
 `s`, which is `s_aux` here (`PARAM_OF`): the prelude declares a local
 `s = -2 theta^2` (`recurrence.fundamental_prelude`), which would shadow it.

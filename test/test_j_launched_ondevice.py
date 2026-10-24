@@ -6,10 +6,10 @@ WHAT RUNS WHERE. `launch.launches` plans the molecule (#138); a driver
 bra class and each ket class ONCE, zeroes one `J_p` per bra class once per
 run, launches every batch kernel of every `(lp, lq)` class into its bra
 class's buffer (fp64 atomics across ket classes and batches), and reads each
-`J_p` back. Eq. 20 and the scatter run host-side (`ao.staged._transform`),
+`J_p` back. Eq. 20 and the scatter run host-side (`eri.j_coulomb.staged._transform`),
 as `jgen` does. The screen is REAL: `Ip`, `Iq`, `Dmax` are the plan's, `tau`
 is the plan's, and the kets arrive in the plan's sorted order -- the inputs
-are `ao.staged`'s own buffers, whose keys it checks bit for bit.
+are `eri.j_coulomb.staged`'s own buffers, whose keys it checks bit for bit.
 
 TWO ANCESTRIES, BOTH IN THE ASSERTION (#144's hazard: comparing the device
 build only with the Python driver that generated its launch order would be
@@ -24,7 +24,7 @@ comparing a thing with itself at one remove):
   libcint        the tracked `get_jk` fixture, `|J_dev - J_pyscf| <= 1e-12
                  scale_J` element by element (test_ao_j.py's JK_TOL, via
                  test_ao_j_ondevice.py). With `tau > 0` the comparison carries
-                 `ao.j`'s stated screening claim on top, `|J(tau) - J(0)| <=
+                 `eri.j_coulomb.j`'s stated screening claim on top, `|J(tau) - J(0)| <=
                  tau * Screened.scale` (#88) -- the screen's own error bound,
                  inherited, not a loosening: `JK_TOL scale_J + tau scale`.
 
@@ -87,7 +87,7 @@ THE CHAIN (#147). `measured_store.CHAIN_INPUT` is test_ao_screening.py's
 two-H2 chain, the extended input on which a decay screen bites and whose
 every T stays inside the device Boys' witnessed [0, 500] (measured_store's
 docstring, THE SORT KEY, says why not four). It has no libcint fixture, so
-its outside witness is the host sweep's J(0) (`ao.j.coulomb_matrix`, the
+its outside witness is the host sweep's J(0) (`eri.j_coulomb.j.coulomb_matrix`, the
 code held to libcint on every fixture) to `ORACLE_TOL max|J0| + tau scale`;
 `test_<backend>_the_chain_under_both_keys` checks it, both keys, untimed.
 
@@ -181,7 +181,7 @@ def _fixture(name: str):
 
 @cache
 def _scale_j(name: str) -> np.ndarray:
-    """`scale_J` of `ao.j.coulomb_matrix_and_scale` (the JK_TOL's scale)."""
+    """`scale_J` of `eri.j_coulomb.j.coulomb_matrix_and_scale` (the JK_TOL's scale)."""
     _, basis, D = _fixture(name)
     return np.array(coulomb_matrix_and_scale(basis, D, pq=ref_pq)[1])
 
@@ -227,7 +227,7 @@ def _abs_jp(plan: LaunchPlan, name: str, *, basis=None, D=None,
             ket_data=None) -> dict[int, np.ndarray]:
     """`A_p = SUM_ket SUM_q |[p|q]| |D_q|` per bra record and `p`, per bra
     class, over EVERY ket of every class (module docstring). `ket_data=`
-    (#157) takes `D_q` from `ao.staged`'s hook -- the DQ kernel's, staged
+    (#157) takes `D_q` from `eri.j_coulomb.staged`'s hook -- the DQ kernel's, staged
     exactly as the driver's input -- instead of the host pre-contraction;
     `basis` / `D` then give the molecule, and `name` is only a label."""
     if basis is None:
@@ -372,7 +372,7 @@ def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
         outside = "get_jk"
     else:
         # No libcint fixture (the chain): the host sweep's unscreened J(0),
-        # through `ao.j.coulomb_matrix` -- the code witnessed against libcint
+        # through `eri.j_coulomb.j.coulomb_matrix` -- the code witnessed against libcint
         # on every fixture -- with the oracle's bound and the screen's own
         # error claim on top, both inherited: ORACLE_TOL max|J0| + tau scale.
         ref = np.array(coulomb_matrix(basis, D, pq=ref_pq))

@@ -123,7 +123,7 @@ def test_bras_keep_pair_order_and_the_shell_pair_map_round_trips():
 
 
 def test_the_ket_key_is_the_host_sweeps_bound_bit_for_bit():
-    """`key = G * Dmax` with G from `pair_bound_pq` is exactly `ao.j`'s
+    """`key = G * Dmax` with G from `pair_bound_pq` is exactly `eri.j_coulomb.j`'s
     `_Ket.bound` -- the factor `coulomb_matrix_screened` multiplies `I_bra`
     by -- for every ket, so #142's equality to 0 has the same screen."""
     basis, D = _h2o()
@@ -263,7 +263,7 @@ TAU_SORT = 1e-6  # H2O/STO-3G's screen skips 385 (bra, ket) index pairs here
 
 def _exceeds(A, B, scale, tau) -> bool:
     """Some element of `A` is further from `B` than the screen's own stated
-    error, `tau * scale` (`ao.j`, "THE SORTED `break`"), allows."""
+    error, `tau * scale` (`eri.j_coulomb.j`, "THE SORTED `break`"), allows."""
     return any(abs(a - b) > tau * s
                for xa, xb, xs in zip(A, B, scale, strict=True)
                for a, b, s in zip(xa, xb, xs, strict=True))
@@ -275,7 +275,7 @@ def test_the_ket_sort_key_is_the_product_and_the_break_needs_it(monkeypatch):
     so the screen can `break`. Not "the code sorts": the claim is that the
     PRODUCT is the key the `break` is sound under, so the falsifier is a
     different key giving a different `J` through the same screened walk --
-    `ao.j.coulomb_matrix_screened`'s sorted `break`, with only its ket order
+    `eri.j_coulomb.j.coulomb_matrix_screened`'s sorted `break`, with only its ket order
     (`_sorted_kets`) replaced, test-locally, by monkeypatch.
 
     (a) The plan's ket order is the product order -- the product recomputed

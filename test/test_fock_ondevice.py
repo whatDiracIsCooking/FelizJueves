@@ -18,8 +18,8 @@ PART 1, PER CLASS. H2O/cc-pVDZ's plan at `tau = 0` (`n = 1`: nothing
 screened, nothing pruned) reaches all 21 classes of milestone 12's ladder;
 for each class, the plan's launches of that class -- every batch pair whose
 kernel it is -- run on the card into one `F`, against (a) those launches
-interpreted (`fock_driver.interpret`: walk_f's executor) and (b) `ao.fock`'s
-every-ordered-quartet sweep with its ERIs from `ao.eri` (MMD, the other
+interpreted (`fock_driver.interpret`: walk_f's executor) and (b) `eri.fock.fock`'s
+every-ordered-quartet sweep with its ERIs from `eri.eri` (MMD, the other
 engine) restricted to the ordered members of the quartets those launches
 meet. The default tier runs the classes of total `L = la + lb + lc + ld <=
 2` -- the issue's `ss|ss`, `sp|ss`, `sp|sp`, `sd|ss`, `pp|ss`, which on this
@@ -44,7 +44,7 @@ card is one more operation order (FMA contraction and the fp64 atomics'
 order only re-associate); `2 TOL` against the interpreted build (the
 triangle inequality through the sweep, both sides within `TOL` of it); and
 `LIBCINT_TOL = 1e-12` of the same scale against libcint (test_ao_fock.py's).
-`scale_G` is the same sweep on `|D|` with `ao.eri`'s absolute-value twin, so
+`scale_G` is the same sweep on `|D|` with `eri.eri`'s absolute-value twin, so
 an element no computed quartet touches has scale 0 and must come back
 exactly 0.0. The screened case's skip decisions are the same IEEE products
 on both sides (`G_ab (G_cd dmax)`, no addition to contract), so the card
@@ -167,7 +167,7 @@ _ERI: dict = {}
 
 
 def _block(name: str, q):
-    """`ao.eri`'s block and scale of the ordered quartet `q`, evaluated
+    """`eri.eri`'s block and scale of the ordered quartet `q`, evaluated
     once per process (no permutation of another)."""
     if (name, q) not in _ERI:
         basis, _, _ = molecule(name)
@@ -179,9 +179,9 @@ def _block(name: str, q):
 
 
 def restricted_sweep(name: str, keep) -> tuple[np.ndarray, np.ndarray]:
-    """`ao.fock`'s sweep over every ordered quartet, its ERIs zero outside
+    """`eri.fock.fock`'s sweep over every ordered quartet, its ERIs zero outside
     the ordered members `keep`: `(G, scale_G)` -- `J - K/2` on `D`, and
-    `J + K/2` on `|D|` with `ao.eri`'s absolute-value twin."""
+    `J + K/2` on `|D|` with `eri.eri`'s absolute-value twin."""
     basis, D, _ = molecule(name)
     idx = {id(s): i for i, s in enumerate(basis.shells)}
 

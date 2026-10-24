@@ -6,7 +6,7 @@
     read_back(driver, raw)                  -> [run][lp] -> J_p[n_bra, n_p]
     reps(stdout)                            -> the timing mode's rep lines
 
-The device twin of `ao.staged.coulomb_matrix_staged` (#143): the plan's
+The device twin of `eri.j_coulomb.staged.coulomb_matrix_staged` (#143): the plan's
 shape on the card, where `test_ao_j_ondevice.py` (#89) launched one process
 per class. It extends `test_kernel_device.py`'s `BATCHED_HARNESS` pattern --
 several batch launches into ONE zeroed `dJ`, each kernel's text `#include`d
@@ -24,7 +24,7 @@ times, so the fp64 atomics' run-to-run spread is measured, not assumed):
     `J_p[lp]` -- several ket classes and several batches per buffer, so every
     kernel ADDS: a split class's kernels are `atomize`d by the builder, and a
     one-batch kernel's plain write (correct only for a sole writer) is
-    `passes.atomize`d here, exactly as `ao.staged._accumulating` does (#143's
+    `passes.atomize`d here, exactly as `eri.j_coulomb.staged._accumulating` does (#143's
     decision, carried to the card);
   - read back per bra class, after one synchronize.
 
@@ -34,11 +34,11 @@ and ONE copy per bra class (`P zeta Ip`) and per ket class
 upload per ket class, not one per (bra pair, ket class). The driver prints
 its own counts (`fj-driver ...`) so the test asserts them as measured.
 
-THE DATA is `ao.staged`'s, not restated: `_bra_buffers` / `_ket_buffers`
+THE DATA is `eri.j_coulomb.staged`'s, not restated: `_bra_buffers` / `_ket_buffers`
 build the very arrays the interpreted staged driver feeds `interp`, including
 its bit-for-bit check that every ket's `Iq * Dmax` is its plan key (the
 order the kernel's `break` reads). Eq. 20 and the scatter stay host-side,
-`ao.staged._transform`, as `jgen` does.
+`eri.j_coulomb.staged._transform`, as `jgen` does.
 
 THE TIMING MODE (#146). `driver in out WARMUP REPS` runs WARMUP untimed
 builds and REPS timed ones in the one process and prints a `rep` line per
@@ -60,11 +60,11 @@ the driver is generated from is keyed on the DQ kernel's own `Dmax`:
   1. `dq_program` -- every ket pair class's `Target.DQ` kernel (`dq_l_l`),
      one launch per class over all its records, `D_q` and `Dmax` read back:
      the chain's one round-trip (j_engine.md, "The round-trip"), as in
-     `ao.drive.coulomb_matrix_chain`, whose plan builder (`_chain_plan`)
+     `eri.j_coulomb.drive.coulomb_matrix_chain`, whose plan builder (`_chain_plan`)
      then keys and sorts the kets on the kernel's `Dmax`;
   2. `driver(plan, ..., chain=basis)` -- milestone 6's driver, unchanged in
      its uploads and `[p|q]` launches, staged with the DQ kernel's `D_q` /
-     `Dmax` through `ao.staged`'s `ket_data=` hook (`stage(ket_data=)`,
+     `Dmax` through `eri.j_coulomb.staged`'s `ket_data=` hook (`stage(ket_data=)`,
      its plan-key check intact), and EXTENDED by one `Target.JAB` launch
      per bra pair class (`jab_ll`) after every `[p|q]` launch, on the same
      stream: each reads its bra class's `J_p` buffer WHERE IT LIES ON THE
@@ -265,8 +265,8 @@ def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver, *,
           ket_data: KetDataHook | None = None) -> np.ndarray:
     """The packed input: `tau | per bra class P zeta Ip | per ket class
     Q eta Iq Dmax D [| per JAB class zeta_ab XPA XPB s off_a off_b row]`,
-    built by `ao.staged`'s own buffer builders. `ket_data=` is
-    `ao.staged`'s hook (#155): a ket class's `Q eta D Dmax` from it -- the
+    built by `eri.j_coulomb.staged`'s own buffer builders. `ket_data=` is
+    `eri.j_coulomb.staged`'s hook (#155): a ket class's `Q eta D Dmax` from it -- the
     DQ kernel's, in the chain -- instead of the host pre-contraction, through
     the same `_kets_checked` (every `Iq * Dmax` its plan key, bit for bit)."""
     rows = checked_density(basis, D)
@@ -336,7 +336,7 @@ JAB_DOUBLES = 11  # per record: zeta_ab XPA(3) XPB(3) s off_a off_b row
 class JabLaunch:
     """One bra pair class's `Target.JAB` launch, after every `[p|q]` launch,
     reading `J_p[lp]` on the card. `data` is per record `zeta_ab XPA XPB s`
-    and `ints` `off_a off_b row` (exact as doubles), `ao.drive`'s values."""
+    and `ints` `off_a off_b row` (exact as doubles), `eri.j_coulomb.drive`'s values."""
 
     la: int
     lb: int
@@ -354,7 +354,7 @@ class JabLaunch:
 def jab_rows(basis: Basis, members) -> tuple[np.ndarray, np.ndarray]:
     """`(data, ints)` for the records of `members`, each `(a, b, start)`: a
     shell pair and its first row of the `J_p` buffer, records in
-    `primitive_pairs` order -- `ao.drive.KernelJAB` / `_jab_launches`' own
+    `primitive_pairs` order -- `eri.j_coulomb.drive.KernelJAB` / `_jab_launches`' own
     `zeta_ab`, `X_PA = P - A`, `X_PB = P - B`, `s`, offsets and rows."""
     shells, off = basis.shells, basis.offsets
     data, ints = [], []
@@ -371,7 +371,7 @@ def jab_rows(basis: Basis, members) -> tuple[np.ndarray, np.ndarray]:
 def jab_records(plan: LaunchPlan, basis: Basis):
     """Per bra pair class `(la, lb)`, sorted: `(la, lb, lp, data, ints)` over
     every record of every bra shell pair of the class -- the grouping of
-    `ao.drive._jab_launches` (one launch per class, rows of `J_p[lp]` from
+    `eri.j_coulomb.drive._jab_launches` (one launch per class, rows of `J_p[lp]` from
     the plan's bra blocks)."""
     shells = basis.shells
     blocks: dict[int, tuple] = {}
@@ -514,7 +514,7 @@ class Program:
 class DQClass:
     """One ket pair class's DQ launch: its shell pairs (sweep order), per
     record `eta XPA XPB s w` and `pair`, and `Dcd` per shell pair --
-    `ao.drive.KernelDQ.run`'s arguments, built the same way."""
+    `eri.j_coulomb.drive.KernelDQ.run`'s arguments, built the same way."""
 
     lc: int
     ld: int  # ld
@@ -535,7 +535,7 @@ class DQClass:
 def dq_classes(basis: Basis, D: object) -> list[DQClass]:
     """Every ket pair class of `basis`, sorted, with its unique shell pairs
     `c >= d` in sweep order and the host's weight -- the grouping and the
-    arguments of `ao.drive.coulomb_matrix_chain`'s DQ step."""
+    arguments of `eri.j_coulomb.drive.coulomb_matrix_chain`'s DQ step."""
     rows = checked_density(basis, D)
     shells, off = basis.shells, basis.offsets
     by: dict[tuple[int, int], list[tuple[int, int]]] = {}
@@ -682,7 +682,7 @@ def jab_stage(jp: np.ndarray, data: np.ndarray, ints: np.ndarray) -> np.ndarray:
 
 
 def transform(basis: Basis, plan: LaunchPlan, jps: dict[int, np.ndarray]):
-    """Eq. 20 and the mirrored scatter: `ao.staged._transform`, host-side."""
+    """Eq. 20 and the mirrored scatter: `eri.j_coulomb.staged._transform`, host-side."""
     blocks = {}
     for cl in plan:
         blocks.setdefault(cl.lp, cl.bra_blocks)
@@ -1152,7 +1152,7 @@ int main(int argc, char** argv) {{
 # block per (bra pair class, b shell): `n_bra x n_a n_b`. Every kernel whose
 # kets have that `b` ADDS into it -- ket classes of every `ld`, and every
 # batch of a split class -- so a one-batch kernel's plain write is
-# `passes.atomize`d here (`k_accumulating`), as `ao.staged._accumulating`
+# `passes.atomize`d here (`k_accumulating`), as `eri.j_coulomb.staged._accumulating`
 # does for J; a split class's kernels are atomic already (#203).
 #
 # THE SCATTER is host-side (`k_scatter`): `K_mn[a][b] = SUM` of the rows of

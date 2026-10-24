@@ -17,9 +17,9 @@ Schwarz factor of every AO pair, standalone output: nothing in the tree screens
 on it yet. It is EXACT where `ao.pairs`' `I_p` and `G_[ab]` are upper bounds
 built from the `PQ = 0` self-integral and the triangle inequality.
 
-THE REFERENCE IS `ao.eri`, NOT A SECOND ERI PATH. `(mn|mn)` is the component
+THE REFERENCE IS `eri.eri`, NOT A SECOND ERI PATH. `(mn|mn)` is the component
 diagonal of the block `eri_block((sa, sb), (sa, sb))`, so every value here is
-`ao.eri`'s arithmetic, already witnessed against libcint (test/test_ao_eri.py),
+`eri.eri`'s arithmetic, already witnessed against libcint (test/test_ao_eri.py),
 and `scale` is `eri_block_and_scale`'s absolute-value twin, the size of what was
 added (a tolerance relative to it is a statement about rounding).
 
@@ -45,7 +45,7 @@ its primitive pairs (`ao.density.epair`: `P`, `zeta`, `s = c_a c_b (pi/zeta)^{3/
 and `XPA = P - A`, `XPB = P - B`) as one contiguous record range
 `[rec0, rec1)`, which is both the bra and the ket side of its quartet.
 
-`pq` is INJECTED (`ao.eri`'s signature); `ao` imports no `reference/`.
+`pq` is INJECTED (`eri.eri`'s signature); `ao` imports no `reference/`.
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ def diagonal_matrix(basis: Basis, *, pq: PQ) -> Matrix:
 
 
 def scale_matrix(basis: Basis, *, pq: PQ) -> Matrix:
-    """The scale of every `(mn|mn)` (`ao.eri`'s), placed as `diagonal_matrix`."""
+    """The scale of every `(mn|mn)` (`eri.eri`'s), placed as `diagonal_matrix`."""
     return _place(basis, lambda sa, sb: diagonal_and_scale(sa, sb, pq=pq)[1])
 
 

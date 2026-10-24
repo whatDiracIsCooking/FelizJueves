@@ -10,7 +10,7 @@ warning located in generated text (#92).
 SCOPE, by decision: correctness is tested through L = 2 (la + lb) <= 4 --
 (ss), (sp), (pp) and (sd). PART 1 is `test_kernel_schwarz.SYNTHETIC`'s
 classes at L <= 4 (swapped pairs, diagonal and off-diagonal pairs) against
-`ao.schwarz`; every element no launched pair owns must come back exactly 0.0.
+`eri.schwarz`; every element no launched pair owns must come back exactly 0.0.
 PART 2 is the two s/p molecules whole, against the host under the bound below
 and against libcint's `int2e_diag` under test_ao_schwarz.py's tolerance,
 `|Q^2 - libcint| <= 1e-12 scale`, unchanged.
@@ -22,7 +22,7 @@ owning shell pair, n_t the Hermite indices at L):
     |Q_dev^2 - (mn|mn)_host| <= (2 gamma_N + delta) scale,
     N = 2 (4L + 8) + (6L + 12) + 2 n_t + 3 + K^2 + 2,
 
-`scale` being `ao.eri`'s absolute-value twin of the sum. Each side forms each
+`scale` being `eri.eri`'s absolute-value twin of the sum. Each side forms each
 term within `gamma` of the roundings it passes through, relative to the
 term's absolute value: two `E` entries (`4L + 8` each, test_j_chain_ondevice's
 `N_E`), one `[p+q]^(0)` at Hermite order 2L (`3 (2L) + 12`, the

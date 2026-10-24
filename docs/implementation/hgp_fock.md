@@ -28,7 +28,7 @@ claim or status (pin 2; `data/literature/fock/limits.json`). What it does
 score is `[Fock]` §3's non-numeric claims:
 **10 [Fock] records: 9 asserted, 1 unverifiable, 0 pending**
 (`data/literature/fock/claims.json`, scored by #291). Correctness is
-witnessed only from outside: `ao/fock.py`'s every-ordered-quartet sweep with
+witnessed only from outside: `eri/fock/fock.py`'s every-ordered-quartet sweep with
 MMD ERIs, and libcint's `vj − vk/2` through the tracked fixtures.
 
 ## The 2x2, in one place
@@ -44,7 +44,7 @@ the diagonal of a 2x2 table:
 | **MMD** | **held**: `Target.J` (milestones 2–7), `Target.K` (milestone 10, still open) | follow-up, #326 |
 | **HGP** | **held**: `Target.J` / `Target.K` on `Engine.HGP` (milestone 14) | **held**: `Target.F` (milestone 12) |
 
-**FJ now holds both of the paper's diagonal cells under one IR (`ir.py`),
+**FJ now holds both of the paper's diagonal cells under one IR (`ir/__init__.py`),
 one harness (`interp.py`, `emit/`, the tracked fixtures, the measured store
 and its gate), and two cards** (RTX 3080 `sm_86`, RX 9060 XT `gfx1200`).
 The two cells have not reached the cards equally. The MMD split cell's `J`
@@ -139,7 +139,7 @@ computed and pinned, not copied.
 
 **As IR** (`hgp/recurrence.py`, #279). `vrr_body` and `hrr_body` emit one
 `Decl` per DAG node in build order. The direction is read off the DAG, never
-re-derived. HGP needed two widenings of `ir.py`'s instruction form (#277):
+re-derived. HGP needed two widenings of `ir/__init__.py`'s instruction form (#277):
 
 - **a signed coefficient**, because the `(m+1)` lowering term's multiplier
   is `−e_d`;
@@ -157,7 +157,7 @@ no change.
   convention that eqs 25 and 28 fix, the ket's `(m+1)` displacement is
   `W − Q = +p/(p+q) PQ`. Eq 26 prints `−`. The kernel binds `WQ` as the
   derived value, so the sign lives in the bound value and not in the IR.
-  `test_hgp_recurrence.py` runs both signs against `ao/eri.py` on a quartet
+  `test_hgp_recurrence.py` runs both signs against `eri/eri.py` on a quartet
   with `P ≠ Q`. The derived sign is within `1e-13·scale`, and the printed
   one is off by more than `1e-2·scale`. #281 repeats the check on
   contracted quartets.
@@ -169,9 +169,9 @@ no change.
   With its normalisation repaired, it still misses `(sp|ss)`, one VRR step
   up.
 
-**The cross-engine pin** (#281): `ao/hgp_drive.py` interprets the VRR per
+**The cross-engine pin** (#281): `eri/hgp_drive.py` interprets the VRR per
 primitive quartet, completes the `K⁴` boundary sum and runs the HRR once.
-Its signature is `ao.eri.eri_block`'s. All 21 classes on HF/cc-pVTZ,
+Its signature is `eri.eri.eri_block`'s. All 21 classes on HF/cc-pVTZ,
 H₂O/cc-pVDZ and He–Ne agree with MMD within
 `1e-12·(scale_mmd + scale_hgp)` (worst 5.4e-16), and agree with libcint
 (worst 2.9e-14). The HGP scale is needed: the HRR's transfers cancel in a
@@ -206,7 +206,7 @@ and the host closes `F ← F + Fᵀ` after the last launch (`kernel_f.close`).
 **The contraction loop is inside the kernel, and that is forced** (pin 5).
 Eq 28 needs contracted values, so all `|boundary|` accumulators are live
 across the `K⁴` loop: 961 at `(dd|dd)`. Staging the boundary instead is
-priced out at 9.8 KB per contracted quartet at `(dd|dd)`. `lower.KernelCost`
+priced out at 9.8 KB per contracted quartet at `(dd|dd)`. `ir.lower.KernelCost`
 (#284) now models the loop nest. Its `carried` field equals `|boundary|` in
 all 21 classes, and at `(dd|dd)` `peak_live` is 2,140
 (`data/hgp/kernel_cost.json`).
@@ -233,7 +233,7 @@ unnoticed because it was checked against a re-typing of itself (pin 6). So
 here the weights are **computed** (`kernel_f.derive_weights`,
 `kernel_f.degeneracy`), and the witness is a sweep with no symmetry in it.
 
-**The witness** (`ao/fock.py`, #275) sweeps every ordered shell quartet once
+**The witness** (`eri/fock/fock.py`, #275) sweeps every ordered shell quartet once
 at weight 1: `J[a][b] += D[c][d] x`, `K[a][c] += D[b][d] x`, and
 `G = J − K/2`. The `1/2` is derived from closed-shell RHF
 (`G^σ = J[D] − K[P^σ]` with `P^σ = D/N_SPIN`), not read off PySCF's
@@ -322,7 +322,7 @@ module that names both engines through their ERI and kernel entry points.
 The two generators, `emit/__main__` and `measured`, name each engine's
 kernel builder only (`kernel`, `kernel_f`), under a narrow exemption added
 by #287 and #288 (`test_layering.py`'s `GENERATORS`). `launch_f` still borrows `launch`'s
-and `ao.j`'s private helpers (#328).
+and `eri.j_coulomb.j`'s private helpers (#328).
 
 ## The generator
 
@@ -349,7 +349,7 @@ and the timing.
 
 - **Part 1, per class.** H₂O/cc-pVDZ's plan at `τ = 0` reaches all 21
   classes. Each class's launches on the card are held to the same launches
-  interpreted (`2·TOL`) and to `ao.fock`'s sweep with MMD ERIs (`TOL =
+  interpreted (`2·TOL`) and to `eri.fock.fock`'s sweep with MMD ERIs (`TOL =
   1e-13·scale_G`). Worst against the sweep: 2.2e-14 at `(00|02)` over the
   default five, and 1.04e-14 (CUDA) / 9.49e-15 (HIP) at `(02|02)` over the
   16 deferred classes.
@@ -443,7 +443,7 @@ block transpose back to the ordered class. At L ≤ 4 there are 50 ordered
 classes in 13 orbits when every shell has `l ≤ 2`, and 70 in 17 with no
 cap. Neither engine is bitwise-symmetric under the permutations, so the
 permutation check is two checks. The index map is checked exactly, on a
-symbolic label tensor. `ao/eri.py`'s blocks are checked within
+symbolic label tensor. `eri/eri.py`'s blocks are checked within
 `1e-12·(scale_rep + scale_ordered)`, worst 2.6e-16. The issue's HRR example
 named the wrong class: its "(ds|ss) 16/34 against (sd|ss) 19/60" is really
 (dp|ss) against (pd|ss).
@@ -462,11 +462,11 @@ pair, one thread per contracted quartet, the `K⁴` contraction in registers
 before the HRR, the per-thread staging, and `kernel_f`'s record, `pack` and
 `MAX_PRIM_PAIRS`. `kernel_hk` imports its nest and modes from `kernel_hj`.
 The primitive nest is bra outer and ket inner, the opposite of `kernel_f`'s,
-so the ERI tap is `==` `ao/hgp_drive.eri_block` bit for bit. The deposit is
+so the ERI tap is `==` `eri/hgp_drive.eri_block` bit for bit. The deposit is
 `J_ab += D_cd (ab|cd)` or `K_ac += D_bd (ac|bd)` by `AtomicAdd`, with no
 weights, no degeneracy factor, no canonical half and no `close`. Two
-engines do not agree bitwise, so each class's deposit is held to `ao/j.py`
-or `ao/k.py` within `1e-12·(s_hgp + s_mmd)`. That bound is derived from
+engines do not agree bitwise, so each class's deposit is held to `eri/j_coulomb/j.py`
+or `eri/k_exchange/k.py` within `1e-12·(s_hgp + s_mmd)`. That bound is derived from
 `test_hgp_eri.py`'s per-ERI `TOL`, and no bound was widened. All 70 L ≤ 4
 classes are tested interpreted, in both modes.
 
@@ -478,14 +478,14 @@ routes a launch to its representative's class and carries the
 `Orientation`. Each build screens on **one** density block: the `j` key is
 `Q_ab Q_cd max|D_cd|` and the `k` key is `Q_ab Q_cd max|D_bd|`. A screen
 **skips, never breaks**, and `τ = 0` skips nothing. On a `τ` ladder every
-skipped quartet is proved against exact `ao/eri.py` ERIs, and J's key used
+skipped quartet is proved against exact `eri/eri.py` ERIs, and J's key used
 for K is shown to skip a quartet K needs. The stream borrows no private
 helper (#328).
 
 **The walker** (`walk_hjk.py`, #406, PR #476) assembles the whole `J` or `K`
 from the stream through the interpreted kernels, in both modes, and refuses
 any plan it cannot account for. It was run interpreted on H₂/STO-3G,
-H₂O/STO-3G and H₂O/6-31G, against `ao/j.py` / `ao/k.py` and libcint's
+H₂O/STO-3G and H₂O/6-31G, against `eri/j_coulomb/j.py` / `eri/k_exchange/k.py` and libcint's
 `vj` / `vk`. The worst error against libcint was 3.82e-15 of the scale
 (6-31G `J`). The H₂O cases are `slow` and were run once by hand (32
 passed). cc-pVDZ was not run.
@@ -505,7 +505,7 @@ nothing is timed.
 **Where it ran: the RTX 3080 only** (#408, PR #477; `test/hjk_driver.py`,
 `test/test_hjk_ondevice.py`). Part 1 ran all 70 L ≤ 4 ordered classes and
 all 17 canonical kernels, for each screen. Each ran on a synthetic basis
-holding only its own shells, against `ao.fock`'s weight-1 sweep. Part 2 ran
+holding only its own shells, against `eri.fock.fock`'s weight-1 sweep. Part 2 ran
 H₂/STO-3G and H₂O/STO-3G at `τ = 0`, in both modes for both screens, against
 the walk, the host and libcint. It also ran H₂O/STO-3G canonical at
 `τ = 1e-2`, where the screen fires. The result was **184 passed, 0

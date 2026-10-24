@@ -34,7 +34,7 @@ itself: no lane reads another lane's shared memory, so
   its sum stored to a shared double instead of a local one, then copied to
   `K` unchanged: interpreted with any lane count the lever's `K` is the
   literal kernel's at that lane count BIT FOR BIT
-  (test/test_k_lever_coalesced.py), and with one lane `ao.k.k_quartet`'s.
+  (test/test_k_lever_coalesced.py), and with one lane `eri.k_exchange.k.k_quartet`'s.
 
 The `K[a, b]` a kernel writes (`KContext.k_outs`, compacted into slots
 `kslot`) are cut into maximal runs of consecutive flat indices `s` whose slots

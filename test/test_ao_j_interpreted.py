@@ -1,23 +1,23 @@
-"""`ao.drive`: `J_mn` with `J_p` from the INTERPRETED GENERATED KERNEL (#87).
+"""`eri.j_coulomb.drive`: `J_mn` with `J_p` from the INTERPRETED GENERATED KERNEL (#87).
 
-`ao.j.coulomb_matrix(basis, D, pq=pq, jp=KernelJP(boys=boys))` runs the
+`eri.j_coulomb.j.coulomb_matrix(basis, D, pq=pq, jp=KernelJP(boys=boys))` runs the
 `[p|q]` kernel `kernel.build_pq_kernels` builds for each REAL class
 `(la, lb | lc, ld)` the basis reaches, in `interp.py`, on the real primitive
 pair records of `ao.pairs`; the ket pre-contraction, the bra transform and the
 scatter are #86's, already witnessed. So this is the first externally
 witnessed number produced by the generator rather than by `reference/`.
 
-THE TWO WITNESSES, both at TAU = 0 (the seam is unscreened; `ao.j` refuses
+THE TWO WITNESSES, both at TAU = 0 (the seam is unscreened; `eri.j_coulomb.j` refuses
 `jp` with `tau > 0`, so screening cannot hide an error here, and the
 sorted-ket precondition -- which only makes the `break` correct -- is moot):
 
-  reference  `J` from `reference.pq` through `ao.j`'s own `pq` path:
+  reference  `J` from `reference.pq` through `eri.j_coulomb.j`'s own `pq` path:
              |J_kernel - J_pq| <= 1e-13 max|J_pq|, element by element
              (the issue's 1e-13 relative, relative to the matrix's largest
              element, test_ao_j.py's convention).
   libcint    the tracked `get_jk` fixture, at test_ao_j.py's DERIVED
              tolerance |J_kernel - J_pyscf| <= 1e-12 scale_J
-             (`ao.j.coulomb_matrix_and_scale`; see test_ao_j.py for the
+             (`eri.j_coulomb.j.coulomb_matrix_and_scale`; see test_ao_j.py for the
              derivation). Not re-derived and not loosened.
 
 THE BATCH AXIS. For each `n_batches` in {1, 3, 6, 9} one full `J` is built
@@ -36,7 +36,7 @@ THE CASES, by cost (interpreter, this host):
          (measured ~2-4 s, ~8-14 s and ~45-50 s per J respectively).
   slow   H2O/cc-pVDZ at the `J_p` level: for EVERY class its basis reaches
          (all 81 `(la, lb | lc, ld)` with l <= 2) and every admitted
-         n_batches, the kernel-backed `jp` against `ao.j.jp_from_pq(pq)` on a
+         n_batches, the kernel-backed `jp` against `eri.j_coulomb.j.jp_from_pq(pq)` on a
          deterministic sample of that class's REAL records -- SAMPLE_BRA bra
          records drawn from all its bra shell pairs and SAMPLE_KET ket
          records of the class, chosen by a seeded generator. This isolates
@@ -46,7 +46,7 @@ THE CASES, by cost (interpreter, this host):
          is per class and a few real records answer it cheaply.
 
 Nothing compiles and nothing launches on a card. Boys is injected
-(`reference.boys.boys`); `ao.drive` itself does not import `reference/`.
+(`reference.boys.boys`); `eri.j_coulomb.drive` itself does not import `reference/`.
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ def test_interpreted_j_matches_reference_and_libcint(name: str, n: int):
 def test_j_p_is_written_unscaled_and_a_factor_four_is_caught():
     """`[JEngine, v2, Alg. 1]` line 10 writes `J[p] = 4 Jshm[p]`; this repo's
     kernel writes `J_p` unscaled and puts the only pair weight host-side
-    (`ao/j.py`'s unique sweep), and that `J_mn` matches libcint's `get_jk`
+    (`eri/j_coulomb/j.py`'s unique sweep), and that `J_mn` matches libcint's `get_jk`
     at test_ao_j.py's derived tolerance. The control is the claim made false:
     the same kernel's `J_p` multiplied by 4 on its way out -- Alg. 1's write,
     with the host weights unchanged -- misses libcint by orders of magnitude
@@ -307,7 +307,7 @@ def test_the_seam_is_unscreened():
 
 
 def test_the_adapter_does_not_reach_the_reference():
-    """Boys is injected; nothing ao.drive imports, transitively, is
+    """Boys is injected; nothing eri.j_coulomb.drive imports, transitively, is
     reference/ (test_layering.py holds the rule; this names the claim)."""
     graph = _graph()
     seen, todo = set(), ["eri.j_coulomb.drive"]

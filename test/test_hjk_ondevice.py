@@ -1,7 +1,8 @@
 """The split HGP `J` and `K` on the cards (#408): every `L <= 4` class in both
 class modes against the host and the interpreted launches, and the whole
 H2/STO-3G and H2O/STO-3G `J` and `K` against `walk_hjk`'s interpreted build,
-`ao/j.py` / `ao/k.py` and libcint's `vj` / `vk` -- on the RTX 3080
+`eri/j_coulomb/j.py` / `eri/k_exchange/k.py` and libcint's `vj` / `vk` -- on the RTX
+3080
 (`sm_86`) and the RX 9060 XT (`gfx1200`).
 
 THE LAUNCHES ARE WALK_HJK'S (test/hjk_driver.py): `launch_hjk`'s ordered
@@ -37,11 +38,11 @@ a `(dd)` pair). Part 2 runs the real bound. Each case asserts that its
 launches meet EVERY ordered quartet of its classes on that basis, once.
 
 The per-class witness is the HOST SWEEP RESTRICTED TO THOSE QUARTETS:
-`ao.fock.coulomb_exchange_reference`, the every-ordered-quartet weight-1
-sweep that `ao/j.py`'s `coulomb_matrix_reference` and `ao/k.py`'s
+`eri.fock.fock.coulomb_exchange_reference`, the every-ordered-quartet weight-1
+sweep that `eri/j_coulomb/j.py`'s `coulomb_matrix_reference` and `eri/k_exchange/k.py`'s
 `exchange_matrix_reference` are (test_hjk_build.py's restricted sweeps use
 it the same way; those two cannot be restricted, and unrestricted they
-would integrate the basis's every class), fed `ao.eri`'s MMD blocks -- the
+would integrate the basis's every class), fed `eri.eri`'s MMD blocks -- the
 other engine -- for the met quartets and zeros elsewhere. Against it: the
 card's matrix, the launches interpreted (`hjk_driver.interpret`), and the
 card's two runs against each other.
@@ -50,7 +51,8 @@ PART 2, PER MOLECULE. H2/STO-3G and H2O/STO-3G (s and p shells: every class
 `L <= 4`) at `tau = 0`, both screens and both modes, every launch of the
 plan (the real Schwarz bound, test_hjk_build's `plan`) in order into one
 matrix, against walk_hjk's interpreted build (`test_hjk_build.walk`),
-`ao/j.py` / `ao/k.py` (`test_hjk_build.reference`) and libcint's `vj` /
+`eri/j_coulomb/j.py` / `eri/k_exchange/k.py` (`test_hjk_build.reference`) and libcint's
+`vj` /
 `vk` (`manifest.fock_pair`, which asserts the `_j` and `_k` fixtures share
 density, shells and provenance). H2O/STO-3G at `tau = 1e-2`, canonical,
 both screens: the screen fires (asserted), against the walk and the sweep
@@ -65,8 +67,8 @@ test_kernel_hj.py carry it:
 
     |X_card - X_mmd| <= TOL S,   S = SUM |D| (scale_mmd + scale_hgp)
 
-`S` the same sweep on `|D|` with `ao.eri`'s absolute-value twin plus
-`ao.hgp_drive`'s, the latter in the orientation the kernel RAN (read off
+`S` the same sweep on `|D|` with `eri.eri`'s absolute-value twin plus
+`eri.hgp_drive`'s, the latter in the orientation the kernel RAN (read off
 each recorded launch's `perm`); the card is one more operation order of
 the HGP recurrence (FMA contraction and the fp64 atomics' order only
 re-associate), inside the same `gamma_n`. Against the interpreted launches
@@ -228,7 +230,7 @@ _MMD: dict = {}
 
 
 def _mmd(ls, q) -> tuple[np.ndarray, np.ndarray]:
-    """`ao.eri`'s block and twin of ordered quartet `q`, flat, once each."""
+    """`eri.eri`'s block and twin of ordered quartet `q`, flat, once each."""
     if (ls, q) not in _MMD:
         sh = class_basis(ls)[0].shells
         blk, scale = eri_block_and_scale((sh[q[0]], sh[q[1]]),
@@ -238,7 +240,7 @@ def _mmd(ls, q) -> tuple[np.ndarray, np.ndarray]:
 
 
 def hgp_twins(basis: Basis, recs) -> dict:
-    """Per ordered quartet, `ao.hgp_drive`'s twin in the orientation its
+    """Per ordered quartet, `eri.hgp_drive`'s twin in the orientation its
     launch RAN (built-order shells `x`, transposed back by `GROUP[perm]`),
     flat in the ordered quartet's `[a][b][c][d]` layout."""
     sh = basis.shells
@@ -256,7 +258,7 @@ def hgp_twins(basis: Basis, recs) -> dict:
 
 
 def restricted_sweep(basis: Basis, D, screen: str, blocks) -> np.ndarray:
-    """`ao.fock`'s every-ordered-quartet sweep (`J` or `K`) with the flat
+    """`eri.fock.fock`'s every-ordered-quartet sweep (`J` or `K`) with the flat
     blocks `blocks[q]` for the quartets it holds and zeros elsewhere."""
     idx = {id(s): i for i, s in enumerate(basis.shells)}
 
@@ -336,7 +338,8 @@ def test_hip_hjk_each_class_matches_the_host(screen, mode, name, request,
 
 
 # ---------------------------------------------------------------------------
-# Part 2: the whole molecule, against walk_hjk, ao/j.py / ao/k.py, libcint
+# Part 2: the whole molecule, against walk_hjk, eri/j_coulomb/j.py /
+# eri/k_exchange/k.py, libcint
 # ---------------------------------------------------------------------------
 
 

@@ -1,7 +1,8 @@
 """`kernel_dq`: the ket pre-contraction kernel, `D_q` and `Dmax` (#153).
 
 The kernel is checked against the HOST pre-contraction it replaces --
-`ao.j.dq_from_host` (the `dq=` seam's reference) and `ao.density.make_kets` (the sweep's
+`eri.j_coulomb.j.dq_from_host` (the `dq=` seam's reference) and `ao.density.make_kets`
+(the sweep's
 own) -- interpreted, on real primitive-pair records. The reference is the host
 path, so the f class needs no `J` fixture: `hf_ccpvtz` (s-f on F, s-d on H,
 the F s shells a general contraction of 8 primitives) reaches every ordered
@@ -11,7 +12,7 @@ EXACT EQUALITY, NOT A TOLERANCE. The kernel performs the host's operations in
 the host's order (`acc_q += x * (s * E[r, q])`, `r` outer, from `+0.0`; then
 `w * acc_q`; `kernel_dq`'s module docstring says why the absent structural
 zeros and the host's `D_cd = 0` skip change no bit), and the inlined `E`
-fragment is bitwise `ao.hermite.e_block` (test/test_e_fragment.py). So
+fragment is bitwise `mmd.hermite.e_block` (test/test_e_fragment.py). So
 `D_q` and `Dmax` are asserted `==`. It does NOT factor `s * w` out of the sum.
 
 THE WEIGHT. `w = 2` off the diagonal is a host scalar; the kernel holds no
@@ -19,7 +20,7 @@ literal that could be a weight, and its output is linear in the `w` it is
 given -- covered on `hf_ccpvtz` and on H2O/STO-3G, both of which have
 off-diagonal ket pairs.
 
-THE CHAIN. `ao.j.coulomb_matrix(..., dq=KernelDQ())` against the host path
+THE CHAIN. `eri.j_coulomb.j.coulomb_matrix(..., dq=KernelDQ())` against the host path
 (`==`, which the exactness above implies) and against the tracked libcint
 `get_jk` fixtures at test_ao_j.py's derived `1e-12 scale_J`, inherited and not
 loosened: H2 and H2O/STO-3G fast, H2O/cc-pVDZ (d) `slow`. No PySCF needed.

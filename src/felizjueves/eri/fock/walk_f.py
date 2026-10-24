@@ -13,7 +13,7 @@ This is the first place the symmetry (the canonical half and the degeneracy
 factor, #283), the screens (pruning and eq. 29's pre-launch screen, #285;
 the six-block in-kernel skip, #283), the batching (#285) and the digestion
 (#283) run together; `test/test_fock_build.py` holds the result to
-`ao.fock`'s every-ordered-quartet sweep and to libcint's `vj - vk/2`.
+`eri.fock.fock`'s every-ordered-quartet sweep and to libcint's `vj - vk/2`.
 
 INDEPENDENT OF THE PLAN BUILDER (m6's discipline). This module does NOT
 import `launch_f` -- not even for its types: the plan is read by duck type
@@ -72,7 +72,7 @@ quartets alone reproduce the walk's `F`) and holds every skipped quartet,
 of all three kinds, to the exact ERIs.
 
 THE EARLY BREAK, WALKED (#352). A launch whose `Spec` carries the
-`ket-break` lever (`KET_BREAK`; f_levers/ket_break.py has the proof) runs a
+`ket-break` lever (`KET_BREAK`; eri/fock/levers/ket_break.py has the proof) runs a
 kernel that ends each thread's strided ket loop at the first ket with
 
     brk = G_ab (G_cd M_ab) < tau
@@ -94,7 +94,7 @@ the proof) and to the exact ERIs. With no `ket-break` launch nothing here
 changes: `kernel_broken` is empty and every argument is the literal one.
 
 THE ATOMIC-FREE WRITE-BACK, WALKED (#358). A launch whose `Spec` carries
-the `scatter` lever (`SCATTER`; f_levers/scatter.py) runs a kernel that
+the `scatter` lever (`SCATTER`; eri/fock/levers/scatter.py) runs a kernel that
 writes no `F`: it is handed a zeroed slot buffer `W` of the declared size
 (`kernel_f_scatter.n_slot`) in `F`'s place and returns it, and the walker
 then runs the scatter kernel (`kernel_f_scatter.build_scatter_kernel`)
@@ -103,7 +103,7 @@ two sides' packed AO offsets), with the running `F` -- the scatter after
 its batch, before the next launch. Everything else is unchanged; with no
 `scatter` launch nothing here changes.
 
-Plain tuples and floats; `D` is `ao.j`'s density contract (square,
+Plain tuples and floats; `D` is `eri.j_coulomb.j`'s density contract (square,
 symmetric, finite), shared.
 """
 
@@ -127,12 +127,12 @@ Run = Callable[[Kernel, int, tuple[int, int], Mapping[str, object]],
 
 THREADS = 4  # the default block width; the answer does not depend on it
 
-# #352: the lever a launch's `Spec` names to break (f_levers/ket_break.py's
+# #352: the lever a launch's `Spec` names to break (eri/fock/levers/ket_break.py's
 # NAME) and the argument its kernel reads (its BOUND); restated, not
 # imported, so the walker stays off the kernel's levers (a test pins both).
 KET_BREAK = "ket-break"
 BREAK_ARG = "M_ab"
-# #358: the atomic-free write-back's lever (f_levers/scatter.py's NAME),
+# #358: the atomic-free write-back's lever (eri/fock/levers/scatter.py's NAME),
 # restated as KET_BREAK is (a test pins it).
 SCATTER = "scatter"
 

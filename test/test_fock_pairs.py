@@ -119,7 +119,7 @@ def _by_fixture(name: str, *rest):
 def _block(basis: Basis, bra: tuple[int, int], ket: tuple[int, int],
            keep_bra=None, keep_ket=None) -> list[list[float]]:
     """`(ab|cd)` from the given primitive pairs only (all when None), by
-    ao/eri.py's own primitive quartet."""
+    eri/eri.py's own primitive quartet."""
     sh = basis.shells
     sa, sb = sh[bra[0]], sh[bra[1]]
     sc, sd = sh[ket[0]], sh[ket[1]]

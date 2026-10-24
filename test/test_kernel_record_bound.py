@@ -1,6 +1,6 @@
 """kernel_record_bound.py: K's dressed record bound, interpreted (#499).
 
-THE WITNESS is `ao.k.record_bounds(epair(sa, sb), pq=reference.pq.pq)`: the
+THE WITNESS is `eri.k_exchange.k.record_bounds(epair(sa, sb), pq=reference.pq.pq)`: the
 host forms each `I_p` from the `[p|q]` recurrence at `PQ = 0`, the dressed
 `E` as `s * e_block`, and sums each row with `fsum`; the kernel inlines
 `e_fragment`'s `E`, uses `kernel_pair_bound`'s closed form one `p` at a time
@@ -264,7 +264,7 @@ FAR = 15.0  # bohr; the H10 chain is 21.6 end to end
 
 
 def test_the_dressed_bound_is_not_the_pair_bound() -> None:
-    # What K's screen is proved against (ao.k, "THE SCREEN") and what
+    # What K's screen is proved against (eri.k_exchange.k, "THE SCREEN") and what
     # PAIR_BOUND gives differ both ways (FreeBreakfast#132's table): on
     # H2O/cc-pVDZ a dressed record exceeds the undressed bound (by 1.2, an
     # s shell with itself), and on the H10 chain the dressed bound

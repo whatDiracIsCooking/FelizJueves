@@ -1,4 +1,4 @@
-"""The interleaved digest per slice, `f_levers/sliced_site_digest.py` (#359),
+"""The interleaved digest per slice, `eri/fock/levers/sliced_site_digest.py` (#359),
 interpreted.
 
 The lever digests each ERI of a #356 slice into the Fock buffers (and the
@@ -24,7 +24,7 @@ slice's whole HRR, in the predigest's order. What is asserted:
 4. EXACTNESS: interpreted, `F` and the tap `g` are the literal kernel's
    and #356's BIT FOR BIT on every class with L <= 4 (milestone 13's cap;
    above it `slow`, not run under the cap): the per-buffer summation order
-   is unchanged; one launch against `ao.fock`'s sweep to
+   is unchanged; one launch against `eri.fock.fock`'s sweep to
    `test_kernel_f.TOL`, and the degeneracy cases within the cap.
 5. THE GOLDENS: `(sp|sp)` with the three levers, one unit per backend.
 

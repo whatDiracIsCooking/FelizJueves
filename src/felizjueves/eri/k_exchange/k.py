@@ -3,7 +3,7 @@
     exchange_matrix(basis, D, *, pq, tau=0.0, k=None)   -> K   (unique)
     exchange_matrix_reference(basis, D, *, pq, tau=0.0) -> K   (all ordered)
     exchange_matrix_and_scale(basis, D, *, pq)          -> (K, scale)
-    k_from_eris(basis, D, *, pq)                        -> K   via ao.eri
+    k_from_eris(basis, D, *, pq)                        -> K   via eri.eri
     k_quartet(bra_pair, ket_pair, D_cd, *, pq)          the seam's reference
     exchange_matrix_screened(basis, D, *, pq, tau, order="sorted",
                              decay=None)                -> KScreened (#200)
@@ -29,13 +29,14 @@ digested the moment it is formed. That is the device kernel's shape
 (`kernel_k.py`, #198), so the host is its bit-for-bit witness; it is forced
 by the shared-memory budget, not chosen (the milestone description). `E` is
 the DRESSED coefficient of `ao.pairs.primitive_pairs` on both sides, formed
-as `s * E` with `s` from `pairs.dress` (via `ao.density.epair`, exactly as `ao.j`'s
+as `s * E` with `s` from `pairs.dress` (via `ao.density.epair`, exactly as
+`eri.j_coulomb.j`'s
 seams form it), so `(pi/zeta)^{3/2}` rides the bra `E` and `(pi/eta)^{3/2}`
 the ket `E`, once each, and this module multiplies no constant in. `[p|q]`
 carries `(2/sqrt(pi)) theta` and `(-1)^{|q|}` inside the injected evaluator,
-as in `ao/eri.py` and `ao/j.py`.
+as in `eri/eri.py` and `eri/j_coulomb/j.py`.
 
-THE TWO SWEEPS, and why K's weights are not J's. `ao/j.py` uses two
+THE TWO SWEEPS, and why K's weights are not J's. `eri/j_coulomb/j.py` uses two
 symmetries: the ket pair `(c, d)` is SUMMED, so `(ab|cd) D_cd + (ab|dc) D_dc
 = 2 (ab|cd) D_cd` gives the ket weight `w = 2` off the diagonal; and `J` is
 symmetric, so a bra pair `a >= b` is mirrored. In K neither pair is summed:
@@ -81,12 +82,12 @@ not at all -- and nothing else: it cannot see an error both sweeps share
 reference away once it is green.
 
 THE DENSITY MUST BE SYMMETRIC, and an asymmetric one is REJECTED
-(`ValueError`, `ao.j`'s check, verbatim), not symmetrised: the transpose
+(`ValueError`, `eri.j_coulomb.j`'s check, verbatim), not symmetrised: the transpose
 identity above holds only for `D_cd = D_dc`. Every entry point rejects, so
 they share one contract.
 
 `k_from_eris` is a THIRD index path: every ordered quadruple's full ERI
-block from `ao.eri.eri_block((sa, sc), (sb, sd))`, contracted with `D_cd`
+block from `eri.eri.eri_block((sa, sc), (sb, sd))`, contracted with `D_cd`
 element by element. It shares the `[p|q]` evaluator and the dressed `E`
 with the sweeps and nothing else -- no staging, no fusing, no symmetry.
 
@@ -94,10 +95,10 @@ THE SCALE (`exchange_matrix_and_scale`, unique sweep): the same sum with
 every factor in absolute value -- `|D_cd|`, `|E^{ac}_p|`, `|[p|q]|`,
 `|E^{bd}_q|` -- and the same weights (`|X|^T` is the partner's scale, since
 `|[p|q]|` is bra-ket symmetric). So `scale_K[a][b] = sum_{cd} |D_cd|
-scale_eri(ac|bd)` for `ao.eri`'s per-element ERI scale, and a per-ERI bound
+scale_eri(ac|bd)` for `eri.eri`'s per-element ERI scale, and a per-ERI bound
 `|err| <= t scale_eri` gives `|err K| <= t scale_K` by the triangle
 inequality: the K tolerance is inherited, not chosen, exactly as
-`ao.j.coulomb_matrix_and_scale`'s is.
+`eri.j_coulomb.j.coulomb_matrix_and_scale`'s is.
 
 THE SCREEN (#200). A (bra record, ket record) pair -- one primitive pair
 of `(sa, sc)` against one of `(sb, sd)` -- is skipped when
@@ -110,7 +111,7 @@ with `I` the per-record scalar `record_bounds` returns:
 
 `I_p = sqrt([p|p](PQ = 0, theta = sqrt(zeta/2)))` is `ao.pairs.hermite_bound`
 -- the pair-factor-free Schwarz factor #84/#85 proved for J -- evaluated
-through the injected `pq` exactly as `ao.j.pair_bound_pq` does (a test pins
+through the injected `pq` exactly as `eri.j_coulomb.j.pair_bound_pq` does (a test pins
 it equal to `hermite_bound` under `reference.pq.one_centre`), and `E` is the
 DRESSED coefficient, the same `s * E` the contraction uses. THE PROOF that
 it bounds: the record pair's contribution to `K[a_i][b_j]` is
@@ -274,7 +275,7 @@ _ORIGIN = (0.0, 0.0, 0.0)
 def _hermite_bounds_pq(zeta: float, L: int, *, pq: PQ) -> list[float]:
     """`I_p = sqrt([p|p](PQ = 0, theta = sqrt(zeta/2)))` over
     `hermite_order(L)`: `ao.pairs.hermite_bound` through the `[p|q]`
-    evaluator, as `ao.j.pair_bound_pq` forms it. Raises on a negative
+    evaluator, as `eri.j_coulomb.j.pair_bound_pq` forms it. Raises on a negative
     radicand, never `abs`es it."""
     theta = math.sqrt(zeta / 2.0)
     out = []
@@ -498,7 +499,7 @@ def exchange_matrix_and_scale(basis: Basis, D: object, *,
 
 
 def k_from_eris(basis: Basis, D: object, *, pq: PQ) -> Matrix:
-    """`K_mn = sum_{ls} D_ls (ml|ns)` from `ao.eri.eri_block` of every ordered
+    """`K_mn = sum_{ls} D_ls (ml|ns)` from `eri.eri.eri_block` of every ordered
     quadruple -- the full ERI block, contracted element by element."""
     rows = checked_density(basis, D)
     shells, off = basis.shells, basis.offsets
@@ -525,7 +526,7 @@ def k_from_eris(basis: Basis, D: object, *, pq: PQ) -> Matrix:
 
 @dataclass(frozen=True)
 class KScreened:
-    """`exchange_matrix_screened`'s result, `ao.j.Screened`'s shape for K
+    """`exchange_matrix_screened`'s result, `eri.j_coulomb.j.Screened`'s shape for K
     (module docstring, "THE SCREEN"): `K`, the `tau`-independent error scale,
     the count of (bra record, ket record) pairs of the unique sweep, total,
     skipped and examined (whose screen test was evaluated: 0 at `tau = 0`),

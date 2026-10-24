@@ -1,4 +1,4 @@
-"""Struct-typed pair-record reads, `f_levers/struct_reads.py` (#353), host side.
+"""Struct-typed pair-record reads, `eri/fock/levers/struct_reads.py` (#353), host side.
 
 The lever reads every packed pair record of the fused F kernel through a
 struct view of its row (`ir.Member` over an `ir.Record`) instead of a
@@ -9,7 +9,7 @@ acceptance in order:
    reasons on J and K), registered in `f_levers.REGISTRY`, moving the
    `field` hook only, refusing to compose over another lever's `field`.
 2. THE LAYOUT IS DECLARED ONCE AND HELD TO THE PACKING: `struct_reads.VIEWS`
-   against `kernel_f.pack` (the F side's packing; `ao/staged.py` packs the
+   against `kernel_f.pack` (the F side's packing; `eri/j_coulomb/staged.py` packs the
    J launch plan's per-field arrays and has no F record), member by member
    and value by value, the member names derived independently from
    `kernel_f.PrimRec` / `PairRec`'s fields -- and a drifted declaration (two
@@ -23,7 +23,7 @@ acceptance in order:
    array is left), and each member is the one the literal offset named.
 4. PARITY, interpreted ("typed and untyped builds parity on the host
    shim"): the lever's `F` and tap `g` are the literal kernel's BIT FOR BIT
-   at every class with L <= 4, one launch against `ao.fock`'s sweep to
+   at every class with L <= 4, one launch against `eri.fock.fock`'s sweep to
    `test_kernel_f.TOL`, and every degeneracy case within the cap.
 5. THE SPELLING (`emit/_c.py`, shared by both backends; additive): one
    `struct fj_<record>` per record a kernel reads, in first-use order, each

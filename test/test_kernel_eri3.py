@@ -1,8 +1,9 @@
 """`kernel_eri3`: the three-center DF integral kernel, `Target.ERI3`, interpreted.
 
-THE WITNESS is `ao.eri3` (#443: `class_block` of each staged cell with
+THE WITNESS is `eri.density_fit.eri3` (#443: `class_block` of each staged cell with
 `reference.pq.pq` injected, placed by `place_staged`); the kernel runs over
-`ao.eri3.eri3_classes`' staging through `ao.eri3_drive`, its Boys function
+`eri.density_fit.eri3.eri3_classes`' staging through `eri.density_fit.eri3_drive`, its
+Boys function
 `reference.boys.boys`, injected into the interpreter. Through the tracked
 schema-4 set `h2o_sto3g_jkfit_3c` (#442) the host is libcint's
 `int3c2e_cart` (test/test_ao_eri3.py), so the fixture cases here also compare

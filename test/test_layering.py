@@ -70,14 +70,15 @@ _DF_HOST = ("eri.density_fit.metric", "eri.density_fit.metric_drive",
 # #510: the shared ERI host modules, which lived under `ao/` the same way
 # until they moved into `eri/`.
 _ERI_HOST = ("eri.eri", "eri.hgp_drive", "eri.schwarz")
-# #513: the fused Fock build's host sweep, `ao/fock.py`, which moved into
+# #513: the fused Fock build's host sweep, `eri/fock/fock.py`, which moved into
 # `eri/fock/` with the rest of the fused build.
 _FOCK_HOST = ("eri.fock.fock",)
 # Every module that left the `ao` prefix: a rule or a transitive check that
 # says `ao` names these too, so its reach is unchanged.
-# #512: `ao.k` (the host K) left `ao/` for `eri/k_exchange/` as well.
+# #512: `eri.k_exchange.k` (the host K) left `ao/` for `eri/k_exchange/` as well.
 _K_HOST = ("eri.k_exchange.k",)
-# #511: the J chain's host modules (`ao/j.py`, `ao/drive.py`, `ao/staged.py`)
+# #511: the J chain's host modules (`eri/j_coulomb/j.py`, `eri/j_coulomb/drive.py`,
+# `eri/j_coulomb/staged.py`)
 # left `ao/` for `eri/j_coulomb/` with the rest of the chain.
 _J_HOST = ("eri.j_coulomb.j", "eri.j_coulomb.drive", "eri.j_coulomb.staged")
 _LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST, *_FOCK_HOST, *_K_HOST,
@@ -724,11 +725,11 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.pairs": ("mmd.hermite", "ao.shell"),
     "eri.eri": ("mmd.hermite", "ao.pairs", "ao.shell"),
     # #503: the density contract, `tau`, `EPair` and the ket records, out of
-    # ao.j so that K, F, Schwarz and the launch plans need not import J.
+    # eri.j_coulomb.j so that K, F, Schwarz and the launch plans need not import J.
     "ao.density": ("mmd.hermite", "ao.pairs", "ao.shell"),
     "eri.j_coulomb.j": ("ao.density", "mmd.hermite", "ao.pairs", "ao.shell"),
     # #197: K reuses the density contract and EPair (ao.density since #503),
-    # and ao.eri for its third index path (`k_from_eris`).
+    # and eri.eri for its third index path (`k_from_eris`).
     "eri.k_exchange.k": ("ao.density", "eri.eri", "mmd.hermite", "ao.shell"),
     "eri.j_coulomb.drive": ("ao.density", "eri.j_coulomb.j", "ao.shell",
                             "eri.j_coulomb.staged", "ir.interp", "ir",
@@ -835,7 +836,7 @@ def _graph() -> dict[str, set[str]]:
 def _under(module: str, prefix: str) -> bool:
     """`prefix` covers `module` and all below it; `"=ir"` covers `ir` only.
 
-    The exact form (#502) is for a module that becomes a package: once `ir.py`
+    The exact form (#502) is for a module that becomes a package: once `ir/__init__.py`
     is `ir/`, `may=("ir",)` would also admit `ir.interp` and `ir.lower`, and
     `"=ir"` keeps the old reach. In `must_not`, pass it as `**{"=ir": why}`.
     """
@@ -1005,7 +1006,7 @@ def test_the_measured_store_imports_no_toolchain() -> None:
 def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # #153, TRANSITIVELY: the pre-contraction kernel is built from IR, the
     # `E` fragment and the key alone. No chain of imports reaches the AO
-    # layer it is checked against (`ao.j.dq_from_host`), the interpreter,
+    # layer it is checked against (`eri.j_coulomb.j.dq_from_host`), the interpreter,
     # reference/, a backend or a card.
     graph = _graph()
     seen: set[str] = set()
@@ -1024,8 +1025,8 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 
 # ---------------------------------------------------------------------------
 # #233 (milestone 11): the one-electron assembly and the overlap matrix, both
-# under the `ao` rule. `ao.one_electron` is the symmetric loop `S`, `T` and
-# `V` share, from `ao.shell` alone; `ao.overlap` is `S` as the `t = 0` column
+# under the `ao` rule. `one_electron.one_electron` is the symmetric loop `S`, `T` and
+# `V` share, from `ao.shell` alone; `one_electron.overlap` is `S` as the `t = 0` column
 # of the block `ao.pairs` already dresses.
 # ---------------------------------------------------------------------------
 
@@ -1056,9 +1057,9 @@ EDGES |= {k: frozenset(v) for k, v in {
 
 
 # ---------------------------------------------------------------------------
-# #234 (milestone 11): the kinetic matrix, under the `ao` rule. `ao.kinetic`
-# is `T` by the fixed +/-2 ket shift on `ao.hermite`'s axis tables, dressed
-# by `ao.pairs.dress` and assembled by `ao.one_electron`.
+# #234 (milestone 11): the kinetic matrix, under the `ao` rule. `one_electron.kinetic`
+# is `T` by the fixed +/-2 ket shift on `mmd.hermite`'s axis tables, dressed
+# by `ao.pairs.dress` and assembled by `one_electron.one_electron`.
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
@@ -1073,7 +1074,7 @@ EDGES |= {k: frozenset(v) for k, v in {
 # ---------------------------------------------------------------------------
 # #237 (milestone 11): the overlap kernel, `Target.S`. A builder like
 # `kernel_jab`: the key, IR and the `E` fragment's `t = 0` column, inlined.
-# It is checked against `ao.overlap.overlap_block` in the interpreter, so
+# It is checked against `one_electron.overlap.overlap_block` in the interpreter, so
 # neither may be its ancestor, nor `reference/`.
 # ---------------------------------------------------------------------------
 
@@ -1152,9 +1153,9 @@ def test_the_pair_bound_builder_reaches_neither_its_witness_nor_a_machine(
 
 # ---------------------------------------------------------------------------
 # #499: K's dressed record bound kernel, `Target.RECORD_BOUND`: each ordered
-# record's `ao.k.record_bounds`. A builder like `kernel_dq`: the key, IR and
+# record's `eri.k_exchange.k.record_bounds`. A builder like `kernel_dq`: the key, IR and
 # the `E` fragment inlined, with `kernel_pair_bound`'s per-`p` closed form.
-# It is checked against `ao.k.record_bounds` through `reference.pq` in the
+# It is checked against `eri.k_exchange.k.record_bounds` through `reference.pq` in the
 # interpreter, so neither may be its ancestor.
 # ---------------------------------------------------------------------------
 
@@ -1223,7 +1224,7 @@ def test_the_s_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # #238 (milestone 11): the kinetic-energy kernel, `Target.T`. `kernel_s`'s
 # shape: the key, IR and the `E` fragment's kinetic bracket (the axis tables
 # at `lb + 2` and the fixed ket shift), inlined. It is checked against
-# `ao.kinetic.kinetic_block` in the interpreter, so neither may be its
+# `one_electron.kinetic.kinetic_block` in the interpreter, so neither may be its
 # ancestor, nor `reference/`.
 # ---------------------------------------------------------------------------
 
@@ -1273,7 +1274,7 @@ def test_the_t_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # #239 (milestone 11): the nuclear-attraction kernel, `Target.V` -- the plan
 # layer's first non-J consumer. A builder like `kernel_s`, plus the plan
 # layer and `recurrence` (the J engine's `[t]^(0)` statements, imported, not
-# rewritten). Checked against `ao.potential.potential_block` in the
+# rewritten). Checked against `one_electron.potential.potential_block` in the
 # interpreter, so neither may be its ancestor, nor `reference/`.
 # ---------------------------------------------------------------------------
 
@@ -1328,8 +1329,9 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # `launch.py`. Its records come from the AO layer (`ao.pairs.pair_list` and
 # `primitive_pairs`, `ao.density.epair`), and its walker reproduces the host's
 # `S`, `T` and `V` from the plan with the host's own axis pieces
-# (`ao.hermite.e_axis`, `ao.kinetic.kinetic_axis`), the host's placement
-# (`ao.one_electron.matrix`) and nucleus check (`ao.potential`). Still
+# (`mmd.hermite.e_axis`, `one_electron.kinetic.kinetic_axis`), the host's placement
+# (`one_electron.one_electron.matrix`) and nucleus check (`one_electron.potential`).
+# Still
 # under rule "launch": `ao` was already allowed, `one_centre` is injected,
 # and no builder of S, T or V is imported -- the plan restates their keys
 # (test/test_launch.py pins them equal), it does not build kernels.
@@ -1401,7 +1403,7 @@ RULES |= {
 RULE_OF |= {m: "hgp" for m in _modules() if _under(m, "hgp")}
 
 # #505: engine #1's modules moved into `mmd/` (kernel, recurrence, e_fragment,
-# ao.hermite), each keeping its own rule above; the package marker itself is
+# mmd.hermite), each keeping its own rule above; the package marker itself is
 # the one new module, and imports nothing.
 RULES |= {
     "mmd_package": _rule(
@@ -1433,7 +1435,7 @@ EDGES["eri"] = frozenset()
 RULE_OF["eri.hjk"] = "eri_hjk_package"
 EDGES["eri.hjk"] = frozenset()
 
-# #512: the MMD exchange K moved into `eri/k_exchange/` (ao.k, kernel_k,
+# #512: the MMD exchange K moved into `eri/k_exchange/` (eri.k_exchange.k, kernel_k,
 # kernel_kblock, kernel_record_bound, launch_k, launch_kblock, kdup and the
 # K lever package, now `eri.k_exchange.levers`), each keeping its own rule;
 # the package marker is the one new module, and imports nothing.
@@ -1447,8 +1449,9 @@ RULES |= {
 RULE_OF["eri.k_exchange"] = "eri_k_exchange_package"
 EDGES["eri.k_exchange"] = frozenset()
 
-# #511: the Coulomb J chain moved into `eri/j_coulomb/` (ao.j, ao.drive,
-# ao.staged, kernel_dq, kernel_jab, launch and the J lever package, now
+# #511: the Coulomb J chain moved into `eri/j_coulomb/` (eri.j_coulomb.j,
+# eri.j_coulomb.drive,
+# eri.j_coulomb.staged, kernel_dq, kernel_jab, launch and the J lever package, now
 # `eri.j_coulomb.levers`), each keeping its own rule; the package marker is
 # the one new module, and imports nothing.
 RULES |= {
@@ -1467,7 +1470,7 @@ EDGES |= {k: frozenset(v) for k, v in {
     "hgp.cost": ("hgp.hrr", "hgp.vrr"),  # #276: FLOPs off both DAGs
 }.items()}
 
-# #279: `hgp.recurrence`, the bridge from `hgp/` to `ir.py` -- the HGP twin
+# #279: `hgp.recurrence`, the bridge from `hgp/` to `ir/__init__.py` -- the HGP twin
 # of the MMD `recurrence` (rule "builder"). It is the one `hgp.*` module that
 # may reach the IR, so it gets its own rule; the package-wide prohibitions
 # (plan, reference) are restated, and the transitive test below holds it too.
@@ -1489,8 +1492,8 @@ RULE_OF["hgp.recurrence"] = "hgp_builder"
 EDGES["hgp.recurrence"] = frozenset(("hgp.hrr", "hgp.vrr", "ir", "spec"))
 
 
-# #281: `ao.hgp_drive`, the HGP engine's ERI block INTERPRETED -- the
-# `ao.drive` precedent (builder + interp + ao, producing numbers) for engine
+# #281: `eri.hgp_drive`, the HGP engine's ERI block INTERPRETED -- the
+# `eri.j_coulomb.drive` precedent (builder + interp + ao, producing numbers) for engine
 # #2. It cannot live under `hgp/` (rule `hgp` admits only `hgp` and `spec`,
 # and `hgp_builder` bans `interp`), so it is an adapter of its own: the
 # MMD adapter's rule does not admit `hgp`, and widening it would let the
@@ -1542,7 +1545,7 @@ def test_no_hgp_module_reaches_the_plan_or_the_reference() -> None:
 
 # ---------------------------------------------------------------------------
 # #275 (milestone 12): the two-electron Fock witness, under the `ao` rule.
-# `ao.fock` sweeps every ordered quartet with the ERI block function
+# `eri.fock.fock` sweeps every ordered quartet with the ERI block function
 # INJECTED (`eri=`), so it imports no engine: only the density contract
 # (`ao.density` since #503) and `ao.shell`'s basis.
 # ---------------------------------------------------------------------------
@@ -1620,7 +1623,7 @@ def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
 # #282 (milestone 12): the fused Fock kernel, `Target.F`, up to the ERIs --
 # a builder beside `kernel_k`: the key, IR, and the HGP statements of
 # `hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs. It is interpreted
-# against a host path built from #279's kernels and against `ao/eri.py`, so
+# against a host path built from #279's kernels and against `eri/eri.py`, so
 # neither the AO layer nor reference/ may be its ancestor, and it keeps off
 # the plan layer as hgp/ does (milestone 12, pin 11).
 # ---------------------------------------------------------------------------
@@ -1712,8 +1715,8 @@ EDGES["eri.fock.walk_f"] = frozenset(("ao.density", "ao.shell", "ir",
 def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None:
     # #286, TRANSITIVELY: no chain of imports from `walk_f` reaches the plan
     # builder, reference/, the interpreter, a backend, the dispatch policy,
-    # or the witnesses the walk is held to (`ao.fock`'s sweep, `ao.eri`,
-    # `ao.hgp_drive`).
+    # or the witnesses the walk is held to (`eri.fock.fock`'s sweep, `eri.eri`,
+    # `eri.hgp_drive`).
     graph = _graph()
     seen: set[str] = set()
     todo = ["eri.fock.walk_f"]
@@ -1740,15 +1743,15 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
 #
 # WHAT "AN ENGINE" IS, by module: the entry points `engine` names and the
 # recurrence machinery behind them (`ENGINES`). MMD is `plan/`, `recurrence`,
-# `kernel` and `ao.eri`; HGP is `hgp/`, `kernel_f` and `ao.hgp_drive`. The
+# `kernel` and `eri.eri`; HGP is `hgp/`, `kernel_f` and `eri.hgp_drive`. The
 # modules that are one engine's private consumers (`launch`, `kernel_k`,
-# `ao.drive`, `launch_f`, ...) are neither an engine nor above one: their
+# `eri.j_coulomb.drive`, `launch_f`, ...) are neither an engine nor above one: their
 # own rules above hold them.
 #
 # WHAT "ABOVE" IS, precisely: (a) every module that imports `engine` -- a
 # consumer of the protocol, computed from the tree, so a new one is held the
 # moment it appears; and (b) the modules DECLARED engine-neutral here
-# (`DECLARED_ABOVE`): today `ao.fock`, the Fock witness whose ERI arrives as
+# (`DECLARED_ABOVE`): today `eri.fock.fock`, the Fock witness whose ERI arrives as
 # `eri=` (#275). Such a module may not reach an engine module through any
 # chain of imports except through `engine` itself. "By name" therefore
 # means: by any import at all, direct or transitive, other than the protocol.
@@ -1849,7 +1852,7 @@ def test_only_the_protocol_names_both_engines() -> None:
 
 def test_the_engine_rule_can_fail() -> None:
     # A module above (it imports `engine`) that also imports `hgp.vrr`, and
-    # the declared `ao.fock` reaching `ao.eri` through two hops: both are
+    # the declared `eri.fock.fock` reaching `eri.eri` through two hops: both are
     # caught; the route through `engine` itself is not a breach.
     graph = {"engine": {"eri.eri", "eri.fock.kernel_f"}, "eri.eri": set(),
              "eri.fock.kernel_f": {"hgp.vrr"}, "hgp.vrr": set(),
@@ -1908,7 +1911,7 @@ EDGES["performance.measured"] |= frozenset(("eri.fock.kernel_f",))
 # `k_levers` is the registry a lever module plugs into. Both sit BELOW
 # `kernel_k` (it imports them), so neither may reach it back, and they keep
 # the `k_builder` rule's prohibitions: what they build is part of the K
-# kernel. A K lever module (`k_levers/<name>.py`) is ruled `k_lever` too.
+# kernel. A K lever module (`eri/k_exchange/levers/<name>.py`) is ruled `k_lever` too.
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -1968,7 +1971,7 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
 # plugs into. Both sit BELOW `kernel_f` (it imports them), so neither may
 # reach it back, and they keep the `f_builder` rule's prohibitions (no plan
 # layer, pin 11): what they build is part of the F kernel. An F lever module
-# (`f_levers/<name>.py`) is ruled `f_lever` too.
+# (`eri/fock/levers/<name>.py`) is ruled `f_lever` too.
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -2028,7 +2031,7 @@ def test_the_f_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
 
 
 # ---------------------------------------------------------------------------
-# #344 (milestone 13): `j_levers/`, the J kernel-body levers' behaviour, one
+# #344 (milestone 13): `eri/j_coulomb/levers/`, the J kernel-body levers' behaviour, one
 # module per lever (`fused` first; #346's mixed precision follows). The
 # vocabulary entry is `levers`'; the IR the lever builds is here, reached
 # from `kernel._pq_kernel` by one hook. Builder-side, so the `builder` rule's
@@ -2268,7 +2271,7 @@ EDGES["eri.k_exchange.levers.interleave"] = (
 
 # ---------------------------------------------------------------------------
 # The Schwarz matrix sqrt((mn|mn)): the host reference and staging
-# (`ao.schwarz`, under the `ao` rule, `pq` injected) and the kernel builder
+# (`eri.schwarz`, under the `ao` rule, `pq` injected) and the kernel builder
 # (`kernel_schwarz`, `kernel_v`'s rule restated: the plan layer's DAG for the
 # J quartet (la lb|la lb), the recurrence statements, the `E` fragment). The
 # generator CLI writes its ladder (`--schwarz-l`), so the driver composes it.
@@ -2441,8 +2444,9 @@ EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(
 
 # ---------------------------------------------------------------------------
 # The DF Coulomb metric (P|Q) (#412): the host reference and staging
-# (`ao.metric`, under the `ao` rule, `pq` injected). The single-center `E` is
-# `ao.hermite.e_block` at `X_PA = 0`; no `ao.eri` (its dummy-shell route
+# (`eri.density_fit.metric`, under the `ao` rule, `pq` injected). The single-center `E`
+# is
+# `mmd.hermite.e_block` at `X_PA = 0`; no `eri.eri` (its dummy-shell route
 # normalises to 0) and no `ao.pairs` (`aux_dress` is the aux record's own).
 # ---------------------------------------------------------------------------
 
@@ -2456,9 +2460,9 @@ EDGES |= {k: frozenset(v) for k, v in {
 
 # ---------------------------------------------------------------------------
 # The three-center integral (mn|P) (#443): the host reference and staging
-# (`ao.eri3`, under the `ao` rule, `pq` injected). The bra is `ao.pairs`'
-# dressed primitive pair, the ket `ao.metric`'s aux record unchanged; no
-# `ao.eri` (its exponent-0 twin is refused by `ao.shell`).
+# (`eri.density_fit.eri3`, under the `ao` rule, `pq` injected). The bra is `ao.pairs`'
+# dressed primitive pair, the ket `eri.density_fit.metric`'s aux record unchanged; no
+# `eri.eri` (its exponent-0 twin is refused by `ao.shell`).
 # ---------------------------------------------------------------------------
 
 RULE_OF |= {
@@ -2474,7 +2478,8 @@ EDGES |= {k: frozenset(v) for k, v in {
 # The DF metric kernel (#414): the builder (`kernel_metric`, the Schwarz
 # builder's rule restated: the plan layer's DAG for the J quartet
 # (lP 0|lQ 0), the recurrence statements, `center_fragment` inlined twice)
-# and its interpreted adapter (`ao.metric_drive`, the `ao/drive.py` pattern:
+# and its interpreted adapter (`eri.density_fit.metric_drive`, the
+# `eri/j_coulomb/drive.py` pattern:
 # builder + interp + ao, Boys injected). No emission yet (#415), so no
 # driver edge.
 # ---------------------------------------------------------------------------
@@ -2544,8 +2549,8 @@ def test_the_metric_builder_reaches_neither_its_witness_nor_a_machine(
 # The three-center kernel (mn|P) (#444): the builder (`kernel_eri3`, the
 # metric builder's rule restated: the plan layer's DAG for the J quartet
 # (la lb|lP 0), the recurrence statements, `block_fragment` and
-# `center_fragment` inlined) and its interpreted adapter (`ao.eri3_drive`,
-# the `ao/metric_drive.py` pattern, Boys injected). Its emission (#445)
+# `center_fragment` inlined) and its interpreted adapter (`eri.density_fit.eri3_drive`,
+# the `eri/density_fit/metric_drive.py` pattern, Boys injected). Its emission (#445)
 # adds the driver edge at the end of this file.
 # ---------------------------------------------------------------------------
 
@@ -2624,7 +2629,8 @@ EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
 
 # ---------------------------------------------------------------------------
 # The cross-basis overlap S_{B1,B2} (`Target.SX`): the host reference
-# (`ao.overlap.cross_overlap_matrix` over `ao.one_electron.rectangular`, no
+# (`one_electron.overlap.cross_overlap_matrix` over
+# `one_electron.one_electron.rectangular`, no
 # new edge), the cross launch and its walker (in `launch`, no new edge), and
 # the kernel builder (`kernel_sx`, `kernel_s`'s rule plus `kernel_s` itself,
 # whose per-record statements it reuses unchanged). The generator CLI writes
@@ -2701,7 +2707,7 @@ EDGES["hgp.orbits"] = frozenset(("hgp.hrr", "hgp.vrr"))
 # one-block screens. Its bound is injected (`bound=`), so it reaches no
 # reference/; it builds no kernel and evaluates no ERI. It restates the
 # density / tau checks and the stable sort rather than borrow `launch`'s or
-# `ao.j`'s privates (#328), so it imports neither.
+# `eri.j_coulomb.j`'s privates (#328), so it imports neither.
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -2770,8 +2776,8 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
 # beside `kernel_f`, under `f_builder`'s prohibitions: key -> IR, the HGP
 # statements of `hgp.recurrence` over `hgp.vrr` / `hgp.hrr`'s DAGs, the
 # orientation from `hgp.orbits`, and `kernel_f`'s packed record layout reused
-# as it is. It is interpreted against `ao/hgp_drive.py` (bitwise) and
-# `ao/j.py`'s sweep, so neither the AO layer nor reference/ may be its
+# as it is. It is interpreted against `eri/hgp_drive.py` (bitwise) and
+# `eri/j_coulomb/j.py`'s sweep, so neither the AO layer nor reference/ may be its
 # ancestor; and it reads #403's pair stream only as packed data.
 # ---------------------------------------------------------------------------
 
@@ -2824,8 +2830,8 @@ def test_the_hj_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
 # sibling of `kernel_hj`, under `hj_builder`'s prohibitions. It imports the
 # shared pieces (the nest's scalars, the membership chain, the orientation
 # record) from `kernel_hj` rather than copying them, so hj and hk stay one
-# kernel with two deposits; it is interpreted against `ao/hgp_drive.py`
-# (bitwise) and `ao/k.py`, so neither the AO layer nor reference/ may be its
+# kernel with two deposits; it is interpreted against `eri/hgp_drive.py`
+# (bitwise) and `eri/k_exchange/k.py`, so neither the AO layer nor reference/ may be its
 # ancestor.
 # ---------------------------------------------------------------------------
 
@@ -2901,9 +2907,10 @@ def test_the_generator_reaches_the_hgp_jk_by_entry_point_only() -> None:
 # through `kernel_f`, checks the routing against `hgp.orbits`' GROUP and the
 # builders' own `built_class` / `orientations`, and runs each launch through
 # an INJECTED executor (`run=`), so it reaches no interpreter and no
-# reference/. Nor may it reach the witnesses it is held to (`ao.j`, `ao.k`,
-# `ao.fock`, `ao.eri`, `ao.hgp_drive`): it restates the density contract
-# rather than borrow `ao.j`'s private (#328).
+# reference/. Nor may it reach the witnesses it is held to (`eri.j_coulomb.j`,
+# `eri.k_exchange.k`,
+# `eri.fock.fock`, `eri.eri`, `eri.hgp_drive`): it restates the density contract
+# rather than borrow `eri.j_coulomb.j`'s private (#328).
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -2986,7 +2993,7 @@ EDGES["engine"] = EDGES["engine"] | frozenset(("eri.k_exchange.kernel_k",
 # #481: the block exchange kernel (opt-UM's mapping, one block per K_AB) and
 # its launch plan, siblings of `kernel_k` and `launch_k`. The builder shares
 # `kernel_k`'s per-pair body and the K seams' default hooks by import, and
-# keeps `k_builder`'s prohibitions: `ao.k` and the walk are its witnesses.
+# keeps `k_builder`'s prohibitions: `eri.k_exchange.k` and the walk are its witnesses.
 # The plan is `launch_k.k_launches` regrouped, under `k_launch`'s
 # prohibitions; the builder arrives injected (`build=`).
 # ---------------------------------------------------------------------------
@@ -3072,7 +3079,7 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
 # #504 (the `launch` half of #328): what the launch plans share -- `PairRec`,
 # the stable descending sort, the bound's value check and the batch
 # admission -- out of `launch` into `launch_common`, so that `launch_k`,
-# `launch_kblock`, `launch_f` and `ao.staged` import no `_`-prefixed name
+# `launch_kblock`, `launch_f` and `eri.j_coulomb.staged` import no `_`-prefixed name
 # from `launch`. Its rule is NO WIDER than `launch`'s: a subset of its `may`
 # (no kernel, no IR, no AO layer) and every one of its prohibitions, plus
 # the launch plans themselves, which import it.
@@ -3130,9 +3137,9 @@ def test_launch_common_is_no_wider_than_launch() -> None:
 # left `ao/` (`_ERI_HOST`) join the same pass through `_LEFT_AO`. No new
 # package (`eri/__init__.py` came with #514).
 #
-# #513: the fused Fock build moved into `eri/fock/` (`ao/fock.py`, kernel_f,
-# kernel_f_scatter, launch_f, walk_f, and `f_levers/` as `eri/fock/levers/`),
-# each module keeping its rule; `ao/fock.py` (`_FOCK_HOST`) joins the same
+# #513: the fused Fock build moved into `eri/fock/` (`eri/fock/fock.py`, kernel_f,
+# kernel_f_scatter, launch_f, walk_f, and `eri/fock/levers/` as `eri/fock/levers/`),
+# each module keeping its rule; `eri/fock/fock.py` (`_FOCK_HOST`) joins the same
 # pass through `_LEFT_AO`, and the package marker `eri.fock` is the one new
 # module.
 # ---------------------------------------------------------------------------
@@ -3182,7 +3189,7 @@ EDGES["eri.fock"] = frozenset()
 #
 # WHY. Every rule above matches by PREFIX (`_under`), so moving a module can
 # silently widen one: when `ao/` shrinks to `shell`/`pairs`, a builder's "off
-# `ao`" no longer keeps it off the host references that left, and when `ir.py`
+# `ao`" no longer keeps it off the host references that left, and when `ir/__init__.py`
 # becomes the `ir/` package, `may=("ir", ...)` starts admitting `ir.interp`.
 # `test_no_import_outside_its_rule` stays green through both. What catches it
 # is the EFFECTIVE relation: for every ordered pair of modules (importer,

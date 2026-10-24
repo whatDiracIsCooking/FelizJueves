@@ -8,12 +8,13 @@
 
 `(P|Q) = INT INT P(r1) Q(r2) / r12` of two Cartesian auxiliary shells, by
 McMurchie & Davidson's Hermite path with a single Gaussian on each side
-(`ao/metric.py`'s module docstring, its witness):
+(`eri/density_fit/metric.py`'s module docstring, its witness):
 
     (P|Q) = SUM_{i in P} SUM_{k in Q} s_i s_k
             SUM_t E^P_t(i) SUM_tau (-1)^{|tau|} [t+tau]^(0)(A_i - A_k) E^Q_tau(k)
 
-with `s = c (pi/alpha)^{3/2}` on each aux record (`ao.metric.aux_dress`) and
+with `s = c (pi/alpha)^{3/2}` on each aux record (`eri.density_fit.metric.aux_dress`)
+and
 `theta^2 = alpha_i alpha_k / (alpha_i + alpha_k)`.
 
 A METRIC CLASS IS A PAIR THAT RUNS A QUARTET (`spec.py`, #410). The key is
@@ -68,14 +69,14 @@ NO PREFACTOR: `(pi/alpha)^{3/2}` and the coefficients are inside the host's
 `s`, `(2/sqrt(pi)) theta` inside `[0]^(m)` (the prelude's `W0`); their
 product is `2 pi^{5/2} / (alpha_i alpha_k sqrt(alpha_i + alpha_k))`.
 
-ROUND-OFF, NOT BITWISE, against `ao.metric`: the host's `[t|tau]` is
+ROUND-OFF, NOT BITWISE, against `eri.density_fit.metric`: the host's `[t|tau]` is
 `reference.pq`'s fixed recursion, the kernel's the plan's MILD DAG, and the
 host dresses each `E` entry where the kernel multiplies `s_i s_k` once.
 
 THE SCATTER, `kernel_jab`'s rule with a plain store: an off-diagonal pair
 (`off_p != off_q`) writes element `(a, b)` to `metric[off_p + a, off_q + b]`
 and its mirror; a diagonal one (only when `lP == lQ`) writes its lower
-triangle `a >= b`, mirrored. A pair staged SWAPPED (`ao.metric.
+triangle `a >= b`, mirrored. A pair staged SWAPPED (`eri.density_fit.metric.
 metric_classes`) needs no flag here: with the mirror, the transposed
 placement `place_staged` makes writes the same two elements.
 
@@ -90,7 +91,7 @@ for a wider one.
             p_rec0 p_rec1 q_rec0 q_rec1 off_p off_q [n_pair]  (I32)
             metric[n_aux, n_aux]  (OUT, written once per element)
 
-The record and pair arrays are `ao.metric.MetricClass.arrays()`' by name,
+The record and pair arrays are `eri.density_fit.metric.MetricClass.arrays()`' by name,
 except `s`, which is `s_aux` here (`PARAM_OF`): the prelude declares a local
 `s = -2 theta^2` (`recurrence.fundamental_prelude`), which would shadow it.
 Elements of pairs NOT launched are untouched: a caller that launches a subset

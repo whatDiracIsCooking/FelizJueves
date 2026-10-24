@@ -1,8 +1,8 @@
 """`e_fragment`: the `E` coefficients as device code, through the interpreter.
 
 `E` has one independent check, the pointwise Hermite identity
-(test/test_ao_hermite.py), and `ao.hermite` is what passes it. So the
-fragments are checked against `ao.hermite.e_axis` / `e_block`, and the axis
+(test/test_ao_hermite.py), and `mmd.hermite` is what passes it. So the
+fragments are checked against `mmd.hermite.e_axis` / `e_block`, and the axis
 fragment against the identity directly as well:
 
 - the AXIS fragment, interpreted alone, equals `e_axis` over randomised
@@ -14,7 +14,7 @@ fragment against the identity directly as well:
   fragment) for every class (ss) through (ff), its axis entries a dead-free
   subsequence of `_axis_body`'s, and the block and axis texts unchanged;
 - the KINETIC fragment (#238) equals the undressed bracket formed from
-  `e_axis` at `lb + 2` by `ao.kinetic.kinetic_axis`, for every class (ss)
+  `e_axis` at `lb + 2` by `one_electron.kinetic.kinetic_axis`, for every class (ss)
   through (ff), its axis entries a dead-free subsequence of
   `_axis_body(la, lb + 2, d)`'s and its `j(j-1)` term absent for `j < 2`;
 - the single-CENTER fragment (#410) equals the products of
@@ -402,7 +402,7 @@ def _run_kinetic(la: int, lb: int, zeta, P, A, B, beta) -> np.ndarray:
 
 def _bracket(la: int, lb: int, zeta, P, A, B, beta) -> list[float]:
     """The undressed bracket from `e_axis` at `lb + 2`, by `kinetic_axis`:
-    `ao.kinetic.kinetic_block`'s per-record arithmetic, before `dress`."""
+    `one_electron.kinetic.kinetic_block`'s per-record arithmetic, before `dress`."""
     S = [[[e_axis(i, j, zeta, P[d] - A[d], P[d] - B[d])[0]
            for j in range(lb + 3)] for i in range(la + 1)] for d in range(3)]
     out = []

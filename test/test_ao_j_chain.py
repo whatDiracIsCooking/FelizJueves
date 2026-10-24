@@ -1,20 +1,20 @@
-"""`ao.drive.coulomb_matrix_chain`: `J_mn` with every step generated (#155).
+"""`eri.j_coulomb.drive.coulomb_matrix_chain`: `J_mn` with every step generated (#155).
 
 The whole J chain composed and INTERPRETED -- `Target.DQ` (#153) for the ket
 pre-contraction and `Dmax`, the `[p|q]` kernels for `J_p`, `Target.JAB`
 (#154) for eq. 20 and the scatter -- over milestone 6's class-grouped
-staging (`ao.staged`, #143). No compiler, no card, no PySCF.
+staging (`eri.j_coulomb.staged`, #143). No compiler, no card, no PySCF.
 
 THE WITNESSES, at tolerances inherited and not loosened here:
 
   libcint     the tracked `get_jk` fixtures at `tau = 0`:
               `|J - J_pyscf| <= 1e-12 scale_J` (test_ao_j.py's `JK_TOL`,
-              with `scale_J` from `ao.j.coulomb_matrix_and_scale`);
-  host        `ao.j`'s pure host path, `coulomb_matrix` (unique sweep) and
+              with `scale_J` from `eri.j_coulomb.j.coulomb_matrix_and_scale`);
+  host        `eri.j_coulomb.j`'s pure host path, `coulomb_matrix` (unique sweep) and
               `coulomb_matrix_reference` (every ordered pair, weight 1):
               `|J - J_host| <= 1e-13 max|J_host|` (test_launch_staged.py's
               `HOST_TOL`);
-  staged      `ao.staged.coulomb_matrix_staged` over `launch.launches`' plan,
+  staged      `eri.j_coulomb.staged.coulomb_matrix_staged` over `launch.launches`' plan,
               whose `D_q`, `Dmax` and eq. 20 are the HOST's: the chain's plan
               (keyed on the DQ kernel's read-back `Dmax`) is `==` to
               `launches`', and its `J` is `==` to the staged `J`. Bit for bit,

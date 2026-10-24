@@ -1,4 +1,4 @@
-"""The dedicated sub-DAG VRR schedule, `f_levers/subdag_vrr.py` (#357),
+"""The dedicated sub-DAG VRR schedule, `eri/fock/levers/subdag_vrr.py` (#357),
 interpreted.
 
 The lever re-orders each of #350's VRR groups by a live-minimising list
@@ -23,7 +23,7 @@ schedule of its own closure (`hgp.vrr.dedicated_order`), on top of
    in the kernel unchanged.
 5. EXACTNESS: interpreted, `F` and the tap `g` equal the literal kernel's
    BIT FOR BIT on every class with L <= 4 at #350's count and at other
-   counts (L <= 2, and a sample to L = 4); one launch against `ao.fock`'s
+   counts (L <= 2, and a sample to L = 4); one launch against `eri.fock.fock`'s
    sweep to `test_kernel_f.TOL`, and the degeneracy cases within the cap;
    classes above L = 4 are `slow` and not run under milestone 13's cap.
 6. THE GOLDENS: `(sp|sp)` with `batched-vrr+subdag-vrr`, one per backend.

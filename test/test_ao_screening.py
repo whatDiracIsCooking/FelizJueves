@@ -1,6 +1,7 @@
 """The screen as an ERROR claim (#88): a tau ladder, on a molecule where it fires.
 
-`ao.j.coulomb_matrix_screened` builds `J` by the unique sweep with the kernel's
+`eri.j_coulomb.j.coulomb_matrix_screened` builds `J` by the unique sweep with the
+kernel's
 screen -- a (bra record, ket record) pair is skipped when
 `I_bra * (I_ket * Dmax) < tau` -- either as the kernel's sorted `break` or as
 the unsorted `continue`. Here it runs at
@@ -15,10 +16,11 @@ THE CLAIMS, per rung, per case.
   exact    sorted-`break` J == unsorted-`continue` J, element by element, TO 0,
            and the two skip the same number of pairs -- the claim
            test_kernel.py makes on synthetic data, here on real bounds. It is
-           a claim about WHICH terms were summed: `ao.j` accumulates each `J_p`
+           a claim about WHICH terms were summed: `eri.j_coulomb.j` accumulates each
+           `J_p`
            with `math.fsum`, so summation order cannot move a bit.
   bounded  |J(tau) - J(0)| <= tau * scale, element by element. `scale`
-           (`Screened.scale`, stated in ao/j.py's module docstring) is
+           (`Screened.scale`, stated in eri/j_coulomb/j.py's module docstring) is
            `n_ket * sum_{bra records} sum_p |E^{ab}_p|`: every skipped pair
            moves each `J_p` by less than `tau` (ao/pairs.py's bound), and a
            bra record can skip at most `n_ket` kets. It is independent of

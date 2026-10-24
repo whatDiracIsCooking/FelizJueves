@@ -27,7 +27,7 @@ Per record `k`, with `E` the UNDRESSED block of record `k`
     D[k, q] = w[k] * acc_q
     Dmax[k] = max_q |D[k, q]|
 
-THE OPERATION ORDER IS THE HOST'S (`ao.j.dq_from_host`): `r` outer, `q`
+THE OPERATION ORDER IS THE HOST'S (`eri.j_coulomb.j.dq_from_host`): `r` outer, `q`
 inner, each term `x * (s * e)` added to an accumulator that starts at `+0.0`,
 then `w * acc`. So interpreted, the kernel is `==` to the host, bit for bit.
 Two departures change no bit, and are why:
@@ -60,7 +60,7 @@ the closed vocabulary is not widened for them.
 
 THE LAYOUT. Rows of `Dcd` are `e_fragment.block_rows(lc, ld)` (the
 Cartesian pairs, `c` outer -- `ao.shell.cartesians`' order, which a test pins
-equal) and columns of `D` are `hermite_targets(lc + ld)` (`ao.hermite`'s
+equal) and columns of `D` are `hermite_targets(lc + ld)` (`mmd.hermite`'s
 `hermite_order`, pinned equal): the same two helpers the fragment's `E`
 block is indexed by, so the row of `Dcd` and the row of `E` are one index.
 

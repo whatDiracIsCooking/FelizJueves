@@ -21,8 +21,9 @@ centre `A_k`),
                    [t + tau]^(0)(P_ij - A_k, theta) E^P_tau(k),
     theta^2 = p alpha_k / (p + alpha_k),
 
-the `[p|q]` contraction of `ao.eri` with the ket's Hermite "pair" a single
-Gaussian (`ao.metric`'s module docstring: `zeta = alpha`, `Q = A`, `X_PA = 0`,
+the `[p|q]` contraction of `eri.eri` with the ket's Hermite "pair" a single
+Gaussian (`eri.density_fit.metric`'s module docstring: `zeta = alpha`, `Q = A`, `X_PA =
+0`,
 no `K_CD`). `[t|tau]` is the INJECTED evaluator's (`pq(t, tau, PQ, theta)`,
 sign and `(2/sqrt(pi)) theta` inside it); `ao` imports neither `reference/`
 nor `plan/`.
@@ -32,17 +33,19 @@ THE TWO SIDES, each dressed where its own module dresses it, and nowhere here:
 - THE BRA is `ao.pairs.primitive_pairs`' record: `w_ij E^{mn}` is its DRESSED
   block, `c_i c_j (pi/p)^{3/2}` multiplied in by `ao.pairs.dress` (the only
   place a bra coefficient is), the Gaussian product `K_AB` in `E`'s seed
-  (`ao.hermite`).
-- THE KET is `ao.metric.aux_records` unchanged: `s_k = c_k (pi/alpha_k)^{3/2}`
-  by `ao.metric.aux_dress`, with NO extra normalisation (it is in `c`; see
-  `ao.metric`), and `E^P` is `ao.metric.center_e`.
+  (`mmd.hermite`).
+- THE KET is `eri.density_fit.metric.aux_records` unchanged: `s_k = c_k
+(pi/alpha_k)^{3/2}`
+  by `eri.density_fit.metric.aux_dress`, with NO extra normalisation (it is in `c`; see
+  `eri.density_fit.metric`), and `E^P` is `eri.density_fit.metric.center_e`.
 
 So `(2/sqrt(pi)) theta (pi/p)^{3/2} (pi/alpha)^{3/2} = 2 pi^{5/2} / (p alpha
 sqrt(p + alpha))` is McMurchie & Davidson's `lambda`, as for `(P|Q)` and
 `(ab|cd)`.
 
 THE SCALE is the same sum with every term replaced by its absolute value
-(`ao.eri`'s and `ao.metric`'s), so a tolerance relative to it is a statement
+(`eri.eri`'s and `eri.density_fit.metric`'s), so a tolerance relative to it is a
+statement
 about rounding, not about how much the sum cancelled.
 
 THE LAYOUT, decided here and honoured by the kernel: `[m][n][P]`, the aux
@@ -50,7 +53,8 @@ index FASTEST. A block is `block[a][b][q]` over `cartesians(la)`,
 `cartesians(lb)`, `cartesians(lP)`; the tensor is `(n_ao, n_ao, n_aux)` as
 nested lists. `eri3_tensor` places every AO shell pair `i <= j` in basis order
 at `[off_i + a][off_j + b][off_P + q]` and its `(m, n)` mirror; a DIAGONAL
-shell pair writes `a >= b` only, mirrored (`ao.metric`'s, `ao.schwarz`'s and
+shell pair writes `a >= b` only, mirrored (`eri.density_fit.metric`'s, `eri.schwarz`'s
+and
 `kernel_jab`'s rule), so `(mn|P) == (nm|P)` EXACTLY in the tensor, whereas
 the two blocks `(ab|P)` and `(ba|P)` are equal exactly but not always
 bitwise (`E^{ab}` and `E^{ba}` round differently).
@@ -65,8 +69,8 @@ TRANSPOSED at `[off_i][off_j]` (`place_staged`; with the mirror either
 placement fills the same elements). A class holds two record tables, each
 entry once, contiguous, in first-touch order: the BRA records of every shell
 pair it touches (`zeta_ab`, `P`, `XPA = P - A`, `XPB = P - B`, `s_ab = c_i c_j
-(pi/p)^{3/2}`, `ao.schwarz`'s record) and the AUX records of every aux shell
-it touches (`A`, `alpha`, `s`, `ao.metric`'s). A cell is two ranges into
+(pi/p)^{3/2}`, `eri.schwarz`'s record) and the AUX records of every aux shell
+it touches (`A`, `alpha`, `s`, `eri.density_fit.metric`'s). A cell is two ranges into
 them, `[ab_rec0, ab_rec1)` and `[p_rec0, p_rec1)`, and three offsets.
 
 `class_block` re-forms each bra `E` from the record alone, as
@@ -92,7 +96,7 @@ from felizjueves.mmd.hermite import e_block, hermite_order
 
 Vec = tuple[float, float, float]
 Ang = tuple[int, int, int]
-PQ = Callable[[Ang, Ang, Vec, float], float]  # ao.eri's, restated
+PQ = Callable[[Ang, Ang, Vec, float], float]  # eri.eri's, restated
 Block = tuple[tuple[tuple[float, ...], ...], ...]  # [a][b][q]
 Tensor = list[list[list[float]]]  # [m][n][P]
 

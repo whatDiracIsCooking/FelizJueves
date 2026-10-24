@@ -6,7 +6,7 @@
     launch_shape(n_el, threads)                    -> (grid, (threads, 1))
     n_slot(cls, n_bra, n_ket)                      `f_levers.scatter`'s
 
-The second kernel of `f_levers/scatter.py`'s build. A `scatter` F launch
+The second kernel of `eri/fock/levers/scatter.py`'s build. A `scatter` F launch
 stores every contribution it would have added to `F` into its slot buffer
 `W`, with no atomics; this kernel then sums `W` into `F`:
 

@@ -12,14 +12,15 @@ small harness (`plan_driver.dq_program` / `jab_program`: one translation
 unit, no `[p|q]`, no Boys) and run on the card over every record of every
 unique shell pair of that class in the tracked HF/cc-pVTZ basis (the one
 fixture whose shells reach f; s-f on F, s-d on H), against the host on the
-SAME inputs: `ao.j.dq_from_host` for `D_q` / `Dmax`, and `ao.j.jab_from_host`
+SAME inputs: `eri.j_coulomb.j.dq_from_host` for `D_q` / `Dmax`, and
+`eri.j_coulomb.j.jab_from_host`
 applied pair by pair for the scatter over a seeded `J_p`. Under
 devtools/kernel-tier.sh the unit compiled is THE FILE THE GENERATE PHASE
 WROTE (`KERNEL_TIER_OUT`, already compiled by the tier's compile phase, #92's
 filter): the test asserts it is byte-identical to `emit(...)` and includes
 that file, as test_kernel_device.py does for `[p|q]`. The witness chain for
 f: `E` is held to the closed-form Hermite identity (#152) and, through
-`ao/eri.py`, to libcint's ERI blocks up to (ff|ff) (test_ao_eri.py); the host
+`eri/eri.py`, to libcint's ERI blocks up to (ff|ff) (test_ao_eri.py); the host
 `D_q` and scatter are built from that `E`. No f `J` fixture is needed.
 
 PART 2, PER MOLECULE, THROUGH d. `J_mn` for H2/STO-3G, H2O/STO-3G (at 1 and
@@ -30,10 +31,10 @@ DRIVER (#144, `plan_driver.driver`), not a new one:
      one launch per class); `D_q` and `Dmax` READ BACK -- the chain's one
      round-trip (j_engine.md, "The round-trip");
   2. the host keys each ket record `G * Dmax` with the KERNEL's `Dmax` and
-     sorts (`ao.drive._chain_plan`, #155's plan builder: `launch`'s own
+     sorts (`eri.j_coulomb.drive._chain_plan`, #155's plan builder: `launch`'s own
      stable descending sort, no host pre-contraction);
   3. `[p|q]`: milestone 6's driver, its kets staged from the kernel's `D_q` /
-     `Dmax` through `ao.staged`'s `ket_data=` hook (the plan-key check, bit
+     `Dmax` through `eri.j_coulomb.staged`'s `ket_data=` hook (the plan-key check, bit
      for bit, intact), one `J_p` buffer per bra class;
   4. JAB: in the SAME process, after every `[p|q]` launch on the same stream,
      one `Target.JAB` launch per bra pair class reads its `J_p` buffer on the
@@ -46,7 +47,7 @@ and `[p|q]` up to L = 12, a separate decision.
 THE TOLERANCES, stated where they are asserted, with `u = 2^-53`,
 `gamma_n = n u / (1 - n u)`, `L = la + lb` (or `lc + ld`):
 
-  E per side. Each axis' `E^{ij}_t` is the recurrence of `ao.hermite` from
+  E per side. Each axis' `E^{ij}_t` is the recurrence of `mmd.hermite` from
   `E^{00}_0 = exp(zeta X_PA X_PB)`, whose ARGUMENT is formed in the same
   order from the same host-supplied `X_PA`, `X_PB` on both sides (bitwise
   equal) and whose `exp` is within 1 ulp (2u) on each vendor's libm and the
@@ -93,7 +94,7 @@ THE TOLERANCES, stated where they are asserted, with `u = 2^-53`,
   libcint `|J_dev - J_pyscf| <= 1e-12 scale_J` (test_ao_j.py's JK_TOL) and
   the launch oracle `launch.walk` over the same plan (host `D_q`,
   `reference.pq`, fsum) `<= 1e-13 max|J|` (ORACLE_TOL); and, to localise
-  step 4, the host scatter (`ao.staged._transform`) of the card's own `J_p`
+  step 4, the host scatter (`eri.j_coulomb.staged._transform`) of the card's own `J_p`
   within the JAB bound above.
 
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build both parts' programs
@@ -302,7 +303,7 @@ def _jab_tol(T, K, L: int, n_p: int) -> np.ndarray:
 
 
 def _dq_host(basis, dc: DQClass) -> tuple[np.ndarray, np.ndarray]:
-    """`(D_host, S)` in record order: `ao.j.dq_from_host` per shell pair on
+    """`(D_host, S)` in record order: `eri.j_coulomb.j.dq_from_host` per shell pair on
     the class's own `Dcd` rows and weights, and the DQ bound's scale."""
     shells = basis.shells
     Dh, S = [], []
@@ -483,7 +484,7 @@ def test_hip_pair_kernels_match_the_host(cls, request, run_device_binary,
 
 
 def _plan_from(basis, dq_rows, n: int) -> LaunchPlan:
-    """`ao.drive._chain_plan` over `dq_rows` (`(i, j, prim) -> (D_q,
+    """`eri.j_coulomb.drive._chain_plan` over `dq_rows` (`(i, j, prim) -> (D_q,
     Dmax)`): kets keyed `G * Dmax` with THAT `Dmax`, sorted."""
     pairs = _unique_pairs(basis)
     gs = {(a, b): [bound_value(BOUND, zeta,
@@ -514,8 +515,8 @@ def _rows_of(classes, per_class) -> dict:
 
 
 def _ket_data(basis, dq_rows):
-    """`ao.staged`'s `ket_data=` hook over `dq_rows`, gathered in the plan's
-    sorted order -- `ao.drive.coulomb_matrix_chain`'s own gather."""
+    """`eri.j_coulomb.staged`'s `ket_data=` hook over `dq_rows`, gathered in the plan's
+    sorted order -- `eri.j_coulomb.drive.coulomb_matrix_chain`'s own gather."""
     def ket_data(recs, n_q: int) -> KetData:
         P = [epair(basis.shells[r.i], basis.shells[r.j]).recs[r.prim]
              for r in recs]

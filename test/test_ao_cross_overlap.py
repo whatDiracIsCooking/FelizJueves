@@ -1,5 +1,5 @@
-"""The cross-basis overlap `S_{B1,B2}` on the host: `ao.overlap.
-cross_overlap_matrix`, its placement `ao.one_electron.rectangular`, its
+"""The cross-basis overlap `S_{B1,B2}` on the host: `one_electron.overlap.
+cross_overlap_matrix`, its placement `one_electron.one_electron.rectangular`, its
 screen `ao.pairs.cross_pair_list`, and its launch plan
 `launch.cross_overlap_launch` / `walk_cross_overlap` (`Target.SX`).
 

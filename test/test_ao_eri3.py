@@ -1,4 +1,5 @@
-"""`ao.eri3`: the three-center integral `(mn|P)`, host-side, against libcint.
+"""`eri.density_fit.eri3`: the three-center integral `(mn|P)`, host-side, against
+libcint.
 
 The oracle is the tracked schema-4 set `h2o_sto3g_jkfit_3c` (#442,
 `manifest.three_center_set`): libcint's `int3c2e_cart` over H2O/STO-3G's 7
@@ -28,7 +29,7 @@ THE WITNESSES, in order:
    records `primitive_pairs`' and `aux_records`', and the staged block
    `eri3_block` of the staged shells bitwise.
 
-THE INTERNAL TWIN IS NOT BUILT. `ao.eri`'s quartet `(ab|c0)` with `0` an s
+THE INTERNAL TWIN IS NOT BUILT. `eri.eri`'s quartet `(ab|c0)` with `0` an s
 shell of exponent 0 and coefficient 1 would be this integral algebraically
 (`eta = alpha`, `Q = A_P`, `K_CD = 1`), but `ao.shell.Shell` refuses an
 exponent that is not > 0, and #443 says to drop the check rather than widen

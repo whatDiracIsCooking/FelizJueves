@@ -6,15 +6,15 @@ BOTH class modes: canonical (the orbit representative's kernel, launched
 with the class's permutation) and `ordered` (the class's own kernel).
 Nothing above L = 4 is built or run here.
 
-THE ERIs, BITWISE. The tap `g` (`eris=True`) is `==` `ao/hgp_drive.py`'s
+THE ERIs, BITWISE. The tap `g` (`eris=True`) is `==` `eri/hgp_drive.py`'s
 `eri_block` on the same (built-order) shells, bit for bit: the kernel's nest
 is bra outer / ket inner and its quartet scalars are spelled in the drive's
 operation order (kernel_hj's docstring), and the records here are formed by
 the drive's own expressions (`records`). The tap is asserted to be the
 shipped kernel plus its writes.
 
-THE DEPOSIT, AGAINST `ao/j.py`'s SWEEP RESTRICTED TO THE CLASS. The witness
-is `ao.j.coulomb_matrix` -- the MMD J engine, a different recurrence and a
+THE DEPOSIT, AGAINST `eri/j_coulomb/j.py`'s SWEEP RESTRICTED TO THE CLASS. The witness
+is `eri.j_coulomb.j.coulomb_matrix` -- the MMD J engine, a different recurrence and a
 different contraction (`D_q`, `J_p`, the bra transform) -- restricted
 through its own `jp=` seam: the injected `J_p` evaluator is
 `jp_from_pq(pq)` for a (bra pair, ket class) whose UNORDERED angular
@@ -38,9 +38,9 @@ by the triangle inequality through the exact `J` of the class:
 `|J_kernel - J| <= 1e-12 s_hgp` and `|f ref - J| <= f 1e-12 s_mmd`. Each
 `s` is its engine's absolute-value twin carried through the (linear) `J`
 sum on `|D|`: `s_hgp = SUM_q |D_cd| scale_hgp(q)` over the class's ordered
-quartets with `ao.hgp_drive`'s twin in the orientation the kernel ran,
+quartets with `eri.hgp_drive`'s twin in the orientation the kernel ran,
 `s_mmd` the same over the quartets the restricted sweep summed (the class
-and its ket mirror) with `ao.eri`'s twin -- which `ao/j.py`'s docstring
+and its ket mirror) with `eri.eri`'s twin -- which `eri/j_coulomb/j.py`'s docstring
 states is exactly its own `J` scale ("THE SCALE"). `1e-12` is
 test/test_hgp_eri.py's `TOL`: `gamma_n` for `n` about 9000 roundings, the
 per-ERI cross-engine bound that file justifies and pins (HGP against MMD
@@ -302,7 +302,7 @@ def test_the_tap_is_the_shipped_kernel_plus_its_writes(cls, mode) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Records in ao/hgp_drive's operation order, and the launches
+# Records in eri/hgp_drive's operation order, and the launches
 # ---------------------------------------------------------------------------
 
 CENTRES = ((0.0, 0.0, 0.0), (0.4, -0.3, 0.5), (-0.2, 0.6, 0.1),
@@ -326,14 +326,14 @@ def basis_for(cls) -> Basis:
 
 
 def density(n_ao: int, seed: int = 404) -> np.ndarray:
-    """Symmetric, sign-mixed, no structure (ao/j.py requires symmetry)."""
+    """Symmetric, sign-mixed, no structure (eri/j_coulomb/j.py requires symmetry)."""
     r = np.random.default_rng(seed).uniform(-1.0, 1.0, (n_ao, n_ao))
     return r + r.T
 
 
 def records(basis: Basis, a: int, b: int, G: float = 1.0) -> PairRec:
     """The ordered pair `(a, b)`, primitive pairs `i` outer, every field by
-    `ao.hgp_drive.primitive_scalars`' own expressions -- so the kernel's
+    `eri.hgp_drive.primitive_scalars`' own expressions -- so the kernel's
     scalars are the drive's bit for bit."""
     sa, sb = basis.shells[a], basis.shells[b]
     A, B = sa.centre, sb.centre
@@ -407,7 +407,7 @@ def launch(cls, mode, basis, D, *, tau=0.0, G=None, threads=2, eris=True,
 
 @cache
 def hgp(basis: Basis, xs: tuple[int, int, int, int]):
-    """`ao.hgp_drive`'s block and twin on the built-order shells `xs`,
+    """`eri.hgp_drive`'s block and twin on the built-order shells `xs`,
     flat in `hgp.hrr.targets` order."""
     sh = basis.shells
     blk, scale = HD.eri_block_and_scale((sh[xs[0]], sh[xs[1]]),
@@ -445,7 +445,7 @@ def ordered_quartets(basis, cls):
 
 
 # ---------------------------------------------------------------------------
-# The ERIs, bitwise against ao/hgp_drive
+# The ERIs, bitwise against eri/hgp_drive
 # ---------------------------------------------------------------------------
 
 
@@ -463,12 +463,12 @@ def test_the_tap_is_hgp_drive_bitwise(cls, mode) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The deposit against ao/j.py's sweep, restricted to the class
+# The deposit against eri/j_coulomb/j.py's sweep, restricted to the class
 # ---------------------------------------------------------------------------
 
 
 def restricted_jp(cls):
-    """`ao.j`'s `jp=` seam limited to the class's unordered bra and ket
+    """`eri.j_coulomb.j`'s `jp=` seam limited to the class's unordered bra and ket
     angular momenta; every other (bra pair, ket class) contributes zero
     and forms no integral (module docstring)."""
     full = jp_from_pq(pq)
@@ -620,7 +620,7 @@ def _sp_basis() -> Basis:
 @pytest.mark.parametrize("mode", MODES)
 def test_every_class_together_is_the_whole_ordered_sweep(mode) -> None:
     """On an s/p basis (every class L <= 4): the sum over all 16 ordered
-    classes' launches is `ao.j.coulomb_matrix_reference`'s whole `J`
+    classes' launches is `eri.j_coulomb.j.coulomb_matrix_reference`'s whole `J`
     (every ordered bra and ket pair, weight 1), within the same derived
     bound; and `J` comes out symmetric to that bound with no mirror."""
     basis = _sp_basis()

@@ -21,7 +21,7 @@ the 21):
    15-30 s a class): per class, H2O/cc-pVDZ's launches of that class at
    `tau = 0` against those launches interpreted with the literal kernel -- which
    the composition equals bit for bit on the host
-   (test/test_f_lever_subdag_vrr.py) -- and `ao.fock`'s sweep, with
+   (test/test_f_lever_subdag_vrr.py) -- and `eri.fock.fock`'s sweep, with
    test_fock_ondevice's `_check_class` and its tolerances unchanged; (b) per
    molecule, H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and, `slow`,
    H2O/6-31G at `tau = 0` (every class L <= 4), against walk_f's interpreted

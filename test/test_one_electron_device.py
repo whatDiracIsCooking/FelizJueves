@@ -18,7 +18,8 @@ devtools/config.sh's flags and FAILS on a warning located in generated text.
 PART 1, PER PAIR CLASS, THROUGH (dd). HF/cc-pVTZ's launch, its classes
 restricted to `la, lb <= 2` -- all nine ordered classes `(0..2, 0..2)` are
 reached (F's d before H's s, p and d), each over every record of every shell
-pair of that class -- against `ao.overlap` / `ao.kinetic` / `ao.potential`
+pair of that class -- against `one_electron.overlap` / `one_electron.kinetic` /
+`one_electron.potential`
 with `pairs=` those shell pairs. Every element is owned by exactly one shell
 pair, so each class is checked on its own elements, and every element no
 kept pair owns must come back exactly 0.0. Its nuclei are the fixture's
@@ -49,7 +50,7 @@ order the fp64 atomics choose):
 
 `Mabs` the sum over the owning pair's records of every term's ABSOLUTE
 VALUE, each factor from its absolute-value recurrence: `Eabs` is the `E`
-recurrence of `ao.hermite` from the SAME seed `exp(zeta X_PA X_PB)` raised
+recurrence of `mmd.hermite` from the SAME seed `exp(zeta X_PA X_PB)` raised
 over `|X_PA|`, `|X_PB|` (test_j_chain_ondevice.py's `_e_abs`, and
 `|E| <= Eabs` there), and for V `Rabs` is `[t]^(0)`'s recurrence over
 `|P - C|` from `(2/sqrt(pi)) theta (2 theta^2)^m F_m` -- a polynomial with

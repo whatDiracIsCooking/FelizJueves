@@ -6,15 +6,17 @@
 
 This is the WITNESS, written before the kernel that needs it (#275): the
 fused, symmetric Fock build of milestone 12 is checked against this module,
-and this module against FJ's own `ao.j` and `ao.k` (test/test_ao_fock.py).
-It has the discipline of `ao.j.coulomb_matrix_reference` and
-`ao.k.exchange_matrix_reference`, for the same reason: it is the only thing a
+and this module against FJ's own `eri.j_coulomb.j` and `eri.k_exchange.k`
+(test/test_ao_fock.py).
+It has the discipline of `eri.j_coulomb.j.coulomb_matrix_reference` and
+`eri.k_exchange.k.exchange_matrix_reference`, for the same reason: it is the only thing
+a
 symmetric path can be checked against without checking it against itself.
 
 THE SWEEP. For every ORDERED shell quartet `(a, b, c, d)` -- all `n_sh^4` of
 them, each visited exactly once -- the injected `eri` returns the block
 `B = (ab|cd)` (rows `ab`, columns `cd`, each in `cartesians` order with the
-first index outer: `ao.eri.eri_block`'s layout). The same block is digested
+first index outer: `eri.eri.eri_block`'s layout). The same block is digested
 twice, both at WEIGHT 1:
 
     J[a_i][b_j] += sum_{kl} D[c_k][d_l] B[ij][kl]        (Coulomb)
@@ -34,7 +36,7 @@ Slow, and meant to be: do not "optimise" it.
 
 THE ERI IS INJECTED (the tree's inversion of control): `eri(bra, ket)`
 takes two shell pairs and returns `(ab|cd)`, so this module is
-engine-neutral -- `functools.partial(ao.eri.eri_block, pq=...)` today, an
+engine-neutral -- `functools.partial(eri.eri.eri_block, pq=...)` today, an
 HGP evaluator later, with no edit here. It imports no `reference/`.
 
 THE COMBINATION, AND THE DENSITY CONVENTION -- DERIVED, NOT TRANSCRIBED.
@@ -65,7 +67,8 @@ gives twice one factor, and the 2 cancels the leading 1/2. With
            = J[D]_mn - K[P^s]_mn,    (ml|sn) = (ml|ns) for real AOs,
 
 where `J[X]_mn = sum_ls X_ls (mn|ls)` and `K[X]_mn = sum_ls X_ls (ml|ns)`
--- exactly `ao.j`'s `J` and `ao.k`'s `K` (`K_ab = sum_cd D_cd (ac|bd)`).
+-- exactly `eri.j_coulomb.j`'s `J` and `eri.k_exchange.k`'s `K` (`K_ab = sum_cd D_cd
+(ac|bd)`).
 Closed shell: `P^alpha = P^beta = D / N_SPIN`, `N_SPIN = 2`, and `K` is
 linear, so
 
@@ -83,7 +86,7 @@ asserted before use) -- it is not where the combination came from. The
 fixtures' density is a Hilbert matrix, not an idempotent one; `G` is linear
 in `D`, so the relation holds for any symmetric `D` read as a total density.
 
-THE DENSITY MUST BE SYMMETRIC (`ao.j`'s contract, shared): `(ml|sn) =
+THE DENSITY MUST BE SYMMETRIC (`eri.j_coulomb.j`'s contract, shared): `(ml|sn) =
 (ml|ns)` above and the identification with `K[D]` rest on it, and an
 asymmetric `D` is rejected, never symmetrised. Pure Python floats; `D` is
 anything indexable as `D[m][n]`; matrices are tuples of rows.
@@ -164,7 +167,8 @@ def fock_two_electron_reference(basis: Basis, D: object, *,
                                 eri: ERI) -> Matrix:
     """`G = J[D] - K[D] / 2` for the TOTAL closed-shell density `D`, by
     every ordered quartet at weight 1 (module docstring: the derivation).
-    `F = h + G`; `h` is `ao.kinetic` + `ao.potential`, not formed here."""
+    `F = h + G`; `h` is `one_electron.kinetic` + `one_electron.potential`, not formed
+    here."""
     J, K = coulomb_exchange_reference(basis, D, eri=eri)
     return tuple(
         tuple(COULOMB_FRACTION * jv - EXCHANGE_FRACTION * kv

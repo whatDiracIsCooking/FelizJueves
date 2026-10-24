@@ -1,6 +1,6 @@
 """`kernel_s`: the overlap kernel, `Target.S`, interpreted (#237).
 
-THE WITNESS is `ao.overlap.overlap_block` (#233), the host's `S` block: the
+THE WITNESS is `one_electron.overlap.overlap_block` (#233), the host's `S` block: the
 summed `t = 0` column of the blocks `ao.pairs.primitive_pairs` dresses. The
 kernel's records are those pairs' `(zeta, P - A, P - B)` and the host's one
 scalar `s` per record (`ao.density.epair`, `pairs.dress`'s own `scale`), and its
@@ -9,7 +9,7 @@ scatter is `kernel_jab`'s rule. Against it:
 - PER CLASS, every ordered pair class (ss) through (ff) on the tracked
   HF/cc-pVTZ basis (the one fixture whose shells reach f), in ONE launch
   over every record of every shell pair `i <= j` of the class -- the
-  orientation `ao.one_electron.matrix` calls `block(sa, sb)` in --
+  orientation `one_electron.one_electron.matrix` calls `block(sa, sb)` in --
   diagonal and off-diagonal pairs mixed.
 - THE WHOLE MATRIX, one launch per class into one zeroed `S`, on H2O/STO-3G
   and HF/cc-pVTZ.
@@ -26,7 +26,7 @@ two admitted departures and why neither changes a bit), so the reference is
 `overlap_block` placed by `kernel_jab`'s rule and the assertion is
 `np.array_equal`.
 
-AGAINST `overlap_matrix`, A STATED BOUND. `ao.one_electron.matrix` reads a
+AGAINST `overlap_matrix`, A STATED BOUND. `one_electron.one_electron.matrix` reads a
 diagonal shell pair's UPPER triangle; `kernel_jab`'s rule keeps the LOWER.
 `<a_i|b_j>` and `<a_j|b_i>` are the same integral reached along different
 `E` recurrence paths, so they agree to rounding, not by construction. The

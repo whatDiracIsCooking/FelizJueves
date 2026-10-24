@@ -60,7 +60,7 @@ the literal kernel (or block-fab, for `f_ab`) would have added atomically,
 bit for bit; only the order of the sums into `F` differs. So the lever is
 held to block-fab's kernel by the derived re-association bound, `|F_scatter
 - F_blockfab| <= 2 gamma_{n-1} SUM |a_i|` per element over its `n` addends,
-and to `ao.fock`'s sweep at the literal kernel's own `TOL`.
+and to `eri.fock.fock`'s sweep at the literal kernel's own `TOL`.
 
 THE LAUNCH CONTRACT is block-fab's (`block_fab.launch_shape`: a block a
 multiple of the wavefront, at most 1024), and after every F launch the host

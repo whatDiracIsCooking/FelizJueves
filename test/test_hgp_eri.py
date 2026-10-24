@@ -1,10 +1,10 @@
-"""The cross-engine pin (#281): HGP against `ao/eri.py`, 21 classes, CONTRACTED.
+"""The cross-engine pin (#281): HGP against `eri/eri.py`, 21 classes, CONTRACTED.
 
 `(ab|cd)` for a contracted shell quartet two ways --
 
-    MMD   `ao.eri.eri_block_and_scale` (evaluator `reference.pq.pq`): the
+    MMD   `eri.eri.eri_block_and_scale` (evaluator `reference.pq.pq`): the
           Hermite path, witnessed against libcint by test/test_ao_eri.py
-    HGP   `ao.hgp_drive.eri_block_and_scale` (Boys `reference.boys.boys`):
+    HGP   `eri.hgp_drive.eri_block_and_scale` (Boys `reference.boys.boys`):
           `hgp.recurrence`'s VRR kernel interpreted per primitive quartet,
           the boundary summed over all `K^4`, then its HRR kernel once
 
@@ -40,7 +40,7 @@ THE TOLERANCE, stated and justified, not tuned:
     |hgp - mmd| <= 1e-12 * (scale_mmd + scale_hgp),   element by element,
 
 each `scale` its own engine's absolute-value twin -- `SUM |term|` through
-every product and sum it formed (`ao.eri`'s, and `ao.hgp_drive`'s
+every product and sum it formed (`eri.eri`'s, and `eri.hgp_drive`'s
 `absolute_kernel` run on |scalars|). An fp64 evaluation of a sum of
 products with at most `n` sequential roundings on every path errs by at most
 `gamma_n = n u / (1 - n u)` of that twin (Higham, Thm 3.1, recursive
@@ -178,7 +178,7 @@ def worst(got, want, scale) -> float:
 
 def test_the_hgp_targets_are_ao_eris_layout() -> None:
     """`hgp.hrr.targets` is `a, b, c, d` nested in `ao.shell.cartesians`
-    order: the flat order `eri_block`'s rows/columns and `ao.eri`'s agree."""
+    order: the flat order `eri_block`'s rows/columns and `eri.eri`'s agree."""
     for cls in CLASSES:
         want = tuple(itertools.product(*(cartesians(x) for x in cls)))
         assert hrr.targets(cls) == want
@@ -377,13 +377,13 @@ def test_eq26s_printed_ket_sign_fails_contracted(monkeypatch, cls) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The signature: injectable into ao.fock's sweep (#286 makes the swap)
+# The signature: injectable into eri.fock.fock's sweep (#286 makes the swap)
 # ---------------------------------------------------------------------------
 
 
 def test_the_evaluator_drops_into_ao_focks_sweep() -> None:
-    """`partial(eri_block, boys=boys)` fills `ao.fock`'s `eri=` slot, the
-    one `partial(ao.eri.eri_block, pq=pq)` fills: H2/STO-3G, `J` and `K`
+    """`partial(eri_block, boys=boys)` fills `eri.fock.fock`'s `eri=` slot, the
+    one `partial(eri.eri.eri_block, pq=pq)` fills: H2/STO-3G, `J` and `K`
     through both engines, within `TOL` of the sweep run on `|D|` with the
     summed scale (the triangle inequality carries the per-ERI bound)."""
     fx = _fixture("h2_sto3g_j")

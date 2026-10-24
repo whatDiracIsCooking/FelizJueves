@@ -21,7 +21,7 @@ TWO PARTS, the issue's acceptance on the device side:
    at one batch and, where the plan admits it, three, plus `(dd|ss)` (the
    largest `E^ac` block within the cap), with the lever, launched by
    test_kernel_device.py's K harness (`_run_k`: its inputs, its host staging
-   `ao.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of the
+   `eri.k_exchange.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of the
    quartet scale, unchanged), at the harness's full warp -- so the
    barrier-free, identical-value staging is exercised by every lane of a
    real warp. `measured.cell_kernels` passes a kernel-body K lever to

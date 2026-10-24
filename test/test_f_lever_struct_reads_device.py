@@ -18,12 +18,12 @@ L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
    swapped for the lever's kernel of its class, named
    `lever_ladder.unit_name` of the literal name (`f_0101_lv_struct_reads`).
    The views ask nothing more of a base pointer than the flat arrays do
-   (natural alignment, f_levers/struct_reads.py), so the driver's packing is
+   (natural alignment, eri/fock/levers/struct_reads.py), so the driver's packing is
    used unchanged. (a) `slow` (cc-pVDZ is not a small input: its host
    references cost 15-30 s a class): per class, H2O/cc-pVDZ's launches of
    that class at `tau = 0`, against those launches INTERPRETED WITH THE
    LITERAL KERNEL -- which the typed kernel equals bit for bit on the host
-   (test_f_lever_struct_reads.py) -- and `ao.fock`'s restricted sweep, with
+   (test_f_lever_struct_reads.py) -- and `eri.fock.fock`'s restricted sweep, with
    test_fock_ondevice's `_check_class` and its stated tolerances unchanged;
    (b) per molecule, H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and,
    `slow`, H2O/6-31G at `tau = 0` (s and p shells only: every class L <= 4),

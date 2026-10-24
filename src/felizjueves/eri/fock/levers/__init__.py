@@ -2,7 +2,7 @@
 
 `seams.py` is the seam: `FHooks`, `FContext` and the frozen defaults that
 reproduce the literal fused kernel byte for byte. An F lever of milestone 13
-(#350-#361) lands as `f_levers/<name>.py` exposing
+(#350-#361) lands as `eri/fock/levers/<name>.py` exposing
 
     apply(hooks: FHooks, spec: Spec) -> FHooks
 

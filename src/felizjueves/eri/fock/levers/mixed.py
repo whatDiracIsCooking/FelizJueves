@@ -74,7 +74,7 @@ accumulation order: the arithmetic is the literal kernel's, operation for
 operation, in the narrower type.
 
 NOT BITWISE against the literal kernel, by construction: held to
-`ao.fock`'s every-ordered-quartet sweep at `F32_REL` of `scale_G`
+`eri.fock.fock`'s every-ordered-quartet sweep at `F32_REL` of `scale_G`
 (test/oracle/tolerance.py, never widened), and shown to MISS the fp64 tier
 there (the build really is fp32). Without the lever the built kernel is the
 literal one, byte for byte (test/test_f_seams.py's digests).

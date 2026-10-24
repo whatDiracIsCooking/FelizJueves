@@ -1,8 +1,10 @@
 """`kernel_metric`: the DF Coulomb metric kernel, `Target.METRIC`, interpreted.
 
-THE WITNESS is `ao.metric` (#412: `class_block` of each staged aux shell pair
+THE WITNESS is `eri.density_fit.metric` (#412: `class_block` of each staged aux shell
+pair
 with `reference.pq.pq` injected, placed by `place_staged`); the kernel runs
-over `ao.metric.metric_classes`' staging through `ao.metric_drive`, its Boys
+over `eri.density_fit.metric.metric_classes`' staging through
+`eri.density_fit.metric_drive`, its Boys
 function `reference.boys.boys`, injected into the interpreter. Through the
 tracked cc-pVTZ-jkfit set (#411) the host is libcint's `int2c2e_cart`
 (test/test_ao_metric.py), so the whole-matrix cases here also compare the

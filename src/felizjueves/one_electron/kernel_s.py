@@ -7,7 +7,7 @@
 
 The first one-electron kernel, and the cheapest consumer of the `E`
 fragment. `S_ab = <a|b>` is the `t = 0` column of the dressed block
-(`ao/overlap.py`'s module docstring): per primitive-pair record `k` of one
+(`one_electron/overlap.py`'s module docstring): per primitive-pair record `k` of one
 pair class `(la, lb)` and per Cartesian pair `r = (i, j)`,
 
     v = s[k] * ((Ex_{a_x b_x 0} * Ey_{a_y b_y 0}) * Ez_{a_z b_z 0})
@@ -46,7 +46,7 @@ NO PREFACTOR IS FORMED HERE. `s` is the host's one scalar per record,
 `s`); the kernel neither raises to a power nor names `pi`. And no `K_AB`
 is reinstated: the fragment's seed `exp(zeta X_PA X_PB)` per axis already
 carries it (milestone 11's design pin). `1/2zeta` is a local `0.5 / zeta`,
-formed once, as `ao.hermite.e_axis` forms it.
+formed once, as `mmd.hermite.e_axis` forms it.
 
 `E` FROM THE FRAGMENT, INLINED. `e_fragment.overlap_fragment(la, lb)` writes
 the undressed `t = 0` column into a LOCAL array `E0[n_rows_cart]` -- not
@@ -56,8 +56,8 @@ ONE THREAD PER RECORD, `rec = THREAD_X + BLOCK_X * BLOCK_DIM_X`, guarded by
 `rec < n_rec` (`launch_shape`). Interpreted (threads in order, blocks in
 order) it runs the records IN ORDER.
 
-WHY `==` IN THE INTERPRETER. The host (`ao.overlap.overlap_block`) forms
-`E^{ab}_0 = ((1.0 E_x) E_y) E_z` (`ao.hermite.e_block`), multiplies by
+WHY `==` IN THE INTERPRETER. The host (`one_electron.overlap.overlap_block`) forms
+`E^{ab}_0 = ((1.0 E_x) E_y) E_z` (`mmd.hermite.e_block`), multiplies by
 `scale` (`ao.pairs.dress`, the same scalar the host passes as `s`), and adds
 it into an accumulator that starts at `0.0`, record by record in
 `primitive_pairs` order. The kernel performs the same multiplications in the
@@ -76,7 +76,8 @@ Two departures, neither of which changes a bit:
       not even that, since the operations are the same.
 
 The diagonal rule keeps the LOWER triangle of a diagonal shell pair's block
-(`kernel_jab`'s, `ao.j.jab_from_host`'s); `ao.one_electron.matrix` reads the
+(`kernel_jab`'s, `eri.j_coulomb.j.jab_from_host`'s); `one_electron.one_electron.matrix`
+reads the
 UPPER. For a symmetric operator the two agree to rounding, not necessarily
 bitwise -- `E^{ij}` and `E^{ji}` are raised along different paths -- so the
 bitwise witness is `overlap_block` with `kernel_jab`'s rule applied, and

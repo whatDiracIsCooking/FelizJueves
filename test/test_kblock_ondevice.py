@@ -14,7 +14,7 @@ test_k_ondevice.py and not loosened:
 
   the walk     `launch_kblock.walk_kb` over the same plan: `|K - K_walk| <=
                ORACLE_TOL max|K_walk|` (1e-13);
-  the host     `ao.k.exchange_matrix_and_scale` (the unique sweep), `|K -
+  the host     `eri.k_exchange.k.exchange_matrix_and_scale` (the unique sweep), `|K -
                K0| <= ORACLE_TOL max|K0| + tau R`;
   libcint      the tracked `get_jk` fixture's `vk`, `|K - vk| <= KJ_TOL
                scale_K + tau R` (1e-12), the whole matrix;
@@ -28,7 +28,7 @@ skipped pair moves an element by less than `tau` (#200's bound).
                bound, so only printed here.
 
 THE PER-BLOCK FACTOR (#484): the `decay` cell plans test_ao_k_decay.py's
-chain with `ao.k.density_decay`, so the block kernel screens each block
+chain with `eri.k_exchange.k.density_decay`, so the block kernel screens each block
 with its own `dmax`; MODE 1 (`kernel_k`) still takes the scalar `max|D|`
 and skips fewer pairs, so there it is held to the host and not to the walk.
 

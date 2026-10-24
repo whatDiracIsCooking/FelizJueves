@@ -587,7 +587,7 @@ int main(int argc, char** argv) {{
 # --- #358: the atomic-free write-back's launch path --------------------------
 #
 # ADDITIVE: everything above is the default path, unchanged. A `scatter`
-# lever kernel (f_levers/scatter.py) writes no F: it stores into a slot
+# lever kernel (eri/fock/levers/scatter.py) writes no F: it stores into a slot
 # buffer W, and the class-agnostic `f_scatter` kernel (kernel_f_scatter.py)
 # sums W into F. So each launch of the scatter program is THREE device
 # steps, in stream order: zero W (`devMemset`, inside the sequence and so

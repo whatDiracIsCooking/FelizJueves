@@ -15,8 +15,8 @@ walk assembles the whole Coulomb matrix (`"j"`: every launch runs
 `kernel_hk`, `K_ac += D_bd (ab|cd)`), and its `mode` whether each launch
 runs its own ordered class's kernel (`"ordered"`, the `ordered` lever) or
 its orbit representative's through a runtime `perm` (`"canonical"`, the
-literal). test/test_hjk_build.py holds the result to `ao/j.py`'s and
-`ao/k.py`'s every-ordered-quartet sweeps and to libcint's `vj` / `vk`.
+literal). test/test_hjk_build.py holds the result to `eri/j_coulomb/j.py`'s and
+`eri/k_exchange/k.py`'s every-ordered-quartet sweeps and to libcint's `vj` / `vk`.
 
 INDEPENDENT OF THE PLAN BUILDER (m6's discipline, as `walk_f`). This module
 does NOT import `launch_hjk`: the plan is read by duck type (`plan.tau`,
@@ -57,7 +57,7 @@ pairs whole (it swaps within a pair and/or the two pairs), so the kernel's
 bra side is one batch's pairs, each read in the built order, and its ket
 side the other's: `n_bra x n_ket` combinations, each exactly one ordered
 quartet of `(I, J)`. The kernel's per-pair records are rebuilt from
-`basis` (`pair_record`, `kernel_f`'s staged record in `ao/hgp_drive.py`'s
+`basis` (`pair_record`, `kernel_f`'s staged record in `eri/hgp_drive.py`'s
 expressions), each carrying the plan's `G` of the ORDERED pair it is (the
 plan bounds every ordered pair, `(b, a)` as well as `(a, b)`).
 
@@ -81,7 +81,7 @@ tau`. It is a PREDICTION of a skip the kernel makes on its own; the test
 holds every predicted skip to the exact ERIs and the walked matrix to the
 sweep restricted to the kept quartets.
 
-Plain tuples and floats; `D` is `ao.j`'s density contract (square,
+Plain tuples and floats; `D` is `eri.j_coulomb.j`'s density contract (square,
 symmetric, finite), restated here rather than borrowed (#328).
 """
 
@@ -175,7 +175,7 @@ def kernel_spec(screen: str, mode: str, ordered: Quartet) -> Spec:
 
 def pair_record(basis: Basis, a: int, b: int, *, G: float) -> KF.PairRec:
     """`kernel_f`'s staged record of the ordered shell pair `(a, b)`, every
-    primitive pair (`i` outer), each field by `ao/hgp_drive.py`'s own
+    primitive pair (`i` outer), each field by `eri/hgp_drive.py`'s own
     expressions (`P = (x A + y B)/p`, `X = P - A`, `U = c_a c_b (pi/p)^{3/2}
     exp(-x y / p |AB|^2)`)."""
     sa, sb = basis.shells[a], basis.shells[b]

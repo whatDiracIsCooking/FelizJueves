@@ -6,7 +6,7 @@ compiled alone into the harness below with test_kernel_device.py's portable
 layer, launched one thread per record over test_kernel_record_bound.py's
 records -- every record of H2O/cc-pVDZ and of the H10 chain in cc-pVDZ, and
 the synthetic contracted shells of every ordered class `la, lb <= 3` -- and
-held to `ao.k.record_bounds` through `reference.pq` at that file's `16 eps`
+held to `eri.k_exchange.k.record_bounds` through `reference.pq` at that file's `16 eps`
 of the bound, a host zero an exact zero. The device `sqrt` and `exp` are
 compiled without fast math (devtools/config.sh), so the card and the
 interpreter should agree to the same few ulps. Classes with `la + lb` above

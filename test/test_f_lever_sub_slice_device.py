@@ -2,7 +2,7 @@
 cards.
 
 The lever is a composition (`batched-vrr+sliced-hrr+slim-fock+sub-slice`,
-f_levers/sub_slice.py), so every unit here carries the four levers. TWO
+eri/fock/levers/sub_slice.py), so every unit here carries the four levers. TWO
 PARTS, every F class with L = la + lb + lc + ld <= 4 (milestone 13's cap;
 13 of the 21):
 
@@ -19,7 +19,7 @@ PARTS, every F class with L = la + lb + lc + ld <= 4 (milestone 13's cap;
    `slow` (cc-pVDZ is not a small input: its host references cost 15-30 s a
    class): per class, H2O/cc-pVDZ's launches of that class at `tau = 0`,
    against those launches interpreted with the LITERAL kernel and
-   `ao.fock`'s restricted sweep, by test_fock_ondevice's `_check_class` and
+   `eri.fock.fock`'s restricted sweep, by test_fock_ondevice's `_check_class` and
    its stated tolerances unchanged (the arithmetic is #360's bit for bit,
    which its `2 TOL` against the interpreted literal already admits); (b)
    per molecule, H2O/STO-3G at `tau = 0` and `tau = 0.1, n = 4` and, `slow`,

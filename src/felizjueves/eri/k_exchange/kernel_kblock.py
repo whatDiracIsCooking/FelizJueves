@@ -83,7 +83,7 @@ block is #481's screen exactly (the plan's default).
 THE BLOCK SCREEN OF [Fock, §4.3.1] (#484). Figure 3's three exit tests --
 block, bra loop, ket loop, each `H e^{-Lambda(|AB| - R_a - R_b)} G G < tau`
 -- are this kernel's two `break`s with `dmax[blk]` the density-decay factor
-`F_ab` (`ao.k.density_decay`, its rule and proof; `launch_kblock` carries
+`F_ab` (`eri.k_exchange.k.density_decay`, its rule and proof; `launch_kblock` carries
 it per block): the block test is the bra exit at the first bra, so a
 separate block drop adds nothing (a failing block costs one warp, two loads
 and a branch). The threshold is `tau`, never [Fock]'s `tau* = tau / N*`, so

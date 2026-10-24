@@ -4,9 +4,9 @@
     launch_class(cls, M, *, boys, threads=32)     -> M with cls's elements
     metric_matrix_kernel(aux, *, boys, classes=None, threads=32) -> Run
 
-The `ao/drive.py` pattern for `Target.METRIC`: `kernel_metric.
+The `eri/j_coulomb/drive.py` pattern for `Target.METRIC`: `kernel_metric.
 build_metric_kernel((lP, lQ))` run in `interp.Interpreter` over
-`ao.metric.metric_classes`' staging -- one launch per class, every staged
+`eri.density_fit.metric.metric_classes`' staging -- one launch per class, every staged
 aux shell pair one thread, the class's record and pair arrays passed by
 name (`MetricClass.arrays()`), into ONE zeroed `n_aux x n_aux` matrix. The
 kernel's plain mirrored stores write every element of the launched pairs

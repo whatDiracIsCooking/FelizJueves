@@ -15,11 +15,11 @@ its 8-fold weights, DERIVED (#283).
 Engine #2's kernel, beside `kernel_k.py` (the MMD `K`) and `kernel_jab.py`.
 It computes every contracted ERI `(ab|cd)` of one launch -- a bra batch and
 a ket batch of `launch_f`'s pair stream (#285) -- and DIGESTS each quartet
-into the two-electron Fock matrix `G = J - K/2` (ao/fock.py's convention,
+into the two-electron Fock matrix `G = J - K/2` (eri/fock/fock.py's convention,
 `D` the total closed-shell density) through six thread-private two-index
 buffers. One unique quartet stands for its whole permutation orbit; the
 weights that make that true are derived below, in code (`derive_weights`)
-and in words, and held to `ao.fock`'s every-ordered-quartet sweep
+and in words, and held to `eri.fock.fock`'s every-ordered-quartet sweep
 (test/test_kernel_f.py). With `eris=True` the kernel also writes every ERI
 to `g[bra, ket, i]` in `hgp.hrr.targets` order -- a TAP, the same body plus
 those writes, kept so the recurrence half stays pinned bitwise (#282).
@@ -53,7 +53,7 @@ THE NEST (milestone 12, pins 5 and 7; `[Fock]` §3.2's "Block Execution"):
 and on the host, after every launch: `F <- F + F^T` (`close`).
 
 THE DIGESTION, AND ITS WEIGHTS -- DERIVED, NOT TRANSCRIBED (milestone 12,
-pin 6). The witness is `ao.fock`: for EVERY ordered shell quartet
+pin 6). The witness is `eri.fock.fock`: for EVERY ordered shell quartet
 `(a, b, c, d)`, each visited once, the block `x_ijkl = (a_i b_j|c_k d_l)` is
 digested at weight 1 as
 
@@ -202,17 +202,17 @@ uncontracted pair of 10-primitive shells (cc-pVTZ's heavy-atom `s`, 100).
 The predecessor shipped this cap and had to LIFT IT LATER, when a basis
 outgrew it: a larger basis is a refusal here, never an overflow.
 
-THE STAGING IS PER THREAD, BECAUSE THE IR HAS NO BARRIER (ir.py: "The IR has
+THE STAGING IS PER THREAD, BECAUSE THE IR HAS NO BARRIER (ir/__init__.py: "The IR has
 no barrier"). A cooperative load -- thread `t` writes rows `t, t + nt, ...`
 -- needs a `__syncthreads()` before any thread reads a row it did not
-write, and nothing in `ir.py` spells one; the interpreter would refuse the
+write, and nothing in `ir/__init__.py` spells one; the interpreter would refuse the
 read (a shared element read before it was written). So every thread copies
 the WHOLE record: each shared element is written by every thread with the
 same value, and each thread reads only after its own write, which is
 correct with no barrier on both vendors and under the interpreter's
 sequential consistency. It is a `K_AB REC` redundant copy per thread, not
 the bandwidth saving §3.2 stages for; the cooperative load is a follow-up
-that needs a barrier in `ir.py` (named for #287, which emits this kernel).
+that needs a barrier in `ir/__init__.py` (named for #287, which emits this kernel).
 
 THE QUARTET SCALARS, per primitive quartet (`p`, `q` the two exponent sums;
 `hgp/recurrence.py`, "WHAT THE SCALARS ARE"):
@@ -258,7 +258,7 @@ So, interpreted, the tap's `g` is `==` the host path, bit for bit: per
 primitive quartet the scalars above in this order,
 `hgp.recurrence.build_vrr_kernel`'s boundary, the left fold `c = c + v`
 over `kcd` outer and `kab` inner from `+0.0`, then `build_hrr_kernel` on
-the sums; and `F`, closed, agrees with `ao.fock`'s sweep to rounding
+the sums; and `F`, closed, agrees with `eri.fock.fock`'s sweep to rounding
 (test/test_kernel_f.py).
 
 THE HOST'S HALF lives here, beside `pack`, as plain Python over sequences:
@@ -287,13 +287,13 @@ record read, the floating type per region, the params and a last rewrite.
 Each hook's default is this file's code before #368, moved statement for
 statement, so the literal kernel is byte-identical (test/test_f_seams.py
 pins the text of every class through L = 4, both backends, against the
-pre-#368 tree). An F lever is its own module, `f_levers/<name>.py`,
+pre-#368 tree). An F lever is its own module, `eri/fock/levers/<name>.py`,
 registered in `f_levers.REGISTRY`; `f_levers.hooks_for` composes a spec's
 levers onto the defaults and this file does not change for one.
 
 Nothing here imports `plan/` (pin 11: it keys on a `[JEngine]` row an HGP
 class does not have), `ao/` (the witness; its two fractions are restated
-below and held equal to `ao.fock`'s by the test), `reference/`, the
+below and held equal to `eri.fock.fock`'s by the test), `reference/`, the
 interpreter, a backend or a device.
 """
 
@@ -397,8 +397,8 @@ F_NO_OUTER_LAYER = (
 
 # --- the weights, derived from the permutation orbit (module docstring) ------
 
-N_SPIN = 2  # closed shell: D = P^alpha + P^beta (ao/fock.py's derivation)
-COULOMB_FRACTION = 1.0  # G = J - K / N_SPIN; held equal to ao.fock's
+N_SPIN = 2  # closed shell: D = P^alpha + P^beta (eri/fock/fock.py's derivation)
+COULOMB_FRACTION = 1.0  # G = J - K / N_SPIN; held equal to eri.fock.fock's
 EXCHANGE_FRACTION = 1.0 / N_SPIN
 
 

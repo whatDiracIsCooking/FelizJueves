@@ -243,7 +243,7 @@ class Target(StrEnum):
     # primitive-pair record, the [p|q] kernel's Ip / Iq, a PAIR class (la, lb)
     # (kernel_pair_bound.py, module docstring "THE CLASS IS A PAIR").
     PAIR_BOUND = "pair_bound"
-    # K's DRESSED record bound, ao.k.record_bounds: max over the first
+    # K's DRESSED record bound, eri.k_exchange.k.record_bounds: max over the first
     # shell's Cartesians of SUM_{k, p} |s E^{a_i b_k}_p| I_p(zeta), an
     # ORDERED pair class (la, lb) (kernel_record_bound.py, module docstring
     # "THE CLASS IS AN ORDERED PAIR").

@@ -42,11 +42,11 @@ ONE THREAD PER RECORD, `rec = THREAD_X + BLOCK_X * BLOCK_DIM_X`, guarded by
 `rec < n_rec` (`jab_launch_shape`). The mapping is not part of the numerical
 contract; it is the simplest one, and in the interpreter (threads in order,
 blocks in order) it runs the records IN ORDER, which is what makes the
-interpreted kernel `==` to `ao.j.jab_from_host` (below).
+interpreted kernel `==` to `eri.j_coulomb.j.jab_from_host` (below).
 
 `E` FROM THE FRAGMENT, INLINED. `e_fragment.block_fragment(la, lb)` writes the
 undressed block into a LOCAL array `E[n_rows_cart, n_p]`, from `zeta`,
-`1/2zeta` (a local `0.5 / zeta`, formed once, as `ao.hermite.e_axis` forms
+`1/2zeta` (a local `0.5 / zeta`, formed once, as `mmd.hermite.e_axis` forms
 `h`), and the host-supplied `X_PA = P - A`, `X_PB = P - B` per axis. Only the
 entries the fragment writes are read: an entry with `t_d > a_d + b_d` on some
 axis is exactly zero, and its term is OMITTED from `v`, not multiplied in --
@@ -69,7 +69,7 @@ in Hermite order (`((t_0 + t_1) + t_2) ...`, the host's `acc += ...` with
 its `+0.0` start and its zero-`E` terms dropped -- both change at most the
 sign of a zero), and the `+=` chain from a zeroed `J` with records in order
 is the host's `jab[r] += acc` from `0.0` followed by its single add into the
-zeroed `J`. So interpreted, the kernel is `==` to `ao.j.jab_from_host`. On a
+zeroed `J`. So interpreted, the kernel is `==` to `eri.j_coulomb.j.jab_from_host`. On a
 card the atomics' order differs run to run; that tolerance is the device
 test's, not this module's.
 

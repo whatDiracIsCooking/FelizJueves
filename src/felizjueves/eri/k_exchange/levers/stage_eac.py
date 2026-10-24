@@ -45,7 +45,7 @@ cards answer.
 THE ARITHMETIC IS THE LITERAL KERNEL'S, bit for bit: the same fragment, the
 same values, the same reads in the same order, only `Eac[r][t]` spelled
 `EacS[r][t]` (test/test_k_lever_stage_eac.py, interpreted, against
-`ao.k.k_quartet` per bra record and against the literal kernel).
+`eri.k_exchange.k.k_quartet` per bra record and against the literal kernel).
 
 THE FOOTPRINT, a declared function of the class (no build needed), beside
 `kernel_k.shared_bytes`' dynamic `Ksh`:

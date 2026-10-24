@@ -2,8 +2,8 @@
 kernels COMPILED and LAUNCHED on the RTX 3080 and the RX 9060 XT, against the
 same tracked libcint fixture #86 used.
 
-WHAT RUNS WHERE. `ao.j.coulomb_matrix(basis, D, pq=pq, jp=...)` with the
-`jp=` seam #87 opened (`ao.drive.KernelJP` is its interpreted twin): the ket
+WHAT RUNS WHERE. `eri.j_coulomb.j.coulomb_matrix(basis, D, pq=pq, jp=...)` with the
+`jp=` seam #87 opened (`eri.j_coulomb.drive.KernelJP` is its interpreted twin): the ket
 pre-contraction, the bra transform `E` and the scatter stay host-side numpy,
 #86's and already witnessed against libcint, so a disagreement here
 localises to the device kernels. Only `J_p = sum_k sum_q [p|q] D_q` runs on
@@ -24,12 +24,12 @@ default stream into ONE zeroed `J`, each with the shared memory its own
 conftest card lock + VRAM probe (#91). What is new is the data: REAL pair
 records (#83's `P`, `zeta`, `Q`, `eta`, dressed `D_q`) instead of
 `rng.uniform`, and several classes. `Ip = Iq = Dmax = 1` and `tau = 0`, as in
-`KernelJP`: the seam is unscreened (`ao.j` refuses `jp` with `tau > 0`), the
+`KernelJP`: the seam is unscreened (`eri.j_coulomb.j` refuses `jp` with `tau > 0`), the
 bound is never `< tau`, no ket is skipped, and the sorted-ket precondition --
 which exists only to make the `break` correct -- is vacuous.
 
 ONE LAUNCH PER CLASS. The seam is called once per (bra shell pair, ket
-class); every call of one class has the same ket records (`ao.j` groups kets
+class); every call of one class has the same ket records (`eri.j_coulomb.j` groups kets
 by class) and its bra records differ only in which shell pair they came from,
 which the kernel never sees (one block per bra record, `J_p` per record). So
 `DeviceJ` first captures the sweep's calls through the seam (returning
@@ -40,7 +40,7 @@ replayed call's arguments are the captured ones. That is a harness economy
 grouping: each launch is the kernel's ordinary contract.
 
 THE BATCH AXIS, as test_ao_j_interpreted.py: for each `n_batches` in
-`ao.drive.BATCH_COUNTS` one full `J` with every class at that count where the
+`eri.j_coulomb.drive.BATCH_COUNTS` one full `J` with every class at that count where the
 plan admits it, at one batch where it does not; the test asserts exactly the
 `(class, n_batches)` cells that ran and were refused.
 
@@ -49,7 +49,7 @@ device's precision (fp64):
 
   libcint    |J_dev - J_pyscf| <= 1e-12 scale_J, element by element
              (test_ao_j.py's derived tolerance; `scale_J` from
-             `ao.j.coulomb_matrix_and_scale`).
+             `eri.j_coulomb.j.coulomb_matrix_and_scale`).
   reference  |J_dev - J_pq| <= 1e-13 max|J_pq| (test_ao_j_interpreted.py's
              pin of the interpreted kernel). The card differs from the
              interpreter only by FMA contraction and libm `exp`/`sqrt`
@@ -197,7 +197,8 @@ class DeviceJ:
         return got
 
     def coulomb_matrix(self, basis, D) -> np.ndarray:
-        """`ao.j.coulomb_matrix` with `J_p` from the card, one launch per class."""
+        """`eri.j_coulomb.j.coulomb_matrix` with `J_p` from the card, one launch per
+        class."""
         calls: list = []
 
         def capture(bra_am, ket_am, bras, kets):
@@ -301,7 +302,7 @@ def test_hip_j_matches_libcint(name, n, request, compile_device_source,
 
 @pytest.mark.parametrize("name", CASES)
 def test_the_selector_reaches_what_the_sweep_launches(name):
-    """`--shell-ls` derives exactly the classes `ao.j`'s sweep calls the seam
+    """`--shell-ls` derives exactly the classes `eri.j_coulomb.j`'s sweep calls the seam
     with -- the set the device test launches."""
     got = set(emit_cli.classes_reached(_shell_ls(name)))
     assert got == _classes(_case(name)[1])

@@ -17,7 +17,7 @@ It is `metric.md`'s shape with one more index.
   `python -m felizjueves.emit --eri3-l [LMAX]` as `eri3_{la}{lb}{lP}`
   (#445). The ladder is never in the bare default and is not in
   `KERNEL_GEN_CMD`.
-- **Host reference:** `ao/eri3.py` (#443), with its `[t|τ]` evaluator
+- **Host reference:** `eri/density_fit/eri3.py` (#443), with its `[t|τ]` evaluator
   injected.
 - **Oracle:** libcint's `int3c2e_cart` on `h2o_sto3g_j`'s molecule against
   PySCF's `df.make_auxmol(mol, 'cc-pvtz-jkfit')`, tracked as one schema-4
@@ -82,24 +82,24 @@ The ket's Hermite "pair" is one aux Gaussian, as in the metric: `ζ = α`,
   record. `ao.pairs.dress` is the only place `c_i c_j (π/p)^{3/2}` is
   multiplied in. The Gaussian product `K_AB` is **not** a dressing factor:
   it is `E`'s seed, `E^{00}_0 = exp(+ζ X_PA X_PB) = exp(−μ X_AB²)` per
-  axis (`ao.hermite.e_axis`). This corrects the issue text of #443, which
+  axis (`mmd.hermite.e_axis`). This corrects the issue text of #443, which
   put `K_AB` in `dress`.
-- **The ket is `ao.metric`'s aux record, unchanged**:
-  `s_k = c_k (π/α_k)^{3/2}` by `ao.metric.aux_dress`, with **no** extra
+- **The ket is `eri.density_fit.metric`'s aux record, unchanged**:
+  `s_k = c_k (π/α_k)^{3/2}` by `eri.density_fit.metric.aux_dress`, with **no** extra
   primitive normalisation, because `c` already carries libcint's
-  (`metric.md`, "The aux record"). `E^P` is `ao.metric.center_e`.
+  (`metric.md`, "The aux record"). `E^P` is `eri.density_fit.metric.center_e`.
 
 So `(2/√π) θ (π/p)^{3/2} (π/α)^{3/2} = 2π^{5/2} / (p α √(p + α))` is
 McMurchie & Davidson's `λ`, as for `(P|Q)` and `(ab|cd)`. No kernel and no
 host module forms that constant: `(2/√π) θ` is the prelude's `W0`.
 
-## The host reference, `ao/eri3.py`
+## The host reference, `eri/density_fit/eri3.py`
 
 `eri3_block(sA, sB, sP, *, pq)` computes one ordered shell triple as
 `[a][b][q]`; `eri3_block_and_scale` also returns its absolute-value twin.
 `eri3_tensor(basis, aux, *, pq)` and `scale_tensor` return
 `(n_ao, n_ao, n_aux)`. `ao` imports neither `reference/` nor `plan/`: the
-evaluator arrives as `pq=`. Layering gives `ao.eri3` the `ao` rule
+evaluator arrives as `pq=`. Layering gives `eri.density_fit.eri3` the `ao` rule
 (`test_layering.py`).
 
 `eri3_tensor` places every AO shell pair `i ≤ j` and its `(m, n)` mirror. A
@@ -115,14 +115,14 @@ shell pair `i ≤ j`, crossed with every aux shell, is a **cell** of class
 - A pair whose first shell has the higher `l` is staged as `(j, i)` with
   `swapped` set. `place_staged` lands its block with `m, n` transposed.
 - A class holds two record tables, each entry once and contiguous: the bra
-  records (`zeta_ab`, `P`, `XPA`, `XPB`, `s_ab`, `ao.schwarz`'s record) and
-  the aux records (`A`, `alpha`, `s`, `ao.metric`'s).
+  records (`zeta_ab`, `P`, `XPA`, `XPB`, `s_ab`, `eri.schwarz`'s record) and
+  the aux records (`A`, `alpha`, `s`, `eri.density_fit.metric`'s).
 - A cell is two record ranges, `[ab_rec0, ab_rec1)` and `[p_rec0, p_rec1)`,
   and three offsets, `off_a`, `off_b`, `off_p`.
 - `class_block` rebuilds each bra `E` from the record alone and is
   `eri3_block` of the staged shells bitwise.
 
-**The internal twin was not built.** `ao.eri`'s quartet `(ab|c0)`, with `0`
+**The internal twin was not built.** `eri.eri`'s quartet `(ab|c0)`, with `0`
 an s shell of exponent 0, would be this integral algebraically, but
 `ao.shell.Shell` refuses an exponent that is not positive, and #443 said to
 drop the check rather than widen `shell`. `test_ao_eri3.py`'s
@@ -197,7 +197,7 @@ kernel forms `(s_ab s_k)(E u)` on the plan's MILD DAG. No class matches the
 host's term order, and `test_no_class_is_bitwise_and_why` records that
 even (ss|s) is not bitwise.
 
-`ao/eri3_drive.py` is the interpreted adapter, after `ao/metric_drive.py`,
+`eri/density_fit/eri3_drive.py` is the interpreted adapter, after `eri/density_fit/metric_drive.py`,
 with Boys injected. Layering rules `eri3_builder` (off `ao`, `interp`, `emit`,
 `device` and `reference/`) and `eri3_adapter` keep the two apart (`test_layering.py`).
 
@@ -217,7 +217,7 @@ other ladder's, and writes `--eri3-l 11` with a stubbed builder into files
 opened in exclusive mode.
 
 **The layout is `[m][n][P]`, the aux index fastest**, decided in
-`ao/eri3.py` and honoured by the kernel, the driver and the fixture. It
+`eri/density_fit/eri3.py` and honoured by the kernel, the driver and the fixture. It
 makes the `(m, n)` mirror a transpose of the first two indices and keeps a
 cell's writes in one short run of aux columns. **The known trade:** a
 future DF-J would prefer aux-major slabs, `[P][m][n]`, so that one aux

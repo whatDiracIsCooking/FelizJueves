@@ -417,7 +417,7 @@ VOCABULARY: dict[str, Lever] = {
            "k_levers.seams, and typing them would be a K lever of its own"),
     ),
     # #356: a composition, legal on F only WITH batched-vrr in the same spec
-    # (f_levers/sliced_hrr.py refuses it alone, with its reason).
+    # (eri/fock/levers/sliced_hrr.py refuses it alone, with its reason).
     "sliced-hrr": Lever.of(
         "sliced-hrr", 356,
         "the HRR run once per bra pair (a, b) on #350's staged boundary, each "
@@ -444,7 +444,7 @@ VOCABULARY: dict[str, Lever] = {
            "`kmixed-de`"),
     ),
     # #357: a composition on batched-vrr, like #356's sliced-hrr
-    # (f_levers/subdag_vrr.py refuses it alone, with its reason).
+    # (eri/fock/levers/subdag_vrr.py refuses it alone, with its reason).
     "subdag-vrr": Lever.of(
         "subdag-vrr", 357,
         "each of #350's VRR groups emitted in a live-minimising list "
@@ -459,7 +459,7 @@ VOCABULARY: dict[str, Lever] = {
            "DAG, with no HGP VRR groups to schedule per group"),
     ),
     # #360: a composition, legal on F only WITH sliced-hrr (and so
-    # batched-vrr) in the same spec (f_levers/slim_fock.py refuses it alone).
+    # batched-vrr) in the same spec (eri/fock/levers/slim_fock.py refuses it alone).
     "slim-fock": Lever.of(
         "slim-fock", 360,
         "each sliced-HRR slice (a, b) keeps a reduced Fock-buffer set -- the "
@@ -476,7 +476,7 @@ VOCABULARY: dict[str, Lever] = {
            "whose per-slice buffer set could be reduced"),
     ),
     # #361: a composition, legal on F only WITH slim-fock (and so sliced-hrr
-    # and batched-vrr) in the same spec (f_levers/sub_slice.py refuses it).
+    # and batched-vrr) in the same spec (eri/fock/levers/sub_slice.py refuses it).
     "sub-slice": Lever.of(
         "sub-slice", 361,
         "each sliced-HRR slice's HRR cut into n_sub ordered sub-slices -- "
@@ -507,7 +507,7 @@ VOCABULARY: dict[str, Lever] = {
     ),
     # #359: a composition on #356, legal on F only WITH sliced-hrr (and so
     # batched-vrr) in the same spec; the name sorts after sliced-hrr so
-    # hooks_for applies it on the slices (f_levers/sliced_site_digest.py).
+    # hooks_for applies it on the slices (eri/fock/levers/sliced_site_digest.py).
     "sliced-site-digest": Lever.of(
         "sliced-site-digest", 359,
         "each ERI of a sliced-HRR slice tapped and digested into the Fock "
@@ -522,7 +522,7 @@ VOCABULARY: dict[str, Lever] = {
            "predigest, its K contraction is staged through the E fragments"),
     ),
     # #354: the ETR on the classes its declared rule (the cost model, gated
-    # on accuracy) picks; f_levers/etr.py.
+    # on accuracy) picks; eri/fock/levers/etr.py.
     "etr": Lever.of(
         "etr", 354,
         "on the classes the declared rule picks (the cost model, gated on "

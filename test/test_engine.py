@@ -167,7 +167,7 @@ def test_every_engine_matches_libcint(engine, q) -> None:
 
 @pytest.mark.parametrize("pair", PAIRS, ids=_ids)
 def test_every_engine_fills_the_fock_witness_slot(pair) -> None:
-    """`engine.eri` is `ao.fock`'s `eri=` -- the module above the engines
+    """`engine.eri` is `eri.fock.fock`'s `eri=` -- the module above the engines
     takes either through the protocol: H2/STO-3G's `J` and `K` agree within
     `TOL` of the sweep run on `|D|` with the summed scale."""
     from oracle import basis as ob

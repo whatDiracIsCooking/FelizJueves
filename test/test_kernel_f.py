@@ -10,16 +10,16 @@ computed in Python floats in the same operation order;
 `interpret(build_hrr_kernel)` on the sums. It reads the ERIs through the
 kernel's TAP (`eris=True`), which is asserted to be the shipped body plus
 the `g` writes and nothing else. The integrals are also checked against
-`ao/eri.py`'s MMD path (a different engine; a rounding tolerance).
+`eri/eri.py`'s MMD path (a different engine; a rounding tolerance).
 
-THE DIGESTION HALF (#283) is held to `ao.fock`'s sweep over EVERY ORDERED
+THE DIGESTION HALF (#283) is held to `eri.fock.fock`'s sweep over EVERY ORDERED
 quartet at weight 1 with no symmetry (milestone 12, pin 6) -- never to a
 re-typing of the weights. Per class, one unique quartet's closed deposit
 (`F + F^T`) equals the sweep restricted, through its injected `eri`, to the
 ordered members of that quartet's orbit -- members enumerated here by
 brute force over shell labels, not from `kernel_f.orbit_group`. Every
 degeneracy case runs: `a = b`, `c = d`, `(ab) = (cd)`, the first two
-together, and all three. The sweep's ERIs come from `ao.hgp_drive` (HGP,
+together, and all three. The sweep's ERIs come from `eri.hgp_drive` (HGP,
 interpreted per ordered member), so the only shared ancestry is the
 recurrence the bitwise half already pins. Whole molecules run from
 `launch_f`'s plan against the full sweep and libcint's `vj - vk/2`.
@@ -464,7 +464,7 @@ def test_the_tap_is_the_shipped_kernel_plus_its_writes(cls) -> None:
 def test_the_weights_are_derived_from_the_orbit() -> None:
     """`derive_weights` enumerates the group: Coulomb 2 (fraction 1 x two
     in-order members), exchange -1/2 (fraction 1/2 x one) -- and the
-    fractions are ao.fock's, the witness's, not a restatement that could
+    fractions are eri.fock.fock's, the witness's, not a restatement that could
     drift."""
     assert len(KF.orbit_group()) == 8
     assert KF.derive_weights() == KF.WEIGHTS == KF.Weights(2.0, -0.5, True)
@@ -698,7 +698,7 @@ def _density(n_ao: int, seed: int = 283) -> np.ndarray:
 def test_one_contracted_quartet_is_the_host_path_bitwise(cls) -> None:
     """All 21 classes on one contracted quartet of 2-primitive shells
     (`K_AB = K_CD = 4`, 16 primitive quartets): the tap's `g` `==` the host
-    path, and against `ao/eri.py`'s MMD integrals to rounding."""
+    path, and against `eri/eri.py`'s MMD integrals to rounding."""
     sh = _shells(cls)
     basis = Basis(tuple(sh))
     bra, ket = records(basis, 0, 1), records(basis, 2, 3)
@@ -744,7 +744,7 @@ def test_a_multi_quartet_ket_loop_is_bitwise_and_the_screen_skips(cls) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The digestion against ao.fock's ordered sweep
+# The digestion against eri.fock.fock's ordered sweep
 # ---------------------------------------------------------------------------
 
 HGP_BOTH = partial(HD.eri_block_and_scale, boys=boys)
@@ -765,7 +765,7 @@ def _members(bras, kets) -> frozenset:
 
 
 def sweep(basis: Basis, D, members=None) -> tuple[np.ndarray, np.ndarray]:
-    """`ao.fock`'s sweep, every ordered quartet at weight 1, with its `eri`
+    """`eri.fock.fock`'s sweep, every ordered quartet at weight 1, with its `eri`
     returning zeros outside `members` (all quartets when `None`). Returns
     `(G, scale_G)`: `G = J - K/2` and the same sweep on `|D|` with the
     absolute-value twin, `scale_J + scale_K / 2`."""
@@ -1047,7 +1047,7 @@ def test_a_launch_from_the_pair_stream_runs_against_mmd() -> None:
     """H2O/STO-3G at `tau = 0`: one launch of `f_launches`' (sp|sp) class
     (`K_AB = K_CD = 9`), each side packed from its batch's `FPair.prims`
     indices -- multi-quartet, both sides, real shells -- the tap bitwise
-    against the host path and to rounding against `ao/eri.py`."""
+    against the host path and to rounding against `eri/eri.py`."""
     fx = manifest.load(manifest.FIXTURES / "h2o_sto3g_j.json")
     basis, D = ob.from_fixture(fx), np.array(fx.density)
     plan = f_launches(basis, D, bound=BOUND, tau=0.0, n=1)

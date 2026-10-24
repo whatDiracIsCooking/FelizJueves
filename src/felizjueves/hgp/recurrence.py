@@ -1,6 +1,6 @@
 """The HGP recurrences as IR: the VRR (eqs 25-26) and HRR (eq 28) of `[Fock]` §3.1.
 
-This is the bridge from `hgp/` to `ir.py`, the second engine's twin of the MMD
+This is the bridge from `hgp/` to `ir/__init__.py`, the second engine's twin of the MMD
 `recurrence.py`, and built on the same two-layer shape so the two are
 recognisably the same kind of object:
 
@@ -15,7 +15,7 @@ recognisably the same kind of object:
 
 THIS MODULE KNOWS HGP; `interp.py` MUST NOT. The interpreter executes what is
 produced here; test/test_hgp_recurrence.py pins it against a direct recursion
-of eqs 25, 26 and 28 and against `ao/eri.py` (by way of `reference/`), neither
+of eqs 25, 26 and 28 and against `eri/eri.py` (by way of `reference/`), neither
 of which builds a DAG. THE DIRECTION IS READ OFF THE DAG, never re-derived:
 `hgp.vrr` and `hgp.hrr` chose the axis and the side, and `vrr_reduction` /
 `hrr_reduction` only spell, and check, what the DAG says.
@@ -54,7 +54,7 @@ THE SIGN OF `WQ` IS DERIVED, NOT TRANSCRIBED. `[Fock]` eq 26 prints the
 `(m+1)` displacement of the ket VRR as `-PQ p/(p+q)`; under the convention
 eqs 25 and 28 fix (`PA = P - A`, `CD = C - D`, so `PQ = P - Q`) the ket
 displacement is `W - Q = +p/(p+q) PQ`, and only that sign reproduces the
-integrals (test/test_hgp_recurrence.py evaluates both against `ao/eri.py` on
+integrals (test/test_hgp_recurrence.py evaluates both against `eri/eri.py` on
 a quartet with `P != Q`; the claim is `fock/eq26-ket-vrr-sign`,
 asserted by #291). The IR names `W - Q` itself, so the sign is a property of
 the bound VALUE, never of the instruction stream.

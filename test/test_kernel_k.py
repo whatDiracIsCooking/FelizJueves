@@ -1,7 +1,7 @@
 """`kernel_k`: the exchange kernel, the staged contraction as IR (#198).
 
 The kernel is checked against the HOST staged contraction it implements --
-`ao.k.k_quartet` (#197), the `k=` seam's reference -- interpreted, on
+`eri.k_exchange.k.k_quartet` (#197), the `k=` seam's reference -- interpreted, on
 synthetic contracted shells (two primitives each, one with a negative
 coefficient, four distinct centres), no fixture and no PySCF.
 
@@ -9,7 +9,7 @@ EXACT EQUALITY, NOT A TOLERANCE. The kernel performs the host's operations in
 the host's order (`kernel_k`'s module docstring: stage 1 a left fold over `q`
 from `+0.0`, stage 2 a left fold over `p`, stage 3 `K += D * V`, the absent
 structural zeros an identity), and its `E` is the fragment that is bitwise
-`ao.hermite.e_block` (test/test_e_fragment.py). Two things make the
+`mmd.hermite.e_block` (test/test_e_fragment.py). Two things make the
 comparison bitwise and are stated rather than hidden:
 
 - `pq=` is the RECURRENCE'S OWN `[p+q]^(0)`: `recurrence.build_recurrence_kernel`
@@ -249,7 +249,7 @@ def _host(bra: EPair, ket: EPair, dcd, am: Am) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
-# Interpreted against ao.k.k_quartet, bitwise
+# Interpreted against eri.k_exchange.k.k_quartet, bitwise
 # ---------------------------------------------------------------------------
 
 
@@ -280,7 +280,7 @@ def test_an_uncontracted_bra_is_the_whole_quartet_bitwise(am: Am) -> None:
 def test_against_the_reference_pq_to_the_quartet_scale(am: Am) -> None:
     """The second ancestry: `k_quartet` on `reference.pq` (the direct
     recursion, no MILD, no DAG) agrees with the kernel to `1e-14` of the
-    per-element scale `ao.k` defines for a quartet (test_ao_k.py's
+    per-element scale `eri.k_exchange.k` defines for a quartet (test_ao_k.py's
     tolerance, inherited) -- so the recurrence-derived `pq=` above hides
     no sign or index error."""
     from felizjueves.eri.k_exchange.k import _k_quartet
@@ -474,7 +474,7 @@ def test_the_key_is_the_hermite_quartet() -> None:
 def test_the_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     """TRANSITIVELY (test_layering.py's graph, its `k_builder` rule): no
     chain of imports from `kernel_k` reaches the AO layer it is checked
-    against (`ao.k.k_quartet`), the interpreter, reference/, a backend or a
+    against (`eri.k_exchange.k.k_quartet`), the interpreter, reference/, a backend or a
     card."""
     import test_layering as tl
 

@@ -10,7 +10,7 @@ Three kinds of witness, from the inside out:
    classes. This checks the IR spelling, not the recurrence.
 2. The fundamental's relation to FJ's one fundamental, `reference/pq.py`'s
    `[0]^(m)`, asserted pointwise (and `[Fock]`'s `R0_m = pref F_m(T)` with it).
-3. The INTEGRALS: VRR then HRR, interpreted, against `ao/eri.py`'s MMD path
+3. The INTEGRALS: VRR then HRR, interpreted, against `eri/eri.py`'s MMD path
    (evaluator `reference.pq.pq`, itself witnessed against libcint) on one
    primitive quartet with four distinct centres, all 21 classes. This is what
    checks the recurrence, and it is where the two `[Fock]` defects show:
@@ -286,12 +286,12 @@ def test_the_ssss_kernel_output_is_the_seed_bitwise() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. The integrals: HGP against ao/eri.py's MMD path, one primitive quartet
+# 3. The integrals: HGP against eri/eri.py's MMD path, one primitive quartet
 # ---------------------------------------------------------------------------
 
 
 def mmd_block(cls, exps=EXPS, centres=CENTRES):
-    """`(ab|cd)` and its scale by `ao/eri.py` on unnormalised single-primitive
+    """`(ab|cd)` and its scale by `eri/eri.py` on unnormalised single-primitive
     shells (coefficient 1 multiplies the bare Cartesian Gaussian,
     `ao/shell.py`), flattened in `hgp.hrr.targets` order (a outermost)."""
     shells = [Shell(am, ctr, (x,), (1.0,))

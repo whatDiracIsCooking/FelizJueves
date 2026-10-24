@@ -1,4 +1,4 @@
-"""Mixed-precision fused F, `f_levers/mixed.py` (#355), interpreted.
+"""Mixed-precision fused F, `eri/fock/levers/mixed.py` (#355), interpreted.
 
 The lever `fmixed` makes the fused F kernel's VRR, contracted boundary and
 HRR FP32 (Boys in fp64 on `TO_F64(T)`, narrowed), and keeps the screen, the
@@ -23,7 +23,7 @@ What is asserted, nothing compiled or launched:
    checker holds the boundary, not this lever).
 4. THE NUMBERS, at THE fp32 tier, `F32_REL` of `scale_G`
    (test/oracle/tolerance.py's one declared fp32 tier, never widened):
-   one orbit against `ao.fock`'s sweep on every class with L <= 4, the
+   one orbit against `eri.fock.fock`'s sweep on every class with L <= 4, the
    degeneracy cases within the cap, and (`slow`: 7 s and more, interpreted)
    H2O/STO-3G's and 6-31G's (s and p shells only) whole `F` from
    `launch_f`'s plan (every kernel the lever's) against the sweep and

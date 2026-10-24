@@ -21,7 +21,7 @@ What is asserted (host shim, fast unless `slow`; no compiler, no card):
    set), forms its `I_p` in locals, carries both levers' notes and the
    arm's; the other three arms carry no `SPLIT_ARM`.
 3. FOUR-ARM PARITY, the issue's acceptance: literal / interleave / split /
-   split+interleave, per bra record `ao.k.k_quartet` BIT FOR BIT and equal
+   split+interleave, per bra record `eri.k_exchange.k.k_quartet` BIT FOR BIT and equal
    to each other, every class with L <= 2 at one batch and, atomized onto a
    zeroed `K`, at three; a sample through L = 4 (no shell above d) `slow`,
    milestone 13's cap. Bitwise because neither lever reassociates (their

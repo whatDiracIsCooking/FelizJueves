@@ -8,7 +8,7 @@ docstring, "THE SPLIT CLASS").
 WHAT IS EXACT AND WHAT IS ROUNDING, stated before the tests:
 
 - BITWISE: interpreted with one lane, each batch kernel is `==`
-  `ao.k.k_quartet` with `pq=` restricted to the batch's targets -- the
+  `eri.k_exchange.k.k_quartet` with `pq=` restricted to the batch's targets -- the
   `[r]^(0)` of that batch's OWN recurrence (`build_recurrence_kernel` over
   the batch's DAG, the same injected Boys), and `0.0` for any `p + q` the
   batch does not hold -- per bra record. Every term the kernel omits is a

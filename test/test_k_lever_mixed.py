@@ -1,6 +1,6 @@
 """Mixed-precision K and the `D`/`E` operand narrowing (#347), interpreted.
 
-Two arms of one axis, `k_levers/mixed.py`: `kmixed` (the compute-only arm,
+Two arms of one axis, `eri/k_exchange/levers/mixed.py`: `kmixed` (the compute-only arm,
 the `[p|q]` pair region F32) and `kmixed-de` (that, plus `E^ac` / `E^bd`
 formed in F32 and `XPA XPC XQB XQD Dcd` as host-packed `const float*`).
 What is asserted, nothing compiled or launched:
@@ -11,7 +11,7 @@ What is asserted, nothing compiled or launched:
    not two composable changes). `mixed` stays J's.
 2. THE FP64 ARM IS UNTOUCHED. No lever: `DEFAULT_HOOKS` and no F32 anywhere
    (the literal K kernels' digest is test/test_k_seams.py's pin, and their
-   bitwise agreement with `ao.k.k_quartet` test/test_kernel_k.py's).
+   bitwise agreement with `eri.k_exchange.k.k_quartet` test/test_kernel_k.py's).
 3. THE FP64 BOUNDARY, AS IR. `kmixed`: the parameters are the literal ones;
    the F32 declarations are exactly the narrowed operands (`PQ_d`,
    `theta`), the prelude (`t2`, `T`, `s`, `W{m}`) and the recurrence's
@@ -21,7 +21,7 @@ What is asserted, nothing compiled or launched:
    read a `TO_F64`. Dropping one widening makes the kernel refuse to build
    (#338's checker holds the boundary, not this lever).
 4. THE NUMBERS, at THE fp32 tier: per bra record, `|K - X| <= F32_REL * S`
-   with `X, S = ao.k._k_quartet(...)` on `reference.pq` in fp64 -- the
+   with `X, S = eri.k_exchange.k._k_quartet(...)` on `reference.pq` in fp64 -- the
    host staging and its |.| twin, the scale test_kernel_device.py's K
    harness uses -- on the UNNARROWED inputs (so `kmixed-de`'s packing
    error is inside the budget, not excused). `F32_REL` is

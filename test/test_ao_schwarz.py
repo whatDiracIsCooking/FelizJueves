@@ -1,11 +1,11 @@
-"""`ao.schwarz`: the Schwarz matrix `sqrt((mn|mn))`, host-side, against libcint.
+"""`eri.schwarz`: the Schwarz matrix `sqrt((mn|mn))`, host-side, against libcint.
 
 THREE WITNESSES, each of a different claim:
 
 1. LIBCINT'S `(mn|mn)`, the `int2e_diag` array of the three `_schwarz`
    fixtures (H2/STO-3G, H2O/STO-3G, H2O/6-31G: s and p only, so every class
    is at L = 2 (la + lb) <= 4). Element by element, `|ours - libcint| <=
-   1e-12 * scale`, `scale` being `ao.eri`'s absolute-value twin -- test_ao_eri's
+   1e-12 * scale`, `scale` being `eri.eri`'s absolute-value twin -- test_ao_eri's
    tolerance and its reason, unchanged.
 2. THE INEQUALITY ITSELF, against libcint's own off-diagonal blocks: for every
    tracked `int2e` block whose two pair classes are at L <= 4,

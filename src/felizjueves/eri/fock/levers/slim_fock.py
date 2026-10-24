@@ -49,7 +49,7 @@ instead of per quartet). Both `F`s are sum trees over the same products, so
 the lever is held to the literal kernel by the DERIVED bound
 `|F_lever - F_literal| <= 2 gamma_{n-1} SUM |p_i|` per element over its `n`
 products `p_i` -- recorded by a witness kernel that atomically adds every
-product as it is formed -- never bitwise, and to `ao.fock`'s sweep at the
+product as it is formed -- never bitwise, and to `eri.fock.fock`'s sweep at the
 literal kernel's own `TOL`.
 
 A COMPOSITION ON #356: `slim-fock` REQUIRES `sliced-hrr` (and so

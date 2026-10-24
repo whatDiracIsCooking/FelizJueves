@@ -24,7 +24,7 @@ index in `hermite_order(la + lb)` order (= `plan.targets.hermite_targets`).
 
 WHERE THE DRESSINGS GO, decided once (milestone 4, "The physics this
 milestone owns"; docs/implementation/j_engine.md, "The `E` transform").
-`ao/hermite.py` produces McMurchie & Davidson's PURE `E` (entry 46 of
+`mmd/hermite.py` produces McMurchie & Davidson's PURE `E` (entry 46 of
 docs/references.md, eqs. 2.20-2.22). `dress` multiplies in, and nothing else
 in this package does:
 
@@ -101,7 +101,7 @@ multiplier is guessed and none can drift:
     one_electron_bound(sa, sb, *, T, weight) >= max_{a,b} |block[a][b]|
 
 For `S` (`overlap_bound`, `T = 0`) the block IS `SUM_pp block_pp[ab][0]`
-(ao/overlap.py), and the triangle inequality gives
+(one_electron/overlap.py), and the triangle inequality gives
 
     |S_ab| <= SUM_pp max_{ab} |c_a c_b (pi/zeta)^{3/2} E^{ab}_0[pp]|
 
@@ -109,13 +109,13 @@ For `S` (`overlap_bound`, `T = 0`) the block IS `SUM_pp block_pp[ab][0]`
 cancellation), which test/test_ao_pairs.py asserts. For `V`
 (`potential_bound`, `T = la + lb`) the block is
 `-SUM_C Z_C SUM_pp SUM_t block_pp[ab][t] [t]^(0)(P - C, sqrt(zeta))`
-(ao/potential.py), and every `[t]^(0)` is bounded uniformly in `C` by
+(one_electron/potential.py), and every `[t]^(0)` is bounded uniformly in `C` by
 `point_charge_bounds` (below), so
 
     |V_ab| <= (SUM_C |Z_C|) SUM_pp max_{ab} SUM_t |block_pp[ab][t]| B_t(zeta)
 
 For `T` (`kinetic_bound`) the block is the fixed `K_ij` combination of 1D
-overlaps read at `lb + 2` (ao/kinetic.py); its bound is that combination
+overlaps read at `lb + 2` (one_electron/kinetic.py); its bound is that combination
 with every coefficient and every overlap replaced by its absolute value,
 
     |K_ij| <= 2 beta^2 |S_{i,j+2}| + beta (2j+1) |S_ij| + 1/2 j(j-1) |S_{i,j-2}|
@@ -145,7 +145,7 @@ odd `n` by Cauchy-Schwarz on the two neighbouring even moments. With
     |[t]^(0)(x, theta)| <= [0]^(0)(0, theta) (2 theta^2)^{|t|/2}
                            PROD_d m_{t_d} / (|t| + 1)        for every x
 
-at `theta = sqrt(zeta)` (ao/potential.py). `[0]^(0)(0, theta)` is read from
+at `theta = sqrt(zeta)` (one_electron/potential.py). `[0]^(0)(0, theta)` is read from
 the INJECTED evaluator, so this module forms no constant of the operator and
 `pi` still appears in `dress` only. Every factor is proved; none is fitted.
 
@@ -153,7 +153,7 @@ THE PAIR LIST. `pair_list(basis, *, tau, bound)` takes the bound as a
 CALLABLE `bound(sa, sb) -> float` -- the way `launch.py` takes `bound=` --
 so one list serves all three matrices, and the question of whose bound it is
 never arises. A shell pair `i <= j` is DROPPED when `bound < tau`; then every
-element of its block is `< tau`. `ao.one_electron.matrix(..., pairs=)`
+element of its block is `< tau`. `one_electron.one_electron.matrix(..., pairs=)`
 builds from the kept pairs only. The decay is `exp(-mu |A - B|^2)` through
 `E^{00}_0`, a genuine distance screen rather than a Schwarz product, which is
 why a one-electron build is `O(N)` work on an extended system -- and why a
@@ -168,7 +168,7 @@ primitive pair `pp` of `(sa, sb)` (its dressed block, `primitive_pairs`):
     G_[ab](pp) = max_k SUM_{p in hermite_order(la + lb)} |block_pp[k][p]| I_p(zeta_pp)
 
 with `I_p = hermite_bound(zeta_pp, p)`, the max over the Cartesian pairs `k`.
-THE PROOF that it bounds: an element of the contracted block is (ao/eri.py)
+THE PROOF that it bounds: an element of the contracted block is (eri/eri.py)
 
     (ab|cd)[k][l] = SUM_{pp, qq} SUM_{p, q} E_pp[k][p] [p|q] E_qq[l][q]
 
@@ -188,7 +188,7 @@ exact-arithmetic one, like `V`'s; the tests check it on computed blocks.
 For an `s`-`s` primitive pair `G_[ab]` is `|block[0][0]| I_0`, the existing
 `hermite_bound` times the dressed coefficient (a test pins it). `[Fock]`'s
 eq. 22 defines `G_ab` as the exact `sqrt((ab|ab))`-type factor; this one is
-an upper bound on it that needs no ERI, and is the bound `ao.k` and the
+an upper bound on it that needs no ERI, and is the bound `eri.k_exchange.k` and the
 J engine already rest on.
 
 `prune(bounds, *, eps)` is [Fock]'s primitive-level screen: the primitive
@@ -450,7 +450,7 @@ def kinetic_bound(sa: Shell, sb: Shell) -> float:
 class PairList:
     """The unordered shell pairs `(i, j)`, `i <= j`, of a basis, split by a
     bound at `tau`: `kept` (bound >= tau) and `dropped` (bound < tau), each
-    in `ao.one_electron.matrix`'s row-major order (`i` outer)."""
+    in `one_electron.one_electron.matrix`'s row-major order (`i` outer)."""
 
     tau: float
     kept: tuple[tuple[int, int], ...]
@@ -498,7 +498,7 @@ def pair_list(basis: Basis, *, tau: float, bound: Bound) -> PairList:
 def cross_pair_list(basis_a: Basis, basis_b: Basis, *, tau: float,
                     bound: Bound) -> PairList:
     """Screen every ORDERED shell pair `(i in basis_a, j in basis_b)` --
-    the cross-basis overlap's (`ao.one_electron.rectangular`) -- as
+    the cross-basis overlap's (`one_electron.one_electron.rectangular`) -- as
     `pair_list` screens `i <= j` of one basis: dropped when `bound(sa, sb)
     < tau`, in row-major order (`i` outer). `PairList`'s `i <= j` reading
     does not apply here; its two lists index the two bases."""

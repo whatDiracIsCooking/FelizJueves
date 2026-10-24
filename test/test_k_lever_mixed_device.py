@@ -16,7 +16,7 @@ TWO PARTS, the issue's acceptance on the device side:
 2. ON THE CARD (`gpu` + `cuda` / `hip`): `k_spec(L)`'s class for L = 0..4,
    at one batch and, where the plan admits it, three, each arm: the cell's
    launch sequence through test_kernel_device.py's K harness (`_k_build`,
-   its `K_CASES` inputs and host staging `_k_case`: `ao.k._k_quartet` on
+   its `K_CASES` inputs and host staging `_k_case`: `eri.k_exchange.k._k_quartet` on
    `reference.pq` in fp64, with its |.| twin `S`) held to THE fp32 tier,
    `|K - X| <= F32_REL * S` elementwise (test/oracle/tolerance.py, the one
    declared fp32 tolerance; not the fp64 `K_REL`, and nothing looser), and

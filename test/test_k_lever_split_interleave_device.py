@@ -17,7 +17,7 @@ TWO PARTS, the issue's acceptance on the device side:
    at one batch and, where the plan admits it, three, with interleave+split:
    the element kernels launched in order onto one zeroed `K` by
    test_kernel_device.py's K harness (`_run_k`: its inputs, its host staging
-   `ao.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of the
+   `eri.k_exchange.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of the
    quartet scale, unchanged), built by `measured.cell_kernels`, which passes
    both kernel-body levers to `build_k_kernels` (#339; units renamed
    `<name>_lv_interleave_lv_split`). Nothing is recorded.

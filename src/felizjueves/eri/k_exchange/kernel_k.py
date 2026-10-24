@@ -11,7 +11,7 @@
 `(b, d)` -- the two Hermite pairs, not the AO quartet order -- so the class
 is `am = (la, lc, lb, ld)`, bra first, and `(lp, lq) = (la + lc, lb + ld)`
 (`spec.py`, #196). Per primitive quartet (milestone 10's contraction, the
-host's `ao.k.k_quartet`, #197):
+host's `eri.k_exchange.k.k_quartet`, #197):
 
     stage 1 (ket)     I[p]     = SUM_q [p|q] E^bd_q      per (b,d) row
     stage 2 (bra)     V(a,c)   = SUM_p E^ac_p I[p]       per (a,c) row
@@ -61,7 +61,7 @@ track it -- `[Fock, §4.3.1]`'s sentence, cited as prior art (milestone 10).
 The bound itself is proved host-side (#200); at `tau = 0` the bound is
 `>= 0`, never `< tau`, and nothing is skipped.
 
-THE DIGESTION, in the host's order (`ao.k.k_quartet`):
+THE DIGESTION, in the host's order (`eri.k_exchange.k.k_quartet`):
 
 - `E^ac` is formed ONCE per bra record, into a LOCAL `Eac[n_ac, n_p]`, from
   `e_fragment.block_fragment(la, lc)` inlined; `E^bd` once per ket record,
@@ -89,7 +89,7 @@ THE DIGESTION, in the host's order (`ao.k.k_quartet`):
   identity. The host also multiplies a zero `D_cd` in, as the kernel does.
   `kernel_dq.py`'s two departures, the same argument.
 
-So, interpreted with one lane, the kernel is `==` to `ao.k.k_quartet` on a
+So, interpreted with one lane, the kernel is `==` to `eri.k_exchange.k.k_quartet` on a
 bra pair of that one record, bit for bit, given a `pq=` whose values are the
 recurrence's own (test/test_kernel_k.py). With more lanes the per-lane
 partial sums are combined by the warp's butterfly: a reassociation.
@@ -156,7 +156,7 @@ products are partitioned by `r`, never duplicated). Whether that holds on
 a card is E2's measurement and E3's score, not this module's.
 
 EXACTNESS OF THE SPLIT. Interpreted with one lane, each batch kernel is
-`==` `ao.k.k_quartet` with `pq` restricted to the batch's targets (a zero
+`==` `eri.k_exchange.k.k_quartet` with `pq` restricted to the batch's targets (a zero
 elsewhere: every term the kernel omits is the host's `+-0.0`, the identity
 on an accumulator), bit for bit; and the batches, run in `Plan.dags` order
 onto a zeroed `K`, are `==` the host's left fold of those partials in that
@@ -176,7 +176,8 @@ and a last rewrite, and (#345) a batch kernel's atomic form -- is asked of
 a `k_levers.seams.KHooks`, whose defaults are this module's code before
 #367, moved statement for statement (the literal kernel is byte-identical:
 test/test_k_seams.py). A K lever lands as
-its own module, `k_levers/<name>.py`, registered in `k_levers.REGISTRY`; the
+its own module, `eri/k_exchange/levers/<name>.py`, registered in `k_levers.REGISTRY`;
+the
 builders resolve a spec's levers through `k_levers.hooks_for` and this file
 does not change for a new lever.
 

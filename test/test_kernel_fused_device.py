@@ -5,7 +5,7 @@ The same harness and the same pin as test_kernel_device.py's lever arms
 oracle `reference.pq.one_centre` contracted with `D_q`), held to the SAME
 `J_REL = 1e-12 * scale` -- not a looser one. The fused kernel forms the same
 products with the same signs and accumulates them in a different order
-(j_levers/fused.py), a reassociation of at most `n` terms per (bra, p) per
+(eri/j_coulomb/levers/fused.py), a reassociation of at most `n` terms per (bra, p) per
 lane, bounded by `(n - 1) u * scale`: far inside J_REL, as test/
 test_kernel_fused.py shows interpreted. FMA contraction on the device rounds
 once where the interpreter rounds twice, which only tightens that bound.
