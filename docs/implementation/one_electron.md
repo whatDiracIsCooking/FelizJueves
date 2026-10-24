@@ -425,6 +425,149 @@ and `KERNEL_GEN_CMD` does not ask for it.
 **Not built:** the projection that would consume it (for example
 `C_B = S_BB⁻¹ S_BA C_A`), a cross-basis `T` or `V`, and any measurement.
 
+## The dipole `MU`
+
+**Status: implemented, and run on both cards (milestone 19, #517–#524),
+through (dd) only.** This section covers the Cartesian dipole moment
+integrals `mu^d_ab = <a| q (r_d - C_d) |b>`, `d ∈ {x, y, z}`: the
+multipole moments of order `e = 1` about an origin `C`, scaled by a
+charge `q`. Like the rest of this note, nothing here is scored or
+measured, and the same `StructuralLimit` reasoning applies
+(`data/literature/jengine/limits.json`, #524's record).
+
+**The key.** `Target.DIPOLE` (`dipole`, operator `Operator.DIPOLE`, #518)
+is a pair class `(la, lb)`, `AM_LENGTH = 2`; an example key is
+`dipole/d0/(2,1)/b1/dipole/literal`, and every pre-existing key is
+unchanged (the 510-key J digest included). Its batching refusal is `S`'s
+structural one, HGP is refused as for `S` (`_NO_HGP_ONE_E`), and it has no
+kernel-body lever (its `levers.DEFAULT_REFUSALS` row, the one-thread-per-
+record wording of `s`, `t` and `sx`). **The order `e` is a builder
+argument, not a key field** (`spec.py`, "A DIPOLE CLASS"): a quadrupole
+would be its own `Target.QUADRUPOLE` sharing the builder, so `Spec` gained
+no field and no stored key moved. **The origin `C` and the charge `q` are
+runtime inputs, not key fields either**: one kernel serves every origin and
+every charge.
+
+**The Hermite route.** Per axis, the moment of one Cartesian pair `(i, j)`
+is `SUM_{t <= min(e, i+j)} E^{ij}_t M^e_t`, with the Hermite moments
+`M^0_0 = 1` and `M^{e+1}_t = t M^e_{t-1} + X_PC M^e_t + M^e_{t+1}/(2ζ)`,
+`X_PC = P - C` (Helgaker, Jørgensen & Olsen, §9.5, `docs/references.md`
+entry 48; **the equation number inside §9.5 was not checked against the
+text**, and entries 39 and 46 were not found to state the moments). `E`
+entries with `t > i + j` are structurally absent and dropped from the sum,
+never read as zero. At `e = 1` an axis is `E^{ij}_1 + X_PC E^{ij}_0`, and
+on the axes other than `d` it is the overlap's `E^{ij}_0`. The value is
+the axis product in the overlap's association, `(q s) ((Mx My) Mz)`, with
+`s = c_a c_b (π/ζ)^{3/2}` (`dress`'s scale) and the moments' own
+`sqrt(π/ζ)` left in `s`. `q` is applied once per record, `q s`, so `q = -1`
+is exactly the negation of `q = 1`. Both the host and the fragment are
+built general in `e`; **only `e = 1` ships**.
+
+**The host.** `one_electron.multipole` (#520; at `one_electron/` and not
+`ao/`, because milestone 18 left only `shell`, `pairs` and `density` in
+`ao/`): `multipole_block(sa, sb, C, e=1, q=1.0)` →
+`[n_comp][n_cart(sa)][n_cart(sb)]` and `multipole_matrix(basis, C, e=1,
+q=1.0)` → `[n_comp][n_ao][n_ao]`, placed by `one_electron.one_electron.matrix`
+so every component is exactly symmetric. Components come in `cartesians(e)`
+order, x, y, z at `e = 1`, libcint's. At `e = 0`, `q = 1` it is
+`overlap_block` bitwise. `walk_one_electron(plan, basis, Target.DIPOLE,
+origin=C, q=q)` rebuilds `MU` from a `one_electron_launch` plan and equals
+`multipole_matrix` exactly; `OneEClass.arrays(Target.DIPOLE)` is `V`'s
+record arrays (#521).
+
+**The fragment.** `e_fragment.multipole_fragment(la, lb, e)` (#519) builds
+the three axes from `_axes_body` unchanged, forms `XPC_d` from the scalar
+binds `P_d` and `C_d`, folds the integer moments (`M^0_0`, `M^e_e = e!`)
+at build time, and writes one value per component and block row. It has a
+**`store=` hook**: the consumer supplies the statement placed where each
+value is formed, so a kernel can `AtomicAdd` each value as it forms and no
+`[n_comp, rows]` local array exists. `from_order=0` writes the `e = 0`
+component first from the same axis tables.
+
+**One fused kernel writes every component.**
+`kernel_mu.build_mu_kernel((la, lb))` (#521) emits `mu_{la}{lb}`: one
+thread per primitive-pair record, the record loaded once and
+`multipole_fragment(la, lb, 1)` inlined once, so the `E` tables are built
+once for all three components, and each value is `AtomicAdd`-ed into
+`MU[n_comp, n_ao, n_ao]` (component stride `n_ao²`) through the `store=`
+hook. There is no per-component kernel. The scatter is `kernel_jab`'s rule
+per component, unchanged, spelled per value as `If(od, (both mirror adds),
+(the diagonal's adds, or none))` with `od` formed once per record. The
+parameter block is `kernel_s`'s plus `P` (under `kernel_v`'s names, in its
+place) and the four runtime scalars: `n_rec n_ao | zeta_ab p_{x,y,z}
+pa_{x,y,z} pb_{x,y,z} s_ab off_a off_b | C_x C_y C_z q | MU[n_comp, n_ao,
+n_ao]`. `MU` must be zeroed by the caller (a `Note`). `with_overlap=True`
+adds `S` as component 0, bitwise `kernel_s`'s at `q = 1`. Interpreted, the
+kernel is **bitwise `==`** to `multipole_block` placed by `kernel_jab`'s
+rule; against `multipole_matrix` off-diagonal shell pairs are exactly
+equal and diagonal pairs are held to `16 ε max|MU_k|` (measured 0),
+because `matrix` reads a diagonal pair's upper triangle and the kernel
+keeps its lower. Its layering rule `mu_builder` keeps it off `ao`,
+`one_electron.multipole`, `ir.interp`, `emit`, `performance.device`,
+`reference/` and `launch`.
+
+**The generator.** `python -m felizjueves.emit --mu-l [LMAX]` (#522; 2 when
+bare) **adds** `mu_{la}{lb}` for every `la ≤ lb ≤ LMAX` beside whichever J
+ladders are selected. **It accepts 0..2 only**: above that, or negative, it
+exits 2 (`the dipole is validated through (dd) only (milestone 19)`), so the
+CLI cannot write an (ff) unit. It is refused with `--class`, `--shell-ls`,
+`--fock-l`, `--fock-class`, `--n-batches` and on the HGP path, never in the
+no-flag output, and `KERNEL_GEN_CMD` does not ask for it. Six goldens per
+backend, `test/golden/{cuda,hip}/mu_{00,01,02,11,12,22}` (the largest
+51,968 B, no digests file).
+
+**The witnesses.** Every class tested has every shell `l ≤ 2`, (ss)
+through (dd), so every one is L ≤ 4 and fast-tier on the host.
+
+- *libcint and PySCF* (#517, #520). Three fixtures, `h2o_sto3g_dipole`,
+  `h2o_631g_dipole` and `h2o_ccpvdz_dipole`, on their `_j` siblings'
+  inputs exactly (`oracle.manifest.dipole_pair` asserts it), carry
+  libcint's `int1e_r_cart` under `mol.with_common_orig(C)` at
+  `C = (0.37, -0.81, 1.23)` bohr (every component non-zero, the three
+  magnitudes distinct) and at `C = 0`, and PySCF's RHF `dip_moment` at
+  both origins with the charges and coordinates it read. A fourth,
+  `hf_ccpvtz_spd_dipole` (HF in Cartesian cc-pVTZ with every f shell
+  removed, 40 AOs, no density), carries `int1e_r_cart` at both origins
+  and `int1e_ovlp`; its d shells sit on both atoms, so all nine ordered
+  classes (ss) through (dd) occur between two centres. The generator
+  checks `r_C = r_0 - C S` before writing.
+- *Host.* `test_ao_multipole.py`: whole H₂O matrices against
+  `int1e_r_cart` at both origins within `1e-12` of scale (worst 7.6e-16),
+  every block of `hf_ccpvtz_spd_dipole` (worst 8.8e-16), `dip_moment` as
+  `-Tr(D mu) + SUM_A Z_A (R_A - C)`, the (s|s) and (s|p) closed forms,
+  the **origin-shift identity** `mu(C') = mu(C) + q (C - C') S`, and
+  `q = -1` against `q = 1`.
+- *Fast tier, interpreted.* `test_e_fragment.py` (the fragment at
+  `e = 0, 1, 2` against `mmd.hermite.e_axis` and a direct `M^e_t`
+  recursion, and against Gauss-Hermite quadrature), `test_kernel_mu.py`
+  (the bitwise statements above, every class in both orders, the plan
+  launched and walked against libcint), `test_launch.py` /
+  `test_launch_oracle.py` (the dipole walk), `test_emit_mu.py` and
+  `test_emit_cli.py` (the ladder, its cap and refusals; the six compile
+  cases per compiler, `cuda`/`hip`).
+- *Both cards* (#523). `test_mu_device.py` (generator `test/mu_driver.py`,
+  which reads `C` and `q` from its input, so one binary serves every
+  origin and charge, and refuses a class above (dd)): per class on
+  `hf_ccpvtz_spd_dipole` against the host under `2 γ_{N+K} MUabs` with
+  `N = 4L + 16` and against `int1e_r_cart`; whole H₂O/STO-3G and 6-31G
+  (cc-pVDZ `slow`) against `int1e_r_cart` and, at `q = -1`, against
+  `dip_moment`; and the origin shift with `S` built on the card by
+  `kernel_s`, within `1e-14` of `max|MU|`. On the **RTX 3080 and the
+  RX 9060 XT** the tier (`-k mu`) gave 4 passed / 0 skipped each, and the
+  slow case by hand 5 passed each. The two cards agree on every quoted
+  maximum: `8.62e-16` of `max|r|` against libcint, `3.16e-16` against
+  `dip_moment`, `7.23e-2` of the per-element host bound, and `2.36e-16`
+  of `max|MU|` for the origin shift against the card's `S`. Runs are not
+  always bit-identical between repeats (the fp64 atomics' order), within
+  the run-to-run bound `2 γ_K MUabs`.
+
+**Not built, and what does not reach.** `e = 1` only; Cartesian only;
+nothing above (dd) is built, emitted, launched or checked, by the user's
+decision, and `--mu-l` refuses above 2. Nothing is measured: #544's
+`nvcc` compile reported 0 spill bytes for `mu_22` (128 registers) and
+`mu_22` with the overlap (200), a sanity reading, not a store row. No
+consumer (an SCF dipole driver, say) is built.
+
 ## Named follow-ups
 
 - **A batched `V` kernel.** `V` has Hermite targets, so the ban that #232
@@ -438,3 +581,8 @@ and `KERNEL_GEN_CMD` does not ask for it.
   template for every unit.
 - **Ordered ladder classes** (`la > lb`), so the generator, rather than the
   test-side driver, writes every class a real basis reaches.
+- **The quadrupole**, `Target.QUADRUPOLE` on `kernel_mu`'s builder at
+  `e = 2` (the fragment and host are already general in `e`).
+- **The dipole at f and above**, past `--mu-l`'s cap of 2.
+- **A three-kernel dipole A/B arm** (one kernel per component against the
+  fused one), opened only if the fused kernel is found to spill.
