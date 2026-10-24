@@ -45,10 +45,10 @@ from felizjueves import levers
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.eri.density_fit.kernel_eri3 import eri3_name
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernel, build_k_kernels
 from felizjueves.ir import lever_ladder
 from felizjueves.kernel_dq import build_dq_kernel, dq_name
 from felizjueves.kernel_jab import build_jab_kernel, jab_name
-from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 from felizjueves.mmd.kernel import (
     build_pq_kernel,
     build_pq_kernels,

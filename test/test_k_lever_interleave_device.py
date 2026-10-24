@@ -36,8 +36,8 @@ from pathlib import Path
 import pytest
 from test_f_lever_batched_vrr_device import compile_unit
 
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 from felizjueves.ir import Kernel
-from felizjueves.kernel_k import build_k_kernels
 from felizjueves.mmd.kernel import k_spec
 from felizjueves.performance import measured
 from felizjueves.spec import Operator, Spec, Target

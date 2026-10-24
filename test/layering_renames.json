@@ -78,5 +78,22 @@
     "kernel_f_scatter": "eri.fock.kernel_f_scatter",
     "launch_f": "eri.fock.launch_f",
     "walk_f": "eri.fock.walk_f"
+  },
+  {
+    "ao.k": "eri.k_exchange.k",
+    "k_levers": "eri.k_exchange.levers",
+    "k_levers.coalesced": "eri.k_exchange.levers.coalesced",
+    "k_levers.interleave": "eri.k_exchange.levers.interleave",
+    "k_levers.mixed": "eri.k_exchange.levers.mixed",
+    "k_levers.seams": "eri.k_exchange.levers.seams",
+    "k_levers.shuffle": "eri.k_exchange.levers.shuffle",
+    "k_levers.split": "eri.k_exchange.levers.split",
+    "k_levers.stage_eac": "eri.k_exchange.levers.stage_eac",
+    "kdup": "eri.k_exchange.kdup",
+    "kernel_k": "eri.k_exchange.kernel_k",
+    "kernel_kblock": "eri.k_exchange.kernel_kblock",
+    "kernel_record_bound": "eri.k_exchange.kernel_record_bound",
+    "launch_k": "eri.k_exchange.launch_k",
+    "launch_kblock": "eri.k_exchange.launch_kblock"
   }
 ]

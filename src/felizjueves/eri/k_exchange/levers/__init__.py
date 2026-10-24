@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from felizjueves.k_levers import (
+from felizjueves.eri.k_exchange.levers import (
     coalesced,
     interleave,
     mixed,
@@ -30,7 +30,7 @@ from felizjueves.k_levers import (
     split,
     stage_eac,
 )
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KHooks
+from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KHooks
 from felizjueves.spec import Spec
 
 __all__ = ["REGISTRY", "hooks_for"]

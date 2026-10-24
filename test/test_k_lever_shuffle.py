@@ -36,8 +36,22 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import k_levers, levers
+from felizjueves import levers
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.k_exchange import levers as k_levers
+from felizjueves.eri.k_exchange.kernel_k import (
+    build_k_kernel,
+    build_k_kernels,
+    launch_shape,
+)
+from felizjueves.eri.k_exchange.levers import coalesced, shuffle, split
+from felizjueves.eri.k_exchange.levers.seams import (
+    DEFAULT_HOOKS,
+    KSH,
+    KContext,
+    KHooks,
+    ncart,
+)
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -61,9 +75,6 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import LANE0
-from felizjueves.k_levers import coalesced, shuffle, split
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KContext, KHooks, ncart
-from felizjueves.kernel_k import build_k_kernel, build_k_kernels, launch_shape
 from felizjueves.mmd.kernel import builder_plan
 from felizjueves.performance import device
 from felizjueves.performance.device import GFX1200, SM_86
@@ -356,7 +367,7 @@ def test_composed_with_split_each_element_is_one_owner_store() -> None:
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
-#   from felizjueves.kernel_k import build_k_kernel; \
+#   from felizjueves.eri.k_exchange.kernel_k import build_k_kernel; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_k_kernel(Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.K, \

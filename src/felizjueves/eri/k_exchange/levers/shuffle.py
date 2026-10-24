@@ -65,6 +65,8 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 
+from felizjueves.eri.k_exchange.levers import coalesced
+from felizjueves.eri.k_exchange.levers.seams import KContext, KHooks
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -82,8 +84,6 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
-from felizjueves.k_levers import coalesced
-from felizjueves.k_levers.seams import KContext, KHooks
 from felizjueves.spec import Spec
 
 __all__ = ["ATOMIC_WRITE", "COL_VAR", "EXTRA_SHARED_BYTES", "MINE_VAR",

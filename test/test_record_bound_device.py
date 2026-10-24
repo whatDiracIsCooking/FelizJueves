@@ -29,7 +29,7 @@ from test_kernel_record_bound import (
 )
 
 from felizjueves.emit import gpu
-from felizjueves.kernel_record_bound import build_record_bound_kernel
+from felizjueves.eri.k_exchange.kernel_record_bound import build_record_bound_kernel
 from felizjueves.performance.device import SM_86
 
 # One flat float64 input file, `n_rec | zeta_ab | XPA | XPB | s_ab` (the two

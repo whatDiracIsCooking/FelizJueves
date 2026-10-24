@@ -1,8 +1,8 @@
 """The duplicated-work count: J against K, per class and batch count (#202).
 
-    python -m felizjueves.kdup              # the record, as JSON
-    python -m felizjueves.kdup --write      # rewrite DATA
-    python -m felizjueves.kdup --markdown   # the per-cell table
+    python -m felizjueves.eri.k_exchange.kdup              # the record, as JSON
+    python -m felizjueves.eri.k_exchange.kdup --write      # rewrite DATA
+    python -m felizjueves.eri.k_exchange.kdup --markdown   # the per-cell table
 
 (with `PYTHONPATH=src uv run` in front, as for every entry point here.)
 
@@ -105,7 +105,7 @@ from felizjueves.plan.pipeline import plan
 from felizjueves.plan.targets import R, hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[4]
 DATA = REPO / "data" / "literature" / "jengine" / "k_duplication.json"
 
 SUBGRID_LS = (7, 10, 13, 16)  # measured_store.SUBGRID_LS, restated and pinned
@@ -369,7 +369,7 @@ def record() -> dict[str, Any]:
             "Spec.am, and their ratio -- the arithmetic half of "
             f"{CLAIM} (claims.json), counted with no card, no compiler and "
             "no built kernel. Written by `PYTHONPATH=src uv run python -m "
-            "felizjueves.kdup --write`; recomputed by "
+            "felizjueves.eri.k_exchange.kdup --write`; recomputed by "
             "test/test_k_duplication.py (L <= 2 in the fast tier, L > 2 "
             "`slow`). It scores nothing: the claim is E3's (#207)."),
         "rule": RULE,
@@ -417,7 +417,7 @@ def main(argv: list[str]) -> int:
     elif not argv:
         sys.stdout.write(dumps(rec))
     else:
-        sys.stderr.write("usage: python -m felizjueves.kdup "
+        sys.stderr.write("usage: python -m felizjueves.eri.k_exchange.kdup "
                          "[--write | --markdown]\n")
         return 2
     return 0

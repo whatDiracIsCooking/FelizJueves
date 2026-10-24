@@ -110,6 +110,9 @@ from felizjueves.ao.staged import (
     _kets_checked,
     _transform,
 )
+from felizjueves.eri.k_exchange.kernel_k import PARAMS as K_PARAMS
+from felizjueves.eri.k_exchange.kernel_k import launch_shape as k_launch_shape
+from felizjueves.eri.k_exchange.launch_k import KLaunchPlan
 from felizjueves.eri.launch_common import PairRec
 from felizjueves.ir import AtomicAdd, For, If, Kernel, Note, Stmt, walk
 from felizjueves.ir.passes import atomize
@@ -117,10 +120,7 @@ from felizjueves.kernel_dq import PARAMS as DQ_PARAMS
 from felizjueves.kernel_dq import build_dq_kernel, dq_shape
 from felizjueves.kernel_dq import launch_shape as dq_launch_shape
 from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.kernel_k import PARAMS as K_PARAMS
-from felizjueves.kernel_k import launch_shape as k_launch_shape
 from felizjueves.launch import LaunchPlan, class_spec
-from felizjueves.launch_k import KLaunchPlan
 from felizjueves.mmd.kernel import bra_functions, ket_functions, launch_shape
 from felizjueves.performance import measured
 from felizjueves.plan.targets import hermite_targets

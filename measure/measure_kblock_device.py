@@ -48,9 +48,9 @@ from test_k_ondevice import ORACLE_TOL
 from test_kblock_ondevice import Cell, _case
 from test_kernel_device import BACKEND, _toolchain
 
-from felizjueves.ao.k import record_bounds
-from felizjueves.kernel_kblock import build_kblock_kernel
-from felizjueves.launch_kblock import kb_launches, walk_kb
+from felizjueves.eri.k_exchange.k import record_bounds
+from felizjueves.eri.k_exchange.kernel_kblock import build_kblock_kernel
+from felizjueves.eri.k_exchange.launch_kblock import kb_launches, walk_kb
 from felizjueves.performance import gate, measured
 from felizjueves.performance.gate import GPU_BUSY_MAX
 from felizjueves.reference.pq import pq

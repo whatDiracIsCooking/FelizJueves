@@ -1176,7 +1176,7 @@ def _k_build(backend: str, spec: Spec, tc, workdir: Path) -> _KCell:
 
     import devcache
 
-    from felizjueves.kernel_k import PARAMS
+    from felizjueves.eri.k_exchange.kernel_k import PARAMS
     assert PARAMS == tuple(
         a.split()[-1].lstrip("*") for a in K_SIGNATURE.split(", ")), PARAMS
     emit, arch, ext = BACKEND[backend]
@@ -1287,7 +1287,7 @@ def _k_case(L: int, case: str):
     """A K_CASES input of class L and its host reference (want, scale, T
     max) -- shared by every n_batches of L, as `_case` is for J."""
     from felizjueves.ao.density import EPair
-    from felizjueves.ao.k import _k_quartet
+    from felizjueves.eri.k_exchange.k import _k_quartet
     from felizjueves.mmd.kernel import k_spec
 
     spec = k_spec(L)

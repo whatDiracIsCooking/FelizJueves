@@ -35,14 +35,14 @@ from test_launch_k import TAUS
 from test_launch_k import _case as _launch_case
 
 from felizjueves.ao.density import checked_density
-from felizjueves.ao.k import (
+from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.k_exchange.k import (
     DECAY_MARGIN,
     density_decay,
     exchange_matrix_screened,
     record_bounds,
 )
-from felizjueves.ao.shell import Basis, Shell
-from felizjueves.launch_kblock import kb_launches, walk_kb
+from felizjueves.eri.k_exchange.launch_kblock import kb_launches, walk_kb
 from felizjueves.reference.pq import pq
 
 BOUND = partial(record_bounds, pq=pq)

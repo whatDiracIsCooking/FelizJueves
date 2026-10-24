@@ -48,6 +48,13 @@ import dataclasses
 from collections import Counter
 from collections.abc import Callable
 
+from felizjueves.eri.k_exchange.levers.seams import (
+    KET,
+    KContext,
+    KHooks,
+    ncart,
+    one_kernel,
+)
 from felizjueves.ir import (
     Decl,
     For,
@@ -60,7 +67,6 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
-from felizjueves.k_levers.seams import KET, KContext, KHooks, ncart, one_kernel
 from felizjueves.spec import Spec
 
 __all__ = ["NAME", "TRADE", "apply", "elements", "keep_element", "prune",

@@ -50,8 +50,19 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import kdup
-from felizjueves.ao.k import k_quartet
+from felizjueves.eri.k_exchange import kdup
+from felizjueves.eri.k_exchange.k import k_quartet
+from felizjueves.eri.k_exchange.kernel_k import (
+    KET,
+    KSH,
+    SORTED_BY_IQ,
+    SPLIT_WRITE,
+    build_k_kernel,
+    build_k_kernels,
+    k_class_spec,
+    launch_shape,
+    shared_doubles,
+)
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -68,17 +79,6 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import LANE0
-from felizjueves.kernel_k import (
-    KET,
-    KSH,
-    SORTED_BY_IQ,
-    SPLIT_WRITE,
-    build_k_kernel,
-    build_k_kernels,
-    k_class_spec,
-    launch_shape,
-    shared_doubles,
-)
 from felizjueves.mmd.kernel import build_pq_kernels, k_spec
 from felizjueves.mmd.recurrence import build_recurrence_kernel, node_name, target_order
 from felizjueves.plan.pipeline import plan
@@ -219,7 +219,7 @@ def test_each_batch_is_the_host_quartet_on_its_targets_bitwise(cell) -> None:
 
 
 def _scale(am: Am, bra, ket, dcd) -> np.ndarray:
-    from felizjueves.ao.k import _k_quartet
+    from felizjueves.eri.k_exchange.k import _k_quartet
     return np.array([np.array(_k_quartet(tk._one(bra, i), ket, dcd,
                                          pq=tk.kernel_pq(am),
                                          want_scale=True)[1]).ravel()

@@ -40,8 +40,18 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import k_levers, levers
+from felizjueves import levers
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.k_exchange import levers as k_levers
+from felizjueves.eri.k_exchange.kernel_k import (
+    KET,
+    build_k_kernel,
+    build_k_kernels,
+    k_class_spec,
+    launch_shape,
+)
+from felizjueves.eri.k_exchange.levers import split
+from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -53,15 +63,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.k_levers import split
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
-from felizjueves.kernel_k import (
-    KET,
-    build_k_kernel,
-    build_k_kernels,
-    k_class_spec,
-    launch_shape,
-)
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
 from felizjueves.spec import Operator, Spec, Target
@@ -379,7 +380,7 @@ def test_the_one_batch_literal_is_untouched() -> None:
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
-#   from felizjueves.kernel_k import build_k_kernels; \
+#   from felizjueves.eri.k_exchange.kernel_k import build_k_kernels; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   [(Path(f'test/golden/cuda/k_split/{k.name}.cu').write_text(cuda.emit(k, \

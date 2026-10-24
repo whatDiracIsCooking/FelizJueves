@@ -58,6 +58,8 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 
+from felizjueves.eri.k_exchange.levers import split
+from felizjueves.eri.k_exchange.levers.seams import KContext, KHooks, plus
 from felizjueves.ir import (
     Assign,
     Call,
@@ -71,8 +73,6 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.k_levers import split
-from felizjueves.k_levers.seams import KContext, KHooks, plus
 from felizjueves.mmd.recurrence import node_name
 from felizjueves.spec import Spec
 

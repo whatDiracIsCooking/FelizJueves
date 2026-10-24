@@ -49,9 +49,9 @@ from oracle.tolerance import F32_REL, F64_REL
 from test_f_lever_batched_vrr_device import compile_unit
 
 from felizjueves.ao.pairs import narrowed
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
+from felizjueves.eri.k_exchange.levers import mixed
 from felizjueves.ir import is_f32
-from felizjueves.k_levers import mixed
-from felizjueves.kernel_k import build_k_kernels
 from felizjueves.mmd.kernel import k_spec
 from felizjueves.performance import measured
 from felizjueves.spec import Operator, Spec, Target

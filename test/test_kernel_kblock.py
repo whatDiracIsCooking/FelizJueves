@@ -34,12 +34,10 @@ from test_kernel_k import _dcd, _pairs, k_args, run_k
 from test_launch_k import _case as _launch_case
 from tiers import by_l
 
-from felizjueves import kernel_k
-from felizjueves.ao.k import record_bounds
-from felizjueves.ir import Assign, AtomicAdd, Index, walk
-from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_k import k_class_spec
-from felizjueves.kernel_kblock import (
+from felizjueves.eri.k_exchange import kernel_k
+from felizjueves.eri.k_exchange.k import record_bounds
+from felizjueves.eri.k_exchange.kernel_k import k_class_spec
+from felizjueves.eri.k_exchange.kernel_kblock import (
     PARAMS,
     build_kblock_kernel,
     kblock_name,
@@ -47,7 +45,9 @@ from felizjueves.kernel_kblock import (
     shared_bytes,
     shared_doubles,
 )
-from felizjueves.launch_kblock import kb_launches, walk_kb
+from felizjueves.eri.k_exchange.launch_kblock import kb_launches, walk_kb
+from felizjueves.ir import Assign, AtomicAdd, Index, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target
@@ -275,7 +275,7 @@ def test_the_interpreted_plan_is_the_walk_with_the_decay(tmp_path):
     the factor skipping more than `max|D|`."""
     from test_ao_k_decay import TAU, chain
 
-    from felizjueves.ao.k import density_decay
+    from felizjueves.eri.k_exchange.k import density_decay
 
     basis, D = chain()
     bound = partial(record_bounds, pq=pq)

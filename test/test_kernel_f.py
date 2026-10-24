@@ -284,7 +284,7 @@ def test_fock_skip_not_break_the_screen_is_a_skip(cls) -> None:
         assert not _BREAK.search(text), backend
         assert len(_SCREEN.findall(text)) == 1, backend
     # the contrast: Target.J's emitted screen is a break, Target.K's IR too
-    from felizjueves.kernel_k import build_k_kernel
+    from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
     from felizjueves.mmd.kernel import build_pq_kernel
     for backend in ("cuda", "hip"):
         jtext = _kernel_text(build_pq_kernel(4), backend)

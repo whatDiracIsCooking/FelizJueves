@@ -61,17 +61,17 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao import k as aok
 from felizjueves.ao.density import epair
-from felizjueves.ao.k import (
+from felizjueves.ao.pairs import hermite_bounds, primitive_pairs
+from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.k_exchange import k as aok
+from felizjueves.eri.k_exchange.k import (
     exchange_matrix,
     exchange_matrix_reference,
     exchange_matrix_screened,
     k_quartet,
     record_bounds,
 )
-from felizjueves.ao.pairs import hermite_bounds, primitive_pairs
-from felizjueves.ao.shell import Basis, Shell
 from felizjueves.reference.pq import one_centre, pq
 
 TAUS = (0.0, 1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2)

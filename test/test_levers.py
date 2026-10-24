@@ -13,9 +13,9 @@ from dataclasses import replace
 import pytest
 
 from felizjueves import levers
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernel, build_k_kernels
 from felizjueves.ir import Note
 from felizjueves.ir.lower import LEVERS as LOWERING
-from felizjueves.kernel_k import build_k_kernel, build_k_kernels
 from felizjueves.mmd.kernel import (
     build_pq_kernel,
     build_pq_kernels,

@@ -171,7 +171,8 @@ from dataclasses import dataclass, replace
 from felizjueves.ao.density import EPair, epair
 from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.density import checked_tau as _tau
-from felizjueves.ao.k import (
+from felizjueves.ao.shell import Basis
+from felizjueves.eri.k_exchange.k import (
     PQ,
     KetKey,
     KScreened,
@@ -180,7 +181,6 @@ from felizjueves.ao.k import (
     _k_quartet,
     record_bounds,
 )
-from felizjueves.ao.shell import Basis
 from felizjueves.eri.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.ir import Kernel
 from felizjueves.spec import Operator, Spec, Target

@@ -182,8 +182,8 @@ from felizjueves.eri import hgp_drive
 from felizjueves.eri.fock.kernel_f import build_f_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
 from felizjueves.ir import Kernel
-from felizjueves.kernel_k import build_k_kernel
 from felizjueves.mmd.kernel import build_pq_kernel
 from felizjueves.spec import Engine as Recurrence
 from felizjueves.spec import Spec, Target
@@ -236,7 +236,8 @@ MEMBERS: dict[str, tuple[str, str]] = {
                       "eri.hgp_drive:eri_block_and_scale"),
     "kernel": ("mmd.kernel:build_pq_kernel", "eri.fock.kernel_f:build_f_kernel"),
     "j": ("mmd.kernel:build_pq_kernel", "eri.hjk.kernel_hj:build_hj_kernel"),
-    "k": ("kernel_k:build_k_kernel", "eri.hjk.kernel_hk:build_hk_kernel"),
+    "k": ("eri.k_exchange.kernel_k:build_k_kernel",
+          "eri.hjk.kernel_hk:build_hk_kernel"),
 }
 
 # The recurrence each engine runs (`spec.Engine`, #401): what `j` and `k`

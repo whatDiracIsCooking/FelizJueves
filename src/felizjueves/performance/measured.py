@@ -202,10 +202,10 @@ from pathlib import Path
 
 from felizjueves.emit import cuda, hip
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 from felizjueves.ir import Decl, Kernel, Lit, Space
 from felizjueves.ir.lever_ladder import unit_name
 from felizjueves.ir.lower import LEVERS, RECYCLE, lower
-from felizjueves.kernel_k import build_k_kernels
 from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
 from felizjueves.performance import leverledger
 from felizjueves.performance.asym import (

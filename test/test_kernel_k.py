@@ -44,10 +44,21 @@ from functools import cache
 import numpy as np
 import pytest
 
-from felizjueves import kernel_k
 from felizjueves.ao.density import EPair, epair
-from felizjueves.ao.k import k_quartet
 from felizjueves.ao.shell import Shell
+from felizjueves.eri.k_exchange import kernel_k
+from felizjueves.eri.k_exchange.k import k_quartet
+from felizjueves.eri.k_exchange.kernel_k import (
+    KET,
+    KSH,
+    NO_DENSITY_KEY,
+    SORTED_BY_IQ,
+    build_k_kernel,
+    k_class_spec,
+    launch_shape,
+    shared_bytes,
+    shared_doubles,
+)
 from felizjueves.ir import (
     AtomicAdd,
     Call,
@@ -65,17 +76,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_k import (
-    KET,
-    KSH,
-    NO_DENSITY_KEY,
-    SORTED_BY_IQ,
-    build_k_kernel,
-    k_class_spec,
-    launch_shape,
-    shared_bytes,
-    shared_doubles,
-)
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.kernel import build_pq_kernel, k_spec
 from felizjueves.mmd.kernel import launch_shape as j_launch_shape
@@ -283,7 +283,7 @@ def test_against_the_reference_pq_to_the_quartet_scale(am: Am) -> None:
     per-element scale `ao.k` defines for a quartet (test_ao_k.py's
     tolerance, inherited) -- so the recurrence-derived `pq=` above hides
     no sign or index error."""
-    from felizjueves.ao.k import _k_quartet
+    from felizjueves.eri.k_exchange.k import _k_quartet
     from felizjueves.reference.pq import pq
 
     bra, ket = _pairs(am, contracted=False)
@@ -480,7 +480,7 @@ def test_the_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 
     graph = tl._graph()
     seen: set[str] = set()
-    todo = ["kernel_k"]
+    todo = ["eri.k_exchange.kernel_k"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -496,7 +496,7 @@ def test_one_batch_delegates_and_a_split_is_build_k_kernels() -> None:
     """#203: `build_k_kernels` at one batch is `(build_k_kernel,)`, a plain
     write; `build_k_kernel` refuses a split and names the builder that takes
     it. The split class itself is test_kernel_k_batched.py's."""
-    from felizjueves.kernel_k import build_k_kernels
+    from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 
     for am in [(0, 0, 0, 0), (1, 0, 1, 0), (0, 2, 0, 0)]:
         spec = k_class_spec(*am)

@@ -31,22 +31,22 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import split_by_l
 
-from felizjueves import kernel_record_bound as krb
 from felizjueves.ao.density import epair
-from felizjueves.ao.k import record_bounds
 from felizjueves.ao.pairs import hermite_bound, pair_bound
 from felizjueves.ao.shell import Shell
-from felizjueves.eri.kernel_pair_bound import (
-    hermite_bound_coefficients,
-    pair_bound_coefficients,
-)
-from felizjueves.ir.interp import Launch, interpret
-from felizjueves.kernel_record_bound import (
+from felizjueves.eri.k_exchange import kernel_record_bound as krb
+from felizjueves.eri.k_exchange.k import record_bounds
+from felizjueves.eri.k_exchange.kernel_record_bound import (
     PARAMS,
     build_record_bound_kernel,
     record_bound_name,
     record_bound_spec,
 )
+from felizjueves.eri.kernel_pair_bound import (
+    hermite_bound_coefficients,
+    pair_bound_coefficients,
+)
+from felizjueves.ir.interp import Launch, interpret
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import one_centre, pq
 from felizjueves.spec import Operator, Spec, Target
