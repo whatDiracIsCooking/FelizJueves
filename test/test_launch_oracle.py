@@ -518,3 +518,43 @@ def test_the_plans_skip_fractions_are_as_recorded(name, op):
         assert p.skip_fraction == len(p.dropped) / p.n_pairs
         lines.append(f"  {tau:7.0e}  {p.skip_fraction:.4f}")
     print("\n" + "\n".join(lines))
+
+
+# --- #521: the dipole MU, walked ----------------------------------------------
+#
+# `walk_one_electron(..., Target.DIPOLE, origin=C, q=q)` rebuilds the three
+# components of `MU` from the same plan, against the host's
+# `one_electron.multipole.multipole_matrix` -- TO 0 -- on every listed basis
+# whose shells are all l <= 2 (milestone 19's cap), at an off-centre origin
+# and at 0, `q = 1` and a non-unit `q`; and on a screened plan, against the
+# host's screened build (`pairs=plan.kept`).
+
+from felizjueves.one_electron.multipole import multipole_matrix  # noqa: E402
+
+MU_ORIGIN = (0.37, -0.81, 1.23)
+BASES_MU = tuple(n for n in BASES_1E
+                 if max(s.l for s in _case_1e(n)[0].shells) <= 2)
+
+
+def test_the_dipole_bases_are_the_spd_ones():
+    assert BASES_MU == ("h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_j",
+                        "h2o_ccpvdz_j", "h2o_sto3g_x_631g_moved",
+                        "h10_chain_ccpvdz_j", "hf_ccpvtz_spd_dipole")
+
+
+@pytest.mark.parametrize("name", BASES_MU)
+def test_the_walk_reproduces_the_host_dipole_exactly(name):
+    basis, nuclei = _case_1e(name)
+    plan = one_electron_launch(basis, nuclei, tau=0.0, bound=overlap_bound)
+    for C, q in ((MU_ORIGIN, 1.0), ((0.0, 0.0, 0.0), 1.0), (MU_ORIGIN, -0.75)):
+        got = walk_one_electron(plan, basis, Target.DIPOLE, origin=C, q=q)
+        assert got == multipole_matrix(basis, C, q=q), (name, C, q)
+
+
+def test_the_screened_plan_walks_the_screened_dipole():
+    basis, nuclei = _case_1e("h2o_sto3g_j")
+    for tau in TAUS_1E:
+        plan = one_electron_launch(basis, nuclei, tau=tau, bound=overlap_bound)
+        got = walk_one_electron(plan, basis, Target.DIPOLE, origin=MU_ORIGIN)
+        assert got == multipole_matrix(basis, MU_ORIGIN,
+                                       pairs=plan.kept), tau
