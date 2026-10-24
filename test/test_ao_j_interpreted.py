@@ -59,13 +59,13 @@ from oracle import basis as ob
 from oracle import manifest
 from test_layering import _graph, _under
 
-from felizjueves.ao.drive import (
+from felizjueves.eri.j_coulomb.drive import (
     BATCH_COUNTS,
     KernelJP,
     admitted_batches,
     class_spec,
 )
-from felizjueves.ao.j import (
+from felizjueves.eri.j_coulomb.j import (
     coulomb_matrix,
     coulomb_matrix_and_scale,
     jp_from_pq,
@@ -310,7 +310,7 @@ def test_the_adapter_does_not_reach_the_reference():
     """Boys is injected; nothing ao.drive imports, transitively, is
     reference/ (test_layering.py holds the rule; this names the claim)."""
     graph = _graph()
-    seen, todo = set(), ["ao.drive"]
+    seen, todo = set(), ["eri.j_coulomb.drive"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:

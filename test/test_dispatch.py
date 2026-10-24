@@ -23,7 +23,7 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao.pairs import pair_bound
-from felizjueves.launch import class_spec, launches
+from felizjueves.eri.j_coulomb.launch import class_spec, launches
 from felizjueves.mmd.kernel import build_pq_kernels, pq_spec
 from felizjueves.performance import batchreport, dispatch
 from felizjueves.performance import measured_store as measured

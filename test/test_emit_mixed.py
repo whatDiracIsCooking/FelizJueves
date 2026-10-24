@@ -32,8 +32,8 @@ from pathlib import Path
 import pytest
 
 from felizjueves.emit import cuda, hip
-from felizjueves.j_levers.fused import FUSED
-from felizjueves.j_levers.mixed import MIXED
+from felizjueves.eri.j_coulomb.levers.fused import FUSED
+from felizjueves.eri.j_coulomb.levers.mixed import MIXED
 from felizjueves.mmd.kernel import build_pq_kernel, build_pq_kernels, pq_spec
 from felizjueves.performance.device import GFX1200, SM_86
 

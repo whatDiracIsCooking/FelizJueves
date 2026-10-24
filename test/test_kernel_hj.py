@@ -72,12 +72,16 @@ import numpy as np
 import pytest
 from tiers import split_by_l
 
-from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_reference, jp_from_pq
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri import hgp_drive as HD
 from felizjueves.eri.eri import eri_block_and_scale as mmd_eri
 from felizjueves.eri.fock.kernel_f import PairRec, PrimRec, pack
 from felizjueves.eri.hjk import kernel_hj as HJ
+from felizjueves.eri.j_coulomb.j import (
+    coulomb_matrix,
+    coulomb_matrix_reference,
+    jp_from_pq,
+)
 from felizjueves.hgp import hrr, orbits, vrr
 from felizjueves.hgp import recurrence as R
 from felizjueves.ir import (

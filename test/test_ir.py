@@ -223,10 +223,10 @@ def _built_kernels() -> list[Kernel]:
     """One kernel of every family the generator builds today, at a size that
     exercises every factor it can use."""
     from felizjueves.eri.fock.kernel_f import build_f_kernel
+    from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
+    from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
     from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
     from felizjueves.hgp.recurrence import build_hrr_kernel, build_vrr_kernel
-    from felizjueves.kernel_dq import build_dq_kernel
-    from felizjueves.kernel_jab import build_jab_kernel
     from felizjueves.mmd.kernel import build_pq_kernel
     from felizjueves.one_electron.kernel_s import build_s_kernel
     from felizjueves.one_electron.kernel_t import build_t_kernel

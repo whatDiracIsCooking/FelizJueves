@@ -53,6 +53,7 @@ from tiers import by_l, split_by_l
 from felizjueves.ao.density import epair
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.j_coulomb.launch import per_axis
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -70,7 +71,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.launch import per_axis
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.one_electron.kernel_s import (
     ATOMIC_REASON,

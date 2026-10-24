@@ -86,6 +86,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 
+from felizjueves.eri.j_coulomb.levers import mixed as jmixed
 from felizjueves.eri.k_exchange.levers.seams import KET, KContext, KHooks, bindings
 from felizjueves.ir import (
     Assign,
@@ -110,7 +111,6 @@ from felizjueves.ir import (
     Weighted,
     _subexprs,
 )
-from felizjueves.j_levers import mixed as jmixed
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.recurrence import (
     PQ_PARAMS,

@@ -272,12 +272,12 @@ from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_nam
 from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
 from felizjueves.eri.hjk.kernel_hk import built_class as hk_built_class
+from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
+from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
 from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
-from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.mmd.kernel import (
     build_pq_kernel,
     build_pq_kernels,

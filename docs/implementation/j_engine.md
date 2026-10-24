@@ -48,7 +48,7 @@ compared against PySCF/libcint — see "The Coulomb matrix, witnessed from
 outside" below.
 
 **Implemented, around the kernel: a whole molecule's `J` from a launch plan**
-(milestone 6, #138–#147). `src/felizjueves/launch.py` is the plan as a
+(milestone 6, #138–#147). `src/felizjueves/eri/j_coulomb/launch.py` is the plan as a
 value. It has one `ClassLaunch` per `(lp, lq)`: bra records in pair order,
 ket records sorted descending by `I_q · max|D_q|` (`[JEngine, v2, §3.3]`'s
 key), and the class's batch kernels. Three things walk it. The launch oracle
@@ -264,7 +264,7 @@ kernel never materialises `[ab|cd]`.
 Pre- and post-contraction (forming `D_q`, and scattering `J_ab` back) are
 deferred by `[JEngine, v2]` to `[Fock]`, which this repo has not read. This
 repo takes only as much of them as a `J` build needs. They were first written
-host-side, in `src/felizjueves/ao/j.py` (milestone 4; "The Coulomb matrix,
+host-side, in `src/felizjueves/eri/j_coulomb/j.py` (milestone 4; "The Coulomb matrix,
 witnessed from outside" below), and that host path is still the reference.
 Since milestone 7 they are also **generated as device code**: the `DQ` and
 `JAB` kernels ("The J chain as device code" below). Both are this repo's own
@@ -1900,7 +1900,7 @@ the only independent check `E` has (#85 is the failure this rules out).
 
 ### Step 2: the pre-contraction kernel, `Target.DQ`
 
-**Status: implemented** (#153, `src/felizjueves/kernel_dq.py`; emitted as
+**Status: implemented** (#153, `src/felizjueves/eri/j_coulomb/kernel_dq.py`; emitted as
 `dq_{lc}_{ld}` by #156; run on both cards by #157). The built kernel has one
 parameter the specification below did not spell, **`n_pair` (I32)**, after
 `n_rec`. It is `Dcd`'s leading extent, because an array extent in the IR must
@@ -1984,7 +1984,7 @@ by fp64 atomics when the class is split.
 
 ### Step 4: the bra-transform-and-scatter kernel, `Target.JAB`
 
-**Status: implemented** (#154, `src/felizjueves/kernel_jab.py`; emitted as
+**Status: implemented** (#154, `src/felizjueves/eri/j_coulomb/kernel_jab.py`; emitted as
 `jab_{la}{lb}` by #156; run on both cards by #157). The built kernel departs
 from the specification below in two places, both forced by the IR and
 spelled in the block:

@@ -168,7 +168,6 @@ from felizjueves.ao.density import PQ, epair
 from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.density import checked_tau as _tau
 from felizjueves.ao.density import make_kets as _kets
-from felizjueves.ao.j import Screened, pair_bound_pq
 from felizjueves.ao.pairs import (
     OneCentre,
     cross_pair_list,
@@ -176,6 +175,7 @@ from felizjueves.ao.pairs import (
     primitive_pairs,
 )
 from felizjueves.ao.shell import Basis, Shell, cartesians
+from felizjueves.eri.j_coulomb.j import Screened, pair_bound_pq
 from felizjueves.eri.launch_common import PairRec, batches_for, nonneg, sorted_desc
 from felizjueves.ir import Kernel
 from felizjueves.mmd.hermite import Ang, e_axis, hermite_order

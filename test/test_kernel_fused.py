@@ -41,11 +41,11 @@ import pytest
 from tiers import FAST_L_MAX, split_by_l
 
 from felizjueves import levers
+from felizjueves.eri.j_coulomb.levers.fused import FUSED, FUSED_NOTE, fuse
 from felizjueves.ir import Assign, Decl, For, If, Index, Kernel, Note, Var, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.lower import kernel_cost
 from felizjueves.ir.passes import ATOMIC_NOTE
-from felizjueves.j_levers.fused import FUSED, FUSED_NOTE, fuse
 from felizjueves.mmd.kernel import (
     JSH,
     batch_contraction,

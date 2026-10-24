@@ -17,6 +17,8 @@ import numpy as np
 import pytest
 from tiers import by_l, split_by_l
 
+from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
+from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -37,8 +39,6 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Launch, interpret
 from felizjueves.ir.passes import ATOMIC_NOTE, LANE0, atomize, split_axes, transpose
-from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_jab import build_jab_kernel
 from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernel,

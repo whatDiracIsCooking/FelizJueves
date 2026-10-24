@@ -101,7 +101,12 @@ from test_kernel_device import BACKEND, PORTABLE
 
 from felizjueves.ao.density import checked_density, epair
 from felizjueves.ao.shell import Basis, n_cartesians
-from felizjueves.ao.staged import (
+from felizjueves.eri.j_coulomb.kernel_dq import PARAMS as DQ_PARAMS
+from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel, dq_shape
+from felizjueves.eri.j_coulomb.kernel_dq import launch_shape as dq_launch_shape
+from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel, jab_launch_shape
+from felizjueves.eri.j_coulomb.launch import LaunchPlan, class_spec
+from felizjueves.eri.j_coulomb.staged import (
     KetDataHook,
     _accumulating,
     _bra_buffers,
@@ -116,11 +121,6 @@ from felizjueves.eri.k_exchange.launch_k import KLaunchPlan
 from felizjueves.eri.launch_common import PairRec
 from felizjueves.ir import AtomicAdd, For, If, Kernel, Note, Stmt, walk
 from felizjueves.ir.passes import atomize
-from felizjueves.kernel_dq import PARAMS as DQ_PARAMS
-from felizjueves.kernel_dq import build_dq_kernel, dq_shape
-from felizjueves.kernel_dq import launch_shape as dq_launch_shape
-from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.launch import LaunchPlan, class_spec
 from felizjueves.mmd.kernel import bra_functions, ket_functions, launch_shape
 from felizjueves.performance import measured
 from felizjueves.plan.targets import hermite_targets

@@ -63,7 +63,9 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao.j import (
+from felizjueves.ao.pairs import pair_bound, primitive_pairs
+from felizjueves.ao.shell import cartesians
+from felizjueves.eri.j_coulomb.j import (
     EPair,
     coulomb_matrix,
     coulomb_matrix_and_scale,
@@ -74,8 +76,6 @@ from felizjueves.ao.j import (
     jp_from_pq,
     pair_bound_pq,
 )
-from felizjueves.ao.pairs import pair_bound, primitive_pairs
-from felizjueves.ao.shell import cartesians
 from felizjueves.mmd.hermite import e_block
 from felizjueves.reference.pq import one_centre, pq
 

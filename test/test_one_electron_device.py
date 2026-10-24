@@ -119,8 +119,8 @@ from tiers import by_l, is_fast
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.ao.shell import cartesians
 from felizjueves.emit import __main__ as emit_cli
+from felizjueves.eri.j_coulomb.launch import OneELaunch, one_electron_launch
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.launch import OneELaunch, one_electron_launch
 from felizjueves.mmd.hermite import _raise, e_axis, hermite_order
 from felizjueves.one_electron.kinetic import kinetic_matrix
 from felizjueves.one_electron.one_electron import matrix

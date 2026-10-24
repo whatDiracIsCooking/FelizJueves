@@ -211,7 +211,7 @@ def test_it_compiles(nvcc, compile_device_source, L_: int) -> None:
 # One DQ and one JAB per backend, class (1,1): the smallest pair class whose E
 # block raises on both centres and binds 1/(2 zeta). Regenerate (never
 # hand-edit), then review the diff:
-#   PYTHONPATH=src uv run python -c "from felizjueves.kernel_dq import \
+#   PYTHONPATH=src uv run python -c "from felizjueves.eri.j_coulomb.kernel_dq import \
 #   build_dq_kernel; from felizjueves.performance.device import SM_86; from \
 #   felizjueves.emit.cuda import emit; print(emit(build_dq_kernel((1, 1)), \
 #   SM_86), end='')" > test/golden/cuda/dq_1_1.cu
@@ -221,8 +221,8 @@ PAIR_GOLDENS = {"dq_1_1": "dq", "jab_11": "jab"}
 
 
 def _pair_kernel(family: str):
-    from felizjueves.kernel_dq import build_dq_kernel
-    from felizjueves.kernel_jab import build_jab_kernel
+    from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
+    from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
     return {"dq": build_dq_kernel, "jab": build_jab_kernel}[family]((1, 1))
 
 

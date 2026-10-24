@@ -79,7 +79,6 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao.j import coulomb_matrix_reference
 from felizjueves.ao.pairs import primitive_schwarz_bounds
 from felizjueves.eri import hgp_drive as HD
 from felizjueves.eri.eri import eri_block_and_scale
@@ -87,6 +86,7 @@ from felizjueves.eri.fock import fock
 from felizjueves.eri.hjk import launch_hjk
 from felizjueves.eri.hjk import walk_hjk as W
 from felizjueves.eri.hjk.launch_hjk import hjk_launches
+from felizjueves.eri.j_coulomb.j import coulomb_matrix_reference
 from felizjueves.eri.k_exchange.k import exchange_matrix_reference
 from felizjueves.hgp import orbits
 from felizjueves.ir import Scalar

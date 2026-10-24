@@ -43,11 +43,11 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao import j as aoj
-from felizjueves.ao.drive import KernelJP
 from felizjueves.ao.shell import Basis, Shell
-from felizjueves.ao.staged import BufferSize, coulomb_matrix_staged
-from felizjueves.launch import LaunchPlan, launches
+from felizjueves.eri.j_coulomb import j as aoj
+from felizjueves.eri.j_coulomb.drive import KernelJP
+from felizjueves.eri.j_coulomb.launch import LaunchPlan, launches
+from felizjueves.eri.j_coulomb.staged import BufferSize, coulomb_matrix_staged
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 

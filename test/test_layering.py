@@ -77,7 +77,11 @@ _FOCK_HOST = ("eri.fock.fock",)
 # says `ao` names these too, so its reach is unchanged.
 # #512: `ao.k` (the host K) left `ao/` for `eri/k_exchange/` as well.
 _K_HOST = ("eri.k_exchange.k",)
-_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST, *_FOCK_HOST, *_K_HOST)
+# #511: the J chain's host modules (`ao/j.py`, `ao/drive.py`, `ao/staged.py`)
+# left `ao/` for `eri/j_coulomb/` with the rest of the chain.
+_J_HOST = ("eri.j_coulomb.j", "eri.j_coulomb.drive", "eri.j_coulomb.staged")
+_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST, *_FOCK_HOST, *_K_HOST,
+            *_J_HOST)
 
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
@@ -236,7 +240,8 @@ RULES: dict[str, Rule] = {
         "through `kernel_k`",
         ("spec", "performance.device", "=ir", "mmd.kernel", "ir.lower",
          "emit", "performance.measured_store", "performance.asym",
-         "kernel_dq", "kernel_jab", "eri.k_exchange.kernel_k"),
+         "eri.j_coulomb.kernel_dq", "eri.j_coulomb.kernel_jab",
+         "eri.k_exchange.kernel_k"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         **{"ir.interp":
@@ -286,8 +291,9 @@ RULES: dict[str, Rule] = {
         **{"performance.dispatch":
             "the reading is not a choice; dispatch chooses from the "
                  "clock alone, and nothing here may become its input"},
-        launch="the reading is about one class's kernel, not a molecule's "
-               "launch plan, and must not reach what the plan launches",
+        **{"eri.j_coulomb.launch":
+            "the reading is about one class's kernel, not a molecule's "
+               "launch plan, and must not reach what the plan launches"},
         reference=_GROUND_TRUTH),
     "dispatch": _rule(
         "dispatch.py (#145): the batch count of a class, chosen from the "
@@ -308,8 +314,9 @@ RULES: dict[str, Rule] = {
             "the cross-read reports disagreements; it does not choose"},
         plan="nothing measured may reach the plan's cost model; the plan "
              "admits the chosen count in `launch`, not here",
-        launch="the resolver is injected into the launch plan; it does not "
-               "need the plan, and importing it would invite the reverse",
+        **{"eri.j_coulomb.launch":
+            "the resolver is injected into the launch plan; it does not "
+               "need the plan, and importing it would invite the reverse"},
         **{"performance.measured":
             "the resolver reads the STORE, never the driver: a choice "
                  "must not need a toolchain (#94)"},
@@ -392,7 +399,8 @@ RULES: dict[str, Rule] = {
         "`ao.staged` and builds its own `launch` plan from the DQ kernel's "
         "read-back `Dmax`",
         ("spec", "mmd.kernel", "=ir", "ir.interp", "plan", "ao", "mmd.hermite",
-         "launch", "eri.launch_common", "ir.passes", "kernel_dq", "kernel_jab"),
+         "eri.j_coulomb.launch", "eri.launch_common", "ir.passes",
+         "eri.j_coulomb.kernel_dq", "eri.j_coulomb.kernel_jab"),
         reference="the kernel's numbers are compared against reference/; "
                   "Boys arrives by injection (`boys=`), so the adapter "
                   "shares no ancestry with its witness (#20)",
@@ -412,12 +420,12 @@ RULES: dict[str, Rule] = {
                   "ao/pairs.py takes its `one_centre=`",
         **{"ir.interp":
             "the plan is data: nothing is launched or interpreted here"},
-        **{"ao.drive": "the adapter runs kernels; the staged driver beside "
+        **{"eri.j_coulomb.drive": "the adapter runs kernels; the staged driver beside "
                        "it imports this plan (#143), so the plan importing "
                        "the adapter is a cycle and drags the interpreter in "
                        "-- `class_spec` is restated, and a test pins the "
                        "two equal",
-           "ao.staged": "the staged driver (#143) runs this plan; the plan "
+           "eri.j_coulomb.staged": "the staged driver (#143) runs this plan; the plan "
                         "importing it is the same cycle as `ao.drive`"},
         emit="the plan is data: no text is emitted (#138's acceptance)",
         **{"performance.measured":
@@ -442,7 +450,8 @@ RULES: dict[str, Rule] = {
         "records and the host's staged contraction; the bound, the ket "
         "sort key and the K kernel builder arrive injected (`bound=`, "
         "`key=`, `build=`)",
-        ("spec", "=ir", "ao", "mmd.hermite", "launch", "eri.launch_common"),
+        ("spec", "=ir", "ao", "mmd.hermite", "eri.j_coulomb.launch",
+         "eri.launch_common"),
         reference=_GROUND_TRUTH + "; the bound and `pq` are injected",
         **{"ir.interp":
             "the plan is data and the walk is ao.k's arithmetic; "
@@ -455,9 +464,9 @@ RULES: dict[str, Rule] = {
              "shared, not "
              "restated: a second path to the plan could disagree with J's",
         emit="the plan is data: no text is emitted",
-        **{"ao.drive": "the adapter runs kernels; a plan importing it drags "
+        **{"eri.j_coulomb.drive": "the adapter runs kernels; a plan importing it drags "
                        "the interpreter in",
-           "ao.staged": "the staged J driver reads `launch`'s plans; this "
+           "eri.j_coulomb.staged": "the staged J driver reads `launch`'s plans; this "
                         "plan importing it is the same cycle as `launch`'s"},
         **{"performance.measured":
             "no toolchain reaches a plan"},
@@ -607,15 +616,15 @@ RULE_OF: dict[str, str] = {
     "ao.pairs": "ao",
     "eri.eri": "ao",
     "ao.density": "ao",
-    "ao.j": "ao",
+    "eri.j_coulomb.j": "ao",
     "eri.k_exchange.k": "ao",
-    "ao.drive": "adapter",
-    "ao.staged": "adapter",
-    "launch": "launch",
+    "eri.j_coulomb.drive": "adapter",
+    "eri.j_coulomb.staged": "adapter",
+    "eri.j_coulomb.launch": "launch",
     "eri.launch_common": "launch_common",
     "eri.k_exchange.launch_k": "k_launch",
-    "kernel_jab": "jab_builder",
-    "kernel_dq": "dq_builder",
+    "eri.j_coulomb.kernel_jab": "jab_builder",
+    "eri.j_coulomb.kernel_dq": "dq_builder",
     "eri.k_exchange.kdup": "count",
     "eri.k_exchange.kernel_k": "k_builder",
     "levers": "levers",
@@ -680,7 +689,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "emit.hip": ("performance.device", "emit._c", "ir"),
     "emit.gpu": ("performance.device", "emit._c", "ir"),
     "emit.__main__": ("performance.device", "emit.cuda", "emit.hip",
-                      "mmd.kernel", "kernel_dq", "kernel_jab", "spec"),
+                      "mmd.kernel", "eri.j_coulomb.kernel_dq",
+                      "eri.j_coulomb.kernel_jab", "spec"),
     "performance.measured": ("performance.asym", "performance.device",
                              "emit.cuda", "emit.hip", "ir", "mmd.kernel",
                              "eri.k_exchange.kernel_k", "ir.lower",
@@ -716,17 +726,21 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     # #503: the density contract, `tau`, `EPair` and the ket records, out of
     # ao.j so that K, F, Schwarz and the launch plans need not import J.
     "ao.density": ("mmd.hermite", "ao.pairs", "ao.shell"),
-    "ao.j": ("ao.density", "mmd.hermite", "ao.pairs", "ao.shell"),
+    "eri.j_coulomb.j": ("ao.density", "mmd.hermite", "ao.pairs", "ao.shell"),
     # #197: K reuses the density contract and EPair (ao.density since #503),
     # and ao.eri for its third index path (`k_from_eris`).
     "eri.k_exchange.k": ("ao.density", "eri.eri", "mmd.hermite", "ao.shell"),
-    "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "ir.interp", "ir",
-                 "mmd.kernel", "kernel_dq", "kernel_jab", "launch",
-                 "eri.launch_common", "plan.pipeline", "spec"),
-    "ao.staged": ("ao.density", "ao.pairs", "ao.shell", "ir.interp", "ir",
-                  "mmd.kernel", "launch", "eri.launch_common", "ir.passes"),
-    "launch": ("ao.density", "ao.j", "ao.pairs", "ao.shell", "ir", "mmd.kernel",
-               "eri.launch_common", "spec"),
+    "eri.j_coulomb.drive": ("ao.density", "eri.j_coulomb.j", "ao.shell",
+                            "eri.j_coulomb.staged", "ir.interp", "ir",
+                            "mmd.kernel", "eri.j_coulomb.kernel_dq",
+                            "eri.j_coulomb.kernel_jab", "eri.j_coulomb.launch",
+                            "eri.launch_common", "plan.pipeline", "spec"),
+    "eri.j_coulomb.staged": ("ao.density", "ao.pairs", "ao.shell", "ir.interp",
+                             "ir", "mmd.kernel", "eri.j_coulomb.launch",
+                             "eri.launch_common", "ir.passes"),
+    "eri.j_coulomb.launch": ("ao.density", "eri.j_coulomb.j", "ao.pairs",
+                             "ao.shell", "ir", "mmd.kernel",
+                             "eri.launch_common", "spec"),
     # #504: what the launch plans share, out of `launch`; it asks the plan
     # which batch counts a class admits.
     "eri.launch_common": ("plan.pipeline", "spec"),
@@ -735,8 +749,8 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     # records and the host's staged contraction from `ao`.
     "eri.k_exchange.launch_k": ("ao.density", "eri.k_exchange.k", "ao.shell",
                                 "ir", "eri.launch_common", "spec"),
-    "kernel_jab": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
-    "kernel_dq": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
+    "eri.j_coulomb.kernel_jab": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
+    "eri.j_coulomb.kernel_dq": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
     "eri.k_exchange.kdup": ("plan.batching", "plan.pipeline", "plan.targets",
                             "spec"),
@@ -919,7 +933,8 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
     # #204: the K plan beside it, the same; and it reaches no K builder --
     # `kernel_k` (#198) arrives injected as `build=`.
     graph = _graph()
-    for root, extra in (("launch", ()), ("eri.launch_common", ("launch",)),
+    for root, extra in (("eri.j_coulomb.launch", ()),
+                        ("eri.launch_common", ("eri.j_coulomb.launch",)),
                         ("eri.k_exchange.launch_k", ("eri.k_exchange.kernel_k",))):
         seen: set[str] = set()
         todo = [root]
@@ -928,9 +943,10 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in (_REF, "ir.interp", "emit", "ao.drive", "ao.staged",
-                       "performance.dispatch", "performance.measured",
-                       "performance.measured_store", *extra):
+        for banned in (_REF, "ir.interp", "emit", "eri.j_coulomb.drive",
+                       "eri.j_coulomb.staged", "performance.dispatch",
+                       "performance.measured", "performance.measured_store",
+                       *extra):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -952,7 +968,8 @@ def test_nothing_measured_reaches_back_through_the_resolver() -> None:
         return seen
 
     for m in sorted(graph):
-        if (_under(m, "plan") or m in ("performance.measured_store", "launch")) and (
+        if (_under(m, "plan") or m in ("performance.measured_store",
+                                       "eri.j_coulomb.launch")) and (
                 "performance.dispatch" in reach(m)):
             raise AssertionError(f"{m} reaches dispatch")
 
@@ -992,7 +1009,7 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     # reference/, a backend or a card.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_dq"]
+    todo = ["eri.j_coulomb.kernel_dq"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -1001,7 +1018,8 @@ def test_the_dq_builder_reaches_neither_its_witness_nor_a_machine() -> None:
     for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "performance.device"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_dq reaches {hit}"
-    assert "kernel_dq" in graph["ao.drive"]  # the adapter is its one runner
+    # the adapter is its one runner
+    assert "eri.j_coulomb.kernel_dq" in graph["eri.j_coulomb.drive"]
 
 
 # ---------------------------------------------------------------------------
@@ -1317,7 +1335,7 @@ def test_the_v_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # (test/test_launch.py pins them equal), it does not build kernels.
 # ---------------------------------------------------------------------------
 
-EDGES["launch"] = EDGES["launch"] | frozenset(
+EDGES["eri.j_coulomb.launch"] = EDGES["eri.j_coulomb.launch"] | frozenset(
     ("mmd.hermite", "one_electron.kinetic", "one_electron.one_electron",
      "one_electron.potential"))
 
@@ -1328,7 +1346,7 @@ def test_the_one_electron_launch_builds_no_one_electron_kernel() -> None:
     # builder, the interpreter, or reference/.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["launch"]
+    todo = ["eri.j_coulomb.launch"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -1428,6 +1446,20 @@ RULES |= {
 }
 RULE_OF["eri.k_exchange"] = "eri_k_exchange_package"
 EDGES["eri.k_exchange"] = frozenset()
+
+# #511: the Coulomb J chain moved into `eri/j_coulomb/` (ao.j, ao.drive,
+# ao.staged, kernel_dq, kernel_jab, launch and the J lever package, now
+# `eri.j_coulomb.levers`), each keeping its own rule; the package marker is
+# the one new module, and imports nothing.
+RULES |= {
+    "eri_j_coulomb_package": _rule(
+        "eri/j_coulomb/__init__.py (#511): the Coulomb J chain's package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.j_coulomb"] = "eri_j_coulomb_package"
+EDGES["eri.j_coulomb"] = frozenset()
 EDGES |= {k: frozenset(v) for k, v in {
     "hgp": (),
     "hgp.vrr": (),
@@ -1481,7 +1513,7 @@ RULES |= {
         **{"eri.eri": "ao/eri.py is the witness this evaluator is pinned "
                      "against; importing it would compare an engine to "
                      "itself",
-           "ao.drive": "the MMD adapter runs the other engine"}),
+           "eri.j_coulomb.drive": "the MMD adapter runs the other engine"}),
 }
 RULE_OF["eri.hgp_drive"] = "hgp_adapter"
 EDGES["eri.hgp_drive"] = frozenset(("ao.shell", "hgp.hrr", "hgp.recurrence",
@@ -1577,9 +1609,9 @@ def test_the_f_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "ao.pairs" in seen
-    for banned in (_REF, "ir.interp", "emit", "ao.drive", "ao.staged",
-                   "performance.dispatch", "performance.measured",
-                   "performance.measured_store"):
+    for banned in (_REF, "ir.interp", "emit", "eri.j_coulomb.drive",
+                   "eri.j_coulomb.staged", "performance.dispatch",
+                   "performance.measured", "performance.measured_store"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_f reaches {hit}"
 
@@ -1691,8 +1723,8 @@ def test_the_f_walker_reaches_neither_its_plan_builder_nor_its_witness() -> None
                 seen.add(e)
                 todo.append(e)
     assert "eri.fock.kernel_f" in seen
-    for banned in ("eri.fock.launch_f", "launch", _REF, "ir.interp", "emit",
-                   "performance.device", "performance.dispatch",
+    for banned in ("eri.fock.launch_f", "eri.j_coulomb.launch", _REF,
+                   "ir.interp", "emit", "performance.device", "performance.dispatch",
                    "performance.measured", "eri.fock.fock", "eri.eri",
                    "eri.hgp_drive", "engine"):
         hit = sorted(e for e in seen if _under(e, banned))
@@ -2021,19 +2053,19 @@ RULES |= {
             "the lever is checked by the interpreter, never built on it"},
         reference=_GROUND_TRUTH),
 }
-RULE_OF |= {"j_levers": "j_lever", "j_levers.fused": "j_lever",
-            "j_levers.mixed": "j_lever"}
+RULE_OF |= {"eri.j_coulomb.levers": "j_lever", "eri.j_coulomb.levers.fused": "j_lever",
+            "eri.j_coulomb.levers.mixed": "j_lever"}
 EDGES |= {k: frozenset(v) for k, v in {
-    "j_levers": (),
-    "j_levers.fused": ("ir", "plan.targets", "mmd.recurrence"),
-    "j_levers.mixed": ("ir", "mmd.recurrence"),
+    "eri.j_coulomb.levers": (),
+    "eri.j_coulomb.levers.fused": ("ir", "plan.targets", "mmd.recurrence"),
+    "eri.j_coulomb.levers.mixed": ("ir", "mmd.recurrence"),
 }.items()}
 RULES["builder"] = Rule(RULES["builder"].why + "; its J kernel-body levers' "
                         "behaviour lives in `j_levers/` (#344)",
-                        RULES["builder"].may | frozenset(("j_levers",)),
+                        RULES["builder"].may | frozenset(("eri.j_coulomb.levers",)),
                         RULES["builder"].must_not)
-EDGES["mmd.kernel"] = EDGES["mmd.kernel"] | frozenset(("j_levers.fused",
-                                                "j_levers.mixed"))
+EDGES["mmd.kernel"] = EDGES["mmd.kernel"] | frozenset(("eri.j_coulomb.levers.fused",
+                                                "eri.j_coulomb.levers.mixed"))
 
 
 # ---------------------------------------------------------------------------
@@ -2154,12 +2186,13 @@ EDGES["eri.fock.levers.sub_slice"] = frozenset(("eri.fock.levers.seams",
 
 RULES["k_lever"] = Rule(RULES["k_lever"].why + "; a K lever may reuse a J "
                         "lever's IR (`j_levers`, #347's fp32 recurrence)",
-                        RULES["k_lever"].may | frozenset(("j_levers",)),
+                        RULES["k_lever"].may | frozenset(("eri.j_coulomb.levers",)),
                         RULES["k_lever"].must_not)
 EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
     ("eri.k_exchange.levers.mixed",))
 EDGES["eri.k_exchange.levers.mixed"] = frozenset(("mmd.e_fragment", "ir",
-    "j_levers.mixed", "eri.k_exchange.levers.seams", "mmd.recurrence", "spec"))
+    "eri.j_coulomb.levers.mixed", "eri.k_exchange.levers.seams",
+    "mmd.recurrence", "spec"))
 
 
 # #353 (milestone 13, H10): struct-typed pair-record reads, an F lever
@@ -2638,7 +2671,7 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
                 todo.append(e)
     assert {"mmd.e_fragment", "one_electron.kernel_s"} <= seen
     for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                   "performance.device", "launch"):
+                   "performance.device", "eri.j_coulomb.launch"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_sx reaches {hit}"
 
@@ -2685,8 +2718,9 @@ RULES |= {
         **{"eri.fock.launch_f":
             "the fused build's stream is a sibling, not a base: its "
                  "privates stay its own (#328)"},
-        launch="the J plan's privates are not borrowed (#328); the stable "
-               "sort is restated",
+        **{"eri.j_coulomb.launch":
+            "the J plan's privates are not borrowed (#328); the stable "
+               "sort is restated"},
         plan="the plan layer keys on `total_am` and refuses an HGP class "
              "(milestone 12, pin 11)",
         **{"eri.fock.kernel_f":
@@ -2722,9 +2756,10 @@ def test_the_hjk_pair_stream_reaches_neither_reference_nor_a_machine() -> None:
                 seen.add(e)
                 todo.append(e)
     assert "hgp.orbits" in seen
-    for banned in (_REF, "plan", "ir.interp", "emit", "ao.drive", "ao.staged",
-                   "performance.dispatch", "performance.measured",
-                   "performance.measured_store", "eri.fock.launch_f",
+    for banned in (_REF, "plan", "ir.interp", "emit", "eri.j_coulomb.drive",
+                   "eri.j_coulomb.staged", "performance.dispatch",
+                   "performance.measured", "performance.measured_store",
+                   "eri.fock.launch_f",
                    "eri.fock.kernel_f"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"launch_hjk reaches {hit}"
@@ -2921,10 +2956,10 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
                 seen.add(e)
                 todo.append(e)
     assert {"eri.hjk.kernel_hj", "eri.hjk.kernel_hk", "eri.fock.kernel_f"} <= seen
-    for banned in ("eri.hjk.launch_hjk", "eri.fock.launch_f", "launch", _REF,
-                   "ir.interp", "emit",
+    for banned in ("eri.hjk.launch_hjk", "eri.fock.launch_f",
+                   "eri.j_coulomb.launch", _REF, "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
-                   "performance.measured", "ao.j", "eri.k_exchange.k",
+                   "performance.measured", "eri.j_coulomb.j", "eri.k_exchange.k",
                    "eri.fock.fock", "eri.eri", "eri.hgp_drive", "engine",
                    "eri.fock.walk_f"):
         hit = sorted(e for e in seen if _under(e, banned))
@@ -3020,11 +3055,11 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
     for root, banned in (
             ("eri.k_exchange.kernel_kblock",
              (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-              "performance.device", "launch", "eri.k_exchange.launch_k",
+              "performance.device", "eri.j_coulomb.launch", "eri.k_exchange.launch_k",
               "eri.k_exchange.launch_kblock")),
             ("eri.k_exchange.launch_kblock",
-             (_REF, "ir.interp", "emit", "ao.drive",
-              "ao.staged", "performance.dispatch",
+             (_REF, "ir.interp", "emit", "eri.j_coulomb.drive",
+              "eri.j_coulomb.staged", "performance.dispatch",
               "performance.measured",
               "performance.measured_store", "eri.k_exchange.kernel_k",
               "eri.k_exchange.kernel_kblock"))):
@@ -3050,7 +3085,8 @@ RULES |= {
         "`Spec`; nothing else",
         ("spec", "plan"),
         **RULES["launch"].must_not,
-        launch="`launch` imports this module; the reverse is a cycle",
+        **{"eri.j_coulomb.launch":
+            "`launch` imports this module; the reverse is a cycle"},
         **{"eri.k_exchange.launch_k":
             "a launch plan imports this module, never the reverse"},
         **{"eri.k_exchange.launch_kblock":
@@ -3073,8 +3109,9 @@ def test_launch_common_is_no_wider_than_launch() -> None:
     assert common.may <= launch.may
     assert set(launch.must_not) <= set(common.must_not)
     rel = effective_relation()
-    assert set(rel["eri.launch_common"]) <= set(rel["launch"]) | {"launch"}
-    assert "launch" not in rel["eri.launch_common"]
+    assert set(rel["eri.launch_common"]) <= (
+        set(rel["eri.j_coulomb.launch"]) | {"eri.j_coulomb.launch"})
+    assert "eri.j_coulomb.launch" not in rel["eri.launch_common"]
 
 
 # ---------------------------------------------------------------------------
@@ -3284,17 +3321,18 @@ def test_a_move_leaves_the_relation_unchanged() -> None:
 def test_the_relation_check_can_fail() -> None:
     # Widening one rule's `may` by a prefix moves the relation ...
     rules = dict(RULES)
-    r = rules[RULE_OF["kernel_jab"]]
-    rules[RULE_OF["kernel_jab"]] = Rule(r.why, r.may | {"plan"}, r.must_not)
+    r = rules[RULE_OF["eri.j_coulomb.kernel_jab"]]
+    rules[RULE_OF["eri.j_coulomb.kernel_jab"]] = Rule(r.why, r.may | {"plan"},
+                                                      r.must_not)
     base = effective_relation()
     wide = effective_relation(rules=rules)
-    assert base != wide and "plan.dag" in set(wide["kernel_jab"]) - set(
-        base["kernel_jab"])
+    assert base != wide and "plan.dag" in set(wide["eri.j_coulomb.kernel_jab"]) - set(
+        base["eri.j_coulomb.kernel_jab"])
     # ... a rename carries the snapshot to the moved names ...
     moved = apply_renames(base, [{"ir": "ir.core", "ir.interp": "ir.check"}])
     assert "ir.check" in moved and "ir.interp" not in moved
-    assert moved["kernel_jab"] == sorted(
-        {"ir.core" if t == "ir" else t for t in base["kernel_jab"]})
+    assert moved["eri.j_coulomb.kernel_jab"] == sorted(
+        {"ir.core" if t == "ir" else t for t in base["eri.j_coulomb.kernel_jab"]})
     # ... and an exact prefix keeps `ir` from covering what moved under it.
     assert _under("ir.interp", "ir") and not _under("ir.interp", "=ir")
     assert _under("ir", "=ir") and not _under("irx", "ir")

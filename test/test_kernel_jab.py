@@ -39,21 +39,21 @@ from test_layering import _graph, _under
 from tiers import split_by_l
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.drive import KernelJAB
-from felizjueves.ao.j import (
+from felizjueves.eri.j_coulomb.drive import KernelJAB
+from felizjueves.eri.j_coulomb.j import (
     coulomb_matrix,
     coulomb_matrix_and_scale,
     jab_from_host,
 )
-from felizjueves.ir import Assign, AtomicAdd, If, Index, Note, walk
-from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_jab import (
+from felizjueves.eri.j_coulomb.kernel_jab import (
     ATOMIC_REASON,
     ZEROED_J,
     build_jab_kernel,
     jab_launch_shape,
     jab_spec,
 )
+from felizjueves.ir import Assign, AtomicAdd, If, Index, Note, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.reference.pq import pq
@@ -306,7 +306,7 @@ def test_the_builder_reaches_neither_ao_nor_the_interpreter():
     """The kernel is checked against `ao.j` in the interpreter: neither may
     be its ancestor, nor `reference/` (test_layering.py holds the rule)."""
     graph = _graph()
-    seen, todo = set(), ["kernel_jab"]
+    seen, todo = set(), ["eri.j_coulomb.kernel_jab"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:

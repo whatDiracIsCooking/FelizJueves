@@ -36,9 +36,9 @@ from tiers import by_l, split_by_l
 
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.j_coulomb.launch import XClass, XLaunch, cross_overlap_launch
 from felizjueves.ir import AtomicAdd, If, Intent, walk
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.launch import XClass, XLaunch, cross_overlap_launch
 from felizjueves.one_electron.kernel_s import build_s_kernel, record_values
 from felizjueves.one_electron.kernel_sx import (
     ATOMIC_REASON,
