@@ -24,14 +24,14 @@ names the two callables; test/test_engine.py resolves every one):
                      A caller needs the target to form a `Spec` the engine
                      will accept, and nothing else about the engine.
   `eri(bra, ket)`    `(ab|cd)` of a contracted, ordered shell quartet, rows
-                     `ab`, columns `cd`, first index outer: `ao.eri.eri_block`
-                     (MMD, the Hermite path) and `ao.hgp_drive.eri_block`
+                     `ab`, columns `cd`, first index outer: `eri.eri.eri_block`
+                     (MMD, the Hermite path) and `eri.hgp_drive.eri_block`
                      (HGP, #281, built with that signature on purpose). It
-                     is exactly `ao.fock`'s injected `eri=` slot.
+                     is exactly `eri.fock.fock`'s injected `eri=` slot.
   `eri_and_scale`    the block and its absolute-value twin, the yardstick a
                      rounding tolerance is stated against:
-                     `ao.eri.eri_block_and_scale` and
-                     `ao.hgp_drive.eri_block_and_scale`. NOT in #292's
+                     `eri.eri.eri_block_and_scale` and
+                     `eri.hgp_drive.eri_block_and_scale`. NOT in #292's
                      candidate surface, and admitted on its rule: both
                      engines have it, with one signature, and without it no
                      cross-engine check can state its tolerance generically
@@ -127,7 +127,8 @@ what it does not.
   Reused from the MMD side, as targets and witnesses, not as machinery:
      `Target.J` / `Target.K` and `am`'s pairing (`K` is `(la, lc | lb, ld)`
      under both engines, #401); the host references it is held to
-     (`ao/j.py`, `ao/k.py`: every ordered quartet, weight 1); the density
+     (`eri/j_coulomb/j.py`, `eri/k_exchange/k.py`: every ordered quartet, weight 1); the
+     density
      contract; and the pair-factor-free Schwarz bound, still injected
      (`ao.pairs.primitive_schwarz_bounds` as `launch_hjk`'s `bound=`), so
      `pair_bound` stays out of the protocol for the reason above.
@@ -160,13 +161,13 @@ two generators written after it (`emit.__main__`, #287; `measured`, #288)
 name each engine's kernel builder only, under test_layering.py's narrow
 `GENERATORS` exemption. A module ABOVE the
 engines -- one that imports this protocol, or one declared engine-neutral
-there (today `ao.fock`, whose ERI arrives as `eri=`) -- may not import an
+there (today `eri.fock.fock`, whose ERI arrives as `eri=`) -- may not import an
 engine's modules by name. Tests are witnesses, not "above": they name both
 engines on purpose, to compare them.
 
 THE ASYMMETRY, stated so it is not mistaken for symmetry: MMD's `eri` is the
-host Hermite path (`ao/eri.py`, pure Python), while HGP's runs the generated
-IR in the interpreter (`ao/hgp_drive.py`). The protocol promises the
+host Hermite path (`eri/eri.py`, pure Python), while HGP's runs the generated
+IR in the interpreter (`eri/hgp_drive.py`). The protocol promises the
 integral and its layout, not how it was evaluated.
 """
 
@@ -203,7 +204,7 @@ class Engine(Protocol):
     target: Target
 
     def eri(self, bra_pair: ShellPair, ket_pair: ShellPair) -> Block:
-        """`(ab|cd)`, `ao.eri.eri_block`'s layout."""
+        """`(ab|cd)`, `eri.eri.eri_block`'s layout."""
         ...
 
     def eri_and_scale(self, bra_pair: ShellPair,

@@ -1,4 +1,4 @@
-"""`ao.kinetic`: `T` by the fixed +/-2 ket shift on the overlap axis tables.
+"""`one_electron.kinetic`: `T` by the fixed +/-2 ket shift on the overlap axis tables.
 
 The witnesses are closed forms derivable by hand (two `s` primitives; parity
 on one centre), the self-adjointness of the operator against a recurrence that
@@ -347,7 +347,7 @@ def test_236_screened_kinetic_drops_only_blocks_below_tau_above_l4() -> None:
 #
 # with |K| the three-term ket shift taken term by term in absolute value
 # (2 beta^2 |S_{i,j+2}| + beta (2j+1) |S_ij| + 1/2 j(j-1) |S_{i,j-2}|): every
-# product `ao.kinetic` adds, before any of it cancels. Measured worst on this
+# product `one_electron.kinetic` adds, before any of it cancels. Measured worst on this
 # box (2026-10-13, pyscf 2.14.0 / libcint 6.1.3), printed with -s: 7.6e-16
 # of scale (hf_ccpvtz). Fast tier for s/p, `slow` from l = 2; no PySCF.
 

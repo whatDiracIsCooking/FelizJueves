@@ -117,7 +117,7 @@ is unchanged except the order inside a batch and the launches' `Spec`: the
 pairs sit descending by `G` ALONE (`FPair.key = G`, stably, the same
 `launch_common.sorted_desc`), and every launch names its class with the
 `KET_BREAK` lever, whose kernel ends a thread's ket loop at the first ket
-whose separable bound `G_ab (G_cd M_ab)` is under `tau` (f_levers/
+whose separable bound `G_ab (G_cd M_ab)` is under `tau` (eri/fock/levers/
 ket_break.py has the dominating factor `M_ab` and the proof). `G * dmax`
 cannot be that key: the six-block `dmax` is not monotone along it (pin 8),
 and `G` is the only factor of the bound that every ket carries alone --
@@ -130,7 +130,7 @@ THE ATOMIC-FREE WRITE-BACK (#358), opt-in: `scatter=True`. The stream is
 the default's (or `ket_break`'s) exactly -- pairs, bins, order, screens --
 and every launch names its class with the `SCATTER` lever too, whose
 kernel stores its contributions to a per-launch slot buffer `W` and leaves
-`F` to a second kernel (f_levers/scatter.py, kernel_f_scatter.py). Such a
+`F` to a second kernel (eri/fock/levers/scatter.py, kernel_f_scatter.py). Such a
 launch needs host buffers the default does not, so the plan DECLARES them,
 from the plan and the basis alone (`launch_footprint`), derived here
 independently of the kernel's layout (a test holds the two equal):
@@ -156,7 +156,7 @@ the screen (milestone 12 pin 9; data/literature/fock/limits.json). How much
 an extended molecule saves is a follow-up.
 
 Plain tuples and floats; `D` is anything indexable as `D[m][n]`, symmetric
-(`ao.j`'s density contract, shared).
+(`eri.j_coulomb.j`'s density contract, shared).
 """
 
 from __future__ import annotations

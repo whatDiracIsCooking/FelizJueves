@@ -289,7 +289,7 @@ class Fn(Enum):
     - SQRT: `theta` in the fundamental `(2/sqrt(pi)) theta (-2 theta^2)^m F_m`.
     - EXP: `E^{00}_0 = exp(zeta X_PA X_PB)` (`= exp(-mu X_AB^2)`), the seed
       of each axis of the `E` recurrence (#152), formed from the pair
-      `(X_PA, X_PB)` exactly as `ao/hermite.py` forms it.
+      `(X_PA, X_PB)` exactly as `mmd/hermite.py` forms it.
     - THREAD_X THREAD_Y BLOCK_X BLOCK_DIM_X BLOCK_DIM_Y: launch geometry. The
       bra index is `THREAD_X + BLOCK_X * BLOCK_DIM_X`; kets are strip-mined
       from `THREAD_Y` with stride `BLOCK_DIM_Y`.

@@ -45,7 +45,8 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 
 
 def count_raw_in_src(root: Path = SRC) -> int:
-    """Every `Raw(...)` constructed anywhere under src/ (ir.py defines, not uses)."""
+    """Every `Raw(...)` constructed anywhere under src/ (ir/__init__.py defines, not
+    uses)."""
     n = 0
     for path in root.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):

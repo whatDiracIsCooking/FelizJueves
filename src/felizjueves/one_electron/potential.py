@@ -2,7 +2,8 @@
 limit of this engine's own `[p|q]`.
 
     potential_block(sa, sb, nuclei, *, one_centre) -> V_ab   n_cart(sa) x n_cart(sb)
-    potential_matrix(basis, nuclei, *, one_centre) -> V      ao.one_electron.matrix
+    potential_matrix(basis, nuclei, *, one_centre) -> V
+    one_electron.one_electron.matrix
 
 A nucleus is `(Z, centre)`: a charge `Z` and a point `centre = (x, y, z)`.
 The attractive sign `-Z_C` is folded in HERE and nowhere else.
@@ -30,7 +31,7 @@ analogue of test_ao_pairs.py's `lambda`). So
 over the FULL Hermite axis `hermite_order(la + lb)` of the dressed block
 `ao.pairs.primitive_pairs` produces (the overlap read only `t = 0`). This
 module forms NO constant: no `2 pi / p`, no second `(pi/p)`, no `K_AB`
-(the `E` seed carries it per axis, ao/overlap.py's note (1)).
+(the `E` seed carries it per axis, one_electron/overlap.py's note (1)).
 
 THE EVALUATOR IS INJECTED. `one_centre(r, m, pq, theta) -> [r]^{(m)}` has the
 signature `ao.pairs.OneCentre`; tests pass `reference.pq.one_centre`. Importing
@@ -102,7 +103,7 @@ def potential_matrix(basis: Basis, nuclei: Sequence[Nucleus], *,
                      pairs: Iterable[tuple[int, int]] | None = None
                      ) -> list[list[float]]:
     """`V`, `basis.n_ao x basis.n_ao`, exactly symmetric
-    (`ao.one_electron.matrix`); `pairs` screens it (#236)."""
+    (`one_electron.one_electron.matrix`); `pairs` screens it (#236)."""
     nuc = _check_nuclei(nuclei)
     return matrix(basis, lambda sa, sb: potential_block(
         sa, sb, nuc, one_centre=one_centre), pairs=pairs)

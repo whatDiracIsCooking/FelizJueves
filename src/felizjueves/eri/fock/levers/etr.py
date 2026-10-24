@@ -83,8 +83,8 @@ unchanged: the kernel is the literal one plus the provenance Note.
 
 NOT BITWISE: the ETR is the same integrals by a different recurrence, so
 the boundary differs from the literal one in rounding. It is held, with the
-existing tolerances (never loosened), to `ao/eri.py`'s MMD integrals and to
-libcint (through the tracked fixtures), and its `F` to `ao.fock`'s sweep,
+existing tolerances (never loosened), to `eri/eri.py`'s MMD integrals and to
+libcint (through the tracked fixtures), and its `F` to `eri.fock.fock`'s sweep,
 on every class with L <= 4 (test/test_f_lever_etr.py) -- and on H2O/cc-pVDZ,
 where it does not hold on two classes, which is THE ACCURACY GATE above.
 
@@ -550,8 +550,8 @@ def build_etr_vrr_kernel(spec: Spec, *, name: str | None = None,
     (`boundary_order`), so an interpreted driver of the one runs the other.
     `etr_pq` is `inv2q / inv2p` (= p / q) from the bound scalars.
 
-    `absolute=True` is half of this engine's |.| twin (`ao.hgp_drive`'s
-    "THE SCALE"): every transfer term ADDED; `ao.hgp_drive.absolute_kernel`
+    `absolute=True` is half of this engine's |.| twin (`eri.hgp_drive`'s
+    "THE SCALE"): every transfer term ADDED; `eri.hgp_drive.absolute_kernel`
     then flips the `Weighted` coefficients, and the kernel run on |scalars|
     gives `SUM |term|` through the ETR's own sums -- the yardstick for ITS
     rounding, whose `- p/q` transfer cancels where the cascade's does not."""

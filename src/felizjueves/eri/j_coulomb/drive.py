@@ -1,6 +1,6 @@
-"""`J_p` from the INTERPRETED GENERATED KERNEL, as `ao.j`'s `jp=` seam (#87).
+"""`J_p` from the INTERPRETED GENERATED KERNEL, as `eri.j_coulomb.j`'s `jp=` seam (#87).
 
-    KernelJP(boys=..., n_batches=1, lanes=1)    a `ao.j.JP`
+    KernelJP(boys=..., n_batches=1, lanes=1)    a `eri.j_coulomb.j.JP`
     admitted_batches(am, candidates)            the n_batches the plan admits
     class_spec(am, n_batches)                   the Spec of a real class
     KernelDQ(lanes=32), KernelJAB(threads=32)   the dq= / jab= seams
@@ -9,16 +9,16 @@
 
 `coulomb_matrix_chain` composes all three generated steps -- `Target.DQ`,
 `[p|q]` and `Target.JAB` -- into one `J_mn`, interpreted, over milestone 6's
-class-grouped staging (`ao.staged`, #143); its result reports which
+class-grouped staging (`eri.j_coulomb.staged`, #143); its result reports which
 generated kernel ran which step for which classes, and a step a kernel did
 not cover raises. Its docstring names the one host round-trip (`Dmax` read
 back to sort) a launch program would remove.
 
-`ao.j.coulomb_matrix(basis, D, pq=..., jp=KernelJP(boys=...))` is then `J_mn`
+`eri.j_coulomb.j.coulomb_matrix(basis, D, pq=..., jp=KernelJP(boys=...))` is then `J_mn`
 with its ONLY shell-quartet-level step, `J_p = sum_k sum_q [p|q] D_q`, done by
 `kernel.build_pq_kernels` run in `interp.Interpreter` -- the generator's own
 output, with no compiler and no card. The ket pre-contraction, the bra
-transform and the scatter stay `ao.j`'s (#86, already witnessed against
+transform and the scatter stay `eri.j_coulomb.j`'s (#86, already witnessed against
 libcint), so a disagreement localises to the kernel.
 
 THE CLASS IS THE BASIS'S. For a bra shell pair `(la, lb)` and a ket class
@@ -37,9 +37,9 @@ A split class's batch kernels run in `Plan.dags` order into ONE zeroed `J`,
 
 THE LAUNCH. One launch per (bra shell pair, ket class): `n_bra` = that bra
 pair's primitive records, `n_ket` = every ket record of the class, `D` the
-pre-contracted `D_q` in `hermite_targets(lq)` order (which `ao.hermite`'s
+pre-contracted `D_q` in `hermite_targets(lq)` order (which `mmd.hermite`'s
 order is pinned equal to). `tau = 0` and `Ip = Iq = Dmax = 1`: the seam is
-unscreened (`ao.j` refuses `jp` with `tau > 0`), so the bound is >= 0 and
+unscreened (`eri.j_coulomb.j` refuses `jp` with `tau > 0`), so the bound is >= 0 and
 never `< tau`, no ket is skipped, and the sorted-ket precondition -- which
 exists only to make the `break` correct -- is vacuous.
 
@@ -47,11 +47,11 @@ BOYS IS INJECTED (`boys=`), as the interpreter requires; nothing here imports
 `reference/`. Kernels are memoised per Spec (building is pure); results are
 not.
 
-`KernelJAB(threads=32)` (#154) is the same for `ao.j`'s `jab=` seam: the bra
+`KernelJAB(threads=32)` (#154) is the same for `eri.j_coulomb.j`'s `jab=` seam: the bra
 transform and scatter of `kernel_jab.build_jab_kernel((la, lb))`, run in the
 interpreter, one launch per unique bra shell pair with its records in order
 (`row = 0..n_rec-1`, `Jp` the pair's own `J_p` rows), adding into the seam's
-zeroed `J`. Interpreted, it is `==` to `ao.j.jab_from_host` (the kernel
+zeroed `J`. Interpreted, it is `==` to `eri.j_coulomb.j.jab_from_host` (the kernel
 module's docstring says why); `ran` is the set of `(la, lb)` launched.
 """
 
@@ -123,7 +123,8 @@ def _kernels(spec: Spec) -> tuple[Kernel, ...]:
 
 
 class KernelJP:
-    """A `ao.j.JP` backed by the interpreted `[p|q]` kernel (module docstring).
+    """A `eri.j_coulomb.j.JP` backed by the interpreted `[p|q]` kernel (module
+    docstring).
 
     `ran` is the set of `(am, n_batches)` cells launched; `refused` the
     `(am, n_batches)` the plan refused and that ran at one batch instead
@@ -182,7 +183,7 @@ class KernelJP:
 
 
 # ---------------------------------------------------------------------------
-# The bra transform and scatter, as `ao.j`'s `jab=` seam (#154)
+# The bra transform and scatter, as `eri.j_coulomb.j`'s `jab=` seam (#154)
 # ---------------------------------------------------------------------------
 
 
@@ -192,7 +193,7 @@ def _jab_kernel(la: int, lb: int) -> Kernel:
 
 
 class KernelJAB:
-    """A `ao.j.JAB` backed by the interpreted `Target.JAB` kernel (module
+    """A `eri.j_coulomb.j.JAB` backed by the interpreted `Target.JAB` kernel (module
     docstring). `ran` is the set of bra pair classes `(la, lb)` launched."""
 
     def __init__(self, *, threads: int = 32) -> None:
@@ -229,7 +230,8 @@ class KernelJAB:
 
 
 # ---------------------------------------------------------------------------
-# `D_q` from the interpreted pre-contraction kernel: `ao.j`'s `dq=` seam (#153)
+# `D_q` from the interpreted pre-contraction kernel: `eri.j_coulomb.j`'s `dq=` seam
+# (#153)
 # ---------------------------------------------------------------------------
 
 __all__ += ["KernelDQ"]
@@ -243,13 +245,13 @@ def _dq_kernel(lc: int, ld: int) -> Kernel:
 
 
 class KernelDQ:
-    """A `ao.j.DQ` backed by the interpreted `Target.DQ` kernel
+    """A `eri.j_coulomb.j.DQ` backed by the interpreted `Target.DQ` kernel
     (`kernel_dq.build_dq_kernel`): `D_q` per ket record, and `Dmax`.
 
-    `ao.j.coulomb_matrix(basis, D, pq=..., dq=KernelDQ())` is then `J_mn`
+    `eri.j_coulomb.j.coulomb_matrix(basis, D, pq=..., dq=KernelDQ())` is then `J_mn`
     with the ket pre-contraction done by the generator's own kernel in
     `interp.Interpreter` -- no compiler, no card -- and everything else
-    (`Q`, `eta`, `J_p`, the bra transform, the scatter) `ao.j`'s, so a
+    (`Q`, `eta`, `J_p`, the bra transform, the scatter) `eri.j_coulomb.j`'s, so a
     disagreement localises to this kernel.
 
     `run(items)` is ONE launch over every record of several ket shell pairs
@@ -257,12 +259,12 @@ class KernelDQ:
     `pair[k]` the item record `k` came from -- and returns `(D, Dmax)` in
     record order. `__call__` is the seam: one item, `D` as rows.
 
-    THE WEIGHT AND THE DRESSING ARE THE HOST'S. `w` is whatever `ao.j`
+    THE WEIGHT AND THE DRESSING ARE THE HOST'S. `w` is whatever `eri.j_coulomb.j`
     passed (2.0 off the diagonal, 1.0 on it) and `s` is `EPair`'s, from
     `pairs.dress`; both reach the kernel as per-record scalars, and nothing
     here decides either. The kernel receives `X_PA = P - A` and
     `X_PB = P - B`, formed here per axis with the subtraction in that order,
-    as `ao.hermite.e_block` forms them.
+    as `mmd.hermite.e_block` forms them.
 
     `ran` is the set of ket classes `(lc, ld)` launched. Kernels are
     memoised per class (building is pure); results are not.
@@ -341,7 +343,7 @@ class Chain:
     `n_dq_records`, `n_jab_records`  the records each step's launches
            covered (checked equal to the basis's unique-pair records);
     `plan` the launch plan the chain built, keyed on the kernel's `Dmax`;
-    `staged`  `ao.staged`'s record of the buffers and `[p|q]` launches."""
+    `staged`  `eri.j_coulomb.staged`'s record of the buffers and `[p|q]` launches."""
 
     J: Matrix
     dq: tuple[tuple[int, int], ...]
@@ -377,7 +379,7 @@ def coulomb_matrix_chain(basis: Basis, D: object, *, bound: Bound,
     records, the weight `w`), the density check, the bounds (`bound(zeta,
     L)`, injected, as `launch.launches` takes it), the sort, the staging and
     the launch order -- and the staging and `[p|q]` launches ARE milestone
-    6's (#143): `ao.staged.coulomb_matrix_staged`, through its `ket_data=`
+    6's (#143): `eri.j_coulomb.staged.coulomb_matrix_staged`, through its `ket_data=`
     and `transform=` hooks, over a `launch.LaunchPlan`.
 
     THE ROUND-TRIP, named as the launch program's to remove. The sort needs
@@ -389,7 +391,7 @@ def coulomb_matrix_chain(basis: Basis, D: object, *, bound: Bound,
     (j_engine.md, "The round-trip"); a launch program that sorted on the
     device would remove it. The plan here is built from the KERNEL's `Dmax`,
     never from a host pre-contraction (`launch.launches` computes one; it is
-    not called), and `ao.staged` checks every staged `Iq * Dmax` against
+    not called), and `eri.j_coulomb.staged` checks every staged `Iq * Dmax` against
     the plan key it sorted by, bit for bit.
 
     A GAP RAISES. There is no `pq=`, no host `D_q` and no host transform to
@@ -407,7 +409,7 @@ def coulomb_matrix_chain(basis: Basis, D: object, *, bound: Bound,
     `E` block as a side effect of building the record; no value of it
     reaches `J` here.
 
-    `tau` is the `[p|q]` kernel's screen (real, as in `ao.staged`); the
+    `tau` is the `[p|q]` kernel's screen (real, as in `eri.j_coulomb.staged`); the
     libcint witness is at `tau = 0`.
     """
     rows = checked_density(basis, D)

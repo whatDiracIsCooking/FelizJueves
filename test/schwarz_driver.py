@@ -5,7 +5,7 @@
     build_on_card(classes, n_ao, backend, tc, workdir,
                   run_device_binary)                 -> [run] -> Q
 
-The records are `ao.schwarz.schwarz_classes`' (every shell pair staged with
+The records are `eri.schwarz.schwarz_classes`' (every shell pair staged with
 `la <= lb`, one contiguous record range per pair), the kernels
 `kernel_schwarz.build_schwarz_kernel`'s, emitted by `emit/cuda.py` /
 `emit/hip.py` unchanged. Only the `main()` around them is written here, as

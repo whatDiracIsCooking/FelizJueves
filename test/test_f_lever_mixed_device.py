@@ -15,7 +15,7 @@ L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
    kernel swapped for the `fmixed` kernel of its class
    (`lever_ladder.unit_name`: `f_0101_lv_fmixed`): (a) `slow` (cc-pVDZ is
    not a small input: its host references cost 15-30 s a class): per class,
-   H2O/cc-pVDZ's launches of that class at `tau = 0`, against `ao.fock`'s
+   H2O/cc-pVDZ's launches of that class at `tau = 0`, against `eri.fock.fock`'s
    restricted sweep and against the same launches INTERPRETED WITH THE
    LEVER'S KERNEL (`fock_driver.interpret`, whose F32 arithmetic rounds as
    the card's does), and run against run; (b) per molecule, H2O/STO-3G at

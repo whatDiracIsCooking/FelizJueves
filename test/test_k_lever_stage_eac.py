@@ -1,4 +1,5 @@
-"""`E^ac` staged in shared memory, `k_levers/stage_eac.py` (#342), interpreted.
+"""`E^ac` staged in shared memory, `eri/k_exchange/levers/stage_eac.py` (#342),
+interpreted.
 
 The lever moves the bra record's `E^ac` block from a per-lane local array to
 one static `__shared__` copy per block (one warp per bra record, so the bra is
@@ -20,7 +21,7 @@ block-uniform). What is asserted:
    did would be refused.
 4. EXACTNESS (the issue's "host-shim parity with kernel_k at L <= 2"): the
    arithmetic is the literal kernel's, so per bra record the lever's kernel
-   is `ao.k.k_quartet` BIT FOR BIT and `==` the literal kernel's `K` --
+   is `eri.k_exchange.k.k_quartet` BIT FOR BIT and `==` the literal kernel's `K` --
    every class with L <= 2 (fast), a sample through L = 4 (`slow`, the cap);
    with several lanes (the redundant identical-value stores, in the
    interpreter's sequentially consistent model); and with a 3-batch split,
@@ -251,7 +252,8 @@ def test_the_staged_fragment_is_bound_to_the_shared_array() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. Exactness: against ao.k.k_quartet per bra record, and the literal kernel
+# 4. Exactness: against eri.k_exchange.k.k_quartet per bra record, and the literal
+# kernel
 # ---------------------------------------------------------------------------
 
 
@@ -273,7 +275,7 @@ def run(kernels: tuple[Kernel, ...], am: Am, *, zero: bool, lanes: int = 1,
 @pytest.mark.parametrize("am", CLASSES)
 def test_each_bra_record_is_the_host_staged_quartet_bitwise(am: Am) -> None:
     """The issue's acceptance: host-shim parity with `kernel_k`, per bra
-    record against `ao.k.k_quartet`, bit for bit."""
+    record against `eri.k_exchange.k.k_quartet`, bit for bit."""
     bra, ket = tk._pairs(am)
     dcd = tk._dcd(am[1], am[3])
     K = run(build_k_kernels(lever_spec(am)), am, zero=False)

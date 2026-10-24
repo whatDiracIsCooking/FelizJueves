@@ -13,7 +13,7 @@ TWO PARTS, the issue's acceptance on the device side:
    at one batch and, where the plan admits it, three, with the split lever:
    the element kernels launched in order onto one zeroed `K` by
    test_kernel_device.py's K harness (`_run_k`: its inputs, its host
-   staging `ao.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of
+   staging `eri.k_exchange.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of
    the quartet scale, unchanged). The harness builds a cell from
    `measured.cell_kernels`, which since #339 passes a kernel-body K lever to
    `build_k_kernels` (renaming each unit `<name>_lv_split`), so the lever's

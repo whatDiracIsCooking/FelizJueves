@@ -19,13 +19,13 @@ per primitive quartet and a host-side `+=` in primitive order, then one HRR
 launch. Nothing about the recurrence is restated: every integral comes out
 of the IR the builder made.
 
-THE SIGNATURE IS `ao.eri.eri_block`'s, deliberately: two ordered shell pairs
+THE SIGNATURE IS `eri.eri.eri_block`'s, deliberately: two ordered shell pairs
 in, the block out as a tuple of rows (`ab` over `cartesians(la) x
 cartesians(lb)`, a outer; columns `cd`, c outer), the evaluator's own
 special function as a keyword. So `functools.partial(eri_block, boys=boys)`
-is an `eri(bra, ket)` for `ao.fock`'s injected sweep, the same slot
-`functools.partial(ao.eri.eri_block, pq=pq)` fills today -- the swap #286
-makes, with no edit to `ao.fock`. Any ordered quartet is accepted (the HGP
+is an `eri(bra, ket)` for `eri.fock.fock`'s injected sweep, the same slot
+`functools.partial(eri.eri.eri_block, pq=pq)` fills today -- the swap #286
+makes, with no edit to `eri.fock.fock`. Any ordered quartet is accepted (the HGP
 DAGs are built for any `(la, lb, lc, ld)`; the 21-class canonical ladder is
 what the kernels are named and measured on, not a restriction here).
 
@@ -42,7 +42,7 @@ theta` (each statement is a weighted sum of earlier ones, and the leaves are
 placed on the seed instead of on `E`. `WQ` is the DERIVED `W - Q = +p/(p+q)
 PQ`, not eq 26's printed sign (`fock/eq26-ket-vrr-sign`, asserted by #291).
 
-THE SCALE, `ao.eri.eri_block_and_scale`'s twin for THIS engine: the same two
+THE SCALE, `eri.eri.eri_block_and_scale`'s twin for THIS engine: the same two
 kernels with every `Weighted` coefficient `c` replaced by `|c|`
 (`absolute_kernel`), run on `|scalar|` for every bound scalar, so each
 statement adds the absolute values of what the real one adds and the result
@@ -54,7 +54,7 @@ MMD scale alone would be a statement about the wrong program's sums.
 WHY AN ADAPTER UNDER `ao/` AND NOT `hgp/eri.py`. Producing a number from the
 IR needs the interpreter, and `hgp/` may not import it (rule `hgp_builder`:
 the interpreter checks the builder and must not be leaned on by it) nor
-anything outside `hgp`/`spec`/`ir` (rule `hgp`). `ao/drive.py` is the MMD
+anything outside `hgp`/`spec`/`ir` (rule `hgp`). `eri/j_coulomb/drive.py` is the MMD
 precedent for exactly this -- builder + `interp` + `ao`, producing numbers --
 so this module follows it, under its own layering rule
 (test/test_layering.py, `hgp_adapter`): it may reach `hgp`, `ir`, `interp`,
@@ -207,7 +207,7 @@ def eri_block(bra_pair: tuple[Shell, Shell], ket_pair: tuple[Shell, Shell],
               *, boys: Boys, first: str = "bra") -> Block:
     """`(ab|cd)` of the ordered quartet `(sa sb|sc sd)` by VRR (per primitive
     quartet, summed) then HRR (once): rows `ab`, columns `cd`, each in
-    `cartesians` order with the first index outer -- `ao.eri.eri_block`'s
+    `cartesians` order with the first index outer -- `eri.eri.eri_block`'s
     layout and signature, with `boys=` in place of `pq=`."""
     flat = _run(bra_pair, ket_pair, boys, first, False)
     return _rows(flat, *bra_pair, *ket_pair)

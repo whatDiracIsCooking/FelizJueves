@@ -6,7 +6,7 @@ fast-tier; PySCF is needed only to regenerate one):
 
 - fast tier, numpy only: our shells are built from each fixture's `converted`
   record and their overlap -- computed here by Obara-Saika, which shares no
-  code with libcint or with `ao/hermite.py` -- is compared with the `int1e_ovlp`
+  code with libcint or with `mmd/hermite.py` -- is compared with the `int1e_ovlp`
   libcint wrote into the same fixture (both cases reach (ff), so that
   comparison is `slow` by test/tiers.py's cut); the recorded constants are compared
   with `common_factor`; AO order is read off PySCF's own `ao_labels`.
@@ -44,7 +44,7 @@ def _fixture(name):
     return manifest.load(manifest.FIXTURES / f"{name}.json")
 
 
-# --- an overlap of our shells, independent of libcint and of ao/hermite ----
+# --- an overlap of our shells, independent of libcint and of mmd/hermite ----
 
 
 def _ovlp_1d(la, lb, a, b, xa, xb):

@@ -15,7 +15,7 @@ Held here, the issue's acceptance in order, plus the IR node it needed:
    `flush_bra` only; the literal build is untouched.
 2. PARITY with the literal kernel, interpreted, on EVERY F class with
    L <= 4 (milestone 13's cap; the issue asks L <= 2), at one warp, two
-   and four: against `ao.fock`'s every-ordered-quartet sweep at the literal
+   and four: against `eri.fock.fock`'s every-ordered-quartet sweep at the literal
    kernel's own `TOL`, and against the literal kernel by a DERIVED bound --
    the two `F`s are sum trees over the same addends (every thread's `f_ab`
    partial is the literal value; only the order of the sums into `F`

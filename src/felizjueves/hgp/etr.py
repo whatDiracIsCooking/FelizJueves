@@ -35,7 +35,7 @@ nodes (`hgp.vrr.reduce` with `f = 0`, the cascade's own bra phase) up to
 `|e| = la + lb + lc + ld`, where the cascade stops at `la + lb`; its ket
 phase is the transfer above at `m = 0` only, where the cascade carries every
 `m <= L - |e| - |f|` through eq 26. Which is cheaper is a property of the
-class (`hgp.cost.etr_cost`, the arbitration in `f_levers/etr.py`).
+class (`hgp.cost.etr_cost`, the arbitration in `eri/fock/levers/etr.py`).
 
 THE DIRECTION: a ket node `[e|f]` is reduced along the first axis (x, y, z)
 with `f_d > 0`, as the cascade's eq 26 nodes are. A bra node (`f = 0`) is

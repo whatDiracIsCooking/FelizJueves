@@ -117,7 +117,7 @@ class Case:
     # four of the five over the 512 KB hook (test_ao_eri.py pins it).
     record_one_e: bool = True
     # Write the `int2e_diag` array: libcint's `(mn|mn)` for every AO pair,
-    # the square of the Schwarz factor (`ao/schwarz.py`). Needs
+    # the square of the Schwarz factor (`eri/schwarz.py`). Needs
     # `record_basis`, as `record_j` does.
     record_schwarz: bool = False
     # #517: write the dipole arrays (manifest: THE DIPOLE FIXTURES) --
@@ -1042,7 +1042,7 @@ def k_array(mol: Any, dm: np.ndarray) -> np.ndarray:
     with
     `hermi=1` and no `vhfopt`, as `j_array`, keeping the K half. PySCF's
     convention is `vk_il = sum_jk (ij|kl) D_jk`, which by the ERI's
-    symmetry is `ao.k`'s `K_ab = sum_cd D_cd (ac|bd)`. Cross-checked against
+    symmetry is `eri.k_exchange.k`'s `K_ab = sum_cd D_cd (ac|bd)`. Cross-checked against
     the full `int2e` tensor contracted by `einsum` with exactly that index
     pattern, to 1e-13 of the largest element, before it is written; what is
     RECORDED is `get_jk`'s."""

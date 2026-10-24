@@ -12,7 +12,7 @@ located in generated text (#92).
 PART 1, PER CLASS, THROUGH (ff). HF/cc-pVTZ against itself as two bases:
 all sixteen ordered classes `(0..3, 0..3)`, every record, same-centre and
 equal-offset pairs included (the kernel has no diagonal rule, so they are
-ordinary pairs), against `ao.overlap.cross_overlap_matrix`. Every element
+ordinary pairs), against `one_electron.overlap.cross_overlap_matrix`. Every element
 is owned by one ordered shell pair, so the whole matrix is checked at once.
 
 PART 2, PER CASE. `h2o_sto3g_x_631g`, `_x_ccpvdz` and `_x_631g_moved`,

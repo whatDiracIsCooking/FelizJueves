@@ -1,20 +1,21 @@
-"""K's dressed record bound kernel, `Target.RECORD_BOUND`: `ao.k.record_bounds`.
+"""K's dressed record bound kernel, `Target.RECORD_BOUND`:
+`eri.k_exchange.k.record_bounds`.
 
     build_record_bound_kernel(spec | (la, lb)) -> Kernel   one per ordered class
     record_bound_spec(la, lb)                  -> Spec     the class's key
     record_bound_name(spec | (la, lb))         -> str      its name, unbuilt
     launch_shape(n_rec, threads)               -> (grid, block)
 
-K's screen (`ao.k`, "THE SCREEN", #200) skips a (bra, ket) record pair on
+K's screen (`eri.k_exchange.k`, "THE SCREEN", #200) skips a (bra, ket) record pair on
 `(I_ac * I_bd) * Dm < tau`, and each `I` is the record's DRESSED Schwarz
-scalar, `ao.k.record_bounds`:
+scalar, `eri.k_exchange.k.record_bounds`:
 
     I = max_{i in a} SUM_{k in b} SUM_p |s E^{a_i b_k}_p| I_p(zeta)
 
 for a record of the ORDERED shell pair `(a, b)`: `s = c_a c_b (pi/zeta)^{3/2}`
 (`ao.pairs.dress`), `E` the undressed Hermite block (which carries the pair
 factor `exp(-mu |AB|^2)` in its seed), and `I_p` the pair-factor-free bound
-of `kernel_pair_bound` taken one `p` at a time. `ao.k`'s docstring proves it
+of `kernel_pair_bound` taken one `p` at a time. `eri.k_exchange.k`'s docstring proves it
 bounds; `Target.PAIR_BOUND`'s `SUM_p I_p` is J's `Ip` / `Iq`, a different
 number with neither the coefficients nor the pair factor in it, and it does
 not decay with `|AB|`, so a density-decay factor (#484) read against it never
@@ -36,7 +37,7 @@ structurally zero (`t_d > a_d + b_d`) is ABSENT, never read: the host adds
 that started at `+0.0` is the identity. `|.|` and `max` are spelled with `LT`
 and `SUB`, as in `kernel_dq`.
 
-ROUND-OFF, NOT BITWISE, against `ao.k.record_bounds` through `reference.pq`:
+ROUND-OFF, NOT BITWISE, against `eri.k_exchange.k.record_bounds` through `reference.pq`:
 the host forms each `I_p` from the `[p|q]` recurrence at `PQ = 0` and sums
 with `fsum`; the kernel uses the closed form and a plain left-to-right sum.
 Every term is non-negative, so the sum's relative error is a few ulps per
@@ -57,7 +58,7 @@ a consumer computes it once per basis, not per SCF iteration.
 
     params  n_rec (I32)
             zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s_ab[n_rec]
-            bound[n_rec] (OUT)   I = ao.k.record_bounds, written whole
+            bound[n_rec] (OUT)   I = eri.k_exchange.k.record_bounds, written whole
 
 Nothing here is CUDA- or HIP-specific, and nothing here imports `ao`,
 `reference/`, the interpreter, a backend or a card.

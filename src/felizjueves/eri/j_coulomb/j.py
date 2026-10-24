@@ -26,7 +26,7 @@ with `E` the DRESSED coefficients of `ao.pairs.primitive_pairs`, both sides:
 `(pi/zeta)^{3/2}` is on the bra `E` and `(pi/eta)^{3/2}` on the ket `E` --
 so on `D_q` -- once each, by `pairs.dress`, and this module multiplies no
 constant in. `[p|q]` carries `(2/sqrt(pi)) theta` and the `(-1)^{|q|}` sign
-inside the injected evaluator, exactly as in `ao/eri.py`, whose oracle
+inside the injected evaluator, exactly as in `eri/eri.py`, whose oracle
 comparison per class is what makes the pieces trustworthy one level down.
 
 THE TWO SWEEPS, and why there are two (the off-diagonal weight is the
@@ -70,7 +70,7 @@ comparison at `tau = 0` cannot have an error hidden by screening.
 THE SCALE (`coulomb_matrix_and_scale`, unique sweep, `tau = 0`): the same
 sum with every factor replaced by its absolute value -- `|E^{ab}_p|`,
 `|[p|q]|`, and `|D_q|` replaced by `w sum_{cd} |E^{cd}_q| |D_cd|` -- which is
-exactly `sum_{ls} scale_{mnls} |D_ls|` for `ao.eri`'s per-element ERI scale.
+exactly `sum_{ls} scale_{mnls} |D_ls|` for `eri.eri`'s per-element ERI scale.
 So a per-ERI bound `|err| <= t scale_eri` gives `|err J| <= t scale_J` by the
 triangle inequality: the J tolerance is inherited, not chosen.
 

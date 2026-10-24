@@ -107,7 +107,7 @@ def test_each_pair_shares_its_inputs(m):
 
 def test_the_combination_constant_is_the_derivations():
     """The manifest may not import `src`, so its 1/2 is checked here against
-    `ao.fock`'s derived `EXCHANGE_FRACTION = 1 / N_SPIN`."""
+    `eri.fock.fock`'s derived `EXCHANGE_FRACTION = 1 / N_SPIN`."""
     assert manifest.FOCK_EXCHANGE_FRACTION == fock.EXCHANGE_FRACTION == 0.5
 
 

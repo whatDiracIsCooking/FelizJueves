@@ -52,7 +52,8 @@ and `V` (every d function scaled by 1.01 in both) each moves `Tr(D h)` by
 at least `SENSITIVITY = 1e6` trace tolerances. The measured multiples are
 printed; they are far above that floor (1e8 to 1e11 here).
 
-THE FAST TIER also holds the HOST's `T + V` (`ao.kinetic` + `ao.potential`)
+THE FAST TIER also holds the HOST's `T + V` (`one_electron.kinetic` +
+`one_electron.potential`)
 to the same two tolerances against the fixture: the same comparison with
 no card, so a device failure here is the device's.
 

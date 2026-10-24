@@ -996,7 +996,7 @@ class _Configured:
 # sorted descending by Iq alone (kernel_k.SORTED_BY_IQ).
 #
 # THE CHECK, K_REL = test_ao_k.KJ_TOL = 1e-12 of the quartet scale,
-# inherited: per bra record, `ao.k._k_quartet` (the host staging) on
+# inherited: per bra record, `eri.k_exchange.k._k_quartet` (the host staging) on
 # `reference.pq` (the direct recursion: no MILD, DAG, sieve or schedule),
 # summed over the ket records, against the kernel's row -- elementwise,
 # |K - X| <= K_REL * S, S the host's |.| twin. The same pin the K build holds

@@ -1,14 +1,14 @@
-"""`ao.k`: the exchange matrix `K_mn` by the staged contraction, two sweeps
-that must agree, and a third index path through `ao.eri`.
+"""`eri.k_exchange.k`: the exchange matrix `K_mn` by the staged contraction, two sweeps
+that must agree, and a third index path through `eri.eri`.
 
-THE WITNESSES (ao/k.py's module docstring).
+THE WITNESSES (eri/k_exchange/k.py's module docstring).
 
   internal  `exchange_matrix_reference` (every ORDERED quadruple at weight 1,
             no symmetry) against `exchange_matrix` (one quadruple per
             bra-ket orbit, K's weights: the partner as `X^T`, and `X + X^T`
             -- never `2 X` -- on a diagonal block). It catches a weight error
             and nothing else.
-  eri path  `k_from_eris`: every ordered quadruple's full `ao.eri.eri_block`,
+  eri path  `k_from_eris`: every ordered quadruple's full `eri.eri.eri_block`,
             contracted element by element -- no staging, no symmetry.
   libcint   not here: #199 adds the tracked K fixtures.
 
@@ -33,7 +33,7 @@ A whole-basis sweep over a basis holding a `p` shell visits `(pp|pp)`
          ordered sum of that truncated K exactly as they do the full one.
   slow   H2O/STO-3G whole, the issue's acceptance case: deferred to #231.
 
-THE TOLERANCES, stated and not tuned (ao/j.py's, carried over).
+THE TOLERANCES, stated and not tuned (eri/j_coulomb/j.py's, carried over).
 
   sweeps     |K - K_ref| <= 1e-14 max|K_ref| element by element, and the
              same for each against `k_from_eris`.

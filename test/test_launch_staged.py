@@ -1,4 +1,4 @@
-"""`ao.staged`: `J_mn` from the launch plan, class-grouped and staged (#143).
+"""`eri.j_coulomb.staged`: `J_mn` from the launch plan, class-grouped and staged (#143).
 
 `coulomb_matrix_staged(launches(...), basis, D, boys=...)` builds each bra
 class's buffers and `J_p` once, each ket class's buffers once, runs every
@@ -9,9 +9,9 @@ level: no compiler, no card, no PySCF (the device version is #144).
 THE WITNESSES, at the tolerances `test_ao_j_interpreted.py` already uses and
 does not loosen here:
 
-  host sweep  `ao.j.coulomb_matrix_screened` at the SAME `tau` (the same
+  host sweep  `eri.j_coulomb.j.coulomb_matrix_screened` at the SAME `tau` (the same
               screen on the same keys, as the sorted `break`),
-              and `ao.j.coulomb_matrix_reference` (every ordered pair, weight
+              and `eri.j_coulomb.j.coulomb_matrix_reference` (every ordered pair, weight
               1) at `tau = 0`: `|J - J_host| <= 1e-13 max|J_host|`;
   libcint     the tracked `get_jk` fixtures at `tau = 0`:
               `|J - J_pyscf| <= 1e-12 scale_J`.
@@ -19,7 +19,7 @@ does not loosen here:
 The LAUNCH ORACLE (#142, the plan walked in Python) is not on main yet; the
 staged-vs-oracle comparison is added when it lands. Until then the host
 sweep is the same-screen witness: its skip decisions are the plan's,
-bit for bit, when the plan's bound is `ao.j.pair_bound_pq` (#138 pins every
+bit for bit, when the plan's bound is `eri.j_coulomb.j.pair_bound_pq` (#138 pins every
 ket key equal to the host's `_Ket.bound`).
 
 THE CASES, by cost:

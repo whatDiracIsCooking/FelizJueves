@@ -1,7 +1,7 @@
 """The McMurchie-Davidson `E` coefficients as device code: two `Fragment`s.
 
 `E` is the first quantity built as an `ir.Fragment` (#149, #152). It is the
-UNDRESSED coefficient `ao/hermite.py` defines -- no contraction coefficient,
+UNDRESSED coefficient `mmd/hermite.py` defines -- no contraction coefficient,
 no primitive normalisation, no `(pi/zeta)^{3/2}`; those are `ao/pairs.py`'s
 `dress`, and a fragment carrying one would break the pointwise Hermite
 identity it is checked by (test/test_e_fragment.py).
@@ -9,7 +9,7 @@ identity it is checked by (test/test_e_fragment.py).
 - `axis_fragment(la, lb, d)`: `E^{ij}_t` on axis `d` for every `i <= la`,
   `j <= lb`, `t <= i+j`, one scalar local per entry (`E{x,y,z}_i_j_t`). The
   seed is `E^{00}_0 = exp(zeta X_PA X_PB)` -- formed from the `(X_PA, X_PB)`
-  pair, as `ao/hermite.py`'s module docstring argues, so `mu X_AB^2` is never
+  pair, as `mmd/hermite.py`'s module docstring argues, so `mu X_AB^2` is never
   a separate input. Every other entry is ONE `Weighted`:
 
       E^{i+1,j}_t = (1/2zeta) E^{ij}_{t-1} + X_PA E^{ij}_t + (t+1) E^{ij}_{t+1}
@@ -17,7 +17,7 @@ identity it is checked by (test/test_e_fragment.py).
 
   with a term whose source has `t < 0` or `t > i+j` ABSENT, not a zero: an
   entry with `t > i+j` is never declared. `i` is raised first through
-  `X_PA`, then `j` through `X_PB`, the order `ao.hermite.e_axis` uses, so the
+  `X_PA`, then `j` through `X_PB`, the order `mmd.hermite.e_axis` uses, so the
   fragment performs the reference's operations in the reference's order.
 
 - `block_fragment(la, lb)`: the three axes and the products
@@ -53,7 +53,7 @@ identity it is checked by (test/test_e_fragment.py).
   `S_d = E^{a_d b_d}_0`), written into the 1D array bind `KE` in
   `block_rows` order. The `j(j-1)` term is ABSENT for `j < 2`, not a zero
   weight -- the fragment's convention for an out-of-range source. Every
-  operation is `ao.kinetic`'s, in its association: `K_ij` is
+  operation is `one_electron.kinetic`'s, in its association: `K_ij` is
   `((-2.0 eb) eb) E^{i,j+2}_0 + (eb (2j+1)) E^{ij}_0`, then minus
   `(1/2 j(j-1)) E^{i,j-2}_0` (`kinetic_axis`), and the product is
   `((K_x S_y) S_z + (S_x K_y) S_z) + (S_x S_y) K_z`. `eb` -- the KET
@@ -107,7 +107,7 @@ The center fragment binds only `half_inv_zeta` (when `l >= 1`; there
 `zeta` is the aux primitive's own exponent) and the array `E`.
 
 This is a builder: it produces vendor-neutral IR. It must not import
-`ao.hermite` (the reference it is checked against) nor the interpreter.
+`mmd.hermite` (the reference it is checked against) nor the interpreter.
 """
 
 from __future__ import annotations
@@ -240,7 +240,7 @@ def _axes_body(la: int, lb: int) -> list[Stmt]:
 def _product(a: tuple[int, int, int], b: tuple[int, int, int],
              t: tuple[int, int, int]) -> Call:
     """`(E_x E_y) E_z` for Cartesians `a`, `b` at Hermite index `t`: the
-    order `ao.hermite.e_block` multiplies in."""
+    order `mmd.hermite.e_block` multiplies in."""
     x, y, z = (Var(e_name(d, a[d], b[d], t[d])) for d in range(3))
     return Call(Fn.MUL, (Call(Fn.MUL, (x, y)), z))
 
@@ -320,7 +320,7 @@ def _mul(x: Expr, y: Expr) -> Call:
 
 
 def _shift(d: int, i: int, j: int) -> Decl:
-    """`K_ij` on axis `d` from the widened table: `ao.kinetic.kinetic_axis`'s
+    """`K_ij` on axis `d` from the widened table: `one_electron.kinetic.kinetic_axis`'s
     operations in its association, the `j(j-1)` term absent for `j < 2`."""
     def e(jj: int) -> Var:
         return Var(e_name(d, i, jj, 0))

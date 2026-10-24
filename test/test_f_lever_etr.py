@@ -1,4 +1,4 @@
-"""The ETR as a second VRR, `hgp/etr.py` + `f_levers/etr.py` (#354), on the host.
+"""The ETR as a second VRR, `hgp/etr.py` + `eri/fock/levers/etr.py` (#354), on the host.
 
 What is asserted:
 
@@ -29,14 +29,14 @@ What is asserted:
 5. THE SAME INTEGRALS, ANOTHER PATH (the issue's "the ETR DAG reaches the
    same ERIs as the ket cascade on the host"): the standalone ETR VRR
    kernel interpreted per primitive quartet with `hgp.recurrence`'s HRR on
-   the contracted sums, against `ao/eri.py`'s MMD integrals and against
+   the contracted sums, against `eri/eri.py`'s MMD integrals and against
    libcint (the tracked fixtures), test_hgp_eri.py's quartets, scale and
    `1e-12` tolerance unchanged, every class with L <= 4.
 6. THE KERNEL: its VRR is exactly the ETR closure (no eq 26 node, no
    cascade-only scalar declared), each transfer scalar declared once; the
-   tap `g` against `ao/eri.py` to test_kernel_f's `TOL` of scale on every
+   tap `g` against `eri/eri.py` to test_kernel_f's `TOL` of scale on every
    class with L <= 4 under the shipped choice AND with the ETR forced
-   everywhere (both recurrences on every class); `F` against `ao.fock`'s
+   everywhere (both recurrences on every class); `F` against `eri.fock.fock`'s
    sweep (one orbit per class, the degeneracy cases within the cap) to
    `TOL`; whole molecules (H2/STO-3G, and, `slow`, H2O/STO-3G and
    H2O/6-31G, every class L <= 4) through `walk_f` against the sweep and
@@ -487,7 +487,7 @@ GATE_PARAMS = [pytest.param(c, id=str(c), marks=() if c == REFUSED[0]
 def test_the_gates_record_is_the_interpreted_etr_on_the_device_inputs(
         cls) -> None:
     """The ETR forced on every class with L <= 4, interpreted over
-    H2O/cc-pVDZ's launches of the class, against `ao.fock`'s restricted
+    H2O/cc-pVDZ's launches of the class, against `eri.fock.fock`'s restricted
     sweep: the recorded error to 1%, and so the gate's verdict exactly.
     On the two refused classes this is the failure #354's device run saw."""
     w = _gate_error(cls)
@@ -726,7 +726,7 @@ def _tap(kern, cls, monkeypatch, shells=None):
 @pytest.mark.parametrize("cls", CAPPED, ids=str)
 def test_the_tap_is_the_mmd_integrals(cls, arm, monkeypatch) -> None:
     """Every class with L <= 4, under the shipped choice and with the ETR
-    forced (both recurrences on every class): `g` against `ao/eri.py` to
+    forced (both recurrences on every class): `g` against `eri/eri.py` to
     test_kernel_f's TOL of scale, its own bound for the same ERIs in two
     operation orders."""
     kern = (build_f_kernel(lever_spec(cls), eris=True) if arm == "shipped"

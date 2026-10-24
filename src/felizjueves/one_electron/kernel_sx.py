@@ -43,10 +43,10 @@ into its block.
 
 WHY `==` IN THE INTERPRETER. Interpreted (threads in order, blocks in
 order), the records of a shell pair add in `primitive_pairs` order from the
-caller's `0.0`, which is `ao.overlap.overlap_block(sa, sb)`'s accumulation
+caller's `0.0`, which is `one_electron.overlap.overlap_block(sa, sb)`'s accumulation
 exactly (`kernel_s`'s docstring has the two admitted departures; neither
 changes a bit). With no triangle read, the whole matrix is `==` to
-`ao.overlap.cross_overlap_matrix` -- not merely to a rearranged block, as
+`one_electron.overlap.cross_overlap_matrix` -- not merely to a rearranged block, as
 `S` is. On a card the atomics' order differs run to run.
 
 A builder: vendor-neutral IR. It imports neither `ao/` (the reference it is

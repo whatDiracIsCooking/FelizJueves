@@ -138,7 +138,7 @@ already proved by `test_kernel_jab.py`:
 Every write is an `AtomicAdd` into a matrix **the caller zeroes**. Because
 the interpreter runs threads in order and blocks in order, `S` and `T`
 interpret **bitwise `==`** to the host block placed by this rule. The rule
-keeps a diagonal pair's **lower** triangle while `ao.one_electron.matrix`
+keeps a diagonal pair's **lower** triangle while `one_electron.one_electron.matrix`
 reads the upper one. For a symmetric operator the two agree to rounding but
 not necessarily bitwise, so the full host matrix is held to a stated
 `8 ε` bound on diagonal-pair elements.
@@ -176,7 +176,7 @@ in every family: `V`'s reused prelude declares a local `s = −2θ²`, and in
   filter fails.
 - **`T`**: `e_fragment.kinetic_fragment(la, lb)`. This is the axis bodies of
   `_axis_body(la, lb + 2, d)`, one `K{d}_i_j` per axis, and the bracket into
-  a local `KE`, in `ao.kinetic`'s association operation for operation.
+  a local `KE`, in `one_electron.kinetic`'s association operation for operation.
 - **`V`**: `e_fragment.block_fragment(la, lb)`, the whole block and the
   first consumer to read every column. `θ = √ζ` is formed once. Then the
   kernel loops over the nuclei **serially** (`ir.For` over `n_nuc`), and
@@ -184,7 +184,7 @@ in every family: `V`'s reused prelude declares a local `s = −2θ²`, and in
   then `u_r = Σ_t E[r,t] [t]^(0)` over the reachable columns and
   `acc_r −= Z_C u_r`. Finally it forms `v_r = s_ab · acc_r`.
 
-`V` is **round-off, not bitwise**, against `ao.potential`. The kernel
+`V` is **round-off, not bitwise**, against `one_electron.potential`. The kernel
 follows MILD's directions and the sieve's re-parenting in the schedule's
 order, while the host recurses along `reference.pq.one_centre`'s fixed
 rule. It also applies `s` once per row after the nucleus sum. The bound is
@@ -263,8 +263,8 @@ to `emit(...)`. Ordered ladder classes are a named follow-up.
 
 **Interpreted, fast tier:**
 
-- `test_e_fragment.py`: each fragment bitwise against `ao.hermite.e_axis`
-  and `ao.kinetic.kinetic_axis`.
+- `test_e_fragment.py`: each fragment bitwise against `mmd.hermite.e_axis`
+  and `one_electron.kinetic.kinetic_axis`.
 - `test_kernel_s.py` and `test_kernel_t.py`: every class (ss) through (ff),
   plus HF/cc-pVTZ's whole matrix, bitwise `==` to the host.
 - `test_kernel_v.py`: within `16 ε M`. Classes past L = 4 are `slow`.
@@ -362,9 +362,9 @@ batching refusal is `S`'s structural one. It has no kernel-body lever (its
 `levers.DEFAULT_REFUSALS` row). An example key is
 `overlap/d0/(2,1)/b1/sx/literal`, and every pre-existing key is unchanged.
 
-**The host.** `ao.overlap.cross_overlap_matrix(basis_a, basis_b, *,
+**The host.** `one_electron.overlap.cross_overlap_matrix(basis_a, basis_b, *,
 pairs=)` reuses `overlap_block` unchanged. Its blocks are placed by
-`ao.one_electron.rectangular`, which calls `block` once per **ordered**
+`one_electron.one_electron.rectangular`, which calls `block` once per **ordered**
 shell pair `(i ∈ A, j ∈ B)` in row-major order and writes every element
 once, nothing mirrored. `ao.pairs.cross_pair_list` is `pair_list`'s screen
 over those pairs, with the bound injected (`overlap_bound`). A basis

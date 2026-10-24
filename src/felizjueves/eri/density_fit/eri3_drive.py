@@ -4,9 +4,9 @@
     launch_class(cls, out, *, boys, threads=32)    -> out with cls's elements
     eri3_tensor_kernel(basis, aux, *, boys, classes=None, threads=32) -> Run
 
-The `ao/metric_drive.py` pattern for `Target.ERI3`: `kernel_eri3.
+The `eri/density_fit/metric_drive.py` pattern for `Target.ERI3`: `kernel_eri3.
 build_eri3_kernel((la, lb, lP))` run in `interp.Interpreter` over
-`ao.eri3.eri3_classes`' staging -- one launch per class, every staged cell
+`eri.density_fit.eri3.eri3_classes`' staging -- one launch per class, every staged cell
 (AO shell pair, aux shell) one thread, the class's record and cell arrays
 passed by name (`Eri3Class.arrays()`), into ONE zeroed
 `n_ao x n_ao x n_aux` tensor, `[m][n][P]`. The kernel's plain mirrored

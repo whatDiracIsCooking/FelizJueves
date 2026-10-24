@@ -5,7 +5,7 @@
     KBLaunchPlan   iterable of KBClassLaunch, plus tau / dm
     KBClassLaunch(am, bras, kets, blocks, kernel)
     KBlock(a, b, bra0, bra1, ket0, ket1, dmax)
-    walk_kb(plan, basis, D, *, pq)                       -> ao.k.KScreened
+    walk_kb(plan, basis, D, *, pq)                       -> eri.k_exchange.k.KScreened
 
 `launch_k.py`'s counterpart for `kernel_kblock` (opt-UM's mapping): which
 K class kernels run, over which blocks, each block a bra RANGE and a ket
@@ -37,7 +37,7 @@ a launch filter, not built (`kernel_kblock`'s docstring).
 
 THE DENSITY FACTOR PER BLOCK (#484). With `decay=None` every block's `dmax`
 is `max|D|`, the plan's `dm`: #481's screen exactly. With `decay`
-(`ao.k.density_decay` at the plan's `tau` and density) each block carries
+(`eri.k_exchange.k.density_decay` at the plan's `tau` and density) each block carries
 `decay.factor(a, b, lc, ld)`, [Fock, §4.3.1]'s `F_ab`, never above `dm`.
 
 THE WALK (`walk_kb`): the plan in Python, the kernel's loops. Per class, per
@@ -45,13 +45,13 @@ block, per bra in order: when screening, a bra with `(G_bra * G_ket0) *
 dmax < tau` (`ket0` the block's first, largest ket; `dmax` the block's)
 ends the block's bra loop and every pair of it and of every later bra is
 skipped; else down the block's kets with `launch_k.walk_k`'s `break`.
-Each surviving pair adds `ao.k._k_quartet` of that one record pair (the
+Each surviving pair adds `eri.k_exchange.k._k_quartet` of that one record pair (the
 host's staged arithmetic) to `K[a][b]`, every element summed with
 `math.fsum`. Both bounds use `walk_k`'s association `(G_bra * G_ket) *
 dmax`, and both breaks are sound because the products are monotone in a
 sorted factor (the block's `dmax` is one constant), so the walk skips
 EXACTLY the ordered record pairs `walk_k` skips at the same `tau` -- the
-same terms, fsummed: its `K` is `walk_k`'s to 0, and so `ao.k`'s to
+same terms, fsummed: its `K` is `walk_k`'s to 0, and so `eri.k_exchange.k`'s to
 rounding (test/test_launch_kblock.py) -- with every `dmax = dm`; a
 per-block factor skips more (#484), within `KScreened.bound`, which the
 walk fills (per element, each skipped pair's `(G_bra G_ket) max|D_cd|`).

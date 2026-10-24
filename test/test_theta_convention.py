@@ -20,7 +20,7 @@ between the fundamental and `ao.pairs.dress` passes it; it fails here
 A doc pins a reading; only the code that forms the number can get it wrong.
 The kernel forms theta in its per-pair prelude (`kernel.build_pq_kernel`,
 spelled by `emit/`); the host forms the same expression in
-`reference.pq.theta_of` (the oracle), `ao/eri.py` and `ao/j.py`. This file
+`reference.pq.theta_of` (the oracle), `eri/eri.py` and `eri/j_coulomb/j.py`. This file
 holds it at the oracle and the kernel, against an anchor that shares ancestry
 with neither:
 

@@ -1,7 +1,7 @@
 """`kernel_sx`: the cross-basis overlap kernel, `Target.SX`, interpreted.
 
-THE WITNESS is `ao.overlap.cross_overlap_matrix`: `overlap_block` of every
-ordered shell pair `(i in A, j in B)`, placed by `ao.one_electron.
+THE WITNESS is `one_electron.overlap.cross_overlap_matrix`: `overlap_block` of every
+ordered shell pair `(i in A, j in B)`, placed by `one_electron.one_electron.
 rectangular`. The kernel's records are `launch.cross_overlap_launch`'s, in
 its parameter order (`XClass.arrays`), and the per-record statements are
 `kernel_s.record_values`', so the only new IR is the scatter.

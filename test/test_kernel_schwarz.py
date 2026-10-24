@@ -1,8 +1,8 @@
 """`kernel_schwarz`: the Schwarz kernel, `Target.SCHWARZ`, interpreted.
 
-THE WITNESS is `ao.schwarz` (the component diagonal of `ao.eri.eri_block` with
+THE WITNESS is `eri.schwarz` (the component diagonal of `eri.eri.eri_block` with
 `reference.pq.pq` injected), placed by `kernel_jab`'s scatter rule; the
-kernel's records are `ao.schwarz.schwarz_classes`', and its Boys function is
+kernel's records are `eri.schwarz.schwarz_classes`', and its Boys function is
 `reference.boys.boys`, injected into the interpreter. Through the fixtures the
 host is libcint's (test/test_ao_schwarz.py), so the whole-matrix cases here
 also compare the interpreted kernel against libcint directly.
@@ -11,7 +11,7 @@ ROUND-OFF, NOT BITWISE (`kernel_schwarz`'s module docstring): the host's
 `[p|q]` is `reference.pq`'s recursion, the kernel's the plan's MILD DAG, and
 the host dresses each `E` entry where the kernel multiplies `s_i s_k` once.
 The bound is per element on the SQUARE, `|Q^2 - (mn|mn)| <= TOL_ULPS * eps *
-scale`, `scale` being `ao.eri`'s absolute-value twin of the same sum -- the
+scale`, `scale` being `eri.eri`'s absolute-value twin of the same sum -- the
 running-error scale `test_kernel_v.py` argues for, `TOL_ULPS = 16` stated
 before measuring. Squaring a rounded root adds two roundings of `Q^2 <=
 scale`, inside that.

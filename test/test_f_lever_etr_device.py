@@ -20,7 +20,7 @@ cap; 13 of the 21):
    of the 13),
    H2O/cc-pVDZ's launches of that class at `tau = 0`, the kernel the ETR
    FORCED (so the ETR runs on the cascade classes too), against those
-   launches interpreted with the literal kernel and `ao.fock`'s restricted
+   launches interpreted with the literal kernel and `eri.fock.fock`'s restricted
    sweep, with test_fock_ondevice's `_check_class` and its stated
    tolerances unchanged (`TOL` against the sweep; `2 TOL` against the
    literal interpreted launches -- the ETR and the cascade each within

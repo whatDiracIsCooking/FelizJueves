@@ -80,7 +80,7 @@ key that can break. No import of `launch_f`'s or `launch`'s privates
 (#328): the density and `tau` checks and the stable sort are restated here.
 
 Plain tuples and floats; `D` is anything indexable as `D[m][n]`, symmetric
-(`ao.j`'s density contract, restated).
+(`eri.j_coulomb.j`'s density contract, restated).
 """
 
 from __future__ import annotations

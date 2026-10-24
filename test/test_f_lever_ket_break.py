@@ -2,7 +2,7 @@
 
 The question the issue asks -- is there a ket key that makes a `break` sound
 in the fused F kernel's ket loop? -- is answered YES here, with the proof in
-f_levers/ket_break.py and its pieces held one by one:
+eri/fock/levers/ket_break.py and its pieces held one by one:
 
   * THE PIN'S REASON IS REAL (the six-block bound itself is not monotone):
     on H2O/STO-3G a literal launch's six-block bound rises after a ket it
@@ -19,7 +19,7 @@ f_levers/ket_break.py and its pieces held one by one:
     fired); and on H2O/STO-3G and 6-31G whole, walked, its `F` is the literal
     walk's of the same stream bit for bit, every quartet it breaks on is one
     the six-block screen skips, and each such quartet is below `tau` in the
-    EXACT ERIs (`ao.eri`).
+    EXACT ERIs (`eri.eri`).
   * THE STREAM MUST BE SORTED (the wrong-answer test): `walk_f` refuses a
     `ket-break` launch whose ket batch is not descending in `G`; forced past
     that refusal, the lever's kernel drops a quartet whose exact terms reach

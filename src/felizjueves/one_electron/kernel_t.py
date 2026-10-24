@@ -6,7 +6,7 @@
     launch_shape(n_rec, threads)    -> (grid, block)
 
 `T_ab = <a| -1/2 grad^2 |b>` on the same axis bodies as `S`, read two
-angular momenta higher (`ao/kinetic.py`'s module docstring). Per
+angular momenta higher (`one_electron/kinetic.py`'s module docstring). Per
 primitive-pair record `k` of one pair class `(la, lb)` and per Cartesian
 pair `r = (a, b)`,
 
@@ -45,20 +45,20 @@ NO PREFACTOR IS FORMED HERE, and no `K_AB` is reinstated: `s` is the host's
 one scalar per record, `c_a c_b (pi/zeta)^{3/2}` (`ao.pairs.dress`), and the
 fragment's per-axis seed `exp(zeta X_PA X_PB)` already carries `K_AB` in
 every term of the bracket. One `(pi/zeta)^{3/2}` is right for all three
-terms, since each carries exactly one factor per axis (`ao/kinetic.py`).
+terms, since each carries exactly one factor per axis (`one_electron/kinetic.py`).
 
 ONE THREAD PER RECORD, `rec = THREAD_X + BLOCK_X * BLOCK_DIM_X`, guarded by
 `rec < n_rec`. Interpreted (threads in order, blocks in order) it runs the
 records IN ORDER.
 
-WHY `==` IN THE INTERPRETER. `ao.kinetic.kinetic_block` forms, per record,
+WHY `==` IN THE INTERPRETER. `one_electron.kinetic.kinetic_block` forms, per record,
 `S_ij = e_axis(i, j)[0]` for `j <= lb + 2`, `K_ij` by `kinetic_axis`
 (`((-2.0 beta) beta) S_{i,j+2} + (beta (2j+1)) S_ij`, then minus
 `(1/2 j(j-1)) S_{i,j-2}` only for `j >= 2`), the bracket
 `((K_x S_y) S_z + (S_x K_y) S_z) + (S_x S_y) K_z`, dresses it as
 `scale * bracket`, and adds it into an accumulator from `0.0`, records in
 `primitive_pairs` order. The fragment performs exactly those operations in
-that association (its axis entries are `ao.hermite.e_axis`'s, raised in
+that association (its axis entries are `mmd.hermite.e_axis`'s, raised in
 its order -- test/test_e_fragment.py), `v = sk * KE[r]` is `scale * x`, and
 the kernel's `+=` chain starts from the caller's zeroed `T` -- the same
 `0.0 + x` as the host's. So the reference is `kinetic_block` placed by

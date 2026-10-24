@@ -1,4 +1,5 @@
-"""`ao.metric`: the two-center Coulomb metric `(P|Q)`, host-side, against libcint.
+"""`eri.density_fit.metric`: the two-center Coulomb metric `(P|Q)`, host-side, against
+libcint.
 
 The oracle is the tracked cc-pVTZ-jkfit metric set (#411,
 `manifest.metric_set`): libcint's `int2c2e_cart` and `int1e_ovlp` over
@@ -12,7 +13,7 @@ Within that, s/p classes are fast and anything with a `d` or higher shell is
 
 THE WITNESSES, in order:
 
-1. THE NORMALISATION, first: the aux overlap `ao.overlap.overlap_block` of the
+1. THE NORMALISATION, first: the aux overlap `one_electron.overlap.overlap_block` of the
    loaded shells against the fixture's `int1e_ovlp`, every shell pair with
    `lP + lQ <= 4`. If the coefficients carried a second normalisation this is
    where it shows, as a clean per-l constant.

@@ -14,7 +14,7 @@ TWO PARTS, the issue's acceptance on the device side:
    at one batch and, where the plan admits it, three, with the interleave
    lever: the cell's kernels launched in order onto one zeroed `K` by
    test_kernel_device.py's K harness (`_run_k`: its inputs, its host staging
-   `ao.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of the
+   `eri.k_exchange.k._k_quartet` on `reference.pq`, its pin `K_REL = 1e-12` of the
    quartet scale, unchanged). The harness builds a cell from
    `measured.cell_kernels`, which refuses a K lever (#205's store has no
    lever rows); here it is pointed at `build_k_kernels` for the test's

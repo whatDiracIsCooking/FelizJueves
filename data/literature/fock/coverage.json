@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "about": "The reading of [Fock] that claims.json is the inventory of (#271), in the shape of jengine/coverage.json (#120) but scoped: milestone 12 reconstructs §3 only (the HGP recurrence, §3.1, and the fused Fock kernel built on it, §3.2). One entry per unit, in the paper's order: every numbered section and subsection; inside §3, also each of eqs. 25-29, each design decision of §3.2 (numbered 1-8 by THIS reading, in text order: the paper does not number them) and each of Fig. 1's four components (its three labelled panels and its legend). `status` is 'read' (the unit was read end to end) or 'not-read' (outside §3 and not needed by it; such a unit may list no claims). Every unit of §3 is read; §1, §2, §2.1-§2.3, §4, §4.3 and §4.3.1 were read too, because §3 depends on their notation or a §3 claim is stated there, and §4.2 later, for the D_q layout passes.transpose gives. `claims` is exactly the ids of the records whose `source` names that unit (a source token is a unit name; 'eqs. N-M' names each equation unit in the range); `note` says what else the unit asserts, in our vocabulary, and why it is not a record. Numeric tables are NOT units: they are timings on hardware this repo does not have (limits.json), and a record may not cite one. test/test_fock_coverage.py holds this file against claims.json both ways and pins the unit list.",
+  "about": "The reading of [Fock] that claims.json is the inventory of (#271), in the shape of jengine/coverage.json (#120) but scoped: milestone 12 reconstructs §3 only (the HGP recurrence, §3.1, and the fused Fock kernel built on it, §3.2). One entry per unit, in the paper's order: every numbered section and subsection; inside §3, also each of eqs. 25-29, each design decision of §3.2 (numbered 1-8 by THIS reading, in text order: the paper does not number them) and each of Fig. 1's four components (its three labelled panels and its legend). `status` is 'read' (the unit was read end to end) or 'not-read' (outside §3 and not needed by it; such a unit may list no claims). Every unit of §3 is read; §1, §2, §2.1-§2.3, §4, §4.3 and §4.3.1 were read too, because §3 depends on their notation or a §3 claim is stated there, and §4.2 later, for the D_q layout ir.passes.transpose gives. `claims` is exactly the ids of the records whose `source` names that unit (a source token is a unit name; 'eqs. N-M' names each equation unit in the range); `note` says what else the unit asserts, in our vocabulary, and why it is not a record. Numeric tables are NOT units: they are timings on hardware this repo does not have (limits.json), and a record may not cite one. test/test_fock_coverage.py holds this file against claims.json both ways and pins the unit list.",
   "read": {
     "text": "arXiv:2407.21445v1 (submitted 2024-07-31; doi:10.48550/arXiv.2407.21445), the preprint of [Fock] (docs/references.md entry 23, JCTC 20, 10424-10442, doi:10.1021/acs.jctc.4c00994), read from its arXiv HTML rendering with Fig. 1 (figures/HGP.png) viewed as an image; not tracked, as no PDF is. Section, equation and figure numbers here are the preprint's: §3 = 'Brc21 scheme optimisations', eqs. 25-29, Fig. 1, as milestone 12 cites them. The journal version was not available to this reading and may renumber its tables (limits.json, the tables record).",
-    "by": "#271, 2026-10-14, §3 end to end, and the units named; §4.2 on 2026-10-21, for passes.transpose"
+    "by": "#271, 2026-10-14, §3 end to end, and the units named; §4.2 on 2026-10-21, for ir.passes.transpose"
   },
   "units": [
     {
@@ -40,7 +40,7 @@
       "claims": [
         "fock/fig1-digestion-unweighted"
       ],
-      "note": "Eqs. 17-23: F = h + J - K/2 with D doubly occupied (eq. 19), J and K (eqs. 20-21) as this repo's ao/j.py and ao/k.py define them, and the Schwarz bounds G_ab (contracted, eq. 22) and G_[ab] (primitive, eq. 23). Eq. 18 is what makes Fig. 1's unit weights wrong (fock/fig1-digestion-unweighted)."
+      "note": "Eqs. 17-23: F = h + J - K/2 with D doubly occupied (eq. 19), J and K (eqs. 20-21) as this repo's eri/j_coulomb/j.py and eri/k_exchange/k.py define them, and the Schwarz bounds G_ab (contracted, eq. 22) and G_[ab] (primitive, eq. 23). Eq. 18 is what makes Fig. 1's unit weights wrong (fock/fig1-digestion-unweighted)."
     },
     {
       "unit": "§2.3",
@@ -218,7 +218,7 @@
       "unit": "§4.2",
       "status": "read",
       "claims": [],
-      "note": "Read for its D_q layout (passes.transpose), end to end: the opt-UM J kernel (eqs. 38-40, Alg. 1, Fig. 2) is [JEngine]'s J engine, which j_engine.md reconstructs, with D_q formed by a strided batched BLAS call and 'transposed before kernel launches to ensure contiguous reads', kets sorted by G_cd times the density block's max, a warp per bra pair and a 64-thread block. The transposed layout is what passes.transpose gives a consumer; the rest restates [JEngine], and the block size is an A100 tuning this repo does not test (limits.json)."
+      "note": "Read for its D_q layout (ir.passes.transpose), end to end: the opt-UM J kernel (eqs. 38-40, Alg. 1, Fig. 2) is [JEngine]'s J engine, which j_engine.md reconstructs, with D_q formed by a strided batched BLAS call and 'transposed before kernel launches to ensure contiguous reads', kets sorted by G_cd times the density block's max, a warp per bra pair and a 64-thread block. The transposed layout is what ir.passes.transpose gives a consumer; the rest restates [JEngine], and the block size is an A100 tuning this repo does not test (limits.json)."
     },
     {
       "unit": "§4.2.1",
@@ -238,7 +238,7 @@
       "claims": [
         "fock/symmetry-vs-screening"
       ],
-      "note": "Read for the restatement: 'to facilitate fine grained density screening and to reduce atomic operations, the K implementation only exploits the [ab|cd] <-> [cd|ab] symmetry' (fock/symmetry-vs-screening). The rest (the density-decay bound eqs. 41-49, already cited as prior art by ao/k.py and kernel_k.py, and Luehr et al.'s GDG bound, eq. 50) is opt-UM and not inventoried here: a follow-up, with milestone 10's K."
+      "note": "Read for the restatement: 'to facilitate fine grained density screening and to reduce atomic operations, the K implementation only exploits the [ab|cd] <-> [cd|ab] symmetry' (fock/symmetry-vs-screening). The rest (the density-decay bound eqs. 41-49, already cited as prior art by eri/k_exchange/k.py and kernel_k.py, and Luehr et al.'s GDG bound, eq. 50) is opt-UM and not inventoried here: a follow-up, with milestone 10's K."
     },
     {
       "unit": "§4.3.2",

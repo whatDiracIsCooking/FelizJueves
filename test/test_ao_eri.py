@@ -1,4 +1,4 @@
-"""`ao.eri`: `(ab|cd)` from the Hermite path, against libcint's `int2e`, ONE
+"""`eri.eri`: `(ab|cd)` from the Hermite path, against libcint's `int2e`, ONE
 ANGULAR-MOMENTUM CLASS AT A TIME.
 
 Why per class, and per block: a wrong `common_fac`, a double normalisation or
@@ -34,7 +34,7 @@ THE TOLERANCE, stated and not tuned: element by element,
     |ours - libcint| <= 1e-12 * scale,
     scale = sum_{prims} sum_pq |E^{ab}_p| |E^{cd}_q| |[p|q]|
 
-(`ao.eri.eri_block_and_scale`, the dressed E): the size of what was added,
+(`eri.eri.eri_block_and_scale`, the dressed E): the size of what was added,
 so the bound is about rounding in either program, not about how much a sum
 cancelled. 1e-12 is ~4500 ulps of the scale. Measured worst on this box
 (2026-10-11, pyscf 2.14.0 / libcint 6.1.3): 1.3e-13 of scale, (fs|ps) on

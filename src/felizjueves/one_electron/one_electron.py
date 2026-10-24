@@ -5,7 +5,7 @@
 
 ONE FUNCTION, SHARED BY `S`, `T` AND `V` (milestone 11, #233). Each of the
 three one-electron matrices differs only in the shell-pair block it computes;
-the loop that places those blocks is this one, and `ao/overlap.py` (`S`),
+the loop that places those blocks is this one, and `one_electron/overlap.py` (`S`),
 the kinetic (`T`, #234) and the nuclear attraction (`V`, #235) take it as
 given rather than writing their own.
 
@@ -30,18 +30,18 @@ recomputed. On a diagonal pair `i == i` only the block's upper triangle
 (`row <= col`) is read and its lower triangle is the mirror, so the whole
 matrix is symmetric EXACTLY (bitwise), whatever rounding the block's own
 evaluation carries. That is `kernel_jab`'s diagonal rule, read from the other
-side (`ao.j.jab_from_host` keeps the lower triangle; which triangle a
+side (`eri.j_coulomb.j.jab_from_host` keeps the lower triangle; which triangle a
 symmetric block is read from is immaterial to the result, only that one is).
 
 ACROSS TWO BASES, NO SYMMETRY. `rectangular(basis_a, basis_b, block)` is
 the `n_a x n_b` matrix `M[m][n] = <m|O|n>`, `m` an AO of `basis_a` (rows)
 and `n` of `basis_b` (columns) -- the cross-basis overlap `S_{B1,B2}`
-(`ao.overlap.cross_overlap_matrix`). Nothing relates `M[m][n]` to any other
+(`one_electron.overlap.cross_overlap_matrix`). Nothing relates `M[m][n]` to any other
 element, so `block` is called once per ORDERED shell pair `(i in A, j in
 B)`, every element written once, nothing mirrored and nothing read from a
 triangle. The block contract is `matrix`'s.
 
-Plain lists and floats, like `ao/j.py`: `src/felizjueves` has no runtime
+Plain lists and floats, like `eri/j_coulomb/j.py`: `src/felizjueves` has no runtime
 dependencies.
 """
 

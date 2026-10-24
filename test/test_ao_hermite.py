@@ -1,4 +1,4 @@
-"""`ao.hermite`: the `E` coefficients, checked by an identity, not a table.
+"""`mmd.hermite`: the `E` coefficients, checked by an identity, not a table.
 
 `[JEngine, v2]` does not state the recurrence (McMurchie & Davidson do, entry
 46 of docs/references.md, eqs. 2.20-2.22), and nobody publishes a table of `E`

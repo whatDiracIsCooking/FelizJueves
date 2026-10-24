@@ -1,11 +1,11 @@
-"""`ao.fock`: the two-electron Fock matrix `G = J - K/2` by every ordered
+"""`eri.fock.fock`: the two-electron Fock matrix `G = J - K/2` by every ordered
 shell quartet, weight 1, no symmetry -- the witness milestone 12's fused,
 symmetric build is checked against (#275).
 
 THE CROSS-CHECKS (no PySCF, no toolchain: tracked fixtures only).
 
-  FJ's paths   the sweep's `J` and `K` against `ao.j.coulomb_matrix` and
-               `ao.k.exchange_matrix` (and their ordered references), and
+  FJ's paths   the sweep's `J` and `K` against `eri.j_coulomb.j.coulomb_matrix` and
+               `eri.k_exchange.k.exchange_matrix` (and their ordered references), and
                `G` against `J - K/2` built from them -- the combination the
                module docstring DERIVES, applied to the matrices FJ already
                trusts.
@@ -34,14 +34,15 @@ shell visits `(pp|pp)`, L = 4. So:
 
 THE TOLERANCES, the tree's, stated and not tuned.
 
-  sweeps     1e-14 of max|ref|, element by element (`ao.j` / `ao.k`'s
+  sweeps     1e-14 of max|ref|, element by element (`eri.j_coulomb.j` /
+  `eri.k_exchange.k`'s
              SWEEP_TOL): the same integrals summed in a different order.
   symmetry   |G - G^T| <= 1e-15 max|G| (the sweep computes both triangles).
   libcint    1e-12 of `scale_G = scale_J + scale_K / 2`, element by element,
              where `scale_J`, `scale_K` are the sweep itself run on `|D|`
              with the ERI's absolute-value twin (`eri_block_and_scale`), so
              #85's per-ERI 1e-12 carries over by the triangle inequality
-             (`ao.j`'s and `ao.k`'s JK_TOL / KJ_TOL).
+             (`eri.j_coulomb.j`'s and `eri.k_exchange.k`'s JK_TOL / KJ_TOL).
 
 A failure is a defect to find, not a tolerance to widen.
 """

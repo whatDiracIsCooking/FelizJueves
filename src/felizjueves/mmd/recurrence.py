@@ -1,6 +1,6 @@
 """The recurrence half of a [p|q] kernel, built as IR from a scheduled DAG.
 
-This is the bridge from plan/ to ir.py: it takes one batch's DAG (MILD's, or
+This is the bridge from plan/ to ir/__init__.py: it takes one batch's DAG (MILD's, or
 the sieve's pruned one) and its schedule (plan/schedule.py, pipeline step 4)
 and turns every node into one IR statement, in the schedule's order:
 

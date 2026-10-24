@@ -90,7 +90,7 @@ def test_a_dd_pair_writes_336_entries_of_1260() -> None:
     # The milestone description's figure, from the count's pattern: of the
     # 36 x 35 = 1260 slots of a (dd) block, 336 are structurally nonzero
     # (written) and 924 are absent -- the 336 is the PRESENT count, as
-    # test_the_nonzero_pattern_is_the_hosts confirms against ao.hermite.
+    # test_the_nonzero_pattern_is_the_hosts confirms against mmd.hermite.
     sums = kdup.row_sums(2, 2)
     cols = len(kdup.nonzero((4, 4, 4), 4))
     present = sum(m * len(kdup.nonzero(s, 4)) for s, m in sums.items())

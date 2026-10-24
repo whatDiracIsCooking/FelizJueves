@@ -1,7 +1,7 @@
 """K's Schwarz screen (#200): the bound, proved; the break and the continue;
 and the sort the J engine cannot use.
 
-ao/k.py's module docstring, "THE SCREEN", states it: a (bra record `(a,c)`,
+eri/k_exchange/k.py's module docstring, "THE SCREEN", states it: a (bra record `(a,c)`,
 ket record `(b,d)`) pair is skipped when `(I_ac * I_bd) * Dm < tau`, with
 `I_ac = max_i sum_k sum_p |E^{a_i c_k}_p| I_p` built on `ao.pairs`'
 pair-factor-free `I_p` and `Dm = max|D|`, and the kets of the kernel's
@@ -18,7 +18,7 @@ THE CLAIMS.
               `ao.pairs.hermite_bound` (the proved one), and `I_ac` to the
               same sum over `ao.pairs.primitive_pairs`' dressed block.
   exact       sorted-`break` K == unsorted-`continue` K TO 0 at every rung,
-              the same skip count and the same skipped bounds (`ao.k`
+              the same skip count and the same skipped bounds (`eri.k_exchange.k`
               accumulates each element with `math.fsum`, so this is a claim
               about WHICH terms were summed); the break examines no more.
   bounded     |K(tau) - K(0)| <= tau * scale element by element, and every
@@ -134,7 +134,7 @@ def test_the_fast_cases_keep_to_l_le_2():
 
 
 def test_i_p_is_the_proved_hermite_bound():
-    """`I_p` as ao.k evaluates it (through `pq`) is `ao.pairs.hermite_bound`
+    """`I_p` as eri.k_exchange.k evaluates it (through `pq`) is `ao.pairs.hermite_bound`
     (through `one_centre`) -- the bound #84/#85 proved -- for every Hermite
     index a pair with `L <= 2` carries."""
     rng = random.Random(SEED)
@@ -322,7 +322,7 @@ def _j_key(basis: Basis, D: np.ndarray):
 def test_the_j_key_does_not_make_the_break_safe(name):
     """Sorted by the J key, the break stops at a ket whose bound is under
     `tau` while a later ket's is not -- `D_cd` straddles the records, so the
-    ket's own density orders nothing the screen tests (ao/k.py, "THE KEY
+    ket's own density orders nothing the screen tests (eri/k_exchange/k.py, "THE KEY
     THE J ENGINE USES IS UNAVAILABLE FOR K"). At some rung it skips a pair
     whose bound is >= tau, and K moves; the Schwarz-only order never does
     (the test above)."""

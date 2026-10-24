@@ -147,9 +147,9 @@ def test_reduce_refuses_an_unknown_side_and_a_bad_class() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The numeric witness: eq 28 on CONTRACTED integrals, against ao.eri.
+# The numeric witness: eq 28 on CONTRACTED integrals, against eri.eri.
 #
-# Each shell has two primitives and the weights `_W`, so ao.eri returns the
+# Each shell has two primitives and the weights `_W`, so eri.eri returns the
 # contracted integral of unnormalised primitives. The boundary `(e0|f0)` is
 # the same quartet with A at l = |e| and B at l = 0 (B's exponents and
 # weights), and likewise C, D. That B's s function keeps B's

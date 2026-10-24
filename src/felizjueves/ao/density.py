@@ -7,20 +7,21 @@
                                               ket records, `D_q` pre-contracted
     pair_bound_pq(zeta, L, *, pq)   -> float  the record bound through `pq`
 
-Extracted from `ao/j.py`, where they were born and where their contracts are
+Extracted from `eri/j_coulomb/j.py`, where they were born and where their contracts are
 still stated (that module's docstring: "THE DENSITY MUST BE SYMMETRIC", "THE
 SCREEN, `tau`", "THE `D_q` AND `J_ab` SEAMS" for `EPair`, "THE SORTED
-`break`" for `Ket.bound`). They live here so that `ao.k`, `ao.fock`,
-`ao.schwarz`, `ao.staged`, `ao.drive` and the launch plans take them from a
+`break`" for `Ket.bound`). They live here so that `eri.k_exchange.k`, `eri.fock.fock`,
+`eri.schwarz`, `eri.j_coulomb.staged`, `eri.j_coulomb.drive` and the launch plans take
+them from a
 shared module instead of from the J reference. Every body is moved verbatim:
-the arithmetic, the operation order and the error messages are `ao.j`'s, and
-`ao.j` imports them back.
+the arithmetic, the operation order and the error messages are `eri.j_coulomb.j`'s, and
+`eri.j_coulomb.j` imports them back.
 
-`pair_bound_pq` is J's record bound and `ao.j` re-exports it under the same
+`pair_bound_pq` is J's record bound and `eri.j_coulomb.j` re-exports it under the same
 name; it is defined here only because `make_kets` evaluates it, and a
-definition left in `ao.j` would make the two modules import each other.
+definition left in `eri.j_coulomb.j` would make the two modules import each other.
 
-MEMOISE NOTHING (`ao.j`'s rule): every record is built per call and dropped.
+MEMOISE NOTHING (`eri.j_coulomb.j`'s rule): every record is built per call and dropped.
 
 Pure Python floats; `D` is anything indexable as `D[m][n]`.
 """
@@ -44,7 +45,7 @@ ERec = tuple[Vec, float, float]  # (P, zeta, s = c_a c_b (pi/zeta)^{3/2})
 
 @dataclass(frozen=True)
 class EPair:
-    """One shell pair as the `dq=` / `jab=` seams receive it (`ao.j`'s module
+    """One shell pair as the `dq=` / `jab=` seams receive it (`eri.j_coulomb.j`'s module
     docstring): `(la, lb)`, the centres, and per primitive pair, in
     `primitive_pairs` order, `(P, zeta, s)` with `s` from `pairs.dress`."""
 
@@ -101,7 +102,7 @@ def checked_tau(tau: float) -> float:
 def pair_bound_pq(zeta: float, L: int, *, pq: PQ) -> float:
     """`I = sum_p sqrt([p|p](PQ = 0, theta = sqrt(zeta/2)))` over
     `hermite_order(L)` -- `ao.pairs.pair_bound` through the `[p|q]` evaluator
-    (`ao.j`'s module docstring). Raises on a negative radicand, never `abs`es
+    (`eri.j_coulomb.j`'s module docstring). Raises on a negative radicand, never `abs`es
     it."""
     theta = math.sqrt(zeta / 2.0)
     out = []
@@ -149,7 +150,7 @@ def make_kets(basis: Basis, D: list[list[float]], pairs, *, pq: PQ,
 
 def epair(sa: Shell, sb: Shell,
           recs: Sequence[PrimitivePair] | None = None) -> EPair:
-    """The `EPair` of the ordered shell pair `(sa, sb)` (`ao.j`'s module
+    """The `EPair` of the ordered shell pair `(sa, sb)` (`eri.j_coulomb.j`'s module
     docstring); `recs` is `primitive_pairs(sa, sb)`, passed when the caller
     has it."""
     if recs is None:

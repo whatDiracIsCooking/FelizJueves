@@ -1,4 +1,4 @@
-"""The batched VRR, `f_levers/batched_vrr.py` (#350), interpreted.
+"""The batched VRR, `eri/fock/levers/batched_vrr.py` (#350), interpreted.
 
 The lever stages the fused F kernel's boundary in a thread-private
 `Space.LOCAL` array and runs the primitive nest once per schedule-contiguous
@@ -30,7 +30,7 @@ asserted:
    lever's `F` and tap `g` are the literal kernel's BIT FOR BIT on every
    class with L <= 4 (milestone 13's cap) at the rule's count, and at other
    counts (2, 3 and one group per boundary value) on every class with
-   L <= 2 and a sample to L = 4; one launch against `ao.fock`'s sweep to
+   L <= 2 and a sample to L = 4; one launch against `eri.fock.fock`'s sweep to
    `test_kernel_f.TOL`, and the degeneracy cases within the cap; classes
    above L = 4 are `slow` and not run under the cap.
 6. THE GOLDENS: `(sp|sp)` with the lever (two groups), one unit per backend.
@@ -216,7 +216,7 @@ def test_build_is_unchanged_by_the_grouping() -> None:
 # ---------------------------------------------------------------------------
 
 # class -> (hrr_floor, literal_phase, rule's count, vrr_phase at that count):
-# hgp.vrr.peak_live's statement-order model (f_levers/batched_vrr.py,
+# hgp.vrr.peak_live's statement-order model (eri/fock/levers/batched_vrr.py,
 # THE GROUP COUNT). Computed by the rule, pinned so a change to the DAGs'
 # orders, the cut or the rule is a visible diff.
 RULE_TABLE = {

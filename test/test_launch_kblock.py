@@ -13,7 +13,7 @@ THE CLAIMS.
              shell in `k_launches`' sorted order; the blocks are every
              `(a, b)` once and tile the class's quartets.
   the walk   at tau = 0 it is `walk_k` over the same records to 0 (the same
-             terms, fsummed) and `ao.k.exchange_matrix` to rounding.
+             terms, fsummed) and `eri.k_exchange.k.exchange_matrix` to rounding.
   screened   on the tau ladder it skips EXACTLY the ordered record pairs
              `walk_k` skips (so its K is `walk_k`'s to 0), its bra `break`
              fires somewhere, and it examines at most two bounds per

@@ -8,7 +8,7 @@
 
 THE FIRST KERNEL OUTSIDE THE J CHAIN TO USE THE PLAN LAYER. `V_ab` is the J
 engine with the ket replaced by a unit point charge (milestone 11's design
-pin; `ao/potential.py`'s module docstring): per primitive-pair record `k` of
+pin; `one_electron/potential.py`'s module docstring): per primitive-pair record `k` of
 one pair class `(la, lb)`,
 
     theta = sqrt(zeta)                         a local, formed once
@@ -77,7 +77,7 @@ fixtures: a point-charge ket has no eta to damp it. Until #301 that made V
 the first kernel to need the wide `fj_boys` (#266); since #301 every kernel
 carries the one `fj_boys`, which holds on all of `reference.boys`' domain.
 
-ROUND-OFF, NOT BITWISE, against `ao.potential.potential_block`. The host
+ROUND-OFF, NOT BITWISE, against `one_electron.potential.potential_block`. The host
 recurses `[t]^(0)` along `reference.pq.one_centre`'s fixed rule; this kernel
 runs the plan's MILD directions (and the sieve's re-parenting) in the
 schedule's order, which is the point of having both. It also applies `s`

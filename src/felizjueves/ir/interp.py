@@ -2,7 +2,7 @@
 
     interpret(kernel, **inputs) -> {out_param: ndarray}
 
-An instruction set machine for ir.py and nothing more. It executes Decl,
+An instruction set machine for ir/__init__.py and nothing more. It executes Decl,
 Assign, For, If, Break, WarpReduce, LaneBroadcast, Barrier, AtomicAdd and
 Inline; it skips Note; it
 refuses Raw (opaque by definition). **It does not know what McMurchie-Davidson is**:
@@ -20,7 +20,7 @@ THE MACHINE.
 
 - A launch is `Launch(grid, block, lanes)`: `grid` blocks along x, `block =
   (dim_x, dim_y)` threads, and the emulated warp width `lanes` (a power of
-  two). The IR deliberately does not know the width (ir.py); the device target
+  two). The IR deliberately does not know the width (ir/__init__.py); the device target
   does, so it is a launch parameter here.
 - Threads are linearised x-fastest within a block (`x + y * dim_x`), as on
   both vendors' hardware, and cut into warps of `lanes` consecutive threads.

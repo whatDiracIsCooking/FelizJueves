@@ -2,7 +2,7 @@
 
 `seams.py` is the seam: `KHooks`, `KContext` and the frozen defaults that
 reproduce the literal kernel byte for byte. A K lever of milestone 13 lands as
-`k_levers/<name>.py` exposing
+`eri/k_exchange/levers/<name>.py` exposing
 
     apply(hooks: KHooks, spec: Spec) -> KHooks
 

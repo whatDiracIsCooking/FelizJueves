@@ -1,4 +1,4 @@
-"""Slice-interior sub-slicing, `f_levers/sub_slice.py` (#361), interpreted.
+"""Slice-interior sub-slicing, `eri/fock/levers/sub_slice.py` (#361), interpreted.
 
 The lever cuts each of #356's slices `(a, b)` into `n_sub(cls)` sub-slices
 -- contiguous runs of its ERIs in target order, each its own HRR sub-DAG
@@ -24,7 +24,7 @@ before the next. What is asserted, the issue's acceptance in order:
    #360's kernel BIT FOR BIT (same products, same order); `F` against the
    literal kernel by #360's DERIVED re-association bound over the leaves
    (a witness kernel atomically adding every product as it is formed);
-   `F` against `ao.fock`'s sweep at the literal kernel's own `TOL`, and
+   `F` against `eri.fock.fock`'s sweep at the literal kernel's own `TOL`, and
    every degeneracy case within the cap.
 5. THE ATOMIC TRAFFIC AS A COUNT: unchanged from #360,
    `slim_fock.ket_atomics(cls, lever=True)` per worked quartet.

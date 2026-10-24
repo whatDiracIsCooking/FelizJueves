@@ -1,4 +1,4 @@
-"""The sliced HRR, `f_levers/sliced_hrr.py` (#356), interpreted.
+"""The sliced HRR, `eri/fock/levers/sliced_hrr.py` (#356), interpreted.
 
 The lever runs the fused F kernel's HRR once per bra pair `(a, b)` on
 #350's staged boundary, each slice's ERIs tapped and predigested before the
@@ -32,7 +32,7 @@ asserted:
    literal kernel's BIT FOR BIT on every class with L <= 4 (milestone 13's
    cap; above it `slow`, not run under the cap), and so are the slices on
    #350 at its own (unsliced) group count -- the slicing's contribution
-   separated from the re-cut; one launch against `ao.fock`'s sweep to
+   separated from the re-cut; one launch against `eri.fock.fock`'s sweep to
    `test_kernel_f.TOL`, and the degeneracy cases within the cap.
 6. THE GOLDENS: `(sp|sp)` with both levers, one unit per backend.
 
@@ -232,7 +232,7 @@ def test_build_is_unchanged_by_the_slicing() -> None:
 # ---------------------------------------------------------------------------
 
 # class -> (n_slices, hrr_phase, the re-cut group count, the slices' HRR
-# statements): `hgp.vrr.peak_live`'s model (f_levers/sliced_hrr.py). Pinned
+# statements): `hgp.vrr.peak_live`'s model (eri/fock/levers/sliced_hrr.py). Pinned
 # so a change to the DAGs' orders, the cut or #350's rule is a visible diff.
 SLICE_TABLE = {
     (0, 0, 0, 0): (1, 1, 1, 1),

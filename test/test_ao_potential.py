@@ -1,4 +1,4 @@
-"""`ao.potential`: `V` as the point-charge limit of the J engine's `[p|q]`.
+"""`one_electron.potential`: `V` as the point-charge limit of the J engine's `[p|q]`.
 
 The `[t]^(0)` evaluator (`reference.pq.one_centre`) and the Boys function
 (`reference.boys`) arrive by injection or are used only by the test's own
@@ -316,7 +316,7 @@ def test_236_screened_potential_drops_only_blocks_below_tau_above_l4() -> None:
 #     |T + V - hcore|  <= 1e-12 (one_e_scale(E_T) + one_e_scale(E_V))
 #     E_V[a][b] = SUM_pp SUM_C |Z_C| SUM_t |dressed block_pp[ab][t]| |[t]^(0)|
 #
-# E_V is every product `ao.potential` adds, before any of it cancels; E_T is
+# E_V is every product `one_electron.potential` adds, before any of it cancels; E_T is
 # test_ao_kinetic.py's. The hcore bound is the triangle inequality on the two
 # (`hcore` is PySCF's get_hcore, which `generate.one_e_arrays` checks IS
 # int1e_kin + int1e_nuc before writing it). WHY hcore AT ALL: a normalisation

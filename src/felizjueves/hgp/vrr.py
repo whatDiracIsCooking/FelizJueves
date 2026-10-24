@@ -282,7 +282,7 @@ def build(cls: AmClass, prune: bool = True) -> VrrDag:
 # statements unchanged.
 #
 # THE LIVE MODEL (`peak_live`). The register demand the group-count rule
-# reads (f_levers/batched_vrr.py) is a STATEMENT-ORDER model: executing
+# reads (eri/fock/levers/batched_vrr.py) is a STATEMENT-ORDER model: executing
 # `order` one node per step, a value is live from the step that defines it
 # to the last step that reads it, and a value in `live_out` (read after the
 # phase: the targets, by the accumulation) to the end. The peak is the most

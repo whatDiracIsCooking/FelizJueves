@@ -43,7 +43,7 @@ for CUDA, `.hip` for HIP):
   the quartet `(la lb|la lb)`'s recurrence at `L = 2 (la + lb)`, so LMAX = 4
   is (gg|gg) at L = 16, the `[p|q]` ladder's top. It ADDS units beside the J
   ladders, as `--one-e-l` does, and is NEVER in the no-flag default. Only
-  `la <= lb`: `ao.schwarz.schwarz_classes` stages every shell pair that way.
+  `la <= lb`: `eri.schwarz.schwarz_classes` stages every shell pair that way.
 
 - the cross-basis overlap ladder, `--sx-l [LMAX]`: for every ORDERED pair
   class `(la, lb)`, `la, lb <= LMAX` (2 when the flag is given bare,
@@ -230,9 +230,10 @@ reaches rather than the balanced ladder `pq_spec(L)` produces.
             --n-batches 1 3 --admitted-only
 
 `--class LA LB LC LD` names a class `(la, lb | lc, ld)` by its REAL shell
-angular momenta -- the `Spec` `ao.drive.class_spec` builds, so `lp = la + lb`,
+angular momenta -- the `Spec` `eri.j_coulomb.drive.class_spec` builds, so `lp = la +
+lb`,
 `lq = lc + ld`, and `(p,p|s,s)` is not `(s,s|p,p)`. `--shell-ls` derives the
-set from a basis's shell angular momenta, in basis order, as `ao.j`'s unique
+set from a basis's shell angular momenta, in basis order, as `eri.j_coulomb.j`'s unique
 sweep reaches it (`classes_reached`). For every class and every `--n-batches`
 (default 1) the cell's kernels are written to `<out>/<cell_dir>/` with an
 `order` file naming them in the CHAIN's launch order (#156):
@@ -656,12 +657,12 @@ def generate_levers(backend: str, arch: Arch, out: Path,
 
 def class_spec(am: Am, n_batches: int = 1) -> Spec:
     """The real class `(la, lb | lc, ld)` as a generation key -- the key
-    `ao.drive.class_spec` builds (test_ao_j_ondevice.py pins them equal)."""
+    `eri.j_coulomb.drive.class_spec` builds (test_ao_j_ondevice.py pins them equal)."""
     return Spec(Operator.COULOMB, 0, tuple(am), Target.J, (), n_batches)
 
 
 def classes_reached(shell_ls: Sequence[int]) -> list[Am]:
-    """Every `(la, lb | lc, ld)` `ao.j`'s unique sweep launches for a basis
+    """Every `(la, lb | lc, ld)` `eri.j_coulomb.j`'s unique sweep launches for a basis
     whose shells, in basis order, have angular momenta `shell_ls`: bra and
     ket shell pairs are `(a, b)` with `b <= a`, taken as `(l_a, l_b)`."""
     ams = sorted({(shell_ls[a], shell_ls[b]) for a in range(len(shell_ls))

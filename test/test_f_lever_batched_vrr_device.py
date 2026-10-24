@@ -19,7 +19,7 @@ L = la + lb + lc + ld <= 4 (milestone 13's cap; 13 of the 21):
 M-30 s a class): per class, H2O/cc-pVDZ's launches of that class at `tau = 0`,
    against those launches INTERPRETED WITH THE LITERAL KERNEL -- which the
    lever's kernel equals bit for bit on the host
-   (test_f_lever_batched_vrr.py) -- and `ao.fock`'s restricted sweep, with
+   (test_f_lever_batched_vrr.py) -- and `eri.fock.fock`'s restricted sweep, with
    test_fock_ondevice's `_check_class` and its stated tolerances unchanged
    (`TOL`, `2 TOL`, the run-to-run `2 TOL`); (b) per molecule, H2O/STO-3G at
    `tau = 0` and `tau = 0.1, n = 4` and, `slow`, H2O/6-31G at `tau = 0` (s

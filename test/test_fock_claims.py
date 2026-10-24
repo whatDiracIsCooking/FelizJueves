@@ -4,10 +4,10 @@
 
 test_fock_pairs.py shows each printed rule dropping a quartet that holds an
 ERI `>= tau`. The records ask for more -- that the drop is checked against
-the UNSCREENED two-electron `F` of `ao/fock.py` (#275) -- so here each rule
+the UNSCREENED two-electron `F` of `eri/fock/fock.py` (#275) -- so here each rule
 is applied to `launch_f`'s pairs (#285) and the quartets it would remove are
-zeroed in `ao.fock`'s every-ordered-quartet sweep (test_fock_build.py's
-`sweep`, fed by `ao.eri`, MMD through `reference.pq`; no HGP in it):
+zeroed in `eri.fock.fock`'s every-ordered-quartet sweep (test_fock_build.py's
+`sweep`, fed by `eri.eri`, MMD through `reference.pq`; no HGP in it):
 
   * the PRINTED rule removes quartets with `G_ab G_cd >= tau`, and the `F`
     it leaves misses the unscreened `F` by more than `tau`;

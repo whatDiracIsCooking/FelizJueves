@@ -2,7 +2,7 @@
 on the cards.
 
 The lever is a composition on #356 (`batched-vrr+sliced-hrr+
-sliced-site-digest`, f_levers/sliced_site_digest.py), so every unit here
+sliced-site-digest`, eri/fock/levers/sliced_site_digest.py), so every unit here
 carries all three levers. TWO PARTS, every F class with L = la + lb + lc +
 ld <= 4 (milestone 13's cap; 13 of the 21):
 
@@ -19,7 +19,7 @@ ld <= 4 (milestone 13's cap; 13 of the 21):
    class): per class, H2O/cc-pVDZ's launches of that class at `tau = 0`,
    against the LITERAL kernel interpreted -- which the composition equals
    bit for bit on the host (test_f_lever_sliced_site_digest.py) -- and
-   `ao.fock`'s sweep, by test_fock_ondevice's `_check_class` and its stated
+   `eri.fock.fock`'s sweep, by test_fock_ondevice's `_check_class` and its stated
    tolerances unchanged; (b) per molecule, H2O/STO-3G at `tau = 0` and
    `tau = 0.1, n = 4` and, `slow`, H2O/6-31G at `tau = 0`, every launch of the
    plan, against walk_f's interpreted build and, at `tau = 0`, the sweep and

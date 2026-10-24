@@ -1,4 +1,4 @@
-"""The per-element split K lever, `k_levers/split.py` (#341), interpreted.
+"""The per-element split K lever, `eri/k_exchange/levers/split.py` (#341), interpreted.
 
 The lever fans each batch's K kernel out into `n_a * n_b` element kernels,
 one per `K[a_i, b_j]`, each carrying that one accumulator. What is asserted:
@@ -13,7 +13,7 @@ one per `K[a_i, b_j]`, each carrying that one accumulator. What is asserted:
    the lever's provenance and the trade's `Note`; and each re-runs the whole
    `[p|q]` program (the trade, stated: the literal kernel's recurrence,
    statement for statement, in every element kernel).
-3. EXACTNESS, against `ao.k.k_quartet` (the issue's acceptance): every
+3. EXACTNESS, against `eri.k_exchange.k.k_quartet` (the issue's acceptance): every
    element kernel performs the literal kernel's operations for its element in
    the literal order, so per bra record the element kernels' union is
    `k_quartet` BIT FOR BIT, and `==` the literal block kernel -- every class
@@ -236,7 +236,7 @@ def test_prune_leaves_the_literal_kernel_alone(am: Am) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Exactness: against ao.k.k_quartet per bra record, and the literal block
+# 3. Exactness: against eri.k_exchange.k.k_quartet per bra record, and the literal block
 # ---------------------------------------------------------------------------
 
 
@@ -258,7 +258,7 @@ def run(kernels: tuple[Kernel, ...], am: Am, *, zero: bool,
 @pytest.mark.parametrize("am", CLASSES)
 def test_each_bra_record_is_the_host_staged_quartet_bitwise(am: Am) -> None:
     """The issue's acceptance: the split kernel set reproduces `kernel_k`'s
-    block against `ao.k.k_quartet`, per bra record, bit for bit."""
+    block against `eri.k_exchange.k.k_quartet`, per bra record, bit for bit."""
     bra, ket = tk._pairs(am)
     dcd = tk._dcd(am[1], am[3])
     K = run(build_k_kernels(lever_spec(am)), am, zero=False)

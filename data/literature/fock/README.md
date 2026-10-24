@@ -2,7 +2,7 @@
 
 `[Fock]` is entry 23 of `docs/references.md` (Palethorpe, Stocks and Barca,
 JCTC **20**, 10424–10442, 2024; doi:10.1021/acs.jctc.4c00994). It was already a
-reference here — `ao/k.py` and `kernel_k.py` cite its §4.3 as prior art for
+reference here — `eri/k_exchange/k.py` and `kernel_k.py` cite its §4.3 as prior art for
 `K` — and this directory, added by #271 for milestone 12, is the first time a
 section of it is **reconstructed** rather than cited: §3, the HGP recurrence
 (§3.1, eqs. 25–28) and the fused Fock kernel built on it (§3.2, eq. 29, Fig. 1).

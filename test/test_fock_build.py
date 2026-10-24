@@ -1,13 +1,13 @@
 """The whole-molecule `F`, interpreted (#286): `launch_f`'s plan (#285) WALKED
 by `walk_f` with `kernel_f`'s kernel (#282, #283) interpreted, closed with
-`F <- F + F^T`, against `ao.fock`'s every-ordered-quartet sweep and against
+`F <- F + F^T`, against `eri.fock.fock`'s every-ordered-quartet sweep and against
 libcint's `vj - vk/2` (the `_j` / `_k` fixture pair, `manifest.fock_pair`,
 which asserts the two share density, shells and provenance before use;
 milestone 12, pin 10).
 
-THE WITNESS IS THE OTHER ENGINE. The sweep (`ao.fock.coulomb_exchange_
+THE WITNESS IS THE OTHER ENGINE. The sweep (`eri.fock.fock.coulomb_exchange_
 reference`, pin 6: every ordered quartet at weight 1, no symmetry) is fed
-ERIs from `ao.eri` -- MMD through `reference.pq`, one block per ORDERED
+ERIs from `eri.eri` -- MMD through `reference.pq`, one block per ORDERED
 quartet, each evaluated, none obtained by permuting another -- so the
 walked `F` (HGP, interpreted) shares no recurrence with it.
 
@@ -16,9 +16,9 @@ THE STATED TOLERANCES, not tuned:
   * at `tau = 0`, nothing is skipped or pruned, and `F` must equal the full
     sweep to `TOL = 1e-13` of `scale_G` element by element -- the bound
     test_kernel_f.py states for one ERI in two operation orders (it holds
-    the fused kernel to `ao.eri` at `1e-13` of scale per ERI), carried
+    the fused kernel to `eri.eri` at `1e-13` of scale per ERI), carried
     through the digestion by the triangle inequality: `scale_G` is the same
-    sweep on `|D|` with `ao.eri`'s absolute-value twin. Against libcint,
+    sweep on `|D|` with `eri.eri`'s absolute-value twin. Against libcint,
     `LIBCINT_TOL = 1e-12` of the same scale (test_ao_fock.py's).
   * at `tau > 0` the screens fire and the comparison is to a bound COMPUTED
     from the answer, never a loosened constant: element by element,
@@ -34,7 +34,7 @@ THE STATED TOLERANCES, not tuned:
     pruning moves no ERI by `tau` or more (launch_f, "PRUNING").
 
 THE SCREENS AGAINST THE ANSWER. Every quartet the plan skips is held to the
-EXACT contracted ERIs (`ao.eri`, full contraction, no pruning), by what its
+EXACT contracted ERIs (`eri.eri`, full contraction, no pruning), by what its
 screen claims: a quartet of a pre-launch screened batch pair or touching a
 deleted pair has every `|(ab|cd)| < tau` (eq. 29's claim reads no
 density); a quartet the kernel's six-block screen skips has every term it
@@ -50,7 +50,7 @@ pair both launched and screened, a pair missing or doubled, or a launch
 naming the wrong class is refused.
 
 Fast tier: H2/STO-3G, H2O/STO-3G and H2O/6-31G. H2O/cc-pVDZ is `slow`
-(measured on this box, #286: the 20,736 ordered `ao.eri` blocks 142 s,
+(measured on this box, #286: the 20,736 ordered `eri.eri` blocks 142 s,
 once per process; the `tau = 0` walk 29 s, the sweeps under 1 s; each
 screened walk 9-21 s). For scale: H2O/6-31G's blocks take 16 s and its
 walk 5 s.
@@ -108,7 +108,7 @@ def molecule(name):
 
 @cache
 def eris(name):
-    """`ao.eri`'s block and scale for EVERY ordered shell quartet, each one
+    """`eri.eri`'s block and scale for EVERY ordered shell quartet, each one
     evaluated (no permutation of another)."""
     basis, _, _ = molecule(name)
     sh = basis.shells
@@ -133,10 +133,10 @@ def members(quartets) -> frozenset:
 
 
 def sweep(name, keep=None, *, block="eri"):
-    """`ao.fock`'s sweep over every ordered quartet, its `eri` zero outside
+    """`eri.fock.fock`'s sweep over every ordered quartet, its `eri` zero outside
     `keep` (ordered members; all when `None`). `block`: "eri" gives `G = J -
     K/2` on `D`; "scale", "abs" and "one" give `J + K/2` on `|D|` with
-    `ao.eri`'s scale twin, `|(ab|cd)|`, or every ERI 1."""
+    `eri.eri`'s scale twin, `|(ab|cd)|`, or every ERI 1."""
     basis, D, _ = molecule(name)
     E = eris(name)
     idx = {id(s): i for i, s in enumerate(basis.shells)}

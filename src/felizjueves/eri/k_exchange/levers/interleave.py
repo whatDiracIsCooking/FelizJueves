@@ -33,7 +33,7 @@ now accumulated across the `p` loop instead of in one expression; and the
 digest `K[a,b] += D V` is the literal one, in the literal `(b,d)`-row order.
 No operation is reassociated or distributed, so the kernel's `K` is the
 literal kernel's BIT FOR BIT (test/test_k_lever_interleave.py, against
-`ao.k.k_quartet` and the literal kernel). The interleaved order is per
+`eri.k_exchange.k.k_quartet` and the literal kernel). The interleaved order is per
 `(b,d)` row: the `D V` digest is NOT moved inside the `p` loop, which would
 distribute `D` over the `p` sum and change the rounding.
 

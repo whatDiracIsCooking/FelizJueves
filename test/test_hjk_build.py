@@ -1,7 +1,7 @@
 """Whole `J` and `K` on the split HGP build, interpreted (#406): `launch_hjk`'s
 ordered pair stream (#403) WALKED by `walk_hjk` with `kernel_hj` (#404) and
-`kernel_hk` (#405) interpreted, in both class modes, against `ao/j.py`'s
-and `ao/k.py`'s every-ordered-quartet sweeps and against libcint's `vj` /
+`kernel_hk` (#405) interpreted, in both class modes, against `eri/j_coulomb/j.py`'s
+and `eri/k_exchange/k.py`'s every-ordered-quartet sweeps and against libcint's `vj` /
 `vk` (the `_j` / `_k` fixture pair: `manifest.fock_pair` asserts that the
 two share density, shells and provenance before either is used, and
 `test_the_fixture_pairs_share_their_inputs` runs that check first).
@@ -10,12 +10,12 @@ Every class here has `L <= 4`: H2/STO-3G and H2O/STO-3G hold s and p shells,
 and so does H2O/6-31G, so the highest class is `(pp|pp)`. cc-pVDZ (d shells)
 is out of the cap and is not run.
 
-THE WITNESS IS THE OTHER ENGINE. `ao/j.py`'s `coulomb_matrix_reference` and
-`ao/k.py`'s `exchange_matrix_reference` are MMD (`reference.pq`), every
+THE WITNESS IS THE OTHER ENGINE. `eri/j_coulomb/j.py`'s `coulomb_matrix_reference` and
+`eri/k_exchange/k.py`'s `exchange_matrix_reference` are MMD (`reference.pq`), every
 ordered quartet at weight 1, so the walked matrix (HGP, interpreted) shares
 no recurrence with them. The restricted sweeps the screened cases need are
-`ao.fock.coulomb_exchange_reference` (the same every-ordered-quartet sweep,
-J and K from one pass) fed `ao.eri`'s MMD blocks.
+`eri.fock.fock.coulomb_exchange_reference` (the same every-ordered-quartet sweep,
+J and K from one pass) fed `eri.eri`'s MMD blocks.
 
 THE STATED TOLERANCES, none new and none widened:
 
@@ -50,7 +50,7 @@ THE STATED TOLERANCES, none new and none widened:
 THE SCREENS AGAINST THE ANSWER. Every quartet the kernel's one-block screen
 skips (the walk's `kernel_screened`, predicted in the kernel's operation
 order) has every term it would deposit -- `|D_cd (ab|cd)|` for J, `|D_bd
-(ab|cd)|` for K, every element, exact ERIs from `ao.eri` -- below `tau`;
+(ab|cd)|` for K, every element, exact ERIs from `eri.eri` -- below `tau`;
 and it is exactly the set `launch_hjk` marked skipped. Each screened case
 asserts that its screen fired.
 
@@ -63,7 +63,7 @@ TIERS. Fast: H2/STO-3G in both modes and both builds at `tau = 0` and
 `tau = 0.2`, and H2O/STO-3G's canonical `J` and `K` at `tau = 1e-2` (the
 skip checks on a molecule with p shells). `slow`, by cost (measured on this
 box, #406): every H2O/STO-3G `tau = 0` case (a walk ~7 s, the ordered-mode
-HGP twins ~16 s) and every H2O/6-31G case (its 6,561 ordered `ao.eri`
+HGP twins ~16 s) and every H2O/6-31G case (its 6,561 ordered `eri.eri`
 blocks ~16 s, its ordered-mode HGP twins ~3 min, a walk ~1 min).
 Interpreter only: no compiler, no card, no emission.
 """
@@ -145,7 +145,7 @@ def _ls(basis, q):
 
 @cache
 def mmd(name):
-    """`ao.eri`'s block and twin for EVERY ordered shell quartet, each one
+    """`eri.eri`'s block and twin for EVERY ordered shell quartet, each one
     evaluated (none obtained by permuting another), flat `[a][b][c][d]`."""
     basis, _, _, _ = molecule(name)
     sh = basis.shells
@@ -159,7 +159,7 @@ def mmd(name):
 
 @cache
 def _hgp_twin(name, x):
-    """`ao.hgp_drive`'s twin on the shells `x`, in that order, flat."""
+    """`eri.hgp_drive`'s twin on the shells `x`, in that order, flat."""
     basis, _, _, _ = molecule(name)
     sh = basis.shells
     _, scale = HD.eri_block_and_scale((sh[x[0]], sh[x[1]]),
@@ -185,7 +185,7 @@ def hgp_twin(name, mode):
 
 
 def sweep(name, screen, *, block, keep=None, mode=None):
-    """`ao.fock`'s every-ordered-quartet sweep, `J` (screen "j") or `K`
+    """`eri.fock.fock`'s every-ordered-quartet sweep, `J` (screen "j") or `K`
     ("k"), its `eri` zero outside `keep` (ordered quartets; all when
     `None`). `block`: "eri" is the MMD block on `D`; on `|D|`, "abs" is
     `|(ab|cd)|`, "scale" the MMD twin plus `mode`'s HGP twin, and "modes"
@@ -218,7 +218,8 @@ def sweep(name, screen, *, block, keep=None, mode=None):
 
 @cache
 def reference(name, screen):
-    """`ao/j.py`'s / `ao/k.py`'s every-ordered-quartet sweep (MMD)."""
+    """`eri/j_coulomb/j.py`'s / `eri/k_exchange/k.py`'s every-ordered-quartet sweep
+    (MMD)."""
     basis, D, _, _ = molecule(name)
     f = coulomb_matrix_reference if screen == "j" else exchange_matrix_reference
     return np.array(f(basis, D.tolist(), pq=pq))
@@ -267,7 +268,8 @@ UNSCREENED = [
 def test_the_walked_stream_is_the_host_sweep_and_libcint(
         name, mode, screen) -> None:
     """`tau = 0`: every ordered quartet visited once and none skipped; the
-    whole `J` / `K` against `ao/j.py` / `ao/k.py` to `TOL S` and libcint's
+    whole `J` / `K` against `eri/j_coulomb/j.py` / `eri/k_exchange/k.py` to `TOL S` and
+    libcint's
     `vj` / `vk` to `LIBCINT_TOL S`, element by element."""
     basis, _, vj, vk = molecule(name)
     w = walk(name, 0.0, mode, screen)

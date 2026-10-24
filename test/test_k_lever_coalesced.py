@@ -1,4 +1,5 @@
-"""The coalesced K write-back lever, `k_levers/coalesced.py` (#345), interpreted.
+"""The coalesced K write-back lever, `eri/k_exchange/levers/coalesced.py` (#345),
+interpreted.
 
 The lever replaces lane 0's serial `K[a, b]` stores with one lane-strided
 store loop, the reduced block broadcast through each lane's own `Ksh`
@@ -14,7 +15,7 @@ accumulator column. What is asserted:
    declaration is the literal kernel's (the footprint declared: zero extra
    bytes); nothing vendor-specific (no `Raw`), so no warp sync to spell.
 3. PARITY WITH THE LANE-0 PATH (the issue's acceptance, L <= 2): per bra
-   record against `ao.k.k_quartet` bit for bit at one lane, and against the
+   record against `eri.k_exchange.k.k_quartet` bit for bit at one lane, and against the
    literal kernel bit for bit at 1, 4 and 32 lanes -- the same butterfly on
    the same values, so the lever moves no bit. Above L = 2 within the cap of
    L = 4, a sample, `slow`.

@@ -17,7 +17,7 @@ stream) and deposits
     K[a_i][b_j] += D[c_k][d_l] (a_i c_k | b_j d_l)
 
 by atomic add -- that and nothing else: no weights, no degeneracy factor, no
-mirror. It is `ao/k.py`'s ordered sweep (`exchange_matrix_reference`: every
+mirror. It is `eri/k_exchange/k.py`'s ordered sweep (`exchange_matrix_reference`: every
 ordered quadruple `(a, b, c, d)` at weight 1, `K[a][b]` its own sum, the
 quartet `k_quartet(epair(a, c), epair(b, d), D_cd)`), one class at a time,
 on another engine.
@@ -37,7 +37,7 @@ docstring is the specification; the pieces are imported from it, not
 copied): one block per bra shell pair, `kernel_f`'s staged `|ab)` record
 copied by every thread (no barrier, #333), one thread per contracted
 quartet, the `K_AB x K_CD` primitive nest BRA OUTER and ket inner with the
-scalars in `ao/hgp_drive.py`'s operation order -- so the ERI tap is `==`
+scalars in `eri/hgp_drive.py`'s operation order -- so the ERI tap is `==`
 `hgp_drive.eri_block` bit for bit -- the contraction completed in registers
 before the HRR (eq 28 needs contracted values), and:
 
@@ -69,8 +69,8 @@ the shells of the density positions), a SKIP (`If(bound < tau)` holds a
 `(1, 3)` by default; any other pair is a MUTATION a test builds to watch the
 deposit fail (`kernel_hj`'s `density=`).
 
-Nothing here imports `plan/`, `ao/` (the witnesses: `ao/hgp_drive.py` for
-the ERIs, `ao/k.py` for `K`), `reference/`, the interpreter, a backend or a
+Nothing here imports `plan/`, `ao/` (the witnesses: `eri/hgp_drive.py` for
+the ERIs, `eri/k_exchange/k.py` for `K`), `reference/`, the interpreter, a backend or a
 device (test/test_layering.py, rule `hk_builder`); it reaches `kernel_hj`
 for the shared pieces, and through it nothing else.
 """

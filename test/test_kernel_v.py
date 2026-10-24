@@ -1,6 +1,6 @@
 """`kernel_v`: the nuclear-attraction kernel, `Target.V`, interpreted (#239).
 
-THE WITNESS is `ao.potential.potential_block` (#235) with
+THE WITNESS is `one_electron.potential.potential_block` (#235) with
 `reference.pq.one_centre` injected, placed into the matrix by `kernel_jab`'s
 scatter rule (the diagonal shell pair's lower triangle, mirrored). The
 kernel's records are `ao.density.epair`'s `(P, zeta, s)` per primitive pair, plus

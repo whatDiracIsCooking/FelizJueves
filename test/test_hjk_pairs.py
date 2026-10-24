@@ -5,7 +5,7 @@ Every fixture here is H2 or H2O/STO-3G, whose highest quartet is `(pp|pp)`,
 L = 4 = FAST_L_MAX (tiers.py), so nothing is `slow`. The bases and
 densities come from tracked fixtures' `converted` records; `reference/` is
 imported HERE, by the test, for the evaluator the bound is injected with and
-for the ERIs (`ao/eri.py`) the screens are checked against -- `launch_hjk`
+for the ERIs (`eri/eri.py`) the screens are checked against -- `launch_hjk`
 never reaches it (test_layering.py, rule "hjk_launch").
 
 THE CLAIMS (the issue's acceptance, in order).
@@ -19,7 +19,7 @@ THE CLAIMS (the issue's acceptance, in order).
   tau = 0    nothing is skipped, by either screen.
   ladder     at every rung, every skipped quartet's exact contribution
              through its screen's one density block -- `|D_kl (ij|kl)|` for
-             J, `|D_jl (ij|kl)|` for K, from ao/eri.py -- is `<=` its key and
+             J, `|D_jl (ij|kl)|` for K, from eri/eri.py -- is `<=` its key and
              the key `< tau`: proved per skip, no tolerance.
   misapplied J's key applied to a K build skips a quartet whose K
              contribution is `>= tau`.
@@ -76,7 +76,7 @@ def _plan(name: str, tau: float, mode: str, screen: str) -> HPlan:
 
 @cache
 def _block(name: str, q: tuple[int, ...]) -> np.ndarray:
-    """`(ab|cd)` of the ordered quartet, `[i][j][k][l]`, by ao/eri.py."""
+    """`(ab|cd)` of the ordered quartet, `[i][j][k][l]`, by eri/eri.py."""
     sh = _fixture(name)[0].shells
     s = [sh[x] for x in q]
     blk = np.array(eri_block((s[0], s[1]), (s[2], s[3]), pq=pq))

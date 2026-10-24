@@ -12,19 +12,19 @@ writes one `K[a, b]` block per bra record, `b` from the ket:
 (bra pair class, b) block, and reads the buffer back. The scatter of the
 per-record blocks into `K_mn` is host-side (`plan_driver.k_scatter`), as eq.
 20 is for J. The screen is REAL on the screened cells: `Ip`, `Iq` are the
-plan's `I_ac`, `I_bd` (`ao.k.record_bounds`), `maxD` the plan's `max|D|`,
+plan's `I_ac`, `I_bd` (`eri.k_exchange.k.record_bounds`), `maxD` the plan's `max|D|`,
 `tau` the plan's, and the kets arrive in the plan's order, sorted by `I_bd`
 alone.
 
 THREE ANCESTRIES IN THE ASSERTION, and libcint where a fixture exists:
 
   host blocks  every (bra record, ket record) of every launch through
-               `ao.k._k_quartet` (the host's staged arithmetic), the screen
+               `eri.k_exchange.k._k_quartet` (the host's staged arithmetic), the screen
                applied with the kernel's own association: the device BUFFER,
                record by record, `|dev - host| <= ORACLE_TOL max|host|`.
   launch walk  `launch_k.walk_k` over the SAME plan (#204): `K_mn`,
                `|K - K_walk| <= ORACLE_TOL max|K_walk|`.
-  host sweep   `ao.k.exchange_matrix`, the UNIQUE sweep (#197) -- a
+  host sweep   `eri.k_exchange.k.exchange_matrix`, the UNIQUE sweep (#197) -- a
                different quadruple set and weights from the plan's ordered
                one -- at tau = 0: `|K - K0| <= ORACLE_TOL max|K0| + tau
                scale` (scale the walk's, #200's screening claim). On the
@@ -236,7 +236,7 @@ def _gamma(n: int) -> float:
 
 def _host_blocks(drv: KDriver, basis: Basis, D, pq):
     """`(X, A)`, each a K buffer: per launch segment (once, not per batch),
-    per bra record, `ao.k._k_quartet` over the segment's kets in launch
+    per bra record, `eri.k_exchange.k._k_quartet` over the segment's kets in launch
     order -- `X` screened with the KERNEL's association `Ib * (Iq * maxD)
     < tau`, a `break`; `A` the absolute-value twin over EVERY ket."""
     rows = checked_density(basis, D)

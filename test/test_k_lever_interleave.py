@@ -1,4 +1,5 @@
-"""Interleaved `I_p`, the warp arm, `k_levers/interleave.py` (#343), interpreted.
+"""Interleaved `I_p`, the warp arm, `eri/k_exchange/levers/interleave.py` (#343),
+interpreted.
 
 The lever replaces the K kernel's per-`(b,d)`-row contraction: instead of
 staging the whole `I[p]` column in `Ksh` and then folding each `(a,c)` row's
@@ -15,7 +16,7 @@ discards it. What is asserted:
    read by a `V` fold, the `[p|q]` program before `E^bd` untouched, the
    lever's provenance and the trade's `Note` in the kernel.
 3. PARITY, the issue's acceptance (host shim, L <= 2): per bra record the
-   kernel's `K` is `ao.k.k_quartet` BIT FOR BIT and `==` the literal
+   kernel's `K` is `eri.k_exchange.k.k_quartet` BIT FOR BIT and `==` the literal
    kernel's, every class with L <= 2 (fast) and a sample through L = 4 with
    no shell above d (`slow`, milestone 13's cap); with a 3-batch split the
    atomized batch kernels onto a zeroed `K` are the literal batched kernels'
@@ -205,7 +206,7 @@ def _vars(e) -> list[Var]:
 
 
 # ---------------------------------------------------------------------------
-# 3. Parity: against ao.k.k_quartet per bra record, and the literal kernel
+# 3. Parity: against eri.k_exchange.k.k_quartet per bra record, and the literal kernel
 # ---------------------------------------------------------------------------
 
 

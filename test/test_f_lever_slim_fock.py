@@ -1,4 +1,4 @@
-"""The per-bra-element Fock-buffer split, `f_levers/slim_fock.py` (#360),
+"""The per-bra-element Fock-buffer split, `eri/fock/levers/slim_fock.py` (#360),
 interpreted.
 
 The lever gives each of #356's slices `(a, b)` a reduced buffer set -- `a`'s
@@ -29,7 +29,7 @@ literal kernel carries it. What is asserted, the issue's acceptance in order:
    (and so #356's, which equals it bitwise) by the DERIVED re-association
    bound `|F_lever - F_literal| <= 2 gamma_{n-1} SUM |p_i|` per element
    over its `n` products, recorded by a witness kernel that atomically adds
-   every product as it is formed; `F` against `ao.fock`'s sweep at the
+   every product as it is formed; `F` against `eri.fock.fock`'s sweep at the
    literal kernel's own `TOL`, and every degeneracy case within the cap.
 5. THE ATOMIC TRAFFIC AS A COUNT: the interpreter's atomics on `F`, per
    worked quartet, are `ket_atomics(cls, lever=)` in both kernels.

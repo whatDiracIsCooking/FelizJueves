@@ -17,19 +17,19 @@ the cap lifted):
     (and `gather` must agree with the transpose). A permutation outside the
     group fails it (the mutation below).
 
-(b) NUMERICALLY, on `ao/eri.py`'s block: the representative's block on the
+(b) NUMERICALLY, on `eri/eri.py`'s block: the representative's block on the
     permuted shells, transposed, against the ordered class's block, within
 
         |rep^T - ordered| <= 1e-12 * (scale_rep^T + scale_ordered),
 
-    each `scale` `ao.eri`'s absolute-value twin -- test/test_hgp_eri.py's
+    each `scale` `eri.eri`'s absolute-value twin -- test/test_hgp_eri.py's
     stated bound, the same Higham argument (two fp64 evaluations of the
     same sum in different orders each err by at most `gamma_n` of their
     twin). It is NOT bitwise, by measurement, and the user approved the
     tolerance in place of #402's "bitwise": on a (pd|sp) quartet on four
-    centres, `ao.eri` agrees bitwise only for the identity and the ket swap
+    centres, `eri.eri` agrees bitwise only for the identity and the ket swap
     (the bra swap and the four bra-ket swaps differ by up to 1.1e-16), and
-    `ao.hgp_drive` only for the identity (the other seven by 6e-16 to
+    `eri.hgp_drive` only for the identity (the other seven by 6e-16 to
     1e-15): each orientation sums in a different order. Measured worst
     here when written (2026-10-21): 2.6e-16 of the summed scale, with 18 of
     the 70 classes bitwise.
@@ -252,7 +252,7 @@ def test_a_permutation_outside_the_group_fails_the_label_check() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The permutation: (b) numeric, on ao/eri.py's block
+# The permutation: (b) numeric, on eri/eri.py's block
 # ---------------------------------------------------------------------------
 
 CENTRES = ((0.10, 0.20, -0.30), (0.90, -0.40, 0.25),

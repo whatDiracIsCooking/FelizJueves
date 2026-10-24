@@ -6,7 +6,7 @@
               interpreter's ket-loop iterations per class
 
 The host side of residency, at interpreter level: the plan's shape replacing
-`ao.drive.KernelJP`'s one launch per (bra shell pair, ket class). The
+`eri.j_coulomb.drive.KernelJP`'s one launch per (bra shell pair, ket class). The
 adapter beside it is UNCHANGED -- two paths, not one replaced.
 
 THE BUFFERS, each built ONCE and counted as it is built (`Staged.builds`),
@@ -24,7 +24,7 @@ so the count a test asserts is measured, not assumed:
 
 THE SCREEN IS REAL. `Ip` and `Iq` are the records' `G` -- the injected
 `I_pair` -- and `Dmax` is `max_q |D_q|` of the weighted, dressed ket vector
-(`ao.j`'s pre-contraction, called rather than restated), or with the plan's
+(`eri.j_coulomb.j`'s pre-contraction, called rather than restated), or with the plan's
 `density_sort=False` the one global value it ranked by. `tau` is the plan's.
 NOT the `jp=` seam's `Ip = Iq = Dmax = 1, tau = 0`: carried here by accident,
 that would leave the screen and the break untested while everything stayed
@@ -47,8 +47,8 @@ the pass the builder applies to a split class. The builder is unchanged.
 EQ. 20 AND THE SCATTER stay host-side (milestone (c)): each bra block
 `(a, b, start, stop)` of the plan -- the record -> shell pair map -- takes
 rows `start:stop` of its class's `J_p` through the dressed `E^{ab}_p` and is
-scattered to `J[a][b]` and, mirrored, `J[b][a]`: the arithmetic of `ao.j`'s
-`jp=` sweep, restated here because `ao.j` exposes it only inside that sweep.
+scattered to `J[a][b]` and, mirrored, `J[b][a]`: the arithmetic of `eri.j_coulomb.j`'s
+`jp=` sweep, restated here because `eri.j_coulomb.j` exposes it only inside that sweep.
 
 THE HOOKS (#155), additive: without them every path above is unchanged.
 
@@ -63,7 +63,7 @@ THE HOOKS (#155), additive: without them every path above is unchanged.
       the bra blocks `(a, b, start, stop)` per bra class `lp`, `jps` each bra
       class's finished `J_p` buffer.
 
-`ao.drive.coulomb_matrix_chain` is their one caller: `D_q` and `Dmax` from
+`eri.j_coulomb.drive.coulomb_matrix_chain` is their one caller: `D_q` and `Dmax` from
 the generated pre-contraction, eq. 20 and the scatter from the generated
 bra-transform kernel, and the staging, its checks and the `[p|q]` launches
 this module's, unchanged.
@@ -183,7 +183,7 @@ def _bra_buffers(basis: Basis, recs: tuple[PairRec, ...]) -> _Bras:
 
 
 def _ket_vectors(basis: Basis, rows, recs) -> list:
-    """`ao.j`'s ket records for `recs`, one `_kets` call per shell pair."""
+    """`eri.j_coulomb.j`'s ket records for `recs`, one `_kets` call per shell pair."""
     by_pair: dict[tuple[int, int], list] = {}
     out = []
     for r in recs:
