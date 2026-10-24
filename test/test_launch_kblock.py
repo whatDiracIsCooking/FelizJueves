@@ -30,9 +30,9 @@ from test_k_ondevice import _sp_basis
 from test_launch_k import SWEEP_TOL, TAUS, _stub, schwarz
 from test_launch_k import _case as _launch_case
 
-from felizjueves.ao.k import exchange_matrix, record_bounds
-from felizjueves.launch_k import k_launches, walk_k
-from felizjueves.launch_kblock import KBlock, kb_launches, walk_kb
+from felizjueves.eri.k_exchange.k import exchange_matrix, record_bounds
+from felizjueves.eri.k_exchange.launch_k import k_launches, walk_k
+from felizjueves.eri.k_exchange.launch_kblock import KBlock, kb_launches, walk_kb
 from felizjueves.reference.pq import pq
 
 FAST = ("h2_sto3g_j", "h2o_sto3g_s", "two_h2", "sp", "h2o_sto3g_j")

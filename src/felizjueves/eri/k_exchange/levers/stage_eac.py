@@ -77,6 +77,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from felizjueves.eri.k_exchange.levers.seams import KContext, KHooks, bindings, ncart
 from felizjueves.ir import (
     Assign,
     Decl,
@@ -93,7 +94,6 @@ from felizjueves.ir import (
     _subexprs,
     walk,
 )
-from felizjueves.k_levers.seams import KContext, KHooks, bindings, ncart
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.spec import Spec
 

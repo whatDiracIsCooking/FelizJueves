@@ -56,7 +56,6 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_reference
-from felizjueves.ao.k import exchange_matrix, exchange_matrix_reference
 from felizjueves.ao.shell import Basis
 from felizjueves.eri.eri import eri_block, eri_block_and_scale
 from felizjueves.eri.fock import fock
@@ -65,6 +64,7 @@ from felizjueves.eri.fock.fock import (
     fock_build_reference,
     fock_two_electron_reference,
 )
+from felizjueves.eri.k_exchange.k import exchange_matrix, exchange_matrix_reference
 from felizjueves.reference.pq import pq
 
 SWEEP_TOL = 1e-14

@@ -75,7 +75,9 @@ _ERI_HOST = ("eri.eri", "eri.hgp_drive", "eri.schwarz")
 _FOCK_HOST = ("eri.fock.fock",)
 # Every module that left the `ao` prefix: a rule or a transitive check that
 # says `ao` names these too, so its reach is unchanged.
-_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST, *_FOCK_HOST)
+# #512: `ao.k` (the host K) left `ao/` for `eri/k_exchange/` as well.
+_K_HOST = ("eri.k_exchange.k",)
+_LEFT_AO = (*_ONE_E_HOST, *_DF_HOST, *_ERI_HOST, *_FOCK_HOST, *_K_HOST)
 
 RULES: dict[str, Rule] = {
     "root": _rule("the package marker; nothing to compose", ()),
@@ -234,7 +236,7 @@ RULES: dict[str, Rule] = {
         "through `kernel_k`",
         ("spec", "performance.device", "=ir", "mmd.kernel", "ir.lower",
          "emit", "performance.measured_store", "performance.asym",
-         "kernel_dq", "kernel_jab", "kernel_k"),
+         "kernel_dq", "kernel_jab", "eri.k_exchange.kernel_k"),
         reference="a driver emits text: #20's hazard applies to it as much as "
                   "to a backend",
         **{"ir.interp":
@@ -534,7 +536,7 @@ RULES: dict[str, Rule] = {
         "a split class's kernels are built then `passes.atomize`d (#203), "
         "as the `builder` rule lets `kernel.py` do",
         ("spec", "plan", "=ir", "mmd.recurrence", "mmd.e_fragment", "mmd.kernel",
-         "ir.passes", "k_levers"),
+         "ir.passes", "eri.k_exchange.levers"),
         ao="`ao.k.k_quartet` is the witness the kernel is interpreted "
            "against, and `ao.pairs.dress` the dressing it must not form: "
            "importing either shares ancestry with its witness (#20); both "
@@ -606,16 +608,16 @@ RULE_OF: dict[str, str] = {
     "eri.eri": "ao",
     "ao.density": "ao",
     "ao.j": "ao",
-    "ao.k": "ao",
+    "eri.k_exchange.k": "ao",
     "ao.drive": "adapter",
     "ao.staged": "adapter",
     "launch": "launch",
     "eri.launch_common": "launch_common",
-    "launch_k": "k_launch",
+    "eri.k_exchange.launch_k": "k_launch",
     "kernel_jab": "jab_builder",
     "kernel_dq": "dq_builder",
-    "kdup": "count",
-    "kernel_k": "k_builder",
+    "eri.k_exchange.kdup": "count",
+    "eri.k_exchange.kernel_k": "k_builder",
     "levers": "levers",
 }
 
@@ -681,7 +683,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
                       "mmd.kernel", "kernel_dq", "kernel_jab", "spec"),
     "performance.measured": ("performance.asym", "performance.device",
                              "emit.cuda", "emit.hip", "ir", "mmd.kernel",
-                             "kernel_k", "ir.lower",
+                             "eri.k_exchange.kernel_k", "ir.lower",
                              "performance.measured_store", "spec"),
     "performance.measured_store": ("performance.device", "mmd.kernel",
                                    "ir.lower", "spec"),
@@ -717,7 +719,7 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     "ao.j": ("ao.density", "mmd.hermite", "ao.pairs", "ao.shell"),
     # #197: K reuses the density contract and EPair (ao.density since #503),
     # and ao.eri for its third index path (`k_from_eris`).
-    "ao.k": ("ao.density", "eri.eri", "mmd.hermite", "ao.shell"),
+    "eri.k_exchange.k": ("ao.density", "eri.eri", "mmd.hermite", "ao.shell"),
     "ao.drive": ("ao.density", "ao.j", "ao.shell", "ao.staged", "ir.interp", "ir",
                  "mmd.kernel", "kernel_dq", "kernel_jab", "launch",
                  "eri.launch_common", "plan.pipeline", "spec"),
@@ -731,18 +733,20 @@ EDGES: dict[str, frozenset[str]] = {k: frozenset(v) for k, v in {
     # #204: the K plan beside J's -- the shared part from `launch` (from
     # `launch_common` since #504), the
     # records and the host's staged contraction from `ao`.
-    "launch_k": ("ao.density", "ao.k", "ao.shell", "ir", "eri.launch_common",
-                 "spec"),
+    "eri.k_exchange.launch_k": ("ao.density", "eri.k_exchange.k", "ao.shell",
+                                "ir", "eri.launch_common", "spec"),
     "kernel_jab": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
     "kernel_dq": ("mmd.e_fragment", "ir", "plan.targets", "spec"),
     # #202: the partition, the plan's cost and the targets; nothing built.
-    "kdup": ("plan.batching", "plan.pipeline", "plan.targets", "spec"),
+    "eri.k_exchange.kdup": ("plan.batching", "plan.pipeline", "plan.targets",
+                            "spec"),
     # #337: the plan reached through `kernel.builder_plan`, which strips the
     # kernel-body levers, so `plan.pipeline` is no longer imported here.
     # #367: the lever seams (`k_levers.seams`, the frozen defaults moved
     # there) and the registry that composes a spec's levers (`k_levers`).
-    "kernel_k": ("ir", "k_levers", "k_levers.seams", "mmd.kernel",
-                 "mmd.recurrence", "spec"),
+    "eri.k_exchange.kernel_k": ("ir", "eri.k_exchange.levers",
+                                "eri.k_exchange.levers.seams", "mmd.kernel",
+                                "mmd.recurrence", "spec"),
     "levers": (),
 }.items()}
 
@@ -916,7 +920,7 @@ def test_the_launch_plan_reaches_neither_reference_nor_a_launcher() -> None:
     # `kernel_k` (#198) arrives injected as `build=`.
     graph = _graph()
     for root, extra in (("launch", ()), ("eri.launch_common", ("launch",)),
-                        ("launch_k", ("kernel_k",))):
+                        ("eri.k_exchange.launch_k", ("eri.k_exchange.kernel_k",))):
         seen: set[str] = set()
         todo = [root]
         while todo:
@@ -1153,11 +1157,12 @@ RULES |= {
         reference=_GROUND_TRUTH),
 }
 RULE_OF |= {
-    "kernel_record_bound": "record_bound_builder",
+    "eri.k_exchange.kernel_record_bound": "record_bound_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_record_bound": ("mmd.e_fragment", "ir", "eri.kernel_pair_bound",
-                            "plan.targets", "spec"),
+    "eri.k_exchange.kernel_record_bound": ("mmd.e_fragment", "ir",
+                                           "eri.kernel_pair_bound",
+                                           "plan.targets", "spec"),
 }.items()}
 
 
@@ -1166,7 +1171,7 @@ def test_the_record_bound_builder_reaches_neither_its_witness_nor_a_machine(
     # TRANSITIVELY, as for `kernel_pair_bound`, whose closed form it reuses.
     graph = _graph()
     seen: set[str] = set()
-    todo = ["kernel_record_bound"]
+    todo = ["eri.k_exchange.kernel_record_bound"]
     while todo:
         for e in graph.get(todo.pop(), set()):
             if e not in seen:
@@ -1409,6 +1414,20 @@ RULE_OF["eri"] = "eri_package"
 EDGES["eri"] = frozenset()
 RULE_OF["eri.hjk"] = "eri_hjk_package"
 EDGES["eri.hjk"] = frozenset()
+
+# #512: the MMD exchange K moved into `eri/k_exchange/` (ao.k, kernel_k,
+# kernel_kblock, kernel_record_bound, launch_k, launch_kblock, kdup and the
+# K lever package, now `eri.k_exchange.levers`), each keeping its own rule;
+# the package marker is the one new module, and imports nothing.
+RULES |= {
+    "eri_k_exchange_package": _rule(
+        "eri/k_exchange/__init__.py (#512): the MMD exchange K's package "
+        "marker, a docstring and no code",
+        (),
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.k_exchange"] = "eri_k_exchange_package"
+EDGES["eri.k_exchange"] = frozenset()
 EDGES |= {k: frozenset(v) for k, v in {
     "hgp": (),
     "hgp.vrr": (),
@@ -1868,10 +1887,11 @@ RULES |= {
         "`E` fragments) and the registry composing a spec's K levers, one "
         "module per lever; since #345 also the batch kernel's atomic "
         "write (`seams.atomize`, the `passes.atomize` default)",
-        ("spec", "plan", "=ir", "mmd.recurrence", "mmd.e_fragment", "k_levers",
-         "ir.passes"),
-        kernel_k="the skeleton imports the seams: a seam or a lever reaching "
-                 "back into `kernel_k` is a cycle",
+        ("spec", "plan", "=ir", "mmd.recurrence", "mmd.e_fragment",
+         "eri.k_exchange.levers", "ir.passes"),
+        **{"eri.k_exchange.kernel_k":
+            "the skeleton imports the seams: a seam or a lever reaching "
+            "back into `kernel_k` is a cycle"},
         ao=RULES["k_builder"].must_not["ao"],
         **{"ir.interp":
             RULES["k_builder"].must_not["ir.interp"]},
@@ -1880,11 +1900,13 @@ RULES |= {
             RULES["k_builder"].must_not["performance.device"]},
         reference=_GROUND_TRUTH),
 }
-RULE_OF |= {m: "k_lever" for m in _modules() if _under(m, "k_levers")}
+RULE_OF |= {m: "k_lever" for m in _modules()
+            if _under(m, "eri.k_exchange.levers")}
 EDGES |= {k: frozenset(v) for k, v in {
-    "k_levers": ("k_levers.seams", "spec"),
-    "k_levers.seams": ("mmd.e_fragment", "ir", "ir.passes", "plan.schedule",
-                       "plan.targets", "mmd.recurrence", "spec"),
+    "eri.k_exchange.levers": ("eri.k_exchange.levers.seams", "spec"),
+    "eri.k_exchange.levers.seams": ("mmd.e_fragment", "ir", "ir.passes",
+                                    "plan.schedule", "plan.targets",
+                                    "mmd.recurrence", "spec"),
 }.items()}
 
 
@@ -1893,7 +1915,7 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
     # imports reaches `kernel_k` (the cycle), the K witness in `ao/`, the
     # interpreter, reference/, a backend or a card.
     graph = _graph()
-    for root in ("k_levers", "k_levers.seams"):
+    for root in ("eri.k_exchange.levers", "eri.k_exchange.levers.seams"):
         seen: set[str] = set()
         todo = [root]
         while todo:
@@ -1901,8 +1923,8 @@ def test_the_k_seams_reach_neither_the_skeleton_nor_a_machine() -> None:
                 if e not in seen:
                     seen.add(e)
                     todo.append(e)
-        for banned in ("kernel_k", _REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                       "performance.device"):
+        for banned in ("eri.k_exchange.kernel_k", _REF, "ao", *_LEFT_AO,
+                       "ir.interp", "emit", "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
@@ -2021,29 +2043,35 @@ EDGES["mmd.kernel"] = EDGES["mmd.kernel"] | frozenset(("j_levers.fused",
 # prohibitions.
 # ---------------------------------------------------------------------------
 
-EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.split",))
-EDGES["k_levers.split"] = frozenset(("ir", "k_levers.seams", "spec"))
+EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
+    ("eri.k_exchange.levers.split",))
+EDGES["eri.k_exchange.levers.split"] = frozenset(("ir",
+    "eri.k_exchange.levers.seams", "spec"))
 
 # #345 (milestone 13, M6): the coalesced K write-back, a K lever module that
 # moves `write_back` only; the same reach as #341's.
-EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.coalesced",))
-EDGES["k_levers.coalesced"] = frozenset(("ir", "k_levers.seams", "spec"))
+EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
+    ("eri.k_exchange.levers.coalesced",))
+EDGES["eri.k_exchange.levers.coalesced"] = frozenset(("ir",
+    "eri.k_exchange.levers.seams", "spec"))
 
 # #349 (milestone 13, M7): the register write-back for small K blocks. It
 # moves `write_back` and `atomize` and falls back to (and reuses the atomize
 # of) #345's `coalesced`, so it reaches that module too.
-EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.shuffle",))
-EDGES["k_levers.shuffle"] = frozenset(("ir", "k_levers.coalesced",
-                                       "k_levers.seams", "spec"))
+EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
+    ("eri.k_exchange.levers.shuffle",))
+EDGES["eri.k_exchange.levers.shuffle"] = frozenset(("ir",
+    "eri.k_exchange.levers.coalesced", "eri.k_exchange.levers.seams", "spec"))
 
 
 # #342 (milestone 13, M2): `E^ac` staged in shared memory, a K lever module.
 # It moves `bind_e_ac` / `e_ac` only, inlining the `E` fragment it reads off
 # the context (and checking it is write-once), so it reaches the seams, the
 # IR, the `E` fragment and `Spec`.
-EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.stage_eac",))
-EDGES["k_levers.stage_eac"] = frozenset(("mmd.e_fragment", "ir", "k_levers.seams",
-                                         "spec"))
+EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
+    ("eri.k_exchange.levers.stage_eac",))
+EDGES["eri.k_exchange.levers.stage_eac"] = frozenset(("mmd.e_fragment", "ir",
+    "eri.k_exchange.levers.seams", "spec"))
 
 
 # #350 (milestone 13, H1): the batched VRR, the first F lever module. It
@@ -2128,9 +2156,10 @@ RULES["k_lever"] = Rule(RULES["k_lever"].why + "; a K lever may reuse a J "
                         "lever's IR (`j_levers`, #347's fp32 recurrence)",
                         RULES["k_lever"].may | frozenset(("j_levers",)),
                         RULES["k_lever"].must_not)
-EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.mixed",))
-EDGES["k_levers.mixed"] = frozenset(("mmd.e_fragment", "ir", "j_levers.mixed",
-                                     "k_levers.seams", "mmd.recurrence", "spec"))
+EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
+    ("eri.k_exchange.levers.mixed",))
+EDGES["eri.k_exchange.levers.mixed"] = frozenset(("mmd.e_fragment", "ir",
+    "j_levers.mixed", "eri.k_exchange.levers.seams", "mmd.recurrence", "spec"))
 
 
 # #353 (milestone 13, H10): struct-typed pair-record reads, an F lever
@@ -2172,7 +2201,7 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and #339's lever ladders "
                        RULES["driver"].may | frozenset(("ir.lever_ladder",)),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
-    ("ir", "kernel_k", "ir.lever_ladder"))
+    ("ir", "eri.k_exchange.kernel_k", "ir.lever_ladder"))
 EDGES["performance.measured"] = EDGES["performance.measured"] | frozenset(
     ("ir.lever_ladder",))
 RULES["store"] = Rule(RULES["store"].why + "; and the kernel-body lever "
@@ -2190,16 +2219,18 @@ EDGES["performance.measured_store"] = (
 # recurrence's node names (`recurrence.node_name`), as the seams do.
 # ---------------------------------------------------------------------------
 
-EDGES["k_levers"] = EDGES["k_levers"] | frozenset(("k_levers.interleave",))
-EDGES["k_levers.interleave"] = frozenset(("ir", "k_levers.seams",
-                                          "mmd.recurrence", "spec"))
+EDGES["eri.k_exchange.levers"] = EDGES["eri.k_exchange.levers"] | frozenset(
+    ("eri.k_exchange.levers.interleave",))
+EDGES["eri.k_exchange.levers.interleave"] = frozenset(("ir",
+    "eri.k_exchange.levers.seams", "mmd.recurrence", "spec"))
 
 # #348 (milestone 13, M4): the split arm is the composition interleave+split,
 # not a lever of its own. `interleave` reads `split.NAME` to name the arm in
 # the element kernels' region (`interleave.arm`); `split` imports nothing of
 # `interleave`, so the edge is one way.
-EDGES["k_levers.interleave"] = EDGES["k_levers.interleave"] | frozenset(
-    ("k_levers.split",))
+EDGES["eri.k_exchange.levers.interleave"] = (
+    EDGES["eri.k_exchange.levers.interleave"]
+    | frozenset(("eri.k_exchange.levers.split",)))
 
 
 # ---------------------------------------------------------------------------
@@ -2893,7 +2924,7 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
     for banned in ("eri.hjk.launch_hjk", "eri.fock.launch_f", "launch", _REF,
                    "ir.interp", "emit",
                    "performance.device", "performance.dispatch",
-                   "performance.measured", "ao.j", "ao.k",
+                   "performance.measured", "ao.j", "eri.k_exchange.k",
                    "eri.fock.fock", "eri.eri", "eri.hgp_drive", "engine",
                    "eri.fock.walk_f"):
         hit = sorted(e for e in seen if _under(e, banned))
@@ -2907,11 +2938,12 @@ def test_the_hjk_walker_reaches_neither_its_plan_builder_nor_its_witness(
 RULES["engine"] = Rule(RULES["engine"].why + ", and since #406 `j` / `k`: "
                        "the split J / K builders `kernel_k`, `kernel_hj` and "
                        "`kernel_hk`, by their entry points",
-                       RULES["engine"].may | frozenset(("kernel_k",
-                                                        "eri.hjk.kernel_hj",
-                                                        "eri.hjk.kernel_hk")),
+                       RULES["engine"].may | frozenset((
+                           "eri.k_exchange.kernel_k", "eri.hjk.kernel_hj",
+                           "eri.hjk.kernel_hk")),
                        RULES["engine"].must_not)
-EDGES["engine"] = EDGES["engine"] | frozenset(("kernel_k", "eri.hjk.kernel_hj",
+EDGES["engine"] = EDGES["engine"] | frozenset(("eri.k_exchange.kernel_k",
+                                               "eri.hjk.kernel_hj",
                                                "eri.hjk.kernel_hk"))
 
 
@@ -2930,33 +2962,42 @@ RULES |= {
         "one block per contracted K_AB block -- `kernel_k`'s per-pair body "
         "(`kernel_k.ket_body`) and the K seams' default hooks in another "
         "loop nest, keyed on a `Target.K` `Spec`",
-        ("spec", "=ir", "mmd.kernel", "kernel_k", "k_levers"),
+        ("spec", "=ir", "mmd.kernel", "eri.k_exchange.kernel_k",
+         "eri.k_exchange.levers"),
         **RULES["k_builder"].must_not,
-        launch_k="a launch plan is the kernel's consumer, never its ancestor",
-        launch_kblock="a launch plan is the kernel's consumer, never its "
-                      "ancestor"),
+        **{"eri.k_exchange.launch_k":
+            "a launch plan is the kernel's consumer, never its ancestor"},
+        **{"eri.k_exchange.launch_kblock":
+            "a launch plan is the kernel's consumer, never its "
+            "ancestor"}),
     "kblock_launch": _rule(
         "launch_kblock.py (#481): the block kernel's launch plan as a VALUE "
         "-- `launch_k.k_launches`' records regrouped by first shell into "
         "one block per (a, b) -- and its walk in Python on ao.k's staged "
         "arithmetic; the bound and the builder arrive injected",
-        ("spec", "=ir", "ao", "mmd.hermite", "eri.launch_common", "launch_k"),
+        ("spec", "=ir", "ao", "mmd.hermite", "eri.launch_common",
+         "eri.k_exchange.launch_k"),
         **{k: v for k, v in RULES["k_launch"].must_not.items()
            if k not in ("mmd.kernel", "ao")},
         **{"mmd.kernel":
             "the builders arrive injected as `build=`: this plan names a "
                "class's `Spec`, it does not build it"},
-        kernel_k="the builders arrive injected as `build=`",
-        kernel_kblock="the builders arrive injected as `build=`"),
+        **{"eri.k_exchange.kernel_k":
+            "the builders arrive injected as `build=`"},
+        **{"eri.k_exchange.kernel_kblock":
+            "the builders arrive injected as `build=`"}),
 }
 RULE_OF |= {
-    "kernel_kblock": "kblock_builder",
-    "launch_kblock": "kblock_launch",
+    "eri.k_exchange.kernel_kblock": "kblock_builder",
+    "eri.k_exchange.launch_kblock": "kblock_launch",
 }
 EDGES |= {k: frozenset(v) for k, v in {
-    "kernel_kblock": ("ir", "k_levers.seams", "mmd.kernel", "kernel_k", "spec"),
-    "launch_kblock": ("ao.density", "ao.k", "ao.shell", "ir",
-                      "eri.launch_common", "launch_k", "spec"),
+    "eri.k_exchange.kernel_kblock": ("ir", "eri.k_exchange.levers.seams",
+                                     "mmd.kernel", "eri.k_exchange.kernel_k",
+                                     "spec"),
+    "eri.k_exchange.launch_kblock": ("ao.density", "eri.k_exchange.k",
+                                     "ao.shell", "ir", "eri.launch_common",
+                                     "eri.k_exchange.launch_k", "spec"),
 }.items()}
 
 
@@ -2977,14 +3018,16 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
         return seen
 
     for root, banned in (
-            ("kernel_kblock", (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
-                               "performance.device", "launch", "launch_k",
-                               "launch_kblock")),
-            ("launch_kblock", (_REF, "ir.interp", "emit", "ao.drive",
-                               "ao.staged", "performance.dispatch",
-                               "performance.measured",
-                               "performance.measured_store", "kernel_k",
-                               "kernel_kblock"))):
+            ("eri.k_exchange.kernel_kblock",
+             (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+              "performance.device", "launch", "eri.k_exchange.launch_k",
+              "eri.k_exchange.launch_kblock")),
+            ("eri.k_exchange.launch_kblock",
+             (_REF, "ir.interp", "emit", "ao.drive",
+              "ao.staged", "performance.dispatch",
+              "performance.measured",
+              "performance.measured_store", "eri.k_exchange.kernel_k",
+              "eri.k_exchange.kernel_kblock"))):
         seen = reach(root)
         hit = sorted(e for e in seen if any(_under(e, b) for b in banned))
         assert not hit, f"{root} reaches {hit}"
@@ -3008,8 +3051,10 @@ RULES |= {
         ("spec", "plan"),
         **RULES["launch"].must_not,
         launch="`launch` imports this module; the reverse is a cycle",
-        launch_k="a launch plan imports this module, never the reverse",
-        launch_kblock="a launch plan imports this module, never the reverse",
+        **{"eri.k_exchange.launch_k":
+            "a launch plan imports this module, never the reverse"},
+        **{"eri.k_exchange.launch_kblock":
+            "a launch plan imports this module, never the reverse"},
         **{"eri.fock.launch_f":
             "a launch plan imports this module, never the reverse"},
         **{"mmd.kernel":

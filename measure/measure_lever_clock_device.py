@@ -108,8 +108,8 @@ from felizjueves.eri.fock import kernel_f as KF
 from felizjueves.eri.fock.levers import block_fab, ket_break, scatter
 from felizjueves.eri.fock.levers import mixed as fmixed
 from felizjueves.eri.fock.walk_f import dominating_factors
+from felizjueves.eri.k_exchange.levers import mixed as kmixed
 from felizjueves.j_levers import mixed as jmixed
-from felizjueves.k_levers import mixed as kmixed
 from felizjueves.performance import gate, measured, measured_store
 from felizjueves.performance.device import Arch
 from felizjueves.spec import Spec, Target

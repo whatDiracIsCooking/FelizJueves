@@ -35,19 +35,20 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import k_levers, levers
+from felizjueves import levers
 from felizjueves.emit import cuda, hip
-from felizjueves.ir import Decl, Index, Inline, Kernel, Lit, Note, Var, walk
-from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.k_levers import seams
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KContext, KHooks
-from felizjueves.kernel_k import (
+from felizjueves.eri.k_exchange import levers as k_levers
+from felizjueves.eri.k_exchange.kernel_k import (
     KSH,
     build_k_kernel,
     build_k_kernels,
     k_class_spec,
     launch_shape,
 )
+from felizjueves.eri.k_exchange.levers import seams
+from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KContext, KHooks
+from felizjueves.ir import Decl, Index, Inline, Kernel, Lit, Note, Var, walk
+from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys

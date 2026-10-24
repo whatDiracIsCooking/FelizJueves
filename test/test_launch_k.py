@@ -61,7 +61,9 @@ from oracle import basis as ob
 from oracle import manifest
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.k import (
+from felizjueves.ao.shell import Basis, Shell, n_cartesians
+from felizjueves.ao.staged import coulomb_matrix_staged
+from felizjueves.eri.k_exchange.k import (
     exchange_matrix,
     exchange_matrix_reference,
     exchange_matrix_screened,
@@ -69,11 +71,7 @@ from felizjueves.ao.k import (
     k_quartet,
     record_bounds,
 )
-from felizjueves.ao.shell import Basis, Shell, n_cartesians
-from felizjueves.ao.staged import coulomb_matrix_staged
-from felizjueves.eri.launch_common import PairRec, admits
-from felizjueves.ir import Kernel
-from felizjueves.launch_k import (
+from felizjueves.eri.k_exchange.launch_k import (
     KClassLaunch,
     KLaunchPlan,
     exchange_launched,
@@ -81,6 +79,8 @@ from felizjueves.launch_k import (
     k_launches,
     walk_k,
 )
+from felizjueves.eri.launch_common import PairRec, admits
+from felizjueves.ir import Kernel
 from felizjueves.plan.pipeline import plan as plan_of
 from felizjueves.reference.pq import pq as _pq
 

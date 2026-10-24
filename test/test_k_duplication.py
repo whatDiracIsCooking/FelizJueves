@@ -1,6 +1,6 @@
 """The duplicated-work count, J against K (#202): every number recomputed.
 
-`src/felizjueves/kdup.py` counts, per K class and batch count, the work a
+`src/felizjueves/eri/k_exchange/kdup.py` counts, per K class and batch count, the work a
 split duplicates for J and for K at the same `Spec.am`, from the plan's
 partition and the `E` nonzero pattern alone; this file holds the tracked
 record, data/literature/jengine/k_duplication.json, to that count.
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from felizjueves import kdup
+from felizjueves.eri.k_exchange import kdup
 from felizjueves.literature.claims import load_claims
 from felizjueves.mmd.hermite import e_block, hermite_order
 from felizjueves.mmd.kernel import k_spec, pq_spec, split
@@ -209,7 +209,7 @@ def test_k_and_j_share_one_plan(L, n) -> None:
 
 
 def test_the_count_imports_no_builder_and_no_toolchain() -> None:
-    probe = ("import sys, felizjueves.kdup; "
+    probe = ("import sys, felizjueves.eri.k_exchange.kdup; "
              "print(sorted(m for m in sys.modules if m.startswith('felizjueves')"
              " or m == 'numpy'))")
     env = {**os.environ, "PYTHONPATH": str(REPO / "src")}

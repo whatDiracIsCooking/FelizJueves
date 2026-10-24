@@ -116,6 +116,16 @@ a backend or a device.
 
 from __future__ import annotations
 
+from felizjueves.eri.k_exchange.kernel_k import (
+    NO_DENSITY_KEY,
+    bra_scalars,
+    k_class_spec,
+    ket_body,
+)
+from felizjueves.eri.k_exchange.kernel_k import shared_bytes as _k_shared_bytes
+from felizjueves.eri.k_exchange.kernel_k import shared_doubles as _k_shared_doubles
+from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KET, KContext
+from felizjueves.eri.k_exchange.levers.seams import params as k_params
 from felizjueves.ir import (
     AtomicAdd,
     Break,
@@ -136,16 +146,6 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KET, KContext
-from felizjueves.k_levers.seams import params as k_params
-from felizjueves.kernel_k import (
-    NO_DENSITY_KEY,
-    bra_scalars,
-    k_class_spec,
-    ket_body,
-)
-from felizjueves.kernel_k import shared_bytes as _k_shared_bytes
-from felizjueves.kernel_k import shared_doubles as _k_shared_doubles
 from felizjueves.mmd.kernel import builder_plan, split
 from felizjueves.spec import Spec, Target
 

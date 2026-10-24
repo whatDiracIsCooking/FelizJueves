@@ -1802,14 +1802,14 @@ def test_the_k_rule_was_declared_in_the_store() -> None:
 
 
 def test_a_k_cell_is_built_by_kernel_k_and_takes_no_lever() -> None:
-    from felizjueves.kernel_k import build_k_kernels
+    from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
     s = k_spec(2, n_batches=3)
     assert measured.cell_kernels(s) == build_k_kernels(s)
     assert measured.cell_kernels(k_spec(1)) == build_k_kernels(k_spec(1))
     with pytest.raises(ValueError, match="no lever is declared for a K cell"):
         measured.cell_kernels(replace(k_spec(1), levers=(RECYCLE,)))
     # the unit's dynamic shared bytes are the K kernel's Ksh, per lane
-    from felizjueves.kernel_k import shared_bytes
+    from felizjueves.eri.k_exchange.kernel_k import shared_bytes
     (u,) = measured.BACKENDS["cuda"].units(k_spec(2))
     assert u.jsh_dynamic_bytes == shared_bytes(k_spec(2).am, 32)
 
@@ -1974,7 +1974,7 @@ def test_the_k_gain_is_read_against_the_same_session_j_twin() -> None:
 
 
 def test_the_unlaunchable_k_cells_are_every_high_l_cell_on_both_cards() -> None:
-    from felizjueves.kernel_k import shared_doubles
+    from felizjueves.eri.k_exchange.kernel_k import shared_doubles
     high = {s for s in measured_store.K_SUBGRID if s.total_am >= 13}
     for arch, (smem, optin) in measured_store.K_SMEM_PER_BLOCK.items():
         assert set(measured_store.K_UNTIMED[arch]) == high, arch

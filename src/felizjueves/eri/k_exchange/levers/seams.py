@@ -44,7 +44,7 @@ fragments -- and `ctx.hooks`, so a hook calls its siblings through the
 composed set, never through the defaults directly (an `e_ac` override is seen
 by the default `bra_digest`).
 
-A LEVER IS A MODULE: `felizjueves/k_levers/<name>.py` exposing
+A LEVER IS A MODULE: `felizjueves/eri/k_exchange/levers/<name>.py` exposing
 `apply(hooks, spec) -> KHooks` (`dataclasses.replace` of the hooks it moves),
 registered by name in `k_levers.REGISTRY`. `kernel_k` resolves a spec's
 kernel-body levers through that registry (`k_levers.hooks_for`) and never

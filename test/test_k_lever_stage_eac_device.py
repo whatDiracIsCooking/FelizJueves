@@ -43,8 +43,8 @@ from pathlib import Path
 import pytest
 from test_f_lever_batched_vrr_device import shared_bytes
 
-from felizjueves.k_levers import stage_eac
-from felizjueves.kernel_k import build_k_kernels
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
+from felizjueves.eri.k_exchange.levers import stage_eac
 from felizjueves.mmd.kernel import k_spec
 from felizjueves.performance import measured
 from felizjueves.spec import Operator, Spec, Target

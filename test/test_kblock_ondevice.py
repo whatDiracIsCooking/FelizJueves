@@ -60,13 +60,13 @@ from test_k_ondevice import ORACLE_TOL
 from test_kernel_device import BACKEND, _toolchain
 from test_launch_k import _case as _launch_case
 
-from felizjueves.ao.k import (
+from felizjueves.eri.k_exchange.k import (
     density_decay,
     exchange_matrix_and_scale,
     record_bounds,
 )
-from felizjueves.kernel_kblock import build_kblock_kernel
-from felizjueves.launch_kblock import KBLaunchPlan, kb_launches, walk_kb
+from felizjueves.eri.k_exchange.kernel_kblock import build_kblock_kernel
+from felizjueves.eri.k_exchange.launch_kblock import KBLaunchPlan, kb_launches, walk_kb
 from felizjueves.reference.pq import pq
 
 KJ_TOL = test_ao_k.KJ_TOL

@@ -187,6 +187,17 @@ a device.
 
 from __future__ import annotations
 
+from felizjueves.eri.k_exchange.levers import hooks_for
+from felizjueves.eri.k_exchange.levers.seams import (
+    KET,
+    KSH,
+    PARAMS,
+    SPLIT_WRITE,
+    EmptyKernel,
+    KContext,
+    KHooks,
+    ncart,
+)
 from felizjueves.ir import (
     Break,
     Call,
@@ -202,17 +213,6 @@ from felizjueves.ir import (
     Scalar,
     Stmt,
     Var,
-)
-from felizjueves.k_levers import hooks_for
-from felizjueves.k_levers.seams import (
-    KET,
-    KSH,
-    PARAMS,
-    SPLIT_WRITE,
-    EmptyKernel,
-    KContext,
-    KHooks,
-    ncart,
 )
 from felizjueves.mmd.kernel import builder_plan, lever_notes, split
 from felizjueves.mmd.kernel import launch_shape as _j_launch_shape

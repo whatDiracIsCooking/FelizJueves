@@ -223,10 +223,10 @@ def _built_kernels() -> list[Kernel]:
     """One kernel of every family the generator builds today, at a size that
     exercises every factor it can use."""
     from felizjueves.eri.fock.kernel_f import build_f_kernel
+    from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
     from felizjueves.hgp.recurrence import build_hrr_kernel, build_vrr_kernel
     from felizjueves.kernel_dq import build_dq_kernel
     from felizjueves.kernel_jab import build_jab_kernel
-    from felizjueves.kernel_k import build_k_kernel
     from felizjueves.mmd.kernel import build_pq_kernel
     from felizjueves.one_electron.kernel_s import build_s_kernel
     from felizjueves.one_electron.kernel_t import build_t_kernel
@@ -892,9 +892,9 @@ def test_the_raw_census_is_unchanged_by_the_k_kernel() -> None:
     # #198: the exchange kernel inlines two fragments and moves the census by
     # zero -- src/ still constructs no Raw, and its built Kernel (at L <= 2,
     # milestone 10's rule) holds none, through either splice.
-    from felizjueves.kernel_k import build_k_kernel
+    from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
 
-    assert (SRC / "felizjueves" / "kernel_k.py").exists()
+    assert (SRC / "felizjueves" / "eri" / "k_exchange" / "kernel_k.py").exists()
     assert count_raw_in_src() == 0
     for am in [(0, 0, 0, 0), (1, 0, 0, 1), (1, 1, 0, 0)]:
         assert not any(isinstance(s, Raw)

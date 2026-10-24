@@ -38,8 +38,17 @@ import numpy as np
 import pytest
 import test_kernel_k as tk
 
-from felizjueves import k_levers, levers
+from felizjueves import levers
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.k_exchange import levers as k_levers
+from felizjueves.eri.k_exchange.kernel_k import (
+    build_k_kernel,
+    build_k_kernels,
+    launch_shape,
+    shared_bytes,
+)
+from felizjueves.eri.k_exchange.levers import coalesced, split
+from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -57,14 +66,6 @@ from felizjueves.ir import (
 )
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import LANE0
-from felizjueves.k_levers import coalesced, split
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KSH, KHooks, ncart
-from felizjueves.kernel_k import (
-    build_k_kernel,
-    build_k_kernels,
-    launch_shape,
-    shared_bytes,
-)
 from felizjueves.mmd.kernel import k_spec
 from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.reference.boys import boys
@@ -352,7 +353,7 @@ def test_composed_with_split_at_three_batches() -> None:
 
 
 def test_runs_are_one_run_of_the_whole_block_at_every_ladder_l() -> None:
-    from felizjueves.k_levers.seams import KContext
+    from felizjueves.eri.k_exchange.levers.seams import KContext
     from felizjueves.mmd.kernel import builder_plan
     for L in range(5):
         spec = dataclasses.replace(k_spec(L), levers=(coalesced.NAME,))
@@ -369,7 +370,7 @@ def test_runs_are_one_run_of_the_whole_block_at_every_ladder_l() -> None:
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
-#   from felizjueves.kernel_k import build_k_kernel; \
+#   from felizjueves.eri.k_exchange.kernel_k import build_k_kernel; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   k = build_k_kernel(Spec(Operator.COULOMB, 0, (1, 0, 1, 0), Target.K, \

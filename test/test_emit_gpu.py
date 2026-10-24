@@ -65,10 +65,10 @@ from test_k_lever_shuffle import _bcast
 from felizjueves.emit import cuda, gpu
 from felizjueves.emit._c import BOYS_DEVICE, BOYS_SWITCH_PAD, EmitError
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.k_exchange.kernel_record_bound import build_record_bound_kernel
 from felizjueves.eri.kernel_pair_bound import build_pair_bound_kernel
 from felizjueves.ir.passes import split_axes, transpose
 from felizjueves.kernel_dq import build_dq_kernel
-from felizjueves.kernel_record_bound import build_record_bound_kernel
 from felizjueves.mmd.kernel import build_pq_kernel
 from felizjueves.one_electron.kernel_s import build_s_kernel
 from felizjueves.one_electron.kernel_t import build_t_kernel

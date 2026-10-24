@@ -110,20 +110,20 @@ from test_launch_k import _case as _launch_case
 from test_launch_k import _guarded, _stub, _truncated, schwarz
 
 from felizjueves.ao.density import checked_density, epair
-from felizjueves.ao.k import (
+from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.eri import eri_block_and_scale
+from felizjueves.eri.k_exchange.k import (
     _dcd,
     _k_quartet,
     exchange_matrix,
     exchange_matrix_and_scale,
     record_bounds,
 )
-from felizjueves.ao.shell import Basis, Shell
-from felizjueves.eri.eri import eri_block_and_scale
+from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
+from felizjueves.eri.k_exchange.kernel_k import launch_shape as k_launch_shape
+from felizjueves.eri.k_exchange.launch_k import KLaunchPlan, k_launches, walk_k
 from felizjueves.ir import Assign, AtomicAdd, Index, walk
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_k import build_k_kernels
-from felizjueves.kernel_k import launch_shape as k_launch_shape
-from felizjueves.launch_k import KLaunchPlan, k_launches, walk_k
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq as ref_pq
 from felizjueves.spec import Spec

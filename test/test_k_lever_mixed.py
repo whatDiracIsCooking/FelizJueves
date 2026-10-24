@@ -57,10 +57,18 @@ import pytest
 import test_kernel_k as tk
 from oracle.tolerance import F32_REL, F64_REL
 
-from felizjueves import k_levers, levers
-from felizjueves.ao.k import _k_quartet
+from felizjueves import levers
 from felizjueves.ao.pairs import narrowed
 from felizjueves.emit import cuda, hip
+from felizjueves.eri.k_exchange import levers as k_levers
+from felizjueves.eri.k_exchange.k import _k_quartet
+from felizjueves.eri.k_exchange.kernel_k import (
+    build_k_kernel,
+    build_k_kernels,
+    launch_shape,
+)
+from felizjueves.eri.k_exchange.levers import mixed, split
+from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KET, KSH
 from felizjueves.ir import (
     Assign,
     Call,
@@ -79,9 +87,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.k_levers import mixed, split
-from felizjueves.k_levers.seams import DEFAULT_HOOKS, KET, KSH
-from felizjueves.kernel_k import build_k_kernel, build_k_kernels, launch_shape
 from felizjueves.mmd.kernel import builder_plan
 from felizjueves.mmd.recurrence import PQ_PARAMS, THETA, node_name
 from felizjueves.performance.device import GFX1200, SM_86
@@ -157,7 +162,7 @@ def test_the_two_arms_do_not_compose() -> None:
 def test_the_hooks_each_arm_moves() -> None:
     import dataclasses as dc
 
-    from felizjueves.k_levers.seams import KHooks
+    from felizjueves.eri.k_exchange.levers.seams import KHooks
 
     def moved(arm: str) -> set[str]:
         h = mixed.apply(DEFAULT_HOOKS, lever_spec((1, 0, 1, 0), arm))
@@ -314,7 +319,7 @@ def test_a_changed_recurrence_is_refused_not_narrowed(
             Fn.ADD, (body[i].init, body[i].init)))
         return tuple(body)
 
-    monkeypatch.setattr("felizjueves.kernel_k.recurrence_body", other)
+    monkeypatch.setattr("felizjueves.eri.k_exchange.kernel_k.recurrence_body", other)
     with pytest.raises(ValueError, match="not the literal recurrence"):
         build_k_kernel(lever_spec((1, 0, 1, 0), mixed.COMPUTE))
 
@@ -447,7 +452,7 @@ def test_narrowed_is_one_round_to_nearest_float32() -> None:
 #
 #   PYTHONPATH=src uv run python -c "from pathlib import Path; \
 #   from felizjueves.spec import Spec, Operator, Target; \
-#   from felizjueves.kernel_k import build_k_kernel; \
+#   from felizjueves.eri.k_exchange.kernel_k import build_k_kernel; \
 #   from felizjueves.performance.device import SM_86, GFX1200; \
 #   from felizjueves.emit import cuda, hip; \
 #   [(Path(f'test/golden/cuda/k_mixed/k_10_00_{a}.cu').write_text(cuda.emit( \
