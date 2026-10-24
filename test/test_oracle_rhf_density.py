@@ -58,7 +58,10 @@ def test_only_the_chain_records_an_rhf_density():
             by_recipe.setdefault(fx.density_recipe.split(":")[0],
                                  set()).add(fx.name)
     assert by_recipe["rhf"] == {f"{PAIR}_j", f"{PAIR}_k"}
-    assert set(by_recipe) == {"hilbert", "rhf"}
+    # #520: the one density-free fixture (manifest: THE DENSITY-FREE DIPOLE
+    # FIXTURE)
+    assert by_recipe["none"] == {"hf_ccpvtz_spd_dipole"}
+    assert set(by_recipe) == {"hilbert", "rhf", "none"}
 
 
 def test_the_density_is_a_converged_rhf_density(pair):

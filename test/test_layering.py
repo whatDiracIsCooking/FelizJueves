@@ -62,7 +62,8 @@ _GROUND_TRUTH = ("an import from reference/ makes it share ancestry with the "
 # #508: the one-electron host references, which lived under `ao/` (so every
 # `ao` prefix below reached them) until they moved into `one_electron/`.
 _ONE_E_HOST = ("one_electron.one_electron", "one_electron.overlap",
-               "one_electron.kinetic", "one_electron.potential")
+               "one_electron.kinetic", "one_electron.potential",
+               "one_electron.multipole")  # #520: born in one_electron/
 # #509: the DF host references and adapters, which lived under `ao/` too
 # until they moved into `eri/density_fit/`.
 _DF_HOST = ("eri.density_fit.metric", "eri.density_fit.metric_drive",
@@ -1068,6 +1069,23 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "one_electron.kinetic": ("mmd.hermite", "one_electron.one_electron",
                              "ao.pairs", "ao.shell"),
+}.items()}
+
+
+# ---------------------------------------------------------------------------
+# #520 (milestone 19): the multipole (dipole) host reference, under the `ao`
+# rule, `T`'s shape: `mmd.hermite`'s axis tables and the Hermite moments
+# about `C`, over `ao.pairs.primitive_pairs`' records, assembled by
+# `one_electron.one_electron`. It is the witness the dipole kernel (#521) is
+# held to, so it joins `_ONE_E_HOST` and every builder rule bans it.
+# ---------------------------------------------------------------------------
+
+RULE_OF |= {
+    "one_electron.multipole": "ao",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "one_electron.multipole": ("mmd.hermite", "one_electron.one_electron",
+                               "ao.pairs", "ao.shell"),
 }.items()}
 
 

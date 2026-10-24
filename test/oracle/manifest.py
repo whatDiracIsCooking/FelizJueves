@@ -170,6 +170,18 @@ Fock pair (the same fields, each exactly, plus every array both carry), so a
 dipole integral is never read against a basis or density it was not computed
 from. `dipole_pairs()` names every tracked molecule with both files.
 
+THE DENSITY-FREE DIPOLE FIXTURE (#520). An AO fixture whose
+`density_recipe` starts `none:` (`NO_DENSITY_RECIPE`) records NO `density`
+and nothing computed from one (`vj`, `vk`, `dip_moment:*`; refused), and of
+the dipole arrays exactly the three integrals `dipole_origin`,
+`int1e_r_cart:origin` and `int1e_r_cart:zero` (`DIPOLE_INT_ARRAYS`) or none;
+`Fixture.density` refuses it. Its one user is `hf_ccpvtz_spd_dipole`:
+`hf_ccpvtz`'s molecule with every f shell removed, so every class (ss)
+through (dd) occurs between two centres. `dipole_integrals()` loads it and
+`check_dipole_integrals` refuses one that records a density, lacks the three
+integrals, `int1e_ovlp` or the converted basis, or holds a shell (raw or
+converted) above `l = DIPOLE_SPD_L_MAX = 2`.
+
 FULL PRECISION. Floats are written by `json`, i.e. by `repr`, which is the
 shortest string that round-trips the double exactly, so "the numbers match"
 can mean `==` and not a tolerance. `dumps` is the one serialiser, and a
@@ -240,6 +252,15 @@ DIP_COORDS_ARRAY = "dip_moment:coords"  # nuclear coordinates, (natm, 3), Bohr
 DIPOLE_ARRAYS = (DIPOLE_ORIGIN_ARRAY, R_ARRAY, R0_ARRAY, DIP_ARRAY,
                  DIP0_ARRAY, DIP_CHARGES_ARRAY, DIP_COORDS_ARRAY)
 DIPOLE_COMPONENTS = ("x", "y", "z")  # libcint's int1e_r component order
+# #520: the integral half of the dipole arrays, all a density-free fixture
+# may carry of them (THE DENSITY-FREE DIPOLE FIXTURE)
+DIPOLE_INT_ARRAYS = (DIPOLE_ORIGIN_ARRAY, R_ARRAY, R0_ARRAY)
+# #520: an AO fixture whose density_recipe starts so records no density
+NO_DENSITY_RECIPE = "none:"
+# arrays computed from a density, which a density-free fixture cannot carry
+DENSITY_ARRAYS = (J_ARRAY, K_ARRAY, DIP_ARRAY, DIP0_ARRAY)
+# #520: the highest shell `l` the density-free dipole fixture may hold
+DIPOLE_SPD_L_MAX = 2
 
 
 class FixtureError(ValueError):
@@ -344,7 +365,16 @@ class Fixture:
             raise _fail(self.path, "a metric piece records no density")
         if self.three_center is not None:
             raise _fail(self.path, "a three-center piece records no density")
+        if self.density_free:
+            raise _fail(self.path, "a density-free fixture records no "
+                                   f"density (density_recipe "
+                                   f"{self.density_recipe!r})")
         return self.arrays["density"]
+
+    @property
+    def density_free(self) -> bool:
+        """#520: an AO fixture that records no density by declaration."""
+        return self.density_recipe.startswith(NO_DENSITY_RECIPE)
 
 
 # --- serialisation ---------------------------------------------------------
@@ -545,12 +575,23 @@ def validate(path: Path, raw: Any) -> Fixture:
                        tuple(ao_loc), arrays, raw["density_recipe"], None,
                        None, tc)
 
-    arrays = _arrays(path, raw["arrays"])
-    d = arrays["density"]
-    if d.shape != (nao, nao):
-        raise _fail(path, f"density has shape {d.shape}, expected ({nao}, {nao})")
-    if not np.array_equal(d, d.T):
-        raise _fail(path, "density is not exactly symmetric")
+    density_free = raw["density_recipe"].startswith(NO_DENSITY_RECIPE)
+    arrays = _arrays(path, raw["arrays"],
+                     required=() if density_free else REQUIRED_ARRAYS)
+    if density_free:
+        # #520: THE DENSITY-FREE DIPOLE FIXTURE -- no density, and nothing
+        # computed from one
+        stray = sorted(n for n in arrays if n in ("density", *DENSITY_ARRAYS))
+        if stray:
+            raise _fail(path, f"density_recipe says no density, and arrays "
+                              f"carries {stray}")
+    else:
+        d = arrays["density"]
+        if d.shape != (nao, nao):
+            raise _fail(path, f"density has shape {d.shape}, expected "
+                              f"({nao}, {nao})")
+        if not np.array_equal(d, d.T):
+            raise _fail(path, "density is not exactly symmetric")
     stray = sorted(n for n in arrays if n in METRIC_ARRAYS)
     if stray:
         raise _fail(path, f"arrays {stray} belong to a metric piece only")
@@ -602,7 +643,7 @@ def validate(path: Path, raw: Any) -> Fixture:
                               f"(rows' nao, {nao})")
     if one_e and not np.array_equal(arrays[OVLP_ARRAY], arrays["ovlp"]):
         raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
-    _check_dipole_arrays(path, arrays, converted, atoms, nao)
+    _check_dipole_arrays(path, arrays, converted, atoms, nao, density_free)
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,
@@ -722,15 +763,20 @@ def _three_center(path: Path, raw: dict[str, Any], prov: Provenance,
 
 def _check_dipole_arrays(path: Path, arrays: dict[str, np.ndarray],
                          converted: Converted | None, atoms: list[Atom],
-                         nao: int) -> None:
+                         nao: int, density_free: bool = False) -> None:
     """#517: the seven dipole arrays, all or none, shaped, the origin
-    non-zero and non-symmetric, the nuclei `dip_moment` used `atoms`'."""
+    non-zero and non-symmetric, the nuclei `dip_moment` used `atoms`'.
+    #520: a density-free fixture carries exactly the three integral arrays
+    (`DIPOLE_INT_ARRAYS`) or none."""
     has = [n for n in DIPOLE_ARRAYS if n in arrays]
     if not has:
         return
-    if len(has) != len(DIPOLE_ARRAYS):
+    want_set = DIPOLE_INT_ARRAYS if density_free else DIPOLE_ARRAYS
+    if has != list(want_set):
         raise _fail(path, f"arrays has {has} of the dipole arrays "
-                          f"{list(DIPOLE_ARRAYS)}: all seven or none")
+                          f"{list(DIPOLE_ARRAYS)}: all seven or none (a "
+                          "density-free fixture: exactly "
+                          f"{list(DIPOLE_INT_ARRAYS)} or none)")
     if converted is None:
         raise _fail(path, "the dipole arrays need the converted basis their "
                           "AOs are in")
@@ -739,6 +785,7 @@ def _check_dipole_arrays(path: Path, arrays: dict[str, np.ndarray],
               R0_ARRAY: (ncomp, nao, nao), DIP_ARRAY: (ncomp,),
               DIP0_ARRAY: (ncomp,), DIP_CHARGES_ARRAY: (natm,),
               DIP_COORDS_ARRAY: (natm, ncomp)}
+    shapes = {k: v for k, v in shapes.items() if k in want_set}
     for name, want in shapes.items():
         if arrays[name].shape != want:
             raise _fail(path, f"arrays.{name} has shape {arrays[name].shape}, "
@@ -750,6 +797,8 @@ def _check_dipole_arrays(path: Path, arrays: dict[str, np.ndarray],
                           "must be non-zero in every component with pairwise "
                           "distinct magnitudes (X_PC exercised, no axis "
                           "interchangeable)")
+    if density_free:
+        return
     if not np.array_equal(arrays[DIP_CHARGES_ARRAY],
                           np.array([float(a.charge) for a in atoms])):
         raise _fail(path, f"arrays.{DIP_CHARGES_ARRAY} are not the atoms' "
@@ -1249,6 +1298,71 @@ def dipole_pairs() -> list[str]:
     return sorted(s[:-len(DIPOLE_SUFFIX)] for s in stems
                   if s.endswith(DIPOLE_SUFFIX)
                   and s[:-len(DIPOLE_SUFFIX)] + J_SUFFIX in stems)
+
+
+# --- the density-free dipole fixture (#520) ---------------------------------
+
+SPD_DIPOLE = "hf_ccpvtz_spd_dipole"
+
+
+@dataclass(frozen=True)
+class DipoleIntegrals:
+    """A density-free fixture carrying the dipole integrals, its basis
+    checked to hold no shell above `DIPOLE_SPD_L_MAX`."""
+
+    fixture: Fixture
+
+    @property
+    def origin(self) -> np.ndarray:
+        """The non-zero origin `C`, Bohr."""
+        return self.fixture.arrays[DIPOLE_ORIGIN_ARRAY]
+
+    @property
+    def r(self) -> np.ndarray:
+        """libcint's `<m|r - C|n>`, (3, nao, nao), x, y, z."""
+        return self.fixture.arrays[R_ARRAY]
+
+    @property
+    def r0(self) -> np.ndarray:
+        """libcint's `<m|r|n>` (`C = 0`), (3, nao, nao), x, y, z."""
+        return self.fixture.arrays[R0_ARRAY]
+
+    @property
+    def ovlp(self) -> np.ndarray:
+        """libcint's `int1e_ovlp`, nao x nao."""
+        return self.fixture.arrays[OVLP_ARRAY]
+
+
+def check_dipole_integrals(fx: Fixture) -> None:
+    """Refuse, naming the file, unless `fx` is density-free, carries the
+    three dipole integral arrays and `int1e_ovlp` with its converted basis,
+    and holds no shell (raw or converted) above `DIPOLE_SPD_L_MAX`."""
+    if fx.metric is not None or fx.three_center is not None:
+        raise _fail(fx.path, "not a density-free dipole fixture: it is a "
+                             "metric or three-center piece")
+    if not fx.density_free:
+        raise _fail(fx.path, "not a density-free dipole fixture: it records "
+                             "a density")
+    missing = [n for n in (*DIPOLE_INT_ARRAYS, OVLP_ARRAY)
+               if n not in fx.arrays]
+    if missing or fx.converted is None:
+        raise _fail(fx.path, "not a density-free dipole fixture: it carries "
+                             f"no {missing or 'converted basis'}")
+    ls = [s.l for s in fx.shells]
+    if fx.converted is not None:
+        ls += [s.l for s in fx.converted.shells]
+    if max(ls) > DIPOLE_SPD_L_MAX:
+        raise _fail(fx.path, f"has a shell with l = {max(ls)}, above "
+                             f"DIPOLE_SPD_L_MAX = {DIPOLE_SPD_L_MAX} "
+                             "(milestone 19 tests nothing above (dd))")
+
+
+def dipole_integrals(name: str = SPD_DIPOLE,
+                     fixtures: Path = FIXTURES) -> DipoleIntegrals:
+    """Load the density-free dipole fixture `name` and check it."""
+    fx = load(fixtures / f"{name}.json")
+    check_dipole_integrals(fx)
+    return DipoleIntegrals(fx)
 
 
 def main(argv: list[str] | None = None) -> int:
