@@ -59,6 +59,7 @@ from .manifest import (
     KIN_ARRAY,
     METRIC_ARRAY,
     METRIC_SCHEMA,
+    NO_DENSITY_RECIPE,
     NUC_ARRAY,
     OVLP_ARRAY,
     R0_ARRAY,
@@ -124,6 +125,15 @@ class Case:
     # libcint's `int1e_r_cart` at `DIPOLE_ORIGIN` and at 0, and PySCF's RHF
     # `dip_moment` for the recorded density at both. Needs `record_basis`.
     record_dipole: bool = False
+    # #520: write the dipole INTEGRALS only (`DIPOLE_INT_ARRAYS`): libcint's
+    # `int1e_r_cart` at `DIPOLE_ORIGIN` and at 0, cross-checked against the
+    # origin shift. For a density-free case (`density="none"`), which has no
+    # `dip_moment` to record. Needs `record_basis` and `cart`.
+    record_dipole_integrals: bool = False
+    # #520: drop every library shell above this l (None keeps them all), so
+    # a fixture holds nothing above it. The basis's name in `provenance`
+    # then says so (`_basis_name`).
+    max_l: int | None = None
     # Write `int1e_ovlp_cross:<rows>`: libcint's rectangular overlap
     # `<m|n>` with `m` an AO of case `rows` (another case, whose molecule
     # and basis are the ROWS) and `n` of this case (the COLUMNS) --
@@ -148,7 +158,9 @@ class Case:
     # #486: the recorded density's recipe -- "hilbert" (every case before
     # #486: `hilbert_density`, a function of nao alone) or "rhf" (PySCF's
     # converged RHF density, which decays with distance). An "rhf" density
-    # is RECORDED and is the input from then on (`case_density`).
+    # is RECORDED and is the input from then on (`case_density`). "none"
+    # (#520): the fixture records no density (manifest: THE DENSITY-FREE
+    # DIPOLE FIXTURE), so nothing computed from one may be recorded either.
     density: str = "hilbert"
     # "rhf" only: the case whose tracked fixture owns the density. A `_k`
     # names its `_j`, so the pair's densities are one matrix, bit for bit
@@ -213,7 +225,11 @@ RHF_DENSITY_RECIPE = (
     f"conv_tol_grad {RHF_CONV_TOL_GRAD:g}), recorded; every array is "
     "computed from the recorded matrix, which --check holds to "
     f"{RHF_DENSITY_TOL:g} of a fresh SCF, not bitwise")
-DENSITY_RECIPES = {"hilbert": DENSITY_RECIPE, "rhf": RHF_DENSITY_RECIPE}
+NO_DENSITY_RECIPE_TEXT = (
+    f"{NO_DENSITY_RECIPE} a density-free fixture records no density and "
+    "nothing computed from one (#520)")
+DENSITY_RECIPES = {"hilbert": DENSITY_RECIPE, "rhf": RHF_DENSITY_RECIPE,
+                   "none": NO_DENSITY_RECIPE_TEXT}
 
 _H2O = "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12"
 
@@ -491,6 +507,28 @@ CASES.update({
 })
 
 
+# #520: the off-centre (dd) witness. #517's H2O fixtures have one d shell,
+# on O, so every (dd) block libcint gives them is one-centre. HF/cc-pVTZ with
+# its f shells removed (F 4s3p2d, H 3s2p1d; 40 Cartesian AOs) has d on both
+# atoms, so every class (ss) through (dd) occurs between the two centres.
+# No density, so no dip_moment: the integrals, at both origins, and the four
+# one-electron arrays (`int1e_ovlp` for the origin-shift identity).
+CASES["hf_ccpvtz_spd_dipole"] = replace(
+    CASES["hf_ccpvtz"],
+    description=(
+        "#520: hf_ccpvtz's molecule in Cartesian cc-pVTZ with every f shell "
+        "removed (F 4s3p2d, H 3s2p1d; nothing above d), so every class (ss) "
+        "through (dd) occurs between the two centres. libcint's int1e_r_cart "
+        "(<m|r - C|n>, components x, y, z) under mol.with_common_orig(C) at "
+        f"C = {DIPOLE_ORIGIN} bohr and at C = 0, and the one-electron "
+        "arrays. No density and no dip_moment."
+    ),
+    max_l=2,
+    density="none",
+    record_dipole_integrals=True,
+)
+
+
 def _cross_case(rows: str, cols: str, description: str, *,
                 atom: str | None = None) -> Case:
     """`cols`' molecule, basis and `cart` (or the same basis at `atom`),
@@ -693,11 +731,25 @@ def _mole(case: Case) -> Any:
     from pyscf import gto
 
     basis: Any = case.basis
+    symbols = sorted({s.split()[0] for s in case.atom.split(";") if s.strip()})
     if "\n" in case.basis:  # inline NWChem text, not a library name
-        symbols = {s.split()[0] for s in case.atom.split(";") if s.strip()}
-        basis = {s: gto.basis.parse(case.basis, symb=s) for s in sorted(symbols)}
+        basis = {s: gto.basis.parse(case.basis, symb=s) for s in symbols}
+    if case.max_l is not None:  # #520: the library basis, high l dropped
+        if isinstance(basis, str):
+            basis = {s: gto.basis.load(basis, s) for s in symbols}
+        basis = {s: [sh for sh in b if sh[0] <= case.max_l]
+                 for s, b in basis.items()}
     return gto.M(atom=case.atom, unit=case.unit, basis=basis, cart=case.cart,
                  charge=case.charge, spin=case.spin, verbose=0)
+
+
+def _basis_name(case: Case) -> str:
+    """The basis as `provenance.basis` records it: the name, and with
+    `max_l` (#520) the cut, so a truncated basis never reads as the
+    library's."""
+    if case.max_l is None:
+        return case.basis
+    return f"{case.basis}, shells with l <= {case.max_l} only"
 
 
 def rhf_density(mol: Any) -> np.ndarray:
@@ -722,10 +774,12 @@ def _tracked_density(name: str) -> np.ndarray | None:
     return np.array(load(path).density) if path.exists() else None
 
 
-def case_density(name: str, mol: Any, *, fresh: bool = False) -> np.ndarray:
+def case_density(name: str, mol: Any, *,
+                 fresh: bool = False) -> np.ndarray | None:
     """The density `name`'s arrays are computed from.
 
-    hilbert: `hilbert_density(nao)`. rhf: the RECORDED matrix -- the tracked
+    hilbert: `hilbert_density(nao)`. none (#520): None, no density.
+    rhf: the RECORDED matrix -- the tracked
     fixture of `density_from` (a `_k`'s `_j`, which must be tracked first),
     or of `name` itself; a fresh `rhf_density` only for an owner regenerated
     (`fresh`) or not yet tracked.
@@ -734,6 +788,8 @@ def case_density(name: str, mol: Any, *, fresh: bool = False) -> np.ndarray:
     nao = int(mol.nao_nr())
     if case.density == "hilbert":
         return hilbert_density(nao)
+    if case.density == "none":
+        return None
     if case.density != "rhf":
         raise ValueError(f"{name}: unknown density recipe {case.density!r}")
     if case.density_from is not None:
@@ -804,7 +860,7 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
             "command": f"{COMMAND} {name}",
             "mol": {"atom": case.atom, "unit": case.unit,
                     "charge": case.charge, "spin": case.spin},
-            "basis": case.aux_basis or case.basis,
+            "basis": case.aux_basis or _basis_name(case),
             "cart": case.cart,
         },
         "atoms": atoms,
@@ -815,9 +871,13 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
         "arrays": {
             "density": encode_array(dm),
             "ovlp": encode_array(mol.intor("int1e_ovlp")),
+        } if dm is not None else {
+            "ovlp": encode_array(mol.intor("int1e_ovlp")),
         },
         "density_recipe": DENSITY_RECIPES[case.density],
     }
+    if dm is None and (case.record_j or case.record_k or case.record_dipole):
+        raise ValueError(f"{name}: no density, so no vj, vk or dip_moment")
     if case.aux_basis is not None and case.three_center_set is not None:
         return _three_center_fixture(name, case, parent_mol, mol, out)
     if case.aux_basis is not None:
@@ -848,6 +908,11 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
             raise ValueError(f"{name}: record_dipole needs record_basis and "
                              "cart")
         out["arrays"].update(dipole_arrays(mol, dm, DIPOLE_ORIGIN))
+    if case.record_dipole_integrals:
+        if not (case.record_basis and case.cart) or case.record_dipole:
+            raise ValueError(f"{name}: record_dipole_integrals needs "
+                             "record_basis and cart, and not record_dipole")
+        out["arrays"].update(dipole_integral_arrays(mol, DIPOLE_ORIGIN))
     if case.cross_rows is not None:
         rows = CASES[case.cross_rows]
         if not (case.record_basis and rows.record_basis):
@@ -976,6 +1041,30 @@ def r_array(mol: Any, origin: Sequence[float]) -> np.ndarray:
     return r
 
 
+def _shift_checked_r(mol: Any, c: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """`(r_C, r_0)`, `int1e_r_cart` at `c` and at 0, refused unless
+    `r_C = r_0 - C S` per component to 1e-14 of the largest `|r_0|`."""
+    r, r0 = r_array(mol, c), r_array(mol, np.zeros(3))
+    s = mol.intor("int1e_ovlp")
+    shifted = r0 - c[:, None, None] * s[None]
+    err = float(np.max(np.abs(r - shifted)))
+    if err > 1e-14 * float(np.max(np.abs(r0))):
+        raise ValueError(f"int1e_r_cart at C and at 0 - C S differ by "
+                         f"{err:.3e}")
+    return r, r0
+
+
+def dipole_integral_arrays(mol: Any,
+                           origin: Sequence[float]) -> dict[str, Any]:
+    """#520: the integral half of `dipole_arrays` alone (no density, no
+    `dip_moment`): `C`, and `int1e_r_cart` at `C` and at 0, with the same
+    origin-shift cross-check before they are written."""
+    c = np.asarray(origin, dtype=np.float64)
+    r, r0 = _shift_checked_r(mol, c)
+    return {DIPOLE_ORIGIN_ARRAY: encode_array(c), R_ARRAY: encode_array(r),
+            R0_ARRAY: encode_array(r0)}
+
+
 def dipole_arrays(mol: Any, dm: np.ndarray,
                   origin: Sequence[float]) -> dict[str, Any]:
     """#517: `int1e_r_cart` at `origin` and at 0, and PySCF's RHF
@@ -991,13 +1080,7 @@ def dipole_arrays(mol: Any, dm: np.ndarray,
 
     c = np.asarray(origin, dtype=np.float64)
     zero = np.zeros(3)
-    r, r0 = r_array(mol, c), r_array(mol, zero)
-    s = mol.intor("int1e_ovlp")
-    shifted = r0 - c[:, None, None] * s[None]
-    err = float(np.max(np.abs(r - shifted)))
-    if err > 1e-14 * float(np.max(np.abs(r0))):
-        raise ValueError(f"int1e_r_cart at C and at 0 - C S differ by "
-                         f"{err:.3e}")
+    r, r0 = _shift_checked_r(mol, c)
     charges = np.asarray(mol.atom_charges(), dtype=np.float64)
     coords = np.asarray(mol.atom_coords(unit="Bohr"), dtype=np.float64)
     out = {DIPOLE_ORIGIN_ARRAY: encode_array(c), R_ARRAY: encode_array(r),

@@ -46,6 +46,9 @@ def test_tracked_fixture_loads_and_is_canonical(path):
     elif fx.three_center is not None:  # #442: schema 4, its one array
         assert sorted(fx.arrays) == [fx.three_center.array]
         assert schema == manifest.THREE_CENTER_SCHEMA
+    elif fx.density_free:  # #520: no density, by its recipe
+        assert "density" not in fx.arrays
+        assert schema == manifest.AO_SCHEMA
     else:
         assert set(fx.arrays) >= set(manifest.REQUIRED_ARRAYS)
         assert schema == manifest.AO_SCHEMA
@@ -639,6 +642,119 @@ def test_a_bad_dipole_array_fails_naming_the_file(tmp_path, mutate, says):
     with pytest.raises(FixtureError) as e:
         load(path)
     assert str(path) in str(e.value) and says in str(e.value)
+
+
+# --- #520: the density-free dipole fixture ---------------------------------
+
+SPD_SRC = manifest.FIXTURES / f"{manifest.SPD_DIPOLE}.json"
+
+
+def test_the_spd_dipole_fixture_loads_and_holds_nothing_above_d():
+    from oracle import generate
+
+    d = manifest.dipole_integrals()
+    fx = d.fixture
+    assert fx.name == "hf_ccpvtz_spd_dipole" and fx.density_free
+    assert sorted(fx.arrays) == sorted(
+        {"ovlp", *manifest.ONE_E_ARRAYS, *manifest.DIPOLE_INT_ARRAYS})
+    hf = load(manifest.FIXTURES / "hf_ccpvtz.json")
+    # hf_ccpvtz's molecule, its basis with the f shells gone: F 4s3p2d,
+    # H 3s2p1d, 40 Cartesian AOs
+    assert fx.atoms == hf.atoms and fx.provenance.mol == hf.provenance.mol
+    assert fx.shells == tuple(s for s in hf.shells if s.l <= 2)
+    assert max(s.l for s in hf.shells) == 3
+    assert fx.nao == 40
+    assert max(s.l for s in fx.converted.shells) == manifest.DIPOLE_SPD_L_MAX
+    assert {fx.converted.shells[i].atom for i, s in
+            enumerate(fx.converted.shells) if s.l == 2} == {0, 1}
+    assert fx.provenance.basis == "cc-pvtz, shells with l <= 2 only"
+    assert d.origin.tolist() == list(generate.DIPOLE_ORIGIN)
+    assert d.r.shape == d.r0.shape == (3, 40, 40)
+    assert np.array_equal(d.ovlp, fx.arrays["ovlp"])
+    # the component order, against the origin
+    shifted = d.r0 - d.origin[:, None, None] * d.ovlp[None]
+    scale = np.max(np.abs(d.r0))
+    assert np.max(np.abs(d.r - shifted)) <= SHIFT_TOL * scale
+    assert np.max(np.abs(d.r[[1, 0, 2]] - shifted)) > 1e3 * SHIFT_TOL * scale
+    assert SPD_SRC.stat().st_size < 512 * 1024
+
+
+def test_a_density_free_fixture_has_no_density_to_give():
+    fx = manifest.dipole_integrals().fixture
+    with pytest.raises(FixtureError, match="records no density"):
+        fx.density  # noqa: B018
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r["arrays"].update(
+            density={"shape": [40, 40], "values": [0.0] * 1600}),
+         "says no density, and arrays carries ['density']"),
+        (lambda r: r["arrays"].update(
+            {manifest.DIP_ARRAY: {"shape": [3], "values": [1.0, 2.0, 3.0]}}),
+         "says no density, and arrays carries"),
+        (lambda r: r["arrays"].update(
+            vj={"shape": [40, 40], "values": [0.0] * 1600}),
+         "says no density, and arrays carries ['vj']"),
+        (lambda r: r["arrays"].pop(manifest.R0_ARRAY),
+         "a density-free fixture: exactly"),
+        (lambda r: r["arrays"].update(
+            {manifest.DIP_CHARGES_ARRAY: {"shape": [2],
+                                          "values": [9.0, 1.0]}}),
+         "a density-free fixture: exactly"),
+        (lambda r: r.update(density_recipe="hilbert: something"),
+         "arrays is missing ['density']"),
+    ],
+    ids=["density", "dip-moment", "vj", "two-of-three", "charges",
+         "recipe"],
+)
+def test_a_bad_density_free_fixture_fails_naming_the_file(tmp_path, mutate,
+                                                          says):
+    path = _write_piece(tmp_path, mutate, src=SPD_SRC)
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value) and says in str(e.value)
+
+
+def test_dipole_integrals_refuses_a_shell_above_d(tmp_path):
+    raw = json.loads(SPD_SRC.read_text())
+    for c in raw["converted"]["shells"]:
+        if c["l"] == 2:
+            c["l"] = 3  # a converted f shell, with a d's AOs: refused first
+            break
+    (tmp_path / SPD_SRC.name).write_text(json.dumps(raw))
+    with pytest.raises(FixtureError):
+        manifest.dipole_integrals(fixtures=tmp_path)
+    # the l check itself, on a fixture that loads: hf_ccpvtz has f shells,
+    # so it is refused by the l cap once it otherwise qualifies
+    hf = load(manifest.FIXTURES / "hf_ccpvtz.json")
+    spd = manifest.dipole_integrals().fixture
+    from dataclasses import replace
+
+    with_f = replace(spd, shells=hf.shells)
+    with pytest.raises(FixtureError, match="l = 3, above DIPOLE_SPD_L_MAX"):
+        manifest.check_dipole_integrals(with_f)
+    conv_f = replace(spd, converted=hf.converted)
+    with pytest.raises(FixtureError, match="l = 3, above DIPOLE_SPD_L_MAX"):
+        manifest.check_dipole_integrals(conv_f)
+
+
+def test_dipole_integrals_refuses_the_wrong_kind_of_fixture():
+    with pytest.raises(FixtureError, match="it records a density"):
+        manifest.check_dipole_integrals(
+            manifest.dipole_pair("h2o_sto3g").dipole)
+    with pytest.raises(FixtureError, match="metric or three-center"):
+        manifest.check_dipole_integrals(load(PIECE))
+    spd = manifest.dipole_integrals().fixture
+    from dataclasses import replace
+
+    bare = replace(spd, arrays={k: v for k, v in spd.arrays.items()
+                                if k != manifest.OVLP_ARRAY})
+    with pytest.raises(FixtureError, match="carries no \\['int1e_ovlp'\\]"):
+        manifest.check_dipole_integrals(bare)
+    with pytest.raises(FixtureError, match="converted basis"):
+        manifest.check_dipole_integrals(replace(spd, converted=None))
 
 
 # --- the drift check: needs PySCF ------------------------------------------
