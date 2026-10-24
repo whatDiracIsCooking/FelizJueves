@@ -915,7 +915,7 @@ def test_the_multipole_binds_are_the_contract() -> None:
     frag = ef.multipole_fragment(1, 2, 1)
     assert frag.binds == (
         "zeta", "half_inv_zeta", "PA_x", "PB_x", "PA_y", "PB_y", "PA_z",
-        "PB_z", "p_x", "C_x", "p_y", "C_y", "p_z", "C_z", "M")
+        "PB_z", "P_x", "C_x", "P_y", "C_y", "P_z", "C_z", "M")
     assert frag.array_binds == {"M"}
     # e = 0 reads no origin; its binds are the overlap fragment's.
     assert ef.multipole_fragment(1, 2, 0).binds == (

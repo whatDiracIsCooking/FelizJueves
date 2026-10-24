@@ -100,9 +100,12 @@ THE ONE-ELECTRON LAUNCH (#241) sits beside both, at the end of this module:
     one_electron_launch(basis, nuclei, *, tau, bound) -> OneELaunch
     OneEClass(la, lb, recs, blocks)                     one pair class
     OneERec(i, j, prim, zeta, P, XPA, XPB, s, eb, off_a, off_b)
-    walk_one_electron(plan, basis, target, *, one_centre=None) -> S, T or V
+    walk_one_electron(plan, basis, target, *, one_centre=None,
+                      origin=None, q=1.0)       -> S, T, V, or MU (x, y, z)
 
-ONE record set for `S`, `T` and `V`, and NOT a `ClassLaunch`: that type is
+ONE record set for `S`, `T`, `V` and, since #521, the dipole `MU`
+(`Target.DIPOLE`, `V`'s record arrays plus the caller's origin and
+charge), and NOT a `ClassLaunch`: that type is
 J-shaped (a bra side, a density-keyed sorted ket side, a batch count), and
 `OneEClass`'s docstring says why a sibling type was the right call. None of
 `PairRec`, `ClassLaunch`, `LaunchPlan` or `launches` changed for it.
@@ -182,6 +185,7 @@ from felizjueves.ir import Kernel
 from felizjueves.mmd.hermite import Ang, e_axis, hermite_order
 from felizjueves.mmd.kernel import build_pq_kernels
 from felizjueves.one_electron.kinetic import kinetic_axis
+from felizjueves.one_electron.multipole import hermite_moments, multipole_axis
 from felizjueves.one_electron.one_electron import matrix, rectangular
 from felizjueves.one_electron.potential import _check_nuclei
 from felizjueves.spec import Operator, Spec, Target
@@ -461,7 +465,8 @@ class OneERec:
 
 
 _ONE_E_OPERATOR = {Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
-                   Target.V: Operator.NUCLEAR}
+                   Target.V: Operator.NUCLEAR,
+                   Target.DIPOLE: Operator.DIPOLE}  # #521: kernel_mu
 
 
 @dataclass(frozen=True)
@@ -510,8 +515,9 @@ class OneEClass:
         return self.la + self.lb
 
     def spec(self, target: Target) -> Spec:
-        """The kernel key of this class for `Target.S`, `T` or `V` --
-        `kernel_s.s_spec` / `kernel_t.t_spec` / `kernel_v.v_spec`, restated
+        """The kernel key of this class for `Target.S`, `T`, `V` or `DIPOLE`
+        -- `kernel_s.s_spec` / `kernel_t.t_spec` / `kernel_v.v_spec` /
+        `kernel_mu.mu_spec`, restated
         (building kernels is not this plan's business; a test pins the
         restatement equal)."""
         if target not in _ONE_E_OPERATOR:
@@ -522,11 +528,13 @@ class OneEClass:
         """The per-record parameter arrays of `target`'s kernel, in record
         order and in its parameter block's order, under its names
         (`kernel_s` / `kernel_t` / `kernel_v`), as plain lists. `n_rec` is
-        `len(recs)`; `V`'s `n_nuc`, `Z` and `Cnuc` are the launch's."""
+        `len(recs)`; `V`'s `n_nuc`, `Z` and `Cnuc` are the launch's.
+        `Target.DIPOLE` (`kernel_mu`, #521) takes `V`'s record arrays; its
+        origin `C_x C_y C_z` and charge `q` are the caller's scalars."""
         self.spec(target)
         rs = self.recs
         out: dict[str, list] = {"zeta_ab": [r.zeta for r in rs]}
-        if target is Target.V:
+        if target in (Target.V, Target.DIPOLE):
             out |= per_axis("p", [r.P for r in rs])
         out |= per_axis("pa", [r.XPA for r in rs])
         out |= per_axis("pb", [r.XPB for r in rs])
@@ -666,61 +674,109 @@ def _v_rec(la: int, lb: int, carts, r: OneERec, nuclei: Sequence[Nucleus],
             acc[k] += -Z * v
 
 
+def _mu_rec(carts, r: OneERec, C: Vec3, q: float) -> list[float]:
+    """The record's `(q s) v` per (component, row), component-major, in
+    `one_electron.multipole.multipole_block`'s arithmetic at `e = 1`: the
+    axis tables from the RECORD's `XPA` / `XPB`, the Hermite moments from
+    its `P`, `v = ((1.0 f_x) f_y) f_z`."""
+    qs = q * r.s
+    mom = [[hermite_moments(k, r.P[d] - C[d], r.zeta) for k in range(2)]
+           for d in range(3)]
+    comps = cartesians(1)
+    out = [0.0] * (len(comps) * len(carts))
+    for n, (a, b) in enumerate(carts):
+        ax = [e_axis(a[d], b[d], r.zeta, r.XPA[d], r.XPB[d]) for d in range(3)]
+        for k, ek in enumerate(comps):
+            v = 1.0
+            for d in range(3):
+                v = v * multipole_axis(ax[d], mom[d][ek[d]])
+            out[k * len(carts) + n] = qs * v
+    return out
+
+
 def walk_one_electron(plan: OneELaunch, basis: Basis, target: Target, *,
-                      one_centre: OneCentre | None = None
-                      ) -> list[list[float]]:
-    """`S`, `T` or `V` (`target`) from the PLAN alone.
+                      one_centre: OneCentre | None = None,
+                      origin: Sequence[float] | None = None, q: float = 1.0
+                      ) -> list:
+    """`S`, `T`, `V` or the dipole `MU` (`target`) from the PLAN alone.
 
     Each record's contribution is computed from the record's own fields
     (for `V` also the launch's nuclei and the INJECTED `one_centre`, the
-    signature `ao.pairs.OneCentre`), the contributions of one shell pair
-    are summed in record order from `0.0` -- `one_electron.overlap`,
-    `one_electron.kinetic` and
-    `one_electron.potential`'s arithmetic, in their order -- and the blocks are placed
-    by `one_electron.one_electron.matrix` over `plan.kept`. So the walk equals
-    `overlap_matrix(basis, pairs=plan.kept)` (and the other two) TO 0: a
-    difference means a record carries a wrong value, never a rounding.
-    `basis` supplies only the momenta and the AO layout. Nothing is
-    memoised, and no kernel is built or interpreted.
+    signature `ao.pairs.OneCentre`; for `Target.DIPOLE`, #521, the
+    caller's `origin` `C` and charge `q`), the contributions of one shell
+    pair are summed in record order from `0.0` -- `one_electron.overlap`,
+    `one_electron.kinetic`, `one_electron.potential` and
+    `one_electron.multipole`'s arithmetic, in their order -- and the blocks
+    are placed by `one_electron.one_electron.matrix` over `plan.kept`. So
+    the walk equals `overlap_matrix(basis, pairs=plan.kept)` (and the
+    others; `multipole_matrix(basis, origin, q=q, pairs=plan.kept)` for the
+    dipole) TO 0: a difference means a record carries a wrong value, never
+    a rounding. `S`, `T` and `V` are one `n_ao x n_ao` matrix; `MU` is
+    three, x, y, z. `basis` supplies only the momenta and the AO layout.
+    Nothing is memoised, and no kernel is built or interpreted.
     """
     if target not in _ONE_E_OPERATOR:
         raise ValueError(f"{target!r} is not a one-electron target")
     if target is Target.V and one_centre is None:
         raise ValueError("V needs the injected one_centre evaluator")
+    dipole = target is Target.DIPOLE
+    C: Vec3 = (0.0, 0.0, 0.0)
+    if dipole:
+        if origin is None:
+            raise ValueError("the dipole needs its origin C")
+        given = tuple(float(x) for x in origin)
+        if len(given) != 3 or not all(math.isfinite(x) for x in given):
+            raise ValueError(f"origin C = {origin!r} is not three finite "
+                             "floats")
+        C = given  # type: ignore[assignment]
+        q = float(q)
+    elif origin is not None:
+        raise ValueError(f"{target!r} takes no origin")
+    n_comp = len(cartesians(1)) if dipole else 1
     shells = basis.shells
-    out: dict[tuple[int, int], tuple[tuple[float, ...], ...]] = {}
+    out: dict[tuple[int, int], list[tuple[tuple[float, ...], ...]]] = {}
     for c in plan:
         ca, cb = cartesians(c.la), cartesians(c.lb)
         carts = [(a, b) for a in ca for b in cb]
-        nb = len(cb)
+        nb, nc = len(cb), len(carts)
         for i, j, start, stop in c.blocks:
             if (shells[i].l, shells[j].l) != (c.la, c.lb):
                 raise ValueError(f"the plan's block ({i}, {j}) is not class "
                                  f"({c.la}, {c.lb}) in this basis")
-            acc = [0.0] * len(carts)
+            acc = [0.0] * (n_comp * nc)
             for r in c.recs[start:stop]:
                 if target is Target.S:
                     vs = _s_rec(carts, r)
                 elif target is Target.T:
                     vs = _t_rec(c.la, c.lb, carts, r)
+                elif dipole:
+                    vs = _mu_rec(carts, r, C, q)
                 else:
                     _v_rec(c.la, c.lb, carts, r, plan.nuclei, one_centre, acc)
                     continue
                 for n, v in enumerate(vs):
                     acc[n] += v
-            out[(i, j)] = tuple(tuple(acc[k * nb:(k + 1) * nb])
-                                for k in range(len(ca)))
+            out[(i, j)] = [
+                tuple(tuple(acc[k * nc + row * nb:k * nc + (row + 1) * nb])
+                      for row in range(len(ca)))
+                for k in range(n_comp)]
     if sorted(out) != sorted(plan.kept):
         raise ValueError("the plan's classes do not cover its kept pairs")
-    order = iter(plan.kept)
 
-    def block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:
-        i, j = next(order)
-        if shells[i] is not sa or shells[j] is not sb:
-            raise ValueError(f"the kept pair ({i}, {j}) is out of order")
-        return out[(i, j)]
+    def component(k: int) -> list[list[float]]:
+        order = iter(plan.kept)
 
-    return matrix(basis, block, pairs=plan.kept)
+        def block(sa: Shell, sb: Shell) -> tuple[tuple[float, ...], ...]:
+            i, j = next(order)
+            if shells[i] is not sa or shells[j] is not sb:
+                raise ValueError(f"the kept pair ({i}, {j}) is out of order")
+            return out[(i, j)][k]
+
+        return matrix(basis, block, pairs=plan.kept)
+
+    if dipole:
+        return [component(k) for k in range(n_comp)]
+    return component(0)
 
 
 # --- the cross-basis overlap launch (Target.SX), BESIDE OneELaunch ----------

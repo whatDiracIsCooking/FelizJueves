@@ -427,6 +427,7 @@ from felizjueves.eri.j_coulomb.launch import (  # noqa: E402
     one_electron_launch,
     walk_one_electron,
 )
+from felizjueves.one_electron.kernel_mu import build_mu_kernel, mu_spec  # noqa: E402
 from felizjueves.one_electron.kernel_s import build_s_kernel, s_spec  # noqa: E402
 from felizjueves.one_electron.kernel_t import build_t_kernel, t_spec  # noqa: E402
 from felizjueves.one_electron.kernel_v import build_v_kernel, v_spec  # noqa: E402
@@ -434,8 +435,11 @@ from felizjueves.spec import Target  # noqa: E402
 
 _ONE_E = {Target.S: (s_spec, build_s_kernel, _s_records),
           Target.T: (t_spec, build_t_kernel, _t_records),
-          Target.V: (v_spec, build_v_kernel, _v_records)}
-_NON_RECORD = {"n_rec", "n_ao", "n_nuc", "Z", "Cnuc", "S", "T", "V"}
+          Target.V: (v_spec, build_v_kernel, _v_records),
+          # #521: the dipole takes V's record arrays
+          Target.DIPOLE: (mu_spec, build_mu_kernel, _v_records)}
+_NON_RECORD = {"n_rec", "n_ao", "n_nuc", "Z", "Cnuc", "S", "T", "V",
+               "C_x", "C_y", "C_z", "q", "MU"}
 
 
 @cache
@@ -501,9 +505,13 @@ def _carries_exactly_what_each_kernel_reads(target, fast: bool):
     basis, nuclei = _spdf()
     plan = _plan_1e(basis, nuclei)
     sh = basis.shells
+    checked: list[tuple[int, int]] = []
     for c in plan:
         if is_fast(c.la + c.lb) != fast:
             continue
+        if target is Target.DIPOLE and max(c.la, c.lb) > 2:
+            continue  # milestone 19's cap: no f shell is built
+        checked.append((c.la, c.lb))
         assert c.spec(target) == spec_of(c.la, c.lb)
         got = c.arrays(target)
         params = [p.name for p in build(c.spec(target)).params
@@ -516,12 +524,16 @@ def _carries_exactly_what_each_kernel_reads(target, fast: bool):
         for k in want:
             assert np.array_equal(np.asarray(got[k], dtype=want[k].dtype),
                                   want[k]), (target, c.la, c.lb, k)
-    return plan, nuclei
+    return plan, nuclei, checked
 
 
-@pytest.mark.parametrize("target", [Target.S, Target.T, Target.V])
+@pytest.mark.parametrize("target", [Target.S, Target.T, Target.V,
+                                    Target.DIPOLE])
 def test_one_record_set_carries_exactly_what_each_kernel_reads(target):
-    plan, nuclei = _carries_exactly_what_each_kernel_reads(target, True)
+    plan, nuclei, checked = _carries_exactly_what_each_kernel_reads(target,
+                                                                    True)
+    if target is Target.DIPOLE:  # every class (ss) through (dd) was read
+        assert set(checked) == {(a, b) for a in range(3) for b in range(3)}
     if target is Target.V:
         assert plan.Z == [z for z, _ in nuclei]
         assert plan.Cnuc == [list(cn) for _, cn in nuclei]
@@ -574,5 +586,11 @@ def test_the_one_electron_plan_refuses():
         walk_one_electron(plan, basis, Target.J)
     with pytest.raises(ValueError, match="one_centre"):
         walk_one_electron(plan, basis, Target.V)
+    with pytest.raises(ValueError, match="origin"):  # #521
+        walk_one_electron(plan, basis, Target.DIPOLE)
+    with pytest.raises(ValueError, match="three finite"):
+        walk_one_electron(plan, basis, Target.DIPOLE, origin=(0.0, 0.0))
+    with pytest.raises(ValueError, match="takes no origin"):
+        walk_one_electron(plan, basis, Target.S, origin=(0.0, 0.0, 0.0))
     assert isinstance(plan, OneELaunch)
     assert all(isinstance(r, OneERec) for c in plan for r in c.recs)

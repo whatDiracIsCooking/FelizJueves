@@ -66,8 +66,8 @@ identity it is checked by (test/test_e_fragment.py).
 
 - `multipole_fragment(la, lb, e)` (#519): the Cartesian multipole moments
   of order `e` about a point `C`, by the Hermite route. The three axes
-  (`_axes_body(la, lb)`, unchanged), then per axis `X_PC = p_d - C_d` (one
-  local `XPC_{x,y,z}` from the scalar binds `p_d`, `C_d`), the Hermite
+  (`_axes_body(la, lb)`, unchanged), then per axis `X_PC = P_d - C_d` (one
+  local `XPC_{x,y,z}` from the scalar binds `P_d`, `C_d`), the Hermite
   moments `M^{e'}_t` for `e' <= e`, `t <= e'` (one local `Mt{x,y,z}_e_t`),
 
       M^0_0 = 1,   M^{e+1}_t = t M^e_{t-1} + X_PC M^e_t + M^e_{t+1} / (2 zeta),
@@ -131,7 +131,7 @@ Binds: `zeta` (the seed's exponent), `half_inv_zeta` (`1/2zeta`, a
 is raised), and each axis's `PA_d` / `PB_d` (`Factor`s, read by the seed as
 plain scalars too); the block adds the array `E`, the overlap fragment
 the array `E0`, the kinetic fragment the scalar `eb` and the array `KE`,
-the multipole fragment the scalars `p_d`, `C_d` (when `e >= 1`) and the
+the multipole fragment the scalars `P_d`, `C_d` (when `e >= 1`) and the
 array `M` (or, with a `store`, the consumer's `store_binds`).
 The center fragment binds only `half_inv_zeta` (when `l >= 1`; there
 `zeta` is the aux primitive's own exponent) and the array `E`.
@@ -401,8 +401,12 @@ _MULTIPOLE_PROVENANCE = (
 
 
 def p_name(d: int) -> str:
-    """The scalar bind holding the pair centre `P_d`: `p_x`."""
-    return f"p_{_AXES[d]}"
+    """The scalar bind holding the pair centre `P_d`: `P_x`. Upper case
+    (#521) so it is not a host name: `kernel_mu` takes the per-record
+    centres as the arrays `p_x p_y p_z` (`kernel_v`'s names), and `ir`
+    refuses a bind that shares a host name unless bound to that very name
+    -- `kernel_s`'s `zeta_ab` hygiene, from the other side."""
+    return f"P_{_AXES[d]}"
 
 
 def origin_name(d: int) -> str:
@@ -503,6 +507,7 @@ def multipole_fragment(
     la: int, lb: int, e: int, *,
     store: Callable[[int, int, Expr], Stmt] | None = None,
     store_binds: tuple[str, ...] = (),
+    from_order: int | None = None,
 ) -> Fragment:
     """The undressed Cartesian multipole moments of order `e` about `C`, one
     value per component of `multipole_components(e)` and row of
@@ -513,10 +518,21 @@ def multipole_fragment(
     value)` is placed there instead (an `AtomicAdd`, say), there is no `M`
     bind, and `store_binds` -- every name those statements read beyond
     `value` -- are the fragment's last binds.
+
+    `from_order` (#521; default `e`) writes every order `from_order..e`,
+    ascending, each order's components in `multipole_components` order and
+    `comp` counting across them: `from_order = 0` at `e = 1` is the `e = 0`
+    product first (component 0, `overlap_fragment`'s `(E_x E_y) E_z`), then
+    x, y, z, all from the one set of axis tables. The default's fragment is
+    unchanged.
     """
     _check_am("la", la)
     _check_am("lb", lb)
     _check_am("e", e)
+    lo = e if from_order is None else from_order
+    if type(lo) is not int or not 0 <= lo <= e:
+        raise ValueError(f"from_order = {from_order!r} is not an int in "
+                         f"[0, e = {e}]")
     if store is None and store_binds:
         raise ValueError("store_binds given without a store")
     body: list[Stmt] = [Note(f"{_PROVENANCE}; {_MULTIPOLE_PROVENANCE}"),
@@ -540,7 +556,8 @@ def multipole_fragment(
                     assert not isinstance(m, int)  # every part reads an E
                     axis[n, i, j] = _bind_local(body, m_name(d, n, i, j), m)
         moments.append(axis)
-    for comp, ex in enumerate(multipole_components(e)):
+    comps = [ex for n in range(lo, e + 1) for ex in multipole_components(n)]
+    for comp, ex in enumerate(comps):
         for row, (a, b) in enumerate(block_rows(la, lb)):
             x, y, z = (moments[d][ex[d], a[d], b[d]] for d in range(3))
             body.append(Assign(Index(M_ARRAY, (Lit(comp), Lit(row))),
@@ -556,7 +573,9 @@ def multipole_fragment(
                   *_scalar_binds(la, lb, (0, 1, 2))[1 + bool(la + lb):],
                   *(n for d in range(3) for n in (p_name(d), origin_name(d)))]
     binds = [b for b in candidates if b in read]
-    return Fragment(f"e_multipole_{la}{lb}_{e}", (*binds, *sink), kept)
+    name = (f"e_multipole_{la}{lb}_{e}" if lo == e
+            else f"e_multipole_{la}{lb}_{lo}_{e}")
+    return Fragment(name, (*binds, *sink), kept)
 
 
 _CENTER_PROVENANCE = (

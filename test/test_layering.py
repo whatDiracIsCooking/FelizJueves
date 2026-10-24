@@ -2700,6 +2700,77 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
         assert not hit, f"kernel_sx reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# #521 (milestone 19): the fused dipole kernel, `Target.DIPOLE`. `kernel_s`'s
+# rule plus `kernel_s` itself (the record index and the per-axis parameter
+# spelling, imported): the key, IR and `e_fragment.multipole_fragment`
+# inlined. It is checked against `one_electron.multipole` in the
+# interpreter, so neither that nor `ao`, the interpreter, a backend, a card
+# or `reference/` may be its ancestor. The plan's walker rebuilds `MU` with
+# the host's own axis pieces (`one_electron.multipole.hermite_moments` /
+# `multipole_axis`), so `launch` gains that edge, under its `launch` rule.
+# The generator CLI is #522's, so the driver does not compose it yet.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "mu_builder": _rule(
+        "kernel_mu.py (#521): the fused dipole kernel, `Target.DIPOLE` -- key "
+        "-> IR, `e_fragment.multipole_fragment` inlined once, every "
+        "component AtomicAdd-ed by `kernel_jab`'s scatter rule as it forms",
+        ("spec", "=ir", "mmd.e_fragment", "one_electron.kernel_s"),
+        ao="`one_electron.multipole.multipole_block` is the witness the "
+           "kernel is interpreted against, and `ao.pairs.dress` the "
+           "prefactor it must not form: importing either shares ancestry "
+           "with it (#20)",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {
+    "one_electron.kernel_mu": "mu_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "one_electron.kernel_mu": ("mmd.e_fragment", "ir", "one_electron.kernel_s",
+                               "spec"),
+}.items()}
+EDGES["eri.j_coulomb.launch"] = EDGES["eri.j_coulomb.launch"] | frozenset(
+    ("one_electron.multipole",))
+
+
+def test_the_mu_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["one_electron.kernel_mu"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"mmd.e_fragment", "one_electron.kernel_s"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "eri.j_coulomb.launch",
+                   "one_electron.multipole"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_mu reaches {hit}"
+
+
+def test_the_launch_builds_no_dipole_kernel() -> None:
+    # #521: the walker rebuilds MU from the host's pieces, never the kernel.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["eri.j_coulomb.launch"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "one_electron.multipole" in seen
+    assert not any(_under(e, "one_electron.kernel_mu") for e in seen)
+
+
 # The generator CLI writes the three-center ladder (`--eri3-l`, #445), so the
 # driver composes the builder, as it does the metric's.
 RULES["driver"] = Rule(RULES["driver"].why + ", and the three-center ladder "

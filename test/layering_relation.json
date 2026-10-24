@@ -1715,6 +1715,12 @@
    "spec"
   ],
   "one_electron": [],
+  "one_electron.kernel_mu": [
+   "ir",
+   "mmd.e_fragment",
+   "one_electron.kernel_s",
+   "spec"
+  ],
   "one_electron.kernel_s": [
    "ir",
    "mmd.e_fragment",
