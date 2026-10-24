@@ -67,7 +67,7 @@ __all__ = [
 # Every `spec.Target`'s key slot, in the enum's order (pinned by a test).
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
                                  "schwarz", "sx", "metric", "eri3",
-                                 "pair_bound", "record_bound")
+                                 "pair_bound", "record_bound", "dipole")
 
 # THE ENGINE SLOTS (#401). A target built on a recurrence other than its
 # native one keys as `<target>.<engine>` (`spec.Spec.target_slot`), and the
@@ -165,6 +165,7 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "is one thread per record over an E fragment and a closed form, with "
         "no [p|q] recurrence region and no batch for a lever to act on"
     ),
+    "dipole": f"the dipole kernel {_ONE_THREAD_PER_RECORD}",
     "j.hgp": (
         "no kernel-body lever is admitted on an HGP Target.J unless its "
         "entry says so: the MMD J levers act on the [p|q] tower and the F "

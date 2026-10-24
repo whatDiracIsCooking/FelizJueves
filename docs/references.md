@@ -184,3 +184,9 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
     cc-pVTZ-jkfit (the Basis Set Exchange's reference for that set, and the
     citation in PySCF's `cc-pvtz-jkfit.dat`), the auxiliary basis of the
     `h2o_ccpvtz_jkfit_metric` fixture (#411).
+48. T. Helgaker, P. Jørgensen, and J. Olsen, *Molecular Electronic-Structure
+    Theory* (John Wiley & Sons, Chichester, 2000). doi:10.1002/9781119019572
+    — §9.5, the multipole moment integrals over Cartesian Gaussians by the
+    Hermite route (the moments `M^e_t` of a Hermite Gaussian and their
+    recurrence in `e`), cited for `Target.DIPOLE` (#518). The equation
+    number within §9.5 was not checked against the text.

@@ -13,6 +13,7 @@ from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,
     OPERATOR_OF,
+    Engine,
     Operator,
     Spec,
     Target,
@@ -125,15 +126,15 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # Coulomb metric `metric`, a pair of aux shells, and #441 the
     # three-center integral `eri3`, a triple, and the record bound
     # `pair_bound`, a pair class, and #499 K's dressed `record_bound`, an
-    # ordered pair class.
+    # ordered pair class, and #518 the dipole matrix `dipole`, a pair class.
     assert [t.value for t in Target] == [
         "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric",
-        "eri3", "pair_bound", "record_bound"]
+        "eri3", "pair_bound", "record_bound", "dipole"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
         Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
-        Target.PAIR_BOUND: 2, Target.RECORD_BOUND: 2,
+        Target.PAIR_BOUND: 2, Target.RECORD_BOUND: 2, Target.DIPOLE: 2,
     }
 
 
@@ -220,10 +221,12 @@ def _one(target: Target, **kw) -> Spec:
 
 def test_the_operator_enum_is_widened_not_renamed() -> None:
     # The first widening of a field that had one legal value since the key
-    # was designed: COULOMB keeps its place and its value.
-    assert [o.value for o in Operator] == ["coulomb", "overlap", "kinetic", "nuclear"]
-    assert (Operator.OVERLAP, Operator.KINETIC, Operator.NUCLEAR) == (
-        "overlap", "kinetic", "nuclear")
+    # was designed: COULOMB keeps its place and its value. #518 appends
+    # `dipole` the same way.
+    assert [o.value for o in Operator] == [
+        "coulomb", "overlap", "kinetic", "nuclear", "dipole"]
+    assert (Operator.OVERLAP, Operator.KINETIC, Operator.NUCLEAR,
+            Operator.DIPOLE) == ("overlap", "kinetic", "nuclear", "dipole")
 
 
 def test_operator_of_pins_each_target_to_one_operator() -> None:
@@ -236,6 +239,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
         Target.PAIR_BOUND: Operator.COULOMB,
         Target.RECORD_BOUND: Operator.COULOMB,
+        Target.DIPOLE: Operator.DIPOLE,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -577,3 +581,88 @@ def test_the_docstring_says_the_triple_is_not_a_quartet_minus_a_shell() -> None:
     doc = spec_module.__doc__
     assert "AN ERI3 CLASS IS A TRIPLE THAT RUNS A QUARTET" in doc
     assert "NOT an AO quartet with a shell dropped" in doc
+
+
+# #518: the dipole matrix <a| q (r - C) |b>, a pair (la, lb) on its own
+# operator, never batched for S's structural reason. The multipole order
+# e = 1 is the builder's argument: no field, so no key spells it.
+
+
+def _dipole(am=(2, 1), **kw) -> Spec:
+    return Spec(Operator.DIPOLE, 0, am, Target.DIPOLE, **kw)
+
+
+def test_the_dipole_key_is_a_dipole_pair_and_round_trips() -> None:
+    a = _dipole()
+    assert a.key() == "dipole/d0/(2,1)/b1/dipole/literal"
+    assert a.key() != _dipole((1, 2)).key()
+    assert a.total_am == 3
+    assert [f.name for f in dataclasses.fields(Spec)] == [
+        "operator", "derivative_order", "am", "target", "levers",
+        "n_batches", "engine"]  # no multipole-order field
+    for la in range(5):
+        for lb in range(5):
+            s = _dipole((la, lb))
+            op, d, cls, b, t, lv = s.key().split("/")
+            assert (op, cls, t, lv) == (
+                "dipole", f"({la},{lb})", "dipole", "literal")
+            back = Spec(Operator(op), int(d[1:]),
+                        tuple(int(x) for x in cls[1:-1].split(",")),
+                        Target(t), n_batches=int(b[1:]))
+            assert back == s and back.key() == s.key()
+            assert target_of(f"{s.key()}@sm_86/nvcc 13.0") is Target.DIPOLE
+
+
+def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
+    for op in Operator:
+        if op is Operator.DIPOLE:
+            continue
+        with pytest.raises(ValueError, match="built from operator dipole"):
+            Spec(op, 0, (1, 1), Target.DIPOLE)
+    for am in ((2, 1, 0, 0), (2, 1, 0), (2,), (2, -1)):
+        with pytest.raises(ValueError):
+            _dipole(am)
+    with pytest.raises(ValueError, match="derivative order"):
+        Spec(Operator.DIPOLE, 1, (2, 1), Target.DIPOLE)
+
+
+@pytest.mark.parametrize("n", [3, 6, 9, 12])
+def test_a_batched_dipole_is_refused_structurally(n: int) -> None:
+    with pytest.raises(ValueError) as info:
+        _dipole(n_batches=n)
+    msg = str(info.value)
+    assert "pair target dipole" in msg
+    assert "never batched" in msg and "partitions the Hermite targets" in msg
+    assert "decision" not in msg
+    assert _PAIR_BATCH_REFUSAL[Target.DIPOLE] == _PAIR_BATCH_REFUSAL[Target.S]
+    assert _dipole().n_batches == 1
+
+
+def test_the_dipole_refuses_hgp_as_s_does() -> None:
+    with pytest.raises(ValueError, match="one-electron kernel"):
+        _dipole(engine=Engine.HGP)
+    assert _dipole().engine is Engine.MMD
+
+
+def test_a_dipole_key_never_collides_with_any_other_target_key() -> None:
+    ls = range(4)
+    dipole = {_dipole((a, b)).key() for a in ls for b in ls}
+    assert len(dipole) == 16
+    others = set()
+    for t in Target:
+        if t is Target.DIPOLE:
+            continue
+        shapes = itertools.product(ls, repeat=AM_LENGTH[t])
+        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+    assert dipole.isdisjoint(others)
+    # Not S's key either, though both are one-electron pairs of one shape.
+    assert _dipole().key() != Spec(Operator.OVERLAP, 0, (2, 1), Target.S).key()
+
+
+def test_the_docstring_says_the_order_is_not_in_the_key() -> None:
+    import felizjueves.spec as spec_module
+
+    doc = spec_module.__doc__
+    assert "A DIPOLE CLASS IS A ONE-ELECTRON PAIR" in doc
+    assert "IS A BUILDER ARGUMENT, NOT A KEY FIELD" in doc
+    assert "§9.5 (docs/references.md entry" in doc
