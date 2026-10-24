@@ -141,8 +141,8 @@ PAIR_GOLDENS = {"dq_1_1": "dq", "jab_11": "jab"}
 
 
 def _pair_kernel(family: str):
-    from felizjueves.kernel_dq import build_dq_kernel
-    from felizjueves.kernel_jab import build_jab_kernel
+    from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
+    from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
     return {"dq": build_dq_kernel, "jab": build_jab_kernel}[family]((1, 1))
 
 

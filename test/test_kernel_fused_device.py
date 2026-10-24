@@ -21,7 +21,7 @@ import pytest
 from test_kernel_device import _run_batched
 from tiers import by_l
 
-from felizjueves.j_levers.fused import FUSED
+from felizjueves.eri.j_coulomb.levers.fused import FUSED
 from felizjueves.mmd.kernel import pq_spec
 
 CELLS = [

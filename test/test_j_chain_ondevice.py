@@ -153,20 +153,20 @@ from test_kernel_device import BACKEND, _toolchain
 from tiers import FAST_L_MAX, by_l, is_fast
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.drive import _chain_plan, _unique_pairs
-from felizjueves.ao.j import (
+from felizjueves.emit import __main__ as emit_cli
+from felizjueves.eri.j_coulomb.drive import _chain_plan, _unique_pairs
+from felizjueves.eri.j_coulomb.j import (
     cart_pairs,
     coulomb_matrix_and_scale,
     dq_from_host,
     jab_from_host,
 )
-from felizjueves.ao.staged import KetData
-from felizjueves.emit import __main__ as emit_cli
+from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel, dq_shape
+from felizjueves.eri.j_coulomb.kernel_dq import launch_shape as dq_launch_shape
+from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel, jab_launch_shape
+from felizjueves.eri.j_coulomb.launch import LaunchPlan, bound_value, walk
+from felizjueves.eri.j_coulomb.staged import KetData
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_dq import build_dq_kernel, dq_shape
-from felizjueves.kernel_dq import launch_shape as dq_launch_shape
-from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.launch import LaunchPlan, bound_value, walk
 from felizjueves.mmd.hermite import _raise, e_block, hermite_order
 from felizjueves.reference.pq import pq as ref_pq
 

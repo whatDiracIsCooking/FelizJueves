@@ -59,7 +59,7 @@ from test_one_electron_device import _axis_abs, _gamma, _n_e
 
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.ao.shell import cartesians
-from felizjueves.launch import XLaunch, cross_overlap_launch
+from felizjueves.eri.j_coulomb.launch import XLaunch, cross_overlap_launch
 from felizjueves.one_electron.overlap import cross_overlap_matrix
 
 CROSS = ("h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz", "h2o_sto3g_x_631g_moved")

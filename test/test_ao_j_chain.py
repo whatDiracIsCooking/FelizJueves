@@ -43,13 +43,13 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao import drive
-from felizjueves.ao import j as aoj
-from felizjueves.ao import staged as aostaged
-from felizjueves.ao.drive import coulomb_matrix_chain
 from felizjueves.ao.pairs import primitive_pairs
-from felizjueves.ao.staged import coulomb_matrix_staged
-from felizjueves.launch import launches
+from felizjueves.eri.j_coulomb import drive
+from felizjueves.eri.j_coulomb import j as aoj
+from felizjueves.eri.j_coulomb import staged as aostaged
+from felizjueves.eri.j_coulomb.drive import coulomb_matrix_chain
+from felizjueves.eri.j_coulomb.launch import launches
+from felizjueves.eri.j_coulomb.staged import coulomb_matrix_staged
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
 

@@ -71,11 +71,11 @@ import pytest
 from oracle import basis as ob
 from oracle import manifest
 
-from felizjueves.ao import j as aoj
 from felizjueves.ao.density import checked_density, make_kets
-from felizjueves.ao.j import coulomb_matrix, coulomb_matrix_screened
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
+from felizjueves.eri.j_coulomb import j as aoj
+from felizjueves.eri.j_coulomb.j import coulomb_matrix, coulomb_matrix_screened
 from felizjueves.reference.boys import T_MAX
 from felizjueves.reference.pq import pq
 

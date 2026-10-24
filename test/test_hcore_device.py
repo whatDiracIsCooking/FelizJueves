@@ -76,7 +76,7 @@ from test_ao_potential import potential_scale_block
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves.ao.pairs import overlap_bound
-from felizjueves.launch import OneELaunch, one_electron_launch
+from felizjueves.eri.j_coulomb.launch import OneELaunch, one_electron_launch
 from felizjueves.one_electron.kinetic import kinetic_matrix
 from felizjueves.one_electron.one_electron import matrix
 from felizjueves.one_electron.potential import potential_matrix

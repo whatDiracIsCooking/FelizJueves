@@ -31,7 +31,7 @@ from oracle import manifest
 from test_ao_overlap import ONE_E_TOL, _overlap_scale_block
 
 from felizjueves.ao.pairs import cross_pair_list, overlap_bound
-from felizjueves.launch import cross_overlap_launch, walk_cross_overlap
+from felizjueves.eri.j_coulomb.launch import cross_overlap_launch, walk_cross_overlap
 from felizjueves.one_electron.kernel_sx import sx_spec
 from felizjueves.one_electron.one_electron import matrix, rectangular
 from felizjueves.one_electron.overlap import (

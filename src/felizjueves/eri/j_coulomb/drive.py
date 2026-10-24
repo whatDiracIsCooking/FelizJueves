@@ -70,18 +70,18 @@ from felizjueves.ao.density import (
     checked_tau,
     epair,
 )
-from felizjueves.ao.j import BraRec, KetRec
 from felizjueves.ao.shell import Basis
-from felizjueves.ao.staged import KetData, Staged, coulomb_matrix_staged
+from felizjueves.eri.j_coulomb.j import BraRec, KetRec
+from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel, dq_shape
+from felizjueves.eri.j_coulomb.kernel_dq import launch_shape as dq_launch_shape
+from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel, jab_launch_shape
+from felizjueves.eri.j_coulomb.launch import Bound, ClassLaunch, LaunchPlan, bound_value
+from felizjueves.eri.j_coulomb.launch import class_kernels as _plan_kernels
+from felizjueves.eri.j_coulomb.launch import class_spec as launch_class_spec
+from felizjueves.eri.j_coulomb.staged import KetData, Staged, coulomb_matrix_staged
 from felizjueves.eri.launch_common import PairRec, batches_for, sorted_desc
 from felizjueves.ir import Kernel
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.kernel_dq import build_dq_kernel, dq_shape
-from felizjueves.kernel_dq import launch_shape as dq_launch_shape
-from felizjueves.kernel_jab import build_jab_kernel, jab_launch_shape
-from felizjueves.launch import Bound, ClassLaunch, LaunchPlan, bound_value
-from felizjueves.launch import class_kernels as _plan_kernels
-from felizjueves.launch import class_spec as launch_class_spec
 from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernels,

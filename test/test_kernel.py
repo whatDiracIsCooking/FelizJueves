@@ -339,7 +339,7 @@ def test_the_kernel_module_is_vendor_neutral() -> None:
     ours = {m for m in mods if m and m.startswith("felizjueves")}
     # #344: `j_levers` holds the J kernel-body levers' behaviour (`fused`),
     # reached by one hook in `_pq_kernel`; it is IR in, IR out, as here.
-    assert ours == {"felizjueves.ir", "felizjueves.j_levers",
+    assert ours == {"felizjueves.ir", "felizjueves.eri.j_coulomb.levers",
                     "felizjueves.ir.passes",
                     "felizjueves.plan.dag", "felizjueves.plan.pipeline",
                     "felizjueves.plan.schedule", "felizjueves.plan.targets",

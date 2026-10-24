@@ -100,15 +100,15 @@ from test_j_launched_ondevice import BOUND as J_BOUND
 from test_kernel_device import BACKEND, _toolchain
 
 from felizjueves.ao.density import epair
-from felizjueves.ao.drive import _chain_plan, _unique_pairs
 from felizjueves.ao.shell import Basis
 from felizjueves.eri.fock import kernel_f as KF
 from felizjueves.eri.fock.launch_f import f_launches
 from felizjueves.eri.fock.levers import block_fab
+from felizjueves.eri.j_coulomb.drive import _chain_plan, _unique_pairs
+from felizjueves.eri.j_coulomb.launch import bound_value
 from felizjueves.eri.k_exchange.k import record_bounds
 from felizjueves.eri.k_exchange.kernel_kblock import build_kblock_kernel
 from felizjueves.eri.k_exchange.launch_kblock import kb_launches
-from felizjueves.launch import bound_value
 from felizjueves.performance import gate, measured
 from felizjueves.performance.gate import GPU_BUSY_MAX
 from felizjueves.reference.pq import pq

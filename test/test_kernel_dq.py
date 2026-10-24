@@ -41,15 +41,16 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import split_by_l
 
-from felizjueves import kernel_dq
 from felizjueves.ao.density import epair, make_kets
-from felizjueves.ao.drive import KernelDQ
-from felizjueves.ao.j import (
+from felizjueves.eri.j_coulomb import kernel_dq
+from felizjueves.eri.j_coulomb.drive import KernelDQ
+from felizjueves.eri.j_coulomb.j import (
     cart_pairs,
     coulomb_matrix,
     coulomb_matrix_and_scale,
     dq_from_host,
 )
+from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel, dq_shape, dq_spec
 from felizjueves.ir import (
     AtomicAdd,
     Inline,
@@ -62,7 +63,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Launch, interpret
-from felizjueves.kernel_dq import build_dq_kernel, dq_shape, dq_spec
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.plan.targets import hermite_targets

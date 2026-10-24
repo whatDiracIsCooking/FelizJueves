@@ -40,8 +40,8 @@ from test_kernel_device import (
     _toolchain,
 )
 
-from felizjueves.j_levers.fused import FUSED
-from felizjueves.j_levers.mixed import MIXED
+from felizjueves.eri.j_coulomb.levers.fused import FUSED
+from felizjueves.eri.j_coulomb.levers.mixed import MIXED
 from felizjueves.mmd.kernel import launch_shape, pq_spec
 
 

@@ -53,8 +53,8 @@ from conftest import Toolchain
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
+from felizjueves.eri.j_coulomb.launch import OneEClass, OneELaunch
 from felizjueves.ir import Intent, Kernel, Scalar
-from felizjueves.launch import OneEClass, OneELaunch
 from felizjueves.one_electron.kernel_s import build_s_kernel
 from felizjueves.one_electron.kernel_s import launch_shape as s_launch_shape
 from felizjueves.one_electron.kernel_t import build_t_kernel

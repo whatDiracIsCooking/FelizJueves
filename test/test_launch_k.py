@@ -62,7 +62,7 @@ from oracle import manifest
 
 from felizjueves.ao.density import epair
 from felizjueves.ao.shell import Basis, Shell, n_cartesians
-from felizjueves.ao.staged import coulomb_matrix_staged
+from felizjueves.eri.j_coulomb.staged import coulomb_matrix_staged
 from felizjueves.eri.k_exchange.k import (
     exchange_matrix,
     exchange_matrix_reference,

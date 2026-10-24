@@ -72,15 +72,15 @@ from test_launch_staged import HOST_TOL, _tiny
 from test_launch_staged import _taus as _staged_taus
 from tiers import split_by_l
 
-from felizjueves.ao.j import (
+from felizjueves.eri.j_coulomb.j import (
     Screened,
     coulomb_matrix_and_scale,
     coulomb_matrix_reference,
     coulomb_matrix_screened,
     pair_bound_pq,
 )
-from felizjueves.ao.staged import coulomb_matrix_staged
-from felizjueves.launch import coulomb_launched, launches, walk
+from felizjueves.eri.j_coulomb.launch import coulomb_launched, launches, walk
+from felizjueves.eri.j_coulomb.staged import coulomb_matrix_staged
 from felizjueves.performance import measured_store
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import pq
@@ -398,10 +398,7 @@ from test_ao_pairs import (  # noqa: E402
 )
 
 from felizjueves.ao.pairs import overlap_bound, pair_list  # noqa: E402
-from felizjueves.launch import (  # noqa: E402
-    one_electron_launch,
-    walk_one_electron,
-)
+from felizjueves.eri.j_coulomb.launch import one_electron_launch, walk_one_electron  # noqa: E402
 from felizjueves.one_electron.kinetic import kinetic_matrix  # noqa: E402
 from felizjueves.one_electron.overlap import overlap_matrix  # noqa: E402
 from felizjueves.one_electron.potential import potential_matrix  # noqa: E402

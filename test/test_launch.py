@@ -24,14 +24,14 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l, is_fast
 
-from felizjueves.ao import drive
-from felizjueves.ao import j as aoj
 from felizjueves.ao.density import checked_density, make_kets
 from felizjueves.ao.pairs import pair_bound, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri import launch_common
+from felizjueves.eri.j_coulomb import drive
+from felizjueves.eri.j_coulomb import j as aoj
+from felizjueves.eri.j_coulomb.launch import ClassLaunch, class_spec, launches
 from felizjueves.eri.launch_common import PairRec, admits
-from felizjueves.launch import ClassLaunch, class_spec, launches
 from felizjueves.mmd.kernel import build_pq_kernels
 from felizjueves.reference.pq import one_centre, pq
 
@@ -419,7 +419,7 @@ from felizjueves.ao.pairs import (  # noqa: E402
     overlap_bound,
     potential_bound,
 )
-from felizjueves.launch import (  # noqa: E402
+from felizjueves.eri.j_coulomb.launch import (  # noqa: E402
     LaunchPlan,
     OneEClass,
     OneELaunch,

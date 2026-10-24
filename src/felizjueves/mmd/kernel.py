@@ -69,6 +69,7 @@ Nothing here is CUDA- or HIP-specific, and nothing here imports `reference/`.
 
 from __future__ import annotations
 
+from felizjueves.eri.j_coulomb.levers import fused, mixed
 from felizjueves.ir import (
     Assign,
     Break,
@@ -91,7 +92,6 @@ from felizjueves.ir import (
     WarpReduce,
 )
 from felizjueves.ir.passes import atomize
-from felizjueves.j_levers import fused, mixed
 from felizjueves.mmd.recurrence import (
     PQ_PARAMS,
     THETA,

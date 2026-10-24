@@ -60,6 +60,7 @@ from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.emit import cuda, hip
 from felizjueves.emit._c import BOYS_DEVICE
+from felizjueves.eri.j_coulomb.launch import per_axis
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -77,7 +78,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.launch import per_axis
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.hermite import hermite_order
 from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_body

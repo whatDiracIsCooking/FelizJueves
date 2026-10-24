@@ -46,6 +46,14 @@ import pytest
 from oracle.tolerance import F32_REL, F64_REL
 
 from felizjueves import levers
+from felizjueves.eri.j_coulomb.levers.fused import FUSED
+from felizjueves.eri.j_coulomb.levers.mixed import (
+    MIXED,
+    MIXED_NOTE,
+    WIDENED,
+    narrow,
+    operands,
+)
 from felizjueves.ir import (
     Assign,
     Call,
@@ -63,8 +71,6 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Interpreter, Launch
-from felizjueves.j_levers.fused import FUSED
-from felizjueves.j_levers.mixed import MIXED, MIXED_NOTE, WIDENED, narrow, operands
 from felizjueves.mmd.kernel import (
     JSH,
     bra_functions,

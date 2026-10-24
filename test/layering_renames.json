@@ -95,5 +95,16 @@
     "kernel_record_bound": "eri.k_exchange.kernel_record_bound",
     "launch_k": "eri.k_exchange.launch_k",
     "launch_kblock": "eri.k_exchange.launch_kblock"
+  },
+  {
+    "ao.drive": "eri.j_coulomb.drive",
+    "ao.j": "eri.j_coulomb.j",
+    "ao.staged": "eri.j_coulomb.staged",
+    "j_levers": "eri.j_coulomb.levers",
+    "j_levers.fused": "eri.j_coulomb.levers.fused",
+    "j_levers.mixed": "eri.j_coulomb.levers.mixed",
+    "kernel_dq": "eri.j_coulomb.kernel_dq",
+    "kernel_jab": "eri.j_coulomb.kernel_jab",
+    "launch": "eri.j_coulomb.launch"
   }
 ]

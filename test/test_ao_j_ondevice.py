@@ -75,10 +75,10 @@ from oracle import manifest
 from test_ao_j_interpreted import _case, _classes, _expected, _pq_j
 from test_kernel_device import BACKEND, BATCHED_HARNESS, LAUNCH, PORTABLE, _toolchain
 
-from felizjueves.ao.drive import BATCH_COUNTS, admitted_batches
-from felizjueves.ao.drive import class_spec as drive_class_spec
-from felizjueves.ao.j import coulomb_matrix
 from felizjueves.emit import __main__ as emit_cli
+from felizjueves.eri.j_coulomb.drive import BATCH_COUNTS, admitted_batches
+from felizjueves.eri.j_coulomb.drive import class_spec as drive_class_spec
+from felizjueves.eri.j_coulomb.j import coulomb_matrix
 from felizjueves.mmd.kernel import (
     bra_functions,
     build_pq_kernels,
