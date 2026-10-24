@@ -64,6 +64,34 @@ identity it is checked by (test/test_e_fragment.py).
   `S_d` at `j <= lb`), and dead entries are dropped by `_live` as in the
   overlap fragment.
 
+- `multipole_fragment(la, lb, e)` (#519): the Cartesian multipole moments
+  of order `e` about a point `C`, by the Hermite route. The three axes
+  (`_axes_body(la, lb)`, unchanged), then per axis `X_PC = p_d - C_d` (one
+  local `XPC_{x,y,z}` from the scalar binds `p_d`, `C_d`), the Hermite
+  moments `M^{e'}_t` for `e' <= e`, `t <= e'` (one local `Mt{x,y,z}_e_t`),
+
+      M^0_0 = 1,   M^{e+1}_t = t M^e_{t-1} + X_PC M^e_t + M^e_{t+1} / (2 zeta),
+
+  (`M^e_t = int x_C^e Lambda_t dx` without its `sqrt(pi/zeta)`, which is
+  `dress`'s), a term with `t - 1 < 0` or `t + 1 > e` ABSENT, and the
+  per-axis moment
+
+      M^{(e')}_{d,ij} = SUM_{t <= min(e', i+j)} E^{ij}_t M^{e'}_t,
+
+  one local `M{x,y,z}_e_i_j`, the entries `t > i + j` DROPPED from the
+  sum, never read as zero. Then one value per component `(ex, ey, ez)` in
+  `cartesians(e)` and row of `block_rows(la, lb)`, `(Mx^{ex} My^{ey})
+  Mz^{ez}` (the overlap product's association), written as it is formed
+  into the 2D array bind `M[comp, row]` -- or handed to a consumer's
+  `store(comp, row, value)` statement instead, so a kernel can `AtomicAdd`
+  each value where it is formed and hold no `[n_comp, rows]` local array.
+  `M^e_t` entries that are integers (`M^0_0 = 1`, `M^e_e = e!`) are folded
+  at build time, never multiplied in, and a moment that is a bare local is
+  an alias, not a copy: so `e = 0` is the overlap fragment's values
+  bitwise, and `e = 1` is `E^{ij}_0 X_PC + E^{ij}_1`. Built general in
+  `e`; `e = 1` (the dipole) is what ships. Dead entries are dropped by
+  `_live`.
+
 - `center_fragment(l)` (#410): the SINGLE-CENTER `E^{i}_t` of one
   auxiliary primitive -- a Hermite "pair" with `zeta = alpha`, `P = A`, so
   `X_PA = 0` and no `K_AB` -- per axis, one local `C{x,y,z}_i_t`, then the
@@ -102,7 +130,9 @@ Binds: `zeta` (the seed's exponent), `half_inv_zeta` (`1/2zeta`, a
 `Factor`, bound once rather than divided per term -- only when some entry
 is raised), and each axis's `PA_d` / `PB_d` (`Factor`s, read by the seed as
 plain scalars too); the block adds the array `E`, the overlap fragment
-the array `E0`, the kinetic fragment the scalar `eb` and the array `KE`.
+the array `E0`, the kinetic fragment the scalar `eb` and the array `KE`,
+the multipole fragment the scalars `p_d`, `C_d` (when `e >= 1`) and the
+array `M` (or, with a `store`, the consumer's `store_binds`).
 The center fragment binds only `half_inv_zeta` (when `l >= 1`; there
 `zeta` is the aux primitive's own exponent) and the array `E`.
 
@@ -111,6 +141,8 @@ This is a builder: it produces vendor-neutral IR. It must not import
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from felizjueves.ir import (
     Assign,
@@ -355,6 +387,176 @@ def kinetic_fragment(la: int, lb: int) -> Fragment:
     kept, read = _live(body)
     binds = [b for b in _scalar_binds(la, lb + 2, (0, 1, 2)) if b in read]
     return Fragment(f"e_kinetic_{la}{lb}", (*binds, EB, KE_ARRAY), kept)
+
+
+# ---------------------------------------------------------------------------
+# The multipole moments, the Hermite route (#519)
+# ---------------------------------------------------------------------------
+
+M_ARRAY = "M"
+_MULTIPOLE_PROVENANCE = (
+    "Hermite moments M^e_t = int x_C^e Lambda_t (undressed): M^0_0 = 1, "
+    "M^{e+1}_t = t M^e_{t-1} + X_PC M^e_t + M^e_{t+1} / (2 zeta); "
+    "S^{(e)}_ij = SUM_{t <= min(e, i+j)} E^{ij}_t M^e_t")
+
+
+def p_name(d: int) -> str:
+    """The scalar bind holding the pair centre `P_d`: `p_x`."""
+    return f"p_{_AXES[d]}"
+
+
+def origin_name(d: int) -> str:
+    """The scalar bind holding the moments' origin `C_d`: `C_x`."""
+    return f"C_{_AXES[d]}"
+
+
+def xpc_name(d: int) -> str:
+    """The local holding `X_PC = P_d - C_d`: `XPC_x`."""
+    return f"XPC_{_AXES[d]}"
+
+
+def mt_name(d: int, e: int, t: int) -> str:
+    """The local holding the Hermite moment `M^e_t` on axis `d`: `Mtx_2_0`."""
+    return f"Mt{_AXES[d]}_{e}_{t}"
+
+
+def m_name(d: int, e: int, i: int, j: int) -> str:
+    """The local holding the axis moment `M^{(e)}_{ij}` on axis `d`:
+    `Mx_1_0_1`."""
+    return f"M{_AXES[d]}_{e}_{i}_{j}"
+
+
+# A Hermite moment at build time: an int (folded, never multiplied in) or
+# an `Expr` (a `Var`: a local, or `XPC_d` itself).
+_Moment = int | Expr
+
+
+def _scaled(c: int, src: _Moment) -> _Moment:
+    """`c * src`, `c` a positive int."""
+    if isinstance(src, int):
+        return c * src
+    return src if c == 1 else _mul(Lit(float(c)), src)
+
+
+def _times(v: Expr, src: _Moment) -> _Moment:
+    """`v * src`, an integer `src` of 1 folded away."""
+    if isinstance(src, int):
+        return v if src == 1 else _mul(v, Lit(float(src)))
+    return _mul(v, src)
+
+
+def _sum(parts: list[_Moment]) -> _Moment:
+    """The parts added left to right, the integers folded into one."""
+    const = sum(p for p in parts if isinstance(p, int))
+    exprs = [p for p in parts if not isinstance(p, int)]
+    if not exprs:
+        return const
+    out = exprs[0]
+    for x in exprs[1:]:
+        out = Call(Fn.ADD, (out, x))
+    return Call(Fn.ADD, (out, Lit(float(const)))) if const else out
+
+
+def _bind_local(body: list[Stmt], name: str, value: Expr) -> Expr:
+    """`value` as a local `name`, unless it already is a bare `Var`."""
+    if isinstance(value, Var):
+        return value
+    body.append(Decl(name, Scalar.F64, init=value))
+    return Var(name)
+
+
+def _hermite_moments(d: int, e: int,
+                     body: list[Stmt]) -> dict[tuple[int, int], _Moment]:
+    """`M^{n}_t` on axis `d` for `n <= e`, `t <= n`, appending its locals
+    to `body`; an integer entry is folded, not declared."""
+    xpc, hiz = Var(xpc_name(d)), Var(HALF_INV_ZETA)
+    tab: dict[tuple[int, int], _Moment] = {(0, 0): 1}
+    for n in range(e):  # M^{n+1} from M^n
+        for t in range(n + 2):
+            parts: list[_Moment] = []
+            if t >= 1:
+                parts.append(_scaled(t, tab[n, t - 1]))
+            if t <= n:
+                parts.append(_times(xpc, tab[n, t]))
+            if t + 1 <= n:
+                src = tab[n, t + 1]
+                parts.append(_times(hiz, src) if isinstance(src, int)
+                             else _mul(src, hiz))
+            m = _sum(parts)
+            tab[n + 1, t] = (m if isinstance(m, int)
+                             else _bind_local(body, mt_name(d, n + 1, t), m))
+    return tab
+
+
+def multipole_components(e: int) -> tuple[tuple[int, int, int], ...]:
+    """The components of order `e`, in the order `multipole_fragment` writes
+    them: `cartesians(e)` (for `e = 1`: x, then y, then z)."""
+    return cartesians(e)
+
+
+def multipole_shape(la: int, lb: int, e: int) -> tuple[int, int]:
+    """`(components, rows)` of the array `M` the fragment writes."""
+    return len(multipole_components(e)), len(block_rows(la, lb))
+
+
+def multipole_fragment(
+    la: int, lb: int, e: int, *,
+    store: Callable[[int, int, Expr], Stmt] | None = None,
+    store_binds: tuple[str, ...] = (),
+) -> Fragment:
+    """The undressed Cartesian multipole moments of order `e` about `C`, one
+    value per component of `multipole_components(e)` and row of
+    `block_rows(la, lb)` (module doc).
+
+    By default each value is written into the 2D array bind `M[comp, row]`
+    where it is formed. With `store`, the statement `store(comp, row,
+    value)` is placed there instead (an `AtomicAdd`, say), there is no `M`
+    bind, and `store_binds` -- every name those statements read beyond
+    `value` -- are the fragment's last binds.
+    """
+    _check_am("la", la)
+    _check_am("lb", lb)
+    _check_am("e", e)
+    if store is None and store_binds:
+        raise ValueError("store_binds given without a store")
+    body: list[Stmt] = [Note(f"{_PROVENANCE}; {_MULTIPOLE_PROVENANCE}"),
+                        *_axes_body(la, lb)]
+    moments: list[dict[tuple[int, int, int], Expr]] = []
+    for d in range(3):
+        if e:
+            body.append(Decl(xpc_name(d), Scalar.F64, init=Call(
+                Fn.SUB, (Var(p_name(d)), Var(origin_name(d))))))
+        tab = _hermite_moments(d, e, body)
+        axis: dict[tuple[int, int, int], Expr] = {}
+        for n in range(e + 1):
+            for i in range(la + 1):
+                for j in range(lb + 1):
+                    parts: list[_Moment] = []
+                    for t in range(min(n, i + j) + 1):  # t > i+j: dropped
+                        ev, mt = Var(e_name(d, i, j, t)), tab[n, t]
+                        parts.append(_times(ev, mt) if isinstance(mt, int)
+                                     else _mul(ev, mt))
+                    m = _sum(parts)
+                    assert not isinstance(m, int)  # every part reads an E
+                    axis[n, i, j] = _bind_local(body, m_name(d, n, i, j), m)
+        moments.append(axis)
+    for comp, ex in enumerate(multipole_components(e)):
+        for row, (a, b) in enumerate(block_rows(la, lb)):
+            x, y, z = (moments[d][ex[d], a[d], b[d]] for d in range(3))
+            body.append(Assign(Index(M_ARRAY, (Lit(comp), Lit(row))),
+                               _mul(_mul(x, y), z)))
+    kept, read = _live(body)
+    sink: tuple[str, ...] = (M_ARRAY,)
+    if store is not None:
+        kept = tuple(
+            store(st.dst.at[0].value, st.dst.at[1].value, st.value)
+            if isinstance(st, Assign) else st for st in kept)
+        sink = tuple(store_binds)
+    candidates = [ZETA, HALF_INV_ZETA,
+                  *_scalar_binds(la, lb, (0, 1, 2))[1 + bool(la + lb):],
+                  *(n for d in range(3) for n in (p_name(d), origin_name(d)))]
+    binds = [b for b in candidates if b in read]
+    return Fragment(f"e_multipole_{la}{lb}_{e}", (*binds, *sink), kept)
 
 
 _CENTER_PROVENANCE = (
