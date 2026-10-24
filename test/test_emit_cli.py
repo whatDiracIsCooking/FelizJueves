@@ -496,6 +496,112 @@ def test_an_eri3_l_it_cannot_honour_is_a_2(argv, tmp_path):
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
+# --- the dipole ladder (#522; goldens in test/test_emit_mu.py) ----------------
+#
+# Milestone 19's cap (user decision 2026-10-24): `--mu-l` accepts 0..2 only,
+# bare 2, and exits 2 above, so no class past (dd) is ever built here.
+
+
+def test_the_mu_ladder_is_every_pair_class_through_dd_and_no_further():
+    assert emit_cli.DEFAULT_MU_L == emit_cli.MU_L_MAX == 2
+    assert emit_cli.mu_classes(1) == [(0, 0), (0, 1), (1, 1)]
+    assert emit_cli.mu_classes(2) == emit_cli.pair_classes(2)
+    assert len(emit_cli.mu_classes(emit_cli.DEFAULT_MU_L)) == 6
+    for bad in (-1, emit_cli.MU_L_MAX + 1, emit_cli.ONE_E_L_MAX):
+        with pytest.raises(ValueError, match=r"through \(dd\) only"):
+            emit_cli.mu_classes(bad)
+
+
+def test_mu_l_adds_its_units_beside_the_ladder_flags(tmp_path):
+    from felizjueves.one_electron.kernel_mu import build_mu_kernel
+
+    assert _run(tmp_path / "a", "hip", "--pair-l", "0", "--mu-l", "1") == 0
+    assert _names(tmp_path / "a") == {"dq_0_0.hip", "jab_00.hip",
+                                      "mu_00.hip", "mu_01.hip", "mu_11.hip"}
+    emit, arch, _ = BACKEND["hip"]
+    assert (tmp_path / "a" / "mu_01.hip").read_text() == emit(
+        build_mu_kernel((0, 1)), arch)
+    assert _run(tmp_path / "b", "cuda", "--L", "0", "--mu-l") == 0
+    assert _names(tmp_path / "b") == {"pq_L0_p0_q0.cu"} | {
+        f"mu_{a}{b}.cu" for a, b in emit_cli.mu_classes(emit_cli.DEFAULT_MU_L)}
+
+
+def test_the_mu_names_cannot_collide_with_any_other_ladder():
+    from felizjueves.one_electron.kernel_mu import mu_name
+
+    pairs = emit_cli.pair_classes(emit_cli.PAIR_L_MAX)
+    others = ({emit_cli.source_name(L, "cuda") for L in range(17)}
+              | {f"{name(c)}.cu" for c in pairs
+                 for name in (dq_name, jab_name, *emit_cli.ONE_E_NAMES)}
+              | {f"schwarz_{a}{b}.cu" for a, b in emit_cli.schwarz_classes(
+                  emit_cli.SCHWARZ_L_MAX)}
+              | {f"sx_{a}{b}.cu" for a, b in emit_cli.sx_classes(
+                  emit_cli.ONE_E_L_MAX)}
+              | {"metric_" + "".join(map(str, c)) + ".cu"
+                 for c in emit_cli.metric_classes(16)}
+              | {f"{eri3_name(c)}.cu" for c in emit_cli.eri3_classes(16)}
+              | {f"f_{''.join(map(str, c))}.cu" for c in emit_cli.FOCK_CLASSES})
+    mu = [f"{mu_name(c)}.cu" for c in emit_cli.mu_classes(emit_cli.MU_L_MAX)]
+    assert len(set(mu)) == len(mu) == 6
+    assert not set(mu) & others
+    assert not any(n.startswith("mu_") for n in others)
+
+
+def test_kernel_gen_cmd_asks_for_no_mu_unit():
+    cfg = (ROOT / "devtools" / "config.sh").read_text()
+    (line,) = [ln for ln in cfg.splitlines()
+               if ln.lstrip().startswith("KERNEL_GEN_CMD=")]
+    assert "felizjueves.emit" in line and "--mu-l" not in line
+
+
+def test_the_bare_default_never_builds_a_mu_unit(monkeypatch, tmp_path):
+    # Fast: the J ladders stubbed, the dipole writer made to fail if reached.
+    def boom(*a, **k):
+        raise AssertionError("the bare default reached the dipole ladder")
+
+    monkeypatch.setattr(emit_cli, "generate_mu", boom)
+    monkeypatch.setattr(emit_cli, "build_mu_kernel", boom)
+    monkeypatch.setattr(emit_cli, "generate", lambda *a: [])
+    monkeypatch.setattr(emit_cli, "generate_pairs", lambda *a: [])
+    assert _run(tmp_path, "cuda") == 0
+    assert _run(tmp_path, "hip", "--one-e-l", "0") == 0
+
+
+@pytest.mark.slow  # the bare default builds L up to 16
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_bare_default_writes_no_mu_unit(backend, tmp_path):
+    _, _, ext = BACKEND[backend]
+    assert _run(tmp_path, backend) == 0
+    got = _names(tmp_path)
+    assert len(got) == 37 and got == _pq_names(ext) | _pair_names(ext)
+    assert not any(n.startswith("mu_") for n in got)
+
+
+@pytest.mark.parametrize("argv", [
+    ["--mu-l", "-1"],
+    ["--mu-l", str(emit_cli.MU_L_MAX + 1)],
+    ["--mu-l", str(emit_cli.ONE_E_L_MAX)],
+    ["--mu-l", "x"],
+    ["--mu-l", "1", "--class", "0", "0", "0", "0"],
+    ["--mu-l", "1", "--shell-ls", "0"],
+    ["--mu-l", "1", "--fock-l", "0"],
+    ["--mu-l", "1", "--fock-class", "0", "0", "0", "0"],
+    ["--mu-l", "1", "--n-batches", "3"],
+    ["--mu-l", "1", "--hgp-j-l", "1"],
+])
+def test_a_mu_l_it_cannot_honour_is_a_2(argv, tmp_path):
+    assert _run(tmp_path, "cuda", *argv) == 2
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
+
+
+def test_a_mu_l_above_dd_says_it_is_validated_through_dd_only(tmp_path,
+                                                              capsys):
+    assert _run(tmp_path, "cuda", "--mu-l", "3") == 2
+    err = capsys.readouterr().err
+    assert "--mu-l 3 is outside 0..2" in err
+    assert "validated through (dd) only" in err
+
+
 @pytest.mark.parametrize("argv", [
     ["--one-e-l", "-1"],
     ["--one-e-l", str(emit_cli.ONE_E_L_MAX + 1)],

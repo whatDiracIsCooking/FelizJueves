@@ -13,6 +13,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --sx-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --metric-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --eri3-l 4
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --mu-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --hgp-j-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-k-l 1 --hgp-class 2 0 1 1 --ordered
@@ -76,6 +77,19 @@ for CUDA, `.hip` for HIP):
   `eri3_` and the three `l`s (`kernel_eri3.eri3_name`, `_`-separated once
   any `l > 9`), so no two classes share a file and none collides with
   another ladder's.
+
+- the dipole ladder, `--mu-l [LMAX]` (#522): for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (2 when the flag is given bare),
+  `kernel_mu.build_mu_kernel` (`mu_{la}{lb}`, `Target.DIPOLE`): one fused
+  kernel per class writing every component x, y, z of `<a| q (r - C) |b>`,
+  the origin `C` and the charge `q` runtime scalars. Accepted 0..`MU_L_MAX`
+  = 2 ONLY (milestone 19's cap, user decision 2026-10-24: the dipole is
+  validated through (dd), L = 4, and nothing above), so no untested (ff)
+  unit can be written by this CLI; above it is a 2. It ADDS units beside
+  the J ladders, as `--one-e-l` does, and is NEVER in the no-flag default
+  nor in KERNEL_GEN_CMD. Only `la <= lb`, the one-electron ladder's set:
+  the `(lb, la)` unit a basis also reaches is the same builder's text,
+  built by its driver.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
@@ -169,7 +183,7 @@ without an HGP selector.
 
 It is a SEPARATE path, like the F path: never combined with `--L`,
 `--pair-l`, `--one-e-l`, `--schwarz-l`, `--sx-l`, `--metric-l`, `--eri3-l`,
-`--class`, `--shell-ls`, `--fock-l`, `--fock-class`, a lever flag,
+`--mu-l`, `--class`, `--shell-ls`, `--fock-l`, `--fock-class`, a lever flag,
 `--n-batches` or `--admitted-only` (each a 2), NEVER in the no-flag default
 and not in KERNEL_GEN_CMD. This driver names the HGP J / K kernels by their
 entry points (`kernel_hj`, `kernel_hk`), never `hgp.orbits` behind them
@@ -286,6 +300,7 @@ from felizjueves.mmd.kernel import (
     pq_name,
     pq_spec,
 )
+from felizjueves.one_electron.kernel_mu import build_mu_kernel
 from felizjueves.one_electron.kernel_s import build_s_kernel, s_name
 from felizjueves.one_electron.kernel_sx import build_sx_kernel
 from felizjueves.one_electron.kernel_t import build_t_kernel, t_name
@@ -307,6 +322,8 @@ SCHWARZ_L_MAX = 4  # (gg|gg) at L = 16, the [p|q] ladder's top
 DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
 DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 units
+DEFAULT_MU_L = 2  # `--mu-l` given bare: (ss) through (dd), 6 units
+MU_L_MAX = 2  # milestone 19's cap: the dipole is validated through (dd) only
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -485,6 +502,28 @@ def generate_eri3(backend: str, arch: Arch, out: Path,
     """Emit the three-center unit of every class through total `lmax` into
     `out`; return the paths."""
     kernels = [build_eri3_kernel(c) for c in eri3_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The dipole ladder (#522)
+# ---------------------------------------------------------------------------
+
+
+def mu_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..MU_L_MAX` (the dipole is validated through (dd) only)."""
+    if type(lmax) is not int or not 0 <= lmax <= MU_L_MAX:
+        raise ValueError(f"--mu-l {lmax!r} is outside 0..{MU_L_MAX}: the "
+                         "dipole is validated through (dd) only")
+    return [(la, lb) for la in range(lmax + 1) for lb in range(la, lmax + 1)]
+
+
+def generate_mu(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]:
+    """Emit the dipole unit of every pair class through `lmax` into `out`;
+    return the paths."""
+    kernels = [build_mu_kernel(c) for c in mu_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -743,10 +782,11 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
     if (other_path or args.Ls is not None or args.pair_l is not None
             or args.one_e_l is not None or args.schwarz_l is not None
             or args.sx_l is not None or args.metric_l is not None
-            or args.eri3_l is not None):
+            or args.eri3_l is not None or args.mu_l is not None):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
-              "--sx-l / --metric-l / --eri3-l / --class / --shell-ls / "
+              "--sx-l / --metric-l / --eri3-l / --mu-l / --class / "
+              "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
               file=sys.stderr)
         return 2
@@ -797,6 +837,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_METRIC_L, default=None, metavar="LMAX")
     ap.add_argument("--eri3-l", dest="eri3_l", type=int, nargs="?",
                     const=DEFAULT_ERI3_L, default=None, metavar="LMAX")
+    ap.add_argument("--mu-l", dest="mu_l", type=int, nargs="?",
+                    const=DEFAULT_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
@@ -845,10 +887,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if fock and (selector or args.Ls is not None or args.pair_l is not None
                  or args.one_e_l is not None or args.schwarz_l is not None
                  or args.sx_l is not None or args.metric_l is not None
-                 or args.eri3_l is not None or ladder_levers):
+                 or args.eri3_l is not None or args.mu_l is not None
+                 or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
-              "--sx-l / --metric-l / --eri3-l / --class / --shell-ls and "
+              "--sx-l / --metric-l / --eri3-l / --mu-l / --class / "
+              "--shell-ls and "
               "the J / K "
               "lever flags; give one",
               file=sys.stderr)
@@ -868,9 +912,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if selector and (args.Ls is not None or args.pair_l is not None
                      or args.one_e_l is not None or args.schwarz_l is not None
                      or args.sx_l is not None or args.metric_l is not None
-                     or args.eri3_l is not None or ladder_levers):
+                     or args.eri3_l is not None or args.mu_l is not None
+                     or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
-              "--metric-l / --eri3-l (and a lever flag) and "
+              "--metric-l / --eri3-l / --mu-l (and a lever flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
         return 2
@@ -902,6 +947,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.eri3_l is not None and args.eri3_l < 0:
         print(f"emit: --eri3-l {args.eri3_l} is negative; LMAX is the "
               "class's total L, any value >= 0", file=sys.stderr)
+        return 2
+    if args.mu_l is not None and not 0 <= args.mu_l <= MU_L_MAX:
+        print(f"emit: --mu-l {args.mu_l} is outside 0..{MU_L_MAX}: the "
+              "dipole is validated through (dd) only (milestone 19)",
+              file=sys.stderr)
         return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
@@ -938,6 +988,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                                    args.metric_l)
     if args.eri3_l is not None:  # beside the J chain, never by default
         written += generate_eri3(args.backend, arch, args.out, args.eri3_l)
+    if args.mu_l is not None:  # beside the J chain, never by default
+        written += generate_mu(args.backend, arch, args.out, args.mu_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "

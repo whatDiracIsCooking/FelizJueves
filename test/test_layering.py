@@ -2709,7 +2709,7 @@ def test_the_sx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
 # or `reference/` may be its ancestor. The plan's walker rebuilds `MU` with
 # the host's own axis pieces (`one_electron.multipole.hermite_moments` /
 # `multipole_axis`), so `launch` gains that edge, under its `launch` rule.
-# The generator CLI is #522's, so the driver does not compose it yet.
+# The generator CLI composes it since #522 (below).
 # ---------------------------------------------------------------------------
 
 RULES |= {
@@ -2738,6 +2738,13 @@ EDGES |= {k: frozenset(v) for k, v in {
 }.items()}
 EDGES["eri.j_coulomb.launch"] = EDGES["eri.j_coulomb.launch"] | frozenset(
     ("one_electron.multipole",))
+# #522: the generator CLI writes the dipole ladder (`--mu-l`), so the driver
+# composes the builder, as it does `kernel_sx`.
+RULES["driver"] = Rule(RULES["driver"].why + ", and the dipole ladder "
+                       "through `kernel_mu`",
+                       RULES["driver"].may | frozenset(("one_electron.kernel_mu",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(("one_electron.kernel_mu",))
 
 
 def test_the_mu_builder_reaches_neither_its_witness_nor_a_machine() -> None:
