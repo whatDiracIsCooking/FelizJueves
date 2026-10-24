@@ -21,6 +21,14 @@ fragment against the identity directly as well:
   `e_axis(i, 0, alpha, 0, .)` bitwise for l = 0..4 over randomised `alpha`,
   every entry with `i - t` odd (or `t > i`) on some axis neither declared
   nor written, every non-seed entry one `Weighted` with no `X_PA` term;
+- the MULTIPOLE fragment (#519) equals `SUM_t E^{ij}_t M^e_t` per axis,
+  formed from `e_axis` and from a direct recursion for `M^e_t` written
+  here, for `e = 0, 1, 2` over (ss) through (dd) at a non-symmetric origin,
+  within 16 eps of its absolute-value twin (the association of the sum is
+  the fragment's own, so this oracle is not bitwise); it is bitwise
+  `overlap_fragment` at `e = 0` and bitwise the closed form
+  `E^{ij}_1 + X_PC E^{ij}_0` at `e = 1`, and Gauss-Hermite quadrature of
+  the moment integral itself holds the recursion to its meaning;
 - dressed by `ao.pairs.dress` -- the one module that dresses -- the block is
   `ao.pairs.PrimitivePair.block`, row for row, so the layout is the pair
   record's and no dressing is inside the fragment.
@@ -698,3 +706,251 @@ def test_the_center_binds_are_the_contract() -> None:
     for bad in (-1, 1.0, None):
         with pytest.raises(ValueError):
             ef.center_fragment(bad)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# The multipole fragment: the Hermite route (#519)
+# ---------------------------------------------------------------------------
+
+# Milestone 19's cap: every shell l <= 2, so (ss) through (dd), L <= 4,
+# all of it fast tier; nothing with an f shell is built here.
+MP_CLASSES = [(la, lb) for la in range(3) for lb in range(3)]
+MP_ORDERS = (0, 1, 2)
+# A non-zero, non-symmetric origin, so X_PC differs on every axis.
+ORIGIN = (0.37, -1.21, 0.83)
+
+
+def _hermite_moment(e: int, t: int, xpc: float, zeta: float) -> float:
+    """`M^e_t` by direct recursion, written here and nowhere else:
+    `M^0_0 = 1`, `M^{e+1}_t = t M^e_{t-1} + X_PC M^e_t + M^e_{t+1}/(2 zeta)`,
+    zero outside `0 <= t <= e`."""
+    if t < 0 or t > e:
+        return 0.0
+    if e == 0:
+        return 1.0
+    return (t * _hermite_moment(e - 1, t - 1, xpc, zeta)
+            + xpc * _hermite_moment(e - 1, t, xpc, zeta)
+            + _hermite_moment(e - 1, t + 1, xpc, zeta) / (2.0 * zeta))
+
+
+def _mp_scalars(frag: ir.Fragment, la: int, lb: int, zeta, P, A, B,
+                C=ORIGIN) -> dict:
+    s = _scalars(la, lb, zeta, P, A, B)
+    s["half_inv_zeta"] = 0.5 / zeta
+    for d in range(3):
+        s[ef.p_name(d)] = P[d]
+        s[ef.origin_name(d)] = C[d]
+    return {k: v for k, v in s.items() if k in frag.binds}
+
+
+def _run_multipole(la: int, lb: int, e: int, zeta, P, A, B,
+                   C=ORIGIN) -> np.ndarray:
+    frag = ef.multipole_fragment(la, lb, e)
+    M = np.full(ef.multipole_shape(la, lb, e), np.nan)
+    return interpret_fragment(
+        frag, M=M, **_mp_scalars(frag, la, lb, zeta, P, A, B, C))["M"]
+
+
+def _mp_want(la: int, lb: int, e: int, zeta, P, A, B, C=ORIGIN):
+    """`(value, twin)` per component and row from `e_axis` and the direct
+    recursion: per axis `SUM_{t <= min(e_d, i+j)} E_t M^{e_d}_t`, the twin
+    with every factor's absolute value."""
+    comps, rows = ef.multipole_components(e), ef.block_rows(la, lb)
+    want = np.empty((len(comps), len(rows)))
+    twin = np.empty_like(want)
+    for c, ex in enumerate(comps):
+        for r, (a, b) in enumerate(rows):
+            v = w = 1.0
+            for d in range(3):
+                E = e_axis(a[d], b[d], zeta, P[d] - A[d], P[d] - B[d])
+                xpc = P[d] - C[d]
+                terms = [E[t] * _hermite_moment(ex[d], t, xpc, zeta)
+                         for t in range(min(ex[d], a[d] + b[d]) + 1)]
+                v *= sum(terms)
+                w *= sum(abs(x) for x in terms)
+            want[c, r], twin[c, r] = v, w
+    return want, twin
+
+
+@pytest.mark.parametrize("e", MP_ORDERS)
+@pytest.mark.parametrize("cls", MP_CLASSES, ids=lambda c: f"{c[0]}-{c[1]}")
+def test_the_multipole_fragment_is_the_hermite_moment_sum(cls, e: int) -> None:
+    la, lb = cls
+    rng = random.Random(519 + 100 * e + 10 * la + lb)
+    for k in range(4):
+        _, _, zeta, P, A, B = _geometry(rng)
+        C = ORIGIN if k == 0 else tuple(rng.uniform(-2, 2) for _ in range(3))
+        got = _run_multipole(la, lb, e, zeta, P, A, B, C)
+        assert not np.any(np.isnan(got))  # every component, every row
+        want, twin = _mp_want(la, lb, e, zeta, P, A, B, C)
+        assert np.all(np.abs(got - want) <= 16 * EPS * twin), (got, want)
+
+
+@pytest.mark.parametrize("cls", MP_CLASSES, ids=lambda c: f"{c[0]}-{c[1]}")
+def test_the_order_0_moment_is_the_overlap_bitwise(cls) -> None:
+    la, lb = cls
+    rng = random.Random(5190 + 10 * la + lb)
+    for _ in range(3):
+        _, _, zeta, P, A, B = _geometry(rng)
+        got = _run_multipole(la, lb, 0, zeta, P, A, B)
+        assert got.shape == (1, len(ef.block_rows(la, lb)))
+        assert np.array_equal(got[0], _run_overlap(la, lb, zeta, P, A, B))
+
+
+@pytest.mark.parametrize("cls", MP_CLASSES, ids=lambda c: f"{c[0]}-{c[1]}")
+def test_the_order_1_moment_is_the_closed_form_bitwise(cls) -> None:
+    # E^{ij}_1 + X_PC E^{ij}_0 per axis, with E^{00}_1 ABSENT (not a zero):
+    # at i + j = 0 the moment is X_PC E^{00}_0 alone.
+    la, lb = cls
+    rng = random.Random(5191 + 10 * la + lb)
+    for _ in range(3):
+        _, _, zeta, P, A, B = _geometry(rng)
+        got = _run_multipole(la, lb, 1, zeta, P, A, B)
+        for c, ex in enumerate(ef.multipole_components(1)):
+            for r, (a, b) in enumerate(ef.block_rows(la, lb)):
+                f = []
+                for d in range(3):
+                    E = e_axis(a[d], b[d], zeta, P[d] - A[d], P[d] - B[d])
+                    xpc = P[d] - ORIGIN[d]
+                    if not ex[d]:
+                        f.append(E[0])
+                    elif a[d] + b[d]:
+                        f.append(E[1] + xpc * E[0])
+                    else:
+                        f.append(xpc * E[0])
+                assert got[c, r] == (f[0] * f[1]) * f[2], (c, r)
+
+
+@pytest.mark.parametrize("e", MP_ORDERS)
+@pytest.mark.parametrize("cls", MP_CLASSES, ids=lambda c: f"{c[0]}-{c[1]}")
+def test_the_moment_is_the_integral(cls, e: int) -> None:
+    # The recursion's meaning, independently: Gauss-Hermite quadrature of
+    # int (x-A)^i (x-B)^j (x-C)^e exp(-a(x-A)^2 - b(x-B)^2) dx per axis,
+    # divided by sqrt(pi/zeta) (the undressed convention), exact for this
+    # polynomial degree.
+    la, lb = cls
+    y, w = np.polynomial.hermite.hermgauss(8)
+    rng = random.Random(5192 + 100 * e + 10 * la + lb)
+    for _ in range(3):
+        alpha, beta, zeta, P, A, B = _geometry(rng)
+        got = _run_multipole(la, lb, e, zeta, P, A, B)
+        for c, ex in enumerate(ef.multipole_components(e)):
+            for r, (a, b) in enumerate(ef.block_rows(la, lb)):
+                v = 1.0
+                for d in range(3):
+                    x = P[d] + y / math.sqrt(zeta)
+                    k = math.exp(-alpha * beta / zeta * (A[d] - B[d]) ** 2)
+                    poly = ((x - A[d]) ** a[d] * (x - B[d]) ** b[d]
+                            * (x - ORIGIN[d]) ** ex[d])
+                    v *= k * float(np.dot(w, poly)) / math.sqrt(math.pi)
+                assert got[c, r] == pytest.approx(v, rel=1e-12, abs=1e-14)
+
+
+@pytest.mark.parametrize("e", MP_ORDERS)
+@pytest.mark.parametrize("cls", MP_CLASSES, ids=lambda c: f"{c[0]}-{c[1]}")
+def test_the_multipole_fragment_is_the_axis_body_minus_dead_entries(
+        cls, e: int) -> None:
+    la, lb = cls
+    frag = ef.multipole_fragment(la, lb, e)
+    assert frag.name == f"e_multipole_{la}{lb}_{e}"
+    assert not any(isinstance(s, Inline) for s in walk(frag.body))
+    decls = [s for s in frag.body if isinstance(s, Decl)]
+    # The E entries are `_axis_body`'s, in order: a subsequence, no rewrite.
+    e_decls = [s for s in decls if s.name.startswith("E")]
+    source = [s for d in range(3) for s in ef._axis_body(la, lb, d)]
+    it = iter(source)
+    assert all(any(s == x for x in it) for s in e_decls)
+    # Nothing declared is unread (#92's ratchet).
+    read = {v.name for s in frag.body if isinstance(s, (Decl, Assign))
+            for v in ir._subexprs(s.init if isinstance(s, Decl) else s.value)
+            if isinstance(v, Var)}
+    assert {s.name for s in decls} <= read
+    # The integer Hermite moments are folded: no literal 1 is multiplied in,
+    # and no E entry with t > i + j is ever named.
+    lits = [x for s in decls for x in ir._subexprs(s.init)
+            if isinstance(x, Lit)]
+    assert Lit(1.0) not in lits
+    # One value per component and row, in that order, written as formed.
+    assigns = [s for s in frag.body if isinstance(s, Assign)]
+    n_comp, n_rows = ef.multipole_shape(la, lb, e)
+    assert n_comp == len(cartesians(e))
+    assert [s.dst for s in assigns] == [
+        ir.Index("M", (Lit(c), Lit(r)))
+        for c in range(n_comp) for r in range(n_rows)]
+    notes = [s for s in walk(frag.body) if isinstance(s, Note)]
+    assert len(notes) == 1 and "eqs. 2.20-2.21" in notes[0].prov
+
+
+def test_x_pc_is_read_on_every_axis() -> None:
+    # e = 1: each component reads its own axis's X_PC, and only that one.
+    frag = ef.multipole_fragment(1, 1, 1)
+    xpc = {d: Var(ef.xpc_name(d)) for d in range(3)}
+    by_name = {s.name: s for s in frag.body if isinstance(s, Decl)}
+
+    def axes_read(e: ir.Expr) -> set[int]:
+        out = set()
+        for v in ir._subexprs(e):
+            for d, x in xpc.items():
+                if v == x:
+                    out.add(d)
+            if isinstance(v, Var) and v.name in by_name and v != e:
+                out |= axes_read(by_name[v.name].init)
+        return out
+
+    assigns = [s for s in frag.body if isinstance(s, Assign)]
+    for s in assigns:
+        assert axes_read(s.value) == {s.dst.at[0].value}
+    # ...and moving C on one axis moves only that axis's component.
+    rng = random.Random(51919)
+    _, _, zeta, P, A, B = _geometry(rng)
+    base = _run_multipole(1, 1, 1, zeta, P, A, B)
+    for d in range(3):
+        C = tuple(ORIGIN[k] + (0.5 if k == d else 0.0) for k in range(3))
+        moved = _run_multipole(1, 1, 1, zeta, P, A, B, C)
+        for c in range(3):
+            assert np.array_equal(moved[c], base[c]) == (c != d), (d, c)
+
+
+def test_the_multipole_binds_are_the_contract() -> None:
+    frag = ef.multipole_fragment(1, 2, 1)
+    assert frag.binds == (
+        "zeta", "half_inv_zeta", "PA_x", "PB_x", "PA_y", "PB_y", "PA_z",
+        "PB_z", "p_x", "C_x", "p_y", "C_y", "p_z", "C_z", "M")
+    assert frag.array_binds == {"M"}
+    # e = 0 reads no origin; its binds are the overlap fragment's.
+    assert ef.multipole_fragment(1, 2, 0).binds == (
+        *ef.overlap_fragment(1, 2).binds[:-1], "M")
+    # (ss) at e = 1: X_PC E^{00}_0, nothing raised, no 1/2zeta.
+    assert "half_inv_zeta" not in ef.multipole_fragment(0, 0, 1).binds
+    # (ss) at e = 2 reads 1/2zeta through M^2_0 alone.
+    assert "half_inv_zeta" in ef.multipole_fragment(0, 0, 2).binds
+    assert ef.multipole_shape(2, 1, 1) == (3, 18)
+    assert ef.multipole_components(1) == ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+    for bad in ((-1, 0, 1), (0, 0, -1), (0, 1.0, 1), (0, 0, None)):
+        with pytest.raises(ValueError):
+            ef.multipole_fragment(*bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        ef.multipole_fragment(0, 0, 1, store_binds=("OUT",))
+
+
+def test_a_store_places_each_value_where_it_is_formed() -> None:
+    # The consumer's statement replaces each write -- here an AtomicAdd of
+    # q * value into a flat OUT -- with no [n_comp, rows] array: the values
+    # are the default's, and the binds end with the store's.
+    la, lb, e = 2, 1, 1
+    n_comp, n_rows = ef.multipole_shape(la, lb, e)
+
+    def store(comp: int, row: int, value: ir.Expr) -> ir.Stmt:
+        return ir.AtomicAdd(ir.Index("OUT", (Lit(comp * n_rows + row),)),
+                            Call(Fn.MUL, (Var("q"), value)))
+
+    frag = ef.multipole_fragment(la, lb, e, store=store,
+                                 store_binds=("q", "OUT"))
+    assert frag.binds[-2:] == ("q", "OUT") and "M" not in frag.binds
+    assert not any(isinstance(s, Assign) for s in frag.body)
+    rng = random.Random(5193)
+    _, _, zeta, P, A, B = _geometry(rng)
+    out = interpret_fragment(frag, q=-2.0, OUT=np.ones(n_comp * n_rows),
+                             **_mp_scalars(frag, la, lb, zeta, P, A, B))["OUT"]
+    want = 1.0 + -2.0 * _run_multipole(la, lb, e, zeta, P, A, B).ravel()
+    assert np.array_equal(out, want)
