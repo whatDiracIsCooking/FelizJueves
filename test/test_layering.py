@@ -3138,6 +3138,24 @@ EDGES |= {k: frozenset(v) for k, v in {
                                      "eri.k_exchange.launch_k", "spec"),
 }.items()}
 
+# #548: the block kernel split per column / element with a density stack, a
+# sibling of `kernel_kblock` under `kblock_builder`'s prohibitions; it builds
+# on the block kernel's parameter list and refusals by import.
+RULES |= {
+    "kblock_split_builder": _rule(
+        "kernel_kblock_split.py (#548): `kernel_kblock`'s kernel with its "
+        "K_AB accumulators split per column or per element through "
+        "`KHooks.keep`, and a density stack",
+        ("spec", "=ir", "mmd.kernel", "eri.k_exchange.kernel_k",
+         "eri.k_exchange.kernel_kblock", "eri.k_exchange.levers"),
+        **RULES["kblock_builder"].must_not),
+}
+RULE_OF["eri.k_exchange.kernel_kblock_split"] = "kblock_split_builder"
+EDGES["eri.k_exchange.kernel_kblock_split"] = frozenset((
+    "ir", "eri.k_exchange.levers.seams", "eri.k_exchange.levers.split",
+    "mmd.kernel", "eri.k_exchange.kernel_k", "eri.k_exchange.kernel_kblock",
+    "spec"))
+
 
 def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
     # #481, TRANSITIVELY: the builder reaches no `ao/`, reference/, the
@@ -3157,6 +3175,10 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
 
     for root, banned in (
             ("eri.k_exchange.kernel_kblock",
+             (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+              "performance.device", "eri.j_coulomb.launch", "eri.k_exchange.launch_k",
+              "eri.k_exchange.launch_kblock")),
+            ("eri.k_exchange.kernel_kblock_split",
              (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
               "performance.device", "eri.j_coulomb.launch", "eri.k_exchange.launch_k",
               "eri.k_exchange.launch_kblock")),

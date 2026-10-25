@@ -83,6 +83,10 @@ same fold with `Dcd[r]`, so the stack's `r`-th `K` is a one-density build
 with `Dcd[r]`, bit for bit. On a card the compiler may contract a different
 multiply-add, so a device comparison is to rounding.
 
+A column's or an element's kernel reads only some `I[p]`, so only some
+recurrence nodes: #341's `levers.split.prune` drops every unread scalar of
+the ket loop, to a fixed point, and removes no arithmetic anything reads.
+
 Like `kernel_kblock`, nothing here imports `ao/`, the interpreter,
 `reference/`, a backend or a device.
 """
@@ -99,11 +103,11 @@ from felizjueves.eri.k_exchange.kernel_k import (
 from felizjueves.eri.k_exchange.kernel_kblock import (
     PARAMS,
     SORTED_GROUPS,
-    _spec_of,
     kblock_name,
     launch_shape,
+    spec_of,
 )
-from felizjueves.eri.k_exchange.kernel_kblock import _params as _kb_params
+from felizjueves.eri.k_exchange.kernel_kblock import params as kb_params
 from felizjueves.eri.k_exchange.levers.seams import (
     DEFAULT_HOOKS,
     KET,
@@ -112,6 +116,7 @@ from felizjueves.eri.k_exchange.levers.seams import (
     KHooks,
     ncart,
 )
+from felizjueves.eri.k_exchange.levers.split import prune
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -302,7 +307,7 @@ def _params(ctx: KContext) -> tuple[Param, ...]:
     """`kernel_kblock.PARAMS`, `Dcd` and `K` with the stack's leading `R`."""
     R = Lit(_stack(ctx))
     out = []
-    for p in _kb_params(ctx):
+    for p in kb_params(ctx):
         if p.name in ("Dcd", "K"):
             p = dataclasses.replace(p, shape=(R, *p.shape))
         out.append(p)
@@ -390,7 +395,10 @@ def _kernel(spec: Spec, dag, name: str, granularity: str,
         hooks.shared_decl(ctx),
         If(Call(Fn.LT, (blk, Var("n_blk"))), tuple(per_blk)),
     )
-    return Kernel(name, _params(ctx), body)
+    # a column or an element reads only some I[p], so only some recurrence
+    # nodes: #341's `prune` drops the unread scalars of the ket loop (an
+    # unread local is a warning in generated text, #92), nothing else
+    return prune(Kernel(name, _params(ctx), body))
 
 
 def build_kblock_split_kernels(cls: tuple[int, int, int, int] | Spec,
@@ -400,7 +408,7 @@ def build_kblock_split_kernels(cls: tuple[int, int, int, int] | Spec,
     `"block"`, `n_b` for `"column"` (in `b_j` order), `n_a n_b` for
     `"element"` (`a_i` outer). `lanes` is the warp width the set will run
     at, read only by the shared-memory refusal."""
-    spec = _spec_of(cls)
+    spec = spec_of(cls)
     if not isinstance(R, int) or R < 1:
         raise ValueError(f"R = {R!r}: a stack of at least one density")
     acc = accumulators_per_density(spec.am, granularity)

@@ -174,7 +174,7 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
         kbs = (() if split is None else
                build_kblock_split_kernels(cl.am, split, lanes=arch.wavefront))
         for ns, kern in ((f"fj_kb{c}", kb), (f"fj_k{c}", k),
-                         *((f"fj_kbs{c}", x) for x in kbs)):
+                         *((f"fj_kbs{c}_{i}", x) for i, x in enumerate(kbs))):
             path = workdir / f"{ns}_{kern.name}.{ext}"
             path.write_text(emit(kern, arch))
             units.append(path)
@@ -221,10 +221,10 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                 f"        // class ({la}{lc}|{lb}{ld}): {len(kbs)} split "
                 f"kernels by {split}\n"
                 f"        CHECK(devEventRecord(ev[{c}]));\n"
-                + "\n".join(_call(f"fj_kbs{c}", kern, kb_args,
+                + "\n".join(_call(f"fj_kbs{c}_{i}", kern, kb_args,
                                    str(len(cl.blocks)),
                                    split_shared_doubles(cl.am, acc, 1))
-                             for kern in kbs))
+                             for i, kern in enumerate(kbs)))
         calls = [f"        // class ({la}{lc}|{lb}{ld}): {len(segs)} b shells\n"
                  f"        CHECK(devEventRecord(ev[{c}]));"]
         for (_, s, t), off in zip(segs, offs, strict=True):
