@@ -1,0 +1,13 @@
+{
+ "schema": 1,
+ "issue": 548,
+ "about": "    devtools/measure.sh kblock-split [--backend cuda|hip]",
+ "declared": {
+  "issue": 548,
+  "hypothesis": "splitting kernel_kblock's K_AB accumulators per column or per element relieves register pressure: the worst kernel of a split set spills less than the block kernel",
+  "rule": "per (class, granularity, R, arch): 'spill win' when the worst split kernel's spill_store is below the block kernel's (kb, R = 1) and below the same granularity's block set at that R, 'no win' otherwise. A spill win is NOT a clock win: the split recomputes the recurrence and the E blocks per kernel, so a per-class clock win is not expected at R = 1, and the row that decides the split is the aggregate wall-clock at R > 1 against R block-kernel sweeps, measured on a card (#548's follow-ups), not here",
+  "expected": "spill win for column and element at R = 1 on sm_86; the split's register count stays at the ceiling (the recurrence's working set is unchanged)",
+  "declared": "2026-10-25, before any row"
+ },
+ "rows": []
+}
