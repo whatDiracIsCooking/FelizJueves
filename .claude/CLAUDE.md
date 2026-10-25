@@ -163,6 +163,35 @@ with its per-block factors (against `walk_kb`, 2.60e-16 of max); the RX
 would time both per class on H₂O/cc-pVDZ into `data/measured/kblock.json`,
 and its one attempt was refused by the card gate (the RTX 3080 busy from
 outside the container), so that file does not exist.
+**Beside it, the block kernel split per column or element, with a density
+stack** (#548; `[Fock, §4.4]`): `eri/k_exchange/kernel_kblock_split.py`
+(`build_kblock_split_kernels(cls, granularity, R=, lanes=)`, `kbs_*`), a
+sibling of `kernel_kblock`, not a lever: its body and parameters unchanged
+but the accumulator extent, moved through `KHooks.keep` — `block` (`n_a n_b`
+slots, the control), `column` (one kernel per `b_j`, `n_a` slots; stage 1 not
+recomputed) or `element` (one per `K[a_i, b_j]`, one slot) — and `R`
+densities sharing one sweep (`Dcd[R, ...]`, `K[R, ...]`, `V` formed once
+and digested `R` times; `dmax[blk]` is the stack's bound, the host's).
+`shared_doubles(am, accumulators, R) = n_p + accumulators·R`, over 48 KiB
+refused (`SHARED_REFUSAL`; `(dd|dd)` admits R = 1 / 10 / 61 at wave64).
+Interpreted, every set is `kernel_kblock`'s `K` **bit for bit** (the per-slot
+fold is kept), a stack is `R` one-density builds bit for bit, and the plan
+through the split sets is the block kernel's bitwise on two H₂ and
+H₂O/STO-3G (`test_kernel_kblock_split.py`, `(dd|dd)` `slow`).
+`test/kblock_driver.py`'s opt-in MODE 2 (`split=`) launches a set on the
+block kernel's upload; `test_kblock_split_ondevice.py` (`slow`, `(dd|dd)`
+only by the user's decision, on two contracted d shells) ran on the **RX
+9060 XT only**: column and element both within 9.28e-16 of `max|K|` of
+`walk_kb`, 7.74e-17 of the block kernel (not bitwise on the card); the RTX
+3080 was not enumerable in that session ("no CUDA-capable device"), so on
+CUDA it is compiled only. `devtools/measure.sh
+kblock-split` (a compiler, no card) writes registers and spill per kernel
+into `data/measured/kblock_split.json`, its verdict rule declared before any
+row: `(dd|dd)` only; on `sm_86` `kb` spills 14,732 B, the worst column kernel
+6,724 B and the worst element kernel 1,340 B (all 255 registers); on
+`gfx1200` 2,204, 1,659 and 715 spilled VGPRs (all 192 VGPRs): a spill win
+on both, never a clock claim. Nothing is timed; the launch plan over the sets
+and the stack's host API are follow-ups.
 **Since milestone 12 the repo has a second ERI engine and the first `F`**
 (`docs/implementation/hgp_fock.md` is the one place with the detail): the
 Head-Gordon–Pople recurrence of `[Fock]` §3.1 and the **fused** Fock kernel

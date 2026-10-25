@@ -1147,6 +1147,21 @@
    "mmd.kernel",
    "spec"
   ],
+  "eri.k_exchange.kernel_kblock_split": [
+   "eri.k_exchange.kernel_k",
+   "eri.k_exchange.kernel_kblock",
+   "eri.k_exchange.levers",
+   "eri.k_exchange.levers.coalesced",
+   "eri.k_exchange.levers.interleave",
+   "eri.k_exchange.levers.mixed",
+   "eri.k_exchange.levers.seams",
+   "eri.k_exchange.levers.shuffle",
+   "eri.k_exchange.levers.split",
+   "eri.k_exchange.levers.stage_eac",
+   "ir",
+   "mmd.kernel",
+   "spec"
+  ],
   "eri.k_exchange.kernel_record_bound": [
    "eri.kernel_pair_bound",
    "ir",

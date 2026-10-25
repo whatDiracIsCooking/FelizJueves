@@ -156,8 +156,10 @@ __all__ = [
     "build_kblock_kernel",
     "kblock_name",
     "launch_shape",
+    "params",
     "shared_bytes",
     "shared_doubles",
+    "spec_of",
 ]
 
 BLOCK_PARAMS = ("bra0", "bra1", "ket0", "ket1", "ko_a", "ko_b", "dmax")
@@ -187,7 +189,7 @@ def kblock_name(am: tuple[int, int, int, int]) -> str:
     return f"kb_{la}{lc}_{lb}{ld}"
 
 
-def _spec_of(cls: tuple[int, int, int, int] | Spec) -> Spec:
+def spec_of(cls: tuple[int, int, int, int] | Spec) -> Spec:
     if isinstance(cls, Spec):
         spec = cls
     elif isinstance(cls, tuple) and len(cls) == 4:
@@ -229,7 +231,7 @@ def _c(fn: Fn, *args: Expr) -> Call:
     return Call(fn, args)
 
 
-def _params(ctx: KContext) -> tuple[Param, ...]:
+def params(ctx: KContext) -> tuple[Param, ...]:
     """`PARAMS`: the block table (ranges, offsets, the density factor), then
     `kernel_k`'s record and density parameters unchanged but `maxD`, then
     `K` as the AO matrix."""
@@ -273,7 +275,7 @@ def build_kblock_kernel(cls: tuple[int, int, int, int] | Spec, *,
     """The exchange kernel of one K class, opt-UM's mapping (module
     docstring). `cls` is `(la, lc, lb, ld)`, the Hermite pairing, bra first,
     or a one-batch, lever-free `Target.K` `Spec`."""
-    spec = _spec_of(cls)
+    spec = spec_of(cls)
     la, lc, lb, ld = spec.am
     lp, lq = split(spec)
     (dag,) = builder_plan(spec).dags
@@ -326,4 +328,4 @@ def build_kblock_kernel(cls: tuple[int, int, int, int] | Spec, *,
         hooks.shared_decl(ctx),
         If(_c(Fn.LT, blk, Var("n_blk")), tuple(per_blk)),
     )
-    return Kernel(name, _params(ctx), body)
+    return Kernel(name, params(ctx), body)

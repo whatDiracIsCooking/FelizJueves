@@ -38,6 +38,11 @@ run the driver prints `rep <r> class <c> events_ns <x>` per class and `rep
 run's output, then the last's. The correctness mode is `WARMUP 0 REPS 2`.
 Mode 1's host scatter is NOT in its time: the comparison favours
 `kernel_k` by exactly that pass.
+
+MODE 2, opt-in (`kb_driver(..., split=granularity)`, #548): each class's
+`kernel_kblock_split` set at `R = 1`, every kernel on the block kernel's
+arguments, into the same zeroed `K_mn` -- its parameters are the block
+kernel's, `Dcd` and `K` with a leading extent of one.
 """
 
 from __future__ import annotations
@@ -60,6 +65,13 @@ from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
 from felizjueves.eri.k_exchange.kernel_k import shared_doubles as k_shared_doubles
 from felizjueves.eri.k_exchange.kernel_kblock import PARAMS as KB_PARAMS
 from felizjueves.eri.k_exchange.kernel_kblock import shared_doubles as kb_shared_doubles
+from felizjueves.eri.k_exchange.kernel_kblock_split import (
+    accumulators_per_density,
+    build_kblock_split_kernels,
+)
+from felizjueves.eri.k_exchange.kernel_kblock_split import (
+    shared_doubles as split_shared_doubles,
+)
 from felizjueves.eri.k_exchange.launch_kblock import KBLaunchPlan
 from felizjueves.eri.launch_common import PairRec
 from felizjueves.ir import Kernel
@@ -68,6 +80,7 @@ REC_DOUBLES = 12  # per record: P(3) zeta XPA(3) XPC(3) s I, then one int
 BLK_INTS = 6  # per block: bra0 bra1 ket0 ket1 ko_a ko_b
 BLK_DOUBLES = 1  # per block: dmax, the block's density factor (#484)
 MODES = {"kb": 0, "k": 1}
+SPLIT_MODE = {"kbs": 2}  # opt-in: kb_driver(..., split=granularity), #548
 
 
 @dataclass(frozen=True)
@@ -81,6 +94,7 @@ class KBClass:
     n_ab: int
     kb: Kernel
     k: Kernel
+    kbs: tuple[Kernel, ...]  # the split set (#548); () without split=
     segs: tuple[tuple[int, int, int], ...]  # (b, ket0, ket1) per b group
     scratch: tuple[int, ...]  # offset of each segment's scratch block
 
@@ -135,17 +149,19 @@ def _call(ns: str, kern: Kernel, args: list[str], grid: str, shared: int
 
 
 def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
-              workdir: Path) -> KBDriver:
+              workdir: Path, *, split: str | None = None) -> KBDriver:
     """Emit both kernels of every class of `plan` (whose `kernel` is the block
     kernel; `kernel_k`'s is built here) and the `main()` that launches either
-    mapping on one upload (module docstring)."""
+    mapping on one upload (module docstring). With `split=` a granularity of
+    `kernel_kblock_split` (#548), each class's split set (`R = 1`) too, and
+    MODE 2 launches it on the block kernel's arguments into `K_mn`."""
     emit, arch, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     n_sh = len(basis.shells)
     dcd_cls = sorted({(c.am[1], c.am[3]) for c in plan})
     eslot = {x: i for i, x in enumerate(dcd_cls)}
     classes: list[KBClass] = []
-    includes, units, kb_body, k_body = [], [], [], []
+    includes, units, kb_body, k_body, kbs_body = [], [], [], [], []
     scratch = 0
     for c, cl in enumerate(plan):
         if cl.kernel is None:
@@ -155,7 +171,10 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
         k = k_accumulating(build_k_kernel(cl.am))
         assert tuple(p.name for p in kb.params) == KB_PARAMS
         assert tuple(p.name for p in k.params) == K_PARAMS
-        for ns, kern in ((f"fj_kb{c}", kb), (f"fj_k{c}", k)):
+        kbs = (() if split is None else
+               build_kblock_split_kernels(cl.am, split, lanes=arch.wavefront))
+        for ns, kern in ((f"fj_kb{c}", kb), (f"fj_k{c}", k),
+                         *((f"fj_kbs{c}_{i}", x) for i, x in enumerate(kbs))):
             path = workdir / f"{ns}_{kern.name}.{ext}"
             path.write_text(emit(kern, arch))
             units.append(path)
@@ -168,7 +187,7 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
             offs.append(scratch)
             scratch += len(cl.bras) * n_ab
         x = KBClass(cl.am, len(cl.bras), len(cl.kets), len(cl.blocks), n_ab,
-                    kb, k, segs, tuple(offs))
+                    kb, k, kbs, segs, tuple(offs))
         classes.append(x)
         e = eslot[(lc, ld)]
         nb, nk = len(cl.bras), len(cl.kets)
@@ -196,6 +215,16 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
             f"        CHECK(devEventRecord(ev[{c}]));\n"
             + _call(f"fj_kb{c}", kb, kb_args, str(len(cl.blocks)),
                     kb_shared_doubles(cl.am)))
+        if kbs:
+            acc = accumulators_per_density(cl.am, split)
+            kbs_body.append(
+                f"        // class ({la}{lc}|{lb}{ld}): {len(kbs)} split "
+                f"kernels by {split}\n"
+                f"        CHECK(devEventRecord(ev[{c}]));\n"
+                + "\n".join(_call(f"fj_kbs{c}_{i}", kern, kb_args,
+                                   str(len(cl.blocks)),
+                                   split_shared_doubles(cl.am, acc, 1))
+                             for i, kern in enumerate(kbs)))
         calls = [f"        // class ({la}{lc}|{lb}{ld}): {len(segs)} b shells\n"
                  f"        CHECK(devEventRecord(ev[{c}]));"]
         for (_, s, t), off in zip(segs, offs, strict=True):
@@ -218,7 +247,9 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
         vram_kernels=", ".join(f"(const void*)fj_kb{c}::{x.kb.name}, "
                                f"(const void*)fj_k{c}::{x.k.name}"
                                for c, x in enumerate(classes)),
-        kb_launches="\n".join(kb_body), k_launches="\n".join(k_body))
+        kb_launches="\n".join(kb_body), k_launches="\n".join(k_body),
+        n_modes=3 if split is not None else 2,
+        kbs_launches="\n".join(kbs_body))
     path = workdir / f"kb_driver.{ext}"
     path.write_text(src)
     return replace(drv, source=src, path=path, units=tuple(units))
@@ -353,8 +384,8 @@ class ClassBinary:
 
 
 def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
-                   backend: str, workdir: Path, *, jobs: int | None = None
-                   ) -> list[ClassBinary]:
+                   backend: str, workdir: Path, *, jobs: int | None = None,
+                   split: str | None = None) -> list[ClassBinary]:
     """One driver PER CLASS (`plan` cut to that one class), compiled in
     parallel, each staged. A whole molecule's 162 kernels in one translation
     unit leave one compiler thread at it for most of an hour; one class per
@@ -366,7 +397,7 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
     def one(c: int) -> ClassBinary:
         sub = replace(plan, classes=(plan.classes[c],))
         w = workdir / f"c{c}"
-        drv = kb_driver(sub, basis, backend, w / "gen")
+        drv = kb_driver(sub, basis, backend, w / "gen", split=split)
         binary = compile_checked(tc, drv, w / "kb_driver")
         staged = w / "in.bin"
         kb_stage(drv, sub, basis, D).tofile(staged)
@@ -389,12 +420,13 @@ def run_classes(parts: list[ClassBinary], basis: Basis, mode: str,
     for p in parts:
         dst = p.staged.with_name(f"out_{mode}.bin")
         outs.append(run_device_binary(p.binary, str(p.staged), str(dst),
-                                      str(MODES[mode]), str(warmup),
+                                      str({**MODES, **SPLIT_MODE}[mode]),
+                                      str(warmup),
                                       str(reps), vram=backend))
         runs = kb_read_back(p.drv, np.fromfile(dst, dtype=np.float64))
         same &= runs[0].tobytes() == runs[1].tobytes()
         for i, r in enumerate(runs):
-            Ks[i] += (r.reshape(n, n) if mode == "kb"
+            Ks[i] += (r.reshape(n, n) if mode in ("kb", "kbs")
                       else k_scatter(p.drv, p.plan, basis, r))
     return Ks, outs, same
 
@@ -439,8 +471,8 @@ static const int ci[NC] = {{{ci}}};  // of them ints: bra, ket, block table
 static const int ne[NE] = {{{ne}}};  // Dcd doubles per density class
 
 // usage: in out MODE WARMUP REPS. MODE 0 the block kernel into K_mn, MODE 1
-// kernel_k into its scratch; `out` is the first timed run's output, then the
-// last's.
+// kernel_k into its scratch, MODE 2 (when emitted) the split set into K_mn;
+// `out` is the first timed run's output, then the last's.
 int main(int argc, char** argv) {{
     if (argc != 6) {{
         std::fprintf(stderr, "usage: in out mode warmup reps\n");
@@ -448,7 +480,7 @@ int main(int argc, char** argv) {{
     }}
     const int mode = std::atoi(argv[3]), warmup = std::atoi(argv[4]),
               reps = std::atoi(argv[5]);
-    if ((mode != 0 && mode != 1) || warmup < 0 || reps < 1) {{
+    if (mode < 0 || mode >= {n_modes} || warmup < 0 || reps < 1) {{
         std::fprintf(stderr, "bad mode/warmup/reps\n");
         return 2;
     }}
@@ -462,7 +494,7 @@ int main(int argc, char** argv) {{
                      in.size(), want);
         return 2;
     }}
-    const size_t nout = mode == 0 ? NAO * NAO : NS;
+    const size_t nout = mode != 1 ? NAO * NAO : NS;
     if (fj_vram_probe(in.size() * sizeof(double) + nout * sizeof(double)
                           + (size_t)16 * (NC + NE),
                       {{{vram_kernels}}})) return 0;
@@ -488,9 +520,9 @@ int main(int argc, char** argv) {{
     }}
     double* dK = nullptr;
     double* dS = nullptr;
-    if (mode == 0) CHECK(devMalloc(&dK, NAO * NAO * sizeof(double)));
+    if (mode != 1) CHECK(devMalloc(&dK, NAO * NAO * sizeof(double)));
     else CHECK(devMalloc(&dS, NS * sizeof(double)));
-    double* dOut = mode == 0 ? dK : dS;
+    double* dOut = mode != 1 ? dK : dS;
     devEvent_t ev[NC + 2];
     for (int e = 0; e < NC + 2; ++e) CHECK(devEventCreate(&ev[e]));
     std::vector<double> buf(nout), first, last;
@@ -500,8 +532,10 @@ int main(int argc, char** argv) {{
         CHECK(devMemset(dOut, 0, nout * sizeof(double)));
         if (mode == 0) {{
 {kb_launches}
-        }} else {{
+        }} else if (mode == 1) {{
 {k_launches}
+        }} else {{
+{kbs_launches}
         }}
         CHECK(devEventRecord(ev[NC]));
         CHECK(devSynchronize());
