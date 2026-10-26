@@ -7,13 +7,16 @@ libcint through PySCF, not this repo's engines.
 ```bash
 uv sync --group oracle
 uv run --group oracle python experimental/rys/check.py    # ~40 s, exit 0 = PASS
+uv run --group oracle python experimental/rys/check_j.py  # ~45 s, the J build
 ```
 
 | File | What it is |
 |---|---|
 | `roots.py` | `roots_weights(n, T)`, the fp64 Rys rule for `n` in 1..3, `T` in `[0, 1e6]`; and `roots_weights_exact(n, T, digits)`, an independent route in `decimal` used only to measure it. |
-| `rys2d.py` | The three 2D tensors, `[ab\|cd]` for one primitive quartet (`prim_quartet`) and the contracted block (`contracted_block`), generic in `(la, lb, lc, ld)`; `prim_quartet_exact`, the same quadrature at 50 digits; `FORM`, the signs as multipliers (all 1). |
+| `rys2d.py` | The three 2D tensors, `[ab\|cd]` for one primitive quartet (`prim_quartet`) and the contracted block (`contracted_block`), generic in `(la, lb, lc, ld)`; `prim_quartet_exact`, the same quadrature at 50 digits; `FORM`, the signs as multipliers (all 1); `shells_of(mol)`, a PySCF `Mole`'s shells with libcint's normalisation (s and p only, refusing above). |
 | `check.py` | The four tables below; exits nonzero on a miss. |
+| `jbuild.py` | The Coulomb matrix on these ERIs: `coulomb_matrix(shells, D, tau=0, eri=)` → `JBuild(J, n_quartets, n_skipped, bound)`, one sweep over the unique shell quartets with an optional Schwarz screen; `coulomb_energy`, `schwarz`, `ao_offsets`. |
+| `check_j.py` | The three J tables in "The J build"; exits nonzero on a miss. |
 
 ## What was settled
 
@@ -143,8 +146,43 @@ built as `(ps|pp)` (VRR on the p centre, then transposed) are 5.95e-15 from
 the 50-digit value. A kernel built on this recurrence should choose its VRR
 centre (by `l` at least) rather than always building on `A` and `C`.
 
+## The J build
+
+`jbuild.coulomb_matrix` builds `J_ab = Σ_cd (ab|cd) D_cd` over a basis's
+Cartesian AOs, host-side, on `rys2d.contracted_block`. One sweep over the
+unique shell quartets (bra pair `i ≤ j`, ket pair `k ≤ l`, bra ≤ ket in pair
+order), each block evaluated once and digested both ways, with weight 2 on
+an off-diagonal pair and 1 on a diagonal one; `J_ji = J_ijᵀ`. `D` enters
+through `(D + Dᵀ)/2` only, which loses nothing because `(ab|cd) = (ab|dc)`.
+
+The screen is optional (`tau = 0`, the default, skips nothing). With
+`Q_p = √max (ab|ab)` over a pair's diagonal block, a quartet is skipped when
+`Q_p Q_q Σ|w D|` (over the other pair) is under `tau` **in both directions**,
+so no skipped quartet moves any element of `J` by more than `tau`. Each
+skip's bounds are summed into `JBuild.bound`, so `|J(τ) − J(0)| ≤ bound`
+elementwise. It is a `continue`, not a sorted `break`. The ERI evaluator is
+injected (`eri=`).
+
+`check_j.py`, on this box (45 s):
+
+| Table | What | Worst | Gate |
+|---|---|---|---|
+| 1. bookkeeping | the sweep against the dense `Σ_cd (ab\|cd) D_cd` over every ordered quartet of the same Rys blocks, H₂O/STO-3G, random **non-symmetric** `D` | 5.55e-16 of max\|J\| | 1e-14 |
+| 2. libcint | `J` against PySCF's `get_jk(hermi=0)`: H₂O/STO-3G and H₂O/6-31G with their RHF densities, and `check.py`'s C, N, O molecule (contracted 6-31G valence, 12 AOs) with a random non-symmetric `D` | 7.16e-16, 1.99e-15, 5.90e-15 of max\|J\|; `E_J = ½Tr(DJ)` 4.5e-16, 3.0e-16, 2.8e-15 relative | 1e-12 |
+| 3. screen | four H₂ along z, 3 Å apart, 6-31G, RHF `D`, `τ` 1e-12 … 1e-4: 3,550 to 6,942 of 9,316 quartets skipped, `max\|ΔJ\|` 2.5e-12 to 6.7e-4, the bound held at every element | `ΔJ/bound` ≤ 0.59 for `τ ≥ 1e-10` | bound, + 1e-14·max\|J\| for rounding |
+
+At `τ = 1e-12` one element's difference, 4.4e-16 (two ulps of a 1.92 entry),
+is over its 3.1e-16 bound: that is rounding, and it is what the slack is for.
+
+It is about 1.5 s for H₂O/STO-3G and 7 s for H₂O/6-31G (1,035 unique shell
+quartets), all in pure-Python primitive loops. It is a reference, not a
+fast path.
+
 ## Not here
 
-Anything above `(pp|pp)`; `d` and higher; derivatives; any `Spec` target, IR or
-emitted kernel; a place in `src/`; the `Engine` protocol. Whether Rys becomes a
-third engine is decided after this.
+Anything above `(pp|pp)`; `d` and higher (`shells_of` refuses them; the
+roots stop at N = 3, and `T_SWITCH = 50` will not hold for larger N, because
+the Laguerre tail `O(e^{−T} T^{2N−3/2})` at N = 5 is ~5e-8 there);
+derivatives; `K`; any `Spec` target, IR or emitted kernel; a place in
+`src/`; the `Engine` protocol. Whether Rys becomes a third engine is decided
+after this.
