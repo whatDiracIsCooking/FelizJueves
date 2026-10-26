@@ -230,7 +230,27 @@ kblock-rolled-compile` (a compiler, no card) writes
 (2,304 records a side, 256 blocks) behind the gate: `kb` 1,110 ms, the
 rolled kernel 2,620 ms, **2.36x slower** (its declared rule's `slower`), a
 record and not a gate: `kb` stays the default through d, the rolled kernel
-is for the classes nothing else compiles.
+is for the classes nothing else compiles. **Why, read off `ncu` on the RTX
+3080** (#574; `devtools/measure.sh kblock-rolled-profile`, one launch each,
+behind the gate, pinned to 16 cores; `kblock_rolled.json`'s `profile` rows,
+read under `profile_declared`, written first, into `profile_reading`):
+`kbr` executes **5.21x** `kb`'s warp instructions (5.74e10 against 1.10e10;
+1.43x the fp64 work, the `sq * Ebd` product per term) and issues 2.25x as
+often (20.2 against 45.3 cycles between a warp's issues), so 2.37x the time.
+Both run one warp per scheduler (achieved occupancy 7.8% of a theoretical
+10.4%, shared-memory-limited, grid 256), and both are latency-bound: H1 (`kbr`
+latency-bound on dependent loads) **supported**: long + short scoreboard
+81% of its stall, 83% of its PC samples on the two rolled loops, the
+`bd_q -> hpq -> R` chain (line `Ebd[(k * 336 + ie)]`, 55%); H2 (`kb`'s spills
+hit L1 or are cold) **contradicted**: its local loads hit L1 1.2% of the
+time (1.93e10 sectors) and long scoreboard is 53% of its stall; H3 (the
+unrolled text buys issue parallelism) **contradicted**: `kb` issues 2.21% of
+cycles against `kbr`'s 4.97%. `kbr`'s global loads average 6.38 sectors per
+request (81% L1 hits); `Ebd`'s own is **not measured** (ncu's SASS-patched
+source counters end in LaunchFailed on `kbr`, recorded), only read off the
+text: a 2,688 B lane stride, 32 sectors per full-warp request
+(`profile_reading.summary.ebd`, for #575 and #576). `ncu` replays here
+also LaunchFail intermittently and are retaken (`gate_discarded_runs`).
 **Since milestone 12 the repo has a second ERI engine and the first `F`**
 (`docs/implementation/hgp_fock.md` is the one place with the detail): the
 Head-Gordon–Pople recurrence of `[Fock]` §3.1 and the **fused** Fock kernel

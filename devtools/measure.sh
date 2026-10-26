@@ -38,6 +38,9 @@
 #                   compiler, no card)                  FJ_KBLOCK_ROLLED_STORE
 #     kblock-rolled the rolled block K kernel against kb,
 #                   (dd|dd) wall-clock (#571)           FJ_KBLOCK_ROLLED_STORE
+#     kblock-rolled-profile  kb_22_22 against kbr_22_22 under
+#                   ncu, one launch each, and the three
+#                   hypotheses read (#574; CUDA only)   FJ_KBLOCK_ROLLED_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -91,6 +94,7 @@ SWEEPS=(
   "kblock-split|compile|split block K kernel's registers/spill vs kb, (dd|dd) -> kblock_split.json"
   "kblock-rolled-compile|compile|rolled block K kernel's compile at (dd|dd), (ff|ff) vs kb (#571) -> kblock_rolled.json"
   "kblock-rolled|timed|rolled block K kernel vs kb, (dd|dd) wall-clock (#571) -> kblock_rolled.json"
+  "kblock-rolled-profile|timed|kb_22_22 vs kbr_22_22 under ncu, CUDA only (#574) -> kblock_rolled.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -171,6 +175,8 @@ case $sweep in
   kblock-rolled-compile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_rolled_compile)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   kblock-rolled) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_rolled_clock)
+                envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  kblock-rolled-profile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_rolled_profile)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")

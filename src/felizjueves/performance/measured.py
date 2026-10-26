@@ -198,6 +198,7 @@ import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 from felizjueves.emit import cuda, hip
@@ -964,18 +965,57 @@ def counter_tool(path: str, backend: str) -> str:
     return f"{name} {m[1]}" if m else f"{name} (unknown version)"
 
 
+# CPU CAP (#574): an ncu replay of a long kernel kept the host busy enough to
+# oversubscribe this 24-core box, so a sweep may pin the profiler and the
+# binary it runs to a few cores (`taskset -c <cpus>`) with the host's
+# threading libraries at one thread each. Opt-in: `cpus=None` (the roofline
+# sweep, #112) leaves the invocation exactly as it was.
+CPU_CAP_ENV = {"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
+               "OPENBLAS_NUM_THREADS": "1"}
+
+
+def _capped(cmd: list[str], cpus: str | None) -> list[str]:
+    return ["taskset", "-c", cpus, *cmd] if cpus else cmd
+
+
+def _capped_env(cpus: str | None) -> dict[str, str] | None:
+    return {**os.environ, **CPU_CAP_ENV} if cpus else None
+
+
+def _shown(cmd: Sequence[str], hidden: Mapping[str, str],
+           cpus: str | None) -> str:
+    """One invocation as recorded: the profiler by name, `hidden`'s paths
+    as their placeholders, and the CPU cap (env and taskset) when set."""
+    body = cmd[3:] if cpus else cmd
+    words = [Path(body[0]).name, *(hidden.get(c, c) for c in body[1:])]
+    if cpus:
+        env = " ".join(f"{k}={v}" for k, v in CPU_CAP_ENV.items())
+        words = [env, "taskset", "-c", cpus, *words]
+    return " ".join(words)
+
+
 def profile_commands(backend: str, tool: str, argv: Sequence[str], *,
-                     kernel_regex: str, outdir: Path) -> list[list[str]]:
+                     kernel_regex: str, outdir: Path, cpus: str | None = None,
+                     ncu_args: Sequence[str] | None = None
+                     ) -> list[list[str]]:
     """The profiler invocations around `argv`, one per pass (module
     docstring, COUNTERS): ncu replays in one; rocprofv3 needs
-    ROCPROF_PASSES, each writing under its own `outdir/pass<i>`."""
+    ROCPROF_PASSES, each writing under its own `outdir/pass<i>`. `cpus`
+    prefixes each with `taskset -c <cpus>` (CPU CAP); `ncu_args` replaces
+    ncu's `--metrics <NCU_METRICS>` (#574's sweep asks for its own)."""
     if backend == "cuda":
-        return [[tool, "--csv", "--print-units", "base", "--clock-control",
-                 "none", "--metrics", ",".join(NCU_METRICS), "--kernel-name",
-                 f"regex:{kernel_regex}", *argv]]
-    return [[tool, "--pmc", *pmc, "--kernel-include-regex", kernel_regex,
-             "--output-format", "csv", "-d", str(outdir / f"pass{i}"), "-o",
-             "counters", "--", *argv] for i, pmc in enumerate(ROCPROF_PASSES)]
+        what = (list(ncu_args) if ncu_args is not None
+                else ["--metrics", ",".join(NCU_METRICS)])
+        return [_capped([tool, "--csv", "--print-units", "base",
+                         "--clock-control", "none", *what, "--kernel-name",
+                         f"regex:{kernel_regex}", *argv], cpus)]
+    if ncu_args is not None:
+        raise ValueError("ncu_args is ncu's: no rocprofv3 equivalent")
+    return [_capped([tool, "--pmc", *pmc, "--kernel-include-regex",
+                     kernel_regex, "--output-format", "csv", "-d",
+                     str(outdir / f"pass{i}"), "-o", "counters", "--", *argv],
+                    cpus)
+            for i, pmc in enumerate(ROCPROF_PASSES)]
 
 
 # rocprofv3's own report that a pass's counter set does not fit the card.
@@ -992,11 +1032,26 @@ ROCPROF_ZERO_BYTES = "rocprofv3's GL2C <-> EA byte counters all read 0"
 _NOT_LOADED = re.compile(r"error while loading shared libraries: (\S+?):")
 
 
+def _ncu_refusals(report: str, name: str) -> None:
+    """The profiler's own refusals, read off its output (COULD NOT MEASURE)."""
+    if "ERR_NVGPUCTRPERM" in report:
+        raise CouldNotMeasure(
+            "ncu: ERR_NVGPUCTRPERM -- this host restricts GPU performance "
+            "counters to admins (NVreg_RestrictProfilingToAdminUsers): "
+            "could not measure")
+    libs = sorted(set(_NOT_LOADED.findall(report)))
+    if libs:
+        raise CouldNotMeasure(f"{name} cannot load {', '.join(libs)}: "
+                              "could not measure")
+
+
 def profile(backend: str, argv: Sequence[str], *, kernel_regex: str,
-            workdir: Path) -> tuple[list[KernelCounters], str, str]:
+            workdir: Path, cpus: str | None = None
+            ) -> tuple[list[KernelCounters], str, str]:
     """Run `argv` under `backend`'s profiler; its launches matching
     `kernel_regex`, the profiler as it reports itself, and the invocation as
-    recorded (the binary and output directory shown as `<name>`).
+    recorded (the binary and output directory shown as `<name>`). `cpus`
+    caps the profiler and the binary to those cores (CPU CAP).
 
     Raises CouldNotMeasure when the profiler is absent, cannot load, is
     refused the counters, or reports no launch -- never a row of zeros.
@@ -1007,7 +1062,7 @@ def profile(backend: str, argv: Sequence[str], *, kernel_regex: str,
         raise CouldNotMeasure(f"{name} not found: could not measure")
     outdir = workdir / f"{name}-out"
     cmds = profile_commands(backend, tool, argv, kernel_regex=kernel_regex,
-                            outdir=outdir)
+                            outdir=outdir, cpus=cpus)
     texts = []
     workdir.mkdir(parents=True, exist_ok=True)
     for i, cmd in enumerate(cmds):
@@ -1015,21 +1070,13 @@ def profile(backend: str, argv: Sequence[str], *, kernel_regex: str,
             # rocprofv3 drops a .rocprofv3/ directory in its cwd: keep it in
             # workdir, out of the checkout
             done = subprocess.run(
-                cmd, capture_output=True, text=True,
+                cmd, capture_output=True, text=True, env=_capped_env(cpus),
                 cwd=None if backend == "cuda" else workdir,
                 timeout=3600 if backend == "cuda" else ROCPROF_TIMEOUT_S)
         except (OSError, subprocess.TimeoutExpired) as e:
             raise CouldNotMeasure(f"{name}: {e}: could not measure") from e
         report = done.stdout + done.stderr
-        if "ERR_NVGPUCTRPERM" in report:
-            raise CouldNotMeasure(
-                "ncu: ERR_NVGPUCTRPERM -- this host restricts GPU performance "
-                "counters to admins (NVreg_RestrictProfilingToAdminUsers): "
-                "could not measure")
-        libs = sorted(set(_NOT_LOADED.findall(report)))
-        if libs:
-            raise CouldNotMeasure(f"{name} cannot load {', '.join(libs)}: "
-                                  "could not measure")
+        _ncu_refusals(report, name)
         if backend == "cuda":
             if done.returncode != 0 or "==ERROR==" in report:
                 raise CouldNotMeasure(f"ncu exited {done.returncode}: could "
@@ -1068,9 +1115,312 @@ def profile(backend: str, argv: Sequence[str], *, kernel_regex: str,
     hidden = {str(argv[0]): f"<{Path(argv[0]).name}>"} if argv else {}
     hidden.update({str(outdir / f"pass{i}"): f"<{outdir.name}/pass{i}>"
                    for i in range(len(cmds))})
-    shown = [" ".join([Path(cmd[0]).name, *(hidden.get(c, c) for c in cmd[1:])])
-             for cmd in cmds]
+    shown = [_shown(cmd, hidden, cpus) for cmd in cmds]
     return got, counter_tool(tool, backend), " ; ".join(shown)
+
+
+# --- the kb / kbr profile (#574) -------------------------------------------
+#
+# `kb_22_22` (`kernel_kblock`) against `kbr_22_22` (`kernel_kblock_rolled`),
+# one launch each under ncu on the RTX 3080 (measure/measure_kblock_rolled.py,
+# `devtools/measure.sh kblock-rolled-profile`). Three runs per kernel:
+#
+#   details   KB_PROFILE_UNITS' counters, every one in the unit ncu prints in
+#             `--print-units base` (a different unit is refused);
+#   pcsamp    the source page (`--page source --print-source cuda,sass`) of
+#             KB_PROFILE_PCSAMP, PC-sampled warp states per source line and
+#             per SASS instruction -- no code patching;
+#   sectors   the source page of KB_PROFILE_SECTORS, which ncu collects by
+#             PATCHING the SASS: per-instruction L1 requests and L2 sectors,
+#             where the Ebd load's sectors per request would be read. When ncu
+#             cannot (LaunchFailed on both kernels here, ncu 2025.3.1.0), the
+#             row records why, never a number.
+
+KB_PROFILE_STALLS = (
+    "long_scoreboard", "short_scoreboard", "wait", "not_selected", "selected",
+    "math_pipe_throttle", "lg_throttle", "mio_throttle", "tex_throttle",
+    "no_instruction", "branch_resolving", "dispatch_stall", "barrier",
+    "membar", "drain", "imc_miss", "misc", "sleeping")
+
+
+def ncu_stall(reason: str) -> str:
+    """ncu's warp-state metric for `reason`: warps stalled on it per issue
+    cycle, i.e. its share, in cycles, of the cycles between a warp's issues
+    (summed over KB_PROFILE_STALLS: smsp__average_warp_latency_per_inst_issued)."""
+    return f"smsp__average_warps_issue_stalled_{reason}_per_issue_active.ratio"
+
+
+KB_PROFILE_UNITS = {
+    "gpu__time_duration.sum": "ns",
+    "sm__cycles_elapsed.avg": "cycle",
+    "smsp__cycles_active.avg": "cycle",
+    "smsp__inst_executed.sum": "inst",
+    "smsp__thread_inst_executed_per_inst_executed.ratio": "",
+    NCU_DADD: "inst", NCU_DMUL: "inst", NCU_DFMA: "inst",
+    "smsp__sass_inst_executed_op_global_ld.sum": "inst",
+    "smsp__sass_inst_executed_op_local_ld.sum": "inst",
+    "smsp__sass_inst_executed_op_local_st.sum": "inst",
+    "smsp__sass_inst_executed_op_shared_ld.sum": "inst",
+    "smsp__sass_inst_executed_op_shared_st.sum": "inst",
+    # local memory: the spills (kb) and the runtime-indexed R[n_r] (kbr)
+    "l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum": "",
+    "l1tex__t_requests_pipe_lsu_mem_local_op_st.sum": "",
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": "sector",
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum": "sector",
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": "sector",
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum": "sector",
+    # global loads (records, E tables, class tables, D)
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": "",
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": "sector",
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum": "sector",
+    # shared memory
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum": "",
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum": "",
+    "l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum": "",
+    NCU_READ: "byte", NCU_WRITE: "byte",
+    # occupancy and issue
+    "sm__maximum_warps_per_active_cycle_pct": "%",
+    "sm__warps_active.avg.pct_of_peak_sustained_active": "%",
+    "smsp__warps_active.avg.per_cycle_active": "warp",
+    "smsp__warps_eligible.avg.per_cycle_active": "warp",
+    "smsp__issue_active.avg.pct_of_peak_sustained_active": "%",
+    "smsp__average_warp_latency_per_inst_issued.ratio": "cycle",
+    "launch__registers_per_thread": "register/thread",
+    "launch__stack_size": "",
+    "launch__shared_mem_per_block_dynamic": "byte/block",
+    "launch__grid_size": "",
+    "launch__block_size": "",
+    "launch__occupancy_limit_registers": "block",
+    "launch__occupancy_limit_shared_mem": "block",
+    "launch__occupancy_limit_warps": "block",
+    **{ncu_stall(r): "inst" for r in KB_PROFILE_STALLS},
+}
+
+# PC sampling's names: `no_instructions`, not `no_instruction`
+KB_PROFILE_PCSAMP = ("smsp__pcsamp_sample_count", *(
+    "smsp__pcsamp_warps_issue_stalled_"
+    + ("no_instructions" if r == "no_instruction" else r)
+    for r in KB_PROFILE_STALLS if r != "selected"),
+    "smsp__pcsamp_warps_issue_stalled_selected")
+KB_PROFILE_SECTORS = ("memory_l1_tag_requests_global",
+                      "memory_l2_theoretical_sectors_global")
+
+
+def _value(v: str) -> float | None:
+    v = v.strip().replace(",", "")
+    if v in ("", "-", "n/a", "(!) n/a"):
+        return None
+    return float(v)
+
+
+def parse_ncu_metrics(text: str, units: Mapping[str, str]
+                      ) -> list[tuple[str, dict[str, float]]]:
+    """`ncu --csv --print-units base` (the details page) as (kernel, every
+    metric by name) per launch in ncu's ID order. Unlike `parse_ncu_csv`
+    the values may be ratios. Refuses a metric of `units` printed in another
+    unit, a launch missing one, and a value ncu reports as n/a."""
+    start = text.find('"ID"')
+    if start < 0:
+        raise ValueError("no ncu CSV header in the output")
+    launches: dict[int, tuple[str, dict[str, float]]] = {}
+    for rec in csv.DictReader(io.StringIO(text[start:])):
+        if not rec.get("ID") or rec.get("Metric Name") is None:
+            continue
+        name, unit = rec["Metric Name"], rec.get("Metric Unit", "")
+        if name in units and unit != units[name]:
+            raise ValueError(f"ncu printed {name} in {unit!r}, not "
+                             f"{units[name]!r}")
+        value = _value(rec["Metric Value"])
+        if value is None:
+            raise ValueError(f"ncu reports {name} as {rec['Metric Value']!r}")
+        kernel = rec["Kernel Name"].split("(", 1)[0].strip()
+        launches.setdefault(int(rec["ID"]), (kernel, {}))[1][name] = value
+    out = []
+    for i in sorted(launches):
+        kernel, raw = launches[i]
+        missing = sorted(set(units) - set(raw))
+        if missing:
+            raise ValueError(f"ncu launch {i} ({kernel}) has no {missing}")
+        out.append((kernel, raw))
+    return out
+
+
+@dataclass(frozen=True)
+class SourceLine:
+    """One source line of ncu's source page: its number and text, its own
+    metric values, and its SASS instructions' (text, values), in order."""
+
+    line: int
+    source: str
+    values: Mapping[str, float]
+    sass: tuple[tuple[str, Mapping[str, float]], ...]
+
+
+def parse_ncu_source(text: str) -> dict[str, list[SourceLine]]:
+    """`ncu --csv --page source --print-source cuda,sass`: per source file
+    (by path), its lines in order. A file's block opens with `"File Path"`;
+    its header row names the metrics after `Line No, Source, Address,
+    Source`; a row with a line number is a source line, one without is a
+    SASS instruction of the line above, and `...` rows (elided addresses)
+    are skipped. A value printed `-` is absent from `values`."""
+    files: dict[str, list[SourceLine]] = {}
+    path = None
+    metrics: list[str] = []
+    cur: list = []  # [line, source, values, sass list] of the open line
+
+    def close() -> None:
+        if cur and path is not None:
+            files[path].append(SourceLine(cur[0], cur[1], cur[2],
+                                          tuple(cur[3])))
+        cur.clear()
+
+    for row in csv.reader(io.StringIO(text)):
+        if not row:
+            continue
+        if row[0] == "File Path":
+            close()
+            path = row[1]
+            files.setdefault(path, [])
+            metrics = []
+            continue
+        if row[0] == "Line No":
+            metrics = row[4:]
+            continue
+        if path is None or not metrics or len(row) != 4 + len(metrics):
+            continue
+        vals = {m: v for m, x in zip(metrics, row[4:], strict=True)
+                if (v := _value(x)) is not None}
+        if row[0]:
+            close()
+            cur.extend([int(row[0]), row[1], vals, []])
+        elif cur and row[3].strip() != "...":
+            cur[3].append((row[3].strip(), vals))
+    close()
+    return files
+
+
+def ncu_raw(argv: Sequence[str], *, ncu_args: Sequence[str],
+            kernel_regex: str, cpus: str | None = None,
+            timeout_s: float = 3600) -> tuple[str, str, str]:
+    """One ncu run of `argv` with `ncu_args` (metrics, page, launch count):
+    its whole output, ncu as it reports itself, and the invocation as
+    recorded (the binary as `<name>`). The refusals are `profile`'s."""
+    tool = _which("ncu")
+    if tool is None:
+        raise CouldNotMeasure("ncu not found: could not measure")
+    (cmd,) = profile_commands("cuda", tool, argv, kernel_regex=kernel_regex,
+                              outdir=Path(), cpus=cpus, ncu_args=ncu_args)
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True,
+                              env=_capped_env(cpus), timeout=timeout_s)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise CouldNotMeasure(f"ncu: {e}: could not measure") from e
+    report = done.stdout + done.stderr
+    _ncu_refusals(report, "ncu")
+    if done.returncode != 0 or "==ERROR==" in report:
+        errs = [ln for ln in report.splitlines() if ln.startswith("==ERROR==")]
+        raise CouldNotMeasure(f"ncu exited {done.returncode}: could not "
+                              f"measure: {' / '.join(errs)[:500]}")
+    hidden = {str(argv[0]): f"<{Path(argv[0]).name}>"} if argv else {}
+    return report, counter_tool(tool, "cuda"), _shown(cmd, hidden, cpus)
+
+
+# THE READING RULE, declared before any row (#574) and copied into the store
+# as `profile_declared`; `kb_profile_verdicts` applies it to the two rows.
+KB_PROFILE_DECLARED = {
+    "issue": 574,
+    "terms": {
+        "S": "a kernel's sum over KB_PROFILE_STALLS of "
+             "smsp__average_warps_issue_stalled_<r>_per_issue_active.ratio: "
+             "cycles between a warp's issues, by reason",
+        "mem": "(long_scoreboard + short_scoreboard) / S",
+        "long": "long_scoreboard / S",
+        "hit": "local-load L1 hit rate: "
+               "l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum / "
+               "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum",
+        "issue": "smsp__issue_active.avg.pct_of_peak_sustained_active",
+        "warps": "smsp__warps_active.avg.per_cycle_active",
+        "hot": "kbr's share of PC samples on the source lines that read "
+               "Ebd[ (stage 1) or Eac[ (stage 2): the rolled loops",
+    },
+    "H1": {
+        "hypothesis": "kbr is latency-bound on dependent loads in its "
+                      "inner loops",
+        "supported": "mem(kbr) >= 0.5, long_scoreboard kbr's largest stall "
+                     "reason, and hot(kbr) >= 0.5",
+        "contradicted": "mem(kbr) < 0.25",
+    },
+    "H2": {
+        "hypothesis": "kb's spills mostly hit L1, or sit outside the hot "
+                      "region",
+        "supported": "hit(kb) >= 0.8, or long(kb) <= 0.25 (local traffic, "
+                     "whatever its hit rate, does not stall kb)",
+        "contradicted": "hit(kb) < 0.5 and long(kb) > 0.25",
+    },
+    "H3": {
+        "hypothesis": "the unrolled text gives the scheduler parallelism "
+                      "that a CSR row loop does not",
+        "supported": "warps(kb) <= 1.1 warps(kbr) (no more warps to hide "
+                     "latency with) and issue(kb) >= 1.5 issue(kbr): kb's "
+                     "extra issue is per-warp parallelism",
+        "contradicted": "issue(kb) <= 1.1 issue(kbr)",
+    },
+    "otherwise": "not resolved",
+    "card": "RTX 3080 (sm_86) only: the RX 9060 XT has no fp64 or byte "
+            "counters (measured_store.UNMEASURED, #140)",
+    "declared": "2026-10-26, before any row",
+}
+
+
+def kb_profile_terms(counters: Mapping[str, float]) -> dict[str, float]:
+    """The declared terms of one kernel's details counters."""
+    stalls = {r: counters[ncu_stall(r)] for r in KB_PROFILE_STALLS}
+    S = sum(stalls.values())
+    sectors = counters["l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum"]
+    hit = counters["l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum"]
+    return {
+        "S": S,
+        "mem": (stalls["long_scoreboard"] + stalls["short_scoreboard"]) / S,
+        "long": stalls["long_scoreboard"] / S,
+        "largest": max(stalls, key=stalls.__getitem__),
+        "hit": hit / sectors if sectors else float("nan"),
+        "issue": counters["smsp__issue_active.avg.pct_of_peak_sustained_active"],
+        "warps": counters["smsp__warps_active.avg.per_cycle_active"],
+    }
+
+
+def kb_profile_verdicts(kb: Mapping[str, float], kbr: Mapping[str, float],
+                        hot_kbr: float) -> dict[str, dict]:
+    """KB_PROFILE_DECLARED applied: per hypothesis, its verdict and the
+    numbers it was read from."""
+    a, b = kb_profile_terms(kb), kb_profile_terms(kbr)
+    if b["mem"] >= 0.5 and b["largest"] == "long_scoreboard" \
+            and hot_kbr >= 0.5:
+        h1 = "supported"
+    elif b["mem"] < 0.25:
+        h1 = "contradicted"
+    else:
+        h1 = "not resolved"
+    if a["hit"] >= 0.8 or a["long"] <= 0.25:
+        h2 = "supported"
+    elif a["hit"] < 0.5 and a["long"] > 0.25:
+        h2 = "contradicted"
+    else:
+        h2 = "not resolved"
+    if a["warps"] <= 1.1 * b["warps"] and a["issue"] >= 1.5 * b["issue"]:
+        h3 = "supported"
+    elif a["issue"] <= 1.1 * b["issue"]:
+        h3 = "contradicted"
+    else:
+        h3 = "not resolved"
+    r4 = partial(round, ndigits=4)
+    return {
+        "H1": {"verdict": h1, "mem_kbr": r4(b["mem"]),
+               "largest_kbr": b["largest"], "hot_kbr": r4(hot_kbr)},
+        "H2": {"verdict": h2, "hit_kb": r4(a["hit"]), "long_kb": r4(a["long"])},
+        "H3": {"verdict": h3, "issue_kb": a["issue"], "issue_kbr": b["issue"],
+               "warps_kb": a["warps"], "warps_kbr": b["warps"]},
+    }
 
 
 def counter_rows(backend: Backend, spec: Spec, units: Sequence[Unit],

@@ -2,6 +2,7 @@
 
     devtools/measure.sh kblock-rolled-compile [--backend cuda|hip]   a compiler
     devtools/measure.sh kblock-rolled [--backend cuda|hip]           timed
+    devtools/measure.sh kblock-rolled-profile                       ncu (#574)
 
 OPT-IN: each test skips unless FJ_KBLOCK_ROLLED_STORE names the store
 (measure.sh sets it to config.sh's MEASURE_KBLOCK_ROLLED_STORE, the tracked
@@ -33,8 +34,10 @@ THE VERDICT RULE is the store's `declared`, written before any row.
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -296,3 +299,352 @@ def test_cuda_kblock_rolled_clock(request, run_device_binary,
 def test_hip_kblock_rolled_clock(request, run_device_binary,
                                  tmp_path) -> None:
     _clock("hip", request, run_device_binary, tmp_path)
+
+
+# --- THE PROFILE (#574): kb_22_22 against kbr_22_22 under ncu ---------------
+#
+#     devtools/measure.sh kblock-rolled-profile     (CUDA only, timed kind)
+#
+# The clock's input and binaries (MODE 0, `rolled=` False / True), each
+# held to the other first, then per kernel three ncu runs of ONE launch
+# (`0 0 1`: no warm-up, one rep, `--launch-count 1`), in this order, never
+# two at once and nothing compiling beside them: `details` (the counters of
+# `measured.KB_PROFILE_UNITS`), `pcsamp` (PC-sampled warp states per source
+# line and SASS instruction, `measured.KB_PROFILE_PCSAMP`) and `sectors`
+# (`measured.KB_PROFILE_SECTORS`, SASS-patched per-instruction requests and
+# sectors: where the Ebd load's sectors per request would be read; when ncu
+# cannot, its reason is recorded). Each run behind `gate.wait_quiet`, its
+# after-reading taken, a contended run (or one ncu ends in LaunchFailed,
+# seen intermittently here) retaken up to PROFILE_RETAKES times
+# and then nothing written. The profiler and the binary are pinned to
+# PROFILE_CPUS (`measured.profile`'s CPU CAP).
+#
+# THE READING RULE is `measured.KB_PROFILE_DECLARED`, copied into the store
+# as `profile_declared` before any row; a store whose declaration differs
+# is refused. One `profile` row per (arch, toolchain, unit); one
+# `profile_reading` row per (arch, toolchain) with the three verdicts.
+
+PROFILE_CPUS = "0-15"
+PROFILE_RETAKES = 3
+HOT_SHARE = 0.01  # a source line kept in the row: >= 1% of the samples
+_EBD = re.compile(r"Ebd\[\(k \* (\d+) \+ ie\)\]")
+_E_GLOBAL = re.compile(r"\bE(bd|ac)\[\(")
+
+
+def _gated(kind: str, unit: str, run, readings: list) -> tuple[object, int]:
+    """`run()` behind the gate; (its result, runs discarded)."""
+    discarded = 0
+    for take in range(PROFILE_RETAKES + 1):
+        try:
+            busy, util = gate.wait_quiet(
+                "cuda", say=lambda s: print(s, flush=True))
+        except gate.Contended as e:
+            discarded += 1
+            print(f"  DISCARDED {unit} {kind}: {e} (take {take + 1})")
+            continue
+        try:
+            got = run()
+        except measured.CouldNotMeasure as e:
+            # seen intermittently on kbr's details / pcsamp replays here:
+            # the same run passes on a retake, so it is retaken like a
+            # contended one; anything else is a refusal
+            if "LaunchFailed" not in str(e):
+                raise
+            discarded += 1
+            print(f"  DISCARDED {unit} {kind}: ncu LaunchFailed "
+                  f"(take {take + 1})")
+            continue
+        after = gate.after_reading("cuda")
+        if gate.is_idle(util) and gate.is_idle(after):
+            readings.append({"unit": unit, "run": kind,
+                             "cpu_busy_permille": round(1000 * busy),
+                             "gpu_util_before": util,
+                             "gpu_util_after": after})
+            return got, discarded
+        discarded += 1
+        print(f"  DISCARDED {unit} {kind}: card {util} -> {after}%")
+    pytest.fail(f"{unit} {kind}: contended through {PROFILE_RETAKES + 1} "
+                "takes -- nothing written")
+
+
+def _nonzero(vals) -> dict[str, float]:
+    pre = "smsp__pcsamp_warps_issue_stalled_"
+    return {k.removeprefix(pre): v for k, v in vals.items()
+            if v and k != "smsp__pcsamp_sample_count"}
+
+
+def _pcsamp(files: dict, unit_file: str) -> dict:
+    """The kernel's PC samples: total, the generated unit's hot lines, and
+    the lines that read Ebd[ / Eac[ with their SASS."""
+    n = "smsp__pcsamp_sample_count"
+    total = sum(ln.values.get(n, 0.0) for lines in files.values()
+                for ln in lines)
+    assert total > 0, "no PC samples"
+    (mine,) = [lines for p, lines in files.items() if p.endswith(unit_file)]
+
+    def row(ln, sass: bool) -> dict:
+        r = {"line": ln.line, "source": ln.source.strip()[:200],
+             "samples": int(ln.values.get(n, 0)),
+             "share": round(ln.values.get(n, 0) / total, 4),
+             "stalls": _nonzero(ln.values)}
+        if sass:
+            # the instructions holding >= 0.1% of the kernel's samples
+            r["sass"] = [{"sass": t, "samples": int(v.get(n, 0)),
+                          "stalls": _nonzero(v)} for t, v in ln.sass
+                         if v.get(n, 0) >= 1e-3 * total]
+        return r
+
+    hot = [row(ln, False) for ln in mine if ln.values.get(n, 0) >= HOT_SHARE * total]
+    # the rolled loops read E from global memory, `Ebd[(k * 336 + ie)]`;
+    # kb's inlined E is a local array, `Ebd[0][0]`, and is not matched
+    loops = [ln for ln in mine if _E_GLOBAL.search(ln.source)]
+    return {"samples": int(total),
+            "hot_lines": sorted(hot, key=lambda r: -r["samples"]),
+            "e_lines": [row(ln, True) for ln in loops],
+            "e_share": round(sum(ln.values.get(n, 0) for ln in loops) / total,
+                             4)}
+
+
+def _sectors(files: dict, unit_file: str) -> dict:
+    """Per 64-bit global load on the Ebd line: requests, sectors, ratio."""
+    (mine,) = [lines for p, lines in files.items() if p.endswith(unit_file)]
+    req, sec = KB_SECTOR_REQ, KB_SECTOR_SEC
+    out = []
+    for ln in mine:
+        if not _EBD.search(ln.source):
+            continue
+        for t, v in ln.sass:
+            if t.split()[0].lstrip("@P!0123456789T ").startswith("LDG") \
+                    and ".64" in t and v.get(req):
+                out.append({"line": ln.line, "sass": t,
+                            "requests": int(v[req]), "sectors": int(v[sec]),
+                            "sectors_per_request": round(v[sec] / v[req], 3)})
+    return {"ebd_loads": out}
+
+
+KB_SECTOR_REQ, KB_SECTOR_SEC = measured.KB_PROFILE_SECTORS
+
+
+def _profile_kernel(arm: str, part, unit: str, text: str, work: Path,
+                    readings: list) -> tuple[dict, int]:
+    argv = [str(part.binary), str(part.staged), str(work / f"{arm}.out"),
+            "0", "0", "1"]
+    unit_file = f"{unit}.cu"
+    regex = f"^{unit}$"
+    once = ["--launch-count", "1"]
+    source = ["--page", "source", "--print-source", "cuda,sass"]
+
+    def ncu(args):
+        return measured.ncu_raw(argv, ncu_args=[*once, *args],
+                                kernel_regex=regex, cpus=PROFILE_CPUS)
+
+    discarded = 0
+    try:
+        (det, tool, c_det), d = _gated("details", unit, lambda: ncu(
+            ["--metrics", ",".join(measured.KB_PROFILE_UNITS)]), readings)
+        discarded += d
+        (pcs, _, c_pcs), d = _gated("pcsamp", unit, lambda: ncu(
+            ["--metrics", ",".join(measured.KB_PROFILE_PCSAMP), *source]),
+            readings)
+        discarded += d
+    except measured.CouldNotMeasure as e:
+        pytest.skip(f"{e} -- nothing written")
+    ((kernel, counters),) = measured.parse_ncu_metrics(
+        det, measured.KB_PROFILE_UNITS)
+    assert kernel == unit, kernel
+
+    def sectors():
+        try:
+            return ncu(["--metrics", ",".join(measured.KB_PROFILE_SECTORS),
+                        *source])
+        except measured.CouldNotMeasure as e:
+            return e
+
+    got, d = _gated("sectors", unit, sectors, readings)
+    discarded += d
+    if isinstance(got, measured.CouldNotMeasure):
+        sec = {"could_not_measure": str(got)}
+        c_sec = None
+    else:
+        sec = _sectors(measured.parse_ncu_source(got[0]), unit_file)
+        c_sec = got[2]
+    m = _EBD.search(text)
+    if m:  # the stride the text fixes, not a measurement
+        sec["ebd_from_text"] = {
+            "index": m.group(0), "lane": "k = k0 + threadIdx.y, blockDim "
+            "(1, 32): consecutive lanes, consecutive ket records",
+            "lane_stride_bytes": 8 * int(m.group(1)),
+            "sectors_per_full_warp_request": 32 if 8 * int(m.group(1)) >= 32
+            else None}
+    row = {
+        "unit": unit, "arm": arm, "counter_tool": tool,
+        "source_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "command": {"details": c_det, "pcsamp": c_pcs, "sectors": c_sec},
+        "counters": counters,
+        "terms": measured.kb_profile_terms(counters),
+        "pcsamp": _pcsamp(measured.parse_ncu_source(pcs), unit_file),
+        "sectors": sec,
+    }
+    return row, discarded
+
+
+def _summary(kb: dict, kbr: dict) -> dict:
+    """The few numbers a reader (and #575, #576) wants first, per kernel:
+    derived from the two rows, never measured separately."""
+    def per(row: dict) -> dict:
+        c = row["counters"]
+        g = "l1tex__t_{}_pipe_lsu_mem_global_op_ld{}.sum"
+        loc = "l1tex__t_{}_pipe_lsu_mem_local_op_{}.sum"
+        return {
+            "ms_under_ncu": round(c["gpu__time_duration.sum"] / 1e6, 1),
+            "warp_inst": c["smsp__inst_executed.sum"],
+            "fp64_flops": (c[measured.NCU_DADD] + c[measured.NCU_DMUL]
+                           + 2 * c[measured.NCU_DFMA]),
+            "global_ld_requests": c[g.format("requests", "")],
+            "global_ld_sectors_per_request": round(
+                c[g.format("sectors", "")] / c[g.format("requests", "")], 3),
+            "global_ld_l1_hit": round(c[g.format("sectors", "_lookup_hit")]
+                                      / c[g.format("sectors", "")], 4),
+            "local_ld_sectors": c[loc.format("sectors", "ld")],
+            "local_st_sectors": c[loc.format("sectors", "st")],
+            "local_ld_l1_hit": round(
+                c[loc.format("sectors", "ld_lookup_hit")]
+                / c[loc.format("sectors", "ld")], 4),
+            "shared_ld_wavefronts":
+                c["l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum"],
+            "dram_bytes_read": c[measured.NCU_READ],
+            "cycles_per_issue": c[
+                "smsp__average_warp_latency_per_inst_issued.ratio"],
+            "issue_active_pct": c[
+                "smsp__issue_active.avg.pct_of_peak_sustained_active"],
+            "achieved_occupancy_pct": c[
+                "sm__warps_active.avg.pct_of_peak_sustained_active"],
+            "theoretical_occupancy_pct": c[
+                "sm__maximum_warps_per_active_cycle_pct"],
+        }
+
+    a, b = per(kb), per(kbr)
+    e = kbr["pcsamp"]["e_lines"]
+    ebd = [x for x in e if _EBD.search(x["source"])]
+    return {
+        "kb": a, "kbr": b,
+        "kbr_over_kb": {k: round(b[k] / a[k], 3) for k in (
+            "ms_under_ncu", "warp_inst", "fp64_flops", "cycles_per_issue",
+            "issue_active_pct")},
+        "ebd": {
+            "line": ebd[0]["line"] if ebd else None,
+            "sample_share": ebd[0]["share"] if ebd else None,
+            "sectors_per_request_measured":
+                kbr["sectors"].get("ebd_loads") or None,
+            "why_not_measured": kbr["sectors"].get("could_not_measure"),
+            "from_text": kbr["sectors"].get("ebd_from_text"),
+        },
+    }
+
+
+def _profile(request, run_device_binary, tmp_path: Path) -> None:
+    path = _store_path()
+    tc = _toolchain("cuda", request)
+    b = measured.BACKENDS["cuda"]
+    store = _load(path)
+    declared = json.loads(json.dumps(measured.KB_PROFILE_DECLARED))
+    if "profile_declared" not in store:
+        store["profile_declared"] = declared
+        store.setdefault("profile", [])
+        store.setdefault("profile_reading", [])
+        path.write_text(json.dumps(store, indent=1) + "\n")
+    assert store["profile_declared"] == declared, (
+        "the store's profile_declared is not measured.KB_PROFILE_DECLARED: "
+        "the rows would be read under another rule")
+
+    basis, D = _basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=0.0, build=build_kblock_kernel)
+    (cl,) = plan
+    assert cl.am == AM and len(cl.blocks) == 256
+    assert len(cl.bras) == len(cl.kets) == 2304
+    # compiled one after the other, all before the first ncu run
+    parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
+                                 "cuda", tmp_path / arm, jobs=1,
+                                 rolled=arm == "rolled", with_k=False)
+             for arm in ARMS}
+    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
+                          "cuda")[0][0] for arm in ARMS)
+    rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
+    assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, rel
+
+    head = {"arch": b.arch.name, "toolchain": b.toolchain(b.compiler()),
+            "gpu": b.gpu(), "host": measured.host(),
+            "date": datetime.date.today().isoformat(), "am": list(AM),
+            "n_ao": basis.n_ao, "n_bra": 2304, "n_ket": 2304,
+            "n_blocks": 256, "tau": 0.0, "cpus": PROFILE_CPUS,
+            "launch": "one launch: MODE 0, warm-up 0, reps 1, "
+                      "--launch-count 1"}
+    rows = {}
+    for arm in ARMS:
+        (part,) = parts[arm]
+        kern = part.drv.classes[0].kb
+        text = BACKEND["cuda"][0](kern, b.arch)
+        readings: list = []
+        work = tmp_path / f"{arm}-ncu"
+        work.mkdir()
+        row, discarded = _profile_kernel(arm, part, kern.name, text, work,
+                                         readings)
+        rows[arm] = {**head, **row, "gate": readings,
+                     "gate_discarded_runs": discarded}
+        t = row["terms"]
+        print(f"\n{kern.name}: {row['counters']['gpu__time_duration.sum'] / 1e6:.0f}"
+              f" ms under ncu; S {t['S']:.2f} mem {t['mem']:.3f} long "
+              f"{t['long']:.3f} ({t['largest']}), local-ld hit {t['hit']:.3f},"
+              f" issue {t['issue']}%, warps {t['warps']}", flush=True)
+
+    verdicts = measured.kb_profile_verdicts(
+        rows["kb"]["counters"], rows["rolled"]["counters"],
+        rows["rolled"]["pcsamp"]["e_share"])
+    store = _load(path)
+    for r in rows.values():
+        _save(path, store, "profile", r, ("arch", "toolchain", "unit"))
+    _save(path, store, "profile_reading",
+          {"arch": head["arch"], "toolchain": head["toolchain"],
+           "date": head["date"], **verdicts,
+           "summary": _summary(rows["kb"], rows["rolled"])},
+          ("arch", "toolchain"))
+    for h, v in verdicts.items():
+        print(f"{h}: {v}")
+    print(f"-> {path}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_rolled_profile(request, run_device_binary,
+                                    tmp_path) -> None:
+    """#574: kb_22_22 and kbr_22_22 under ncu, one launch each (RTX 3080
+    only: the RX 9060 XT has no fp64 or byte counters, #140)."""
+    _profile(request, run_device_binary, tmp_path)
+
+
+TRACKED = Path(__file__).resolve().parent.parent / "data/measured/kblock_rolled.json"
+
+
+def test_the_profile_reading_is_what_its_rows_recompute_to() -> None:
+    """`devtools/measure.sh check`: the tracked store's profile section was
+    read under today's declared rule, and each `profile_reading` row is
+    `kb_profile_verdicts` of its two `profile` rows."""
+    store = json.loads(TRACKED.read_text())
+    if "profile_declared" not in store:
+        pytest.skip("no #574 profile in the tracked store")
+    assert store["profile_declared"] == json.loads(
+        json.dumps(measured.KB_PROFILE_DECLARED))
+    assert store["profile_reading"], "declared, but nothing read"
+    for reading in store["profile_reading"]:
+        at = (reading["arch"], reading["toolchain"])
+        rows = {r["arm"]: r for r in store["profile"]
+                if (r["arch"], r["toolchain"]) == at}
+        assert set(rows) == set(ARMS), at
+        for r in rows.values():
+            assert r["terms"] == json.loads(json.dumps(
+                measured.kb_profile_terms(r["counters"])))
+        got = measured.kb_profile_verdicts(
+            rows["kb"]["counters"], rows["rolled"]["counters"],
+            rows["rolled"]["pcsamp"]["e_share"])
+        assert {h: reading[h] for h in got} == json.loads(json.dumps(got))
