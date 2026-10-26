@@ -31,12 +31,54 @@
    ],
    "unit": "kb_22_22",
    "source_bytes": 1665471,
-   "compile_s": 64.01,
-   "peak_rss_kb": 815808,
+   "compile_s": 64.0,
+   "peak_rss_kb": 815616,
    "registers": 255,
    "spill_store": 14732,
    "spill_load": 117880,
    "stack_bytes": 12528
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "arm": "dense",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kbd_22_22",
+   "source_bytes": 111327,
+   "compile_s": 0.91,
+   "peak_rss_kb": 191424,
+   "registers": 255,
+   "spill_store": 1012,
+   "spill_load": 1284,
+   "stack_bytes": 1016
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "arm": "dense",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "unit": "kbd_33_33",
+   "source_bytes": 508569,
+   "compile_s": 2.27,
+   "peak_rss_kb": 197184,
+   "registers": 255,
+   "spill_store": 11372,
+   "spill_load": 31312,
+   "stack_bytes": 10512
   },
   {
    "arch": "sm_86",
@@ -52,7 +94,7 @@
    ],
    "unit": "kbr_22_22",
    "source_bytes": 37009,
-   "compile_s": 1.0,
+   "compile_s": 0.94,
    "peak_rss_kb": 190656,
    "registers": 128,
    "spill_store": 0,
@@ -73,8 +115,8 @@
    ],
    "unit": "kbr_33_33",
    "source_bytes": 96890,
-   "compile_s": 1.09,
-   "peak_rss_kb": 192192,
+   "compile_s": 1.06,
+   "peak_rss_kb": 192000,
    "registers": 254,
    "spill_store": 0,
    "spill_load": 0,
@@ -99,65 +141,190 @@
    "n_ket": 2304,
    "n_blocks": 256,
    "tau": 0.0,
-   "rolled_vs_kb_rel": 2.696052381516924e-16,
+   "reference_arm": "kb",
+   "rel_vs_reference": {
+    "rolled": 2.696052381516924e-16,
+    "dense": 2.696052381516924e-16
+   },
    "rounds": 3,
    "warmup": 3,
    "repeats": 7,
    "gate": [
     {
      "arm": "kb",
-     "cpu_busy_permille": 10,
-     "gpu_util_before": 22,
+     "cpu_busy_permille": 14,
+     "gpu_util_before": 21,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "dense",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 8
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 18,
+     "gpu_util_before": 4,
      "gpu_util_after": 7
     },
     {
      "arm": "rolled",
-     "cpu_busy_permille": 22,
-     "gpu_util_before": 5,
-     "gpu_util_after": 1
-    },
-    {
-     "arm": "kb",
-     "cpu_busy_permille": 10,
-     "gpu_util_before": 2,
-     "gpu_util_after": 4
-    },
-    {
-     "arm": "rolled",
-     "cpu_busy_permille": 26,
-     "gpu_util_before": 10,
-     "gpu_util_after": 2
-    },
-    {
-     "arm": "kb",
-     "cpu_busy_permille": 27,
-     "gpu_util_before": 4,
-     "gpu_util_after": 6
-    },
-    {
-     "arm": "rolled",
-     "cpu_busy_permille": 16,
+     "cpu_busy_permille": 51,
      "gpu_util_before": 7,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "dense",
+     "cpu_busy_permille": 7,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 7,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "dense",
+     "cpu_busy_permille": 9,
+     "gpu_util_before": 0,
      "gpu_util_after": 0
     }
    ],
-   "gate_discarded_runs": 1,
+   "gate_discarded_runs": 0,
    "arms": {
     "kb": {
-     "median_ns": 1109552124,
-     "q1_ns": 1103636475,
-     "q3_ns": 1149262695,
+     "median_ns": 1090459595,
+     "q1_ns": 1083238403,
+     "q3_ns": 1106130005,
      "n": 21
     },
     "rolled": {
-     "median_ns": 2619539551,
-     "q1_ns": 2609084473,
-     "q3_ns": 2634386475,
+     "median_ns": 2547016602,
+     "q1_ns": 2528385010,
+     "q3_ns": 2566189941,
+     "n": 21
+    },
+    "dense": {
+     "median_ns": 4139696289,
+     "q1_ns": 4128809082,
+     "q3_ns": 4197537598,
      "n": 21
     }
    },
-   "rolled_over_kb": 2.3609,
-   "verdict": "slower"
+   "rolled_vs_kb_rel": 2.696052381516924e-16,
+   "rolled_over_kb": 2.3357,
+   "verdict": "slower",
+   "dense": {
+    "kb": {
+     "dense_over": 3.7963,
+     "verdict": "slower"
+    },
+    "rolled": {
+     "dense_over": 1.6253,
+     "verdict": "slower"
+    }
+   },
+   "fastest": "kb"
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "n_ao": 160,
+   "n_bra": 256,
+   "n_ket": 256,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "reference_arm": "rolled",
+   "rel_vs_reference": {
+    "dense": 0.0
+   },
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 10,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "dense",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 9,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "dense",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 7,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "dense",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 1
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "rolled": {
+     "median_ns": 1266375732,
+     "q1_ns": 1260535767,
+     "q3_ns": 1268899780,
+     "n": 21
+    },
+    "dense": {
+     "median_ns": 3827267578,
+     "q1_ns": 3792712646,
+     "q3_ns": 3872877441,
+     "n": 21
+    }
+   },
+   "dense": {
+    "rolled": {
+     "dense_over": 3.0222,
+     "verdict": "slower"
+    }
+   },
+   "fastest": "rolled"
   }
  ],
  "profile_declared": {
@@ -1937,5 +2104,12 @@
     }
    }
   }
- ]
+ ],
+ "dense_declared": {
+  "issue": 575,
+  "hypothesis": "with the (a,c) and (b,d) rows rolled and p, q unrolled over dense E, every p + q is a compile-time constant: the R array, the hpq / bd_q / ac_p indirection and #574's dependent bd_q -> hpq -> R load chain are gone, at the price of the structural zeros' multiplies; the text grows as n_p n_q, not n_ac n_bd n_p n_q, so (ff|ff) compiles",
+  "rule": "per arch and class: the median over the timed runs of the class's events, dense / other for each other arm timed beside it (kb and rolled at (dd|dd), rolled at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, else 'neutral'. The form a class should use is the fastest arm that compiles, read from these medians; a RECORD, not a gate",
+  "expected": "(dd|dd): dense faster than rolled, slower than kb; (ff|ff): dense faster than rolled",
+  "declared": "2026-10-26, before any dense row"
+ }
 }

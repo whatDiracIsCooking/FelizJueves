@@ -228,7 +228,8 @@ kblock-rolled-compile` (a compiler, no card) writes
 `kbr_33_33` 97 KB, 1.1 s, 192 MB, 254 registers, no spill, 3,640 B stack
 (`R`). `devtools/measure.sh kblock-rolled` timed `(dd|dd)` on #569's input
 (2,304 records a side, 256 blocks) behind the gate: `kb` 1,110 ms, the
-rolled kernel 2,620 ms, **2.36x slower** (its declared rule's `slower`), a
+rolled kernel 2,620 ms, **2.36x slower** (its declared rule's `slower`;
+re-timed with #575's third arm in one session, 1,090 and 2,547 ms, 2.34x), a
 record and not a gate: `kb` stays the default through d, the rolled kernel
 is for the classes nothing else compiles. **Why, read off `ncu` on the RTX
 3080** (#574; `devtools/measure.sh kblock-rolled-profile`, one launch each,
@@ -251,6 +252,31 @@ source counters end in LaunchFailed on `kbr`, recorded), only read off the
 text: a 2,688 B lane stride, 32 sectors per full-warp request
 (`profile_reading.summary.ebd`, for #575 and #576). `ncu` replays here
 also LaunchFail intermittently and are retaken (`gate_discarded_runs`).
+**Between them, a dense-Hermite form, measured and not chosen** (#575):
+`kernel_kblock_rolled.build_kblock_dense_kernel` (`kbd_{la}{lc}_{lb}{ld}`,
+opt-in, one batch, no lever; `kbr`'s text byte-identical) keeps the `(b, d)`
+and `(a, c)` row loops rolled and unrolls the Hermite `p` and `q` over `E`
+rows stored DENSE, zeros kept (`launch_kblock.e_table(..., dense=True)`,
+`Eac[n_bra, n_ac n_p]` / `Ebd[n_ket, n_bd n_q]`, no class tables), so every
+`p + q` is a constant: no `R` array and none of #574's `bd_q -> hpq -> R`
+chain. Interpreted it equals `kb` **by value** for every class with every
+`l <= 2` and `walk_kb` within `ORACLE_TOL` with an f shell through `(ff|ff)`
+(`test_kernel_kblock_rolled.py`, above L = 4 `slow`); on the **RTX 3080**
+`test_kblock_ondevice.py`'s `-dense` cells (the rolled cells' four, H₂O/
+cc-pVDZ `slow`) and its `sf` / `spdf` f cells (worst 5.57e-16 of max
+against the walk, runs bit-identical) passed; the RX 9060 XT is out of
+scope (#431). Compile (`kblock-rolled-compile`, `sm_86`): `kbd_22_22` 111 KB,
+0.9 s, 191 MB, 255 registers, 1,012 B spill stores, 1,016 B stack;
+`kbd_33_33` 509 KB, 2.3 s, 197 MB, 255 registers, 11,372 B spill stores,
+10,512 B stack -- f compiles. Clock (`kblock-rolled`, behind the gate, rule
+`dense_declared` written before any dense row): `(dd|dd)` `kb` 1,090 ms,
+`kbr` 2,547 ms, `kbd` **4,140 ms** (3.80x `kb`, 1.63x `kbr`); `(ff|ff)` on
+16 f shells, one primitive each (256 records a side, 256 blocks), `kbr`
+1,266 ms, `kbd` **3,827 ms** (3.02x) -- `slower` everywhere: the structural
+zeros' multiplies (3.75x `kbr`'s contraction terms at d, 4.4x at f) cost
+more than the indirection they remove. **Which form a class uses: through
+d `kb`, at f `kbr`; `kbd` at neither.** #576 (`Ebd` transposed for `kbr`)
+is the next lever on the f path.
 **Since milestone 12 the repo has a second ERI engine and the first `F`**
 (`docs/implementation/hgp_fock.md` is the one place with the detail): the
 Head-Gordon–Pople recurrence of `[Fock]` §3.1 and the **fused** Fock kernel

@@ -6,7 +6,8 @@
     KBClassLaunch(am, bras, kets, blocks, kernel)
     KBlock(a, b, bra0, bra1, ket0, ket1, dmax)
     walk_kb(plan, basis, D, *, pq)                       -> eri.k_exchange.k.KScreened
-    e_table(l1, l2, zeta, P, A, B, *, sign=False)        -> one record's E
+    e_table(l1, l2, zeta, P, A, B, *, sign=False, dense=False)
+                                                         -> one record's E
 
 `launch_k.py`'s counterpart for `kernel_kblock` (opt-UM's mapping): which
 K class kernels run, over which blocks, each block a bra RANGE and a ket
@@ -65,6 +66,9 @@ reads it, `mmd.hermite.e_block` of every row (`cartesians(l1) x
 cartesians(l2)`, `l1` outer) with its structurally zero entries (`t_k >
 x_k + y_k`) dropped, row-major; `sign=True` (the ket side) negates every
 entry of odd `|t|`, the `(-1)^|q|` of `[p|q] = (-1)^|q| [p+q]`.
+`dense=True` (#575, `kernel_kblock_rolled.build_kblock_dense_kernel`)
+keeps every entry, structural zeros included: each row is the whole
+`hermite_order(l1 + l2)`.
 """
 
 from __future__ import annotations
@@ -304,10 +308,11 @@ def walk_kb(plan: KBLaunchPlan, basis: Basis, D: object, *,
 
 def e_table(l1: int, l2: int, zeta: float, P: Sequence[float],
             A: Sequence[float], B: Sequence[float], *,
-            sign: bool = False) -> tuple[float, ...]:
+            sign: bool = False, dense: bool = False) -> tuple[float, ...]:
     """One record's `E^{l1 l2}` as `kernel_kblock_rolled` reads it: the
     nonzero entries of `mmd.hermite.e_block`, row by row (module docstring,
-    "THE ROLLED KERNEL'S `E`"); `sign` negates the odd-`|t|` entries."""
+    "THE ROLLED KERNEL'S `E`"); `sign` negates the odd-`|t|` entries;
+    `dense` keeps the structural zeros, every row whole (#575's kernel)."""
     ts = hermite_order(l1 + l2)
     out: list[float] = []
     for x in cartesians(l1):
@@ -315,5 +320,5 @@ def e_table(l1: int, l2: int, zeta: float, P: Sequence[float],
             row = e_block(x, y, zeta, tuple(P), tuple(A), tuple(B))
             out += [-v if sign and sum(t) % 2 else v
                     for t, v in zip(ts, row, strict=True)
-                    if all(t[k] <= x[k] + y[k] for k in range(3))]
+                    if dense or all(t[k] <= x[k] + y[k] for k in range(3))]
     return tuple(out)
