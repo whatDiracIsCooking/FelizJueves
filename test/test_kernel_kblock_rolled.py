@@ -183,10 +183,15 @@ def test_the_interpreted_plan_is_the_walk_screened(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("l1, l2", [(a, b) for a in range(4) for b in range(4)])
-def test_e_table_is_e_blocks_nonzero_entries_in_pattern_order(l1, l2):
+# every shell pair through (f, f), `slow` above FAST_L_MAX by la + lb
+PAIRS = [by_l((a, b), a + b, f"{a}-{b}") for a in range(4) for b in range(4)]
+
+
+@pytest.mark.parametrize("pair", PAIRS)
+def test_e_table_is_e_blocks_nonzero_entries_in_pattern_order(pair):
     from felizjueves.ao.shell import cartesians
 
+    l1, l2 = pair
     P, A, B, zeta = (0.1, -0.2, 0.3), (0.4, 0.0, -0.5), (-0.3, 0.6, 0.2), 1.3
     ptr, cols = e_pattern(l1, l2)
     got, signed = (e_table(l1, l2, zeta, P, A, B, sign=s) for s in (False,
@@ -322,10 +327,11 @@ def test_the_dense_plan_is_the_walk_screened(tmp_path):
     assert np.array_equal(K, _interp(plan, basis, D, tmp_path, rolled=False))
 
 
-@pytest.mark.parametrize("l1, l2", [(a, b) for a in range(4) for b in range(4)])
-def test_the_dense_e_table_is_e_block_whole_and_signed(l1, l2):
+@pytest.mark.parametrize("pair", PAIRS)
+def test_the_dense_e_table_is_e_block_whole_and_signed(pair):
     from felizjueves.ao.shell import cartesians
 
+    l1, l2 = pair
     P, A, B, zeta = (0.1, -0.2, 0.3), (0.4, 0.0, -0.5), (-0.3, 0.6, 0.2), 1.3
     ts = hermite_order(l1 + l2)
     got, signed = (e_table(l1, l2, zeta, P, A, B, sign=s, dense=True)
