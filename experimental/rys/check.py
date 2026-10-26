@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import rys2d  # noqa: E402
 from roots import N_MAX, T_SWITCH, roots_weights, roots_weights_exact  # noqa: E402
-from rys2d import Shell, contracted_block, prim_quartet_exact  # noqa: E402
+from rys2d import contracted_block, prim_quartet_exact, shells_of  # noqa: E402
 
 MOMENT_TOL = 4e-15
 ROOT_TOL = 1e-14
@@ -108,27 +108,6 @@ def check_roots() -> bool:
 # --- ERIs against libcint ---------------------------------------------------
 
 ATOMS = "C 0 0 0; N 0.15 -0.2 1.3; O 1.2 0.45 -0.55"
-COMMON_FAC = {0: 0.5 / math.sqrt(math.pi), 1: math.sqrt(3.0 / (4.0 * math.pi))}
-
-
-def shells_of(mol) -> list[Shell]:
-    """Every shell of ``mol`` with libcint's normalisation, read from the Mole:
-    ``_libcint_ctr_coeff`` (the radial normalisation times the contraction)
-    and libcint's s/p common factor (CINTcommon_fac_sp), which int2e applies."""
-    out = []
-    for ib in range(mol.nbas):
-        am = int(mol.bas_angular(ib))
-        coeff = mol._libcint_ctr_coeff(ib)
-        assert coeff.shape[1] == 1, "generally contracted shell"
-        out.append(
-            Shell(
-                am,
-                tuple(float(v) for v in mol.bas_coord(ib)),
-                tuple(float(v) for v in mol.bas_exp(ib)),
-                tuple(float(v) * COMMON_FAC[am] for v in coeff[:, 0]),
-            )
-        )
-    return out
 
 
 def build_mols():

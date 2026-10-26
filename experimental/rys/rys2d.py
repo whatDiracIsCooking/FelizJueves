@@ -155,6 +155,33 @@ class Shell:
     coeffs: tuple[float, ...]
 
 
+# libcint's s/p common factor (CINTcommon_fac_sp), which int2e applies.
+COMMON_FAC = {0: 0.5 / np.sqrt(np.pi), 1: np.sqrt(3.0 / (4.0 * np.pi))}
+
+
+def shells_of(mol) -> list[Shell]:
+    """Every shell of a PySCF ``Mole`` with libcint's normalisation, read from
+    the Mole: ``_libcint_ctr_coeff`` (the radial normalisation times the
+    contraction) and ``COMMON_FAC``. s and p only: d and above have no common
+    factor here, and the roots stop at N = 3, i.e. (pp|pp)."""
+    out = []
+    for ib in range(mol.nbas):
+        am = int(mol.bas_angular(ib))
+        if am not in COMMON_FAC:
+            raise ValueError(f"shell {ib} has l = {am}; this spike stops at p")
+        coeff = mol._libcint_ctr_coeff(ib)
+        assert coeff.shape[1] == 1, "generally contracted shell"
+        out.append(
+            Shell(
+                am,
+                tuple(float(v) for v in mol.bas_coord(ib)),
+                tuple(float(v) for v in mol.bas_exp(ib)),
+                tuple(float(v) * COMMON_FAC[am] for v in coeff[:, 0]),
+            )
+        )
+    return out
+
+
 def contracted_block(sa: Shell, sb: Shell, sc: Shell, sd: Shell, t_log=None):
     """(ab|cd) for four contracted shells: the coefficient-weighted sum of
     ``prim_quartet`` over every primitive quartet."""
