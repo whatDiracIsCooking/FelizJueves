@@ -2111,5 +2111,1801 @@
   "rule": "per arch and class: the median over the timed runs of the class's events, dense / other for each other arm timed beside it (kb and rolled at (dd|dd), rolled at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, else 'neutral'. The form a class should use is the fastest arm that compiles, read from these medians; a RECORD, not a gate",
   "expected": "(dd|dd): dense faster than rolled, slower than kb; (ff|ff): dense faster than rolled",
   "declared": "2026-10-26, before any dense row"
- }
+ },
+ "transpose_declared": {
+  "issue": 576,
+  "hypothesis": "kbr's lanes take consecutive kets and read Ebd[k, e] for one e across the warp: record-major, a 2,688 B lane stride at (dd|dd), 32 sectors per full-warp request (#574's profile_reading.summary.ebd). Stored [n_ebd, n_ket], those reads are 256 contiguous bytes, 8 sectors; #574 put 55% of kbr's PC samples on that line, and long scoreboard at 57% of its stalls",
+  "rule": "per arch and class: the median over the timed runs of the class's events, rolled-T / other for each other arm timed beside it in the same rounds (kb and rolled at (dd|dd), rolled at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, else 'neutral'. The rolled kernel's DEFAULT layout becomes the transposed one only if rolled-T is 'faster' than rolled at every class timed (both (dd|dd) and (ff|ff)); kb stays the default through d unless rolled-T is also 'faster' than kb there. A record of the layout",
+  "expected": "rolled-T faster than rolled at both classes, the gap to kb at (dd|dd) narrowed but not closed (the 5.21x warp instructions are the loops', not the layout's)",
+  "sectors": "kernel-level l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum / ..._requests.sum for kbr_22_22 and kbrt_22_22 (every global load, the tables and records included), and, where ncu's SASS-patched per-instruction counters run, the Ebd load's own; read, not ruled on",
+  "declared": "2026-10-26, before any rolled-T row"
+ },
+ "transpose_clock": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "reference_arm": "kb",
+   "rel_vs_reference": {
+    "rolled": 2.696052381516924e-16,
+    "rolled-T": 2.696052381516924e-16
+   },
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 11,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-T",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 30
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-T",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-T",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "kb": {
+     "median_ns": 1074745361,
+     "q1_ns": 1073547241,
+     "q3_ns": 1079083984,
+     "n": 21
+    },
+    "rolled": {
+     "median_ns": 2552431641,
+     "q1_ns": 2540642334,
+     "q3_ns": 2568962158,
+     "n": 21
+    },
+    "rolled-T": {
+     "median_ns": 2391197510,
+     "q1_ns": 2374355957,
+     "q3_ns": 2397882324,
+     "n": 21
+    }
+   },
+   "transposed": {
+    "kb": {
+     "transposed_over": 2.2249,
+     "verdict": "slower"
+    },
+    "rolled": {
+     "transposed_over": 0.9368,
+     "verdict": "faster"
+    }
+   },
+   "fastest": "kb"
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "n_ao": 160,
+   "n_bra": 256,
+   "n_ket": 256,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "reference_arm": "rolled",
+   "rel_vs_reference": {
+    "rolled-T": 0.0
+   },
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 5,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-T",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-T",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 11,
+     "gpu_util_before": 0,
+     "gpu_util_after": 11
+    },
+    {
+     "arm": "rolled-T",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 1,
+   "arms": {
+    "rolled": {
+     "median_ns": 1262245850,
+     "q1_ns": 1260507080,
+     "q3_ns": 1267219482,
+     "n": 21
+    },
+    "rolled-T": {
+     "median_ns": 1266002930,
+     "q1_ns": 1264547852,
+     "q3_ns": 1268646118,
+     "n": 21
+    }
+   },
+   "transposed": {
+    "rolled": {
+     "transposed_over": 1.003,
+     "verdict": "neutral"
+    }
+   },
+   "fastest": "rolled"
+  }
+ ],
+ "transpose_profile": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "cpus": "0-15",
+   "rel_vs_rolled": 0.0,
+   "launch": "one launch: MODE 0, warm-up 0, reps 1, --launch-count 1",
+   "unit": "kbr_22_22",
+   "arm": "rolled",
+   "counter_tool": "ncu 2025.3.1.0",
+   "source_sha256": "a36fa7c0d52031bb4119ad3563340b90b9f21ac4ba81cce218497e1fe72e9ca2",
+   "command": {
+    "details": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 0-15 ncu --csv --print-units base --clock-control none --launch-count 1 --metrics gpu__time_duration.sum,sm__cycles_elapsed.avg,smsp__cycles_active.avg,smsp__inst_executed.sum,smsp__thread_inst_executed_per_inst_executed.ratio,smsp__sass_thread_inst_executed_op_dadd_pred_on.sum,smsp__sass_thread_inst_executed_op_dmul_pred_on.sum,smsp__sass_thread_inst_executed_op_dfma_pred_on.sum,smsp__sass_inst_executed_op_global_ld.sum,smsp__sass_inst_executed_op_local_ld.sum,smsp__sass_inst_executed_op_local_st.sum,smsp__sass_inst_executed_op_shared_ld.sum,smsp__sass_inst_executed_op_shared_st.sum,l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum,l1tex__t_requests_pipe_lsu_mem_local_op_st.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum,l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum,l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum,l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum,l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum,dram__bytes_read.sum,dram__bytes_write.sum,sm__maximum_warps_per_active_cycle_pct,sm__warps_active.avg.pct_of_peak_sustained_active,smsp__warps_active.avg.per_cycle_active,smsp__warps_eligible.avg.per_cycle_active,smsp__issue_active.avg.pct_of_peak_sustained_active,smsp__average_warp_latency_per_inst_issued.ratio,launch__registers_per_thread,launch__stack_size,launch__shared_mem_per_block_dynamic,launch__grid_size,launch__block_size,launch__occupancy_limit_registers,launch__occupancy_limit_shared_mem,launch__occupancy_limit_warps,smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio,smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio,smsp__average_warps_issue_stalled_wait_per_issue_active.ratio,smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio,smsp__average_warps_issue_stalled_selected_per_issue_active.ratio,smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_tex_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio,smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio,smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio,smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio,smsp__average_warps_issue_stalled_membar_per_issue_active.ratio,smsp__average_warps_issue_stalled_drain_per_issue_active.ratio,smsp__average_warps_issue_stalled_imc_miss_per_issue_active.ratio,smsp__average_warps_issue_stalled_misc_per_issue_active.ratio,smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio --kernel-name regex:^kbr_22_22$ <kb_driver> /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled/c0/in.bin /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled-ncu/rolled.out 0 0 1",
+    "pcsamp": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 0-15 ncu --csv --print-units base --clock-control none --launch-count 1 --metrics smsp__pcsamp_sample_count,smsp__pcsamp_warps_issue_stalled_long_scoreboard,smsp__pcsamp_warps_issue_stalled_short_scoreboard,smsp__pcsamp_warps_issue_stalled_wait,smsp__pcsamp_warps_issue_stalled_not_selected,smsp__pcsamp_warps_issue_stalled_math_pipe_throttle,smsp__pcsamp_warps_issue_stalled_lg_throttle,smsp__pcsamp_warps_issue_stalled_mio_throttle,smsp__pcsamp_warps_issue_stalled_tex_throttle,smsp__pcsamp_warps_issue_stalled_no_instructions,smsp__pcsamp_warps_issue_stalled_branch_resolving,smsp__pcsamp_warps_issue_stalled_dispatch_stall,smsp__pcsamp_warps_issue_stalled_barrier,smsp__pcsamp_warps_issue_stalled_membar,smsp__pcsamp_warps_issue_stalled_drain,smsp__pcsamp_warps_issue_stalled_imc_miss,smsp__pcsamp_warps_issue_stalled_misc,smsp__pcsamp_warps_issue_stalled_sleeping,smsp__pcsamp_warps_issue_stalled_selected --page source --print-source cuda,sass --kernel-name regex:^kbr_22_22$ <kb_driver> /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled/c0/in.bin /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled-ncu/rolled.out 0 0 1",
+    "sectors": null
+   },
+   "counters": {
+    "dram__bytes_read.sum": 197134718848.0,
+    "dram__bytes_write.sum": 6970580736.0,
+    "gpu__time_duration.sum": 2510118816.0,
+    "l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum": 32541.0,
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum": 4443224449.0,
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum": 862966861.0,
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 11687806976.0,
+    "l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum": 4335206400.0,
+    "l1tex__t_requests_pipe_lsu_mem_local_op_st.sum": 60825600.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 74527006016.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum": 60613567879.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": 15606743040.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum": 1035112622.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": 218972160.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum": 11304.0,
+    "launch__block_size": 32.0,
+    "launch__grid_size": 256.0,
+    "launch__occupancy_limit_registers": 16.0,
+    "launch__occupancy_limit_shared_mem": 5.0,
+    "launch__occupancy_limit_warps": 48.0,
+    "launch__registers_per_thread": 128.0,
+    "launch__shared_mem_per_block_dynamic": 18176.0,
+    "launch__stack_size": 1328.0,
+    "sm__cycles_elapsed.avg": 4804460268.62,
+    "sm__maximum_warps_per_active_cycle_pct": 10.42,
+    "sm__warps_active.avg.pct_of_peak_sustained_active": 7.79,
+    "smsp__average_warp_latency_per_inst_issued.ratio": 20.09,
+    "smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio": 0.09,
+    "smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio": 0.19,
+    "smsp__average_warps_issue_stalled_drain_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_imc_miss_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": 11.5,
+    "smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio": 0.01,
+    "smsp__average_warps_issue_stalled_membar_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_misc_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio": 0.07,
+    "smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_selected_per_issue_active.ratio": 1.0,
+    "smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio": 4.89,
+    "smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_tex_throttle_per_issue_active.ratio": 0.01,
+    "smsp__average_warps_issue_stalled_wait_per_issue_active.ratio": 2.36,
+    "smsp__cycles_active.avg": 4246797819.31,
+    "smsp__inst_executed.sum": 57426964835.0,
+    "smsp__issue_active.avg.pct_of_peak_sustained_active": 4.98,
+    "smsp__sass_inst_executed_op_global_ld.sum": 11687806976.0,
+    "smsp__sass_inst_executed_op_local_ld.sum": 2167603200.0,
+    "smsp__sass_inst_executed_op_local_st.sum": 30412800.0,
+    "smsp__sass_inst_executed_op_shared_ld.sum": 2468422656.0,
+    "smsp__sass_inst_executed_op_shared_st.sum": 471131136.0,
+    "smsp__sass_thread_inst_executed_op_dadd_pred_on.sum": 153151332.0,
+    "smsp__sass_thread_inst_executed_op_dfma_pred_on.sum": 135523861596.0,
+    "smsp__sass_thread_inst_executed_op_dmul_pred_on.sum": 128498288920.0,
+    "smsp__thread_inst_executed_per_inst_executed.ratio": 28.73,
+    "smsp__warps_active.avg.per_cycle_active": 1.0,
+    "smsp__warps_eligible.avg.per_cycle_active": 0.05
+   },
+   "terms": {
+    "S": 20.12,
+    "mem": 0.8146123260437376,
+    "long": 0.5715705765407555,
+    "largest": "long_scoreboard",
+    "hit": 0.066324704606657,
+    "issue": 4.98,
+    "warps": 1.0
+   },
+   "pcsamp": {
+    "samples": 3669994,
+    "hot_lines": [
+     {
+      "line": 693,
+      "source": "acc = (acc + (R[hpq[(ip * 35 + bd_q[ie])]] * (sq * Ebd[(k * 336 + ie)])));",
+      "samples": 2027293,
+      "share": 0.5524,
+      "stalls": {
+       "branch_resolving": 2821.0,
+       "dispatch_stall": 25125.0,
+       "long_scoreboard": 1495266.0,
+       "no_instructions": 2010.0,
+       "selected": 76237.0,
+       "short_scoreboard": 247390.0,
+       "wait": 178444.0
+      }
+     },
+     {
+      "line": 703,
+      "source": "v = (v + ((sb * Eac[(bra * 336 + ie)]) * Ksh[(ac_p[ie] * (int)blockDim.y + (int)threadIdx.y)]));",
+      "samples": 1034421,
+      "share": 0.2819,
+      "stalls": {
+       "branch_resolving": 200.0,
+       "dispatch_stall": 7772.0,
+       "lg_throttle": 687.0,
+       "long_scoreboard": 293575.0,
+       "no_instructions": 362.0,
+       "selected": 60682.0,
+       "short_scoreboard": 551954.0,
+       "tex_throttle": 676.0,
+       "wait": 118513.0
+      }
+     },
+     {
+      "line": 705,
+      "source": "Ksh[((35 + ((xa * 6) + xb)) * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[((35 + ((xa * 6) + xb)) * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 36 + ((xc * 6) + xd))] * v));",
+      "samples": 272489,
+      "share": 0.0742,
+      "stalls": {
+       "branch_resolving": 1362.0,
+       "long_scoreboard": 180159.0,
+       "no_instructions": 1296.0,
+       "selected": 4968.0,
+       "short_scoreboard": 69903.0,
+       "wait": 14801.0
+      }
+     },
+     {
+      "line": 702,
+      "source": "for (int ie = ac_ptr[rac]; ie < ac_ptr[(rac + 1)]; ie += 1) {",
+      "samples": 173382,
+      "share": 0.0472,
+      "stalls": {
+       "branch_resolving": 6649.0,
+       "dispatch_stall": 3138.0,
+       "long_scoreboard": 59743.0,
+       "math_pipe_throttle": 1601.0,
+       "no_instructions": 4799.0,
+       "selected": 21337.0,
+       "short_scoreboard": 70.0,
+       "wait": 76045.0
+      }
+     },
+     {
+      "line": 692,
+      "source": "for (int ie = bd_ptr[rbd]; ie < bd_ptr[(rbd + 1)]; ie += 1) {",
+      "samples": 53081,
+      "share": 0.0145,
+      "stalls": {
+       "branch_resolving": 4497.0,
+       "dispatch_stall": 39.0,
+       "long_scoreboard": 12.0,
+       "math_pipe_throttle": 913.0,
+       "no_instructions": 3443.0,
+       "selected": 12027.0,
+       "short_scoreboard": 7312.0,
+       "wait": 24838.0
+      }
+     }
+    ],
+    "e_lines": [
+     {
+      "line": 693,
+      "source": "acc = (acc + (R[hpq[(ip * 35 + bd_q[ie])]] * (sq * Ebd[(k * 336 + ie)])));",
+      "samples": 2027293,
+      "share": 0.5524,
+      "stalls": {
+       "branch_resolving": 2821.0,
+       "dispatch_stall": 25125.0,
+       "long_scoreboard": 1495266.0,
+       "no_instructions": 2010.0,
+       "selected": 76237.0,
+       "short_scoreboard": 247390.0,
+       "wait": 178444.0
+      },
+      "sass": [
+       {
+        "sass": "IMAD R15, R28, 0x23, R15",
+        "samples": 6608,
+        "stalls": {
+         "long_scoreboard": 6551.0,
+         "selected": 57.0
+        }
+       },
+       {
+        "sass": "LEA R32, R14, UR18, 0x3",
+        "samples": 14026,
+        "stalls": {
+         "long_scoreboard": 13867.0,
+         "selected": 86.0,
+         "wait": 73.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R16, R30, RZ",
+        "samples": 17104,
+        "stalls": {
+         "long_scoreboard": 16779.0,
+         "selected": 63.0,
+         "short_scoreboard": 4.0,
+         "wait": 258.0
+        }
+       },
+       {
+        "sass": "IMAD R17, R28, 0x23, R17",
+        "samples": 18649,
+        "stalls": {
+         "long_scoreboard": 18420.0,
+         "selected": 229.0
+        }
+       },
+       {
+        "sass": "LEA R16, R16, UR18, 0x3",
+        "samples": 19737,
+        "stalls": {
+         "long_scoreboard": 19497.0,
+         "selected": 240.0
+        }
+       },
+       {
+        "sass": "LEA R47, R39, UR18, 0x3",
+        "samples": 44257,
+        "stalls": {
+         "long_scoreboard": 43996.0,
+         "selected": 261.0
+        }
+       },
+       {
+        "sass": "DMUL R34, R12, R34",
+        "samples": 12480,
+        "stalls": {
+         "long_scoreboard": 11719.0,
+         "selected": 266.0,
+         "wait": 495.0
+        }
+       },
+       {
+        "sass": "DFMA R14, R14, R16, R30",
+        "samples": 30872,
+        "stalls": {
+         "long_scoreboard": 29112.0,
+         "selected": 256.0,
+         "short_scoreboard": 663.0,
+         "wait": 841.0
+        }
+       },
+       {
+        "sass": "DMUL R38, R12, R38",
+        "samples": 68778,
+        "stalls": {
+         "long_scoreboard": 67764.0,
+         "selected": 261.0,
+         "wait": 753.0
+        }
+       },
+       {
+        "sass": "DFMA R14, R38, R40, R14",
+        "samples": 20584,
+        "stalls": {
+         "selected": 256.0,
+         "short_scoreboard": 19072.0,
+         "wait": 1256.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R42, R44, R14",
+        "samples": 16283,
+        "stalls": {
+         "selected": 249.0,
+         "short_scoreboard": 14777.0,
+         "wait": 1257.0
+        }
+       },
+       {
+        "sass": "LEA R36, R34, UR18, 0x3",
+        "samples": 5772,
+        "stalls": {
+         "long_scoreboard": 5735.0,
+         "selected": 18.0,
+         "wait": 19.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R36, RZ",
+        "samples": 5650,
+        "stalls": {
+         "long_scoreboard": 5550.0,
+         "selected": 16.0,
+         "short_scoreboard": 1.0,
+         "wait": 83.0
+        }
+       },
+       {
+        "sass": "IMAD R36, R31, 0x23, R36",
+        "samples": 25412,
+        "stalls": {
+         "long_scoreboard": 25070.0,
+         "selected": 342.0
+        }
+       },
+       {
+        "sass": "LEA R36, R36, UR18, 0x3",
+        "samples": 28361,
+        "stalls": {
+         "long_scoreboard": 28004.0,
+         "selected": 357.0
+        }
+       },
+       {
+        "sass": "LEA R52, R45, UR18, 0x3",
+        "samples": 55987,
+        "stalls": {
+         "long_scoreboard": 55672.0,
+         "selected": 315.0
+        }
+       },
+       {
+        "sass": "DMUL R40, R12, R40",
+        "samples": 17467,
+        "stalls": {
+         "long_scoreboard": 16517.0,
+         "selected": 324.0,
+         "wait": 626.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R34, R36, R26",
+        "samples": 35968,
+        "stalls": {
+         "long_scoreboard": 34031.0,
+         "selected": 310.0,
+         "short_scoreboard": 679.0,
+         "wait": 948.0
+        }
+       },
+       {
+        "sass": "DMUL R44, R12, R44",
+        "samples": 86054,
+        "stalls": {
+         "long_scoreboard": 84783.0,
+         "selected": 324.0,
+         "wait": 947.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R44, R46, R34",
+        "samples": 25969,
+        "stalls": {
+         "selected": 347.0,
+         "short_scoreboard": 24010.0,
+         "wait": 1612.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R48, R50, R34",
+        "samples": 20296,
+        "stalls": {
+         "selected": 344.0,
+         "short_scoreboard": 18390.0,
+         "wait": 1562.0
+        }
+       },
+       {
+        "sass": "LEA R36, R34, UR18, 0x3",
+        "samples": 5377,
+        "stalls": {
+         "long_scoreboard": 5344.0,
+         "selected": 16.0,
+         "wait": 17.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R36, RZ",
+        "samples": 5645,
+        "stalls": {
+         "long_scoreboard": 5523.0,
+         "selected": 30.0,
+         "wait": 92.0
+        }
+       },
+       {
+        "sass": "IMAD R36, R31, 0x23, R36",
+        "samples": 27983,
+        "stalls": {
+         "long_scoreboard": 27678.0,
+         "selected": 305.0
+        }
+       },
+       {
+        "sass": "LEA R36, R36, UR18, 0x3",
+        "samples": 30353,
+        "stalls": {
+         "long_scoreboard": 30026.0,
+         "selected": 327.0
+        }
+       },
+       {
+        "sass": "LEA R52, R45, UR18, 0x3",
+        "samples": 52654,
+        "stalls": {
+         "long_scoreboard": 52326.0,
+         "selected": 328.0
+        }
+       },
+       {
+        "sass": "DMUL R40, R12, R40",
+        "samples": 17334,
+        "stalls": {
+         "long_scoreboard": 16397.0,
+         "selected": 311.0,
+         "wait": 626.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R34, R36, R26",
+        "samples": 37590,
+        "stalls": {
+         "long_scoreboard": 35472.0,
+         "selected": 324.0,
+         "short_scoreboard": 810.0,
+         "wait": 984.0
+        }
+       },
+       {
+        "sass": "DMUL R44, R12, R44",
+        "samples": 85675,
+        "stalls": {
+         "long_scoreboard": 84454.0,
+         "selected": 326.0,
+         "wait": 895.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R44, R46, R34",
+        "samples": 25694,
+        "stalls": {
+         "selected": 296.0,
+         "short_scoreboard": 23818.0,
+         "wait": 1580.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R48, R50, R34",
+        "samples": 20131,
+        "stalls": {
+         "selected": 312.0,
+         "short_scoreboard": 18212.0,
+         "wait": 1607.0
+        }
+       },
+       {
+        "sass": "IMAD R26, R31, 0x23, R26",
+        "samples": 6524,
+        "stalls": {
+         "long_scoreboard": 6442.0,
+         "selected": 82.0
+        }
+       },
+       {
+        "sass": "LEA R36, R34, UR18, 0x3",
+        "samples": 14023,
+        "stalls": {
+         "long_scoreboard": 13884.0,
+         "selected": 72.0,
+         "wait": 67.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R36, RZ",
+        "samples": 17002,
+        "stalls": {
+         "long_scoreboard": 16654.0,
+         "selected": 70.0,
+         "short_scoreboard": 8.0,
+         "wait": 270.0
+        }
+       },
+       {
+        "sass": "IMAD R36, R31, 0x23, R36",
+        "samples": 19091,
+        "stalls": {
+         "long_scoreboard": 18842.0,
+         "selected": 249.0
+        }
+       },
+       {
+        "sass": "LEA R36, R36, UR18, 0x3",
+        "samples": 18780,
+        "stalls": {
+         "long_scoreboard": 18509.0,
+         "selected": 271.0
+        }
+       },
+       {
+        "sass": "LEA R52, R45, UR18, 0x3",
+        "samples": 43820,
+        "stalls": {
+         "long_scoreboard": 43571.0,
+         "selected": 249.0
+        }
+       },
+       {
+        "sass": "DMUL R40, R12, R40",
+        "samples": 15014,
+        "stalls": {
+         "long_scoreboard": 14251.0,
+         "selected": 263.0,
+         "wait": 500.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R34, R36, R26",
+        "samples": 30201,
+        "stalls": {
+         "long_scoreboard": 28567.0,
+         "selected": 271.0,
+         "short_scoreboard": 580.0,
+         "wait": 783.0
+        }
+       },
+       {
+        "sass": "DMUL R44, R12, R44",
+        "samples": 73095,
+        "stalls": {
+         "long_scoreboard": 72060.0,
+         "selected": 256.0,
+         "wait": 779.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R44, R46, R34",
+        "samples": 20771,
+        "stalls": {
+         "selected": 261.0,
+         "short_scoreboard": 19221.0,
+         "wait": 1289.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R48, R50, R34",
+        "samples": 15923,
+        "stalls": {
+         "selected": 285.0,
+         "short_scoreboard": 14415.0,
+         "wait": 1223.0
+        }
+       },
+       {
+        "sass": "LEA R36, R34, UR18, 0x3",
+        "samples": 4245,
+        "stalls": {
+         "long_scoreboard": 4210.0,
+         "selected": 15.0,
+         "wait": 20.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R36, RZ",
+        "samples": 4634,
+        "stalls": {
+         "long_scoreboard": 4530.0,
+         "selected": 13.0,
+         "short_scoreboard": 2.0,
+         "wait": 89.0
+        }
+       },
+       {
+        "sass": "IMAD R36, R29, 0x23, R36",
+        "samples": 28829,
+        "stalls": {
+         "long_scoreboard": 28513.0,
+         "selected": 316.0
+        }
+       },
+       {
+        "sass": "LEA R36, R36, UR18, 0x3",
+        "samples": 27870,
+        "stalls": {
+         "long_scoreboard": 27554.0,
+         "selected": 316.0
+        }
+       },
+       {
+        "sass": "LEA R52, R45, UR18, 0x3",
+        "samples": 54565,
+        "stalls": {
+         "long_scoreboard": 54243.0,
+         "selected": 322.0
+        }
+       },
+       {
+        "sass": "DMUL R40, R12, R40",
+        "samples": 20452,
+        "stalls": {
+         "long_scoreboard": 19537.0,
+         "selected": 286.0,
+         "wait": 629.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R34, R36, R30",
+        "samples": 36171,
+        "stalls": {
+         "long_scoreboard": 34163.0,
+         "selected": 320.0,
+         "short_scoreboard": 704.0,
+         "wait": 984.0
+        }
+       },
+       {
+        "sass": "DMUL R44, R12, R44",
+        "samples": 85024,
+        "stalls": {
+         "long_scoreboard": 83797.0,
+         "selected": 274.0,
+         "wait": 953.0
+        }
+       },
+       {
+        "sass": "DFMA R34, R44, R46, R34",
+        "samples": 25713,
+        "stalls": {
+         "selected": 318.0,
+         "short_scoreboard": 23861.0,
+         "wait": 1534.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R48, R50, R34",
+        "samples": 20034,
+        "stalls": {
+         "selected": 315.0,
+         "short_scoreboard": 18138.0,
+         "wait": 1581.0
+        }
+       },
+       {
+        "sass": "IMAD R28, R27, 0x23, R28",
+        "samples": 5636,
+        "stalls": {
+         "long_scoreboard": 5506.0,
+         "selected": 65.0,
+         "wait": 65.0
+        }
+       },
+       {
+        "sass": "LEA R32, R30, UR18, 0x3",
+        "samples": 12553,
+        "stalls": {
+         "long_scoreboard": 12426.0,
+         "selected": 71.0,
+         "wait": 56.0
+        }
+       },
+       {
+        "sass": "DMUL R28, R12, R28",
+        "samples": 4656,
+        "stalls": {
+         "long_scoreboard": 4595.0,
+         "selected": 61.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R32, RZ",
+        "samples": 15599,
+        "stalls": {
+         "long_scoreboard": 15255.0,
+         "selected": 63.0,
+         "short_scoreboard": 9.0,
+         "wait": 272.0
+        }
+       },
+       {
+        "sass": "IMAD R32, R27, 0x23, R32",
+        "samples": 17244,
+        "stalls": {
+         "long_scoreboard": 17015.0,
+         "selected": 229.0
+        }
+       },
+       {
+        "sass": "IMAD R36, R27, 0x23, R36",
+        "samples": 3849,
+        "stalls": {
+         "long_scoreboard": 3620.0,
+         "selected": 229.0
+        }
+       },
+       {
+        "sass": "LEA R32, R32, UR18, 0x3",
+        "samples": 17334,
+        "stalls": {
+         "long_scoreboard": 17088.0,
+         "selected": 246.0
+        }
+       },
+       {
+        "sass": "LEA R49, R41, UR18, 0x3",
+        "samples": 47583,
+        "stalls": {
+         "long_scoreboard": 47326.0,
+         "selected": 257.0
+        }
+       },
+       {
+        "sass": "DMUL R36, R12, R36",
+        "samples": 11380,
+        "stalls": {
+         "long_scoreboard": 10615.0,
+         "selected": 286.0,
+         "wait": 479.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R32, R28",
+        "samples": 30273,
+        "stalls": {
+         "long_scoreboard": 28372.0,
+         "selected": 249.0,
+         "short_scoreboard": 855.0,
+         "wait": 797.0
+        }
+       },
+       {
+        "sass": "DMUL R40, R12, R40",
+        "samples": 74480,
+        "stalls": {
+         "long_scoreboard": 73477.0,
+         "selected": 243.0,
+         "wait": 760.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R40, R42, R30",
+        "samples": 20331,
+        "stalls": {
+         "selected": 273.0,
+         "short_scoreboard": 18819.0,
+         "wait": 1239.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R44, R46, R30",
+        "samples": 16193,
+        "stalls": {
+         "selected": 241.0,
+         "short_scoreboard": 14697.0,
+         "wait": 1255.0
+        }
+       }
+      ]
+     },
+     {
+      "line": 703,
+      "source": "v = (v + ((sb * Eac[(bra * 336 + ie)]) * Ksh[(ac_p[ie] * (int)blockDim.y + (int)threadIdx.y)]));",
+      "samples": 1034421,
+      "share": 0.2819,
+      "stalls": {
+       "branch_resolving": 200.0,
+       "dispatch_stall": 7772.0,
+       "lg_throttle": 687.0,
+       "long_scoreboard": 293575.0,
+       "no_instructions": 362.0,
+       "selected": 60682.0,
+       "short_scoreboard": 551954.0,
+       "tex_throttle": 676.0,
+       "wait": 118513.0
+      },
+      "sass": [
+       {
+        "sass": "LEA R40, R45, 0xfffffe28, 0x3",
+        "samples": 26392,
+        "stalls": {
+         "long_scoreboard": 26293.0,
+         "selected": 99.0
+        }
+       },
+       {
+        "sass": "DFMA R36, R44, R36, R56",
+        "samples": 3855,
+        "stalls": {
+         "selected": 120.0,
+         "short_scoreboard": 3368.0,
+         "wait": 367.0
+        }
+       },
+       {
+        "sass": "LDS.64 R56, [R52]",
+        "samples": 4931,
+        "stalls": {
+         "selected": 126.0,
+         "short_scoreboard": 4682.0,
+         "wait": 123.0
+        }
+       },
+       {
+        "sass": "LDS.64 R32, [R50]",
+        "samples": 4012,
+        "stalls": {
+         "selected": 112.0,
+         "short_scoreboard": 3797.0,
+         "wait": 103.0
+        }
+       },
+       {
+        "sass": "DFMA R36, R44, R38, R36",
+        "samples": 8401,
+        "stalls": {
+         "selected": 117.0,
+         "short_scoreboard": 7936.0,
+         "wait": 348.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R40, R36",
+        "samples": 7076,
+        "stalls": {
+         "selected": 110.0,
+         "short_scoreboard": 6607.0,
+         "wait": 359.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R42, R30",
+        "samples": 9472,
+        "stalls": {
+         "selected": 123.0,
+         "short_scoreboard": 8987.0,
+         "wait": 362.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R34, R28",
+        "samples": 9462,
+        "stalls": {
+         "selected": 138.0,
+         "short_scoreboard": 8933.0,
+         "wait": 391.0
+        }
+       },
+       {
+        "sass": "DFMA R24, R24, R32, R26",
+        "samples": 9684,
+        "stalls": {
+         "selected": 147.0,
+         "short_scoreboard": 8977.0,
+         "wait": 560.0
+        }
+       },
+       {
+        "sass": "DFMA R20, R20, R38, R24",
+        "samples": 8072,
+        "stalls": {
+         "selected": 115.0,
+         "short_scoreboard": 7373.0,
+         "wait": 584.0
+        }
+       },
+       {
+        "sass": "DFMA R56, R22, R56, R20",
+        "samples": 7814,
+        "stalls": {
+         "selected": 107.0,
+         "short_scoreboard": 7045.0,
+         "wait": 662.0
+        }
+       },
+       {
+        "sass": "LEA R32, R29, 0xfffffe28, 0x3",
+        "samples": 12610,
+        "stalls": {
+         "long_scoreboard": 12559.0,
+         "selected": 51.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R26, R28, R22",
+        "samples": 7770,
+        "stalls": {
+         "selected": 63.0,
+         "short_scoreboard": 7434.0,
+         "wait": 273.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R30, R32, R22",
+        "samples": 3702,
+        "stalls": {
+         "selected": 59.0,
+         "short_scoreboard": 3376.0,
+         "wait": 267.0
+        }
+       },
+       {
+        "sass": "LEA R45, R45, 0xfffffe38, 0x3",
+        "samples": 26702,
+        "stalls": {
+         "long_scoreboard": 26462.0,
+         "selected": 106.0,
+         "wait": 134.0
+        }
+       },
+       {
+        "sass": "DFMA R36, R44, R36, R56",
+        "samples": 3699,
+        "stalls": {
+         "selected": 121.0,
+         "short_scoreboard": 3230.0,
+         "wait": 348.0
+        }
+       },
+       {
+        "sass": "LDS.64 R56, [R52]",
+        "samples": 4884,
+        "stalls": {
+         "selected": 121.0,
+         "short_scoreboard": 4644.0,
+         "wait": 119.0
+        }
+       },
+       {
+        "sass": "LDS.64 R32, [R50]",
+        "samples": 4090,
+        "stalls": {
+         "selected": 86.0,
+         "short_scoreboard": 3893.0,
+         "wait": 111.0
+        }
+       },
+       {
+        "sass": "DFMA R36, R44, R38, R36",
+        "samples": 8299,
+        "stalls": {
+         "selected": 94.0,
+         "short_scoreboard": 7846.0,
+         "wait": 359.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R40, R36",
+        "samples": 7112,
+        "stalls": {
+         "selected": 107.0,
+         "short_scoreboard": 6627.0,
+         "wait": 378.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R42, R30",
+        "samples": 9298,
+        "stalls": {
+         "selected": 109.0,
+         "short_scoreboard": 8844.0,
+         "wait": 345.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R34, R28",
+        "samples": 9462,
+        "stalls": {
+         "selected": 123.0,
+         "short_scoreboard": 8962.0,
+         "wait": 377.0
+        }
+       },
+       {
+        "sass": "DFMA R24, R24, R32, R26",
+        "samples": 9544,
+        "stalls": {
+         "selected": 134.0,
+         "short_scoreboard": 8818.0,
+         "wait": 592.0
+        }
+       },
+       {
+        "sass": "DFMA R20, R20, R38, R24",
+        "samples": 8008,
+        "stalls": {
+         "selected": 126.0,
+         "short_scoreboard": 7285.0,
+         "wait": 597.0
+        }
+       },
+       {
+        "sass": "DFMA R56, R22, R56, R20",
+        "samples": 7731,
+        "stalls": {
+         "selected": 95.0,
+         "short_scoreboard": 7039.0,
+         "wait": 597.0
+        }
+       },
+       {
+        "sass": "LEA R33, R29, 0xfffffe38, 0x3",
+        "samples": 12505,
+        "stalls": {
+         "long_scoreboard": 12445.0,
+         "selected": 60.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R26, R28, R22",
+        "samples": 7907,
+        "stalls": {
+         "selected": 44.0,
+         "short_scoreboard": 7583.0,
+         "wait": 280.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R30, R32, R22",
+        "samples": 3713,
+        "stalls": {
+         "selected": 61.0,
+         "short_scoreboard": 3391.0,
+         "wait": 261.0
+        }
+       },
+       {
+        "sass": "LEA R45, R45, 0xfffffe30, 0x3",
+        "samples": 26542,
+        "stalls": {
+         "long_scoreboard": 26423.0,
+         "selected": 119.0
+        }
+       },
+       {
+        "sass": "LDS.64 R56, [R51]",
+        "samples": 4884,
+        "stalls": {
+         "selected": 101.0,
+         "short_scoreboard": 4658.0,
+         "wait": 125.0
+        }
+       },
+       {
+        "sass": "LDS.64 R32, [R49]",
+        "samples": 3987,
+        "stalls": {
+         "selected": 122.0,
+         "short_scoreboard": 3764.0,
+         "wait": 101.0
+        }
+       },
+       {
+        "sass": "DFMA R36, R44, R38, R36",
+        "samples": 8443,
+        "stalls": {
+         "selected": 111.0,
+         "short_scoreboard": 7960.0,
+         "wait": 372.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R40, R36",
+        "samples": 7219,
+        "stalls": {
+         "selected": 108.0,
+         "short_scoreboard": 6747.0,
+         "wait": 364.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R42, R30",
+        "samples": 9436,
+        "stalls": {
+         "selected": 123.0,
+         "short_scoreboard": 8953.0,
+         "wait": 360.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R34, R28",
+        "samples": 9477,
+        "stalls": {
+         "selected": 115.0,
+         "short_scoreboard": 9010.0,
+         "wait": 352.0
+        }
+       },
+       {
+        "sass": "DFMA R24, R24, R32, R26",
+        "samples": 9668,
+        "stalls": {
+         "selected": 121.0,
+         "short_scoreboard": 8912.0,
+         "wait": 635.0
+        }
+       },
+       {
+        "sass": "DFMA R20, R20, R38, R24",
+        "samples": 8335,
+        "stalls": {
+         "selected": 122.0,
+         "short_scoreboard": 7618.0,
+         "wait": 595.0
+        }
+       },
+       {
+        "sass": "DFMA R56, R22, R56, R20",
+        "samples": 7817,
+        "stalls": {
+         "selected": 102.0,
+         "short_scoreboard": 7096.0,
+         "wait": 619.0
+        }
+       },
+       {
+        "sass": "LEA R33, R28, 0xfffffe30, 0x3",
+        "samples": 12517,
+        "stalls": {
+         "long_scoreboard": 12461.0,
+         "selected": 56.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R26, R28, R22",
+        "samples": 7778,
+        "stalls": {
+         "selected": 53.0,
+         "short_scoreboard": 7448.0,
+         "wait": 277.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R30, R32, R22",
+        "samples": 3787,
+        "stalls": {
+         "selected": 63.0,
+         "short_scoreboard": 3464.0,
+         "wait": 260.0
+        }
+       },
+       {
+        "sass": "LEA R45, R45, 0xfffffe30, 0x3",
+        "samples": 26688,
+        "stalls": {
+         "long_scoreboard": 26561.0,
+         "selected": 127.0
+        }
+       },
+       {
+        "sass": "IMAD R44, R47, c[0x0][0x4], R16",
+        "samples": 13069,
+        "stalls": {
+         "selected": 127.0,
+         "short_scoreboard": 12817.0,
+         "wait": 125.0
+        }
+       },
+       {
+        "sass": "DFMA R32, R32, R38, R40",
+        "samples": 8688,
+        "stalls": {
+         "selected": 124.0,
+         "short_scoreboard": 8564.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R36, R32",
+        "samples": 6726,
+        "stalls": {
+         "selected": 138.0,
+         "short_scoreboard": 6588.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R42, R30",
+        "samples": 9479,
+        "stalls": {
+         "selected": 108.0,
+         "short_scoreboard": 9030.0,
+         "wait": 341.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R34, R28",
+        "samples": 9867,
+        "stalls": {
+         "selected": 110.0,
+         "short_scoreboard": 9167.0,
+         "wait": 590.0
+        }
+       },
+       {
+        "sass": "DFMA R24, R24, R44, R26",
+        "samples": 8122,
+        "stalls": {
+         "selected": 110.0,
+         "short_scoreboard": 7438.0,
+         "wait": 574.0
+        }
+       },
+       {
+        "sass": "DFMA R20, R20, R38, R24",
+        "samples": 7841,
+        "stalls": {
+         "selected": 117.0,
+         "short_scoreboard": 7112.0,
+         "wait": 612.0
+        }
+       },
+       {
+        "sass": "DFMA R56, R22, R56, R20",
+        "samples": 7823,
+        "stalls": {
+         "selected": 111.0,
+         "short_scoreboard": 7116.0,
+         "wait": 596.0
+        }
+       },
+       {
+        "sass": "LEA R33, R32, 0xfffffe30, 0x3",
+        "samples": 12577,
+        "stalls": {
+         "long_scoreboard": 12511.0,
+         "selected": 66.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R26, R28, R22",
+        "samples": 7876,
+        "stalls": {
+         "selected": 52.0,
+         "short_scoreboard": 7553.0,
+         "wait": 271.0
+        }
+       },
+       {
+        "sass": "LEA R45, R45, 0xfffffe30, 0x3",
+        "samples": 26239,
+        "stalls": {
+         "long_scoreboard": 26141.0,
+         "selected": 98.0
+        }
+       },
+       {
+        "sass": "IMAD R44, R47, c[0x0][0x4], R16",
+        "samples": 12837,
+        "stalls": {
+         "selected": 110.0,
+         "short_scoreboard": 12605.0,
+         "wait": 122.0
+        }
+       },
+       {
+        "sass": "DFMA R32, R32, R38, R40",
+        "samples": 8546,
+        "stalls": {
+         "selected": 123.0,
+         "short_scoreboard": 8423.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R36, R32",
+        "samples": 6825,
+        "stalls": {
+         "selected": 120.0,
+         "short_scoreboard": 6705.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R42, R30",
+        "samples": 9735,
+        "stalls": {
+         "selected": 126.0,
+         "short_scoreboard": 9259.0,
+         "wait": 350.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R34, R28",
+        "samples": 9752,
+        "stalls": {
+         "selected": 118.0,
+         "short_scoreboard": 9059.0,
+         "wait": 575.0
+        }
+       },
+       {
+        "sass": "DFMA R24, R24, R44, R26",
+        "samples": 8163,
+        "stalls": {
+         "selected": 148.0,
+         "short_scoreboard": 7385.0,
+         "wait": 630.0
+        }
+       },
+       {
+        "sass": "DFMA R20, R20, R38, R24",
+        "samples": 7904,
+        "stalls": {
+         "selected": 132.0,
+         "short_scoreboard": 7225.0,
+         "wait": 547.0
+        }
+       },
+       {
+        "sass": "DFMA R56, R22, R56, R20",
+        "samples": 7761,
+        "stalls": {
+         "selected": 131.0,
+         "short_scoreboard": 7043.0,
+         "wait": 587.0
+        }
+       },
+       {
+        "sass": "LEA R33, R33, 0xfffffe30, 0x3",
+        "samples": 12226,
+        "stalls": {
+         "long_scoreboard": 12110.0,
+         "selected": 54.0,
+         "wait": 62.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R26, R28, R22",
+        "samples": 7641,
+        "stalls": {
+         "selected": 55.0,
+         "short_scoreboard": 7298.0,
+         "wait": 288.0
+        }
+       },
+       {
+        "sass": "LEA R41, R41, 0xfffffe30, 0x3",
+        "samples": 26695,
+        "stalls": {
+         "long_scoreboard": 26586.0,
+         "selected": 109.0
+        }
+       },
+       {
+        "sass": "DFMA R30, R30, R38, R52",
+        "samples": 4933,
+        "stalls": {
+         "selected": 116.0,
+         "short_scoreboard": 4391.0,
+         "tex_throttle": 80.0,
+         "wait": 346.0
+        }
+       },
+       {
+        "sass": "IMAD R38, R43, c[0x0][0x4], R16",
+        "samples": 12463,
+        "stalls": {
+         "selected": 136.0,
+         "short_scoreboard": 12205.0,
+         "wait": 122.0
+        }
+       },
+       {
+        "sass": "DFMA R28, R28, R34, R30",
+        "samples": 8482,
+        "stalls": {
+         "selected": 114.0,
+         "short_scoreboard": 8368.0
+        }
+       },
+       {
+        "sass": "DFMA R26, R26, R32, R28",
+        "samples": 6691,
+        "stalls": {
+         "selected": 132.0,
+         "short_scoreboard": 6559.0
+        }
+       },
+       {
+        "sass": "DFMA R24, R24, R36, R26",
+        "samples": 9299,
+        "stalls": {
+         "selected": 115.0,
+         "short_scoreboard": 8827.0,
+         "wait": 357.0
+        }
+       },
+       {
+        "sass": "DFMA R22, R22, R40, R24",
+        "samples": 9686,
+        "stalls": {
+         "selected": 116.0,
+         "short_scoreboard": 8943.0,
+         "wait": 627.0
+        }
+       },
+       {
+        "sass": "DFMA R20, R20, R38, R22",
+        "samples": 8120,
+        "stalls": {
+         "selected": 110.0,
+         "short_scoreboard": 7426.0,
+         "wait": 584.0
+        }
+       },
+       {
+        "sass": "DFMA R10, R10, R30, R20",
+        "samples": 7679,
+        "stalls": {
+         "selected": 136.0,
+         "short_scoreboard": 6997.0,
+         "wait": 546.0
+        }
+       },
+       {
+        "sass": "DFMA R52, R14, R52, R10",
+        "samples": 7735,
+        "stalls": {
+         "selected": 112.0,
+         "short_scoreboard": 7050.0,
+         "wait": 573.0
+        }
+       },
+       {
+        "sass": "LEA R29, R28, 0xfffffe30, 0x3",
+        "samples": 12607,
+        "stalls": {
+         "long_scoreboard": 12558.0,
+         "selected": 49.0
+        }
+       },
+       {
+        "sass": "DFMA R14, R22, R24, R14",
+        "samples": 7658,
+        "stalls": {
+         "selected": 58.0,
+         "short_scoreboard": 7328.0,
+         "wait": 272.0
+        }
+       }
+      ]
+     }
+    ],
+    "e_share": 0.8343
+   },
+   "sectors": {
+    "could_not_measure": "ncu exited 9: could not measure: ==ERROR== An error was reported by the driver: / ==ERROR== LaunchFailed / ==ERROR== The application returned an error code (9).",
+    "ebd_from_text": {
+     "index": "Ebd[(k * 336 + ie)]",
+     "lane": "k = k0 + threadIdx.y, blockDim (1, 32): consecutive lanes, consecutive ket records",
+     "lane_stride_bytes": 2688,
+     "sectors_per_full_warp_request": 32
+    }
+   },
+   "narrow": {
+    "gpu__time_duration.sum": 2500043968.0,
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 11687806976.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 74523525007.0
+   },
+   "narrow_command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 0-15 ncu --csv --print-units base --clock-control none --launch-count 1 --metrics l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,gpu__time_duration.sum --kernel-name regex:^kbr_22_22$ <kb_driver> /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled/c0/in.bin /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled-ncu/rolled.out 0 0 1",
+   "gate": [
+    {
+     "unit": "kbr_22_22",
+     "run": "narrow",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 11,
+     "gpu_util_after": 0
+    },
+    {
+     "unit": "kbr_22_22",
+     "run": "details",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 11,
+     "gpu_util_after": 0
+    },
+    {
+     "unit": "kbr_22_22",
+     "run": "pcsamp",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "unit": "kbr_22_22",
+     "run": "sectors",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 1
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "cpus": "0-15",
+   "rel_vs_rolled": 0.0,
+   "launch": "one launch: MODE 0, warm-up 0, reps 1, --launch-count 1",
+   "unit": "kbrt_22_22",
+   "arm": "rolled-T",
+   "source_sha256": "6d2393902360b235edfdd5ea65dbb3cf123b7814e987cb2d507358209b94a013",
+   "full_profile_failed": "kbrt_22_22 details: no take kept through 4 takes (ncu LaunchFailed; ncu LaunchFailed; ncu LaunchFailed; ncu LaunchFailed) -- nothing written",
+   "narrow": {
+    "gpu__time_duration.sum": 2322239424.0,
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 11687806976.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 28100642223.0
+   },
+   "narrow_command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 0-15 ncu --csv --print-units base --clock-control none --launch-count 1 --metrics l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,gpu__time_duration.sum --kernel-name regex:^kbrt_22_22$ <kb_driver> /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled-T/c0/in.bin /tmp/pytest-of-ubuntu/pytest-1854/test_cuda_kblock_transpose_pro0/rolled-T-ncu/rolled-T.out 0 0 1",
+   "gate": [
+    {
+     "unit": "kbrt_22_22",
+     "run": "narrow",
+     "cpu_busy_permille": 1,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 4
+  }
+ ],
+ "transpose_profile_reading": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "date": "2026-10-26",
+   "rolled": {
+    "unit": "kbr_22_22",
+    "ms_under_ncu": 2500.0,
+    "global_ld_requests": 11687806976.0,
+    "global_ld_sectors": 74523525007.0,
+    "global_ld_sectors_per_request": 6.376,
+    "warp_inst": 57426964835.0,
+    "global_ld_l1_hit": 0.8133,
+    "dram_bytes_read": 197134718848.0,
+    "cycles_per_issue": 20.09,
+    "issue_active_pct": 4.98,
+    "ebd_sample_share": 0.5524,
+    "ebd_loads_measured": null,
+    "ebd_why_not_measured": "ncu exited 9: could not measure: ==ERROR== An error was reported by the driver: / ==ERROR== LaunchFailed / ==ERROR== The application returned an error code (9).",
+    "ebd_from_text": {
+     "index": "Ebd[(k * 336 + ie)]",
+     "lane": "k = k0 + threadIdx.y, blockDim (1, 32): consecutive lanes, consecutive ket records",
+     "lane_stride_bytes": 2688,
+     "sectors_per_full_warp_request": 32
+    }
+   },
+   "rolled-T": {
+    "unit": "kbrt_22_22",
+    "ms_under_ncu": 2322.2,
+    "global_ld_requests": 11687806976.0,
+    "global_ld_sectors": 28100642223.0,
+    "global_ld_sectors_per_request": 2.404,
+    "full_profile": "kbrt_22_22 details: no take kept through 4 takes (ncu LaunchFailed; ncu LaunchFailed; ncu LaunchFailed; ncu LaunchFailed) -- nothing written"
+   },
+   "transposed_over_rolled": {
+    "ms_under_ncu": 0.929,
+    "global_ld_requests": 1.0,
+    "global_ld_sectors": 0.377,
+    "global_ld_sectors_per_request": 0.377
+   }
+  }
+ ]
 }

@@ -3,6 +3,8 @@
     devtools/measure.sh kblock-rolled-compile [--backend cuda|hip]   a compiler
     devtools/measure.sh kblock-rolled [--backend cuda|hip]           timed
     devtools/measure.sh kblock-rolled-profile                       ncu (#574)
+    devtools/measure.sh kblock-transpose                            timed (#576)
+    devtools/measure.sh kblock-transpose-profile                    ncu (#576)
 
 OPT-IN: each test skips unless FJ_KBLOCK_ROLLED_STORE names the store
 (measure.sh sets it to config.sh's MEASURE_KBLOCK_ROLLED_STORE, the tracked
@@ -44,6 +46,20 @@ whichever of the compile or the clock touches it first, before any dense
 row; a store whose declaration differs is refused. The clock rows are keyed
 by (arch, toolchain, am). To add an arm: a builder in `ARM_BUILD`, its
 `class_binaries` flags in `ARM_FLAGS`, and its name in a `CLOCKS` entry.
+
+THE TRANSPOSED KET TABLE (#576), `build_kblock_rolled_kernel(...,
+transposed=True)` (`kbrt_*`, arm `rolled-T`): `Ebd` stored `[n_ebd, n_ket]`
+so a warp's kets read adjacent doubles. Timed (CUDA only: the RX 9060 XT is
+out of scope for the block K kernels, #431) as its own rounds: `(dd|dd)`
+with `kb`, `rolled` and `rolled-T` interleaved on #569's input, and
+`(ff|ff)` with `rolled` and `rolled-T` on #575's f input (`CLOCKS`' `dd-T`
+and `ff-T`). Its rule is the store's `transpose_declared`
+(TRANSPOSE_DECLARED), written before any `rolled-T` row; its rows go in
+their own section, `transpose_clock`, keyed by (arch, toolchain, am), so
+#571's and #575's `clock` rows stay as they were measured. Its profile
+(`kblock-transpose-profile`) is #574's `ncu` runs on `kbr_22_22` and
+`kbrt_22_22`, one launch each, into `transpose_profile`, and the global-load
+sectors per request of both layouts into `transpose_profile_reading`.
 """
 
 from __future__ import annotations
@@ -182,24 +198,61 @@ def _store_path() -> Path:
 
 
 ARM_BUILD = {"kb": build_kblock_kernel, "rolled": build_kblock_rolled_kernel,
-             "dense": build_kblock_dense_kernel}
+             "dense": build_kblock_dense_kernel,
+             "rolled-T": partial(build_kblock_rolled_kernel, transposed=True)}
 ARM_FLAGS = {"kb": {}, "rolled": {"rolled": True},
-             "dense": {"rolled": True, "dense": True}}
+             "dense": {"rolled": True, "dense": True},
+             "rolled-T": {"rolled": True, "transposed": True}}
+
+TRANSPOSE_DECLARED = {
+    "issue": 576,
+    "hypothesis": "kbr's lanes take consecutive kets and read Ebd[k, e] for "
+                  "one e across the warp: record-major, a 2,688 B lane "
+                  "stride at (dd|dd), 32 sectors per full-warp request "
+                  "(#574's profile_reading.summary.ebd). Stored [n_ebd, "
+                  "n_ket], those reads are 256 contiguous bytes, 8 sectors; "
+                  "#574 put 55% of kbr's PC samples on that line, and long "
+                  "scoreboard at 57% of its stalls",
+    "rule": "per arch and class: the median over the timed runs of the "
+            "class's events, rolled-T / other for each other arm timed "
+            "beside it in the same rounds (kb and rolled at (dd|dd), "
+            "rolled at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, "
+            "else 'neutral'. The rolled kernel's DEFAULT layout becomes the "
+            "transposed one only if rolled-T is 'faster' than rolled at "
+            "every class timed (both (dd|dd) and (ff|ff)); kb stays the "
+            "default through d unless rolled-T is also 'faster' than kb "
+            "there. A record of the layout",
+    "expected": "rolled-T faster than rolled at both classes, the gap to kb "
+                "at (dd|dd) narrowed but not closed (the 5.21x warp "
+                "instructions are the loops', not the layout's)",
+    "sectors": "kernel-level l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum "
+               "/ ..._requests.sum for kbr_22_22 and kbrt_22_22 (every "
+               "global load, the tables and records included), and, where "
+               "ncu's SASS-patched per-instruction counters run, the Ebd "
+               "load's own; read, not ruled on",
+    "declared": "2026-10-26, before any rolled-T row",
+}
 
 
 def _build(arm: str, am):
     return ARM_BUILD[arm](am)
 
 
+def _declare(path: Path, store: dict, key: str, value: dict) -> None:
+    """`value` into the store as `key` before any row it rules; refuse
+    another declaration."""
+    declared = json.loads(json.dumps(value))
+    if key not in store:
+        store[key] = declared
+        path.write_text(json.dumps(store, indent=1) + "\n")
+    assert store[key] == declared, (
+        f"the store's {key} is not this file's: its rows would be read under "
+        "another rule")
+
+
 def _declare_dense(path: Path, store: dict) -> None:
     """`dense_declared` into the store before any dense row; refuse another."""
-    declared = json.loads(json.dumps(DENSE_DECLARED))
-    if "dense_declared" not in store:
-        store["dense_declared"] = declared
-        path.write_text(json.dumps(store, indent=1) + "\n")
-    assert store["dense_declared"] == declared, (
-        "the store's dense_declared is not DENSE_DECLARED: the dense rows "
-        "would be read under another rule")
+    _declare(path, store, "dense_declared", DENSE_DECLARED)
 
 
 def _verdict(ratio: float) -> str:
@@ -282,6 +335,8 @@ def _basis_f() -> tuple[Basis, np.ndarray]:
 CLOCKS = {
     "dd": (AM, _basis, 2304, 256, ("kb", "rolled", "dense")),
     "ff": (AM_F, _basis_f, 256, 256, ("rolled", "dense")),
+    "dd-T": (AM, _basis, 2304, 256, ("kb", "rolled", "rolled-T")),  # #576
+    "ff-T": (AM_F, _basis_f, 256, 256, ("rolled", "rolled-T")),  # #576
 }
 
 
@@ -294,6 +349,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
     store = _load(path)
     if "dense" in arms_run:
         _declare_dense(path, store)
+    if "rolled-T" in arms_run:
+        _declare(path, store, "transpose_declared", TRANSPOSE_DECLARED)
     basis, D = make()
     plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
                        tau=0.0,
@@ -359,7 +416,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
         "rounds": ROUNDS, "warmup": WARMUP, "repeats": REPEATS,
         "gate": readings, "gate_discarded_runs": discarded, "arms": arms,
     }
-    if {"kb", "rolled"} <= set(arms_run):  # #571's rule
+    if {"kb", "rolled"} <= set(arms_run) and "rolled-T" not in arms_run:
+        # #571's rule
         row["rolled_vs_kb_rel"] = rels["rolled"]
         row["rolled_over_kb"] = round(over("rolled", "kb"), 4)
         row["verdict"] = _verdict(over("rolled", "kb"))
@@ -369,11 +427,21 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
                 "verdict": _verdict(over("dense", o))}
             for o in arms_run if o != "dense"}
         row["fastest"] = min(arms_run, key=lambda a: arms[a]["median_ns"])
+    section = "clock"
+    if "rolled-T" in arms_run:  # #576's rule, TRANSPOSE_DECLARED
+        section = "transpose_clock"
+        row["transposed"] = {
+            o: {"transposed_over": round(over("rolled-T", o), 4),
+                "verdict": _verdict(over("rolled-T", o))}
+            for o in arms_run if o != "rolled-T"}
+        row["fastest"] = min(arms_run, key=lambda a: arms[a]["median_ns"])
     store = _load(path)
-    _save(path, store, "clock", row, ("arch", "toolchain", "am"))
+    store.setdefault(section, [])
+    _save(path, store, section, row, ("arch", "toolchain", "am"))
     print(f"\n{backend} {b.arch.name} {am}: " + ", ".join(
         f"{a} {arms[a]['median_ns'] / 1e6:.3f} ms" for a in arms_run)
-        + f"; {json.dumps(row.get('dense'))}; -> {path}")
+        + f"; {json.dumps(row.get('dense') or row.get('transposed'))}; "
+        f"-> {path}")
 
 
 @pytest.mark.cuda
@@ -415,6 +483,50 @@ def test_hip_kblock_rolled_clock_ff(request, run_device_binary,
     _clock("hip", request, run_device_binary, tmp_path, "ff")
 
 
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_transpose_clock(request, run_device_binary,
+                                     tmp_path) -> None:
+    """#576: `(dd|dd)`, kb, rolled and rolled-T in the same rounds."""
+    _clock("cuda", request, run_device_binary, tmp_path, "dd-T")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_transpose_clock_ff(request, run_device_binary,
+                                        tmp_path) -> None:
+    """#576: `(ff|ff)`, rolled against rolled-T."""
+    _clock("cuda", request, run_device_binary, tmp_path, "ff-T")
+
+
+def test_the_transpose_verdicts_are_what_their_medians_say() -> None:
+    """`devtools/measure.sh check`: every `transpose_clock` row was read under
+    today's TRANSPOSE_DECLARED, and its verdicts are its medians'."""
+    store = json.loads(TRACKED.read_text())
+    if "transpose_clock" not in store:
+        pytest.skip("no #576 clock in the tracked store")
+    assert store["transpose_declared"] == json.loads(
+        json.dumps(TRANSPOSE_DECLARED))
+    for row in store["transpose_clock"]:
+        arms = row["arms"]
+        assert set(row["transposed"]) == set(arms) - {"rolled-T"}
+        for o, v in row["transposed"].items():
+            r = arms["rolled-T"]["median_ns"] / arms[o]["median_ns"]
+            assert v == {"transposed_over": round(r, 4),
+                         "verdict": _verdict(r)}
+        assert row["fastest"] == min(arms, key=lambda a: arms[a]["median_ns"])
+
+
+def test_the_default_rolled_text_is_the_profiled_one() -> None:
+    """`devtools/measure.sh check`: #576 left the default layout's text
+    alone -- `kbr_22_22` is still the text #574 profiled."""
+    store = json.loads(TRACKED.read_text())
+    (row,) = [r for r in store.get("profile", []) if r["unit"] == "kbr_22_22"]
+    text = BACKEND["cuda"][0](build_kblock_rolled_kernel(AM),
+                              measured.BACKENDS["cuda"].arch)
+    assert hashlib.sha256(text.encode()).hexdigest() == row["source_sha256"]
+
+
 # --- THE PROFILE (#574): kb_22_22 against kbr_22_22 under ncu ---------------
 #
 #     devtools/measure.sh kblock-rolled-profile     (CUDA only, timed kind)
@@ -441,19 +553,21 @@ def test_hip_kblock_rolled_clock_ff(request, run_device_binary,
 PROFILE_CPUS = "0-15"
 PROFILE_RETAKES = 3
 HOT_SHARE = 0.01  # a source line kept in the row: >= 1% of the samples
-_EBD = re.compile(r"Ebd\[\(k \* (\d+) \+ ie\)\]")
+_EBD = re.compile(r"Ebd\[\((?:k \* (\d+) \+ ie|ie \* n_ket \+ k)\)\]")
 _E_GLOBAL = re.compile(r"\bE(bd|ac)\[\(")
 
 
 def _gated(kind: str, unit: str, run, readings: list) -> tuple[object, int]:
-    """`run()` behind the gate; (its result, runs discarded)."""
-    discarded = 0
+    """`run()` behind the gate; (its result, runs discarded). Each discarded
+    take's reason is named in the failure when no take is kept (#576)."""
+    discarded, why = 0, []
     for take in range(PROFILE_RETAKES + 1):
         try:
             busy, util = gate.wait_quiet(
                 "cuda", say=lambda s: print(s, flush=True))
         except gate.Contended as e:
             discarded += 1
+            why.append("gate contended")
             print(f"  DISCARDED {unit} {kind}: {e} (take {take + 1})")
             continue
         try:
@@ -465,6 +579,7 @@ def _gated(kind: str, unit: str, run, readings: list) -> tuple[object, int]:
             if "LaunchFailed" not in str(e):
                 raise
             discarded += 1
+            why.append("ncu LaunchFailed")
             print(f"  DISCARDED {unit} {kind}: ncu LaunchFailed "
                   f"(take {take + 1})")
             continue
@@ -476,9 +591,10 @@ def _gated(kind: str, unit: str, run, readings: list) -> tuple[object, int]:
                              "gpu_util_after": after})
             return got, discarded
         discarded += 1
+        why.append(f"card {util} -> {after}%")
         print(f"  DISCARDED {unit} {kind}: card {util} -> {after}%")
-    pytest.fail(f"{unit} {kind}: contended through {PROFILE_RETAKES + 1} "
-                "takes -- nothing written")
+    pytest.fail(f"{unit} {kind}: no take kept through {PROFILE_RETAKES + 1} "
+                f"takes ({'; '.join(why)}) -- nothing written")
 
 
 def _nonzero(vals) -> dict[str, float]:
@@ -584,12 +700,15 @@ def _profile_kernel(arm: str, part, unit: str, text: str, work: Path,
         c_sec = got[2]
     m = _EBD.search(text)
     if m:  # the stride the text fixes, not a measurement
+        stride = 8 * int(m.group(1)) if m.group(1) else 8  # #576: [e, k]
         sec["ebd_from_text"] = {
             "index": m.group(0), "lane": "k = k0 + threadIdx.y, blockDim "
             "(1, 32): consecutive lanes, consecutive ket records",
-            "lane_stride_bytes": 8 * int(m.group(1)),
-            "sectors_per_full_warp_request": 32 if 8 * int(m.group(1)) >= 32
-            else None}
+            "lane_stride_bytes": stride,
+            # 32 lanes x 8 B: one sector each when strided past a sector,
+            # 256 contiguous bytes (8 sectors, 9 when not 32 B aligned)
+            "sectors_per_full_warp_request": 32 if stride >= 32
+            else 32 * stride // 32}
     row = {
         "unit": unit, "arm": arm, "counter_tool": tool,
         "source_sha256": hashlib.sha256(text.encode()).hexdigest(),
@@ -762,3 +881,160 @@ def test_the_profile_reading_is_what_its_rows_recompute_to() -> None:
             rows["kb"]["counters"], rows["rolled"]["counters"],
             rows["rolled"]["pcsamp"]["e_share"])
         assert {h: reading[h] for h in got} == json.loads(json.dumps(got))
+
+
+# --- THE TRANSPOSE PROFILE (#576): kbr_22_22 against kbrt_22_22 under ncu ----
+#
+#     devtools/measure.sh kblock-transpose-profile     (CUDA only, timed kind)
+#
+# First, per kernel, one ncu run of ONE launch reading only the kernel-level
+# global-load counters (T_SECTORS: requests, sectors, duration), behind the
+# gate: #576's first try of #574's full `details` set on `kbrt_22_22` ended
+# in LaunchFailed on all four takes while this narrow set ran, so the
+# sectors per request of both layouts are read here, same session, the
+# same way. Then #574's three runs per kernel (`_profile_kernel`: details,
+# pcsamp, sectors), as far as ncu gets: a kernel whose full profile cannot
+# be taken has the reason recorded in its row, never a number. Pinned to
+# PROFILE_CPUS, on the clock's (dd|dd) input, the two binaries held to each
+# other first. Read under TRANSPOSE_DECLARED's `sectors` (no verdict): one
+# `transpose_profile` row per (arch, toolchain, unit) and one
+# `transpose_profile_reading` row per (arch, toolchain).
+
+T_ARMS = ("rolled", "rolled-T")
+_G = "l1tex__t_{}_pipe_lsu_mem_global_op_ld.sum"
+T_SECTORS = {m: measured.KB_PROFILE_UNITS[m] for m in (
+    _G.format("requests"), _G.format("sectors"), "gpu__time_duration.sum")}
+
+
+def _sectors_read(row: dict) -> dict:
+    n = row["narrow"]
+    out = {
+        "unit": row["unit"],
+        "ms_under_ncu": round(n["gpu__time_duration.sum"] / 1e6, 1),
+        "global_ld_requests": n[_G.format("requests")],
+        "global_ld_sectors": n[_G.format("sectors")],
+        "global_ld_sectors_per_request": round(
+            n[_G.format("sectors")] / n[_G.format("requests")], 3),
+    }
+    if "counters" not in row:
+        out["full_profile"] = row.get("full_profile_failed")
+        return out
+    c = row["counters"]
+    g = "l1tex__t_{}_pipe_lsu_mem_global_op_ld{}.sum"
+    out.update({
+        "warp_inst": c["smsp__inst_executed.sum"],
+        "global_ld_l1_hit": round(c[g.format("sectors", "_lookup_hit")]
+                                  / c[g.format("sectors", "")], 4),
+        "dram_bytes_read": c[measured.NCU_READ],
+        "cycles_per_issue": c[
+            "smsp__average_warp_latency_per_inst_issued.ratio"],
+        "issue_active_pct": c[
+            "smsp__issue_active.avg.pct_of_peak_sustained_active"],
+        "ebd_sample_share": next(
+            (x["share"] for x in row["pcsamp"]["e_lines"]
+             if _EBD.search(x["source"])), None),
+        "ebd_loads_measured": row["sectors"].get("ebd_loads") or None,
+        "ebd_why_not_measured": row["sectors"].get("could_not_measure"),
+        "ebd_from_text": row["sectors"].get("ebd_from_text"),
+    })
+    return out
+
+
+def _narrow(arm: str, part, unit: str, work: Path, readings: list
+            ) -> tuple[dict, str, int]:
+    """T_SECTORS of one launch of `unit`, behind the gate."""
+    argv = [str(part.binary), str(part.staged), str(work / f"{arm}.out"),
+            "0", "0", "1"]
+    (raw, _, cmd), d = _gated("narrow", unit, lambda: measured.ncu_raw(
+        argv, ncu_args=["--launch-count", "1", "--metrics",
+                        ",".join(T_SECTORS)],
+        kernel_regex=f"^{unit}$", cpus=PROFILE_CPUS), readings)
+    ((kernel, counters),) = measured.parse_ncu_metrics(raw, T_SECTORS)
+    assert kernel == unit, kernel
+    return counters, cmd, d
+
+
+def _transpose_profile(request, run_device_binary, tmp_path: Path) -> None:
+    path = _store_path()
+    tc = _toolchain("cuda", request)
+    b = measured.BACKENDS["cuda"]
+    store = _load(path)
+    _declare(path, store, "transpose_declared", TRANSPOSE_DECLARED)
+    basis, D = _basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=0.0, build=None)
+    (cl,) = plan
+    assert cl.am == AM and len(cl.blocks) == 256
+    parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
+                                 "cuda", tmp_path / arm, jobs=1,
+                                 with_k=False, **ARM_FLAGS[arm])
+             for arm in T_ARMS}
+    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
+                          "cuda")[0][0] for arm in T_ARMS)
+    rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
+    assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, rel
+
+    head = {"arch": b.arch.name, "toolchain": b.toolchain(b.compiler()),
+            "gpu": b.gpu(), "host": measured.host(),
+            "date": datetime.date.today().isoformat(), "am": list(AM),
+            "n_ao": basis.n_ao, "n_bra": 2304, "n_ket": 2304,
+            "n_blocks": 256, "tau": 0.0, "cpus": PROFILE_CPUS,
+            "rel_vs_rolled": rel,
+            "launch": "one launch: MODE 0, warm-up 0, reps 1, "
+                      "--launch-count 1"}
+    rows: dict[str, dict] = {}
+    narrow: dict[str, tuple] = {}
+    for arm in T_ARMS:  # the narrow pair first, back to back
+        (part,) = parts[arm]
+        kern = part.drv.classes[0].kb
+        work = tmp_path / f"{arm}-ncu"
+        work.mkdir()
+        readings: list = []
+        counters, cmd, d = _narrow(arm, part, kern.name, work, readings)
+        narrow[arm] = (counters, cmd, d, readings)
+    for arm in T_ARMS:
+        (part,) = parts[arm]
+        kern = part.drv.classes[0].kb
+        text = BACKEND["cuda"][0](kern, b.arch)
+        counters, cmd, discarded, readings = narrow[arm]
+        try:
+            row, d = _profile_kernel(arm, part, kern.name, text,
+                                     tmp_path / f"{arm}-ncu", readings)
+            discarded += d
+        except pytest.fail.Exception as e:  # recorded, never a number
+            discarded += PROFILE_RETAKES + 1  # every take of the failed run
+            row = {"unit": kern.name, "arm": arm,
+                   "source_sha256": hashlib.sha256(
+                       text.encode()).hexdigest(),
+                   "full_profile_failed": str(e).splitlines()[0]}
+        rows[arm] = {**head, **row, "narrow": counters,
+                     "narrow_command": cmd, "gate": readings,
+                     "gate_discarded_runs": discarded}
+        print(f"\n{kern.name}: "
+              f"{json.dumps(_sectors_read(rows[arm]), default=str)}",
+              flush=True)
+
+    store = _load(path)
+    store.setdefault("transpose_profile", [])
+    store.setdefault("transpose_profile_reading", [])
+    for r in rows.values():
+        _save(path, store, "transpose_profile", r,
+              ("arch", "toolchain", "unit"))
+    a, t = (_sectors_read(rows[x]) for x in T_ARMS)
+    _save(path, store, "transpose_profile_reading",
+          {"arch": head["arch"], "toolchain": head["toolchain"],
+           "date": head["date"], "rolled": a, "rolled-T": t,
+           "transposed_over_rolled": {k: round(t[k] / a[k], 3) for k in (
+               "ms_under_ncu", "warp_inst", "global_ld_requests",
+               "global_ld_sectors", "global_ld_sectors_per_request",
+               "dram_bytes_read", "cycles_per_issue") if k in a and k in t}},
+          ("arch", "toolchain"))
+    print(f"-> {path}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_transpose_profile(request, run_device_binary,
+                                       tmp_path) -> None:
+    """#576: kbr_22_22 and kbrt_22_22 under ncu, one launch each."""
+    _transpose_profile(request, run_device_binary, tmp_path)

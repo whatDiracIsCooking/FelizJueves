@@ -1159,6 +1159,7 @@
    "eri.k_exchange.levers.split",
    "eri.k_exchange.levers.stage_eac",
    "ir",
+   "ir.passes",
    "mmd.e_fragment",
    "mmd.kernel",
    "mmd.recurrence",

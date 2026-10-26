@@ -17,6 +17,13 @@ Plus the pieces: `e_pattern` against `e_table`, the tables, the shape and
 the refusals, and the text's size (the point of the issue: the contraction's
 text no longer grows with the class).
 
+And the transposed ket table (#576, `transposed=True`, `kbrt_*`): a
+relayout, so the default rolled kernel's `K` BIT FOR BIT on every case
+above (every class through `(ff|ff)`, the s, s, p plan at one and four
+lanes, two H2 screened), staged as the driver stages it for the card; its
+shape; and the default text pinned to its digest before the option
+existed.
+
 Every class with L <= `tiers.FAST_L_MAX` is fast, above it `slow` (and
 `high_l` above `tiers.DEVICE_L_MAX`). Fast tier: no compiler, no card, no
 PySCF.
@@ -25,6 +32,7 @@ PySCF.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import itertools
 from functools import cache, partial
 from pathlib import Path
@@ -49,6 +57,7 @@ from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
     DENSE_PARAMS,
     PARAMS,
     TABLES,
+    TRANSPOSED,
     build_kblock_dense_kernel,
     build_kblock_rolled_kernel,
     e_pattern,
@@ -60,6 +69,7 @@ from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
 from felizjueves.eri.k_exchange.launch_kblock import e_table, kb_launches, walk_kb
 from felizjueves.ir import AtomicAdd, For, walk
 from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.ir.passes import transpose
 from felizjueves.mmd.hermite import e_block, hermite_order
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.boys import boys
@@ -102,10 +112,11 @@ def _class_case(am: Am):
 
 
 def _interp(plan, basis, D, tmp_path, *, rolled: bool, lanes: int = 1,
-            dense: bool = False) -> np.ndarray:
+            dense: bool = False, transposed: bool = False) -> np.ndarray:
     drv = kb_driver(plan, basis, "cuda", tmp_path / (
-        "d" if dense else "r" if rolled else "b"),
-                    rolled=rolled or dense, dense=dense, with_k=False)
+        "d" if dense else "t" if transposed else "r" if rolled else "b"),
+                    rolled=rolled or dense or transposed, dense=dense,
+                    transposed=transposed, with_k=False)
     staged = kb_stage(drv, plan, basis, D)
     K = np.zeros((drv.n_ao, drv.n_ao))
     for c in range(len(plan)):
@@ -380,3 +391,94 @@ def test_the_dense_refusals():
     with pytest.raises(ValueError, match="rolled="):
         kb_driver(_class_case((0, 0, 0, 0))[2], _class_case((0, 0, 0, 0))[0],
                   "cuda", Path("/nonexistent"), dense=True)
+
+
+# ---------------------------------------------------------------------------
+# The transposed ket table (#576): Ebd[n_ebd, n_ket], a relayout
+# ---------------------------------------------------------------------------
+
+# the default rolled text, sha256 of its emission at 4429f09 (before #576);
+# (dd|dd)'s cuda digest is #574's profiled `kbr_22_22` row's `source_sha256`
+DEFAULT_SHA256 = {
+    ("cuda", (1, 1, 1, 1)):
+        "06237dd4d9576795887c2a3a15797edc537328dca8d146b23f7ed1b4026d5ba0",
+    ("cuda", (2, 2, 2, 2)):
+        "a36fa7c0d52031bb4119ad3563340b90b9f21ac4ba81cce218497e1fe72e9ca2",
+    ("cuda", (3, 3, 3, 3)):
+        "708c077db66da2020d0240394813ea0badca3331606fd3ccdf6a8a1a8a33b1a2",
+    ("hip", (1, 1, 1, 1)):
+        "90ba94ae0150da8fa3254f85b59726d7af0d972c62f7d66f2dc82b95bc0916ad",
+    ("hip", (2, 2, 2, 2)):
+        "8be6e600a6ee17a0be01ffcbeb586f6e72520d0c4889e50c63f4a90499c1bdd5",
+    ("hip", (3, 3, 3, 3)):
+        "8ce0737e06b7d30d4db0a9860a68585fbbd54a777882d888e8489bef0b5aff22",
+}
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am))
+                                for am in SPD + WITH_F])
+def test_the_transposed_kernel_is_the_rolled_kernel_bitwise(am: Am, tmp_path):
+    basis, D, plan = _class_case(am)
+    got = _interp(plan, basis, D, tmp_path, rolled=True, transposed=True)
+    want = _interp(plan, basis, D, tmp_path, rolled=True)
+    assert np.any(got != 0.0)
+    assert got.tobytes() == want.tobytes()
+
+
+@pytest.mark.parametrize("lanes", [1, 4])
+def test_the_transposed_plan_is_the_rolled_plan_bitwise(lanes, tmp_path):
+    basis, D = _sp_basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq), tau=0.0,
+                       build=build_kblock_kernel)
+    got = _interp(plan, basis, D, tmp_path, rolled=True, transposed=True,
+                  lanes=lanes)
+    want = _interp(plan, basis, D, tmp_path, rolled=True, lanes=lanes)
+    assert np.any(got != 0.0) and got.tobytes() == want.tobytes()
+
+
+def test_the_transposed_plan_is_the_rolled_plan_screened(tmp_path):
+    basis, D = _launch_case("two_h2")
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=1e-6, build=build_kblock_kernel)
+    assert walk_kb(plan, basis, D, pq=pq).n_skipped > 0
+    got = _interp(plan, basis, D, tmp_path, rolled=True, transposed=True)
+    want = _interp(plan, basis, D, tmp_path, rolled=True)
+    assert got.tobytes() == want.tobytes()
+
+
+def test_the_transposed_kernel_shape():
+    am = (2, 1, 1, 2)
+    k = build_kblock_rolled_kernel(am, transposed=True)
+    d = build_kblock_rolled_kernel(am)
+    assert k.name == kblock_rolled_name(am, transposed=True) == "kbrt_21_12"
+    assert TRANSPOSED == ("Ebd",)
+    assert k == dataclasses.replace(transpose(d, TRANSPOSED), name=k.name)
+    shapes = {p.name: p.shape for p in k.params}
+    dflt = {p.name: p.shape for p in d.params}
+    assert tuple(p.name for p in k.params) == PARAMS
+    assert shapes["Ebd"] == dflt["Ebd"][::-1]
+    assert {n: v for n, v in shapes.items() if n != "Ebd"} == {
+        n: v for n, v in dflt.items() if n != "Ebd"}
+    emit, arch, _ = BACKEND["cuda"]
+    text = emit(k, arch)
+    assert "Ebd[(ie * n_ket + k)]" in text  # a warp's kets, adjacent
+    assert "Eac[(bra * " in text  # the bra side untouched: a broadcast
+
+
+@pytest.mark.parametrize("case", [
+    by_l((b, am), sum(am), f"{b}-{_id(am)}") for b, am in DEFAULT_SHA256])
+def test_the_default_rolled_text_is_unchanged(case):
+    backend, am = case
+    emit, arch, _ = BACKEND[backend]
+    for k in (build_kblock_rolled_kernel(am),
+              build_kblock_rolled_kernel(am, transposed=False)):
+        assert hashlib.sha256(emit(k, arch).encode()).hexdigest() == \
+            DEFAULT_SHA256[backend, am]
+
+
+def test_the_transposed_refusals():
+    basis, _, plan = _class_case((0, 0, 0, 0))
+    for kw in ({"transposed": True}, {"transposed": True, "rolled": True,
+                                      "dense": True}):
+        with pytest.raises(ValueError, match="transposed="):
+            kb_driver(plan, basis, "cuda", Path("/nonexistent"), **kw)

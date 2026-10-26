@@ -42,6 +42,13 @@
 #     kblock-rolled-profile  kb_22_22 against kbr_22_22 under
 #                   ncu, one launch each, and the three
 #                   hypotheses read (#574; CUDA only)   FJ_KBLOCK_ROLLED_STORE
+#     kblock-transpose  kbr with Ebd stored [n_ebd, n_ket]
+#                   (rolled-T) against kb and kbr at
+#                   (dd|dd), and kbr at (ff|ff) (#576;
+#                   CUDA only)                          FJ_KBLOCK_ROLLED_STORE
+#     kblock-transpose-profile  kbr_22_22 against kbrt_22_22
+#                   under ncu, global-load sectors per
+#                   request (#576; CUDA only)           FJ_KBLOCK_ROLLED_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -96,6 +103,8 @@ SWEEPS=(
   "kblock-rolled-compile|compile|kbr and kbd block K kernels' compile at (dd|dd), (ff|ff) vs kb (#571, #575) -> kblock_rolled.json"
   "kblock-rolled|timed|kb, kbr, kbd at (dd|dd), kbr vs kbd at (ff|ff), wall-clock (#571, #575) -> kblock_rolled.json"
   "kblock-rolled-profile|timed|kb_22_22 vs kbr_22_22 under ncu, CUDA only (#574) -> kblock_rolled.json"
+  "kblock-transpose|timed|kbr with Ebd transposed vs kb, kbr at (dd|dd) and kbr at (ff|ff), CUDA only (#576) -> kblock_rolled.json"
+  "kblock-transpose-profile|timed|kbr_22_22 vs kbrt_22_22 under ncu, CUDA only (#576) -> kblock_rolled.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -178,6 +187,10 @@ case $sweep in
   kblock-rolled) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_rolled_clock)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   kblock-rolled-profile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_rolled_profile)
+                envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  kblock-transpose) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_transpose_clock)
+                envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  kblock-transpose-profile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_transpose_profile)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
