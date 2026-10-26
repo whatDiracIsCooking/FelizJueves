@@ -182,6 +182,18 @@ through (dd) occurs between two centres. `dipole_integrals()` loads it and
 integrals, `int1e_ovlp` or the converted basis, or holds a shell (raw or
 converted) above `l = DIPOLE_SPD_L_MAX = 2`.
 
+THE ONE-ELECTRON PIECES (#570). A molecule whose four one-electron arrays
+do not fit one file beside its density under the 512 KiB hook (CO/cc-pVTZ:
+70 AOs, ~127 KB an array) records them in two density-free AO fixtures
+beside its `_j` owner: `<owner>_st` carries exactly `int1e_ovlp` and
+`int1e_kin`, `<owner>_vh` exactly `int1e_nuc` and `hcore`
+(`ONE_E_HALVES`, `ONE_E_PIECE_SUFFIXES`); a piece is refused if it carries
+anything else of the four or a density, and the owner carries none of them.
+`one_e_fixture(owner)` returns the owner with both halves merged in, after
+holding each piece's inputs (shells, basis, molecule, AOs, converted basis,
+and the legacy `ovlp`) to the owner's exactly; `one_e_fixtures()` names
+every fixture it completes.
+
 FULL PRECISION. Floats are written by `json`, i.e. by `repr`, which is the
 shortest string that round-trips the double exactly, so "the numbers match"
 can mean `==` and not a tolerance. `dumps` is the one serialiser, and a
@@ -196,7 +208,7 @@ from __future__ import annotations
 import json
 import math
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -231,6 +243,10 @@ SCHWARZ_ARRAY = "int2e_diag"  # libcint's (mn|mn) for every AO pair
 # libcint's <m|n>, m an AO of the named fixture (rows), n of this one
 CROSS_PREFIX = "int1e_ovlp_cross:"
 ONE_E_ARRAYS = (OVLP_ARRAY, KIN_ARRAY, NUC_ARRAY, HCORE_ARRAY)
+# #570: the two halves a ONE-ELECTRON PIECE carries, and each piece's stem
+# suffix after its owner's (`<owner>_st`, `<owner>_vh`)
+ONE_E_HALVES = ((OVLP_ARRAY, KIN_ARRAY), (NUC_ARRAY, HCORE_ARRAY))
+ONE_E_PIECE_SUFFIXES = ("_st", "_vh")
 # #411: a metric piece's two row blocks (THE METRIC PIECES)
 METRIC_ARRAY = "int2c2e_cart:rows"
 AUX_OVLP_ARRAY = "int1e_ovlp:rows"
@@ -605,7 +621,15 @@ def validate(path: Path, raw: Any) -> Fixture:
                  if "converted" in raw else None)
     _check_eri(path, arrays, converted)
     one_e = [n for n in ONE_E_ARRAYS if n in arrays]
-    if one_e and len(one_e) != len(ONE_E_ARRAYS):
+    half = _one_e_half(raw["name"])
+    if half is not None:
+        # #570: A ONE-ELECTRON PIECE -- exactly its half, and no density
+        if tuple(one_e) != ONE_E_HALVES[half] or not density_free:
+            raise _fail(path, f"a one-electron piece ({raw['name']}) is "
+                              f"density-free and carries exactly "
+                              f"{list(ONE_E_HALVES[half])} of the "
+                              "one-electron arrays")
+    elif one_e and len(one_e) != len(ONE_E_ARRAYS):
         raise _fail(path, f"arrays has {one_e} of the one-electron arrays "
                           f"{list(ONE_E_ARRAYS)}: all four or none")
     for name in (J_ARRAY, K_ARRAY, SCHWARZ_ARRAY, *ONE_E_ARRAYS):
@@ -641,7 +665,8 @@ def validate(path: Path, raw: Any) -> Fixture:
         if a.ndim != 2 or a.shape[1] != nao:
             raise _fail(path, f"arrays.{name} has shape {a.shape}, expected "
                               f"(rows' nao, {nao})")
-    if one_e and not np.array_equal(arrays[OVLP_ARRAY], arrays["ovlp"]):
+    if OVLP_ARRAY in arrays and not np.array_equal(arrays[OVLP_ARRAY],
+                                                   arrays["ovlp"]):
         raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
     _check_dipole_arrays(path, arrays, converted, atoms, nao, density_free)
 
@@ -1168,10 +1193,13 @@ def check_pair(fj: Fixture, fk: Fixture) -> None:
         raise _pair_fail(fj, fk, f"{field} differ")
 
 
-def _input_difference(fj: Fixture, fk: Fixture) -> str | None:
+def _input_difference(fj: Fixture, fk: Fixture, *,
+                      density: bool = True) -> str | None:
     """The first input field two converted AO fixtures differ in, or None:
     the issue's five first (#280), then the density, the rest, and every
-    array both carry -- each compared exactly."""
+    array both carry -- each compared exactly. `density=False` (#570, a
+    density-free one-electron piece against its owner) skips the density
+    and its recipe."""
     assert fj.converted is not None and fk.converted is not None
     pj, pk = fj.provenance, fk.provenance
     fields = (  # the issue's five first, so the message names the first rot
@@ -1191,9 +1219,9 @@ def _input_difference(fj: Fixture, fk: Fixture) -> str | None:
     for name, a, b in fields[:3]:
         if a != b:
             return name
-    if not np.array_equal(fj.density, fk.density):
+    if density and not np.array_equal(fj.density, fk.density):
         return "density"
-    for name, a, b in fields[3:]:
+    for name, a, b in fields[3:] if density else fields[3:-1]:
         if a != b:
             return name
     shared = sorted(set(fj.arrays) & set(fk.arrays) - {"density"})
@@ -1218,6 +1246,63 @@ def fock_pairs() -> list[str]:
     return sorted(s[:-len(J_SUFFIX)] for s in stems
                   if s.endswith(J_SUFFIX)
                   and s[:-len(J_SUFFIX)] + K_SUFFIX in stems)
+
+
+# --- the one-electron pieces (#570) -----------------------------------------
+
+
+def _one_e_half(stem: str) -> int | None:
+    """The half (`ONE_E_HALVES` index) a stem names as a ONE-ELECTRON PIECE
+    (`<owner>_st` / `<owner>_vh`, the owner a `_j` fixture), or None."""
+    for h, suffix in enumerate(ONE_E_PIECE_SUFFIXES):
+        if stem.endswith(J_SUFFIX + suffix):
+            return h
+    return None
+
+
+def one_e_fixture(name: str, fixtures: Path = FIXTURES) -> Fixture:
+    """The fixture `name` with all four one-electron arrays: itself when it
+    carries them, else itself with its two ONE-ELECTRON PIECES' halves
+    merged in (#570: a molecule whose four arrays do not fit one file under
+    the 512 KB hook). Refuses a missing piece, and a piece whose inputs --
+    every field `check_pair` compares but the density, and every array both
+    carry (`ovlp`) -- differ from `name`'s, naming both files; exact
+    comparisons, never a tolerance."""
+    fx = load(fixtures / f"{name}.json")
+    if all(n in fx.arrays for n in ONE_E_ARRAYS):
+        return fx
+    if fx.converted is None or any(n in fx.arrays for n in ONE_E_ARRAYS):
+        raise _fail(fx.path, "neither carries the four one-electron arrays "
+                             "nor is an owner of one-electron pieces")
+    arrays = dict(fx.arrays)
+    for half, suffix in zip(ONE_E_HALVES, ONE_E_PIECE_SUFFIXES, strict=True):
+        piece = load(fixtures / f"{name}{suffix}.json")
+        if piece.converted is None:
+            raise _fail(piece.path, "a one-electron piece records the "
+                                    "converted basis")
+        field = _input_difference(fx, piece, density=False)
+        if field is not None:
+            raise FixtureError(f"{fx.path} / {piece.path}: not a "
+                               f"one-electron piece of the first: {field} "
+                               "differ")
+        arrays.update({n: piece.arrays[n] for n in half})
+    return replace(fx, arrays=arrays)
+
+
+def one_e_fixtures() -> list[str]:
+    """Every tracked fixture `one_e_fixture` completes, sorted: those that
+    carry the four arrays themselves, and every owner of a piece pair. By
+    file name and array names only; `one_e_fixture` is what checks one."""
+    stems = {p.stem for p in tracked()}
+    out = []
+    for path in tracked():
+        if _one_e_half(path.stem) is not None:
+            continue
+        if all(path.stem + s in stems for s in ONE_E_PIECE_SUFFIXES):
+            out.append(path.stem)
+        elif OVLP_ARRAY in load(path).arrays:
+            out.append(path.stem)
+    return out
 
 
 # --- the dipole fixtures (#517) ----------------------------------------------

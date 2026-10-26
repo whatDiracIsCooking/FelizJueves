@@ -49,7 +49,7 @@ from felizjueves.reference.pq import pq
 LIBCINT_TOL = 1e-12
 L_MAX_RUN = 2
 
-MOLECULES = ("h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz",
+MOLECULES = ("co_ccpvtz", "h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz",
              "h10_chain_ccpvdz")
 FAST_WHOLE = ("h2_sto3g",)
 FAST_SS = ("h2o_sto3g", "h2o_631g")
@@ -59,8 +59,11 @@ SLOW_WHOLE = ("h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
 # interpreted sweep over every quartet grows ~(30/12)^4 ~ 40x over
 # H2O/cc-pVDZ (12 shells), already the slowest case. Its vj / vk are
 # libcint's, cross-checked against einsum over the full int2e when
-# written (oracle.generate).
-NOT_RUN_WHOLE = ("h10_chain_ccpvdz",)
+# written (oracle.generate). #570's CO/cc-pVTZ (f on both atoms, 20
+# shells) is not run here either: its sweep is ~80x H2O/cc-pVDZ's, and its
+# J is held to libcint by the host and the cards instead (test_ao_j.py,
+# test_j_chain_ondevice.py).
+NOT_RUN_WHOLE = ("h10_chain_ccpvdz", "co_ccpvtz")
 
 
 @cache

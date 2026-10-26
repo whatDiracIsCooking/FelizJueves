@@ -354,14 +354,14 @@ ONE_E_TOL = 1e-12
 
 
 def _one_e_params():
-    """Every tracked fixture carrying the #240 arrays; `slow` from l = 2."""
+    """Every tracked fixture carrying the #240 arrays, itself or in its
+    one-electron pieces (#570, `manifest.one_e_fixture`); `slow` from
+    l = 2."""
     out = []
-    for path in _manifest.tracked():
-        fx = _manifest.load(path)
-        if _manifest.OVLP_ARRAY not in fx.arrays:
-            continue
+    for name in _manifest.one_e_fixtures():
+        fx = _manifest.one_e_fixture(name)
         slow = max(s.l for s in fx.converted.shells) >= 2
-        out.append(pytest.param(path.stem, id=path.stem,
+        out.append(pytest.param(name, id=name,
                                 marks=[pytest.mark.slow] if slow else []))
     return out
 
@@ -393,16 +393,21 @@ def one_e_scale(entry: np.ndarray) -> np.ndarray:
 
 
 def test_every_one_e_fixture_is_compared() -> None:
-    # s/p cases in the fast tier; a d case and an s-to-f case behind `slow`.
+    # s/p cases in the fast tier; a d case and the s-to-f cases behind
+    # `slow` -- #570's CO/cc-pVTZ through its one-electron pieces, which
+    # are never a case of their own.
     names = {p.values[0]: bool(p.marks) for p in ONE_E_PARAMS}
     assert {"h2_sto3g_j", "h2o_sto3g_j", "h2o_631g_eri", "h2o_ccpvdz_j",
-            "hf_ccpvtz", "prim_spdf"} <= set(names)
+            "hf_ccpvtz", "prim_spdf", "co_ccpvtz_j"} <= set(names)
     assert not names["h2o_631g_eri"] and names["hf_ccpvtz"]
+    assert names["co_ccpvtz_j"]
+    assert not any(n.endswith(s) for n in names
+                   for s in _manifest.ONE_E_PIECE_SUFFIXES)
 
 
 @pytest.mark.parametrize("name", ONE_E_PARAMS)
 def test_overlap_matrix_against_libcint(name: str) -> None:
-    fx = _manifest.load(_manifest.FIXTURES / f"{name}.json")
+    fx = _manifest.one_e_fixture(name)
     basis = _ob.from_fixture(fx)
     S = np.array(overlap_matrix(basis))
     scale = one_e_scale(np.array(matrix(basis, _overlap_scale_block)))

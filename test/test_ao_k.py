@@ -389,6 +389,9 @@ K_FAST_WHOLE = ("h2_sto3g_k",)
 K_FAST_SS = ("h2o_sto3g_k", "h2o_631g_k")
 K_SLOW_WHOLE = ("h2o_sto3g_k", "h2o_631g_k", "h2o_ccpvdz_k")
 K_CASES = ("h2_sto3g_k", "h2o_sto3g_k", "h2o_631g_k", "h2o_ccpvdz_k")
+# #570's f case: its inputs are checked here, its K is not built -- K at f
+# is #570's follow-up, behind #569.
+K_NOT_RUN = ("co_ccpvtz_k",)
 
 
 @cache
@@ -415,7 +418,7 @@ def test_the_k_fixtures_are_the_j_fixtures_inputs():
     """Every `_k` fixture carries `vk` and not `vj`, and its molecule, basis
     (raw and converted), AO layout and density are its `_j` sibling's,
     exactly -- the same input, so only the contraction differs."""
-    for name in K_CASES:
+    for name in K_CASES + K_NOT_RUN:
         fk, _ = _kfx(name)
         fj = manifest.load(manifest.FIXTURES / f"{name[:-1]}j.json")
         assert manifest.K_ARRAY in fk.arrays, name

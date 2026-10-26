@@ -41,8 +41,11 @@ DRIVER (#144, `plan_driver.driver`), not a new one:
      card and adds into one zeroed `J_mn`, read back.
 
 No `[p|q]` above L = 8 enters a driver (asserted): the reach stays
-milestone 6's. f in a whole-molecule driver would need a new f `J` fixture
-and `[p|q]` up to L = 12, a separate decision.
+milestone 6's -- except #570's f cell, CO/cc-pVTZ (f on both atoms; the
+`co_ccpvtz_j` fixture), whose driver carries `[p|q]` up to L = 12
+(`(ff|ff)`), the same driver and the same tolerances; it is `slow` and
+`high_l`, so off both kernel-tier selections and run by hand
+(`pytest -m "gpu and <backend> and high_l" -k co_ccpvtz`).
 
 THE TOLERANCES, stated where they are asserted, with `u = 2^-53`,
 `gamma_n = n u / (1 - n u)`, `L = la + lb` (or `lc + ld`):
@@ -179,16 +182,29 @@ PAIR_PARAMS = [by_l(c, sum(c), id=f"{c[0]}{c[1]}") for c in PAIR_CLASSES]
 # (fixture, n_batches, slow): part 2, through d. H2O/cc-pVDZ's whole chain is
 # ~110 s on the RTX 3080 -- a third of the gate on its own -- so it is `slow`;
 # H2O/STO-3G reaches every class it runs below L = 4.
+# #570: CO/cc-pVTZ, f on both atoms, the one cell past d: `[p|q]` to
+# L = 12, so `slow` and `high_l` (tiers.py: off both kernel-tier
+# selections, run by hand with `-m "gpu and <backend> and high_l"`).
 CHAIN_CELLS = (
     ("h2_sto3g_j", 1, False),
     ("h2o_sto3g_j", 1, False),
     ("h2o_sto3g_j", 3, False),
     ("h2o_ccpvdz_j", 1, True),
+    ("co_ccpvtz_j", 1, True),
 )
+F_CELLS = ("co_ccpvtz_j",)
 CHAIN_PARAMS = [pytest.param(name, n, id=f"{name}-b{n}",
-                             marks=(pytest.mark.slow,) if slow else ())
+                             marks=(pytest.mark.slow,
+                                    *((pytest.mark.high_l,)
+                                      if name in F_CELLS else ()))
+                             if slow else ())
                 for name, n, slow in CHAIN_CELLS]
 L_MAX_DRIVER = 8  # milestone 6's reach: no [p|q] above it enters a driver
+L_MAX_DRIVER_F = 12  # #570's f cells: (ff|ff) is [p|q] at L = 6 + 6
+
+
+def _l_max_driver(name: str) -> int:
+    return L_MAX_DRIVER_F if name in F_CELLS else L_MAX_DRIVER
 
 
 # ---------------------------------------------------------------------------
@@ -483,9 +499,11 @@ def test_hip_pair_kernels_match_the_host(cls, request, run_device_binary,
 # ---------------------------------------------------------------------------
 
 
-def _plan_from(basis, dq_rows, n: int) -> LaunchPlan:
+def _plan_from(basis, dq_rows, n: int,
+               l_max: int = L_MAX_DRIVER) -> LaunchPlan:
     """`eri.j_coulomb.drive._chain_plan` over `dq_rows` (`(i, j, prim) -> (D_q,
-    Dmax)`): kets keyed `G * Dmax` with THAT `Dmax`, sorted."""
+    Dmax)`): kets keyed `G * Dmax` with THAT `Dmax`, sorted; no `[p|q]`
+    above `l_max` (`_l_max_driver`)."""
     pairs = _unique_pairs(basis)
     gs = {(a, b): [bound_value(BOUND, zeta,
                                basis.shells[a].l + basis.shells[b].l)
@@ -494,8 +512,8 @@ def _plan_from(basis, dq_rows, n: int) -> LaunchPlan:
           for a, b in pairs}
     plan = _chain_plan(basis, pairs, gs, dq_rows, n_batches=n, tau=0.0,
                        strict=False, resolve=None)
-    assert max(cl.L for cl in plan) <= L_MAX_DRIVER, (
-        "a [p|q] above L = 8 would enter the driver")
+    assert max(cl.L for cl in plan) <= l_max, (
+        f"a [p|q] above L = {l_max} would enter the driver")
     return plan
 
 
@@ -544,7 +562,8 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
     tc = _toolchain(backend, request)
     arch = BACKEND[backend][1]
     basis, D = _case(name)
-    assert max(s.l for s in basis.shells) <= 2, "part 2 is through d"
+    assert max(s.l for s in basis.shells) <= (3 if name in F_CELLS else 2), (
+        "part 2 is through d, and through f for F_CELLS")
 
     # step 2 on the card: D_q and Dmax per ket pair class; THE ROUND-TRIP
     classes = dq_classes(basis, D)
@@ -560,7 +579,7 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
     dq_rows = _rows_of(classes, dq_runs[0])
 
     # the sort on the card's Dmax; steps 3 and 4 on milestone 6's driver
-    plan = _plan_from(basis, dq_rows, n)
+    plan = _plan_from(basis, dq_rows, n, _l_max_driver(name))
     ket_data = _ket_data(basis, dq_rows)
     drv = driver(plan, backend, tmp_path / "gen", chain=basis)
     binary = compile_checked(tc, drv, tmp_path / "driver")
@@ -683,7 +702,8 @@ def _part2_compiles(backend: str, tc, name: str, n: int, tmp_path: Path):
     classes = dq_classes(basis, D)
     compile_checked(tc, dq_program(classes, backend, tmp_path / "dq"),
                     tmp_path / "dq_bin")
-    plan = _plan_from(basis, _host_dq_rows(basis, classes), n)
+    plan = _plan_from(basis, _host_dq_rows(basis, classes), n,
+                      _l_max_driver(name))
     drv = driver(plan, backend, tmp_path / "gen", chain=basis)
     compile_checked(tc, drv, tmp_path / "driver")
 

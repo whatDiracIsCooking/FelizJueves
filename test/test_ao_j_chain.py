@@ -65,7 +65,10 @@ SLOW = ("h2o_631g_j", "h2o_ccpvdz_j")
 # interpreted chain grows ~(30/12)^4 ~ 40x. Its vj is libcint's,
 # cross-checked against einsum over the full int2e when written
 # (oracle.generate).
-NOT_RUN = ("h10_chain_ccpvdz_j",)
+# #570's CO/cc-pVTZ (20 shells, f on both atoms, [p|q] up to L = 12) is
+# not run interpreted either, by cost: its chain on the card is
+# test_j_chain_ondevice.py's, and the host J against its vj test_ao_j.py's.
+NOT_RUN = ("h10_chain_ccpvdz_j", "co_ccpvtz_j")
 CASES = [pytest.param(n, id=n) for n in FAST] + [
     pytest.param(n, id=n, marks=pytest.mark.slow) for n in SLOW]
 

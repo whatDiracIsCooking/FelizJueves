@@ -366,7 +366,7 @@ def potential_scale_block(sa: Shell, sb: Shell, nuclei):
 @cache
 def _one_e(name: str):
     """(fixture, V, scale_V) for one tracked fixture, computed once."""
-    fx = _manifest.load(_manifest.FIXTURES / f"{name}.json")
+    fx = _manifest.one_e_fixture(name)
     basis = _ob.from_fixture(fx)
     nuc = _nuclei(fx)
     V = np.array(potential_matrix(basis, nuc, one_centre=one_centre))

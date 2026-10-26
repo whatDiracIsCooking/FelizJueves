@@ -139,7 +139,7 @@ PARAMS = ([pytest.param(n, id=n) for n in FAST]
 
 # every tracked molecule with a density and both PySCF matrices
 PAIRS = ("h2_sto3g", "h2o_sto3g", "h2o_631g", "h2o_ccpvdz",
-         "h10_chain_ccpvdz")
+         "h10_chain_ccpvdz", "co_ccpvtz")
 LIBCINT_FAST_WHOLE = ("h2_sto3g",)
 LIBCINT_FAST_SS = ("h2o_sto3g", "h2o_631g")
 LIBCINT_SLOW_WHOLE = ("h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
@@ -148,8 +148,11 @@ LIBCINT_SLOW_WHOLE = ("h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
 # interpreted sweep over every quartet grows ~(30/12)^4 ~ 40x over
 # H2O/cc-pVDZ (12 shells), already the slowest case. Its vj / vk are
 # libcint's, cross-checked against einsum over the full int2e when
-# written (oracle.generate).
-LIBCINT_NOT_RUN = ("h10_chain_ccpvdz",)
+# written (oracle.generate). #570's CO/cc-pVTZ is #570's f witness for J
+# (and, after #569, K); it is not run here: it carries f shells, which the
+# fused F does not reach (#330), and the sweep at 20 shells is ~80x H2O/
+# cc-pVDZ's.
+LIBCINT_NOT_RUN = ("h10_chain_ccpvdz", "co_ccpvtz")
 
 
 def test_the_fast_cases_keep_to_the_rule():

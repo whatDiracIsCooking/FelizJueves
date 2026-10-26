@@ -85,10 +85,14 @@ from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Target
 
 U = 2.0 ** -53
-# classes through (dd); H2O/cc-pVDZ is `slow`, off the PR gate
+# classes through (dd); H2O/cc-pVDZ is `slow`, off the PR gate. #570's
+# CO/cc-pVTZ reaches (ff) on both atoms, `slow`: its units above (dd) are
+# the driver's, the same text as the ladder's.
 MOLECULES = ("h2o_sto3g_j",
-             pytest.param("h2o_ccpvdz_j", marks=pytest.mark.slow))
+             pytest.param("h2o_ccpvdz_j", marks=pytest.mark.slow),
+             pytest.param("co_ccpvtz_j", marks=pytest.mark.slow))
 LMAX = 2  # the tier's `--one-e-l 2`
+LMAX_OF = {"co_ccpvtz_j": 3}  # #570: through (ff)
 SENSITIVITY = 1e6  # each slip moves Tr(D h) by at least this many tolerances
 D_SLIP = 1.01  # the shared normalisation slip: every d function, T and V
 
@@ -108,8 +112,10 @@ def _tr(D: np.ndarray, h: np.ndarray) -> float:
 
 @cache
 def _case(name: str):
-    """(fixture, basis, nuclei); the nuclei are the fixture's atoms."""
-    fx = manifest.load(manifest.FIXTURES / f"{name}.json")
+    """(fixture, basis, nuclei); the nuclei are the fixture's atoms. The
+    one-electron arrays are reassembled from the fixture's pieces where it
+    has them (#570, `manifest.one_e_fixture`)."""
+    fx = manifest.one_e_fixture(name)
     return fx, ob.from_fixture(fx), tuple((float(a.charge), a.coord)
                                           for a in fx.atoms)
 
@@ -119,7 +125,7 @@ def _launch(name: str) -> OneELaunch:
     _, basis, nuclei = _case(name)
     launch = one_electron_launch(basis, nuclei, tau=0.0, bound=overlap_bound)
     assert not launch.dropped
-    assert max(max(c.la, c.lb) for c in launch) <= LMAX
+    assert max(max(c.la, c.lb) for c in launch) <= LMAX_OF.get(name, LMAX)
     return launch
 
 
@@ -194,12 +200,13 @@ def _check(label: str, name: str, h: np.ndarray) -> tuple[float, float, float]:
 @pytest.mark.parametrize("name", MOLECULES)
 def test_hcore_fixture_carries_the_capstone_inputs(name: str) -> None:
     """The fixture's `hcore` is its `int1e_kin + int1e_nuc` (generate.py's
-    1e-14 check, re-read), its density the recipe's Hilbert matrix, and
-    every one-e class it reaches is within the tier's `--one-e-l 2`."""
+    check, re-read: 1e-14 of the largest element), its density the
+    recipe's Hilbert matrix, and every one-e class it reaches is within the
+    tier's `--one-e-l 2` (CO/cc-pVTZ's within (ff))."""
     fx, basis, _ = _case(name)
     H = fx.arrays[manifest.HCORE_ARRAY]
     T, V = fx.arrays[manifest.KIN_ARRAY], fx.arrays[manifest.NUC_ARRAY]
-    assert float(np.max(np.abs(H - (T + V)))) <= 1e-14
+    assert float(np.max(np.abs(H - (T + V)))) <= 1e-14 * np.max(np.abs(H))
     assert "hilbert" in fx.density_recipe
     n = fx.nao
     i = np.arange(n)
