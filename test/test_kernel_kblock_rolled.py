@@ -27,6 +27,7 @@ from __future__ import annotations
 import dataclasses
 import itertools
 from functools import cache, partial
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -45,11 +46,14 @@ from felizjueves.eri.k_exchange.kernel_kblock import (
     shared_doubles,
 )
 from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
+    DENSE_PARAMS,
     PARAMS,
     TABLES,
+    build_kblock_dense_kernel,
     build_kblock_rolled_kernel,
     e_pattern,
     hpq_table,
+    kblock_dense_name,
     kblock_rolled_name,
     tables,
 )
@@ -97,10 +101,11 @@ def _class_case(am: Am):
     return basis, D, plan
 
 
-def _interp(plan, basis, D, tmp_path, *, rolled: bool, lanes: int = 1
-            ) -> np.ndarray:
-    drv = kb_driver(plan, basis, "cuda", tmp_path / ("r" if rolled else "b"),
-                    rolled=rolled, with_k=False)
+def _interp(plan, basis, D, tmp_path, *, rolled: bool, lanes: int = 1,
+            dense: bool = False) -> np.ndarray:
+    drv = kb_driver(plan, basis, "cuda", tmp_path / (
+        "d" if dense else "r" if rolled else "b"),
+                    rolled=rolled or dense, dense=dense, with_k=False)
     staged = kb_stage(drv, plan, basis, D)
     K = np.zeros((drv.n_ao, drv.n_ao))
     for c in range(len(plan)):
@@ -245,3 +250,133 @@ def test_the_refusals():
     with pytest.raises(ValueError, match="not a Target.K"):
         build_kblock_rolled_kernel(Spec(Operator.COULOMB, 0, (0, 0, 0, 0),
                                         Target.J))
+
+
+# ---------------------------------------------------------------------------
+# The dense-Hermite form (#575): rows rolled, p and q unrolled over dense E
+# ---------------------------------------------------------------------------
+#
+# Interpreted, `kbd` adds exactly `kbr`'s terms in `kbr`'s order plus the
+# structural zeros' `[r] * (+-0)`, which leave a sum unchanged unless it is
+# itself zero (then at most its sign moves). So it is held to `kb` (and so
+# to `kbr`) by VALUE, `==`, every class with every `l <= 2` -- stronger than
+# the issue's "to rounding" -- and to the walk within `ORACLE_TOL` with an f
+# shell, as `kbr` is.
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am)) for am in SPD])
+def test_the_dense_kernel_is_the_block_kernel_by_value(am: Am, tmp_path):
+    basis, D, plan = _class_case(am)
+    got = _interp(plan, basis, D, tmp_path, rolled=True, dense=True)
+    want = _interp(plan, basis, D, tmp_path, rolled=False)
+    assert np.any(got != 0.0)
+    assert np.array_equal(got, want)
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am)) for am in WITH_F])
+def test_the_dense_kernel_is_the_walk_with_an_f_shell(am: Am, tmp_path):
+    basis, D, plan = _class_case(am)
+    got = _interp(plan, basis, D, tmp_path, rolled=True, dense=True)
+    Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
+    big = float(np.max(np.abs(Kw)))
+    assert big > 0.0 and float(np.max(np.abs(got - Kw))) <= ORACLE_TOL * big
+
+
+@pytest.mark.parametrize("lanes", [1, 4])
+def test_the_dense_plan_is_the_walk_with_p_shells(lanes, tmp_path):
+    basis, D = _sp_basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq), tau=0.0,
+                       build=build_kblock_kernel)
+    K = _interp(plan, basis, D, tmp_path, rolled=True, dense=True,
+                lanes=lanes)
+    Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
+    big = float(np.max(np.abs(Kw)))
+    assert big > 0.0 and float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * big
+    if lanes == 1:
+        assert np.array_equal(K, _interp(plan, basis, D, tmp_path,
+                                         rolled=False))
+
+
+def test_the_dense_plan_is_the_walk_screened(tmp_path):
+    basis, D = _launch_case("two_h2")
+    tau = 1e-6
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=tau, build=build_kblock_kernel)
+    w = walk_kb(plan, basis, D, pq=pq)
+    assert w.n_skipped > 0
+    K = _interp(plan, basis, D, tmp_path, rolled=True, dense=True)
+    Kw = np.array(w.K)
+    assert float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * float(
+        np.max(np.abs(Kw)))
+    assert np.array_equal(K, _interp(plan, basis, D, tmp_path, rolled=False))
+
+
+@pytest.mark.parametrize("l1, l2", [(a, b) for a in range(4) for b in range(4)])
+def test_the_dense_e_table_is_e_block_whole_and_signed(l1, l2):
+    from felizjueves.ao.shell import cartesians
+
+    P, A, B, zeta = (0.1, -0.2, 0.3), (0.4, 0.0, -0.5), (-0.3, 0.6, 0.2), 1.3
+    ts = hermite_order(l1 + l2)
+    got, signed = (e_table(l1, l2, zeta, P, A, B, sign=s, dense=True)
+                   for s in (False, True))
+    rows = [(x, y) for x in cartesians(l1) for y in cartesians(l2)]
+    assert len(got) == len(rows) * len(ts)
+    for r, (x, y) in enumerate(rows):
+        full = e_block(x, y, zeta, P, A, B)
+        row = got[r * len(ts):(r + 1) * len(ts)]
+        assert row == tuple(full)
+        assert signed[r * len(ts):(r + 1) * len(ts)] == tuple(
+            -v if sum(t) % 2 else v for t, v in zip(ts, full, strict=True))
+    # the nonzero entries, in order, are the rolled kernel's table
+    sparse = e_table(l1, l2, zeta, P, A, B)
+    ptr, cols = e_pattern(l1, l2)
+    assert sparse == tuple(got[r * len(ts) + cols[e]]
+                           for r in range(len(rows))
+                           for e in range(ptr[r], ptr[r + 1]))
+
+
+def test_the_dense_kernel_shape():
+    am = (2, 1, 1, 2)
+    k = build_kblock_dense_kernel(am)
+    assert k.name == kblock_dense_name(am) == "kbd_21_12"
+    assert tuple(p.name for p in k.params) == DENSE_PARAMS
+    assert not set(TABLES) & set(DENSE_PARAMS)
+    width = {p.name: p.shape[1].value for p in k.params
+             if p.name in ("Eac", "Ebd")}
+    n3 = len(hermite_targets(3))
+    assert width == {"Eac": 6 * 3 * n3, "Ebd": 3 * 6 * n3}
+    stmts = list(walk(k.body))
+    adds = [s for s in stmts if isinstance(s, AtomicAdd)]
+    assert len(adds) == 1 and adds[0].dst.array == "K"
+    # zeroing; bra, ket; (b, d) and (a, c); the write-back (a, b): p, q
+    # and the entries are unrolled
+    assert sum(isinstance(s, For) for s in stmts) == 9
+    emit, arch, _ = BACKEND["cuda"]
+    text = emit(k, arch)
+    assert "R[" not in text and "hpq" not in text
+    ksh = next(s for s in stmts if getattr(s, "name", None) == "Ksh")
+    assert ksh.shape[0].value == shared_doubles(am)
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am)) for am in
+                                ((1, 1, 1, 1), (2, 2, 2, 2), (3, 3, 3, 3))])
+def test_the_dense_text_grows_with_n_p_n_q_not_the_rows(am: Am):
+    """Stage 1 is one body of `n_p n_q` multiply-adds, stage 2 one of `n_p`:
+    the text past the recurrence is linear in `n_p n_q + n_q + n_p`, never
+    in `n_ac n_bd` (`kb_33_33` is 22 MB)."""
+    emit, arch, _ = BACKEND["cuda"]
+    text = emit(build_kblock_dense_kernel(am), arch)
+    rolled = emit(build_kblock_rolled_kernel(am), arch)
+    la, lc, lb, ld = am
+    n_p, n_q = (len(hermite_targets(x)) for x in (la + lc, lb + ld))
+    assert len(text) < len(rolled) + 80 * (n_p * n_q + n_p + n_q)
+    assert len(text) < 2_000_000
+
+
+def test_the_dense_refusals():
+    with pytest.raises(ValueError, match="one batch"):
+        build_kblock_dense_kernel(dataclasses.replace(
+            k_class_spec(1, 1, 1, 1), n_batches=3))
+    with pytest.raises(ValueError, match="rolled="):
+        kb_driver(_class_case((0, 0, 0, 0))[2], _class_case((0, 0, 0, 0))[0],
+                  "cuda", Path("/nonexistent"), dense=True)

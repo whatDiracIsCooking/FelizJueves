@@ -1,6 +1,7 @@
 """The block exchange kernel, `E` from global memory, the contraction ROLLED (#571).
 
     build_kblock_rolled_kernel((la, lc, lb, ld) | spec) -> Kernel  n_batches = 1
+    build_kblock_dense_kernel((la, lc, lb, ld) | spec)  -> Kernel  (#575)
     e_pattern(l1, l2)        -> (ptr, cols)   one E block's nonzero entries
     hpq_table(am)            -> [n_p][n_q]    the R index of p + q
     tables(am)               -> {name: ints}  every class-constant I32 table
@@ -79,6 +80,32 @@ a warp read one bra's row (a broadcast) and distinct kets' rows of `Ebd`
 (strided). `ir.passes.transpose(kernel, ("Ebd",))` would make the ket reads
 contiguous; not applied, nothing measured asks for it.
 
+THE DENSE-HERMITE FORM (#575), `build_kblock_dense_kernel` (`kbd_*`), a
+third contraction between `kb`'s unrolled text and this rolled one: the
+`(b, d)` and `(a, c)` row loops stay rolled, the Hermite `p` and `q` are
+UNROLLED, and each row of `E` arrives DENSE over its Hermite index,
+structural zeros kept (`Eac[n_bra, n_ac n_p]`, `Ebd[n_ket, n_bd n_q]`,
+row-major, `launch_kblock.e_table(..., dense=True)`, the ket's signed).
+Every `p + q` is then a constant of the text, so stage 1 reads the
+recurrence's own named `[r]^(0)` (no `R`, no `hpq` / `bd_q` / `ac_p`,
+none of the five tables), the row's `s_bd E^bd_q` are formed once into
+`n_q` locals, and the only runtime-indexed reads are `E[record, row, t]`
+and the `Ksh` slots:
+
+    for (b, d):  eq_j = s_bd Ebd[k, rbd n_q + j]        j < n_q
+                 Ksh[p] = SUM_j [p + q_j] eq_j           n_p n_q terms
+      for (a, c):
+                 Ksh[n_p + a n_b + b] += Dcd[dk, c n_d + d]
+                     SUM_p (s_ac Eac[bra, rac n_p + p]) Ksh[p]   n_p terms
+
+The text grows as `n_p n_q`, not `n_ac n_bd n_p n_q`: `kbd_33_33` is 0.5 MB
+and compiles in seconds (`kb_33_33` is 22 MB and never finished). Its
+parameters are `PARAMS` without `TABLES` (`DENSE_PARAMS`). The terms are
+`kbr`'s, in `kbr`'s order, plus `[r] * (+-0)` for every structural zero,
+which leaves a nonzero sum unchanged: interpreted it equals `kb` and `kbr`
+BY VALUE. The price is those zeros' multiplies: 3.75x `kbr`'s contraction
+terms at `(dd|dd)`, 4.4x at `(ff|ff)` (`(n_rows n_hermite) / nnz`).
+
 ONE BATCH ONLY, no lever: `kernel_kblock.spec_of`'s refusals.
 
 Like `kernel_kblock`, nothing here imports `ao/`, the interpreter,
@@ -136,12 +163,15 @@ from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Spec
 
 __all__ = [
+    "DENSE_PARAMS",
     "E_PARAMS",
     "PARAMS",
     "TABLES",
+    "build_kblock_dense_kernel",
     "build_kblock_rolled_kernel",
     "e_pattern",
     "hpq_table",
+    "kblock_dense_name",
     "kblock_rolled_name",
     "launch_shape",
     "shared_bytes",
@@ -159,6 +189,8 @@ PARAMS = ("n_blk", "n_bra", "n_ket", "n_dc", "n_ao", "tau",
           *E_PARAMS, *TABLES,
           "Dcd", "K")
 
+DENSE_PARAMS = tuple(p for p in PARAMS if p not in TABLES)  # kbd (#575)
+
 R = "R"  # the local [r]^(0) array, Hermite order of hermite_targets(L)
 
 ROLLED_NOTE = (
@@ -167,6 +199,12 @@ ROLLED_NOTE = (
     "kernel_k's stages as loops over the class tables -- stage 1 into the "
     "shared I column per (b,d) row, then stages 2 and 3 fused per (a,c) "
     "row; no n_ac x n_bd block is live")
+
+DENSE_NOTE = (
+    "the contraction DENSE-HERMITE (#575): E^ac, E^bd from global memory, "
+    "each (row) dense over its Hermite index, zeros kept; the (b,d) and "
+    "(a,c) row loops rolled, p and q unrolled, so every p + q is a constant "
+    "and [p+q] the recurrence's own named local -- no R array, no tables")
 
 
 def kblock_rolled_name(am: tuple[int, int, int, int]) -> str:
@@ -345,18 +383,133 @@ def _write_back(ctx: KContext) -> tuple[Stmt, ...]:
     )
 
 
+# ---------------------------------------------------------------------------
+# The dense-Hermite form (#575): rows rolled, p and q unrolled over dense E
+# ---------------------------------------------------------------------------
+
+
+def kblock_dense_name(am: tuple[int, int, int, int]) -> str:
+    la, lc, lb, ld = am
+    return f"kbd_{la}{lc}_{lb}{ld}"
+
+
+def _dense_params(spec: Spec) -> tuple[Param, ...]:
+    """`kbr`'s list without the five tables, `E` dense: `Eac[n_bra, n_ac
+    n_p]`, `Ebd[n_ket, n_bd n_q]`."""
+    la, lc, lb, ld = spec.am
+    n_p, n_q = len(hermite_targets(la + lc)), len(hermite_targets(lb + ld))
+    width = {"Eac": _ncart(la) * _ncart(lc) * n_p,
+             "Ebd": _ncart(lb) * _ncart(ld) * n_q}
+    out = tuple(
+        replace(p, shape=(p.shape[0], Lit(width[p.name])))
+        if p.name in width else p
+        for p in _params(spec) if p.name not in TABLES)
+    assert tuple(p.name for p in out) == DENSE_PARAMS
+    return out
+
+
+def _no_r(ctx: KContext) -> tuple[Stmt, ...]:
+    """In place of `bind_e_bd`: nothing. Every `p + q` is a constant of the
+    unrolled text, so stage 1 reads the recurrence's named `[r]^(0)`."""
+    return ()
+
+
+def _dense_contract(ctx: KContext) -> tuple[Stmt, ...]:
+    """`kbr`'s two stages with `p` and `q` unrolled over dense `E` rows
+    (module docstring, THE DENSE-HERMITE FORM)."""
+    na, nc, nb, nd = (_ncart(x) for x in ctx.spec.am)
+    ps, qs = ctx.ps, ctx.qs
+    n_p, n_q = len(ps), len(qs)
+    ty = ctx.ty
+
+    def sh(row: Expr) -> Index:
+        return Index("Ksh", (row, ty))
+
+    def e(j: int) -> str:
+        return f"eq{j}"
+
+    rbd, rac = Var("rbd"), Var("rac")
+    stage1: list[Stmt] = [
+        Decl("eb", Scalar.I32, init=_c(Fn.MUL, rbd, Lit(n_q))),
+        Note("the (b,d) row of E^bd, dense over q, the sign in Ebd and the "
+             "dressing s_bd applied once per entry"),
+        *(Decl(e(j), Scalar.F64, init=_c(Fn.MUL, Var("sq"), Index(
+            "Ebd", (Var(KET), _c(Fn.ADD, Var("eb"), Lit(j))))))
+          for j in range(n_q)),
+        Decl("acc", Scalar.F64),
+    ]
+    for i, p in enumerate(ps):
+        stage1.append(Assign(Var("acc"), Lit(0.0)))
+        stage1 += [Assign(Var("acc"), _c(Fn.ADD, Var("acc"), _c(
+            Fn.MUL, Var(node_name((plus(p, q), 0))), Var(e(j)))))
+            for j, q in enumerate(qs)]
+        stage1.append(Assign(sh(Lit(i)), Var("acc")))
+    slot = _c(Fn.ADD, Lit(n_p), _c(Fn.ADD, _c(Fn.MUL, Var("xa"), Lit(nb)),
+                                   Var("xb")))
+    ea = _c(Fn.MUL, rac, Lit(n_p))
+    digest = For("xa", Lit(0), Lit(na), Lit(1), (For("xc", Lit(0), Lit(nc),
+                                                     Lit(1), (
+        Decl("rac", Scalar.I32, init=_c(Fn.ADD, _c(Fn.MUL, Var("xa"),
+                                                   Lit(nc)), Var("xc"))),
+        Decl("ea", Scalar.I32, init=ea),
+        Decl("v", Scalar.F64, init=Lit(0.0)),
+        *(Assign(Var("v"), _c(Fn.ADD, Var("v"), _c(
+            Fn.MUL,
+            _c(Fn.MUL, Var("sb"), Index("Eac", (ctx.bra, _c(
+                Fn.ADD, Var("ea"), Lit(i))))),
+            sh(Lit(i)))))
+          for i in range(n_p)),
+        Assign(sh(slot), _c(Fn.ADD, sh(slot), _c(
+            Fn.MUL, Index("Dcd", (Var("dk"), _c(Fn.ADD, _c(
+                Fn.MUL, Var("xc"), Lit(nd)), Var("xd")))), Var("v")))),
+    )),))
+    return (
+        Note(DENSE_NOTE),
+        For("xb", Lit(0), Lit(nb), Lit(1), (For("xd", Lit(0), Lit(nd), Lit(1), (
+            Decl("rbd", Scalar.I32, init=_c(Fn.ADD, _c(Fn.MUL, Var("xb"),
+                                                       Lit(nd)), Var("xd"))),
+            Note(f"stage 1: I[p] = SUM_q [p+q] (-1)^|q| E^bd_q, {n_p} x "
+                 f"{n_q} terms unrolled, into the shared column"),
+            *stage1,
+            Note(f"stages 2 and 3 fused: K[a,b] += D[c,d] SUM_p E^ac_p I[p], "
+                 f"{n_p} terms unrolled per (a,c) row"),
+            digest,
+        )),)),
+    )
+
+
+def build_kblock_dense_kernel(cls: tuple[int, int, int, int] | Spec, *,
+                              name: str | None = None) -> Kernel:
+    """The dense-Hermite block exchange kernel of one K class (#575; module
+    docstring, THE DENSE-HERMITE FORM). `cls` as `build_kblock_rolled_kernel`
+    takes it."""
+    spec = spec_of(cls)
+    name = kblock_dense_name(spec.am) if name is None else name
+    return _build(spec, name, _no_r, _dense_contract, _dense_params(spec),
+                  "global memory DENSE over its Hermite index, the (a,c) and "
+                  "(b,d) rows rolled and p, q unrolled (#575)")
+
+
 def build_kblock_rolled_kernel(cls: tuple[int, int, int, int] | Spec, *,
                                name: str | None = None) -> Kernel:
     """The rolled block exchange kernel of one K class (module docstring).
     `cls` is `(la, lc, lb, ld)`, the Hermite pairing, bra first, or a
     one-batch, lever-free `Target.K` `Spec` (`kernel_kblock.spec_of`)."""
     spec = spec_of(cls)
+    name = kblock_rolled_name(spec.am) if name is None else name
+    return _build(spec, name, _store_r, _rolled_contract, _params(spec),
+                  "global memory and the contraction rolled (#571)")
+
+
+def _build(spec: Spec, name: str, bind_e_bd, contract,
+           params: tuple[Param, ...], how: str) -> Kernel:
+    """The block kernel's skeleton around one contraction form: `kbr`'s and
+    `kbd`'s differ only in `bind_e_bd`, `contract` and the parameters."""
     la, lc, lb, ld = spec.am
     lp, lq = split(spec)
     (dag,) = builder_plan(spec).dags
-    name = kblock_rolled_name(spec.am) if name is None else name
-    hooks = replace(DEFAULT_HOOKS, bind_e_bd=_store_r,
-                    contract=_rolled_contract, init_acc=_rolled_init)
+    hooks = replace(DEFAULT_HOOKS, bind_e_bd=bind_e_bd,
+                    contract=contract, init_acc=_rolled_init)
     ctx = KContext.of(spec, dag, name, None, hooks)
     assert ctx.n_shared == shared_doubles(spec.am)
     assert ctx.islot == {i: i for i in range(len(ctx.ps))}
@@ -393,7 +546,7 @@ def build_kblock_rolled_kernel(cls: tuple[int, int, int, int] | Spec, *,
         Note(f"K[a,b] += D[c,d] SUM_p E^ac_p SUM_q [p|q] E^bd_q, K class "
              f"(la,lc|lb,ld) = ({la},{lc}|{lb},{ld}), lp={lp} lq={lq} "
              f"(L={lp + lq}), one batch: kernel_kblock's mapping with E from "
-             "global memory and the contraction rolled (#571)"),
+             + how),
         Note(SORTED_GROUPS),
         Note(NO_DENSITY_KEY),
         Note("launch: gridDim = n_blk, blockDim = (1, warp width)"),
@@ -401,4 +554,4 @@ def build_kblock_rolled_kernel(cls: tuple[int, int, int, int] | Spec, *,
         hooks.shared_decl(ctx),
         If(_c(Fn.LT, blk, Var("n_blk")), tuple(per_blk)),
     )
-    return Kernel(name, _params(spec), body)
+    return Kernel(name, params, body)

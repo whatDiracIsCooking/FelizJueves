@@ -49,6 +49,12 @@ against the walk and the host (no libcint `vk` has an f shell yet, #570).
 Above `tiers.DEVICE_L_MAX` they are `slow` and `high_l`, run by hand
 (`-m "gpu and cuda and high_l"`); they compile in seconds, not hours.
 
+THE DENSE-HERMITE KERNEL (#575): every rolled cell again with `dense=True`,
+MODE 0 `kernel_kblock_rolled.build_kblock_dense_kernel`'s kernel on the
+same upload with its `E` dense and no class tables, held to the same
+bounds, its two runs bit-identical; its `sf` and `spdf` cells beside the
+rolled kernel's.
+
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`): the H2O/STO-3G driver
 compiled where no card is, both kernels; a warning in generated text fails
 it (#92). Without a card the `gpu` tests SKIP: green and empty.
@@ -91,12 +97,14 @@ class Cell:
     tau: float
     decay: bool = False
     rolled: bool = False  # MODE 0 the rolled kernel, kernel_k unbuilt (#571)
+    dense: bool = False  # with rolled: the dense-Hermite kernel (#575)
 
     @property
     def id(self) -> str:
         return (f"{self.case}-tau{self.tau:g}"
                 + ("-decay" if self.decay else "")
-                + ("-rolled" if self.rolled else ""))
+                + ("-dense" if self.dense else "-rolled" if self.rolled
+                   else ""))
 
 
 FAST = (Cell("h2o_sto3g_k", 0.0), Cell("h2o_sto3g_k", 1e-8),
@@ -104,10 +112,16 @@ FAST = (Cell("h2o_sto3g_k", 0.0), Cell("h2o_sto3g_k", 1e-8),
 SLOW = (Cell("h2o_ccpvdz_k", 0.0),)
 ROLLED = tuple(Cell(c.case, c.tau, c.decay, rolled=True) for c in FAST)
 ROLLED_SLOW = tuple(Cell(c.case, c.tau, c.decay, rolled=True) for c in SLOW)
-HIGH_L = (Cell("sf", 0.0, rolled=True), Cell("spdf", 0.0, rolled=True))
-PARAMS = ([pytest.param(c, id=c.id) for c in (*FAST, *ROLLED)]
+DENSE = tuple(Cell(c.case, c.tau, c.decay, rolled=True, dense=True)
+              for c in FAST)
+DENSE_SLOW = tuple(Cell(c.case, c.tau, c.decay, rolled=True, dense=True)
+                   for c in SLOW)
+HIGH_L = (Cell("sf", 0.0, rolled=True), Cell("spdf", 0.0, rolled=True),
+          Cell("sf", 0.0, rolled=True, dense=True),
+          Cell("spdf", 0.0, rolled=True, dense=True))
+PARAMS = ([pytest.param(c, id=c.id) for c in (*FAST, *ROLLED, *DENSE)]
           + [pytest.param(c, id=c.id, marks=pytest.mark.slow)
-             for c in (*SLOW, *ROLLED_SLOW)]
+             for c in (*SLOW, *ROLLED_SLOW, *DENSE_SLOW)]
           + [pytest.param(c, id=c.id, marks=(pytest.mark.slow,
                                              pytest.mark.high_l))
              for c in HIGH_L])
@@ -177,7 +191,8 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
     plan = _plan(cell)
     assert cell.rolled or max(c.L for c in plan) <= DEVICE_L_MAX
     parts = class_binaries(tc, plan, basis, D, backend, workdir,
-                           rolled=cell.rolled, with_k=not cell.rolled)
+                           rolled=cell.rolled, dense=cell.dense,
+                           with_k=not cell.rolled)
     w = _walk(cell)
     Kw = np.array(w.K)
     K0, scale = _host(cell.case)
@@ -190,7 +205,8 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
                                   backend)
         if mode == "kb":
             assert same, "the block kernel's two runs differ: its atomics met"
-        mode = "kbr" if cell.rolled else mode  # the lines' and errors' name
+        mode = ("kbd" if cell.dense else "kbr" if cell.rolled
+                else mode)  # the lines' and errors' name
         K = Ks[0]
         assert np.all(np.isfinite(K))
         rel_w = float(np.max(np.abs(K - Kw)) / np.max(np.abs(Kw)))
@@ -239,9 +255,10 @@ def test_hip_kblock_from_the_launch_plan(cell, request, run_device_binary,
 def _compile_only(backend: str, tc, tmp_path: Path) -> None:
     cell = FAST[0]
     _, basis, _ = _case(cell.case)
-    for rolled in (False, True):
-        w = tmp_path / ("rolled" if rolled else "kb")
-        drv = kb_driver(_plan(cell), basis, backend, w / "gen", rolled=rolled)
+    for rolled, dense in ((False, False), (True, False), (True, True)):
+        w = tmp_path / ("dense" if dense else "rolled" if rolled else "kb")
+        drv = kb_driver(_plan(cell), basis, backend, w / "gen", rolled=rolled,
+                        dense=dense)
         compile_checked(tc, drv, w / "kb_driver")
 
 

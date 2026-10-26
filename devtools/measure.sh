@@ -31,13 +31,14 @@
 #     kblock-split  the split block K kernel's registers and
 #                   spill beside kb, (dd|dd) (#548; a
 #                   compiler, no card)                  FJ_KBLOCK_SPLIT_STORE
-#     kblock-rolled-compile  the rolled block K kernel's
-#                   compile (source, wall, peak RSS,
-#                   registers, spill, stack) at (dd|dd)
-#                   and (ff|ff) beside kb (#571; a
-#                   compiler, no card)                  FJ_KBLOCK_ROLLED_STORE
-#     kblock-rolled the rolled block K kernel against kb,
-#                   (dd|dd) wall-clock (#571)           FJ_KBLOCK_ROLLED_STORE
+#     kblock-rolled-compile  the rolled (kbr) and dense-Hermite
+#                   (kbd) block K kernels' compile (source,
+#                   wall, peak RSS, registers, spill,
+#                   stack) at (dd|dd) and (ff|ff) beside
+#                   kb (#571, #575; a compiler, no card) FJ_KBLOCK_ROLLED_STORE
+#     kblock-rolled kb, kbr and kbd, (dd|dd) wall-clock,
+#                   and kbr against kbd at (ff|ff)
+#                   (#571, #575)                        FJ_KBLOCK_ROLLED_STORE
 #     kblock-rolled-profile  kb_22_22 against kbr_22_22 under
 #                   ncu, one launch each, and the three
 #                   hypotheses read (#574; CUDA only)   FJ_KBLOCK_ROLLED_STORE
@@ -92,8 +93,8 @@ SWEEPS=(
   "kblock|timed|block K kernel vs kernel_k per class (H2O/cc-pVDZ) -> kblock.json"
   "scheme-ab|timed|fused HGP F vs MMD J+K, (ss|ss) (pp|pp), polyglycine -> scheme_ab.json"
   "kblock-split|compile|split block K kernel's registers/spill vs kb, (dd|dd) -> kblock_split.json"
-  "kblock-rolled-compile|compile|rolled block K kernel's compile at (dd|dd), (ff|ff) vs kb (#571) -> kblock_rolled.json"
-  "kblock-rolled|timed|rolled block K kernel vs kb, (dd|dd) wall-clock (#571) -> kblock_rolled.json"
+  "kblock-rolled-compile|compile|kbr and kbd block K kernels' compile at (dd|dd), (ff|ff) vs kb (#571, #575) -> kblock_rolled.json"
+  "kblock-rolled|timed|kb, kbr, kbd at (dd|dd), kbr vs kbd at (ff|ff), wall-clock (#571, #575) -> kblock_rolled.json"
   "kblock-rolled-profile|timed|kb_22_22 vs kbr_22_22 under ncu, CUDA only (#574) -> kblock_rolled.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"

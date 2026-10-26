@@ -1,4 +1,4 @@
-"""The rolled block K kernel against `kb`: compiled at d and f, timed at d (#571).
+"""The rolled block K kernels against `kb`: compiled at d and f, timed at d and f.
 
     devtools/measure.sh kblock-rolled-compile [--backend cuda|hip]   a compiler
     devtools/measure.sh kblock-rolled [--backend cuda|hip]           timed
@@ -29,6 +29,21 @@ issue makes this clock a RECORD, not a gate: `kb` stays the default
 through d; the rolled kernel need only win where nothing compiles now.
 
 THE VERDICT RULE is the store's `declared`, written before any row.
+
+THE DENSE-HERMITE ARM (#575), `kernel_kblock_rolled.build_kblock_dense_kernel`
+(`kbd_*`): the (a,c) and (b,d) rows rolled, p and q unrolled over dense `E`.
+Compiled at `(dd|dd)` and `(ff|ff)` beside the others; timed at `(dd|dd)`
+as a third arm of the same rounds (`kb`, `rolled`, `dense`, interleaved),
+and at `(ff|ff)` against `rolled` alone (`kb_33_33` does not compile) on
+#575's f input -- 16 f shells on the same 4 x 4 grid, one primitive a
+shell: 256 bra and 256 ket records, 256 blocks, `tau = 0` (with two
+primitives a shell, 1,024 a side, one dense launch took over 30 s and the
+run outlasted the driver's 300 s timeout). Its rule is
+the store's `dense_declared` (DENSE_DECLARED), written into the store by
+whichever of the compile or the clock touches it first, before any dense
+row; a store whose declaration differs is refused. The clock rows are keyed
+by (arch, toolchain, am). To add an arm: a builder in `ARM_BUILD`, its
+`class_binaries` flags in `ARM_FLAGS`, and its name in a `CLOCKS` entry.
 """
 
 from __future__ import annotations
@@ -56,6 +71,7 @@ from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri.k_exchange.k import record_bounds
 from felizjueves.eri.k_exchange.kernel_kblock import build_kblock_kernel
 from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
+    build_kblock_dense_kernel,
     build_kblock_rolled_kernel,
 )
 from felizjueves.eri.k_exchange.launch_kblock import kb_launches
@@ -64,12 +80,14 @@ from felizjueves.performance.gate import GPU_BUSY_MAX
 from felizjueves.reference.pq import pq
 
 STORE = "FJ_KBLOCK_ROLLED_STORE"
-ARMS = ("kb", "rolled")
+ARMS = ("kb", "rolled")  # #574's profile pair; the clocks' arms: CLOCKS
 ROUNDS, WARMUP, REPEATS, RETAKES = 3, 3, 7, 3
 SCHEMA = 1
 AM = (2, 2, 2, 2)
 COMPILE_UNITS = (("kb", (2, 2, 2, 2)), ("rolled", (2, 2, 2, 2)),
-                 ("rolled", (3, 3, 3, 3)))
+                 ("rolled", (3, 3, 3, 3)), ("dense", (2, 2, 2, 2)),
+                 ("dense", (3, 3, 3, 3)))
+AM_F = (3, 3, 3, 3)
 COMPILE_TIMEOUT_S = 3600.0
 BAND = 0.05  # the declared rule's band around 1
 
@@ -86,6 +104,26 @@ DECLARED = {
     "expected": "slower: the rolled stages read E and the tables from "
                 "global memory and R from local memory per term",
     "declared": "2026-10-26, before any row",
+}
+
+DENSE_DECLARED = {
+    "issue": 575,
+    "hypothesis": "with the (a,c) and (b,d) rows rolled and p, q unrolled "
+                  "over dense E, every p + q is a compile-time constant: "
+                  "the R array, the hpq / bd_q / ac_p indirection and "
+                  "#574's dependent bd_q -> hpq -> R load chain are gone, "
+                  "at the price of the structural zeros' multiplies; the "
+                  "text grows as n_p n_q, not n_ac n_bd n_p n_q, so (ff|ff) "
+                  "compiles",
+    "rule": "per arch and class: the median over the timed runs of the "
+            "class's events, dense / other for each other arm timed beside "
+            "it (kb and rolled at (dd|dd), rolled at (ff|ff)): 'faster' "
+            "below 0.95, 'slower' above 1.05, else 'neutral'. The form a "
+            "class should use is the fastest arm that compiles, read from "
+            "these medians; a RECORD, not a gate",
+    "expected": "(dd|dd): dense faster than rolled, slower than kb; "
+                "(ff|ff): dense faster than rolled",
+    "declared": "2026-10-26, before any dense row",
 }
 
 KB_FF = {
@@ -143,9 +181,30 @@ def _store_path() -> Path:
     return Path(p)
 
 
+ARM_BUILD = {"kb": build_kblock_kernel, "rolled": build_kblock_rolled_kernel,
+             "dense": build_kblock_dense_kernel}
+ARM_FLAGS = {"kb": {}, "rolled": {"rolled": True},
+             "dense": {"rolled": True, "dense": True}}
+
+
 def _build(arm: str, am):
-    return (build_kblock_rolled_kernel(am) if arm == "rolled"
-            else build_kblock_kernel(am))
+    return ARM_BUILD[arm](am)
+
+
+def _declare_dense(path: Path, store: dict) -> None:
+    """`dense_declared` into the store before any dense row; refuse another."""
+    declared = json.loads(json.dumps(DENSE_DECLARED))
+    if "dense_declared" not in store:
+        store["dense_declared"] = declared
+        path.write_text(json.dumps(store, indent=1) + "\n")
+    assert store["dense_declared"] == declared, (
+        "the store's dense_declared is not DENSE_DECLARED: the dense rows "
+        "would be read under another rule")
+
+
+def _verdict(ratio: float) -> str:
+    return ("faster" if ratio < 1 - BAND else
+            "slower" if ratio > 1 + BAND else "neutral")
 
 
 def _compile(backend: str, kern, workdir: Path) -> dict:
@@ -192,6 +251,7 @@ def _compile_rows(backend: str, request, tmp_path: Path) -> None:
     _toolchain(backend, request)
     b = measured.BACKENDS[backend]
     store = _load(path)
+    _declare_dense(path, store)
     head = {"arch": b.arch.name, "toolchain": b.toolchain(b.compiler()),
             "host": measured.host(),
             "date": datetime.date.today().isoformat()}
@@ -205,30 +265,59 @@ def _compile_rows(backend: str, request, tmp_path: Path) -> None:
               f"stack {r['stack_bytes']}")
 
 
-def _clock(backend: str, request, run_device_binary, tmp_path: Path) -> None:
+def _basis_f() -> tuple[Basis, np.ndarray]:
+    """#575's f input: `_basis`'s grid and density shape with 16 f shells,
+    one primitive each."""
+    ex, co = (0.9,), (1.0,)
+    shells = tuple(Shell(3, (2.0 * (i % 4), 2.0 * (i // 4), 0.3 * (i % 3)),
+                         ex, co) for i in range(16))
+    basis = Basis(shells)
+    n = basis.n_ao
+    D = np.array([[np.exp(-0.05 * abs(i - j)) * (1.0 + 0.1 * ((i * j) % 5))
+                   for j in range(n)] for i in range(n)])
+    return basis, (D + D.T) / 2.0
+
+
+# (am, input, its records a side, its blocks, the arms in round order)
+CLOCKS = {
+    "dd": (AM, _basis, 2304, 256, ("kb", "rolled", "dense")),
+    "ff": (AM_F, _basis_f, 256, 256, ("rolled", "dense")),
+}
+
+
+def _clock(backend: str, request, run_device_binary, tmp_path: Path,
+           which: str = "dd") -> None:
     path = _store_path()
     tc = _toolchain(backend, request)
     b = measured.BACKENDS[backend]
-    basis, D = _basis()
+    am, make, n_rec, n_blk, arms_run = CLOCKS[which]
+    store = _load(path)
+    if "dense" in arms_run:
+        _declare_dense(path, store)
+    basis, D = make()
     plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
-                       tau=0.0, build=build_kblock_kernel)
-    assert [c.am for c in plan] == [AM]
+                       tau=0.0,
+                       build=build_kblock_kernel if "kb" in arms_run else None)
+    assert [c.am for c in plan] == [am]
     (cl,) = plan
-    assert len(cl.bras) == len(cl.kets) == 2304 and len(cl.blocks) == 256
+    assert len(cl.bras) == len(cl.kets) == n_rec and len(cl.blocks) == n_blk
     parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
-                                 backend, tmp_path / arm,
-                                 rolled=arm == "rolled", with_k=False)
-             for arm in ARMS}
-    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
-                          backend)[0][0] for arm in ARMS)
-    rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
-    assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, (
-        f"rolled vs kb {rel:.2e}")
+                                 backend, tmp_path / arm, with_k=False,
+                                 **ARM_FLAGS[arm])
+             for arm in arms_run}
+    Ks = {arm: run_classes(parts[arm], basis, "kb", run_device_binary,
+                           backend)[0][0] for arm in arms_run}
+    ref = Ks[arms_run[0]]
+    rels = {arm: float(np.max(np.abs(Ks[arm] - ref)) / np.max(np.abs(ref)))
+            for arm in arms_run[1:]}
+    assert np.max(np.abs(ref)) > 0.0, "K is zero"
+    for arm, rel in rels.items():
+        assert rel <= ORACLE_TOL, f"{arm} vs {arms_run[0]} {rel:.2e}"
 
-    per: dict[str, list[float]] = {a: [] for a in ARMS}
+    per: dict[str, list[float]] = {a: [] for a in arms_run}
     readings, discarded = [], 0
     for _ in range(ROUNDS):
-        for arm in ARMS:
+        for arm in arms_run:
             for take in range(RETAKES + 1):
                 try:
                     busy, util = gate.wait_quiet(
@@ -255,26 +344,36 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path) -> None:
             (out,) = outs
             per[arm].extend(timings(out)["0"])
 
-    arms = {arm: _stats(per[arm]) for arm in ARMS}
-    ratio = arms["rolled"]["median_ns"] / arms["kb"]["median_ns"]
-    verdict = ("faster" if ratio < 1 - BAND else
-               "slower" if ratio > 1 + BAND else "neutral")
+    arms = {arm: _stats(per[arm]) for arm in arms_run}
+
+    def over(a: str, o: str) -> float:
+        return arms[a]["median_ns"] / arms[o]["median_ns"]
+
     row = {
         "arch": b.arch.name, "toolchain": b.toolchain(b.compiler()),
         "gpu": b.gpu(), "host": measured.host(),
         "date": datetime.date.today().isoformat(),
-        "am": list(AM), "n_ao": basis.n_ao, "n_bra": 2304, "n_ket": 2304,
-        "n_blocks": 256, "tau": 0.0, "rolled_vs_kb_rel": rel,
+        "am": list(am), "n_ao": basis.n_ao, "n_bra": n_rec, "n_ket": n_rec,
+        "n_blocks": n_blk, "tau": 0.0, "reference_arm": arms_run[0],
+        "rel_vs_reference": rels,
         "rounds": ROUNDS, "warmup": WARMUP, "repeats": REPEATS,
-        "gate": readings, "gate_discarded_runs": discarded,
-        "arms": arms, "rolled_over_kb": round(ratio, 4), "verdict": verdict,
+        "gate": readings, "gate_discarded_runs": discarded, "arms": arms,
     }
+    if {"kb", "rolled"} <= set(arms_run):  # #571's rule
+        row["rolled_vs_kb_rel"] = rels["rolled"]
+        row["rolled_over_kb"] = round(over("rolled", "kb"), 4)
+        row["verdict"] = _verdict(over("rolled", "kb"))
+    if "dense" in arms_run:  # #575's rule, DENSE_DECLARED
+        row["dense"] = {
+            o: {"dense_over": round(over("dense", o), 4),
+                "verdict": _verdict(over("dense", o))}
+            for o in arms_run if o != "dense"}
+        row["fastest"] = min(arms_run, key=lambda a: arms[a]["median_ns"])
     store = _load(path)
-    _save(path, store, "clock", row, ("arch", "toolchain"))
-    print(f"\n{backend} {b.arch.name} (dd|dd): kb "
-          f"{arms['kb']['median_ns'] / 1e6:.3f} ms, rolled "
-          f"{arms['rolled']['median_ns'] / 1e6:.3f} ms; rolled/kb "
-          f"{ratio:.3f} -> {verdict}; -> {path}")
+    _save(path, store, "clock", row, ("arch", "toolchain", "am"))
+    print(f"\n{backend} {b.arch.name} {am}: " + ", ".join(
+        f"{a} {arms[a]['median_ns'] / 1e6:.3f} ms" for a in arms_run)
+        + f"; {json.dumps(row.get('dense'))}; -> {path}")
 
 
 @pytest.mark.cuda
@@ -299,6 +398,21 @@ def test_cuda_kblock_rolled_clock(request, run_device_binary,
 def test_hip_kblock_rolled_clock(request, run_device_binary,
                                  tmp_path) -> None:
     _clock("hip", request, run_device_binary, tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_rolled_clock_ff(request, run_device_binary,
+                                     tmp_path) -> None:
+    """#575: `(ff|ff)`, the dense-Hermite kernel against the rolled one."""
+    _clock("cuda", request, run_device_binary, tmp_path, "ff")
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_kblock_rolled_clock_ff(request, run_device_binary,
+                                    tmp_path) -> None:
+    _clock("hip", request, run_device_binary, tmp_path, "ff")
 
 
 # --- THE PROFILE (#574): kb_22_22 against kbr_22_22 under ncu ---------------
