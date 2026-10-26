@@ -95,6 +95,11 @@ FAST: list[Am] = [am for am in itertools.product(range(3), repeat=4)
 DEFERRED: list[Am] = [(1, 1, 1, 0), (1, 0, 1, 1), (1, 1, 1, 1),
                       (2, 0, 0, 2), (2, 2, 0, 0), (0, 0, 2, 2), (2, 1, 1, 0),
                       (2, 1, 2, 1), (2, 2, 1, 1), (2, 2, 2, 2)]
+# f shells (#569: E held factored, so an (f, f) pair's E fits): an f on each
+# slot, each side's (f, f) pair, and (ff|ff) itself. `slow` (L > 4).
+F_CLASSES: list[Am] = [(3, 0, 0, 0), (0, 3, 0, 0), (0, 0, 3, 0),
+                       (0, 0, 0, 3), (3, 3, 0, 0), (0, 0, 3, 3),
+                       (3, 2, 1, 3), (3, 3, 3, 3)]
 
 
 def _id(am: Am) -> str:
@@ -104,7 +109,7 @@ def _id(am: Am) -> str:
 
 CLASSES = ([pytest.param(am, id=_id(am)) for am in FAST]
            + [pytest.param(am, id=_id(am), marks=pytest.mark.slow)
-              for am in DEFERRED])
+              for am in DEFERRED + F_CLASSES])
 
 
 def test_the_fast_set_is_every_class_with_l_at_most_2() -> None:
@@ -124,7 +129,8 @@ CENTRES = {"A": (0.0, 0.0, 0.0), "C": (0.3, -0.2, 0.9),
            "E": (0.7, -0.6, -0.4)}
 PRIMS = {0: ((1.3, 0.4), (0.6, 0.5)),
          1: ((0.9, 0.3), (0.7, -0.4)),
-         2: ((0.8, 0.25), (0.5, 0.6))}
+         2: ((0.8, 0.25), (0.5, 0.6)),
+         3: ((0.7, 0.3), (0.45, 0.55))}
 
 
 def _shell(l: int, at: str, *, contracted: bool = True) -> Shell:  # noqa: E741
@@ -399,8 +405,10 @@ def _counts(am: Am) -> dict[str, int]:
 
 @pytest.mark.parametrize("am", [pytest.param(a, id=_id(a)) for a in FAST])
 def test_the_decl_set_holds_no_materialised_v(am: Am) -> None:
-    """The arrays are exactly `E^ac` and `E^bd` (local, one bra / one ket
-    record), the prelude's `boys` (local, F_0..F_L, #301) and the shared
+    """The arrays are exactly the factored `E^ac` and `E^bd`, three axis
+    tables per side (local, one bra / one ket record; #569: never the
+    composed `n_ac x n_p` / `n_bd x n_q` blocks), the prelude's `boys`
+    (local, F_0..F_L, #301) and the shared
     `I` + `K` column; there is no array whose extent
     is a product of the two Cartesian pair-block sizes (`V`, `n_ac x n_bd`)
     nor an `I` over the `(b,d)` rows (`n_p x n_bd`), and no `V` at all."""
@@ -409,8 +417,8 @@ def test_the_decl_set_holds_no_materialised_v(am: Am) -> None:
     decls = [s for s in walk(kern.body) if isinstance(s, Decl)]
     arrays = {(s.name, s.shape, s.space) for s in decls if s.shape}
     assert arrays == {
-        ("Eac", (Lit(c["n_ac"]), Lit(c["n_p"])), Space.LOCAL),
-        ("Ebd", (Lit(c["n_bd"]), Lit(c["n_q"])), Space.LOCAL),
+        ("Xac", (Lit(ef.axes_size(am[0], am[1])),), Space.LOCAL),
+        ("Xbd", (Lit(ef.axes_size(am[2], am[3])),), Space.LOCAL),
         (KSH, (Lit(c["n_p"] + c["n_ab"]), Call(Fn.BLOCK_DIM_Y, ())),
          Space.SHARED),
         ("boys", (Lit(sum(am) + 1),), Space.LOCAL),
@@ -421,7 +429,8 @@ def test_the_decl_set_holds_no_materialised_v(am: Am) -> None:
 
 @pytest.mark.parametrize("am", [pytest.param(a, id=_id(a)) for a in FAST])
 def test_two_undressed_fragments_and_nothing_vendor_specific(am: Am) -> None:
-    """Exactly two `Inline`s, the undressed blocks `(la, lc)` and `(lb, ld)`;
+    """Exactly two `Inline`s, the undressed axis tables `(la, lc)` and
+    `(lb, ld)` (#569: factored, never the composed blocks);
     no float literal that could be a dressing, a weight or a coefficient
     (only the accumulators' `0.0`, `1/2zeta`'s `0.5` and the recurrence's
     `-2` and `2/sqrt(pi)`, which `Target.J` has too); no `Raw`, no atomic;
@@ -430,7 +439,7 @@ def test_two_undressed_fragments_and_nothing_vendor_specific(am: Am) -> None:
     kern = build_k_kernel(am)
     stmts = list(walk(kern.body))
     inl = [s.fragment for s in stmts if isinstance(s, Inline)]
-    assert inl == [ef.block_fragment(la, lc), ef.block_fragment(lb, ld)]
+    assert inl == [ef.axes_fragment(la, lc), ef.axes_fragment(lb, ld)]
     lits = {e.value for s in stmts for root in _exprs_of(s)
             if root is not None for e in _subexprs(root)
             if isinstance(e, Lit) and isinstance(e.value, float)}

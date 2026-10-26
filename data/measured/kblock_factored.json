@@ -1,0 +1,100 @@
+{
+ "schema": 1,
+ "issue": 569,
+ "about": "OPT-IN, AND RUN ALONE: each test skips unless FJ_KBLOCK_FACTORED_STORE names\nthe store (measure.sh sets it to config.sh's MEASURE_KBLOCK_FACTORED_STORE,\nthe tracked data/measured/kblock_factored.json). It writes one row per\n(arch, toolchain).",
+ "declared": {
+  "issue": 569,
+  "hypothesis": "holding E factored (three axis tables per side, each E_t formed at its read) removes the per-thread E blocks that keep (f, f)-pair K classes off the RTX 3080, at a cost of two multiplies per stage-2 read that may slow (dd|dd)",
+  "rule": "per arch: the median over the timed runs of the (dd|dd) class's events, factored / composed. 'accepted' when <= 1.05, 'regressed' when > 1.05; a regression is reported as the trade the f classes pay for, never hidden",
+  "expected": "neutral within the 5% band: the compilers already hoist the composed E^ac out of the ket loop (stack frames within 4% of each other at (dd|dd) and (ff|ss) before any row)",
+  "declared": "2026-10-26, before any row"
+ },
+ "rows": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "0f31ccc23ef3 (container)",
+   "date": "2026-10-26",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "composed",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "factored",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "composed",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "factored",
+     "cpu_busy_permille": 7,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "composed",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "factored",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "composed": {
+     "median_ns": 1060930542,
+     "q1_ns": 1060727783,
+     "q3_ns": 1062126587,
+     "n": 21,
+     "registers": 255,
+     "spill_store": 14732,
+     "spill_load": 117880,
+     "source_bytes": 1665471,
+     "compile_s": 61.6
+    },
+    "factored": {
+     "median_ns": 1042453491,
+     "q1_ns": 1041491943,
+     "q3_ns": 1043119141,
+     "n": 21,
+     "registers": 255,
+     "spill_store": 15284,
+     "spill_load": 116796,
+     "source_bytes": 1766496,
+     "compile_s": 72.5
+    }
+   },
+   "factored_over_composed": 0.9826,
+   "verdict": "accepted"
+  }
+ ]
+}

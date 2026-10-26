@@ -31,6 +31,8 @@
 #     kblock-split  the split block K kernel's registers and
 #                   spill beside kb, (dd|dd) (#548; a
 #                   compiler, no card)                  FJ_KBLOCK_SPLIT_STORE
+#     kblock-factored  the block K kernel with E factored
+#                   against E composed, (dd|dd) (#569)  FJ_KBLOCK_FACTORED_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -82,6 +84,7 @@ SWEEPS=(
   "kblock|timed|block K kernel vs kernel_k per class (H2O/cc-pVDZ) -> kblock.json"
   "scheme-ab|timed|fused HGP F vs MMD J+K, (ss|ss) (pp|pp), polyglycine -> scheme_ab.json"
   "kblock-split|compile|split block K kernel's registers/spill vs kb, (dd|dd) -> kblock_split.json"
+  "kblock-factored|timed|kb with E factored vs composed, (dd|dd) (#569) -> kblock_factored.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -159,6 +162,8 @@ case $sweep in
                 envs=("FJ_SCHEME_AB_STORE=${FJ_SCHEME_AB_STORE:-$MEASURE_SCHEME_AB_STORE}") ;;
   kblock-split) files=("$M/measure_kblock_split.py"); select=(-k kblock_split_compile)
                 envs=("FJ_KBLOCK_SPLIT_STORE=${FJ_KBLOCK_SPLIT_STORE:-$MEASURE_KBLOCK_SPLIT_STORE}") ;;
+  kblock-factored) files=("$M/measure_kblock_factored.py"); select=(-k kblock_factored_clock)
+                envs=("FJ_KBLOCK_FACTORED_STORE=${FJ_KBLOCK_FACTORED_STORE:-$MEASURE_KBLOCK_FACTORED_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
                 select=(-k "not record_ceilings") ;;

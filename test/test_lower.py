@@ -648,7 +648,11 @@ MMD_PINS = {
     "dq_2_2": (39, 0, 552), "dq_3_3": (88, 495, 2430),
     "jab_00": (5, 0, 10), "jab_11": (13, 0, 43), "jab_22": (40, 0, 151),
     "jab_33": (104, 593, 407),
-    "k_10_10": (21, 0, 85),
+    # #569, a deliberate move: K holds E factored, so each stage-2 read forms
+    # (E_x E_y) E_z from the axis table and each stage-1 row its dressed
+    # s_bd E_q as a local, values in this model where the composed block's
+    # reads were array loads outside it (21, 0, 85 -> 22, 0, 91)
+    "k_10_10": (22, 0, 91),
 }
 
 

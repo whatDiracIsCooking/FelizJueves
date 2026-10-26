@@ -204,6 +204,49 @@ def test_the_block_fragment_is_e_block(cls) -> None:
         assert np.array_equal(got[~absent], want[~absent])  # bitwise
 
 
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_axes_fragment_products_are_the_block_bitwise(cls) -> None:
+    """#569: the factored `E`. Every slot written once, every entry the axis
+    recurrence's; `(E_x E_y) E_z` formed from the table, at every entry the
+    block writes, is the block's value bit for bit."""
+    la, lb = cls
+    frag = ef.axes_fragment(la, lb)
+    n = ef.axes_size(la, lb)
+    assert n == len(ef.axes_entries(la, lb)) == 3 * sum(
+        i + j + 1 for i in range(la + 1) for j in range(lb + 1))
+    assert sorted(ef.axes_slot(la, lb, *e) for e in ef.axes_entries(la, lb)) \
+        == list(range(n))
+    rng = random.Random(569 + 10 * la + lb)
+    absent = _absent(la, lb)
+    for _ in range(3):
+        _, _, zeta, P, A, B = _geometry(rng)
+        tab = interpret_fragment(frag, EA=np.full(n, np.nan),
+                                 **_scalars(la, lb, zeta, P, A, B))["EA"]
+        assert not np.any(np.isnan(tab))
+        for d, i, j, t in ef.axes_entries(la, lb):
+            pa, pb = P[d] - A[d], P[d] - B[d]
+            assert tab[ef.axes_slot(la, lb, d, i, j, t)] == e_axis(
+                i, j, zeta, pa, pb)[t]
+        block = _run_block(la, lb, zeta, P, A, B)
+        for r, (a, b) in enumerate(ef.block_rows(la, lb)):
+            for c, t in enumerate(hermite_order(la + lb)):
+                if absent[r, c]:
+                    continue
+                prod = ef.axes_product(la, lb, "EA", a, b, t)
+                got = interpret_fragment(ir.Fragment(
+                    "p", ("EA", "out"), (ir.Assign(ir.Index("out", (Lit(0),)),
+                                                   prod),)),
+                    EA=tab, out=np.zeros(1))["out"][0]
+                assert got == block[r, c]  # bitwise
+
+
+def test_the_axes_fragment_refuses_a_slot_out_of_range() -> None:
+    with pytest.raises(ValueError):
+        ef.axes_slot(1, 1, 0, 1, 1, 3)
+    with pytest.raises(ValueError):
+        ef.axes_slot(1, 1, 3, 0, 0, 0)
+
+
 def test_the_block_layout_is_the_pair_records() -> None:
     assert all(ef.cartesians(l) == cartesians(l) for l in range(6))  # noqa: E741
     for la, lb in CLASSES:

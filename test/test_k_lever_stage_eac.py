@@ -160,13 +160,13 @@ def test_the_staged_block_is_the_declared_footprint(am: Am) -> None:
     kern = build_k_kernel(lever_spec(am))
     lit = build_k_kernel(am)
     eacs = _decl(kern, stage_eac.ARRAY)
-    assert eacs.space is Space.SHARED and eacs.type is _decl(lit, "Eac").type
+    assert eacs.space is Space.SHARED and eacs.type is _decl(lit, "Xac").type
     shape = tuple(d.value for d in eacs.shape)  # static: literal extents
     assert shape == (ncart(la) * ncart(lc), _n_p(la + lc))
     assert shape[0] * shape[1] == stage_eac.staged_doubles(am)
     assert stage_eac.staged_bytes(am) == 8 * stage_eac.staged_doubles(am)
     # no local E^ac left; the dynamic Ksh is the literal one
-    assert not any(isinstance(s, Decl) and s.name == "Eac"
+    assert not any(isinstance(s, Decl) and s.name in ("Eac", "Xac")
                    for s in walk(kern.body))
     assert _decl(kern, KSH) == _decl(lit, KSH)
     # declared once per bra record: inside the `bra < n_bra` guard, not in

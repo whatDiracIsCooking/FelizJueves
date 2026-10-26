@@ -124,7 +124,12 @@ from felizjueves.eri.k_exchange.kernel_k import (
 )
 from felizjueves.eri.k_exchange.kernel_k import shared_bytes as _k_shared_bytes
 from felizjueves.eri.k_exchange.kernel_k import shared_doubles as _k_shared_doubles
-from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KET, KContext
+from felizjueves.eri.k_exchange.levers.seams import (
+    COMPOSED_E,
+    DEFAULT_HOOKS,
+    KET,
+    KContext,
+)
 from felizjueves.eri.k_exchange.levers.seams import params as k_params
 from felizjueves.ir import (
     AtomicAdd,
@@ -271,16 +276,21 @@ def _write_back(ctx: KContext) -> tuple[Stmt, ...]:
 
 
 def build_kblock_kernel(cls: tuple[int, int, int, int] | Spec, *,
-                        name: str | None = None) -> Kernel:
+                        name: str | None = None,
+                        composed_e: bool = False) -> Kernel:
     """The exchange kernel of one K class, opt-UM's mapping (module
     docstring). `cls` is `(la, lc, lb, ld)`, the Hermite pairing, bra first,
-    or a one-batch, lever-free `Target.K` `Spec`."""
+    or a one-batch, lever-free `Target.K` `Spec`.
+
+    `composed_e=True` builds the pre-#569 kernel, `E` held as the composed
+    blocks (`seams.COMPOSED_E`): the factored form's control arm, the same
+    values bit for bit; not a lever, never the default."""
     spec = spec_of(cls)
     la, lc, lb, ld = spec.am
     lp, lq = split(spec)
     (dag,) = builder_plan(spec).dags
     name = kblock_name(spec.am) if name is None else name
-    hooks = DEFAULT_HOOKS
+    hooks = COMPOSED_E if composed_e else DEFAULT_HOOKS
     ctx = KContext.of(spec, dag, name, None, hooks)
     assert ctx.n_shared == shared_doubles(spec.am)
     blk = Var("blk")

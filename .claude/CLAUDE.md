@@ -192,6 +192,37 @@ row: `(dd|dd)` only; on `sm_86` `kb` spills 14,732 B, the worst column kernel
 `gfx1200` 2,204, 1,659 and 715 spilled VGPRs (all 192 VGPRs): a spill win
 on both, never a clock claim. Nothing is timed; the launch plan over the sets
 and the stack's host API are follow-ups.
+**Since #569 every MMD K kernel holds `E` factored**: `seams`' default
+`bind_e_ac` / `bind_e_bd` inline `e_fragment.axes_fragment` (three axis
+tables per side, `Xac` / `Xbd`, 336 doubles a side at `(f, f)`, against the
+composed block's 8,400) and `e_ac` / `e_bd` form `(E_x E_y) E_z` where it
+is read (`axes_product`, the block's association), and `ket_stage` forms
+each `(b,d)` row's `s_bd E_q` once (`wq{row}_{j}`). Every value is the
+composed block's bit for bit, so every interpreted K test stayed bitwise,
+now through `(ff|ff)` (`test_kernel_k.py`'s and `test_kernel_kblock.py`'s
+f classes and the s + f basis against `walk_kb` and the host, all `slow`);
+`kernel_kblock` and `kernel_kblock_split` take it through the default hooks,
+`kmixed-de` and `stage-eac` keep their composed block. The pre-#569 form is
+`seams.COMPOSED_E` (`build_kblock_kernel(composed_e=True)`), the old text
+byte for byte (`test_k_seams.py` pins both). The finding: **local memory
+was not what bounds f on these compilers** -- both promote the composed
+blocks, so the stack frame tracks the live nonzero `E`, not the declared
+array, and factoring moved it by at most 4 % (`sm_86` `kb`: `(dd|dd)`
+12,528 -> 13,048 B, `(ff|ss)` 21,072 -> 21,544, `(ff|ps)` 19,800 ->
+20,704; `gfx1200` scratch 5,812 -> 5,916 B/lane at `(dd|dd)`, compiled
+only) -- and **the compile is**: `kb_33_33` (22.2 MB composed, 24.4 MB
+factored) was still in `cicc` after 2.7 h either way (peak RSS 2.3 GB,
+never reached `ptxas`), so whether `(ff|ff)` launches is unknown and a
+contraction that is not fully unrolled is the follow-up. `devtools/measure.sh
+kblock-factored` timed `(dd|dd)` on the issue's 16-centre d basis, its rule
+declared first (`data/measured/kblock_factored.json`): on the RTX 3080
+factored / composed 0.983 (1,042 against 1,061 ms), **accepted**. On the
+RTX 3080 the kernel tier passed with the factored text (402 passed, and
+`--full` 661 passed, no skip; every K device cell there is L <= 8); the f
+cells of `test_kblock_ondevice.py` (`spdf` / `sf`, `slow` + `high_l`, cut
+to L <= 9 or whole) are written and **not yet run to completion**, so no f
+class has run on a card. **The RX 9060 XT was not run** (the card went down
+mid-session; skipped by the user's decision, attached to #431).
 **Since milestone 12 the repo has a second ERI engine and the first `F`**
 (`docs/implementation/hgp_fock.md` is the one place with the detail): the
 Head-Gordon–Pople recurrence of `[Fock]` §3.1 and the **fused** Fock kernel

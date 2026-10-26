@@ -93,7 +93,7 @@ class KBClass:
     n_blk: int
     n_ab: int
     kb: Kernel
-    k: Kernel
+    k: Kernel | None  # None: built with_k=False (#569)
     kbs: tuple[Kernel, ...]  # the split set (#548); () without split=
     segs: tuple[tuple[int, int, int], ...]  # (b, ket0, ket1) per b group
     scratch: tuple[int, ...]  # offset of each segment's scratch block
@@ -149,12 +149,15 @@ def _call(ns: str, kern: Kernel, args: list[str], grid: str, shared: int
 
 
 def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
-              workdir: Path, *, split: str | None = None) -> KBDriver:
+              workdir: Path, *, split: str | None = None,
+              with_k: bool = True) -> KBDriver:
     """Emit both kernels of every class of `plan` (whose `kernel` is the block
     kernel; `kernel_k`'s is built here) and the `main()` that launches either
     mapping on one upload (module docstring). With `split=` a granularity of
     `kernel_kblock_split` (#548), each class's split set (`R = 1`) too, and
-    MODE 2 launches it on the block kernel's arguments into `K_mn`."""
+    MODE 2 launches it on the block kernel's arguments into `K_mn`.
+    `with_k=False` (#569) leaves `kernel_k` out -- MODE 1 then refuses --
+    so a class above (dd|dd) compiles one kernel, not two."""
     emit, arch, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     n_sh = len(basis.shells)
@@ -168,12 +171,13 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
             raise ValueError(f"K class {cl.am} carries no kernel: plan it "
                              "with build=")
         kb = cl.kernel
-        k = k_accumulating(build_k_kernel(cl.am))
+        k = k_accumulating(build_k_kernel(cl.am)) if with_k else None
         assert tuple(p.name for p in kb.params) == KB_PARAMS
-        assert tuple(p.name for p in k.params) == K_PARAMS
+        assert k is None or tuple(p.name for p in k.params) == K_PARAMS
         kbs = (() if split is None else
                build_kblock_split_kernels(cl.am, split, lanes=arch.wavefront))
-        for ns, kern in ((f"fj_kb{c}", kb), (f"fj_k{c}", k),
+        for ns, kern in ((f"fj_kb{c}", kb),
+                         *(((f"fj_k{c}", k),) if with_k else ()),
                          *((f"fj_kbs{c}_{i}", x) for i, x in enumerate(kbs))):
             path = workdir / f"{ns}_{kern.name}.{ext}"
             path.write_text(emit(kern, arch))
@@ -225,6 +229,8 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                                    str(len(cl.blocks)),
                                    split_shared_doubles(cl.am, acc, 1))
                              for i, kern in enumerate(kbs)))
+        if not with_k:
+            continue
         calls = [f"        // class ({la}{lc}|{lb}{ld}): {len(segs)} b shells\n"
                  f"        CHECK(devEventRecord(ev[{c}]));"]
         for (_, s, t), off in zip(segs, offs, strict=True):
@@ -244,10 +250,14 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
         ci=", ".join(str(x.n_bra + x.n_ket + BLK_INTS * x.n_blk)
                      for x in classes),
         ne=", ".join(str(drv.dcd_doubles(*x)) for x in dcd_cls),
-        vram_kernels=", ".join(f"(const void*)fj_kb{c}::{x.kb.name}, "
-                               f"(const void*)fj_k{c}::{x.k.name}"
-                               for c, x in enumerate(classes)),
-        kb_launches="\n".join(kb_body), k_launches="\n".join(k_body),
+        vram_kernels=", ".join(
+            f"(const void*)fj_kb{c}::{x.kb.name}"
+            + (f", (const void*)fj_k{c}::{x.k.name}" if with_k else "")
+            for c, x in enumerate(classes)),
+        kb_launches="\n".join(kb_body),
+        k_launches=("\n".join(k_body) if with_k else
+                    '            std::fprintf(stderr, "mode 1: kernel_k not '
+                    'built (with_k=False)\\n");\n            return 1;'),
         n_modes=3 if split is not None else 2,
         kbs_launches="\n".join(kbs_body))
     path = workdir / f"kb_driver.{ext}"
@@ -385,7 +395,9 @@ class ClassBinary:
 
 def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
                    backend: str, workdir: Path, *, jobs: int | None = None,
-                   split: str | None = None) -> list[ClassBinary]:
+                   split: str | None = None,
+                   with_k: bool = True,
+                   timeout: float = 1800) -> list[ClassBinary]:
     """One driver PER CLASS (`plan` cut to that one class), compiled in
     parallel, each staged. A whole molecule's 162 kernels in one translation
     unit leave one compiler thread at it for most of an hour; one class per
@@ -397,8 +409,9 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
     def one(c: int) -> ClassBinary:
         sub = replace(plan, classes=(plan.classes[c],))
         w = workdir / f"c{c}"
-        drv = kb_driver(sub, basis, backend, w / "gen", split=split)
-        binary = compile_checked(tc, drv, w / "kb_driver")
+        drv = kb_driver(sub, basis, backend, w / "gen", split=split,
+                        with_k=with_k)
+        binary = compile_checked(tc, drv, w / "kb_driver", timeout=timeout)
         staged = w / "in.bin"
         kb_stage(drv, sub, basis, D).tofile(staged)
         return ClassBinary(sub, drv, binary, staged)

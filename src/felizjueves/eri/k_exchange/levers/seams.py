@@ -38,6 +38,16 @@ THE HOOKS, and the lever each was cut for (milestone 13, lane SK):
                               form only; #345's lane-parallel atomics). Never
                               called for the one-batch kernel
 
+SINCE #569 THE DEFAULTS HOLD `E` FACTORED: `bind_e_ac` / `bind_e_bd` inline
+`e_fragment.axes_fragment` into the three-axis tables `Xac` / `Xbd`, and
+`e_ac` / `e_bd` form `(E_x E_y) E_z` at each read; `ket_stage` forms a row's
+dressed `s_bd E^bd_q` once (`wq_name`). Every value is the composed block's
+bit for bit, so the kernels' `K` did not move; their text did. The composed
+defaults are kept under `*_block` names and `ket_stage_inline`, composed as
+`COMPOSED_E` (the pre-#569 text byte for byte, test/test_k_seams.py), for
+the A/B and for a lever that stages or narrows the whole block (`stage-eac`,
+`kmixed-de` read `ctx.frag_ac` / `frag_bd`).
+
 A hook receives the `KContext`, which carries everything the skeleton derived
 from `(spec, dag)` -- the term lists `s1` / `s2`, the shared slots, the
 fragments -- and `ctx.hooks`, so a hook calls its siblings through the
@@ -56,6 +66,7 @@ backend or a device; the `Kernel` it helps build is arch-neutral.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -88,6 +99,7 @@ from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Spec
 
 __all__ = [
+    "COMPOSED_E",
     "DEFAULT_HOOKS",
     "EmptyKernel",
     "KET",
@@ -149,6 +161,16 @@ def bindings(frag, zeta: Expr, pa: str, pb: str, at: Expr
     return out
 
 
+@functools.cache
+def _axes(la: int, lb: int):
+    return ef.axes_fragment(la, lb)
+
+
+@functools.cache
+def _block(la: int, lb: int):
+    return ef.block_fragment(la, lb)
+
+
 # ---------------------------------------------------------------------------
 # The context: what the skeleton derives from (spec, dag), once
 # ---------------------------------------------------------------------------
@@ -182,8 +204,6 @@ class KContext:
     qs: tuple
     rows_ac: tuple
     rows_bd: tuple
-    frag_ac: object
-    frag_bd: object
     s1: dict
     s2: dict
     i_rows: tuple[int, ...]
@@ -237,10 +257,33 @@ class KContext:
             spec=spec, dag=dag, name=name, head=head, hooks=hooks,
             order=tuple(schedule(dag)), ps=tuple(ps), qs=tuple(qs),
             rows_ac=tuple(rows_ac), rows_bd=tuple(rows_bd),
-            frag_ac=ef.block_fragment(la, lc), frag_bd=ef.block_fragment(lb, ld),
             s1=s1, s2=s2, i_rows=i_rows, k_outs=k_outs,
             islot={i: n for n, i in enumerate(i_rows)},
             kslot={s: n_i + n for n, s in enumerate(k_outs)})
+
+    # --- the E fragments ----------------------------------------------------
+    @property
+    def ax_ac(self):
+        """`e_fragment.axes_fragment(la, lc)`: the bra's three axis tables,
+        the factored `E^ac` the default hooks hold (#569)."""
+        return _axes(*self.spec.am[:2])
+
+    @property
+    def ax_bd(self):
+        """`e_fragment.axes_fragment(lb, ld)`: the ket's."""
+        return _axes(*self.spec.am[2:])
+
+    @property
+    def frag_ac(self):
+        """`e_fragment.block_fragment(la, lc)`: the COMPOSED `E^ac` block,
+        for a lever that stages or narrows the whole block (`stage-eac`,
+        `kmixed-de`); the default hooks do not read it (#569)."""
+        return _block(*self.spec.am[:2])
+
+    @property
+    def frag_bd(self):
+        """`e_fragment.block_fragment(lb, ld)`: the composed `E^bd`."""
+        return _block(*self.spec.am[2:])
 
     # --- the class's shapes -------------------------------------------------
     @property
@@ -303,7 +346,67 @@ def shared_decl(ctx: KContext) -> Stmt:
                 Space.SHARED)
 
 
+XAC, XBD = "Xac", "Xbd"  # the factored E: each side's three axis tables
+
+FACTORED_E = (
+    "E is held FACTORED (#569): three axis tables per side, Xac[{n_ac}] and "
+    "Xbd[{n_bd}] doubles (e_fragment.axes_fragment), and each E_t = (E_x "
+    "E_y) E_z formed where it is read, the block fragment's association, so "
+    "every value is the composed block's bit for bit. The composed blocks "
+    "Eac[{r_ac}][{c_ac}] and Ebd[{r_bd}][{c_bd}] are never held")
+
+
 def bind_e_ac(ctx: KContext) -> tuple[Stmt, ...]:
+    """The bra's three axis tables, the local `Xac[axes_size(la, lc)]`, from
+    `e_fragment.axes_fragment` inlined once per bra (#569)."""
+    la, lc, lb, ld = ctx.spec.am
+    return (
+        Note(FACTORED_E.format(
+            n_ac=ef.axes_size(la, lc), n_bd=ef.axes_size(lb, ld),
+            r_ac=len(ctx.rows_ac), c_ac=len(ctx.ps),
+            r_bd=len(ctx.rows_bd), c_bd=len(ctx.qs))),
+        Note("the undressed E^ac axis tables of this bra record, once: "
+             "e_fragment.axes_fragment(la, lc), inlined; s_ac is the host's"),
+        Decl(XAC, Scalar.F64, (Lit(ef.axes_size(la, lc)),)),
+        Inline(ctx.ax_ac, {**bindings(ctx.ax_ac, Var("ze"), "XPA", "XPC",
+                                      ctx.bra),
+                           ef.AXES_ARRAY: Var(XAC)}),
+    )
+
+
+def e_ac(ctx: KContext, rac: int, i: int) -> Expr:
+    """`E^ac_p` of row `rac`, `p = ps[i]`, formed from `Xac` at its read."""
+    la, lc = ctx.spec.am[:2]
+    a, c = ctx.rows_ac[rac]
+    return ef.axes_product(la, lc, XAC, a, c, ctx.ps[i])
+
+
+def bind_e_bd(ctx: KContext) -> tuple[Stmt, ...]:
+    """The ket's three axis tables, the local `Xbd[axes_size(lb, ld)]`, from
+    `e_fragment.axes_fragment` inlined once per ket (#569)."""
+    lb, ld = ctx.spec.am[2:]
+    return (
+        Note("the undressed E^bd axis tables of this ket record: "
+             "e_fragment.axes_fragment(lb, ld), inlined; s_bd is the host's"),
+        Decl(XBD, Scalar.F64, (Lit(ef.axes_size(lb, ld)),)),
+        Inline(ctx.ax_bd, {**bindings(ctx.ax_bd, Var("et"), "XQB", "XQD",
+                                      Var(KET)),
+                           ef.AXES_ARRAY: Var(XBD)}),
+    )
+
+
+def e_bd(ctx: KContext, rbd: int, j: int) -> Expr:
+    """`E^bd_q` of row `rbd`, `q = qs[j]`, formed from `Xbd` at its read."""
+    lb, ld = ctx.spec.am[2:]
+    b, d = ctx.rows_bd[rbd]
+    return ef.axes_product(lb, ld, XBD, b, d, ctx.qs[j])
+
+
+# The COMPOSED form, the defaults before #569: the whole undressed block per
+# record in a local array, read by index. Kept for the A/B (`COMPOSED_E`).
+
+
+def bind_e_ac_block(ctx: KContext) -> tuple[Stmt, ...]:
     """The local `Eac[n_ac, n_p]`, from the fragment inlined once per bra."""
     return (
         Note("the undressed E^ac block of this bra record, once: "
@@ -315,11 +418,11 @@ def bind_e_ac(ctx: KContext) -> tuple[Stmt, ...]:
     )
 
 
-def e_ac(ctx: KContext, rac: int, i: int) -> Expr:
+def e_ac_block(ctx: KContext, rac: int, i: int) -> Expr:
     return Index("Eac", (Lit(rac), Lit(i)))
 
 
-def bind_e_bd(ctx: KContext) -> tuple[Stmt, ...]:
+def bind_e_bd_block(ctx: KContext) -> tuple[Stmt, ...]:
     """The local `Ebd[n_bd, n_q]`, from the fragment inlined once per ket."""
     return (
         Note("the undressed E^bd block of this ket record: "
@@ -331,7 +434,7 @@ def bind_e_bd(ctx: KContext) -> tuple[Stmt, ...]:
     )
 
 
-def e_bd(ctx: KContext, rbd: int, j: int) -> Expr:
+def e_bd_block(ctx: KContext, rbd: int, j: int) -> Expr:
     return Index("Ebd", (Lit(rbd), Lit(j)))
 
 
@@ -350,12 +453,44 @@ def contract(ctx: KContext) -> tuple[Stmt, ...]:
     return tuple(out)
 
 
+def wq_name(rbd: int, j: int) -> str:
+    """The local holding row `rbd`'s dressed `s_bd E^bd_q`, `q = qs[j]`."""
+    return f"wq{rbd}_{j}"
+
+
 def ket_stage(ctx: KContext, rbd: int) -> tuple[Stmt, ...]:
-    """Stage 1: `I[p]`, a left fold over `q` from `+0.0`, into `Ksh`."""
-    out: list[Stmt] = []
+    """Stage 1: `I[p]`, a left fold over `q` from `+0.0`, into `Ksh`.
+
+    The row's dressed `s_bd E^bd_q` are formed ONCE per row, before its
+    folds (#569: one local `wq{rbd}_{j}` per `q` the row reads), and each
+    term is `[p+q]^(0) * wq` -- the value `[p+q]^(0) * (s_bd * E^bd_q)` the
+    folds read before, bit for bit, without re-forming the product for
+    every `p`."""
+    used = sorted({j for i in range(len(ctx.ps)) if (rbd, i) in ctx.s1
+                   for j, _ in ctx.s1[rbd, i]})
+    out: list[Stmt] = [
+        Decl(wq_name(rbd, j), Scalar.F64, init=_c(
+            Fn.MUL, Var("sq"), ctx.hooks.e_bd(ctx, rbd, j)))
+        for j in used]
     for i, p in enumerate(ctx.ps):
         if (rbd, i) not in ctx.s1:
             continue  # I[p] is structurally zero in this batch: no slot
+        acc: Expr = Lit(0.0)
+        for j, q in ctx.s1[rbd, i]:
+            term = _c(Fn.MUL, Var(node_name((plus(p, q), 0))),
+                      Var(wq_name(rbd, j)))
+            acc = _c(Fn.SUB if sum(q) % 2 else Fn.ADD, acc, term)
+        out.append(Assign(ctx.sh(ctx.islot[i]), acc))
+    return tuple(out)
+
+
+def ket_stage_inline(ctx: KContext, rbd: int) -> tuple[Stmt, ...]:
+    """Stage 1 as before #569: `s_bd E^bd_q` re-formed in every term, no
+    per-row local (`COMPOSED_E`'s, so that arm is the old kernel's text)."""
+    out: list[Stmt] = []
+    for i, p in enumerate(ctx.ps):
+        if (rbd, i) not in ctx.s1:
+            continue
         acc: Expr = Lit(0.0)
         for j, q in ctx.s1[rbd, i]:
             term = _c(Fn.MUL, Var(node_name((plus(p, q), 0))), _c(
@@ -478,3 +613,12 @@ class KHooks:
 
 
 DEFAULT_HOOKS = KHooks()
+
+COMPOSED_E = KHooks(bind_e_ac=bind_e_ac_block, e_ac=e_ac_block,
+                    bind_e_bd=bind_e_bd_block, e_bd=e_bd_block,
+                    ket_stage=ket_stage_inline)
+"""The defaults with `E` held COMPOSED, as before #569: one local block per
+record side, `Eac[n_ac, n_p]` and `Ebd[n_bd, n_q]`, read by index, and
+stage 1 without its per-row locals -- the pre-#569 kernel's text. Not a
+lever and in no registry: the control arm of the factored form's A/B, the
+same values bit for bit."""

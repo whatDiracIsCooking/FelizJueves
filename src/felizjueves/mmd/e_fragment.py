@@ -28,6 +28,16 @@ identity it is checked by (test/test_e_fragment.py).
   on some axis is exactly zero and is NOT written -- the consumer owns those
   slots -- so no computed zero is ever emitted.
 
+- `axes_fragment(la, lb)` (#569): the three axes and NO products -- every
+  `E^{ij}_t` written into the 1D array bind `EA` at `axes_slot(la, lb, d,
+  i, j, t)` (axis outer, then `i`, `j`, `t`; `axes_size(la, lb)` slots, 336
+  at `(f, f)` against the block's 8,400). The FACTORED `E`: a consumer forms
+  `E^{ab}_t` where it reads it, `axes_product` -- `(E_x E_y) E_z`, the
+  block's association, so every value is `block_fragment`'s bit for bit.
+  It is what the K kernels hold (`k_exchange.levers.seams`), where the
+  composed block per record side was 134,504 B of locals a thread at
+  `(ff|ff)`.
+
 - `overlap_fragment(la, lb)` (#237): the three axes and the `t = 0`
   products ONLY, `E0[row] = E_x E_y E_z` at `t = (0, 0, 0)`, written into
   the 1D array bind `E0` in `block_rows` order -- column 0 of the block,
@@ -129,7 +139,8 @@ the head of each fragment -- never per axis.
 Binds: `zeta` (the seed's exponent), `half_inv_zeta` (`1/2zeta`, a
 `Factor`, bound once rather than divided per term -- only when some entry
 is raised), and each axis's `PA_d` / `PB_d` (`Factor`s, read by the seed as
-plain scalars too); the block adds the array `E`, the overlap fragment
+plain scalars too); the block adds the array `E`, the axes fragment the
+array `EA`, the overlap fragment
 the array `E0`, the kinetic fragment the scalar `eb` and the array `KE`,
 the multipole fragment the scalars `P_d`, `C_d` (when `e >= 1`) and the
 array `M` (or, with a `store`, the consumer's `store_binds`).
@@ -291,6 +302,69 @@ def block_fragment(la: int, lb: int) -> Fragment:
                                _product(a, b, t)))
     return Fragment(f"e_block_{la}{lb}",
                     (*_scalar_binds(la, lb, (0, 1, 2)), E_ARRAY), tuple(body))
+
+
+AXES_ARRAY = "EA"
+
+
+def axes_entries(la: int, lb: int) -> tuple[tuple[int, int, int, int], ...]:
+    """Every `(d, i, j, t)` of the three axis tables, in `axes_fragment`'s
+    slot order: axis outer, then `i`, `j`, `t` -- `i <= la`, `j <= lb`,
+    `t <= i + j`, so no slot is a structural zero."""
+    _check_am("la", la)
+    _check_am("lb", lb)
+    return tuple((d, i, j, t) for d in range(3) for i in range(la + 1)
+                 for j in range(lb + 1) for t in range(i + j + 1))
+
+
+def axes_size(la: int, lb: int) -> int:
+    """Slots of the array `axes_fragment(la, lb)` writes:
+    `3 SUM_{i,j} (i + j + 1)` -- 336 at `(f, f)`, against the composed
+    block's `100 x 84`."""
+    return len(axes_entries(la, lb))
+
+
+def axes_slot(la: int, lb: int, d: int, i: int, j: int, t: int) -> int:
+    """The slot of `E^{ij}_t` on axis `d` in `axes_fragment(la, lb)`'s array."""
+    if not (d in (0, 1, 2) and 0 <= i <= la and 0 <= j <= lb
+            and 0 <= t <= i + j):
+        raise ValueError(f"E^{{{i}{j}}}_{t} on axis {d} is not an entry of "
+                         f"the ({la}, {lb}) axis tables")
+    per_ij = [(ii, jj) for ii in range(la + 1) for jj in range(lb + 1)]
+    per_axis = sum(ii + jj + 1 for ii, jj in per_ij)
+    off = sum(ii + jj + 1 for ii, jj in per_ij[:i * (lb + 1) + j])
+    return d * per_axis + off + t
+
+
+def axes_fragment(la: int, lb: int) -> Fragment:
+    """The three undressed axis tables `E^{ij}_t`, x then y then z, written
+    into the 1D array bind `EA` at `axes_slot` (#569): the FACTORED `E`.
+
+    The same `_axes_body(la, lb)` as `block_fragment`, but NO products: a
+    consumer forms `E^{ab}_t = (E_x E_y) E_z` where it reads it
+    (`axes_product`), the block fragment's association, so every value it
+    forms is the block's bit for bit. `axes_size(la, lb)` doubles, against
+    the block's `rows x columns`: 336 against 8,400 at `(f, f)`.
+    """
+    body: list[Stmt] = [Note(_PROVENANCE), *_axes_body(la, lb)]
+    for d, i, j, t in axes_entries(la, lb):
+        body.append(Assign(Index(AXES_ARRAY, (Lit(axes_slot(la, lb, d, i, j,
+                                                            t)),)),
+                           Var(e_name(d, i, j, t))))
+    return Fragment(f"e_axes_{la}{lb}",
+                    (*_scalar_binds(la, lb, (0, 1, 2)), AXES_ARRAY),
+                    tuple(body))
+
+
+def axes_product(la: int, lb: int, array: str, a: tuple[int, int, int],
+                 b: tuple[int, int, int], t: tuple[int, int, int]) -> Call:
+    """`(E_x E_y) E_z` of Cartesians `a`, `b` at Hermite index `t`, read from
+    `axes_fragment(la, lb)`'s table bound to `array`: `block_fragment`'s
+    product, its operands from the table. `t_d > a_d + b_d` is the caller's
+    to skip (the entry is a structural zero, never formed)."""
+    x, y, z = (Index(array, (Lit(axes_slot(la, lb, d, a[d], b[d], t[d])),))
+               for d in range(3))
+    return Call(Fn.MUL, (Call(Fn.MUL, (x, y)), z))
 
 
 def _reads(e: object) -> set[str]:

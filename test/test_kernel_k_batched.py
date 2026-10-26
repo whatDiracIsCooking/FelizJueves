@@ -397,16 +397,20 @@ def test_the_screen_is_a_break_in_every_batch() -> None:
 
 def built_counts(spec: Spec) -> dict[str, int]:
     """Per primitive quartet, summed over the batch kernels: the stage-1
-    (`Ebd` reads), stage-2 (`Eac` reads) and stage-3 (`Dcd` reads)
-    multiply-adds in each kernel's ket loop, which runs once per quartet."""
-    c = {"Ebd": 0, "Eac": 0, "Dcd": 0}
+    (reads of a row's dressed `wq` local), stage-2 (`E^ac` entries formed,
+    three `Xac` reads each, #569) and stage-3 (`Dcd` reads) multiply-adds
+    in each kernel's ket loop, which runs once per quartet."""
+    c = {"wq": 0, "Xac": 0, "Dcd": 0}
     for k in build_k_kernels(spec):
         for s in walk(_ket_loop(k)):
             if isinstance(s, Assign):
                 for e in _subexprs(s.value):
                     if isinstance(e, Index) and e.array in c:
                         c[e.array] += 1
-    return {"stage1_fma": c["Ebd"], "stage2_fma": c["Eac"],
+                    elif isinstance(e, Var) and e.name.startswith("wq"):
+                        c["wq"] += 1
+    assert c["Xac"] % 3 == 0
+    return {"stage1_fma": c["wq"], "stage2_fma": c["Xac"] // 3,
             "stage3_fma": c["Dcd"]}
 
 

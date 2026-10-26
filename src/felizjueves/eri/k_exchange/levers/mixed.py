@@ -87,6 +87,7 @@ import dataclasses
 from collections.abc import Callable
 
 from felizjueves.eri.j_coulomb.levers import mixed as jmixed
+from felizjueves.eri.k_exchange.levers import seams
 from felizjueves.eri.k_exchange.levers.seams import KET, KContext, KHooks, bindings
 from felizjueves.ir import (
     Assign,
@@ -410,4 +411,7 @@ def apply(hooks: KHooks, spec: Spec) -> KHooks:
             hooks.finish, note=COMPUTE_NOTE, operands_too=False))
     return dataclasses.replace(
         hooks, finish=_finish(hooks.finish, note=FULL_NOTE, operands_too=True),
-        bind_e_ac=_bind_e_ac, e_ac=_e_ac, bind_e_bd=_bind_e_bd, e_bd=_e_bd)
+        bind_e_ac=_bind_e_ac, e_ac=_e_ac, bind_e_bd=_bind_e_bd, e_bd=_e_bd,
+        # its E is the COMPOSED block (F32): stage 1 reads it per term, as
+        # before #569, so this arm's text is unchanged by the factored E
+        ket_stage=seams.ket_stage_inline)

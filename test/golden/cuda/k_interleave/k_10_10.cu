@@ -94,11 +94,16 @@ extern "C" __global__ void k_10_10(
         double Ib = Ip[bra];
         double sb = s_ac[bra];
         int dcb = dc[bra];
-        // the undressed E^ac block of this bra record, once:
-        // e_fragment.block_fragment(la, lc), inlined; s_ac is the host's
-        double Eac[3][4];
+        // E is held FACTORED (#569): three axis tables per side, Xac[9] and Xbd[9]
+        // doubles (e_fragment.axes_fragment), and each E_t = (E_x E_y) E_z formed
+        // where it is read, the block fragment's association, so every value is the
+        // composed block's bit for bit. The composed blocks Eac[3][4] and Ebd[3][4]
+        // are never held
+        // the undressed E^ac axis tables of this bra record, once:
+        // e_fragment.axes_fragment(la, lc), inlined; s_ac is the host's
+        double Xac[9];
         {
-            // fragment e_block_10
+            // fragment e_axes_10
             const auto zeta = ze;
             const auto half_inv_zeta = (0.5 / ze);
             const auto PA_x = XPA[(bra * 3 + 0)];
@@ -107,7 +112,7 @@ extern "C" __global__ void k_10_10(
             const auto PB_y = XPC[(bra * 3 + 1)];
             const auto PA_z = XPA[(bra * 3 + 2)];
             const auto PB_z = XPC[(bra * 3 + 2)];
-            auto* const E = Eac;
+            auto* const EA = Xac;
             // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
             // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
             // undressed
@@ -120,12 +125,15 @@ extern "C" __global__ void k_10_10(
             double Ez_0_0_0 = exp(((zeta * PA_z) * PB_z));
             double Ez_1_0_0 = (PA_z * Ez_0_0_0);
             double Ez_1_0_1 = (half_inv_zeta * Ez_0_0_0);
-            E[0][0] = ((Ex_1_0_0 * Ey_0_0_0) * Ez_0_0_0);
-            E[0][1] = ((Ex_1_0_1 * Ey_0_0_0) * Ez_0_0_0);
-            E[1][0] = ((Ex_0_0_0 * Ey_1_0_0) * Ez_0_0_0);
-            E[1][2] = ((Ex_0_0_0 * Ey_1_0_1) * Ez_0_0_0);
-            E[2][0] = ((Ex_0_0_0 * Ey_0_0_0) * Ez_1_0_0);
-            E[2][3] = ((Ex_0_0_0 * Ey_0_0_0) * Ez_1_0_1);
+            EA[0] = Ex_0_0_0;
+            EA[1] = Ex_1_0_0;
+            EA[2] = Ex_1_0_1;
+            EA[3] = Ey_0_0_0;
+            EA[4] = Ey_1_0_0;
+            EA[5] = Ey_1_0_1;
+            EA[6] = Ez_0_0_0;
+            EA[7] = Ez_1_0_0;
+            EA[8] = Ez_1_0_1;
         }
         // accumulate K[a,b] in shared memory, one slot per lane, after the lane's I
         // column
@@ -178,11 +186,11 @@ extern "C" __global__ void k_10_10(
             double R1_0_1_0 = (PQ_x * R0_0_1_1);
             double R1_1_0_0 = (PQ_y * R1_0_0_1);
             double R2_0_0_0 = ((PQ_x * R1_0_0_1) + R0_0_0_1);
-            // the undressed E^bd block of this ket record: e_fragment.block_fragment(lb,
-            // ld), inlined; s_bd is the host's
-            double Ebd[3][4];
+            // the undressed E^bd axis tables of this ket record:
+            // e_fragment.axes_fragment(lb, ld), inlined; s_bd is the host's
+            double Xbd[9];
             {
-                // fragment e_block_10
+                // fragment e_axes_10
                 const auto zeta = et;
                 const auto half_inv_zeta = (0.5 / et);
                 const auto PA_x = XQB[(k * 3 + 0)];
@@ -191,7 +199,7 @@ extern "C" __global__ void k_10_10(
                 const auto PB_y = XQD[(k * 3 + 1)];
                 const auto PA_z = XQB[(k * 3 + 2)];
                 const auto PB_z = XQD[(k * 3 + 2)];
-                auto* const E = Ebd;
+                auto* const EA = Xbd;
                 // McMurchie & Davidson report UCRL-13791 (docs/references.md entry 46), eqs.
                 // 2.20-2.21: E^{i+1,j}_t and E^{i,j+1}_t from E^{00}_0 = exp(zeta X_PA X_PB);
                 // undressed
@@ -204,12 +212,15 @@ extern "C" __global__ void k_10_10(
                 double Ez_0_0_0 = exp(((zeta * PA_z) * PB_z));
                 double Ez_1_0_0 = (PA_z * Ez_0_0_0);
                 double Ez_1_0_1 = (half_inv_zeta * Ez_0_0_0);
-                E[0][0] = ((Ex_1_0_0 * Ey_0_0_0) * Ez_0_0_0);
-                E[0][1] = ((Ex_1_0_1 * Ey_0_0_0) * Ez_0_0_0);
-                E[1][0] = ((Ex_0_0_0 * Ey_1_0_0) * Ez_0_0_0);
-                E[1][2] = ((Ex_0_0_0 * Ey_1_0_1) * Ez_0_0_0);
-                E[2][0] = ((Ex_0_0_0 * Ey_0_0_0) * Ez_1_0_0);
-                E[2][3] = ((Ex_0_0_0 * Ey_0_0_0) * Ez_1_0_1);
+                EA[0] = Ex_0_0_0;
+                EA[1] = Ex_1_0_0;
+                EA[2] = Ex_1_0_1;
+                EA[3] = Ey_0_0_0;
+                EA[4] = Ey_1_0_0;
+                EA[5] = Ey_1_0_1;
+                EA[6] = Ez_0_0_0;
+                EA[7] = Ez_1_0_0;
+                EA[8] = Ez_1_0_1;
             }
             double sq = s_bd[k];
             // the row of Dcd: D_cd straddles the records, c on the bra and d on the ket
@@ -223,48 +234,48 @@ extern "C" __global__ void k_10_10(
             double V0_0 = 0.0;
             double V0_1 = 0.0;
             double V0_2 = 0.0;
-            double I0_0 = ((0.0 + (R0_0_0_0 * (sq * Ebd[0][0]))) - (R1_0_0_0 * (sq * Ebd[0][1])));
-            V0_0 = (V0_0 + ((sb * Eac[0][0]) * I0_0));
-            V0_1 = (V0_1 + ((sb * Eac[1][0]) * I0_0));
-            V0_2 = (V0_2 + ((sb * Eac[2][0]) * I0_0));
-            double I0_1 = ((0.0 + (R1_0_0_0 * (sq * Ebd[0][0]))) - (R2_0_0_0 * (sq * Ebd[0][1])));
-            V0_0 = (V0_0 + ((sb * Eac[0][1]) * I0_1));
-            double I0_2 = ((0.0 + (R0_1_0_0 * (sq * Ebd[0][0]))) - (R1_1_0_0 * (sq * Ebd[0][1])));
-            V0_1 = (V0_1 + ((sb * Eac[1][2]) * I0_2));
-            double I0_3 = ((0.0 + (R0_0_1_0 * (sq * Ebd[0][0]))) - (R1_0_1_0 * (sq * Ebd[0][1])));
-            V0_2 = (V0_2 + ((sb * Eac[2][3]) * I0_3));
+            double I0_0 = ((0.0 + (R0_0_0_0 * (sq * ((Xbd[1] * Xbd[3]) * Xbd[6])))) - (R1_0_0_0 * (sq * ((Xbd[2] * Xbd[3]) * Xbd[6]))));
+            V0_0 = (V0_0 + ((sb * ((Xac[1] * Xac[3]) * Xac[6])) * I0_0));
+            V0_1 = (V0_1 + ((sb * ((Xac[0] * Xac[4]) * Xac[6])) * I0_0));
+            V0_2 = (V0_2 + ((sb * ((Xac[0] * Xac[3]) * Xac[7])) * I0_0));
+            double I0_1 = ((0.0 + (R1_0_0_0 * (sq * ((Xbd[1] * Xbd[3]) * Xbd[6])))) - (R2_0_0_0 * (sq * ((Xbd[2] * Xbd[3]) * Xbd[6]))));
+            V0_0 = (V0_0 + ((sb * ((Xac[2] * Xac[3]) * Xac[6])) * I0_1));
+            double I0_2 = ((0.0 + (R0_1_0_0 * (sq * ((Xbd[1] * Xbd[3]) * Xbd[6])))) - (R1_1_0_0 * (sq * ((Xbd[2] * Xbd[3]) * Xbd[6]))));
+            V0_1 = (V0_1 + ((sb * ((Xac[0] * Xac[5]) * Xac[6])) * I0_2));
+            double I0_3 = ((0.0 + (R0_0_1_0 * (sq * ((Xbd[1] * Xbd[3]) * Xbd[6])))) - (R1_0_1_0 * (sq * ((Xbd[2] * Xbd[3]) * Xbd[6]))));
+            V0_2 = (V0_2 + ((sb * ((Xac[0] * Xac[3]) * Xac[8])) * I0_3));
             Ksh[(0 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(0 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V0_0));
             Ksh[(3 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(3 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V0_1));
             Ksh[(6 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(6 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V0_2));
             double V1_0 = 0.0;
             double V1_1 = 0.0;
             double V1_2 = 0.0;
-            double I1_0 = ((0.0 + (R0_0_0_0 * (sq * Ebd[1][0]))) - (R0_1_0_0 * (sq * Ebd[1][2])));
-            V1_0 = (V1_0 + ((sb * Eac[0][0]) * I1_0));
-            V1_1 = (V1_1 + ((sb * Eac[1][0]) * I1_0));
-            V1_2 = (V1_2 + ((sb * Eac[2][0]) * I1_0));
-            double I1_1 = ((0.0 + (R1_0_0_0 * (sq * Ebd[1][0]))) - (R1_1_0_0 * (sq * Ebd[1][2])));
-            V1_0 = (V1_0 + ((sb * Eac[0][1]) * I1_1));
-            double I1_2 = ((0.0 + (R0_1_0_0 * (sq * Ebd[1][0]))) - (R0_2_0_0 * (sq * Ebd[1][2])));
-            V1_1 = (V1_1 + ((sb * Eac[1][2]) * I1_2));
-            double I1_3 = ((0.0 + (R0_0_1_0 * (sq * Ebd[1][0]))) - (R0_1_1_0 * (sq * Ebd[1][2])));
-            V1_2 = (V1_2 + ((sb * Eac[2][3]) * I1_3));
+            double I1_0 = ((0.0 + (R0_0_0_0 * (sq * ((Xbd[0] * Xbd[4]) * Xbd[6])))) - (R0_1_0_0 * (sq * ((Xbd[0] * Xbd[5]) * Xbd[6]))));
+            V1_0 = (V1_0 + ((sb * ((Xac[1] * Xac[3]) * Xac[6])) * I1_0));
+            V1_1 = (V1_1 + ((sb * ((Xac[0] * Xac[4]) * Xac[6])) * I1_0));
+            V1_2 = (V1_2 + ((sb * ((Xac[0] * Xac[3]) * Xac[7])) * I1_0));
+            double I1_1 = ((0.0 + (R1_0_0_0 * (sq * ((Xbd[0] * Xbd[4]) * Xbd[6])))) - (R1_1_0_0 * (sq * ((Xbd[0] * Xbd[5]) * Xbd[6]))));
+            V1_0 = (V1_0 + ((sb * ((Xac[2] * Xac[3]) * Xac[6])) * I1_1));
+            double I1_2 = ((0.0 + (R0_1_0_0 * (sq * ((Xbd[0] * Xbd[4]) * Xbd[6])))) - (R0_2_0_0 * (sq * ((Xbd[0] * Xbd[5]) * Xbd[6]))));
+            V1_1 = (V1_1 + ((sb * ((Xac[0] * Xac[5]) * Xac[6])) * I1_2));
+            double I1_3 = ((0.0 + (R0_0_1_0 * (sq * ((Xbd[0] * Xbd[4]) * Xbd[6])))) - (R0_1_1_0 * (sq * ((Xbd[0] * Xbd[5]) * Xbd[6]))));
+            V1_2 = (V1_2 + ((sb * ((Xac[0] * Xac[3]) * Xac[8])) * I1_3));
             Ksh[(1 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(1 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V1_0));
             Ksh[(4 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(4 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V1_1));
             Ksh[(7 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(7 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V1_2));
             double V2_0 = 0.0;
             double V2_1 = 0.0;
             double V2_2 = 0.0;
-            double I2_0 = ((0.0 + (R0_0_0_0 * (sq * Ebd[2][0]))) - (R0_0_1_0 * (sq * Ebd[2][3])));
-            V2_0 = (V2_0 + ((sb * Eac[0][0]) * I2_0));
-            V2_1 = (V2_1 + ((sb * Eac[1][0]) * I2_0));
-            V2_2 = (V2_2 + ((sb * Eac[2][0]) * I2_0));
-            double I2_1 = ((0.0 + (R1_0_0_0 * (sq * Ebd[2][0]))) - (R1_0_1_0 * (sq * Ebd[2][3])));
-            V2_0 = (V2_0 + ((sb * Eac[0][1]) * I2_1));
-            double I2_2 = ((0.0 + (R0_1_0_0 * (sq * Ebd[2][0]))) - (R0_1_1_0 * (sq * Ebd[2][3])));
-            V2_1 = (V2_1 + ((sb * Eac[1][2]) * I2_2));
-            double I2_3 = ((0.0 + (R0_0_1_0 * (sq * Ebd[2][0]))) - (R0_0_2_0 * (sq * Ebd[2][3])));
-            V2_2 = (V2_2 + ((sb * Eac[2][3]) * I2_3));
+            double I2_0 = ((0.0 + (R0_0_0_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[7])))) - (R0_0_1_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[8]))));
+            V2_0 = (V2_0 + ((sb * ((Xac[1] * Xac[3]) * Xac[6])) * I2_0));
+            V2_1 = (V2_1 + ((sb * ((Xac[0] * Xac[4]) * Xac[6])) * I2_0));
+            V2_2 = (V2_2 + ((sb * ((Xac[0] * Xac[3]) * Xac[7])) * I2_0));
+            double I2_1 = ((0.0 + (R1_0_0_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[7])))) - (R1_0_1_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[8]))));
+            V2_0 = (V2_0 + ((sb * ((Xac[2] * Xac[3]) * Xac[6])) * I2_1));
+            double I2_2 = ((0.0 + (R0_1_0_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[7])))) - (R0_1_1_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[8]))));
+            V2_1 = (V2_1 + ((sb * ((Xac[0] * Xac[5]) * Xac[6])) * I2_2));
+            double I2_3 = ((0.0 + (R0_0_1_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[7])))) - (R0_0_2_0 * (sq * ((Xbd[0] * Xbd[3]) * Xbd[8]))));
+            V2_2 = (V2_2 + ((sb * ((Xac[0] * Xac[3]) * Xac[8])) * I2_3));
             Ksh[(2 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(2 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V2_0));
             Ksh[(5 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(5 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V2_1));
             Ksh[(8 * (int)blockDim.y + (int)threadIdx.y)] = (Ksh[(8 * (int)blockDim.y + (int)threadIdx.y)] + (Dcd[(dk * 1 + 0)] * V2_2));

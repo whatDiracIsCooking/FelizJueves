@@ -67,7 +67,7 @@ from felizjueves.eri.k_exchange.kernel_k import (
     build_k_kernels,
     launch_shape,
 )
-from felizjueves.eri.k_exchange.levers import mixed, split
+from felizjueves.eri.k_exchange.levers import mixed, seams, split
 from felizjueves.eri.k_exchange.levers.seams import DEFAULT_HOOKS, KET, KSH
 from felizjueves.ir import (
     Assign,
@@ -170,7 +170,10 @@ def test_the_hooks_each_arm_moves() -> None:
 
     assert moved(mixed.COMPUTE) == {"finish"}
     assert moved(mixed.FULL) == {"finish", "bind_e_ac", "e_ac", "bind_e_bd",
-                                 "e_bd"}
+                                 "e_bd", "ket_stage"}
+    # #569: its composed F32 E is read per term in stage 1, as before
+    h = mixed.apply(DEFAULT_HOOKS, lever_spec((1, 0, 1, 0), mixed.FULL))
+    assert h.ket_stage is seams.ket_stage_inline
 
 
 # ---------------------------------------------------------------------------

@@ -63,10 +63,19 @@ The bound itself is proved host-side (#200); at `tau = 0` the bound is
 
 THE DIGESTION, in the host's order (`eri.k_exchange.k.k_quartet`):
 
-- `E^ac` is formed ONCE per bra record, into a LOCAL `Eac[n_ac, n_p]`, from
-  `e_fragment.block_fragment(la, lc)` inlined; `E^bd` once per ket record,
-  into `Ebd[n_bd, n_q]`, from `block_fragment(lb, ld)` inlined -- the first
-  kernel to inline two. Both are the UNDRESSED `E`; the dressings
+- `E^ac` is held FACTORED (#569): its three axis tables are formed ONCE
+  per bra record, into a LOCAL `Xac[axes_size(la, lc)]`, from
+  `e_fragment.axes_fragment(la, lc)` inlined, and each `E^ac_p` is formed
+  where stage 2 reads it, `(E_x E_y) E_z` (`e_fragment.axes_product`, the
+  block fragment's association, so the value is the composed block's bit
+  for bit); `E^bd`'s tables once per ket record, into `Xbd`, from
+  `axes_fragment(lb, ld)` -- the first kernel to inline two -- and stage 1
+  forms each `(b,d)` row's `s_bd E^bd_q` once, into a local `wq{row}_{j}`,
+  before that row's folds. Before #569 both sides held the COMPOSED blocks,
+  `Eac[n_ac, n_p]` and `Ebd[n_bd, n_q]` (134,504 B of locals a thread at
+  `(ff|ff)`, against 5,376 B of tables); that form is kept as
+  `seams.COMPOSED_E`, the A/B's control, its text the old text byte for
+  byte. Both are the UNDRESSED `E`; the dressings
   `s_ac = c_a c_c (pi/zeta)^{3/2}` and `s_bd` arrive as one host scalar per
   record per side (`ao.pairs.dress` via `ao.density.epair`), and every use is
   `s * E[r, t]`, as the host forms `s * e`. Neither fragment forms a

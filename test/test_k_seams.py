@@ -8,7 +8,10 @@ Three things are asserted, the issue's acceptance in order:
    plan admits the split -- digested, against a digest computed from the
    tree BEFORE #367 (`main` at 6a57a32, the same enumeration run over its
    `src/`), pinned at L <= 2 and at L <= 4. The K subgrid cells through
-   L = 10, above the cap, are the same check, `slow`.
+   L = 10, above the cap, are the same check, `slow`. Since #569 (E held
+   factored) that byte-identity is `seams.COMPOSED_E`'s, the pre-#569
+   defaults kept as the A/B's control; the factored defaults' text is
+   pinned beside it.
 2. EVERY HOOK HAS A DEFAULT, AND THE DEFAULT IS THE FROZEN PATH: the
    resolution of a literal spec is `DEFAULT_HOOKS`; each hook, wrapped by a
    spy that delegates to its default, is CALLED by the builder and changes
@@ -82,12 +85,12 @@ def _ladder_specs(lmax: int) -> list[Spec]:
     return out
 
 
-def digest(specs: list[Spec]) -> tuple[int, str]:
+def digest(specs: list[Spec], hooks: KHooks | None = None) -> tuple[int, str]:
     """`(kernels, sha256)` over each spec's `build_k_kernels`, in order, each
     kernel's `emit.cuda` (sm_86) then `emit.hip` (gfx1200) text."""
     h, n = hashlib.sha256(), 0
     for spec in specs:
-        for kern in build_k_kernels(spec):
+        for kern in build_k_kernels(spec, hooks=hooks):
             h.update(cuda.emit(kern, SM_86).encode())
             h.update(hip.emit(kern, GFX1200).encode())
             n += 1
@@ -99,21 +102,30 @@ def digest(specs: list[Spec]) -> tuple[int, str]:
 # subgrid through L = 10 is above the cap: `slow`.
 # Re-taken at #301, the one deliberate text change since: every unit's Boys
 # became one `fj_boys<M>` fill (the counts are unchanged).
+# Since #569 the defaults hold E FACTORED, so these pins are the COMPOSED
+# arm's (`seams.COMPOSED_E`, the pre-#569 defaults kept as the A/B's
+# control): it is still the old text byte for byte. The factored defaults
+# are pinned beside them (`F_PIN_*`, `F_SUB_PIN`, taken at #569).
 LADDER_PIN_2 = (57, "caecd99cdbacf695cf5af814e0d23a7611aed3436f202f3c79d7220e59c34638")
 LADDER_PIN_4 = (607, "88e7e3f8c6e470055a42286798b48b3211fc5b8bfa6a58e897116d4c7e81ccce")
 SUBGRID_PIN = (62, "f3083fc0e13442bb658768ad594269b45cf741a9b4c58e4ec3e51561a176962e")
+F_PIN_2 = (57, "448e9037ff93fabb914bdd7ed845f7e0719c6d5e4ec025e036bbaa12adb848b8")
+F_PIN_4 = (607, "dcfda2211921e28088e44dc47c6b381ea394b0d622372e0e4ff4deac3c85776b")
+F_SUB_PIN = (62, "f732c2408c0b646b0b6e0d78d38d927f879e1c94e17b7e7d15c0abe2be4cab79")
 
 
 def test_the_literal_ladder_is_byte_identical_to_before_the_seams() -> None:
     specs = _ladder_specs(2)
     assert len([s for s in specs if s.n_batches == 1]) == 15
-    assert digest(specs) == LADDER_PIN_2
+    assert digest(specs, seams.COMPOSED_E) == LADDER_PIN_2
+    assert digest(specs) == F_PIN_2
 
 
 def test_the_literal_ladder_through_l4_is_byte_identical() -> None:
     specs = _ladder_specs(4)
     assert len([s for s in specs if s.n_batches == 1]) == 70
-    assert digest(specs) == LADDER_PIN_4
+    assert digest(specs, seams.COMPOSED_E) == LADDER_PIN_4
+    assert digest(specs) == F_PIN_4
 
 
 @pytest.mark.slow
@@ -122,7 +134,8 @@ def test_the_k_subgrid_through_l10_is_byte_identical() -> None:
 
     specs = [s for s in K_SUBGRID if sum(s.am) <= 10]
     assert len(specs) == 10
-    assert digest(specs) == SUBGRID_PIN
+    assert digest(specs, seams.COMPOSED_E) == SUBGRID_PIN
+    assert digest(specs) == F_SUB_PIN
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +207,9 @@ REPLACEMENTS = {
         seams.shared_decl(ctx), shape=(Lit(ctx.n_shared + 1),
                                        seams.shared_decl(ctx).shape[1])),
     "bind_e_ac": lambda ctx: (*seams.bind_e_ac(ctx), Note("MARK")),
-    "e_ac": lambda ctx, rac, i: Index("Eac", (Lit(rac), Lit(0))),
+    "e_ac": lambda ctx, rac, i: Index(seams.XAC, (Lit(0),)),
     "bind_e_bd": lambda ctx: (*seams.bind_e_bd(ctx), Note("MARK")),
-    "e_bd": lambda ctx, rbd, j: Index("Ebd", (Lit(rbd), Lit(0))),
+    "e_bd": lambda ctx, rbd, j: Index(seams.XBD, (Lit(0),)),
     "contract": lambda ctx: (*seams.contract(ctx), Note("MARK")),
     "ket_stage": lambda ctx, rbd: (*seams.ket_stage(ctx, rbd), Note("MARK")),
     "bra_digest": lambda ctx, rbd: (*seams.bra_digest(ctx, rbd),
@@ -339,23 +352,25 @@ def test_an_e_ac_rebinding_moves_the_binding_and_its_reads_together() -> None:
     read through `e_ac` -- the kernel computes the same `K`, bitwise."""
     def bind(ctx: KContext) -> tuple:
         out = seams.bind_e_ac(ctx)
-        return tuple(dataclasses.replace(s, name="Eac2")
-                     if isinstance(s, Decl) and s.name == "Eac"
+        return tuple(dataclasses.replace(s, name="Xac2")
+                     if isinstance(s, Decl) and s.name == seams.XAC
                      else _rebind(s) for s in out)
 
     def _rebind(s):
         if isinstance(s, Inline):
             return Inline(s.fragment, {**dict(s.bindings),
-                                       ef.E_ARRAY: Var("Eac2")})
+                                       ef.AXES_ARRAY: Var("Xac2")})
         return s
 
-    hooks = dataclasses.replace(
-        DEFAULT_HOOKS, bind_e_ac=bind,
-        e_ac=lambda ctx, rac, i: Index("Eac2", (Lit(rac), Lit(i))))
+    def read(ctx: KContext, rac: int, i: int):
+        a, c = ctx.rows_ac[rac]
+        return ef.axes_product(*ctx.spec.am[:2], "Xac2", a, c, ctx.ps[i])
+
+    hooks = dataclasses.replace(DEFAULT_HOOKS, bind_e_ac=bind, e_ac=read)
     for am in [(1, 0, 1, 0), (2, 0, 0, 0), (0, 1, 1, 0)]:
         kern = build_k_kernel(am, hooks=hooks)
         assert kern != build_k_kernel(am)
-        assert not any(isinstance(s, Decl) and s.name == "Eac"
+        assert not any(isinstance(s, Decl) and s.name == seams.XAC
                        for s in walk(kern.body))
         assert (_run((kern,), am, zero=False).tolist()
                 == _run((build_k_kernel(am),), am, zero=False).tolist())

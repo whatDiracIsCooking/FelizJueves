@@ -45,7 +45,7 @@ Without a card the `gpu` tests SKIP: green and empty.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache, partial
 from pathlib import Path
 
@@ -58,8 +58,11 @@ from plan_driver import compile_checked
 from test_ao_k_decay import TAU, chain
 from test_k_ondevice import ORACLE_TOL
 from test_kernel_device import BACKEND, _toolchain
+from test_kernel_kblock import sf_basis
 from test_launch_k import _case as _launch_case
+from tiers import DEVICE_L_MAX
 
+from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri.k_exchange.k import (
     density_decay,
     exchange_matrix_and_scale,
@@ -77,18 +80,52 @@ class Cell:
     case: str
     tau: float
     decay: bool = False
+    with_k: bool = True  # False: the block kernel only (MODE 0), #569
+    lmax: int | None = None  # the plan cut to its classes with L <= lmax
 
     @property
     def id(self) -> str:
-        return f"{self.case}-tau{self.tau:g}" + ("-decay" if self.decay
-                                                  else "")
+        return (f"{self.case}-tau{self.tau:g}" + ("-decay" if self.decay
+                                                   else "")
+                + ("" if self.with_k else "-kb")
+                + ("" if self.lmax is None else f"-L{self.lmax}"))
 
 
 FAST = (Cell("h2o_sto3g_k", 0.0), Cell("h2o_sto3g_k", 1e-8),
         Cell("two_h2", 1e-6), Cell("chain", TAU, decay=True))
 SLOW = (Cell("h2o_ccpvdz_k", 0.0),)
+# f shells (#569, E held factored): `spdf`, one shell of each l <= 3 on four
+# centres -- every K class with every l <= 3, 256 of them, (ff|ff) among
+# them -- the block kernel only (`kernel_k` is the same body; doubling the
+# compile of 256 classes buys nothing); and `sf`, an s and an f shell, its
+# 16 classes in both modes, so `kernel_k` runs (ff|ff) on the card too.
+# Above tiers.DEVICE_L_MAX: `slow` and `high_l`, run by hand. The `-L9`
+# cells cut the plan to its classes with L <= 9 (241 of spdf's 256, 20 of
+# them with an (f, f) pair; 12 of sf's 16) and are held to the walk over
+# that cut plan only: a class at L >= 10 did not finish compiling on nvcc
+# within the budget (#569: kb_33_33 was still in cicc after 2.7 h, factored
+# or not), so the whole-plan cells are written and NOT run here.
+HIGH_L = (Cell("spdf", 0.0, with_k=False, lmax=9), Cell("sf", 0.0, lmax=9),
+          Cell("spdf", 0.0, with_k=False), Cell("sf", 0.0))
+HIGH_L_COMPILE_S = 6 * 3600.0
 PARAMS = ([pytest.param(c, id=c.id) for c in FAST]
-          + [pytest.param(c, id=c.id, marks=pytest.mark.slow) for c in SLOW])
+          + [pytest.param(c, id=c.id, marks=pytest.mark.slow) for c in SLOW]
+          + [pytest.param(c, id=c.id, marks=(pytest.mark.slow,
+                                             pytest.mark.high_l))
+             for c in HIGH_L])
+
+
+def _spdf() -> tuple[Basis, np.ndarray]:
+    """An s, p, d and f shell on four centres, two primitives each (one
+    contracted pair per shell pair, four records), and a symmetric density."""
+    shells = (Shell(0, (0.0, 0.0, 0.0), (1.2, 0.4), (0.6, 0.5)),
+              Shell(1, (0.5, -0.6, 0.3), (0.9, 0.35), (0.7, 0.4)),
+              Shell(2, (-0.4, 0.7, 0.6), (0.8, 0.3), (0.5, 0.6)),
+              Shell(3, (0.6, 0.5, -0.7), (0.7, 0.3), (0.45, 0.55)))
+    basis = Basis(shells)
+    n = basis.n_ao
+    return basis, np.array([[1.0 / (i + j + 1) for j in range(n)]
+                            for i in range(n)])
 
 
 @cache
@@ -99,6 +136,10 @@ def _case(name: str):
         return fx, basis, np.array(fx.density)
     if name == "chain":
         return None, *chain()
+    if name == "spdf":
+        return None, *_spdf()
+    if name == "sf":
+        return None, *sf_basis()
     basis, D = _launch_case(name)
     return None, basis, D
 
@@ -113,8 +154,12 @@ def _plan(cell: Cell) -> KBLaunchPlan:
         assert any(b.dmax < decay.dm for c in kb_launches(
             basis, D, bound=bound, tau=cell.tau, decay=decay)
             for b in c.blocks), "no block's factor is under max|D|"
-    return kb_launches(basis, D, bound=bound, tau=cell.tau,
+    plan = kb_launches(basis, D, bound=bound, tau=cell.tau,
                        build=build_kblock_kernel, decay=decay)
+    if cell.lmax is not None:
+        plan = replace(plan, classes=tuple(c for c in plan
+                                           if c.L <= cell.lmax))
+    return plan
 
 
 @cache
@@ -135,15 +180,21 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
     tc = _toolchain(backend, request)
     fx, basis, D = _case(cell.case)
     plan = _plan(cell)
-    parts = class_binaries(tc, plan, basis, D, backend, workdir)
+    high = max(c.L for c in plan) > DEVICE_L_MAX
+    parts = class_binaries(tc, plan, basis, D, backend, workdir,
+                           with_k=cell.with_k,
+                           # an f-pair class's unit compiles for an hour or
+                           # more (#569): its source is the unrolled
+                           # contraction, not E
+                           timeout=HIGH_L_COMPILE_S if high else 1800)
     w = _walk(cell)
     Kw = np.array(w.K)
-    K0, scale = _host(cell.case)
+    K0, scale = _host(cell.case) if cell.lmax is None else (Kw, None)
     tau_scale = cell.tau * np.array(w.scale)  # #200: < tau per skipped pair
     if cell.tau > 0.0:
         assert w.n_skipped > 0, "the screen never fired"
     lines = []
-    for mode in MODES:
+    for mode in MODES if cell.with_k else ("kb",):
         Ks, _, same = run_classes(parts, basis, mode, run_device_binary,
                                   backend)
         if mode == "kb":
@@ -154,7 +205,10 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
         if not (cell.decay and mode == "k"):  # kernel_k: the scalar max|D|
             assert rel_w <= ORACLE_TOL, f"{mode}: K vs walk_kb {rel_w:.2e}"
         big0 = float(np.max(np.abs(K0)))
-        assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0 + tau_scale), (
+        # a cut plan builds part of K: held to the walk over that plan only
+        assert cell.lmax is None or fx is None
+        assert cell.lmax is not None or np.all(
+            np.abs(K - K0) <= ORACLE_TOL * big0 + tau_scale), (
             f"{mode}: K vs exchange_matrix "
             f"{float(np.max(np.abs(K - K0))) / big0:.2e}")
         if cell.decay and mode == "kb":  # within the skipped pairs' bounds

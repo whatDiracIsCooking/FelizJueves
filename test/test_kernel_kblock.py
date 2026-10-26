@@ -30,12 +30,13 @@ import numpy as np
 import pytest
 from kblock_driver import class_args, kb_driver, kb_stage
 from test_k_ondevice import ORACLE_TOL, _sp_basis
-from test_kernel_k import _dcd, _pairs, k_args, run_k
+from test_kernel_k import F_CLASSES, _dcd, _pairs, k_args, run_k
 from test_launch_k import _case as _launch_case
 from tiers import by_l
 
+from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri.k_exchange import kernel_k
-from felizjueves.eri.k_exchange.k import record_bounds
+from felizjueves.eri.k_exchange.k import exchange_matrix_and_scale, record_bounds
 from felizjueves.eri.k_exchange.kernel_k import k_class_spec
 from felizjueves.eri.k_exchange.kernel_kblock import (
     PARAMS,
@@ -55,8 +56,8 @@ from felizjueves.spec import Operator, Spec, Target
 Am = tuple[int, int, int, int]
 
 ALL = [am for am in itertools.product(range(3), repeat=4)]
-CLASSES = [by_l(am, sum(am), id="({}{}|{}{})".format(*("spd"[x] for x in am)))
-           for am in ALL]
+CLASSES = [by_l(am, sum(am), id="({}{}|{}{})".format(*("spdf"[x] for x in am)))
+           for am in ALL + F_CLASSES]
 
 
 def _na_nb(am: Am) -> tuple[int, int]:
@@ -210,6 +211,34 @@ def test_the_interpreted_plan_is_the_walk_with_p_shells(lanes, tmp_path):
     Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
     big = float(np.max(np.abs(Kw)))
     assert big > 0.0 and float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * big
+
+
+def sf_basis() -> tuple[Basis, np.ndarray]:
+    """An s and an f shell on two centres, one primitive each: every K class
+    with `l` in {0, 3}, (ff|ff) among them (#569)."""
+    basis = Basis((Shell(0, (0.0, 0.0, 0.0), (0.9,), (1.0,)),
+                   Shell(3, (0.4, -0.7, 0.5), (0.8,), (1.0,))))
+    n = basis.n_ao
+    return basis, np.array([[1.0 / (i + j + 1) for j in range(n)]
+                            for i in range(n)])
+
+
+@pytest.mark.slow
+def test_the_interpreted_plan_is_the_walk_and_the_host_with_f_shells(
+        tmp_path):
+    """#569: E held factored through (ff|ff). The interpreted plan against
+    `walk_kb` over the same plan and against the host's unique sweep."""
+    basis, D = sf_basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq), tau=0.0,
+                       build=build_kblock_kernel)
+    assert (3, 3, 3, 3) in {c.am for c in plan} and len(plan) == 16
+    drv = kb_driver(plan, basis, "cuda", tmp_path)
+    K = _interp_K(plan, drv, kb_stage(drv, plan, basis, D), lanes=1)
+    Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
+    K0, _ = exchange_matrix_and_scale(basis, D, pq=pq)
+    big = float(np.max(np.abs(Kw)))
+    assert big > 0.0 and float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * big
+    assert float(np.max(np.abs(K - np.array(K0)))) <= ORACLE_TOL * big
 
 
 def test_the_interpreted_plan_is_the_walk_screened(tmp_path):

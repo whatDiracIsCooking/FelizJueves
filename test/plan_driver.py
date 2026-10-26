@@ -748,7 +748,8 @@ def generated_warnings(drv: Driver, diagnostics: str) -> list[str]:
 
 
 def compile_checked(tc: Toolchain, drv: Driver | Program, out: Path, *,
-                    env: Mapping[str, str] | None = None) -> Path:
+                    env: Mapping[str, str] | None = None,
+                    timeout: float = 1800) -> Path:
     """Compile the driver with the tier's flags; FAIL on an error, and on any
     warning located in generated text (#92), naming file and line.
 
@@ -762,7 +763,7 @@ def compile_checked(tc: Toolchain, drv: Driver | Program, out: Path, *,
     cmd = compile_command(tc, drv, out)
     text, units = devcache.localize(drv.path.read_text(), drv.path.parent)
     got = devcache.compile_unit(cmd[0], cmd[1:-3], drv.path.name, text, units,
-                                out, env=env, timeout=1800)
+                                out, env=env, timeout=timeout)
     diag = got.diagnostics
     assert got.returncode == 0, (
         f"{tc.name} failed in {got.workdir}:\n"
