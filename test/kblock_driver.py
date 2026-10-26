@@ -43,6 +43,15 @@ MODE 2, opt-in (`kb_driver(..., split=granularity)`, #548): each class's
 `kernel_kblock_split` set at `R = 1`, every kernel on the block kernel's
 arguments, into the same zeroed `K_mn` -- its parameters are the block
 kernel's, `Dcd` and `K` with a leading extent of one.
+
+THE ROLLED KERNEL, opt-in (`kb_driver(..., rolled=True)`, #571): MODE 0
+launches `kernel_kblock_rolled`'s kernel in the block kernel's place, on the
+same records (its `XPA XPC XQB XQD` simply not passed) plus what it reads
+instead of forming `E`: each class's `E^ac` / `E^bd` tables per record
+(`launch_kblock.e_table`, the ket's signed) appended to the class's doubles
+after `dmax`, and its five class tables (`kernel_kblock_rolled.tables`)
+appended to the class's ints. `with_k=False` (#569) leaves `kernel_k` out,
+MODE 1 then refusing, so a class above `(dd|dd)` compiles one kernel.
 """
 
 from __future__ import annotations
@@ -65,6 +74,15 @@ from felizjueves.eri.k_exchange.kernel_k import build_k_kernel
 from felizjueves.eri.k_exchange.kernel_k import shared_doubles as k_shared_doubles
 from felizjueves.eri.k_exchange.kernel_kblock import PARAMS as KB_PARAMS
 from felizjueves.eri.k_exchange.kernel_kblock import shared_doubles as kb_shared_doubles
+from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
+    PARAMS as KBR_PARAMS,
+)
+from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
+    TABLES,
+    build_kblock_rolled_kernel,
+    e_pattern,
+    tables,
+)
 from felizjueves.eri.k_exchange.kernel_kblock_split import (
     accumulators_per_density,
     build_kblock_split_kernels,
@@ -72,7 +90,7 @@ from felizjueves.eri.k_exchange.kernel_kblock_split import (
 from felizjueves.eri.k_exchange.kernel_kblock_split import (
     shared_doubles as split_shared_doubles,
 )
-from felizjueves.eri.k_exchange.launch_kblock import KBLaunchPlan
+from felizjueves.eri.k_exchange.launch_kblock import KBLaunchPlan, e_table
 from felizjueves.eri.launch_common import PairRec
 from felizjueves.ir import Kernel
 
@@ -92,16 +110,26 @@ class KBClass:
     n_ket: int
     n_blk: int
     n_ab: int
-    kb: Kernel
-    k: Kernel
+    kb: Kernel  # the block kernel, or with rolled= the rolled one (#571)
+    k: Kernel | None  # None: built with_k=False (#569)
     kbs: tuple[Kernel, ...]  # the split set (#548); () without split=
     segs: tuple[tuple[int, int, int], ...]  # (b, ket0, ket1) per b group
     scratch: tuple[int, ...]  # offset of each segment's scratch block
+    n_e: tuple[int, int] = (0, 0)  # rolled=: E entries per bra, per ket
+    n_tab: int = 0  # rolled=: the class tables' ints
+
+    @property
+    def e_doubles(self) -> int:
+        return self.n_e[0] * self.n_bra + self.n_e[1] * self.n_ket
+
+    @property
+    def ints(self) -> int:
+        return self.n_bra + self.n_ket + BLK_INTS * self.n_blk + self.n_tab
 
     @property
     def doubles(self) -> int:
         return (REC_DOUBLES + 1) * (self.n_bra + self.n_ket) + (
-            (BLK_DOUBLES + BLK_INTS) * self.n_blk)
+            (BLK_DOUBLES + BLK_INTS) * self.n_blk) + self.e_doubles + self.n_tab
 
 
 @dataclass(frozen=True)
@@ -117,6 +145,7 @@ class KBDriver:
     classes: tuple[KBClass, ...]
     dcd: tuple[tuple[int, int], ...]
     n_scratch: int
+    rolled: bool = False
 
     def dcd_doubles(self, lc: int, ld: int) -> int:
         return self.n_sh * self.n_sh * n_cartesians(lc) * n_cartesians(ld)
@@ -149,12 +178,17 @@ def _call(ns: str, kern: Kernel, args: list[str], grid: str, shared: int
 
 
 def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
-              workdir: Path, *, split: str | None = None) -> KBDriver:
+              workdir: Path, *, split: str | None = None,
+              rolled: bool = False, with_k: bool = True) -> KBDriver:
     """Emit both kernels of every class of `plan` (whose `kernel` is the block
     kernel; `kernel_k`'s is built here) and the `main()` that launches either
     mapping on one upload (module docstring). With `split=` a granularity of
     `kernel_kblock_split` (#548), each class's split set (`R = 1`) too, and
-    MODE 2 launches it on the block kernel's arguments into `K_mn`."""
+    MODE 2 launches it on the block kernel's arguments into `K_mn`. With
+    `rolled=True` (#571) MODE 0 is `kernel_kblock_rolled`'s kernel, built
+    here, the plan's `kernel` unused; `with_k=False` leaves `kernel_k` out."""
+    if rolled and split is not None:
+        raise ValueError("rolled= and split= are separate experiments")
     emit, arch, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     n_sh = len(basis.shells)
@@ -164,16 +198,18 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
     includes, units, kb_body, k_body, kbs_body = [], [], [], [], []
     scratch = 0
     for c, cl in enumerate(plan):
-        if cl.kernel is None:
+        if cl.kernel is None and not rolled:
             raise ValueError(f"K class {cl.am} carries no kernel: plan it "
                              "with build=")
-        kb = cl.kernel
-        k = k_accumulating(build_k_kernel(cl.am))
-        assert tuple(p.name for p in kb.params) == KB_PARAMS
-        assert tuple(p.name for p in k.params) == K_PARAMS
+        kb = build_kblock_rolled_kernel(cl.am) if rolled else cl.kernel
+        k = k_accumulating(build_k_kernel(cl.am)) if with_k else None
+        assert tuple(p.name for p in kb.params) == (
+            KBR_PARAMS if rolled else KB_PARAMS)
+        assert k is None or tuple(p.name for p in k.params) == K_PARAMS
         kbs = (() if split is None else
                build_kblock_split_kernels(cl.am, split, lanes=arch.wavefront))
-        for ns, kern in ((f"fj_kb{c}", kb), (f"fj_k{c}", k),
+        for ns, kern in ((f"fj_kb{c}", kb),
+                         *(((f"fj_k{c}", k),) if with_k else ()),
                          *((f"fj_kbs{c}_{i}", x) for i, x in enumerate(kbs))):
             path = workdir / f"{ns}_{kern.name}.{ext}"
             path.write_text(emit(kern, arch))
@@ -186,8 +222,11 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
         for _ in segs:
             offs.append(scratch)
             scratch += len(cl.bras) * n_ab
+        n_e = ((len(e_pattern(la, lc)[1]), len(e_pattern(lb, ld)[1]))
+               if rolled else (0, 0))
+        n_tab = sum(map(len, tables(cl.am).values())) if rolled else 0
         x = KBClass(cl.am, len(cl.bras), len(cl.kets), len(cl.blocks), n_ab,
-                    kb, k, kbs, segs, tuple(offs))
+                    kb, k, kbs, segs, tuple(offs), n_e, n_tab)
         classes.append(x)
         e = eslot[(lc, ld)]
         nb, nk = len(cl.bras), len(cl.kets)
@@ -210,6 +249,19 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                    *(f"{blk} + {j * len(cl.blocks)}" for j in range(BLK_INTS)),
                    f"bp[{c}] + {12 * (nb + nk)}",
                    *bra_args, *ket_args(0), f"dp[{e}]", "dK"]
+        if rolled:  # #571: no XPA XPC XQB XQD; E and the tables before Dcd
+            ea = 12 * (nb + nk) + len(cl.blocks)
+            ti = nb + nk + BLK_INTS * len(cl.blocks)
+            tabs, at = [], ti
+            for n in TABLES:
+                tabs.append(f"ip[{c}] + {at}")
+                at += len(tables(cl.am)[n])
+            kb_args = [*kb_args[:6 + BLK_INTS + 1],
+                       *(bra_args[i] for i in (0, 1, 4, 5, 6)),
+                       *(ket_args(0)[i] for i in (0, 1, 4, 5, 6)),
+                       f"bp[{c}] + {ea}", f"bp[{c}] + {ea + n_e[0] * nb}",
+                       *tabs, f"dp[{e}]", "dK"]
+            assert len(kb_args) == len(KBR_PARAMS)
         kb_body.append(
             f"        // class ({la}{lc}|{lb}{ld}): {len(cl.blocks)} blocks\n"
             f"        CHECK(devEventRecord(ev[{c}]));\n"
@@ -225,6 +277,8 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                                    str(len(cl.blocks)),
                                    split_shared_doubles(cl.am, acc, 1))
                              for i, kern in enumerate(kbs)))
+        if not with_k:
+            continue
         calls = [f"        // class ({la}{lc}|{lb}{ld}): {len(segs)} b shells\n"
                  f"        CHECK(devEventRecord(ev[{c}]));"]
         for (_, s, t), off in zip(segs, offs, strict=True):
@@ -234,20 +288,23 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                                str(nb), k_shared_doubles(cl.am)))
         k_body.append("\n".join(calls))
     drv = KBDriver(backend, "", workdir, (), plan.tau, plan.dm, n_sh,
-                   basis.n_ao, tuple(classes), tuple(dcd_cls), scratch)
+                   basis.n_ao, tuple(classes), tuple(dcd_cls), scratch, rolled)
     src = KB_DRIVER.format(
         prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
         portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
         n_c=len(classes), n_e=len(dcd_cls), n_dc=n_sh * n_sh,
         lanes=arch.wavefront, n_ao=basis.n_ao, n_s=max(scratch, 1),
         cd=", ".join(str(x.doubles) for x in classes),
-        ci=", ".join(str(x.n_bra + x.n_ket + BLK_INTS * x.n_blk)
-                     for x in classes),
+        ci=", ".join(str(x.ints) for x in classes),
         ne=", ".join(str(drv.dcd_doubles(*x)) for x in dcd_cls),
-        vram_kernels=", ".join(f"(const void*)fj_kb{c}::{x.kb.name}, "
-                               f"(const void*)fj_k{c}::{x.k.name}"
-                               for c, x in enumerate(classes)),
-        kb_launches="\n".join(kb_body), k_launches="\n".join(k_body),
+        vram_kernels=", ".join(
+            f"(const void*)fj_kb{c}::{x.kb.name}"
+            + (f", (const void*)fj_k{c}::{x.k.name}" if with_k else "")
+            for c, x in enumerate(classes)),
+        kb_launches="\n".join(kb_body),
+        k_launches=("\n".join(k_body) if with_k else
+                    '            std::fprintf(stderr, "mode 1: kernel_k not '
+                    'built (with_k=False)\\n");\n            return 1;'),
         n_modes=3 if split is not None else 2,
         kbs_launches="\n".join(kbs_body))
     path = workdir / f"kb_driver.{ext}"
@@ -274,6 +331,22 @@ def _rows(basis: Basis, recs: tuple[PairRec, ...], *, bra: bool
     return (np.concatenate([a[:, 0:3].ravel(), a[:, 3], a[:, 4:7].ravel(),
                             a[:, 7:10].ravel(), a[:, 10], a[:, 11]]),
             np.array(ints, dtype=np.float64))
+
+
+def _e_rows(basis: Basis, recs: tuple[PairRec, ...], *, bra: bool
+            ) -> np.ndarray:
+    """One side's `E` tables (#571), record-major: `launch_kblock.e_table` of
+    each record's primitive pair, the ket's signed."""
+    shells = basis.shells
+    eps: dict[tuple[int, int], object] = {}
+    out = []
+    for r in recs:
+        ep = eps.get((r.i, r.j))
+        if ep is None:
+            ep = eps[r.i, r.j] = epair(shells[r.i], shells[r.j])
+        P, zeta, _ = ep.recs[r.prim]
+        out += e_table(ep.la, ep.lb, zeta, P, ep.A, ep.B, sign=not bra)
+    return np.array(out, dtype=np.float64)
 
 
 def _dcd(drv: KBDriver, basis: Basis, rows: np.ndarray, lc: int, ld: int
@@ -307,7 +380,14 @@ def kb_stage(drv: KBDriver, plan: KBLaunchPlan, basis: Basis, D: object
                         [off[b.a] for b in cl.blocks],
                         [off[b.b] for b in cl.blocks]], dtype=np.float64)
         dmax = np.array([b.dmax for b in cl.blocks], dtype=np.float64)
-        parts += [bd, kd, dmax, bi, ki, blk.ravel()]
+        parts += [bd, kd, dmax]
+        if drv.rolled:  # #571: the E tables, after dmax
+            parts += [_e_rows(basis, cl.bras, bra=True),
+                      _e_rows(basis, cl.kets, bra=False)]
+        parts += [bi, ki, blk.ravel()]
+        if drv.rolled:  # #571: the class tables, after the block table
+            parts += [np.array(tables(cl.am)[n], dtype=np.float64)
+                      for n in TABLES]
     for lc, ld in drv.dcd:
         parts.append(_dcd(drv, basis, rows, lc, ld).ravel())
     out = np.concatenate(parts)
@@ -324,14 +404,16 @@ def class_args(drv: KBDriver, staged: np.ndarray, c: int) -> dict:
     b = staged[h:h + 12 * nb]
     k = staged[h + 12 * nb:h + 12 * (nb + nk)]
     dmax = staged[h + 12 * (nb + nk):h + 12 * (nb + nk) + ng]
-    ints = staged[h + 12 * (nb + nk) + ng:h + x.doubles].astype(np.int32)
+    e0 = h + 12 * (nb + nk) + ng
+    ev = staged[e0:e0 + x.e_doubles]
+    ints = staged[e0 + x.e_doubles:h + x.doubles].astype(np.int32)
     e = 2 + sum(y.doubles for y in drv.classes)
     lc, ld = x.am[1], x.am[3]
     for y in drv.dcd[:drv.dcd.index((lc, ld))]:
         e += drv.dcd_doubles(*y)
     dcd = staged[e:e + drv.dcd_doubles(lc, ld)]
-    blk = ints[nb + nk:]
-    return dict(
+    blk = ints[nb + nk:nb + nk + BLK_INTS * ng]
+    out = dict(
         n_blk=ng, n_bra=nb, n_ket=nk, n_dc=drv.n_sh * drv.n_sh,
         n_ao=drv.n_ao, tau=drv.tau,
         **{n: blk[j * ng:(j + 1) * ng] for j, n in enumerate(
@@ -346,6 +428,21 @@ def class_args(drv: KBDriver, staged: np.ndarray, c: int) -> dict:
         s_bd=k[10 * nk:11 * nk], Iq=k[11 * nk:12 * nk],
         dd=ints[nb:nb + nk],
         Dcd=dcd.reshape(drv.n_sh * drv.n_sh, -1))
+    if not drv.rolled:
+        return out
+    for n in ("XPA", "XPC", "XQB", "XQD"):
+        del out[n]
+    ea, eb = x.n_e
+    out["Eac"] = ev[:ea * nb].reshape(nb, ea)
+    out["Ebd"] = ev[ea * nb:].reshape(nk, eb)
+    at = nb + nk + BLK_INTS * ng
+    for n in TABLES:
+        m = len(tables(x.am)[n])
+        out[n] = ints[at:at + m]
+        at += m
+    lq = x.am[2] + x.am[3]
+    out["hpq"] = out["hpq"].reshape(-1, (lq + 1) * (lq + 2) * (lq + 3) // 6)
+    return out
 
 
 def kb_read_back(drv: KBDriver, raw: np.ndarray) -> list[np.ndarray]:
@@ -385,7 +482,8 @@ class ClassBinary:
 
 def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
                    backend: str, workdir: Path, *, jobs: int | None = None,
-                   split: str | None = None) -> list[ClassBinary]:
+                   split: str | None = None, rolled: bool = False,
+                   with_k: bool = True) -> list[ClassBinary]:
     """One driver PER CLASS (`plan` cut to that one class), compiled in
     parallel, each staged. A whole molecule's 162 kernels in one translation
     unit leave one compiler thread at it for most of an hour; one class per
@@ -397,7 +495,8 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
     def one(c: int) -> ClassBinary:
         sub = replace(plan, classes=(plan.classes[c],))
         w = workdir / f"c{c}"
-        drv = kb_driver(sub, basis, backend, w / "gen", split=split)
+        drv = kb_driver(sub, basis, backend, w / "gen", split=split,
+                        rolled=rolled, with_k=with_k)
         binary = compile_checked(tc, drv, w / "kb_driver")
         staged = w / "in.bin"
         kb_stage(drv, sub, basis, D).tofile(staged)

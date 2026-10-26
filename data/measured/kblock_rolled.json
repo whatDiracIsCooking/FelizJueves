@@ -1,0 +1,163 @@
+{
+ "schema": 1,
+ "issue": 571,
+ "about": "    devtools/measure.sh kblock-rolled-compile [--backend cuda|hip]   a compiler\n    devtools/measure.sh kblock-rolled [--backend cuda|hip]           timed",
+ "declared": {
+  "issue": 571,
+  "hypothesis": "E read from global memory and the contraction as loops make every l <= 3 K class compile in minutes; the loops cost (dd|dd) wall-clock against the unrolled kb, which keeps its compile-time constant indices",
+  "rule": "per arch: the median over the timed runs of the (dd|dd) class's events, rolled / kb: 'faster' below 0.95, 'slower' above 1.05, else 'neutral'. A RECORD, not a gate (#571): kb stays the default through d whatever it reads",
+  "expected": "slower: the rolled stages read E and the tables from global memory and R from local memory per term",
+  "declared": "2026-10-26, before any row"
+ },
+ "kb_ff_not_compiled": {
+  "issue": 569,
+  "unit": "kb_33_33",
+  "source_bytes": 22200000,
+  "nvcc": "killed in cicc at 2.8 h, 2.28 GB RSS (E composed); 2.7 h, 2.26 GB (E factored)",
+  "re_run": false
+ },
+ "compile": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "arm": "kb",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kb_22_22",
+   "source_bytes": 1665471,
+   "compile_s": 64.01,
+   "peak_rss_kb": 815808,
+   "registers": 255,
+   "spill_store": 14732,
+   "spill_load": 117880,
+   "stack_bytes": 12528
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "arm": "rolled",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kbr_22_22",
+   "source_bytes": 37009,
+   "compile_s": 1.0,
+   "peak_rss_kb": 190656,
+   "registers": 128,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 1320
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "arm": "rolled",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "unit": "kbr_33_33",
+   "source_bytes": 96890,
+   "compile_s": 1.09,
+   "peak_rss_kb": 192192,
+   "registers": 254,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 3640
+  }
+ ],
+ "clock": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "7ef7958eb654 (container)",
+   "date": "2026-10-26",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "rolled_vs_kb_rel": 2.696052381516924e-16,
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 10,
+     "gpu_util_before": 22,
+     "gpu_util_after": 7
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 22,
+     "gpu_util_before": 5,
+     "gpu_util_after": 1
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 10,
+     "gpu_util_before": 2,
+     "gpu_util_after": 4
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 26,
+     "gpu_util_before": 10,
+     "gpu_util_after": 2
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 27,
+     "gpu_util_before": 4,
+     "gpu_util_after": 6
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 16,
+     "gpu_util_before": 7,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 1,
+   "arms": {
+    "kb": {
+     "median_ns": 1109552124,
+     "q1_ns": 1103636475,
+     "q3_ns": 1149262695,
+     "n": 21
+    },
+    "rolled": {
+     "median_ns": 2619539551,
+     "q1_ns": 2609084473,
+     "q3_ns": 2634386475,
+     "n": 21
+    }
+   },
+   "rolled_over_kb": 2.3609,
+   "verdict": "slower"
+  }
+ ]
+}

@@ -3135,7 +3135,8 @@ EDGES |= {k: frozenset(v) for k, v in {
                                      "spec"),
     "eri.k_exchange.launch_kblock": ("ao.density", "eri.k_exchange.k",
                                      "ao.shell", "ir", "eri.launch_common",
-                                     "eri.k_exchange.launch_k", "spec"),
+                                     "eri.k_exchange.launch_k", "mmd.hermite",
+                                     "spec"),
 }.items()}
 
 # #548: the block kernel split per column / element with a density stack, a
@@ -3156,6 +3157,28 @@ EDGES["eri.k_exchange.kernel_kblock_split"] = frozenset((
     "mmd.kernel", "eri.k_exchange.kernel_k", "eri.k_exchange.kernel_kblock",
     "spec"))
 
+# #571: the block kernel with E from global memory and the contraction
+# rolled, a sibling of `kernel_kblock` under `kblock_builder`'s prohibitions;
+# it shares the block kernel's refusals, `kernel_k`'s per-pair body and the
+# K seams' hooks by import, and reads E's structural pattern off
+# `e_fragment` and `plan.targets` (the VALUES are the host's,
+# `launch_kblock.e_table`).
+RULES |= {
+    "kblock_rolled_builder": _rule(
+        "kernel_kblock_rolled.py (#571): `kernel_kblock`'s mapping with "
+        "E^ac, E^bd from global memory and the contraction emitted as "
+        "loops over class tables",
+        ("spec", "=ir", "plan", "mmd.kernel", "mmd.recurrence",
+         "mmd.e_fragment", "eri.k_exchange.kernel_k",
+         "eri.k_exchange.kernel_kblock", "eri.k_exchange.levers"),
+        **RULES["kblock_builder"].must_not),
+}
+RULE_OF["eri.k_exchange.kernel_kblock_rolled"] = "kblock_rolled_builder"
+EDGES["eri.k_exchange.kernel_kblock_rolled"] = frozenset((
+    "ir", "eri.k_exchange.levers.seams", "mmd.e_fragment", "mmd.kernel",
+    "mmd.recurrence", "plan.targets", "eri.k_exchange.kernel_k",
+    "eri.k_exchange.kernel_kblock", "spec"))
+
 
 def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
     # #481, TRANSITIVELY: the builder reaches no `ao/`, reference/, the
@@ -3175,6 +3198,10 @@ def test_the_block_k_modules_reach_neither_witness_nor_machine() -> None:
 
     for root, banned in (
             ("eri.k_exchange.kernel_kblock",
+             (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+              "performance.device", "eri.j_coulomb.launch", "eri.k_exchange.launch_k",
+              "eri.k_exchange.launch_kblock")),
+            ("eri.k_exchange.kernel_kblock_rolled",
              (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
               "performance.device", "eri.j_coulomb.launch", "eri.k_exchange.launch_k",
               "eri.k_exchange.launch_kblock")),
