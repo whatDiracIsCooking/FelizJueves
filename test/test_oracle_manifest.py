@@ -246,10 +246,19 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
     carriers = {key(fx) for fx in fixtures
                 if manifest.OVLP_ARRAY in fx.arrays}
     skipped = set()
+    pieces = {f"co_ccpvtz_j{s}" for s in manifest.ONE_E_PIECE_SUFFIXES}
     for fx in fixtures:
         has = [n for n in manifest.ONE_E_ARRAYS if n in fx.arrays]
         if fx.converted is None:
             assert not has, fx.name
+            continue
+        if fx.name in pieces:  # #570: a half each (THE ONE-ELECTRON PIECES)
+            continue
+        if fx.name == "co_ccpvtz_j":  # #570: its two pieces carry the four
+            whole = manifest.one_e_fixture(fx.name)
+            assert not has and all(n in whole.arrays
+                                   for n in manifest.ONE_E_ARRAYS)
+            skipped.add(fx.name)
             continue
         if generate.CASES[fx.name].record_one_e:
             assert has == list(manifest.ONE_E_ARRAYS), fx.name
@@ -262,7 +271,7 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
                        "h2o_631g_schwarz",
                        "h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz",
                        "h2o_sto3g_dipole", "h2o_631g_dipole",
-                       "h2o_ccpvdz_dipole"}
+                       "h2o_ccpvdz_dipole", "co_ccpvtz_j", "co_ccpvtz_k"}
 
 
 def test_the_cross_overlap_fixtures_name_their_rows_and_fit_them():
@@ -486,6 +495,99 @@ def test_a_bad_one_e_array_fails_naming_the_file(tmp_path, mutate, says):
         load(path)
     assert str(path) in str(e.value)
     assert says in str(e.value)
+
+
+# --- #570: the one-electron pieces ------------------------------------------
+
+PIECE_OWNER = "co_ccpvtz_j"
+
+
+def test_the_one_e_pieces_reassemble_into_their_owner():
+    """`one_e_fixture` merges exactly the two halves into the owner, which
+    carries none of the four itself; each piece is density-free and holds
+    its half and nothing else of the four; a fixture that carries the four
+    comes back as loaded."""
+    owner = load(manifest.FIXTURES / f"{PIECE_OWNER}.json")
+    assert not any(n in owner.arrays for n in manifest.ONE_E_ARRAYS)
+    whole = manifest.one_e_fixture(PIECE_OWNER)
+    assert set(whole.arrays) == set(owner.arrays) | set(manifest.ONE_E_ARRAYS)
+    for half, suffix in zip(manifest.ONE_E_HALVES,
+                            manifest.ONE_E_PIECE_SUFFIXES, strict=True):
+        piece = load(manifest.FIXTURES / f"{PIECE_OWNER}{suffix}.json")
+        assert piece.density_free
+        assert [n for n in manifest.ONE_E_ARRAYS if n in piece.arrays] \
+            == list(half)
+        for n in half:
+            assert np.array_equal(whole.arrays[n], piece.arrays[n])
+    assert np.array_equal(whole.density, owner.density)
+    own = manifest.one_e_fixture("h2o_sto3g_j")
+    plain = load(manifest.FIXTURES / "h2o_sto3g_j.json")
+    assert set(own.arrays) == set(plain.arrays)
+    assert all(np.array_equal(own.arrays[n], plain.arrays[n])
+               for n in plain.arrays)
+    assert PIECE_OWNER in manifest.one_e_fixtures()
+    assert not any(n.endswith(s) for n in manifest.one_e_fixtures()
+                   for s in manifest.ONE_E_PIECE_SUFFIXES)
+
+
+def _pieces(tmp_path, mutate_st=None):
+    """The owner and both pieces copied to `tmp_path`, `_st` mutated."""
+    for suffix in ("", *manifest.ONE_E_PIECE_SUFFIXES):
+        src = manifest.FIXTURES / f"{PIECE_OWNER}{suffix}.json"
+        raw = json.loads(src.read_text())
+        if suffix == "_st" and mutate_st is not None:
+            mutate_st(raw)
+        (tmp_path / src.name).write_text(json.dumps(raw))
+    return tmp_path / f"{PIECE_OWNER}_st.json"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r["arrays"].update(int1e_nuc=r["arrays"]["int1e_kin"]),
+         "carries exactly ['int1e_ovlp', 'int1e_kin']"),
+        (lambda r: r["arrays"].pop("int1e_kin"),
+         "carries exactly ['int1e_ovlp', 'int1e_kin']"),
+        (lambda r: (r["arrays"].update(density={"shape": [70, 70],
+                                                "values": [0.0] * 4900}),
+                    r.update(density_recipe="hilbert: x")),
+         "is density-free"),
+    ],
+    ids=["extra-array", "half-missing", "with-density"],
+)
+def test_a_bad_one_e_piece_fails_naming_the_file(tmp_path, mutate, says):
+    path = _pieces(tmp_path, mutate)
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value) and says in str(e.value)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r["atoms"][0]["coord"].__setitem__(0, 0.5), "atoms"),
+        (lambda r: r["provenance"].update(basis="cc-pvdz"),
+         "provenance.basis"),
+        (lambda r: (r["arrays"]["ovlp"]["values"].__setitem__(1, 0.5),
+                    r["arrays"]["int1e_ovlp"]["values"].__setitem__(1, 0.5)),
+         "arrays.ovlp"),
+    ],
+    ids=["moved-atom", "other-basis", "other-ovlp"],
+)
+def test_a_piece_of_other_inputs_is_refused_naming_both(tmp_path, mutate,
+                                                        says):
+    path = _pieces(tmp_path, mutate)
+    with pytest.raises(FixtureError) as e:
+        manifest.one_e_fixture(PIECE_OWNER, tmp_path)
+    assert str(path) in str(e.value) and says in str(e.value)
+    assert "not a one-electron piece" in str(e.value)
+
+
+def test_a_missing_one_e_piece_is_refused(tmp_path):
+    _pieces(tmp_path)
+    (tmp_path / f"{PIECE_OWNER}_vh.json").unlink()
+    with pytest.raises(FixtureError, match=f"{PIECE_OWNER}_vh"):
+        manifest.one_e_fixture(PIECE_OWNER, tmp_path)
 
 
 # --- #517: the dipole fixtures, siblings of the `_j` files ----------------

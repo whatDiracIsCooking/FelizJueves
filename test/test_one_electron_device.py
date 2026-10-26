@@ -34,7 +34,10 @@ F's own `(ff)` diagonal pair), the same check under the same bound. `V` at
 the `la <= lb` units are the generate phase's; without it the driver emits
 them, the same text. Its compile-only companions are `slow` too.
 
-PART 2, PER MOLECULE. H2O/STO-3G and H2O/cc-pVDZ, every class at once, S, T
+PART 2, PER MOLECULE. H2O/STO-3G, H2O/cc-pVDZ and, `slow` (#570),
+CO/cc-pVTZ -- f on both atoms, so every class through (ff) between two
+centres, its one-electron arrays in two pieces (`manifest.one_e_fixture`)
+-- every class at once, S, T
 and V against the tracked libcint fixture arrays (`int1e_ovlp`, `int1e_kin`,
 `int1e_nuc`, #240) at test_ao_overlap.py's stated tolerance, unchanged:
 `|M_dev - M_libcint| <= ONE_E_TOL one_e_scale(E_M)` (1e-12, the absolute
@@ -137,12 +140,17 @@ TARGET_PARAMS = [pytest.param(t, id=t.name) for t in TARGETS]
 PART1 = "hf_ccpvtz"
 LMAX = 2  # through (dd): the default tier's ceiling (the issue)
 LMAX_DEFERRED = 3  # through (ff): #244's deferred tier, `slow`
-MOLECULES = ("h2o_sto3g_j", "h2o_ccpvdz_j")
+MOLECULES = ("h2o_sto3g_j", "h2o_ccpvdz_j", "co_ccpvtz_j")
 # H2O/cc-pVDZ is `slow`: the PR gate holds S, T and V to libcint on
-# H2O/STO-3G, and the d shells to the host in part 1.
+# H2O/STO-3G, and the d shells to the host in part 1. #570's CO/cc-pVTZ
+# (f on both atoms, every class through (ff) between two centres) is
+# `slow` too, the one molecule allowed past LMAX: its units through (ff)
+# are the driver's where the tier's `--one-e-l 2` stops.
+SLOW_MOLECULES = ("h2o_ccpvdz_j", "co_ccpvtz_j")
+F_MOLECULES = ("co_ccpvtz_j",)
 MOLECULE_CELLS = [pytest.param(m, t, id=f"{m}-{t.name}",
                                marks=(pytest.mark.slow,)
-                               if m == "h2o_ccpvdz_j" else ())
+                               if m in SLOW_MOLECULES else ())
                   for m in MOLECULES for t in TARGETS]
 FIXTURE_ARRAY = {Target.S: manifest.OVLP_ARRAY, Target.T: manifest.KIN_ARRAY,
                  Target.V: manifest.NUC_ARRAY}
@@ -163,8 +171,10 @@ def _n_e(L: int) -> int:
 
 @cache
 def _case(name: str):
-    """(fixture, basis, nuclei) of a tracked fixture; nuclei its atoms."""
-    fx = manifest.load(manifest.FIXTURES / f"{name}.json")
+    """(fixture, basis, nuclei) of a tracked fixture, its one-electron
+    arrays reassembled from its pieces where it has them (#570); nuclei its
+    atoms."""
+    fx = manifest.one_e_fixture(name)
     return fx, ob.from_fixture(fx), tuple((float(a.charge), a.coord)
                                           for a in fx.atoms)
 
@@ -330,6 +340,15 @@ def _scale(name: str, target: Target, lmax: int | None):
 
 def _bound(name: str, target: Target, lmax: int | None):
     M, K, N, cls_of = _scale(name, target, lmax)
+    # #570: Mabs completed by Cauchy-Schwarz, test_ao_overlap.one_e_scale's
+    # rule. On one centre OFF the origin `X_PA` is an ulp, not 0, so a
+    # parity zero comes out ~1e-31 on each side while its own Mabs is that
+    # same size and the sides need not agree to a fraction of it; the error
+    # is a fraction of the two functions' size, the geometric mean of their
+    # diagonals. Every earlier case had such pairs at X_PA = 0 exactly
+    # (HF/cc-pVTZ's d on H, H2O's O at the origin); CO/cc-pVTZ's O d and f
+    # do not.
+    M = one_e_scale(M)
     g = np.vectorize(_gamma)
     delta = BOYS_REL if target is Target.V else 0.0
     tol = (2.0 * g((N + K).astype(int)) + delta) * M
@@ -467,7 +486,8 @@ def _part2(backend: str, name: str, target: Target, request,
     tc = _toolchain(backend, request)
     fx, basis, _ = _case(name)
     launch = _launch(name)
-    assert max(max(c.la, c.lb) for c in launch) <= LMAX
+    assert max(max(c.la, c.lb) for c in launch) <= (
+        LMAX_DEFERRED if name in F_MOLECULES else LMAX)
     units = _units(backend, launch, target)
     Ms = build_on_card(launch, target, basis.n_ao, backend, tc, tmp_path,
                        run_device_binary, units=units)
@@ -512,7 +532,9 @@ def test_hip_one_electron_matrices_match_libcint(name, target, request,
 # Compile-only companions (`cuda` / `hip`, no `gpu`): no card needed
 # ---------------------------------------------------------------------------
 
-COMPILE_CELLS = [pytest.param(n, t, LMAX, id=f"{n}-{t.name}")
+COMPILE_CELLS = [pytest.param(n, t, LMAX, id=f"{n}-{t.name}",
+                              marks=(pytest.mark.slow,)
+                              if n in F_MOLECULES else ())
                  for n in (PART1, *MOLECULES) for t in TARGETS] + [
     pytest.param(PART1, t, LMAX_DEFERRED, id=f"{PART1}-ff-{t.name}",
                  marks=pytest.mark.slow) for t in TARGETS]

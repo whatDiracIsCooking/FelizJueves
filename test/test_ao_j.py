@@ -150,6 +150,36 @@ def test_coulomb_matrix(name):
         f"scale; worst err/scale {worst:.2e}; J/get_jk ratio {ratio:.6g}")
 
 
+F_CASE = "co_ccpvtz_j"  # #570: f on both atoms, one sweep only, by cost
+
+
+@pytest.mark.slow  # 20 shells through (ff|ff): one sweep is tens of minutes
+def test_coulomb_matrix_with_f_against_get_jk():
+    """#570's f witness: the unique sweep's J of CO/cc-pVTZ (f on both
+    atoms, so every class through (ff|ff) between two centres) against
+    libcint's `vj` at JK_TOL of `scale_J`, unchanged. One sweep, not
+    `test_coulomb_matrix`'s three: the sweeps' agreement and symmetry are
+    held there on the d cases, and a CO sweep is tens of minutes."""
+    fx, basis = _case(F_CASE)
+    assert max(s.l for s in basis.shells) == 3
+    assert {fx.atoms[s.atom].symbol for s in fx.converted.shells
+            if s.l == 3} == {"C", "O"}
+    J, scale = (np.array(x) for x in
+                coulomb_matrix_and_scale(basis, fx.density, pq=pq))
+    ref = fx.arrays[manifest.J_ARRAY]
+    err = np.abs(J - ref)
+    assert np.all(scale > 0)
+    worst = float(np.max(err / scale))
+    sym = float(np.max(np.abs(J - J.T)) / np.max(np.abs(J)))
+    print(f"\n{F_CASE}: max|J - get_jk| = {err.max():.2e}, max err/scale = "
+          f"{worst:.2e}, symmetry {sym:.2e}")
+    assert sym <= SYM_TOL, f"{F_CASE}: J asymmetric, {sym:.2e}"
+    bad = err > JK_TOL * scale
+    assert not bad.any(), (
+        f"{F_CASE}: {int(bad.sum())} of {err.size} elements exceed 1e-12 * "
+        f"scale; worst err/scale {worst:.2e}")
+
+
 def test_the_weight_is_exercised():
     """The sweeps' agreement means something only if the off-diagonal ket
     shell pairs carry weight. Split D into its diagonal-shell-pair blocks and

@@ -391,7 +391,7 @@ def kinetic_scale_block(sa: Shell, sb: Shell):
 
 @pytest.mark.parametrize("name", ONE_E_PARAMS)
 def test_kinetic_matrix_against_libcint(name: str) -> None:
-    fx = _manifest.load(_manifest.FIXTURES / f"{name}.json")
+    fx = _manifest.one_e_fixture(name)
     basis = _ob.from_fixture(fx)
     T = np.array(kinetic_matrix(basis))
     scale = one_e_scale(np.array(_matrix(basis, kinetic_scale_block)))

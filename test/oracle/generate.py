@@ -61,6 +61,8 @@ from .manifest import (
     METRIC_SCHEMA,
     NO_DENSITY_RECIPE,
     NUC_ARRAY,
+    ONE_E_HALVES,
+    ONE_E_PIECE_SUFFIXES,
     OVLP_ARRAY,
     R0_ARRAY,
     R_ARRAY,
@@ -117,6 +119,11 @@ class Case:
     # exactly, which carries the four, and four 50 x 50 arrays would put
     # four of the five over the 512 KB hook (test_ao_eri.py pins it).
     record_one_e: bool = True
+    # #570: write only this half of the four (`manifest.ONE_E_HALVES`, by
+    # index): a ONE-ELECTRON PIECE, for a molecule whose four nao x nao
+    # arrays do not fit one file under the 512 KB hook. Needs
+    # `record_one_e`; the case is density-free.
+    one_e_half: int | None = None
     # Write the `int2e_diag` array: libcint's `(mn|mn)` for every AO pair,
     # the square of the Schwarz factor (`eri/schwarz.py`). Needs
     # `record_basis`, as `record_j` does.
@@ -638,6 +645,54 @@ CASES.update({
 })
 
 
+# #570: the f witness of a whole-molecule build. CO in Cartesian cc-pVTZ
+# (C and O each 4s3p2d1f; 18 shells, 70 AOs): f on BOTH centres and
+# heteronuclear, so every class through (ff|ff) occurs between two
+# different atoms and no A <-> B swap hides behind a symmetry. H2O or HF in
+# cc-pVTZ carry f on one atom only, so their (ff|ff) is one-centre. The
+# bond is ~2.10 bohr, off every axis. A 70 x 70 array is ~127 KB here, so
+# a file holds three under the 512 KB hook: `_j` and `_k` the density, the
+# legacy `ovlp` and vj / vk; the four one-electron arrays go in two
+# density-free ONE-ELECTRON PIECES beside the `_j` (`manifest.one_e_fixture`
+# reassembles them, refusing pieces whose inputs differ from the `_j`'s).
+_CO = "C 0.13 -0.21 0.17; O 0.77 0.86 1.86"
+
+CASES["co_ccpvtz_j"] = Case(
+    description=(
+        "#570's f case: CO in cc-pVTZ, Cartesian (ten f components), off "
+        "every axis, f on both atoms. Records the converted basis and "
+        "PySCF's get_jk J for the recorded density; the one-electron arrays "
+        "are its two pieces', co_ccpvtz_j_st and co_ccpvtz_j_vh."
+    ),
+    atom=_CO,
+    unit="Bohr",
+    basis="cc-pvtz",
+    cart=True,
+    record_basis=True,
+    record_j=True,
+    record_one_e=False,  # in the pieces: four 70 x 70 arrays do not fit
+)
+CASES["co_ccpvtz_k"] = _k_case("co_ccpvtz_j")
+CASES.update({
+    f"co_ccpvtz_j{suffix}": replace(
+        CASES["co_ccpvtz_j"],
+        description=(
+            f"#570: co_ccpvtz_j's molecule and basis, with half of the "
+            f"one-electron arrays ({', '.join(half)}): a density-free "
+            "one-electron piece, reassembled with its sibling by "
+            "manifest.one_e_fixture('co_ccpvtz_j')."
+        ),
+        record_j=False,
+        record_one_e=True,
+        one_e_half=h,
+        density="none",
+    )
+    for h, (half, suffix) in enumerate(zip(ONE_E_HALVES,
+                                           ONE_E_PIECE_SUFFIXES,
+                                           strict=True))
+})
+
+
 def _host() -> str:
     # The same marking felizjueves.performance.measured uses: a container's hostname is
     # its id, not the box's.
@@ -922,7 +977,16 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
         out["arrays"][CROSS_PREFIX + case.cross_rows] = encode_array(
             cross_overlap_array(_mole(rows), mol))
     if case.record_basis and case.record_one_e:
-        out["arrays"].update(one_e_arrays(mol))
+        one_e = one_e_arrays(mol)
+        if case.one_e_half is not None:
+            if dm is not None:
+                raise ValueError(f"{name}: a one-electron piece is "
+                                 "density-free")
+            one_e = {k: one_e[k] for k in ONE_E_HALVES[case.one_e_half]}
+        out["arrays"].update(one_e)
+    elif case.one_e_half is not None:
+        raise ValueError(f"{name}: one_e_half needs record_basis and "
+                         "record_one_e")
     return out
 
 
