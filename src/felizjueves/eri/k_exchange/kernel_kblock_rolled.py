@@ -75,10 +75,18 @@ order, with the sign moved from a `SUB` into `Ebd` (`acc - r (s e)` is
 differs between the unrolled and the rolled text, so there it is held to
 rounding (test/test_kblock_rolled_ondevice.py).
 
-THE LAYOUT IS RECORD-MAJOR, `Eac[bra, e]` as `XPA[bra, d]` is: the lanes of
-a warp read one bra's row (a broadcast) and distinct kets' rows of `Ebd`
-(strided). `ir.passes.transpose(kernel, ("Ebd",))` would make the ket reads
-contiguous; not applied, nothing measured asks for it.
+THE LAYOUT IS RECORD-MAJOR by default, `Eac[bra, e]` as `XPA[bra, d]` is:
+the lanes of a warp read one bra's row (a broadcast) and distinct kets' rows
+of `Ebd` (strided by `n_ebd` doubles, one sector per lane). Opt-in,
+`build_kblock_rolled_kernel(..., transposed=True)` (#576, `kbrt_*`) is
+`ir.passes.transpose(kernel, ("Ebd",))` of it: `Ebd[n_ebd, n_ket]`, every
+`Ebd[k, e]` read as `Ebd[e, k]`, so the warp's consecutive kets read
+consecutive doubles; a relayout, the same terms in the same order, so
+interpreted it is the default's `K` bit for bit. `Eac` stays record-major
+(a broadcast). The default text is unchanged by the option. Measured on
+the RTX 3080 (#576, `data/measured/kblock_rolled.json`'s `transpose_clock`):
+0.94x the default's time at `(dd|dd)`, neutral at `(ff|ff)`, so the
+default stays record-major.
 
 THE DENSE-HERMITE FORM (#575), `build_kblock_dense_kernel` (`kbd_*`), a
 third contraction between `kb`'s unrolled text and this rolled one: the
@@ -156,6 +164,7 @@ from felizjueves.ir import (
     Var,
     WarpReduce,
 )
+from felizjueves.ir.passes import transpose
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.kernel import builder_plan, split
 from felizjueves.mmd.recurrence import node_name
@@ -164,6 +173,7 @@ from felizjueves.spec import Spec
 
 __all__ = [
     "DENSE_PARAMS",
+    "TRANSPOSED",
     "E_PARAMS",
     "PARAMS",
     "TABLES",
@@ -191,6 +201,8 @@ PARAMS = ("n_blk", "n_bra", "n_ket", "n_dc", "n_ao", "tau",
 
 DENSE_PARAMS = tuple(p for p in PARAMS if p not in TABLES)  # kbd (#575)
 
+TRANSPOSED = ("Ebd",)  # stored [n_ebd, n_ket] by transposed=True (#576)
+
 R = "R"  # the local [r]^(0) array, Hermite order of hermite_targets(L)
 
 ROLLED_NOTE = (
@@ -207,9 +219,10 @@ DENSE_NOTE = (
     "and [p+q] the recurrence's own named local -- no R array, no tables")
 
 
-def kblock_rolled_name(am: tuple[int, int, int, int]) -> str:
+def kblock_rolled_name(am: tuple[int, int, int, int], *,
+                       transposed: bool = False) -> str:
     la, lc, lb, ld = am
-    return f"kbr_{la}{lc}_{lb}{ld}"
+    return f"kbr{'t' if transposed else ''}_{la}{lc}_{lb}{ld}"
 
 
 def e_pattern(l1: int, l2: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -491,14 +504,19 @@ def build_kblock_dense_kernel(cls: tuple[int, int, int, int] | Spec, *,
 
 
 def build_kblock_rolled_kernel(cls: tuple[int, int, int, int] | Spec, *,
-                               name: str | None = None) -> Kernel:
+                               name: str | None = None,
+                               transposed: bool = False) -> Kernel:
     """The rolled block exchange kernel of one K class (module docstring).
     `cls` is `(la, lc, lb, ld)`, the Hermite pairing, bra first, or a
-    one-batch, lever-free `Target.K` `Spec` (`kernel_kblock.spec_of`)."""
+    one-batch, lever-free `Target.K` `Spec` (`kernel_kblock.spec_of`).
+    `transposed=True` (#576) stores `Ebd` as `[n_ebd, n_ket]`
+    (`ir.passes.transpose`, `kbrt_*`); the default is untouched."""
     spec = spec_of(cls)
-    name = kblock_rolled_name(spec.am) if name is None else name
-    return _build(spec, name, _store_r, _rolled_contract, _params(spec),
-                  "global memory and the contraction rolled (#571)")
+    if name is None:
+        name = kblock_rolled_name(spec.am, transposed=transposed)
+    k = _build(spec, name, _store_r, _rolled_contract, _params(spec),
+               "global memory and the contraction rolled (#571)")
+    return transpose(k, TRANSPOSED) if transposed else k
 
 
 def _build(spec: Spec, name: str, bind_e_bd, contract,

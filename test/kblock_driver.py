@@ -58,6 +58,13 @@ dense=True)`, #575): MODE 0 launches
 `kernel_kblock_rolled.build_kblock_dense_kernel`'s kernel on the rolled
 layout, its `E` tables DENSE (`e_table(..., dense=True)`, zeros kept) and
 no class tables.
+
+THE TRANSPOSED KET TABLE, opt-in (`kb_driver(..., rolled=True,
+transposed=True)`, #576): MODE 0 launches
+`build_kblock_rolled_kernel(..., transposed=True)` (`kbrt_*`), and the ket
+`E` block is staged transposed, `Ebd[n_ebd, n_ket]` (entry-major, the
+warp's consecutive kets adjacent), `class_args` returning it so; every
+other array as `rolled=True` stages it.
 """
 
 from __future__ import annotations
@@ -155,6 +162,7 @@ class KBDriver:
     n_scratch: int
     rolled: bool = False
     dense: bool = False  # with rolled: the dense-Hermite kernel (#575)
+    transposed: bool = False  # with rolled: Ebd stored [n_ebd, n_ket] (#576)
 
     def dcd_doubles(self, lc: int, ld: int) -> int:
         return self.n_sh * self.n_sh * n_cartesians(lc) * n_cartesians(ld)
@@ -189,7 +197,7 @@ def _call(ns: str, kern: Kernel, args: list[str], grid: str, shared: int
 def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
               workdir: Path, *, split: str | None = None,
               rolled: bool = False, dense: bool = False,
-              with_k: bool = True) -> KBDriver:
+              transposed: bool = False, with_k: bool = True) -> KBDriver:
     """Emit both kernels of every class of `plan` (whose `kernel` is the block
     kernel; `kernel_k`'s is built here) and the `main()` that launches either
     mapping on one upload (module docstring). With `split=` a granularity of
@@ -198,9 +206,14 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
     `rolled=True` (#571) MODE 0 is `kernel_kblock_rolled`'s kernel, built
     here, the plan's `kernel` unused; `with_k=False` leaves `kernel_k` out.
     With `dense=True` too (#575) MODE 0 is `build_kblock_dense_kernel`'s
-    kernel instead, its `E` dense and no class tables."""
+    kernel instead, its `E` dense and no class tables. With
+    `transposed=True` too (#576) MODE 0 is the rolled kernel with `Ebd`
+    stored `[n_ebd, n_ket]`, staged so."""
     if dense and not rolled:
         raise ValueError("dense= is a form of rolled=: pass both")
+    if transposed and (not rolled or dense):
+        raise ValueError("transposed= is a form of rolled= (not dense=): "
+                         "pass rolled=True")
     if rolled and split is not None:
         raise ValueError("rolled= and split= are separate experiments")
     emit, arch, ext = BACKEND[backend]
@@ -216,7 +229,8 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
             raise ValueError(f"K class {cl.am} carries no kernel: plan it "
                              "with build=")
         kb = (build_kblock_dense_kernel(cl.am) if dense else
-              build_kblock_rolled_kernel(cl.am) if rolled else cl.kernel)
+              build_kblock_rolled_kernel(cl.am, transposed=transposed)
+              if rolled else cl.kernel)
         k = k_accumulating(build_k_kernel(cl.am)) if with_k else None
         assert tuple(p.name for p in kb.params) == (
             DENSE_PARAMS if dense else KBR_PARAMS if rolled else KB_PARAMS)
@@ -306,7 +320,7 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
         k_body.append("\n".join(calls))
     drv = KBDriver(backend, "", workdir, (), plan.tau, plan.dm, n_sh,
                    basis.n_ao, tuple(classes), tuple(dcd_cls), scratch, rolled,
-                   dense)
+                   dense, transposed)
     src = KB_DRIVER.format(
         prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
         portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
@@ -413,8 +427,10 @@ def kb_stage(drv: KBDriver, plan: KBLaunchPlan, basis: Basis, D: object
         dmax = np.array([b.dmax for b in cl.blocks], dtype=np.float64)
         parts += [bd, kd, dmax]
         if drv.rolled:  # #571: the E tables, after dmax
-            parts += [_e_rows(basis, cl.bras, bra=True, dense=drv.dense),
-                      _e_rows(basis, cl.kets, bra=False, dense=drv.dense)]
+            eb = _e_rows(basis, cl.kets, bra=False, dense=drv.dense)
+            if drv.transposed:  # #576: Ebd[n_ebd, n_ket]
+                eb = eb.reshape(len(cl.kets), -1).T.ravel()
+            parts += [_e_rows(basis, cl.bras, bra=True, dense=drv.dense), eb]
         parts += [bi, ki, blk.ravel()]
         if drv.rolled and not drv.dense:  # #571: the class tables, last
             parts += [np.array(tables(cl.am)[n], dtype=np.float64)
@@ -465,7 +481,8 @@ def class_args(drv: KBDriver, staged: np.ndarray, c: int) -> dict:
         del out[n]
     ea, eb = x.n_e
     out["Eac"] = ev[:ea * nb].reshape(nb, ea)
-    out["Ebd"] = ev[ea * nb:].reshape(nk, eb)
+    out["Ebd"] = (ev[ea * nb:].reshape(eb, nk) if drv.transposed  # #576
+                  else ev[ea * nb:].reshape(nk, eb))
     if drv.dense:  # #575: no class tables
         return out
     at = nb + nk + BLK_INTS * ng
@@ -516,8 +533,8 @@ class ClassBinary:
 def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
                    backend: str, workdir: Path, *, jobs: int | None = None,
                    split: str | None = None, rolled: bool = False,
-                   dense: bool = False, with_k: bool = True
-                   ) -> list[ClassBinary]:
+                   dense: bool = False, transposed: bool = False,
+                   with_k: bool = True) -> list[ClassBinary]:
     """One driver PER CLASS (`plan` cut to that one class), compiled in
     parallel, each staged. A whole molecule's 162 kernels in one translation
     unit leave one compiler thread at it for most of an hour; one class per
@@ -530,7 +547,8 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
         sub = replace(plan, classes=(plan.classes[c],))
         w = workdir / f"c{c}"
         drv = kb_driver(sub, basis, backend, w / "gen", split=split,
-                        rolled=rolled, dense=dense, with_k=with_k)
+                        rolled=rolled, dense=dense, transposed=transposed,
+                        with_k=with_k)
         binary = compile_checked(tc, drv, w / "kb_driver")
         staged = w / "in.bin"
         kb_stage(drv, sub, basis, D).tofile(staged)
@@ -632,6 +650,7 @@ int main(int argc, char** argv) {{
                           + (size_t)16 * (NC + NE),
                       {{{vram_kernels}}})) return 0;
     const double tau = in[0], maxD = in[1];
+    (void)maxD;  // read by kernel_k's mode only: with_k=False leaves it unused
     const double* h = in.data() + 2;
     double* bp[NC];
     int* ip[NC];

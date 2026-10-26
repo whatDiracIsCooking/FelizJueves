@@ -3168,14 +3168,15 @@ RULES |= {
         "kernel_kblock_rolled.py (#571): `kernel_kblock`'s mapping with "
         "E^ac, E^bd from global memory and the contraction emitted as "
         "loops over class tables",
-        ("spec", "=ir", "plan", "mmd.kernel", "mmd.recurrence",
+        ("spec", "=ir", "ir.passes", "plan", "mmd.kernel", "mmd.recurrence",
          "mmd.e_fragment", "eri.k_exchange.kernel_k",
          "eri.k_exchange.kernel_kblock", "eri.k_exchange.levers"),
         **RULES["kblock_builder"].must_not),
 }
 RULE_OF["eri.k_exchange.kernel_kblock_rolled"] = "kblock_rolled_builder"
+# #576: `ir.passes.transpose`, the opt-in `Ebd` relayout
 EDGES["eri.k_exchange.kernel_kblock_rolled"] = frozenset((
-    "ir", "eri.k_exchange.levers.seams", "mmd.e_fragment", "mmd.kernel",
+    "ir", "ir.passes", "eri.k_exchange.levers.seams", "mmd.e_fragment", "mmd.kernel",
     "mmd.recurrence", "plan.targets", "eri.k_exchange.kernel_k",
     "eri.k_exchange.kernel_kblock", "spec"))
 
