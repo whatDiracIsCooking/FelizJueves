@@ -6,6 +6,7 @@
     KBClassLaunch(am, bras, kets, blocks, kernel)
     KBlock(a, b, bra0, bra1, ket0, ket1, dmax)
     walk_kb(plan, basis, D, *, pq)                       -> eri.k_exchange.k.KScreened
+    e_table(l1, l2, zeta, P, A, B, *, sign=False)        -> one record's E
 
 `launch_k.py`'s counterpart for `kernel_kblock` (opt-UM's mapping): which
 K class kernels run, over which blocks, each block a bra RANGE and a ket
@@ -57,6 +58,13 @@ per-block factor skips more (#484), within `KScreened.bound`, which the
 walk fills (per element, each skipped pair's `(G_bra G_ket) max|D_cd|`).
 `n_examined` counts every bound test, the bra loop's included; `scale` is
 counted from the plan, as `walk_k`'s.
+
+THE ROLLED KERNEL'S `E` (#571, `kernel_kblock_rolled`). That kernel forms
+no `E`: `e_table` is one primitive pair's undressed `E^{l1 l2}` block as it
+reads it, `mmd.hermite.e_block` of every row (`cartesians(l1) x
+cartesians(l2)`, `l1` outer) with its structurally zero entries (`t_k >
+x_k + y_k`) dropped, row-major; `sign=True` (the ket side) negates every
+entry of odd `|t|`, the `(-1)^|q|` of `[p|q] = (-1)^|q| [p+q]`.
 """
 
 from __future__ import annotations
@@ -67,7 +75,7 @@ from dataclasses import dataclass, replace
 
 from felizjueves.ao.density import checked_density as _density
 from felizjueves.ao.density import epair
-from felizjueves.ao.shell import Basis
+from felizjueves.ao.shell import Basis, cartesians
 from felizjueves.eri.k_exchange.k import (
     PQ,
     DensityDecay,
@@ -80,10 +88,11 @@ from felizjueves.eri.k_exchange.k import (
 from felizjueves.eri.k_exchange.launch_k import KBound, k_class_spec, k_launches
 from felizjueves.eri.launch_common import PairRec
 from felizjueves.ir import Kernel
+from felizjueves.mmd.hermite import e_block, hermite_order
 from felizjueves.spec import Spec
 
-__all__ = ["KBClassLaunch", "KBLaunchPlan", "KBlock", "kb_launches",
-           "walk_kb"]
+__all__ = ["KBClassLaunch", "KBLaunchPlan", "KBlock", "e_table",
+           "kb_launches", "walk_kb"]
 
 KBBuild = Callable[[Spec], Kernel]
 Am = tuple[int, int, int, int]
@@ -291,3 +300,20 @@ def walk_kb(plan: KBLaunchPlan, basis: Basis, D: object, *,
               for m in range(n))
     return KScreened(K, S, n_pairs, n_skipped, n_examined,
                      max(dropped, default=0.0), math.fsum(dropped), B)
+
+
+def e_table(l1: int, l2: int, zeta: float, P: Sequence[float],
+            A: Sequence[float], B: Sequence[float], *,
+            sign: bool = False) -> tuple[float, ...]:
+    """One record's `E^{l1 l2}` as `kernel_kblock_rolled` reads it: the
+    nonzero entries of `mmd.hermite.e_block`, row by row (module docstring,
+    "THE ROLLED KERNEL'S `E`"); `sign` negates the odd-`|t|` entries."""
+    ts = hermite_order(l1 + l2)
+    out: list[float] = []
+    for x in cartesians(l1):
+        for y in cartesians(l2):
+            row = e_block(x, y, zeta, tuple(P), tuple(A), tuple(B))
+            out += [-v if sign and sum(t) % 2 else v
+                    for t, v in zip(ts, row, strict=True)
+                    if all(t[k] <= x[k] + y[k] for k in range(3))]
+    return tuple(out)
