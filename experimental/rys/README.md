@@ -9,6 +9,7 @@ uv sync --group oracle
 uv run --group oracle python experimental/rys/check.py    # ~40 s, exit 0 = PASS
 uv run --group oracle python experimental/rys/check_j.py  # ~45 s, the J build
 uv run --group oracle python experimental/rys/check_k.py  # ~60 s, the K build
+uv run --group oracle python experimental/rys/check_f.py  # ~2 min, the fused Fock build
 ```
 
 | File | What it is |
@@ -20,6 +21,8 @@ uv run --group oracle python experimental/rys/check_k.py  # ~60 s, the K build
 | `check_j.py` | The three J tables in "The J build"; exits nonzero on a miss. |
 | `kbuild.py` | The exchange matrix on the same ERIs: `exchange_matrix(shells, D, tau=0, eri=)` → `KBuild(K, n_quartets, n_skipped, bound)`, the same unique-quartet sweep digested over each block's 8-fold orbit, with an optional Schwarz screen; `exchange_energy`, `orbit_members`. |
 | `check_k.py` | The three K tables in "The K build"; exits nonzero on a miss. |
+| `fbuild.py` | The fused Fock build: `fock_matrix(shells, D, tau=0, eri=)` → `FBuild(G, J, K, n_quartets, n_skipped, bound_J, bound_K)` (and `bound_G`), `G = J − K/2` with each unique block evaluated once and digested into both, with an optional Schwarz screen on `G`; `fock_energy`, `EXCHANGE_FRACTION`. |
+| `check_f.py` | The three tables in "The fused Fock build"; exits nonzero on a miss. |
 
 ## What was settled
 
@@ -214,12 +217,52 @@ fewer quartets for `τ ≤ 1e-8` (3,397 / 4,099 / 5,084 against 3,550 / 4,308 /
 skips more at 1e-6 and 1e-4 (6,003 / 7,475 against 5,949 / 6,942), where the
 small exchange density between distant H₂ takes over.
 
+## The fused Fock build
+
+`fbuild.fock_matrix` is the fused scheme the HGP route ships (`[Fock]` §3.2,
+`src/felizjueves/eri/fock/kernel_f.py`), on the Rys blocks: one sweep over the
+unique shell quartets, each block evaluated **once** and digested into both
+`J` and `K`, then `G = J − K/2` (`EXCHANGE_FRACTION`, `1/N_spin`, closed-shell
+restricted; derived in `eri/fock/fock.py`). `jbuild` and `kbuild` built apart
+evaluate every block twice.
+
+The digestion is `kbuild`'s: once per **distinct** member `(x0 x1|x2 x3)` of
+the block's 8-fold orbit, at weight 1, `J[x0, x1] += blk'·D[x2, x3]` and
+`K[x0, x3] += blk'·D[x1, x2]`. Each ordered quartet is in exactly one orbit, so
+both are the dense sums with no weights to derive. The Coulomb half therefore
+does not use `jbuild`'s factor 2 or its symmetrised `D`. That costs up to eight
+Coulomb digestions per block where `jbuild` makes two, which is cheap next to
+the integrals. `D` is used as given, so `hermi=0` holds for `J`, `K` and `G`.
+
+The screen is on `G`, the quantity built. Member bounds are
+`Q_ij Q_kl Σ|D[x2, x3]|` on `J[x0, x1]` and `½ Q_ij Q_kl Σ|D[x1, x2]|` on
+`K[x0, x3]`, **summed per target shell block** because a J and a K term, or two
+members, can land on the same block. A quartet is skipped when every block's
+sum is under `τ`. The skipped bounds go to `bound_J` and `bound_K`, and
+`bound_G = bound_J + ½ bound_K`, each holding elementwise. It is a `continue`,
+not a sorted `break`.
+
+`check_f.py`, on this box (125 s):
+
+| Table | What | Worst | Gate |
+|---|---|---|---|
+| 1. bookkeeping | the fused `G`, `J`, `K` against the dense sums over every ordered quartet of the same Rys blocks, H₂O/STO-3G, random **non-symmetric** `D`; and `G` against `jbuild − kbuild/2` | `G` 5.40e-16, `J` 4.94e-16, `K` 5.01e-16 of max (`K`'s transpose 1.46 away); against the split builds 1.73e-16 | 1e-14 |
+| 2. libcint | `G` against `vj − vk/2` (`get_jk`, `hermi=0`), with `J` and `K` alone and `E_2 = ½Tr(D G)`, on `check_j.py`'s three cases | `G` 9.96e-16, 2.63e-15, 6.69e-15 of max; `E_2` 5.6e-16, 9.4e-16, 1.2e-15 relative | 1e-12 |
+| 2. evaluations | blocks evaluated, fused against `jbuild` + `kbuild`, every call counted | 120 / 240, 1,035 / 2,070, 231 / 462, exactly half; 2.8 / 5.3 s, 11.1 / 21.5 s, 7.9 / 16.0 s | each block once |
+| 3. screen | four H₂ along z, 3 Å apart, 6-31G, RHF `D`, `τ` 1e-12 … 1e-4: 3,352 to 6,847 of 9,316 quartets skipped, `max\|ΔG\|` 1.9e-12 to 5.2e-4; `bound_G`, `bound_J` and `bound_K` held at every element | `ΔG/bound_G` ≤ 0.96 | bound, + 1e-14·max for rounding |
+
+The `G` screen skips fewer quartets than either separate screen at every `τ`
+(at 1e-8: 4,956, against J's 5,136 and K's 5,084). A quartet is kept if its
+Coulomb **or** its exchange part matters, and it is evaluated once instead of
+twice, so the fused build is still about half the evaluations of the two
+screened builds together. At `τ = 1e-12` one J element's `ΔJ/bound_J` is 1.44:
+that is rounding, inside the 1e-14·max slack, as in `check_j.py`.
+
 ## Not here
 
 Anything above `(pp|pp)`; `d` and higher (`shells_of` refuses them; the
 roots stop at N = 3, and `T_SWITCH = 50` will not hold for larger N, because
 the Laguerre tail `O(e^{−T} T^{2N−3/2})` at N = 5 is ~5e-8 there);
-derivatives; a sorted `break` screen or a combined J+K sweep sharing one
-evaluation per block; any `Spec` target, IR or emitted kernel; a place in
+derivatives; a sorted `break` screen; any `Spec` target, IR or emitted kernel; a place in
 `src/`; the `Engine` protocol. Whether Rys becomes a third engine is decided
 after this.
