@@ -8,6 +8,7 @@ libcint through PySCF, not this repo's engines.
 uv sync --group oracle
 uv run --group oracle python experimental/rys/check.py    # ~40 s, exit 0 = PASS
 uv run --group oracle python experimental/rys/check_j.py  # ~45 s, the J build
+uv run --group oracle python experimental/rys/check_k.py  # ~60 s, the K build
 ```
 
 | File | What it is |
@@ -17,6 +18,8 @@ uv run --group oracle python experimental/rys/check_j.py  # ~45 s, the J build
 | `check.py` | The four tables below; exits nonzero on a miss. |
 | `jbuild.py` | The Coulomb matrix on these ERIs: `coulomb_matrix(shells, D, tau=0, eri=)` → `JBuild(J, n_quartets, n_skipped, bound)`, one sweep over the unique shell quartets with an optional Schwarz screen; `coulomb_energy`, `schwarz`, `ao_offsets`. |
 | `check_j.py` | The three J tables in "The J build"; exits nonzero on a miss. |
+| `kbuild.py` | The exchange matrix on the same ERIs: `exchange_matrix(shells, D, tau=0, eri=)` → `KBuild(K, n_quartets, n_skipped, bound)`, the same unique-quartet sweep digested over each block's 8-fold orbit, with an optional Schwarz screen; `exchange_energy`, `orbit_members`. |
+| `check_k.py` | The three K tables in "The K build"; exits nonzero on a miss. |
 
 ## What was settled
 
@@ -178,11 +181,45 @@ It is about 1.5 s for H₂O/STO-3G and 7 s for H₂O/6-31G (1,035 unique shell
 quartets), all in pure-Python primitive loops. It is a reference, not a
 fast path.
 
+## The K build
+
+`kbuild.exchange_matrix` builds `K_ad = Σ_bc (ab|cd) D_bc`, PySCF's
+convention (`get_jk`'s `einsum('ijkl,jk->il')`), on the same blocks and the
+same sweep over unique shell quartets as J. Each block is evaluated once and
+digested once per **distinct** shell quartet of its 8-fold orbit, with the
+block transposed to match, each at weight 1. Every ordered quartet is in
+exactly one orbit, so this is the dense sum and needs no weights; a
+degenerate quartet just has fewer distinct members (`orbit_members`). `D` is
+used as given, not symmetrised: unlike `J`, `K` of a non-symmetric `D` is not
+`K` of its symmetric part.
+
+The screen is the same `continue` on `Q_ij Q_kl`, but the density factor is
+the **exchange** block `Σ|D[x1, x2]|` of each orbit member `(x0 x1|x2 x3)`,
+whose bound lands on the `K[x0, x3]` block. A quartet is skipped when every
+member's bound is under `τ`, and each skipped member's bound is summed into
+`KBuild.bound`, so `|K(τ) − K(0)| ≤ bound` holds elementwise.
+
+`check_k.py`, on this box (57 s):
+
+| Table | What | Worst | Gate |
+|---|---|---|---|
+| 1. bookkeeping | the sweep against the dense `Σ_bc (ab\|cd) D_bc` over every ordered quartet of the same Rys blocks, H₂O/STO-3G, random **non-symmetric** `D` | 5.01e-16 of max\|K\| (the transpose is 1.46 away, so the check can tell the orientation) | 1e-14 |
+| 2. libcint | `K` against PySCF's `get_jk(hermi=0)` `vk`, and `G = J − K/2` against `vj − vk/2`, on `check_j.py`'s three cases | `K` 5.11e-16, 7.25e-16, 7.57e-15 of max\|K\|; `G` 9.78e-16, 2.92e-15, 6.56e-15; `E_K = ½Tr(DK)` 3.9e-16, 2.0e-16, 6.4e-14 relative (the last a small `E_K`, 0.37, from a random `D`) | 1e-12 |
+| 3. screen | four H₂ along z, 3 Å apart, 6-31G, RHF `D`, `τ` 1e-12 … 1e-4: 3,397 to 7,475 of 9,316 quartets skipped, `max\|ΔK\|` 1.6e-12 to 6.8e-4, the bound held at every element | `ΔK/bound` ≤ 0.96 | bound, + 1e-14·max\|K\| for rounding |
+
+The bound is tighter on `K` than on `J` (`ΔK/bound` up to 0.96, `ΔJ/bound`
+up to 0.59 for `τ ≥ 1e-10`). Against J's screen on the same chain it skips
+fewer quartets for `τ ≤ 1e-8` (3,397 / 4,099 / 5,084 against 3,550 / 4,308 /
+5,136): a quartet is kept if any of its up to eight members is over `τ`. It
+skips more at 1e-6 and 1e-4 (6,003 / 7,475 against 5,949 / 6,942), where the
+small exchange density between distant H₂ takes over.
+
 ## Not here
 
 Anything above `(pp|pp)`; `d` and higher (`shells_of` refuses them; the
 roots stop at N = 3, and `T_SWITCH = 50` will not hold for larger N, because
 the Laguerre tail `O(e^{−T} T^{2N−3/2})` at N = 5 is ~5e-8 there);
-derivatives; `K`; any `Spec` target, IR or emitted kernel; a place in
+derivatives; a sorted `break` screen or a combined J+K sweep sharing one
+evaluation per block; any `Spec` target, IR or emitted kernel; a place in
 `src/`; the `Engine` protocol. Whether Rys becomes a third engine is decided
 after this.
