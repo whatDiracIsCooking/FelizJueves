@@ -345,6 +345,17 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
         Spec(Operator.COULOMB, 2, (2, 1), Target.DQ)
 
 
+def test_the_df_targets_take_order_one_on_mmd_only() -> None:
+    # felizjueves.gradient's kernel_gmetric / kernel_geri3: the integral's
+    # class at d1, the key differing in the `d` segment alone.
+    for target, am in ((Target.METRIC, (1, 2)), (Target.ERI3, (0, 1, 2))):
+        d0 = Spec(Operator.COULOMB, 0, am, target)
+        d1 = Spec(Operator.COULOMB, 1, am, target)
+        assert d1.key() == d0.key().replace("/d0/", "/d1/")
+        with pytest.raises(ValueError, match="derivative order 1 on target"):
+            Spec(Operator.COULOMB, 1, am, target, engine=Engine.HGP)
+
+
 def test_a_one_electron_key_has_the_shape_every_key_has() -> None:
     assert _one(Target.S).key() == "overlap/d0/(2,1)/b1/s/literal"
     assert _one(Target.T).key() == "kinetic/d0/(2,1)/b1/t/literal"

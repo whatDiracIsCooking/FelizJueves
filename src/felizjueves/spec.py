@@ -208,9 +208,13 @@ whose bra order is one higher (`gradient.kernel_gjab.gjab_pq_spec`), a d0
 key. `K` at d1 is the exchange energy's bra derivative, its `am` K's
 Hermite pairing `(la, lc, lb, ld)`; it runs the plan of the d0 K class with
 the bra raised by one (`gradient.kernel_gk.gk_pq_spec`), and its builder
-refuses `n_batches != 1`. Unbatched, for each target's d0 reason.
-`DQ` at d1 is the ket pre-contraction differentiated on each of the ket's
-two centres (`hessian.kernel_hdq`), which only the Hessian reads.
+refuses `n_batches != 1`. `METRIC` and `ERI3` at d1 are the density-fitting
+terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
+(`gradient.kernel_gmetric`, `gradient.kernel_geri3`), `am` the integral's
+pair `(lP, lQ)` and triple `(la, lb, lP)`. `DQ` at d1 is the ket
+pre-contraction differentiated on each of the ket's two centres
+(`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
+target's d0 reason.
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, on MMD -- every other target refusing it
@@ -482,17 +486,18 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # The targets whose first derivative is built (`felizjueves.gradient`):
 # `S`, `T`, `V` (its Hellmann-Feynman term included), `JAB`, the J
 # chain's bra back-transform read as the Coulomb energy's bra derivative,
-# and `K`, the exchange energy's bra derivative (`gradient.kernel_gk`);
-# and `DQ`, the ket pre-contraction differentiated on each ket centre,
-# which the Coulomb Hessian's bra-ket term reads
-# (`hessian.kernel_hdq`). Each on its native engine, MMD, only.
+# `K`, the exchange energy's bra derivative (`gradient.kernel_gk`), the
+# density-fitting `METRIC` and `ERI3`, and `DQ`, the ket pre-contraction
+# differentiated on each ket centre, which the Coulomb Hessian's bra-ket
+# term reads (`hessian.kernel_hdq`). Each on its native engine, MMD, only.
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
-                              Target.K, Target.DQ))
+                              Target.K, Target.METRIC, Target.ERI3,
+                              Target.DQ))
 
 _GRADIENT_REFUSAL = (
-    "a first derivative is built for S, T, V, JAB, K and DQ on the MMD engine "
-    "only (felizjueves.gradient, felizjueves.hessian); this target's "
-    "gradient is a follow-up"
+    "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
+    "the MMD engine only (felizjueves.gradient, felizjueves.hessian); this "
+    "target's gradient is a follow-up"
 )
 
 # The targets whose second derivative is built (`felizjueves.hessian`):

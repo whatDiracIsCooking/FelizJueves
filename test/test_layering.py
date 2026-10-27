@@ -3821,6 +3821,88 @@ def test_the_gradient_builders_reach_neither_their_witness_nor_a_machine(
             assert not hit, f"{start} reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The density-fitting gradients (`gradient.host_df`, `kernel_gmetric`,
+# `kernel_geri3`): the host reference reads the AO layer, the DF staging and
+# `gradient.host`'s weight rule; the builders reuse `kernel_g1e`'s readers,
+# the d0 metric kernel's `s_aux` name, and the plan -- never their witness.
+# ---------------------------------------------------------------------------
+
+_DF_GRAD_BUILDERS = ("gradient.kernel_gmetric", "gradient.kernel_geri3")
+RULES |= {
+    "gradient_host_df": _rule(
+        "gradient/host_df.py: the contracted nuclear gradients of (P|Q) and "
+        "(mn|P) -- the DF d1 kernels' witness -- on the AO layer and the DF "
+        "staging, `[t|tau]` injected",
+        ("ao", "mmd.hermite", "eri.density_fit.eri3",
+         "eri.density_fit.metric", "gradient.host",
+         "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "gradient.kernel_gmetric": "the kernel is what this module checks",
+           "gradient.kernel_geri3": "the kernel is what this module checks"}),
+    "gmetric_builder": _rule(
+        "kernel_gmetric.py: the DF metric gradient kernel -- key -> IR, the "
+        "single-center `E` inlined, the tower one order up by the plan",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "gradient.kernel_g1e", "eri.density_fit.kernel_metric"),
+        ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "geri3_builder": _rule(
+        "kernel_geri3.py: the three-center DF gradient kernel -- key -> IR, "
+        "`kernel_g1e`'s per-axis readers, `kernel_gmetric`'s tower and "
+        "single-center pieces",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "gradient.kernel_g1e", "gradient.kernel_gmetric",
+         "eri.density_fit.kernel_metric"),
+        ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "gradient.host_df": "gradient_host_df",
+    "gradient.kernel_gmetric": "gmetric_builder",
+    "gradient.kernel_geri3": "geri3_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "gradient.host_df": ("ao.pairs", "ao.shell", "eri.density_fit.eri3",
+                         "eri.density_fit.metric", "gradient.host",
+                         "mmd.hermite", "one_electron.potential"),
+    "gradient.kernel_gmetric": ("eri.density_fit.kernel_metric",
+                                "gradient.kernel_g1e", "ir", "mmd.e_fragment",
+                                "mmd.recurrence", "plan.dag", "plan.pipeline",
+                                "plan.schedule", "plan.targets", "spec"),
+    "gradient.kernel_geri3": ("eri.density_fit.kernel_metric",
+                              "gradient.kernel_g1e", "gradient.kernel_gmetric",
+                              "ir", "mmd.e_fragment", "mmd.recurrence",
+                              "plan.dag", "plan.pipeline", "plan.schedule",
+                              "plan.targets", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the DF gradient ladder "
+                       "through `kernel_gmetric`, `kernel_geri3`",
+                       RULES["driver"].may | frozenset(_DF_GRAD_BUILDERS),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_DF_GRAD_BUILDERS)
+
+
+def test_the_df_gradient_builders_reach_neither_their_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    for start in _DF_GRAD_BUILDERS:
+        seen: set[str] = set()
+        todo = [start]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        assert {"mmd.e_fragment", "mmd.recurrence"} <= seen
+        for banned in (_REF, "ao", *_LEFT_AO, "gradient.host",
+                       "gradient.host_df", "ir.interp", "emit",
+                       "performance.device"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{start} reaches {hit}"
+
+
 def test_the_hessian_builders_reach_neither_their_witness_nor_a_machine(
         ) -> None:
     graph = _graph()
@@ -3837,7 +3919,6 @@ def test_the_hessian_builders_reach_neither_their_witness_nor_a_machine(
                        "ir.interp", "emit", "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{start} reaches {hit}"
-
 
 if __name__ == "__main__":
     import sys

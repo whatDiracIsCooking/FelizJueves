@@ -616,7 +616,7 @@ the RX 9060 XT is not run (#431), nothing measured.
 McMurchie–Davidson, interpreted only** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):
 `spec.DERIVATIVE_ORDERS` is `(0, 1)`, order 1 legal on
-`spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, MMD only;
+`spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, `METRIC`, `ERI3`, MMD only;
 `_GRADIENT_REFUSAL` elsewhere), every d0 key byte-identical. A d1 kernel
 writes `G[A, k] += SUM_mn M_mn dX_mn/dR_{A,k}`, not the derivative
 integrals, by the rule `d/dA x^i e^{-a x^2} = 2a x^{i+1} - i x^{i-1}` on
@@ -650,7 +650,30 @@ goldens (`test_emit_grad.py`, `test_emit_grad_k.py`).
 session had either (the compile cases and `test_grad_device.py` /
 `test/grad_driver.py`, `gk` on H₂O/STO-3G, are written; clang 18's CUDA
 front end passed every unit with `-Wall -Wextra`, a proxy). No whole RHF
-gradient assembled, no DF gradient, nothing measured.
+gradient assembled, nothing measured (the DF-J terms: below).
+**The DF-J gradient terms are generated too, interpreted only**
+(`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
+(`gradient/kernel_gmetric.py`, `SUM_PQ W_PQ d(P|Q)/dR`) and
+`geri3_{la}{lb}{lP}` (`gradient/kernel_geri3.py`, `SUM_mnP Gam_mnP
+d(mn|P)/dR`, `Gam` `[m][n][P]`), on the d0 kernels' staging and mapping
+plus atoms and exponents (`gradient/host_df.py`'s `metric_records` /
+`eri3_records`); DF-J is `Gam = D (x) d`, `W = -1/2 d d^T`. The AO
+centres by the Cartesian rule on per-axis `E` one index up; every aux
+centre by the Hermite shift `[r]^(0) -> [r + 1_k]^(0)` on the tower of the
+J quartet one order up (`(mn|P)`'s aux centre computed, not inferred;
+`(P|Q)`'s `d/dB = -d/dA` exactly). Host reference `gradient/host_df.py`
+takes the Cartesian rule on every centre (another route), held to finite
+differences of `metric_matrix`, `eri3_tensor` and a whole DF-J `E_J`
+(H₂O/STO-3G against the JKFIT s, p shells `slow`; ~2-3e-9 of `max|G|`)
+(`test_gradient_host_df.py`); interpreted, every class at L <= 4 within
+4.9 (`gmetric`) and 2.6 (`geri3`) eps of the split-centre scale, gate 16
+(`test_kernel_gmetric.py`, `test_kernel_geri3.py`, launches in
+`test/df_grad_launch.py`). Ladder `--grad-df-l [LMAX]` (4 bare, 0..4),
+never in the bare default nor in `KERNEL_GEN_CMD`; 62 goldens
+(`test_emit_grad_df.py`). **Not compiled by nvcc or hipcc and not run on
+either card** (`test_grad_df_device.py`, `slow`, on `grad_driver`'s
+program, is written; clang 18's front end passed all 31 units). No DF-K
+gradient, nothing above L = 4, nothing measured.
 **The first `derivative_order = 2` key: the Coulomb energy's analytic
 nuclear Hessian by MMD, interpreted only** (`docs/implementation/hessian.md`
 is the one place with the detail; after `experimental/mmd/hessian`):
