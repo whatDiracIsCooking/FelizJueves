@@ -136,6 +136,31 @@ array `M` (or, with a `store`, the consumer's `store_binds`).
 The center fragment binds only `half_inv_zeta` (when `l >= 1`; there
 `zeta` is the aux primitive's own exponent) and the array `E`.
 
+THE LOW-STACK E PATH (#586), for the consumers that would otherwise hold
+the whole `E^{ab}` block per thread (`E[100][84]` at (ff), 67 KB). Two
+pieces, both class-generic, neither a second recurrence:
+
+- `axis_tables_fragment(la, lb)`: `_axes_body(la, lb)` UNCHANGED, then every
+  entry `E{x,y,z}_i_j_t` stored into a per-axis LOCAL array bind `Ex`,
+  `Ey`, `Ez` of `axis_table_extent(la, lb) = (la+1)(lb+1)(la+lb+1)`
+  doubles, at `axis_table_index(i, j, t, lb, L)` (`t` fastest, `L = la+lb`
+  the stride). An entry `t > i+j` is never written, and nothing reads it.
+  336 doubles at (ff), the three axes together, against the block's 8,400.
+- `rolled_e_sum(la, lb, ...)`: the contraction `SUM_t E^{ab}_t X[t]` of one
+  block row, as REAL loops: the row's Cartesians `a`, `b` are I32
+  expressions (`cartesian_loops` enumerates them as loops, in
+  `cartesians` order), and the Hermite `t` runs over exactly the reachable
+  box `t_d <= a_d + b_d`, nested `x` outer, factored per axis,
+
+      u = SUM_tx Ex[a_x b_x tx] (SUM_ty Ey[a_y b_y ty]
+                                 (SUM_tz Ez[a_z b_z tz] X[t]))
+
+  each fold from `+0.0`. `X[t]` is the consumer's read (`hermite_index`
+  gives `t`'s place in `hermite_targets(L)` as an I32 expression), so the
+  same loops serve any `E`-row contraction. The product `E_x E_y E_z` is
+  formed in a different association from `block_fragment`'s, so a consumer
+  of this path is held to round-off, not bitwise.
+
 This is a builder: it produces vendor-neutral IR. It must not import
 `mmd.hermite` (the reference it is checked against) nor the interpreter.
 """
@@ -151,6 +176,7 @@ from felizjueves.ir import (
     Expr,
     Factor,
     Fn,
+    For,
     Fragment,
     Index,
     Lit,
@@ -644,3 +670,154 @@ def center_fragment(l: int) -> Fragment:  # noqa: E741
     kept, read = _live(body)
     binds = [b for b in (HALF_INV_ZETA,) if b in read]
     return Fragment(f"e_center_{l}", (*binds, E_ARRAY), kept)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack E path (#586): per-axis tables and a rolled row contraction
+# ---------------------------------------------------------------------------
+
+AXIS_ARRAYS = ("Ex", "Ey", "Ez")  # the per-axis table binds, x, y, z
+_AXIS_PROVENANCE = (
+    "#586's low-stack E path: the per-axis E^{ij}_t stored into Ex, Ey, Ez "
+    "[(i (lb+1) + j) (la+lb+1) + t]; the E^{ab}_t block is never formed")
+
+
+def axis_table_extent(la: int, lb: int) -> int:
+    """Doubles in each of `Ex`, `Ey`, `Ez`: `(la+1)(lb+1)(la+lb+1)`."""
+    _check_am("la", la)
+    _check_am("lb", lb)
+    return (la + 1) * (lb + 1) * (la + lb + 1)
+
+
+def _i32(v: int | Expr) -> Expr:
+    return Lit(v) if isinstance(v, int) else v
+
+
+def _iadd(x: Expr, y: Expr) -> Expr:
+    if isinstance(x, Lit) and x.value == 0:
+        return y
+    if isinstance(y, Lit) and y.value == 0:
+        return x
+    if isinstance(x, Lit) and isinstance(y, Lit):
+        return Lit(x.value + y.value)
+    return Call(Fn.ADD, (x, y))
+
+
+def _imul(x: Expr, k: int) -> Expr:
+    if isinstance(x, Lit):
+        return Lit(x.value * k)
+    return x if k == 1 else Call(Fn.MUL, (x, Lit(k)))
+
+
+def axis_table_index(i: int | Expr, j: int | Expr, t: int | Expr,
+                     lb: int, L: int) -> Expr:  # noqa: N803
+    """`E^{ij}_t`'s slot in an axis table: `(i (lb+1) + j) (L+1) + t`,
+    an I32 expression (a `Lit` when all three are ints)."""
+    return _iadd(_imul(_iadd(_imul(_i32(i), lb + 1), _i32(j)), L + 1),
+                 _i32(t))
+
+
+def axis_tables_fragment(la: int, lb: int) -> Fragment:
+    """The three axis recurrences, every entry stored into the LOCAL array
+    binds `Ex`, `Ey`, `Ez` at `axis_table_index` (module doc, THE LOW-STACK
+    E PATH). The recurrence is `_axes_body`'s, statement for statement."""
+    L = la + lb
+    body: list[Stmt] = [Note(_PROVENANCE), Note(_AXIS_PROVENANCE),
+                        *_axes_body(la, lb)]
+    for d in range(3):
+        for i in range(la + 1):
+            for j in range(lb + 1):
+                for t in range(i + j + 1):
+                    body.append(Assign(
+                        Index(AXIS_ARRAYS[d],
+                              (axis_table_index(i, j, t, lb, L),)),
+                        Var(e_name(d, i, j, t))))
+    return Fragment(f"e_axis_tables_{la}{lb}",
+                    (*_scalar_binds(la, lb, (0, 1, 2)), *AXIS_ARRAYS),
+                    tuple(body))
+
+
+def hermite_index(t: tuple[Expr, Expr, Expr]) -> Expr:
+    """`t`'s place in `hermite_targets(L)` (any `L >= |t|`), as an I32
+    expression of the three I32 components: with `n = |t|`, `m = t_y + t_z`,
+
+        n (n+1) (n+2) / 6  +  m (m+1) / 2  +  t_z
+
+    (`|r|` ascending, then `r_x` descending, then `r_y` descending). The
+    divisions are exact, of non-negative ints."""
+    tx, ty, tz = t
+    m = _iadd(ty, tz)
+    n = _iadd(tx, m)
+
+    def c(fn: Fn, *a: Expr) -> Expr:
+        return Call(fn, a)
+
+    tri3 = c(Fn.DIV, c(Fn.MUL, c(Fn.MUL, n, _iadd(n, Lit(1))),
+                       _iadd(n, Lit(2))), Lit(6))
+    tri2 = c(Fn.DIV, c(Fn.MUL, m, _iadd(m, Lit(1))), Lit(2))
+    return _iadd(_iadd(tri3, tri2), tz)
+
+
+def cartesian_loops(l: int, names: tuple[str, str, str],  # noqa: E741
+                    body: Callable[[tuple[Expr, Expr, Expr]],
+                                   tuple[Stmt, ...]],
+                    *, tag: str) -> For:
+    """Every `(i, j, k)` of `cartesians(l)`, IN THAT ORDER, as two loops
+    (`i` descending, then `j`): the three components are declared as I32
+    locals `names` and handed to `body`. `tag` makes the loop variables
+    unique (`{tag}_u`, `{tag}_w`) when two nests are open at once."""
+    _check_am("l", l)
+    u, w = f"{tag}_u", f"{tag}_w"
+    cx, cy, cz = names
+    inner = (
+        Decl(cx, Scalar.I32, init=Call(Fn.SUB, (Lit(l), Var(u)))),
+        Decl(cy, Scalar.I32, init=Call(Fn.SUB, (Var(u), Var(w)))),
+        Decl(cz, Scalar.I32, init=Var(w)),
+        *body((Var(cx), Var(cy), Var(cz))),
+    )
+    return For(u, Lit(0), Lit(l + 1), Lit(1), (
+        For(w, Lit(0), _iadd(Var(u), Lit(1)), Lit(1), inner),))
+
+
+def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
+                 b: tuple[Expr, Expr, Expr], x: Callable[[Expr], Expr],
+                 dst: str, *, tag: str = "e") -> tuple[Stmt, ...]:
+    """`dst = SUM_t E^{ab}_t X[t]` over the reachable `t` of one row, as
+    loops over the per-axis tables (module doc, THE LOW-STACK E PATH).
+
+    `a`, `b` are the row's Cartesians (I32 expressions, e.g. the names
+    `cartesian_loops` declares), `x(h)` the consumer's read of `X` at the
+    I32 `hermite_targets` index `h`. Declares the F64 `dst` and the I32
+    and F64 locals `{tag}_*`."""
+    L = la + lb
+    t = (Var(f"{tag}_tx"), Var(f"{tag}_ty"), Var(f"{tag}_tz"))
+    base = [f"{tag}_b{_AXES[d]}" for d in range(3)]
+    sy, sz = f"{tag}_sy", f"{tag}_sz"
+
+    def e(d: int) -> Index:
+        return Index(AXIS_ARRAYS[d], (_iadd(Var(base[d]), t[d]),))
+
+    def acc(name: str, value: Expr) -> Assign:
+        return Assign(Var(name), Call(Fn.ADD, (Var(name), value)))
+
+    def top(d: int) -> Expr:
+        return _iadd(_iadd(a[d], b[d]), Lit(1))
+
+    z_loop = For(t[2].name, Lit(0), top(2), Lit(1), (
+        acc(sz, Call(Fn.MUL, (e(2), x(hermite_index(t))))),))
+    y_loop = For(t[1].name, Lit(0), top(1), Lit(1), (
+        Decl(sz, Scalar.F64, init=Lit(0.0)),
+        z_loop,
+        acc(sy, Call(Fn.MUL, (e(1), Var(sz)))),
+    ))
+    x_loop = For(t[0].name, Lit(0), top(0), Lit(1), (
+        Decl(sy, Scalar.F64, init=Lit(0.0)),
+        y_loop,
+        acc(dst, Call(Fn.MUL, (e(0), Var(sy)))),
+    ))
+    return (
+        *(Decl(base[d], Scalar.I32,
+               init=axis_table_index(a[d], b[d], 0, lb, L)) for d in range(3)),
+        Decl(dst, Scalar.F64, init=Lit(0.0)),
+        x_loop,
+    )

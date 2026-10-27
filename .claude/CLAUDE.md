@@ -100,6 +100,18 @@ was added (`limits.json`) — **and nothing one-electron is measured.** Energy
 order only; `V` is one batch by decision. Every kernel-tier run of milestone
 11 was capped at L ≤ 8 by the user, and no `J` text changed, so the L = 16
 tier was not re-run.
+**From f up, `V` defaults to a low-stack form** (#586, stage 1):
+`build_v_kernel(cls)` picks it when `kernel_v.v_lowstack(cls)` (a shell
+with `l ≥ 3`). `lowstack=` forces either form. The name, parameters, launch
+and `V` contract are the same in both. Instead of the `E[100][84]` block
+(an ~85 KB `sm_86` frame at (ff), reserved for every resident thread, so
+~8.5 GB of the RTX 3080), it holds per-axis `E` tables
+(`mmd/e_fragment.py`'s `axis_tables_fragment`), `[t]^(0)` in a local `R`,
+and the row contraction as loops (`cartesian_loops`, `rolled_e_sum`,
+`hermite_index`, the shared piece that stages 2 and 3 reuse for `DQ`,
+`JAB` and `RECORD_BOUND`). At (ff) the frame is 4,160 B with no spill.
+Through d the text is byte-identical, pinned by digest in
+`test_kernel_v.py`. The numbers are in `one_electron.md`.
 **Milestone 10, the exchange matrix `K`, is partly built and still open**
 (#205, #207, #208 and #231 are open; no doc has a `K` section yet, #208).
 Built: `Target.K` (`spec.py`, #196; `am = (la, lc, lb, ld)`, the two Hermite

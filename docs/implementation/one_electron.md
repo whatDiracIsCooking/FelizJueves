@@ -182,7 +182,58 @@ in every family: `V`'s reused prelude declares a local `s = −2θ²`, and in
   kernel loops over the nuclei **serially** (`ir.For` over `n_nuc`), and
   for each one runs `PQ = P − C`, `fundamental_prelude`, `recurrence_body`,
   then `u_r = Σ_t E[r,t] [t]^(0)` over the reachable columns and
-  `acc_r −= Z_C u_r`. Finally it forms `v_r = s_ab · acc_r`.
+  `acc_r −= Z_C u_r`. Finally it forms `v_r = s_ab · acc_r`. That is the
+  form **through d**. **From f up** (any shell `l ≥ 3`) the default is the
+  low-stack form below.
+
+**`V`'s low-stack form, the default at f** (#586, stage 1).
+`build_v_kernel(cls)` picks the form by `kernel_v.v_lowstack(cls)`: true
+when `max(la, lb) ≥ LOWSTACK_MIN_L = 3`. `lowstack=True` / `False` forces
+either form at any class. Through d the text is the unrolled kernel's, byte
+for byte. `test_kernel_v.py` pins the cuda and hip text of all nine
+classes through (dd) by sha256 from cc5d16f. Both forms have the same name
+`v_{la}{lb}`, the same parameters in the same order, the same
+one-thread-per-record launch and the same `V` contract (the caller zeroes
+`V`, the kernel only `AtomicAdd`s). So a launcher needs no change, and
+free-breakfast's `tools/emit_one_electron_kernels.py` keeps calling
+`build_v_kernel(cls)`. The unrolled kernel materialises `E[100][84]` per
+thread at (ff), 67 KB. The low-stack form holds no `E^{ab}` block:
+
+- **Per-axis `E` tables.** `e_fragment.axis_tables_fragment(la, lb)` runs
+  `_axes_body` unchanged and stores each `E^{ij}_t` into local `Ex`, `Ey`
+  and `Ez` of `(la+1)(lb+1)(la+lb+1)` doubles at
+  `axis_table_index(i, j, t)`. That is 336 doubles at (ff), against the
+  block's 8,400.
+- **`[t]^(0)` into a local `R`**, per nucleus, in `hermite_targets` order,
+  from the plan's recurrence as before (84 doubles at (ff)).
+- **The contraction as real loops.** `e_fragment.cartesian_loops` walks the
+  block rows in `cartesians` order. `e_fragment.rolled_e_sum` forms
+  `u = Σ_tx Ex (Σ_ty Ey (Σ_tz Ez R[h(t)]))` over exactly the reachable box
+  `t_d ≤ a_d + b_d`, with `h = hermite_index(t)` in closed form. The
+  accumulators are a local `acc[n_rows]`, and the scatter is the same
+  rule, rolled.
+
+So the frame is the three tables, `acc` and `R` (4,160 B at (ff)). The
+text is the recurrence plus a fixed set of loops. The rolled pieces live
+in `mmd/e_fragment.py` so that `DQ`, `JAB` and `RECORD_BOUND` (#586 stages 2
+and 3) can reuse them. `rolled_e_sum` takes the consumer's `X[t]` read as a
+callable.
+
+**Why this design, and not kbr's.** `kbr` (#571) passes its `E` values and
+class tables as kernel parameters. `V` must keep its ABI, and the IR has no
+constant-initialised array. So the row tables are loops, and the Hermite
+index is arithmetic. The per-axis product costs two extra multiplies per
+reachable term, and no structural zero is multiplied. #575's dense form
+lost to exactly those zeros.
+
+Interpreted, the low-stack form agrees with the host within the unchanged
+`16 ε M` at every class through (ff) (worst 1.85 ε M, at (dp); 1.32 at an f class). The unrolled form
+does too, at every class, and the two agree with each other within the
+same bound. All of it is in `test_kernel_v.py`, with L > 4 `slow`.
+`test_e_fragment.py` holds the tables to `e_axis` bitwise,
+`hermite_index` to `hermite_targets` through L = 8, and the rolled row sum
+to `e_block`'s row `· X` within `8 ε Σ|E||X|`. The golden
+`test/golden/{cuda,hip}/v_33.*` is the (ff) default text.
 
 `V` is **round-off, not bitwise**, against `one_electron.potential`. The kernel
 follows MILD's directions and the sieve's re-parenting in the schedule's
@@ -330,15 +381,48 @@ PRs #297 and #298 (nvcc `-Xptxas -v` in bytes; hipcc
 - **`S` and `T` do not spill** on either card through (dd). At (ff),
   `gfx1200` spills 36 VGPRs for `S` and 182 for `T`, and `sm_86` spills
   80 B for `T`.
-- **`V` spills from `la + lb = 3` on both cards.** At (ff), `sm_86` reports
-  23,588 B of spill stores and 32,444 B of spill loads in an 84,944 B stack
-  frame. `gfx1200` reports 4,154 VGPRs spilled and 14,820 B of scratch.
-- **`V` (ff) on the RTX 3080 has about 170 MiB of headroom.** The
-  per-thread stack is reserved for every resident thread (104,448), so the
-  program's VRAM probe asked for 8,461 MiB with 8,633 MiB free. It ran and
-  passed. About 170 MiB more of that card in use by anything else would
-  make the probe refuse it. The RX 9060 XT asked for 463 MiB.
+- **`V` spills from `la + lb = 3` on both cards** in the unrolled form,
+  which is now the form through d only. At (ff) it was a frame of about
+  85 KB on `sm_86`, `E[100][84]` and spills. Because CUDA reserves the
+  per-thread stack for every resident thread (104,448 on the RTX 3080),
+  the VRAM probe asked for about 8.5 GB of the 10 GB card. It passed alone
+  and failed whenever anything else held about 170 MiB (#586).
+- **The f units, each form** (#586). The compiles used
+  `nvcc -O3 -arch=sm_86 -Xptxas -v -cubin` (CUDA 13.0) and
+  `hipcc --offload-arch=gfx1200 -O3 -Rpass-analysis=kernel-resource-usage`
+  (ROCm 7.2), on free-breakfast's spelling (`gpu.emit` with its
+  `potential_en<la, lb>` specialization). Columns: generated source,
+  `sm_86` stack / spill stores / registers / compile time, then `gfx1200`
+  scratch per lane / VGPRs.
 
+  | unit | form | source | sm_86 stack | spill st | regs | nvcc | gfx1200 scratch | VGPRs |
+  |---|---|---|---|---|---|---|---|---|
+  | `v_03` | unrolled (cc5d16f) | 14,756 B | 0 B | 0 B | 218 | 0.3 s | 36 B | 192 |
+  | `v_03` | low-stack | 12,060 B | 0 B | 0 B | 164 | 0.3 s | 0 B | 154 |
+  | `v_13` | unrolled | 42,960 B | 1,872 B | 2,068 B | 255 | 0.5 s | 1,860 B | 192 |
+  | `v_13` | low-stack | 18,455 B | 1,488 B | 0 B | 128 | 0.4 s | 1,488 B | 96 |
+  | `v_23` | unrolled | 103,924 B | 6,192 B | 7,820 B | 255 | 1.5 s | 6,380 B | 192 |
+  | `v_23` | low-stack | 27,484 B | 2,656 B | 0 B | 168 | 0.5 s | 2,672 B | 174 |
+  | `v_33` | unrolled | 224,889 B | 85,472 B | 24,008 B | 255 | 9.0 s | 14,756 B | 192 |
+  | `v_33` | low-stack | 40,213 B | **4,160 B** | 0 B | 254 | 0.5 s | 4,208 B | 192 |
+
+  The issue's 85,312 B for `potential_en<3,3>` was read through
+  free-breakfast's build; FJ's spelling gives 85,376–85,472 B. At (ff)
+  the low-stack frame is exactly the five local arrays (3 × 112 + 100 +
+  84 doubles) and spills nothing. On the RTX 3080, the CO/cc-pVTZ and
+  HF/cc-pVTZ (ff) probes now ask for 415 MiB (4,160 B × 104,448). The
+  ordered `v_30`, `v_31`, `v_32` match their mirrors (0, 1,488 and
+  2,656 B).
+- **A wall-clock reading, not a store row** (#586; hand-written harness,
+  not behind the gate; the card's lock held). The input was 65,536 random
+  records, 8 nuclei and the best of 6 launches. The two forms took
+  `v_03` 1.97 / 1.80–2.10 ms, `v_13` 2.88 / 3.16–3.61 ms,
+  `v_23` 5.82 / 7.27–7.31 ms and `v_33` 17.97 / 16.54–16.63 ms (unrolled
+  / low-stack). So `(ff)` is about 0.92× the unrolled time, and the
+  mixed f classes cost up to about 1.25× (`(df)`). They agree to
+  `≤ 1e-15` of `max|V|`. The rule stays "every class with an f shell",
+  for one simple selection: `V` is built once per geometry, and those
+  milliseconds are not on any path that matters.
 The test plan's `kernel-tier` / `high-L` markers are not registered in
 `pyproject.toml`. The deferred cells use the registered `slow` marker,
 which keeps them off the pre-push gate.
@@ -573,8 +657,8 @@ consumer (an SCF dipole driver, say) is built.
 - **A batched `V` kernel.** `V` has Hermite targets, so the ban that #232
   restated per target is a decision for `V` and not structural.
 - **A warp-per-record `V`** with the nuclei strip-mined over `THREAD_Y`, the
-  `Target.J` shape. This is where `V`'s spills and its 3080 headroom would
-  be answered.
+  `Target.J` shape. `V`'s 3080 headroom at f was answered instead by the
+  low-stack form (#586).
 - **One-electron derivatives** (gradients and Hessians), excluded by this
   milestone's scope.
 - **One `fj_boys` spelling** (the #266 record): done in #301, one

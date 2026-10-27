@@ -954,3 +954,137 @@ def test_a_store_places_each_value_where_it_is_formed() -> None:
                              **_mp_scalars(frag, la, lb, zeta, P, A, B))["OUT"]
     want = 1.0 + -2.0 * _run_multipole(la, lb, e, zeta, P, A, B).ravel()
     assert np.array_equal(out, want)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack E path (#586): per-axis tables, the rolled row contraction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_axis_tables_are_e_axis_bitwise(cls) -> None:
+    # Every slot `axis_table_index(i, j, t)` with `t <= i + j` holds
+    # `e_axis`'s entry bitwise; every other slot is left as the consumer's
+    # NaN (never written).
+    la, lb = cls
+    L = la + lb
+    frag = ef.axis_tables_fragment(la, lb)
+    n = ef.axis_table_extent(la, lb)
+    assert n == (la + 1) * (lb + 1) * (L + 1)
+    rng = random.Random(586 + 10 * la + lb)
+    for _ in range(4):
+        _, _, zeta, P, A, B = _geometry(rng)
+        tabs = {a: np.full(n, np.nan) for a in ef.AXIS_ARRAYS}
+        out = interpret_fragment(frag, **tabs,
+                                 **_scalars(la, lb, zeta, P, A, B))
+        for d, name in enumerate(ef.AXIS_ARRAYS):
+            got = out[name]
+            seen = np.zeros(n, bool)
+            for i in range(la + 1):
+                for j in range(lb + 1):
+                    want = e_axis(i, j, zeta, P[d] - A[d], P[d] - B[d])
+                    for t in range(i + j + 1):
+                        k = ef.axis_table_index(i, j, t, lb, L).value
+                        assert got[k] == want[t], (d, i, j, t)  # bitwise
+                        seen[k] = True
+            assert np.all(np.isnan(got[~seen]))
+
+
+def test_the_axis_tables_run_the_axis_body_unchanged() -> None:
+    # One recurrence: the tables fragment is `_axes_body` plus stores.
+    for la, lb in ((0, 0), (2, 1), (3, 3)):
+        body = ef.axis_tables_fragment(la, lb).body
+        decls = tuple(s for s in body if isinstance(s, Decl))
+        assert decls == tuple(ef._axes_body(la, lb))
+        assert {type(s) for s in body} == {Note, Decl, Assign}
+    assert ef.axis_tables_fragment(1, 0).binds == (
+        "zeta", "half_inv_zeta", "PA_x", "PB_x", "PA_y", "PB_y", "PA_z",
+        "PB_z", "Ex", "Ey", "Ez")
+
+
+def _index_probe(L: int) -> Kernel:  # noqa: N803
+    """One thread writes `H[hermite_index(t)] = 100 tx + 10 ty + tz` for
+    every `|t| <= L`, as loops."""
+    t = (Var("tx"), Var("ty"), Var("tz"))
+    sub = Call(Fn.SUB, (Lit(L + 1), Var("tx")))
+    body = ir.For("tx", Lit(0), Lit(L + 1), Lit(1), (
+        ir.For("ty", Lit(0), sub, Lit(1), (
+            ir.For("tz", Lit(0), Call(Fn.SUB, (sub, Var("ty"))), Lit(1), (
+                Assign(ir.Index("H", (ef.hermite_index(t),)), Call(
+                    Fn.ADD, (Call(Fn.ADD, (Call(Fn.MUL, (Var("tx"), Lit(100))),
+                                           Call(Fn.MUL, (Var("ty"), Lit(10))))),
+                             Var("tz")))),)),)),))
+    n = len(hermite_order(L))
+    return Kernel(f"hermite_index_probe_{L}", (
+        Param("H", Scalar.I32, array=True, intent=Intent.OUT,
+              shape=(Lit(n),)),), (body,))
+
+
+@pytest.mark.parametrize("L", [by_l(L, L, id=f"L{L}") for L in (4, 8)])
+def test_hermite_index_is_the_hermite_targets_order(L: int) -> None:  # noqa: N803
+    got = interpret(_index_probe(L), H=np.full(len(hermite_order(L)), -1,
+                                               np.int32))["H"]
+    want = [100 * x + 10 * y + z for x, y, z in hermite_order(L)]
+    assert got.tolist() == want
+
+
+def _rolled_probe(la: int, lb: int) -> Kernel:
+    """One thread forms the tables and `OUT[row] = SUM_t E^{ab}_t X[t]` for
+    every row, the rows enumerated by `cartesian_loops` and counted, and
+    each row's Cartesians written to `AB[row, 0..5]`."""
+    frag = ef.axis_tables_fragment(la, lb)
+    scalars = [b for b in frag.binds if b not in ef.AXIS_ARRAYS]
+    n_rows, n_t = ef.block_shape(la, lb)
+    ext = Lit(ef.axis_table_extent(la, lb))
+
+    def row(a):
+        def cell(b):
+            return (
+                *ef.rolled_e_sum(la, lb, a, b,
+                                 lambda h: ir.Index("X", (h,)), "u"),
+                Assign(ir.Index("OUT", (Var("row"),)), Var("u")),
+                *(Assign(ir.Index("AB", (Var("row"), Lit(k))), c)
+                  for k, c in enumerate((*a, *b))),
+                Assign(Var("row"), Call(Fn.ADD, (Var("row"), Lit(1)))),
+            )
+        return (ef.cartesian_loops(lb, ("bx", "by", "bz"), cell, tag="b"),)
+
+    return Kernel(f"rolled_probe_{la}{lb}", (
+        *(Param(n, Scalar.F64) for n in scalars),
+        Param("X", Scalar.F64, array=True, shape=(Lit(n_t),)),
+        Param("OUT", Scalar.F64, array=True, intent=Intent.OUT,
+              shape=(Lit(n_rows),)),
+        Param("AB", Scalar.I32, array=True, intent=Intent.OUT,
+              shape=(Lit(n_rows), Lit(6))),
+    ), (
+        *(Decl(n, Scalar.F64, (ext,)) for n in ef.AXIS_ARRAYS),
+        ir.Inline(frag, {b: Var(b) for b in frag.binds}),
+        Decl("row", Scalar.I32, init=Lit(0)),
+        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+    ))
+
+
+@pytest.mark.parametrize("cls", CLASS_PARAMS)
+def test_the_rolled_row_sum_is_the_block_row_times_x(cls) -> None:
+    # Rows in `block_rows` order, and each row's sum `SUM_t E^{ab}_t X[t]`
+    # over the reachable t: `e_block`'s row dotted with X to round-off
+    # (the product's association differs: (E_x (E_y (E_z X))), not
+    # ((E_x E_y) E_z) X), bounded by 8 eps SUM_t |E||X|.
+    la, lb = cls
+    n_rows, n_t = ef.block_shape(la, lb)
+    k = _rolled_probe(la, lb)
+    rng = random.Random(5860 + 10 * la + lb)
+    np_rng = np.random.default_rng(5860 + 10 * la + lb)
+    for _ in range(3):
+        _, _, zeta, P, A, B = _geometry(rng)
+        X = np_rng.uniform(-1.0, 1.0, n_t)
+        out = interpret(k, X=X, OUT=np.full(n_rows, np.nan),
+                        AB=np.full((n_rows, 6), -1, np.int32),
+                        **_scalars(la, lb, zeta, P, A, B))
+        rows = ef.block_rows(la, lb)
+        assert [tuple(r) for r in out["AB"].tolist()] == [
+            (*a, *b) for a, b in rows]
+        want = np.array([e_block(a, b, zeta, P, A, B) for a, b in rows])
+        mag = np.abs(want) @ np.abs(X)
+        err = np.abs(out["OUT"] - want @ X)
+        assert np.all(err <= 8 * EPS * mag), float(np.max(err / mag))
