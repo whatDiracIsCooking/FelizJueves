@@ -613,7 +613,7 @@ only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`,
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
 the RX 9060 XT is not run (#431), nothing measured.
 **The first `derivative_order = 1` keys: analytic nuclear gradients by
-McMurchie–Davidson, interpreted only** (`docs/implementation/gradient.md`
+McMurchie–Davidson, run on both cards at L <= 4** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):
 `spec.DERIVATIVE_ORDERS` is `(0, 1)`, order 1 legal on
 `spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, `METRIC`, `ERI3`, MMD only;
@@ -646,12 +646,13 @@ through `(dd|dd)` (`test_kernel_gk.py`, L + 1 > 4 `slow`). Ladders
 `--grad-k-l [LMAX]` (1 bare, 0..2; `gk` is ~4 MB of unrolled text at
 `(dd|dd)`), never in the bare default nor in `KERNEL_GEN_CMD`; 48 + 32
 goldens (`test_emit_grad.py`, `test_emit_grad_k.py`).
-**Not compiled by nvcc or hipcc and not run on either card**: neither
-session had either (the compile cases and `test_grad_device.py` /
-`test/grad_driver.py`, `gk` on H₂O/STO-3G, are written; clang 18's CUDA
-front end passed every unit with `-Wall -Wextra`, a proxy). No whole RHF
+**On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`,
+2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
+`gk` on H₂O/STO-3G only, against the host, 9 passed per card; worst
+3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060 XT (`gt`,
+cc-pVDZ), under `1e-13`. No whole RHF
 gradient assembled, nothing measured (the DF-J terms: below).
-**The DF-J gradient terms are generated too, interpreted only**
+**The DF-J gradient terms are generated too, run on both cards at L <= 4**
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
 (`gradient/kernel_gmetric.py`, `SUM_PQ W_PQ d(P|Q)/dR`) and
 `geri3_{la}{lb}{lP}` (`gradient/kernel_geri3.py`, `SUM_mnP Gam_mnP
@@ -670,12 +671,13 @@ differences of `metric_matrix`, `eri3_tensor` and a whole DF-J `E_J`
 (`test_kernel_gmetric.py`, `test_kernel_geri3.py`, launches in
 `test/df_grad_launch.py`). Ladder `--grad-df-l [LMAX]` (4 bare, 0..4),
 never in the bare default nor in `KERNEL_GEN_CMD`; 62 goldens
-(`test_emit_grad_df.py`). **Not compiled by nvcc or hipcc and not run on
-either card** (`test_grad_df_device.py`, `slow`, on `grad_driver`'s
-program, is written; clang 18's front end passed all 31 units). No DF-K
+(`test_emit_grad_df.py`). **On both cards** (`test_grad_df_device.py`,
+`slow`, on `grad_driver`'s program): DF-J of H₂O/STO-3G against the JKFIT
+s, p, d shells, worst 6.58e-15 of `max|G|` (RTX 3080) and 4.87e-15 (RX
+9060 XT). No DF-K
 gradient, nothing above L = 4, nothing measured.
 **The first `derivative_order = 2` key: the Coulomb energy's analytic
-nuclear Hessian by MMD, interpreted only** (`docs/implementation/hessian.md`
+nuclear Hessian by MMD, run on both cards through (dd)** (`docs/implementation/hessian.md`
 is the one place with the detail; after `experimental/mmd/hessian`):
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`, order 2 legal on
 `spec.HESSIAN_TARGETS` (`JAB`, MMD only; `_HESSIAN_REFUSAL` elsewhere) and
@@ -697,12 +699,15 @@ class through (dd), and the whole chain through the interpreted `[p|q]`
 within 64 eps (`test_kernel_hessian.py`; L > 4 `slow`). Ladder `python -m
 felizjueves.emit --hess-l [LMAX]` (1 bare, 0..2; `hjab` is ~1 MB of
 unrolled text at (dd)), never in the bare default nor in
-`KERNEL_GEN_CMD`; 12 goldens (`test_emit_hess.py`). **Not compiled by
-nvcc or hipcc, no device test written, not run on either card** (clang
-18's CUDA front end passed every unit through (dd), a proxy). No
-exchange or response term, no whole RHF Hessian, nothing measured.
+`KERNEL_GEN_CMD`; 12 goldens (`test_emit_hess.py`). **On both cards**
+(`test_hess_j_device.py`, generator `test/hess_driver.py` with its OUT
+`D1` for `hdq`): `hdq` and `hjab` for every ordered class (ss)–(dd) and
+the whole H₂O/STO-3G `H` (`slow`), against the host with the host's `J`s,
+19 passed per card; `hdq` 4.98e-16 of `max|D1|`, `hjab` 9.28e-17 of the
+absolute twin, the same on both cards. The on-card chain through the
+`[p|q]` kernel is interpreted only. No exchange or response term, no whole RHF Hessian, nothing measured.
 **Beside it, the one-electron Hessians of `S`, `T` and `V` at d2,
-interpreted only** (`hessian.md`, "The one-electron Hessians"; the spike's
+run on both cards through (dd)** (`hessian.md`, "The one-electron Hessians"; the spike's
 one-electron half): `HESSIAN_TARGETS` also holds `S`, `T`, `V` (MMD only).
 A d2 kernel writes `H[A, k, B, l] += SUM_mn M_mn d2X_mn/dR_{A,k} dR_{B,l}`,
 the rule applied twice on ONE pair (`dA dA f_i = 4a^2 f_{i+2} - 2a(2i+1) f_i
@@ -728,10 +733,10 @@ L + 2 > 4 `slow`). Ladder `python -m felizjueves.emit --hess-one-e-l
 [LMAX]` (2 bare, 0..3), never in the bare default nor in
 `KERNEL_GEN_CMD`; 18 goldens per backend (`test_emit_hess_1e.py`),
 `d2v_22` (1.08 MB) pinned by digest in `test/golden/hessian_digests.json`.
-**Not compiled by nvcc or hipcc and not run on either card** (the compile
-cases and `test_hess_device.py` / `test/hess_driver.py` are written;
-clang 18's CUDA front end passed all 48 ordered units through (ff), a
-proxy). Nothing measured.
+**On both cards** (`test_hess_device.py`, generator `test/hess_driver.py`):
+H₂O/STO-3G and cc-pVDZ (`slow`), against the host, 6 passed per card;
+worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
+`d2v` on cc-pVDZ. Nothing above (dd) on a card, nothing measured.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence
