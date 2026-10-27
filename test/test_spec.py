@@ -12,6 +12,7 @@ from felizjueves.performance.measured_store import target_of
 from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,
+    GRADIENT_TARGETS,
     OPERATOR_OF,
     Engine,
     Operator,
@@ -90,7 +91,8 @@ def test_frozen() -> None:
     [
         {"operator": "coulomb"},
         {"target": "k"},
-        {"derivative_order": 1},
+        {"derivative_order": 1},  # legal on S, T, V and JAB only, not J
+        {"derivative_order": 2},
         {"derivative_order": False},
         {"am": (4, 4, 4)},
         {"am": (4, 4, 4, -1)},
@@ -277,10 +279,33 @@ def test_a_one_electron_target_takes_a_pair(target: Target) -> None:
 
 
 @pytest.mark.parametrize("target", list(ONE_ELECTRON))
-def test_a_one_electron_target_is_derivative_order_zero(target: Target) -> None:
+def test_a_one_electron_target_takes_order_one_and_no_higher(
+        target: Target) -> None:
+    # The gradient (felizjueves.gradient): order 1 is legal, its key differs
+    # from the integral's in the `d` segment alone, and order 2 is refused.
+    d1 = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
+               derivative_order=1)
+    d0 = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1))
+    assert d1.key() == d0.key().replace("/d0/", "/d1/")
     with pytest.raises(ValueError, match="derivative order"):
         _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
-              derivative_order=1)
+              derivative_order=2)
+
+
+@pytest.mark.parametrize("target", [t for t in Target
+                                    if t not in GRADIENT_TARGETS])
+def test_order_one_is_refused_outside_the_gradient_targets(
+        target: Target) -> None:
+    am = (1,) * AM_LENGTH[target]
+    with pytest.raises(ValueError, match="derivative order 1 on target"):
+        Spec(OPERATOR_OF[target], 1, am, target)
+
+
+def test_order_one_is_refused_on_a_non_native_engine() -> None:
+    with pytest.raises(ValueError, match="derivative order 1 on target s.hgp"):
+        Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.HGP)
+    assert Spec(Operator.COULOMB, 1, (1, 0), Target.JAB).key() == \
+        "coulomb/d1/(1,0)/b1/jab/literal"
 
 
 def test_a_one_electron_key_has_the_shape_every_key_has() -> None:
