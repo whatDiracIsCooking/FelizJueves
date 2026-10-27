@@ -1,7 +1,7 @@
 # The DF integrals `(P|Q)` and `(mn|P)` on the Head-Gordon–Pople recurrence
 
-**Status: implemented for s and p shells, interpreted and emitted; not
-compiled or run on a card yet.** This is the derived note for the two
+**Status: implemented for s and p shells, interpreted and emitted;
+compiled and run on the RTX 3080 only.** This is the derived note for the two
 density-fitting targets of milestones 15 and 16, the metric `(P|Q)`
 (`metric.md`) and the three-center `(mn|P)` (`three_center.md`), built a
 second way: on the HGP VRR (`[Fock]` eqs 25–26) and HRR (eq 28) of
@@ -120,17 +120,16 @@ Nine goldens per backend are in `test/golden/{cuda,hip}/{hmetric,heri3}_*`
 
 ## Where it ran
 
-**Nowhere yet.** The session that built it had no device compiler and no
-card, so the `cuda` / `hip` compile cases (`test_emit_hgp_df.py`,
-`test_hgp_df_device.py`) and the `gpu` device tests (`test_hgp_df_device.py`:
-both kernels on the synthetic bases and the s/p-cut fixtures against the
-host and libcint, runs bit-identical) are written and skipped. The next step
-is running them on both cards.
+**On the RTX 3080 only.** The `cuda` compile cases (`test_emit_hgp_df.py`,
+`test_hgp_df_device.py`) and the `gpu` device tests (`test_hgp_df_device.py`,
+8 passed) ran: against the host, worst 3.08 / 6.06 eps of the tower twin for
+`(P|Q)` (synthetic / fixture) and 2.98 / 4.90 for `(mn|P)`; against libcint
+6.24e-15 of `max|M|` (`int2c2e_cart`) and 2.05e-14 of `max|T|`
+(`int3c2e_cart`); runs bit-identical. The RX 9060 XT is not run (#431).
 
 ## What is not done
 
-- **The compile and the card runs**, on both the RTX 3080 and the
-  RX 9060 XT (above).
+- **The RX 9060 XT** compile and card run (above; #431).
 - **d and above.** The builders accept them, but nothing is tested there and
   the CLI refuses them.
 - **Measurement**, and any comparison against the MMD kernels' clock or

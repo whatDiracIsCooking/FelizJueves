@@ -678,7 +678,7 @@ consumer (an SCF dipole driver, say) is built.
 ## The HGP route: `S`, `T`, `V` and `MU` on engine #2
 
 **Status: built and interpreted, s and p shells only; compiled and run on
-no card yet.** `one_electron/kernel_hgp.py` builds the same four matrices
+the RTX 3080 only.** `one_electron/kernel_hgp.py` builds the same four matrices
 on Head-Gordon & Pople's split of Obara & Saika's one-electron recurrences,
 promoted from the spike `experimental/hgp/one_electron/` (whose route and
 oracle it keeps). The MMD kernels above are untouched, byte for byte.
@@ -735,15 +735,24 @@ in one launch each; libcint's `int1e_ovlp`, `int1e_kin`, `int1e_nuc` on
 H₂O/STO-3G and 6-31G and `int1e_r_cart` at both fixture origins, within
 `1e-12` of `max|M|` (observed ≤ 1.0e-15); `q = −1` the exact negation; the
 origin shift. Goldens: `test/golden/{cuda,hip}/{hs,ht,hv,hmu}_{00,01,11}`
-(`test_emit_hgp_one_e.py`, whose `cuda`/`hip` compile cases have not run:
-the session that built this had no device compiler).
+(`test_emit_hgp_one_e.py`).
+
+**On the card** (`test/test_hgp_one_e_device.py`, generator
+`test/hgp_one_e_driver.py`: one thread per contracted shell pair over
+`one_electron_launch`'s plan, `hgp_arrays` staged, plain stores): on the
+RTX 3080, 16 passed -- each of `S`, `T`, `V`, `MU` on the synthetic basis
+against the MMD host (worst 5.03e-16 of `max|M|`, `T`) and on H₂O/STO-3G
+and 6-31G against libcint (worst 1.01e-15, `V`), the dipole at both
+origins; runs bit-identical, every matrix exactly symmetric. The RX 9060 XT
+is not run (#431).
 
 **The generator.** `python -m felizjueves.emit --hgp-one-e-l [LMAX]` (1
 bare, **0..1 only**, exit 2 above) adds the 12 units beside the J ladders;
 never in the bare default, not in `KERNEL_GEN_CMD`.
 
 **Not done.** d and above (the recurrences are general in `l`; the builder
-refuses `l > 1`, the requested scope); no compile, card run or measurement;
+refuses `l > 1`, the requested scope); no RX 9060 XT run (#431), no
+measurement;
 no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
 ladder); no screening inside the kernel; no comparison of the two engines'
 cost.
