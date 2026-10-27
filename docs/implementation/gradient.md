@@ -304,4 +304,5 @@ above L = 4; no screen; nothing measured; Cartesian only.
   `gjab` are unrolled and reach ~210 KB of text at (dd); a low-stack form
   (#586's) is not built.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
-  not derived), Cartesian only, no Hessian.
+  not derived), Cartesian only. The Coulomb energy's Hessian is built
+  on these pieces (`hessian.md`); no other Hessian term is.

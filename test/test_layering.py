@@ -3736,6 +3736,73 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the gradient ladder "
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)
 
 
+# ---------------------------------------------------------------------------
+# The Coulomb energy's analytic nuclear Hessian by MMD
+# (`felizjueves.hessian`): the host reference on the AO layer and the
+# gradient's host helpers, and two builders -- `kernel_hdq` (DQ at d1, the
+# ket derivative densities) and `kernel_hjab` (JAB at d2) -- on
+# `kernel_g1e`'s record head, readers and densities, each checked against
+# `hessian.host` in the interpreter, so none may be its ancestor, nor
+# `reference/`. The generator CLI writes their ladder (`--hess-l`).
+# ---------------------------------------------------------------------------
+
+_HESS_WITNESS = ("`hessian.host` is the witness the kernel is interpreted "
+                 "against and `ao` the layer it reads: importing either "
+                 "shares ancestry with it (#20)")
+RULES |= {
+    "hessian_package": _rule(
+        "hessian/__init__.py: the Hessian package's marker, a docstring "
+        "and no code", (), reference=_GROUND_TRUTH),
+    "hessian_host": _rule(
+        "hessian/host.py: the Coulomb energy's nuclear Hessian on the AO "
+        "layer -- the d2 kernels' witness -- from the undressed E "
+        "(`mmd.hermite`), the gradient reference's kets, weights and J_p "
+        "(`gradient.host`) and the nucleus type; `[t]^(0)` injected",
+        ("ao", "mmd.hermite", "gradient.host", "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "hessian.kernel_hdq": "the kernel is what this module checks",
+           "hessian.kernel_hjab": "the kernel is what this module checks"}),
+    "hdq_builder": _rule(
+        "kernel_hdq.py: the ket derivative-density kernel -- key -> IR, "
+        "`kernel_g1e`'s record head, weights and Hermite densities reused",
+        ("spec", "=ir", "plan", "gradient.kernel_g1e"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "hjab_builder": _rule(
+        "kernel_hjab.py: the Coulomb-energy Hessian kernel -- key -> IR, "
+        "`kernel_g1e`'s record head, readers, weights and Hermite densities "
+        "reused, the block rows of `e_fragment`",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "gradient.kernel_g1e"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian": "hessian_package",
+    "hessian.host": "hessian_host",
+    "hessian.kernel_hdq": "hdq_builder",
+    "hessian.kernel_hjab": "hjab_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian": (),
+    "hessian.host": ("ao.density", "ao.pairs", "ao.shell", "gradient.host",
+                     "mmd.hermite", "one_electron.potential"),
+    "hessian.kernel_hdq": ("gradient.kernel_g1e", "ir", "plan.targets",
+                           "spec"),
+    "hessian.kernel_hjab": ("gradient.kernel_g1e", "ir", "mmd.e_fragment",
+                            "plan.targets", "spec"),
+}.items()}
+_HESS_BUILDERS = ("hessian.kernel_hdq", "hessian.kernel_hjab")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the Hessian ladder "
+                       "through `kernel_hdq`, `kernel_hjab`",
+                       RULES["driver"].may | frozenset(_HESS_BUILDERS),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_HESS_BUILDERS)
+
 def test_the_gradient_builders_reach_neither_their_witness_nor_a_machine(
         ) -> None:
     graph = _graph()
@@ -3835,6 +3902,23 @@ def test_the_df_gradient_builders_reach_neither_their_witness_nor_a_machine(
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{start} reaches {hit}"
 
+
+def test_the_hessian_builders_reach_neither_their_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    for start in _HESS_BUILDERS:
+        seen: set[str] = set()
+        todo = [start]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        assert "mmd.e_fragment" in seen
+        for banned in (_REF, "ao", *_LEFT_AO, "gradient.host", "hessian.host",
+                       "ir.interp", "emit", "performance.device"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{start} reaches {hit}"
 
 if __name__ == "__main__":
     import sys
