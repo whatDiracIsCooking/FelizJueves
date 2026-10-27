@@ -217,19 +217,22 @@ pre-contraction differentiated on each of the ket's two centres
 target's d0 reason.
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
-`HESSIAN_TARGETS` alone -- `JAB` and `K`, on MMD -- every other target
-refusing it
-(`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a contraction, not the
-derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
+`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V` and `K`, on MMD -- every
+other target refusing it (`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a
+contraction, not the derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
 `H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l}`, from `J_p` of the bra
 raised by two and of the ket derivative densities
 (`hessian.kernel_hjab`). `am` is the bra pair, unchanged, so
 ``coulomb/d2/(2,1)/b1/jab/literal`` differs from the d0 and d1 keys in the
-`d` segment alone. `K` at d2 is the exchange energy's Hessian,
-its `am` K's Hermite pairing `(la, lc, lb, ld)`, one kernel per class
-writing both the bra-bra and the bra-ket term (`hessian.kernel_hkx`); it
-runs the plan of the d0 K class with the bra raised by two
-(`hkx_pq_spec`), and its builder refuses `n_batches != 1`.
+`d` segment alone. `S`, `T` and `V` at d2 are the one-electron Hessians,
+`H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}`
+(`hessian.kernel_h1e`), `am` the integral's pair, so
+``overlap/d2/(2,1)/b1/s/literal`` likewise differs from its d0 and d1 keys
+in one segment. `K` at d2 is the exchange energy's Hessian, its `am` K's
+Hermite pairing `(la, lc, lb, ld)`, one kernel per class writing both the
+bra-bra and the bra-ket term (`hessian.kernel_hkx`); it runs the plan of
+the d0 K class with the bra raised by two (`hkx_pq_spec`), and its builder
+refuses `n_batches != 1`.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -507,14 +510,18 @@ _GRADIENT_REFUSAL = (
 
 # The targets whose second derivative is built (`felizjueves.hessian`):
 # `JAB`, the J chain's bra back-transform read as the Coulomb energy's
-# Hessian (`hessian.kernel_hjab`), and `K`, the exchange energy's Hessian
-# (`hessian.kernel_hkx`). MMD only.
-HESSIAN_TARGETS = frozenset((Target.JAB, Target.K))
+# Hessian (`hessian.kernel_hjab`), the one-electron `S`, `T` and `V`
+# (`hessian.kernel_h1e`, `V`'s centre-nucleus and nucleus-nucleus terms
+# included), and `K`, the exchange energy's Hessian (`hessian.kernel_hkx`).
+# MMD only.
+HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
+                             Target.K))
 
 _HESSIAN_REFUSAL = (
-    "a second derivative is built for JAB (the Coulomb energy's Hessian) and "
-    "K (the exchange energy's) on the MMD engine only (felizjueves.hessian); "
-    "this target's Hessian is a follow-up"
+    "a second derivative is built for JAB (the Coulomb energy's Hessian), "
+    "S, T, V (the one-electron Hessians) and K (the exchange energy's) on "
+    "the MMD engine only (felizjueves.hessian); this target's Hessian is a "
+    "follow-up"
 )
 
 

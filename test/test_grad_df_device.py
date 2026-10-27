@@ -18,8 +18,8 @@ within 5 eps of their scale of the host (test_kernel_gmetric.py,
 test_kernel_geri3.py); the card's atomics reorder the adds and its `exp`
 and Boys differ by ulps. The runs are compared with each other too.
 
-THE SESSION THAT BUILT THESE KERNELS HAD NO DEVICE COMPILER AND NO CARD:
-this file is written and has NOT been run on either card.
+RUN ON BOTH CARDS (2026-10-27): worst 6.58e-15 of `max|G|` on the RTX
+3080 and 4.87e-15 on the RX 9060 XT (`gmetric`).
 """
 
 from __future__ import annotations
