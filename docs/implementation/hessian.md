@@ -252,7 +252,9 @@ at most, with 36 reductions each) is unexamined.
 
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards** (H₂O/STO-3G and cc-pVDZ, classes
-through (dd), against the host; the table below). This is
+through (dd), against the host; the table below) -- in the unrolled
+`d2v`; the low-stack `d2v`, the default from `la + lb = 4`, is interpreted
+only, not compiled by a vendor compiler nor run on a card. This is
 the derived note for the one-electron `derivative_order = 2` keys: the contracted
 second nuclear derivatives of the overlap, the kinetic energy and the
 nuclear attraction (its operator's centre–nucleus and nucleus–nucleus
@@ -353,8 +355,49 @@ l)` and `(B, l, A, k)`).
   9 nucleus-nucleus).
 
 Text size (cuda, unrolled): `d2s` 16 KB at (ss) to 211 KB at (ff),
-`d2t` 32 KB to 456 KB, `d2v` 35 KB, 190 KB at (pp), 1.08 MB at (dd) and
-4.9 MB at (ff). No low-stack form is built.
+`d2t` 32 KB to 456 KB, `d2v` 35 KB, 190 KB at (pp), 440 KB at (pd),
+1.08 MB at (dd) and 4.9 MB at (ff).
+
+### The low-stack `d2v`
+
+From `la + lb = 4` (`h1e_lowstack`: `V`'s Hermite order `la + lb + 2 >=
+kernel_v.LOWSTACK_MIN_LSUM = 6`, the order at which `V`'s own low-stack form
+takes over), `build_h1e_kernel` emits `d2v` in a looped form by default,
+with the same name, parameters, launch and `H` contract;
+`lowstack=True` / `False` forces either form of `V` at any class, and `S`
+and `T` have one form (they refuse `True`). It forms no Hermite density.
+Instead:
+
+- the weights go into a local `W[n_rows]` by loops (the same rule);
+- per nucleus, after the unchanged prelude and `recurrence_body`, the
+  `[t]^(0)` go into a local `R` in `hermite_targets(L + 2)` order;
+- per block row (`e_fragment.cartesian_loops`), each axis's operated
+  factors `F{op}[d, t] = (op E)^{a_d b_d}_t` (`op` in `"" A B AA AB BB`)
+  are filled by short loops, `operated`'s rule term for term (its
+  `- n f` term behind an `If` on `0 < n` and its source's reach), so each
+  entry is the unrolled pooled local's value bitwise;
+- the 28 operator triples (21 components, 6 first derivatives, the plain
+  density) are contracted as rolled `t` loops against `R[t + up]`, every
+  shift a triple needs read in one pass, into 45 accumulators;
+- then the same `hXY_kl -= Z_C q`, the same 45 nucleus atomics and the
+  same 36-atomic scatter.
+
+The sums are regrouped by row instead of by Hermite index, so the two
+forms agree to rounding. Text (cuda): 113 KB at (pf), 115 KB at
+(dd), 135 KB at (df), **161 KB at (ff)**, so every default hessian unit
+through (ff), in both orientations and for both vendors, is under the
+512 KiB file cap (`test_emit_hess_1e.py` asserts it). Below the rule the
+unrolled text is unchanged byte for byte. The unrolled `d2v_22` is pinned
+by its old digest, under the key `d2v_22.unrolled`.
+
+The frame, read from clang 18's PTX (`-O3`, `__local_depot`; no ptxas
+here, so not nvcc's figure): 7.4 KB at (dd) and 12.9 KB at (ff), of which
+the `(la + 2, lb + 2)` axis tables, shared with `kernel_g1e`'s record
+head, are 5.4 and 9.5 KB. The unrolled form shows no depot in PTX,
+because its spills happen in ptxas. It keeps 1,760 densities (14 KB) live
+across the nucleus loop at (dd) and 3,780 (30 KB) at (ff), and every
+pooled factor besides. No `sm_86` or `gfx1200` frame, spill or timing is
+measured for either form.
 
 ### The generator
 
@@ -362,9 +405,9 @@ Text size (cuda, unrolled): `d2s` 16 KB at (ss) to 211 KB at (ff),
 adds `d2s_`, `d2t_`, `d2v_{la}{lb}` for every `la <= lb <= LMAX` beside
 the J ladders; never in the no-flag output and not in `KERNEL_GEN_CMD`.
 The goldens are the six classes (ss) through (dd) per backend
-(`test/golden/{cuda,hip}/d2{s,t,v}_*`); `d2v_22`, over the 512 KiB file
-cap, is pinned by byte count and sha256 in
-`test/golden/hessian_digests.json`.
+(`test/golden/{cuda,hip}/d2{s,t,v}_*`), plus `d2v_33` (the low-stack form
+at (ff)); the unrolled `d2v_22`, over the 512 KiB file cap, is pinned by
+byte count and sha256 in `test/golden/hessian_digests.json`.
 
 ### Witnesses, and what ran where
 
@@ -373,9 +416,11 @@ cap, is pinned by byte count and sha256 in
 | `hessian.host_1e`, `S` `T` `V` | central FD (`h = 1e-4`) of `gradient.host`, itself FD-held to the libcint-witnessed integrals | H₂O/STO-3G, a two-atom s/p basis; H₂O/cc-pVDZ `slow` (`test_hessian_host_1e.py`) | ~3e-9 – 8e-9 of `max\|H\|` (`O(h²)`), gate 1e-7 |
 | the same | `SUM_A H = 0`; `H = H^T` | the same | invariance 4.5e-12 of `max\|H\|` (`T`, the O 1s cancellation; gate 1e-10); symmetry ~5e-16 (gate 1e-13) |
 | `kernel_h1e`, interpreted | `hessian.host_1e` per class, `M` non-symmetric | every ordered class (ss)–(ff) on HF/cc-pVTZ (above L + 2 = 4 `slow`); whole H₂O/STO-3G (`test_kernel_h1e.py`) | 0.35 eps of the absolute twin (`d2v_12`), gate 16 eps |
-| the units | clang 18 CUDA front end, `-Wall -Wextra` | all 48 ordered classes through (ff), here | no diagnostic (a proxy) |
+| the low-stack `d2v`, interpreted | the same, every class also in the form its default does not pick | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G (`test_kernel_h1e.py`) | 0.27 eps of the absolute twin (`d2v_12` forced), gate 16 eps |
+| the units | clang 18 CUDA front end, `-Wall -Wextra` | all 48 ordered classes through (ff), here; the low-stack `d2v_22` and `d2v_33` | no diagnostic (a proxy) |
 | nvcc / hipcc compile | #92's warning filter | `test_emit_hess_1e.py`'s `cuda` / `hip` cases, `sm_86` and `gfx1200` | passed, no warning in generated text |
-| on a card | `hessian.host_1e`, within 1e-14 of the absolute twin | `test_hess_device.py` (generator `test/hess_driver.py`), H₂O/STO-3G, cc-pVDZ `slow`; RTX 3080 and RX 9060 XT, 6 cases per card | 1.57e-16 (CUDA), 2.30e-16 (HIP) of the scale, both `d2v` on cc-pVDZ |
+| on a card | `hessian.host_1e`, within 1e-14 of the absolute twin | `test_hess_device.py` (generator `test/hess_driver.py`), H₂O/STO-3G, cc-pVDZ `slow`; RTX 3080 and RX 9060 XT, 6 cases per card, the UNROLLED `d2v` (before the low-stack form) | 1.57e-16 (CUDA), 2.30e-16 (HIP) of the scale, both `d2v` on cc-pVDZ |
+| the low-stack `d2v` on a card | the same | `test_hess_device.py` | **not run** (no card or vendor compiler in that session) |
 
 ### What is not done
 
@@ -383,6 +428,9 @@ cap, is pinned by byte count and sha256 in
   response, no assembled RHF hessian; `experimental/mmd/hessian` has the
   rest for s and p, in numpy.
 - Nothing above (dd) has run on a card; nothing measured.
-- Unrolled only: `d2v` is 1 MB of text at (dd) and 4.9 MB at (ff); a
-  low-stack form (#586's per-axis loops) is the named follow-up.
+- The low-stack `d2v` is not measured: no frame, spill or clock on
+  either card, and nothing says which form is faster. Its frame is mostly
+  the shared `(la + 2, lb + 2)` axis tables, which keep slots no read
+  reaches (`t > i + j`, the doubly raised corner); packing them is a
+  follow-up. `S` and `T` stay unrolled (`d2t_33` is 456 KB).
 - No screening, Cartesian only.

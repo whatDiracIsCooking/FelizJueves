@@ -9,21 +9,27 @@ validated through (ff), interpreted), exits 2 above that, is NEVER in the
 bare default and is not in KERNEL_GEN_CMD.
 
 THE GOLDENS are `test/golden/{cuda,hip}/{d2s,d2t,d2v}_{la}{lb}.{cu,hip}` for
-the six classes (ss) (sp) (sd) (pp) (pd) (dd); a unit over the repo's
-512 KiB file cap (`d2v_22`, ~1 MB of unrolled Hermite densities) is pinned
-instead by its byte count and sha256 in `test/golden/hessian_digests.json`,
-as `fock_digests.json` pins the large F units. Regenerate (and review the
-diff) with
+the six classes (ss) (sp) (sd) (pp) (pd) (dd), plus `d2v_33`, the low-stack
+form at (ff). From `la + lb = 4` `d2v` defaults to the LOW-STACK form
+(`kernel_h1e.h1e_lowstack`), so every default unit through (ff), both
+orders, is under the repo's 512 KiB file cap (asserted). The UNROLLED
+`d2v_22` (`lowstack=False`, ~1 MB of straight-line Hermite densities) is
+over it, and is pinned instead by its byte count and sha256 in
+`test/golden/hessian_digests.json` (as `fock_digests.json` pins the large F
+units): its text is byte-identical to the one the default emitted before
+the low-stack form. Regenerate (and review the diff) with
 
     PYTHONPATH=src uv run python test/test_emit_hess_1e.py --write
 
 THE COMPILE. Each golden is compiled alone (`-c`) with the kernel tier's
 own flags and FAILS on any warning located in the generated unit (#92's
-filter; `test_emit_grad.compile_kernel`). Needs a compiler, never a card.
-The session that wrote these kernels had neither compiler, so these cases
-have NOT been run yet; the units passed clang 18's CUDA front end (device
-side, `-Wall -Wextra`, a declaration stub for the runtime) with no
-diagnostic, which is a proxy, not this test.
+filter; `test_emit_grad.compile_kernel`), and the unrolled `d2v_22` too
+(`slow`). Needs a compiler, never a card.
+The unrolled units through (dd) passed on `sm_86` and `gfx1200` (#607);
+the low-stack `d2v_22` and `d2v_33` have NOT been compiled by either
+vendor compiler yet. They passed clang 18's CUDA front end (device side,
+`-Wall -Wextra`, a declaration stub for the runtime) with no diagnostic,
+which is a proxy, not this test.
 """
 
 from __future__ import annotations
@@ -35,12 +41,19 @@ from pathlib import Path
 
 import pytest
 from test_emit_grad import compile_kernel
+from tiers import by_l
 
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
-from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel, h1e_name
+from felizjueves.hessian.kernel_h1e import (
+    HESSIAN_1E,
+    build_h1e_kernel,
+    h1e_lowstack,
+    h1e_name,
+)
 from felizjueves.ir import Raw, walk
 from felizjueves.performance.device import GFX1200, SM_86
+from felizjueves.spec import Target
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "test" / "golden"
@@ -51,9 +64,15 @@ CLASSES = [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]
 FAMILY = dict(zip(("d2s", "d2t", "d2v"), HESSIAN_1E, strict=True))
 PREFIXES = ("d2s_", "d2t_", "d2v_")
 UNITS = [(f, c) for c in CLASSES for f in FAMILY]
+EXTRA = [("d2v", (3, 3))]  # the low-stack form at (ff), off the bare ladder
+GOLDENS = [*UNITS, *EXTRA]
+UNROLLED = [("d2v", (2, 2))]  # lowstack=False, pinned by digest
+ORDERED = [(la, lb) for la in range(4) for lb in range(4)]
 
 
-def _kernel(family: str, cls):
+def _kernel(family: str, cls, lowstack: bool | None = None):
+    if lowstack is not None:
+        return build_h1e_kernel((FAMILY[family], *cls), lowstack=lowstack)
     return build_h1e_kernel((FAMILY[family], *cls))
 
 
@@ -65,9 +84,14 @@ def _id(u) -> str:
     return _name(*u)
 
 
-def _text(family: str, cls, backend: str) -> str:
+def _text(family: str, cls, backend: str,
+          lowstack: bool | None = None) -> str:
     emit, arch, _ = BACKEND[backend]
-    return emit(_kernel(family, cls), arch)
+    return emit(_kernel(family, cls, lowstack), arch)
+
+
+def _pin_name(family: str, cls) -> str:
+    return f"{_name(family, cls)}.unrolled"
 
 
 def _digest(text: str) -> dict:
@@ -81,14 +105,14 @@ def write_goldens() -> None:
     digests: dict[str, dict] = {}
     for backend, (_, _, ext) in BACKEND.items():
         digests[backend] = {}
-        for f, c in UNITS:
+        for f, c in GOLDENS:
             text = _text(f, c, backend)
-            path = GOLDEN / backend / f"{_name(f, c)}.{ext}"
             if len(text.encode()) > CAP:
-                digests[backend][_name(f, c)] = _digest(text)
-                path.unlink(missing_ok=True)
-            else:
-                path.write_text(text)
+                raise SystemExit(f"{_name(f, c)} is over the {CAP} B cap")
+            (GOLDEN / backend / f"{_name(f, c)}.{ext}").write_text(text)
+        for f, c in UNROLLED:
+            digests[backend][_pin_name(f, c)] = _digest(
+                _text(f, c, backend, lowstack=False))
     DIGESTS.write_text(json.dumps(digests, indent=2, sort_keys=True) + "\n")
 
 
@@ -141,26 +165,51 @@ def test_no_raw_escape_hatch() -> None:
 # --- the goldens --------------------------------------------------------------
 
 
+def _golden(u):
+    # d2v_33 builds a Hermite-order-8 plan: L above the fast cut
+    return by_l(u, 2 + sum(u[1]) if u in EXTRA else 0, id=_id(u))
+
+
 @pytest.mark.parametrize("backend", sorted(BACKEND))
-@pytest.mark.parametrize("unit", UNITS, ids=_id)
+@pytest.mark.parametrize("unit", [_golden(u) for u in GOLDENS])
 def test_the_hessian_golden_is_unchanged(unit, backend: str) -> None:
     text = _text(*unit, backend)
-    name = _name(*unit)
-    path = GOLDEN / backend / f"{name}.{BACKEND[backend][2]}"
-    if name in _pinned(backend):
-        assert not path.exists()
-        assert _digest(text) == _pinned(backend)[name]
-    else:
-        assert len(text.encode()) <= CAP
-        assert text == path.read_text()
+    path = GOLDEN / backend / f"{_name(*unit)}.{BACKEND[backend][2]}"
+    assert len(text.encode()) <= CAP
+    assert text == path.read_text()
 
 
-def test_the_golden_set_is_exactly_the_six_classes() -> None:
+def test_the_golden_set_is_exactly_the_six_classes_and_d2v_33() -> None:
     for backend, (_, _, ext) in BACKEND.items():
         files = {p.stem for f in FAMILY
                  for p in (GOLDEN / backend).glob(f"{f}_[0-9]*.{ext}")}
-        assert files | set(_pinned(backend)) == {_name(*u) for u in UNITS}
-        assert not files & set(_pinned(backend))
+        assert files == {_name(*u) for u in GOLDENS}
+        assert set(_pinned(backend)) == {_pin_name(*u) for u in UNROLLED}
+
+
+@pytest.mark.parametrize("backend", sorted(BACKEND))
+def test_the_unrolled_d2v_22_is_byte_identical_to_its_pin(backend) -> None:
+    for u in UNROLLED:
+        assert _digest(_text(*u, backend, lowstack=False)) == \
+            _pinned(backend)[_pin_name(*u)]
+
+
+@pytest.mark.parametrize("cls", [by_l(c, 2 + sum(c), id=f"{c[0]}{c[1]}")
+                                 for c in ORDERED])
+def test_every_default_unit_through_ff_is_under_the_cap(cls) -> None:
+    """The point of the low-stack `d2v`: no default hessian unit, either
+    orientation, either vendor, is over the file cap."""
+    for backend in BACKEND:
+        for f in FAMILY:
+            size = len(_text(f, cls, backend).encode())
+            assert size <= CAP, f"{_name(f, cls)}.{backend}: {size} B"
+
+
+def test_d2v_is_low_stack_from_la_plus_lb_4_only() -> None:
+    for c in ORDERED:
+        assert h1e_lowstack((Target.V, *c)) == (sum(c) >= 4), c
+        assert not h1e_lowstack((Target.S, *c))
+        assert not h1e_lowstack((Target.T, *c))
 
 
 @pytest.mark.parametrize("unit", [("d2s", (1, 2)), ("d2v", (1, 1))], ids=_id)
@@ -187,14 +236,10 @@ def test_hess_one_e_l_bare_writes_the_golden_units(backend, tmp_path) -> None:
     assert _run(tmp_path, backend, "--pair-l", "0", "--hess-one-e-l") == 0
     assert _names(tmp_path) == {f"dq_0_0.{ext}", f"jab_00.{ext}"} | {
         f"{_name(*u)}.{ext}" for u in UNITS}
-    pinned = _pinned(backend)
     for u in UNITS:
         name = _name(*u)
         text = (tmp_path / f"{name}.{ext}").read_text()
-        if name in pinned:
-            assert _digest(text) == pinned[name]
-        else:
-            assert text == (GOLDEN / backend / f"{name}.{ext}").read_text()
+        assert text == (GOLDEN / backend / f"{name}.{ext}").read_text()
 
 
 def test_hess_one_e_l_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
@@ -254,22 +299,34 @@ def test_hess_one_e_l_above_ff_says_why(tmp_path, capsys) -> None:
 # --- the compile (a compiler, no card) ----------------------------------------
 
 
-def _slow(u):
-    # d2v_22's ~1 MB of straight-line text, as F's large units are `slow`
-    return pytest.param(u, id=_id(u), marks=(
-        (pytest.mark.slow,) if u == ("d2v", (2, 2)) else ()))
+def _unrolled(u):
+    # the unrolled d2v_22's ~1 MB of straight-line text, as F's large
+    # units are `slow`
+    return pytest.param(u, id=_id(u) + "-unrolled", marks=pytest.mark.slow)
 
 
 @pytest.mark.cuda
-@pytest.mark.parametrize("unit", [_slow(u) for u in UNITS])
+@pytest.mark.parametrize("unit", [_golden(u) for u in GOLDENS])
 def test_nvcc_compiles_the_hessian_unit(unit, nvcc, tmp_path) -> None:
     compile_kernel(nvcc, "cuda", _kernel(*unit), tmp_path)
 
 
 @pytest.mark.hip
-@pytest.mark.parametrize("unit", [_slow(u) for u in UNITS])
+@pytest.mark.parametrize("unit", [_golden(u) for u in GOLDENS])
 def test_hipcc_compiles_the_hessian_unit(unit, hipcc, tmp_path) -> None:
     compile_kernel(hipcc, "hip", _kernel(*unit), tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("unit", [_unrolled(u) for u in UNROLLED])
+def test_nvcc_compiles_the_unrolled_unit(unit, nvcc, tmp_path) -> None:
+    compile_kernel(nvcc, "cuda", _kernel(*unit, lowstack=False), tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("unit", [_unrolled(u) for u in UNROLLED])
+def test_hipcc_compiles_the_unrolled_unit(unit, hipcc, tmp_path) -> None:
+    compile_kernel(hipcc, "hip", _kernel(*unit, lowstack=False), tmp_path)
 
 
 if __name__ == "__main__":
