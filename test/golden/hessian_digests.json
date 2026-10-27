@@ -1,12 +1,12 @@
 {
   "cuda": {
-    "d2v_22": {
+    "d2v_22.unrolled": {
       "bytes": 1082283,
       "sha256": "78288a8e5101243b2acbfa88bfdb8232d1667e3de26caeab11fdafded93dfb74"
     }
   },
   "hip": {
-    "d2v_22": {
+    "d2v_22.unrolled": {
       "bytes": 1082313,
       "sha256": "f4f9d34b56c1f03ca2a84772b403e936b7ac3c4dcb1b6780b5053add86be1a08"
     }

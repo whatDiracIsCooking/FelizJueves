@@ -11,6 +11,11 @@ every shell pair `i <= j` of that class, into a zeroed `H`, against
   one fixture whose shells reach f, both orientations occurring with
   `i <= j`), `M` non-symmetric (the weight rule is exact for any `M`).
 - THE WHOLE HESSIAN, one launch per class into one `H`, on H2O/STO-3G.
+- BOTH `d2v` FORMS: every class above runs `V`'s default form (the
+  low-stack one from `la + lb = 4`, `kernel_h1e`'s THE LOW-STACK `d2v`),
+  and every class again in the form its default does not pick, to the
+  same bound; H2O/STO-3G whole in the low-stack form too. Measured: the
+  low-stack form within 0.27 eps of the scale at every class through (ff).
 
 ROUND-OFF, NOT BITWISE: `|H_kernel - H_host| <= TOL max(scale)` with
 `TOL = 16 eps`, `scale` the host's `absolute=True` twin (every factor in
@@ -39,14 +44,16 @@ from felizjueves.hessian import host_1e as host
 from felizjueves.hessian.kernel_h1e import (
     ATOMIC_REASON,
     COMPONENTS,
+    LOWSTACK_NOTE,
     ZEROED_H,
     axis_ops,
     build_h1e_kernel,
+    h1e_lowstack,
     h1e_name,
     h1e_spec,
     launch_shape,
 )
-from felizjueves.ir import AtomicAdd, Intent, Note, Raw, walk
+from felizjueves.ir import AtomicAdd, Decl, Intent, Note, Raw, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
@@ -70,9 +77,9 @@ def _m(n: int) -> np.ndarray:
     return np.random.default_rng(3).standard_normal((n, n))
 
 
-def _launch(target, basis, nuclei, M, la, lb, H, threads=7):
+def _launch(target, basis, nuclei, M, la, lb, H, threads=7, lowstack=None):
     rec = grad.records(basis, nuclei, la, lb)
-    kern = build_h1e_kernel((target, la, lb))
+    kern = build_h1e_kernel((target, la, lb), lowstack=lowstack)
     want = {p.name for p in kern.params if p.array}
     arrs = {k: np.array(v, dtype=np.int32 if k.startswith(("off", "atom"))
                         else float) for k, v in rec.items() if k in want}
@@ -126,15 +133,35 @@ def test_one_launch_over_the_class_is_the_host_hessian(cls, target) -> None:
            f"{target} {cls}")
 
 
-@pytest.mark.parametrize("target", TARGETS, ids=str)
-def test_the_whole_hessian_of_h2o_is_the_host_hessian(target) -> None:
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 2, id=f"{c[0]}{c[1]}")
+                                 for c in CLASSES])
+def test_the_other_d2v_form_is_the_host_hessian_too(cls) -> None:
+    """Each class in the `V` form its default does NOT pick: the low-stack
+    one below `la + lb = 4`, the unrolled one from there (THE LOW-STACK
+    `d2v`), held to the host by the same bound."""
+    basis, nuclei = _fixture("hf_ccpvtz")
+    pairs = grad.class_pairs(basis, *cls)
+    M = _m(basis.n_ao)
+    other = not h1e_lowstack((Target.V, *cls))
+    H = _launch(Target.V, basis, nuclei, M, *cls, _zeros(nuclei),
+                lowstack=other)
+    scale = _host(Target.V, basis, nuclei, M, pairs, absolute=True).max()
+    _close(H, _host(Target.V, basis, nuclei, M, pairs), scale,
+           f"d2v {cls} lowstack={other}")
+
+
+@pytest.mark.parametrize(("target", "lowstack"), [
+    *((t, None) for t in TARGETS), (Target.V, True)],
+    ids=[*map(str, TARGETS), "v-lowstack"])
+def test_the_whole_hessian_of_h2o_is_the_host_hessian(target,
+                                                     lowstack) -> None:
     basis, nuclei = _fixture("h2o_sto3g_j")
     M = _m(basis.n_ao)
     H = _zeros(nuclei)
     classes = sorted({(a.l, b.l) for k, a in enumerate(basis.shells)
                       for b in basis.shells[k:]})
     for la, lb in classes:
-        H = _launch(target, basis, nuclei, M, la, lb, H)
+        H = _launch(target, basis, nuclei, M, la, lb, H, lowstack=lowstack)
     _close(H, _host(target, basis, nuclei, M),
            _host(target, basis, nuclei, M, absolute=True).max(),
            f"{target} H2O/STO-3G")
@@ -198,6 +225,36 @@ def test_every_write_is_an_atomic_add_into_h(target) -> None:
     # 36 centre adds per record; V adds 36 centre-nucleus and 9
     # nucleus-nucleus ones per nucleus inside its loop.
     assert len(adds) == (36 + 45 if target is Target.V else 36)
+
+
+def test_the_low_stack_d2v_keeps_the_contract() -> None:
+    """Same name, parameters and atomics as the unrolled form; no Hermite
+    density is declared, and the contraction is loops."""
+    for cls in [(1, 2), (2, 2)]:
+        lo = build_h1e_kernel((Target.V, *cls), lowstack=True)
+        un = build_h1e_kernel((Target.V, *cls), lowstack=False)
+        assert lo.name == un.name and lo.params == un.params
+        nodes = list(walk(lo.body))
+        adds = [s for s in nodes if isinstance(s, AtomicAdd)]
+        assert len(adds) == 36 + 45 and all(a.dst.array == "H" for a in adds)
+        names = {s.name for s in nodes if isinstance(s, Decl)}
+        assert not any(n.startswith("H_") for n in names)
+        assert {"R", "W", "Fn", "FAA", "FAB", "FBB"} <= names
+        assert LOWSTACK_NOTE in {s.prov for s in nodes if isinstance(s, Note)}
+        assert not any(isinstance(s, Raw) for s in nodes)
+
+
+def test_the_selection_rule_and_its_refusals() -> None:
+    assert h1e_lowstack(h1e_spec(Target.V, 2, 2))
+    assert h1e_lowstack((Target.V, 3, 1)) and h1e_lowstack((Target.V, 0, 4))
+    assert not h1e_lowstack((Target.V, 1, 2))
+    assert not h1e_lowstack((Target.S, 3, 3))
+    assert not h1e_lowstack((Target.T, 3, 3))
+    for t in (Target.S, Target.T):
+        with pytest.raises(ValueError, match="only d2v has a low-stack form"):
+            build_h1e_kernel((t, 0, 0), lowstack=True)
+        assert build_h1e_kernel((t, 0, 0), lowstack=False) == \
+            build_h1e_kernel((t, 0, 0))
 
 
 def test_the_components_and_their_axis_operators() -> None:

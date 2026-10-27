@@ -726,12 +726,28 @@ differences of `gradient.host` (~3e-9 to 8e-9 of `max|H|`, gate 1e-7;
 every ordered class through (ff) on HF/cc-pVTZ (`test_kernel_h1e.py`,
 L + 2 > 4 `slow`). Ladder `python -m felizjueves.emit --hess-one-e-l
 [LMAX]` (2 bare, 0..3), never in the bare default nor in
-`KERNEL_GEN_CMD`; 18 goldens per backend (`test_emit_hess_1e.py`),
-`d2v_22` (1.08 MB) pinned by digest in `test/golden/hessian_digests.json`.
+`KERNEL_GEN_CMD`; 18 goldens per backend plus `d2v_33`
+(`test_emit_hess_1e.py`). **From `la + lb = 4` `d2v` defaults to a
+low-stack form** (`build_h1e_kernel(cls)` picks it when
+`kernel_h1e.h1e_lowstack(cls)`: `V`'s Hermite order `la + lb + 2 >=
+kernel_v.LOWSTACK_MIN_LSUM`; `lowstack=` forces either form, `S` / `T`
+refuse `True`). Name, parameters, launch and `H` contract are the same.
+It forms no Hermite density: per nucleus `[t]^(0)` goes into a local `R`,
+and per block row each axis's operated factors `F{op}[d, t]` (bitwise
+the unrolled pooled locals) and the 28 contractions are loops, so the
+text is 115 KB at (dd) and 161 KB at (ff), against 1.08 MB and 4.9 MB.
+Every default unit through (ff) is under the 512 KiB cap (asserted). By
+clang 18's PTX depot the frame is 7.4 / 12.9 KB, mostly the shared
+`(la + 2, lb + 2)` axis tables; the unrolled form holds 14 / 30 KB of
+densities live across the nucleus loop. Interpreted, within 0.27 eps of
+the absolute twin for every ordered class through (ff), and every class
+is held in both forms. Below the rule the text is byte-identical; the
+unrolled `d2v_22` is pinned by its old digest (`d2v_22.unrolled`) in
+`test/golden/hessian_digests.json`. Neither form is measured.
 **Not compiled by nvcc or hipcc and not run on either card** (the compile
 cases and `test_hess_device.py` / `test/hess_driver.py` are written;
-clang 18's CUDA front end passed all 48 ordered units through (ff), a
-proxy). Nothing measured.
+clang 18's CUDA front end passed all 48 ordered units through (ff), and
+the low-stack `d2v_22` / `d2v_33`, a proxy). Nothing measured.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence
