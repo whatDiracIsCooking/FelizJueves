@@ -55,15 +55,17 @@ class HessLaunch:
     n_rec: int
     arrays: Mapping[str, np.ndarray]
     scalars: Mapping[str, int] = field(default_factory=dict)
+    out: str = H  # the one OUT, shared by every launch (`hdq_`'s is `D1`)
 
     def __post_init__(self) -> None:
-        want = {p.name for p in self.kernel.params if p.array} - {H}
+        want = {p.name for p in self.kernel.params if p.array} - {self.out}
         if set(self.arrays) != want:
             raise ValueError(f"{self.kernel.name}: arrays {sorted(self.arrays)}"
                              f", the kernel takes {sorted(want)}")
         out = [p for p in self.kernel.params if p.intent is Intent.OUT]
-        if [p.name for p in out] != [H]:
-            raise ValueError(f"{self.kernel.name}: the one OUT is not H")
+        if [p.name for p in out] != [self.out]:
+            raise ValueError(f"{self.kernel.name}: the one OUT is not "
+                             f"{self.out}")
 
 
 def one_electron_launches(basis, nuclei, target: Target,
@@ -95,7 +97,7 @@ def _buffers(launches: Sequence[HessLaunch]):
     `(launch, name, flat doubles, is_int)`."""
     for c, x in enumerate(launches):
         for p in x.kernel.params:
-            if p.array and p.name != H:
+            if p.array and p.name != x.out:
                 a = np.asarray(x.arrays[p.name])
                 yield c, p.name, a.astype(np.float64).ravel(), (
                     p.type is Scalar.I32)
@@ -105,7 +107,7 @@ def _call(x: HessLaunch, c: int, ns: str, slot: Mapping[tuple[int, str], int]
           ) -> str:
     args = []
     for p in x.kernel.params:
-        if p.name == H:
+        if p.name == x.out:
             args.append("dH")
         elif p.array:
             t = "int" if p.type is Scalar.I32 else "double"
@@ -121,9 +123,10 @@ def _call(x: HessLaunch, c: int, ns: str, slot: Mapping[tuple[int, str], int]
 
 
 def hess_program(launches: Sequence[HessLaunch], n_atom: int, backend: str,
-                 workdir: Path, *, units: Mapping[str, Path] | None = None
-                 ) -> Program:
-    """The `main()` building `H` from every launch (module docstring)."""
+                 workdir: Path, *, units: Mapping[str, Path] | None = None,
+                 n_out: int | None = None) -> Program:
+    """The `main()` building `H` from every launch (module docstring);
+    `n_out` doubles of OUT instead of `H`'s `9 n_atom^2` when given."""
     _, _, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     includes, paths, calls, kernels = [], [], [], []
@@ -146,7 +149,8 @@ def hess_program(launches: Sequence[HessLaunch], n_atom: int, backend: str,
     src = HESS_PROGRAM.format(
         prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
         portable=PORTABLE, includes="\n".join(includes),
-        upload_int=UPLOAD_INT, n_buf=len(sizes), n_atom=n_atom, runs=RUNS,
+        upload_int=UPLOAD_INT, n_buf=len(sizes), runs=RUNS,
+        n_out=9 * n_atom * n_atom if n_out is None else n_out,
         sizes=", ".join(sizes), ints=", ".join(ints),
         vram_kernels=", ".join(kernels), launches="\n".join(calls))
     main = workdir / f"hess.{ext}"
@@ -162,13 +166,14 @@ def hess_stage(launches: Sequence[HessLaunch]) -> np.ndarray:
 @dataclass(frozen=True)
 class HessBinary:
     """One compiled hessian program; `run` returns
-    `[run][n_atom][3][n_atom][3]`."""
+    `[run][n_atom][3][n_atom][3]`, or `[run][n_out]` given `n_out`."""
 
     launches: tuple[HessLaunch, ...]
     n_atom: int
     backend: str
     binary: Path
     workdir: Path
+    n_out: int | None = None
 
     def run(self, run_device_binary) -> np.ndarray:
         src, dst = self.workdir / "hess.in", self.workdir / "hess.out"
@@ -178,6 +183,9 @@ class HessBinary:
         want = f"fj-hess launches {len(self.launches) * RUNS} runs {RUNS}"
         assert want in out, out
         raw = np.fromfile(dst, dtype=np.float64)
+        if self.n_out is not None:
+            assert raw.size == RUNS * self.n_out, raw.size
+            return raw.reshape(RUNS, self.n_out)
         n = self.n_atom
         assert raw.size == RUNS * 9 * n * n, raw.size
         return raw.reshape(RUNS, n, 3, n, 3)
@@ -185,12 +193,15 @@ class HessBinary:
 
 def compile_hess(launches: Sequence[HessLaunch], n_atom: int, backend: str,
                  tc: Toolchain, workdir: Path, *,
-                 units: Mapping[str, Path] | None = None) -> HessBinary:
+                 units: Mapping[str, Path] | None = None,
+                 n_out: int | None = None) -> HessBinary:
     """Compile the program with devtools/config.sh's flags, FAILING on a
     warning located in generated text (#92)."""
-    prog = hess_program(launches, n_atom, backend, workdir, units=units)
+    prog = hess_program(launches, n_atom, backend, workdir, units=units,
+                        n_out=n_out)
     binary = compile_checked(tc, prog, workdir / "hess_bin")
-    return HessBinary(tuple(launches), n_atom, backend, binary, workdir)
+    return HessBinary(tuple(launches), n_atom, backend, binary, workdir,
+                      n_out)
 
 
 # Every launch into one H, RUNS times.
@@ -206,12 +217,12 @@ HESS_PROGRAM = r"""// generated by test/hess_driver.py: harness, the d2 hessian 
 #endif
 {includes}
 {upload_int}
-static const int NB = {n_buf}, NATOM = {n_atom}, RUNS = {runs};
+static const int NB = {n_buf}, RUNS = {runs};
 static const size_t sz[NB] = {{{sizes}}};  // doubles per staged array
 static const int is_int[NB] = {{{ints}}};  // 1: converted to int on upload
 
 // usage: in out. `in` is every staged array, flat, in order; `out` is each
-// run's H [NATOM, 3, NATOM, 3], each from a zeroed H.
+// run's OUT (H [n_atom, 3, n_atom, 3] unless sized otherwise), each zeroed.
 int main(int argc, char** argv) {{
     if (argc != 3) {{ std::fprintf(stderr, "usage: in out\n"); return 2; }}
     std::vector<double> in;
@@ -223,7 +234,7 @@ int main(int argc, char** argv) {{
                      in.size(), want);
         return 2;
     }}
-    const size_t nh = (size_t)NATOM * 3 * NATOM * 3;
+    const size_t nh = (size_t){n_out};  // doubles of the one OUT
     if (fj_vram_probe(in.size() * sizeof(double) + nh * sizeof(double)
                           + (size_t)16 * NB,
                       {{{vram_kernels}}})) return 0;

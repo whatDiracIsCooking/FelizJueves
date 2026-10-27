@@ -4,15 +4,17 @@ The Coulomb energy's Hessian is this note's first part; the one-electron
 Hessians of `S`, `T` and `V`, built after it, are the last section ("The
 one-electron Hessians"), with their own status line.
 
-**Status: implemented host-side and as generated kernels, interpreted
-only. Not compiled by nvcc or hipcc, and not run on either card.** This is
+**Status: implemented host-side and as generated kernels, compiled by
+nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
+`hdq` and `hjab` per class through (dd) and the whole H₂O/STO-3G `H`,
+against the host, with the host's `J`s; the on-card chain through the
+`[p|q]` kernel is interpreted only). This is
 the derived note for the first `derivative_order = 2` key: the skeleton
 Coulomb part of an SCF Hessian, `d2 E_J / dR dR` for a fixed density. It
 says what is generated, what it is checked against, and what is not done.
-The session that built it had no device compiler and no card; the kernel
-texts passed clang 18's CUDA front end (device side, `-Wall -Wextra`, a
-declaration stub for the runtime) with no diagnostic, for every class
-through (dd) — a proxy, not the kernel tier.
+The session that built it had no device compiler and no card (the kernel
+texts passed clang 18's CUDA front end, `-Wall -Wextra`, through (dd), a
+proxy); a later session (2026-10-27) wrote the device test and ran it.
 
 **Nothing here is scored.** No published table covers it; the rule is
 McMurchie & Davidson's (`docs/references.md` entry 46) applied twice, as
@@ -138,13 +140,14 @@ at (ff); `hdq` is about a fifth of that.
 | `hjab` interpreted | `host.coulomb_hessian(pairs=)`, host `J`s, the absolute twin as scale | the same classes and basis ((pd), (dp), (dd) `slow`) | worst 0.14 eps of the scale ((pp)), 0.08 at (dd); gate 16 eps |
 | the chain: `hdq` → gather → `[p|q]` at both specs (interpreted) → `hjab` | `host.coulomb_hessian` | the s, p basis; H₂O/STO-3G `slow` | 0.14 eps of the scale on the s, p basis, gate 64 eps; symmetry and invariance 1e-13 |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | `hdq` and `hjab` for every class through (dd), (10), (21) | no diagnostic (a proxy) |
-| compile, nvcc / hipcc (`test_emit_hess.py`) | #92's filter | — | **not run** (no compiler) |
-| on a card | — | — | **not written, not run** |
+| compile, nvcc / hipcc (`test_emit_hess.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
+| on a card (`test_hess_j_device.py`, generator `test/hess_driver.py`) | `hdq`: `host.ket_derivative_records`, `1e-13` of `max\|D1\|`; `hjab`: `host.coulomb_hessian`, host `J`s, `1e-14` of the absolute twin | RTX 3080 and RX 9060 XT: `hdq` and `hjab` for every ordered class (ss)–(dd) on the three-atom s, p, d basis; the whole H₂O/STO-3G `H` (`slow`); 19 cases per card | `hdq` 4.98e-16 (`hdq_02`); `hjab` 7.16e-17 of the scale per class, 9.28e-17 whole H₂O; the same on both cards, per-class runs bit-identical |
 
 ## What is not done
 
-- No compile by nvcc or hipcc, no card run, and no device driver or device
-  test (unlike the gradient, whose device test is written).
+- On a card, `hjab` takes the host's `Jp2` / `Jp1`: the chain `hdq` →
+  gather → `[p|q]` → `hjab` is checked interpreted only. Nothing above
+  (dd) has run on a card.
 - The skeleton Coulomb term and (below) the one-electron skeleton only.
   Not built: the exchange Hessian, the nuclear repulsion as a kernel (it is host-side), the
   derivative Fock matrices `F^x` and the CPHF response, so no whole RHF
@@ -161,17 +164,17 @@ at (ff); `hdq` is about a fifth of that.
 ## The one-electron Hessians (`S`, `T`, `V`)
 
 
-**Status: implemented host-side and as generated kernels, interpreted
-only. Not compiled by nvcc or hipcc, and not run on either card.** This is
+**Status: implemented host-side and as generated kernels, compiled by
+nvcc and hipcc and run on both cards** (H₂O/STO-3G and cc-pVDZ, classes
+through (dd), against the host; the table below). This is
 the derived note for the one-electron `derivative_order = 2` keys: the contracted
 second nuclear derivatives of the overlap, the kinetic energy and the
 nuclear attraction (its operator's centre–nucleus and nucleus–nucleus
 terms included) -- the one-electron skeleton of an SCF hessian. It says
 what is generated, what it is checked against, and what is not done. The
-session that built it had no device compiler and no card; every kernel
-text (every ordered class through (ff)) passed clang 18's CUDA front end
-(device side, `-fsyntax-only -Wall -Wextra`, a declaration stub for the
-runtime) with no diagnostic, which is a proxy, not the kernel tier.
+session that built it had no device compiler and no card (every ordered
+class through (ff) passed clang 18's CUDA front end, `-fsyntax-only -Wall
+-Wextra`, a proxy); a later session (2026-10-27) compiled and ran them.
 
 **Nothing here is scored.** No published table covers these hessians; the
 rule is McMurchie & Davidson's (`docs/references.md` entry 46) applied
@@ -285,15 +288,15 @@ cap, is pinned by byte count and sha256 in
 | the same | `SUM_A H = 0`; `H = H^T` | the same | invariance 4.5e-12 of `max\|H\|` (`T`, the O 1s cancellation; gate 1e-10); symmetry ~5e-16 (gate 1e-13) |
 | `kernel_h1e`, interpreted | `hessian.host_1e` per class, `M` non-symmetric | every ordered class (ss)–(ff) on HF/cc-pVTZ (above L + 2 = 4 `slow`); whole H₂O/STO-3G (`test_kernel_h1e.py`) | 0.35 eps of the absolute twin (`d2v_12`), gate 16 eps |
 | the units | clang 18 CUDA front end, `-Wall -Wextra` | all 48 ordered classes through (ff), here | no diagnostic (a proxy) |
-| nvcc / hipcc compile | #92's warning filter | `test_emit_hess_1e.py`'s `cuda` / `hip` cases | **not run** (no compiler here) |
-| on a card | `hessian.host_1e`, within 1e-14 of the absolute twin | `test_hess_device.py` (generator `test/hess_driver.py`), H₂O/STO-3G, cc-pVDZ `slow` | **not run** (no card here) |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_hess_1e.py`'s `cuda` / `hip` cases, `sm_86` and `gfx1200` | passed, no warning in generated text |
+| on a card | `hessian.host_1e`, within 1e-14 of the absolute twin | `test_hess_device.py` (generator `test/hess_driver.py`), H₂O/STO-3G, cc-pVDZ `slow`; RTX 3080 and RX 9060 XT, 6 cases per card | 1.57e-16 (CUDA), 2.30e-16 (HIP) of the scale, both `d2v` on cc-pVDZ |
 
 ### What is not done
 
 - No exchange second derivative (the Coulomb one is this note's first part), no CPHF
   response, no assembled RHF hessian; `experimental/mmd/hessian` has the
   rest for s and p, in numpy.
-- Not compiled by a vendor compiler, not run on a card, nothing measured.
+- Nothing above (dd) has run on a card; nothing measured.
 - Unrolled only: `d2v` is 1 MB of text at (dd) and 4.9 MB at (ff); a
   low-stack form (#586's per-axis loops) is the named follow-up.
 - No screening, Cartesian only.
