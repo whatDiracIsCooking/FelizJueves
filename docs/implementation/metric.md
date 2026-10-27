@@ -298,6 +298,29 @@ ROCm 7.2.4 for `gfx1200`, with no warning in generated text:
 `devtools/kernel-tier.sh`'s HIP device check, which tests `/dev/kfd` only
 and printed `device: present` with no usable card.
 
+## The low-stack form (#606)
+
+`build_metric_kernel` has the same low-stack form as `(mn|P)`
+(`three_center.md`, "The low-stack form"; `kernel_metric.py`'s docstring).
+It has the same rule (`L ≥ 10`, or `E` blocks over eri3's (dd|g)), and on
+`lP ≤ lQ ≤ 6` it is the default for (s|i) through (i|i) and for (h|h): 8 of
+28 classes, none at `L ≤ 4`.
+
+- **Text.** At (i|i) its local arrays are 6,768 B against 37,736 B of `E`
+  blocks unrolled, and its source is 85 KB against 738 KB.
+- **Interpreted** (`test_kernel_df_lowstack.py`):
+  - every L ≤ 4 class forced, against the host and within `1e-14` of the
+    unrolled kernel, bitwise through (p|p);
+  - by default (`slow`): (s|i), (p|i), (h|h), (h|i) and (i|i). Worst
+    0.94 eps of the tower-twin scale against the host, and 1.9e-16 of max
+    against the unrolled kernel.
+- **Compiled once by hand** (no stored row). `metric_66` is 6,352 B of
+  `sm_86` stack with 64 B of spill stores, and 5,824 B of `gfx1200`
+  scratch. The unrolled (g|h), which the rule keeps, is 4,944 B with
+  10,300 B of spill stores.
+- **Not done.** It has not been run on a card, and has no
+  libcint check above L = 4.
+
 ## What is not done
 
 - **The RX 9060 XT run** (#431).

@@ -161,6 +161,20 @@ pieces, both class-generic, neither a second recurrence:
   formed in a different association from `block_fragment`'s, so a consumer
   of this path is held to round-off, not bitwise.
 
+The single-center twin (#606), for the DF kernels' aux side at high `l`:
+
+- `center_tables_fragment(l)`: `center_fragment`'s axis recurrence
+  UNCHANGED, then every live `C{x,y,z}_i_t` stored into a per-axis LOCAL
+  array bind `Cx`, `Cy`, `Cz` of `center_table_extent(l) = (l+1)^2`
+  doubles at `center_table_index(i, t, l) = i (l+1) + t`. A parity zero is
+  never written, and nothing reads it.
+- `rolled_center_sum(l, q, x, dst)`: `SUM_tau E^q_tau X(tau)` of one row
+  `q` as loops over exactly its live box, `tau_d = q_d mod 2, ..., q_d` in
+  steps of two, factored per axis as `rolled_e_sum` is.
+- `hermite_loops(L, body)` enumerates every `|t| <= L` (or, `parity=True`,
+  every `|t| = L mod 2`) as three loops, and `cartesian_index(tag)` is the
+  row a `cartesian_loops` nest stands on.
+
 This is a builder: it produces vendor-neutral IR. It must not import
 `mmd.hermite` (the reference it is checked against) nor the interpreter.
 """
@@ -821,3 +835,119 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
         Decl(dst, Scalar.F64, init=Lit(0.0)),
         x_loop,
     )
+
+
+# ---------------------------------------------------------------------------
+# The low-stack single-center path (#606): per-axis tables and rolled loops
+# ---------------------------------------------------------------------------
+
+CENTER_ARRAYS = ("Cx", "Cy", "Cz")  # the single-center table binds, x, y, z
+_CENTER_TABLES_PROVENANCE = (
+    "#606's low-stack single-center E path: the live E^{i}_t of each axis "
+    "stored into Cx, Cy, Cz [i (l+1) + t]; the E^{a}_tau block is never "
+    "formed")
+
+
+def center_table_extent(l: int) -> int:  # noqa: E741
+    """Doubles in each of `Cx`, `Cy`, `Cz`: `(l+1)^2`."""
+    _check_am("l", l)
+    return (l + 1) ** 2
+
+
+def center_table_index(i: int | Expr, t: int | Expr, l: int  # noqa: E741
+                       ) -> Expr:
+    """`E^{i}_t`'s slot in a single-center table: `i (l+1) + t`."""
+    return _iadd(_imul(_i32(i), l + 1), _i32(t))
+
+
+def center_tables_fragment(l: int) -> Fragment:  # noqa: E741
+    """`center_fragment(l)`'s axis recurrence, every live entry stored into
+    the LOCAL array binds `Cx`, `Cy`, `Cz` at `center_table_index` (module
+    doc, the single-center twin); the parity zeros are never written."""
+    _check_am("l", l)
+    body: list[Stmt] = [Note(_CENTER_PROVENANCE),
+                        Note(_CENTER_TABLES_PROVENANCE)]
+    for d in range(3):
+        body += _center_axis_body(l, d)
+    for d in range(3):
+        for i in range(l + 1):
+            for t in range(i + 1):
+                if center_live(i, t):
+                    body.append(Assign(
+                        Index(CENTER_ARRAYS[d],
+                              (center_table_index(i, t, l),)),
+                        Var(c_name(d, i, t))))
+    binds = [HALF_INV_ZETA] if l >= 1 else []
+    return Fragment(f"e_center_tables_{l}", (*binds, *CENTER_ARRAYS),
+                    tuple(body))
+
+
+def _parity_start(n: Expr) -> Expr:
+    """`n mod 2` of a non-negative I32 `n`, as `n - 2 (n / 2)`."""
+    if isinstance(n, Lit):
+        return Lit(n.value % 2)
+    return Call(Fn.SUB, (n, Call(Fn.MUL, (Lit(2), Call(Fn.DIV, (n, Lit(2)))))))
+
+
+def rolled_center_sum(l: int, q: tuple[Expr, Expr, Expr],  # noqa: E741
+                      x: Callable[[tuple[Expr, Expr, Expr]], Expr], dst: str,
+                      *, tag: str = "c",
+                      arrays: tuple[str, str, str] = CENTER_ARRAYS
+                      ) -> tuple[Stmt, ...]:
+    """`dst = SUM_tau E^q_tau X(tau)` over the live `tau` of one
+    single-center row `q` (I32 expressions), as loops over the tables
+    `arrays` (`center_tables_fragment`'s, bound to the consumer's names):
+    `tau_d` from `q_d mod 2` to `q_d` in steps of two, factored per axis,
+
+        SUM_tx Cx[q_x tx] (SUM_ty Cy[q_y ty] (SUM_tz Cz[q_z tz] X(tau)))
+
+    each fold from `+0.0`. `x(tau)` is the consumer's read at the three I32
+    components. Declares the F64 `dst` and the I32 and F64 locals
+    `{tag}_*`."""
+    tau = (Var(f"{tag}_tx"), Var(f"{tag}_ty"), Var(f"{tag}_tz"))
+    sy, sz = f"{tag}_sy", f"{tag}_sz"
+
+    def c(d: int) -> Index:
+        return Index(arrays[d], (center_table_index(q[d], tau[d], l),))
+
+    def acc(name: str, value: Expr) -> Assign:
+        return Assign(Var(name), Call(Fn.ADD, (Var(name), value)))
+
+    def loop(d: int, body: tuple[Stmt, ...]) -> For:
+        return For(tau[d].name, _parity_start(q[d]), _iadd(q[d], Lit(1)),
+                   Lit(2), body)
+
+    z_loop = loop(2, (acc(sz, Call(Fn.MUL, (c(2), x(tau)))),))
+    y_loop = loop(1, (Decl(sz, Scalar.F64, init=Lit(0.0)), z_loop,
+                      acc(sy, Call(Fn.MUL, (c(1), Var(sz))))))
+    x_loop = loop(0, (Decl(sy, Scalar.F64, init=Lit(0.0)), y_loop,
+                      acc(dst, Call(Fn.MUL, (c(0), Var(sy))))))
+    return (Decl(dst, Scalar.F64, init=Lit(0.0)), x_loop)
+
+
+def hermite_loops(L: int, body: Callable[[tuple[Expr, Expr, Expr]],  # noqa: N803
+                                         tuple[Stmt, ...]],
+                  *, tag: str = "h", parity: bool = False) -> For:
+    """Every `t` with `|t| <= L` -- or, `parity=True`, only those with
+    `|t| = L (mod 2)` -- as three loops, `t_x` outer, `t_z` inner (with
+    `parity`, `t_z` from `(L - t_x - t_y) mod 2` in steps of two), the
+    components I32 loop variables `{tag}_x`, `{tag}_y`, `{tag}_z` handed to
+    `body`."""
+    if type(L) is not int or L < 0:
+        raise ValueError(f"L = {L!r} is not a non-negative int")
+    tx, ty, tz = (Var(f"{tag}_{a}") for a in _AXES)
+    rest = Call(Fn.SUB, (Call(Fn.SUB, (Lit(L), tx)), ty))
+    z = For(tz.name, _parity_start(rest) if parity else Lit(0),
+            _iadd(rest, Lit(1)), Lit(2 if parity else 1),
+            tuple(body((tx, ty, tz))))
+    y = For(ty.name, Lit(0), _iadd(Call(Fn.SUB, (Lit(L), tx)), Lit(1)), Lit(1),
+            (z,))
+    return For(tx.name, Lit(0), Lit(L + 1), Lit(1), (y,))
+
+
+def cartesian_index(tag: str) -> Expr:
+    """The `cartesians(l)` position of the row a `cartesian_loops(...,
+    tag=tag)` nest stands on: `u (u+1) / 2 + w`, an I32 expression."""
+    u, w = Var(f"{tag}_u"), Var(f"{tag}_w")
+    return Call(Fn.ADD, (Call(Fn.DIV, (Call(Fn.MUL, (u, _iadd(u, Lit(1)))),
+                                       Lit(2))), w))

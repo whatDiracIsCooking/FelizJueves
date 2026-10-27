@@ -137,6 +137,25 @@ def recurrence_body(
     return tuple(body)
 
 
+def store_targets(body: tuple[Stmt, ...], targets: frozenset[R], L: int,
+                  array: str) -> tuple[Stmt, ...]:  # noqa: N803
+    """`body` with `array[i] = [r_i]^(0)` right after each target's `Decl`,
+    `i` the place of `r` in `hermite_targets(L)`, so no target stays live
+    past its own store (#606: the low-stack DF kernels' `R`). Raises when
+    `body` declares some target nowhere."""
+    at = {node_name((r, 0)): i for i, r in enumerate(hermite_targets(L))
+          if r in targets}
+    out: list[Stmt] = []
+    for st in body:
+        out.append(st)
+        if isinstance(st, Decl) and st.name in at:
+            out.append(Assign(Index(array, (Lit(at.pop(st.name)),)),
+                              Var(st.name)))
+    if at:
+        raise ValueError(f"the body declares no {sorted(at)}")
+    return tuple(out)
+
+
 def _mul(a: Expr, b: Expr) -> Call:
     return Call(Fn.MUL, (a, b))
 

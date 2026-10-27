@@ -49,15 +49,17 @@ Boys = Callable[[int, float], float]
 
 
 @cache
-def eri3_kernel(la: int, lb: int, lP: int, engine: Engine = Engine.MMD) -> Kernel:
+def eri3_kernel(la: int, lb: int, lP: int, engine: Engine = Engine.MMD,
+                lowstack: bool | None = None) -> Kernel:
     """`build_eri3_kernel((la, lb, lP))`, or on `Engine.HGP`
     `kernel_hgp.build_heri3_kernel((la, lb, lP))` (the same parameters, launch and
-    output), built once."""
+    output), built once. `lowstack` forces the MMD kernel's form (None:
+    the builder's default)."""
     if engine is Engine.HGP:
         return build_heri3_kernel((la, lb, lP))
     if engine is not Engine.MMD:
         raise ValueError(f"engine {engine!r} is not an Engine")
-    return build_eri3_kernel((la, lb, lP))
+    return build_eri3_kernel((la, lb, lP), lowstack=lowstack)
 
 
 def _arrays(cls: Eri3Class) -> dict[str, np.ndarray]:
@@ -67,13 +69,14 @@ def _arrays(cls: Eri3Class) -> dict[str, np.ndarray]:
 
 
 def launch_class(cls: Eri3Class, out: np.ndarray, *, boys: Boys,
-                 threads: int = 32, engine: Engine = Engine.MMD) -> np.ndarray:
+                 threads: int = 32, engine: Engine = Engine.MMD,
+                 lowstack: bool | None = None) -> np.ndarray:
     """One interpreted launch of `cls`'s kernel over every staged cell,
     writing into (a copy of) `out`, `(n_ao, n_ao, n_aux)`, which is
     returned."""
     n, _, naux = out.shape
     grid, block = launch_shape(cls.n_cell, threads)
-    return Interpreter(eri3_kernel(cls.la, cls.lb, cls.lP, engine),
+    return Interpreter(eri3_kernel(cls.la, cls.lb, cls.lP, engine, lowstack),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec, n_aux_rec=cls.n_aux_rec,
         n_ao=n, n_aux=naux, **{OUT: out}, **_arrays(cls))[OUT]
@@ -89,7 +92,8 @@ class Run:
 
 def eri3_tensor_kernel(basis: Basis, aux: Basis, *, boys: Boys,
                        classes: Iterable[tuple[int, int, int]] | None = None,
-                       threads: int = 32, engine: Engine = Engine.MMD) -> Run:
+                       threads: int = 32, engine: Engine = Engine.MMD,
+                       lowstack: bool | None = None) -> Run:
     """`(mn|P)` over `basis` and `aux` from the interpreted kernels of
     `classes` (every class the two bases reach when None); the elements of
     any other class are 0.0."""
@@ -99,6 +103,6 @@ def eri3_tensor_kernel(basis: Basis, aux: Basis, *, boys: Boys,
     for cls in eri3_classes(basis, aux):
         if want is None or (cls.la, cls.lb, cls.lP) in want:
             T = launch_class(cls, T, boys=boys, threads=threads,
-                             engine=engine)
+                             engine=engine, lowstack=lowstack)
             ran.append((cls.la, cls.lb, cls.lP))
     return Run(T, tuple(ran))
