@@ -2853,6 +2853,66 @@ def test_the_launch_builds_no_dipole_kernel() -> None:
     assert not any(_under(e, "one_electron.kernel_mu") for e in seen)
 
 
+# ---------------------------------------------------------------------------
+# The HGP one-electron kernels, `Target.S`, `T`, `V` and `DIPOLE` on
+# `Engine.HGP` (`one_electron.kernel_hgp`): the key, IR and engine #2's
+# recurrences (`hgp.vrr`'s eq 25, `hgp.hrr`'s eq 28, spelled by
+# `hgp.recurrence`), nothing of MMD's. Checked in the interpreter against the
+# MMD host matrices and libcint, so neither `ao`, `one_electron`'s host
+# references, the interpreter, a backend, a card nor `reference/` may be its
+# ancestor. The generator CLI composes it (`--hgp-one-e-l`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgp1e_builder": _rule(
+        "kernel_hgp.py: the HGP one-electron kernels -- key -> IR, a VRR per "
+        "primitive pair (`hgp.vrr` eq 25 at f = 0) and the HRR on contracted "
+        "values (`hgp.hrr` eq 28), one thread per contracted shell pair",
+        ("spec", "=ir", "hgp"),
+        ao="the MMD host matrices (`one_electron.overlap` / `kinetic` / "
+           "`potential` / `multipole`) and `ao.pairs.dress` are the witnesses "
+           "the kernels are interpreted against: importing either shares "
+           "ancestry with them (#20)",
+        one_electron="the MMD one-electron kernels and host references are "
+                     "the other engine's: this builder names engine #2 only",
+        mmd="McMurchie-Davidson is the other engine (#292)",
+        plan="the plan layer is MMD machinery keyed on a [JEngine] row an HGP "
+             "class does not have",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF |= {"one_electron.kernel_hgp": "hgp1e_builder"}
+EDGES |= {"one_electron.kernel_hgp": frozenset(
+    ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP one-electron "
+                       "ladder through `kernel_hgp`",
+                       RULES["driver"].may
+                       | frozenset(("one_electron.kernel_hgp",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("one_electron.kernel_hgp",))
+
+
+def test_the_hgp1e_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["one_electron.kernel_hgp"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.vrr", "hgp.hrr", "hgp.recurrence"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "plan", "mmd",
+                   "performance.device", "eri", "one_electron"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hgp reaches {hit}"
+
+
 # The generator CLI writes the three-center ladder (`--eri3-l`, #445), so the
 # driver composes the builder, as it does the metric's.
 RULES["driver"] = Rule(RULES["driver"].why + ", and the three-center ladder "

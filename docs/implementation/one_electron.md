@@ -674,6 +674,79 @@ decision, and `--mu-l` refuses above 2. Nothing is measured: #544's
 `mu_22` with the overlap (200), a sanity reading, not a store row. No
 consumer (an SCF dipole driver, say) is built.
 
+## The HGP route: `S`, `T`, `V` and `MU` on engine #2
+
+**Status: built and interpreted, s and p shells only; compiled and run on
+no card yet.** `one_electron/kernel_hgp.py` builds the same four matrices
+on Head-Gordon & Pople's split of Obara & Saika's one-electron recurrences,
+promoted from the spike `experimental/hgp/one_electron/` (whose route and
+oracle it keeps). The MMD kernels above are untouched, byte for byte.
+
+**Keys.** `Target.S`, `T`, `V` and `DIPOLE` with `engine=Engine.HGP`
+(`kernel_hgp.hgp_spec`), legal since this change (`spec.py`, "AN HGP
+ONE-ELECTRON CLASS"; `SX` stays refused). The key spells the engine as a
+slot suffix, `overlap/d0/(1,0)/b1/s.hgp/literal`, so no MMD key moves;
+`s.hgp`, `t.hgp`, `v.hgp` and `dipole.hgp` are engine slots
+(`levers.ENGINE_SLOTS`) that refuse every lever. Units are `hs_{la}{lb}`,
+`ht_`, `hv_`, `hmu_`.
+
+**The route.** Per primitive pair a VRR on the bra centre builds `(e|0)`;
+the pairs are summed; then the HRR `(a|b+1_d) = (a+1_d|b) + AB_d (a|b)` runs
+once per shell pair on contracted values. Each matrix is a combination of
+contracted overlap-type integrals:
+
+| Matrix | From contracted `(a\|b)` | VRR order |
+|---|---|---|
+| `S` | `(a\|b)` | `la + lb` |
+| `MU_d` | `q [(a\|b+1_d) + (B_d − C_d)(a\|b)]` | `la + lb + 1` |
+| `T` | `(2lb+3)(a\|b)₁ − 2 Σ_d (a\|b+2_d)₂ − ½ Σ_d b_d(b_d−1)(a\|b−2_d)₀` | `la + lb + 2` |
+| `V` | `−Σ_C Z_C (a\|b)⁽⁰⁾_C` | `la + lb` (Boys `m ≤ la + lb`) |
+
+`T`'s subscript `n` is a table weighted by `β^n` (`β` the ket exponent),
+each with its own HRR; `V` sums the nuclei into one table first.
+
+**The recurrences are `hgp/`'s, not rewritten.** The VRR is `hgp.vrr`'s
+eq 25 DAG at `f = 0`, spelled by `hgp.recurrence.vrr_body` unchanged, in
+two limits read off its coefficients: for `V`, the ket a unit point charge
+(`W → C`, so `WP = C − P`, and `ρ/p → 1`, so `inv2p_alpha_over_p = inv2p`);
+for the overlap, the `m + 1` terms dropped and the DAG cut to `m = 0`. The
+HRR is `hgp.hrr.reduce` (eq 28's bra half) spelled by
+`hgp.recurrence.hrr_body`, which gained an additive `name=` hook (default
+`hrr_name`, so no existing unit's text moved) for `T`'s three tables. The
+VRR is cut to exactly the boundary the HRRs read and every recurrence
+scalar is declared only where a term reads it, so no unit declares an
+unread local (#92's filter; `test_kernel_hgp.py` checks it on the IR).
+
+**Mapping.** One thread per contracted shell pair (the Schwarz kernel's),
+looping its records `[rec0, rec1)` serially, because the HRR needs
+contracted values. Plain stores, no atomics: each element belongs to one
+shell pair, so a build is bit-reproducible and exactly symmetric. The
+seed `(0|0) = s_ab K_AB` forms `K_AB = exp(ζ (P−A)·(P−B))` per record from
+the MMD kernels' own record arrays; `V`'s leaf is
+`s_ab K_AB (2/√π) √ζ F_m`. Staging is `OneEClass.hgp_arrays(target, basis)`:
+the MMD record arrays plus `rec0 rec1 off_a off_b ab_*` (and `b_*` for the
+dipole) per shell pair.
+
+**Witnesses** (`test/test_kernel_hgp.py`, fast tier, interpreted): the MMD
+host matrices on a synthetic contracted s/p basis on three off-axis
+centres under four nuclei, within `1e-13` of `max|M|`, every ordered class
+in one launch each; libcint's `int1e_ovlp`, `int1e_kin`, `int1e_nuc` on
+H₂O/STO-3G and 6-31G and `int1e_r_cart` at both fixture origins, within
+`1e-12` of `max|M|` (observed ≤ 1.0e-15); `q = −1` the exact negation; the
+origin shift. Goldens: `test/golden/{cuda,hip}/{hs,ht,hv,hmu}_{00,01,11}`
+(`test_emit_hgp_one_e.py`, whose `cuda`/`hip` compile cases have not run:
+the session that built this had no device compiler).
+
+**The generator.** `python -m felizjueves.emit --hgp-one-e-l [LMAX]` (1
+bare, **0..1 only**, exit 2 above) adds the 12 units beside the J ladders;
+never in the bare default, not in `KERNEL_GEN_CMD`.
+
+**Not done.** d and above (the recurrences are general in `l`; the builder
+refuses `l > 1`, the requested scope); no compile, card run or measurement;
+no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
+ladder); no screening inside the kernel; no comparison of the two engines'
+cost.
+
 ## Named follow-ups
 
 - **A batched `V` kernel.** `V` has Hermite targets, so the ban that #232

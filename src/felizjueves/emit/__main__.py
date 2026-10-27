@@ -14,6 +14,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --metric-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --eri3-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --mu-l 2
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --hgp-one-e-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-metric-l --hgp-eri3-l
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --hgp-j-l 1
@@ -105,6 +106,17 @@ for CUDA, `.hip` for HIP):
   nor in KERNEL_GEN_CMD. Only `la <= lb`, the one-electron ladder's set:
   the `(lb, la)` unit a basis also reaches is the same builder's text,
   built by its driver.
+
+- the HGP one-electron ladder, `--hgp-one-e-l [LMAX]`: for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
+  `kernel_hgp.build_hgp_kernel` for `Target.S`, `T`, `V` and `DIPOLE` on
+  `Engine.HGP` (`hs_{la}{lb}`, `ht_`, `hv_`, `hmu_`): a VRR per primitive
+  pair, the contraction, the HRR on contracted values, one thread per
+  contracted shell pair. Accepted 0..`HGP_ONE_E_L_MAX` = 1 ONLY (the builder
+  is built and checked for s and p shells; above it is a 2). It ADDS units
+  beside the J ladders, as `--one-e-l` does, and is NEVER in the no-flag
+  default nor in KERNEL_GEN_CMD. Only `la <= lb`; the `(1, 0)` unit a basis
+  also reaches is the same builder's text, built by its driver.
 
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
@@ -321,6 +333,8 @@ from felizjueves.mmd.kernel import (
     pq_name,
     pq_spec,
 )
+from felizjueves.one_electron.kernel_hgp import TARGETS as HGP_ONE_E_TARGETS
+from felizjueves.one_electron.kernel_hgp import build_hgp_kernel
 from felizjueves.one_electron.kernel_mu import build_mu_kernel
 from felizjueves.one_electron.kernel_s import build_s_kernel, s_name
 from felizjueves.one_electron.kernel_sx import build_sx_kernel
@@ -346,6 +360,8 @@ DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 uni
 DEFAULT_HGP_DF_L = HGP_DF_L_MAX  # `--hgp-metric-l` / `--hgp-eri3-l` bare: p
 DEFAULT_MU_L = 2  # `--mu-l` given bare: (ss) through (dd), 6 units
 MU_L_MAX = 2  # milestone 19's cap: the dipole is validated through (dd) only
+DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
+HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -588,6 +604,37 @@ def generate_mu(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]:
     """Emit the dipole unit of every pair class through `lmax` into `out`;
     return the paths."""
     kernels = [build_mu_kernel(c) for c in mu_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The HGP one-electron ladder
+# ---------------------------------------------------------------------------
+
+
+def hgp_one_e_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..HGP_ONE_E_L_MAX` (the HGP one-electron kernels are s and p only)."""
+    if type(lmax) is not int or not 0 <= lmax <= HGP_ONE_E_L_MAX:
+        raise ValueError(f"--hgp-one-e-l {lmax!r} is outside "
+                         f"0..{HGP_ONE_E_L_MAX}: the HGP one-electron "
+                         "kernels are built for s and p shells only")
+    return pair_classes(lmax)
+
+
+def hgp_one_e_kernels(lmax: int) -> list[Kernel]:
+    """`hs_`, `ht_`, `hv_`, `hmu_{la}{lb}` for every class through `lmax`,
+    class-major."""
+    return [build_hgp_kernel((t, la, lb)) for la, lb in hgp_one_e_classes(lmax)
+            for t in HGP_ONE_E_TARGETS]
+
+
+def generate_hgp_one_e(backend: str, arch: Arch, out: Path,
+                       lmax: int) -> list[Path]:
+    """Emit the HGP `S`, `T`, `V` and dipole unit of every pair class
+    through `lmax` into `out`; return the paths."""
+    kernels = hgp_one_e_kernels(lmax)
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -847,11 +894,14 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.one_e_l is not None or args.schwarz_l is not None
             or args.sx_l is not None or args.metric_l is not None
             or args.eri3_l is not None or args.mu_l is not None
+            or args.hgp_one_e_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
-              "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
-              "--mu-l / --class / "
+              "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
+              "--hgp-eri3-l / "
+              "--mu-l / --hgp-one-e-l / "
+              "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
               file=sys.stderr)
@@ -910,6 +960,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_HGP_DF_L, default=None, metavar="LMAX")
     ap.add_argument("--mu-l", dest="mu_l", type=int, nargs="?",
                     const=DEFAULT_MU_L, default=None, metavar="LMAX")
+    ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
+                    const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
@@ -959,12 +1011,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.one_e_l is not None or args.schwarz_l is not None
                  or args.sx_l is not None or args.metric_l is not None
                  or args.eri3_l is not None or args.mu_l is not None
-                 or _hgp_df(args)
+                 or args.hgp_one_e_l is not None or _hgp_df(args)
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
-              "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
-              "--mu-l / --class / "
+              "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
+              "--hgp-eri3-l / "
+              "--mu-l / --hgp-one-e-l / "
+              "--class / "
               "--shell-ls and "
               "the J / K "
               "lever flags; give one",
@@ -986,11 +1040,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or args.one_e_l is not None or args.schwarz_l is not None
                      or args.sx_l is not None or args.metric_l is not None
                      or args.eri3_l is not None or args.mu_l is not None
-                     or _hgp_df(args)
+                     or args.hgp_one_e_l is not None or _hgp_df(args)
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
-              "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / --mu-l "
-              "(and a lever flag) and "
+              "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
+              "--mu-l / "
+              "--hgp-one-e-l (and a lever "
+              "flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
         return 2
@@ -1035,6 +1091,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               "dipole is validated through (dd) only (milestone 19)",
               file=sys.stderr)
         return 2
+    if (args.hgp_one_e_l is not None
+            and not 0 <= args.hgp_one_e_l <= HGP_ONE_E_L_MAX):
+        print(f"emit: --hgp-one-e-l {args.hgp_one_e_l} is outside "
+              f"0..{HGP_ONE_E_L_MAX}: the HGP one-electron kernels are built "
+              "for s and p shells only", file=sys.stderr)
+        return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
         lever_units = [k for lf, a in given for k in lever_kernels(lf, a)]
@@ -1075,6 +1137,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                                    args.hgp_metric_l, args.hgp_eri3_l)
     if args.mu_l is not None:  # beside the J chain, never by default
         written += generate_mu(args.backend, arch, args.out, args.mu_l)
+    if args.hgp_one_e_l is not None:  # beside the J chain, never by default
+        written += generate_hgp_one_e(args.backend, arch, args.out,
+                                      args.hgp_one_e_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "

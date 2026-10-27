@@ -122,6 +122,7 @@
    "ir.lever_ladder",
    "ir.lower",
    "mmd.kernel",
+   "one_electron.kernel_hgp",
    "one_electron.kernel_mu",
    "one_electron.kernel_s",
    "one_electron.kernel_sx",
@@ -1777,6 +1778,17 @@
    "spec"
   ],
   "one_electron": [],
+  "one_electron.kernel_hgp": [
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "spec"
+  ],
   "one_electron.kernel_mu": [
    "ir",
    "mmd.e_fragment",
@@ -2029,6 +2041,7 @@
    "ir.lever_ladder",
    "ir.lower",
    "mmd.kernel",
+   "one_electron.kernel_hgp",
    "one_electron.kernel_mu",
    "one_electron.kernel_s",
    "one_electron.kernel_sx",

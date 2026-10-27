@@ -74,9 +74,11 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # same lever can mean nothing there: an MMD J lever acts on the [p|q] tower,
 # which an HGP J kernel never runs. So legality is per SLOT, and every
 # legality table covers these too. Only the off-native pairings `spec`
-# admits are slots (HGP J, K, METRIC and ERI3; a test pins this to `spec`).
-ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "metric.hgp",
-                                 "eri3.hgp")
+# admits are slots (HGP J and HGP K, the HGP one-electron S, T, V and
+# dipole of `one_electron.kernel_hgp`, and the HGP DF metric and three-center
+# of `eri.density_fit.kernel_hgp`; a test pins this to `spec`).
+ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
+                                 "dipole.hgp", "metric.hgp", "eri3.hgp")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -178,6 +180,13 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "fragments, and the F levers on the fused digestion; an HGP K kernel "
         "runs neither"
     ),
+    **{f"{slot}.hgp": (
+        f"the HGP {what} kernel (one_electron.kernel_hgp) has no option "
+        "surface: one thread per contracted shell pair, a VRR per primitive "
+        "pair and an HRR on contracted values, one batch, and a lever on it "
+        "is a follow-up nobody has declared"
+    ) for slot, what in (("s", "S"), ("t", "T"), ("v", "V"),
+                         ("dipole", "dipole"))},
     "metric.hgp": (
         "the HGP metric (P|Q) has no option surface: it is the VRR of "
         "(lP 0|lQ 0) with exponent-0 partners, one batch, and an HGP metric "

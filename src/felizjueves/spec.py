@@ -88,7 +88,8 @@ when it is not the native one, as a suffix of the target slot
 same six segments; `.` and not `@`, which separates the arch in
 `MeasuredKey`. So every pre-existing key is byte-identical and no stored key
 carries a suffix. A non-native engine is legal only where it is being built:
-HGP on `J` and `K`, and on the two DF targets `METRIC` and `ERI3`
+HGP on `J` and `K`, on the one-electron `S`, `T`, `V` and `DIPOLE`
+(`one_electron/kernel_hgp.py`), and on the two DF targets `METRIC` and `ERI3`
 (`eri/density_fit/kernel_hgp.py`, s and p shells tested). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
@@ -167,8 +168,19 @@ The ORDER `e` IS A BUILDER ARGUMENT, NOT A KEY FIELD: a quadrupole would be
 its own `Target.QUADRUPOLE` sharing the builder, so `Spec` gains no field
 and no stored key moves. Unbatched for `S`'s structural reason
 (`_PAIR_BATCH_REFUSAL`): one thread per record over an E fragment, no [p|q]
-tower, so no Hermite targets of a quartet to partition. HGP is refused as
-for `S` (`_NO_HGP_ONE_E`).
+tower, so no Hermite targets of a quartet to partition. HGP is legal, as
+for `S` (below).
+
+AN HGP ONE-ELECTRON CLASS. `Target.S`, `T`, `V` and `DIPOLE` are legal on
+`Engine.HGP` too: `one_electron.kernel_hgp` builds each on Head-Gordon &
+Pople's split of Obara & Saika's one-electron recurrences (a VRR on the bra
+centre per primitive pair -- `hgp.vrr`'s eq 25 at `f = 0`, its point-charge
+limit for `V` -- the contraction, then `hgp.hrr`'s eq 28 on contracted
+values). The key spells the engine as a slot suffix,
+``overlap/d0/(1,0)/b1/s.hgp/literal``, so no MMD key moves; `am` is the same
+pair `(la, lb)`, unbatched for the same reason as the MMD class's (an HGP
+class has no Hermite targets at all). The builder takes s and p shells only
+(`kernel_hgp.L_MAX`); `SX` stays refused (`_NO_HGP_ONE_E`).
 
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
@@ -326,17 +338,20 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 }
 
 
-# Why a (target, engine) other than the native one is refused (#401). Only
-# HGP `J` and HGP `K` are legal off-native (milestone 14 builds them), and HGP
-# `METRIC` and `ERI3` (`eri/density_fit/kernel_hgp.py`).
+# Why a (target, engine) other than the native one is refused (#401). Legal
+# off-native: HGP `J` and HGP `K` (milestone 14 builds them), HGP `S`, `T`,
+# `V` and `DIPOLE` (`one_electron.kernel_hgp`), and HGP `METRIC` and `ERI3`
+# (`eri/density_fit/kernel_hgp.py`).
 _NO_HGP_PAIR = (
     "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
     "this pair kernel runs no ERI recurrence at all, so there is nothing "
     "for HGP to replace"
 )
 _NO_HGP_ONE_E = (
-    "the HGP engine is the two-electron VRR/HRR of [Fock] §3.1; this "
-    "one-electron kernel is McMurchie-Davidson's E fragment, not an ERI"
+    "the HGP engine is the two-electron VRR/HRR of [Fock] §3.1, and its "
+    "one-electron instance (one_electron.kernel_hgp) covers S, T, V and the "
+    "dipole only; this one-electron kernel is McMurchie-Davidson's E "
+    "fragment, and an HGP instance of it is a follow-up nobody has declared"
 )
 
 
@@ -357,15 +372,9 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
         "the dressed record bound is the E fragment and a closed form per "
         "primitive-pair record, with no ERI recurrence for HGP to replace"
     ),
-    (Target.S, Engine.HGP): _NO_HGP_ONE_E,
-    (Target.T, Engine.HGP): _NO_HGP_ONE_E,
+    # S, T, V and DIPOLE are legal on HGP (`one_electron.kernel_hgp`, s and p
+    # shells): the module docstring's "AN HGP ONE-ELECTRON CLASS".
     (Target.SX, Engine.HGP): _NO_HGP_ONE_E,
-    (Target.DIPOLE, Engine.HGP): _NO_HGP_ONE_E,
-    (Target.V, Engine.HGP): (
-        "V is the MMD J engine with the ket a unit point charge "
-        "(theta -> sqrt(zeta)); the HGP VRR/HRR has no point-charge ket, "
-        "and an HGP V is a follow-up nobody has declared"
-    ),
     (Target.SCHWARZ, Engine.HGP): _mmd_only(
         "the Schwarz kernel (la lb|la lb)"),
     (Target.F, Engine.MMD): (
