@@ -3642,6 +3642,98 @@ def write_relation() -> None:
     RELATION.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
 
 
+# ---------------------------------------------------------------------------
+# The analytic nuclear gradients by MMD (`felizjueves.gradient`): the host
+# references on the AO layer, and two builders -- `kernel_g1e` (S, T, V at
+# d1) and `kernel_gjab` (JAB at d1, the Coulomb energy's bra derivative) --
+# each checked against `gradient.host` in the interpreter, so neither may be
+# its ancestor, nor `reference/`. The generator CLI writes their ladder
+# (`--grad-l`).
+# ---------------------------------------------------------------------------
+
+_NO_MACHINE = {
+    "ir.interp": "the builder is checked by the interpreter, never built on it",
+    "emit": "nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+    "performance.device":
+        "the `Kernel` is arch-neutral; the arch enters at emission",
+}
+_GRAD_WITNESS = ("`gradient.host` is the witness the kernel is interpreted "
+                 "against and `ao` the layer it reads: importing either "
+                 "shares ancestry with it (#20)")
+RULES |= {
+    "gradient_package": _rule(
+        "gradient/__init__.py: the gradient package's marker, a docstring "
+        "and no code", (), reference=_GROUND_TRUTH),
+    "gradient_host": _rule(
+        "gradient/host.py: the contracted nuclear gradients of S, T, V and "
+        "E_J on the AO layer -- the d1 kernels' witness -- from the undressed "
+        "E (`mmd.hermite`), the kinetic shift and nucleus type of the "
+        "one-electron references, and the J chain's kets (`ao.density`); "
+        "`[t]^(0)` and `[p|q]` injected",
+        ("ao", "mmd.hermite", "one_electron.kinetic",
+         "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "gradient.kernel_g1e": "the kernel is what this module checks",
+           "gradient.kernel_gjab": "the kernel is what this module checks"}),
+    "g1e_builder": _rule(
+        "kernel_g1e.py: the S, T and V gradient kernels -- key -> IR, the "
+        "per-axis `E` tables inlined (`e_fragment`), `V`'s `[t]^(0)` by the "
+        "plan layer one order up (`kernel_v.v_plan`, `recurrence`)",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "one_electron.kernel_v"),
+        ao=_GRAD_WITNESS, gradient=_GRAD_WITNESS, reference=_GROUND_TRUTH,
+        **_NO_MACHINE),
+    "gjab_builder": _rule(
+        "kernel_gjab.py: the Coulomb-energy gradient kernel -- key -> IR, "
+        "`kernel_g1e`'s record head, weights and Hermite densities reused",
+        ("spec", "=ir", "plan", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "gradient": "gradient_package",
+    "gradient.host": "gradient_host",
+    "gradient.kernel_g1e": "g1e_builder",
+    "gradient.kernel_gjab": "gjab_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "gradient": (),
+    "gradient.host": ("ao.density", "ao.pairs", "ao.shell", "mmd.hermite",
+                      "one_electron.kinetic", "one_electron.potential"),
+    "gradient.kernel_g1e": ("ir", "mmd.e_fragment", "mmd.recurrence",
+                            "one_electron.kernel_v", "plan.targets", "spec"),
+    "gradient.kernel_gjab": ("gradient.kernel_g1e", "ir", "plan.targets",
+                             "spec"),
+}.items()}
+_GRAD_BUILDERS = ("gradient.kernel_g1e", "gradient.kernel_gjab")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the gradient ladder "
+                       "through `kernel_g1e`, `kernel_gjab`",
+                       RULES["driver"].may | frozenset(_GRAD_BUILDERS),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)
+
+
+def test_the_gradient_builders_reach_neither_their_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    for start in _GRAD_BUILDERS:
+        seen: set[str] = set()
+        todo = [start]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        assert {"mmd.e_fragment", "mmd.recurrence"} <= seen
+        for banned in (_REF, "ao", *_LEFT_AO, "gradient.host", "ir.interp",
+                       "emit", "performance.device"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{start} reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

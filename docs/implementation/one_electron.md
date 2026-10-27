@@ -6,8 +6,9 @@ kinetic energy `T_ab = <a|-½∇²|b>`, the nuclear attraction
 `V_ab = -Σ_C Z_C <a|1/r_C|b>`, and the core Hamiltonian `h = T + V` they sum
 to. It is the contract the three kernels were built against, and the one
 place that says what is generated, what is reused from the `J` engine, and
-where it ran. **Energy order only:** `derivative_order` stays 0, and
-one-electron gradients and Hessians are out of scope.
+where it ran. **Energy order only here:** the d1 keys of `S`, `T` and
+`V`, their contracted nuclear gradients, are `gradient.md`'s; Hessians are
+out of scope.
 
 **Nothing here is scored against a published table.** `[JEngine]`
 (`docs/references.md` entry 35) is about `J` only. It prints no

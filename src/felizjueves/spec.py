@@ -20,8 +20,8 @@ exactly one operator (`OPERATOR_OF`) and the validator refuses any other
 pairing, so `Spec(COULOMB, 0, (1, 1), Target.S)` is never keyed. No consumer
 outside this module changed: a one-electron key reads
 ``overlap/d0/(2,1)/b1/s/literal``, the shape every key already had, and every
-pre-existing key is byte-identical. `DERIVATIVE_ORDERS` stays (0,):
-gradients and Hessians are out of milestone 11's scope.
+pre-existing key is byte-identical. `DERIVATIVE_ORDERS` stayed (0,):
+gradients were out of milestone 11's scope (since widened, below).
 
 THE TARGET DECIDES THE CLASS'S SHAPE (#150). `Target.J` is the [p|q] kernel
 of a QUARTET class (l1, l2 | l3, l4). `Target.DQ` (the pre-contracted ket
@@ -191,6 +191,21 @@ today. The field is a widening path, not a dead end: its future meaning for
 `F` is VRR target grouping (`_F_BATCH_REFUSAL`). For the same reason the plan
 layer, which is MMD machinery keyed on `total_am`, refuses an F spec
 (`plan.dag.refuse_hgp`).
+
+A GRADIENT CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 1`. The
+field reserved above is the second to be widened: `DERIVATIVE_ORDERS` is
+`(0, 1)`, and order 1 is legal on `GRADIENT_TARGETS` alone -- `S`, `T`,
+`V` and `JAB`, each on MMD -- every other target refusing it
+(`_GRADIENT_REFUSAL`). A d1 kernel does not write the derivative integrals
+(a `[n_atom, 3, n_ao, n_ao]` tensor); it writes their CONTRACTION with a
+matrix `M`, `G[atom, k] += SUM_mn M_mn dX_mn/dR_{atom,k}`, which is what an
+energy gradient needs (`felizjueves.gradient`'s package docstring). `am` is
+the integral's pair `(la, lb)`, unchanged, so
+``overlap/d1/(2,1)/b1/s/literal`` and ``overlap/d0/(2,1)/b1/s/literal``
+differ in one segment and every d0 key is byte-identical. `JAB` at d1 is
+the Coulomb energy's bra derivative: it reads `J_p` of a `Target.J` class
+whose bra order is one higher (`gradient.kernel_gjab.gjab_pq_spec`), a d0
+key. Unbatched, for each target's d0 reason.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -442,8 +457,21 @@ _F_BATCH_REFUSAL = (
 )
 
 
-# Geometric derivatives are a later operator family; order 0 only for now.
-DERIVATIVE_ORDERS = (0,)
+# The geometric derivative order (module docstring, "A GRADIENT CLASS"):
+# 0, the integral itself, everywhere; 1, the nuclear gradient contracted
+# with a matrix, on the targets in `GRADIENT_TARGETS` only.
+DERIVATIVE_ORDERS = (0, 1)
+
+# The targets whose first derivative is built (`felizjueves.gradient`):
+# `S`, `T`, `V` (its Hellmann-Feynman term included) and `JAB`, the J
+# chain's bra back-transform read as the Coulomb energy's bra derivative.
+# Each on its native engine, MMD, only.
+GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB))
+
+_GRADIENT_REFUSAL = (
+    "a first derivative is built for S, T, V and JAB on the MMD engine only "
+    "(felizjueves.gradient); this target's gradient is a follow-up"
+)
 
 
 def is_batch_count(n: object) -> bool:
@@ -501,6 +529,13 @@ class Spec:
                 f"derivative order {self.derivative_order!r} not in "
                 f"{DERIVATIVE_ORDERS}"
             )
+        if self.derivative_order and (
+            self.target not in GRADIENT_TARGETS
+            or self.engine is not NATIVE_ENGINE[self.target]
+        ):
+            raise ValueError(
+                f"derivative order {self.derivative_order} on target "
+                f"{self.target_slot}: {_GRADIENT_REFUSAL}")
         if len(self.am) not in (2, 3, 4) or not all(
             type(x) is int and x >= 0 for x in self.am
         ):
