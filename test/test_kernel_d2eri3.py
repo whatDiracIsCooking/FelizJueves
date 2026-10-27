@@ -1,7 +1,7 @@
 """`kernel_d2eri3`: the three-center DF Hessian kernel (d2), interpreted.
 
-THE WITNESS is `hessian.host_df.eri3_hessian` (itself held to finite
-differences of the d1 `(mn|P)` host gradient, test/test_hessian_host_df.py),
+THE WITNESS is `hessian.host_eri3.eri3_hessian` (itself held to finite
+differences of the d1 `(mn|P)` host gradient, test/test_hessian_host_eri3.py),
 which takes ANOTHER ROUTE on every centre: it differentiates each 3-D
 Cartesian as a list of moved Cartesians, the aux one included, where the
 kernel operates per axis on the AO pair and shifts the Hermite tower for the
@@ -33,7 +33,7 @@ from test_kernel_geri3 import AUX, BASIS, CLASSES, NUCLEI, _cells, _gam, _id
 from tiers import by_l
 
 from felizjueves.ao.shell import Basis
-from felizjueves.hessian import host_df
+from felizjueves.hessian import host_eri3
 from felizjueves.hessian.kernel_d2eri3 import (
     ACCUMULATORS,
     build_d2eri3_kernel,
@@ -64,9 +64,9 @@ def test_one_launch_over_the_class_is_the_host_hessian(cls) -> None:
     H, ran = run_d2eri3(BASIS, AUX, NUCLEI, Gam, boys=boys, classes={cls})
     assert ran == (cls,)
     cells = _cells(BASIS, AUX, cls)
-    want = np.array(host_df.eri3_hessian(BASIS, AUX, Gam, NUCLEI, pq=pq,
+    want = np.array(host_eri3.eri3_hessian(BASIS, AUX, Gam, NUCLEI, pq=pq,
                                          cells=cells))
-    twin = np.array(host_df.eri3_hessian(BASIS, AUX, Gam, NUCLEI, pq=pq,
+    twin = np.array(host_eri3.eri3_hessian(BASIS, AUX, Gam, NUCLEI, pq=pq,
                                          cells=cells, absolute=True))
     scale = float(twin.max())
     _close(H, want, scale, f"d2eri3 {cls}")
@@ -89,8 +89,8 @@ def test_the_whole_hessian_of_h2o_against_an_sp_aux_basis() -> None:
     Gam = _gam(basis, aux, seed=11)
     H, ran = run_d2eri3(basis, aux, nuclei, Gam, boys=boys)
     assert max(sum(c) for c in ran) == 3  # (pp|p)
-    want = np.array(host_df.eri3_hessian(basis, aux, Gam, nuclei, pq=pq))
-    twin = np.array(host_df.eri3_hessian(basis, aux, Gam, nuclei, pq=pq,
+    want = np.array(host_eri3.eri3_hessian(basis, aux, Gam, nuclei, pq=pq))
+    twin = np.array(host_eri3.eri3_hessian(basis, aux, Gam, nuclei, pq=pq,
                                          absolute=True))
     _close(H, want, float(twin.max()), "d2eri3 H2O")
     assert np.abs(H.sum(axis=0)).max() <= 1e-12 * np.abs(H).max()

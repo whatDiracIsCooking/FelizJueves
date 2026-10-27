@@ -4,14 +4,18 @@
     eri3_arrays(cls, basis, aux, nuclei)        -> geri3's arrays by name
     run_metric(aux, nuclei, W, *, boys, ...)    -> (G, classes run)
     run_eri3(basis, aux, nuclei, Gam, *, boys, ...) -> (G, classes run)
+    run_d2metric(aux, nuclei, W, *, boys, ...)   -> (H, classes run)
     run_d2eri3(basis, aux, nuclei, Gam, *, boys, ...) -> (H, classes run)
 
 The staging is the d0 kernels' (`metric_classes`, `eri3_classes`), `s` passed
 as `s_aux` (`kernel_metric.PARAM_OF`), plus `gradient.host_df`'s atoms and
-exponents. One launch per class into one `G` (the Hessian's `H`), zeroed
-here once. Shared by test_kernel_gmetric.py, test_kernel_geri3.py,
-test_kernel_d2eri3.py and test/grad_df_driver.py (which stages the same
-arrays for the card).
+exponents. One launch per class into one `G` (or `H`), zeroed here once.
+Shared by test_kernel_gmetric.py, test_kernel_geri3.py,
+test_kernel_d2metric.py, test_kernel_d2eri3.py and test/grad_df_driver.py
+(which stages the same arrays for the card). `run_d2metric` is the d2
+metric kernel (`hessian.kernel_d2metric`) on `run_metric`'s arrays, and
+`run_d2eri3` the d2 three-center kernel (`hessian.kernel_d2eri3`) on
+`run_eri3`'s, `H` in place of `G`.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from felizjueves.gradient.kernel_gmetric import (
     launch_shape,
 )
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
+from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.ir.interp import Interpreter, Launch
 
 I32 = ("rec0", "rec1", "off_", "atom_")
@@ -92,6 +97,25 @@ def run_eri3(basis, aux, nuclei, Gam, *, boys,
             **eri3_arrays(cls, basis, aux, nuclei))["G"]
         ran.append(c)
     return G, tuple(ran)
+
+
+def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
+                threads: int = 7, H: np.ndarray | None = None):
+    want = None if classes is None else set(classes)
+    n = len(nuclei)
+    H = np.zeros((n, 3, n, 3)) if H is None else H
+    ran = []
+    for cls in metric_classes(aux):
+        if want is not None and (cls.lP, cls.lQ) not in want:
+            continue
+        grid, block = launch_shape(cls.n_pair, threads)
+        H = Interpreter(build_d2metric_kernel((cls.lP, cls.lQ)),
+                        launch=Launch(grid, block, 1), boys=boys).run(
+            n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=aux.n_ao,
+            n_atom=len(H), M=np.asarray(W, dtype=float), H=H,
+            **metric_arrays(cls, aux, nuclei))["H"]
+        ran.append((cls.lP, cls.lQ))
+    return H, tuple(ran)
 
 
 def run_d2eri3(basis, aux, nuclei, Gam, *, boys,

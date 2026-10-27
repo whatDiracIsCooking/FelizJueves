@@ -1,7 +1,7 @@
 """Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-the exchange energy's, the one-electron `S`, `T`, `V` and the three-center
-DF integral `(mn|P)`, as host references and as generated kernels
-(`Spec.derivative_order = 2`).
+the exchange energy's, the one-electron `S`, `T`, `V`, and the
+density-fitting metric `(P|Q)` and three-center integral `(mn|P)`, as host
+references and as generated kernels (`Spec.derivative_order = 2`).
 
     host.py          the Coulomb reference, pure Python, on the AO layer
     kernel_hdq.py    Target.DQ at d1: hdq_{lc}{ld}, the ket pre-contraction
@@ -13,13 +13,18 @@ DF integral `(mn|P)`, as host references and as generated kernels
                      energy's Hessian, both terms in one kernel per K
                      class (D_ab D_cd straddles bra and ket, so there is
                      no ket derivative density to precompute)
+    host_df.py       the DF metric reference, pure Python
+    kernel_d2metric.py  Target.METRIC at d2: d2metric_{lP}{lQ},
+                     H[A, k, B, l] += SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}
+                     (the Hermite shift twice: [r] -> [r + 1_k + 1_l],
+                     the other centre's blocks by sign, no raised E)
     host_1e.py       the one-electron references, pure Python
     kernel_h1e.py    Target.S / T / V at d2: d2s_, d2t_, d2v_{la}{lb},
                      H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
                      (`M = D` for T and V, `W` for S; V's operator moves
                      with its nucleus: centre-nucleus and nucleus-nucleus
                      terms by `d/dC_k [t]^(0) = -[t + 1_k]^(0)`)
-    host_df.py       the three-center DF reference, pure Python
+    host_eri3.py     the three-center DF reference, pure Python
     kernel_d2eri3.py Target.ERI3 at d2: d2eri3_{la}{lb}{lP},
                      H[X, k, Y, l] += SUM_mnP Gam_mnP d2(mn|P) / dR dR
                      over the AO pair's two centres (the rule twice, per
@@ -27,7 +32,8 @@ DF integral `(mn|P)`, as host references and as generated kernels
 
 The sections below are the Coulomb kernels'; the one-electron ones apply
 the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring
-is their account.
+is their account; `kernel_d2metric`'s and `kernel_d2eri3`'s docstrings
+are the DF metric's and the three-center integral's.
 
 WHAT A HESSIAN KERNEL WRITES. As a gradient kernel writes a contraction and
 not the derivative integrals (`felizjueves.gradient`), a Hessian kernel

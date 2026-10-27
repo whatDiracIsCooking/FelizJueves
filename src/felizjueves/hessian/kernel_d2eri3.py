@@ -13,7 +13,7 @@ cell's contribution to
 
     H[X, k, Y, l] += SUM_mnP Gam_mnP d2(mn|P) / dR_{X,k} dR_{Y,l}
 
-(`felizjueves.hessian`; `hessian.host_df.eri3_hessian` is the reference,
+(`felizjueves.hessian`; `hessian.host_eri3.eri3_hessian` is the reference,
 by another route on the aux side). `Gam` is any `[n_ao, n_ao, n_aux]`
 tensor (`eri3`'s layout); a DF-J skeleton Hessian passes `D (x) d`. The
 name is `d2eri3_`, not `heri3_`: that is the HGP `(mn|P)`'s
@@ -62,7 +62,7 @@ staged SWAPPED needs no flag (`kernel_geri3`'s reason). The arrays are
 `Eri3Class.arrays()`' (`s` as `s_aux`) plus `gradient.host_df.eri3_records`'
 exponents and atoms, unchanged from d1.
 
-ROUND-OFF, NOT BITWISE, against `hessian.host_df` (another route on `C`,
+ROUND-OFF, NOT BITWISE, against `hessian.host_eri3` (another route on `C`,
 the plan's MILD DAG against `reference.pq`, the per-axis factors against
 moved 3-D Cartesians). The interpreted test states its bound
 (test/test_kernel_d2eri3.py).
@@ -73,7 +73,7 @@ class; units over the repo's 512 KiB file cap are pinned by digest
 (test/golden/d2eri3_digests.json). No low-stack form is built.
 
 A builder: vendor-neutral IR. It imports neither `ao/` nor
-`hessian.host_df` (its witness) nor the interpreter nor `reference/`.
+`hessian.host_eri3` (its witness) nor the interpreter nor `reference/`.
 """
 
 from __future__ import annotations

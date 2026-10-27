@@ -1,8 +1,8 @@
 """The three-center DF Hessian kernel emitted for both vendors: golden texts
-for every class at L <= 4, the `--hess-df-l` ladder, and a compile of each
+for every class at L <= 4, the `--hess-eri3-l` ladder, and a compile of each
 through nvcc (sm_86) and hipcc (gfx1200).
 
-THE LADDER. `python -m felizjueves.emit --hess-df-l [LMAX]` writes
+THE LADDER. `python -m felizjueves.emit --hess-eri3-l [LMAX]` writes
 `d2eri3_{la}{lb}{lP}` (`hessian.kernel_d2eri3`) for every `la <= lb`,
 `la + lb + lP <= LMAX` (3 when the flag is bare: 13 units). It accepts
 0..4 (the d0 kernel's cap, where the Hessian is validated, interpreted),
@@ -16,7 +16,7 @@ pinned instead by its byte count and sha256 in
 `test/golden/d2eri3_digests.json`, so the repo carries no megabyte of
 unrolled text a digest pins as well. Regenerate (and review the diff) with
 
-    PYTHONPATH=src uv run python test/test_emit_hess_df.py --write
+    PYTHONPATH=src uv run python test/test_emit_d2eri3.py --write
 
 THE COMPILE is test_emit_grad.py's: each unit alone (`-c`), the kernel
 tier's flags, FAILING on a warning located in the generated unit (#92).
@@ -38,8 +38,8 @@ from felizjueves.emit import __main__ as emit_cli
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel, d2eri3_name
 from felizjueves.ir import Raw, walk
 
-CLASSES = emit_cli.hess_df_classes(4)
-BARE = emit_cli.hess_df_classes(emit_cli.DEFAULT_HESS_DF_L)
+CLASSES = emit_cli.hess_eri3_classes(4)
+BARE = emit_cli.hess_eri3_classes(emit_cli.DEFAULT_HESS_ERI3_L)
 DIGESTS = GOLDEN / "d2eri3_digests.json"
 FILE_L_MAX = 2  # classes above it are pinned by digest (module docstring)
 PREFIX = "d2eri3_"
@@ -100,15 +100,15 @@ def _no_tier_env(monkeypatch):
 
 def test_the_ladder_is_every_class_through_lmax() -> None:
     assert len(CLASSES) == 22 and len(BARE) == 13
-    assert emit_cli.DEFAULT_HESS_DF_L == 3 and emit_cli.HESS_DF_L_MAX == 4
-    assert emit_cli.hess_df_classes(0) == [(0, 0, 0)]
+    assert emit_cli.DEFAULT_HESS_ERI3_L == 3 and emit_cli.HESS_ERI3_L_MAX == 4
+    assert emit_cli.hess_eri3_classes(0) == [(0, 0, 0)]
     assert all(a <= b and a + b + p <= 4 for a, b, p in CLASSES)
 
 
 def test_the_ladder_refuses_above_l4() -> None:
     for bad in (-1, 5, 1.0, True):
         with pytest.raises(ValueError, match=r"outside 0\.\.4"):
-            emit_cli.hess_df_classes(bad)
+            emit_cli.hess_eri3_classes(bad)
 
 
 def test_the_names_are_the_builders() -> None:
@@ -163,9 +163,9 @@ def test_every_write_is_atomic_with_no_shared_array() -> None:
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
-def test_hess_df_l_bare_writes_the_pinned_units(backend, tmp_path) -> None:
+def test_hess_eri3_l_bare_writes_the_pinned_units(backend, tmp_path) -> None:
     _, _, ext = BACKEND[backend]
-    assert _run(tmp_path, backend, "--pair-l", "0", "--hess-df-l") == 0
+    assert _run(tmp_path, backend, "--pair-l", "0", "--hess-eri3-l") == 0
     assert _names(tmp_path) == {f"dq_0_0.{ext}", f"jab_00.{ext}"} | {
         f"{d2eri3_name(c)}.{ext}" for c in BARE}
     for c in BARE:
@@ -173,9 +173,9 @@ def test_hess_df_l_bare_writes_the_pinned_units(backend, tmp_path) -> None:
                 (tmp_path / f"{d2eri3_name(c)}.{ext}").read_text())
 
 
-def test_hess_df_l_adds_its_units_beside_the_other_ladders(tmp_path) -> None:
+def test_hess_eri3_l_adds_its_units_beside_the_other_ladders(tmp_path) -> None:
     assert _run(tmp_path, "cuda", "--L", "0", "--grad-df-l", "0",
-                "--hess-df-l", "0") == 0
+                "--hess-eri3-l", "0") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "gmetric_00.cu",
                                 "geri3_000.cu", "d2eri3_000.cu"}
 
@@ -188,7 +188,7 @@ def test_the_bare_default_writes_no_df_hessian_unit(tmp_path) -> None:
 def test_kernel_gen_cmd_asks_for_no_df_hessian_unit() -> None:
     from felizjueves.performance import measured
     line = measured.config_value("KERNEL_GEN_CMD")
-    assert "felizjueves.emit" in line and "--hess-df-l" not in line
+    assert "felizjueves.emit" in line and "--hess-eri3-l" not in line
 
 
 def test_the_names_cannot_collide_with_the_hgp_df_ladder(tmp_path) -> None:
@@ -196,31 +196,31 @@ def test_the_names_cannot_collide_with_the_hgp_df_ladder(tmp_path) -> None:
                 "--eri3-l", "--grad-df-l", "--hess-one-e-l") == 0
     others = _names(tmp_path / "a")
     assert not any(n.startswith(PREFIX) for n in others)
-    assert _run(tmp_path / "b", "cuda", "--L", "0", "--hess-df-l", "1") == 0
+    assert _run(tmp_path / "b", "cuda", "--L", "0", "--hess-eri3-l", "1") == 0
     mine = _names(tmp_path / "b") - {"pq_L0_p0_q0.cu"}
     assert len(mine) == 3 and not mine & others
 
 
 @pytest.mark.parametrize("argv", [
-    ["--hess-df-l", "5"],
-    ["--hess-df-l", "-1"],
-    ["--hess-df-l", "x"],
-    ["--hess-df-l", "1", "--class", "0", "0", "0", "0"],
-    ["--hess-df-l", "1", "--shell-ls", "0"],
-    ["--hess-df-l", "1", "--fock-l", "0"],
-    ["--hess-df-l", "1", "--fock-class", "0", "0", "0", "0"],
-    ["--hess-df-l", "1", "--n-batches", "3"],
-    ["--hess-df-l", "1", "--hgp-j-l", "1"],
+    ["--hess-eri3-l", "5"],
+    ["--hess-eri3-l", "-1"],
+    ["--hess-eri3-l", "x"],
+    ["--hess-eri3-l", "1", "--class", "0", "0", "0", "0"],
+    ["--hess-eri3-l", "1", "--shell-ls", "0"],
+    ["--hess-eri3-l", "1", "--fock-l", "0"],
+    ["--hess-eri3-l", "1", "--fock-class", "0", "0", "0", "0"],
+    ["--hess-eri3-l", "1", "--n-batches", "3"],
+    ["--hess-eri3-l", "1", "--hgp-j-l", "1"],
 ], ids=lambda a: "_".join(a))
-def test_a_hess_df_l_it_cannot_honour_is_a_2(argv, tmp_path) -> None:
+def test_a_hess_eri3_l_it_cannot_honour_is_a_2(argv, tmp_path) -> None:
     assert _run(tmp_path / "out", "cuda", *argv) == 2
     assert not (tmp_path / "out").exists()
 
 
-def test_hess_df_l_above_l4_says_why(tmp_path, capsys) -> None:
-    assert _run(tmp_path / "out", "hip", "--hess-df-l", "5") == 2
+def test_hess_eri3_l_above_l4_says_why(tmp_path, capsys) -> None:
+    assert _run(tmp_path / "out", "hip", "--hess-eri3-l", "5") == 2
     err = capsys.readouterr().err
-    assert "--hess-df-l 5 is outside 0..4" in err
+    assert "--hess-eri3-l 5 is outside 0..4" in err
     assert "validated at L <= 4 only" in err
 
 
@@ -248,6 +248,6 @@ def test_hipcc_compiles_the_df_hessian_unit(cls, hipcc,
 
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write"]:
-        sys.exit("usage: PYTHONPATH=src python test/test_emit_hess_df.py "
+        sys.exit("usage: PYTHONPATH=src python test/test_emit_d2eri3.py "
                  "--write")
     write_goldens()

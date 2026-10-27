@@ -1,55 +1,47 @@
-"""The host reference of `kernel_d2eri3`: the contracted nuclear Hessian of
-the three-center DF integral `(mn|P)`.
+"""The host reference of `kernel_d2metric`: the contracted nuclear Hessian
+of the density-fitting Coulomb metric `(P|Q)`.
 
-    eri3_hessian(basis, aux, Gam, nuclei, *, pq, absolute=)  -> H
+    metric_hessian(aux, W, nuclei, *, pq, pairs=, atoms=, absolute=) -> H
 
-`H` is `n_atom x 3 x n_atom x 3`,
+`H` is `n_atom x 3 x n_atom x 3`, `H[A][k][B][l] = SUM_PQ W_PQ d2(P|Q) /
+dR_{A,k} dR_{B,l}` (the package docstring) -- over every aux shell pair
+`i <= j`, or over `pairs=` only -- every centre of every pair on atom `A`
+(and `B`) summed. `W` is any `n_aux x n_aux` matrix, weighted per
+Cartesian pair by `gradient.host.pair_weights` (`W[p, q] + W[q, p]` off a
+diagonal shell pair, `W[p, q]` on it), exact for any `W` against the
+symmetric `(P|Q)`. A DF-J energy Hessian's metric term passes `W = -1/2 d
+d^T` (`gradient.host_df`'s module docstring), skeleton only: `d` is not
+differentiated (its response is the caller's).
 
-    H[A][k][B][l] = SUM_mnP Gam_mnP d2(mn|P) / dR_{A,k} dR_{B,l}
+THE ROUTE IS NOT THE KERNEL'S. The kernel moves the Hermite Gaussians
+(`[r]^(0) -> [r + 1_k + 1_l]^(0)`, `kernel_d2metric`'s docstring). This
+reference is `hessian.host_1e`'s: each aux FUNCTION is differentiated as
+a list of `(coefficient, Cartesian)` -- `d_centre(a, v, k) = [(2a, v +
+1_k), (-v_k, v - 1_k)]`, applied twice for `d2` -- and every term is the
+ordinary `(u|v)` of the moved Cartesians on the single-center `E`
+(`e_axis(i, 0, alpha, 0, 0)`, two indices above the class):
 
-over every cell (an AO shell pair `i <= j` crossed with an aux shell), or
-over `cells=` only, every centre of every cell on atom `A` (and `B`)
-summed. `Gam` is any `[n_ao, n_ao, n_aux]` tensor (`eri3_tensor`'s
-layout), not necessarily symmetric in `(m, n)`: the weights are
-`gradient.host_df`'s rule, `Gam[a, b, P] + Gam[b, a, P]` off a diagonal
-shell pair and `Gam[a, a', P]` on it, at each aux function. A DF-J
-skeleton Hessian passes `Gam = D (x) d` (with the metric's `-1/2 d d^T`
-term beside it; that term is not built here). The sweep, the atoms
-(`atoms=`, `aux_atoms=`) and the injected `[t|tau]` (`pq=`) are
-`gradient.host_df.eri3_gradient`'s.
+    H[A, k, A, l] += s w SUM c (u|b)          over d2_A(a; k, l)
+    H[B, k, B, l] += s w SUM c (a|u)          over d2_B(b; k, l)
+    H[A, k, B, l] += s w SUM c c' (u|u')      over d_A(a; k) x d_B(b; l)
+    H[B, l, A, k] += the same                 (one value, both places)
 
-THE ROUTE IS NOT THE KERNEL'S. Every centre, the aux one included, is
-differentiated as a FUNCTION, `hessian.host_1e`'s route: a Cartesian `v`
-with exponent `a` on `A` moves to the list `d_centre(a, v, k) = [(2a, v +
-1_k), (-v_k, v - 1_k)]`, applied twice for `d2`, and every term is the
-ordinary three-center integral of the moved Cartesians,
-
-    X(u, v | x) = SUM_t SUM_tau E^{uv}_t [t|tau] E^x_tau
-
-on the per-axis `E` two indices above the class and the single-center `E`
-(`e_axis(i, 0, gamma, 0, 0)`) two above the aux shell. So per primitive
-pair (`alpha` on `A`, `beta` on `B`, `s_ab = c_a c_b (pi/zeta)^{3/2}`), aux
-record (`gamma` on `C`, `s_aux`), Cartesian pair `(a, b)` and aux Cartesian
-`x` of weight `w`, with `s = s_ab s_aux`:
-
-    H[A, k, A, l] += s w SUM c X(u, b | x)       over d2_A(a; k, l)
-    H[B, k, B, l], H[C, k, C, l]                 likewise
-    H[A, k, B, l] += s w SUM c c' X(u, u' | x)   over d_A(a; k) x d_B(b; l)
-    H[A, k, C, l], H[B, k, C, l]                 likewise
-    H[Y, l, X, k] += the same                    (one value, both places)
-
-The kernel moves the aux centre by the Hermite shift instead (its
-single-center `E` does not depend on `C`); the two are one number, so
-agreement checks both.
-
-NO TRANSLATIONAL INVARIANCE IS USED: every centre is differentiated on its
-own, so `SUM_A H[A, k, B, l] = 0` and `H = H^T` are checks.
+per aux record pair (`s = s_P s_Q`, the metric's record weights) and
+Cartesian pair `(a, b)` of weight `w`. The two routes are the same number
+by `SUM_t (2 alpha E^{a+1}_t - a E^{a-1}_t) Lambda_t = SUM_t E^a_t
+Lambda_{t+1_k}` applied twice, so agreement checks both.
 
 `absolute=True` is the same sum with every factor in `|.|` (coefficients,
 `E`, `[t|tau]`, `w`, `s`): a round-off scale for the kernel's interpreted
-test, as `hessian.host_1e`'s.
+test, the size of the terms before they cancel.
 
-Pure Python floats: `src/felizjueves` has no runtime dependencies.
+NO TRANSLATIONAL INVARIANCE IS USED: both centres are differentiated on
+their own, so `SUM_A H[A, k, B, l] = 0` and `H = H^T` are checks
+(test/test_hessian_host_df.py), as is a central finite difference of
+`gradient.host_df.metric_gradient`.
+
+`[t|tau]` is INJECTED (`pq=`, `reference.pq.pq` in the tests), as in
+`gradient.host_df`. Pure Python floats.
 """
 
 from __future__ import annotations
@@ -57,151 +49,111 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 
-from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, cartesians
 from felizjueves.eri.density_fit.metric import aux_records
-from felizjueves.gradient.host import shell_atoms
-from felizjueves.hessian.host_1e import Hess, Terms, d2_centre, d_centre, zeros
+from felizjueves.gradient.host import pair_weights, shell_atoms
+from felizjueves.hessian.host_1e import Hess, d2_centre, d_centre, zeros
 from felizjueves.mmd.hermite import e_axis, hermite_order
 from felizjueves.one_electron.potential import Nucleus
 
 Ang = tuple[int, int, int]
 Vec = tuple[float, float, float]
 PQ = Callable[[Ang, Ang, Vec, float], float]
-Cells = Sequence[tuple[int, int, int]] | None
+Terms = list[tuple[float, Ang]]
 
 _KL = tuple((k, l) for k in range(3) for l in range(3))  # noqa: E741
 
 
-def _rows(basis: Basis, nuclei: Sequence[Nucleus],
+def _at(e: Sequence[float], t: int) -> float:
+    return e[t] if t < len(e) else 0.0
+
+
+def _rows(aux: Basis, nuclei: Sequence[Nucleus],
           atoms: Sequence[int] | None) -> tuple[int, ...]:
     if atoms is None:
-        return shell_atoms(basis, nuclei)
+        return shell_atoms(aux, nuclei)
     atoms = tuple(int(a) for a in atoms)
-    if len(atoms) != len(basis.shells) or min(atoms, default=0) < 0:
+    if len(atoms) != len(aux.shells) or min(atoms, default=0) < 0:
         raise ValueError("atoms= needs one non-negative row per shell")
     return atoms
 
 
-def _cell_weights(Gam, basis: Basis, aux: Basis, i: int, j: int, n: int
-                  ) -> list[list[float]]:
-    """`w[r][q]` of cell `(i, j | n)`, `i <= j`, rows `a` outer
-    (`gradient.host_df`'s rule, restated: a private name is not
-    imported)."""
-    sa, sb, sp = basis.shells[i], basis.shells[j], aux.shells[n]
-    oa, ob, op = basis.offsets[i], basis.offsets[j], aux.offsets[n]
-    out = []
-    for r in range(sa.n_cart):
-        for c in range(sb.n_cart):
-            if i == j:
-                out.append([float(Gam[oa + r][oa + c][op + q])
-                            for q in range(sp.n_cart)])
-            else:
-                out.append([float(Gam[oa + r][ob + c][op + q])
-                            + float(Gam[ob + c][oa + r][op + q])
-                            for q in range(sp.n_cart)])
-    return out
-
-
 class _Record:
-    """One primitive pair crossed with one aux record: `X(u, v | x)` of
-    moved Cartesians (module docstring), cached."""
+    """One aux record pair's `(u|v)` of any two Cartesians at most two
+    above the class: `SUM_t SUM_tau E^u_t E^v_tau [t|tau]`, cached."""
 
-    def __init__(self, zeta: float, P: Vec, A: Vec, B: Vec, la: int,
-                 lb: int, gamma: float, C: Vec, lP: int, pq: PQ,
-                 f: Callable[[float], float]) -> None:
-        self.f = f
-        self.ab = [[[e_axis(i, j, zeta, P[d] - A[d], P[d] - B[d])
-                     for j in range(lb + 3)] for i in range(la + 3)]
-                   for d in range(3)]
-        self.c = [e_axis(i, 0, gamma, 0.0, 0.0) for i in range(lP + 3)]
-        R = (P[0] - C[0], P[1] - C[1], P[2] - C[2])
-        theta = math.sqrt(zeta * gamma / (zeta + gamma))
+    def __init__(self, ap: float, aq: float, lp: int, lq: int, R: Vec,
+                 pq: PQ, f) -> None:
+        self.eP = [e_axis(x, 0, ap, 0.0, 0.0) for x in range(lp + 3)]
+        self.eQ = [e_axis(x, 0, aq, 0.0, 0.0) for x in range(lq + 3)]
+        theta = math.sqrt(ap * aq / (ap + aq))
         self.m = {(t, tau): f(pq(t, tau, R, theta))
-                  for t in hermite_order(la + lb + 2)
-                  for tau in hermite_order(lP + 2)}
-        self.cache: dict[tuple[Ang, Ang, Ang], float] = {}
+                  for t in hermite_order(lp + 2)
+                  for tau in hermite_order(lq + 2)}
+        self.f = f
+        self.cache: dict[tuple[Ang, Ang], float] = {}
 
-    def __call__(self, u: Ang, v: Ang, x: Ang) -> float:
-        key = (u, v, x)
+    def __call__(self, u: Ang, v: Ang) -> float:
+        key = (u, v)
         if key not in self.cache:
-            f = self.f
-            e = [self.ab[d][u[d]][v[d]] for d in range(3)]
-            g = [self.c[x[d]] for d in range(3)]
-            ts = [((tx, ty, tz), f(ex) * f(ey) * f(ez))
-                  for tx, ex in enumerate(e[0]) for ty, ey in enumerate(e[1])
-                  for tz, ez in enumerate(e[2])]
-            taus = [((sx, sy, sz), f(gx) * f(gy) * f(gz))
-                    for sx, gx in enumerate(g[0]) for sy, gy in enumerate(g[1])
-                    for sz, gz in enumerate(g[2])]
+            f, eP, eQ = self.f, self.eP, self.eQ
             acc = 0.0
-            for t, et in ts:
+            for t in hermite_order(sum(u)):
+                et = (_at(eP[u[0]], t[0]) * _at(eP[u[1]], t[1])
+                      * _at(eP[u[2]], t[2]))
                 if not et:
                     continue
-                for tau, es in taus:
-                    if es:
-                        acc += et * self.m[t, tau] * es
+                for tau in hermite_order(sum(v)):
+                    eu = (_at(eQ[v[0]], tau[0]) * _at(eQ[v[1]], tau[1])
+                          * _at(eQ[v[2]], tau[2]))
+                    if eu:
+                        acc += f(et) * f(eu) * self.m[(t, tau)]
             self.cache[key] = acc
         return self.cache[key]
 
+    def terms(self, ta: Terms, tb: Terms) -> float:
+        f = self.f
+        return sum(f(c1) * f(c2) * self(u, v) for c1, u in ta for c2, v in tb)
 
-def eri3_hessian(basis: Basis, aux: Basis, Gam, nuclei: Sequence[Nucleus],
-                 *, pq: PQ, cells: Cells = None,
-                 atoms: Sequence[int] | None = None,
-                 aux_atoms: Sequence[int] | None = None,
-                 absolute: bool = False) -> Hess:
-    """`H[A][k][B][l] = SUM_mnP Gam_mnP d2(mn|P) / dR_{A,k} dR_{B,l}`
-    (module docstring); `Gam` is indexed `[m][n][P]`."""
-    sh, ash = basis.shells, aux.shells
-    rows = _rows(basis, nuclei, atoms)
-    arows = _rows(aux, nuclei, aux_atoms)
-    H = zeros(max(len(nuclei), max((*rows, *arows), default=-1) + 1))
-    f: Callable[[float], float] = abs if absolute else float
-    if cells is None:
-        cells = [(i, j, n) for i in range(len(sh)) for j in range(i, len(sh))
-                 for n in range(len(ash))]
-    for i, j, n in cells:
-        if not (0 <= i <= j < len(sh) and 0 <= n < len(ash)):
-            raise ValueError(f"cell ({i}, {j} | {n}) is not i <= j over "
-                             "the two bases")
-        sa, sb, sp = sh[i], sh[j], ash[n]
-        A, B, C = rows[i], rows[j], arows[n]
-        w = _cell_weights(Gam, basis, aux, i, j, n)
-        rows_ab = [(a, b) for a in cartesians(sa.l) for b in cartesians(sb.l)]
-        cq = cartesians(sp.l)
-        for pp in primitive_pairs(sa, sb):
-            alpha, beta = sa.exponents[pp.i], sb.exponents[pp.j]
-            sab = (sa.coefficients[pp.i] * sb.coefficients[pp.j]
-                   * (math.pi / pp.zeta) ** 1.5)
-            for c in aux_records(sp):
-                X = _Record(pp.zeta, pp.P, sa.centre, sb.centre, sa.l, sb.l,
-                            c.alpha, c.A, sp.l, pq, f)
 
-                def one(ta: Terms, tb: Terms, tc: Terms, X=X) -> float:
-                    return sum(f(c1) * f(c2) * f(c3) * X(u, v, x)
-                               for c1, u in ta for c2, v in tb
-                               for c3, x in tc)
-
-                s = f(sab) * f(c.s)
-                for r, (a, b) in enumerate(rows_ab):
-                    for q, x in enumerate(cq):
-                        if not w[r][q]:
-                            continue
-                        sw = s * f(w[r][q])
-                        pa, pb, px = [(1.0, a)], [(1.0, b)], [(1.0, x)]
-                        for k, l in _KL:  # noqa: E741
-                            dak = d_centre(alpha, a, k)
-                            dbk, dbl = d_centre(beta, b, k), d_centre(beta, b, l)
-                            dcl = d_centre(c.alpha, x, l)
-                            H[A][k][A][l] += sw * one(
-                                d2_centre(alpha, a, k, l), pb, px)
-                            H[B][k][B][l] += sw * one(
-                                pa, d2_centre(beta, b, k, l), px)
-                            H[C][k][C][l] += sw * one(
-                                pa, pb, d2_centre(c.alpha, x, k, l))
-                            for X0, Y0, val in ((A, B, one(dak, dbl, px)),
-                                                (A, C, one(dak, pb, dcl)),
-                                                (B, C, one(pa, dbk, dcl))):
-                                H[X0][k][Y0][l] += sw * val
-                                H[Y0][l][X0][k] += sw * val
+def metric_hessian(aux: Basis, W: Sequence[Sequence[float]],
+                   nuclei: Sequence[Nucleus], *, pq: PQ,
+                   pairs: Sequence[tuple[int, int]] | None = None,
+                   atoms: Sequence[int] | None = None,
+                   absolute: bool = False) -> Hess:
+    """`H[A][k][B][l] = SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}` (module
+    docstring)."""
+    f = abs if absolute else float
+    sh = aux.shells
+    rows = _rows(aux, nuclei, atoms)
+    H = zeros(max(len(nuclei), max(rows, default=-1) + 1))
+    n = aux.n_ao
+    Wr = [[float(W[i][j]) for j in range(n)] for i in range(n)]
+    if pairs is None:
+        pairs = [(i, j) for i in range(len(sh)) for j in range(i, len(sh))]
+    for i, j in pairs:
+        if not 0 <= i <= j < len(sh):
+            raise ValueError(f"aux shell pair ({i}, {j}) is not i <= j")
+        sP, sQ = sh[i], sh[j]
+        A, B = rows[i], rows[j]
+        w = pair_weights(Wr, i, j, aux)
+        cart = [(a, b) for a in cartesians(sP.l) for b in cartesians(sQ.l)]
+        for p in aux_records(sP):
+            for q in aux_records(sQ):
+                R = (p.A[0] - q.A[0], p.A[1] - q.A[1], p.A[2] - q.A[2])
+                X = _Record(p.alpha, q.alpha, sP.l, sQ.l, R, pq, f)
+                s = f(p.s) * f(q.s)
+                for wr, (a, b) in zip(w, cart, strict=True):
+                    if not wr:
+                        continue
+                    sw = s * f(wr)
+                    for k, l in _KL:  # noqa: E741
+                        aa = X.terms(d2_centre(p.alpha, a, k, l), [(1.0, b)])
+                        bb = X.terms([(1.0, a)], d2_centre(q.alpha, b, k, l))
+                        ab = X.terms(d_centre(p.alpha, a, k),
+                                     d_centre(q.alpha, b, l))
+                        H[A][k][A][l] += sw * aa
+                        H[B][k][B][l] += sw * bb
+                        H[A][k][B][l] += sw * ab
+                        H[B][l][A][k] += sw * ab
     return H
