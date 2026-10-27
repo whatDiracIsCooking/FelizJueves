@@ -3992,6 +3992,88 @@ def test_the_hessian_builders_reach_neither_their_witness_nor_a_machine(
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{start} reaches {hit}"
 
+# ---------------------------------------------------------------------------
+# The DF metric Hessian (`hessian.host_df`, `kernel_d2metric`): the host
+# reference reads the AO layer, the metric's aux records, `gradient.host`'s
+# weight rule and `hessian.host_1e`'s Cartesian derivative rule; the builder
+# reuses `kernel_gmetric`'s tower and single-center pieces two orders up --
+# never its witness. The generator CLI writes its ladder
+# (`--hess-metric-l`).
+# ---------------------------------------------------------------------------
+
+_HESS_DF_WITNESS = ("`hessian.host_df` is the witness the kernel is "
+                    "interpreted against and `ao` the layer it reads: "
+                    "importing either shares ancestry with it (#20)")
+RULES |= {
+    "hessian_host_df": _rule(
+        "hessian/host_df.py: the contracted nuclear Hessian of (P|Q) -- "
+        "kernel_d2metric's witness -- on the AO layer and the metric's aux "
+        "records, the gradient host's weights and `host_1e`'s Cartesian "
+        "derivative rule; `[t|tau]` injected",
+        ("ao", "mmd.hermite", "eri.density_fit.metric", "gradient.host",
+         "hessian.host_1e", "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "hessian.kernel_d2metric": "the kernel is what this module "
+                                      "checks"}),
+    "d2metric_builder": _rule(
+        "kernel_d2metric.py: the DF metric Hessian kernel -- key -> IR, "
+        "the single-center `E` inlined, `kernel_gmetric`'s tower two orders "
+        "up by the plan",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "gradient.kernel_g1e", "gradient.kernel_gmetric",
+         "eri.density_fit.kernel_metric"),
+        ao=_HESS_DF_WITNESS, **{"hessian.host_df": _HESS_DF_WITNESS,
+                                "hessian.host_1e": _HESS_DF_WITNESS,
+                                "gradient.host_df": _HESS_DF_WITNESS,
+                                "gradient.host": _HESS_DF_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian.host_df": "hessian_host_df",
+    "hessian.kernel_d2metric": "d2metric_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.host_df": ("ao.shell", "eri.density_fit.metric",
+                        "gradient.host", "hessian.host_1e", "mmd.hermite",
+                        "one_electron.potential"),
+    "hessian.kernel_d2metric": ("eri.density_fit.kernel_metric",
+                                "gradient.kernel_g1e",
+                                "gradient.kernel_gmetric", "ir",
+                                "mmd.e_fragment", "mmd.recurrence",
+                                "plan.dag", "plan.pipeline", "plan.schedule",
+                                "plan.targets", "spec"),
+}.items()}
+_HESS_BUILDERS = (*_HESS_BUILDERS, "hessian.kernel_d2metric")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the DF metric Hessian "
+                       "ladder through `kernel_d2metric`",
+                       RULES["driver"].may | {"hessian.kernel_d2metric"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = (EDGES["emit.__main__"]
+                          | {"hessian.kernel_d2metric"})
+
+
+def test_the_d2metric_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_d2metric"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"mmd.e_fragment", "mmd.recurrence"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "gradient.host",
+                   "gradient.host_df", "hessian.host", "hessian.host_1e",
+                   "hessian.host_df", "ir.interp", "emit",
+                   "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"hessian.kernel_d2metric reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 
