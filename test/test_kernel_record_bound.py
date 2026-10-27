@@ -17,13 +17,22 @@ c_b (pi/zeta)^{3/2}` (`ao.density.epair`'s `s`).
 Cases: every ordered class `la, lb <= 3` on contracted shells with signed
 coefficients, `la + lb` above `tiers.FAST_L_MAX` in the slow tier; and every
 record of every ordered shell pair of H2O/cc-pVDZ and of #486's H10 chain in
-cc-pVDZ (both orientations, since every ordered pair is a record set).
+cc-pVDZ (both orientations, since every ordered pair is a record set); and,
+slow, every record of CO/cc-pVTZ, whose f shells reach (ff).
+
+THE LOW-STACK FORM (#586, stage 3), the default from f up: its selection
+rule, the d text byte-identical (sha256 from 534a8e7, before stage 3), the
+two forms' equal name, parameters and launch, its local arrays inside the
+8 KB budget, and BOTH forms held to the host at the same `16 eps` at every
+class through (ff), and to each other.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 from functools import cache
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -34,11 +43,14 @@ from tiers import split_by_l
 from felizjueves.ao.density import epair
 from felizjueves.ao.pairs import hermite_bound, pair_bound
 from felizjueves.ao.shell import Shell
+from felizjueves.emit import cuda, hip
 from felizjueves.eri.k_exchange import kernel_record_bound as krb
 from felizjueves.eri.k_exchange.k import record_bounds
 from felizjueves.eri.k_exchange.kernel_record_bound import (
+    LOWSTACK_MIN_L,
     PARAMS,
     build_record_bound_kernel,
+    record_bound_lowstack,
     record_bound_name,
     record_bound_spec,
 )
@@ -46,7 +58,10 @@ from felizjueves.eri.kernel_pair_bound import (
     hermite_bound_coefficients,
     pair_bound_coefficients,
 )
+from felizjueves.ir import Decl, Inline, walk
 from felizjueves.ir.interp import Launch, interpret
+from felizjueves.mmd import e_fragment as ef
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import one_centre, pq
 from felizjueves.spec import Operator, Spec, Target
@@ -59,6 +74,7 @@ CLASSES = [(la, lb) for la in range(LMAX + 1) for lb in range(LMAX + 1)]
 CLASS_GRID = split_by_l(CLASSES, sum, ids=lambda c: f"{c[0]}{c[1]}")
 
 MOLECULES = ("h2o_ccpvdz_k", "h10_chain_ccpvdz_k")
+F_MOLECULES = ("co_ccpvtz_k",)  # #570's f case: classes through (ff)
 
 
 # ---------------------------------------------------------------------------
@@ -91,10 +107,12 @@ def stage(pairs) -> Records:
 
 
 def run(cls: tuple[int, int], args: dict[str, np.ndarray],
-        threads: int = 32) -> np.ndarray:
+        threads: int = 32, lowstack: bool | None = None) -> np.ndarray:
+    """One interpreted launch; `lowstack` is `build_record_bound_kernel`'s
+    (None: the class's default form)."""
     n = len(args["zeta_ab"])
     grid, block = krb.launch_shape(n, threads)
-    out = interpret(build_record_bound_kernel(cls),
+    out = interpret(build_record_bound_kernel(cls, lowstack=lowstack),
                     launch=Launch(grid, block, threads), n_rec=n,
                     **{k: v.copy() for k, v in args.items()},
                     bound=np.full(n, np.nan))
@@ -299,3 +317,175 @@ def test_the_guard_leaves_spare_lanes_idle() -> None:
     )]).items()
     assert len(want) == 9
     assert worst(run(cls, args, threads=32), want) <= REL_TOL
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", F_MOLECULES)
+def test_every_record_of_an_f_molecule_is_the_hosts(name: str) -> None:
+    recs = molecule(name)
+    assert max(max(c) for c in recs) == 3 and (3, 3) in recs
+    w = max(worst(run(cls, args), want) for cls, (args, want) in recs.items())
+    print(f"\n{name}: worst {w / EPS:.2f} eps over "
+          f"{sum(len(v[1]) for v in recs.values())} records")
+    assert w <= REL_TOL, (name, w / EPS)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#586, stage 3): from f up by default, the d text
+# unchanged
+# ---------------------------------------------------------------------------
+
+# sha256 of the unrolled text through (dd), cuda and hip, as emitted at
+# 534a8e7 (before stage 3): the low-stack form must not move a byte of it.
+D_DIGESTS = {
+    (0, 0): ("45d148d8b87197939371d8a1aa67ee949d45c0bd898a4b221e7a243a0ac4e397",
+             "bb4e5ee6f24dfcd2bf80cb51ea102ddd05632a350ce5724d820cdb869410f956"),
+    (0, 1): ("da309ac0b6529e6a348b54b50f52c80e19e3ad5fae6ffb42fd1e2eed4d22ba19",
+             "1899a9c52e2c4e459a99c5ae1fa24de800690853189f5daf27640979e766c08b"),
+    (0, 2): ("fcab6f3f5283489e545311c86190e260bad6135b16291f73c929d6fbb93f74bd",
+             "799b5b1d26ffefae1118af086c26d21cf1fde9963198d1ba50d013dee3625609"),
+    (1, 0): ("28330731794ee934a573634a39eea2721b204e83b9daa5c09fd273da555deead",
+             "acf207f768c7224bba1d19907af8c6c76958cca933ff32862f67f36f027d20a1"),
+    (1, 1): ("09a25dec9fd14396de3996245d54c014b184534c332bc1aa3b8c4b5f99a2003e",
+             "5c13942bc21b2ee8fc0ca92bd261f77b9e6c0ad7b571c64cba46b491a1220a8d"),
+    (1, 2): ("42cb39958371d150d087637a53528101f0c41713e540be1916e19aba73618f42",
+             "3edee60f4a92d01e6fd9bcdeccda291188394d5c9e62750d008b4d2c3d1c3391"),
+    (2, 0): ("d610038db3a7ea78781bee4842641460eaa55263864b1cd8912681d5f97e0d84",
+             "2c041144768f32721a110f050851827cfd617939198993bc0c78b7f9ed015b7b"),
+    (2, 1): ("43e24b372c47e341dda8937b21a65ea33283c9e17f9dc385135d32e16c67a685",
+             "ed94087a5d2ab34d61976508d1164bcedadb8bc861f4a02f8d0578d2b318a4b4"),
+    (2, 2): ("f897e3a2d496e11d91ea958c0f401dff727a6b1d09c9a8052d7206998893aca8",
+             "f93a6e7d78f376827b96fe120a6f65995491dd75d0f17dd38f153ea2f55152f9"),
+}
+
+# #586's budget: at most 8 KB of stack per thread on sm_86 for every f
+# unit. The kernel's local arrays are the whole of what it can spill by
+# design, so they are held to it here, without a compiler (the measured
+# frames are in kernel_record_bound.py's docstring).
+STACK_BUDGET = 8192
+
+F_CLASSES = [(0, 3), (3, 0), (1, 3), (3, 1), (2, 3), (3, 2), (3, 3)]
+
+
+def test_the_selection_rule_is_f_and_above() -> None:
+    assert LOWSTACK_MIN_L == 3
+    for la in range(5):
+        for lb in range(5):
+            assert record_bound_lowstack((la, lb)) is (max(la, lb) >= 3)
+            assert record_bound_lowstack(record_bound_spec(la, lb)) is \
+                record_bound_lowstack((la, lb))
+
+
+@pytest.mark.parametrize("cls", sorted(D_DIGESTS),
+                         ids=lambda c: f"{c[0]}{c[1]}")
+def test_the_d_text_is_byte_identical(cls: tuple[int, int]) -> None:
+    k = build_record_bound_kernel(cls)
+    assert k == build_record_bound_kernel(cls, lowstack=False)
+    got = tuple(hashlib.sha256(t.encode()).hexdigest()
+                for t in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)))
+    assert got == D_DIGESTS[cls]
+
+
+@pytest.mark.parametrize("cls", [(1, 0), (2, 2), *F_CLASSES],
+                         ids=lambda c: f"{c[0]}{c[1]}")
+def test_both_forms_share_the_name_parameters_and_launch(
+        cls: tuple[int, int]) -> None:
+    # The ABI free-breakfast's launcher binds: the same kernel name, the
+    # same parameters (names, types, intents, shapes, in order), the same
+    # one-thread-per-record index and guard.
+    lo = build_record_bound_kernel(cls, lowstack=True)
+    hi = build_record_bound_kernel(cls, lowstack=False)
+    assert lo.name == hi.name == record_bound_name(cls)
+    assert lo.params == hi.params
+    assert tuple(p.name for p in lo.params) == PARAMS
+    assert build_record_bound_kernel(cls) == \
+        (lo if record_bound_lowstack(cls) else hi)
+    assert lo.body[2] == hi.body[2] and lo.body[2].name == krb.REC
+    assert lo.body[3].cond == hi.body[3].cond
+    assert lo.body[1:3] == hi.body[1:3]
+    assert build_record_bound_kernel(cls, lowstack=True, name="x").name == "x"
+
+
+def _local_doubles(k) -> dict[str, int]:
+    return {s.name: math.prod(d.value for d in s.shape)
+            for s in walk(k.body) if isinstance(s, Decl) and s.shape}
+
+
+@pytest.mark.parametrize("cls", F_CLASSES, ids=lambda c: f"{c[0]}{c[1]}")
+def test_the_lowstack_form_holds_no_e_block(cls: tuple[int, int]) -> None:
+    la, lb = cls
+    k = build_record_bound_kernel(cls)
+    arrays = _local_doubles(k)
+    ext = ef.axis_table_extent(la, lb)
+    assert arrays == {"Ex": ext, "Ey": ext, "Ez": ext,
+                      "I": len(hermite_targets(la + lb))}
+    assert ef.E_ARRAY not in arrays
+    assert 8 * sum(arrays.values()) <= STACK_BUDGET
+    (inl,) = [s for s in walk(k.body, into_inline=False)
+              if isinstance(s, Inline)]
+    assert inl.fragment == ef.axis_tables_fragment(la, lb)
+    # the unrolled form, for contrast, holds the whole block
+    rows, cols = ef.block_shape(la, lb)
+    assert _local_doubles(build_record_bound_kernel(cls, lowstack=False)) \
+        == {ef.E_ARRAY: rows * cols}
+
+
+def test_the_ff_lowstack_arrays_are_420_doubles() -> None:
+    # 3 x 112 axis-table entries and 84 I_p: 3,360 B, sm_86's whole frame
+    # at (ff) (measured), against the unrolled form's 76,608 B.
+    assert sum(_local_doubles(build_record_bound_kernel((3, 3))).values()) \
+        == 420
+
+
+@pytest.mark.parametrize("cls", CLASS_GRID)
+def test_the_other_form_is_the_hosts_record_bounds(
+        cls: tuple[int, int]) -> None:
+    """Every class through (ff) in the form `build_record_bound_kernel`
+    does NOT choose by default -- the low-stack form through d, the unrolled
+    one at f -- against the host at the same `REL_TOL`: with the
+    default-form test above, both forms are held at every class."""
+    ((_, (args, want)),) = synthetic(cls).items()
+    other = not record_bound_lowstack(cls)
+    w = worst(run(cls, args, lowstack=other), want)
+    assert w <= REL_TOL, (cls, w / EPS)
+
+
+@pytest.mark.parametrize("cls", CLASS_GRID)
+def test_the_two_forms_agree_with_each_other(cls: tuple[int, int]) -> None:
+    ((_, (args, _)),) = synthetic(cls).items()
+    lo = run(cls, args, lowstack=True)
+    hi = run(cls, args, lowstack=False)
+    assert worst(lo, hi) <= REL_TOL, (cls, worst(lo, hi) / EPS)
+
+
+def test_the_lowstack_form_keeps_an_exact_zero() -> None:
+    # A record whose pair factor underflows: every E entry is +0.0, so the
+    # bound must be exactly 0.0 in both forms, as the host's is.
+    a = Shell(3, (0.0, 0.0, 0.0), (40.0,), (1.0,))
+    b = Shell(3, (0.0, 0.0, 9.0), (40.0,), (-1.0,))
+    ((cls, (args, want)),) = stage([(a, b)]).items()
+    assert cls == (3, 3) and want.tolist() == [0.0]
+    for lowstack in (True, False):
+        assert run(cls, args, lowstack=lowstack).tolist() == [0.0]
+
+
+GOLDEN = Path(__file__).resolve().parent / "golden"
+LOWSTACK_GOLDEN_CLASS = (3, 3)
+
+
+def test_the_lowstack_cuda_golden_is_unchanged() -> None:
+    # Regenerate (never hand-edit), the default form at (ff):
+    #   PYTHONPATH=src uv run python -c "from felizjueves.eri.k_exchange.\
+    #   kernel_record_bound import build_record_bound_kernel as b; from \
+    #   felizjueves.performance.device import SM_86; from \
+    #   felizjueves.emit.cuda import emit; print(emit(b((3, 3)), SM_86), \
+    #   end='')" > test/golden/cuda/record_bound_33.cu
+    text = cuda.emit(build_record_bound_kernel(LOWSTACK_GOLDEN_CLASS), SM_86)
+    assert text == (GOLDEN / "cuda" / "record_bound_33.cu").read_text()
+
+
+def test_the_lowstack_hip_golden_is_unchanged() -> None:
+    #   ... the same with GFX1200 and felizjueves.emit.hip, into
+    #   test/golden/hip/record_bound_33.hip
+    text = hip.emit(build_record_bound_kernel(LOWSTACK_GOLDEN_CLASS), GFX1200)
+    assert text == (GOLDEN / "hip" / "record_bound_33.hip").read_text()

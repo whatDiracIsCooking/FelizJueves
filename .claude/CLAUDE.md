@@ -70,7 +70,15 @@ over the first shell's Cartesians, never batched): one thread per record,
 for every ordered class `la, lb ≤ 3` and every record of H₂O/cc-pVDZ and
 the H₁₀ chain, interpreted (`test_kernel_record_bound.py`) and on the RX
 9060 XT (`test_record_bound_device.py`; the RTX 3080 was down in that
-session, so on CUDA it is compiled only). **Nothing about `DQ` or
+session, so on CUDA it is compiled only). **From f up it defaults to a
+low-stack form** (#586, stage 3): `build_record_bound_kernel(cls)` picks
+it when `kernel_record_bound.record_bound_lowstack(cls)` (a shell with
+`l ≥ 3`), `lowstack=` forces either, and the name, parameters, launch and
+`bound` are the same. It holds stage 1's per-axis tables, taken `|·|` in
+place, and a local `I[n_p]` instead of `E[100][84]`, so `record_bound_33`'s
+`sm_86` frame is 3,360 B with no spill, against 76,608 B. The d text is
+pinned by digest, and the per-unit numbers are in the module docstring.
+**Nothing about `DQ` or
 `JAB` is measured.** `j_engine.md`, "The J chain as device code", is the one
 place that says which steps are generated and on which cards they ran.
 Dispatch (`performance/dispatch.py`, #145) chooses `n_batches` per class from measured

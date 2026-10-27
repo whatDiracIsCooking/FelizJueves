@@ -1,7 +1,9 @@
 """K's dressed record bound kernel, `Target.RECORD_BOUND`:
 `eri.k_exchange.k.record_bounds`.
 
-    build_record_bound_kernel(spec | (la, lb)) -> Kernel   one per ordered class
+    build_record_bound_kernel(spec | (la, lb), lowstack=None) -> Kernel
+                                               one per ordered class
+    record_bound_lowstack(spec | (la, lb))     -> bool     the form's rule
     record_bound_spec(la, lb)                  -> Spec     the class's key
     record_bound_name(spec | (la, lb))         -> str      its name, unbuilt
     launch_shape(n_rec, threads)               -> (grid, block)
@@ -60,6 +62,62 @@ a consumer computes it once per basis, not per SCF iteration.
             zeta_ab[n_rec]  XPA[n_rec, 3]  XPB[n_rec, 3]  s_ab[n_rec]
             bound[n_rec] (OUT)   I = eri.k_exchange.k.record_bounds, written whole
 
+THE LOW-STACK FORM (#586, stage 3), the default from f up. The block
+above is `E[n_ab][n_p]` per thread, `E[100][84]` at (ff), 67 KB: on sm_86 a
+76,608 B stack frame with 12 KB of spill, reserved by CUDA for every
+resident thread (~8 GB of a 10 GB RTX 3080), and ~32 KB at (df) / (fd).
+`build_record_bound_kernel(cls)` therefore emits, whenever
+`record_bound_lowstack(cls)` (a shell with `l >= LOWSTACK_MIN_L = 3`), a
+kernel with the SAME name, parameters, launch and `bound` contract and no
+`E^{ab}` block:
+
+    tables = e_fragment.axis_tables_fragment(la, lb)   Ex Ey Ez, local
+    |E{x,y,z}^{ij}_t| in place, over the reachable t <= i + j only
+    I[j] = C_j x^{|t_j|} sqrt(x)                       a local, n_p doubles
+    for each first-shell Cartesian a          e_fragment.cartesian_loops
+        acc = 0
+        for each second-shell Cartesian b
+            acc += SUM_t |E_x||E_y||E_z| I[t]   e_fragment.rolled_e_sum
+        acc = |s| acc;  bnd = max(bnd, acc)
+
+That is the same number: `|s E^{ab}_t| I_t = |s| |E_x| |E_y| |E_z| I_t`
+term by term (`E^{ab}_t = E_x E_y E_z`, `I_t > 0`), over the same reachable
+terms, and the same max over the first shell. The frame is the three tables
+and `I` (420 doubles at (ff)). The products and sums are associated
+differently from the unrolled form's, so the two agree to rounding, at the
+same `16 eps` against the host (test/test_kernel_record_bound.py). Through
+d the unrolled text is unchanged byte for byte (pinned by sha256);
+`lowstack=True` / `False` forces either form at any class.
+
+MEASURED (#586; `nvcc -O3 -arch=sm_86 -rdc=true -DFJ_WAVEFRONT=32 -Xptxas
+-v`, CUDA 13.0, and `hipcc --offload-arch=gfx1200 -O3
+-Rpass-analysis=kernel-resource-usage`, ROCm 7.2, compile only; both on
+`emit.gpu`'s text, source in bytes), unrolled (534a8e7) / low-stack:
+
+    unit  source            sm_86 stack     spill st     regs      nvcc
+    03    15,838 / 9,208    0 / 256         0 / 0        70 / 64   0.7 / 0.7 s
+    30    16,621 / 9,184    0 / 256         0 / 0        70 / 64   0.7 / 0.7 s
+    13    60,805 / 14,235   0 / 1,248       0 / 0       254 / 96   0.9 / 0.8 s
+    31    61,420 / 14,235   16 / 1,248      16 / 0      255 / 106  0.9 / 1.0 s
+    23   169,304 / 21,071   32,000 / 2,176  7,024 / 0   255 / 96   2.8 / 0.9 s
+    32   169,672 / 21,071   31,744 / 2,176  5,744 / 0   255 / 118  2.7 / 0.9 s
+    33   386,304 / 29,835   76,608 / 3,360  12,056 / 0  255 / 162  29.0 / 0.9 s
+
+    unit  gfx1200 scratch/lane   VGPRs
+    03    0 / 0                  70 / 96
+    30    0 / 0                  121 / 94
+    13    1,212 / 1,264          192 / 146
+    31    1,300 / 1,264          192 / 152
+    23    5,068 / 2,192          192 / 102
+    32    4,492 / 2,192          192 / 102
+    33    10,260 / 3,376         192 / 98
+
+At (ff) the sm_86 frame is exactly the four local arrays (3 x 112 + 84
+doubles), no spill: 3,360 B x 104,448 resident threads is ~350 MB of the
+RTX 3080, against ~8 GB. `03` / `30` grow from no frame to 256 B (part
+of the tables, indexed by loop variables, stays in memory), far inside the
+8 KB budget.
+
 Nothing here is CUDA- or HIP-specific, and nothing here imports `ao`,
 `reference/`, the interpreter, a backend or a card.
 """
@@ -74,6 +132,7 @@ from felizjueves.ir import (
     Expr,
     Factor,
     Fn,
+    For,
     If,
     Index,
     Inline,
@@ -87,20 +146,28 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.mmd.e_fragment import (
+    AXIS_ARRAYS,
     E_ARRAY,
     HALF_INV_ZETA,
     ZETA,
+    axis_table_extent,
+    axis_table_index,
+    axis_tables_fragment,
     block_fragment,
     block_rows,
     block_shape,
+    cartesian_loops,
+    rolled_e_sum,
 )
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
+    "LOWSTACK_MIN_L",
     "PARAMS",
     "build_record_bound_kernel",
     "launch_shape",
+    "record_bound_lowstack",
     "record_bound_name",
     "record_bound_spec",
 ]
@@ -162,15 +229,35 @@ def _c(fn: Fn, *args: Expr) -> Call:
     return Call(fn, args)
 
 
+LOWSTACK_MIN_L = 3  # the low-stack form from f up (#586)
+
+
+def record_bound_lowstack(cls: Spec | tuple[int, int]) -> bool:
+    """THE SELECTION RULE (#586): True when the class has a shell of
+    `l >= LOWSTACK_MIN_L` (f or above), where `build_record_bound_kernel`
+    emits the low-stack form by default; False through d, where the unrolled
+    form stays the default and its text is unchanged."""
+    return max(_class(cls)) >= LOWSTACK_MIN_L
+
+
 def build_record_bound_kernel(cls: Spec | tuple[int, int], *,
-                              name: str | None = None) -> Kernel:
+                              name: str | None = None,
+                              lowstack: bool | None = None) -> Kernel:
     """The dressed record bound kernel of one ordered pair class (module
     docstring).
 
     `cls` is a `Target.RECORD_BOUND` `Spec` or `(la, lb)`, `la` the first
-    shell's momentum.
+    shell's momentum. `lowstack` picks the form: `None` (the default) is
+    `record_bound_lowstack(cls)`, so through d the unrolled kernel and at f
+    the low-stack one (THE LOW-STACK FORM); `True` / `False` force either,
+    at any class. Both have the same name, parameters, launch and `bound`
+    contract.
     """
     la, lb = _class(cls)
+    if lowstack is None:
+        lowstack = record_bound_lowstack((la, lb))
+    if lowstack:
+        return _build_lowstack(la, lb, name)
     L = la + lb
     frag = block_fragment(la, lb)
     rows = block_rows(la, lb)
@@ -243,16 +330,29 @@ def build_record_bound_kernel(cls: Spec | tuple[int, int], *,
                           (Assign(Var("bnd"), acc),)))
     per_rec.append(Assign(rec("bound"), Var("bnd")))
 
-    body: tuple[Stmt, ...] = (
+    return Kernel(name or record_bound_name((la, lb)), _params(),
+                  _launch(la, lb, "", per_rec))
+
+
+def _launch(la: int, lb: int, form: str, per_rec: list[Stmt]
+            ) -> tuple[Stmt, ...]:
+    """The kernel body around one record's statements: one thread per
+    record, guarded by `n_rec`. `form` tags the head note."""
+    k = Var(REC)
+    return (
         Note(f"K's dressed record bound I = ao.k.record_bounds of an ordered "
-             f"pair class ({la},{lb}), rows over the first shell: kb's Ip or "
-             f"Iq"),
+             f"pair class ({la},{lb}){form}, rows over the first shell: kb's "
+             f"Ip or Iq"),
         Note("launch: one thread per record, k = threadIdx.x + blockIdx.x * "
              "blockDim.x"),
         Decl(REC, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
             Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
         If(_c(Fn.LT, k, Var("n_rec")), tuple(per_rec)),
     )
+
+
+def _params() -> tuple[Param, ...]:
+    """The parameter block (module docstring), one for both forms."""
     nr = Var("n_rec")
 
     def f64(n: str, *shape: Expr, intent: Intent = Intent.IN) -> Param:
@@ -265,4 +365,114 @@ def build_record_bound_kernel(cls: Spec | tuple[int, int], *,
         f64("bound", nr, intent=Intent.OUT),
     )
     assert tuple(p.name for p in params) == PARAMS
-    return Kernel(name or record_bound_name((la, lb)), params, body)
+    return params
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#586, stage 3)
+# ---------------------------------------------------------------------------
+
+I_ARRAY = "I"  # I_p of the record, hermite_targets(la + lb) order
+
+LOWSTACK_NOTE = (
+    "LOW-STACK (#586): per-axis E tables (3 x (la+1)(lb+1)(la+lb+1) "
+    "doubles) in place of the E^{ab}_t block, their entries taken |.| in "
+    "place, I_p in a local I, the row sums as loops: |s E_t| I_t = |s| "
+    "|E_x| |E_y| |E_z| I_t term by term")
+
+
+def _abs_in_place(at: Index | Var) -> If:
+    return If(_c(Fn.LT, at, Lit(0.0)), (Assign(at, _c(Fn.SUB, Lit(0.0), at)),))
+
+
+def _build_lowstack(la: int, lb: int, name: str | None) -> Kernel:
+    """`build_record_bound_kernel`'s kernel with no `E^{ab}` block (module
+    docstring, THE LOW-STACK FORM): the same parameters, launch and
+    `bound`."""
+    L = la + lb
+    frag = axis_tables_fragment(la, lb)
+    ts = hermite_targets(L)
+    coeffs = hermite_bound_coefficients(L)
+    assert len(coeffs) == len(ts)
+    k = Var(REC)
+
+    def rec(arr: str, *more: Expr) -> Index:
+        return Index(arr, (k, *more))
+
+    bindings: dict[str, Expr] = {ZETA: Var(ZETA),
+                                 **{n: Var(n) for n in AXIS_ARRAYS}}
+    head: list[Stmt] = [Decl(ZETA, Scalar.F64, init=rec("zeta_ab"))]
+    if HALF_INV_ZETA in frag.binds:
+        head.append(Decl(HALF_INV_ZETA, Scalar.F64,
+                         init=_c(Fn.DIV, Lit(0.5), Var(ZETA))))
+        bindings[HALF_INV_ZETA] = Var(HALF_INV_ZETA)
+    for d in range(3):
+        bindings[Factor.pa(d).name_in_kernel] = rec("XPA", Lit(d))
+        bindings[Factor.pb(d).name_in_kernel] = rec("XPB", Lit(d))
+
+    def xp(n: int) -> Var:
+        return Var(f"xp{n}")
+
+    # |E^{ij}_t| of every reachable entry, in place; t > i + j is never
+    # written by the fragment and never read here or by rolled_e_sum.
+    ti, tj, tt = Var("ti"), Var("tj"), Var("tt")
+    at = axis_table_index(ti, tj, tt, lb, L)
+    absolute = For(ti.name, Lit(0), Lit(la + 1), Lit(1), (
+        For(tj.name, Lit(0), Lit(lb + 1), Lit(1), (
+            For(tt.name, Lit(0), _c(Fn.ADD, _c(Fn.ADD, ti, tj), Lit(1)),
+                Lit(1), (
+                    Decl("ix", Scalar.I32, init=at),
+                    *(_abs_in_place(Index(n, (Var("ix"),)))
+                      for n in AXIS_ARRAYS),
+                )),)),))
+
+    acc, bnd = Var("acc"), Var("bnd")
+
+    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+        def cell(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            return (
+                *rolled_e_sum(la, lb, a, b,
+                              lambda h: Index(I_ARRAY, (h,)), "u"),
+                Assign(acc, _c(Fn.ADD, acc, Var("u"))),
+            )
+        return (
+            Decl(acc.name, Scalar.F64, init=Lit(0.0)),
+            cartesian_loops(lb, ("bx", "by", "bz"), cell, tag="b"),
+            Assign(acc, _c(Fn.MUL, Var("sk"), acc)),
+            If(_c(Fn.LT, bnd, acc), (Assign(bnd, acc),)),
+        )
+
+    extent = Lit(axis_table_extent(la, lb))
+    per_rec: list[Stmt] = [
+        Note(BOUND_IS_RECORD_BOUNDS),
+        Note(LOWSTACK_NOTE),
+        *head,
+        Note("|s|: the dressing's sign is the coefficients', and the bound "
+             "takes |s E| term by term"),
+        Decl("sk", Scalar.F64, init=rec("s_ab")),
+        _abs_in_place(Var("sk")),
+        Note("I_p = C_p x^|p| sqrt(x), x = sqrt(zeta): kernel_pair_bound's "
+             "closed form at PQ = 0, one p at a time, into the local I"),
+        Decl("x", Scalar.F64, init=_c(Fn.SQRT, Var(ZETA))),
+        Decl(xp(0).name, Scalar.F64, init=_c(Fn.SQRT, Var("x"))),
+        *(Decl(xp(n).name, Scalar.F64, init=_c(Fn.MUL, xp(n - 1), Var("x")))
+          for n in range(1, L + 1)),
+        Decl(I_ARRAY, Scalar.F64, (Lit(len(ts)),)),
+        *(Assign(Index(I_ARRAY, (Lit(j),)),
+                 _c(Fn.MUL, Lit(coeffs[j]), xp(sum(t))))
+          for j, t in enumerate(ts)),
+        Note("the record's per-axis E^{ij}_t, one local table per axis "
+             "(e_fragment.axis_tables_fragment); no E^{ab}_t block is formed"),
+        *(Decl(n, Scalar.F64, (extent,)) for n in AXIS_ARRAYS),
+        Inline(frag, bindings),
+        Note("|E| per axis, over the reachable entries only"),
+        absolute,
+        Note("acc_a = |s| SUM_{b} SUM_t |E_x||E_y||E_z| I_t over the reachable "
+             "t (e_fragment.rolled_e_sum), b in cartesians order; bound = "
+             "max_a acc_a"),
+        Decl(bnd.name, Scalar.F64, init=Lit(0.0)),
+        cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+        Assign(rec("bound"), bnd),
+    ]
+    return Kernel(name or record_bound_name((la, lb)), _params(),
+                  _launch(la, lb, ", LOW-STACK (#586)", per_rec))
