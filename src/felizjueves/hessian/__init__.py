@@ -1,6 +1,7 @@
 """Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-the exchange energy's and the one-electron `S`, `T`, `V`, as host
-references and as generated kernels (`Spec.derivative_order = 2`).
+the exchange energy's, the one-electron `S`, `T`, `V` and the three-center
+DF integral `(mn|P)`, as host references and as generated kernels
+(`Spec.derivative_order = 2`).
 
     host.py          the Coulomb reference, pure Python, on the AO layer
     kernel_hdq.py    Target.DQ at d1: hdq_{lc}{ld}, the ket pre-contraction
@@ -18,6 +19,11 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      (`M = D` for T and V, `W` for S; V's operator moves
                      with its nucleus: centre-nucleus and nucleus-nucleus
                      terms by `d/dC_k [t]^(0) = -[t + 1_k]^(0)`)
+    host_df.py       the three-center DF reference, pure Python
+    kernel_d2eri3.py Target.ERI3 at d2: d2eri3_{la}{lb}{lP},
+                     H[X, k, Y, l] += SUM_mnP Gam_mnP d2(mn|P) / dR dR
+                     over the AO pair's two centres (the rule twice, per
+                     axis) and the aux centre (the Hermite shift twice)
 
 The sections below are the Coulomb kernels'; the one-electron ones apply
 the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring

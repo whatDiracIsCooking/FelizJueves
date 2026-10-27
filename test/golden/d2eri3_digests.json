@@ -1,0 +1,126 @@
+{
+  "cuda": {
+    "d2eri3_003": {
+      "bytes": 145122,
+      "sha256": "81d82c3bda929e0ba8ab7530cf021c00d15fcf932986f59107d51cdefd54c636"
+    },
+    "d2eri3_004": {
+      "bytes": 210323,
+      "sha256": "6e330f3c0791ce33cfa7be5a5f288c31fac6c1368541b49941c8e0979794301a"
+    },
+    "d2eri3_012": {
+      "bytes": 294291,
+      "sha256": "ca71a61462f52ed4bd0ea022b75d73044251eeb99fa6ea78b6694c8989e9474a"
+    },
+    "d2eri3_013": {
+      "bytes": 467885,
+      "sha256": "c2f044e12456865e3324e96855f8c0914f6ae9000109466921a733e5681f9d5e"
+    },
+    "d2eri3_021": {
+      "bytes": 386577,
+      "sha256": "e0ad5c1001236515db811c0f05011d094fc66b5b7bbe88baab55ac056b67d9d3"
+    },
+    "d2eri3_022": {
+      "bytes": 724790,
+      "sha256": "25e4424f8f3266a703a3dd98d6ec5b4d797305ab835a1c1ce0df31141d1d27a3"
+    },
+    "d2eri3_030": {
+      "bytes": 311839,
+      "sha256": "bc55102e51279b1bfb65115ce8425c374080b47014d23108f8019d080bf7cf88"
+    },
+    "d2eri3_031": {
+      "bytes": 799982,
+      "sha256": "71a6cf3318a004c78c1e3f9378f69989d31f0914197459489871393cb390f014"
+    },
+    "d2eri3_040": {
+      "bytes": 564055,
+      "sha256": "e32f60d232be1eaa83d77feefadd1a1a4fa6d4c9399a2e5a830ab1b0384c0600"
+    },
+    "d2eri3_111": {
+      "bytes": 504466,
+      "sha256": "fad73d7b0e0651f51a0e33bc50de7f880fc02657007508280df19efef0385412"
+    },
+    "d2eri3_112": {
+      "bytes": 954999,
+      "sha256": "e48db015e04dc81423f271156afcbd52c220b2b89fe0f947c00d65e28c454d3b"
+    },
+    "d2eri3_120": {
+      "bytes": 470768,
+      "sha256": "76d2ebb295f845c6effef683b35b711bc46e3e9d416f7e8ce6a4f513f6f69049"
+    },
+    "d2eri3_121": {
+      "bytes": 1252559,
+      "sha256": "85c857852fd5c36cf85f696e9c15e2ab63b0d4c5db1a3f9b5873b1cc7418ca9c"
+    },
+    "d2eri3_130": {
+      "bytes": 971928,
+      "sha256": "1526a3b31b389418ba3c8626388e2ac0cbd0b3b622b313f2a4476e124cee18a2"
+    },
+    "d2eri3_220": {
+      "bytes": 1148202,
+      "sha256": "58f45662ef4a6f7df04a7e4cf78161f999a0bf23794838c07942d079690de548"
+    }
+  },
+  "hip": {
+    "d2eri3_003": {
+      "bytes": 145152,
+      "sha256": "8b4401ab0184a2f77a2b59aab74e1b535a48f9dd3f8f5e4b27541e8b14ceaa1f"
+    },
+    "d2eri3_004": {
+      "bytes": 210353,
+      "sha256": "7e77fb41a4e21603f041c03c2efca8e157347c3fade098a2072fc91970299a85"
+    },
+    "d2eri3_012": {
+      "bytes": 294321,
+      "sha256": "ee491a6c91c208cdd44131e399a7663801fcb3e5cb867f5b9578c55560c8a562"
+    },
+    "d2eri3_013": {
+      "bytes": 467915,
+      "sha256": "f3fe362c74fb8d389af0d3356ed3298f3807aec21887fb01c4861e652babab46"
+    },
+    "d2eri3_021": {
+      "bytes": 386607,
+      "sha256": "53738c0ab089d10b01b373850553e51341a88f014e60a89556f7dca0f3225bea"
+    },
+    "d2eri3_022": {
+      "bytes": 724820,
+      "sha256": "859842e67dbc1fb85be0f7e45df4f5615e3123680c942491f51fcaeaa0ff8ab4"
+    },
+    "d2eri3_030": {
+      "bytes": 311869,
+      "sha256": "f03f8029a0af52d93358fd0ed54a88e8b4696f783496b673ba4da20456859960"
+    },
+    "d2eri3_031": {
+      "bytes": 800012,
+      "sha256": "d482f9243f0671d0edc8837aa3e5f875f6b080a071bec2e0b890e79ebab60282"
+    },
+    "d2eri3_040": {
+      "bytes": 564085,
+      "sha256": "01dac1b8d92fd830047499e3b880b04392642751760569a5a08bebf90f6874bf"
+    },
+    "d2eri3_111": {
+      "bytes": 504496,
+      "sha256": "d9f47b47bb51cfe9aaea6abb443d0bc93aebf1be5c3c5724789c3a3cee5365e8"
+    },
+    "d2eri3_112": {
+      "bytes": 955029,
+      "sha256": "78fde4408671fab85e26c65cec3b99af63da7a6452ab49eb6d4da1ccbbedc6e7"
+    },
+    "d2eri3_120": {
+      "bytes": 470798,
+      "sha256": "af4c3744ecc289139e0d8ac40089b9007acad4892fe846f2762e8efe1bb9d2a0"
+    },
+    "d2eri3_121": {
+      "bytes": 1252589,
+      "sha256": "e7a8014f9a5b00076528512d480284091709c956a90a3e2ffe16567aad2b0e5f"
+    },
+    "d2eri3_130": {
+      "bytes": 971958,
+      "sha256": "de2ead625276dae056bce3786670fa705284d329dfebe3db80a7e8a0f31d7021"
+    },
+    "d2eri3_220": {
+      "bytes": 1148232,
+      "sha256": "099f3aee64bf85081d61e20eead578fc5fc2c425e0d38a7bf14befee7dde77aa"
+    }
+  }
+}

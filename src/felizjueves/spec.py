@@ -217,8 +217,8 @@ pre-contraction differentiated on each of the ket's two centres
 target's d0 reason.
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
-`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V` and `K`, on MMD -- every
-other target refusing it (`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a
+`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K` and `ERI3`, on MMD --
+every other target refusing it (`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a
 contraction, not the derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
 `H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l}`, from `J_p` of the bra
 raised by two and of the ket derivative densities
@@ -232,7 +232,11 @@ in one segment. `K` at d2 is the exchange energy's Hessian, its `am` K's
 Hermite pairing `(la, lc, lb, ld)`, one kernel per class writing both the
 bra-bra and the bra-ket term (`hessian.kernel_hkx`); it runs the plan of
 the d0 K class with the bra raised by two (`hkx_pq_spec`), and its builder
-refuses `n_batches != 1`.
+refuses `n_batches != 1`. `ERI3` at d2 is the three-center DF integral's
+Hessian, `H[X, k, Y, l] += SUM_mnP M_mnP d2(mn|P) / dR_{X,k} dR_{Y,l}`
+over its three centres (`hessian.kernel_d2eri3`), `am` the triple, so
+``coulomb/d2/(0,1|2)/b1/eri3/literal`` differs from the d1 key in one
+segment.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -515,13 +519,13 @@ _GRADIENT_REFUSAL = (
 # included), and `K`, the exchange energy's Hessian (`hessian.kernel_hkx`).
 # MMD only.
 HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
-                             Target.K))
+                             Target.K, Target.ERI3))
 
 _HESSIAN_REFUSAL = (
     "a second derivative is built for JAB (the Coulomb energy's Hessian), "
-    "S, T, V (the one-electron Hessians) and K (the exchange energy's) on "
-    "the MMD engine only (felizjueves.hessian); this target's Hessian is a "
-    "follow-up"
+    "S, T, V (the one-electron Hessians), K (the exchange energy's) and "
+    "ERI3 (the three-center DF integral's) on the MMD engine only "
+    "(felizjueves.hessian); this target's Hessian is a follow-up"
 )
 
 

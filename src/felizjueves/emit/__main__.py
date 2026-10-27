@@ -176,6 +176,17 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. Every name starts `d2s_`, `d2t_` or `d2v_` (not `hs_`:
   the HGP one-electron ladder's), so none collides with another ladder's.
 
+- the DF Hessian ladder, `--hess-df-l [LMAX]` (`hessian.kernel_d2eri3`):
+  `d2eri3_{la}{lb}{lP}` (`SUM_mnP Gam_mnP d2(mn|P)/dR dR` over the three
+  centres, `Target.ERI3` at d2) for every `la <= lb`, `la + lb + lP <=
+  LMAX` (3 when the flag is given bare: 13 units). Accepted
+  0..`HESS_DF_L_MAX` = 4 (validated at the d0 kernel's cap, interpreted;
+  the unrolled text is ~1.25 MB there); above it is a 2. It ADDS units
+  beside the J ladders, as `--grad-df-l` does, and is NEVER in the
+  no-flag default nor in KERNEL_GEN_CMD. Every name starts `d2eri3_`
+  (not `heri3_`: the HGP `(mn|P)`'s), so none collides with another
+  ladder's.
+
 - the HGP one-electron ladder, `--hgp-one-e-l [LMAX]`: for every pair class
   `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
   `kernel_hgp.build_hgp_kernel` for `Target.S`, `T`, `V` and `DIPOLE` on
@@ -398,6 +409,7 @@ from felizjueves.gradient.kernel_geri3 import build_geri3_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
+from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
@@ -450,6 +462,8 @@ DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
 HESS_K_L_MAX = 1  # kernel_hkx is validated through (pp|pp) interpreted
 DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
+DEFAULT_HESS_DF_L = 3  # `--hess-df-l` given bare: la + lb + lP <= 3, 13 units
+HESS_DF_L_MAX = 4  # kernel_d2eri3 is validated at the d0 kernel's cap
 DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
@@ -831,6 +845,31 @@ def generate_hess_one_e(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The DF Hessian ladder (hessian.kernel_d2eri3)
+# ---------------------------------------------------------------------------
+
+
+def hess_df_classes(lmax: int) -> list[tuple[int, int, int]]:
+    """The three-center classes `(la, lb, lP)`, `la <= lb`, `la + lb + lP
+    <= lmax`, over `0..HESS_DF_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= HESS_DF_L_MAX:
+        raise ValueError(f"--hess-df-l {lmax!r} is outside "
+                         f"0..{HESS_DF_L_MAX}")
+    r = range(lmax + 1)
+    return [(a, b, p) for a in r for b in r for p in r
+            if a <= b and a + b + p <= lmax]
+
+
+def generate_hess_df(backend: str, arch: Arch, out: Path,
+                     lmax: int) -> list[Path]:
+    """Emit `d2eri3_{la}{lb}{lP}` for every three-center class through
+    `lmax` into `out`; return the paths."""
+    kernels = [build_d2eri3_kernel(c) for c in hess_df_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The HGP one-electron ladder
 # ---------------------------------------------------------------------------
 
@@ -1120,6 +1159,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
+            or args.hess_df_l is not None
             or args.hgp_one_e_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
@@ -1128,7 +1168,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--hgp-eri3-l / "
               "--mu-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
-              "--hess-one-e-l / "
+              "--hess-one-e-l / --hess-df-l / "
               "--hgp-one-e-l / "
               "--class / "
               "--shell-ls / "
@@ -1202,6 +1242,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hess-one-e-l", dest="hess_one_e_l", type=int,
                     nargs="?", const=DEFAULT_HESS_ONE_E_L, default=None,
                     metavar="LMAX")
+    ap.add_argument("--hess-df-l", dest="hess_df_l", type=int, nargs="?",
+                    const=DEFAULT_HESS_DF_L, default=None, metavar="LMAX")
     ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
@@ -1257,6 +1299,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
+            or args.hess_df_l is not None
                  or args.hgp_one_e_l is not None or _hgp_df(args)
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
@@ -1265,7 +1308,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hgp-eri3-l / "
               "--mu-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
-              "--hess-one-e-l / "
+              "--hess-one-e-l / --hess-df-l / "
               "--hgp-one-e-l / "
               "--class / "
               "--shell-ls and "
@@ -1293,13 +1336,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
+            or args.hess_df_l is not None
                      or args.hgp_one_e_l is not None or _hgp_df(args)
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
               "--mu-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
-              "--hess-one-e-l / "
+              "--hess-one-e-l / --hess-df-l / "
               "--hgp-one-e-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
@@ -1378,6 +1422,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HESS_ONE_E_L_MAX}: the one-electron Hessian kernels are "
               "validated through (ff) only", file=sys.stderr)
         return 2
+    if (args.hess_df_l is not None
+            and not 0 <= args.hess_df_l <= HESS_DF_L_MAX):
+        print(f"emit: --hess-df-l {args.hess_df_l} is outside "
+              f"0..{HESS_DF_L_MAX}: the DF Hessian kernels are validated "
+              "at L <= 4 only", file=sys.stderr)
+        return 2
     if (args.hgp_one_e_l is not None
             and not 0 <= args.hgp_one_e_l <= HGP_ONE_E_L_MAX):
         print(f"emit: --hgp-one-e-l {args.hgp_one_e_l} is outside "
@@ -1440,6 +1490,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hess_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hess_one_e(args.backend, arch, args.out,
                                        args.hess_one_e_l)
+    if args.hess_df_l is not None:  # beside the J chain, never by default
+        written += generate_hess_df(args.backend, arch, args.out,
+                                    args.hess_df_l)
     if args.hgp_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hgp_one_e(args.backend, arch, args.out,
                                       args.hgp_one_e_l)

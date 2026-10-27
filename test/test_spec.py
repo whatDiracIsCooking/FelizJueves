@@ -341,9 +341,10 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
     # key differing from the integral's in the `d` segment alone; order 3 is
     # refused everywhere.
     # (S, T and V at d2 are the one-electron Hessians, hessian.kernel_h1e;
-    # K at d2 the exchange energy's, hessian.kernel_hkx.)
+    # K at d2 the exchange energy's, hessian.kernel_hkx; ERI3 at d2 the
+    # three-center DF integral's, hessian.kernel_d2eri3.)
     assert HESSIAN_TARGETS == frozenset({Target.JAB, Target.S, Target.T,
-                                         Target.V, Target.K})
+                                         Target.V, Target.K, Target.ERI3})
     assert Target.DQ in GRADIENT_TARGETS
     d2 = Spec(Operator.COULOMB, 2, (2, 1), Target.JAB)
     assert d2.key() == "coulomb/d2/(2,1)/b1/jab/literal"
@@ -374,6 +375,18 @@ def test_the_df_targets_take_order_one_on_mmd_only() -> None:
         assert d1.key() == d0.key().replace("/d0/", "/d1/")
         with pytest.raises(ValueError, match="derivative order 1 on target"):
             Spec(Operator.COULOMB, 1, am, target, engine=Engine.HGP)
+
+
+def test_eri3_takes_order_two_on_mmd_only() -> None:
+    # hessian.kernel_d2eri3: the triple at d2, the key differing from the
+    # integral's in the `d` segment alone; the metric's Hessian is not built.
+    d0 = Spec(Operator.COULOMB, 0, (0, 1, 2), Target.ERI3)
+    d2 = Spec(Operator.COULOMB, 2, (0, 1, 2), Target.ERI3)
+    assert d2.key() == d0.key().replace("/d0/", "/d2/")
+    with pytest.raises(ValueError, match="derivative order 2 on target"):
+        Spec(Operator.COULOMB, 2, (0, 1, 2), Target.ERI3, engine=Engine.HGP)
+    with pytest.raises(ValueError, match="derivative order 2 on target"):
+        Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC)
 
 
 def test_a_one_electron_key_has_the_shape_every_key_has() -> None:
