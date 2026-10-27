@@ -3955,6 +3955,62 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the DF gradient ladder "
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_DF_GRAD_BUILDERS)
 
 
+# The three-center DF Hessian (`hessian.kernel_d2eri3`: ERI3 at d2) and its
+# host reference (`hessian.host_eri3`): the builder on `kernel_geri3`'s
+# mapping and weights, `kernel_h1e`'s per-axis operators and
+# `kernel_gmetric`'s tower, checked against `hessian.host_eri3` in the
+# interpreter (`--hess-eri3-l`).
+_HESS_ERI3_WITNESS = ("`hessian.host_eri3` is the witness the kernel is "
+                    "interpreted against and `ao` the layer it reads: "
+                    "importing either shares ancestry with it (#20)")
+RULES |= {
+    "hessian_host_eri3": _rule(
+        "hessian/host_eri3.py: the contracted nuclear Hessian of (mn|P) on the "
+        "AO layer and the DF staging -- kernel_d2eri3's witness -- from the "
+        "undressed E (`mmd.hermite`), `hessian.host_1e`'s moved Cartesians "
+        "and the gradient host's atoms; `[t|tau]` injected",
+        ("ao", "mmd.hermite", "eri.density_fit.metric", "gradient.host",
+         "hessian.host_1e", "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernel it checks is built on",
+           "hessian.kernel_d2eri3": "the kernel is what this module checks"}),
+    "d2eri3_builder": _rule(
+        "kernel_d2eri3.py: the three-center DF Hessian kernel -- key -> IR, "
+        "`kernel_geri3`'s mapping and weights, `kernel_h1e`'s per-axis "
+        "operators, `kernel_gmetric`'s tower two orders up",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "gradient.kernel_g1e", "gradient.kernel_gmetric",
+         "gradient.kernel_geri3", "hessian.kernel_h1e",
+         "eri.density_fit.kernel_metric"),
+        ao=_HESS_ERI3_WITNESS, **{"hessian.host_eri3": _HESS_ERI3_WITNESS,
+                                "gradient.host_df": _HESS_ERI3_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian.host_eri3": "hessian_host_eri3",
+    "hessian.kernel_d2eri3": "d2eri3_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.host_eri3": ("ao.pairs", "ao.shell", "eri.density_fit.metric",
+                        "gradient.host", "hessian.host_1e", "mmd.hermite",
+                        "one_electron.potential"),
+    "hessian.kernel_d2eri3": ("eri.density_fit.kernel_metric",
+                              "gradient.kernel_g1e", "gradient.kernel_geri3",
+                              "gradient.kernel_gmetric", "hessian.kernel_h1e",
+                              "ir", "mmd.e_fragment", "mmd.recurrence",
+                              "plan.dag", "plan.pipeline", "plan.schedule",
+                              "plan.targets", "spec"),
+}.items()}
+_HESS_BUILDERS = (*_HESS_BUILDERS, "hessian.kernel_d2eri3")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the DF Hessian ladder "
+                       "through `kernel_d2eri3`",
+                       RULES["driver"].may | {"hessian.kernel_d2eri3"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_d2eri3"}
+
+
 def test_the_df_gradient_builders_reach_neither_their_witness_nor_a_machine(
         ) -> None:
     graph = _graph()
@@ -3987,7 +4043,9 @@ def test_the_hessian_builders_reach_neither_their_witness_nor_a_machine(
                     todo.append(e)
         assert "mmd.e_fragment" in seen
         for banned in (_REF, "ao", *_LEFT_AO, "gradient.host", "hessian.host",
-                       "hessian.host_1e", "ir.interp", "emit",
+                       "hessian.host_1e", "hessian.host_df",
+                       "hessian.host_eri3", "gradient.host_df", "ir.interp",
+                       "emit",
                        "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{start} reaches {hit}"

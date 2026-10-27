@@ -217,9 +217,10 @@ pre-contraction differentiated on each of the ket's two centres
 target's d0 reason.
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
-`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K` and `METRIC`, on MMD
--- every other target refusing it (`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a
-contraction, not the derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
+`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
+on MMD -- every other target refusing it (`_HESSIAN_REFUSAL`). Like a d1
+kernel it writes a contraction, not the derivative integrals: `JAB` at d2
+is the Coulomb energy's Hessian,
 `H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l}`, from `J_p` of the bra
 raised by two and of the ket derivative densities
 (`hessian.kernel_hjab`). `am` is the bra pair, unchanged, so
@@ -236,7 +237,11 @@ refuses `n_batches != 1`. `METRIC` at d2 is the density-fitting metric's
 Hessian, `H[A, k, B, l] += SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}`
 (`hessian.kernel_d2metric`), `am` the integral's pair `(lP, lQ)`, so
 ``coulomb/d2/(1,2)/b1/metric/literal`` differs from its d0 and d1 keys in
-one segment.
+one segment. `ERI3` at d2 is the three-center DF integral's Hessian,
+`H[X, k, Y, l] += SUM_mnP M_mnP d2(mn|P) / dR_{X,k} dR_{Y,l}` over its
+three centres (`hessian.kernel_d2eri3`), `am` the triple, so
+``coulomb/d2/(0,1|2)/b1/eri3/literal`` differs from the d1 key in one
+segment.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -518,15 +523,17 @@ _GRADIENT_REFUSAL = (
 # (`hessian.kernel_h1e`, `V`'s centre-nucleus and nucleus-nucleus terms
 # included), `K`, the exchange energy's Hessian (`hessian.kernel_hkx`),
 # and the density-fitting `METRIC`, `SUM_PQ W_PQ d2(P|Q)/dR dR`
-# (`hessian.kernel_d2metric`). MMD only.
+# (`hessian.kernel_d2metric`), and `ERI3`, `SUM_mnP M_mnP d2(mn|P)/dR dR`
+# (`hessian.kernel_d2eri3`). MMD only.
 HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V,
-                             Target.K, Target.METRIC))
+                             Target.K, Target.METRIC, Target.ERI3))
 
 _HESSIAN_REFUSAL = (
     "a second derivative is built for JAB (the Coulomb energy's Hessian), "
-    "S, T, V (the one-electron Hessians), K (the exchange energy's) and "
-    "METRIC (the DF metric's) on the MMD engine only (felizjueves.hessian); "
-    "this target's Hessian is a follow-up"
+    "S, T, V (the one-electron Hessians), K (the exchange energy's), "
+    "METRIC (the DF metric's) and ERI3 (the three-center DF integral's) on "
+    "the MMD engine only (felizjueves.hessian); this target's Hessian is a "
+    "follow-up"
 )
 
 

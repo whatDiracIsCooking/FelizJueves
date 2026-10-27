@@ -121,6 +121,7 @@ from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
     "build_geri3_kernel",
+    "cell_weights",
     "geri3_name",
     "geri3_plan",
     "geri3_spec",
@@ -188,7 +189,7 @@ def _plus(*vs: tuple[int, ...]) -> tuple[int, int, int]:
     return tuple(sum(v[d] for v in vs) for d in range(3))  # type: ignore[return-value]
 
 
-def _cell_weights(la: int, lb: int, lP: int) -> list[Stmt]:
+def cell_weights(la: int, lb: int, lP: int) -> list[Stmt]:
     """`w{r}_{q}` per Cartesian pair `r` and aux row `q`, from `M`."""
     nb, nP = len(ef.cartesians(lb)), len(ef.cartesians(lP))
     rows = range(len(ef.block_rows(la, lb)))
@@ -373,7 +374,7 @@ def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
         Decl("aa", Scalar.I32, init=Index("atom_a", (cell,))),
         Decl("ab", Scalar.I32, init=Index("atom_b", (cell,))),
         Decl("ap", Scalar.I32, init=Index("atom_p", (cell,))),
-        *_cell_weights(la, lb, lP),
+        *cell_weights(la, lb, lP),
         *(Decl(f"g{s}{k}", Scalar.F64, init=Lit(0.0))
           for s in "ABC" for k in range(3)),
         Note("the bra records of the cell's shell pair, serially"),
