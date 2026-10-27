@@ -83,10 +83,12 @@ from felizjueves.mmd.hermite import hermite_order
 from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_body
 from felizjueves.one_electron.kernel_v import (
     ATOMIC_REASON,
+    LOWSTACK_MIN_L,
     NUC,
     ZEROED_V,
     build_v_kernel,
     launch_shape,
+    v_lowstack,
     v_plan,
     v_spec,
 )
@@ -167,12 +169,13 @@ def _nuc_arrays(nuclei):
                 Cnuc=np.array([list(c) for _, c in nuclei]))
 
 
-def _launch(cls, basis, pairs, nuclei, V, threads=5):
-    """One launch of class `cls` over every record of `pairs`, into `V`."""
+def _launch(cls, basis, pairs, nuclei, V, threads=5, lowstack=None):
+    """One launch of class `cls` over every record of `pairs`, into `V`;
+    `lowstack` is `build_v_kernel`'s (None: the class's default form)."""
     rec = _records(basis, pairs)
     n_rec = len(rec["s_ab"])
     grid, block = launch_shape(n_rec, threads)
-    return Interpreter(build_v_kernel(v_spec(*cls)),
+    return Interpreter(build_v_kernel(v_spec(*cls), lowstack=lowstack),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_rec=n_rec, n_ao=basis.n_ao, V=V, **_nuc_arrays(nuclei), **rec)["V"]
 
@@ -336,7 +339,8 @@ def test_the_recurrence_is_the_plan_layers_statements_unchanged(cls):
         [m for (r, m) in order if not any(r)])
     want = (*prelude, *recurrence_body(dag, order, fundamental))
 
-    (loop,) = [s for s in walk(build_v_kernel(cls).body) if isinstance(s, For)]
+    (loop,) = [s for s in walk(build_v_kernel(cls).body)
+               if isinstance(s, For) and s.var == NUC]
     body = loop.body
     starts = [i for i in range(len(body) - len(want) + 1)
               if body[i:i + len(want)] == want]
@@ -429,6 +433,11 @@ def test_no_prefactor_is_formed_in_the_kernel(cls):
     floats = {e.value for e in subs
               if isinstance(e, Lit) and isinstance(e.value, float)}
     assert floats <= {0.0, 0.5, -2.0, 2.0 / math.sqrt(math.pi)}
+    if v_lowstack(cls):  # one rolled value, sk * acc[i nb + j] (#586)
+        (v,) = {s.init for s in stmts if isinstance(s, Decl) and s.name == "v"}
+        assert v.fn is Fn.MUL and v.args[0] == Var("sk")
+        assert isinstance(v.args[1], Index) and v.args[1].array == "acc"
+        return
     vs = [s for s in stmts if isinstance(s, Decl) and s.name.startswith("v")
           and s.name[1:].isdigit()]
     assert len(vs) == len(ef.block_rows(*cls))
@@ -507,3 +516,151 @@ def test_the_hip_golden_is_unchanged() -> None:
     #   test/golden/hip/v_11.hip
     text = hip.emit(build_v_kernel(GOLDEN_CLASS), GFX1200)
     assert text == (GOLDEN / "hip" / "v_11.hip").read_text()
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#586): from f up by default, the d text unchanged
+# ---------------------------------------------------------------------------
+
+# sha256 of the unrolled V text through (dd), cuda and hip, as emitted at
+# cc5d16f (before #586): the low-stack form must not move a byte of it.
+D_DIGESTS = {
+    (0, 0): ("b7180b64ee2c74943cdf75e4e73e7fe846af5eba3835f9d2140dd65969f7124e",
+             "842b0bd01c614451d087494c57c48b67387cee6f18da882485a350163c138403"),
+    (0, 1): ("a3bfb3693d6e36f1b3bafc935b0a3403db8ab7ad5ad004337c3d9d6adf2b5fc7",
+             "193c25a62625b7f958e11c817d0aef35ffc5398cfc7fe36564280f97c9a4b429"),
+    (0, 2): ("b64c919ec89930e99ac69d1f96e67b1c78ea54d0bf7cdb2521d04f7367996244",
+             "2bcbf1d1210e8b5fc2cea50238b66de2511e3d751c6a6d9fb72678b41ae79160"),
+    (1, 0): ("090760a4286d34feb149463a700aacc8ac54b32b8f809cab81735a4b501501ed",
+             "f51a898e8a7f1c8762a933fc5994afad2fd076313dab8ae3bc05c41bc57eb14b"),
+    (1, 1): ("18984ed53b0da485d44fc59938d8658b7364106fa6fb9e34a6fcc57cf06c484f",
+             "fabecff37d7d647b86c42785f8164389c456f61b789f1356c1c3cfa497acb4a8"),
+    (1, 2): ("28459ee7350cd0dbcc134c3c1a2162a179ed4da3189767f63d55765de926ba1d",
+             "f65855fd351c47db944315a87f87aac5455b7701b7262599f238c67f22da56d5"),
+    (2, 0): ("bc73f12f5353e890c19d6a611e88addfef92570bc44580f799461b31ffb7edd8",
+             "bcc163887e7c38468949e94379e7021c51889f678728fd2b72ee0e2dccd69ea9"),
+    (2, 1): ("ff7f2c23cb0f412c3883384dd7a23076dbea871e2c2bce941335878bb5611693",
+             "a99288902121639ae99a6a752d9f6711b108233d33e40e8706245cb8f46c4670"),
+    (2, 2): ("0cf5a7dccc8790ac98080ee2d2fd28b65d8cb624c716e1c0487200e080028184",
+             "7a935c294474cc0f112cbc5adb62e604868da3ce02e990d4136c4affed18fc0a"),
+}
+
+# #586's budget: at most 8 KB of stack per thread at (ff) on sm_86. The
+# kernel's local arrays are the whole of what it can spill by design, so
+# they are held to it here, without a compiler (the measured frame is in
+# docs/implementation/one_electron.md).
+STACK_BUDGET = 8192
+
+
+def test_the_selection_rule_is_f_and_above():
+    assert LOWSTACK_MIN_L == 3
+    for la in range(5):
+        for lb in range(5):
+            assert v_lowstack((la, lb)) is (max(la, lb) >= 3)
+            assert v_lowstack(v_spec(la, lb)) is v_lowstack((la, lb))
+
+
+@pytest.mark.parametrize("cls", sorted(D_DIGESTS), ids=lambda c: f"{c[0]}{c[1]}")
+def test_the_d_text_is_byte_identical(cls):
+    import hashlib
+    k = build_v_kernel(cls)
+    assert k == build_v_kernel(cls, lowstack=False)
+    got = tuple(hashlib.sha256(t.encode()).hexdigest()
+                for t in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)))
+    assert got == D_DIGESTS[cls]
+
+
+@pytest.mark.parametrize("cls", [(1, 1), (2, 3), (3, 3)],
+                         ids=lambda c: f"{c[0]}{c[1]}")
+def test_both_forms_share_the_name_parameters_and_launch(cls):
+    lo = build_v_kernel(cls, lowstack=True)
+    hi = build_v_kernel(cls, lowstack=False)
+    assert lo.name == hi.name == f"v_{cls[0]}{cls[1]}"
+    assert lo.params == hi.params
+    assert build_v_kernel(cls) == (lo if v_lowstack(cls) else hi)
+    rec = [s for s in lo.body if isinstance(s, Decl) and s.name == "rec"]
+    assert rec == [s for s in hi.body if isinstance(s, Decl) and s.name == "rec"]
+
+
+def _local_doubles(k) -> dict[str, int]:
+    return {s.name: math.prod(d.value for d in s.shape)
+            for s in walk(k.body) if isinstance(s, Decl) and s.shape}
+
+
+@pytest.mark.parametrize("cls", [(0, 3), (1, 3), (2, 3), (3, 3), (3, 0)],
+                         ids=lambda c: f"{c[0]}{c[1]}")
+def test_the_lowstack_form_holds_no_e_block(cls):
+    la, lb = cls
+    k = build_v_kernel(cls)
+    rows, cols = ef.block_shape(la, lb)
+    arrays = _local_doubles(k)
+    ext = ef.axis_table_extent(la, lb)
+    assert arrays == {"Ex": ext, "Ey": ext, "Ez": ext, "acc": rows,
+                      "R": cols, "boys": la + lb + 1}
+    assert 8 * sum(arrays.values()) <= STACK_BUDGET
+    assert ef.E_ARRAY not in arrays
+    (inl,) = [s for s in walk(k.body, into_inline=False)
+              if isinstance(s, Inline)]
+    assert inl.fragment == ef.axis_tables_fragment(la, lb)
+    # the recurrence is still the plan's, inside the one nucleus loop
+    (loop,) = [s for s in walk(k.body) if isinstance(s, For) and s.var == NUC]
+    assert not [s for s in walk(loop.body) if isinstance(s, (Inline, AtomicAdd))]
+
+
+def test_the_ff_lowstack_arrays_are_527_doubles():
+    # 3 x 112 axis-table entries, 100 accumulators, 84 [t]^(0), boys[7]:
+    # 4,216 B, of which sm_86's frame holds all but boys (4,160 B measured).
+    assert sum(_local_doubles(build_v_kernel((3, 3))).values()) == 527
+
+
+def _other_form(cls):
+    return not v_lowstack(cls)
+
+
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
+def test_the_other_form_agrees_with_the_host_to_round_off(cls):
+    """Every class through (ff) in the form `build_v_kernel` does NOT
+    choose by default -- the low-stack form through d, the unrolled one at
+    f -- against the host, at the same `TOL_ULPS`: with the default-form
+    test above, both forms are held at every class."""
+    pairs = _pairs_of(SYNTHETIC, cls)
+    n = SYNTHETIC.n_ao
+    got = _launch(cls, SYNTHETIC, pairs, NUCLEI, np.zeros((n, n)),
+                  lowstack=_other_form(cls))
+    want = _host(SYNTHETIC, pairs, NUCLEI)
+    mag = _magnitude(SYNTHETIC, pairs, NUCLEI)
+    _check(got, want, mag, f"({cls[0]}{cls[1]}) other form")
+    assert np.all(got[~_owned(SYNTHETIC, pairs)] == 0.0)
+    assert np.array_equal(got, got.T)
+
+
+@pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
+def test_the_two_forms_agree_with_each_other(cls):
+    pairs = _pairs_of(SYNTHETIC, cls)
+    n = SYNTHETIC.n_ao
+    lo = _launch(cls, SYNTHETIC, pairs, NUCLEI, np.zeros((n, n)),
+                 lowstack=True)
+    hi = _launch(cls, SYNTHETIC, pairs, NUCLEI, np.zeros((n, n)),
+                 lowstack=False)
+    mag = _magnitude(SYNTHETIC, pairs, NUCLEI)
+    assert np.all(np.abs(lo - hi) <= TOL_ULPS * EPS * mag)
+
+
+LOWSTACK_GOLDEN_CLASS = (3, 3)
+
+
+def test_the_lowstack_cuda_golden_is_unchanged() -> None:
+    # Regenerate (never hand-edit), the default form at (ff):
+    #   PYTHONPATH=src uv run python -c "from felizjueves.one_electron.kernel_v import \
+    #   build_v_kernel as b; from felizjueves.performance.device import SM_86; \
+    #   from felizjueves.emit.cuda import emit; print(emit(b((3, 3)), SM_86), \
+    #   end='')" > test/golden/cuda/v_33.cu
+    text = cuda.emit(build_v_kernel(LOWSTACK_GOLDEN_CLASS), SM_86)
+    assert text == (GOLDEN / "cuda" / "v_33.cu").read_text()
+
+
+def test_the_lowstack_hip_golden_is_unchanged() -> None:
+    #   ... the same with GFX1200 and felizjueves.emit.hip, into
+    #   test/golden/hip/v_33.hip
+    text = hip.emit(build_v_kernel(LOWSTACK_GOLDEN_CLASS), GFX1200)
+    assert text == (GOLDEN / "hip" / "v_33.hip").read_text()

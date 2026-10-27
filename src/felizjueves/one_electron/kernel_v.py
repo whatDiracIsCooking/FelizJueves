@@ -1,6 +1,7 @@
 """The nuclear-attraction kernel, `Target.V`, built as a `Kernel` (#239).
 
-    build_v_kernel(spec | (la, lb)) -> Kernel     one per pair class
+    build_v_kernel(spec | (la, lb), lowstack=None) -> Kernel  one per class
+    v_lowstack(spec | (la, lb))     -> bool       the form's selection rule
     v_name(spec | (la, lb))         -> str        its name, unbuilt
     v_spec(la, lb)                  -> Spec       the class's key
     v_plan(spec | (la, lb))         -> (dag, order)  the plan layer's answer
@@ -85,6 +86,34 @@ once per row after the nucleus sum rather than once per `E` entry. So the
 two agree to rounding, and the test states its bound (test/test_kernel_v.py);
 contrast `kernel_s` and `kernel_jab`, which are bitwise.
 
+THE LOW-STACK FORM (#586), the default from f up. The block above is
+`E[100][84]` per thread at (ff), 67 KB: on sm_86 an 85 KB stack frame,
+which CUDA reserves for every resident thread (~8.5 GB of a 10 GB RTX
+3080). `build_v_kernel(cls)` therefore emits, whenever `v_lowstack(cls)`
+(a shell with `l >= LOWSTACK_MIN_L = 3`), a kernel with the SAME name,
+parameters, launch and output contract and no `E^{ab}` block:
+
+    tables = e_fragment.axis_tables_fragment(la, lb)  Ex Ey Ez, local,
+                                      3 x (la+1)(lb+1)(la+lb+1) doubles
+    theta = sqrt(zeta);  acc[n_rows] = 0
+    per nucleus C:
+        PQ, [t]^(0)                   the same prelude and recurrence_body
+        R[i] = [t_i]^(0)              hermite_targets order, a local
+        for each block row (a, b)     e_fragment.cartesian_loops, as loops
+            u = SUM_t E^{ab}_t R[t]   e_fragment.rolled_e_sum: loops over
+                                      the reachable t, factored per axis
+            acc[row] -= Z_C u
+    scatter s acc[row]                kernel_jab's rule, as loops
+
+so the frame is the tables, `acc` and `R` (520 doubles at (ff), 4,160 B on
+sm_86, no spill), and the text is the recurrence plus a fixed set of
+loops. Through d the default is the unrolled kernel above, its text
+unchanged byte for byte; `lowstack=True` / `False` forces either form at
+any class. Interpreted, both forms agree with the host to the same bound
+(test/test_kernel_v.py); the low-stack product `E_x (E_y (E_z R))` is in a
+different association from the block's `(E_x E_y) E_z`, so the two forms
+agree to rounding, not bitwise.
+
 A builder: vendor-neutral IR. It imports neither `ao/` (its witness) nor the
 interpreter nor `reference/`.
 """
@@ -131,7 +160,9 @@ __all__ = [
     "NUC",
     "REC",
     "ZEROED_V",
+    "LOWSTACK_MIN_L",
     "build_v_kernel",
+    "v_lowstack",
     "v_name",
     "launch_shape",
     "v_plan",
@@ -207,13 +238,33 @@ def v_name(cls: Spec | tuple[int, int]) -> str:
     return f"v_{la}{lb}"
 
 
+LOWSTACK_MIN_L = 3  # the low-stack form from f up (#586)
+
+
+def v_lowstack(cls: Spec | tuple[int, int]) -> bool:
+    """THE SELECTION RULE (#586): True when the class has a shell of
+    `l >= LOWSTACK_MIN_L` (f or above), where `build_v_kernel` emits the
+    low-stack form by default; False through d, where the unrolled form
+    stays the default and its text is unchanged."""
+    return max(_spec(cls).am) >= LOWSTACK_MIN_L
+
+
 def build_v_kernel(cls: Spec | tuple[int, int], *,
-                   name: str | None = None) -> Kernel:
+                   name: str | None = None,
+                   lowstack: bool | None = None) -> Kernel:
     """The nuclear-attraction kernel of one pair class.
 
     `cls` is a `Target.V` `Spec` or `(la, lb)`. See the module docstring.
+    `lowstack` picks the form: `None` (the default) is `v_lowstack(cls)`,
+    so through d the unrolled kernel and at f the low-stack one (THE
+    LOW-STACK FORM); `True` / `False` force either, at any class. Both
+    have the same name, parameters, launch and output contract.
     """
     spec = _spec(cls)
+    if lowstack is None:
+        lowstack = v_lowstack(spec)
+    if lowstack:
+        return _build_lowstack(spec, name)
     la, lb = spec.am
     dag, order = v_plan(spec)
     frag = ef.block_fragment(la, lb)
@@ -334,8 +385,13 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
             Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
         If(_c(Fn.LT, rec, Var("n_rec")), per_rec),
     )
+    return Kernel(name or v_name(spec), _params(), body)
+
+
+def _params() -> tuple[Param, ...]:
+    """The parameter block (module docstring), one for both forms."""
     nr, nao, nn = Var("n_rec"), Var("n_ao"), Var("n_nuc")
-    params = (
+    return (
         Param("n_rec", Scalar.I32),
         Param("n_ao", Scalar.I32),
         Param("n_nuc", Scalar.I32),
@@ -350,4 +406,170 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
         _f64("Cnuc", (nn, Lit(3))),
         Param("V", Scalar.F64, array=True, intent=Intent.OUT, shape=(nao, nao)),
     )
-    return Kernel(name or v_name(spec), params, body)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#586)
+# ---------------------------------------------------------------------------
+
+R_ARRAY = "R"  # [t]^(0) of one nucleus, hermite_targets(la + lb) order
+ACC = "acc"  # the row accumulators, block_rows order
+
+
+def _row_index(lb: int) -> Expr:
+    """The block row of the two `cartesian_loops` nests open around it
+    (tags `a`, `b`): `(u_a (u_a+1)/2 + w_a) n_b + u_b (u_b+1)/2 + w_b`."""
+    def pos(tag: str) -> Expr:
+        u, w = Var(f"{tag}_u"), Var(f"{tag}_w")
+        return _c(Fn.ADD, _c(Fn.DIV, _c(Fn.MUL, u, _c(Fn.ADD, u, Lit(1))),
+                             Lit(2)), w)
+    nb = len(ef.cartesians(lb))
+    return _c(Fn.ADD, _c(Fn.MUL, pos("a"), Lit(nb)), pos("b"))
+
+
+def _build_lowstack(spec: Spec, name: str | None) -> Kernel:
+    """`build_v_kernel`'s kernel with no `E^{ab}` block (module docstring,
+    THE LOW-STACK FORM): the same parameters, launch and scatter rule."""
+    la, lb = spec.am
+    L = la + lb
+    dag, order = v_plan(spec)
+    frag = ef.axis_tables_fragment(la, lb)
+    ts = hermite_targets(L)
+    na, nb = len(ef.cartesians(la)), len(ef.cartesians(lb))
+    n_rows = na * nb
+    rec, nuc = Var(REC), Var(NUC)
+
+    binds: dict[str, Expr] = {ef.ZETA: Var(ef.ZETA),
+                              **{n: Var(n) for n in ef.AXIS_ARRAYS}}
+    head: list[Stmt] = [
+        Decl(ef.ZETA, Scalar.F64, init=Index("zeta_ab", (rec,))),
+    ]
+    if ef.HALF_INV_ZETA in frag.binds:
+        head.append(Decl(ef.HALF_INV_ZETA, Scalar.F64,
+                         init=_c(Fn.DIV, Lit(0.5), Var(ef.ZETA))))
+        binds[ef.HALF_INV_ZETA] = Var(ef.HALF_INV_ZETA)
+    for d, a in enumerate("xyz"):
+        binds[Factor.pa(d).name_in_kernel] = Index(f"pa_{a}", (rec,))
+        binds[Factor.pb(d).name_in_kernel] = Index(f"pb_{a}", (rec,))
+    extent = Lit(ef.axis_table_extent(la, lb))
+    head += [
+        Decl("sk", Scalar.F64, init=Index("s_ab", (rec,))),
+        Decl("oa", Scalar.I32, init=Index("off_a", (rec,))),
+        Decl("ob", Scalar.I32, init=Index("off_b", (rec,))),
+        *(Decl(f"P{d}", Scalar.F64, init=Index(f"p_{a}", (rec,)))
+          for d, a in enumerate("xyz")),
+        Note(LOWSTACK_NOTE),
+        Note("the record's per-axis E^{ij}_t, one local table per axis "
+             "(e_fragment.axis_tables_fragment); no E^{ab}_t block is formed"),
+        *(Decl(n, Scalar.F64, (extent,)) for n in ef.AXIS_ARRAYS),
+        Inline(frag, binds),
+        Note("theta = sqrt(zeta): the eta -> inf limit of theta^2 = "
+             "zeta eta / (zeta + eta), a unit point-charge ket"),
+        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, Var(ef.ZETA))),
+        Decl(ACC, Scalar.F64, (Lit(n_rows),)),
+        For("r", Lit(0), Lit(n_rows), Lit(1), (
+            Assign(Index(ACC, (Var("r"),)), Lit(0.0)),)),
+        Decl(R_ARRAY, Scalar.F64, (Lit(len(ts)),)),
+    ]
+
+    held = {r for (r, m) in order if m == 0}
+    assert set(ts) <= held, "the recurrence never forms every [t]^(0)"
+    prelude, fundamental = fundamental_prelude(
+        [m for (r, m) in order if not any(r)])
+
+    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+        def cell(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            at = Index(ACC, (Var("row"),))
+            return (
+                *ef.rolled_e_sum(la, lb, a, b,
+                                 lambda h: Index(R_ARRAY, (h,)), "u"),
+                Decl("row", Scalar.I32, init=_row_index(lb)),
+                Assign(at, _c(Fn.SUB, at, _c(Fn.MUL, Var("Zc"), Var("u")))),
+            )
+        return (ef.cartesian_loops(lb, ("bx", "by", "bz"), cell, tag="b"),)
+
+    per_nuc: list[Stmt] = [
+        Decl("Zc", Scalar.F64, init=Index("Z", (nuc,))),
+        *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
+                                      Index("Cnuc", (nuc, Lit(d)))))
+          for d, n in enumerate(PQ_PARAMS)),
+        *prelude,
+        *recurrence_body(dag, order, fundamental),
+        Note("[t]^(0) into the local R, hermite_targets order, so the "
+             "rolled contraction can index it"),
+        *(Assign(Index(R_ARRAY, (Lit(i),)), Var(node_name((t, 0))))
+          for i, t in enumerate(ts)),
+        Note("per block row: u = SUM_t E^{ab}_t [t]^(0) over the reachable "
+             "t, rolled over the per-axis tables (e_fragment.rolled_e_sum), "
+             "and acc[row] -= Z_C u: V's attractive sign, applied here only"),
+        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+    ]
+    nuclei = For(NUC, Lit(0), Var("n_nuc"), Lit(1), tuple(per_nuc))
+
+    # --- the scatter: kernel_jab's rule, rolled over the block -------------
+    def at(row: Expr, col: Expr) -> Index:
+        return Index("V", (row, col))
+
+    i, j = Var("i"), Var("j")
+
+    def value() -> Decl:
+        return Decl("v", Scalar.F64, init=_c(Fn.MUL, Var("sk"), Index(
+            ACC, (_c(Fn.ADD, _c(Fn.MUL, i, Lit(nb)), j),))))
+
+    off_diag: tuple[Stmt, ...] = (
+        Note(ATOMIC_REASON),
+        For("i", Lit(0), Lit(na), Lit(1), (For("j", Lit(0), Lit(nb), Lit(1), (
+            value(),
+            AtomicAdd(at(_c(Fn.ADD, Var("oa"), i), _c(Fn.ADD, Var("ob"), j)),
+                      Var("v")),
+            AtomicAdd(at(_c(Fn.ADD, Var("ob"), j), _c(Fn.ADD, Var("oa"), i)),
+                      Var("v")),
+        )),)),
+    )
+    differ = _c(Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
+                _c(Fn.LT, Var("ob"), Var("oa")))
+    scatter: Stmt
+    if la == lb:
+        diag: tuple[Stmt, ...] = (
+            Note(_DIAGONAL), Note(ATOMIC_REASON),
+            For("i", Lit(0), Lit(nb), Lit(1), (
+                For("j", Lit(0), _c(Fn.ADD, i, Lit(1)), Lit(1), (
+                    value(),
+                    AtomicAdd(at(_c(Fn.ADD, Var("oa"), i),
+                                 _c(Fn.ADD, Var("oa"), j)), Var("v")),
+                    If(_c(Fn.LT, j, i), (
+                        AtomicAdd(at(_c(Fn.ADD, Var("oa"), j),
+                                     _c(Fn.ADD, Var("oa"), i)), Var("v")),)),
+                )),)),
+        )
+        scatter = If(differ, off_diag, diag)
+    else:
+        scatter = If(differ, off_diag)
+
+    per_rec = (*head,
+               Note("the nuclei, serially inside the record (milestone 11's "
+                    "mapping pin)"),
+               nuclei,
+               Note("V_ab = s acc, scattered into V_mn and its mirror V_nm: "
+                    "s = c_a c_b (pi/zeta)^{3/2} is the host's "
+                    "(ao.pairs.dress); no prefactor and no K_AB is formed "
+                    "here"),
+               scatter)
+    body: tuple[Stmt, ...] = (
+        Note(f"nuclear attraction, class (la, lb) = ({la}, {lb}), LOW-STACK "
+             "(#586): V_ab = -SUM_C Z_C SUM_t E^{ab}_t [t]^(0)(P - C, "
+             f"sqrt(zeta)), the J engine's recurrence at Hermite order {L} "
+             "with the ket a unit point charge (ao/potential.py)"),
+        Note(ZEROED_V),
+        Note("launch: one thread per primitive-pair record"),
+        Decl(REC, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
+            Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
+        If(_c(Fn.LT, rec, Var("n_rec")), per_rec),
+    )
+    return Kernel(name or v_name(spec), _params(), body)
+
+
+LOWSTACK_NOTE = (
+    "LOW-STACK (#586): per-axis E tables (3 x (la+1)(lb+1)(la+lb+1) "
+    "doubles) in place of the E^{ab}_t block, [t]^(0) into a local R, the "
+    "contraction and the scatter as loops over the block's rows")
