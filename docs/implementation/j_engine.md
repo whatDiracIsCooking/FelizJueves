@@ -1772,7 +1772,9 @@ and the whole chain ran on the RTX 3080 and the RX 9060 XT (#157). What is
 per-record inputs, the bound, the sort (with its `Dmax` read-back), the
 staging, and the launch code itself, which is a test-side driver
 (`test/plan_driver.py`) launched from Python. **Nothing about the new kernels
-is measured**: no registers, spills, wall-clock or counters. There is no
+is measured**, except #586's f units of `DQ` and `JAB` (compile rows and
+one hand timing, "The low-stack `DQ` and `JAB` at f" below): no counters,
+and no store rows. There is no
 device-resident `J` across SCF iterations, and dispatch does not reach the
 generator.
 
@@ -2053,6 +2055,153 @@ its `Note`.
 the sign of a zero, which `==` does not distinguish). On a card, fp64 atomics
 make the summation order differ from run to run. The tolerance for that is
 stated where the device test asserts, and not here.
+
+### The low-stack `DQ` and `JAB` at f (#586, stage 2)
+
+**Status: implemented; the default at (ff), i.e. `l₁ + l₂ ≥ 6`.** Both unrolled kernels above
+materialise the record's whole `E` block per thread, `double E[100][84]` at
+(ff), 67 KB. On `sm_86` that is a 72,464 B (`dq_33`) and a 71,456 B
+(`jab_33`) stack frame. CUDA reserves the per-thread stack for every
+resident thread (104,448 on the RTX 3080), so each launch asked for about
+7 GB of the 10 GB card. Stage 1 (#587) built the shared per-axis `E` path
+in `mmd/e_fragment.py` for `V`; this stage applies it to `DQ` and `JAB`
+without changing `e_fragment.py`.
+
+**The rule and the override.** `build_dq_kernel(cls)` and
+`build_jab_kernel(cls)` pick the form by `kernel_dq.dq_lowstack(cls)` and
+`kernel_jab.jab_lowstack(cls)`: true when `l₁ + l₂ ≥ LOWSTACK_MIN_PAIR_L
+= 6` (the two constants are one rule, pinned equal by a test). Through f
+that is (ff) alone; past f it is (gd), (gf), (gg) and up. **Why the cut is
+on L, where it is needed and nowhere else:** the unrolled frame grows with
+the block, `n_rows × n_t` doubles. At L = 5 (`dq_23` / `jab_23`, 60 × 56)
+it is 728 B / 936 B with no spill, and at L = 6 ((ff), 100 × 84) about
+72 KB; (sf) and (pf) have none at all (table below). Block size follows L
+more than its split (gd's 90 × 84 sits beside (ff), gp's 45 × 56 below
+(df)). The low-stack form is slower on the mixed f classes (timing
+below), and a slower path ships only where it is needed. `lowstack=True` /
+`False` forces either form at any class, and `density="ao"` takes either.
+Both forms have the same name (`dq_{lc}_{ld}`, `dq_{lc}_{ld}_ao`,
+`jab_{la}{lb}`), the same parameters in the same order, the same
+one-thread-per-record launch and the same output contract (`D` / `Dmax` in
+record order; `J` zeroed by the caller and only `AtomicAdd`ed, by the same
+scatter rule). So free-breakfast's `tools/emit_coulomb_kernels.py` keeps
+calling `build_dq_kernel(cls, density="ao", name=…)` and
+`build_jab_kernel(cls, name=…)`, and its `split_axes` / `transpose` passes
+take the low-stack form unchanged (`test_kernel_dq.py`,
+`test_kernel_jab.py`). Below L = 6 the text is the unrolled kernel's byte
+for byte: the cuda and hip text of all fifteen classes with `l ≤ 3` other
+than (ff), through (dd) and the mixed f classes (sf), (pf), (df) in both
+orders, is pinned by sha256 from 534a8e7, `DQ`'s AO variant included.
+
+**What the low-stack form holds.** No `E` block:
+
+- **Per-axis `E` tables.** `e_fragment.axis_tables_fragment(l₁, l₂)`, the
+  same recurrence, into local `Ex`, `Ey`, `Ez` (336 doubles at (ff)).
+- **`DQ`:** a local `acc[n_q]` (84 at (ff)). The rows `(c, d)` are
+  `e_fragment.cartesian_loops` nests, `c` outer, so `block_rows` order. Per
+  row, `x = Dcd[pair[k], r]` (or `Dao[oc + i, od + j]`) is read once, and
+  three loops walk exactly the reachable box `t_d ≤ c_d + d_d`, adding
+  `x · (s · ((E_x E_y) E_z))` into `acc[hermite_index(t)]`. Then one loop
+  over `q` writes `D = w · acc` and folds `Dmax`.
+- **`JAB`:** nothing more. Per Cartesian pair, `v` is a left fold from
+  `+0.0` over the row's reachable `t` **in `hermite_order`** (`|t|`
+  ascending, then `t_x`, then `t_y` descending; each loop clipped to the
+  reachable range, so no iteration is a skipped branch), each term
+  `(s · ((E_x E_y) E_z)) · Jp[row, hermite_index(t)]`. The scatter is done
+  in place: on a diagonal pair only `i ≥ j`, the mirror only for `i ≠ j`,
+  and for `la ≠ lb` the whole nest sits under the unrolled form's
+  `off_a ≠ off_b` test, which has no else branch.
+
+**The same bits, not round-off.** Unlike `V`'s, this low-stack form does
+**not** use `e_fragment.rolled_e_sum`. That helper's factored product
+`E_x (E_y (E_z X))`, summed in its own `t` order, agrees only to rounding,
+and `DQ` and `JAB` are held `==` to the host. Here each `E` entry is
+`block_fragment`'s own product `(E_x E_y) E_z` from the same recurrence.
+Each of `DQ`'s accumulators takes the same terms in the same order (`r`
+outer, and no row touches one `q` twice). `JAB`'s fold is the same fold over
+the same `p`, and its atomics come in the same order. So interpreted, both
+forms are `==` to the host at every class (ss)–(ff), both densities and the
+diagonal included, and every existing tolerance stands unchanged.
+
+**The f units, each form** (the default is **unrolled** for 03, 13 and
+23, **low-stack** for 33; `nvcc -O3 -arch=sm_86 -Xptxas -v -cubin`, CUDA
+13.0, on free-breakfast's spelling: `gpu.emit` with its `dq<lc, ld>` /
+`jab<la, lb>` specialization, `density="ao"`, `split_axes`, `D` transposed
+q-major). Columns: generated source, then `sm_86` stack / spill stores /
+registers / compile time, then `gfx1200` scratch per lane / VGPRs (`hipcc
+--offload-arch=gfx1200 -O3 -Rpass-analysis=kernel-resource-usage`, ROCm
+7.2, compile only: the RX 9060 XT is wedged host-side).
+
+| unit | form | source | sm_86 stack | spill st | regs | nvcc | gfx1200 scratch | VGPRs |
+|---|---|---|---|---|---|---|---|---|
+| `dq_03` | unrolled (534a8e7) | 17,891 B | 0 B | 0 B | 96 | 0.3 s | 0 B | 114 |
+| `dq_03` | low-stack | 8,661 B | 384 B | 0 B | 66 | 0.3 s | 0 B | 113 |
+| `dq_13` | unrolled | 55,086 B | 0 B | 0 B | 255 | 0.4 s | 84 B | 191 |
+| `dq_13` | low-stack | 12,999 B | 1,248 B | 0 B | 128 | 0.5 s | 1,248 B | 99 |
+| `dq_23` | unrolled | 140,939 B | 728 B | 768 B | 255 | 1.3 s | 1,268 B | 191 |
+| `dq_23` | low-stack | 18,891 B | 2,176 B | 0 B | 168 | 0.4 s | 2,192 B | 179 |
+| `dq_33` | unrolled | 309,108 B | 72,464 B | 8,084 B | 255 | 8.8 s | 3,668 B | 192 |
+| `dq_33` | low-stack | 26,403 B | **3,360 B** | 0 B | 254 | 0.5 s | 3,392 B | 191 |
+| `jab_03` | unrolled | 11,405 B | 0 B | 0 B | 80 | 0.3 s | 0 B | 82 |
+| `jab_03` | low-stack | 8,800 B | 384 B | 0 B | 64 | 0.4 s | 272 B | 57 |
+| `jab_13` | unrolled | 39,380 B | 0 B | 0 B | 254 | 0.4 s | 108 B | 192 |
+| `jab_13` | low-stack | 13,138 B | 960 B | 0 B | 96 | 0.4 s | 976 B | 96 |
+| `jab_23` | unrolled | 103,567 B | 936 B | 1,076 B | 255 | 1.5 s | 740 B | 192 |
+| `jab_23` | low-stack | 19,030 B | 1,728 B | 0 B | 168 | 0.3 s | 1,744 B | 103 |
+| `jab_33` | unrolled | 235,103 B | 71,456 B | 6,244 B | 255 | 7.9 s | 3,188 B | 192 |
+| `jab_33` | low-stack | 26,910 B | **2,688 B** | 0 B | 254 | 0.4 s | 2,704 B | 104 |
+
+The unrolled rows reproduce the issue's 72,464 B and 71,456 B. Every
+low-stack frame is exactly its local arrays (the tables, plus `acc` for
+`DQ`) and spills nothing, so at (ff) a launch reserves 335 MiB (`dq_33`) and
+268 MiB (`jab_33`) of the RTX 3080, not about 7 GB. The ordered mirrors
+`dq_30`–`dq_32` and `jab_30`–`jab_32` forced low-stack have their partners'
+frames (384, 1,248, 2,176 and 384, 960, 1,728 B). Forced at the mixed f
+classes the low-stack form would cost a frame where the unrolled one has
+little or none, which is one reason the rule leaves them unrolled; every
+forced form is within the 8 KB budget too, which the tests hold on the
+local arrays without a compiler. On `gfx1200` the unrolled scratch was already small (hipcc does
+not keep the block), and the low-stack form trades a little scratch for
+far fewer VGPRs at `jab_*`.
+
+**On the RTX 3080** (#586): the PR-gate kernel tier (`kernel-tier.sh
+--backend cuda`, 414 passed, none skipped) runs `dq_0_3`, `dq_1_3`,
+`jab_03` and `jab_13` (unrolled, the default there) against the host in
+part 1 of `test_j_chain_ondevice.py`. By hand, its `slow` cells passed
+within their unchanged bounds: (df), unrolled, worst `|D − D_host|/S`
+3.27e-16 and `|J − J_host|/T` 9.06e-17; (ff), low-stack, 5.45e-16 and
+4.04e-16; each run bit-identical. An earlier run with the rule at every f
+class had (df) low-stack at 3.27e-16 / 1.22e-16, and H₂O/cc-pVDZ's whole
+chain (through d, unrolled) passed. The (ff)
+program's VRAM probe now asks for 335 MiB. **The CO/cc-pVTZ chain cell
+(`high_l`) was not completed:** its `DQ` and driver launches passed their
+VRAM probes (335 and 1,314 MiB), but the host-side references then ran
+for over 30 CPU-minutes and the run was stopped (as in #585, where it
+also never finished); free-breakfast's #345 runs that `J` against
+libcint's `vj` downstream. The RX 9060 XT is wedged
+host-side: `gfx1200` is compile-only (the f programs compile with no
+warning in generated text).
+
+**A wall-clock reading, not a store row** (#586; a hand-written harness on
+FJ's own `cuda.emit` text, not behind `measure.sh`; FJ's card lock and
+free-breakfast's two cuda slots held, no other compute app on the card).
+The input was 65,536 random records, 128 threads per block, and the best
+of 6 launches after one warm-up. Unrolled / low-stack:
+
+| class | `DQ` | `JAB` |
+|---|---|---|
+| (sf) | 0.125 / 0.148 ms (1.19×) | 0.096 / 0.263 ms (2.73×) |
+| (pf) | 0.366 / 0.560 ms (1.53×) | 0.323 / 1.163 ms (3.61×) |
+| (df) | 1.086 / 1.473 ms (1.36×) | 1.014 / 2.408 ms (2.38×) |
+| (ff) | 4.519–4.558 / 3.046–3.268 ms (0.67–0.72×) | 4.347–4.371 / 5.581–5.633 ms (1.28×) |
+
+`D` was bit-identical between the forms on the card; `J` agreed to
+≤ 7.9e-16 of `max|J|` (fp64 atomics). So at (ff) `DQ` is faster and `JAB`
+about 1.3× slower; the mixed f classes are slower in both, `JAB` most
+(the clipped Hermite-order loops cost more than the unrolled sum they
+replace). So the rule is `l₁ + l₂ ≥ 6`: (ff) takes the low-stack form,
+where `DQ` is faster and `JAB`'s 1.28× is the price of fitting, and the
+mixed f classes, which already fit, stay on the faster unrolled text.
 
 ### What stays host-side, and the one round-trip
 
