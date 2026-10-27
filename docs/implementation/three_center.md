@@ -365,13 +365,99 @@ is 58,818 B, far under the 512 KiB hook, so there is **no digests file**;
 `test_emit_eri3.py` asserts both. `--eri3-l 5` is written, not refused
 (`slow`), and never compiled or launched.
 
+## The low-stack form, and the ladder through aux i (#606)
+
+The kernel above holds `Ebra[nA nB][n_t(la+lb)]`, `Eket[nP][n_t(lP)]` and
+`nA nB nP` accumulators per thread, and nvcc keeps the blocks whole.
+FreeBreakfast measured `sm_86` frames of 13,856 B at (dd|g), 32,040 B at
+(df|g) and 70,232 B at (ff|g), against `E` blocks of 14,280, 28,680 and
+69,000 B. At (ff|g) and full residency that is ~7.3 GB of a 10 GB RTX 3080,
+held for the context's lifetime. Unclamped aCD aux sets reach i (`l = 6`),
+which makes it worse: (ff|i) has 2,800 accumulators. So `build_eri3_kernel`
+has a **low-stack form** (`kernel_eri3.py`'s docstring, "THE LOW-STACK
+FORM"), the default wherever `eri3_lowstack(cls)`:
+
+- the same name, parameters, launch and `[m][n][P]` output;
+- per-axis `E` tables for the bra (`e_fragment.axis_tables_fragment`) and
+  the aux record (`center_tables_fragment`, new);
+- the tower's live `[r]^(0)` stored into a local `R` as each one forms
+  (`recurrence.store_targets`);
+- per aux row, `U[t] = Σ_τ R[t+τ] E^q_τ`, then every bra row's
+  `Σ_t E^{ab}_t U[t]`, all as loops (`rolled_center_sum`,
+  `rolled_e_sum`);
+- the result accumulated **in place** in the cell's own `eri3` slots, which
+  it zeroes first, then mirrored by a plain copy. No atomics: each element
+  belongs to one cell.
+
+The rule is `L ≥ 10` or `E` blocks larger than (dd|g)'s (1,785 doubles). On
+`la ≤ lb ≤ 3`, `lP ≤ 6` that is 24 of 70 classes: every (df|·) and (ff|·),
+every aux-i row, and (pf|h) and (dd|h). Nothing at `L ≤ 4` is gated, so the
+22 goldens are unchanged. The metric has the same form and rule
+(`metric.md`).
+
+**From the text**, every gated class declares at most 8,800 B of local
+arrays and at most 128 KiB of source (`slow`, `test_kernel_df_lowstack.py`).
+
+**Compiled once, by hand**, with no `measured_store` row. Each unit was
+compiled alone under the tier's flags: nvcc 13.0 `-O3 -lineinfo
+-Xcompiler -Wall -arch=sm_86 -Xptxas -v -c`, and hipcc / ROCm 7.2.4
+`-O3 -g1 -Wall -Wextra --offload-arch=gfx1200
+-Rpass-analysis=kernel-resource-usage -c`. All 32 low-stack units and six
+unrolled neighbours compiled on both, with no warning in generated text,
+in 26 s for all 76 compiles together.
+
+| unit | text | `sm_86` | `gfx1200` |
+|---|---|---|---|
+| `eri3_224` (dd\|g), unrolled, stays | 14,352 B arrays, 405 KB | 255 regs, 15,992 B stack, 27,276 B spill stores, 15.4 s | 192 VGPRs, 5,092 spilled, 10,516 B scratch |
+| `eri3_234` (df\|g) | 4,616 B, 66 KB | 255 regs, 4,608 B stack, 56 B spill stores, 2.1 s | 180 VGPRs, no spill, 4,560 B scratch |
+| `eri3_334` (ff\|g) | 6,336 B, 87 KB | 255 regs, 6,320 B stack, 56 B spill stores, 2.2 s | 192 VGPRs, 11 spilled, 6,320 B scratch |
+| `eri3_336` (ff\|i) | 8,280 B, 124 KB | 255 regs, 8,256 B stack, 68 B spill stores, 2.5 s | 192 VGPRs, 93 spilled, 8,512 B scratch |
+
+Across the 32 low-stack units on `sm_86`:
+
+- the stack is at most 8,256 B, with at most 68 B of spill stores;
+- each unit compiles in at most 2.6 s, against #606's 275 s for (ff|g)
+  unrolled.
+
+The unrolled classes the rule keeps spill heavily:
+
+| unit | `sm_86` stack | spill stores |
+|---|---|---|
+| (dd\|g) | 15,992 B | 27,276 B |
+| (pf\|g) | 13,928 B | 22,540 B |
+| (pd\|h) | 10,208 B | 17,884 B |
+| (g\|h) | 4,944 B | 10,300 B |
+
+(dd|g) is over #606's ~14 KB under these flags; FreeBreakfast measured
+13,856 B after device link. So the `E_DOUBLES_MAX` arm may be too loose.
+Whether to move it is for the measurement to decide.
+
+**Interpreted** (`test/test_kernel_df_lowstack.py`):
+
+- every L ≤ 4 class with the form forced, against the host within
+  16 eps of the tower-twin scale and within `1e-14` of the unrolled kernel;
+- by default (`slow`) on f AO shells against h and i aux shells:
+  (ff|s), (df|p), (ss|i), (sp|i), (pp|i), (df|i), (ff|h) and (ff|i). Worst
+  1.54 eps of the scale against the host, and 5.7e-16 of the class's max
+  against the unrolled kernel. (ff|i) itself is 0.75 eps and 7.0e-17.
+
+Only (ss|s) is bitwise. The rest differ by association.
+
+Not done here:
+
+- **No card run and no `measured_store` row.** Stored registers, spills,
+  compile time and wall-clock, before and after, are #606's open
+  measurement.
+- **No libcint check above L = 4.** No tracked fixture has an h or i aux
+  shell, and PySCF was not available to make one.
+
 ## What is not done
 
 - **The RX 9060 XT run** (#431).
-- **Above `L = 4`.** No correctness test covers `L > 4`. The builder and
-  the emitter accept any `L`. The tests build `(pd|d)` at `L = 5` and emit
-  `--eri3-l 5` (both `slow`); neither is interpreted, compiled or
-  launched. The fixture's (sp|g), (pp|f) and (pp|g) are not launched.
+- **Above `L = 4` against libcint.** No libcint fixture covers `L > 4`. The
+  low-stack section above lists the interpreted host checks past it. The
+  builder and the emitter accept any `L`. The fixture's (sp|g), (pp|f) and
+  (pp|g) are not launched.
 - **Spherical aux functions.** Only Cartesian aux functions are handled.
 - **DF-J and DF-K themselves**, and anything that factors or inverts the
   metric `(P|Q)`.
@@ -380,9 +466,9 @@ is 58,818 B, far under the 512 KiB hook, so there is **no digests file**;
 - **Measurement.** Nothing about `(mn|P)` is measured: no `data/measured/`
   row, no registers, spills, wall-clock or counters.
 - **A score.** Nothing is scored, because no published board exists.
-- **A batched or blocked kernel for the high classes that spill.** One
-  thread holds `nA × nB × nP` accumulators (540 at `(dd|g)`); splitting the
-  accumulators or the Hermite targets is unbuilt, as is a lever.
+- **A batched kernel or a lever.** The high classes take the low-stack form
+  (#606, above) instead. Splitting the Hermite targets across kernels is
+  unbuilt.
 - **An HGP twin.** `(mn|P)` on the HGP VRR and bra HRR (`heri3_*`,
   `Target.ERI3` on `Engine.HGP`), the same parameters and output, is built
   for s and p shells and checked interpreted: `hgp_df.md`.

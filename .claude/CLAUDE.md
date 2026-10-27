@@ -542,7 +542,33 @@ the RX 9060 XT**: kfd did not enumerate the card (`gfx_target_version` 0),
 so on `gfx1200` it is compiled only, and by the user's decision that run is
 attached to #431. Nothing about it is measured or scored (no published
 board; a `StructuralLimit`, #447); no screen (`(mn|P)` has no Schwarz bound
-yet), nothing above L = 4, Cartesian only.
+yet), nothing above L = 4 against libcint, Cartesian only.
+**Both DF kernels have a low-stack form, for the aux ladder through i**
+(#606; `three_center.md` / `metric.md`, "The low-stack form"):
+`build_eri3_kernel(cls)` / `build_metric_kernel(cls)` pick it when
+`eri3_lowstack` / `metric_lowstack` (`L >= 10`, or the unrolled `E`
+blocks over (dd|g)'s `E_DOUBLES_MAX = 1785` doubles: on `la <= lb <= 3`,
+`lP <= 6` 24 eri3 classes, every (df|.), (ff|.) and aux-i row; on
+`lP <= lQ <= 6` 8 metric classes, every i row and (h|h); none at
+`L <= 4`, so every golden is unchanged), and `lowstack=` forces either.
+The name, parameters, launch and output are the same. It has per-axis
+`E` tables for both sides (`e_fragment.center_tables_fragment`, new), the
+tower's `[r]^(0)` stored into a local `R` as each forms
+(`recurrence.store_targets`), the contraction as loops through `U[t]` of
+one aux row, and the elements accumulated in place in the thread's own
+output slots (zeroed first, mirrored last, still no atomics). Compiled
+once by hand under the tier's flags, with no stored row. All 32
+low-stack units built on both compilers with no warning in generated
+text. On `sm_86`, (ff|i) is 255 registers and 8,256 B of stack with 68 B
+of spill stores, in 2.5 s, against (ff|g)'s measured 70,232 B unrolled
+and 275 s. Every low-stack unit is at most 8.3 KB of stack, on `sm_86`
+or as `gfx1200` scratch. The unrolled (dd|g) that the rule keeps is
+15,992 B, so its `E_DOUBLES_MAX` arm may be too loose. Interpreted
+(`test_kernel_df_lowstack.py`) against the host within 16 eps of the
+tower twin and within 1e-14 of the unrolled kernel, through (ff|i) and
+(i|i) by default (`slow`). **Not run on a card, not measured, and not
+checked against libcint above L = 4** (no fixture has an h or i aux
+shell).
 **Both DF targets also have an HGP twin, for s and p shells, interpreted
 only** (`docs/implementation/hgp_df.md` is the one place with the detail):
 `eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)
