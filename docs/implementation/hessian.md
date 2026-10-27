@@ -1,8 +1,9 @@
-# Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, and `S`, `T`, `V`
+# Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, and the DF metric `(P|Q)`
 
 The Coulomb energy's Hessian is this note's first part; the one-electron
-Hessians of `S`, `T` and `V`, built after it, are the last section ("The
-one-electron Hessians"), with their own status line.
+Hessians of `S`, `T` and `V`, built after it, are the next-to-last section
+("The one-electron Hessians"), and the DF metric's the last ("The DF
+metric Hessian"), each with its own status line.
 
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
@@ -434,3 +435,86 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
   reaches (`t > i + j`, the doubly raised corner); packing them is a
   follow-up. `S` and `T` stay unrolled (`d2t_33` is 456 KB).
 - No screening, Cartesian only.
+
+## The DF metric Hessian (`(P|Q)`)
+
+**Status: implemented host-side and as a generated kernel, interpreted
+only.** Not compiled by nvcc or hipcc (none in the session that built
+it; all 9 units passed clang 18's CUDA front end, device side, `-Wall
+-Wextra`, a proxy), no device test, not run on a card, nothing measured.
+Nothing scored: no published board, no claim added.
+
+### The key
+
+`Target.METRIC` joins `spec.HESSIAN_TARGETS` (MMD only: `metric.hgp` at
+d2 is refused, as is `ERI3`). `am` is the aux pair `(lP, lQ)`, so
+``coulomb/d2/(1,2)/b1/metric/literal`` differs from its d0 and d1 keys in
+the `d` segment alone; every d0 and d1 key is byte-identical.
+
+### What is computed
+
+`H[A, k, B, l] += SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}` for any
+`n_aux x n_aux` matrix `W`. A DF-J energy Hessian's metric term passes
+`W = -1/2 d d^T` (the gradient's `W`, `gradient/host_df.py`), skeleton
+only: `d`'s response, the three-center `(mn|P)` Hessian and the assembled
+DF-J Hessian are not built.
+
+### The rule: the Hermite shift twice
+
+A single-center `E^a_t` does not depend on its centre, so moving `P`
+moves only its Hermite Gaussians, and `[r]^(0)` reads `A - B`:
+
+    d2(P|Q)/dA_k dA_l = SUM_t E^P_t SUM_tau (-1)^{|tau|} [t + tau + 1_k + 1_l]^(0) E^Q_tau =: h_kl
+    d2(P|Q)/dA_k dB_l = -h_kl,      d2(P|Q)/dB_k dB_l = +h_kl
+
+`kernel_gmetric`'s contraction with the tower read two indices up: no
+raised `E`, and `h` symmetric, so six contractions per pair. It is exact,
+not translational invariance assumed (`SUM_A H = 0` by construction).
+
+### The host reference (`hessian/host_df.py`)
+
+`metric_hessian(aux, W, nuclei, *, pq, pairs=, atoms=, absolute=)` takes
+**another route**, `host_1e`'s: each aux function differentiated as a list
+of moved Cartesians (`d_centre`, `d2_centre`), each term the ordinary
+`(u|v)` on the single-center `E` two indices above the class, `[t|tau]`
+injected. `absolute=True` is its round-off twin.
+
+### The kernel (`hessian/kernel_d2metric.py`)
+
+`build_d2metric_kernel(cls)`, `d2metric_{lP}{lQ}` (not `hmetric_`: that is
+the HGP metric's, `eri/density_fit/kernel_hgp.py`). `kernel_gmetric`'s
+mapping and parameter block, `H[n_atom, 3, n_atom, 3]` in place of `G`:
+one thread per aux shell pair, both record ranges serially, the weighted
+bra density once per bra record, the tower the plan of the `Target.J`
+quartet `(lP + 2, 0 | lQ, 0)` at `L + 2` cut to the live
+`t + tau + 1_k + 1_l` (`kernel_gmetric.live_body`), and once per pair 36
+`AtomicAdd`s (`+h` on the two same-atom blocks, `-h` on the two mixed
+ones). `H` is zeroed by the caller.
+
+### The generator
+
+`python -m felizjueves.emit --hess-metric-l [LMAX]` (4 bare, 0..4, a 2
+above) adds `d2metric_{lP}{lQ}` for every `lP <= lQ`, `lP + lQ <= LMAX`
+beside the J ladders; never in the no-flag output and not in
+`KERNEL_GEN_CMD`. The 9 goldens per backend are
+`test/golden/{cuda,hip}/d2metric_*` (largest ~36 KB).
+
+### Witnesses, and what ran where
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `hessian.host_df` | central FD (`h = 1e-4`) of `gradient.host_df.metric_gradient`, itself FD-held to the libcint-witnessed `(P|Q)` | a synthetic s/p aux basis on three centres; s/p/d and f/g bases `slow` (`test_hessian_host_df.py`) | ~2.5e-9 of `max\|H\|` (`O(h²)`), gate 1e-7 |
+| the same | `SUM_A H = 0`; `H = H^T`; split atoms folded back | the same | gates 1e-12 and 1e-13 of `max\|H\|` |
+| `kernel_d2metric`, interpreted | `hessian.host_df` per class, `W` non-symmetric | every class `lP + lQ <= 4` on `test_kernel_gmetric.py`'s aux basis (above `lP + lQ + 2 = 4` `slow`); a whole s/p aux basis (`test_kernel_d2metric.py`) | 0.17 eps of the absolute twin (`d2metric_02`), gate 16 eps |
+| the units | clang 18 CUDA front end, `-Wall -Wextra` | all 9 | no diagnostic (a proxy) |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_d2metric.py`'s `cuda` / `hip` cases | **not run** (no compiler in that session) |
+| on a card | — | — | **not run** |
+
+### What is not done
+
+- No device test and no card run; no nvcc / hipcc compile.
+- No three-center `(mn|P)` Hessian, no `d` response, no assembled DF-J
+  (or DF-K) Hessian.
+- Nothing above `lP + lQ = 4` against the host; nothing against libcint
+  directly (the chain is FD → gradient host → libcint's `(P|Q)`).
+- Nothing measured; Cartesian only.

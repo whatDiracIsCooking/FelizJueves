@@ -1,6 +1,7 @@
 """Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-the exchange energy's and the one-electron `S`, `T`, `V`, as host
-references and as generated kernels (`Spec.derivative_order = 2`).
+the exchange energy's, the one-electron `S`, `T`, `V` and the
+density-fitting metric `(P|Q)`, as host references and as generated
+kernels (`Spec.derivative_order = 2`).
 
     host.py          the Coulomb reference, pure Python, on the AO layer
     kernel_hdq.py    Target.DQ at d1: hdq_{lc}{ld}, the ket pre-contraction
@@ -12,6 +13,11 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      energy's Hessian, both terms in one kernel per K
                      class (D_ab D_cd straddles bra and ket, so there is
                      no ket derivative density to precompute)
+    host_df.py       the DF metric reference, pure Python
+    kernel_d2metric.py  Target.METRIC at d2: d2metric_{lP}{lQ},
+                     H[A, k, B, l] += SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}
+                     (the Hermite shift twice: [r] -> [r + 1_k + 1_l],
+                     the other centre's blocks by sign, no raised E)
     host_1e.py       the one-electron references, pure Python
     kernel_h1e.py    Target.S / T / V at d2: d2s_, d2t_, d2v_{la}{lb},
                      H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
@@ -21,7 +27,7 @@ references and as generated kernels (`Spec.derivative_order = 2`).
 
 The sections below are the Coulomb kernels'; the one-electron ones apply
 the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring
-is their account.
+is their account; `kernel_d2metric`'s docstring is the DF metric's.
 
 WHAT A HESSIAN KERNEL WRITES. As a gradient kernel writes a contraction and
 not the derivative integrals (`felizjueves.gradient`), a Hessian kernel
