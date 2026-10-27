@@ -195,7 +195,7 @@ layer, which is MMD machinery keyed on `total_am`, refuses an F spec
 A GRADIENT CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 1`. The
 field reserved above is the second to be widened: `DERIVATIVE_ORDERS` is
 `(0, 1)`, and order 1 is legal on `GRADIENT_TARGETS` alone -- `S`, `T`,
-`V` and `JAB`, each on MMD -- every other target refusing it
+`V`, `JAB` and `K`, each on MMD -- every other target refusing it
 (`_GRADIENT_REFUSAL`). A d1 kernel does not write the derivative integrals
 (a `[n_atom, 3, n_ao, n_ao]` tensor); it writes their CONTRACTION with a
 matrix `M`, `G[atom, k] += SUM_mn M_mn dX_mn/dR_{atom,k}`, which is what an
@@ -205,8 +205,11 @@ the integral's pair `(la, lb)`, unchanged, so
 differ in one segment and every d0 key is byte-identical. `JAB` at d1 is
 the Coulomb energy's bra derivative: it reads `J_p` of a `Target.J` class
 whose bra order is one higher (`gradient.kernel_gjab.gjab_pq_spec`), a d0
-key. `METRIC` and `ERI3` at d1 are the density-fitting terms,
-`SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
+key. `K` at d1 is the exchange energy's bra derivative, its `am` K's
+Hermite pairing `(la, lc, lb, ld)`; it runs the plan of the d0 K class with
+the bra raised by one (`gradient.kernel_gk.gk_pq_spec`), and its builder
+refuses `n_batches != 1`. `METRIC` and `ERI3` at d1 are the density-fitting
+terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 (`gradient.kernel_gmetric`, `gradient.kernel_geri3`), `am` the integral's
 pair `(lP, lQ)` and triple `(la, lb, lP)`. Unbatched, for each target's d0
 reason.
@@ -467,16 +470,16 @@ _F_BATCH_REFUSAL = (
 DERIVATIVE_ORDERS = (0, 1)
 
 # The targets whose first derivative is built (`felizjueves.gradient`):
-# `S`, `T`, `V` (its Hellmann-Feynman term included) and `JAB`, the J
-# chain's bra back-transform read as the Coulomb energy's bra derivative;
-# and the density-fitting `METRIC` and `ERI3`. Each on its native engine,
-# MMD, only.
+# `S`, `T`, `V` (its Hellmann-Feynman term included), `JAB`, the J
+# chain's bra back-transform read as the Coulomb energy's bra derivative,
+# `K`, the exchange energy's bra derivative (`gradient.kernel_gk`), and the
+# density-fitting `METRIC` and `ERI3`. Each on its native engine, MMD, only.
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
-                              Target.METRIC, Target.ERI3))
+                              Target.K, Target.METRIC, Target.ERI3))
 
 _GRADIENT_REFUSAL = (
-    "a first derivative is built for S, T, V, JAB, METRIC and ERI3 on the "
-    "MMD engine only "
+    "a first derivative is built for S, T, V, JAB, K, METRIC and ERI3 on "
+    "the MMD engine only "
     "(felizjueves.gradient); this target's gradient is a follow-up"
 )
 

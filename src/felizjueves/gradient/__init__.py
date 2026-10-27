@@ -5,6 +5,8 @@ generated kernels (`Spec.derivative_order = 1`).
     kernel_g1e.py    Target.S / T / V at d1: gs_, gt_, gv_{la}{lb}
     kernel_gjab.py   Target.JAB at d1: gjab_{la}{lb}, the Coulomb energy's
                      bra derivative from J_p one Hermite order higher
+    kernel_gk.py     Target.K at d1: gk_{la}{lc}_{lb}{ld}, the exchange
+                     energy's bra derivative, K's plan one bra order up
     host_df.py       the density-fitting references, (P|Q) and (mn|P)
     kernel_gmetric.py  Target.METRIC at d1: gmetric_{lP}{lQ}
     kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}
@@ -15,8 +17,8 @@ WHAT A GRADIENT KERNEL WRITES. Not the derivative integrals -- a
     G[A, k] += SUM_mn M_mn dX_mn / dR_{A,k}
 
 which is what every term of an SCF energy gradient is (`M = D` for `T`,
-`V` and `J`, `M = W`, the energy-weighted density, for `S`; the sign and
-the half are the caller's). The DF terms contract an aux matrix
+`V`, `J` and `K`, `M = W`, the energy-weighted density, for `S`; the sign
+and the half are the caller's). The DF terms contract an aux matrix
 (`SUM_PQ W_PQ d(P|Q)/dR`) and a three-index tensor (`SUM_mnP Gam_mnP
 d(mn|P)/dR`) the same way (`host_df`'s module docstring has DF-J's).
 The rule is McMurchie & Davidson's, the one `experimental/mmd/gradient`
@@ -32,7 +34,9 @@ Hermite order higher). `V`'s operator also moves with its nucleus,
 `d/dC_k [t]^(0)(P - C) = -[t + 1_k]^(0)` (Hellmann-Feynman); and the
 Coulomb energy's ket derivative equals its bra derivative by the
 permutational symmetry of `(ab|cd)`, so `dE_J = SUM D_ab D_cd d_bra (ab|cd)`
-needs the bra side alone.
+needs the bra side alone; so does the exchange energy's, `E_K = 1/2 SUM
+D_ab D_cd (ac|bd)`, for a symmetric `D`: `dE_K = SUM D_ab D_cd d_bra
+(ac|bd)` over every ordered quartet.
 
 NO TRANSLATIONAL INVARIANCE IS USED: the derivative on both centres of a
 pair (and on every nucleus, for `V`) is computed, so `SUM_A G[A] = 0` is a

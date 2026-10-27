@@ -177,7 +177,7 @@ def test_kernel_gen_cmd_asks_for_no_df_gradient_unit() -> None:
 def test_the_names_cannot_collide_with_any_other_ladder(tmp_path) -> None:
     assert _run(tmp_path / "a", "cuda", "--one-e-l", "3", "--mu-l",
                 "--schwarz-l", "--sx-l", "--metric-l", "--eri3-l",
-                "--grad-l", "3") == 0
+                "--grad-l", "3", "--grad-k-l") == 0
     others = _names(tmp_path / "a")
     assert not any(n.startswith(PREFIXES) for n in others)
     assert _run(tmp_path / "b", "cuda", "--L", "0", "--grad-df-l") == 0

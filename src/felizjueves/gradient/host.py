@@ -5,6 +5,7 @@
     kinetic_gradient(basis, M, nuclei)               -> G   SUM M dT/dR
     potential_gradient(basis, M, nuclei, one_centre=) -> G  SUM M dV/dR
     coulomb_gradient(basis, D, nuclei, one_centre=)  -> G   dE_J/dR
+    exchange_gradient(basis, D, nuclei, one_centre=) -> G   dE_K/dR
     nuclear_repulsion_gradient(nuclei)               -> G   dE_nuc/dR
 
 `G` is `n_atom x 3`, `G[A][k] = SUM_mn M_mn dX_mn/dR_{A,k}` (the package
@@ -52,6 +53,22 @@ on the differentiated axis, the plain `E` on the other two. Then
   diagonal), then `SUM_t HA_k,t J_t` on `A` and `HB` on `B`, with
   `M = D`. That is the whole `dE_J` (`E_J = 1/2 SUM D_ab D_cd (ab|cd)`;
   the ket derivative is the bra derivative, the package docstring).
+- `K`:  `E_K = 1/2 SUM_abcd D_ab D_cd (ac|bd)` (`K_ab = SUM_cd D_cd
+  (ac|bd)`, `eri.k_exchange.k`'s pairing: bra `(a, c)`, ket `(b, d)`).
+  Its ket derivative is its bra derivative for a SYMMETRIC `D` (rename
+  `a <-> b`, `c <-> d` in the ket term and use `D_ba = D_ab`), so
+
+      dE_K/dR = SUM over every ORDERED bra shell pair (sa, sc) and ket
+                shell pair (sb, sd), SUM_abcd D_ab D_cd d_bra (ac|bd)
+
+  per (bra record, ket record): `[r]^(0)` at `P - Q`, `theta^2 = zeta eta
+  / (zeta + eta)`, `|r| <= L + 1`; per `(b,d)` row `I[p] = SUM_q
+  (-1)^{|q|} [p+q]^(0) s_bd E^{bd}_q` over `hermite_order(lp + 1)`; per
+  `(a,c)` row and axis `k`, `SUM_p (dA_k E^{ac})_p I[p]` on `A` (and
+  `dC` on `C`) times `D_ab D_cd s_ac`. No pair weight: every ordered
+  quartet is visited once. The RHF exchange energy is `-1/2 E_K`; the
+  factor is the caller's. An asymmetric `D` is refused
+  (`ao.density.checked_density`).
 
 `atoms=` replaces `shell_atoms`: one row of `G` per shell, each row after
 the nuclei's (so `V`'s nucleus rows stay where they are). A test passes
@@ -413,6 +430,189 @@ def coulomb_gradient(basis: Basis, D: Matrix, nuclei: Sequence[Nucleus],
         _add(G, at_b, gB, s)
 
     return _one_electron(basis, D, nuclei, per_record, pairs, atoms)
+
+
+def _exchange_quartet(G: Grad, at_a: int, at_c: int, sa: Shell, sc: Shell,
+                      sb: Shell, sd: Shell, Dab, Dcd, *,
+                      one_centre: OneCentre, absolute: bool) -> None:
+    """One ordered shell quartet's `SUM D_ab D_cd d_bra (ac|bd)` into `G`
+    (module docstring, `K`). `Dab[i][j]` / `Dcd[k][l]` are the two density
+    blocks. `absolute` takes every factor in `|.|`, the derivative rule's
+    two terms both added: the round-off scale."""
+    f = abs if absolute else float
+    lp, lq = sa.l + sc.l, sb.l + sd.l
+    ps, qs = hermite_order(lp + 1), hermite_order(lq)
+    rows_ac = [(a, c) for a in cartesians(sa.l) for c in cartesians(sc.l)]
+    rows_bd = [(b, d) for b in cartesians(sb.l) for d in cartesians(sd.l)]
+    nc, nd = sc.n_cart, sd.n_cart
+    kets = []
+    for eta, Q, s_bd, _, _ in _records(sb, sd):
+        ax = _Axes(eta, Q, sb.centre, sd.centre, sb.l, sd.l)
+        kets.append((eta, Q, [
+            [s_bd * v for v in _hermite([ax.e(d, b[d], e[d])
+                                         for d in range(3)], qs)]
+            for b, e in rows_bd]))
+    for zeta, P, s_ac, alpha, gamma in _records(sa, sc):
+        ax = _Axes(zeta, P, sa.centre, sc.centre, sa.l + 1, sc.l + 1)
+        dE = []  # per (a,c) row, per side (A, C), per axis: over `ps`
+        for a, c in rows_ac:
+            e = [ax.e(d, a[d], c[d]) for d in range(3)]
+            sides = []
+            for side, two in ((0, 2.0 * alpha), (1, 2.0 * gamma)):
+                per_k = []
+                for k in range(3):
+                    if absolute:
+                        n = (a, c)[side][k]
+                        hi = [a[k], c[k]]
+                        hi[side] += 1
+                        dk = [two * abs(x) for x in ax.e(k, *hi)]
+                        if n:
+                            lo = [a[k], c[k]]
+                            lo[side] -= 1
+                            for t, x in enumerate(ax.e(k, *lo)):
+                                dk[t] += n * abs(x)
+                        fk = [[abs(x) for x in v] for v in e]
+                    else:
+                        dk = _axis_derivs(ax, k, a[k], c[k], alpha,
+                                          gamma)[side]
+                        fk = list(e)
+                    fk[k] = dk
+                    per_k.append(_hermite(fk, ps))
+                sides.append(per_k)
+            dE.append(sides)
+        gA, gC = [0.0] * 3, [0.0] * 3
+        for eta, Q, ebd in kets:
+            theta = math.sqrt(zeta * eta / (zeta + eta))
+            PQv = (P[0] - Q[0], P[1] - Q[1], P[2] - Q[2])
+            R = {r: f(one_centre(r, 0, PQv, theta))
+                 for r in hermite_order(lp + lq + 1)}
+            for rbd in range(len(rows_bd)):
+                ib, id_ = divmod(rbd, nd)
+                col = []
+                for p in ps:
+                    acc = 0.0
+                    for q, e in zip(qs, ebd[rbd], strict=True):
+                        x = R[(p[0] + q[0], p[1] + q[1], p[2] + q[2])] * f(e)
+                        acc += x if absolute or sum(q) % 2 == 0 else -x
+                    col.append(acc)
+                for rac in range(len(rows_ac)):
+                    ia, ic = divmod(rac, nc)
+                    w = f(Dab[ia][ib]) * f(Dcd[ic][id_])
+                    for side, g in ((0, gA), (1, gC)):
+                        for k in range(3):
+                            v = 0.0
+                            for x, y in zip(dE[rac][side][k], col,
+                                            strict=True):
+                                v += x * y
+                            g[k] += w * v
+        _add(G, at_a, gA, f(s_ac))
+        _add(G, at_c, gC, f(s_ac))
+
+
+Quartets = Sequence[tuple[int, int, int, int]] | None
+
+
+def exchange_gradient(basis: Basis, D: Matrix, nuclei: Sequence[Nucleus],
+                      *, one_centre: OneCentre, quartets: Quartets = None,
+                      atoms: Sequence[int] | None = None,
+                      absolute: bool = False) -> Grad:
+    """`dE_K / dR_{A,k}`, `E_K = 1/2 SUM D_ab D_cd (ac|bd)` (module
+    docstring): the bra derivative alone over every ordered shell quartet,
+    or over `quartets=` `(i, k, j, l)` -- bra `(sa, sc) = (i, k)`, ket
+    `(sb, sd) = (j, l)`, K's Hermite pairing. `D` must be symmetric.
+    `absolute=True` is the same sum with every factor in `|.|`, a
+    round-off scale. `atoms=` is `_one_electron`'s."""
+    nuc = _check_nuclei(nuclei)
+    rows = checked_density(basis, D)
+    if atoms is None:
+        atoms = shell_atoms(basis, nuc)
+        n_rows = len(nuc)
+    else:  # the caller's own rows, as `_one_electron`'s
+        atoms = tuple(atoms)
+        if len(atoms) != len(basis.shells) or min(atoms) < len(nuc):
+            raise ValueError("atoms= needs one row per shell, each after "
+                             "the nuclei's rows")
+        n_rows = max(atoms) + 1
+    sh, off = basis.shells, basis.offsets
+    n = len(sh)
+    if quartets is None:
+        quartets = [(i, k, j, m) for i in range(n) for k in range(n)
+                    for j in range(n) for m in range(n)]
+
+    def block(x: int, y: int) -> list[list[float]]:
+        return [[rows[off[x] + i][off[y] + j] for j in range(sh[y].n_cart)]
+                for i in range(sh[x].n_cart)]
+
+    G = [[0.0, 0.0, 0.0] for _ in range(n_rows)]
+    for i, k, j, m in quartets:
+        if not all(0 <= x < n for x in (i, k, j, m)):
+            raise ValueError(f"shell quartet {(i, k, j, m)} is out of range")
+        _exchange_quartet(G, atoms[i], atoms[k], sh[i], sh[k], sh[j], sh[m],
+                          block(i, j), block(k, m), one_centre=one_centre,
+                          absolute=absolute)
+    return G
+
+
+def exchange_pairs(basis: Basis, la: int, lb: int
+                   ) -> list[tuple[int, int]]:
+    """Every ORDERED shell pair `(i, j)` of class `(la, lb)`, row-major."""
+    sh = basis.shells
+    return [(i, j) for i in range(len(sh)) for j in range(len(sh))
+            if (sh[i].l, sh[j].l) == (la, lb)]
+
+
+def class_quartets(basis: Basis, am: tuple[int, int, int, int]
+                   ) -> list[tuple[int, int, int, int]]:
+    """The ordered shell quartets `(i, k, j, l)` of K class `am = (la, lc,
+    lb, ld)`: every bra pair of `exchange_pairs(la, lc)` against every ket
+    pair of `exchange_pairs(lb, ld)`."""
+    la, lc, lb, ld = am
+    return [(i, k, j, m) for i, k in exchange_pairs(basis, la, lc)
+            for j, m in exchange_pairs(basis, lb, ld)]
+
+
+def exchange_records(basis: Basis, nuclei: Sequence[Nucleus],
+                     am: tuple[int, int, int, int]) -> tuple[dict, dict]:
+    """`kernel_gk`'s per-record arrays of K class `am = (la, lc, lb, ld)`,
+    as lists: the bra side (`P`, `zeta_ac`, `XPA`, `XPC`, `s_ac`, `ea_bra`,
+    `ec_bra`, `off_a`, `off_c`, `atom_a`, `atom_c`) over every pair of
+    `exchange_pairs(la, lc)`, the ket side (`Q`, `eta`, `XQB`, `XQD`,
+    `s_bd`, `off_b`, `off_d`) over `exchange_pairs(lb, ld)`, each in
+    `primitive_pairs` order. One launch over both sides is every quartet
+    of `class_quartets(am)`."""
+    la, lc, lb, ld = am
+    atoms = shell_atoms(basis, nuclei)
+    sh, off = basis.shells, basis.offsets
+    bra: dict[str, list] = {k: [] for k in (
+        "P", "zeta_ac", "XPA", "XPC", "s_ac", "ea_bra", "ec_bra", "off_a",
+        "off_c", "atom_a", "atom_c")}
+    for i, k in exchange_pairs(basis, la, lc):
+        A, C = sh[i].centre, sh[k].centre
+        for zeta, P, s, alpha, gamma in _records(sh[i], sh[k]):
+            bra["P"].append(tuple(P))
+            bra["zeta_ac"].append(zeta)
+            bra["XPA"].append(tuple(P[d] - A[d] for d in range(3)))
+            bra["XPC"].append(tuple(P[d] - C[d] for d in range(3)))
+            bra["s_ac"].append(s)
+            bra["ea_bra"].append(alpha)
+            bra["ec_bra"].append(gamma)
+            bra["off_a"].append(off[i])
+            bra["off_c"].append(off[k])
+            bra["atom_a"].append(atoms[i])
+            bra["atom_c"].append(atoms[k])
+    ket: dict[str, list] = {k: [] for k in (
+        "Q", "eta", "XQB", "XQD", "s_bd", "off_b", "off_d")}
+    for j, m in exchange_pairs(basis, lb, ld):
+        B, Dc = sh[j].centre, sh[m].centre
+        for eta, Q, s, _, _ in _records(sh[j], sh[m]):
+            ket["Q"].append(tuple(Q))
+            ket["eta"].append(eta)
+            ket["XQB"].append(tuple(Q[d] - B[d] for d in range(3)))
+            ket["XQD"].append(tuple(Q[d] - Dc[d] for d in range(3)))
+            ket["s_bd"].append(s)
+            ket["off_b"].append(off[j])
+            ket["off_d"].append(off[m])
+    return bra, ket
 
 
 def nuclear_repulsion_gradient(nuclei: Sequence[Nucleus]) -> Grad:

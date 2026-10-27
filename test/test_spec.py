@@ -301,6 +301,17 @@ def test_order_one_is_refused_outside_the_gradient_targets(
         Spec(OPERATOR_OF[target], 1, am, target)
 
 
+def test_k_takes_order_one_in_its_hermite_pairing() -> None:
+    # The exchange gradient (gradient.kernel_gk): K's am, bra first, and the
+    # key differs from the integral's in the `d` segment alone.
+    d1 = Spec(Operator.COULOMB, 1, (2, 1, 1, 0), Target.K)
+    d0 = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.K)
+    assert Target.K in GRADIENT_TARGETS
+    assert d1.key() == d0.key().replace("/d0/", "/d1/")
+    with pytest.raises(ValueError, match="derivative order 1 on target k.hgp"):
+        Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
+
+
 def test_order_one_is_refused_on_a_non_native_engine() -> None:
     with pytest.raises(ValueError, match="derivative order 1 on target s.hgp"):
         Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.HGP)
