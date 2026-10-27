@@ -543,6 +543,23 @@ so on `gfx1200` it is compiled only, and by the user's decision that run is
 attached to #431. Nothing about it is measured or scored (no published
 board; a `StructuralLimit`, #447); no screen (`(mn|P)` has no Schwarz bound
 yet), nothing above L = 4, Cartesian only.
+**Both DF targets also have an HGP twin, for s and p shells, interpreted
+only** (`docs/implementation/hgp_df.md` is the one place with the detail):
+`eri/density_fit/kernel_hgp.py`'s `build_hmetric_kernel` (`hmetric_{lP}{lQ}`)
+and `build_heri3_kernel` (`heri3_{la}{lb}{lP}`), keyed `Target.METRIC` /
+`Target.ERI3` with `engine=Engine.HGP` (slots `metric.hgp` / `eri3.hgp`;
+`spec.py` admits HGP there beside `J` and `K`). Each is a drop-in sibling of
+its MMD kernel (same parameters, staging, thread mapping and plain mirrored
+stores; the adapters and harnesses take `engine=`): an aux Gaussian is an
+HGP pair with an exponent-0 partner, so `(P|Q)` is the VRR of `(lP 0|lQ 0)`
+alone and `(mn|P)` the VRR of `(max, min|lP 0)` then the bra HRR, the zero
+`PA` / `QC` terms not spelled. Ladders `--hgp-metric-l` / `--hgp-eri3-l`
+(LMAX per shell, 0..1 only), never in the bare default nor in
+`KERNEL_GEN_CMD`. Interpreted against the hosts (worst 3.20 eps of the tower
+twin), the MMD kernels and libcint (`test_kernel_hgp_df.py`), nine goldens
+per backend (`test_emit_hgp_df.py`); **not compiled and not run on a card**
+(`test_hgp_df_device.py` is written; that session had neither). Nothing
+measured.
 **The dipole `MU = <a| q (r - C) |b>` is generated too, and ran on both
 cards** (milestone 19, #517–#524; `one_electron.md`, "The dipole `MU`";
 nothing consumes it yet): `Target.DIPOLE` (`spec.py`, #518; `am` a pair

@@ -40,6 +40,7 @@ from conftest import Toolchain
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
+from felizjueves.eri.density_fit.kernel_hgp import build_hmetric_kernel
 from felizjueves.eri.density_fit.kernel_metric import (
     OUT,
     PARAM_OF,
@@ -48,6 +49,7 @@ from felizjueves.eri.density_fit.kernel_metric import (
 )
 from felizjueves.eri.density_fit.metric import MetricClass
 from felizjueves.ir import Intent, Kernel
+from felizjueves.spec import Engine
 
 THREADS = 32  # lanes per block, one aux shell pair per thread; not numerical
 WIDTH = {"A": 3, "alpha": 1, "s": 1}  # by MetricClass.RECORD_ARRAYS name
@@ -89,13 +91,16 @@ def _call(kern: Kernel, c: int, ns: str, cls: MetricClass) -> str:
 
 
 def metric_program(classes: Sequence[MetricClass], n_aux: int, backend: str,
-                   workdir: Path) -> Program:
+                   workdir: Path, *,
+                   engine: Engine = Engine.MMD) -> Program:
     """The `main()` building `(P|Q)` from every class in `classes`."""
     _, _, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     includes, paths, calls, kernels = [], [], [], []
     for c, cls in enumerate(classes):
-        kern = build_metric_kernel((cls.lP, cls.lQ))
+        build = (build_hmetric_kernel if engine is Engine.HGP
+                 else build_metric_kernel)
+        kern = build((cls.lP, cls.lQ))
         _check_signature(kern)
         path = _unit(kern, backend, workdir, None)
         paths.append(path)
@@ -130,10 +135,11 @@ def metric_stage(classes: Sequence[MetricClass]) -> np.ndarray:
 
 def build_on_card(classes: Sequence[MetricClass], n_aux: int, backend: str,
                   tc: Toolchain, workdir: Path,
-                  run_device_binary) -> np.ndarray:
+                  run_device_binary, *,
+                  engine: Engine = Engine.MMD) -> np.ndarray:
     """`(P|Q)` of `classes` built on the card, `[run][n_aux, n_aux]` (`RUNS`
     runs). The caller holds the card (its device fixture)."""
-    prog = metric_program(classes, n_aux, backend, workdir)
+    prog = metric_program(classes, n_aux, backend, workdir, engine=engine)
     binary = compile_checked(tc, prog, workdir / "metric_bin")
     src, dst = workdir / "metric.in", workdir / "metric.out"
     metric_stage(classes).tofile(src)

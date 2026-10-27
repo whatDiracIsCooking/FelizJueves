@@ -13,6 +13,10 @@ kernel's plain mirrored stores write every element of the launched pairs
 once, so a class subset leaves the other elements 0.0 and the caller sees
 which classes ran (`Run.ran`).
 
+`engine=Engine.HGP` runs `kernel_hgp.build_hmetric_kernel` instead (the HGP
+twin, `docs/implementation/hgp_df.md`): the same parameters, launch and
+output, so nothing else here changes.
+
 BOYS IS INJECTED (`boys=`), as the interpreter requires; nothing here imports
 `reference/`. Kernels are memoised per class (building is pure); results are
 not. Its own layering rule (test/test_layering.py, `metric_adapter`): the
@@ -28,6 +32,7 @@ from functools import cache
 import numpy as np
 
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.density_fit.kernel_hgp import build_hmetric_kernel
 from felizjueves.eri.density_fit.kernel_metric import (
     OUT,
     PARAM_OF,
@@ -37,13 +42,20 @@ from felizjueves.eri.density_fit.kernel_metric import (
 from felizjueves.eri.density_fit.metric import MetricClass, metric_classes
 from felizjueves.ir import Kernel
 from felizjueves.ir.interp import Interpreter, Launch
+from felizjueves.spec import Engine
 
 Boys = Callable[[int, float], float]
 
 
 @cache
-def metric_kernel(lP: int, lQ: int) -> Kernel:
-    """`build_metric_kernel((lP, lQ))`, built once."""
+def metric_kernel(lP: int, lQ: int, engine: Engine = Engine.MMD) -> Kernel:
+    """`build_metric_kernel((lP, lQ))`, or on `Engine.HGP`
+    `kernel_hgp.build_hmetric_kernel((lP, lQ))` (the same parameters, launch and
+    output), built once."""
+    if engine is Engine.HGP:
+        return build_hmetric_kernel((lP, lQ))
+    if engine is not Engine.MMD:
+        raise ValueError(f"engine {engine!r} is not an Engine")
     return build_metric_kernel((lP, lQ))
 
 
@@ -54,12 +66,12 @@ def _arrays(cls: MetricClass) -> dict[str, np.ndarray]:
 
 
 def launch_class(cls: MetricClass, M: np.ndarray, *, boys: Boys,
-                 threads: int = 32) -> np.ndarray:
+                 threads: int = 32, engine: Engine = Engine.MMD) -> np.ndarray:
     """One interpreted launch of `cls`'s kernel over every staged pair,
     writing into (a copy of) `M`, which is returned."""
     n = M.shape[0]
     grid, block = launch_shape(cls.n_pair, threads)
-    return Interpreter(metric_kernel(cls.lP, cls.lQ),
+    return Interpreter(metric_kernel(cls.lP, cls.lQ, engine),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=n, **{OUT: M},
         **_arrays(cls))[OUT]
@@ -75,7 +87,7 @@ class Run:
 
 def metric_matrix_kernel(aux: Basis, *, boys: Boys,
                          classes: Iterable[tuple[int, int]] | None = None,
-                         threads: int = 32) -> Run:
+                         threads: int = 32, engine: Engine = Engine.MMD) -> Run:
     """`(P|Q)` over `aux` from the interpreted kernels of `classes` (every
     class of `aux` when None); the elements of any other class are 0.0."""
     want = None if classes is None else set(classes)
@@ -83,6 +95,7 @@ def metric_matrix_kernel(aux: Basis, *, boys: Boys,
     ran = []
     for cls in metric_classes(aux):
         if want is None or (cls.lP, cls.lQ) in want:
-            M = launch_class(cls, M, boys=boys, threads=threads)
+            M = launch_class(cls, M, boys=boys, threads=threads,
+                             engine=engine)
             ran.append((cls.lP, cls.lQ))
     return Run(M, tuple(ran))

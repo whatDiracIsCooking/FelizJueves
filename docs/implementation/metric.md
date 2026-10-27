@@ -316,4 +316,7 @@ and printed `device: present` with no usable card.
   primitive with `s` and no pair factor) unchanged and inlines
   `center_fragment` beside `block_fragment`. Its status,
   tests and what it does not reach are in `three_center.md`, not here.
+- **An HGP twin.** `(P|Q)` on the HGP VRR (`hmetric_*`, `Target.METRIC` on
+  `Engine.HGP`), the same parameters and output, is built for s and p shells
+  and checked interpreted: `hgp_df.md`.
 - **A batched metric kernel, a metric lever, and derivatives.**
