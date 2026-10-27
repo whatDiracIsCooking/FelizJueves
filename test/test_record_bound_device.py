@@ -10,7 +10,8 @@ held to `eri.k_exchange.k.record_bounds` through `reference.pq` at that file's `
 of the bound, a host zero an exact zero. The device `sqrt` and `exp` are
 compiled without fast math (devtools/config.sh), so the card and the
 interpreter should agree to the same few ulps. Classes with `la + lb` above
-`tiers.FAST_L_MAX` are `slow`.
+`tiers.FAST_L_MAX` are `slow`, and so is every record of CO/cc-pVTZ, whose
+f classes run the low-stack form (#586, stage 3), the default from f up.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from test_kernel_device import PORTABLE, _toolchain
 from test_kernel_record_bound import (
     CLASS_GRID,
     EPS,
+    F_MOLECULES,
     MOLECULES,
     REL_TOL,
     molecule,
@@ -155,5 +157,29 @@ def test_cuda_record_bound_on_a_molecule(name, request, compile_device_source,
 @pytest.mark.parametrize("name", MOLECULES)
 def test_hip_record_bound_on_a_molecule(name, request, compile_device_source,
                                         run_device_binary, tmp_path) -> None:
+    _molecule("hip", name, request, compile_device_source, run_device_binary,
+              tmp_path)
+
+
+@pytest.mark.slow
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("name", F_MOLECULES)
+def test_cuda_record_bound_on_an_f_molecule(name, request,
+                                            compile_device_source,
+                                            run_device_binary,
+                                            tmp_path) -> None:
+    _molecule("cuda", name, request, compile_device_source, run_device_binary,
+              tmp_path)
+
+
+@pytest.mark.slow
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("name", F_MOLECULES)
+def test_hip_record_bound_on_an_f_molecule(name, request,
+                                           compile_device_source,
+                                           run_device_binary,
+                                           tmp_path) -> None:
     _molecule("hip", name, request, compile_device_source, run_device_binary,
               tmp_path)
