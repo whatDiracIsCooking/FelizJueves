@@ -183,15 +183,30 @@ in every family: `V`'s reused prelude declares a local `s = −2θ²`, and in
   for each one runs `PQ = P − C`, `fundamental_prelude`, `recurrence_body`,
   then `u_r = Σ_t E[r,t] [t]^(0)` over the reachable columns and
   `acc_r −= Z_C u_r`. Finally it forms `v_r = s_ab · acc_r`. That is the
-  form **through d**. **From f up** (any shell `l ≥ 3`) the default is the
-  low-stack form below.
+  default form at every class but **(ff)** (`la + lb ≥ 6`), where the
+  default is the low-stack form below.
 
-**`V`'s low-stack form, the default at f** (#586, stage 1).
-`build_v_kernel(cls)` picks the form by `kernel_v.v_lowstack(cls)`: true
-when `max(la, lb) ≥ LOWSTACK_MIN_L = 3`. `lowstack=True` / `False` forces
-either form at any class. Through d the text is the unrolled kernel's, byte
-for byte. `test_kernel_v.py` pins the cuda and hip text of all nine
-classes through (dd) by sha256 from cc5d16f. Both forms have the same name
+**`V`'s low-stack form, the default at (ff)** (#586, stage 1; the rule
+narrowed after it). `build_v_kernel(cls)` picks the form by
+`kernel_v.v_lowstack(cls)`: true when `la + lb ≥ LOWSTACK_MIN_LSUM = 6`,
+which through f is (ff) alone. `lowstack=True` / `False` forces either form
+at any class. At every other class the text is the unrolled kernel's, byte
+for byte. `test_kernel_v.py` pins the cuda and hip text of all fifteen
+classes below `la + lb = 6` (through (dd), and `v_03`, `v_13`, `v_23` and
+their mirrors) by sha256 from cc5d16f.
+
+**Why `la + lb ≥ 6`.** A slower form ships only where the faster one does
+not fit. Stage 1 first made every class with an f shell low-stack, but its
+own timing (below) has the low-stack form slower at the mixed f classes,
+up to about 1.25× at (df), and only the (ff) unrolled frame blows the
+8 KB budget (85 KB, against 6 KB at (df)). The rule is the class's Hermite
+order `L = la + lb`, which fixes the recurrence and the block's width
+(`hermite_targets(L)` columns); its rows, `n_cart(la) · n_cart(lb)`, are
+largest at the most even split. So at every `L ≤ 5` no class has a larger
+block than (df)'s 60 × 56, the measured 6 KB frame, and past f (gs) and
+(gp) stay unrolled. At `L ≥ 6` the rule picks the low-stack form, measured
+at (ff) only. A lopsided class such as (is) (28 × 84) might fit unrolled,
+but nothing past f is generated, and the rule errs to the smaller frame. Both forms have the same name
 `v_{la}{lb}`, the same parameters in the same order, the same
 one-thread-per-record launch and the same `V` contract (the caller zeroes
 `V`, the kernel only `AtomicAdd`s). So a launcher needs no change, and
@@ -382,7 +397,7 @@ PRs #297 and #298 (nvcc `-Xptxas -v` in bytes; hipcc
   `gfx1200` spills 36 VGPRs for `S` and 182 for `T`, and `sm_86` spills
   80 B for `T`.
 - **`V` spills from `la + lb = 3` on both cards** in the unrolled form,
-  which is now the form through d only. At (ff) it was a frame of about
+  which is the default everywhere but (ff). At (ff) it was a frame of about
   85 KB on `sm_86`, `E[100][84]` and spills. Because CUDA reserves the
   per-thread stack for every resident thread (104,448 on the RTX 3080),
   the VRAM probe asked for about 8.5 GB of the 10 GB card. It passed alone
@@ -397,17 +412,23 @@ PRs #297 and #298 (nvcc `-Xptxas -v` in bytes; hipcc
 
   | unit | form | source | sm_86 stack | spill st | regs | nvcc | gfx1200 scratch | VGPRs |
   |---|---|---|---|---|---|---|---|---|
-  | `v_03` | unrolled (cc5d16f) | 14,756 B | 0 B | 0 B | 218 | 0.3 s | 36 B | 192 |
+  | `v_03` | unrolled (cc5d16f), **default** | 14,756 B | 0 B | 0 B | 218 | 0.3 s | 36 B | 192 |
   | `v_03` | low-stack | 12,060 B | 0 B | 0 B | 164 | 0.3 s | 0 B | 154 |
-  | `v_13` | unrolled | 42,960 B | 1,872 B | 2,068 B | 255 | 0.5 s | 1,860 B | 192 |
+  | `v_13` | unrolled, **default** | 42,960 B | 1,872 B | 2,068 B | 255 | 0.5 s | 1,860 B | 192 |
   | `v_13` | low-stack | 18,455 B | 1,488 B | 0 B | 128 | 0.4 s | 1,488 B | 96 |
-  | `v_23` | unrolled | 103,924 B | 6,192 B | 7,820 B | 255 | 1.5 s | 6,380 B | 192 |
+  | `v_23` | unrolled, **default** | 103,924 B | 6,192 B | 7,820 B | 255 | 1.5 s | 6,380 B | 192 |
   | `v_23` | low-stack | 27,484 B | 2,656 B | 0 B | 168 | 0.5 s | 2,672 B | 174 |
   | `v_33` | unrolled | 224,889 B | 85,472 B | 24,008 B | 255 | 9.0 s | 14,756 B | 192 |
-  | `v_33` | low-stack | 40,213 B | **4,160 B** | 0 B | 254 | 0.5 s | 4,208 B | 192 |
+  | `v_33` | low-stack, **default** | 40,213 B | **4,160 B** | 0 B | 254 | 0.5 s | 4,208 B | 192 |
 
   The issue's 85,312 B for `potential_en<3,3>` was read through
-  free-breakfast's build; FJ's spelling gives 85,376–85,472 B. At (ff)
+  free-breakfast's build; FJ's spelling gives 85,376–85,472 B. FJ's own
+  `emit.cuda` text compiled with `nvcc -O3 -arch=sm_86 -rdc=true -Xptxas
+  -v -c` (CUDA 13.0) reads the unrolled `v_03` / `v_13` / `v_23` /
+  `v_33` at 0 B / 1,904 B (2,064 B of spill stores) / 6,192 B (7,920 B) /
+  85,312 B of stack, and the low-stack ones at 0 / 1,488 / 2,656 /
+  4,160 B. Only `v_33` is over the 8 KB budget, so it alone is low-stack
+  by default. At (ff)
   the low-stack frame is exactly the five local arrays (3 × 112 + 100 +
   84 doubles) and spills nothing. On the RTX 3080, the CO/cc-pVTZ and
   HF/cc-pVTZ (ff) probes now ask for 415 MiB (4,160 B × 104,448). The
@@ -420,9 +441,10 @@ PRs #297 and #298 (nvcc `-Xptxas -v` in bytes; hipcc
   `v_23` 5.82 / 7.27–7.31 ms and `v_33` 17.97 / 16.54–16.63 ms (unrolled
   / low-stack). So `(ff)` is about 0.92× the unrolled time, and the
   mixed f classes cost up to about 1.25× (`(df)`). They agree to
-  `≤ 1e-15` of `max|V|`. The rule stays "every class with an f shell",
-  for one simple selection: `V` is built once per geometry, and those
-  milliseconds are not on any path that matters.
+  `≤ 1e-15` of `max|V|`. Stage 1 kept "every class with an f shell" for
+  one simple selection; the rule was then narrowed to `la + lb ≥ 6`,
+  (ff) alone, because the repo ships a slower path only where it is
+  needed, and `v_03`, `v_13`, `v_23` fit unrolled.
 The test plan's `kernel-tier` / `high-L` markers are not registered in
 `pyproject.toml`. The deferred cells use the registered `slow` marker,
 which keeps them off the pre-push gate.
