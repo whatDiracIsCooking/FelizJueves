@@ -74,8 +74,10 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # same lever can mean nothing there: an MMD J lever acts on the [p|q] tower,
 # which an HGP J kernel never runs. So legality is per SLOT, and every
 # legality table covers these too. Only the off-native pairings `spec`
-# admits are slots (HGP J and HGP K; a test pins this to `spec`).
-ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp")
+# admits are slots (HGP J and HGP K, and the HGP one-electron S, T, V and
+# dipole of `one_electron.kernel_hgp`; a test pins this to `spec`).
+ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
+                                 "dipole.hgp")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -177,6 +179,13 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "fragments, and the F levers on the fused digestion; an HGP K kernel "
         "runs neither"
     ),
+    **{f"{slot}.hgp": (
+        f"the HGP {what} kernel (one_electron.kernel_hgp) has no option "
+        "surface: one thread per contracted shell pair, a VRR per primitive "
+        "pair and an HRR on contracted values, one batch, and a lever on it "
+        "is a follow-up nobody has declared"
+    ) for slot, what in (("s", "S"), ("t", "T"), ("v", "V"),
+                         ("dipole", "dipole"))},
 })
 
 

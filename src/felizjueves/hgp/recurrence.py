@@ -248,10 +248,13 @@ def vrr_body(dag: vrr.VrrDag, fundamental: Fundamental) -> tuple[Stmt, ...]:
     return tuple(body)
 
 
-def hrr_reduction(dag: hrr.HrrDag, node: hrr.Node) -> Weighted:
+def hrr_reduction(dag: hrr.HrrDag, node: hrr.Node, *,
+                  name: Callable[[hrr.Node], str] = hrr_name) -> Weighted:
     """`(ab|cd) = transferred + AB_k|CD_k * lowered`, read off the DAG and
     checked: the transfer moves one unit on axis `k` from `b` to `a` (or `d`
-    to `c`), the lowered term drops it from `b` (`d`)."""
+    to `c`), the lowered term drops it from `b` (`d`). `name` spells each
+    node's local: `hrr_name` by default, a per-table prefix where one kernel
+    runs several HRRs (`one_electron.kernel_hgp`'s `T`)."""
     ts = dag.terms[node]
     if len(ts) != 2 or ts[0].coef != "1":
         raise ValueError(f"{node}: terms {ts} are not eq 28's two")
@@ -271,18 +274,20 @@ def hrr_reduction(dag: hrr.HrrDag, node: hrr.Node) -> Weighted:
             ok = mv == n and lw == n
         if not ok:
             raise ValueError(f"{node}: terms {ts} are not eq 28 on axis {k}")
-    return Weighted((Term(1, Factor.ONE, Var(hrr_name(moved))),
-                     Term(1, HRR_FACTOR[coef], Var(hrr_name(lowered)))))
+    return Weighted((Term(1, Factor.ONE, Var(name(moved))),
+                     Term(1, HRR_FACTOR[coef], Var(name(lowered)))))
 
 
-def hrr_body(dag: hrr.HrrDag, boundary: Boundary) -> tuple[Stmt, ...]:
+def hrr_body(dag: hrr.HrrDag, boundary: Boundary, *,
+             name: Callable[[hrr.Node], str] = hrr_name) -> tuple[Stmt, ...]:
     """One `Decl` per node of `dag`, in `dag.order`: a boundary node
-    `(e,0|f,0)` is `boundary(e, f)`, every other node its `hrr_reduction`."""
+    `(e,0|f,0)` is `boundary(e, f)`, every other node its `hrr_reduction`.
+    `name` is `hrr_reduction`'s."""
     body: list[Stmt] = [Note("[Fock] eq 28, the HGP HRR on contracted values")]
     for node in dag.order:
         value = (boundary(node[0], node[2]) if hrr.is_boundary(node)
-                 else hrr_reduction(dag, node))
-        body.append(Decl(hrr_name(node), Scalar.F64, init=value))
+                 else hrr_reduction(dag, node, name=name))
+        body.append(Decl(name(node), Scalar.F64, init=value))
     return tuple(body)
 
 

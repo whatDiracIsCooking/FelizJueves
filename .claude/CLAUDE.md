@@ -577,6 +577,21 @@ the RX 9060 XT, the slow cc-pVDZ case 5 passed on each; worst 8.62e-16 of
 `max|r|` against libcint and 3.16e-16 against `dip_moment`, the same on
 both cards). Nothing about it is measured or scored (no published board; a
 `StructuralLimit`, #524); `e = 1` only, Cartesian only.
+**`S`, `T`, `V` and the dipole are also built on the HGP engine, s and p
+only, interpreted only** (`one_electron.md`, "The HGP route"):
+`Target.S` / `T` / `V` / `DIPOLE` with `engine=Engine.HGP` (slots `s.hgp`,
+`t.hgp`, `v.hgp`, `dipole.hgp`; `SX` stays refused), built by
+`one_electron/kernel_hgp.py` (`hs_`, `ht_`, `hv_`, `hmu_{la}{lb}`, `l <= 1`,
+refused above): one thread per contracted shell pair, `hgp.vrr`'s eq 25 at
+`f = 0` per primitive pair (its point-charge limit for `V`), the contraction,
+then `hgp.hrr`'s eq 28 on contracted values, plain stores, no atomics.
+Staged by `OneEClass.hgp_arrays`; `python -m felizjueves.emit --hgp-one-e-l
+[LMAX]` (1 bare, 0..1 only), never in the bare default nor `KERNEL_GEN_CMD`.
+Witnessed interpreted (`test_kernel_hgp.py`) against the MMD host and
+libcint's `int1e_ovlp` / `kin` / `nuc` / `r_cart` on H₂O/STO-3G and 6-31G;
+goldens in `test_emit_hgp_one_e.py`. **Not compiled and not run on either
+card yet** (its compile cases were never run: no device compiler in the
+session that built it), nothing measured.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence
