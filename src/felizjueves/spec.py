@@ -210,6 +210,15 @@ Hermite pairing `(la, lc, lb, ld)`; it runs the plan of the d0 K class with
 the bra raised by one (`gradient.kernel_gk.gk_pq_spec`), and its builder
 refuses `n_batches != 1`. Unbatched, for each target's d0 reason.
 
+A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`. The
+field's third value: order 2 is legal on `HESSIAN_TARGETS` alone -- `S`,
+`T` and `V`, each on MMD -- every other target refusing it
+(`_HESSIAN_REFUSAL`). As at d1, a d2 kernel writes the CONTRACTION
+`H[A, k, B, l] += SUM_mn M_mn d2X_mn/dR_{A,k} dR_{B,l}`
+(`felizjueves.hessian`'s package docstring), `am` the integral's pair, so
+``overlap/d2/(2,1)/b1/s/literal`` differs from the d0 and d1 keys in one
+segment and every existing key is byte-identical.
+
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
 total angular momentum, L = l1 + l2 + l3 + l4 (the [p|q] class has
@@ -462,8 +471,9 @@ _F_BATCH_REFUSAL = (
 
 # The geometric derivative order (module docstring, "A GRADIENT CLASS"):
 # 0, the integral itself, everywhere; 1, the nuclear gradient contracted
-# with a matrix, on the targets in `GRADIENT_TARGETS` only.
-DERIVATIVE_ORDERS = (0, 1)
+# with a matrix, on the targets in `GRADIENT_TARGETS` only; 2, the nuclear
+# hessian contracted with a matrix, on `HESSIAN_TARGETS` only.
+DERIVATIVE_ORDERS = (0, 1, 2)
 
 # The targets whose first derivative is built (`felizjueves.gradient`):
 # `S`, `T`, `V` (its Hellmann-Feynman term included), `JAB`, the J
@@ -476,6 +486,16 @@ GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB and K on the MMD engine only "
     "(felizjueves.gradient); this target's gradient is a follow-up"
+)
+
+# The targets whose second derivative is built (`felizjueves.hessian`): the
+# one-electron `S`, `T` and `V` (its operator's centre-nucleus and
+# nucleus-nucleus terms included), on MMD only.
+HESSIAN_TARGETS = frozenset((Target.S, Target.T, Target.V))
+
+_HESSIAN_REFUSAL = (
+    "a second derivative is built for S, T and V on the MMD engine only "
+    "(felizjueves.hessian); this target's hessian is a follow-up"
 )
 
 
@@ -534,7 +554,14 @@ class Spec:
                 f"derivative order {self.derivative_order!r} not in "
                 f"{DERIVATIVE_ORDERS}"
             )
-        if self.derivative_order and (
+        if self.derivative_order == 2 and (
+            self.target not in HESSIAN_TARGETS
+            or self.engine is not NATIVE_ENGINE[self.target]
+        ):
+            raise ValueError(
+                f"derivative order 2 on target {self.target_slot}: "
+                f"{_HESSIAN_REFUSAL}")
+        if self.derivative_order == 1 and (
             self.target not in GRADIENT_TARGETS
             or self.engine is not NATIVE_ENGINE[self.target]
         ):

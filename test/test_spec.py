@@ -13,6 +13,7 @@ from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,
     GRADIENT_TARGETS,
+    HESSIAN_TARGETS,
     OPERATOR_OF,
     Engine,
     Operator,
@@ -279,17 +280,34 @@ def test_a_one_electron_target_takes_a_pair(target: Target) -> None:
 
 
 @pytest.mark.parametrize("target", list(ONE_ELECTRON))
-def test_a_one_electron_target_takes_order_one_and_no_higher(
+def test_a_one_electron_target_takes_orders_one_and_two_and_no_higher(
         target: Target) -> None:
-    # The gradient (felizjueves.gradient): order 1 is legal, its key differs
-    # from the integral's in the `d` segment alone, and order 2 is refused.
-    d1 = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
-               derivative_order=1)
+    # The gradient (felizjueves.gradient) and the hessian
+    # (felizjueves.hessian): orders 1 and 2 are legal, each key differs
+    # from the integral's in the `d` segment alone, and order 3 is refused.
     d0 = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1))
-    assert d1.key() == d0.key().replace("/d0/", "/d1/")
+    for order in (1, 2):
+        dn = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
+                   derivative_order=order)
+        assert dn.key() == d0.key().replace("/d0/", f"/d{order}/")
     with pytest.raises(ValueError, match="derivative order"):
         _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
-              derivative_order=2)
+              derivative_order=3)
+
+
+@pytest.mark.parametrize("target", [t for t in Target
+                                    if t not in HESSIAN_TARGETS])
+def test_order_two_is_refused_outside_the_hessian_targets(
+        target: Target) -> None:
+    am = (1,) * AM_LENGTH[target]
+    with pytest.raises(ValueError, match="derivative order 2 on target"):
+        Spec(OPERATOR_OF[target], 2, am, target)
+
+
+def test_order_two_is_refused_on_a_non_native_engine() -> None:
+    assert HESSIAN_TARGETS == {Target.S, Target.T, Target.V}
+    with pytest.raises(ValueError, match="derivative order 2 on target v.hgp"):
+        Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.HGP)
 
 
 @pytest.mark.parametrize("target", [t for t in Target

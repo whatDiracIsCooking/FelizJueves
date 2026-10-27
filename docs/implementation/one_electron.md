@@ -7,8 +7,8 @@ kinetic energy `T_ab = <a|-½∇²|b>`, the nuclear attraction
 to. It is the contract the three kernels were built against, and the one
 place that says what is generated, what is reused from the `J` engine, and
 where it ran. **Energy order only here:** the d1 keys of `S`, `T` and
-`V`, their contracted nuclear gradients, are `gradient.md`'s; Hessians are
-out of scope.
+`V`, their contracted nuclear gradients, are `gradient.md`'s; their contracted hessians
+(d2) are `hessian.md`'s.
 
 **Nothing here is scored against a published table.** `[JEngine]`
 (`docs/references.md` entry 35) is about `J` only. It prints no

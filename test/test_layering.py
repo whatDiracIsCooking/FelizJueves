@@ -3754,6 +3754,81 @@ def test_the_gradient_builders_reach_neither_their_witness_nor_a_machine(
             assert not hit, f"{start} reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The analytic nuclear hessians by MMD (`felizjueves.hessian`): the host
+# references on the AO layer (on `gradient.host`'s sweep helpers), and one
+# builder, `kernel_h1e` (S, T, V at d2, on `kernel_g1e`'s record head),
+# checked against `hessian.host` in the interpreter, so it may reach
+# neither, nor `reference/`. The generator CLI writes its ladder
+# (`--hess-l`).
+# ---------------------------------------------------------------------------
+
+_HESS_WITNESS = ("`hessian.host` is the witness the kernel is interpreted "
+                 "against and `ao` the layer it reads: importing either "
+                 "shares ancestry with it (#20)")
+RULES |= {
+    "hessian_package": _rule(
+        "hessian/__init__.py: the hessian package's marker, a docstring "
+        "and no code", (), reference=_GROUND_TRUTH),
+    "hessian_host": _rule(
+        "hessian/host.py: the contracted nuclear hessians of S, T, V and "
+        "E_nuc on the AO layer -- the d2 kernels' witness -- from the "
+        "undressed E (`mmd.hermite`), the nucleus type, and the gradient "
+        "host's sweep (`shell_atoms`, `pair_weights`); `[t]^(0)` injected",
+        ("ao", "mmd.hermite", "one_electron.potential", "gradient.host"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "hessian.kernel_h1e": "the kernel is what this module checks"}),
+    "h1e_builder": _rule(
+        "kernel_h1e.py: the S, T and V hessian kernels -- key -> IR, "
+        "`kernel_g1e`'s record head, weights and table reader, `V`'s "
+        "`[t]^(0)` by the plan layer two orders up (`kernel_v.v_plan`, "
+        "`recurrence`)",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "one_electron.kernel_v", "gradient.kernel_g1e"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian": "hessian_package",
+    "hessian.host": "hessian_host",
+    "hessian.kernel_h1e": "h1e_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian": (),
+    "hessian.host": ("ao.pairs", "ao.shell", "gradient.host", "mmd.hermite",
+                     "one_electron.potential"),
+    "hessian.kernel_h1e": ("gradient.kernel_g1e", "ir", "mmd.e_fragment",
+                           "mmd.recurrence", "one_electron.kernel_v",
+                           "plan.targets", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the hessian ladder "
+                       "through `kernel_h1e`",
+                       RULES["driver"].may | {"hessian.kernel_h1e"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_h1e"}
+
+
+def test_the_hessian_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_h1e"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"mmd.e_fragment", "mmd.recurrence", "gradient.kernel_g1e"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "hessian.host", "gradient.host",
+                   "ir.interp", "emit", "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_h1e reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 
