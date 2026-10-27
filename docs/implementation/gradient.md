@@ -1,12 +1,13 @@
-# Analytic nuclear gradients by McMurchie–Davidson: `S`, `T`, `V` and `E_J`
+# Analytic nuclear gradients by McMurchie–Davidson: `S`, `T`, `V`, `E_J` and `E_K`
 
 **Status: implemented host-side and as generated kernels, interpreted
 only. Not compiled by nvcc or hipcc, and not run on either card.** This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
-attraction (its Hellmann–Feynman term included) and the Coulomb energy
-`E_J`. It says what is generated, what it is checked against, and what is
-not done. The session that built it had no device compiler and no card;
+attraction (its Hellmann–Feynman term included), the Coulomb energy
+`E_J` and, added after, the exchange energy `E_K`. It says what is
+generated, what it is checked against, and what is not done. Neither
+session that built it had a device compiler or a card;
 the kernel texts passed clang 18's CUDA front end (device side, `-Wall
 -Wextra`, a declaration stub for the runtime) with no diagnostic, which is
 a proxy, not the kernel tier.
@@ -25,12 +26,15 @@ and `pyscf.grad.RHF` to ~1e-13. That spike is not imported anywhere.
 `Spec.derivative_order` was a field with one legal value, kept so that
 widening it would not retrofit every consumer. It is now `(0, 1)`
 (`spec.DERIVATIVE_ORDERS`), and order 1 is legal on
-`spec.GRADIENT_TARGETS` only: `S`, `T`, `V` and `JAB`, each on its native
-engine, MMD. Every other target, and HGP, refuses it with
+`spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB` and `K`, each on its
+native engine, MMD. Every other target, and HGP, refuses it with
 `_GRADIENT_REFUSAL`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
-d0 key is byte-identical. Unbatched, for each target's d0 reason.
+d0 key is byte-identical. Unbatched, for each target's d0 reason. `K` at
+d1 keeps K's quartet `am = (la, lc, lb, ld)`, the Hermite pairing, bra
+first (`coulomb/d1/(2,1|1,0)/b1/k/literal`); `Spec` would admit a batch
+count there as it does at d0, and `kernel_gk` refuses any but 1.
 
 ## What a d1 kernel writes
 
@@ -39,8 +43,9 @@ their contraction with a matrix, the shape every SCF gradient term has:
 
     G[A, k] += SUM_mn M_mn dX_mn / dR_{A,k}
 
-`M = D` for `T`, `V` and `J`, the energy-weighted density `W` for `S`; the
-signs and halves of an energy are the caller's. Per shell pair `i <= j`
+`M = D` for `T`, `V`, `J` and `K`, the energy-weighted density `W` for
+`S`; the signs and halves of an energy are the caller's (RHF's exchange
+energy is `-1/2 E_K`). Per shell pair `i <= j`
 the weight of Cartesian pair `(r, c)` is `M[a_r, b_c] + M[b_c, a_r]` off
 the diagonal and `M[a_r, a_c]` on it, which is `SUM_mn M_mn X_mn` exactly
 for any `M` (no symmetry assumed) and any `X` symmetric in `m <-> n`.
@@ -78,6 +83,20 @@ undressed `E` tables raised one index higher on each side.
   chain's `J_p` of the bra record **one Hermite order higher**,
   `|t| <= la + lb + 1`. The half of `E_J` and the bra-plus-ket two cancel:
   no factor appears.
+- `E_K`: `E_K = 1/2 SUM D_ab D_cd (ac|bd)` (`K_ab = SUM_cd D_cd (ac|bd)`,
+  K's pairing: bra record `(a, c)`, ket record `(b, d)`). Its ket
+  derivative equals its bra derivative for a **symmetric** `D` (rename
+  `a <-> b`, `c <-> d` in the ket term, then `D_ba = D_ab`), so
+  `dE_K/dR = SUM D_ab D_cd d_bra (ac|bd)` over every **ordered** shell
+  quartet, the bra's two centres `A` and `C` differentiated. Per (bra,
+  ket) record pair, `I_bd[p] = SUM_q (-1)^{|q|} [p+q]^(0) s_bd E^{bd}_q`
+  over `|p| <= la + lc + 1` (K's stage 1, one order up), then
+  `SUM_ac D_ab D_cd SUM_p (dX_k E^{ac})_p I_bd[p]`. Both `D` blocks
+  straddle the records (`a`, `c` on the bra; `b`, `d` on the ket), so
+  unlike `E_J` the density does not factor into a per-bra Hermite density
+  and a per-bra `J_p`: the contraction stays at the quartet. No factor:
+  the half of `E_K` and the bra-plus-ket two cancel, as for `E_J`. An
+  asymmetric `D` is refused.
 
 No translational invariance is used. The derivative on both centres of a
 pair, and on every nucleus for `V`, is computed, so `SUM_A G[A] = 0` is a
@@ -90,6 +109,11 @@ injected) and `coulomb_gradient` (`one_centre=` injected: `[p|q] =
 (-1)^{|q|} [p+q]^(0)`, one `[r]^(0)` table per bra–ket record pair, the
 kets `ao.density.make_kets` over the unique pairs at weight 2 off the
 diagonal), each over every shell pair or `pairs=`, plus
+`exchange_gradient` (`one_centre=` injected; every ordered quartet or
+`quartets=`, the bra derivative differentiated before its fold,
+`absolute=True` the same sum with every factor in `|.|`, the kernel
+test's round-off scale), `exchange_pairs` / `class_quartets` /
+`exchange_records` (the `gk` launch's records, one class at a time),
 `nuclear_repulsion_gradient`, `shell_atoms` (a shell sits on the nucleus
 whose centre it equals exactly) and `records` (the kernels' per-record
 arrays). `atoms=` gives each shell a row of its own, which the kernel tests
@@ -116,7 +140,43 @@ zeroed by the caller.
   the same bra records and the J chain's `DQ` kets. Nothing in the `[p|q]`
   kernel or its plan is new.
 
-Parameters (`kernel_s`'s per-axis spelling for the one-electron three):
+`gradient/kernel_gk.py` builds `gk_{la}{lc}_{lb}{ld}` (`build_gk_kernel`),
+one per K class, on `kernel_k`'s mapping: **one warp per bra record**, the
+kets strip-mined over the lanes, no screen (K's bound bounds the
+integral, not its derivative), no shared memory.
+
+- The `[r]^(0)` are the plan's for the d0 K class with the bra raised by
+  one, `kernel_gk.gk_pq_spec(la, lc, lb, ld) = (la + 1, lc | lb, ld)`
+  (split `(lp + 1, lq)`), `recurrence_body` unchanged, as `kernel_k`
+  runs it. `E^bd` is `block_fragment(lb, ld)` inlined into a local
+  `Ebd`, as `kernel_k`'s default; stage 1 is `kernel_k`'s fold, into
+  straight-line locals `I{n}`.
+- The derivative is taken through **raised rows**: on axis `k`,
+  `(dA_k E)^{ac} = 2 alpha E^{a+1_k, c} - a_k E^{a-1_k, c}`, so with
+  `V(a', c) = SUM_p E^{a'c}_p I[p]` (an ordinary stage-2 fold over a row
+  of shell `la +- 1`) the A side is `2 alpha SUM W V(a+1_k, c) - SUM a_k
+  W V(a-1_k, c)`, `W = D_ab D_cd`, and C the same with `c` moved. Each
+  raised row is folded once per `(b,d)` row and digested into every axis
+  it serves, into per-lane `uA_k`, `lA_k`, `uC_k`, `lC_k`; after the ket
+  loop `gA_k = 2 alpha uA_k - lA_k`. `E^{a'c}_p` is a product of the
+  per-axis tables `axis_tables_fragment(la + 1, lc + 1)`.
+- Six `WarpReduce`s, then lane 0 adds `s_ac gA_k` into `G[atom_a, k]` and
+  `s_ac gC_k` into `G[atom_c, k]`.
+- A launch is one class: every ordered bra record of `(la, lc)` against
+  every ordered ket record of `(lb, ld)` (`host.exchange_records`), so
+  the class launches over a basis sum to the whole `dE_K`
+  (`host.class_quartets` partitions the ordered quartets).
+- Params: `n_bra n_ket n_ao n_atom`, the bra side `P XPA XPC [n_bra, 3]`,
+  `zeta_ac s_ac ea_bra ec_bra`, `off_a off_c atom_a atom_c`, the ket side
+  `Q XQB XQD [n_ket, 3]`, `eta s_bd`, `off_b off_d`, then `M[n_ao, n_ao]`
+  (the density, `D_ab` and `D_cd` read at the records' AO offsets) and
+  `G[n_atom, 3]`.
+- The unrolled text grows fast: 29 KB at `(ds|ss)`, 169 KB at `(pp|pp)`,
+  809 KB at `(pd|pd)`, 4.0 MB at `(dd|dd)` (cuda). A rolled form, as
+  `kernel_kblock_rolled` is for K at f, is not built.
+
+Parameters of the pair kernels (`kernel_s`'s per-axis spelling for the
+one-electron three):
 `n_rec n_ao n_atom`, `zeta_ab pa_* pb_* [p_*: V] s_ab ea_bra eb_ket`,
 `off_a off_b atom_a atom_b`, `M[n_ao, n_ao]`, `[Z Cnuc: V]`,
 `G[n_atom, 3]`. For `V` the atoms are the nuclei.
@@ -131,6 +191,13 @@ class selector (`--class LA+1 LB LC LD`), not by this flag. Goldens:
 `test/golden/{cuda,hip}/{gs,gt,gv,gjab}_{la}{lb}` for (ss) through (dd),
 48 files, the largest 211 KB.
 
+`python -m felizjueves.emit --grad-k-l [LMAX]` (1 bare, accepted 0..2,
+exit 2 above) adds `gk_{la}{lc}_{lb}{ld}` for every K class with each
+`l <= LMAX` (16 units bare, 81 at 2), beside the J ladders, never in the
+bare default nor in `KERNEL_GEN_CMD`. Goldens:
+`test/golden/{cuda,hip}/gk_*` for the 16 s / p classes, 32 files, the
+largest 169 KB (`test_emit_grad_k.py`).
+
 ## Witnesses, and what ran where
 
 | What | Against | Where | Worst |
@@ -141,9 +208,12 @@ class selector (`--class LA+1 LB LC LD`), not by this flag. Goldens:
 | `gs`, `gt`, `gv` interpreted (`test_kernel_g1e.py`) | `host`, per class | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G | `gs`, `gt` bitwise; `gv` 2.2 eps of the split-centre scale, gate 16 eps |
 | `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis | gate 16 eps of the split-centre scale |
 | the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow` | gate 64 eps of the scale |
-| compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 units through (ff) | no diagnostic (a proxy) |
-| compile, nvcc / hipcc (`test_emit_grad.py`) | #92's filter | — | **not run** (no compiler) |
-| on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|` | — | **not run** (no card) |
+| host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
+| host `E_K` invariance, partition | `SUM_A G = 0`; the class quartets cover every ordered quartet once | the s, p basis | ~5e-16 of `max\|G\|` |
+| `gk` interpreted (`test_kernel_gk.py`) | `host.exchange_gradient`, per class, its `absolute=True` twin as scale | every K class with each `l <= 1` on the s, p basis; every class with a d shell through `(dd\|dd)` on a two-atom s, p, d basis (L + 1 > 4 `slow`); the 16 s, p classes summed to the whole `dE_K`; 1, 4 and 32 lanes | at most 0.7 eps of the scale, gate 16 eps |
+| compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
+| compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | — | **not run** (no compiler) |
+| on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | — | **not run** (no card) |
 
 ## What is not done
 
@@ -151,10 +221,18 @@ class selector (`--class LA+1 LB LC LD`), not by this flag. Goldens:
   cases and the device test are written.
 - The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
   the raised `[p|q]`, `gjab`) is a follow-up.
-- No exchange (`K`) gradient, so no whole RHF gradient on the card. The
-  host has every term but `K` (`-1/4 SUM D dK D` needs all four centres of
-  `(ac|bd)` against a density on both sides). No DF gradient.
+- Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
+  `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
+  caller's), but no whole RHF gradient is assembled or checked against
+  `pyscf.grad.RHF`, and none has run on a card. No DF gradient.
+- `gk` is checked interpreted through `(dd|dd)` but its ladder writes
+  `l <= 2` only and its goldens are the s, p classes; f is not built
+  into the ladder (the unrolled text is 4 MB at `(dd|dd)` already).
+  A rolled form (`kernel_kblock_rolled`'s E-from-global and loops) and a
+  block mapping (`kernel_kblock`'s, one warp per `K_AB` block) are the
+  named follow-ups; neither is built.
 - Nothing is measured: no registers, spills or wall-clock. `gv` and
   `gjab` are unrolled and reach ~210 KB of text at (dd); a low-stack form
   (#586's) is not built.
-- No screening, Cartesian only, no Hessian.
+- No screening (`gk` visits every ordered quartet; a derivative bound is
+  not derived), Cartesian only, no Hessian.

@@ -4,6 +4,7 @@ harness.
     GradLaunch(kernel, n_rec, arrays, scalars)      one kernel launch
     one_electron_launches(basis, nuclei, target, M) -> [GradLaunch]
     gjab_launches(basis, nuclei, D, one_centre=)            -> [GradLaunch]
+    gk_launches(basis, nuclei, D)                   -> [GradLaunch]
     grad_program(launches, n_atom, backend, workdir, units=) -> Program
     compile_grad(launches, n_atom, backend, tc, workdir, units=) -> GradBinary
     GradBinary.run(run_device_binary)               -> [run][n_atom][3]
@@ -12,15 +13,17 @@ harness.
 array argument of every launch is staged (int arrays as exact doubles,
 converted on upload, `plan_driver.UPLOAD_INT`), scalar arguments are
 spelled into the call, and `G` is the one OUT, shared by every launch.
-The kernels are `gradient.kernel_g1e` / `kernel_gjab`'s, emitted by
+The kernels are `gradient.kernel_g1e` / `kernel_gjab` / `kernel_gk`'s,
+emitted by
 `emit/cuda.py` / `emit/hip.py` unchanged; a unit the tier's generate
 phase wrote (`--grad-l`) is that file. Only the `main()` is written here.
 
 WHAT THE GENERATED `main()` DOES, `RUNS` times (the fp64 atomics'
 run-to-run spread witnessed, not assumed): zero ONE `G[n_atom, 3]` (the
 kernels' precondition, `kernel_g1e.ZEROED_G`), launch every kernel into
-it -- one thread per record, `THREADS` lanes -- then one synchronize and
-the read-back.
+it -- one thread per record, `THREADS` lanes, or for `gk_` one warp of
+`THREADS` lanes per bra record (`kernel_gk.launch_shape`) -- then one
+synchronize and the read-back.
 
 `gjab`'s `Jp` here is the HOST's (`gradient.host.coulomb_jp` at order
 `L + 1`): the kernel is tested, not the `[p|q]` launch that would feed it
@@ -42,11 +45,13 @@ from test_kernel_device import BACKEND, PORTABLE
 from felizjueves.gradient import host
 from felizjueves.gradient.kernel_g1e import build_g1e_kernel, launch_shape
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
+from felizjueves.gradient.kernel_gk import build_gk_kernel
+from felizjueves.gradient.kernel_gk import launch_shape as gk_launch_shape
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.spec import Target
 
 __all__ = ["GradBinary", "GradLaunch", "compile_grad", "gjab_launches",
-           "grad_program", "one_electron_launches"]
+           "gk_launches", "grad_program", "one_electron_launches"]
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
 G = "G"
@@ -61,6 +66,7 @@ class GradLaunch:
     n_rec: int
     arrays: Mapping[str, np.ndarray]
     scalars: Mapping[str, int] = field(default_factory=dict)
+    warp_per_record: bool = False  # `gk_`: one warp per record, (1, THREADS)
 
     def __post_init__(self) -> None:
         want = {p.name for p in self.kernel.params if p.array} - {G}
@@ -130,6 +136,24 @@ def gjab_launches(basis, nuclei, D, *, one_centre) -> list[GradLaunch]:
     return out
 
 
+def gk_launches(basis, nuclei, D) -> list[GradLaunch]:
+    """One `gk_` launch per K class `(la, lc, lb, ld)` the basis reaches,
+    every ordered bra record of `(la, lc)` against every ordered ket
+    record of `(lb, ld)` (`gradient.host.exchange_records`)."""
+    ls = sorted({s.l for s in basis.shells})
+    out = []
+    for am in [(a, c, b, d) for a in ls for c in ls for b in ls for d in ls]:
+        kern = build_gk_kernel(am)
+        bra, ket = host.exchange_records(basis, nuclei, am)
+        arrs = _rec_arrays({**bra, **ket}, kern)
+        arrs["M"] = np.asarray(D, dtype=np.float64)
+        n_bra, n_ket = len(bra["s_ac"]), len(ket["s_bd"])
+        out.append(GradLaunch(kern, n_bra, arrs, {
+            "n_bra": n_bra, "n_ket": n_ket, "n_ao": basis.n_ao,
+            "n_atom": len(nuclei)}, warp_per_record=True))
+    return out
+
+
 def _buffers(launches: Sequence[GradLaunch]):
     """Every staged array, launch by launch in parameter order:
     `(launch, name, flat doubles, is_int)`."""
@@ -152,9 +176,12 @@ def _call(x: GradLaunch, c: int, ns: str, slot: Mapping[tuple[int, str], int]
             args.append(f"(const {t}*)buf[{slot[c, p.name]}]")
         else:
             args.append(str(x.scalars[p.name]))
-    grid, (lanes, _) = launch_shape(x.n_rec, THREADS)
+    if x.warp_per_record:
+        grid, (bx, by) = gk_launch_shape(x.n_rec, THREADS)
+    else:
+        grid, (bx, by) = launch_shape(x.n_rec, THREADS)
     return (f"        // {x.kernel.name}, {x.n_rec} records\n"
-            f"        {ns}::{x.kernel.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
+            f"        {ns}::{x.kernel.name}<<<dim3({grid}), dim3({bx}, {by})>>>(\n"
             f"            {', '.join(args)});\n"
             f"        CHECK(devGetLastError());\n"
             f"        ++launches;")

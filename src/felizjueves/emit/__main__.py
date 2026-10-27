@@ -121,6 +121,15 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. Every name starts `gs_`, `gt_`, `gv_` or `gjab_`, so
   none collides with another ladder's.
 
+- the exchange-gradient ladder, `--grad-k-l [LMAX]`
+  (`gradient.kernel_gk`): for every K class `(la, lc | lb, ld)`, the
+  Hermite pairing, each `l <= LMAX` (1 when the flag is given bare: the
+  16 classes with every shell s or p), `gk_{la}{lc}_{lb}{ld}`, `dE_K/dR`
+  on the bra's two centres. Accepted 0..`GRAD_K_L_MAX` = 2 (validated
+  through (dd|dd), interpreted; its unrolled text is ~4 MB there); above
+  it is a 2. It ADDS units beside the J ladders, as `--grad-l` does, and
+  is NEVER in the no-flag default nor in KERNEL_GEN_CMD.
+
 - the HGP one-electron ladder, `--hgp-one-e-l [LMAX]`: for every pair class
   `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
   `kernel_hgp.build_hgp_kernel` for `Target.S`, `T`, `V` and `DIPOLE` on
@@ -340,6 +349,7 @@ from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 from felizjueves.gradient.kernel_g1e import GRADIENT_1E, build_g1e_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
+from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.mmd.kernel import (
@@ -378,6 +388,8 @@ DEFAULT_MU_L = 2  # `--mu-l` given bare: (ss) through (dd), 6 units
 MU_L_MAX = 2  # milestone 19's cap: the dipole is validated through (dd) only
 DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
+DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
+GRAD_K_L_MAX = 2  # kernel_gk is validated through (dd|dd) interpreted
 DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
@@ -646,6 +658,24 @@ def generate_grad(backend: str, arch: Arch, out: Path,
     kernels = [k for c in grad_classes(lmax) for k in (
         *(build_g1e_kernel((t, *c)) for t in GRADIENT_1E),
         build_gjab_kernel(c))]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+def grad_k_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """Every K class `(la, lc, lb, ld)`, each `l <= lmax`, over
+    `0..GRAD_K_L_MAX`, `la` outermost."""
+    if type(lmax) is not int or not 0 <= lmax <= GRAD_K_L_MAX:
+        raise ValueError(f"--grad-k-l {lmax!r} is outside 0..{GRAD_K_L_MAX}")
+    r = range(lmax + 1)
+    return [(la, lc, lb, ld) for la in r for lc in r for lb in r for ld in r]
+
+
+def generate_grad_k(backend: str, arch: Arch, out: Path,
+                    lmax: int) -> list[Path]:
+    """Emit `gk_{la}{lc}_{lb}{ld}` for every K class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_gk_kernel(c) for c in grad_k_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -936,14 +966,14 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.one_e_l is not None or args.schwarz_l is not None
             or args.sx_l is not None or args.metric_l is not None
             or args.eri3_l is not None or args.mu_l is not None
-            or args.grad_l is not None
+            or args.grad_l is not None or args.grad_k_l is not None
             or args.hgp_one_e_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / "
-              "--mu-l / --grad-l / --hgp-one-e-l / "
+              "--mu-l / --grad-l / --grad-k-l / --hgp-one-e-l / "
               "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
@@ -1005,6 +1035,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-l", dest="grad_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_L, default=None, metavar="LMAX")
+    ap.add_argument("--grad-k-l", dest="grad_k_l", type=int, nargs="?",
+                    const=DEFAULT_GRAD_K_L, default=None, metavar="LMAX")
     ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
@@ -1056,14 +1088,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.one_e_l is not None or args.schwarz_l is not None
                  or args.sx_l is not None or args.metric_l is not None
                  or args.eri3_l is not None or args.mu_l is not None
-            or args.grad_l is not None
+            or args.grad_l is not None or args.grad_k_l is not None
                  or args.hgp_one_e_l is not None or _hgp_df(args)
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / "
-              "--mu-l / --grad-l / --hgp-one-e-l / "
+              "--mu-l / --grad-l / --grad-k-l / --hgp-one-e-l / "
               "--class / "
               "--shell-ls and "
               "the J / K "
@@ -1086,12 +1118,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or args.one_e_l is not None or args.schwarz_l is not None
                      or args.sx_l is not None or args.metric_l is not None
                      or args.eri3_l is not None or args.mu_l is not None
-            or args.grad_l is not None
+            or args.grad_l is not None or args.grad_k_l is not None
                      or args.hgp_one_e_l is not None or _hgp_df(args)
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
-              "--mu-l / --grad-l / "
+              "--mu-l / --grad-l / --grad-k-l / "
               "--hgp-one-e-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
@@ -1143,6 +1175,11 @@ def main(argv: Sequence[str] | None = None) -> int:
               "gradient kernels are validated through (ff) only",
               file=sys.stderr)
         return 2
+    if args.grad_k_l is not None and not 0 <= args.grad_k_l <= GRAD_K_L_MAX:
+        print(f"emit: --grad-k-l {args.grad_k_l} is outside "
+              f"0..{GRAD_K_L_MAX}: the exchange-gradient kernel is validated "
+              "through (dd|dd) only", file=sys.stderr)
+        return 2
     if (args.hgp_one_e_l is not None
             and not 0 <= args.hgp_one_e_l <= HGP_ONE_E_L_MAX):
         print(f"emit: --hgp-one-e-l {args.hgp_one_e_l} is outside "
@@ -1191,6 +1228,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         written += generate_mu(args.backend, arch, args.out, args.mu_l)
     if args.grad_l is not None:  # beside the J chain, never by default
         written += generate_grad(args.backend, arch, args.out, args.grad_l)
+    if args.grad_k_l is not None:  # beside the J chain, never by default
+        written += generate_grad_k(args.backend, arch, args.out,
+                                   args.grad_k_l)
     if args.hgp_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hgp_one_e(args.backend, arch, args.out,
                                       args.hgp_one_e_l)
