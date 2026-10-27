@@ -1,6 +1,6 @@
-"""Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's
-and the one-electron `S`, `T`, `V`, as host references and as generated
-kernels (`Spec.derivative_order = 2`).
+"""Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
+the exchange energy's and the one-electron `S`, `T`, `V`, as host
+references and as generated kernels (`Spec.derivative_order = 2`).
 
     host.py          the Coulomb reference, pure Python, on the AO layer
     kernel_hdq.py    Target.DQ at d1: hdq_{lc}{ld}, the ket pre-contraction
@@ -8,6 +8,10 @@ kernels (`Spec.derivative_order = 2`).
     kernel_hjab.py   Target.JAB at d2: hjab_{la}{lb}, the Coulomb energy's
                      Hessian from J_p two bra orders up (bra-bra) and from
                      J_p of the ket derivative densities (bra-ket)
+    kernel_hkx.py    Target.K at d2: hkx_{la}{lc}_{lb}{ld}, the exchange
+                     energy's Hessian, both terms in one kernel per K
+                     class (D_ab D_cd straddles bra and ket, so there is
+                     no ket derivative density to precompute)
     host_1e.py       the one-electron references, pure Python
     kernel_h1e.py    Target.S / T / V at d2: d2s_, d2t_, d2v_{la}{lb},
                      H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
@@ -54,6 +58,10 @@ DENSITIES `D^{(C,l)}_q = SUM_cd D_cd (dC_l E^{cd})_q` of the kets that
 touch atom `C`. Summed over every quartet each term is symmetric in
 `x <-> y` by itself (rename `(ab) <-> (cd)` again); one bra class's share
 of the bra-ket term is not, so it is never mirrored.
+
+THE EXCHANGE ENERGY `E_K = 1/2 SUM D_ab D_cd (ac|bd)` splits the same
+way (rename `(ac) <-> (bd)`); `hessian.host`'s THE EXCHANGE HESSIAN and
+`kernel_hkx` have the detail.
 
 NO TRANSLATIONAL INVARIANCE IS USED: every centre is differentiated, so
 `SUM_A H[A, k, B, l] = 0` and `H = H^T` are checks

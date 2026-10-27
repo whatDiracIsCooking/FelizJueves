@@ -24,8 +24,10 @@ the card, one warp per bra record, so its row is the whole `dE_K` of
 the molecule (every ordered quartet, `E_K = 1/2 SUM D_ab D_cd (ac|bd)`).
 Its interpreted bound is test_kernel_gk.py's; the same `DEV_TOL` holds it.
 
-THE SESSION THAT BUILT THESE KERNELS HAD NO DEVICE COMPILER AND NO CARD:
-this file is written and has NOT been run on either card.
+RUN ON BOTH CARDS (2026-10-27), every case passed, cc-pVDZ included:
+worst 3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060
+XT (`gt` on cc-pVDZ, the atomics' run-to-run spread 2e-14 of it); `gk`
+4.1e-15 / 4.0e-15.
 """
 
 from __future__ import annotations

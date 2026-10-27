@@ -25,10 +25,11 @@ THE COMPILE. Each golden is compiled alone (`-c`) with the kernel tier's
 own flags and FAILS on any warning located in the generated unit (#92's
 filter; `test_emit_grad.compile_kernel`), and the unrolled `d2v_22` too
 (`slow`). Needs a compiler, never a card.
-The session that wrote these kernels had neither compiler, so these cases
-have NOT been run yet; the units passed clang 18's CUDA front end (device
-side, `-Wall -Wextra`, a declaration stub for the runtime) with no
-diagnostic, which is a proxy, not this test.
+The unrolled units through (dd) passed on `sm_86` and `gfx1200` (#607);
+the low-stack `d2v_22` and `d2v_33` have NOT been compiled by either
+vendor compiler yet. They passed clang 18's CUDA front end (device side,
+`-Wall -Wextra`, a declaration stub for the runtime) with no diagnostic,
+which is a proxy, not this test.
 """
 
 from __future__ import annotations

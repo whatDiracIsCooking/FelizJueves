@@ -48,15 +48,17 @@ Boys = Callable[[int, float], float]
 
 
 @cache
-def metric_kernel(lP: int, lQ: int, engine: Engine = Engine.MMD) -> Kernel:
+def metric_kernel(lP: int, lQ: int, engine: Engine = Engine.MMD,
+                  lowstack: bool | None = None) -> Kernel:
     """`build_metric_kernel((lP, lQ))`, or on `Engine.HGP`
     `kernel_hgp.build_hmetric_kernel((lP, lQ))` (the same parameters, launch and
-    output), built once."""
+    output), built once. `lowstack` forces the MMD kernel's form (None:
+    the builder's default)."""
     if engine is Engine.HGP:
         return build_hmetric_kernel((lP, lQ))
     if engine is not Engine.MMD:
         raise ValueError(f"engine {engine!r} is not an Engine")
-    return build_metric_kernel((lP, lQ))
+    return build_metric_kernel((lP, lQ), lowstack=lowstack)
 
 
 def _arrays(cls: MetricClass) -> dict[str, np.ndarray]:
@@ -66,12 +68,13 @@ def _arrays(cls: MetricClass) -> dict[str, np.ndarray]:
 
 
 def launch_class(cls: MetricClass, M: np.ndarray, *, boys: Boys,
-                 threads: int = 32, engine: Engine = Engine.MMD) -> np.ndarray:
+                 threads: int = 32, engine: Engine = Engine.MMD,
+                 lowstack: bool | None = None) -> np.ndarray:
     """One interpreted launch of `cls`'s kernel over every staged pair,
     writing into (a copy of) `M`, which is returned."""
     n = M.shape[0]
     grid, block = launch_shape(cls.n_pair, threads)
-    return Interpreter(metric_kernel(cls.lP, cls.lQ, engine),
+    return Interpreter(metric_kernel(cls.lP, cls.lQ, engine, lowstack),
                        launch=Launch(grid, block, 1), boys=boys).run(
         n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=n, **{OUT: M},
         **_arrays(cls))[OUT]
@@ -87,7 +90,8 @@ class Run:
 
 def metric_matrix_kernel(aux: Basis, *, boys: Boys,
                          classes: Iterable[tuple[int, int]] | None = None,
-                         threads: int = 32, engine: Engine = Engine.MMD) -> Run:
+                         threads: int = 32, engine: Engine = Engine.MMD,
+                         lowstack: bool | None = None) -> Run:
     """`(P|Q)` over `aux` from the interpreted kernels of `classes` (every
     class of `aux` when None); the elements of any other class are 0.0."""
     want = None if classes is None else set(classes)
@@ -96,6 +100,6 @@ def metric_matrix_kernel(aux: Basis, *, boys: Boys,
     for cls in metric_classes(aux):
         if want is None or (cls.lP, cls.lQ) in want:
             M = launch_class(cls, M, boys=boys, threads=threads,
-                             engine=engine)
+                             engine=engine, lowstack=lowstack)
             ran.append((cls.lP, cls.lQ))
     return Run(M, tuple(ran))

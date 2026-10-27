@@ -1,0 +1,46 @@
+{
+  "cuda": {
+    "hkx_01_11": {
+      "bytes": 561071,
+      "sha256": "8ad99f04192dd404bc1b681e614c625ba288730ff72274da991842fa6ca1990b"
+    },
+    "hkx_10_11": {
+      "bytes": 562907,
+      "sha256": "5df5cad95bd8548a06568e2839d31b96a85998c5b79e3897ce0bc86fdd6d8a09"
+    },
+    "hkx_11_01": {
+      "bytes": 557573,
+      "sha256": "d7709bb45ab8711e359bce2f6b4c25ea03f71a5ecde0496ac8e7c68b8ce050fd"
+    },
+    "hkx_11_10": {
+      "bytes": 557555,
+      "sha256": "4ec6607cf709ff0527beee10ce1d3c1179512ec8a32a806990668e805791fedb"
+    },
+    "hkx_11_11": {
+      "bytes": 1627822,
+      "sha256": "d7ceac2c0ea14ad39708d68d4c2afdaab2daca2e06dc976014e67fba9cc90015"
+    }
+  },
+  "hip": {
+    "hkx_01_11": {
+      "bytes": 561215,
+      "sha256": "ee7f173503165e49a184a8defab8b7114c0c7f91cf2c459b098070faab13d641"
+    },
+    "hkx_10_11": {
+      "bytes": 563051,
+      "sha256": "1a50c49990416c26cf52dc8a644b6a53863d04b29df529083b22ca21a432be3e"
+    },
+    "hkx_11_01": {
+      "bytes": 557717,
+      "sha256": "5e31892b2361b0a0dcee846df673ba29395ef8e80bd008b1eb84ee7c1110e991"
+    },
+    "hkx_11_10": {
+      "bytes": 557699,
+      "sha256": "9e8e1979ccd278c6138afa2eddb41cc0cc4519a1c74b5c9cdbaecb6b1d733d1d"
+    },
+    "hkx_11_11": {
+      "bytes": 1627966,
+      "sha256": "027e6868fb07147f748894ee28766749e61f41231db9face88633742fb9fc2c7"
+    }
+  }
+}
