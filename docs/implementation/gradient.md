@@ -305,4 +305,6 @@ above L = 4; no screen; nothing measured; Cartesian only.
   (#586's) is not built.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
   not derived), Cartesian only. The Coulomb energy's Hessian is built
-  on these pieces (`hessian.md`); no other Hessian term is.
+  on these pieces (`hessian.md`), and so are the one-electron Hessians of
+  `S`, `T` and `V` (`hessian.md`, "The one-electron Hessians"); no other
+  Hessian term is.

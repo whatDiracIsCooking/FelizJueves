@@ -280,17 +280,24 @@ def test_a_one_electron_target_takes_a_pair(target: Target) -> None:
 
 
 @pytest.mark.parametrize("target", list(ONE_ELECTRON))
-def test_a_one_electron_target_takes_order_one_and_no_higher(
+def test_a_one_electron_target_takes_orders_one_and_two_and_no_higher(
         target: Target) -> None:
-    # The gradient (felizjueves.gradient): order 1 is legal, its key differs
-    # from the integral's in the `d` segment alone, and order 2 is refused.
-    d1 = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
-               derivative_order=1)
+    # The gradient (felizjueves.gradient) and the hessian
+    # (felizjueves.hessian): orders 1 and 2 are legal, each key differs
+    # from the integral's in the `d` segment alone, and order 3 is refused.
     d0 = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1))
-    assert d1.key() == d0.key().replace("/d0/", "/d1/")
+    for order in (1, 2):
+        dn = _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
+                   derivative_order=order)
+        assert dn.key() == d0.key().replace("/d0/", f"/d{order}/")
     with pytest.raises(ValueError, match="derivative order"):
         _spec(operator=ONE_ELECTRON[target], target=target, am=(2, 1),
-              derivative_order=2)
+              derivative_order=3)
+
+
+def test_order_two_is_refused_on_a_non_native_engine() -> None:
+    with pytest.raises(ValueError, match="derivative order 2 on target v.hgp"):
+        Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.HGP)
 
 
 @pytest.mark.parametrize("target", [t for t in Target
@@ -333,7 +340,9 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
     # The Coulomb Hessian (felizjueves.hessian): JAB at d2 and DQ at d1, each
     # key differing from the integral's in the `d` segment alone; order 3 is
     # refused everywhere.
-    assert HESSIAN_TARGETS == frozenset({Target.JAB})
+    # (S, T and V at d2 are the one-electron Hessians, hessian.kernel_h1e.)
+    assert HESSIAN_TARGETS == frozenset({Target.JAB, Target.S, Target.T,
+                                         Target.V})
     assert Target.DQ in GRADIENT_TARGETS
     d2 = Spec(Operator.COULOMB, 2, (2, 1), Target.JAB)
     assert d2.key() == "coulomb/d2/(2,1)/b1/jab/literal"

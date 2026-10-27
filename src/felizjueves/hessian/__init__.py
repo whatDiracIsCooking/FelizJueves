@@ -1,12 +1,23 @@
-"""Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's,
-as a host reference and as generated kernels (`Spec.derivative_order = 2`).
+"""Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's
+and the one-electron `S`, `T`, `V`, as host references and as generated
+kernels (`Spec.derivative_order = 2`).
 
-    host.py          the reference, pure Python, on the AO layer
+    host.py          the Coulomb reference, pure Python, on the AO layer
     kernel_hdq.py    Target.DQ at d1: hdq_{lc}{ld}, the ket pre-contraction
                      differentiated on each ket centre
     kernel_hjab.py   Target.JAB at d2: hjab_{la}{lb}, the Coulomb energy's
                      Hessian from J_p two bra orders up (bra-bra) and from
                      J_p of the ket derivative densities (bra-ket)
+    host_1e.py       the one-electron references, pure Python
+    kernel_h1e.py    Target.S / T / V at d2: d2s_, d2t_, d2v_{la}{lb},
+                     H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
+                     (`M = D` for T and V, `W` for S; V's operator moves
+                     with its nucleus: centre-nucleus and nucleus-nucleus
+                     terms by `d/dC_k [t]^(0) = -[t + 1_k]^(0)`)
+
+The sections below are the Coulomb kernels'; the one-electron ones apply
+the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring
+is their account.
 
 WHAT A HESSIAN KERNEL WRITES. As a gradient kernel writes a contraction and
 not the derivative integrals (`felizjueves.gradient`), a Hessian kernel

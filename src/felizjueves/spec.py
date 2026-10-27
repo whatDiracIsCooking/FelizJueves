@@ -217,14 +217,18 @@ pre-contraction differentiated on each of the ket's two centres
 target's d0 reason.
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
-`HESSIAN_TARGETS` alone -- `JAB`, on MMD -- every other target refusing it
-(`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a contraction, not the
-derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
+`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T` and `V`, on MMD -- every other
+target refusing it (`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a
+contraction, not the derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
 `H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l}`, from `J_p` of the bra
 raised by two and of the ket derivative densities
 (`hessian.kernel_hjab`). `am` is the bra pair, unchanged, so
 ``coulomb/d2/(2,1)/b1/jab/literal`` differs from the d0 and d1 keys in the
-`d` segment alone.
+`d` segment alone. `S`, `T` and `V` at d2 are the one-electron Hessians,
+`H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}`
+(`hessian.kernel_h1e`), `am` the integral's pair, so
+``overlap/d2/(2,1)/b1/s/literal`` likewise differs from its d0 and d1 keys
+in one segment.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -502,13 +506,15 @@ _GRADIENT_REFUSAL = (
 
 # The targets whose second derivative is built (`felizjueves.hessian`):
 # `JAB`, the J chain's bra back-transform read as the Coulomb energy's
-# Hessian (`hessian.kernel_hjab`). MMD only.
-HESSIAN_TARGETS = frozenset((Target.JAB,))
+# Hessian (`hessian.kernel_hjab`), and the one-electron `S`, `T` and `V`
+# (`hessian.kernel_h1e`, `V`'s centre-nucleus and nucleus-nucleus terms
+# included). MMD only.
+HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V))
 
 _HESSIAN_REFUSAL = (
-    "a second derivative is built for JAB (the Coulomb energy's Hessian) on "
-    "the MMD engine only (felizjueves.hessian); this target's Hessian is a "
-    "follow-up"
+    "a second derivative is built for JAB (the Coulomb energy's Hessian) and "
+    "S, T, V (the one-electron Hessians) on the MMD engine only "
+    "(felizjueves.hessian); this target's Hessian is a follow-up"
 )
 
 
