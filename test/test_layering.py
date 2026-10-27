@@ -3737,13 +3737,14 @@ EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)
 
 
 # ---------------------------------------------------------------------------
-# The Coulomb energy's analytic nuclear Hessian by MMD
+# The Coulomb and exchange energies' analytic nuclear Hessians by MMD
 # (`felizjueves.hessian`): the host reference on the AO layer and the
-# gradient's host helpers, and two builders -- `kernel_hdq` (DQ at d1, the
-# ket derivative densities) and `kernel_hjab` (JAB at d2) -- on
-# `kernel_g1e`'s record head, readers and densities, each checked against
-# `hessian.host` in the interpreter, so none may be its ancestor, nor
-# `reference/`. The generator CLI writes their ladder (`--hess-l`).
+# gradient's host helpers, and three builders -- `kernel_hdq` (DQ at d1, the
+# ket derivative densities), `kernel_hjab` (JAB at d2) on `kernel_g1e`'s
+# record head, readers and densities, and `kernel_hkx` (K at d2) on the K
+# class's plan two bra orders up -- each checked against `hessian.host` in
+# the interpreter, so none may be its ancestor, nor `reference/`. The
+# generator CLI writes their ladders (`--hess-l`, `--hess-k-l`).
 # ---------------------------------------------------------------------------
 
 _HESS_WITNESS = ("`hessian.host` is the witness the kernel is interpreted "
@@ -3754,8 +3755,9 @@ RULES |= {
         "hessian/__init__.py: the Hessian package's marker, a docstring "
         "and no code", (), reference=_GROUND_TRUTH),
     "hessian_host": _rule(
-        "hessian/host.py: the Coulomb energy's nuclear Hessian on the AO "
-        "layer -- the d2 kernels' witness -- from the undressed E "
+        "hessian/host.py: the Coulomb and exchange energies' nuclear "
+        "Hessians on the AO layer -- the d2 kernels' witness -- from the "
+        "undressed E "
         "(`mmd.hermite`), the gradient reference's kets, weights and J_p "
         "(`gradient.host`) and the nucleus type; `[t]^(0)` injected",
         ("ao", "mmd.hermite", "gradient.host", "one_electron.potential"),
@@ -3764,7 +3766,8 @@ RULES |= {
            "plan": "the reference recurses directly; the plan is what the "
                    "kernels it checks are built on",
            "hessian.kernel_hdq": "the kernel is what this module checks",
-           "hessian.kernel_hjab": "the kernel is what this module checks"}),
+           "hessian.kernel_hjab": "the kernel is what this module checks",
+           "hessian.kernel_hkx": "the kernel is what this module checks"}),
     "hdq_builder": _rule(
         "kernel_hdq.py: the ket derivative-density kernel -- key -> IR, "
         "`kernel_g1e`'s record head, weights and Hermite densities reused",
@@ -3780,12 +3783,25 @@ RULES |= {
         ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
                              "gradient.host": _HESS_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "hkx_builder": _rule(
+        "kernel_hkx.py: the exchange-energy Hessian kernel -- key -> IR, "
+        "the K class's plan two bra orders up (`kernel_k.k_class_spec`, "
+        "`mmd.kernel.builder_plan`, `recurrence`), the K seams' fragment "
+        "bindings, the per-axis `E` tables (`e_fragment`) and "
+        "`kernel_hjab`'s precondition note",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "mmd.recurrence",
+         "mmd.kernel", "eri.k_exchange.kernel_k",
+         "eri.k_exchange.levers.seams", "hessian.kernel_hjab"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
 }
 RULE_OF |= {
     "hessian": "hessian_package",
     "hessian.host": "hessian_host",
     "hessian.kernel_hdq": "hdq_builder",
     "hessian.kernel_hjab": "hjab_builder",
+    "hessian.kernel_hkx": "hkx_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "hessian": (),
@@ -3795,10 +3811,16 @@ EDGES |= {k: frozenset(v) for k, v in {
                            "spec"),
     "hessian.kernel_hjab": ("gradient.kernel_g1e", "ir", "mmd.e_fragment",
                             "plan.targets", "spec"),
+    "hessian.kernel_hkx": ("eri.k_exchange.kernel_k",
+                           "eri.k_exchange.levers.seams",
+                           "hessian.kernel_hjab", "ir", "mmd.e_fragment",
+                           "mmd.kernel", "mmd.recurrence", "plan.schedule",
+                           "plan.targets", "spec"),
 }.items()}
-_HESS_BUILDERS = ("hessian.kernel_hdq", "hessian.kernel_hjab")
-RULES["driver"] = Rule(RULES["driver"].why + ", and the Hessian ladder "
-                       "through `kernel_hdq`, `kernel_hjab`",
+_HESS_BUILDERS = ("hessian.kernel_hdq", "hessian.kernel_hjab",
+                  "hessian.kernel_hkx")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the Hessian ladders "
+                       "through `kernel_hdq`, `kernel_hjab`, `kernel_hkx`",
                        RULES["driver"].may | frozenset(_HESS_BUILDERS),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_HESS_BUILDERS)

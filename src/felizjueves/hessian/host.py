@@ -4,6 +4,8 @@ Hessian.
     ket_derivative_records(basis, D, lc, ld)  -> per-record dD_q    (hdq's)
     coulomb_dkets(basis, D, nuclei)           -> {(C, l): [DKet]}  the kets
     coulomb_hessian(basis, D, nuclei, one_centre=) -> H   d2 E_J / dR dR
+    exchange_hessian(basis, D, nuclei, one_centre=) -> H  d2 E_K / dR dR
+    exchange_hessian_records(basis, nuclei, am) -> hkx's per-record arrays
     nuclear_repulsion_hessian(nuclei)         -> H   d2 E_nuc / dR dR
 
 `H` is `3 n_atom x 3 n_atom`, row and column `3 A + k` the coordinate
@@ -57,6 +59,28 @@ and the record is a ket of `(atom_c, l)` carrying `dD^C_l` and a ket of
 on it; the `[p|q]` sum is linear). `[t|q] = (-1)^{|q|} [t + q]^(0)`
 (`coulomb_jp`), as for any ket.
 
+THE EXCHANGE HESSIAN. `E_K = 1/2 SUM_abcd D_ab D_cd (ac|bd)` (K's
+pairing: bra `(a, c)` on `A`, `C`, ket `(b, d)` on `B`, `D`). For a
+symmetric `D` the same renaming as `E_J`'s (`(ac) <-> (bd)`, `D_ba =
+D_ab`) cancels the half against the twos, so over every ORDERED quartet
+
+    d2 E_K / dx dy = SUM D_ab D_cd [d_bra^x d_bra^y + d_bra^x d_ket^y] (ac|bd)
+
+per (bra record, ket record), with `[r]^(0)` at `P - Q`, `|r| <= L + 2`:
+
+- BRA-BRA: per `(b,d)` row `I0[p] = SUM_q (-1)^{|q|} [p+q]^(0) s_bd
+  E^{bd}_q` over `hermite_order(lp + 2)`, then per `(a,c)` row `s_ac
+  D_ab D_cd SUM_p (dX_k dY_l E^{ac})_p I0[p]`, `XY` = `AA`, `AC`, `CC`
+  (the `AC` value also on `[C l][A k]`);
+- BRA-KET: per `(b,d)` row, ket centre `Y` (`B` or `D`) and axis `l`,
+  `I1[p] = SUM_q (-1)^{|q|} [p+q]^(0) s_bd (dY_l E^{bd})_q` over
+  `hermite_order(lp + 1)`, `q` to `lq + 1`, then `s_ac D_ab D_cd SUM_p
+  (dX_k E^{ac})_p I1[p]` on `[X k][Y l]`, never mirrored.
+
+The derivatives of `E^{ac}` and `E^{bd}` are formed BEFORE the fold, by
+the rule above on `_Axes` (the kernel folds raised rows instead). The RHF
+exchange energy is `-1/2 E_K`: the factor is the caller's.
+
 `absolute=True` is the same sum with every factor in `|.|` (the kernel
 tests' round-off scale). `atoms=` gives each shell a row of its own after
 the nuclei's, for the bra AND the kets; `[t]^(0)` is INJECTED
@@ -76,6 +100,8 @@ from felizjueves.gradient.host import (
     class_pairs,
     coulomb_jp,
     coulomb_kets,
+    exchange_pairs,
+    exchange_records,
     pair_weights,
     shell_atoms,
 )
@@ -334,6 +360,183 @@ def coulomb_hessian(basis: Basis, D, nuclei: Sequence[Nucleus], *,
                     for (side, k), Hd in first.items():
                         H[3 * cen[side] + k][3 * C + l] += s * _dot(Hd, j1)
     return H
+
+
+Quartets = Sequence[tuple[int, int, int, int]] | None
+
+
+def _fold_q(R: dict, col: Sequence[float], ps: Sequence[Ang],
+            qs: Sequence[Ang], absolute: bool) -> list[float]:
+    """`SUM_q (-1)^{|q|} [p+q]^(0) col_q` for every `p` (`+` throughout
+    when `absolute`)."""
+    out = []
+    for p in ps:
+        acc = 0.0
+        for q, e in zip(qs, col, strict=True):
+            x = R[(p[0] + q[0], p[1] + q[1], p[2] + q[2])] * e
+            acc += x if absolute or sum(q) % 2 == 0 else -x
+        out.append(acc)
+    return out
+
+
+def _exchange_quartet(H: Hess, cb: dict[str, int], ck: dict[str, int],
+                      sa: Shell, sc: Shell, sb: Shell, sd: Shell, Dab, Dcd,
+                      *, one_centre: OneCentre, parts: str,
+                      absolute: bool) -> None:
+    """One ordered shell quartet's `SUM D_ab D_cd [bra bra + bra ket]
+    (ac|bd)` into `H` (module docstring, THE EXCHANGE HESSIAN). `cb` /
+    `ck` map `_Axes`' centre letters, `A` the first shell and `B` the
+    second, to the bra's and the ket's atom rows."""
+    fix = abs if absolute else float
+    lp, lq = sa.l + sc.l, sb.l + sd.l
+    p2, p1 = hermite_order(lp + 2), hermite_order(lp + 1)
+    q0, q1 = hermite_order(lq), hermite_order(lq + 1)
+    rows_ac, rows_bd = _rows(sa, sc), _rows(sb, sd)
+    nc, nd = sc.n_cart, sd.n_cart
+    kets = []
+    for eta, Q, s_bd, beta, delta in _records(sb, sd):
+        ax = _Axes(eta, Q, sb.centre, sd.centre, sb.l + 1, sd.l + 1,
+                   beta, delta, absolute)
+        sq = fix(s_bd)
+        plain = [[sq * v for v in _hermite(
+            [ax.e(d, b[d], e[d]) for d in range(3)], q0)]
+            for b, e in rows_bd]
+        first: dict[tuple[str, int], list[list[float]]] = {}
+        for side in "AB":
+            for l in range(3):  # noqa: E741
+                rows = []
+                for b, e in rows_bd:
+                    f = [ax.e(d, b[d], e[d]) for d in range(3)]
+                    f[l] = ax.first(side, l, b[l], e[l])
+                    rows.append([sq * v for v in _hermite(f, q1)])
+                first[side, l] = rows
+        kets.append((eta, Q, plain, first))
+
+    for zeta, P, s_ac, alpha, gamma in _records(sa, sc):
+        ax = _Axes(zeta, P, sa.centre, sc.centre, sa.l + 2, sc.l + 2,
+                   alpha, gamma, absolute)
+        sec: dict[tuple[str, int, int], list[list[float]]] = {}
+        fst: dict[tuple[str, int], list[list[float]]] = {}
+        for a, c in rows_ac:
+            for kind in KINDS:
+                for k in range(3):
+                    for l in range(3):  # noqa: E741
+                        f = [ax.e(d, a[d], c[d]) for d in range(3)]
+                        if k == l:
+                            f[k] = ax.d2(kind, k, a[k], c[k])
+                        else:
+                            f[k] = ax.first(kind[0], k, a[k], c[k])
+                            f[l] = ax.first(kind[1], l, a[l], c[l])
+                        sec.setdefault((kind, k, l), []).append(
+                            _hermite(f, p2))
+            for side in "AB":
+                for k in range(3):
+                    f = [ax.e(d, a[d], c[d]) for d in range(3)]
+                    f[k] = ax.first(side, k, a[k], c[k])
+                    fst.setdefault((side, k), []).append(_hermite(f, p1))
+        acc: dict[tuple[int, int], float] = {}
+        for eta, Q, plain, first in kets:
+            theta = math.sqrt(zeta * eta / (zeta + eta))
+            PQv = (P[0] - Q[0], P[1] - Q[1], P[2] - Q[2])
+            R = {r: fix(one_centre(r, 0, PQv, theta))
+                 for r in hermite_order(lp + lq + 2)}
+            for rbd in range(len(rows_bd)):
+                ib, id_ = divmod(rbd, nd)
+                I0 = (_fold_q(R, plain[rbd], p2, q0, absolute)
+                      if parts != "bk" else None)
+                I1 = ({key: _fold_q(R, rows[rbd], p1, q1, absolute)
+                       for key, rows in first.items()}
+                      if parts != "bb" else {})
+                for rac in range(len(rows_ac)):
+                    ia, ic = divmod(rac, nc)
+                    w = fix(Dab[ia][ib]) * fix(Dcd[ic][id_])
+                    if I0 is not None:
+                        for (kind, k, l), rows in sec.items():  # noqa: E741
+                            v = w * _dot(rows[rac], I0)
+                            xy = (3 * cb[kind[0]] + k, 3 * cb[kind[1]] + l)
+                            acc[xy] = acc.get(xy, 0.0) + v
+                            if kind == "AB":
+                                yx = (xy[1], xy[0])
+                                acc[yx] = acc.get(yx, 0.0) + v
+                    for (side, k), rows in fst.items():
+                        for (kside, l), col in I1.items():  # noqa: E741
+                            xy = (3 * cb[side] + k, 3 * ck[kside] + l)
+                            acc[xy] = acc.get(xy, 0.0) + w * _dot(
+                                rows[rac], col)
+        for (x, y), v in acc.items():
+            H[x][y] += fix(s_ac) * v
+
+
+def exchange_hessian(basis: Basis, D, nuclei: Sequence[Nucleus], *,
+                     one_centre: OneCentre, quartets: Quartets = None,
+                     atoms: Sequence[int] | None = None, parts: str = "both",
+                     absolute: bool = False) -> Hess:
+    """`d2 E_K / dR dR`, `E_K = 1/2 SUM D_ab D_cd (ac|bd)` (module
+    docstring, THE EXCHANGE HESSIAN): the bra-bra and bra-ket terms over
+    every ordered shell quartet, or over `quartets=` `(i, k, j, l)` -- bra
+    `(sa, sc) = (i, k)`, ket `(sb, sd) = (j, l)`, K's Hermite pairing
+    (`gradient.host.class_quartets`). `D` must be symmetric. `parts`,
+    `atoms=` and `absolute=` are `coulomb_hessian`'s."""
+    if parts not in ("both", "bb", "bk"):
+        raise ValueError(f"parts = {parts!r} is not 'both', 'bb' or 'bk'")
+    at, n_rows = _atoms(basis, nuclei, atoms)
+    rows = checked_density(basis, D)
+    sh, off = basis.shells, basis.offsets
+    n = len(sh)
+    if quartets is None:
+        quartets = [(i, k, j, m) for i in range(n) for k in range(n)
+                    for j in range(n) for m in range(n)]
+
+    def block(x: int, y: int) -> list[list[float]]:
+        return [[rows[off[x] + i][off[y] + j] for j in range(sh[y].n_cart)]
+                for i in range(sh[x].n_cart)]
+
+    H = [[0.0] * (3 * n_rows) for _ in range(3 * n_rows)]
+    for i, k, j, m in quartets:
+        if not all(0 <= x < n for x in (i, k, j, m)):
+            raise ValueError(f"shell quartet {(i, k, j, m)} is out of range")
+        _exchange_quartet(H, {"A": at[i], "B": at[k]},
+                          {"A": at[j], "B": at[m]}, sh[i], sh[k], sh[j],
+                          sh[m], block(i, j), block(k, m),
+                          one_centre=one_centre, parts=parts,
+                          absolute=absolute)
+    return H
+
+
+def exchange_hessian_records(basis: Basis, nuclei: Sequence[Nucleus],
+                             am: tuple[int, int, int, int]
+                             ) -> tuple[dict, dict, dict]:
+    """`kernel_hkx`'s per-record arrays of K class `am = (la, lc, lb, ld)`,
+    as lists: `gradient.host.exchange_records`' bra side unchanged; its
+    ket side with the ket's exponents `eb_ket` (on `B`) and `ed_ket` (on
+    `D`) added, STABLY regrouped by the ket's atom pair `(atom_b,
+    atom_d)`; and the segments of that grouping, `seg_start` (`n_seg + 1`
+    record offsets), `seg_b`, `seg_d` (each segment's two atoms). One
+    launch over both sides is every quartet of `class_quartets(am)`."""
+    _, _, lb, ld = am
+    bra, ket = exchange_records(basis, nuclei, am)
+    atoms = shell_atoms(basis, nuclei)
+    sh = basis.shells
+    extra: list[tuple[float, float, int, int]] = []
+    for j, m in exchange_pairs(basis, lb, ld):
+        for _, _, _, beta, delta in _records(sh[j], sh[m]):
+            extra.append((beta, delta, atoms[j], atoms[m]))
+    if len(extra) != len(ket["s_bd"]):
+        raise AssertionError("the ket records and their exponents disagree")
+    order = sorted(range(len(extra)), key=lambda r: extra[r][2:])
+    out = {k: [v[r] for r in order] for k, v in ket.items()}
+    out["eb_ket"] = [extra[r][0] for r in order]
+    out["ed_ket"] = [extra[r][1] for r in order]
+    seg: dict[str, list[int]] = {"seg_start": [], "seg_b": [], "seg_d": []}
+    last = None
+    for n, r in enumerate(order):
+        if extra[r][2:] != last:
+            last = extra[r][2:]
+            seg["seg_start"].append(n)
+            seg["seg_b"].append(last[0])
+            seg["seg_d"].append(last[1])
+    seg["seg_start"].append(len(order))
+    return bra, out, seg
 
 
 def nuclear_repulsion_hessian(nuclei: Sequence[Nucleus]) -> Hess:

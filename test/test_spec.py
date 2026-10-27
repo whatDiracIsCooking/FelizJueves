@@ -340,9 +340,10 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
     # The Coulomb Hessian (felizjueves.hessian): JAB at d2 and DQ at d1, each
     # key differing from the integral's in the `d` segment alone; order 3 is
     # refused everywhere.
-    # (S, T and V at d2 are the one-electron Hessians, hessian.kernel_h1e.)
+    # (S, T and V at d2 are the one-electron Hessians, hessian.kernel_h1e;
+    # K at d2 the exchange energy's, hessian.kernel_hkx.)
     assert HESSIAN_TARGETS == frozenset({Target.JAB, Target.S, Target.T,
-                                         Target.V})
+                                         Target.V, Target.K})
     assert Target.DQ in GRADIENT_TARGETS
     d2 = Spec(Operator.COULOMB, 2, (2, 1), Target.JAB)
     assert d2.key() == "coulomb/d2/(2,1)/b1/jab/literal"
@@ -352,6 +353,16 @@ def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
         Spec(Operator.COULOMB, 3, (2, 1), Target.JAB)
     with pytest.raises(ValueError, match="derivative order 2 on target dq"):
         Spec(Operator.COULOMB, 2, (2, 1), Target.DQ)
+
+
+def test_k_takes_order_two_in_its_hermite_pairing() -> None:
+    # The exchange Hessian (hessian.kernel_hkx): K's am, bra first, the key
+    # differing from the integral's in the `d` segment alone; MMD only.
+    d2 = Spec(Operator.COULOMB, 2, (2, 1, 1, 0), Target.K)
+    d0 = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.K)
+    assert d2.key() == d0.key().replace("/d0/", "/d2/")
+    with pytest.raises(ValueError, match="derivative order 2 on target k.hgp"):
+        Spec(Operator.COULOMB, 2, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
 
 
 def test_the_df_targets_take_order_one_on_mmd_only() -> None:
