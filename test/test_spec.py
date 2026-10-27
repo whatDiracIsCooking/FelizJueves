@@ -638,10 +638,14 @@ def test_a_batched_dipole_is_refused_structurally(n: int) -> None:
     assert _dipole().n_batches == 1
 
 
-def test_the_dipole_refuses_hgp_as_s_does() -> None:
-    with pytest.raises(ValueError, match="one-electron kernel"):
-        _dipole(engine=Engine.HGP)
+def test_the_dipole_admits_hgp_as_s_does() -> None:
+    # one_electron.kernel_hgp: S, T, V and the dipole are legal on HGP, keyed
+    # by the engine slot; the native engine stays MMD.
+    hgp = _dipole(engine=Engine.HGP)
+    assert hgp.engine is Engine.HGP and hgp.target_slot == "dipole.hgp"
     assert _dipole().engine is Engine.MMD
+    assert hgp.key() == _dipole().key().replace("/dipole/literal",
+                                                "/dipole.hgp/literal")
 
 
 def test_a_dipole_key_never_collides_with_any_other_target_key() -> None:
