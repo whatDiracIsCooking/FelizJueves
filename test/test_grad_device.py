@@ -1,6 +1,7 @@
 """The d1 gradient kernels ON A CARD: `G = SUM_mn M_mn dX_mn/dR` for `S`,
-`T` and `V` (Hellmann-Feynman included), and `dE_J/dR` from `gjab_`,
-against `gradient.host` (generator `test/grad_driver.py`).
+`T` and `V` (Hellmann-Feynman included), `dE_J/dR` from `gjab_` and
+`dE_K/dR` from `gk_`, against `gradient.host` (generator
+`test/grad_driver.py`).
 
 PER MOLECULE, H2O/STO-3G and H2O/cc-pVDZ (`slow`, for its input size and
 its (dd) classes, L + 1 = 5), each fixture's own density as `M` (the
@@ -18,6 +19,10 @@ room and would still catch any wrong term (a gradient term is >= 1e-6 of
 `max|G|` on these inputs). The runs are compared with each other too.
 
 `gjab`'s `Jp` is the host's at `L + 1` (grad_driver.py's docstring).
+`gk` needs nothing from the host but the records: its `[r]^(0)` run on
+the card, one warp per bra record, so its row is the whole `dE_K` of
+the molecule (every ordered quartet, `E_K = 1/2 SUM D_ab D_cd (ac|bd)`).
+Its interpreted bound is test_kernel_gk.py's; the same `DEV_TOL` holds it.
 
 THE SESSION THAT BUILT THESE KERNELS HAD NO DEVICE COMPILER AND NO CARD:
 this file is written and has NOT been run on either card.
@@ -30,7 +35,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from grad_driver import compile_grad, gjab_launches, one_electron_launches
+from grad_driver import (
+    compile_grad,
+    gjab_launches,
+    gk_launches,
+    one_electron_launches,
+)
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import _toolchain
@@ -43,7 +53,13 @@ DEV_TOL = 1e-13  # of max|G| (module docstring)
 MOLECULES = [pytest.param("h2o_sto3g_j", id="h2o_sto3g"),
              pytest.param("h2o_ccpvdz_j", id="h2o_ccpvdz",
                           marks=(pytest.mark.slow,))]
-TARGETS = ("s", "t", "v", "j")
+TARGETS = ("s", "t", "v", "j", "k")
+# `k` on H2O/STO-3G only: cc-pVDZ's whole host dE_K (every ordered quartet
+# of 12 shells, in pure Python) and its (dd|dd) unit (~4 MB of unrolled
+# text) are out of this test's reach
+CASES = [pytest.param(m.values[0], w, id=f"{m.id}-{w}", marks=m.marks)
+         for m in MOLECULES for w in TARGETS
+         if not (w == "k" and m.values[0] != "h2o_sto3g_j")]
 
 
 @cache
@@ -62,6 +78,9 @@ def _host(name: str, which: str) -> np.ndarray:
     if which == "v":
         return np.array(host.potential_gradient(basis, D, nuclei,
                                                 one_centre=one_centre))
+    if which == "k":
+        return np.array(host.exchange_gradient(basis, D, nuclei,
+                                               one_centre=one_centre))
     return np.array(host.coulomb_gradient(basis, D, nuclei,
                                           one_centre=one_centre))
 
@@ -70,6 +89,8 @@ def _launches(name: str, which: str):
     basis, nuclei, D = _case(name)
     if which == "j":
         return gjab_launches(basis, nuclei, D, one_centre=one_centre)
+    if which == "k":
+        return gk_launches(basis, nuclei, D)
     target = {"s": Target.S, "t": Target.T, "v": Target.V}[which]
     return one_electron_launches(basis, nuclei, target, D)
 
@@ -95,8 +116,7 @@ def _check(backend: str, name: str, which: str, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-@pytest.mark.parametrize("which", TARGETS)
-@pytest.mark.parametrize("name", MOLECULES)
+@pytest.mark.parametrize(("name", "which"), CASES)
 def test_cuda_gradient_matches_the_host(name, which, request,
                                         run_device_binary, tmp_path) -> None:
     _check("cuda", name, which, request, run_device_binary, tmp_path)
@@ -104,8 +124,7 @@ def test_cuda_gradient_matches_the_host(name, which, request,
 
 @pytest.mark.hip
 @pytest.mark.gpu
-@pytest.mark.parametrize("which", TARGETS)
-@pytest.mark.parametrize("name", MOLECULES)
+@pytest.mark.parametrize(("name", "which"), CASES)
 def test_hip_gradient_matches_the_host(name, which, request,
                                        run_device_binary, tmp_path) -> None:
     _check("hip", name, which, request, run_device_binary, tmp_path)

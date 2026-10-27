@@ -3644,11 +3644,12 @@ def write_relation() -> None:
 
 # ---------------------------------------------------------------------------
 # The analytic nuclear gradients by MMD (`felizjueves.gradient`): the host
-# references on the AO layer, and two builders -- `kernel_g1e` (S, T, V at
-# d1) and `kernel_gjab` (JAB at d1, the Coulomb energy's bra derivative) --
-# each checked against `gradient.host` in the interpreter, so neither may be
-# its ancestor, nor `reference/`. The generator CLI writes their ladder
-# (`--grad-l`).
+# references on the AO layer, and three builders -- `kernel_g1e` (S, T, V
+# at d1), `kernel_gjab` (JAB at d1, the Coulomb energy's bra derivative) and
+# `kernel_gk` (K at d1, the exchange energy's) -- each checked against
+# `gradient.host` in the interpreter, so none may be its ancestor, nor
+# `reference/`. The generator CLI writes their ladders (`--grad-l`,
+# `--grad-k-l`).
 # ---------------------------------------------------------------------------
 
 _NO_MACHINE = {
@@ -3665,8 +3666,8 @@ RULES |= {
         "gradient/__init__.py: the gradient package's marker, a docstring "
         "and no code", (), reference=_GROUND_TRUTH),
     "gradient_host": _rule(
-        "gradient/host.py: the contracted nuclear gradients of S, T, V and "
-        "E_J on the AO layer -- the d1 kernels' witness -- from the undressed "
+        "gradient/host.py: the contracted nuclear gradients of S, T, V, "
+        "E_J and E_K on the AO layer -- the d1 kernels' witness -- from the undressed "
         "E (`mmd.hermite`), the kinetic shift and nucleus type of the "
         "one-electron references, and the J chain's kets (`ao.density`); "
         "`[t]^(0)` and `[p|q]` injected",
@@ -3677,7 +3678,8 @@ RULES |= {
            "plan": "the reference recurses directly; the plan is what the "
                    "kernels it checks are built on",
            "gradient.kernel_g1e": "the kernel is what this module checks",
-           "gradient.kernel_gjab": "the kernel is what this module checks"}),
+           "gradient.kernel_gjab": "the kernel is what this module checks",
+           "gradient.kernel_gk": "the kernel is what this module checks"}),
     "g1e_builder": _rule(
         "kernel_g1e.py: the S, T and V gradient kernels -- key -> IR, the "
         "per-axis `E` tables inlined (`e_fragment`), `V`'s `[t]^(0)` by the "
@@ -3692,12 +3694,24 @@ RULES |= {
         ("spec", "=ir", "plan", "gradient.kernel_g1e"),
         ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "gk_builder": _rule(
+        "kernel_gk.py: the exchange-energy gradient kernel -- key -> IR, "
+        "the K class's plan one bra order up (`kernel_k.k_class_spec`, "
+        "`mmd.kernel.builder_plan`, `recurrence`), the K seams' fragment "
+        "bindings, the per-axis `E` tables (`e_fragment`) and "
+        "`kernel_g1e`'s table reader",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "mmd.recurrence",
+         "mmd.kernel", "eri.k_exchange.kernel_k",
+         "eri.k_exchange.levers.seams", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
 }
 RULE_OF |= {
     "gradient": "gradient_package",
     "gradient.host": "gradient_host",
     "gradient.kernel_g1e": "g1e_builder",
     "gradient.kernel_gjab": "gjab_builder",
+    "gradient.kernel_gk": "gk_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "gradient": (),
@@ -3707,10 +3721,16 @@ EDGES |= {k: frozenset(v) for k, v in {
                             "one_electron.kernel_v", "plan.targets", "spec"),
     "gradient.kernel_gjab": ("gradient.kernel_g1e", "ir", "plan.targets",
                              "spec"),
+    "gradient.kernel_gk": ("eri.k_exchange.kernel_k",
+                           "eri.k_exchange.levers.seams",
+                           "gradient.kernel_g1e", "ir", "mmd.e_fragment",
+                           "mmd.kernel", "mmd.recurrence", "plan.schedule",
+                           "plan.targets", "spec"),
 }.items()}
-_GRAD_BUILDERS = ("gradient.kernel_g1e", "gradient.kernel_gjab")
+_GRAD_BUILDERS = ("gradient.kernel_g1e", "gradient.kernel_gjab",
+                  "gradient.kernel_gk")
 RULES["driver"] = Rule(RULES["driver"].why + ", and the gradient ladder "
-                       "through `kernel_g1e`, `kernel_gjab`",
+                       "through `kernel_g1e`, `kernel_gjab`, `kernel_gk`",
                        RULES["driver"].may | frozenset(_GRAD_BUILDERS),
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)

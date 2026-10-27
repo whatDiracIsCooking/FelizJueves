@@ -1,9 +1,10 @@
-"""`gradient.host`: the contracted nuclear gradients of `S`, `T`, `V` and
-`E_J`, against an oracle independent of the derivative rule.
+"""`gradient.host`: the contracted nuclear gradients of `S`, `T`, `V`,
+`E_J` and `E_K`, against an oracle independent of the derivative rule.
 
 THE ORACLE is a central finite difference of this repo's own integrals --
-`one_electron.overlap_matrix`, `kinetic_matrix`, `potential_matrix` and
-`eri.j_coulomb.j.coulomb_matrix`, each witnessed against libcint through
+`one_electron.overlap_matrix`, `kinetic_matrix`, `potential_matrix`,
+`eri.j_coulomb.j.coulomb_matrix` and `eri.k_exchange.k.exchange_matrix`
+(`E_K = 1/2 SUM D K`), each witnessed against libcint through
 the tracked fixtures -- in every coordinate of every atom, the atom's
 shells AND its nucleus moved together:
 
@@ -14,15 +15,18 @@ with `h = 1e-4` bohr, so the truncation is `O(h^2)`: measured ~2e-9 to
 order-unity error (a wrong `2 alpha`, a dropped `- i E^{i-1}`, a missing
 Hellmann-Feynman term, a factor 2 on `E_J`) is ~1 of `max|G|`. `M` is a
 NON-symmetric matrix for `S`, `T` and `V` (the weight rule claims any `M`)
-and a symmetric positive definite one for `E_J` (a density).
+and a symmetric positive definite one for `E_J` and `E_K` (a density;
+`E_K`'s bra-only rule needs `D` symmetric, and an asymmetric one is
+refused).
 
 TRANSLATIONAL INVARIANCE, `SUM_A G[A] = 0`, holds only if the derivative
 on every centre (and every nucleus, for `V`) is right, since none is
 inferred from another: held to `INVAR_TOL = 1e-13` of `max|G|`.
 
 The fast tier: H2O/STO-3G for `S`, `T`, `V`; a two-atom s, p basis for
-`E_J` (one primitive per shell, so `coulomb_matrix` is cheap). `slow`:
-H2O/cc-pVDZ (d shells) and H2O/STO-3G's `E_J`.
+`E_J` and `E_K` (one primitive per shell, so `coulomb_matrix` and
+`exchange_matrix` are cheap). `slow`: H2O/cc-pVDZ (d shells) and
+H2O/STO-3G's `E_J` and `E_K`.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from oracle import manifest
 
 from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri.j_coulomb.j import coulomb_matrix
+from felizjueves.eri.k_exchange.k import exchange_matrix
 from felizjueves.gradient import host
 from felizjueves.one_electron.kinetic import kinetic_matrix
 from felizjueves.one_electron.overlap import overlap_matrix
@@ -100,6 +105,9 @@ def _energy(which: str, M, D):
     if which == "V":
         return lambda b, nu: float(np.sum(M * np.array(
             potential_matrix(b, nu, one_centre=one_centre))))
+    if which == "K":
+        return lambda b, nu: 0.5 * float(np.sum(D * np.array(
+            exchange_matrix(b, D, pq=pq))))
     return lambda b, nu: 0.5 * float(np.sum(D * np.array(
         coulomb_matrix(b, D, pq=pq))))
 
@@ -112,6 +120,9 @@ def _analytic(which: str, basis, nuclei, M, D) -> np.ndarray:
     if which == "V":
         return np.array(host.potential_gradient(basis, M, nuclei,
                                                 one_centre=one_centre))
+    if which == "K":
+        return np.array(host.exchange_gradient(basis, D, nuclei,
+                                               one_centre=one_centre))
     return np.array(host.coulomb_gradient(basis, D, nuclei,
                                           one_centre=one_centre))
 
@@ -121,7 +132,9 @@ CASES = [
     *(pytest.param("h2o_sto3g_j", w, id=f"h2o_sto3g-{w}") for w in "STV"),
     pytest.param("pair_sp", "J", id="pair_sp-J"),
     pytest.param("pair_sp", "V", id="pair_sp-V"),
+    pytest.param("pair_sp", "K", id="pair_sp-K"),
     pytest.param("h2o_sto3g_j", "J", id="h2o_sto3g-J", marks=_SLOW),
+    pytest.param("h2o_sto3g_j", "K", id="h2o_sto3g-K", marks=_SLOW),
     *(pytest.param("h2o_ccpvdz_j", w, id=f"h2o_ccpvdz-{w}", marks=_SLOW)
       for w in "STV"),
 ]
@@ -143,7 +156,7 @@ def test_the_gradient_is_the_finite_difference_of_the_integrals(
 
 @pytest.mark.parametrize(("name", "which"), [
     *(pytest.param("h2o_sto3g_j", w, id=f"h2o_sto3g-{w}") for w in "STVJ"),
-    *(pytest.param("pair_sp", w, id=f"pair_sp-{w}") for w in "STVJ"),
+    *(pytest.param("pair_sp", w, id=f"pair_sp-{w}") for w in "STVJK"),
 ])
 def test_the_gradient_is_translationally_invariant(name: str,
                                                    which: str) -> None:
@@ -215,3 +228,29 @@ def test_the_nuclear_repulsion_gradient_is_its_finite_difference() -> None:
             fd[A, k] = (at(FD_H) - at(-FD_H)) / (2 * FD_H)
     assert np.abs(g - fd).max() <= FD_TOL * np.abs(g).max()
     assert np.abs(g.sum(axis=0)).max() <= INVAR_TOL * np.abs(g).max()
+
+
+def test_the_exchange_gradient_refuses_an_asymmetric_density() -> None:
+    # Its ket derivative is its bra derivative only for D_ab = D_ba.
+    basis, nuclei = PAIR_SP
+    M, _ = _matrices(basis.n_ao)
+    with pytest.raises(ValueError):
+        host.exchange_gradient(basis, M, nuclei, one_centre=one_centre)
+
+
+def test_the_exchange_classes_partition_the_ordered_quartets() -> None:
+    # One launch per K class covers each ordered quartet exactly once, so
+    # the classes' sum is the whole dE_K.
+    basis, nuclei = PAIR_SP
+    _, D = _matrices(basis.n_ao)
+    ls = (0, 1)
+    seen = [q for am in ((a, c, b, d) for a in ls for c in ls for b in ls
+                         for d in ls) for q in host.class_quartets(basis, am)]
+    n = len(basis.shells)
+    assert sorted(seen) == [(i, k, j, m) for i in range(n) for k in range(n)
+                            for j in range(n) for m in range(n)]
+    whole = np.array(host.exchange_gradient(basis, D, nuclei,
+                                            one_centre=one_centre))
+    parts = sum(np.array(host.exchange_gradient(
+        basis, D, nuclei, one_centre=one_centre, quartets=[q])) for q in seen)
+    assert np.abs(parts - whole).max() <= 1e-14 * np.abs(whole).max()

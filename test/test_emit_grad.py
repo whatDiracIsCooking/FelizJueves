@@ -233,12 +233,16 @@ FLAGS_VAR = {"cuda": "NVCC_FLAGS", "hip": "HIPCC_FLAGS"}
 
 
 def _compile(tc, backend: str, unit, tmp_path: Path) -> None:
+    compile_kernel(tc, backend, _kernel(*unit), tmp_path)
+
+
+def compile_kernel(tc, backend: str, k, tmp_path: Path) -> None:
+    """Compile one built kernel's unit alone, failing on a warning in it."""
     import devcache
 
     from felizjueves.performance import measured
 
     emit, arch, ext = BACKEND[backend]
-    k = _kernel(*unit)
     main = f"{k.name}.{ext}"
     target = (f"-arch=sm_{tc.arch}" if tc.name == "nvcc"
               else f"--offload-arch={tc.arch}")
