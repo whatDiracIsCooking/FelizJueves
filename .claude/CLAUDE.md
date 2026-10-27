@@ -79,7 +79,8 @@ place, and a local `I[n_p]` instead of `E[100][84]`, so `record_bound_33`'s
 `sm_86` frame is 3,360 B with no spill, against 76,608 B. The d text is
 pinned by digest, and the per-unit numbers are in the module docstring.
 **Nothing about `DQ` or
-`JAB` is measured.** `j_engine.md`, "The J chain as device code", is the one
+`JAB` is measured**, except #586's f-unit compiles and one hand timing
+(below). `j_engine.md`, "The J chain as device code", is the one
 place that says which steps are generated and on which cards they ran.
 Dispatch (`performance/dispatch.py`, #145) chooses `n_batches` per class from measured
 wall-clock for a launch plan, but the generator does not follow it:
@@ -120,6 +121,23 @@ and the row contraction as loops (`cartesian_loops`, `rolled_e_sum`,
 `JAB` and `RECORD_BOUND`). At (ff) the frame is 4,160 B with no spill.
 Through d the text is byte-identical, pinned by digest in
 `test_kernel_v.py`. The numbers are in `one_electron.md`.
+**At (ff), `DQ` and `JAB` default to a low-stack form too** (#586,
+stage 2): `build_dq_kernel(cls)` / `build_jab_kernel(cls)` pick it when
+`kernel_dq.dq_lowstack(cls)` / `kernel_jab.jab_lowstack(cls)` (one rule,
+`la + lb >= LOWSTACK_MIN_PAIR_L = 6`: (ff), and past f (gd) up). The
+mixed f classes stay unrolled: their frames are 0 to 936 B with no
+spill, and the low-stack form is slower there. `lowstack=` forces either
+form, and `density="ao"` takes both. Name, parameters, launch and output
+contract are the same, so free-breakfast's emitter calls the same
+builders. Per-axis `E` tables (`axis_tables_fragment`), the rows as
+`cartesian_loops`, the Hermite index in closed form -- but NOT
+`rolled_e_sum`: each `E` entry is `block_fragment`'s own `(E_x E_y) E_z`
+and the sums keep the host's order, so both forms stay `==` to the host,
+interpreted, at every class through (ff). At (ff) the `sm_86` frames are
+3,360 B (`dq_33`) and 2,688 B (`jab_33`), no spill, against 72,464 and
+71,456 B. Below L = 6 the text is byte-identical, pinned by digest in
+`test_kernel_dq.py` / `test_kernel_jab.py`. The numbers and a hand timing
+are in `j_engine.md`, "The low-stack `DQ` and `JAB` at f".
 **Milestone 10, the exchange matrix `K`, is partly built and still open**
 (#205, #207, #208 and #231 are open; no doc has a `K` section yet, #208).
 Built: `Target.K` (`spec.py`, #196; `am = (la, lc, lb, ld)`, the two Hermite

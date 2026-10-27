@@ -40,9 +40,10 @@ import test_emit_cuda
 import test_emit_hip
 from oracle import basis as ob
 from oracle import manifest
-from tiers import split_by_l
+from tiers import by_l, split_by_l
 
 from felizjueves.ao.density import epair, make_kets
+from felizjueves.emit import cuda, hip
 from felizjueves.eri.j_coulomb import kernel_dq
 from felizjueves.eri.j_coulomb.drive import KernelDQ
 from felizjueves.eri.j_coulomb.j import (
@@ -54,6 +55,7 @@ from felizjueves.eri.j_coulomb.j import (
 from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel, dq_shape, dq_spec
 from felizjueves.ir import (
     AtomicAdd,
+    Decl,
     Inline,
     Lit,
     Raw,
@@ -64,8 +66,10 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.ir.interp import Launch, interpret
+from felizjueves.ir.passes import split_axes, transpose
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.mmd.hermite import hermite_order
+from felizjueves.performance.device import GFX1200, SM_86
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.reference.pq import pq
 from felizjueves.spec import Operator, Spec, Target
@@ -165,7 +169,9 @@ def test_the_kernel_decides_no_weight_and_no_dressing(cls) -> None:
     stmts = list(walk(k.body))
     assert not any(isinstance(s, (Raw, AtomicAdd, WarpReduce)) for s in stmts)
     (inl,) = [s for s in stmts if isinstance(s, Inline)]
-    assert inl.fragment == ef.block_fragment(lc, ld)  # E inlined, undressed
+    want = (ef.axis_tables_fragment(lc, ld) if kernel_dq.dq_lowstack((lc, ld))
+            else ef.block_fragment(lc, ld))
+    assert inl.fragment == want  # E inlined, undressed (#586: per axis at f)
     assert "never decides" in kernel_dq.WEIGHT_IS_THE_HOSTS
 
 
@@ -420,3 +426,232 @@ def test_the_ao_variant_is_its_own_parameter_block() -> None:
     assert build_dq_kernel((2, 1)).name == "dq_2_1"
     with pytest.raises(ValueError, match="density is one of"):
         build_dq_kernel((2, 1), density="dense")
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#586, stage 2): the default at l_c + l_d >= 6, the
+# text below it unchanged, the same bits
+# ---------------------------------------------------------------------------
+
+# sha256 of the unrolled DQ text of every class below L = 6 with l <= 3 --
+# through (dd), and the mixed f classes (sf), (pf), (df) -- cuda and hip,
+# both densities, as emitted at 534a8e7 (before stage 2): the low-stack form
+# must not move a byte of it.
+D_DIGESTS = {
+    (0, 0): ("2764fd37ca241f6c82618334231923465eef95e201bb6a9a368eea9b982d44b6",
+             "57c9a84ce87013865598285e004e3294d0b1b09808f663cfafa2b716d53f9ccc"),
+    (0, 1): ("a949f8f4c776f8fc76a089040ba7faf9f73fb574a46198239676fc7777b6379c",
+             "a6c7024b673cc7b91e6e522d2ddf9af4c2456519f4245046183772d1f5ed761c"),
+    (0, 2): ("97f94d56b6f78eecb287c8d06931da68670c34581debe5319a35f11eee36b7bb",
+             "8a426c3240037c414ab897800947f0fe3cb5e2fc619770186f17f257814de293"),
+    (0, 3): ("76b66ca12a2e518c2ef729de1802d635c08980e2513776f93ed5eb52129cc9f0",
+             "3eaabeed7e225a38fbcfe90f62d086ee380121d918a6044bf8c0d14a43b209c1"),
+    (1, 0): ("30c9a87169405a6ea24a00b1ec6efa60e0664d31e9e907c13d57b40d8a3cedb0",
+             "0991f263e73167fc7edf9c30cfdfd57aa365b57ac03a64bc4f4c72b069cb2cd4"),
+    (1, 1): ("e4b0d79c37f5ea11224a73f3dbd1e1079cc98d737c4c5c24c0bb2d66bf8001a8",
+             "fc53549485cdee57aaa7dfe64fd6fb95be29ab1d6480720afa5c5fa7b06af6b1"),
+    (1, 2): ("661f1ec3002d78561e426aa70131db69c19608b98fb71f85b266047231ad10c5",
+             "ff767069aa9dccdfa28fcd8968827e27092c703a1311420259ffabef059b23a7"),
+    (1, 3): ("ba0f64a2fbbd7cbf5390c03eaedba502bcff0f71acae0d67c64c14d979f66a01",
+             "1c13120c2cf0e83152734391e1ab75af65895962fb5c8805d79957c14f6e669a"),
+    (2, 0): ("e5cbd306c18cfc4b27ac643af575c4b41c863d0becbeadf83d9fffa6300c631b",
+             "6ee6b07e63055e6fec0b9e209c7e9c239c565d57f0583d8c1953f55fe3d0d809"),
+    (2, 1): ("76124940859fa08b633fb2e782590882f8be38b4a6e005cab2581f8e22cb1e33",
+             "8668ad101a83b3a0cece914407bc02d77fc1e547fa59fd57fb8fecfd09d58cc0"),
+    (2, 2): ("91f7cabfc356c9bc0503b360cbb29d7731ba4bfb320a136ea80e4555d10b7936",
+             "e6dd3d10ce90d163fcbb505c65bee6378e2a3c29e3ef259eff1f904a2424f180"),
+    (2, 3): ("ccabae2b8fb51f644c76af24560585d4dd60a4bc9ac2286bf63931f489939d88",
+             "36af6154485f6066ba749485cb070a102e022fe9ea8a71182c003b2c0da9c832"),
+    (3, 0): ("d51bf77e0a4a761708e9226a1a814614a13f3f0e537539fbfc1714ec6dded209",
+             "655b86a50d5f74422551cabdc90074a0b6db18e4ce9c184c154743ecc3d11ba6"),
+    (3, 1): ("bf107373ab830515a559d7ba18ad01924459a59c4cd8956b7f1b379327c9bbba",
+             "4438a5ace4e53eaada2b4fa883265f8eddb21bad3347eda3490efc135224b117"),
+    (3, 2): ("c5d0501e3659f4bfb719df433c1921acd244ff304fe287acd5874282439882a5",
+             "48cdfcfa9e52c4009e1b9a90df1d3917d76bd524c95c4a2e89b92366d6ca171c"),
+}
+D_DIGESTS_AO = {
+    (0, 0): ("554bbdbbc6640fff4c36a6444da3e61a2ef5d42b9a795bfbefe7c260368fc252",
+             "769796da5bba549b227309b3b1814bd2b1cac2cd0bcbcecbd3b49e9621179831"),
+    (0, 1): ("bd05726cd2648683857e3107d726b029c36b61f4e6dbe9ea6451a09d10a451bf",
+             "86f010bf1a1dfc49bc6ea871a055078749f00b7139b29039adf4010d61537147"),
+    (0, 2): ("c324385dd6348b052fa6d78d81611b2b30c0c434b50d0855f57b772680f32e8c",
+             "d84aa283615cf82a2fba4d8f7d65444575a2f0ffa02342192a294f697d5fb128"),
+    (0, 3): ("d06d62f0376a85047f1336516f4760e06b294bbe092a6565a46194210e0d36e2",
+             "763dc195d94a568b93c546dc0d1d39db91229b0ce456ccfd4cae3273b4d5c586"),
+    (1, 0): ("18e4fb24e414108a540cabcfd2b178d73fe85abdde7143716b7f80624a6aa2dd",
+             "ac4d9e1571ba2b2150756b3942ea13d338a5b2e64328a3ec4ef0008642e25965"),
+    (1, 1): ("59661e9d7c655bc22559391236fea088dc1831c7c975a5b45c6e2acac0f1f841",
+             "2c9eda10efc9ac0eca4e672064d1b98e58de767352d4cd86b0169306d672e1a2"),
+    (1, 2): ("0ff358e1d33209125e7d0097b5f9247c6730bf22075c6bd4b4537bf56652fe80",
+             "41f6cc982663ad2a398a378eb6b5599555af75d297c8f95086c06a0dcd0001d1"),
+    (1, 3): ("d95066755bab975ea94dd0d5ca2b534a48b65247fb3fba24392b681aad9d12b6",
+             "7cdffa5b3a6f847a87bdec78f12fccd3e81c7bc5ac2ebbee51f5cd6b24ba65e0"),
+    (2, 0): ("326318e576d2b5e467b218da170c6faece5e295e5a5e6624ca056991c977d2fa",
+             "20f2c16c95bfae5f07c9b1d7a65ed1c063890701fb67347a3246d91b312fdccb"),
+    (2, 1): ("858c968e9115d2f2b5b8fade69f958b6a5da661276fe9bea80ed0356c893d629",
+             "30431dd05a17f79d4fa2f4610a2d6437885def54f47b2c7b9d802ae749a02bef"),
+    (2, 2): ("1f413f25b8b11a27dc09557a2d7424f755aeba91e2a65062d261f4300ddc8608",
+             "a1817819ae47e2a5e2d62f989c37719cb52f04c9d08489b077813ba3aa99adbb"),
+    (2, 3): ("3b3810ab05e68876b2a37842c8ccc76e689766093817faea67b37a5e431b8288",
+             "a16b0c473a06c5f0086a8a344dd1e9b12382a2967830871535ed7bcb67c7195a"),
+    (3, 0): ("e0c3a4113e77a8c67c3763cf8c9d21303ae098df4075351436ca078a129eab14",
+             "729591831f74858d35aa2a4a8c250c033ddf9683ad5dc047dc313196164ab99e"),
+    (3, 1): ("1684e2e8e9111f52bab9ed9c43e2e84fa894b2a39560b4c1449b811bdf2cefd8",
+             "bb3fba2472a540f3af9c032fdb7065b31b40a9a496c7219b4eb18caf0fd96adb"),
+    (3, 2): ("40c3526387a83ae90a62e4d91fff62235405012778c692e1fb759c46e42989c2",
+             "2d4e7587015a903beb7e6ae141b81309e89b1ba7cf216ebbf1d12642138b88a0"),
+}
+
+# #586's budget: at most 8 KB of stack per thread at f on sm_86. The local
+# arrays are the whole of what the low-stack kernel can spill by design, so
+# they are held to it here, without a compiler (the measured frames are in
+# docs/implementation/j_engine.md).
+STACK_BUDGET = 8192
+F_CLASSES = [(0, 3), (1, 3), (2, 3), (3, 3), (3, 0), (3, 1), (3, 2)]
+
+
+def test_the_selection_rule_is_pair_l_6_and_above() -> None:
+    # (ff), and past f (gd), (gf), ...; the mixed f classes stay unrolled
+    assert kernel_dq.LOWSTACK_MIN_PAIR_L == 6
+    for lc in range(5):
+        for ld in range(5):
+            assert kernel_dq.dq_lowstack((lc, ld)) is (lc + ld >= 6)
+            assert kernel_dq.dq_lowstack(dq_spec(lc, ld)) is \
+                kernel_dq.dq_lowstack((lc, ld))
+
+
+@pytest.mark.parametrize("density", kernel_dq.DENSITIES)
+@pytest.mark.parametrize("cls", split_by_l(sorted(D_DIGESTS), sum,
+                                           ids=lambda c: f"{c[0]}{c[1]}"))
+def test_the_text_below_l6_is_byte_identical(cls, density) -> None:
+    import hashlib
+    k = build_dq_kernel(cls, density=density)
+    assert k == build_dq_kernel(cls, density=density, lowstack=False)
+    got = tuple(hashlib.sha256(t.encode()).hexdigest()
+                for t in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)))
+    want = D_DIGESTS_AO if density == "ao" else D_DIGESTS
+    assert got == want[cls]
+
+
+@pytest.mark.parametrize("density", kernel_dq.DENSITIES)
+@pytest.mark.parametrize("cls", split_by_l([(1, 1), (2, 3), (3, 2), (3, 3)], sum,
+                                           ids=lambda c: f"{c[0]}{c[1]}"))
+def test_both_forms_share_the_name_parameters_and_launch(cls, density) -> None:
+    lo = build_dq_kernel(cls, density=density, lowstack=True)
+    hi = build_dq_kernel(cls, density=density, lowstack=False)
+    assert lo.name == hi.name == kernel_dq.dq_name(cls, density=density)
+    assert lo.params == hi.params
+    want = kernel_dq.AO_PARAMS if density == "ao" else kernel_dq.PARAMS
+    assert tuple(p.name for p in lo.params) == want
+    assert build_dq_kernel(cls, density=density) == (
+        lo if kernel_dq.dq_lowstack(cls) else hi)
+    rec = [s for s in lo.body if isinstance(s, Decl) and s.name == "k"]
+    assert rec and rec == [s for s in hi.body
+                           if isinstance(s, Decl) and s.name == "k"]
+
+
+def _local_doubles(k) -> dict[str, int]:
+    return {s.name: int(np.prod([d.value for d in s.shape]))
+             for s in walk(k.body) if isinstance(s, Decl) and s.shape}
+
+
+@pytest.mark.parametrize("cls", split_by_l(F_CLASSES, sum,
+                                           ids=lambda c: f"{c[0]}{c[1]}"))
+def test_the_lowstack_form_holds_no_e_block(cls) -> None:
+    # every f class, forced where the rule keeps the unrolled form
+    lc, ld = cls
+    for density in kernel_dq.DENSITIES:
+        k = build_dq_kernel(cls, density=density, lowstack=True)
+        arrays = _local_doubles(k)
+        ext = ef.axis_table_extent(lc, ld)
+        assert arrays == {"Ex": ext, "Ey": ext, "Ez": ext,
+                           "acc": dq_shape(lc, ld)[1]}
+        assert 8 * sum(arrays.values()) <= STACK_BUDGET
+        (inl,) = [s for s in walk(k.body, into_inline=False)
+                  if isinstance(s, Inline)]
+        assert inl.fragment == ef.axis_tables_fragment(lc, ld)
+
+
+@pytest.mark.slow  # builds (ff), L = 6 > FAST_L_MAX (tiers.py)
+def test_the_ff_lowstack_arrays_are_420_doubles() -> None:
+    # 3 x 112 axis-table entries and 84 accumulators: 3,360 B, all of
+    # sm_86's measured frame for dq_33.
+    assert sum(_local_doubles(build_dq_kernel((3, 3))).values()) == 420
+
+
+def _other_form(cls) -> bool:
+    return not kernel_dq.dq_lowstack(cls)
+
+
+@pytest.mark.parametrize("cls", split_by_l(CLASSES, sum,
+                                           ids=lambda c: f"{c[0]}{c[1]}"))
+def test_the_other_form_is_the_host_pre_contraction_bitwise(cls) -> None:
+    """Every class through (ff) in the form `build_dq_kernel` does NOT choose
+    by default -- the low-stack form through d, the unrolled one at f --
+    both densities, every ket shell pair of the class in one launch,
+    against `dq_from_host`, `==`: with the default-form tests above, both
+    forms are held bitwise at every class."""
+    fx, basis = _fixture("hf_ccpvtz")
+    items = _by_class("hf_ccpvtz")[cls]
+    pairs = [(c, d, w, ket) for c, d, w, ket, _ in items]
+    a = _records(pairs, basis.offsets)
+    n_rec, n_q = len(a["eta"]), dq_shape(*cls)[1]
+    common = dict(n_rec=n_rec, eta=a["eta"], XPA=a["XPA"], XPB=a["XPB"],
+                  s=a["s"], w=a["w"])
+    launch = Launch(*kernel_dq.launch_shape(n_rec, 32), 32)
+    want = [list(row) for _, _, w, ket, dcd in items
+            for row in dq_from_host(ket, dcd, w)]
+    dense = np.array(fx.density, dtype=np.float64)
+    for density, extra in (
+            ("pairs", dict(n_pair=len(pairs), pair=a["pair"],
+                           Dcd=np.array([d for *_, d in items]))),
+            ("ao", dict(n_ao=dense.shape[0], off_c=a["off_c"],
+                        off_d=a["off_d"], Dao=dense))):
+        k = build_dq_kernel(cls, density=density, lowstack=_other_form(cls))
+        out = interpret(k, launch=launch, **common, **extra,
+                        D=np.full((n_rec, n_q), np.nan),
+                        Dmax=np.full(n_rec, np.nan))
+        assert out["D"].tolist() == want, density
+        assert out["Dmax"].tolist() == [max(abs(v) for v in r) for r in want]
+
+
+@pytest.mark.parametrize("cls", [by_l((1, 2), 3, id="12"),
+                                 by_l((3, 3), 6, id="33")])
+def test_the_freebreakfast_spelling_takes_both_forms(cls) -> None:
+    # free-breakfast's tools/emit_coulomb_kernels.py: density="ao", the
+    # record vectors split per axis, D transposed q-major. The passes take
+    # the low-stack form as they take the unrolled one, and the parameters
+    # still match.
+    axes = {"XPA": ("pa_x", "pa_y", "pa_z"), "XPB": ("pb_x", "pb_y", "pb_z")}
+
+    def fbf(lowstack: bool):
+        k = build_dq_kernel(cls, density="ao", name="dq", lowstack=lowstack)
+        return transpose(split_axes(k, axes), ("D",))
+
+    lo, hi = fbf(True), fbf(False)
+    assert lo.params == hi.params
+    assert "D[(q * n_rec + k)] = dq;" in cuda.emit(lo, SM_86)
+
+
+# The (ff) default text, both backends: the low-stack form's golden.
+LOWSTACK_GOLDEN_CLASS = (3, 3)
+GOLDEN = test_emit_cuda.GOLDEN.parent.parent
+
+
+@pytest.mark.slow  # emits (ff), L = 6 > FAST_L_MAX (tiers.py)
+def test_the_lowstack_cuda_golden_is_unchanged() -> None:
+    # Regenerate (never hand-edit), the default form at (ff):
+    #   PYTHONPATH=src uv run python -c "from felizjueves.eri.j_coulomb.kernel_dq \
+    #   import build_dq_kernel as b; from felizjueves.performance.device import \
+    #   SM_86; from felizjueves.emit.cuda import emit; print(emit(b((3, 3)), \
+    #   SM_86), end='')" > test/golden/cuda/dq_3_3.cu
+    text = cuda.emit(build_dq_kernel(LOWSTACK_GOLDEN_CLASS), SM_86)
+    assert text == (GOLDEN / "cuda" / "dq_3_3.cu").read_text()
+
+
+@pytest.mark.slow  # emits (ff)
+def test_the_lowstack_hip_golden_is_unchanged() -> None:
+    #   ... the same with GFX1200 and felizjueves.emit.hip, into
+    #   test/golden/hip/dq_3_3.hip
+    text = hip.emit(build_dq_kernel(LOWSTACK_GOLDEN_CLASS), GFX1200)
+    assert text == (GOLDEN / "hip" / "dq_3_3.hip").read_text()

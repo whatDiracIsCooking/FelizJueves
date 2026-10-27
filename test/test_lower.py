@@ -659,10 +659,14 @@ def _mmd_kernels(fast: bool) -> dict[str, Kernel]:
         return is_fast(L) == fast
 
     ks = [build_pq_kernel(L) for L in range(11) if pick(L)]
-    ks += [build_dq_kernel((la, lb)) for la, lb in ((0, 0), (0, 1), (1, 1),
-                                                     (2, 2), (3, 3))
+    # The UNROLLED DQ / JAB at every class: from f up the default is #586's
+    # low-stack form, whose rolled loops carry their accumulators by design
+    # and are outside this value model; the pins are the unrolled text's.
+    ks += [build_dq_kernel((la, lb), lowstack=False)
+           for la, lb in ((0, 0), (0, 1), (1, 1), (2, 2), (3, 3))
            if pick(la + lb)]
-    ks += [build_jab_kernel((la, la)) for la in range(4) if pick(2 * la)]
+    ks += [build_jab_kernel((la, la), lowstack=False) for la in range(4)
+           if pick(2 * la)]
     ks += [k for L in range(5) if pick(L) for k in build_k_kernels(k_spec(L))]
     return {k.name: k for k in ks}
 
