@@ -557,9 +557,10 @@ alone and `(mn|P)` the VRR of `(max, min|lP 0)` then the bra HRR, the zero
 (LMAX per shell, 0..1 only), never in the bare default nor in
 `KERNEL_GEN_CMD`. Interpreted against the hosts (worst 3.20 eps of the tower
 twin), the MMD kernels and libcint (`test_kernel_hgp_df.py`), nine goldens
-per backend (`test_emit_hgp_df.py`); **not compiled and not run on a card**
-(`test_hgp_df_device.py` is written; that session had neither). Nothing
-measured.
+per backend (`test_emit_hgp_df.py`); **compiled and run on the RTX 3080
+only** (`test_hgp_df_device.py`, 8 passed: worst 6.06 eps of the tower twin
+against the host, 2.1e-14 of max against libcint, runs bit-identical); the
+RX 9060 XT is not run (#431). Nothing measured.
 **The dipole `MU = <a| q (r - C) |b>` is generated too, and ran on both
 cards** (milestone 19, #517–#524; `one_electron.md`, "The dipole `MU`";
 nothing consumes it yet): `Target.DIPOLE` (`spec.py`, #518; `am` a pair
@@ -606,9 +607,11 @@ Staged by `OneEClass.hgp_arrays`; `python -m felizjueves.emit --hgp-one-e-l
 [LMAX]` (1 bare, 0..1 only), never in the bare default nor `KERNEL_GEN_CMD`.
 Witnessed interpreted (`test_kernel_hgp.py`) against the MMD host and
 libcint's `int1e_ovlp` / `kin` / `nuc` / `r_cart` on H₂O/STO-3G and 6-31G;
-goldens in `test_emit_hgp_one_e.py`. **Not compiled and not run on either
-card yet** (its compile cases were never run: no device compiler in the
-session that built it), nothing measured.
+goldens in `test_emit_hgp_one_e.py`. **Compiled and run on the RTX 3080
+only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`,
+16 passed: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
+basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
+the RX 9060 XT is not run (#431), nothing measured.
 **The first `derivative_order = 1` keys: analytic nuclear gradients by
 McMurchie–Davidson, interpreted only** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):
