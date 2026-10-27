@@ -109,9 +109,13 @@ was added (`limits.json`) — **and nothing one-electron is measured.** Energy
 order only; `V` is one batch by decision. Every kernel-tier run of milestone
 11 was capped at L ≤ 8 by the user, and no `J` text changed, so the L = 16
 tier was not re-run.
-**From f up, `V` defaults to a low-stack form** (#586, stage 1):
-`build_v_kernel(cls)` picks it when `kernel_v.v_lowstack(cls)` (a shell
-with `l ≥ 3`). `lowstack=` forces either form. The name, parameters, launch
+**At (ff), `V` defaults to a low-stack form** (#586, stage 1, narrowed):
+`build_v_kernel(cls)` picks it when `kernel_v.v_lowstack(cls)`
+(`la + lb ≥ 6`, so (ff) alone through f: the only unrolled frame over the
+8 KB budget; `sm_86` stack unrolled / low-stack is 0 / 0 B at `v_03`,
+1,904 / 1,488 at `v_13`, 6,192 / 2,656 at `v_23`, 85,312 / 4,160 at
+`v_33`, and by hand the low-stack form is up to ~1.25× slower at (df),
+slightly faster at (ff)). `lowstack=` forces either form. The name, parameters, launch
 and `V` contract are the same in both. Instead of the `E[100][84]` block
 (an ~85 KB `sm_86` frame at (ff), reserved for every resident thread, so
 ~8.5 GB of the RTX 3080), it holds per-axis `E` tables
@@ -119,8 +123,8 @@ and `V` contract are the same in both. Instead of the `E[100][84]` block
 and the row contraction as loops (`cartesian_loops`, `rolled_e_sum`,
 `hermite_index`, the shared piece that stages 2 and 3 reuse for `DQ`,
 `JAB` and `RECORD_BOUND`). At (ff) the frame is 4,160 B with no spill.
-Through d the text is byte-identical, pinned by digest in
-`test_kernel_v.py`. The numbers are in `one_electron.md`.
+Every other class's text, the mixed f ones included, is byte-identical to
+cc5d16f's, pinned by digest in `test_kernel_v.py`. The numbers are in `one_electron.md`.
 **At (ff), `DQ` and `JAB` default to a low-stack form too** (#586,
 stage 2): `build_dq_kernel(cls)` / `build_jab_kernel(cls)` pick it when
 `kernel_dq.dq_lowstack(cls)` / `kernel_jab.jab_lowstack(cls)` (one rule,

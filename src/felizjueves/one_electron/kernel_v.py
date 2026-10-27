@@ -86,11 +86,11 @@ once per row after the nucleus sum rather than once per `E` entry. So the
 two agree to rounding, and the test states its bound (test/test_kernel_v.py);
 contrast `kernel_s` and `kernel_jab`, which are bitwise.
 
-THE LOW-STACK FORM (#586), the default from f up. The block above is
+THE LOW-STACK FORM (#586), the default at (ff). The block above is
 `E[100][84]` per thread at (ff), 67 KB: on sm_86 an 85 KB stack frame,
 which CUDA reserves for every resident thread (~8.5 GB of a 10 GB RTX
 3080). `build_v_kernel(cls)` therefore emits, whenever `v_lowstack(cls)`
-(a shell with `l >= LOWSTACK_MIN_L = 3`), a kernel with the SAME name,
+(`la + lb >= LOWSTACK_MIN_LSUM = 6`), a kernel with the SAME name,
 parameters, launch and output contract and no `E^{ab}` block:
 
     tables = e_fragment.axis_tables_fragment(la, lb)  Ex Ey Ez, local,
@@ -107,12 +107,27 @@ parameters, launch and output contract and no `E^{ab}` block:
 
 so the frame is the tables, `acc` and `R` (520 doubles at (ff), 4,160 B on
 sm_86, no spill), and the text is the recurrence plus a fixed set of
-loops. Through d the default is the unrolled kernel above, its text
-unchanged byte for byte; `lowstack=True` / `False` forces either form at
-any class. Interpreted, both forms agree with the host to the same bound
+loops. Below `la + lb = 6` the default is the unrolled kernel above, its
+text unchanged byte for byte; `lowstack=True` / `False` forces either form
+at any class. Interpreted, both forms agree with the host to the same bound
 (test/test_kernel_v.py); the low-stack product `E_x (E_y (E_z R))` is in a
 different association from the block's `(E_x E_y) E_z`, so the two forms
 agree to rounding, not bitwise.
+
+WHY `la + lb >= 6`, AND NOT "AN f SHELL". The slower form ships only where
+the faster one does not fit. Measured on sm_86 (`nvcc -O3 -rdc=true
+-Xptxas -v`), the unrolled frame is 0 B at (sf), 1,904 B at (pf), 6,192 B
+at (df) and 85,312 B at (ff); the low-stack one 0, 1,488, 2,656 and
+4,160 B, and by hand it is slower at the mixed f classes (about 1.25x at
+(df)) and slightly faster at (ff). So the rule is the class's Hermite order
+`L = la + lb`, which fixes the recurrence and the block's width
+(`hermite_targets(L)` columns); its rows are `n_cart(la) n_cart(lb)`,
+largest at the most even split. At every `L <= 5` no class has a larger
+block than (df)'s 60 x 56, the measured 6 KB frame, inside #586's 8 KB
+budget, so past f, (gs) and (gp) stay unrolled. At `L >= 6` the rule picks
+the low-stack form, measured at (ff) only; a lopsided class such as (is)
+(28 x 84) might fit unrolled, but nothing past f is generated here, and the
+rule errs to the smaller frame.
 
 A builder: vendor-neutral IR. It imports neither `ao/` (its witness) nor the
 interpreter nor `reference/`.
@@ -160,7 +175,7 @@ __all__ = [
     "NUC",
     "REC",
     "ZEROED_V",
-    "LOWSTACK_MIN_L",
+    "LOWSTACK_MIN_LSUM",
     "build_v_kernel",
     "v_lowstack",
     "v_name",
@@ -238,15 +253,18 @@ def v_name(cls: Spec | tuple[int, int]) -> str:
     return f"v_{la}{lb}"
 
 
-LOWSTACK_MIN_L = 3  # the low-stack form from f up (#586)
+LOWSTACK_MIN_LSUM = 6  # the low-stack form from la + lb = 6, (ff) (#586)
 
 
 def v_lowstack(cls: Spec | tuple[int, int]) -> bool:
-    """THE SELECTION RULE (#586): True when the class has a shell of
-    `l >= LOWSTACK_MIN_L` (f or above), where `build_v_kernel` emits the
-    low-stack form by default; False through d, where the unrolled form
-    stays the default and its text is unchanged."""
-    return max(_spec(cls).am) >= LOWSTACK_MIN_L
+    """THE SELECTION RULE (#586): True when the class's Hermite order
+    `la + lb >= LOWSTACK_MIN_LSUM` -- through f, (ff) alone -- where the
+    unrolled frame (85 KB at (ff) on sm_86) blows the 8 KB budget and
+    `build_v_kernel` emits the low-stack form by default. False below,
+    where the unrolled form fits, is faster, stays the default and its text
+    is unchanged. The module docstring says why the sum, past f."""
+    la, lb = _spec(cls).am
+    return la + lb >= LOWSTACK_MIN_LSUM
 
 
 def build_v_kernel(cls: Spec | tuple[int, int], *,
@@ -256,8 +274,8 @@ def build_v_kernel(cls: Spec | tuple[int, int], *,
 
     `cls` is a `Target.V` `Spec` or `(la, lb)`. See the module docstring.
     `lowstack` picks the form: `None` (the default) is `v_lowstack(cls)`,
-    so through d the unrolled kernel and at f the low-stack one (THE
-    LOW-STACK FORM); `True` / `False` force either, at any class. Both
+    so below `la + lb = 6` the unrolled kernel and at (ff) the low-stack
+    one (THE LOW-STACK FORM); `True` / `False` force either, at any class. Both
     have the same name, parameters, launch and output contract.
     """
     spec = _spec(cls)

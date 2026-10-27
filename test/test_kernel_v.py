@@ -83,7 +83,7 @@ from felizjueves.mmd.hermite import hermite_order
 from felizjueves.mmd.recurrence import fundamental_prelude, recurrence_body
 from felizjueves.one_electron.kernel_v import (
     ATOMIC_REASON,
-    LOWSTACK_MIN_L,
+    LOWSTACK_MIN_LSUM,
     NUC,
     ZEROED_V,
     build_v_kernel,
@@ -519,12 +519,13 @@ def test_the_hip_golden_is_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The low-stack form (#586): from f up by default, the d text unchanged
+# The low-stack form (#586): at (ff) by default, every other text unchanged
 # ---------------------------------------------------------------------------
 
-# sha256 of the unrolled V text through (dd), cuda and hip, as emitted at
-# cc5d16f (before #586): the low-stack form must not move a byte of it.
-D_DIGESTS = {
+# sha256 of the unrolled V text of every class below la + lb = 6 -- through
+# (dd), and the mixed f classes -- cuda and hip, as emitted at cc5d16f
+# (before #586): the low-stack form must not move a byte of it.
+UNROLLED_DIGESTS = {
     (0, 0): ("b7180b64ee2c74943cdf75e4e73e7fe846af5eba3835f9d2140dd65969f7124e",
              "842b0bd01c614451d087494c57c48b67387cee6f18da882485a350163c138403"),
     (0, 1): ("a3bfb3693d6e36f1b3bafc935b0a3403db8ab7ad5ad004337c3d9d6adf2b5fc7",
@@ -543,6 +544,18 @@ D_DIGESTS = {
              "a99288902121639ae99a6a752d9f6711b108233d33e40e8706245cb8f46c4670"),
     (2, 2): ("0cf5a7dccc8790ac98080ee2d2fd28b65d8cb624c716e1c0487200e080028184",
              "7a935c294474cc0f112cbc5adb62e604868da3ce02e990d4136c4affed18fc0a"),
+    (0, 3): ("ff16f783741ebd92d2908c6bc2ef37f94bfb41c01f9e3f09bfba6ac9ded73ae2",
+             "d97afe8be5fc60b20256c823c2c021acc4b8f94bb6bf49fd67cc4a1d34782f71"),
+    (1, 3): ("85fd9b1366b4e9895875a5e0a6d330fd439b489d0df79927c6662a1f6c937062",
+             "13ae0d8d557e0e7c6a96ddaf2c952c11e0106fb38f6888f8461f9d9e09e23cde"),
+    (2, 3): ("54275f35c933f3a4fb0c1045065a5feb00810c3d3eae869ba4881a38e78272ad",
+             "f446e3ef3e395e1aea3f1c4c1e8b91627edcce8dc1b959931697ff5dacfea99f"),
+    (3, 0): ("280171a1c26dd9873c4e630b2021500aa7667864dbe14a1d9a8e830d0169cfd3",
+             "06dc7a12d084ac99c5f990640be0f21f4ec2be33b380ff40c29c5263714ca460"),
+    (3, 1): ("cee007584c2a3f841c60a8c447b3a88e16b1fe22c91bcae7a677b20c8ab2f327",
+             "30ab756b5e14a97fb6909644eecec1351e9ac59f760b1b429b5b588694e810c1"),
+    (3, 2): ("f022e68f8bd1d7f941feb88464f6a66aa507dd531f75a71b3a0f982cd7210442",
+             "392869757dedfa188228ed6d6dbea838df603ac966e7bf312c50d1c76b0669ae"),
 }
 
 # #586's budget: at most 8 KB of stack per thread at (ff) on sm_86. The
@@ -552,22 +565,29 @@ D_DIGESTS = {
 STACK_BUDGET = 8192
 
 
-def test_the_selection_rule_is_f_and_above():
-    assert LOWSTACK_MIN_L == 3
+def test_the_selection_rule_is_the_hermite_order_six():
+    # (ff) alone through f; past f by la + lb, so (gs) and (gp) unrolled
+    assert LOWSTACK_MIN_LSUM == 6
     for la in range(5):
         for lb in range(5):
-            assert v_lowstack((la, lb)) is (max(la, lb) >= 3)
+            assert v_lowstack((la, lb)) is (la + lb >= 6)
             assert v_lowstack(v_spec(la, lb)) is v_lowstack((la, lb))
+    assert [c for c in CLASSES if v_lowstack(c)] == [(3, 3)]
 
 
-@pytest.mark.parametrize("cls", sorted(D_DIGESTS), ids=lambda c: f"{c[0]}{c[1]}")
-def test_the_d_text_is_byte_identical(cls):
+def test_every_unrolled_default_through_f_is_pinned():
+    assert sorted(UNROLLED_DIGESTS) == [c for c in CLASSES if not v_lowstack(c)]
+
+
+@pytest.mark.parametrize("cls", sorted(UNROLLED_DIGESTS),
+                         ids=lambda c: f"{c[0]}{c[1]}")
+def test_the_unrolled_text_is_byte_identical(cls):
     import hashlib
     k = build_v_kernel(cls)
     assert k == build_v_kernel(cls, lowstack=False)
     got = tuple(hashlib.sha256(t.encode()).hexdigest()
                 for t in (cuda.emit(k, SM_86), hip.emit(k, GFX1200)))
-    assert got == D_DIGESTS[cls]
+    assert got == UNROLLED_DIGESTS[cls]
 
 
 @pytest.mark.parametrize("cls", [(1, 1), (2, 3), (3, 3)],
@@ -591,7 +611,7 @@ def _local_doubles(k) -> dict[str, int]:
                          ids=lambda c: f"{c[0]}{c[1]}")
 def test_the_lowstack_form_holds_no_e_block(cls):
     la, lb = cls
-    k = build_v_kernel(cls)
+    k = build_v_kernel(cls, lowstack=True)
     rows, cols = ef.block_shape(la, lb)
     arrays = _local_doubles(k)
     ext = ef.axis_table_extent(la, lb)
@@ -620,8 +640,8 @@ def _other_form(cls):
 @pytest.mark.parametrize("cls", [_cls_param(c) for c in CLASSES])
 def test_the_other_form_agrees_with_the_host_to_round_off(cls):
     """Every class through (ff) in the form `build_v_kernel` does NOT
-    choose by default -- the low-stack form through d, the unrolled one at
-    f -- against the host, at the same `TOL_ULPS`: with the default-form
+    choose by default -- the low-stack form below (ff), the unrolled one at
+    (ff) -- against the host, at the same `TOL_ULPS`: with the default-form
     test above, both forms are held at every class."""
     pairs = _pairs_of(SYNTHETIC, cls)
     n = SYNTHETIC.n_ao
