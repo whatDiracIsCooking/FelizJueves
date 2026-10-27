@@ -50,7 +50,9 @@ from felizjueves.eri.density_fit.kernel_eri3 import (
     build_eri3_kernel,
     launch_shape,
 )
+from felizjueves.eri.density_fit.kernel_hgp import build_heri3_kernel
 from felizjueves.ir import Intent, Kernel
+from felizjueves.spec import Engine
 
 THREADS = 32  # lanes per block, one cell per thread; not numerical
 WIDTH = {"zeta_ab": 1, "P": 3, "XPA": 3, "XPB": 3, "s_ab": 1,  # per bra rec
@@ -98,13 +100,16 @@ def _call(kern: Kernel, c: int, ns: str, cls: Eri3Class) -> str:
 
 
 def eri3_program(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
-                 backend: str, workdir: Path) -> Program:
+                 backend: str, workdir: Path, *,
+                 engine: Engine = Engine.MMD) -> Program:
     """The `main()` building `(mn|P)` from every class in `classes`."""
     _, _, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     includes, paths, calls, kernels = [], [], [], []
     for c, cls in enumerate(classes):
-        kern = build_eri3_kernel((cls.la, cls.lb, cls.lP))
+        build = (build_heri3_kernel if engine is Engine.HGP
+                 else build_eri3_kernel)
+        kern = build((cls.la, cls.lb, cls.lP))
         _check_signature(kern)
         path = _unit(kern, backend, workdir, None)
         paths.append(path)
@@ -141,10 +146,11 @@ def eri3_stage(classes: Sequence[Eri3Class]) -> np.ndarray:
 
 def build_on_card(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
                   backend: str, tc: Toolchain, workdir: Path,
-                  run_device_binary) -> np.ndarray:
+                  run_device_binary, *,
+                  engine: Engine = Engine.MMD) -> np.ndarray:
     """`(mn|P)` of `classes` built on the card, `[run][n_ao, n_ao, n_aux]`
     (`RUNS` runs). The caller holds the card (its device fixture)."""
-    prog = eri3_program(classes, n_ao, n_aux, backend, workdir)
+    prog = eri3_program(classes, n_ao, n_aux, backend, workdir, engine=engine)
     binary = compile_checked(tc, prog, workdir / "eri3_bin")
     src, dst = workdir / "eri3.in", workdir / "eri3.out"
     eri3_stage(classes).tofile(src)

@@ -2634,6 +2634,81 @@ def test_the_eri3_builder_reaches_neither_its_witness_nor_a_machine(
         assert not hit, f"kernel_eri3 reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The DF kernels on the HGP engine (`kernel_hgp`): `(P|Q)` and `(mn|P)` by the
+# VRR and the bra HRR of `hgp.recurrence`, with exponent-0 partners. It
+# restates the MMD kernels' parameters rather than importing their builders
+# (which reach `plan/`), so it reaches neither the plan nor the MMD engine;
+# the two adapters take `engine=` and so compose both builders.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgp_df_builder": _rule(
+        "kernel_hgp.py: the DF metric and three-center kernels on the HGP "
+        "engine -- key -> IR, with `hgp.vrr` / `hgp.hrr`'s DAGs spelled by "
+        "`hgp.recurrence`, the MMD kernels' parameters, staging, thread "
+        "mapping and scatter restated",
+        ("spec", "=ir", "hgp"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao="`ao.metric` / `ao.eri3` are the witnesses the kernels are "
+           "interpreted against: importing them shares ancestry (#20)",
+        mmd="the other engine: the MMD kernels are this builder's "
+            "cross-engine witnesses, not its ancestors",
+        **{"eri.density_fit.kernel_metric":
+            "the MMD metric builder reaches `plan/`; its names are restated",
+           "eri.density_fit.kernel_eri3":
+            "the MMD three-center builder reaches `plan/`; its names are "
+            "restated",
+           "ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.density_fit.kernel_hgp"] = "hgp_df_builder"
+EDGES["eri.density_fit.kernel_hgp"] = frozenset(
+    ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir", "spec"))
+for _adapter, _drive in (("metric_adapter", "eri.density_fit.metric_drive"),
+                         ("eri3_adapter", "eri.density_fit.eri3_drive")):
+    RULES[_adapter] = Rule(RULES[_adapter].why + ", and on `engine=HGP` the "
+                           "HGP builder `kernel_hgp`",
+                           RULES[_adapter].may
+                           | frozenset(("eri.density_fit.kernel_hgp",)),
+                           RULES[_adapter].must_not)
+    EDGES[_drive] = EDGES[_drive] | frozenset(
+        ("eri.density_fit.kernel_hgp", "spec"))
+
+
+def test_the_hgp_df_builder_reaches_neither_the_plan_nor_the_mmd_engine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["eri.density_fit.kernel_hgp"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.vrr", "hgp.hrr", "hgp.recurrence"} <= seen
+    for banned in (_REF, "plan", "mmd", "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "eri.density_fit.kernel_metric",
+                   "eri.density_fit.kernel_eri3"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hgp reaches {hit}"
+
+
+# The generator CLI writes the HGP DF ladders (`--hgp-metric-l`,
+# `--hgp-eri3-l`), so the driver composes `kernel_hgp` too.
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP DF ladders "
+                       "through `kernel_hgp`",
+                       RULES["driver"].may
+                       | frozenset(("eri.density_fit.kernel_hgp",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("eri.density_fit.kernel_hgp",))
+
+
 # The generator CLI writes the metric ladder (`--metric-l`, #415), so the
 # driver composes the builder.
 RULES["driver"] = Rule(RULES["driver"].why + ", and the DF metric ladder "

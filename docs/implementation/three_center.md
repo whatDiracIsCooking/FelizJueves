@@ -383,4 +383,7 @@ is 58,818 B, far under the 512 KiB hook, so there is **no digests file**;
 - **A batched or blocked kernel for the high classes that spill.** One
   thread holds `nA × nB × nP` accumulators (540 at `(dd|g)`); splitting the
   accumulators or the Hermite targets is unbuilt, as is a lever.
+- **An HGP twin.** `(mn|P)` on the HGP VRR and bra HRR (`heri3_*`,
+  `Target.ERI3` on `Engine.HGP`), the same parameters and output, is built
+  for s and p shells and checked interpreted: `hgp_df.md`.
 - **An aux-major layout** for DF-J (the trade above), and derivatives.

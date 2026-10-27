@@ -88,8 +88,10 @@ when it is not the native one, as a suffix of the target slot
 same six segments; `.` and not `@`, which separates the arch in
 `MeasuredKey`. So every pre-existing key is byte-identical and no stored key
 carries a suffix. A non-native engine is legal only where it is being built:
-HGP on `J` and `K`. Every other non-native pairing is refused with its reason
-(`_ENGINE_REFUSAL`), MMD `F` among them until #326.
+HGP on `J` and `K`, and on the two DF targets `METRIC` and `ERI3`
+(`eri/density_fit/kernel_hgp.py`, s and p shells tested). Every other
+non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
+among them until #326.
 
 `am` IS THE PAIRING THE RECURRENCE USES -- one rule, under either engine. A
 J class is `(la, lb | lc, ld)`: its ERI is (ab|cd), bra (a, b), under MMD
@@ -325,7 +327,8 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 
 
 # Why a (target, engine) other than the native one is refused (#401). Only
-# HGP `J` and HGP `K` are legal off-native: milestone 14 builds them.
+# HGP `J` and HGP `K` are legal off-native (milestone 14 builds them), and HGP
+# `METRIC` and `ERI3` (`eri/density_fit/kernel_hgp.py`).
 _NO_HGP_PAIR = (
     "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
     "this pair kernel runs no ERI recurrence at all, so there is nothing "
@@ -365,8 +368,6 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
     ),
     (Target.SCHWARZ, Engine.HGP): _mmd_only(
         "the Schwarz kernel (la lb|la lb)"),
-    (Target.METRIC, Engine.HGP): _mmd_only("the metric (lP 0|lQ 0)"),
-    (Target.ERI3, Engine.HGP): _mmd_only("the three-center (la lb|lP 0)"),
     (Target.F, Engine.MMD): (
         "the fused F is built on HGP only ([Fock] §3.2); a fused MMD F is "
         "#326, not yet built"

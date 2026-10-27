@@ -29,8 +29,10 @@ from felizjueves.spec import (
 _AM = {2: (2, 1), 3: (2, 1, 1), 4: (1, 1, 1, 0)}
 _CARDS = (("sm_86", "nvcc 13.0"), ("gfx1200", "hipcc / ROCm 7.2.4"))
 
-# The off-native pairings milestone 14 builds, and nothing else.
-LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP)}
+# The off-native pairings milestone 14 builds, the HGP DF kernels
+# (`eri/density_fit/kernel_hgp.py`), and nothing else.
+LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
+                    (Target.METRIC, Engine.HGP), (Target.ERI3, Engine.HGP)}
 
 
 def _spec(target: Target, engine: Engine | None = None, *,
@@ -162,10 +164,9 @@ def test_mmd_f_is_refused_until_326() -> None:
 
 @pytest.mark.parametrize("target", [Target.DQ, Target.JAB, Target.S,
                                     Target.T, Target.V, Target.SX,
-                                    Target.SCHWARZ, Target.METRIC,
-                                    Target.ERI3, Target.PAIR_BOUND,
+                                    Target.SCHWARZ, Target.PAIR_BOUND,
                                     Target.RECORD_BOUND])
-def test_hgp_is_refused_on_every_target_but_j_k_f(target) -> None:
+def test_hgp_is_refused_on_every_target_but_j_k_f_metric_eri3(target) -> None:
     with pytest.raises(ValueError, match=f"engine hgp on target {target}"):
         _spec(target, Engine.HGP)
 

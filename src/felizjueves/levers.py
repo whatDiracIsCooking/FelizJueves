@@ -74,8 +74,9 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # same lever can mean nothing there: an MMD J lever acts on the [p|q] tower,
 # which an HGP J kernel never runs. So legality is per SLOT, and every
 # legality table covers these too. Only the off-native pairings `spec`
-# admits are slots (HGP J and HGP K; a test pins this to `spec`).
-ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp")
+# admits are slots (HGP J, K, METRIC and ERI3; a test pins this to `spec`).
+ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "metric.hgp",
+                                 "eri3.hgp")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -176,6 +177,16 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "entry says so: the MMD K levers act on the [p|q] tower and the E "
         "fragments, and the F levers on the fused digestion; an HGP K kernel "
         "runs neither"
+    ),
+    "metric.hgp": (
+        "the HGP metric (P|Q) has no option surface: it is the VRR of "
+        "(lP 0|lQ 0) with exponent-0 partners, one batch, and an HGP metric "
+        "lever is a follow-up nobody has declared"
+    ),
+    "eri3.hgp": (
+        "the HGP three-center (mn|P) has no option surface: it is the VRR "
+        "and bra HRR of (la lb|lP 0) with an exponent-0 partner, one batch, "
+        "and an HGP three-center lever is a follow-up nobody has declared"
     ),
 })
 
