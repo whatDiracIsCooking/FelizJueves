@@ -1,7 +1,7 @@
 """`kernel_h1e`: the `S`, `T` and `V` hessian kernels (d2), interpreted.
 
-THE WITNESS is `hessian.host` (itself held to finite differences of the
-gradient host, test/test_hessian_host.py), by another route: the host
+THE WITNESS is `hessian.host_1e` (itself held to finite differences of the
+gradient host, test/test_hessian_host_1e.py), by another route: the host
 differentiates each 3-D function as a list of moved Cartesians, the
 kernel each axis's factor. Per class, one launch over every record of
 every shell pair `i <= j` of that class, into a zeroed `H`, against
@@ -35,7 +35,7 @@ from oracle import manifest
 from tiers import by_l
 
 from felizjueves.gradient import host as grad
-from felizjueves.hessian import host
+from felizjueves.hessian import host_1e as host
 from felizjueves.hessian.kernel_h1e import (
     ATOMIC_REASON,
     COMPONENTS,

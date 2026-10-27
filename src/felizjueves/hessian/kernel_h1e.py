@@ -12,7 +12,7 @@ the contribution of the pair's block to
 
     H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
 
-(`felizjueves.hessian`'s package docstring; `hessian.host` is the
+(`felizjueves.hessian`'s package docstring; `hessian.host_1e` is the
 reference, by another route: it differentiates each 3-D function as a
 list of moved Cartesians, the kernel each axis's factor). `kernel_g1e`'s
 record head, weights `w_r` and launch are reused unchanged, the tables two
@@ -67,7 +67,7 @@ axis here, per 3-D function there), and `V` regroups by Hermite index and
 runs the plan's MILD recurrence. The interpreted test states its bound
 (test/test_kernel_h1e.py).
 
-A builder: vendor-neutral IR. It imports neither `ao/` nor `hessian.host`
+A builder: vendor-neutral IR. It imports neither `ao/` nor `hessian.host_1e`
 (its witness), nor the interpreter, nor `reference/`.
 """
 

@@ -1,4 +1,4 @@
-# Analytic nuclear gradients by McMurchie–Davidson: `S`, `T`, `V`, `E_J` and `E_K`
+# Analytic nuclear gradients by McMurchie–Davidson: `S`, `T`, `V`, `E_J`, `E_K` and the DF integrals
 
 **Status: implemented host-side and as generated kernels, interpreted
 only. Not compiled by nvcc or hipcc, and not run on either card.** This is
@@ -26,8 +26,9 @@ and `pyscf.grad.RHF` to ~1e-13. That spike is not imported anywhere.
 `Spec.derivative_order` was a field with one legal value, kept so that
 widening it would not retrofit every consumer. It is now `(0, 1)`
 (`spec.DERIVATIVE_ORDERS`), and order 1 is legal on
-`spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB` and `K`, each on its
-native engine, MMD. Every other target, and HGP, refuses it with
+`spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB`, `K`, `METRIC` and
+`ERI3`, each on its native engine, MMD (the last two: "The density-fitting
+gradients", below). Every other target, and HGP, refuses it with
 `_GRADIENT_REFUSAL`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
@@ -215,6 +216,73 @@ largest 169 KB (`test_emit_grad_k.py`).
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | — | **not run** (no compiler) |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | — | **not run** (no card) |
 
+## The density-fitting gradients: `(P|Q)` and `(mn|P)`
+
+**Status: host reference and generated kernels, interpreted; not compiled
+by nvcc or hipcc and not run on either card** (the session had neither;
+clang 18's CUDA front end passed all 31 units, `-Wall -Wextra`, a proxy).
+
+`Target.METRIC` and `Target.ERI3` at d1. Each kernel contracts the
+derivative integrals the way the others do:
+
+    G[A, k] += SUM_PQ  W_PQ    d(P|Q)  / dR_{A,k}      gmetric_{lP}{lQ}
+    G[A, k] += SUM_mnP Gam_mnP d(mn|P) / dR_{A,k}      geri3_{la}{lb}{lP}
+
+with any `W` (`n_aux x n_aux`) and any `Gam` (`[n_ao, n_ao, n_aux]`, the
+d0 kernel's layout). A DF-J energy gradient is the two together:
+
+    E_J = SUM D_mn (mn|P) d_P - 1/2 d (P|Q) d,   (P|Q) d = (P|mn) D_mn
+    dE_J/dR = geri3 at Gam = D (x) d   +   gmetric at W = -1/2 d d^T
+
+(`E_J` is stationary in `d`, so `d` is not differentiated).
+
+**The rules.** An AO pair's centres `A` and `B` take the Cartesian rule on
+the per-axis `E` tables one index higher, as `gs`/`gv` do. An aux
+function's single-center `E` does not depend on where it sits, so moving
+it moves only the Hermite Gaussians: the kernels read the tower one index
+up, `[t + tau + 1_k]^(0)`, with no raised `E` at all. For `(P|Q)` that
+gives `d/dB = -d/dA` exactly (the tower reads `A - B`); for `(mn|P)` the
+aux centre gets `-[t + tau + 1_k]^(0)` and `A`, `B` are each computed, so
+`SUM_A G[A] = 0` is a check. The tower is the plan of the `Target.J`
+quartet one order up (`(lP + 1, 0 | lQ, 0)`, `(la + 1, lb | lP, 0)`), cut
+to its read targets by a liveness pass.
+
+**The host reference** (`gradient/host_df.py`) takes the Cartesian rule on
+every centre, the aux side included (`2 alpha E^{a+1} - a E^{a-1}` on the
+single-center `E`), so kernel against host is two routes, not one restated.
+
+**The kernels** keep the d0 kernels' staging and mapping: one thread per
+aux shell pair (`metric_classes`) or per cell (`eri3_classes`), both record
+ranges serially, the weights formed once per pair/cell by `kernel_g1e`'s
+rule (swapped pairs need no flag), the weighted Hermite densities once per
+bra record, then per (bra, ket) record pair the tower and a dot product.
+Six (`gmetric`) or nine (`geri3`) `AtomicAdd`s per pair/cell into
+`G[n_atom, 3]`, zeroed by the caller. Extra arrays beyond the d0 staging:
+`atom_p`, `atom_q` (`host_df.metric_records`); `ea_bra`, `eb_ket`,
+`atom_a`, `atom_b`, `atom_p` (`host_df.eri3_records`).
+
+**The generator.** `python -m felizjueves.emit --grad-df-l [LMAX]` (4
+bare, 0..4, exit 2 above) adds `gmetric_{lP}{lQ}` for `lP <= lQ`,
+`lP + lQ <= LMAX`, and `geri3_{la}{lb}{lP}` for `la <= lb`,
+`la + lb + lP <= LMAX`: 9 + 22 units, the d0 kernels' validated cap. Never
+in the bare default nor in `KERNEL_GEN_CMD`. Goldens:
+`test/golden/{cuda,hip}/{gmetric,geri3}_*`, 62 files, the largest 232 KB.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| host `(P\|Q)`, `(mn\|P)` (`test_gradient_host_df.py`) | central differences, `h = 1e-4`, of `metric_matrix`, `eri3_tensor` (libcint-witnessed) | a three-atom s/p/d basis and s/p/d aux; `(mn\|P)` through d `slow` | 2.1e-9, 2.7e-9 of `max\|G\|`, gate 1e-7 |
+| host DF-J `dE_J/dR` | central differences of `E_J`, the solve redone per geometry | the s, p sub-bases; H₂O/STO-3G against the JKFIT s, p shells `slow` | 3.1e-9, 2.5e-9 |
+| host invariance | `SUM_A G = 0` | same | gate 1e-13 of `max\|G\|` |
+| `gmetric` interpreted (`test_kernel_gmetric.py`) | `host_df`, per class | every class `lP + lQ <= 4` (`lP + lQ = 4` `slow`), swapped and off-diagonal pairs | 4.9 eps of the split-centre scale, gate 16 eps |
+| `geri3` interpreted (`test_kernel_geri3.py`) | `host_df`, per class | every class `la + lb + lP <= 4` (= 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` | 2.6 eps of the split-centre scale, gate 16 eps |
+| compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 31 units | no diagnostic (a proxy) |
+| compile, nvcc / hipcc (`test_emit_grad_df.py`) | #92's filter | — | **not run** (no compiler) |
+| on a card (`test_grad_df_device.py`, `grad_driver`'s program) | `host_df`, `1e-13` of `max\|G\|`, DF-J of H₂O/STO-3G against JKFIT s/p/d | — | **not run** (no card) |
+
+Not done for DF: the metric solve and `d` stay host-side; no DF-K
+gradient (the kernels take any `Gam`, but nothing stages K's); nothing
+above L = 4; no screen; nothing measured; Cartesian only.
+
 ## What is not done
 
 - No compile by nvcc or hipcc and no card run, on either card. The compile
@@ -224,7 +292,8 @@ largest 169 KB (`test_emit_grad_k.py`).
 - Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
   `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
   caller's), but no whole RHF gradient is assembled or checked against
-  `pyscf.grad.RHF`, and none has run on a card. No DF gradient.
+  `pyscf.grad.RHF`, and none has run on a card. The DF-J terms are
+  built (above); no DF-K.
 - `gk` is checked interpreted through `(dd|dd)` but its ladder writes
   `l <= 2` only and its goldens are the s, p classes; f is not built
   into the ladder (the unrolled text is 4 MB at `(dd|dd)` already).
@@ -235,5 +304,7 @@ largest 169 KB (`test_emit_grad_k.py`).
   `gjab` are unrolled and reach ~210 KB of text at (dd); a low-stack form
   (#586's) is not built.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
-  not derived), Cartesian only. The one-electron hessian (`S`, `T`, `V` at d2) is
-  `hessian.md`'s.
+  not derived), Cartesian only. The Coulomb energy's Hessian is built
+  on these pieces (`hessian.md`), and so are the one-electron Hessians of
+  `S`, `T` and `V` (`hessian.md`, "The one-electron Hessians"); no other
+  Hessian term is.

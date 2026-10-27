@@ -1,43 +1,61 @@
-"""Analytic nuclear hessians by McMurchie-Davidson: host references and the
-generated kernels (`Spec.derivative_order = 2`).
+"""Analytic nuclear Hessians by McMurchie-Davidson: the Coulomb energy's
+and the one-electron `S`, `T`, `V`, as host references and as generated
+kernels (`Spec.derivative_order = 2`).
 
-    host.py          the references, pure Python, on the AO layer
-    kernel_h1e.py    Target.S / T / V at d2: d2s_, d2t_, d2v_{la}{lb}
+    host.py          the Coulomb reference, pure Python, on the AO layer
+    kernel_hdq.py    Target.DQ at d1: hdq_{lc}{ld}, the ket pre-contraction
+                     differentiated on each ket centre
+    kernel_hjab.py   Target.JAB at d2: hjab_{la}{lb}, the Coulomb energy's
+                     Hessian from J_p two bra orders up (bra-bra) and from
+                     J_p of the ket derivative densities (bra-ket)
+    host_1e.py       the one-electron references, pure Python
+    kernel_h1e.py    Target.S / T / V at d2: d2s_, d2t_, d2v_{la}{lb},
+                     H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
+                     (`M = D` for T and V, `W` for S; V's operator moves
+                     with its nucleus: centre-nucleus and nucleus-nucleus
+                     terms by `d/dC_k [t]^(0) = -[t + 1_k]^(0)`)
 
-WHAT A HESSIAN KERNEL WRITES. As at d1 (`felizjueves.gradient`), not the
-second-derivative integrals -- a `[n_atom, 3, n_atom, 3, n_ao, n_ao]`
-tensor -- but their contraction with a matrix,
+The sections below are the Coulomb kernels'; the one-electron ones apply
+the same rule twice on ONE pair (no split), and `kernel_h1e`'s docstring
+is their account.
 
-    H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}
+WHAT A HESSIAN KERNEL WRITES. As a gradient kernel writes a contraction and
+not the derivative integrals (`felizjueves.gradient`), a Hessian kernel
+writes
 
-which is what the one-electron skeleton (fixed-density) part of an SCF
-hessian is (`M = D` for `T` and `V`, `M = W` for `S`; the signs are the
-caller's). The rule is the gradient's, applied twice -- the one
-`experimental/mmd/hessian` checked against libcint, PySCF's RHF hessian
-and finite differences:
+    H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l},
+    E_J = 1/2 SUM_abcd D_ab D_cd (ab|cd)
 
-    d/dA_k [x_A^i exp(-a x_A^2)] = 2a x_A^{i+1} exp(-a x_A^2)
-                                   - i x_A^{i-1} exp(-a x_A^2)
+for a fixed, symmetric `D`: the skeleton (`D` not differentiated) Coulomb
+part of an SCF Hessian. The density response (CPHF) is the caller's.
 
-so on one axis
+THE RULE is the gradient's, applied twice (experimental/mmd/hessian):
+`d/dA_k [x_A^i exp(-a x_A^2)] = 2a x_A^{i+1} exp(-a x_A^2) - i x_A^{i-1}
+exp(-a x_A^2)`, so per axis
 
-    dA dA f_i  = 4a^2 f_{i+2} - 2a (2i + 1) f_i + i (i - 1) f_{i-2}
-    dA dB f_ij = the rule on each index in turn
+    dA dA E^{ij} = 2 alpha (dA E)^{i+1,j} - i (dA E)^{i-1,j}
+    dB dA E^{ij} = 2 beta  (dA E)^{i,j+1} - j (dA E)^{i,j-1}
+    dB dB E^{ij} = 2 beta  (dB E)^{i,j+1} - j (dB E)^{i,j-1}
 
-and a second derivative on two different axes is the product of the two
-first derivatives. Every term is an ordinary integral of the SAME
-primitive pair (same `zeta`, same `P`) with the Cartesians moved by two in
-all: the same `E` tables raised two higher on each side, and the same
-`[t]^(0)` two Hermite orders higher. `V`'s operator moves with its
-nucleus, `d/dC_k [t]^(0)(P - C) = -[t + 1_k]^(0)`: a centre-nucleus term
-is one function derivative times one shift, a nucleus-nucleus term two
-shifts.
+on a twice-differentiated axis (and a product of two first derivatives on
+two different axes), from the undressed `E` tables raised two higher.
 
-NO TRANSLATIONAL INVARIANCE IS USED: every ordered pair of centres (and
-nuclei, for `V`) is computed, so `SUM_A H[A, k, B, l] = 0` is a check
-(test/test_hessian_host.py), not an assumption.
+THE SPLIT. With every ordered quartet summed, the ket-ket term equals the
+bra-bra term and the ket-bra term the bra-ket one (rename `(ab) <-> (cd)`),
+so the half of `E_J` cancels both twos:
 
-Only the one-electron skeleton is built: no `J` / `K` second derivative,
-no CPHF response, no assembled RHF hessian (`experimental/mmd/hessian`
-has all three, s and p, in numpy).
+    d2 E_J / dx dy = SUM D_ab D_cd [d_bra^x d_bra^y + d_bra^x d_ket^y] (ab|cd)
+
+`x` always on the bra. The first is `SUM_ab D_ab SUM_t (dx dy E^{ab})_t
+J_t` with `J_t` the J chain's `J_p` two Hermite orders up; the second is
+`SUM_ab D_ab SUM_t (dx E^{ab})_t J^{(C,l)}_t` with `J^{(C,l)}_t = SUM_q
+[t|q] D^{(C,l)}_q`, the `[p|q]` kernel run over the KET DERIVATIVE
+DENSITIES `D^{(C,l)}_q = SUM_cd D_cd (dC_l E^{cd})_q` of the kets that
+touch atom `C`. Summed over every quartet each term is symmetric in
+`x <-> y` by itself (rename `(ab) <-> (cd)` again); one bra class's share
+of the bra-ket term is not, so it is never mirrored.
+
+NO TRANSLATIONAL INVARIANCE IS USED: every centre is differentiated, so
+`SUM_A H[A, k, B, l] = 0` and `H = H^T` are checks
+(test/test_hessian_host.py), not assumptions.
 """

@@ -1,6 +1,6 @@
 """The d2 hessian kernels ON A CARD: `H = SUM_mn M_mn d2X_mn/dR dR` for
 `S`, `T` and `V` (its operator's centre-nucleus and nucleus-nucleus terms
-included), against `hessian.host` (generator `test/hess_driver.py`).
+included), against `hessian.host_1e` (generator `test/hess_driver.py`).
 
 PER MOLECULE, H2O/STO-3G and H2O/cc-pVDZ (`slow`, for its input size and
 its (dd) classes, L + 2 = 6), each fixture's own density as `M`. One
@@ -35,7 +35,7 @@ from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import _toolchain
 
-from felizjueves.hessian import host
+from felizjueves.hessian import host_1e as host
 from felizjueves.reference.pq import one_centre
 from felizjueves.spec import Target
 

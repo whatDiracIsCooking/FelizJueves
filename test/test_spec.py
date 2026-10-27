@@ -295,17 +295,7 @@ def test_a_one_electron_target_takes_orders_one_and_two_and_no_higher(
               derivative_order=3)
 
 
-@pytest.mark.parametrize("target", [t for t in Target
-                                    if t not in HESSIAN_TARGETS])
-def test_order_two_is_refused_outside_the_hessian_targets(
-        target: Target) -> None:
-    am = (1,) * AM_LENGTH[target]
-    with pytest.raises(ValueError, match="derivative order 2 on target"):
-        Spec(OPERATOR_OF[target], 2, am, target)
-
-
 def test_order_two_is_refused_on_a_non_native_engine() -> None:
-    assert HESSIAN_TARGETS == {Target.S, Target.T, Target.V}
     with pytest.raises(ValueError, match="derivative order 2 on target v.hgp"):
         Spec(Operator.NUCLEAR, 2, (1, 0), Target.V, engine=Engine.HGP)
 
@@ -335,6 +325,44 @@ def test_order_one_is_refused_on_a_non_native_engine() -> None:
         Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.HGP)
     assert Spec(Operator.COULOMB, 1, (1, 0), Target.JAB).key() == \
         "coulomb/d1/(1,0)/b1/jab/literal"
+
+
+@pytest.mark.parametrize("target", [t for t in Target
+                                    if t not in HESSIAN_TARGETS])
+def test_order_two_is_refused_outside_the_hessian_targets(
+        target: Target) -> None:
+    am = (1,) * AM_LENGTH[target]
+    with pytest.raises(ValueError, match="derivative order 2 on target"):
+        Spec(OPERATOR_OF[target], 2, am, target)
+
+
+def test_jab_takes_order_two_and_dq_order_one_for_the_hessian() -> None:
+    # The Coulomb Hessian (felizjueves.hessian): JAB at d2 and DQ at d1, each
+    # key differing from the integral's in the `d` segment alone; order 3 is
+    # refused everywhere.
+    # (S, T and V at d2 are the one-electron Hessians, hessian.kernel_h1e.)
+    assert HESSIAN_TARGETS == frozenset({Target.JAB, Target.S, Target.T,
+                                         Target.V})
+    assert Target.DQ in GRADIENT_TARGETS
+    d2 = Spec(Operator.COULOMB, 2, (2, 1), Target.JAB)
+    assert d2.key() == "coulomb/d2/(2,1)/b1/jab/literal"
+    dq = Spec(Operator.COULOMB, 1, (2, 1), Target.DQ)
+    assert dq.key() == "coulomb/d1/(2,1)/b1/dq/literal"
+    with pytest.raises(ValueError, match="derivative order"):
+        Spec(Operator.COULOMB, 3, (2, 1), Target.JAB)
+    with pytest.raises(ValueError, match="derivative order 2 on target dq"):
+        Spec(Operator.COULOMB, 2, (2, 1), Target.DQ)
+
+
+def test_the_df_targets_take_order_one_on_mmd_only() -> None:
+    # felizjueves.gradient's kernel_gmetric / kernel_geri3: the integral's
+    # class at d1, the key differing in the `d` segment alone.
+    for target, am in ((Target.METRIC, (1, 2)), (Target.ERI3, (0, 1, 2))):
+        d0 = Spec(Operator.COULOMB, 0, am, target)
+        d1 = Spec(Operator.COULOMB, 1, am, target)
+        assert d1.key() == d0.key().replace("/d0/", "/d1/")
+        with pytest.raises(ValueError, match="derivative order 1 on target"):
+            Spec(Operator.COULOMB, 1, am, target, engine=Engine.HGP)
 
 
 def test_a_one_electron_key_has_the_shape_every_key_has() -> None:

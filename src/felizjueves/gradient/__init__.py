@@ -7,6 +7,9 @@ generated kernels (`Spec.derivative_order = 1`).
                      bra derivative from J_p one Hermite order higher
     kernel_gk.py     Target.K at d1: gk_{la}{lc}_{lb}{ld}, the exchange
                      energy's bra derivative, K's plan one bra order up
+    host_df.py       the density-fitting references, (P|Q) and (mn|P)
+    kernel_gmetric.py  Target.METRIC at d1: gmetric_{lP}{lQ}
+    kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}
 
 WHAT A GRADIENT KERNEL WRITES. Not the derivative integrals -- a
 `[n_atom, 3, n_ao, n_ao]` tensor -- but their contraction with a matrix,
@@ -15,8 +18,11 @@ WHAT A GRADIENT KERNEL WRITES. Not the derivative integrals -- a
 
 which is what every term of an SCF energy gradient is (`M = D` for `T`,
 `V`, `J` and `K`, `M = W`, the energy-weighted density, for `S`; the sign
-and the half are the caller's). The rule is McMurchie & Davidson's, the one
-`experimental/mmd/gradient` checked against libcint and finite differences:
+and the half are the caller's). The DF terms contract an aux matrix
+(`SUM_PQ W_PQ d(P|Q)/dR`) and a three-index tensor (`SUM_mnP Gam_mnP
+d(mn|P)/dR`) the same way (`host_df`'s module docstring has DF-J's).
+The rule is McMurchie & Davidson's, the one `experimental/mmd/gradient`
+checked against libcint and finite differences:
 
     d/dA_k [x_A^i exp(-a x_A^2)] = 2a x_A^{i+1} exp(-a x_A^2)
                                    - i x_A^{i-1} exp(-a x_A^2)

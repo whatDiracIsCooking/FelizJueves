@@ -208,16 +208,27 @@ whose bra order is one higher (`gradient.kernel_gjab.gjab_pq_spec`), a d0
 key. `K` at d1 is the exchange energy's bra derivative, its `am` K's
 Hermite pairing `(la, lc, lb, ld)`; it runs the plan of the d0 K class with
 the bra raised by one (`gradient.kernel_gk.gk_pq_spec`), and its builder
-refuses `n_batches != 1`. Unbatched, for each target's d0 reason.
+refuses `n_batches != 1`. `METRIC` and `ERI3` at d1 are the density-fitting
+terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
+(`gradient.kernel_gmetric`, `gradient.kernel_geri3`), `am` the integral's
+pair `(lP, lQ)` and triple `(la, lb, lP)`. `DQ` at d1 is the ket
+pre-contraction differentiated on each of the ket's two centres
+(`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
+target's d0 reason.
 
-A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`. The
-field's third value: order 2 is legal on `HESSIAN_TARGETS` alone -- `S`,
-`T` and `V`, each on MMD -- every other target refusing it
-(`_HESSIAN_REFUSAL`). As at d1, a d2 kernel writes the CONTRACTION
-`H[A, k, B, l] += SUM_mn M_mn d2X_mn/dR_{A,k} dR_{B,l}`
-(`felizjueves.hessian`'s package docstring), `am` the integral's pair, so
-``overlap/d2/(2,1)/b1/s/literal`` differs from the d0 and d1 keys in one
-segment and every existing key is byte-identical.
+A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
+`HESSIAN_TARGETS` alone -- `JAB`, `S`, `T` and `V`, on MMD -- every other
+target refusing it (`_HESSIAN_REFUSAL`). Like a d1 kernel it writes a
+contraction, not the derivative integrals: `JAB` at d2 is the Coulomb energy's Hessian,
+`H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l}`, from `J_p` of the bra
+raised by two and of the ket derivative densities
+(`hessian.kernel_hjab`). `am` is the bra pair, unchanged, so
+``coulomb/d2/(2,1)/b1/jab/literal`` differs from the d0 and d1 keys in the
+`d` segment alone. `S`, `T` and `V` at d2 are the one-electron Hessians,
+`H[A, k, B, l] += SUM_mn M_mn d2X_mn / dR_{A,k} dR_{B,l}`
+(`hessian.kernel_h1e`), `am` the integral's pair, so
+``overlap/d2/(2,1)/b1/s/literal`` likewise differs from its d0 and d1 keys
+in one segment.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -469,33 +480,41 @@ _F_BATCH_REFUSAL = (
 )
 
 
-# The geometric derivative order (module docstring, "A GRADIENT CLASS"):
-# 0, the integral itself, everywhere; 1, the nuclear gradient contracted
-# with a matrix, on the targets in `GRADIENT_TARGETS` only; 2, the nuclear
-# hessian contracted with a matrix, on `HESSIAN_TARGETS` only.
+# The geometric derivative order (module docstring, "A GRADIENT CLASS"
+# and "A HESSIAN CLASS"): 0, the integral itself, everywhere; 1, the
+# nuclear gradient contracted with a matrix, on the targets in
+# `GRADIENT_TARGETS` only; 2, the nuclear Hessian contracted with a
+# density, on `HESSIAN_TARGETS` only.
 DERIVATIVE_ORDERS = (0, 1, 2)
 
 # The targets whose first derivative is built (`felizjueves.gradient`):
 # `S`, `T`, `V` (its Hellmann-Feynman term included), `JAB`, the J
 # chain's bra back-transform read as the Coulomb energy's bra derivative,
-# and `K`, the exchange energy's bra derivative (`gradient.kernel_gk`).
-# Each on its native engine, MMD, only.
+# `K`, the exchange energy's bra derivative (`gradient.kernel_gk`), the
+# density-fitting `METRIC` and `ERI3`, and `DQ`, the ket pre-contraction
+# differentiated on each ket centre, which the Coulomb Hessian's bra-ket
+# term reads (`hessian.kernel_hdq`). Each on its native engine, MMD, only.
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
-                              Target.K))
+                              Target.K, Target.METRIC, Target.ERI3,
+                              Target.DQ))
 
 _GRADIENT_REFUSAL = (
-    "a first derivative is built for S, T, V, JAB and K on the MMD engine only "
-    "(felizjueves.gradient); this target's gradient is a follow-up"
+    "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
+    "the MMD engine only (felizjueves.gradient, felizjueves.hessian); this "
+    "target's gradient is a follow-up"
 )
 
-# The targets whose second derivative is built (`felizjueves.hessian`): the
-# one-electron `S`, `T` and `V` (its operator's centre-nucleus and
-# nucleus-nucleus terms included), on MMD only.
-HESSIAN_TARGETS = frozenset((Target.S, Target.T, Target.V))
+# The targets whose second derivative is built (`felizjueves.hessian`):
+# `JAB`, the J chain's bra back-transform read as the Coulomb energy's
+# Hessian (`hessian.kernel_hjab`), and the one-electron `S`, `T` and `V`
+# (`hessian.kernel_h1e`, `V`'s centre-nucleus and nucleus-nucleus terms
+# included). MMD only.
+HESSIAN_TARGETS = frozenset((Target.JAB, Target.S, Target.T, Target.V))
 
 _HESSIAN_REFUSAL = (
-    "a second derivative is built for S, T and V on the MMD engine only "
-    "(felizjueves.hessian); this target's hessian is a follow-up"
+    "a second derivative is built for JAB (the Coulomb energy's Hessian) and "
+    "S, T, V (the one-electron Hessians) on the MMD engine only "
+    "(felizjueves.hessian); this target's Hessian is a follow-up"
 )
 
 
@@ -554,13 +573,6 @@ class Spec:
                 f"derivative order {self.derivative_order!r} not in "
                 f"{DERIVATIVE_ORDERS}"
             )
-        if self.derivative_order == 2 and (
-            self.target not in HESSIAN_TARGETS
-            or self.engine is not NATIVE_ENGINE[self.target]
-        ):
-            raise ValueError(
-                f"derivative order 2 on target {self.target_slot}: "
-                f"{_HESSIAN_REFUSAL}")
         if self.derivative_order == 1 and (
             self.target not in GRADIENT_TARGETS
             or self.engine is not NATIVE_ENGINE[self.target]
@@ -568,6 +580,13 @@ class Spec:
             raise ValueError(
                 f"derivative order {self.derivative_order} on target "
                 f"{self.target_slot}: {_GRADIENT_REFUSAL}")
+        if self.derivative_order == 2 and (
+            self.target not in HESSIAN_TARGETS
+            or self.engine is not NATIVE_ENGINE[self.target]
+        ):
+            raise ValueError(
+                f"derivative order {self.derivative_order} on target "
+                f"{self.target_slot}: {_HESSIAN_REFUSAL}")
         if len(self.am) not in (2, 3, 4) or not all(
             type(x) is int and x >= 0 for x in self.am
         ):
