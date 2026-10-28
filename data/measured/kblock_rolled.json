@@ -18,6 +18,72 @@
  },
  "compile": [
   {
+   "arch": "gfx1200",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "host": "79a021ced426 (container)",
+   "date": "2026-10-28",
+   "arm": "rolled-C",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kbrc_22_22",
+   "source_bytes": 38700,
+   "compile_s": 1.51,
+   "peak_rss_kb": 150120,
+   "registers": 192,
+   "spill_store": 395,
+   "spill_load": 395,
+   "stack_bytes": 1376,
+   "static_shared_bytes": 288
+  },
+  {
+   "arch": "gfx1200",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "host": "79a021ced426 (container)",
+   "date": "2026-10-28",
+   "arm": "rolled-C",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "unit": "kbrc_33_33",
+   "source_bytes": 98583,
+   "compile_s": 1.71,
+   "peak_rss_kb": 163124,
+   "registers": 192,
+   "spill_store": 135,
+   "spill_load": 135,
+   "stack_bytes": 4080,
+   "static_shared_bytes": 800
+  },
+  {
+   "arch": "gfx1200",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "host": "79a021ced426 (container)",
+   "date": "2026-10-28",
+   "arm": "rolled-C",
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "unit": "kbrc_44_44",
+   "source_bytes": 218572,
+   "compile_s": 3.05,
+   "peak_rss_kb": 210764,
+   "registers": 192,
+   "spill_store": 1067,
+   "spill_load": 1067,
+   "stack_bytes": 9616,
+   "static_shared_bytes": 1800
+  },
+  {
    "arch": "sm_86",
    "toolchain": "nvcc 13.0",
    "host": "7ef7958eb654 (container)",
@@ -121,6 +187,72 @@
    "spill_store": 0,
    "spill_load": 0,
    "stack_bytes": 3640
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "79a021ced426 (container)",
+   "date": "2026-10-28",
+   "arm": "rolled-C",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kbrc_22_22",
+   "source_bytes": 38668,
+   "compile_s": 0.86,
+   "peak_rss_kb": 190848,
+   "registers": 96,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 1320,
+   "static_shared_bytes": 288
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "79a021ced426 (container)",
+   "date": "2026-10-28",
+   "arm": "rolled-C",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "unit": "kbrc_33_33",
+   "source_bytes": 98551,
+   "compile_s": 1.11,
+   "peak_rss_kb": 192000,
+   "registers": 254,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 3640,
+   "static_shared_bytes": 800
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "79a021ced426 (container)",
+   "date": "2026-10-28",
+   "arm": "rolled-C",
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "unit": "kbrc_44_44",
+   "source_bytes": 218540,
+   "compile_s": 2.45,
+   "peak_rss_kb": 210944,
+   "registers": 255,
+   "spill_store": 8160,
+   "spill_load": 8280,
+   "stack_bytes": 14736,
+   "static_shared_bytes": 1808
   }
  ],
  "clock": [
@@ -3907,5 +4039,13 @@
     "global_ld_sectors_per_request": 0.377
    }
   }
- ]
+ ],
+ "column_declared": {
+  "issue": 583,
+  "hypothesis": "kbr's Ksh holds the lane's I[n_p] and its whole K_AB partial, n_p + n_a n_b doubles a lane (18,176 B a 32-lane block at (dd|dd), 47,104 B at (ff|ff)), which caps occupancy at 5 and 2 blocks an SM on sm_86 (#574: one warp per scheduler, latency-bound). Reducing each K_AB column across the warp per (bra, ket strip) leaves n_p + n_a a lane plus one n_a n_b copy a block (10,784 B and 24,864 B), so more warps hide the same latency; the price is n_a n_b warp reductions per (bra, strip), and the dead lanes of a ragged or screened strip computing a zero-weighted ket",
+  "rule": "per arch and class: the median over the timed runs of the class's events, rolled-C / other for each other arm timed beside it in the same rounds (kb and rolled at (dd|dd), rolled at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, else 'neutral'. The recommendation ('through d kb, at f kbr') moves only where rolled-C is 'faster' than the form it names there: at f, kbrc replaces kbr if rolled-C is 'faster' than rolled at (ff|ff); through d, kbrc replaces kb only if rolled-C is 'faster' than kb at (dd|dd). Never the default of any builder (#583's scope)",
+  "expected": "rolled-C faster than rolled at both classes (occupancy 5 -> 8 blocks at d, 2 -> 3 at f); still slower than kb at (dd|dd) (#574's 5.21x warp instructions are the loops')",
+  "profile": "one ncu take each of measured.KB_PROFILE_UNITS on kbr_22_22 and kbrc_22_22 (#569's input, one launch): theoretical and achieved occupancy, warps active and eligible, issue, and the stall mix of measured.kb_profile_terms; read, not ruled on",
+  "declared": "2026-10-28, before any rolled-C row"
+ }
 }

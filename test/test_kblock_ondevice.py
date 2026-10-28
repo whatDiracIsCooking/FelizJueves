@@ -60,6 +60,16 @@ THE TRANSPOSED KET TABLE (#576): every rolled cell again with
 `[n_ebd, n_ket]` (`kbrt_*`) and staged so, held to the same bounds, its
 two runs bit-identical; its `sf` and `spdf` cells beside the others.
 
+THE COLUMN FORM (#583): every rolled cell again with `column=True`, MODE 0
+the rolled kernel with each `K_AB` column reduced across the warp per
+(bra, ket strip) (`kbrc_*`), on the rolled upload unchanged, held to the
+same bounds, its two runs bit-identical; its `sf` and `spdf` cells beside
+the others, and ONE g cell, `spdfg`: an s, p, d, f and g shell on five
+centres, one primitive each -- every K class with every `l <= 4`, 625 of
+them, `(gg|gg)` among them, which no other form launches (its `Ksh` is
+99,840 B a warp without the column cut, 47,880 B with it) -- against the
+walk and the host only (no libcint `vk` has a g shell).
+
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`): the H2O/STO-3G driver
 compiled where no card is, both kernels; a warning in generated text fails
 it (#92). Without a card the `gpu` tests SKIP: green and empty.
@@ -104,12 +114,14 @@ class Cell:
     rolled: bool = False  # MODE 0 the rolled kernel, kernel_k unbuilt (#571)
     dense: bool = False  # with rolled: the dense-Hermite kernel (#575)
     transposed: bool = False  # with rolled: Ebd [n_ebd, n_ket] (#576)
+    column: bool = False  # with rolled: the column form (#583)
 
     @property
     def id(self) -> str:
         return (f"{self.case}-tau{self.tau:g}"
                 + ("-decay" if self.decay else "")
                 + ("-dense" if self.dense else "-rolled-T" if self.transposed
+                   else "-rolled-C" if self.column
                    else "-rolled" if self.rolled else ""))
 
 
@@ -126,29 +138,42 @@ TRANSPOSED = tuple(Cell(c.case, c.tau, c.decay, rolled=True, transposed=True)
                    for c in FAST)
 TRANSPOSED_SLOW = tuple(Cell(c.case, c.tau, c.decay, rolled=True,
                              transposed=True) for c in SLOW)
+COLUMN = tuple(Cell(c.case, c.tau, c.decay, rolled=True, column=True)
+               for c in FAST)
+COLUMN_SLOW = tuple(Cell(c.case, c.tau, c.decay, rolled=True, column=True)
+                    for c in SLOW)
 HIGH_L = (Cell("sf", 0.0, rolled=True), Cell("spdf", 0.0, rolled=True),
           Cell("sf", 0.0, rolled=True, dense=True),
           Cell("spdf", 0.0, rolled=True, dense=True),
           Cell("sf", 0.0, rolled=True, transposed=True),
-          Cell("spdf", 0.0, rolled=True, transposed=True))
+          Cell("spdf", 0.0, rolled=True, transposed=True),
+          Cell("sf", 0.0, rolled=True, column=True),
+          Cell("spdf", 0.0, rolled=True, column=True),
+          Cell("spdfg", 0.0, rolled=True, column=True))
 PARAMS = ([pytest.param(c, id=c.id)
-           for c in (*FAST, *ROLLED, *DENSE, *TRANSPOSED)]
+           for c in (*FAST, *ROLLED, *DENSE, *TRANSPOSED, *COLUMN)]
           + [pytest.param(c, id=c.id, marks=pytest.mark.slow)
-             for c in (*SLOW, *ROLLED_SLOW, *DENSE_SLOW, *TRANSPOSED_SLOW)]
+             for c in (*SLOW, *ROLLED_SLOW, *DENSE_SLOW, *TRANSPOSED_SLOW,
+                       *COLUMN_SLOW)]
           + [pytest.param(c, id=c.id, marks=(pytest.mark.slow,
                                              pytest.mark.high_l))
              for c in HIGH_L])
 
 
-def _f_basis(ls: tuple[int, ...]) -> tuple[Basis, np.ndarray]:
-    """One shell per `l` of `ls` on its own centre, two primitives each, and
-    a symmetric density (#571's f cells)."""
+def _f_basis(ls: tuple[int, ...], *, one: bool = False
+             ) -> tuple[Basis, np.ndarray]:
+    """One shell per `l` of `ls` on its own centre, two primitives each (the
+    first alone with `one`, #583's g cell: the host walk's cost), and a
+    symmetric density (#571's f cells)."""
     centres = ((0.0, 0.0, 0.0), (0.5, -0.6, 0.3), (-0.4, 0.7, 0.6),
-               (0.6, 0.5, -0.7))
+               (0.6, 0.5, -0.7), (-0.5, -0.4, -0.6))
     prims = {0: ((1.2, 0.4), (0.6, 0.5)), 1: ((0.9, 0.35), (0.7, 0.4)),
-             2: ((0.8, 0.3), (0.5, 0.6)), 3: ((0.7, 0.3), (0.45, 0.55))}
-    basis = Basis(tuple(Shell(l, centres[i], *prims[l])
-                        for i, l in enumerate(ls)))  # noqa: E741
+             2: ((0.8, 0.3), (0.5, 0.6)), 3: ((0.7, 0.3), (0.45, 0.55)),
+             4: ((0.6, 0.25), (0.4, 0.6))}
+    basis = Basis(tuple(
+        Shell(l, centres[i], (prims[l][0][0],), (1.0,)) if one
+        else Shell(l, centres[i], *prims[l])
+        for i, l in enumerate(ls)))  # noqa: E741
     n = basis.n_ao
     return basis, np.array([[1.0 / (i + j + 1) for j in range(n)]
                             for i in range(n)])
@@ -166,6 +191,8 @@ def _case(name: str):
         return None, *_f_basis((0, 1, 2, 3))
     if name == "sf":
         return None, *_f_basis((0, 3))
+    if name == "spdfg":  # #583
+        return None, *_f_basis((0, 1, 2, 3, 4), one=True)
     basis, D = _launch_case(name)
     return None, basis, D
 
@@ -205,8 +232,11 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
     assert cell.rolled or max(c.L for c in plan) <= DEVICE_L_MAX
     parts = class_binaries(tc, plan, basis, D, backend, workdir,
                            rolled=cell.rolled, dense=cell.dense,
-                           transposed=cell.transposed,
-                           with_k=not cell.rolled)
+                           transposed=cell.transposed, column=cell.column,
+                           with_k=not cell.rolled,
+                           # #583: a column unit compiles in seconds; a
+                           # driver past five minutes is a failure, not a wait
+                           **({"timeout": 300.0} if cell.column else {}))
     w = _walk(cell)
     Kw = np.array(w.K)
     K0, scale = _host(cell.case)
@@ -220,7 +250,7 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
         if mode == "kb":
             assert same, "the block kernel's two runs differ: its atomics met"
         mode = ("kbd" if cell.dense else "kbrt" if cell.transposed
-                else "kbr" if cell.rolled
+                else "kbrc" if cell.column else "kbr" if cell.rolled
                 else mode)  # the lines' and errors' name
         K = Ks[0]
         assert np.all(np.isfinite(K))
@@ -270,12 +300,16 @@ def test_hip_kblock_from_the_launch_plan(cell, request, run_device_binary,
 def _compile_only(backend: str, tc, tmp_path: Path) -> None:
     cell = FAST[0]
     _, basis, _ = _case(cell.case)
-    for rolled, dense, tr in ((False, False, False), (True, False, False),
-                              (True, True, False), (True, False, True)):
+    for rolled, dense, tr, col in ((False, False, False, False),
+                                   (True, False, False, False),
+                                   (True, True, False, False),
+                                   (True, False, True, False),
+                                   (True, False, False, True)):
         w = tmp_path / ("dense" if dense else "rolled-T" if tr
+                        else "rolled-C" if col
                         else "rolled" if rolled else "kb")
         drv = kb_driver(_plan(cell), basis, backend, w / "gen", rolled=rolled,
-                        dense=dense, transposed=tr)
+                        dense=dense, transposed=tr, column=col)
         compile_checked(tc, drv, w / "kb_driver")
 
 

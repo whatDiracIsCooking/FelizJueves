@@ -5,6 +5,9 @@
     devtools/measure.sh kblock-rolled-profile                       ncu (#574)
     devtools/measure.sh kblock-transpose                            timed (#576)
     devtools/measure.sh kblock-transpose-profile                    ncu (#576)
+    devtools/measure.sh kblock-column-compile [--backend cuda|hip]  a compiler (#583)
+    devtools/measure.sh kblock-column                               timed (#583)
+    devtools/measure.sh kblock-column-profile                       ncu (#583)
 
 OPT-IN: each test skips unless FJ_KBLOCK_ROLLED_STORE names the store
 (measure.sh sets it to config.sh's MEASURE_KBLOCK_ROLLED_STORE, the tracked
@@ -60,6 +63,21 @@ their own section, `transpose_clock`, keyed by (arch, toolchain, am), so
 (`kblock-transpose-profile`) is #574's `ncu` runs on `kbr_22_22` and
 `kbrt_22_22`, one launch each, into `transpose_profile`, and the global-load
 sectors per request of both layouts into `transpose_profile_reading`.
+
+THE COLUMN FORM (#583), `build_kblock_rolled_kernel(..., column=True)`
+(`kbrc_*`, arm `rolled-C`): each `K_AB` column reduced across the warp per
+(bra, ket strip), so `Ksh` is `n_p + n_a` per lane plus one static
+`Kblk[n_a n_b]` a block. Its compile (`kblock-column-compile`, each unit
+under a 300 s budget) is `kbrc` at `(dd|dd)`, `(ff|ff)` and `(gg|gg)` into
+the `compile` rows, with the static shared bytes the compiler reports.
+Its clock (CUDA only, #431) is its own rounds, `CLOCKS`' `dd-C` (`kb`,
+`rolled`, `rolled-C` on #569's input) and `ff-C` (`rolled`, `rolled-C` on
+#575's), under the store's `column_declared` (COLUMN_DECLARED), written
+before any `rolled-C` row, into `column_clock`. Its profile
+(`kblock-column-profile`) is ONE ncu take of #574's `details` counters per
+kernel, `kbr_22_22` and `kbrc_22_22`, one launch each, into
+`column_profile`, and the occupancy and stall mix of both into
+`column_profile_reading`, beside #574's `kbr_22_22` row.
 """
 
 from __future__ import annotations
@@ -199,10 +217,46 @@ def _store_path() -> Path:
 
 ARM_BUILD = {"kb": build_kblock_kernel, "rolled": build_kblock_rolled_kernel,
              "dense": build_kblock_dense_kernel,
-             "rolled-T": partial(build_kblock_rolled_kernel, transposed=True)}
+             "rolled-T": partial(build_kblock_rolled_kernel, transposed=True),
+             "rolled-C": partial(build_kblock_rolled_kernel, column=True)}
 ARM_FLAGS = {"kb": {}, "rolled": {"rolled": True},
              "dense": {"rolled": True, "dense": True},
-             "rolled-T": {"rolled": True, "transposed": True}}
+             "rolled-T": {"rolled": True, "transposed": True},
+             "rolled-C": {"rolled": True, "column": True}}
+
+COLUMN_DECLARED = {
+    "issue": 583,
+    "hypothesis": "kbr's Ksh holds the lane's I[n_p] and its whole K_AB "
+                  "partial, n_p + n_a n_b doubles a lane (18,176 B a 32-lane "
+                  "block at (dd|dd), 47,104 B at (ff|ff)), which caps "
+                  "occupancy at 5 and 2 blocks an SM on sm_86 (#574: one "
+                  "warp per scheduler, latency-bound). Reducing each K_AB "
+                  "column across the warp per (bra, ket strip) leaves n_p + "
+                  "n_a a lane plus one n_a n_b copy a block (10,784 B and "
+                  "24,864 B), so more warps hide the same latency; the price "
+                  "is n_a n_b warp reductions per (bra, strip), and the "
+                  "dead lanes of a ragged or screened strip computing a "
+                  "zero-weighted ket",
+    "rule": "per arch and class: the median over the timed runs of the "
+            "class's events, rolled-C / other for each other arm timed "
+            "beside it in the same rounds (kb and rolled at (dd|dd), rolled "
+            "at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, else "
+            "'neutral'. The recommendation ('through d kb, at f kbr') "
+            "moves only where rolled-C is 'faster' than the form it names "
+            "there: at f, kbrc replaces kbr if rolled-C is 'faster' than "
+            "rolled at (ff|ff); through d, kbrc replaces kb only if "
+            "rolled-C is 'faster' than kb at (dd|dd). Never the default "
+            "of any builder (#583's scope)",
+    "expected": "rolled-C faster than rolled at both classes (occupancy "
+                "5 -> 8 blocks at d, 2 -> 3 at f); still slower than kb at "
+                "(dd|dd) (#574's 5.21x warp instructions are the loops')",
+    "profile": "one ncu take each of measured.KB_PROFILE_UNITS on "
+               "kbr_22_22 and kbrc_22_22 (#569's input, one launch): "
+               "theoretical and achieved occupancy, warps active and "
+               "eligible, issue, and the stall mix of "
+               "measured.kb_profile_terms; read, not ruled on",
+    "declared": "2026-10-28, before any rolled-C row",
+}
 
 TRANSPOSE_DECLARED = {
     "issue": 576,
@@ -260,7 +314,8 @@ def _verdict(ratio: float) -> str:
             "slower" if ratio > 1 + BAND else "neutral")
 
 
-def _compile(backend: str, kern, workdir: Path) -> dict:
+def _compile(backend: str, kern, workdir: Path, *,
+             timeout: float = COMPILE_TIMEOUT_S) -> dict:
     """One unit through `os.wait4`: the measured flags, wall-clock, peak RSS
     of the compiler and everything it waited for, and the resource report."""
     b = measured.BACKENDS[backend]
@@ -275,7 +330,7 @@ def _compile(backend: str, kern, workdir: Path) -> dict:
         proc = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT,
                                 start_new_session=True)
         # its own session, so the timer kills cicc / ptxas / clang too
-        timer = threading.Timer(COMPILE_TIMEOUT_S, os.killpg,
+        timer = threading.Timer(timeout, os.killpg,
                                 (proc.pid, signal.SIGKILL))
         timer.start()
         # reaped by wait4 itself: the rusage of THIS child, its waited-for
@@ -285,18 +340,23 @@ def _compile(backend: str, kern, workdir: Path) -> dict:
     proc.returncode = os.waitstatus_to_exitcode(status)
     wall = time.perf_counter() - t0
     out = log.read_text()
-    if wall >= COMPILE_TIMEOUT_S:
-        pytest.fail(f"{kern.name}: not compiled within {COMPILE_TIMEOUT_S} s")
+    if wall >= timeout:
+        pytest.fail(f"{kern.name}: over budget, not compiled within "
+                    f"{timeout} s")
     peak_kb = ru.ru_maxrss
     assert proc.returncode == 0, out[-4000:]
     raw = (measured.parse_ptxas(out, kern.name) if backend == "cuda"
            else measured.parse_amd_remarks(out, kern.name))
     regs, store, load, _ = measured._numbers(b, raw)
-    return {"unit": kern.name, "source_bytes": len(text),
-            "compile_s": round(wall, 2), "peak_rss_kb": peak_kb,
-            "registers": regs, "spill_store": store, "spill_load": load,
-            "stack_bytes": raw.get("stack_frame_bytes",
-                                   raw.get("ScratchSize"))}
+    out = {"unit": kern.name, "source_bytes": len(text),
+           "compile_s": round(wall, 2), "peak_rss_kb": peak_kb,
+           "registers": regs, "spill_store": store, "spill_load": load,
+           "stack_bytes": raw.get("stack_frame_bytes",
+                                  raw.get("ScratchSize"))}
+    if timeout != COMPILE_TIMEOUT_S:  # #583's rows: its static Kblk too
+        out["static_shared_bytes"] = raw.get("smem_bytes",
+                                             raw.get("LDS Size", 0))
+    return out
 
 
 def _compile_rows(backend: str, request, tmp_path: Path) -> None:
@@ -337,7 +397,10 @@ CLOCKS = {
     "ff": (AM_F, _basis_f, 256, 256, ("rolled", "dense")),
     "dd-T": (AM, _basis, 2304, 256, ("kb", "rolled", "rolled-T")),  # #576
     "ff-T": (AM_F, _basis_f, 256, 256, ("rolled", "rolled-T")),  # #576
+    "dd-C": (AM, _basis, 2304, 256, ("kb", "rolled", "rolled-C")),  # #583
+    "ff-C": (AM_F, _basis_f, 256, 256, ("rolled", "rolled-C")),  # #583
 }
+COLUMN_BUDGET_S = 300.0  # #583: every compile it triggers, a hard cap
 
 
 def _clock(backend: str, request, run_device_binary, tmp_path: Path,
@@ -351,6 +414,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
         _declare_dense(path, store)
     if "rolled-T" in arms_run:
         _declare(path, store, "transpose_declared", TRANSPOSE_DECLARED)
+    if "rolled-C" in arms_run:
+        _declare(path, store, "column_declared", COLUMN_DECLARED)
     basis, D = make()
     plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
                        tau=0.0,
@@ -360,7 +425,9 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
     assert len(cl.bras) == len(cl.kets) == n_rec and len(cl.blocks) == n_blk
     parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
                                  backend, tmp_path / arm, with_k=False,
-                                 **ARM_FLAGS[arm])
+                                 **ARM_FLAGS[arm],
+                                 **({"timeout": COLUMN_BUDGET_S}
+                                    if "rolled-C" in arms_run else {}))
              for arm in arms_run}
     Ks = {arm: run_classes(parts[arm], basis, "kb", run_device_binary,
                            backend)[0][0] for arm in arms_run}
@@ -416,7 +483,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
         "rounds": ROUNDS, "warmup": WARMUP, "repeats": REPEATS,
         "gate": readings, "gate_discarded_runs": discarded, "arms": arms,
     }
-    if {"kb", "rolled"} <= set(arms_run) and "rolled-T" not in arms_run:
+    if {"kb", "rolled"} <= set(arms_run) and not {
+            "rolled-T", "rolled-C"} & set(arms_run):
         # #571's rule
         row["rolled_vs_kb_rel"] = rels["rolled"]
         row["rolled_over_kb"] = round(over("rolled", "kb"), 4)
@@ -435,12 +503,20 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
                 "verdict": _verdict(over("rolled-T", o))}
             for o in arms_run if o != "rolled-T"}
         row["fastest"] = min(arms_run, key=lambda a: arms[a]["median_ns"])
+    if "rolled-C" in arms_run:  # #583's rule, COLUMN_DECLARED
+        section = "column_clock"
+        row["column"] = {
+            o: {"column_over": round(over("rolled-C", o), 4),
+                "verdict": _verdict(over("rolled-C", o))}
+            for o in arms_run if o != "rolled-C"}
+        row["fastest"] = min(arms_run, key=lambda a: arms[a]["median_ns"])
     store = _load(path)
     store.setdefault(section, [])
     _save(path, store, section, row, ("arch", "toolchain", "am"))
     print(f"\n{backend} {b.arch.name} {am}: " + ", ".join(
         f"{a} {arms[a]['median_ns'] / 1e6:.3f} ms" for a in arms_run)
-        + f"; {json.dumps(row.get('dense') or row.get('transposed'))}; "
+        + "; " + json.dumps(row.get('dense') or row.get('transposed')
+                            or row.get('column')) + "; "
         f"-> {path}")
 
 
@@ -515,6 +591,75 @@ def test_the_transpose_verdicts_are_what_their_medians_say() -> None:
             assert v == {"transposed_over": round(r, 4),
                          "verdict": _verdict(r)}
         assert row["fastest"] == min(arms, key=lambda a: arms[a]["median_ns"])
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_column_clock(request, run_device_binary,
+                                  tmp_path) -> None:
+    """#583: `(dd|dd)`, kb, rolled and rolled-C in the same rounds."""
+    _clock("cuda", request, run_device_binary, tmp_path, "dd-C")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_column_clock_ff(request, run_device_binary,
+                                     tmp_path) -> None:
+    """#583: `(ff|ff)`, rolled against rolled-C."""
+    _clock("cuda", request, run_device_binary, tmp_path, "ff-C")
+
+
+def test_the_column_verdicts_are_what_their_medians_say() -> None:
+    """`devtools/measure.sh check`: every `column_clock` row was read under
+    today's COLUMN_DECLARED, and its verdicts are its medians'."""
+    store = json.loads(TRACKED.read_text())
+    if "column_clock" not in store:
+        pytest.skip("no #583 clock in the tracked store")
+    assert store["column_declared"] == json.loads(
+        json.dumps(COLUMN_DECLARED))
+    for row in store["column_clock"]:
+        arms = row["arms"]
+        assert set(row["column"]) == set(arms) - {"rolled-C"}
+        for o, v in row["column"].items():
+            r = arms["rolled-C"]["median_ns"] / arms[o]["median_ns"]
+            assert v == {"column_over": round(r, 4), "verdict": _verdict(r)}
+        assert row["fastest"] == min(arms, key=lambda a: arms[a]["median_ns"])
+
+
+COLUMN_UNITS = ((2, 2, 2, 2), (3, 3, 3, 3), (4, 4, 4, 4))
+
+
+def _column_compile_rows(backend: str, request, tmp_path: Path) -> None:
+    """`kbrc` at d, f and g, each alone under COLUMN_BUDGET_S (#583). The
+    compiler only: no card, so not the card's lock either."""
+    path = _store_path()
+    request.getfixturevalue("nvcc" if backend == "cuda" else "hipcc")
+    b = measured.BACKENDS[backend]
+    store = _load(path)
+    _declare(path, store, "column_declared", COLUMN_DECLARED)
+    head = {"arch": b.arch.name, "toolchain": b.toolchain(b.compiler()),
+            "host": measured.host(),
+            "date": datetime.date.today().isoformat()}
+    for am in COLUMN_UNITS:
+        kern = _build("rolled-C", am)
+        r = _compile(backend, kern, tmp_path, timeout=COLUMN_BUDGET_S)
+        row = {**head, "arm": "rolled-C", "am": list(am), **r}
+        _save(path, store, "compile", row, ("arch", "toolchain", "unit"))
+        print(f"\n{backend} {b.arch.name} {r['unit']}: {r['source_bytes']} B "
+              f"source, {r['compile_s']} s, {r['peak_rss_kb']} kB peak, "
+              f"r{r['registers']} spill {r['spill_store']}/{r['spill_load']} "
+              f"stack {r['stack_bytes']} static shared "
+              f"{r['static_shared_bytes']}")
+
+
+@pytest.mark.cuda
+def test_cuda_kblock_column_compile(request, tmp_path) -> None:
+    _column_compile_rows("cuda", request, tmp_path)
+
+
+@pytest.mark.hip
+def test_hip_kblock_column_compile(request, tmp_path) -> None:
+    _column_compile_rows("hip", request, tmp_path)
 
 
 def test_the_default_rolled_text_is_the_profiled_one() -> None:
@@ -1038,3 +1183,153 @@ def test_cuda_kblock_transpose_profile(request, run_device_binary,
                                        tmp_path) -> None:
     """#576: kbr_22_22 and kbrt_22_22 under ncu, one launch each."""
     _transpose_profile(request, run_device_binary, tmp_path)
+
+
+# --- THE COLUMN PROFILE (#583): kbr_22_22 against kbrc_22_22 under ncu -----
+#
+#     devtools/measure.sh kblock-column-profile     (CUDA only, timed kind)
+#
+# On the clock's (dd|dd) input, the two binaries held to each other first,
+# ONE ncu take per kernel of #574's `details` counters
+# (`measured.KB_PROFILE_UNITS`: occupancy, issue, the stall mix), one launch
+# each, behind the gate, pinned to PROFILE_CPUS; a contended take or one ncu
+# ends in LaunchFailed is retaken (`_gated`) and counted. Read under
+# COLUMN_DECLARED's `profile` (no verdict): one `column_profile` row per
+# (arch, toolchain, unit) and one `column_profile_reading` per (arch,
+# toolchain), which also quotes #574's stored `kbr_22_22` row.
+
+C_ARMS = ("rolled", "rolled-C")
+
+
+def _occupancy_read(c: dict) -> dict:
+    """The occupancy and the stall mix of one kernel's details counters."""
+    t = measured.kb_profile_terms(c)
+    S = t["S"]
+    return {
+        "ms_under_ncu": round(c["gpu__time_duration.sum"] / 1e6, 1),
+        "registers": c["launch__registers_per_thread"],
+        "dynamic_shared_bytes": c["launch__shared_mem_per_block_dynamic"],
+        "blocks_limit_shared": c["launch__occupancy_limit_shared_mem"],
+        "blocks_limit_registers": c["launch__occupancy_limit_registers"],
+        "theoretical_occupancy_pct": c[
+            "sm__maximum_warps_per_active_cycle_pct"],
+        "achieved_occupancy_pct": c[
+            "sm__warps_active.avg.pct_of_peak_sustained_active"],
+        "warps_active": c["smsp__warps_active.avg.per_cycle_active"],
+        "warps_eligible": c["smsp__warps_eligible.avg.per_cycle_active"],
+        "issue_active_pct": c[
+            "smsp__issue_active.avg.pct_of_peak_sustained_active"],
+        "cycles_per_issue": c[
+            "smsp__average_warp_latency_per_inst_issued.ratio"],
+        "warp_inst": c["smsp__inst_executed.sum"],
+        "stall_mix": {r: round(c[measured.ncu_stall(r)] / S, 4)
+                      for r in measured.KB_PROFILE_STALLS
+                      if c[measured.ncu_stall(r)] / S >= 0.01},
+        "mem": round(t["mem"], 4), "long": round(t["long"], 4),
+        "largest": t["largest"],
+    }
+
+
+def _column_profile(request, run_device_binary, tmp_path: Path) -> None:
+    path = _store_path()
+    tc = _toolchain("cuda", request)
+    b = measured.BACKENDS["cuda"]
+    store = _load(path)
+    _declare(path, store, "column_declared", COLUMN_DECLARED)
+    basis, D = _basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=0.0, build=None)
+    (cl,) = plan
+    assert cl.am == AM and len(cl.blocks) == 256
+    parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
+                                 "cuda", tmp_path / arm, jobs=1,
+                                 with_k=False, timeout=COLUMN_BUDGET_S,
+                                 **ARM_FLAGS[arm])
+             for arm in C_ARMS}
+    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
+                          "cuda")[0][0] for arm in C_ARMS)
+    rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
+    assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, rel
+
+    head = {"arch": b.arch.name, "toolchain": b.toolchain(b.compiler()),
+            "gpu": b.gpu(), "host": measured.host(),
+            "date": datetime.date.today().isoformat(), "am": list(AM),
+            "n_ao": basis.n_ao, "n_bra": 2304, "n_ket": 2304,
+            "n_blocks": 256, "tau": 0.0, "cpus": PROFILE_CPUS,
+            "rel_vs_rolled": rel,
+            "launch": "one launch: MODE 0, warm-up 0, reps 1, "
+                      "--launch-count 1"}
+    rows: dict[str, dict] = {}
+    for arm in C_ARMS:
+        (part,) = parts[arm]
+        kern = part.drv.classes[0].kb
+        text = BACKEND["cuda"][0](kern, b.arch)
+        work = tmp_path / f"{arm}-ncu"
+        work.mkdir()
+        argv = [str(part.binary), str(part.staged), str(work / "out"),
+                "0", "0", "1"]
+        readings: list = []
+        (raw, tool, cmd), discarded = _gated(
+            "details", kern.name, lambda argv=argv, kern=kern:
+            measured.ncu_raw(argv, ncu_args=[
+                "--launch-count", "1", "--metrics",
+                ",".join(measured.KB_PROFILE_UNITS)],
+                kernel_regex=f"^{kern.name}$", cpus=PROFILE_CPUS), readings)
+        ((kernel, counters),) = measured.parse_ncu_metrics(
+            raw, measured.KB_PROFILE_UNITS)
+        assert kernel == kern.name, kernel
+        rows[arm] = {**head, "unit": kern.name, "arm": arm,
+                     "counter_tool": tool,
+                     "source_sha256": hashlib.sha256(
+                         text.encode()).hexdigest(),
+                     "command": cmd, "counters": counters,
+                     "terms": measured.kb_profile_terms(counters),
+                     "gate": readings, "gate_discarded_runs": discarded}
+        print(f"\n{kern.name}: "
+              f"{json.dumps(_occupancy_read(counters), default=str)}",
+              flush=True)
+
+    store = _load(path)
+    store.setdefault("column_profile", [])
+    store.setdefault("column_profile_reading", [])
+    for r in rows.values():
+        _save(path, store, "column_profile", r,
+              ("arch", "toolchain", "unit"))
+    a, c = (_occupancy_read(rows[x]["counters"]) for x in C_ARMS)
+    prior = [r for r in store.get("profile", [])
+             if r["unit"] == "kbr_22_22" and r["arch"] == head["arch"]]
+    _save(path, store, "column_profile_reading",
+          {"arch": head["arch"], "toolchain": head["toolchain"],
+           "date": head["date"], "rolled": a, "rolled-C": c,
+           "rolled_574": (_occupancy_read(prior[0]["counters"])
+                          if prior else None),
+           "column_over_rolled": {k: round(c[k] / a[k], 3) for k in (
+               "ms_under_ncu", "warp_inst", "theoretical_occupancy_pct",
+               "achieved_occupancy_pct", "warps_active", "warps_eligible",
+               "issue_active_pct", "cycles_per_issue")}},
+          ("arch", "toolchain"))
+    print(f"-> {path}")
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_kblock_column_profile(request, run_device_binary,
+                                    tmp_path) -> None:
+    """#583: kbr_22_22 and kbrc_22_22 under ncu, one launch each."""
+    _column_profile(request, run_device_binary, tmp_path)
+
+
+def test_the_column_profile_reading_is_its_rows() -> None:
+    """`devtools/measure.sh check`: each `column_profile_reading` is
+    `_occupancy_read` of its two `column_profile` rows."""
+    store = json.loads(TRACKED.read_text())
+    if "column_profile_reading" not in store:
+        pytest.skip("no #583 profile in the tracked store")
+    for reading in store["column_profile_reading"]:
+        at = (reading["arch"], reading["toolchain"])
+        rows = {r["arm"]: r for r in store["column_profile"]
+                if (r["arch"], r["toolchain"]) == at}
+        assert set(rows) == set(C_ARMS), at
+        for arm in C_ARMS:
+            assert reading[arm] == json.loads(json.dumps(
+                _occupancy_read(rows[arm]["counters"])))
