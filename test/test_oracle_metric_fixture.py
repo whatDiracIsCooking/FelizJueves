@@ -29,7 +29,8 @@ def ms():
 
 
 def test_the_set_is_tracked_and_every_piece_is_under_the_cap(ms):
-    assert manifest.metric_sets() == [SET]
+    # #606's aux-i set beside it (test_kernel_df_lowstack.py reads it)
+    assert manifest.metric_sets() == [SET, "prim_spd_f_auxi_metric"]
     assert [p.metric.rows for p in ms.pieces] == [
         (0, 43), (43, 81), (81, 121), (121, 166)]
     for p in ms.pieces:

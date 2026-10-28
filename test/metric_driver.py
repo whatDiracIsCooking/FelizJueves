@@ -37,6 +37,8 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
+from eri3_driver import timed_launch, timed_source
+from kblock_driver import timings
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
@@ -71,7 +73,8 @@ def _check_signature(kern: Kernel) -> None:
                          f"want {want}")
 
 
-def _call(kern: Kernel, c: int, ns: str, cls: MetricClass) -> str:
+def _call(kern: Kernel, c: int, ns: str, cls: MetricClass, *,
+          timed: bool = False) -> str:
     at, off = {}, 0
     for name in MetricClass.RECORD_ARRAYS:
         at[_param(name)] = f"dd[{c}] + {off}" if off else f"dd[{c}]"
@@ -82,32 +85,36 @@ def _call(kern: Kernel, c: int, ns: str, cls: MetricClass) -> str:
                "n_aux": "NAUX", OUT: "dM"})
     args = [at[p.name] for p in kern.params]
     grid, (lanes, _) = launch_shape(cls.n_pair, THREADS)
-    return (f"        // aux class ({cls.lP}|{cls.lQ}), {cls.n_pair} "
-            f"pairs, {cls.n_rec} records\n"
-            f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
-            f"            {', '.join(args)});\n"
-            f"        CHECK(devGetLastError());\n"
-            f"        ++launches;")
+    head = (f"        // aux class ({cls.lP}|{cls.lQ}), {cls.n_pair} "
+            f"pairs, {cls.n_rec} records\n")
+    launch = (f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
+              f"            {', '.join(args)});\n"
+              f"        CHECK(devGetLastError());\n"
+              f"        ++launches;")
+    return head + (timed_launch(launch, c) if timed else launch)
 
 
 def metric_program(classes: Sequence[MetricClass], n_aux: int, backend: str,
                    workdir: Path, *,
-                   engine: Engine = Engine.MMD) -> Program:
-    """The `main()` building `(P|Q)` from every class in `classes`."""
+                   engine: Engine = Engine.MMD, lowstack: bool | None = None,
+                   timed: bool = False) -> Program:
+    """The `main()` building `(P|Q)` from every class in `classes`;
+    `lowstack=` and `timed=` as `eri3_driver.eri3_program`'s (#606)."""
     _, _, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     includes, paths, calls, kernels = [], [], [], []
     for c, cls in enumerate(classes):
         build = (build_hmetric_kernel if engine is Engine.HGP
                  else build_metric_kernel)
-        kern = build((cls.lP, cls.lQ))
+        kern = (build((cls.lP, cls.lQ)) if engine is Engine.HGP
+                else build((cls.lP, cls.lQ), lowstack=lowstack))
         _check_signature(kern)
         path = _unit(kern, backend, workdir, None)
         paths.append(path)
         ns = f"fj_m{c}"
         includes.append(f'namespace {ns} {{\n#include "{path}"\n}}')
         kernels.append(f"(const void*){ns}::{kern.name}")
-        calls.append(_call(kern, c, ns, cls))
+        calls.append(_call(kern, c, ns, cls, timed=timed))
     src = METRIC_PROGRAM.format(
         prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
         portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
@@ -115,6 +122,8 @@ def metric_program(classes: Sequence[MetricClass], n_aux: int, backend: str,
         nr=", ".join(str(c.n_rec) for c in classes),
         np_=", ".join(str(c.n_pair) for c in classes),
         vram_kernels=", ".join(kernels), launches="\n".join(calls))
+    if timed:
+        src = timed_source(src, "M")
     main = workdir / f"metric_main.{ext}"
     main.write_text(src)
     return Program(backend, src, main, tuple(paths))
@@ -136,11 +145,14 @@ def metric_stage(classes: Sequence[MetricClass]) -> np.ndarray:
 def build_on_card(classes: Sequence[MetricClass], n_aux: int, backend: str,
                   tc: Toolchain, workdir: Path,
                   run_device_binary, *,
-                  engine: Engine = Engine.MMD) -> np.ndarray:
+                  engine: Engine = Engine.MMD, lowstack: bool | None = None,
+                  timeout: float = 1800.0) -> np.ndarray:
     """`(P|Q)` of `classes` built on the card, `[run][n_aux, n_aux]` (`RUNS`
     runs). The caller holds the card (its device fixture)."""
-    prog = metric_program(classes, n_aux, backend, workdir, engine=engine)
-    binary = compile_checked(tc, prog, workdir / "metric_bin")
+    prog = metric_program(classes, n_aux, backend, workdir, engine=engine,
+                          lowstack=lowstack)
+    binary = compile_checked(tc, prog, workdir / "metric_bin",
+                             timeout=timeout)
     src, dst = workdir / "metric.in", workdir / "metric.out"
     metric_stage(classes).tofile(src)
     out = run_device_binary(binary, str(src), str(dst), vram=backend)
@@ -150,6 +162,30 @@ def build_on_card(classes: Sequence[MetricClass], n_aux: int, backend: str,
     raw = np.fromfile(dst, dtype=np.float64)
     assert raw.size == RUNS * n_aux * n_aux, (raw.size, RUNS, n_aux)
     return raw.reshape(RUNS, n_aux, n_aux)
+
+
+def compile_timed(classes: Sequence[MetricClass], n_aux: int, backend: str,
+                  tc: Toolchain, workdir: Path, *, lowstack: bool | None,
+                  timeout: float) -> Path:
+    """The TIMED program of `classes` in one form, compiled."""
+    prog = metric_program(classes, n_aux, backend, workdir,
+                          lowstack=lowstack, timed=True)
+    return compile_checked(tc, prog, workdir / "metric_timed",
+                           timeout=timeout)
+
+
+def run_timed(binary: Path, classes: Sequence[MetricClass], n_aux: int,
+              backend: str, workdir: Path, run_device_binary, *,
+              warmup: int, reps: int) -> tuple[np.ndarray, dict]:
+    """The last run's matrix and `timings` of one run of a timed binary."""
+    src, dst = workdir / "metric_timed.in", workdir / "metric_timed.out"
+    if not src.exists():
+        metric_stage(classes).tofile(src)
+    out = run_device_binary(binary, str(src), str(dst), str(warmup),
+                            str(reps), vram=backend)
+    raw = np.fromfile(dst, dtype=np.float64)
+    assert raw.size == n_aux * n_aux, (raw.size, n_aux)
+    return raw.reshape(n_aux, n_aux), timings(out)
 
 
 # Every class into one matrix, RUNS times.

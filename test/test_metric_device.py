@@ -59,6 +59,7 @@ import pytest
 from metric_driver import build_on_card, metric_program
 from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
+from test_kernel_df_lowstack import METRIC_LADDER, auxi_metric
 from test_kernel_metric import (
     CLASSES,
     EPS,
@@ -72,6 +73,7 @@ from test_kernel_metric import (
 from tiers import FAST_L_MAX
 
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.density_fit.kernel_metric import metric_lowstack
 from felizjueves.eri.density_fit.metric import metric_classes
 
 L_CAP = FAST_L_MAX  # 4, the milestone's cap
@@ -166,6 +168,70 @@ def test_cuda_metric_through_l4_matches_libcint(request, run_device_binary,
 def test_hip_metric_through_l4_matches_libcint(request, run_device_binary,
                                                tmp_path):
     _part2("hip", request, run_device_binary, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Part 3 (#606): the aux ladder through i, every class in its default form
+# ---------------------------------------------------------------------------
+
+AUXI_COMPILE_S = 300.0  # the user's per-compile budget (#606)
+
+
+@cache
+def _auxi_host():
+    _, aux = auxi_metric()
+    return _host(aux, set(METRIC_LADDER))
+
+
+def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
+    """All 28 classes `lP <= lQ <= 6` on the aux-i set, each in the form
+    the gate picks (8 low-stack), one program per `lQ`, against the host
+    (16 eps of the tower twin) and libcint (TOL of max)."""
+    tc = _toolchain(backend, request)
+    ms, aux = auxi_metric()
+    classes = metric_classes(aux)
+    assert sorted((c.lP, c.lQ) for c in classes) == METRIC_LADDER
+    M = np.zeros((aux.n_ao, aux.n_ao))
+    for lQ in range(7):
+        part = [c for c in classes if c.lQ == lQ]
+        Ms = build_on_card(part, aux.n_ao, backend, tc, tmp_path / f"lQ{lQ}",
+                           run_device_binary, timeout=AUXI_COMPILE_S)
+        assert all(np.array_equal(Ms[0], m) for m in Ms[1:]), lQ
+        M += Ms[0]  # disjoint elements: every other one is exactly 0.0
+    want, scale, owned = _auxi_host()
+    assert owned.all()
+    err = np.abs(M - want)
+    pos = scale > 0
+    worst = float(np.max(err[pos] / (EPS * scale[pos])))
+    lib = float(np.max(np.abs(M - ms.metric))) / float(np.max(np.abs(
+        ms.metric)))
+    print(f"\n{backend} {BACKEND[backend][1].name} aux-i: {len(classes)} "
+          f"classes, {sum(c.n_pair for c in classes)} pairs, "
+          f"{sum(metric_lowstack((c.lP, c.lQ)) for c in classes)} "
+          f"low-stack; worst {worst:.2f} eps scale against the host (tol "
+          f"{TOL_ULPS}); {lib:.2e} of max against int2c2e_cart (tol "
+          f"{TOL:g}); runs bit-identical")
+    assert np.all(err <= TOL_ULPS * EPS * scale), worst
+    assert np.array_equal(M, M.T)
+    assert lib <= TOL, lib
+
+
+@pytest.mark.slow
+@pytest.mark.high_l
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_metric_through_i_i_matches_libcint(request, run_device_binary,
+                                                 tmp_path):
+    _part3("cuda", request, run_device_binary, tmp_path)
+
+
+@pytest.mark.slow
+@pytest.mark.high_l
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_metric_through_i_i_matches_libcint(request, run_device_binary,
+                                                tmp_path):
+    _part3("hip", request, run_device_binary, tmp_path)
 
 
 # ---------------------------------------------------------------------------

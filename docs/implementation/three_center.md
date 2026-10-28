@@ -1,7 +1,10 @@
 # The three-center DF integral `(mn|P)` on the McMurchie-Davidson recurrence
 
-**Status: implemented, tested at `L = la + lb + lP ≤ 4`, and run on the
-RTX 3080 only (milestone 16, #441–#446; PRs #452–#457).** This is the derived
+**Status: implemented, tested at `L = la + lb + lP ≤ 4` (milestone 16,
+#441–#446; PRs #452–#457), and since #606 through (ff|i) against libcint
+on both cards, with its low-stack form measured (see "The low-stack form,
+and the ladder through aux i"; the milestone-16 bullets below are as they
+were).** This is the derived
 note for the three-center Coulomb integral of density fitting
 
     (mn|P) = ∫∫ m(r1) n(r1) P(r2) / r12
@@ -31,9 +34,10 @@ It is `metric.md`'s shape with one more index.
   `la ≤ lb` from (ss|s) through (dd|s). The builder and the emitter accept
   any `L`.
 
-**Nothing here is measured and nothing is scored.** There is no
-`measured_store` row for any `eri3_` unit: no registers, spills,
-wall-clock or counters. No published board exists. `[JEngine]` (entry 35)
+**Nothing here is scored.** Until #606 nothing was measured; since then
+`data/measured/df_lowstack.json` holds every ladder unit's compile row and
+a wall-clock row for each class where the gate is read. That file is not
+`measured_store`'s `kernels.json`. No published board exists. `[JEngine]` (entry 35)
 is J only, and the recurrence is McMurchie & Davidson's (entries 39 and 46).
 The auxiliary basis is Weigend's cc-pVTZ-jkfit (entry 47), an input here
 and not a table to score against. Milestone 16 added no `tables.json`
@@ -389,48 +393,115 @@ FORM"), the default wherever `eri3_lowstack(cls)`:
   it zeroes first, then mirrored by a plain copy. No atomics: each element
   belongs to one cell.
 
-The rule is `L ≥ 10` or `E` blocks larger than (dd|g)'s (1,785 doubles). On
-`la ≤ lb ≤ 3`, `lP ≤ 6` that is 24 of 70 classes: every (df|·) and (ff|·),
-every aux-i row, and (pf|h) and (dd|h). Nothing at `L ≤ 4` is gated, so the
-22 goldens are unchanged. The metric has the same form and rule
-(`metric.md`).
+The rule is `L ≥ 10`, or `E` blocks larger than (pf|g)'s (1,575 doubles).
+The bound was set from the measurement below. Before it, the bound was
+(dd|g)'s 1,785 doubles, and that left (dd|g) unrolled. On `la ≤ lb ≤ 3`,
+`lP ≤ 6` the rule gates 25 of 70 classes: every (df|·) and (ff|·), every
+aux-i row, and (dd|g), (pf|h) and (dd|h). Nothing at `L ≤ 4` is gated, so
+the 22 goldens are unchanged. The metric has the same form. Its bound
+stays at 1,785 doubles (`metric.md`).
 
 **From the text**, every gated class declares at most 8,800 B of local
 arrays and at most 128 KiB of source (`slow`, `test_kernel_df_lowstack.py`).
 
-**Compiled once, by hand**, with no `measured_store` row. Each unit was
-compiled alone under the tier's flags: nvcc 13.0 `-O3 -lineinfo
--Xcompiler -Wall -arch=sm_86 -Xptxas -v -c`, and hipcc / ROCm 7.2.4
-`-O3 -g1 -Wall -Wextra --offload-arch=gfx1200
--Rpass-analysis=kernel-resource-usage -c`. All 32 low-stack units and six
-unrolled neighbours compiled on both, with no warning in generated text,
-in 26 s for all 76 compiles together.
+**Measured** in `data/measured/df_lowstack.json`
+(`measure/measure_df_lowstack.py`). Its rule (`declared`) was written into
+the store before any row.
 
-| unit | text | `sm_86` | `gfx1200` |
+**The compile** (`devtools/measure.sh df-lowstack-compile`, no card)
+covers 115 units per arch. That is every eri3 and metric class of the
+ladder in its default form, plus the other form where the gate is read:
+
+- the unrolled (df|g) and (ff|g), which are #606's before;
+- the low-stack form of every eri3 class the old rule kept unrolled from
+  `L = 7`;
+- the low-stack form of every such metric class.
+
+Each unit was compiled alone, one at a time, with the measured store's
+flags:
+
+- nvcc 13.0, `sm_86`, `-Xptxas -v`; the stack figure is the frame before
+  device link;
+- hipcc / ROCm 7.2.4, `gfx1200`, `-Rpass-analysis=kernel-resource-usage`;
+  the figure is `ScratchSize`.
+
+Each compile had a **300 s budget**. A unit still running at 300 s was
+killed and recorded `over_budget`.
+
+| unit | form | `sm_86` | `gfx1200` |
 |---|---|---|---|
-| `eri3_224` (dd\|g), unrolled, stays | 14,352 B arrays, 405 KB | 255 regs, 15,992 B stack, 27,276 B spill stores, 15.4 s | 192 VGPRs, 5,092 spilled, 10,516 B scratch |
-| `eri3_234` (df\|g) | 4,616 B, 66 KB | 255 regs, 4,608 B stack, 56 B spill stores, 2.1 s | 180 VGPRs, no spill, 4,560 B scratch |
-| `eri3_334` (ff\|g) | 6,336 B, 87 KB | 255 regs, 6,320 B stack, 56 B spill stores, 2.2 s | 192 VGPRs, 11 spilled, 6,320 B scratch |
-| `eri3_336` (ff\|i) | 8,280 B, 124 KB | 255 regs, 8,256 B stack, 68 B spill stores, 2.5 s | 192 VGPRs, 93 spilled, 8,512 B scratch |
+| `eri3_224` (dd\|g) | unrolled (before) | 255 regs, 15,992 B stack, 27,276 B spill stores, 24.8 s | 192 VGPRs, 10,516 B scratch, 25.1 s |
+| | low-stack (now the default) | 162 regs, 3,280 B, no spill, 2.3 s | 144 VGPRs, 3,344 B, 2.0 s |
+| `eri3_234` (df\|g) | unrolled | 255 regs, 33,992 B, 54,104 B spill stores, 51.9 s | 192 VGPRs, 18,988 B, 65.6 s |
+| | low-stack | 255 regs, 4,608 B, 56 B, 2.0 s | 180 VGPRs, 4,560 B, 3.1 s |
+| `eri3_334` (ff\|g) | unrolled | **over budget**, killed at 300 s (1.52 MB of source) | 192 VGPRs, 34,660 B, 242.5 s |
+| | low-stack | 255 regs, 6,320 B, 56 B, 2.6 s | 192 VGPRs, 6,320 B, 3.1 s |
+| `eri3_134` (pf\|g) | unrolled (kept) | 255 regs, 13,928 B, 22,540 B, 16.6 s | 192 VGPRs, 9,412 B, 25.8 s |
+| `eri3_336` (ff\|i) | low-stack | 255 regs, 8,256 B, 68 B, 3.2 s | 192 VGPRs, 8,512 B, 4.7 s |
 
-Across the 32 low-stack units on `sm_86`:
+Across every low-stack unit of the ladder:
 
-- the stack is at most 8,256 B, with at most 68 B of spill stores;
-- each unit compiles in at most 2.6 s, against #606's 275 s for (ff|g)
-  unrolled.
+- the stack is at most 8,256 B on `sm_86` and 8,512 B of `gfx1200`
+  scratch;
+- spill stores on `sm_86` are at most 68 B;
+- each unit compiles in at most 5.1 s.
 
-The unrolled classes the rule keeps spill heavily:
+Every eri3 class the gate keeps unrolled is at most 13,928 B, with (pf|g)
+the largest.
 
-| unit | `sm_86` stack | spill stores |
-|---|---|---|
-| (dd\|g) | 15,992 B | 27,276 B |
-| (pf\|g) | 13,928 B | 22,540 B |
-| (pd\|h) | 10,208 B | 17,884 B |
-| (g\|h) | 4,944 B | 10,300 B |
+**The decision on (dd|g).** The declared rule admits an unrolled form only
+when, on both arches, its stack is at most 14,000 B and it compiles within
+300 s. The unrolled (dd|g) is 15,992 B on `sm_86`, so it is not admissible
+and must be gated. FreeBreakfast's 13,856 B is after device link; the rule
+reads ptxas's per-unit frame.
 
-(dd|g) is over #606's ~14 KB under these flags; FreeBreakfast measured
-13,856 B after device link. So the `E_DOUBLES_MAX` arm may be too loose.
-Whether to move it is for the measurement to decide.
+The bound therefore tightened to (pf|g)'s blocks, the largest admissible
+unrolled class. That gates (dd|g) and no other class.
+`measure_df_lowstack.test_the_gate_is_what_the_measured_rows_rule` (in
+`measure.sh check`) holds the gate to the rows.
+
+**The clock** (`devtools/measure.sh df-lowstack`, behind the card gate)
+covers both forms where both compile within the budget. Each class is
+timed alone on a synthetic input:
+
+- eri3: 8,704 to 9,216 cells, from 12 to 16 contracted AO shells per `l`
+  against 64 aux shells;
+- metric: 96 aux shells;
+- protocol: 3 rounds × 7 timed launches.
+
+| class | `sm_86` low / unrolled | ratio | `gfx1200` low / unrolled | ratio |
+|---|---|---|---|---|
+| (dd\|g) | 9.42 / 2.57 ms | 3.67 | 13.12 / 3.91 ms | 3.36 |
+| (pf\|g) | 8.46 / 2.31 ms | 3.66 | 12.15 / 3.79 ms | 3.20 |
+| (pd\|h) | 4.89 / 1.69 ms | 2.90 | 10.23 / 2.75 ms | 3.71 |
+| (sf\|h) | 3.65 / 1.17 ms | 3.13 | 2.84 / 1.59 ms | 1.79 |
+| (df\|g) | 18.49 / 6.41 ms | 2.89 | 29.01 / 9.91 ms | 2.93 |
+| (ff\|g) | 36.46 ms / not compiled | — | 46.59 / 21.51 ms | 2.17 |
+| (ff\|i) | 75.45 ms | — | 133.70 ms | — |
+
+The low-stack form is **slower everywhere**, by 1.8x to 3.7x. So the clock
+moves no admissible class under the gate. It is a stack and compile-time
+trade, not a speed one. The (dd|g) move costs ~3.5x on that class's
+launch. Beside the clock, the two forms' tensors agree within `1e-14` of
+max.
+
+**Against libcint through (ff|i).** The tracked aux-i set is
+`prim_spd_f_auxi_3c`, five schema-4 column pieces, on the AO parent
+`prim_spd_f`:
+
+- AOs: He with s, p and d; Ne with one f contracted over two primitives;
+  20 AOs in all.
+- Aux: `l = 0..6` shells on both atoms, with Ne's i contracted; 168
+  Cartesian functions.
+
+Every one of the 70 ladder classes occurs. The comparison is Cartesian
+(`int3c2e_cart`), as the kernels are. #606's spherical comparison is the
+consumer's transform, and spherical is not handled here.
+
+- The host matches libcint within 1.16e-14 of max over the whole tensor.
+- Interpreted, (ss|i), (pf|h), (df|g), (ff|g) and (ff|i) match within
+  4.6e-15 of max.
+- The cards: Part 3 below.
 
 **Interpreted** (`test/test_kernel_df_lowstack.py`):
 
@@ -443,28 +514,42 @@ Whether to move it is for the measurement to decide.
 
 Only (ss|s) is bitwise. The rest differ by association.
 
-Not done here:
+**On both cards** (`test_eri3_device.py` Part 3, `slow` and `high_l`, run
+by hand with `pytest -m "gpu and <backend>"`, #606). Every one of the 70
+classes runs on the aux-i set in the form the gate picks; 25 of them are
+low-stack. There is one program per `lP`, each compiled within the 300 s
+budget.
 
-- **No card run and no `measured_store` row.** Stored registers, spills,
-  compile time and wall-clock, before and after, are #606's open
-  measurement.
-- **No libcint check above L = 4.** No tracked fixture has an h or i aux
-  shell, and PySCF was not available to make one.
+| card | worst against the host | against `int3c2e_cart` |
+|---|---|---|
+| RTX 3080 | 2.75 eps of the tower-twin scale (gate 16) | 1.19e-14 of max (gate `1e-12`) |
+| RX 9060 XT | 2.46 eps | 1.19e-14 of max |
+
+Runs are bit-identical on both cards. The libcint figure is the host's
+own, set by the low classes.
+
+The same session ran Parts 1 and 2 (L ≤ 4) on the RX 9060 XT too. That
+is the card's first `(mn|P)` run; it was #431's.
 
 ## What is not done
 
-- **The RX 9060 XT run** (#431).
-- **Above `L = 4` against libcint.** No libcint fixture covers `L > 4`. The
-  low-stack section above lists the interpreted host checks past it. The
-  builder and the emitter accept any `L`. The fixture's (sp|g), (pp|f) and
-  (pp|g) are not launched.
+- **Spherical comparison.** #606 asks for agreement with spherical
+  `int3c2e`; the kernels are Cartesian, so the check is `int3c2e_cart`,
+  through (ff|i).
+- **A faster low-stack form.** It is 1.8x to 3.7x slower than the unrolled
+  one wherever both compile (the clock above). The gate trades that time
+  for stack and compile time.
+- **L > 4 on the cc-pVTZ-jkfit fixture.** That fixture's (sp|g), (pp|f)
+  and (pp|g) are still not launched. The aux-i set covers those classes.
 - **Spherical aux functions.** Only Cartesian aux functions are handled.
 - **DF-J and DF-K themselves**, and anything that factors or inverts the
   metric `(P|Q)`.
 - **Screening.** A `(mn|P)` Schwarz bound is unbuilt, and every cell is
   launched.
-- **Measurement.** Nothing about `(mn|P)` is measured: no `data/measured/`
-  row, no registers, spills, wall-clock or counters.
+- **Measurement beyond #606's.** `data/measured/df_lowstack.json` holds
+  compile rows for the whole ladder and wall-clock rows for the gate's
+  classes. Nothing else is measured: there are no counters, and no
+  `kernels.json` row.
 - **A score.** Nothing is scored, because no published board exists.
 - **A batched kernel or a lever.** The high classes take the low-stack form
   (#606, above) instead. Splitting the Hermite targets across kernels is

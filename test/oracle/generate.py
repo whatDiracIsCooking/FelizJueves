@@ -645,6 +645,91 @@ CASES.update({
 })
 
 
+# #606: the aux ladder through i. A small AO parent, `prim_spd_f` -- s, p
+# and d on He, one contracted f on Ne (20 AOs), every pair class through
+# (ff) -- and an inline aux basis with every l = 0..6 on BOTH atoms (168
+# Cartesian aux AOs), so every eri3 class `la <= lb <= 3`, `lP <= 6` and
+# every metric class through (i|i) occurs, each also with the aux shell on
+# another centre than the bra pair's (the (ff) pair is one-centre on Ne; an
+# i aux shell is also on He). The 168-column tensor of 20 x 20 AOs does not
+# fit one file under the 512 KB hook, and an i shell alone (28 columns) does,
+# so the tensor is split at aux shell boundaries into five pieces and the
+# metric (two 168-wide arrays) by rows into four.
+PRIM_SPD_F = """\
+#BASIS SET: #606's parent: s, p, d on He, one contracted f on Ne
+He S
+  1.3 1.0
+He P
+  0.9 1.0
+He D
+  0.7 1.0
+#BASIS SET: #606's parent: s, p, d on He, one contracted f on Ne
+Ne F
+  1.4 0.6
+  0.55 0.5
+"""
+AUX_I = """\
+#BASIS SET: #606's aux ladder, l = 0..6 on each atom
+He S
+  1.9 1.0
+He P
+  1.5 1.0
+He D
+  1.2 1.0
+He F
+  1.0 1.0
+He G
+  0.85 1.0
+He H
+  0.75 1.0
+He I
+  0.65 1.0
+#BASIS SET: #606's aux ladder, l = 0..6 on each atom
+Ne S
+  2.4 1.0
+Ne P
+  1.9 1.0
+Ne D
+  1.5 1.0
+Ne F
+  1.2 1.0
+Ne G
+  1.0 1.0
+Ne H
+  0.85 1.0
+Ne I
+  1.6 0.6
+  0.7 0.5
+"""
+CASES["prim_spd_f"] = Case(
+    description=(
+        "#606's AO parent for the aux ladder through i: He with one "
+        "primitive s, p and d, Ne with one f contracted over two primitives, "
+        "Ne off every axis. Every pair class (la <= lb <= 3) occurs. Records "
+        "the converted basis and libcint's one-electron arrays."
+    ),
+    atom="He 0 0 0; Ne 0.3 -0.5 1.2",
+    unit="Bohr",
+    basis=PRIM_SPD_F,
+    cart=True,
+    record_basis=True,
+)
+AUX_I_METRIC_SET = "prim_spd_f_auxi_metric"
+AUX_I_METRIC_ROWS = ((0, 56), (56, 104), (104, 140), (140, 168))
+AUX_I_3C_SET = "prim_spd_f_auxi_3c"
+AUX_I_3C_COLS = ((0, 35), (35, 84), (84, 119), (119, 140), (140, 168))
+CASES.update({
+    f"{AUX_I_METRIC_SET}{ROWS_SEP}{r0}_{r1}": _metric_piece(
+        "prim_spd_f", AUX_I, AUX_I_METRIC_SET, (r0, r1))
+    for r0, r1 in AUX_I_METRIC_ROWS
+})
+CASES.update({
+    f"{AUX_I_3C_SET}{COLS_SEP}{c0}_{c1}": _three_center_piece(
+        "prim_spd_f", AUX_I, AUX_I_3C_SET, (c0, c1))
+    for c0, c1 in AUX_I_3C_COLS
+})
+
+
 # #570: the f witness of a whole-molecule build. CO in Cartesian cc-pVTZ
 # (C and O each 4s3p2d1f; 18 shells, 70 AOs): f on BOTH centres and
 # heteronuclear, so every class through (ff|ff) occurs between two
@@ -872,7 +957,14 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
     if case.aux_basis is not None:
         from pyscf import df
 
-        mol = df.make_auxmol(mol, case.aux_basis)
+        aux_basis: Any = case.aux_basis
+        if "\n" in aux_basis:  # #606: inline NWChem text, per element
+            from pyscf import gto
+
+            aux_basis = {s: gto.basis.parse(aux_basis, symb=s)
+                         for s in sorted({mol.atom_pure_symbol(i)
+                                          for i in range(mol.natm)})}
+        mol = df.make_auxmol(mol, aux_basis)
         if not mol.cart:
             raise ValueError(f"{name}: make_auxmol did not inherit cart")
 

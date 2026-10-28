@@ -336,10 +336,13 @@ def test_schema_2_3_and_4_files_load_side_by_side():
     assert all(load(manifest.FIXTURES / f"{n}.json").metric is not None
                for n in by_schema[3])
     assert by_schema[3] == {p.stem for p in manifest.tracked()
-                            if p.stem.startswith("h2o_ccpvtz_jkfit_metric")}
+                            if p.stem.startswith(("h2o_ccpvtz_jkfit_metric",
+                                                  "prim_spd_f_auxi_metric"))}
     assert all(load(manifest.FIXTURES / f"{n}.json").three_center is not None
                for n in by_schema[4])
-    assert by_schema[4] == {"h2o_sto3g_jkfit_3c_cols0_166"}
+    assert by_schema[4] == {"h2o_sto3g_jkfit_3c_cols0_166"} | {
+        f"prim_spd_f_auxi_3c_cols{c0}_{c1}" for c0, c1 in
+        ((0, 35), (35, 84), (84, 119), (119, 140), (140, 168))}
     for n in by_schema[2]:
         fx = load(manifest.FIXTURES / f"{n}.json")
         assert fx.metric is None and fx.three_center is None

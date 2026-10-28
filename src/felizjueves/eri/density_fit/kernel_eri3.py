@@ -129,21 +129,25 @@ with each other to `1e-14` of the class's max (test/test_kernel_df_lowstack
 block's, so only s and p are bitwise.
 
 WHY THE RULE. `eri3_lowstack` is `la + lb + lP >= LOWSTACK_MIN_L = 10` or
-the unrolled `E` blocks over (dd|g)'s, `E_DOUBLES_MAX = 1785` doubles:
-the form that ships keeps its measured 13,856 B, the issue's budget, and no
-class through f / i is built unrolled with larger blocks. On the ladder
-`la <= lb <= 3`, `lP <= 6` that is 24 of 70 classes: every (df|.) and
-(ff|.), every aux-i row, and (pf|h), (dd|h); nothing at `L <= 4`, so every
-golden is unchanged. The `L >= 10` arm is for the tower, which grows
-fastest (the `[p|q]` kernel's one-batch frame is 4,832 B at L = 10 and
-12,496 B at L = 12, `kernels.json`). It was set from the text, and then
-compiled once by hand (#606, no stored row). On `sm_86`, every low-stack
-unit is at most 8,256 B of stack with at most 68 B of spill stores, and
-compiles in at most 2.6 s. The unrolled (dd|g) is 15,992 B of stack with
-27,276 B of spill stores, so the `E_DOUBLES_MAX` arm may be too loose
-(three_center.md, "The low-stack form"). V's (df), which nvcc kept to
-6,192 B with a 60 x 56 block (#586), says the mixed classes might fit
-unrolled, so the rule errs to the smaller frame.
+the unrolled `E` blocks over (pf|g)'s, `E_DOUBLES_MAX = 1575` doubles. It
+is set from MEASURED rows (data/measured/df_lowstack.json, `devtools/
+measure.sh df-lowstack-compile`, its rule declared before any row): every
+class of the ladder in both forms where the gate is read, each unit
+compiled alone under a 300 s budget. An unrolled form is admissible at
+<= 14,000 B of stack (#606's ~14 KB) and within the budget on `sm_86` and
+`gfx1200`. The unrolled (dd|g) is not (15,992 B of `sm_86` stack, 27,276 B
+of spill stores), so it is gated; the largest admissible unrolled class is
+(pf|g) (13,928 B on `sm_86`, 9,412 B of `gfx1200` scratch), whose blocks
+are the bound. (df|g) unrolled is 33,992 B / 52 s on `sm_86`, and (ff|g)
+unrolled does not compile within 300 s there (242 s and 34,660 B of
+scratch on `gfx1200`). On the ladder `la <= lb <= 3`, `lP <= 6` that is
+25 of 70 classes: every (df|.) and (ff|.), every aux-i row, and (dd|g),
+(pf|h), (dd|h); nothing at `L <= 4`, so every golden is unchanged. The
+`L >= 10` arm is for the tower, which grows fastest (the `[p|q]` kernel's
+one-batch frame is 4,832 B at L = 10 and 12,496 B at L = 12,
+`kernels.json`). Every low-stack unit of the ladder is at most 8,256 B of
+`sm_86` stack (8,512 B of `gfx1200` scratch) with at most 68 B of `sm_86`
+spill stores, and compiles in at most 5.1 s.
 
     params  n_cell n_bra_rec n_aux_rec n_ao n_aux (I32)
             zeta_ab[n_bra_rec]  P XPA XPB[n_bra_rec, 3]  s_ab[n_bra_rec]
@@ -583,9 +587,10 @@ def _params() -> tuple[Param, ...]:
 # ---------------------------------------------------------------------------
 
 LOWSTACK_MIN_L = 10  # every class from L = la + lb + lP = 10 (#606)
-# (dd|g)'s E blocks, 36 x 35 + 15 x 35 doubles (14,280 B): the largest the
-# unrolled form keeps (#606 measured its frame at 13,856 B on sm_86)
-E_DOUBLES_MAX = 1785
+# (pf|g)'s E blocks, 30 x 35 + 15 x 35 doubles (12,600 B): the largest the
+# unrolled form keeps, its frame measured at 13,928 B on sm_86; (dd|g)'s
+# 1,785 is over it, at 15,992 B (data/measured/df_lowstack.json, #606)
+E_DOUBLES_MAX = 1575
 R_ARRAY = "R"  # [r]^(0) of one (bra, aux) pair, hermite_targets(L) order
 U_ARRAY = "U"  # SUM_tau [t+tau] E^q_tau of one aux row q, hermite_targets(Lab)
 AUX_TABLES = ("Cx", "Cy", "Cz")  # the aux record's single-center tables
@@ -610,7 +615,7 @@ def eri3_e_doubles(cls: Spec | tuple[int, int, int]) -> int:
 def eri3_lowstack(cls: Spec | tuple[int, int, int]) -> bool:
     """THE SELECTION RULE (#606): True when `la + lb + lP >=
     LOWSTACK_MIN_L`, or when the unrolled form's `E` blocks are larger
-    than (dd|g)'s (`eri3_e_doubles`, `E_DOUBLES_MAX`); there
+    than (pf|g)'s (`eri3_e_doubles`, `E_DOUBLES_MAX`); there
     `build_eri3_kernel` emits the low-stack form by default. False below,
     where the unrolled text is unchanged."""
     spec = _spec(cls)

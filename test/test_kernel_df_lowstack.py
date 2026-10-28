@@ -3,9 +3,11 @@ interpreted.
 
 THE GATE. `eri3_lowstack` / `metric_lowstack` pick the low-stack form from
 `L = 10`, or where the unrolled form's two `E` blocks are larger than
-(dd|g)'s (`E_DOUBLES_MAX`, the frame #606 measured at 13,856 B). On the
-ladder FreeBreakfast emits (eri3 `la <= lb <= 3`, `lP <= 6`; the metric
-`lP <= lQ <= 6`) that is the 24 and 8 classes pinned here, and none at
+`E_DOUBLES_MAX`: eri3's is (pf|g)'s, the largest unrolled class measured
+within #606's ~14 KB (data/measured/df_lowstack.json), so (dd|g), at
+15,992 B of `sm_86` stack, is gated; the metric keeps its own 1,785. On
+the ladder FreeBreakfast emits (eri3 `la <= lb <= 3`, `lP <= 6`; the metric
+`lP <= lQ <= 6`) that is the 25 and 8 classes pinned here, and none at
 `L <= 4`, so every golden is untouched.
 
 THE WITNESSES, test_kernel_eri3.py's and test_kernel_metric.py's, imported:
@@ -20,16 +22,26 @@ SCOPE: every L <= 4 class with the form FORCED (s and p fast, the rest
 `slow`, as the two modules), and a few gated classes by default (`slow`:
 they are above `FAST_L_MAX`), on small bases with f AO shells and h and i
 aux shells. The text of every gated class through (ff|i) and (i|i) is
-built and bounded (`slow`) and compiled by none of these tests; nothing launches:
-no libcint fixture reaches an h or i aux shell yet (#606's follow-up).
+built and bounded (`slow`) and compiled by none of these tests.
+
+LIBCINT THROUGH (ff|i) AND (i|i): the tracked aux-i sets
+(`prim_spd_f_auxi_3c`, `prim_spd_f_auxi_metric`; He s, p, d and a
+contracted Ne f against l = 0..6 aux shells on both atoms) reach every
+ladder class; the host on the whole tensor and matrix, and a few gated
+classes interpreted, within TOL of libcint's max (`slow`). Every class on
+the cards: test_eri3_device.py / test_metric_device.py, Part 3.
 """
 
 from __future__ import annotations
+
+from functools import cache
 
 import numpy as np
 import pytest
 import test_kernel_eri3 as te
 import test_kernel_metric as tm
+from oracle import basis as ob
+from oracle import manifest
 from tiers import FAST_L_MAX
 
 from felizjueves.ao.shell import Basis, Shell
@@ -47,7 +59,8 @@ ERI3_LADDER = [(a, b, p) for a in range(4) for b in range(a, 4)
                for p in range(7)]
 METRIC_LADDER = [(p, q) for p in range(7) for q in range(p, 7)]
 ERI3_GATED = {(0, 0, 6), (0, 1, 6), (0, 2, 6), (0, 3, 6), (1, 1, 6),
-              (1, 2, 6), (1, 3, 5), (1, 3, 6), (2, 2, 5), (2, 2, 6),
+              (1, 2, 6), (1, 3, 5), (1, 3, 6), (2, 2, 4), (2, 2, 5),
+              (2, 2, 6),
               (2, 3, 0), (2, 3, 1), (2, 3, 2), (2, 3, 3), (2, 3, 4),
               (2, 3, 5), (2, 3, 6), (3, 3, 0), (3, 3, 1), (3, 3, 2),
               (3, 3, 3), (3, 3, 4), (3, 3, 5), (3, 3, 6)}
@@ -82,11 +95,13 @@ HIGH_AUX = Basis((
 # --- the gate ------------------------------------------------------------------
 
 
-def test_the_reference_is_dd_g_s_e_blocks_in_both_modules():
-    assert ke.eri3_e_doubles((2, 2, 4)) == ke.E_DOUBLES_MAX == 36 * 35 + 15 * 35
-    assert km.E_DOUBLES_MAX == ke.E_DOUBLES_MAX  # restated, not imported
+def test_the_reference_is_pf_g_s_e_blocks_and_dd_g_is_gated():
+    # eri3's bound is (pf|g)'s blocks, measured (#606); (dd|g) is over it
+    assert ke.eri3_e_doubles((1, 3, 4)) == ke.E_DOUBLES_MAX == 30 * 35 + 15 * 35
+    assert ke.eri3_e_doubles((2, 2, 4)) == 36 * 35 + 15 * 35 > ke.E_DOUBLES_MAX
+    assert ke.eri3_lowstack((2, 2, 4)) and not ke.eri3_lowstack((1, 3, 4))
+    assert km.E_DOUBLES_MAX == 1785  # the metric's own, unchanged
     assert ke.LOWSTACK_MIN_L == km.LOWSTACK_MIN_L == 10
-    assert not ke.eri3_lowstack((2, 2, 4))  # (dd|g) itself stays unrolled
 
 
 def test_the_gate_on_the_ladder_is_pinned():
@@ -250,6 +265,86 @@ def test_every_gated_eri3_text_is_bounded(cls):
 @pytest.mark.parametrize("cls", sorted(METRIC_GATED), ids=str)
 def test_every_gated_metric_text_is_bounded(cls):
     _bounded(km.build_metric_kernel(cls), ("Ebra", "Eket"))
+
+
+# --- libcint through (ff|i) and (i|i): the aux-i sets (#606) -------------------
+
+AUXI_3C = "prim_spd_f_auxi_3c"
+AUXI_METRIC = "prim_spd_f_auxi_metric"
+
+
+@cache
+def auxi_3c() -> tuple[manifest.ThreeCenterSet, Basis, Basis]:
+    """The tracked aux-i three-center set and its two bases in our
+    convention: `prim_spd_f` (He s, p, d; Ne f, contracted; 20 AOs) and
+    l = 0..6 aux shells on both atoms (168 Cartesian aux AOs)."""
+    ts = manifest.three_center_set(AUXI_3C)
+    return ts, ob.from_fixture(ts.parent), ob.from_fixture(ts)
+
+
+@cache
+def auxi_metric() -> tuple[manifest.MetricSet, Basis]:
+    ms = manifest.metric_set(AUXI_METRIC)
+    return ms, ob.from_fixture(ms)
+
+
+def libcint_worst(got: np.ndarray, ref: np.ndarray, owned: np.ndarray
+                  ) -> float:
+    """max |got - libcint| over the owned elements, of max |libcint|."""
+    return float(np.max(np.abs(got - ref)[owned])) / float(np.max(np.abs(ref)))
+
+
+def test_the_aux_i_sets_reach_every_ladder_class():
+    """Every eri3 class `la <= lb <= 3`, `lP <= 6` and every metric class
+    `lP <= lQ <= 6` occurs on the aux-i sets, so the libcint checks below
+    and on the cards reach the whole ladder FreeBreakfast emits."""
+    from felizjueves.eri.density_fit.eri3 import eri3_classes
+    from felizjueves.eri.density_fit.metric import metric_classes
+    _, basis, aux = auxi_3c()
+    assert sorted({(c.la, c.lb, c.lP) for c in eri3_classes(basis, aux)}) \
+        == ERI3_LADDER
+    _, maux = auxi_metric()
+    assert sorted({(c.lP, c.lQ) for c in metric_classes(maux)}) \
+        == METRIC_LADDER
+    assert maux == aux  # one aux basis, the same shells
+
+
+@pytest.mark.slow  # the whole tensor and matrix on the host, ~40 s
+def test_the_host_through_ff_i_and_i_i_is_libcints():
+    from felizjueves.eri.density_fit.eri3 import eri3_tensor
+    from felizjueves.eri.density_fit.metric import metric_matrix
+    from felizjueves.reference.pq import pq
+    ts, basis, aux = auxi_3c()
+    T = np.array(eri3_tensor(basis, aux, pq=pq))
+    w3 = libcint_worst(T, ts.tensor, np.ones(T.shape, bool))
+    ms, maux = auxi_metric()
+    M = np.array(metric_matrix(maux, pq=pq))
+    wm = libcint_worst(M, ms.metric, np.ones(M.shape, bool))
+    print(f"\nhost vs libcint: (mn|P) {w3:.2e}, (P|Q) {wm:.2e} of max")
+    assert w3 <= te.TOL and wm <= tm.TOL, (w3, wm)
+
+
+@pytest.mark.slow  # interpreted above FAST_L_MAX
+@pytest.mark.parametrize("cls", [(0, 0, 6), (1, 3, 5), (2, 3, 4), (3, 3, 4),
+                                 (3, 3, 6)], ids=ke.eri3_name)
+def test_a_gated_eri3_class_is_libcints(cls):
+    ts, basis, aux = auxi_3c()
+    T = _eri3(basis, aux, cls, None).T
+    owned = te._host(basis, aux, {cls})[2]
+    w = libcint_worst(T, ts.tensor, owned)
+    print(f"\n{ke.eri3_name(cls)} vs libcint: {w:.2e} of max")
+    assert np.all(T[~owned] == 0.0) and w <= te.TOL, w
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("cls", [(0, 6), (5, 5), (5, 6), (6, 6)], ids=str)
+def test_a_gated_metric_class_is_libcints(cls):
+    ms, aux = auxi_metric()
+    M = _metric(aux, cls, None).M
+    owned = tm._host(aux, {cls})[2]
+    w = libcint_worst(M, ms.metric, owned)
+    print(f"\n{cls} vs libcint: {w:.2e} of max")
+    assert np.all(M[~owned] == 0.0) and w <= tm.TOL, w
 
 
 def test_the_forms_share_name_parameters_and_launch():

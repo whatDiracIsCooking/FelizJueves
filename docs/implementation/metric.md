@@ -1,7 +1,9 @@
 # The DF Coulomb metric `(P|Q)` on the McMurchie-Davidson recurrence
 
-**Status: implemented, tested at `lP + lQ ≤ 4`, and run on the RTX 3080 only
-(milestone 15, #410–#416; PRs #425–#430).** This is the derived note for the
+**Status: implemented, tested at `lP + lQ ≤ 4` (milestone 15, #410–#416;
+PRs #425–#430), and since #606 through (i|i) against libcint on both
+cards, with its low-stack form measured (see "The low-stack form"; the
+milestone-15 bullets below are as they were).** This is the derived note for the
 two-center Coulomb metric
 
     (P|Q) = ∫∫ P(r1) Q(r2) / r12
@@ -302,9 +304,11 @@ and printed `device: present` with no usable card.
 
 `build_metric_kernel` has the same low-stack form as `(mn|P)`
 (`three_center.md`, "The low-stack form"; `kernel_metric.py`'s docstring).
-It has the same rule (`L ≥ 10`, or `E` blocks over eri3's (dd|g)), and on
-`lP ≤ lQ ≤ 6` it is the default for (s|i) through (i|i) and for (h|h): 8 of
-28 classes, none at `L ≤ 4`.
+Its rule is `L ≥ 10`, or `E` blocks over `E_DOUBLES_MAX = 1785` doubles.
+That bound was eri3's (dd|g), restated. It is now the metric's own, because
+#606's measurement tightened eri3's bound and not this one. On
+`lP ≤ lQ ≤ 6` the form is the default for (s|i) through (i|i) and for
+(h|h): 8 of 28 classes, none at `L ≤ 4`.
 
 - **Text.** At (i|i) its local arrays are 6,768 B against 37,736 B of `E`
   blocks unrolled, and its source is 85 KB against 738 KB.
@@ -314,23 +318,58 @@ It has the same rule (`L ≥ 10`, or `E` blocks over eri3's (dd|g)), and on
   - by default (`slow`): (s|i), (p|i), (h|h), (h|i) and (i|i). Worst
     0.94 eps of the tower-twin scale against the host, and 1.9e-16 of max
     against the unrolled kernel.
-- **Compiled once by hand** (no stored row). `metric_66` is 6,352 B of
-  `sm_86` stack with 64 B of spill stores, and 5,824 B of `gfx1200`
-  scratch. The unrolled (g|h), which the rule keeps, is 4,944 B with
-  10,300 B of spill stores.
-- **Not done.** It has not been run on a card, and has no
-  libcint check above L = 4.
+- **Measured** (`data/measured/df_lowstack.json`, `devtools/measure.sh
+  df-lowstack-compile`; the method and rule are in `three_center.md`,
+  "The low-stack form"):
+  - all 28 classes in their default form;
+  - the low-stack form of the five unrolled classes from `L = 7`, each
+    unit alone, under a 300 s compile budget.
+
+  `metric_66` (i|i) is 255 registers, 6,352 B of `sm_86` stack and 64 B
+  of spill stores, in 1.8 s; on `gfx1200` it is 192 VGPRs and 5,824 B of
+  scratch, in 2.6 s. The largest unrolled class the rule keeps is (g|h):
+  4,944 B of `sm_86` stack and 5,320 B of `gfx1200` scratch, inside the
+  ~14 KB budget. So the metric's gate does not move.
+- **Against libcint through (i|i)**: the tracked aux-i set
+  `prim_spd_f_auxi_metric`. Its basis has `l = 0..6` aux shells on He
+  and Ne, with Ne's i contracted, for 168 Cartesian functions. It is four
+  schema-3 row pieces.
+  - The host matches libcint within 2.76e-14 of max. The worst class is
+    (d|g); every h and i class is better.
+  - Interpreted, (s|i), (h|h), (h|i) and (i|i) match within 2.2e-15 of
+    max.
+  - **On both cards** (`test_metric_device.py` Part 3, `slow` and
+    `high_l`, #606). Every one of the 28 classes runs, 8 of them
+    low-stack, with one program per `lQ`.
+
+    | card | worst against the host | against `int2c2e_cart` |
+    |---|---|---|
+    | RTX 3080 | 3.71 eps of the tower-twin scale | 2.76e-14 of max |
+    | RX 9060 XT | 3.71 eps | 2.76e-14 of max |
+
+    The 2.76e-14 is the host's own, set at (d|g). Runs are bit-identical
+    on both cards. The same session ran Parts 1 and 2 on the RX 9060 XT
+    too: the card's first metric run, which was #431's.
+- **Clock** (`devtools/measure.sh df-lowstack`): the low-stack form is
+  slower wherever both forms compile.
+
+  | class | RTX 3080 | RX 9060 XT |
+  |---|---|---|
+  | (g\|g) | 3.50x | 1.73x |
+  | (g\|h) | 4.58x | 1.46x |
+
+  The unrolled forms are inside the stack budget, so neither class moves
+  under the gate. (i|i) low-stack takes 4.21 ms on the RTX 3080 and
+  5.27 ms on the RX 9060 XT.
 
 ## What is not done
 
-- **The RX 9060 XT run** (#431).
-- **Measurement.** Nothing about the metric is measured: no
-  `data/measured/` row, no registers, spills, wall-clock or counters.
+- **Measurement beyond #606's** compile and clock rows in
+  `data/measured/df_lowstack.json`. There are no counters, and no
+  `kernels.json` row.
 - **A score.** Nothing is scored, because no published board exists.
-- **Above `L = 4`.** No correctness test covers `L > 4`. The builder and
-  the emitter accept any `L` (`--metric-l` takes any `LMAX ≥ 0`). The one
-  class above the cap that the tests touch is built and emitted at `L = 5`
-  (`slow`), never interpreted, compiled or launched.
+- **Spherical comparison.** The libcint check is `int2c2e_cart`; #606
+  asked for spherical, and the kernels are Cartesian.
 - **Spherical aux functions.** Only Cartesian aux functions are handled.
 - **DF-J and DF-K themselves**, and anything that factors or inverts the
   metric.

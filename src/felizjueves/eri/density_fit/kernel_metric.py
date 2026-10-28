@@ -102,14 +102,15 @@ parameters, launch and output contract, no `Ebra` / `Eket` block and no
 mirror as a plain copy. The frame is `R`, `U` and the six tables, 6,768 B
 at (i|i) against 37,736 B of `E` blocks unrolled. The rule is
 `kernel_eri3.eri3_lowstack`'s, `metric_lowstack`: `lP + lQ >=
-LOWSTACK_MIN_L = 10` or the unrolled `E` blocks over `E_DOUBLES_MAX`
-(eri3's (dd|g), restated); on `lP <= lQ <= 6` that is (s|i) through (i|i)
-and (h|h), 8 of 28, none at `L <= 4`, so every golden is unchanged.
-Interpreted, the two forms agree with the host to the same bound and with
-each other to `1e-14` of the class's max; through (p|p) they are bitwise
-(test/test_kernel_df_lowstack.py). Compiled once by hand (#606, no
-stored row): `metric_66` is 6,352 B of `sm_86` stack with 64 B of spill
-stores, and 5,824 B of `gfx1200` scratch.
+LOWSTACK_MIN_L = 10` or the unrolled `E` blocks over `E_DOUBLES_MAX =
+1785` (the metric's own bound since #606's measurement; eri3's is tighter);
+on `lP <= lQ <= 6` that is (s|i) through (i|i) and (h|h), 8 of 28, none
+at `L <= 4`, so every golden is unchanged. Interpreted, the two forms agree
+with the host to the same bound and with each other to `1e-14` of the
+class's max; through (p|p) they are bitwise (test/test_kernel_df_lowstack
+.py). Measured (data/measured/df_lowstack.json): `metric_66` is 6,352 B
+of `sm_86` stack with 64 B of spill stores and 5,824 B of `gfx1200`
+scratch; the largest unrolled class kept, (g|h), is 4,944 B / 5,320 B.
 
     params  n_pair n_rec n_aux (I32)
             A[n_rec, 3]  alpha[n_rec]  s_aux[n_rec]           per aux record
@@ -484,9 +485,10 @@ def _params() -> tuple[Param, ...]:
 # ---------------------------------------------------------------------------
 
 LOWSTACK_MIN_L = 10  # every class from L = lP + lQ = 10 (#606)
-# kernel_eri3.E_DOUBLES_MAX, restated (the metric builder may not import
-# the eri3 builder): (dd|g)'s two E blocks, the largest an unrolled DF
-# kernel keeps
+# the metric's own bound (#606's measurement; it was kernel_eri3's, restated,
+# until the eri3 bound tightened): every unrolled class under it is at most
+# 4,944 B of sm_86 stack and 5,320 B of gfx1200 scratch ((g|h), 1,701
+# doubles), so nothing moves; the smallest gated class has 2,352
 E_DOUBLES_MAX = 1785
 R_ARRAY = "R"  # [r]^(0) of one (P, Q) record pair, hermite_targets(L) order
 U_ARRAY = "U"  # SUM_tau [t+tau] E^b_tau of one Q row b, hermite_targets(lP)
