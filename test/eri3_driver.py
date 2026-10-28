@@ -31,6 +31,17 @@ int cell arrays (`ab_rec0 | ab_rec1 | p_rec0 | p_rec1 | off_a | off_b |
 off_p`). A kernel argument is a pointer into those buffers, read off the
 kernel's own parameter list, so the call cannot drift from the signature.
 The record array `s` is the kernel's `s_aux` (`kernel_eri3.PARAM_OF`).
+
+THE FORM (#606): `lowstack=` reaches `build_eri3_kernel` unchanged (None,
+the default, is the gate's choice), so a program can launch either form of
+a class; `timeout=` bounds the program's compile.
+
+TIMED (#606, measure/measure_df_lowstack.py): `compile_timed` builds the
+same program with `timed=True` -- run `warmup + reps` times, one event pair
+around each class's launch, a `rep R class C events_ns X` line per timed
+launch (`kblock_driver.timings` reads them), and only the last run's tensor
+written. Each element is a plain store, so every run writes the same
+tensor and nothing is zeroed between runs.
 """
 
 from __future__ import annotations
@@ -40,6 +51,7 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
+from kblock_driver import timings
 from plan_driver import RUNS, UPLOAD_INT, Program, _unit, compile_checked
 from test_kernel_device import BACKEND, PORTABLE
 
@@ -78,7 +90,8 @@ def _check_signature(kern: Kernel) -> None:
                          f"want {want}")
 
 
-def _call(kern: Kernel, c: int, ns: str, cls: Eri3Class) -> str:
+def _call(kern: Kernel, c: int, ns: str, cls: Eri3Class, *,
+          timed: bool = False) -> str:
     at, off = {}, 0
     for name, n in ([(b, cls.n_bra_rec) for b in Eri3Class.BRA_ARRAYS]
                     + [(a, cls.n_aux_rec) for a in Eri3Class.AUX_ARRAYS]):
@@ -91,32 +104,36 @@ def _call(kern: Kernel, c: int, ns: str, cls: Eri3Class) -> str:
                "n_aux": "NAUX", OUT: "dT"})
     args = [at[p.name] for p in kern.params]
     grid, (lanes, _) = launch_shape(cls.n_cell, THREADS)
-    return (f"        // class ({cls.la}{cls.lb}|{cls.lP}), {cls.n_cell} "
-            f"cells, {cls.n_bra_rec} bra / {cls.n_aux_rec} aux records\n"
-            f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
-            f"            {', '.join(args)});\n"
-            f"        CHECK(devGetLastError());\n"
-            f"        ++launches;")
+    head = (f"        // class ({cls.la}{cls.lb}|{cls.lP}), {cls.n_cell} "
+            f"cells, {cls.n_bra_rec} bra / {cls.n_aux_rec} aux records\n")
+    launch = (f"        {ns}::{kern.name}<<<dim3({grid}), dim3({lanes}, 1)>>>(\n"
+              f"            {', '.join(args)});\n"
+              f"        CHECK(devGetLastError());\n"
+              f"        ++launches;")
+    return head + (timed_launch(launch, c) if timed else launch)
 
 
 def eri3_program(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
                  backend: str, workdir: Path, *,
-                 engine: Engine = Engine.MMD) -> Program:
-    """The `main()` building `(mn|P)` from every class in `classes`."""
+                 engine: Engine = Engine.MMD, lowstack: bool | None = None,
+                 timed: bool = False) -> Program:
+    """The `main()` building `(mn|P)` from every class in `classes`
+    (module docstring: THE FORM, TIMED)."""
     _, _, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     includes, paths, calls, kernels = [], [], [], []
     for c, cls in enumerate(classes):
         build = (build_heri3_kernel if engine is Engine.HGP
                  else build_eri3_kernel)
-        kern = build((cls.la, cls.lb, cls.lP))
+        kern = (build((cls.la, cls.lb, cls.lP)) if engine is Engine.HGP
+                else build((cls.la, cls.lb, cls.lP), lowstack=lowstack))
         _check_signature(kern)
         path = _unit(kern, backend, workdir, None)
         paths.append(path)
         ns = f"fj_e{c}"
         includes.append(f'namespace {ns} {{\n#include "{path}"\n}}')
         kernels.append(f"(const void*){ns}::{kern.name}")
-        calls.append(_call(kern, c, ns, cls))
+        calls.append(_call(kern, c, ns, cls, timed=timed))
     src = ERI3_PROGRAM.format(
         prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
         portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
@@ -126,6 +143,8 @@ def eri3_program(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
         na=", ".join(str(c.n_aux_rec) for c in classes),
         nc=", ".join(str(c.n_cell) for c in classes),
         vram_kernels=", ".join(kernels), launches="\n".join(calls))
+    if timed:
+        src = timed_source(src, "T")
     main = workdir / f"eri3_main.{ext}"
     main.write_text(src)
     return Program(backend, src, main, tuple(paths))
@@ -147,11 +166,13 @@ def eri3_stage(classes: Sequence[Eri3Class]) -> np.ndarray:
 def build_on_card(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
                   backend: str, tc: Toolchain, workdir: Path,
                   run_device_binary, *,
-                  engine: Engine = Engine.MMD) -> np.ndarray:
+                  engine: Engine = Engine.MMD, lowstack: bool | None = None,
+                  timeout: float = 1800.0) -> np.ndarray:
     """`(mn|P)` of `classes` built on the card, `[run][n_ao, n_ao, n_aux]`
     (`RUNS` runs). The caller holds the card (its device fixture)."""
-    prog = eri3_program(classes, n_ao, n_aux, backend, workdir, engine=engine)
-    binary = compile_checked(tc, prog, workdir / "eri3_bin")
+    prog = eri3_program(classes, n_ao, n_aux, backend, workdir, engine=engine,
+                        lowstack=lowstack)
+    binary = compile_checked(tc, prog, workdir / "eri3_bin", timeout=timeout)
     src, dst = workdir / "eri3.in", workdir / "eri3.out"
     eri3_stage(classes).tofile(src)
     out = run_device_binary(binary, str(src), str(dst), vram=backend)
@@ -162,6 +183,87 @@ def build_on_card(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
     assert raw.size == RUNS * n_ao * n_ao * n_aux, (raw.size, RUNS, n_ao,
                                                     n_aux)
     return raw.reshape(RUNS, n_ao, n_ao, n_aux)
+
+
+def compile_timed(classes: Sequence[Eri3Class], n_ao: int, n_aux: int,
+                  backend: str, tc: Toolchain, workdir: Path, *,
+                  lowstack: bool | None, timeout: float) -> Path:
+    """The TIMED program of `classes` in one form, compiled."""
+    prog = eri3_program(classes, n_ao, n_aux, backend, workdir,
+                        lowstack=lowstack, timed=True)
+    return compile_checked(tc, prog, workdir / "eri3_timed", timeout=timeout)
+
+
+def run_timed(binary: Path, classes: Sequence[Eri3Class], n_ao: int,
+              n_aux: int, backend: str, workdir: Path, run_device_binary, *,
+              warmup: int, reps: int) -> tuple[np.ndarray, dict]:
+    """The last run's tensor and `timings` of one run of a timed binary."""
+    src, dst = workdir / "eri3_timed.in", workdir / "eri3_timed.out"
+    if not src.exists():
+        eri3_stage(classes).tofile(src)
+    out = run_device_binary(binary, str(src), str(dst), str(warmup),
+                            str(reps), vram=backend)
+    raw = np.fromfile(dst, dtype=np.float64)
+    assert raw.size == n_ao * n_ao * n_aux, (raw.size, n_ao, n_aux)
+    return raw.reshape(n_ao, n_ao, n_aux), timings(out)
+
+
+def timed_launch(launch: str, c: int) -> str:
+    """One launch between an event pair, its time printed once timed."""
+    return ("        CHECK(devEventRecord(ev0));\n" + launch + "\n"
+            "        CHECK(devEventRecord(ev1));\n"
+            "        CHECK(devEventSynchronize(ev1));\n"
+            "        if (r >= warmup) {\n"
+            "            float ms = 0.0f;\n"
+            "            CHECK(devEventElapsedTime(&ms, ev0, ev1));\n"
+            f"            std::printf(\"rep %d class {c} events_ns %.0f\\n\",\n"
+            "                        r - warmup, 1e6 * (double)ms);\n"
+            "        }")
+
+
+EVENTS = r"""
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
+#define devEvent_t           hipEvent_t
+#define devEventCreate       hipEventCreate
+#define devEventRecord(e)    hipEventRecord(e, 0)
+#define devEventSynchronize  hipEventSynchronize
+#define devEventElapsedTime  hipEventElapsedTime
+#else
+#define devEvent_t           cudaEvent_t
+#define devEventCreate       cudaEventCreate
+#define devEventRecord(e)    cudaEventRecord(e, 0)
+#define devEventSynchronize  cudaEventSynchronize
+#define devEventElapsedTime  cudaEventElapsedTime
+#endif
+"""
+
+
+def timed_source(src: str, out: str) -> str:
+    """A RUNS-loop program (this module's, `metric_driver`'s) made TIMED:
+    `usage: in out warmup reps`, `warmup + reps` runs, only the last run's
+    `out` array written. Each edit must apply exactly once."""
+    def once(s: str, a: str, b: str) -> str:
+        assert s.count(a) == 1, (a, s.count(a))
+        return s.replace(a, b)
+
+    src = once(src, "int main(int argc, char** argv) {",
+               EVENTS + "int main(int argc, char** argv) {")
+    src = once(src, 'if (argc != 3) { std::fprintf(stderr, "usage: in out\\n"); '
+               "return 2; }",
+               'if (argc != 5) { std::fprintf(stderr, "usage: in out warmup '
+               'reps\\n"); return 2; }\n'
+               "    const int warmup = std::atoi(argv[3]), "
+               "reps = std::atoi(argv[4]);\n"
+               "    if (warmup < 0 || reps < 1) return 2;\n"
+               "    devEvent_t ev0, ev1;\n"
+               "    CHECK(devEventCreate(&ev0));\n"
+               "    CHECK(devEventCreate(&ev1));")
+    src = once(src, "for (int r = 0; r < RUNS; ++r) {",
+               "for (int r = 0; r < warmup + reps; ++r) {")
+    src = once(src, f"out.insert(out.end(), {out}.begin(), {out}.end());",
+               f"if (r == warmup + reps - 1) "
+               f"out.insert(out.end(), {out}.begin(), {out}.end());")
+    return src
 
 
 # Every class into one tensor, RUNS times.

@@ -62,6 +62,7 @@ import pytest
 from eri3_driver import build_on_card, eri3_program
 from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
+from test_kernel_df_lowstack import ERI3_LADDER, auxi_3c
 from test_kernel_eri3 import (
     CLASSES,
     EPS,
@@ -78,6 +79,7 @@ from tiers import FAST_L_MAX
 
 from felizjueves.ao.shell import Basis
 from felizjueves.eri.density_fit.eri3 import eri3_classes
+from felizjueves.eri.density_fit.kernel_eri3 import eri3_lowstack
 
 L_CAP = FAST_L_MAX  # 4, the milestone's cap
 BASES = ("synthetic", "fixture")
@@ -181,6 +183,73 @@ def test_cuda_eri3_through_l4_matches_libcint(request, run_device_binary,
 def test_hip_eri3_through_l4_matches_libcint(request, run_device_binary,
                                              tmp_path):
     _part2("hip", request, run_device_binary, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Part 3 (#606): the aux ladder through i, every class in its default form
+# ---------------------------------------------------------------------------
+
+AUXI_COMPILE_S = 300.0  # the user's per-compile budget (#606)
+
+
+@cache
+def _auxi_host():
+    _, basis, aux = auxi_3c()
+    return _host(basis, aux, set(ERI3_LADDER))
+
+
+def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
+    """All 70 classes of `la <= lb <= 3`, `lP <= 6` on the aux-i set, each
+    in the form the gate picks (24 low-stack), one program per `lP` (so no
+    program's compile passes the budget), against the host (the same
+    16 eps of the tower twin) and libcint (TOL of max)."""
+    tc = _toolchain(backend, request)
+    ts, basis, aux = auxi_3c()
+    classes = eri3_classes(basis, aux)
+    assert sorted((c.la, c.lb, c.lP) for c in classes) == ERI3_LADDER
+    T = np.zeros((basis.n_ao, basis.n_ao, aux.n_ao))
+    for lP in range(7):
+        part = [c for c in classes if c.lP == lP]
+        Ts = build_on_card(part, basis.n_ao, aux.n_ao, backend, tc,
+                           tmp_path / f"lP{lP}", run_device_binary,
+                           timeout=AUXI_COMPILE_S)
+        assert all(np.array_equal(Ts[0], t) for t in Ts[1:]), lP
+        T += Ts[0]  # disjoint elements: every other one is exactly 0.0
+    want, scale, owned = _auxi_host()
+    assert owned.all()
+    err = np.abs(T - want)
+    pos = scale > 0
+    worst = float(np.max(err[pos] / (EPS * scale[pos])))
+    lib = float(np.max(np.abs(T - ts.tensor))) / float(np.max(np.abs(
+        ts.tensor)))
+    print(f"\n{backend} {BACKEND[backend][1].name} aux-i: {len(classes)} "
+          f"classes, {sum(c.n_cell for c in classes)} cells, "
+          f"{sum(eri3_lowstack((c.la, c.lb, c.lP)) for c in classes)} "
+          f"low-stack; worst "
+          f"{worst:.2f} eps scale against the host (tol {TOL_ULPS}); "
+          f"{lib:.2e} of max against int3c2e_cart (tol {TOL:g}); "
+          "runs bit-identical")
+    assert np.all(err <= TOL_ULPS * EPS * scale), worst
+    assert np.array_equal(T, T.transpose(1, 0, 2))
+    assert lib <= TOL, lib
+
+
+@pytest.mark.slow
+@pytest.mark.high_l
+@pytest.mark.cuda
+@pytest.mark.gpu
+def test_cuda_eri3_through_ff_i_matches_libcint(request, run_device_binary,
+                                                tmp_path):
+    _part3("cuda", request, run_device_binary, tmp_path)
+
+
+@pytest.mark.slow
+@pytest.mark.high_l
+@pytest.mark.hip
+@pytest.mark.gpu
+def test_hip_eri3_through_ff_i_matches_libcint(request, run_device_binary,
+                                               tmp_path):
+    _part3("hip", request, run_device_binary, tmp_path)
 
 
 # ---------------------------------------------------------------------------

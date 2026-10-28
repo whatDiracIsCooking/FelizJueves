@@ -43,7 +43,8 @@ def ts():
 
 
 def test_the_set_is_tracked_and_every_piece_is_under_the_cap(ts):
-    assert manifest.three_center_sets() == [SET]
+    # #606's aux-i set beside it (test_kernel_df_lowstack.py reads it)
+    assert manifest.three_center_sets() == [SET, "prim_spd_f_auxi_3c"]
     assert [p.three_center.cols for p in ts.pieces] == [(0, NAUX)]
     for p in ts.pieces:
         assert p.path.stat().st_size < CAP, p.path.name

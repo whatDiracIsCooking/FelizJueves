@@ -49,6 +49,14 @@
 #     kblock-transpose-profile  kbr_22_22 against kbrt_22_22
 #                   under ncu, global-load sectors per
 #                   request (#576; CUDA only)           FJ_KBLOCK_ROLLED_STORE
+#     df-lowstack-compile  every eri3 / metric class of the aux
+#                   ladder through i in its default form, and
+#                   the other form of the gate's classes:
+#                   source, compile, RSS, registers, spill,
+#                   stack, a 300 s budget a unit (#606; a
+#                   compiler, no card)                  FJ_DF_LOWSTACK_STORE
+#     df-lowstack   the low-stack against the unrolled DF
+#                   kernels, wall-clock per class (#606) FJ_DF_LOWSTACK_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -105,6 +113,8 @@ SWEEPS=(
   "kblock-rolled-profile|timed|kb_22_22 vs kbr_22_22 under ncu, CUDA only (#574) -> kblock_rolled.json"
   "kblock-transpose|timed|kbr with Ebd transposed vs kb, kbr at (dd|dd) and kbr at (ff|ff), CUDA only (#576) -> kblock_rolled.json"
   "kblock-transpose-profile|timed|kbr_22_22 vs kbrt_22_22 under ncu, CUDA only (#576) -> kblock_rolled.json"
+  "df-lowstack-compile|compile|eri3/metric aux ladder through i, both forms' compile (#606) -> df_lowstack.json"
+  "df-lowstack|timed|eri3/metric low-stack vs unrolled wall-clock per class (#606) -> df_lowstack.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -192,6 +202,10 @@ case $sweep in
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   kblock-transpose-profile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_transpose_profile)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  df-lowstack-compile) files=("$M/measure_df_lowstack.py"); select=(-k df_lowstack_compile)
+                envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
+  df-lowstack)  files=("$M/measure_df_lowstack.py"); select=(-k df_lowstack_clock)
+                envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
                 select=(-k "not record_ceilings") ;;
