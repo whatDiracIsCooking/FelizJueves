@@ -39,8 +39,10 @@ from tiers import by_l
 from felizjueves.gradient import host
 from felizjueves.gradient.kernel_g1e import (
     ATOMIC_REASON,
+    LOWSTACK_MIN_LSUM,
     ZEROED_G,
     build_g1e_kernel,
+    g1e_lowstack,
     g1e_name,
     g1e_spec,
     launch_shape,
@@ -69,9 +71,9 @@ def _m(n: int) -> np.ndarray:
     return np.random.default_rng(3).standard_normal((n, n))
 
 
-def _launch(target, basis, nuclei, M, la, lb, G, threads=7):
+def _launch(target, basis, nuclei, M, la, lb, G, threads=7, lowstack=None):
     rec = host.records(basis, nuclei, la, lb)
-    kern = build_g1e_kernel((target, la, lb))
+    kern = build_g1e_kernel((target, la, lb), lowstack=lowstack)
     want = {p.name for p in kern.params if p.array}
     arrs = {k: np.array(v, dtype=np.int32 if k.startswith(("off", "atom"))
                         else float) for k, v in rec.items() if k in want}
@@ -130,6 +132,37 @@ def test_one_launch_over_the_class_is_the_host_gradient(cls, target) -> None:
     G = _launch(target, basis, nuclei, M, *cls, np.zeros((len(nuclei), 3)))
     _close(G, _host(target, basis, nuclei, M, pairs),
            _scale(target, basis, nuclei, M, pairs), f"{target} {cls}")
+
+
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 1, id=f"{c[0]}{c[1]}")
+                                 for c in CLASSES])
+def test_gv_in_its_other_form_is_the_host_gradient(cls) -> None:
+    """THE LOW-STACK gv (#614): every class in the form its default is not
+    -- forced low-stack below the floor, forced unrolled above it -- held
+    to the same bound."""
+    basis, nuclei = _fixture("hf_ccpvtz")
+    pairs = host.class_pairs(basis, *cls)
+    M = _m(basis.n_ao)
+    other = not g1e_lowstack((Target.V, *cls))
+    G = _launch(Target.V, basis, nuclei, M, *cls,
+                np.zeros((len(nuclei), 3)), lowstack=other)
+    _close(G, _host(Target.V, basis, nuclei, M, pairs),
+           _scale(Target.V, basis, nuclei, M, pairs), f"gv {cls} other form")
+
+
+def test_the_low_stack_rule_and_its_refusals() -> None:
+    gated = {c for c in CLASSES if g1e_lowstack((Target.V, *c))}
+    assert LOWSTACK_MIN_LSUM == 5
+    assert gated == {(2, 3), (3, 2), (3, 3)}
+    for t in (Target.S, Target.T):
+        assert not any(g1e_lowstack((t, *c)) for c in CLASSES)
+        with pytest.raises(ValueError, match="only gv has a low-stack"):
+            build_g1e_kernel((t, 3, 3), lowstack=True)
+    # one name, one parameter list, in both forms
+    for c in ((1, 1), (3, 3)):
+        a = build_g1e_kernel((Target.V, *c), lowstack=True)
+        b = build_g1e_kernel((Target.V, *c), lowstack=False)
+        assert a.name == b.name and a.params == b.params
 
 
 @pytest.mark.parametrize("target", TARGETS, ids=str)
