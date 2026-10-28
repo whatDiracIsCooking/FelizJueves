@@ -218,6 +218,7 @@ MEASURE_SCHEME_AB_STORE=${MEASURE_SCHEME_AB_STORE:-data/measured/scheme_ab.json}
 MEASURE_KBLOCK_SPLIT_STORE=${MEASURE_KBLOCK_SPLIT_STORE:-data/measured/kblock_split.json}
 MEASURE_KBLOCK_ROLLED_STORE=${MEASURE_KBLOCK_ROLLED_STORE:-data/measured/kblock_rolled.json}
 MEASURE_DF_LOWSTACK_STORE=${MEASURE_DF_LOWSTACK_STORE:-data/measured/df_lowstack.json}
+MEASURE_DF_GRAD_LOWSTACK_STORE=${MEASURE_DF_GRAD_LOWSTACK_STORE:-data/measured/df_grad_lowstack.json}
 
 # How a timed or profiled sweep runs: ALONE (no xdist -- a worker compiling
 # beside a timing makes it a different experiment), its prints shown, its

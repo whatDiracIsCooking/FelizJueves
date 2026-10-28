@@ -56,6 +56,23 @@ is symmetric in it and `atom_p` / `atom_q` follow the staged order
 ROUND-OFF, NOT BITWISE, against `host_df`: another route (above), the
 plan's MILD DAG against `reference.pq`, and the weights folded in first.
 
+THE LOW-STACK FORM (#613), the default from `L = lP + lQ >= LOWSTACK_MIN_L
+= 10` (`gmetric_lowstack`; `lowstack=` forces either form, the name,
+parameters, launch and `G` contract the same): no `E` block, weight or
+density held. Per (P, Q) record pair the tower is stored into a local
+`R[n_t(L + 1)]`; per Q row `b`, `U[t'] = SUM_tau R[t' + tau] E^b_tau` for
+every `|t'| <= lP + 1` of its parity; per element `(a, b)` its weight from
+`M` and `g_k +-= w wt SUM_t E^a_t U[t + 1_k]`, rolled over the P record's
+single-center tables (`e_fragment.rolled_center_sum`). Measured
+(data/measured/df_grad_lowstack.json): every unrolled class through L = 9
+is within 14,000 B of stack on `sm_86` and `gfx1200`, (g|i) and (h|h) are
+not; the low-stack (i|i) is 7,872 B on `sm_86`.
+
+CHUNKED FOLDS (#613). Every contraction fold longer than `FOLD_CHUNK`
+terms is a chain of locals (`chunked_fold`), the same left fold bitwise:
+at (ff|i) one fold of `kernel_geri3`'s unrolled form is 3,360 terms, whose
+`Call` nest overflowed Python's default recursion limit in the IR checker.
+
     params  n_pair n_rec n_aux n_atom (I32)
             A[n_rec, 3]  alpha[n_rec]  s_aux[n_rec]                per record
             p_rec0 p_rec1 q_rec0 q_rec1 off_p off_q atom_p atom_q  [n_pair] (I32)
@@ -102,6 +119,7 @@ from felizjueves.mmd.recurrence import (
     fundamental_prelude,
     node_name,
     recurrence_body,
+    store_targets,
 )
 from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
@@ -110,9 +128,13 @@ from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
+    "FOLD_CHUNK",
+    "LOWSTACK_MIN_L",
     "build_gmetric_kernel",
     "center_binds",
     "center_cols",
+    "chunked_fold",
+    "gmetric_lowstack",
     "gmetric_name",
     "gmetric_plan",
     "gmetric_spec",
@@ -180,6 +202,30 @@ def _fold(terms: list[Expr]) -> Expr:
     for t in terms[1:]:
         out = _c(Fn.ADD, out, t)
     return out
+
+
+FOLD_CHUNK = 128  # terms per link of a chunked left fold (#613)
+
+
+def chunked_fold(terms: list[Expr], name: str
+                 ) -> tuple[list[Stmt], Expr]:
+    """`_fold(terms)` as a chain of F64 locals `{name}_c{n}` of at most
+    `FOLD_CHUNK` terms each, and the last link's expression: the SAME left
+    fold, operation for operation (each link starts from the one before),
+    so the value is bitwise `_fold`'s, but no expression is deeper than one
+    chunk. A fold of at most `FOLD_CHUNK` terms is `_fold`'s text exactly.
+    At (ff|i) a single fold is 3,360 terms, which overflowed Python's
+    default recursion limit in the IR checker (#613)."""
+    if len(terms) <= FOLD_CHUNK:
+        return [], _fold(terms)
+    out: list[Stmt] = []
+    acc = _fold(terms[:FOLD_CHUNK])
+    for n, i in enumerate(range(FOLD_CHUNK, len(terms), FOLD_CHUNK)):
+        out.append(Decl(f"{name}_c{n}", Scalar.F64, init=acc))
+        acc = Var(f"{name}_c{n}")
+        for t in terms[i:i + FOLD_CHUNK]:
+            acc = _c(Fn.ADD, acc, t)
+    return out, acc
 
 
 def _plus(*vs: tuple[int, ...]) -> tuple[int, int, int]:
@@ -258,11 +304,19 @@ def center_binds(frag, alpha: Expr, array: str) -> dict[str, Expr]:
 
 
 def build_gmetric_kernel(cls: Spec | tuple[int, int], *,
-                         name: str | None = None) -> Kernel:
+                         name: str | None = None,
+                         lowstack: bool | None = None) -> Kernel:
     """The metric gradient kernel of one aux class (module docstring).
 
-    `cls` is a d1 `Target.METRIC` `Spec` or `(lP, lQ)`."""
+    `cls` is a d1 `Target.METRIC` `Spec` or `(lP, lQ)`. `lowstack` picks
+    the form: `None` (the default) is `gmetric_lowstack(cls)` (THE
+    LOW-STACK FORM), `True` / `False` force it. The name, parameters,
+    launch and `G` contract are the same in both."""
     lP, lQ = _class(cls)
+    if lowstack is None:
+        lowstack = gmetric_lowstack((lP, lQ))
+    if lowstack:
+        return _build_lowstack((lP, lQ), name)
     dag, order = gmetric_plan((lP, lQ))
     fP, fQ = ef.center_fragment(lP), ef.center_fragment(lQ)
     rowsP, rowsQ = ef.cartesians(lP), ef.cartesians(lQ)
@@ -294,11 +348,13 @@ def build_gmetric_kernel(cls: Spec | tuple[int, int], *,
                     (_plus(tsP[i], tau, unit(k)), 0)))) for i in H[b]])
                 outer.append(_mul(Index("Eket", (Lit(b), Lit(j))), inner))
         g = Var(f"g{k}")
+        links, total = chunked_fold(outer, f"s{k}")
+        contract += links
         contract.append(Assign(g, _c(Fn.SUB if odd else Fn.ADD, g,
-                                     _mul(Var("w"), _fold(outer)))))
+                                     _mul(Var("w"), total))))
     wanted: set[str] = set()
     for st in contract:
-        wanted |= reads(st.value)
+        wanted |= reads(st.value if isinstance(st, Assign) else st.init)
 
     ket_body: tuple[Stmt, ...] = (
         Decl("aq", Scalar.F64, init=Index("alpha", (iq,))),
@@ -364,6 +420,11 @@ def build_gmetric_kernel(cls: Spec | tuple[int, int], *,
             Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
         If(_c(Fn.LT, pair, Var("n_pair")), per_pair),
     )
+    return Kernel(name or gmetric_name((lP, lQ)), _params(), body)
+
+
+def _params() -> tuple[Param, ...]:
+    """The parameter list, the same in both forms (module docstring)."""
 
     def f64(n: str, shape: tuple[Expr, ...]) -> Param:
         return Param(n, Scalar.F64, array=True, shape=shape)
@@ -373,7 +434,7 @@ def build_gmetric_kernel(cls: Spec | tuple[int, int], *,
 
     npair, nrec, naux, nat = (Var("n_pair"), Var("n_rec"), Var("n_aux"),
                               Var("n_atom"))
-    params = (
+    return (
         Param("n_pair", Scalar.I32),
         Param("n_rec", Scalar.I32),
         Param("n_aux", Scalar.I32),
@@ -387,4 +448,192 @@ def build_gmetric_kernel(cls: Spec | tuple[int, int], *,
         Param("G", Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nat, Lit(3))),
     )
-    return Kernel(name or gmetric_name((lP, lQ)), params, body)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#613)
+# ---------------------------------------------------------------------------
+
+# every class from L = lP + lQ = 10 (#613): the smallest L with an
+# inadmissible unrolled class (data/measured/df_grad_lowstack.json)
+LOWSTACK_MIN_L = 10
+R_ARRAY = "R"  # [r]^(0) of one (P, Q) record pair, hermite_targets(L + 1)
+U_ARRAY = "U"  # SUM_tau [t'+tau] E^b_tau of one Q row b, |t'| <= lP + 1
+BRA_TABLES = ("CPx", "CPy", "CPz")  # the P record's single-center tables
+KET_TABLES = ("CQx", "CQy", "CQz")  # the Q record's
+
+LOWSTACK_NOTE = (
+    "LOW-STACK (#613): per-axis single-center E tables for both records in "
+    "place of both E blocks and the weighted density, [r]^(0) into a local "
+    "R as it forms, U[t'] of one Q row, and each element's three terms as "
+    "rolled sums over the P tables through U[t + 1_k], its weight read from "
+    "M where it is used: no per-record density and no per-pair weight is "
+    "held")
+
+
+def gmetric_lowstack(cls: Spec | tuple[int, int]) -> bool:
+    """THE SELECTION RULE (#613): True when `lP + lQ >= LOWSTACK_MIN_L`;
+    there `build_gmetric_kernel` emits the low-stack form by default. False
+    below, where the unrolled text is unchanged."""
+    return sum(_class(cls)) >= LOWSTACK_MIN_L
+
+
+def _iadd(x: Expr, y: Expr) -> Expr:
+    return _c(Fn.ADD, x, y)
+
+
+def _table_binds(frag, alpha: Expr, arrays: tuple[str, str, str]
+                 ) -> dict[str, Expr]:
+    out: dict[str, Expr] = {n: Var(m)
+                            for n, m in zip(ef.CENTER_ARRAYS, arrays,
+                                            strict=True)}
+    if ef.HALF_INV_ZETA in frag.binds:
+        out[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), alpha)
+    return out
+
+
+def _build_lowstack(am: tuple[int, int], name: str | None) -> Kernel:
+    """`build_gmetric_kernel`'s kernel with no block, density or weight
+    held (module docstring, THE LOW-STACK FORM): the same parameters,
+    launch and `G` contract."""
+    lP, lQ = am
+    L1 = lP + lQ + 1  # the tower's order
+    dag, order = gmetric_plan(am)
+    fP, fQ = ef.center_tables_fragment(lP), ef.center_tables_fragment(lQ)
+    odd = lQ % 2 == 1
+    pair, ip, iq = Var(PAIR), Var(BRA), Var(KET)
+    shifted = [t for t in hermite_targets(lP + 1)
+               if sum(t) % 2 == (lP + 1) % 2]
+    targets = frozenset(_plus(t, tau) for t in shifted
+                        for b in ef.cartesians(lQ)
+                        for _, tau in center_cols(b, lQ))
+    tw = store_targets(tower(order, dag, {node_name((r, 0)) for r in targets}),
+                       targets, L1, R_ARRAY)
+
+    def per_b(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+        def u_of(t: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            def r_at(tau: tuple[Expr, Expr, Expr]) -> Expr:
+                return Index(R_ARRAY, (ef.hermite_index(tuple(
+                    _iadd(t[d], tau[d]) for d in range(3))),))
+            return (*ef.rolled_center_sum(lQ, b, r_at, "u", tag="c",
+                                          arrays=KET_TABLES),
+                    Assign(Index(U_ARRAY, (ef.hermite_index(t),)), Var("u")))
+
+        def elem(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            m, n = _iadd(Var("oa"), Var("ra")), _iadd(Var("ob"), Var("rb"))
+            off = _iadd(Index("M", (m, n)), Index("M", (n, m)))
+            if lP != lQ:
+                weight: tuple[Stmt, ...] = (Decl("wt", Scalar.F64, init=off),)
+            else:
+                weight = (
+                    Decl("wt", Scalar.F64, init=Lit(0.0)),
+                    If(Var("differ"), (Assign(Var("wt"), off),),
+                       (Assign(Var("wt"), Index("M", (m, _iadd(
+                           Var("oa"), Var("rb"))))),)),
+                )
+            out: list[Stmt] = [
+                Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
+                *weight,
+                Decl("ww", Scalar.F64, init=_mul(Var("w"), Var("wt"))),
+            ]
+            for k in range(3):
+                def x(t: tuple[Expr, Expr, Expr], k=k) -> Expr:
+                    return Index(U_ARRAY, (ef.hermite_index(tuple(
+                        _iadd(t[d], Lit(1)) if d == k else t[d]
+                        for d in range(3))),))
+                out += [
+                    *ef.rolled_center_sum(lP, a, x, f"v{k}", tag=f"e{k}",
+                                          arrays=BRA_TABLES),
+                    Assign(Var(f"g{k}"), _c(Fn.SUB if odd else Fn.ADD,
+                                            Var(f"g{k}"),
+                                            _mul(Var("ww"), Var(f"v{k}")))),
+                ]
+            return tuple(out)
+
+        return (
+            Decl("rb", Scalar.I32, init=ef.cartesian_index("b")),
+            Note("U[t'] = SUM_tau [t'+tau]^(0) E^b_tau over the live tau of "
+                 "this Q row, for every |t'| <= lP + 1 of lP + 1's parity: "
+                 "once per (t', b)"),
+            ef.hermite_loops(lP + 1, u_of, tag="h", parity=True),
+            Note(f"per element (a, b), weight wt from M: g_k "
+                 f"{'-' if odd else '+'}= w wt SUM_t E^a_t U[t + 1_k] over "
+                 "the live t, rolled over the P tables (the Hermite shift); "
+                 f"(-1)^|tau| = (-1)^{lQ} on every live tau"),
+            ef.cartesian_loops(lP, ("ax", "ay", "az"), elem, tag="a"),
+        )
+
+    ket_body: tuple[Stmt, ...] = (
+        Decl("aq", Scalar.F64, init=Index("alpha", (iq,))),
+        *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"A{d}"),
+                                      Index("A", (iq, Lit(d)))))
+          for d, n in enumerate(PQ_PARAMS)),
+        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
+            Fn.DIV, _mul(Var("ap"), Var("aq")),
+            _c(Fn.ADD, Var("ap"), Var("aq"))))),
+        Note(f"[t'+tau]^(0) by the plan's DAG for the quartet ({lP + 1},0|"
+             f"{lQ},0) at L + 1 = {L1}, the targets no U reads dropped, each "
+             "live one stored into R as it forms"),
+        *tw,
+        Note("the Q record's single-center E, per axis: "
+             "e_fragment.center_tables_fragment, inlined"),
+        *(Decl(n, Scalar.F64, (Lit(ef.center_table_extent(lQ)),))
+          for n in KET_TABLES),
+        Inline(fQ, _table_binds(fQ, Var("aq"), KET_TABLES)),
+        Decl("w", Scalar.F64, init=_mul(Var("sp"), Index(S_AUX, (iq,)))),
+        ef.cartesian_loops(lQ, ("bx", "by", "bz"), per_b, tag="b"),
+    )
+    bra_body: tuple[Stmt, ...] = (
+        Decl("ap", Scalar.F64, init=Index("alpha", (ip,))),
+        *(Decl(f"A{d}", Scalar.F64, init=Index("A", (ip, Lit(d))))
+          for d in range(3)),
+        Decl("sp", Scalar.F64, init=Index(S_AUX, (ip,))),
+        Note("the P record's single-center E, per axis: "
+             "e_fragment.center_tables_fragment, inlined"),
+        *(Decl(n, Scalar.F64, (Lit(ef.center_table_extent(lP)),))
+          for n in BRA_TABLES),
+        Inline(fP, _table_binds(fP, Var("ap"), BRA_TABLES)),
+        Note("the Q records of the pair"),
+        For(KET, Var("q0"), Var("q1"), Lit(1), ket_body),
+    )
+    scatter: list[Stmt] = [Note(ATOMIC_REASON)]
+    for k in range(3):
+        scatter.append(AtomicAdd(Index("G", (Var("aa"), Lit(k))), Var(f"g{k}")))
+    for k in range(3):
+        scatter.append(AtomicAdd(Index("G", (Var("ab"), Lit(k))),
+                                 _c(Fn.SUB, Lit(0.0), Var(f"g{k}"))))
+    differ: tuple[Stmt, ...] = ()
+    if lP == lQ:
+        differ = (Decl("differ", Scalar.I32, init=_c(
+            Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
+            _c(Fn.LT, Var("ob"), Var("oa")))),)
+    per_pair: tuple[Stmt, ...] = (
+        Decl("p0", Scalar.I32, init=Index("p_rec0", (pair,))),
+        Decl("p1", Scalar.I32, init=Index("p_rec1", (pair,))),
+        Decl("q0", Scalar.I32, init=Index("q_rec0", (pair,))),
+        Decl("q1", Scalar.I32, init=Index("q_rec1", (pair,))),
+        Decl("oa", Scalar.I32, init=Index("off_p", (pair,))),
+        Decl("ob", Scalar.I32, init=Index("off_q", (pair,))),
+        Decl("aa", Scalar.I32, init=Index("atom_p", (pair,))),
+        Decl("ab", Scalar.I32, init=Index("atom_q", (pair,))),
+        *differ,
+        Note(LOWSTACK_NOTE),
+        *(Decl(f"g{k}", Scalar.F64, init=Lit(0.0)) for k in range(3)),
+        *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
+          for n, x in ((R_ARRAY, L1), (U_ARRAY, lP + 1))),
+        Note("the P records of the pair, serially"),
+        For(BRA, Var("p0"), Var("p1"), Lit(1), bra_body),
+        Note("d/dB_k = -d/dA_k: [r]^(0) reads A - B"),
+        *scatter,
+    )
+    body: tuple[Stmt, ...] = (
+        Note(f"gradient of the DF metric, class (lP, lQ) = ({lP}, {lQ}), "
+             "LOW-STACK (#613): G[A, k] += SUM_PQ W_PQ d(P|Q)/dR_{A,k} "
+             "(felizjueves.gradient)"),
+        Note(ZEROED_G),
+        Note("launch: one thread per aux shell pair"),
+        Decl(PAIR, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _mul(
+            Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
+        If(_c(Fn.LT, pair, Var("n_pair")), per_pair),
+    )
+    return Kernel(name or gmetric_name(am), _params(), body)

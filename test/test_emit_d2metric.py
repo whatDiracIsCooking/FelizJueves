@@ -75,7 +75,8 @@ def test_the_ladder_is_every_class_through_lmax() -> None:
     assert emit_cli.DEFAULT_HESS_METRIC_L == 4
     assert emit_cli.HESS_METRIC_L_MAX == 4
     assert emit_cli.hess_metric_classes(0) == [(0, 0)]
-    assert CLASSES == emit_cli.grad_df_classes(4)[0]
+    assert CLASSES == [c for c in emit_cli.grad_df_classes(3, 4)[0]
+                       if sum(c) <= 4]
 
 
 def test_the_ladder_refuses_above_l4() -> None:

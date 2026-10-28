@@ -250,11 +250,13 @@ class GradBinary:
 
 def compile_grad(launches: Sequence[GradLaunch], n_atom: int, backend: str,
                  tc: Toolchain, workdir: Path, *,
-                 units: Mapping[str, Path] | None = None) -> GradBinary:
+                 units: Mapping[str, Path] | None = None,
+                 timeout: float = 1800.0) -> GradBinary:
     """Compile the program with devtools/config.sh's flags, FAILING on a
-    warning located in generated text (#92)."""
+    warning located in generated text (#92); `timeout` (s) caps the
+    compile (#613's ladder parts pass the user's 300 s budget)."""
     prog = grad_program(launches, n_atom, backend, workdir, units=units)
-    binary = compile_checked(tc, prog, workdir / "grad_bin")
+    binary = compile_checked(tc, prog, workdir / "grad_bin", timeout=timeout)
     return GradBinary(tuple(launches), n_atom, backend, binary, workdir)
 
 

@@ -175,7 +175,7 @@ def test_hess_eri3_l_bare_writes_the_pinned_units(backend, tmp_path) -> None:
 
 def test_hess_eri3_l_adds_its_units_beside_the_other_ladders(tmp_path) -> None:
     assert _run(tmp_path, "cuda", "--L", "0", "--grad-df-l", "0",
-                "--hess-eri3-l", "0") == 0
+                "--grad-df-aux-l", "0", "--hess-eri3-l", "0") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "gmetric_00.cu",
                                 "geri3_000.cu", "d2eri3_000.cu"}
 

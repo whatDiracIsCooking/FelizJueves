@@ -2,8 +2,9 @@
 
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
-against the host, kernel classes at L <= 4 only; which inputs, per kernel,
-in the tables below). This is
+against the host, kernel classes at L <= 4 only, except the DF terms,
+through (ff|i) and (i|i) since #613; which inputs, per kernel, in the
+tables below). This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -220,9 +221,11 @@ largest 169 KB (`test_emit_grad_k.py`).
 ## The density-fitting gradients: `(P|Q)` and `(mn|P)`
 
 **Status: host reference and generated kernels, interpreted, compiled by
-nvcc and hipcc and run on both cards** (the building session had neither,
-and clang 18's CUDA front end passed all 31 units, a proxy; the card runs
-are the table's last row).
+nvcc and hipcc and run on both cards, through (ff|i) and (i|i) since #613**
+(the first session had neither compiler, and clang 18's CUDA front end
+passed all 31 L <= 4 units, a proxy; the card runs are the table's last
+rows). The ladder is FreeBreakfast's DF-CASSCF one: `geri3` for `la <= lb
+<= 3`, `lP <= 6` (70 classes), `gmetric` for `lP <= lQ <= 6` (28).
 
 `Target.METRIC` and `Target.ERI3` at d1. Each kernel contracts the
 derivative integrals the way the others do:
@@ -263,12 +266,66 @@ Six (`gmetric`) or nine (`geri3`) `AtomicAdd`s per pair/cell into
 `atom_p`, `atom_q` (`host_df.metric_records`); `ea_bra`, `eb_ket`,
 `atom_a`, `atom_b`, `atom_p` (`host_df.eri3_records`).
 
-**The generator.** `python -m felizjueves.emit --grad-df-l [LMAX]` (4
-bare, 0..4, exit 2 above) adds `gmetric_{lP}{lQ}` for `lP <= lQ`,
-`lP + lQ <= LMAX`, and `geri3_{la}{lb}{lP}` for `la <= lb`,
-`la + lb + lP <= LMAX`: 9 + 22 units, the d0 kernels' validated cap. Never
-in the bare default nor in `KERNEL_GEN_CMD`. Goldens:
-`test/golden/{cuda,hip}/{gmetric,geri3}_*`, 62 files, the largest 232 KB.
+**The low-stack form (#613).** The unrolled kernels above hold the
+weights, `H0` and the six derivative densities per aux row, for every bra
+record, in registers or on the stack, and the text grows to 26 MB at
+(ff|i) (whose build also overflowed Python's recursion limit: a 3,360-term
+fold, now chunked by `kernel_gmetric.chunked_fold`, the same left fold
+bitwise and the same text below 129 terms). `build_geri3_kernel(cls)` /
+`build_gmetric_kernel(cls)` therefore emit, from an `L` floor, a form with
+the SAME name, parameters, launch and `G` contract and no density or
+weight held: per (bra, aux) record pair the tower stored into a local `R`
+(`recurrence.store_targets`, order `L + 1`), per aux row `U[t] = SUM_tau
+[t + tau]^(0) E^q_tau` (`|t| <= la + lb + 1`; `gmetric`: `|t'| <= lP + 1`
+of its parity), and per element its weight read from `M` where it is used
+and its terms as rolled sums over per-axis tables: for `geri3`, the bra's
+`axis_tables_fragment(la + 1, lb + 1)`, `dA_k` as `2 alpha SUM E^{a+1_k,
+b} U - a_k SUM E^{a-1_k, b} U` and the aux centre as `SUM E^{ab}_t U[t +
+1_k]` (`e_fragment.rolled_e_sum(..., up=k)`, new; the default text
+unchanged); for `gmetric`, `SUM_t E^a_t U[t + 1_k]` over the P record's
+single-center tables. The forms differ only in association (round-off).
+
+**The gate is an `L` floor set from measured rows**
+(`data/measured/df_grad_lowstack.json`, `devtools/measure.sh
+df-grad-lowstack-compile`, `measure/measure_df_grad_lowstack.py`, the
+rule declared before any row; `measure.sh check` holds the gate to the
+rows). Every class's low-stack form and the unrolled form level by level in
+`L`, through the first level with an inadmissible class, each unit
+compiled alone under a 300 s budget; an unrolled form is admissible at <=
+14,000 B of stack and within the budget on `sm_86` AND `gfx1200`.
+
+- `geri3`: `kernel_geri3.LOWSTACK_MIN_L = 5`. Every L <= 4 class is
+  admissible (the largest unrolled frame 9,776 B, (dd|s) on `sm_86`); at
+  L = 5 the unrolled (sf|d) is 14,184 B, (pd|d) 24,408 B, (pf|p) 26,896 B,
+  (dd|p) 27,144 B and (df|s) 22,520 B on `sm_86` (the RX 9060 XT's first
+  inadmissible level is L = 6). 49 of 70 classes gated.
+- `gmetric`: `kernel_gmetric.LOWSTACK_MIN_L = 10`. Every unrolled class
+  through L = 9 is admissible ((f|i) 12,432 B, (g|h) 11,520 B on `sm_86`);
+  (g|i) is 15,968 B and (h|h) 18,200 B. 4 of 28 classes gated.
+- No class at L <= 4 is gated, so every golden is unchanged.
+- Every low-stack unit of the ladder is within both budgets: at most
+  13,792 B of `sm_86` stack (`geri3_336`, (ff|i), 255 registers, 1,916 B
+  of spill stores, 3.1 s, 196 KB of text) and 12,816 B of `gfx1200`
+  scratch, compiled in at most 5.2 s (`sm_86`) / 2.1 s (`gfx1200`).
+  `gmetric_66` (i|i) is 7,872 B / 7,296 B. (ff|i) is close to the
+  ~14 KB target: `R` at order 13 (4,480 B) and the bra tables one index up
+  (5,400 B, about half of them slots no row reads) are most of it.
+- Before / after on `sm_86`: (df|s) unrolled 22,520 B with 46,640 B of
+  spill stores in 12.9 s (468 KB of text), low-stack 5,136 B in 1.9 s
+  (80 KB); (pd|d) 24,408 B against 2,912 B; (h|h) 18,200 B against
+  5,312 B. Every row is in the store.
+- The clock is NOT measured: #606 found its d0 low-stack forms 1.46x to
+  4.58x slower, and nothing says these are not.
+
+**The generator.** `python -m felizjueves.emit --grad-df-l [LMAX]
+[--grad-df-aux-l AUXMAX]` (#613: the split cap of FreeBreakfast's
+`df_kernels.py`; LMAX the orbital `l`, 1 bare, 0..3; AUXMAX the aux `l`,
+2 bare or omitted, 0..6; exit 2 above either, or for `--grad-df-aux-l`
+alone) adds `gmetric_{lP}{lQ}` for `lP <= lQ <= AUXMAX` and
+`geri3_{la}{lb}{lP}` for `la <= lb <= LMAX`, `lP <= AUXMAX`, each in its
+builder's default form. Never in the bare default nor in
+`KERNEL_GEN_CMD`. Goldens: `test/golden/{cuda,hip}/{gmetric,geri3}_*`,
+the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 
 | What | Against | Where | Worst |
 |---|---|---|---|
@@ -280,14 +337,21 @@ in the bare default nor in `KERNEL_GEN_CMD`. Goldens:
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 31 units | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad_df.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_df_device.py`, `grad_driver`'s program) | `host_df`, `1e-13` of `max\|G\|`, DF-J of H₂O/STO-3G against JKFIT s/p/d | RTX 3080 and RX 9060 XT, `gmetric` and `geri3` (`slow`) | 6.58e-15 (CUDA), 4.87e-15 (HIP), both `gmetric` |
+| every ladder class above L = 4, interpreted, default form (`test_kernel_df_grad_ladder.py`, `slow` from L + 1 = 5) | `host_df`, per class, 16 eps of the TOWER-TWIN split-centre scale (the host on `\|Gam\|` with `test_kernel_metric.pq_tower`; the signed scale is blind to the tower's own cancellation from L ~ 9, where the unrolled form misses it as well) | 49 `geri3`, 19 `gmetric` classes on one-primitive bases with swapped and diagonal pairs; every L <= 4 class in the low-stack form forced; four classes forced unrolled above the floor | worst 0.96 eps of the tower-twin scale ((pf|s), forced low-stack), gate 16 eps |
+| the DF gradient witness (`oracle.manifest.df_gradient`, #613) | libcint's `int3c2e_ip1_cart` / `int3c2e_ip2_cart`, `int2c2e_ip1_cart`, contracted per class with closed-form `Gam`, `W`, on `prim_spd_f` against the aux-i basis (every ladder class) | the host, every class (`slow`); the kernel interpreted at (df\|i), (ff\|h), (ff\|i), (h\|i), (i\|i) (`slow`) | host 3.91e-14 (`geri3`), 1.71e-14 (`gmetric`) of the witness's largest `max\|G\|`; the kernel at most 2.72e-15 ((h\|i)); gate `1e-12` |
+| on a card, the ladder (`test_grad_df_device.py` Part 2, `slow` + `high_l`) | `host_df` at `1e-13` of `max\|G\|` per program, and the witness at `1e-12` | RTX 3080 and RX 9060 XT: all 70 + 28 classes in their default forms on the aux-i system, one program per aux `l`, each compile under a 300 s timeout; 16 passed per card (with Part 1) | host 1.20e-14 (CUDA) / 9.34e-15 (HIP), (`geri3`, aux i); libcint 5.49e-14 / 5.48e-14 of max; runs bit-identical on both |
 
 Not done for DF: the metric solve and `d` stay host-side; no DF-K
-gradient (the kernels take any `Gam`, but nothing stages K's); nothing
-above L = 4; no screen; nothing measured; Cartesian only.
+gradient (the kernels take any `Gam`, but nothing stages K's); no screen;
+no clock (the low-stack form's cost is unmeasured); Cartesian only (the
+libcint witness is Cartesian `_cart` integrals, not the spherical
+`int3c2e_ip1` / `int2c2e_ip1` #613 named: the kernels are Cartesian and
+the spherical transform is the consumer's, as #615 decided for d0).
 
 ## What is not done
 
-- On a card, nothing above L = 4 has run, and `gk` only on H₂O/STO-3G.
+- On a card, nothing above L = 4 has run but the DF terms (through
+  (ff|i) and (i|i), #613), and `gk` only on H₂O/STO-3G.
 - The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
   the raised `[p|q]`, `gjab`) is a follow-up.
 - Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
