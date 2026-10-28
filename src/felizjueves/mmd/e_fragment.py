@@ -795,16 +795,21 @@ def cartesian_loops(l: int, names: tuple[str, str, str],  # noqa: E741
 
 def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
                  b: tuple[Expr, Expr, Expr], x: Callable[[Expr], Expr],
-                 dst: str, *, tag: str = "e") -> tuple[Stmt, ...]:
+                 dst: str, *, tag: str = "e", up: int | None = None
+                 ) -> tuple[Stmt, ...]:
     """`dst = SUM_t E^{ab}_t X[t]` over the reachable `t` of one row, as
     loops over the per-axis tables (module doc, THE LOW-STACK E PATH).
 
     `a`, `b` are the row's Cartesians (I32 expressions, e.g. the names
     `cartesian_loops` declares), `x(h)` the consumer's read of `X` at the
     I32 `hermite_targets` index `h`. Declares the F64 `dst` and the I32
-    and F64 locals `{tag}_*`."""
+    and F64 locals `{tag}_*`. `up = k` reads `X[t + 1_k]` in place of
+    `X[t]` (the Hermite shift of a d1 kernel, #613); the default text is
+    unchanged."""
     L = la + lb
     t = (Var(f"{tag}_tx"), Var(f"{tag}_ty"), Var(f"{tag}_tz"))
+    at = t if up is None else tuple(
+        _iadd(t[d], Lit(1)) if d == up else t[d] for d in range(3))
     base = [f"{tag}_b{_AXES[d]}" for d in range(3)]
     sy, sz = f"{tag}_sy", f"{tag}_sz"
 
@@ -818,7 +823,7 @@ def rolled_e_sum(la: int, lb: int, a: tuple[Expr, Expr, Expr],
         return _iadd(_iadd(a[d], b[d]), Lit(1))
 
     z_loop = For(t[2].name, Lit(0), top(2), Lit(1), (
-        acc(sz, Call(Fn.MUL, (e(2), x(hermite_index(t))))),))
+        acc(sz, Call(Fn.MUL, (e(2), x(hermite_index(at))))),))
     y_loop = For(t[1].name, Lit(0), top(1), Lit(1), (
         Decl(sz, Scalar.F64, init=Lit(0.0)),
         z_loop,

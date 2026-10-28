@@ -57,6 +57,34 @@ rule is symmetric in `(m, n)` and `atom_a` / `atom_b` follow the staged order
 ROUND-OFF, NOT BITWISE, against `host_df` (another route on `C`, the plan's
 MILD DAG against `reference.pq`, the weights folded in first).
 
+THE LOW-STACK FORM (#613), the default from `L = la + lb + lP >=
+LOWSTACK_MIN_L = 5` (`geri3_lowstack`; `lowstack=` forces either form,
+the name, parameters, launch and `G` contract the same). The form above
+holds every weight, `H0` and the six derivative densities per aux row of a
+bra record across the aux loop (26 MB of text at (ff|i)); this one holds
+none of them:
+
+    per cell:    gA gB gC = 0;  R[n_t(L + 1)], U[n_t(la + lb + 1)]  local
+    per bra:     Ex Ey Ez = e_fragment.axis_tables_fragment(la + 1, lb + 1)
+    per aux:     the tower, each read [r]^(0) stored into R as it forms;
+                 Cx Cy Cz = e_fragment.center_tables_fragment(lP)
+                 for each aux row q:  U[t] = SUM_tau R[t + tau] E^q_tau
+                     for each bra row (a, b):  wt from M (the weight rule)
+                         gA_k +-= w wt (2 alpha SUM E^{a+1_k,b} U
+                                        - a_k SUM E^{a-1_k,b} U)
+                         gB_k likewise on b;  gC_k -+= w wt SUM E^{ab}_t U[t+1_k]
+
+each SUM a rolled loop over the tables (`e_fragment.rolled_e_sum`, its
+`up=k` the Hermite shift). The gate is measured: every unrolled class at
+`L <= 4` is within #606's 14,000 B of stack on `sm_86` and `gfx1200`, and
+at `L = 5` (sf|d), (pd|d), (pf|p), (dd|p) and (df|s) are not on `sm_86`
+(data/measured/df_grad_lowstack.json, `devtools/measure.sh
+df-grad-lowstack-compile`, its rule declared before any row). Every
+low-stack unit through (ff|i) is at most 13,792 B of `sm_86` stack and
+12,816 B of `gfx1200` scratch. The contraction folds of the unrolled form
+are chunked (`kernel_gmetric.chunked_fold`), so it builds at Python's
+default recursion limit at any class.
+
     params  n_cell n_bra_rec n_aux_rec n_ao n_aux n_atom (I32)
             zeta_ab[n_bra_rec]  P XPA XPB[n_bra_rec, 3]  s_ab  ea_bra  eb_ket
             A[n_aux_rec, 3]  alpha[n_aux_rec]  s_aux[n_aux_rec]
@@ -85,6 +113,7 @@ from felizjueves.gradient.kernel_g1e import (
 from felizjueves.gradient.kernel_gmetric import (
     center_binds,
     center_cols,
+    chunked_fold,
     launch_shape,
     reads,
     tower,
@@ -112,7 +141,12 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.mmd import e_fragment as ef
-from felizjueves.mmd.recurrence import PQ_PARAMS, THETA, node_name
+from felizjueves.mmd.recurrence import (
+    PQ_PARAMS,
+    THETA,
+    node_name,
+    store_targets,
+)
 from felizjueves.plan.dag import BatchDag
 from felizjueves.plan.pipeline import plan
 from felizjueves.plan.schedule import Order, schedule
@@ -120,8 +154,10 @@ from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
+    "LOWSTACK_MIN_L",
     "build_geri3_kernel",
     "cell_weights",
+    "geri3_lowstack",
     "geri3_name",
     "geri3_plan",
     "geri3_spec",
@@ -223,11 +259,19 @@ def cell_weights(la: int, lb: int, lP: int) -> list[Stmt]:
 
 
 def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
-                       name: str | None = None) -> Kernel:
+                       name: str | None = None,
+                       lowstack: bool | None = None) -> Kernel:
     """The three-center gradient kernel of one class (module docstring).
 
-    `cls` is a d1 `Target.ERI3` `Spec` or `(la, lb, lP)`."""
+    `cls` is a d1 `Target.ERI3` `Spec` or `(la, lb, lP)`. `lowstack` picks
+    the form: `None` (the default) is `geri3_lowstack(cls)` (THE LOW-STACK
+    FORM), `True` / `False` force it. The name, parameters, launch and `G`
+    contract are the same in both."""
     la, lb, lP = _class(cls)
+    if lowstack is None:
+        lowstack = geri3_lowstack((la, lb, lP))
+    if lowstack:
+        return _build_lowstack((la, lb, lP), name)
     Lab = la + lb
     dag, order = geri3_plan((la, lb, lP))
     fP = ef.center_fragment(lP)
@@ -297,15 +341,19 @@ def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
             terms = [_mul(Var(HD[f"{side}{k}", q, n]), Var(f"u{n}_{q}"))
                      for (s, q, n) in HD if s == f"{side}{k}"]
             g = Var(f"g{side}{k}")
+            links, total = chunked_fold(terms, f"s{side}{k}")
+            contract += links
             contract.append(Assign(g, _c(plus_ab, g,
-                                         _mul(Var("w"), _fold(terms)))))
+                                         _mul(Var("w"), total))))
     for k in range(3):
         terms = [_mul(Var(H0[q, n]),
                       Var(f"u{index1[_plus(ts0[n], unit(k))]}_{q}"))
                  for (q, n) in H0]
         g = Var(f"gC{k}")
+        links, total = chunked_fold(terms, f"sC{k}")
+        contract += links
         contract.append(Assign(g, _c(minus_ab, g,
-                                     _mul(Var("w"), _fold(terms)))))
+                                     _mul(Var("w"), total))))
 
     ket_body: tuple[Stmt, ...] = (
         Decl("aq", Scalar.F64, init=Index("alpha", (ik,))),
@@ -391,6 +439,11 @@ def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
             Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
         If(_c(Fn.LT, cell, Var("n_cell")), per_cell),
     )
+    return Kernel(name or geri3_name((la, lb, lP)), _params(), body)
+
+
+def _params() -> tuple[Param, ...]:
+    """The parameter list, the same in both forms (module docstring)."""
 
     def f64(n: str, shape: tuple[Expr, ...]) -> Param:
         return Param(n, Scalar.F64, array=True, shape=shape)
@@ -400,7 +453,7 @@ def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
 
     ncell, nbra, naux_rec = Var("n_cell"), Var("n_bra_rec"), Var("n_aux_rec")
     nao, naux, nat = Var("n_ao"), Var("n_aux"), Var("n_atom")
-    params = (
+    return (
         Param("n_cell", Scalar.I32),
         Param("n_bra_rec", Scalar.I32),
         Param("n_aux_rec", Scalar.I32),
@@ -424,4 +477,232 @@ def build_geri3_kernel(cls: Spec | tuple[int, int, int], *,
         Param("G", Scalar.F64, array=True, intent=Intent.OUT,
               shape=(nat, Lit(3))),
     )
-    return Kernel(name or geri3_name((la, lb, lP)), params, body)
+
+
+# ---------------------------------------------------------------------------
+# The low-stack form (#613)
+# ---------------------------------------------------------------------------
+
+# every class from L = la + lb + lP = 5 (#613): the smallest L with an
+# inadmissible unrolled class (data/measured/df_grad_lowstack.json)
+LOWSTACK_MIN_L = 5
+R_ARRAY = "R"  # [r]^(0) of one (bra, aux) pair, hermite_targets(L + 1) order
+U_ARRAY = "U"  # SUM_tau [t+tau] E^q_tau of one aux row q, |t| <= la + lb + 1
+AUX_TABLES = ("Cx", "Cy", "Cz")  # the aux record's single-center tables
+
+LOWSTACK_NOTE = (
+    "LOW-STACK (#613): the bra's per-axis E tables one index up in place of "
+    "the weighted densities, [r]^(0) into a local R as it forms, U[t] of one "
+    "aux row, and each element's nine derivative terms as rolled sums over "
+    "the tables, its weight read from M where it is used: no per-record "
+    "density and no per-cell weight is held")
+
+
+def geri3_lowstack(cls: Spec | tuple[int, int, int]) -> bool:
+    """THE SELECTION RULE (#613): True when `la + lb + lP >=
+    LOWSTACK_MIN_L`; there `build_geri3_kernel` emits the low-stack form by
+    default. False below, where the unrolled text is unchanged."""
+    return sum(_class(cls)) >= LOWSTACK_MIN_L
+
+
+def _iadd(x: Expr, y: Expr) -> Expr:
+    return _c(Fn.ADD, x, y)
+
+
+def _build_lowstack(am: tuple[int, int, int], name: str | None) -> Kernel:
+    """`build_geri3_kernel`'s kernel with no density and no weight held
+    (module docstring, THE LOW-STACK FORM): the same parameters, launch and
+    `G` contract."""
+    la, lb, lP = am
+    Lab = la + lb
+    L1 = Lab + lP + 1  # the tower's order
+    dag, order = geri3_plan(am)
+    fB = ef.axis_tables_fragment(la + 1, lb + 1)
+    fP = ef.center_tables_fragment(lP)
+    odd = lP % 2 == 1
+    cell, ib, ik = Var(CELL), Var(BRA), Var(KET)
+    targets = frozenset(_plus(t, tau) for t in hermite_targets(Lab + 1)
+                        for q in ef.cartesians(lP)
+                        for _, tau in center_cols(q, lP))
+    tw = store_targets(tower(order, dag, {node_name((r, 0)) for r in targets}),
+                       targets, L1, R_ARRAY)
+    plus_ab, minus_ab = (Fn.SUB, Fn.ADD) if odd else (Fn.ADD, Fn.SUB)
+
+    def u_read(h: Expr) -> Expr:
+        return Index(U_ARRAY, (h,))
+
+    def m_at(i: Expr, j: Expr) -> Index:
+        return Index("M", (i, j, _iadd(Var("op"), Var("rq"))))
+
+    def per_q(q: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+        def u_of(t: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            def r_at(tau: tuple[Expr, Expr, Expr]) -> Expr:
+                return Index(R_ARRAY, (ef.hermite_index(tuple(
+                    _iadd(t[d], tau[d]) for d in range(3))),))
+            return (*ef.rolled_center_sum(lP, q, r_at, "u", tag="c",
+                                          arrays=AUX_TABLES),
+                    Assign(Index(U_ARRAY, (ef.hermite_index(t),)), Var("u")))
+
+        def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+                m, n = _iadd(Var("oa"), Var("ra")), _iadd(Var("ob"), Var("rb"))
+                off = _iadd(m_at(m, n), m_at(n, m))
+                if la != lb:
+                    weight: tuple[Stmt, ...] = (
+                        Decl("wt", Scalar.F64, init=off),)
+                else:
+                    weight = (
+                        Decl("wt", Scalar.F64, init=Lit(0.0)),
+                        If(Var("differ"), (Assign(Var("wt"), off),),
+                           (Assign(Var("wt"), m_at(m, _iadd(
+                               Var("oa"), Var("rb")))),)),
+                    )
+                out: list[Stmt] = [
+                    Decl("rb", Scalar.I32, init=ef.cartesian_index("b")),
+                    *weight,
+                    Decl("ww", Scalar.F64, init=_mul(Var("w"), Var("wt"))),
+                ]
+                for side, ab, two in (("A", a, "ea2"), ("B", b, "eb2")):
+                    for k in range(3):
+                        def moved(by: int, ab=ab, k=k) -> tuple[Expr, ...]:
+                            step = (_iadd(ab[k], Lit(1)) if by > 0
+                                    else _c(Fn.SUB, ab[k], Lit(1)))
+                            return tuple(step if d == k else ab[d]
+                                         for d in range(3))
+                        up, lo = moved(1), moved(-1)
+                        ra_, rb_ = (up, b) if side == "A" else (a, up)
+                        la_, lb_ = (lo, b) if side == "A" else (a, lo)
+                        hi, dn = f"h{side}{k}", f"l{side}{k}"
+                        out += [
+                            *ef.rolled_e_sum(la + 1, lb + 1, ra_, rb_,
+                                             u_read, hi, tag=f"p{side}{k}"),
+                            Decl(dn, Scalar.F64, init=Lit(0.0)),
+                            If(_c(Fn.LT, Lit(0), ab[k]), (
+                                *ef.rolled_e_sum(la + 1, lb + 1, la_, lb_,
+                                                 u_read, f"m{side}{k}",
+                                                 tag=f"q{side}{k}"),
+                                Assign(Var(dn), _mul(ab[k],
+                                                     Var(f"m{side}{k}"))),
+                            )),
+                            Assign(Var(f"g{side}{k}"), _c(
+                                plus_ab, Var(f"g{side}{k}"), _mul(Var("ww"), _c(
+                                    Fn.SUB, _mul(Var(two), Var(hi)),
+                                    Var(dn))))),
+                        ]
+                for k in range(3):
+                    out += [
+                        *ef.rolled_e_sum(la + 1, lb + 1, a, b, u_read,
+                                         f"hC{k}", tag=f"pC{k}", up=k),
+                        Assign(Var(f"gC{k}"), _c(
+                            minus_ab, Var(f"gC{k}"),
+                            _mul(Var("ww"), Var(f"hC{k}")))),
+                    ]
+                return tuple(out)
+            return (Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
+                    ef.cartesian_loops(lb, ("bx", "by", "bz"), elem, tag="b"))
+
+        return (
+            Decl("rq", Scalar.I32, init=ef.cartesian_index("q")),
+            Note("U[t] = SUM_tau [t+tau]^(0) E^q_tau over the live tau of "
+                 "this aux row, for every |t| <= la + lb + 1: once per (t, q)"),
+            ef.hermite_loops(Lab + 1, u_of, tag="h"),
+            Note(f"per element (a, b, q), weight wt from M: gA_k "
+                 f"{'-' if odd else '+'}= w wt SUM_t (dA_k E^{{ab}})_t U[t] "
+                 "(the Cartesian rule, 2 alpha E^{a+1_k,b} - a_k E^{a-1_k,b}"
+                 f"), gB likewise, gC_k {'+' if odd else '-'}= w wt SUM_t "
+                 "E^{ab}_t U[t + 1_k] (the Hermite shift), each rolled over "
+                 f"the per-axis tables; (-1)^|tau| = (-1)^{lP} on every live "
+                 "tau"),
+            ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+        )
+
+    aux_binds: dict[str, Expr] = {n: Var(n) for n in AUX_TABLES}
+    if ef.HALF_INV_ZETA in fP.binds:
+        aux_binds[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), Var("aq"))
+    ket_body: tuple[Stmt, ...] = (
+        Decl("aq", Scalar.F64, init=Index("alpha", (ik,))),
+        *(Decl(nm, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
+                                       Index("A", (ik, Lit(d)))))
+          for d, nm in enumerate(PQ_PARAMS)),
+        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, _c(
+            Fn.DIV, _mul(Var("ze"), Var("aq")),
+            _c(Fn.ADD, Var("ze"), Var("aq"))))),
+        Note(f"[t+tau]^(0) by the plan's DAG for the quartet ({la + 1},{lb}|"
+             f"{lP},0) at L + 1 = {L1}, the targets no U reads dropped, each "
+             "live one stored into R as it forms"),
+        *tw,
+        Note("the aux record's single-center E, per axis: "
+             "e_fragment.center_tables_fragment, inlined"),
+        *(Decl(n, Scalar.F64, (Lit(ef.center_table_extent(lP)),))
+          for n in AUX_TABLES),
+        Inline(fP, aux_binds),
+        Decl("w", Scalar.F64, init=_mul(Var("sb"), Index(S_AUX, (ik,)))),
+        ef.cartesian_loops(lP, ("qx", "qy", "qz"), per_q, tag="q"),
+    )
+    bra_binds: dict[str, Expr] = {ef.ZETA: Var("ze"),
+                                  **{n: Var(n) for n in ef.AXIS_ARRAYS}}
+    if ef.HALF_INV_ZETA in fB.binds:
+        bra_binds[ef.HALF_INV_ZETA] = _c(Fn.DIV, Lit(0.5), Var("ze"))
+    for d in range(3):
+        bra_binds[Factor.pa(d).name_in_kernel] = Index("XPA", (ib, Lit(d)))
+        bra_binds[Factor.pb(d).name_in_kernel] = Index("XPB", (ib, Lit(d)))
+    bra_body: tuple[Stmt, ...] = (
+        Decl("ze", Scalar.F64, init=Index("zeta_ab", (ib,))),
+        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (ib, Lit(d))))
+          for d in range(3)),
+        Decl("sb", Scalar.F64, init=Index("s_ab", (ib,))),
+        Decl("ea2", Scalar.F64, init=_mul(Lit(2.0), Index("ea_bra", (ib,)))),
+        Decl("eb2", Scalar.F64, init=_mul(Lit(2.0), Index("eb_ket", (ib,)))),
+        Note(f"the undressed per-axis E^{{ij}}_t, i <= {la + 1}, j <= "
+             f"{lb + 1}: one index above the class on each side, for the "
+             "derivative rule (e_fragment.axis_tables_fragment)"),
+        *(Decl(n, Scalar.F64, (Lit(ef.axis_table_extent(la + 1, lb + 1)),))
+          for n in ef.AXIS_ARRAYS),
+        Inline(fB, bra_binds),
+        Note("the aux records of the cell"),
+        For(KET, Var("p0"), Var("p1"), Lit(1), ket_body),
+    )
+    scatter: list[Stmt] = [Note(ATOMIC_REASON)]
+    for side, atom in (("A", "aa"), ("B", "ab"), ("C", "ap")):
+        for k in range(3):
+            scatter.append(AtomicAdd(Index("G", (Var(atom), Lit(k))),
+                                     Var(f"g{side}{k}")))
+    differ: tuple[Stmt, ...] = ()
+    if la == lb:
+        differ = (Note(_WEIGHTS), Decl("differ", Scalar.I32, init=_c(
+            Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
+            _c(Fn.LT, Var("ob"), Var("oa")))),)
+    else:
+        differ = (Note(_WEIGHTS),)
+    per_cell: tuple[Stmt, ...] = (
+        Decl("b0", Scalar.I32, init=Index("ab_rec0", (cell,))),
+        Decl("b1", Scalar.I32, init=Index("ab_rec1", (cell,))),
+        Decl("p0", Scalar.I32, init=Index("p_rec0", (cell,))),
+        Decl("p1", Scalar.I32, init=Index("p_rec1", (cell,))),
+        Decl("oa", Scalar.I32, init=Index("off_a", (cell,))),
+        Decl("ob", Scalar.I32, init=Index("off_b", (cell,))),
+        Decl("op", Scalar.I32, init=Index("off_p", (cell,))),
+        Decl("aa", Scalar.I32, init=Index("atom_a", (cell,))),
+        Decl("ab", Scalar.I32, init=Index("atom_b", (cell,))),
+        Decl("ap", Scalar.I32, init=Index("atom_p", (cell,))),
+        *differ,
+        Note(LOWSTACK_NOTE),
+        *(Decl(f"g{s}{k}", Scalar.F64, init=Lit(0.0))
+          for s in "ABC" for k in range(3)),
+        *(Decl(n, Scalar.F64, (Lit(len(hermite_targets(x))),))
+          for n, x in ((R_ARRAY, L1), (U_ARRAY, Lab + 1))),
+        Note("the bra records of the cell's shell pair, serially"),
+        For(BRA, Var("b0"), Var("b1"), Lit(1), bra_body),
+        *scatter,
+    )
+    body: tuple[Stmt, ...] = (
+        Note(f"gradient of the three-center DF integral, class (la, lb, lP) "
+             f"= ({la}, {lb}, {lP}), LOW-STACK (#613): G[A, k] += SUM_mnP "
+             "M_mnP d(mn|P)/dR_{A,k} (felizjueves.gradient)"),
+        Note(ZEROED_G),
+        Note("launch: one thread per (AO shell pair, aux shell) cell"),
+        Decl(CELL, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _mul(
+            Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
+        If(_c(Fn.LT, cell, Var("n_cell")), per_cell),
+    )
+    return Kernel(name or geri3_name(am), _params(), body)

@@ -57,6 +57,12 @@
 #                   compiler, no card)                  FJ_DF_LOWSTACK_STORE
 #     df-lowstack   the low-stack against the unrolled DF
 #                   kernels, wall-clock per class (#606) FJ_DF_LOWSTACK_STORE
+#     df-grad-lowstack-compile  every gmetric / geri3 class of the
+#                   DF gradient ladder in its low-stack form,
+#                   and the unrolled form up the held-doubles
+#                   order: source, compile, RSS, registers,
+#                   spill, stack, a 300 s budget a unit (#613;
+#                   a compiler, no card)          FJ_DF_GRAD_LOWSTACK_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -115,6 +121,7 @@ SWEEPS=(
   "kblock-transpose-profile|timed|kbr_22_22 vs kbrt_22_22 under ncu, CUDA only (#576) -> kblock_rolled.json"
   "df-lowstack-compile|compile|eri3/metric aux ladder through i, both forms' compile (#606) -> df_lowstack.json"
   "df-lowstack|timed|eri3/metric low-stack vs unrolled wall-clock per class (#606) -> df_lowstack.json"
+  "df-grad-lowstack-compile|compile|gmetric/geri3 DF gradient ladder through (i|i)/(ff|i), both forms' compile (#613) -> df_grad_lowstack.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "recheck|compile|recompile and compare against the stored rows (no card)"
@@ -206,6 +213,8 @@ case $sweep in
                 envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
   df-lowstack)  files=("$M/measure_df_lowstack.py"); select=(-k df_lowstack_clock)
                 envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
+  df-grad-lowstack-compile) files=("$M/measure_df_grad_lowstack.py"); select=(-k df_grad_lowstack_compile)
+                envs=("FJ_DF_GRAD_LOWSTACK_STORE=${FJ_DF_GRAD_LOWSTACK_STORE:-$MEASURE_DF_GRAD_LOWSTACK_STORE}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
                 select=(-k "not record_ceilings") ;;

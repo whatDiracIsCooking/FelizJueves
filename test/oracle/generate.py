@@ -25,6 +25,11 @@ back from the tracked file thereafter (`case_density`), so every array stays
 bitwise reproducible; `--check` holds a fresh SCF to `RHF_DENSITY_TOL` of it.
 Regenerate the owner (`h10_chain_ccpvdz_j`) and its `_k` together, in that
 order: the `_k` reads the `_j`'s recorded density.
+
+`--df-gradient` (with `--regenerate` or `--check`, no names) is the DF
+gradient witness instead (#613, `df_gradient_build`): libcint's derivative
+integrals on the aux-i sets' inputs, contracted per class, written to
+`df_gradient/` and loaded by `manifest.df_gradient`.
 """
 
 from __future__ import annotations
@@ -1362,6 +1367,143 @@ def drift(name: str) -> str | None:
             f"right before running `{COMMAND} {name}`.")
 
 
+# ---------------------------------------------------------------------------
+# #613: the DF gradient witness (manifest.df_gradient)
+# ---------------------------------------------------------------------------
+
+DF_GRADIENT_COMMAND = ("PYTHONPATH=test uv run --group oracle python -m "
+                       "oracle.generate --df-gradient")
+
+
+def _class_grads(keys, atoms, contrib) -> list[dict[str, Any]]:
+    """Per class, the sum of `contrib(block)` over the blocks keyed so."""
+    out: dict[tuple[int, ...], np.ndarray] = {}
+    for key, atom, g in contrib:
+        out.setdefault(key, np.zeros((atoms, 3)))[atom] += g
+    return [{"am": list(k), "G": [float(x) for x in out[k].ravel()]}
+            for k in sorted(out)]
+
+
+def df_gradient_build() -> dict[str, Any]:
+    """The DF gradient witness (manifest.df_gradient), computed now: per
+    class of the aux-i sets' molecule, libcint's `int3c2e_ip1_cart` /
+    `int3c2e_ip2_cart` contracted with `df_gradient_gam` and
+    `int2c2e_ip1_cart` with `df_gradient_w`. An electron-coordinate
+    derivative on a function is minus the derivative on its centre, so
+    `d(mn|P)/dR_{atom(m)} = -ip1[k, m, n, P]`, the `n` side `-ip1[k, n, m,
+    P]` (`(m nabla n|P) = (nabla n m|P)`), the aux side `-ip2[k, m, n, P]`,
+    and `d(P|Q)/dR_{atom(P)} = -ip1[k, P, Q]`, the `Q` side `-ip1[k, Q,
+    P]`."""
+    import pyscf
+    from pyscf import df, gto
+
+    from .manifest import (
+        DF_GRADIENT,
+        DF_GRADIENT_SCHEMA,
+        df_gradient_gam,
+        df_gradient_w,
+    )
+
+    case = CASES["prim_spd_f"]
+    mol = _mole(case)
+    aux = {s: gto.basis.parse(AUX_I, symb=s)
+           for s in sorted({mol.atom_pure_symbol(i) for i in range(mol.natm)})}
+    auxmol = df.make_auxmol(mol, aux)
+    nao, naux, nat = int(mol.nao_nr()), int(auxmol.nao_nr()), mol.natm
+    ip1 = df.incore.aux_e2(mol, auxmol, intor="int3c2e_ip1_cart",
+                           aosym="s1", comp=3)
+    ip2 = df.incore.aux_e2(mol, auxmol, intor="int3c2e_ip2_cart",
+                           aosym="s1", comp=3)
+    m1 = auxmol.intor("int2c2e_ip1_cart", comp=3)
+    if ip1.shape != (3, nao, nao, naux) or m1.shape != (3, naux, naux):
+        raise ValueError(f"unexpected shapes {ip1.shape} {m1.shape}")
+    gam, w = df_gradient_gam(nao, naux), df_gradient_w(naux)
+    loc, aloc = mol.ao_loc_nr(cart=True), auxmol.ao_loc_nr(cart=True)
+
+    def sl(lc, i):
+        return slice(int(lc[i]), int(lc[i + 1]))
+
+    def eri3():
+        for i in range(mol.nbas):
+            for j in range(mol.nbas):
+                li, lj = mol.bas_angular(i), mol.bas_angular(j)
+                for p in range(auxmol.nbas):
+                    key = (min(li, lj), max(li, lj), auxmol.bas_angular(p))
+                    si, sj, sp = sl(loc, i), sl(loc, j), sl(aloc, p)
+                    g = gam[si, sj, sp]
+                    yield key, mol.bas_atom(i), -np.einsum(
+                        "kmnp,mnp->k", ip1[:, si, sj, sp], g)
+                    yield key, mol.bas_atom(j), -np.einsum(
+                        "knmp,mnp->k", ip1[:, sj, si, sp], g)
+                    yield key, auxmol.bas_atom(p), -np.einsum(
+                        "kmnp,mnp->k", ip2[:, si, sj, sp], g)
+
+    def metric():
+        for p in range(auxmol.nbas):
+            for q in range(auxmol.nbas):
+                lp, lq = auxmol.bas_angular(p), auxmol.bas_angular(q)
+                key = (min(lp, lq), max(lp, lq))
+                sp, sq = sl(aloc, p), sl(aloc, q)
+                yield key, auxmol.bas_atom(p), -np.einsum(
+                    "kpq,pq->k", m1[:, sp, sq], w[sp, sq])
+                yield key, auxmol.bas_atom(q), -np.einsum(
+                    "kqp,pq->k", m1[:, sq, sp], w[sp, sq])
+
+    return {
+        "schema": DF_GRADIENT_SCHEMA,
+        "name": DF_GRADIENT,
+        "description": (
+            "#613: libcint's int3c2e_ip1_cart / int3c2e_ip2_cart and "
+            "int2c2e_ip1_cart on prim_spd_f's molecule against the aux-i "
+            "basis (prim_spd_f_auxi_3c / _metric's), contracted per class "
+            "into G[atom, k] with manifest.df_gradient_gam / df_gradient_w "
+            "(oracle.generate.df_gradient_build has the signs)."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": DF_GRADIENT_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "aux_basis": AUX_I,
+            "parent": "prim_spd_f",
+            "nao": nao,
+            "naux": naux,
+        },
+        "three_center_set": AUX_I_3C_SET,
+        "metric_set": AUX_I_METRIC_SET,
+        "eri3": _class_grads(None, nat, eri3()),
+        "gmetric": _class_grads(None, nat, metric()),
+    }
+
+
+def df_gradient_main(regenerate: bool) -> int:
+    """`--df-gradient`: rewrite the witness, or (`--check`) compare."""
+    import json
+
+    from .manifest import DF_GRADIENT, DF_GRADIENT_DIR, df_gradient
+
+    path = DF_GRADIENT_DIR / f"{DF_GRADIENT}.json"
+    fresh = df_gradient_build()
+    if regenerate:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(dumps(fresh))
+        df_gradient()
+        print(f"wrote {path}")
+        return 0
+    tracked = json.loads(path.read_text())
+    if comparable(fresh) == comparable(tracked):
+        print(f"{DF_GRADIENT}: matches the tracked witness")
+        return 0
+    print(f"{path}: PySCF now computes it differently from the tracked "
+          "witness; news about PySCF until proven otherwise")
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.generate",
                                  description=__doc__.split("\n\n")[0])
@@ -1371,7 +1513,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true",
                       help="compare a fresh build against the tracked fixture(s)")
     ap.add_argument("names", nargs="*", help=f"cases (default all: {list(CASES)})")
+    ap.add_argument("--df-gradient", action="store_true",
+                    help="the DF gradient witness (#613, "
+                         "manifest.df_gradient) instead of the fixtures")
     args = ap.parse_args(argv)
+    if args.df_gradient and args.names:
+        ap.error("--df-gradient takes no case names")
 
     unknown = [n for n in args.names if n not in CASES]
     if unknown:
@@ -1388,6 +1535,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     src = str(Path(__file__).resolve().parents[2] / "src")
     if src not in sys.path:
         sys.path.append(src)
+    if args.df_gradient:
+        return df_gradient_main(args.regenerate)
 
     status = 0
     for name in args.names or list(CASES):

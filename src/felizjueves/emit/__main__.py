@@ -130,15 +130,21 @@ for CUDA, `.hip` for HIP):
   it is a 2. It ADDS units beside the J ladders, as `--grad-l` does, and
   is NEVER in the no-flag default nor in KERNEL_GEN_CMD.
 
-- the DF gradient ladder, `--grad-df-l [LMAX]` (`felizjueves.gradient`):
+- the DF gradient ladder, `--grad-df-l [LMAX] [--grad-df-aux-l AUXMAX]`
+  (`felizjueves.gradient`), split as FreeBreakfast's `df_kernels.py` is
+  (#613): LMAX the orbital `l` per shell, AUXMAX the aux `l`.
   `gmetric_{lP}{lQ}` (`kernel_gmetric`: `SUM_PQ W_PQ d(P|Q)/dR`) for every
-  `lP <= lQ`, `lP + lQ <= LMAX`, and `geri3_{la}{lb}{lP}` (`kernel_geri3`:
-  `SUM_mnP Gam_mnP d(mn|P)/dR`) for every `la <= lb`, `la + lb + lP <=
-  LMAX` (4 when the flag is given bare: 9 + 22 units). Accepted
-  0..`GRAD_DF_L_MAX` = 4 (validated at the d0 kernels' cap, interpreted);
-  above it is a 2. It ADDS units beside the J ladders, as `--grad-l` does,
-  and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name
-  starts `gmetric_` or `geri3_`, so none collides with another ladder's.
+  `lP <= lQ <= AUXMAX`, and `geri3_{la}{lb}{lP}` (`kernel_geri3`: `SUM_mnP
+  Gam_mnP d(mn|P)/dR`) for every `la <= lb <= LMAX`, `lP <= AUXMAX` (1 and
+  2 when the flags are given bare or AUXMAX omitted: 6 + 9 units).
+  Accepted 0..`GRAD_DF_L_MAX` = 3 and 0..`GRAD_DF_AUX_L_MAX` = 6 (every
+  class through (ff|i) and (i|i), interpreted against the host and on both
+  cards); above either it is a 2, and `--grad-df-aux-l` without
+  `--grad-df-l` is a 2. Each builder picks its own form (the low-stack one
+  from `kernel_geri3.LOWSTACK_MIN_L` / `kernel_gmetric.LOWSTACK_MIN_L`).
+  It ADDS units beside the J ladders, as `--grad-l` does, and is NEVER in
+  the no-flag default nor in KERNEL_GEN_CMD. Every name starts `gmetric_`
+  or `geri3_`, so none collides with another ladder's.
 
 - the Coulomb-Hessian ladder, `--hess-l [LMAX]` (`felizjueves.hessian`):
   for every pair class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is
@@ -465,8 +471,10 @@ DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
 DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
 GRAD_K_L_MAX = 2  # kernel_gk is validated through (dd|dd) interpreted
-DEFAULT_GRAD_DF_L = 4  # `--grad-df-l` given bare: 9 gmetric + 22 geri3 units
-GRAD_DF_L_MAX = 4  # the DF gradients are validated at the d0 kernels' cap
+DEFAULT_GRAD_DF_L = 1  # `--grad-df-l` given bare: orbital l <= 1
+DEFAULT_GRAD_DF_AUX_L = 2  # `--grad-df-aux-l` bare or omitted: aux l <= 2
+GRAD_DF_L_MAX = 3  # orbital l: the DF gradients are validated through f
+GRAD_DF_AUX_L_MAX = 6  # aux l: validated through i (#613)
 DEFAULT_HESS_L = 1  # `--hess-l` given bare: (ss) (sp) (pp), 6 units
 HESS_L_MAX = 2  # the Hessian kernels are validated through (dd) interpreted
 DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
@@ -767,25 +775,29 @@ def generate_grad_k(backend: str, arch: Arch, out: Path,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
-def grad_df_classes(lmax: int
+def grad_df_classes(lmax: int, aux_lmax: int = DEFAULT_GRAD_DF_AUX_L
                     ) -> tuple[list[tuple[int, int]], list[tuple[int, int, int]]]:
-    """The metric classes `(lP, lQ)`, `lP <= lQ`, `lP + lQ <= lmax`, and
-    the three-center classes `(la, lb, lP)`, `la <= lb`, `la + lb + lP <=
-    lmax`, over `0..GRAD_DF_L_MAX`."""
+    """The metric classes `(lP, lQ)`, `lP <= lQ <= aux_lmax`, and the
+    three-center classes `(la, lb, lP)`, `la <= lb <= lmax`, `lP <=
+    aux_lmax`, over `0..GRAD_DF_L_MAX` and `0..GRAD_DF_AUX_L_MAX` (#613:
+    the orbital and aux limits of FreeBreakfast's `df_kernels.py`)."""
     if type(lmax) is not int or not 0 <= lmax <= GRAD_DF_L_MAX:
         raise ValueError(f"--grad-df-l {lmax!r} is outside "
                          f"0..{GRAD_DF_L_MAX}")
-    r = range(lmax + 1)
-    return ([(p, q) for p in r for q in r if p <= q and p + q <= lmax],
-            [(a, b, p) for a in r for b in r for p in r
-             if a <= b and a + b + p <= lmax])
+    if type(aux_lmax) is not int or not 0 <= aux_lmax <= GRAD_DF_AUX_L_MAX:
+        raise ValueError(f"--grad-df-aux-l {aux_lmax!r} is outside "
+                         f"0..{GRAD_DF_AUX_L_MAX}")
+    r, x = range(lmax + 1), range(aux_lmax + 1)
+    return ([(p, q) for p in x for q in x if p <= q],
+            [(a, b, p) for a in r for b in r for p in x if a <= b])
 
 
-def generate_grad_df(backend: str, arch: Arch, out: Path,
-                     lmax: int) -> list[Path]:
-    """Emit the DF d1 units through `lmax` into `out`: `gmetric_` per
-    metric class, then `geri3_` per three-center class; return the paths."""
-    metric, eri3 = grad_df_classes(lmax)
+def generate_grad_df(backend: str, arch: Arch, out: Path, lmax: int,
+                     aux_lmax: int = DEFAULT_GRAD_DF_AUX_L) -> list[Path]:
+    """Emit the DF d1 units through `lmax` / `aux_lmax` into `out`:
+    `gmetric_` per metric class, then `geri3_` per three-center class;
+    return the paths."""
+    metric, eri3 = grad_df_classes(lmax, aux_lmax)
     kernels = [*(build_gmetric_kernel(c) for c in metric),
                *(build_geri3_kernel(c) for c in eri3)]
     out.mkdir(parents=True, exist_ok=True)
@@ -1272,6 +1284,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_GRAD_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-df-l", dest="grad_df_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_DF_L, default=None, metavar="LMAX")
+    ap.add_argument("--grad-df-aux-l", dest="grad_df_aux_l", type=int,
+                    nargs="?", const=DEFAULT_GRAD_DF_AUX_L, default=None,
+                    metavar="AUXMAX")
     ap.add_argument("--grad-k-l", dest="grad_k_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_K_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-l", dest="hess_l", type=int, nargs="?",
@@ -1451,7 +1466,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not 0 <= args.grad_df_l <= GRAD_DF_L_MAX):
         print(f"emit: --grad-df-l {args.grad_df_l} is outside "
               f"0..{GRAD_DF_L_MAX}: the DF gradient kernels are validated "
-              "at L <= 4 only", file=sys.stderr)
+              "through orbital f only", file=sys.stderr)
+        return 2
+    if args.grad_df_aux_l is not None and args.grad_df_l is None:
+        print("emit: --grad-df-aux-l needs --grad-df-l (the orbital limit)",
+              file=sys.stderr)
+        return 2
+    if (args.grad_df_aux_l is not None
+            and not 0 <= args.grad_df_aux_l <= GRAD_DF_AUX_L_MAX):
+        print(f"emit: --grad-df-aux-l {args.grad_df_aux_l} is outside "
+              f"0..{GRAD_DF_AUX_L_MAX}: the DF gradient kernels are "
+              "validated through aux i only", file=sys.stderr)
         return 2
     if args.hess_l is not None and not 0 <= args.hess_l <= HESS_L_MAX:
         print(f"emit: --hess-l {args.hess_l} is outside 0..{HESS_L_MAX}: "
@@ -1533,8 +1558,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         written += generate_grad_k(args.backend, arch, args.out,
                                    args.grad_k_l)
     if args.grad_df_l is not None:  # beside the J chain, never by default
-        written += generate_grad_df(args.backend, arch, args.out,
-                                    args.grad_df_l)
+        written += generate_grad_df(
+            args.backend, arch, args.out, args.grad_df_l,
+            DEFAULT_GRAD_DF_AUX_L if args.grad_df_aux_l is None
+            else args.grad_df_aux_l)
     if args.hess_l is not None:  # beside the J chain, never by default
         written += generate_hess(args.backend, arch, args.out, args.hess_l)
     if args.hess_k_l is not None:  # beside the J chain, never by default

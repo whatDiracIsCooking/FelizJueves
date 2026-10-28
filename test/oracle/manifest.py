@@ -1450,6 +1450,99 @@ def dipole_integrals(name: str = SPD_DIPOLE,
     return DipoleIntegrals(fx)
 
 
+# --- the DF gradient witness (#613) -------------------------------------------
+#
+# libcint's derivative integrals contracted, per class, into the gradient the
+# d1 DF kernels write: `G[A, k] = SUM Gam_mnP d(mn|P)/dR_{A,k}` from
+# `int3c2e_ip1_cart` / `int3c2e_ip2_cart` and `G[A, k] = SUM W_PQ d(P|Q)/dR_
+# {A,k}` from `int2c2e_ip1_cart`, on the aux-i sets' molecule and bases
+# (`prim_spd_f`, AUX_I), for EVERY class of the ladder FreeBreakfast emits
+# (geri3 `la <= lb <= 3`, `lP <= 6`; gmetric `lP <= lQ <= 6`). The tensors
+# themselves (3 x 20 x 20 x 168 each) are far over the 512 KiB hook, so only
+# their contraction is recorded, with `Gam` and `W` CLOSED FORMS
+# (`df_gradient_gam`, `df_gradient_w`: small rationals, exact in binary, not
+# symmetric) that the reader rebuilds bit for bit. Not a schema-2..4 fixture
+# (no AO arrays), so it lives in `df_gradient/`, not in `fixtures/`, and
+# `df_gradient()` loads it: the recorded inputs (the parent's molecule,
+# basis and `cart`; the aux basis; both sets' names) must equal the tracked
+# fixtures' exactly, or it is refused. Cartesian, as the kernels are
+# (libcint's `_cart` integrals); the spherical transform is the consumer's.
+
+DF_GRADIENT_DIR = Path(__file__).resolve().parent / "df_gradient"
+DF_GRADIENT = "prim_spd_f_auxi_grad"
+DF_GRADIENT_SCHEMA = 1
+
+
+def df_gradient_gam(nao: int, naux: int) -> np.ndarray:
+    """`Gam[m, n, P] = ((3 m + 5 n + 7 P) mod 11 - 5) / 4`: exact in binary,
+    not symmetric in `(m, n)`."""
+    m, n, p = np.ogrid[:nao, :nao, :naux]
+    return (((3 * m + 5 * n + 7 * p) % 11) - 5) / 4.0
+
+
+def df_gradient_w(naux: int) -> np.ndarray:
+    """`W[P, Q] = ((5 P + 3 Q) mod 13 - 6) / 4`: exact, not symmetric."""
+    p, q = np.ogrid[:naux, :naux]
+    return (((5 * p + 3 * q) % 13) - 6) / 4.0
+
+
+@dataclass(frozen=True)
+class DfGradient:
+    """The DF gradient witness, its inputs checked against the sets."""
+
+    path: Path
+    provenance: dict[str, Any]
+    three_center: ThreeCenterSet
+    metric: MetricSet
+    eri3: dict[tuple[int, int, int], np.ndarray]  # class -> G[n_atom, 3]
+    gmetric: dict[tuple[int, int], np.ndarray]  # class -> G[n_atom, 3]
+
+    def gam(self) -> np.ndarray:
+        return df_gradient_gam(self.three_center.parent.nao,
+                               self.three_center.nao)
+
+    def w(self) -> np.ndarray:
+        return df_gradient_w(self.metric.nao)
+
+
+def df_gradient(name: str = DF_GRADIENT, where: Path = DF_GRADIENT_DIR,
+                fixtures: Path = FIXTURES) -> DfGradient:
+    """Load the DF gradient witness `name` and hold its inputs to the
+    tracked sets it names, exactly; refuse a mismatch by field."""
+    path = where / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != DF_GRADIENT_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{DF_GRADIENT_SCHEMA} DF gradient "
+                          f"witness named {name}")
+    ts = three_center_set(raw["three_center_set"], fixtures)
+    ms = metric_set(raw["metric_set"], fixtures)
+    pv, parent = raw["provenance"], ts.parent.provenance
+    want = {"mol": parent.mol, "basis": parent.basis, "cart": parent.cart,
+            "aux_basis": ts.pieces[0].provenance.basis, "parent":
+            ts.parent.name, "nao": ts.parent.nao, "naux": ts.nao}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the tracked sets' "
+                              f"({pv.get(k)!r} against {v!r})")
+    if ms.pieces[0].provenance.basis != pv["aux_basis"] or ms.nao != ts.nao:
+        raise _fail(path, "the metric set is not on the same aux basis")
+    nat = len(ts.parent.atoms)
+
+    def grads(rows: Any, n: int) -> dict:
+        out = {}
+        for r in rows:
+            g = np.array(_floats(path, "G", r["G"], 3 * nat)).reshape(nat, 3)
+            g.setflags(write=False)
+            am = tuple(r["am"])
+            if len(am) != n or am in out:
+                raise _fail(path, f"bad or duplicate class {am}")
+            out[am] = g
+        return out
+
+    return DfGradient(path, pv, ts, ms, grads(raw["eri3"], 3),
+                      grads(raw["gmetric"], 2))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Load every tracked fixture; one line each. Exit 1 on the first bad one."""
     paths = [Path(p) for p in (argv or [])] or tracked()

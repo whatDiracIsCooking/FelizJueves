@@ -20,6 +20,19 @@ and Boys differ by ulps. The runs are compared with each other too.
 
 RUN ON BOTH CARDS (2026-10-27): worst 6.58e-15 of `max|G|` on the RTX
 3080 and 4.87e-15 on the RX 9060 XT (`gmetric`).
+
+PART 2, THE LADDER THROUGH (ff|i) AND (i|i) (#613; `slow` + `high_l`): the
+aux-i witness's system (`manifest.df_gradient`: `prim_spd_f`, He s, p, d
+and a contracted Ne f, against l = 0..6 aux shells on both atoms), which
+reaches every class FreeBreakfast emits (geri3 `la <= lb <= 3`, `lP <= 6`;
+gmetric `lP <= lQ <= 6`), each in its DEFAULT form (the low-stack one from
+`kernel_geri3.LOWSTACK_MIN_L` / `kernel_gmetric.LOWSTACK_MIN_L`), with the
+witness's closed-form `Gam` and `W`. One program per aux `l` (`lP` for
+geri3, `lQ` for gmetric), so each compile stays within the user's 300 s
+budget (`COMPILE_BUDGET_S`, a hard timeout). Against the host over the
+program's classes at `DEV_TOL` of their `max|G|`, and against libcint's
+derivative integrals (the witness, per class) at `LIBCINT_TOL` of the
+witness's largest class `max|G|`.
 """
 
 from __future__ import annotations
@@ -44,6 +57,8 @@ from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
 from felizjueves.reference.pq import pq
 
 DEV_TOL = 1e-13  # of max|G| (module docstring)
+LIBCINT_TOL = 1e-12  # of the witness's max|G| (Part 2)
+COMPILE_BUDGET_S = 300.0  # the user's per-compile budget (#613)
 SET = "h2o_sto3g_jkfit_3c"
 
 
@@ -142,3 +157,117 @@ def test_the_staged_launches_cover_every_class_once(tmp_path) -> None:
     # DF-J: the sum of the two host terms has zero net force.
     G = _host("metric") + _host("eri3")
     assert np.abs(G.sum(axis=0)).max() <= 1e-12 * np.abs(G).max()
+
+
+# --- Part 2: the ladder through (ff|i) and (i|i) (#613) ------------------------
+
+
+@cache
+def _auxi():
+    wit = manifest.df_gradient()
+    ts = wit.three_center
+    basis, aux = ob.from_fixture(ts.parent), ob.from_fixture(ts)
+    nuclei = tuple((float(a.charge), tuple(a.coord)) for a in ts.parent.atoms)
+    return wit, basis, aux, nuclei
+
+
+def _ladder_launches(which: str, l: int) -> tuple[list[GradLaunch], list]:  # noqa: E741
+    """Every class of the aux-i system with aux `l` (`lP` / `lQ`)."""
+    wit, basis, aux, nuclei = _auxi()
+    out, classes = [], []
+    if which == "metric":
+        for c in metric_classes(aux):
+            if c.lQ != l:
+                continue
+            arrs = metric_arrays(c, aux, nuclei) | {"M": wit.w()}
+            out.append(GradLaunch(build_gmetric_kernel((c.lP, c.lQ)),
+                                  c.n_pair, arrs, {
+                "n_pair": c.n_pair, "n_rec": c.n_rec, "n_aux": aux.n_ao,
+                "n_atom": len(nuclei)}))
+            classes.append((c.lP, c.lQ))
+        return out, classes
+    for c in eri3_classes(basis, aux):
+        if c.lP != l:
+            continue
+        arrs = eri3_arrays(c, basis, aux, nuclei) | {"M": wit.gam()}
+        out.append(GradLaunch(build_geri3_kernel((c.la, c.lb, c.lP)),
+                              c.n_cell, arrs, {
+            "n_cell": c.n_cell, "n_bra_rec": c.n_bra_rec,
+            "n_aux_rec": c.n_aux_rec, "n_ao": basis.n_ao,
+            "n_aux": aux.n_ao, "n_atom": len(nuclei)}))
+        classes.append((c.la, c.lb, c.lP))
+    return out, classes
+
+
+@cache
+def _ladder_host(which: str, l: int) -> np.ndarray:  # noqa: E741
+    wit, basis, aux, nuclei = _auxi()
+    sh, ash = basis.shells, aux.shells
+    if which == "metric":
+        pairs = [(i, j) for i in range(len(ash)) for j in range(i, len(ash))
+                 if max(ash[i].l, ash[j].l) == l]
+        return np.array(host_df.metric_gradient(aux, wit.w(), nuclei, pq=pq,
+                                                pairs=pairs))
+    cells = [(i, j, n) for i in range(len(sh)) for j in range(i, len(sh))
+             for n in range(len(ash)) if ash[n].l == l]
+    return np.array(host_df.eri3_gradient(basis, aux, wit.gam(), nuclei,
+                                          pq=pq, cells=cells))
+
+
+def _ladder(backend: str, which: str, l: int, request,  # noqa: E741
+            run_device_binary, tmp_path: Path) -> None:
+    tc = _toolchain(backend, request)
+    wit, _, _, nuclei = _auxi()
+    xs, classes = _ladder_launches(which, l)
+    got = compile_grad(xs, len(nuclei), backend, tc, tmp_path,
+                       timeout=COMPILE_BUDGET_S).run(run_device_binary)
+    want = _ladder_host(which, l)
+    scale = np.abs(want).max()
+    errs = [float(np.abs(g - want).max() / scale) for g in got]
+    ref = (sum(wit.gmetric[c] for c in classes) if which == "metric"
+           else sum(wit.eri3[c] for c in classes))
+    big = max(np.abs(g).max() for g in (wit.gmetric if which == "metric"
+                                        else wit.eri3).values())
+    lib = float(np.abs(got[0] - ref).max() / big)
+    print(f"\n{backend} aux-i {which} l={l}: {len(classes)} classes, "
+          f"|G - host| / max|G| {max(errs):.2e}, |G - libcint| / max {lib:.2e}"
+          f", bit-identical {bool(np.array_equal(got[0], got[1]))}")
+    assert max(errs) <= DEV_TOL, (backend, which, l, errs)
+    assert lib <= LIBCINT_TOL, (backend, which, l, lib)
+
+
+LADDER = [("metric", lq) for lq in range(7)] + [("eri3", lp)
+                                                for lp in range(7)]
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+@pytest.mark.parametrize("which,l", LADDER, ids=lambda x: str(x))
+def test_cuda_df_gradient_ladder_through_i(which, l, request,  # noqa: E741
+                                           run_device_binary, tmp_path):
+    _ladder("cuda", which, l, request, run_device_binary, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.slow
+@pytest.mark.high_l
+@pytest.mark.parametrize("which,l", LADDER, ids=lambda x: str(x))
+def test_hip_df_gradient_ladder_through_i(which, l, request,  # noqa: E741
+                                          run_device_binary, tmp_path):
+    _ladder("hip", which, l, request, run_device_binary, tmp_path)
+
+
+@pytest.mark.slow  # builds every class through L = 12
+def test_the_ladder_parts_cover_every_class_of_the_ladder() -> None:
+    """Host-only: the aux-i system's classes are the whole ladder, split
+    over the parts by aux l, each once."""
+    seen = {"metric": [], "eri3": []}
+    for which, l in LADDER:  # noqa: E741
+        seen[which] += _ladder_launches(which, l)[1]
+    assert sorted(seen["metric"]) == [(p, q) for p in range(7)
+                                      for q in range(p, 7)]
+    assert sorted(seen["eri3"]) == [(a, b, p) for a in range(4)
+                                    for b in range(a, 4) for p in range(7)]

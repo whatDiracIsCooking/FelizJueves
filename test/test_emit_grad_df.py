@@ -2,16 +2,19 @@
 every class at L <= 4, the `--grad-df-l` ladder, and a compile of each
 through nvcc (sm_86) and hipcc (gfx1200).
 
-THE LADDER. `python -m felizjueves.emit --grad-df-l [LMAX]` writes
-`gmetric_{lP}{lQ}` for every `lP <= lQ`, `lP + lQ <= LMAX`, and
-`geri3_{la}{lb}{lP}` for every `la <= lb`, `la + lb + lP <= LMAX` (4 when
-the flag is bare: 9 + 22 units). It accepts 0..4 (the d0 kernels' cap,
-where the gradients are validated, interpreted), exits 2 above that, is
-NEVER in the bare default and is not in KERNEL_GEN_CMD.
+THE LADDER (#613: split as FreeBreakfast's `df_kernels.py` is). `python
+-m felizjueves.emit --grad-df-l [LMAX] [--grad-df-aux-l AUXMAX]` writes
+`gmetric_{lP}{lQ}` for every `lP <= lQ <= AUXMAX` and `geri3_{la}{lb}{lP}`
+for every `la <= lb <= LMAX`, `lP <= AUXMAX` (1 and 2 bare: 6 + 9 units).
+It accepts LMAX 0..3 and AUXMAX 0..6 (every class through (ff|i) and
+(i|i), where the gradients are validated), exits 2 above either, is NEVER
+in the bare default and is not in KERNEL_GEN_CMD.
 
 THE GOLDENS are `test/golden/{cuda,hip}/{gmetric,geri3}_*.{cu,hip}`, the 31
-units of the bare flag (the largest 232 KB). Regenerate (and review the
-diff) with
+units with `L <= 4` (the largest 232 KB), every one in the unrolled form
+(both gates are above L = 4: `kernel_geri3.LOWSTACK_MIN_L` = 5,
+`kernel_gmetric.LOWSTACK_MIN_L` = 10). Regenerate (and review the diff)
+with
 
     PYTHONPATH=src uv run python test/test_emit_grad_df.py --write
 
@@ -42,7 +45,10 @@ from felizjueves.gradient.kernel_gmetric import (
 )
 from felizjueves.ir import Raw, walk
 
-METRIC, ERI3 = emit_cli.grad_df_classes(4)
+# the goldens: every class with L <= 4 (so (sg|s), lb = 4, too)
+METRIC = [(p, q) for p in range(5) for q in range(p, 5) if p + q <= 4]
+ERI3 = [(a, b, p) for a in range(5) for b in range(a, 5) for p in range(5)
+        if a + b + p <= 4]
 UNITS = [("gmetric", c) for c in METRIC] + [("geri3", c) for c in ERI3]
 PREFIXES = ("gmetric_", "geri3_")
 
@@ -84,16 +90,26 @@ def _no_tier_env(monkeypatch):
 
 def test_the_ladder_is_every_class_through_lmax() -> None:
     assert len(METRIC) == 9 and len(ERI3) == 22
-    assert emit_cli.DEFAULT_GRAD_DF_L == 4 and emit_cli.GRAD_DF_L_MAX == 4
-    assert emit_cli.grad_df_classes(0) == ([(0, 0)], [(0, 0, 0)])
-    assert all(p <= q and p + q <= 4 for p, q in METRIC)
-    assert all(a <= b and a + b + p <= 4 for a, b, p in ERI3)
+    assert emit_cli.DEFAULT_GRAD_DF_L == 1 and emit_cli.GRAD_DF_L_MAX == 3
+    assert (emit_cli.DEFAULT_GRAD_DF_AUX_L == 2
+            and emit_cli.GRAD_DF_AUX_L_MAX == 6)
+    assert emit_cli.grad_df_classes(0, 0) == ([(0, 0)], [(0, 0, 0)])
+    metric, eri3 = emit_cli.grad_df_classes(3, 6)  # FreeBreakfast's ladder
+    assert len(metric) == 28 and len(eri3) == 70
+    assert max(map(sum, metric)) == 12 and max(map(sum, eri3)) == 12
+    bare = emit_cli.grad_df_classes(1)
+    assert bare == ([(p, q) for p in range(3) for q in range(p, 3)],
+                    [(a, b, p) for a in range(2) for b in range(a, 2)
+                     for p in range(3)])
 
 
-def test_the_ladder_refuses_above_l4() -> None:
-    for bad in (-1, 5, 1.0, True):
-        with pytest.raises(ValueError, match=r"outside 0\.\.4"):
+def test_the_ladder_refuses_above_f_and_i() -> None:
+    for bad in (-1, 4, 1.0, True):
+        with pytest.raises(ValueError, match=r"--grad-df-l .* 0\.\.3"):
             emit_cli.grad_df_classes(bad)
+    for bad in (-1, 7, 1.0, True):
+        with pytest.raises(ValueError, match=r"--grad-df-aux-l .* 0\.\.6"):
+            emit_cli.grad_df_classes(1, bad)
 
 
 def test_the_names_are_the_builders() -> None:
@@ -147,18 +163,30 @@ def test_every_write_is_atomic_with_no_shared_array() -> None:
 @pytest.mark.parametrize("backend", sorted(BACKEND))
 def test_grad_df_l_bare_writes_the_golden_units(backend, tmp_path) -> None:
     _, _, ext = BACKEND[backend]
+    metric, eri3 = emit_cli.grad_df_classes(1, 2)
+    bare = [("gmetric", c) for c in metric] + [("geri3", c) for c in eri3]
+    assert set(bare) <= set(UNITS) and len(bare) == 15
     assert _run(tmp_path, backend, "--pair-l", "0", "--grad-df-l") == 0
     assert _names(tmp_path) == {f"dq_0_0.{ext}", f"jab_00.{ext}"} | {
-        f"{_name(*u)}.{ext}" for u in UNITS}
-    for u in UNITS:
+        f"{_name(*u)}.{ext}" for u in bare}
+    for u in bare:
         p = f"{_name(*u)}.{ext}"
         assert (tmp_path / p).read_text() == (GOLDEN / backend / p).read_text()
 
 
 def test_grad_df_l_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
-    assert _run(tmp_path, "cuda", "--L", "0", "--grad-df-l", "0") == 0
+    assert _run(tmp_path, "cuda", "--L", "0", "--grad-df-l", "0",
+                "--grad-df-aux-l", "0") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "gmetric_00.cu",
                                 "geri3_000.cu"}
+
+
+def test_grad_df_aux_l_takes_the_aux_ladder_to_i(tmp_path) -> None:
+    assert _run(tmp_path, "cuda", "--L", "0", "--grad-df-l", "0",
+                "--grad-df-aux-l", "6") == 0
+    assert _names(tmp_path) - {"pq_L0_p0_q0.cu"} == (
+        {f"gmetric_{p}{q}.cu" for p in range(7) for q in range(p, 7)}
+        | {f"geri3_00{p}.cu" for p in range(7)})
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
@@ -182,12 +210,14 @@ def test_the_names_cannot_collide_with_any_other_ladder(tmp_path) -> None:
     assert not any(n.startswith(PREFIXES) for n in others)
     assert _run(tmp_path / "b", "cuda", "--L", "0", "--grad-df-l") == 0
     mine = _names(tmp_path / "b") - {"pq_L0_p0_q0.cu"}
-    assert len(mine) == 31 and not mine & others
+    assert len(mine) == 15 and not mine & others
 
 
 @pytest.mark.parametrize("argv", [
-    ["--grad-df-l", "5"],
+    ["--grad-df-l", "4"],
     ["--grad-df-l", "-1"],
+    ["--grad-df-l", "1", "--grad-df-aux-l", "7"],
+    ["--grad-df-aux-l", "2"],
     ["--grad-df-l", "x"],
     ["--grad-df-l", "1", "--class", "0", "0", "0", "0"],
     ["--grad-df-l", "1", "--shell-ls", "0"],
@@ -200,11 +230,14 @@ def test_a_grad_df_l_it_cannot_honour_is_a_2(argv, tmp_path) -> None:
     assert not (tmp_path / "out").exists()
 
 
-def test_grad_df_l_above_l4_says_why(tmp_path, capsys) -> None:
-    assert _run(tmp_path / "out", "hip", "--grad-df-l", "5") == 2
+def test_grad_df_l_above_f_says_why(tmp_path, capsys) -> None:
+    assert _run(tmp_path / "out", "hip", "--grad-df-l", "4") == 2
     err = capsys.readouterr().err
-    assert "--grad-df-l 5 is outside 0..4" in err
-    assert "validated at L <= 4 only" in err
+    assert "--grad-df-l 4 is outside 0..3" in err
+    assert "validated through orbital f only" in err
+    assert _run(tmp_path / "out", "hip", "--grad-df-l", "--grad-df-aux-l",
+                "7") == 2
+    assert "validated through aux i only" in capsys.readouterr().err
 
 
 # --- the compile (a compiler, no card) ----------------------------------------
