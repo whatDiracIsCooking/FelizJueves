@@ -20,7 +20,8 @@ host run on `|Gam|` / `|W|` with `[t|tau]` replaced by its absolute-value
 tower (`test_kernel_metric.pq_tower`, #606's yardstick for the d0 kernels
 at high L): at L = 9 to 13 the tower's own cancellation is what both
 routes round, and the signed scale is blind to it (the unrolled (h|h)
-reads 19 eps of it as well as the low-stack one) -- every class of
+reads 17.5 eps of it, and the low-stack (i|i) 52 though it is libcint's
+to 7.8e-16 of max) -- every class of
 the ladder in its default form on a small basis that reaches it with a
 swapped or diagonal pair, and every `L <= 4` class in the low-stack form
 FORCED (the form is exact arithmetic of another association, so not
