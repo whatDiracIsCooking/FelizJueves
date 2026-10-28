@@ -71,6 +71,32 @@ ONE THREAD PER RECORD, `rec = THREAD_X + BLOCK_X * BLOCK_DIM_X`, guarded by
 (the low-stack path's tables, #586, so the derivative entries share one
 recurrence); no `E^{ab}` block is formed.
 
+THE LOW-STACK gv (#614), the default from `la + lb >= LOWSTACK_MIN_LSUM =
+5` ((df), (fd), (ff) through f; `g1e_lowstack`; `lowstack=` forces either
+form at any `gv` class, `gs` / `gt` refuse `True`; the name, parameters,
+launch and `G` contract the same). The unrolled `gv` holds `H0` and the six
+derivative densities, `n_t(L) + 6 n_t(L + 1)` locals, across its nucleus
+loop, and the pooled derivative factors with them: on `sm_86` 21,104 B of
+stack at (df) and 50,016 B at (ff) (140 s of nvcc), over #613's 14,000 B
+gradient-family budget. The low-stack form holds none of them:
+
+    per record:  the same head and per-axis tables one index up
+    per nucleus: [t]^(0), |t| <= L + 1, into a local R as it forms
+                 (recurrence.store_targets); f_k = 0
+                 for each block row (a, b), its weight wt from M:
+                     gA_k -= Z_C wt (2 alpha SUM E^{a+1_k,b} R
+                                     - a_k SUM E^{a-1_k,b} R),  gB likewise
+                     f_k  += wt SUM E^{ab}_t R[t + 1_k]
+                 G[C, k] += s Z_C f_k
+
+each SUM a rolled loop over the tables (`e_fragment.rolled_e_sum`, its
+`up=k` the Hermite shift), so the frame is the tables and `R`: at (ff)
+7,712 B of `sm_86` stack (2.4 s) and 6,448 B of `gfx1200` scratch. The
+gate and every number are measured rows (data/measured/g1e.json,
+`devtools/measure.sh g1e-compile`, its rule declared before any row);
+`gs` and `gt` hold no density and fit unrolled at every class through
+(ff). Below the gate the text is unchanged byte for byte.
+
 ROUND-OFF, NOT BITWISE, against the host. The host sums each record's
 gradient row by row into `gA` from `0.0`; the kernel forms the same sums
 as one expression per component, and `V` regroups by Hermite index
@@ -113,6 +139,7 @@ from felizjueves.mmd.recurrence import (
     fundamental_prelude,
     node_name,
     recurrence_body,
+    store_targets,
 )
 from felizjueves.one_electron.kernel_v import v_plan
 from felizjueves.plan.targets import hermite_targets
@@ -123,10 +150,12 @@ __all__ = [
     "REC",
     "ZEROED_G",
     "GRADIENT_1E",
+    "LOWSTACK_MIN_LSUM",
     "Locals",
     "axis_reader",
     "build_g1e_kernel",
     "derivative_reader",
+    "g1e_lowstack",
     "g1e_name",
     "g1e_spec",
     "hermite_densities",
@@ -517,14 +546,163 @@ def _v_values(la: int, lb: int, E: Axis, dA: Axis, dB: Axis
     ]
 
 
+# ---------------------------------------------------------------------------
+# The low-stack gv (#614)
+# ---------------------------------------------------------------------------
+
+# gv from la + lb = 5, (df), (fd) and (ff) through f (#614): the smallest
+# la + lb with an inadmissible unrolled gv class (data/measured/g1e.json)
+LOWSTACK_MIN_LSUM = 5
+R_ARRAY = "R"  # [t]^(0) of one nucleus, hermite_targets(L + 1) order
+
+LOWSTACK_NOTE = (
+    "LOW-STACK (#614): no Hermite density is formed; per nucleus [t]^(0) "
+    "into a local R as it forms, and per block row, its weight read from M, "
+    "the nine derivative terms as rolled sums over the per-axis tables one "
+    "index up (2 alpha SUM E^{a+1_k,b} R - a_k SUM E^{a-1_k,b} R, and "
+    "SUM E^{ab}_t R[t + 1_k] for the nucleus)")
+
+
+def g1e_lowstack(cls: Spec | tuple[Target, int, int]) -> bool:
+    """THE SELECTION RULE (#614): True for a `gv` class with `la + lb >=
+    LOWSTACK_MIN_LSUM`; there `build_g1e_kernel` emits the low-stack form
+    by default. `gs` and `gt` have no other form (every unrolled class
+    through (ff) is admissible, data/measured/g1e.json)."""
+    target, la, lb = _class(cls)
+    return target is Target.V and la + lb >= LOWSTACK_MIN_LSUM
+
+
+def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
+    """`gv`'s per-record body after the head, LOW-STACK (module docstring,
+    THE LOW-STACK gv): the same sums as `_v_values`, regrouped per row."""
+    L = la + lb
+    dag, order = v_plan((la, lb + 1))
+    t1 = hermite_targets(L + 1)
+    prelude, fundamental = fundamental_prelude(
+        [m for (r, m) in order if not any(r)])
+    tw = store_targets(recurrence_body(dag, order, fundamental),
+                       frozenset(t1), L + 1, R_ARRAY)
+    nuc = Var(NUC)
+
+    def r_read(h: Expr) -> Expr:
+        return Index(R_ARRAY, (h,))
+
+    def m_at(i: Expr, j: Expr) -> Index:
+        return Index("M", (i, j))
+
+    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+        def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            m = _c(Fn.ADD, Var("oa"), Var("ra"))
+            n = _c(Fn.ADD, Var("ob"), Var("rb"))
+            off = _c(Fn.ADD, m_at(m, n), m_at(n, m))
+            if la != lb:
+                weight: tuple[Stmt, ...] = (Decl("wt", Scalar.F64, init=off),)
+            else:
+                weight = (
+                    Decl("wt", Scalar.F64, init=Lit(0.0)),
+                    If(Var("differ"), (Assign(Var("wt"), off),),
+                       (Assign(Var("wt"), m_at(m, _c(
+                           Fn.ADD, Var("oa"), Var("rb")))),)),
+                )
+            out: list[Stmt] = [
+                Decl("rb", Scalar.I32, init=ef.cartesian_index("b")),
+                *weight,
+                Decl("wz", Scalar.F64, init=_mul(Var("Zc"), Var("wt"))),
+            ]
+            for side, ab, two in (("A", a, "ea2"), ("B", b, "eb2")):
+                for k in range(3):
+                    def moved(by: int, ab=ab, k=k) -> tuple[Expr, ...]:
+                        step = (_c(Fn.ADD, ab[k], Lit(1)) if by > 0
+                                else _c(Fn.SUB, ab[k], Lit(1)))
+                        return tuple(step if d == k else ab[d]
+                                     for d in range(3))
+                    up, lo = moved(1), moved(-1)
+                    ra_, rb_ = (up, b) if side == "A" else (a, up)
+                    la_, lb_ = (lo, b) if side == "A" else (a, lo)
+                    hi, dn = f"h{side}{k}", f"l{side}{k}"
+                    out += [
+                        *ef.rolled_e_sum(la + 1, lb + 1, ra_, rb_, r_read,
+                                         hi, tag=f"p{side}{k}"),
+                        Decl(dn, Scalar.F64, init=Lit(0.0)),
+                        If(_c(Fn.LT, Lit(0), ab[k]), (
+                            *ef.rolled_e_sum(la + 1, lb + 1, la_, lb_,
+                                             r_read, f"m{side}{k}",
+                                             tag=f"q{side}{k}"),
+                            Assign(Var(dn), _mul(ab[k], Var(f"m{side}{k}"))),
+                        )),
+                        Assign(Var(f"g{side}{k}"), _c(
+                            Fn.SUB, Var(f"g{side}{k}"), _mul(Var("wz"), _c(
+                                Fn.SUB, _mul(Var(two), Var(hi)),
+                                Var(dn))))),
+                    ]
+            for k in range(3):
+                out += [
+                    *ef.rolled_e_sum(la + 1, lb + 1, a, b, r_read,
+                                     f"hC{k}", tag=f"pC{k}", up=k),
+                    Assign(Var(f"f{k}"), _c(Fn.ADD, Var(f"f{k}"),
+                                            _mul(Var("wt"), Var(f"hC{k}")))),
+                ]
+            return tuple(out)
+        return (Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
+                ef.cartesian_loops(lb, ("bx", "by", "bz"), elem, tag="b"))
+
+    per_nuc: list[Stmt] = [
+        Decl("Zc", Scalar.F64, init=Index("Z", (nuc,))),
+        *(Decl(nm, Scalar.F64, init=_c(Fn.SUB, Var(f"P{d}"),
+                                       Index("Cnuc", (nuc, Lit(d)))))
+          for d, nm in enumerate(PQ_PARAMS)),
+        *prelude,
+        Note(f"[t]^(0) for every |t| <= L + 1 = {L + 1}, each stored into "
+             "R as it forms (recurrence.store_targets)"),
+        *tw,
+        *(Decl(f"f{k}", Scalar.F64, init=Lit(0.0)) for k in range(3)),
+        Note("per block row (a, b), weight wt from M: gA_k -= Z_C wt SUM_t "
+             "(dA_k E^{ab})_t R[t] (the Cartesian rule, 2 alpha "
+             "E^{a+1_k,b} - a_k E^{a-1_k,b}), gB likewise, and f_k += wt "
+             "SUM_t E^{ab}_t R[t + 1_k] (Hellmann-Feynman), each rolled "
+             "over the per-axis tables (e_fragment.rolled_e_sum)"),
+        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+        Decl("skz", Scalar.F64, init=_mul(Var("sk"), Var("Zc"))),
+        *(AtomicAdd(Index("G", (nuc, Lit(k))), _mul(Var("skz"),
+                                                    Var(f"f{k}")))
+          for k in range(3)),
+    ]
+    differ: list[Stmt] = [Note(_WEIGHTS)]
+    if la == lb:
+        differ.append(Decl("differ", Scalar.I32, init=_c(
+            Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
+            _c(Fn.LT, Var("ob"), Var("oa")))))
+    return [
+        Note(LOWSTACK_NOTE),
+        *differ,
+        *(Decl(f"P{d}", Scalar.F64, init=Index(f"p_{a}", (Var(REC),)))
+          for d, a in enumerate("xyz")),
+        Note("theta = sqrt(zeta): a unit point-charge ket (kernel_v)"),
+        Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, Var(ef.ZETA))),
+        *(Decl(f"g{s}{k}", Scalar.F64, init=Lit(0.0))
+          for s in "AB" for k in range(3)),
+        Decl(R_ARRAY, Scalar.F64, (Lit(len(t1)),)),
+        Note("the nuclei, serially inside the record (kernel_v's mapping)"),
+        For(NUC, Lit(0), Var("n_atom"), Lit(1), tuple(per_nuc)),
+    ]
+
+
 def build_g1e_kernel(cls: Spec | tuple[Target, int, int], *,
-                     name: str | None = None) -> Kernel:
+                     name: str | None = None,
+                     lowstack: bool | None = None) -> Kernel:
     """The gradient kernel of one one-electron pair class at d1.
 
     `cls` is a d1 `Target.S` / `T` / `V` `Spec` or `(target, la, lb)`.
-    See the module docstring.
+    See the module docstring. `lowstack` picks `gv`'s form: `None` (the
+    default) is `g1e_lowstack(cls)` (THE LOW-STACK gv), `True` / `False`
+    force either at any `gv` class; `gs` / `gt` refuse `True`. Both forms
+    have the same name, parameters, launch and `G` contract.
     """
     target, la, lb = _class(cls)
+    if lowstack is None:
+        lowstack = g1e_lowstack(cls)
+    if lowstack and target is not Target.V:
+        raise ValueError(f"{g1e_name(cls)}: only gv has a low-stack form")
     lb_t = lb + 3 if target is Target.T else lb + 1
     head = record_head(la + 1, lb_t)
     E = axis_reader(la + 1, lb_t)
@@ -537,15 +715,20 @@ def build_g1e_kernel(cls: Spec | tuple[Target, int, int], *,
         values = _s_values(la, lb, E, dA, dB)
     elif target is Target.T:
         values = _t_values(la, lb, E, pool)
+    elif lowstack:
+        values = _v_lowstack_values(la, lb)
     else:
         values = _v_values(la, lb, E, dA, dB)
     what = {Target.S: "overlap", Target.T: "kinetic energy",
             Target.V: "nuclear attraction (the Hellmann-Feynman term on "
                       "every nucleus included)"}[target]
-    per_rec = (*head, *weights(la, lb),
-               Note("the derivative factors, each declared where first "
-                    "read"),
-               *pool.decls, *values, *scatter_gradient())
+    if lowstack:  # no pooled factor and no w{r}: M is read per row
+        per_rec = (*head, *values, *scatter_gradient())
+    else:
+        per_rec = (*head, *weights(la, lb),
+                   Note("the derivative factors, each declared where first "
+                        "read"),
+                   *pool.decls, *values, *scatter_gradient())
     body: tuple[Stmt, ...] = (
         Note(f"gradient of the {what}, class (la, lb) = ({la}, {lb}): "
              "G[A, k] += SUM_mn M_mn dX_mn/dR_{A,k} (felizjueves.gradient)"),

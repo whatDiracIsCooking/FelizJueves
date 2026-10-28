@@ -28,6 +28,17 @@ RUN ON BOTH CARDS (2026-10-27), every case passed, cc-pVDZ included:
 worst 3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060
 XT (`gt` on cc-pVDZ, the atomics' run-to-run spread 2e-14 of it); `gk`
 4.1e-15 / 4.0e-15.
+
+THROUGH (ff) (#614; `slow`, L + 1 = 7 at (ff), under the device cap):
+`gs`, `gt`, `gv` on CO/cc-pVTZ (`co_ccpvtz_j`, its own density as `M`)
+with a BARE PROTON added as a third nucleus (`EXTRA_NUCLEI`, no shell on
+it). CO/cc-pVTZ puts an f shell on both atoms, so all 16 ordered classes
+(ss)-(ff) occur with `i <= j` (asserted), the off-centre (df) and (ff)
+pairs move both of a pair's atoms, and `gv`'s Hellmann-Feynman term lands
+on a nucleus that carries no basis function. Every class in its default
+form: `gv` (df), (fd), (ff) in `kernel_g1e`'s LOW-STACK form, the rest
+unrolled. Each program's compile is capped at `COMPILE_TIMEOUT_S = 300`.
+The same `DEV_TOL`.
 """
 
 from __future__ import annotations
@@ -62,12 +73,20 @@ TARGETS = ("s", "t", "v", "j", "k")
 CASES = [pytest.param(m.values[0], w, id=f"{m.id}-{w}", marks=m.marks)
          for m in MOLECULES for w in TARGETS
          if not (w == "k" and m.values[0] != "h2o_sto3g_j")]
+# #614: every one-electron class through (ff), f on two centres, a third
+# nucleus with no shell (module docstring)
+FF = "co_ccpvtz_j"
+EXTRA_NUCLEI = {FF: ((1.0, (-1.1, 0.9, -0.4)),)}
+FF_CASES = [pytest.param(FF, w, id=f"co_ccpvtz_proton-{w}",
+                         marks=(pytest.mark.slow,)) for w in ("s", "t", "v")]
+COMPILE_TIMEOUT_S = 300.0  # the user's per-compile budget
 
 
 @cache
 def _case(name: str):
     fx = manifest.load(manifest.FIXTURES / f"{name}.json")
     nuclei = tuple((float(a.charge), tuple(a.coord)) for a in fx.atoms)
+    nuclei += EXTRA_NUCLEI.get(name, ())
     return ob.from_fixture(fx), nuclei, np.asarray(fx.arrays["density"])
 
 
@@ -101,8 +120,12 @@ def _check(backend: str, name: str, which: str, request, run_device_binary,
            tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     _, nuclei, _ = _case(name)
-    b = compile_grad(_launches(name, which), len(nuclei), backend, tc,
-                     tmp_path)
+    launches = _launches(name, which)
+    if name == FF:
+        names = {x.kernel.name[3:] for x in launches}
+        assert names == {f"{a}{b}" for a in range(4) for b in range(4)}, names
+    b = compile_grad(launches, len(nuclei), backend, tc, tmp_path,
+                     timeout=COMPILE_TIMEOUT_S)
     got = b.run(run_device_binary)
     want = _host(name, which)
     scale = np.abs(want).max()
@@ -118,7 +141,7 @@ def _check(backend: str, name: str, which: str, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-@pytest.mark.parametrize(("name", "which"), CASES)
+@pytest.mark.parametrize(("name", "which"), CASES + FF_CASES)
 def test_cuda_gradient_matches_the_host(name, which, request,
                                         run_device_binary, tmp_path) -> None:
     _check("cuda", name, which, request, run_device_binary, tmp_path)
@@ -126,7 +149,7 @@ def test_cuda_gradient_matches_the_host(name, which, request,
 
 @pytest.mark.hip
 @pytest.mark.gpu
-@pytest.mark.parametrize(("name", "which"), CASES)
+@pytest.mark.parametrize(("name", "which"), CASES + FF_CASES)
 def test_hip_gradient_matches_the_host(name, which, request,
                                        run_device_binary, tmp_path) -> None:
     _check("hip", name, which, request, run_device_binary, tmp_path)

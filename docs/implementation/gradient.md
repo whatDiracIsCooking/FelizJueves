@@ -3,8 +3,8 @@
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
-through (ff|i) and (i|i) since #613; which inputs, per kernel, in the
-tables below). This is
+through (ff|i) and (i|i) since #613, and `gs`, `gt`, `gv` through (ff)
+since #614; which inputs, per kernel, in the tables below). This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -136,6 +136,47 @@ zeroed by the caller.
 - `gv` runs `[t]^(0)` through the plan layer one order up,
   `kernel_v.v_plan((la, lb + 1))`, with `recurrence_body` unchanged, as
   `kernel_v` does at d0.
+- **From `la + lb = 5`, `gv` defaults to a low-stack form** (#614;
+  `kernel_g1e.g1e_lowstack`, `LOWSTACK_MIN_LSUM = 5`: (df), (fd) and (ff)
+  through f; `lowstack=` forces either form at any `gv` class, `gs` / `gt`
+  refuse `True`; name, parameters, launch and `G` contract the same). The
+  unrolled `gv` keeps `H0` and the six derivative densities live across
+  its nucleus loop. The low-stack one forms no density: per nucleus it
+  stores `[t]^(0)` into a local `R` as it forms
+  (`recurrence.store_targets`), and per block row, its weight read from
+  `M`, takes `gA_k -= Z_C wt (2 alpha SUM E^{a+1_k,b} R - a_k SUM
+  E^{a-1_k,b} R)` (and `gB`) and the Hellmann–Feynman `f_k += wt SUM
+  E^{ab}_t R[t + 1_k]` as rolled sums over the per-axis tables
+  (`e_fragment.rolled_e_sum`, `up=k`), `kernel_geri3`'s low-stack shape.
+  Below the gate the text is byte-identical (the goldens through (dd) are
+  unchanged).
+
+  **Measured** (`data/measured/g1e.json`, `measure/measure_g1e.py`,
+  `devtools/measure.sh g1e-compile`, a compiler and no card, its rule
+  declared before any row; a separate store, not `measured_store`, as
+  #606 and #613 did). Every one of the 48 unrolled units through (ff) and
+  the 16 low-stack `gv` units, alone, killed at 300 s; admissible at
+  <= 14,000 B of stack (#613's gradient-family budget) on both arches.
+  `measure.sh check` holds the gate to the rows
+  (`test_the_gate_is_what_the_measured_rows_rule`).
+
+  | unit | `sm_86` regs / spill stores / stack / compile | `gfx1200` VGPRs / spills / scratch / compile |
+  |---|---|---|
+  | `gs_33` | 255 / 2,180 B / 1,592 B / 1.0 s | 192 / 767 / 1,824 B / 1.5 s |
+  | `gt_33` | 255 / 9,028 B / 5,296 B / 1.7 s | 192 / 1,708 / 4,776 B / 1.9 s |
+  | `gv_22` unrolled | 255 / 15,772 B / 9,752 B / 4.6 s | 192 / 2,568 / 4,812 B / 4.2 s |
+  | `gv_23` unrolled | 255 / 43,748 B / **21,104 B** / 18 s | 192 / 5,004 / 8,692 B / 13 s |
+  | `gv_32` unrolled | 255 / 40,460 B / **18,472 B** / 17 s | 192 / 5,052 / 8,620 B / 14 s |
+  | `gv_33` unrolled | 255 / 102,540 B / **50,016 B** / 144 s | 192 / 9,880 / **15,244 B** / 38 s |
+  | `gv_23` low-stack | 255 / 344 B / 4,880 B / 1.8 s | 192 / 2 / 4,528 B / 1.5 s |
+  | `gv_33` low-stack | 255 / 1,392 B / 7,712 B / 2.4 s | 192 / 14 / 6,448 B / 1.5 s |
+
+  `gs` and `gt` hold no density and fit unrolled everywhere (the largest
+  is `gt_33`, 5,296 B), so they have one form. `gv_22`'s 9,752 B is over
+  #586's d0 8 KB budget but under this one; under 8 KB the gate would
+  move (dd), which ran on both cards in #607, so the rule is #613's. Every
+  low-stack unit is at most 7,712 B of stack and 2.4 s. No clock
+  (#586 found the d0 low-stack `V` up to ~1.25x slower at (df)).
 - `gjab` reads `Jp[n_rows, n_p1]`, `n_p1 = len(hermite_targets(la+lb+1))`,
   in `kernel_jab`'s interleaved spelling. That `J_p` is the ordinary d0
   `[p|q]` kernel of the quartet class with the bra raised by one,
@@ -208,7 +249,7 @@ largest 169 KB (`test_emit_grad_k.py`).
 | host `S`, `T`, `V`, `E_J` (`test_gradient_host.py`) | central differences, `h = 1e-4`, of `overlap_matrix`, `kinetic_matrix`, `potential_matrix`, `coulomb_matrix` (each libcint-witnessed) | H₂O/STO-3G, a two-atom s, p basis; H₂O/cc-pVDZ and H₂O/STO-3G's `E_J` `slow` | ~2e-9 to 6e-9 of `max\|G\|` (the `O(h²)` floor), gate 1e-7 |
 | host invariance | `SUM_A G = 0` | same | ~1e-15 of `max\|G\|`, gate 1e-13 |
 | `V`'s Hellmann–Feynman term | a nucleus with no basis function, by finite difference | two-atom s, p basis plus a bare nucleus | as above |
-| `gs`, `gt`, `gv` interpreted (`test_kernel_g1e.py`) | `host`, per class | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G | `gs`, `gt` bitwise; `gv` 2.2 eps of the split-centre scale, gate 16 eps |
+| `gs`, `gt`, `gv` interpreted (`test_kernel_g1e.py`) | `host`, per class | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G; `gv` also in its other form at every class (#614) | `gs`, `gt` bitwise; `gv` 2.2 eps of the split-centre scale, gate 16 eps |
 | `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis | gate 16 eps of the split-centre scale |
 | the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow` | gate 64 eps of the scale |
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
@@ -217,6 +258,7 @@ largest 169 KB (`test_emit_grad_k.py`).
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
+| on a card through (ff) (`test_grad_device.py`, `co_ccpvtz_proton-*`, `slow`; #614) | `host`, `1e-13` of `max\|G\|` | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv` on CO/cc-pVTZ (f on both atoms, all 16 ordered classes (ss)–(ff) asserted) with a bare proton as a third nucleus, its own density as `M`, every class in its default form (`gv` (df), (fd), (ff) low-stack), each compile under a 300 s timeout; 12 passed per card with the cases above | `gt` 1.29e-14 (CUDA) / 7.64e-15 (HIP); `gv` 1.94e-15 / 2.80e-15; `gs` 6.2e-16 on both |
 
 ## The density-fitting gradients: `(P|Q)` and `(mn|P)`
 
@@ -351,7 +393,10 @@ the spherical transform is the consumer's, as #615 decided for d0).
 ## What is not done
 
 - On a card, nothing above L = 4 has run but the DF terms (through
-  (ff|i) and (i|i), #613), and `gk` only on H₂O/STO-3G.
+  (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
+  (ff), #614); `gjab` and `gk` have not (`gk` only on H₂O/STO-3G). The
+  forced-unrolled `gv` at (df) / (ff) is compiled (`g1e.json`) but not
+  run on a card.
 - The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
   the raised `[p|q]`, `gjab`) is a follow-up.
 - Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
@@ -365,9 +410,9 @@ the spherical transform is the consumer's, as #615 decided for d0).
   A rolled form (`kernel_kblock_rolled`'s E-from-global and loops) and a
   block mapping (`kernel_kblock`'s, one warp per `K_AB` block) are the
   named follow-ups; neither is built.
-- Nothing is measured: no registers, spills or wall-clock. `gv` and
-  `gjab` are unrolled and reach ~210 KB of text at (dd); a low-stack form
-  (#586's) is not built.
+- `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
+  time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured
+  and is unrolled (~210 KB of text at (dd)), with no low-stack form.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
   not derived), Cartesian only. The Coulomb energy's Hessian is built
   on these pieces (`hessian.md`), and so are the one-electron Hessians of
