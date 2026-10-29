@@ -4222,10 +4222,41 @@ EDGES["emit.__main__"] = (EDGES["emit.__main__"]
                           | frozenset(("eri.hjk.kernel_rj",)))
 
 
+# The split K on Rys (`eri/hjk/kernel_rk.py`): `kernel_hk`'s skeleton through
+# its seam (`split_k_kernel`) with `kernel_rj`'s Rys nest, under
+# `hk_builder`'s prohibitions; the emit driver names it by its entry point.
+RULES |= {
+    "rk_builder": _rule(
+        "kernel_rk.py: the split K on Rys, `Target.K` on `Engine.RYS` -- "
+        "`kernel_hk`'s skeleton through its seam with `kernel_rj`'s Rys nest",
+        ("spec", "=ir", "hgp", "rys", "eri.hjk.kernel_hj", "eri.hjk.kernel_hk",
+         "eri.hjk.kernel_rj"),
+        plan="the plan layer keys on a [JEngine] row a Rys class does not have",
+        ao="the AO layer is the witness the kernel is interpreted against",
+        reference=_GROUND_TRUTH,
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"}),
+}
+RULE_OF["eri.hjk.kernel_rk"] = "rk_builder"
+EDGES["eri.hjk.kernel_rk"] = frozenset(
+    ("eri.hjk.kernel_hj", "eri.hjk.kernel_hk", "eri.hjk.kernel_rj", "hgp.vrr",
+     "ir", "rys.roots", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the split K on Rys "
+                       "through `kernel_rk`, by its entry point only",
+                       RULES["driver"].may
+                       | frozenset(("eri.hjk.kernel_rk",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = (EDGES["emit.__main__"]
+                          | frozenset(("eri.hjk.kernel_rk",)))
+
+
 def test_the_rys_engine_reaches_neither_its_witness_nor_a_machine() -> None:
     graph = _graph()
-    for root in ("eri.fock.kernel_frys", "eri.hjk.kernel_rj", "rys.roots",
-                 "rys.recurrence"):
+    for root in ("eri.fock.kernel_frys", "eri.hjk.kernel_rj",
+                 "eri.hjk.kernel_rk", "rys.roots", "rys.recurrence"):
         seen: set[str] = set()
         todo = [root]
         while todo:

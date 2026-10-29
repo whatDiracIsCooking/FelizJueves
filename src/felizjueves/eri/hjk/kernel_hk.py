@@ -8,6 +8,8 @@
     params_of(spec, *, eris=False) -> the parameter names, in order
     launch_shape(n_bra, threads)   -> (n_bra, (threads, 1))   (kernel_hj's)
     kernel_counts(spec) / counted(kernel) -> statement counts, DAG vs built
+    hgp_nest(am, bnd)              -> kernel_hj.Nest, HGP's part (K's note)
+    split_k_kernel(spec, nest_of, *, name=, ...) -> Kernel   the seam
 
 The exchange matrix on the Head-Gordon-Pople recurrence of `[Fock]` §3.1,
 SPLIT: the sibling of `kernel_hj.py` (#404), and the same kernel in every
@@ -69,6 +71,13 @@ the shells of the density positions), a SKIP (`If(bound < tau)` holds a
 `(1, 3)` by default; any other pair is a MUTATION a test builds to watch the
 deposit fail (`kernel_hj`'s `density=`).
 
+THE SEAM (`split_k_kernel`, `kernel_hj.Nest`): as `kernel_hj`'s, the engine
+is the `K_CD` loop's body after the ket record's reads. `hgp_nest` is
+`kernel_hj.hgp_nest` with K's opening note; `eri/hjk/kernel_rk.py` passes
+the Rys rule and the 2D VRR (`Target.K` on `Engine.RYS`). Everything else
+is this module's, so an `rk_` unit is a drop-in for the `hk_` unit of the
+same class and mode.
+
 Nothing here imports `plan/`, `ao/` (the witnesses: `eri/hgp_drive.py` for
 the ERIs, `eri/k_exchange/k.py` for `K`), `reference/`, the interpreter, a backend or a
 device (test/test_layering.py, rule `hk_builder`); it reaches `kernel_hj`
@@ -78,12 +87,12 @@ for the shared pieces, and through it nothing else.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from felizjueves.eri.fock.kernel_f import MAX_PRIM_PAIRS, REC
+from felizjueves.eri.hjk import kernel_hj as HJ
 from felizjueves.eri.hjk.kernel_hj import (
     _AO,
-    _DERIVED,
     _F,
     _I,
     _P,
@@ -106,22 +115,14 @@ from felizjueves.eri.hjk.kernel_hj import (
     _factors,
     _membership,
     _Orient,
-    _quartet_scalars,
     _record,
     acc_name,
     inverse,
     launch_shape,
 )
 from felizjueves.hgp import hrr, orbits, vrr
-from felizjueves.hgp.recurrence import (
-    boundary_order,
-    fundamental_prelude,
-    hrr_body,
-    hrr_name,
-    vrr_body,
-    vrr_name,
-)
-from felizjueves.hgp.vrr import AmClass
+from felizjueves.hgp.recurrence import boundary_order, hrr_body, hrr_name
+from felizjueves.hgp.vrr import AmClass, Cart
 from felizjueves.ir import (
     Assign,
     AtomicAdd,
@@ -166,6 +167,7 @@ __all__ = [
     "build_hk_kernel",
     "built_class",
     "counted",
+    "hgp_nest",
     "hk_class_spec",
     "hk_name",
     "inverse",
@@ -173,6 +175,7 @@ __all__ = [
     "launch_shape",
     "orientations",
     "params_of",
+    "split_k_kernel",
 ]
 
 K_OUT = "K"  # the exchange matrix, AtomicAdd-ed
@@ -309,6 +312,15 @@ def _deposit(o: _Orient, n: Sequence[int], comps, targets) -> tuple[Stmt, ...]:
 # --- the kernel --------------------------------------------------------------
 
 
+def hgp_nest(am: AmClass, bnd: Sequence[tuple[Cart, Cart]]) -> HJ.Nest:
+    """The HGP engine's nest (`kernel_hj.hgp_nest`, statement for
+    statement) under K's opening note."""
+    return replace(HJ.hgp_nest(am, bnd), note=(
+        "(x0 x1|x2 x3) by the HGP recurrence, K class ({cls}) [{mode}]: VRR "
+        "eqs 25-26 inside the K_AB x K_CD nest, HRR eq 28 after it, then "
+        "K_ab += D_cd (ac|bd), split (#405)"))
+
+
 def build_hk_kernel(cls: AmClass | Spec, *, name: str | None = None,
                     eris: bool = False,
                     density: tuple[int, int] = K_DENSITY) -> Kernel:
@@ -318,6 +330,19 @@ def build_hk_kernel(cls: AmClass | Spec, *, name: str | None = None,
     `hgp.hrr.targets` order; `density` is the ordered positions whose `D`
     block the deposit reads -- `(1, 3)`, or a test's mutation."""
     spec = _spec_of(cls)
+    return split_k_kernel(spec, hgp_nest, name=name or hk_name(spec),
+                          eris=eris, density=density)
+
+
+def split_k_kernel(cls: AmClass | Spec, nest_of: HJ.NestOf, *, name: str,
+                   eris: bool = False,
+                   density: tuple[int, int] = K_DENSITY) -> Kernel:
+    """The split `K` kernel of one HGP-keyed class, the primitive nest's
+    engine part from `nest_of` (module docstring, "THE SEAM").
+    `build_hk_kernel` is `split_k_kernel(spec, hgp_nest, ...)`; the Rys
+    builder (`eri/hjk/kernel_rk.py`) passes its HGP twin's spec and its own
+    nest."""
+    spec = _spec_of(cls)
     density = tuple(density)  # type: ignore[assignment]
     if (len(density) != 2 or density[0] == density[1]
             or any(type(x) is not int or not 0 <= x < 4 for x in density)):
@@ -325,23 +350,19 @@ def build_hk_kernel(cls: AmClass | Spec, *, name: str | None = None,
     am = built_class(spec)
     ordered = _ordered(spec)
     l0, l1, l2, l3 = am
-    vdag, hdag = vrr.build(am), hrr.build(am)
+    hdag = hrr.build(am)
     bnd = boundary_order(am)
     if set(bnd) != hdag.boundary:  # #274 holds this; refuse, never misread
         raise ValueError(f"{am}: HRR boundary is not the VRR target set")
-    prelude, fundamental = fundamental_prelude(sum(am))
-    vbody = tuple(vrr_body(vdag, fundamental))
+    nest = nest_of(am, bnd)
+    vneed = nest.need
     hbody = tuple(hrr_body(hdag, lambda e, f: Var(acc_name(e, f))))
-    vf = _factors(vbody)
-    vneed = frozenset(vf | {i2 for n, i2, _ in _DERIVED if n in vf})
     hneed = frozenset(_factors(hbody))
     n = tuple(len(vrr.cartesians(x)) for x in am)
     orients = _orients(spec, density)
     shells = {p for o in orients for p in o.dpos}
     aos = {p for o in orients for p in (*o.jpos, *o.dpos)}
     bra, k = Var("bra"), Var(KET)
-    if name is None:
-        name = hk_name(spec)
 
     def bra_prim(f: int) -> Expr:
         return Index(AB_SH, (Var(KAB), Lit(f)))
@@ -369,14 +390,7 @@ def build_hk_kernel(cls: AmClass | Spec, *, name: str | None = None,
           if Factor.qc(d).value in vneed),
         _F("q", ket_prim(_ZETA)),
         _F("Uq", ket_prim(_U)),
-        *_quartet_scalars(vneed),
-        *prelude,
-        *vbody,
-        Note("eq 27: c += [e0|f0]^(0), every boundary value, contracted in "
-             "registers before the HRR (pin 5)"),
-        *(Assign(Var(acc_name(e, f)), _c(Fn.ADD, Var(acc_name(e, f)),
-                                         Var(vrr_name((e, f, 0)))))
-          for e, f in bnd),
+        *nest.body,
     )
     per_kab = (
         Note("the bra primitive pair, from shared memory"),
@@ -444,9 +458,7 @@ def build_hk_kernel(cls: AmClass | Spec, *, name: str | None = None,
             f"canonical: the orbit representative, {len(orients)} "
             "orientation(s) selected by perm")
     body = (
-        Note(f"(x0 x1|x2 x3) by the HGP recurrence, K class ({l0}{l1}|{l2}{l3}) "
-             f"[{mode}]: VRR eqs 25-26 inside the K_AB x K_CD nest, HRR eq 28 "
-             "after it, then K_ab += D_cd (ac|bd), split (#405)"),
+        Note(nest.note.format(cls=f"{l0}{l1}|{l2}{l3}", mode=mode)),
         *(Note(lever_provenance(lv)) for lv in spec.kernel_body_levers()),
         Note("launch: grid = n_bra, blockDim = (threads, 1); one block per "
              "bra shell pair"),

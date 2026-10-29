@@ -328,14 +328,17 @@ which classes exist, not one class's body). So the flag is the path's own,
 it selects the mode for every unit the command writes, and it is a 2
 without an HGP selector.
 
-THE SPLIT J ON RYS, `--rys` with `--hgp-j-l` / `--hgp-class`: the J units on
-the Rys engine instead of HGP, `kernel_rj.build_rj_kernel` (`Target.J` on
-`Engine.RYS`), named `rj_{rep}` / `rj_o_{class}` -- `kernel_hj`'s staging,
-screen, HRR and deposit with the Rys rule (`fj_rys<N>`, carried in the
-unit) and its 2D VRR in the primitive nest, a drop-in for the `hj_` unit of
-the same class and mode. J only: `--hgp-class` writes no K unit with it,
-and `--hgp-k-l` with it is a 2 (no K on Rys). The rule stops at N = 5, so
-`--hgp-j-l` above 2 and a class with `l0 + l1 + l2 + l3 > 8` are a 2.
+THE SPLIT J AND K ON RYS, `--rys` with `--hgp-j-l` / `--hgp-k-l` /
+`--hgp-class`: the units on the Rys engine instead of HGP,
+`kernel_rj.build_rj_kernel` (`Target.J` on `Engine.RYS`, `rj_{rep}` /
+`rj_o_{class}`) and `kernel_rk.build_rk_kernel` (`Target.K` on
+`Engine.RYS`, `rk_{rep}` / `rk_o_{class}`) -- `kernel_hj`'s / `kernel_hk`'s
+staging, screen, HRR and deposit with the Rys rule (`fj_rys<N>`, carried in
+the unit) and its 2D VRR in the primitive nest, each a drop-in for the
+`hj_` / `hk_` unit of the same class and mode. `--hgp-class` writes both
+targets' units, as without `--rys`. The rule stops at N = 5, so
+`--hgp-j-l` / `--hgp-k-l` above 2 and a class with `l0 + l1 + l2 + l3 > 8`
+are a 2.
 
 It is a SEPARATE path, like the F path: never combined with `--L`,
 `--pair-l`, `--one-e-l`, `--schwarz-l`, `--sx-l`, `--metric-l`, `--eri3-l`,
@@ -451,6 +454,7 @@ from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
 from felizjueves.eri.hjk.kernel_hk import built_class as hk_built_class
 from felizjueves.eri.hjk.kernel_rj import build_rj_kernel
+from felizjueves.eri.hjk.kernel_rk import build_rk_kernel
 from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
 from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
 from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
@@ -1123,24 +1127,23 @@ def hgp_selection(j_l: int | None, k_l: int | None,
 
 
 RYS_J_LMAX = 2  # `--hgp-j-l` with `--rys`: rys.roots' N = 5 reaches (dd|dd)
+RYS_K_LMAX = 2  # `--hgp-k-l` with `--rys`: the same rule, the same reach
 
 
 def hgp_kernel(spec: Spec, *, rys: bool = False) -> Kernel:
     """The unit of one `hgp_specs` key, by its target's builder -- or, with
-    `rys`, a J key's Rys twin (`kernel_rj`; K is refused)."""
+    `rys`, the key's Rys twin (`kernel_rj` for J, `kernel_rk` for K)."""
     target = "j" if spec.target is Target.J else "k"
     if rys:
-        if target != "j":
-            raise ValueError(f"{spec.key()}: there is no K on Rys; --rys "
-                             "writes J units only")
-        return build_rj_kernel(replace(spec, engine=Engine.RYS))
+        build = build_rj_kernel if target == "j" else build_rk_kernel
+        return build(replace(spec, engine=Engine.RYS))
     return HGP_TARGETS[target][1](spec)
 
 
 def generate_hgp(backend: str, arch: Arch, out: Path,
                  specs: Sequence[Spec], *, rys: bool = False) -> list[Path]:
     """Emit the HGP J / K unit of every key into `out` -- or, with `rys`,
-    each J key's Rys twin `rj_...`; return the paths."""
+    each key's Rys twin `rj_...` / `rk_...`; return the paths."""
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, hgp_kernel(s, rys=rys)) for s in specs]
 
@@ -1319,21 +1322,17 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             print(f"emit: {flag} {v} is negative; LMAX bounds each shell's "
                   "l, any value >= 0", file=sys.stderr)
             return 2
-    if args.rys and args.hgp_k_l is not None:
-        print("emit: --rys writes the split J on Rys only (kernel_rj); there "
-              "is no K on Rys, so --hgp-k-l with it is refused",
-              file=sys.stderr)
-        return 2
-    if args.rys and args.hgp_j_l is not None and args.hgp_j_l > RYS_J_LMAX:
-        print(f"emit: --hgp-j-l {args.hgp_j_l} with --rys: the Rys rule stops "
-              f"at N = 5, (dd|dd); LMAX is 0..{RYS_J_LMAX}", file=sys.stderr)
-        return 2
+    for flag, v, cap in (("--hgp-j-l", args.hgp_j_l, RYS_J_LMAX),
+                         ("--hgp-k-l", args.hgp_k_l, RYS_K_LMAX)):
+        if args.rys and v is not None and v > cap:
+            print(f"emit: {flag} {v} with --rys: the Rys rule stops at "
+                  f"N = 5, (dd|dd); LMAX is 0..{cap}", file=sys.stderr)
+            return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
         specs = hgp_selection(args.hgp_j_l, args.hgp_k_l,
                               args.hgp_classes or (), ordered=args.ordered)
         if args.rys:
-            specs = [s for s in specs if s.target is Target.J]
             for s in specs:
                 hgp_kernel(s, rys=True)  # the reach refused before writing
     except ValueError as e:
@@ -1341,7 +1340,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
         return 2
     written = generate_hgp(args.backend, arch, args.out, specs, rys=args.rys)
     mode = "ordered" if args.ordered else "canonical"
-    what = "Rys J" if args.rys else "HGP J / K"
+    what = "Rys J / K" if args.rys else "HGP J / K"
     print(f"emit: {len(written)} {args.backend} {what} ({mode}) "
           f"translation unit(s) for {arch.name} -> {args.out}")
     for p in written:
@@ -1449,10 +1448,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.rys and (not (args.fock_l is not None or args.fock_classes
                           or hgp) or fock_levers):
-        print("emit: --rys is the fused F path's or the split J path's "
+        print("emit: --rys is the fused F path's or the split J / K path's "
               "engine: it needs --fock-l / --fock-class or --hgp-j-l / "
-              "--hgp-class, and takes no F lever flag (the f.rys slot admits "
-              "none)", file=sys.stderr)
+              "--hgp-k-l / --hgp-class, and takes no F lever flag (the f.rys "
+              "slot admits none)", file=sys.stderr)
         return 2
     if hgp:
         return _main_hgp(args, bool(given or selector or fock))

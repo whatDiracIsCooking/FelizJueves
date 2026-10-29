@@ -76,13 +76,15 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # legality table covers these too. Only the off-native pairings `spec`
 # admits are slots (HGP J and HGP K, the HGP one-electron S, T, V and
 # dipole of `one_electron.kernel_hgp`, and the HGP DF metric and three-center
-# of `eri.density_fit.kernel_hgp`; and the fused F and the split J on Rys
-# quadrature, `eri.fock.kernel_frys` and `eri.hjk.kernel_rj`, and the Rys
+# of `eri.density_fit.kernel_hgp`; and the fused F and the split J and K on
+# Rys quadrature, `eri.fock.kernel_frys`, `eri.hjk.kernel_rj` and
+# `eri.hjk.kernel_rk`, and the Rys
 # one-electron S, T and V of `one_electron.kernel_rys`; a test pins this to
 # `spec`).
 ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
                                  "dipole.hgp", "metric.hgp", "eri3.hgp",
-                                 "f.rys", "j.rys", "s.rys", "t.rys", "v.rys")
+                                 "f.rys", "j.rys", "k.rys", "s.rys", "t.rys",
+                                 "v.rys")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -219,6 +221,12 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "on the fused digestion, and the split J on Rys quadrature "
         "(eri.hjk.kernel_rj) runs neither; only HGP J's class mode carries "
         "over"
+    ),
+    "k.rys": (
+        "no kernel-body lever is admitted on a Rys Target.K unless its entry "
+        "says so: the MMD K levers act on kernel_k's [p|q] tower and its "
+        "seams, and the split K on Rys quadrature (eri.hjk.kernel_rk) runs "
+        "neither; only HGP K's class mode carries over"
     ),
 })
 
@@ -595,7 +603,7 @@ VOCABULARY: dict[str, Lever] = {
         "one HGP kernel per ORDERED class (la, lb | lc, ld) instead of one "
         "per canonical class with its permutations mapped onto it (the "
         "literal class mode); the recurrence unchanged",
-        {"j.hgp", "k.hgp", "j.rys"},
+        {"j.hgp", "k.hgp", "j.rys", "k.rys"},
         j=("an MMD [p|q] kernel is keyed by its Hermite split (lp, lq), not "
            "by an HGP class's shell order, so it has no canonical/ordered "
            "class mode to choose between"),

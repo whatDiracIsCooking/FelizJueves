@@ -1012,11 +1012,29 @@ MMD element by element and HGP per block within `1e-12 (s_hgp + s_mmd)`,
 the deposit against `eri/j_coulomb/j.py`'s restricted sweep, both modes, every class
 through `(dd|dd)` (`L > 4` `slow`), whole H₂ (and H₂O, `slow`) STO-3G `J`
 against the MMD sweep and libcint's `vj`. `python -m felizjueves.emit
---hgp-j-l LMAX --rys` (0..2) or `--hgp-class ... --rys` (J only), never in
+--hgp-j-l LMAX --rys` (0..2) or `--hgp-class ... --rys`, never in
 the bare default nor in `KERNEL_GEN_CMD`; 63 goldens per backend plus 8
 digests (`test_emit_rj.py`, `rj_digests.json`). All 71 cuda units passed
 clang 18's CUDA front end (a proxy). Nothing measured; a `j.rys` row is
-refused by the store. No split `K` on Rys.
+refused by the store.
+**The split `K` on Rys quadrature too, interpreted and emitted, NOT
+compiled by nvcc / hipcc and NOT run on a card** (`rys_fock.md`, "The split
+`K` on Rys"): `Target.K` on `Engine.RYS` (slot `k.rys`, `am` K's Hermite
+pairing, only `ordered` legal), `eri/hjk/kernel_rk.py`'s `build_rk_kernel`
+(`rk_{rep}` / `rk_o_{class}`, `L <= 8`): `kernel_hk`'s split `K` through a
+seam it now exposes (`kernel_hk.split_k_kernel`, `hgp_nest`; every `hk_`
+golden byte-identical) with `kernel_rj.rys_nest` as the nest, so an `rk_`
+unit is a drop-in for the `hk_` unit (IR outside the `K_CD` loop `==`,
+signature equal). Interpreted (`test_kernel_rk.py`, `L > 4` `slow`): the
+tap against MMD and HGP within `1e-12 (s_hgp + s_mmd)`, the deposit against
+`k_quartet` per class (worst 3.2e-16), both modes, every class through
+`(dd|dd)`, the density mutation and AO-order trap failing, whole H₂ (and
+H₂O, `slow`) STO-3G `K` against the MMD sweep and libcint's `vk` (worst
+1.7e-15 of `S`). `--rys` takes `--hgp-k-l LMAX` (0..2), and `--hgp-class
+... --rys` writes both `rj_` and `rk_`; 63 goldens per backend plus 8
+digests (`test_emit_rk.py`, `rk_digests.json`). All 102 cuda units passed
+clang 18's CUDA front end (a proxy). Nothing measured; a `k.rys` row is
+refused by the store.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence
