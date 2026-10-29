@@ -26,6 +26,13 @@ scalars, and its scatter `kernel_jab`'s rule, per component. Against it:
 - `with_overlap`: component 0 bitwise `kernel_s`'s `S`, components 1..3
   bitwise the plain kernel's.
 - THE ORIGIN SHIFT on the interpreted output: `MU(C') = MU(C) + q (C - C') S`.
+- AT f (#627), on `hf_ccpvtz_dipole` (the same molecule, f shells kept):
+  every ordered class with an f, (sf) through (ff), per class bitwise the
+  host block at both origins, the charge an exact factor and `with_overlap`
+  `kernel_s` bitwise; the plan's launches per shell-pair block against
+  libcint at both origins, and the origin shift against its `S`. A class
+  above L = 4 is `slow` (tiers.FAST_L_MAX), and so is each whole-basis
+  check, which launches (ff).
 
 THE DIAGONAL BOUND. `one_electron.one_electron.matrix` reads a diagonal
 shell pair's UPPER triangle, `kernel_jab`'s rule keeps the LOWER;
@@ -53,6 +60,7 @@ from oracle import basis as ob
 from oracle import manifest
 from test_kernel_s import _launch as _s_launch
 from test_kernel_v import _records
+from tiers import split_by_l
 
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.emit import cuda, hip
@@ -84,9 +92,22 @@ ZERO = (0.0, 0.0, 0.0)
 H2O = ("h2o_sto3g", "h2o_631g")
 
 
+# #627: the ordered classes with an f, on the f witness
+F_LMAX = 3
+F_CLASSES = [(la, lb) for la in range(F_LMAX + 1) for lb in range(F_LMAX + 1)
+             if F_LMAX in (la, lb)]
+F_TIERED = split_by_l(F_CLASSES, sum, ids=lambda c: f"{c[0]}{c[1]}")
+
+
 @cache
 def _spd():
     d = manifest.dipole_integrals()
+    return d, ob.from_fixture(d.fixture)
+
+
+@cache
+def _f():
+    d = manifest.dipole_integrals(manifest.F_DIPOLE)
     return d, ob.from_fixture(d.fixture)
 
 
@@ -371,4 +392,87 @@ def test_the_origin_shift_on_the_interpreted_output(q) -> None:
     # and against libcint's overlap, the shift from the origin to 0
     mu0 = _whole(basis, ZERO)
     assert _rel(_whole(basis, C), mu0 - C[:, None, None] * d.ovlp[None]) \
+        <= LIBCINT_TOL
+
+
+# ---------------------------------------------------------------------------
+# At f (#627): the f witness
+# ---------------------------------------------------------------------------
+
+
+def test_the_f_basis_reaches_every_f_class_in_both_orders() -> None:
+    _, basis = _f()
+    assert max(s.l for s in basis.shells) == F_LMAX
+    assert len(F_CLASSES) == 7
+    for cls in F_CLASSES:
+        pairs = _pairs_of(basis, cls)
+        assert pairs, cls
+        if cls[0] == cls[1]:
+            assert any(i == j for i, j in pairs), cls
+
+
+@pytest.mark.parametrize("cls", F_TIERED)
+def test_at_f_one_launch_over_the_class_equals_the_host_block(cls) -> None:
+    d, basis = _f()
+    pairs = _pairs_of(basis, cls)
+    for C in (d.origin, ZERO):
+        got = _launch(cls, basis, pairs, _zeros(basis), C)
+        assert np.array_equal(got, _host(basis, pairs, C)), tuple(C)
+        assert np.array_equal(got, got.transpose(0, 2, 1))
+
+
+@pytest.mark.parametrize("cls", F_TIERED)
+def test_at_f_the_charge_is_an_exact_factor(cls) -> None:
+    d, basis = _f()
+    pairs = _pairs_of(basis, cls)
+    plus = _launch(cls, basis, pairs, _zeros(basis), d.origin, 1.0)
+    minus = _launch(cls, basis, pairs, _zeros(basis), d.origin, -1.0)
+    assert np.array_equal(minus, -plus)
+
+
+@pytest.mark.parametrize("cls", F_TIERED)
+def test_at_f_the_overlap_component_is_kernel_s_bitwise(cls) -> None:
+    d, basis = _f()
+    pairs = _pairs_of(basis, cls)
+    n = basis.n_ao
+    got = _launch(cls, basis, pairs, _zeros(basis, True), d.origin,
+                  with_overlap=True)
+    assert np.array_equal(got[0], _s_launch(cls, basis, pairs,
+                                            np.zeros((n, n))))
+    plain = _launch(cls, basis, pairs, _zeros(basis), d.origin)
+    assert np.array_equal(got[1:], plain)
+
+
+@pytest.mark.slow  # the plan launches (ff), L = 6
+def test_at_f_every_block_of_the_plan_is_libcints() -> None:
+    d, basis = _f()
+    sh, off = basis.shells, basis.offsets
+    worst = 0.0
+    for C, want in ((d.origin, d.r), (ZERO, d.r0)):
+        got, plan = _from_plan(basis, C)
+        assert {c.spec(Target.DIPOLE).am for c in plan} >= set(F_CLASSES)
+        scale = float(np.max(np.abs(want)))
+        for i, sa in enumerate(sh):
+            for j, sb in enumerate(sh):
+                blk = (slice(None), slice(off[i], off[i] + sa.n_cart),
+                       slice(off[j], off[j] + sb.n_cart))
+                err = float(np.max(np.abs(got[blk] - want[blk])))
+                worst = max(worst, err / scale)
+                assert err <= LIBCINT_TOL * scale, (i, j, tuple(C))
+        walked = np.array(walk_one_electron(plan, basis, Target.DIPOLE,
+                                            origin=C))
+        assert _rel(walked, want) <= LIBCINT_TOL, ("walk", tuple(C))
+    print(f"\nf witness: max|MU - int1e_r_cart| = {worst:.2e} of max|r|")
+
+
+@pytest.mark.slow  # every class through (ff), L = 6
+def test_at_f_the_origin_shift_on_the_interpreted_output() -> None:
+    d, basis = _f()
+    C, C2 = np.asarray(d.origin), np.array((-1.1, 0.25, 0.6))
+    at_c = _whole(basis, C, 1.0, with_overlap=True)
+    at_c2 = _whole(basis, C2, 1.0)
+    want = at_c[1:] + (C - C2)[:, None, None] * at_c[0][None]
+    assert _rel(at_c2, want) <= SHIFT_TOL
+    mu0 = _whole(basis, ZERO)
+    assert _rel(at_c[1:], mu0 - C[:, None, None] * d.ovlp[None]) \
         <= LIBCINT_TOL

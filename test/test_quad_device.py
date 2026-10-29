@@ -59,7 +59,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from mu_driver import MU_LMAX, compile_mu, kernel_of, mu_program, mu_stage, units_of
+from mu_driver import QUAD_LMAX, compile_mu, kernel_of, mu_program, mu_stage, units_of
 from oracle import basis as ob
 from oracle import manifest
 from plan_driver import compile_checked
@@ -98,7 +98,7 @@ def _case():
 @cache
 def _launch() -> OneELaunch:
     basis = _case()[0]
-    assert max(s.l for s in basis.shells) <= MU_LMAX
+    assert max(s.l for s in basis.shells) <= QUAD_LMAX
     launch = one_electron_launch(basis, (), tau=0.0, bound=overlap_bound)
     assert not launch.dropped
     return launch

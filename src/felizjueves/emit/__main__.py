@@ -100,9 +100,10 @@ for CUDA, `.hip` for HIP):
   `kernel_mu.build_mu_kernel` (`mu_{la}{lb}`, `Target.DIPOLE`): one fused
   kernel per class writing every component x, y, z of `<a| q (r - C) |b>`,
   the origin `C` and the charge `q` runtime scalars. Accepted 0..`MU_L_MAX`
-  = 2 ONLY (milestone 19's cap, user decision 2026-10-24: the dipole is
-  validated through (dd), L = 4, and nothing above), so no untested (ff)
-  unit can be written by this CLI; above it is a 2. It ADDS units beside
+  = 3 ONLY (milestone 19 stopped at (dd) by decision; #627 lifted it to
+  (ff), L = 6, held to libcint on the host and interpreted, and compiled
+  by nvcc and hipcc), so nothing above f can be written by this CLI; above
+  it is a 2. The bare flag stays 2, (ss) through (dd). It ADDS units beside
   the J ladders, as `--one-e-l` does, and is NEVER in the no-flag default
   nor in KERNEL_GEN_CMD. Only `la <= lb`, the one-electron ladder's set:
   the `(lb, la)` unit a basis also reaches is the same builder's text,
@@ -521,9 +522,9 @@ DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
 DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 units
 DEFAULT_HGP_DF_L = HGP_DF_L_MAX  # `--hgp-metric-l` / `--hgp-eri3-l` bare: p
 DEFAULT_MU_L = 2  # `--mu-l` given bare: (ss) through (dd), 6 units
-MU_L_MAX = 2  # milestone 19's cap: the dipole is validated through (dd) only
+MU_L_MAX = 3  # #627: the dipole is validated through (ff) only
 DEFAULT_QUAD_L = 2  # `--quad-l` given bare: (ss) through (dd), 6 units
-QUAD_L_MAX = 2  # the quadrupole is validated through (dd) only, as the dipole
+QUAD_L_MAX = 2  # the quadrupole is validated through (dd) only
 DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
 DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
@@ -777,10 +778,10 @@ def generate_hgp_df(backend: str, arch: Arch, out: Path,
 
 def mu_classes(lmax: int) -> list[tuple[int, int]]:
     """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
-    `0..MU_L_MAX` (the dipole is validated through (dd) only)."""
+    `0..MU_L_MAX` (the dipole is validated through (ff) only)."""
     if type(lmax) is not int or not 0 <= lmax <= MU_L_MAX:
         raise ValueError(f"--mu-l {lmax!r} is outside 0..{MU_L_MAX}: the "
-                         "dipole is validated through (dd) only")
+                         "dipole is validated through (ff) only")
     return [(la, lb) for la in range(lmax + 1) for lb in range(la, lmax + 1)]
 
 
@@ -1601,7 +1602,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
     if args.mu_l is not None and not 0 <= args.mu_l <= MU_L_MAX:
         print(f"emit: --mu-l {args.mu_l} is outside 0..{MU_L_MAX}: the "
-              "dipole is validated through (dd) only (milestone 19)",
+              "dipole is validated through (ff) only (#627)",
               file=sys.stderr)
         return 2
     if args.quad_l is not None and not 0 <= args.quad_l <= QUAD_L_MAX:

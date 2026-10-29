@@ -180,7 +180,12 @@ the dipole arrays exactly the three integrals `dipole_origin`,
 through (dd) occurs between two centres. `dipole_integrals()` loads it and
 `check_dipole_integrals` refuses one that records a density, lacks the three
 integrals, `int1e_ovlp` or the converted basis, or holds a shell (raw or
-converted) above `l = DIPOLE_SPD_L_MAX = 2`.
+converted) above `l = DIPOLE_SPD_L_MAX = 2`. #627's `hf_ccpvtz_dipole`
+(`F_DIPOLE`) is the same molecule with the f shells kept, capped at
+`DIPOLE_F_L_MAX = 3` instead (`DIPOLE_L_CAPS`) and loaded by
+`dipole_integrals(F_DIPOLE)`. It carries none of the four one-electron
+arrays (with them the file is 541 KB, over the 512 KB hook), so its `S` is
+the `ovlp` every AO fixture records, the same libcint call.
 
 THE ONE-ELECTRON PIECES (#570). A molecule whose four one-electron arrays
 do not fit one file beside its density under the 512 KiB hook (CO/cc-pVTZ:
@@ -277,6 +282,8 @@ NO_DENSITY_RECIPE = "none:"
 DENSITY_ARRAYS = (J_ARRAY, K_ARRAY, DIP_ARRAY, DIP0_ARRAY)
 # #520: the highest shell `l` the density-free dipole fixture may hold
 DIPOLE_SPD_L_MAX = 2
+# #627: the same, for the f fixture beside it
+DIPOLE_F_L_MAX = 3
 
 
 class FixtureError(ValueError):
@@ -1388,12 +1395,17 @@ def dipole_pairs() -> list[str]:
 # --- the density-free dipole fixture (#520) ---------------------------------
 
 SPD_DIPOLE = "hf_ccpvtz_spd_dipole"
+F_DIPOLE = "hf_ccpvtz_dipole"  # #627: the same molecule, its f shells kept
+# each density-free dipole fixture's l cap, by name (`check_dipole_integrals`
+# reads it; any other name gets the spd cap)
+DIPOLE_L_CAPS = {SPD_DIPOLE: ("DIPOLE_SPD_L_MAX", DIPOLE_SPD_L_MAX),
+                 F_DIPOLE: ("DIPOLE_F_L_MAX", DIPOLE_F_L_MAX)}
 
 
 @dataclass(frozen=True)
 class DipoleIntegrals:
     """A density-free fixture carrying the dipole integrals, its basis
-    checked to hold no shell above `DIPOLE_SPD_L_MAX`."""
+    checked to hold no shell above its cap (`DIPOLE_L_CAPS`)."""
 
     fixture: Fixture
 
@@ -1414,32 +1426,38 @@ class DipoleIntegrals:
 
     @property
     def ovlp(self) -> np.ndarray:
-        """libcint's `int1e_ovlp`, nao x nao."""
-        return self.fixture.arrays[OVLP_ARRAY]
+        """libcint's `int1e_ovlp`, nao x nao: the fixture's `ovlp`, which
+        `validate` holds bitwise to `int1e_ovlp` where both are recorded
+        (the f fixture records only `ovlp`, under the 512 KB hook)."""
+        return self.fixture.arrays["ovlp"]
 
 
 def check_dipole_integrals(fx: Fixture) -> None:
     """Refuse, naming the file, unless `fx` is density-free, carries the
-    three dipole integral arrays and `int1e_ovlp` with its converted basis,
-    and holds no shell (raw or converted) above `DIPOLE_SPD_L_MAX`."""
+    three dipole integral arrays and libcint's overlap with its converted
+    basis (`int1e_ovlp` too for the spd fixture), and holds no shell (raw
+    or converted) above its cap (`DIPOLE_L_CAPS`: `DIPOLE_SPD_L_MAX`, or
+    `DIPOLE_F_L_MAX` for `F_DIPOLE`)."""
     if fx.metric is not None or fx.three_center is not None:
         raise _fail(fx.path, "not a density-free dipole fixture: it is a "
                              "metric or three-center piece")
     if not fx.density_free:
         raise _fail(fx.path, "not a density-free dipole fixture: it records "
                              "a density")
-    missing = [n for n in (*DIPOLE_INT_ARRAYS, OVLP_ARRAY)
-               if n not in fx.arrays]
+    missing = [n for n in DIPOLE_INT_ARRAYS if n not in fx.arrays]
+    if fx.name != F_DIPOLE and OVLP_ARRAY not in fx.arrays:
+        missing.append(OVLP_ARRAY)
     if missing or fx.converted is None:
         raise _fail(fx.path, "not a density-free dipole fixture: it carries "
                              f"no {missing or 'converted basis'}")
     ls = [s.l for s in fx.shells]
     if fx.converted is not None:
         ls += [s.l for s in fx.converted.shells]
-    if max(ls) > DIPOLE_SPD_L_MAX:
+    cap_name, cap = DIPOLE_L_CAPS.get(fx.name, DIPOLE_L_CAPS[SPD_DIPOLE])
+    if max(ls) > cap:
         raise _fail(fx.path, f"has a shell with l = {max(ls)}, above "
-                             f"DIPOLE_SPD_L_MAX = {DIPOLE_SPD_L_MAX} "
-                             "(milestone 19 tests nothing above (dd))")
+                             f"{cap_name} = {cap} (the dipole is tested "
+                             "through (ff) only, #627)")
 
 
 def dipole_integrals(name: str = SPD_DIPOLE,

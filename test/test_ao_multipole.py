@@ -8,9 +8,17 @@ origin-shift identity against `one_electron.overlap` and against libcint's
 `int1e_ovlp`, and the charge as an exact factor; and at `e = 2`, the
 quadrupole, libcint's `int1e_rr_cart` (`manifest.quadrupole_integrals`, on
 `hf_ccpvtz_spd_dipole`'s inputs) and its origin shift through libcint's
-`r` and `S`. Every class is L <= 4 and
-every shell l <= 2 (milestone 19's cap), so all of it is fast tier; no
-PySCF is needed (the fixtures are tracked).
+`r` and `S`. Through (dd) every class is L <= 4 and every shell l <= 2
+(milestone 19's cap), so all of it is fast tier.
+
+AT f (#627): #627's `hf_ccpvtz_dipole` (the same molecule, f shells kept,
+50 AOs), every shell-pair block of every class (ss) through (ff) at both
+origins, per ordered class, and the origin shift against its libcint `S`.
+f is only on F, so each class with one f is reached between the two
+centres in both orders and (ff) one-centre only. A class above L = 4,
+(df) (fd) (ff), is `slow` (tiers.FAST_L_MAX), and so is the whole-matrix
+origin shift, which integrates every class. No PySCF is needed (the
+fixtures are tracked).
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ import numpy as np
 import pytest
 from oracle import manifest
 from oracle.basis import from_fixture
+from tiers import split_by_l
 
 from felizjueves.ao.shell import Shell
 from felizjueves.one_electron.multipole import (
@@ -91,6 +100,59 @@ def test_every_block_of_hf_spd_is_libcints_and_every_class_is_off_centre(
                     off_centre.add((sa.l, sb.l))
     # every class (ss) through (dd), in both orders, between two centres
     assert off_centre == {(la, lb) for la in range(3) for lb in range(3)}
+
+
+# --- libcint, every block of the f witness (#627) --------------------------
+
+F_CLASSES = [(la, lb) for la in range(4) for lb in range(4)]
+
+
+def _f_case():
+    d = manifest.dipole_integrals(manifest.F_DIPOLE)
+    return d, from_fixture(d.fixture)
+
+
+def test_the_f_witness_reaches_every_f_class_and_off_centre_with_one_f(
+        ) -> None:
+    d, basis = _f_case()
+    sh = basis.shells
+    assert max(s.l for s in sh) == 3 and basis.n_ao == 50
+    reached = {(a.l, b.l) for a in sh for b in sh}
+    assert reached == set(F_CLASSES)
+    off = {(a.l, b.l) for a in sh for b in sh if a.centre != b.centre}
+    assert off == set(F_CLASSES) - {(3, 3)}  # f on F only
+
+
+@pytest.mark.parametrize("cls", split_by_l(
+    F_CLASSES, sum, ids=lambda c: f"{c[0]}{c[1]}"))
+def test_every_block_of_the_f_witness_is_libcints(cls) -> None:
+    d, basis = _f_case()
+    shells, off = basis.shells, basis.offsets
+    n = 0
+    for C, want in ((d.origin, d.r), (ZERO, d.r0)):
+        scale = float(np.max(np.abs(want)))
+        for i, sa in enumerate(shells):
+            for j, sb in enumerate(shells):
+                if (sa.l, sb.l) != cls:
+                    continue
+                got = np.array(multipole_block(sa, sb, C))
+                ref = want[:, off[i]:off[i] + sa.n_cart,
+                           off[j]:off[j] + sb.n_cart]
+                assert got.shape == ref.shape
+                assert np.max(np.abs(got - ref)) <= LIBCINT_TOL * scale, (
+                    i, j, tuple(C))
+                n += 1
+    assert n > 0
+
+
+@pytest.mark.slow  # integrates (ff), L = 6
+def test_the_f_witness_origin_shift_against_libcints_overlap() -> None:
+    d, basis = _f_case()
+    mu = np.array(multipole_matrix(basis, d.origin))
+    mu0 = np.array(multipole_matrix(basis, ZERO))
+    want = mu0 - np.asarray(d.origin)[:, None, None] * d.ovlp[None]
+    assert _rel(mu, want) <= LIBCINT_TOL
+    assert np.array_equal(mu, mu.transpose(0, 2, 1))
 
 
 # --- PySCF's dip_moment (#517) ---------------------------------------------

@@ -553,6 +553,28 @@ CASES["hf_ccpvtz_spd_dipole"] = replace(
 )
 
 
+# #627: the (ff) witness. The same molecule with cc-pVTZ whole (F 4s3p2d1f,
+# H 3s2p1d; 50 Cartesian AOs): f only on F, so (ff) is one-centre, but every
+# class with one f, (sf) (pf) (df), occurs between the two centres in both
+# orders. The spd fixture's origin, and no density.
+CASES["hf_ccpvtz_dipole"] = replace(
+    CASES["hf_ccpvtz_spd_dipole"],
+    description=(
+        "#627: hf_ccpvtz's molecule in Cartesian cc-pVTZ with its f shells "
+        "kept (F 4s3p2d1f, H 3s2p1d), so every class (ss) through (ff) "
+        "occurs, each class with one f between the two centres. libcint's "
+        "int1e_r_cart (<m|r - C|n>, components x, y, z) under "
+        f"mol.with_common_orig(C) at C = {DIPOLE_ORIGIN} bohr and at C = 0, "
+        "and libcint's int1e_ovlp (as ovlp). No density and no dip_moment."
+    ),
+    max_l=None,
+    # none of the four one-electron arrays: with them the file is 541 KB,
+    # over the 512 KB hook, and the origin shift needs only the `ovlp`
+    # every AO fixture records (manifest.DipoleIntegrals.ovlp)
+    record_one_e=False,
+)
+
+
 def _cross_case(rows: str, cols: str, description: str, *,
                 atom: str | None = None) -> Case:
     """`cols`' molecule, basis and `cart` (or the same basis at `atom`),
