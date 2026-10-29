@@ -19,12 +19,19 @@ THE CLOCK is not measured: #619 asks for registers, spills, stack and
 compile time.
 
 THE RULE is the store's `declared`, written before any row (DECLARED),
-#614's rule on `gv` restated for `gjab`. The tracked store holds the rule
-and NO ROW yet: the session that wrote it had neither compiler. While a
-class lacks a row on either arch, `kernel_gjab.LOWSTACK_MIN_LSUM` must be
-None (no class defaults to the low-stack form); once every unrolled class
-has both arches' rows, the floor must be what the rule reads from them
+#614's rule on `gv` restated for `gjab`. While a class lacks a row on
+either arch, `kernel_gjab.LOWSTACK_MIN_LSUM` must be None (no class
+defaults to the low-stack form); once every unrolled class has both arches'
+rows, the floor must be what the rule reads from them
 (`test_the_gate_is_what_the_measured_rows_rule`, `measure.sh check`).
+
+THE ROWS (2026-10-29, both arches, every unit under the budget): the
+unrolled form is inadmissible on sm_86 only, at (df) / (fd) (18,976 /
+21,240 B of stack) and (ff) (46,680 B, 93,788 B spill stores, 115 s);
+gfx1200's worst is (ff) at 11,908 B. Every class through la + lb = 4 fits
+both (worst (dd), 8,648 B on sm_86), so the floor is 5. Every low-stack
+unit fits both, worst (ff) at 6,352 B on sm_86 and 5,424 B on gfx1200,
+under 3 s.
 """
 
 from __future__ import annotations

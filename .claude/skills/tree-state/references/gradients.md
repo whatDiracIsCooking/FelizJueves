@@ -106,7 +106,8 @@ on-card differential against the unrolled form over the 62 / 58 classes
 whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
 319 / 315 units, every one under the 10 s cap (slowest 5.7 s / 6.1 s).
 No whole RHF gradient assembled; `gk` measured for its compile only (the
-DF-J terms: below). **`gjab` has a low-stack form, no class's default** (#619;
+DF-J terms: below). **`gjab` defaults to a low-stack form from `la + lb =
+5`, and its whole chain runs on both cards through (ff)** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the
 per-row weight and derivative terms shared with `gv` through
@@ -114,14 +115,30 @@ per-row weight and derivative terms shared with `gv` through
 byte-identical): interpreted at every class through (ff) in both forms
 (`test_kernel_gjab.py`; unrolled 1.8, low-stack 5.7 eps of the
 split-centre scale, gate 16) and the interpreted chain in both forms.
-`kernel_gjab.LOWSTACK_MIN_LSUM` is **None**: `data/measured/gjab.json`
-holds the declared rule (#614's, restated) and **no row**
-(`measure/measure_gjab.py`, `devtools/measure.sh gjab-compile`, never run:
-the session had no compiler), and `measure.sh check` holds the floor at
-None until every class has both arches' rows. Not compiled by nvcc or
-hipcc in either new form; the on-card chain (`DQ`, raised `[p|q]`,
-`gjab`, no host `J_p`) is not built. Its CO/cc-pVTZ reference is
-tracked so that cell need not run the pure-Python host (#639): a
+**Measured** in `data/measured/gjab.json` (`measure/measure_gjab.py`,
+`devtools/measure.sh gjab-compile`, a compiler and no card, #614's rule
+restated and declared before any row, 16 unrolled + 16 low-stack units
+per arch, each alone under a 300 s kill, admissible at <= 14,000 B on
+both arches; `measure.sh check` holds the floor to the rows): unrolled
+`gjab_23` / `gjab_32` 18,976 / 21,240 B of `sm_86` stack and `gjab_33`
+46,680 B (93,788 B spill stores, 115 s; `gfx1200` 11,908 B, 15 s), so
+`kernel_gjab.LOWSTACK_MIN_LSUM = 5`; through `la + lb = 4` unrolled
+(worst `gjab_22` 8,648 B), text and goldens unchanged; every low-stack
+unit fits both (worst `gjab_33` 6,352 / 5,424 B, under 3 s). **The chain
+on the card** (`test_gjab_chain_ondevice.py`; `grad_driver.raised_plan`
+and `gjab_tail` on `plan_driver.driver`'s new `tail=` slot,
+`plan_driver.ChainTail`): `DQ` on the card, read back, the J chain's
+plan keyed on its `Dmax`, every bra class raised by one, the raised
+`[p|q]` launched, then `gjab` reading `J_p` where it lies, in one process,
+no host `J_p`; against `host.coulomb_gradient` at `1e-13` of `max|G|`,
+every compile under 300 s. On both cards (2026-10-29), 5 passed per card:
+H₂/STO-3G (the PR gate) and H₂O/STO-3G (`slow`) in both forms, worst
+2.1e-15 / 2.0e-15 (RTX 3080 / RX 9060 XT); CO/cc-pVTZ (`slow`, `high_l`,
+hand-run: all 16 ordered classes, (df), (fd), (ff) low-stack, raised
+`[p|q]` to L = 13) 9.0e-16 / 1.07e-15. The CO cell takes ~17 / 20 min,
+almost all of it the pure-Python host reference. The forced-unrolled
+(df) / (ff) units are compiled, not run on a card. That cell's CO/cc-pVTZ
+reference is now tracked so it need not run the host (#639): a
 **libcint witness**, `test/oracle/j_gradient/co_ccpvtz_j_grad.json`
 (`manifest.j_gradient`, `python -m oracle.generate --regenerate
 --j-gradient`), `int2e_ip1_cart` contracted with `co_ccpvtz_j`'s recorded
@@ -129,7 +146,7 @@ density into `dE_J/dR` per `gjab` bra class (10) and whole; the host
 matches it on every class within 1.25e-15 of `max|G|` (gate 1e-14,
 `test_j_gradient_witness.py`, `slow`: 13 min on 4 workers, ~37 CPU-min
 of host), and its `oracle` test rebuilds it from PySCF in ~2 s. No
-device test reads it yet.
+device test reads it yet (#639's device half).
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`

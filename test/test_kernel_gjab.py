@@ -17,9 +17,9 @@ differences of `eri.j_coulomb.j.coulomb_matrix`, test/test_gradient_host.py).
   `gjab`: the whole `dE_J` of the s, p basis of test_gradient_host.py and
   of H2O/STO-3G (`slow`), against the host.
 - THE LOW-STACK FORM (#619): every class through (ff) in the form its
-  default is not (`gjab_lowstack`; while `LOWSTACK_MIN_LSUM` is None that
-  is the low-stack form at every class), held to the same `TOL`, and the
-  chain in the low-stack form to `CHAIN_TOL`.
+  default is not (`gjab_lowstack`: the unrolled form at (df), (fd), (ff),
+  the low-stack form below), held to the same `TOL`, and the chain in
+  both forms to `CHAIN_TOL`.
 
 ROUND-OFF: `|G_kernel - G_host| <= TOL max(scale)`, `TOL = 16 eps`,
 `scale` test_kernel_g1e.py's (each shell on its own row, each pair alone,
@@ -202,10 +202,12 @@ def test_the_other_form_is_the_host_gradient(cls) -> None:
 
 
 def test_the_low_stack_rule_and_one_contract() -> None:
-    """No measured rows yet (#619): no class defaults to the low-stack
-    form. Both forms share the name and the parameter list."""
-    assert LOWSTACK_MIN_LSUM is None
-    assert not any(gjab_lowstack(c) for c in CLASSES)
+    """The measured floor (#619, data/measured/gjab.json): (df), (fd) and
+    (ff) default to the low-stack form. Both forms share the name and the
+    parameter list."""
+    assert LOWSTACK_MIN_LSUM == 5
+    assert {c for c in CLASSES if gjab_lowstack(c)} == {(2, 3), (3, 2),
+                                                        (3, 3)}
     for c in ((0, 0), (1, 1), (3, 3)):
         a = build_gjab_kernel(c, lowstack=True)
         b = build_gjab_kernel(c, lowstack=False)

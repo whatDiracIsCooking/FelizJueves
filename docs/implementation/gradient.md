@@ -3,8 +3,9 @@
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
-through (ff|i) and (i|i) since #613, and `gs`, `gt`, `gv` through (ff)
-since #614; which inputs, per kernel, in the tables below). This is
+through (ff|i) and (i|i) since #613, `gs`, `gt`, `gv` through (ff)
+since #614, `gk` through `(ff|ff)` since #618 and the whole `gjab` chain
+(`DQ`, raised `[p|q]`, `gjab`) through (ff) since #619; which inputs, per kernel, in the tables below). This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -184,7 +185,7 @@ zeroed by the caller.
   `kernel_gjab.gjab_pq_spec(la, lb, lc, ld) = (la + 1, lb | lc, ld)`, over
   the same bra records and the J chain's `DQ` kets. Nothing in the `[p|q]`
   kernel or its plan is new.
-- **`gjab` has a low-stack form, NOT YET ANY CLASS'S DEFAULT** (#619;
+- **`gjab` has a low-stack form, the default from `la + lb = 5`** (#619;
   `build_gjab_kernel(cls, lowstack=True)`; name, parameters, launch and
   `G` contract the same). The unrolled `gjab` holds the six derivative
   densities `HA_k`, `HB_k` over `hermite_targets(L + 1)` and the pooled
@@ -197,13 +198,18 @@ zeroed by the caller.
   The per-row weight and derivative terms are shared with `gv`
   (`kernel_g1e.lowstack_weight` / `lowstack_derivative`, the `gv` text
   byte-identical at all 32 units). The default is
-  `kernel_gjab.gjab_lowstack`, an `la + lb` floor `LOWSTACK_MIN_LSUM`
-  that is **None** until `data/measured/gjab.json` has rows
+  `kernel_gjab.gjab_lowstack`, an `la + lb` floor `LOWSTACK_MIN_LSUM =
+  5` read from `data/measured/gjab.json` by its declared rule
   (`measure/measure_gjab.py`, `devtools/measure.sh gjab-compile`, a
-  compiler and no card; its rule, #614's restated, declared before any
-  row and tracked with none: the session that wrote it had neither
-  compiler). `measure.sh check` holds the floor at None while a class
-  lacks a row on either arch, and to the rule once all have them.
+  compiler and no card; #614's rule restated, declared before any row,
+  every unit compiled alone under a 300 s kill, admissible at <= 14,000 B
+  of stack on both arches; `measure.sh check` holds the floor to the
+  rows). The unrolled form is over on `sm_86` only: (df) / (fd) 18,976 /
+  21,240 B, (ff) 46,680 B with 93,788 B of spill stores and a 115 s
+  compile (`gfx1200`'s worst, (ff), 11,908 B, 15 s); through `la + lb =
+  4` it fits both (worst (dd), 8,648 B on `sm_86`), so those classes stay
+  unrolled, their text and goldens unchanged. Every low-stack unit fits
+  both, worst (ff) 6,352 B (`sm_86`) / 5,424 B (`gfx1200`), under 3 s.
 
 `gradient/kernel_gk.py` builds `gk_{la}{lc}_{lb}{ld}` (`build_gk_kernel`),
 one per K class, on `kernel_k`'s mapping: **one warp per bra record**, the
@@ -350,6 +356,7 @@ classes (unrolled) and the four classes with one f shell and nothing else
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
 | on a card through (ff) (`test_grad_device.py`, `co_ccpvtz_proton-*`, `slow`; #614) | `host`, `1e-13` of `max\|G\|` | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv` on CO/cc-pVTZ (f on both atoms, all 16 ordered classes (ss)–(ff) asserted) with a bare proton as a third nucleus, its own density as `M`, every class in its default form (`gv` (df), (fd), (ff) low-stack), each compile under a 300 s timeout; 12 passed per card with the cases above | `gt` 1.29e-14 (CUDA) / 7.64e-15 (HIP); `gv` 1.94e-15 / 2.80e-15; `gs` 6.2e-16 on both |
+| the `gjab` chain on a card (`test_gjab_chain_ondevice.py`, `grad_driver.raised_plan` / `gjab_tail` on `plan_driver.driver`; #619) | `host.coulomb_gradient`, `1e-13` of `max\|G\|` | RTX 3080 and RX 9060 XT: `DQ` on the card (read back, the plan keyed on its `Dmax`), the plan's bra classes raised by one, then `gjab` reading `J_p` where it lies, one process, no host `J_p`; H₂/STO-3G (the PR gate) and H₂O/STO-3G (`slow`) in both forms, CO/cc-pVTZ (`slow`, `high_l`, hand-run: all 16 ordered classes, (df), (fd), (ff) low-stack, raised `[p\|q]` to L = 13) in default forms; every compile under a 300 s timeout; 5 passed per card | H₂O 2.1e-15 / 2.0e-15; CO 9.0e-16 (CUDA) / 1.07e-15 (HIP); the CO cell ~17 / 20 min, almost all the host reference (#639) |
 
 ## The density-fitting gradients: `(P|Q)` and `(mn|P)`
 
@@ -503,12 +510,10 @@ the spherical transform is the consumer's, as #615 decided for d0).
 
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
-  (ff), #614) and `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618); `gjab`
-  has not. The
-  forced-unrolled `gv` at (df) / (ff) is compiled (`g1e.json`) but not
-  run on a card.
-- The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
-  the raised `[p|q]`, `gjab`) is a follow-up.
+  (ff), #614), `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618) and the
+  `gjab` chain (through (ff) on CO/cc-pVTZ, #619). The
+  forced-unrolled `gv` and `gjab` at (df) / (ff) are compiled
+  (`g1e.json`, `gjab.json`) but not run on a card.
 - Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
   `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
   caller's), but no whole RHF gradient is assembled or checked against
@@ -523,10 +528,8 @@ the spherical transform is the consumer's, as #615 decided for d0).
   (`kernel_kblock`'s, one warp per `K_AB` block) is not built, and no
   `gk` clock is measured.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
-  time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured:
-  its sweep and rule exist (`gjab-compile`, `gjab.json`, #619) but no
-  row, so its low-stack form is built and interpreted at every class
-  through (ff) and is no class's default.
+  time (`g1e.json`, #614), and `gjab` likewise (`gjab.json`, #619), not
+  for wall-clock.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
   not derived), Cartesian only. The Coulomb energy's Hessian is built
   on these pieces (`hessian.md`), and so are the one-electron Hessians of

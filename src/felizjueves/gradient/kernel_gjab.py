@@ -59,11 +59,11 @@ record the same head and per-axis tables one index up, then per block row
 
 each SUM a rolled loop over the tables (`e_fragment.rolled_e_sum`) reading
 the record's `Jp` row where it lies; there is no `R`, the `J_p` row is
-already in global memory. NOT YET THE DEFAULT anywhere:
-`LOWSTACK_MIN_LSUM` is None until data/measured/gjab.json holds the rows
-(`devtools/measure.sh gjab-compile`, a compiler and no card, its rule
-declared before any row), and `gjab_lowstack` reads it. Below the floor
-the text is byte-identical to the form before #619.
+already in global memory. THE DEFAULT FROM `la + lb = 5`
+(`LOWSTACK_MIN_LSUM`, read by `gjab_lowstack`), the floor the rule
+declared in data/measured/gjab.json reads from its rows
+(`devtools/measure.sh gjab-compile`, a compiler and no card). Below the
+floor the text is byte-identical to the form before #619.
 
 ROUND-OFF, NOT BITWISE, against `gradient.host.coulomb_gradient`, which
 sums row by row; the stated bound is in test/test_kernel_gjab.py.
@@ -120,12 +120,13 @@ __all__ = [
     "n_p1",
 ]
 
-# The la + lb floor of the low-stack default (#619): None until
-# data/measured/gjab.json holds both arches' rows (`devtools/measure.sh
-# gjab-compile`, the rule declared before any row); then the smallest la + lb
-# with an inadmissible unrolled class. Until then the low-stack form is
-# built only when forced (`lowstack=True`).
-LOWSTACK_MIN_LSUM: int | None = None
+# The la + lb floor of the low-stack default (#619): the smallest la + lb
+# with an inadmissible unrolled class in data/measured/gjab.json
+# (`devtools/measure.sh gjab-compile`, the rule declared before any row):
+# (df) / (fd) at 18,976 / 21,240 B of sm_86 stack and (ff) at 46,680 B,
+# over the 14,000 B budget; every class through la + lb = 4 fits on both
+# arches (worst (dd), 8,648 B on sm_86).
+LOWSTACK_MIN_LSUM: int | None = 5
 
 LOWSTACK_NOTE = (
     "LOW-STACK (#619): no Hermite density is formed; per block row, its "
