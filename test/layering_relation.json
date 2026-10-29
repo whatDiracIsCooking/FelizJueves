@@ -2,6 +2,31 @@
  "allowed": {
   "__init__": [],
   "ao": [
+   "ao.bse",
+   "ao.density",
+   "ao.pairs",
+   "ao.shell",
+   "eri.density_fit.eri3",
+   "eri.density_fit.eri3_drive",
+   "eri.density_fit.metric",
+   "eri.density_fit.metric_drive",
+   "eri.eri",
+   "eri.fock.fock",
+   "eri.hgp_drive",
+   "eri.j_coulomb.drive",
+   "eri.j_coulomb.j",
+   "eri.j_coulomb.staged",
+   "eri.k_exchange.k",
+   "eri.schwarz",
+   "mmd.hermite",
+   "one_electron.kinetic",
+   "one_electron.multipole",
+   "one_electron.one_electron",
+   "one_electron.overlap",
+   "one_electron.potential"
+  ],
+  "ao.bse": [
+   "ao",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -26,6 +51,7 @@
   ],
   "ao.density": [
    "ao",
+   "ao.bse",
    "ao.pairs",
    "ao.shell",
    "eri.density_fit.eri3",
@@ -49,6 +75,7 @@
   ],
   "ao.pairs": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.shell",
    "eri.density_fit.eri3",
@@ -72,6 +99,7 @@
   ],
   "ao.shell": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "eri.density_fit.eri3",
@@ -206,6 +234,7 @@
   "eri.density_fit": [],
   "eri.density_fit.eri3": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -229,6 +258,7 @@
   ],
   "eri.density_fit.eri3_drive": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -308,6 +338,7 @@
   ],
   "eri.density_fit.metric": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -331,6 +362,7 @@
   ],
   "eri.density_fit.metric_drive": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -359,6 +391,7 @@
   ],
   "eri.eri": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -383,6 +416,7 @@
   "eri.fock": [],
   "eri.fock.fock": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -473,6 +507,7 @@
   ],
   "eri.fock.launch_f": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -835,6 +870,7 @@
   ],
   "eri.fock.walk_f": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -863,6 +899,7 @@
   ],
   "eri.hgp_drive": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -968,6 +1005,7 @@
   "eri.j_coulomb": [],
   "eri.j_coulomb.drive": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1014,6 +1052,7 @@
   ],
   "eri.j_coulomb.j": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1049,6 +1088,7 @@
   ],
   "eri.j_coulomb.launch": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1104,6 +1144,7 @@
   ],
   "eri.j_coulomb.staged": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1151,6 +1192,7 @@
   "eri.k_exchange": [],
   "eri.k_exchange.k": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1289,6 +1331,7 @@
   ],
   "eri.k_exchange.launch_k": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1315,6 +1358,7 @@
   ],
   "eri.k_exchange.launch_kblock": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1631,6 +1675,7 @@
   ],
   "eri.schwarz": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1655,6 +1700,7 @@
   "gradient": [],
   "gradient.host": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1664,6 +1710,7 @@
   ],
   "gradient.host_df": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1812,6 +1859,7 @@
   "hessian": [],
   "hessian.host": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1821,6 +1869,7 @@
   ],
   "hessian.host_1e": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1830,6 +1879,7 @@
   ],
   "hessian.host_df": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -1841,6 +1891,7 @@
   ],
   "hessian.host_eri3": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -2113,6 +2164,7 @@
   ],
   "mmd.hermite": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -2245,6 +2297,7 @@
   ],
   "one_electron.kinetic": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -2268,6 +2321,7 @@
   ],
   "one_electron.multipole": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -2291,6 +2345,7 @@
   ],
   "one_electron.one_electron": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -2314,6 +2369,7 @@
   ],
   "one_electron.overlap": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",
@@ -2337,6 +2393,7 @@
   ],
   "one_electron.potential": [
    "ao",
+   "ao.bse",
    "ao.density",
    "ao.pairs",
    "ao.shell",

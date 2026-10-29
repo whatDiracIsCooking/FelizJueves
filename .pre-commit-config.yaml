@@ -38,9 +38,12 @@ repos:
       # artefacts are source, generated kernel text and docs. The realistic
       # accident is a downloaded PDF or a profiler capture copied into the tree
       # and `git add -A`ed -- 512kB sits comfortably above any source file here
-      # and below anything of that kind.
+      # and below anything of that kind. The one exception is the basis JSON
+      # copied verbatim from FreeBreakfast (#650): text, checked byte for byte
+      # against data/*/provenance.json, and up to 2.8MB a file.
       - id: check-added-large-files
         args: [--maxkb=512]
+        exclude: ^data/(aux_)?basis/[^/]+\.json$
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
