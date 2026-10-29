@@ -90,6 +90,22 @@ unresolvable device group. On a host with no `hipcc`, `--backend hip` re-execs
 itself inside `fj:combined` with the device nodes and host gids passed in; with
 no such image it exits 2 and names `docker/build.sh combined`.
 
+### Compile-only — no card needed
+
+```bash
+pytest -rs -n 4 --dist worksteal -m "(cuda or hip) and not gpu and not slow"
+```
+
+Every `cuda`/`hip` test that stops at compile-and-link, on a box with the
+compilers and no card (a Claude cloud container, the `fj:combined` image).
+`test/conftest.py` hands collection to `tiers.sample_compiles`, which keeps
+each test function's first case of each kind (`hj_0000` stands for every
+`hj_` class, `hk_0000` for every `hk_`) and marks the rest `slow`, so the run
+covers every emitter under both compilers and stays under five minutes cold
+(3m24s and 3m56s in two cold runs on a 4-core Claude cloud container, no sccache, 2026-10-29), where the same expression took 28m38s before the
+sample (`test/compile-only-timings.xml`); the cases it drops still run with
+`slow` and a bare `pytest`. A green run here proves no number.
+
 ### Measurement is not a tier — `devtools/measure.sh`
 
 No test times, profiles or reads back a stored measurement. The timed sweeps,
@@ -110,7 +126,7 @@ gets reported as a pass:
 | `cuda` | nvcc — **no card required** | `nvcc` |
 | `hip` | hipcc — **no card required** | `hipcc` |
 | `gpu` | a live device | `cuda_device` / `hip_device` |
-| `slow` | nothing; costs minutes (an exhaustive search re-run, a class above `FAST_L_MAX`, or a large input: 6-31G, cc-pVDZ, cc-pVTZ); off the pre-push gate via `FAST_TEST_ARGS` and off the kernel tier unless `--full` | — |
+| `slow` | nothing; costs minutes (an exhaustive search re-run, a class above `FAST_L_MAX`, a large input: 6-31G, cc-pVDZ, cc-pVTZ, or a compile-only case after the first of its kind in its function, `tiers.sample_compiles`); off the pre-push gate via `FAST_TEST_ARGS` and off the kernel tier unless `--full` | — |
 
 Those are the registered markers (with `oracle` and `claim(id)`). An issue that
 names a `kernel-tier` or `high-L` marker means `slow`: neither is registered.
