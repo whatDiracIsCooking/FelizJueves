@@ -1,0 +1,70 @@
+{
+  "cuda": {
+    "rj_1121": {
+      "bytes": 156995,
+      "sha256": "ab9b1d1916a9f7e72484e4ef698a710d06bf32aea42f373f5a8be74532351e38"
+    },
+    "rj_1122": {
+      "bytes": 258963,
+      "sha256": "502d4fa6b0fb5492a1574e93519b0fbde9ae63690d244589b5e09308dd2eab24"
+    },
+    "rj_2021": {
+      "bytes": 155357,
+      "sha256": "d8cebfb656525a4b5ad350c914b4f5067ce3a9549cceb5c11420e01903444546"
+    },
+    "rj_2121": {
+      "bytes": 271387,
+      "sha256": "c638a496238b4911b0fb6a57fc3e42de2aef23eccd413378d996fd9e10ab567d"
+    },
+    "rj_2210": {
+      "bytes": 121931,
+      "sha256": "a66fa9dfe956b07f76b60f09c5363fe2771c9b2756818a1f24ad4fbee4fa300f"
+    },
+    "rj_2220": {
+      "bytes": 212661,
+      "sha256": "15d099ee8e47629a367df8ce5134ffc2c1c3755f8223dc3f7cb954016399af23"
+    },
+    "rj_2221": {
+      "bytes": 617965,
+      "sha256": "91dd5d8a16bd6d612a3a90a9f76a90106277c4078fd20a5d582ad238fd4f6e46"
+    },
+    "rj_2222": {
+      "bytes": 974752,
+      "sha256": "367a4ffde25216ea3c49ca07b4e27e280f9822ecbe4837a2c9f81ab289a7ebca"
+    }
+  },
+  "hip": {
+    "rj_1121": {
+      "bytes": 157025,
+      "sha256": "2a19015eef49be2576c9816a372a0b293b1106cf7ccd0ee6f5ab8735599bed89"
+    },
+    "rj_1122": {
+      "bytes": 258993,
+      "sha256": "3fbfa8ab9d83acc63fb8a47e469ab9f5a3d54b1d3e3df2583eb40b66e793cf7e"
+    },
+    "rj_2021": {
+      "bytes": 155387,
+      "sha256": "96755fa84bd5ed299bc3d7d50fe2e688b0824df93630162a978a011465cc3bfa"
+    },
+    "rj_2121": {
+      "bytes": 271417,
+      "sha256": "7562de3a97738c808efd6118bdb2ba6753939ca601d533245533819c33721d70"
+    },
+    "rj_2210": {
+      "bytes": 121961,
+      "sha256": "83ba22933cbd45cfce4d737e1bf9f0d1a086c2f2998ce58f7f0486084f0dd9d1"
+    },
+    "rj_2220": {
+      "bytes": 212691,
+      "sha256": "88107af13969a7fdd71bb4ca0908ed503775ffb3b6ef6fff4e5befabd8b31edd"
+    },
+    "rj_2221": {
+      "bytes": 617995,
+      "sha256": "24d622779ba90fb39ca9dfcdc1bb32687e0a2e7111c4f3b2e789103fbe05af0d"
+    },
+    "rj_2222": {
+      "bytes": 974782,
+      "sha256": "fa4b79be81550312cd712b27c56c830df61922545da8b6911e6e1759833b81ae"
+    }
+  }
+}

@@ -76,11 +76,12 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # legality table covers these too. Only the off-native pairings `spec`
 # admits are slots (HGP J and HGP K, the HGP one-electron S, T, V and
 # dipole of `one_electron.kernel_hgp`, and the HGP DF metric and three-center
-# of `eri.density_fit.kernel_hgp`; and the fused F on Rys quadrature,
-# `eri.fock.kernel_frys`; a test pins this to `spec`).
+# of `eri.density_fit.kernel_hgp`; and the fused F and the split J on Rys
+# quadrature, `eri.fock.kernel_frys` and `eri.hjk.kernel_rj`; a test pins
+# this to `spec`).
 ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
                                  "dipole.hgp", "metric.hgp", "eri3.hgp",
-                                 "f.rys")
+                                 "f.rys", "j.rys")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -204,6 +205,13 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "surface yet: the F levers act on the HGP VRR, its boundary and the "
         "seams around them, and which of them carries over to a Rys VRR is "
         "a follow-up nobody has declared"
+    ),
+    "j.rys": (
+        "no kernel-body lever is admitted on a Rys Target.J unless its entry "
+        "says so: the MMD J levers act on the [p|q] tower and the F levers "
+        "on the fused digestion, and the split J on Rys quadrature "
+        "(eri.hjk.kernel_rj) runs neither; only HGP J's class mode carries "
+        "over"
     ),
 })
 
@@ -580,7 +588,7 @@ VOCABULARY: dict[str, Lever] = {
         "one HGP kernel per ORDERED class (la, lb | lc, ld) instead of one "
         "per canonical class with its permutations mapped onto it (the "
         "literal class mode); the recurrence unchanged",
-        {"j.hgp", "k.hgp"},
+        {"j.hgp", "k.hgp", "j.rys"},
         j=("an MMD [p|q] kernel is keyed by its Hermite split (lp, lq), not "
            "by an HGP class's shell order, so it has no canonical/ordered "
            "class mode to choose between"),

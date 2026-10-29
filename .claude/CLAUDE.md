@@ -956,7 +956,7 @@ measured.
 compiled by nvcc / hipcc and NOT run on a card** (`docs/implementation/rys_fock.md`
 is the one place with the detail; #468's spike, `experimental/rys/`, brought
 into `src/`): `Target.F` on `Engine.RYS` (`spec.Engine.RYS`, key slot
-`f.rys`, refused on every other target, no lever), `eri/fock/kernel_frys.py`'s
+`f.rys`, refused on every target but `F` and `J` (below), no lever), `eri/fock/kernel_frys.py`'s
 `build_frys_kernel` (`fr_{la}{lb}{lc}{ld}`, the 21 classes through
 `(dd|dd)`): `kernel_f`'s skeleton and seams with `ket_prim`,
 `quartet_scalars`, `vrr` and `accumulate` replaced -- the `N = L // 2 + 1`
@@ -977,6 +977,27 @@ of libcint. `python -m felizjueves.emit --fock-l LMAX --rys`, never in the
 bare default nor in `KERNEL_GEN_CMD`; 21 goldens per backend
 (`test_emit_frys.py`, two in `frys_digests.json`). All 21 units passed clang
 18's CUDA front end (a proxy). Nothing measured or scored.
+**The split `J` on Rys quadrature too, interpreted and emitted, NOT
+compiled by nvcc / hipcc and NOT run on a card** (`rys_fock.md`, "The split
+`J` on Rys"): `Target.J` on `Engine.RYS` (slot `j.rys`, whose only legal
+lever is HGP J's `ordered`), `eri/hjk/kernel_rj.py`'s `build_rj_kernel`
+(`rj_{rep}` canonical / `rj_o_{class}` ordered, `L <= 8`): `kernel_hj`'s
+split `J` through a seam it now exposes (`kernel_hj.Nest`,
+`split_j_kernel`, `hgp_nest`; every `hj_` golden byte-identical) with the
+Rys rule and 2D VRR as the nest (`rys.recurrence.quartet_rule`, shared with
+`kernel_frys`, its text unchanged), so an `rj_` unit is a drop-in for the
+`hj_` unit of the same class and mode (IR outside the `K_CD` loop `==`,
+signature equal). `walk_hjk(..., build=)` walks `launch_hjk`'s plan with
+the caller's kernels. Interpreted (`test_kernel_rj.py`): the ERI tap against
+MMD element by element and HGP per block within `1e-12 (s_hgp + s_mmd)`,
+the deposit against `eri/j_coulomb/j.py`'s restricted sweep, both modes, every class
+through `(dd|dd)` (`L > 4` `slow`), whole H₂ (and H₂O, `slow`) STO-3G `J`
+against the MMD sweep and libcint's `vj`. `python -m felizjueves.emit
+--hgp-j-l LMAX --rys` (0..2) or `--hgp-class ... --rys` (J only), never in
+the bare default nor in `KERNEL_GEN_CMD`; 63 goldens per backend plus 8
+digests (`test_emit_rj.py`, `rj_digests.json`). All 71 cuda units passed
+clang 18's CUDA front end (a proxy). Nothing measured; a `j.rys` row is
+refused by the store. No split `K` on Rys.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence

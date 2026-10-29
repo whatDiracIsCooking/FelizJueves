@@ -94,7 +94,8 @@ def test_the_key_is_f_on_the_rys_engine() -> None:
     assert KR.build_frys_kernel(spec).name == "fr_1011"
 
 
-@pytest.mark.parametrize("target", [t for t in Target if t is not Target.F])
+@pytest.mark.parametrize("target", [t for t in Target
+                                    if t not in (Target.F, Target.J)])
 def test_rys_is_refused_on_every_other_target(target) -> None:
     from felizjueves.spec import AM_LENGTH, OPERATOR_OF
     with pytest.raises(ValueError, match=f"engine rys on target {target}"):

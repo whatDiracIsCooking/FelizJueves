@@ -3,6 +3,7 @@ boundary `[e0|f0]^(0)` as a product of three 2D integrals.
 
     root_loop(cls, boundary, acc, *, n_roots) -> (Stmt, ...)
     scalar_needs(cls) -> frozenset[str]       the quartet scalars it reads
+    quartet_rule(cls, scalar) -> (Stmt, ...)  those scalars, T, S, the rule
 
 THE FORM (#468, settled against libcint and a 50-digit route, every sign
 flipped alone and caught; `experimental/rys/README.md`). With `x` a node,
@@ -45,6 +46,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from felizjueves.hgp.recurrence import _TWO_OVER_SQRT_PI, PAIR, PQ_PARAMS, THETA
 from felizjueves.hgp.vrr import AmClass, Cart
 from felizjueves.ir import (
     Assign,
@@ -56,13 +58,16 @@ from felizjueves.ir import (
     Index,
     Lit,
     Note,
+    Rys,
     Scalar,
+    Space,
     Stmt,
     Var,
 )
+from felizjueves.rys.roots import n_roots as _n_roots
 
-__all__ = ["NODES", "ROOT", "WEIGHTS", "WEIGHT_SCALE", "root_loop",
-           "scalar_needs"]
+__all__ = ["NODES", "ROOT", "WEIGHTS", "WEIGHT_SCALE", "quartet_rule",
+           "root_loop", "scalar_needs"]
 
 NODES, WEIGHTS = "rys_x", "rys_w"  # the rule's two local arrays
 ROOT = "r"  # the root loop's variable
@@ -191,3 +196,59 @@ def root_loop(cls: AmClass, boundary: Sequence[tuple[Cart, Cart]],
              f"I(i, k), i <= {lab}, k <= {lcd} (rys/recurrence.py)"),
         For(ROOT, Lit(0), Lit(n_roots), Lit(1), tuple(body)),
     )
+
+
+def quartet_rule(cls: AmClass, scalar: Callable[[str, Expr], Decl]
+                 ) -> tuple[Stmt, ...]:
+    """One primitive quartet's scalars and its Rys rule, after the two
+    records' reads (`Pb0..2`, `p`, `Ub` and `Qk0..2`, `q`, `Uq`, and the
+    `PA_*` / `QC_*` that `scalar_needs` names): `PQ`, `p + q`, `rho`,
+    `theta`, `W - P = -(q/(p+q)) PQ` and `W - Q = (p/(p+q)) PQ`
+    (`kernel_f`'s derived signs), the `1/(2 x)` the class reads, `pair =
+    U_P U_Q`, `T = rho |PQ|^2`, `S = pair (2/sqrt(pi)) theta`, then the
+    `N`-point rule into `NODES` / `WEIGHTS` -- everything `root_loop`
+    reads. `scalar(name, init)` declares each floating local (a builder's
+    own typing hook); `T`, `S` and the two arrays are plain fp64."""
+    need = scalar_needs(cls)
+    n = _n_roots(sum(cls))
+    pq = [Var(v) for v in PQ_PARAMS]
+    theta = Var(THETA)
+    out: list[Stmt] = [
+        Note("quartet geometry: W - P and W - Q with kernel_f's derived "
+             "signs, and the 2D recurrence's scalars"),
+        *(scalar(name, _c(Fn.SUB, Var(f"Pb{d}"), Var(f"Qk{d}")))
+          for d, name in enumerate(PQ_PARAMS)),
+        scalar("ppq", _c(Fn.ADD, Var("p"), Var("q"))),
+        scalar("rho", _c(Fn.DIV, _c(Fn.MUL, Var("p"), Var("q")), Var("ppq"))),
+        scalar(THETA, _c(Fn.SQRT, Var("rho"))),
+    ]
+    wp = any(f"WP_{a}" in need for a in _AXES)
+    wq = any(f"WQ_{a}" in need for a in _AXES)
+    if wp or "q_ppq" in need:
+        out.append(scalar("q_ppq", _c(Fn.DIV, Var("q"), Var("ppq"))))
+    if wq or "p_ppq" in need:
+        out.append(scalar("p_ppq", _c(Fn.DIV, Var("p"), Var("ppq"))))
+    for d, a in enumerate(_AXES):
+        if f"WP_{a}" in need:
+            out.append(scalar(f"WP_{a}", _c(Fn.SUB, Lit(0.0), _c(
+                Fn.MUL, Var("q_ppq"), pq[d]))))
+        if f"WQ_{a}" in need:
+            out.append(scalar(f"WQ_{a}", _c(Fn.MUL, Var("p_ppq"), pq[d])))
+    for name, x in (("inv2p", "p"), ("inv2q", "q"), ("inv2pq", "ppq")):
+        if name in need:
+            out.append(scalar(name, _c(Fn.DIV, Lit(0.5), Var(x))))
+    out += [
+        scalar(PAIR, _c(Fn.MUL, Var("Ub"), Var("Uq"))),
+        Note(f"the Rys rule: N = {n} nodes and weights of (1/2) x^(-1/2) "
+             "exp(-T x) dx on [0, 1] at T = rho |PQ|^2 (rys/roots.py); "
+             "S = U_P U_Q (2/sqrt(pi)) theta, the HGP fundamental's scale"),
+        Decl("T", Scalar.F64, init=_c(Fn.MUL, _c(Fn.MUL, theta, theta), _c(
+            Fn.ADD, _c(Fn.ADD, _c(Fn.MUL, pq[0], pq[0]),
+                       _c(Fn.MUL, pq[1], pq[1])), _c(Fn.MUL, pq[2], pq[2])))),
+        Decl(WEIGHT_SCALE, Scalar.F64, init=_c(Fn.MUL, Var(PAIR), _c(
+            Fn.MUL, Lit(_TWO_OVER_SQRT_PI), theta))),
+        Decl(NODES, Scalar.F64, (Lit(n),), Space.LOCAL),
+        Decl(WEIGHTS, Scalar.F64, (Lit(n),), Space.LOCAL),
+        Rys(NODES, WEIGHTS, n, Var("T")),
+    ]
+    return tuple(out)

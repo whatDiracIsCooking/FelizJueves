@@ -104,6 +104,14 @@ included, `HrrDag.n_statements`), every ERI read once per orientation's
 deposit, and one `AtomicAdd` per `J` element per orientation -- read off the
 built kernel and cross-checked against `hgp.vrr` / `hgp.hrr` by the test.
 
+THE SEAM (`Nest`, `split_j_kernel`): the engine is the `K_CD` loop's body
+after the ket record's reads -- the quartet scalars, the recurrence and the
+`+=` of every boundary value `(e0|f0)` into its accumulator -- and the
+record scalars it reads (`PA_*`, `QC_*`). `hgp_nest` is HGP's (eqs 25-27);
+`eri/hjk/kernel_rj.py` passes the Rys rule and the 2D VRR (`Target.J` on
+`Engine.RYS`). Everything else is this module's, so an `rj_` unit is a
+drop-in for the `hj_` unit of the same class and mode.
+
 Nothing here imports `plan/`, `ao/` (the witnesses: `eri/hgp_drive.py` for
 the ERIs, `eri/j_coulomb/j.py` for `J`), `reference/`, the interpreter, a backend or
 a device (test/test_layering.py, rule `hj_builder`).
@@ -111,7 +119,7 @@ a device (test/test_layering.py, rule `hj_builder`).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from felizjueves.eri.fock.kernel_f import MAX_PRIM_PAIRS, REC
@@ -162,6 +170,8 @@ __all__ = [
     "KCD",
     "KET",
     "MAX_PRIM_PAIRS",
+    "Nest",
+    "NestOf",
     "ORDERED",
     "OUT",
     "PERM",
@@ -170,6 +180,7 @@ __all__ = [
     "STAGE",
     "build_hj_kernel",
     "built_class",
+    "hgp_nest",
     "counted",
     "hj_class_spec",
     "hj_name",
@@ -178,6 +189,7 @@ __all__ = [
     "launch_shape",
     "orientations",
     "params_of",
+    "split_j_kernel",
 ]
 
 ORDERED = "ordered"  # the class-mode lever (#401, levers.VOCABULARY)
@@ -455,6 +467,47 @@ def _deposit(o: _Orient, n: Sequence[int], comps, targets) -> tuple[Stmt, ...]:
 # --- the kernel --------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Nest:
+    """The primitive nest's ENGINE part (module docstring, "THE SEAM"):
+    `need`, the record scalars (`PA_*` off the bra record, `QC_*` off the
+    ket's) the body reads; `body`, the `K_CD` loop's statements after the
+    ket record's reads, which must leave every boundary value `(e0|f0)` of
+    the primitive quartet added into its accumulator `acc_name(e, f)`; and
+    `note`, the kernel's opening `Note`, with `{cls}` and `{mode}` fields."""
+
+    need: frozenset[str]
+    body: tuple[Stmt, ...]
+    note: str
+
+
+NestOf = Callable[[AmClass, Sequence[tuple[Cart, Cart]]], Nest]
+
+
+def hgp_nest(am: AmClass, bnd: Sequence[tuple[Cart, Cart]]) -> Nest:
+    """The HGP engine's nest: the quartet scalars in `eri/hgp_drive.py`'s
+    operation order, one Boys evaluation, the VRR (eqs 25-26), then eq 27's
+    `+=` of every boundary value."""
+    prelude, fundamental = fundamental_prelude(sum(am))
+    vbody = tuple(vrr_body(vrr.build(am), fundamental))
+    vf = _factors(vbody)
+    vneed = frozenset(vf | {i2 for n, i2, _ in _DERIVED if n in vf})
+    body = (
+        *_quartet_scalars(vneed),
+        *prelude,
+        *vbody,
+        Note("eq 27: c += [e0|f0]^(0), every boundary value, contracted in "
+             "registers before the HRR (pin 5)"),
+        *(Assign(Var(acc_name(e, f)), _c(Fn.ADD, Var(acc_name(e, f)),
+                                         Var(vrr_name((e, f, 0)))))
+          for e, f in bnd),
+    )
+    return Nest(vneed, body,
+                "(ab|cd) by the HGP recurrence, J class ({cls}) [{mode}]: VRR "
+                "eqs 25-26 inside the K_AB x K_CD nest, HRR eq 28 after it, "
+                "then J_ab += D_cd (ab|cd), split (#404)")
+
+
 def build_hj_kernel(cls: AmClass | Spec, *, name: str | None = None,
                     eris: bool = False,
                     density: tuple[int, int] = COULOMB_DENSITY) -> Kernel:
@@ -464,6 +517,20 @@ def build_hj_kernel(cls: AmClass | Spec, *, name: str | None = None,
     `hgp.hrr.targets` order; `density` is the ordered positions whose `D`
     block the deposit reads -- `(2, 3)`, or a test's mutation."""
     spec = _spec_of(cls)
+    return split_j_kernel(spec, hgp_nest, name=name or hj_name(spec),
+                          eris=eris, density=density)
+
+
+def split_j_kernel(cls: AmClass | Spec, nest_of: NestOf, *, name: str,
+                   eris: bool = False,
+                   density: tuple[int, int] = COULOMB_DENSITY) -> Kernel:
+    """The split `J` kernel of one HGP-keyed class, the primitive nest's
+    engine part from `nest_of` (module docstring, "THE SEAM").
+    `build_hj_kernel` is `split_j_kernel(spec, hgp_nest, ...)`; the Rys
+    builder (`eri/hjk/kernel_rj.py`) passes its HGP twin's spec and its own
+    nest. Everything else -- the staging, the screen, the HRR, the tap, the
+    deposit, the parameters -- is this module's."""
+    spec = _spec_of(cls)
     density = tuple(density)  # type: ignore[assignment]
     if (len(density) != 2 or density[0] == density[1]
             or any(type(x) is not int or not 0 <= x < 4 for x in density)):
@@ -471,23 +538,19 @@ def build_hj_kernel(cls: AmClass | Spec, *, name: str | None = None,
     am = built_class(spec)
     ordered = _ordered(spec)
     la, lb, lc, ld = am
-    vdag, hdag = vrr.build(am), hrr.build(am)
+    hdag = hrr.build(am)
     bnd = boundary_order(am)
     if set(bnd) != hdag.boundary:  # #274 holds this; refuse, never misread
         raise ValueError(f"{am}: HRR boundary is not the VRR target set")
-    prelude, fundamental = fundamental_prelude(sum(am))
-    vbody = tuple(vrr_body(vdag, fundamental))
+    nest = nest_of(am, bnd)
+    vneed = nest.need
     hbody = tuple(hrr_body(hdag, lambda e, f: Var(acc_name(e, f))))
-    vf = _factors(vbody)
-    vneed = frozenset(vf | {i2 for n, i2, _ in _DERIVED if n in vf})
     hneed = frozenset(_factors(hbody))
     n = tuple(len(vrr.cartesians(x)) for x in am)
     orients = _orients(spec, density)
     shells = {p for o in orients for p in o.dpos}
     aos = {p for o in orients for p in (*o.jpos, *o.dpos)}
     bra, k = Var("bra"), Var(KET)
-    if name is None:
-        name = hj_name(spec)
 
     def bra_prim(f: int) -> Expr:
         return Index(AB_SH, (Var(KAB), Lit(f)))
@@ -515,14 +578,7 @@ def build_hj_kernel(cls: AmClass | Spec, *, name: str | None = None,
           if Factor.qc(d).value in vneed),
         _F("q", ket_prim(_ZETA)),
         _F("Uq", ket_prim(_U)),
-        *_quartet_scalars(vneed),
-        *prelude,
-        *vbody,
-        Note("eq 27: c += [e0|f0]^(0), every boundary value, contracted in "
-             "registers before the HRR (pin 5)"),
-        *(Assign(Var(acc_name(e, f)), _c(Fn.ADD, Var(acc_name(e, f)),
-                                         Var(vrr_name((e, f, 0)))))
-          for e, f in bnd),
+        *nest.body,
     )
     per_kab = (
         Note("the bra primitive pair, from shared memory"),
@@ -590,9 +646,7 @@ def build_hj_kernel(cls: AmClass | Spec, *, name: str | None = None,
             f"canonical: the orbit representative, {len(orients)} "
             "orientation(s) selected by perm")
     body = (
-        Note(f"(ab|cd) by the HGP recurrence, J class ({la}{lb}|{lc}{ld}) "
-             f"[{mode}]: VRR eqs 25-26 inside the K_AB x K_CD nest, HRR eq 28 "
-             "after it, then J_ab += D_cd (ab|cd), split (#404)"),
+        Note(nest.note.format(cls=f"{la}{lb}|{lc}{ld}", mode=mode)),
         *(Note(lever_provenance(lv)) for lv in spec.kernel_body_levers()),
         Note("launch: grid = n_bra, blockDim = (threads, 1); one block per "
              "bra shell pair"),
