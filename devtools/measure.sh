@@ -49,6 +49,15 @@
 #     kblock-transpose-profile  kbr_22_22 against kbrt_22_22
 #                   under ncu, global-load sectors per
 #                   request (#576; CUDA only)           FJ_KBLOCK_ROLLED_STORE
+#     kblock-column-compile  kbr's column form (kbrc) at (dd|dd),
+#                   (ff|ff) and (gg|gg), a 120 s budget a
+#                   unit (#583; a compiler, no card)    FJ_KBLOCK_ROLLED_STORE
+#     kblock-column  kbrc (rolled-C) against kb and kbr at
+#                   (dd|dd), and kbr at (ff|ff) (#583;
+#                   CUDA only)                          FJ_KBLOCK_ROLLED_STORE
+#     kblock-column-profile  kbr_22_22 against kbrc_22_22 under
+#                   ncu, occupancy and stall mix (#583;
+#                   CUDA only)                          FJ_KBLOCK_ROLLED_STORE
 #     df-lowstack-compile  every eri3 / metric class of the aux
 #                   ladder through i in its default form, and
 #                   the other form of the gate's classes:
@@ -124,6 +133,9 @@ SWEEPS=(
   "kblock-rolled-profile|timed|kb_22_22 vs kbr_22_22 under ncu, CUDA only (#574) -> kblock_rolled.json"
   "kblock-transpose|timed|kbr with Ebd transposed vs kb, kbr at (dd|dd) and kbr at (ff|ff), CUDA only (#576) -> kblock_rolled.json"
   "kblock-transpose-profile|timed|kbr_22_22 vs kbrt_22_22 under ncu, CUDA only (#576) -> kblock_rolled.json"
+  "kblock-column-compile|compile|kbr's column form kbrc at (dd|dd), (ff|ff), (gg|gg), 120 s a unit (#583) -> kblock_rolled.json"
+  "kblock-column|timed|kbrc vs kb, kbr at (dd|dd) and kbr at (ff|ff), CUDA only (#583) -> kblock_rolled.json"
+  "kblock-column-profile|timed|kbr_22_22 vs kbrc_22_22 under ncu, CUDA only (#583) -> kblock_rolled.json"
   "df-lowstack-compile|compile|eri3/metric aux ladder through i, both forms' compile (#606) -> df_lowstack.json"
   "df-lowstack|timed|eri3/metric low-stack vs unrolled wall-clock per class (#606) -> df_lowstack.json"
   "df-grad-lowstack-compile|compile|gmetric/geri3 DF gradient ladder through (i|i)/(ff|i), both forms' compile (#613) -> df_grad_lowstack.json"
@@ -214,6 +226,12 @@ case $sweep in
   kblock-transpose) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_transpose_clock)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   kblock-transpose-profile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_transpose_profile)
+                envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  kblock-column-compile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_column_compile)
+                envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  kblock-column) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_column_clock)
+                envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
+  kblock-column-profile) files=("$M/measure_kblock_rolled.py"); select=(-k kblock_column_profile)
                 envs=("FJ_KBLOCK_ROLLED_STORE=${FJ_KBLOCK_ROLLED_STORE:-$MEASURE_KBLOCK_ROLLED_STORE}") ;;
   df-lowstack-compile) files=("$M/measure_df_lowstack.py"); select=(-k df_lowstack_compile)
                 envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;

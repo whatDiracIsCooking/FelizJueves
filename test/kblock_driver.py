@@ -65,6 +65,12 @@ transposed=True)`, #576): MODE 0 launches
 `E` block is staged transposed, `Ebd[n_ebd, n_ket]` (entry-major, the
 warp's consecutive kets adjacent), `class_args` returning it so; every
 other array as `rolled=True` stages it.
+
+THE COLUMN FORM, opt-in (`kb_driver(..., rolled=True, column=True)`,
+#583): MODE 0 launches `build_kblock_rolled_kernel(..., column=True)`
+(`kbrc_*`) on the rolled layout unchanged, its dynamic shared memory
+`column_shared_doubles` (`n_p + n_a`) per lane; its `Kblk[n_a n_b]` is
+static, the compiler's to count.
 """
 
 from __future__ import annotations
@@ -92,6 +98,7 @@ from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
     TABLES,
     build_kblock_dense_kernel,
     build_kblock_rolled_kernel,
+    column_shared_doubles,
     e_pattern,
     tables,
 )
@@ -197,7 +204,8 @@ def _call(ns: str, kern: Kernel, args: list[str], grid: str, shared: int
 def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
               workdir: Path, *, split: str | None = None,
               rolled: bool = False, dense: bool = False,
-              transposed: bool = False, with_k: bool = True) -> KBDriver:
+              transposed: bool = False, column: bool = False,
+              with_k: bool = True) -> KBDriver:
     """Emit both kernels of every class of `plan` (whose `kernel` is the block
     kernel; `kernel_k`'s is built here) and the `main()` that launches either
     mapping on one upload (module docstring). With `split=` a granularity of
@@ -208,7 +216,12 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
     With `dense=True` too (#575) MODE 0 is `build_kblock_dense_kernel`'s
     kernel instead, its `E` dense and no class tables. With
     `transposed=True` too (#576) MODE 0 is the rolled kernel with `Ebd`
-    stored `[n_ebd, n_ket]`, staged so."""
+    stored `[n_ebd, n_ket]`, staged so. With `column=True` too (#583)
+    MODE 0 is the rolled kernel's column form (`kbrc_*`): the same
+    parameters and staging, `Ksh` sized `column_shared_doubles` per lane."""
+    if column and (not rolled or dense):
+        raise ValueError("column= is a form of rolled= (not dense=): "
+                         "pass rolled=True")
     if dense and not rolled:
         raise ValueError("dense= is a form of rolled=: pass both")
     if transposed and (not rolled or dense):
@@ -229,7 +242,8 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
             raise ValueError(f"K class {cl.am} carries no kernel: plan it "
                              "with build=")
         kb = (build_kblock_dense_kernel(cl.am) if dense else
-              build_kblock_rolled_kernel(cl.am, transposed=transposed)
+              build_kblock_rolled_kernel(cl.am, transposed=transposed,
+                                         column=column)
               if rolled else cl.kernel)
         k = k_accumulating(build_k_kernel(cl.am)) if with_k else None
         assert tuple(p.name for p in kb.params) == (
@@ -297,7 +311,8 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
             f"        // class ({la}{lc}|{lb}{ld}): {len(cl.blocks)} blocks\n"
             f"        CHECK(devEventRecord(ev[{c}]));\n"
             + _call(f"fj_kb{c}", kb, kb_args, str(len(cl.blocks)),
-                    kb_shared_doubles(cl.am)))
+                    column_shared_doubles(cl.am) if column
+                    else kb_shared_doubles(cl.am)))
         if kbs:
             acc = accumulators_per_density(cl.am, split)
             kbs_body.append(
@@ -534,7 +549,8 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
                    backend: str, workdir: Path, *, jobs: int | None = None,
                    split: str | None = None, rolled: bool = False,
                    dense: bool = False, transposed: bool = False,
-                   with_k: bool = True) -> list[ClassBinary]:
+                   column: bool = False, with_k: bool = True,
+                   timeout: float = 1800.0) -> list[ClassBinary]:
     """One driver PER CLASS (`plan` cut to that one class), compiled in
     parallel, each staged. A whole molecule's 162 kernels in one translation
     unit leave one compiler thread at it for most of an hour; one class per
@@ -548,8 +564,8 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
         w = workdir / f"c{c}"
         drv = kb_driver(sub, basis, backend, w / "gen", split=split,
                         rolled=rolled, dense=dense, transposed=transposed,
-                        with_k=with_k)
-        binary = compile_checked(tc, drv, w / "kb_driver")
+                        column=column, with_k=with_k)
+        binary = compile_checked(tc, drv, w / "kb_driver", timeout=timeout)
         staged = w / "in.bin"
         kb_stage(drv, sub, basis, D).tofile(staged)
         return ClassBinary(sub, drv, binary, staged)

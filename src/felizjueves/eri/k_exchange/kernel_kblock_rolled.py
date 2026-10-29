@@ -2,6 +2,8 @@
 
     build_kblock_rolled_kernel((la, lc, lb, ld) | spec) -> Kernel  n_batches = 1
     build_kblock_dense_kernel((la, lc, lb, ld) | spec)  -> Kernel  (#575)
+    build_kblock_rolled_kernel(..., column=True)        -> Kernel  (#583)
+    column_shared_doubles(am) / column_block_doubles(am) / column_shared_bytes
     e_pattern(l1, l2)        -> (ptr, cols)   one E block's nonzero entries
     hpq_table(am)            -> [n_p][n_q]    the R index of p + q
     tables(am)               -> {name: ints}  every class-constant I32 table
@@ -114,6 +116,53 @@ which leaves a nonzero sum unchanged: interpreted it equals `kb` and `kbr`
 BY VALUE. The price is those zeros' multiplies: 3.75x `kbr`'s contraction
 terms at `(dd|dd)`, 4.4x at `(ff|ff)` (`(n_rows n_hermite) / nnz`).
 
+THE COLUMN FORM (#583), `build_kblock_rolled_kernel(..., column=True)`
+(`kbrc_*`), opt-in, the default text untouched: `kbr`'s parameters,
+staging, recurrence and two rolled stages, but no lane carries a whole
+`K_AB` partial to the end of the block. No lane ever reads another lane's
+`Ksh` column, and stage 1 is per `(b, d)` row, so column `b` of one
+quartet is complete after its `d` rows; it is reduced there:
+
+    for each (bra, ket strip):                       every lane, together
+      for b:   col[a] = 0                            n_a per lane, in Ksh
+               for d:  stage 1 -> I[p];  for (a, c): col[a] += D[c,d] V(a,c)
+               for a:  WarpReduce(col[a]);  lane 0: Kblk[a n_b + b] += sum
+    lane 0 AtomicAdds Kblk into K[n_ao, n_ao] at (ko_a, ko_b), as kbr's
+
+`Ksh` is `[n_p + n_a, lanes]` (`column_shared_doubles`, dynamic) and
+`Kblk[n_a n_b]` one static copy a block (`column_block_doubles`), touched
+by lane 0 alone, so no barrier: 10,784 B a 32-lane block at `(dd|dd)`
+against `kbr`'s 18,176, 24,864 against 47,104 at `(ff|ff)`, and 47,880
+against 99,840 at `(gg|gg)` -- under 48 KiB with no opt-in
+(`column_shared_bytes`).
+
+WARP-UNIFORM CONTROL FLOW, because a `WarpReduce` needs every lane at the
+same statement (the interpreter refuses divergence). The ket loop is
+strip-mined from `ket0` in steps of `blockDim.y`, every lane at the same
+strip, lane `threadIdx.y` taking ket `kk + threadIdx.y`. Its `break` is on
+the strip's FIRST ket, its largest (kets sorted descending): `Ib *
+Iq[kk] * maxD < tau` bounds every pair of the strip and of every later one,
+the same for every lane. A lane past `ket1`, or under its OWN bound `Ib *
+Iq[k] * maxD < tau` (the walk's per-pair test, unchanged), keeps going on
+a real ket (the strip's first, when past `ket1`) with `s_bd` zeroed (`w =
+0`): its `I[p]` are zeros and so is everything it adds. So the pairs that
+contribute are exactly `walk_kb`'s at `tau`; the bra loop's `break` is
+`kbr`'s.
+
+NOT BITWISE against `kb` / `kbr`: each column is folded per strip and
+reduced per (bra, strip), where `kbr` folds a lane's whole share of the
+block and reduces once, so the sum is reassociated. Interpreted it is held
+to `walk_kb` within `ORACLE_TOL` (test/test_kernel_kblock_rolled.py). The
+price is `n_a n_b` warp reductions per (bra, strip), `n_a n_b log2(32)`
+shuffles, about 1% of the contraction at d by arithmetic, and a ragged or
+screened strip's dead lanes computing a zero-weighted ket.
+`transposed=True` composes with it (`kbrtc_*`). Measured on the RTX 3080
+(#583, `data/measured/kblock_rolled.json`'s `column_clock`): neutral
+against the default at `(dd|dd)` (1.035x) and `(ff|ff)` (0.971x). The
+theoretical occupancy rises from 10.4% to 16.7%, but on those 256-block
+inputs the achieved occupancy stays at one warp a scheduler. So it is the
+default of nothing, and the form for `(gg|gg)`, which only it launches.
+
 ONE BATCH ONLY, no lever: `kernel_kblock.spec_of`'s refusals.
 
 Like `kernel_kblock`, nothing here imports `ao/`, the interpreter,
@@ -125,7 +174,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from felizjueves.eri.k_exchange.kernel_k import bra_scalars, ket_body
+from felizjueves.eri.k_exchange.kernel_k import bra_scalars, ket_body, ket_quartet
 from felizjueves.eri.k_exchange.kernel_kblock import (
     BLOCK_PARAMS,
     NO_DENSITY_KEY,
@@ -160,6 +209,7 @@ from felizjueves.ir import (
     Note,
     Param,
     Scalar,
+    Space,
     Stmt,
     Var,
     WarpReduce,
@@ -178,6 +228,9 @@ __all__ = [
     "PARAMS",
     "TABLES",
     "build_kblock_dense_kernel",
+    "column_block_doubles",
+    "column_shared_bytes",
+    "column_shared_doubles",
     "build_kblock_rolled_kernel",
     "e_pattern",
     "hpq_table",
@@ -220,9 +273,10 @@ DENSE_NOTE = (
 
 
 def kblock_rolled_name(am: tuple[int, int, int, int], *,
-                       transposed: bool = False) -> str:
+                       transposed: bool = False, column: bool = False) -> str:
     la, lc, lb, ld = am
-    return f"kbr{'t' if transposed else ''}_{la}{lc}_{lb}{ld}"
+    return (f"kbr{'t' if transposed else ''}{'c' if column else ''}"
+            f"_{la}{lc}_{lb}{ld}")
 
 
 def e_pattern(l1: int, l2: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -315,7 +369,30 @@ def _store_r(ctx: KContext) -> tuple[Stmt, ...]:
 
 def _rolled_contract(ctx: KContext) -> tuple[Stmt, ...]:
     """`kernel_k`'s stage 1 and fused stages 2 and 3, as loops (docstring)."""
-    na, nc, nb, nd = (_ncart(x) for x in ctx.spec.am)
+    nb, nd = ctx.nb, ctx.nd
+    n_p = len(ctx.ps)
+    slot = _c(Fn.ADD, Lit(n_p), _c(Fn.ADD, _c(Fn.MUL, Var("xa"), Lit(nb)),
+                                   Var("xb")))
+    stage1, digest = _rolled_stages(ctx, slot)
+    return (
+        Note(ROLLED_NOTE),
+        For("xb", Lit(0), Lit(nb), Lit(1), (For("xd", Lit(0), Lit(nd), Lit(1), (
+            Decl("rbd", Scalar.I32, init=_c(Fn.ADD, _c(Fn.MUL, Var("xb"),
+                                                       Lit(nd)), Var("xd"))),
+            Note("stage 1: I[p] = SUM_q [p+q] (-1)^|q| E^bd_q, the sign in "
+                 "Ebd, into the shared column"),
+            stage1,
+            Note("stages 2 and 3 fused: K[a,b] += D[c,d] SUM_p E^ac_p I[p]"),
+            digest,
+        )),)),
+    )
+
+
+def _rolled_stages(ctx: KContext, slot: Expr) -> tuple[For, For]:
+    """One `(b, d)` row's stage 1 (into `Ksh[p]`) and fused stages 2 and 3
+    (into `Ksh[slot]`, an expression of `xa` and `xb`), as loops: `kbr`'s,
+    and with `slot = n_p + xa` the column form's (#583)."""
+    na, nc, _, nd = (_ncart(x) for x in ctx.spec.am)
     n_p = len(ctx.ps)
     ty = ctx.ty
 
@@ -335,8 +412,6 @@ def _rolled_contract(ctx: KContext) -> tuple[Stmt, ...]:
                                                         Var("ie"))))))),)),
         Assign(sh(Var("ip")), Var("acc")),
     ))
-    slot = _c(Fn.ADD, Lit(n_p), _c(Fn.ADD, _c(Fn.MUL, Var("xa"), Lit(nb)),
-                                   Var("xb")))
     digest = For("xa", Lit(0), Lit(na), Lit(1), (For("xc", Lit(0), Lit(nc),
                                                      Lit(1), (
         Decl("rac", Scalar.I32, init=_c(Fn.ADD, _c(Fn.MUL, Var("xa"),
@@ -352,18 +427,7 @@ def _rolled_contract(ctx: KContext) -> tuple[Stmt, ...]:
             Fn.MUL, Index("Dcd", (Var("dk"), _c(Fn.ADD, _c(
                 Fn.MUL, Var("xc"), Lit(nd)), Var("xd")))), Var("v")))),
     )),))
-    return (
-        Note(ROLLED_NOTE),
-        For("xb", Lit(0), Lit(nb), Lit(1), (For("xd", Lit(0), Lit(nd), Lit(1), (
-            Decl("rbd", Scalar.I32, init=_c(Fn.ADD, _c(Fn.MUL, Var("xb"),
-                                                       Lit(nd)), Var("xd"))),
-            Note("stage 1: I[p] = SUM_q [p+q] (-1)^|q| E^bd_q, the sign in "
-                 "Ebd, into the shared column"),
-            stage1,
-            Note("stages 2 and 3 fused: K[a,b] += D[c,d] SUM_p E^ac_p I[p]"),
-            digest,
-        )),)),
-    )
+    return stage1, digest
 
 
 def _rolled_init(ctx: KContext) -> tuple[Stmt, ...]:
@@ -394,6 +458,179 @@ def _write_back(ctx: KContext) -> tuple[Stmt, ...]:
                           Var("Kab")),)),
         )),)),
     )
+
+
+# ---------------------------------------------------------------------------
+# The column form (#583): each K_AB column reduced across the warp in-kernel
+# ---------------------------------------------------------------------------
+
+KBLK = "Kblk"  # the block's one K_AB copy, static SHARED, lane 0's alone
+
+COLUMN_NOTE = (
+    "the column form (#583): kbr's rolled stages, but the lane holds ONE "
+    "K_AB column, col[a] = Ksh[n_p + a], zeroed per (bra, ket strip, b) and "
+    "reduced across the warp after its d rows; lane 0 adds each column into "
+    "the block's one copy Kblk[a n_b + b]")
+
+
+def column_shared_doubles(am: tuple[int, int, int, int]) -> int:
+    """The column form's `Ksh` rows per lane: `I[n_p]`, then `col[n_a]`."""
+    la, lc, _, _ = am
+    return len(hermite_targets(la + lc)) + _ncart(la)
+
+
+def column_block_doubles(am: tuple[int, int, int, int]) -> int:
+    """The column form's static `Kblk[n_a n_b]`, one per block."""
+    return _ncart(am[0]) * _ncart(am[2])
+
+
+def column_shared_bytes(am: tuple[int, int, int, int], lanes: int) -> int:
+    """Shared memory per block (one warp of `lanes`): `Ksh`'s dynamic
+    `(n_p + n_a) lanes` doubles plus the static `Kblk`."""
+    return 8 * (column_shared_doubles(am) * lanes + column_block_doubles(am))
+
+
+def _column_shared(ctx: KContext) -> Stmt:
+    return Decl("Ksh", Scalar.F64, (Lit(column_shared_doubles(ctx.spec.am)),
+                                    Call(Fn.BLOCK_DIM_Y)), Space.SHARED)
+
+
+def _column_contract(ctx: KContext) -> tuple[Stmt, ...]:
+    """Per `b`: zero the lane's column, `kbr`'s two stages per `d` row into
+    it, then one `WarpReduce` per `a` and lane 0's add into `Kblk`. Every
+    loop bound is a constant of the class, so the reductions are reached by
+    every lane together; a dead lane (`w = 0`) adds exact zeros."""
+    na, nb, nd = _ncart(ctx.spec.am[0]), ctx.nb, ctx.nd
+    n_p = len(ctx.ps)
+    ty = ctx.ty
+    col = _c(Fn.ADD, Lit(n_p), Var("xa"))
+    stage1, digest = _rolled_stages(ctx, col)
+    return (
+        Note(COLUMN_NOTE),
+        Note("a lane with no live pair (past ket1, or under its own bound) "
+             "runs a real ket with s_bd zeroed: I[p] = 0, so its column "
+             "gets exact zeros"),
+        Assign(Var("sq"), _c(Fn.MUL, Var("sq"), Var("w"))),
+        For("xb", Lit(0), Lit(nb), Lit(1), (
+            For("xa", Lit(0), Lit(na), Lit(1), (
+                Assign(Index("Ksh", (col, ty)), Lit(0.0)),)),
+            For("xd", Lit(0), Lit(nd), Lit(1), (
+                Decl("rbd", Scalar.I32, init=_c(Fn.ADD, _c(
+                    Fn.MUL, Var("xb"), Lit(nd)), Var("xd"))),
+                Note("stage 1: I[p] = SUM_q [p+q] (-1)^|q| E^bd_q, the sign "
+                     "in Ebd, into the shared column"),
+                stage1,
+                Note("stages 2 and 3 fused: col[a] += D[c,d] SUM_p E^ac_p "
+                     "I[p]"),
+                digest,
+            )),
+            Note("column b of this (bra, strip): reduce each col[a] across "
+                 "the warp, warp-uniform; lane 0 adds it into the block's "
+                 "copy"),
+            For("xa", Lit(0), Lit(na), Lit(1), (
+                Decl("Kab", Scalar.F64),
+                WarpReduce(Var("Kab"), Index("Ksh", (col, ty))),
+                If(_c(Fn.LT, ty, Lit(1)), (
+                    Assign(_kblk(nb), _c(Fn.ADD, _kblk(nb), Var("Kab"))),)),
+            )),
+        )),
+    )
+
+
+def _kblk(nb: int) -> Index:
+    return Index(KBLK, (_c(Fn.ADD, _c(Fn.MUL, Var("xa"), Lit(nb)),
+                           Var("xb")),))
+
+
+def _build_column(spec: Spec, name: str) -> Kernel:
+    """The column form's skeleton (#583; module docstring, THE COLUMN
+    FORM): `_build`'s, with the ket loop warp-uniform and the write from
+    `Kblk`."""
+    la, lc, lb, ld = spec.am
+    lp, lq = split(spec)
+    (dag,) = builder_plan(spec).dags
+    hooks = replace(DEFAULT_HOOKS, bind_e_bd=_store_r,
+                    contract=_column_contract, shared_decl=_column_shared)
+    ctx = KContext.of(spec, dag, name, None, hooks)
+    assert ctx.islot == {i: i for i in range(len(ctx.ps))}
+    na, nb = _ncart(la), ctx.nb
+    blk, ty, kk = Var("blk"), ctx.ty, Var("kk")
+
+    def bound(at: Expr) -> Call:
+        return _c(Fn.MUL, Var("Ib"), _c(Fn.MUL, Index("Iq", (at,)),
+                                        Var("maxD")))
+
+    per_strip: list[Stmt] = [
+        Note("strip screen: the strip's first ket is its largest (kets "
+             "sorted descending), so Ib * Iq[kk] * maxD < tau bounds every "
+             "pair of this strip and of every later one -- break, uniform "
+             "across the warp"),
+        If(_c(Fn.LT, bound(kk), Var("tau")), (Break(),)),
+        Decl(KET, Scalar.I32, init=_c(Fn.ADD, kk, ty)),
+        Decl("w", Scalar.F64, init=Lit(0.0)),
+        Note("the lane's own pair: live (w = 1) unless past ket1 or under "
+             "its own bound, the per-pair test walk_kb skips on; a lane past "
+             "ket1 runs the strip's first ket instead"),
+        If(_c(Fn.LT, Var(KET), Var("k1")), (
+            If(_c(Fn.LT, bound(Var(KET)), Var("tau")), (
+                Note("under its own bound: contributes zero"),),
+               (Assign(Var("w"), Lit(1.0)),)),),
+           (Assign(Var(KET), kk),)),
+        *ket_quartet(ctx),
+    ]
+    per_bra: list[Stmt] = [
+        *bra_scalars(ctx),
+        Note("bra screen: Ib * Iq[ket0] * maxD < tau bounds every pair of "
+             "this bra and of every later one (both groups sorted) -- so "
+             "break; uniform across the warp"),
+        If(_c(Fn.LT, _c(Fn.MUL, Var("Ib"), _c(Fn.MUL, Var("Iq0"),
+                                              Var("maxD"))), Var("tau")),
+           (Break(),)),
+        Note("the block's kets in strips of blockDim.y, every lane at the "
+             "same strip: lane threadIdx.y takes ket kk + threadIdx.y"),
+        For("kk", Var("k0"), Var("k1"), Call(Fn.BLOCK_DIM_Y),
+            tuple(per_strip)),
+    ]
+    per_blk: list[Stmt] = [
+        *(Decl(v, Scalar.I32, init=Index(p, (blk,)))
+          for v, p in (("b0", "bra0"), ("b1", "bra1"), ("k0", "ket0"),
+                       ("k1", "ket1"), ("ka", "ko_a"), ("kb", "ko_b"))),
+        Note("the block's density factor, read once (#484)"),
+        Decl("maxD", Scalar.F64, init=Index("dmax", (blk,))),
+        Note("the block's largest ket bound: its kets are sorted, and a "
+             "block in the launch has at least one"),
+        Decl("Iq0", Scalar.F64, init=Index("Iq", (Var("k0"),))),
+        Note("zero the block's K_AB copy: lane 0's alone, so no barrier"),
+        If(_c(Fn.LT, ty, Lit(1)), (
+            For("s", Lit(0), Lit(na * nb), Lit(1), (
+                Assign(Index(KBLK, (Var("s"),)), Lit(0.0)),)),)),
+        Note("every lane walks the block's whole bra list"),
+        For("bra", Var("b0"), Var("b1"), Lit(1), tuple(per_bra)),
+        Note("lane 0 adds the block's K_AB into K, as kbr's write: "
+             + WRITE_NOTE),
+        If(_c(Fn.LT, ty, Lit(1)), (
+            For("xa", Lit(0), Lit(na), Lit(1), (
+                For("xb", Lit(0), Lit(nb), Lit(1), (
+                    AtomicAdd(Index("K", (_c(Fn.ADD, Var("ka"), Var("xa")),
+                                          _c(Fn.ADD, Var("kb"), Var("xb")))),
+                              _kblk(nb)),)),)),)),
+    ]
+    body: tuple[Stmt, ...] = (
+        Note(f"K[a,b] += D[c,d] SUM_p E^ac_p SUM_q [p|q] E^bd_q, K class "
+             f"(la,lc|lb,ld) = ({la},{lc}|{lb},{ld}), lp={lp} lq={lq} "
+             f"(L={lp + lq}), one batch: kernel_kblock's mapping with E from "
+             "global memory, the contraction rolled and each K_AB column "
+             "reduced across the warp per (bra, ket strip) (#583)"),
+        Note(SORTED_GROUPS),
+        Note(NO_DENSITY_KEY),
+        Note("launch: gridDim = n_blk, blockDim = (1, warp width); dynamic "
+             "shared Ksh[n_p + n_a, warp width], static Kblk[n_a n_b]"),
+        Decl("blk", Scalar.I32, init=Call(Fn.BLOCK_X)),
+        hooks.shared_decl(ctx),
+        Decl(KBLK, Scalar.F64, (Lit(na * nb),), Space.SHARED),
+        If(_c(Fn.LT, blk, Var("n_blk")), tuple(per_blk)),
+    )
+    return Kernel(name, _params(spec), body)
 
 
 # ---------------------------------------------------------------------------
@@ -505,17 +742,22 @@ def build_kblock_dense_kernel(cls: tuple[int, int, int, int] | Spec, *,
 
 def build_kblock_rolled_kernel(cls: tuple[int, int, int, int] | Spec, *,
                                name: str | None = None,
-                               transposed: bool = False) -> Kernel:
+                               transposed: bool = False,
+                               column: bool = False) -> Kernel:
     """The rolled block exchange kernel of one K class (module docstring).
     `cls` is `(la, lc, lb, ld)`, the Hermite pairing, bra first, or a
     one-batch, lever-free `Target.K` `Spec` (`kernel_kblock.spec_of`).
     `transposed=True` (#576) stores `Ebd` as `[n_ebd, n_ket]`
-    (`ir.passes.transpose`, `kbrt_*`); the default is untouched."""
+    (`ir.passes.transpose`, `kbrt_*`); `column=True` (#583) is THE COLUMN
+    FORM (`kbrc_*`), each `K_AB` column reduced across the warp in-kernel;
+    the default is untouched by either."""
     spec = spec_of(cls)
     if name is None:
-        name = kblock_rolled_name(spec.am, transposed=transposed)
-    k = _build(spec, name, _store_r, _rolled_contract, _params(spec),
-               "global memory and the contraction rolled (#571)")
+        name = kblock_rolled_name(spec.am, transposed=transposed,
+                                  column=column)
+    k = (_build_column(spec, name) if column else
+         _build(spec, name, _store_r, _rolled_contract, _params(spec),
+                "global memory and the contraction rolled (#571)"))
     return transpose(k, TRANSPOSED) if transposed else k
 
 
