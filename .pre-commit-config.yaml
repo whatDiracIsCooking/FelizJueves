@@ -22,8 +22,14 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # test/compile-only-timings.xml is pytest's --junitxml output, tracked
+      # verbatim: one line, no final newline. A fix here would be undone by
+      # the next regeneration, and rewriting it fails any push whose range
+      # carries it (#646).
       - id: trailing-whitespace
+        exclude: ^test/compile-only-timings\.xml$
       - id: end-of-file-fixer
+        exclude: ^test/compile-only-timings\.xml$
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
