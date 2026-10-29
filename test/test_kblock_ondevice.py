@@ -64,11 +64,13 @@ THE COLUMN FORM (#583): every rolled cell again with `column=True`, MODE 0
 the rolled kernel with each `K_AB` column reduced across the warp per
 (bra, ket strip) (`kbrc_*`), on the rolled upload unchanged, held to the
 same bounds, its two runs bit-identical; its `sf` and `spdf` cells beside
-the others, and ONE g cell, `spdfg`: an s, p, d, f and g shell on five
-centres, one primitive each -- every K class with every `l <= 4`, 625 of
-them, `(gg|gg)` among them, which no other form launches (its `Ksh` is
-99,840 B a warp without the column cut, 47,880 B with it) -- against the
-walk and the host only (no libcint `vk` has a g shell).
+the others, and ONE g cell, `gg`: a single g shell, two primitives -- the
+one class `(gg|gg)`, which no other form launches (its `Ksh` is 99,840 B a
+warp without the column cut, 47,880 B with it, under 48 KiB with no
+opt-in) -- against `walk_kb` ONLY (no libcint `vk` has a g shell, and the
+host sweep adds nothing the interpreted tests do not already hold). A
+625-class s, p, d, f, g cell was tried first and dropped: about 45 minutes
+of its run was the pure-Python host references, not the card.
 
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`): the H2O/STO-3G driver
 compiled where no card is, both kernels; a warning in generated text fails
@@ -149,7 +151,8 @@ HIGH_L = (Cell("sf", 0.0, rolled=True), Cell("spdf", 0.0, rolled=True),
           Cell("spdf", 0.0, rolled=True, transposed=True),
           Cell("sf", 0.0, rolled=True, column=True),
           Cell("spdf", 0.0, rolled=True, column=True),
-          Cell("spdfg", 0.0, rolled=True, column=True))
+          Cell("gg", 0.0, rolled=True, column=True))
+WALK_ONLY = frozenset({"gg"})  # #583: held to walk_kb alone
 PARAMS = ([pytest.param(c, id=c.id)
            for c in (*FAST, *ROLLED, *DENSE, *TRANSPOSED, *COLUMN)]
           + [pytest.param(c, id=c.id, marks=pytest.mark.slow)
@@ -160,20 +163,16 @@ PARAMS = ([pytest.param(c, id=c.id)
              for c in HIGH_L])
 
 
-def _f_basis(ls: tuple[int, ...], *, one: bool = False
-             ) -> tuple[Basis, np.ndarray]:
-    """One shell per `l` of `ls` on its own centre, two primitives each (the
-    first alone with `one`, #583's g cell: the host walk's cost), and a
-    symmetric density (#571's f cells)."""
+def _f_basis(ls: tuple[int, ...]) -> tuple[Basis, np.ndarray]:
+    """One shell per `l` of `ls` on its own centre, two primitives each, and
+    a symmetric density (#571's f cells; #583's g cell)."""
     centres = ((0.0, 0.0, 0.0), (0.5, -0.6, 0.3), (-0.4, 0.7, 0.6),
                (0.6, 0.5, -0.7), (-0.5, -0.4, -0.6))
     prims = {0: ((1.2, 0.4), (0.6, 0.5)), 1: ((0.9, 0.35), (0.7, 0.4)),
              2: ((0.8, 0.3), (0.5, 0.6)), 3: ((0.7, 0.3), (0.45, 0.55)),
              4: ((0.6, 0.25), (0.4, 0.6))}
-    basis = Basis(tuple(
-        Shell(l, centres[i], (prims[l][0][0],), (1.0,)) if one
-        else Shell(l, centres[i], *prims[l])
-        for i, l in enumerate(ls)))  # noqa: E741
+    basis = Basis(tuple(Shell(l, centres[i], *prims[l])
+                        for i, l in enumerate(ls)))  # noqa: E741
     n = basis.n_ao
     return basis, np.array([[1.0 / (i + j + 1) for j in range(n)]
                             for i in range(n)])
@@ -191,8 +190,8 @@ def _case(name: str):
         return None, *_f_basis((0, 1, 2, 3))
     if name == "sf":
         return None, *_f_basis((0, 3))
-    if name == "spdfg":  # #583
-        return None, *_f_basis((0, 1, 2, 3, 4), one=True)
+    if name == "gg":  # #583: (gg|gg) alone
+        return None, *_f_basis((4,))
     basis, D = _launch_case(name)
     return None, basis, D
 
@@ -239,7 +238,8 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
                            **({"timeout": 300.0} if cell.column else {}))
     w = _walk(cell)
     Kw = np.array(w.K)
-    K0, scale = _host(cell.case)
+    walk_only = cell.case in WALK_ONLY
+    K0, scale = (None, None) if walk_only else _host(cell.case)
     tau_scale = cell.tau * np.array(w.scale)  # #200: < tau per skipped pair
     if cell.tau > 0.0:
         assert w.n_skipped > 0, "the screen never fired"
@@ -257,10 +257,11 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
         rel_w = float(np.max(np.abs(K - Kw)) / np.max(np.abs(Kw)))
         if not (cell.decay and mode == "k"):  # kernel_k: the scalar max|D|
             assert rel_w <= ORACLE_TOL, f"{mode}: K vs walk_kb {rel_w:.2e}"
-        big0 = float(np.max(np.abs(K0)))
-        assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0 + tau_scale), (
-            f"{mode}: K vs exchange_matrix "
-            f"{float(np.max(np.abs(K - K0))) / big0:.2e}")
+        if not walk_only:
+            big0 = float(np.max(np.abs(K0)))
+            assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0 + tau_scale), (
+                f"{mode}: K vs exchange_matrix "
+                f"{float(np.max(np.abs(K - K0))) / big0:.2e}")
         if cell.decay and mode != "k":  # within the skipped pairs' bounds
             assert np.all(np.abs(K - K0) <= ORACLE_TOL * big0
                           + np.array(w.bound)), f"{mode}: K vs the bound"

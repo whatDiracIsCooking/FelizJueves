@@ -68,8 +68,9 @@ THE COLUMN FORM (#583), `build_kblock_rolled_kernel(..., column=True)`
 (`kbrc_*`, arm `rolled-C`): each `K_AB` column reduced across the warp per
 (bra, ket strip), so `Ksh` is `n_p + n_a` per lane plus one static
 `Kblk[n_a n_b]` a block. Its compile (`kblock-column-compile`, each unit
-under a 300 s budget) is `kbrc` at `(dd|dd)`, `(ff|ff)` and `(gg|gg)` into
-the `compile` rows, with the static shared bytes the compiler reports.
+alone under a 120 s budget, recorded `over_budget` past it) is `kbrc`
+at `(dd|dd)`, `(ff|ff)` and `(gg|gg)` into the `compile` rows, with the
+static shared bytes the compiler reports.
 Its clock (CUDA only, #431) is its own rounds, `CLOCKS`' `dd-C` (`kb`,
 `rolled`, `rolled-C` on #569's input) and `ff-C` (`rolled`, `rolled-C` on
 #575's), under the store's `column_declared` (COLUMN_DECLARED), written
@@ -341,8 +342,11 @@ def _compile(backend: str, kern, workdir: Path, *,
     wall = time.perf_counter() - t0
     out = log.read_text()
     if wall >= timeout:
-        pytest.fail(f"{kern.name}: over budget, not compiled within "
-                    f"{timeout} s")
+        if timeout == COMPILE_TIMEOUT_S:
+            pytest.fail(f"{kern.name}: not compiled within {timeout} s")
+        return {"unit": kern.name, "source_bytes": len(text),
+                "compile_s": round(wall, 2), "budget_s": timeout,
+                "over_budget": True}  # #583: killed, recorded so
     peak_kb = ru.ru_maxrss
     assert proc.returncode == 0, out[-4000:]
     raw = (measured.parse_ptxas(out, kern.name) if backend == "cuda"
@@ -356,6 +360,7 @@ def _compile(backend: str, kern, workdir: Path, *,
     if timeout != COMPILE_TIMEOUT_S:  # #583's rows: its static Kblk too
         out["static_shared_bytes"] = raw.get("smem_bytes",
                                              raw.get("LDS Size", 0))
+        out.update(budget_s=timeout, over_budget=False)
     return out
 
 
@@ -400,7 +405,8 @@ CLOCKS = {
     "dd-C": (AM, _basis, 2304, 256, ("kb", "rolled", "rolled-C")),  # #583
     "ff-C": (AM_F, _basis_f, 256, 256, ("rolled", "rolled-C")),  # #583
 }
-COLUMN_BUDGET_S = 300.0  # #583: every compile it triggers, a hard cap
+COLUMN_BUDGET_S = 120.0  # #583: a unit compiled ALONE; over it is over budget
+COLUMN_KILL_S = 300.0  # a driver build in a run: a safety net, not the budget
 
 
 def _clock(backend: str, request, run_device_binary, tmp_path: Path,
@@ -426,7 +432,7 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
     parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
                                  backend, tmp_path / arm, with_k=False,
                                  **ARM_FLAGS[arm],
-                                 **({"timeout": COLUMN_BUDGET_S}
+                                 **({"timeout": COLUMN_KILL_S}
                                     if "rolled-C" in arms_run else {}))
              for arm in arms_run}
     Ks = {arm: run_classes(parts[arm], basis, "kb", run_device_binary,
@@ -645,6 +651,10 @@ def _column_compile_rows(backend: str, request, tmp_path: Path) -> None:
         r = _compile(backend, kern, tmp_path, timeout=COLUMN_BUDGET_S)
         row = {**head, "arm": "rolled-C", "am": list(am), **r}
         _save(path, store, "compile", row, ("arch", "toolchain", "unit"))
+        if r["over_budget"]:
+            print(f"\n{backend} {b.arch.name} {r['unit']}: OVER BUDGET "
+                  f"({r['compile_s']} s >= {r['budget_s']} s)")
+            continue
         print(f"\n{backend} {b.arch.name} {r['unit']}: {r['source_bytes']} B "
               f"source, {r['compile_s']} s, {r['peak_rss_kb']} kB peak, "
               f"r{r['registers']} spill {r['spill_store']}/{r['spill_load']} "
@@ -1243,7 +1253,7 @@ def _column_profile(request, run_device_binary, tmp_path: Path) -> None:
     assert cl.am == AM and len(cl.blocks) == 256
     parts = {arm: class_binaries(tc, replace(plan, classes=(cl,)), basis, D,
                                  "cuda", tmp_path / arm, jobs=1,
-                                 with_k=False, timeout=COLUMN_BUDGET_S,
+                                 with_k=False, timeout=COLUMN_KILL_S,
                                  **ARM_FLAGS[arm])
              for arm in C_ARMS}
     K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,

@@ -50,7 +50,7 @@
 #                   under ncu, global-load sectors per
 #                   request (#576; CUDA only)           FJ_KBLOCK_ROLLED_STORE
 #     kblock-column-compile  kbr's column form (kbrc) at (dd|dd),
-#                   (ff|ff) and (gg|gg), a 300 s budget a
+#                   (ff|ff) and (gg|gg), a 120 s budget a
 #                   unit (#583; a compiler, no card)    FJ_KBLOCK_ROLLED_STORE
 #     kblock-column  kbrc (rolled-C) against kb and kbr at
 #                   (dd|dd), and kbr at (ff|ff) (#583;
@@ -133,7 +133,7 @@ SWEEPS=(
   "kblock-rolled-profile|timed|kb_22_22 vs kbr_22_22 under ncu, CUDA only (#574) -> kblock_rolled.json"
   "kblock-transpose|timed|kbr with Ebd transposed vs kb, kbr at (dd|dd) and kbr at (ff|ff), CUDA only (#576) -> kblock_rolled.json"
   "kblock-transpose-profile|timed|kbr_22_22 vs kbrt_22_22 under ncu, CUDA only (#576) -> kblock_rolled.json"
-  "kblock-column-compile|compile|kbr's column form kbrc at (dd|dd), (ff|ff), (gg|gg), 300 s a unit (#583) -> kblock_rolled.json"
+  "kblock-column-compile|compile|kbr's column form kbrc at (dd|dd), (ff|ff), (gg|gg), 120 s a unit (#583) -> kblock_rolled.json"
   "kblock-column|timed|kbrc vs kb, kbr at (dd|dd) and kbr at (ff|ff), CUDA only (#583) -> kblock_rolled.json"
   "kblock-column-profile|timed|kbr_22_22 vs kbrc_22_22 under ncu, CUDA only (#583) -> kblock_rolled.json"
   "df-lowstack-compile|compile|eri3/metric aux ladder through i, both forms' compile (#606) -> df_lowstack.json"

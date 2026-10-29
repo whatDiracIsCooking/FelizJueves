@@ -156,7 +156,12 @@ to `walk_kb` within `ORACLE_TOL` (test/test_kernel_kblock_rolled.py). The
 price is `n_a n_b` warp reductions per (bra, strip), `n_a n_b log2(32)`
 shuffles, about 1% of the contraction at d by arithmetic, and a ragged or
 screened strip's dead lanes computing a zero-weighted ket.
-`transposed=True` composes with it (`kbrtc_*`).
+`transposed=True` composes with it (`kbrtc_*`). Measured on the RTX 3080
+(#583, `data/measured/kblock_rolled.json`'s `column_clock`): neutral
+against the default at `(dd|dd)` (1.035x) and `(ff|ff)` (0.971x). The
+theoretical occupancy rises from 10.4% to 16.7%, but on those 256-block
+inputs the achieved occupancy stays at one warp a scheduler. So it is the
+default of nothing, and the form for `(gg|gg)`, which only it launches.
 
 ONE BATCH ONLY, no lever: `kernel_kblock.spec_of`'s refusals.
 

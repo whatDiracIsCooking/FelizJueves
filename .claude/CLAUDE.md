@@ -348,6 +348,62 @@ sectors are again not measured (SASS-patched counters LaunchFailed on
 `kbr`), and on `kbrt` #574's full `details` set LaunchFailed on all 12
 takes of three sessions while the narrow sector set ran, recorded in its
 row (`transpose_profile`, `transpose_profile_reading`).
+**`kbr`'s column form, which takes K to g, measured and not made the
+default** (#583): `build_kblock_rolled_kernel(..., column=True)` (`kbrc_*`,
+arm `rolled-C`, opt-in; `kbr`'s parameters and staging, the default text
+byte-identical, `kernel_k.ket_body` split into its screen and
+`ket_quartet` with its text unchanged). No lane carries a whole `K_AB`
+partial to the end of the block. Per (bra, ket strip, `b`), the lane's
+column `col[a]` in `Ksh[n_p + a]` is reduced by one `WarpReduce` per `a`.
+Lane 0 adds each sum into one static `Kblk[n_a n_b]` a block (lane 0's
+alone, so no barrier) and then `Kblk` into `K`. The control flow is
+warp-uniform: strips from `ket0` in steps of `blockDim.y`, a `break` on
+the strip's first (largest) ket, and a lane past `ket1` or under its own
+bound (the walk's per-pair test) running a real ket with `s_bd` zeroed,
+which adds exact zeros. Footprint per 32-lane block (`column_shared_bytes`):
+10,784 B at `(dd|dd)` against 18,176, 24,864 at `(ff|ff)` against 47,104,
+and **47,880 at `(gg|gg)` against 99,840, under 48 KiB with no opt-in**. It
+reassociates the sum, so it is never bitwise against `kb` / `kbr`.
+Interpreted it is within `ORACLE_TOL` of `walk_kb` for every class through
+`(ff|ff)` at four lanes, the s, s, p plan and two H₂ screened
+(`test_kernel_kblock_rolled.py`, above L = 4 `slow`). **On the RTX 3080**
+(`test_kblock_ondevice.py`'s `-rolled-C` cells), runs bit-identical:
+- the four rolled cells, against the walk, the host and libcint;
+- H₂O/cc-pVDZ (`slow`): 81 classes, 3.78e-16 of the walk, 3.75e-15 of
+  `scale_K` against libcint;
+- `sf` and `spdf` (`high_l`): 2.23e-16 and 2.73e-16 of the walk;
+- **`gg`** (`high_l`): one g shell, two primitives, the one class
+  `(gg|gg)`, held to `walk_kb` only, 4.60e-16. It is the first g launch
+  of any K form. A 625-class s, p, d, f, g cell was tried and dropped:
+  about 45 minutes of it was pure-Python host references.
+
+On the RX 9060 XT only the fast cells ran, inside the kernel-tier gate
+(#431 keeps the rest out of scope). Compile (`devtools/measure.sh
+kblock-column-compile`, each unit alone, against a 120 s budget):
+- `sm_86`: `kbrc_22_22` 1.0 s, 96 registers (`kbr`: 128), no spill;
+  `kbrc_33_33` 1.1 s, 254 registers, no spill; `kbrc_44_44` 2.4 s, 255
+  registers, 8,160 B of spill stores, 14,736 B of stack.
+- `gfx1200`: 192 VGPRs each, 1.6 / 1.7 / 3.1 s.
+
+Clock (`devtools/measure.sh kblock-column`, behind the gate, rule
+`column_declared` written before any row, rows in `column_clock`):
+- `(dd|dd)`: `kb` 1,078 ms, `kbr` 2,530 ms, `kbrc` 2,619 ms, so 1.035x
+  `kbr` (`neutral`) and 2.43x `kb` (`slower`);
+- `(ff|ff)`: `kbr` 1,264 ms, `kbrc` 1,227 ms, 0.971 (`neutral`).
+
+The rule moves nothing, so **the recommendation is unchanged: through d
+`kb`, at f `kbr`, and at g `kbrc`, the only form that launches there**.
+Why, read off `ncu` (`kblock-column-profile`, one `details` take each,
+`column_profile_reading`):
+- theoretical occupancy went from 10.4% to 16.7%, the shared-memory limit
+  from 5 to 8 blocks an SM;
+- achieved occupancy stayed 7.78%, one warp per scheduler. #569's
+  `(dd|dd)` input is 256 blocks on 68 SMs, under 4 warps an SM, so it is
+  grid-limited, not shared-memory-limited;
+- the stall mix is unchanged (long scoreboard 56%, long + short 81%),
+  with 1.06x the warp instructions (the reductions and the dead lanes).
+
+The occupancy gain needs a grid wider than this input to show.
 **Since milestone 12 the repo has a second ERI engine and the first `F`**
 (`docs/implementation/hgp_fock.md` is the one place with the detail): the
 Head-Gordon–Pople recurrence of `[Fock]` §3.1 and the **fused** Fock kernel
