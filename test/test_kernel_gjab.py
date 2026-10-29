@@ -16,6 +16,10 @@ differences of `eri.j_coulomb.j.coulomb_matrix`, test/test_gradient_host.py).
   class (`eri.j_coulomb.drive.KernelJP`) -- over the J chain's kets, then
   `gjab`: the whole `dE_J` of the s, p basis of test_gradient_host.py and
   of H2O/STO-3G (`slow`), against the host.
+- THE LOW-STACK FORM (#619): every class through (ff) in the form its
+  default is not (`gjab_lowstack`; while `LOWSTACK_MIN_LSUM` is None that
+  is the low-stack form at every class), held to the same `TOL`, and the
+  chain in the low-stack form to `CHAIN_TOL`.
 
 ROUND-OFF: `|G_kernel - G_host| <= TOL max(scale)`, `TOL = 16 eps`,
 `scale` test_kernel_g1e.py's (each shell on its own row, each pair alone,
@@ -39,7 +43,9 @@ from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri.j_coulomb.drive import KernelJP
 from felizjueves.gradient import host
 from felizjueves.gradient.kernel_gjab import (
+    LOWSTACK_MIN_LSUM,
     build_gjab_kernel,
+    gjab_lowstack,
     gjab_name,
     gjab_pq_spec,
     gjab_spec,
@@ -126,13 +132,14 @@ def _chain_jp(name: str, la: int, lb: int, rec) -> np.ndarray:
     return out
 
 
-def _launch(name: str, la: int, lb: int, G, *, chain: bool = False):
+def _launch(name: str, la: int, lb: int, G, *, chain: bool = False,
+            lowstack: bool | None = None):
     basis, nuclei = _case(name)
     rec = host.records(basis, nuclei, la, lb)
     n = len(rec["s_ab"])
     jp = (_chain_jp if chain else _host_jp)(name, la, lb, rec)
     grid, block = launch_shape(n, 3)
-    return Interpreter(build_gjab_kernel((la, lb)),
+    return Interpreter(build_gjab_kernel((la, lb), lowstack=lowstack),
                        launch=Launch(grid, block, 1)).run(
         n_rec=n, n_ao=basis.n_ao, n_atom=len(nuclei), n_rows=n, Jp=jp,
         M=_density(basis.n_ao), G=G, row=np.arange(n, dtype=np.int32),
@@ -178,15 +185,46 @@ def test_one_launch_over_the_bra_class_is_the_host_gradient(cls) -> None:
     assert err <= TOL * sc, f"{cls}: {err / sc / EPS:.1f} eps of scale"
 
 
+@pytest.mark.parametrize("cls", [by_l(c, sum(c) + 1, id=f"{c[0]}{c[1]}")
+                                 for c in CLASSES])
+def test_the_other_form_is_the_host_gradient(cls) -> None:
+    """THE LOW-STACK FORM (#619): every class in the form its default is
+    not, held to the same bound."""
+    basis, nuclei = SPDF
+    pairs = host.class_pairs(basis, *cls)
+    other = not gjab_lowstack(cls)
+    G = _launch("spdf", *cls, np.zeros((len(nuclei), 3)), lowstack=other)
+    want = _host("spdf", pairs)
+    sc = _scale("spdf", pairs)
+    err = np.abs(G - want).max()
+    assert err <= TOL * sc, (
+        f"{cls} other form: {err / sc / EPS:.1f} eps of scale")
+
+
+def test_the_low_stack_rule_and_one_contract() -> None:
+    """No measured rows yet (#619): no class defaults to the low-stack
+    form. Both forms share the name and the parameter list."""
+    assert LOWSTACK_MIN_LSUM is None
+    assert not any(gjab_lowstack(c) for c in CLASSES)
+    for c in ((0, 0), (1, 1), (3, 3)):
+        a = build_gjab_kernel(c, lowstack=True)
+        b = build_gjab_kernel(c, lowstack=False)
+        assert a.name == b.name and a.params == b.params
+        assert len([s for s in walk(a.body) if isinstance(s, AtomicAdd)]) == 6
+
+
+@pytest.mark.parametrize("lowstack", [False, True], ids=["unrolled",
+                                                         "lowstack"])
 @pytest.mark.parametrize("name", [
     pytest.param("pair_sp", id="pair_sp"),
     pytest.param("h2o_sto3g_j", id="h2o_sto3g", marks=(pytest.mark.slow,))])
-def test_the_chain_through_the_pq_kernel_one_order_up_is_de_j(name) -> None:
+def test_the_chain_through_the_pq_kernel_one_order_up_is_de_j(
+        name, lowstack) -> None:
     basis, nuclei = _case(name)
     G = np.zeros((len(nuclei), 3))
     for la, lb in sorted({(a.l, b.l) for k, a in enumerate(basis.shells)
                           for b in basis.shells[k:]}):
-        G = _launch(name, la, lb, G, chain=True)
+        G = _launch(name, la, lb, G, chain=True, lowstack=lowstack)
     want = _host(name)
     sc = _scale(name, _all_pairs(name))
     err = np.abs(G - want).max()

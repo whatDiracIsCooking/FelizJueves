@@ -1,7 +1,8 @@
 """The Coulomb-energy gradient kernel: `Target.JAB` at `derivative_order =
 1`, the J chain's bra back-transform differentiated.
 
-    build_gjab_kernel(spec | (la, lb)) -> Kernel   one per bra pair class
+    build_gjab_kernel(spec | (la, lb), lowstack=) -> Kernel   one per class
+    gjab_lowstack(spec | (la, lb))     -> bool     the default form's rule
     gjab_name(spec | (la, lb))         -> str      gjab_{la}{lb}
     gjab_spec(la, lb)                  -> Spec     the class's d1 key
     gjab_pq_spec(la, lb, lc, ld)       -> Spec     the [p|q] class it reads
@@ -45,6 +46,25 @@ plus the derivative's and the gradient's:
 with `n_p1 = len(hermite_targets(la + lb + 1))`. `G` is ZEROED BY THE
 CALLER; every record only adds.
 
+THE LOW-STACK FORM (#619; `lowstack=True`, `kernel_g1e`'s low-stack gv
+shape; the name, parameters, launch and `G` contract the same). The
+unrolled form holds the six derivative densities `HA_k`, `HB_k` over
+`hermite_targets(L + 1)` and the pooled derivative factors as straight-line
+locals, ~210 KB of text at (dd). The low-stack form holds none of them: per
+record the same head and per-axis tables one index up, then per block row
+`(a, b)`, its weight `wt` read from `M`,
+
+    gA_k += wt (2 alpha SUM_t E^{a+1_k,b}_t Jp[row, t]
+                - a_k SUM_t E^{a-1_k,b}_t Jp[row, t]),   gB likewise
+
+each SUM a rolled loop over the tables (`e_fragment.rolled_e_sum`) reading
+the record's `Jp` row where it lies; there is no `R`, the `J_p` row is
+already in global memory. NOT YET THE DEFAULT anywhere:
+`LOWSTACK_MIN_LSUM` is None until data/measured/gjab.json holds the rows
+(`devtools/measure.sh gjab-compile`, a compiler and no card, its rule
+declared before any row), and `gjab_lowstack` reads it. Below the floor
+the text is byte-identical to the form before #619.
+
 ROUND-OFF, NOT BITWISE, against `gradient.host.coulomb_gradient`, which
 sums row by row; the stated bound is in test/test_kernel_gjab.py.
 
@@ -62,6 +82,10 @@ from felizjueves.gradient.kernel_g1e import (
     derivative_reader,
     hermite_densities,
     launch_shape,
+    lowstack_derivative,
+    lowstack_differ,
+    lowstack_rows,
+    lowstack_weight,
     record_head,
     scatter_gradient,
     weights,
@@ -82,17 +106,33 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
+from felizjueves.mmd import e_fragment as ef
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
 __all__ = [
+    "LOWSTACK_MIN_LSUM",
     "build_gjab_kernel",
+    "gjab_lowstack",
     "gjab_name",
     "gjab_pq_spec",
     "gjab_spec",
     "launch_shape",
     "n_p1",
 ]
+
+# The la + lb floor of the low-stack default (#619): None until
+# data/measured/gjab.json holds both arches' rows (`devtools/measure.sh
+# gjab-compile`, the rule declared before any row); then the smallest la + lb
+# with an inadmissible unrolled class. Until then the low-stack form is
+# built only when forced (`lowstack=True`).
+LOWSTACK_MIN_LSUM: int | None = None
+
+LOWSTACK_NOTE = (
+    "LOW-STACK (#619): no Hermite density is formed; per block row, its "
+    "weight read from M, the six derivative terms as rolled sums over the "
+    "per-axis tables one index up against the record's Jp row in global "
+    "memory (2 alpha SUM E^{a+1_k,b} Jp - a_k SUM E^{a-1_k,b} Jp)")
 
 
 def gjab_spec(la: int, lb: int) -> Spec:
@@ -127,20 +167,20 @@ def gjab_name(cls: Spec | tuple[int, int]) -> str:
     return f"gjab_{la}{lb}"
 
 
+def gjab_lowstack(cls: Spec | tuple[int, int]) -> bool:
+    """THE SELECTION RULE (#619): True when `LOWSTACK_MIN_LSUM` is set and
+    `la + lb >= LOWSTACK_MIN_LSUM`; there `build_gjab_kernel` emits the
+    low-stack form by default. While the floor is None (no measured rows)
+    every class defaults to the unrolled form."""
+    la, lb = _class(cls)
+    return LOWSTACK_MIN_LSUM is not None and la + lb >= LOWSTACK_MIN_LSUM
+
+
 def _c(fn: Fn, *args: Expr) -> Call:
     return Call(fn, args)
 
 
-def build_gjab_kernel(cls: Spec | tuple[int, int], *,
-                      name: str | None = None) -> Kernel:
-    """The Coulomb-energy gradient kernel of one bra pair class.
-
-    `cls` is a d1 `Target.JAB` `Spec` or `(la, lb)`. See the module
-    docstring.
-    """
-    la, lb = _class(cls)
-    head = record_head(la + 1, lb + 1, interleaved=True)
-    head.append(Decl("jr", Scalar.I32, init=Index("row", (Var(REC),))))
+def _unrolled_values(la: int, lb: int) -> list[Stmt]:
     E = axis_reader(la + 1, lb + 1)
     pool = Locals()
     dA = derivative_reader(E, pool, "A")
@@ -160,8 +200,53 @@ def build_gjab_kernel(cls: Spec | tuple[int, int], *,
             for t in terms[1:]:
                 v = _c(Fn.ADD, v, t)
             values.append(Decl(f"g{side}{k}", Scalar.F64, init=v))
-    per_rec = (*head, *weights(la, lb), *pool.decls, *dens, *values,
-               *scatter_gradient())
+    return [*weights(la, lb), *pool.decls, *dens, *values]
+
+
+def _lowstack_values(la: int, lb: int) -> list[Stmt]:
+    """THE LOW-STACK FORM (module docstring): the same sums as
+    `_unrolled_values`, regrouped per block row."""
+    def jp_read(h: Expr) -> Expr:
+        return Index("Jp", (Var("jr"), h))
+
+    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+        def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
+            return (*lowstack_weight(la, lb),
+                    *lowstack_derivative(la, lb, a, b, jp_read, "wt",
+                                         Fn.ADD))
+        return lowstack_rows(lb, elem)
+
+    return [
+        Note(LOWSTACK_NOTE),
+        *lowstack_differ(la, lb),
+        *(Decl(f"g{s}{k}", Scalar.F64, init=Lit(0.0))
+          for s in "AB" for k in range(3)),
+        Note("per block row (a, b), weight wt from M: gA_k += wt SUM_t "
+             "(dA_k E^{ab})_t Jp[row, t] (the Cartesian rule, 2 alpha "
+             "E^{a+1_k,b} - a_k E^{a-1_k,b}), gB likewise, each rolled over "
+             "the per-axis tables (e_fragment.rolled_e_sum); Hermite order "
+             f"{la + lb + 1}"),
+        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+    ]
+
+
+def build_gjab_kernel(cls: Spec | tuple[int, int], *,
+                      name: str | None = None,
+                      lowstack: bool | None = None) -> Kernel:
+    """The Coulomb-energy gradient kernel of one bra pair class.
+
+    `cls` is a d1 `Target.JAB` `Spec` or `(la, lb)`. See the module
+    docstring. `lowstack` picks the form: `None` (the default) is
+    `gjab_lowstack(cls)`, `True` / `False` force either at any class. Both
+    forms have the same name, parameters, launch and `G` contract.
+    """
+    la, lb = _class(cls)
+    if lowstack is None:
+        lowstack = gjab_lowstack(cls)
+    head = record_head(la + 1, lb + 1, interleaved=True)
+    head.append(Decl("jr", Scalar.I32, init=Index("row", (Var(REC),))))
+    values = (_lowstack_values if lowstack else _unrolled_values)(la, lb)
+    per_rec = (*head, *values, *scatter_gradient())
     body: tuple[Stmt, ...] = (
         Note(f"gradient of E_J, bra class (la, lb) = ({la}, {lb}): "
              "G[A, k] += SUM_ab D_ab SUM_t (dA_k E^ab)_t J_t "
