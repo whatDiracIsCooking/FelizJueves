@@ -157,6 +157,11 @@ and the `dkms autoinstall` that fixes it.
   rather than running out of memory. Two
   runs on one card serialise; an outer `flock` on the same path is recognised
   as an ancestor and is redundant, not harmful.
+- **A PR from a session without both cards may merge, labelled** (#651):
+  after the fast and compile tiers, carrying `unverified-on-card` and naming
+  the backend(s) no card ran. `lib.sh`'s `card_present` / `card_absent` decide
+  it, and `doctor.sh`'s `card verdict` line prints the same answer; the `pr`
+  skill has the rule.
 - **The kernel tier is deliberately NOT a hook.** An unrolled high-L kernel is
   slow to compile and the tier costs minutes; a gate that costs minutes is one
   people bypass with `--no-verify`. Run it before a PR and say which backend.
