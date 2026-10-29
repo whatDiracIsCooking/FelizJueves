@@ -138,9 +138,10 @@ for CUDA, `.hip` for HIP):
   (`gradient.kernel_gk`): for every K class `(la, lc | lb, ld)`, the
   Hermite pairing, each `l <= LMAX` (1 when the flag is given bare: the
   16 classes with every shell s or p), `gk_{la}{lc}_{lb}{ld}`, `dE_K/dR`
-  on the bra's two centres. Accepted 0..`GRAD_K_L_MAX` = 2 (validated
-  through (dd|dd), interpreted; its unrolled text is ~4 MB there); above
-  it is a 2. It ADDS units beside the J ladders, as `--grad-l` does, and
+  on the bra's two centres. Accepted 0..`GRAD_K_L_MAX` = 3 (validated
+  through (ff|ff); from L = 5 and for every class with an f shell each
+  unit is `kernel_gk`'s ROLLED form, #618); above it is a 2. It ADDS
+  units beside the J ladders, as `--grad-l` does, and
   is NEVER in the no-flag default nor in KERNEL_GEN_CMD.
 
 - the DF gradient ladder, `--grad-df-l [LMAX] [--grad-df-aux-l AUXMAX]`
@@ -526,7 +527,7 @@ QUAD_L_MAX = 2  # the quadrupole is validated through (dd) only, as the dipole
 DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
 DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
-GRAD_K_L_MAX = 2  # kernel_gk is validated through (dd|dd) interpreted
+GRAD_K_L_MAX = 3  # kernel_gk is validated through (ff|ff) (#618)
 DEFAULT_GRAD_DF_L = 1  # `--grad-df-l` given bare: orbital l <= 1
 DEFAULT_GRAD_DF_AUX_L = 2  # `--grad-df-aux-l` bare or omitted: aux l <= 2
 GRAD_DF_L_MAX = 3  # orbital l: the DF gradients are validated through f
@@ -1616,7 +1617,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.grad_k_l is not None and not 0 <= args.grad_k_l <= GRAD_K_L_MAX:
         print(f"emit: --grad-k-l {args.grad_k_l} is outside "
               f"0..{GRAD_K_L_MAX}: the exchange-gradient kernel is validated "
-              "through (dd|dd) only", file=sys.stderr)
+              "through (ff|ff) only", file=sys.stderr)
         return 2
     if (args.grad_df_l is not None
             and not 0 <= args.grad_df_l <= GRAD_DF_L_MAX):

@@ -174,6 +174,15 @@ KERNEL_BUILD_DIR=${KERNEL_BUILD_DIR:-.kernel-tier}
 # (SCCACHE_DIR) is never touched by this repo's scripts.
 KERNEL_NO_CACHE=${KERNEL_NO_CACHE:-}
 
+# A per-unit compile cap in seconds (#618), empty for none (the default).
+# Non-empty, kernel-tier.sh's compile phase kills a unit still compiling
+# after it (a failed compile, never a retry) and exports it for the device
+# phase, where test/devcache.py caps every test-side compile at it too
+# (`compile_unit`'s timeout is the smaller of the two):
+#
+#   KERNEL_UNIT_TIMEOUT=10 devtools/kernel-tier.sh --backend cuda
+KERNEL_UNIT_TIMEOUT=${KERNEL_UNIT_TIMEOUT:-}
+
 # Where kernel-tier.sh writes its run logs. Relative paths resolve against the
 # repo root. Gitignored; `.gitignore` and `.dockerignore` both name this path,
 # so keep them in step if you rename it.
@@ -232,6 +241,7 @@ MEASURE_DF_LOWSTACK_STORE=${MEASURE_DF_LOWSTACK_STORE:-data/measured/df_lowstack
 MEASURE_DF_GRAD_LOWSTACK_STORE=${MEASURE_DF_GRAD_LOWSTACK_STORE:-data/measured/df_grad_lowstack.json}
 MEASURE_G1E_STORE=${MEASURE_G1E_STORE:-data/measured/g1e.json}
 MEASURE_GJAB_STORE=${MEASURE_GJAB_STORE:-data/measured/gjab.json}
+MEASURE_GK_STORE=${MEASURE_GK_STORE:-data/measured/gk.json}
 
 # How a timed or profiled sweep runs: ALONE (no xdist -- a worker compiling
 # beside a timing makes it a different experiment), its prints shown, its

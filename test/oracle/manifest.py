@@ -1706,6 +1706,78 @@ def quadrupole_integrals(name: str = QUADRUPOLE,
         arr("int1e_rr_cart:zero", (ncomp, nao, nao)))
 
 
+# --- the exchange-gradient witness (#618) ----------------------------------------
+#
+# libcint's `int2e_ip1_cart` on a tracked fixture's molecule and basis,
+# contracted with that fixture's OWN recorded density into the gradient
+# `kernel_gk` writes: `G[A, k] = dE_K/dR_{A,k}`, `E_K = 1/2 SUM D_ab D_cd
+# (ac|bd)`, as the bra derivative of every ordered quartet (both bra centres;
+# D symmetric), per K class `(la, lc | lb, ld)` (the Hermite pairing, bra
+# first: the class whose `gk_` launch deposits it) and whole. The tensor
+# (3 x 70^4 at CO/cc-pVTZ) is far over the 512 KiB hook, so only its
+# contraction is recorded. Not a fixture of its own (no AO arrays): it
+# lives in `k_gradient/` and `k_gradient()` loads it, holding its inputs
+# (molecule, basis, `cart`, `nao`) to the parent's exactly and the density
+# by the sha256 of its recorded bytes. Cartesian, as the kernel is.
+
+K_GRADIENT_DIR = Path(__file__).resolve().parent / "k_gradient"
+K_GRADIENT = "co_ccpvtz_k_grad"
+K_GRADIENT_SCHEMA = 1
+
+
+def density_sha256(dm: np.ndarray) -> str:
+    """The sha256 of a density's float64 bytes, row-major."""
+    import hashlib
+
+    return hashlib.sha256(np.ascontiguousarray(
+        dm, dtype=np.float64).tobytes()).hexdigest()
+
+
+@dataclass(frozen=True)
+class KGradient:
+    """The exchange-gradient witness, its inputs checked against its parent."""
+
+    path: Path
+    provenance: dict[str, Any]
+    parent: Fixture
+    whole: np.ndarray  # G[n_atom, 3]
+    classes: dict[tuple[int, int, int, int], np.ndarray]  # am -> G[n_atom, 3]
+
+
+def k_gradient(name: str = K_GRADIENT, where: Path = K_GRADIENT_DIR,
+               fixtures: Path = FIXTURES) -> KGradient:
+    """Load the exchange-gradient witness `name` and hold its inputs to the
+    tracked fixture it names, exactly; refuse a mismatch by field."""
+    path = where / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != K_GRADIENT_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{K_GRADIENT_SCHEMA} exchange "
+                          f"gradient witness named {name}")
+    parent = load(fixtures / f"{raw['parent']}.json")
+    pv, ppv = raw["provenance"], parent.provenance
+    want = {"mol": ppv.mol, "basis": ppv.basis, "cart": ppv.cart,
+            "nao": parent.nao, "density_sha256": density_sha256(
+                parent.density)}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the parent's "
+                              f"({pv.get(k)!r} against {v!r})")
+    nat = len(parent.atoms)
+
+    def grad(where_: str, xs: Any) -> np.ndarray:
+        g = np.array(_floats(path, where_, xs, 3 * nat)).reshape(nat, 3)
+        g.setflags(write=False)
+        return g
+
+    classes = {}
+    for r in raw["classes"]:
+        am = tuple(r["am"])
+        if len(am) != 4 or am in classes:
+            raise _fail(path, f"bad or duplicate class {am}")
+        classes[am] = grad(f"classes {am}", r["G"])
+    return KGradient(path, pv, parent, grad("whole", raw["whole"]), classes)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Load every tracked fixture; one line each. Exit 1 on the first bad one."""
     paths = [Path(p) for p in (argv or [])] or tracked()

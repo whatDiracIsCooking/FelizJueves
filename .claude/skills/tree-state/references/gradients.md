@@ -33,9 +33,10 @@ chain through the interpreted raised `[p|q]`), and `gk` within 16 eps
 (measured <= 0.7) of the host's `absolute=True` twin for every K class
 through `(dd|dd)` (`test_kernel_gk.py`, L + 1 > 4 `slow`). Ladders
 `python -m felizjueves.emit --grad-l [LMAX]` (2 bare, 0..3) and
-`--grad-k-l [LMAX]` (1 bare, 0..2; `gk` is ~4 MB of unrolled text at
-`(dd|dd)`), never in the bare default nor in `KERNEL_GEN_CMD`; 48 + 32
-goldens (`test_emit_grad.py`, `test_emit_grad_k.py`).
+`--grad-k-l [LMAX]` (1 bare, 0..3 since #618), never in the bare default
+nor in `KERNEL_GEN_CMD`; 48 + 40 goldens (`test_emit_grad.py`,
+`test_emit_grad_k.py`, every other default `gk` unit through `(ff|ff)`
+pinned in `test/golden/gk_digests.json`).
 **On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`,
 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
 `gk` on H₂O/STO-3G only, against the host, 9 passed per card; worst
@@ -65,8 +66,46 @@ arches; `measure.sh check` holds the gate to the rows): unrolled `gv_33`
 everywhere (`gt_33` 5,296 B), one form; `gv_22` is 9,752 B, over #586's
 d0 8 KB but under #613's 14,000 B, so (dd) stays unrolled. Interpreted,
 `gv` in its other form at every class (`test_kernel_g1e.py`). No clock.
-No whole RHF gradient assembled; `gk` not measured (the DF-J terms:
-below). **`gjab` has a low-stack form, no class's default** (#619;
+**`gk` defaults to a ROLLED form from `L = 5` and at every f class**
+(#618; `gradient.md`, "The rolled `gk`"; `kernel_gk.gk_lowstack`,
+`LOWSTACK_MIN_L = 5`, `UNROLLED_L_MAX = 2`; `lowstack=` forces either;
+name, parameters, launch and `G` the same; below the floor the text is
+byte-identical, goldens unchanged). No `E` block, no straight-line fold:
+the bra's per-axis tables one index up and the ket's (its sign folded
+into the odd-`t` entries), both COMPACT (`tables_fragment`, only `t <= i
++ j` stored), `[r]^(0)` into a local `R` (`store_targets`), stage 1 into a
+local `I[p]` per `(b, d)` row, and each `(a, c)` row's derivative terms
+as loop nests over the tables, `W` read from `M`. The unrolled f form is
+never built (the user's decision), nor the block mapping (`kernel_kblock`'s
+one warp per `K_AB` block: only a cheap rolled variant was in scope, and
+#571 / #583 measured those slower or neutral). **Measured** in
+`data/measured/gk.json` (`measure/measure_gk.py`, `devtools/measure.sh
+gk-compile`, a compiler and no card, rule declared before any row, every
+unit alone under a **10 s kill**, the user's #618 budget, admissible at
+<= 14,000 B on both arches; `measure.sh check` holds the gate): the
+unrolled form is admissible through L = 4 on both (worst `gk_22_00`
+11,696 B on `sm_86`) and over on `sm_86` at L = 5 (`gk_22_10` 14,880 B);
+all 256 rolled units fit both, worst `gk_33_33` 11,616 B / 2.8 s on
+`sm_86` and 10,736 B / 2.2 s on `gfx1200`, slowest compile 4.8 s. A
+tracked **libcint witness**, `test/oracle/k_gradient/co_ccpvtz_k_grad.json`
+(`manifest.k_gradient`, `python -m oracle.generate --regenerate
+--k-gradient`): `int2e_ip1_cart` on CO/cc-pVTZ contracted with
+`co_ccpvtz_j`'s recorded density, per K class (256) and whole; the host
+matches it on four s, p, d classes within 2.7e-16 of `max|G|`
+(`test_k_gradient_witness.py`, `slow`). On the cards `gk` runs through
+`test/gk_driver.py` (every unit its own translation unit, `-c` under the
+10 s cap, linked; one `G` per launch) in `test_gk_device.py`, which took
+over `test_grad_device.py`'s `gk` case. **On both cards** (2026-10-29):
+H₂O/STO-3G, every class in both forms on one upload, whole against the
+host 3.22e-15 / 3.37e-15 of `max|G|` (RTX 3080 / RX 9060 XT), rolled
+against default 9.2e-16; and CO/cc-pVTZ (`slow`, `high_l`, hand-run), all
+256 classes in their default forms against the libcint witness per class
+and whole, worst 2.63e-15 / 2.94e-15 of `max|G|` (gate 1e-12), plus the
+on-card differential against the unrolled form over the 62 / 58 classes
+whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
+319 / 315 units, every one under the 10 s cap (slowest 5.7 s / 6.1 s).
+No whole RHF gradient assembled; `gk` measured for its compile only (the
+DF-J terms: below). **`gjab` has a low-stack form, no class's default** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the
 per-row weight and derivative terms shared with `gv` through

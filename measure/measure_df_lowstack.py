@@ -171,8 +171,10 @@ def _build(target: str, cls, lowstack: bool):
     return km.build_metric_kernel(cls, lowstack=lowstack)
 
 
-def _compile(backend: str, kern, workdir: Path) -> dict:
-    """One unit through `os.wait4`, killed at COMPILE_BUDGET_S."""
+def _compile(backend: str, kern, workdir: Path, *,
+             budget: float = COMPILE_BUDGET_S) -> dict:
+    """One unit through `os.wait4`, killed at `budget` s (COMPILE_BUDGET_S
+    unless the caller has its own: #618's 10 s)."""
     b = measured.BACKENDS[backend]
     text = BACKEND[backend][0](kern, b.arch)
     src = workdir / f"{kern.name}.{b.ext}"
@@ -190,7 +192,7 @@ def _compile(backend: str, kern, workdir: Path) -> dict:
     with log.open("w") as fh:
         proc = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT,
                                 start_new_session=True)
-        timer = threading.Timer(COMPILE_BUDGET_S, kill, (proc.pid,))
+        timer = threading.Timer(budget, kill, (proc.pid,))
         timer.start()
         _, status, ru = os.wait4(proc.pid, 0)
         timer.cancel()
