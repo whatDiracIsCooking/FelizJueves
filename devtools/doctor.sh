@@ -546,6 +546,16 @@ if [ -n "${DOCTOR_GPU_VENDORS// /}" ]; then
     note "and says NOTHING about what a kernel computes; run the kernel tier"
     note "on a box with a card before trusting a numerical claim"
   fi
+
+  # The verdict a PR from here carries (#651), from lib.sh's card_present --
+  # the same call the pr skill makes, so the two cannot disagree. Not a warn:
+  # a session with no card is allowed to merge, labelled.
+  if card_present >/dev/null; then
+    ok "card verdict: cuda hip -- a PR from here is verified on both cards"
+  else
+    note "card verdict: unverified on $(card_absent) -- a PR from here carries"
+    note "the \`unverified-on-card\` label and names those backends (pr skill)"
+  fi
 fi
 
 # --- required paths (fixture trees, reference data) -----------------------

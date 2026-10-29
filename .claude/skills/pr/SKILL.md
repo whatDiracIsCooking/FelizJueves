@@ -68,6 +68,33 @@ bypassing it — `gh pr create` applies it only when no body is supplied.
 
 The harness's PR-body footer rules apply.
 
+### No card, or one: the `unverified-on-card` label
+
+Ask which cards this session can reach before writing the body:
+
+```bash
+bash -c '. devtools/lib.sh; echo "present: [$(card_present)] absent: [$(card_absent)]"'
+```
+
+`card_present` (in `devtools/lib.sh`) uses the enumeration rule the tiers use
+— an AMD GPU node in kfd's topology (`gfx_target_version` nonzero), an NVIDIA
+GPU under `/proc/driver/nvidia/gpus/` or in `nvidia-smi -L` — and
+`devtools/doctor.sh` prints the same verdict as its `card verdict` line.
+
+- **Both cards present**: the kernel tier is expected on each backend the diff
+  touches, as above. No label.
+- **One card, or none** (a Claude cloud container has none): the PR may still
+  merge after the **fast** tier and the **compile** tier (`(cuda or hip) and
+  not gpu and not slow`, both compilers, no card) are green — but it carries
+  the `unverified-on-card` label (`gh pr create … --label unverified-on-card`;
+  the label already exists), and the body's *What was run* names each backend
+  in `card_absent` as **unverified on card**. A session with one card still
+  runs the kernel tier on that one and says so.
+
+The label is the record that a card run is owed: whoever next has both cards
+runs the kernel tier for the labelled PRs' families and removes it. It never
+excuses a red fast or compile tier.
+
 ## 5. Merge
 
 ```bash
