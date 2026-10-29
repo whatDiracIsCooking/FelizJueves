@@ -186,12 +186,12 @@ the 31 classes with `5 <= L <= 8` and every shell `l <= 2` are `slow`.
 
 | Check | Worst | Gate |
 |---|---|---|
-| the ERI tap against `eri/eri.py` (MMD), element by element, every class through `(dd\|dd)`, both modes | (pending) | `TOL (s_hgp + s_mmd)` |
+| the ERI tap against `eri/eri.py` (MMD), element by element, every class through `(dd\|dd)`, both modes | 5.6e-16 of `s_hgp + s_mmd` (`(pp\|pp)`) | `TOL (s_hgp + s_mmd)` |
 | the same against `eri/hgp_drive.py`, per block (see below) | — | `TOL max_block(s_hgp + s_mmd)` |
 | the ket 20 bohr away, every `T` past the switch, `(ss\|pp)` and `(pp\|dd)` | — | the same two |
-| `J` against `eri/j_coulomb/j.py`'s sweep restricted to the class (MMD), both modes, every class through `(dd\|dd)`; every element off the class's blocks exactly 0 | — | `TOL (s_hgp + s_mmd)` |
+| `J` against `eri/j_coulomb/j.py`'s sweep restricted to the class (MMD), both modes, every class through `(dd\|dd)`; every element off the class's blocks exactly 0 | 4.7e-16 of `s_hgp + s_mmd` | `TOL (s_hgp + s_mmd)` |
 | canonical against ordered, every class through `L = 4` | — | `TOL (s_c + s_o)` |
-| whole `J` of H₂/STO-3G (and H₂O/STO-3G, `slow`), `launch_hjk`'s plan walked with the Rys kernels, both modes, against the MMD sweep / libcint's `vj` | (pending) | `1e-12 S` / `1e-12 S` (test_hjk_build.py's) |
+| whole `J` of H₂/STO-3G (and H₂O/STO-3G, `slow`), `launch_hjk`'s plan walked with the Rys kernels, both modes, against the MMD sweep / libcint's `vj` | 5.6e-16 / 2.6e-15 of `S` (H₂O) | `1e-12 S` / `1e-12 S` (test_hjk_build.py's) |
 
 The ERI tap is held to HGP per block, not per element, for a reason found
 here: where the four centres coincide (`(pp|pp)` on one shell)
