@@ -203,3 +203,17 @@ cc-pVTZ-JKFIT s, p, closed-form orbitals, `slow`): 7.8e-13 absolute, gate
 `1e-10`; `geri3` / `gmetric` interpreted with the DF-K weights within 0.37
 eps of the split-centre scale (`test_kernel_df_k_grad.py`). Not run on a
 card with the DF-K weights; the solve stays host-side. No clock.
+
+**RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
+nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O
+`_j` fixtures (STO-3G, 6-31G; cc-pVDZ is for `slow` tests only) plus a C1
+NH2F/6-31G with no `_j` sibling: the converted basis held to the sibling's
+exactly, PySCF's converged RHF (`mo_*` recorded; `density`, `W` derived),
+libcint's `int1e_ipovlp`/`ipkin`/`ipnuc`, `int1e_iprinv` per nucleus,
+`grad.rhf.get_jk`'s `vj1`/`vk1`, and the per-atom `h`, `S`, `J`, `K`, `V_nn`
+terms with `nuc_grad_method().kernel()`'s total. `manifest.gradient_fixture`
+recomputes each term from the stored arrays (~3e-15, `GRADIENT_TOL` 1e-12),
+sums them to the total, and checks zero net force (structural only: it cannot
+see a wrong factor). An `oracle` test holds H2O/STO-3G's total to a central
+difference of RHF energies. The sign conventions are `manifest`'s docstring.
+No card was involved.
