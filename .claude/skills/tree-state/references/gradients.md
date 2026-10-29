@@ -120,7 +120,16 @@ holds the declared rule (#614's, restated) and **no row**
 the session had no compiler), and `measure.sh check` holds the floor at
 None until every class has both arches' rows. Not compiled by nvcc or
 hipcc in either new form; the on-card chain (`DQ`, raised `[p|q]`,
-`gjab`, no host `J_p`) is not built.
+`gjab`, no host `J_p`) is not built. Its CO/cc-pVTZ reference is
+tracked so that cell need not run the pure-Python host (#639): a
+**libcint witness**, `test/oracle/j_gradient/co_ccpvtz_j_grad.json`
+(`manifest.j_gradient`, `python -m oracle.generate --regenerate
+--j-gradient`), `int2e_ip1_cart` contracted with `co_ccpvtz_j`'s recorded
+density into `dE_J/dR` per `gjab` bra class (10) and whole; the host
+matches it on every class within 1.25e-15 of `max|G|` (gate 1e-14,
+`test_j_gradient_witness.py`, `slow`: 13 min on 4 workers, ~37 CPU-min
+of host), and its `oracle` test rebuilds it from PySCF in ~2 s. No
+device test reads it yet.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
