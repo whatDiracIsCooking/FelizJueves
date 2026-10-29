@@ -217,6 +217,11 @@ class Case:
     # `gradient_sibling` is the `_j` case whose inputs it shares, or None.
     record_gradient: bool = False
     gradient_sibling: str | None = None
+    # #565: single uncontracted primitives `(symbol, l, exponent)` appended
+    # to the library basis of that element, coefficient 1 -- a polarisation
+    # shell a cheap witness needs. The basis's name in `provenance` says so
+    # (`_basis_name`).
+    extra_shells: tuple[tuple[str, int, float], ...] = ()
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -896,6 +901,28 @@ CASES["nh2f_631g_grad"] = Case(
     record_gradient=True,
 )
 
+# #565's cheap d witness: H2O/STO-3G plus one primitive d on O, no `_j`
+# sibling. J and K reach every class through (dd|dd) (the raised [p|q] at
+# L = 9) at about STO-3G's cost -- cc-pVDZ's d classes without its
+# nine-primitive s shells, which are what make its interpreted gk_ take hours.
+CASES["h2o_sto3g_d_grad"] = Case(
+    description=(
+        "#565's cheap d case: H2O/STO-3G plus one d primitive on O "
+        "(exponent 0.8), Cartesian, every J and K class through (dd|dd). "
+        "PySCF's converged RHF, libcint's derivative integrals, vj1 / vk1, "
+        "each per-atom term of the RHF nuclear gradient and its total."
+    ),
+    atom=_H2O,
+    unit="Bohr",
+    basis="sto-3g",
+    cart=True,
+    record_basis=True,
+    record_one_e=False,
+    density="rhf",
+    record_gradient=True,
+    extra_shells=(("O", 2, 0.8),),
+)
+
 
 def _host() -> str:
     # The same marking felizjueves.performance.measured uses: a container's hostname is
@@ -998,6 +1025,11 @@ def _mole(case: Case) -> Any:
             basis = {s: gto.basis.load(basis, s) for s in symbols}
         basis = {s: [sh for sh in b if sh[0] <= case.max_l]
                  for s, b in basis.items()}
+    if case.extra_shells:  # #565: the library basis plus primitives
+        if isinstance(basis, str):
+            basis = {s: gto.basis.load(basis, s) for s in symbols}
+        for sym, lx, a in case.extra_shells:
+            basis[sym] = [*basis[sym], [lx, [a, 1.0]]]
     return gto.M(atom=case.atom, unit=case.unit, basis=basis, cart=case.cart,
                  charge=case.charge, spin=case.spin, verbose=0)
 
@@ -1005,10 +1037,13 @@ def _mole(case: Case) -> Any:
 def _basis_name(case: Case) -> str:
     """The basis as `provenance.basis` records it: the name, and with
     `max_l` (#520) the cut, so a truncated basis never reads as the
-    library's."""
-    if case.max_l is None:
-        return case.basis
-    return f"{case.basis}, shells with l <= {case.max_l} only"
+    library's -- and with `extra_shells` (#565) each added primitive."""
+    name = case.basis
+    if case.max_l is not None:
+        name = f"{name}, shells with l <= {case.max_l} only"
+    for sym, lx, a in case.extra_shells:
+        name += f", plus one {'spdfghi'[lx]} primitive on {sym} (exponent {a})"
+    return name
 
 
 def rhf_density(mol: Any) -> np.ndarray:

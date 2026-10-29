@@ -10,6 +10,10 @@ generated kernels (`Spec.derivative_order = 1`).
     host_df.py       the density-fitting references, (P|Q) and (mn|P)
     kernel_gmetric.py  Target.METRIC at d1: gmetric_{lP}{lQ}
     kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}
+    rhf.py           dE_RHF/dR assembled from per-term runners (#565):
+                     the signs, the half, V_nn^x, the total
+    interpreted.py   the d1 kernels above as rhf.py's runners, run in
+                     the interpreter (the J chain's [p|q] included)
 
 WHAT A GRADIENT KERNEL WRITES. Not the derivative integrals -- a
 `[n_atom, 3, n_ao, n_ao]` tensor -- but their contraction with a matrix,

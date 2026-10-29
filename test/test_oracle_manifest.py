@@ -881,7 +881,8 @@ def test_dipole_integrals_refuses_the_wrong_kind_of_fixture():
 GRADIENT_FIXTURES = {"h2o_sto3g_grad": "h2o_sto3g_j",
                      "h2o_631g_grad": "h2o_631g_j",
                      "h2o_ccpvdz_grad": "h2o_ccpvdz_j",
-                     "nh2f_631g_grad": None}
+                     "nh2f_631g_grad": None,
+                     "h2o_sto3g_d_grad": None}  # #565: + one d on O
 GRAD_SLOW = {"h2o_ccpvdz_grad"}
 GRAD = manifest.FIXTURES / "h2o_sto3g_grad.json"
 

@@ -105,8 +105,23 @@ and whole, worst 2.63e-15 / 2.94e-15 of `max|G|` (gate 1e-12), plus the
 on-card differential against the unrolled form over the 62 / 58 classes
 whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
 319 / 315 units, every one under the 10 s cap (slowest 5.7 s / 6.1 s).
-No whole RHF gradient assembled; `gk` measured for its compile only (the
-DF-J terms: below). **`gjab` defaults to a low-stack form from `la + lb =
+`gk` measured for its compile only (the DF-J terms: below).
+**The whole RHF gradient is assembled and interpreted** (#565,
+`gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
+`rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,
+`D dV`, `dE_J`, `-1/2 dE_K` and `V_nn^x` (host) from injected per-term
+runners, each term returned with their fixed-order total;
+`gradient/interpreted.py`'s `interpreted_runners(boys=)` runs `gs_`, `gt_`,
+`gv_`, the J chain (`[p|q]` one bra order up through `KernelJP`, then
+`gjab_`) and `gk_` in the interpreter, each in its default form. Held to
+#550's gradient fixtures (`manifest.gradient_fixture`; `grad:h` split into
+`T` and `V` by its stored `int1e_ipkin`) per term and in total within
+`1e-10` absolute (`test_rhf_gradient.py`): H₂O/STO-3G, H₂O/6-31G, C1
+NH₂F/6-31G, H₂O/cc-pVDZ, and #565's `h2o_sto3g_d_grad` (H₂O/STO-3G plus one
+d primitive on O, `Case.extra_shells`: every J and K class through
+`(dd|dd)` at STO-3G's cost). The one-electron terms on s, p bases are fast;
+every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). Not on a
+card: the device assembly is #566. **`gjab` defaults to a low-stack form from `la + lb =
 5`, and its whole chain runs on both cards through (ff)** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the

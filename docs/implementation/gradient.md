@@ -1,7 +1,8 @@
 # Analytic nuclear gradients by McMurchie–Davidson: `S`, `T`, `V`, `E_J`, `E_K` and the DF integrals
 
 **Status: implemented host-side and as generated kernels, compiled by
-nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
+nvcc and hipcc and run on both cards; the whole RHF gradient assembled and
+held to PySCF interpreted only (#565)** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
 through (ff|i) and (i|i) since #613, `gs`, `gt`, `gv` through (ff)
 since #614, `gk` through `(ff|ff)` since #618 and the whole `gjab` chain
@@ -335,6 +336,45 @@ classes (unrolled) and the four classes with one f shell and nothing else
 `test/golden/gk_digests.json` (`slow` above `L + 1 = 4`;
 `test_emit_grad_k.py`).
 
+## The RHF gradient, assembled (`gradient/rhf.py`, #565)
+
+With `D` and `W` the total density and energy-weighted density,
+
+    dE/dR = - SUM W dS/dR + SUM D dT/dR + SUM D dV/dR
+            + dE_J/dR - 1/2 dE_K/dR + dV_nn/dR
+
+`rhf_gradient(basis, nuclei, D, W, runners)` applies those signs and the
+half once (`rhf.SIGN`) to five injected runners, each `(basis, nuclei, M) ->
+G` with the d1 kernels' contract, adds the host's `V_nn^x`
+(`host.nuclear_repulsion_gradient`), and returns every signed term and
+their sum in `rhf.TERMS` order. `V`'s runner carries the Hellmann–Feynman
+term (inside `gv_`). Two sets of runners exist: `rhf.host_runners` (the
+references) and `interpreted.interpreted_runners(boys=)`, every term from
+the generated kernels in `ir.interp`, each in its default form, launched
+class by class into one zeroed `G` as `test/grad_driver.py` packs them for
+a card. J is the chain, not the host's `J_p`: the d0 `[p|q]` of
+`kernel_gjab.gjab_pq_spec`'s class (the bra raised by one) through
+`eri.j_coulomb.drive.KernelJP`, then `gjab_`. The device runners are #566.
+
+This departs from the milestone's plan where #552 and #557 closed: the
+kernels `atomicAdd` into `G` (no partials and no fixed-order reduction, so
+a device term is not bit-reproducible; the interpreted one is), the
+Hellmann–Feynman term is `gv_`'s, with no `vhf_` kernel, and the module
+lives in `gradient/`, beside the kernels, not in a `nuclear_gradient/`
+package.
+
+**The witness** is #550's gradient fixtures (`manifest.gradient_fixture`):
+their converged `D` and `W` (`dme`) are the inputs, and each term is held
+to the fixture's (libcint's derivative integrals contracted by PySCF's own
+route), the total to `nuc_grad_method().kernel()`'s. #550 records `T + V`
+as one term, `grad:h`; the test splits off `T` from the fixture's stored
+`int1e_ipkin` so each is held separately. Molecules: #550's H₂O in STO-3G,
+6-31G and cc-pVDZ and C1 NH₂F/6-31G, plus #565's `h2o_sto3g_d_grad`:
+H₂O/STO-3G with one primitive d on O (`Case.extra_shells`), which reaches
+every class cc-pVDZ does -- through `(dd|dd)`, the raised `[p|q]` at L =
+9 -- at about STO-3G's cost. cc-pVDZ adds only contraction depth (O's
+nine-primitive s), and its interpreted `gk_` runs for hours.
+
 ## Witnesses, and what ran where
 
 | What | Against | Where | Worst |
@@ -352,6 +392,7 @@ classes (unrolled) and the four classes with one f shell and nothing else
 | libcint `gk` witness (`test_k_gradient_witness.py`, #618) | `int2e_ip1_cart` on CO/cc-pVTZ, `co_ccpvtz_j`'s density, per class and whole | the file: 256 classes, sum, invariance; the host on `(dd\|dd)`, `(pd\|pd)`, `(ds\|ds)`, `(dp\|sp)` (`slow`) | host 2.6e-16 of `max\|G\|`, gate 1e-12 |
 | libcint `gjab` witness (`test_j_gradient_witness.py`, #639) | `int2e_ip1_cart` on CO/cc-pVTZ, `co_ccpvtz_j`'s density, contracted into `dE_J/dR` per `gjab` bra class and whole (`manifest.j_gradient`) | the file: 10 classes, sum, invariance; the host on every class, so the whole `host.coulomb_gradient` (`slow`); the file against PySCF today (`oracle`) | host 1.25e-15 of `max\|G\|` (worst `(ss)`), gate 1e-14; host ~37 CPU-min |
 | `gk` on a card (`test_gk_device.py`, `test/gk_driver.py`, #618) | H₂O/STO-3G: the host (whole) and the other form (per class); CO/cc-pVTZ (`slow`, `high_l`): the libcint witness per class and whole, and the unrolled form on the same upload | RTX 3080 and RX 9060 XT; every unit its own TU under a 10 s kill | H₂O 3.22e-15 / 3.37e-15 of `max\|G\|`; CO 2.63e-15 / 2.94e-15 against libcint, differential over 62 / 58 classes 9.2e-17 / 1.2e-16 |
+| the RHF gradient, interpreted (`test_rhf_gradient.py`, #565) | #550's gradient fixtures: each term from libcint at the recorded `D`, `W` (`grad:h` split into `T`, `V`); the total `nuc_grad_method()`'s | H₂O/STO-3G, H₂O/6-31G, C1 NH₂F/6-31G, H₂O/STO-3G + one d on O, H₂O/cc-pVDZ; one-electron and nuclear terms on s, p bases fast, J, K, the totals and every d case `slow` | H₂O/STO-3G worst term 7.5e-14 (`V`), total 7.9e-14, net 2.7e-15 (118 s interpreted); the d case 6.9e-14 / 6.9e-14 (1162 s, `gk_`'s rolled form from L = 5 the bulk); H₂O/6-31G passes; every one-electron term on all five passes; NH₂F and cc-pVDZ totals not run to the end (hours interpreted); gate `1e-10` absolute |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
@@ -514,10 +555,9 @@ the spherical transform is the consumer's, as #615 decided for d0).
   `gjab` chain (through (ff) on CO/cc-pVTZ, #619). The
   forced-unrolled `gv` and `gjab` at (df) / (ff) are compiled
   (`g1e.json`, `gjab.json`) but not run on a card.
-- Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
-  `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
-  caller's), but no whole RHF gradient is assembled or checked against
-  `pyscf.grad.RHF` (each term has run on both cards, alone). The DF
+- The whole RHF gradient is assembled and held to PySCF interpreted
+  only ("The RHF gradient, assembled", #565); on a card each term has run
+  alone, and the device assembly is #566. The DF
   two-electron gradient, `G_J - 1/2 G_K`, is assembled on the host and
   held to PySCF's DF RHF gradient (above, #620); the one-electron terms
   are not added to it.
