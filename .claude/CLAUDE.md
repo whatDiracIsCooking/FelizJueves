@@ -39,7 +39,9 @@ opens with a status block, and it is the one place with the detail.
 The pattern to expect everywhere: "generated" does not mean "run on a
 card", and "run on a card" does not mean "measured". Many families are
 **interpreted only** or **compiled only** on one card. The RX 9060 XT runs
-that are still missing are attached to #431.
+that are still missing have no open issue: #431 closed on 2026-10-17 when
+the card's detection was fixed (below), not when they were re-run, so the
+list is each family's "RTX 3080 only" in the tree-state files.
 
 | Family | Where it stands | Reference |
 |---|---|---|
@@ -49,7 +51,7 @@ that are still missing are attached to #431.
 | HGP engine, fused `F`, split HGP `J`/`K` | `F` on both cards and timed; split HGP on the RTX 3080 only; nothing above L = 4 | `fock-hgp.md` |
 | Schwarz `Q`, cross overlap `SX`, DF metric, `(mn\|P)` | generated; DF through (ff\|i) / (i\|i) on both cards with low-stack forms; HGP DF twins on the RTX 3080 only | `schwarz-overlap-df.md` |
 | dipole `MU`, quadrupole; one-electron on HGP and Rys | dipole on both cards at L ≤ 4; quadrupole (raw second moments) interpreted only; HGP one-e on the RTX 3080 only; Rys one-e interpreted only | `one-electron-extra.md` |
-| gradients (d1) | `gs`/`gt`/`gv` on both cards through (ff); `gjab`, `gk`, DF-J terms on both cards; no assembled RHF gradient | `gradients.md` |
+| gradients (d1) | `gs`/`gt`/`gv` on both cards through (ff); `gjab`, `gk`, DF-J terms on both cards; DF-K weights and the DF two-electron gradient host-side, held to PySCF; no assembled RHF gradient | `gradients.md` |
 | Hessians (d2) | `hjab`/`hdq` and unrolled `d2s`/`d2t`/`d2v` on both cards through (dd); `hkx`, `d2metric`, `d2eri3` interpreted only | `hessians.md` |
 | Rys `F` / `J` / `K`, device Boys | Rys interpreted and emitted, never compiled by nvcc/hipcc; `fj_boys<M>`'s move left `kernels.json` pins **stale** | `rys-and-boys.md` |
 

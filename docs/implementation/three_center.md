@@ -25,11 +25,12 @@ It is `metric.md`'s shape with one more index.
 - **Oracle:** libcint's `int3c2e_cart` on `h2o_sto3g_j`'s molecule against
   PySCF's `df.make_auxmol(mol, 'cc-pvtz-jkfit')`, tracked as one schema-4
   piece (#442).
-- **Where it ran:** the RTX 3080 (`sm_86`, CUDA 13.0) only (#446, PR #457).
-  It has **not** run on the RX 9060 XT (`gfx1200`): kfd did not enumerate
-  the card (`gfx_target_version` 0). On `gfx1200` the units and both device
-  programs have only been compiled. By the user's decision that run is
-  attached to the open follow-up #431, with the metric's.
+- **Where it ran:** the RTX 3080 (`sm_86`, CUDA 13.0) (#446, PR #457).
+  At PR #457 kfd did not enumerate the RX 9060 XT (`gfx1200`,
+  `gfx_target_version` 0), so the units and both device programs were
+  only compiled there. #431 fixed that detection and closed; the card's
+  first `(mn|P)` run was #606's (PR #615), Parts 1 to 3 (see "The
+  low-stack form, and the ladder through aux i").
 - **Correctness is tested at `la + lb + lP ≤ 4` only**, the 22 classes
   `la ≤ lb` from (ss|s) through (dd|s). The builder and the emitter accept
   any `L`.
@@ -40,14 +41,14 @@ a wall-clock row for each class where the gate is read. That file is not
 `measured_store`'s `kernels.json`. No published board exists. `[JEngine]` (entry 35)
 is J only, and the recurrence is McMurchie & Davidson's (entries 39 and 46).
 The auxiliary basis is Weigend's cc-pVTZ-jkfit (entry 47), an input here
-and not a table to score against. Milestone 16 added no `tables.json`
+and not a table to score against. Milestone 16 added no `table{1,2,3}.json`
 cell, scoreboard, floor or `claims.json` record.
 `data/literature/jengine/limits.json` records this as a `StructuralLimit`
 (#447), as #245 did for the one-electron family and #417 for the metric.
 
 **Out of scope:** DF-J and DF-K, anything that factors or inverts the
-metric, spherical aux functions, screening, and any measurement (see "What
-is not done").
+metric, spherical aux functions, screening, and any measurement beyond
+#606's (see "What is not done").
 
 ## The family, as a key: a triple that runs a quartet
 
@@ -162,7 +163,8 @@ The kernel contract:
   grid. The thread walks its cell's two record ranges serially: bra outer,
   with the `mn` block formed once per bra record; aux inner. It holds
   `nA × nB × nP` accumulators in registers. That is 540 at `(dd|g)`, so
-  high classes will spill; nothing is measured.
+  high classes spill; #606 measured it and gated them (the low-stack form
+  below).
 - **Both `E` fragments are inlined:** `e_fragment.block_fragment(la, lb)`
   into `Ebra` (`zeta_ab`, `half_inv_zeta = 0.5 / zeta`, the record's
   `XPA` / `XPB`) and `e_fragment.center_fragment(lP)` into `Eket`
@@ -343,7 +345,8 @@ zeroed `(n_ao, n_ao, n_aux)` tensor `RUNS` times behind the VRAM probe,
 compiled through `plan_driver.compile_checked`, each call built from the
 kernel's own parameter list.
 
-**Not on the RX 9060 XT (`gfx1200`).** The card was on the PCI bus but kfd
+**Not on the RX 9060 XT (`gfx1200`), at PR #457.** The card was on the
+PCI bus but kfd
 did not enumerate it (`gfx_target_version` 0, the DKMS state #431
 records). `kernel-tier.sh --backend hip -- -k eri3` compiled 55 units with
 no warning and then exited 2, `device ABSENT -- numbers unproven`: "could
@@ -354,8 +357,9 @@ generated text:
 - the 22 units, in `test_emit_eri3.py` (#445);
 - both device programs, in `test_eri3_device.py` (#446).
 
-By the user's decision the HIP device run is attached to the open
-follow-up **#431**, the metric's.
+By the user's decision the HIP device run was attached to **#431**, the
+metric's. #431 closed on 2026-10-17 with the card's detection fixed; the
+run itself came in #606's session (PR #615), below.
 
 ## The emitted text
 
@@ -556,5 +560,9 @@ is the card's first `(mn|P)` run; it was #431's.
   unbuilt.
 - **An HGP twin.** `(mn|P)` on the HGP VRR and bra HRR (`heri3_*`,
   `Target.ERI3` on `Engine.HGP`), the same parameters and output, is built
-  for s and p shells and checked interpreted: `hgp_df.md`.
-- **An aux-major layout** for DF-J (the trade above), and derivatives.
+  for s and p shells, checked interpreted and run on the RTX 3080 only
+  (PR #601): `hgp_df.md`.
+- **An aux-major layout** for DF-J (the trade above). Derivatives are
+  built elsewhere: `geri3_` (gradient, #603/#613, both cards;
+  `gradient.md`) and `d2eri3_` (Hessian, #612, interpreted only;
+  `hessian.md`).

@@ -34,7 +34,8 @@ function of `la + lb` only, never batched), one thread per record, the
 closed form of `ao.pairs.pair_bound` at `PQ = 0` (two `SQRT`s and a Horner
 fold in `sqrt(ζ)`), within 16 eps of the host through `reference.pq` for
 every class `la ≤ lb ≤ 4`, interpreted (`test_kernel_pair_bound.py`) and on
-the RTX 3080 (`test_pair_bound_device.py`; the RX 9060 XT run is #431's).
+the RTX 3080 (`test_pair_bound_device.py`; the RX 9060 XT is not run, and
+no open issue tracks it; #431 closed on the card's detection fix, not the run).
 That is J's undressed bound; `K`'s screen is proved against the dressed one,
 `eri.k_exchange.k.record_bounds`, generated as `Target.RECORD_BOUND`
 (`eri/k_exchange/kernel_record_bound.py`, #499; `am` an **ordered** pair `(la, lb)`, the max

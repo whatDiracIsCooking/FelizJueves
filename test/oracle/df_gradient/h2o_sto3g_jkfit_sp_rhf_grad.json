@@ -1,0 +1,64 @@
+{
+ "schema": 1,
+ "name": "h2o_sto3g_jkfit_sp_rhf_grad",
+ "description": "#620: PySCF's DF-RHF two-electron nuclear gradient (aux response on) of H2O/STO-3G against cc-pVTZ-JKFIT's s and p shells (h2o_sto3g_jkfit_3c's inputs, aux l <= 1), at D = occ C C^T of manifest.df_rhf_c: g_j of E_J, g_k of E_K = 1/2 SUM D D (ml|ns), g of E_J - 1/2 E_K (get_veff), each [atom, k] (oracle.generate.df_rhf_build has the signs).",
+ "provenance": {
+  "pyscf": "2.14.0",
+  "libcint": "6.1.3",
+  "numpy": "2.5.3",
+  "date": "2026-10-29",
+  "host": "vm",
+  "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --df-gradient",
+  "mol": {
+   "atom": "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+   "unit": "Bohr",
+   "charge": 0,
+   "spin": 0
+  },
+  "basis": "sto-3g",
+  "cart": true,
+  "aux_basis": "cc-pvtz-jkfit",
+  "aux_max_l": 1,
+  "parent": "h2o_sto3g_j",
+  "nao": 7,
+  "naux": 57,
+  "occ": 2.0
+ },
+ "three_center_set": "h2o_sto3g_jkfit_3c",
+ "nocc": 5,
+ "e_j": 134.88203785661634,
+ "e_k": 59.44153416343683,
+ "g_j": [
+  -5.70243712878711,
+  -0.33895120682173563,
+  -11.881098287544095,
+  -5.631666296185184,
+  7.861751580243633,
+  -5.422538518679606,
+  11.334103424972314,
+  -7.522800373421907,
+  17.303636806223693
+ ],
+ "g_k": [
+  -3.534370011284734,
+  0.8287653659420905,
+  -8.65488791511893,
+  -3.9636143905026953,
+  2.5047083575635596,
+  -1.5604977541292926,
+  7.497984401787424,
+  -3.3334737235056613,
+  10.215385669248231
+ ],
+ "g": [
+  -3.9352521231447466,
+  -0.7533338897927784,
+  -7.553654329984605,
+  -3.6498591009338353,
+  6.6093974014618535,
+  -4.6422896416149575,
+  7.5851112240786005,
+  -5.856063511669074,
+  12.19594397159958
+ ]
+}

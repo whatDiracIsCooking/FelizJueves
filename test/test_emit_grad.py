@@ -236,8 +236,10 @@ def _compile(tc, backend: str, unit, tmp_path: Path) -> None:
     compile_kernel(tc, backend, _kernel(*unit), tmp_path)
 
 
-def compile_kernel(tc, backend: str, k, tmp_path: Path) -> None:
-    """Compile one built kernel's unit alone, failing on a warning in it."""
+def compile_kernel(tc, backend: str, k, tmp_path: Path, *,
+                   timeout: float = 1800) -> None:
+    """Compile one built kernel's unit alone, failing on a warning in it;
+    killed (an exception, a failure) after `timeout` s."""
     import devcache
 
     from felizjueves.performance import measured
@@ -249,7 +251,7 @@ def compile_kernel(tc, backend: str, k, tmp_path: Path) -> None:
     flags = [*shlex.split(measured.config_value(FLAGS_VAR[backend])), target]
     got = devcache.compile_unit(tc.path, flags, main, emit(k, arch), {},
                                 tmp_path / f"{k.name}.o", mode="-c",
-                                timeout=1800)
+                                timeout=timeout)
     diag = got.diagnostics
     assert got.returncode == 0, (
         f"{tc.name} failed in {got.workdir}:\n"

@@ -6,7 +6,8 @@ Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `..
 nuclear Hessian by MMD, run on both cards through (dd)** (`docs/implementation/hessian.md`
 is the one place with the detail; after `experimental/mmd/hessian`):
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`, order 2 legal on
-`spec.HESSIAN_TARGETS` (`JAB`, and since the exchange Hessian `K`, MMD only; `_HESSIAN_REFUSAL` elsewhere) and
+`spec.HESSIAN_TARGETS` (`JAB`, then `S`, `T`, `V`, the exchange Hessian
+`K` and the DF `METRIC` and `ERI3`, MMD only; `_HESSIAN_REFUSAL` elsewhere) and
 order 1 gaining `DQ`, every d0 and d1 key byte-identical. The skeleton
 `H[A, k, B, l] = d2 E_J/dR dR` for a fixed `D` (no CPHF response), split
 as bra-bra plus bra-ket (the half of `E_J` cancelling both twos):

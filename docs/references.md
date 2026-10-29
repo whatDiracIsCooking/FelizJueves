@@ -96,7 +96,12 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
 26. R. Li, Q. Sun, X. Zhang, and G. K.-L. Chan, "Introducing GPU acceleration
     into the Python-based simulations of chemistry framework," The Journal of
     Physical Chemistry A **129**, 1459–1468 (2025).
-    doi:10.1021/acs.jpca.4c05876
+    doi:10.1021/acs.jpca.4c05876 — `[GPU4PySCF]`. Also arXiv:2407.09700
+    (v1, openly readable); equation numbers cited against this entry are the
+    arXiv v1's, which the journal version may renumber. Cited by
+    `docs/implementation/rys_fock.md` for its eq. 1 (the ERI as
+    `SUM_n w_n I_x I_y I_z`) and eq. 3 (`N = floor(L/2) + 1` roots); its
+    Alg. 2 is not leaned on.
 27. X. Wu, Q. Sun, Z. Pu, T. Zheng, W. Ma, W. Yan, Y. Xia, Z. Wu, M. Huo,
     X. Li, W. Ren, S. Gong, Y. Zhang, and W. Gao, "Enhancing GPU-acceleration
     in the Python-based simulations of chemistry frameworks," WIREs
@@ -190,3 +195,23 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
     Hermite route (the moments `M^e_t` of a Hermite Gaussian and their
     recurrence in `e`), cited for `Target.DIPOLE` (#518). The equation
     number within §9.5 was not checked against the text.
+49. M. Dupuis, J. Rys, and H. F. King, "Evaluation of molecular integrals over
+    Gaussian basis functions," The Journal of Chemical Physics **65**, 111–116
+    (1976). doi:10.1063/1.432807 — `[DRK]`. The Rys method's 2D-integral
+    recurrences and their coefficients, the source of
+    `docs/implementation/rys_fock.md`'s VRR. Closed access: neither its
+    equation numbers nor its own spelling of the coefficients' names was
+    checked against the text here.
+50. R. Lindh, U. Ryu, and B. Liu, "The reduced multiplication scheme of the
+    Rys quadrature and new recurrence relations for auxiliary function based
+    two-electron integral evaluation," The Journal of Chemical Physics **95**,
+    5889–5897 (1991). doi:10.1063/1.461610 — `[LRL]`. The same 2D recurrences
+    re-derived with a reduced operation count. Closed access; no equation
+    number cited against it here was checked against the text.
+51. Q. Sun, "Libcint: An efficient general integral library for Gaussian basis
+    functions," Journal of Computational Chemistry **36**, 1664–1671 (2015).
+    doi:10.1002/jcc.23981 — `[Libcint]`. Cited for its source, which
+    implements `[DRK]`'s recurrences and is this repo's oracle (through
+    PySCF): `src/g2e.c`'s `CINTg0_2e` (the coefficients) and
+    `CINTg0_2e_2d` (the recurrences), read at commit `4909749` of
+    github.com/sunqm/libcint.

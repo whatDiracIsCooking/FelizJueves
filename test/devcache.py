@@ -65,6 +65,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 NO_CACHE_VAR = "KERNEL_NO_CACHE"  # devtools/config.sh; test_devcache.py pins it
+UNIT_TIMEOUT_VAR = "KERNEL_UNIT_TIMEOUT"  # devtools/config.sh: a compile cap, s
 DEFAULT_VENV_PATHS = ".venv /opt/venv"
 
 
@@ -224,8 +225,11 @@ def compile_unit(compiler: str, flags: list[str], main: str, text: str,
     `mode`: "link" (an executable: a cached `-c`, then an uncached link),
     "-c" or "-cubin" (one cached-or-passed-through step, the object itself).
     Every step runs; a failure stops after it with its returncode.
+    `KERNEL_UNIT_TIMEOUT` (config.sh), when set, caps `timeout` (#618).
     """
     env = dict(os.environ if env is None else env)
+    if env.get(UNIT_TIMEOUT_VAR):
+        timeout = min(timeout, float(env[UNIT_TIMEOUT_VAR]))
     key = unit_key(compiler, flags, main, text, units)
     work = build_root() / key[:24]
     work.mkdir(parents=True, exist_ok=True)

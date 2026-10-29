@@ -27,9 +27,16 @@ Regenerate the owner (`h10_chain_ccpvdz_j`) and its `_k` together, in that
 order: the `_k` reads the `_j`'s recorded density.
 
 `--df-gradient` (with `--regenerate` or `--check`, no names) is the DF
-gradient witness instead (#613, `df_gradient_build`): libcint's derivative
-integrals on the aux-i sets' inputs, contracted per class, written to
-`df_gradient/` and loaded by `manifest.df_gradient`.
+gradient witnesses instead, both in `df_gradient/`: #613's
+(`df_gradient_build`), libcint's derivative integrals on the aux-i sets'
+inputs contracted per class, loaded by `manifest.df_gradient`; and #620's
+(`df_rhf_build`), PySCF's DF-RHF two-electron gradient of H2O/STO-3G
+against JKFIT's s and p shells, loaded by `manifest.df_rhf`.
+
+`--k-gradient` (the same way) is the exchange-gradient witness instead
+(#618, `k_gradient_build`): libcint's `int2e_ip1_cart` on `co_ccpvtz_j`'s
+inputs contracted with its recorded density, per K class and whole,
+written to `k_gradient/` and loaded by `manifest.k_gradient`.
 
 A GRADIENT case (#550, `Case.record_gradient`, `<m>_grad`) records its
 converged SCF (`mo_energy`, `mo_occ`, `mo_coeff`) the way an "rhf" density
@@ -1730,22 +1737,249 @@ def df_gradient_build() -> dict[str, Any]:
 
 
 def df_gradient_main(regenerate: bool) -> int:
-    """`--df-gradient`: rewrite the witness, or (`--check`) compare."""
+    """`--df-gradient`: rewrite both witnesses in `df_gradient/` (#613's
+    per-class contractions, #620's DF-RHF gradient), or (`--check`)
+    compare."""
+    from .manifest import DF_GRADIENT, DF_RHF, df_gradient, df_rhf
+
+    return (_witness_main(regenerate, DF_GRADIENT, df_gradient_build,
+                         df_gradient)
+            | _witness_main(regenerate, DF_RHF, df_rhf_build, df_rhf))
+
+
+# #620: the DF-RHF two-electron gradient (manifest.df_rhf)
+
+def df_rhf_build() -> dict[str, Any]:
+    """The DF-RHF two-electron gradient (#620, manifest.df_rhf), computed
+    now: PySCF's `scf.RHF(mol).density_fit(aux).nuc_grad_method()` at the
+    closed-form `D = occ C C^T` (`df_rhf_c`, `mo_coeff` / `mo_occ` tagged so
+    K is built from `C`). `get_jk`'s `vj` / `vk` are electron-coordinate
+    derivatives on the bra AO (`-d/dR` of the function, so `+d/dR` of the
+    centre with PySCF's sign), each AO row counted twice by `(mn|ls) =
+    (nm|ls)` symmetry, plus its `.aux` (the aux-centre and metric terms):
+    `G_X[A] = 2 SUM_{m on A} vX[:, m, :] . D[m, :] + vX.aux[A]`. `G` is
+    `get_veff`'s the same way, `E_J - 1/2 E_K`. ONE OpenMP thread: PySCF's
+    threaded DF-K reduces in a run-dependent order (~1e-14 apart run to
+    run), and `--check` compares bytes."""
+    import pyscf
+    from pyscf import gto, lib, scf
+
+    from .manifest import (
+        DF_RHF,
+        DF_RHF_AUX_MAX_L,
+        DF_RHF_OCC,
+        DF_RHF_SCHEMA,
+        DF_RHF_SET,
+        df_rhf_c,
+    )
+
+    piece = CASES[f"{DF_RHF_SET}{COLS_SEP}{THREE_CENTER_COLS[0][0]}_"
+                  f"{THREE_CENTER_COLS[0][1]}"]
+    case = CASES[piece.parent]
+    mol = _mole(case)
+    symbols = sorted({mol.atom_pure_symbol(i) for i in range(mol.natm)})
+    aux = {s: [sh for sh in gto.basis.load(piece.aux_basis, s)
+               if sh[0] <= DF_RHF_AUX_MAX_L] for s in symbols}
+    mf = scf.RHF(mol).density_fit(auxbasis=aux)
+    mf.with_df.build()
+    auxmol = mf.with_df.auxmol
+    if not auxmol.cart:
+        raise ValueError("the aux molecule is not Cartesian")
+    nao, naux, nat = int(mol.nao_nr()), int(auxmol.nao_nr()), mol.natm
+    nocc = mol.nelectron // 2
+    c = df_rhf_c(nao, nocc)
+    mo = np.zeros((nao, nao))
+    mo[:, :nocc] = c
+    mo_occ = np.zeros(nao)
+    mo_occ[:nocc] = DF_RHF_OCC
+    d = DF_RHF_OCC * c @ c.T
+    dm = lib.tag_array(d, mo_coeff=mo, mo_occ=mo_occ)
+    with lib.with_omp_threads(1):
+        vj, vk = mf.get_jk(mol, dm)
+        g = mf.nuc_grad_method()
+        gj, gk = g.get_jk(mol, dm)
+        veff = g.get_veff(mol, dm)
+    sl = mol.aoslice_by_atom()
+
+    def total(v) -> list[float]:
+        out = np.asarray(v.aux, dtype=float).reshape(-1, nat, 3)[0].copy()
+        for a in range(nat):
+            p0, p1 = sl[a, 2:]
+            out[a] += 2 * np.einsum("xij,ij->x", v[:, p0:p1], d[p0:p1])
+        return [float(x) for x in out.ravel()]
+
+    return {
+        "schema": DF_RHF_SCHEMA,
+        "name": DF_RHF,
+        "description": (
+            "#620: PySCF's DF-RHF two-electron nuclear gradient (aux "
+            "response on) of H2O/STO-3G against cc-pVTZ-JKFIT's s and p "
+            "shells (h2o_sto3g_jkfit_3c's inputs, aux l <= 1), at D = occ "
+            "C C^T of manifest.df_rhf_c: g_j of E_J, g_k of E_K = 1/2 SUM "
+            "D D (ml|ns), g of E_J - 1/2 E_K (get_veff), each [atom, k] "
+            "(oracle.generate.df_rhf_build has the signs)."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": DF_GRADIENT_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "aux_basis": piece.aux_basis,
+            "aux_max_l": DF_RHF_AUX_MAX_L,
+            "parent": piece.parent,
+            "nao": nao,
+            "naux": naux,
+            "occ": DF_RHF_OCC,
+        },
+        "three_center_set": DF_RHF_SET,
+        "nocc": nocc,
+        "e_j": float(0.5 * np.einsum("ij,ji->", d, vj)),
+        "e_k": float(0.5 * np.einsum("ij,ji->", d, vk)),
+        "g_j": total(gj),
+        "g_k": total(gk),
+        "g": total(veff),
+    }
+
+
+def _witness_main(regenerate: bool, name: str, build, load) -> int:
     import json
 
-    from .manifest import DF_GRADIENT, DF_GRADIENT_DIR, df_gradient
+    from .manifest import DF_GRADIENT_DIR
 
-    path = DF_GRADIENT_DIR / f"{DF_GRADIENT}.json"
-    fresh = df_gradient_build()
+    path = DF_GRADIENT_DIR / f"{name}.json"
+    fresh = build()
     if regenerate:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dumps(fresh))
-        df_gradient()
+        load()
         print(f"wrote {path}")
         return 0
     tracked = json.loads(path.read_text())
     if comparable(fresh) == comparable(tracked):
-        print(f"{DF_GRADIENT}: matches the tracked witness")
+        print(f"{name}: matches the tracked witness")
+        return 0
+    print(f"{path}: PySCF now computes it differently from the tracked "
+          "witness; news about PySCF until proven otherwise")
+    return 1
+
+
+# ---------------------------------------------------------------------------
+# #618: the exchange-gradient witness (manifest.k_gradient)
+# ---------------------------------------------------------------------------
+
+K_GRADIENT_COMMAND = ("PYTHONPATH=test uv run --group oracle python -m "
+                      "oracle.generate --k-gradient")
+K_GRADIENT_PARENT = "co_ccpvtz_j"
+
+
+def k_gradient_build() -> dict[str, Any]:
+    """The exchange-gradient witness (manifest.k_gradient), computed now:
+    libcint's `int2e_ip1_cart` on `K_GRADIENT_PARENT`'s molecule and basis,
+    contracted with that fixture's recorded density `D`. An
+    electron-coordinate derivative on a function is minus the derivative on
+    its centre, so with `ip1[k, a, c, b, d] = (nabla_k a c|b d)` the bra
+    derivative of the quartet `(ac|bd)` (`kernel_gk`'s pairing) is
+    `-SUM D_ab D_cd ip1[k, a, c, b, d]` on `atom(a)` and `-SUM D_ab D_cd
+    ip1[k, c, a, b, d]` on `atom(c)` (`(ac|bd) = (ca|bd)`), each into the K
+    class `(l_a, l_c | l_b, l_d)`. One `shls_slice` per first shell; `D` is
+    symmetric (asserted)."""
+    import pyscf
+
+    from .manifest import (
+        K_GRADIENT,
+        K_GRADIENT_SCHEMA,
+        density_sha256,
+    )
+
+    case = CASES[K_GRADIENT_PARENT]
+    mol = _mole(case)
+    D = _tracked_density(K_GRADIENT_PARENT)
+    if D is None:
+        raise ValueError(f"{K_GRADIENT_PARENT} is not tracked")
+    if not np.array_equal(D, D.T):
+        raise ValueError(f"{K_GRADIENT_PARENT}'s density is not symmetric")
+    nao, nat, n = int(mol.nao_nr()), mol.natm, mol.nbas
+    if D.shape != (nao, nao):
+        raise ValueError(f"density {D.shape}, nao {nao}")
+    loc = mol.ao_loc_nr(cart=True)
+    ls = [int(mol.bas_angular(i)) for i in range(n)]
+    by_l = {lv: np.concatenate([np.arange(loc[i], loc[i + 1])
+                                for i in range(n) if ls[i] == lv])
+            for lv in sorted(set(ls))}
+    out: dict[tuple[int, int, int, int], np.ndarray] = {}
+
+    def add(key, atom, g) -> None:
+        out.setdefault(key, np.zeros((nat, 3)))[atom] += g
+
+    for s in range(n):
+        ip = mol.intor("int2e_ip1_cart", comp=3,
+                       shls_slice=(s, s + 1, 0, n, 0, n, 0, n))
+        ss = slice(int(loc[s]), int(loc[s + 1]))
+        if ip.shape != (3, ss.stop - ss.start, nao, nao, nao):
+            raise ValueError(f"unexpected shape {ip.shape}")
+        atom = int(mol.bas_atom(s))
+        for lt, T in by_l.items():
+            for lu, U in by_l.items():
+                for lv, V in by_l.items():
+                    blk = ip[:, :, T][:, :, :, U][:, :, :, :, V]
+                    add((ls[s], lt, lu, lv), atom, -np.einsum(
+                        "xstuv,su,tv->x", blk, D[ss][:, U], D[np.ix_(T, V)]))
+                    add((lt, ls[s], lu, lv), atom, -np.einsum(
+                        "xstuv,tu,sv->x", blk, D[np.ix_(T, U)], D[ss][:, V]))
+    whole = sum(out.values())
+    return {
+        "schema": K_GRADIENT_SCHEMA,
+        "name": K_GRADIENT,
+        "description": (
+            f"#618: libcint's int2e_ip1_cart on {K_GRADIENT_PARENT}'s "
+            "molecule and basis, contracted with its recorded density into "
+            "dE_K/dR (E_K = 1/2 SUM D_ab D_cd (ac|bd), the bra derivative "
+            "of every ordered quartet, both bra centres), per K class "
+            "(la, lc | lb, ld) and whole (oracle.generate.k_gradient_build "
+            "has the signs)."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": K_GRADIENT_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "nao": nao,
+            "density_sha256": density_sha256(D),
+        },
+        "parent": K_GRADIENT_PARENT,
+        "whole": [float(x) for x in whole.ravel()],
+        "classes": [{"am": list(k), "G": [float(x) for x in out[k].ravel()]}
+                    for k in sorted(out)],
+    }
+
+
+def k_gradient_main(regenerate: bool) -> int:
+    """`--k-gradient`: rewrite the witness, or (`--check`) compare."""
+    import json
+
+    from .manifest import K_GRADIENT, K_GRADIENT_DIR, k_gradient
+
+    path = K_GRADIENT_DIR / f"{K_GRADIENT}.json"
+    fresh = k_gradient_build()
+    if regenerate:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(dumps(fresh))
+        k_gradient()
+        print(f"wrote {path}")
+        return 0
+    tracked = json.loads(path.read_text())
+    if comparable(fresh) == comparable(tracked):
+        print(f"{K_GRADIENT}: matches the tracked witness")
         return 0
     print(f"{path}: PySCF now computes it differently from the tracked "
           "witness; news about PySCF until proven otherwise")
@@ -1878,9 +2112,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="the quadrupole witness "
                          "(manifest.quadrupole_integrals) instead of the "
                          "fixtures")
+    ap.add_argument("--k-gradient", action="store_true",
+                    help="the exchange-gradient witness (#618, "
+                         "manifest.k_gradient) instead of the fixtures")
     args = ap.parse_args(argv)
     if args.df_gradient and args.names:
         ap.error("--df-gradient takes no case names")
+    if args.k_gradient and (args.names or args.df_gradient
+                            or args.quadrupole):
+        ap.error("--k-gradient takes no case names and no other witness")
     if args.quadrupole and (args.names or args.df_gradient):
         ap.error("--quadrupole takes no case names and no --df-gradient")
 
@@ -1903,6 +2143,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return df_gradient_main(args.regenerate)
     if args.quadrupole:
         return quadrupole_main(args.regenerate)
+    if args.k_gradient:
+        return k_gradient_main(args.regenerate)
 
     status = 0
     for name in args.names or list(CASES):

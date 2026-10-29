@@ -1678,6 +1678,91 @@ def df_gradient(name: str = DF_GRADIENT, where: Path = DF_GRADIENT_DIR,
                       grads(raw["gmetric"], 2))
 
 
+# --- the DF-RHF two-electron gradient (#620) -------------------------------------
+#
+# PySCF's DF-RHF two-electron nuclear gradient (`scf.RHF(mol).density_fit()`
+# and its `nuc_grad_method()`'s `get_jk`, aux response on) of H2O/STO-3G
+# against cc-pVTZ-JKFIT's s and p shells -- the h2o_sto3g_jkfit_3c set's
+# molecule and parent basis, its aux basis cut to `l <= DF_RHF_AUX_MAX_L` --
+# at the closed-shell density `D = DF_RHF_OCC C C^T` of the CLOSED-FORM
+# occupied coefficients `df_rhf_c` (no SCF: every array is rebuilt bit for
+# bit). The J and K terms are recorded apart: `G_J` of `E_J = 1/2 SUM D D
+# (mn|ls)`, `G_K` of `E_K = 1/2 SUM D D (ml|ns)`, and PySCF's own two-
+# electron gradient `G` (`get_veff`, `E_J - 1/2 E_K`), with both energies.
+# DF against DF over the same aux set, never DF against exact integrals. The
+# aux basis is s and p only, so Cartesian and spherical agree and the host
+# (`gradient.host_df`, pure Python) stays at (pp|p). It lives beside the DF
+# gradient witness in `df_gradient/`; `df_rhf()` loads it and holds its
+# inputs to the tracked set exactly.
+
+DF_RHF = "h2o_sto3g_jkfit_sp_rhf_grad"
+DF_RHF_SCHEMA = 1
+DF_RHF_SET = "h2o_sto3g_jkfit_3c"
+DF_RHF_AUX_MAX_L = 1
+DF_RHF_OCC = 2.0
+
+
+def df_rhf_c(nao: int, nocc: int) -> np.ndarray:
+    """`C[m, i] = ((3 m + 5 i + 1) mod 7 - 3) / 4`: exact in binary."""
+    m, i = np.ogrid[:nao, :nocc]
+    return (((3 * m + 5 * i + 1) % 7) - 3) / 4.0
+
+
+@dataclass(frozen=True)
+class DfRhf:
+    """PySCF's DF-RHF two-electron gradient, its inputs checked."""
+
+    path: Path
+    provenance: dict[str, Any]
+    three_center: ThreeCenterSet
+    nocc: int
+    e_j: float
+    e_k: float
+    g_j: np.ndarray  # [n_atom, 3]
+    g_k: np.ndarray
+    g: np.ndarray  # G_J - 1/2 G_K, PySCF's get_veff route
+
+    def c(self) -> np.ndarray:
+        return df_rhf_c(self.three_center.parent.nao, self.nocc)
+
+
+def df_rhf(name: str = DF_RHF, where: Path = DF_GRADIENT_DIR,
+           fixtures: Path = FIXTURES) -> DfRhf:
+    """Load the DF-RHF gradient `name`; refuse inputs that are not the
+    tracked set's, by field."""
+    path = where / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != DF_RHF_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{DF_RHF_SCHEMA} DF-RHF gradient "
+                          f"named {name}")
+    ts = three_center_set(raw["three_center_set"], fixtures)
+    pv, parent = raw["provenance"], ts.parent.provenance
+    lmax = DF_RHF_AUX_MAX_L
+    naux = sum((s.l + 1) * (s.l + 2) // 2
+               for s in ts.converted.shells if s.l <= lmax)
+    want = {"mol": parent.mol, "basis": parent.basis, "cart": parent.cart,
+            "aux_basis": ts.pieces[0].provenance.basis, "aux_max_l": lmax,
+            "parent": ts.parent.name, "nao": ts.parent.nao, "naux": naux,
+            "occ": DF_RHF_OCC}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the tracked set's "
+                              f"({pv.get(k)!r} against {v!r})")
+    nat = len(ts.parent.atoms)
+
+    def grad(key: str) -> np.ndarray:
+        g = np.array(_floats(path, key, raw[key], 3 * nat)).reshape(nat, 3)
+        g.setflags(write=False)
+        return g
+
+    nocc = raw["nocc"]
+    if not isinstance(nocc, int) or not 0 < nocc <= ts.parent.nao:
+        raise _fail(path, f"bad nocc {nocc!r}")
+    e_j, e_k = _floats(path, "energies", [raw["e_j"], raw["e_k"]], 2)
+    return DfRhf(path, pv, ts, nocc, e_j, e_k, grad("g_j"), grad("g_k"),
+                 grad("g"))
+
+
 # --- the quadrupole witness ---------------------------------------------------
 #
 # libcint's Cartesian second moments `<m| (r - C)_d (r - C)_e |n>`
@@ -1871,6 +1956,78 @@ def gradient_fixtures() -> list[str]:
     `gradient_fixture` is what checks one."""
     return sorted(p.stem for p in tracked()
                   if p.stem.endswith(GRADIENT_SUFFIX))
+
+
+# --- the exchange-gradient witness (#618) ----------------------------------------
+#
+# libcint's `int2e_ip1_cart` on a tracked fixture's molecule and basis,
+# contracted with that fixture's OWN recorded density into the gradient
+# `kernel_gk` writes: `G[A, k] = dE_K/dR_{A,k}`, `E_K = 1/2 SUM D_ab D_cd
+# (ac|bd)`, as the bra derivative of every ordered quartet (both bra centres;
+# D symmetric), per K class `(la, lc | lb, ld)` (the Hermite pairing, bra
+# first: the class whose `gk_` launch deposits it) and whole. The tensor
+# (3 x 70^4 at CO/cc-pVTZ) is far over the 512 KiB hook, so only its
+# contraction is recorded. Not a fixture of its own (no AO arrays): it
+# lives in `k_gradient/` and `k_gradient()` loads it, holding its inputs
+# (molecule, basis, `cart`, `nao`) to the parent's exactly and the density
+# by the sha256 of its recorded bytes. Cartesian, as the kernel is.
+
+K_GRADIENT_DIR = Path(__file__).resolve().parent / "k_gradient"
+K_GRADIENT = "co_ccpvtz_k_grad"
+K_GRADIENT_SCHEMA = 1
+
+
+def density_sha256(dm: np.ndarray) -> str:
+    """The sha256 of a density's float64 bytes, row-major."""
+    import hashlib
+
+    return hashlib.sha256(np.ascontiguousarray(
+        dm, dtype=np.float64).tobytes()).hexdigest()
+
+
+@dataclass(frozen=True)
+class KGradient:
+    """The exchange-gradient witness, its inputs checked against its parent."""
+
+    path: Path
+    provenance: dict[str, Any]
+    parent: Fixture
+    whole: np.ndarray  # G[n_atom, 3]
+    classes: dict[tuple[int, int, int, int], np.ndarray]  # am -> G[n_atom, 3]
+
+
+def k_gradient(name: str = K_GRADIENT, where: Path = K_GRADIENT_DIR,
+               fixtures: Path = FIXTURES) -> KGradient:
+    """Load the exchange-gradient witness `name` and hold its inputs to the
+    tracked fixture it names, exactly; refuse a mismatch by field."""
+    path = where / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != K_GRADIENT_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{K_GRADIENT_SCHEMA} exchange "
+                          f"gradient witness named {name}")
+    parent = load(fixtures / f"{raw['parent']}.json")
+    pv, ppv = raw["provenance"], parent.provenance
+    want = {"mol": ppv.mol, "basis": ppv.basis, "cart": ppv.cart,
+            "nao": parent.nao, "density_sha256": density_sha256(
+                parent.density)}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the parent's "
+                              f"({pv.get(k)!r} against {v!r})")
+    nat = len(parent.atoms)
+
+    def grad(where_: str, xs: Any) -> np.ndarray:
+        g = np.array(_floats(path, where_, xs, 3 * nat)).reshape(nat, 3)
+        g.setflags(write=False)
+        return g
+
+    classes = {}
+    for r in raw["classes"]:
+        am = tuple(r["am"])
+        if len(am) != 4 or am in classes:
+            raise _fail(path, f"bad or duplicate class {am}")
+        classes[am] = grad(f"classes {am}", r["G"])
+    return KGradient(path, pv, parent, grad("whole", raw["whole"]), classes)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -26,11 +26,12 @@ and `pyscf.grad.RHF` to ~1e-13. That spike is not imported anywhere.
 ## The keys
 
 `Spec.derivative_order` was a field with one legal value, kept so that
-widening it would not retrofit every consumer. It is now `(0, 1)`
-(`spec.DERIVATIVE_ORDERS`), and order 1 is legal on
+widening it would not retrofit every consumer. It is now `(0, 1, 2)`
+(`spec.DERIVATIVE_ORDERS`; order 2 is `hessian.md`'s), and order 1 is legal on
 `spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB`, `K`, `METRIC` and
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
-gradients", below). Every other target, and HGP, refuses it with
+gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
+Every other target, and HGP, refuses it with
 `_GRADIENT_REFUSAL`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
@@ -183,6 +184,26 @@ zeroed by the caller.
   `kernel_gjab.gjab_pq_spec(la, lb, lc, ld) = (la + 1, lb | lc, ld)`, over
   the same bra records and the J chain's `DQ` kets. Nothing in the `[p|q]`
   kernel or its plan is new.
+- **`gjab` has a low-stack form, NOT YET ANY CLASS'S DEFAULT** (#619;
+  `build_gjab_kernel(cls, lowstack=True)`; name, parameters, launch and
+  `G` contract the same). The unrolled `gjab` holds the six derivative
+  densities `HA_k`, `HB_k` over `hermite_targets(L + 1)` and the pooled
+  derivative factors as straight-line locals (~210 KB of text at (dd)).
+  The low-stack one forms no density: per block row, its weight read from
+  `M`, it takes `gA_k += wt (2 alpha SUM E^{a+1_k,b} Jp - a_k SUM
+  E^{a-1_k,b} Jp)` (and `gB`) as rolled sums over the per-axis tables
+  (`e_fragment.rolled_e_sum`), reading the record's `Jp` row where it lies
+  in global memory: `gv`'s low-stack shape without `R` or a nucleus loop.
+  The per-row weight and derivative terms are shared with `gv`
+  (`kernel_g1e.lowstack_weight` / `lowstack_derivative`, the `gv` text
+  byte-identical at all 32 units). The default is
+  `kernel_gjab.gjab_lowstack`, an `la + lb` floor `LOWSTACK_MIN_LSUM`
+  that is **None** until `data/measured/gjab.json` has rows
+  (`measure/measure_gjab.py`, `devtools/measure.sh gjab-compile`, a
+  compiler and no card; its rule, #614's restated, declared before any
+  row and tracked with none: the session that wrote it had neither
+  compiler). `measure.sh check` holds the floor at None while a class
+  lacks a row on either arch, and to the rule once all have them.
 
 `gradient/kernel_gk.py` builds `gk_{la}{lc}_{lb}{ld}` (`build_gk_kernel`),
 one per K class, on `kernel_k`'s mapping: **one warp per bra record**, the
@@ -216,8 +237,70 @@ integral, not its derivative), no shared memory.
   (the density, `D_ab` and `D_cd` read at the records' AO offsets) and
   `G[n_atom, 3]`.
 - The unrolled text grows fast: 29 KB at `(ds|ss)`, 169 KB at `(pp|pp)`,
-  809 KB at `(pd|pd)`, 4.0 MB at `(dd|dd)` (cuda). A rolled form, as
-  `kernel_kblock_rolled` is for K at f, is not built.
+  809 KB at `(pd|pd)`, 4.0 MB at `(dd|dd)` (cuda), so it is the default
+  only below `L = 5` (next section).
+
+### The rolled `gk` (#618)
+
+From `L = la + lc + lb + ld >= kernel_gk.LOWSTACK_MIN_L = 5`, and for
+every class with an f shell, `build_gk_kernel(cls)` emits a **rolled
+form** (`gk_lowstack(cls)`; `lowstack=` forces either form at any class;
+the name, parameters, launch and `G` contract are the same, so a rolled
+unit is a drop-in). Below the floor the default text is byte-identical
+and the 16 s / p goldens did not move. The unrolled form of a class with
+an f shell is never built by default (`UNROLLED_L_MAX = 2`) and, by the
+user's decision, was not compiled or measured.
+
+The rolled form holds no `E` block and no straight-line fold. Per bra
+record it forms the bra's per-axis `E` tables one index up, `(la + 1, lc
++ 1)`; per ket record the recurrence (the same plan, `gk_pq_spec`) with
+each `[r]^(0)` stored into a local `R[n_t(L + 1)]` as it forms
+(`recurrence.store_targets`), and the ket's per-axis tables `(lb, ld)`,
+every odd-`t` entry negated once (so `(-1)^|q|` is in the table). Then,
+per `(b, d)` row (`cartesian_loops`), stage 1 is `I[p] = s_bd SUM_q
+E^bd_q R[p + q]` for every `|p| <= lp + 1` (`hermite_loops`), and per
+`(a, c)` row, with `W = M[a, b] M[c, d]` read where it is used,
+
+    gA_k += W (2 alpha SUM_t E^{a+1_k, c}_t I[t] - a_k SUM_t E^{a-1_k, c}_t I[t])
+
+and `gC_k` likewise on `c`. Every `SUM` is a loop nest over the tables,
+factored per axis as `e_fragment.rolled_e_sum` is. The tables are
+**compact** (`kernel_gk.tables_fragment`): only the reachable `E^{ij}_t`,
+`t <= i + j`, at `compact_offset(i, j, l2) + t`, 125 doubles a table at
+`(4, 4)` against the dense 225. That is what brings `(ff|ff)` under the
+stack budget: with the dense tables `gk_33_33` was 15,008 B of `sm_86`
+stack (a hand probe), compact 11,616 B. The rolled form folds each
+derivative term per `(a, c)` row, where the unrolled one folds each raised
+row once and digests it into up to three axes, so the two agree to
+round-off, never bitwise.
+
+**The block mapping is not built.** The issue named a second form,
+`kernel_kblock`'s one warp per `K_AB` block. By the user's decision only a
+rolled / low-stack block variant was in scope, and only if cheap; the
+energy K's rolled block kernels measured slower than `kb` or neutral (#571,
+#583), so it was not built and nothing about it is measured.
+
+**Measured** in `data/measured/gk.json` (`measure/measure_gk.py`,
+`devtools/measure.sh gk-compile`, a compiler and no card; the rule
+`declared` before any row; `measure.sh check` holds the gate to the rows):
+every class through `(ff|ff)` (256) in the rolled form, and the unrolled
+form of the classes with every `l <= 2` level by level in `L` through the
+floor's level, each unit compiled alone and **killed at 10 s** (the user's
+per-compile budget for #618; a killed unit is recorded `over_budget`).
+Admissible means at most 14,000 B of stack (#613's budget) and within
+10 s, on both arches.
+
+| | `sm_86` | `gfx1200` |
+|---|---|---|
+| unrolled, L <= 4 (50 classes) | all admissible; worst `gk_22_00` 11,696 B, 2.1 s | all admissible; worst `gk_22_00` 10,836 B, 4.3 s |
+| unrolled, L = 5 | `gk_22_01` 14,616 B and `gk_22_10` 14,880 B (8.5 s, 18,400 B spill stores): **over** | all within budget (worst 11,648 B, 7.8 s) |
+| unrolled, L = 6 (`gfx1200` only, the first session's per-arch stop) | not compiled | 8 of 10 **over_budget** (killed at 10 s) |
+| rolled, all 256 | worst stack `gk_33_33` 11,616 B (255 registers, 1,956 B spill stores, 2.8 s, 204 KB of source); worst compile `gk_31_21` 4.8 s; median 2.5 s, 2,632 B | worst `gk_33_33` 10,736 B (192 VGPRs, 412 spilled, 2.2 s); worst compile 2.6 s; median 1.6 s, 2,680 B |
+
+So the floor is 5 (`sm_86`'s L = 5), no default unit is over the budget
+on either arch, and no rolled unit came near the 10 s cap. At `(dd|dd)`
+the rolled unit is 101 KB, 4,448 B of `sm_86` stack and 3.7 s, against the
+unrolled 4.0 MB. No clock was measured.
 
 Parameters of the pair kernels (`kernel_s`'s per-axis spelling for the
 one-electron three):
@@ -235,12 +318,16 @@ class selector (`--class LA+1 LB LC LD`), not by this flag. Goldens:
 `test/golden/{cuda,hip}/{gs,gt,gv,gjab}_{la}{lb}` for (ss) through (dd),
 48 files, the largest 211 KB.
 
-`python -m felizjueves.emit --grad-k-l [LMAX]` (1 bare, accepted 0..2,
-exit 2 above) adds `gk_{la}{lc}_{lb}{ld}` for every K class with each
-`l <= LMAX` (16 units bare, 81 at 2), beside the J ladders, never in the
-bare default nor in `KERNEL_GEN_CMD`. Goldens:
-`test/golden/{cuda,hip}/gk_*` for the 16 s / p classes, 32 files, the
-largest 169 KB (`test_emit_grad_k.py`).
+`python -m felizjueves.emit --grad-k-l [LMAX]` (1 bare, accepted 0..3
+since #618, exit 2 above) adds `gk_{la}{lc}_{lb}{ld}` for every K class
+with each `l <= LMAX` (16 units bare, 81 at 2, 256 at 3), each in its
+default form, beside the J ladders, never in the bare default nor in
+`KERNEL_GEN_CMD`. Goldens: `test/golden/{cuda,hip}/gk_*` for the 16 s / p
+classes (unrolled) and the four classes with one f shell and nothing else
+(`L + 1 = 4`, rolled), 40 files; every other default unit through
+`(ff|ff)` (236 a backend) is pinned by size and sha256 in
+`test/golden/gk_digests.json` (`slow` above `L + 1 = 4`;
+`test_emit_grad_k.py`).
 
 ## Witnesses, and what ran where
 
@@ -250,11 +337,14 @@ largest 169 KB (`test_emit_grad_k.py`).
 | host invariance | `SUM_A G = 0` | same | ~1e-15 of `max\|G\|`, gate 1e-13 |
 | `V`'s Hellmann–Feynman term | a nucleus with no basis function, by finite difference | two-atom s, p basis plus a bare nucleus | as above |
 | `gs`, `gt`, `gv` interpreted (`test_kernel_g1e.py`) | `host`, per class | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G; `gv` also in its other form at every class (#614) | `gs`, `gt` bitwise; `gv` 2.2 eps of the split-centre scale, gate 16 eps |
-| `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis | gate 16 eps of the split-centre scale |
-| the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow` | gate 64 eps of the scale |
+| `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis; also in its other form (low-stack) at every class (#619) | unrolled 1.8 eps, low-stack 5.7 eps of the split-centre scale, gate 16 eps |
+| the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow`; each in both forms (#619) | gate 64 eps of the scale |
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
 | host `E_K` invariance, partition | `SUM_A G = 0`; the class quartets cover every ordered quartet once | the s, p basis | ~5e-16 of `max\|G\|` |
 | `gk` interpreted (`test_kernel_gk.py`) | `host.exchange_gradient`, per class, its `absolute=True` twin as scale | every K class with each `l <= 1` on the s, p basis; every class with a d shell through `(dd\|dd)` on a two-atom s, p, d basis (L + 1 > 4 `slow`); the 16 s, p classes summed to the whole `dE_K`; 1, 4 and 32 lanes | at most 0.7 eps of the scale, gate 16 eps |
+| rolled `gk` interpreted (`test_kernel_gk.py`, #618) | the unrolled `gk` on the same records (the differential), the class's `absolute=True` twin as scale; and at f `host.exchange_gradient` | every K class with each `l <= 2` (L + 1 > 4 `slow`); f witnesses `(ff\|ff)` (bra `(f_A, f_B)` against both off-centre kets), `(fs\|fs)`, `(fd\|pd)` on a two-atom single-primitive s, p, d, f basis (`slow`) | all within the gate, 16 eps (the 107 slow cases passed, 2026-10-29) |
+| libcint `gk` witness (`test_k_gradient_witness.py`, #618) | `int2e_ip1_cart` on CO/cc-pVTZ, `co_ccpvtz_j`'s density, per class and whole | the file: 256 classes, sum, invariance; the host on `(dd\|dd)`, `(pd\|pd)`, `(ds\|ds)`, `(dp\|sp)` (`slow`) | host 2.6e-16 of `max\|G\|`, gate 1e-12 |
+| `gk` on a card (`test_gk_device.py`, `test/gk_driver.py`, #618) | H₂O/STO-3G: the host (whole) and the other form (per class); CO/cc-pVTZ (`slow`, `high_l`): the libcint witness per class and whole, and the unrolled form on the same upload | RTX 3080 and RX 9060 XT; every unit its own TU under a 10 s kill | H₂O 3.22e-15 / 3.37e-15 of `max\|G\|`; CO 2.63e-15 / 2.94e-15 against libcint, differential over 62 / 58 classes 9.2e-17 / 1.2e-16 |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
@@ -281,7 +371,21 @@ d0 kernel's layout). A DF-J energy gradient is the two together:
     E_J = SUM D_mn (mn|P) d_P - 1/2 d (P|Q) d,   (P|Q) d = (P|mn) D_mn
     dE_J/dR = geri3 at Gam = D (x) d   +   gmetric at W = -1/2 d d^T
 
-(`E_J` is stationary in `d`, so `d` is not differentiated).
+(`E_J` is stationary in `d`, so `d` is not differentiated). A DF-K one
+(#620) is the same two kernels at the exchange weights: with `D = occ C
+C^T` (`C` the occupied coefficients) and `E_K = 1/2 SUM D_mn D_ls (ml|ns)`,
+
+    X_ijP = SUM_ml C_mi C_lj (ml|P),   (P|Q) d_ij = X_ij,
+    dE_K/dR = geri3 at Gam^K_mlP = occ^2 SUM_ij C_mi C_lj d_ijP
+            + gmetric at W^K_PQ = -1/2 occ^2 SUM_ij d_ijP d_ijQ,
+
+and the closed-shell two-electron gradient is `G_J - 1/2 G_K`.
+`host_df.df_j_stage` / `df_k_stage` stage the weights (pure Python, a
+Cholesky solve of the metric) and return them with the energy, so a
+consumer staging its own (FreeBreakfast, dense GPU linear algebra) has
+them to compare against; `host_df.df_rhf_gradient` returns `G_J`, `G_K`,
+each split into its `geri3` and `gmetric` halves, and `G_J - 1/2 G_K`.
+Nothing stages them on a device: the solve stays host-side.
 
 **The rules.** An AO pair's centres `A` and `B` take the Cartesian rule on
 the per-axis `E` tables one index higher, as `gs`/`gv` do. An aux
@@ -373,7 +477,10 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 |---|---|---|---|
 | host `(P\|Q)`, `(mn\|P)` (`test_gradient_host_df.py`) | central differences, `h = 1e-4`, of `metric_matrix`, `eri3_tensor` (libcint-witnessed) | a three-atom s/p/d basis and s/p/d aux; `(mn\|P)` through d `slow` | 2.1e-9, 2.7e-9 of `max\|G\|`, gate 1e-7 |
 | host DF-J `dE_J/dR` | central differences of `E_J`, the solve redone per geometry | the s, p sub-bases; H₂O/STO-3G against the JKFIT s, p shells `slow` | 3.1e-9, 2.5e-9 |
+| host DF-K `dE_K/dR` (#620) | central differences of `E_K` (numpy, the solve redone per geometry) | the s, p sub-bases (and `G_J - 1/2 G_K`); H₂O/STO-3G against the JKFIT s, p shells `slow` | 3.6e-9, 2.6e-9 |
 | host invariance | `SUM_A G = 0` | same | gate 1e-13 of `max\|G\|` |
+| host DF-RHF two-electron gradient (`oracle.manifest.df_rhf`, #620) | PySCF's `density_fit()` RHF gradient (`get_jk` / `get_veff`, aux response on) over the SAME aux set, at closed-form occupied coefficients | H₂O/STO-3G against cc-pVTZ-JKFIT's s, p shells (57 aux), `slow` (~15 s); `G_J`, `G_K` and `G_J - 1/2 G_K` apart, and both energies | 4.4e-13 (J), 6.2e-13 (K), 7.8e-13 (two-electron) absolute, gate `1e-10` |
+| `geri3` / `gmetric` interpreted with the DF-K weights (`test_kernel_df_k_grad.py`, #620) | `host_df`, whole gradient | `Gam^K`, `W^K` and `Gam^J - 1/2 Gam^K`, `W^J - 1/2 W^K` on three-atom s, p bases (through (pp\|p), (p\|p)) | 0.37 eps of the split-centre scale, gate 16 eps |
 | `gmetric` interpreted (`test_kernel_gmetric.py`) | `host_df`, per class | every class `lP + lQ <= 4` (`lP + lQ = 4` `slow`), swapped and off-diagonal pairs | 4.9 eps of the split-centre scale, gate 16 eps |
 | `geri3` interpreted (`test_kernel_geri3.py`) | `host_df`, per class | every class `la + lb + lP <= 4` (= 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` | 2.6 eps of the split-centre scale, gate 16 eps |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 31 units | no diagnostic (a proxy) |
@@ -383,8 +490,9 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 | the DF gradient witness (`oracle.manifest.df_gradient`, #613) | libcint's `int3c2e_ip1_cart` / `int3c2e_ip2_cart`, `int2c2e_ip1_cart`, contracted per class with closed-form `Gam`, `W`, on `prim_spd_f` against the aux-i basis (every ladder class) | the host, every class (`slow`); the kernel interpreted at (df\|i), (ff\|h), (ff\|i), (h\|i), (i\|i) (`slow`) | host 3.91e-14 (`geri3`), 1.71e-14 (`gmetric`) of the witness's largest `max\|G\|`; the kernel at most 2.72e-15 ((h\|i)); gate `1e-12` |
 | on a card, the ladder (`test_grad_df_device.py` Part 2, `slow` + `high_l`) | `host_df` at `1e-13` of `max\|G\|` per program, and the witness at `1e-12` | RTX 3080 and RX 9060 XT: all 70 + 28 classes in their default forms on the aux-i system, one program per aux `l`, each compile under a 300 s timeout; 16 passed per card (with Part 1) | host 1.20e-14 (CUDA) / 9.34e-15 (HIP), (`geri3`, aux i); libcint 5.49e-14 / 5.48e-14 of max; runs bit-identical on both |
 
-Not done for DF: the metric solve and `d` stay host-side; no DF-K
-gradient (the kernels take any `Gam`, but nothing stages K's); no screen;
+Not done for DF: the metric solve and `d` stay host-side (DF-K's `Gam^K`,
+`W^K` are staged on the host only, #620; no device run of them, the
+kernels having run on both cards with an arbitrary `Gam`); no screen;
 no clock (the low-stack form's cost is unmeasured); Cartesian only (the
 libcint witness is Cartesian `_cart` integrals, not the spherical
 `int3c2e_ip1` / `int2c2e_ip1` #613 named: the kernels are Cartesian and
@@ -394,7 +502,8 @@ the spherical transform is the consumer's, as #615 decided for d0).
 
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
-  (ff), #614); `gjab` and `gk` have not (`gk` only on H₂O/STO-3G). The
+  (ff), #614) and `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618); `gjab`
+  has not. The
   forced-unrolled `gv` at (df) / (ff) is compiled (`g1e.json`) but not
   run on a card.
 - The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
@@ -402,19 +511,25 @@ the spherical transform is the consumer's, as #615 decided for d0).
 - Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
   `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
   caller's), but no whole RHF gradient is assembled or checked against
-  `pyscf.grad.RHF` (each term has run on both cards, alone). The DF-J terms are
-  built (above); no DF-K.
-- `gk` is checked interpreted through `(dd|dd)` but its ladder writes
-  `l <= 2` only and its goldens are the s, p classes; f is not built
-  into the ladder (the unrolled text is 4 MB at `(dd|dd)` already).
-  A rolled form (`kernel_kblock_rolled`'s E-from-global and loops) and a
-  block mapping (`kernel_kblock`'s, one warp per `K_AB` block) are the
-  named follow-ups; neither is built.
+  `pyscf.grad.RHF` (each term has run on both cards, alone). The DF
+  two-electron gradient, `G_J - 1/2 G_K`, is assembled on the host and
+  held to PySCF's DF RHF gradient (above, #620); the one-electron terms
+  are not added to it.
+- `gk`'s rolled form is built (#618) but its f classes are witnessed
+  interpreted on three classes only (`(ff|ff)` on a subset of its
+  records, `(fs|fs)`, `(fd|pd)`); the full 256-class interpreted sweep
+  against the host was not run (hours of pure Python). The block mapping
+  (`kernel_kblock`'s, one warp per `K_AB` block) is not built, and no
+  `gk` clock is measured.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
-  time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured
-  and is unrolled (~210 KB of text at (dd)), with no low-stack form.
+  time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured:
+  its sweep and rule exist (`gjab-compile`, `gjab.json`, #619) but no
+  row, so its low-stack form is built and interpreted at every class
+  through (ff) and is no class's default.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
   not derived), Cartesian only. The Coulomb energy's Hessian is built
   on these pieces (`hessian.md`), and so are the one-electron Hessians of
-  `S`, `T` and `V` (`hessian.md`, "The one-electron Hessians"); no other
-  Hessian term is.
+  `S`, `T` and `V` (`hessian.md`, "The one-electron Hessians"), the
+  exchange Hessian (`hkx`, on `gk`'s mapping) and the DF metric and
+  three-center Hessians (`d2metric`, `d2eri3`, on `gmetric`'s and
+  `geri3`'s).

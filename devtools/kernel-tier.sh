@@ -364,6 +364,15 @@ else
   # are printed as one block after it finishes: parallel compilers writing to
   # one pipe interleave mid-line, and the warning scan below reads per unit.
   cc_cmp0=$(cache_counts)
+  # KERNEL_UNIT_TIMEOUT (config.sh, #618): a unit still compiling after it
+  # is killed, a failed compile; exported so test/devcache.py caps the
+  # device phase's compiles at it too.
+  cap=()
+  if [ -n "${KERNEL_UNIT_TIMEOUT:-}" ]; then
+    cap=(timeout -s KILL "$KERNEL_UNIT_TIMEOUT")
+    export KERNEL_UNIT_TIMEOUT
+    note "per-unit compile cap: ${KERNEL_UNIT_TIMEOUT} s"
+  fi
   set +e
   # shellcheck disable=SC2016  # the single quotes are the point: $1/$OBJ_DIR
   # are expanded by the xargs CHILD, not here
@@ -373,7 +382,7 @@ else
         'src="$1"; shift; stem="$OBJ_DIR/$(basename "${src%.*}")";
          "$@" -c "$src" -o "$stem.o" >"$stem.log" 2>&1; rc=$?;
          { echo "   cc $(basename "$src")"; cat "$stem.log"; } ; exit "$rc"' \
-        _ {} "${launcher[@]}" "$compiler_path" "${compiler_flags[@]}" \
+        _ {} "${cap[@]}" "${launcher[@]}" "$compiler_path" "${compiler_flags[@]}" \
     2>&1 | tee "$report_dir/compile.log"
   compile_rc=${PIPESTATUS[1]}
   set -e
