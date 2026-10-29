@@ -72,6 +72,7 @@ from pathlib import Path
 
 import devcache
 import pytest
+import registry
 import tiers
 
 from felizjueves.performance.device import Vendor, from_env
@@ -334,9 +335,11 @@ def _may_select(markexpr: str, backend: str) -> bool:
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Before `-m` reads the marks: `tiers.sample_compiles`, on test/'s own
     items only -- measure/ re-exports this hook, and its compile sweeps are
-    not sampled."""
+    not sampled. Then, with `FJ_REGISTRY_DUMP` set, the device cases
+    resolved against the case registry (#648, test/test_registry.py)."""
     here = Path(__file__).parent
     tiers.sample_compiles(i for i in items if i.path.is_relative_to(here))
+    registry.dump_if_asked(i for i in items if i.path.is_relative_to(here))
 
 
 _CONTROLLER_LOCKS = pytest.StashKey[list[int]]()

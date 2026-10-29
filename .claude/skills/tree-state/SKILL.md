@@ -25,6 +25,14 @@ Update the summary row in `.claude/CLAUDE.md` too if the change moves it.
 `test/test_claims.py` holds every tally, `StructuralLimit` count and plan
 wording in these files to the data, as it does for `CLAUDE.md`.
 
+**`test/registry/` is these files as data** (#648): one module per kernel
+file below, declaring each family's cases as `(engine, quantity, deriv, L,
+cards, tiers)` and how each device test's cases map onto them.
+`test/test_registry.py` holds it to the collected `gpu` and compile-only
+cases in both directions. When a PR adds a device test, a class or a card
+run, change the family's module in the same PR; the test names what is
+missing.
+
 ## Kernel families
 
 | File | Covers |
