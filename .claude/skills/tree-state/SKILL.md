@@ -34,7 +34,7 @@ wording in these files to the data, as it does for `CLAUDE.md`.
 | [fock-hgp.md](references/fock-hgp.md) | The HGP engine and the fused `F` (milestone 12), the split HGP `J`/`K` (milestone 14), and the scheme A/B of the 2x2's diagonal cells. |
 | [schwarz-overlap-df.md](references/schwarz-overlap-df.md) | The Schwarz matrix, the cross-basis overlap `SX`, the DF metric `(P\|Q)` (milestone 15), the three-center `(mn\|P)` (milestone 16), their low-stack forms (#606) and their HGP twins. |
 | [one-electron-extra.md](references/one-electron-extra.md) | The dipole `MU` (milestone 19), the quadrupole, and `S`, `T`, `V`, dipole on the HGP and Rys engines. |
-| [gradients.md](references/gradients.md) | `derivative_order = 1`: `gs`, `gt`, `gv`, `gjab`, `gk`, the DF-J gradient terms, and their low-stack forms. |
+| [gradients.md](references/gradients.md) | `derivative_order = 1`: `gs`, `gt`, `gv`, `gjab`, `gk`, the DF-J gradient terms, the host-staged DF-K weights and DF two-electron gradient, and their low-stack forms. |
 | [hessians.md](references/hessians.md) | `derivative_order = 2`: `hjab` / `hdq`, the one-electron `d2s` / `d2t` / `d2v`, `hkx`, `d2metric`, `d2eri3`. |
 | [rys-and-boys.md](references/rys-and-boys.md) | The fused `F` and split `J` and `K` on Rys quadrature, and the device Boys `fj_boys<M>` (#301) with its stale-pin consequence. |
 

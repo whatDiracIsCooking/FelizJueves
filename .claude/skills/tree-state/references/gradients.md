@@ -150,5 +150,16 @@ kernel at the top classes, within `1e-12` of max. **On both cards**
 `l`, each compile under a 300 s timeout): all 70 + 28 classes in their
 default forms on that system, 16 passed per card with Part 1; worst
 1.20e-14 (RTX 3080) / 9.34e-15 (RX 9060 XT) of `max|G|` against the host
-and 5.5e-14 of max against libcint, runs bit-identical. No DF-K gradient,
-no clock.
+and 5.5e-14 of max against libcint, runs bit-identical. **The DF-K
+weights and the whole DF two-electron gradient are staged on the host**
+(#620; `gradient.md`, "The density-fitting gradients"):
+`host_df.df_k_stage` gives `E_K`, `Gam^K`, `W^K` from the occupied
+coefficients (`df_j_stage` the J ones), `df_rhf_gradient` the terms
+`G_J`, `G_K` and `G_J - 1/2 G_K` apart; DF-K held to central differences
+of `E_K` (3.6e-9 of `max|G|`; H₂O/STO-3G against JKFIT s, p `slow`,
+2.6e-9), the whole two-electron gradient to PySCF's DF RHF gradient over
+the same aux set (`oracle.manifest.df_rhf`, H₂O/STO-3G against
+cc-pVTZ-JKFIT s, p, closed-form orbitals, `slow`): 7.8e-13 absolute, gate
+`1e-10`; `geri3` / `gmetric` interpreted with the DF-K weights within 0.37
+eps of the split-centre scale (`test_kernel_df_k_grad.py`). Not run on a
+card with the DF-K weights; the solve stays host-side. No clock.
