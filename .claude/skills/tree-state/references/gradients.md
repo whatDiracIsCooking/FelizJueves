@@ -78,10 +78,14 @@ witness** per molecule (`test/oracle/rhf_gradient/`,
 `oracle.manifest.rhf_gradient`, `python -m oracle.generate --regenerate
 --rhf-gradient`: converged `D`, `W`, every term from libcint's `int1e_ip*`,
 `int1e_iprinv` and `int2e_ip1`, and `nuc_grad_method()`'s total, the terms
-held to it to 1e-10): H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G and H₂O/cc-pVDZ,
+held to it to 1e-10): H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G, H₂O/STO-3G
+plus one d primitive on O (every class through `(dd|dd)` at STO-3G's
+cost) and H₂O/cc-pVDZ,
 per term and total within `1e-10` absolute (`test_rhf_gradient.py`; the
 one-electron terms on s, p bases fast, every J/K term and total `slow` by
-L + 1 = 5, cc-pVDZ `slow`). Worst on the s, p witnesses 2.4e-13 per term (`V`, NH₃) and 7.9e-14 in total; interpreted `gk_` dominates the cost (138 s for H₂O/STO-3G, 564 s for 6-31G). Not on a card: the
+L + 1 = 5, cc-pVDZ `slow`). Worst 2.4e-13 per term (`V`, NH₃) and 7.9e-14 in total, the d witness
+7.2e-14 / 6.6e-14; cc-pVDZ's interpreted total (hours of `gk_`) has not
+been run to the end, its one-electron terms pass; interpreted `gk_` dominates the cost (138 s for H₂O/STO-3G, 564 s for 6-31G). Not on a card: the
 device assembly is #566.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)

@@ -189,6 +189,11 @@ class Case:
     # names its `_j`, so the pair's densities are one matrix, bit for bit
     # (`manifest.check_pair`); None means this case converges its own.
     density_from: str | None = None
+    # #565: single uncontracted primitives `(symbol, l, exponent)` appended
+    # to the library basis of that element, coefficient 1 -- a polarisation
+    # shell a cheap witness needs. The basis's name in `provenance` says so
+    # (`_basis_name`).
+    extra_shells: tuple[tuple[str, int, float], ...] = ()
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -895,6 +900,11 @@ def _mole(case: Case) -> Any:
             basis = {s: gto.basis.load(basis, s) for s in symbols}
         basis = {s: [sh for sh in b if sh[0] <= case.max_l]
                  for s, b in basis.items()}
+    if case.extra_shells:  # #565: the library basis plus primitives
+        if isinstance(basis, str):
+            basis = {s: gto.basis.load(basis, s) for s in symbols}
+        for sym, lx, a in case.extra_shells:
+            basis[sym] = [*basis[sym], [lx, [a, 1.0]]]
     return gto.M(atom=case.atom, unit=case.unit, basis=basis, cart=case.cart,
                  charge=case.charge, spin=case.spin, verbose=0)
 
@@ -903,9 +913,12 @@ def _basis_name(case: Case) -> str:
     """The basis as `provenance.basis` records it: the name, and with
     `max_l` (#520) the cut, so a truncated basis never reads as the
     library's."""
-    if case.max_l is None:
-        return case.basis
-    return f"{case.basis}, shells with l <= {case.max_l} only"
+    name = case.basis
+    if case.max_l is not None:
+        name = f"{name}, shells with l <= {case.max_l} only"
+    for sym, lx, a in case.extra_shells:
+        name += f", plus one {'spdfghi'[lx]} primitive on {sym} (exponent {a})"
+    return name
 
 
 def rhf_density(mol: Any) -> np.ndarray:
@@ -1647,6 +1660,15 @@ RHF_GRADIENT_CASES: dict[str, Case] = {
     for tag, basis in (("sto3g", "sto-3g"), ("631g", "6-31g"),
                        ("ccpvdz", "cc-pvdz"))
 }
+# The cheap d witness: H2O/STO-3G plus one primitive d on O, so J and K
+# reach every class through (dd|dd) (the raised [p|q] at L = 9) at about
+# STO-3G's cost -- cc-pVDZ's d classes without its nine-primitive s shells,
+# which are what make its interpreted gk_ take hours.
+RHF_GRADIENT_CASES["h2o_sto3g_d_rhf_grad"] = Case(
+    description="#565: H2O/STO-3G plus one d primitive on O, the RHF "
+                "gradient per term (every d class at STO-3G's cost)",
+    atom=_H2O, unit="Bohr", basis="sto-3g", cart=True,
+    extra_shells=(("O", 2, 0.8),))
 RHF_GRADIENT_CASES["nh3_sto3g_rhf_grad"] = Case(
     description="#565: NH3/STO-3G at a C1 geometry, the RHF gradient per term",
     atom=_NH3_C1, unit="Bohr", basis="sto-3g", cart=True)

@@ -281,9 +281,13 @@ kernel()`'s total. The generator refuses to write, and the loader refuses
 to read, a witness whose terms do not add to that total within 1e-10.
 `--check` recomputes the terms from the recorded `D` and `W` bitwise and
 holds a fresh SCF to the recorded one within tolerance (#486's rule).
-Molecules: `_H2O` in STO-3G, 6-31G and cc-pVDZ, and NH₃/STO-3G at a C1
+Molecules: `_H2O` in STO-3G, 6-31G and cc-pVDZ; NH₃/STO-3G at a C1
 geometry (a triatomic always keeps its mirror plane, under which an
-`i <= j` weighting bug can cancel).
+`i <= j` weighting bug can cancel); and H₂O/STO-3G plus one primitive d on
+O (`Case.extra_shells`), which reaches every class cc-pVDZ does -- through
+`(dd|dd)`, the raised `[p|q]` at L = 9 -- at about STO-3G's cost.
+cc-pVDZ adds only contraction depth (O's nine-primitive s), and its
+interpreted `gk_` runs for hours.
 
 ## Witnesses, and what ran where
 
@@ -298,7 +302,7 @@ geometry (a triatomic always keeps its mirror plane, under which an
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
 | host `E_K` invariance, partition | `SUM_A G = 0`; the class quartets cover every ordered quartet once | the s, p basis | ~5e-16 of `max\|G\|` |
 | `gk` interpreted (`test_kernel_gk.py`) | `host.exchange_gradient`, per class, its `absolute=True` twin as scale | every K class with each `l <= 1` on the s, p basis; every class with a d shell through `(dd\|dd)` on a two-atom s, p, d basis (L + 1 > 4 `slow`); the 16 s, p classes summed to the whole `dE_K`; 1, 4 and 32 lanes | at most 0.7 eps of the scale, gate 16 eps |
-| the RHF gradient, interpreted (`test_rhf_gradient.py`, #565) | PySCF's RHF gradient witness: each term from libcint at the recorded `D`, `W`; the total from `nuc_grad_method()` | H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G, H₂O/cc-pVDZ; one-electron and nuclear terms on s, p bases fast, J, K and the totals `slow` (L + 1 = 5), cc-pVDZ `slow` | worst term 2.4e-13 (`V`, NH₃), worst total 7.9e-14 (H₂O/STO-3G), net force <= 4.2e-14 (s, p witnesses; interpreted, 138 s / 244 s / 564 s for STO-3G / NH₃ / 6-31G, `gk_` the bulk); gate `1e-10` absolute |
+| the RHF gradient, interpreted (`test_rhf_gradient.py`, #565) | PySCF's RHF gradient witness: each term from libcint at the recorded `D`, `W`; the total from `nuc_grad_method()` | H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G, H₂O/STO-3G + one d on O, H₂O/cc-pVDZ; one-electron and nuclear terms on s, p bases fast, J, K and the totals `slow` (L + 1 = 5), cc-pVDZ `slow` | worst term 2.4e-13 (`V`, NH₃), worst total 7.9e-14 (H₂O/STO-3G), net force <= 4.2e-14; the d witness 7.2e-14 / 6.6e-14 (interpreted, 138 s / 244 s / 417 s / 564 s for STO-3G / NH₃ / STO-3G + d / 6-31G, `gk_` the bulk); cc-pVDZ's one-electron terms pass, its interpreted total was not run to the end; gate `1e-10` absolute |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |

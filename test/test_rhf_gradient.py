@@ -16,8 +16,12 @@ gradient route.
   `gs_`, `gt_`, `gv_` (Hellmann-Feynman included), the J chain (`[p|q]` one
   bra order up, then `gjab_`) and `gk_`, plus the host's `V_nn^x`, within
   `ABS_TOL = 1e-10` absolute (the issue's bound) of PySCF, on H2O/STO-3G,
-  H2O/6-31G, C1 NH3/STO-3G and H2O/cc-pVDZ. Each total carries no net
-  force to rounding.
+  H2O/6-31G, C1 NH3/STO-3G, H2O/STO-3G plus one d primitive on O, and
+  H2O/cc-pVDZ. Each total carries no net force to rounding. The d witness
+  reaches every class cc-pVDZ does (through `(dd|dd)`, the raised `[p|q]`
+  at L = 9) at about STO-3G's cost; cc-pVDZ adds only contraction depth,
+  and its interpreted `gk_` takes hours, so it is the one case to leave to
+  a long run.
 - THE HOST ROUTE (`host_runners`): the same assembly over the references,
   on H2O/STO-3G.
 
@@ -47,7 +51,8 @@ ABS_TOL = 1e-10
 NET_TOL = 1e-12
 ONE_E = ("overlap", "kinetic", "potential")
 WITNESSES = ("h2o_sto3g_rhf_grad", "h2o_631g_rhf_grad",
-             "nh3_sto3g_rhf_grad", "h2o_ccpvdz_rhf_grad")
+             "nh3_sto3g_rhf_grad", "h2o_sto3g_d_rhf_grad",
+             "h2o_ccpvdz_rhf_grad")
 
 
 @cache
