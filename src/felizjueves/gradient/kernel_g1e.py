@@ -587,14 +587,18 @@ def lowstack_differ(la: int, lb: int) -> list[Stmt]:
     return out
 
 
-def lowstack_rows(lb: int, elem: Callable[[tuple[Expr, Expr, Expr]],
-                                          tuple[Stmt, ...]]
-                  ) -> tuple[Stmt, ...]:
-    """The inner half of a block-row nest, under `cartesian_loops(la, ...,
-    tag="a")`: `ra`, the `a` row's index, and every `b` row, each handed
-    to `elem`."""
-    return (Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
-            ef.cartesian_loops(lb, ("bx", "by", "bz"), elem, tag="b"))
+Cart = tuple[Expr, Expr, Expr]
+
+
+def lowstack_rows(la: int, lb: int,
+                  elem: Callable[[Cart, Cart], tuple[Stmt, ...]]) -> For:
+    """The block-row nest: every `a` row (`ra` its index) and, inside it,
+    every `b` row, each pair handed to `elem(a, b)`."""
+    def row(a: Cart) -> tuple[Stmt, ...]:
+        return (Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
+                ef.cartesian_loops(lb, ("bx", "by", "bz"),
+                                   lambda b: elem(a, b), tag="b"))
+    return ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a")
 
 
 def lowstack_weight(la: int, lb: int) -> tuple[Stmt, ...]:
@@ -668,22 +672,20 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
     def r_read(h: Expr) -> Expr:
         return Index(R_ARRAY, (h,))
 
-    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
-        def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
-            out: list[Stmt] = [
-                *lowstack_weight(la, lb),
-                Decl("wz", Scalar.F64, init=_mul(Var("Zc"), Var("wt"))),
-                *lowstack_derivative(la, lb, a, b, r_read, "wz", Fn.SUB),
+    def elem(a: Cart, b: Cart) -> tuple[Stmt, ...]:
+        out: list[Stmt] = [
+            *lowstack_weight(la, lb),
+            Decl("wz", Scalar.F64, init=_mul(Var("Zc"), Var("wt"))),
+            *lowstack_derivative(la, lb, a, b, r_read, "wz", Fn.SUB),
+        ]
+        for k in range(3):
+            out += [
+                *ef.rolled_e_sum(la + 1, lb + 1, a, b, r_read,
+                                 f"hC{k}", tag=f"pC{k}", up=k),
+                Assign(Var(f"f{k}"), _c(Fn.ADD, Var(f"f{k}"),
+                                        _mul(Var("wt"), Var(f"hC{k}")))),
             ]
-            for k in range(3):
-                out += [
-                    *ef.rolled_e_sum(la + 1, lb + 1, a, b, r_read,
-                                     f"hC{k}", tag=f"pC{k}", up=k),
-                    Assign(Var(f"f{k}"), _c(Fn.ADD, Var(f"f{k}"),
-                                            _mul(Var("wt"), Var(f"hC{k}")))),
-                ]
-            return tuple(out)
-        return lowstack_rows(lb, elem)
+        return tuple(out)
 
     per_nuc: list[Stmt] = [
         Decl("Zc", Scalar.F64, init=Index("Z", (nuc,))),
@@ -700,7 +702,7 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
              "E^{a+1_k,b} - a_k E^{a-1_k,b}), gB likewise, and f_k += wt "
              "SUM_t E^{ab}_t R[t + 1_k] (Hellmann-Feynman), each rolled "
              "over the per-axis tables (e_fragment.rolled_e_sum)"),
-        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+        lowstack_rows(la, lb, elem),
         Decl("skz", Scalar.F64, init=_mul(Var("sk"), Var("Zc"))),
         *(AtomicAdd(Index("G", (nuc, Lit(k))), _mul(Var("skz"),
                                                     Var(f"f{k}")))

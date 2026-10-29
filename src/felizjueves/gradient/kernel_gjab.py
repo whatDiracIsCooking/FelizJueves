@@ -106,7 +106,6 @@ from felizjueves.ir import (
     Stmt,
     Var,
 )
-from felizjueves.mmd import e_fragment as ef
 from felizjueves.plan.targets import hermite_targets
 from felizjueves.spec import Operator, Spec, Target
 
@@ -209,12 +208,10 @@ def _lowstack_values(la: int, lb: int) -> list[Stmt]:
     def jp_read(h: Expr) -> Expr:
         return Index("Jp", (Var("jr"), h))
 
-    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
-        def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
-            return (*lowstack_weight(la, lb),
-                    *lowstack_derivative(la, lb, a, b, jp_read, "wt",
-                                         Fn.ADD))
-        return lowstack_rows(lb, elem)
+    def elem(a: tuple[Expr, Expr, Expr], b: tuple[Expr, Expr, Expr]
+             ) -> tuple[Stmt, ...]:
+        return (*lowstack_weight(la, lb),
+                *lowstack_derivative(la, lb, a, b, jp_read, "wt", Fn.ADD))
 
     return [
         Note(LOWSTACK_NOTE),
@@ -226,7 +223,7 @@ def _lowstack_values(la: int, lb: int) -> list[Stmt]:
              "E^{a+1_k,b} - a_k E^{a-1_k,b}), gB likewise, each rolled over "
              "the per-axis tables (e_fragment.rolled_e_sum); Hermite order "
              f"{la + lb + 1}"),
-        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+        lowstack_rows(la, lb, elem),
     ]
 
 
