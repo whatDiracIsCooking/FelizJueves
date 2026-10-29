@@ -158,6 +158,10 @@ __all__ = [
     "g1e_lowstack",
     "g1e_name",
     "g1e_spec",
+    "lowstack_derivative",
+    "lowstack_differ",
+    "lowstack_rows",
+    "lowstack_weight",
     "hermite_densities",
     "launch_shape",
     "record_head",
@@ -572,6 +576,87 @@ def g1e_lowstack(cls: Spec | tuple[Target, int, int]) -> bool:
     return target is Target.V and la + lb >= LOWSTACK_MIN_LSUM
 
 
+def lowstack_differ(la: int, lb: int) -> list[Stmt]:
+    """The weight rule's note and, for `la == lb`, the I32 `differ` that
+    `lowstack_weight` reads."""
+    out: list[Stmt] = [Note(_WEIGHTS)]
+    if la == lb:
+        out.append(Decl("differ", Scalar.I32, init=_c(
+            Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
+            _c(Fn.LT, Var("ob"), Var("oa")))))
+    return out
+
+
+Cart = tuple[Expr, Expr, Expr]
+
+
+def lowstack_rows(la: int, lb: int,
+                  elem: Callable[[Cart, Cart], tuple[Stmt, ...]]) -> For:
+    """The block-row nest: every `a` row (`ra` its index) and, inside it,
+    every `b` row, each pair handed to `elem(a, b)`."""
+    def row(a: Cart) -> tuple[Stmt, ...]:
+        return (Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
+                ef.cartesian_loops(lb, ("bx", "by", "bz"),
+                                   lambda b: elem(a, b), tag="b"))
+    return ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a")
+
+
+def lowstack_weight(la: int, lb: int) -> tuple[Stmt, ...]:
+    """`rb` and the F64 `wt`, block row `(ra, rb)`'s weight read from `M`
+    (`_WEIGHTS`; `differ` is `lowstack_differ`'s)."""
+    def m_at(i: Expr, j: Expr) -> Index:
+        return Index("M", (i, j))
+
+    m = _c(Fn.ADD, Var("oa"), Var("ra"))
+    n = _c(Fn.ADD, Var("ob"), Var("rb"))
+    off = _c(Fn.ADD, m_at(m, n), m_at(n, m))
+    if la != lb:
+        weight: tuple[Stmt, ...] = (Decl("wt", Scalar.F64, init=off),)
+    else:
+        weight = (
+            Decl("wt", Scalar.F64, init=Lit(0.0)),
+            If(Var("differ"), (Assign(Var("wt"), off),),
+               (Assign(Var("wt"), m_at(m, _c(
+                   Fn.ADD, Var("oa"), Var("rb")))),)),
+        )
+    return (Decl("rb", Scalar.I32, init=ef.cartesian_index("b")), *weight)
+
+
+def lowstack_derivative(la: int, lb: int, a: tuple[Expr, Expr, Expr],
+                        b: tuple[Expr, Expr, Expr],
+                        read: Callable[[Expr], Expr], w: str, op: Fn
+                        ) -> list[Stmt]:
+    """Block row `(a, b)`'s six centre terms, `g{side}{k} = g{side}{k} op
+    w (2 alpha SUM E^{a+1_k,b} X - a_k SUM E^{a-1_k,b} X)` (and B), each
+    SUM rolled over the per-axis tables one index up
+    (`e_fragment.rolled_e_sum`), `read(h)` the consumer's `X[h]`."""
+    out: list[Stmt] = []
+    for side, ab, two in (("A", a, "ea2"), ("B", b, "eb2")):
+        for k in range(3):
+            def moved(by: int, ab=ab, k=k) -> tuple[Expr, ...]:
+                step = (_c(Fn.ADD, ab[k], Lit(1)) if by > 0
+                        else _c(Fn.SUB, ab[k], Lit(1)))
+                return tuple(step if d == k else ab[d] for d in range(3))
+            up, lo = moved(1), moved(-1)
+            ra_, rb_ = (up, b) if side == "A" else (a, up)
+            la_, lb_ = (lo, b) if side == "A" else (a, lo)
+            hi, dn = f"h{side}{k}", f"l{side}{k}"
+            out += [
+                *ef.rolled_e_sum(la + 1, lb + 1, ra_, rb_, read, hi,
+                                 tag=f"p{side}{k}"),
+                Decl(dn, Scalar.F64, init=Lit(0.0)),
+                If(_c(Fn.LT, Lit(0), ab[k]), (
+                    *ef.rolled_e_sum(la + 1, lb + 1, la_, lb_, read,
+                                     f"m{side}{k}", tag=f"q{side}{k}"),
+                    Assign(Var(dn), _mul(ab[k], Var(f"m{side}{k}"))),
+                )),
+                Assign(Var(f"g{side}{k}"), _c(
+                    op, Var(f"g{side}{k}"), _mul(Var(w), _c(
+                        Fn.SUB, _mul(Var(two), Var(hi)), Var(dn))))),
+            ]
+    return out
+
+
 def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
     """`gv`'s per-record body after the head, LOW-STACK (module docstring,
     THE LOW-STACK gv): the same sums as `_v_values`, regrouped per row."""
@@ -587,64 +672,20 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
     def r_read(h: Expr) -> Expr:
         return Index(R_ARRAY, (h,))
 
-    def m_at(i: Expr, j: Expr) -> Index:
-        return Index("M", (i, j))
-
-    def row(a: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
-        def elem(b: tuple[Expr, Expr, Expr]) -> tuple[Stmt, ...]:
-            m = _c(Fn.ADD, Var("oa"), Var("ra"))
-            n = _c(Fn.ADD, Var("ob"), Var("rb"))
-            off = _c(Fn.ADD, m_at(m, n), m_at(n, m))
-            if la != lb:
-                weight: tuple[Stmt, ...] = (Decl("wt", Scalar.F64, init=off),)
-            else:
-                weight = (
-                    Decl("wt", Scalar.F64, init=Lit(0.0)),
-                    If(Var("differ"), (Assign(Var("wt"), off),),
-                       (Assign(Var("wt"), m_at(m, _c(
-                           Fn.ADD, Var("oa"), Var("rb")))),)),
-                )
-            out: list[Stmt] = [
-                Decl("rb", Scalar.I32, init=ef.cartesian_index("b")),
-                *weight,
-                Decl("wz", Scalar.F64, init=_mul(Var("Zc"), Var("wt"))),
+    def elem(a: Cart, b: Cart) -> tuple[Stmt, ...]:
+        out: list[Stmt] = [
+            *lowstack_weight(la, lb),
+            Decl("wz", Scalar.F64, init=_mul(Var("Zc"), Var("wt"))),
+            *lowstack_derivative(la, lb, a, b, r_read, "wz", Fn.SUB),
+        ]
+        for k in range(3):
+            out += [
+                *ef.rolled_e_sum(la + 1, lb + 1, a, b, r_read,
+                                 f"hC{k}", tag=f"pC{k}", up=k),
+                Assign(Var(f"f{k}"), _c(Fn.ADD, Var(f"f{k}"),
+                                        _mul(Var("wt"), Var(f"hC{k}")))),
             ]
-            for side, ab, two in (("A", a, "ea2"), ("B", b, "eb2")):
-                for k in range(3):
-                    def moved(by: int, ab=ab, k=k) -> tuple[Expr, ...]:
-                        step = (_c(Fn.ADD, ab[k], Lit(1)) if by > 0
-                                else _c(Fn.SUB, ab[k], Lit(1)))
-                        return tuple(step if d == k else ab[d]
-                                     for d in range(3))
-                    up, lo = moved(1), moved(-1)
-                    ra_, rb_ = (up, b) if side == "A" else (a, up)
-                    la_, lb_ = (lo, b) if side == "A" else (a, lo)
-                    hi, dn = f"h{side}{k}", f"l{side}{k}"
-                    out += [
-                        *ef.rolled_e_sum(la + 1, lb + 1, ra_, rb_, r_read,
-                                         hi, tag=f"p{side}{k}"),
-                        Decl(dn, Scalar.F64, init=Lit(0.0)),
-                        If(_c(Fn.LT, Lit(0), ab[k]), (
-                            *ef.rolled_e_sum(la + 1, lb + 1, la_, lb_,
-                                             r_read, f"m{side}{k}",
-                                             tag=f"q{side}{k}"),
-                            Assign(Var(dn), _mul(ab[k], Var(f"m{side}{k}"))),
-                        )),
-                        Assign(Var(f"g{side}{k}"), _c(
-                            Fn.SUB, Var(f"g{side}{k}"), _mul(Var("wz"), _c(
-                                Fn.SUB, _mul(Var(two), Var(hi)),
-                                Var(dn))))),
-                    ]
-            for k in range(3):
-                out += [
-                    *ef.rolled_e_sum(la + 1, lb + 1, a, b, r_read,
-                                     f"hC{k}", tag=f"pC{k}", up=k),
-                    Assign(Var(f"f{k}"), _c(Fn.ADD, Var(f"f{k}"),
-                                            _mul(Var("wt"), Var(f"hC{k}")))),
-                ]
-            return tuple(out)
-        return (Decl("ra", Scalar.I32, init=ef.cartesian_index("a")),
-                ef.cartesian_loops(lb, ("bx", "by", "bz"), elem, tag="b"))
+        return tuple(out)
 
     per_nuc: list[Stmt] = [
         Decl("Zc", Scalar.F64, init=Index("Z", (nuc,))),
@@ -661,20 +702,15 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
              "E^{a+1_k,b} - a_k E^{a-1_k,b}), gB likewise, and f_k += wt "
              "SUM_t E^{ab}_t R[t + 1_k] (Hellmann-Feynman), each rolled "
              "over the per-axis tables (e_fragment.rolled_e_sum)"),
-        ef.cartesian_loops(la, ("ax", "ay", "az"), row, tag="a"),
+        lowstack_rows(la, lb, elem),
         Decl("skz", Scalar.F64, init=_mul(Var("sk"), Var("Zc"))),
         *(AtomicAdd(Index("G", (nuc, Lit(k))), _mul(Var("skz"),
                                                     Var(f"f{k}")))
           for k in range(3)),
     ]
-    differ: list[Stmt] = [Note(_WEIGHTS)]
-    if la == lb:
-        differ.append(Decl("differ", Scalar.I32, init=_c(
-            Fn.ADD, _c(Fn.LT, Var("oa"), Var("ob")),
-            _c(Fn.LT, Var("ob"), Var("oa")))))
     return [
         Note(LOWSTACK_NOTE),
-        *differ,
+        *lowstack_differ(la, lb),
         *(Decl(f"P{d}", Scalar.F64, init=Index(f"p_{a}", (Var(REC),)))
           for d, a in enumerate("xyz")),
         Note("theta = sqrt(zeta): a unit point-charge ket (kernel_v)"),

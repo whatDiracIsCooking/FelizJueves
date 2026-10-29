@@ -65,8 +65,22 @@ arches; `measure.sh check` holds the gate to the rows): unrolled `gv_33`
 everywhere (`gt_33` 5,296 B), one form; `gv_22` is 9,752 B, over #586's
 d0 8 KB but under #613's 14,000 B, so (dd) stays unrolled. Interpreted,
 `gv` in its other form at every class (`test_kernel_g1e.py`). No clock.
-No whole RHF gradient assembled; `gjab` / `gk` not measured (the DF-J
-terms: below).
+No whole RHF gradient assembled; `gk` not measured (the DF-J terms:
+below). **`gjab` has a low-stack form, no class's default** (#619;
+`kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
+shape reading the record's `Jp` row from global memory, no `R`; the
+per-row weight and derivative terms shared with `gv` through
+`kernel_g1e.lowstack_weight` / `lowstack_derivative`, `gv`'s text
+byte-identical): interpreted at every class through (ff) in both forms
+(`test_kernel_gjab.py`; unrolled 1.8, low-stack 5.7 eps of the
+split-centre scale, gate 16) and the interpreted chain in both forms.
+`kernel_gjab.LOWSTACK_MIN_LSUM` is **None**: `data/measured/gjab.json`
+holds the declared rule (#614's, restated) and **no row**
+(`measure/measure_gjab.py`, `devtools/measure.sh gjab-compile`, never run:
+the session had no compiler), and `measure.sh check` holds the floor at
+None until every class has both arches' rows. Not compiled by nvcc or
+hipcc in either new form; the on-card chain (`DQ`, raised `[p|q]`,
+`gjab`, no host `J_p`) is not built.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`

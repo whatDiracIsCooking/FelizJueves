@@ -1,0 +1,14 @@
+{
+ "schema": 1,
+ "issue": 619,
+ "about": "    devtools/measure.sh gjab-compile [--backend cuda|hip]",
+ "compile": [],
+ "declared": {
+  "issue": 619,
+  "question": "whether gjab needs a low-stack form through (ff), as gv did (#614), and which classes its gate must cover",
+  "rule": "per class, over both arches: a class's UNROLLED form is admissible when its stack is at most STACK_BUDGET_B = 14,000 B (#613's gradient-family budget) on sm_86 and on gfx1200 and its compile finishes within COMPILE_BUDGET_S = 300 s on both. If any class is inadmissible, the low-stack form is gated by an la + lb floor, LOWSTACK_MIN_LSUM = the smallest la + lb with an inadmissible class: every class below it must be admissible (so stays unrolled, its text unchanged), every class at or above it is gated. Every low-stack unit must itself be within both budgets on both arches; where one is not, the form is changed, never the budget. With no inadmissible class, gjab keeps one form (LOWSTACK_MIN_LSUM None)",
+  "expected": "the unrolled gjab holds the six derivative densities over hermite_targets(L + 1) and the pooled derivative factors as straight-line locals (~210 KB of text at (dd)), like gv's but without H0 or a nucleus loop, so it is expected over budget somewhere in (df)-(ff); the low-stack form holds the per-axis tables one index up and no R (Jp is read from global memory), expected under gv's low-stack 7,712 B at (ff)",
+  "clock": "not measured (module docstring)",
+  "declared": "2026-10-29, before any row of this store"
+ }
+}

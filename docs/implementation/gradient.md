@@ -183,6 +183,26 @@ zeroed by the caller.
   `kernel_gjab.gjab_pq_spec(la, lb, lc, ld) = (la + 1, lb | lc, ld)`, over
   the same bra records and the J chain's `DQ` kets. Nothing in the `[p|q]`
   kernel or its plan is new.
+- **`gjab` has a low-stack form, NOT YET ANY CLASS'S DEFAULT** (#619;
+  `build_gjab_kernel(cls, lowstack=True)`; name, parameters, launch and
+  `G` contract the same). The unrolled `gjab` holds the six derivative
+  densities `HA_k`, `HB_k` over `hermite_targets(L + 1)` and the pooled
+  derivative factors as straight-line locals (~210 KB of text at (dd)).
+  The low-stack one forms no density: per block row, its weight read from
+  `M`, it takes `gA_k += wt (2 alpha SUM E^{a+1_k,b} Jp - a_k SUM
+  E^{a-1_k,b} Jp)` (and `gB`) as rolled sums over the per-axis tables
+  (`e_fragment.rolled_e_sum`), reading the record's `Jp` row where it lies
+  in global memory: `gv`'s low-stack shape without `R` or a nucleus loop.
+  The per-row weight and derivative terms are shared with `gv`
+  (`kernel_g1e.lowstack_weight` / `lowstack_derivative`, the `gv` text
+  byte-identical at all 32 units). The default is
+  `kernel_gjab.gjab_lowstack`, an `la + lb` floor `LOWSTACK_MIN_LSUM`
+  that is **None** until `data/measured/gjab.json` has rows
+  (`measure/measure_gjab.py`, `devtools/measure.sh gjab-compile`, a
+  compiler and no card; its rule, #614's restated, declared before any
+  row and tracked with none: the session that wrote it had neither
+  compiler). `measure.sh check` holds the floor at None while a class
+  lacks a row on either arch, and to the rule once all have them.
 
 `gradient/kernel_gk.py` builds `gk_{la}{lc}_{lb}{ld}` (`build_gk_kernel`),
 one per K class, on `kernel_k`'s mapping: **one warp per bra record**, the
@@ -250,8 +270,8 @@ largest 169 KB (`test_emit_grad_k.py`).
 | host invariance | `SUM_A G = 0` | same | ~1e-15 of `max\|G\|`, gate 1e-13 |
 | `V`'s Hellmann–Feynman term | a nucleus with no basis function, by finite difference | two-atom s, p basis plus a bare nucleus | as above |
 | `gs`, `gt`, `gv` interpreted (`test_kernel_g1e.py`) | `host`, per class | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G; `gv` also in its other form at every class (#614) | `gs`, `gt` bitwise; `gv` 2.2 eps of the split-centre scale, gate 16 eps |
-| `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis | gate 16 eps of the split-centre scale |
-| the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow` | gate 64 eps of the scale |
+| `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis; also in its other form (low-stack) at every class (#619) | unrolled 1.8 eps, low-stack 5.7 eps of the split-centre scale, gate 16 eps |
+| the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow`; each in both forms (#619) | gate 64 eps of the scale |
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
 | host `E_K` invariance, partition | `SUM_A G = 0`; the class quartets cover every ordered quartet once | the s, p basis | ~5e-16 of `max\|G\|` |
 | `gk` interpreted (`test_kernel_gk.py`) | `host.exchange_gradient`, per class, its `absolute=True` twin as scale | every K class with each `l <= 1` on the s, p basis; every class with a d shell through `(dd\|dd)` on a two-atom s, p, d basis (L + 1 > 4 `slow`); the 16 s, p classes summed to the whole `dE_K`; 1, 4 and 32 lanes | at most 0.7 eps of the scale, gate 16 eps |
@@ -411,8 +431,10 @@ the spherical transform is the consumer's, as #615 decided for d0).
   block mapping (`kernel_kblock`'s, one warp per `K_AB` block) are the
   named follow-ups; neither is built.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
-  time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured
-  and is unrolled (~210 KB of text at (dd)), with no low-stack form.
+  time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured:
+  its sweep and rule exist (`gjab-compile`, `gjab.json`, #619) but no
+  row, so its low-stack form is built and interpreted at every class
+  through (ff) and is no class's default.
 - No screening (`gk` visits every ordered quartet; a derivative bound is
   not derived), Cartesian only. The Coulomb energy's Hessian is built
   on these pieces (`hessian.md`), and so are the one-electron Hessians of
