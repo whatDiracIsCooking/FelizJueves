@@ -246,7 +246,7 @@ def test_an_lmax_above_2_is_accepted_and_nothing_is_emitted_above_l4(
     # The parser and selection take any LMAX >= 0; the writer is stubbed,
     # so no IR is built above L = 4.
     seen = []
-    monkeypatch.setattr(emit_cli, "generate_hgp", lambda b, a, out, specs: (
+    monkeypatch.setattr(emit_cli, "generate_hgp", lambda b, a, out, specs, **kw: (
         seen.append(list(specs)) or []))
     assert _run(tmp_path, "cuda", "--hgp-j-l", "3", "--hgp-k-l", "5",
                 "--ordered") == 0
