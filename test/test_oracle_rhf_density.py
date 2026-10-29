@@ -62,9 +62,10 @@ def test_only_the_chain_records_an_rhf_density():
                                  set()).add(fx.name)
     assert by_recipe["rhf"] == {f"{PAIR}_j", f"{PAIR}_k"}
     # #520: the density-free dipole fixture (manifest: THE DENSITY-FREE
-    # DIPOLE FIXTURE), and #570's two one-electron pieces
-    assert by_recipe["none"] == {"hf_ccpvtz_spd_dipole", "co_ccpvtz_j_st",
-                                 "co_ccpvtz_j_vh"}
+    # DIPOLE FIXTURE) and #627's (ff) twin, and #570's two one-electron
+    # pieces
+    assert by_recipe["none"] == {"hf_ccpvtz_spd_dipole", "hf_ccpvtz_dipole",
+                                 "co_ccpvtz_j_st", "co_ccpvtz_j_vh"}
     assert set(by_recipe) == {"hilbert", "rhf", "none"}
 
 
