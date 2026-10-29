@@ -4238,6 +4238,74 @@ def test_the_rys_engine_reaches_neither_its_witness_nor_a_machine() -> None:
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{root} reaches {hit}"
 
+
+# ---------------------------------------------------------------------------
+# The Rys one-electron kernels, `Target.S`, `T` and `V` on `Engine.RYS`
+# (`one_electron.kernel_rys`): the Rys factorisation per primitive pair (the
+# rule, `rys.roots`, and the 2D VRR's bra half, `rys.recurrence`) filling
+# `kernel_hgp`'s skeleton (its contracted boundary, HRR and scatter). Checked
+# in the interpreter against the MMD host matrices, the HGP kernels and
+# libcint, so neither `ao`, `one_electron`'s host references, the MMD
+# one-electron kernels, the interpreter, a backend, a card nor `reference/`
+# may be its ancestor. The generator CLI composes it (`--rys-one-e-l`).
+# ---------------------------------------------------------------------------
+
+_MMD_ONE_E_KERNELS = ("one_electron.kernel_s", "one_electron.kernel_t",
+                      "one_electron.kernel_v", "one_electron.kernel_mu",
+                      "one_electron.kernel_sx")
+RULES |= {
+    "rys1e_builder": _rule(
+        "kernel_rys.py: the Rys one-electron kernels -- key -> IR, the Rys "
+        "factorisation per primitive pair into `kernel_hgp`'s contracted "
+        "boundary, HRR and scatter, one thread per contracted shell pair",
+        ("spec", "=ir", "hgp.vrr", "rys", "=one_electron.kernel_hgp"),
+        ao="the MMD host matrices and `ao.pairs.dress` are the witnesses the "
+           "kernels are interpreted against: importing either shares "
+           "ancestry with them (#20)",
+        **{m: "the one-electron host references are the witnesses"
+           for m in _ONE_E_HOST},
+        **{m: "the MMD one-electron kernels are another engine's"
+           for m in _MMD_ONE_E_KERNELS},
+        mmd="McMurchie-Davidson is another engine (#292)",
+        plan="the plan layer is MMD machinery keyed on a [JEngine] row a Rys "
+             "class does not have",
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["one_electron.kernel_rys"] = "rys1e_builder"
+EDGES["one_electron.kernel_rys"] = frozenset(
+    ("hgp.vrr", "ir", "one_electron.kernel_hgp", "rys.recurrence",
+     "rys.roots", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the Rys one-electron "
+                       "ladder through `kernel_rys`",
+                       RULES["driver"].may
+                       | frozenset(("one_electron.kernel_rys",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("one_electron.kernel_rys",))
+
+
+def test_the_rys1e_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["one_electron.kernel_rys"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"one_electron.kernel_hgp", "rys.recurrence", "rys.roots",
+            "hgp.hrr"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "plan", "mmd",
+                   "performance.device", "eri", *_MMD_ONE_E_KERNELS):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_rys reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

@@ -138,6 +138,7 @@
    "mmd.kernel",
    "one_electron.kernel_hgp",
    "one_electron.kernel_mu",
+   "one_electron.kernel_rys",
    "one_electron.kernel_s",
    "one_electron.kernel_sx",
    "one_electron.kernel_t",
@@ -2150,6 +2151,16 @@
    "one_electron.kernel_s",
    "spec"
   ],
+  "one_electron.kernel_rys": [
+   "hgp.vrr",
+   "ir",
+   "one_electron.kernel_hgp",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
+   "spec"
+  ],
   "one_electron.kernel_s": [
    "ir",
    "mmd.e_fragment",
@@ -2411,6 +2422,7 @@
    "mmd.kernel",
    "one_electron.kernel_hgp",
    "one_electron.kernel_mu",
+   "one_electron.kernel_rys",
    "one_electron.kernel_s",
    "one_electron.kernel_sx",
    "one_electron.kernel_t",

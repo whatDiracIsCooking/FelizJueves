@@ -293,11 +293,6 @@ def _digits(v: Cart) -> str:
     return "_".join(str(c) for c in v)
 
 
-def _acc(table: int, e: Cart) -> str:
-    """The contracted accumulator of `(e|0)` in table `table`."""
-    return f"acc{table}_{_digits(e)}"
-
-
 def _table_name(table: int) -> Callable[[hrr.Node], str]:
     return lambda n: f"t{table}{hrr_name(n)}"
 
@@ -448,16 +443,8 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
     """
     target, la, lb = _class(cls)
     nuclear = target is Target.V
-    tables = _tables(target, la, lb)
-    hrrs = {n: _hrr_dag(tg) for n, tg in tables.items()}
-    bounds = {n: _boundary(d) for n, d in hrrs.items()}
-    roots = tuple(sorted({e for b in bounds.values() for e in b},
-                         key=lambda e: vrr.order_key((e, ZERO, 0))))
-    vdag = _vrr_dag(roots, nuclear)
-
-    def hname(table: int, node: hrr.Node) -> str:
-        return (_table_name(table)(node) if target is Target.T
-                else hrr_name(node))
+    hrrs, bounds = contracted_tables(target, la, lb)
+    vdag = _vrr_dag(boundary_union(bounds), nuclear)
 
     k = Var(_REC)
     # --- per record: the seed, the VRR, the accumulation -------------------
@@ -481,8 +468,8 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
             if target is Target.T else None
         for e in bnd:
             x = read(e) if w is None else _c(Fn.MUL, w, read(e))
-            accumulate.append(Assign(Var(_acc(n, e)), _c(
-                Fn.SUB if nuclear else Fn.ADD, Var(_acc(n, e)), x)))
+            accumulate.append(Assign(Var(acc_name(n, e)), _c(
+                Fn.SUB if nuclear else Fn.ADD, Var(acc_name(n, e)), x)))
 
     record: list[Stmt] = [Decl("zeta", Scalar.F64,
                                init=Index("zeta_ab", (k,)))]
@@ -540,12 +527,72 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
     else:
         record += [*vstmts, *accumulate]
 
+    what = {Target.S: "overlap S", Target.T: "kinetic T",
+            Target.V: "nuclear attraction V",
+            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>"}[target]
+    return assemble(
+        target, la, lb, hrrs, bounds, tuple(record),
+        name=name or hgp_name((target, la, lb)),
+        title=(f"HGP {what}, class (la, lb) = ({la}, {lb}): a VRR per "
+               "primitive pair, the contraction, the HRR on contracted "
+               "values (one_electron/kernel_hgp.py)"),
+        per_record=("the pair's primitive pairs, serially: the VRR per "
+                    "record ([Fock] eq 25 at f = 0)"))
+
+
+# ---------------------------------------------------------------------------
+# The pair skeleton, shared with the Rys route (`one_electron.kernel_rys`)
+# ---------------------------------------------------------------------------
+
+
+def contracted_tables(target: Target, la: int, lb: int
+                      ) -> tuple[dict[int, hrr.HrrDag],
+                                 dict[int, tuple[Cart, ...]]]:
+    """Each contracted table's HRR DAG, and the boundary `(e|0)` it reads
+    (VRR order): what a route's per-record body must accumulate into
+    `acc_name(table, e)` -- `S`, `V`, `MU` one table, `T` up to three
+    (module docstring). Built for any `l`: `L_MAX` is the scope of this
+    module's builder, not of this function."""
+    hrrs = {n: _hrr_dag(tg) for n, tg in _tables(target, la, lb).items()}
+    return hrrs, {n: _boundary(d) for n, d in hrrs.items()}
+
+
+def boundary_union(bounds: dict[int, tuple[Cart, ...]]) -> tuple[Cart, ...]:
+    """Every `e` any table reads, once, in VRR order."""
+    return tuple(sorted({e for b in bounds.values() for e in b},
+                        key=lambda e: vrr.order_key((e, ZERO, 0))))
+
+
+def acc_name(table: int, e: Cart) -> str:
+    """The contracted accumulator of `(e|0)` in table `table`."""
+    return f"acc{table}_{_digits(e)}"
+
+
+def assemble(target: Target, la: int, lb: int,
+             hrrs: dict[int, hrr.HrrDag],
+             bounds: dict[int, tuple[Cart, ...]],
+             record: tuple[Stmt, ...], *, name: str, title: str,
+             per_record: str) -> Kernel:
+    """The kernel around a route's per-record body (module docstring, "THE
+    THREAD MAPPING" and "THE PARAMETER BLOCK"): one thread per contracted
+    shell pair, the accumulators `acc_name(n, e)` of `bounds` zeroed,
+    `record` run over the pair's records `kr in [r0, r1)`, then the HRR of
+    `hrrs` on the contracted values, the operator's combination and
+    `kernel_jab`'s placement as plain stores. `record` reads the record
+    arrays at `kr` and adds into the accumulators; `title` and `per_record`
+    are its two notes."""
+    nuclear = target is Target.V
+
+    def hname(table: int, node: hrr.Node) -> str:
+        return (_table_name(table)(node) if target is Target.T
+                else hrr_name(node))
+
     # --- per pair: the HRR on contracted values, the values, the scatter ---
     hstmts: list[Stmt] = []
     for n, dag in hrrs.items():
         if target is Target.T:
             hstmts.append(Note(f"table {n}: SUM c_a c_b beta^{n} (e|0)"))
-        hstmts += hrr_body(dag, lambda e, f, n=n: Var(_acc(n, e)),
+        hstmts += hrr_body(dag, lambda e, f, n=n: Var(acc_name(n, e)),
                            name=lambda node, n=n: hname(n, node))
     vals, values = _values(target, la, lb, hname)
     used_ab = _factors(tuple(hstmts))
@@ -568,24 +615,18 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
     head.append(Note("the contracted boundary (e|0), summed from 0.0 over the "
                      "pair's records"))
     for n, bnd in bounds.items():
-        head += [Decl(_acc(n, e), Scalar.F64, init=Lit(0.0)) for e in bnd]
+        head += [Decl(acc_name(n, e), Scalar.F64, init=Lit(0.0)) for e in bnd]
     per_pair = (
         *head,
-        Note("the pair's primitive pairs, serially: the VRR per record "
-             "([Fock] eq 25 at f = 0)"),
-        For(_REC, Var("r0"), Var("r1"), Lit(1), tuple(record)),
+        Note(per_record),
+        For(_REC, Var("r0"), Var("r1"), Lit(1), record),
         *hstmts,
         *vals,
         Note("scatter into the matrix and its mirror"),
         _scatter(target, la, lb, values),
     )
-    what = {Target.S: "overlap S", Target.T: "kinetic T",
-            Target.V: "nuclear attraction V",
-            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>"}[target]
     body: tuple[Stmt, ...] = (
-        Note(f"HGP {what}, class (la, lb) = ({la}, {lb}): a VRR per "
-             "primitive pair, the contraction, the HRR on contracted values "
-             "(one_electron/kernel_hgp.py)"),
+        Note(title),
         Note("launch: one thread per contracted shell pair"),
         Decl(PAIR, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
             Fn.MUL, Call(Fn.BLOCK_X), Call(Fn.BLOCK_DIM_X)))),
@@ -618,4 +659,4 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
     else:
         params.append(Param(OUT[target], Scalar.F64, array=True,
                             intent=Intent.OUT, shape=(nao, nao)))
-    return Kernel(name or hgp_name((target, la, lb)), tuple(params), body)
+    return Kernel(name, tuple(params), body)

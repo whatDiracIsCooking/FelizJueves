@@ -40,7 +40,10 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     # eri/fock/kernel_frys.py: the fused F on Rys quadrature
                     (Target.F, Engine.RYS),
                     # eri/hjk/kernel_rj.py: the split J on Rys quadrature
-                    (Target.J, Engine.RYS)}
+                    (Target.J, Engine.RYS),
+                    # one_electron/kernel_rys.py: S, T and V by Rys
+                    (Target.S, Engine.RYS), (Target.T, Engine.RYS),
+                    (Target.V, Engine.RYS)}
 
 
 def _spec(target: Target, engine: Engine | None = None, *,
