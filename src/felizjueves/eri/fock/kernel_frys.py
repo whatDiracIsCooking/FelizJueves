@@ -68,10 +68,6 @@ from felizjueves.eri.fock.levers.seams import (
     acc_name,
 )
 from felizjueves.hgp.recurrence import (
-    _TWO_OVER_SQRT_PI,
-    PAIR,
-    PQ_PARAMS,
-    THETA,
     hgp_class,
 )
 from felizjueves.hgp.vrr import AmClass
@@ -84,9 +80,7 @@ from felizjueves.ir import (
     Kernel,
     Lit,
     Note,
-    Rys,
     Scalar,
-    Space,
     Stmt,
     Var,
 )
@@ -162,7 +156,6 @@ def quartet_scalars(ctx: FContext) -> tuple[Stmt, ...]:
     """The bra primitive pair, the quartet geometry, `T`, `S` and the Rys
     rule (module docstring)."""
     need = _need(ctx)
-    n = n_roots(sum(ctx.cls))
 
     def sh(f: int) -> Expr:
         return ctx.read(AB_SH, Var(KAB), Lit(f))
@@ -170,8 +163,6 @@ def quartet_scalars(ctx: FContext) -> tuple[Stmt, ...]:
     def scalar(name: str, e: Expr) -> Decl:
         return ctx.scalar(name, e, "vrr")
 
-    pq = [Var(v) for v in PQ_PARAMS]
-    theta = Var(THETA)
     out: list[Stmt] = [
         Note("the bra primitive pair, from shared memory"),
         *(scalar(f"Pb{d}", sh(_P + d)) for d in range(3)),
@@ -179,43 +170,8 @@ def quartet_scalars(ctx: FContext) -> tuple[Stmt, ...]:
           if f"PA_{a}" in need),
         scalar("p", sh(_ZETA)),
         scalar("Ub", sh(_U)),
-        Note("quartet geometry: W - P and W - Q with kernel_f's derived "
-             "signs, and the 2D recurrence's scalars"),
-        *(scalar(name, _c(Fn.SUB, Var(f"Pb{d}"), Var(f"Qk{d}")))
-          for d, name in enumerate(PQ_PARAMS)),
-        scalar("ppq", _c(Fn.ADD, Var("p"), Var("q"))),
-        scalar("rho", _c(Fn.DIV, _c(Fn.MUL, Var("p"), Var("q")), Var("ppq"))),
-        scalar(THETA, _c(Fn.SQRT, Var("rho"))),
     ]
-    wp = any(f"WP_{a}" in need for a in _AXES)
-    wq = any(f"WQ_{a}" in need for a in _AXES)
-    if wp or "q_ppq" in need:
-        out.append(scalar("q_ppq", _c(Fn.DIV, Var("q"), Var("ppq"))))
-    if wq or "p_ppq" in need:
-        out.append(scalar("p_ppq", _c(Fn.DIV, Var("p"), Var("ppq"))))
-    for d, a in enumerate(_AXES):
-        if f"WP_{a}" in need:
-            out.append(scalar(f"WP_{a}", _c(Fn.SUB, Lit(0.0), _c(
-                Fn.MUL, Var("q_ppq"), pq[d]))))
-        if f"WQ_{a}" in need:
-            out.append(scalar(f"WQ_{a}", _c(Fn.MUL, Var("p_ppq"), pq[d])))
-    for name, x in (("inv2p", "p"), ("inv2q", "q"), ("inv2pq", "ppq")):
-        if name in need:
-            out.append(scalar(name, _c(Fn.DIV, Lit(0.5), Var(x))))
-    out += [
-        scalar(PAIR, _c(Fn.MUL, Var("Ub"), Var("Uq"))),
-        Note(f"the Rys rule: N = {n} nodes and weights of (1/2) x^(-1/2) "
-             "exp(-T x) dx on [0, 1] at T = rho |PQ|^2 (rys/roots.py); "
-             "S = U_P U_Q (2/sqrt(pi)) theta, the HGP fundamental's scale"),
-        Decl("T", Scalar.F64, init=_c(Fn.MUL, _c(Fn.MUL, theta, theta), _c(
-            Fn.ADD, _c(Fn.ADD, _c(Fn.MUL, pq[0], pq[0]),
-                       _c(Fn.MUL, pq[1], pq[1])), _c(Fn.MUL, pq[2], pq[2])))),
-        Decl(rr.WEIGHT_SCALE, Scalar.F64, init=_c(Fn.MUL, Var(PAIR), _c(
-            Fn.MUL, Lit(_TWO_OVER_SQRT_PI), theta))),
-        Decl(rr.NODES, Scalar.F64, (Lit(n),), Space.LOCAL),
-        Decl(rr.WEIGHTS, Scalar.F64, (Lit(n),), Space.LOCAL),
-        Rys(rr.NODES, rr.WEIGHTS, n, Var("T")),
-    ]
+    out += rr.quartet_rule(ctx.cls, scalar)
     return tuple(out)
 
 

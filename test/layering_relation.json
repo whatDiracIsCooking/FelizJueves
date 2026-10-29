@@ -116,6 +116,7 @@
    "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
    "eri.hjk.kernel_hk",
+   "eri.hjk.kernel_rj",
    "eri.j_coulomb.kernel_dq",
    "eri.j_coulomb.kernel_jab",
    "eri.k_exchange.kernel_k",
@@ -913,6 +914,22 @@
    "hgp.recurrence",
    "hgp.vrr",
    "ir",
+   "spec"
+  ],
+  "eri.hjk.kernel_rj": [
+   "eri.hjk.kernel_hj",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
    "spec"
   ],
   "eri.hjk.launch_hjk": [
@@ -2372,6 +2389,7 @@
    "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
    "eri.hjk.kernel_hk",
+   "eri.hjk.kernel_rj",
    "eri.j_coulomb.kernel_dq",
    "eri.j_coulomb.kernel_jab",
    "eri.k_exchange.kernel_k",
@@ -2761,6 +2779,7 @@
    "reference.boys"
   ],
   "rys": [
+   "hgp.recurrence",
    "hgp.vrr",
    "ir",
    "rys.exact",
@@ -2768,6 +2787,7 @@
    "rys.roots"
   ],
   "rys.exact": [
+   "hgp.recurrence",
    "hgp.vrr",
    "ir",
    "rys",
@@ -2775,6 +2795,7 @@
    "rys.roots"
   ],
   "rys.recurrence": [
+   "hgp.recurrence",
    "hgp.vrr",
    "ir",
    "rys",
@@ -2782,6 +2803,7 @@
    "rys.roots"
   ],
   "rys.roots": [
+   "hgp.recurrence",
    "hgp.vrr",
    "ir",
    "rys",

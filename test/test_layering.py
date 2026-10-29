@@ -4146,7 +4146,7 @@ RULES |= {
     "rys": _rule(
         "rys/: engine #3, the Rys rule (host fp64, its device text, a "
         "decimal ground truth) and the 2D VRR as IR into the HGP boundary",
-        ("=ir", "rys", "hgp.vrr"),
+        ("=ir", "rys", "hgp.vrr", "hgp.recurrence"),
         plan="the plan layer keys on a [JEngine] row a Rys class does not have",
         ao="the AO layer is the witness the kernel is interpreted against",
         reference=_GROUND_TRUTH,
@@ -4173,7 +4173,7 @@ EDGES |= {k: frozenset(v) for k, v in {
     "rys": (),
     "rys.roots": (),
     "rys.exact": ("rys.roots",),
-    "rys.recurrence": ("hgp.vrr", "ir"),
+    "rys.recurrence": ("hgp.recurrence", "hgp.vrr", "ir", "rys.roots"),
     "eri.fock.kernel_frys": ("eri.fock.kernel_f", "eri.fock.levers.seams",
                              "hgp.recurrence", "hgp.vrr", "ir",
                              "rys.recurrence", "rys.roots", "spec"),
@@ -4192,9 +4192,40 @@ EDGES["emit.__main__"] = (EDGES["emit.__main__"]
                           | frozenset(("eri.fock.kernel_frys",)))
 
 
+# The split J on Rys (`eri/hjk/kernel_rj.py`): `kernel_hj`'s skeleton through
+# its seam (`Nest`, `split_j_kernel`) with the Rys nest, under `hj_builder`'s
+# prohibitions; the emit driver names it by its entry point.
+RULES |= {
+    "rj_builder": _rule(
+        "kernel_rj.py: the split J on Rys, `Target.J` on `Engine.RYS` -- "
+        "`kernel_hj`'s skeleton through its seam with the Rys nest",
+        ("spec", "=ir", "hgp", "rys", "eri.hjk.kernel_hj"),
+        plan="the plan layer keys on a [JEngine] row a Rys class does not have",
+        ao="the AO layer is the witness the kernel is interpreted against",
+        reference=_GROUND_TRUTH,
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"}),
+}
+RULE_OF["eri.hjk.kernel_rj"] = "rj_builder"
+EDGES["eri.hjk.kernel_rj"] = frozenset(
+    ("eri.hjk.kernel_hj", "hgp.vrr", "ir", "rys.recurrence", "rys.roots",
+     "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the split J on Rys "
+                       "through `kernel_rj`, by its entry point only",
+                       RULES["driver"].may
+                       | frozenset(("eri.hjk.kernel_rj",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = (EDGES["emit.__main__"]
+                          | frozenset(("eri.hjk.kernel_rj",)))
+
+
 def test_the_rys_engine_reaches_neither_its_witness_nor_a_machine() -> None:
     graph = _graph()
-    for root in ("eri.fock.kernel_frys", "rys.roots", "rys.recurrence"):
+    for root in ("eri.fock.kernel_frys", "eri.hjk.kernel_rj", "rys.roots",
+                 "rys.recurrence"):
         seen: set[str] = set()
         todo = [root]
         while todo:

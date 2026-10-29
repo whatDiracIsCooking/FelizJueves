@@ -38,7 +38,9 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     # eri/density_fit/kernel_hgp.py: (P|Q) and (mn|P) by HGP
                     (Target.METRIC, Engine.HGP), (Target.ERI3, Engine.HGP),
                     # eri/fock/kernel_frys.py: the fused F on Rys quadrature
-                    (Target.F, Engine.RYS)}
+                    (Target.F, Engine.RYS),
+                    # eri/hjk/kernel_rj.py: the split J on Rys quadrature
+                    (Target.J, Engine.RYS)}
 
 
 def _spec(target: Target, engine: Engine | None = None, *,
