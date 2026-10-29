@@ -24,6 +24,9 @@ ladder, every shell `l` up to 4), for each screen (`J`, `K`) in each mode:
              every launch of every member class it serves, so every
              runtime `perm` the stream routes to it runs.
 
+The canonical cases are the PR gate; the ordered ones are `slow`
+(`kernel-tier.sh --full`): 140 one-class programs, each its own compile.
+
 THE PER-CLASS BASIS. A real basis with a d shell reaches `(dd|dd)` (L = 8),
 and nothing above L = 4 may be built, compiled or run here; so each class
 runs on a small synthetic basis holding only its own shell types (`l` of
@@ -138,8 +141,13 @@ def _groups(screen: str, mode: str) -> dict[str, tuple]:
 
 
 GROUPS = {(s, m): _groups(s, m) for s in SCREENS for m in MODES}
+# The PR gate runs the canonical mode, the literal default, whose 17 kernels a
+# screen already launch all 70 classes through their runtime `perm`; the
+# `ordered` lever's 70 one-class programs a screen (~450 s of the CUDA gate,
+# ~3 s of compile each) are `slow`, run by `kernel-tier.sh --full`.
 CLASS_CASES = [
-    pytest.param(s, m, name, id=f"{s}-{m}-{name}")
+    pytest.param(s, m, name, id=f"{s}-{m}-{name}",
+                 marks=(pytest.mark.slow,) if m == "ordered" else ())
     for s in SCREENS for m in MODES for name in GROUPS[s, m]
 ]
 MOLECULES = [

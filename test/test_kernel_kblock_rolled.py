@@ -24,6 +24,14 @@ lanes, two H2 screened), staged as the driver stages it for the card; its
 shape; and the default text pinned to its digest before the option
 existed.
 
+And the column form (#583, `column=True`, `kbrc_*`): each `K_AB` column
+reduced across the warp per (bra, ket strip), so REASSOCIATED, held to
+`walk_kb` within `ORACLE_TOL` (never bitwise against `kb` / `kbr`) on
+every class through `(ff|ff)` at four lanes, the s, s, p plan and two H2
+screened at one and four; its shape (every `WarpReduce` under no
+lane-dependent `If`, the per-lane screen the walk's predicate), the
+footprint the issue tabulates, and `transposed=True` composing with it.
+
 Every class with L <= `tiers.FAST_L_MAX` is fast, above it `slow` (and
 `high_l` above `tiers.DEVICE_L_MAX`). Fast tier: no compiler, no card, no
 PySCF.
@@ -51,15 +59,20 @@ from felizjueves.eri.k_exchange.kernel_k import k_class_spec
 from felizjueves.eri.k_exchange.kernel_kblock import (
     build_kblock_kernel,
     launch_shape,
+    shared_bytes,
     shared_doubles,
 )
 from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
     DENSE_PARAMS,
+    KBLK,
     PARAMS,
     TABLES,
     TRANSPOSED,
     build_kblock_dense_kernel,
     build_kblock_rolled_kernel,
+    column_block_doubles,
+    column_shared_bytes,
+    column_shared_doubles,
     e_pattern,
     hpq_table,
     kblock_dense_name,
@@ -67,7 +80,18 @@ from felizjueves.eri.k_exchange.kernel_kblock_rolled import (
     tables,
 )
 from felizjueves.eri.k_exchange.launch_kblock import e_table, kb_launches, walk_kb
-from felizjueves.ir import AtomicAdd, For, walk
+from felizjueves.ir import (
+    AtomicAdd,
+    Call,
+    Decl,
+    For,
+    If,
+    Index,
+    Space,
+    Var,
+    WarpReduce,
+    walk,
+)
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.ir.passes import transpose
 from felizjueves.mmd.hermite import e_block, hermite_order
@@ -83,7 +107,7 @@ WITH_F = [am for am in itertools.product(range(4), repeat=4) if 3 in am]
 
 
 def _id(am: Am) -> str:
-    return "({}{}|{}{})".format(*("spdf"[x] for x in am))
+    return "({}{}|{}{})".format(*("spdfg"[x] for x in am))
 
 
 CENTRES = ((0.0, 0.0, 0.0), (0.5, -0.6, 0.3), (-0.4, 0.7, 0.6),
@@ -103,20 +127,28 @@ def _class_case(am: Am):
     basis = Basis(shells)
     n = basis.n_ao
     D = np.array([[1.0 / (i + j + 1) for j in range(n)] for i in range(n)])
+    # build `am`'s block kernel only: the basis reaches up to 81 classes,
+    # and building every one cost each case ~5 s of the fast tier
     plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq), tau=0.0,
-                       build=build_kblock_kernel if max(am) <= 2 else None)
+                       build=(lambda s: build_kblock_kernel(s)
+                              if s.am == am else None)
+                       if max(am) <= 2 else None)
     plan = dataclasses.replace(plan, classes=tuple(c for c in plan
                                                    if c.am == am))
     assert len(plan) == 1
+    assert (plan.classes[0].kernel is not None) == (max(am) <= 2)
     return basis, D, plan
 
 
 def _interp(plan, basis, D, tmp_path, *, rolled: bool, lanes: int = 1,
-            dense: bool = False, transposed: bool = False) -> np.ndarray:
+            dense: bool = False, transposed: bool = False,
+            column: bool = False) -> np.ndarray:
     drv = kb_driver(plan, basis, "cuda", tmp_path / (
-        "d" if dense else "t" if transposed else "r" if rolled else "b"),
-                    rolled=rolled or dense or transposed, dense=dense,
-                    transposed=transposed, with_k=False)
+        ("c" if column else "") + (
+            "d" if dense else "t" if transposed else "r" if rolled else "b")),
+                    rolled=rolled or dense or transposed or column,
+                    dense=dense, transposed=transposed, column=column,
+                    with_k=False)
     staged = kb_stage(drv, plan, basis, D)
     K = np.zeros((drv.n_ao, drv.n_ao))
     for c in range(len(plan)):
@@ -477,7 +509,9 @@ def test_the_default_rolled_text_is_unchanged(case):
     backend, am = case
     emit, arch, _ = BACKEND[backend]
     for k in (build_kblock_rolled_kernel(am),
-              build_kblock_rolled_kernel(am, transposed=False)):
+              build_kblock_rolled_kernel(am, transposed=False),
+              build_kblock_rolled_kernel(am, transposed=False,
+                                         column=False)):  # #583
         assert hashlib.sha256(emit(k, arch).encode()).hexdigest() == \
             DEFAULT_SHA256[backend, am]
 
@@ -487,4 +521,180 @@ def test_the_transposed_refusals():
     for kw in ({"transposed": True}, {"transposed": True, "rolled": True,
                                       "dense": True}):
         with pytest.raises(ValueError, match="transposed="):
+            kb_driver(plan, basis, "cuda", Path("/nonexistent"), **kw)
+
+
+# ---------------------------------------------------------------------------
+# The column form (#583): each K_AB column reduced across the warp in-kernel
+# ---------------------------------------------------------------------------
+#
+# Per (bra, ket strip, b) the lane's column `col[a]` is reduced across the
+# warp and lane 0 adds it into the block's one `Kblk`: the sum is
+# REASSOCIATED against `kb` / `kbr` (one fold per strip, not one per lane
+# over the whole block), so it is held to the walk within `ORACLE_TOL`,
+# never bitwise. At four lanes, so every reduction sums real lanes and the
+# last strip of a block is ragged.
+
+# the issue's table: bytes per 32-lane block after, Ksh + Kblk
+COLUMN_BYTES = {(2, 2, 2, 2): 10_784, (3, 3, 3, 3): 24_864,
+                (4, 4, 4, 4): 47_880}
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am))
+                                for am in SPD + WITH_F])
+def test_the_column_kernel_is_the_walk(am: Am, tmp_path):
+    basis, D, plan = _class_case(am)
+    got = _interp(plan, basis, D, tmp_path, rolled=True, column=True,
+                  lanes=4)
+    Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
+    big = float(np.max(np.abs(Kw)))
+    assert big > 0.0 and float(np.max(np.abs(got - Kw))) <= ORACLE_TOL * big
+
+
+@pytest.mark.parametrize("lanes", [1, 4])
+def test_the_column_plan_is_the_walk_with_p_shells(lanes, tmp_path):
+    basis, D = _sp_basis()
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq), tau=0.0,
+                       build=build_kblock_kernel)
+    K = _interp(plan, basis, D, tmp_path, rolled=True, column=True,
+                lanes=lanes)
+    Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
+    big = float(np.max(np.abs(Kw)))
+    assert big > 0.0 and float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * big
+
+
+@pytest.mark.parametrize("lanes", [1, 4])
+def test_the_column_plan_is_the_walk_screened(lanes, tmp_path):
+    """Two H2 6 bohr apart at a tau where the bra break, the strip break
+    and the per-lane zero all fire."""
+    basis, D = _launch_case("two_h2")
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=1e-6, build=build_kblock_kernel)
+    w = walk_kb(plan, basis, D, pq=pq)
+    assert w.n_skipped > 0
+    K = _interp(plan, basis, D, tmp_path, rolled=True, column=True,
+                lanes=lanes)
+    Kw = np.array(w.K)
+    assert float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * float(
+        np.max(np.abs(Kw)))
+
+
+def test_the_column_screen_skips_the_walks_pairs(tmp_path):
+    """The screened column form is the screened walk, and the unscreened one
+    is not: the agreement is the screen's (the per-lane predicate is the
+    walk's per-pair test, `test_the_column_kernel_shape`), not an accident
+    of pairs too small to see."""
+    basis, D = _launch_case("two_h2")
+    plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                       tau=1e-6, build=build_kblock_kernel)
+    w = walk_kb(plan, basis, D, pq=pq)
+    assert 0 < w.n_skipped < w.n_pairs
+    K = _interp(plan, basis, D, tmp_path, rolled=True, column=True, lanes=4)
+    Kw = np.array(w.K)
+    assert float(np.max(np.abs(K - Kw))) <= ORACLE_TOL * float(
+        np.max(np.abs(Kw)))
+    # the unscreened build differs from the screened walk by more than the
+    # tolerance, so the agreement above is the screen's, not an accident
+    open_ = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
+                        tau=0.0, build=build_kblock_kernel)
+    K0 = _interp(open_, basis, D, tmp_path / "open", rolled=True,
+                 column=True, lanes=4)
+    assert float(np.max(np.abs(K0 - Kw))) > ORACLE_TOL * float(
+        np.max(np.abs(Kw)))
+
+
+def _collectives_under(body, conds=()):
+    """Every `WarpReduce` with the `If` conditions it sits under."""
+    for s in body:
+        if isinstance(s, WarpReduce):
+            yield s, conds
+        elif isinstance(s, For):
+            yield from _collectives_under(s.body, conds)
+        elif isinstance(s, If):
+            yield from _collectives_under(s.then, (*conds, s.cond))
+            yield from _collectives_under(s.orelse, (*conds, s.cond))
+
+
+def _reads(e) -> set[str]:
+    """The names an expression reads (`Var`s, array names, Call kinds)."""
+    out: set[str] = set()
+    if isinstance(e, Var):
+        out.add(e.name)
+    elif isinstance(e, Index):
+        out.add(e.array)
+        for x in e.at:
+            out |= _reads(x)
+    elif isinstance(e, Call):
+        out.add(e.fn.name)
+        for x in e.args:
+            out |= _reads(x)
+    return out
+
+
+def test_the_column_kernel_shape():
+    am = (2, 1, 1, 2)
+    k = build_kblock_rolled_kernel(am, column=True)
+    assert k.name == kblock_rolled_name(am, column=True) == "kbrc_21_12"
+    assert tuple(p.name for p in k.params) == PARAMS
+    stmts = list(walk(k.body))
+    adds = [s for s in stmts if isinstance(s, AtomicAdd)]
+    assert len(adds) == 1 and adds[0].dst.array == "K"
+    shared = {s.name: s for s in stmts if isinstance(s, Decl)
+              and s.space is Space.SHARED}
+    assert set(shared) == {"Ksh", KBLK}
+    assert shared["Ksh"].shape[0].value == column_shared_doubles(am) == \
+        len(hermite_targets(3)) + 6
+    assert [d.value for d in shared[KBLK].shape] == [
+        column_block_doubles(am)] == [6 * 3]
+    # one reduction per (bra, strip, b, a), under no lane-dependent If:
+    # only the block guard `blk < n_blk`
+    ((red, conds),) = list(_collectives_under(k.body))
+    assert red.value.array == "Ksh"
+    assert all(_reads(c) <= {"blk", "n_blk", "LT"} for c in conds), conds
+    # the per-lane screen is the walk's per-pair predicate, the bound at k
+    text = BACKEND["cuda"][0](k, BACKEND["cuda"][1])
+    assert "if ((Ib * (Iq[k] * maxD)) < tau) {" in text
+    assert "if ((Ib * (Iq[kk] * maxD)) < tau) {" in text
+
+
+@pytest.mark.parametrize("am", list(COLUMN_BYTES))
+def test_the_column_footprint_is_the_issues(am: Am):
+    """`(n_p + n_a)` doubles per lane plus one `n_a n_b` copy per block:
+    `(gg|gg)` under 48 KiB with no opt-in."""
+    assert column_shared_bytes(am, 32) == COLUMN_BYTES[am]
+    assert column_shared_bytes(am, 32) < shared_bytes(am, 32)
+    assert column_shared_bytes((4, 4, 4, 4), 32) < 48 * 1024 < shared_bytes(
+        (4, 4, 4, 4), 32)
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am)) for am in
+                                ((1, 1, 1, 1), (2, 2, 2, 2), (3, 3, 3, 3),
+                                 (4, 4, 4, 4))])
+def test_the_column_text_stays_small(am: Am):
+    emit, arch, _ = BACKEND["cuda"]
+    text = emit(build_kblock_rolled_kernel(am, column=True), arch)
+    n_r = len(hermite_targets(sum(am)))
+    assert len(text) < 400 * n_r + 20_000
+
+
+@pytest.mark.parametrize("am", [by_l(am, sum(am), _id(am)) for am in
+                                ((1, 1, 1, 1), (2, 1, 1, 2), (2, 2, 2, 2))])
+def test_the_column_kernel_transposed_is_itself_bitwise(am: Am, tmp_path):
+    """`transposed=True` composes: a relayout of the column form, its `K`
+    bit for bit."""
+    basis, D, plan = _class_case(am)
+    kt = build_kblock_rolled_kernel(am, column=True, transposed=True)
+    assert kt.name == f"kbrtc_{am[0]}{am[1]}_{am[2]}{am[3]}"
+    got = _interp(plan, basis, D, tmp_path, rolled=True, column=True,
+                  transposed=True, lanes=4)
+    want = _interp(plan, basis, D, tmp_path, rolled=True, column=True,
+                   lanes=4)
+    assert np.any(got != 0.0) and got.tobytes() == want.tobytes()
+
+
+def test_the_column_refusals():
+    basis, _, plan = _class_case((0, 0, 0, 0))
+    for kw in ({"column": True}, {"column": True, "rolled": True,
+                                  "dense": True}):
+        with pytest.raises(ValueError, match="column="):
             kb_driver(plan, basis, "cuda", Path("/nonexistent"), **kw)

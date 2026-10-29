@@ -235,6 +235,7 @@ __all__ = [
     "build_k_kernel",
     "build_k_kernels",
     "k_class_spec",
+    "ket_quartet",
     "launch_shape",
     "shared_bytes",
     "shared_doubles",
@@ -457,9 +458,6 @@ def ket_body(ctx: KContext) -> tuple[Stmt, ...]:
     """One (bra, ket) pair at ket `k`: the screen's `break`, the recurrence,
     `E^bd` and the contraction -- the strip-mined loop's body (#481 shares
     it)."""
-    hooks = ctx.hooks
-    prelude, fundamental = fundamental_prelude(
-        [m for (r, m) in ctx.order if not any(r)])
     return (
         Decl("bound", Scalar.F64,
              init=_c(Fn.MUL, Var("Ib"), _c(Fn.MUL, ctx.ket("Iq"),
@@ -467,6 +465,18 @@ def ket_body(ctx: KContext) -> tuple[Stmt, ...]:
         Note("screen: Ip * Iq * maxD < tau, and every later ket is under it "
              "too (sorted by Iq) -- so break"),
         If(_c(Fn.LT, Var("bound"), Var("tau")), (Break(),)),
+        *ket_quartet(ctx),
+    )
+
+
+def ket_quartet(ctx: KContext) -> tuple[Stmt, ...]:
+    """`ket_body` after its screen: the recurrence at ket `k`, `E^bd`, `sq`,
+    `dk` and the contraction hook. #583's column form runs it behind a
+    warp-uniform screen of its own instead of the per-lane `break`."""
+    hooks = ctx.hooks
+    prelude, fundamental = fundamental_prelude(
+        [m for (r, m) in ctx.order if not any(r)])
+    return (
         *(Decl(n, Scalar.F64,
                init=_c(Fn.SUB, Var(f"P{d}"), ctx.ket("Q", Lit(d))))
           for d, n in enumerate(PQ_PARAMS)),

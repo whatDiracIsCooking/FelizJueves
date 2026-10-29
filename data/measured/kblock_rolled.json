@@ -18,6 +18,78 @@
  },
  "compile": [
   {
+   "arch": "gfx1200",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "arm": "rolled-C",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kbrc_22_22",
+   "source_bytes": 38700,
+   "compile_s": 1.55,
+   "peak_rss_kb": 150120,
+   "registers": 192,
+   "spill_store": 395,
+   "spill_load": 395,
+   "stack_bytes": 1376,
+   "static_shared_bytes": 288,
+   "budget_s": 120.0,
+   "over_budget": false
+  },
+  {
+   "arch": "gfx1200",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "arm": "rolled-C",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "unit": "kbrc_33_33",
+   "source_bytes": 98583,
+   "compile_s": 1.74,
+   "peak_rss_kb": 163528,
+   "registers": 192,
+   "spill_store": 135,
+   "spill_load": 135,
+   "stack_bytes": 4080,
+   "static_shared_bytes": 800,
+   "budget_s": 120.0,
+   "over_budget": false
+  },
+  {
+   "arch": "gfx1200",
+   "toolchain": "hipcc / ROCm 7.2.4",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "arm": "rolled-C",
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "unit": "kbrc_44_44",
+   "source_bytes": 218572,
+   "compile_s": 3.13,
+   "peak_rss_kb": 209848,
+   "registers": 192,
+   "spill_store": 1067,
+   "spill_load": 1067,
+   "stack_bytes": 9616,
+   "static_shared_bytes": 1800,
+   "budget_s": 120.0,
+   "over_budget": false
+  },
+  {
    "arch": "sm_86",
    "toolchain": "nvcc 13.0",
    "host": "7ef7958eb654 (container)",
@@ -121,6 +193,78 @@
    "spill_store": 0,
    "spill_load": 0,
    "stack_bytes": 3640
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "arm": "rolled-C",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "unit": "kbrc_22_22",
+   "source_bytes": 38668,
+   "compile_s": 1.04,
+   "peak_rss_kb": 190464,
+   "registers": 96,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 1320,
+   "static_shared_bytes": 288,
+   "budget_s": 120.0,
+   "over_budget": false
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "arm": "rolled-C",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "unit": "kbrc_33_33",
+   "source_bytes": 98551,
+   "compile_s": 1.13,
+   "peak_rss_kb": 192000,
+   "registers": 254,
+   "spill_store": 0,
+   "spill_load": 0,
+   "stack_bytes": 3640,
+   "static_shared_bytes": 800,
+   "budget_s": 120.0,
+   "over_budget": false
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "arm": "rolled-C",
+   "am": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "unit": "kbrc_44_44",
+   "source_bytes": 218540,
+   "compile_s": 2.43,
+   "peak_rss_kb": 209704,
+   "registers": 255,
+   "spill_store": 8160,
+   "spill_load": 8280,
+   "stack_bytes": 14736,
+   "static_shared_bytes": 1808,
+   "budget_s": 120.0,
+   "over_budget": false
   }
  ],
  "clock": [
@@ -3905,6 +4049,515 @@
     "global_ld_requests": 1.0,
     "global_ld_sectors": 0.377,
     "global_ld_sectors_per_request": 0.377
+   }
+  }
+ ],
+ "column_declared": {
+  "issue": 583,
+  "hypothesis": "kbr's Ksh holds the lane's I[n_p] and its whole K_AB partial, n_p + n_a n_b doubles a lane (18,176 B a 32-lane block at (dd|dd), 47,104 B at (ff|ff)), which caps occupancy at 5 and 2 blocks an SM on sm_86 (#574: one warp per scheduler, latency-bound). Reducing each K_AB column across the warp per (bra, ket strip) leaves n_p + n_a a lane plus one n_a n_b copy a block (10,784 B and 24,864 B), so more warps hide the same latency; the price is n_a n_b warp reductions per (bra, strip), and the dead lanes of a ragged or screened strip computing a zero-weighted ket",
+  "rule": "per arch and class: the median over the timed runs of the class's events, rolled-C / other for each other arm timed beside it in the same rounds (kb and rolled at (dd|dd), rolled at (ff|ff)): 'faster' below 0.95, 'slower' above 1.05, else 'neutral'. The recommendation ('through d kb, at f kbr') moves only where rolled-C is 'faster' than the form it names there: at f, kbrc replaces kbr if rolled-C is 'faster' than rolled at (ff|ff); through d, kbrc replaces kb only if rolled-C is 'faster' than kb at (dd|dd). Never the default of any builder (#583's scope)",
+  "expected": "rolled-C faster than rolled at both classes (occupancy 5 -> 8 blocks at d, 2 -> 3 at f); still slower than kb at (dd|dd) (#574's 5.21x warp instructions are the loops')",
+  "profile": "one ncu take each of measured.KB_PROFILE_UNITS on kbr_22_22 and kbrc_22_22 (#569's input, one launch): theoretical and achieved occupancy, warps active and eligible, issue, and the stall mix of measured.kb_profile_terms; read, not ruled on",
+  "declared": "2026-10-28, before any rolled-C row"
+ },
+ "column_clock": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "reference_arm": "kb",
+   "rel_vs_reference": {
+    "rolled": 2.696052381516924e-16,
+    "rolled-C": 6.066117858413079e-15
+   },
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 9,
+     "gpu_util_before": 11,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-C",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 12,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-C",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 6
+    },
+    {
+     "arm": "kb",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-C",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "kb": {
+     "median_ns": 1077804077,
+     "q1_ns": 1076704346,
+     "q3_ns": 1078278198,
+     "n": 21
+    },
+    "rolled": {
+     "median_ns": 2530322510,
+     "q1_ns": 2502717529,
+     "q3_ns": 2550729736,
+     "n": 21
+    },
+    "rolled-C": {
+     "median_ns": 2619106445,
+     "q1_ns": 2603845703,
+     "q3_ns": 2639800293,
+     "n": 21
+    }
+   },
+   "column": {
+    "kb": {
+     "column_over": 2.43,
+     "verdict": "slower"
+    },
+    "rolled": {
+     "column_over": 1.0351,
+     "verdict": "neutral"
+    }
+   },
+   "fastest": "kb"
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "am": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "n_ao": 160,
+   "n_bra": 256,
+   "n_ket": 256,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "reference_arm": "rolled",
+   "rel_vs_reference": {
+    "rolled-C": 2.06538791437665e-15
+   },
+   "rounds": 3,
+   "warmup": 3,
+   "repeats": 7,
+   "gate": [
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 9,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-C",
+     "cpu_busy_permille": 38,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-C",
+     "cpu_busy_permille": 6,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled",
+     "cpu_busy_permille": 4,
+     "gpu_util_before": 1,
+     "gpu_util_after": 0
+    },
+    {
+     "arm": "rolled-C",
+     "cpu_busy_permille": 5,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0,
+   "arms": {
+    "rolled": {
+     "median_ns": 1264132080,
+     "q1_ns": 1261933594,
+     "q3_ns": 1270775757,
+     "n": 21
+    },
+    "rolled-C": {
+     "median_ns": 1227290649,
+     "q1_ns": 1213305908,
+     "q3_ns": 1236656128,
+     "n": 21
+    }
+   },
+   "column": {
+    "rolled": {
+     "column_over": 0.9709,
+     "verdict": "neutral"
+    }
+   },
+   "fastest": "rolled-C"
+  }
+ ],
+ "column_profile": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "cpus": "0-15",
+   "rel_vs_rolled": 5.931315239337233e-15,
+   "launch": "one launch: MODE 0, warm-up 0, reps 1, --launch-count 1",
+   "unit": "kbr_22_22",
+   "arm": "rolled",
+   "counter_tool": "ncu 2025.3.1.0",
+   "source_sha256": "a36fa7c0d52031bb4119ad3563340b90b9f21ac4ba81cce218497e1fe72e9ca2",
+   "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 0-15 ncu --csv --print-units base --clock-control none --launch-count 1 --metrics gpu__time_duration.sum,sm__cycles_elapsed.avg,smsp__cycles_active.avg,smsp__inst_executed.sum,smsp__thread_inst_executed_per_inst_executed.ratio,smsp__sass_thread_inst_executed_op_dadd_pred_on.sum,smsp__sass_thread_inst_executed_op_dmul_pred_on.sum,smsp__sass_thread_inst_executed_op_dfma_pred_on.sum,smsp__sass_inst_executed_op_global_ld.sum,smsp__sass_inst_executed_op_local_ld.sum,smsp__sass_inst_executed_op_local_st.sum,smsp__sass_inst_executed_op_shared_ld.sum,smsp__sass_inst_executed_op_shared_st.sum,l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum,l1tex__t_requests_pipe_lsu_mem_local_op_st.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum,l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum,l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum,l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum,l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum,dram__bytes_read.sum,dram__bytes_write.sum,sm__maximum_warps_per_active_cycle_pct,sm__warps_active.avg.pct_of_peak_sustained_active,smsp__warps_active.avg.per_cycle_active,smsp__warps_eligible.avg.per_cycle_active,smsp__issue_active.avg.pct_of_peak_sustained_active,smsp__average_warp_latency_per_inst_issued.ratio,launch__registers_per_thread,launch__stack_size,launch__shared_mem_per_block_dynamic,launch__grid_size,launch__block_size,launch__occupancy_limit_registers,launch__occupancy_limit_shared_mem,launch__occupancy_limit_warps,smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio,smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio,smsp__average_warps_issue_stalled_wait_per_issue_active.ratio,smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio,smsp__average_warps_issue_stalled_selected_per_issue_active.ratio,smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_tex_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio,smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio,smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio,smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio,smsp__average_warps_issue_stalled_membar_per_issue_active.ratio,smsp__average_warps_issue_stalled_drain_per_issue_active.ratio,smsp__average_warps_issue_stalled_imc_miss_per_issue_active.ratio,smsp__average_warps_issue_stalled_misc_per_issue_active.ratio,smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio --kernel-name regex:^kbr_22_22$ <kb_driver> /tmp/pytest-of-ubuntu/pytest-1966/test_cuda_kblock_column_profil0/rolled/c0/in.bin /tmp/pytest-of-ubuntu/pytest-1966/test_cuda_kblock_column_profil0/rolled-ncu/out 0 0 1",
+   "counters": {
+    "dram__bytes_read.sum": 193782057344.0,
+    "dram__bytes_write.sum": 6970561664.0,
+    "gpu__time_duration.sum": 2493603776.0,
+    "l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum": 33132.0,
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum": 4443225288.0,
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum": 863007762.0,
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 11687806976.0,
+    "l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum": 4335206400.0,
+    "l1tex__t_requests_pipe_lsu_mem_local_op_st.sum": 60825600.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 74528478740.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum": 60624365537.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": 15606743040.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum": 1032979372.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": 218972160.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum": 10122.0,
+    "launch__block_size": 32.0,
+    "launch__grid_size": 256.0,
+    "launch__occupancy_limit_registers": 16.0,
+    "launch__occupancy_limit_shared_mem": 5.0,
+    "launch__occupancy_limit_warps": 48.0,
+    "launch__registers_per_thread": 128.0,
+    "launch__shared_mem_per_block_dynamic": 18176.0,
+    "launch__stack_size": 1328.0,
+    "sm__cycles_elapsed.avg": 4845095408.71,
+    "sm__maximum_warps_per_active_cycle_pct": 10.42,
+    "sm__warps_active.avg.pct_of_peak_sustained_active": 7.78,
+    "smsp__average_warp_latency_per_inst_issued.ratio": 20.13,
+    "smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio": 0.09,
+    "smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio": 0.19,
+    "smsp__average_warps_issue_stalled_drain_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_imc_miss_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": 11.52,
+    "smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio": 0.01,
+    "smsp__average_warps_issue_stalled_membar_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_misc_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio": 0.07,
+    "smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_selected_per_issue_active.ratio": 1.0,
+    "smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio": 4.89,
+    "smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_tex_throttle_per_issue_active.ratio": 0.01,
+    "smsp__average_warps_issue_stalled_wait_per_issue_active.ratio": 2.36,
+    "smsp__cycles_active.avg": 4255317007.09,
+    "smsp__inst_executed.sum": 57426964835.0,
+    "smsp__issue_active.avg.pct_of_peak_sustained_active": 4.97,
+    "smsp__sass_inst_executed_op_global_ld.sum": 11687806976.0,
+    "smsp__sass_inst_executed_op_local_ld.sum": 2167603200.0,
+    "smsp__sass_inst_executed_op_local_st.sum": 30412800.0,
+    "smsp__sass_inst_executed_op_shared_ld.sum": 2468422656.0,
+    "smsp__sass_inst_executed_op_shared_st.sum": 471131136.0,
+    "smsp__sass_thread_inst_executed_op_dadd_pred_on.sum": 153151332.0,
+    "smsp__sass_thread_inst_executed_op_dfma_pred_on.sum": 135523861596.0,
+    "smsp__sass_thread_inst_executed_op_dmul_pred_on.sum": 128498288920.0,
+    "smsp__thread_inst_executed_per_inst_executed.ratio": 28.73,
+    "smsp__warps_active.avg.per_cycle_active": 1.0,
+    "smsp__warps_eligible.avg.per_cycle_active": 0.05
+   },
+   "terms": {
+    "S": 20.14,
+    "mem": 0.8147964250248262,
+    "long": 0.5719960278053624,
+    "largest": "long_scoreboard",
+    "hit": 0.06618801689452306,
+    "issue": 4.97,
+    "warps": 1.0
+   },
+   "gate": [
+    {
+     "unit": "kbr_22_22",
+     "run": "details",
+     "cpu_busy_permille": 2,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0
+  },
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "host": "5a63058ba64c (container)",
+   "date": "2026-10-29",
+   "am": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "n_ao": 96,
+   "n_bra": 2304,
+   "n_ket": 2304,
+   "n_blocks": 256,
+   "tau": 0.0,
+   "cpus": "0-15",
+   "rel_vs_rolled": 5.931315239337233e-15,
+   "launch": "one launch: MODE 0, warm-up 0, reps 1, --launch-count 1",
+   "unit": "kbrc_22_22",
+   "arm": "rolled-C",
+   "counter_tool": "ncu 2025.3.1.0",
+   "source_sha256": "64a698f3872f95a628f80d241e6dbb25f336d59621e856d04a954fc160de2403",
+   "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 0-15 ncu --csv --print-units base --clock-control none --launch-count 1 --metrics gpu__time_duration.sum,sm__cycles_elapsed.avg,smsp__cycles_active.avg,smsp__inst_executed.sum,smsp__thread_inst_executed_per_inst_executed.ratio,smsp__sass_thread_inst_executed_op_dadd_pred_on.sum,smsp__sass_thread_inst_executed_op_dmul_pred_on.sum,smsp__sass_thread_inst_executed_op_dfma_pred_on.sum,smsp__sass_inst_executed_op_global_ld.sum,smsp__sass_inst_executed_op_local_ld.sum,smsp__sass_inst_executed_op_local_st.sum,smsp__sass_inst_executed_op_shared_ld.sum,smsp__sass_inst_executed_op_shared_st.sum,l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum,l1tex__t_requests_pipe_lsu_mem_local_op_st.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum,l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum,l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum,l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum,l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum,dram__bytes_read.sum,dram__bytes_write.sum,sm__maximum_warps_per_active_cycle_pct,sm__warps_active.avg.pct_of_peak_sustained_active,smsp__warps_active.avg.per_cycle_active,smsp__warps_eligible.avg.per_cycle_active,smsp__issue_active.avg.pct_of_peak_sustained_active,smsp__average_warp_latency_per_inst_issued.ratio,launch__registers_per_thread,launch__stack_size,launch__shared_mem_per_block_dynamic,launch__grid_size,launch__block_size,launch__occupancy_limit_registers,launch__occupancy_limit_shared_mem,launch__occupancy_limit_warps,smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio,smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio,smsp__average_warps_issue_stalled_wait_per_issue_active.ratio,smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio,smsp__average_warps_issue_stalled_selected_per_issue_active.ratio,smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_tex_throttle_per_issue_active.ratio,smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio,smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio,smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio,smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio,smsp__average_warps_issue_stalled_membar_per_issue_active.ratio,smsp__average_warps_issue_stalled_drain_per_issue_active.ratio,smsp__average_warps_issue_stalled_imc_miss_per_issue_active.ratio,smsp__average_warps_issue_stalled_misc_per_issue_active.ratio,smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio --kernel-name regex:^kbrc_22_22$ <kb_driver> /tmp/pytest-of-ubuntu/pytest-1966/test_cuda_kblock_column_profil0/rolled-C/c0/in.bin /tmp/pytest-of-ubuntu/pytest-1966/test_cuda_kblock_column_profil0/rolled-C-ncu/out 0 0 1",
+   "counters": {
+    "dram__bytes_read.sum": 211177374464.0,
+    "dram__bytes_write.sum": 7741988608.0,
+    "gpu__time_duration.sum": 2567015520.0,
+    "l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum": 0.0,
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_ld.sum": 4956744172.0,
+    "l1tex__data_pipe_lsu_wavefronts_mem_shared_op_st.sum": 967246165.0,
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum": 11693520896.0,
+    "l1tex__t_requests_pipe_lsu_mem_local_op_ld.sum": 4335206400.0,
+    "l1tex__t_requests_pipe_lsu_mem_local_op_st.sum": 60825600.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum": 74489887199.0,
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld_lookup_hit.sum": 60883215237.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": 17340825600.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_ld_lookup_hit.sum": 1246165652.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": 243302400.0,
+    "l1tex__t_sectors_pipe_lsu_mem_local_op_st_lookup_hit.sum": 7256.0,
+    "launch__block_size": 32.0,
+    "launch__grid_size": 256.0,
+    "launch__occupancy_limit_registers": 20.0,
+    "launch__occupancy_limit_shared_mem": 8.0,
+    "launch__occupancy_limit_warps": 48.0,
+    "launch__registers_per_thread": 96.0,
+    "launch__shared_mem_per_block_dynamic": 10496.0,
+    "launch__stack_size": 1328.0,
+    "sm__cycles_elapsed.avg": 4993147308.29,
+    "sm__maximum_warps_per_active_cycle_pct": 16.67,
+    "sm__warps_active.avg.pct_of_peak_sustained_active": 7.78,
+    "smsp__average_warp_latency_per_inst_issued.ratio": 19.44,
+    "smsp__average_warps_issue_stalled_barrier_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_branch_resolving_per_issue_active.ratio": 0.08,
+    "smsp__average_warps_issue_stalled_dispatch_stall_per_issue_active.ratio": 0.17,
+    "smsp__average_warps_issue_stalled_drain_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_imc_miss_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": 10.91,
+    "smsp__average_warps_issue_stalled_math_pipe_throttle_per_issue_active.ratio": 0.01,
+    "smsp__average_warps_issue_stalled_membar_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_mio_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_misc_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_no_instruction_per_issue_active.ratio": 0.06,
+    "smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_selected_per_issue_active.ratio": 1.0,
+    "smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio": 4.84,
+    "smsp__average_warps_issue_stalled_sleeping_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_tex_throttle_per_issue_active.ratio": 0.0,
+    "smsp__average_warps_issue_stalled_wait_per_issue_active.ratio": 2.35,
+    "smsp__cycles_active.avg": 4360705095.36,
+    "smsp__inst_executed.sum": 61024142935.0,
+    "smsp__issue_active.avg.pct_of_peak_sustained_active": 5.15,
+    "smsp__sass_inst_executed_op_global_ld.sum": 11693520896.0,
+    "smsp__sass_inst_executed_op_local_ld.sum": 2167603200.0,
+    "smsp__sass_inst_executed_op_local_st.sum": 30412800.0,
+    "smsp__sass_inst_executed_op_shared_ld.sum": 2481689088.0,
+    "smsp__sass_inst_executed_op_shared_st.sum": 484397568.0,
+    "smsp__sass_thread_inst_executed_op_dadd_pred_on.sum": 1236373812.0,
+    "smsp__sass_thread_inst_executed_op_dfma_pred_on.sum": 150579991724.0,
+    "smsp__sass_thread_inst_executed_op_dmul_pred_on.sum": 142791470056.0,
+    "smsp__thread_inst_executed_per_inst_executed.ratio": 31.93,
+    "smsp__warps_active.avg.per_cycle_active": 1.0,
+    "smsp__warps_eligible.avg.per_cycle_active": 0.05
+   },
+   "terms": {
+    "S": 19.42,
+    "mem": 0.8110195674562306,
+    "long": 0.5617919670442842,
+    "largest": "long_scoreboard",
+    "hit": 0.07186310967800749,
+    "issue": 5.15,
+    "warps": 1.0
+   },
+   "gate": [
+    {
+     "unit": "kbrc_22_22",
+     "run": "details",
+     "cpu_busy_permille": 3,
+     "gpu_util_before": 0,
+     "gpu_util_after": 0
+    }
+   ],
+   "gate_discarded_runs": 0
+  }
+ ],
+ "column_profile_reading": [
+  {
+   "arch": "sm_86",
+   "toolchain": "nvcc 13.0",
+   "date": "2026-10-29",
+   "rolled": {
+    "ms_under_ncu": 2493.6,
+    "registers": 128.0,
+    "dynamic_shared_bytes": 18176.0,
+    "blocks_limit_shared": 5.0,
+    "blocks_limit_registers": 16.0,
+    "theoretical_occupancy_pct": 10.42,
+    "achieved_occupancy_pct": 7.78,
+    "warps_active": 1.0,
+    "warps_eligible": 0.05,
+    "issue_active_pct": 4.97,
+    "cycles_per_issue": 20.13,
+    "warp_inst": 57426964835.0,
+    "stall_mix": {
+     "long_scoreboard": 0.572,
+     "short_scoreboard": 0.2428,
+     "wait": 0.1172,
+     "selected": 0.0497
+    },
+    "mem": 0.8148,
+    "long": 0.572,
+    "largest": "long_scoreboard"
+   },
+   "rolled-C": {
+    "ms_under_ncu": 2567.0,
+    "registers": 96.0,
+    "dynamic_shared_bytes": 10496.0,
+    "blocks_limit_shared": 8.0,
+    "blocks_limit_registers": 20.0,
+    "theoretical_occupancy_pct": 16.67,
+    "achieved_occupancy_pct": 7.78,
+    "warps_active": 1.0,
+    "warps_eligible": 0.05,
+    "issue_active_pct": 5.15,
+    "cycles_per_issue": 19.44,
+    "warp_inst": 61024142935.0,
+    "stall_mix": {
+     "long_scoreboard": 0.5618,
+     "short_scoreboard": 0.2492,
+     "wait": 0.121,
+     "selected": 0.0515
+    },
+    "mem": 0.811,
+    "long": 0.5618,
+    "largest": "long_scoreboard"
+   },
+   "rolled_574": {
+    "ms_under_ncu": 2482.1,
+    "registers": 128.0,
+    "dynamic_shared_bytes": 18176.0,
+    "blocks_limit_shared": 5.0,
+    "blocks_limit_registers": 16.0,
+    "theoretical_occupancy_pct": 10.42,
+    "achieved_occupancy_pct": 7.78,
+    "warps_active": 1.0,
+    "warps_eligible": 0.05,
+    "issue_active_pct": 4.97,
+    "cycles_per_issue": 20.16,
+    "warp_inst": 57426964835.0,
+    "stall_mix": {
+     "long_scoreboard": 0.5725,
+     "short_scoreboard": 0.2423,
+     "wait": 0.1172,
+     "selected": 0.0497
+    },
+    "mem": 0.8148,
+    "long": 0.5725,
+    "largest": "long_scoreboard"
+   },
+   "column_over_rolled": {
+    "ms_under_ncu": 1.029,
+    "warp_inst": 1.063,
+    "theoretical_occupancy_pct": 1.6,
+    "achieved_occupancy_pct": 1.0,
+    "warps_active": 1.0,
+    "warps_eligible": 1.0,
+    "issue_active_pct": 1.036,
+    "cycles_per_issue": 0.966
    }
   }
  ]

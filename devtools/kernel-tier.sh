@@ -21,9 +21,12 @@
 #              a green, empty run happens.
 #   generate   KERNEL_GEN_CMD (devtools/config.sh) emits sources into
 #              $KERNEL_TIER_OUT, a per-backend directory under
-#              KERNEL_BUILD_DIR that is emptied first: by default the J
-#              chain's 37 units plus the one-electron ladder through (dd)
-#              (`--one-e-l 2`: s_, t_, v_, 18 units, #242). DORMANT while the
+#              KERNEL_BUILD_DIR that is emptied first: by default `[p|q]`
+#              L = 0..8, the DQ / JAB pairs through (ff) and the
+#              one-electron ladder through (dd) (`--one-e-l 2`: s_, t_, v_,
+#              18 units, #242), 47 units; with --full KERNEL_FULL_GEN_CMD,
+#              the J chain's 37 units (`[p|q]` through L = 16) plus the
+#              same one-electron ladder, 55 units. DORMANT while the
 #              command is empty, and this script says so instead of implying
 #              a tier ran.
 #   compile    every translation unit the generate phase wrote, through the
@@ -101,7 +104,12 @@ while [ $# -gt 0 ]; do
     --backend) backend=${2:?--backend needs cuda or hip}; shift 2 ;;
     --cuda)    backend=cuda; shift ;;
     --hip)     backend=hip;  shift ;;
-    --full)    test_args=$KERNEL_FULL_TEST_ARGS; shift ;;
+    --full)    test_args=$KERNEL_FULL_TEST_ARGS
+               # the whole ladder, L = 9..16 compiled too, unless the
+               # caller chose a KERNEL_GEN_CMD (config.sh)
+               [ -n "$KERNEL_GEN_CMD_SET_BY_CALLER" ] \
+                 || KERNEL_GEN_CMD=$KERNEL_FULL_GEN_CMD
+               shift ;;
     --fresh)   fresh=1; shift ;;
     --no-cache) no_cache=1; shift ;;
     --no-test) run_tests=0; shift ;;
