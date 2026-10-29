@@ -31,6 +31,18 @@ gradient witness instead (#613, `df_gradient_build`): libcint's derivative
 integrals on the aux-i sets' inputs, contracted per class, written to
 `df_gradient/` and loaded by `manifest.df_gradient`.
 
+A GRADIENT case (#550, `Case.record_gradient`, `<m>_grad`) records its
+converged SCF (`mo_energy`, `mo_occ`, `mo_coeff`) the way an "rhf" density
+is recorded, and computes everything else from it: the density, `W`, the
+derivative integrals, `vj1` / `vk1`, each per-atom term and PySCF's total
+(`gradient_arrays`). THE SIGN CONVENTIONS are `manifest`'s docstring's:
+every libcint `ip` integral is `<nabla m| O |n>`, `nabla` the electron
+coordinate's derivative on the FIRST function, which is `-d/dA` for `m` on
+atom A -- so `grad.rhf.get_hcore` and `get_ovlp` are the integrals NEGATED,
+`grad.rhf.get_jk` returns `-vj, -vk`, and each recorded term is PySCF's
+`grad_elec` split by term. `manifest.check_gradient` recomputes every term
+from the stored arrays and runs on every written file.
+
 `--quadrupole` (the same way) is the quadrupole witness instead
 (`quadrupole_build`): libcint's `int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s
 inputs at its origin and at 0, written to `quadrupole/` and loaded by
@@ -63,6 +75,9 @@ from .manifest import (
     DIPOLE_ORIGIN_ARRAY,
     ERI_PREFIX,
     FIXTURES,
+    GRAD_TOTAL,
+    GRADIENT_SCHEMA,
+    GRADIENT_TERMS,
     HCORE_ARRAY,
     J_ARRAY,
     K_ARRAY,
@@ -82,6 +97,7 @@ from .manifest import (
     THREE_CENTER_SCHEMA,
     dumps,
     encode_array,
+    gradient_fixture,
     load,
 )
 
@@ -183,6 +199,12 @@ class Case:
     # names its `_j`, so the pair's densities are one matrix, bit for bit
     # (`manifest.check_pair`); None means this case converges its own.
     density_from: str | None = None
+    # #550: a GRADIENT fixture (schema 5, manifest: THE GRADIENT FIXTURES):
+    # the converged SCF recorded, and the RHF nuclear gradient's pieces
+    # (`gradient_arrays`). Needs `record_basis`, `cart` and density "rhf";
+    # `gradient_sibling` is the `_j` case whose inputs it shares, or None.
+    record_gradient: bool = False
+    gradient_sibling: str | None = None
 
 
 # A basis given inline rather than by library name: NWChem text, one
@@ -236,6 +258,7 @@ DENSITY_RECIPE = ("hilbert: D[i][j] = 1/(i+j+1) -- symmetric positive "
 RHF_CONV_TOL = 1e-12  # energy, Eh
 RHF_CONV_TOL_GRAD = 1e-10  # orbital gradient
 RHF_DENSITY_TOL = 1e-8  # max |D_fresh - D_recorded|, --check only
+RHF_MAX_CYCLE = 200  # #550's gradient cases (`rhf_mos`) only
 RHF_DENSITY_RECIPE = (
     f"rhf: PySCF's converged closed-shell RHF density (total, 2 C_occ "
     f"C_occ^T, symmetrised as (D + D^T) / 2; conv_tol {RHF_CONV_TOL:g}, "
@@ -788,6 +811,58 @@ CASES.update({
 })
 
 
+def _grad_case(j_name: str) -> Case:
+    """#550: the `_j` case's molecule, basis and `cart` exactly (so the
+    converted basis is the `_j` fixture's, bit for bit;
+    `manifest.check_gradient` asserts it), with its own converged RHF and
+    the gradient arrays in place of J and the one-electron arrays."""
+    j = CASES[j_name]
+    return replace(
+        j,
+        description=(
+            f"#550: {j_name}'s molecule and basis with PySCF's converged RHF "
+            "(mo_energy, mo_occ, mo_coeff recorded; density and W = "
+            "make_rdm1e from them), libcint's int1e_ipovlp / ipkin / ipnuc "
+            "and int1e_iprinv at each nucleus, grad.rhf.get_jk's vj1 / vk1, "
+            "each per-atom term of the RHF nuclear gradient (h, S/Pulay, J, "
+            "K, V_nn) and nuc_grad_method().kernel()'s total."
+        ),
+        record_j=False,
+        record_one_e=False,
+        density="rhf",
+        record_gradient=True,
+        gradient_sibling=j_name,
+    )
+
+
+# #550's gradient cases: one beside each H2O `_j` case (cc-pVDZ: d shells,
+# so J/K classes to L = 8, read by `slow` tests only), and one low-symmetry
+# s/p molecule with no `_j` sibling -- NH2F, C1 (no plane: the two N-H
+# bonds differ), so no Cartesian component of any atom's gradient is zero
+# by symmetry and a sign error has nowhere to hide.
+CASES.update({
+    j[:-1] + "grad": _grad_case(j)
+    for j in ("h2o_sto3g_j", "h2o_631g_j", "h2o_ccpvdz_j")
+})
+CASES["nh2f_631g_grad"] = Case(
+    description=(
+        "#550's low-symmetry case: NH2F in 6-31G, Cartesian, C1 (the two "
+        "N-H bonds differ, no atom on an axis, no plane of symmetry). "
+        "PySCF's converged RHF, libcint's derivative integrals, vj1 / vk1, "
+        "each per-atom term of the RHF nuclear gradient and its total."
+    ),
+    atom=("N 0 0 0; F 1.31 0.42 -2.18; H -1.02 1.57 0.33; "
+          "H 0.48 -0.96 1.71"),
+    unit="Bohr",
+    basis="6-31g",
+    cart=True,
+    record_basis=True,
+    record_one_e=False,
+    density="rhf",
+    record_gradient=True,
+)
+
+
 def _host() -> str:
     # The same marking felizjueves.performance.measured uses: a container's hostname is
     # its id, not the box's.
@@ -919,6 +994,47 @@ def rhf_density(mol: Any) -> np.ndarray:
     return 0.5 * (dm + dm.T)
 
 
+def rhf_mos(mol: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """#550: PySCF's converged closed-shell RHF `(mo_energy, mo_coeff,
+    mo_occ)`, as `rhf_density` converges it. Refuses an SCF that did not
+    converge. Up to `RHF_MAX_CYCLE` iterations: NH2F/6-31G, far from its
+    equilibrium on purpose, takes 56 to these tolerances, over PySCF's 50."""
+    from pyscf import scf
+
+    mf = scf.RHF(mol)
+    mf.conv_tol = RHF_CONV_TOL
+    mf.conv_tol_grad = RHF_CONV_TOL_GRAD
+    mf.max_cycle = RHF_MAX_CYCLE
+    mf.kernel()
+    if not mf.converged:
+        raise ValueError("RHF did not converge")
+    return (np.asarray(mf.mo_energy, dtype=np.float64),
+            np.asarray(mf.mo_coeff, dtype=np.float64),
+            np.asarray(mf.mo_occ, dtype=np.float64))
+
+
+def case_mos(name: str, mol: Any, *, fresh: bool = False,
+             ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """#550: a gradient case's `(mo_energy, mo_coeff, mo_occ)`: the RECORDED
+    ones from its tracked fixture, or a fresh `rhf_mos` when regenerated
+    (`fresh`) or not yet tracked -- an "rhf" density's rule."""
+    path = FIXTURES / f"{name}.json"
+    if fresh or not path.exists():
+        return rhf_mos(mol)
+    a = load(path).arrays
+    return (np.array(a["mo_energy"]), np.array(a["mo_coeff"]),
+            np.array(a["mo_occ"]))
+
+
+def mos_density(mo_coeff: np.ndarray, mo_occ: np.ndarray) -> np.ndarray:
+    """PySCF's RHF `make_rdm1` of recorded orbitals, symmetrised so it is
+    exactly symmetric (`rhf_density`'s rule)."""
+    from pyscf import scf
+
+    dm = np.asarray(scf.hf.make_rdm1(mo_coeff, mo_occ), dtype=np.float64)
+    return 0.5 * (dm + dm.T)
+
+
 def _tracked_density(name: str) -> np.ndarray | None:
     path = FIXTURES / f"{name}.json"
     return np.array(load(path).density) if path.exists() else None
@@ -942,6 +1058,9 @@ def case_density(name: str, mol: Any, *,
         return None
     if case.density != "rhf":
         raise ValueError(f"{name}: unknown density recipe {case.density!r}")
+    if case.record_gradient:  # #550: the recorded orbitals' density
+        _, c, occ = case_mos(name, mol, fresh=fresh)
+        return mos_density(c, occ)
     if case.density_from is not None:
         dm = _tracked_density(case.density_from)
         if dm is None:
@@ -1003,7 +1122,12 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
 
     nao = int(mol.nao_nr())
     ao_loc = mol.ao_loc_nr(cart=case.cart)
-    dm = case_density(name, mol, fresh=fresh_density)
+    mos = None
+    if case.record_gradient:  # #550: one SCF, the density derived from it
+        mos = case_mos(name, mol, fresh=fresh_density)
+        dm = mos_density(mos[1], mos[2])
+    else:
+        dm = case_density(name, mol, fresh=fresh_density)
     out = {
         "schema": AO_SCHEMA,
         "name": name,
@@ -1070,6 +1194,19 @@ def build(name: str, *, fresh_density: bool = False) -> dict[str, Any]:
             raise ValueError(f"{name}: record_dipole_integrals needs "
                              "record_basis and cart, and not record_dipole")
         out["arrays"].update(dipole_integral_arrays(mol, DIPOLE_ORIGIN))
+    if case.record_gradient:
+        if not (case.record_basis and case.cart and case.density == "rhf"
+                and not case.record_one_e):
+            raise ValueError(f"{name}: record_gradient needs record_basis, "
+                             "cart, density rhf and no one-electron arrays")
+        out["schema"] = GRADIENT_SCHEMA
+        out["gradient"] = {"sibling": case.gradient_sibling}
+        del out["arrays"]["ovlp"]  # the sibling's; not a gradient array
+        if case.gradient_sibling is not None:
+            out["converted"] = sibling_converted(case.gradient_sibling,
+                                                 out["converted"])
+        assert mos is not None and dm is not None
+        out["arrays"].update(gradient_arrays(mol, *mos, dm))
     if case.cross_rows is not None:
         rows = CASES[case.cross_rows]
         if not (case.record_basis and rows.record_basis):
@@ -1329,6 +1466,110 @@ def schwarz_array(mol: Any) -> np.ndarray:
     return full
 
 
+def sibling_converted(sibling: str, fresh: dict[str, Any]) -> dict[str, Any]:
+    """#550: the tracked `sibling`'s recorded `converted` record -- the `_j`
+    fixture's input, which a gradient fixture shares exactly -- refused
+    unless `fresh` (this host's `converted_record`) is it in every field but
+    the normalised coefficients, and those within 1e-15 of each value. The
+    normalisation's last bit is host-dependent (h2o_631g_j's own coefficients
+    differ by one ulp between the host that wrote it and others, on one
+    PySCF and libcint), so the recorded input is adopted, as an "rhf"
+    density is."""
+    import json
+
+    rec = json.loads((FIXTURES / f"{sibling}.json").read_text())["converted"]
+    same = (rec["common_factor"] == fresh["common_factor"]
+            and len(rec["shells"]) == len(fresh["shells"]))
+    for a, b in zip(rec["shells"], fresh["shells"], strict=False):
+        same = same and all(a[k] == b[k] for k in a if k != "coefficients")
+        ca, cb = np.array(a["coefficients"]), np.array(b["coefficients"])
+        same = same and ca.shape == cb.shape and bool(
+            np.all(np.abs(ca - cb) <= 1e-15 * np.abs(ca)))
+    if not same:
+        raise ValueError(f"{sibling}'s recorded converted basis is not this "
+                         "case's to 1e-15")
+    return rec
+
+
+def gradient_arrays(mol: Any, mo_energy: np.ndarray, mo_coeff: np.ndarray,
+                    mo_occ: np.ndarray, dm: np.ndarray) -> dict[str, Any]:
+    """#550: the gradient fixture's arrays (manifest: THE GRADIENT
+    FIXTURES) for the recorded orbitals and their density `dm`.
+
+    The terms are PySCF's `grad.rhf.grad_elec` split by term, from `dm`
+    and `W = make_rdm1e(mo_energy, mo_coeff, mo_occ)`: `grad:h` the
+    `hcore_generator` derivative contracted with `dm`; `grad:s` `-2 sum
+    s1[:, s(A)] W[s(A)]` with `s1 = get_ovlp = -int1e_ipovlp`; `grad:j` /
+    `grad:k` `2 sum vj1[:, s(A)] D[s(A)]` and `-1/2` of that with `vk1`,
+    `get_jk`'s (already negated); `grad:nuc` `grad_nuc`. `grad:total` is
+    `nuc_grad_method().kernel()` on the recorded orbitals. Cross-checked
+    before they are written: `vj1` / `vk1` against `int2e_ip1` contracted
+    by `einsum` (`-(nabla m n|k l) D_lk` and `-(nabla m n|k l) D_nk`) to
+    1e-13 of the largest element, and the derivative integrals against
+    `get_hcore` / `get_ovlp` exactly; what is RECORDED is PySCF's."""
+    from pyscf import scf
+    from pyscf.grad import rhf as rhf_grad
+
+    mf = scf.RHF(mol)
+    mf.mo_energy, mf.mo_coeff, mf.mo_occ = mo_energy, mo_coeff, mo_occ
+    mf.converged = True
+    g = mf.nuc_grad_method()
+    g.verbose = 0
+    total = np.asarray(g.kernel(mo_energy=mo_energy, mo_coeff=mo_coeff,
+                                mo_occ=mo_occ), dtype=np.float64)
+    dme = np.asarray(g.make_rdm1e(mo_energy, mo_coeff, mo_occ),
+                     dtype=np.float64)
+    ipovlp = mol.intor("int1e_ipovlp", comp=3)
+    ipkin = mol.intor("int1e_ipkin", comp=3)
+    ipnuc = mol.intor("int1e_ipnuc", comp=3)
+    if not (np.array_equal(g.get_ovlp(mol), -ipovlp)
+            and np.array_equal(g.get_hcore(mol), -(ipkin + ipnuc))):
+        raise ValueError("get_ovlp / get_hcore are not the negated ip "
+                         "integrals")
+    iprinv = []
+    for ia in range(mol.natm):
+        with mol.with_rinv_at_nucleus(ia):
+            iprinv.append(mol.intor("int1e_iprinv", comp=3))
+    vj1, vk1 = (np.asarray(v, dtype=np.float64)
+                for v in rhf_grad.get_jk(mol, dm))
+    eri1 = mol.intor("int2e_ip1", comp=3)
+    for got, want, what in (
+            (vj1, -np.einsum("xmnkl,lk->xmn", eri1, dm), "vj1"),
+            (vk1, -np.einsum("xmnkl,nk->xml", eri1, dm), "vk1")):
+        err = float(np.max(np.abs(got - want)))
+        if err > 1e-13 * float(np.max(np.abs(want))):
+            raise ValueError(f"get_jk's {what} and einsum(int2e_ip1, dm) "
+                             f"differ by {err:.3e}")
+    s1 = g.get_ovlp(mol)
+    hcore_deriv = g.hcore_generator(mol)
+    aoslices = mol.aoslice_by_atom()
+    terms = {n: np.zeros((mol.natm, 3)) for n in GRADIENT_TERMS}
+    for ia in range(mol.natm):
+        p0, p1 = aoslices[ia, 2:]
+        terms["grad:h"][ia] = np.einsum("xij,ij->x", hcore_deriv(ia), dm)
+        terms["grad:s"][ia] = -2 * np.einsum("xij,ij->x", s1[:, p0:p1],
+                                             dme[p0:p1])
+        terms["grad:j"][ia] = 2 * np.einsum("xij,ij->x", vj1[:, p0:p1],
+                                            dm[p0:p1])
+        terms["grad:k"][ia] = -np.einsum("xij,ij->x", vk1[:, p0:p1],
+                                         dm[p0:p1])
+    terms["grad:nuc"] = np.asarray(g.grad_nuc(mol), dtype=np.float64)
+    return {
+        "mo_energy": encode_array(mo_energy),
+        "mo_occ": encode_array(mo_occ),
+        "mo_coeff": encode_array(mo_coeff),
+        "dme": encode_array(dme),
+        "int1e_ipovlp": encode_array(ipovlp),
+        "int1e_ipkin": encode_array(ipkin),
+        "int1e_ipnuc": encode_array(ipnuc),
+        "int1e_iprinv": encode_array(np.stack(iprinv)),
+        "vj1": encode_array(vj1),
+        "vk1": encode_array(vk1),
+        **{n: encode_array(terms[n]) for n in GRADIENT_TERMS},
+        GRAD_TOTAL: encode_array(total),
+    }
+
+
 def comparable(obj: dict[str, Any]) -> str:
     """The fixture's bytes with the volatile provenance blanked: what must match."""
     obj = dict(obj)
@@ -1352,8 +1593,10 @@ def drift(name: str) -> str | None:
             return None
         # #486: the arrays are the recorded density's exactly; the density
         # itself is held to a fresh SCF within a tolerance, never bitwise.
-        err = float(np.max(np.abs(rhf_density(_mole(case))
-                                  - np.array(load(path).density))))
+        mol = _mole(case)
+        dm = (mos_density(*rhf_mos(mol)[1:]) if case.record_gradient
+              else rhf_density(mol))
+        err = float(np.max(np.abs(dm - np.array(load(path).density))))
         if err <= RHF_DENSITY_TOL:
             return None
         return (f"{path}: PySCF {fp['pyscf']} now converges an RHF density "
@@ -1667,7 +1910,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             path = FIXTURES / f"{name}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(dumps(build(name, fresh_density=True)))
-            load(path)
+            if CASES[name].record_gradient:
+                gradient_fixture(name)  # #550: every term recomputed
+            else:
+                load(path)
             print(f"wrote {path}")
         else:
             msg = drift(name)
