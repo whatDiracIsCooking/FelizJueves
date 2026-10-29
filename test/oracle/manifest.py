@@ -1543,6 +1543,91 @@ def df_gradient(name: str = DF_GRADIENT, where: Path = DF_GRADIENT_DIR,
                       grads(raw["gmetric"], 2))
 
 
+# --- the DF-RHF two-electron gradient (#620) -------------------------------------
+#
+# PySCF's DF-RHF two-electron nuclear gradient (`scf.RHF(mol).density_fit()`
+# and its `nuc_grad_method()`'s `get_jk`, aux response on) of H2O/STO-3G
+# against cc-pVTZ-JKFIT's s and p shells -- the h2o_sto3g_jkfit_3c set's
+# molecule and parent basis, its aux basis cut to `l <= DF_RHF_AUX_MAX_L` --
+# at the closed-shell density `D = DF_RHF_OCC C C^T` of the CLOSED-FORM
+# occupied coefficients `df_rhf_c` (no SCF: every array is rebuilt bit for
+# bit). The J and K terms are recorded apart: `G_J` of `E_J = 1/2 SUM D D
+# (mn|ls)`, `G_K` of `E_K = 1/2 SUM D D (ml|ns)`, and PySCF's own two-
+# electron gradient `G` (`get_veff`, `E_J - 1/2 E_K`), with both energies.
+# DF against DF over the same aux set, never DF against exact integrals. The
+# aux basis is s and p only, so Cartesian and spherical agree and the host
+# (`gradient.host_df`, pure Python) stays at (pp|p). It lives beside the DF
+# gradient witness in `df_gradient/`; `df_rhf()` loads it and holds its
+# inputs to the tracked set exactly.
+
+DF_RHF = "h2o_sto3g_jkfit_sp_rhf_grad"
+DF_RHF_SCHEMA = 1
+DF_RHF_SET = "h2o_sto3g_jkfit_3c"
+DF_RHF_AUX_MAX_L = 1
+DF_RHF_OCC = 2.0
+
+
+def df_rhf_c(nao: int, nocc: int) -> np.ndarray:
+    """`C[m, i] = ((3 m + 5 i + 1) mod 7 - 3) / 4`: exact in binary."""
+    m, i = np.ogrid[:nao, :nocc]
+    return (((3 * m + 5 * i + 1) % 7) - 3) / 4.0
+
+
+@dataclass(frozen=True)
+class DfRhf:
+    """PySCF's DF-RHF two-electron gradient, its inputs checked."""
+
+    path: Path
+    provenance: dict[str, Any]
+    three_center: ThreeCenterSet
+    nocc: int
+    e_j: float
+    e_k: float
+    g_j: np.ndarray  # [n_atom, 3]
+    g_k: np.ndarray
+    g: np.ndarray  # G_J - 1/2 G_K, PySCF's get_veff route
+
+    def c(self) -> np.ndarray:
+        return df_rhf_c(self.three_center.parent.nao, self.nocc)
+
+
+def df_rhf(name: str = DF_RHF, where: Path = DF_GRADIENT_DIR,
+           fixtures: Path = FIXTURES) -> DfRhf:
+    """Load the DF-RHF gradient `name`; refuse inputs that are not the
+    tracked set's, by field."""
+    path = where / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != DF_RHF_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{DF_RHF_SCHEMA} DF-RHF gradient "
+                          f"named {name}")
+    ts = three_center_set(raw["three_center_set"], fixtures)
+    pv, parent = raw["provenance"], ts.parent.provenance
+    lmax = DF_RHF_AUX_MAX_L
+    naux = sum((s.l + 1) * (s.l + 2) // 2
+               for s in ts.converted.shells if s.l <= lmax)
+    want = {"mol": parent.mol, "basis": parent.basis, "cart": parent.cart,
+            "aux_basis": ts.pieces[0].provenance.basis, "aux_max_l": lmax,
+            "parent": ts.parent.name, "nao": ts.parent.nao, "naux": naux,
+            "occ": DF_RHF_OCC}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the tracked set's "
+                              f"({pv.get(k)!r} against {v!r})")
+    nat = len(ts.parent.atoms)
+
+    def grad(key: str) -> np.ndarray:
+        g = np.array(_floats(path, key, raw[key], 3 * nat)).reshape(nat, 3)
+        g.setflags(write=False)
+        return g
+
+    nocc = raw["nocc"]
+    if not isinstance(nocc, int) or not 0 < nocc <= ts.parent.nao:
+        raise _fail(path, f"bad nocc {nocc!r}")
+    e_j, e_k = _floats(path, "energies", [raw["e_j"], raw["e_k"]], 2)
+    return DfRhf(path, pv, ts, nocc, e_j, e_k, grad("g_j"), grad("g_k"),
+                 grad("g"))
+
+
 # --- the quadrupole witness ---------------------------------------------------
 #
 # libcint's Cartesian second moments `<m| (r - C)_d (r - C)_e |n>`

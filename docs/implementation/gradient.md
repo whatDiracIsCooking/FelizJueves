@@ -281,7 +281,21 @@ d0 kernel's layout). A DF-J energy gradient is the two together:
     E_J = SUM D_mn (mn|P) d_P - 1/2 d (P|Q) d,   (P|Q) d = (P|mn) D_mn
     dE_J/dR = geri3 at Gam = D (x) d   +   gmetric at W = -1/2 d d^T
 
-(`E_J` is stationary in `d`, so `d` is not differentiated).
+(`E_J` is stationary in `d`, so `d` is not differentiated). A DF-K one
+(#620) is the same two kernels at the exchange weights: with `D = occ C
+C^T` (`C` the occupied coefficients) and `E_K = 1/2 SUM D_mn D_ls (ml|ns)`,
+
+    X_ijP = SUM_ml C_mi C_lj (ml|P),   (P|Q) d_ij = X_ij,
+    dE_K/dR = geri3 at Gam^K_mlP = occ^2 SUM_ij C_mi C_lj d_ijP
+            + gmetric at W^K_PQ = -1/2 occ^2 SUM_ij d_ijP d_ijQ,
+
+and the closed-shell two-electron gradient is `G_J - 1/2 G_K`.
+`host_df.df_j_stage` / `df_k_stage` stage the weights (pure Python, a
+Cholesky solve of the metric) and return them with the energy, so a
+consumer staging its own (FreeBreakfast, dense GPU linear algebra) has
+them to compare against; `host_df.df_rhf_gradient` returns `G_J`, `G_K`,
+each split into its `geri3` and `gmetric` halves, and `G_J - 1/2 G_K`.
+Nothing stages them on a device: the solve stays host-side.
 
 **The rules.** An AO pair's centres `A` and `B` take the Cartesian rule on
 the per-axis `E` tables one index higher, as `gs`/`gv` do. An aux
@@ -373,7 +387,10 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 |---|---|---|---|
 | host `(P\|Q)`, `(mn\|P)` (`test_gradient_host_df.py`) | central differences, `h = 1e-4`, of `metric_matrix`, `eri3_tensor` (libcint-witnessed) | a three-atom s/p/d basis and s/p/d aux; `(mn\|P)` through d `slow` | 2.1e-9, 2.7e-9 of `max\|G\|`, gate 1e-7 |
 | host DF-J `dE_J/dR` | central differences of `E_J`, the solve redone per geometry | the s, p sub-bases; H₂O/STO-3G against the JKFIT s, p shells `slow` | 3.1e-9, 2.5e-9 |
+| host DF-K `dE_K/dR` (#620) | central differences of `E_K` (numpy, the solve redone per geometry) | the s, p sub-bases (and `G_J - 1/2 G_K`); H₂O/STO-3G against the JKFIT s, p shells `slow` | 3.6e-9, 2.6e-9 |
 | host invariance | `SUM_A G = 0` | same | gate 1e-13 of `max\|G\|` |
+| host DF-RHF two-electron gradient (`oracle.manifest.df_rhf`, #620) | PySCF's `density_fit()` RHF gradient (`get_jk` / `get_veff`, aux response on) over the SAME aux set, at closed-form occupied coefficients | H₂O/STO-3G against cc-pVTZ-JKFIT's s, p shells (57 aux), `slow` (~15 s); `G_J`, `G_K` and `G_J - 1/2 G_K` apart, and both energies | 4.4e-13 (J), 6.2e-13 (K), 7.8e-13 (two-electron) absolute, gate `1e-10` |
+| `geri3` / `gmetric` interpreted with the DF-K weights (`test_kernel_df_k_grad.py`, #620) | `host_df`, whole gradient | `Gam^K`, `W^K` and `Gam^J - 1/2 Gam^K`, `W^J - 1/2 W^K` on three-atom s, p bases (through (pp\|p), (p\|p)) | 0.37 eps of the split-centre scale, gate 16 eps |
 | `gmetric` interpreted (`test_kernel_gmetric.py`) | `host_df`, per class | every class `lP + lQ <= 4` (`lP + lQ = 4` `slow`), swapped and off-diagonal pairs | 4.9 eps of the split-centre scale, gate 16 eps |
 | `geri3` interpreted (`test_kernel_geri3.py`) | `host_df`, per class | every class `la + lb + lP <= 4` (= 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` | 2.6 eps of the split-centre scale, gate 16 eps |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 31 units | no diagnostic (a proxy) |
@@ -383,8 +400,9 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 | the DF gradient witness (`oracle.manifest.df_gradient`, #613) | libcint's `int3c2e_ip1_cart` / `int3c2e_ip2_cart`, `int2c2e_ip1_cart`, contracted per class with closed-form `Gam`, `W`, on `prim_spd_f` against the aux-i basis (every ladder class) | the host, every class (`slow`); the kernel interpreted at (df\|i), (ff\|h), (ff\|i), (h\|i), (i\|i) (`slow`) | host 3.91e-14 (`geri3`), 1.71e-14 (`gmetric`) of the witness's largest `max\|G\|`; the kernel at most 2.72e-15 ((h\|i)); gate `1e-12` |
 | on a card, the ladder (`test_grad_df_device.py` Part 2, `slow` + `high_l`) | `host_df` at `1e-13` of `max\|G\|` per program, and the witness at `1e-12` | RTX 3080 and RX 9060 XT: all 70 + 28 classes in their default forms on the aux-i system, one program per aux `l`, each compile under a 300 s timeout; 16 passed per card (with Part 1) | host 1.20e-14 (CUDA) / 9.34e-15 (HIP), (`geri3`, aux i); libcint 5.49e-14 / 5.48e-14 of max; runs bit-identical on both |
 
-Not done for DF: the metric solve and `d` stay host-side; no DF-K
-gradient (the kernels take any `Gam`, but nothing stages K's); no screen;
+Not done for DF: the metric solve and `d` stay host-side (DF-K's `Gam^K`,
+`W^K` are staged on the host only, #620; no device run of them, the
+kernels having run on both cards with an arbitrary `Gam`); no screen;
 no clock (the low-stack form's cost is unmeasured); Cartesian only (the
 libcint witness is Cartesian `_cart` integrals, not the spherical
 `int3c2e_ip1` / `int2c2e_ip1` #613 named: the kernels are Cartesian and
@@ -402,8 +420,10 @@ the spherical transform is the consumer's, as #615 decided for d0).
 - Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
   `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
   caller's), but no whole RHF gradient is assembled or checked against
-  `pyscf.grad.RHF` (each term has run on both cards, alone). The DF-J terms are
-  built (above); no DF-K.
+  `pyscf.grad.RHF` (each term has run on both cards, alone). The DF
+  two-electron gradient, `G_J - 1/2 G_K`, is assembled on the host and
+  held to PySCF's DF RHF gradient (above, #620); the one-electron terms
+  are not added to it.
 - `gk` is checked interpreted through `(dd|dd)` but its ladder writes
   `l <= 2` only and its goldens are the s, p classes; f is not built
   into the ladder (the unrolled text is 4 MB at `(dd|dd)` already).

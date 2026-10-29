@@ -27,9 +27,11 @@ Regenerate the owner (`h10_chain_ccpvdz_j`) and its `_k` together, in that
 order: the `_k` reads the `_j`'s recorded density.
 
 `--df-gradient` (with `--regenerate` or `--check`, no names) is the DF
-gradient witness instead (#613, `df_gradient_build`): libcint's derivative
-integrals on the aux-i sets' inputs, contracted per class, written to
-`df_gradient/` and loaded by `manifest.df_gradient`.
+gradient witnesses instead, both in `df_gradient/`: #613's
+(`df_gradient_build`), libcint's derivative integrals on the aux-i sets'
+inputs contracted per class, loaded by `manifest.df_gradient`; and #620's
+(`df_rhf_build`), PySCF's DF-RHF two-electron gradient of H2O/STO-3G
+against JKFIT's s and p shells, loaded by `manifest.df_rhf`.
 
 `--quadrupole` (the same way) is the quadrupole witness instead
 (`quadrupole_build`): libcint's `int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s
@@ -1487,22 +1489,131 @@ def df_gradient_build() -> dict[str, Any]:
 
 
 def df_gradient_main(regenerate: bool) -> int:
-    """`--df-gradient`: rewrite the witness, or (`--check`) compare."""
+    """`--df-gradient`: rewrite both witnesses in `df_gradient/` (#613's
+    per-class contractions, #620's DF-RHF gradient), or (`--check`)
+    compare."""
+    from .manifest import DF_GRADIENT, DF_RHF, df_gradient, df_rhf
+
+    return (_witness_main(regenerate, DF_GRADIENT, df_gradient_build,
+                         df_gradient)
+            | _witness_main(regenerate, DF_RHF, df_rhf_build, df_rhf))
+
+
+# #620: the DF-RHF two-electron gradient (manifest.df_rhf)
+
+def df_rhf_build() -> dict[str, Any]:
+    """The DF-RHF two-electron gradient (#620, manifest.df_rhf), computed
+    now: PySCF's `scf.RHF(mol).density_fit(aux).nuc_grad_method()` at the
+    closed-form `D = occ C C^T` (`df_rhf_c`, `mo_coeff` / `mo_occ` tagged so
+    K is built from `C`). `get_jk`'s `vj` / `vk` are electron-coordinate
+    derivatives on the bra AO (`-d/dR` of the function, so `+d/dR` of the
+    centre with PySCF's sign), each AO row counted twice by `(mn|ls) =
+    (nm|ls)` symmetry, plus its `.aux` (the aux-centre and metric terms):
+    `G_X[A] = 2 SUM_{m on A} vX[:, m, :] . D[m, :] + vX.aux[A]`. `G` is
+    `get_veff`'s the same way, `E_J - 1/2 E_K`. ONE OpenMP thread: PySCF's
+    threaded DF-K reduces in a run-dependent order (~1e-14 apart run to
+    run), and `--check` compares bytes."""
+    import pyscf
+    from pyscf import gto, lib, scf
+
+    from .manifest import (
+        DF_RHF,
+        DF_RHF_AUX_MAX_L,
+        DF_RHF_OCC,
+        DF_RHF_SCHEMA,
+        DF_RHF_SET,
+        df_rhf_c,
+    )
+
+    piece = CASES[f"{DF_RHF_SET}{COLS_SEP}{THREE_CENTER_COLS[0][0]}_"
+                  f"{THREE_CENTER_COLS[0][1]}"]
+    case = CASES[piece.parent]
+    mol = _mole(case)
+    symbols = sorted({mol.atom_pure_symbol(i) for i in range(mol.natm)})
+    aux = {s: [sh for sh in gto.basis.load(piece.aux_basis, s)
+               if sh[0] <= DF_RHF_AUX_MAX_L] for s in symbols}
+    mf = scf.RHF(mol).density_fit(auxbasis=aux)
+    mf.with_df.build()
+    auxmol = mf.with_df.auxmol
+    if not auxmol.cart:
+        raise ValueError("the aux molecule is not Cartesian")
+    nao, naux, nat = int(mol.nao_nr()), int(auxmol.nao_nr()), mol.natm
+    nocc = mol.nelectron // 2
+    c = df_rhf_c(nao, nocc)
+    mo = np.zeros((nao, nao))
+    mo[:, :nocc] = c
+    mo_occ = np.zeros(nao)
+    mo_occ[:nocc] = DF_RHF_OCC
+    d = DF_RHF_OCC * c @ c.T
+    dm = lib.tag_array(d, mo_coeff=mo, mo_occ=mo_occ)
+    with lib.with_omp_threads(1):
+        vj, vk = mf.get_jk(mol, dm)
+        g = mf.nuc_grad_method()
+        gj, gk = g.get_jk(mol, dm)
+        veff = g.get_veff(mol, dm)
+    sl = mol.aoslice_by_atom()
+
+    def total(v) -> list[float]:
+        out = np.asarray(v.aux, dtype=float).reshape(-1, nat, 3)[0].copy()
+        for a in range(nat):
+            p0, p1 = sl[a, 2:]
+            out[a] += 2 * np.einsum("xij,ij->x", v[:, p0:p1], d[p0:p1])
+        return [float(x) for x in out.ravel()]
+
+    return {
+        "schema": DF_RHF_SCHEMA,
+        "name": DF_RHF,
+        "description": (
+            "#620: PySCF's DF-RHF two-electron nuclear gradient (aux "
+            "response on) of H2O/STO-3G against cc-pVTZ-JKFIT's s and p "
+            "shells (h2o_sto3g_jkfit_3c's inputs, aux l <= 1), at D = occ "
+            "C C^T of manifest.df_rhf_c: g_j of E_J, g_k of E_K = 1/2 SUM "
+            "D D (ml|ns), g of E_J - 1/2 E_K (get_veff), each [atom, k] "
+            "(oracle.generate.df_rhf_build has the signs)."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": DF_GRADIENT_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "aux_basis": piece.aux_basis,
+            "aux_max_l": DF_RHF_AUX_MAX_L,
+            "parent": piece.parent,
+            "nao": nao,
+            "naux": naux,
+            "occ": DF_RHF_OCC,
+        },
+        "three_center_set": DF_RHF_SET,
+        "nocc": nocc,
+        "e_j": float(0.5 * np.einsum("ij,ji->", d, vj)),
+        "e_k": float(0.5 * np.einsum("ij,ji->", d, vk)),
+        "g_j": total(gj),
+        "g_k": total(gk),
+        "g": total(veff),
+    }
+
+
+def _witness_main(regenerate: bool, name: str, build, load) -> int:
     import json
 
-    from .manifest import DF_GRADIENT, DF_GRADIENT_DIR, df_gradient
+    from .manifest import DF_GRADIENT_DIR
 
-    path = DF_GRADIENT_DIR / f"{DF_GRADIENT}.json"
-    fresh = df_gradient_build()
+    path = DF_GRADIENT_DIR / f"{name}.json"
+    fresh = build()
     if regenerate:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dumps(fresh))
-        df_gradient()
+        load()
         print(f"wrote {path}")
         return 0
     tracked = json.loads(path.read_text())
     if comparable(fresh) == comparable(tracked):
-        print(f"{DF_GRADIENT}: matches the tracked witness")
+        print(f"{name}: matches the tracked witness")
         return 0
     print(f"{path}: PySCF now computes it differently from the tracked "
           "witness; news about PySCF until proven otherwise")

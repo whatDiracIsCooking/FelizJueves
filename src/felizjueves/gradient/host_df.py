@@ -54,17 +54,51 @@ nucleus whose centre it equals EXACTLY (`gradient.host.shell_atoms`).
 `[t|tau]` is INJECTED (`pq=`, `reference.pq.pq` in the tests), as in
 `eri.density_fit`. Pure Python floats: `src/felizjueves` has no runtime
 dependencies.
+
+THE STAGED TERMS (#620). The `Gam` and `W` of a DF-RHF two-electron
+gradient, staged here so a consumer that builds its own (FreeBreakfast,
+with dense GPU linear algebra) has something to hold them to:
+
+    df_j_stage(T, M, D)              -> DfStage  E_J, Gam^J, W^J
+    df_k_stage(T, M, C, *, occ)      -> DfStage  E_K, Gam^K, W^K
+    df_term(basis, aux, stage, nuclei, *, pq)    -> DfTerm  the two contractions
+    df_rhf_gradient(basis, aux, C, nuclei, *, pq, occ)  -> DfRhfGradient
+
+`T = (mn|P)` (`eri3_tensor`), `M = (P|Q)` (`metric_matrix`), `D = occ C
+C^T` with `C` the occupied coefficients `[n_ao][n_occ]` (`occ = 2`: the
+closed-shell total density). With `(ml|ns) ~ SUM_PQ (ml|P) M^-1_PQ (Q|ns)`,
+
+    E_J = 1/2 SUM D_mn D_ls (mn|ls),   b_P = SUM_mn D_mn (mn|P),  M d = b,
+          Gam^J_mnP = D_mn d_P,        W^J_PQ = -1/2 d_P d_Q;
+    E_K = 1/2 SUM D_mn D_ls (ml|ns),   X_ijP = SUM_ml C_mi C_lj (ml|P),
+                                       M d_ij = X_ij,
+          Gam^K_mlP = occ^2 SUM_ij C_mi C_lj d_ijP,
+          W^K_PQ    = -1/2 occ^2 SUM_ij d_ijP d_ijQ,
+
+each `dE/dR = eri3_gradient(Gam) + metric_gradient(W)`, `d` not
+differentiated (the fitted energy is stationary in it). `E_K` is
+`gradient.md`'s `1/2 SUM D_ab D_cd (ac|bd)`, so the closed-shell
+two-electron energy is `E_J - 1/2 E_K` and its gradient `G_J - 1/2 G_K`;
+the signs and halves of any other energy are the caller's.
+`df_rhf_gradient` returns every term on its own. `M` is solved by a
+Cholesky factorisation, once per stage; nothing is screened, and a metric
+that is not positive definite is refused, not regularised.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from felizjueves.ao.pairs import primitive_pairs
 from felizjueves.ao.shell import Basis, cartesians
-from felizjueves.eri.density_fit.eri3 import Eri3Class
-from felizjueves.eri.density_fit.metric import MetricClass, aux_records
+from felizjueves.eri.density_fit.eri3 import Eri3Class, eri3_tensor
+from felizjueves.eri.density_fit.metric import (
+    MetricClass,
+    aux_records,
+    metric_matrix,
+)
 from felizjueves.gradient.host import pair_weights, shell_atoms
 from felizjueves.mmd.hermite import e_axis, hermite_order
 from felizjueves.one_electron.potential import Nucleus
@@ -320,3 +354,146 @@ def eri3_records(cls: Eri3Class, basis: Basis, aux: Basis,
     out["atom_b"] = [at[b] for _, b, _ in cls.cells]
     out["atom_p"] = [aat[n] for _, _, n in cls.cells]
     return out
+
+
+# --- the staged DF-J and DF-K terms (#620; module docstring) -----------------
+
+Matrix = list[list[float]]
+Tensor = list[list[list[float]]]
+
+
+@dataclass(frozen=True)
+class DfStage:
+    """One fitted energy and the weights of its gradient: `Gam[m][n][P]`
+    for `eri3_gradient`, `W[P][Q]` for `metric_gradient`."""
+
+    energy: float
+    Gam: Tensor
+    W: Matrix
+
+
+@dataclass(frozen=True)
+class DfTerm:
+    """A stage contracted: `G = eri3 + metric`, each `n_atom x 3`."""
+
+    stage: DfStage
+    eri3: Grad
+    metric: Grad
+    G: Grad
+
+
+@dataclass(frozen=True)
+class DfRhfGradient:
+    """The closed-shell DF two-electron gradient, `G = J.G - 1/2 K.G`."""
+
+    J: DfTerm
+    K: DfTerm
+    G: Grad
+
+
+def _cholesky(M: Sequence[Sequence[float]]) -> Matrix:
+    """The lower factor `L L^T = M`; refuses a matrix that is not
+    positive definite."""
+    n = len(M)
+    L = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1):
+            s = float(M[i][j]) - sum(L[i][k] * L[j][k] for k in range(j))
+            if i == j:
+                if not s > 0.0:
+                    raise ValueError(f"the metric is not positive definite "
+                                     f"(pivot {i}: {s!r})")
+                L[i][i] = math.sqrt(s)
+            else:
+                L[i][j] = s / L[j][j]
+    return L
+
+
+def _solve(L: Matrix, b: Sequence[float]) -> list[float]:
+    """`x` of `L L^T x = b`."""
+    n = len(L)
+    y = [0.0] * n
+    for i in range(n):
+        y[i] = (b[i] - sum(L[i][k] * y[k] for k in range(i))) / L[i][i]
+    x = [0.0] * n
+    for i in reversed(range(n)):
+        x[i] = (y[i] - sum(L[k][i] * x[k] for k in range(i + 1, n))) / L[i][i]
+    return x
+
+
+def _sizes(T, M) -> tuple[int, int]:
+    n_ao, n_aux = len(T), len(M)
+    if any(len(r) != n_aux for r in M) or any(
+            len(r) != n_ao or any(len(c) != n_aux for c in r) for r in T):
+        raise ValueError("T is not [n_ao][n_ao][n_aux] over M's n_aux")
+    return n_ao, n_aux
+
+
+def df_j_stage(T, M, D) -> DfStage:
+    """`E_J`, `Gam^J = D (x) d`, `W^J = -1/2 d d^T` (module docstring)."""
+    n_ao, n_aux = _sizes(T, M)
+    b = [sum(float(D[m][n]) * float(T[m][n][p]) for m in range(n_ao)
+             for n in range(n_ao)) for p in range(n_aux)]
+    d = _solve(_cholesky(M), b)
+    return DfStage(
+        0.5 * sum(x * y for x, y in zip(b, d, strict=True)),
+        [[[float(D[m][n]) * d[p] for p in range(n_aux)] for n in range(n_ao)]
+         for m in range(n_ao)],
+        [[-0.5 * d[p] * d[q] for q in range(n_aux)] for p in range(n_aux)])
+
+
+def df_k_stage(T, M, C, *, occ: float = 2.0) -> DfStage:
+    """`E_K`, `Gam^K`, `W^K` of `D = occ C C^T`, `C` the occupied
+    coefficients `[n_ao][n_occ]` (module docstring)."""
+    n_ao, n_aux = _sizes(T, M)
+    n_occ = len(C[0]) if n_ao else 0
+    if len(C) != n_ao or any(len(r) != n_occ for r in C):
+        raise ValueError("C is not [n_ao][n_occ] over T's n_ao")
+    Cf = [[float(x) for x in r] for r in C]
+    # Half-transformed: H[i][n][P] = SUM_m C_mi (mn|P).
+    H = [[[sum(Cf[m][i] * float(T[m][n][p]) for m in range(n_ao))
+           for p in range(n_aux)] for n in range(n_ao)] for i in range(n_occ)]
+    L = _cholesky(M)
+    pairs = [(i, j) for i in range(n_occ) for j in range(n_occ)]
+    X = {(i, j): [sum(Cf[n][j] * H[i][n][p] for n in range(n_ao))
+                  for p in range(n_aux)] for i, j in pairs}
+    d = {ij: _solve(L, X[ij]) for ij in pairs}
+    o2 = occ * occ
+    energy = 0.5 * o2 * sum(x * y for ij in pairs
+                            for x, y in zip(X[ij], d[ij], strict=True))
+    # Back: E[i][n][P] = SUM_j C_nj d_ijP, Gam_mnP = occ^2 SUM_i C_mi E_inP.
+    E = [[[sum(Cf[n][j] * d[i, j][p] for j in range(n_occ))
+           for p in range(n_aux)] for n in range(n_ao)] for i in range(n_occ)]
+    Gam = [[[o2 * sum(Cf[m][i] * E[i][n][p] for i in range(n_occ))
+             for p in range(n_aux)] for n in range(n_ao)] for m in range(n_ao)]
+    W = [[-0.5 * o2 * sum(d[ij][p] * d[ij][q] for ij in pairs)
+          for q in range(n_aux)] for p in range(n_aux)]
+    return DfStage(energy, Gam, W)
+
+
+def _sum(a: Grad, b: Grad, s: float = 1.0) -> Grad:
+    return [[x + s * y for x, y in zip(ra, rb, strict=True)]
+            for ra, rb in zip(a, b, strict=True)]
+
+
+def df_term(basis: Basis, aux: Basis, stage: DfStage,
+            nuclei: Sequence[Nucleus], *, pq: PQ) -> DfTerm:
+    """`stage`'s gradient: `eri3_gradient(Gam) + metric_gradient(W)`."""
+    e = eri3_gradient(basis, aux, stage.Gam, nuclei, pq=pq)
+    m = metric_gradient(aux, stage.W, nuclei, pq=pq)
+    return DfTerm(stage, e, m, _sum(e, m))
+
+
+def df_rhf_gradient(basis: Basis, aux: Basis, C, nuclei: Sequence[Nucleus],
+                    *, pq: PQ, occ: float = 2.0) -> DfRhfGradient:
+    """The DF two-electron gradient of `E_J - 1/2 E_K` at `D = occ C C^T`,
+    `C` the occupied coefficients `[n_ao][n_occ]`, every term returned on
+    its own (module docstring). `T` and `M` are computed once."""
+    T = eri3_tensor(basis, aux, pq=pq)
+    M = metric_matrix(aux, pq=pq)
+    n_ao, n_occ = len(C), len(C[0]) if len(C) else 0
+    D = [[occ * sum(float(C[m][i]) * float(C[n][i]) for i in range(n_occ))
+          for n in range(n_ao)] for m in range(n_ao)]
+    j = df_term(basis, aux, df_j_stage(T, M, D), nuclei, pq=pq)
+    k = df_term(basis, aux, df_k_stage(T, M, C, occ=occ), nuclei, pq=pq)
+    return DfRhfGradient(j, k, _sum(j.G, k.G, -0.5))
