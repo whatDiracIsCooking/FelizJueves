@@ -38,6 +38,11 @@ against JKFIT's s and p shells, loaded by `manifest.df_rhf`.
 inputs contracted with its recorded density, per K class and whole,
 written to `k_gradient/` and loaded by `manifest.k_gradient`.
 
+`--j-gradient` (the same way) is the Coulomb-gradient witness instead
+(#639, `j_gradient_build`): the same integrals and density contracted into
+`dE_J/dR`, per `gjab` bra class and whole, written to `j_gradient/` and
+loaded by `manifest.j_gradient`.
+
 A GRADIENT case (#550, `Case.record_gradient`, `<m>_grad`) records its
 converged SCF (`mo_energy`, `mo_occ`, `mo_coeff`) the way an "rhf" density
 is recorded, and computes everything else from it: the density, `W`, the
@@ -1987,6 +1992,113 @@ def k_gradient_main(regenerate: bool) -> int:
 
 
 # ---------------------------------------------------------------------------
+# #639: the Coulomb-gradient witness (manifest.j_gradient)
+# ---------------------------------------------------------------------------
+
+J_GRADIENT_COMMAND = ("PYTHONPATH=test uv run --group oracle python -m "
+                      "oracle.generate --j-gradient")
+J_GRADIENT_PARENT = "co_ccpvtz_j"
+
+
+def j_gradient_build() -> dict[str, Any]:
+    """The Coulomb-gradient witness (manifest.j_gradient), computed now:
+    libcint's `int2e_ip1_cart` on `J_GRADIENT_PARENT`'s molecule and basis,
+    contracted with that fixture's recorded density `D`. `E_J = 1/2 SUM
+    D_ab D_cd (ab|cd)`; its ket derivative is its bra derivative, so
+    `dE_J/dR` is the bra derivative of every quartet, both bra centres.
+    With `ip1[k, a, b, c, d] = (nabla_k a b|c d)` (minus the derivative on
+    `a`'s centre), `(ab|cd) = (ba|cd)` and `D` symmetric (asserted), that
+    is `-2 SUM_b D_ab vj[k, a, b]` on `atom(a)`, `vj[k, a, b] = SUM_cd
+    ip1[k, a, b, c, d] D_cd`. Shell `s` of `a` and shell `t` of `b` deposit
+    it into the `gjab` bra class `(min(l_s, l_t), max(l_s, l_t))`: keyed by
+    angular momentum alone, so the key does not depend on shell order.
+    One `shls_slice` per first shell."""
+    import pyscf
+
+    from .manifest import J_GRADIENT, J_GRADIENT_SCHEMA, density_sha256
+
+    case = CASES[J_GRADIENT_PARENT]
+    mol = _mole(case)
+    D = _tracked_density(J_GRADIENT_PARENT)
+    if D is None:
+        raise ValueError(f"{J_GRADIENT_PARENT} is not tracked")
+    if not np.array_equal(D, D.T):
+        raise ValueError(f"{J_GRADIENT_PARENT}'s density is not symmetric")
+    nao, nat, n = int(mol.nao_nr()), mol.natm, mol.nbas
+    if D.shape != (nao, nao):
+        raise ValueError(f"density {D.shape}, nao {nao}")
+    loc = mol.ao_loc_nr(cart=True)
+    ls = [int(mol.bas_angular(i)) for i in range(n)]
+    out: dict[tuple[int, int], np.ndarray] = {}
+    for s in range(n):
+        ip = mol.intor("int2e_ip1_cart", comp=3,
+                       shls_slice=(s, s + 1, 0, n, 0, n, 0, n))
+        ss = slice(int(loc[s]), int(loc[s + 1]))
+        if ip.shape != (3, ss.stop - ss.start, nao, nao, nao):
+            raise ValueError(f"unexpected shape {ip.shape}")
+        vj = np.einsum("xabcd,cd->xab", ip, D)
+        atom = int(mol.bas_atom(s))
+        for t in range(n):
+            tt = slice(int(loc[t]), int(loc[t + 1]))
+            key = (min(ls[s], ls[t]), max(ls[s], ls[t]))
+            g = -2.0 * np.einsum("xab,ab->x", vj[:, :, tt], D[ss, tt])
+            out.setdefault(key, np.zeros((nat, 3)))[atom] += g
+    whole = sum(out.values())
+    return {
+        "schema": J_GRADIENT_SCHEMA,
+        "name": J_GRADIENT,
+        "description": (
+            f"#639: libcint's int2e_ip1_cart on {J_GRADIENT_PARENT}'s "
+            "molecule and basis, contracted with its recorded density into "
+            "dE_J/dR (E_J = 1/2 SUM D_ab D_cd (ab|cd), the bra derivative "
+            "of every quartet, both bra centres), per gjab bra class "
+            "(la <= lb) and whole (oracle.generate.j_gradient_build has the "
+            "signs)."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": J_GRADIENT_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "nao": nao,
+            "density_sha256": density_sha256(D),
+        },
+        "parent": J_GRADIENT_PARENT,
+        "whole": [float(x) for x in whole.ravel()],
+        "classes": [{"am": list(k), "G": [float(x) for x in out[k].ravel()]}
+                    for k in sorted(out)],
+    }
+
+
+def j_gradient_main(regenerate: bool) -> int:
+    """`--j-gradient`: rewrite the witness, or (`--check`) compare."""
+    import json
+
+    from .manifest import J_GRADIENT, J_GRADIENT_DIR, j_gradient
+
+    path = J_GRADIENT_DIR / f"{J_GRADIENT}.json"
+    fresh = j_gradient_build()
+    if regenerate:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(dumps(fresh))
+        j_gradient()
+        print(f"wrote {path}")
+        return 0
+    tracked = json.loads(path.read_text())
+    if comparable(fresh) == comparable(tracked):
+        print(f"{J_GRADIENT}: matches the tracked witness")
+        return 0
+    print(f"{path}: PySCF now computes it differently from the tracked "
+          "witness; news about PySCF until proven otherwise")
+    return 1
+
+
+# ---------------------------------------------------------------------------
 # The quadrupole witness (manifest.quadrupole_integrals)
 # ---------------------------------------------------------------------------
 
@@ -2115,12 +2227,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--k-gradient", action="store_true",
                     help="the exchange-gradient witness (#618, "
                          "manifest.k_gradient) instead of the fixtures")
+    ap.add_argument("--j-gradient", action="store_true",
+                    help="the Coulomb-gradient witness (#639, "
+                         "manifest.j_gradient) instead of the fixtures")
     args = ap.parse_args(argv)
     if args.df_gradient and args.names:
         ap.error("--df-gradient takes no case names")
     if args.k_gradient and (args.names or args.df_gradient
                             or args.quadrupole):
         ap.error("--k-gradient takes no case names and no other witness")
+    if args.j_gradient and (args.names or args.df_gradient
+                            or args.quadrupole or args.k_gradient):
+        ap.error("--j-gradient takes no case names and no other witness")
     if args.quadrupole and (args.names or args.df_gradient):
         ap.error("--quadrupole takes no case names and no --df-gradient")
 
@@ -2145,6 +2263,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return quadrupole_main(args.regenerate)
     if args.k_gradient:
         return k_gradient_main(args.regenerate)
+    if args.j_gradient:
+        return j_gradient_main(args.regenerate)
 
     status = 0
     for name in args.names or list(CASES):

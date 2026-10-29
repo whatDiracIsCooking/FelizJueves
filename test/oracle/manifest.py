@@ -1987,24 +1987,25 @@ def density_sha256(dm: np.ndarray) -> str:
 
 @dataclass(frozen=True)
 class KGradient:
-    """The exchange-gradient witness, its inputs checked against its parent."""
+    """A contracted gradient witness (exchange, #618, or Coulomb, #639),
+    its inputs checked against its parent."""
 
     path: Path
     provenance: dict[str, Any]
     parent: Fixture
     whole: np.ndarray  # G[n_atom, 3]
-    classes: dict[tuple[int, int, int, int], np.ndarray]  # am -> G[n_atom, 3]
+    classes: dict[tuple[int, ...], np.ndarray]  # am -> G[n_atom, 3]
 
 
-def k_gradient(name: str = K_GRADIENT, where: Path = K_GRADIENT_DIR,
-               fixtures: Path = FIXTURES) -> KGradient:
-    """Load the exchange-gradient witness `name` and hold its inputs to the
-    tracked fixture it names, exactly; refuse a mismatch by field."""
-    path = where / f"{name}.json"
+def _gradient_witness(path: Path, name: str, schema: int, arity: int,
+                      fixtures: Path, what: str) -> KGradient:
+    """Load a contracted two-electron gradient witness and hold its inputs
+    to the tracked fixture it names, exactly; refuse a mismatch by field.
+    Each class key holds `arity` angular momenta."""
     raw = json.loads(path.read_text())
-    if raw.get("schema") != K_GRADIENT_SCHEMA or raw.get("name") != name:
-        raise _fail(path, f"not a schema-{K_GRADIENT_SCHEMA} exchange "
-                          f"gradient witness named {name}")
+    if raw.get("schema") != schema or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{schema} {what} gradient witness "
+                          f"named {name}")
     parent = load(fixtures / f"{raw['parent']}.json")
     pv, ppv = raw["provenance"], parent.provenance
     want = {"mol": ppv.mol, "basis": ppv.basis, "cart": ppv.cart,
@@ -2024,10 +2025,42 @@ def k_gradient(name: str = K_GRADIENT, where: Path = K_GRADIENT_DIR,
     classes = {}
     for r in raw["classes"]:
         am = tuple(r["am"])
-        if len(am) != 4 or am in classes:
+        if len(am) != arity or am in classes:
             raise _fail(path, f"bad or duplicate class {am}")
         classes[am] = grad(f"classes {am}", r["G"])
     return KGradient(path, pv, parent, grad("whole", raw["whole"]), classes)
+
+
+def k_gradient(name: str = K_GRADIENT, where: Path = K_GRADIENT_DIR,
+               fixtures: Path = FIXTURES) -> KGradient:
+    """Load the exchange-gradient witness `name` and hold its inputs to the
+    tracked fixture it names, exactly; refuse a mismatch by field."""
+    return _gradient_witness(where / f"{name}.json", name, K_GRADIENT_SCHEMA,
+                             4, fixtures, "exchange")
+
+
+# --- the Coulomb-gradient witness (#639) -----------------------------------------
+#
+# The same integrals and density as `k_gradient`, contracted into the
+# gradient `kernel_gjab` writes: `G[A, k] = dE_J/dR_{A,k}`, `E_J = 1/2 SUM
+# D_ab D_cd (ab|cd)`, the bra derivative of every quartet (both bra
+# centres), per `gjab` bra class `(la, lb)`, `la <= lb`, and whole. It
+# stands in for `gradient.host.coulomb_gradient` on the card's CO input,
+# which is pure Python at minutes a class; the host is tied to it, class
+# by class, in test_j_gradient_witness.py (`slow`). Same layout and checks
+# as `k_gradient`, a class key a pair; the `KGradient` record carries it.
+
+J_GRADIENT_DIR = Path(__file__).resolve().parent / "j_gradient"
+J_GRADIENT = "co_ccpvtz_j_grad"
+J_GRADIENT_SCHEMA = 1
+
+
+def j_gradient(name: str = J_GRADIENT, where: Path = J_GRADIENT_DIR,
+               fixtures: Path = FIXTURES) -> KGradient:
+    """Load the Coulomb-gradient witness `name` and hold its inputs to the
+    tracked fixture it names, exactly; refuse a mismatch by field."""
+    return _gradient_witness(where / f"{name}.json", name, J_GRADIENT_SCHEMA,
+                             2, fixtures, "Coulomb")
 
 
 def main(argv: list[str] | None = None) -> int:
