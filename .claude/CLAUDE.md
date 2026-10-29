@@ -49,7 +49,7 @@ that are still missing are attached to #431.
 | HGP engine, fused `F`, split HGP `J`/`K` | `F` on both cards and timed; split HGP on the RTX 3080 only; nothing above L = 4 | `fock-hgp.md` |
 | Schwarz `Q`, cross overlap `SX`, DF metric, `(mn\|P)` | generated; DF through (ff\|i) / (i\|i) on both cards with low-stack forms; HGP DF twins on the RTX 3080 only | `schwarz-overlap-df.md` |
 | dipole `MU`, quadrupole; one-electron on HGP and Rys | dipole on both cards at L ≤ 4; quadrupole (raw second moments) interpreted only; HGP one-e on the RTX 3080 only; Rys one-e interpreted only | `one-electron-extra.md` |
-| gradients (d1) | `gs`/`gt`/`gv` on both cards through (ff); `gjab`, `gk`, DF-J terms on both cards; no assembled RHF gradient | `gradients.md` |
+| gradients (d1) | `gs`/`gt`/`gv` on both cards through (ff); `gjab`, `gk`, DF-J terms on both cards; the RHF gradient assembled and interpreted against PySCF, not on a card | `gradients.md` |
 | Hessians (d2) | `hjab`/`hdq` and unrolled `d2s`/`d2t`/`d2v` on both cards through (dd); `hkx`, `d2metric`, `d2eri3` interpreted only | `hessians.md` |
 | Rys `F` / `J` / `K`, device Boys | Rys interpreted and emitted, never compiled by nvcc/hipcc; `fj_boys<M>`'s move left `kernels.json` pins **stale** | `rys-and-boys.md` |
 

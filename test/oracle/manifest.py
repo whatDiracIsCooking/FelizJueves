@@ -1621,6 +1621,115 @@ def quadrupole_integrals(name: str = QUADRUPOLE,
         arr("int1e_rr_cart:zero", (ncomp, nao, nao)))
 
 
+# --- the RHF gradient witnesses (#565) -----------------------------------------
+#
+# PySCF's closed-shell RHF nuclear gradient of one molecule, per term and in
+# total, for the CONVERGED density it records: `D` (`make_rdm1`) and `W`
+# (`nuc_grad_method().make_rdm1e`), each symmetrised `(X + X^T) / 2`, are the
+# inputs, and every term is libcint's derivative integrals contracted with
+# them (`oracle.generate.rhf_gradient_terms` has each contraction), signed as
+# it enters `dE/dR` (`felizjueves.gradient.rhf`'s `TERMS` / `SIGN`): overlap
+# `-SUM W dS`, kinetic `SUM D dT`, potential `SUM D dV` (Hellmann-Feynman
+# included), coulomb `dE_J`, exchange `-1/2 dE_K`, nuclear `dV_nn`. `total`
+# is PySCF's own `nuc_grad_method().kernel()`, a separate route the generator
+# holds the six terms' sum to (`RHF_GRADIENT_SUM_TOL`) before it writes.
+# Self-contained, unlike the other witnesses: it carries its own converted
+# basis (Cartesian), atoms, `D` and `W`, so it lives in `rhf_gradient/` and
+# `rhf_gradient()` loads it.
+
+RHF_GRADIENT_DIR = Path(__file__).resolve().parent / "rhf_gradient"
+RHF_GRADIENT_SCHEMA = 1
+RHF_GRADIENT_TERMS = ("overlap", "kinetic", "potential", "coulomb",
+                      "exchange", "nuclear")
+RHF_GRADIENT_SUM_TOL = 1e-10  # |SUM terms - PySCF's total|, Eh/bohr
+
+
+@dataclass(frozen=True)
+class RhfGradientWitness:
+    """One RHF gradient witness; `converted` and `path` are what
+    `oracle.basis.from_fixture` reads."""
+
+    path: Path
+    name: str
+    provenance: dict[str, Any]
+    atoms: tuple[Atom, ...]
+    converted: Converted
+    energy: float
+    density: np.ndarray  # D, (nao, nao), total
+    weighted: np.ndarray  # W, (nao, nao), total
+    terms: dict[str, np.ndarray]  # RHF_GRADIENT_TERMS -> (n_atom, 3)
+    total: np.ndarray  # PySCF's nuc_grad_method().kernel(), (n_atom, 3)
+
+    @property
+    def nuclei(self) -> tuple[tuple[float, tuple[float, float, float]], ...]:
+        return tuple((float(a.charge), a.coord) for a in self.atoms)
+
+
+def rhf_gradient_names(where: Path | None = None) -> list[str]:
+    where = RHF_GRADIENT_DIR if where is None else where
+    return sorted(p.stem for p in where.glob("*.json"))
+
+
+def rhf_gradient(name: str, where: Path | None = None) -> RhfGradientWitness:
+    """Load the RHF gradient witness `name` and check its shape; refuse a
+    file whose terms do not add to its total within `RHF_GRADIENT_SUM_TOL`."""
+    path = (RHF_GRADIENT_DIR if where is None else where) / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != RHF_GRADIENT_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{RHF_GRADIENT_SCHEMA} RHF gradient "
+                          f"witness named {name}")
+    pv = raw["provenance"]
+    if pv.get("cart") is not True:
+        raise _fail(path, "an RHF gradient witness is Cartesian")
+    atoms = tuple(Atom(a["symbol"], int(a["charge"]),
+                       _floats(path, "atoms.coord", a["coord"], 3))
+                  for a in raw["atoms"])
+    c = raw["converted"]
+    shells = tuple(ConvertedShell(
+        int(s["atom"]), int(s["l"]),
+        _floats(path, "converted.centre", s["centre"], 3),
+        _floats(path, "converted.exponents", s["exponents"]),
+        _floats(path, "converted.coefficients", s["coefficients"],
+                len(s["exponents"])))
+        for s in c["shells"])
+    for i, s in enumerate(shells):
+        if not 0 <= s.atom < len(atoms) or s.centre != atoms[s.atom].coord:
+            raise _fail(path, f"converted.shells[{i}] is not on its atom")
+    nao = sum((s.l + 1) * (s.l + 2) // 2 for s in shells)
+    if nao != pv.get("nao"):
+        raise _fail(path, f"converted shells give {nao} AOs, provenance.nao "
+                          f"is {pv.get('nao')}")
+    n = len(atoms)
+
+    def arr(key: str, shape: tuple[int, ...]) -> np.ndarray:
+        enc = raw["arrays"][key]
+        if tuple(enc["shape"]) != shape:
+            raise _fail(path, f"arrays.{key} has shape {enc['shape']}, not "
+                              f"{list(shape)}")
+        a = np.array(_floats(path, key, enc["values"], int(np.prod(shape))),
+                     dtype=np.float64).reshape(shape)
+        a.setflags(write=False)
+        return a
+
+    if sorted(raw["arrays"]) != sorted(
+            ["density", "weighted", "total",
+             *(f"grad:{t}" for t in RHF_GRADIENT_TERMS)]):
+        raise _fail(path, f"arrays are {sorted(raw['arrays'])}")
+    D, W = arr("density", (nao, nao)), arr("weighted", (nao, nao))
+    if not (np.array_equal(D, D.T) and np.array_equal(W, W.T)):
+        raise _fail(path, "density and weighted must be exactly symmetric")
+    terms = {t: arr(f"grad:{t}", (n, 3)) for t in RHF_GRADIENT_TERMS}
+    total = arr("total", (n, 3))
+    err = float(np.abs(sum(terms.values()) - total).max())
+    if err > RHF_GRADIENT_SUM_TOL:
+        raise _fail(path, f"the terms add to the total within {err:.2e}, "
+                          f"over {RHF_GRADIENT_SUM_TOL:g}")
+    return RhfGradientWitness(
+        path, name, pv, atoms,
+        Converted(_floats(path, "common_factor", c["common_factor"]), shells),
+        float(raw["energy"]), D, W, terms, total)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Load every tracked fixture; one line each. Exit 1 on the first bad one."""
     paths = [Path(p) for p in (argv or [])] or tracked()

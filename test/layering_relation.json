@@ -1673,6 +1673,27 @@
    "mmd.hermite",
    "one_electron.potential"
   ],
+  "gradient.interpreted": [
+   "ao.shell",
+   "eri.j_coulomb.drive",
+   "gradient",
+   "gradient.host",
+   "gradient.host_df",
+   "gradient.kernel_g1e",
+   "gradient.kernel_geri3",
+   "gradient.kernel_gjab",
+   "gradient.kernel_gk",
+   "gradient.kernel_gmetric",
+   "gradient.rhf",
+   "ir",
+   "ir.interp",
+   "ir.lever_ladder",
+   "ir.lower",
+   "ir.passes",
+   "mmd.hermite",
+   "one_electron.potential",
+   "spec"
+  ],
   "gradient.kernel_g1e": [
    "ir",
    "mmd.e_fragment",
@@ -1781,6 +1802,12 @@
    "plan.sieve",
    "plan.targets",
    "spec"
+  ],
+  "gradient.rhf": [
+   "ao.pairs",
+   "ao.shell",
+   "gradient.host",
+   "one_electron.potential"
   ],
   "hessian": [],
   "hessian.host": [

@@ -3735,6 +3735,48 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the gradient ladder "
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)
 
+# #565: the RHF gradient assembled (`gradient.rhf`, its runners injected)
+# and the interpreted runners (`gradient.interpreted`, the J chain's
+# interpreted `[p|q]` through `eri.j_coulomb.drive`, as that module's own
+# chain). Neither emits; the assembly knows no kernel, and no builder
+# reaches either (the builders' transitive check, below, bans `ir.interp`).
+RULES |= {
+    "grad_rhf": _rule(
+        "gradient/rhf.py: dE_RHF/dR assembled from injected per-term "
+        "runners -- the signs and the half, the fixed-order total, `V_nn^x` "
+        "and the host references as one set of runners (`gradient.host`)",
+        ("ao.pairs", "ao.shell", "gradient.host", "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "the assembly adds terms; it builds no instructions",
+           "gradient.kernel_g1e": "the kernels arrive as injected runners",
+           "gradient.kernel_gjab": "the kernels arrive as injected runners",
+           "gradient.kernel_gk": "the kernels arrive as injected runners"},
+        **_NO_MACHINE),
+    "grad_interpreted": _rule(
+        "gradient/interpreted.py: the d1 kernels as `gradient.rhf` runners, "
+        "run in `ir.interp` -- the builders, `gradient.host`'s records and "
+        "kets, the J chain's interpreted `[p|q]` (`eri.j_coulomb.drive`); "
+        "Boys injected",
+        ("ao.shell", "spec", "ir", "mmd.hermite", "one_electron.potential",
+         "eri.j_coulomb.drive", "gradient"),
+        reference=_GROUND_TRUTH,
+        emit="interpreted, never emitted: no card, no compiler",
+        **{"performance.device": "no card is reached"}),
+}
+RULE_OF |= {
+    "gradient.rhf": "grad_rhf",
+    "gradient.interpreted": "grad_interpreted",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "gradient.rhf": ("ao.pairs", "ao.shell", "gradient.host",
+                     "one_electron.potential"),
+    "gradient.interpreted": ("ao.shell", "eri.j_coulomb.drive",
+                             "gradient.host", "gradient.kernel_g1e",
+                             "gradient.kernel_gjab", "gradient.kernel_gk",
+                             "gradient.rhf", "ir", "ir.interp",
+                             "mmd.hermite", "one_electron.potential", "spec"),
+}.items()}
+
 
 # ---------------------------------------------------------------------------
 # The Coulomb and exchange energies' analytic nuclear Hessians by MMD

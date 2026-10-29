@@ -35,6 +35,12 @@ integrals on the aux-i sets' inputs, contracted per class, written to
 (`quadrupole_build`): libcint's `int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s
 inputs at its origin and at 0, written to `quadrupole/` and loaded by
 `manifest.quadrupole_integrals`.
+
+`--rhf-gradient [NAME ...]` is the RHF gradient witnesses instead (#565,
+`rhf_gradient_build`): PySCF's converged RHF of each case, its `D` and `W`,
+every term of the nuclear gradient from libcint's derivative integrals and
+PySCF's own total, written to `rhf_gradient/` and loaded by
+`manifest.rhf_gradient`.
 """
 
 from __future__ import annotations
@@ -1619,6 +1625,199 @@ def quadrupole_main(regenerate: bool) -> int:
     return 1
 
 
+# ---------------------------------------------------------------------------
+# #565: the RHF gradient witnesses (manifest.rhf_gradient)
+# ---------------------------------------------------------------------------
+
+RHF_GRADIENT_COMMAND = ("PYTHONPATH=test uv run --group oracle python -m "
+                        "oracle.generate --rhf-gradient")
+
+# The low-symmetry molecule: NH3 with every bond length and angle different
+# and N off every axis, so no symmetry operation of the nuclear frame exists
+# (C1). A triatomic always has its plane, so `_H2O` (already unequal bonds)
+# keeps one mirror; a weighting bug in the i <= j sweep that cancels under
+# a mirror does not cancel here.
+_NH3_C1 = "N 0.11 -0.07 0.23; H 1.92 0.31 -0.54; H -0.63 1.71 -0.38; " \
+          "H -0.41 -0.92 1.84"
+
+RHF_GRADIENT_CASES: dict[str, Case] = {
+    f"h2o_{tag}_rhf_grad": Case(
+        description=f"#565: H2O/{basis}, the RHF gradient per term",
+        atom=_H2O, unit="Bohr", basis=basis, cart=True)
+    for tag, basis in (("sto3g", "sto-3g"), ("631g", "6-31g"),
+                       ("ccpvdz", "cc-pvdz"))
+}
+RHF_GRADIENT_CASES["nh3_sto3g_rhf_grad"] = Case(
+    description="#565: NH3/STO-3G at a C1 geometry, the RHF gradient per term",
+    atom=_NH3_C1, unit="Bohr", basis="sto-3g", cart=True)
+
+
+def rhf_gradient_terms(mol: Any, D: np.ndarray, W: np.ndarray
+                       ) -> dict[str, np.ndarray]:
+    """Each term of the RHF gradient, signed as it enters `dE/dR`
+    (manifest: THE RHF GRADIENT WITNESSES), from libcint's derivative
+    integrals; `D`, `W` symmetric. `ip*[k, m, n]` differentiates the
+    electron coordinate of `m`, which is minus its centre's derivative, so
+    for a symmetric `M` and `X`, `SUM M dX/dR_A = -2 SUM_{m on A} ip[k, m,
+    n] M_mn`. `V`'s operator moves with nucleus `C`: `dV^C/dC = -Z_C
+    (iprinv + iprinv^T)` (integration by parts), `iprinv` at `C`. `E_J =
+    1/2 SUM D D (ab|cd)` and `E_K = 1/2 SUM D_ab D_cd (ac|bd)` are
+    invariant under every swap of their four functions (D symmetric), so
+    each derivative is four times the first function's: `dE_J/dR_A = -2
+    SUM_{a on A} ip1[k, a, b, c, d] D_ab D_cd`, `dE_K/dR_A = -2 SUM_{a on
+    A} ip1[k, a, c, b, d] D_ab D_cd`."""
+    nat = mol.natm
+    loc = mol.aoslice_by_atom()
+
+    def on_atoms(ip: np.ndarray, M: np.ndarray) -> np.ndarray:
+        g = np.zeros((nat, 3))
+        for a in range(nat):
+            p0, p1 = int(loc[a, 2]), int(loc[a, 3])
+            g[a] = -2.0 * np.einsum("kmn,mn->k", ip[:, p0:p1], M[p0:p1])
+        return g
+
+    out = {
+        "overlap": -on_atoms(mol.intor("int1e_ipovlp_cart", comp=3), W),
+        "kinetic": on_atoms(mol.intor("int1e_ipkin_cart", comp=3), D),
+        "potential": on_atoms(mol.intor("int1e_ipnuc_cart", comp=3), D),
+    }
+    for c in range(nat):
+        with mol.with_rinv_at_nucleus(c):
+            ip = mol.intor("int1e_iprinv_cart", comp=3)
+        out["potential"][c] += -mol.atom_charge(c) * np.einsum(
+            "kmn,mn->k", ip + ip.transpose(0, 2, 1), D)
+    ip1 = mol.intor("int2e_ip1_cart", comp=3)  # [k, a, b, c, d] = (da b|c d)
+    vj = np.einsum("kabcd,cd->kab", ip1, D)
+    vk = np.einsum("kacbd,cd->kab", ip1, D)
+    out["coulomb"] = on_atoms(vj, D)
+    out["exchange"] = -0.5 * on_atoms(vk, D)
+    return out
+
+
+def rhf_gradient_build(name: str, recorded: Any = None
+                       ) -> tuple[dict[str, Any], dict[str, float]]:
+    """The witness `name` (manifest.rhf_gradient), computed now, and how far
+    a fresh SCF lands from it.
+
+    PySCF's converged RHF, its `D` and `W` symmetrised, the terms
+    (`rhf_gradient_terms`) and `grad_nuc()`, and PySCF's own
+    `nuc_grad_method()` total, refused unless the six terms add to it within
+    `RHF_GRADIENT_SUM_TOL`. With `recorded` (a tracked
+    `manifest.RhfGradientWitness`) the SCF's outputs are THE RECORDED ONES --
+    `D`, `W`, `energy`, `total` -- so every other array is a deterministic
+    function of tracked inputs and compares bitwise (#486's rule: an SCF is
+    reproducible only to its convergence); the second value is the fresh
+    SCF's distance from them, max abs: `density`, `weighted`, `total`,
+    `energy`."""
+    import pyscf
+    from pyscf import scf
+
+    from .basis import converted_record
+    from .manifest import RHF_GRADIENT_SCHEMA, RHF_GRADIENT_SUM_TOL
+
+    case = RHF_GRADIENT_CASES[name]
+    mol = _mole(case)
+    mf = scf.RHF(mol)
+    mf.conv_tol, mf.conv_tol_grad = RHF_CONV_TOL, RHF_CONV_TOL_GRAD
+    energy = float(mf.kernel())
+    if not mf.converged:
+        raise ValueError(f"{name}: RHF did not converge")
+    g = mf.nuc_grad_method()
+    total = np.asarray(g.kernel(), dtype=np.float64)
+    D = np.asarray(mf.make_rdm1(), dtype=np.float64)
+    W = np.asarray(g.make_rdm1e(), dtype=np.float64)
+    D, W = 0.5 * (D + D.T), 0.5 * (W + W.T)
+    away: dict[str, float] = {}
+    if recorded is not None:
+        away = {"density": float(np.abs(D - recorded.density).max()),
+                "weighted": float(np.abs(W - recorded.weighted).max()),
+                "total": float(np.abs(total - recorded.total).max()),
+                "energy": abs(energy - recorded.energy)}
+        D, W = np.array(recorded.density), np.array(recorded.weighted)
+        total, energy = np.array(recorded.total), recorded.energy
+    terms = rhf_gradient_terms(mol, D, W)
+    terms["nuclear"] = np.asarray(g.grad_nuc(), dtype=np.float64)
+    err = float(np.abs(sum(terms.values()) - total).max())
+    if err > RHF_GRADIENT_SUM_TOL:
+        raise ValueError(f"{name}: the terms add to PySCF's total within "
+                         f"{err:.2e}, over {RHF_GRADIENT_SUM_TOL:g}")
+    coords = mol.atom_coords(unit="Bohr")
+    return {
+        "schema": RHF_GRADIENT_SCHEMA,
+        "name": name,
+        "description": case.description,
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": f"{RHF_GRADIENT_COMMAND} {name}",
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "nao": int(mol.nao_nr()),
+            "conv_tol": RHF_CONV_TOL,
+            "conv_tol_grad": RHF_CONV_TOL_GRAD,
+        },
+        "atoms": [{"symbol": mol.atom_pure_symbol(i),
+                   "charge": int(mol.atom_charge(i)),
+                   "coord": [float(x) for x in coords[i]]}
+                  for i in range(mol.natm)],
+        "converted": converted_record(mol),
+        "energy": energy,
+        "arrays": {
+            "density": encode_array(D),
+            "weighted": encode_array(W),
+            "total": encode_array(total),
+            **{f"grad:{t}": encode_array(v) for t, v in terms.items()},
+        },
+    }, away
+
+
+# `--check`'s bounds on a fresh SCF's distance from the recorded one, max
+# abs: the density as #486 holds it, and the gradient, first order in it.
+RHF_GRADIENT_SCF_TOL = {"density": RHF_DENSITY_TOL, "weighted": RHF_DENSITY_TOL,
+                        "total": 1e-7, "energy": 1e-10}
+
+
+def rhf_gradient_main(regenerate: bool, names: Sequence[str]) -> int:
+    """`--rhf-gradient`: rewrite the witnesses (or the named ones), or
+    (`--check`) compare: the integrals' terms from the RECORDED `D` and `W`
+    bitwise, and a fresh SCF within `RHF_GRADIENT_SCF_TOL`
+    (`rhf_gradient_build`)."""
+    import json
+
+    from .manifest import RHF_GRADIENT_DIR, rhf_gradient
+
+    status = 0
+    for name in names or list(RHF_GRADIENT_CASES):
+        path = RHF_GRADIENT_DIR / f"{name}.json"
+        if regenerate:
+            fresh, _ = rhf_gradient_build(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(dumps(fresh))
+            rhf_gradient(name)
+            print(f"wrote {path}")
+            continue
+        fresh, away = rhf_gradient_build(name, rhf_gradient(name))
+        tracked = json.loads(path.read_text())
+        over = {k: v for k, v in away.items() if v > RHF_GRADIENT_SCF_TOL[k]}
+        if comparable(fresh) != comparable(tracked):
+            print(f"{path}: PySCF now computes it differently from the "
+                  "tracked witness; news about PySCF until proven otherwise")
+            status = 1
+        elif over:
+            print(f"{path}: a fresh SCF lands {over} (max abs) from the "
+                  f"recorded one, over {RHF_GRADIENT_SCF_TOL}")
+            status = 1
+        else:
+            print(f"{name}: matches the tracked witness (fresh SCF within "
+                  + ", ".join(f"{k} {v:.1e}" for k, v in away.items()) + ")")
+    return status
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.generate",
                                  description=__doc__.split("\n\n")[0])
@@ -1635,15 +1834,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="the quadrupole witness "
                          "(manifest.quadrupole_integrals) instead of the "
                          "fixtures")
+    ap.add_argument("--rhf-gradient", action="store_true",
+                    help="the RHF gradient witnesses (#565, "
+                         "manifest.rhf_gradient) instead of the fixtures; "
+                         f"names from {list(RHF_GRADIENT_CASES)}")
     args = ap.parse_args(argv)
     if args.df_gradient and args.names:
         ap.error("--df-gradient takes no case names")
     if args.quadrupole and (args.names or args.df_gradient):
         ap.error("--quadrupole takes no case names and no --df-gradient")
+    if args.rhf_gradient and (args.df_gradient or args.quadrupole):
+        ap.error("--rhf-gradient is its own mode")
 
-    unknown = [n for n in args.names if n not in CASES]
+    known = RHF_GRADIENT_CASES if args.rhf_gradient else CASES
+    unknown = [n for n in args.names if n not in known]
     if unknown:
-        ap.error(f"unknown case(s) {unknown}; known: {list(CASES)}")
+        ap.error(f"unknown case(s) {unknown}; known: {list(known)}")
     try:
         import pyscf  # noqa: F401
     except ImportError:
@@ -1660,6 +1866,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return df_gradient_main(args.regenerate)
     if args.quadrupole:
         return quadrupole_main(args.regenerate)
+    if args.rhf_gradient:
+        return rhf_gradient_main(args.regenerate, args.names)
 
     status = 0
     for name in args.names or list(CASES):

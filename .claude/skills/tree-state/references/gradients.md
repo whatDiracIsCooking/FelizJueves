@@ -65,8 +65,24 @@ arches; `measure.sh check` holds the gate to the rows): unrolled `gv_33`
 everywhere (`gt_33` 5,296 B), one form; `gv_22` is 9,752 B, over #586's
 d0 8 KB but under #613's 14,000 B, so (dd) stays unrolled. Interpreted,
 `gv` in its other form at every class (`test_kernel_g1e.py`). No clock.
-No whole RHF gradient assembled; `gjab` / `gk` not measured (the DF-J
-terms: below).
+`gjab` / `gk` not measured (the DF-J terms: below).
+**The whole RHF gradient is assembled and interpreted** (#565,
+`gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
+`rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,
+`D dV`, `dE_J`, `-1/2 dE_K` and `V_nn^x` (host) from injected per-term
+runners, each term returned and their fixed-order total;
+`gradient/interpreted.py`'s `interpreted_runners(boys=)` runs `gs_`, `gt_`,
+`gv_`, the J chain (`[p|q]` one bra order up through `KernelJP`, then
+`gjab_`) and `gk_` in the interpreter. Against a tracked **PySCF RHF gradient
+witness** per molecule (`test/oracle/rhf_gradient/`,
+`oracle.manifest.rhf_gradient`, `python -m oracle.generate --regenerate
+--rhf-gradient`: converged `D`, `W`, every term from libcint's `int1e_ip*`,
+`int1e_iprinv` and `int2e_ip1`, and `nuc_grad_method()`'s total, the terms
+held to it to 1e-10): H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G and H₂O/cc-pVDZ,
+per term and total within `1e-10` absolute (`test_rhf_gradient.py`; the
+one-electron terms on s, p bases fast, every J/K term and total `slow` by
+L + 1 = 5, cc-pVDZ `slow`). Worst on the s, p witnesses 2.4e-13 per term (`V`, NH₃) and 7.9e-14 in total; interpreted `gk_` dominates the cost (138 s for H₂O/STO-3G, 564 s for 6-31G). Not on a card: the
+device assembly is #566.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`

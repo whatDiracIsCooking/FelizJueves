@@ -1,7 +1,8 @@
 # Analytic nuclear gradients by McMurchie–Davidson: `S`, `T`, `V`, `E_J`, `E_K` and the DF integrals
 
 **Status: implemented host-side and as generated kernels, compiled by
-nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
+nvcc and hipcc and run on both cards; the whole RHF gradient assembled and
+checked against PySCF interpreted only (#565)** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
 through (ff|i) and (i|i) since #613, and `gs`, `gt`, `gv` through (ff)
 since #614; which inputs, per kernel, in the tables below). This is
@@ -242,6 +243,48 @@ bare default nor in `KERNEL_GEN_CMD`. Goldens:
 `test/golden/{cuda,hip}/gk_*` for the 16 s / p classes, 32 files, the
 largest 169 KB (`test_emit_grad_k.py`).
 
+## The RHF gradient, assembled (`gradient/rhf.py`, #565)
+
+With `D` and `W` the total density and energy-weighted density,
+
+    dE/dR = - SUM W dS/dR + SUM D dT/dR + SUM D dV/dR
+            + dE_J/dR - 1/2 dE_K/dR + dV_nn/dR
+
+`rhf_gradient(basis, nuclei, D, W, runners)` applies those signs and the
+half once (`rhf.SIGN`) to five injected runners, each `(basis, nuclei, M) ->
+G` with the d1 kernels' contract, adds the host's `V_nn^x`
+(`host.nuclear_repulsion_gradient`), and returns every signed term and
+their sum in `rhf.TERMS` order. `V`'s runner carries the Hellmann–Feynman
+term (inside `gv_`). Two sets of runners exist: `rhf.host_runners` (the
+references) and `interpreted.interpreted_runners(boys=)`, every term from
+the generated kernels in `ir.interp`, launched class by class into one
+zeroed `G` as `test/grad_driver.py` packs them for a card. J is the chain,
+not the host's `J_p`: the d0 `[p|q]` of `kernel_gjab.gjab_pq_spec`'s class
+(the bra raised by one) through `eri.j_coulomb.drive.KernelJP`, then
+`gjab_`. The device runners are #566.
+
+This departs from the milestone's plan in two places, both decided when
+#552 and #557 closed: the kernels `atomicAdd` into `G` (no partials and no
+fixed-order reduction, so a device term is not bit-reproducible; the
+interpreted one is), and the Hellmann–Feynman term is `gv_`'s, with no
+`vhf_` kernel. The module lives in `gradient/`, beside the kernels, not in
+a `nuclear_gradient/` package.
+
+**The witness** (`test/oracle/rhf_gradient/`, `oracle.manifest.
+rhf_gradient`, written by `python -m oracle.generate --regenerate
+--rhf-gradient`): per molecule PySCF's converged RHF in the Cartesian basis,
+its `D` and `W` (symmetrised), and each term as libcint's derivative
+integrals contracted with them (`int1e_ipovlp`, `int1e_ipkin`,
+`int1e_ipnuc` and `int1e_iprinv` at each nucleus, `int2e_ip1`;
+`generate.rhf_gradient_terms` has every sign), with `nuc_grad_method().
+kernel()`'s total. The generator refuses to write, and the loader refuses
+to read, a witness whose terms do not add to that total within 1e-10.
+`--check` recomputes the terms from the recorded `D` and `W` bitwise and
+holds a fresh SCF to the recorded one within tolerance (#486's rule).
+Molecules: `_H2O` in STO-3G, 6-31G and cc-pVDZ, and NH₃/STO-3G at a C1
+geometry (a triatomic always keeps its mirror plane, under which an
+`i <= j` weighting bug can cancel).
+
 ## Witnesses, and what ran where
 
 | What | Against | Where | Worst |
@@ -255,6 +298,7 @@ largest 169 KB (`test_emit_grad_k.py`).
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
 | host `E_K` invariance, partition | `SUM_A G = 0`; the class quartets cover every ordered quartet once | the s, p basis | ~5e-16 of `max\|G\|` |
 | `gk` interpreted (`test_kernel_gk.py`) | `host.exchange_gradient`, per class, its `absolute=True` twin as scale | every K class with each `l <= 1` on the s, p basis; every class with a d shell through `(dd\|dd)` on a two-atom s, p, d basis (L + 1 > 4 `slow`); the 16 s, p classes summed to the whole `dE_K`; 1, 4 and 32 lanes | at most 0.7 eps of the scale, gate 16 eps |
+| the RHF gradient, interpreted (`test_rhf_gradient.py`, #565) | PySCF's RHF gradient witness: each term from libcint at the recorded `D`, `W`; the total from `nuc_grad_method()` | H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G, H₂O/cc-pVDZ; one-electron and nuclear terms on s, p bases fast, J, K and the totals `slow` (L + 1 = 5), cc-pVDZ `slow` | worst term 2.4e-13 (`V`, NH₃), worst total 7.9e-14 (H₂O/STO-3G), net force <= 4.2e-14 (s, p witnesses; interpreted, 138 s / 244 s / 564 s for STO-3G / NH₃ / 6-31G, `gk_` the bulk); gate `1e-10` absolute |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
@@ -399,10 +443,9 @@ the spherical transform is the consumer's, as #615 decided for d0).
   run on a card.
 - The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
   the raised `[p|q]`, `gjab`) is a follow-up.
-- Every term of the RHF gradient now has a kernel (`gs`, `gt`, `gv`,
-  `gjab`, `gk`; `E_RHF`'s `-1/2 E_K` and the nuclear repulsion are the
-  caller's), but no whole RHF gradient is assembled or checked against
-  `pyscf.grad.RHF` (each term has run on both cards, alone). The DF-J terms are
+- The whole RHF gradient is assembled and checked against PySCF
+  interpreted only ("The RHF gradient, assembled", #565); on a card each
+  term has run alone, and the device assembly is #566. The DF-J terms are
   built (above); no DF-K.
 - `gk` is checked interpreted through `(dd|dd)` but its ladder writes
   `l <= 2` only and its goldens are the s, p classes; f is not built
