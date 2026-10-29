@@ -549,9 +549,9 @@ unchanged (the 510-key J digest included). Its batching refusal is `S`'s
 structural one, HGP is refused as for `S` (`_NO_HGP_ONE_E`), and it has no
 kernel-body lever (its `levers.DEFAULT_REFUSALS` row, the one-thread-per-
 record wording of `s`, `t` and `sx`). **The order `e` is a builder
-argument, not a key field** (`spec.py`, "A DIPOLE CLASS"): a quadrupole
-would be its own `Target.QUADRUPOLE` sharing the builder, so `Spec` gained
-no field and no stored key moved. **The origin `C` and the charge `q` are
+argument, not a key field** (`spec.py`, "A DIPOLE CLASS"): the quadrupole
+is its own `Target.QUADRUPOLE` sharing the builder (below), so `Spec`
+gained no field and no stored key moved. **The origin `C` and the charge `q` are
 runtime inputs, not key fields either**: one kernel serves every origin and
 every charge.
 
@@ -674,6 +674,90 @@ decision, and `--mu-l` refuses above 2. Nothing is measured: #544's
 `nvcc` compile reported 0 spill bytes for `mu_22` (128 registers) and
 `mu_22` with the overlap (200), a sanity reading, not a store row. No
 consumer (an SCF dipole driver, say) is built.
+
+## The quadrupole
+
+**Status: implemented and interpreted through (dd); emitted for both
+vendors; NOT compiled by nvcc or hipcc and NOT run on a card** (the session
+that built it had neither compiler nor card; all six units passed clang 18's
+CUDA front end, device side, `-Wall -Wextra`, a declaration stub for the
+runtime: a proxy). This section covers the Cartesian second moments
+`Q^{de}_ab = <a| q (r_d - C_d)(r_e - C_e) |b>`, the six components xx, xy,
+xz, yy, yz, zz (`cartesians(2)` order, the upper triangle of libcint's
+nine-component `int1e_rr`). These are the RAW second moments, not the
+traceless (Buckingham) quadrupole tensor `Θ = (3 Q - tr(Q) 1) / 2`, which
+is a linear combination of them the consumer forms. Nothing here is scored
+or measured.
+
+**The key.** `Target.QUADRUPOLE` (`quadrupole`, operator
+`Operator.QUADRUPOLE`) is a pair class `(la, lb)`; an example key is
+`quadrupole/d0/(2,1)/b1/quadrupole/literal`. Every pre-existing key is
+unchanged. Its batching refusal is the dipole's structural one; HGP is
+refused with its own reason (`spec._NO_HGP_QUAD`: `kernel_hgp` covers the
+dipole only), and Rys by the general `_NO_RYS`.
+
+**The kernel is the dipole's builder at `e = 2`.** `kernel_mu.ORDER` maps
+each target to its order, and `build_quad_kernel(cls)` (`quad_{la}{lb}`) is
+`build_mu_kernel` on a quadrupole key: the same parameter block (`P`, the
+runtime origin `C` and charge `q`), the same `sq = q s` per record, the same
+`multipole_fragment` inlined once (now at `e = 2`) and the same scatter per
+component, into `MU[6, n_ao, n_ao]`. At `e = 2` the moments read `1/(2ζ)`
+(`M^2_0 = X_PC X_PC + 1/(2ζ)`, `M^2_1 = X_PC + X_PC`, `M^2_2 = 2`), so the
+record also forms `half_inv_zeta`. `with_overlap` is the dipole's alone and
+a quadrupole key refuses it. The plan carries it unchanged:
+`OneEClass.spec` / `arrays(Target.QUADRUPOLE)` (the dipole's record arrays)
+and `walk_one_electron(..., Target.QUADRUPOLE, origin=, q=)`, which returns
+the six components.
+
+**The host** is `one_electron.multipole.multipole_matrix(basis, C, e=2)`,
+already general in `e`.
+
+**The oracle.** A separate witness, not a fixture:
+`test/oracle/quadrupole/hf_ccpvtz_spd_quadrupole.json`, libcint's
+`int1e_rr_cart` under `mol.with_common_orig(C)` on `hf_ccpvtz_spd_dipole`'s
+inputs (HF/cc-pVTZ without f, every class (ss) through (dd) between two
+centres) at that fixture's own origin and at 0. `python -m oracle.generate
+--regenerate --quadrupole` writes it and refuses unless libcint's mirrored
+components (yx, zx, zy) equal their twins bitwise and the origin shift
+`Q_de(C) = Q_de(0) - C_d r_e(0) - C_e r_d(0) + C_d C_e S` holds to `1e-14`.
+`manifest.quadrupole_integrals()` loads it with its parent and refuses any
+input (`mol`, `basis`, `cart`, `nao`, the origin, the component order) that
+is not the parent's exactly.
+
+**Witnesses, all interpreted** (fast tier):
+
+- the host against `int1e_rr_cart` at both origins, worst 1.1e-15 of
+  `max|rr|`, and libcint's `rr` at 0 from the host's at `C` through
+  libcint's own `r` and `S` (`test_ao_multipole.py`);
+- the kernel, per ordered class (ss)–(dd), one launch over every record:
+  **bitwise** the host block placed by `kernel_jab`'s rule at both origins,
+  `q = 1`, `-1` and `0.75` (`q = -1` the exact negation); the whole matrix
+  bitwise the placed host, and `multipole_matrix(e=2)` off the diagonal
+  shell pairs bitwise and on them within `16 eps` of each component's scale
+  (measured 0); the plan launched and walked against `int1e_rr_cart`,
+  whole and per shell-pair block, within `1e-12` (measured 1.1e-15); the
+  walk `==` `multipole_matrix`; and the origin shift
+  `Q_de(C') = Q_de(C) + δ_d μ_e + δ_e μ_d + δ_d δ_e q S`, every term an
+  interpreted kernel (`μ` and `q S` from the dipole's `with_overlap`
+  launch), within `1e-14` (`test_kernel_quad.py`);
+- six goldens per backend, `test/golden/{cuda,hip}/quad_*`, the largest
+  `quad_22` at 99 KB (`test_emit_quad.py`).
+
+**The generator.** `python -m felizjueves.emit --quad-l [LMAX]` (2 bare,
+**0..2 only**, exit 2 above, the dipole's cap and its reason) adds
+`quad_{la}{lb}` for every `la <= lb <= LMAX` beside the J ladders, never in
+the bare default nor in `KERNEL_GEN_CMD`, refusing the selector, the Fock
+and HGP paths and `--n-batches` as `--mu-l` does.
+
+**On a card: written, not run.** `test/mu_driver.py` takes `target=`
+(`Target.DIPOLE` by default, every dipole call unchanged), and
+`test_quad_device.py` (`gpu` + `cuda`/`hip`) builds the spd basis's
+quadrupole from its plan on each card against libcint (`1e-12` of
+`max|rr|`) and the host under a per-element bound stated in its docstring
+(`2 γ_{N+K} Qabs`, `N = 4L + 8 + 16`), with `q = -1` from the same binary.
+Its fast-tier cases (the program's text, the staging through the
+interpreter) pass; its device and compile cases have not run. Nothing
+above (dd), nothing spherical, no traceless tensor, no consumer.
 
 ## The HGP route: `S`, `T`, `V` and `MU` on engine #2
 
@@ -848,8 +932,8 @@ MMD and HGP kernels.
   template for every unit.
 - **Ordered ladder classes** (`la > lb`), so the generator, rather than the
   test-side driver, writes every class a real basis reaches.
-- **The quadrupole**, `Target.QUADRUPOLE` on `kernel_mu`'s builder at
-  `e = 2` (the fragment and host are already general in `e`).
+- **The quadrupole on a card**: `test_quad_device.py` on both cards, and
+  the compile cases of `test_emit_quad.py` (built, "The quadrupole").
 - **The dipole at f and above**, past `--mu-l`'s cap of 2.
 - **A three-kernel dipole A/B arm** (one kernel per component against the
   fused one), opened only if the fused kernel is found to spill.

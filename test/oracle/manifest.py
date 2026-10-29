@@ -1543,6 +1543,84 @@ def df_gradient(name: str = DF_GRADIENT, where: Path = DF_GRADIENT_DIR,
                       grads(raw["gmetric"], 2))
 
 
+# --- the quadrupole witness ---------------------------------------------------
+#
+# libcint's Cartesian second moments `<m| (r - C)_d (r - C)_e |n>`
+# (`int1e_rr_cart` under `mol.with_common_orig(C)`) on the density-free dipole
+# fixture's inputs (`hf_ccpvtz_spd_dipole`: HF/cc-pVTZ without f, every class
+# (ss) through (dd) between two centres), at that fixture's own non-zero
+# origin and at 0. libcint gives nine components, xx, xy, xz, yx, yy, yz, zx,
+# zy, zz; the generator refuses unless the mirrored three equal their twins
+# bitwise, and records the six of `QUADRUPOLE_COMPONENTS` (`cartesians(2)`
+# order, the quadrupole kernel's). Not a fixture of its own (it carries no
+# basis or one-electron arrays: those are the parent's, and its inputs must
+# equal the parent's exactly, or it is refused), so it lives in
+# `quadrupole/`, as the DF gradient witness lives in `df_gradient/`, and
+# `quadrupole_integrals()` loads it with its parent.
+
+QUADRUPOLE_DIR = Path(__file__).resolve().parent / "quadrupole"
+QUADRUPOLE = "hf_ccpvtz_spd_quadrupole"
+QUADRUPOLE_SCHEMA = 1
+QUADRUPOLE_COMPONENTS = ("xx", "xy", "xz", "yy", "yz", "zz")
+# The six recorded components' indices in libcint's nine (`3 d + e`).
+RR_KEPT = (0, 1, 2, 4, 5, 8)
+
+
+@dataclass(frozen=True)
+class QuadrupoleIntegrals:
+    """The quadrupole witness and its parent dipole fixture, checked as one."""
+
+    path: Path
+    provenance: dict[str, Any]
+    parent: DipoleIntegrals
+    origin: np.ndarray  # C, Bohr: the parent's own dipole_origin
+    rr: np.ndarray  # <m|(r - C)_d (r - C)_e|n>, (6, nao, nao)
+    rr0: np.ndarray  # the same at C = 0
+
+
+def quadrupole_integrals(name: str = QUADRUPOLE,
+                         where: Path = QUADRUPOLE_DIR,
+                         fixtures: Path = FIXTURES) -> QuadrupoleIntegrals:
+    """Load the quadrupole witness `name` and hold its inputs to the parent
+    fixture it names, exactly; refuse a mismatch by field."""
+    path = where / f"{name}.json"
+    raw = json.loads(path.read_text())
+    if raw.get("schema") != QUADRUPOLE_SCHEMA or raw.get("name") != name:
+        raise _fail(path, f"not a schema-{QUADRUPOLE_SCHEMA} quadrupole "
+                          f"witness named {name}")
+    parent = dipole_integrals(raw["parent"], fixtures)
+    pv, ppv = raw["provenance"], parent.fixture.provenance
+    want = {"mol": ppv.mol, "basis": ppv.basis, "cart": ppv.cart,
+            "nao": parent.fixture.nao}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the parent's "
+                              f"({pv.get(k)!r} against {v!r})")
+    if tuple(raw.get("components", ())) != QUADRUPOLE_COMPONENTS:
+        raise _fail(path, f"components are not {QUADRUPOLE_COMPONENTS}")
+    nao = parent.fixture.nao
+
+    def arr(key: str, shape: tuple[int, ...]) -> np.ndarray:
+        enc = raw["arrays"][key]
+        if tuple(enc["shape"]) != shape:
+            raise _fail(path, f"arrays.{key} has shape {enc['shape']}, not "
+                              f"{list(shape)}")
+        a = np.array(_floats(path, key, enc["values"], int(np.prod(shape))),
+                     dtype=np.float64).reshape(shape)
+        a.setflags(write=False)
+        return a
+
+    origin = arr("origin", (3,))
+    if not np.array_equal(origin, parent.origin):
+        raise _fail(path, f"origin {origin.tolist()} is not the parent's "
+                          f"{parent.origin.tolist()}")
+    ncomp = len(QUADRUPOLE_COMPONENTS)
+    return QuadrupoleIntegrals(
+        path, pv, parent, origin,
+        arr("int1e_rr_cart:origin", (ncomp, nao, nao)),
+        arr("int1e_rr_cart:zero", (ncomp, nao, nao)))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Load every tracked fixture; one line each. Exit 1 on the first bad one."""
     paths = [Path(p) for p in (argv or [])] or tracked()
