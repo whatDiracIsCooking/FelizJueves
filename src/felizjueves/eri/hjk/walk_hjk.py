@@ -72,6 +72,12 @@ launch to launch; `run` returns at least that matrix. Nothing is closed or
 mirrored after the last launch: the split kernels write each element from
 its own blocks (kernel_hj, "THE DEPOSIT").
 
+ANOTHER ENGINE (`build=`). A drop-in for `kernel_hj` with the same
+parameters, launch and output -- the split `J` on Rys quadrature,
+`eri/hjk/kernel_rj.py` -- walks the same plan: `build(spec)` is handed the
+launch's HGP `Spec` and returns the kernel to run. This module still
+imports no other engine; the caller injects it, as it injects `run`.
+
 THE IN-KERNEL SCREEN, PREDICTED (`kernel_screened`). For every visited
 ordered quartet the walker evaluates the kernel's one-block bound in the
 kernel's operation order -- `bound = G_bra (G_ket dmax)`, `G_bra` / `G_ket`
@@ -280,11 +286,14 @@ def _check_launches(plan: object, screen: str, mode: str) -> list[Spec]:
 
 
 def walk_hjk(plan: object, basis: Basis, D: object, *, run: Run,
-             threads: int = THREADS) -> HJKWalk:
+             threads: int = THREADS,
+             build: Callable[[Spec], Kernel] | None = None) -> HJKWalk:
     """Walk `plan` (module docstring): check it against `basis`, run every
     launch through the injected `run` on the screen's kernel, and record
     every ordered quartet's fate. `plan` must have been planned from `basis`
-    and `D`."""
+    and `D`. `build`, when given, builds each launch's kernel from its HGP
+    `Spec` instead of `kernel_hj` / `kernel_hk` -- another engine's drop-in
+    with the same parameters (module docstring, "ANOTHER ENGINE")."""
     screen, mode = plan.screen, plan.mode
     if screen not in SCREENS or mode not in MODES:
         raise _refuse(f"screen {screen!r} / mode {mode!r} is not one of "
@@ -326,7 +335,8 @@ def walk_hjk(plan: object, basis: Basis, D: object, *, run: Run,
                     kscreen.add(q)  # type: ignore[arg-type]
         name = mod.hj_name(spec) if screen == "j" else mod.hk_name(spec)
         if name not in kernels:
-            kernels[name] = (HJ.build_hj_kernel(spec) if screen == "j"
+            kernels[name] = (build(spec) if build is not None
+                             else HJ.build_hj_kernel(spec) if screen == "j"
                              else HK.build_hk_kernel(spec))
         kernel = kernels[name]
         pb, pk = KF.pack(bras), KF.pack(kets)

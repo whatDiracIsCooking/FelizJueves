@@ -140,7 +140,7 @@ def test_rys_writes_the_golden_text(backend, tmp_path) -> None:
 
 
 @pytest.mark.parametrize("argv", [
-    ["--rys"], ["--rys", "--L", "2"], ["--rys", "--hgp-j-l", "1"],
+    ["--rys"], ["--rys", "--L", "2"], ["--rys", "--one-e-l", "1"],
     ["--rys", "--fock-l", "3"],
 ], ids=lambda a: "_".join(a))
 def test_a_rys_request_it_cannot_honour_is_a_2(argv, tmp_path) -> None:

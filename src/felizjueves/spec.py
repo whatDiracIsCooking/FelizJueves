@@ -92,9 +92,10 @@ HGP on `J` and `K`, on the one-electron `S`, `T`, `V` and `DIPOLE`
 (`one_electron/kernel_hgp.py`), and on the two DF targets `METRIC` and `ERI3`
 (`eri/density_fit/kernel_hgp.py`, s and p shells tested); and RYS on `F`
 (`eri/fock/kernel_frys.py`: Rys quadrature's 2D VRR feeding the HGP
-HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``) and on the
-one-electron `S`, `T` and `V` (`one_electron/kernel_rys.py`, keyed
-``.../s.rys/...``). Every other
+HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``), on `J`
+(`eri/hjk/kernel_rj.py`: the same VRR in `kernel_hj`'s split nest, keyed
+``.../j.rys/...``) and on the one-electron `S`, `T` and `V`
+(`one_electron/kernel_rys.py`, keyed ``.../s.rys/...``). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
 
@@ -279,7 +280,8 @@ stated reason; a name outside the vocabulary passes through to its own
 layer, as before. The table is keyed by `target_slot`, not by the target
 alone, because `j` and `k` now exist under both engines and a lever written
 for one engine's kernel has nothing to act on in the other's: `ordered` is
-legal on `j.hgp` / `k.hgp` only. The key spells every lever alike, so every
+legal on `j.hgp` / `k.hgp` and on `j.rys` (the split J on Rys keeps HGP
+J's class modes) only. The key spells every lever alike, so every
 pre-existing key is byte-identical.
 
 Values only, plus two derived reads: `total_am` above, and `key`, a string
@@ -363,7 +365,7 @@ class Engine(StrEnum):
 
     MMD = "mmd"  # McMurchie-Davidson: the [p|q] tower of [JEngine]
     HGP = "hgp"  # Head-Gordon-Pople: the VRR/HRR of [Fock] §3.1
-    RYS = "rys"  # Rys quadrature's VRR, then the HGP HRR (F; S, T, V)
+    RYS = "rys"  # Rys quadrature's VRR, then the HGP HRR (F, split J; S, T, V)
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -429,12 +431,13 @@ def _mmd_only(what: str) -> str:
 
 
 _NO_RYS = (
-    "the Rys engine is built for the fused F (eri/fock/kernel_frys.py: its "
-    "2D VRR feeds the HGP HRR of kernel_f) and the one-electron S, T and V "
-    "(one_electron/kernel_rys.py) only; a Rys instance of this target is a "
+    "the Rys engine is built for the fused F (eri/fock/kernel_frys.py), "
+    "the split J (eri/hjk/kernel_rj.py) and the one-electron S, T and V "
+    "(one_electron/kernel_rys.py) only: its VRR feeds the HGP HRR of "
+    "kernel_f / kernel_hj / kernel_hgp; a Rys instance of this target is a "
     "follow-up nobody has declared"
 )
-_RYS_TARGETS = (Target.F, Target.S, Target.T, Target.V)
+_RYS_TARGETS = (Target.F, Target.J, Target.S, Target.T, Target.V)
 
 
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
