@@ -1,10 +1,24 @@
-"""The dipole kernel, `Target.DIPOLE`, built as a `Kernel` (#521).
+"""The dipole kernel, `Target.DIPOLE`, built as a `Kernel` (#521), and the
+quadrupole kernel, `Target.QUADRUPOLE`, the same builder at `e = 2`.
 
     build_mu_kernel(spec | (la, lb), *, with_overlap=False) -> Kernel
+    build_quad_kernel(spec | (la, lb))                      -> Kernel
     mu_name(spec | (la, lb), *, with_overlap=False)         -> str, unbuilt
-    mu_spec(la, lb)                                         -> Spec
-    n_components(with_overlap=False)                        -> 3 or 4
+    quad_name(spec | (la, lb))                              -> str, unbuilt
+    mu_spec(la, lb) / quad_spec(la, lb)                     -> Spec
+    n_components(with_overlap=False, e=1)                   -> 3, 4 or 6
     launch_shape(n_rec, threads)                            -> (grid, block)
+
+THE QUADRUPOLE. `Target.QUADRUPOLE` (`spec.py`, "A QUADRUPOLE CLASS") is
+this module's kernel with the fragment at `e = 2`: `quad_{la}{lb}` writes the
+six second moments `<a| q (r - C)_d (r - C)_e |b>`, xx, xy, xz, yy, yz, zz
+(`e_fragment.multipole_components(2)`), into `MU[6, n_ao, n_ao]`, with the
+dipole's parameter block, record, `sq` and scatter unchanged. At `e = 2` the
+moments read `1 / (2 zeta)` (`M^2_0 = X_PC^2 + 1/(2 zeta)`), so the record
+also forms `hiz = 0.5 / zeta`, as every fragment that reads it does.
+`with_overlap` is the dipole's alone (`from_order = 0` at `e = 2` would also
+write the dipole); a quadrupole spec refuses it. Everything below that says
+"dipole" holds for the quadrupole with six components for three.
 
 ONE FUSED KERNEL PER PAIR CLASS WRITES EVERY COMPONENT. `mu^d_ab =
 <a| q (r_d - C_d) |b>`, d = x, y, z, by the Hermite route
@@ -113,17 +127,24 @@ __all__ = [
     "ATOMIC_REASON",
     "E_ORDER",
     "MU",
+    "ORDER",
     "ZEROED_MU",
     "build_mu_kernel",
+    "build_quad_kernel",
     "launch_shape",
     "mu_name",
     "mu_spec",
     "n_components",
     "p_name",
+    "quad_name",
+    "quad_spec",
 ]
 
 MU = "MU"  # the output: [n_comp, n_ao, n_ao]
 E_ORDER = 1  # the dipole: multipole order 1 (a builder fact, not a key field)
+# The multipole order each target's kernel is built at, and its name prefix.
+ORDER = {Target.DIPOLE: E_ORDER, Target.QUADRUPOLE: 2}
+_PREFIX = {Target.DIPOLE: "mu", Target.QUADRUPOLE: "quad"}
 
 ATOMIC_REASON = (
     "AtomicAdd: several primitive records of one shell pair, and both mirror "
@@ -144,19 +165,31 @@ def mu_spec(la: int, lb: int) -> Spec:
     return Spec(Operator.DIPOLE, 0, (la, lb), Target.DIPOLE)
 
 
-def _class(cls: Spec | tuple[int, int]) -> tuple[int, int]:
-    spec = cls if isinstance(cls, Spec) else mu_spec(*cls)
-    if spec.target is not Target.DIPOLE:
-        raise ValueError(f"{spec.key()} is not a Target.DIPOLE key")
+def quad_spec(la: int, lb: int) -> Spec:
+    """The pair class `(la, lb)` as a generation key, `Target.QUADRUPOLE`."""
+    return Spec(Operator.QUADRUPOLE, 0, (la, lb), Target.QUADRUPOLE)
+
+
+def _class(cls: Spec | tuple[int, int],
+           default=mu_spec) -> tuple[int, int, Target]:
+    """`(la, lb, target)` of a dipole or quadrupole key; a bare pair is
+    read through `default` (`mu_spec`, or `quad_spec`)."""
+    spec = cls if isinstance(cls, Spec) else default(*cls)
+    if spec.target not in ORDER:
+        raise ValueError(f"{spec.key()} is not a Target.DIPOLE key (nor a "
+                         "Target.QUADRUPOLE one)")
     if spec.levers:
-        raise ValueError(f"{spec.key()}: the dipole kernel takes no levers")
+        raise ValueError(f"{spec.key()}: the multipole kernel takes no "
+                         "levers")
     la, lb = spec.am
-    return la, lb
+    return la, lb, spec.target
 
 
-def n_components(with_overlap: bool = False) -> int:
-    """`MU`'s leading extent: x, y, z, and `S` first when `with_overlap`."""
-    return len(ef.multipole_components(E_ORDER)) + bool(with_overlap)
+def n_components(with_overlap: bool = False, e: int = E_ORDER) -> int:
+    """`MU`'s leading extent: the components of order `e` (x, y, z at the
+    dipole's `e = 1`; xx, xy, xz, yy, yz, zz at `e = 2`), and `S` first when
+    `with_overlap` (the dipole only)."""
+    return len(ef.multipole_components(e)) + bool(with_overlap)
 
 
 def launch_shape(n_rec: int, threads: int = 32
@@ -173,9 +206,15 @@ def launch_shape(n_rec: int, threads: int = 32
 def mu_name(cls: Spec | tuple[int, int], *, with_overlap: bool = False
             ) -> str:
     """The name `build_mu_kernel(cls, with_overlap=...)` gives its kernel,
-    without building it: `mu_{la}{lb}`, `mu_{la}{lb}_s` with the overlap."""
-    la, lb = _class(cls)
-    return f"mu_{la}{lb}" + ("_s" if with_overlap else "")
+    without building it: `mu_{la}{lb}`, `mu_{la}{lb}_s` with the overlap,
+    and for a quadrupole key `quad_{la}{lb}`."""
+    la, lb, target = _class(cls)
+    return f"{_PREFIX[target]}_{la}{lb}" + ("_s" if with_overlap else "")
+
+
+def quad_name(cls: Spec | tuple[int, int]) -> str:
+    """The name `build_quad_kernel(cls)` gives its kernel: `quad_{la}{lb}`."""
+    return mu_name(cls if isinstance(cls, Spec) else quad_spec(*cls))
 
 
 def p_name(d: int) -> str:
@@ -229,13 +268,18 @@ def build_mu_kernel(cls: Spec | tuple[int, int], *,
                     name: str | None = None) -> Kernel:
     """The fused dipole kernel of one pair class, every component.
 
-    `cls` is a `Target.DIPOLE` `Spec` or `(la, lb)`. See the module
-    docstring.
+    `cls` is a `Target.DIPOLE` `Spec` or `(la, lb)`, or a
+    `Target.QUADRUPOLE` `Spec` (`build_quad_kernel` takes the bare pair).
+    See the module docstring.
     """
-    la, lb = _class(cls)
+    la, lb, target = _class(cls)
+    e = ORDER[target]
+    if with_overlap and target is not Target.DIPOLE:
+        raise ValueError(f"with_overlap is the dipole's alone, not "
+                         f"{target.value}'s (module docstring)")
     rec = Var(REC)
     frag = ef.multipole_fragment(
-        la, lb, E_ORDER, store=_store(la, lb),
+        la, lb, e, store=_store(la, lb),
         store_binds=(MU, "sq", "oa", "ob", "od"),
         from_order=0 if with_overlap else None)
 
@@ -273,9 +317,13 @@ def build_mu_kernel(cls: Spec | tuple[int, int], *,
              + (" (component 0 the overlap)" if with_overlap else "")),
         Inline(frag, binds),
     ]
+    what = ("dipole, class (la, lb) = ({la}, {lb}): mu_ab = <a| q (r - C) "
+            "|b>" if target is Target.DIPOLE else
+            "quadrupole, class (la, lb) = ({la}, {lb}): Q_ab = <a| q "
+            "(r - C)_d (r - C)_e |b>, xx xy xz yy yz zz")
     body: tuple[Stmt, ...] = (
-        Note(f"dipole, class (la, lb) = ({la}, {lb}): mu_ab = <a| q (r - C) "
-             "|b> by the Hermite route (one_electron/multipole.py)"),
+        Note(what.format(la=la, lb=lb)
+             + " by the Hermite route (one_electron/multipole.py)"),
         Note(ZEROED_MU),
         Note("launch: one thread per primitive-pair record"),
         Decl(REC, Scalar.I32, init=_c(Fn.ADD, Call(Fn.THREAD_X), _c(
@@ -296,7 +344,21 @@ def build_mu_kernel(cls: Spec | tuple[int, int], *,
         *(Param(ef.origin_name(d), Scalar.F64) for d in range(3)),
         Param("q", Scalar.F64),
         Param(MU, Scalar.F64, array=True, intent=Intent.OUT,
-              shape=(Lit(n_components(with_overlap)), nao, nao)),
+              shape=(Lit(n_components(with_overlap, e)), nao, nao)),
     )
-    return Kernel(name or mu_name((la, lb), with_overlap=with_overlap),
+    return Kernel(name or mu_name(cls, with_overlap=with_overlap),
                   params, body)
+
+
+def build_quad_kernel(cls: Spec | tuple[int, int], *,
+                      name: str | None = None) -> Kernel:
+    """The fused quadrupole kernel of one pair class, its six components:
+    `build_mu_kernel` at `e = 2` (module docstring, "THE QUADRUPOLE").
+
+    `cls` is a `Target.QUADRUPOLE` `Spec` or `(la, lb)`.
+    """
+    la, lb, target = _class(cls, default=quad_spec)
+    if target is not Target.QUADRUPOLE:
+        raise ValueError(f"{mu_spec(la, lb).key()} is not a "
+                         "Target.QUADRUPOLE key")
+    return build_mu_kernel(quad_spec(la, lb), name=name)

@@ -5,7 +5,10 @@ three H2O fixtures, whole matrices, and #520's `hf_ccpvtz_spd_dipole`, every
 shell-pair block, which reaches every class (ss) through (dd) between two
 centres), PySCF's RHF `dip_moment`, the (s|s) and (s|p) closed forms, the
 origin-shift identity against `one_electron.overlap` and against libcint's
-`int1e_ovlp`, and the charge as an exact factor. Every class is L <= 4 and
+`int1e_ovlp`, and the charge as an exact factor; and at `e = 2`, the
+quadrupole, libcint's `int1e_rr_cart` (`manifest.quadrupole_integrals`, on
+`hf_ccpvtz_spd_dipole`'s inputs) and its origin shift through libcint's
+`r` and `S`. Every class is L <= 4 and
 every shell l <= 2 (milestone 19's cap), so all of it is fast tier; no
 PySCF is needed (the fixtures are tracked).
 """
@@ -232,3 +235,92 @@ def test_refusals(kw, says) -> None:
     args = {"C": ORIGIN, "e": 1} | kw
     with pytest.raises(ValueError, match=says):
         multipole_block(SA, SB_S, args["C"], args["e"])
+
+
+# --- the quadrupole, e = 2 (manifest.quadrupole_integrals) -----------------
+#
+# libcint's `int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s inputs, at its origin
+# and at 0: every class (ss) through (dd) between two centres. Measured worst
+# 1.1e-15 of max |rr|.
+
+
+def test_the_quadrupole_witness_is_on_the_spd_dipole_inputs() -> None:
+    w = manifest.quadrupole_integrals()
+    assert w.parent.fixture.name == manifest.SPD_DIPOLE
+    nao = w.parent.fixture.nao
+    assert w.rr.shape == w.rr0.shape == (6, nao, nao)
+    assert np.array_equal(w.origin, w.parent.origin)
+    assert manifest.QUADRUPOLE_COMPONENTS == ("xx", "xy", "xz", "yy", "yz",
+                                              "zz")
+
+
+def test_the_quadrupole_host_is_libcints_int1e_rr_cart() -> None:
+    w = manifest.quadrupole_integrals()
+    basis = from_fixture(w.parent.fixture)
+    for C, want in ((w.origin, w.rr), (ZERO, w.rr0)):
+        got = np.array(multipole_matrix(basis, C, e=2))
+        assert _rel(got, want) <= LIBCINT_TOL, tuple(C)
+        assert np.array_equal(got, got.transpose(0, 2, 1))
+
+
+def test_the_quadrupole_shift_against_libcints_dipole_and_overlap() -> None:
+    """`Q_de(0) = Q_de(C) + C_d r_e(C) + C_e r_d(C) + C_d C_e S`: libcint's
+    `rr` at 0 from the host's at `C`, libcint's `r` at `C` and its `S`."""
+    w = manifest.quadrupole_integrals()
+    basis = from_fixture(w.parent.fixture)
+    c, r, S = np.asarray(w.origin), w.parent.r, w.parent.ovlp
+    at_c = np.array(multipole_matrix(basis, c, e=2))
+    pairs = [(d, e) for d in range(3) for e in range(d, 3)]
+    want0 = np.array([at_c[k] + c[a] * r[b] + c[b] * r[a] + c[a] * c[b] * S
+                      for k, (a, b) in enumerate(pairs)])
+    assert _rel(want0, w.rr0) <= LIBCINT_TOL
+
+
+def _tampered(tmp_path, edit) -> None:
+    import json
+
+    src = manifest.QUADRUPOLE_DIR / f"{manifest.QUADRUPOLE}.json"
+    raw = json.loads(src.read_text())
+    edit(raw)
+    (tmp_path / src.name).write_text(json.dumps(raw))
+
+
+@pytest.mark.parametrize(("field", "value", "says"), [
+    ("mol", {"atom": "F 0 0 0; H 0.4 -0.7 1.7", "unit": "Bohr", "charge": 0,
+             "spin": 0}, "provenance.mol"),
+    ("basis", "cc-pvtz", "provenance.basis"),
+    ("nao", 41, "provenance.nao"),
+])
+def test_a_quadrupole_witness_on_other_inputs_is_refused(
+        field, value, says, tmp_path) -> None:
+    _tampered(tmp_path, lambda raw: raw["provenance"].update({field: value}))
+    with pytest.raises(manifest.FixtureError, match=says):
+        manifest.quadrupole_integrals(where=tmp_path)
+
+
+def test_a_quadrupole_witness_at_another_origin_is_refused(tmp_path) -> None:
+    _tampered(tmp_path, lambda raw: raw["arrays"]["origin"].update(
+        values=[0.0, 0.0, 1.0]))
+    with pytest.raises(manifest.FixtureError, match="not the parent's"):
+        manifest.quadrupole_integrals(where=tmp_path)
+
+
+def test_a_quadrupole_witness_in_another_order_is_refused(tmp_path) -> None:
+    _tampered(tmp_path, lambda raw: raw.update(
+        components=["xx", "yy", "zz", "xy", "xz", "yz"]))
+    with pytest.raises(manifest.FixtureError, match="components"):
+        manifest.quadrupole_integrals(where=tmp_path)
+
+
+@pytest.mark.oracle
+def test_the_quadrupole_witness_is_what_pyscf_computes_today() -> None:
+    """A drift is news about PySCF/libcint until proven otherwise."""
+    pytest.importorskip("pyscf", reason="oracle group not installed: "
+                        "uv sync --group oracle")
+    import json
+
+    from oracle import generate
+    fresh = generate.quadrupole_build()
+    tracked = json.loads((manifest.QUADRUPOLE_DIR
+                          / f"{manifest.QUADRUPOLE}.json").read_text())
+    assert generate.comparable(fresh) == generate.comparable(tracked)

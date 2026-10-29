@@ -700,6 +700,28 @@ the RX 9060 XT, the slow cc-pVDZ case 5 passed on each; worst 8.62e-16 of
 `max|r|` against libcint and 3.16e-16 against `dip_moment`, the same on
 both cards). Nothing about it is measured or scored (no published board; a
 `StructuralLimit`, #524); `e = 1` only, Cartesian only.
+**The quadrupole (raw second moments) is generated too, interpreted only**
+(`one_electron.md`, "The quadrupole"): `Target.QUADRUPOLE` (`spec.py`; `am`
+a pair `(la, lb)`, operator `QUADRUPOLE`, unbatched as the dipole, HGP and
+Rys refused, no lever) is the dipole's builder at `e = 2`
+(`kernel_mu.build_quad_kernel`, `quad_{la}{lb}`; `kernel_mu.ORDER`): the six
+components xx, xy, xz, yy, yz, zz of `<a| q (r - C)(r - C) |b>` into
+`MU[6, n_ao, n_ao]`, the dipole's parameters, record and scatter, every
+`mu_` text byte-identical. Not the traceless tensor. The plan carries it
+(`OneEClass.arrays(Target.QUADRUPOLE)`, `walk_one_electron(...,
+Target.QUADRUPOLE, origin=)`). The oracle is a separate witness,
+`test/oracle/quadrupole/hf_ccpvtz_spd_quadrupole.json` (libcint's
+`int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s inputs at its origin and at 0;
+`python -m oracle.generate --regenerate --quadrupole`,
+`manifest.quadrupole_integrals`, refused on any input not the parent's).
+Interpreted, through (dd): the kernel bitwise the host block per class, the
+plan and walk within 1.1e-15 of libcint (`test_kernel_quad.py`), the host
+the same (`test_ao_multipole.py`); `--quad-l [LMAX]` (2 bare, 0..2 only),
+never in the bare default nor `KERNEL_GEN_CMD`; 6 goldens per backend
+(`test_emit_quad.py`). **Not compiled by nvcc or hipcc and not run on a
+card** (clang 18's front end passed all six, a proxy);
+`test_quad_device.py` (on `mu_driver`'s `target=`) is written and its
+device cases have not run. Nothing measured.
 **`S`, `T`, `V` and the dipole are also built on the HGP engine, s and p
 only, interpreted only** (`one_electron.md`, "The HGP route"):
 `Target.S` / `T` / `V` / `DIPOLE` with `engine=Engine.HGP` (slots `s.hgp`,

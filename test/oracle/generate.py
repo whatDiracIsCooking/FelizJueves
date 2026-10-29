@@ -30,6 +30,11 @@ order: the `_k` reads the `_j`'s recorded density.
 gradient witness instead (#613, `df_gradient_build`): libcint's derivative
 integrals on the aux-i sets' inputs, contracted per class, written to
 `df_gradient/` and loaded by `manifest.df_gradient`.
+
+`--quadrupole` (the same way) is the quadrupole witness instead
+(`quadrupole_build`): libcint's `int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s
+inputs at its origin and at 0, written to `quadrupole/` and loaded by
+`manifest.quadrupole_integrals`.
 """
 
 from __future__ import annotations
@@ -1504,6 +1509,116 @@ def df_gradient_main(regenerate: bool) -> int:
     return 1
 
 
+# ---------------------------------------------------------------------------
+# The quadrupole witness (manifest.quadrupole_integrals)
+# ---------------------------------------------------------------------------
+
+QUADRUPOLE_COMMAND = ("PYTHONPATH=test uv run --group oracle python -m "
+                      "oracle.generate --quadrupole")
+
+
+def rr_array(mol: Any, origin: Sequence[float]) -> np.ndarray:
+    """libcint's `<m|(r - C)_d (r - C)_e|n>` at common origin `C`, the six
+    components `manifest.QUADRUPOLE_COMPONENTS`, (6, nao, nao): the nine of
+    `int1e_rr_cart` under `mol.with_common_orig(C)`, refused unless each
+    mirrored component (yx, zx, zy) equals its twin bitwise."""
+    from .manifest import RR_KEPT
+
+    nao = int(mol.nao_nr())
+    with mol.with_common_orig(origin):
+        rr = np.ascontiguousarray(mol.intor("int1e_rr_cart", comp=9))
+    if rr.shape != (9, nao, nao):
+        raise ValueError(f"int1e_rr_cart has shape {rr.shape}")
+    for d in range(3):
+        for e in range(d):
+            if not np.array_equal(rr[3 * d + e], rr[3 * e + d]):
+                raise ValueError(f"int1e_rr_cart component {3 * d + e} is "
+                                 f"not its mirror {3 * e + d}")
+    return np.ascontiguousarray(rr[list(RR_KEPT)])
+
+
+def quadrupole_build() -> dict[str, Any]:
+    """The quadrupole witness (manifest.quadrupole_integrals), computed now:
+    `rr_array` at the parent's origin and at 0, cross-checked before it is
+    returned by the origin shift `Q_de(C) = Q_de(0) - C_d r_e(0) -
+    C_e r_d(0) + C_d C_e S` to 1e-14 of the largest `|Q(0)|`."""
+    import pyscf
+
+    from .manifest import (
+        QUADRUPOLE,
+        QUADRUPOLE_COMPONENTS,
+        QUADRUPOLE_SCHEMA,
+        SPD_DIPOLE,
+    )
+
+    case = CASES[SPD_DIPOLE]
+    mol = _mole(case)
+    c = np.asarray(DIPOLE_ORIGIN, dtype=np.float64)
+    rr, rr0 = rr_array(mol, c), rr_array(mol, np.zeros(3))
+    r0 = r_array(mol, np.zeros(3))
+    s = mol.intor("int1e_ovlp")
+    pairs = [(d, e) for d in range(3) for e in range(d, 3)]
+    for k, (d, e) in enumerate(pairs):
+        want = rr0[k] - c[d] * r0[e] - c[e] * r0[d] + c[d] * c[e] * s
+        err = float(np.max(np.abs(rr[k] - want)))
+        if err > 1e-14 * float(np.max(np.abs(rr0))):
+            raise ValueError(f"int1e_rr_cart's {QUADRUPOLE_COMPONENTS[k]} at "
+                             f"C and its shift from 0 differ by {err:.3e}")
+    return {
+        "schema": QUADRUPOLE_SCHEMA,
+        "name": QUADRUPOLE,
+        "description": (
+            f"libcint's int1e_rr_cart (<m|(r - C)_d (r - C)_e|n>) on "
+            f"{SPD_DIPOLE}'s molecule and basis under mol.with_common_orig(C) "
+            f"at C = {DIPOLE_ORIGIN} bohr (the parent's dipole_origin) and at "
+            "C = 0; the six components xx, xy, xz, yy, yz, zz of libcint's "
+            "nine, the mirrored three checked equal first."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": QUADRUPOLE_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "nao": int(mol.nao_nr()),
+        },
+        "parent": SPD_DIPOLE,
+        "components": list(QUADRUPOLE_COMPONENTS),
+        "arrays": {
+            "origin": encode_array(c),
+            "int1e_rr_cart:origin": encode_array(rr),
+            "int1e_rr_cart:zero": encode_array(rr0),
+        },
+    }
+
+
+def quadrupole_main(regenerate: bool) -> int:
+    """`--quadrupole`: rewrite the witness, or (`--check`) compare."""
+    import json
+
+    from .manifest import QUADRUPOLE, QUADRUPOLE_DIR, quadrupole_integrals
+
+    path = QUADRUPOLE_DIR / f"{QUADRUPOLE}.json"
+    fresh = quadrupole_build()
+    if regenerate:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(dumps(fresh))
+        quadrupole_integrals()
+        print(f"wrote {path}")
+        return 0
+    tracked = json.loads(path.read_text())
+    if comparable(fresh) == comparable(tracked):
+        print(f"{QUADRUPOLE}: matches the tracked witness")
+        return 0
+    print(f"{path}: PySCF now computes it differently from the tracked "
+          "witness; news about PySCF until proven otherwise")
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.generate",
                                  description=__doc__.split("\n\n")[0])
@@ -1516,9 +1631,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--df-gradient", action="store_true",
                     help="the DF gradient witness (#613, "
                          "manifest.df_gradient) instead of the fixtures")
+    ap.add_argument("--quadrupole", action="store_true",
+                    help="the quadrupole witness "
+                         "(manifest.quadrupole_integrals) instead of the "
+                         "fixtures")
     args = ap.parse_args(argv)
     if args.df_gradient and args.names:
         ap.error("--df-gradient takes no case names")
+    if args.quadrupole and (args.names or args.df_gradient):
+        ap.error("--quadrupole takes no case names and no --df-gradient")
 
     unknown = [n for n in args.names if n not in CASES]
     if unknown:
@@ -1537,6 +1658,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.path.append(src)
     if args.df_gradient:
         return df_gradient_main(args.regenerate)
+    if args.quadrupole:
+        return quadrupole_main(args.regenerate)
 
     status = 0
     for name in args.names or list(CASES):

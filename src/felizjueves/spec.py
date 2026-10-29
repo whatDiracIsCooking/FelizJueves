@@ -171,12 +171,25 @@ components. The integrals are McMurchie-Davidson's `E` (`dress`'s
 *Molecular Electronic-Structure Theory*, §9.5 (docs/references.md entry
 48). The equation number inside §9.5 was not checked against the text, and
 entries 39 / 46 (McMurchie & Davidson) were not found to state the moments.
-The ORDER `e` IS A BUILDER ARGUMENT, NOT A KEY FIELD: a quadrupole would be
-its own `Target.QUADRUPOLE` sharing the builder, so `Spec` gains no field
-and no stored key moves. Unbatched for `S`'s structural reason
+The ORDER `e` IS A BUILDER ARGUMENT, NOT A KEY FIELD: the quadrupole is its
+own `Target.QUADRUPOLE` sharing the builder (below), so `Spec` gained no
+field and no stored key moved. Unbatched for `S`'s structural reason
 (`_PAIR_BATCH_REFUSAL`): one thread per record over an E fragment, no [p|q]
 tower, so no Hermite targets of a quartet to partition. HGP is legal, as
 for `S` (below).
+
+A QUADRUPOLE CLASS IS THE DIPOLE'S AT `e = 2`. `Target.QUADRUPOLE` is the
+matrix of Cartesian second moments `Q^{de}_ab = <a| q (r_d - C_d)(r_e - C_e)
+|b>`, the six components xx, xy, xz, yy, yz, zz (`cartesians(2)` order, the
+upper triangle of libcint's nine-component `int1e_rr`), of operator
+`Operator.QUADRUPOLE`, its origin `C` and charge `q` runtime inputs as the
+dipole's are. Its class is the pair `(la, lb)`, key
+``quadrupole/d0/(la,lb)/b1/quadrupole/literal``, built by the dipole's
+builder at `e = 2` (`one_electron.kernel_mu`, `quad_{la}{lb}`): the same
+fragment, record and scatter, six components where the dipole writes three.
+These are the raw second moments, not the traceless (Buckingham) tensor,
+which is a linear combination of them the consumer forms. Unbatched for the
+dipole's structural reason; HGP and Rys are refused (`_NO_HGP_QUAD`).
 
 AN HGP ONE-ELECTRON CLASS. `Target.S`, `T`, `V` and `DIPOLE` are legal on
 `Engine.HGP` too: `one_electron.kernel_hgp` builds each on Head-Gordon &
@@ -306,6 +319,8 @@ class Operator(StrEnum):
     NUCLEAR = "nuclear"  # -SUM_C Z_C / r_C: V_ab
     # The dipole moment operator (#518, milestone 19).
     DIPOLE = "dipole"  # q (r - C): mu_ab = <a|q (r - C)|b>, e = 1
+    # The second-moment (quadrupole) operator: e = 2, six components.
+    QUADRUPOLE = "quadrupole"  # q (r - C)(r - C): <a|q (r-C)_d (r-C)_e|b>
 
 
 class Target(StrEnum):
@@ -360,6 +375,10 @@ class Target(StrEnum):
     # builder's argument, not a key field (#518; module docstring "A
     # DIPOLE CLASS").
     DIPOLE = "dipole"
+    # The Cartesian second moments <a| q (r - C)_d (r - C)_e |b>, the six
+    # components xx, xy, xz, yy, yz, zz, a PAIR class (la, lb): the dipole's
+    # builder at e = 2 (module docstring "A QUADRUPOLE CLASS").
+    QUADRUPOLE = "quadrupole"
 
 
 class Engine(StrEnum):
@@ -377,18 +396,20 @@ class Engine(StrEnum):
 # (la, lb | lc, ld) in AO order for the fused Fock build (#272), and a pair
 # (lP, lQ) of auxiliary shells for the Coulomb metric (#410), and a triple
 # (la, lb | lP) -- an AO pair and one aux shell -- for the three-center
-# integral (#441), and a pair (la, lb) for the dipole matrix (#518).
+# integral (#441), and a pair (la, lb) for the dipole matrix (#518) and the
+# quadrupole matrix.
 AM_LENGTH: dict[Target, int] = {
     Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4, Target.F: 4,
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
     Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
-    Target.RECORD_BOUND: 2, Target.DIPOLE: 2,
+    Target.RECORD_BOUND: 2, Target.DIPOLE: 2, Target.QUADRUPOLE: 2,
 }
 
 
 # The one operator each target is built from (#232); any other pairing is
 # refused. The two-electron targets are Coulomb's, the metric and the
-# three-center integral among them; the dipole is its own operator (#518).
+# three-center integral among them; the dipole is its own operator (#518),
+# and so is the quadrupole.
 OPERATOR_OF: dict[Target, Operator] = {
     Target.J: Operator.COULOMB, Target.DQ: Operator.COULOMB,
     Target.JAB: Operator.COULOMB, Target.K: Operator.COULOMB,
@@ -397,7 +418,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.V: Operator.NUCLEAR, Target.SX: Operator.OVERLAP,
     Target.METRIC: Operator.COULOMB, Target.ERI3: Operator.COULOMB,
     Target.PAIR_BOUND: Operator.COULOMB, Target.RECORD_BOUND: Operator.COULOMB,
-    Target.DIPOLE: Operator.DIPOLE,
+    Target.DIPOLE: Operator.DIPOLE, Target.QUADRUPOLE: Operator.QUADRUPOLE,
 }
 
 
@@ -423,6 +444,14 @@ _NO_HGP_ONE_E = (
     "one-electron instance (one_electron.kernel_hgp) covers S, T, V and the "
     "dipole only; this one-electron kernel is McMurchie-Davidson's E "
     "fragment, and an HGP instance of it is a follow-up nobody has declared"
+)
+
+
+_NO_HGP_QUAD = (
+    "the quadrupole is built on McMurchie-Davidson's E fragment and Hermite "
+    "moments at e = 2 (one_electron.kernel_mu); one_electron.kernel_hgp "
+    "covers S, T, V and the dipole only, and an HGP quadrupole is a "
+    "follow-up nobody has declared"
 )
 
 
@@ -458,6 +487,7 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
     # S, T, V and DIPOLE are legal on HGP (`one_electron.kernel_hgp`, s and p
     # shells): the module docstring's "AN HGP ONE-ELECTRON CLASS".
     (Target.SX, Engine.HGP): _NO_HGP_ONE_E,
+    (Target.QUADRUPOLE, Engine.HGP): _NO_HGP_QUAD,
     (Target.SCHWARZ, Engine.HGP): _mmd_only(
         "the Schwarz kernel (la lb|la lb)"),
     (Target.F, Engine.MMD): (
@@ -483,6 +513,7 @@ _PAIR_BATCH_REFUSAL: dict[Target, str] = {
     Target.S: _STRUCTURAL,
     Target.SX: _STRUCTURAL,
     Target.DIPOLE: _STRUCTURAL,
+    Target.QUADRUPOLE: _STRUCTURAL,
     Target.T: _STRUCTURAL,
     Target.V: (
         "unbatched by milestone 11's decision -- V does have Hermite targets "

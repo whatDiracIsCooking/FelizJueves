@@ -14,6 +14,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --metric-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --eri3-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --mu-l 2
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --quad-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --hgp-one-e-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-metric-l --hgp-eri3-l
@@ -106,6 +107,18 @@ for CUDA, `.hip` for HIP):
   nor in KERNEL_GEN_CMD. Only `la <= lb`, the one-electron ladder's set:
   the `(lb, la)` unit a basis also reaches is the same builder's text,
   built by its driver.
+
+- the quadrupole ladder, `--quad-l [LMAX]`: for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (2 when the flag is given bare),
+  `kernel_mu.build_quad_kernel` (`quad_{la}{lb}`, `Target.QUADRUPOLE`): the
+  dipole's builder at `e = 2`, one fused kernel per class writing the six
+  second moments xx, xy, xz, yy, yz, zz of `<a| q (r - C)(r - C) |b>`, the
+  origin `C` and the charge `q` runtime scalars. Accepted 0..`QUAD_L_MAX`
+  = 2 ONLY, the dipole's cap and for its reason (validated against
+  libcint's `int1e_rr_cart` through (dd)); above it is a 2. It ADDS units
+  beside the J ladders, as `--mu-l` does, and is NEVER in the no-flag
+  default nor in KERNEL_GEN_CMD. Every name starts `quad_`, so none
+  collides with another ladder's.
 
 - the gradient ladder, `--grad-l [LMAX]` (`felizjueves.gradient`): for
   every pair class `(la, lb)`, `la <= lb <= LMAX` (2 when the flag is
@@ -481,7 +494,7 @@ from felizjueves.mmd.kernel import (
 )
 from felizjueves.one_electron.kernel_hgp import TARGETS as HGP_ONE_E_TARGETS
 from felizjueves.one_electron.kernel_hgp import build_hgp_kernel
-from felizjueves.one_electron.kernel_mu import build_mu_kernel
+from felizjueves.one_electron.kernel_mu import build_mu_kernel, build_quad_kernel
 from felizjueves.one_electron.kernel_rys import TARGETS as RYS_ONE_E_TARGETS
 from felizjueves.one_electron.kernel_rys import build_rys_kernel
 from felizjueves.one_electron.kernel_s import build_s_kernel, s_name
@@ -508,6 +521,8 @@ DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 uni
 DEFAULT_HGP_DF_L = HGP_DF_L_MAX  # `--hgp-metric-l` / `--hgp-eri3-l` bare: p
 DEFAULT_MU_L = 2  # `--mu-l` given bare: (ss) through (dd), 6 units
 MU_L_MAX = 2  # milestone 19's cap: the dipole is validated through (dd) only
+DEFAULT_QUAD_L = 2  # `--quad-l` given bare: (ss) through (dd), 6 units
+QUAD_L_MAX = 2  # the quadrupole is validated through (dd) only, as the dipole
 DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
 DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
@@ -772,6 +787,29 @@ def generate_mu(backend: str, arch: Arch, out: Path, lmax: int) -> list[Path]:
     """Emit the dipole unit of every pair class through `lmax` into `out`;
     return the paths."""
     kernels = [build_mu_kernel(c) for c in mu_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The quadrupole ladder (kernel_mu at e = 2)
+# ---------------------------------------------------------------------------
+
+
+def quad_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..QUAD_L_MAX` (the quadrupole is validated through (dd) only)."""
+    if type(lmax) is not int or not 0 <= lmax <= QUAD_L_MAX:
+        raise ValueError(f"--quad-l {lmax!r} is outside 0..{QUAD_L_MAX}: "
+                         "the quadrupole is validated through (dd) only")
+    return [(la, lb) for la in range(lmax + 1) for lb in range(la, lmax + 1)]
+
+
+def generate_quad(backend: str, arch: Arch, out: Path,
+                  lmax: int) -> list[Path]:
+    """Emit the quadrupole unit of every pair class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_quad_kernel(c) for c in quad_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1289,6 +1327,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.one_e_l is not None or args.schwarz_l is not None
             or args.sx_l is not None or args.metric_l is not None
             or args.eri3_l is not None or args.mu_l is not None
+            or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
@@ -1302,7 +1341,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / "
-              "--mu-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
@@ -1376,6 +1415,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_HGP_DF_L, default=None, metavar="LMAX")
     ap.add_argument("--mu-l", dest="mu_l", type=int, nargs="?",
                     const=DEFAULT_MU_L, default=None, metavar="LMAX")
+    ap.add_argument("--quad-l", dest="quad_l", type=int, nargs="?",
+                    const=DEFAULT_QUAD_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-l", dest="grad_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-df-l", dest="grad_df_l", type=int, nargs="?",
@@ -1459,6 +1500,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.one_e_l is not None or args.schwarz_l is not None
                  or args.sx_l is not None or args.metric_l is not None
                  or args.eri3_l is not None or args.mu_l is not None
+            or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
@@ -1472,7 +1514,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / "
-              "--mu-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
@@ -1499,6 +1541,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or args.one_e_l is not None or args.schwarz_l is not None
                      or args.sx_l is not None or args.metric_l is not None
                      or args.eri3_l is not None or args.mu_l is not None
+            or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
@@ -1510,7 +1553,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
-              "--mu-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
@@ -1558,6 +1601,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.mu_l is not None and not 0 <= args.mu_l <= MU_L_MAX:
         print(f"emit: --mu-l {args.mu_l} is outside 0..{MU_L_MAX}: the "
               "dipole is validated through (dd) only (milestone 19)",
+              file=sys.stderr)
+        return 2
+    if args.quad_l is not None and not 0 <= args.quad_l <= QUAD_L_MAX:
+        print(f"emit: --quad-l {args.quad_l} is outside 0..{QUAD_L_MAX}: the "
+              "quadrupole is validated through (dd) only",
               file=sys.stderr)
         return 2
     if args.grad_l is not None and not 0 <= args.grad_l <= GRAD_L_MAX:
@@ -1667,6 +1715,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                                    args.hgp_metric_l, args.hgp_eri3_l)
     if args.mu_l is not None:  # beside the J chain, never by default
         written += generate_mu(args.backend, arch, args.out, args.mu_l)
+    if args.quad_l is not None:  # beside the J chain, never by default
+        written += generate_quad(args.backend, arch, args.out, args.quad_l)
     if args.grad_l is not None:  # beside the J chain, never by default
         written += generate_grad(args.backend, arch, args.out, args.grad_l)
     if args.grad_k_l is not None:  # beside the J chain, never by default

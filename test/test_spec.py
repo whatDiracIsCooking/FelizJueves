@@ -129,15 +129,17 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # Coulomb metric `metric`, a pair of aux shells, and #441 the
     # three-center integral `eri3`, a triple, and the record bound
     # `pair_bound`, a pair class, and #499 K's dressed `record_bound`, an
-    # ordered pair class, and #518 the dipole matrix `dipole`, a pair class.
+    # ordered pair class, and #518 the dipole matrix `dipole`, a pair class,
+    # and the quadrupole matrix `quadrupole`, a pair class.
     assert [t.value for t in Target] == [
         "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric",
-        "eri3", "pair_bound", "record_bound", "dipole"]
+        "eri3", "pair_bound", "record_bound", "dipole", "quadrupole"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
         Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
         Target.PAIR_BOUND: 2, Target.RECORD_BOUND: 2, Target.DIPOLE: 2,
+        Target.QUADRUPOLE: 2,
     }
 
 
@@ -225,9 +227,9 @@ def _one(target: Target, **kw) -> Spec:
 def test_the_operator_enum_is_widened_not_renamed() -> None:
     # The first widening of a field that had one legal value since the key
     # was designed: COULOMB keeps its place and its value. #518 appends
-    # `dipole` the same way.
+    # `dipole` the same way, and the quadrupole appends `quadrupole`.
     assert [o.value for o in Operator] == [
-        "coulomb", "overlap", "kinetic", "nuclear", "dipole"]
+        "coulomb", "overlap", "kinetic", "nuclear", "dipole", "quadrupole"]
     assert (Operator.OVERLAP, Operator.KINETIC, Operator.NUCLEAR,
             Operator.DIPOLE) == ("overlap", "kinetic", "nuclear", "dipole")
 
@@ -243,6 +245,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.PAIR_BOUND: Operator.COULOMB,
         Target.RECORD_BOUND: Operator.COULOMB,
         Target.DIPOLE: Operator.DIPOLE,
+        Target.QUADRUPOLE: Operator.QUADRUPOLE,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
