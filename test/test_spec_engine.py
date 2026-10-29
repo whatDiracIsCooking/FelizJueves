@@ -41,6 +41,8 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     (Target.F, Engine.RYS),
                     # eri/hjk/kernel_rj.py: the split J on Rys quadrature
                     (Target.J, Engine.RYS),
+                    # eri/hjk/kernel_rk.py: the split K on Rys quadrature
+                    (Target.K, Engine.RYS),
                     # one_electron/kernel_rys.py: S, T and V by Rys
                     (Target.S, Engine.RYS), (Target.T, Engine.RYS),
                     (Target.V, Engine.RYS)}

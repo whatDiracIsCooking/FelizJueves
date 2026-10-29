@@ -1,0 +1,70 @@
+{
+  "cuda": {
+    "rk_1121": {
+      "bytes": 156743,
+      "sha256": "7ee8f598166b61c0beab6d734052623f3d7f6a60beb7c147d32a6ed51746a483"
+    },
+    "rk_1122": {
+      "bytes": 257022,
+      "sha256": "02e7d5d3bcba01b328a30e68558f822a7de79ce2b07ae042d3209b29e47862c2"
+    },
+    "rk_2021": {
+      "bytes": 161379,
+      "sha256": "fd026f42b130feece791281eaa1280c0eb79a4fe7248e849a5f3a3ae603c96a8"
+    },
+    "rk_2121": {
+      "bytes": 273028,
+      "sha256": "a72f6ca9348b69d930280d590407f6cf7448d5bf6e144a2ba36637db8716d82e"
+    },
+    "rk_2210": {
+      "bytes": 115757,
+      "sha256": "19318b5dadc32ec15139cd871f4e1322cb9eb6ed377120b4975722de62382c87"
+    },
+    "rk_2220": {
+      "bytes": 212865,
+      "sha256": "6cf34399fe408e3b208e83ca6b5f5695a3caf5497fdae2cf153628a4dc105cab"
+    },
+    "rk_2221": {
+      "bytes": 618073,
+      "sha256": "4808c1b8a397cf178a7909ffc198d4b81d48723ed970f48948b5abc9081cae1f"
+    },
+    "rk_2222": {
+      "bytes": 974664,
+      "sha256": "6d7830f4b5fc0f339c0afb81710b509474e14b85f71ec01be91cdd9befe49e2a"
+    }
+  },
+  "hip": {
+    "rk_1121": {
+      "bytes": 156773,
+      "sha256": "6db9c00fc87247279d3f22805bf0a3ccd11dbf93d13d26616abe67c3ca775a41"
+    },
+    "rk_1122": {
+      "bytes": 257052,
+      "sha256": "025a8fc159f437f860e48bd00551339dad38622ea16fd790790ce69be16efe5f"
+    },
+    "rk_2021": {
+      "bytes": 161409,
+      "sha256": "a12c7f9c67b4ede9dccc693321d46df4210820727692167e51e05620e643c86a"
+    },
+    "rk_2121": {
+      "bytes": 273058,
+      "sha256": "1dcee237da98964b359905760b6ffaa23177741dd44764dc3bbc2ca40c0f2c0d"
+    },
+    "rk_2210": {
+      "bytes": 115787,
+      "sha256": "4b6e5f70a489c27ea42cac38fce14e40c98ee46fffbdac4c4462029445352b9a"
+    },
+    "rk_2220": {
+      "bytes": 212895,
+      "sha256": "e5e8e2b0034990561c63862ba3f6b605910445bb5defa881e443d4e4e0e42743"
+    },
+    "rk_2221": {
+      "bytes": 618103,
+      "sha256": "31d56b96336049f06125623b45dd3f5c06f2efe353e521c83213ffed42a30a2a"
+    },
+    "rk_2222": {
+      "bytes": 974694,
+      "sha256": "542645132fa7009b4597f9beb4a60f54e50014352068eb8294c84ffb3c775783"
+    }
+  }
+}

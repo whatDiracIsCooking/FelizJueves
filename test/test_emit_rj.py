@@ -185,14 +185,15 @@ def test_rys_hgp_j_l_1_writes_the_canonical_golden_units(backend,
         assert p.read_text() == (GOLDEN / backend / p.name).read_text()
 
 
-def test_rys_hgp_class_writes_the_j_unit_alone(tmp_path) -> None:
+def test_rys_hgp_class_writes_the_j_and_k_units(tmp_path) -> None:
     assert _run(tmp_path, "cuda", "--rys", "--ordered",
                 "--hgp-class", "2", "1", "1", "0") == 0
-    assert {p.name for p in tmp_path.iterdir()} == {"rj_o_2110.cu"}
+    assert {p.name for p in tmp_path.iterdir()} == {"rj_o_2110.cu",
+                                                    "rk_o_2110.cu"}
 
 
 @pytest.mark.parametrize("argv", [
-    ["--rys", "--hgp-k-l", "1"], ["--rys", "--hgp-j-l", "3"],
+    ["--rys", "--hgp-j-l", "3"],
     ["--rys", "--hgp-class", "3", "3", "2", "2"],
     ["--rys", "--hgp-j-l", "1", "--L", "2"],
 ], ids=lambda a: "_".join(a))

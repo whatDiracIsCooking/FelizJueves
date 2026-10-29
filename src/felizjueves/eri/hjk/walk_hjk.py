@@ -72,9 +72,10 @@ launch to launch; `run` returns at least that matrix. Nothing is closed or
 mirrored after the last launch: the split kernels write each element from
 its own blocks (kernel_hj, "THE DEPOSIT").
 
-ANOTHER ENGINE (`build=`). A drop-in for `kernel_hj` with the same
-parameters, launch and output -- the split `J` on Rys quadrature,
-`eri/hjk/kernel_rj.py` -- walks the same plan: `build(spec)` is handed the
+ANOTHER ENGINE (`build=`). A drop-in for `kernel_hj` / `kernel_hk` with
+the same parameters, launch and output -- the split `J` and `K` on Rys
+quadrature, `eri/hjk/kernel_rj.py` and `kernel_rk.py` -- walks the same
+plan: `build(spec)` is handed the
 launch's HGP `Spec` and returns the kernel to run. This module still
 imports no other engine; the caller injects it, as it injects `run`.
 

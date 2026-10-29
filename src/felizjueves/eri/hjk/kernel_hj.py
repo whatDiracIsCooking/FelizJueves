@@ -110,7 +110,9 @@ after the ket record's reads -- the quartet scalars, the recurrence and the
 record scalars it reads (`PA_*`, `QC_*`). `hgp_nest` is HGP's (eqs 25-27);
 `eri/hjk/kernel_rj.py` passes the Rys rule and the 2D VRR (`Target.J` on
 `Engine.RYS`). Everything else is this module's, so an `rj_` unit is a
-drop-in for the `hj_` unit of the same class and mode.
+drop-in for the `hj_` unit of the same class and mode. `kernel_hk` takes the
+same `Nest` through its own seam (`split_k_kernel`), and
+`eri/hjk/kernel_rk.py` passes it the Rys one.
 
 Nothing here imports `plan/`, `ao/` (the witnesses: `eri/hgp_drive.py` for
 the ERIs, `eri/j_coulomb/j.py` for `J`), `reference/`, the interpreter, a backend or

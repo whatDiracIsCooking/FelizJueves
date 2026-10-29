@@ -1,4 +1,4 @@
-# Rys quadrature: the fused `F` (`Target.F`) and the split `J` (`Target.J`) on `Engine.RYS`
+# Rys quadrature: the fused `F` (`Target.F`) and the split `J` and `K` (`Target.J`, `Target.K`) on `Engine.RYS`
 
 **Status: implemented and interpreted; emitted for both vendors; NOT
 compiled by nvcc or hipcc and NOT run on either card.** The session that
@@ -16,7 +16,9 @@ derived weights, the pair stream and the six-block screen are that note's.
 The second Rys kernel, **the split Coulomb `J`** (`rj_` units, `kernel_hj`'s
 nest with the same Rys VRR), has its own section, "The split `J` on Rys",
 with the same status: interpreted and emitted, not compiled by a vendor
-compiler, not run on a card, nothing measured.
+compiler, not run on a card, nothing measured. So has the third, **the
+split exchange `K`** (`rk_` units, `kernel_hk`'s nest with the same Rys
+VRR), "The split `K` on Rys", with the same status.
 
 ## What it is
 
@@ -167,7 +169,7 @@ nest's engine part replaced by this note's rule and 2D VRR. It is to
 | the class modes | HGP J's own: canonical (`rj_{rep}`, one unit per 8-fold orbit, a runtime `perm`) and the `ordered` lever (`rj_o_{class}`), which is legal on the new slot `j.rys` and nowhere else new; the structure (built class, orientations, parameters) is read off the HGP twin (`kernel_rj.hgp_twin`) |
 | the nest | bra outer, ket inner, as `kernel_hj`; per ket primitive pair `rys.recurrence.quartet_rule` (the quartet scalars, `T`, `S`, the rule; shared with `kernel_frys`, whose text is unchanged) and `root_loop` into the accumulators |
 | the walk | `walk_hjk(..., build=)`: `launch_hjk`'s plan with each launch's kernel built by the caller from its HGP key, so one plan and one walker serve both engines |
-| the generator | `python -m felizjueves.emit --hgp-j-l LMAX --rys` (LMAX 0..2) or `--hgp-class L0 L1 L2 L3 --rys` (J only, `L <= 8`), `--ordered` for the ordered mode; `--hgp-k-l` with `--rys` is a 2; never in the bare default nor in `KERNEL_GEN_CMD` |
+| the generator | `python -m felizjueves.emit --hgp-j-l LMAX --rys` (LMAX 0..2) or `--hgp-class L0 L1 L2 L3 --rys` (`L <= 8`), `--ordered` for the ordered mode (the class path writes the `rk_` unit too since the split `K` on Rys, below); never in the bare default nor in `KERNEL_GEN_CMD` |
 | the store | a `j.rys` row is refused, as `j.hgp`'s (`measured_store.HGP_JK_REFUSED`: any non-native engine) |
 
 So an `rj_` unit is a **drop-in** for the `hj_` unit of the same class and
@@ -213,9 +215,73 @@ through `(dd|dd)` pinned by digest in `test/golden/rj_digests.json`
   compile cases on both compilers, then a device test on
   `test/hjk_driver.py`'s harness (the signature is `hj_`'s, so it should
   take the `rj_` unit unchanged).
-- **No split `K` on Rys** (`kernel_hk` has no seam yet; its nest is
-  `kernel_hj`'s, so the same `Nest` would serve), and no `gpu` backend
-  spelling (`ir.Rys` is refused there).
+- **The split `K` on Rys** is built since: "The split `K` on Rys", below.
+  No `gpu` backend spelling (`ir.Rys` is refused there).
 - **Nothing measured**: no word on Rys against HGP here.
 - **Above `(dd|dd)`**: the rule stops at `N = 5`, so `L <= 8`; `--hgp-j-l`
   with `--rys` refuses LMAX above 2.
+
+## The split `K` on Rys: `Target.K` on `Engine.RYS`
+
+**Status: implemented and interpreted; emitted for both vendors; NOT
+compiled by nvcc or hipcc and NOT run on either card.** As for `rj_`: the
+session that built it had no card and neither device compiler. All 102 cuda
+units through `(dd|dd)` (21 canonical, 81 ordered) passed clang 18's CUDA
+front end (device side, `-fsyntax-only -Wall -Wextra`, a runtime stub) with
+no diagnostic, a proxy; the hip units differ from them in the prologue
+alone and were not put through a HIP front end. **Nothing is measured or
+scored.**
+
+`eri/hjk/kernel_rk.py`'s `build_rk_kernel(spec)` is the HGP split `K` of
+milestone 14 (`kernel_hk`: every ordered shell quartet once, `K[a][b] +=
+D[c][d] (ac|bd)` by atomic add, `am` K's Hermite pairing `(la, lc | lb,
+ld)`) with the primitive nest's engine part replaced by this note's rule
+and 2D VRR. It is to `kernel_hk` what `kernel_rj` is to `kernel_hj`:
+
+| Piece | Where |
+|---|---|
+| the seam | `kernel_hk.split_k_kernel(spec, nest_of, ...)`, taking `kernel_hj`'s `Nest`; `build_hk_kernel` is `split_k_kernel(spec, kernel_hk.hgp_nest, ...)`, `hgp_nest` being `kernel_hj.hgp_nest` under K's opening note, so every `hk_` golden is byte-identical |
+| the nest | `kernel_rj.rys_nest` under K's opening note, statement for statement: the recurrence of a built class `(x0 x1 \| x2 x3)` does not know whether the deposit is `J`'s or `K`'s (`test_kernel_rk.py` holds the `rk_o_` nest `==` the `rj_o_` nest of the same built class) |
+| the key | `Spec(..., Target.K, engine=Engine.RYS)`, `coulomb/d0/(la,lc\|lb,ld)/b1/k.rys/{literal,ordered}`; `spec._NO_RYS` now refuses every target but `F`, `J`, `K`, `S`, `T`, `V` |
+| the class modes | HGP K's own: canonical (`rk_{rep}`, a runtime `perm`) and the `ordered` lever (`rk_o_{class}`), legal on the new slot `k.rys`; the structure read off the HGP twin (`kernel_rk.hgp_twin`) |
+| the walk | `walk_hjk(..., build=)` with `launch_hjk`'s `"k"` plan, unchanged |
+| the generator | `--rys` now takes `--hgp-k-l LMAX` (0..2) too, and `--hgp-class ... --rys` writes both the `rj_` and the `rk_` unit; a request past `(dd\|dd)` is a 2; never in the bare default nor in `KERNEL_GEN_CMD` |
+| the store | a `k.rys` row is refused (`measured_store.HGP_JK_REFUSED`, any non-native engine) |
+
+So an `rk_` unit is a **drop-in** for the `hk_` unit of the same class and
+mode: the same parameters (signature text equal, `test_emit_rk.py`), grid
+and output; `test_kernel_rk.py` holds the IR equal outside the `K_CD` loop,
+both modes, every class through `(dd|dd)`.
+
+### How it is checked (interpreted)
+
+`test/test_kernel_rk.py`, the rule injected as `rys=roots_weights`, on
+test_kernel_hk.py's launches, records and witnesses (its `launch` takes the
+drop-in as `kernel=` / `rys=`, as test_kernel_hj.py's does). Every ordered
+K class through `L = 4` (all 70) is fast; the 31 with `5 <= L <= 8` and
+every shell `l <= 2` are `slow`. `TOL = 1e-12` is test_hgp_eri.py's, as
+for `rj_`.
+
+| Check | Worst | Gate |
+|---|---|---|
+| the ERI tap against `eri/eri.py` (MMD), element by element, every class through `(dd\|dd)`, both modes | 5.6e-16 of `s_hgp + s_mmd` (`(pp\|pp)`) | `TOL (s_hgp + s_mmd)` |
+| the same against `eri/hgp_drive.py`, per block (`rj_`'s reason) | — | `TOL max_block(s_hgp + s_mmd)` |
+| the built ket 20 bohr away, every `T` past the switch, `(ss\|pp)` and `(pp\|dd)` | — | the same two |
+| `K` against `eri/k_exchange/k.py`'s `k_quartet` over the class's ordered quadruples (MMD), both modes, every class through `(dd\|dd)`; every element off the class's blocks exactly 0 | 3.2e-16 of `s_hgp + s_mmd` | `TOL (s_hgp + s_mmd)` |
+| canonical against ordered, every class through `L = 4` | — | `TOL (s_c + s_o)` |
+| a wrong density block (`(2, 3)`, `(0, 1)`) and the AO-order trap, both modes | fail, as `hk_`'s | excess `> 1e3` |
+| whole `K` of H₂/STO-3G (and H₂O/STO-3G, `slow`), `launch_hjk`'s `"k"` plan walked with the Rys kernels, both modes, against the MMD sweep / libcint's `vk` | 3.8e-16 / 1.7e-15 of `S` | `1e-12 S` / `1e-12 S` |
+
+Emission (`test_emit_rk.py`): 63 goldens per backend (13 canonical, 50
+ordered, `test/golden/{cuda,hip}/rk_*`, the largest 91 KB) and the 8
+canonical units above `L = 4` pinned by digest in
+`test/golden/rk_digests.json` (`slow`; `rk_2222` is 974,664 B). The nvcc /
+hipcc compile cases reuse `test_emit_hjk.py`'s and have **not run**.
+
+### What is not done
+
+- **Nothing on a card, and no vendor compile**: `test_emit_rk.py`'s compile
+  cases, then a device test on `test/hjk_driver.py`'s harness (the
+  signature is `hk_`'s).
+- **Nothing measured**, no `gpu` backend spelling, nothing above
+  `(dd|dd)`.
