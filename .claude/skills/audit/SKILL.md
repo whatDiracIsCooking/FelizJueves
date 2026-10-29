@@ -59,7 +59,8 @@ For each `<name>/SKILL.md`:
   kernel. A doc that describes what a tier *will* prove reads exactly like
   one describing what it *does* prove — flag any sentence that would let a
   reader think a kernel was generated, compiled, or run. The honest spellings
-  are already in `.claude/CLAUDE.md` ("The state of the tree") and in
+  are already in `.claude/CLAUDE.md` ("The state of the tree"), its long
+  form in `.claude/skills/tree-state/references/`, and in
   `kernel-tier.sh`'s own report; drift away from them is a finding.
 - **Claims about this box's hardware and toolchains.** Several docs name
   `sm_86`, `gfx1200`, CUDA 13.0, ROCm 7.2.4, driver 580.126.20, and the render

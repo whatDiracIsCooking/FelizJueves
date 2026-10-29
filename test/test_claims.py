@@ -277,8 +277,11 @@ def test_a_note_names_only_records_that_exist() -> None:
 # held to the file.
 
 JENGINE_MD = ROOT / "docs" / "implementation" / "j_engine.md"
+# CLAUDE.md's long form, moved out of it verbatim, is held as CLAUDE.md is.
+TREE_STATE_DOCS = tuple(sorted(
+    (ROOT / ".claude" / "skills" / "tree-state").rglob("*.md")))
 TALLY_DOCS = (JENGINE_MD, ROOT / "README.md", ROOT / ".claude" / "CLAUDE.md",
-              CLAIMS.parent / "README.md")
+              CLAIMS.parent / "README.md", *TREE_STATE_DOCS)
 _BEGIN, _END = "<!-- claims-status:begin -->", "<!-- claims-status:end -->"
 _TALLY = re.compile(
     r"(\d+) records: (\d+) asserted, (\d+) unverifiable, (\d+) pending")
@@ -464,7 +467,7 @@ def test_the_sieve_claim_reads_the_searched_space() -> None:
 
 _PARITY_DOCS = (JENGINE_MD, ROOT / "README.md", ROOT / ".claude" / "CLAUDE.md")
 _PLAN_DOCS = (*_PARITY_DOCS, ROOT / "docs" / "implementation" / "mild.md",
-              CLAIMS.parent / "README.md")
+              CLAIMS.parent / "README.md", *TREE_STATE_DOCS)
 _STALE_PARITY = (
     "except the tuned-plan wire", "both qualifications",
     "in exactly two places", "literal plan, not the searched one",
