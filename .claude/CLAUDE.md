@@ -952,6 +952,31 @@ within 16 eps of the twin (measured <= 0.40) and the whole H₂O/STO-3G
 passed all 22 units, a proxy), no device test, not run on either card. No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), nothing
 measured.
+**The fused `F` on Rys quadrature too, interpreted and emitted, NOT
+compiled by nvcc / hipcc and NOT run on a card** (`docs/implementation/rys_fock.md`
+is the one place with the detail; #468's spike, `experimental/rys/`, brought
+into `src/`): `Target.F` on `Engine.RYS` (`spec.Engine.RYS`, key slot
+`f.rys`, refused on every other target, no lever), `eri/fock/kernel_frys.py`'s
+`build_frys_kernel` (`fr_{la}{lb}{lc}{ld}`, the 21 classes through
+`(dd|dd)`): `kernel_f`'s skeleton and seams with `ket_prim`,
+`quartet_scalars`, `vrr` and `accumulate` replaced -- the `N = L // 2 + 1`
+point Rys rule (`ir.Rys`, a new statement like `Boys`: fp64, injected into
+the interpreter as `rys=`, spelled `fj_rys<N>` by `emit/cuda.py` /
+`emit/hip.py`, refused by `emit/gpu.py`) and per node the 2D VRR
+(`rys/recurrence.py`) into the HGP boundary, so the HRR, digestion,
+staging, screen, parameters and launch are `f_`'s and an `fr_` unit is a
+drop-in (its IR outside the `K_CD` loop `==` `kernel_f`'s, tested). The rule
+(`rys/roots.py`: Laguerre constants from `T = 80`, below it Stieltjes on an
+88-point Legendre half, Sturm bisection, Christoffel weights) is within
+3.4e-15 of a 40-digit route (`rys/exact.py`) for `N <= 5`, `T` in
+`[0, 1e6]`, and its device text run as host C++ is bitwise the host rule
+(`test_rys_roots.py`). Interpreted (`test_kernel_frys.py`): the ERI tap
+within 6.3e-15 of MMD's scale in all 21 classes, the deposit against
+`eri.fock.fock`'s sweep, whole H₂ / H₂O STO-3G `G` within 2.2e-15 of scale
+of libcint. `python -m felizjueves.emit --fock-l LMAX --rys`, never in the
+bare default nor in `KERNEL_GEN_CMD`; 21 goldens per backend
+(`test_emit_frys.py`, two in `frys_digests.json`). All 21 units passed clang
+18's CUDA front end (a proxy). Nothing measured or scored.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence

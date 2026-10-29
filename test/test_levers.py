@@ -88,7 +88,7 @@ def test_the_engine_slots_are_spec_s_legal_off_native_pairings() -> None:
             off_native.add(spec.target_slot)
     assert off_native == set(levers.ENGINE_SLOTS) == {
         "j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp", "dipole.hgp",
-        "metric.hgp", "eri3.hgp"}
+        "metric.hgp", "eri3.hgp", "f.rys"}
 
 
 def test_the_other_layers_names_are_their_owners() -> None:

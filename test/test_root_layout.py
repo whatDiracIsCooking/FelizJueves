@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent / "src" / "felizjueves"
 MODULES = frozenset({"__init__.py", "spec.py", "engine.py", "levers.py"})
 PACKAGES = frozenset({
     "ao", "mmd", "hgp", "plan", "ir", "emit", "eri", "one_electron",
-    "performance", "literature", "reference", "gradient", "hessian",
+    "performance", "literature", "reference", "gradient", "hessian", "rys",
 })
 # Interpreter and tool droppings, never tracked.
 IGNORED = frozenset({"__pycache__"})

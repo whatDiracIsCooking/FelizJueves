@@ -100,7 +100,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.__main__": [
    "emit",
@@ -112,6 +113,7 @@
    "eri.density_fit.kernel_hgp",
    "eri.density_fit.kernel_metric",
    "eri.fock.kernel_f",
+   "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
    "eri.hjk.kernel_hk",
    "eri.j_coulomb.kernel_dq",
@@ -152,7 +154,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.cuda": [
    "emit",
@@ -161,7 +164,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.gpu": [
    "emit",
@@ -170,7 +174,8 @@
    "emit.cuda",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.hip": [
    "emit",
@@ -179,7 +184,8 @@
    "emit.cuda",
    "emit.gpu",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "engine": [
    "ao.shell",
@@ -443,6 +449,23 @@
    "hgp.recurrence",
    "hgp.vrr",
    "ir",
+   "spec"
+  ],
+  "eri.fock.kernel_frys": [
+   "eri.fock.kernel_f",
+   "eri.fock.levers.seams",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
    "spec"
   ],
   "eri.fock.launch_f": [
@@ -2346,6 +2369,7 @@
    "eri.density_fit.kernel_hgp",
    "eri.density_fit.kernel_metric",
    "eri.fock.kernel_f",
+   "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
    "eri.hjk.kernel_hk",
    "eri.j_coulomb.kernel_dq",
@@ -2735,6 +2759,34 @@
   "reference.pq": [
    "reference",
    "reference.boys"
+  ],
+  "rys": [
+   "hgp.vrr",
+   "ir",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots"
+  ],
+  "rys.exact": [
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.recurrence",
+   "rys.roots"
+  ],
+  "rys.recurrence": [
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.roots"
+  ],
+  "rys.roots": [
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence"
   ],
   "spec": [
    "levers"

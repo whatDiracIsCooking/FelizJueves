@@ -4132,6 +4132,81 @@ def test_the_d2metric_builder_reaches_neither_its_witness_nor_a_machine(
         assert not hit, f"hessian.kernel_d2metric reaches {hit}"
 
 
+
+# ---------------------------------------------------------------------------
+# Engine #3, Rys quadrature (`rys/`), and the fused F on it
+# (`eri/fock/kernel_frys.py`). `rys/` is the rule and the 2D VRR: off `plan`
+# (no [JEngine] row), `ao` and `reference/` (the witnesses), the interpreter
+# and every backend. The builder is `kernel_f`'s skeleton with four hooks
+# moved, so it may read `kernel_f` and its seams; the writers read the
+# rule's device text, a constant of `rys.roots`, and nothing else of it.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "rys": _rule(
+        "rys/: engine #3, the Rys rule (host fp64, its device text, a "
+        "decimal ground truth) and the 2D VRR as IR into the HGP boundary",
+        ("=ir", "rys", "hgp.vrr"),
+        plan="the plan layer keys on a [JEngine] row a Rys class does not have",
+        ao="the AO layer is the witness the kernel is interpreted against",
+        reference=_GROUND_TRUTH,
+        **{"ir.interp": "the rule is injected into the interpreter, never "
+                        "built on it"},
+        emit="the rule's text is a constant the writers read, not one of them"),
+    "frys_builder": _rule(
+        "kernel_frys.py: the fused F on Rys, `Target.F` on `Engine.RYS` -- "
+        "`kernel_f`'s skeleton and seams with the Rys hooks",
+        ("spec", "=ir", "hgp", "rys", "eri.fock.kernel_f",
+         "eri.fock.levers.seams"),
+        plan="the plan layer refuses Target.F (pin 11)",
+        ao="the AO layer is the witness the kernel is interpreted against",
+        reference=_GROUND_TRUTH,
+        **{"ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"}),
+}
+RULE_OF |= {m: "rys" for m in _modules() if _under(m, "rys")}
+RULE_OF["eri.fock.kernel_frys"] = "frys_builder"
+EDGES |= {k: frozenset(v) for k, v in {
+    "rys": (),
+    "rys.roots": (),
+    "rys.exact": ("rys.roots",),
+    "rys.recurrence": ("hgp.vrr", "ir"),
+    "eri.fock.kernel_frys": ("eri.fock.kernel_f", "eri.fock.levers.seams",
+                             "hgp.recurrence", "hgp.vrr", "ir",
+                             "rys.recurrence", "rys.roots", "spec"),
+}.items()}
+RULES["emit"] = Rule(RULES["emit"].why + ", and the Rys rule's device text "
+                     "(`rys.roots.device_text`)",
+                     RULES["emit"].may | frozenset(("rys.roots",)),
+                     RULES["emit"].must_not)
+EDGES["emit._c"] = EDGES["emit._c"] | frozenset(("rys.roots",))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the fused F on Rys "
+                       "through `kernel_frys`, by its entry point only",
+                       RULES["driver"].may
+                       | frozenset(("eri.fock.kernel_frys",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = (EDGES["emit.__main__"]
+                          | frozenset(("eri.fock.kernel_frys",)))
+
+
+def test_the_rys_engine_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    for root in ("eri.fock.kernel_frys", "rys.roots", "rys.recurrence"):
+        seen: set[str] = set()
+        todo = [root]
+        while todo:
+            for e in graph.get(todo.pop(), set()):
+                if e not in seen:
+                    seen.add(e)
+                    todo.append(e)
+        for banned in (_REF, "ao", *_LEFT_AO, "plan", "ir.interp", "emit",
+                       "performance.device"):
+            hit = sorted(e for e in seen if _under(e, banned))
+            assert not hit, f"{root} reaches {hit}"
+
 if __name__ == "__main__":
     import sys
 

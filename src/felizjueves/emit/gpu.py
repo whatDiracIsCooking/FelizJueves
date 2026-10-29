@@ -332,6 +332,7 @@ class Specialization:
 class GpuWriter(CWriter):
     INT = "int32_t"  # fixed width; <stdint.h> comes in through HEADER
     BOYS = _BOYS  # from BOYS_HEADER, never carried in the unit
+    RYS = None  # the Rys rule has no header of its own yet: refused
 
     def __init__(self, arch: Arch,
                  specialization: Specialization | None = None, *,

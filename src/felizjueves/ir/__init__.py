@@ -7,7 +7,7 @@ dataclass over tuples, so a `Kernel` is hashable and two of them compare with
 
     Kernel(name, params, body)
     Stmt = Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
-         | AtomicAdd | Note | Raw | Inline | Barrier | Boys
+         | AtomicAdd | Note | Raw | Inline | Barrier | Boys | Rys
     Expr = Weighted | Index | Call | Lit | Var
     Fragment(name, binds, body)   -- spliced into a kernel by Inline(fragment, bindings)
 
@@ -79,7 +79,8 @@ PRECISION HYGIENE (#338). Every expression has a type (`expr_type`), and a
   F64 in one sum is refused. Its int coefficients take the sum's type.
 - `SQRT` and `EXP` keep their argument's float type (an I32 argument is F64,
   as before). `Boys` is fp64 only: its `T` may not be F32 and its `dst` must
-  be an F64 array -- there is no fp32 Boys function.
+  be an F64 array -- there is no fp32 Boys function. `Rys` likewise: an
+  F64 `T` into two F64 arrays.
 - A store (`Assign`, a `Decl`'s init, `AtomicAdd`, `WarpReduce`) of F32 into
   F64, of F64 into F32, or of F32 into I32 is refused; an I32 into either
   float type converts. `For` bounds may not be F32.
@@ -787,6 +788,35 @@ class Boys:
         _expr(self.t, "Boys t")
 
 
+@dataclass(frozen=True)
+class Rys:
+    """`nodes[i], weights[i]` for `i` in `0..n-1`: the `n`-point Rys rule at
+    `t`, the nodes and weights of `(1/2) x^(-1/2) exp(-T x) dx` on `[0, 1]`
+    (`felizjueves.rys.roots`), so `SUM_i weights[i] nodes[i]^m = F_m(T)` for
+    `m <= 2n - 1`. The Rys engine's one special function, as `Boys` is the
+    others': one statement for the whole rule, because the nodes come from
+    one set of recurrence coefficients. `nodes` and `weights` are LOCAL F64
+    arrays `Decl`'d with the one extent `n`, which the `Kernel` checks; `n`
+    is an int fixed at build (the writer spells it as a template argument).
+    `t` is fp64: there is no fp32 rule. Its semantics are INJECTED into the
+    interpreter (`rys=`), as `Boys`'s are.
+    """
+
+    nodes: str
+    weights: str
+    n: int
+    t: Expr
+
+    def __post_init__(self) -> None:
+        _ident(self.nodes, "Rys nodes")
+        _ident(self.weights, "Rys weights")
+        if self.nodes == self.weights:
+            raise ValueError("Rys nodes and weights must be two arrays")
+        if type(self.n) is not int or self.n < 1:
+            raise ValueError(f"Rys n must be an int >= 1, not {self.n!r}")
+        _expr(self.t, "Rys t")
+
+
 # ---------------------------------------------------------------------------
 # Fragments: a device-code block with a checked binding contract
 # ---------------------------------------------------------------------------
@@ -863,6 +893,10 @@ def _free_uses(body: tuple[Stmt, ...]) -> tuple[dict[str, str], set[str], set[st
             elif isinstance(s, Boys):
                 read(s.t)
                 use(s.dst, "array")
+            elif isinstance(s, Rys):
+                read(s.t)
+                use(s.nodes, "array")
+                use(s.weights, "array")
             elif isinstance(s, For):
                 read(s.start)
                 read(s.stop)
@@ -987,9 +1021,9 @@ class Inline:
 
 
 Stmt = (Decl | Assign | For | If | Break | WarpReduce | LaneBroadcast
-        | AtomicAdd | Note | Raw | Inline | Barrier | Boys)
+        | AtomicAdd | Note | Raw | Inline | Barrier | Boys | Rys)
 STMT_TYPES = (Decl, Assign, For, If, Break, WarpReduce, LaneBroadcast,
-              AtomicAdd, Note, Raw, Inline, Barrier, Boys)
+              AtomicAdd, Note, Raw, Inline, Barrier, Boys, Rys)
 
 
 # ---------------------------------------------------------------------------
@@ -1064,7 +1098,7 @@ def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
         return (s.cond,)
     if isinstance(s, Inline):
         return tuple(e for _, e in s.bindings)
-    if isinstance(s, Boys):
+    if isinstance(s, (Boys, Rys)):
         return (s.t,)
     return ()
 
@@ -1267,6 +1301,15 @@ def _check_types(params: tuple[Param, ...], body: tuple[Stmt, ...],
             if dst is not None and dst is not Scalar.F64:
                 raise PrecisionError(f"Boys into {s.dst!r}: an {dst.name} "
                                      "array, not F64")
+        elif isinstance(s, Rys):
+            if ty(s.t) is Scalar.F32:
+                raise PrecisionError(f"Rys into {s.nodes!r}: fp64 only, there "
+                                     "is no fp32 rule; TO_F64 its T")
+            for a in (s.nodes, s.weights):
+                dst = lookup(a)
+                if dst is not None and dst is not Scalar.F64:
+                    raise PrecisionError(f"Rys into {a!r}: an {dst.name} "
+                                         "array, not F64")
         elif isinstance(s, Inline):
             binds: dict[str, Scalar | None] = {}
             for name, e in s.bindings:
@@ -1351,3 +1394,15 @@ class Kernel:
                 raise ValueError(
                     f"Boys into {s.dst!r} needs a LOCAL F64 array Decl'd "
                     f"with the one extent {s.top + 1} (top + 1)")
+        for s in walk(self.body):
+            if not isinstance(s, Rys):
+                continue
+            for a in (s.nodes, s.weights):
+                d = arrays.get(a)
+                if (d is None or d.space is not Space.LOCAL
+                        or d.type is not Scalar.F64 or len(d.shape) != 1
+                        or not isinstance(d.shape[0], Lit)
+                        or d.shape[0].value != s.n):
+                    raise ValueError(
+                        f"Rys into {a!r} needs a LOCAL F64 array Decl'd "
+                        f"with the one extent {s.n} (n)")

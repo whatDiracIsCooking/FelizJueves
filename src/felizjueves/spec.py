@@ -90,7 +90,9 @@ same six segments; `.` and not `@`, which separates the arch in
 carries a suffix. A non-native engine is legal only where it is being built:
 HGP on `J` and `K`, on the one-electron `S`, `T`, `V` and `DIPOLE`
 (`one_electron/kernel_hgp.py`), and on the two DF targets `METRIC` and `ERI3`
-(`eri/density_fit/kernel_hgp.py`, s and p shells tested). Every other
+(`eri/density_fit/kernel_hgp.py`, s and p shells tested); and RYS on `F`
+alone (`eri/fock/kernel_frys.py`: Rys quadrature's 2D VRR feeding the HGP
+HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
 
@@ -349,6 +351,7 @@ class Engine(StrEnum):
 
     MMD = "mmd"  # McMurchie-Davidson: the [p|q] tower of [JEngine]
     HGP = "hgp"  # Head-Gordon-Pople: the VRR/HRR of [Fock] §3.1
+    RYS = "rys"  # Rys quadrature's 2D VRR, then the HGP HRR (fused F only)
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -412,7 +415,15 @@ def _mmd_only(what: str) -> str:
             "inlined); an HGP instance is a follow-up nobody has declared")
 
 
+_NO_RYS = (
+    "the Rys engine is built for the fused F only (eri/fock/kernel_frys.py: "
+    "its 2D VRR feeds the HGP HRR of kernel_f); a Rys instance of this "
+    "target is a follow-up nobody has declared"
+)
+
+
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
+    **{(t, Engine.RYS): _NO_RYS for t in Target if t is not Target.F},
     (Target.DQ, Engine.HGP): _NO_HGP_PAIR,
     (Target.JAB, Engine.HGP): _NO_HGP_PAIR,
     (Target.PAIR_BOUND, Engine.HGP): (

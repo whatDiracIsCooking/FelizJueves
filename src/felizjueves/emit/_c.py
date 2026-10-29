@@ -71,6 +71,12 @@ spellings of #266, and `Kernel.wide_boys` that picked between them, are gone.
 there the series loop is a fixed polynomial per order (gpu.py, "The Boys
 series"), the rest of the text this one.
 
+A `Rys` statement likewise: the writer emits `fj_rys<N>` and its constant
+tables (`felizjueves.rys.roots.device_text`, the host rule's own operation
+order and constants) when the kernel holds one, and spells the statement
+`fj_rys<n>(T, nodes, weights);`. `emit/gpu.py` does not carry it yet and
+refuses a kernel with one (`CWriter.RYS` is None there).
+
 Names starting `fj_` are the writer's own and are refused in a kernel.
 """
 
@@ -103,6 +109,7 @@ from felizjueves.ir import (
     Param,
     Raw,
     Record,
+    Rys,
     Scalar,
     Space,
     Stmt,
@@ -115,6 +122,7 @@ from felizjueves.ir import (
     walk,
 )
 from felizjueves.performance.device import Arch
+from felizjueves.rys.roots import device_text
 
 INDENT = "    "
 NOTE_WIDTH = 76
@@ -226,6 +234,10 @@ class CWriter:
     # includes it from a header of its own and names it there.
     BOYS = "fj_boys"
 
+    # The name a `Rys` statement calls; None where the backend does not
+    # carry the routine (`emit/gpu.py`), which refuses the statement.
+    RYS: str | None = "fj_rys"
+
     def __init__(self, arch: Arch) -> None:
         if not isinstance(arch, Arch):
             raise TypeError(f"emit takes a device.Arch, not {arch!r}")
@@ -266,6 +278,8 @@ class CWriter:
         boys = self.boys(BOYS_DEVICE) if has_boys(k) else ""
         if boys:
             head += "\n" + boys
+        if has_rys(k):
+            head += "\n" + self.spell_int(device_text(prefix=self.RYS))
         records = _records(k)
         if records:
             head += "\n" + "".join(record_struct(r, self.ctype(r.scalar))
@@ -367,6 +381,17 @@ class CWriter:
                                 f"array, or no {self.BOYS}")
             self._emit(depth,
                        f"{self.BOYS}<{s.top}>({self.expr(s.t)}, {s.dst});")
+        elif isinstance(s, Rys):
+            if self.RYS is None:
+                raise EmitError(f"Rys into {s.nodes!r}: this backend does not "
+                                "carry the device Rys rule")
+            if (self._type(s.t) is not Scalar.F64
+                    or self._lookup(s.nodes) is None
+                    or self._lookup(s.weights) is None):
+                raise EmitError(f"Rys into {s.nodes!r}: an F64 T and two "
+                                f"local arrays, or no {self.RYS}")
+            self._emit(depth, f"{self.RYS}<{s.n}>({self.expr(s.t)}, "
+                       f"{s.nodes}, {s.weights});")
         elif isinstance(s, Inline):
             self.inline(s, depth)
         elif isinstance(s, Raw):
@@ -631,6 +656,11 @@ def kernel_names(k: Kernel) -> list[str]:
         elif isinstance(s, Inline):
             names.extend(s.fragment.binds)
     return names
+
+
+def has_rys(k: Kernel) -> bool:
+    """Whether `k` holds a `Rys` statement, so its unit needs the rule."""
+    return any(isinstance(s, Rys) for s in walk(k.body))
 
 
 def has_boys(k: Kernel) -> bool:
