@@ -183,3 +183,49 @@ amd_gpu_present() {
   done
   return 1
 }
+
+# Does the NVIDIA driver have an actual GPU enumerated? Returns 0 when it does.
+#
+# The same question amd_gpu_present asks, for the other vendor, and with the
+# same trap avoided: /dev/nvidiactl exists whenever the nvidia module is
+# loaded, card or not, so it is not asked here. /proc/driver/nvidia/gpus/ holds
+# one directory per GPU the driver bound (the container runtime mounts it under
+# --gpus), which needs nothing installed; `nvidia-smi -L` is the fallback for a
+# container that got the tool but not that procfs view.
+nvidia_gpu_present() {
+  local d
+  for d in /proc/driver/nvidia/gpus/*/; do
+    [ -d "$d" ] && return 0
+  done
+  command -v nvidia-smi >/dev/null 2>&1 &&
+    nvidia-smi -L 2>/dev/null | grep -q '^GPU [0-9]'
+}
+
+# Is a card for this backend here? `card_present cuda|hip` returns 0 or 1.
+# With no argument it echoes the backends that have one, space-separated (empty
+# when none), and returns 0 only when BOTH do -- the condition under which a PR
+# needs no `unverified-on-card` label (#651; the `pr` skill has the rule).
+#
+# This is the one place the verdict is computed: the pr skill and doctor.sh's
+# `card verdict` line both call it, so they cannot disagree.
+card_present() {
+  case "${1:-}" in
+    cuda) nvidia_gpu_present ;;
+    hip)  amd_gpu_present ;;
+    "")
+      local b present=()
+      for b in cuda hip; do card_present "$b" && present+=("$b"); done
+      echo "${present[*]}"
+      [ "${#present[@]}" -eq 2 ]
+      ;;
+    *) echo "card_present: unknown backend '$1' (cuda|hip)" >&2; return 2 ;;
+  esac
+}
+
+# The backends with no card here, space-separated (empty when both have one):
+# what a PR from this session states as unverified, under the label.
+card_absent() {
+  local b absent=()
+  for b in cuda hip; do card_present "$b" || absent+=("$b"); done
+  echo "${absent[*]}"
+}

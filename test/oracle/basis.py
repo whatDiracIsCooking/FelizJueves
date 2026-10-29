@@ -6,7 +6,10 @@ x^i y^j z^k exp(-alpha r^2); `ao/shell.py`'s module docstring), so that a
 contracted function of ours and libcint's AO of the same index are the same
 function, with the same AO index. `from_fixture(fx)` does the same from a
 tracked fixture's `converted` record, with no PySCF. `converted_record(mol)` is
-what `generate.py` writes into that record.
+what `generate.py` writes into that record. `from_bse(basis_set, atoms)` does
+it from a `data/basis/` file read by `felizjueves.ao.bse` (#650), with
+PySCF's normalisation computed here, and `free_primitive_reduced` is the one
+difference between those files and PySCF's own library.
 
 THE THREE CONVENTIONS -- each was wrong once in the predecessor project, and
 each shows up as a clean per-angular-momentum constant. `test_oracle_basis.py`
@@ -54,8 +57,10 @@ methods; `measured_common_factor` imports `pyscf.gto` when called.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Any
 
+from felizjueves.ao.bse import BasisSet, Contraction
 from felizjueves.ao.shell import Basis, Shell, primitive_norm
 
 from .manifest import Fixture, MetricSet
@@ -163,11 +168,120 @@ def converted_record(mol: Any) -> dict[str, Any]:
     }
 
 
+def _gaussian_int(n: int, a: float) -> float:
+    """int_0^inf r^n e^(-a r^2) dr -- PySCF's `gto.gaussian_int`."""
+    return math.gamma((n + 1) / 2.0) / (2.0 * a ** ((n + 1) / 2.0))
+
+
+def gto_norm(l: int, a: float) -> float:  # noqa: E741
+    """libcint's radial normaliser, 1/sqrt(int r^(2l+2) e^(-2 a r^2) dr)."""
+    return 1.0 / math.sqrt(_gaussian_int(2 * l + 2, 2.0 * a))
+
+
+def libcint_order(contractions: Sequence[Contraction]) -> tuple[Contraction, ...]:
+    """An element's contractions as libcint lays them out: by angular
+    momentum, file order within one (PySCF's `make_bas_env`)."""
+    return tuple(sorted(contractions, key=lambda c: c.l))
+
+
+def free_exponents(contractions: Sequence[Contraction], l: int) -> frozenset[float]:  # noqa: E741
+    """The exponents that stand alone at `l`: a contracted function that is
+    one primitive with coefficient 1, whether its own shell or a unit column
+    of a general contraction."""
+    out = set()
+    for c in contractions:
+        if c.l != l:
+            continue
+        for row in c.coefficients:
+            nonzero = [(a, x) for a, x in zip(c.exponents, row, strict=True) if x]
+            if len(nonzero) == 1 and nonzero[0][1] == 1.0:
+                out.add(nonzero[0][0])
+    return frozenset(out)
+
+
+def free_primitive_reduced(
+        contractions: Sequence[Contraction]) -> tuple[Contraction, ...]:
+    """`contractions` with every contracted function's components on a free
+    exponent (`free_exponents`) dropped, one `Contraction` per function:
+    every contracted one first, in file order, then every free primitive.
+
+    This is the form PySCF's own library carries the correlation-consistent
+    sets in, and BSE's are not (#650): BSE's cc-pVDZ O s has three columns
+    over nine primitives, the third the free 0.3023, and the first two carry
+    a 0.3023 component; PySCF's has the two over eight plus the 0.3023
+    alone. A multiple of a free primitive added to a contraction leaves the
+    SPAN unchanged, so the two give one SCF energy -- but different AOs, so
+    a J matrix in one is not the J matrix in the other. Zero entries are
+    dropped from every function; on a segmented set (STO-3G, 6-31G) that is
+    the only change, and it changes nothing a `Shell` sees.
+    """
+    out = []
+    for l in sorted({c.l for c in contractions}):  # noqa: E741
+        free = free_exponents(contractions, l)
+        contracted, alone = [], []
+        for c in contractions:
+            if c.l != l:
+                continue
+            for row in c.coefficients:
+                keep = [(a, x) for a, x in zip(c.exponents, row, strict=True) if x]
+                if len(keep) == 1 and keep[0][1] == 1.0:
+                    alone.append(keep[0][0])
+                    continue
+                keep = [(a, x) for a, x in keep if a not in free]
+                contracted.append(Contraction(
+                    l, tuple(a for a, _ in keep), (tuple(x for _, x in keep),),
+                    c.function_type))
+        out.extend(contracted)
+        out.extend(Contraction(l, (a,), ((1.0,),), "gto") for a in alone)
+    return tuple(out)
+
+
+def bse_coefficients(c: Contraction) -> tuple[tuple[float, ...], ...]:
+    """OUR coefficients for each of `c`'s contracted functions: what
+    `from_mole` gives for the same file read by PySCF, computed here.
+
+    PySCF's `_nomalize_contracted_ao` multiplies each file coefficient by
+    `gto_norm(l, alpha)` and then scales the contraction to unit RADIAL norm;
+    `common_factor(l)` is then applied as `from_mole` applies it. A zero
+    coefficient stays a zero, so a general contraction keeps every primitive
+    in every column, as libcint does.
+    """
+    l = c.l  # noqa: E741
+    g = [gto_norm(l, a) for a in c.exponents]
+    out = []
+    for row in c.coefficients:
+        w = [x * gp for x, gp in zip(row, g, strict=True)]
+        s = sum(wp * wq * _gaussian_int(2 * l + 2, ap + aq)
+                for wp, ap in zip(w, c.exponents, strict=True)
+                for wq, aq in zip(w, c.exponents, strict=True))
+        scale = common_factor(l) / math.sqrt(s)
+        out.append(tuple(wp * scale for wp in w))
+    return tuple(out)
+
+
+def from_bse(basis_set: BasisSet,
+             atoms: Sequence[tuple[int, tuple[float, float, float]]],
+             *, reduce: bool = False) -> Basis:
+    """Our shells for `atoms` ((Z, centre in Bohr) each) in `basis_set`, in
+    libcint's AO order -- `from_mole` for a Mole built over the same file
+    with `cart=True`, with no PySCF. One `Shell` per contracted function.
+    `reduce=True` takes each element's `free_primitive_reduced` form."""
+    shells = []
+    for z, centre in atoms:
+        cs = basis_set.contractions(z)
+        for c in (free_primitive_reduced(cs) if reduce else libcint_order(cs)):
+            shells.extend(Shell(c.l, centre, c.exponents, coeffs)
+                          for coeffs in bse_coefficients(c))
+    return Basis(tuple(shells))
+
+
 def ao_offsets(basis: Basis) -> tuple[int, ...]:
     """The AO offset map, with the total appended: libcint's `ao_loc` shape."""
     return (*basis.offsets, basis.n_ao)
 
 
-__all__ = ["PROBE_EXPONENT", "ao_offsets", "common_factor", "converted_record",
-           "from_fixture", "from_mole", "from_mole_file_coefficients",
+__all__ = ["PROBE_EXPONENT", "ao_offsets", "bse_coefficients", "common_factor",
+           "converted_record", "free_exponents", "free_primitive_reduced",
+           "from_bse", "from_fixture", "from_mole",
+           "from_mole_file_coefficients", "gto_norm", "libcint_order",
            "measured_common_factor"]

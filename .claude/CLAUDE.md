@@ -75,7 +75,7 @@ a 2 as "could not run", never as a pass.
 | `measure/` | **live, never a gate.** `devtools/measure.sh list` names the sweeps; `check` recomputes the tracked stores (no compiler, no card). A kernel-text change that moves a stored `source_sha256` fails `check`, not the PR gate. See `measure-dir.md`. |
 | `src/felizjueves/` | **importable.** Root holds only `__init__`, `spec`, `engine`, `levers` (`test_root_layout.py` enforces it); everything else is in a package: `ao/`, `mmd/`, `hgp/`, `rys/`, `plan/`, `ir/`, `emit/`, `eri/` (`j_coulomb/`, `k_exchange/`, `fock/`, `hjk/`, `density_fit/`), `one_electron/`, `gradient/`, `hessian/`, `performance/`, `literature/`, `reference/`. `spec.Spec` is the key every subsystem joins on. See `src-dir.md`. |
 | `src/felizjueves/plan/` | **live, host-side only.** Steps 1–3 of `[JEngine, v2, §6]` plus the schedule; counts, emits nothing. See `plan-dir.md`. |
-| `data/` | **live.** Transcribed `[JEngine]` / `[Fock]` tables, claims and limits; the measured stores in `data/measured/`; the libcint fixtures in `test/oracle/fixtures/`. See `data-dir.md`. |
+| `data/` | **live.** Transcribed `[JEngine]` / `[Fock]` tables, claims and limits; the measured stores in `data/measured/`; FreeBreakfast's basis sets, verbatim, in `data/basis/` and `data/aux_basis/` (#650); the libcint fixtures in `test/oracle/fixtures/`. See `data-dir.md`. |
 | the generator | **live.** `KERNEL_GEN_CMD` (`devtools/config.sh`) writes the PR gate's 47 units; every other family has its own opt-in `python -m felizjueves.emit --<family>-l` ladder, never in the bare default nor in `KERNEL_GEN_CMD`. See `generator.md`. |
 | `pyproject.toml` | **a virtual uv project** — no `[build-system]`, nothing installed. `src/` is importable from pytest only, via `pythonpath = ["src"]`. Dev tooling plus numpy, and a lock. |
 | `docs/` | `references.md` and the specifications in `implementation/`, each opening with a status block. See `docs-dir.md`. |
@@ -157,6 +157,11 @@ and the `dkms autoinstall` that fixes it.
   rather than running out of memory. Two
   runs on one card serialise; an outer `flock` on the same path is recognised
   as an ancestor and is redundant, not harmful.
+- **A PR from a session without both cards may merge, labelled** (#651):
+  after the fast and compile tiers, carrying `unverified-on-card` and naming
+  the backend(s) no card ran. `lib.sh`'s `card_present` / `card_absent` decide
+  it, and `doctor.sh`'s `card verdict` line prints the same answer; the `pr`
+  skill has the rule.
 - **The kernel tier is deliberately NOT a hook.** An unrolled high-L kernel is
   slow to compile and the tier costs minutes; a gate that costs minutes is one
   people bypass with `--no-verify`. Run it before a PR and say which backend.
