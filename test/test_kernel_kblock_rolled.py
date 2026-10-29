@@ -127,11 +127,16 @@ def _class_case(am: Am):
     basis = Basis(shells)
     n = basis.n_ao
     D = np.array([[1.0 / (i + j + 1) for j in range(n)] for i in range(n)])
+    # build `am`'s block kernel only: the basis reaches up to 81 classes,
+    # and building every one cost each case ~5 s of the fast tier
     plan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq), tau=0.0,
-                       build=build_kblock_kernel if max(am) <= 2 else None)
+                       build=(lambda s: build_kblock_kernel(s)
+                              if s.am == am else None)
+                       if max(am) <= 2 else None)
     plan = dataclasses.replace(plan, classes=tuple(c for c in plan
                                                    if c.am == am))
     assert len(plan) == 1
+    assert (plan.classes[0].kernel is not None) == (max(am) <= 2)
     return basis, D, plan
 
 

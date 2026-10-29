@@ -57,6 +57,7 @@ from test_kernel_hessian import (
     _ket_classes,
     _scale,
 )
+from tiers import by_l
 
 from felizjueves.gradient import host as gh
 from felizjueves.hessian import host
@@ -65,7 +66,11 @@ from felizjueves.hessian.kernel_hjab import build_hjab_kernel
 
 DEV_TOL = 1e-14  # of max(scale), ~45 eps (module docstring)
 DQ_TOL = 1e-13  # of max|D1| (module docstring)
-IDS = [f"{a}{b}" for a, b in CLASSES]
+# split by L as test_kernel_hessian's interpreted twins are: `hdq` runs the
+# ket class raised by one, `hjab` the [p|q] with the bra raised by two, so
+# (dd)'s hjab is an L = 6 kernel (218 s of the CUDA PR gate on its own)
+HDQ_CLASSES = [by_l(c, sum(c) + 1, id=f"{c[0]}{c[1]}") for c in CLASSES]
+HJAB_CLASSES = [by_l(c, sum(c) + 2, id=f"{c[0]}{c[1]}") for c in CLASSES]
 
 
 def _hdq_launch(lc: int, ld: int) -> tuple[HessLaunch, int]:
@@ -128,7 +133,7 @@ def _check_hjab(backend, name, classes, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-@pytest.mark.parametrize("cls", CLASSES, ids=IDS)
+@pytest.mark.parametrize("cls", HDQ_CLASSES)
 def test_cuda_hdq_matches_the_host(cls, request, run_device_binary,
                                    tmp_path) -> None:
     _check_hdq("cuda", cls, request, run_device_binary, tmp_path)
@@ -136,7 +141,7 @@ def test_cuda_hdq_matches_the_host(cls, request, run_device_binary,
 
 @pytest.mark.hip
 @pytest.mark.gpu
-@pytest.mark.parametrize("cls", CLASSES, ids=IDS)
+@pytest.mark.parametrize("cls", HDQ_CLASSES)
 def test_hip_hdq_matches_the_host(cls, request, run_device_binary,
                                   tmp_path) -> None:
     _check_hdq("hip", cls, request, run_device_binary, tmp_path)
@@ -144,7 +149,7 @@ def test_hip_hdq_matches_the_host(cls, request, run_device_binary,
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-@pytest.mark.parametrize("cls", CLASSES, ids=IDS)
+@pytest.mark.parametrize("cls", HJAB_CLASSES)
 def test_cuda_hjab_class_matches_the_host(cls, request, run_device_binary,
                                           tmp_path) -> None:
     _check_hjab("cuda", "spd", [cls], request, run_device_binary, tmp_path,
@@ -153,7 +158,7 @@ def test_cuda_hjab_class_matches_the_host(cls, request, run_device_binary,
 
 @pytest.mark.hip
 @pytest.mark.gpu
-@pytest.mark.parametrize("cls", CLASSES, ids=IDS)
+@pytest.mark.parametrize("cls", HJAB_CLASSES)
 def test_hip_hjab_class_matches_the_host(cls, request, run_device_binary,
                                          tmp_path) -> None:
     _check_hjab("hip", "spd", [cls], request, run_device_binary, tmp_path,

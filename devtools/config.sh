@@ -132,19 +132,30 @@ HIPCC_FLAGS=${HIPCC_FLAGS:--O3 -g1 -std=c++17 -Wall -Wextra}
 # quoting, no `VAR=value` prefix -- hence `env`.
 #
 # felizjueves.emit's CLI reads those three variables as its defaults and
-# writes one translation unit per class in the backend's own spelling: with
-# no ladder flag the J chain's 37 (`[p|q]` L = 0..16 and the DQ / JAB pair
-# ladder through (ff), whose `source_sha256` data/measured/kernels.json
-# pins), and `--one-e-l 2` ADDS the one-electron ladder (#242): `s_`, `t_`
-# and `v_` for every pair class `la <= lb <= 2`, 18 units, through (dd) --
-# the classes test/test_one_electron_device.py holds to the host on each
-# card. The one-electron units are never in the bare command's output; the
-# tier asks for them here, explicitly. PYTHONPATH because this is a virtual
-# uv project: nothing is installed, src/ is put on the path by hand.
+# writes one translation unit per class in the backend's own spelling: the
+# `[p|q]` ladder at `--L 0..8` (tiers.DEVICE_L_MAX: no test either tier
+# selection runs reads a unit above it), the DQ / JAB pair ladder through
+# (ff) (`--pair-l 3`, its default), and `--one-e-l 2` ADDS the one-electron
+# ladder (#242): `s_`, `t_` and `v_` for every pair class `la <= lb <= 2`,
+# 18 units, through (dd) -- the classes test/test_one_electron_device.py
+# holds to the host on each card. 47 units. PYTHONPATH because this is a
+# virtual uv project: nothing is installed, src/ is put on the path by hand.
 #
+# KERNEL_FULL_GEN_CMD is what `--full` generates instead: the bare command's
+# whole J chain (37 units, `[p|q]` L = 0..16, whose `source_sha256`
+# data/measured/kernels.json pins) plus the same one-electron ladder, 55
+# units. L = 9..16 are only compiled, never run by either selection, and cold
+# they are most of the compile phase (`pq_L16` alone ~115 s of nvcc on this
+# box, `pq_L15` ~60 s), which is why the PR gate leaves them to `--full`.
+#
+# A KERNEL_GEN_CMD set by the caller wins in both modes (`--full` included),
+# so `KERNEL_GEN_CMD="..." kernel-tier.sh --full` runs the caller's ladder.
 # Set it EMPTY (KERNEL_GEN_CMD= devtools/kernel-tier.sh ...) and the tier
 # reports its generate and compile phases DORMANT rather than pretending.
-KERNEL_GEN_CMD=${KERNEL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit --one-e-l 2}
+# shellcheck disable=SC2034  # read by kernel-tier.sh's --full
+KERNEL_GEN_CMD_SET_BY_CALLER=${KERNEL_GEN_CMD+yes}
+KERNEL_GEN_CMD=${KERNEL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit --L 0 1 2 3 4 5 6 7 8 --pair-l 3 --one-e-l 2}
+KERNEL_FULL_GEN_CMD=${KERNEL_FULL_GEN_CMD-env PYTHONPATH=src python -m felizjueves.emit --one-e-l 2}
 
 # Where generated sources and their binaries land. Gitignored (/.kernel-tier/),
 # and wiped by --fresh.
@@ -278,6 +289,14 @@ TEST_CMD=${TEST_CMD:-pytest}
 # containers can be up at once, and `auto` in each would claim every core on
 # the box. Set to empty to drop the -n flag entirely.
 JOBS=${JOBS:-8}
+
+# The xdist scheduler, passed as `--dist` beside JOBS; empty = xdist's own
+# default (`load`). `worksteal` because the suite's cost is lopsided -- a few
+# tests take 10-20 s among ~11,000 that take milliseconds -- and `load`
+# hands out work up front, so one worker finishes its queue long after the
+# rest are idle: the fast tier took 241 s under `load` and 210 s under
+# `worksteal` on this box (JOBS=8).
+XDIST_DIST=${XDIST_DIST:-worksteal}
 
 # Host CPU bounds for a devcontainer, applied by devcontainer.sh on `up` and
 # `rebuild`. Both empty = unbounded, and nothing is applied.
