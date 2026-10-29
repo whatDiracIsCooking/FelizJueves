@@ -450,6 +450,8 @@ def test_every_converted_fixture_is_a_case_1e():
     listed = {_case_1e(n)[0] for n in BASES_1E}
     for p in sorted(manifest.FIXTURES.glob("*.json")):
         fx = manifest.load(p)
+        if fx.gradient is not None and fx.gradient.sibling is None:
+            continue  # #550's NH2F: a gradient witness, no launch case
         if fx.converted is not None:
             assert ob.from_fixture(fx) in listed, p.name
 
