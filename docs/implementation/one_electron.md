@@ -1,7 +1,7 @@
 # The one-electron matrices: `S`, `T`, `V` and `h` on the `E` fragment
 
-**Status: implemented, and run on both cards (milestone 11, #232–#244,
-#265, #266).** This is the derived note for the overlap `S_ab = <a|b>`, the
+**Status: implemented, and run on both cards through (ff) (milestone 11,
+#232–#244, #265, #266; `V`'s low-stack form at (ff), #586).** This is the derived note for the overlap `S_ab = <a|b>`, the
 kinetic energy `T_ab = <a|-½∇²|b>`, the nuclear attraction
 `V_ab = -Σ_C Z_C <a|1/r_C|b>`, and the core Hamiltonian `h = T + V` they sum
 to. It is the contract the three kernels were built against, and the one
@@ -18,7 +18,7 @@ McMurchie & Davidson report (entry 46). `S`, `T` and `V` are **this
 repo's own design** built on it, which is the same position as `DQ` and
 `JAB` relative to `[Fock]`. `data/literature/jengine/limits.json` records
 this as a `StructuralLimit` (#245) and not as a second literature file.
-Milestone 11 added **no** `tables.json` cell, scoreboard, floor or
+Milestone 11 added **no** `table{1,2,3}.json` cell, scoreboard, floor or
 `claims.json` record, and it changed or scored none.
 `test/test_claims.py` and `test/test_scoreboards.py` pass unchanged. A pair
 class's `Spec.total_am` is `la + lb`, the Hermite order of one pair. It
@@ -92,11 +92,12 @@ The three operators on the dressed block:
 | `T` | `s · ((K_x S_y) S_z + (S_x K_y) S_z) + (S_x S_y) K_z`, with `K_ij = −2β² S_{i,j+2} + β(2j+1) S_{ij} − ½ j(j−1) S_{i,j−2}` (the last term **absent**, not zero-weighted, for `j < 2`) | the axis tables to `(la, lb + 2)`, ket widened only; `β` the ket primitive's exponent |
 | `V` | `s · Σ_C (−Z_C) Σ_t E^{ab}_t [t]^(0)(P − C, √ζ)` | the whole block, every reachable `t` |
 
-## The host layer (`src/felizjueves/ao/`)
+## The host layer (`src/felizjueves/one_electron/` and `ao/`)
 
 The reference each kernel is held to, all in pure Python:
 
-- **`one_electron.matrix(basis, block, *, pairs=)`** (#233) assembles a
+- **`one_electron.one_electron.matrix(basis, block, *, pairs=)`** (#233)
+  assembles a
   symmetric AO matrix from a per-shell-pair block. It calls `block` once per
   shell pair `i ≤ j`, copies the lower triangle, and reads a diagonal pair
   from its **upper** triangle, so the result is exactly symmetric. It needs
@@ -314,9 +315,11 @@ ladder, `s_{la}{lb}`, `t_{la}{lb}` and `v_{la}{lb}` for every `la ≤ lb ≤
 LMAX`, beside whichever `J` ladders `--L` and `--pair-l` select. The no-flag
 command is unchanged: it writes 37 units, and every `kernels.json`
 `source_sha256` pin still holds. `KERNEL_GEN_CMD` in `devtools/config.sh`
-is now `env PYTHONPATH=src python -m felizjueves.emit --one-e-l 2`, so the
-default kernel tier writes **55 units**: the 37 `J`-chain units plus 18
-one-electron units through (dd).
+is now `... --L 0 1 2 3 4 5 6 7 8 --pair-l 3 --one-e-l 2` (#625), so the
+default kernel tier writes **47 units**: the `J` chain to `[p|q]` L = 8 plus
+18 one-electron units through (dd). `--full` generates
+`KERNEL_FULL_GEN_CMD`, `--one-e-l 2` alone: the 37 `J`-chain units plus
+the same 18, 55 units.
 
 **The ladder writes `la ≤ lb` only.** A real basis's launch keys a class by
 shell index `i ≤ j`, not by angular momentum. So H₂O (O's p shells before
@@ -383,8 +386,9 @@ No `J` kernel text changed, so the L = 16 `J` tier was not re-run.
 #244's deferred tier ran with the generator at
 `--L 0..8 --pair-l 3 --one-e-l 3` (59 units). It gave **CUDA 95 passed /
 3 skipped** and **HIP 96 passed / 3 skipped**; the skips are three opt-in
-recordings. The default `KERNEL_GEN_CMD` (the `J` ladder to L = 16 plus
-`--one-e-l 2`) has not been run as a whole.
+recordings. The `KERNEL_GEN_CMD` of that time (the `J` ladder to L = 16
+plus `--one-e-l 2`, now `KERNEL_FULL_GEN_CMD`) was not run as a whole in
+milestone 11.
 
 ## What is not measured, and what does not reach
 
@@ -447,8 +451,9 @@ PRs #297 and #298 (nvcc `-Xptxas -v` in bytes; hipcc
   (ff) alone, because the repo ships a slower path only where it is
   needed, and `v_03`, `v_13`, `v_23` fit unrolled.
 The test plan's `kernel-tier` / `high-L` markers are not registered in
-`pyproject.toml`. The deferred cells use the registered `slow` marker,
-which keeps them off the pre-push gate.
+`pyproject.toml` (its `high_l`, since #301, is L > 8 only). The deferred
+cells use the registered `slow` marker, which keeps them off the pre-push
+gate.
 
 ## The cross-basis overlap `S_{B1,B2}`
 
@@ -535,7 +540,8 @@ and `KERNEL_GEN_CMD` does not ask for it.
 ## The dipole `MU`
 
 **Status: implemented, and run on both cards (milestone 19, #517–#524),
-through (dd) only.** This section covers the Cartesian dipole moment
+through (dd); through (ff) on the host, interpreted and compiled, NOT on a
+card (#627).** This section covers the Cartesian dipole moment
 integrals `mu^d_ab = <a| q (r_d - C_d) |b>`, `d ∈ {x, y, z}`: the
 multipole moments of order `e = 1` about an origin `C`, scaled by a
 charge `q`. Like the rest of this note, nothing here is scored or
@@ -615,16 +621,18 @@ keeps its lower. Its layering rule `mu_builder` keeps it off `ao`,
 
 **The generator.** `python -m felizjueves.emit --mu-l [LMAX]` (#522; 2 when
 bare) **adds** `mu_{la}{lb}` for every `la ≤ lb ≤ LMAX` beside whichever J
-ladders are selected. **It accepts 0..2 only**: above that, or negative, it
-exits 2 (`the dipole is validated through (dd) only (milestone 19)`), so the
-CLI cannot write an (ff) unit. It is refused with `--class`, `--shell-ls`,
-`--fock-l`, `--fock-class`, `--n-batches` and on the HGP path, never in the
-no-flag output, and `KERNEL_GEN_CMD` does not ask for it. Six goldens per
-backend, `test/golden/{cuda,hip}/mu_{00,01,02,11,12,22}` (the largest
-51,968 B, no digests file).
+ladders are selected. **It accepts 0..3 only** (0..2 until #627): above
+that, or negative, it exits 2 (`the dipole is validated through (ff) only
+(#627)`), so the CLI cannot write a g unit. It is refused with `--class`,
+`--shell-ls`, `--fock-l`, `--fock-class`, `--n-batches` and on the HGP
+path, never in the no-flag output, and `KERNEL_GEN_CMD` does not ask for
+it. Ten goldens per backend, `test/golden/{cuda,hip}/mu_{00,01,02,03,11,
+12,13,22,23,33}` (the largest, `mu_33`, 135,887 B, no digests file); the
+six through (dd) were unchanged byte for byte by #627.
 
-**The witnesses.** Every class tested has every shell `l ≤ 2`, (ss)
-through (dd), so every one is L ≤ 4 and fast-tier on the host.
+**The witnesses.** Through (dd) every shell is `l ≤ 2`, so every class is
+L ≤ 4 and fast-tier on the host. At f (#627), (sf) and (pf) are fast-tier
+and (df) and (ff), L = 5 and 6, are `slow` (`tiers.FAST_L_MAX`).
 
 - *libcint and PySCF* (#517, #520). Three fixtures, `h2o_sto3g_dipole`,
   `h2o_631g_dipole` and `h2o_ccpvdz_dipole`, on their `_j` siblings'
@@ -637,10 +645,19 @@ through (dd), so every one is L ≤ 4 and fast-tier on the host.
   removed, 40 AOs, no density), carries `int1e_r_cart` at both origins
   and `int1e_ovlp`; its d shells sit on both atoms, so all nine ordered
   classes (ss) through (dd) occur between two centres. The generator
-  checks `r_C = r_0 - C S` before writing.
+  checks `r_C = r_0 - C S` before writing. A fifth (#627),
+  `hf_ccpvtz_dipole`, is the same molecule with its f shells kept (F
+  4s3p2d1f, H 3s2p1d; 50 AOs, no density): all sixteen ordered classes
+  (ss) through (ff) occur, each with one f between two centres, (ff) on F
+  alone. It carries `int1e_r_cart` at both origins and `ovlp` (libcint's
+  `int1e_ovlp`) but none of the four one-electron arrays, which would put
+  it over the 512 KB hook (541 KB); `hf_ccpvtz` carries them for its
+  inputs. `manifest.dipole_integrals(F_DIPOLE)` loads it under
+  `DIPOLE_F_L_MAX = 3`.
 - *Host.* `test_ao_multipole.py`: whole H₂O matrices against
   `int1e_r_cart` at both origins within `1e-12` of scale (worst 7.6e-16),
-  every block of `hf_ccpvtz_spd_dipole` (worst 8.8e-16), `dip_moment` as
+  every block of `hf_ccpvtz_spd_dipole` (worst 8.8e-16) and, per class
+  through (ff), of `hf_ccpvtz_dipole` (#627), `dip_moment` as
   `-Tr(D mu) + SUM_A Z_A (R_A - C)`, the (s|s) and (s|p) closed forms,
   the **origin-shift identity** `mu(C') = mu(C) + q (C - C') S`, and
   `q = -1` against `q = 1`.
@@ -648,13 +665,17 @@ through (dd), so every one is L ≤ 4 and fast-tier on the host.
   `e = 0, 1, 2` against `mmd.hermite.e_axis` and a direct `M^e_t`
   recursion, and against Gauss-Hermite quadrature), `test_kernel_mu.py`
   (the bitwise statements above, every class in both orders, the plan
-  launched and walked against libcint), `test_launch.py` /
+  launched and walked against libcint; at f, #627, every ordered class with
+  an f bitwise the host block, `q` an exact factor and the overlap
+  component `kernel_s`'s, the plan within 2.25e-15 of `max|r|` of
+  `int1e_r_cart`, the origin shift), `test_launch.py` /
   `test_launch_oracle.py` (the dipole walk), `test_emit_mu.py` and
-  `test_emit_cli.py` (the ladder, its cap and refusals; the six compile
-  cases per compiler, `cuda`/`hip`).
+  `test_emit_cli.py` (the ladder, its cap and refusals; the ten compile
+  cases per compiler, `cuda`/`hip`, all green on a device-less box for
+  #627).
 - *Both cards* (#523). `test_mu_device.py` (generator `test/mu_driver.py`,
   which reads `C` and `q` from its input, so one binary serves every
-  origin and charge, and refuses a class above (dd)): per class on
+  origin and charge, and refuses a class above (ff) since #627): per class on
   `hf_ccpvtz_spd_dipole` against the host under `2 γ_{N+K} MUabs` with
   `N = 4L + 16` and against `int1e_r_cart`; whole H₂O/STO-3G and 6-31G
   (cc-pVDZ `slow`) against `int1e_r_cart` and, at `q = -1`, against
@@ -666,14 +687,21 @@ through (dd), so every one is L ≤ 4 and fast-tier on the host.
   `dip_moment`, `7.23e-2` of the per-element host bound, and `2.36e-16`
   of `max|MU|` for the origin shift against the card's `S`. Runs are not
   always bit-identical between repeats (the fp64 atomics' order), within
-  the run-to-run bound `2 γ_K MUabs`.
+  the run-to-run bound `2 γ_K MUabs`. **At f (#627) the card cases are
+  written and have NOT run**: Part 1 and Part 3 on `hf_ccpvtz_dipole`
+  (`slow`, so `kernel-tier.sh --full`), and their compile-only companions,
+  which nvcc and hipcc passed.
 
 **Not built, and what does not reach.** `e = 1` only; Cartesian only;
-nothing above (dd) is built, emitted, launched or checked, by the user's
-decision, and `--mu-l` refuses above 2. Nothing is measured: #544's
-`nvcc` compile reported 0 spill bytes for `mu_22` (128 registers) and
-`mu_22` with the overlap (200), a sanity reading, not a store row. No
-consumer (an SCF dipole driver, say) is built.
+nothing above (ff) is built, emitted, launched or checked, and `--mu-l`
+refuses above 3. Nothing is measured: #544's `nvcc` compile reported 0
+spill bytes for `mu_22` (128 registers) and `mu_22` with the overlap (200),
+and #627's, at the tier's flags, 0 stack and 0 spill bytes on sm_86 for
+every class through (ff) (`mu_23` 255 registers, `mu_33` 234) and 0
+scratch on gfx1200 except `mu_33`, 92 bytes a lane (192 VGPRs) -- so the
+dipole needs no low-stack form at (ff), unlike `V` (#586, 85 KB a thread):
+sanity readings, not store rows. No consumer (an SCF dipole driver, say) is
+built.
 
 ## The quadrupole
 
@@ -828,15 +856,16 @@ RTX 3080, 16 passed -- each of `S`, `T`, `V`, `MU` on the synthetic basis
 against the MMD host (worst 5.03e-16 of `max|M|`, `T`) and on H₂O/STO-3G
 and 6-31G against libcint (worst 1.01e-15, `V`), the dipole at both
 origins; runs bit-identical, every matrix exactly symmetric. The RX 9060 XT
-is not run (#431).
+run has not been made, and no open issue tracks it (#431 closed on
+2026-10-17 with the card's detection fixed, not with this run).
 
 **The generator.** `python -m felizjueves.emit --hgp-one-e-l [LMAX]` (1
 bare, **0..1 only**, exit 2 above) adds the 12 units beside the J ladders;
 never in the bare default, not in `KERNEL_GEN_CMD`.
 
 **Not done.** d and above (the recurrences are general in `l`; the builder
-refuses `l > 1`, the requested scope); no RX 9060 XT run (#431), no
-measurement;
+refuses `l > 1`, the requested scope); no RX 9060 XT run (untracked:
+#431 closed with the card's detection fixed, not the run), no measurement;
 no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
 ladder); no screening inside the kernel; no comparison of the two engines'
 cost.
@@ -927,7 +956,8 @@ MMD and HGP kernels.
   `Target.J` shape. `V`'s 3080 headroom at f was answered instead by the
   low-stack form (#586).
 - **One-electron derivatives** (gradients and Hessians), excluded by this
-  milestone's scope.
+  milestone's scope: done since, `gs_`/`gt_`/`gv_` (#600, #614;
+  `gradient.md`) and `d2s_`/`d2t_`/`d2v_` (#604, #610; `hessian.md`).
 - **One `fj_boys` spelling** (the #266 record): done in #301, one
   template for every unit.
 - **Ordered ladder classes** (`la > lb`), so the generator, rather than the

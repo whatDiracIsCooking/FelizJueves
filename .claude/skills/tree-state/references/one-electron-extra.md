@@ -20,8 +20,8 @@ equation number unchecked) inlined once, each value `AtomicAdd`-ed into
 reference, general in `e`, `overlap_block` bitwise at `e = 0`, and
 `walk_one_electron(..., Target.DIPOLE, origin=, q=)` rebuilds `MU` from a
 `one_electron_launch` plan. The ladder is `python -m felizjueves.emit
---mu-l [LMAX]` (`mu_{la}{lb}`, `la <= lb`, 2 bare, **0..2 only**, exit 2
-above), never in the bare default and not in `KERNEL_GEN_CMD`. The oracles
+--mu-l [LMAX]` (`mu_{la}{lb}`, `la <= lb`, 2 bare, **0..3 only** since
+#627, exit 2 above), never in the bare default and not in `KERNEL_GEN_CMD`. The oracles
 are libcint's `int1e_r_cart` at a non-zero origin and at 0 and PySCF's
 `dip_moment`, through `h2o_{sto3g,631g,ccpvdz}_dipole` (#517, on their `_j`
 siblings' inputs) and `hf_ccpvtz_spd_dipole` (#520, HF/cc-pVTZ without f,
@@ -34,8 +34,11 @@ against the host block (`test_kernel_mu.py`), the six goldens per backend
 `test/mu_driver.py`, PR #546: 4 passed / 0 skipped on the RTX 3080 and on
 the RX 9060 XT, the slow cc-pVDZ case 5 passed on each; worst 8.62e-16 of
 `max|r|` against libcint and 3.16e-16 against `dip_moment`, the same on
-both cards). Nothing about it is measured or scored (no published board; a
-`StructuralLimit`, #524); `e = 1` only, Cartesian only.
+both cards). #627 lifted the cap to (ff): `--mu-l` accepts 0..3 (2 bare), the driver refuses above (ff), and every class (ss) through (ff) is held to libcint's `int1e_r_cart` on the host and interpreted through `hf_ccpvtz_dipole` (HF/cc-pVTZ with its f shells, 50 AOs, no density; worst 2.25e-15 of `max|r|`), with ten goldens per backend, compiled warning-free by nvcc (sm_86) and hipcc (gfx1200); **the f classes have not run on either card** (`test_mu_device.py`'s f cases are written, `slow`, for `kernel-tier.sh --full`). Nothing about it is measured or scored
+(no published board; a `StructuralLimit`, #524; #627's compile reading, 0
+stack / 0 spills on sm_86 through (ff) and 92 B a lane of scratch for
+`mu_33` on gfx1200, is not a row, and no low-stack form was needed);
+`e = 1` only, Cartesian only.
 **The quadrupole (raw second moments) is generated too, interpreted only**
 (`one_electron.md`, "The quadrupole"): `Target.QUADRUPOLE` (`spec.py`; `am`
 a pair `(la, lb)`, operator `QUADRUPOLE`, unbatched as the dipole, HGP and
@@ -74,7 +77,7 @@ goldens in `test_emit_hgp_one_e.py`. **Compiled and run on the RTX 3080
 only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`,
 16 passed: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
-the RX 9060 XT is not run (#431), nothing measured.
+the RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run), nothing measured.
 **`S`, `T` and `V` are also built on the Rys engine, through (ff),
 interpreted only** (`one_electron.md`, "The Rys route"): `Target.S` / `T` /
 `V` with `engine=Engine.RYS` (slots `s.rys`, `t.rys`, `v.rys`; `DIPOLE` and

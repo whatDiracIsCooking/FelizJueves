@@ -54,14 +54,18 @@ def test_only_the_chain_records_an_rhf_density():
     by_recipe: dict[str, set[str]] = {}
     for p in manifest.tracked():
         fx = manifest.load(p)
+        if fx.gradient is not None:  # #550: each converges its own RHF
+            assert fx.density_recipe.startswith("rhf:"), fx.name
+            continue
         if fx.metric is None and fx.three_center is None:
             by_recipe.setdefault(fx.density_recipe.split(":")[0],
                                  set()).add(fx.name)
     assert by_recipe["rhf"] == {f"{PAIR}_j", f"{PAIR}_k"}
     # #520: the density-free dipole fixture (manifest: THE DENSITY-FREE
-    # DIPOLE FIXTURE), and #570's two one-electron pieces
-    assert by_recipe["none"] == {"hf_ccpvtz_spd_dipole", "co_ccpvtz_j_st",
-                                 "co_ccpvtz_j_vh"}
+    # DIPOLE FIXTURE) and #627's (ff) twin, and #570's two one-electron
+    # pieces
+    assert by_recipe["none"] == {"hf_ccpvtz_spd_dipole", "hf_ccpvtz_dipole",
+                                 "co_ccpvtz_j_st", "co_ccpvtz_j_vh"}
     assert set(by_recipe) == {"hilbert", "rhf", "none"}
 
 

@@ -1,4 +1,4 @@
-# Rys quadrature `F` and `J`, and the device Boys
+# Rys quadrature `F`, `J` and `K`, and the device Boys
 
 Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `../SKILL.md`).
 
@@ -6,7 +6,8 @@ Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `..
 compiled by nvcc / hipcc and NOT run on a card** (`docs/implementation/rys_fock.md`
 is the one place with the detail; #468's spike, `experimental/rys/`, brought
 into `src/`): `Target.F` on `Engine.RYS` (`spec.Engine.RYS`, key slot
-`f.rys`, refused on every target but `F` and `J` (below), no lever), `eri/fock/kernel_frys.py`'s
+`f.rys`, refused on every target but `F`, `J` and `K` (below) and the
+one-electron `S`, `T`, `V` (`one-electron-extra.md`), no lever), `eri/fock/kernel_frys.py`'s
 `build_frys_kernel` (`fr_{la}{lb}{lc}{ld}`, the 21 classes through
 `(dd|dd)`): `kernel_f`'s skeleton and seams with `ket_prim`,
 `quartet_scalars`, `vrr` and `accumulate` replaced -- the `N = L // 2 + 1`
@@ -26,7 +27,12 @@ within 6.3e-15 of MMD's scale in all 21 classes, the deposit against
 of libcint. `python -m felizjueves.emit --fock-l LMAX --rys`, never in the
 bare default nor in `KERNEL_GEN_CMD`; 21 goldens per backend
 (`test_emit_frys.py`, two in `frys_digests.json`). All 21 units passed clang
-18's CUDA front end (a proxy). Nothing measured or scored.
+18's CUDA front end (a proxy). Nothing measured or scored. Sources
+(#489): the VRR's coefficients and recurrences and the prefactor are
+checked against libcint's source (`docs/references.md` entry 51,
+`[Libcint]`), and `N` and the product form against `[GPU4PySCF]` (entry
+26). `[DRK]` and `[LRL]` (entries 49 and 50) are cited but closed access
+and unread, so none of their equation numbers is recorded.
 **The split `J` on Rys quadrature too, interpreted and emitted, NOT
 compiled by nvcc / hipcc and NOT run on a card** (`rys_fock.md`, "The split
 `J` on Rys"): `Target.J` on `Engine.RYS` (slot `j.rys`, whose only legal
@@ -72,6 +78,6 @@ refused by the store.
 below `T = M + 8`, `erf` and the upward recurrence from it. It is witnessed on
 the RTX 3080 over `reference.boys`' whole domain, `T ∈ [0, 1e6]`, `M ≤ 16`
 (worst 2.1e-15; `test_kernel_device.py`), and compiled only on `gfx1200`
-(#431). Its text moved every J, K and F unit, so `kernels.json`'s
+(no open issue tracks it; #431 closed on the card's detection fix, not the run). Its text moved every J, K and F unit, so `kernels.json`'s
 `source_sha256` pins are **stale** until those rows are re-measured:
 `devtools/measure.sh check` fails until then.

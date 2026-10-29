@@ -5,8 +5,9 @@ Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `..
 **The first `derivative_order = 1` keys: analytic nuclear gradients by
 McMurchie–Davidson, run on both cards at L <= 4** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):
-`spec.DERIVATIVE_ORDERS` is `(0, 1)`, order 1 legal on
-`spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, `METRIC`, `ERI3`, MMD only;
+`spec.DERIVATIVE_ORDERS` is `(0, 1, 2)` (order 2: `hessians.md`), order 1 legal on
+`spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, `METRIC`, `ERI3`, and
+`DQ` for the Hessian, MMD only;
 `_GRADIENT_REFUSAL` elsewhere), every d0 key byte-identical. A d1 kernel
 writes `G[A, k] += SUM_mn M_mn dX_mn/dR_{A,k}`, not the derivative
 integrals, by the rule `d/dA x^i e^{-a x^2} = 2a x^{i+1} - i x^{i-1}` on
@@ -33,9 +34,10 @@ chain through the interpreted raised `[p|q]`), and `gk` within 16 eps
 (measured <= 0.7) of the host's `absolute=True` twin for every K class
 through `(dd|dd)` (`test_kernel_gk.py`, L + 1 > 4 `slow`). Ladders
 `python -m felizjueves.emit --grad-l [LMAX]` (2 bare, 0..3) and
-`--grad-k-l [LMAX]` (1 bare, 0..2; `gk` is ~4 MB of unrolled text at
-`(dd|dd)`), never in the bare default nor in `KERNEL_GEN_CMD`; 48 + 32
-goldens (`test_emit_grad.py`, `test_emit_grad_k.py`).
+`--grad-k-l [LMAX]` (1 bare, 0..3 since #618), never in the bare default
+nor in `KERNEL_GEN_CMD`; 48 + 40 goldens (`test_emit_grad.py`,
+`test_emit_grad_k.py`, every other default `gk` unit through `(ff|ff)`
+pinned in `test/golden/gk_digests.json`).
 **On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`,
 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
 `gk` on H₂O/STO-3G only, against the host, 9 passed per card; worst
@@ -65,28 +67,101 @@ arches; `measure.sh check` holds the gate to the rows): unrolled `gv_33`
 everywhere (`gt_33` 5,296 B), one form; `gv_22` is 9,752 B, over #586's
 d0 8 KB but under #613's 14,000 B, so (dd) stays unrolled. Interpreted,
 `gv` in its other form at every class (`test_kernel_g1e.py`). No clock.
-`gjab` / `gk` not measured (the DF-J terms: below).
+**`gk` defaults to a ROLLED form from `L = 5` and at every f class**
+(#618; `gradient.md`, "The rolled `gk`"; `kernel_gk.gk_lowstack`,
+`LOWSTACK_MIN_L = 5`, `UNROLLED_L_MAX = 2`; `lowstack=` forces either;
+name, parameters, launch and `G` the same; below the floor the text is
+byte-identical, goldens unchanged). No `E` block, no straight-line fold:
+the bra's per-axis tables one index up and the ket's (its sign folded
+into the odd-`t` entries), both COMPACT (`tables_fragment`, only `t <= i
++ j` stored), `[r]^(0)` into a local `R` (`store_targets`), stage 1 into a
+local `I[p]` per `(b, d)` row, and each `(a, c)` row's derivative terms
+as loop nests over the tables, `W` read from `M`. The unrolled f form is
+never built (the user's decision), nor the block mapping (`kernel_kblock`'s
+one warp per `K_AB` block: only a cheap rolled variant was in scope, and
+#571 / #583 measured those slower or neutral). **Measured** in
+`data/measured/gk.json` (`measure/measure_gk.py`, `devtools/measure.sh
+gk-compile`, a compiler and no card, rule declared before any row, every
+unit alone under a **10 s kill**, the user's #618 budget, admissible at
+<= 14,000 B on both arches; `measure.sh check` holds the gate): the
+unrolled form is admissible through L = 4 on both (worst `gk_22_00`
+11,696 B on `sm_86`) and over on `sm_86` at L = 5 (`gk_22_10` 14,880 B);
+all 256 rolled units fit both, worst `gk_33_33` 11,616 B / 2.8 s on
+`sm_86` and 10,736 B / 2.2 s on `gfx1200`, slowest compile 4.8 s. A
+tracked **libcint witness**, `test/oracle/k_gradient/co_ccpvtz_k_grad.json`
+(`manifest.k_gradient`, `python -m oracle.generate --regenerate
+--k-gradient`): `int2e_ip1_cart` on CO/cc-pVTZ contracted with
+`co_ccpvtz_j`'s recorded density, per K class (256) and whole; the host
+matches it on four s, p, d classes within 2.7e-16 of `max|G|`
+(`test_k_gradient_witness.py`, `slow`). On the cards `gk` runs through
+`test/gk_driver.py` (every unit its own translation unit, `-c` under the
+10 s cap, linked; one `G` per launch) in `test_gk_device.py`, which took
+over `test_grad_device.py`'s `gk` case. **On both cards** (2026-10-29):
+H₂O/STO-3G, every class in both forms on one upload, whole against the
+host 3.22e-15 / 3.37e-15 of `max|G|` (RTX 3080 / RX 9060 XT), rolled
+against default 9.2e-16; and CO/cc-pVTZ (`slow`, `high_l`, hand-run), all
+256 classes in their default forms against the libcint witness per class
+and whole, worst 2.63e-15 / 2.94e-15 of `max|G|` (gate 1e-12), plus the
+on-card differential against the unrolled form over the 62 / 58 classes
+whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
+319 / 315 units, every one under the 10 s cap (slowest 5.7 s / 6.1 s).
+`gk` measured for its compile only (the DF-J terms: below).
 **The whole RHF gradient is assembled and interpreted** (#565,
 `gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
 `rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,
 `D dV`, `dE_J`, `-1/2 dE_K` and `V_nn^x` (host) from injected per-term
-runners, each term returned and their fixed-order total;
+runners, each term returned with their fixed-order total;
 `gradient/interpreted.py`'s `interpreted_runners(boys=)` runs `gs_`, `gt_`,
 `gv_`, the J chain (`[p|q]` one bra order up through `KernelJP`, then
-`gjab_`) and `gk_` in the interpreter. Against a tracked **PySCF RHF gradient
-witness** per molecule (`test/oracle/rhf_gradient/`,
-`oracle.manifest.rhf_gradient`, `python -m oracle.generate --regenerate
---rhf-gradient`: converged `D`, `W`, every term from libcint's `int1e_ip*`,
-`int1e_iprinv` and `int2e_ip1`, and `nuc_grad_method()`'s total, the terms
-held to it to 1e-10): H₂O/STO-3G, H₂O/6-31G, C1 NH₃/STO-3G, H₂O/STO-3G
-plus one d primitive on O (every class through `(dd|dd)` at STO-3G's
-cost) and H₂O/cc-pVDZ,
-per term and total within `1e-10` absolute (`test_rhf_gradient.py`; the
-one-electron terms on s, p bases fast, every J/K term and total `slow` by
-L + 1 = 5, cc-pVDZ `slow`). Worst 2.4e-13 per term (`V`, NH₃) and 7.9e-14 in total, the d witness
-7.2e-14 / 6.6e-14; cc-pVDZ's interpreted total (hours of `gk_`) has not
-been run to the end, its one-electron terms pass; interpreted `gk_` dominates the cost (138 s for H₂O/STO-3G, 564 s for 6-31G). Not on a card: the
-device assembly is #566.
+`gjab_`) and `gk_` in the interpreter, each in its default form. Held to
+#550's gradient fixtures (`manifest.gradient_fixture`; `grad:h` split into
+`T` and `V` by its stored `int1e_ipkin`) per term and in total within
+`1e-10` absolute (`test_rhf_gradient.py`): H₂O/STO-3G, H₂O/6-31G, C1
+NH₂F/6-31G, H₂O/cc-pVDZ, and #565's `h2o_sto3g_d_grad` (H₂O/STO-3G plus one
+d primitive on O, `Case.extra_shells`: every J and K class through
+`(dd|dd)` at STO-3G's cost). The one-electron terms on s, p bases are fast;
+every J/K term, every total and every d case `slow`. RESULTS_TS Not on a
+card: the device assembly is #566. **`gjab` defaults to a low-stack form from `la + lb =
+5`, and its whole chain runs on both cards through (ff)** (#619;
+`kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
+shape reading the record's `Jp` row from global memory, no `R`; the
+per-row weight and derivative terms shared with `gv` through
+`kernel_g1e.lowstack_weight` / `lowstack_derivative`, `gv`'s text
+byte-identical): interpreted at every class through (ff) in both forms
+(`test_kernel_gjab.py`; unrolled 1.8, low-stack 5.7 eps of the
+split-centre scale, gate 16) and the interpreted chain in both forms.
+**Measured** in `data/measured/gjab.json` (`measure/measure_gjab.py`,
+`devtools/measure.sh gjab-compile`, a compiler and no card, #614's rule
+restated and declared before any row, 16 unrolled + 16 low-stack units
+per arch, each alone under a 300 s kill, admissible at <= 14,000 B on
+both arches; `measure.sh check` holds the floor to the rows): unrolled
+`gjab_23` / `gjab_32` 18,976 / 21,240 B of `sm_86` stack and `gjab_33`
+46,680 B (93,788 B spill stores, 115 s; `gfx1200` 11,908 B, 15 s), so
+`kernel_gjab.LOWSTACK_MIN_LSUM = 5`; through `la + lb = 4` unrolled
+(worst `gjab_22` 8,648 B), text and goldens unchanged; every low-stack
+unit fits both (worst `gjab_33` 6,352 / 5,424 B, under 3 s). **The chain
+on the card** (`test_gjab_chain_ondevice.py`; `grad_driver.raised_plan`
+and `gjab_tail` on `plan_driver.driver`'s new `tail=` slot,
+`plan_driver.ChainTail`): `DQ` on the card, read back, the J chain's
+plan keyed on its `Dmax`, every bra class raised by one, the raised
+`[p|q]` launched, then `gjab` reading `J_p` where it lies, in one process,
+no host `J_p`; against `host.coulomb_gradient` at `1e-13` of `max|G|`,
+every compile under 300 s. On both cards (2026-10-29), 5 passed per card:
+H₂/STO-3G (the PR gate) and H₂O/STO-3G (`slow`) in both forms, worst
+2.1e-15 / 2.0e-15 (RTX 3080 / RX 9060 XT); CO/cc-pVTZ (`slow`, `high_l`,
+hand-run: all 16 ordered classes, (df), (fd), (ff) low-stack, raised
+`[p|q]` to L = 13) 9.0e-16 / 1.07e-15. The CO cell takes ~17 / 20 min,
+almost all of it the pure-Python host reference. The forced-unrolled
+(df) / (ff) units are compiled, not run on a card. That cell's CO/cc-pVTZ
+reference is now tracked so it need not run the host (#639): a
+**libcint witness**, `test/oracle/j_gradient/co_ccpvtz_j_grad.json`
+(`manifest.j_gradient`, `python -m oracle.generate --regenerate
+--j-gradient`), `int2e_ip1_cart` contracted with `co_ccpvtz_j`'s recorded
+density into `dE_J/dR` per `gjab` bra class (10) and whole; the host
+matches it on every class within 1.25e-15 of `max|G|` (gate 1e-14,
+`test_j_gradient_witness.py`, `slow`: 13 min on 4 workers, ~37 CPU-min
+of host), and its `oracle` test rebuilds it from PySCF in ~2 s. No
+device test reads it yet (#639's device half).
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
@@ -156,5 +231,30 @@ kernel at the top classes, within `1e-12` of max. **On both cards**
 `l`, each compile under a 300 s timeout): all 70 + 28 classes in their
 default forms on that system, 16 passed per card with Part 1; worst
 1.20e-14 (RTX 3080) / 9.34e-15 (RX 9060 XT) of `max|G|` against the host
-and 5.5e-14 of max against libcint, runs bit-identical. No DF-K gradient,
-no clock.
+and 5.5e-14 of max against libcint, runs bit-identical. **The DF-K
+weights and the whole DF two-electron gradient are staged on the host**
+(#620; `gradient.md`, "The density-fitting gradients"):
+`host_df.df_k_stage` gives `E_K`, `Gam^K`, `W^K` from the occupied
+coefficients (`df_j_stage` the J ones), `df_rhf_gradient` the terms
+`G_J`, `G_K` and `G_J - 1/2 G_K` apart; DF-K held to central differences
+of `E_K` (3.6e-9 of `max|G|`; H₂O/STO-3G against JKFIT s, p `slow`,
+2.6e-9), the whole two-electron gradient to PySCF's DF RHF gradient over
+the same aux set (`oracle.manifest.df_rhf`, H₂O/STO-3G against
+cc-pVTZ-JKFIT s, p, closed-form orbitals, `slow`): 7.8e-13 absolute, gate
+`1e-10`; `geri3` / `gmetric` interpreted with the DF-K weights within 0.37
+eps of the split-centre scale (`test_kernel_df_k_grad.py`). Not run on a
+card with the DF-K weights; the solve stays host-side. No clock.
+
+**RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
+nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O
+`_j` fixtures (STO-3G, 6-31G; cc-pVDZ is for `slow` tests only) plus a C1
+NH2F/6-31G with no `_j` sibling: the converted basis held to the sibling's
+exactly, PySCF's converged RHF (`mo_*` recorded; `density`, `W` derived),
+libcint's `int1e_ipovlp`/`ipkin`/`ipnuc`, `int1e_iprinv` per nucleus,
+`grad.rhf.get_jk`'s `vj1`/`vk1`, and the per-atom `h`, `S`, `J`, `K`, `V_nn`
+terms with `nuc_grad_method().kernel()`'s total. `manifest.gradient_fixture`
+recomputes each term from the stored arrays (~3e-15, `GRADIENT_TOL` 1e-12),
+sums them to the total, and checks zero net force (structural only: it cannot
+see a wrong factor). An `oracle` test holds H2O/STO-3G's total to a central
+difference of RHF energies. The sign conventions are `manifest`'s docstring.
+No card was involved.

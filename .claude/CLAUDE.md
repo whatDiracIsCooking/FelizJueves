@@ -39,7 +39,9 @@ opens with a status block, and it is the one place with the detail.
 The pattern to expect everywhere: "generated" does not mean "run on a
 card", and "run on a card" does not mean "measured". Many families are
 **interpreted only** or **compiled only** on one card. The RX 9060 XT runs
-that are still missing are attached to #431.
+that are still missing have no open issue: #431 closed on 2026-10-17 when
+the card's detection was fixed (below), not when they were re-run, so the
+list is each family's "RTX 3080 only" in the tree-state files.
 
 | Family | Where it stands | Reference |
 |---|---|---|
@@ -48,8 +50,8 @@ that are still missing are attached to #431.
 | exchange `K` (milestone 10, **open**) | `kernel_k` on cards at L ≤ 2 only; block forms `kb` / `kbr` / `kbrc` (through d `kb`, at f `kbr`, at g `kbrc`); `kbd`, `kbrt` measured and not chosen | `k-exchange.md` |
 | HGP engine, fused `F`, split HGP `J`/`K` | `F` on both cards and timed; split HGP on the RTX 3080 only; nothing above L = 4 | `fock-hgp.md` |
 | Schwarz `Q`, cross overlap `SX`, DF metric, `(mn\|P)` | generated; DF through (ff\|i) / (i\|i) on both cards with low-stack forms; HGP DF twins on the RTX 3080 only | `schwarz-overlap-df.md` |
-| dipole `MU`, quadrupole; one-electron on HGP and Rys | dipole on both cards at L ≤ 4; quadrupole (raw second moments) interpreted only; HGP one-e on the RTX 3080 only; Rys one-e interpreted only | `one-electron-extra.md` |
-| gradients (d1) | `gs`/`gt`/`gv` on both cards through (ff); `gjab`, `gk`, DF-J terms on both cards; the RHF gradient assembled and interpreted against PySCF, not on a card | `gradients.md` |
+| dipole `MU`, quadrupole; one-electron on HGP and Rys | dipole on both cards at L ≤ 4, through (ff) host/interpreted/compiled only; quadrupole (raw second moments) interpreted only; HGP one-e on the RTX 3080 only; Rys one-e interpreted only | `one-electron-extra.md` |
+| gradients (d1) | `gs`/`gt`/`gv` and the on-card `gjab` chain (`DQ` → raised `[p\|q]` → `gjab`) on both cards through (ff); `gk`, DF-J terms on both cards; DF-K weights and the DF two-electron gradient host-side, held to PySCF; the whole RHF gradient assembled and interpreted, held to PySCF, not on a card | `gradients.md` |
 | Hessians (d2) | `hjab`/`hdq` and unrolled `d2s`/`d2t`/`d2v` on both cards through (dd); `hkx`, `d2metric`, `d2eri3` interpreted only | `hessians.md` |
 | Rys `F` / `J` / `K`, device Boys | Rys interpreted and emitted, never compiled by nvcc/hipcc; `fj_boys<M>`'s move left `kernels.json` pins **stale** | `rys-and-boys.md` |
 
@@ -69,7 +71,7 @@ a 2 as "could not run", never as a pass.
 | | State |
 |---|---|
 | `docker/`, `.devcontainer/`, `devtools/` | **live.** Both toolchains build; `devtools/kernel-tier.sh` runs end to end on this box. |
-| `test/` | **live, and thin — and it measures nothing.** Timing, counters and stored-row checks live in `measure/`. Markers: `cuda`/`hip` need a compiler, `gpu` a card, `slow` is L above `FAST_L_MAX` or a large input, `oracle` PySCF, `claim(id)` a claims record. Per-family test files are listed in `test-dir.md`. |
+| `test/` | **live, and thin — and it measures nothing.** Timing, counters and stored-row checks live in `measure/`. Markers: `cuda`/`hip` need a compiler, `gpu` a card, `slow` is L above `FAST_L_MAX`, a large input, or a compile-only case after the first of its kind (`tiers.sample_compiles`), `oracle` PySCF, `claim(id)` a claims record. Per-family test files are listed in `test-dir.md`. |
 | `measure/` | **live, never a gate.** `devtools/measure.sh list` names the sweeps; `check` recomputes the tracked stores (no compiler, no card). A kernel-text change that moves a stored `source_sha256` fails `check`, not the PR gate. See `measure-dir.md`. |
 | `src/felizjueves/` | **importable.** Root holds only `__init__`, `spec`, `engine`, `levers` (`test_root_layout.py` enforces it); everything else is in a package: `ao/`, `mmd/`, `hgp/`, `rys/`, `plan/`, `ir/`, `emit/`, `eri/` (`j_coulomb/`, `k_exchange/`, `fock/`, `hjk/`, `density_fit/`), `one_electron/`, `gradient/`, `hessian/`, `performance/`, `literature/`, `reference/`. `spec.Spec` is the key every subsystem joins on. See `src-dir.md`. |
 | `src/felizjueves/plan/` | **live, host-side only.** Steps 1–3 of `[JEngine, v2, §6]` plus the schedule; counts, emits nothing. See `plan-dir.md`. |
@@ -107,6 +109,7 @@ on THIS host the CUDA 13.0 toolkit happens to be installed natively, so
 | fast | `pytest -m "not cuda and not hip and not gpu and not slow and not oracle"` (`FAST_TEST_ARGS`; a bare `pytest` applies no marker filter; 3m27s on `JOBS=8` with `XDIST_DIST=worksteal`, 2026-10-29) | the Python side agrees with itself — and, through tracked fixtures, with libcint — **for classes with L ≤ 4** (`test/tiers.py`'s `FAST_L_MAX`, #419): anything that builds, emits, plans or integrates a class above it is `slow`, and a parametrized test is split at the cut, so the `[JEngine]` board replays and the plan search (every cell L 7–16) are slow-tier only; reads of stored rows and keys stay fast. Compiles nothing, launches nothing, needs no PySCF. |
 | kernel | `devtools/kernel-tier.sh --backend cuda\|hip` | generate → compile with the real device compiler (a warning located in generated text fails the compile phase, exit 1 — #92) → run on the card → compare against the host reference, and against libcint for `J_µν` (`test_ao_j_ondevice.py`). The device phase is `gpu and <backend> and not slow` (`KERNEL_TEST_ARGS`): L ≤ `FAST_L_MAX` on small inputs (H₂, two H₂, H₂O/STO-3G), the PR gate, 3m59s on the RTX 3080 and 3m54s on the RX 9060 XT, each with `--no-cache` (every compile cold), 2026-10-29. |
 | kernel, full | `devtools/kernel-tier.sh --backend cuda\|hip --full` | the same, every `gpu` test with **L ≤ 8** (`KERNEL_FULL_TEST_ARGS`): the L = 7 J and K subgrid cells, #259's L = 8 K check, the `[p\|q]` ladder through L = 8, the 6-31G / cc-pVDZ / cc-pVTZ builds, the per-class F lever checks. For a milestone's close or a kernel-text change above the cut. **Since #301 both kernel selections exclude `high_l`**, every case above `tiers.DEVICE_L_MAX = 8` (the L = 10, 13 and 16 J/K subgrid and asymmetric cells, the ladder's L = 9..16): one L = 10 K unit's compile alone outlasted an hour. They are kept: `pytest -m "gpu and <backend> and high_l"` runs them by hand. |
+| compile | `pytest -n 4 --dist worksteal -m "(cuda or hip) and not gpu and not slow"` (3m24s and 3m56s in two cold runs on a 4-core Claude cloud container, no sccache, 2026-10-29) | every compile-only test function's emitted text survives nvcc **and** hipcc, needing no card — for the first case of each kind of unit it emits (`tiers.sample_compiles`: 272 of 2,345 cases, all 171 functions); the rest are `slow`, which the 28m38s full set in `test/compile-only-timings.xml` was. Proves no number. |
 | measure | `devtools/measure.sh <sweep>` | **not a correctness tier**: timing, counters, ceilings, the recompile-against-stored-rows check and the stored reports recomputed (`check`). Nothing here blocks a PR. |
 | oracle | `uv sync --group oracle`, then `pytest -m oracle` | the tracked fixtures in `test/oracle/fixtures/` still equal what PySCF computes today. Without the group these tests skip; a drift is news about PySCF until proven otherwise. |
 

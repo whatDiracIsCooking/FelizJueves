@@ -125,11 +125,13 @@ Nine goldens per backend are in `test/golden/{cuda,hip}/{hmetric,heri3}_*`
 8 passed) ran: against the host, worst 3.08 / 6.06 eps of the tower twin for
 `(P|Q)` (synthetic / fixture) and 2.98 / 4.90 for `(mn|P)`; against libcint
 6.24e-15 of `max|M|` (`int2c2e_cart`) and 2.05e-14 of `max|T|`
-(`int3c2e_cart`); runs bit-identical. The RX 9060 XT is not run (#431).
+(`int3c2e_cart`); runs bit-identical. The RX 9060 XT has not run it, and
+no open issue tracks that run: #431 closed on 2026-10-17 when the card's
+detection was fixed, not when this was run.
 
 ## What is not done
 
-- **The RX 9060 XT** compile and card run (above; #431).
+- **The RX 9060 XT** compile and card run (above; no open issue).
 - **d and above.** The builders accept them, but nothing is tested there and
   the CLI refuses them.
 - **Measurement**, and any comparison against the MMD kernels' clock or

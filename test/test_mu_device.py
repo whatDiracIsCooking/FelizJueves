@@ -1,12 +1,17 @@
-"""The dipole `MU = <a| q (r - C) |b>` on the card (#523): every ordered pair
-class through (dd) against the host and libcint, whole-H2O `MU` against
-libcint's `int1e_r_cart` at both origins, the origin-shift identity against
-the card's own `S`, and `q = -1` traced with the density against PySCF's
-`dip_moment` -- on the RTX 3080 and the RX 9060 XT.
+"""The dipole `MU = <a| q (r - C) |b>` on the card (#523, f by #627): every
+ordered pair class through (ff) against the host and libcint, whole-H2O `MU`
+against libcint's `int1e_r_cart` at both origins, the origin-shift identity
+against the card's own `S`, and `q = -1` traced with the density against
+PySCF's `dip_moment` -- on the RTX 3080 and the RX 9060 XT.
 
-MILESTONE 19'S CAP: nothing above L = 4, every shell `l <= 2`. The driver
-(`mu_driver.py`) refuses a class above (dd), and nothing here builds,
-emits, launches or checks one.
+THE CAP: nothing above L = 6, every shell `l <= 3` (#627; milestone 19
+stopped at (dd)). The driver (`mu_driver.py`) refuses a class above (ff),
+and nothing here builds, emits, launches or checks one. The f cases (PART 1
+and PART 3 on `hf_ccpvtz_dipole`, and its compile) launch (df) and (ff),
+above tiers.FAST_L_MAX, so they are `slow`: `kernel-tier.sh --full` runs
+them. #627's f cases were WRITTEN on a device-less box (compiled by nvcc and
+hipcc there, every compile-only companion green); their device runs are
+the card's to do.
 
 THE BUILD is `mu_driver.compile_mu`: one program per launch
 (`launch.one_electron_launch`, no nuclei, tau = 0), every pair class's
@@ -23,8 +28,10 @@ text.
 
 PART 1, PER PAIR CLASS, THROUGH (dd): `hf_ccpvtz_spd_dipole` (#520,
 HF/cc-pVTZ without f), whose launch reaches all nine ordered classes
-`(0..2, 0..2)`, each between two centres. At the fixture's origin and at 0,
-`q = 1`:
+`(0..2, 0..2)`, each between two centres; and THROUGH (ff):
+`hf_ccpvtz_dipole` (#627, the same molecule with its f shells), all sixteen
+`(0..3, 0..3)`, every class with one f between two centres and (ff) on F
+alone. At the fixture's origin and at 0, `q = 1`:
 
 - against the HOST, `one_electron.multipole.multipole_block` placed by
   `kernel_jab`'s rule (test_kernel_mu.py's `_host`, the interpreted
@@ -43,13 +50,13 @@ dipole `Tr(D MU)` plus `SUM_A Z_A (R_A - C)` against PySCF's RHF
 `dip_moment`, within 1e-12 of `max|nuclear| + max|electronic|`
 (test_ao_multipole.py's scale, unchanged).
 
-PART 3, THE ORIGIN SHIFT ON THE CARD: on the spd basis,
+PART 3, THE ORIGIN SHIFT ON THE CARD: on the spd basis and the f basis,
 `MU(C') = MU(C) + q (C - C') S` with `MU` at two origins and `S` all three
 built on the card (`S` by `kernel_s`, `one_electron_driver.build_on_card`),
 at `q = 1` and `q = -1`, within `SHIFT_TOL = 1e-14` of `max|MU|`
 (test_kernel_mu.py's and test_ao_multipole.py's bound, unchanged); and the
-shift from the fixture's origin to 0 against libcint's `int1e_ovlp`, within
-1e-12 of `max|MU|`.
+shift from the fixture's origin to 0 against libcint's `int1e_ovlp` (the
+f fixture's `ovlp`, the same call), within 1e-12 of `max|MU|`.
 
 THE DEVICE-VERSUS-HOST BOUND, per element of component `k`, stated before
 any run, with `u = 2^-53`, `gamma_n = n u / (1 - n u)`, `L = la + lb` and
@@ -105,6 +112,7 @@ from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_mu import _host as _host_jab
 from test_one_electron_device import _axis_abs, _place
+from tiers import by_l
 
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.ao.shell import cartesians
@@ -119,6 +127,11 @@ SHIFT_TOL = 1e-14  # of max|MU|: test_kernel_mu.py's / test_ao_multipole.py's
 ZERO = (0.0, 0.0, 0.0)
 C2 = (-1.1, 0.25, 0.6)  # the second origin of the shift (test_kernel_mu.py's)
 SPD = manifest.SPD_DIPOLE
+F = manifest.F_DIPOLE  # #627: through (ff)
+# the per-class fixtures, each with the top shell l its launch reaches;
+# the f one launches (ff), L = 6, so it is `slow`
+CLASS_LMAX = {SPD: 2, F: 3}
+CLASS_PARAMS = [by_l(n, 2 * CLASS_LMAX[n], id=n) for n in (SPD, F)]
 MOLECULES = ("h2o_sto3g", "h2o_631g", "h2o_ccpvdz")
 MOLECULE_PARAMS = [pytest.param(m, id=m, marks=(pytest.mark.slow,)
                                 if m == "h2o_ccpvdz" else ())
@@ -141,10 +154,10 @@ def _n_e(L: int) -> int:
 
 @cache
 def _case(name: str):
-    """`(basis, origin, r, r0, extra)`: the spd fixture, or an H2O pair
-    (`extra` its `DipolePair`, else its `DipoleIntegrals`)."""
-    if name == SPD:
-        d = manifest.dipole_integrals()
+    """`(basis, origin, r, r0, extra)`: the spd or f fixture, or an H2O
+    pair (`extra` its `DipolePair`, else its `DipoleIntegrals`)."""
+    if name in CLASS_LMAX:
+        d = manifest.dipole_integrals(name)
         return ob.from_fixture(d.fixture), d.origin, d.r, d.r0, d
     p = manifest.dipole_pair(name)
     return ob.from_fixture(p.dipole), p.origin, p.r, p.r0, p
@@ -284,27 +297,29 @@ def _tag(backend: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Part 1: every ordered pair class through (dd), host and libcint
+# Part 1: every ordered pair class through (dd), and through (ff)
 # ---------------------------------------------------------------------------
 
 
-def _part1(backend: str, request, run_device_binary, tmp_path: Path) -> None:
-    b, n_tier = _binary(backend, SPD, request, tmp_path)
-    launch = _launch(SPD)
-    _, origin, r, r0, _ = _case(SPD)
-    _, _, K, cls_of = _bound(SPD, origin, 1.0)
+def _part1(backend: str, request, run_device_binary, tmp_path: Path,
+           name: str = SPD) -> None:
+    lmax = CLASS_LMAX[name]
+    b, n_tier = _binary(backend, name, request, tmp_path)
+    launch = _launch(name)
+    _, origin, r, r0, _ = _case(name)
+    _, _, K, cls_of = _bound(name, origin, 1.0)
     classes = sorted(set(cls_of[K > 0]))
     lines = []
     for C, want, tag in ((origin, r, "C"), (ZERO, r0, "0")):
         plus = b.run(C, 1.0, run_device_binary)
-        worst = _check_host(backend, SPD, C, 1.0, plus)
+        worst = _check_host(backend, name, C, 1.0, plus)
         lc = {c: _libcint_rel(plus[0], want, cls_of == c) for c in classes}
         bad = {c: v for c, v in lc.items() if v > LIBCINT_TOL}
-        assert not bad, (f"{backend} {SPD} at {tag}: per-class |MU - "
+        assert not bad, (f"{backend} {name} at {tag}: per-class |MU - "
                          f"int1e_r_cart| / max|r| over {LIBCINT_TOL:g}: {bad}")
         minus = b.run(C, -1.0, run_device_binary)
-        _check_host(backend, SPD, C, -1.0, minus)
-        _, r2r, _, _ = _bound(SPD, C, 1.0)
+        _check_host(backend, name, C, -1.0, minus)
+        _, r2r, _, _ = _bound(name, C, 1.0)
         d = np.abs(minus[0] + plus[0])
         assert np.all(d <= r2r), (
             f"q = -1 is not the negation of q = 1: {_ratio(d, r2r):.2e} of "
@@ -315,12 +330,14 @@ def _part1(backend: str, request, run_device_binary, tmp_path: Path) -> None:
                      + "; |MU - int1e_r_cart| / max|r| per class "
                      + " ".join(f"{c}:{v:.2e}" for c, v in lc.items())
                      + f" (tol {LIBCINT_TOL:g}); |MU - host| / max|MU| "
-                     f"{_host_rel(SPD, C, plus):.2e}; runs bit-identical "
+                     f"{_host_rel(name, C, plus):.2e}; runs bit-identical "
                      f"{bool(np.array_equal(plus[0], plus[1]))}; q=-1 exact "
                      f"negation {bool(np.array_equal(minus[0], -plus[0]))}")
-    assert classes == [f"{a}{c}" for a in range(3) for c in range(3)]
+    assert classes == [f"{a}{c}" for a in range(lmax + 1)
+                       for c in range(lmax + 1)]
     recs = {f"{c.la}{c.lb}": len(c.recs) for c in launch}
-    print(f"\n{_tag(backend)} MU {SPD}: classes through (dd) ({n_tier} of "
+    top = "(ff)" if lmax == 3 else "(dd)"
+    print(f"\n{_tag(backend)} MU {name}: classes through {top} ({n_tier} of "
           f"{len(launch)} units the tier's), records {recs}\n"
           + "\n".join(lines))
 
@@ -339,6 +356,24 @@ def test_hip_mu_every_class_through_dd_matches_host_and_libcint(
         request, run_device_binary, tmp_path) -> None:
     """Part 1 on the RX 9060 XT."""
     _part1("hip", request, run_device_binary, tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.slow  # launches (ff), L = 6
+def test_cuda_mu_every_class_through_ff_matches_host_and_libcint(
+        request, run_device_binary, tmp_path) -> None:
+    """Part 1 at f (#627) on the RTX 3080."""
+    _part1("cuda", request, run_device_binary, tmp_path, F)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.slow  # launches (ff), L = 6
+def test_hip_mu_every_class_through_ff_matches_host_and_libcint(
+        request, run_device_binary, tmp_path) -> None:
+    """Part 1 at f (#627) on the RX 9060 XT."""
+    _part1("hip", request, run_device_binary, tmp_path, F)
 
 
 # ---------------------------------------------------------------------------
@@ -407,10 +442,11 @@ def test_hip_mu_h2o_matches_libcint_and_dip_moment(
 # ---------------------------------------------------------------------------
 
 
-def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
-    b, _ = _binary(backend, SPD, request, tmp_path / "mu")
-    basis, origin, _, _, d = _case(SPD)
-    launch = _launch(SPD)
+def _part3(backend: str, request, run_device_binary, tmp_path: Path,
+           name: str = SPD) -> None:
+    b, _ = _binary(backend, name, request, tmp_path / "mu")
+    basis, origin, _, _, d = _case(name)
+    launch = _launch(name)
     tc = _toolchain(backend, request)
     units = one_e_tier_units(backend,
                              [one_e_kernel_of(c, Target.S) for c in launch])
@@ -432,7 +468,7 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
     lc = float(np.max(np.abs(at_c - want)) / np.max(np.abs(want)))
     assert lc <= LIBCINT_TOL, (
         f"{backend}: MU(C) - MU(0) + C S_libcint = {lc:.2e} of max|MU|")
-    print(f"\n{_tag(backend)} MU {SPD} origin shift: |MU(C') - MU(C) - "
+    print(f"\n{_tag(backend)} MU {name} origin shift: |MU(C') - MU(C) - "
           f"q (C - C') S_card| / max|MU| q=+1 {shift[1.0]:.2e}, q=-1 "
           f"{shift[-1.0]:.2e} (tol {SHIFT_TOL:g}); against int1e_ovlp "
           f"{lc:.2e} (tol {LIBCINT_TOL:g})")
@@ -440,25 +476,27 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
 
 @pytest.mark.cuda
 @pytest.mark.gpu
+@pytest.mark.parametrize("name", CLASS_PARAMS)
 def test_cuda_mu_origin_shift_against_the_cards_s(
-        request, run_device_binary, tmp_path) -> None:
+        name, request, run_device_binary, tmp_path) -> None:
     """Part 3 on the RTX 3080."""
-    _part3("cuda", request, run_device_binary, tmp_path)
+    _part3("cuda", request, run_device_binary, tmp_path, name)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
+@pytest.mark.parametrize("name", CLASS_PARAMS)
 def test_hip_mu_origin_shift_against_the_cards_s(
-        request, run_device_binary, tmp_path) -> None:
+        name, request, run_device_binary, tmp_path) -> None:
     """Part 3 on the RX 9060 XT."""
-    _part3("hip", request, run_device_binary, tmp_path)
+    _part3("hip", request, run_device_binary, tmp_path, name)
 
 
 # ---------------------------------------------------------------------------
 # Compile-only companions (`cuda` / `hip`, no `gpu`): no card needed
 # ---------------------------------------------------------------------------
 
-COMPILE_CELLS = [pytest.param(SPD, id=SPD)] + MOLECULE_PARAMS
+COMPILE_CELLS = CLASS_PARAMS + MOLECULE_PARAMS
 
 
 def _compiles(backend: str, tc, name: str, tmp_path: Path) -> None:
@@ -493,11 +531,18 @@ def test_mu_spd_launch_reaches_every_ordered_class_and_none_above_dd(
         assert all(max(c.la, c.lb) <= MU_LMAX for c in _launch(name))
 
 
-def test_mu_driver_refuses_a_class_above_dd() -> None:
-    class _F:
-        la, lb = 0, 3
-    with pytest.raises(ValueError, match="above"):
-        kernel_of(_F())  # type: ignore[arg-type]
+@pytest.mark.slow  # plans (ff), L = 6
+def test_mu_f_launch_reaches_every_ordered_class_through_ff() -> None:
+    got = {(c.la, c.lb) for c in _launch(F)}
+    assert got == {(a, b) for a in range(4) for b in range(4)}
+    assert MU_LMAX == 3
+
+
+def test_mu_driver_refuses_a_class_above_ff() -> None:
+    class _G:
+        la, lb = 0, 4
+    with pytest.raises(ValueError, match=r"above \(ff\)"):
+        kernel_of(_G())  # type: ignore[arg-type]
 
 
 def test_mu_program_reads_the_kernels_parameters(tmp_path) -> None:

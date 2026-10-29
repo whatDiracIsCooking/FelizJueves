@@ -498,17 +498,19 @@ def test_an_eri3_l_it_cannot_honour_is_a_2(argv, tmp_path):
 
 # --- the dipole ladder (#522; goldens in test/test_emit_mu.py) ----------------
 #
-# Milestone 19's cap (user decision 2026-10-24): `--mu-l` accepts 0..2 only,
-# bare 2, and exits 2 above, so no class past (dd) is ever built here.
+# #627's cap (milestone 19 stopped at (dd)): `--mu-l` accepts 0..3 only,
+# bare 2, and exits 2 above, so no class past (ff) is ever built here.
 
 
-def test_the_mu_ladder_is_every_pair_class_through_dd_and_no_further():
-    assert emit_cli.DEFAULT_MU_L == emit_cli.MU_L_MAX == 2
+def test_the_mu_ladder_is_every_pair_class_through_ff_and_no_further():
+    assert emit_cli.DEFAULT_MU_L == 2 and emit_cli.MU_L_MAX == 3
     assert emit_cli.mu_classes(1) == [(0, 0), (0, 1), (1, 1)]
     assert emit_cli.mu_classes(2) == emit_cli.pair_classes(2)
+    assert emit_cli.mu_classes(3) == emit_cli.pair_classes(3)
     assert len(emit_cli.mu_classes(emit_cli.DEFAULT_MU_L)) == 6
+    assert len(emit_cli.mu_classes(emit_cli.MU_L_MAX)) == 10
     for bad in (-1, emit_cli.MU_L_MAX + 1, emit_cli.ONE_E_L_MAX):
-        with pytest.raises(ValueError, match=r"through \(dd\) only"):
+        with pytest.raises(ValueError, match=r"through \(ff\) only"):
             emit_cli.mu_classes(bad)
 
 
@@ -542,7 +544,7 @@ def test_the_mu_names_cannot_collide_with_any_other_ladder():
               | {f"{eri3_name(c)}.cu" for c in emit_cli.eri3_classes(16)}
               | {f"f_{''.join(map(str, c))}.cu" for c in emit_cli.FOCK_CLASSES})
     mu = [f"{mu_name(c)}.cu" for c in emit_cli.mu_classes(emit_cli.MU_L_MAX)]
-    assert len(set(mu)) == len(mu) == 6
+    assert len(set(mu)) == len(mu) == 10
     assert not set(mu) & others
     assert not any(n.startswith("mu_") for n in others)
 
@@ -594,12 +596,12 @@ def test_a_mu_l_it_cannot_honour_is_a_2(argv, tmp_path):
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
-def test_a_mu_l_above_dd_says_it_is_validated_through_dd_only(tmp_path,
+def test_a_mu_l_above_ff_says_it_is_validated_through_ff_only(tmp_path,
                                                               capsys):
-    assert _run(tmp_path, "cuda", "--mu-l", "3") == 2
+    assert _run(tmp_path, "cuda", "--mu-l", "4") == 2
     err = capsys.readouterr().err
-    assert "--mu-l 3 is outside 0..2" in err
-    assert "validated through (dd) only" in err
+    assert "--mu-l 4 is outside 0..3" in err
+    assert "validated through (ff) only" in err
 
 
 @pytest.mark.parametrize("argv", [
