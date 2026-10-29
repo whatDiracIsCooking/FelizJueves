@@ -153,11 +153,13 @@ HIGH_L = (Cell("sf", 0.0, rolled=True), Cell("spdf", 0.0, rolled=True),
           Cell("spdf", 0.0, rolled=True, column=True),
           Cell("gg", 0.0, rolled=True, column=True))
 WALK_ONLY = frozenset({"gg"})  # #583: held to walk_kb alone
-PARAMS = ([pytest.param(c, id=c.id)
-           for c in (*FAST, *ROLLED, *DENSE, *TRANSPOSED, *COLUMN)]
+# The PR gate holds the forms a class can default to (`kb`, `kbr`, `kbrc`);
+# the dense (#575) and transposed (#576) forms, measured and not chosen, run
+# their PR-gate cells under `slow` (`--full`), ~100 s of the CUDA gate.
+PARAMS = ([pytest.param(c, id=c.id) for c in (*FAST, *ROLLED, *COLUMN)]
           + [pytest.param(c, id=c.id, marks=pytest.mark.slow)
-             for c in (*SLOW, *ROLLED_SLOW, *DENSE_SLOW, *TRANSPOSED_SLOW,
-                       *COLUMN_SLOW)]
+             for c in (*DENSE, *TRANSPOSED, *SLOW, *ROLLED_SLOW, *DENSE_SLOW,
+                       *TRANSPOSED_SLOW, *COLUMN_SLOW)]
           + [pytest.param(c, id=c.id, marks=(pytest.mark.slow,
                                              pytest.mark.high_l))
              for c in HIGH_L])

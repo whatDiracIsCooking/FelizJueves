@@ -60,14 +60,15 @@ usage_from_header() {
   }' "$1"
 }
 
-# The xdist worker flag, or nothing when JOBS is empty (a suite without
-# pytest-xdist installed). Used as `${XDIST[@]}`.
+# The xdist worker flag, plus XDIST_DIST's scheduler when set, or nothing when
+# JOBS is empty (a suite without pytest-xdist installed). Used as
+# `${XDIST[@]}`.
 xdist_args() {
   # shellcheck disable=SC2034  # both assignments are read by the CALLER, as
   # "${XDIST[@]}"; shellcheck cannot see across the function boundary
   XDIST=()
   # shellcheck disable=SC2034
-  [ -n "${JOBS:-}" ] && XDIST=(-n "$JOBS")
+  [ -n "${JOBS:-}" ] && XDIST=(-n "$JOBS" ${XDIST_DIST:+--dist "$XDIST_DIST"})
   return 0
 }
 
