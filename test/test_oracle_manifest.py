@@ -82,7 +82,7 @@ def test_manifest_imports_numpy_and_stdlib_only():
         elif isinstance(node, ast.ImportFrom):
             mods.add((node.module or "").split(".")[0])
     third_party = mods - {"__future__", "json", "math", "sys", "dataclasses",
-                          "pathlib", "typing"}
+                          "pathlib", "typing", "hashlib"}
     assert third_party == {"numpy"}
 
 

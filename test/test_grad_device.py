@@ -19,10 +19,8 @@ room and would still catch any wrong term (a gradient term is >= 1e-6 of
 `max|G|` on these inputs). The runs are compared with each other too.
 
 `gjab`'s `Jp` is the host's at `L + 1` (grad_driver.py's docstring).
-`gk` needs nothing from the host but the records: its `[r]^(0)` run on
-the card, one warp per bra record, so its row is the whole `dE_K` of
-the molecule (every ordered quartet, `E_K = 1/2 SUM D_ab D_cd (ac|bd)`).
-Its interpreted bound is test_kernel_gk.py's; the same `DEV_TOL` holds it.
+`gk` (H2O/STO-3G here until #618) is test_gk_device.py's now: its units
+are compiled one at a time there (test/gk_driver.py), in both forms.
 
 RUN ON BOTH CARDS (2026-10-27), every case passed, cc-pVDZ included:
 worst 3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060
@@ -66,13 +64,11 @@ DEV_TOL = 1e-13  # of max|G| (module docstring)
 MOLECULES = [pytest.param("h2o_sto3g_j", id="h2o_sto3g"),
              pytest.param("h2o_ccpvdz_j", id="h2o_ccpvdz",
                           marks=(pytest.mark.slow,))]
-TARGETS = ("s", "t", "v", "j", "k")
-# `k` on H2O/STO-3G only: cc-pVDZ's whole host dE_K (every ordered quartet
-# of 12 shells, in pure Python) and its (dd|dd) unit (~4 MB of unrolled
-# text) are out of this test's reach
+TARGETS = ("s", "t", "v", "j")
+# `k` moved to test_gk_device.py (#618): its units are compiled one at a
+# time there, under the user's per-unit budget, in both forms
 CASES = [pytest.param(m.values[0], w, id=f"{m.id}-{w}", marks=m.marks)
-         for m in MOLECULES for w in TARGETS
-         if not (w == "k" and m.values[0] != "h2o_sto3g_j")]
+         for m in MOLECULES for w in TARGETS]
 # #614: every one-electron class through (ff), f on two centres, a third
 # nucleus with no shell (module docstring)
 FF = "co_ccpvtz_j"

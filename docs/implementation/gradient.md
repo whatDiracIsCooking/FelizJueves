@@ -236,8 +236,70 @@ integral, not its derivative), no shared memory.
   (the density, `D_ab` and `D_cd` read at the records' AO offsets) and
   `G[n_atom, 3]`.
 - The unrolled text grows fast: 29 KB at `(ds|ss)`, 169 KB at `(pp|pp)`,
-  809 KB at `(pd|pd)`, 4.0 MB at `(dd|dd)` (cuda). A rolled form, as
-  `kernel_kblock_rolled` is for K at f, is not built.
+  809 KB at `(pd|pd)`, 4.0 MB at `(dd|dd)` (cuda), so it is the default
+  only below `L = 5` (next section).
+
+### The rolled `gk` (#618)
+
+From `L = la + lc + lb + ld >= kernel_gk.LOWSTACK_MIN_L = 5`, and for
+every class with an f shell, `build_gk_kernel(cls)` emits a **rolled
+form** (`gk_lowstack(cls)`; `lowstack=` forces either form at any class;
+the name, parameters, launch and `G` contract are the same, so a rolled
+unit is a drop-in). Below the floor the default text is byte-identical
+and the 16 s / p goldens did not move. The unrolled form of a class with
+an f shell is never built by default (`UNROLLED_L_MAX = 2`) and, by the
+user's decision, was not compiled or measured.
+
+The rolled form holds no `E` block and no straight-line fold. Per bra
+record it forms the bra's per-axis `E` tables one index up, `(la + 1, lc
++ 1)`; per ket record the recurrence (the same plan, `gk_pq_spec`) with
+each `[r]^(0)` stored into a local `R[n_t(L + 1)]` as it forms
+(`recurrence.store_targets`), and the ket's per-axis tables `(lb, ld)`,
+every odd-`t` entry negated once (so `(-1)^|q|` is in the table). Then,
+per `(b, d)` row (`cartesian_loops`), stage 1 is `I[p] = s_bd SUM_q
+E^bd_q R[p + q]` for every `|p| <= lp + 1` (`hermite_loops`), and per
+`(a, c)` row, with `W = M[a, b] M[c, d]` read where it is used,
+
+    gA_k += W (2 alpha SUM_t E^{a+1_k, c}_t I[t] - a_k SUM_t E^{a-1_k, c}_t I[t])
+
+and `gC_k` likewise on `c`. Every `SUM` is a loop nest over the tables,
+factored per axis as `e_fragment.rolled_e_sum` is. The tables are
+**compact** (`kernel_gk.tables_fragment`): only the reachable `E^{ij}_t`,
+`t <= i + j`, at `compact_offset(i, j, l2) + t`, 125 doubles a table at
+`(4, 4)` against the dense 225. That is what brings `(ff|ff)` under the
+stack budget: with the dense tables `gk_33_33` was 15,008 B of `sm_86`
+stack (a hand probe), compact 11,616 B. The rolled form folds each
+derivative term per `(a, c)` row, where the unrolled one folds each raised
+row once and digests it into up to three axes, so the two agree to
+round-off, never bitwise.
+
+**The block mapping is not built.** The issue named a second form,
+`kernel_kblock`'s one warp per `K_AB` block. By the user's decision only a
+rolled / low-stack block variant was in scope, and only if cheap; the
+energy K's rolled block kernels measured slower than `kb` or neutral (#571,
+#583), so it was not built and nothing about it is measured.
+
+**Measured** in `data/measured/gk.json` (`measure/measure_gk.py`,
+`devtools/measure.sh gk-compile`, a compiler and no card; the rule
+`declared` before any row; `measure.sh check` holds the gate to the rows):
+every class through `(ff|ff)` (256) in the rolled form, and the unrolled
+form of the classes with every `l <= 2` level by level in `L` through the
+floor's level, each unit compiled alone and **killed at 10 s** (the user's
+per-compile budget for #618; a killed unit is recorded `over_budget`).
+Admissible means at most 14,000 B of stack (#613's budget) and within
+10 s, on both arches.
+
+| | `sm_86` | `gfx1200` |
+|---|---|---|
+| unrolled, L <= 4 (50 classes) | all admissible; worst `gk_22_00` 11,696 B, 2.1 s | all admissible; worst `gk_22_00` 10,836 B, 4.3 s |
+| unrolled, L = 5 | `gk_22_01` 14,616 B and `gk_22_10` 14,880 B (8.5 s, 18,400 B spill stores): **over** | all within budget (worst 11,648 B, 7.8 s) |
+| unrolled, L = 6 (`gfx1200` only, the first session's per-arch stop) | not compiled | 8 of 10 **over_budget** (killed at 10 s) |
+| rolled, all 256 | worst stack `gk_33_33` 11,616 B (255 registers, 1,956 B spill stores, 2.8 s, 204 KB of source); worst compile `gk_31_21` 4.8 s; median 2.5 s, 2,632 B | worst `gk_33_33` 10,736 B (192 VGPRs, 412 spilled, 2.2 s); worst compile 2.6 s; median 1.6 s, 2,680 B |
+
+So the floor is 5 (`sm_86`'s L = 5), no default unit is over the budget
+on either arch, and no rolled unit came near the 10 s cap. At `(dd|dd)`
+the rolled unit is 101 KB, 4,448 B of `sm_86` stack and 3.7 s, against the
+unrolled 4.0 MB. No clock was measured.
 
 Parameters of the pair kernels (`kernel_s`'s per-axis spelling for the
 one-electron three):
@@ -255,12 +317,16 @@ class selector (`--class LA+1 LB LC LD`), not by this flag. Goldens:
 `test/golden/{cuda,hip}/{gs,gt,gv,gjab}_{la}{lb}` for (ss) through (dd),
 48 files, the largest 211 KB.
 
-`python -m felizjueves.emit --grad-k-l [LMAX]` (1 bare, accepted 0..2,
-exit 2 above) adds `gk_{la}{lc}_{lb}{ld}` for every K class with each
-`l <= LMAX` (16 units bare, 81 at 2), beside the J ladders, never in the
-bare default nor in `KERNEL_GEN_CMD`. Goldens:
-`test/golden/{cuda,hip}/gk_*` for the 16 s / p classes, 32 files, the
-largest 169 KB (`test_emit_grad_k.py`).
+`python -m felizjueves.emit --grad-k-l [LMAX]` (1 bare, accepted 0..3
+since #618, exit 2 above) adds `gk_{la}{lc}_{lb}{ld}` for every K class
+with each `l <= LMAX` (16 units bare, 81 at 2, 256 at 3), each in its
+default form, beside the J ladders, never in the bare default nor in
+`KERNEL_GEN_CMD`. Goldens: `test/golden/{cuda,hip}/gk_*` for the 16 s / p
+classes (unrolled) and the four classes with one f shell and nothing else
+(`L + 1 = 4`, rolled), 40 files; every other default unit through
+`(ff|ff)` (236 a backend) is pinned by size and sha256 in
+`test/golden/gk_digests.json` (`slow` above `L + 1 = 4`;
+`test_emit_grad_k.py`).
 
 ## Witnesses, and what ran where
 
@@ -275,6 +341,9 @@ largest 169 KB (`test_emit_grad_k.py`).
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
 | host `E_K` invariance, partition | `SUM_A G = 0`; the class quartets cover every ordered quartet once | the s, p basis | ~5e-16 of `max\|G\|` |
 | `gk` interpreted (`test_kernel_gk.py`) | `host.exchange_gradient`, per class, its `absolute=True` twin as scale | every K class with each `l <= 1` on the s, p basis; every class with a d shell through `(dd\|dd)` on a two-atom s, p, d basis (L + 1 > 4 `slow`); the 16 s, p classes summed to the whole `dE_K`; 1, 4 and 32 lanes | at most 0.7 eps of the scale, gate 16 eps |
+| rolled `gk` interpreted (`test_kernel_gk.py`, #618) | the unrolled `gk` on the same records (the differential), the class's `absolute=True` twin as scale; and at f `host.exchange_gradient` | every K class with each `l <= 2` (L + 1 > 4 `slow`); f witnesses `(ff\|ff)` (bra `(f_A, f_B)` against both off-centre kets), `(fs\|fs)`, `(fd\|pd)` on a two-atom single-primitive s, p, d, f basis (`slow`) | all within the gate, 16 eps (the 107 slow cases passed, 2026-10-29) |
+| libcint `gk` witness (`test_k_gradient_witness.py`, #618) | `int2e_ip1_cart` on CO/cc-pVTZ, `co_ccpvtz_j`'s density, per class and whole | the file: 256 classes, sum, invariance; the host on `(dd\|dd)`, `(pd\|pd)`, `(ds\|ds)`, `(dp\|sp)` (`slow`) | host 2.6e-16 of `max\|G\|`, gate 1e-12 |
+| `gk` on a card (`test_gk_device.py`, `test/gk_driver.py`, #618) | H₂O/STO-3G: the host (whole) and the other form (per class); CO/cc-pVTZ (`slow`, `high_l`): the libcint witness per class and whole, and the unrolled form on the same upload | RTX 3080 and RX 9060 XT; every unit its own TU under a 10 s kill | H₂O 3.22e-15 / 3.37e-15 of `max\|G\|`; CO 2.63e-15 / 2.94e-15 against libcint, differential over 62 / 58 classes 9.2e-17 / 1.2e-16 |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
@@ -432,7 +501,8 @@ the spherical transform is the consumer's, as #615 decided for d0).
 
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
-  (ff), #614); `gjab` and `gk` have not (`gk` only on H₂O/STO-3G). The
+  (ff), #614) and `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618); `gjab`
+  has not. The
   forced-unrolled `gv` at (df) / (ff) is compiled (`g1e.json`) but not
   run on a card.
 - The device test feeds `gjab` the host's `J_p`: an on-card chain (`DQ`,
@@ -444,12 +514,12 @@ the spherical transform is the consumer's, as #615 decided for d0).
   two-electron gradient, `G_J - 1/2 G_K`, is assembled on the host and
   held to PySCF's DF RHF gradient (above, #620); the one-electron terms
   are not added to it.
-- `gk` is checked interpreted through `(dd|dd)` but its ladder writes
-  `l <= 2` only and its goldens are the s, p classes; f is not built
-  into the ladder (the unrolled text is 4 MB at `(dd|dd)` already).
-  A rolled form (`kernel_kblock_rolled`'s E-from-global and loops) and a
-  block mapping (`kernel_kblock`'s, one warp per `K_AB` block) are the
-  named follow-ups; neither is built.
+- `gk`'s rolled form is built (#618) but its f classes are witnessed
+  interpreted on three classes only (`(ff|ff)` on a subset of its
+  records, `(fs|fs)`, `(fd|pd)`); the full 256-class interpreted sweep
+  against the host was not run (hours of pure Python). The block mapping
+  (`kernel_kblock`'s, one warp per `K_AB` block) is not built, and no
+  `gk` clock is measured.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
   time (`g1e.json`, #614), not for wall-clock; `gjab` is not measured:
   its sweep and rule exist (`gjab-compile`, `gjab.json`, #619) but no
