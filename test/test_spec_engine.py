@@ -36,7 +36,14 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     (Target.S, Engine.HGP), (Target.T, Engine.HGP),
                     (Target.V, Engine.HGP), (Target.DIPOLE, Engine.HGP),
                     # eri/density_fit/kernel_hgp.py: (P|Q) and (mn|P) by HGP
-                    (Target.METRIC, Engine.HGP), (Target.ERI3, Engine.HGP)}
+                    (Target.METRIC, Engine.HGP), (Target.ERI3, Engine.HGP),
+                    # eri/fock/kernel_frys.py: the fused F on Rys quadrature
+                    (Target.F, Engine.RYS),
+                    # eri/hjk/kernel_rj.py: the split J on Rys quadrature
+                    (Target.J, Engine.RYS),
+                    # one_electron/kernel_rys.py: S, T and V by Rys
+                    (Target.S, Engine.RYS), (Target.T, Engine.RYS),
+                    (Target.V, Engine.RYS)}
 
 
 def _spec(target: Target, engine: Engine | None = None, *,
@@ -56,7 +63,7 @@ def test_the_native_engine_is_hgp_for_f_and_mmd_for_every_other_target(
     assert NATIVE_ENGINE[Target.F] is Engine.HGP
     assert all(e is Engine.MMD for t, e in NATIVE_ENGINE.items()
                if t is not Target.F)
-    assert [e.value for e in Engine] == ["mmd", "hgp"]
+    assert [e.value for e in Engine] == ["mmd", "hgp", "rys"]
 
 
 @pytest.mark.parametrize("target", list(Target))

@@ -214,6 +214,20 @@ for CUDA, `.hip` for HIP):
   default nor in KERNEL_GEN_CMD. Only `la <= lb`; the `(1, 0)` unit a basis
   also reaches is the same builder's text, built by its driver.
 
+- the Rys one-electron ladder, `--rys-one-e-l [LMAX]`: for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (3 when the flag is given bare),
+  `kernel_rys.build_rys_kernel` for `Target.S`, `T` and `V` on
+  `Engine.RYS` (`rs_{la}{lb}`, `rt_`, `rv_`): the Rys factorisation per
+  primitive pair (the 1D recurrences, and for `V` the Rys rule `fj_rys<N>`
+  per nucleus, carried in the unit) into `kernel_hgp`'s contracted boundary
+  and HRR, one thread per contracted shell pair -- a drop-in for the
+  `hs_` / `ht_` / `hv_` unit of the same class. Accepted
+  0..`RYS_ONE_E_L_MAX` = 3 ONLY (the builder is built and checked through
+  (ff); above it is a 2). It ADDS units beside the J ladders, as
+  `--hgp-one-e-l` does, and is NEVER in the no-flag default nor in
+  KERNEL_GEN_CMD. The `cuda` and `hip` backends carry `fj_rys`; there is no
+  CLI `gpu` backend.
+
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
 is what the bare command writes, and `data/measured/kernels.json` pins those
@@ -266,6 +280,16 @@ classes: ptxas `8192 bytes smem` on the NVIDIA arch (48 KiB static per
 block) and `LDS Size [bytes/block]: 8192` on the AMD one (64 KiB per
 workgroup), pinned by test/test_emit_fock.py's compile cases.
 
+THE FUSED F ON RYS, `--rys` with `--fock-l` / `--fock-class`: the same
+classes on the Rys engine instead of HGP, `kernel_frys.build_frys_kernel`
+(`Target.F` on `Engine.RYS`), one unit per class, `fr_{la}{lb}{lc}{ld}` --
+`kernel_f`'s staging, screen, HRR and digestion with the Rys rule
+(`fj_rys<N>`, carried in the unit) and its 2D VRR in the primitive nest. A
+drop-in for the `f_` unit of the same class (same parameters and launch).
+`--rys` alone, or with an F lever flag (the `f.rys` slot admits none), is
+a 2. The `cuda` and `hip` backends carry `fj_rys`; there is no CLI `gpu`
+backend.
+
 THE HGP SPLIT J / K PATH, `--hgp-j-l LMAX` / `--hgp-k-l LMAX` /
 `--hgp-class L0 L1 L2 L3` [`--ordered`] (#407, milestone 14): the split
 Coulomb and exchange kernels on the HGP recurrence, `kernel_hj.build_hj_kernel`
@@ -303,6 +327,15 @@ already name the ordered units `hj_o_` / `hk_o_` (the class mode changes
 which classes exist, not one class's body). So the flag is the path's own,
 it selects the mode for every unit the command writes, and it is a 2
 without an HGP selector.
+
+THE SPLIT J ON RYS, `--rys` with `--hgp-j-l` / `--hgp-class`: the J units on
+the Rys engine instead of HGP, `kernel_rj.build_rj_kernel` (`Target.J` on
+`Engine.RYS`), named `rj_{rep}` / `rj_o_{class}` -- `kernel_hj`'s staging,
+screen, HRR and deposit with the Rys rule (`fj_rys<N>`, carried in the
+unit) and its 2D VRR in the primitive nest, a drop-in for the `hj_` unit of
+the same class and mode. J only: `--hgp-class` writes no K unit with it,
+and `--hgp-k-l` with it is a 2 (no K on Rys). The rule stops at N = 5, so
+`--hgp-j-l` above 2 and a class with `l0 + l1 + l2 + l3 > 8` are a 2.
 
 It is a SEPARATE path, like the F path: never combined with `--L`,
 `--pair-l`, `--one-e-l`, `--schwarz-l`, `--sx-l`, `--metric-l`, `--eri3-l`,
@@ -412,10 +445,12 @@ from felizjueves.eri.density_fit.kernel_hgp import (
 )
 from felizjueves.eri.density_fit.kernel_metric import build_metric_kernel
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.fock.kernel_frys import build_frys_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
 from felizjueves.eri.hjk.kernel_hk import built_class as hk_built_class
+from felizjueves.eri.hjk.kernel_rj import build_rj_kernel
 from felizjueves.eri.j_coulomb.kernel_dq import build_dq_kernel
 from felizjueves.eri.j_coulomb.kernel_jab import build_jab_kernel
 from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
@@ -443,12 +478,14 @@ from felizjueves.mmd.kernel import (
 from felizjueves.one_electron.kernel_hgp import TARGETS as HGP_ONE_E_TARGETS
 from felizjueves.one_electron.kernel_hgp import build_hgp_kernel
 from felizjueves.one_electron.kernel_mu import build_mu_kernel
+from felizjueves.one_electron.kernel_rys import TARGETS as RYS_ONE_E_TARGETS
+from felizjueves.one_electron.kernel_rys import build_rys_kernel
 from felizjueves.one_electron.kernel_s import build_s_kernel, s_name
 from felizjueves.one_electron.kernel_sx import build_sx_kernel
 from felizjueves.one_electron.kernel_t import build_t_kernel, t_name
 from felizjueves.one_electron.kernel_v import build_v_kernel, v_name
 from felizjueves.performance.device import Arch, Vendor, by_name, from_env
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import Engine, Operator, Spec, Target
 
 BACKENDS = {
     "cuda": (Vendor.NVIDIA, cuda.emit, "cu"),
@@ -487,6 +524,8 @@ DEFAULT_HESS_ERI3_L = 3  # `--hess-eri3-l` bare: la + lb + lP <= 3, 13 units
 HESS_ERI3_L_MAX = 4  # kernel_d2eri3 is validated at the d0 kernel's cap
 DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
+DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
+RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -950,6 +989,38 @@ def generate_hgp_one_e(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The Rys one-electron ladder
+# ---------------------------------------------------------------------------
+
+
+def rys_one_e_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..RYS_ONE_E_L_MAX` (the Rys one-electron kernels are built through
+    (ff))."""
+    if type(lmax) is not int or not 0 <= lmax <= RYS_ONE_E_L_MAX:
+        raise ValueError(f"--rys-one-e-l {lmax!r} is outside "
+                         f"0..{RYS_ONE_E_L_MAX}: the Rys one-electron "
+                         "kernels are built for shells through f only")
+    return pair_classes(lmax)
+
+
+def rys_one_e_kernels(lmax: int) -> list[Kernel]:
+    """`rs_`, `rt_`, `rv_{la}{lb}` for every class through `lmax`,
+    class-major."""
+    return [build_rys_kernel((t, la, lb)) for la, lb in rys_one_e_classes(lmax)
+            for t in RYS_ONE_E_TARGETS]
+
+
+def generate_rys_one_e(backend: str, arch: Arch, out: Path,
+                       lmax: int) -> list[Path]:
+    """Emit the Rys `S`, `T` and `V` unit of every pair class through `lmax`
+    into `out`; return the paths."""
+    kernels = rys_one_e_kernels(lmax)
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The Fock path (#287)
 # ---------------------------------------------------------------------------
 
@@ -979,12 +1050,13 @@ def fock_selection(lmax: int | None, classes: Sequence[Sequence[int]] = ()
 
 
 def generate_fock(backend: str, arch: Arch, out: Path,
-                  classes: Sequence[Am]) -> list[Path]:
+                  classes: Sequence[Am], *, rys: bool = False) -> list[Path]:
     """Emit the fused Fock unit `f_{la}{lb}{lc}{ld}` of every class into
-    `out`; return the paths."""
+    `out` -- or, with `rys`, its Rys twin `fr_{la}{lb}{lc}{ld}`; return the
+    paths."""
     out.mkdir(parents=True, exist_ok=True)
-    return [_write(backend, arch, out, build_f_kernel(tuple(c)))
-            for c in classes]
+    build = build_frys_kernel if rys else build_f_kernel
+    return [_write(backend, arch, out, build(tuple(c))) for c in classes]
 
 
 # ---------------------------------------------------------------------------
@@ -1050,17 +1122,27 @@ def hgp_selection(j_l: int | None, k_l: int | None,
     return specs
 
 
-def hgp_kernel(spec: Spec) -> Kernel:
-    """The unit of one `hgp_specs` key, by its target's builder."""
+RYS_J_LMAX = 2  # `--hgp-j-l` with `--rys`: rys.roots' N = 5 reaches (dd|dd)
+
+
+def hgp_kernel(spec: Spec, *, rys: bool = False) -> Kernel:
+    """The unit of one `hgp_specs` key, by its target's builder -- or, with
+    `rys`, a J key's Rys twin (`kernel_rj`; K is refused)."""
     target = "j" if spec.target is Target.J else "k"
+    if rys:
+        if target != "j":
+            raise ValueError(f"{spec.key()}: there is no K on Rys; --rys "
+                             "writes J units only")
+        return build_rj_kernel(replace(spec, engine=Engine.RYS))
     return HGP_TARGETS[target][1](spec)
 
 
 def generate_hgp(backend: str, arch: Arch, out: Path,
-                 specs: Sequence[Spec]) -> list[Path]:
-    """Emit the HGP J / K unit of every key into `out`; return the paths."""
+                 specs: Sequence[Spec], *, rys: bool = False) -> list[Path]:
+    """Emit the HGP J / K unit of every key into `out` -- or, with `rys`,
+    each J key's Rys twin `rj_...`; return the paths."""
     out.mkdir(parents=True, exist_ok=True)
-    return [_write(backend, arch, out, hgp_kernel(s)) for s in specs]
+    return [_write(backend, arch, out, hgp_kernel(s, rys=rys)) for s in specs]
 
 
 # ---------------------------------------------------------------------------
@@ -1211,6 +1293,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.hess_metric_l is not None
             or args.hess_eri3_l is not None
             or args.hgp_one_e_l is not None
+            or args.rys_one_e_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
@@ -1220,7 +1303,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / "
+              "--hgp-one-e-l / --rys-one-e-l / "
               "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
@@ -1236,16 +1319,30 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             print(f"emit: {flag} {v} is negative; LMAX bounds each shell's "
                   "l, any value >= 0", file=sys.stderr)
             return 2
+    if args.rys and args.hgp_k_l is not None:
+        print("emit: --rys writes the split J on Rys only (kernel_rj); there "
+              "is no K on Rys, so --hgp-k-l with it is refused",
+              file=sys.stderr)
+        return 2
+    if args.rys and args.hgp_j_l is not None and args.hgp_j_l > RYS_J_LMAX:
+        print(f"emit: --hgp-j-l {args.hgp_j_l} with --rys: the Rys rule stops "
+              f"at N = 5, (dd|dd); LMAX is 0..{RYS_J_LMAX}", file=sys.stderr)
+        return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
         specs = hgp_selection(args.hgp_j_l, args.hgp_k_l,
                               args.hgp_classes or (), ordered=args.ordered)
+        if args.rys:
+            specs = [s for s in specs if s.target is Target.J]
+            for s in specs:
+                hgp_kernel(s, rys=True)  # the reach refused before writing
     except ValueError as e:
         print(f"emit: {e}", file=sys.stderr)
         return 2
-    written = generate_hgp(args.backend, arch, args.out, specs)
+    written = generate_hgp(args.backend, arch, args.out, specs, rys=args.rys)
     mode = "ordered" if args.ordered else "canonical"
-    print(f"emit: {len(written)} {args.backend} HGP J / K ({mode}) "
+    what = "Rys J" if args.rys else "HGP J / K"
+    print(f"emit: {len(written)} {args.backend} {what} ({mode}) "
           f"translation unit(s) for {arch.name} -> {args.out}")
     for p in written:
         print(f"   {p.name}")
@@ -1304,10 +1401,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
+    ap.add_argument("--rys-one-e-l", dest="rys_one_e_l", type=int, nargs="?",
+                    const=DEFAULT_RYS_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
                     action="append", metavar=("LA", "LB", "LC", "LD"))
+    ap.add_argument("--rys", action="store_true")
     ap.add_argument("--hgp-j-l", dest="hgp_j_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--hgp-k-l", dest="hgp_k_l", type=int, default=None,
@@ -1347,6 +1447,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("emit: --ordered is the HGP J / K path's class mode; it needs "
               "--hgp-j-l, --hgp-k-l or --hgp-class", file=sys.stderr)
         return 2
+    if args.rys and (not (args.fock_l is not None or args.fock_classes
+                          or hgp) or fock_levers):
+        print("emit: --rys is the fused F path's or the split J path's "
+              "engine: it needs --fock-l / --fock-class or --hgp-j-l / "
+              "--hgp-class, and takes no F lever flag (the f.rys slot admits "
+              "none)", file=sys.stderr)
+        return 2
     if hgp:
         return _main_hgp(args, bool(given or selector or fock))
     if fock and (selector or args.Ls is not None or args.pair_l is not None
@@ -1359,7 +1466,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.hess_eri3_l is not None
-                 or args.hgp_one_e_l is not None or _hgp_df(args)
+                 or args.hgp_one_e_l is not None
+                 or args.rys_one_e_l is not None or _hgp_df(args)
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
@@ -1369,7 +1477,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / "
+              "--hgp-one-e-l / --rys-one-e-l / "
               "--class / "
               "--shell-ls and "
               "the J / K "
@@ -1398,7 +1506,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.hess_eri3_l is not None
-                     or args.hgp_one_e_l is not None or _hgp_df(args)
+                     or args.hgp_one_e_l is not None
+                 or args.rys_one_e_l is not None or _hgp_df(args)
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
@@ -1406,7 +1515,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l (and a lever "
+              "--hgp-one-e-l / --rys-one-e-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
@@ -1512,6 +1621,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HGP_ONE_E_L_MAX}: the HGP one-electron kernels are built "
               "for s and p shells only", file=sys.stderr)
         return 2
+    if (args.rys_one_e_l is not None
+            and not 0 <= args.rys_one_e_l <= RYS_ONE_E_L_MAX):
+        print(f"emit: --rys-one-e-l {args.rys_one_e_l} is outside "
+              f"0..{RYS_ONE_E_L_MAX}: the Rys one-electron kernels are built "
+              "for shells through f only", file=sys.stderr)
+        return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
         lever_units = [k for lf, a in given for k in lever_kernels(lf, a)]
@@ -1521,7 +1636,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if selector:
         return _main_classes(args, arch)
     if fock:
-        written = generate_fock(args.backend, arch, args.out, fock_cls)
+        written = generate_fock(args.backend, arch, args.out, fock_cls,
+                                rys=args.rys)
         written += generate_levers(args.backend, arch, args.out, lever_units)
         print(f"emit: {len(written)} {args.backend} Fock translation unit(s) "
               f"for {arch.name} -> {args.out}")
@@ -1579,6 +1695,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hgp_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hgp_one_e(args.backend, arch, args.out,
                                       args.hgp_one_e_l)
+    if args.rys_one_e_l is not None:  # beside the J chain, never by default
+        written += generate_rys_one_e(args.backend, arch, args.out,
+                                      args.rys_one_e_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "

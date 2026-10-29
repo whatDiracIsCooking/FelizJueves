@@ -90,7 +90,12 @@ same six segments; `.` and not `@`, which separates the arch in
 carries a suffix. A non-native engine is legal only where it is being built:
 HGP on `J` and `K`, on the one-electron `S`, `T`, `V` and `DIPOLE`
 (`one_electron/kernel_hgp.py`), and on the two DF targets `METRIC` and `ERI3`
-(`eri/density_fit/kernel_hgp.py`, s and p shells tested). Every other
+(`eri/density_fit/kernel_hgp.py`, s and p shells tested); and RYS on `F`
+(`eri/fock/kernel_frys.py`: Rys quadrature's 2D VRR feeding the HGP
+HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``), on `J`
+(`eri/hjk/kernel_rj.py`: the same VRR in `kernel_hj`'s split nest, keyed
+``.../j.rys/...``) and on the one-electron `S`, `T` and `V`
+(`one_electron/kernel_rys.py`, keyed ``.../s.rys/...``). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
 
@@ -182,6 +187,16 @@ pair `(la, lb)`, unbatched for the same reason as the MMD class's (an HGP
 class has no Hermite targets at all). The builder takes s and p shells only
 (`kernel_hgp.L_MAX`); `SX` stays refused (`_NO_HGP_ONE_E`).
 
+A RYS ONE-ELECTRON CLASS. `Target.S`, `T` and `V` are legal on
+`Engine.RYS` too: `one_electron.kernel_rys` builds each on the Rys
+factorisation -- per primitive pair a product of three 1D integrals, for
+`V` summed over the nodes of the Rys rule at `T = zeta |P - C|^2` (the
+point-charge limit of the fused F's 2D VRR, `rys.recurrence`) -- into the
+same contracted boundary `kernel_hgp`'s HRR reads. Keyed
+``overlap/d0/(1,0)/b1/s.rys/literal``, `am` the pair `(la, lb)`, unbatched
+as the HGP class is; shells through f (`kernel_rys.L_MAX`). `DIPOLE` and
+`SX` stay refused on Rys (`_NO_RYS`).
+
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
 partition, whereas an HGP class has no Hermite targets AT ALL, batched or not
@@ -265,7 +280,8 @@ stated reason; a name outside the vocabulary passes through to its own
 layer, as before. The table is keyed by `target_slot`, not by the target
 alone, because `j` and `k` now exist under both engines and a lever written
 for one engine's kernel has nothing to act on in the other's: `ordered` is
-legal on `j.hgp` / `k.hgp` only. The key spells every lever alike, so every
+legal on `j.hgp` / `k.hgp` and on `j.rys` (the split J on Rys keeps HGP
+J's class modes) only. The key spells every lever alike, so every
 pre-existing key is byte-identical.
 
 Values only, plus two derived reads: `total_am` above, and `key`, a string
@@ -349,6 +365,7 @@ class Engine(StrEnum):
 
     MMD = "mmd"  # McMurchie-Davidson: the [p|q] tower of [JEngine]
     HGP = "hgp"  # Head-Gordon-Pople: the VRR/HRR of [Fock] §3.1
+    RYS = "rys"  # Rys quadrature's VRR, then the HGP HRR (F, split J; S, T, V)
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -392,7 +409,8 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 # Why a (target, engine) other than the native one is refused (#401). Legal
 # off-native: HGP `J` and HGP `K` (milestone 14 builds them), HGP `S`, `T`,
 # `V` and `DIPOLE` (`one_electron.kernel_hgp`), and HGP `METRIC` and `ERI3`
-# (`eri/density_fit/kernel_hgp.py`).
+# (`eri/density_fit/kernel_hgp.py`); Rys `F` (`eri/fock/kernel_frys.py`) and
+# Rys `S`, `T` and `V` (`one_electron.kernel_rys`).
 _NO_HGP_PAIR = (
     "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
     "this pair kernel runs no ERI recurrence at all, so there is nothing "
@@ -412,7 +430,18 @@ def _mmd_only(what: str) -> str:
             "inlined); an HGP instance is a follow-up nobody has declared")
 
 
+_NO_RYS = (
+    "the Rys engine is built for the fused F (eri/fock/kernel_frys.py), "
+    "the split J (eri/hjk/kernel_rj.py) and the one-electron S, T and V "
+    "(one_electron/kernel_rys.py) only: its VRR feeds the HGP HRR of "
+    "kernel_f / kernel_hj / kernel_hgp; a Rys instance of this target is a "
+    "follow-up nobody has declared"
+)
+_RYS_TARGETS = (Target.F, Target.J, Target.S, Target.T, Target.V)
+
+
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
+    **{(t, Engine.RYS): _NO_RYS for t in Target if t not in _RYS_TARGETS},
     (Target.DQ, Engine.HGP): _NO_HGP_PAIR,
     (Target.JAB, Engine.HGP): _NO_HGP_PAIR,
     (Target.PAIR_BOUND, Engine.HGP): (

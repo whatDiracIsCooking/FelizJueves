@@ -1,0 +1,54 @@
+{
+  "cuda": {
+    "rs_23": {
+      "bytes": 45106,
+      "sha256": "06d3a37a179d5582706b9a62ddca7f6d42d7b38bd2278c38080db453af032d96"
+    },
+    "rs_33": {
+      "bytes": 77566,
+      "sha256": "e184a05d28f7333267baf7a6b77e36abb27505adf3b827bed7660eee79b879b4"
+    },
+    "rt_23": {
+      "bytes": 196737,
+      "sha256": "ef644c3fbc76bc803ca5d6bdbb2c97f19ab96ad83adb3e24a4aa83b430f17776"
+    },
+    "rt_33": {
+      "bytes": 310204,
+      "sha256": "abba05fb39d96ca024ffe937292dc3f08308dd1545fed37dbeea966822f3fbb1"
+    },
+    "rv_23": {
+      "bytes": 53290,
+      "sha256": "6ed474f97a8d7c41540c19717827d5218c616555321b9a80cbe7ea3c35e23748"
+    },
+    "rv_33": {
+      "bytes": 86093,
+      "sha256": "2ba20c3d2dd3040e824f254653aa30088db25b5e193d7045c4c8de69249e81c0"
+    }
+  },
+  "hip": {
+    "rs_23": {
+      "bytes": 45136,
+      "sha256": "7d42c2564debdfd8a66f0025ceeaf13827322b1508264269c0ef5c439208ed33"
+    },
+    "rs_33": {
+      "bytes": 77596,
+      "sha256": "91eba240a8cced9e6ba18984a7c58bae5786c29948307f7affa111a13d5273c1"
+    },
+    "rt_23": {
+      "bytes": 196767,
+      "sha256": "b76cc8b5d5ba66d4d43e1ca4bef7a0976bf2ed48684b86769d12c34c73fadadc"
+    },
+    "rt_33": {
+      "bytes": 310234,
+      "sha256": "afacf383954ebf1b128fe80048f035d7a442395451c9f88f9fa77558a4534dd6"
+    },
+    "rv_23": {
+      "bytes": 53320,
+      "sha256": "71402ac5abe0aa03523162308a260e8246f7403e2ae370f05904f8a3cf176f2e"
+    },
+    "rv_33": {
+      "bytes": 86123,
+      "sha256": "63a895d8b6df54aec2ed4278e63d58adad1f0883c306169d23b1cc2651716567"
+    }
+  }
+}

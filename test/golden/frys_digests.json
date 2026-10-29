@@ -1,0 +1,22 @@
+{
+  "cuda": {
+    "fr_1222": {
+      "bytes": 854971,
+      "sha256": "04c7508e893ea5a6afbd331ce982957d55d356a9f16f04c1c9d8e5a0d937ffed"
+    },
+    "fr_2222": {
+      "bytes": 1611909,
+      "sha256": "00ba1be3b3ede5cc3a9a418d9fc5ce49530155fa633b0c11aa8ce4199fef0e36"
+    }
+  },
+  "hip": {
+    "fr_1222": {
+      "bytes": 855001,
+      "sha256": "26d1a900170ba56126aa3c60e7bcb94e23b44c79e2026e29031b63b6754c10b1"
+    },
+    "fr_2222": {
+      "bytes": 1611939,
+      "sha256": "41db52e352d0199114c51b058f57b45eca65bb0d48cccd7b201630fd2edb501a"
+    }
+  }
+}

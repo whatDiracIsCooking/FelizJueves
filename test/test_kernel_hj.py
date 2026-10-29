@@ -365,10 +365,12 @@ def dsh(basis: Basis, D: np.ndarray) -> np.ndarray:
 
 
 def launch(cls, mode, basis, D, *, tau=0.0, G=None, threads=2, eris=True,
-           density_=HJ.COULOMB_DENSITY, perm=None):
+           density_=HJ.COULOMB_DENSITY, perm=None, kernel=None, rys=None):
     """One launch of the class in `mode` over every ordered quartet of the
     class in `basis`. Returns `(J, g, bras, kets, gidx)`: bras / kets are
-    the BUILT-order shell pairs launched, `gidx` the permutation."""
+    the BUILT-order shell pairs launched, `gidx` the permutation.
+    `kernel(cls, mode, eris, density)` and `rys`, when given, run another
+    engine's drop-in (test/test_kernel_rj.py) in place of `kernel_hj`'s."""
     spec = _spec(cls, mode)
     am = HJ.built_class(spec)
     if mode == "ordered":
@@ -377,7 +379,7 @@ def launch(cls, mode, basis, D, *, tau=0.0, G=None, threads=2, eris=True,
         gidx = orbits.GROUP.index(orbits.to_representative(cls).shells)
     bras = pairs_of(basis, am[0], am[1])
     kets = pairs_of(basis, am[2], am[3])
-    k = _kernel(cls, mode, eris, tuple(density_))
+    k = (kernel or _kernel)(cls, mode, eris, tuple(density_))
     G = G or {}
     pb = pack([records(basis, *p) for p in bras])
     pk = pack([records(basis, *p, G=G.get(i, 1.0)) for i, p in enumerate(kets)])
@@ -398,7 +400,7 @@ def launch(cls, mode, basis, D, *, tau=0.0, G=None, threads=2, eris=True,
         HJ.OUT: np.full(pb.n * pk.n * n_eri, -7.0),
     }
     grid, block = HJ.launch_shape(pb.n, threads)
-    it = Interpreter(k, launch=Launch(grid, block, 32), boys=boys)
+    it = Interpreter(k, launch=Launch(grid, block, 32), boys=boys, rys=rys)
     out = it.run(**{n: every[n] for n in HJ.params_of(spec, eris=eris)})
     J = out[HJ.J_OUT].reshape(n_ao, n_ao)
     g = out[HJ.OUT].reshape(pb.n, pk.n, n_eri) if eris else None

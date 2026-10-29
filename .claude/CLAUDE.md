@@ -717,6 +717,25 @@ only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`,
 16 passed: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
 the RX 9060 XT is not run (#431), nothing measured.
+**`S`, `T` and `V` are also built on the Rys engine, through (ff),
+interpreted only** (`one_electron.md`, "The Rys route"): `Target.S` / `T` /
+`V` with `engine=Engine.RYS` (slots `s.rys`, `t.rys`, `v.rys`; `DIPOLE` and
+`SX` refused), built by `one_electron/kernel_rys.py` (`rs_`, `rt_`,
+`rv_{la}{lb}`, `l <= 3`): per primitive pair a product of three 1D
+integrals -- the nodeless overlap recurrence for `S` / `T`, and for `V` per
+nucleus the `N = (la + lb)//2 + 1` point Rys rule (`ir.Rys`, `fj_rys<N>`)
+with `rys.recurrence.root_loop`'s bra half at the point-charge limit --
+into `kernel_hgp`'s contracted boundary, filling its pair skeleton
+(`kernel_hgp.assemble`, extracted with every HGP text byte-identical), so a
+Rys unit is a drop-in for the `hs_` / `ht_` / `hv_` unit (same parameters,
+staging, launch). `python -m felizjueves.emit --rys-one-e-l [LMAX]` (3
+bare, 0..3 only), never in the bare default nor `KERNEL_GEN_CMD`.
+Interpreted (`test_kernel_rys_one_e.py`) within 2.8e-15 of `max|M|` of the
+MMD host through (ff) and against libcint on H₂O/STO-3G, 6-31G, cc-pVDZ and
+`prim_spdf` (worst 7.5e-14, `V` on `prim_spdf`, the host's own distance);
+24 goldens per backend plus 6 digests (`test_emit_rys_one_e.py`). **Not
+compiled by nvcc or hipcc and not run on a card** (clang 18's CUDA front
+end passed all 30 units, a proxy); nothing measured.
 **The first `derivative_order = 1` keys: analytic nuclear gradients by
 McMurchie–Davidson, run on both cards at L <= 4** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):
@@ -1008,6 +1027,52 @@ within 16 eps of the twin (measured <= 0.40) and the whole H₂O/STO-3G
 passed all 22 units, a proxy), no device test, not run on either card. No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), nothing
 measured.
+**The fused `F` on Rys quadrature too, interpreted and emitted, NOT
+compiled by nvcc / hipcc and NOT run on a card** (`docs/implementation/rys_fock.md`
+is the one place with the detail; #468's spike, `experimental/rys/`, brought
+into `src/`): `Target.F` on `Engine.RYS` (`spec.Engine.RYS`, key slot
+`f.rys`, refused on every target but `F` and `J` (below), no lever), `eri/fock/kernel_frys.py`'s
+`build_frys_kernel` (`fr_{la}{lb}{lc}{ld}`, the 21 classes through
+`(dd|dd)`): `kernel_f`'s skeleton and seams with `ket_prim`,
+`quartet_scalars`, `vrr` and `accumulate` replaced -- the `N = L // 2 + 1`
+point Rys rule (`ir.Rys`, a new statement like `Boys`: fp64, injected into
+the interpreter as `rys=`, spelled `fj_rys<N>` by `emit/cuda.py` /
+`emit/hip.py`, refused by `emit/gpu.py`) and per node the 2D VRR
+(`rys/recurrence.py`) into the HGP boundary, so the HRR, digestion,
+staging, screen, parameters and launch are `f_`'s and an `fr_` unit is a
+drop-in (its IR outside the `K_CD` loop `==` `kernel_f`'s, tested). The rule
+(`rys/roots.py`: Laguerre constants from `T = 80`, below it Stieltjes on an
+88-point Legendre half, Sturm bisection, Christoffel weights) is within
+3.4e-15 of a 40-digit route (`rys/exact.py`) for `N <= 5`, `T` in
+`[0, 1e6]`, and its device text run as host C++ is bitwise the host rule
+(`test_rys_roots.py`). Interpreted (`test_kernel_frys.py`): the ERI tap
+within 6.3e-15 of MMD's scale in all 21 classes, the deposit against
+`eri.fock.fock`'s sweep, whole H₂ / H₂O STO-3G `G` within 2.2e-15 of scale
+of libcint. `python -m felizjueves.emit --fock-l LMAX --rys`, never in the
+bare default nor in `KERNEL_GEN_CMD`; 21 goldens per backend
+(`test_emit_frys.py`, two in `frys_digests.json`). All 21 units passed clang
+18's CUDA front end (a proxy). Nothing measured or scored.
+**The split `J` on Rys quadrature too, interpreted and emitted, NOT
+compiled by nvcc / hipcc and NOT run on a card** (`rys_fock.md`, "The split
+`J` on Rys"): `Target.J` on `Engine.RYS` (slot `j.rys`, whose only legal
+lever is HGP J's `ordered`), `eri/hjk/kernel_rj.py`'s `build_rj_kernel`
+(`rj_{rep}` canonical / `rj_o_{class}` ordered, `L <= 8`): `kernel_hj`'s
+split `J` through a seam it now exposes (`kernel_hj.Nest`,
+`split_j_kernel`, `hgp_nest`; every `hj_` golden byte-identical) with the
+Rys rule and 2D VRR as the nest (`rys.recurrence.quartet_rule`, shared with
+`kernel_frys`, its text unchanged), so an `rj_` unit is a drop-in for the
+`hj_` unit of the same class and mode (IR outside the `K_CD` loop `==`,
+signature equal). `walk_hjk(..., build=)` walks `launch_hjk`'s plan with
+the caller's kernels. Interpreted (`test_kernel_rj.py`): the ERI tap against
+MMD element by element and HGP per block within `1e-12 (s_hgp + s_mmd)`,
+the deposit against `eri/j_coulomb/j.py`'s restricted sweep, both modes, every class
+through `(dd|dd)` (`L > 4` `slow`), whole H₂ (and H₂O, `slow`) STO-3G `J`
+against the MMD sweep and libcint's `vj`. `python -m felizjueves.emit
+--hgp-j-l LMAX --rys` (0..2) or `--hgp-class ... --rys` (J only), never in
+the bare default nor in `KERNEL_GEN_CMD`; 63 goldens per backend plus 8
+digests (`test_emit_rj.py`, `rj_digests.json`). All 71 cuda units passed
+clang 18's CUDA front end (a proxy). Nothing measured; a `j.rys` row is
+refused by the store. No split `K` on Rys.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence

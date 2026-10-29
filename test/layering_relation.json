@@ -100,7 +100,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.__main__": [
    "emit",
@@ -112,8 +113,10 @@
    "eri.density_fit.kernel_hgp",
    "eri.density_fit.kernel_metric",
    "eri.fock.kernel_f",
+   "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
    "eri.hjk.kernel_hk",
+   "eri.hjk.kernel_rj",
    "eri.j_coulomb.kernel_dq",
    "eri.j_coulomb.kernel_jab",
    "eri.k_exchange.kernel_k",
@@ -135,6 +138,7 @@
    "mmd.kernel",
    "one_electron.kernel_hgp",
    "one_electron.kernel_mu",
+   "one_electron.kernel_rys",
    "one_electron.kernel_s",
    "one_electron.kernel_sx",
    "one_electron.kernel_t",
@@ -152,7 +156,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.cuda": [
    "emit",
@@ -161,7 +166,8 @@
    "emit.gpu",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.gpu": [
    "emit",
@@ -170,7 +176,8 @@
    "emit.cuda",
    "emit.hip",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "emit.hip": [
    "emit",
@@ -179,7 +186,8 @@
    "emit.cuda",
    "emit.gpu",
    "ir",
-   "performance.device"
+   "performance.device",
+   "rys.roots"
   ],
   "engine": [
    "ao.shell",
@@ -443,6 +451,23 @@
    "hgp.recurrence",
    "hgp.vrr",
    "ir",
+   "spec"
+  ],
+  "eri.fock.kernel_frys": [
+   "eri.fock.kernel_f",
+   "eri.fock.levers.seams",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
    "spec"
   ],
   "eri.fock.launch_f": [
@@ -890,6 +915,22 @@
    "hgp.recurrence",
    "hgp.vrr",
    "ir",
+   "spec"
+  ],
+  "eri.hjk.kernel_rj": [
+   "eri.hjk.kernel_hj",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
    "spec"
   ],
   "eri.hjk.launch_hjk": [
@@ -2110,6 +2151,16 @@
    "one_electron.kernel_s",
    "spec"
   ],
+  "one_electron.kernel_rys": [
+   "hgp.vrr",
+   "ir",
+   "one_electron.kernel_hgp",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
+   "spec"
+  ],
   "one_electron.kernel_s": [
    "ir",
    "mmd.e_fragment",
@@ -2346,8 +2397,10 @@
    "eri.density_fit.kernel_hgp",
    "eri.density_fit.kernel_metric",
    "eri.fock.kernel_f",
+   "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
    "eri.hjk.kernel_hk",
+   "eri.hjk.kernel_rj",
    "eri.j_coulomb.kernel_dq",
    "eri.j_coulomb.kernel_jab",
    "eri.k_exchange.kernel_k",
@@ -2369,6 +2422,7 @@
    "mmd.kernel",
    "one_electron.kernel_hgp",
    "one_electron.kernel_mu",
+   "one_electron.kernel_rys",
    "one_electron.kernel_s",
    "one_electron.kernel_sx",
    "one_electron.kernel_t",
@@ -2735,6 +2789,38 @@
   "reference.pq": [
    "reference",
    "reference.boys"
+  ],
+  "rys": [
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots"
+  ],
+  "rys.exact": [
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.recurrence",
+   "rys.roots"
+  ],
+  "rys.recurrence": [
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.roots"
+  ],
+  "rys.roots": [
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence"
   ],
   "spec": [
    "levers"

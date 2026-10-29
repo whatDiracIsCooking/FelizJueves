@@ -88,7 +88,8 @@ def test_the_engine_slots_are_spec_s_legal_off_native_pairings() -> None:
             off_native.add(spec.target_slot)
     assert off_native == set(levers.ENGINE_SLOTS) == {
         "j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp", "dipole.hgp",
-        "metric.hgp", "eri3.hgp"}
+        "metric.hgp", "eri3.hgp", "f.rys", "j.rys", "s.rys", "t.rys",
+        "v.rys"}
 
 
 def test_the_other_layers_names_are_their_owners() -> None:
@@ -285,14 +286,14 @@ def _every_spec_slot() -> list[tuple[Target, Engine]]:
 def test_ordered_is_declared_on_the_engine_slots_only() -> None:
     lever = levers.VOCABULARY[ORDERED]
     assert (lever.name, lever.issue) == ("ordered", 401)
-    assert lever.legal == {"j.hgp", "k.hgp"}
+    assert lever.legal == {"j.hgp", "k.hgp", "j.rys"}
     for slot in ("j", "k", "f"):
         assert lever.refusals[slot] != levers.DEFAULT_REFUSALS[slot]
     for slot in set(levers.TARGET_SLOTS) - {"j", "k", "f"}:
         assert lever.refusals[slot] == levers.DEFAULT_REFUSALS[slot]
 
 
-def test_ordered_is_legal_exactly_on_hgp_j_and_k() -> None:
+def test_ordered_is_legal_exactly_on_hgp_j_and_k_and_rys_j() -> None:
     legal = set()
     for target, engine in _every_spec_slot():
         try:
@@ -304,7 +305,8 @@ def test_ordered_is_legal_exactly_on_hgp_j_and_k() -> None:
             continue
         legal.add((target, engine))
         assert spec.key().endswith(f"/{spec.target_slot}/ordered")
-    assert legal == {(Target.J, Engine.HGP), (Target.K, Engine.HGP)}
+    assert legal == {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
+                     (Target.J, Engine.RYS)}
 
 
 @pytest.mark.parametrize(("target", "match"), [

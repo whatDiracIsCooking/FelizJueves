@@ -108,6 +108,7 @@ from felizjueves.ir import (
     Index,
     Kernel,
     Lit,
+    Rys,
     Scalar,
     Space,
     Stmt,
@@ -190,6 +191,8 @@ def _refs(s: Stmt) -> tuple[list[str], list[str]]:
         return list(_reads(s.cond)), []
     if isinstance(s, Boys):
         return list(_reads(s.t)), []  # it writes an array, never a value
+    if isinstance(s, Rys):
+        return list(_reads(s.t)), []  # it writes two arrays, never a value
     return [], []
 
 
@@ -406,6 +409,8 @@ def recycle(kernel: Kernel, *, array: str = "slot") -> Kernel:
                 out.append(If(ex(s.cond), st(s.then), st(s.orelse)))
             elif isinstance(s, Boys):
                 out.append(Boys(s.dst, s.top, ex(s.t)))
+            elif isinstance(s, Rys):
+                out.append(Rys(s.nodes, s.weights, s.n, ex(s.t)))
             else:
                 out.append(s)  # Break, Note, Raw: nothing to rewrite
         return tuple(out)
