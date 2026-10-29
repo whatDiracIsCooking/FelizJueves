@@ -12,7 +12,7 @@ Every entry point takes `target=` (`Target.DIPOLE` by default, so every
 dipole call is unchanged): `Target.QUADRUPOLE` builds the same program over
 `kernel_mu.build_quad_kernel`'s `quad_{la}{lb}` units, the same parameters
 and input, and a `6 x n_ao x n_ao` `MU` (xx, xy, xz, yy, yz, zz), its
-cap the dipole's (`MU_LMAX`).
+own cap (`QUAD_LMAX`, (dd)) below the dipole's (`MU_LMAX`, (ff), #627).
 
 `one_electron_driver.py`'s pattern for `Target.DIPOLE`, with one
 difference: the origin `C` and the charge `q` are the kernel's RUNTIME
@@ -46,8 +46,8 @@ THE UNITS. As `one_electron_driver.py`: a kernel the tier's generate phase
 wrote (`--mu-l`) is that file, asserted byte-identical to `emit(...)`; any
 other class (`la > lb`, which the ladder never writes, or a tier run whose
 generator did not ask for `--mu-l`) is emitted into `workdir` here, the same
-text. Nothing above (dd) is ever emitted: `MU_LMAX`, refused (milestone
-19's cap).
+text. Nothing above (ff) is ever emitted for the dipole (`MU_LMAX`, #627)
+nor above (dd) for the quadrupole (`QUAD_LMAX`): refused.
 """
 
 from __future__ import annotations
@@ -73,11 +73,15 @@ from felizjueves.one_electron.kernel_mu import (
 )
 from felizjueves.spec import Target
 
-__all__ = ["MU_LMAX", "MuBinary", "compile_mu", "kernel_of", "mu_program",
-           "mu_read_back", "mu_stage", "tier_units", "units_of"]
+__all__ = ["MU_LMAX", "QUAD_LMAX", "MuBinary", "compile_mu", "kernel_of",
+           "mu_program", "mu_read_back", "mu_stage", "tier_units",
+           "units_of"]
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
-MU_LMAX = 2  # milestone 19: every shell l <= 2, nothing above (dd)
+MU_LMAX = 3  # #627: every shell l <= 3, nothing above (ff)
+QUAD_LMAX = 2  # the quadrupole: every shell l <= 2, nothing above (dd)
+# each target's cap, and the class it names
+LMAX = {Target.DIPOLE: (MU_LMAX, "(ff)"), Target.QUADRUPOLE: (QUAD_LMAX, "(dd)")}
 NCOMP = n_components()  # x, y, z
 # Each target's component count: x, y, z; and xx, xy, xz, yy, yz, zz.
 NCOMPS = {t: n_components(e=e) for t, e in ORDER.items()}
@@ -87,12 +91,13 @@ SCALARS = ("C_x", "C_y", "C_z", "q")  # the runtime scalars, the input's head
 
 def kernel_of(cls: OneEClass, target: Target = Target.DIPOLE) -> Kernel:
     """The class's dipole (or quadrupole) kernel, refusing anything above
-    (dd)."""
+    the target's cap ((ff) for the dipole, (dd) for the quadrupole)."""
     if target not in ORDER:
         raise ValueError(f"{target!r} is not a multipole target")
-    if max(cls.la, cls.lb) > MU_LMAX:
-        raise ValueError(f"pair class ({cls.la}, {cls.lb}) is above (dd): "
-                         "milestone 19 emits nothing there")
+    cap, top = LMAX[target]
+    if max(cls.la, cls.lb) > cap:
+        raise ValueError(f"pair class ({cls.la}, {cls.lb}) is above {top}: "
+                         f"nothing is emitted there for {target.name}")
     return build_mu_kernel(cls.spec(target))
 
 

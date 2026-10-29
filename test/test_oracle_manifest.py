@@ -236,10 +236,11 @@ def test_the_one_e_arrays_are_named_and_shaped_by_cartesian_aos():
 
 
 def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
-    """The five HF/cc-pVTZ ERI files, the three `_schwarz` files and the
-    three `_dipole` files (#517) are the declared exceptions
-    (`Case.record_one_e`), and a twin -- same molecule, basis, Cartesian
-    flag (`hf_ccpvtz`, the `_j` cases) -- carries the four for them."""
+    """The five HF/cc-pVTZ ERI files, the three `_schwarz` files, the
+    three `_dipole` files (#517) and `hf_ccpvtz_dipole` (#627) are the
+    declared exceptions (`Case.record_one_e`), and a twin -- same molecule,
+    basis, Cartesian flag (`hf_ccpvtz`, the `_j` cases) -- carries the four
+    for them."""
     from oracle import generate
 
     fixtures = [load(p) for p in manifest.tracked()]
@@ -279,7 +280,8 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
                        "h2o_631g_schwarz",
                        "h2o_sto3g_x_631g", "h2o_sto3g_x_ccpvdz",
                        "h2o_sto3g_dipole", "h2o_631g_dipole",
-                       "h2o_ccpvdz_dipole", "co_ccpvtz_j", "co_ccpvtz_k"}
+                       "h2o_ccpvdz_dipole", "hf_ccpvtz_dipole",
+                       "co_ccpvtz_j", "co_ccpvtz_k"}
 
 
 def test_the_cross_overlap_fixtures_name_their_rows_and_fit_them():
