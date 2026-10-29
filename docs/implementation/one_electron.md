@@ -757,6 +757,84 @@ no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
 ladder); no screening inside the kernel; no comparison of the two engines'
 cost.
 
+## The Rys route: `S`, `T` and `V` on engine #3
+
+**Status: built, interpreted and emitted through (ff); NOT compiled by
+nvcc or hipcc and NOT run on a card** (the session that built it had
+neither compiler nor card; all 30 units passed clang 18's CUDA front end,
+`-fsyntax-only -Wall -Wextra`, a proxy). `one_electron/kernel_rys.py` builds
+`S`, `T` and `V` on the Rys factorisation of #468's spike
+(`experimental/rys/`), whose two-electron instance is the fused F's
+`eri/fock/kernel_frys.py` (`docs/implementation/rys_fock.md`). The MMD and
+HGP kernels are untouched; every HGP golden is byte-identical.
+
+**Keys.** `Target.S`, `T` and `V` with `engine=Engine.RYS`
+(`kernel_rys.rys_spec`; `spec.py`, "A RYS ONE-ELECTRON CLASS"), keyed
+`overlap/d0/(1,0)/b1/s.rys/literal`; `s.rys`, `t.rys`, `v.rys` are engine
+slots that refuse every lever. `DIPOLE` and `SX` stay refused on Rys. Units
+are `rs_{la}{lb}`, `rt_`, `rv_`, every shell `l <= 3` (`kernel_rys.L_MAX`).
+
+**The route.** Per primitive pair, each boundary value is a product of
+three 1D integrals:
+
+| Matrix | Per primitive pair | 1D recurrence |
+|---|---|---|
+| `S`, `T` | `(e\|0) = u I_x(e_x) I_y(e_y) I_z(e_z)` | `I(i+1) = PA I(i) + i/(2ζ) I(i−1)` |
+| `V` | `(e\|0) −= Z w0 Σ_n w_n I_x I_y I_z`, per nucleus | `I(i+1) = C00 I(i) + i B10 I(i−1)`, `C00 = PA + x_n (C − P)`, `B10 = (1 − x_n)/(2ζ)` |
+
+`(x_n, w_n)` is the `N = (la + lb)//2 + 1` point Rys rule at `T = ζ|P − C|²`
+(`ir.Rys`, `fj_rys<N>`, `rys.roots`; `Σ w x^m = F_m(T)`). `V`'s recurrence
+is `rys.recurrence.root_loop`'s bra half unchanged, at the point-charge
+limit of the ket (`q → ∞`: `WP = C − P`, `q/(p+q) = 1`), the attractive sign
+in the weight scale `S = −Z w0`. The overlap needs no node: its 1D
+recurrence is the nodeless form of the same one. `T` is the overlap's 1D
+tables with the HGP route's three `β^n` tables.
+
+**The skeleton is `kernel_hgp`'s.** The products form exactly the boundary
+`(e|0)` that `kernel_hgp`'s HRR reads, so `kernel_hgp` now exposes its pair
+skeleton -- `contracted_tables`, `boundary_union`, `acc_name`, `assemble`
+(one thread per contracted shell pair, the record loop, the HRR on
+contracted values, the combination, plain mirrored stores) -- and both
+builders fill it, differing in the per-record body and two notes. An
+`rs_` / `rt_` / `rv_` unit has the parameter block of the `hs_` / `ht_` /
+`hv_` unit of its class (tested equal), so it takes the same staging
+(`OneEClass.hgp_arrays`), launch (`kernel_hgp.launch_shape`) and output: a
+drop-in.
+
+**Witnesses** (`test/test_kernel_rys_one_e.py`, interpreted, the rule
+injected as `rys.roots.roots_weights`; within `1e-13` of `max|M|` of a
+reference engine, `1e-12` of libcint), observed:
+
+| Against | `S` | `T` | `V` |
+|---|---|---|---|
+| MMD host, synthetic s–d (fast) | 1.8e-16 | 1.0e-15 | 4.8e-16 |
+| MMD host, synthetic s–f (`slow`) | 2.0e-16 | 2.8e-15 | 5.5e-16 |
+| HGP kernels, synthetic s, p | 1.1e-16 | 8.0e-16 | 1.5e-16 |
+| libcint, H₂O/STO-3G | 3.3e-16 | 1.2e-16 | 1.0e-15 |
+| libcint, H₂O/6-31G | 2.8e-16 | 2.4e-16 | 9.7e-16 |
+| libcint, H₂O/cc-pVDZ (`slow`) | 1.8e-16 | 6.1e-16 | 3.1e-15 |
+| libcint, `prim_spdf` (`slow`) | 6.2e-16 | 3.3e-15 | 7.5e-14 |
+
+`prim_spdf`'s `V` is the MMD host's distance from libcint too (7.48e-14);
+the Rys kernel is 8.5e-16 from the host there. A nucleus far enough that
+every `T` takes the rule's Laguerre branch is held to the host too. Goldens:
+`test/golden/{cuda,hip}/{rs,rt,rv}_{la}{lb}` for every class with
+`la + lb <= 4`, (df) and (ff) pinned by sha256 in
+`test/golden/rys_one_e_digests.json` (`test_emit_rys_one_e.py`, whose
+nvcc / hipcc compile cases have not run).
+
+**The generator.** `python -m felizjueves.emit --rys-one-e-l [LMAX]` (3
+bare, **0..3 only**, exit 2 above) adds the units beside the J ladders;
+never in the bare default, not in `KERNEL_GEN_CMD`. The `cuda` and `hip`
+backends carry `fj_rys`; `emit/gpu.py` refuses a `Rys` statement, so `rv_`
+has no `gpu` spelling yet.
+
+**Not done.** No nvcc / hipcc compile and no card run (a device driver
+would be `test/hgp_one_e_driver.py` with the builder swapped); the dipole
+and `SX` on Rys; g and above (the rule reaches `N = 5`, (gg), but the
+builder refuses `l > 3`); nothing measured, and no cost comparison with the
+MMD and HGP kernels.
+
 ## Named follow-ups
 
 - **A batched `V` kernel.** `V` has Hermite targets, so the ban that #232

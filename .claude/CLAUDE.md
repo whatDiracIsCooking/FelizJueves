@@ -661,6 +661,25 @@ only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`,
 16 passed: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
 the RX 9060 XT is not run (#431), nothing measured.
+**`S`, `T` and `V` are also built on the Rys engine, through (ff),
+interpreted only** (`one_electron.md`, "The Rys route"): `Target.S` / `T` /
+`V` with `engine=Engine.RYS` (slots `s.rys`, `t.rys`, `v.rys`; `DIPOLE` and
+`SX` refused), built by `one_electron/kernel_rys.py` (`rs_`, `rt_`,
+`rv_{la}{lb}`, `l <= 3`): per primitive pair a product of three 1D
+integrals -- the nodeless overlap recurrence for `S` / `T`, and for `V` per
+nucleus the `N = (la + lb)//2 + 1` point Rys rule (`ir.Rys`, `fj_rys<N>`)
+with `rys.recurrence.root_loop`'s bra half at the point-charge limit --
+into `kernel_hgp`'s contracted boundary, filling its pair skeleton
+(`kernel_hgp.assemble`, extracted with every HGP text byte-identical), so a
+Rys unit is a drop-in for the `hs_` / `ht_` / `hv_` unit (same parameters,
+staging, launch). `python -m felizjueves.emit --rys-one-e-l [LMAX]` (3
+bare, 0..3 only), never in the bare default nor `KERNEL_GEN_CMD`.
+Interpreted (`test_kernel_rys_one_e.py`) within 2.8e-15 of `max|M|` of the
+MMD host through (ff) and against libcint on H₂O/STO-3G, 6-31G, cc-pVDZ and
+`prim_spdf` (worst 7.5e-14, `V` on `prim_spdf`, the host's own distance);
+24 goldens per backend plus 6 digests (`test_emit_rys_one_e.py`). **Not
+compiled by nvcc or hipcc and not run on a card** (clang 18's CUDA front
+end passed all 30 units, a proxy); nothing measured.
 **The first `derivative_order = 1` keys: analytic nuclear gradients by
 McMurchie–Davidson, run on both cards at L <= 4** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):

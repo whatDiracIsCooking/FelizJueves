@@ -91,8 +91,10 @@ carries a suffix. A non-native engine is legal only where it is being built:
 HGP on `J` and `K`, on the one-electron `S`, `T`, `V` and `DIPOLE`
 (`one_electron/kernel_hgp.py`), and on the two DF targets `METRIC` and `ERI3`
 (`eri/density_fit/kernel_hgp.py`, s and p shells tested); and RYS on `F`
-alone (`eri/fock/kernel_frys.py`: Rys quadrature's 2D VRR feeding the HGP
-HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``). Every other
+(`eri/fock/kernel_frys.py`: Rys quadrature's 2D VRR feeding the HGP
+HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``) and on the
+one-electron `S`, `T` and `V` (`one_electron/kernel_rys.py`, keyed
+``.../s.rys/...``). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
 
@@ -183,6 +185,16 @@ values). The key spells the engine as a slot suffix,
 pair `(la, lb)`, unbatched for the same reason as the MMD class's (an HGP
 class has no Hermite targets at all). The builder takes s and p shells only
 (`kernel_hgp.L_MAX`); `SX` stays refused (`_NO_HGP_ONE_E`).
+
+A RYS ONE-ELECTRON CLASS. `Target.S`, `T` and `V` are legal on
+`Engine.RYS` too: `one_electron.kernel_rys` builds each on the Rys
+factorisation -- per primitive pair a product of three 1D integrals, for
+`V` summed over the nodes of the Rys rule at `T = zeta |P - C|^2` (the
+point-charge limit of the fused F's 2D VRR, `rys.recurrence`) -- into the
+same contracted boundary `kernel_hgp`'s HRR reads. Keyed
+``overlap/d0/(1,0)/b1/s.rys/literal``, `am` the pair `(la, lb)`, unbatched
+as the HGP class is; shells through f (`kernel_rys.L_MAX`). `DIPOLE` and
+`SX` stay refused on Rys (`_NO_RYS`).
 
 AN F CLASS IS UNBATCHED, FOR ITS OWN REASON (#272). It is not the pair rule:
 a pair target is unbatched because a pair has no Hermite targets to
@@ -351,7 +363,7 @@ class Engine(StrEnum):
 
     MMD = "mmd"  # McMurchie-Davidson: the [p|q] tower of [JEngine]
     HGP = "hgp"  # Head-Gordon-Pople: the VRR/HRR of [Fock] §3.1
-    RYS = "rys"  # Rys quadrature's 2D VRR, then the HGP HRR (fused F only)
+    RYS = "rys"  # Rys quadrature's VRR, then the HGP HRR (F; S, T, V)
 
 
 # How many shells a target's class names: a quartet (l1, l2 | l3, l4) for the
@@ -395,7 +407,8 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 # Why a (target, engine) other than the native one is refused (#401). Legal
 # off-native: HGP `J` and HGP `K` (milestone 14 builds them), HGP `S`, `T`,
 # `V` and `DIPOLE` (`one_electron.kernel_hgp`), and HGP `METRIC` and `ERI3`
-# (`eri/density_fit/kernel_hgp.py`).
+# (`eri/density_fit/kernel_hgp.py`); Rys `F` (`eri/fock/kernel_frys.py`) and
+# Rys `S`, `T` and `V` (`one_electron.kernel_rys`).
 _NO_HGP_PAIR = (
     "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
     "this pair kernel runs no ERI recurrence at all, so there is nothing "
@@ -416,14 +429,16 @@ def _mmd_only(what: str) -> str:
 
 
 _NO_RYS = (
-    "the Rys engine is built for the fused F only (eri/fock/kernel_frys.py: "
-    "its 2D VRR feeds the HGP HRR of kernel_f); a Rys instance of this "
-    "target is a follow-up nobody has declared"
+    "the Rys engine is built for the fused F (eri/fock/kernel_frys.py: its "
+    "2D VRR feeds the HGP HRR of kernel_f) and the one-electron S, T and V "
+    "(one_electron/kernel_rys.py) only; a Rys instance of this target is a "
+    "follow-up nobody has declared"
 )
+_RYS_TARGETS = (Target.F, Target.S, Target.T, Target.V)
 
 
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
-    **{(t, Engine.RYS): _NO_RYS for t in Target if t is not Target.F},
+    **{(t, Engine.RYS): _NO_RYS for t in Target if t not in _RYS_TARGETS},
     (Target.DQ, Engine.HGP): _NO_HGP_PAIR,
     (Target.JAB, Engine.HGP): _NO_HGP_PAIR,
     (Target.PAIR_BOUND, Engine.HGP): (
