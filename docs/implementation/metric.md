@@ -22,28 +22,31 @@ where it ran and what is not done.
 - **Oracle:** libcint's `int2c2e_cart` on PySCF's
   `df.make_auxmol(mol, 'cc-pvtz-jkfit')`, tracked as four schema-3 row
   pieces (#411).
-- **Where it ran:** the RTX 3080 (`sm_86`, CUDA 13.0) only (#416, PR #430).
-  It has **not** run on the RX 9060 XT (`gfx1200`): the AMD card was not
-  enumerated in the container. That run is follow-up #431. On `gfx1200` the
-  units have only been compiled.
+- **Where it ran:** the RTX 3080 (`sm_86`, CUDA 13.0) (#416, PR #430).
+  At PR #430 the RX 9060 XT (`gfx1200`) was not enumerated in the
+  container, so its units were only compiled. #431 fixed that detection
+  and closed; the card's first metric run was #606's (PR #615), Parts 1
+  to 3 (see "The low-stack form").
 - **Correctness is tested at `lP + lQ ≤ 4` only**, the nine classes
   `lP ≤ lQ`: (s|s) (s|p) (s|d) (s|f) (s|g) (p|p) (p|d) (p|f) (d|d). The
   builder and the emitter accept any `L`.
 
-**Nothing here is measured and nothing is scored.** There is no
-`measured_store` row for any `metric_` unit: no registers, spills,
-wall-clock or counters. No published board exists. `[JEngine]` (entry 35)
+**Nothing here is scored.** Until #606 nothing was measured; since then
+`data/measured/df_lowstack.json` holds every ladder unit's compile row and
+a wall-clock row for each class where the gate is read. There is no
+`measured_store` (`kernels.json`) row for any `metric_` unit and no
+counters. No published board exists. `[JEngine]` (entry 35)
 is J only, and the recurrence is McMurchie & Davidson's (entries 39 and 46).
 The auxiliary basis is Weigend's cc-pVTZ-jkfit (entry 47), which is an
 input here, not a table to score against. Milestone 15 added no
-`tables.json` cell, scoreboard, floor or `claims.json` record.
+`table{1,2,3}.json` cell, scoreboard, floor or `claims.json` record.
 `data/literature/jengine/limits.json` records this as a `StructuralLimit`
 (#417), as #245 did for the one-electron family. A metric class's
 `Spec.total_am` is `lP + lQ`. It is the `L` of the quartet the class runs,
 but it indexes no row of `[JEngine]` Tables 1–3.
 
 **Out of scope:** DF-J and DF-K themselves, spherical aux functions, and any
-measurement. The three-center `(mn|P)`, this note's named follow-up, was
+measurement beyond #606's. The three-center `(mn|P)`, this note's named follow-up, was
 built in milestone 16 on the same aux record and `center_fragment`:
 `three_center.md` is the one place with its detail.
 
@@ -288,17 +291,19 @@ matrix exactly symmetric. The results are in the tables above: 2.61e-14 of
 `max|M|` against libcint, and 7.17 eps of the tower-twin scale against the
 host (max abs 3.55e-14) on the fixture.
 
-**Not on the RX 9060 XT (`gfx1200`).** The card was not enumerated in the
-container: `/dev/kfd` existed, but `rocminfo` showed no gfx agent. No HIP
+**Not on the RX 9060 XT (`gfx1200`), at PR #430.** The card was not
+enumerated in the container: `/dev/kfd` existed, but `rocminfo` showed no gfx agent. No HIP
 number is claimed. Only the compile-only companions ran under hipcc /
 ROCm 7.2.4 for `gfx1200`, with no warning in generated text:
 
 - the nine units, in `test_emit_metric.py` (#415);
 - both device programs, in `test_metric_device.py` (#416).
 
-**Follow-up #431** runs the device tests on that card. It also fixes
-`devtools/kernel-tier.sh`'s HIP device check, which tests `/dev/kfd` only
-and printed `device: present` with no usable card.
+**#431** fixed `devtools/kernel-tier.sh`'s HIP device check, which tested
+`/dev/kfd` only and printed `device: present` with no usable card: it now
+asks `lib.sh`'s `amd_gpu_present` (an enumerated kfd GPU node). It closed
+on 2026-10-17 with that fix. The device tests first ran on the card in
+#606's session (PR #615): "The low-stack form" below.
 
 ## The low-stack form (#606)
 
@@ -379,6 +384,8 @@ That bound was eri3's (dd|g), restated. It is now the metric's own, because
   `center_fragment` beside `block_fragment`. Its status,
   tests and what it does not reach are in `three_center.md`, not here.
 - **An HGP twin.** `(P|Q)` on the HGP VRR (`hmetric_*`, `Target.METRIC` on
-  `Engine.HGP`), the same parameters and output, is built for s and p shells
-  and checked interpreted: `hgp_df.md`.
-- **A batched metric kernel, a metric lever, and derivatives.**
+  `Engine.HGP`), the same parameters and output, is built for s and p shells,
+  checked interpreted and run on the RTX 3080 only (PR #601): `hgp_df.md`.
+- **A batched metric kernel and a metric lever.** Derivatives are built
+  elsewhere: `gmetric_` (gradient, #603/#613, both cards; `gradient.md`)
+  and `d2metric_` (Hessian, #611, interpreted only; `hessian.md`).

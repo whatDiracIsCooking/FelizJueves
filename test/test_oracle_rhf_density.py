@@ -54,6 +54,9 @@ def test_only_the_chain_records_an_rhf_density():
     by_recipe: dict[str, set[str]] = {}
     for p in manifest.tracked():
         fx = manifest.load(p)
+        if fx.gradient is not None:  # #550: each converges its own RHF
+            assert fx.density_recipe.startswith("rhf:"), fx.name
+            continue
         if fx.metric is None and fx.three_center is None:
             by_recipe.setdefault(fx.density_recipe.split(":")[0],
                                  set()).add(fx.name)

@@ -77,7 +77,7 @@ goldens in `test_emit_hgp_one_e.py`. **Compiled and run on the RTX 3080
 only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`,
 16 passed: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
-the RX 9060 XT is not run (#431), nothing measured.
+the RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run), nothing measured.
 **`S`, `T` and `V` are also built on the Rys engine, through (ff),
 interpreted only** (`one_electron.md`, "The Rys route"): `Target.S` / `T` /
 `V` with `engine=Engine.RYS` (slots `s.rys`, `t.rys`, `v.rys`; `DIPOLE` and

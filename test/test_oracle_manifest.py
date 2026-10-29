@@ -46,6 +46,10 @@ def test_tracked_fixture_loads_and_is_canonical(path):
     elif fx.three_center is not None:  # #442: schema 4, its one array
         assert sorted(fx.arrays) == [fx.three_center.array]
         assert schema == manifest.THREE_CENTER_SCHEMA
+    elif fx.gradient is not None:  # #550: schema 5, its arrays exactly
+        assert sorted(fx.arrays) == sorted(("density",
+                                            *manifest.GRADIENT_ARRAYS))
+        assert schema == manifest.GRADIENT_SCHEMA
     elif fx.density_free:  # #520: no density, by its recipe
         assert "density" not in fx.arrays
         assert schema == manifest.AO_SCHEMA
@@ -133,7 +137,7 @@ def _write(tmp_path, mutate):
         (lambda r: r.update(ao_loc=[0, 2, 2]), "ao_loc gives shell 0"),
         (lambda r: r["shells"][0]["coefficients"].pop(), "one row per primitive"),
         (lambda r: r["provenance"].update(cart="yes"), "cart must be"),
-        (lambda r: r.update(schema=5), "schema 5"),
+        (lambda r: r.update(schema=6), "schema 6"),
     ],
     ids=["no-libcint", "no-date", "density-short", "ovlp-short", "asymmetric",
          "no-density", "no-ao_loc", "bad-ao_loc", "ragged-shell", "cart-str",
@@ -213,8 +217,9 @@ def test_a_schema_1_file_is_refused_naming_the_bump(tmp_path):
 
 def test_the_one_e_arrays_are_named_and_shaped_by_cartesian_aos():
     assert (manifest.AO_SCHEMA, manifest.METRIC_SCHEMA,
-            manifest.THREE_CENTER_SCHEMA, manifest.SCHEMA) == (2, 3, 4, 4)
-    assert manifest.SCHEMAS == (2, 3, 4)
+            manifest.THREE_CENTER_SCHEMA, manifest.GRADIENT_SCHEMA,
+            manifest.SCHEMA) == (2, 3, 4, 5, 5)
+    assert manifest.SCHEMAS == (2, 3, 4, 5)
     assert manifest.ONE_E_ARRAYS == ("int1e_ovlp", "int1e_kin", "int1e_nuc",
                                      "hcore")
     fx = load(ONE_E_FIXTURE)
@@ -250,6 +255,9 @@ def test_every_converted_fixture_carries_the_one_e_arrays_or_its_twin_does():
     pieces = {f"co_ccpvtz_j{s}" for s in manifest.ONE_E_PIECE_SUFFIXES}
     for fx in fixtures:
         has = [n for n in manifest.ONE_E_ARRAYS if n in fx.arrays]
+        if fx.gradient is not None:  # #550: exactly its own arrays
+            assert not has, fx.name
+            continue
         if fx.converted is None:
             assert not has, fx.name
             continue
@@ -326,15 +334,17 @@ def test_a_cross_overlap_array_that_cannot_be_read_is_refused(tmp_path):
 PIECE = manifest.FIXTURES / "h2o_ccpvtz_jkfit_metric_rows0_43.json"
 
 
-def test_schema_2_3_and_4_files_load_side_by_side():
+def test_schema_2_3_4_and_5_files_load_side_by_side():
     """Every AO fixture is still schema 2, unchanged; the metric pieces are
-    schema 3 and the only files that are, and the three-center pieces
-    (#442) schema 4 and the only files that are."""
+    schema 3 and the only files that are, the three-center pieces (#442)
+    schema 4 and the only files that are, and the gradient fixtures (#550)
+    schema 5 and the only files that are."""
     by_schema = {}
     for p in manifest.tracked():
         by_schema.setdefault(json.loads(p.read_text())["schema"], set()).add(
             p.stem)
-    assert set(by_schema) == {2, 3, 4}
+    assert set(by_schema) == {2, 3, 4, 5}
+    assert by_schema[5] == set(GRADIENT_FIXTURES)
     assert all(load(manifest.FIXTURES / f"{n}.json").metric is not None
                for n in by_schema[3])
     assert by_schema[3] == {p.stem for p in manifest.tracked()
@@ -348,6 +358,7 @@ def test_schema_2_3_and_4_files_load_side_by_side():
     for n in by_schema[2]:
         fx = load(manifest.FIXTURES / f"{n}.json")
         assert fx.metric is None and fx.three_center is None
+        assert fx.gradient is None
 
 
 def test_a_schema_2_fixture_still_requires_its_density(tmp_path):
@@ -356,11 +367,11 @@ def test_a_schema_2_fixture_still_requires_its_density(tmp_path):
         load(path)
 
 
-@pytest.mark.parametrize("schema", [3, 4])
+@pytest.mark.parametrize("schema", [3, 4, 5])
 def test_a_schema_3_or_4_ao_fixture_still_requires_its_density(tmp_path,
                                                                 schema):
     """Schemas 3 and 4 lift the density requirement for a metric or
-    three-center piece only."""
+    three-center piece only, and schema 5 lifts it for nothing."""
     ok = _write(tmp_path, lambda r: r.update(schema=schema))
     assert load(ok).metric is None and load(ok).three_center is None
     path = _write(tmp_path, lambda r: (r.update(schema=schema),
@@ -864,6 +875,207 @@ def test_dipole_integrals_refuses_the_wrong_kind_of_fixture():
         manifest.check_dipole_integrals(replace(spd, converted=None))
 
 
+# --- #550: schema 5 and the gradient fixtures --------------------------------
+
+# H2O/cc-pVDZ (d shells: J/K classes to L = 8) is read by `slow` tests only.
+GRADIENT_FIXTURES = {"h2o_sto3g_grad": "h2o_sto3g_j",
+                     "h2o_631g_grad": "h2o_631g_j",
+                     "h2o_ccpvdz_grad": "h2o_ccpvdz_j",
+                     "nh2f_631g_grad": None}
+GRAD_SLOW = {"h2o_ccpvdz_grad"}
+GRAD = manifest.FIXTURES / "h2o_sto3g_grad.json"
+
+
+def _grad_params():
+    return [pytest.param(n, marks=(pytest.mark.slow,) if n in GRAD_SLOW
+                         else ()) for n in sorted(GRADIENT_FIXTURES)]
+
+
+def test_the_gradient_fixtures_are_tracked_with_their_siblings():
+    from oracle import generate
+
+    assert manifest.gradient_fixtures() == sorted(GRADIENT_FIXTURES)
+    for name, sib in GRADIENT_FIXTURES.items():
+        fx = load(manifest.FIXTURES / f"{name}.json")
+        assert fx.gradient == manifest.GradientRecord(sib)
+        case = generate.CASES[name]
+        assert case.record_gradient and case.gradient_sibling == sib
+        assert fx.density_recipe == generate.RHF_DENSITY_RECIPE
+        # the PySCF details that each bit once (#550): Cartesian AOs, and
+        # libcint's common_fac 1/sqrt(4 pi), sqrt(3 / (4 pi)), then 1
+        assert fx.provenance.cart is True
+        cf = fx.converted.common_factor
+        assert np.allclose(cf[:2], (1 / np.sqrt(4 * np.pi),
+                                    np.sqrt(3 / (4 * np.pi))), rtol=1e-15)
+        assert all(c == 1.0 for c in cf[2:])
+
+
+@pytest.mark.parametrize("name", _grad_params())
+def test_a_gradient_fixture_recomputes_from_its_stored_arrays(name):
+    """THE assertions, each naming the claim it carries.
+
+    - each per-atom term, `density` and `W` recomputed from the stored
+      integrals, orbitals and `vj1` / `vk1` by the docstring's sign
+      conventions: carries the SIGNS and the MULTIPLICITY FACTORS (2 on J,
+      -1 on K, 2 on the Pulay term) -- and nothing else here does;
+    - the terms sum to PySCF's own total: carries completeness (no term
+      missing or counted twice);
+    - the total sums to zero over atoms: STRUCTURAL only. A wrong factor on
+      a term scales a sum that vanishes per quartet, and it still vanishes,
+      so a green net force is never the factor's warrant."""
+    fx = manifest.gradient_fixture(name)  # all of the below, and the sibling
+    tol = manifest.GRADIENT_TOL
+    got = manifest.gradient_recompute(fx)
+    for term in (*manifest.GRADIENT_TERMS, "density", "dme"):
+        assert np.max(np.abs(got[term] - fx.arrays[term])) <= tol, term
+    total = fx.arrays[manifest.GRAD_TOTAL]
+    terms = sum(fx.arrays[n] for n in manifest.GRADIENT_TERMS)
+    assert np.max(np.abs(terms - total)) <= tol
+    assert np.max(np.abs(total.sum(axis=0))) <= tol
+    # a real force on every atom, so a sign error is visible
+    assert np.min(np.abs(total)) > 1e-3
+
+
+def test_the_net_force_cannot_see_a_wrong_factor():
+    """The guardrail, demonstrated: doubling `vj1` (a J factor of 4, not 2)
+    changes `grad:j` and leaves the net J force zero -- only the per-term
+    recompute against PySCF's `grad:j` catches it."""
+    fx = manifest.gradient_fixture("h2o_sto3g_grad")
+    from dataclasses import replace
+
+    bad = replace(fx, arrays={**fx.arrays, "vj1": 2 * fx.arrays["vj1"]})
+    j = manifest.gradient_recompute(bad)["grad:j"]
+    assert np.max(np.abs(j - fx.arrays["grad:j"])) > 1e-2
+    assert np.max(np.abs(j.sum(axis=0))) <= manifest.GRADIENT_TOL
+    with pytest.raises(FixtureError, match="arrays.grad:j differs"):
+        manifest.check_gradient(bad, load(manifest.FIXTURES /
+                                          "h2o_sto3g_j.json"))
+
+
+def test_the_low_symmetry_molecule_has_no_zero_component():
+    """NH2F, C1: no atom on an axis and no plane of symmetry, so every
+    Cartesian component of every term on every atom is non-zero."""
+    fx = manifest.gradient_fixture("nh2f_631g_grad")
+    assert [a.symbol for a in fx.atoms] == ["N", "F", "H", "H"]
+    assert {s.l for s in fx.shells} == {0, 1}
+    for n in (*manifest.GRADIENT_TERMS, manifest.GRAD_TOTAL):
+        assert np.min(np.abs(fx.arrays[n])) > 1e-4, n
+
+
+def _grad_copy(tmp_path, mutate=None, mutate_j=None):
+    """h2o_sto3g_grad and its sibling in `tmp_path`, each mutated."""
+    out = []
+    for src, m in ((GRAD, mutate),
+                   (manifest.FIXTURES / "h2o_sto3g_j.json", mutate_j)):
+        raw = json.loads(src.read_text())
+        if m is not None:
+            m(raw)
+        (tmp_path / src.name).write_text(json.dumps(raw))
+        out.append(tmp_path / src.name)
+    return out
+
+
+def _bump(r, name, k=0, by=1e-9):
+    r["arrays"][name]["values"][k] += by
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: r["arrays"].pop("vk1"), "missing arrays ['vk1']"),
+        (lambda r: r["arrays"].pop("grad:total"),
+         "missing arrays ['grad:total']"),
+        (lambda r: r["arrays"].pop("int1e_iprinv"),
+         "missing arrays ['int1e_iprinv']"),
+        (lambda r: r["arrays"]["int1e_iprinv"].update(
+            shape=[1, 3, 7, 21]), "arrays.int1e_iprinv has shape (1, 3, 7, 21)"),
+        (lambda r: r["arrays"].update(ovlp=r["arrays"]["dme"]),
+         "carries no other arrays, not ['ovlp']"),
+        (lambda r: r.update(schema=4), "a gradient fixture is schema 5"),
+        (lambda r: r.update(gradient={}), "exactly the keys ['sibling']"),
+        (lambda r: r["gradient"].update(sibling="h2o_sto3g_k"),
+         "sibling must be a `_j`"),
+        (lambda r: r.pop("converted"), "the converted basis"),
+    ],
+    ids=["no-vk1", "no-total", "no-iprinv", "iprinv-shape", "extra-array",
+         "schema-4", "bad-record", "k-sibling", "no-converted"],
+)
+def test_a_bad_gradient_fixture_fails_naming_the_file(tmp_path, mutate, says):
+    path, _ = _grad_copy(tmp_path, mutate)
+    with pytest.raises(FixtureError) as e:
+        load(path)
+    assert str(path) in str(e.value) and says in str(e.value)
+
+
+def test_gradient_arrays_outside_a_gradient_fixture_are_refused(tmp_path):
+    grad = json.loads(GRAD.read_text())
+    path = _write(tmp_path, lambda r: r["arrays"].update(
+        {"vj1": grad["arrays"]["vj1"]}))
+    with pytest.raises(FixtureError, match="belong to a gradient fixture"):
+        load(path)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "says"),
+    [
+        (lambda r: _bump(r, "grad:h"), "arrays.grad:h differs"),
+        (lambda r: _bump(r, "grad:nuc", 4), "arrays.grad:nuc differs"),
+        # a stored W off its orbitals: the Pulay term built on it is first
+        (lambda r: _bump(r, "dme", 3), "arrays.grad:s differs"),
+        (lambda r: _bump(r, "mo_coeff", 2), "arrays.density differs"),
+        (lambda r: _bump(r, "grad:total"), "sum to grad:total only"),
+    ],
+    ids=["term-h", "term-nuc", "dme", "orbitals", "total"],
+)
+def test_a_gradient_fixture_off_its_own_arrays_is_refused(tmp_path, mutate,
+                                                          says):
+    _grad_copy(tmp_path, mutate)
+    with pytest.raises(FixtureError) as e:
+        manifest.gradient_fixture("h2o_sto3g_grad", tmp_path)
+    assert says in str(e.value)
+
+
+def _move_atom(r, by=1e-9):
+    r["atoms"][1]["coord"][0] += by
+
+
+@pytest.mark.parametrize(
+    ("mutate", "mutate_j", "says"),
+    [
+        (None, lambda r: r["converted"]["shells"][0]["coefficients"]
+         .__setitem__(0, 1.0), "converted.shells differ"),
+        (None, lambda r: r["provenance"].update(basis="6-31g"),
+         "provenance.basis differ"),
+        (None, _move_atom, "atoms differ"),
+        (None, lambda r: r["provenance"]["mol"].update(charge=1),
+         "provenance.mol differ"),
+    ],
+    ids=["converted", "basis", "atoms", "mol"],
+)
+def test_a_gradient_fixture_off_its_sibling_is_refused_naming_both(
+        tmp_path, mutate, mutate_j, says):
+    path, jpath = _grad_copy(tmp_path, mutate, mutate_j)
+    with pytest.raises(FixtureError) as e:
+        manifest.gradient_fixture("h2o_sto3g_grad", tmp_path)
+    assert str(path) in str(e.value) and str(jpath) in str(e.value)
+    assert says in str(e.value)
+
+
+def test_a_gradient_fixture_without_its_sibling_is_refused(tmp_path):
+    path, jpath = _grad_copy(tmp_path)
+    jpath.unlink()
+    with pytest.raises(FixtureError, match="no fixture h2o_sto3g_j.json"):
+        manifest.gradient_fixture("h2o_sto3g_grad", tmp_path)
+    fx = load(path)
+    with pytest.raises(FixtureError, match="the sibling given is None"):
+        manifest.check_gradient(fx)
+    other = load(manifest.FIXTURES / "h2o_631g_j.json")
+    with pytest.raises(FixtureError, match="not 'h2o_631g_j'"):
+        manifest.check_gradient(fx, other)
+    with pytest.raises(FixtureError, match="not a gradient fixture"):
+        manifest.gradient_fixture("h2o_sto3g_j")
+
+
 # --- the drift check: needs PySCF ------------------------------------------
 
 
@@ -888,3 +1100,36 @@ def test_fixture_is_what_pyscf_computes_today(path):
     for name, a in fresh["arrays"].items():
         got = np.array(a["values"]).reshape(a["shape"])
         assert np.array_equal(got, fx.arrays[name]), name
+
+
+@pytest.mark.oracle
+def test_the_recorded_gradient_is_the_energy_s_slope():
+    """#550, a witness independent of PySCF's gradient code: the recorded
+    H2O/STO-3G `grad:total` against a central difference of converged RHF
+    energies, one Cartesian component per atom. Carries the overall sign
+    and the factors end to end (the net force cannot)."""
+    pytest.importorskip("pyscf", reason="oracle group not installed: "
+                        "uv sync --group oracle")
+    from oracle import generate
+    from pyscf import gto, scf
+
+    fx = manifest.gradient_fixture("h2o_sto3g_grad")
+    case = generate.CASES["h2o_sto3g_grad"]
+    coords = np.array([a.coord for a in fx.atoms])
+    h = 1e-4
+
+    def energy(xyz):
+        mol = gto.M(atom=[(a.symbol, tuple(c)) for a, c in
+                          zip(fx.atoms, xyz, strict=True)],
+                    unit="Bohr", basis=case.basis, cart=True, verbose=0)
+        mf = scf.RHF(mol)
+        mf.conv_tol = 1e-12
+        return mf.kernel()
+
+    for atom, x in ((0, 2), (1, 0), (2, 1)):
+        plus, minus = coords.copy(), coords.copy()
+        plus[atom, x] += h
+        minus[atom, x] -= h
+        fd = (energy(plus) - energy(minus)) / (2 * h)
+        got = fx.arrays[manifest.GRAD_TOTAL][atom, x]
+        assert abs(fd - got) <= 1e-6, (atom, x, fd, got)

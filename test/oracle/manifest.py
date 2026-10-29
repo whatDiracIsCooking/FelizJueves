@@ -5,16 +5,18 @@ tracked fixture on a box where the `oracle` group was never installed. The
 writer is `generate.py`; this module only defines what a fixture IS and refuses
 anything that is not one, with a message naming the file.
 
-THE SHAPE (schema 2, 3 or 4), one JSON object per file under `fixtures/`:
+THE SHAPE (schema 2, 3, 4 or 5), one JSON object per file under `fixtures/`:
 
-    schema       2, 3 or 4 (#240: schema 1 had no one-electron arrays; a
+    schema       2, 3, 4 or 5 (#240: schema 1 had no one-electron arrays; a
                  schema-1 file is refused by name, not read as one with them
                  absent). Schema 3 (#411) adds one optional key, `metric`
                  (THE METRIC PIECES, below), and schema 4 (#442) another,
-                 `three_center` (THE THREE-CENTER PIECES); an AO fixture is
-                 still written as schema 2 and a metric piece as schema 3,
-                 unchanged, and a `metric` key in a schema-2 file or a
-                 `three_center` key in a file below schema 4 is refused.
+                 `three_center` (THE THREE-CENTER PIECES), and schema 5
+                 (#550) another, `gradient` (THE GRADIENT FIXTURES); an AO
+                 fixture is still written as schema 2 and a metric piece as
+                 schema 3, unchanged, and a `metric` key in a schema-2 file,
+                 a `three_center` key in a file below schema 4 or a
+                 `gradient` key in a file below schema 5 is refused.
     name         the file's stem
     description  free text: what the case is for
     provenance   {pyscf, libcint, numpy, date, host, command, mol, basis, cart}
@@ -144,6 +146,60 @@ element -- NOT bitwise: libcint computes both triangles separately (1,998 of
 the 8,134 entries of the tracked set differ from their transpose, by at most
 4.4e-16). `three_center_sets()` names every tracked set.
 
+THE GRADIENT FIXTURES (#550, schema 5). `<m>_grad` is an AO fixture on
+the `<m>_j` fixture's molecule, Cartesian basis and converted basis exactly
+(or, for the one low-symmetry molecule, on none: `gradient.sibling` null),
+with its OWN density: PySCF's converged RHF one, from which every recorded
+term is computed. It carries
+
+    gradient     {sibling}: the `_j` fixture whose inputs it shares, or null.
+    arrays       besides `density` (and no legacy `ovlp`), exactly
+                 `GRADIENT_ARRAYS`:
+                 `mo_energy` (nmo,), `mo_occ` (nmo,), `mo_coeff` (nao, nmo):
+                 the converged SCF, RECORDED; `density` is
+                 `sym(C diag(mo_occ) C^T)` of them and `dme` (`W`,
+                 nao x nao) PySCF's `make_rdm1e` of them,
+                 `W_mn = sum_i occ_i e_i C_mi C_ni`.
+                 `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc` (3, nao, nao)
+                 and `int1e_iprinv` (natm, 3, nao, nao: libcint's under
+                 `with_rinv_at_nucleus(A)` for each nucleus A, NOT yet
+                 scaled by `-Z_A`): libcint's raw `<nabla m| O |n>`.
+                 `vj1`, `vk1` (3, nao, nao): PySCF's `grad.rhf.get_jk` for
+                 `density`, `vj1[x, m, n] = -sum_kl (nabla_x m n|k l) D_lk`,
+                 `vk1[x, m, l] = -sum_nk (nabla_x m n|k l) D_nk`.
+                 `grad:h`, `grad:s`, `grad:j`, `grad:k`, `grad:nuc`
+                 (`GRADIENT_TERMS`, natm x 3 each, xyz fastest) and
+                 `grad:total`: each term's per-atom contribution, and
+                 `nuc_grad_method().kernel()`'s total.
+
+THE SIGN CONVENTIONS. Every libcint `ip` integral differentiates the FIRST
+(bra) function with respect to the ELECTRON coordinate, `nabla = d/dr`; for
+a function centred on atom A that is `-d/dA`. So, with `s(A)` the AOs on A
+and `h1 = -(ipkin + ipnuc)` (the bra half of `dh/dA` for m in `s(A)`):
+
+    grad:h[A]   = sum_mn dh_A[x, m, n] D_mn,  dh_A = v + v^T (over m, n),
+                  v = -Z_A iprinv[A] with h1 added on rows m in s(A)
+                  (PySCF's `hcore_generator`; the iprinv half is the
+                  Hellmann-Feynman term, the operator's own centre)
+    grad:s[A]   = 2 sum_{m in s(A), n} ipovlp[x, m, n] W_mn     (Pulay)
+    grad:j[A]   = 2 sum_{m in s(A), n} vj1[x, m, n] D_mn
+    grad:k[A]   = -sum_{m in s(A), n} vk1[x, m, n] D_mn          (-1/2 * 2)
+    grad:nuc[A] = -sum_{B != A} Z_A Z_B (R_A - R_B) / |R_A - R_B|^3
+
+and their sum is `grad:total`. The 2 on `grad:j` is the bra/ket symmetry of
+`E_J = 1/2 sum D D (mn|kl)` (the bra-only factor the kernels carry); the -1
+on `grad:k` is that 2 times the closed-shell exchange fraction 1/2.
+
+`gradient_fixture(name)` recomputes every term, `density` and `dme` from
+the stored arrays (`GRADIENT_TOL`), sums the terms to the total, holds the
+total's sum over atoms to zero (translational invariance), and holds the
+inputs to the `_j` sibling's exactly, refusing a mismatch by field.
+WHICH ASSERTION CARRIES WHICH CLAIM: the zero net force is STRUCTURAL only
+-- bra-only times a symmetry factor is an identity per quartet, so a wrong
+overall factor on a term scales a vanishing sum and it still vanishes. The
+factors are carried by the per-term recomputes against PySCF's own
+`grad:*` (and `vj1` / `vk1` against a kernel's), and by nothing else.
+
 THE FOCK PAIR (#280, milestone 12 pin 10). No fixture records the
 two-electron Fock matrix; it is COMBINED, never stored, from a `<m>_j` /
 `<m>_k` pair, which `fock_pair(m)` loads and `check_pair` asserts share
@@ -219,11 +275,12 @@ from typing import Any
 
 import numpy as np
 
-SCHEMA = 4  # the newest this loader reads (#442: the three-center pieces)
+SCHEMA = 5  # the newest this loader reads (#550: the gradient fixtures)
 AO_SCHEMA = 2  # what an AO fixture is written as, unchanged since #240
 METRIC_SCHEMA = 3  # what a metric piece is written as, unchanged since #411
 THREE_CENTER_SCHEMA = 4  # what a three-center piece is written as (#442)
-SCHEMAS = (AO_SCHEMA, METRIC_SCHEMA, THREE_CENTER_SCHEMA)
+GRADIENT_SCHEMA = 5  # what a gradient fixture is written as (#550)
+SCHEMAS = (AO_SCHEMA, METRIC_SCHEMA, THREE_CENTER_SCHEMA, GRADIENT_SCHEMA)
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 PROVENANCE_KEYS = (
@@ -234,7 +291,7 @@ TOP_KEYS = (
     "schema", "name", "description", "provenance", "atoms", "shells", "nao",
     "ao_labels", "ao_loc", "arrays", "density_recipe",
 )
-OPTIONAL_KEYS = ("converted", "metric", "three_center")
+OPTIONAL_KEYS = ("converted", "metric", "three_center", "gradient")
 REQUIRED_ARRAYS = ("density",)
 ERI_PREFIX = "int2e:"  # an ERI block's array name: int2e:i,j,k,l (#85)
 J_ARRAY = "vj"  # PySCF get_jk's Coulomb matrix for `density` (#86)
@@ -284,6 +341,19 @@ DENSITY_ARRAYS = (J_ARRAY, K_ARRAY, DIP_ARRAY, DIP0_ARRAY)
 DIPOLE_SPD_L_MAX = 2
 # #627: the same, for the f fixture beside it
 DIPOLE_F_L_MAX = 3
+# #550: THE GRADIENT FIXTURES' arrays, besides `density`
+GRAD_SCF_ARRAYS = ("mo_energy", "mo_occ", "mo_coeff", "dme")
+GRAD_INT_ARRAYS = ("int1e_ipovlp", "int1e_ipkin", "int1e_ipnuc",
+                   "int1e_iprinv")
+GRAD_JK_ARRAYS = ("vj1", "vk1")
+GRADIENT_TERMS = ("grad:h", "grad:s", "grad:j", "grad:k", "grad:nuc")
+GRAD_TOTAL = "grad:total"
+GRADIENT_ARRAYS = (*GRAD_SCF_ARRAYS, *GRAD_INT_ARRAYS, *GRAD_JK_ARRAYS,
+                   *GRADIENT_TERMS, GRAD_TOTAL)
+GRADIENT_KEYS = ("sibling",)
+GRADIENT_SUFFIX = "_grad"
+# a recompute from the stored arrays against PySCF's own, absolute (Eh/bohr)
+GRADIENT_TOL = 1e-12
 
 
 class FixtureError(ValueError):
@@ -366,6 +436,13 @@ class ThreeCenterPiece:
 
 
 @dataclass(frozen=True)
+class GradientRecord:
+    """A schema-5 file's `gradient` record (#550)."""
+
+    sibling: str | None  # the `_j` fixture whose inputs it shares, or None
+
+
+@dataclass(frozen=True)
 class Fixture:
     path: Path
     name: str
@@ -381,6 +458,7 @@ class Fixture:
     converted: Converted | None = None
     metric: MetricPiece | None = None
     three_center: ThreeCenterPiece | None = None
+    gradient: GradientRecord | None = None
 
     @property
     def density(self) -> np.ndarray:
@@ -509,6 +587,13 @@ def validate(path: Path, raw: Any) -> Fixture:
         raise _fail(path, f"a three-center piece is schema "
                           f"{THREE_CENTER_SCHEMA} (#442), and this file says "
                           f"schema {raw['schema']}")
+    if "gradient" in raw and raw["schema"] < GRADIENT_SCHEMA:
+        raise _fail(path, f"a gradient fixture is schema {GRADIENT_SCHEMA} "
+                          f"(#550), and this file says schema "
+                          f"{raw['schema']}")
+    if "gradient" in raw and ("metric" in raw or "three_center" in raw):
+        raise _fail(path, "a gradient fixture is an AO fixture, not a "
+                          "metric or three-center piece")
     if "metric" in raw and "three_center" in raw:
         raise _fail(path, "a file is a metric piece or a three-center piece, "
                           "not both")
@@ -676,10 +761,60 @@ def validate(path: Path, raw: Any) -> Fixture:
                                                    arrays["ovlp"]):
         raise _fail(path, f"arrays.{OVLP_ARRAY} is not exactly arrays.ovlp")
     _check_dipole_arrays(path, arrays, converted, atoms, nao, density_free)
+    gradient = _gradient(path, raw, arrays, converted, len(atoms), nao,
+                         density_free)
 
     return Fixture(path, raw["name"], raw["description"], prov, tuple(atoms),
                    tuple(shells), nao, tuple(labels), tuple(ao_loc), arrays,
-                   raw["density_recipe"], converted)
+                   raw["density_recipe"], converted, gradient=gradient)
+
+
+def _gradient(path: Path, raw: dict[str, Any], arrays: dict[str, np.ndarray],
+              converted: Converted | None, natm: int, nao: int,
+              density_free: bool) -> GradientRecord | None:
+    """#550: the `gradient` record and its arrays, all or none, shaped."""
+    has = [n for n in GRADIENT_ARRAYS if n in arrays]
+    if "gradient" not in raw:
+        if has:
+            raise _fail(path, f"arrays {has} belong to a gradient fixture "
+                              "only")
+        return None
+    g = raw["gradient"]
+    if not isinstance(g, dict) or sorted(g) != sorted(GRADIENT_KEYS):
+        raise _fail(path, f"gradient must have exactly the keys "
+                          f"{list(GRADIENT_KEYS)}")
+    sib = g["sibling"]
+    if sib is not None and (not isinstance(sib, str) or not sib
+                            or sib != Path(sib).name
+                            or not sib.endswith(J_SUFFIX)):
+        raise _fail(path, "gradient.sibling must be a `_j` fixture's name or "
+                          "null")
+    if not raw["name"].endswith(GRADIENT_SUFFIX):
+        raise _fail(path, f"a gradient fixture's stem ends with "
+                          f"{GRADIENT_SUFFIX!r}")
+    if density_free or converted is None:
+        raise _fail(path, "a gradient fixture records its density and the "
+                          "converted basis")
+    missing = [n for n in GRADIENT_ARRAYS if n not in arrays]
+    if missing:
+        raise _fail(path, f"a gradient fixture is missing arrays {missing}")
+    extra = sorted(set(arrays) - {"density", *GRADIENT_ARRAYS})
+    if extra:
+        raise _fail(path, f"a gradient fixture carries no other arrays, not "
+                          f"{extra}")
+    mo_e = arrays["mo_energy"]
+    nmo = mo_e.shape[0] if mo_e.ndim == 1 else -1
+    shapes = {"mo_energy": (nmo,), "mo_occ": (nmo,), "mo_coeff": (nao, nmo),
+              "dme": (nao, nao), "int1e_iprinv": (natm, 3, nao, nao),
+              GRAD_TOTAL: (natm, 3)}
+    shapes.update({n: (3, nao, nao)
+                   for n in (*GRAD_INT_ARRAYS[:3], *GRAD_JK_ARRAYS)})
+    shapes.update({n: (natm, 3) for n in GRADIENT_TERMS})
+    for name, want in shapes.items():
+        if arrays[name].shape != want:
+            raise _fail(path, f"arrays.{name} has shape {arrays[name].shape}, "
+                              f"expected {want}")
+    return GradientRecord(sib)
 
 
 def _converted(path: Path, c: Any, prov: Provenance, n_atoms: int,
@@ -1722,6 +1857,123 @@ def quadrupole_integrals(name: str = QUADRUPOLE,
         path, pv, parent, origin,
         arr("int1e_rr_cart:origin", (ncomp, nao, nao)),
         arr("int1e_rr_cart:zero", (ncomp, nao, nao)))
+
+
+# --- the gradient fixtures (#550) ---------------------------------------------
+
+
+def ao_atoms(fx: Fixture) -> np.ndarray:
+    """The atom each AO sits on, (nao,), from `shells` and `ao_loc`."""
+    out = np.empty(fx.nao, dtype=int)
+    for i, sh in enumerate(fx.shells):
+        out[fx.ao_loc[i]:fx.ao_loc[i + 1]] = sh.atom
+    return out
+
+
+def gradient_recompute(fx: Fixture) -> dict[str, np.ndarray]:
+    """Every per-atom term, and `density` and `dme`, recomputed from `fx`'s
+    stored arrays by THE SIGN CONVENTIONS (module docstring); each is what
+    the like-named array must equal to `GRADIENT_TOL`."""
+    a = fx.arrays
+    d, w = fx.density, a["dme"]
+    c, occ, e = a["mo_coeff"], a["mo_occ"], a["mo_energy"]
+    on = ao_atoms(fx)
+    natm = len(fx.atoms)
+    h1 = -(a["int1e_ipkin"] + a["int1e_ipnuc"])
+    out = {n: np.zeros((natm, 3)) for n in GRADIENT_TERMS}
+    for A in range(natm):
+        rows = on == A
+        v = -fx.atoms[A].charge * a["int1e_iprinv"][A]
+        v[:, rows] += h1[:, rows]
+        dh = v + v.transpose(0, 2, 1)
+        out["grad:h"][A] = np.einsum("xmn,mn->x", dh, d)
+        out["grad:s"][A] = 2 * np.einsum("xmn,mn->x",
+                                         a["int1e_ipovlp"][:, rows], w[rows])
+        out["grad:j"][A] = 2 * np.einsum("xmn,mn->x", a["vj1"][:, rows],
+                                         d[rows])
+        out["grad:k"][A] = -np.einsum("xmn,mn->x", a["vk1"][:, rows],
+                                      d[rows])
+        for B in range(natm):
+            if B != A:
+                r = (np.array(fx.atoms[A].coord)
+                     - np.array(fx.atoms[B].coord))
+                out["grad:nuc"][A] -= (fx.atoms[A].charge * fx.atoms[B].charge
+                                       * r / np.linalg.norm(r) ** 3)
+    dm = (c * occ) @ c.T
+    out["density"] = 0.5 * (dm + dm.T)
+    out["dme"] = (c * (occ * e)) @ c.T
+    return out
+
+
+def check_gradient(fx: Fixture, sibling: Fixture | None = None) -> None:
+    """Refuse, naming the file(s), unless `fx` is a gradient fixture whose
+    recorded terms, density and `dme` are what its stored arrays recompute
+    to, whose terms sum to its total and whose total sums to zero over
+    atoms (each to `GRADIENT_TOL`), and -- with `sibling` -- whose inputs
+    are the `_j` sibling's exactly (every field `check_pair` compares but
+    the density, and every array both carry)."""
+    if fx.gradient is None:
+        raise _fail(fx.path, "not a gradient fixture (no gradient record)")
+    if (sibling is None) != (fx.gradient.sibling is None):
+        raise _fail(fx.path, f"gradient.sibling is "
+                             f"{fx.gradient.sibling!r}, and the sibling "
+                             f"given is {sibling and sibling.name!r}")
+    if sibling is not None:
+        if sibling.name != fx.gradient.sibling:
+            raise _fail(fx.path, f"gradient.sibling is "
+                                 f"{fx.gradient.sibling!r}, not "
+                                 f"{sibling.name!r}")
+        if sibling.converted is None:
+            raise _fail(sibling.path, "a gradient fixture's sibling records "
+                                      "the converted basis")
+        field = _input_difference(fx, sibling, density=False)
+        if field is not None:
+            raise FixtureError(f"{fx.path} / {sibling.path}: not the "
+                               f"gradient fixture of the second: {field} "
+                               "differ")
+    if not fx.provenance.cart:
+        raise _fail(fx.path, "a gradient fixture is Cartesian")
+    got = gradient_recompute(fx)
+    for name, want in got.items():
+        err = float(np.max(np.abs(fx.arrays[name] - want)))
+        if err > GRADIENT_TOL:
+            raise _fail(fx.path, f"arrays.{name} differs from its recompute "
+                                 f"from the stored arrays by {err:.3e}, over "
+                                 f"GRADIENT_TOL = {GRADIENT_TOL:g}")
+    total = fx.arrays[GRAD_TOTAL]
+    err = float(np.max(np.abs(sum(fx.arrays[n] for n in GRADIENT_TERMS)
+                              - total)))
+    if err > GRADIENT_TOL:
+        raise _fail(fx.path, f"the terms {list(GRADIENT_TERMS)} sum to "
+                             f"{GRAD_TOTAL} only to {err:.3e}")
+    err = float(np.max(np.abs(total.sum(axis=0))))
+    if err > GRADIENT_TOL:
+        raise _fail(fx.path, f"{GRAD_TOTAL} sums over atoms to {err:.3e}, "
+                             "not zero (translational invariance)")
+
+
+def gradient_fixture(name: str, fixtures: Path = FIXTURES) -> Fixture:
+    """Load the gradient fixture `name` (`<m>_grad`) with its `_j` sibling,
+    if it names one, and `check_gradient` them."""
+    fx = load(fixtures / f"{name}.json")
+    if fx.gradient is None:
+        raise _fail(fx.path, "not a gradient fixture (no gradient record)")
+    sib = fx.gradient.sibling
+    sibling = None
+    if sib is not None:
+        spath = fixtures / f"{sib}.json"
+        if not spath.exists():
+            raise _fail(fx.path, f"gradient.sibling: no fixture {spath.name}")
+        sibling = load(spath)
+    check_gradient(fx, sibling)
+    return fx
+
+
+def gradient_fixtures() -> list[str]:
+    """Every tracked gradient fixture's stem, sorted. By file name only;
+    `gradient_fixture` is what checks one."""
+    return sorted(p.stem for p in tracked()
+                  if p.stem.endswith(GRADIENT_SUFFIX))
 
 
 # --- the exchange-gradient witness (#618) ----------------------------------------

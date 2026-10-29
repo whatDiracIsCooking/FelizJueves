@@ -31,7 +31,8 @@ or floor was added. The spike is not imported anywhere.
 
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`. Order 2 is legal on
 `spec.HESSIAN_TARGETS` only — `JAB`, and since the one-electron Hessians
-`S`, `T` and `V`, and the exchange Hessian `K`, on MMD — and refused elsewhere with
+`S`, `T` and `V`, the exchange Hessian `K` and the DF `METRIC` and `ERI3`,
+on MMD — and refused elsewhere with
 `_HESSIAN_REFUSAL`. Order 1 gained `DQ` (`GRADIENT_TARGETS`), the ket
 pre-contraction differentiated on each ket centre, which only the Hessian
 reads. Every d0 and d1 key is byte-identical:
@@ -236,10 +237,10 @@ at most, with 36 reductions each) is unexamined.
   gather → `[p|q]` → `hjab` is checked interpreted only. Nothing above
   (dd) has run on a card.
 - The skeleton Coulomb and exchange terms and (below) the one-electron
-  skeleton only. Not built: the exchange Hessian above p ("The exchange
-  Hessian"), the nuclear repulsion as a kernel (it is host-side), the
-  derivative Fock matrices `F^x` and the CPHF response, so no whole RHF
-  Hessian is assembled or checked against `pyscf.hessian.rhf`.
+  and DF `(P|Q)`, `(mn|P)` skeletons only. Not built: the exchange
+  Hessian above p ("The exchange Hessian"), the nuclear repulsion as a
+  kernel (it is host-side), the derivative Fock matrices `F^x` and the
+  CPHF response, so no whole RHF Hessian is assembled or checked against `pyscf.hessian.rhf`.
 - The bra–ket term runs the `[p|q]` kernel `3 n_atom` times per class
   pair, each over the kets touching one atom (about `6 n_ket` kets in all),
   and `hjab` adds `18 n_atom` atomics per bra record whether or not the
@@ -280,7 +281,8 @@ not ported here (the skeleton Coulomb term is this note's first part).
 ### Their keys
 
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`. Order 2 is legal on
-`spec.HESSIAN_TARGETS` -- `S`, `T` and `V` beside `JAB`, each on MMD -- and every
+`spec.HESSIAN_TARGETS` -- `S`, `T` and `V` beside `JAB`, `K`, `METRIC`
+and `ERI3`, each on MMD -- and every
 other target, and HGP, refuses it with `_HESSIAN_REFUSAL`. A hessian
 class is its integral's class, so `overlap/d2/(2,1)/b1/s/literal`
 differs from the d0 and d1 keys in the `d` segment alone, and every
@@ -426,8 +428,9 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
 
 ### What is not done
 
-- No exchange second derivative (the Coulomb one is this note's first part), no CPHF
-  response, no assembled RHF hessian; `experimental/mmd/hessian` has the
+- The two-electron second derivatives are this note's first part and
+  "The exchange Hessian" (s and p only); no CPHF response, no assembled
+  RHF hessian; `experimental/mmd/hessian` has the
   rest for s and p, in numpy.
 - Nothing above (dd) has run on a card; nothing measured.
 - The low-stack `d2v` is not measured: no frame, spill or clock on
@@ -457,8 +460,8 @@ the `d` segment alone; every d0 and d1 key is byte-identical.
 `H[A, k, B, l] += SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}` for any
 `n_aux x n_aux` matrix `W`. A DF-J energy Hessian's metric term passes
 `W = -1/2 d d^T` (the gradient's `W`, `gradient/host_df.py`), skeleton
-only: `d`'s response, the three-center `(mn|P)` Hessian and the assembled
-DF-J Hessian are not built.
+only: `d`'s response and the assembled DF-J Hessian are not built (the
+three-center `(mn|P)` Hessian is the next section).
 
 ### The rule: the Hermite shift twice
 
