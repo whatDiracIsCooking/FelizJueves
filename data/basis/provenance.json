@@ -1,0 +1,75 @@
+{
+  "description": "data/basis/ copied verbatim from FreeBreakfast (#650); every file's bytes are FreeBreakfast's at the commit below, checked by test/test_ao_bse.py",
+  "repository": "https://github.com/whatDiracIsCooking/FreeBreakfast",
+  "commit": "67a5bb47cd9268a6d2c15978a6b3230e8b8b3c81",
+  "path": "data/basis/",
+  "copied": "2026-10-29",
+  "files": {
+    "6-31g.json": {
+      "name": "6-31G",
+      "bytes": 120778,
+      "sha256": "05368c86f56b9bfb7b6a8d1fb056c665f1c7b7b20011f3786d8e7c8c379d5088",
+      "source": "Basis Set Exchange v1 (revised 2018-06-19); d shells from K relabelled gto_spherical by FreeBreakfast's tools/basis/cartesian_to_spherical.py"
+    },
+    "6-31gstar.json": {
+      "name": "6-31G*",
+      "bytes": 137574,
+      "sha256": "099cfcbb61c13525a15ea33b77b38d9e62eb621ed4b603f0ed8a9f1788658d4c",
+      "source": "Basis Set Exchange v1 (revised 2018-06-19); d shells from Li relabelled gto_spherical by FreeBreakfast's tools/basis/cartesian_to_spherical.py"
+    },
+    "6-31gstarstar.json": {
+      "name": "6-31G**",
+      "bytes": 138613,
+      "sha256": "8f382e7fd5e07f5ade8f0f7fd11fcf4717b5fe0fe8b4118418c6666d663d1d45",
+      "source": "Basis Set Exchange v1 (revised 2018-06-19); d shells from Li relabelled gto_spherical by FreeBreakfast's tools/basis/cartesian_to_spherical.py"
+    },
+    "aug-cc-pVDZ.json": {
+      "name": "aug-cc-pVDZ",
+      "bytes": 226927,
+      "sha256": "fb70490791e276047013dfd7be5df734d6830a541b93af37b32e8a51fa7e95ab",
+      "source": "Basis Set Exchange v1 (revised 2018-10-03), as served"
+    },
+    "aug-cc-pVTZ.json": {
+      "name": "aug-cc-pVTZ",
+      "bytes": 300499,
+      "sha256": "6a49e4b760c55b53c8074ca90f7e3734b9001d5424b28736932e41197c10caaa",
+      "source": "Basis Set Exchange v1 (revised 2018-10-03), as served"
+    },
+    "cc-pVDZ.json": {
+      "name": "cc-pVDZ",
+      "bytes": 193817,
+      "sha256": "a3c0ea7ff628750e17f939c5ea885bcd488523b860ded2aaddd7df086f4f6da6",
+      "source": "Basis Set Exchange v1 (revised 2018-10-03), as served"
+    },
+    "cc-pVTZ.json": {
+      "name": "cc-pVTZ",
+      "bytes": 260747,
+      "sha256": "b12b49e7fdf6ff2f33f60d028f835a2ab978a981b4e64c33e3b0389225352e8e",
+      "source": "Basis Set Exchange v1 (revised 2018-10-03), as served"
+    },
+    "def2-SVP.json": {
+      "name": "def2-SVP",
+      "bytes": 134592,
+      "sha256": "29397a4a1a75ce640a7fc7ff53f7cdc8c556482afac8b787b3c2d3c46b6aa9ac",
+      "source": "Basis Set Exchange v1 (revised 2018-09-07), as served"
+    },
+    "def2-TZVP.json": {
+      "name": "def2-TZVP",
+      "bytes": 187872,
+      "sha256": "b60141ac9a08a7b554799840cd78c297e607d3e460cfaff4e94b32b876cf35e6",
+      "source": "Basis Set Exchange v1 (revised 2018-09-07), as served"
+    },
+    "minao.json": {
+      "name": "MINAO",
+      "bytes": 135538,
+      "sha256": "6df2ffc4e2324fd94b0c4a06d983f52944159100def8eeb02ce9d791324de93c",
+      "source": "PySCF 2.14.0's pyscf/gto/basis/minao.py (Molpro's MINAO), converted by FreeBreakfast's tools/minao_from_pyscf.py; not on the Basis Set Exchange"
+    },
+    "sto-3g.json": {
+      "name": "STO-3G",
+      "bytes": 76482,
+      "sha256": "013c12933f648faddfa3f3741a1bfb12d5f6e1609a43066687d49d1e5727d937",
+      "source": "Basis Set Exchange v1 (revised 2018-06-19), as served"
+    }
+  }
+}
