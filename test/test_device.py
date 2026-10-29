@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,49 @@ def test_the_shell_probe_asks_the_same_question_as_conftest() -> None:
     # whether or not a card is bound.
     assert "hip)  amd_gpu_present && device_present=1" in tier
     assert "hip)  [ -e /dev/kfd ] && device_present=1" not in tier
+
+
+def _card_sh(script: str, path: str) -> subprocess.CompletedProcess[str]:
+    lib = Path(__file__).resolve().parent.parent / "devtools" / "lib.sh"
+    return subprocess.run(
+        ["bash", "-c", f". {lib}; {script}"], capture_output=True, text=True,
+        env={"PATH": path, "HOME": "/nonexistent"})
+
+
+def test_card_present_reads_nvidia_smi_enumeration(tmp_path: Path) -> None:
+    """#651: an NVIDIA card counts when the driver enumerates one, and
+    `nvidia-smi -L` is one of the two places that says so. A fake tool that
+    lists a GPU makes `cuda` present, whatever this box has."""
+    fake = tmp_path / "nvidia-smi"
+    fake.write_text("#!/bin/sh\necho 'GPU 0: NVIDIA GeForce RTX 3080 (UUID: x)'\n")
+    fake.chmod(0o755)
+    done = _card_sh("card_present cuda", f"{tmp_path}:/usr/bin:/bin")
+    assert done.returncode == 0, done.stderr
+    listed = _card_sh("card_present", f"{tmp_path}:/usr/bin:/bin").stdout.split()
+    assert "cuda" in listed
+    assert "cuda" not in _card_sh("card_absent", f"{tmp_path}:/usr/bin:/bin").stdout
+
+
+def test_card_present_verdict_shape() -> None:
+    """No argument: the present backends on stdout, rc 0 only for both, and
+    card_absent is their complement; a bad backend is rc 2, not "absent"."""
+    done = _card_sh("card_present", "/usr/bin:/bin")
+    present = done.stdout.split()
+    absent = _card_sh("card_absent", "/usr/bin:/bin").stdout.split()
+    assert sorted(present + absent) == ["cuda", "hip"]
+    assert (done.returncode == 0) == (present == ["cuda", "hip"])
+    bad = _card_sh("card_present gpu", "/usr/bin:/bin")
+    assert bad.returncode == 2 and "unknown backend" in bad.stderr
+
+
+def test_doctor_and_pr_skill_ask_card_present() -> None:
+    """One verdict, computed once: doctor.sh prints it from card_present and
+    the pr skill tells the agent to call the same helper (#651)."""
+    root = Path(__file__).resolve().parent.parent
+    doctor = (root / "devtools" / "doctor.sh").read_text()
+    skill = (root / ".claude" / "skills" / "pr" / "SKILL.md").read_text()
+    assert "card_present" in doctor and "card verdict" in doctor
+    assert "card_present" in skill and "unverified-on-card" in skill
 
 
 def test_two_rows_differing_only_in_card_do_not_collide() -> None:
