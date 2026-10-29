@@ -26,7 +26,12 @@ within 6.3e-15 of MMD's scale in all 21 classes, the deposit against
 of libcint. `python -m felizjueves.emit --fock-l LMAX --rys`, never in the
 bare default nor in `KERNEL_GEN_CMD`; 21 goldens per backend
 (`test_emit_frys.py`, two in `frys_digests.json`). All 21 units passed clang
-18's CUDA front end (a proxy). Nothing measured or scored.
+18's CUDA front end (a proxy). Nothing measured or scored. Sources
+(#489): the VRR's coefficients and recurrences and the prefactor are
+checked against libcint's source (`docs/references.md` entry 51,
+`[Libcint]`), and `N` and the product form against `[GPU4PySCF]` (entry
+26). `[DRK]` and `[LRL]` (entries 49 and 50) are cited but closed access
+and unread, so none of their equation numbers is recorded.
 **The split `J` on Rys quadrature too, interpreted and emitted, NOT
 compiled by nvcc / hipcc and NOT run on a card** (`rys_fock.md`, "The split
 `J` on Rys"): `Target.J` on `Engine.RYS` (slot `j.rys`, whose only legal
