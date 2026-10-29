@@ -263,6 +263,11 @@ that is rounding, inside the 1e-14·max slack, as in `check_j.py`.
 Anything above `(pp|pp)`; `d` and higher (`shells_of` refuses them; the
 roots stop at N = 3, and `T_SWITCH = 50` will not hold for larger N, because
 the Laguerre tail `O(e^{−T} T^{2N−3/2})` at N = 5 is ~5e-8 there);
-derivatives; a sorted `break` screen; any `Spec` target, IR or emitted kernel; a place in
-`src/`; the `Engine` protocol. Whether Rys becomes a third engine is decided
-after this.
+derivatives; a sorted `break` screen; the `Engine` protocol.
+
+**Since then the fused Fock build is in `src/` as a GPU kernel emitter**:
+`Target.F` on `Engine.RYS`, `src/felizjueves/eri/fock/kernel_frys.py`
+(`fr_` units), the rule in `src/felizjueves/rys/` widened to `N <= 5` with
+`T_SWITCH = 80` and a device-shaped route (Sturm bisection, no
+eigensolver). `docs/implementation/rys_fock.md` is the one place with the
+detail; this spike is unchanged and still the reference for its tables.

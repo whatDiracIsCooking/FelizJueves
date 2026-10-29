@@ -266,6 +266,16 @@ classes: ptxas `8192 bytes smem` on the NVIDIA arch (48 KiB static per
 block) and `LDS Size [bytes/block]: 8192` on the AMD one (64 KiB per
 workgroup), pinned by test/test_emit_fock.py's compile cases.
 
+THE FUSED F ON RYS, `--rys` with `--fock-l` / `--fock-class`: the same
+classes on the Rys engine instead of HGP, `kernel_frys.build_frys_kernel`
+(`Target.F` on `Engine.RYS`), one unit per class, `fr_{la}{lb}{lc}{ld}` --
+`kernel_f`'s staging, screen, HRR and digestion with the Rys rule
+(`fj_rys<N>`, carried in the unit) and its 2D VRR in the primitive nest. A
+drop-in for the `f_` unit of the same class (same parameters and launch).
+`--rys` alone, or with an F lever flag (the `f.rys` slot admits none), is
+a 2. The `cuda` and `hip` backends carry `fj_rys`; there is no CLI `gpu`
+backend.
+
 THE HGP SPLIT J / K PATH, `--hgp-j-l LMAX` / `--hgp-k-l LMAX` /
 `--hgp-class L0 L1 L2 L3` [`--ordered`] (#407, milestone 14): the split
 Coulomb and exchange kernels on the HGP recurrence, `kernel_hj.build_hj_kernel`
@@ -412,6 +422,7 @@ from felizjueves.eri.density_fit.kernel_hgp import (
 )
 from felizjueves.eri.density_fit.kernel_metric import build_metric_kernel
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
+from felizjueves.eri.fock.kernel_frys import build_frys_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
 from felizjueves.eri.hjk.kernel_hj import built_class as hj_built_class
 from felizjueves.eri.hjk.kernel_hk import build_hk_kernel, hk_class_spec, hk_name
@@ -979,12 +990,13 @@ def fock_selection(lmax: int | None, classes: Sequence[Sequence[int]] = ()
 
 
 def generate_fock(backend: str, arch: Arch, out: Path,
-                  classes: Sequence[Am]) -> list[Path]:
+                  classes: Sequence[Am], *, rys: bool = False) -> list[Path]:
     """Emit the fused Fock unit `f_{la}{lb}{lc}{ld}` of every class into
-    `out`; return the paths."""
+    `out` -- or, with `rys`, its Rys twin `fr_{la}{lb}{lc}{ld}`; return the
+    paths."""
     out.mkdir(parents=True, exist_ok=True)
-    return [_write(backend, arch, out, build_f_kernel(tuple(c)))
-            for c in classes]
+    build = build_frys_kernel if rys else build_f_kernel
+    return [_write(backend, arch, out, build(tuple(c))) for c in classes]
 
 
 # ---------------------------------------------------------------------------
@@ -1308,6 +1320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
                     action="append", metavar=("LA", "LB", "LC", "LD"))
+    ap.add_argument("--rys", action="store_true")
     ap.add_argument("--hgp-j-l", dest="hgp_j_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--hgp-k-l", dest="hgp_k_l", type=int, default=None,
@@ -1346,6 +1359,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.ordered and not hgp:
         print("emit: --ordered is the HGP J / K path's class mode; it needs "
               "--hgp-j-l, --hgp-k-l or --hgp-class", file=sys.stderr)
+        return 2
+    if args.rys and (not (args.fock_l is not None or args.fock_classes)
+                     or fock_levers):
+        print("emit: --rys is the fused F path's engine: it needs --fock-l "
+              "or --fock-class, and takes no F lever flag (the f.rys slot "
+              "admits none)", file=sys.stderr)
         return 2
     if hgp:
         return _main_hgp(args, bool(given or selector or fock))
@@ -1521,7 +1540,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if selector:
         return _main_classes(args, arch)
     if fock:
-        written = generate_fock(args.backend, arch, args.out, fock_cls)
+        written = generate_fock(args.backend, arch, args.out, fock_cls,
+                                rys=args.rys)
         written += generate_levers(args.backend, arch, args.out, lever_units)
         print(f"emit: {len(written)} {args.backend} Fock translation unit(s) "
               f"for {arch.name} -> {args.out}")

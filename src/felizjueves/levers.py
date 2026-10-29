@@ -76,9 +76,11 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # legality table covers these too. Only the off-native pairings `spec`
 # admits are slots (HGP J and HGP K, the HGP one-electron S, T, V and
 # dipole of `one_electron.kernel_hgp`, and the HGP DF metric and three-center
-# of `eri.density_fit.kernel_hgp`; a test pins this to `spec`).
+# of `eri.density_fit.kernel_hgp`; and the fused F on Rys quadrature,
+# `eri.fock.kernel_frys`; a test pins this to `spec`).
 ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
-                                 "dipole.hgp", "metric.hgp", "eri3.hgp")
+                                 "dipole.hgp", "metric.hgp", "eri3.hgp",
+                                 "f.rys")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -196,6 +198,12 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "the HGP three-center (mn|P) has no option surface: it is the VRR "
         "and bra HRR of (la lb|lP 0) with an exponent-0 partner, one batch, "
         "and an HGP three-center lever is a follow-up nobody has declared"
+    ),
+    "f.rys": (
+        "the fused F on Rys quadrature (eri.fock.kernel_frys) has no option "
+        "surface yet: the F levers act on the HGP VRR, its boundary and the "
+        "seams around them, and which of them carries over to a Rys VRR is "
+        "a follow-up nobody has declared"
     ),
 })
 

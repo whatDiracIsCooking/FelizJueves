@@ -101,6 +101,11 @@ default, on purpose: a default would be an import of `reference/` from here,
 and the interpreter must not share ancestry with the reference its own pins
 compare against (test/test_layering.py).
 
+`Rys` is the Rys engine's rule, injected the same way: `rys=(n, T) ->
+(nodes, weights)` (the pins pass `felizjueves.rys.roots.roots_weights`, the
+device routine's own operation order), and a kernel that runs a `Rys`
+without one raises.
+
 FRAGMENTS. An `Inline` evaluates its bindings in the host's scope -- a scalar
 bind is a read-only copy typed by its value, an array bind an alias of the
 host array -- then runs the fragment's body with ONLY those names visible,
@@ -144,6 +149,7 @@ from felizjueves.ir import (
     Lit,
     Note,
     Raw,
+    Rys,
     Scalar,
     Space,
     Stmt,
@@ -508,6 +514,8 @@ class _Thread:
             yield (s, None)  # the block resumes every thread together
         elif isinstance(s, Boys):
             self.boys(s)
+        elif isinstance(s, Rys):
+            self.rys(s)
         elif isinstance(s, Inline):
             yield from self.inline(s)
         elif isinstance(s, Raw):
@@ -531,6 +539,28 @@ class _Thread:
         for m in range(s.top + 1):
             self.store(Index(s.dst, (Lit(m),)),
                        float(self.interp.boys(m, float(T))))
+
+    def rys(self, s: Rys) -> None:
+        """`nodes[i], weights[i]` of the `n`-point Rys rule at `T`, from the
+        injected evaluator (module docstring)."""
+        rule = getattr(self.interp, "rys", None)
+        if rule is None:
+            raise InterpError("Rys run but no rys= evaluator injected")
+        T = self.eval(s.t)
+        if type(T) is F32:
+            raise InterpError("Rys of an F32: there is no fp32 rule")
+        for a in (s.nodes, s.weights):
+            arr = self.array(a)
+            if arr.type is not Scalar.F64 or arr.data.shape != (s.n,):
+                raise InterpError(f"Rys into {a!r}: not an F64 array of "
+                                  f"{s.n}")
+        x, w = rule(s.n, float(T))
+        if len(x) != s.n or len(w) != s.n:
+            raise InterpError(f"rys= returned {len(x)}, {len(w)} values for "
+                              f"n = {s.n}")
+        for i in range(s.n):
+            self.store(Index(s.nodes, (Lit(i),)), float(x[i]))
+            self.store(Index(s.weights, (Lit(i),)), float(w[i]))
 
     def inline(self, s: Inline) -> Generator[Any, Any, None]:
         """Bind the names in the host's scopes, then run the body in isolation.
@@ -620,16 +650,22 @@ def _butterfly(values: list[float | int]) -> int | float:
     return v[0]
 
 
+# The injected Rys rule: `(n, T) -> (nodes, weights)`, each `n` floats.
+RysRule = Callable[[int, float], tuple[Any, Any]]
+
+
 class Interpreter:
     """Run one `Kernel`; `iterations` counts `For` body entries by loop var."""
 
     def __init__(self, kernel: Kernel, *, launch: Launch | None = None,
-                 boys: Callable[[int, float], float] | None = None) -> None:
+                 boys: Callable[[int, float], float] | None = None,
+                 rys: RysRule | None = None) -> None:
         if not isinstance(kernel, Kernel):
             raise TypeError("interpret takes a Kernel")
         self.kernel = kernel
         self.launch = Launch() if launch is None else launch
         self.boys = boys
+        self.rys = rys
         self.iterations: Counter[str] = Counter()
         # Array params whose declared extents could not be evaluated, and why.
         self.unchecked: dict[str, str] = {}
@@ -777,13 +813,14 @@ class _Warp:
 
 def interpret(kernel: Kernel, *, launch: Launch | None = None,
               boys: Callable[[int, float], float] | None = None,
+              rys: RysRule | None = None,
               **inputs: Any) -> dict[str, np.ndarray]:
     """Execute every Stmt: Decl, Assign, For, If, Break, WarpReduce, AtomicAdd.
 
     Returns a copy of every OUT array after the launch. The warp reduction is
     emulated on the host (see the module docstring for the machine).
     """
-    return Interpreter(kernel, launch=launch, boys=boys).run(**inputs)
+    return Interpreter(kernel, launch=launch, boys=boys, rys=rys).run(**inputs)
 
 
 class _Alone:
