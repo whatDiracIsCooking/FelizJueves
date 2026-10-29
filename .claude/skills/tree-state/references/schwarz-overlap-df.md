@@ -41,7 +41,7 @@ fixture, `oracle.manifest.cross_overlap`), both orientations
 (`test_sx_device.py`, generator `test/sx_driver.py`). Nothing about it is
 measured.
 **The DF Coulomb metric `(P|Q)` of a Cartesian auxiliary basis is generated
-too, and ran on the RTX 3080 only** (milestone 15, #410–#416;
+too, and ran on both cards** (the RTX 3080 first, both since #606; milestone 15, #410–#416;
 `docs/implementation/metric.md` is the one place with the detail; nothing
 consumes it yet, DF-J and DF-K are out of scope): `Target.METRIC` (`spec.py`;
 `am` a pair `(lP, lQ)`, operator `COULOMB`, unbatched by decision, no lever)
@@ -72,11 +72,13 @@ nine goldens per backend (`test_emit_metric.py`), and on the RTX 3080
 against the host). **It has not run on the RX 9060 XT**: the card was not
 enumerated in the container, so on `gfx1200` it is compiled only; that run,
 and a fix to `kernel-tier.sh`'s HIP device check (it tests `/dev/kfd` only
-and printed `device: present` with no card), are open follow-up #431.
+and printed `device: present` with no card), were follow-up #431: the
+check was fixed when #431 closed (2026-10-17), and the card run came with
+#606 (PR #615, Parts 1 and 2 below).
 Nothing about it is measured or scored (no published board; a
 `StructuralLimit`, #417); `(mn|P)` was its named follow-up, built next.
-**The three-center DF integral `(mn|P)` is generated too, and ran on the
-RTX 3080 only** (milestone 16, #441–#446; `docs/implementation/three_center.md`
+**The three-center DF integral `(mn|P)` is generated too, and ran on
+both cards** (the RTX 3080 first, both since #606; milestone 16, #441–#446; `docs/implementation/three_center.md`
 is the one place with the detail; nothing consumes it yet, DF-J and DF-K are
 out of scope): `Target.ERI3` (`spec.py`; `am` the **triple** `(la, lb, lP)`,
 the first three-shell class, operator `COULOMB`, unbatched by decision, no
@@ -112,8 +114,8 @@ per backend (`test_emit_eri3.py`, no digests file), and on the RTX 3080
 against the host on the fixture and 4.66 on the synthetic bases; the
 fixture's (sp|g), (pp|f) and (pp|g) are not launched). **It has not run on
 the RX 9060 XT**: kfd did not enumerate the card (`gfx_target_version` 0),
-so on `gfx1200` it is compiled only, and by the user's decision that run is
-attached to #431. Nothing about it is measured or scored (no published
+so on `gfx1200` it was compiled only, and by the user's decision that run
+was attached to #431; it came with #606 (PR #615, Parts 1 and 2 below). Nothing about it is measured or scored (no published
 board; a `StructuralLimit`, #447); no screen (`(mn|P)` has no Schwarz bound
 yet), nothing above L = 4 against libcint, Cartesian only.
 **Both DF kernels have a low-stack form, for the aux ladder through i**
@@ -182,4 +184,4 @@ twin), the MMD kernels and libcint (`test_kernel_hgp_df.py`), nine goldens
 per backend (`test_emit_hgp_df.py`); **compiled and run on the RTX 3080
 only** (`test_hgp_df_device.py`, 8 passed: worst 6.06 eps of the tower twin
 against the host, 2.1e-14 of max against libcint, runs bit-identical); the
-RX 9060 XT is not run (#431). Nothing measured.
+RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run). Nothing measured.

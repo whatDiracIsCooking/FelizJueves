@@ -68,7 +68,9 @@ pre-contraction `Target.DQ` (`kernel_dq.py`) and the bra back-transform and
 scatter `Target.JAB` (`kernel_jab.py`). `KERNEL_GEN_CMD` writes both beside
 the `[p|q]` ladder. The chain runs interpreted against the host and libcint,
 and compiled and launched on both cards: pair kernels through (ff), and a
-whole molecule's `J` through d. The host-side `ao/` paths stay as the
+whole molecule's `J` through d. Since #586 `DQ` and `JAB` default to a
+low-stack form at (ff), run on the RTX 3080 only ("The low-stack `DQ` and
+`JAB` at f" below). The host-side `ao/` paths stay as the
 references the kernels are held to. See "The J chain as device code" below,
 the one place that says which steps are generated and where they ran.
 
@@ -509,7 +511,8 @@ every cell on both arches — **no cell dropped** for compile cost. A cell's
 number is the host wall-clock of its whole launch sequence (every
 `build_pq_kernels` batch into one zeroed `J`, then one synchronize), 5 warm-up
 and **31 timed** sequences, `n_bra × n_ket = 2048 × 128`, no screening, run
-alone on an uncontended box by `test/test_kernel_device.py`'s opt-in sweep —
+alone on an uncontended box by the opt-in wall-clock sweep (then in
+`test/test_kernel_device.py`, now `measure/measure_kernel_device.py`) —
 and the timed binary is the one first checked against `reference/`. **One
 session per card**: #93 re-timed every cell of an arch in one sweep, behind
 the card lock and the CPU and card-utilisation gates, replacing the two
@@ -679,7 +682,8 @@ independent chains; the faster median wins) and STREAM's triad over three
 timed launches, the median rate recorded.
 
 **Behind the card gate.** `src/felizjueves/performance/gate.py` is the gate the wall-clock
-sweep used (lifted out of `test_kernel_device.py`, which now reads it): card
+sweep used (lifted out of `test_kernel_device.py`; the sweep, now in
+`measure/measure_kernel_device.py`, reads it): card
 utilisation at most 30% and the CPU at most 10% busy before a phase, and the
 settled reading after it. A contended probe does not add noise, it
 under-reports — a lower ridge, every verdict pushed toward compute-bound — so a
@@ -840,7 +844,7 @@ and neither is the image:
   that reading rather than store it. The root cause was not found (amdgpu
   module 6.16.13, host Linux 6.8).
 
-`test_toolchain.py` holds both. One test fails if the byte counters ever
+`measure/measure_toolchain.py` holds both. One test fails if the byte counters ever
 count. The other reads the card's `--list-avail` and fails if an fp64
 counter appears.
 
@@ -1370,12 +1374,12 @@ them. Every comparison runs at `τ = 0`; the screen has its own section below.
 
 | What | Against libcint | Test | Tier |
 |---|---|---|---|
-| shells, normalisation, `common_fac` | overlap `int1e_ovlp` | `test_oracle_basis.py` | fast |
+| shells, normalisation, `common_fac` | overlap `int1e_ovlp` | `test_oracle_basis.py` | slow (both cases reach (ff)); AO order, constants fast |
 | `(ab\|cd)`, one block per class: all 55 classes of HF/cc-pVTZ (L ≤ 12), H₂O/6-31G's s/p | `int2e`, `≤ 1e-12·scale` | `test_ao_eri.py` | s/p fast, d+ slow |
-| `J_µν`, `reference.pq` | `get_jk`, `≤ 1e-12·scale_J` (derived from the ERI bound) | `test_ao_j.py` | H₂, H₂O STO-3G/6-31G fast; cc-pVDZ slow |
+| `J_µν`, `reference.pq` | `get_jk`, `≤ 1e-12·scale_J` (derived from the ERI bound) | `test_ao_j.py` | H₂, H₂O/STO-3G fast; H₂O 6-31G/cc-pVDZ, CO/cc-pVTZ slow |
 | `J_µν`, interpreted generated kernel | same | `test_ao_j_interpreted.py` | H₂ fast; H₂O ×3 slow |
 | `J_µν`, generated kernel on each card | same | `test_ao_j_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G |
-| `J_µν` from the launch plan on each card (#144) | same, plus `τ · scale` when `τ > 0` | `test_j_launched_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G, H₂O/cc-pVDZ |
+| `J_µν` from the launch plan on each card (#144) | same, plus `τ · scale` when `τ > 0` | `test_j_launched_ondevice.py` | kernel tier (`gpu`); H₂, H₂O/STO-3G; H₂O/cc-pVDZ `slow` (`--full`) |
 
 **What it proves, as records** (`data/literature/jengine/claims.json`):
 
@@ -1426,8 +1430,9 @@ not a structural limit, and it is stated here instead:
   (`hf_ccpvtz_eri_l9` … `_l12.json`, every file under the 512 KB hook), and
   `test_ao_eri.py` checks that their union is exactly the basis's 55 classes.
   Those blocks are built from `reference.pq`; the **generated kernel** meets
-  libcint only through the `J` fixtures, which still stop at `d` (cc-pVDZ,
-  so L ≤ 8). The kernel ladder runs to L = 16 and is checked against
+  libcint only through the `J` fixtures, and every such path that has run
+  stops at `d` (cc-pVDZ, so L ≤ 8): CO/cc-pVTZ's (#570) carries f, but its
+  chain cell on the card has never completed (#585, #586). The kernel ladder runs to L = 16 and is checked against
   `reference/` at every L, and `reference/` is itself witnessed by libcint to
   L = 12 — so above L = 8 the kernel is held to libcint at one remove, and
   above L = 12 not at all. `θ` is formed once per pair by the same prelude at
@@ -1826,10 +1831,11 @@ libcint on every tracked `J` fixture (H₂, H₂O/STO-3G, 6-31G, cc-pVDZ; worst
   into one zeroed `J_µν` on the card. Worst against libcint
   **1.24e-14·scale_J** (tolerance `1e-12`), against the launch oracle
   3.29e-16 `max|J|`, with the same digits on both cards. No `[p|q]` above
-  L = 8 and no f shell enters a whole-molecule build, because the `J`
-  fixtures stop at d.
+  L = 8 and no f shell entered a whole-molecule build, because the `J`
+  fixtures then stopped at d. Since #585 a CO/cc-pVTZ cell carries f
+  (`slow`, `high_l`); it has not completed on a card (#586 below).
 
-**The last device run, per card** (PR #210, the full kernel tier, every unit
+**The last full device run recorded here, per card** (PR #210, the full kernel tier, every unit
 generated by `KERNEL_GEN_CMD`): CUDA, RTX 3080 (`sm_86`), **96 passed, 5
 skipped**; HIP, RX 9060 XT (`gfx1200`), **97 passed, 5 skipped**. The five
 skips on each card are the opt-in recordings (ceilings, `[p|q]` wall-clock,
@@ -1846,9 +1852,11 @@ before, its `source_sha256` pins unchanged) and the pair ladder,
 units by default). The class selector (`--class`, `--shell-ls`) writes each
 cell's whole chain, with an `order` file in launch order: `dq_{lc}_{ld}`, the
 `[p|q]` batch kernels, then `jab_{la}{lb}`.
-Since #242 `--one-e-l LMAX` adds the one-electron ladder beside these, and
-`KERNEL_GEN_CMD` asks for `--one-e-l 2` (37 + 18 units); the 37 above and
-their pins are unchanged ([`one_electron.md`](one_electron.md), "The
+Since #242 `--one-e-l LMAX` adds the one-electron ladder beside these.
+Since #625 `KERNEL_GEN_CMD` asks for `--L 0 … 8 --pair-l 3 --one-e-l 2`
+(9 + 20 + 18 = 47 units, `[p|q]` through `tiers.DEVICE_L_MAX`), and
+`--full`'s `KERNEL_FULL_GEN_CMD` for `--one-e-l 2` alone (37 + 18); the 37
+above and their pins are unchanged ([`one_electron.md`](one_electron.md), "The
 generator").
 
 ### The layout every consumer indexes
@@ -2130,7 +2138,7 @@ diagonal included, and every existing tolerance stands unchanged.
 q-major). Columns: generated source, then `sm_86` stack / spill stores /
 registers / compile time, then `gfx1200` scratch per lane / VGPRs (`hipcc
 --offload-arch=gfx1200 -O3 -Rpass-analysis=kernel-resource-usage`, ROCm
-7.2, compile only: the RX 9060 XT is wedged host-side).
+7.2, compile only: the RX 9060 XT was wedged host-side that session).
 
 | unit | form | source | sm_86 stack | spill st | regs | nvcc | gfx1200 scratch | VGPRs |
 |---|---|---|---|---|---|---|---|---|
@@ -2178,9 +2186,10 @@ program's VRAM probe now asks for 335 MiB. **The CO/cc-pVTZ chain cell
 VRAM probes (335 and 1,314 MiB), but the host-side references then ran
 for over 30 CPU-minutes and the run was stopped (as in #585, where it
 also never finished); free-breakfast's #345 runs that `J` against
-libcint's `vj` downstream. The RX 9060 XT is wedged
-host-side: `gfx1200` is compile-only (the f programs compile with no
-warning in generated text).
+libcint's `vj` downstream. The RX 9060 XT was wedged
+host-side in that session: `gfx1200` was compile-only (the f programs
+compile with no warning in generated text). The RX 9060 XT run of the
+low-stack form has not been made since, and no open issue tracks it.
 
 **A wall-clock reading, not a store row** (#586; a hand-written harness on
 FJ's own `cuda.emit` text, not behind `measure.sh`; FJ's card lock and
@@ -2219,7 +2228,9 @@ mixed f classes, which already fit, stay on the faster unrolled text.
   `ao.pairs.pair_bound` through `reference.pq`, a derivation that shares no
   code with it, within 16 eps, interpreted for every class `la ≤ lb ≤ 4` and
   on the RTX 3080 (`test_kernel_pair_bound.py`, `test_pair_bound_device.py`);
-  the RX 9060 XT run is #431's. The launch code here still forms it host-side;
+  the RX 9060 XT run has not been made, and no open issue tracks it (#431,
+  which held it, closed on 2026-10-17 with the card's detection fixed, not
+  with the run). The launch code here still forms it host-side;
 - the **sort** of each ket class, descending by `I_q · Dmax`, stable
   (`launch.launches`);
 - the **staging**: class-grouped buffers, one upload per bra class and one per

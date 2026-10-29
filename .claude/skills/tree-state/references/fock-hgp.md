@@ -66,7 +66,7 @@ interpreted (H₂, H₂O/STO-3G, H₂O/6-31G; worst 3.82e-15 against libcint),
 and `Engine` gained `j` / `k`. On the RTX 3080, #408: 184 passed (every L ≤ 4
 class in both modes, and H₂ and H₂O/STO-3G whole), worst 2.59e-15 against
 libcint. **It has not run on the RX 9060 XT**: compile-only there (182
-passed), the card run attached to #431 by the user's decision. **Nothing is
+passed); the card run is not made, and no open issue tracks it; #431 closed on the card's detection fix, not the run. **Nothing is
 timed** (`measured_store` refuses an HGP `J`/`K` row, `HGP_JK_REFUSED`),
 nothing above L = 4 is tested, nothing persists, and
 `fock/symmetry-vs-screening` stays unverifiable (#331).

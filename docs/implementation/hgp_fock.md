@@ -54,8 +54,10 @@ both cards only for classes with L ≤ 2 (#206, and one `(dd|dd)` cell on the
 class through `(dd|dd)` on both cards (#288, #290). **One off-diagonal
 cell now exists:** the split HGP `J`/`K` (milestone 14). Pin 1 had kept it
 out of milestone 12, because it is the predecessor's `brc26` row JK, not
-§3. It ran every class with L ≤ 4 on the RTX 3080 only, and its RX 9060 XT
-run is attached to #431. **The fused MMD `F` (#326) does not exist.** The
+§3. It ran every class with L ≤ 4 on the RTX 3080 only; its RX 9060 XT
+run has not been made and no open issue tracks it (#431 closed on
+2026-10-17 with the card's detection fixed, not with the run). **The fused
+MMD `F` (#326) does not exist.** The
 HGP row now holds both schemes on one recurrence, so timing `Target.F`
 against HGP `Target.J + Target.K` would no longer confound the recurrence
 with the scheme. **Only the two diagonal cells have been timed against
@@ -321,8 +323,9 @@ whether HGP should get an analogue. A layering rule makes `engine` the one
 module that names both engines through their ERI and kernel entry points.
 The two generators, `emit/__main__` and `measured`, name each engine's
 kernel builder only (`kernel`, `kernel_f`), under a narrow exemption added
-by #287 and #288 (`test_layering.py`'s `GENERATORS`). `launch_f` still borrows `launch`'s
-and `eri.j_coulomb.j`'s private helpers (#328).
+by #287 and #288 (`test_layering.py`'s `GENERATORS`). `launch_f` no longer
+borrows private helpers: it takes the public `launch_common.sorted_desc` /
+`nonneg` and `ao.density`'s checks (#328; "Named follow-ups", below).
 
 ## The generator
 
@@ -427,7 +430,10 @@ tree's `la ≤ lb` through an asserted bijection.
 other target to MMD. `engine=None` resolves to the native engine, and the
 key spells an engine only when it is off-native, as a suffix of the target
 slot: `coulomb/d0/(1,1|1,0)/b1/j.hgp/literal`. Every stored key is
-byte-identical. HGP is legal on `J` and `K` only. Every other off-native
+byte-identical. HGP was legal on `J` and `K` only; since #598 and #599 it
+is also legal on `S`, `T`, `V`, `DIPOLE`, `METRIC` and `ERI3`, and a
+third engine, `Engine.RYS`, on `F`, `J`, `K`, `S`, `T` and `V` (#621–#626,
+`rys_fock.md`). Every other off-native
 pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F` among them
 until #326. **`am` is the pairing the recurrence uses.** HGP `J` is
 `(la, lb | lc, ld)`. HGP `K` is `(la, lc | lb, ld)`, the same as MMD `K` and
@@ -511,9 +517,10 @@ the walk, the host and libcint. It also ran H₂O/STO-3G canonical at
 `τ = 1e-2`, where the screen fires. The result was **184 passed, 0
 skipped**. The worst error against the host was 5.90e-16 of the scale
 (`hj_o_2100`), and against libcint 2.59e-15 (H₂O/STO-3G). **The RX 9060 XT
-did not run it**, because the card is not enumerated on this box. The HIP
-side is compile-only (182 passed), and by the user's decision the card run
-is attached to #431.
+did not run it**, because the card was not enumerated on this box then.
+The HIP side is compile-only (182 passed). The card run has not been made
+and no open issue tracks it: #431 closed on 2026-10-17 when the card's
+detection was fixed, not when this was run.
 
 **What the split cell does not reach** (`data/literature/fock/limits.json`):
 
