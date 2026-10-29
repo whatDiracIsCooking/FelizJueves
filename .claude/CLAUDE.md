@@ -39,7 +39,9 @@ opens with a status block, and it is the one place with the detail.
 The pattern to expect everywhere: "generated" does not mean "run on a
 card", and "run on a card" does not mean "measured". Many families are
 **interpreted only** or **compiled only** on one card. The RX 9060 XT runs
-that are still missing are attached to #431.
+that are still missing have no open issue: #431 closed on 2026-10-17 when
+the card's detection was fixed (below), not when they were re-run, so the
+list is each family's "RTX 3080 only" in the tree-state files.
 
 | Family | Where it stands | Reference |
 |---|---|---|
