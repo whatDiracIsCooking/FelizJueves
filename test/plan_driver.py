@@ -73,6 +73,13 @@ the driver is generated from is keyed on the DQ kernel's own `Dmax`:
      run-to-run bound. Without `chain=` the driver's text is milestone 6's,
      byte for byte (every chain slot of the template is empty).
 
+ANOTHER CHAIN STEP (#619): `driver(plan, ..., tail=ChainTail(...))` fills the
+same slots with a step that is not JAB -- the Coulomb gradient's `gjab`,
+reading the raised plan's `J_p` where it lies (test/grad_driver.py,
+`gjab_tail`). The tail brings its own kernels, its slot text, its input
+(staged after the kets) and its output per run (after the `J_p` runs);
+`chain=` and `tail=` are exclusive.
+
 `jab_program` is one JAB unit alone over a given `J_p` (#157's part 1); the
 DQ part-1 harness is `dq_program` over one class. Both are harness, and the
 emitted units they `#include` are the generator's text, unchanged.
@@ -90,7 +97,7 @@ import math
 import re
 import shlex
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -158,6 +165,7 @@ class Driver:
     # Empty for milestone 6's J_p-only driver, whose text is then unchanged.
     jab: tuple[JabLaunch, ...] = ()
     n_ao: int = 0
+    tail: ChainTail | None = None  # #619: another chain step (`ChainTail`)
 
     @property
     def writers(self) -> Counter[int]:
@@ -168,7 +176,27 @@ class Driver:
     def n_input(self) -> int:
         return 1 + sum(5 * n for _, n, _ in self.bra) + sum(
             n * (6 + q) for _, n, q in self.ket) + sum(
-            JAB_DOUBLES * x.n_rec for x in self.jab)
+            JAB_DOUBLES * x.n_rec for x in self.jab) + (
+            self.tail.n_input if self.tail else 0)
+
+
+@dataclass(frozen=True)
+class ChainTail:
+    """A chain step after every `[p|q]` launch other than JAB (#619): its
+    kernels `(ns, kernel)`, emitted and included as the JAB units are;
+    `text(bslot)` -> every `CHAIN_SLOTS` entry (`bslot`: bra class `lp` ->
+    its `dJ` / `nb` index); `parts`, its input in the order its upload
+    slot reads it; `n_output`, the doubles it writes per run after the
+    `J_p` runs."""
+
+    kernels: tuple[tuple[str, Kernel], ...]
+    text: Callable[[dict[int, int]], dict[str, str]]
+    parts: tuple[np.ndarray, ...]
+    n_output: int
+
+    @property
+    def n_input(self) -> int:
+        return sum(int(np.asarray(p).size) for p in self.parts)
 
 
 def _shapes(plan: LaunchPlan):
@@ -185,12 +213,16 @@ def _shapes(plan: LaunchPlan):
 
 
 def driver(plan: LaunchPlan, backend: str, workdir: Path, *,
-           chain: Basis | None = None) -> Driver:
+           chain: Basis | None = None,
+           tail: ChainTail | None = None) -> Driver:
     """Emit every kernel of `plan` for `backend` and the `main()` that
     launches them in the plan's shape (module docstring). With `chain=` (the
     plan's basis, #157) the driver also launches every bra pair class's
     `Target.JAB` kernel after the `[p|q]` launches, reading each `J_p`
-    buffer where it lies on the card, and reads back `J_mn` ("THE CHAIN")."""
+    buffer where it lies on the card, and reads back `J_mn` ("THE CHAIN").
+    `tail=` is another step in the same slots (`ChainTail`, #619)."""
+    if chain is not None and tail is not None:
+        raise ValueError("chain= and tail= fill the same slots")
     emit, arch, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     bra, ket = _shapes(plan)
@@ -242,6 +274,17 @@ def driver(plan: LaunchPlan, backend: str, workdir: Path, *,
             includes.append(f'namespace {ns} {{\n#include "{path.name}"\n}}')
             jabs.append(JabLaunch(la, lb, lp, ns, kern, data, ints))
         chain_text = _chain_text(jabs, bslot, n_ao)
+    tail_refs = []
+    if tail is not None:
+        for ns, kern in tail.kernels:
+            path = workdir / f"{ns}_{kern.name}.{ext}"
+            path.write_text(emit(kern, arch))
+            units.append(path)
+            includes.append(f'namespace {ns} {{\n#include "{path.name}"\n}}')
+            tail_refs.append(f"(const void*){ns}::{kern.name}")
+        chain_text = tail.text(bslot)
+        if set(chain_text) != set(CHAIN_SLOTS):
+            raise ValueError(f"the tail fills {sorted(chain_text)}")
     prologue = "#include <hip/hip_runtime.h>" if backend == "hip" else ""
     src = DRIVER.format(
         prologue=prologue, portable=PORTABLE, includes="\n".join(includes),
@@ -253,12 +296,13 @@ def driver(plan: LaunchPlan, backend: str, workdir: Path, *,
         nq=", ".join(str(q) for _, _, q in ket),
         n_launch=len(launches),
         vram_kernels=", ".join(f"(const void*){x.ns}::{x.kernel.name}"
-                               for x in (*launches, *jabs)),
+                               for x in (*launches, *jabs))
+        + "".join(f", {r}" for r in tail_refs),
         launches="\n".join(body))
     path = workdir / f"driver.{ext}"
     path.write_text(src)
     return Driver(backend, src, path, tuple(units), tuple(bra), tuple(ket),
-                  tuple(launches), plan.tau, tuple(jabs), n_ao)
+                  tuple(launches), plan.tau, tuple(jabs), n_ao, tail)
 
 
 def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver, *,
@@ -292,6 +336,8 @@ def stage(plan: LaunchPlan, basis: Basis, D: object, drv: Driver, *,
         parts += [k.Q.ravel(), k.eta, k.Iq, k.Dmax, k.D.ravel()]
     for x in drv.jab:
         parts += _jab_parts(x)
+    if drv.tail is not None:
+        parts += list(drv.tail.parts)
     out = np.concatenate([np.asarray(p, dtype=np.float64) for p in parts])
     assert out.size == drv.n_input, (out.size, drv.n_input)
     return out
@@ -302,6 +348,7 @@ def read_back(drv: Driver, raw: np.ndarray) -> list[dict[int, np.ndarray]]:
     driver's `J_mn` follows the `J_p` runs: `read_back_j`.)"""
     per_run = sum(n * p for _, n, p in drv.bra)
     n_j = RUNS * drv.n_ao * drv.n_ao if drv.jab else 0
+    n_j += RUNS * drv.tail.n_output if drv.tail else 0
     assert raw.size == RUNS * per_run + n_j, (raw.size, RUNS, per_run, n_j)
     out, at = [], 0
     for _ in range(RUNS):
