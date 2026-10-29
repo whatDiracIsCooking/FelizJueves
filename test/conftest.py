@@ -72,6 +72,7 @@ from pathlib import Path
 
 import devcache
 import pytest
+import tiers
 
 from felizjueves.performance.device import Vendor, from_env
 
@@ -327,6 +328,15 @@ def _may_select(markexpr: str, backend: str) -> bool:
         if expr.evaluate(lambda name, /, **kw: name in on):  # noqa: B023
             return True
     return False
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Before `-m` reads the marks: `tiers.sample_compiles`, on test/'s own
+    items only -- measure/ re-exports this hook, and its compile sweeps are
+    not sampled."""
+    here = Path(__file__).parent
+    tiers.sample_compiles(i for i in items if i.path.is_relative_to(here))
 
 
 _CONTROLLER_LOCKS = pytest.StashKey[list[int]]()
