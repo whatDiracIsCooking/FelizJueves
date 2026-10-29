@@ -1,4 +1,4 @@
-# Rys quadrature `F` and `J`, and the device Boys
+# Rys quadrature `F`, `J` and `K`, and the device Boys
 
 Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `../SKILL.md`).
 
@@ -6,7 +6,8 @@ Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `..
 compiled by nvcc / hipcc and NOT run on a card** (`docs/implementation/rys_fock.md`
 is the one place with the detail; #468's spike, `experimental/rys/`, brought
 into `src/`): `Target.F` on `Engine.RYS` (`spec.Engine.RYS`, key slot
-`f.rys`, refused on every target but `F` and `J` (below), no lever), `eri/fock/kernel_frys.py`'s
+`f.rys`, refused on every target but `F`, `J` and `K` (below) and the
+one-electron `S`, `T`, `V` (`one-electron-extra.md`), no lever), `eri/fock/kernel_frys.py`'s
 `build_frys_kernel` (`fr_{la}{lb}{lc}{ld}`, the 21 classes through
 `(dd|dd)`): `kernel_f`'s skeleton and seams with `ket_prim`,
 `quartet_scalars`, `vrr` and `accumulate` replaced -- the `N = L // 2 + 1`
@@ -72,6 +73,6 @@ refused by the store.
 below `T = M + 8`, `erf` and the upward recurrence from it. It is witnessed on
 the RTX 3080 over `reference.boys`' whole domain, `T ∈ [0, 1e6]`, `M ≤ 16`
 (worst 2.1e-15; `test_kernel_device.py`), and compiled only on `gfx1200`
-(#431). Its text moved every J, K and F unit, so `kernels.json`'s
+(no open issue tracks it; #431 closed on the card's detection fix, not the run). Its text moved every J, K and F unit, so `kernels.json`'s
 `source_sha256` pins are **stale** until those rows are re-measured:
 `devtools/measure.sh check` fails until then.

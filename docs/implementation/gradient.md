@@ -26,11 +26,12 @@ and `pyscf.grad.RHF` to ~1e-13. That spike is not imported anywhere.
 ## The keys
 
 `Spec.derivative_order` was a field with one legal value, kept so that
-widening it would not retrofit every consumer. It is now `(0, 1)`
-(`spec.DERIVATIVE_ORDERS`), and order 1 is legal on
+widening it would not retrofit every consumer. It is now `(0, 1, 2)`
+(`spec.DERIVATIVE_ORDERS`; order 2 is `hessian.md`'s), and order 1 is legal on
 `spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB`, `K`, `METRIC` and
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
-gradients", below). Every other target, and HGP, refuses it with
+gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
+Every other target, and HGP, refuses it with
 `_GRADIENT_REFUSAL`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
@@ -458,5 +459,7 @@ the spherical transform is the consumer's, as #615 decided for d0).
 - No screening (`gk` visits every ordered quartet; a derivative bound is
   not derived), Cartesian only. The Coulomb energy's Hessian is built
   on these pieces (`hessian.md`), and so are the one-electron Hessians of
-  `S`, `T` and `V` (`hessian.md`, "The one-electron Hessians"); no other
-  Hessian term is.
+  `S`, `T` and `V` (`hessian.md`, "The one-electron Hessians"), the
+  exchange Hessian (`hkx`, on `gk`'s mapping) and the DF metric and
+  three-center Hessians (`d2metric`, `d2eri3`, on `gmetric`'s and
+  `geri3`'s).

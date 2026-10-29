@@ -61,7 +61,8 @@ record per block is `kernel_k`'s row bitwise for every class through
 the RTX 3080 both matched `walk_kb` and libcint's `vk` on H₂O/STO-3G (τ 0 and
 1e-8), two H₂ and H₂O/cc-pVDZ (`slow`), and since #484 the decaying chain
 with its per-block factors (against `walk_kb`, 2.60e-16 of max); the RX
-9060 XT is compile-only (#431). **Nothing about it is measured yet:** `devtools/measure.sh kblock`
+9060 XT is compile-only (
+no open issue tracks it; #431 closed on the card's detection fix, not the run). **Nothing about it is measured yet:** `devtools/measure.sh kblock`
 would time both per class on H₂O/cc-pVDZ into `data/measured/kblock.json`,
 and its one attempt was refused by the card gate (the RTX 3080 busy from
 outside the container), so that file does not exist.
@@ -122,7 +123,8 @@ H₂O/cc-pVDZ (`slow`) against the walk, the host and libcint's `vk` (worst
 hand) `sf` (16 classes) and `spdf` (one s, p, d, f shell, two primitives:
 every K class with every `l <= 3`, 256 of them, `(ff|ff)` included) against
 the walk, worst 2.28e-16 of max, every run bit-identical. The RX 9060 XT
-is out of scope by the user's decision (#431). `devtools/measure.sh
+is out of scope by the user's decision (#431, since closed on the card's
+detection fix; no open issue tracks the run). `devtools/measure.sh
 kblock-rolled-compile` (a compiler, no card) writes
 `data/measured/kblock_rolled.json`'s `compile` rows: on `sm_86` `kb_22_22`
 1.67 MB, 64 s, 816 MB peak RSS, 255 registers, 14,732 B spill stores;
@@ -167,7 +169,7 @@ chain. Interpreted it equals `kb` **by value** for every class with every
 `test_kblock_ondevice.py`'s `-dense` cells (the rolled cells' four, H₂O/
 cc-pVDZ `slow`) and its `sf` / `spdf` f cells (worst 5.57e-16 of max
 against the walk, runs bit-identical) passed; the RX 9060 XT is out of
-scope (#431). Compile (`kblock-rolled-compile`, `sm_86`): `kbd_22_22` 111 KB,
+scope (#431's, since closed on the detection fix; no open issue tracks it). Compile (`kblock-rolled-compile`, `sm_86`): `kbd_22_22` 111 KB,
 0.9 s, 191 MB, 255 registers, 1,012 B spill stores, 1,016 B stack;
 `kbd_33_33` 509 KB, 2.3 s, 197 MB, 255 registers, 11,372 B spill stores,
 10,512 B stack -- f compiles. Clock (`kblock-rolled`, behind the gate, rule
@@ -238,7 +240,8 @@ Interpreted it is within `ORACLE_TOL` of `walk_kb` for every class through
   about 45 minutes of it was pure-Python host references.
 
 On the RX 9060 XT only the fast cells ran, inside the kernel-tier gate
-(#431 keeps the rest out of scope). Compile (`devtools/measure.sh
+(the rest is out of scope; #431, which held it, closed on the detection
+fix and no open issue tracks it). Compile (`devtools/measure.sh
 kblock-column-compile`, each unit alone, against a 120 s budget):
 - `sm_86`: `kbrc_22_22` 1.0 s, 96 registers (`kbr`: 128), no spill;
   `kbrc_33_33` 1.1 s, 254 registers, no spill; `kbrc_44_44` 2.4 s, 255

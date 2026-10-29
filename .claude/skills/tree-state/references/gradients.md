@@ -5,8 +5,9 @@ Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `..
 **The first `derivative_order = 1` keys: analytic nuclear gradients by
 McMurchie–Davidson, run on both cards at L <= 4** (`docs/implementation/gradient.md`
 is the one place with the detail; the port of `experimental/mmd/gradient`):
-`spec.DERIVATIVE_ORDERS` is `(0, 1)`, order 1 legal on
-`spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, `METRIC`, `ERI3`, MMD only;
+`spec.DERIVATIVE_ORDERS` is `(0, 1, 2)` (order 2: `hessians.md`), order 1 legal on
+`spec.GRADIENT_TARGETS` (`S`, `T`, `V`, `JAB`, `K`, `METRIC`, `ERI3`, and
+`DQ` for the Hessian, MMD only;
 `_GRADIENT_REFUSAL` elsewhere), every d0 key byte-identical. A d1 kernel
 writes `G[A, k] += SUM_mn M_mn dX_mn/dR_{A,k}`, not the derivative
 integrals, by the rule `d/dA x^i e^{-a x^2} = 2a x^{i+1} - i x^{i-1}` on

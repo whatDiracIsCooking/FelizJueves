@@ -43,7 +43,7 @@ kernels' IR equal outside the `K_CD` loop.
 
 | Piece | Where |
 |---|---|
-| the key | `Spec(..., Target.F, engine=Engine.RYS)`, `coulomb/d0/(la,lb\|lc,ld)/b1/f.rys/literal`; RYS on any other target is refused (`spec._NO_RYS`); the `f.rys` lever slot admits nothing |
+| the key | `Spec(..., Target.F, engine=Engine.RYS)`, `coulomb/d0/(la,lb\|lc,ld)/b1/f.rys/literal`; RYS on any target but `F`, `J`, `K`, `S`, `T` and `V` is refused (`spec._NO_RYS`); the `f.rys` lever slot admits nothing |
 | the rule | `rys/roots.py`: `roots_weights(n, T)` (host fp64) and `device_text()` (`fj_rys<N>`), one algorithm, one set of constants |
 | its ground truth | `rys/exact.py`: moments in `decimal`, Gautschi's Chebyshev algorithm, Newton (#468's exact route) |
 | the 2D VRR | `rys/recurrence.py`: `root_loop`, the per-root tables and the boundary `+=` |
@@ -139,8 +139,8 @@ over 512 KiB, `(pd|dd)` and `(dd|dd)`, pinned in
   evaluation; it is written for correctness first.
 - **Above `(dd|dd)`**: `rys.roots` stops at `N = 5`; `N` up to 9 for
   `(gg|gg)` needs `T_SWITCH` and `M_LEGENDRE` re-measured.
-- **No lever** (`f.rys` admits none), no split `K` on Rys (the split `J`
-  is below), no gradient.
+- **No lever** (`f.rys` admits none), no gradient. The split `J` and `K`
+  on Rys are built since (below).
 - The bra-transfer rounding #468 measured (`P` near `B`) is now eq 28's,
   shared with `f_`; choosing the VRR centre by `l` is still open.
 
@@ -165,7 +165,7 @@ nest's engine part replaced by this note's rule and 2D VRR. It is to
 | Piece | Where |
 |---|---|
 | the seam | `kernel_hj.Nest(need, body, note)` and `split_j_kernel(spec, nest_of, ...)`: the `K_CD` loop's body after the ket record's reads, the record scalars it reads (`PA_*`, `QC_*`) and the opening `Note`; `build_hj_kernel` is `split_j_kernel(spec, hgp_nest, ...)`, every `hj_` golden byte-identical |
-| the key | `Spec(..., Target.J, engine=Engine.RYS)`, `coulomb/d0/(la,lb\|lc,ld)/b1/j.rys/{literal,ordered}`; `spec._NO_RYS` now refuses every target but `F` and `J` |
+| the key | `Spec(..., Target.J, engine=Engine.RYS)`, `coulomb/d0/(la,lb\|lc,ld)/b1/j.rys/{literal,ordered}`; `spec._NO_RYS` refuses every target but `F`, `J`, `K`, `S`, `T` and `V` (`F` and `J` alone when this landed) |
 | the class modes | HGP J's own: canonical (`rj_{rep}`, one unit per 8-fold orbit, a runtime `perm`) and the `ordered` lever (`rj_o_{class}`), which is legal on the new slot `j.rys` and nowhere else new; the structure (built class, orientations, parameters) is read off the HGP twin (`kernel_rj.hgp_twin`) |
 | the nest | bra outer, ket inner, as `kernel_hj`; per ket primitive pair `rys.recurrence.quartet_rule` (the quartet scalars, `T`, `S`, the rule; shared with `kernel_frys`, whose text is unchanged) and `root_loop` into the accumulators |
 | the walk | `walk_hjk(..., build=)`: `launch_hjk`'s plan with each launch's kernel built by the caller from its HGP key, so one plan and one walker serve both engines |
