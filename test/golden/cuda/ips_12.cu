@@ -20,6 +20,10 @@ extern "C" __global__ void ips_12(
 {
     // derivative matrix, class (la, lb) = (1, 2): X1[k, m, n] += dS_mn/dA_k, A the
     // centre of m (hessian.kernel_ip1e)
+    // lever uncontracted (#693): the derivative integrals themselves, X1[k, m, n]
+    // = dX_mn/dA_k with A the centre of m, as a matrix per axis, in place of their
+    // contraction into G[atom, k] (gradient/kernel_ipmetric.py for the DF metric,
+    // hessian/kernel_ip1e.py for S, T and V, #687)
     // PRECONDITION: the out matrix is zeroed by the caller before the first launch
     // of a build into it; this kernel only adds
     // launch: one thread per primitive-pair record

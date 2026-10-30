@@ -1,8 +1,8 @@
 """The one-electron derivative-matrix kernels (#687) emitted for both
-vendors: golden texts for the pair classes (ss) through (dd), the `--ip1-l`
+vendors: golden texts for the pair classes (ss) through (dd), the `--ip-one-e-l`
 ladder, and a compile of each through nvcc (sm_86) and hipcc (gfx1200).
 
-THE LADDER. `python -m felizjueves.emit --ip1-l [LMAX]` writes, for every
+THE LADDER. `python -m felizjueves.emit --ip-one-e-l [LMAX]` writes, for every
 `la <= lb <= LMAX` (2 when the flag is bare), `ips_`, `ipt_`, `ipv_` and
 `iprv_{la}{lb}` (`hessian.kernel_ip1e`). It accepts 0..3 (the kernels are
 validated through (ff), interpreted), exits 2 above that, is NEVER in the
@@ -93,16 +93,16 @@ def _names(d: Path) -> set[str]:
 
 
 def test_the_ladder_is_every_pair_class_through_lmax() -> None:
-    assert emit_cli.ip1_classes(2) == CLASSES
-    assert emit_cli.DEFAULT_IP1_L == 2 and emit_cli.IP1_L_MAX == 3
-    assert emit_cli.ip1_classes(0) == [(0, 0)]
-    assert len(emit_cli.ip1_classes(3)) == 10
+    assert emit_cli.ip_one_e_classes(2) == CLASSES
+    assert emit_cli.DEFAULT_IP_ONE_E_L == 2 and emit_cli.IP_ONE_E_L_MAX == 3
+    assert emit_cli.ip_one_e_classes(0) == [(0, 0)]
+    assert len(emit_cli.ip_one_e_classes(3)) == 10
 
 
 def test_the_ladder_refuses_above_ff() -> None:
     for bad in (-1, 4, 8, 1.0, True):
         with pytest.raises(ValueError, match=r"outside 0\.\.3"):
-            emit_cli.ip1_classes(bad)
+            emit_cli.ip_one_e_classes(bad)
 
 
 def test_the_names_are_the_builders() -> None:
@@ -165,9 +165,9 @@ def test_every_write_is_atomic_with_no_shared_array() -> None:
 
 
 @pytest.mark.parametrize("backend", sorted(BACKEND))
-def test_ip1_l_bare_writes_the_golden_units(backend, tmp_path) -> None:
+def test_ip_one_e_l_bare_writes_the_golden_units(backend, tmp_path) -> None:
     _, _, ext = BACKEND[backend]
-    assert _run(tmp_path, backend, "--pair-l", "0", "--ip1-l") == 0
+    assert _run(tmp_path, backend, "--pair-l", "0", "--ip-one-e-l") == 0
     assert _names(tmp_path) == {f"dq_0_0.{ext}", f"jab_00.{ext}"} | {
         f"{_name(*u)}.{ext}" for u in UNITS}
     for u in UNITS:
@@ -176,8 +176,8 @@ def test_ip1_l_bare_writes_the_golden_units(backend, tmp_path) -> None:
         assert text == (GOLDEN / backend / f"{name}.{ext}").read_text()
 
 
-def test_ip1_l_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
-    assert _run(tmp_path, "cuda", "--L", "0", "--ip1-l", "0") == 0
+def test_ip_one_e_l_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
+    assert _run(tmp_path, "cuda", "--L", "0", "--ip-one-e-l", "0") == 0
     assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "ips_00.cu", "ipt_00.cu",
                                 "ipv_00.cu", "iprv_00.cu"}
 
@@ -191,7 +191,7 @@ def test_the_bare_default_writes_no_ip1_unit(backend, tmp_path) -> None:
 def test_kernel_gen_cmd_asks_for_no_ip1_unit() -> None:
     from felizjueves.performance import measured
     line = measured.config_value("KERNEL_GEN_CMD")
-    assert "felizjueves.emit" in line and "--ip1-l" not in line
+    assert "felizjueves.emit" in line and "--ip-one-e-l" not in line
 
 
 def test_the_ip1_names_cannot_collide_with_any_other_ladder(tmp_path) -> None:
@@ -201,31 +201,31 @@ def test_the_ip1_names_cannot_collide_with_any_other_ladder(tmp_path) -> None:
                 "--hess-one-e-l", "3", "--grad-df-l") == 0
     others = _names(tmp_path / "a")
     assert not any(n.startswith(PREFIXES) for n in others)
-    assert _run(tmp_path / "b", "cuda", "--L", "0", "--ip1-l", "1") == 0
+    assert _run(tmp_path / "b", "cuda", "--L", "0", "--ip-one-e-l", "1") == 0
     mine = _names(tmp_path / "b") - {"pq_L0_p0_q0.cu"}
     assert len(mine) == 12 and not mine & others
 
 
 @pytest.mark.parametrize("argv", [
-    ["--ip1-l", "4"],
-    ["--ip1-l", "-1"],
-    ["--ip1-l", "x"],
-    ["--ip1-l", "1", "--class", "0", "0", "0", "0"],
-    ["--ip1-l", "1", "--shell-ls", "0"],
-    ["--ip1-l", "1", "--fock-l", "0"],
-    ["--ip1-l", "1", "--fock-class", "0", "0", "0", "0"],
-    ["--ip1-l", "1", "--n-batches", "3"],
-    ["--ip1-l", "1", "--hgp-j-l", "1"],
+    ["--ip-one-e-l", "4"],
+    ["--ip-one-e-l", "-1"],
+    ["--ip-one-e-l", "x"],
+    ["--ip-one-e-l", "1", "--class", "0", "0", "0", "0"],
+    ["--ip-one-e-l", "1", "--shell-ls", "0"],
+    ["--ip-one-e-l", "1", "--fock-l", "0"],
+    ["--ip-one-e-l", "1", "--fock-class", "0", "0", "0", "0"],
+    ["--ip-one-e-l", "1", "--n-batches", "3"],
+    ["--ip-one-e-l", "1", "--hgp-j-l", "1"],
 ], ids=lambda a: "_".join(a))
-def test_an_ip1_l_it_cannot_honour_is_a_2(argv, tmp_path) -> None:
+def test_an_ip_one_e_l_it_cannot_honour_is_a_2(argv, tmp_path) -> None:
     assert _run(tmp_path / "out", "cuda", *argv) == 2
     assert not (tmp_path / "out").exists()
 
 
-def test_ip1_l_above_ff_says_why(tmp_path, capsys) -> None:
-    assert _run(tmp_path / "out", "hip", "--ip1-l", "4") == 2
+def test_ip_one_e_l_above_ff_says_why(tmp_path, capsys) -> None:
+    assert _run(tmp_path / "out", "hip", "--ip-one-e-l", "4") == 2
     err = capsys.readouterr().err
-    assert "--ip1-l 4 is outside 0..3" in err
+    assert "--ip-one-e-l 4 is outside 0..3" in err
     assert "validated through (ff) only" in err
 
 

@@ -460,13 +460,15 @@ Cartesian matrices, row-major (spherical is the caller's, `U X U^T`).
 
 ### Their keys
 
-A d1 key may name a matrix FORM (`Spec.form`, `spec.FORM_TARGETS`), legal
-at d1 on MMD only, with no lever and one batch, and refused elsewhere
-(`_FORM_REFUSAL`): `ip1` on `S`, `T`, `V` and `rinv` on `V`. The key
-spells it in its `d` segment, `overlap/d1.ip1/(2,1)/b1/s/literal`,
-`nuclear/d1.rinv/(2,1)/b1/v/literal`; every key without a form is
-byte-identical. The case registry counts a form as a variant of the d1
-case, as it does a lever (`ips_` is `(mmd, s, 1)`).
+The matrix form is a kernel-body LEVER (`levers.VOCABULARY`), as the DF
+metric's uncontracted derivative is (#693, `gradient.kernel_ipmetric`):
+#693's `uncontracted`, widened to `S`, `T` and `V`, is the ip1 form, and
+`rinv`, legal on `V` alone, is the operator term. Both are legal at d1
+only (`levers.order_refusal`) and on MMD only (the `.hgp` / `.rys` slots
+refuse them), and `kernel_ip1e` takes exactly one of them:
+`overlap/d1/(2,1)/b1/s/uncontracted`, `nuclear/d1/(2,1)/b1/v/rinv`. A key
+without either is the contraction, unchanged. The case registry counts
+a lever as a variant of its d1 case (`ips_` is `(mmd, s, 1)`).
 
 ### What they write
 
@@ -516,7 +518,7 @@ kinetic bracket, `[t]^(0)` injected (`one_centre=`).
 
 ### The generator
 
-`python -m felizjueves.emit --ip1-l [LMAX]` (2 bare, 0..3, a 2 above) adds
+`python -m felizjueves.emit --ip-one-e-l [LMAX]` (2 bare, 0..3, a 2 above) adds
 `ips_`, `ipt_`, `ipv_` and `iprv_{la}{lb}` for every `la <= lb <= LMAX`
 beside the J ladders; never in the no-flag output and not in
 `KERNEL_GEN_CMD`. The goldens are the six classes (ss) through (dd) per

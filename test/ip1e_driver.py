@@ -13,7 +13,7 @@ record, `THREADS` lanes -- every argument named from the kernel's parameter
 list, and the one OUT (`X1`, or `XC` for the rinv form at nucleus `nuc`)
 carried from zero (`kernel_ip1e.ZEROED_X`) through every launch. The
 kernels are emitted by `emit/cuda.py` / `emit/hip.py` unchanged; a unit the
-tier's generate phase wrote (`--ip1-l`) is that file.
+tier's generate phase wrote (`--ip-one-e-l`) is that file.
 
 THE RUNS: the whole chain `RUNS` times, each from a zeroed OUT in its own
 processes (`harness_driver.run_chain`), so the fp64 atomics' run-to-run

@@ -1,6 +1,7 @@
 """The one-electron derivative MATRICES (#687): `S`, `T` and `V` at
-`derivative_order = 1` in a matrix form (`spec.FORM_TARGETS`), built as
-`Kernel`s.
+`derivative_order = 1` with a kernel-body lever naming the matrix form --
+`uncontracted` (the ip1 form, #693's lever widened) or `rinv` (`V`'s
+operator term) -- built as `Kernel`s.
 
     build_ip1e_kernel(spec | (target, la, lb[, form])) -> Kernel  one per class
     ip1e_name(spec | (target, la, lb[, form]))         -> str
@@ -16,8 +17,9 @@ dX_mn/dR`, which cannot give them. These kernels write the one-electron
 half, `S^x` and `h^x = T^x + V^x`, as `[3, n_ao, n_ao]` Cartesian matrices,
 row-major (spherical is the caller's, `U X U^T`).
 
-THE ip1 FORM (`ips_`, `ipt_`, `ipv_`; key ``overlap/d1.ip1/(la,lb)/b1/s/
-literal``): the derivative on the centre of the matrix's FIRST index,
+THE ip1 FORM (`ips_`, `ipt_`, `ipv_`; the lever `uncontracted`, key
+``overlap/d1/(la,lb)/b1/s/uncontracted``): the derivative on the centre of
+the matrix's FIRST index,
 
     X1[k, m, n] += d X_mn / dA_k        A the centre of m
 
@@ -51,7 +53,7 @@ on `X` of `X1`, plus that slab's transpose.
   low-stack `gv`'s). There is no unrolled `ipv`: `U` is the only Hermite
   quantity, and the frame is the tables, `R` and `U` at every class.
 
-THE rinv FORM (`iprv_`; ``nuclear/d1.rinv/(la,lb)/b1/v/literal``): `V`'s
+THE rinv FORM (`iprv_`; the lever `rinv`, ``nuclear/d1/(la,lb)/b1/v/rinv``): `V`'s
 OPERATOR term, which no first-index derivative holds -- `d/dC_k` of the
 operator at nucleus `C` moved with its nucleus,
 
@@ -141,11 +143,12 @@ from felizjueves.mmd.recurrence import (
 )
 from felizjueves.one_electron.kernel_v import v_plan
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.spec import FORM_TARGETS, OPERATOR_OF, Spec, Target
+from felizjueves.spec import OPERATOR_OF, Spec, Target, lever_provenance
 
 __all__ = [
     "ATOMIC_REASON",
     "IP1E",
+    "LEVER",
     "ZEROED_X",
     "build_ip1e_kernel",
     "ip1e_name",
@@ -164,6 +167,11 @@ IP1E = ((Target.S, "ip1"), (Target.T, "ip1"), (Target.V, "ip1"),
 _PREFIX = {(Target.S, "ip1"): "ips", (Target.T, "ip1"): "ipt",
            (Target.V, "ip1"): "ipv", (Target.V, "rinv"): "iprv"}
 
+# Each form's kernel-body lever (levers.VOCABULARY): the key names the
+# form by it.
+LEVER = {"ip1": "uncontracted", "rinv": "rinv"}
+_FORM = {lever: form for form, lever in LEVER.items()}
+
 ATOMIC_REASON = (
     "AtomicAdd: every record of every shell pair a shell is in adds into "
     "that shell's rows and columns of the matrix")
@@ -176,16 +184,22 @@ Cls = Spec | tuple[Target, int, int] | tuple[Target, int, int, str]
 
 
 def ip1e_spec(target: Target, la: int, lb: int, form: str = "ip1") -> Spec:
-    """The pair class `(la, lb)` of `target` at d1 in matrix form `form`."""
-    return Spec(OPERATOR_OF[target], 1, (la, lb), target, form=form)
+    """The pair class `(la, lb)` of `target` at d1 in matrix form `form`
+    ("ip1" or "rinv"), its lever `LEVER[form]`."""
+    if form not in LEVER:
+        raise ValueError(f"form {form!r} is not one of {sorted(LEVER)}")
+    return Spec(OPERATOR_OF[target], 1, (la, lb), target, (LEVER[form],))
 
 
 def _class(cls: Cls) -> tuple[Target, str, int, int]:
     spec = cls if isinstance(cls, Spec) else ip1e_spec(*cls)
-    if spec.derivative_order != 1 or spec.form not in FORM_TARGETS:
-        raise ValueError(f"{spec.key()} is not a d1 matrix-form key")
+    if (spec.derivative_order != 1
+            or spec.target not in (Target.S, Target.T, Target.V)
+            or len(spec.levers) != 1 or spec.levers[0] not in _FORM):
+        raise ValueError(f"{spec.key()} is not a d1 S, T or V key with "
+                         f"exactly one of the levers {sorted(_FORM)}")
     la, lb = spec.am
-    return spec.target, spec.form, la, lb
+    return spec.target, _FORM[spec.levers[0]], la, lb
 
 
 def ip1e_name(cls: Cls) -> str:
@@ -463,8 +477,9 @@ def _rinv_values(la: int, lb: int) -> list[Stmt]:
 def build_ip1e_kernel(cls: Cls, *, name: str | None = None) -> Kernel:
     """The derivative-matrix kernel of one one-electron pair class.
 
-    `cls` is a d1 matrix-form `Spec` (`spec.FORM_TARGETS`) or `(target, la,
-    lb[, form])`, `form` "ip1" by default. See the module docstring."""
+    `cls` is a d1 `Spec` with the lever `uncontracted` or `rinv`, or
+    `(target, la, lb[, form])`, `form` "ip1" by default. See the module
+    docstring."""
     target, form, la, lb = _class(cls)
     out = "XC" if form == "rinv" else "X1"
     pool = Locals()
@@ -502,6 +517,7 @@ def build_ip1e_kernel(cls: Cls, *, name: str | None = None) -> Kernel:
     body: tuple[Stmt, ...] = (
         Note(f"derivative matrix, class (la, lb) = ({la}, {lb}): {what} "
              "(hessian.kernel_ip1e)"),
+        Note(lever_provenance(LEVER[form])),
         Note(ZEROED_X),
         Note("launch: one thread per primitive-pair record"),
         Decl(REC, Scalar.I32, init=_add(Call(Fn.THREAD_X), _mul(

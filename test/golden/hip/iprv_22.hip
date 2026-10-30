@@ -68,6 +68,10 @@ extern "C" __global__ void iprv_22(
     (void)n_atom;
     // derivative matrix, class (la, lb) = (2, 2): XC[k, m, n] += dV^C_mn/dC_k,
     // nucleus C = nuc's operator term (hessian.kernel_ip1e)
+    // lever rinv (#687): V's per-nucleus operator term as a matrix, XC[k, m, n] =
+    // dV^C_mn/dC_k for the one nucleus C = nuc a kernel argument, -Z_C (iprinv +
+    // iprinv^T) with libcint's rinv origin at C, in place of its contraction into
+    // G[C, k] (hessian/kernel_ip1e.py)
     // PRECONDITION: the out matrix is zeroed by the caller before the first launch
     // of a build into it; this kernel only adds
     // launch: one thread per primitive-pair record

@@ -4856,11 +4856,56 @@ def test_the_hgmetric_builder_reaches_neither_the_plan_nor_the_mmd_engine(
 
 
 # ---------------------------------------------------------------------------
+# The uncontracted DF metric derivative (`gradient.kernel_ipmetric`, #693):
+# `kernel_gmetric`'s tower and launch, `kernel_metric`'s `s_aux`, and the
+# single-center tables -- its witness `gradient.host_df` never. The generator
+# CLI writes its ladder (`--ip-metric-l`).
+# ---------------------------------------------------------------------------
+
+RULES["ipmetric_builder"] = _rule(
+    "kernel_ipmetric.py: the uncontracted DF metric derivative -- key -> IR, "
+    "`kernel_gmetric`'s tower one order up and its rolled per-axis form, "
+    "the elements stored in place of their contraction",
+    ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+     "gradient.kernel_gmetric", "eri.density_fit.kernel_metric"),
+    ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+    reference=_GROUND_TRUTH, **_NO_MACHINE)
+RULE_OF["gradient.kernel_ipmetric"] = "ipmetric_builder"
+EDGES["gradient.kernel_ipmetric"] = frozenset(
+    ("eri.density_fit.kernel_metric", "gradient.kernel_gmetric", "ir",
+     "mmd.e_fragment", "mmd.recurrence", "plan.targets", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the uncontracted DF "
+                       "metric derivative ladder through `kernel_ipmetric`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_ipmetric",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_ipmetric",))
+
+
+def test_the_ipmetric_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_ipmetric"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "gradient.host", "gradient.host_df",
+                   "ir.interp", "emit", "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"gradient.kernel_ipmetric reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
 # The one-electron derivative matrices (`hessian.kernel_ip1e`, #687): S, T,
 # V at d1 in matrix form, on `kernel_g1e`'s record head, rules and rolled
 # sums and `kernel_v`'s plan, checked against `gradient.host`'s `*_ip1` /
 # `potential_rinv` in the interpreter. The generator CLI writes its ladder
-# (`--ip1-l`).
+# (`--ip-one-e-l`).
 # ---------------------------------------------------------------------------
 
 RULES |= {

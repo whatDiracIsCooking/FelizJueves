@@ -14,7 +14,9 @@ device test calls -- at the fp64 tier (1e-12 of the golden's largest
 element): our `coulomb_matrix` over `numeric.basis` (the `data/` file read
 with no PySCF) and the fixture's density, and our `metric_matrix` over the
 fitting file's s and p shells (every pair at lP + lQ <= 2, inside
-`FAST_L_MAX`) against those rows and columns of the golden. H2O/STO-3G and
+`FAST_L_MAX`) against those rows and columns of the golden, and (#693)
+`host_df.metric_derivative` over the same shells against each axis of the
+uncontracted d1 metric. H2O/STO-3G and
 the s/p metric blocks are fast; 6-31G and cc-pVDZ's J are `slow`, by
 test_ao_j.py's cost rule. Measured worst at writing (2026-10-30, the store's
 pyscf 2.14.0 / libcint 6.1.3): J 1.2e-15 (STO-3G), 3.0e-15 (6-31G),
@@ -38,6 +40,7 @@ from oracle import numeric as golden
 from felizjueves.ao.shell import Basis
 from felizjueves.eri.density_fit.metric import metric_matrix
 from felizjueves.eri.j_coulomb.j import coulomb_matrix
+from felizjueves.gradient import host_df
 from felizjueves.ir import Scalar
 from felizjueves.reference.pq import pq
 
@@ -49,7 +52,8 @@ STORE_BUDGET = 1024 * 1024
 NPY = golden.entries("npy")
 J_FAST = ("j_h2o_sto3g_bse",)
 J_SLOW = ("j_h2o_631g_bse", "j_h2o_ccpvdz_bse")
-METRICS = tuple(n for n in NPY if golden.entry(n).quantity == "metric")
+METRICS = tuple(n for n in NPY if golden.entry(n).what == "metric")
+IP1 = tuple(n for n in NPY if golden.entry(n).what.startswith("metric.d1."))
 
 
 def test_the_manifest_the_recipe_and_the_files_agree():
@@ -62,7 +66,9 @@ def test_the_seed_is_j_and_the_metric_both_kinds():
              for n in golden.entries()}
     assert kinds == {("j", "npy"), ("j", "fixture"), ("metric", "npy"),
                      ("metric", "fixture")}
-    assert set(J_FAST + J_SLOW) | set(METRICS) == set(NPY)
+    assert set(J_FAST + J_SLOW) | set(METRICS) | set(IP1) == set(NPY)
+    # #693's three axes of one uncontracted d1 metric
+    assert sorted(golden.entry(n).component for n in IP1) == ["x", "y", "z"]
 
 
 def test_the_store_stays_inside_its_budget():
@@ -233,6 +239,18 @@ def test_host_metric_over_the_s_and_p_fitting_shells_is_the_golden(name):
     got = np.array(metric_matrix(sub, pq=pq))
     err = golden.compare(name, got, index=(rows, rows))
     print(f"\n{name} (s, p): max |M - golden| / max |golden| = {err:.2e}")
+
+
+@pytest.mark.parametrize("name", IP1)
+def test_host_metric_derivative_over_the_s_and_p_fitting_shells_is_the_golden(
+        name):
+    # #693: `host_df.metric_derivative` (each centre by the Cartesian rule),
+    # the axis of this entry, against -int2c2e_ip1 on those rows and columns
+    sub, rows = _sp(name)
+    k = "xyz".index(golden.entry(name).component)
+    got = np.array(host_df.metric_derivative(sub, pq=pq)[k])
+    err = golden.compare(name, got, index=(rows, rows))
+    print(f"\n{name} (s, p): max |M1 - golden| / max |golden| = {err:.2e}")
 
 
 # --- the oracle: regenerated bit for bit -------------------------------------

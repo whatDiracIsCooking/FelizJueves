@@ -46,10 +46,12 @@ from oracle import basis as ob
 from oracle import manifest
 from tiers import by_l
 
+from felizjueves import levers
 from felizjueves.gradient import host
 from felizjueves.hessian.kernel_ip1e import (
     ATOMIC_REASON,
     IP1E,
+    LEVER,
     ZEROED_X,
     build_ip1e_kernel,
     ip1e_name,
@@ -61,7 +63,7 @@ from felizjueves.ir import AtomicAdd, Intent, Note, Raw, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.reference.boys import boys
 from felizjueves.reference.pq import one_centre
-from felizjueves.spec import FORM_TARGETS, Engine, Operator, Spec, Target
+from felizjueves.spec import Engine, Operator, Spec, Target
 
 EPS = 2.0 ** -52
 TOL = 16 * EPS  # of the class's max|X_host| (module docstring)
@@ -280,57 +282,71 @@ def test_x_is_added_to_not_overwritten() -> None:
 
 
 def test_the_key_and_the_names() -> None:
-    assert ip1e_spec(Target.S, 2, 1).key() == "overlap/d1.ip1/(2,1)/b1/s/literal"
+    assert ip1e_spec(Target.S, 2, 1).key() == (
+        "overlap/d1/(2,1)/b1/s/uncontracted")
     assert ip1e_spec(Target.V, 0, 1, "rinv").key() == (
-        "nuclear/d1.rinv/(0,1)/b1/v/literal")
+        "nuclear/d1/(0,1)/b1/v/rinv")
     for (t, form), prefix in _IDS.items():
         assert ip1e_name((t, 2, 1, form)) == f"{prefix}_21"
         assert build_ip1e_kernel(ip1e_spec(t, 2, 1, form)).name == (
             f"{prefix}_21")
-    # The contraction's key is byte-identical: no form, no suffix.
+    # The contraction's key is untouched: no lever, `literal`.
     assert Spec(Operator.OVERLAP, 1, (2, 1), Target.S).key() == (
         "overlap/d1/(2,1)/b1/s/literal")
 
 
-def test_the_prefixes_collide_with_no_other_kernels() -> None:
+def test_the_prefixes_are_the_registry_s_and_collide_with_none() -> None:
     from registry import UNITS
-    assert not {"ips", "ipt", "ipv", "iprv"} & (set(UNITS) - {
-        "ips", "ipt", "ipv", "iprv"})
+    from registry import _unit as unit
     assert {UNITS[p] for p in ("ips", "ipt", "ipv", "iprv")} == {
         ("mmd", "s", 1), ("mmd", "t", 1), ("mmd", "v", 1)}
+    # #700's `ipmetric_` stays the metric's, not read as one of these.
+    assert unit("ipmetric_12") == (("mmd", "metric", 1), 3)
+    assert unit("iprv_12") == (("mmd", "v", 1), 3)
 
 
-@pytest.mark.parametrize("bad", [
-    dict(form="ip1", target=Target.J),
-    dict(form="rinv", target=Target.S),
-    dict(form="rinv", target=Target.T),
-    dict(form="ip1", deriv=0),
-    dict(form="ip1", deriv=2),
-    dict(form="ip1", engine=Engine.HGP),
-    dict(form="ip2"),
-    dict(form="ip1", levers=("no-sieve",)),
-], ids=lambda d: "-".join(str(v) for v in d.values()))
-def test_spec_refuses_a_form_elsewhere(bad) -> None:
-    target = bad.get("target", Target.S)
-    am = (1, 0, 0, 0) if target is Target.J else (1, 0)
-    with pytest.raises(ValueError):
-        Spec(Operator.COULOMB if target is Target.J else
-             {Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC}.get(
-                 target, Operator.NUCLEAR),
-             bad.get("deriv", 1), am, target, bad.get("levers", ()),
-             engine=bad.get("engine"), form=bad["form"])
+def test_each_form_s_lever_is_legal_on_its_targets_at_d1_only() -> None:
+    assert LEVER == {"ip1": "uncontracted", "rinv": "rinv"}
+    for target, form in IP1E:
+        assert ip1e_spec(target, 1, 1, form).levers == (LEVER[form],)
+    assert {"s", "t", "v", "metric"} == levers.VOCABULARY[
+        "uncontracted"].legal
+    assert levers.VOCABULARY["rinv"].legal == {"v"}
+    for name in ("uncontracted", "rinv"):
+        assert levers.VOCABULARY[name].orders == {1}
 
 
-def test_spec_admits_each_form_on_its_targets() -> None:
-    assert set(FORM_TARGETS) == {"ip1", "rinv"}
-    for form, targets in FORM_TARGETS.items():
-        for t in targets:
-            assert ip1e_spec(t, 1, 1, form).form == form
+_OP = {Target.S: Operator.OVERLAP, Target.T: Operator.KINETIC,
+       Target.V: Operator.NUCLEAR}
 
 
-def test_a_contraction_key_is_refused() -> None:
-    with pytest.raises(ValueError, match="not a d1 matrix-form key"):
+@pytest.mark.parametrize(("target", "lever", "deriv", "engine", "match"), [
+    (Target.S, "rinv", 1, None, "lever 'rinv' on target s"),
+    (Target.T, "rinv", 1, None, "lever 'rinv' on target t"),
+    (Target.S, "uncontracted", 0, None, "at derivative order 0"),
+    (Target.V, "uncontracted", 2, None, "at derivative order 2"),
+    (Target.V, "rinv", 0, None, "at derivative order 0"),
+    (Target.S, "uncontracted", 1, Engine.HGP, "on target s.hgp"),
+    (Target.V, "rinv", 1, Engine.HGP, "on target v.hgp"),
+], ids=lambda v: getattr(v, "value", v))
+def test_spec_refuses_a_form_s_lever_elsewhere(target, lever, deriv, engine,
+                                               match) -> None:
+    with pytest.raises(ValueError, match=match):
+        Spec(_OP[target], deriv, (1, 0), target, (lever,), engine=engine)
+
+
+def test_a_contraction_key_or_two_forms_are_refused() -> None:
+    with pytest.raises(ValueError, match="exactly one of the levers"):
         build_ip1e_kernel(Spec(Operator.OVERLAP, 1, (1, 0), Target.S))
+    with pytest.raises(ValueError, match="exactly one of the levers"):
+        build_ip1e_kernel(Spec(Operator.NUCLEAR, 1, (1, 0), Target.V,
+                               ("rinv", "uncontracted")))
+    with pytest.raises(ValueError, match="not one of"):
+        ip1e_spec(Target.S, 1, 0, "ip2")
+    # the metric's uncontracted key is kernel_ipmetric's, not this builder's
+    with pytest.raises(ValueError, match="exactly one of the levers"):
+        build_ip1e_kernel(Spec(Operator.COULOMB, 1, (1, 0), Target.METRIC,
+                               ("uncontracted",)))
 
 
 @pytest.mark.parametrize(("target", "form"), IP1E,

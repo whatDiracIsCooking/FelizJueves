@@ -3,6 +3,7 @@
     metric_arrays(cls, aux, nuclei)             -> gmetric's arrays by name
     eri3_arrays(cls, basis, aux, nuclei)        -> geri3's arrays by name
     run_metric(aux, nuclei, W, *, boys, ...)    -> (G, classes run)
+    run_ipmetric(aux, *, boys, ...)             -> (M1, classes run)
     run_eri3(basis, aux, nuclei, Gam, *, boys, ...) -> (G, classes run)
     run_d2metric(aux, nuclei, W, *, boys, ...)   -> (H, classes run)
     run_d2eri3(basis, aux, nuclei, Gam, *, boys, ...) -> (H, classes run)
@@ -41,6 +42,7 @@ from felizjueves.gradient.kernel_gmetric import (
 )
 from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
 from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
+from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.ir.interp import Interpreter, Launch
@@ -89,6 +91,27 @@ def run_metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
             **metric_arrays(cls, aux, nuclei))["G"]
         ran.append((cls.lP, cls.lQ))
     return G, tuple(ran)
+
+
+def run_ipmetric(aux, *, boys, classes: Iterable | None = None,
+                 threads: int = 7, M1: np.ndarray | None = None):
+    """The uncontracted d1 metric (`gradient.kernel_ipmetric`, #693) on
+    `kernel_metric`'s arrays, one launch per class into `M1[3, n_aux,
+    n_aux]` (zeroed here unless given)."""
+    want = None if classes is None else set(classes)
+    M1 = np.zeros((3, aux.n_ao, aux.n_ao)) if M1 is None else M1
+    ran = []
+    for cls in metric_classes(aux):
+        if want is not None and (cls.lP, cls.lQ) not in want:
+            continue
+        grid, block = launch_shape(cls.n_pair, threads)
+        M1 = Interpreter(build_ipmetric_kernel((cls.lP, cls.lQ)),
+                         launch=Launch(grid, block, 1), boys=boys).run(
+            n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=aux.n_ao, M1=M1,
+            **{PARAM_OF.get(k, k): _np(k, v)
+               for k, v in cls.arrays().items()})["M1"]
+        ran.append((cls.lP, cls.lQ))
+    return M1, tuple(ran)
 
 
 def run_eri3(basis, aux, nuclei, Gam, *, boys,
