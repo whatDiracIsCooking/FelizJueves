@@ -69,7 +69,7 @@ __all__ = [
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
                                  "schwarz", "sx", "metric", "eri3",
                                  "pair_bound", "record_bound", "dipole",
-                                 "quadrupole")
+                                 "quadrupole", "kx1", "kxc")
 
 # THE ENGINE SLOTS (#401). A target built on a recurrence other than its
 # native one keys as `<target>.<engine>` (`spec.Spec.target_slot`), and the
@@ -183,6 +183,11 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
     ),
     "dipole": f"the dipole kernel {_ONE_THREAD_PER_RECORD}",
     "quadrupole": f"the quadrupole kernel {_ONE_THREAD_PER_RECORD}",
+    **{slot: (
+        "the exchange derivative matrix (hessian.kernel_kx) has no option "
+        "surface: gk's rolled form with a matrix scatter, one batch, and a "
+        "lever on it is a follow-up nobody has declared"
+    ) for slot in ("kx1", "kxc")},
     "j.hgp": (
         "no kernel-body lever is admitted on an HGP Target.J unless its "
         "entry says so: the MMD J levers act on the [p|q] tower and the F "
@@ -660,24 +665,34 @@ VOCABULARY: dict[str, Lever] = {
     # An output form rather than a departure from a paper: the d1 metric
     # kernel (`gradient.kernel_gmetric`) contracts every d(P|Q)/dR into
     # `G[atom, 3]`, and the DF Hessian needs the derivative integrals
-    # themselves. Its builder is `gradient.kernel_ipmetric`; ERI3's twin is
-    # #692's. #687 widened it to the one-electron S, T and V, whose CPHF
-    # right-hand side needs S^x and h^x as matrices: their ip1 form, the
-    # derivative on the centre of the first index, `hessian.kernel_ip1e`.
+    # themselves. Its builder is `gradient.kernel_ipmetric`; ERI3's twin,
+    # the three-center (nabla m n|P) in aux blocks, is #692's
+    # `gradient.kernel_xeri3`. #687 widened it to the one-electron S, T and
+    # V, whose CPHF right-hand side needs S^x and h^x as matrices: their ip1
+    # form, the derivative on the centre of the first index,
+    # `hessian.kernel_ip1e`.
     "uncontracted": Lever.of(
         "uncontracted", 693,
-        "the derivative integrals themselves, X1[k, m, n] = dX_mn/dA_k with "
-        "A the centre of m, as a matrix per axis, in place of their "
-        "contraction into G[atom, k] (gradient/kernel_ipmetric.py for the "
-        "DF metric, hessian/kernel_ip1e.py for S, T and V, #687)",
-        {"metric", "s", "t", "v"},
+        "the derivative integrals themselves, in place of their contraction "
+        "into G[atom, k]: M1[k, P, Q] = d(P|Q)/dA_k with A the centre of P, "
+        "an n_aux x n_aux matrix per axis (gradient/kernel_ipmetric.py); "
+        "X[k, m, n, P] = (nabla_k m n|P) over one aux block, libcint's "
+        "int3c2e_ip1 (gradient/kernel_xeri3.py, #692); X1[k, m, n] = "
+        "dX_mn/dA_k with A the centre of m for S, T and V, libcint's "
+        "int1e_ip* negated (hessian/kernel_ip1e.py, #687)",
+        {"metric", "eri3", "s", "t", "v"},
         orders=(1,),
         orders_why=("the uncontracted form is the first derivative's: at "
-                    "d0 the kernel already writes the integrals, and a d2 "
-                    "matrix form is a follow-up nobody has declared"),
-        eri3=("the uncontracted three-center derivative (dm n|P) is #692's, "
-              "not yet built"),
-        **{"metric.hgp": ("the uncontracted metric derivative is built on "
+                    "d0 the metric, three-center and one-electron kernels "
+                    "already write the integrals, and a d2 form is a "
+                    "follow-up nobody has declared"),
+        **{"eri3.hgp": ("the uncontracted three-center derivative is built "
+                        "on the MMD engine only (gradient.kernel_xeri3); an "
+                        "HGP twin is a follow-up nobody has declared"),
+           "eri3.rys": ("the uncontracted three-center derivative is built "
+                        "on the MMD engine only (gradient.kernel_xeri3); the "
+                        "Rys (mn|P) has no gradient at all"),
+           "metric.hgp": ("the uncontracted metric derivative is built on "
                           "the MMD engine only (gradient.kernel_ipmetric); "
                           "an HGP twin is a follow-up nobody has declared"),
            "metric.rys": ("the uncontracted metric derivative is built on "

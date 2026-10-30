@@ -282,8 +282,9 @@ def test_the_form_is_refused_off_d1_and_off_the_mmd_metric() -> None:
         with pytest.raises(ValueError, match="at derivative order"):
             Spec(Operator.COULOMB, order, (1, 2), Target.METRIC,
                  (UNCONTRACTED,))
-    with pytest.raises(ValueError, match="#692"):
-        Spec(Operator.COULOMB, 1, (1, 1, 2), Target.ERI3, (UNCONTRACTED,))
+    # #692 widened the lever to the MMD three-center twin (kernel_xeri3).
+    assert Spec(Operator.COULOMB, 1, (1, 1, 2), Target.ERI3,
+                (UNCONTRACTED,)).levers == (UNCONTRACTED,)
     with pytest.raises(ValueError, match="MMD engine only"):
         Spec(Operator.COULOMB, 1, (1, 2), Target.METRIC, (UNCONTRACTED,),
              engine=Engine.HGP)

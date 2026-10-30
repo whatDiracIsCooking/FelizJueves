@@ -16,7 +16,10 @@ through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`, on no
 card; the kinetic, overlap and nuclear-attraction gradients on HGP
 (`hgt_`, `hgs_`, `ghv_`, through (ff)) are interpreted and compiled, not
 run on a card; the HGP `(mn|P)` gradient `hgeri3` is interpreted and
-compiled only, no card.
+compiled only, no card. The uncontracted `(nabla m n|P)` of `xeri3_`
+(#692, "The uncontracted three-center derivative") is interpreted through
+(ff|i) against a host held to libcint, and compiled by nvcc and hipcc; it
+has not run on a card.
 **The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
 interpreted and compiled, not run**: held to `eri.eri`'s derivative
 integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
@@ -965,6 +968,94 @@ Goldens `test/golden/{cuda,hip}/hgeri3_*` (`test_emit_hgp_grad_df.py`).
 
 **Not on a card**: there is no device harness for it yet, and the session
 that built it had no card. Not measured.
+
+## The uncontracted three-center derivative (`gradient/kernel_xeri3.py`, #692)
+
+**Status: generated, interpreted against the host, the host held to
+libcint, and compiled by nvcc and hipcc; not run on a card** (the session
+that built it had no card; its device tests are written).
+
+**Why.** The DF-RHF Hessian's derivative Fock matrices contract the first
+derivatives of `(mn|P)` in more ways than one fused kernel covers: DF-J's
+`SUM_P (mn|P)^x d_P` and `SUM_mn (mn|P)^x D_mn`, DF-K's three-index
+`SUM_lP (ml|P)^x Gam_lnP`, and the cross terms' `(ij|P)^x` in occ x occ.
+PySCF's `df.hessian.rhf` writes the raw derivative integrals
+(`int3c2e_ip1`) in aux blocks and does each as a gemm, which is also the
+GPU-friendly route. So this kernel writes the tensor and nothing else.
+
+**The key.** `Spec(COULOMB, 1, (la, lb, lP), ERI3, ("uncontracted",))`,
+``coulomb/d1/(la,lb|lP)/b1/eri3/uncontracted``: #693's kernel-body lever
+`uncontracted` (the metric's `ipmetric_`, above), widened from `metric` to
+`eri3`, legal at d1 on MMD only (`levers.order_refusal`, and its refusals
+of `eri3.hgp` / `eri3.rys`). `kernel_geri3` refuses it, as it refuses
+every lever, and `kernel_xeri3` builds only the key with exactly it. The
+kernel prefix is `xeri3_`, which collides with none of `eri3_`, `geri3_`,
+`heri3_`, `hgeri3_`, `reri3_`, `d2eri3_`.
+
+**What it writes.** `X[k, m, n, P - aux0] = (nabla_k m n|P) = -d(mn|P)
+/ dA_k`, `A` the centre of `m`: `eri3`'s `(m, n, P)` layout with the axis
+outermost, `[3, n_ao, n_ao, n_blk]`, over the aux functions `aux0 ..
+aux0 + n_blk - 1`. A cell (shell pair `i <= j` x aux shell) writes its
+`(m, n)` slot by the `dA` rule and its `(n, m)` slot by the `dB` rule; a
+diagonal shell pair writes the `dA` slot alone, which over every `(a, b)`
+of the shell is every slot. Each slot is one cell's, so the stores are
+plain. They accumulate over the records in `X` itself, and the kernel
+zeroes its own slots first.
+
+**No second kernel for the aux centre.** Each integral is translationally
+invariant, and `nabla = -d/dR` on every centre, so
+
+    (mn | nabla_k P) = -X[k, m, n, P] - X[k, n, m, P]
+
+The sign check: `ip1 = -dA`, its transpose in `(m, n)` is `-dB` (the `(n,
+m)` slot differentiates `n`'s own centre), and `ip2 = -dC = dA + dB`. The
+caller forms it. The test holds it to libcint's `int3c2e_ip2_cart`.
+
+**Blocking.** The full tensor is `3 n_ao^2 n_aux` doubles (9 GB at 500
+AOs and 1500 aux functions), so the caller launches over the cells of one
+aux block, as PySCF batches over aux shells: `kernel_eri3`'s staging with
+the per-cell arrays (`ab_rec0/1`, `p_rec0/1`, `off_a/b/p`) restricted to
+the block's cells (`test/df_grad_launch.xeri3_arrays`). `off_p` stays the
+whole-basis index, and the column written is `off_p - aux0`. The kernel
+writes only the slots of the cells it is given: an entry of `X` that no
+given cell owns keeps whatever the caller passed. The linear index is
+I32, so `3 n_ao^2 n_blk < 2^31`.
+
+**The route** is `kernel_geri3`'s low-stack form (#613) with the weights,
+the aux centre and the atom reduction removed, one form at every class:
+the bra's per-axis `E` tables one index up, the tower of the quartet `(la
++ 1, lb | lP, 0)` at `L + 1` stored into `R`, `U[t] = SUM_tau [t +
+tau]^(0) E^q_tau` per aux row, then per element `X[k, m, n] -+= w (2 alpha
+SUM E^{a+1_k,b} U - a_k SUM E^{a-1_k,b} U)` (`w = s_ab s_aux`, the sign
+`(-1)^{lP}` then nabla's `-`), and `X[k, n, m]` likewise on `b`. At
+(ff|i) nvcc's frame is 13,536 B of `sm_86` stack (1,564 B spill stores)
+and hipcc's 12,672 B of `gfx1200` scratch, inside #606's 14,000 B line
+(one compile each, read from ptxas `-v` and hipcc's resource remarks; not
+a sweep, and not stored).
+
+| Check | Against | Over | Worst |
+|---|---|---|---|
+| host `eri3_ip1` (`test_kernel_xeri3.py`, `oracle` + `slow`) | libcint `int3c2e_ip1_cart`, live, every element | H₂O/cc-pVDZ with cc-pVDZ-JKFIT; `prim_spd_f` with AUX_I (orbital f, aux i) | 3.54e-14 / 2.21e-14 of `max\|ip1\|`, gate `1e-13` |
+| the aux identity, `-X - X^T` | libcint `int3c2e_ip2_cart`, live | the same two systems | 3.09e-14 / 1.95e-14 of `max\|ip2\|`, gate `1e-13` |
+| host, contracted per class (`slow`) | the tracked DF gradient witness (`oracle.manifest.df_gradient`) | all 70 ladder classes | 3.91e-14 of `max\|G\|`, gate `1e-12` |
+| kernel, interpreted, one launch per class | host `eri3_ip1` | every class at L <= 4 on test_kernel_geri3.py's bases | 4.66 eps of the class's `max\|X\|` ((sg\|s)), gate 16 |
+| kernel, interpreted (`slow`) | host `eri3_ip1` | every ladder class above L = 4 through (ff\|i), one primitive per shell | 0.53 eps of the tower-twin scale, gate 16 |
+| kernel over a strict aux block and half its cells | host, and the sentinel elsewhere | aux p, d, f of the geri3 bases, classes at L <= 3 | 1.90 eps; every unowned entry untouched |
+| kernel contracted onto the atoms | `host_df.eri3_gradient` (another route on the aux centre) | the geri3 bases' s and p shells; H₂O/STO-3G with JKFIT s, p (`slow`) | within 64 eps of `max\|G\|` |
+
+**The ladder** is `--grad-dfx-l [LMAX] [--grad-dfx-aux-l AUXMAX]`:
+`--grad-df-l`'s three-center classes, limits (0..3, 0..6) and defaults
+(bare: 9 units), never in the bare default nor in `KERNEL_GEN_CMD`, with 18
+goldens (`test_emit_grad_dfx.py`). **Compiled, not run**: its nvcc
+(CUDA 13.0, `sm_86`) and hipcc (ROCm 7.2.4, `gfx1200`) compile cases, the
+bare ladder plus (dd|g), (ff|i), (sf|i), 24 in all, pass with no warning in
+generated text, and the card program's runners build under both
+(device-less cloud container, 2026-10-30). Its device tests
+(`test_xeri3_device.py`: H₂O/STO-3G against JKFIT s, p, d, in one whole
+block and in a strict block over every other cell; the ladder through
+(ff|i), one program per aux `l`) have not run on a card. The card test's
+own staging, run through the interpreter in place of the card, matches the
+host to 1.2e-16 of max. Not measured.
 
 ## The fused Fock gradient on HGP (`gradient/kernel_gf.py`)
 

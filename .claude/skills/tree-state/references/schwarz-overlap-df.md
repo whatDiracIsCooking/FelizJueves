@@ -190,7 +190,10 @@ only** (`test_hgp_df_device.py`, 8 passed: worst 6.06 eps of the tower twin
 against the host, 2.1e-14 of max against libcint, runs bit-identical); the
 RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run). Nothing measured.
 `(mn|P)`'s HGP twin has a d1 sibling, `hgeri3_` (`gradient/kernel_hgeri3.py`;
-`gradients.md`), interpreted and compiled only.
+`gradients.md`), interpreted and compiled only. `(mn|P)`'s raw first
+derivatives, uncontracted over an aux block, are `xeri3_`
+(`gradient/kernel_xeri3.py`, #692; `gradients.md`), interpreted and
+compiled only.
 **The DF metric also has a Rys twin, through (g|h), interpreted and
 compiled, NOT run on a card** (`docs/implementation/rys_fock.md`, "The DF
 metric on Rys", is the one place with the detail):

@@ -309,8 +309,7 @@ def test_each_form_s_lever_is_legal_on_its_targets_at_d1_only() -> None:
     assert LEVER == {"ip1": "uncontracted", "rinv": "rinv"}
     for target, form in IP1E:
         assert ip1e_spec(target, 1, 1, form).levers == (LEVER[form],)
-    assert {"s", "t", "v", "metric"} == levers.VOCABULARY[
-        "uncontracted"].legal
+    assert {"s", "t", "v"} <= levers.VOCABULARY["uncontracted"].legal
     assert levers.VOCABULARY["rinv"].legal == {"v"}
     for name in ("uncontracted", "rinv"):
         assert levers.VOCABULARY[name].orders == {1}

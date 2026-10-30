@@ -21,10 +21,13 @@ extern "C" __global__ void ipt_11(
 {
     // derivative matrix, class (la, lb) = (1, 1): X1[k, m, n] += dT_mn/dA_k, A the
     // centre of m (hessian.kernel_ip1e)
-    // lever uncontracted (#693): the derivative integrals themselves, X1[k, m, n]
-    // = dX_mn/dA_k with A the centre of m, as a matrix per axis, in place of their
-    // contraction into G[atom, k] (gradient/kernel_ipmetric.py for the DF metric,
-    // hessian/kernel_ip1e.py for S, T and V, #687)
+    // lever uncontracted (#693): the derivative integrals themselves, in place of
+    // their contraction into G[atom, k]: M1[k, P, Q] = d(P|Q)/dA_k with A the
+    // centre of P, an n_aux x n_aux matrix per axis (gradient/kernel_ipmetric.py);
+    // X[k, m, n, P] = (nabla_k m n|P) over one aux block, libcint's int3c2e_ip1
+    // (gradient/kernel_xeri3.py, #692); X1[k, m, n] = dX_mn/dA_k with A the centre
+    // of m for S, T and V, libcint's int1e_ip* negated (hessian/kernel_ip1e.py,
+    // #687)
     // PRECONDITION: the out matrix is zeroed by the caller before the first launch
     // of a build into it; this kernel only adds
     // launch: one thread per primitive-pair record

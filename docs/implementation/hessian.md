@@ -239,10 +239,11 @@ at most, with 36 reductions each) is unexamined.
 - The skeleton Coulomb and exchange terms and (below) the one-electron
   and DF `(P|Q)`, `(mn|P)` skeletons only. Not built: the exchange
   Hessian above p ("The exchange Hessian"), the nuclear repulsion as a
-  kernel (it is host-side), the two-electron half of the derivative Fock
-  matrices `F^x` (`J^x` #688, `K^x` #689; the one-electron half, `S^x` and
-  `h^x`, is "The one-electron derivative matrices" below) and the CPHF
-  response, so no whole RHF Hessian is assembled or checked against `pyscf.hessian.rhf`.
+  kernel (it is host-side), the derivative Fock matrices `F^x` (only
+  their exchange part, "The exchange derivative matrix", and their
+  one-electron part, "The one-electron derivative matrices", are built;
+  `J^x` is #688) and the CPHF response, so no whole RHF Hessian is
+  assembled or checked against `pyscf.hessian.rhf`.
 - The bra–ket term runs the `[p|q]` kernel `3 n_atom` times per class
   pair, each over the kets touching one atom (about `6 n_ket` kets in all),
   and `hjab` adds `18 n_atom` atomics per bra record whether or not the
@@ -541,8 +542,9 @@ unit through (ff), both orders, is under the 512 KiB cap (the largest,
 
 - Not run on a card; nothing measured. Above (dd) interpreted only (the
   ladder emits through (ff); the compile goldens stop at (dd)).
-- The two-electron half of `F^x`, `J^x` (#688) and `K^x` (#689); the
-  CPHF solve and the whole RHF Hessian.
+- `F^x`'s Coulomb part `J^x` (#688; its exchange part `K^x` is "The
+  exchange derivative matrix", #689); the CPHF solve and the whole RHF
+  Hessian.
 - The ladder emits `la <= lb` only, as `--hess-one-e-l` does; a build
   whose shell order puts the higher `l` first needs the `(lb, la)` units,
   which build and are interpreted but are not on the ladder.
@@ -760,3 +762,127 @@ are pinned by byte count and sha256 in `test/golden/d2eri3_digests.json`.
   `W = -1/2 d d^T`, plus the response of `d`. The last is not a skeleton
   term.
 - No DF-K, no screen, nothing above L = 4. Cartesian only.
+
+## The exchange derivative matrix (`kx1`, `kxc`)
+
+**Status: implemented host-side and as generated kernels, interpreted
+through (dd|dd) and at three f classes, held to PySCF, compiled by nvcc
+and hipcc at every class through (ff|ff) (the local-memory frame
+recorded); not run on either card** (#689). The session that built it had
+both compilers and no card: no device test or driver is written, so
+nothing here has launched on the RTX 3080 or the RX 9060 XT.
+
+**Nothing here is scored.** The rule is `kernel_gk`'s (`docs/references.md`
+entry 46, McMurchie & Davidson); no `claims.json` record, cell or floor was
+added.
+
+### Why a matrix
+
+The RHF Hessian's CPHF right-hand side needs, per perturbation `x =
+(atom X, axis k)`, the skeleton derivative Fock matrix `F^x = h^x + J^x -
+1/2 K^x` as an AO matrix, for all `3 N` perturbations. A d1 kernel writes a
+contraction `G[atom, k]` (`spec.py`, "A GRADIENT CLASS"), which cannot give
+it. This is the exchange part:
+
+    K^X_ab = SUM_cd D_cd d(ac|bd) / dR_{X,k}        (K's pairing)
+
+The one-electron half is #687 and `J^X` is #688; neither is built here.
+
+### The two forms, and the assembly
+
+`D_cd` straddles bra and ket, so there is no derivative density to reuse
+(the reason `hkx` is one kernel), and both bra functions need a kernel:
+
+- **ip1**, the derivative on the matrix index, every atom at once:
+  `K1[k, a, b] = SUM_cd D_cd (dA_k a c|b d)`;
+- **contracted**, the derivative on the contracted index, per atom:
+  `KC_X[k, a, b] = SUM_{c on X} SUM_d D_cd (a dC_k c|b d)`.
+
+For a symmetric `D`, the ket's two derivatives are the bra's transposed
+(`(ac|b dd) = (b dd|a c)`), so
+
+    K^X = P_X K1 + (P_X K1)^T + KC_X + KC_X^T
+
+with `P_X` keeping the rows on `X`. That is PySCF's `hessian.rhf.make_h1`
+exchange part times `-2`: its `vk1` is `KC_X^T`, and its `vk2` on the rows
+of `X` is `P_X K1`. `K1` alone is `grad.rhf.get_jk`'s `vk`.
+
+### Its keys
+
+Two targets, `Target.KX1` (slot `kx1`) and `Target.KXC` (slot `kxc`). Each
+is a K class in K's Hermite pairing `(la, lc | lb, ld)`, operator
+`COULOMB`. They are legal at d1 **only** (`spec.D1_ONLY_TARGETS`: at d0 the
+matrix is `Target.K`, and no d2 is asked for), and on MMD only:
+`coulomb/d1/(la,lc|lb,ld)/b1/kx1/literal` and `.../kxc/literal`. One
+builder makes both, as the dipole and quadrupole share one. No lever, one
+batch.
+
+### The kernel (`hessian/kernel_kx.py`)
+
+`kx1_{la}{lc}_{lb}{ld}` and `kxc_{la}{lc}_{lb}{ld}` use `kernel_gk`'s
+mapping: one warp per bra record, kets over the lanes, no shared memory,
+no screen. They run `gk`'s plan (the d0 K class with the bra raised by
+one). Both are built in the **rolled form only**, so #618's lesson applies
+from the start: no `E` block and no straight-line fold. Each kernel holds:
+
+- the bra's compact per-axis tables, one index up on the moved side only:
+  `(la + 1, lc)` for `kx1`, `(la, lc + 1)` for `kxc`;
+- `[r]^(0)` stored into a local `R`;
+- the ket's compact tables, with the ket sign folded into their odd-`t`
+  entries;
+- one local scatter row `Y[3 n_a]`.
+
+Then, per ket `b` row:
+
+    Y = 0
+    for every d row:  I[p] = s_bd SUM_q E^bd_q R[p + q]
+        for every (a, c) row:  Y[k, a] += D_cd (2e SUM E^{+1_k} I - n_k SUM E^{-1_k} I)
+    X[k, oa + a, ob + b] += s_ac Y[k, a]          AtomicAdd
+
+There is no warp reduction: each lane's ket is its own, and lanes whose
+kets share a shell pair meet in the atomics. `kxc` is launched once per
+atom, with the bra records whose `c` sits on it
+(`host_kx.kx_records(..., atom=X)`), so the atoms together cost one pass.
+The output `X[3, n_ao, n_ao]` is zeroed by the caller. It is Cartesian;
+spherical is the caller's.
+
+### The host reference (`hessian/host_kx.py`)
+
+`exchange_derivative_ip1`, `exchange_derivative_contracted(atom)` and
+`exchange_derivative(atom)` (the assembly) sweep every ordered quartet as
+`gradient.host.exchange_gradient` does: `E^{ac}` differentiated before the
+fold, and `reference.pq`'s `[r]`. `absolute=True` is the round-off scale.
+It is pure Python: H₂O/cc-pVDZ's `K1` takes ~5 min.
+
+### Witnesses, and what ran where
+
+| What | Against | Where | Result |
+|---|---|---|---|
+| `K1` (host) | the gradient fixtures' `vk1` (libcint `int2e_ip1`, `ijkl,jk->il`) | H₂O/STO-3G, + a d on O, cc-pVDZ (`slow`) | 8.9e-15 / 3.6e-14 / 8.3e-14 absolute |
+| `K^X` per atom (host) | `test/oracle/k_deriv/*_kx.json`, PySCF's `make_h1` exchange part (`manifest.kx_witness`, `oracle.generate --kx`) | the same three (`slow`) | 2.3e-14 / 3.6e-14 / 1.5e-13 absolute |
+| `K^X` (host) | central differences of `exchange_matrix` | a two-atom s basis (fast), the s, p basis (`slow`) | within 1e-7 of `max\|K^X\|` |
+| `SUM_X K^X = 0` | — | host (s; s, p `slow`), the three witnesses, the kernels' assembly | 1e-13 of scale |
+| `kx1`, `kxc` per class (interpreted) | the host, `quartets=` the class | every s, p class; every d class through (dd\|dd) (`slow` above L + 1 = 4); (ff\|ff), (fs\|fs), (fd\|pd) (`slow`) | within 16 eps of the absolute twin |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_hess_kx.py`: the 14 goldens and (ff\|ff) in both forms | 32 passed, no warning; slowest 6.0 s (`kx1_33_33`, hipcc) |
+| frame | `data/measured/kx.json` (`devtools/measure.sh kx-compile`, rule declared before any row: stack ≤ 14,000 B, compile ≤ 30 s on both arches) | all 512 units, `sm_86` and `gfx1200` | every unit admissible on both: worst `kx1_33_33`, 9,824 B of `sm_86` stack (556 B spill stores at most) and 10,192 B of `gfx1200` scratch; slowest compile 5.6 s |
+| on a card | — | — | **not run**: no device test or driver |
+
+### The generator
+
+`python -m felizjueves.emit --hess-kx-l [LMAX]` writes both forms of every
+K class with each `l <= LMAX`. Bare is 1 (32 units), and it accepts
+0..3. It is never in the bare default nor in `KERNEL_GEN_CMD`. There are
+14 goldens (7 classes in both forms) plus digests of the other 498 units
+per backend (`test/golden/kx_digests.json`).
+
+### What is not done
+
+- **No card.** Nothing has launched. The issue's "every class launches on
+  the RTX 3080" and "run on both cards against the host" are open: what
+  stands in for them is the compiled frame of every unit. The device test
+  and its driver (`gk_driver.py`'s pattern, `X` zeroed, `kxc` once per
+  atom) are the next step.
+- `J^X` (#688) and `h^x`, `S^x` (#687) are not built, so `F^x` is not
+  assembled, and neither is the CPHF right-hand side.
+- Nothing is timed, and nothing is screened. A per-atom ket mask for
+  `kxc`, or a block mapping, is a follow-up.
