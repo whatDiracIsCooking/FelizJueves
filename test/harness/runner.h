@@ -60,6 +60,22 @@
 // and, for a sequence of more than one launch, `fj-runner run <r> launch <l>
 // events_ns <ns>` per launch: an event pair around the kernel alone.
 //
+// Three optional switches for timing a whole build as one region (#659, the
+// J driver's `measured_store.BUILD_TIMED_REGION`):
+//   "timed_readback": true  -- every run (warmup included) downloads each
+//               `out` buffer, one blocking copy per buffer in spec order,
+//               right after the closing synchronize, and the run line ends
+//               ` readback_ns <ns>`: the host clock around those copies, so
+//               wall_ns + readback_ns is synchronize-to-read-back-done.
+//   "launch_events": false  -- no event pair per launch: only the run's two
+//               events are recorded, so nothing but the zeros and the
+//               launches is between them (no per-launch lines are printed).
+//   either way, before the first run: `fj-runner upload_ns <ns>`, the host
+//               clock around allocating and uploading every buffer, between
+//               two synchronizes. A buffer whose first use in the sequence is
+//               a launch's `zero` (and has no `in`) is allocated but neither
+//               uploaded nor restored between runs: the zero is its state.
+//
 // Before anything is allocated every launch is checked against its kernel's
 // compiled signature (kernel_table.h): the arity, and per argument scalar or
 // pointer, kind and size, that no single-form `out` names a
@@ -172,6 +188,9 @@ struct Buffer {
     std::vector<npy::Array> each;        // witness "each": runs 1.. after warmup
     DeviceBuffer dev;
     bool written = false;
+    bool has_in = false;
+    bool zeroed_first = false;           // its first use is a `zero`
+    std::vector<unsigned char> got;      // timed_readback's copy, per run
 };
 
 struct Launch {
@@ -206,6 +225,7 @@ inline Buffer read_buffer(const json::Value& b, const std::string& base, const s
     const json::Value* in = b.find("in");
     if (in != nullptr) {
         const std::string path = resolve(base, in->str());
+        buf.has_in = true;
         buf.host = npy::read(path);
         if (buf.host.descr != buf.type->descr) {
             throw std::runtime_error(path + ": dtype " + buf.host.descr + ", but " + buf.name +
@@ -383,6 +403,24 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
     if (witness != "identical" && witness != "each") {
         throw std::runtime_error("witness must be \"identical\" or \"each\"");
     }
+    const json::Value* trb = spec.find("timed_readback");
+    const bool timed_readback = trb != nullptr && trb->boolean;
+    const json::Value* lev = spec.find("launch_events");
+    const bool launch_events = lev == nullptr || lev->boolean;
+
+    // A buffer zeroed before anything else touches it needs no upload.
+    {
+        std::vector<bool> seen(buffers.size(), false);
+        for (const Launch& l : launches) {
+            for (std::size_t z : l.zero) {
+                if (!seen[z]) buffers[z].zeroed_first = !buffers[z].has_in;
+                seen[z] = true;
+            }
+            for (std::size_t k = 0; k < l.entry->arity; ++k) {
+                if (l.entry->args[k].pointer) seen[l.buffer[k]] = true;
+            }
+        }
+    }
 
     int devices = 0;
     gpu::check(gpu::device_count(&devices), "device count");
@@ -390,9 +428,19 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
     const json::Value* dev = spec.find("device");
     gpu::check(gpu::set_device(dev ? static_cast<int>(dev->integer()) : 0), "set device");
 
+    gpu::check(gpu::synchronize(), "synchronize");
+    const auto u0 = std::chrono::steady_clock::now();
     for (Buffer& b : buffers) {
         b.dev = DeviceBuffer(b.initial.size());
-        b.dev.upload(b.initial.data());
+        if (!b.zeroed_first) b.dev.upload(b.initial.data());
+    }
+    gpu::check(gpu::synchronize(), "synchronize");
+    std::printf("fj-runner upload_ns %lld\n",
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now() - u0)
+                                           .count()));
+    for (Buffer& b : buffers) {
+        if (timed_readback && !b.out.empty()) b.got.resize(b.host.data.size());
     }
     for (Launch& l : launches) {
         const std::size_t n = l.entry->arity;
@@ -418,7 +466,7 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
     for (int r = 0; r < warmup + runs; ++r) {
         if (r > 0) {
             for (Buffer& b : buffers) {
-                if (b.written) b.dev.upload(b.initial.data());
+                if (b.written && !b.zeroed_first) b.dev.upload(b.initial.data());
             }
         }
         gpu::check(gpu::synchronize(), "synchronize");
@@ -427,23 +475,47 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
         for (std::size_t i = 0; i < n_launch; ++i) {
             Launch& l = launches[i];
             for (std::size_t z : l.zero) buffers[z].dev.zero();
-            gpu::check(gpu::event_record(ev[2 * i + 1]), "event record");
+            if (launch_events) gpu::check(gpu::event_record(ev[2 * i + 1]), "event record");
             gpu::check(gpu::launch(l.entry->fn, l.grid, l.block, l.args.data(),
                                    static_cast<std::size_t>(l.shm), nullptr),
                        "launch");
             gpu::check(gpu::last_error(), "launch (last error)");
-            gpu::check(gpu::event_record(ev[2 * i + 2]), "event record");
+            if (launch_events || i + 1 == n_launch) {
+                gpu::check(gpu::event_record(ev[2 * i + 2]), "event record");
+            }
         }
         gpu::check(gpu::synchronize(), "synchronize");
         const auto t1 = std::chrono::steady_clock::now();
+        long long readback = 0;
+        if (timed_readback) {
+            for (Buffer& b : buffers) {
+                if (!b.out.empty()) b.dev.download(b.got.data());
+            }
+            readback = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now() - t1)
+                           .count();
+        }
+        // An `out` buffer's contents this run: the timed copy, or a download now.
+        auto fetch = [&](const Buffer& b, unsigned char* dst) {
+            if (timed_readback) {
+                std::memcpy(dst, b.got.data(), b.got.size());
+            } else {
+                b.dev.download(dst);
+            }
+        };
         if (r >= warmup) {
             float ms = 0.0f;
             gpu::check(gpu::elapsed_ms(&ms, ev[0], ev[2 * n_launch]), "event elapsed");
             const long long wall =
                 std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-            std::printf("fj-runner run %d events_ns %.0f wall_ns %lld\n", r - warmup,
-                        1e6 * double(ms), wall);
-            for (std::size_t i = 0; n_launch > 1 && i < n_launch; ++i) {
+            if (timed_readback) {
+                std::printf("fj-runner run %d events_ns %.0f wall_ns %lld readback_ns %lld\n",
+                            r - warmup, 1e6 * double(ms), wall, readback);
+            } else {
+                std::printf("fj-runner run %d events_ns %.0f wall_ns %lld\n", r - warmup,
+                            1e6 * double(ms), wall);
+            }
+            for (std::size_t i = 0; launch_events && n_launch > 1 && i < n_launch; ++i) {
                 gpu::check(gpu::elapsed_ms(&ms, ev[2 * i + 1], ev[2 * i + 2]), "event elapsed");
                 std::printf("fj-runner run %d launch %zu events_ns %.0f\n", r - warmup, i,
                             1e6 * double(ms));
@@ -452,17 +524,17 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
         for (Buffer& b : buffers) {
             if (b.out.empty()) continue;
             if (r == 0) {
-                b.dev.download(b.host.data.data());
+                fetch(b, b.host.data.data());
                 continue;
             }
             if (witness == "each") {
                 if (r <= warmup) continue;
                 b.each.push_back(b.host);
-                b.dev.download(b.each.back().data.data());
+                fetch(b, b.each.back().data.data());
                 continue;
             }
             again.resize(b.host.data.size());
-            b.dev.download(again.data());
+            fetch(b, again.data());
             if (again != b.host.data) {
                 throw std::runtime_error(b.name + ": run " + std::to_string(r) +
                                          " differs from run 0 -- not run-to-run "
@@ -472,7 +544,7 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
         // witness "each": the first kept run is the first after warmup.
         if (witness == "each" && r == warmup && r > 0) {
             for (Buffer& b : buffers) {
-                if (!b.out.empty()) b.dev.download(b.host.data.data());
+                if (!b.out.empty()) fetch(b, b.host.data.data());
             }
         }
     }

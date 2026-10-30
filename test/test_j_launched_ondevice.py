@@ -1,8 +1,9 @@
 """The whole molecule on the card (#144): `J_mn` from the LAUNCH PLAN, one
 `J_p` buffer per bra class, on the RTX 3080 and the RX 9060 XT.
 
-WHAT RUNS WHERE. `launch.launches` plans the molecule (#138); a driver
-`main()` generated FROM THAT PLAN (`plan_driver.py`, harness) uploads each
+WHAT RUNS WHERE. `launch.launches` plans the molecule (#138); a
+sequence generated FROM THAT PLAN (`plan_driver.py`, harness, on the shared
+runner since #659: one process, one runner) uploads each
 bra class and each ket class ONCE, zeroes one `J_p` per bra class once per
 run, launches every batch kernel of every `(lp, lq)` class into its bra
 class's buffer (fp64 atomics across ket classes and batches), and reads each
@@ -93,9 +94,9 @@ code held to libcint on every fixture) to `ORACLE_TOL max|J0| + tau scale`;
 
 WHAT SKIPS: the device tests are `gpu` plus `cuda` or `hip` and take the
 compiler and device fixtures, so on a box without the card they SKIP -- the
-run is green and empty, and devtools/kernel-tier.sh exits 2. The VRAM probe
-(`run_device_binary(..., vram=)`) runs first and fails with both figures
-rather than launching into an out-of-memory error.
+run is green and empty, and devtools/kernel-tier.sh exits 2. The shared
+runner has no VRAM probe (#659, as for every ported driver): a short card
+fails the launch with the runner's error.
 """
 
 from __future__ import annotations
@@ -114,10 +115,10 @@ from plan_driver import (
     RUNS,
     Driver,
     compile_checked,
-    counts,
     driver,
     generated_warnings,
     read_back,
+    run,
     stage,
     transform,
 )
@@ -292,7 +293,7 @@ class Checked:
     plan: LaunchPlan
     drv: Driver
     binary: Path
-    src: Path  # its staged input
+    buffers: dict  # its staged input, the sequence's buffers
     jp: dict[int, np.ndarray]  # the checked run's J_p, per bra class
     bound: dict[int, np.ndarray]  # 2 gamma_{K-1} A_p, per bra class
     n_pairs: int
@@ -300,30 +301,28 @@ class Checked:
 
 
 def _built(backend: str, tc, name: str, tau: float, n, density_sort: bool,
-           workdir: Path) -> tuple[LaunchPlan, Driver, Path, Path]:
+           workdir: Path) -> tuple[LaunchPlan, Driver, Path, dict]:
     """Plan, generate, compile (#92's filter) and stage one cell."""
     _, basis, D = _fixture(name)
     plan = _plan(backend, name, tau, n, density_sort)
     drv = driver(plan, backend, workdir / "gen")
     binary = compile_checked(tc, drv, workdir / "driver")
-    src = workdir / "in.bin"
-    stage(plan, basis, D, drv).tofile(src)
-    return plan, drv, binary, src
+    return plan, drv, binary, stage(plan, basis, D, drv)
 
 
-def _check_counts(c: dict[str, int], drv: Driver, plan: LaunchPlan, *,
-                  warmup: int, reps: int) -> None:
-    """The plan's shape, as the driver counted it, over `warmup + reps`
-    builds in one process."""
-    runs = warmup + reps
+def _check_counts(drv: Driver, plan: LaunchPlan) -> None:
+    """The plan's shape, as the sequence carries it: one upload per bra
+    class and per ket class, one `J_p` per bra class zeroed by the first
+    launch, every batch kernel of every class once, in plan order (`run`
+    asserts the runner launched exactly these)."""
     nb, nk, nl = len(drv.bra), len(drv.ket), len(drv.launches)
-    c = {k: v for k, v in c.items() if k != "upload_ns"}
-    assert c == dict(runs=runs, bra_classes=nb, ket_classes=nk,
-                     uploads_bra=nb, uploads_ket=nk, jp_buffers=nb,
-                     memsets=nb * runs, launches=nl * runs,
-                     readbacks=nb * runs, plan_launches=nl, warmup=warmup,
-                     reps=reps), c
     assert nl == sum(len(cl.kernels) for cl in plan)
+    assert [s.kernel.name for s in drv.steps[:nl]] == [
+        k.name for cl in plan for k in cl.kernels]
+    assert drv.steps[0].zero == tuple(f"J{lp}" for lp, _, _ in drv.bra)
+    assert not any(s.zero for s in drv.steps[1:nl])
+    assert len({f"bra{lp}" for lp, _, _ in drv.bra}) == nb
+    assert len({f"ket{lq}" for lq, _, _ in drv.ket}) == nk
 
 
 def _run(backend: str, name: str, tau: float, n, request,
@@ -337,14 +336,14 @@ def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
     """Build one cell and run it in its correctness mode: the counts, the
     run-to-run bound, the launch oracle and libcint (module docstring)."""
     fx, basis, D = _fixture(name)
-    plan, drv, binary, src = _built(backend, tc, name, tau, n, density_sort,
-                                    workdir)
-    dst = workdir / "out.bin"
-    out = run_device_binary(binary, str(src), str(dst), vram=backend)
-    _check_counts(counts(out), drv, plan, warmup=0, reps=RUNS)
+    plan, drv, binary, buffers = _built(backend, tc, name, tau, n,
+                                        density_sort, workdir)
+    _check_counts(drv, plan)
     nb, nk, nl = len(drv.bra), len(drv.ket), len(drv.launches)
 
-    runs = read_back(drv, np.fromfile(dst, dtype=np.float64))
+    runs = read_back(drv, run(drv, binary, buffers, workdir / "run",
+                              runs=RUNS))
+    assert len(runs) == RUNS
     for r in runs:
         for lp, jp in r.items():
             assert np.all(np.isfinite(jp)), f"non-finite J_p[{lp}]"
@@ -404,7 +403,7 @@ def _check(backend: str, name: str, tau: float, n, density_sort: bool, tc,
         f"{name} on {arch.name}: J vs the launch oracle, worst {rel:.2e}")
     assert np.all(np.abs(J - ref) <= allowed), (
         f"{name} on {arch.name}: J vs {outside}, worst err/scale {jk:.2e}")
-    return Checked(plan, drv, binary, src, runs[0], bounds, oracle.n_pairs,
+    return Checked(plan, drv, binary, buffers, runs[0], bounds, oracle.n_pairs,
                    oracle.n_skipped)
 
 
@@ -529,13 +528,15 @@ def test_the_driver_is_the_plans_shape(backend, n, tmp_path):
     assert [lq for lq, _, _ in drv.ket] == sorted({cl.lq for cl in plan})
     assert [(x.lp, x.lq) for x in drv.launches] == [
         (cl.lp, cl.lq) for cl in plan for _ in cl.kernels]
-    for x, unit in zip(drv.launches, drv.units, strict=True):
+    for x, unit in zip(drv.launches, drv.units, strict=False):
         assert unit.read_text() == emit(x.kernel, arch)
         assert "atomicAdd" in unit.read_text(), f"{x.kernel.name} does not add"
-        assert f"{x.ns}::{x.kernel.name}<<<" in drv.source
-    assert drv.source.count("<<<") == len(drv.launches)
-    assert f"static const int NB = {len(drv.bra)}, NK = {len(drv.ket)}," in (
-        drv.source)
+        assert f'kernel_entry("{x.kernel.name}",' in drv.source
+    assert drv.source.count("kernel_entry(") == len(drv.launches)
+    assert [s.kernel.name for s in drv.steps] == [
+        x.kernel.name for x in drv.launches]
+    assert {s.args["J"] for s in drv.steps} == {f"J{lp}" for lp, _, _ in
+                                               drv.bra}
     # a one-batch class's kernel is atomized HERE, never in the builder
     if n == 1:
         built = {k.name: k for cl in plan for k in cl.kernels}
@@ -566,7 +567,11 @@ def test_stage_packs_every_class_once(tmp_path):
                     strict=False)
     drv = driver(plan, "cuda", tmp_path)
     data = stage(plan, basis, D, drv)
-    assert data.size == drv.n_input and data[0] == 1e-3
+    assert {s.args["tau"] for s in drv.steps} == {1e-3}
+    assert sum(data[f"bra{lp}"].size for lp, _, _ in drv.bra) == sum(
+        5 * n for _, n, _ in drv.bra)
+    assert sum(data[f"ket{lq}"].size for lq, _, _ in drv.ket) == sum(
+        n * (6 + q) for _, n, q in drv.ket)
     n_bra = {cl.lp: len(cl.bras) for cl in plan}
     n_ket = {cl.lq: len(cl.kets) for cl in plan}
     assert [(lp, n) for lp, n, _ in drv.bra] == sorted(n_bra.items())

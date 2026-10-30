@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -337,6 +338,15 @@ def sequence_reference(data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 SEQ_OUTS = ("sum", "acc", "idx", "sum2", "scaled2", "twice2", "idx2")
 
 
+def test_sequence_spec_carries_the_clock_switches_only_when_asked():
+    bufs, steps = sequence(inputs())
+    spec, _ = sequence_spec(bufs, steps, outs=SEQ_OUTS)
+    assert "timed_readback" not in spec and "launch_events" not in spec
+    spec, _ = sequence_spec(bufs, steps, outs=SEQ_OUTS, timed_readback=True,
+                            launch_events=False)
+    assert spec["timed_readback"] is True and spec["launch_events"] is False
+
+
 def test_sequence_reference_is_the_interpreted_sequence():
     """The two launches interpreted, the second on `sum[SHIFT:]` and the
     first's `acc`, equal `sequence_reference` bit for bit."""
@@ -625,6 +635,19 @@ def _sequence_on_card(backend: str, request, tmp_path: Path) -> None:
     for name, w in want.items():
         runs = each.load(name)
         assert len(runs) == 2 and all(_bitwise(r, w) for r in runs), name
+    # #659's whole-build clock: the read-back inside each run, only the run's
+    # two events, and buffers zeroed by the first launch (never uploaded or
+    # restored -- three identical runs witness the zero is their state).
+    zeroed = [replace(steps[0], zero=("sum2", "idx2")), steps[1]]
+    timed = run_sequence(binary, tmp_path / "timed", bufs, zeroed,
+                         outs=SEQ_OUTS, runs=3, warmup=1, timed_readback=True,
+                         launch_events=False)
+    assert len(timed.readback_ns) == 3 and all(r > 0 for r in timed.readback_ns)
+    assert timed.launch_ns == [[], [], []] and timed.upload_ns > 0
+    assert timed.launched == [axpy_kernel().name, twin_kernel().name]
+    for name, w in want.items():
+        (path,) = timed.outs[name]
+        assert _bitwise(np.load(path), w), (backend, "timed", name)
 
 
 @pytest.mark.cuda

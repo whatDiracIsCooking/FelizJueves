@@ -109,7 +109,7 @@ driver's text depends on the per-class record counts and kernels, not on the
 ket order a key sorts.
 
 WHAT SKIPS: the device tests are `gpu` plus `cuda` or `hip`, behind the card
-lock and the VRAM probe, so on a box without the card they skip and the run is
+lock, so on a box without the card they skip and the run is
 green and empty (kernel-tier.sh exits 2). Nothing here is a measurement:
 no registers, spills, wall-clock or counters of the new kernels.
 """
@@ -118,6 +118,7 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
@@ -130,11 +131,9 @@ from plan_driver import (
     DQ_LANES,
     RUNS,
     DQClass,
-    chain_counts,
     compile_checked,
     compile_dq,
     compile_jab,
-    counts,
     dq_args,
     dq_classes,
     dq_kernel,
@@ -144,8 +143,10 @@ from plan_driver import (
     jab_records,
     jab_rows,
     jab_step,
+    jp_buffer,
     read_back,
-    read_back_j,
+    read_back_tail,
+    run,
     run_jab,
     stage,
     transform,
@@ -206,6 +207,26 @@ CHAIN_PARAMS = [pytest.param(name, n, id=f"{name}-b{n}",
                 for name, n, slow in CHAIN_CELLS]
 L_MAX_DRIVER = 8  # milestone 6's reach: no [p|q] above it enters a driver
 L_MAX_DRIVER_F = 12  # #570's f cells: (ff|ff) is [p|q] at L = 6 + 6
+
+
+@dataclass(frozen=True)
+class _Jab:
+    """One bra pair class's JAB records (`jab_records`), as the tail
+    stages them."""
+
+    la: int
+    lb: int
+    lp: int
+    data: np.ndarray
+    ints: np.ndarray
+
+    @property
+    def n_rec(self) -> int:
+        return int(self.data.shape[0])
+
+
+def _jabs(plan, basis) -> list[_Jab]:
+    return [_Jab(*x) for x in jab_records(plan, basis)]
 
 
 def _l_max_driver(name: str) -> int:
@@ -570,16 +591,16 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
     ket_data = _ket_data(basis, dq_rows)
     drv = driver(plan, backend, tmp_path / "gen", chain=basis)
     binary = compile_checked(tc, drv, tmp_path / "driver")
-    src, dst = tmp_path / "in.bin", tmp_path / "out.bin"
-    stage(plan, basis, D, drv, ket_data=ket_data).tofile(src)
-    out = run_device_binary(binary, str(src), str(dst), vram=backend)
-    _check_counts(counts(out), drv, plan, warmup=0, reps=RUNS)
-    nj = len(drv.jab)
-    assert chain_counts(out) == dict(
-        jab_classes=nj, uploads_jab=nj, jab_launches=nj * RUNS,
-        j_memsets=RUNS, j_readbacks=RUNS), out
-    raw = np.fromfile(dst, dtype=np.float64)
-    jps, Js = read_back(drv, raw), read_back_j(drv, raw)
+    _check_counts(drv, plan)
+    jabs = _jabs(plan, basis)
+    nj = len(jabs)
+    assert [s.kernel.name for s in drv.tail.steps] == [
+        f"jab_{x.la}{x.lb}" for x in jabs]
+    assert drv.tail.steps[0].zero == ("Jmn",)
+    ran = run(drv, binary, stage(plan, basis, D, drv, ket_data=ket_data),
+              tmp_path / "run", runs=RUNS)
+    jps, Js = read_back(drv, ran), read_back_tail(drv, ran)
+    assert len(jps) == len(Js) == RUNS
     for r in range(RUNS):
         assert np.all(np.isfinite(Js[r])), "non-finite J"
         for lp, jp in jps[r].items():
@@ -599,7 +620,7 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
     acc = (np.zeros((n_ao, n_ao)), np.zeros((n_ao, n_ao)),
            np.zeros((n_ao, n_ao)))
     per_class = {}
-    for x in drv.jab:
+    for x in jabs:
         one = _jab_scales(x.la, x.lb, x.data, x.ints, jps[0][x.lp],
                           jps[1][x.lp], n_ao)
         per_class[(x.la, x.lb)] = one
@@ -609,7 +630,7 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
     assert np.all(K > 0), "an element of J no bra pair owns"
     r2r_ok = np.ones((n_ao, n_ao), bool)
     host_tol = np.zeros((n_ao, n_ao))
-    for x in drv.jab:
+    for x in jabs:
         t, dl, k = per_class[(x.la, x.lb)]
         mine = k > 0
         n_p = len(hermite_order(x.lp))
@@ -643,7 +664,7 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
           f"runs bit-identical); [p|q] "
           f"{' '.join(f'({c.lp},{c.lq})b{c.n_batches}' for c in plan)} "
           f"(L <= {max(c.L for c in plan)}), refused {list(plan.refused)}; "
-          f"JAB {[(x.la, x.lb) for x in drv.jab]}; {len(drv.launches)} [p|q] "
+          f"JAB {[(x.la, x.lb) for x in jabs]}; {len(drv.launches)} [p|q] "
           f"+ {nj} JAB launches per run; max|J - get_jk|/scale_J = {jk:.2e} "
           f"(tol {JK_TOL:g}); max|J - oracle|/max|J| = {rel:.2e} (tol "
           f"{ORACLE_TOL:g}); |J - host scatter of J_p|/T = "
@@ -824,34 +845,42 @@ def test_the_programs_data_is_the_interpreted_kernels(name):
 
 
 def test_the_chain_driver_is_the_plans_shape_plus_jab(tmp_path):
-    """Without `chain=` the driver has no JAB text; with it, one JAB launch
+    """Without `chain=` the sequence has no JAB step; with it, one JAB launch
     per bra pair class, all after the last `[p|q]` launch, each reading its
-    bra class's `J_p` buffer, each unit `emit`'s text."""
+    bra class's `J_p` buffer and adding into `Jmn` (zeroed by the first),
+    each unit `emit`'s text."""
     basis, D = _case("h2o_sto3g_j")
     plan = _plan_from(basis, _host_dq_rows(basis, dq_classes(basis, D)), 1)
     plain = driver(plan, "hip", tmp_path / "plain")
-    assert "dJmn" not in plain.source and not plain.jab
+    assert plain.tail is None and "jab_" not in plain.source
+    assert "Jmn" not in plain.outs
     drv = driver(plan, "hip", tmp_path / "chain", chain=basis)
     emit, arch, _ = BACKEND["hip"]
     pairs = {(basis.shells[a].l, basis.shells[b].l)
              for a, b in _unique_pairs(basis)}
-    assert [(x.la, x.lb) for x in drv.jab] == sorted(pairs)
-    slot = {lp: i for i, (lp, _, _) in enumerate(drv.bra)}
-    last_pq = max(drv.source.index(f"{x.ns}::{x.kernel.name}<<<")
-                  for x in drv.launches)
-    for x in drv.jab:
-        at = drv.source.index(f"{x.ns}::{x.kernel.name}<<<")
-        assert at > last_pq
-        assert f"dJ[{slot[x.lp]}], dJmn)" in drv.source[at:at + 400]
-    assert drv.units[-len(drv.jab):] and all(
-        u.read_text() == emit(x.kernel, arch)
-        for u, x in zip(drv.units[-len(drv.jab):], drv.jab, strict=True))
+    jabs = _jabs(plan, basis)
+    assert [(x.la, x.lb) for x in jabs] == sorted(pairs)
+    n_pq = len(drv.launches)
+    tail = drv.steps[n_pq:]
+    assert [s.kernel.name for s in drv.steps[:n_pq]] == [
+        x.kernel.name for x in drv.launches]
+    assert [s.kernel.name for s in tail] == [f"jab_{x.la}{x.lb}" for x in jabs]
+    for s, x in zip(tail, jabs, strict=True):
+        assert s.args["Jp"] == jp_buffer(x.lp) and s.args["J"] == "Jmn"
+        assert s.args["n_rec"] == x.n_rec
+    assert tail[0].zero == ("Jmn",) and drv.outs[-1] == "Jmn"
+    units = {u.stem: u for u in drv.units}
+    assert all(units[s.kernel.name].read_text() == emit(s.kernel, arch)
+               for s in tail)
     n_rec = sum(len(epair(basis.shells[a], basis.shells[b]).recs)
                 for a, b in _unique_pairs(basis))
-    assert sum(x.n_rec for x in drv.jab) == n_rec
+    assert sum(x.n_rec for x in jabs) == n_rec
     data = stage(plan, basis, D, drv, ket_data=_ket_data(
         basis, _host_dq_rows(basis, dq_classes(basis, D))))
-    assert data.size == drv.n_input
+    for c, x in enumerate(jabs):
+        assert data[f"jd{c}"].size == 8 * x.n_rec
+        assert data[f"ji{c}"].dtype == np.int32
+        assert data[f"ji{c}"].size == 3 * x.n_rec
 
 
 def _e_abs_bounds_e(fast: bool) -> None:

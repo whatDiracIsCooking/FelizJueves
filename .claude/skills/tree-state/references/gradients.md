@@ -39,7 +39,7 @@ nor in `KERNEL_GEN_CMD`; 48 + 40 goldens (`test_emit_grad.py`,
 `test_emit_grad_k.py`, every other default `gk` unit through `(ff|ff)`
 pinned in `test/golden/gk_digests.json`).
 **On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`
--- on the shared runner since #659, not yet run on a card --, 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
+-- on the shared runner since #659, which ran on both cards on 2026-10-30 --, 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
 `gk` on H₂O/STO-3G only, against the host, 9 passed per card; worst
 3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060 XT (`gt`,
 cc-pVDZ), under `1e-13`. **`gs`, `gt`, `gv` through (ff) on both cards**
@@ -122,8 +122,24 @@ runners, each term returned with their fixed-order total;
 NH₂F/6-31G, H₂O/cc-pVDZ, and #565's `h2o_sto3g_d_grad` (H₂O/STO-3G plus one
 d primitive on O, `Case.extra_shells`: every J and K class through
 `(dd|dd)` at STO-3G's cost). The one-electron terms on s, p bases are fast;
-every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). Not on a
-card: the device assembly is #566. **`gjab` defaults to a low-stack form from `la + lb =
+every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). **On the RX 9060
+XT only (#566, 2026-10-30; CUDA not run)**: `test_rhf_gradient_device.py`
+(`slow`) injects device runners -- `gs_` / `gt_` / `gv_`
+(`grad_driver`), the J chain on the card (DQ -> raised `[p|q]` ->
+`gjab_`, no host `J_p`) and every `gk_` class (`gk_driver`) -- into
+`rhf_gradient` on H₂O/STO-3G and 6-31G, 2 passed: every term and the
+total within `1e-10` absolute of PySCF (worst total 8.2e-14, STO-3G) and
+of the interpreted `rhf_gradient` (worst 4.4e-15); run to run within
+`SPREAD_TOL = 1e-13` (worst 4.4e-15, 6-31G) -- NOT bit-identical, the
+kernels' `atomicAdd`s, so the issue's bit-identity was restated as that
+bound by the user. **Nothing scored or timed; the milestone's limits are
+one `StructuralLimit` record** (#567, `data/literature/jengine/limits.json`;
+`gradient.md`, "What is not done" and "What AIMD still needs"): no
+published board, Cartesian only, the whole gradient on the RX 9060 XT
+only and on s, p bases only, cc-pVDZ's whole gradient on no card, and for
+AIMD an SCF producing `D` and `W` (no eigensolver in `src/`), the per-step
+host rebuild of pairs, bounds and plans, a derivative screen, d/f in the
+whole gradient on a card, RI gradients end to end, UHF. **`gjab` defaults to a low-stack form from `la + lb =
 5`, and its whole chain runs on both cards through (ff)** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the
@@ -144,7 +160,8 @@ both arches; `measure.sh check` holds the floor to the rows): unrolled
 unit fits both (worst `gjab_33` 6,352 / 5,424 B, under 3 s). **The chain
 on the card** (`test_gjab_chain_ondevice.py`; `grad_driver.raised_plan`
 and `gjab_tail` on `plan_driver.driver`'s new `tail=` slot,
-`plan_driver.ChainTail`): `DQ` on the card, read back, the J chain's
+`plan_driver.Tail`; a shared-runner sequence since #659, both cards
+2026-10-30): `DQ` on the card, read back, the J chain's
 plan keyed on its `Dmax`, every bra class raised by one, the raised
 `[p|q]` launched, then `gjab` reading `J_p` where it lies, in one process,
 no host `J_p`; against `host.coulomb_gradient` at `1e-13` of `max|G|`,
@@ -206,7 +223,7 @@ AUXMAX]` (#613: split as FreeBreakfast's `df_kernels.py`, LMAX the orbital
 for `la <= lb <= LMAX`, `lP <= AUXMAX`, `gmetric` for `lP <= lQ <=
 AUXMAX`), never in the bare default nor in `KERNEL_GEN_CMD`; 62 goldens,
 the 31 classes at L <= 4 (`test_emit_grad_df.py`). **On both cards**
-(`test_grad_df_device.py`, `slow`, on `grad_driver`'s program, on the shared runner since #659, not yet run on a card): DF-J of
+(`test_grad_df_device.py`, `slow`, on `grad_driver`'s program, on the shared runner since #659, which ran on both cards on 2026-10-30): DF-J of
 H₂O/STO-3G against the JKFIT s, p, d shells, worst 6.58e-15 of `max|G|`
 (RTX 3080) and 4.87e-15 (RX 9060 XT).
 **Through (ff|i) and (i|i) (#613), with a low-stack form** (`gradient.md`,

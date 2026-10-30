@@ -149,7 +149,7 @@ at (ff); `hdq` is about a fifth of that.
 | the chain: `hdq` → gather → `[p|q]` at both specs (interpreted) → `hjab` | `host.coulomb_hessian` | the s, p basis; H₂O/STO-3G `slow` | 0.14 eps of the scale on the s, p basis, gate 64 eps; symmetry and invariance 1e-13 |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | `hdq` and `hjab` for every class through (dd), (10), (21) | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_hess.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
-| on a card (`test_hess_j_device.py`, generator `test/hess_driver.py`, on the shared runner since #659, not yet run on a card) | `hdq`: `host.ket_derivative_records`, `1e-13` of `max\|D1\|`; `hjab`: `host.coulomb_hessian`, host `J`s, `1e-14` of the absolute twin | RTX 3080 and RX 9060 XT: `hdq` and `hjab` for every ordered class (ss)–(dd) on the three-atom s, p, d basis; the whole H₂O/STO-3G `H` (`slow`); 19 cases per card | `hdq` 4.98e-16 (`hdq_02`); `hjab` 7.16e-17 of the scale per class, 9.28e-17 whole H₂O; the same on both cards, per-class runs bit-identical |
+| on a card (`test_hess_j_device.py`, generator `test/hess_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30) | `hdq`: `host.ket_derivative_records`, `1e-13` of `max\|D1\|`; `hjab`: `host.coulomb_hessian`, host `J`s, `1e-14` of the absolute twin | RTX 3080 and RX 9060 XT: `hdq` and `hjab` for every ordered class (ss)–(dd) on the three-atom s, p, d basis; the whole H₂O/STO-3G `H` (`slow`); 19 cases per card | `hdq` 4.98e-16 (`hdq_02`); `hjab` 7.16e-17 of the scale per class, 9.28e-17 whole H₂O; the same on both cards, per-class runs bit-identical |
 
 ## The exchange Hessian (`hkx`)
 
@@ -425,7 +425,7 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
 | the low-stack `d2v`, interpreted | the same, every class also in the form its default does not pick | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G (`test_kernel_h1e.py`) | 0.27 eps of the absolute twin (`d2v_12` forced), gate 16 eps |
 | the units | clang 18 CUDA front end, `-Wall -Wextra` | all 48 ordered classes through (ff), here; the low-stack `d2v_22` and `d2v_33` | no diagnostic (a proxy) |
 | nvcc / hipcc compile | #92's warning filter | `test_emit_hess_1e.py`'s `cuda` / `hip` cases, `sm_86` and `gfx1200` | passed, no warning in generated text |
-| on a card | `hessian.host_1e`, within 1e-14 of the absolute twin | `test_hess_device.py` (generator `test/hess_driver.py`, on the shared runner since #659, not yet run on a card), H₂O/STO-3G, cc-pVDZ `slow`; RTX 3080 and RX 9060 XT, 6 cases per card, the UNROLLED `d2v` (before the low-stack form) | 1.57e-16 (CUDA), 2.30e-16 (HIP) of the scale, both `d2v` on cc-pVDZ |
+| on a card | `hessian.host_1e`, within 1e-14 of the absolute twin | `test_hess_device.py` (generator `test/hess_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30), H₂O/STO-3G, cc-pVDZ `slow`; RTX 3080 and RX 9060 XT, 6 cases per card, the UNROLLED `d2v` (before the low-stack form) | 1.57e-16 (CUDA), 2.30e-16 (HIP) of the scale, both `d2v` on cc-pVDZ |
 | the low-stack `d2v` on a card | the same | `test_hess_device.py` | **not run** (no card or vendor compiler in that session) |
 
 ### What is not done
