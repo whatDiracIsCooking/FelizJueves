@@ -260,7 +260,11 @@ themselves -- `M1[k, P, Q] = d(P|Q)/dA_k` as an `[3, n_aux, n_aux]` matrix
 (`gradient.kernel_ipmetric`), keyed
 ``coulomb/d1/(1,2)/b1/metric/uncontracted``, and `X[k, m, n, P] =
 (nabla_k m n|P)` over one aux block (`gradient.kernel_xeri3`), keyed
-``coulomb/d1/(0,1|2)/b1/eri3/uncontracted``. `DQ` at d1 is the ket
+``coulomb/d1/(0,1|2)/b1/eri3/uncontracted``; #687 makes it legal on `S`,
+`T` and `V` too, their ip1 form `X1[k, m, n] = dX_mn/dA_k` with `A` the
+centre of `m` (`hessian.kernel_ip1e`, ``overlap/d1/(2,1)/b1/s/uncontracted``),
+beside the lever `rinv`, `V`'s per-nucleus operator term as a matrix
+(``nuclear/d1/(2,1)/b1/v/rinv``). `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
 target's d0 reason. SIX OFF-NATIVE PAIRS ARE LEGAL AT d1

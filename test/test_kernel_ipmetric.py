@@ -288,8 +288,13 @@ def test_the_form_is_refused_off_d1_and_off_the_mmd_metric() -> None:
     with pytest.raises(ValueError, match="MMD engine only"):
         Spec(Operator.COULOMB, 1, (1, 2), Target.METRIC, (UNCONTRACTED,),
              engine=Engine.HGP)
-    with pytest.raises(ValueError, match="lever 'uncontracted' on target s"):
-        Spec(Operator.OVERLAP, 1, (1, 2), Target.S, (UNCONTRACTED,))
+    with pytest.raises(ValueError, match="lever 'uncontracted' on target dq"):
+        Spec(Operator.COULOMB, 1, (1, 2), Target.DQ, (UNCONTRACTED,))
+    # Legal on S since #687 (its ip1 form, hessian.kernel_ip1e), and not
+    # this builder's key.
+    s = Spec(Operator.OVERLAP, 1, (1, 2), Target.S, (UNCONTRACTED,))
+    with pytest.raises(ValueError):
+        build_ipmetric_kernel(s)
 
 
 def test_each_builder_refuses_the_others_key() -> None:
