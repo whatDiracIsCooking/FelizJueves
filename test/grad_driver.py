@@ -11,8 +11,8 @@ harness.
     compile_grad(launches, n_atom, backend, tc, workdir, units=) -> GradBinary
     GradBinary.run()                                -> [run][n_atom][3]
     raised_plan(plan)                               -> LaunchPlan, bras one up
-    gjab_tail(plan, basis, nuclei, D, lowstack=)    -> plan_driver.ChainTail
-    gjab_read_back(drv, raw, n_atom)                -> ([run][lp] J_p, G[run])
+    gjab_tail(plan, basis, nuclei, D, lowstack=)    -> plan_driver.Tail
+    gjab_read_back(drv, ran, n_atom)                -> ([run][lp] J_p, G[run])
 
 ON THE SHARED RUNNER (#649, ported by #659): one runner per distinct
 kernel (`harness_driver.chain_runners`, compiled by `compile_checked` under
@@ -37,9 +37,9 @@ check.
 on the card (`kernel_gjab.gjab_pq_spec`'s class, an ordinary d0 `[p|q]`
 kernel, witnessed by the J chain's own device tests at d0).
 
-THE CHAIN ON THE CARD (#619) is not this `main()` but the J chain's own
-driver (`plan_driver.driver`, #157), its JAB step replaced by `gjab`
-(`tail=`, `plan_driver.ChainTail`):
+THE CHAIN ON THE CARD (#619) is not these chains but the J chain's own
+sequence (`plan_driver.driver`, #157, one runner process), its JAB step
+replaced by `gjab` (`tail=`, `plan_driver.Tail`):
 
   1. DQ on the card, `D_q` / `Dmax` read back (the J chain's one
      round-trip), and the J chain's plan keyed and sorted on them;
@@ -65,8 +65,25 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from harness_driver import Program, Step, build_chain, chain_runners, run_chain
-from plan_driver import RUNS, UPLOAD_INT, ChainTail, Driver, read_back
+from harness_driver import (
+    Program,
+    Ref,
+    Sequenced,
+    Step,
+    build_chain,
+    chain_runners,
+    run_chain,
+)
+from plan_driver import (
+    RUNS,
+    Driver,
+    Tail,
+    as_exact_int,
+    bra_rows,
+    jp_buffer,
+    read_back,
+    read_back_tail,
+)
 
 from felizjueves.ao.density import epair
 from felizjueves.eri.j_coulomb.launch import ClassLaunch, LaunchPlan
@@ -353,32 +370,14 @@ def gjab_chain_launches(plan: LaunchPlan, basis, nuclei, *,
     return out
 
 
-def _gjab_parts(x: GjabChainLaunch) -> list[np.ndarray]:
-    """One gjab class's input, in the order the upload slot reads it."""
-    d = x.data
-    return [d[:, 0], d[:, 1:4].ravel(), d[:, 4:7].ravel(), d[:, 7],
-            d[:, 8], d[:, 9], *(x.ints[:, k] for k in range(GJAB_INTS))]
-
-
-def _gjab_call(x: GjabChainLaunch, c: int, jp: str, n_rows: str) -> str:
-    n = x.n_rec
-    grid, (bx, by) = launch_shape(n, THREADS)
-    f, i = f"gd[{c}]", f"gi[{c}]"
-    return (f"        // bra pair class ({x.la}, {x.lb}): J_p[{x.lp}] -> G\n"
-            f"        {x.ns}::{x.kernel.name}<<<dim3({grid}), dim3({bx}, {by})>>>(\n"
-            f"            {n}, NAO, NATOM, {n_rows}, {f}, {f} + {n}, "
-            f"{f} + {4 * n}, {f} + {7 * n}, {f} + {8 * n}, {f} + {9 * n},\n"
-            f"            {i}, {i} + {n}, {i} + {2 * n}, {i} + {3 * n}, "
-            f"{i} + {4 * n}, {jp}, dM, dG);\n"
-            f"        CHECK(devGetLastError());\n"
-            f"        ++gjab_launches;\n")
-
-
 def gjab_tail(plan: LaunchPlan, basis, nuclei, D, *,
-              lowstack: bool | None = None) -> ChainTail:
-    """The `plan_driver.ChainTail` launching every bra pair class's `gjab_`
+              lowstack: bool | None = None) -> Tail:
+    """The `plan_driver.Tail` launching every bra pair class's `gjab_`
     after the `[p|q]` launches of `plan` (`raised_plan`'s value), `M = D`:
-    `G[n_atom, 3]` per run, after the `J_p` runs."""
+    per class `gd<c>` = `zeta_ab XPA XPB s ea_bra eb_ket` and `gi<c>` =
+    `off_a off_b row atom_a atom_b` (int32), one upload each, each launch
+    reading its raised `J_p` buffer on the card and adding into `G[n_atom,
+    3]`, zeroed by the first."""
     xs = gjab_chain_launches(plan, basis, nuclei, lowstack=lowstack)
     for x in xs:
         assert n_p1(x.la, x.lb) == len(bra_functions(
@@ -386,85 +385,35 @@ def gjab_tail(plan: LaunchPlan, basis, nuclei, D, *,
         assert split(gjab_pq_spec(x.la, x.lb, 0, 0)) == split(
             plan_class_spec(x.lp, 0)), (x.la, x.lb)
     n_ao, n_atom = basis.n_ao, len(nuclei)
-    Dm = np.asarray(D, dtype=np.float64)
+    Dm = np.ascontiguousarray(D, dtype=np.float64)
     assert Dm.shape == (n_ao, n_ao), Dm.shape
-    parts = [p for x in xs for p in _gjab_parts(x)] + [Dm.ravel()]
-    per = GJAB_DOUBLES + GJAB_INTS
-
-    def text(bslot: dict[int, int]) -> dict[str, str]:
-        calls = "".join(_gjab_call(x, c, f"dJ[{bslot[x.lp]}]",
-                                   f"nb[{bslot[x.lp]}]")
-                        for c, x in enumerate(xs))
-        return dict(
-            jab_helpers=(
-                "\n// the gjab chain (#619): one gjab launch per bra pair "
-                f"class\nstatic const int NG = {len(xs)}, NAO = {n_ao}, "
-                f"NATOM = {n_atom};\nstatic const int ng_[NG] = {{"
-                + ", ".join(str(x.n_rec) for x in xs) + "};" + UPLOAD_INT),
-            jab_count=(f"    for (int c = 0; c < NG; ++c) want += (size_t)"
-                       f"{per} * ng_[c];\n"
-                       "    want += (size_t)NAO * NAO;\n"),
-            jab_need=("\n                          + (size_t)NATOM * 3 * "
-                      "sizeof(double)"),
-            jab_upload=(
-                "    int uploads_gjab = 0, gjab_launches = 0, g_memsets = 0, "
-                "g_readbacks = 0;\n"
-                "    double* gd[NG];\n"
-                "    int* gi[NG];\n"
-                "    for (int c = 0; c < NG; ++c) {\n"
-                f"        gd[c] = upload(h, (size_t){GJAB_DOUBLES} * ng_[c]);\n"
-                f"        h += (size_t){GJAB_DOUBLES} * ng_[c];\n"
-                f"        gi[c] = upload_int(h, (size_t){GJAB_INTS} * ng_[c]);\n"
-                f"        h += (size_t){GJAB_INTS} * ng_[c];\n"
-                "        if (!gd[c] || !gi[c]) { std::fprintf(stderr, \"gjab "
-                "upload %d failed\\n\", c); return 1; }\n"
-                "        ++uploads_gjab;\n"
-                "    }\n"
-                "    double* dM = upload(h, (size_t)NAO * NAO);\n"
-                "    h += (size_t)NAO * NAO;\n"
-                "    if (!dM) { std::fprintf(stderr, \"M upload failed\\n\"); "
-                "return 1; }\n"
-                "    double* dG = nullptr;\n"
-                "    CHECK(devMalloc(&dG, (size_t)NATOM * 3 * sizeof(double)));\n"
-                "    std::vector<double> Gh((size_t)NATOM * 3), "
-                "gfirst(Gh.size()), glast(Gh.size());\n"),
-            jab_launch=(
-                "        // the gjab chain (#619): every [p|q] launch above is "
-                "on this stream,\n"
-                "        // so each raised J_p row is complete; gjab reads it "
-                "on the card\n"
-                "        CHECK(devMemset(dG, 0, (size_t)NATOM * 3 * "
-                "sizeof(double)));\n"
-                "        ++g_memsets;\n" + calls),
-            jab_readback=(
-                "        CHECK(devMemcpy(Gh.data(), dG, Gh.size() * "
-                "sizeof(double),\n                        devMemcpyD2H));\n"
-                "        ++g_readbacks;\n"),
-            jab_keep=("        if (r == warmup) gfirst = Gh;\n"
-                      "        glast = Gh;\n"),
-            jab_free=(
-                "    out.insert(out.end(), gfirst.begin(), gfirst.end());\n"
-                "    out.insert(out.end(), glast.begin(), glast.end());\n"
-                "    for (int c = 0; c < NG; ++c) {\n"
-                "        CHECK(devFree(gd[c]));\n"
-                "        CHECK(devFree(gi[c]));\n"
-                "    }\n"
-                "    CHECK(devFree(dM));\n"
-                "    CHECK(devFree(dG));\n"),
-            jab_counts=(
-                "    std::printf(\"fj-gjab classes %d uploads_gjab %d "
-                "gjab_launches %d \"\n                \"g_memsets %d "
-                "g_readbacks %d\\n\", NG, uploads_gjab,\n                "
-                "gjab_launches, g_memsets, g_readbacks);\n"),
-        )
-
-    return ChainTail(tuple((x.ns, x.kernel) for x in xs), text, tuple(parts),
-                     n_atom * 3)
+    rows = bra_rows(plan)
+    buffers: dict[str, np.ndarray] = {"M": Dm}
+    steps = []
+    for c, x in enumerate(xs):
+        n, d = x.n_rec, x.data
+        f, i = f"gd{c}", f"gi{c}"
+        buffers[f] = np.concatenate([d[:, 0], d[:, 1:4].ravel(),
+                                     d[:, 4:7].ravel(), d[:, 7], d[:, 8],
+                                     d[:, 9]])
+        buffers[i] = as_exact_int(np.concatenate(
+            [x.ints[:, k] for k in range(GJAB_INTS)]))
+        grid, block = launch_shape(n, THREADS)
+        steps.append(Step(x.kernel, grid, block, {
+            "n_rec": n, "n_ao": n_ao, "n_atom": n_atom, "n_rows": rows[x.lp],
+            "zeta_ab": Ref(f), "XPA": Ref(f, n), "XPB": Ref(f, 4 * n),
+            "s": Ref(f, 7 * n), "ea_bra": Ref(f, 8 * n),
+            "eb_ket": Ref(f, 9 * n), "off_a": Ref(i), "off_b": Ref(i, n),
+            "row": Ref(i, 2 * n), "atom_a": Ref(i, 3 * n),
+            "atom_b": Ref(i, 4 * n), "Jp": jp_buffer(x.lp), "M": "M",
+            "G": G}))
+    steps[0] = replace(steps[0], zero=(G,))
+    return Tail(tuple(x.kernel for x in xs), buffers, tuple(steps), G,
+                (n_atom, 3))
 
 
-def gjab_read_back(drv: Driver, raw: np.ndarray, n_atom: int
+def gjab_read_back(drv: Driver, ran: Sequenced, n_atom: int
                    ) -> tuple[list[dict[int, np.ndarray]], np.ndarray]:
-    """A gjab chain driver's output: `([run][lp] -> J_p, G[run][n_atom][3])`."""
-    assert drv.tail is not None and drv.tail.n_output == n_atom * 3
-    tail = raw[raw.size - RUNS * n_atom * 3:]
-    return read_back(drv, raw), tail.reshape(RUNS, n_atom, 3)
+    """A gjab chain's output: `([run][lp] -> J_p, G[run][n_atom][3])`."""
+    assert drv.tail is not None and drv.tail.shape == (n_atom, 3)
+    return read_back(drv, ran), np.array(read_back_tail(drv, ran))

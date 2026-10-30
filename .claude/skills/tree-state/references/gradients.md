@@ -39,7 +39,7 @@ nor in `KERNEL_GEN_CMD`; 48 + 40 goldens (`test_emit_grad.py`,
 `test_emit_grad_k.py`, every other default `gk` unit through `(ff|ff)`
 pinned in `test/golden/gk_digests.json`).
 **On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`
--- on the shared runner since #659, not yet run on a card --, 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
+-- on the shared runner since #659, which ran on both cards on 2026-10-30 --, 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
 `gk` on H₂O/STO-3G only, against the host, 9 passed per card; worst
 3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060 XT (`gt`,
 cc-pVDZ), under `1e-13`. **`gs`, `gt`, `gv` through (ff) on both cards**
@@ -144,7 +144,8 @@ both arches; `measure.sh check` holds the floor to the rows): unrolled
 unit fits both (worst `gjab_33` 6,352 / 5,424 B, under 3 s). **The chain
 on the card** (`test_gjab_chain_ondevice.py`; `grad_driver.raised_plan`
 and `gjab_tail` on `plan_driver.driver`'s new `tail=` slot,
-`plan_driver.ChainTail`): `DQ` on the card, read back, the J chain's
+`plan_driver.Tail`; a shared-runner sequence since #659, both cards
+2026-10-30): `DQ` on the card, read back, the J chain's
 plan keyed on its `Dmax`, every bra class raised by one, the raised
 `[p|q]` launched, then `gjab` reading `J_p` where it lies, in one process,
 no host `J_p`; against `host.coulomb_gradient` at `1e-13` of `max|G|`,
@@ -192,7 +193,7 @@ AUXMAX]` (#613: split as FreeBreakfast's `df_kernels.py`, LMAX the orbital
 for `la <= lb <= LMAX`, `lP <= AUXMAX`, `gmetric` for `lP <= lQ <=
 AUXMAX`), never in the bare default nor in `KERNEL_GEN_CMD`; 62 goldens,
 the 31 classes at L <= 4 (`test_emit_grad_df.py`). **On both cards**
-(`test_grad_df_device.py`, `slow`, on `grad_driver`'s program, on the shared runner since #659, not yet run on a card): DF-J of
+(`test_grad_df_device.py`, `slow`, on `grad_driver`'s program, on the shared runner since #659, which ran on both cards on 2026-10-30): DF-J of
 H₂O/STO-3G against the JKFIT s, p, d shells, worst 6.58e-15 of `max|G|`
 (RTX 3080) and 4.87e-15 (RX 9060 XT).
 **Through (ff|i) and (i|i) (#613), with a low-stack form** (`gradient.md`,
