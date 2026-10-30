@@ -3682,7 +3682,8 @@ RULES |= {
            "gradient.kernel_g1e": "the kernel is what this module checks",
            "gradient.kernel_gjab": "the kernel is what this module checks",
            "gradient.kernel_gk": "the kernel is what this module checks",
-           "gradient.kernel_ghj": "the kernel is what this module checks"}),
+           "gradient.kernel_ghj": "the kernel is what this module checks",
+           "gradient.kernel_ghk": "the kernel is what this module checks"}),
     "g1e_builder": _rule(
         "kernel_g1e.py: the S, T and V gradient kernels -- key -> IR, the "
         "per-axis `E` tables inlined (`e_fragment`), `V`'s `[t]^(0)` by the "
@@ -3717,6 +3718,14 @@ RULES |= {
         plan=RULES["hgp"].must_not["plan"],
         ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "ghk_builder": _rule(
+        "kernel_ghk.py: the exchange-energy gradient on the HGP recurrence "
+        "-- key -> IR, `kernel_hj`'s nest, staging and quartet scalars, one "
+        "VRR and the raised / lowered bra classes' HRRs (`hgp`)",
+        ("spec", "=ir", "hgp", "eri.fock.kernel_f", "eri.hjk.kernel_hj"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
 }
 RULE_OF |= {
     "gradient": "gradient_package",
@@ -3725,6 +3734,7 @@ RULE_OF |= {
     "gradient.kernel_g1e": "g1e_builder",
     "gradient.kernel_gjab": "gjab_builder",
     "gradient.kernel_gk": "gk_builder",
+    "gradient.kernel_ghk": "ghk_builder",
 }
 EDGES |= {k: frozenset(v) for k, v in {
     "gradient": (),
@@ -3742,14 +3752,20 @@ EDGES |= {k: frozenset(v) for k, v in {
                            "gradient.kernel_g1e", "ir", "mmd.e_fragment",
                            "mmd.kernel", "mmd.recurrence", "plan.schedule",
                            "plan.targets", "spec"),
+    "gradient.kernel_ghk": ("eri.fock.kernel_f", "eri.hjk.kernel_hj",
+                            "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+                            "spec"),
 }.items()}
 _GRAD_BUILDERS = ("gradient.kernel_g1e", "gradient.kernel_gjab",
                   "gradient.kernel_gk")
 RULES["driver"] = Rule(RULES["driver"].why + ", and the gradient ladder "
-                       "through `kernel_g1e`, `kernel_gjab`, `kernel_gk`",
-                       RULES["driver"].may | frozenset(_GRAD_BUILDERS),
+                       "through `kernel_g1e`, `kernel_gjab`, `kernel_gk`, "
+                       "`kernel_ghk`",
+                       RULES["driver"].may | frozenset(_GRAD_BUILDERS)
+                       | {"gradient.kernel_ghk"},
                        RULES["driver"].must_not)
-EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)
+EDGES["emit.__main__"] = (EDGES["emit.__main__"] | frozenset(_GRAD_BUILDERS)
+                          | {"gradient.kernel_ghk"})
 
 # #565: the RHF gradient assembled (`gradient.rhf`, its runners injected)
 # and the interpreted runners (`gradient.interpreted`, the J chain's
@@ -3952,6 +3968,28 @@ def test_the_gradient_builders_reach_neither_their_witness_nor_a_machine(
                        "emit", "performance.device"):
             hit = sorted(e for e in seen if _under(e, banned))
             assert not hit, f"{start} reaches {hit}"
+
+
+def test_the_hgp_exchange_gradient_builder_reaches_no_witness_nor_machine(
+        ) -> None:
+    # `kernel_ghk` is built on HGP (`kernel_hj`'s nest), not on the MMD
+    # fragments the other gradient builders share; it is interpreted
+    # against `gradient.host`, so neither that nor the AO layer may be its
+    # ancestor, nor the HGP pair stream.
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_ghk"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.recurrence", "eri.hjk.kernel_hj"} <= seen
+    for banned in ("plan", _REF, "ao", *_LEFT_AO, "gradient.host",
+                   "ir.interp", "emit", "performance.device",
+                   "eri.fock.launch_f", "eri.hjk.launch_hjk"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_ghk reaches {hit}"
 
 
 # ---------------------------------------------------------------------------

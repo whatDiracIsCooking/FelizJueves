@@ -157,6 +157,13 @@ for CUDA, `.hip` for HIP):
   units beside the J ladders, as `--grad-l` does, and
   is NEVER in the no-flag default nor in KERNEL_GEN_CMD.
 
+- the HGP exchange-gradient ladder, `--grad-hk-l [LMAX]`
+  (`gradient.kernel_ghk`): `--grad-k-l`'s classes, `dE_K/dR` by the HGP
+  recurrence, `ghk_{la}{lc}_{lb}{ld}` (1 bare: 16 units). Accepted
+  0..`GRAD_HK_L_MAX` = 2 (validated through (dd|dd), interpreted); above
+  it is a 2. It ADDS units beside the J ladders and is NEVER in the
+  no-flag default nor in KERNEL_GEN_CMD.
+
 - the DF gradient ladder, `--grad-df-l [LMAX] [--grad-df-aux-l AUXMAX]`
   (`felizjueves.gradient`), split as FreeBreakfast's `df_kernels.py` is
   (#613): LMAX the orbital `l` per shell, AUXMAX the aux `l`.
@@ -503,6 +510,7 @@ from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 from felizjueves.gradient.kernel_g1e import GRADIENT_1E, build_g1e_kernel
 from felizjueves.gradient.kernel_geri3 import build_geri3_kernel
+from felizjueves.gradient.kernel_ghk import build_ghk_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
@@ -558,6 +566,8 @@ DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
 DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
 GRAD_K_L_MAX = 3  # kernel_gk is validated through (ff|ff) (#618)
+DEFAULT_GRAD_HK_L = 1  # `--grad-hk-l` given bare: every s / p K class, 16 units
+GRAD_HK_L_MAX = 2  # kernel_ghk is validated through (dd|dd), interpreted
 DEFAULT_GRAD_DF_L = 1  # `--grad-df-l` given bare: orbital l <= 1
 DEFAULT_GRAD_DF_AUX_L = 2  # `--grad-df-aux-l` bare or omitted: aux l <= 2
 GRAD_DF_L_MAX = 3  # orbital l: the DF gradients are validated through f
@@ -909,6 +919,25 @@ def generate_grad_k(backend: str, arch: Arch, out: Path,
     """Emit `gk_{la}{lc}_{lb}{ld}` for every K class through `lmax` into
     `out`; return the paths."""
     kernels = [build_gk_kernel(c) for c in grad_k_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+def grad_hk_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """Every K class `(la, lc, lb, ld)`, each `l <= lmax`, over
+    `0..GRAD_HK_L_MAX`, `la` outermost (`grad_k_classes`' order)."""
+    if type(lmax) is not int or not 0 <= lmax <= GRAD_HK_L_MAX:
+        raise ValueError(f"--grad-hk-l {lmax!r} is outside "
+                         f"0..{GRAD_HK_L_MAX}")
+    r = range(lmax + 1)
+    return [(la, lc, lb, ld) for la in r for lc in r for lb in r for ld in r]
+
+
+def generate_grad_hk(backend: str, arch: Arch, out: Path,
+                     lmax: int) -> list[Path]:
+    """Emit `ghk_{la}{lc}_{lb}{ld}` for every K class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_ghk_kernel(c) for c in grad_hk_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1415,6 +1444,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
+            or args.grad_hk_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
@@ -1428,7 +1458,8 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --rys-metric-l / "
-              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
@@ -1516,6 +1547,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="AUXMAX")
     ap.add_argument("--grad-k-l", dest="grad_k_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_K_L, default=None, metavar="LMAX")
+    ap.add_argument("--grad-hk-l", dest="grad_hk_l", type=int, nargs="?",
+                    const=DEFAULT_GRAD_HK_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-l", dest="hess_l", type=int, nargs="?",
                     const=DEFAULT_HESS_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-k-l", dest="hess_k_l", type=int, nargs="?",
@@ -1594,6 +1627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
+            or args.grad_hk_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
@@ -1607,7 +1641,8 @@ def main(argv: Sequence[str] | None = None) -> int:
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --rys-metric-l / "
-              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
@@ -1636,6 +1671,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
+            or args.grad_hk_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
@@ -1648,7 +1684,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
               "--rys-metric-l / "
-              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
@@ -1718,6 +1755,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"emit: --grad-k-l {args.grad_k_l} is outside "
               f"0..{GRAD_K_L_MAX}: the exchange-gradient kernel is validated "
               "through (ff|ff) only", file=sys.stderr)
+        return 2
+    if (args.grad_hk_l is not None
+            and not 0 <= args.grad_hk_l <= GRAD_HK_L_MAX):
+        print(f"emit: --grad-hk-l {args.grad_hk_l} is outside "
+              f"0..{GRAD_HK_L_MAX}: the HGP exchange-gradient kernel is "
+              "validated through (dd|dd) only", file=sys.stderr)
         return 2
     if (args.grad_df_l is not None
             and not 0 <= args.grad_df_l <= GRAD_DF_L_MAX):
@@ -1832,6 +1875,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.grad_k_l is not None:  # beside the J chain, never by default
         written += generate_grad_k(args.backend, arch, args.out,
                                    args.grad_k_l)
+    if args.grad_hk_l is not None:  # beside the J chain, never by default
+        written += generate_grad_hk(args.backend, arch, args.out,
+                                    args.grad_hk_l)
     if args.grad_df_l is not None:  # beside the J chain, never by default
         written += generate_grad_df(
             args.backend, arch, args.out, args.grad_df_l,

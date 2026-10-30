@@ -12,6 +12,7 @@ from felizjueves.performance.measured_store import target_of
 from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,
+    GRADIENT_OFF_NATIVE,
     GRADIENT_TARGETS,
     HESSIAN_TARGETS,
     OPERATOR_OF,
@@ -319,8 +320,13 @@ def test_k_takes_order_one_in_its_hermite_pairing() -> None:
     d0 = Spec(Operator.COULOMB, 0, (2, 1, 1, 0), Target.K)
     assert Target.K in GRADIENT_TARGETS
     assert d1.key() == d0.key().replace("/d0/", "/d1/")
-    with pytest.raises(ValueError, match="derivative order 1 on target k.hgp"):
-        Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
+    # ... and on HGP too, an off-native d1 key beside J on HGP (gradient.kernel_ghk)
+    hgp = Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
+    assert hgp.key() == "coulomb/d1/(1,0|0,0)/b1/k.hgp/literal"
+    assert GRADIENT_OFF_NATIVE == {(Target.J, Engine.HGP),
+                                   (Target.K, Engine.HGP), (Target.T, Engine.HGP)}
+    with pytest.raises(ValueError, match="derivative order 1 on target k.rys"):
+        Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.RYS)
 
 
 def test_order_one_is_refused_on_a_non_native_engine() -> None:

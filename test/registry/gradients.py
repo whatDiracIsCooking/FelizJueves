@@ -14,6 +14,10 @@ CASES = [
     # gk: H2O/STO-3G and CO/cc-pVTZ's 256 classes on both cards (#618).
     *ladder("mmd", "k", 1, compile=range(5), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
+    # ghk, K at d1 on HGP: interpreted through (dd|dd), compiled at the s / p
+    # classes and the d classes test_emit_grad_hk.py names; no card yet.
+    *ladder("hgp", "k", 1, compile=(0, 1, 2, 3, 4, 6),
+            interpreted=range(9)),
     # The DF-J terms through (ff|i) and (i|i) on both cards (#613).
     *ladder("mmd", "metric", 1, compile=range(5), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
@@ -69,6 +73,8 @@ TESTS = {
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":
         Classes("mmd", "k", 1),
     "test/test_emit_hgp_grad.py::test_X_compiles_the_unit": Classes("hgp", "t", 1),
+    "test/test_emit_grad_hk.py::test_X_compiles_the_hgp_exchange_gradient_unit":
+        Classes("hgp", "k", 1),
     "test/test_grad_device.py::test_X_gradient_matches_the_host": ById(_GRAD),
     # #659's compile-only twins, the registry's compile tier (L <= 4)
     "test/test_grad_device.py::test_X_gradient_runners_compile": ById(

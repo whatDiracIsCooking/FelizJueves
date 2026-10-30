@@ -8,7 +8,10 @@ through (ff|i) and (i|i) since #613, `gs`, `gt`, `gv` through (ff)
 since #614, `gk` through `(ff|ff)` since #618 and the whole `gjab` chain
 (`DQ`, raised `[p|q]`, `gjab`) through (ff) since #619; which inputs, per kernel, in the tables below).
 The Coulomb gradient on the HGP recurrence (`ghj_`, "The Coulomb gradient
-on the HGP recurrence") is generated and interpreted only. This is
+on the HGP recurrence") is generated and interpreted only; the exchange
+gradient on it (`ghk`, "The exchange gradient on HGP") is interpreted
+through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`, on no
+card. This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -36,11 +39,12 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
 Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
-every other engine -- except two off-native pairs,
+every other engine -- except three off-native pairs,
 `spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
-recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`, and
+recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`,
 `T` on HGP ("The kinetic gradient on HGP", below), key
-`kinetic/d1/(la,lb)/b1/t.hgp/literal`. A gradient class is its integral's class, `am` the
+`kinetic/d1/(la,lb)/b1/t.hgp/literal`, and `K` on HGP ("The exchange
+gradient on HGP", below), key `coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
 d0 key is byte-identical. Unbatched, for each target's d0 reason. `K` at
@@ -320,6 +324,89 @@ one-electron three):
 `n_rec n_ao n_atom`, `zeta_ab pa_* pb_* [p_*: V] s_ab ea_bra eb_ket`,
 `off_a off_b atom_a atom_b`, `M[n_ao, n_ao]`, `[Z Cnuc: V]`,
 `G[n_atom, 3]`. For `V` the atoms are the nuclei.
+
+## The exchange gradient on HGP (`gradient/kernel_ghk.py`)
+
+`ghk_{la}{lc}_{lb}{ld}` writes the same `G` as `gk` -- `dE_K/dR`, `E_K =
+1/2 SUM D_ab D_cd (ac|bd)`, the bra derivative alone over every ordered
+quartet, `D` symmetric -- but on the Head-Gordon–Pople recurrence of
+`[Fock]` §3.1 instead of MMD's Hermite tower. Its key is `K` at d1 on
+`Engine.HGP` (`ghk_spec`), K's Hermite pairing `(la, lc | lb, ld)`, the
+HGP bra pair `(a, c)` exactly as `kernel_hk`'s.
+
+**The derivative as raised and lowered classes.** On contracted
+integrals
+
+    d/dA_k (ac|bd) = (a+1_k c|bd)_{2 alpha} - a_k (a-1_k c|bd)
+    d/dC_k (ac|bd) = (a c+1_k|bd)_{2 gamma} - c_k (a c-1_k|bd)
+
+where `_{2 alpha}` is the contraction with each primitive quartet weighted
+by twice its `A` exponent. The HRR (eq 28) is linear and its coefficients
+are geometry alone, so it holds for any per-primitive weight: each of the
+three contractions is an ordinary HGP boundary set. Per contracted quartet
+the kernel runs ONE VRR, `vrr_class(am) = (e_lo, la + lc + 1 - e_lo | lb,
+ld)` with `e_lo = max(la - 1, 0)`, whose targets cover every boundary
+needed; sums its ket primitives into `T(e, f)` per bra primitive pair;
+folds `T` into three contracted sets after the ket loop (`2 alpha T` over
+the `(la + 1, lc)` boundary, `2 gamma T` over `(la, lc + 1)`'s, `T` over
+the lowered classes'), so a weight multiplies once per bra primitive pair;
+then runs up to four HRRs (`hrr_classes`: `(la ± 1, lc)`, `(la, lc ± 1)`,
+the lowered only where the shell has a unit to lower), each on its own
+locals. The deposit is `W = M[a, b] M[c, d]` times the two derivative
+rows per axis, into six thread-private sums carried over the thread's
+kets, then six `AtomicAdd`s into `G[atom_a]`, `G[atom_c]`.
+
+**The rest is `kernel_hj`'s, imported**: the nest (`hgp_nest`, its quartet
+scalars in `eri/hgp_drive.py`'s operation order), the staged `|ac)`
+record (`kernel_f`'s `REC`, one block per bra pair, every thread copying
+it), one thread per contracted quartet, bra primitives outer. One class
+mode only (`ordered`'s: an orbit representative would move the bra's two
+centres), no lever, no screen (`gk`'s reason), one batch. Beside the
+record it reads `bra_exp[n_bra, k_ab, 2]` (`alpha`, `gamma`) and
+`bra_atom`; `gradient.host.hgp_exchange_launches` packs a class's
+launches, one per `(k_ab, k_cd)` pair of contraction degrees (a side is
+degree-uniform, `kernel_f.pack`'s rule).
+
+    params  n_bra n_ket k_ab k_cd n_ao n_atom (I32)
+            bra_prim[n_bra, k_ab, REC] bra_exp[n_bra, k_ab, 2] AB[n_bra, 3]
+            bra_ao bra_atom [n_bra, 2] (I32)
+            ket_prim[n_ket, k_cd, REC] [CD[n_ket, 3]: ld > 0]
+            ket_ao[n_ket, 2] (I32)
+            M[n_ao, n_ao]  G[n_atom, 3] (OUT, AtomicAdd-ed, zeroed by the caller)
+
+**Checked** (`test_kernel_ghk.py`), interpreted against
+`host.exchange_gradient` (MMD: another recurrence, another order), gate
+`16 eps` of the host's `absolute=True` twin, `gk`'s gate unchanged: every
+K class with each `l <= 1` on the two-atom s, p basis and every class
+with a d shell through `(dd|dd)` on the two-atom s, p, d basis (L + 1 > 4
+`slow`), worst 4.4 eps (`(ss|ss)`), 0.4 eps at `(dd|dd)`; the 16 s, p
+classes summed to the whole `dE_K` and translationally invariant; a
+mixed-degree basis (1, 2, 3 primitives) cut into several launches a
+class; 1, 2 and 32 threads a block. Against libcint (`slow`): `(dd|dd)` on
+CO/cc-pVTZ, all 256 ordered quartets, against the tracked
+`int2e_ip1_cart` witness (`manifest.k_gradient`) within `1e-12` of the
+whole `max|G|` (that test's gate).
+
+**Emitted and compiled** (`test_emit_grad_hk.py`): `python -m
+felizjueves.emit --grad-hk-l [LMAX]` (1 bare, 16 units; accepted 0..2,
+exit 2 above), never in the bare default nor in `KERNEL_GEN_CMD`; goldens
+`test/golden/{cuda,hip}/ghk_*` for the 16 s, p classes, 32 files. nvcc
+(`sm_86`) and hipcc (`gfx1200`) compile every golden and the d classes `(ds|ss)`, `(sd|ss)`,
+`(dp|ps)`, `(dd|ss)`, `(dd|pp)` (L + 1 > 4 `slow`), each alone under a
+600 s cap, no warning in generated text (2026-10-30, a 4-core cloud
+container, no sccache: the s, p units about 2 s each on nvcc, at most
+14 s on hipcc; `ghk_22_11` 11.6 s / 44 s).
+**`ghk_22_22` did not compile within 600 s** (ptxas on the straight-line
+unit), so `(dd|dd)` is interpreted and libcint-witnessed but not in the
+compile set.
+
+**Not done**: no card has run it; nothing measured (registers, stack,
+clock); the unit is straight-line, so its text grows with the raised
+classes' HRRs and nothing rolled or low-stack is built; nothing above
+`(dd|dd)` is built or checked, and `(dd|dd)` itself does not compile in
+600 s (a rolled form, `gk`'s #618 move, is the follow-up); not wired into
+`gradient.rhf`'s
+interpreted runners (`gk` stays the default exchange term).
 
 ## The generator
 
@@ -651,6 +738,10 @@ hipcc, 2026-10-30). `S` and `V` on HGP stay refused at d1.
 
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
   emitted, not compiled, not on a card.
+- `ghk`, the exchange gradient on HGP, is interpreted through `(dd|dd)`
+  and compiled by nvcc and hipcc through `(dd|pp)` only (`(dd|dd)` over
+  600 s on nvcc); no card, no measurement ("The
+  exchange gradient on HGP").
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
   (ff), #614), `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618) and the
