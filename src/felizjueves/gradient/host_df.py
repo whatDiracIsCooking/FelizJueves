@@ -6,6 +6,7 @@ integral `(mn|P)`.
     eri3_gradient(basis, aux, Gam, nuclei, *, pq)  -> G  SUM_mnP Gam_mnP d(mn|P)/dR
     metric_records(cls, aux, nuclei)               -> gmetric's extra arrays
     eri3_records(cls, basis, aux, nuclei)          -> geri3's extra arrays
+    eri3_ip1(basis, aux, *, pq)                    -> X  (nabla m n|P), uncontracted
 
 `G` is `n_atom x 3`, as in `gradient.host`: the derivative of every function
 on atom `A`, summed. A DF-J energy gradient is the two together,
@@ -323,6 +324,67 @@ def eri3_gradient(basis: Basis, aux: Basis, Gam, nuclei: Sequence[Nucleus],
                 _add(G, rows[j], gB, s)
                 _add(G, arows[n], gC, s)
     return G
+
+
+def eri3_ip1(basis: Basis, aux: Basis, *, pq: PQ,
+             cells: Sequence[tuple[int, int, int]] | None = None
+             ) -> list[list[list[list[float]]]]:
+    """The UNCONTRACTED d1 integrals in libcint's `int3c2e_ip1` form (#692):
+
+        X[k][m][n][P] = (nabla_k m n | P) = -d(mn|P) / dA_k,
+
+    `A` the centre of `m`, indexed `[3][n_ao][n_ao][n_aux]`. Over `cells`
+    (default every `i <= j` row-major, aux inner, as `eri3_gradient`), each
+    writing its `(m, n)` slot by the `dA` rule and its `(n, m)` slot by the
+    `dB` rule; a diagonal shell pair `i == j` writes the `dA` slot of every
+    `(m, n)` of the shell, which is all of them. An entry no listed cell
+    owns is 0. The aux centre needs no table of its own: by translational
+    invariance of each integral,
+
+        (mn | nabla_k P) = -X[k][m][n][P] - X[k][n][m][P]
+
+    (`int3c2e_ip2`), which the caller forms."""
+    sh, ash = basis.shells, aux.shells
+    nao, naux = basis.n_ao, aux.n_ao
+    X = [[[[0.0] * naux for _ in range(nao)] for _ in range(nao)]
+         for _ in range(3)]
+    if cells is None:
+        cells = [(i, j, n) for i in range(len(sh)) for j in range(i, len(sh))
+                 for n in range(len(ash))]
+    for i, j, n in cells:
+        if not (0 <= i <= j < len(sh) and 0 <= n < len(ash)):
+            raise ValueError(f"cell ({i}, {j} | {n}) is not i <= j over "
+                             "the two bases")
+        sa, sb, sp = sh[i], sh[j], ash[n]
+        oa, ob, op = basis.offsets[i], basis.offsets[j], aux.offsets[n]
+        ca, cb, cq = cartesians(sa.l), cartesians(sb.l), cartesians(sp.l)
+        ts, taus = hermite_order(sa.l + sb.l + 1), hermite_order(sp.l)
+        for pp in primitive_pairs(sa, sb):
+            alpha, beta = sa.exponents[pp.i], sb.exponents[pp.j]
+            sab = (sa.coefficients[pp.i] * sb.coefficients[pp.j]
+                   * (math.pi / pp.zeta) ** 1.5)
+            ab = _Pair(pp.zeta, pp.P, sa.centre, sb.centre, sa.l, sb.l,
+                       alpha, beta)
+            for c in aux_records(sp):
+                cc = _Center(c.alpha, sp.l)
+                R = (pp.P[0] - c.A[0], pp.P[1] - c.A[1], pp.P[2] - c.A[2])
+                theta = math.sqrt(pp.zeta * c.alpha / (pp.zeta + c.alpha))
+                m = [[pq(t, tau, R, theta) for tau in taus] for t in ts]
+                eq = [_hermite(cc.e(x), taus) for x in cq]
+                s = sab * c.s
+                for ia, a in enumerate(ca):
+                    for ib, b in enumerate(cb):
+                        for k in range(3):
+                            dA = _hermite(ab.dA(a, b, k), ts)
+                            dB = None if i == j else _hermite(
+                                ab.dB(a, b, k), ts)
+                            for q, e in enumerate(eq):
+                                X[k][oa + ia][ob + ib][op + q] -= (
+                                    s * _contract(dA, m, e))
+                                if dB is not None:
+                                    X[k][ob + ib][oa + ia][op + q] -= (
+                                        s * _contract(dB, m, e))
+    return X
 
 
 def metric_records(cls: MetricClass, aux: Basis,

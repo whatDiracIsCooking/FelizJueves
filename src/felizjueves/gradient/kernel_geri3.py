@@ -185,6 +185,9 @@ def _class(cls: Spec | tuple[int, int, int]) -> tuple[int, int, int]:
         raise ValueError(f"{spec.key()} is not a d1 Target.ERI3 key")
     if spec.levers:
         raise ValueError(f"{spec.key()}: the gradient kernels take no levers")
+    if spec.uncontracted:
+        raise ValueError(f"{spec.key()} is the uncontracted form: "
+                         "kernel_xeri3 builds it")
     la, lb, lP = spec.am
     return la, lb, lP
 

@@ -28,6 +28,8 @@ the generated kernels
     kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}
     kernel_hgeri3.py   Target.ERI3 at d1 on the HGP engine: hgeri3_{la}{lb}{lP},
                        the Cartesian rule on all three centres by VRR/HRR
+    kernel_xeri3.py    Target.ERI3 at d1, uncontracted (#692): xeri3_{la}{lb}{lP},
+                       the raw (nabla m n|P) of one aux block, not a contraction
     kernel_hgmetric.py Target.METRIC at d1 on the HGP engine:
                      hgmetric_{lP}{lQ}, the Cartesian rule on the HGP VRR
     rhf.py           dE_RHF/dR assembled from per-term runners (#565):
@@ -45,6 +47,10 @@ which is what every term of an SCF energy gradient is (`M = D` for `T`,
 and the half are the caller's). The DF terms contract an aux matrix
 (`SUM_PQ W_PQ d(P|Q)/dR`) and a three-index tensor (`SUM_mnP Gam_mnP
 d(mn|P)/dR`) the same way (`host_df`'s module docstring has DF-J's).
+ONE KERNEL IS THE EXCEPTION (#692): `kernel_xeri3` writes the
+three-center derivative integrals themselves, `(nabla_k m n|P)` over one
+aux block, because a DF Hessian contracts them in more ways than one
+kernel can fuse (`Spec.uncontracted`).
 The rule is McMurchie & Davidson's, the one `experimental/mmd/gradient`
 checked against libcint and finite differences:
 

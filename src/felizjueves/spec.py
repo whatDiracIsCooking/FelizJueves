@@ -306,6 +306,16 @@ three centres (`hessian.kernel_d2eri3`), `am` the triple, so
 ``coulomb/d2/(0,1|2)/b1/eri3/literal`` differs from the d1 key in one
 segment.
 
+ONE d1 CLASS IS UNCONTRACTED (#692). `ERI3` at d1 on MMD, with no lever,
+may carry `uncontracted=True`: its kernel writes the derivative integrals
+themselves, `X[k, m, n, P] = (nabla_k m n|P)` (libcint's `int3c2e_ip1`), not
+their contraction (`gradient.kernel_xeri3`), because a DF Hessian's
+derivative Fock matrices contract them in more ways than one kernel can
+fuse. The key spells it in the `d` segment, ``coulomb/d1u/(0,1|2)/b1/eri3/
+literal``, so it differs from the contracted d1 key in that segment alone;
+every other spec refuses it (`_UNCONTRACTED_REFUSAL`), and every
+pre-existing key is byte-identical.
+
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
 total angular momentum, L = l1 + l2 + l3 + l4 (the [p|q] class has
@@ -661,6 +671,17 @@ _HESSIAN_REFUSAL = (
 )
 
 
+# THE UNCONTRACTED FORM (#692) is legal on one slot: `ERI3` at d1 on MMD,
+# no lever (`gradient.kernel_xeri3`, the raw `(nabla m n|P)` a DF Hessian's
+# derivative Fock matrices contract by BLAS). Every other d1 kernel writes
+# its contraction, and nobody has asked for another target's raw tensor.
+_UNCONTRACTED_REFUSAL = (
+    "the uncontracted form is built for ERI3 at derivative order 1 on the "
+    "MMD engine only, with no lever (gradient.kernel_xeri3); every other "
+    "kernel writes a contraction"
+)
+
+
 def is_batch_count(n: object) -> bool:
     """1, or a positive multiple of 3 ([JEngine, v2, §5])."""
     return type(n) is int and (n == 1 or (n > 0 and n % 3 == 0))
@@ -689,6 +710,10 @@ class Spec:
     # native engine (`NATIVE_ENGINE`), so after construction it is always an
     # `Engine`; the key spells it only when it is not the native one.
     engine: Engine | None = None
+    # The UNCONTRACTED form (#692): the derivative integrals themselves, not
+    # their contraction -- legal on `Target.ERI3` at d1 on MMD alone, with
+    # no lever (`_UNCONTRACTED_REFUSAL`); the key spells it ``d1u``.
+    uncontracted: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.operator, Operator):
@@ -776,6 +801,18 @@ class Spec:
                 f"{self.target}: "
                 f"{_PAIR_BATCH_REFUSAL[self.target]}"
             )
+        if type(self.uncontracted) is not bool:
+            raise ValueError(
+                f"uncontracted {self.uncontracted!r} is not a bool")
+        if self.uncontracted and not (
+            self.target is Target.ERI3 and self.derivative_order == 1
+            and self.engine is Engine.MMD and not self.levers
+        ):
+            raise ValueError(
+                f"uncontracted on d{self.derivative_order} target "
+                f"{self.target_slot}"
+                f"{' with levers' if self.levers else ''}: "
+                f"{_UNCONTRACTED_REFUSAL}")
 
     @property
     def target_slot(self) -> str:
@@ -844,7 +881,8 @@ class Spec:
             cls = f"({la},{lb})"
         levers = "+".join(self.levers) or "literal"
         return (
-            f"{self.operator}/d{self.derivative_order}/{cls}/"
+            f"{self.operator}/d{self.derivative_order}"
+            f"{'u' if self.uncontracted else ''}/{cls}/"
             f"b{self.n_batches}/{self.target_slot}/{levers}"
         )
 
@@ -861,7 +899,8 @@ class Spec:
         if not body:
             return self
         return Spec(self.operator, self.derivative_order, self.am,
-                    self.target, rest, self.n_batches, self.engine)
+                    self.target, rest, self.n_batches, self.engine,
+                    self.uncontracted)
 
 
 def lever_provenance(name: str) -> str:

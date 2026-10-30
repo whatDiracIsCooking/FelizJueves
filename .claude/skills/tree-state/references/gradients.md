@@ -269,7 +269,41 @@ Ladder `--hgp-grad-eri3-l [LMAX]` (s and p, 0..1, bare 1: 6 units), never
 in the bare default nor in `KERNEL_GEN_CMD`; 12 goldens
 (`test_emit_hgp_grad_df.py`), compiled by nvcc and hipcc warning-free on a
 device-less container (2026-10-30). **No card, no device harness**, not
-measured. **The DF-K
+measured. **The UNCONTRACTED `(mn|P)` derivative integrals, interpreted
+and compiled only** (#692; `gradient.md`, "The uncontracted three-center derivative"):
+`gradient/kernel_xeri3.py`'s `xeri3_{la}{lb}{lP}`, keyed
+`coulomb/d1u/(la,lb|lP)/b1/eri3/literal` (`Spec.uncontracted`, legal on
+MMD `ERI3` at d1 alone, no lever), writes `X[k, m, n, P - aux0] = (nabla_k
+m n|P)` -- libcint's `int3c2e_ip1`, no `Gam`, no atom reduction -- over
+the cells of one caller-chosen aux block, `X` `[3, n_ao, n_ao, n_blk]`,
+plain stores (each slot one cell's), zeroed by the kernel; the aux centre
+is the caller's, `-X - X^T` (`int3c2e_ip2`). `geri3`'s low-stack route at
+every class, one form. Host reference `host_df.eri3_ip1`, held to libcint
+live (`oracle` + `slow`): `int3c2e_ip1_cart` within 3.54e-14 of max on
+H₂O/cc-pVDZ with cc-pVDZ-JKFIT and 2.21e-14 on the aux-i system
+(`prim_spd_f`, AUX_I: orbital f, aux i), the identity against
+`int3c2e_ip2_cart` within 3.09e-14 / 1.95e-14, and through the tracked DF
+gradient witness contracted per class (3.91e-14 of `max|G|`, `slow`).
+Interpreted (`test_kernel_xeri3.py`): every class at L <= 4 within 4.66
+eps of the class's `max|X|` (gate 16), every ladder class above it through
+(ff|i) within 0.53 eps of the tower-twin scale, an aux block that is a
+strict subset of the cells (its slots the host's, every other entry
+untouched), and `X` contracted onto the atoms equal to `host_df.
+eri3_gradient` (another route on the aux centre). Ladder `--grad-dfx-l
+[LMAX] [--grad-dfx-aux-l AUXMAX]` (`--grad-df-l`'s three-center classes
+and limits, bare 9 units), never in the bare default nor in
+`KERNEL_GEN_CMD`; 18 goldens (`test_emit_grad_dfx.py`). **Compiled by
+nvcc and hipcc, no card**: the 9 bare-ladder units and (dd|g), (ff|i),
+(sf|i), 24 cases, warning-free (CUDA 13.0 `sm_86`, ROCm 7.2.4 `gfx1200`,
+device-less cloud container, 2026-10-30), and the card program's runners
+built (`test_xeri3_device.py`'s compile twins); (ff|i) at 13,536 B of
+`sm_86` stack (1,564 B spill stores) and 12,672 B of `gfx1200` scratch
+(ptxas / hipcc's resource remarks, one compile, not a sweep). Its device
+tests (H₂O/STO-3G whole and a strict block; the ladder through (ff|i) per
+aux `l`, `high_l`) are written and have not run on a card; their staging,
+run through the interpreter in place of the card, matches the host to
+1.2e-16 of max. Not measured.
+**The DF-K
 weights and the whole DF two-electron gradient are staged on the host**
 (#620; `gradient.md`, "The density-fitting gradients"):
 `host_df.df_k_stage` gives `E_K`, `Gam^K`, `W^K` from the occupied
