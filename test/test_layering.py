@@ -4399,6 +4399,55 @@ def test_the_rys1e_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
         assert not hit, f"kernel_rys reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The kinetic gradient on HGP, `Target.T` at d1 on `Engine.HGP`
+# (`gradient.kernel_hgt`): `kernel_hgp`'s VRR, HRR and kinetic combination
+# on six weighted contracted tables, `kernel_g1e`'s weight rule and atomics.
+# Checked in the interpreter against `gradient.host` and libcint, so neither
+# `gradient.host`, `ao`, the interpreter, a backend, a card nor `reference/`
+# may be its ancestor. The generator CLI writes its ladder (`--hgp-grad-l`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgt_builder": _rule(
+        "kernel_hgt.py: the kinetic-energy gradient on HGP -- key -> IR, "
+        "`kernel_hgp`'s VRR / HRR DAGs and kinetic combination on weighted "
+        "contracted tables, `kernel_g1e`'s weights and atomics",
+        ("spec", "=ir", "hgp.hrr", "hgp.vrr", "hgp.recurrence",
+         "=one_electron.kernel_hgp", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["gradient.kernel_hgt"] = "hgt_builder"
+EDGES["gradient.kernel_hgt"] = frozenset(
+    ("gradient.kernel_g1e", "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+     "one_electron.kernel_hgp", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP kinetic-gradient "
+                       "ladder through `kernel_hgt`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_hgt",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_hgt",))
+
+
+def test_the_hgt_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_hgt"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"one_electron.kernel_hgp", "gradient.kernel_g1e", "hgp.hrr",
+            "hgp.vrr"} <= seen
+    for banned in (_REF, "ao", "gradient.host", "ir.interp", "emit",
+                   "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hgt reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

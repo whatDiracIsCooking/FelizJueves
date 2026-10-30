@@ -155,6 +155,7 @@
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
+   "gradient.kernel_hgt",
    "hessian.kernel_d2eri3",
    "hessian.kernel_d2metric",
    "hessian.kernel_h1e",
@@ -1734,6 +1735,7 @@
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
+   "gradient.kernel_hgt",
    "gradient.rhf",
    "ir",
    "ir.interp",
@@ -1864,6 +1866,15 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
+   "spec"
+  ],
+  "gradient.kernel_hgt": [
+   "gradient.kernel_g1e",
+   "hgp.hrr",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
+   "one_electron.kernel_hgp",
    "spec"
   ],
   "gradient.rhf": [
@@ -2530,6 +2541,7 @@
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
+   "gradient.kernel_hgt",
    "hessian.kernel_d2eri3",
    "hessian.kernel_d2metric",
    "hessian.kernel_h1e",
