@@ -14,6 +14,10 @@ arithmetic. The rule this package establishes, and later tests rely on:
   `PYTHONPATH=test uv run --group oracle python -m oracle.generate --regenerate`
   -- the shape `felizjueves.performance.measured --remeasure` set. Its
   `oracle`-marked test rebuilds each fixture and asserts it is what is tracked.
+- `numeric` is the numerical golden store (#655, `test/golden/numeric/`):
+  plain `.npy` arrays keyed by registry case, their manifest, and `compare`,
+  the one helper a test calls against them. NumPy only, like `manifest`;
+  `generate --numeric` writes the arrays.
 
 A fixture is DATA WITH PROVENANCE, NOT THE RIGHT ANSWER: it records what
 libcint computed, with which versions, on which host and date. A drift between
