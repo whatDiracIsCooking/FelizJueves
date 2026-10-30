@@ -6,6 +6,9 @@
     gk_gradient(basis, nuclei, D, *, boys, lanes=)       gk_
     ghj_gradient(basis, nuclei, D, *, boys, threads=)    ghj_ (HGP J)
     ghj_class_gradient(basis, nuclei, D, cls, *, boys)   one ordered class
+    gf_launches(basis, nuclei)                           the fused F's stream
+    gf_pair(basis, atoms, a, b) / gf_run(am, diag, ...)  one record / launch
+    gf_gradient(basis, nuclei, D, *, boys, threads=)     gf_, dE_J - 1/2 dE_K
 
 Every term of the RHF gradient from the GENERATED kernels, with no compiler
 and no card: one launch per class into one zeroed `G` (the kernels'
@@ -32,6 +35,15 @@ arrays packed as `test/grad_driver.py` packs them for a card:
   `kernel_f.pack`, one launch per pair of contraction degrees (a packed
   side is degree-uniform) -- plus each bra pair's exponents and atoms.
   `interpreted_runners(coulomb="hgp")` runs it in place of the J chain.
+- `gf_{la}{lb}{lc}{ld}`, THE FUSED TWO-ELECTRON TERM (`gradient.kernel_gf`):
+  not one of `Runners`' terms but their sum, `dE_J - 1/2 dE_K`, in one
+  kernel per F class. `gf_launches` is its stream, built here from the
+  basis alone with nothing screened or pruned (the kernel has no screen):
+  every unordered shell pair written canonically (`launch_f`'s rule,
+  `la <= lb`, the lower index first on a tie), batched by `(la, lb)` and
+  contraction degree, each batch pair `I <= J` one launch of class
+  `(la_I, lb_I | la_J, lb_J)`, `diag = 1` exactly on `I == J` -- so every
+  unique quartet is met once, as `kernel_f`'s canonical half requires.
 
 BOYS IS INJECTED (`boys=`), as the interpreter requires: nothing here
 imports `reference/`. The interpreted `G` is the sum the card's `atomicAdd`s
@@ -41,6 +53,7 @@ not on a card.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from functools import cache
 from itertools import product
@@ -52,6 +65,7 @@ from felizjueves.eri.fock.kernel_f import pack
 from felizjueves.eri.hjk.walk_hjk import pair_record
 from felizjueves.eri.j_coulomb.drive import KernelJP
 from felizjueves.gradient import host
+from felizjueves.gradient import kernel_gf as GF
 from felizjueves.gradient.kernel_g1e import build_g1e_kernel, launch_shape
 from felizjueves.gradient.kernel_ghj import build_ghj_kernel
 from felizjueves.gradient.kernel_ghj import launch_shape as ghj_launch_shape
@@ -87,6 +101,11 @@ def _gk(am: tuple[int, int, int, int]) -> Kernel:
 @cache
 def _ghj(am: tuple[int, int, int, int]) -> Kernel:
     return build_ghj_kernel(am)
+
+
+@cache
+def _gf(am: tuple[int, int, int, int]) -> Kernel:
+    return GF.build_gf_kernel(am)
 
 
 def _pair_classes(basis: Basis) -> list[tuple[int, int]]:
@@ -248,6 +267,90 @@ def ghj_gradient(basis: Basis, nuclei: Sequence[Nucleus], D: Matrix, *,
     return G
 
 
+def gf_pair(basis: Basis, atoms: Sequence[int], a: int, b: int
+             ) -> GF.GPairRec:
+    """`kernel_gf`'s record of the ordered shell pair `(a, b)`: every
+    primitive pair, `i` outer (`walk_f.pair_record`'s rows, no pruning),
+    with its two exponents."""
+    sa, sb = basis.shells[a], basis.shells[b]
+    A, B = sa.centre, sb.centre
+    AB = tuple(u - v for u, v in zip(A, B, strict=True))
+    ab2 = sum(x * x for x in AB)
+    prims = []
+    for x, ca in zip(sa.exponents, sa.coefficients, strict=True):
+        for y, cb in zip(sb.exponents, sb.coefficients, strict=True):
+            p = x + y
+            P = tuple((x * u + y * v) / p for u, v in zip(A, B, strict=True))
+            U = ca * cb * (math.pi / p) ** 1.5 * math.exp(-x * y / p * ab2)
+            prims.append(GF.GPrimRec(
+                P, tuple(u - v for u, v in zip(P, A, strict=True)), p, U, x,
+                y))
+    return GF.GPairRec(AB, tuple(prims), (a, b),
+                       (basis.offsets[a], basis.offsets[b]),
+                       (atoms[a], atoms[b]))
+
+
+def gf_launches(basis: Basis, nuclei: Sequence[Nucleus]
+                ) -> list[tuple[tuple[int, int, int, int], int, GF.Packed,
+                                GF.Packed]]:
+    """The fused F gradient's launches, `(class, diag, bra, ket)` (module
+    docstring): every unique quartet of `basis` exactly once."""
+    sh = basis.shells
+    atoms = host.shell_atoms(basis, nuclei)
+    batches: dict[tuple[int, int, int], list[GF.GPairRec]] = {}
+    for i in range(len(sh)):
+        for j in range(i, len(sh)):
+            a, b = (i, j) if (sh[i].l, i) <= (sh[j].l, j) else (j, i)
+            key = (sh[a].l, sh[b].l,
+                   len(sh[a].exponents) * len(sh[b].exponents))
+            batches.setdefault(key, []).append(gf_pair(basis, atoms, a, b))
+    keys = sorted(batches)
+    packed = [GF.pack(batches[k]) for k in keys]
+    return [((*keys[i][:2], *keys[j][:2]), int(i == j), packed[i], packed[j])
+            for i in range(len(keys)) for j in range(i, len(keys))]
+
+
+def gf_run(am: tuple[int, int, int, int], diag: int, bra: GF.Packed,
+           ket: GF.Packed, n_atom: int, D: np.ndarray, G: np.ndarray, *,
+           boys: Boys, threads: int = 4,
+           kernel: Kernel | None = None) -> np.ndarray:
+    """One `gf_` launch of class `am` over packed sides `bra` and `ket`,
+    `G` (`n_atom x 3`) carried in and returned; `kernel` replaces the
+    class's built one (a test's mutation)."""
+    kern = _gf(tuple(am)) if kernel is None else kernel
+    arrs = {"n_bra": bra.n, "n_ket": ket.n, "k_ab": bra.degree,
+            "k_cd": ket.degree, "n_atom": n_atom, "n_ao": D.shape[0],
+            "diag": diag, "bra_prim": bra.prim, "AB": bra.sep,
+            "bra_sh": bra.sh, "bra_ao": bra.ao, "bra_at": bra.at,
+            "ket_prim": ket.prim, "CD": ket.sep, "ket_sh": ket.sh,
+            "ket_ao": ket.ao, "ket_at": ket.at, "D": D, "G": G}
+    args = {}
+    for p in kern.params:
+        v = arrs[p.name]
+        if p.array and not isinstance(v, np.ndarray):
+            v = np.asarray(v, dtype=np.int32 if p.type is Scalar.I32
+                           else np.float64)
+        args[p.name] = v
+    grid, block = GF.launch_shape(bra.n, threads)
+    return Interpreter(kern, launch=Launch(grid, block, 1),
+                       boys=boys).run(**args)["G"]
+
+
+def gf_gradient(basis: Basis, nuclei: Sequence[Nucleus], D: Matrix, *,
+                boys: Boys, threads: int = 4) -> np.ndarray:
+    """`dE_J/dR - 1/2 dE_K/dR` from the fused `gf_` kernels, every launch
+    of `gf_launches` into one zeroed `G`."""
+    G = _zero(nuclei)
+    Dx = np.asarray(D, dtype=np.float64)
+    if Dx.shape != (basis.n_ao, basis.n_ao) or not np.array_equal(Dx, Dx.T):
+        raise ValueError(f"D is not a symmetric {basis.n_ao} x {basis.n_ao} "
+                         "matrix (the derived weights assume D_ab = D_ba)")
+    for am, diag, pb, pk in gf_launches(basis, nuclei):
+        G = gf_run(am, diag, pb, pk, len(nuclei), Dx, G, boys=boys,
+                   threads=threads)
+    return G
+
+
 def interpreted_runners(*, boys: Boys, lanes: int = 4,
                         coulomb: str = "mmd") -> Runners:
     """Every electronic term of `gradient.rhf` from the interpreted kernels
@@ -265,5 +368,6 @@ def interpreted_runners(*, boys: Boys, lanes: int = 4,
                                              lanes=lanes))
 
 
-__all__ = ["g1e_gradient", "ghj_class_gradient", "ghj_gradient",
+__all__ = ["g1e_gradient", "gf_gradient", "gf_launches", "gf_pair", "gf_run",
+           "ghj_class_gradient", "ghj_gradient",
            "gjab_gradient", "gk_gradient", "interpreted_runners"]

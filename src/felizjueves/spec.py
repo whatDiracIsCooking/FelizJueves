@@ -229,7 +229,7 @@ layer, which is MMD machinery keyed on `total_am`, refuses an F spec
 A GRADIENT CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 1`. The
 field reserved above is the second to be widened: `DERIVATIVE_ORDERS` is
 `(0, 1)`, and order 1 is legal on `GRADIENT_TARGETS` alone -- `S`, `T`,
-`V`, `JAB` and `K`, each on MMD -- every other target
+`V`, `JAB` and `K`, each on MMD, and `F` on HGP -- every other target
 refusing it (`_GRADIENT_REFUSAL`). A d1 kernel does not write the derivative integrals
 (a `[n_atom, 3, n_ao, n_ao]` tensor); it writes their CONTRACTION with a
 matrix `M`, `G[atom, k] += SUM_mn M_mn dX_mn/dR_{atom,k}`, which is what an
@@ -271,6 +271,10 @@ translational invariance). And
 `ERI3` on `Engine.HGP`, ``coulomb/d1/(0,1|2)/b1/eri3.hgp/literal``
 (`gradient.kernel_hgeri3`: the three-center DF gradient, the Cartesian rule
 on all three centres by `kernel_hgp`'s VRR and the bra HRR).
+`F` at d1 is the fused Fock build's two-electron energy
+gradient, `dE_J - 1/2 dE_K`, its `am` the AO order as at d0, on F's
+native HGP engine (`gradient.kernel_gf`):
+``coulomb/d1/(1,0|0,0)/b1/f/literal``.
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
@@ -599,11 +603,14 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # `K`, the exchange energy's bra derivative (`gradient.kernel_gk`), the
 # density-fitting `METRIC` and `ERI3`, and `DQ`, the ket pre-contraction
 # differentiated on each ket centre, which the Coulomb Hessian's bra-ket
-# term reads (`hessian.kernel_hdq`). Each on its native engine, MMD, and
-# `J`, `K`, `T`, `S`, `V` and `ERI3` on HGP too (`GRADIENT_OFF_NATIVE`).
+# term reads (`hessian.kernel_hdq`); and `F`, the fused Fock build's
+# two-electron energy, `dE_J - 1/2 dE_K` in one kernel per class
+# (`gradient.kernel_gf`). Each on its native engine (MMD; HGP for `F`),
+# and `J`, `K`, `T`, `S`, `V` and `ERI3` on HGP too
+# (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
-                              Target.DQ))
+                              Target.DQ, Target.F))
 
 # The (target, engine) pairs off the native engine whose first derivative is
 # built: `J` on HGP, the Coulomb energy's bra derivative over every ordered
@@ -624,7 +631,7 @@ GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
 
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
-    "the MMD engine, and for J, K, T, S, V and ERI3 on the HGP engine "
+    "the MMD engine, and for F, J, K, T, S, V and ERI3 on the HGP engine "
     "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"
 )

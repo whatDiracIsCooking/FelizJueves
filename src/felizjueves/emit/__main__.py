@@ -182,6 +182,17 @@ for CUDA, `.hip` for HIP):
   it is a 2. It ADDS units beside the J ladders and is NEVER in the
   no-flag default nor in KERNEL_GEN_CMD.
 
+- the fused Fock gradient ladder, `--grad-f-l [LMAX]`
+  (`gradient.kernel_gf`): for every F class of milestone 12's ladder
+  (`fock_classes`: AO order, canonical, each `l <= LMAX`; 1 when the flag
+  is given bare, the six classes through (pp|pp)), `gf_{la}{lb}{lc}{ld}`,
+  `dE_J/dR - 1/2 dE_K/dR` on all four centres by the HGP recurrence.
+  Accepted 0..`GRAD_F_L_MAX` = 2 (validated through (dd|dd), interpreted);
+  above it is a 2. It ADDS units beside the J ladders, as `--grad-k-l`
+  does, and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every
+  name starts `gf_`, so none collides with another ladder's (the d0 F
+  units are `f_...`, on the separate `--fock-l` path).
+
 - the DF gradient ladder, `--grad-df-l [LMAX] [--grad-df-aux-l AUXMAX]`
   (`felizjueves.gradient`), split as FreeBreakfast's `df_kernels.py` is
   (#613): LMAX the orbital `l` per shell, AUXMAX the aux `l`.
@@ -538,6 +549,7 @@ from felizjueves.eri.k_exchange.kernel_k import build_k_kernels
 from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 from felizjueves.gradient.kernel_g1e import GRADIENT_1E, build_g1e_kernel
 from felizjueves.gradient.kernel_geri3 import build_geri3_kernel
+from felizjueves.gradient.kernel_gf import build_gf_kernel
 from felizjueves.gradient.kernel_ghk import build_ghk_kernel
 from felizjueves.gradient.kernel_ghv import build_ghv_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
@@ -599,6 +611,8 @@ DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
 GRAD_K_L_MAX = 3  # kernel_gk is validated through (ff|ff) (#618)
 DEFAULT_GRAD_HK_L = 1  # `--grad-hk-l` given bare: every s / p K class, 16 units
 GRAD_HK_L_MAX = 2  # kernel_ghk is validated through (dd|dd), interpreted
+DEFAULT_GRAD_F_L = 1  # `--grad-f-l` given bare: the F classes through (pp|pp), 6 units
+GRAD_F_L_MAX = 2  # kernel_gf is validated through (dd|dd) interpreted
 DEFAULT_GRAD_DF_L = 1  # `--grad-df-l` given bare: orbital l <= 1
 DEFAULT_GRAD_DF_AUX_L = 2  # `--grad-df-aux-l` bare or omitted: aux l <= 2
 GRAD_DF_L_MAX = 3  # orbital l: the DF gradients are validated through f
@@ -1002,6 +1016,24 @@ def generate_grad_hk(backend: str, arch: Arch, out: Path,
     """Emit `ghk_{la}{lc}_{lb}{ld}` for every K class through `lmax` into
     `out`; return the paths."""
     kernels = [build_ghk_kernel(c) for c in grad_hk_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+def grad_f_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """The fused F classes (`fock_classes`, milestone 12's ladder: AO order,
+    `la <= lb`, `lc <= ld`, bra pair <= ket pair) whose shells are all
+    `l <= lmax`, over `0..GRAD_F_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= GRAD_F_L_MAX:
+        raise ValueError(f"--grad-f-l {lmax!r} is outside 0..{GRAD_F_L_MAX}")
+    return fock_classes(lmax)
+
+
+def generate_grad_f(backend: str, arch: Arch, out: Path,
+                    lmax: int) -> list[Path]:
+    """Emit `gf_{la}{lb}{lc}{ld}` for every F class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_gf_kernel(c) for c in grad_f_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1511,6 +1543,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
             or args.grad_hk_l is not None
+            or args.grad_f_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
@@ -1525,6 +1558,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--grad-f-l / "
               "--grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
@@ -1620,6 +1654,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_GRAD_K_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-hk-l", dest="grad_hk_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_HK_L, default=None, metavar="LMAX")
+    ap.add_argument("--grad-f-l", dest="grad_f_l", type=int, nargs="?",
+                    const=DEFAULT_GRAD_F_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-l", dest="hess_l", type=int, nargs="?",
                     const=DEFAULT_HESS_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-k-l", dest="hess_k_l", type=int, nargs="?",
@@ -1699,6 +1735,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
             or args.grad_hk_l is not None
+            or args.grad_f_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
@@ -1713,6 +1750,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--grad-f-l / "
               "--grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
@@ -1743,6 +1781,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
             or args.grad_hk_l is not None
+            or args.grad_f_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_one_e_l is not None
@@ -1756,6 +1795,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--grad-f-l / "
               "--grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
@@ -1838,6 +1878,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not 0 <= args.grad_hk_l <= GRAD_HK_L_MAX):
         print(f"emit: --grad-hk-l {args.grad_hk_l} is outside "
               f"0..{GRAD_HK_L_MAX}: the HGP exchange-gradient kernel is "
+              "validated through (dd|dd) only", file=sys.stderr)
+        return 2
+    if args.grad_f_l is not None and not 0 <= args.grad_f_l <= GRAD_F_L_MAX:
+        print(f"emit: --grad-f-l {args.grad_f_l} is outside "
+              f"0..{GRAD_F_L_MAX}: the fused Fock gradient kernel is "
               "validated through (dd|dd) only", file=sys.stderr)
         return 2
     if (args.grad_df_l is not None
@@ -1961,6 +2006,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.grad_hk_l is not None:  # beside the J chain, never by default
         written += generate_grad_hk(args.backend, arch, args.out,
                                     args.grad_hk_l)
+    if args.grad_f_l is not None:  # beside the J chain, never by default
+        written += generate_grad_f(args.backend, arch, args.out,
+                                   args.grad_f_l)
     if args.grad_df_l is not None:  # beside the J chain, never by default
         written += generate_grad_df(
             args.backend, arch, args.out, args.grad_df_l,

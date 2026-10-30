@@ -1,5 +1,6 @@
 """Analytic nuclear gradients by McMurchie-Davidson (and, for `J`, `K`, `S`,
-`T` and `V`, by Head-Gordon-Pople too): host references and the generated kernels
+`T`, `V` and the fused `F`, by Head-Gordon-Pople too): host references and
+the generated kernels
 (`Spec.derivative_order = 1`).
 
     host.py          the references, pure Python, on the AO layer
@@ -17,6 +18,8 @@
                      kinetic energy's gradient on kernel_hgp's route
     kernel_ghv.py    Target.V on Engine.HGP at d1: ghv_{la}{lb}, the
                      nuclear attraction's gradient on kernel_hgp's route
+    kernel_gf.py     Target.F at d1, on HGP: gf_{la}{lb}{lc}{ld}, the fused
+                     Fock build's dE_J - 1/2 dE_K, all four centres
     kernel_ghk.py    Target.K on Engine.HGP at d1: ghk_{la}{lc}_{lb}{ld},
                      the exchange energy's bra derivative on the same
                      recurrence, kernel_hj's nest

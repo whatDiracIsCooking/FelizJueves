@@ -154,6 +154,7 @@
    "eri.kernel_schwarz",
    "gradient.kernel_g1e",
    "gradient.kernel_geri3",
+   "gradient.kernel_gf",
    "gradient.kernel_ghk",
    "gradient.kernel_ghv",
    "gradient.kernel_gjab",
@@ -1765,6 +1766,7 @@
    "gradient.host_df",
    "gradient.kernel_g1e",
    "gradient.kernel_geri3",
+   "gradient.kernel_gf",
    "gradient.kernel_ghj",
    "gradient.kernel_ghk",
    "gradient.kernel_ghv",
@@ -1826,6 +1828,18 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
+   "spec"
+  ],
+  "gradient.kernel_gf": [
+   "eri.fock.kernel_f",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
    "spec"
   ],
   "gradient.kernel_ghj": [
@@ -2624,6 +2638,7 @@
    "eri.kernel_schwarz",
    "gradient.kernel_g1e",
    "gradient.kernel_geri3",
+   "gradient.kernel_gf",
    "gradient.kernel_ghk",
    "gradient.kernel_ghv",
    "gradient.kernel_gjab",
