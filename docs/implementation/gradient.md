@@ -601,9 +601,9 @@ place of the J chain.
 
 | what | held to | result |
 |---|---|---|
-| every ordered class with each `l <= 2`, summed per unordered group `{la, lb} x {lc, ld}` (36 groups, 81 classes; three atoms, a two-primitive s), interpreted (`test_kernel_ghj.py`; raised `L + 1 > 4` `slow`) | `host.coulomb_gradient` restricted to the group's bra pairs and kets, `1e-12` of the per-shell absolute scale (`test_hgp_eri.py`'s cross-engine bound) | RESULT_GROUPS |
-| the whole `dE_J` of test_gradient_host.py's s, p pair (`slow`) | the host, `1e-12` of `max\|G\|`; zero net force | RESULT_PAIR |
-| the Coulomb term of H₂O/STO-3G, H₂O/STO-3G plus a d primitive, H₂O/6-31G (`slow`) | PySCF's `grad:j` (#550's fixtures), `1e-10` absolute | RESULT_PYSCF |
+| every ordered class with each `l <= 2`, summed per unordered group `{la, lb} x {lc, ld}` (36 groups, 81 classes; three atoms, a two-primitive s), interpreted (`test_kernel_ghj.py`; raised `L + 1 > 4` `slow`) | `host.coulomb_gradient` restricted to the group's bra pairs and kets, `1e-12` of the per-shell absolute scale (`test_hgp_eri.py`'s cross-engine bound) | all 36 groups pass; worst 5.2e-15 of scale (2026-10-30, interpreted, no card) |
+| the whole `dE_J` of test_gradient_host.py's s, p pair (`slow`) | the host, `1e-12` of `max\|G\|`; zero net force | 5.6e-16 of `max\|G\|` |
+| the Coulomb term of H₂O/STO-3G, H₂O/STO-3G plus a d primitive, H₂O/6-31G (`slow`) | PySCF's `grad:j` (#550's fixtures), `1e-10` absolute | 4.7e-15 / 5.2e-15 / 7.5e-15 absolute |
 
 Not done: no `--grad-*` emit ladder writes a `ghj_` unit and no golden
 holds its text, so nvcc and hipcc have never seen it; no card; no
