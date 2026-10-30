@@ -24,6 +24,17 @@ CASES = [
 _HGP = {q: span("hgp", t, 0, range(3)) for q, t in (
     ("s", "s"), ("t", "t"), ("v", "v"), ("dipole", "dipole"))}
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its drivers and the two engines it runs on besides MMD; its
+# test files come from TESTS.
+PATHS = (
+    "src/felizjueves/one_electron/",
+    "src/felizjueves/hgp/",
+    "src/felizjueves/rys/",
+    "test/mu_driver.py",
+    "test/hgp_one_e_driver.py",
+)
+
 TESTS = {
     "test/test_emit_mu.py::test_X_compiles_the_mu_class": Classes("mmd", "dipole"),
     "test/test_mu_device.py::test_X_mu_every_class_through_dd_matches_host_and_libcint":

@@ -50,6 +50,15 @@ _GJAB = {f"{name}_j-{form}": span("mmd", "jab", 1, range(_TOP_PAIR_L[name] + 1))
                              ("co_ccpvtz", ("default",)))
          for form in forms}
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its drivers; its test files come from TESTS.
+PATHS = (
+    "src/felizjueves/gradient/",
+    "test/grad_driver.py",
+    "test/df_grad_launch.py",
+    "test/gk_driver.py",
+)
+
 TESTS = {
     "test/test_emit_grad.py::test_X_compiles_the_gradient_unit": Classes("mmd", "s", 1),
     "test/test_emit_grad_df.py::test_X_compiles_the_df_gradient_unit":

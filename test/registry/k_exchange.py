@@ -21,6 +21,14 @@ _COMPILES = {"coalesced": "coalesced_kernels", "interleave": "interleave_kernels
              "split_interleave": "split_interleave_arms",
              "stage_eac": "stage_eac_kernels"}
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its drivers; its test files come from TESTS.
+PATHS = (
+    "src/felizjueves/eri/k_exchange/",
+    "src/felizjueves/eri/launch_common.py",
+    "test/kblock_driver.py",
+)
+
 TESTS = {
     "test/test_kernel_device.py::test_X_k_cell_matches_the_host": Classes("mmd", "k"),
     "test/test_kernel_device.py::test_X_k_check_cell_matches_the_host":

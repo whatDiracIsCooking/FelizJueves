@@ -36,6 +36,9 @@ and its `gpu` tests on each backend, measured from the junit reports or
 modelled on L, read from `data/measured/registry_cost.json`; a new case
 needs `devtools/measure.sh registry-cost` rerun and the store committed
 (`test_every_registry_case_has_a_cost` says so).
+Each module's `PATHS` are the source and driver paths whose change touches
+the family, for the sampler's change weighting (`test/registry/sample.py`,
+#653); a new kernel module or driver goes there too.
 
 ## Kernel families
 

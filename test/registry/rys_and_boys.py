@@ -14,6 +14,15 @@ CASES = [
 BOYS = ("the device Boys template fj_boys<M>: an order M, not an integral "
         "class")
 
+# The paths whose change touches this family (sample.py's change weighting):
+# the Rys engine and its F / J / K kernels; its test files come from TESTS.
+PATHS = (
+    "src/felizjueves/rys/",
+    "src/felizjueves/eri/fock/kernel_frys.py",
+    "src/felizjueves/eri/hjk/kernel_rj.py",
+    "src/felizjueves/eri/hjk/kernel_rk.py",
+)
+
 TESTS = {
     "test/test_emit_frys.py::test_X_compiles_the_frys_class": Classes("rys", "f"),
     "test/test_emit_rj.py::test_X_compiles_the_rj_unit": Classes("rys", "j"),

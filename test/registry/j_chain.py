@@ -30,6 +30,18 @@ CASES = [
 _ONE_E_DD = {q.upper(): span("mmd", q, 0, range(5)) for q in "stv"}
 _ONE_E_FF = {q.upper(): span("mmd", q, 0, range(7)) for q in "stv"}
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its drivers; its test files come from TESTS.
+PATHS = (
+    "src/felizjueves/eri/j_coulomb/",
+    "src/felizjueves/eri/launch_common.py",
+    "src/felizjueves/eri/kernel_pair_bound.py",
+    "src/felizjueves/eri/k_exchange/kernel_record_bound.py",
+    "src/felizjueves/one_electron/",
+    "test/one_electron_driver.py",
+    "test/plan_driver.py",
+)
+
 TESTS = {
     # [p|q], one batch and split.
     "test/test_emit_X.py::test_it_compiles": Classes("mmd", "j"),
