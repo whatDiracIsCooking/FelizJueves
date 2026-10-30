@@ -443,11 +443,15 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
 
 ## The DF metric Hessian (`(P|Q)`)
 
-**Status: implemented host-side and as a generated kernel, interpreted
-only.** Not compiled by nvcc or hipcc (none in the session that built
-it; all 9 units passed clang 18's CUDA front end, device side, `-Wall
--Wextra`, a proxy), no device test, not run on a card, nothing measured.
-Nothing scored: no published board, no claim added.
+**Status: implemented host-side and as a generated kernel through (i|i),
+interpreted against the host and compiled by nvcc; a device test is
+written and has not run on a card** (#694). Every class `lP <= lQ <= 6`
+is interpreted against the host and compiled by nvcc 13.0 for `sm_86`,
+and by hipcc (ROCm 7.2.4) for `gfx1200`, with each unit's compile time
+and frame recorded on both arches (`data/measured/d2_df_lowstack.json`).
+The session that did this had both compilers and no card, so the device
+test (`test_hess_df_device.py`) has run on neither card. Nothing is
+scored: there is no published board and no claim was added.
 
 ### The key
 
@@ -496,13 +500,33 @@ quartet `(lP + 2, 0 | lQ, 0)` at `L + 2` cut to the live
 `AtomicAdd`s (`+h` on the two same-atom blocks, `-h` on the two mixed
 ones). `H` is zeroed by the caller.
 
+**The low-stack form (#694)** is the default from `lP + lQ >=
+kernel_d2metric.LOWSTACK_MIN_L = 9` (`d2metric_lowstack`; `lowstack=`
+forces either form, and the name, parameters, launch and `H` contract are
+the same). It is `kernel_gmetric`'s low-stack form read one order up. No
+`E` block, weight or density is held. Per record pair the tower is stored
+into a local `R[n_t(L + 2)]` as it forms. Per Q row,
+`U[t'] = SUM_tau R[t' + tau] E^b_tau` is formed for every `|t'| <= lP +
+2` of `lP`'s parity. Per element, the weight is read from `M`, and the six
+`h_kl +-= w wt SUM_t E^a_t U[t + 1_k + 1_l]` are rolled over the P
+record's single-center tables. The floor is measured
+(`devtools/measure.sh d2-df-lowstack-compile`, its rule declared before
+any row): every unrolled class through `L = 8` is within #606's 14,000 B
+of `sm_86` stack, and at `L = 9` the unrolled (d|i) is 19,216 B. The (g|h)
+is 13,888 B there, but the floor is per level. The low-stack (i|i) is
+9,200 B and 135 KB of text, and compiles in 1.9 s.
+
 ### The generator
 
-`python -m felizjueves.emit --hess-metric-l [LMAX]` (4 bare, 0..4, a 2
-above) adds `d2metric_{lP}{lQ}` for every `lP <= lQ`, `lP + lQ <= LMAX`
-beside the J ladders; never in the no-flag output and not in
-`KERNEL_GEN_CMD`. The 9 goldens per backend are
-`test/golden/{cuda,hip}/d2metric_*` (largest ~36 KB).
+`python -m felizjueves.emit --hess-metric-l [AUXMAX]` (2 bare, 0..6, a 2
+above) adds `d2metric_{lP}{lQ}` for every `lP <= lQ <= AUXMAX` beside the
+J ladders. AUXMAX is the aux `l` per shell, as `--grad-df-aux-l`'s
+(#694); the flag was a total-`L` bound before. It is never in the
+no-flag output and not in `KERNEL_GEN_CMD`. The 9 classes with `lP + lQ
+<= 4` keep their goldens per backend, `test/golden/{cuda,hip}/d2metric_*`
+(largest ~36 KB), unchanged by #694. The other 19 classes through (i|i)
+are pinned by byte count and sha256 in
+`test/golden/d2metric_digests.json`.
 
 ### Witnesses, and what ran where
 
@@ -511,26 +535,31 @@ beside the J ladders; never in the no-flag output and not in
 | `hessian.host_df` | central FD (`h = 1e-4`) of `gradient.host_df.metric_gradient`, itself FD-held to the libcint-witnessed `(P|Q)` | a synthetic s/p aux basis on three centres; s/p/d and f/g bases `slow` (`test_hessian_host_df.py`) | ~2.5e-9 of `max\|H\|` (`O(h²)`), gate 1e-7 |
 | the same | `SUM_A H = 0`; `H = H^T`; split atoms folded back | the same | gates 1e-12 and 1e-13 of `max\|H\|` |
 | `kernel_d2metric`, interpreted | `hessian.host_df` per class, `W` non-symmetric | every class `lP + lQ <= 4` on `test_kernel_gmetric.py`'s aux basis (above `lP + lQ + 2 = 4` `slow`); a whole s/p aux basis (`test_kernel_d2metric.py`) | 0.17 eps of the absolute twin (`d2metric_02`), gate 16 eps |
-| the units | clang 18 CUDA front end, `-Wall -Wextra` | all 9 | no diagnostic (a proxy) |
-| nvcc / hipcc compile | #92's warning filter | `test_emit_d2metric.py`'s `cuda` / `hip` cases | **not run** (no compiler in that session) |
-| on a card | — | — | **not run** |
+| the same, the ladder (#694) | `hessian.host_df` per class | every class `lP <= lQ <= 6` in its default form, every class below the floor in the low-stack form forced, (d\|i) and (g\|h) unrolled forced, on a two-shell aux basis with a swapped and a diagonal pair (`test_kernel_d2_df_ladder.py`, 52 cases) | 0.34 eps of the twin (`d2metric_06`), gate 16 eps |
+| nvcc 13.0, `sm_86` | #92's warning filter | all 28 classes (`test_emit_d2metric.py`), 2026-10-30 | clean |
+| hipcc 7.2.4, `gfx1200` | #92's warning filter | all 28 classes, 2026-10-30 | clean |
+| the same, frames | `d2-df-lowstack-compile` | every class low-stack on both arches; unrolled through `L = 9` (`sm_86`) and `L = 11` (`gfx1200`) | low-stack ≤ 9,200 B `sm_86`, ≤ 9,744 B `gfx1200` scratch; ≤ 10 s a unit |
+| on a card | `test_hess_df_device.py` | — | **not run** (no card in that session) |
 
 ### What is not done
 
-- No device test and no card run; no nvcc / hipcc compile.
+- No card run: the device test is written and has run on neither card.
 - No `d` response, no assembled DF-J (or DF-K) Hessian (the three-center
   `(mn|P)` Hessian is the next section).
-- Nothing above `lP + lQ = 4` against the host; nothing against libcint
-  directly (the chain is FD → gradient host → libcint's `(P|Q)`).
-- Nothing measured; Cartesian only.
+- Nothing against libcint directly (the chain is FD → gradient host →
+  libcint's `(P|Q)`).
+- No clock measured; Cartesian only.
 
 ## The three-center DF Hessian (`(mn|P)`)
 
-**Status: implemented host-side and as generated kernels, interpreted
-only.** Not compiled by nvcc or hipcc and not run on a card: the session
-that built it had neither compiler nor card. Every unit through L = 4
-passed clang 18's CUDA front end with `-fsyntax-only -Wall -Wextra`,
-device side, with a runtime stub. That is a proxy, not the tier. This
+**Status: implemented host-side and as generated kernels through (ff|i),
+interpreted against the host and compiled by nvcc; a device test is
+written and has not run on a card** (#694). Every class `la <= lb <= 3`,
+`lP <= 6` is interpreted against the host and compiled by nvcc 13.0 for
+`sm_86`, and by hipcc (ROCm 7.2.4) for `gfx1200`, with each unit's compile time
+and frame recorded on both arches (`data/measured/d2_df_lowstack.json`).
+The session that did this had both compilers and no card, so the device
+test (`test_hess_df_device.py`) has run on neither card. This
 section covers the first density-fitting `derivative_order = 2` key: the
 contracted second nuclear derivatives of the three-center integral
 `(mn|P)`, which is the three-center half of a DF-J skeleton Hessian.
@@ -605,30 +634,62 @@ records inner. It also reuses `kernel_geri3`'s parameter block (`H[n_atom,
 made public with its text byte-identical. The arrays are the d1 kernel's
 (`test/df_grad_launch.run_d2eri3`).
 
-The text is straight-line and grows fast with the class:
+The text of that form is straight-line and grows fast with the class:
 
-| Class (L) | cuda text |
-|---|---|
-| `(ss\|s)` (0) | 40 KB |
-| `(pp\|s)` (2) | 206 KB |
-| `(pp\|p)` (3) | 504 KB |
-| `(pd\|p)` (4) | 1.25 MB |
+| Class (L) | cuda text, unrolled | `sm_86` stack, unrolled | low-stack text | low-stack stack |
+|---|---|---|---|---|
+| `(ss\|s)` (0) | 40 KB | 376 B | — | — |
+| `(pp\|s)` (2) | 206 KB | 7,680 B | — | — |
+| `(pp\|p)` (3) | 504 KB | 20,280 B | 100 KB | 4,480 B |
+| `(pd\|p)` (4) | 1.25 MB | not compiled | 115 KB | 6,752 B |
+| `(ff\|s)` (6) | — | — | 178 KB | 19,904 B |
+| `(ff\|i)` (12) | — | — | 293 KB | 24,544 B |
 
-No low-stack form is built.
+**The low-stack form (#694)** is the default from `la + lb + lP >=
+kernel_d2eri3.LOWSTACK_MIN_L = 3` (`d2eri3_lowstack`; `lowstack=` forces
+either form, and the name, parameters, launch and `H` contract are the
+same). It is `kernel_geri3`'s low-stack form with the low-stack `d2v`'s
+operated factors. No density and no weight is held. Per aux record, the
+tower goes into a local `R[n_t(L + 2)]`. Per aux row,
+`U[t] = SUM_tau R[t + tau] E^q_tau` is formed for every `|t| <= la + lb +
+2`. Per element `(a, b, q)`, the weight is read from `M`, and each axis's
+operated factors `F{op}[d, t]` (`op` in `"" A B AA AB BB`) are filled by
+`kernel_h1e.operated_value`'s loops. Then the 28 operator triples are
+contracted against `U[t + up]` by `kernel_h1e.rolled`, the low-stack
+`d2v`'s contraction with `U` for `R`, into 45 accumulators. Per cell,
+`hXY = s qXY`, `hXC = -s qX` and `hCC = s qC` (`s = (-1)^{lP}`) go out by
+the same 81 atomics.
+
+The floor is measured (`devtools/measure.sh d2-df-lowstack-compile`, its
+rule declared before any row). Every unrolled class at `L <= 2` is within
+#606's 14,000 B of `sm_86` stack. At `L = 3`, (sp|d), (sd|p), (pp|p) and
+(pd|s) are not, at 14,768 to 20,280 B. **The low-stack frames are
+recorded, not gated** (the rule says so, and why, before any row): the
+bra tables two indices up are 9.5 KB alone at (ff|.), so 19 units exceed
+14 KB on `sm_86` (9 on `gfx1200`, worst 20,640 B) ((pf|g) to (pf|i), (dd|g) to (dd|i), and every (df|.) from p and
+every (ff|.)). The worst is (ff|i) at 24,544 B, 8 KB of it spill. Every unit compiles within 29 s ((df|p)), far inside the 300 s
+budget. A form that brings (ff|.) under 14 KB is follow-up work. The
+likely candidates are a triangular table layout (`i + j <= la + lb + 2` is
+all the rule reads) or factors built from the tables one up on demand.
 
 ### The generator
 
-`python -m felizjueves.emit --hess-eri3-l [LMAX]` adds
-`d2eri3_{la}{lb}{lP}` for every `la <= lb`, `la + lb + lP <= LMAX`,
-beside the J ladders:
+`python -m felizjueves.emit --hess-eri3-l [LMAX] [--hess-eri3-aux-l
+AUXMAX]` adds `d2eri3_{la}{lb}{lP}` for every `la <= lb <= LMAX`, `lP <=
+AUXMAX`, beside the J ladders. The split is `--grad-df-l`'s (#694); the
+flag was a total-`L` bound before:
 
-- LMAX is 3 when the flag is bare (13 units) and accepted from 0 to 4;
-  above 4 the CLI exits 2.
+- LMAX is 1 and AUXMAX 2 when the flags are bare or AUXMAX is omitted (9
+  units). LMAX is accepted from 0 to 3 and AUXMAX from 0 to 6; above
+  either, or `--hess-eri3-aux-l` without `--hess-eri3-l`, the CLI exits 2.
 - It is never in the no-flag output and not in `KERNEL_GEN_CMD`.
 
 The goldens are the seven classes with L <= 2, kept as files per backend
-(`test/golden/{cuda,hip}/d2eri3_*`). The other 15 classes through L = 4
-are pinned by byte count and sha256 in `test/golden/d2eri3_digests.json`.
+(`test/golden/{cuda,hip}/d2eri3_*`), unchanged by #694. Every other class
+of the old ladder and the new one (71 in all, (sg|s) the old one's only)
+is pinned in its default form by byte count and sha256 in
+`test/golden/d2eri3_digests.json`. The 15 old classes at L = 3 and 4 also
+keep their unrolled digests, unchanged, under `<name>.unrolled`.
 
 ### Witnesses, and what ran where
 
@@ -637,21 +698,23 @@ are pinned by byte count and sha256 in `test/golden/d2eri3_digests.json`.
 | `hessian.host_eri3` | central FD (`h = 1e-4`) of `gradient.host_df.eri3_gradient`, itself FD-held to the libcint-witnessed `(mn\|P)` | a three-atom s, p AO / s, p, d aux basis; H₂O/STO-3G against the cc-pVTZ-JKFIT s and p shells `slow` (`test_hessian_host_eri3.py`) | 4.8e-9 of `max\|H\|` (`O(h²)`), gate 1e-7 |
 | the same | `SUM_A H = 0`; `H = H^T` | the same | 4e-15 / 4e-16 of `max\|H\|` (gates 1e-12, 1e-13) |
 | `kernel_d2eri3`, interpreted | `hessian.host_eri3` per class, `Gam` random and non-symmetric | every class `la <= lb`, `la + lb + lP <= 4` on `test_kernel_geri3.py`'s bases (L + 2 > 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` (`test_kernel_d2eri3.py`) | 0.40 eps of the absolute twin (`d2eri3_110`), gate 16 eps |
-| the units | clang 18 CUDA front end, `-fsyntax-only -Wall -Wextra`, device side, runtime stub | all 22 classes through L = 4 | no diagnostic (a proxy) |
-| nvcc / hipcc compile | #92's warning filter | `test_emit_d2eri3.py`'s `cuda` / `hip` cases | **not run** (no compiler in that session) |
-| on a card | — | — | **not run**: no device test is written |
+| the same, the ladder (#694) | `hessian.host_eri3` per class | every class `la <= lb <= 3`, `lP <= 6` in its default form, every class below the floor in the low-stack form forced, (sp\|d) and (pp\|p) unrolled forced, on a two-shell AO basis with a swapped pair and, for `la == lb`, a diagonal one (`test_kernel_d2_df_ladder.py`, 79 cases, 2026-10-30) | every case within the gate; worst printed 0.49 eps of the twin (`d2eri3_010`, both forms; the 49 classes at L ≥ 5 ran under xdist, which kept no per-class figure), gate 16 eps |
+| nvcc 13.0, `sm_86` | #92's warning filter | all 71 pinned classes (`test_emit_d2eri3.py`), 2026-10-30 | clean |
+| hipcc 7.2.4, `gfx1200` | #92's warning filter | all 71 pinned classes, 2026-10-30 | clean |
+| the same, frames | `d2-df-lowstack-compile` | every class low-stack on both arches; unrolled through `L = 3` | low-stack ≤ 24,544 B `sm_86`, ≤ 20,640 B `gfx1200` (recorded, not gated), ≤ 29 s a unit |
+| on a card | `test_hess_df_device.py` (H₂O/cc-pVDZ against cc-pVDZ-JKFIT; the aux-i system per aux `l`) | — | **not run** (no card in that session) |
 
 ### What is not done
 
-- No device test and no driver. The d1 `grad_driver` program is the
-  pattern for one.
-- Nothing has been compiled by a vendor compiler, run on a card or
+- No card run. The device test and driver are written (`test_hess_df_device.py`, `hess_driver.py`'s
+  `d2eri3_launches`), and its host-only staging tests ran.
+- The low-stack frames at f exceed #606's 14 KB (above). No clock is
   measured.
 - No assembled DF-J Hessian. The DF-J Hessian is this term with
   `Gam = D (x) d`, plus the metric term (`d2metric_`) with
   `W = -1/2 d d^T`, plus the response of `d`. The last is not a skeleton
   term.
-- No DF-K, no screen, nothing above L = 4. Cartesian only.
+- No DF-K, no screen. Cartesian only.
 
 ## The exchange derivative matrix (`kx1`, `kxc`)
 

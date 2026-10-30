@@ -155,13 +155,18 @@ __all__ = [
     "ATOMIC_REASON",
     "COMPONENTS",
     "HESSIAN_1E",
+    "OPS",
     "ZEROED_H",
     "axis_ops",
     "build_h1e_kernel",
+    "contractions",
+    "f_array",
     "h1e_lowstack",
     "h1e_name",
     "h1e_spec",
     "launch_shape",
+    "operated_value",
+    "rolled",
 ]
 
 HESSIAN_1E = (Target.S, Target.T, Target.V)
@@ -415,10 +420,10 @@ def _v_values(la: int, lb: int, F: Op) -> list[Stmt]:
 
 R_ARRAY = "R"  # [t]^(0) of one nucleus, hermite_targets(L + 2) order
 W_ARRAY = "W"  # the record's weights, block_rows order
-_OPS = ("", "A", "B", "AA", "AB", "BB")  # every operator axis_ops spells
+OPS = ("", "A", "B", "AA", "AB", "BB")  # every operator axis_ops spells
 
 
-def _f_array(op: str) -> str:
+def f_array(op: str) -> str:
     """The row's operated factors `(op E)^{a_d b_d}_t`, `[3, L + 3]`."""
     return f"F{op or 'n'}"
 
@@ -434,8 +439,8 @@ def _cart_index(tag: str) -> Expr:
     return _iadd(_c(Fn.DIV, _mul(u, _iadd(u, Lit(1))), Lit(2)), w)
 
 
-def _operated_value(op: str, d: int, i: Expr, j: Expr, t: Expr, dst: str,
-                    lb_t: int, L_t: int) -> list[Stmt]:  # noqa: N803
+def operated_value(op: str, d: int, i: Expr, j: Expr, t: Expr, dst: str,
+                   lb_t: int, L_t: int) -> list[Stmt]:  # noqa: N803
     """Declare `dst = (op E)^{ij}_t` on axis `d`, `i`, `j`, `t` I32
     expressions: `operated`'s rule term for term, its `- n f` term behind
     an `If` on `0 < n` and `t <= ` its source's reach, so the value is the
@@ -452,11 +457,11 @@ def _operated_value(op: str, d: int, i: Expr, j: Expr, t: Expr, dst: str,
     else:
         up, lo, n, two = ((i, _iadd(j, one)), (i, _c(Fn.SUB, j, one)), j,
                           Var("eb2"))
-    out = _operated_value(rest, d, *up, t, dst + "u", lb_t, L_t)
+    out = operated_value(rest, d, *up, t, dst + "u", lb_t, L_t)
     out.append(Decl(dst, Scalar.F64, init=_mul(two, Var(dst + "u"))))
     reach = _iadd(_iadd(lo[0], lo[1]), Lit(len(rest) + 1))
     out.append(If(_mul(_c(Fn.LT, Lit(0), n), _c(Fn.LT, t, reach)), (
-        *_operated_value(rest, d, *lo, t, dst + "l", lb_t, L_t),
+        *operated_value(rest, d, *lo, t, dst + "l", lb_t, L_t),
         Assign(Var(dst), _c(Fn.SUB, Var(dst), _mul(n, Var(dst + "l")))),
     )))
     return out
@@ -466,8 +471,8 @@ def _unit(*axes: int) -> tuple[int, int, int]:
     return tuple(sum(a == d for a in axes) for d in range(3))  # type: ignore[return-value]
 
 
-def _contractions(la: int, lb: int
-                  ) -> list[tuple[Ops, list[tuple[tuple[int, int, int], str]]]]:
+def contractions(la: int, lb: int
+                 ) -> list[tuple[Ops, list[tuple[tuple[int, int, int], str]]]]:
     """Every operator triple the record needs, each with the shifts `up`
     of `R[t + up]` it is contracted against and their accumulators: the 21
     components at `up = 0`, the six first derivatives at `1_l`, and the
@@ -482,22 +487,24 @@ def _contractions(la: int, lb: int
     return out
 
 
-def _rolled(ops: Ops, ups: list[tuple[tuple[int, int, int], str]],
-            a: tuple[Expr, Expr, Expr], b: tuple[Expr, Expr, Expr],
-            width: int) -> For:
-    """`q += W[row] SUM_t PROD_d F{o_d}[d, t_d] R[t + up]` for every
+def rolled(ops: Ops, ups: list[tuple[tuple[int, int, int], str]],
+           a: tuple[Expr, Expr, Expr], b: tuple[Expr, Expr, Expr],
+           width: int, src: str = R_ARRAY) -> For:
+    """`q += wr SUM_t PROD_d F{o_d}[d, t_d] src[t + up]` for every
     `(up, q)` of `ups` at once: three loops over the row's reachable `t`
-    (`t_d <= a_d + b_d + len(o_d)`), the product formed per axis."""
+    (`t_d <= a_d + b_d + len(o_d)`), the product formed per axis. `wr` is
+    the row's weight; `src` is `R` here, and `U` in `kernel_d2eri3`'s
+    low-stack form."""
     t = (Var("q_tx"), Var("q_ty"), Var("q_tz"))
 
     def f(d: int) -> Index:
-        return Index(_f_array(ops[d]), (_iadd(Lit(d * width), t[d]),))
+        return Index(f_array(ops[d]), (_iadd(Lit(d * width), t[d]),))
 
     def top(d: int) -> Expr:
         return _iadd(_iadd(a[d], b[d]), Lit(len(ops[d]) + 1))
 
     def at(up: tuple[int, int, int]) -> Index:
-        return Index(R_ARRAY, (ef.hermite_index(tuple(  # type: ignore[arg-type]
+        return Index(src, (ef.hermite_index(tuple(  # type: ignore[arg-type]
             _iadd(t[d], Lit(up[d])) if up[d] else t[d] for d in range(3))),))
 
     z = For(t[2].name, Lit(0), top(2), Lit(1), (
@@ -548,7 +555,7 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
                                                  _iadd(Var("oa"), j))),)))
 
     # --- per row: the operated factors, then every contraction -------------
-    contractions = _contractions(la, lb)
+    contracted = contractions(la, lb)
     def cell(a: tuple[Expr, Expr, Expr], b: tuple[Expr, Expr, Expr]
              ) -> tuple[Stmt, ...]:
         out: list[Stmt] = [
@@ -558,19 +565,19 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
             Note("F{op}[d, t] = (op E)^{a_d b_d}_t on each axis, operated's "
                  "rule with the row's indices at run time"),
         ]
-        for op in _OPS:
+        for op in OPS:
             for d in range(3):
                 top = _iadd(_iadd(a[d], b[d]), Lit(len(op) + 1))
                 out.append(For("q_t", Lit(0), top, Lit(1), (
-                    *_operated_value(op, d, a[d], b[d], Var("q_t"), "o",
+                    *operated_value(op, d, a[d], b[d], Var("q_t"), "o",
                                      lb_t, L_t),
-                    Assign(Index(_f_array(op), (_iadd(Lit(d * width),
+                    Assign(Index(f_array(op), (_iadd(Lit(d * width),
                                                       Var("q_t")),)),
                            Var("o")),
                 )))
         out.append(Note("q += W[row] SUM_t PROD_d F{o_d}[d, t_d] R[t + up], "
                         "rolled over t per axis"))
-        out += [_rolled(ops, ups, a, b, width) for ops, ups in contractions]
+        out += [rolled(ops, ups, a, b, width) for ops, ups in contracted]
         return tuple(out)
 
     rows = ef.cartesian_loops(la, ("ax", "ay", "az"), lambda a: (
@@ -583,7 +590,7 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
     assert set(ts) <= held, "the recurrence never forms every [t]^(0)"
     prelude, fundamental = fundamental_prelude(
         [mm for (r, mm) in order if not any(r)])
-    accs = [q for _, ups in contractions for _, q in ups]
+    accs = [q for _, ups in contracted for _, q in ups]
 
     def at_h(x: Expr, k: int, y: Expr, l: int) -> Index:  # noqa: E741
         return Index("H", (x, Lit(k), y, Lit(l)))
@@ -639,7 +646,7 @@ def _v_lowstack_values(la: int, lb: int) -> list[Stmt]:
         Decl(THETA, Scalar.F64, init=_c(Fn.SQRT, Var(ef.ZETA))),
         *(Decl(_h(*c), Scalar.F64, init=Lit(0.0)) for c in COMPONENTS),
         Decl(R_ARRAY, Scalar.F64, (Lit(len(ts)),)),
-        *(Decl(_f_array(op), Scalar.F64, (Lit(3 * width),)) for op in _OPS),
+        *(Decl(f_array(op), Scalar.F64, (Lit(3 * width),)) for op in OPS),
         Note("the nuclei, serially inside the record (kernel_v's mapping)"),
         For(NUC, Lit(0), Var("n_atom"), Lit(1), tuple(per_nuc)),
     ]
