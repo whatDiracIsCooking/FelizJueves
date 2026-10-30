@@ -13,7 +13,8 @@ gradient on it (`ghk`, "The exchange gradient on HGP") is interpreted
 through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`, on no
 card; the kinetic, overlap and nuclear-attraction gradients on HGP
 (`hgt_`, `hgs_`, `ghv_`, through (ff)) are interpreted and compiled, not
-run on a card. This is
+run on a card; the HGP `(mn|P)` gradient `hgeri3` is interpreted and
+compiled only, no card. This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -41,11 +42,13 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
 Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
-every other engine -- except five off-native pairs,
+every other engine -- except six off-native pairs,
 `spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
 recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`,
 `T` on HGP ("The kinetic gradient on HGP", below), key
-`kinetic/d1/(la,lb)/b1/t.hgp/literal`, and `K` on HGP ("The exchange
+`kinetic/d1/(la,lb)/b1/t.hgp/literal`, `ERI3` on HGP ("The
+three-center gradient on HGP", below), key
+`coulomb/d1/(la,lb|lP)/b1/eri3.hgp/literal`, `K` on HGP ("The exchange
 gradient on HGP", below), key `coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal`, and `S` on HGP ("The
 overlap gradient on HGP", below), key
 `overlap/d1/(la,lb)/b1/s.hgp/literal`, and `V` on HGP ("The
@@ -822,6 +825,49 @@ Staged by `gradient.host.pair_records`, as `hgt_` and `hgs_`.
 Ladder: `--hgp-grad-l [LMAX]` writes `ghv_` beside `hgt_` and `hgs_` per
 class (class-major); goldens `test/golden/{cuda,hip}/ghv_{00,01,11}`.
 
+## The three-center gradient on HGP (`gradient/kernel_hgeri3.py`)
+
+`gradient/kernel_hgeri3.py`'s `build_hgeri3_kernel((la, lb, lP))` →
+`hgeri3_{la}{lb}{lP}`, keyed `Spec(COULOMB, 1, (la, lb, lP), Target.ERI3,
+engine=Engine.HGP)` (``coulomb/d1/(la,lb|lP)/b1/eri3.hgp/literal``): the
+HGP sibling of `geri3`, as `heri3` is of `eri3` (`hgp_df.md`). The same
+parameters in the same order (restated and held equal), the same staging
+and records, one thread per cell, and the same `G` contract with nine
+`AtomicAdd`s into a caller-zeroed `G`; `df_grad_launch.run_eri3(engine=)`
+swaps one for the other.
+
+**The rule is the Cartesian one on all three centres**, `d/dX_k (x y|q) = 2
+xi (x + 1_k, y|q) - x_k (x - 1_k, y|q)`, and likewise on `Y` and on the aux
+centre `C` with `2 gam`: the aux Gaussian is the HGP pair with an
+exponent-0 partner, so raising its `l` is raising an ordinary Gaussian.
+`geri3` takes the Hermite shift on `C` instead; here no centre is inferred
+and `SUM_A G = 0` is a check. The factor `2 xi` is per primitive, so each
+raised class is contracted with its own weight: per cell up to six HRR
+classes in the built (higher `l` first) orientation, `(x ± 1, y | lP)`,
+`(x, y ± 1 | lP)`, `(x, y | lP ± 1)`, the raised ones on accumulators
+weighted `2 xi`, `2 eta`, `2 gam`, the lowered ones unweighted. The HRR is
+linear with a geometry-only coefficient, so it holds on any
+per-primitive-weighted contraction. **One VRR per primitive quartet** feeds
+all of them: `hgp.vrr.build` of the rectangle spanning their boundaries,
+cut to the union by `hgp.vrr.group_dag` (Boys top `L + 1`), the aux side's
+`QC = 0` terms dropped (`kernel_hgp`'s rule). Then per staged element the
+weight from `M` (`geri3`'s rule) times `up - x_k down`. No low-stack form.
+
+Ladder `python -m felizjueves.emit --hgp-grad-eri3-l [LMAX]`: `--hgp-eri3-l`'s
+classes and bound (`la <= lb <= LMAX`, `lP <= LMAX`, 0..`HGP_DF_L_MAX` = 1,
+bare 1: 6 units), never in the bare default nor in `KERNEL_GEN_CMD`.
+Goldens `test/golden/{cuda,hip}/hgeri3_*` (`test_emit_hgp_grad_df.py`).
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `hgeri3` interpreted (`test_kernel_hgeri3.py`) | `host_df`, per class, and `SUM_A G = 0` | every class `la + lb + lP <= 4` on `test_kernel_geri3.py`'s bases (swapped, diagonal, one- and two-centre cells; L + 1 = 5 `slow`) | 9.05 eps of the split-centre scale ((pd\|p)), gate 16 eps |
+| `hgeri3` against `geri3`, both interpreted | the MMD kernel, per class | the same 22 classes | 15.2 eps ((dd\|s)), gate 32 eps |
+| `hgeri3` against libcint | the DF gradient witness (`oracle.manifest.df_gradient`), per class | (ss\|p), (ss\|d), (sp\|s), (sp\|p), (sd\|p), (pp\|s), (pp\|p), (pp\|d) on `prim_spd_f` against the aux-i basis ((ss\|s) is exactly zero there) | 4.95e-15 of the witness's largest `max\|G\|`, gate `1e-12` |
+| compile, nvcc / hipcc (`test_emit_hgp_grad_df.py`) | #92's filter | the 6 s/p units, `sm_86` and `gfx1200` | passed, no warning in generated text (a device-less cloud container, 2026-10-30) |
+
+**Not on a card**: there is no device harness for it yet, and the session
+that built it had no card. Not measured.
+
 ## What is not done
 
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
@@ -832,6 +878,9 @@ class (class-major); goldens `test/golden/{cuda,hip}/ghv_{00,01,11}`.
   exchange gradient on HGP").
 - `hgs` (the overlap gradient on HGP, above) has not run on a card and
   is not measured.
+- The HGP `(mn|P)` gradient (`hgeri3`) has run on no card and has no
+  device harness; its CLI ladder stops at s and p shells. The DF metric's
+  gradient is not built on HGP.
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
   (ff), #614), `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618) and the

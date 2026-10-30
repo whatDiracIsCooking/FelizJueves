@@ -23,6 +23,8 @@
     host_df.py       the density-fitting references, (P|Q) and (mn|P)
     kernel_gmetric.py  Target.METRIC at d1: gmetric_{lP}{lQ}
     kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}
+    kernel_hgeri3.py   Target.ERI3 at d1 on the HGP engine: hgeri3_{la}{lb}{lP},
+                       the Cartesian rule on all three centres by VRR/HRR
     rhf.py           dE_RHF/dR assembled from per-term runners (#565):
                      the signs, the half, V_nn^x, the total
     interpreted.py   the d1 kernels above as rhf.py's runners, run in

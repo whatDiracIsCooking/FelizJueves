@@ -159,6 +159,7 @@
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
+   "gradient.kernel_hgeri3",
    "gradient.kernel_hgs",
    "gradient.kernel_hgt",
    "hessian.kernel_d2eri3",
@@ -1770,6 +1771,7 @@
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
+   "gradient.kernel_hgeri3",
    "gradient.kernel_hgs",
    "gradient.kernel_hgt",
    "gradient.rhf",
@@ -1927,6 +1929,18 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
+   "spec"
+  ],
+  "gradient.kernel_hgeri3": [
+   "eri.density_fit.kernel_hgp",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
    "spec"
   ],
   "gradient.kernel_hgs": [
@@ -2615,6 +2629,7 @@
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
+   "gradient.kernel_hgeri3",
    "gradient.kernel_hgs",
    "gradient.kernel_hgt",
    "hessian.kernel_d2eri3",

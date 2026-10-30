@@ -237,7 +237,25 @@ kernel at the top classes, within `1e-12` of max. **On both cards**
 `l`, each compile under a 300 s timeout): all 70 + 28 classes in their
 default forms on that system, 16 passed per card with Part 1; worst
 1.20e-14 (RTX 3080) / 9.34e-15 (RX 9060 XT) of `max|G|` against the host
-and 5.5e-14 of max against libcint, runs bit-identical. **The DF-K
+and 5.5e-14 of max against libcint, runs bit-identical. **The `(mn|P)` gradient on the HGP engine too, interpreted and compiled
+only** (`gradient.md`, "The three-center gradient on HGP"):
+`gradient/kernel_hgeri3.py`'s `hgeri3_{la}{lb}{lP}`, keyed
+`.../d1/.../eri3.hgp/...` (`spec.GRADIENT_OFF_NATIVE`, the one off-native
+d1 slot), `geri3`'s parameters, staging, mapping and `G` contract. The
+Cartesian rule on all three centres (the aux one too, by its exponent-0
+partner: no Hermite shift, nothing inferred), each raised class contracted
+with its own primitive weight `2 xi` / `2 eta` / `2 gam`, one VRR per
+primitive quartet over every derivative HRR's boundary
+(`hgp.vrr.group_dag`), up to six bra HRRs per cell. Interpreted
+(`test_kernel_hgeri3.py`): every class at L <= 4 against `host_df` within
+9.05 eps of the split-centre scale (gate 16) and translational invariance,
+against `geri3` within 15.2 eps (gate 32), and 8 s/p/d classes against
+the libcint DF gradient witness within 4.95e-15 of its largest `max|G|`.
+Ladder `--hgp-grad-eri3-l [LMAX]` (s and p, 0..1, bare 1: 6 units), never
+in the bare default nor in `KERNEL_GEN_CMD`; 12 goldens
+(`test_emit_hgp_grad_df.py`), compiled by nvcc and hipcc warning-free on a
+device-less container (2026-10-30). **No card, no device harness**, not
+measured. **The DF-K
 weights and the whole DF two-electron gradient are staged on the host**
 (#620; `gradient.md`, "The density-fitting gradients"):
 `host_df.df_k_stage` gives `E_K`, `Gam^K`, `W^K` from the occupied

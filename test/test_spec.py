@@ -325,7 +325,8 @@ def test_k_takes_order_one_in_its_hermite_pairing() -> None:
     assert hgp.key() == "coulomb/d1/(1,0|0,0)/b1/k.hgp/literal"
     assert GRADIENT_OFF_NATIVE == {(Target.J, Engine.HGP),
                                    (Target.K, Engine.HGP), (Target.T, Engine.HGP),
-                                   (Target.S, Engine.HGP), (Target.V, Engine.HGP)}
+                                   (Target.S, Engine.HGP), (Target.V, Engine.HGP),
+                                   (Target.ERI3, Engine.HGP)}
     with pytest.raises(ValueError, match="derivative order 1 on target k.rys"):
         Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.RYS)
 
@@ -404,15 +405,22 @@ def test_the_metric_takes_order_two_on_mmd_only() -> None:
         Spec(Operator.COULOMB, 2, (1, 2), Target.METRIC, engine=Engine.HGP)
 
 
-def test_the_df_targets_take_order_one_on_mmd_only() -> None:
+def test_the_df_targets_take_order_one_and_eri3_on_hgp_too() -> None:
     # felizjueves.gradient's kernel_gmetric / kernel_geri3: the integral's
-    # class at d1, the key differing in the `d` segment alone.
+    # class at d1, the key differing in the `d` segment alone; ERI3 on HGP
+    # too (kernel_hgeri3, GRADIENT_OFF_NATIVE), the metric MMD only.
     for target, am in ((Target.METRIC, (1, 2)), (Target.ERI3, (0, 1, 2))):
         d0 = Spec(Operator.COULOMB, 0, am, target)
         d1 = Spec(Operator.COULOMB, 1, am, target)
         assert d1.key() == d0.key().replace("/d0/", "/d1/")
-        with pytest.raises(ValueError, match="derivative order 1 on target"):
-            Spec(Operator.COULOMB, 1, am, target, engine=Engine.HGP)
+    with pytest.raises(ValueError, match="derivative order 1 on target "
+                                         "metric.hgp"):
+        Spec(Operator.COULOMB, 1, (1, 2), Target.METRIC, engine=Engine.HGP)
+    h0 = Spec(Operator.COULOMB, 0, (0, 1, 2), Target.ERI3, engine=Engine.HGP)
+    h1 = Spec(Operator.COULOMB, 1, (0, 1, 2), Target.ERI3, engine=Engine.HGP)
+    assert h1.key() == h0.key().replace("/d0/", "/d1/") == \
+        "coulomb/d1/(0,1|2)/b1/eri3.hgp/literal"
+    assert (Target.ERI3, Engine.HGP) in GRADIENT_OFF_NATIVE
 
 
 def test_eri3_takes_order_two_on_mmd_only() -> None:
