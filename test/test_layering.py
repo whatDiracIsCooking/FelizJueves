@@ -4974,6 +4974,78 @@ def test_the_ipmetric_builder_reaches_neither_its_witness_nor_a_machine(
         assert not hit, f"gradient.kernel_ipmetric reaches {hit}"
 
 
+
+# ---------------------------------------------------------------------------
+# The Coulomb derivative matrix (#688): `hessian.kernel_jx` (JX at d1, the
+# ip1 bra half) on `kernel_g1e`'s record head and rolled derivative sums and
+# `kernel_gjab`'s raised [p|q] class, checked against `hessian.host_jx` in
+# the interpreter; `host_jx` on the AO layer and the Coulomb references'
+# kets and derivative kets. The generator CLI writes the ladder (`--jx-l`).
+# ---------------------------------------------------------------------------
+
+_JX_WITNESS = ("`hessian.host_jx` is the witness the kernel is interpreted "
+               "against and `ao` the layer it reads: importing either shares "
+               "ancestry with it (#20)")
+RULES |= {
+    "hessian_host_jx": _rule(
+        "hessian/host_jx.py: the Coulomb derivative matrix J^X and its ip1 "
+        "bra half J1 on the AO layer -- kernel_jx's witness -- from the "
+        "undressed E (`mmd.hermite`), the gradient reference's kets and J_p "
+        "(`gradient.host`), the Hessian reference's derivative kets "
+        "(`hessian.host`) and the nucleus type; `[t]^(0)` injected",
+        ("ao", "mmd.hermite", "gradient.host", "hessian.host",
+         "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "hessian.kernel_jx": "the kernel is what this module checks"}),
+    "jx_builder": _rule(
+        "kernel_jx.py: the ip1 bra half of the Coulomb derivative matrix -- "
+        "key -> IR, `kernel_g1e`'s record head and rolled derivative sums, "
+        "`kernel_gjab`'s raised [p|q] class, `e_fragment`'s row index",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "gradient.kernel_g1e",
+         "gradient.kernel_gjab"),
+        ao=_JX_WITNESS, **{"hessian.host_jx": _JX_WITNESS,
+                           "hessian.host": _JX_WITNESS,
+                           "gradient.host": _JX_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian.host_jx": "hessian_host_jx",
+    "hessian.kernel_jx": "jx_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.host_jx": ("ao.density", "ao.pairs", "ao.shell", "gradient.host",
+                        "hessian.host", "mmd.hermite",
+                        "one_electron.potential"),
+    "hessian.kernel_jx": ("gradient.kernel_g1e", "gradient.kernel_gjab", "ir",
+                          "mmd.e_fragment", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the Coulomb derivative "
+                       "matrix ladder through `kernel_jx`",
+                       RULES["driver"].may | {"hessian.kernel_jx"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_jx"}
+
+
+def test_the_jx_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_jx"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"gradient.kernel_g1e", "gradient.kernel_gjab"} <= seen
+    for banned in (_REF, "ao", "gradient.host", "hessian.host",
+                   "hessian.host_jx", "ir.interp", "emit",
+                   "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_jx reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

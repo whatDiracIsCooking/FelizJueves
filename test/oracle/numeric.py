@@ -94,11 +94,26 @@ QUANTITIES = {
         "coordinate), naux x naux, checked equal to int2c2e_ip1 (cart=True) "
         "and antisymmetric to 1e-13 of its max before it is written")
        for k, x in enumerate("xyz")},
+    # #688: the Coulomb derivative matrix, its ip1 bra half and the whole.
+    "jx1": ("PySCF's grad.rhf.get_jk vj for the referenced density, "
+            "J1[k, m, n] = sum_ls (d/dA_k m n|ls) D_ls with A the centre of m "
+            "(-int2e_ip1 contracted ijkl,lk->ij), 3 x nao x nao, "
+            "cross-checked against einsum(int2e_ip1_cart, D) before it is "
+            "written"),
+    "jx": ("PySCF's hessian.rhf h1ao Coulomb part for the referenced "
+           "density, J^X[X, k, m, n] = sum_ls D_ls d(mn|ls)/dR_{X,k} (vj1 + "
+           "vj1^T, the ket half, plus vj2 on X's rows and its transpose, "
+           "the bra half, from hessian.rhf._get_jk), natm x 3 x nao x nao, "
+           "cross-checked against the same sum from the full int2e_ip1_cart "
+           "tensor before it is written"),
 }
 
-# The basis file's directory, by quantity: an orbital set for J, a fitting
-# set for the metric.
-DIRECTORY = {"j": bse.ORBITAL, "metric": bse.AUXILIARY}
+# The basis file's directory, by registry quantity: an orbital set for J and
+# J^X, a fitting set for the metric.
+DIRECTORY = {"j": bse.ORBITAL, "metric": bse.AUXILIARY, "jx": bse.ORBITAL}
+
+# The quantities whose array is built for the molecule fixture's density.
+WITH_DENSITY = frozenset({"j", "jx1", "jx"})
 
 
 class GoldenError(ValueError):
@@ -112,7 +127,10 @@ class Entry:
     deriv, L)` its build reaches. An npy entry names a `basis` file and the
     tracked `molecule` fixture whose geometry (and, for `j`, density) it
     takes; a fixture entry names the tracked `fixture` and `array`, or a
-    `metric_set`."""
+    `metric_set`. `form` names WHICH array of the key's quantity an npy
+    entry holds when there is more than one (`jx1`, the ip1 bra half of
+    the `jx` registry quantity, and `jx`, the whole); None derives it from
+    the key (`what`)."""
 
     name: str
     key: tuple[str, str, int, int]
@@ -123,6 +141,7 @@ class Entry:
     array: str | None = None
     metric_set: str | None = None
     component: str | None = None  # an npy derivative entry's axis, x y z
+    form: str | None = None
 
     @property
     def kind(self) -> str:
@@ -134,8 +153,12 @@ class Entry:
 
     @property
     def what(self) -> str:
-        """The `QUANTITIES` key the generator dispatches on: the quantity,
-        `.d<n>` at a derivative order, `.<axis>` for one component."""
+        """The `QUANTITIES` key the generator dispatches on: `form` when an
+        entry names one (#688's `jx1` / `jx`, two arrays of one registry
+        quantity); else the quantity, `.d<n>` at a derivative order,
+        `.<axis>` for one component."""
+        if self.form is not None:
+            return self.form
         q = self.quantity if not self.key[2] else (
             f"{self.quantity}.d{self.key[2]}")
         return q if self.component is None else f"{q}.{self.component}"
@@ -194,6 +217,26 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("metric_prim_spd_f_auxi", ("mmd", "metric", 0, 12),
           "the prim_spd_f_auxi_metric set's int2c2e_cart (aux to i)",
           metric_set="prim_spd_f_auxi_metric"),
+    # #688: the Coulomb derivative matrix of the RHF Hessian's CPHF
+    # right-hand side, over the J entries' files, molecule and density: its
+    # ip1 bra half J1 (kernel_jx's output) and the whole J^X (host_jx). Keyed
+    # by the top JX bra class the build reaches, (pp) and (dd).
+    Entry("jx1_h2o_sto3g_bse", ("mmd", "jx", 1, 2),
+          f"J1 (ip1 bra half of J^X) of {_H2O}, in data/basis/sto-3g.json, "
+          "for h2o_sto3g_j's density",
+          basis="STO-3G", molecule="h2o_sto3g_j", form="jx1"),
+    Entry("jx_h2o_sto3g_bse", ("mmd", "jx", 1, 2),
+          f"J^X (both halves) of {_H2O}, in data/basis/sto-3g.json, for "
+          "h2o_sto3g_j's density",
+          basis="STO-3G", molecule="h2o_sto3g_j", form="jx"),
+    Entry("jx1_h2o_ccpvdz_bse", ("mmd", "jx", 1, 4),
+          f"J1 (ip1 bra half of J^X) of {_H2O}, in data/basis/cc-pVDZ.json "
+          "as the file states it, for h2o_ccpvdz_j's density",
+          basis="cc-pVDZ", molecule="h2o_ccpvdz_j", form="jx1"),
+    Entry("jx_h2o_ccpvdz_bse", ("mmd", "jx", 1, 4),
+          f"J^X (both halves) of {_H2O}, in data/basis/cc-pVDZ.json as the "
+          "file states it, for h2o_ccpvdz_j's density",
+          basis="cc-pVDZ", molecule="h2o_ccpvdz_j", form="jx"),
 )
 
 BY_NAME = {e.name: e for e in ENTRIES}
@@ -262,10 +305,11 @@ def basis(name: str) -> Basis:
 
 
 def density(name: str) -> np.ndarray:
-    """A `j` npy entry's density: its molecule fixture's recorded one."""
+    """A `j` or `jx` npy entry's density: its molecule fixture's recorded
+    one."""
     e = entry(name)
-    if e.kind != "npy" or e.quantity != "j":
-        raise GoldenError(f"{name}: only a j npy entry has a density")
+    if e.kind != "npy" or e.what not in WITH_DENSITY:
+        raise GoldenError(f"{name}: only a j or jx npy entry has a density")
     return _molecule(e.molecule).density
 
 
@@ -350,7 +394,7 @@ def recipe_record(e: Entry) -> dict[str, Any]:
     }
     out["density"] = ({"fixture": e.molecule,
                        "sha256": fixtures.density_sha256(mol.density)}
-                      if e.quantity == "j" else None)
+                      if e.what in WITH_DENSITY else None)
     out["file"] = f"{e.name}.npy"
     return out
 
@@ -410,6 +454,6 @@ def check_manifest() -> list[str]:
 
 
 __all__ = ["COMMAND", "DIRECTORY", "ENTRIES", "MANIFEST", "QUANTITIES",
-           "SCHEMA", "STORE", "Entry", "GoldenError", "atoms", "basis",
-           "basis_file", "check_manifest", "compare", "density", "entries",
+           "SCHEMA", "STORE", "WITH_DENSITY", "Entry", "GoldenError", "atoms",
+           "basis", "basis_file", "check_manifest", "compare", "density", "entries",
            "entry", "record", "recipe_record", "sha256", "want"]

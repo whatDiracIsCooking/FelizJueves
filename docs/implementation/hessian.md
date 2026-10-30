@@ -1,10 +1,12 @@
 # Analytic nuclear Hessians by McMurchie–Davidson: `E_J`, `E_K`, `S`, `T`, `V`, and the DF `(P|Q)` and `(mn|P)`
 
-The Coulomb energy's Hessian is this note's first part. Three later
+The Coulomb energy's Hessian is this note's first part. Five later
 sections each have their own status line: the one-electron Hessians of
 `S`, `T` and `V` ("The one-electron Hessians"), the DF metric's ("The DF
-metric Hessian") and the three-center DF integral's ("The three-center DF
-Hessian").
+metric Hessian"), the three-center DF integral's ("The three-center DF
+Hessian"), and the CPHF right-hand side's exchange and Coulomb derivative
+matrices ("The exchange derivative matrix", "The Coulomb derivative
+matrix").
 
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
@@ -772,7 +774,124 @@ per backend (`test/golden/kx_digests.json`).
   stands in for them is the compiled frame of every unit. The device test
   and its driver (`gk_driver.py`'s pattern, `X` zeroed, `kxc` once per
   atom) are the next step.
-- `J^X` (#688) and `h^x`, `S^x` (#687) are not built, so `F^x` is not
-  assembled, and neither is the CPHF right-hand side.
+- `h^x`, `S^x` (#687) are not built (`J^X` is the next section), so
+  `F^x` is not assembled, and neither is the CPHF right-hand side.
 - Nothing is timed, and nothing is screened. A per-atom ket mask for
   `kxc`, or a block mapping, is a follow-up.
+
+## The Coulomb derivative matrix (`J^X`)
+
+**Status: host-side, held to PySCF; its bra kernel `jx_` generated,
+interpreted through (ff) and compiled by nvcc and hipcc through (ff), not
+run on a card** (#688). Its device test is written. The session that built
+it had both compilers and no card.
+
+The CPHF right-hand side of the RHF Hessian needs the derivative Fock
+matrix `F^x` as an AO matrix, not contracted to `[atom, 3]`. Its
+one-electron half is #687 and its exchange part `K^X` is #689 ("The
+exchange derivative matrix", above). This is its Coulomb part: for atom `X` and axis `k`,
+
+    J^X_mn = SUM_ls D_ls d(mn|ls) / dR_{X,k}
+
+### The split
+
+    J^X = BRA + KET
+    BRA_mn = [m on X] J1[k, m, n] + [n on X] J1[k, n, m]
+    J1[k, m, n] = SUM_ls (dA_k m n|ls) D_ls        A the centre of m
+    KET_mn = SUM_ls (mn|d_{X,k}(ls)) D_ls
+
+`J1` is the **ip1** form. It is PySCF's `grad.rhf.get_jk` `vj`, libcint's
+`int2e_ip1` contracted `ijkl,lk->ij` and negated, since libcint's `nabla`
+is minus the centre derivative. PySCF's `hessian.rhf.make_h1` builds the
+same `J^X`: its `vj2` on X's rows plus the transpose is `BRA`, and its
+`vj1 + vj1^T` is `KET`.
+
+### Its key
+
+`Target.JX`, a pair class `(la, lb)`, operator `COULOMB`, key
+`coulomb/d1/(la,lb)/b1/jx/literal`. A target and not a lever, because it is
+a different matrix from both `JAB`s: d0's `J`, and d1's contraction into
+`G`. It exists at derivative order 1 **only** (`spec.D1_ONLY`); d0 and d2
+are refused with the reason. It is unbatched for `JAB`'s structural reason,
+and MMD only. Every earlier key is byte-identical.
+
+### The bra kernel (`hessian/kernel_jx.py`)
+
+`jx_{la}{lb}`, one per ordered bra class, all atoms in one launch. The
+chain is `coulomb_gradient`'s (`gjab`) up to its last step. The ket phase
+(`DQ`) is unchanged, and so is the raised `[p|q]` at `jx_pq_spec` =
+`gjab_pq_spec`, `J_t` over `|t| <= la + lb + 1`. Then, per bra record (one
+thread) and block row `(a, b)`:
+
+    gA_k = s SUM_t (dA_k E^{ab})_t Jp[row, t]     J1[k, oa + i, ob + j] += gA_k
+    gB_k = s SUM_t (dB_k E^{ab})_t Jp[row, t]     J1[k, ob + j, oa + i] += gB_k
+
+These are `gjab`'s sums with no weight `M`. Where `gjab` contracts the rows
+with `D` and adds into `G[atom]`, `jx` scatters each row the way `jab`
+does. `J1` is not symmetric, so there is no mirror; the `B` term is the
+transposed element.
+
+A **diagonal shell pair** (`off_a == off_b`) writes the `A` term alone,
+every `(i, j)`. Its records are every ordered primitive pair, so the `B`
+term of `(i, j)` at `(p, q)` is the `A` term of `(j, i)` at `(q, p)`.
+
+**One form, rolled.** The kernel takes `gjab`'s low-stack shape: the
+per-axis tables one index up, and the six sums as loops
+(`kernel_g1e.lowstack_derivative`, its weight the record scalar `s`)
+reading the record's `Jp` row in global memory. Every row is its own output
+here, so an unrolled form's text grows as rows × Hermite targets, with no
+density to fold the rows first as `gjab`'s does. Whether an unrolled form
+pays below some `L` is a measurement nobody has made, so it is not built.
+
+The parameters are `jab`'s plus the exponents: `n_rec n_ao n_rows`,
+`zeta_ab XPA XPB s ea_bra eb_ket off_a off_b row`, `Jp[n_rows, n_p1]`, and
+the OUT `J1[3, n_ao, n_ao]`, zeroed by the caller. There is no `M` and no
+atom; the caller's gather takes atom `X`'s rows.
+
+### The ket half: no kernel
+
+`KET` is the ordinary J build over the derivative kets of `(X, k)`.
+`hdq_`'s `D1` slabs are gathered per atom and axis, as `hjab`'s bra–ket term
+gathers them. Then the d0 `[p|q]` of `(la, lb | lc + ld + 1, 0)` runs over
+them, and the d0 `jab_` scatters into `J`. Every piece is an existing
+kernel. `test_kernel_jx.py` runs this chain interpreted.
+
+### The host reference (`hessian/host_jx.py`)
+
+`coulomb_ip1(basis, D, one_centre=)` is `J1`, by `gradient.host`'s sweep.
+`J_t` comes from `coulomb_jp` at `L + 1`, and each derivative is formed
+before the sum. It has an `absolute=True` twin, the kernel test's round-off
+scale. `coulomb_derivative_matrix(basis, D, nuclei, one_centre=,
+parts=)` is `J^X` (`parts` "both", "bra" or "ket"). Its ket half is a J
+build over `hessian.host.coulomb_dkets`, the derivative kets whose records
+`hdq_` writes.
+
+### The generator
+
+`python -m felizjueves.emit --jx-l [LMAX]` writes every ordered class with
+each `l <= LMAX` (2 bare, 0..3). It is never in the bare default nor in
+`KERNEL_GEN_CMD`. `test_emit_jx.py` holds 4 goldens per backend, (ss) (sp)
+(ps) (pp).
+
+### Witnesses, and what ran where
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `host_jx.coulomb_ip1` | PySCF `grad.rhf.get_jk` `vj` (golden `jx1_*`) | H₂O, `data/basis` STO-3G; cc-pVDZ `slow` (`test_kernel_jx.py`) | 1.37e-15 of `max\|J1\|` (STO-3G), gate 1e-12 |
+| `host_jx.coulomb_derivative_matrix` | PySCF `hessian.rhf` `h1ao` Coulomb part (golden `jx_*`) | H₂O, STO-3G only | 4.32e-15 of `max\|J^X\|`, gate 1e-12 |
+| the goldens, the host | `SUM_X J^X = 0`; each `J^X` symmetric | both goldens; an s, p pair | gate 1e-13 |
+| `jx`, interpreted | `coulomb_ip1(pairs=)` per class, random symmetric `D` | every ordered class through (ff) on `test_kernel_gjab.py`'s s, p, d, f basis (L + 1 > 4 `slow`) | 0.73 eps of the absolute twin (`jx_00`; 0.10–0.62 elsewhere), gate 16 eps |
+| the chain, interpreted | the host (`J1` and `J^X`); PySCF | an s, p pair; H₂O/STO-3G (`slow`, 59 s) | `J1` 0.39 eps of the absolute twin, `J^X` 1.8 eps of `max\|J^X\|` (gate 64 eps); against PySCF `J1` 1.07e-15, `J^X` 4.32e-15 |
+| nvcc / hipcc compile | #92's warning filter | all 32 units through (ff) (`test_emit_jx.py`) | **pass** (nvcc 13.0 sm_86, hipcc gfx1200; 2026-10-30) |
+| on a card | the host per class through (dd); PySCF on H₂O | `test_jx_device.py` | **not run**: no card in that session |
+
+### What is not done
+
+- Nothing has run on a card or been measured.
+- The whole `J^X` over cc-pVDZ is not held to its golden by any test:
+  the host's ket half there is nine J builds over ~10k derivative kets in
+  pure Python, hours. `J1` over cc-pVDZ is (`slow`), and the `jx_` golden
+  is tracked for a faster witness.
+- No unrolled form, so no rule choosing between forms.
+- No one-electron half (#687), so no assembled `F^x`; no CPHF solve.
+- Cartesian only.

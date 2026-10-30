@@ -241,6 +241,19 @@ for CUDA, `.hip` for HIP):
   does, and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every
   name starts `hdq_` or `hjab_`, so none collides with another ladder's.
 
+- the Coulomb derivative matrix ladder, `--jx-l [LMAX]`
+  (`hessian.kernel_jx`, #688): for every ORDERED bra pair class `(la,
+  lb)`, each `l <= LMAX` (2 when the flag is given bare), `jx_{la}{lb}`,
+  the ip1 bra half of `J^X`, `J1[k, m, n] = SUM_ls (dA_k m n|ls) D_ls`
+  (`Target.JX` at d1). Ordered because a bra class is `class_pairs`',
+  as for `--grad-l`'s `gjab`. Accepted 0..`JX_L_MAX` = 3 (validated
+  through (ff), interpreted); above it is a 2. The `[p|q]` class it reads
+  is `gjab`'s (`kernel_jx.jx_pq_spec`), written by `--class`, not by this
+  flag; the ket half needs no unit of its own (`hdq_` and the d0 `jab_`).
+  It ADDS units beside the J ladders, as `--grad-l` does, and is NEVER in
+  the no-flag default nor in KERNEL_GEN_CMD. Every name starts `jx_`, so
+  none collides with another ladder's (`jab_`, `gjab_`, `hjab_`).
+
 - the exchange-Hessian ladder, `--hess-k-l [LMAX]`
   (`hessian.kernel_hkx`): for every K class `(la, lc | lb, ld)`, the
   Hermite pairing, each `l <= LMAX` (1 when the flag is given bare: the
@@ -609,6 +622,7 @@ from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
 from felizjueves.hessian.kernel_hkx import build_hkx_kernel
+from felizjueves.hessian.kernel_jx import build_jx_kernel
 from felizjueves.hessian.kernel_kx import build_kx_kernel
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
@@ -665,6 +679,8 @@ GRAD_DF_L_MAX = 3  # orbital l: the DF gradients are validated through f
 GRAD_DF_AUX_L_MAX = 6  # aux l: validated through i (#613)
 DEFAULT_HESS_L = 1  # `--hess-l` given bare: (ss) (sp) (pp), 6 units
 HESS_L_MAX = 2  # the Hessian kernels are validated through (dd) interpreted
+DEFAULT_JX_L = 2  # `--jx-l` given bare: every ordered class through (dd), 9 units
+JX_L_MAX = 3  # kernel_jx is validated through (ff) interpreted
 DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
 HESS_K_L_MAX = 1  # kernel_hkx is validated through (pp|pp) interpreted
 DEFAULT_HESS_KX_L = 1  # `--hess-kx-l` bare: every s / p K class, 32 units
@@ -1172,6 +1188,23 @@ def generate_hess(backend: str, arch: Arch, out: Path,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
+def jx_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every ORDERED bra pair class `(la, lb)`, each `l <= lmax`, over
+    `0..JX_L_MAX`, `la` outermost."""
+    if type(lmax) is not int or not 0 <= lmax <= JX_L_MAX:
+        raise ValueError(f"--jx-l {lmax!r} is outside 0..{JX_L_MAX}")
+    return [(la, lb) for la in range(lmax + 1) for lb in range(lmax + 1)]
+
+
+def generate_jx(backend: str, arch: Arch, out: Path,
+                lmax: int) -> list[Path]:
+    """Emit `jx_{la}{lb}` for every ordered bra pair class through `lmax`
+    into `out`; return the paths."""
+    kernels = [build_jx_kernel(c) for c in jx_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
 def hess_k_classes(lmax: int) -> list[tuple[int, int, int, int]]:
     """Every K class `(la, lc, lb, ld)`, each `l <= lmax`, over
     `0..HESS_K_L_MAX`, `la` outermost."""
@@ -1673,6 +1706,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.grad_dfx_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_kx_l is not None
+            or args.jx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -1688,7 +1722,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
-              "--grad-df-l / --grad-dfx-l / --hess-l / "
+              "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
               "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
@@ -1795,6 +1829,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_GRAD_F_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-l", dest="hess_l", type=int, nargs="?",
                     const=DEFAULT_HESS_L, default=None, metavar="LMAX")
+    ap.add_argument("--jx-l", dest="jx_l", type=int, nargs="?",
+                    const=DEFAULT_JX_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-k-l", dest="hess_k_l", type=int, nargs="?",
                     const=DEFAULT_HESS_K_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-kx-l", dest="hess_kx_l", type=int, nargs="?",
@@ -1882,6 +1918,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_dfx_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_kx_l is not None
+            or args.jx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -1897,7 +1934,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
-              "--grad-df-l / --grad-dfx-l / --hess-l / "
+              "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
               "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
@@ -1932,6 +1969,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_dfx_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
             or args.hess_kx_l is not None
+            or args.jx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.ip_metric_l is not None
@@ -1945,7 +1983,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
-              "--grad-df-l / --grad-dfx-l / --hess-l / "
+              "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
               "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
@@ -2071,6 +2109,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"emit: --hess-l {args.hess_l} is outside 0..{HESS_L_MAX}: "
               "the Coulomb-Hessian kernels are validated through (dd) only",
               file=sys.stderr)
+        return 2
+    if args.jx_l is not None and not 0 <= args.jx_l <= JX_L_MAX:
+        print(f"emit: --jx-l {args.jx_l} is outside 0..{JX_L_MAX}: the "
+              "Coulomb derivative matrix kernels are validated through (ff) "
+              "only", file=sys.stderr)
         return 2
     if args.hess_k_l is not None and not 0 <= args.hess_k_l <= HESS_K_L_MAX:
         print(f"emit: --hess-k-l {args.hess_k_l} is outside "
@@ -2201,6 +2244,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             else args.grad_dfx_aux_l)
     if args.hess_l is not None:  # beside the J chain, never by default
         written += generate_hess(args.backend, arch, args.out, args.hess_l)
+    if args.jx_l is not None:  # beside the J chain, never by default
+        written += generate_jx(args.backend, arch, args.out, args.jx_l)
     if args.hess_k_l is not None:  # beside the J chain, never by default
         written += generate_hess_k(args.backend, arch, args.out,
                                    args.hess_k_l)

@@ -2326,6 +2326,65 @@ def numeric_mole(name: str) -> Any:
     return mol
 
 
+def jx1_array(mol: Any, dm: np.ndarray) -> np.ndarray:
+    """#688: `J1[k, m, n] = sum_ls (d/dA_k m n|ls) D_ls`, PySCF's
+    `grad.rhf.get_jk` `vj` (its `-int2e_ip1` contracted `lk->ij`; libcint's
+    `nabla` is minus the centre derivative), cross-checked against the full
+    `int2e_ip1_cart` tensor by `einsum` to 1e-13 of the largest element;
+    what is RECORDED is `get_jk`'s."""
+    from pyscf.grad import rhf as rhf_grad
+
+    if not np.array_equal(dm, dm.T):
+        raise ValueError("the density is not symmetric")
+    vj, _ = rhf_grad.get_jk(mol, dm)
+    vj = np.asarray(vj, dtype=np.float64)
+    full = -np.einsum("xijkl,lk->xij", mol.intor("int2e_ip1_cart", comp=3),
+                      dm)
+    err = float(np.max(np.abs(vj - full)))
+    if err > 1e-13 * float(np.max(np.abs(full))):
+        raise ValueError(f"get_jk and einsum(int2e_ip1, dm) differ by "
+                         f"{err:.3e}")
+    return vj
+
+
+def jx_array(mol: Any, dm: np.ndarray) -> np.ndarray:
+    """#688: `J^X[X, k, m, n] = sum_ls D_ls d(mn|ls)/dR_{X,k}`, the Coulomb
+    part of PySCF's `hessian.rhf.make_h1` `h1ao` for density `dm`, built by
+    the same `_get_jk` scripts (`'ji->s2kl'` the ket half, `'lk->s1ij'` the
+    bra half, both on `-dm`), then `vhf + vhf^T`. Cross-checked against the
+    same sum from the full `int2e_ip1_cart` tensor (bra: X's rows of
+    `J1` and the transpose; ket: `-ip1[x, i, j, k, l] D_ji` over `i` on X,
+    and the transpose) to 1e-13 of the largest element; what is RECORDED is
+    `_get_jk`'s."""
+    from pyscf.hessian import rhf as rhf_hess
+
+    if not np.array_equal(dm, dm.T):
+        raise ValueError("the density is not symmetric")
+    ip = mol.intor("int2e_ip1_cart", comp=3)
+    j1 = -np.einsum("xijkl,lk->xij", ip, dm)
+    nao = int(mol.nao_nr())
+    out = np.zeros((mol.natm, 3, nao, nao))
+    for ia, (shl0, shl1, p0, p1) in enumerate(mol.aoslice_by_atom()):
+        shls_slice = (shl0, shl1) + (0, mol.nbas) * 3
+        vj1, vj2 = rhf_hess._get_jk(
+            mol, "int2e_ip1", 3, "s2kl",
+            ["ji->s2kl", -dm[:, p0:p1], "lk->s1ij", -dm],
+            shls_slice=shls_slice)
+        vhf = np.array(vj1, dtype=np.float64)
+        vhf[:, p0:p1] += vj2
+        out[ia] = vhf + vhf.transpose(0, 2, 1)
+        ket = -np.einsum("xijkl,ji->xkl", ip[:, p0:p1], dm[:, p0:p1])
+        bra = np.zeros((3, nao, nao))
+        bra[:, p0:p1] = j1[:, p0:p1]
+        want = ket + bra
+        want = want + want.transpose(0, 2, 1)
+        err = float(np.max(np.abs(out[ia] - want)))
+        if err > 1e-13 * float(np.max(np.abs(want))):
+            raise ValueError(f"atom {ia}: _get_jk and einsum(int2e_ip1, dm) "
+                             f"differ by {err:.3e}")
+    return out
+
+
 def numeric_array(name: str) -> np.ndarray:
     """npy entry `name`'s array, computed now (`numeric.QUANTITIES`)."""
     from . import numeric
@@ -2334,6 +2393,10 @@ def numeric_array(name: str) -> np.ndarray:
     mol = numeric_mole(name)
     if e.what == "j":
         a = j_array(mol, numeric.density(name))
+    elif e.what == "jx1":
+        a = jx1_array(mol, numeric.density(name))
+    elif e.what == "jx":
+        a = jx_array(mol, numeric.density(name))
     elif e.what == "metric":
         a = np.ascontiguousarray(mol.intor("int2c2e_cart"))
         if not np.array_equal(a, mol.intor("int2c2e")):

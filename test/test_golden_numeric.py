@@ -20,7 +20,9 @@ uncontracted d1 metric. H2O/STO-3G and
 the s/p metric blocks are fast; 6-31G and cc-pVDZ's J are `slow`, by
 test_ao_j.py's cost rule. Measured worst at writing (2026-10-30, the store's
 pyscf 2.14.0 / libcint 6.1.3): J 1.2e-15 (STO-3G), 3.0e-15 (6-31G),
-2.1e-15 (cc-pVDZ); metric s/p 6.3e-15.
+2.1e-15 (cc-pVDZ); metric s/p 6.3e-15. The Coulomb derivative matrix's
+entries (`jx1_*`, `jx_*`, #688) are held to `hessian.host_jx` and the
+interpreted kernel chain in test/test_kernel_jx.py.
 
 THE ORACLE TEST (`-m oracle`, PySCF): each npy entry rebuilt in memory is
 the tracked `.npy` bit for bit.
@@ -54,6 +56,7 @@ J_FAST = ("j_h2o_sto3g_bse",)
 J_SLOW = ("j_h2o_631g_bse", "j_h2o_ccpvdz_bse")
 METRICS = tuple(n for n in NPY if golden.entry(n).what == "metric")
 IP1 = tuple(n for n in NPY if golden.entry(n).what.startswith("metric.d1."))
+JX = tuple(n for n in NPY if golden.entry(n).quantity == "jx")
 
 
 def test_the_manifest_the_recipe_and_the_files_agree():
@@ -65,10 +68,11 @@ def test_the_seed_is_j_and_the_metric_both_kinds():
     kinds = {(golden.entry(n).quantity, golden.entry(n).kind)
              for n in golden.entries()}
     assert kinds == {("j", "npy"), ("j", "fixture"), ("metric", "npy"),
-                     ("metric", "fixture")}
-    assert set(J_FAST + J_SLOW) | set(METRICS) | set(IP1) == set(NPY)
+                     ("metric", "fixture"), ("jx", "npy")}
+    assert set(J_FAST + J_SLOW) | set(METRICS) | set(IP1) | set(JX) == set(NPY)
     # #693's three axes of one uncontracted d1 metric
     assert sorted(golden.entry(n).component for n in IP1) == ["x", "y", "z"]
+    assert {golden.entry(n).what for n in JX} == {"jx1", "jx"}
 
 
 def test_the_store_stays_inside_its_budget():
@@ -106,11 +110,11 @@ def test_an_npy_entrys_inputs_are_its_fixtures(name):
     e = golden.entry(name)
     rec = golden.record(name)
     basis = golden.basis(name)
-    assert basis.n_ao == golden.want(name).shape[0] == rec["shape"][0]
+    assert basis.n_ao == golden.want(name).shape[-1] == rec["shape"][-1]
     assert len(golden.atoms(name)) == len(
         manifest.load(manifest.FIXTURES / f"{e.molecule}.json").atoms)
-    if e.quantity == "j":
-        assert golden.density(name).shape == tuple(rec["shape"])
+    if e.what in golden.WITH_DENSITY:
+        assert golden.density(name).shape == (basis.n_ao, basis.n_ao)
 
 
 # --- the comparison helper --------------------------------------------------
