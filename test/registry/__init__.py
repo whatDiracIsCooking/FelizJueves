@@ -175,6 +175,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "fr": ("rys", "f", 0), "rj": ("rys", "j", 0), "rk": ("rys", "k", 0),
     "rs": ("rys", "s", 0), "rt": ("rys", "t", 0), "rv": ("rys", "v", 0),
     "rmetric": ("rys", "metric", 0),
+    "reri3": ("rys", "eri3", 0),
 }
 _UNIT = re.compile(r"^([a-z][a-z0-9]*?)_(?:o_)?(\d[\d_]*)$")
 

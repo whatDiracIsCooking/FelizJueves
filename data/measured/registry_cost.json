@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 135,
-  "compile/cuda/modelled": 211,
+  "compile/cuda/modelled": 218,
   "compile/hip/measured": 135,
-  "compile/hip/modelled": 211,
-  "gpu/cuda/modelled": 346,
-  "gpu/hip/modelled": 346
+  "compile/hip/modelled": 218,
+  "gpu/cuda/modelled": 353,
+  "gpu/hip/modelled": 353
  },
  "held_out": {
   "compile/cuda": {
@@ -10559,6 +10559,223 @@
     },
     "hip": {
      "s": 16.682,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 0,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 4.41,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    },
+    "hip": {
+     "s": 5.361,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 4.41,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 5.361,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 1,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 4.785,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    },
+    "hip": {
+     "s": 5.882,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 4.785,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 5.882,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 2,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 5.193,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    },
+    "hip": {
+     "s": 6.454,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 5.193,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 6.454,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 3,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 5.634,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    },
+    "hip": {
+     "s": 7.082,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 5.634,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 7.082,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 4,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 6.114,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    },
+    "hip": {
+     "s": 7.77,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 6.114,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 7.77,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 5,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 6.634,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 8.526,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 6.634,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 8.526,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "rys",
+   "quantity": "eri3",
+   "deriv": 0,
+   "L": 6,
+   "family": "schwarz-overlap-df",
+   "compile": {
+    "cuda": {
+     "s": 7.198,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 9.355,
+     "basis": "modelled",
+     "source": "fit:schwarz-overlap-df, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 7.198,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 9.355,
      "basis": "modelled",
      "source": "compile"
     }

@@ -2,6 +2,7 @@
 
     build_hmetric_kernel(spec | (lP, lQ))     -> Kernel   `hmetric_{lP}{lQ}`
     build_heri3_kernel(spec | (la, lb, lP))   -> Kernel   `heri3_{la}{lb}{lP}`
+    three_center_kernel(spec, ket, ...)       -> Kernel   the seam: any VRR
     hmetric_spec(lP, lQ) / heri3_spec(la, lb, lP) -> Spec  (engine HGP)
     metric_class(spec) / eri3_class(spec)     -> the HGP class it builds
     HGP_DF_L_MAX                               -> 1: every shell s or p
@@ -89,6 +90,14 @@ tested for s and p shells only (`HGP_DF_L_MAX = 1`: the metric's (s|s),
 (s|p), (p|p) and `(mn|P)`'s six classes `la <= lb <= 1`, `lP <= 1`), and the
 CLI's ladders refuse more. Nothing is measured.
 
+THE SEAM (`three_center_kernel`). Everything of `(mn|P)` but the per-aux-record
+body -- the key's built class, the bra record's scalars, the serial record
+loops, the contracted accumulators, the HRR and the scatter -- is one
+function of the class and a `ket` callback that spells one aux record's
+statements into the accumulators `acc_name(e, f)`. `build_heri3_kernel`
+passes the HGP VRR; `eri/density_fit/kernel_reri3.py` passes the Rys rule and
+its 2D VRR, so a `reri3_` unit is a drop-in for the `heri3_` unit.
+
     params  exactly kernel_metric's / kernel_eri3's (their module docstrings)
 
 A builder: vendor-neutral IR. It imports neither `ao/` (its witnesses), nor
@@ -98,6 +107,7 @@ Hermite plan), nor a backend.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 
 from felizjueves.hgp import hrr, vrr
@@ -128,10 +138,12 @@ from felizjueves.ir import (
     Lit,
     Note,
     Param,
+    Rys,
     Scalar,
     Stmt,
     Var,
     Weighted,
+    walk,
 )
 from felizjueves.spec import Engine, Operator, Spec, Target
 
@@ -143,6 +155,7 @@ __all__ = [
     "S_AUX",
     "build_heri3_kernel",
     "build_hmetric_kernel",
+    "acc_name",
     "eri3_class",
     "heri3_name",
     "heri3_spec",
@@ -151,6 +164,7 @@ __all__ = [
     "metric_acc",
     "metric_class",
     "metric_kernel",
+    "three_center_kernel",
 ]
 
 HGP_DF_L_MAX = 1  # the highest shell l the HGP DF kernels are tested for
@@ -234,6 +248,12 @@ def _acc(e: Cart, f: Cart) -> str:
     return f"c{_digits(e)}__{_digits(f)}"
 
 
+def acc_name(e: Cart, f: Cart) -> str:
+    """The contracted accumulator of the boundary value `[e0|f0]^(0)`, the
+    one a `three_center_kernel` `ket` callback adds into."""
+    return _acc(e, f)
+
+
 def _expr_reads(e: object) -> set[str]:
     """Every name an expression reads: `Var`s, arrays, `Factor` scalars."""
     if isinstance(e, Var):
@@ -253,15 +273,19 @@ def _expr_reads(e: object) -> set[str]:
 
 
 def _reads(body: tuple[Stmt, ...]) -> set[str]:
-    """Every name the `Decl`, `Assign` and `Boys` statements of `body` read."""
+    """Every name the `Decl`, `Assign`, `Boys` and `Rys` statements of
+    `body` read, and a `For`'s bounds, nested statements included."""
     out: set[str] = set()
-    for st in body:
+    for st in walk(body):
         if isinstance(st, Decl):
             out |= _expr_reads(st.init)
         elif isinstance(st, Assign):
             out |= _expr_reads(st.value)
-        elif isinstance(st, Boys):
+        elif isinstance(st, (Boys, Rys)):
             out |= _expr_reads(st.t)
+        elif isinstance(st, For):
+            out |= set().union(*(_expr_reads(e)
+                                 for e in (st.start, st.stop, st.step)))
     return out
 
 
@@ -517,17 +541,39 @@ def build_hmetric_kernel(cls: Spec | tuple[int, int], *,
                "(eri/density_fit/kernel_hgp.py)"))
 
 
+KetBody = Callable[[AmClass, Var],
+                   tuple[tuple[Stmt, ...], list[tuple[Cart, Cart]]]]
+
+
 def build_heri3_kernel(cls: Spec | tuple[int, int, int], *,
                        name: str | None = None) -> Kernel:
     """The HGP three-center kernel of one class (module docstring); its
     parameters, launch and output are `kernel_eri3.build_eri3_kernel`'s."""
     spec = _spec(cls, Target.ERI3, heri3_spec)
+    return three_center_kernel(
+        spec, lambda hcls, ket: _ket_body(hcls, _QC, "P", ket),
+        name=name or heri3_name(spec),
+        title="three-center DF integral on the HGP engine",
+        origin="eri/density_fit/kernel_hgp.py")
+
+
+def three_center_kernel(spec: Spec, ket: KetBody, *, name: str, title: str,
+                        origin: str, bra: tuple[str, str, str] = (
+                            "pe", "P", "up")) -> Kernel:
+    """`(mn|P)` of `spec`'s class with `ket(built class, aux record index)`
+    as the per-aux-record body (module docstring, "THE SEAM"): it returns
+    its statements, which add every boundary value into `acc_name(e, f)`,
+    and the boundary in `hgp.vrr.targets` order. `bra` names the bra
+    record's exponent, centre prefix and `U_P` locals, which `ket` reads.
+    The engine is the caller's to check; the parameters, launch and output
+    are `kernel_eri3.build_eri3_kernel`'s."""
     la, lb, lP = spec.am
-    hcls = eri3_class(spec)
+    hcls = (max(la, lb), min(la, lb), lP, 0)
     swap = la < lb  # built (b a|P): the record's B is the recurrence's A
     xa, xb = ("XPB", "XPA") if swap else ("XPA", "XPB")
     ib = Var(BRA3)
-    ket_body, bnd = _ket_body(hcls, _QC, "P", Var(KET3))
+    pe, centre, up = bra
+    ket_body, bnd = ket(hcls, Var(KET3))
 
     kdot: Expr | None = None
     for d in range(3):
@@ -535,15 +581,15 @@ def build_heri3_kernel(cls: Spec | tuple[int, int, int], *,
         kdot = t if kdot is None else _c(Fn.ADD, kdot, t)
     assert kdot is not None
     bra_scalars = _live((
-        Decl("pe", Scalar.F64, init=Index("zeta_ab", (ib,))),
-        *(Decl(f"P{d}", Scalar.F64, init=Index("P", (ib, Lit(d))))
+        Decl(pe, Scalar.F64, init=Index("zeta_ab", (ib,))),
+        *(Decl(f"{centre}{d}", Scalar.F64, init=Index("P", (ib, Lit(d))))
           for d in range(3)),
         *(Decl(Factor.pa(d).value, Scalar.F64, init=Index(xa, (ib, Lit(d))))
           for d in range(3)),
         Note("U_P = s_ab K_AB, K_AB = exp(p X_PA . X_PB): the MMD staging "
              "keeps K_AB out of s_ab (it rides in E's seed there)"),
-        Decl("up", Scalar.F64, init=_c(Fn.MUL, Index("s_ab", (ib,)), _c(
-            Fn.EXP, _c(Fn.MUL, Var("pe"), kdot)))),
+        Decl(up, Scalar.F64, init=_c(Fn.MUL, Index("s_ab", (ib,)), _c(
+            Fn.EXP, _c(Fn.MUL, Var(pe), kdot)))),
     ), _reads(ket_body))
     bra_body: tuple[Stmt, ...] = (
         *bra_scalars,
@@ -618,10 +664,10 @@ def build_heri3_kernel(cls: Spec | tuple[int, int, int], *,
         scatter,
     )
     body = (
-        Note(f"three-center DF integral on the HGP engine, class (la, lb, lP) "
+        Note(f"{title}, class (la, lb, lP) "
              f"= ({la}, {lb}, {lP}): (mn|P) = {hcls} with an exponent-0 "
-             "partner (eri/density_fit/kernel_hgp.py)"),
+             f"partner ({origin})"),
         *_thread(CELL, "n_cell", per_cell,
                  "(AO shell pair, aux shell) cell"),
     )
-    return Kernel(name or heri3_name(spec), _eri3_params(), body)
+    return Kernel(name, _eri3_params(), body)

@@ -97,9 +97,11 @@ HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``), on `J`
 ``.../j.rys/...``), on `K` (`eri/hjk/kernel_rk.py`: the same VRR in
 `kernel_hk`'s split nest, keyed ``.../k.rys/...``, K's Hermite pairing) and
 on the one-electron `S`, `T` and `V`
-(`one_electron/kernel_rys.py`, keyed ``.../s.rys/...``) and on the DF
+(`one_electron/kernel_rys.py`, keyed ``.../s.rys/...``), on the DF
 metric `METRIC` (`eri/density_fit/kernel_rmetric.py`, keyed
-``.../metric.rys/...``, through (g|g)). Every other
+``.../metric.rys/...``, through (g|g)) and on the three-center `ERI3`
+(`eri/density_fit/kernel_reri3.py`: the same VRR into `kernel_hgp`'s
+`(mn|P)` skeleton, keyed ``.../eri3.rys/...``). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
 
@@ -483,14 +485,15 @@ def _mmd_only(what: str) -> str:
 _NO_RYS = (
     "the Rys engine is built for the fused F (eri/fock/kernel_frys.py), "
     "the split J and K (eri/hjk/kernel_rj.py, kernel_rk.py), the "
-    "one-electron S, T and V (one_electron/kernel_rys.py) and the DF metric "
-    "(eri/density_fit/kernel_rmetric.py) only: its VRR feeds the HGP HRR of "
+    "one-electron S, T and V (one_electron/kernel_rys.py), the DF metric "
+    "(eri/density_fit/kernel_rmetric.py) and the three-center (mn|P) "
+    "(eri/density_fit/kernel_reri3.py) only: its VRR feeds the HGP HRR of "
     "kernel_f / kernel_hj / kernel_hk / kernel_hgp; "
     "a Rys instance of this target is a "
     "follow-up nobody has declared"
 )
 _RYS_TARGETS = (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V,
-                Target.METRIC)
+                Target.METRIC, Target.ERI3)
 
 
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {

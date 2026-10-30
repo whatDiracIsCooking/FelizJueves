@@ -1,4 +1,4 @@
-# Rys quadrature: the fused `F` (`Target.F`), the split `J` and `K` (`Target.J`, `Target.K`) and the DF metric (`Target.METRIC`) on `Engine.RYS`
+# Rys quadrature: the fused `F` (`Target.F`), the split `J` and `K` (`Target.J`, `Target.K`) the DF metric (`Target.METRIC`) and the three-center `(mn|P)` (`Target.ERI3`) on `Engine.RYS`
 
 **Status: implemented and interpreted; emitted for both vendors; NOT
 compiled by nvcc or hipcc and NOT run on either card.** The session that
@@ -22,7 +22,10 @@ VRR), "The split `K` on Rys", with the same status. The fourth, **the DF
 metric `(P|Q)`** (`rmetric_` units, `kernel_hgp`'s metric skeleton with the
 same rule and VRR), "The DF metric on Rys", is further along: it is
 **compiled by nvcc and hipcc** (warning-free, every class through (g|h)),
-though not run on a card either.
+though not run on a card either. The fifth, **the three-center `(mn|P)`** (`reri3_` units,
+`kernel_hgp`'s `(mn|P)` skeleton with the same rule and VRR and a
+single-centre ket), "The three-center `(mn|P)` on Rys", is compiled by
+nvcc and hipcc too, and not run on a card.
 
 ## What it is
 
@@ -439,4 +442,78 @@ kernel tier's flags and #92's warning filter: 60 passed, 47 s on 8 workers.
   harness, which should take the `rmetric_` unit unchanged.
 - **Nothing measured**: no word on Rys against MMD or HGP here, and no
   `metric.rys` row in `data/measured/`.
-- **`(mn|P)` on Rys**, and anything past (g|h): the rule stops at `N = 5`.
+- Anything past (g|h): the rule stops at `N = 5`. (`(mn|P)` on Rys is
+  the next section.)
+
+## The three-center `(mn|P)` on Rys: `Target.ERI3` on `Engine.RYS`
+
+**Status: implemented, interpreted, emitted for both vendors and compiled
+by nvcc 13.0 (`sm_86`) and hipcc (ROCm 7.2.4, `gfx1200`) with #92's warning
+filter; NOT run on either card.** The session that built it had both
+device compilers and no card, so every `gpu` case skipped. **Nothing is
+measured or scored.** Cartesian; `la + lb + lP <= 9` (`N <= 5`).
+
+`eri/density_fit/kernel_reri3.py`'s `build_reri3_kernel((la, lb, lP))`
+builds `reri3_{la}{lb}{lP}`, keyed `Spec(..., Target.ERI3,
+engine=Engine.RYS)` (slot `eri3.rys`, no lever: `levers.DEFAULT_REFUSALS`).
+It is the HGP twin `heri3_` (`hgp_df.md`) with one thing replaced, the
+per-aux-record vertical recurrence. It goes through a seam that
+`kernel_hgp` now exposes, `three_center_kernel(spec, ket, ...)`: the built
+class `(max, min | lP 0)`, the bra record's scalars (`U_P = s_ab K_AB`),
+the serial record loops, the contracted accumulators (`acc_name`), the bra
+HRR and the plain mirrored scatter are all `kernel_hgp`'s, and the `ket`
+callback spells one aux record's statements. Every `heri3_` golden is
+byte-identical through the seam. So a `reri3_` unit is a drop-in for the
+`eri3_` and `heri3_` units of its class: same signature, launch and output.
+`eri3_drive` and `test/eri3_driver.py` serve all three (`engine=`).
+
+**The aux side is single-centre.** An aux Gaussian is the pair `(P, 1)`
+with an exponent-0 s partner on its own centre, so `q = alpha`, `Q = C =
+A_k`, `U_Q = s_aux`, and `QC = 0`. `rys.recurrence.root_loop` and
+`scalar_needs` take `ket_centred=True` for it: `D00 = x (W - Q)`, the zero
+term not spelled and `QC_*` never formed (`kernel_hgp._without`'s rule, in
+the 2D VRR). It is the ket half of the metric's `single_centre=True`
+(above), which drops `PA` too; the `(mn|P)` bra is a real pair, so `PA`
+stays. The default is unchanged, so every `fr_` / `rj_` / `rk_` / `rs_` /
+`rt_` / `rv_` / `rmetric_` golden is byte-identical. Per (bra record, aux
+record): `quartet_rule`'s scalars, `T = rho |PQ|^2`, `S = U_P U_Q
+(2/sqrt(pi)) theta`, the `N = L // 2 + 1` point rule (`fj_rys<N>`), then
+the root loop into the accumulators.
+
+### How it is checked
+
+- **Interpreted** (`test_kernel_reri3.py`, `rys=roots_weights` injected):
+  - every class `la + lb + lP <= 4` against the MMD host within 16 eps of
+    the tower-twin scale (worst 6.62 eps, (dd|s)), with the MMD tests'
+    fast/slow split;
+  - the s/p classes against the MMD and HGP kernels within 32 eps;
+  - the tight sets past `T = 709`;
+  - H2O/STO-3G x cc-pVTZ-jkfit against libcint's `int3c2e_cart`: aux s and
+    p 2.05e-14 of max (fast), and the **whole** tensor, 15 classes through
+    (pp|g) at `L = 6`, 3.31e-14 of max (`slow`). The MMD kernel's own
+    tests stop at `L = 4` on that fixture.
+  - Structure: one `Rys` and no `Boys`, no `QC_*`, the stored ERIs are the
+    HRR's nodes, the parameters are `eri3_`'s and `heri3_`'s, and `L = 10`
+    is refused.
+- **Emitted** (`test_emit_reri3.py`): `python -m felizjueves.emit
+  --rys-eri3-l [LMAX]` (bare 4; `0..RYS_ERI3_L_MAX = 9`, above is a 2),
+  never in the bare default nor in `KERNEL_GEN_CMD`. 22 goldens per backend
+  (`test/golden/{cuda,hip}/reri3_*`, 968 KB in all, no digests file).
+- **Compiled:** each of the 22 units alone, by nvcc and by hipcc, with the
+  kernel tier's flags and no warning located in generated text. The
+  device test's three runner programs (the synthetic pair, the fixture at
+  `L <= 4`, the whole fixture) also compile under both (`fj_rys<N>`,
+  `N <= 3` here, carried in each unit).
+- **On a card** (`test_reri3_device.py`, `gpu`): the synthetic pair at
+  `L <= 4` against the host, and the fixture at `L <= 4` against the host
+  and libcint. The whole fixture against libcint is `slow`. The bounds are
+  the interpreter's, stated before any run. **Not run**: no card in the
+  session.
+
+### What is not done
+
+- **The card runs**, on the RTX 3080 and the RX 9060 XT
+  (`devtools/kernel-tier.sh --backend cuda|hip`, and `--full` for the
+  whole fixture).
+- **Nothing measured**, no `gpu` backend spelling, no screen, nothing above
+  `L = 9`, Cartesian only.
