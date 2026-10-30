@@ -4002,6 +4002,52 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the Hessian ladders "
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_HESS_BUILDERS)
 
+# The exchange derivative matrix (#689): `hessian.kernel_kx` (kx1_ / kxc_,
+# `gk`'s rolled form with a matrix scatter) and its host reference.
+RULES |= {
+    "kx_host": _rule(
+        "hessian/host_kx.py: the exchange derivative matrix K^X on the AO "
+        "layer -- kernel_kx's witness -- from the gradient reference's "
+        "records, per-axis E and Hermite products (`gradient.host`), the "
+        "undressed E's Hermite order and the nucleus type; `[t]^(0)` "
+        "injected",
+        ("ao", "mmd.hermite", "gradient.host", "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "hessian.kernel_kx": "the kernel is what this module checks"}),
+    "kx_builder": _rule(
+        "kernel_kx.py: the exchange derivative matrix kernels -- key -> "
+        "IR, `kernel_gk`'s plan, compact tables, rolled sums and ket signs, "
+        "the K seams' fragment bindings and the per-axis `E` tables "
+        "(`e_fragment`)",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "mmd.recurrence",
+         "mmd.kernel", "gradient.kernel_gk", "eri.k_exchange.levers.seams"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "hessian.host_kx": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian.host_kx": "kx_host",
+    "hessian.kernel_kx": "kx_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.host_kx": ("ao.density", "ao.pairs", "ao.shell",
+                        "gradient.host", "mmd.hermite",
+                        "one_electron.potential"),
+    "hessian.kernel_kx": ("eri.k_exchange.levers.seams",
+                          "gradient.kernel_gk", "ir", "mmd.e_fragment",
+                          "mmd.kernel", "mmd.recurrence", "plan.schedule",
+                          "plan.targets", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the exchange derivative "
+                       "matrix ladder through `kernel_kx`",
+                       RULES["driver"].may | {"hessian.kernel_kx"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_kx"}
+
 # The one-electron Hessians (`hessian.kernel_h1e`: S, T, V at d2) and their
 # host reference (`hessian.host_1e`), the same way: the builder on
 # `kernel_g1e`'s record head and `kernel_v`'s plan, checked against

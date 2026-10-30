@@ -22,6 +22,12 @@ CASES = [
     *ladder("mmd", "k", 2, compile=range(5)),
     *ladder("mmd", "metric", 2, compile=range(5)),
     *ladder("mmd", "eri3", 2, compile=range(5)),
+    # kx1 / kxc (#689), the exchange derivative matrix at d1: interpreted
+    # through (dd|dd) and at three f classes, compiled at the goldens and
+    # (ff|ff); no device test, not run on either card.
+    *(case for q in ("kx1", "kxc") for case in ladder(
+        "mmd", q, 1, compile=(0, 1, 2, 3, 4, 12),
+        interpreted=(*range(9), 12))),
 ]
 
 # H2O STO-3G's pair classes reach L = 2, cc-pVDZ's L = 4.
@@ -44,6 +50,8 @@ TESTS = {
         Classes("mmd", "v", 2),
     "test/test_emit_hess_k.py::test_X_compiles_the_exchange_hessian_unit":
         Classes("mmd", "k", 2),
+    "test/test_emit_hess_kx.py::test_X_compiles_the_derivative_matrix_unit":
+        Classes("mmd", "kx1", 1),
     "test/test_emit_d2metric.py::test_X_compiles_the_metric_hessian_unit":
         Classes("mmd", "metric", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_df_hessian_unit":
