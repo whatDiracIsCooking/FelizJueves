@@ -3,11 +3,12 @@ the RTX 3080 and the RX 9060 XT.
 
 WHAT RUNS WHERE. `launch_k.k_launches` plans the molecule (#204), with
 `kernel_k.build_k_kernels` (#198, #203) injected as the plan's `build=`; a
-driver `main()` generated FROM THAT PLAN (`plan_driver.k_driver`, harness in
-`test/`, never in `src/`) uploads each bra pair class, each ket pair class
-and each density class ONCE, zeroes ONE K buffer once per run, launches every
-batch kernel of every K class once per `b` shell of its kets (the K kernel
-writes one `K[a, b]` block per bra record, `b` from the ket:
+sequence generated FROM THAT PLAN on the shared runner
+(`plan_driver.k_driver`, harness in `test/`, never in `src/`; #659) uploads
+each bra pair class, each ket pair class and each density class ONCE,
+zeroes ONE K buffer once per run, launches every batch kernel of every K
+class once per `b` shell of its kets (the K kernel writes one `K[a, b]`
+block per bra record, `b` from the ket:
 `plan_driver`'s "K on the card"), every launch ADDING into its
 (bra pair class, b) block, and reads the buffer back. The scatter of the
 per-record blocks into `K_mn` is host-side (`plan_driver.k_scatter`), as eq.
@@ -71,15 +72,16 @@ with devtools/config.sh's flags; a warning located in generated text fails
 it (#92), as it fails the device tests' own compiles.
 
 FAST TIER (no compiler, no card, no PySCF): the driver's shape against the
-plan, and the driver INTERPRETED -- the staged input sliced exactly as the
-generated `main()` slices it, each launch run through `interp`, scattered --
+plan, and the sequence INTERPRETED -- every launch's arguments resolved
+through its own `Ref`s into `k_buffers`, run through `interp`, scattered --
 against the walk, on a synthetic basis with two s shells and a p shell
 (several `b` shells per ket class, several `d` shells per launch) and on H2.
 
 WHAT SKIPS: the device tests are `gpu` plus `cuda` or `hip` and take the
 compiler and device fixtures, so on a box without the card they SKIP -- the
-run is green and empty, and devtools/kernel-tier.sh exits 2. The VRAM probe
-(`run_device_binary(..., vram=)`) runs first.
+run is green and empty, and devtools/kernel-tier.sh exits 2. The shared
+runner has no VRAM probe (#659, as for every ported driver): a short card
+fails the launch with the runner's error.
 """
 
 from __future__ import annotations
@@ -93,15 +95,16 @@ import numpy as np
 import pytest
 import test_ao_j_ondevice
 import test_ao_k
+from harness_driver import Ref
 from oracle import manifest
 from plan_driver import (
     RUNS,
     KDriver,
     compile_checked,
     k_block,
-    k_counts,
+    k_buffers,
     k_driver,
-    k_read_back,
+    k_run,
     k_scatter,
     k_stage,
 )
@@ -299,12 +302,19 @@ def _ss_scale(basis: Basis, D: np.ndarray, pq) -> tuple[list[int], np.ndarray]:
 # ---------------------------------------------------------------------------
 
 
-def _check_counts(c: dict[str, int], drv: KDriver) -> None:
+def _check_counts(drv: KDriver, staged: np.ndarray) -> None:
+    """The plan's shape, as the sequence carries it: one upload per bra,
+    ket and density class (doubles, and the ints apart), ONE K buffer
+    zeroed by the first launch, one step per launch (`k_run` asserts the
+    runner launched exactly these)."""
     nb, nk, ne, nl = len(drv.bra), len(drv.ket), len(drv.dcd), len(drv.launches)
-    assert c == dict(runs=RUNS, bra_classes=nb, ket_classes=nk,
-                     dcd_classes=ne, uploads_bra=nb, uploads_ket=nk,
-                     uploads_dcd=ne, k_buffers=1, memsets=RUNS,
-                     launches=nl * RUNS, readbacks=RUNS, plan_launches=nl), c
+    bufs = k_buffers(drv, staged)
+    assert sorted(bufs) == sorted(
+        [f"kb{i}" for i in range(nb)] + [f"kbi{i}" for i in range(nb)]
+        + [f"kk{j}" for j in range(nk)] + [f"kki{j}" for j in range(nk)]
+        + [f"kd{e}" for e in range(ne)] + ["K"])
+    assert len(drv.steps) == nl and drv.steps[0].zero == ("K",)
+    assert not any(s.zero for s in drv.steps[1:])
 
 
 def _check(backend: str, cell: Cell, request, run_device_binary,
@@ -314,11 +324,10 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
     plan = _plan(cell)
     drv = k_driver(plan, basis, backend, workdir / "gen")
     binary = compile_checked(tc, drv, workdir / "k_driver")
-    src, dst = workdir / "in.bin", workdir / "out.bin"
-    k_stage(drv, basis, D).tofile(src)
-    out = run_device_binary(binary, str(src), str(dst), vram=backend)
-    _check_counts(k_counts(out), drv)
-    runs = k_read_back(drv, np.fromfile(dst, dtype=np.float64))
+    staged = k_stage(drv, basis, D)
+    _check_counts(drv, staged)
+    runs = k_run(drv, binary, staged, workdir / "run", runs=RUNS)
+    assert len(runs) == RUNS
     for r in runs:
         assert np.all(np.isfinite(r)), "non-finite K buffer"
 
@@ -487,7 +496,12 @@ def test_the_k_driver_is_the_plans_shape(backend, cell, tmp_path):
         assert any(isinstance(s, AtomicAdd) for s in stmts)
         assert not any(isinstance(s, Assign) and isinstance(s.dst, Index)
                        and s.dst.array == "K" for s in stmts)
-        assert x.kernel.name in drv.source
+        assert f'kernel_entry("{x.kernel.name}",' in drv.source
+    assert [s.kernel.name for s in drv.steps] == [
+        x.kernel.name for x in drv.launches]
+    for s, x in zip(drv.steps, drv.launches, strict=True):
+        assert s.args["n_ket"] == x.n_ket
+        assert s.args["K"].offset == drv.blocks[x.block].offset
     assert len({(b.bra, b.b) for b in drv.blocks}) == len(drv.blocks)
     assert k_stage(drv, basis, D).size == drv.n_input
     assert sum(drv.writers.values()) == len(drv.launches)
@@ -495,51 +509,32 @@ def test_the_k_driver_is_the_plans_shape(backend, cell, tmp_path):
 
 def _interp_buffer(drv: KDriver, staged: np.ndarray, *, lanes: int
                    ) -> np.ndarray:
-    """The generated `main()`, in Python: the staged input sliced exactly as
-    `K_DRIVER` slices it (pointer offsets and all), each launch run through
-    `interp` with the reference Boys, adding into one zeroed K buffer."""
-    tau, maxD = float(staged[0]), float(staged[1])
-    h = 2
-    bp, bi, kp, ki, dp = [], [], [], [], []
-    for _, recs in drv.bra:
-        n = len(recs)
-        bp.append(staged[h:h + 12 * n])
-        bi.append(staged[h + 12 * n:h + 13 * n].astype(np.int32))
-        h += 13 * n
-    for _, recs in drv.ket:
-        n = len(recs)
-        kp.append(staged[h:h + 12 * n])
-        ki.append(staged[h + 12 * n:h + 13 * n].astype(np.int32))
-        h += 13 * n
-    for lc, ld in drv.dcd:
-        m = drv.dcd_doubles(lc, ld)
-        dp.append(staged[h:h + m])
-        h += m
-    assert h == staged.size
-    bslot = {x: i for i, (x, _) in enumerate(drv.bra)}
-    kslot = {x: i for i, (x, _) in enumerate(drv.ket)}
-    eslot = {x: i for i, x in enumerate(drv.dcd)}
-    n_dc = drv.n_sh * drv.n_sh
+    """The runner's sequence, in Python: every step's arguments resolved
+    from `k_buffers(staged)` through its own `Ref`s (the offsets the card is
+    handed), each launch run through `interp` with the reference Boys,
+    adding into one zeroed K buffer."""
+    bufs = k_buffers(drv, staged)
     buf = np.zeros(drv.n_k)
-    for x in drv.launches:
-        i, j = bslot[x.am[:2]], kslot[x.am[2:]]
-        e = eslot[(x.am[1], x.am[3])]
-        n, nk, s, m = len(drv.bra[i][1]), len(drv.ket[j][1]), x.start, x.n_ket
-        b, k = bp[i], kp[j]
+    shape3 = {"P", "XPA", "XPC", "Q", "XQB", "XQD"}
+    for x, st in zip(drv.launches, drv.steps, strict=True):
+        n, m = st.args["n_bra"], st.args["n_ket"]
+        args = {}
+        for name, v in st.args.items():
+            if not isinstance(v, Ref) or name == "K":
+                args[name] = v
+                continue
+            whole = bufs[v.buffer]
+            if name == "Dcd":
+                args[name] = whole[v.offset:].reshape(st.args["n_dc"], -1)
+                continue
+            count = (n if name in {"P", "zeta_ac", "XPA", "XPC", "s_ac", "Ip",
+                                   "dc"} else m)
+            width = 3 if name in shape3 else 1
+            got = whole[v.offset:v.offset + count * width]
+            args[name] = got.reshape(count, 3) if width == 3 else got
+        assert st.args["K"] == Ref("K", drv.blocks[x.block].offset)
         blk = drv.blocks[x.block]
-        args = dict(
-            n_bra=n, n_ket=m, n_dc=n_dc, tau=tau, maxD=maxD,
-            P=b[0:3 * n].reshape(n, 3), zeta_ac=b[3 * n:4 * n],
-            XPA=b[4 * n:7 * n].reshape(n, 3), XPC=b[7 * n:10 * n].reshape(n, 3),
-            s_ac=b[10 * n:11 * n], Ip=b[11 * n:12 * n], dc=bi[i],
-            Q=k[3 * s:3 * s + 3 * m].reshape(m, 3),
-            eta=k[3 * nk + s:3 * nk + s + m],
-            XQB=k[4 * nk + 3 * s:4 * nk + 3 * s + 3 * m].reshape(m, 3),
-            XQD=k[7 * nk + 3 * s:7 * nk + 3 * s + 3 * m].reshape(m, 3),
-            s_bd=k[10 * nk + s:10 * nk + s + m],
-            Iq=k[11 * nk + s:11 * nk + s + m], dd=ki[j][s:s + m],
-            Dcd=dp[e].reshape(n_dc, -1),
-            K=k_block(drv, buf, x.block).copy())
+        args["K"] = k_block(drv, buf, x.block).copy()
         grid, block = k_launch_shape(n, lanes)
         got = Interpreter(x.kernel, launch=Launch(grid, block, lanes),
                           boys=boys).run(**args)["K"]

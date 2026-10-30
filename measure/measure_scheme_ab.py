@@ -88,10 +88,11 @@ from plan_driver import (
     compile_dq,
     dq_classes,
     driver,
-    read_back_j,
+    read_back_tail,
     reps,
     stage,
 )
+from plan_driver import run as run_j
 from test_fock_build import BOUND as F_BOUND
 from test_j_chain_ondevice import _ket_data, _rows_of
 from test_j_launched_ondevice import BOUND as J_BOUND
@@ -148,6 +149,11 @@ TIMED_REGION = {
     # region. Restate this entry with the store's header at the next sweep.
     "dq": "GPU events around every DQ launch; the outputs' poisoning "
           "outside (plan_driver.DQ_PROGRAM's timing mode)",
+    # Likewise "j": the tracked rows were taken on plan_driver.DRIVER, which
+    # #659 replaced by the shared runner's sequence (`plan_driver.run`, one
+    # process, `launch_events=False`): its events are the same pair, from
+    # before the J_p zeros to after the last JAB launch, with J_mn's zero
+    # between. Restate this entry with the store's header at the next sweep.
     "j": "GPU events from before the J_p and J_mn memsets to after the last "
          "JAB launch (plan_driver.DRIVER, chain=)",
     "k": "GPU events from before K's memset to after the last kb launch "
@@ -217,7 +223,7 @@ class Cell:
     D: np.ndarray
     f: dict  # arm -> (binary, data, recs)
     dq: object  # plan_driver.DQBinary
-    j: tuple  # (binary, staged, drv, plan)
+    j: tuple  # (binary, buffers, drv, plan)
     k: list  # kblock ClassBinary
     wd: Path
 
@@ -251,8 +257,7 @@ def build(tc, backend: str, n: int, cls: str, tau: float, run,
                         strict=False, resolve=None)
     drv = driver(jplan, backend, wd / "jgen", chain=basis)
     j_bin = compile_checked(tc, drv, wd / "j_bin")
-    j_in = wd / "j.in"
-    stage(jplan, basis, D, drv, ket_data=_ket_data(basis, rows)).tofile(j_in)
+    j_in = stage(jplan, basis, D, drv, ket_data=_ket_data(basis, rows))
 
     kplan = kb_launches(basis, D, bound=partial(record_bounds, pq=pq),
                         tau=tau, build=build_kblock_kernel)
@@ -277,12 +282,11 @@ def run_arm(c: Cell, arm: str, backend: str, run, *, warmup: int = 0,
         return None, [float(sum(t)) for t in zip(*times.values(),
                                                   strict=True)]
     if arm == "j":
-        binary, staged, drv, _ = c.j
-        dst = c.wd / "j.out"
-        out = run(binary, str(staged), str(dst), str(warmup), str(reps_),
-                  vram=backend)
-        J = read_back_j(drv, np.fromfile(dst, dtype=np.float64))[0]
-        return J, [e for *_, e in reps(out)]
+        binary, buffers, drv, _ = c.j
+        ran = run_j(drv, binary, buffers, c.wd / f"j_{warmup}_{reps_}",
+                    runs=reps_, warmup=warmup)
+        J = read_back_tail(drv, ran)[0]
+        return J, [e for *_, e in reps(ran)]
     if arm == "k":
         Ks, outs, _ = run_classes(c.k, c.basis, "kb", c.wd / "k_runs",
                                   warmup=warmup, reps=reps_)

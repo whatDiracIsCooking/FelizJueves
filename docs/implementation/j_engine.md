@@ -53,8 +53,8 @@ value. It has one `ClassLaunch` per `(lp, lq)`: bra records in pair order,
 ket records sorted descending by `I_q · max|D_q|` (`[JEngine, v2, §3.3]`'s
 key), and the class's batch kernels. Three things walk it. The launch oracle
 (`launch.walk`) is pure Python. The staged driver (`eri/j_coulomb/staged.py`) runs the
-kernels interpreted. A device `main()`, generated from the plan by
-`test/plan_driver.py`, uploads each bra and ket class once, keeps one `J_p`
+kernels interpreted. A device sequence, generated from the plan by
+`test/plan_driver.py` and run by the shared C++ runner (#659), uploads each bra and ket class once, keeps one `J_p`
 buffer per bra class and launches every batch kernel into it with fp64
 atomics. That device build ran on **both cards** and was compared against the
 oracle and the libcint fixtures. `src/felizjueves/performance/dispatch.py` chooses a
@@ -1538,8 +1538,8 @@ with the real screen.
 
 **What is generated, and what is not.** The generator emits the `[p|q]`
 kernels (`J_p = Σ_q [p|q] D_q`) and nothing else. The plan is a Python value.
-The device `main()` that runs it is written by a test harness
-(`test/plan_driver.py`), not by `emit/`. The `E` transform, the ket
+The device sequence that runs it is written by a test harness
+(`test/plan_driver.py`, on the shared runner since #659), not by `emit/`. The `E` transform, the ket
 pre-contraction, eq. 20's back-transform `J_ab = Σ_p E_p^{ab} J_p` and the
 `J_ab` scatter stay **host-side Python** (`ao/`), as they are in the
 predecessor's `jgen`. That was milestone 6's state. Milestone 7 generated

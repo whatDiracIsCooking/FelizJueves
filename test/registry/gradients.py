@@ -143,4 +143,10 @@ TESTS = {
         span("mmd", "k", 1, range(5)),
     "test/test_gk_device.py::test_X_gk_co_ccpvtz_against_libcint":
         span("mmd", "k", 1, range(13)),
+    # The whole RHF gradient on a card (#566): H2O/STO-3G and 6-31G, s and
+    # p -- gs, gt, gv and the gjab chain at (ss)-(pp), every gk class
+    # through (pp|pp).
+    "test/test_rhf_gradient_device.py::test_X_rhf_gradient_on_the_card":
+        sum((span("mmd", q, 1, range(3)) for q in ("t", "v", "jab")),
+            span("mmd", "s", 1, range(3))) + span("mmd", "k", 1, range(5)),
 }

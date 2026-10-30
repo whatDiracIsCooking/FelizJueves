@@ -2,7 +2,9 @@
 
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards; the whole RHF gradient assembled and
-held to PySCF interpreted only (#565)** (the RTX 3080 and the RX 9060 XT,
+held to PySCF interpreted (#565) and on the RX 9060 XT only, H₂O/STO-3G
+and 6-31G, CUDA not run (#566); nothing scored or timed, the closing
+`StructuralLimit` is #567's** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
 through (ff|i) and (i|i) since #613, `gs`, `gt`, `gv` through (ff)
 since #614, `gk` through `(ff|ff)` since #618 and the whole `gjab` chain
@@ -481,7 +483,41 @@ the generated kernels in `ir.interp`, each in its default form, launched
 class by class into one zeroed `G` as `test/grad_driver.py` packs them for
 a card. J is the chain, not the host's `J_p`: the d0 `[p|q]` of
 `kernel_gjab.gjab_pq_spec`'s class (the bra raised by one) through
-`eri.j_coulomb.drive.KernelJP`, then `gjab_`. The device runners are #566.
+`eri.j_coulomb.drive.KernelJP`, then `gjab_`.
+
+**On a card (#566, `test/test_rhf_gradient_device.py`).** The device
+runners feed the same `rhf_gradient`, one program per term, every kernel
+in its default form, the terms reduced on the host: `gs_` / `gt_` / `gv_`
+per pair class (`grad_driver.one_electron_launches`; `gv_` carries the
+Hellmann–Feynman term); the J chain wholly on the card (`DQ`, the plan
+keyed on its `Dmax`, every bra class raised by one by
+`grad_driver.raised_plan`, the raised `[p|q]`, then `gjab_` reading `J_p`
+where it lies, `grad_driver.gjab_tail`; no host `J_p`); every `gk_` class
+through `gk_driver`, each unit compiled alone under its 10 s budget, the
+per-class `G` summed on the host in launch order; `V_nn^x` the host's.
+Inputs are #550's H₂O/STO-3G and H₂O/6-31G fixtures, both `slow`
+(`tiers.by_l`: `gk_` at `(pp|pp)` and the raised `[p|q]` reach L = 5).
+Bounds, set before the run: every term and the total within `1e-10`
+absolute of PySCF and of the interpreted `rhf_gradient`, and run to run
+within `SPREAD_TOL = 1e-13` absolute.
+
+Run on the RX 9060 XT (gfx1200) only, 2026-10-30, `kernel-tier.sh
+--backend hip --full`, 2 passed: total against PySCF 8.17e-14 (STO-3G) /
+4.66e-14 (6-31G), against the interpreted gradient 1.78e-15 / 3.11e-15,
+run to run 6.9e-17 / 4.4e-15; worst term `potential` against PySCF
+(7.64e-14 / 4.97e-14). **CUDA was not run** (NVML failed to initialise in
+that container; PR #696 is labelled `unverified-on-card`).
+
+**Decision (the user's, #566): run-to-run bound, not bit-identity.** #566
+asked for the device gradient to be bit-identical across two launches.
+Because every d1 kernel `atomicAdd`s into `G` (the departure below), the
+order of the additions is the hardware's and a device gradient is **not
+bit-reproducible**: the first hip run's totals differed by 2.8e-17
+(STO-3G) and 1.8e-15 (6-31G). The criterion was restated as `SPREAD_TOL =
+1e-13` absolute on every term and the total; the test still reports
+whether the totals came out bit-identical (they did not). Getting bit
+reproducibility back means the plan's partials and a fixed-order
+reduction, a kernel change nobody has made.
 
 This departs from the milestone's plan where #552 and #557 closed: the
 kernels `atomicAdd` into `G` (no partials and no fixed-order reduction, so
@@ -522,9 +558,10 @@ nine-primitive s), and its interpreted `gk_` runs for hours.
 | libcint `gjab` witness (`test_j_gradient_witness.py`, #639) | `int2e_ip1_cart` on CO/cc-pVTZ, `co_ccpvtz_j`'s density, contracted into `dE_J/dR` per `gjab` bra class and whole (`manifest.j_gradient`) | the file: 10 classes, sum, invariance; the host on every class, so the whole `host.coulomb_gradient` (`slow`); the file against PySCF today (`oracle`) | host 1.25e-15 of `max\|G\|` (worst `(ss)`), gate 1e-14; host ~37 CPU-min |
 | `gk` on a card (`test_gk_device.py`, `test/gk_driver.py`, #618; on the shared runner since #657, not yet re-run on a card) | H₂O/STO-3G: the host (whole) and the other form (per class); CO/cc-pVTZ (`slow`, `high_l`): the libcint witness per class and whole, and the unrolled form on the same upload | RTX 3080 and RX 9060 XT; every unit its own TU under a 10 s kill | H₂O 3.22e-15 / 3.37e-15 of `max\|G\|`; CO 2.63e-15 / 2.94e-15 against libcint, differential over 62 / 58 classes 9.2e-17 / 1.2e-16 |
 | the RHF gradient, interpreted (`test_rhf_gradient.py`, #565) | #550's gradient fixtures: each term from libcint at the recorded `D`, `W` (`grad:h` split into `T`, `V`); the total `nuc_grad_method()`'s | H₂O/STO-3G, H₂O/6-31G, C1 NH₂F/6-31G, H₂O/STO-3G + one d on O, H₂O/cc-pVDZ; one-electron and nuclear terms on s, p bases fast, J, K, the totals and every d case `slow` | H₂O/STO-3G worst term 7.5e-14 (`V`), total 7.9e-14, net 2.7e-15 (118 s interpreted); the d case 6.9e-14 / 6.9e-14 (1162 s, `gk_`'s rolled form from L = 5 the bulk); H₂O/6-31G passes; every one-electron term on all five passes; NH₂F and cc-pVDZ totals not run to the end (hours interpreted); gate `1e-10` absolute |
+| the RHF gradient on a card (`test_rhf_gradient_device.py`, #566) | as the interpreted row, and the interpreted `rhf_gradient`; two runs against each other | RX 9060 XT only (CUDA not run): H₂O/STO-3G and H₂O/6-31G, both `slow`, every term from device runners (the J chain wholly on the card), 2 passed | total 8.17e-14 / 4.66e-14 of PySCF, 1.78e-15 / 3.11e-15 of interpreted; run to run 6.9e-17 / 4.4e-15, gate `SPREAD_TOL = 1e-13` (not bit-identical: the atomics) |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
-| on a card (`test_grad_device.py`, `test/grad_driver.py`, on the shared runner since #659, not yet run on a card) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
+| on a card (`test_grad_device.py`, `test/grad_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
 | on a card through (ff) (`test_grad_device.py`, `co_ccpvtz_proton-*`, `slow`; #614) | `host`, `1e-13` of `max\|G\|` | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv` on CO/cc-pVTZ (f on both atoms, all 16 ordered classes (ss)–(ff) asserted) with a bare proton as a third nucleus, its own density as `M`, every class in its default form (`gv` (df), (fd), (ff) low-stack), each compile under a 300 s timeout; 12 passed per card with the cases above | `gt` 1.29e-14 (CUDA) / 7.64e-15 (HIP); `gv` 1.94e-15 / 2.80e-15; `gs` 6.2e-16 on both |
 | the `gjab` chain on a card (`test_gjab_chain_ondevice.py`, `grad_driver.raised_plan` / `gjab_tail` on `plan_driver.driver`; #619) | `host.coulomb_gradient` (H₂, H₂O) and CO's tracked libcint witness (`manifest.j_gradient`, #639), `1e-13` of `max\|G\|` | RTX 3080 and RX 9060 XT: `DQ` on the card (read back, the plan keyed on its `Dmax`), the plan's bra classes raised by one, then `gjab` reading `J_p` where it lies, one process, no host `J_p`; H₂/STO-3G (the PR gate) and H₂O/STO-3G (`slow`) in both forms, CO/cc-pVTZ (`slow`, `high_l`, hand-run: all 16 ordered classes, (df), (fd), (ff) low-stack, raised `[p\|q]` to L = 13) in default forms; every compile under a 300 s timeout; 5 passed per card | H₂O 2.1e-15 / 2.0e-15; CO 9.0e-16 (CUDA) / 1.07e-15 (HIP); the CO cell ~17 / 20 min, almost all the host reference, before #639 moved it to the witness (not re-run on a card since) |
 
@@ -663,7 +700,7 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 | `geri3` interpreted (`test_kernel_geri3.py`) | `host_df`, per class | every class `la + lb + lP <= 4` (= 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` | 2.6 eps of the split-centre scale, gate 16 eps |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 31 units | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad_df.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
-| on a card (`test_grad_df_device.py`, `grad_driver`'s program, on the shared runner since #659, not yet run on a card) | `host_df`, `1e-13` of `max\|G\|`, DF-J of H₂O/STO-3G against JKFIT s/p/d | RTX 3080 and RX 9060 XT, `gmetric` and `geri3` (`slow`) | 6.58e-15 (CUDA), 4.87e-15 (HIP), both `gmetric` |
+| on a card (`test_grad_df_device.py`, `grad_driver`'s program, on the shared runner since #659, which ran on both cards on 2026-10-30) | `host_df`, `1e-13` of `max\|G\|`, DF-J of H₂O/STO-3G against JKFIT s/p/d | RTX 3080 and RX 9060 XT, `gmetric` and `geri3` (`slow`) | 6.58e-15 (CUDA), 4.87e-15 (HIP), both `gmetric` |
 | every ladder class above L = 4, interpreted, default form (`test_kernel_df_grad_ladder.py`, `slow` from L + 1 = 5) | `host_df`, per class, 16 eps of the TOWER-TWIN split-centre scale (the host on `\|Gam\|` with `test_kernel_metric.pq_tower`; the signed scale is blind to the tower's own cancellation from L ~ 9, where the unrolled form misses it as well) | 49 `geri3`, 19 `gmetric` classes on one-primitive bases with swapped and diagonal pairs; every L <= 4 class in the low-stack form forced; four classes forced unrolled above the floor | worst 0.96 eps of the tower-twin scale ((pf|s), forced low-stack), gate 16 eps |
 | the DF gradient witness (`oracle.manifest.df_gradient`, #613) | libcint's `int3c2e_ip1_cart` / `int3c2e_ip2_cart`, `int2c2e_ip1_cart`, contracted per class with closed-form `Gam`, `W`, on `prim_spd_f` against the aux-i basis (every ladder class) | the host, every class (`slow`); the kernel interpreted at (df\|i), (ff\|h), (ff\|i), (h\|i), (i\|i) (`slow`) | host 3.91e-14 (`geri3`), 1.71e-14 (`gmetric`) of the witness's largest `max\|G\|`; the kernel at most 2.72e-15 ((h\|i)); gate `1e-12` |
 | on a card, the ladder (`test_grad_df_device.py` Part 2, `slow` + `high_l`) | `host_df` at `1e-13` of `max\|G\|` per program, and the witness at `1e-12` | RTX 3080 and RX 9060 XT: all 70 + 28 classes in their default forms on the aux-i system, one program per aux `l`, each compile under a 300 s timeout; 16 passed per card (with Part 1) | host 1.20e-14 (CUDA) / 9.34e-15 (HIP), (`geri3`, aux i); libcint 5.49e-14 / 5.48e-14 of max; runs bit-identical on both |
@@ -1080,9 +1117,11 @@ ladder).
   `gjab` chain (through (ff) on CO/cc-pVTZ, #619). The
   forced-unrolled `gv` and `gjab` at (df) / (ff) are compiled
   (`g1e.json`, `gjab.json`) but not run on a card.
-- The whole RHF gradient is assembled and held to PySCF interpreted
-  only ("The RHF gradient, assembled", #565); on a card each term has run
-  alone, and the device assembly is #566. The DF
+- The whole RHF gradient on a card has run on the RX 9060 XT only, on
+  s, p bases only (H₂O/STO-3G, 6-31G; #566): not on the RTX 3080, and no
+  basis with a d or f shell (H₂O/cc-pVDZ is not run whole even
+  interpreted). A device gradient is not bit-reproducible (the atomics),
+  held run to run to `SPREAD_TOL = 1e-13` by the user's decision. The DF
   two-electron gradient, `G_J - 1/2 G_K`, is assembled on the host and
   held to PySCF's DF RHF gradient (above, #620); the one-electron terms
   are not added to it.
@@ -1105,3 +1144,35 @@ ladder).
   exchange Hessian (`hkx`, on `gk`'s mapping) and the DF metric and
   three-center Hessians (`d2metric`, `d2eri3`, on `gmetric`'s and
   `geri3`'s).
+- Nothing is scored (no published board) and no gradient kernel is timed;
+  milestone 20's limits are one record in
+  `data/literature/jengine/limits.json` (#567).
+
+### What AIMD still needs
+
+The gradient is a piece of an ab initio MD step, not the step. Missing, by
+what the tree holds today:
+
+- **The SCF that produces `D` and `W`.** Every input density here is a
+  fixture's (PySCF's converged RHF, #550); there is no eigensolver and no
+  SCF loop in `src/`.
+- **The per-step rebuild** of everything geometry-dependent that is built
+  on the host today: the primitive-pair records and their bounds
+  (`ao/pairs.py`), the J chain's plan (`plan/`, host-side only) and the
+  launch packing, once per nuclear step.
+- **A gradient screen proved against the derivative integrals.** `gk_`,
+  `ghk` and `gf_` visit every ordered quartet: K's bound bounds the
+  integral, not its derivative, and no derivative bound is derived.
+- **d and f shells in the whole gradient on a card.** Each term has run
+  alone through (ff) on both cards, but the assembled device gradient only
+  on s, p bases, and no orbital g shell is built.
+- **RI gradients end to end.** `geri3` (`(mn|P)^x`) and `gmetric`
+  (`(P|Q)^x`) run on both cards, but the metric solve and the DF-K weights
+  are host-side and the one-electron terms are not added to the DF
+  two-electron gradient.
+- **UHF.** Only `rhf.py` assembles a gradient; the exchange rule assumes
+  a symmetric `D` (`host.exchange_gradient` refuses an asymmetric one),
+  and no spin-resolved assembly exists.
+- **Bit reproducibility, if a trajectory needs it**: the atomics make a
+  device gradient vary run to run (within 1e-13 measured), so two runs of
+  one step can differ in the last bits.
