@@ -75,8 +75,8 @@ def _check(backend: str, granularity: str, request, run_device_binary,
     assert big > 0.0
     got = {}
     for mode in ("kb", "kbs"):
-        Ks, _, same = run_classes(parts, basis, mode, run_device_binary,
-                                  backend)
+        Ks, _, same = run_classes(parts, basis, mode,
+                                  workdir / "runs")
         assert same, f"{mode}: the two runs differ, its atomics met"
         K = Ks[0]
         assert np.all(np.isfinite(K))

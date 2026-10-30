@@ -98,7 +98,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from kblock_driver import class_binaries, run_classes, timings
+from kblock_driver import class_binaries, run_classes
 from test_k_ondevice import ORACLE_TOL
 from test_kernel_device import BACKEND, _toolchain
 
@@ -435,8 +435,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
                                  **({"timeout": COLUMN_KILL_S}
                                     if "rolled-C" in arms_run else {}))
              for arm in arms_run}
-    Ks = {arm: run_classes(parts[arm], basis, "kb", run_device_binary,
-                           backend)[0][0] for arm in arms_run}
+    Ks = {arm: run_classes(parts[arm], basis, "kb",
+                           tmp_path / "runs" / arm)[0][0] for arm in arms_run}
     ref = Ks[arms_run[0]]
     rels = {arm: float(np.max(np.abs(Ks[arm] - ref)) / np.max(np.abs(ref)))
             for arm in arms_run[1:]}
@@ -457,7 +457,7 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
                     print(f"  DISCARDED {arm}: {e} (take {take + 1})")
                     continue
                 _, outs, _ = run_classes(parts[arm], basis, "kb",
-                                         run_device_binary, backend,
+                                         tmp_path / "runs" / arm,
                                          warmup=WARMUP, reps=REPEATS)
                 after = gate.after_reading(backend)
                 if util is not None and after is not None \
@@ -472,7 +472,7 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path,
                              round(1000 * busy), "gpu_util_before": util,
                              "gpu_util_after": after})
             (out,) = outs
-            per[arm].extend(timings(out)["0"])
+            per[arm].extend(out["0"])
 
     arms = {arm: _stats(per[arm]) for arm in arms_run}
 
@@ -812,8 +812,7 @@ KB_SECTOR_REQ, KB_SECTOR_SEC = measured.KB_PROFILE_SECTORS
 
 def _profile_kernel(arm: str, part, unit: str, text: str, work: Path,
                     readings: list) -> tuple[dict, int]:
-    argv = [str(part.binary), str(part.staged), str(work / f"{arm}.out"),
-            "0", "0", "1"]
+    argv = part.case("kb", work / f"{arm}.case")  # one run, no warm-up
     unit_file = f"{unit}.cu"
     regex = f"^{unit}$"
     once = ["--launch-count", "1"]
@@ -956,8 +955,8 @@ def _profile(request, run_device_binary, tmp_path: Path) -> None:
                                  "cuda", tmp_path / arm, jobs=1,
                                  rolled=arm == "rolled", with_k=False)
              for arm in ARMS}
-    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
-                          "cuda")[0][0] for arm in ARMS)
+    K0, K1 = (run_classes(parts[arm], basis, "kb",
+                          tmp_path / "runs" / arm)[0][0] for arm in ARMS)
     rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
     assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, rel
 
@@ -1098,8 +1097,7 @@ def _sectors_read(row: dict) -> dict:
 def _narrow(arm: str, part, unit: str, work: Path, readings: list
             ) -> tuple[dict, str, int]:
     """T_SECTORS of one launch of `unit`, behind the gate."""
-    argv = [str(part.binary), str(part.staged), str(work / f"{arm}.out"),
-            "0", "0", "1"]
+    argv = part.case("kb", work / f"{arm}.case")  # one run, no warm-up
     (raw, _, cmd), d = _gated("narrow", unit, lambda: measured.ncu_raw(
         argv, ncu_args=["--launch-count", "1", "--metrics",
                         ",".join(T_SECTORS)],
@@ -1124,8 +1122,8 @@ def _transpose_profile(request, run_device_binary, tmp_path: Path) -> None:
                                  "cuda", tmp_path / arm, jobs=1,
                                  with_k=False, **ARM_FLAGS[arm])
              for arm in T_ARMS}
-    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
-                          "cuda")[0][0] for arm in T_ARMS)
+    K0, K1 = (run_classes(parts[arm], basis, "kb",
+                          tmp_path / "runs" / arm)[0][0] for arm in T_ARMS)
     rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
     assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, rel
 
@@ -1256,8 +1254,8 @@ def _column_profile(request, run_device_binary, tmp_path: Path) -> None:
                                  with_k=False, timeout=COLUMN_KILL_S,
                                  **ARM_FLAGS[arm])
              for arm in C_ARMS}
-    K0, K1 = (run_classes(parts[arm], basis, "kb", run_device_binary,
-                          "cuda")[0][0] for arm in C_ARMS)
+    K0, K1 = (run_classes(parts[arm], basis, "kb",
+                          tmp_path / "runs" / arm)[0][0] for arm in C_ARMS)
     rel = float(np.max(np.abs(K1 - K0)) / np.max(np.abs(K0)))
     assert np.max(np.abs(K0)) > 0.0 and rel <= ORACLE_TOL, rel
 
@@ -1276,8 +1274,7 @@ def _column_profile(request, run_device_binary, tmp_path: Path) -> None:
         text = BACKEND["cuda"][0](kern, b.arch)
         work = tmp_path / f"{arm}-ncu"
         work.mkdir()
-        argv = [str(part.binary), str(part.staged), str(work / "out"),
-                "0", "0", "1"]
+        argv = part.case("kb", work / "case")  # one run, no warm-up
         readings: list = []
         (raw, tool, cmd), discarded = _gated(
             "details", kern.name, lambda argv=argv, kern=kern:

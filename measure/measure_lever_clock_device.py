@@ -171,8 +171,9 @@ class Runnable:
     binary: Path
     names: tuple[str, ...]
     sha: str
-    # input label -> (staged file, output file, how to read the result)
-    inputs: dict[str, tuple[Path, Path]] = field(default_factory=dict)
+    # input label -> (staged file, output file), or for F (#657) the runner's
+    # sequence and its working directory
+    inputs: dict[str, tuple] = field(default_factory=dict)
     reshape: Callable[[np.ndarray], np.ndarray] = lambda a: a
 
 
@@ -300,7 +301,7 @@ def f_launch(spec: Spec, wide: bool) -> tuple[FD.FRec, int]:
     return FD.FRec(k, rec.grid, threads, args), basis.n_ao
 
 
-def _f_stage(spec: Spec, wide: bool, monkeypatch) -> tuple[np.ndarray, int]:
+def _f_stage(spec: Spec, wide: bool, monkeypatch) -> tuple[FD.Staged, int]:
     rec, n_ao = f_launch(spec, wide)
     if scatter.NAME in spec.levers:
         return FD.fock_scatter_stage([rec], [rec.kernel],
@@ -322,9 +323,10 @@ def stage(r: Runnable, cell: Spec, lanes: int, monkeypatch,
         elif cell.target is Target.K:
             data, _ = _k_input(cell, wide, lanes)
             r.reshape = lambda a: a.reshape(2, mkd.K_TIMING_N_BRA, -1)[0]
-        else:
-            data, n_ao = _f_stage(r.spec, wide, monkeypatch)
-            r.reshape = (lambda n: lambda a: a.reshape(2, n, n)[0])(n_ao)
+        else:  # the shared runner's sequence (#657), no files of its own
+            data, _ = _f_stage(r.spec, wide, monkeypatch)
+            r.inputs[label] = (data, workdir / label)
+            continue
         src, dst = workdir / f"{label}.in", workdir / f"{label}.out"
         data.tofile(src)
         r.inputs[label] = (src, dst)
@@ -336,15 +338,19 @@ def stage(r: Runnable, cell: Spec, lanes: int, monkeypatch,
 
 
 def _run(r: Runnable, label: str, run_device_binary) -> tuple:
-    src, dst = r.inputs[label]
-    out = run_device_binary(r.binary, str(src), str(dst), str(WARMUP),
-                            str(REPEATS))
     if r.spec.target is Target.F:
-        wall, _ = FD.reps(out)
+        staged, work = r.inputs[label]
+        Fs, ran = FD.run_on_card(r.binary, staged, work,
+                                 timing=(WARMUP, REPEATS), tag="timed")
+        wall, _ = FD.reps(ran)
+        res = Fs[0]
     else:
+        src, dst = r.inputs[label]
+        out = run_device_binary(r.binary, str(src), str(dst), str(WARMUP),
+                                str(REPEATS))
         wall, _, _ = mkd._parse_reps(out, len(r.names))
-    assert len(wall) == REPEATS, out
-    res = r.reshape(np.fromfile(dst, dtype=np.float64))
+        res = r.reshape(np.fromfile(dst, dtype=np.float64))
+    assert len(wall) == REPEATS, (r.spec.key(), label, wall)
     assert np.all(np.isfinite(res)), f"{r.spec.key()} {label}: non-finite"
     return wall, res
 
@@ -509,7 +515,9 @@ def _lever_clock(backend: str, request, compile_device_source,
         cdir = tmp_path / "inputs" / f"c{i:03d}"
         stage(arm, spec, lanes, monkeypatch, cdir / "arm")
         stage(ctl, spec, lanes, monkeypatch, cdir / "control")
-        for r in (arm, ctl):  # the VRAM probe, off the clock
+        for r in (arm, ctl):  # the VRAM probe, off the clock (no F runner
+            if r.spec.target is Target.F:  # carries one, #657)
+                continue
             for src, dst in r.inputs.values():
                 tkd.check_vram(r.binary, (str(src), str(dst), str(WARMUP),
                                           str(REPEATS)), backend)

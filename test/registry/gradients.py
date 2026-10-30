@@ -78,6 +78,8 @@ TESTS = {
     # all 256 of CO/cc-pVTZ (#618).
     "test/test_gk_device.py::test_X_gk_h2o_sto3g_both_forms":
         span("mmd", "k", 1, range(5)),
+    "test/test_gk_device.py::test_X_gk_h2o_sto3g_compiles":
+        span("mmd", "k", 1, range(5)),
     "test/test_gk_device.py::test_X_gk_co_ccpvtz_against_libcint":
         span("mmd", "k", 1, range(13)),
 }

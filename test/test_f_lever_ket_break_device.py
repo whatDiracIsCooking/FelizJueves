@@ -6,11 +6,11 @@ THE LAUNCHES ARE WALK_F'S, RECORDED (test/fock_driver.py's `record`, as
 test_fock_ondevice.py's part 2): `launch_f.f_launches(..., ket_break=True)`
 walked with a recording `run`, so the card replays the very records, `diag`,
 `Dsh`, `D` and per-bra `M_ab` the interpreted build is handed, at the
-driver's 32 threads. The program is fock_driver's, with ONE extension made
-here rather than in the shared harness: the lever's extra double array
-`M_ab[n_bra]` is carried at the END of each launch's double buffer
-(`_lever_program` / `_lever_stage` below), and the signature check accepts
-it exactly once, right after `G_ab`.
+driver's 32 threads. The program is fock_driver's shared runner (#657),
+whose staging reads every parameter off the launch's own kernel, so the
+lever's extra double array `M_ab[n_bra]` is each launch's own buffer with
+no change there; the one extension made here is the signature check
+(`_lever_program`), which accepts it exactly once, right after `G_ab`.
 
 THE CHECK, its tolerances stated before any run (test_fock_ondevice.py's,
 not tuned): the card's closed `F` against (a) the interpreted LEVER walk of
@@ -65,12 +65,6 @@ MOLECULES = [
                  marks=pytest.mark.slow),  # not a small input: the PR tier's cut
 ]
 
-_SIZES = {"bra_prim": f"(size_t)nb * kab * {len(KF.REC)}",
-          "AB": "(size_t)nb * 3", "G_ab": "(size_t)nb",
-          "ket_prim": f"(size_t)nk * kcd * {len(KF.REC)}",
-          "CD": "(size_t)nk * 3", "G_cd": "(size_t)nk"}
-
-
 def _check_signature(k: Kernel) -> None:
     names = [p.name for p in k.params]
     if names.count(M) != 1 or names[names.index("G_ab") + 1] != M:
@@ -82,24 +76,10 @@ def _check_signature(k: Kernel) -> None:
         raise ValueError(f"{k.name}: signature {names}")
 
 
-def _case(base):
-    def case(i: int, k: Kernel, ns: str) -> str:
-        """fock_driver's arm, plus `a_M_ab` carved off the END of the
-        launch's double buffer (after every array fock_driver carves)."""
-        has = {p.name for p in k.params}
-        at = " + ".join(["0", *(_SIZES[n] for n in FD.DOUBLES if n in has)])
-        lines = base(i, k, ns).split("\n")
-        call = next(j for j, ln in enumerate(lines) if "<<<" in ln)
-        lines.insert(call, f"            const double* a_{M} = pd[l] + {at};")
-        return "\n".join(lines)
-    return case
-
-
 @contextmanager
 def _lever_harness(monkeypatch):
     with monkeypatch.context() as m:
         m.setattr(FD, "_check_signature", _check_signature)
-        m.setattr(FD, "_case", _case(FD._case))
         yield
 
 
@@ -108,12 +88,12 @@ def _lever_program(kernels, backend, workdir, name, monkeypatch):
         return FD.fock_program(kernels, backend, workdir, name=name)
 
 
-def _lever_stage(recs, kernels, monkeypatch) -> np.ndarray:
-    """fock_driver's staging with `M_ab` appended to each launch's doubles
-    (the order `_case` carves it in)."""
-    with monkeypatch.context() as m:
-        m.setattr(FD, "DOUBLES", (*FD.DOUBLES, M))
-        return FD.fock_stage(recs, kernels)
+def _lever_stage(recs, kernels, monkeypatch) -> FD.Staged:
+    """fock_driver's staging, unchanged: it reads every parameter off the
+    launch's own kernel, so `M_ab` is staged as the launch's own buffer
+    (`monkeypatch` kept for the callers' signature)."""
+    del monkeypatch
+    return FD.fock_stage(recs, kernels)
 
 
 @cache
@@ -145,8 +125,7 @@ def _on_card(backend, name, tau, n, request, run_device_binary, tmp_path,
                     monkeypatch)
     basis, _, _ = molecule(name)
     Fs, _ = FD.run_on_card(binary, _lever_stage(recs, kernels, monkeypatch),
-                           basis.n_ao, tmp_path, run_device_binary,
-                           backend=backend)
+                           tmp_path)
     got = [np.array(KF.close(F)) for F in Fs]
     wb, wl, _ = _walks(name, tau, n)  # interpreted: lever, literal
     scale = sweep(name, block="scale")
@@ -240,27 +219,17 @@ def test_the_device_molecules_reach_only_l_le_4_and_break(name, tau, n
     assert w.kernel_broken
 
 
-def test_the_lever_program_carves_m_ab_last(tmp_path, monkeypatch) -> None:
-    """The arm carves `a_M_ab` after every double fock_driver carves, and
-    the staged buffer puts `M_ab` there: the interpreter, fed the unstaged
-    arrays, reproduces the recorded arguments."""
+def test_the_lever_sequence_stages_m_ab(tmp_path, monkeypatch) -> None:
+    """The runner takes the lever kernels (the signature check accepting
+    `M_ab`), and each launch passes `M_ab` as its own buffer, holding the
+    recorded per-bra values."""
     recs, kernels, _ = _recorded("h2o_sto3g", 0.1, 4)
     prog = _lever_program(list(kernels), "cuda", tmp_path, "prog_kb",
                           monkeypatch)
     for k in kernels:
-        has = {p.name for p in k.params}
-        at = " + ".join(["0", *(_SIZES[x] for x in FD.DOUBLES if x in has)])
-        assert f"const double* a_{M} = pd[l] + {at};" in prog.source
-    data = _lever_stage(recs, kernels, monkeypatch)
-    # the M_ab values sit at the end of each launch's doubles
-    head = FD.HEADER + FD.PER_LAUNCH * len(recs)
-    basis, _, _ = molecule("h2o_sto3g")
-    at = head + len(basis.shells) ** 2 + basis.n_ao ** 2
-    for i, r in enumerate(recs):
-        nd = int(data[FD.HEADER + FD.PER_LAUNCH * i + 7])
-        ni = int(data[FD.HEADER + FD.PER_LAUNCH * i + 8])
-        doubles = data[at:at + nd]
-        assert np.array_equal(doubles[-r.args["n_bra"]:],
+        assert f'kernel_entry("{k.name}", &' in prog.source
+    staged = _lever_stage(recs, kernels, monkeypatch)
+    for i, (st, r) in enumerate(zip(staged.steps, recs, strict=True)):
+        assert st.args[M] == f"l{i}.{M}"
+        assert np.array_equal(staged.buffers[st.args[M]],
                               np.asarray(r.args[M], dtype=float))
-        at += nd + ni
-    assert at == data.size

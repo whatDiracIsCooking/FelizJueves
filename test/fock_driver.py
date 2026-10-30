@@ -1,9 +1,10 @@
 """The fused Fock kernel ON A CARD (#288) -- harness.
 
     record(plan, basis, D, *, threads=)            -> (list[FRec], FWalk)
-    fock_program(kernels, backend, workdir)        -> Program
-    fock_stage(recs, kernels)                      -> np.ndarray
-    run_on_card(prog, binary, recs, n_ao, run, *, timing=) -> [run] F
+    fock_program(kernels, backend, workdir)        -> Program (the runner)
+    fock_stage(recs, kernels)                      -> Staged (the sequence)
+    run_on_card(binary, staged, workdir, *, timing=) -> ([run] F, Sequenced)
+    reps(ran)                                      -> (wall_ns, events_ns)
     interpret(recs, n_ao)                          -> F (not closed)
     synthetic_launch(cls, *, side, seed)           -> (FRec, basis)
     fock_scatter_program / fock_scatter_stage / interpret_scatter
@@ -20,34 +21,28 @@ recorded launches through `interp` (Boys from `reference/`, injected), one
 after another into one `F`: walk_f's own executor, restated, so a subset of
 the launches (one class) has a host reference too.
 
-THE PROGRAM is one `main()` around a set of emitted F units (`kernel_f.
-build_f_kernel`, spelt by `emit/cuda.py` / `emit/hip.py` unchanged, each in
-its own namespace as test/one_electron_driver.py did before #658), driven at RUN time
-by its input: any number of launches of any of its kernels, in order, into
-ONE `F`. The per-class parity runs and the wall-clock sweep therefore run
-the SAME binary on different inputs -- the timed binary is the checked
-binary. The input, every value a double (ints exact):
+THE PROGRAM is the shared runner (#649; ported by #657) over a set of
+emitted F units (`kernel_f.build_f_kernel`, spelt by `emit/cuda.py` /
+`emit/hip.py` unchanged, each in its own namespace,
+`harness_driver.units_runner`), driven at RUN time by a SEQUENCE: any number
+of launches of any of its kernels, in order, into ONE `F`. The per-class
+parity runs and the wall-clock sweep therefore run the SAME binary on
+different sequences -- the timed binary is the checked binary. `stage`
+builds the sequence from the records: every parameter read off the
+launch's own kernel (so a lever's extra array is staged with no change
+here), `Dsh` and `D` one buffer shared by every launch, every other array
+the launch's own buffer, and a launch is `grid = n_bra`, `block =
+(threads, 1)` (`kernel_f.launch_shape`).
 
-    n_launch n_sh n_ao tau
-    per launch: kernel-index n_bra n_ket k_ab k_cd diag threads nd ni
-    Dsh[n_sh, n_sh]  D[n_ao, n_ao]                 uploaded once, shared
-    per launch: nd doubles -- the kernel's double record arrays in its own
-                parameter order (bra_prim, AB if it has one, G_ab, ket_prim,
-                CD if it has one, G_cd) -- then ni ints (bra_sh, bra_ao,
-                ket_sh, ket_ao), each row-major
-
-and a launch is `grid = n_bra`, `block = (threads, 1)` (`kernel_f.
-launch_shape`). Every argument of a call is read off the kernel's own
-parameter list, so the call cannot drift from the signature.
-
-TWO MODES. `prog in out`: `RUNS` runs, each from a zeroed `F`, every launch,
-one synchronize, the read-back -- `F` NOT closed (the host's `kernel_f.
-close` is the caller's, as in walk_f). `prog in out WARMUP REPEATS`: the
-same sequence WARMUP times untimed and REPEATS times timed, each from a
-zeroed `F` (the zeroing and a synchronize OUTSIDE the clock), one `rep i
-wall_ns W events_ns E` line per timed sequence (the host `steady_clock`
-across every launch and the closing synchronize, and the GPU events
-recorded around the launches), and the last two `F`s written.
+TWO MODES. Correctness: `RUNS` runs, each from a zeroed `F`, every run's
+`F` kept -- NOT closed (the host's `kernel_f.close` is the caller's, as in
+walk_f) -- since the six blocks add by atomics, whose order is the card's:
+the caller compares the runs at its tolerance. Timing (`timing=(WARMUP,
+REPEATS)`): the same sequence WARMUP times untimed and REPEATS times timed,
+each from a zeroed `F` (restored, and synchronized, OUTSIDE the clock),
+each timed run's host `steady_clock` across every launch and the closing
+synchronize and its GPU events around the launches (`reps`), and the last
+two `F`s returned.
 
 THE SYNTHETIC LAUNCH (`synthetic_launch`) is the wall-clock sweep's input:
 one OFF-diagonal launch of the class (`diag = 0`), `TIMING_N_BRA` bra pairs
@@ -66,14 +61,13 @@ Harness, in `test/`: not a second emitter, no measurement decided here.
 
 from __future__ import annotations
 
-import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
-from plan_driver import UPLOAD_INT, Program, _unit
-from test_kernel_device import BACKEND, PORTABLE
+from harness_driver import Ref, Sequenced, Step, Zeros, run_sequence, units_runner
+from plan_driver import Program, _unit
 
 from felizjueves.ao.density import checked_density
 from felizjueves.ao.shell import Basis, Shell
@@ -89,11 +83,7 @@ from felizjueves.reference.boys import boys
 THREADS = 32  # block width: kets strided over 32 lanes; not numerical
 RUNS = 2  # runs per check-mode process: the run-to-run witness
 SCALARS = ("n_bra", "n_ket", "k_ab", "k_cd", "n_sh", "n_ao", "diag", "tau")
-DOUBLES = ("bra_prim", "AB", "G_ab", "ket_prim", "CD", "G_cd")
-INTS = ("bra_sh", "bra_ao", "ket_sh", "ket_ao")
 SHARED = ("Dsh", "D")
-HEADER = 4  # n_launch n_sh n_ao tau
-PER_LAUNCH = 9  # kernel-index n_bra n_ket k_ab k_cd diag threads nd ni
 TIMING_N_BRA = 2048  # test_kernel_device.py's TIMING_N_BRA
 TIMING_N_KET = 128  # and TIMING_N_KET
 
@@ -203,70 +193,30 @@ def _check_signature(k: Kernel) -> None:
                          "kernel's (kernel_f.params_of, no tap)")
 
 
-def _case(i: int, k: Kernel, ns: str) -> str:
-    """The `switch` arm launching kernel `i`: its pointers carved off the
-    launch's two buffers in parameter order, its arguments read off its own
-    parameters."""
-    has = {p.name for p in k.params}
-    lines = [f"        case {i}: {{  // {k.name}"]
-    rec = len(KF.REC)
-    size = {"bra_prim": f"(size_t)nb * kab * {rec}", "AB": "(size_t)nb * 3",
-            "G_ab": "(size_t)nb", "ket_prim": f"(size_t)nk * kcd * {rec}",
-            "CD": "(size_t)nk * 3", "G_cd": "(size_t)nk",
-            "bra_sh": "(size_t)2 * nb", "bra_ao": "(size_t)2 * nb",
-            "ket_sh": "(size_t)2 * nk", "ket_ao": "(size_t)2 * nk"}
-    for buf, names, ty in (("pd", DOUBLES, "double"), ("pi", INTS, "int")):
-        at = "0"
-        for n in names:
-            if n not in has:
-                continue
-            lines.append(f"            const {ty}* a_{n} = {buf}[l] + {at};")
-            at = f"{at} + {size[n]}"
-    arg = {"n_bra": "nb", "n_ket": "nk", "k_ab": "kab", "k_cd": "kcd",
-           "n_sh": "NSH", "n_ao": "NAO", "diag": "dg", "tau": "TAU",
-           "Dsh": "dDsh", "D": "dD", KF.FOCK: "dF"}
-    args = [arg.get(p.name, f"a_{p.name}") for p in k.params]
-    lines += [
-        f"            {ns}::{k.name}<<<dim3(nb), dim3(th, 1)>>>(",
-        f"                {', '.join(args)});",
-        "            break;",
-        "        }",
-    ]
-    return "\n".join(lines)
-
-
 def fock_program(kernels: Sequence[Kernel], backend: str, workdir: Path, *,
                  units: Mapping[str, Path] | None = None,
                  name: str = "fock") -> Program:
-    """The `main()` around `kernels` (module docstring, THE PROGRAM); a
-    launch names its kernel by its index here."""
+    """The runner over `kernels`' units (module docstring, THE PROGRAM)."""
     if not kernels or len({k.name for k in kernels}) != len(kernels):
         raise ValueError("fock_program takes distinct kernels")
-    _, _, ext = BACKEND[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    includes, paths, cases, ptrs = [], [], [], []
-    for i, k in enumerate(kernels):
-        _check_signature(k)
-        path = _unit(k, backend, workdir, units)
-        paths.append(path)
-        ns = f"fj_f{i}"
-        includes.append(f'namespace {ns} {{\n#include "{path}"\n}}')
-        cases.append(_case(i, k, ns))
-        ptrs.append(f"(const void*){ns}::{k.name}")
-    src = FOCK_PROGRAM.format(
-        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
-        portable=PORTABLE, includes="\n".join(includes),
-        upload_int=UPLOAD_INT, n_k=len(kernels), runs=RUNS,
-        header=HEADER, per=PER_LAUNCH, vram_kernels=", ".join(ptrs),
-        cases="\n".join(cases))
     if name in {k.name for k in kernels}:
         raise ValueError(f"the program {name!r} would overwrite its unit")
-    main = workdir / f"{name}.{ext}"
-    main.write_text(src)
-    return Program(backend, src, main, tuple(paths))
+    for k in kernels:
+        _check_signature(k)
+    return runner_of(kernels, backend, workdir, units=units, name=name)
 
 
-def _global(recs: Sequence[FRec], key: str):
+def runner_of(kernels: Sequence[Kernel], backend: str, workdir: Path, *,
+              units: Mapping[str, Path] | None = None,
+              name: str) -> Program:
+    """One runner over every kernel's unit, emitted into `workdir` unless
+    `units` has it (hjk_driver's too)."""
+    workdir.mkdir(parents=True, exist_ok=True)
+    return units_runner(backend, [(_unit(k, backend, workdir, units), [k.name])
+                                  for k in kernels], workdir, name)
+
+
+def _global(recs: Sequence, key: str):
     vals = {tuple(np.ravel(np.asarray(r.args[key], dtype=float)))
             for r in recs}
     if len(vals) != 1:
@@ -274,68 +224,114 @@ def _global(recs: Sequence[FRec], key: str):
     return np.array(next(iter(vals)))
 
 
-def fock_stage(recs: Sequence[FRec], kernels: Sequence[Kernel]) -> np.ndarray:
-    """The program's input for `recs`, each launching one of `kernels`
-    (module docstring, THE PROGRAM's layout)."""
+_NP = {Scalar.F64: np.float64, Scalar.I32: np.int32}
+
+
+@dataclass(frozen=True)
+class Staged:
+    """A sequence for the runner: its buffers, its launches, the output
+    buffer read back and its side."""
+
+    buffers: Mapping[str, object]
+    steps: tuple[Step, ...]
+    out: str
+    n_ao: int
+
+
+def stage(recs: Sequence, kernels: Sequence[Kernel], *, out: str,
+          shared: Sequence[str] = SHARED) -> Staged:
+    """`recs` (FRec or hjk_driver.HRec), each launching one of `kernels`,
+    as a sequence into ONE zeroed `n_ao x n_ao` buffer named `out`: every
+    parameter read off the launch's own kernel -- a scalar from its
+    arguments, `out` the output, a `shared` array one buffer for every
+    launch (they must agree), and every other array the launch's own
+    buffer `l<i>.<name>`. One launch per record, `grid` blocks of
+    `(threads, 1)`."""
     if not recs:
         raise ValueError("no launch to stage")
-    index = {k.name: i for i, k in enumerate(kernels)}
-    n_sh, n_ao = int(_global(recs, "n_sh")[0]), int(_global(recs, "n_ao")[0])
-    tau = float(_global(recs, "tau")[0])
-    Dsh, D = _global(recs, "Dsh"), _global(recs, "D")
-    assert Dsh.size == n_sh * n_sh and D.size == n_ao * n_ao
-    head = [len(recs), n_sh, n_ao, tau]
-    body: list[np.ndarray] = []
-    for r in recs:
-        if r.name not in index or r.kernel != kernels[index[r.name]]:
+    index = {k.name: k for k in kernels}
+    n_ao = int(_global(recs, "n_ao")[0])
+    buffers: dict[str, object] = {out: Zeros((n_ao, n_ao))}
+    for n in shared:
+        if any(n in {p.name for p in r.kernel.params} for r in recs):
+            buffers[n] = _global(recs, n).astype(np.float64)
+    steps = []
+    for i, r in enumerate(recs):
+        if index.get(r.name) != r.kernel:
             raise ValueError(f"{r.name} is not one of the program's kernels")
-        has = {p.name for p in r.kernel.params}
-        dd = [np.ravel(np.asarray(r.args[n], dtype=float))
-              for n in DOUBLES if n in has]
-        ii = [np.ravel(np.asarray(r.args[n], dtype=float)) for n in INTS]
-        nd, ni = sum(x.size for x in dd), sum(x.size for x in ii)
-        a = r.args
-        head += [index[r.name], a["n_bra"], a["n_ket"], a["k_ab"], a["k_cd"],
-                 a["diag"], r.threads, nd, ni]
-        assert r.grid == a["n_bra"], (r.grid, a["n_bra"])
-        body += [*dd, *ii]
-    return np.concatenate([np.array(head, dtype=np.float64), Dsh, D,
-                           *body]).astype(np.float64)
+        assert r.grid == r.args["n_bra"], (r.grid, r.args["n_bra"])
+        args: dict[str, object] = {}
+        for p in r.kernel.params:
+            if p.name == out:
+                args[p.name] = out
+            elif not p.array:
+                args[p.name] = r.args[p.name]
+            elif p.name in shared:
+                args[p.name] = p.name
+            else:
+                buf = f"l{i}.{p.name}"
+                buffers[buf] = np.ravel(np.asarray(r.args[p.name],
+                                                   dtype=_NP[p.type]))
+                args[p.name] = buf
+        steps.append(Step(r.kernel, r.grid, (r.threads, 1), args))
+    return Staged(buffers, tuple(steps), out, n_ao)
 
 
-_REP = re.compile(r"^rep (\d+) wall_ns (\d+) events_ns (\d+)$",
-                  re.MULTILINE)
-_DONE = re.compile(r"^fj-fock launches (\d+) runs (\d+)$", re.MULTILINE)
+def fock_stage(recs: Sequence[FRec], kernels: Sequence[Kernel]) -> Staged:
+    """The sequence of `recs`, each launching one of `kernels`, into `F`
+    (module docstring, THE PROGRAM)."""
+    return stage(recs, kernels, out=KF.FOCK)
 
 
-def reps(stdout: str) -> tuple[list[int], list[int]]:
-    """The timed sequences' host wall-clock and GPU-event times, in order."""
-    got = [(int(m.group(2)), int(m.group(3))) for m in _REP.finditer(stdout)]
-    return [w for w, _ in got], [e for _, e in got]
+def unstage(staged: Staged) -> list[tuple[Kernel, int, int, dict]]:
+    """Each launch's kernel, grid, block width and arguments as the runner
+    is handed them -- every array read back out of its buffer, the output
+    `None` (for the tests that interpret the staged sequence)."""
+    out = []
+    for st in staged.steps:
+        args = {}
+        for p in st.kernel.params:
+            v = st.args[p.name]
+            if p.name == staged.out:
+                v = None
+            elif p.array:
+                ref = v if isinstance(v, Ref) else Ref(v)
+                v = np.ravel(np.asarray(staged.buffers[ref.buffer]))[
+                    ref.offset:]
+            args[p.name] = v
+        grid = st.grid if isinstance(st.grid, int) else st.grid[0]
+        out.append((st.kernel, int(grid), int(st.block[0]), args))
+    return out
 
 
-def run_on_card(binary: Path, data: np.ndarray, n_ao: int, workdir: Path,
-                run: Callable[..., str], *, backend: str,
+def reps(ran: Sequenced) -> tuple[list[int], list[int]]:
+    """The timed runs' host wall-clock and GPU-event times, in order."""
+    return list(ran.wall_ns), [int(round(e)) for e in ran.events_ns]
+
+
+def run_on_card(binary: Path, staged: Staged, workdir: Path, *,
                 timing: tuple[int, int] | None = None,
-                tag: str = "fock") -> tuple[np.ndarray, str]:
-    """Run the program on `data`: `[2 or RUNS][n_ao, n_ao]` (not closed) and
-    its stdout. `run` is the caller's `run_device_binary` (the VRAM probe
-    first, behind the caller's card lock); in timing mode the caller has
-    already probed and gated, so it passes a plain runner."""
-    src, dst = workdir / f"{tag}.in", workdir / f"{tag}.out"
-    data.tofile(src)
-    args = [str(src), str(dst)]
+                tag: str = "fock") -> tuple[np.ndarray, Sequenced]:
+    """Run the sequence: `[RUNS][n_ao, n_ao]` (not closed), every run kept
+    (the kernels add by atomics, so the caller compares the runs at its
+    tolerance), and the runner's result. `timing=(warmup, repeats)`: the
+    same sequence `warmup` times untimed and `repeats` (>= 2) timed, each
+    from a zeroed output, and the last two runs' outputs returned; the
+    clocks are `reps(...)`. The caller holds the card (its device
+    fixture)."""
     if timing is None:
-        out = run(binary, *args, vram=backend)
+        warmup, runs = 0, RUNS
     else:
-        out = run(binary, *args, *map(str, timing))
-    m = _DONE.search(out)
-    assert m, out
-    n = RUNS if timing is None else 2
-    assert int(m.group(1)) == int(data[0]) and int(m.group(2)) == n, out
-    F = np.fromfile(dst, dtype=np.float64)
-    assert F.size == n * n_ao * n_ao, (F.size, n, n_ao)
-    return F.reshape(n, n_ao, n_ao), out
+        warmup, runs = timing
+        if warmup < 0 or runs < 2:
+            raise ValueError("warmup >= 0 and repeats >= 2")
+    ran = run_sequence(binary, workdir / tag, staged.buffers, staged.steps,
+                       outs=[staged.out], runs=runs, warmup=warmup,
+                       witness="each")
+    Xs = ran.load(staged.out)[-2:] if timing else ran.load(staged.out)
+    for X in Xs:
+        assert X.shape == (staged.n_ao, staged.n_ao), X.shape
+    return np.stack(Xs), ran
 
 
 # --- the wall-clock sweep's input -------------------------------------------
@@ -430,182 +426,22 @@ def synthetic_launch(cls: tuple[int, int, int, int], *, side: float,
     return FRec(k, grid, threads, args), basis
 
 
-# The program. `{...}` are filled per kernel set; everything else is C++.
-FOCK_PROGRAM = r"""// generated by test/fock_driver.py (#288) -- harness: the fused F.
-{prologue}
-#include <chrono>
-{portable}
-#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
-#define devMemset hipMemset
-#define devFree   hipFree
-#define devEvent_t           hipEvent_t
-#define devEventCreate       hipEventCreate
-#define devEventDestroy      hipEventDestroy
-#define devEventRecord(e)    hipEventRecord(e, 0)
-#define devEventElapsedTime  hipEventElapsedTime
-#else
-#define devMemset cudaMemset
-#define devFree   cudaFree
-#define devEvent_t           cudaEvent_t
-#define devEventCreate       cudaEventCreate
-#define devEventDestroy      cudaEventDestroy
-#define devEventRecord(e)    cudaEventRecord(e, 0)
-#define devEventElapsedTime  cudaEventElapsedTime
-#endif
-{includes}
-{upload_int}
-static const int NK = {n_k}, RUNS = {runs}, HEAD = {header}, PER = {per};
-
-// usage: in out [warmup repeats]. `in`: n_launch n_sh n_ao tau, then per
-// launch kernel-index n_bra n_ket k_ab k_cd diag threads nd ni, then
-// Dsh[n_sh, n_sh] D[n_ao, n_ao], then per launch nd doubles and ni ints.
-// `out`: each run's F [n_ao, n_ao], NOT closed (RUNS runs; the last two in
-// timing mode).
-int main(int argc, char** argv) {{
-    if (argc != 3 && argc != 5) {{
-        std::fprintf(stderr, "usage: in out [warmup repeats]\n");
-        return 2;
-    }}
-    std::vector<double> in;
-    if (!slurp(argv[1], in) || in.size() < (size_t)HEAD) {{
-        std::fprintf(stderr, "bad input\n");
-        return 2;
-    }}
-    const int NL = (int)in[0], NSH = (int)in[1], NAO = (int)in[2];
-    const double TAU = in[3];
-    if (NL < 1 || in.size() < (size_t)HEAD + (size_t)PER * NL) {{
-        std::fprintf(stderr, "bad header\n");
-        return 2;
-    }}
-    std::vector<int> kidx(NL), nbs(NL), nks(NL), kabs(NL), kcds(NL), dgs(NL),
-        ths(NL);
-    std::vector<size_t> nds(NL), nis(NL);
-    size_t want = (size_t)HEAD + (size_t)PER * NL + (size_t)NSH * NSH
-                  + (size_t)NAO * NAO;
-    for (int l = 0; l < NL; ++l) {{
-        const double* h = in.data() + HEAD + (size_t)PER * l;
-        kidx[l] = (int)h[0]; nbs[l] = (int)h[1]; nks[l] = (int)h[2];
-        kabs[l] = (int)h[3]; kcds[l] = (int)h[4]; dgs[l] = (int)h[5];
-        ths[l] = (int)h[6]; nds[l] = (size_t)h[7]; nis[l] = (size_t)h[8];
-        if (kidx[l] < 0 || kidx[l] >= NK) {{
-            std::fprintf(stderr, "launch %d: kernel index %d\n", l, kidx[l]);
-            return 2;
-        }}
-        want += nds[l] + nis[l];
-    }}
-    if (in.size() != want) {{
-        std::fprintf(stderr, "input has %zu doubles, the launches want %zu\n",
-                     in.size(), want);
-        return 2;
-    }}
-    if (fj_vram_probe(in.size() * sizeof(double)
-                          + (size_t)NAO * NAO * sizeof(double) + (size_t)64 * NL,
-                      {{{vram_kernels}}})) return 0;
-    const double* h = in.data() + HEAD + (size_t)PER * NL;
-    double* dDsh = upload(h, (size_t)NSH * NSH);
-    h += (size_t)NSH * NSH;
-    double* dD = upload(h, (size_t)NAO * NAO);
-    h += (size_t)NAO * NAO;
-    if (!dDsh || !dD) {{ std::fprintf(stderr, "density upload failed\n"); return 1; }}
-    std::vector<double*> pd(NL);
-    std::vector<int*> pi(NL);
-    for (int l = 0; l < NL; ++l) {{
-        pd[l] = upload(h, nds[l]);
-        h += nds[l];
-        pi[l] = upload_int(h, nis[l]);
-        h += nis[l];
-        if (!pd[l] || !pi[l]) {{
-            std::fprintf(stderr, "upload %d failed\n", l);
-            return 1;
-        }}
-    }}
-    double* dF = nullptr;
-    CHECK(devMalloc(&dF, (size_t)NAO * NAO * sizeof(double)));
-    auto sequence = [&]() -> int {{
-        for (int l = 0; l < NL; ++l) {{
-            const int nb = nbs[l], nk = nks[l], kab = kabs[l], kcd = kcds[l],
-                      dg = dgs[l], th = ths[l];
-            switch (kidx[l]) {{
-{cases}
-            default:
-                std::fprintf(stderr, "launch %d: no kernel %d\n", l, kidx[l]);
-                return 1;
-            }}
-            CHECK(devGetLastError());
-        }}
-        return 0;
-    }};
-    std::vector<double> F((size_t)NAO * NAO), out;
-    const bool timing = argc == 5;
-    const int warmup = timing ? std::atoi(argv[3]) : 0;
-    const int repeats = timing ? std::atoi(argv[4]) : RUNS;
-    if (timing && (warmup < 0 || repeats < 2)) {{
-        std::fprintf(stderr, "warmup >= 0 and repeats >= 2\n");
-        return 2;
-    }}
-    devEvent_t ev0, ev1;
-    CHECK(devEventCreate(&ev0));
-    CHECK(devEventCreate(&ev1));
-    for (int r = 0; r < warmup + repeats; ++r) {{
-        CHECK(devMemset(dF, 0, F.size() * sizeof(double)));
-        CHECK(devSynchronize());
-        const auto t0 = std::chrono::steady_clock::now();
-        CHECK(devEventRecord(ev0));
-        if (sequence()) return 1;
-        CHECK(devEventRecord(ev1));
-        CHECK(devSynchronize());
-        const auto t1 = std::chrono::steady_clock::now();
-        if (r < warmup) continue;
-        if (timing) {{
-            float ms = 0.0f;
-            CHECK(devEventElapsedTime(&ms, ev0, ev1));
-            std::printf("rep %d wall_ns %lld events_ns %.0f\n", r - warmup,
-                        (long long)std::chrono::duration_cast<
-                            std::chrono::nanoseconds>(t1 - t0).count(),
-                        1.0e6 * (double)ms);
-            if (r < warmup + repeats - 2) continue;
-        }}
-        CHECK(devMemcpy(F.data(), dF, F.size() * sizeof(double), devMemcpyD2H));
-        out.insert(out.end(), F.begin(), F.end());
-    }}
-    for (int l = 0; l < NL; ++l) {{
-        CHECK(devFree(pd[l]));
-        CHECK(devFree(pi[l]));
-    }}
-    CHECK(devFree(dDsh));
-    CHECK(devFree(dD));
-    CHECK(devFree(dF));
-    CHECK(devEventDestroy(ev0));
-    CHECK(devEventDestroy(ev1));
-    if (!spill(argv[2], out)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
-    std::printf("fj-fock launches %d runs %d\n", NL, timing ? 2 : RUNS);
-    return 0;
-}}
-"""
-
-
 # --- #358: the atomic-free write-back's launch path --------------------------
 #
 # ADDITIVE: everything above is the default path, unchanged. A `scatter`
 # lever kernel (eri/fock/levers/scatter.py) writes no F: it stores into a slot
 # buffer W, and the class-agnostic `f_scatter` kernel (kernel_f_scatter.py)
-# sums W into F. So each launch of the scatter program is THREE device
-# steps, in stream order: zero W (`devMemset`, inside the sequence and so
+# sums W into F. So each launch of the scatter path is THREE device steps,
+# in stream order: zero W (the step's `zero`, inside the sequence and so
 # inside the clock -- it is the lever's cost), the F kernel, then the
-# scatter over that launch's map. The program is FOCK_PROGRAM itself with
-# other `cases` and a longer per-launch header:
+# scatter over that launch's map (`el`, `ptr`, `src`, the launch's own
+# buffers). The runner carries the scatter unit beside the F units.
 #
-#     per launch: kernel-index n_bra n_ket k_ab k_cd diag threads nd ni
-#                 n_el n_slot                       (SCATTER_PER = 11)
-#     ints:       bra_sh bra_ao ket_sh ket_ao, then the map: el (2 n_el),
-#                 ptr (n_el + 1), src (n_slot)
-#
-# W is one device buffer grown to the largest launch's n_slot. `f_only=True`
-# builds the same program without the scatter launch (W written, F left
+# W is one buffer the size of the largest launch's n_slot. `f_only=True`
+# stages the same sequence without the scatter launches (W written, F left
 # zero): the tail measurement's arm, never checked against F.
 
 SCATTER_THREADS = 128  # the scatter kernel's block width; not numerical
-SCATTER_PER = PER_LAUNCH + 2
 
 
 def _cls_of(k: Kernel) -> tuple[int, int, int, int]:
@@ -695,131 +531,73 @@ def interpret_scatter(recs: Sequence[FRec], n_ao: int, *,
     return np.asarray(F, dtype=float).reshape(n_ao, n_ao)
 
 
-def _scatter_case(i: int, k: Kernel, ns: str, f_only: bool) -> str:
-    has = {p.name for p in k.params}
-    rec = len(KF.REC)
-    size = {"bra_prim": f"(size_t)nb * kab * {rec}", "AB": "(size_t)nb * 3",
-            "G_ab": "(size_t)nb", "ket_prim": f"(size_t)nk * kcd * {rec}",
-            "CD": "(size_t)nk * 3", "G_cd": "(size_t)nk",
-            "bra_sh": "(size_t)2 * nb", "bra_ao": "(size_t)2 * nb",
-            "ket_sh": "(size_t)2 * nk", "ket_ao": "(size_t)2 * nk"}
-    lines = [f"        case {i}: {{  // {k.name}, then f_scatter"]
-    at_i = "0"
-    for buf, names, ty in (("pd", DOUBLES, "double"), ("pi", INTS, "int")):
-        at = "0"
-        for n in names:
-            if n not in has:
-                continue
-            lines.append(f"            const {ty}* a_{n} = {buf}[l] + {at};")
-            at = f"{at} + {size[n]}"
-        at_i = at
-    head = "in[HEAD + (size_t)PER * l"
-    lines.append(f"            const size_t nslot = (size_t){head} + 10];")
-    if not f_only:  # the map is read only by the scatter launch
-        lines += [
-            f"            const int nel = (int){head} + 9];",
-            f"            const int* a_el = pi[l] + {at_i};",
-            "            const int* a_ptr = a_el + (size_t)2 * nel;",
-            "            const int* a_src = a_ptr + (size_t)nel + 1;",
-        ]
-    lines += [
-        "            if (nslot > fj_wcap) {",
-        "                if (fj_w) CHECK(devFree(fj_w));",
-        "                fj_w = nullptr;",
-        "                CHECK(devMalloc(&fj_w, nslot * sizeof(double)));",
-        "                fj_wcap = nslot;",
-        "            }",
-        "            CHECK(devMemset(fj_w, 0, nslot * sizeof(double)));",
-    ]
-    arg = {"n_bra": "nb", "n_ket": "nk", "k_ab": "kab", "k_cd": "kcd",
-           "n_sh": "NSH", "n_ao": "NAO", "diag": "dg", "tau": "TAU",
-           "Dsh": "dDsh", "D": "dD", FS.SLOTS: "fj_w"}
-    args = [arg.get(p.name, f"a_{p.name}") for p in k.params]
-    lines += [
-        f"            {ns}::{k.name}<<<dim3(nb), dim3(th, 1)>>>(",
-        f"                {', '.join(args)});",
-    ]
-    if not f_only:
-        lines += [
-            "            CHECK(devGetLastError());",
-            f"            fj_sc::{FS.NAME}<<<dim3((nel + {SCATTER_THREADS} - 1)"
-            f" / {SCATTER_THREADS}), dim3({SCATTER_THREADS}, 1)>>>(",
-            "                nel, (int)nslot, NAO, a_el, a_ptr, a_src, fj_w, "
-            "dF);",
-        ]
-    lines += ["            break;", "        }"]
-    return "\n".join(lines)
-
-
 def fock_scatter_program(kernels: Sequence[Kernel], backend: str,
-                         workdir: Path, *, f_only: bool = False,
+                         workdir: Path, *,
                          units: Mapping[str, Path] | None = None,
                          name: str = "fock_scatter") -> Program:
-    """The scatter path's `main()` around `kernels` (each a `scatter` lever
-    F kernel) and the `f_scatter` unit (the block comment above)."""
+    """The runner over `kernels` (each a `scatter` lever F kernel) and the
+    `f_scatter` unit (the block comment above)."""
     if not kernels or len({k.name for k in kernels}) != len(kernels):
         raise ValueError("fock_scatter_program takes distinct kernels")
-    _, _, ext = BACKEND[backend]
-    workdir.mkdir(parents=True, exist_ok=True)
-    sk = FS.build_scatter_kernel()
-    includes, paths, cases, ptrs = [], [], [], []
-    for i, k in enumerate(kernels):
-        _check_scatter_signature(k)
-        path = _unit(k, backend, workdir, units)
-        paths.append(path)
-        ns = f"fj_f{i}"
-        includes.append(f'namespace {ns} {{\n#include "{path}"\n}}')
-        cases.append(_scatter_case(i, k, ns, f_only))
-        ptrs.append(f"(const void*){ns}::{k.name}")
-    spath = _unit(sk, backend, workdir, units)
-    paths.append(spath)
-    includes += [f'namespace fj_sc {{\n#include "{spath}"\n}}',
-                 "static double* fj_w = nullptr;  // W, grown per launch",
-                 "static size_t fj_wcap = 0;"]
-    ptrs.append(f"(const void*)fj_sc::{FS.NAME}")
-    src = FOCK_PROGRAM.format(
-        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
-        portable=PORTABLE, includes="\n".join(includes),
-        upload_int=UPLOAD_INT, n_k=len(kernels), runs=RUNS,
-        header=HEADER, per=SCATTER_PER, vram_kernels=", ".join(ptrs),
-        cases="\n".join(cases))
     if name in {k.name for k in kernels} | {FS.NAME}:
         raise ValueError(f"the program {name!r} would overwrite its unit")
-    main = workdir / f"{name}.{ext}"
-    main.write_text(src)
-    return Program(backend, src, main, tuple(paths))
+    for k in kernels:
+        _check_scatter_signature(k)
+    return runner_of([*kernels, FS.build_scatter_kernel()], backend, workdir,
+                     units=units, name=name)
 
 
 def fock_scatter_stage(recs: Sequence[FRec], kernels: Sequence[Kernel], *,
-                       mapper=None) -> np.ndarray:
-    """The scatter program's input for `recs` (each a `scatter` lever F
-    launch of one of `kernels`), every launch's map computed here by
-    `mapper` (`kernel_f_scatter.scatter_map` unless given)."""
+                       mapper=None, f_only: bool = False) -> Staged:
+    """The scatter path's sequence for `recs` (each a `scatter` lever F
+    launch of one of `kernels`): per launch `W` zeroed, the F kernel into
+    `W`, then -- unless `f_only` -- `f_scatter` over the launch's map
+    (computed here by `mapper`, `kernel_f_scatter.scatter_map` unless
+    given) into `F`."""
     if not recs:
         raise ValueError("no launch to stage")
     mapper = FS.scatter_map if mapper is None else mapper
-    index = {k.name: i for i, k in enumerate(kernels)}
-    n_sh, n_ao = int(_global(recs, "n_sh")[0]), int(_global(recs, "n_ao")[0])
-    tau = float(_global(recs, "tau")[0])
-    Dsh, D = _global(recs, "Dsh"), _global(recs, "D")
-    head = [len(recs), n_sh, n_ao, tau]
-    body: list[np.ndarray] = []
-    for r in recs:
-        if r.name not in index or r.kernel != kernels[index[r.name]]:
+    index = {k.name: k for k in kernels}
+    n_ao = int(_global(recs, "n_ao")[0])
+    buffers: dict[str, object] = {KF.FOCK: Zeros((n_ao, n_ao))}
+    for n in SHARED:
+        buffers[n] = _global(recs, n).astype(np.float64)
+    sk = FS.build_scatter_kernel()
+    steps, n_slot = [], 0
+    for i, r in enumerate(recs):
+        if index.get(r.name) != r.kernel:
             raise ValueError(f"{r.name} is not one of the program's kernels")
-        has = {p.name for p in r.kernel.params}
         a = r.args
-        m = mapper(_cls_of(r.kernel), a["n_ket"], a["bra_ao"], a["ket_ao"])
-        assert m.n_slot == FS.n_slot(_cls_of(r.kernel), a["n_bra"], a["n_ket"])
-        dd = [np.ravel(np.asarray(a[n], dtype=float))
-              for n in DOUBLES if n in has]
-        ii = [np.ravel(np.asarray(a[n], dtype=float)) for n in INTS]
-        ii += [np.asarray(m.el, dtype=float), np.asarray(m.ptr, dtype=float),
-               np.asarray(m.src, dtype=float)]
-        nd, ni = sum(x.size for x in dd), sum(x.size for x in ii)
-        head += [index[r.name], a["n_bra"], a["n_ket"], a["k_ab"], a["k_cd"],
-                 a["diag"], r.threads, nd, ni, m.n_el, m.n_slot]
+        cls = _cls_of(r.kernel)
+        m = mapper(cls, a["n_ket"], a["bra_ao"], a["ket_ao"])
+        assert m.n_slot == FS.n_slot(cls, a["n_bra"], a["n_ket"])
+        n_slot = max(n_slot, m.n_slot)
+        args: dict[str, object] = {}
+        for p in r.kernel.params:
+            if p.name == FS.SLOTS:
+                args[p.name] = FS.SLOTS
+            elif not p.array:
+                args[p.name] = a[p.name]
+            elif p.name in SHARED:
+                args[p.name] = p.name
+            else:
+                buf = f"l{i}.{p.name}"
+                buffers[buf] = np.ravel(np.asarray(a[p.name],
+                                                   dtype=_NP[p.type]))
+                args[p.name] = buf
         assert r.grid == a["n_bra"], (r.grid, a["n_bra"])
-        body += [*dd, *ii]
-    return np.concatenate([np.array(head, dtype=np.float64), Dsh, D,
-                           *body]).astype(np.float64)
+        steps.append(Step(r.kernel, r.grid, (r.threads, 1), args,
+                          zero=(FS.SLOTS,)))
+        if f_only:
+            continue
+        sa: dict[str, object] = {}
+        for n, v in m.args(FS.SLOTS, KF.FOCK, n_ao).items():
+            if n in ("el", "ptr", "src"):
+                buf = f"l{i}.{n}"
+                buffers[buf] = np.asarray(v, dtype=np.int32)
+                v = buf
+            sa[n] = v
+        grid, block = FS.launch_shape(m.n_el, SCATTER_THREADS)
+        steps.append(Step(sk, grid, block, sa))
+    buffers[FS.SLOTS] = Zeros((n_slot,))
+    return Staged(buffers, tuple(steps), KF.FOCK, n_ao)

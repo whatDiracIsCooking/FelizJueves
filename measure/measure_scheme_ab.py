@@ -80,7 +80,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from fock_driver import fock_program, fock_stage, record_plan, run_on_card
-from kblock_driver import class_binaries, run_classes, timings
+from kblock_driver import class_binaries, run_classes
 from oracle import polyglycine
 from plan_driver import (
     RUNS,
@@ -269,8 +269,7 @@ def run_arm(c: Cell, arm: str, backend: str, run, *, warmup: int = 0,
     timing = (warmup, reps_)
     if arm in ("f", "f_block_fab"):
         binary, data, _ = c.f[arm]
-        F, out = run_on_card(binary, data, c.basis.n_ao, c.wd, run,
-                             backend=backend, timing=timing, tag=arm)
+        F, out = run_on_card(binary, data, c.wd, timing=timing, tag=arm)
         _, ev = _f_reps(out)
         return np.array(KF.close(F[0].tolist())), ev
     if arm == "dq":
@@ -285,14 +284,14 @@ def run_arm(c: Cell, arm: str, backend: str, run, *, warmup: int = 0,
         J = read_back_j(drv, np.fromfile(dst, dtype=np.float64))[0]
         return J, [e for *_, e in reps(out)]
     if arm == "k":
-        Ks, outs, _ = run_classes(c.k, c.basis, "kb", run, backend,
+        Ks, outs, _ = run_classes(c.k, c.basis, "kb", c.wd / "k_runs",
                                   warmup=warmup, reps=reps_)
         (out,) = outs
-        return Ks[0], timings(out)["total"]
+        return Ks[0], out["total"]
     raise ValueError(arm)
 
 
-def _f_reps(out: str):
+def _f_reps(out):
     from fock_driver import reps as f_reps
 
     return f_reps(out)

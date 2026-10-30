@@ -340,9 +340,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path) -> None:
             def run(low, warmup, reps, classes=classes, n_ao=n_ao,
                     n_aux=n_aux, units=units, work=work):
                 return eri3_driver.run_timed(
-                    units[low], classes, n_ao, n_aux, backend,
-                    work / str(low), run_device_binary, warmup=warmup,
-                    reps=reps)
+                    units[low], classes, n_ao, n_aux, work / str(low),
+                    lowstack=low, warmup=warmup, reps=reps)
             size = {"n_ao": n_ao, "n_aux": n_aux,
                     "n_cell": sum(c.n_cell for c in classes),
                     "n_bra_rec": sum(c.n_bra_rec for c in classes)}

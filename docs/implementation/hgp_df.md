@@ -42,7 +42,8 @@ mirrored stores into the same output, with no atomics, so runs are
 bit-reproducible. The interpreted adapters take `engine=`
 (`metric_drive.metric_matrix_kernel`, `eri3_drive.eri3_tensor_kernel`), and
 so do the on-card harnesses (`test/metric_driver.py`,
-`test/eri3_driver.py`, `build_on_card(..., engine=)`). Nothing else changes.
+`test/eri3_driver.py`, `build_on_card(..., engine=)`, both on the shared
+runner since #654 / #657). Nothing else changes.
 
 ## A DF class is an HGP quartet with exponent-0 partners
 
