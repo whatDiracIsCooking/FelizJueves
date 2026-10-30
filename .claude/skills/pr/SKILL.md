@@ -124,9 +124,25 @@ GPU under `/proc/driver/nvidia/gpus/` or in `nvidia-smi -L` — and
   in `card_absent` as **unverified on card** -- the gate's summary does. A session with one card still
   runs the kernel tier on that one and says so.
 
-The label is the record that a card run is owed: whoever next has both cards
-runs the kernel tier for the labelled PRs' families and removes it. It never
-excuses a red fast or compile tier.
+The label is the record that a card run is owed, and it never excuses a red
+fast or compile tier. Whoever next has both cards pays it back with
+`devtools/verify-unverified.sh` (#660), by hand:
+
+```bash
+devtools/verify-unverified.sh --dry-run     # every labelled merged PR: commit, backends, mode
+devtools/verify-unverified.sh 675           # one PR; no number = all of them, oldest first
+```
+
+For each PR it checks the merge commit out in a throwaway worktree (its own
+`.venv`, synced with `UV_PROJECT_ENVIRONMENT` pointed into it, so the
+devcontainer's `/opt/venv` is never re-synced) and runs gate.sh's gpu sample
+there on the backends the body names as unverified (both, if it names
+neither), seeded from the merge commit and its parent so a rerun draws the
+same cases. **Pass**: it comments with the cases drawn and removes the label.
+**Fail**: it comments with the failing cases and keeps the label -- a
+failure on a merged commit is a finding to file, not a tolerance to loosen.
+**Could not run** (exit 2): nothing is posted. A commit from before gate.sh
+runs its own `kernel-tier.sh` PR gate instead, and the comment says so.
 
 ## 5. Merge
 
