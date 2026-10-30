@@ -49,6 +49,7 @@ TESTS = {
     "test/test_emit_d2eri3.py::test_X_compiles_the_df_hessian_unit":
         Classes("mmd", "eri3", 2),
     "test/test_hess_device.py::test_X_hessian_matches_the_host": ById(_HESS),
+    "test/test_hess_device.py::test_X_hessian_runners_compile": ById(_HESS),
     "test/test_hess_j_device.py::test_X_hdq_matches_the_host": Classes("mmd", "dq", 2),
     "test/test_hess_j_device.py::test_X_hjab_class_matches_the_host":
         Classes("mmd", "jab", 2),

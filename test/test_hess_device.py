@@ -31,7 +31,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from hess_driver import compile_hess, one_electron_launches
+from harness_driver import build_chain, chain_specs
+from hess_driver import (
+    compile_hess,
+    hess_runners,
+    hess_steps,
+    one_electron_launches,
+)
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import _toolchain
@@ -69,14 +75,14 @@ def _host(name: str, which: str, absolute: bool = False) -> np.ndarray:
                                            absolute=absolute))
 
 
-def _check(backend: str, name: str, which: str, request, run_device_binary,
+def _check(backend: str, name: str, which: str, request,
            tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     basis, nuclei, D = _case(name)
     target = {"s": Target.S, "t": Target.T, "v": Target.V}[which]
     b = compile_hess(one_electron_launches(basis, nuclei, target, D),
                      len(nuclei), backend, tc, tmp_path)
-    got = b.run(run_device_binary)
+    got = b.run()
     want = _host(name, which)
     scale = _host(name, which, absolute=True).max()
     errs = [float(np.abs(g - want).max() / scale) for g in got]
@@ -92,14 +98,50 @@ def _check(backend: str, name: str, which: str, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize(("name", "which"), CASES)
-def test_cuda_hessian_matches_the_host(name, which, request,
-                                       run_device_binary, tmp_path) -> None:
-    _check("cuda", name, which, request, run_device_binary, tmp_path)
+def test_cuda_hessian_matches_the_host(name, which, request, tmp_path) -> None:
+    _check("cuda", name, which, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize(("name", "which"), CASES)
-def test_hip_hessian_matches_the_host(name, which, request,
-                                      run_device_binary, tmp_path) -> None:
-    _check("hip", name, which, request, run_device_binary, tmp_path)
+def test_hip_hessian_matches_the_host(name, which, request, tmp_path) -> None:
+    _check("hip", name, which, request, tmp_path)
+
+
+# --- No card: the runners compile, and every launch's spec is the kernel's ---
+
+
+def _runners_compile(backend: str, tc, name: str, which: str,
+                     tmp_path: Path) -> None:
+    basis, nuclei, D = _case(name)
+    target = {"s": Target.S, "t": Target.T, "v": Target.V}[which]
+    launches = one_electron_launches(basis, nuclei, target, D)
+    bins = build_chain(tc, hess_runners(launches, backend, tmp_path), tmp_path)
+    assert set(bins) == {x.kernel.name for x in launches}
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize(("name", "which"), CASES)
+def test_cuda_hessian_runners_compile(name, which, nvcc, tmp_path) -> None:
+    _runners_compile("cuda", nvcc, name, which, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize(("name", "which"), CASES)
+def test_hip_hessian_runners_compile(name, which, hipcc, tmp_path) -> None:
+    _runners_compile("hip", hipcc, name, which, tmp_path)
+
+
+@pytest.mark.parametrize(("name", "which"), CASES)
+def test_every_launch_names_the_kernels_arguments(name, which) -> None:
+    """Every launch's runner spec, built host-side (harness_driver)."""
+    basis, nuclei, D = _case(name)
+    target = {"s": Target.S, "t": Target.T, "v": Target.V}[which]
+    launches = one_electron_launches(basis, nuclei, target, D)
+    n = len(nuclei)
+    specs = chain_specs(hess_steps(launches), "H", np.zeros((n, 3, n, 3)))
+    for x, spec in zip(launches, specs, strict=True):
+        assert [a["name"] for a in spec["args"]] == [
+            p.name for p in x.kernel.params]
+        assert [a["name"] for a in spec["args"] if "out" in a] == ["H"]

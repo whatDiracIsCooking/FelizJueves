@@ -5,10 +5,10 @@ with no `J_p` from the host, on the RTX 3080 and the RX 9060 XT.
 THE CHAIN (test/grad_driver.py, "THE CHAIN ON THE CARD"), every arithmetic
 step a generated kernel:
 
-  1. DQ: every ket pair class's `Target.DQ` kernel (`plan_driver.dq_program`),
-     `D_q` / `Dmax` read back -- the J chain's one round-trip -- and the J
-     chain's plan keyed and sorted on them (test_j_chain_ondevice.py's
-     `_plan_from`, one batch);
+  1. DQ: every ket pair class's `Target.DQ` kernel (`plan_driver.compile_dq`,
+     on the shared runner), `D_q` / `Dmax` read back -- the J chain's one
+     round-trip -- and the J chain's plan keyed and sorted on them
+     (test_j_chain_ondevice.py's `_plan_from`, one batch);
   2. `[p|q]`: that plan with every bra class raised by one
      (`grad_driver.raised_plan`, `kernel_gjab.gjab_pq_spec`'s classes) on
      the J chain's driver (`plan_driver.driver`), staged from the DQ
@@ -60,11 +60,9 @@ from oracle import manifest
 from plan_driver import (
     RUNS,
     compile_checked,
+    compile_dq,
     counts,
     dq_classes,
-    dq_program,
-    dq_read_back,
-    dq_stage,
     driver,
     stage,
 )
@@ -123,16 +121,9 @@ def _chain(backend: str, name: str, form: str, request, run_device_binary,
 
     # 1. DQ on the card; the round-trip, and the plan keyed on its Dmax
     classes = dq_classes(basis, D)
-    dqp = dq_program(classes, backend, tmp_path / "dq")
-    dq_bin = compile_checked(tc, dqp, tmp_path / "dq_bin",
-                             timeout=COMPILE_TIMEOUT_S)
-    src, dst = tmp_path / "dq.in", tmp_path / "dq.out"
-    dq_stage(classes).tofile(src)
-    out = run_device_binary(dq_bin, str(src), str(dst), vram=backend)
-    assert (f"fj-dq classes {len(classes)} launches {len(classes) * RUNS} "
-            f"runs {RUNS}") in out, out
-    dq_rows = _rows_of(classes, dq_read_back(
-        classes, np.fromfile(dst, dtype=np.float64))[0])
+    dq_out, _ = compile_dq(classes, backend, tc, tmp_path / "dq",
+                           timeout=COMPILE_TIMEOUT_S).run()
+    dq_rows = _rows_of(classes, dq_out)
     plan = raised_plan(_plan_from(basis, dq_rows, 1, L_MAX_PLAN[name]))
 
     # 2 and 3: the raised [p|q] and gjab, one process

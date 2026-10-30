@@ -66,6 +66,9 @@ TESTS = {
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":
         Classes("mmd", "k", 1),
     "test/test_grad_device.py::test_X_gradient_matches_the_host": ById(_GRAD),
+    # #659's compile-only twins, the registry's compile tier (L <= 4)
+    "test/test_grad_device.py::test_X_gradient_runners_compile": ById(
+        {k: v for k, v in _GRAD.items() if k.startswith("h2o_")}),
     "test/test_grad_df_device.py::test_X_df_gradient_matches_the_host":
         Allow(PROGRAM),
     "test/test_grad_df_device.py::test_X_df_gradient_ladder_through_i": ById(_LADDER),

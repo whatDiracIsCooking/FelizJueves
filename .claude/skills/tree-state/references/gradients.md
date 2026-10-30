@@ -38,8 +38,8 @@ through `(dd|dd)` (`test_kernel_gk.py`, L + 1 > 4 `slow`). Ladders
 nor in `KERNEL_GEN_CMD`; 48 + 40 goldens (`test_emit_grad.py`,
 `test_emit_grad_k.py`, every other default `gk` unit through `(ff|ff)`
 pinned in `test/golden/gk_digests.json`).
-**On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`,
-2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
+**On both cards** (`test_grad_device.py`, generator `test/grad_driver.py`
+-- on the shared runner since #659, not yet run on a card --, 2026-10-27): `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`),
 `gk` on H₂O/STO-3G only, against the host, 9 passed per card; worst
 3.20e-14 of `max|G|` on the RTX 3080 and 2.36e-14 on the RX 9060 XT (`gt`,
 cc-pVDZ), under `1e-13`. **`gs`, `gt`, `gv` through (ff) on both cards**
@@ -190,7 +190,7 @@ AUXMAX]` (#613: split as FreeBreakfast's `df_kernels.py`, LMAX the orbital
 for `la <= lb <= LMAX`, `lP <= AUXMAX`, `gmetric` for `lP <= lQ <=
 AUXMAX`), never in the bare default nor in `KERNEL_GEN_CMD`; 62 goldens,
 the 31 classes at L <= 4 (`test_emit_grad_df.py`). **On both cards**
-(`test_grad_df_device.py`, `slow`, on `grad_driver`'s program): DF-J of
+(`test_grad_df_device.py`, `slow`, on `grad_driver`'s program, on the shared runner since #659, not yet run on a card): DF-J of
 H₂O/STO-3G against the JKFIT s, p, d shells, worst 6.58e-15 of `max|G|`
 (RTX 3080) and 4.87e-15 (RX 9060 XT).
 **Through (ff|i) and (i|i) (#613), with a low-stack form** (`gradient.md`,

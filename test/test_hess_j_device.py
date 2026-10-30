@@ -43,7 +43,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from hess_driver import HessLaunch, compile_hess
+from harness_driver import chain_specs
+from hess_driver import HessLaunch, compile_hess, hess_steps
 from test_kernel_device import _toolchain
 from test_kernel_hessian import (
     CLASSES,
@@ -103,12 +104,12 @@ def _report(got, want, scale, label: str, tol: float) -> None:
           f"{spread:.2e}; bit-identical {bool(np.array_equal(got[0], got[1]))}")
 
 
-def _check_hdq(backend, cls, request, run_device_binary, tmp_path: Path):
+def _check_hdq(backend, cls, request, tmp_path: Path):
     tc = _toolchain(backend, request)
     x, n = _hdq_launch(*cls)
     size = 6 * n * n_q1(*cls)
     got = compile_hess([x], len(SPD[1]), backend, tc, tmp_path,
-                       n_out=size).run(run_device_binary)
+                       n_out=size).run()
     want = np.array(host.ket_derivative_records(
         SPD[0], _density(SPD[0].n_ao), *cls)).ravel()
     assert want.size == size
@@ -116,13 +117,13 @@ def _check_hdq(backend, cls, request, run_device_binary, tmp_path: Path):
             DQ_TOL)
 
 
-def _check_hjab(backend, name, classes, request, run_device_binary,
-                tmp_path: Path, label: str):
+def _check_hjab(backend, name, classes, request, tmp_path: Path,
+                label: str):
     tc = _toolchain(backend, request)
     basis, nuclei = _case(name)
     nat = len(nuclei)
     xs = [_hjab_launch(name, la, lb) for la, lb in classes]
-    got = compile_hess(xs, nat, backend, tc, tmp_path).run(run_device_binary)
+    got = compile_hess(xs, nat, backend, tc, tmp_path).run()
     pairs = [p for c in classes for p in gh.class_pairs(basis, *c)]
     if set(pairs) == set(_all_pairs(name)):
         pairs = None
@@ -134,34 +135,30 @@ def _check_hjab(backend, name, classes, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", HDQ_CLASSES)
-def test_cuda_hdq_matches_the_host(cls, request, run_device_binary,
-                                   tmp_path) -> None:
-    _check_hdq("cuda", cls, request, run_device_binary, tmp_path)
+def test_cuda_hdq_matches_the_host(cls, request, tmp_path) -> None:
+    _check_hdq("cuda", cls, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", HDQ_CLASSES)
-def test_hip_hdq_matches_the_host(cls, request, run_device_binary,
-                                  tmp_path) -> None:
-    _check_hdq("hip", cls, request, run_device_binary, tmp_path)
+def test_hip_hdq_matches_the_host(cls, request, tmp_path) -> None:
+    _check_hdq("hip", cls, request, tmp_path)
 
 
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", HJAB_CLASSES)
-def test_cuda_hjab_class_matches_the_host(cls, request, run_device_binary,
-                                          tmp_path) -> None:
-    _check_hjab("cuda", "spd", [cls], request, run_device_binary, tmp_path,
+def test_cuda_hjab_class_matches_the_host(cls, request, tmp_path) -> None:
+    _check_hjab("cuda", "spd", [cls], request, tmp_path,
                 f"hjab_{cls[0]}{cls[1]}")
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", HJAB_CLASSES)
-def test_hip_hjab_class_matches_the_host(cls, request, run_device_binary,
-                                         tmp_path) -> None:
-    _check_hjab("hip", "spd", [cls], request, run_device_binary, tmp_path,
+def test_hip_hjab_class_matches_the_host(cls, request, tmp_path) -> None:
+    _check_hjab("hip", "spd", [cls], request, tmp_path,
                 f"hjab_{cls[0]}{cls[1]}")
 
 
@@ -169,15 +166,33 @@ def test_hip_hjab_class_matches_the_host(cls, request, run_device_binary,
 @pytest.mark.gpu
 @pytest.mark.slow
 def test_cuda_h2o_coulomb_hessian_matches_the_host(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     _check_hjab("cuda", "h2o_sto3g_j", _ket_classes("h2o_sto3g_j"), request,
-                run_device_binary, tmp_path, "H2O/STO-3G d2 E_J")
+                tmp_path, "H2O/STO-3G d2 E_J")
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.slow
 def test_hip_h2o_coulomb_hessian_matches_the_host(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     _check_hjab("hip", "h2o_sto3g_j", _ket_classes("h2o_sto3g_j"), request,
-                run_device_binary, tmp_path, "H2O/STO-3G d2 E_J")
+                tmp_path, "H2O/STO-3G d2 E_J")
+
+
+@pytest.mark.parametrize("cls", HDQ_CLASSES)
+def test_every_hdq_launch_names_the_kernels_arguments(cls) -> None:
+    """The `hdq` launch's runner spec, built host-side: `D1` the output."""
+    x, n = _hdq_launch(*cls)
+    (spec,) = chain_specs(hess_steps([x]), "D1",
+                          np.zeros(6 * n * n_q1(*cls)))
+    assert [a["name"] for a in spec["args"] if "out" in a] == ["D1"]
+
+
+@pytest.mark.parametrize("cls", HJAB_CLASSES)
+def test_every_hjab_launch_names_the_kernels_arguments(cls) -> None:
+    """The `hjab` launch's runner spec, built host-side: `H` the output."""
+    nat = len(_case("spd")[1])
+    (spec,) = chain_specs(hess_steps([_hjab_launch("spd", *cls)]), "H",
+                          np.zeros((nat, 3, nat, 3)))
+    assert [a["name"] for a in spec["args"] if "out" in a] == ["H"]
