@@ -239,6 +239,18 @@ for CUDA, `.hip` for HIP):
   starts `hkx_`, so none collides with another ladder's (HGP's `K` is
   `hk_`).
 
+- the exchange derivative matrix ladder, `--hess-kx-l [LMAX]`
+  (`hessian.kernel_kx`, #689): for every K class `(la, lc | lb, ld)`, the
+  Hermite pairing, each `l <= LMAX` (1 when the flag is given bare: the
+  16 classes with every shell s or p), BOTH forms, `kx1_{la}{lc}_{lb}{ld}`
+  (`Target.KX1`, the derivative on the matrix index, ip1) and
+  `kxc_{la}{lc}_{lb}{ld}` (`Target.KXC`, on the contracted index), the
+  exchange part of the RHF Hessian's derivative Fock matrix. Accepted
+  0..`HESS_KX_L_MAX` = 3 (validated through (ff|ff), interpreted); above
+  it is a 2. It ADDS units beside the J ladders, as `--grad-k-l` does,
+  and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name
+  starts `kx1_` or `kxc_`, so none collides with another ladder's.
+
 - the one-electron Hessian ladder, `--hess-one-e-l [LMAX]`
   (`hessian.kernel_h1e`): for every pair class `(la, lb)`,
   `la <= lb <= LMAX` (2 when the flag is given bare), the three d2
@@ -571,6 +583,7 @@ from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
 from felizjueves.hessian.kernel_hkx import build_hkx_kernel
+from felizjueves.hessian.kernel_kx import build_kx_kernel
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.mmd.kernel import (
@@ -628,6 +641,8 @@ DEFAULT_HESS_L = 1  # `--hess-l` given bare: (ss) (sp) (pp), 6 units
 HESS_L_MAX = 2  # the Hessian kernels are validated through (dd) interpreted
 DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
 HESS_K_L_MAX = 1  # kernel_hkx is validated through (pp|pp) interpreted
+DEFAULT_HESS_KX_L = 1  # `--hess-kx-l` bare: every s / p K class, 32 units
+HESS_KX_L_MAX = 3  # kernel_kx is validated through (ff|ff) interpreted
 DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
 DEFAULT_HESS_METRIC_L = 4  # `--hess-metric-l` bare: 9 d2metric units
@@ -1126,6 +1141,26 @@ def generate_hess_k(backend: str, arch: Arch, out: Path,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
+def hess_kx_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """Every K class `(la, lc, lb, ld)`, each `l <= lmax`, over
+    `0..HESS_KX_L_MAX`, `la` outermost."""
+    if type(lmax) is not int or not 0 <= lmax <= HESS_KX_L_MAX:
+        raise ValueError(
+            f"--hess-kx-l {lmax!r} is outside 0..{HESS_KX_L_MAX}")
+    r = range(lmax + 1)
+    return [(la, lc, lb, ld) for la in r for lc in r for lb in r for ld in r]
+
+
+def generate_hess_kx(backend: str, arch: Arch, out: Path,
+                     lmax: int) -> list[Path]:
+    """Emit `kx1_` and `kxc_{la}{lc}_{lb}{ld}` for every K class through
+    `lmax` into `out`; return the paths."""
+    kernels = [build_kx_kernel(c, form=t) for c in hess_kx_classes(lmax)
+               for t in (Target.KX1, Target.KXC)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
 # ---------------------------------------------------------------------------
 # The DF metric Hessian ladder (hessian.kernel_d2metric)
 # ---------------------------------------------------------------------------
@@ -1564,6 +1599,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.grad_f_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
+            or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.hess_eri3_l is not None
@@ -1579,7 +1615,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
               "--grad-df-l / --hess-l / "
-              "--hess-k-l / "
+              "--hess-k-l / --hess-kx-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
@@ -1682,6 +1718,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_HESS_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-k-l", dest="hess_k_l", type=int, nargs="?",
                     const=DEFAULT_HESS_K_L, default=None, metavar="LMAX")
+    ap.add_argument("--hess-kx-l", dest="hess_kx_l", type=int, nargs="?",
+                    const=DEFAULT_HESS_KX_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-one-e-l", dest="hess_one_e_l", type=int,
                     nargs="?", const=DEFAULT_HESS_ONE_E_L, default=None,
                     metavar="LMAX")
@@ -1760,6 +1798,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_f_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
+            or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.hess_eri3_l is not None
@@ -1775,7 +1814,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
               "--grad-df-l / --hess-l / "
-              "--hess-k-l / "
+              "--hess-k-l / --hess-kx-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
@@ -1807,6 +1846,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_f_l is not None
             or args.grad_df_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
+            or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
             or args.hess_eri3_l is not None
@@ -1820,7 +1860,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
               "--grad-df-l / --hess-l / "
-              "--hess-k-l / "
+              "--hess-k-l / --hess-kx-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l (and a lever "
@@ -1935,6 +1975,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HESS_K_L_MAX}: the exchange-Hessian kernels are "
               "validated through (pp|pp) only", file=sys.stderr)
         return 2
+    if (args.hess_kx_l is not None
+            and not 0 <= args.hess_kx_l <= HESS_KX_L_MAX):
+        print(f"emit: --hess-kx-l {args.hess_kx_l} is outside "
+              f"0..{HESS_KX_L_MAX}: the exchange derivative matrix kernels "
+              "are validated through (ff|ff) only", file=sys.stderr)
+        return 2
     if (args.hess_one_e_l is not None
             and not 0 <= args.hess_one_e_l <= HESS_ONE_E_L_MAX):
         print(f"emit: --hess-one-e-l {args.hess_one_e_l} is outside "
@@ -2045,6 +2091,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hess_k_l is not None:  # beside the J chain, never by default
         written += generate_hess_k(args.backend, arch, args.out,
                                    args.hess_k_l)
+    if args.hess_kx_l is not None:  # beside the J chain, never by default
+        written += generate_hess_kx(args.backend, arch, args.out,
+                                    args.hess_kx_l)
     if args.hess_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hess_one_e(args.backend, arch, args.out,
                                        args.hess_one_e_l)

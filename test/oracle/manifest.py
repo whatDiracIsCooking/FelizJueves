@@ -2081,6 +2081,57 @@ def j_gradient(name: str = J_GRADIENT, where: Path = J_GRADIENT_DIR,
                              2, fixtures, "Coulomb")
 
 
+# --- the exchange derivative matrix witness (#689) -------------------------------
+#
+# Per atom `X` and axis `k`, `K^X_ab = SUM_cd D_cd d(ac|bd)/dR_{X,k}`, the
+# matrix `hessian.host_kx.exchange_derivative` assembles from the two
+# `kernel_kx` forms: PySCF's `hessian.rhf.make_h1` exchange part (`-1/2
+# K^X`), recorded as `K^X`, on a gradient fixture's molecule, basis and
+# recorded density. Not a fixture of its own: it lives in `k_deriv/`,
+# named `<parent>_kx`, and `kx_witness(parent)` loads it, holding its
+# inputs to the parent exactly (`_gradient_witness`'s check). The ip1 half
+# `K1` needs no witness: it is the parent's own `vk1`.
+
+KX_DIR = Path(__file__).resolve().parent / "k_deriv"
+KX_PARENTS = ("h2o_sto3g_grad", "h2o_sto3g_d_grad", "h2o_ccpvdz_grad")
+KX_SCHEMA = 1
+
+
+@dataclass(frozen=True)
+class KXWitness:
+    """The exchange derivative matrices of a gradient fixture (#689)."""
+
+    path: Path
+    provenance: dict[str, Any]
+    parent: Fixture
+    kx: np.ndarray  # [n_atom, 3, nao, nao]
+
+
+def kx_witness(parent: str, where: Path = KX_DIR,
+               fixtures: Path = FIXTURES) -> KXWitness:
+    """Load `parent`'s exchange derivative matrix witness and hold its
+    inputs to the tracked fixture, exactly; refuse a mismatch by field."""
+    path = where / f"{parent}_kx.json"
+    raw = json.loads(path.read_text())
+    if (raw.get("schema") != KX_SCHEMA or raw.get("name") != f"{parent}_kx"
+            or raw.get("parent") != parent):
+        raise _fail(path, f"not a schema-{KX_SCHEMA} exchange derivative "
+                          f"matrix witness of {parent}")
+    fx = load(fixtures / f"{parent}.json")
+    pv, ppv = raw["provenance"], fx.provenance
+    want = {"mol": ppv.mol, "basis": ppv.basis, "cart": ppv.cart,
+            "nao": fx.nao, "density_sha256": density_sha256(fx.density)}
+    for k, v in want.items():
+        if pv.get(k) != v:
+            raise _fail(path, f"provenance.{k} is not the parent's "
+                              f"({pv.get(k)!r} against {v!r})")
+    shape = (len(fx.atoms), 3, fx.nao, fx.nao)
+    kx = np.array(_floats(path, "kx", raw["kx"],
+                          int(np.prod(shape)))).reshape(shape)
+    kx.setflags(write=False)
+    return KXWitness(path, pv, fx, kx)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Load every tracked fixture; one line each. Exit 1 on the first bad one."""
     paths = [Path(p) for p in (argv or [])] or tracked()
