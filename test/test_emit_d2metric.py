@@ -22,8 +22,8 @@ Regenerate (and review the diff) with
 THE COMPILE. Each unit is compiled alone (`-c`) with the kernel tier's own
 flags and FAILS on any warning located in the generated unit (#92's
 filter). Needs a compiler, never a card. nvcc 13.0 (sm_86) compiled every
-class of the ladder on 2026-10-30 (#694, a device-less container); hipcc
-has not been run on these units.
+class of the ladder on 2026-10-30 (#694, a device-less container), and
+hipcc 7.2.4 (gfx1200) the same day.
 """
 
 from __future__ import annotations

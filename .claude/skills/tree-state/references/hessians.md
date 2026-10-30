@@ -141,8 +141,8 @@ unrolled (d|i) is 19,216 B of `sm_86` stack). Interpreted, every class
 low-stack and (d|i), (g|h) forced unrolled, within 0.34 eps of the twin
 (`test_kernel_d2_df_ladder.py`, 52 cases). **nvcc 13.0 (`sm_86`) compiles
 all 28 units** (#92's filter, 2026-10-30, a device-less container); every
-low-stack frame is <= 9,200 B and <= 1.9 s of nvcc. hipcc has not compiled
-them and there are no `gfx1200` rows. A device test and driver are written
+low-stack frame is <= 9,200 B and <= 1.9 s of nvcc; **hipcc 7.2.4
+(`gfx1200`) compiles all 28 too**, frames <= 9,744 B. A device test and driver are written
 (`test_hess_df_device.py`, `hess_driver.d2metric_launches`: H₂O/cc-pVDZ
 against cc-pVDZ-JKFIT with DF-J's `W`, and the d1 ladder's aux-i system per
 aux `l`) and have **run on neither card**. No `d` response, no assembled
@@ -183,8 +183,8 @@ with 8 KB of spill. Every unit compiles in <= 29 s. Interpreted, every
 class of the ladder in its default form, every class below the floor
 forced low-stack and (sp|d), (pp|p) forced unrolled, against the host's
 twin (`test_kernel_d2_df_ladder.py`). **nvcc 13.0 (`sm_86`) compiles all
-71 pinned units** (#92's filter, 2026-10-30); hipcc has not, no
-`gfx1200` rows. A device test and driver are written (`test_hess_df_device.py`,
+71 pinned units** (#92's filter, 2026-10-30), **and so does hipcc 7.2.4
+(`gfx1200`)**, worst low-stack scratch 20,640 B (9 units over 14 KB). A device test and driver are written (`test_hess_df_device.py`,
 `hess_driver.d2eri3_launches`) and have **run on neither card**. No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), no clock
 measured.

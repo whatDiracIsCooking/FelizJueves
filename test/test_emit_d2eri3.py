@@ -27,8 +27,8 @@ that floor that the old ladder pinned unrolled keeps that digest too, under
 THE COMPILE is test_emit_grad.py's: each unit alone (`-c`), the kernel
 tier's flags, FAILING on a warning located in the generated unit (#92).
 Needs a compiler, never a card. nvcc 13.0 (sm_86) compiled every pinned
-class on 2026-10-30 (#694, a device-less container); hipcc has not been run
-on these units.
+class on 2026-10-30 (#694, a device-less container), and hipcc 7.2.4
+(gfx1200) the same day.
 """
 
 from __future__ import annotations

@@ -9,8 +9,8 @@ ladder.
 THE GATE. Both builders have a LOW-STACK form (`kernel_d2eri3` /
 `kernel_d2metric`, THE LOW-STACK FORM) picked from an `L` floor set from
 measured rows (data/measured/d2_df_lowstack.json, `devtools/measure.sh
-d2-df-lowstack-compile`, its rule declared before any row; `sm_86` rows
-only so far): `d2eri3` from `kernel_d2eri3.LOWSTACK_MIN_L` = 3 (the
+d2-df-lowstack-compile`, its rule declared before any row, `sm_86` and
+`gfx1200` rows): `d2eri3` from `kernel_d2eri3.LOWSTACK_MIN_L` = 3 (the
 unrolled (sp|d) is 14,768 B of stack), `d2metric` from
 `kernel_d2metric.LOWSTACK_MIN_L` = 9 (the unrolled (d|i) is 19,216 B).
 

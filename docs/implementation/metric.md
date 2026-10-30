@@ -396,4 +396,4 @@ That bound was eri3's (dd|g), restated. It is now the metric's own, because
 - **A batched metric kernel and a metric lever.** Derivatives are built
   elsewhere: `gmetric_` (gradient, #603/#613, both cards; `gradient.md`)
   and `d2metric_` (Hessian, #611 / #694, through (i|i), interpreted and
-  nvcc-compiled, on no card; `hessian.md`).
+  compiled by nvcc and hipcc, on no card; `hessian.md`).

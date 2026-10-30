@@ -446,11 +446,11 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
 interpreted against the host and compiled by nvcc; a device test is
 written and has not run on a card** (#694). Every class `lP <= lQ <= 6`
 is interpreted against the host and compiled by nvcc 13.0 for `sm_86`,
-with each unit's compile time and frame recorded
-(`data/measured/d2_df_lowstack.json`). hipcc has not compiled these
-units: the session that did this had nvcc, no hipcc and no card. The
-device test (`test_hess_df_device.py`) has run on neither card. Nothing
-is scored: there is no published board and no claim was added.
+and by hipcc (ROCm 7.2.4) for `gfx1200`, with each unit's compile time
+and frame recorded on both arches (`data/measured/d2_df_lowstack.json`).
+The session that did this had both compilers and no card, so the device
+test (`test_hess_df_device.py`) has run on neither card. Nothing is
+scored: there is no published board and no claim was added.
 
 ### The key
 
@@ -536,14 +536,13 @@ are pinned by byte count and sha256 in
 | `kernel_d2metric`, interpreted | `hessian.host_df` per class, `W` non-symmetric | every class `lP + lQ <= 4` on `test_kernel_gmetric.py`'s aux basis (above `lP + lQ + 2 = 4` `slow`); a whole s/p aux basis (`test_kernel_d2metric.py`) | 0.17 eps of the absolute twin (`d2metric_02`), gate 16 eps |
 | the same, the ladder (#694) | `hessian.host_df` per class | every class `lP <= lQ <= 6` in its default form, every class below the floor in the low-stack form forced, (d\|i) and (g\|h) unrolled forced, on a two-shell aux basis with a swapped and a diagonal pair (`test_kernel_d2_df_ladder.py`, 52 cases) | 0.34 eps of the twin (`d2metric_06`), gate 16 eps |
 | nvcc 13.0, `sm_86` | #92's warning filter | all 28 classes (`test_emit_d2metric.py`), 2026-10-30 | clean |
-| the same, frames | `d2-df-lowstack-compile` | every class low-stack; unrolled through `L = 9` | low-stack ≤ 9,200 B, ≤ 1.9 s a unit |
-| hipcc | — | — | **not run** (no hipcc in that session) |
+| hipcc 7.2.4, `gfx1200` | #92's warning filter | all 28 classes, 2026-10-30 | clean |
+| the same, frames | `d2-df-lowstack-compile` | every class low-stack on both arches; unrolled through `L = 9` (`sm_86`) and `L = 11` (`gfx1200`) | low-stack ≤ 9,200 B `sm_86`, ≤ 9,744 B `gfx1200` scratch; ≤ 10 s a unit |
 | on a card | `test_hess_df_device.py` | — | **not run** (no card in that session) |
 
 ### What is not done
 
-- No card run, and no hipcc compile and no `gfx1200` rows: the device
-  test is written, and the sweep's `gfx1200` rows are owed.
+- No card run: the device test is written and has run on neither card.
 - No `d` response, no assembled DF-J (or DF-K) Hessian (the three-center
   `(mn|P)` Hessian is the next section).
 - Nothing against libcint directly (the chain is FD → gradient host →
@@ -556,10 +555,10 @@ are pinned by byte count and sha256 in
 interpreted against the host and compiled by nvcc; a device test is
 written and has not run on a card** (#694). Every class `la <= lb <= 3`,
 `lP <= 6` is interpreted against the host and compiled by nvcc 13.0 for
-`sm_86`, with each unit's compile time and frame recorded
-(`data/measured/d2_df_lowstack.json`). hipcc has not compiled these
-units: the session that did this had nvcc, no hipcc and no card. The
-device test (`test_hess_df_device.py`) has run on neither card. This
+`sm_86`, and by hipcc (ROCm 7.2.4) for `gfx1200`, with each unit's compile time
+and frame recorded on both arches (`data/measured/d2_df_lowstack.json`).
+The session that did this had both compilers and no card, so the device
+test (`test_hess_df_device.py`) has run on neither card. This
 section covers the first density-fitting `derivative_order = 2` key: the
 contracted second nuclear derivatives of the three-center integral
 `(mn|P)`, which is the three-center half of a DF-J skeleton Hessian.
@@ -666,7 +665,7 @@ rule declared before any row). Every unrolled class at `L <= 2` is within
 (pd|s) are not, at 14,768 to 20,280 B. **The low-stack frames are
 recorded, not gated** (the rule says so, and why, before any row): the
 bra tables two indices up are 9.5 KB alone at (ff|.), so 19 units exceed
-14 KB ((pf|g) to (pf|i), (dd|g) to (dd|i), and every (df|.) from p and
+14 KB on `sm_86` (9 on `gfx1200`, worst 20,640 B) ((pf|g) to (pf|i), (dd|g) to (dd|i), and every (df|.) from p and
 every (ff|.)). The worst is (ff|i) at 24,544 B, 8 KB of it spill. Every unit compiles within 29 s ((df|p)), far inside the 300 s
 budget. A form that brings (ff|.) under 14 KB is follow-up work. The
 likely candidates are a triangular table layout (`i + j <= la + lb + 2` is
@@ -700,14 +699,13 @@ keep their unrolled digests, unchanged, under `<name>.unrolled`.
 | `kernel_d2eri3`, interpreted | `hessian.host_eri3` per class, `Gam` random and non-symmetric | every class `la <= lb`, `la + lb + lP <= 4` on `test_kernel_geri3.py`'s bases (L + 2 > 4 `slow`); whole H₂O/STO-3G against JKFIT s, p `slow` (`test_kernel_d2eri3.py`) | 0.40 eps of the absolute twin (`d2eri3_110`), gate 16 eps |
 | the same, the ladder (#694) | `hessian.host_eri3` per class | every class `la <= lb <= 3`, `lP <= 6` in its default form, every class below the floor in the low-stack form forced, (sp\|d) and (pp\|p) unrolled forced, on a two-shell AO basis with a swapped pair and, for `la == lb`, a diagonal one (`test_kernel_d2_df_ladder.py`, 90 cases) | ERI3_WORST, gate 16 eps |
 | nvcc 13.0, `sm_86` | #92's warning filter | all 71 pinned classes (`test_emit_d2eri3.py`), 2026-10-30 | clean |
-| the same, frames | `d2-df-lowstack-compile` | every class low-stack; unrolled through `L = 3` | low-stack ≤ 24,544 B (recorded, not gated), ≤ 29 s a unit |
-| hipcc | — | — | **not run** (no hipcc in that session) |
+| hipcc 7.2.4, `gfx1200` | #92's warning filter | all 71 pinned classes, 2026-10-30 | clean |
+| the same, frames | `d2-df-lowstack-compile` | every class low-stack on both arches; unrolled through `L = 3` | low-stack ≤ 24,544 B `sm_86`, ≤ 20,640 B `gfx1200` (recorded, not gated), ≤ 29 s a unit |
 | on a card | `test_hess_df_device.py` (H₂O/cc-pVDZ against cc-pVDZ-JKFIT; the aux-i system per aux `l`) | — | **not run** (no card in that session) |
 
 ### What is not done
 
-- No card run, no hipcc compile and no `gfx1200` rows. The device test
-  and driver are written (`test_hess_df_device.py`, `hess_driver.py`'s
+- No card run. The device test and driver are written (`test_hess_df_device.py`, `hess_driver.py`'s
   `d2eri3_launches`), and its host-only staging tests ran.
 - The low-stack frames at f exceed #606's 14 KB (above). No clock is
   measured.
