@@ -50,8 +50,11 @@ from grad_driver import (
     compile_grad,
     gjab_launches,
     gk_launches,
+    grad_runners,
+    grad_steps,
     one_electron_launches,
 )
+from harness_driver import build_chain, chain_specs
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import _toolchain
@@ -112,7 +115,7 @@ def _launches(name: str, which: str):
     return one_electron_launches(basis, nuclei, target, D)
 
 
-def _check(backend: str, name: str, which: str, request, run_device_binary,
+def _check(backend: str, name: str, which: str, request,
            tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     _, nuclei, _ = _case(name)
@@ -122,7 +125,7 @@ def _check(backend: str, name: str, which: str, request, run_device_binary,
         assert names == {f"{a}{b}" for a in range(4) for b in range(4)}, names
     b = compile_grad(launches, len(nuclei), backend, tc, tmp_path,
                      timeout=COMPILE_TIMEOUT_S)
-    got = b.run(run_device_binary)
+    got = b.run()
     want = _host(name, which)
     scale = np.abs(want).max()
     errs = [float(np.abs(g - want).max() / scale) for g in got]
@@ -138,14 +141,49 @@ def _check(backend: str, name: str, which: str, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize(("name", "which"), CASES + FF_CASES)
-def test_cuda_gradient_matches_the_host(name, which, request,
-                                        run_device_binary, tmp_path) -> None:
-    _check("cuda", name, which, request, run_device_binary, tmp_path)
+def test_cuda_gradient_matches_the_host(name, which, request, tmp_path) -> None:
+    _check("cuda", name, which, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize(("name", "which"), CASES + FF_CASES)
-def test_hip_gradient_matches_the_host(name, which, request,
-                                       run_device_binary, tmp_path) -> None:
-    _check("hip", name, which, request, run_device_binary, tmp_path)
+def test_hip_gradient_matches_the_host(name, which, request, tmp_path) -> None:
+    _check("hip", name, which, request, tmp_path)
+
+
+# --- No card: the runners compile, and every launch's spec is the kernel's ---
+
+
+def _runners_compile(backend: str, tc, name: str, which: str,
+                     tmp_path: Path) -> None:
+    launches = _launches(name, which)
+    bins = build_chain(tc, grad_runners(launches, backend, tmp_path), tmp_path,
+                       timeout=COMPILE_TIMEOUT_S)
+    assert set(bins) == {x.kernel.name for x in launches}
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize(("name", "which"), CASES)  # the registry's compile tier
+def test_cuda_gradient_runners_compile(name, which, nvcc, tmp_path) -> None:
+    _runners_compile("cuda", nvcc, name, which, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize(("name", "which"), CASES)  # the registry's compile tier
+def test_hip_gradient_runners_compile(name, which, hipcc, tmp_path) -> None:
+    _runners_compile("hip", hipcc, name, which, tmp_path)
+
+
+@pytest.mark.parametrize(("name", "which"), CASES + FF_CASES)
+def test_every_launch_names_the_kernels_arguments(name, which) -> None:
+    """Every launch's runner spec, built host-side: each parameter named
+    once, of its own dtype, `G` the one output (harness_driver.launch_spec
+    refuses anything else)."""
+    _, nuclei, _ = _case(name)
+    launches = _launches(name, which)
+    specs = chain_specs(grad_steps(launches), "G", np.zeros((len(nuclei), 3)))
+    for x, spec in zip(launches, specs, strict=True):
+        assert [a["name"] for a in spec["args"]] == [
+            p.name for p in x.kernel.params]
+        assert [a["name"] for a in spec["args"] if "out" in a] == ["G"]

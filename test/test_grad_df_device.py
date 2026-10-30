@@ -43,7 +43,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 from df_grad_launch import eri3_arrays, metric_arrays
-from grad_driver import GradLaunch, compile_grad, grad_program
+from grad_driver import GradLaunch, compile_grad, grad_runners, grad_steps
+from harness_driver import chain_specs
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import _toolchain
@@ -105,12 +106,12 @@ def _host(which: str) -> np.ndarray:
     return np.array(host_df.eri3_gradient(basis, aux, Gam, nuclei, pq=pq))
 
 
-def _check(backend: str, which: str, request, run_device_binary,
+def _check(backend: str, which: str, request,
            tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     nuclei = _case()[2]
     got = compile_grad(_launches(which), len(nuclei), backend, tc,
-                       tmp_path).run(run_device_binary)
+                       tmp_path).run()
     want = _host(which)
     scale = np.abs(want).max()
     errs = [float(np.abs(g - want).max() / scale) for g in got]
@@ -126,18 +127,18 @@ def _check(backend: str, which: str, request, run_device_binary,
 @pytest.mark.gpu
 @pytest.mark.slow
 @pytest.mark.parametrize("which", ("metric", "eri3"))
-def test_cuda_df_gradient_matches_the_host(which, request, run_device_binary,
+def test_cuda_df_gradient_matches_the_host(which, request,
                                            tmp_path) -> None:
-    _check("cuda", which, request, run_device_binary, tmp_path)
+    _check("cuda", which, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.slow
 @pytest.mark.parametrize("which", ("metric", "eri3"))
-def test_hip_df_gradient_matches_the_host(which, request, run_device_binary,
+def test_hip_df_gradient_matches_the_host(which, request,
                                           tmp_path) -> None:
-    _check("hip", which, request, run_device_binary, tmp_path)
+    _check("hip", which, request, tmp_path)
 
 
 @pytest.mark.slow
@@ -152,8 +153,10 @@ def test_the_staged_launches_cover_every_class_once(tmp_path) -> None:
     for which in ("metric", "eri3"):
         xs = _launches(which)
         assert all(x.n_rec >= 1 for x in xs)
-        prog = grad_program(xs, 3, "cuda", tmp_path / which)
-        assert prog.source.count("<<<") == len(xs)
+        specs = chain_specs(grad_steps(xs), "G", np.zeros((3, 3)))
+        assert [s["kernel"] for s in specs] == [x.kernel.name for x in xs]
+        runners = grad_runners(xs, "cuda", tmp_path / which)
+        assert set(runners) == {x.kernel.name for x in xs}
     # DF-J: the sum of the two host terms has zero net force.
     G = _host("metric") + _host("eri3")
     assert np.abs(G.sum(axis=0)).max() <= 1e-12 * np.abs(G).max()
@@ -215,12 +218,12 @@ def _ladder_host(which: str, l: int) -> np.ndarray:  # noqa: E741
 
 
 def _ladder(backend: str, which: str, l: int, request,  # noqa: E741
-            run_device_binary, tmp_path: Path) -> None:
+            tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     wit, _, _, nuclei = _auxi()
     xs, classes = _ladder_launches(which, l)
     got = compile_grad(xs, len(nuclei), backend, tc, tmp_path,
-                       timeout=COMPILE_BUDGET_S).run(run_device_binary)
+                       timeout=COMPILE_BUDGET_S).run()
     want = _ladder_host(which, l)
     scale = np.abs(want).max()
     errs = [float(np.abs(g - want).max() / scale) for g in got]
@@ -246,8 +249,8 @@ LADDER = [("metric", lq) for lq in range(7)] + [("eri3", lp)
 @pytest.mark.high_l
 @pytest.mark.parametrize("which,l", LADDER, ids=lambda x: str(x))
 def test_cuda_df_gradient_ladder_through_i(which, l, request,  # noqa: E741
-                                           run_device_binary, tmp_path):
-    _ladder("cuda", which, l, request, run_device_binary, tmp_path)
+                                           tmp_path):
+    _ladder("cuda", which, l, request, tmp_path)
 
 
 @pytest.mark.hip
@@ -256,8 +259,8 @@ def test_cuda_df_gradient_ladder_through_i(which, l, request,  # noqa: E741
 @pytest.mark.high_l
 @pytest.mark.parametrize("which,l", LADDER, ids=lambda x: str(x))
 def test_hip_df_gradient_ladder_through_i(which, l, request,  # noqa: E741
-                                          run_device_binary, tmp_path):
-    _ladder("hip", which, l, request, run_device_binary, tmp_path)
+                                          tmp_path):
+    _ladder("hip", which, l, request, tmp_path)
 
 
 @pytest.mark.slow  # builds every class through L = 12
