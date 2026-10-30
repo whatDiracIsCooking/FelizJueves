@@ -253,7 +253,7 @@ terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 pair `(lP, lQ)` and triple `(la, lb, lP)`. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
-target's d0 reason. THREE OFF-NATIVE PAIRS ARE LEGAL AT d1
+target's d0 reason. FIVE OFF-NATIVE PAIRS ARE LEGAL AT d1
 (`GRADIENT_OFF_NATIVE`): `J` on `Engine.HGP`, the Coulomb energy's bra
 derivative over every ordered quartet of the class on the Head-Gordon-Pople
 recurrence (`gradient.kernel_ghj`), `am` the d0 HGP J class `(la, lb | lc,
@@ -264,7 +264,10 @@ in the `d` segment alone; MMD `J` at d1 stays refused (its gradient is
 CLASS" with the bra derivative folded into its contracted tables). And `K`
 on `Engine.HGP` (above, `gradient.kernel_ghk`). And `S` on `Engine.HGP`,
 ``overlap/d1/(1,0)/b1/s.hgp/literal`` (`gradient.kernel_hgs`, `hgt_`'s
-route over three tables).
+route over three tables). And `V` on `Engine.HGP`,
+``nuclear/d1/(1,0)/b1/v.hgp/literal`` (`gradient.kernel_ghv`: the same
+route's point-charge VRR, per nucleus, its Hellmann-Feynman row by
+translational invariance).
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
@@ -594,7 +597,7 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # density-fitting `METRIC` and `ERI3`, and `DQ`, the ket pre-contraction
 # differentiated on each ket centre, which the Coulomb Hessian's bra-ket
 # term reads (`hessian.kernel_hdq`). Each on its native engine, MMD, and
-# `J`, `K`, `T` and `S` on HGP too (`GRADIENT_OFF_NATIVE`).
+# `J`, `K`, `T`, `S` and `V` on HGP too (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
                               Target.DQ))
@@ -605,16 +608,18 @@ GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
 # `T` on HGP, the kinetic energy's gradient by Head-Gordon & Pople's split of
 # the Obara-Saika recurrences (`gradient.kernel_hgt`), and `K` on HGP, the
 # exchange energy's (`gradient.kernel_ghk`), and `S` on HGP, the overlap
-# gradient on `hgt_`'s route (`gradient.kernel_hgs`). MMD `J` at d1 stays
-# refused: its gradient is `JAB`'s, through the J chain.
+# gradient on `hgt_`'s route (`gradient.kernel_hgs`), and `V` on HGP, the
+# nuclear attraction's on the same route, per nucleus (`gradient.kernel_ghv`).
+# MMD `J` at d1 stays refused: its gradient is `JAB`'s, through the J chain.
 GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.K, Engine.HGP),
                                  (Target.T, Engine.HGP),
-                                 (Target.S, Engine.HGP)))
+                                 (Target.S, Engine.HGP),
+                                 (Target.V, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
-    "the MMD engine, and for J, K, T and S on the HGP engine "
+    "the MMD engine, and for J, K, T, S and V on the HGP engine "
     "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"
 )

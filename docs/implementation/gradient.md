@@ -11,7 +11,9 @@ The Coulomb gradient on the HGP recurrence (`ghj_`, "The Coulomb gradient
 on the HGP recurrence") is generated and interpreted only; the exchange
 gradient on it (`ghk`, "The exchange gradient on HGP") is interpreted
 through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`, on no
-card. This is
+card; the kinetic, overlap and nuclear-attraction gradients on HGP
+(`hgt_`, `hgs_`, `ghv_`, through (ff)) are interpreted and compiled, not
+run on a card. This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -39,14 +41,16 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
 Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
-every other engine -- except four off-native pairs,
+every other engine -- except five off-native pairs,
 `spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
 recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`,
 `T` on HGP ("The kinetic gradient on HGP", below), key
 `kinetic/d1/(la,lb)/b1/t.hgp/literal`, and `K` on HGP ("The exchange
 gradient on HGP", below), key `coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal`, and `S` on HGP ("The
 overlap gradient on HGP", below), key
-`overlap/d1/(la,lb)/b1/s.hgp/literal`. A gradient class is its integral's class, `am` the
+`overlap/d1/(la,lb)/b1/s.hgp/literal`, and `V` on HGP ("The
+nuclear-attraction gradient on HGP", below), key
+`nuclear/d1/(la,lb)/b1/v.hgp/literal`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
 d0 key is byte-identical. Unbatched, for each target's d0 reason. `K` at
@@ -743,7 +747,7 @@ felizjueves.emit --hgp-grad-l [LMAX]` (1 bare, 0..3), never in the bare
 default nor in `KERNEL_GEN_CMD`; goldens `test/golden/{cuda,hip}/hgt_{00,
 01,11}`; every class through (ff) compiles warning-free under both
 compilers (`test_emit_hgp_grad.py`, slowest `hgt_33`: 6.3 s nvcc, 14.6 s
-hipcc, 2026-10-30). `S` and `V` on HGP stay refused at d1.
+hipcc, 2026-10-30). `S` and `V` on HGP are `hgs_`'s and `ghv_`'s, below.
 
 ## The overlap gradient on HGP (`gradient/kernel_hgs.py`)
 
@@ -781,6 +785,43 @@ per class. Compiled by nvcc and hipcc through (ff); its card cases
 with the bare proton) are written and **not yet run on a card**. Not
 measured.
 
+## The nuclear-attraction gradient on HGP (`gradient/kernel_ghv.py`)
+
+**Status: generated, interpreted against the MMD host and PySCF, and
+compiled by nvcc (sm_86) and hipcc (gfx1200) through (ff); its device test
+written, not run on a card; nothing measured.** `ghv_{la}{lb}`, key
+`nuclear/d1/(la,lb)/b1/v.hgp/literal`, writes what `gv_` writes, `G[X, k]
++= SUM_mn M_mn dV_mn/dR_{X,k}` with every nucleus's Hellmann–Feynman term,
+on `kernel_hgp`'s `hv_` route: per nucleus, the point-charge VRR per
+primitive pair to `la + lb + 1`, the contraction, the HRR on contracted
+values; one thread per contracted shell pair; nothing of MMD's (its own
+layering rule, `ghv_builder`, keeps `mmd`, `plan` and the witnesses out of
+its ancestry; `kernel_g1e`'s weight rule is restated, not imported).
+
+The rule is the Cartesian one, `d/dA_k |a) = 2 alpha |a + 1_k) - a_k |a -
+1_k)`, with the weight folded in before the contraction as `hgt_` and
+`hgs_` do: per nucleus three contracted tables, `SUM 2 alpha (e|0)` (HRR
+targets `(a + 1_k|b)`), `SUM 2 beta (e|0)` (`(a|b + 1_k)`) and `SUM (e|0)`
+(`(a - 1_k|b)`, `(a|b - 1_k)`; empty at (ss)), each its own HRR, all on
+one VRR (`kernel_hgp.table_dags`, `vrr_dag`, `factors`). The nucleus row
+is **not** a third derivative: one nucleus's integral depends on `A - C`
+and `B - C` alone, so `dC = -(dA + dB)` of that nucleus's own tables,
+exactly. That is why the record loop runs inside the nucleus loop: a
+contracted table is one nucleus's (`hv_` sums the nuclei before its one
+HRR; the gradient cannot), at the price of the seed's `exp` per record
+per nucleus. `G` is `AtomicAdd`-ed, three per nucleus and six per pair.
+Staged by `gradient.host.pair_records`, as `hgt_` and `hgs_`.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| `ghv` interpreted (`test_kernel_ghv.py`) | `host.potential_gradient`, per class, `M` non-symmetric, `test_kernel_g1e.py`'s split-centre scale | every ordered class (ss)–(ff) on HF/cc-pVTZ (L + 1 > 4 `slow`); the s, p classes on test_kernel_hgp.py's synthetic off-axis basis plus a fourth, bare nucleus | 6.0 eps of the scale (HF (dd)), gate 16 eps |
+| `ghv` interpreted, whole | PySCF's `potential` term (`int1e_ipnuc`, `int1e_iprinv`; test_rhf_gradient.py's witness) | H₂O/STO-3G, H₂O/6-31G | 7.9e-14 / 4.9e-14 absolute, gate `1e-10` |
+| compile (`test_emit_ghv.py`, `test_ghv_device.py`) | #92's filter | nvcc `sm_86`, hipcc `gfx1200`: every class through (ff), each unit alone, and the synthetic program | passed, no warning in generated text (2026-10-30, a device-less cloud container); `ghv_33` 2.5 s / 7.3 s, 6,104 B of `sm_86` stack and 4,708 B of `gfx1200` scratch, under #613's 14,000 B, so one (unrolled) form -- a reading, not a measured row |
+| on a card (`test_ghv_device.py`, `test/ghv_driver.py`) | the host at `1e-13` of `max\|G\|`, PySCF at `1e-10` | written for the synthetic basis and H₂O/STO-3G, 6-31G; **not run on either card** | -- |
+
+Ladder: `--hgp-grad-l [LMAX]` writes `ghv_` beside `hgt_` and `hgs_` per
+class (class-major); goldens `test/golden/{cuda,hip}/ghv_{00,01,11}`.
+
 ## What is not done
 
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
@@ -810,7 +851,8 @@ measured.
   (`kernel_kblock`'s, one warp per `K_AB` block) is not built, and no
   `gk` clock is measured.
 - `hgt_` (the kinetic gradient on HGP, above) has not run on a card and
-  is not measured; `V` has no HGP gradient.
+  is not measured. Neither has `ghv_` (the nuclear-attraction gradient on
+  HGP, above), whose device test is written for s and p.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
   time (`g1e.json`, #614), and `gjab` likewise (`gjab.json`, #619), not
   for wall-clock.

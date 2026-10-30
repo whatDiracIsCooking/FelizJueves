@@ -284,9 +284,11 @@ for CUDA, `.hip` for HIP):
   contraction with `M` into `G`, one thread per contracted shell pair; and
   `kernel_hgs.build_hgs_kernel`, `Target.S` at d1 on `Engine.HGP`
   (`hgs_{la}{lb}`), the same route over three tables (unweighted, `2 alpha`,
-  `2 beta`).
-  Accepted 0..`HGP_GRAD_L_MAX` = 3 ONLY (the builder is checked through (ff),
-  interpreted; above it is a 2). It ADDS units beside the J ladders, as
+  `2 beta`); and `kernel_ghv.build_ghv_kernel`, `Target.V` there too
+  (`ghv_{la}{lb}`): per nucleus the point-charge VRR into the same three
+  tables, their HRRs, the Hellmann-Feynman row by translational invariance.
+  Accepted 0..`HGP_GRAD_L_MAX` = 3 ONLY (the builders are checked through
+  (ff), interpreted; above it is a 2). It ADDS units beside the J ladders, as
   `--grad-l` does, and is NEVER in the no-flag default nor in
   KERNEL_GEN_CMD.
 
@@ -532,6 +534,7 @@ from felizjueves.eri.kernel_schwarz import build_schwarz_kernel
 from felizjueves.gradient.kernel_g1e import GRADIENT_1E, build_g1e_kernel
 from felizjueves.gradient.kernel_geri3 import build_geri3_kernel
 from felizjueves.gradient.kernel_ghk import build_ghk_kernel
+from felizjueves.gradient.kernel_ghv import build_ghv_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
@@ -608,8 +611,9 @@ DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
-DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_, hgs_ (ss) (sp) (pp)
-HGP_GRAD_L_MAX = 3  # kernel_hgt.L_MAX = kernel_hgs.L_MAX: interpreted through (ff)
+DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_, hgs_, ghv_ (ss) (sp) (pp)
+# kernel_hgt.L_MAX = kernel_hgs.L_MAX = kernel_ghv.L_MAX: interpreted through (ff)
+HGP_GRAD_L_MAX = 3
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -1173,10 +1177,10 @@ def hgp_grad_classes(lmax: int) -> list[tuple[int, int]]:
 
 
 def hgp_grad_kernels(lmax: int) -> list[Kernel]:
-    """`hgt_{la}{lb}` and `hgs_{la}{lb}` for every class through `lmax`,
+    """`hgt_{la}{lb}`, `hgs_{la}{lb}` and `ghv_{la}{lb}` for every class through `lmax`,
     class-major."""
     return [build((la, lb)) for la, lb in hgp_grad_classes(lmax)
-            for build in (build_hgt_kernel, build_hgs_kernel)]
+            for build in (build_hgt_kernel, build_hgs_kernel, build_ghv_kernel)]
 
 
 def generate_hgp_grad(backend: str, arch: Arch, out: Path,

@@ -145,9 +145,9 @@ def test_the_refusals() -> None:
     with pytest.raises(ValueError, match="not an HGP d1 T key"):
         kt.build_hgt_kernel(Spec(Operator.KINETIC, 0, (1, 0), Target.T,
                                  engine=Engine.HGP))
-    # V stays refused on HGP (S is gradient.kernel_hgs's)
-    with pytest.raises(ValueError, match="derivative order 1 on target v.hgp"):
-        Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.HGP)
+    # Rys stays refused at d1 (S and V on HGP are kernel_hgs's and kernel_ghv's)
+    with pytest.raises(ValueError, match="derivative order 1 on target v.rys"):
+        Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.RYS)
     with pytest.raises(ValueError, match="derivative order 2 on target t.hgp"):
         Spec(Operator.KINETIC, 2, (1, 0), Target.T, engine=Engine.HGP)
     with pytest.raises(ValueError, match="positive int"):

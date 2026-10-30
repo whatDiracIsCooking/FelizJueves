@@ -159,8 +159,8 @@ def test_above_f_is_refused() -> None:
 def test_the_spec_admits_s_on_hgp_at_order_one_only() -> None:
     assert Spec(Operator.OVERLAP, 1, (1, 0), Target.S,
                 engine=Engine.HGP).key() == "overlap/d1/(1,0)/b1/s.hgp/literal"
-    with pytest.raises(ValueError, match="derivative order 1 on target v.hgp"):
-        Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.HGP)
+    with pytest.raises(ValueError, match="derivative order 1 on target v.rys"):
+        Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.RYS)
     with pytest.raises(ValueError, match="derivative order 2 on target s.hgp"):
         Spec(Operator.OVERLAP, 2, (1, 0), Target.S, engine=Engine.HGP)
 
