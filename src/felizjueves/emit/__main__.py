@@ -243,6 +243,17 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. The `cuda` and `hip` backends carry `fj_rys`; there is no
   CLI `gpu` backend.
 
+- the HGP kinetic-gradient ladder, `--hgp-grad-l [LMAX]`: for every pair
+  class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
+  `kernel_hgt.build_hgt_kernel`, `Target.T` at derivative order 1 on
+  `Engine.HGP` (`hgt_{la}{lb}`): `kernel_hgp`'s VRR per primitive pair into
+  six contracted tables weighted `(2 alpha)^p beta^n`, their HRRs, the
+  contraction with `M` into `G`, one thread per contracted shell pair.
+  Accepted 0..`HGP_GRAD_L_MAX` = 3 ONLY (the builder is checked through (ff),
+  interpreted; above it is a 2). It ADDS units beside the J ladders, as
+  `--grad-l` does, and is NEVER in the no-flag default nor in
+  KERNEL_GEN_CMD.
+
 With NEITHER `--L` nor `--pair-l` both J ladders are written -- `[p|q]`
 L = 0..16 and the pair classes (ss) through (ff), 17 + 20 units: the J chain
 is what the bare command writes, and `data/measured/kernels.json` pins those
@@ -479,6 +490,7 @@ from felizjueves.gradient.kernel_geri3 import build_geri3_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
+from felizjueves.gradient.kernel_hgt import build_hgt_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
@@ -547,6 +559,8 @@ DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
+DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_ (ss) (sp) (pp)
+HGP_GRAD_L_MAX = 3  # kernel_hgt.L_MAX: interpreted through (ff)
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -1033,6 +1047,35 @@ def generate_hgp_one_e(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The HGP kinetic-gradient ladder
+# ---------------------------------------------------------------------------
+
+
+def hgp_grad_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..HGP_GRAD_L_MAX` (the HGP kinetic gradient is built through f)."""
+    if type(lmax) is not int or not 0 <= lmax <= HGP_GRAD_L_MAX:
+        raise ValueError(f"--hgp-grad-l {lmax!r} is outside "
+                         f"0..{HGP_GRAD_L_MAX}: the HGP kinetic gradient "
+                         "kernels are built for shells through f only")
+    return pair_classes(lmax)
+
+
+def hgp_grad_kernels(lmax: int) -> list[Kernel]:
+    """`hgt_{la}{lb}` for every class through `lmax`."""
+    return [build_hgt_kernel((la, lb)) for la, lb in hgp_grad_classes(lmax)]
+
+
+def generate_hgp_grad(backend: str, arch: Arch, out: Path,
+                      lmax: int) -> list[Path]:
+    """Emit the HGP kinetic-gradient unit of every pair class through
+    `lmax` into `out`; return the paths."""
+    kernels = hgp_grad_kernels(lmax)
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The Rys one-electron ladder
 # ---------------------------------------------------------------------------
 
@@ -1338,6 +1381,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.hess_eri3_l is not None
             or args.hgp_one_e_l is not None
             or args.rys_one_e_l is not None
+            or args.hgp_grad_l is not None
             or _hgp_df(args)):
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
@@ -1347,7 +1391,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --rys-one-e-l / "
+              "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
@@ -1445,6 +1489,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--rys-one-e-l", dest="rys_one_e_l", type=int, nargs="?",
                     const=DEFAULT_RYS_ONE_E_L, default=None, metavar="LMAX")
+    ap.add_argument("--hgp-grad-l", dest="hgp_grad_l", type=int, nargs="?",
+                    const=DEFAULT_HGP_GRAD_L, default=None, metavar="LMAX")
     ap.add_argument("--fock-l", dest="fock_l", type=int, default=None,
                     metavar="LMAX")
     ap.add_argument("--fock-class", dest="fock_classes", type=int, nargs=4,
@@ -1511,6 +1557,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_eri3_l is not None
                  or args.hgp_one_e_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
+                 or args.hgp_grad_l is not None
                  or ladder_levers):
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
@@ -1520,7 +1567,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --rys-one-e-l / "
+              "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
               "--shell-ls and "
               "the J / K "
@@ -1552,6 +1599,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_eri3_l is not None
                      or args.hgp_one_e_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
+                 or args.hgp_grad_l is not None
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
@@ -1559,7 +1607,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --rys-one-e-l (and a lever "
+              "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
@@ -1676,6 +1724,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{RYS_ONE_E_L_MAX}: the Rys one-electron kernels are built "
               "for shells through f only", file=sys.stderr)
         return 2
+    if (args.hgp_grad_l is not None
+            and not 0 <= args.hgp_grad_l <= HGP_GRAD_L_MAX):
+        print(f"emit: --hgp-grad-l {args.hgp_grad_l} is outside "
+              f"0..{HGP_GRAD_L_MAX}: the HGP kinetic gradient kernels are "
+              "built for shells through f only", file=sys.stderr)
+        return 2
     try:
         arch = resolve_arch(args.backend, args.arch)
         lever_units = [k for lf, a in given for k in lever_kernels(lf, a)]
@@ -1749,6 +1803,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.rys_one_e_l is not None:  # beside the J chain, never by default
         written += generate_rys_one_e(args.backend, arch, args.out,
                                       args.rys_one_e_l)
+    if args.hgp_grad_l is not None:  # beside the J chain, never by default
+        written += generate_hgp_grad(args.backend, arch, args.out,
+                                     args.hgp_grad_l)
     # #339: the J / K lever ladders, beside the J chain, never by default
     written += generate_levers(args.backend, arch, args.out, lever_units)
     print(f"emit: {len(written)} {args.backend} translation unit(s) for "

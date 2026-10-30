@@ -251,6 +251,29 @@ cc-pVTZ-JKFIT s, p, closed-form orbitals, `slow`): 7.8e-13 absolute, gate
 eps of the split-centre scale (`test_kernel_df_k_grad.py`). Not run on a
 card with the DF-K weights; the solve stays host-side. No clock.
 
+**The kinetic gradient on HGP is generated, interpreted and compiled,
+not run on a card** (`gradient.md`, "The kinetic gradient on HGP"):
+`spec.GRADIENT_OFF_NATIVE` makes `T` at d1 legal on `Engine.HGP`
+(`kinetic/d1/(la,lb)/b1/t.hgp/literal`; `S` and `V` stay refused),
+built by `gradient/kernel_hgt.py` (`hgt_{la}{lb}`, through f,
+`L_MAX = 3`): `kernel_hgp`'s VRR per primitive pair into up to six
+contracted tables weighted `(2 alpha)^p beta^n`, their HRRs on contracted
+values, `kernel_hgp`'s kinetic combination at `a +- 1_k`, contracted with
+`M` (`kernel_g1e.weights`' rule), `B`'s row `-A`'s by translational
+invariance; one thread per contracted shell pair, six `AtomicAdd`s per
+pair; staged by `host.pair_records`. Interpreted
+(`test_kernel_hgt.py`): every class (ss)-(ff) on HF/cc-pVTZ against
+`host.kinetic_gradient`, worst 37.2 eps of the split-centre scale (gate
+64 eps); the whole gradient of H₂O/STO-3G, H₂O/6-31G and
+`h2o_sto3g_d_grad` against libcint's `int1e_ipkin` within `1e-12`
+absolute. Ladder `--hgp-grad-l [LMAX]` (1 bare, 0..3), never in the bare
+default nor `KERNEL_GEN_CMD`; 6 goldens (`hgt_00`, `_01`, `_11` per
+backend, `test_emit_hgp_grad.py`). **Compiled by nvcc and hipcc, not
+run on a card**: every class through (ff) warning-free under both
+(2026-10-30, a device-less cloud container, slowest `hgt_33` 6.3 s /
+14.6 s). No driver, no device test, nothing measured; registry
+`hgp/t/d1` L 0..6, compile tier only, its cost modelled.
+
 **RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
 nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O
 `_j` fixtures (STO-3G, 6-31G; cc-pVDZ is for `slow` tests only) plus a C1

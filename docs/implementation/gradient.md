@@ -35,10 +35,12 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB`, `K`, `METRIC` and
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
-Every other target, and HGP, refuses it with
-`_GRADIENT_REFUSAL` -- except one off-native pair,
+Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
+every other engine -- except two off-native pairs,
 `spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
-recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`. A gradient class is its integral's class, `am` the
+recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`, and
+`T` on HGP ("The kinetic gradient on HGP", below), key
+`kinetic/d1/(la,lb)/b1/t.hgp/literal`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
 d0 key is byte-identical. Unbatched, for each target's d0 reason. `K` at
@@ -611,6 +613,40 @@ register, stack or clock measurement; nothing above `(dd|dd)` is
 exercised (the builder takes any class); the device assembly of the RHF
 gradient (#566) does not use it.
 
+## The kinetic gradient on HGP (`gradient/kernel_hgt.py`)
+
+**Status: generated, interpreted against the MMD host and libcint, and
+compiled by nvcc (sm_86) and hipcc (gfx1200) through (ff); not run on a
+card, nothing measured.** `hgt_{la}{lb}`, key
+`kinetic/d1/(la,lb)/b1/t.hgp/literal`, writes the same `G[A, k] += SUM_mn
+M_mn dT_mn/dR_{A,k}` as `gt_` on the second engine: `kernel_hgp`'s route
+(a VRR per primitive pair, `hgp.vrr`'s eq 25 at `f = 0`, the contraction,
+`hgp.hrr`'s eq 28 on contracted values), its mapping (one thread per
+contracted shell pair) and its kinetic combination `T(a', b) = (2 lb + 3)
+(a'|b)_1 - 2 SUM_d (a'|b + 2_d)_2 - 1/2 SUM_d b_d (b_d - 1) (a'|b - 2_d)_0`.
+The bra derivative `2 alpha T(a + 1_k, b) - a_k T(a - 1_k, b)` is folded
+into the contraction: `alpha` and `beta` are per primitive, so there are
+up to six contracted tables, weighted `(2 alpha)^p beta^n`, each with its
+own HRR (`p = 0` absent for an s bra, `n = 0` while `lb <= 1`). The ket
+centre is `-dA` (translational invariance, no third centre), so each pair
+adds `gA` to `A`'s row and `-gA` to `B`'s, six `AtomicAdd`s. Staged by
+`gradient.host.pair_records` (`records`' per-record arrays plus the
+per-pair `rec0` / `rec1`, offsets, atoms and `A - B`).
+
+Witnessed interpreted (`test_kernel_hgt.py`): per class (ss) through (ff)
+on HF/cc-pVTZ against `host.kinetic_gradient`, worst 37.2 eps of
+`test_kernel_g1e.py`'s split-centre scale at (sd) (gate 64 eps, looser
+than MMD's 16 because the kinetic combination and the HRR on contracted
+values cancel; `kernel_hgp`'s d0 test allows 1e-13 of max for the same
+reason); the whole gradient of H₂O/STO-3G, H₂O/6-31G and
+`h2o_sto3g_d_grad` against libcint's `int1e_ipkin` contracted with the
+fixtures' density, within `1e-12` absolute. Ladder `python -m
+felizjueves.emit --hgp-grad-l [LMAX]` (1 bare, 0..3), never in the bare
+default nor in `KERNEL_GEN_CMD`; goldens `test/golden/{cuda,hip}/hgt_{00,
+01,11}`; every class through (ff) compiles warning-free under both
+compilers (`test_emit_hgp_grad.py`, slowest `hgt_33`: 6.3 s nvcc, 14.6 s
+hipcc, 2026-10-30). `S` and `V` on HGP stay refused at d1.
+
 ## What is not done
 
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
@@ -633,6 +669,8 @@ gradient (#566) does not use it.
   against the host was not run (hours of pure Python). The block mapping
   (`kernel_kblock`'s, one warp per `K_AB` block) is not built, and no
   `gk` clock is measured.
+- `hgt_` (the kinetic gradient on HGP, above) has not run on a card and
+  is not measured; `S` and `V` have no HGP gradient.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
   time (`g1e.json`, #614), and `gjab` likewise (`gjab.json`, #619), not
   for wall-clock.

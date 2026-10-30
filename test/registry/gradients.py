@@ -19,6 +19,9 @@ CASES = [
             cards=dict.fromkeys(BOTH, range(13))),
     *ladder("mmd", "eri3", 1, compile=range(5), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
+    # The HGP kinetic gradient, hgt_ (ss) through (ff): interpreted and
+    # compiled by nvcc and hipcc, never run on a card.
+    *ladder("hgp", "t", 1, compile=range(7)),
 ]
 
 # #613's ladder: one program per aux l, every class of the aux-i system
@@ -65,6 +68,7 @@ TESTS = {
         Classes("mmd", "metric", 1),
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":
         Classes("mmd", "k", 1),
+    "test/test_emit_hgp_grad.py::test_X_compiles_the_unit": Classes("hgp", "t", 1),
     "test/test_grad_device.py::test_X_gradient_matches_the_host": ById(_GRAD),
     # #659's compile-only twins, the registry's compile tier (L <= 4)
     "test/test_grad_device.py::test_X_gradient_runners_compile": ById(
