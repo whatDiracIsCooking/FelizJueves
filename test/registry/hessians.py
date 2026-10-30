@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .rules import ById, Classes, ladder, span
+from .rules import PROGRAM, Allow, ById, Classes, ladder, span
 
 BOTH = ("rtx3080", "rx9060xt")
 
@@ -18,10 +18,12 @@ CASES = [
         cards=dict.fromkeys(BOTH, range(5)))),
     *ladder("mmd", "v", 2, compile=(0, 1, 2, 3, 4, 6), gpu=range(5),
             cards=dict.fromkeys(BOTH, range(5))),
-    # hkx, d2metric, d2eri3: no device test, not run on either card.
+    # hkx: no device test, not run on either card.
     *ladder("mmd", "k", 2, compile=range(5)),
-    *ladder("mmd", "metric", 2, compile=range(5)),
-    *ladder("mmd", "eri3", 2, compile=range(5)),
+    # d2metric, d2eri3 through (i|i) / (ff|i) (#694): interpreted, compiled
+    # by nvcc and hipcc, a device test written; not run on either card.
+    *ladder("mmd", "metric", 2, compile=range(13), gpu=range(13)),
+    *ladder("mmd", "eri3", 2, compile=range(13), gpu=range(13)),
     # kx1 / kxc (#689), the exchange derivative matrix at d1: interpreted
     # through (dd|dd) and at three f classes, compiled at the goldens and
     # (ff|ff); no device test, not run on either card.
@@ -34,6 +36,15 @@ CASES = [
     # (H2O STO-3G and cc-pVDZ) written, not run on either card.
     *ladder("mmd", "jx", 1, compile=range(7), gpu=range(5)),
 ]
+
+# #694's ladder: one program per aux l of the d1 DF ladder's aux-i system
+# (gradients.py's _LADDER, at d2).
+_DF_LADDER = {
+    **{f"metric-{aux}": span("mmd", "metric", 2, range(aux, 2 * aux + 1))
+       for aux in range(7)},
+    **{f"eri3-{aux}": span("mmd", "eri3", 2, range(aux, aux + 7))
+       for aux in range(7)},
+}
 
 # H2O STO-3G's pair classes reach L = 2, cc-pVDZ's L = 4.
 _HESS = {f"{name}-{which}": span("mmd", which, 2, range(top + 1))
@@ -48,6 +59,7 @@ _JX = {name: span("mmd", "jx", 1, range(top + 1))
 PATHS = (
     "src/felizjueves/hessian/",
     "test/hess_driver.py",
+    "test/df_grad_launch.py",
 )
 
 TESTS = {
@@ -64,6 +76,10 @@ TESTS = {
         Classes("mmd", "metric", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_df_hessian_unit":
         Classes("mmd", "eri3", 2),
+    "test/test_hess_df_device.py::test_X_df_hessian_matches_the_host":
+        Allow(PROGRAM),
+    "test/test_hess_df_device.py::test_X_df_hessian_ladder_through_i":
+        ById(_DF_LADDER),
     "test/test_hess_device.py::test_X_hessian_matches_the_host": ById(_HESS),
     "test/test_hess_device.py::test_X_hessian_runners_compile": ById(_HESS),
     "test/test_hess_j_device.py::test_X_hdq_matches_the_host": Classes("mmd", "dq", 2),

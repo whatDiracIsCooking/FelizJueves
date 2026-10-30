@@ -3,6 +3,8 @@ kernels -- harness.
 
     HessLaunch(kernel, n_rec, arrays, scalars)          one kernel launch
     one_electron_launches(basis, nuclei, target, M)     -> [HessLaunch]
+    d2metric_launches(aux, nuclei, W, *, lQ=)          -> [HessLaunch]  (#694)
+    d2eri3_launches(basis, aux, nuclei, Gam, *, lP=)   -> [HessLaunch]  (#694)
     hess_steps(launches)                                -> [harness_driver.Step]
     hess_runners(launches, backend, workdir, units=)    -> {kernel: Program}
     compile_hess(launches, n_atom, backend, tc, workdir, units=) -> HessBinary
@@ -16,8 +18,10 @@ launch per `HessLaunch` -- one thread per record, `THREADS` lanes -- every
 argument named from the kernel's parameter list, and the OUT carried from
 zero (the kernels' precondition, `kernel_h1e.ZEROED_H`) through every
 launch. The kernels are `hessian.kernel_h1e`'s (and `kernel_hjab` /
-`kernel_hdq`'s), emitted by `emit/cuda.py` / `emit/hip.py` unchanged; a
-unit the tier's generate phase wrote (`--hess-l`) is that file.
+`kernel_hdq`'s, and the DF `kernel_d2metric` / `kernel_d2eri3`'s, one
+thread per aux shell pair or cell, on `df_grad_launch`'s arrays), emitted
+by `emit/cuda.py` / `emit/hip.py` unchanged; a unit the tier's generate
+phase wrote (`--hess-l`) is that file.
 
 THE RUNS: the whole chain `RUNS` times, each from a zeroed OUT in its own
 processes (`harness_driver.run_chain`), so the fp64 atomics' run-to-run
@@ -32,16 +36,22 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
+from df_grad_launch import eri3_arrays, metric_arrays
 from harness_driver import Program, Step, build_chain, chain_runners, run_chain
 from plan_driver import RUNS
 
+from felizjueves.eri.density_fit.eri3 import eri3_classes
+from felizjueves.eri.density_fit.metric import metric_classes
 from felizjueves.gradient import host
+from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
+from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.hessian.kernel_h1e import build_h1e_kernel, launch_shape
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.spec import Target
 
-__all__ = ["HessBinary", "HessLaunch", "compile_hess", "hess_runners",
-           "hess_steps", "one_electron_launches"]
+__all__ = ["HessBinary", "HessLaunch", "compile_hess", "d2eri3_launches",
+           "d2metric_launches", "hess_runners", "hess_steps",
+           "one_electron_launches"]
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
 H = "H"
@@ -90,6 +100,43 @@ def one_electron_launches(basis, nuclei, target: Target,
         n = len(rec["s_ab"])
         out.append(HessLaunch(kern, n, arrs, {
             "n_rec": n, "n_ao": basis.n_ao, "n_atom": len(nuclei)}))
+    return out
+
+
+def d2metric_launches(aux, nuclei, W, *, lQ: int | None = None
+                      ) -> list[HessLaunch]:
+    """One `d2metric_` launch per metric class of `aux` (`metric_classes`'
+    staging, the interpreted tests'), each in its default form; `lQ` keeps
+    the classes with that ket `l` only."""
+    out = []
+    for c in metric_classes(aux):
+        if lQ is not None and c.lQ != lQ:
+            continue
+        arrs = metric_arrays(c, aux, nuclei) | {
+            "M": np.asarray(W, dtype=np.float64)}
+        out.append(HessLaunch(build_d2metric_kernel((c.lP, c.lQ)), c.n_pair,
+                              arrs, {"n_pair": c.n_pair, "n_rec": c.n_rec,
+                                     "n_aux": aux.n_ao,
+                                     "n_atom": len(nuclei)}))
+    return out
+
+
+def d2eri3_launches(basis, aux, nuclei, Gam, *, lP: int | None = None
+                    ) -> list[HessLaunch]:
+    """One `d2eri3_` launch per three-center class of `basis` x `aux`
+    (`eri3_classes`' staging), each in its default form; `lP` keeps the
+    classes with that aux `l` only."""
+    out = []
+    for c in eri3_classes(basis, aux):
+        if lP is not None and c.lP != lP:
+            continue
+        arrs = eri3_arrays(c, basis, aux, nuclei) | {
+            "M": np.asarray(Gam, dtype=np.float64)}
+        out.append(HessLaunch(build_d2eri3_kernel((c.la, c.lb, c.lP)),
+                              c.n_cell, arrs, {
+            "n_cell": c.n_cell, "n_bra_rec": c.n_bra_rec,
+            "n_aux_rec": c.n_aux_rec, "n_ao": basis.n_ao,
+            "n_aux": aux.n_ao, "n_atom": len(nuclei)}))
     return out
 
 
