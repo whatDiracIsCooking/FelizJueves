@@ -291,8 +291,10 @@ and the matrix exactly symmetric. Since #654 it runs on the shared runner
 (#649, `test/harness/`): one runner per class's unit, one launch per class
 with the matrix carried from class to class, each launch `RUNS` times and
 the runner failing unless every run is bit-identical to the first. That
-port has been run through the real runner and units on the host against a
-stub runtime only, not yet on a card. The results are in the tables above: 2.61e-14 of
+port ran on both cards on 2026-10-30 (#654), Parts 1 to 3 and the HGP
+twin, every figure unchanged from the `main()` it replaced: Part 1 worst
+2.09 eps, Part 2 7.17 eps, Part 3 3.71 eps and 2.76e-14 of `max|M|`
+against libcint, on the RTX 3080 and the RX 9060 XT alike. The results are in the tables above: 2.61e-14 of
 `max|M|` against libcint, and 7.17 eps of the tower-twin scale against the
 host (max abs 3.55e-14) on the fixture.
 
