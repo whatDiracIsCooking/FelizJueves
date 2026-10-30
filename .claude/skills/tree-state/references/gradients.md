@@ -132,7 +132,14 @@ total within `1e-10` absolute of PySCF (worst total 8.2e-14, STO-3G) and
 of the interpreted `rhf_gradient` (worst 4.4e-15); run to run within
 `SPREAD_TOL = 1e-13` (worst 4.4e-15, 6-31G) -- NOT bit-identical, the
 kernels' `atomicAdd`s, so the issue's bit-identity was restated as that
-bound by the user. **`gjab` defaults to a low-stack form from `la + lb =
+bound by the user. **Nothing scored or timed; the milestone's limits are
+one `StructuralLimit` record** (#567, `data/literature/jengine/limits.json`;
+`gradient.md`, "What is not done" and "What AIMD still needs"): no
+published board, Cartesian only, the whole gradient on the RX 9060 XT
+only and on s, p bases only, cc-pVDZ's whole gradient on no card, and for
+AIMD an SCF producing `D` and `W` (no eigensolver in `src/`), the per-step
+host rebuild of pairs, bounds and plans, a derivative screen, d/f in the
+whole gradient on a card, RI gradients end to end, UHF. **`gjab` defaults to a low-stack form from `la + lb =
 5`, and its whole chain runs on both cards through (ff)** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the
