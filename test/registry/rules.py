@@ -4,8 +4,11 @@ test function resolves by (`__init__.py`'s docstring has the whole story)."""
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import NamedTuple
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from .cost import Cost
 
 ENGINES = frozenset({"mmd", "hgp", "rys"})
 TIERS = frozenset({"interpreted", "compile", "gpu"})
@@ -29,7 +32,9 @@ class Case:
     L: int
     cards: frozenset[str]
     tiers: frozenset[str]
-    cost_s: float | None = None
+    # Seconds per tier and backend, from the cost store (#652, cost.py);
+    # None only for a case the store does not cover yet.
+    cost_s: Cost | None = field(default=None, hash=False)
 
     def __post_init__(self) -> None:
         if self.engine not in ENGINES:
