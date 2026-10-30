@@ -199,6 +199,23 @@ bare 1), never in the bare default nor in `KERNEL_GEN_CMD`; six goldens,
 compiled by nvcc and hipcc warning-free (`test_emit_hgp_df.py`, device-less
 cloud container, 2026-10-30). Not run on a card, not measured; its
 `(mn|P)` sibling is `hgeri3`, below.
+**The metric's derivative uncontracted, `ipmetric_`, interpreted and
+compiled through (i|i), on no card** (#693; `gradient.md`, "The
+uncontracted metric derivative"): `gradient/kernel_ipmetric.py`'s
+`ipmetric_{lP}{lQ}` writes `M1[k, P, Q] = d(P|Q)/dA_k` (`A` the centre of
+`P`, `= -int2c2e_ip1`) as `[3, n_aux, n_aux]`, the mirror `(Q, P)` negated;
+keyed `coulomb/d1/(lP,lQ)/b1/metric/uncontracted` (the `uncontracted`
+kernel-body lever, `metric` at d1 only). Interpreted
+(`test_kernel_ipmetric.py`): all 28 classes `lP <= lQ <= 6` against
+`host_df.metric_derivative` (worst 3.62 eps, gate 16; above L = 4 `slow`);
+the host against libcint `-int2c2e_ip1_cart` on cc-pVDZ-JKFIT/H₂O (the
+numeric golden store, one axis per entry, 7.21e-14) and through (i|i)
+against the aux-i witness contracted (1.72e-14); the kernel against both
+(at most 7.21e-14). Ladder `--ip-metric-l [LMAX]` (0..6, bare 2), never in
+the bare default nor in `KERNEL_GEN_CMD`; six goldens; all 28 classes
+compiled by nvcc and hipcc warning-free (`test_emit_ipmetric.py`,
+device-less cloud container, 2026-10-30). Not run on a card (no device
+harness yet), not measured.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
