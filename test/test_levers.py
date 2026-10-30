@@ -28,6 +28,7 @@ from felizjueves.plan.pipeline import TUNED, plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import (
     AM_LENGTH,
+    D1_ONLY_TARGETS,
     NATIVE_ENGINE,
     OPERATOR_OF,
     Engine,
@@ -37,6 +38,12 @@ from felizjueves.spec import (
 
 PROBE = "probe"
 K_REASON = "the probe's own reason for K"
+
+
+def _base_order(target: Target) -> int:
+    """The lowest derivative order `target` is keyed at: 1 for a d1-only
+    target (#689, `spec.D1_ONLY_TARGETS`), 0 for every other."""
+    return 1 if target in D1_ONLY_TARGETS else 0
 
 
 @pytest.fixture
@@ -57,8 +64,8 @@ def probe_j_only(monkeypatch: pytest.MonkeyPatch) -> levers.Lever:
 def _spec(target: Target, *lv: str, n_batches: int = 1,
           engine: Engine | None = None) -> Spec:
     am = {2: (2, 1), 3: (2, 1, 1), 4: (1, 0, 1, 0)}[AM_LENGTH[target]]
-    return Spec(OPERATOR_OF[target], 0, am, target, tuple(lv), n_batches,
-                engine)
+    return Spec(OPERATOR_OF[target], _base_order(target), am, target,
+                tuple(lv), n_batches, engine)
 
 
 # ---------------------------------------------------------------------------

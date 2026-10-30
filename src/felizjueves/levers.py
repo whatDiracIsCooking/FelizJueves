@@ -69,7 +69,7 @@ __all__ = [
 TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
                                  "schwarz", "sx", "metric", "eri3",
                                  "pair_bound", "record_bound", "dipole",
-                                 "quadrupole")
+                                 "quadrupole", "kx1", "kxc")
 
 # THE ENGINE SLOTS (#401). A target built on a recurrence other than its
 # native one keys as `<target>.<engine>` (`spec.Spec.target_slot`), and the
@@ -183,6 +183,11 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
     ),
     "dipole": f"the dipole kernel {_ONE_THREAD_PER_RECORD}",
     "quadrupole": f"the quadrupole kernel {_ONE_THREAD_PER_RECORD}",
+    **{slot: (
+        "the exchange derivative matrix (hessian.kernel_kx) has no option "
+        "surface: gk's rolled form with a matrix scatter, one batch, and a "
+        "lever on it is a follow-up nobody has declared"
+    ) for slot in ("kx1", "kxc")},
     "j.hgp": (
         "no kernel-body lever is admitted on an HGP Target.J unless its "
         "entry says so: the MMD J levers act on the [p|q] tower and the F "

@@ -107,6 +107,35 @@ in `KERNEL_GEN_CMD`; 22 goldens plus 10 digests
 nvcc or hipcc (clang 18's front end passed all 16 cuda units, a proxy),
 no device test, not run on either card. No response term, no whole RHF
 Hessian, nothing measured.
+**The exchange derivative matrix `K^X` at d1, interpreted through (dd|dd)
+and at f, compiled through (ff|ff), on no card** (#689; `hessian.md`, "The
+exchange derivative matrix"): the exchange part of the CPHF right-hand
+side's `F^x`, `K^X_ab = SUM_cd D_cd d(ac|bd)/dR_X` as an AO matrix. Two
+d1-only targets (`spec.D1_ONLY_TARGETS`), `Target.KX1` (ip1, the
+derivative on the matrix index, every atom in one launch) and
+`Target.KXC` (the contracted index, one launch per atom with the bra
+records whose `c` sits on it), keys `coulomb/d1/(la,lc|lb,ld)/b1/kx1/literal`
+and `.../kxc/...`; one builder, `hessian/kernel_kx.py`
+(`kx1_` / `kxc_{la}{lc}_{lb}{ld}`), `gk`'s mapping and plan in its rolled
+form only, scattering `X[3, n_ao, n_ao]` by `AtomicAdd` per `b` row, no
+warp reduction; the caller assembles `K^X = P_X K1 + (P_X K1)^T + KC_X +
+KC_X^T`. Host reference `hessian/host_kx.py`, held to PySCF
+(`test_hessian_host_kx.py`, `slow`): `K1` to the gradient fixtures'
+`vk1` (8.3e-14 at H₂O/cc-pVDZ) and whole `K^X` per atom to
+`test/oracle/k_deriv/*_kx.json`, `make_h1`'s exchange part (1.5e-13 at
+cc-pVDZ; H₂O/STO-3G and its d case too), to finite differences of
+`exchange_matrix`, and `SUM_X K^X = 0`. Interpreted, both forms within 16
+eps of the host's absolute twin per class, every class through (dd|dd)
+and (ff|ff), (fs|fs), (fd|pd) (`test_kernel_kx.py`, L + 1 > 4 `slow`).
+Ladder `--hess-kx-l [LMAX]` (1 bare, 0..3), never in the bare default nor
+in `KERNEL_GEN_CMD`; 14 goldens plus 498 digests a backend
+(`test_emit_hess_kx.py`, `test/golden/kx_digests.json`), the goldens and
+(ff|ff) compiled by nvcc and hipcc. The frame of all 512 units on both
+arches is in `data/measured/kx.json` (`devtools/measure.sh kx-compile`,
+compiler only): all admissible under the declared 14,000 B / 30 s, worst
+`kx1_33_33` at 9,824 B (`sm_86`) and 10,192 B (`gfx1200`), slowest
+compile 5.6 s. No device test or driver: nothing has
+launched on either card. `J^X` (#688) and `h^x` (#687) are not built.
 **The DF metric's Hessian too, `lP + lQ <= 4`, interpreted only**
 (`hessian.md`, "The DF metric Hessian"): `Target.METRIC` joins
 `spec.HESSIAN_TARGETS` (MMD only; `metric.hgp` refuses d2), a
