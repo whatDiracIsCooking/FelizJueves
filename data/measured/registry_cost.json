@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 135,
-  "compile/cuda/modelled": 244,
+  "compile/cuda/modelled": 260,
   "compile/hip/measured": 135,
-  "compile/hip/modelled": 244,
-  "gpu/cuda/modelled": 379,
-  "gpu/hip/modelled": 379
+  "compile/hip/modelled": 260,
+  "gpu/cuda/modelled": 395,
+  "gpu/hip/modelled": 395
  },
  "held_out": {
   "compile/cuda": {
@@ -5885,6 +5885,254 @@
   },
   {
    "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 5,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 198.504,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 296.953,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 198.504,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 296.953,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 6,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 578.992,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 833.279,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 578.992,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 833.279,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 7,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 1688.793,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 2338.263,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1688.793,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2338.263,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 8,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 4925.835,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 6561.397,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 4925.835,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 6561.397,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 9,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 14367.573,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 18411.923,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 14367.573,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 18411.923,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 10,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 41907.032,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 51665.662,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 41907.032,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 51665.662,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 11,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 122233.544,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 144978.916,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 122233.544,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 144978.916,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "eri3",
+   "deriv": 2,
+   "L": 12,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 356528.214,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    },
+    "hip": {
+     "s": 406825.061,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/eri3/d2, extrapolated past L 2"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 356528.214,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 406825.061,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
    "quantity": "j",
    "deriv": 0,
    "L": 0,
@@ -8823,6 +9071,254 @@
     },
     "hip": {
      "s": 4.935,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 5,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 3.8,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 6.401,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 3.8,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 6.401,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 6,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 5.154,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 8.627,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 5.154,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 8.627,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 7,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 6.992,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 11.627,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 6.992,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 11.627,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 8,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 9.486,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 15.67,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 9.486,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 15.67,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 9,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 12.868,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 21.12,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 12.868,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 21.12,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 10,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 17.456,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 28.465,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 17.456,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 28.465,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 11,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 23.681,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 38.364,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 23.681,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 38.364,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "mmd",
+   "quantity": "metric",
+   "deriv": 2,
+   "L": 12,
+   "family": "hessians",
+   "compile": {
+    "cuda": {
+     "s": 32.125,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 51.706,
+     "basis": "modelled",
+     "source": "fit:hessians/mmd/metric/d2, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 32.125,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 51.706,
      "basis": "modelled",
      "source": "compile"
     }
