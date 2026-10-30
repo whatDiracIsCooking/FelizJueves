@@ -16,6 +16,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --mu-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --quad-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --hgp-one-e-l 1
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --hgp-mu-l 3
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-metric-l --hgp-eri3-l --hgp-grad-eri3-l
             --hgp-grad-metric-l
@@ -349,6 +350,17 @@ for CUDA, `.hip` for HIP):
   default nor in KERNEL_GEN_CMD. Only `la <= lb`; the `(1, 0)` unit a basis
   also reaches is the same builder's text, built by its driver.
 
+- the HGP moment ladder, `--hgp-mu-l [LMAX]`: for every pair class
+  `(la, lb)`, `la <= lb <= LMAX` (2 when the flag is given bare),
+  `kernel_hgp.build_hgp_kernel` for `Target.DIPOLE` and `QUADRUPOLE` on
+  `Engine.HGP` (`hmu_{la}{lb}`, `hquad_`): `--hgp-one-e-l`'s route with the
+  operator moved onto the ket, `MU[3 | 6, n_ao, n_ao]`, the origin `C` and
+  the charge `q` runtime scalars. Accepted 0..`HGP_MU_L_MAX` = 3 ONLY (the
+  two moments are built and checked through (ff); above it is a 2). Its
+  `hmu_` units through (pp) are `--hgp-one-e-l`'s, byte for byte. It ADDS
+  units beside the J ladders and is NEVER in the no-flag default nor in
+  KERNEL_GEN_CMD.
+
 - the Rys one-electron ladder, `--rys-one-e-l [LMAX]`: for every pair class
   `(la, lb)`, `la <= lb <= LMAX` (3 when the flag is given bare),
   `kernel_rys.build_rys_kernel` for `Target.S`, `T` and `V` on
@@ -652,7 +664,8 @@ from felizjueves.mmd.kernel import (
     pq_name,
     pq_spec,
 )
-from felizjueves.one_electron.kernel_hgp import TARGETS as HGP_ONE_E_TARGETS
+from felizjueves.one_electron.kernel_hgp import MOMENT_L_MAX as HGP_MU_L_MAX
+from felizjueves.one_electron.kernel_hgp import MOMENTS as HGP_MOMENTS
 from felizjueves.one_electron.kernel_hgp import build_hgp_kernel
 from felizjueves.one_electron.kernel_mu import build_mu_kernel, build_quad_kernel
 from felizjueves.one_electron.kernel_rys import TARGETS as RYS_ONE_E_TARGETS
@@ -718,6 +731,9 @@ HESS_ERI3_L_MAX = 3  # orbital l: kernel_d2eri3 is validated through f (#694)
 HESS_ERI3_AUX_L_MAX = 6  # aux l: validated through i (#694)
 DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
+# `--hgp-one-e-l`'s targets: the quadrupole is `--hgp-mu-l`'s alone
+HGP_ONE_E_TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
+DEFAULT_HGP_MU_L = 2  # `--hgp-mu-l` given bare: (ss) through (dd), 12 units
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
 DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_, hgs_, ghv_ (ss) (sp) (pp)
@@ -1424,6 +1440,32 @@ def generate_hgp_one_e(backend: str, arch: Arch, out: Path,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
+def hgp_mu_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..HGP_MU_L_MAX` (the HGP moments are built and checked through f)."""
+    if type(lmax) is not int or not 0 <= lmax <= HGP_MU_L_MAX:
+        raise ValueError(f"--hgp-mu-l {lmax!r} is outside "
+                         f"0..{HGP_MU_L_MAX}: the HGP dipole and quadrupole "
+                         "kernels are built for shells through f only")
+    return pair_classes(lmax)
+
+
+def hgp_mu_kernels(lmax: int) -> list[Kernel]:
+    """`hmu_`, `hquad_{la}{lb}` for every class through `lmax`,
+    class-major."""
+    return [build_hgp_kernel((t, la, lb)) for la, lb in hgp_mu_classes(lmax)
+            for t in HGP_MOMENTS]
+
+
+def generate_hgp_mu(backend: str, arch: Arch, out: Path,
+                    lmax: int) -> list[Path]:
+    """Emit the HGP dipole and quadrupole unit of every pair class through
+    `lmax` into `out`; return the paths."""
+    kernels = hgp_mu_kernels(lmax)
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
 # ---------------------------------------------------------------------------
 # The HGP one-electron gradient ladder
 # ---------------------------------------------------------------------------
@@ -1767,6 +1809,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
             or args.hgp_one_e_l is not None
+            or args.hgp_mu_l is not None
             or args.rys_one_e_l is not None
             or args.hgp_grad_l is not None
             or _hgp_df(args)):
@@ -1782,7 +1825,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
+              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
               "--shell-ls / "
               "--fock-l / --fock-class and every lever flag; give one",
@@ -1910,6 +1953,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
+    ap.add_argument("--hgp-mu-l", dest="hgp_mu_l", type=int, nargs="?",
+                    const=DEFAULT_HGP_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--rys-one-e-l", dest="rys_one_e_l", type=int, nargs="?",
                     const=DEFAULT_RYS_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--hgp-grad-l", dest="hgp_grad_l", type=int, nargs="?",
@@ -1986,6 +2031,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
                  or args.hgp_one_e_l is not None
+                 or args.hgp_mu_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
                  or args.hgp_grad_l is not None
                  or ladder_levers):
@@ -2001,7 +2047,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
+              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
               "--shell-ls and "
               "the J / K "
@@ -2039,6 +2085,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
                      or args.hgp_one_e_l is not None
+                     or args.hgp_mu_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
                  or args.hgp_grad_l is not None
                      or ladder_levers):
@@ -2052,7 +2099,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--hess-one-e-l / --ip-one-e-l / --hess-metric-l / "
               "--ip-metric-l / "
               "--hess-eri3-l / "
-              "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l (and a lever "
+              "--hgp-one-e-l / --hgp-mu-l / --rys-one-e-l / --hgp-grad-l (and a lever "
               "flag) and "
               "--class / --shell-ls are separate paths; give one",
               file=sys.stderr)
@@ -2237,6 +2284,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HGP_ONE_E_L_MAX}: the HGP one-electron kernels are built "
               "for s and p shells only", file=sys.stderr)
         return 2
+    if (args.hgp_mu_l is not None
+            and not 0 <= args.hgp_mu_l <= HGP_MU_L_MAX):
+        print(f"emit: --hgp-mu-l {args.hgp_mu_l} is outside "
+              f"0..{HGP_MU_L_MAX}: the HGP dipole and quadrupole kernels are "
+              "built for shells through f only", file=sys.stderr)
+        return 2
     if (args.rys_one_e_l is not None
             and not 0 <= args.rys_one_e_l <= RYS_ONE_E_L_MAX):
         print(f"emit: --rys-one-e-l {args.rys_one_e_l} is outside "
@@ -2352,6 +2405,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hgp_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hgp_one_e(args.backend, arch, args.out,
                                       args.hgp_one_e_l)
+    if args.hgp_mu_l is not None:  # beside the J chain, never by default
+        written += generate_hgp_mu(args.backend, arch, args.out,
+                                   args.hgp_mu_l)
     if args.rys_one_e_l is not None:  # beside the J chain, never by default
         written += generate_rys_one_e(args.backend, arch, args.out,
                                       args.rys_one_e_l)

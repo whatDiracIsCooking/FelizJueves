@@ -33,9 +33,11 @@ _CARDS = (("sm_86", "nvcc 13.0"), ("gfx1200", "hipcc / ROCm 7.2.4"))
 # The off-native pairings milestone 14 builds, the HGP one-electron and DF
 # kernels, and nothing else.
 LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
-                    # one_electron.kernel_hgp: S, T, V and the dipole by HGP
+                    # one_electron.kernel_hgp: S, T, V, the dipole and the
+                    # quadrupole by HGP
                     (Target.S, Engine.HGP), (Target.T, Engine.HGP),
                     (Target.V, Engine.HGP), (Target.DIPOLE, Engine.HGP),
+                    (Target.QUADRUPOLE, Engine.HGP),
                     # eri/density_fit/kernel_hgp.py: (P|Q) and (mn|P) by HGP
                     (Target.METRIC, Engine.HGP), (Target.ERI3, Engine.HGP),
                     # eri/fock/kernel_frys.py: the fused F on Rys quadrature

@@ -10,7 +10,9 @@ shells), exits 2 above that, is NEVER in the bare default and is not in
 KERNEL_GEN_CMD.
 
 THE GOLDENS are `test/golden/{cuda,hip}/{hs,ht,hv,hmu}_{00,01,11}.{cu,hip}`,
-and nothing else under those prefixes. Regenerate (and review the diff) with
+and nothing else under the `hs_`, `ht_`, `hv_` prefixes (`hmu_` goes on
+through (dd) in `--hgp-mu-l`'s set, test_emit_hgp_mu.py, the same text).
+Regenerate (and review the diff) with
 
     PYTHONPATH=src uv run python test/test_emit_hgp_one_e.py --write
 
@@ -33,15 +35,17 @@ from test_emit_mu import _WARNING, FLAGS_VAR  # #92's filter, one spelling
 from felizjueves.emit import __main__ as emit_cli
 from felizjueves.emit import cuda, hip
 from felizjueves.ir import Raw, walk
-from felizjueves.one_electron.kernel_hgp import TARGETS, build_hgp_kernel, hgp_name
+from felizjueves.one_electron.kernel_hgp import build_hgp_kernel, hgp_name
 from felizjueves.performance.device import GFX1200, SM_86
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "test" / "golden"
 BACKEND = {"cuda": (cuda.emit, SM_86, "cu"), "hip": (hip.emit, GFX1200, "hip")}
 CLASSES = [(0, 0), (0, 1), (1, 1)]
+TARGETS = emit_cli.HGP_ONE_E_TARGETS  # S, T, V, the dipole
 UNITS = [(t, la, lb) for la, lb in CLASSES for t in TARGETS]
 PREFIXES = ("hs_", "ht_", "hv_", "hmu_")
+OWN = PREFIXES[:3]  # the golden prefixes this ladder alone writes
 
 
 def _id(unit) -> str:
@@ -107,9 +111,11 @@ def test_the_golden_is_unchanged(unit, backend: str) -> None:
 
 def test_the_golden_set_is_exactly_the_ladder() -> None:
     for backend, (_, _, ext) in BACKEND.items():
-        files = {p.stem for pre in PREFIXES
+        files = {p.stem for pre in OWN
                  for p in (GOLDEN / backend).glob(f"{pre}*.{ext}")}
-        assert files == {_id(u) for u in UNITS}
+        assert files == {_id(u) for u in UNITS if _id(u).startswith(OWN)}
+        assert all((GOLDEN / backend / f"{_id(u)}.{ext}").is_file()
+                   for u in UNITS)
 
 
 @pytest.mark.parametrize("unit", UNITS, ids=_id)

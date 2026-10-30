@@ -727,8 +727,8 @@ or measured.
 `Operator.QUADRUPOLE`) is a pair class `(la, lb)`; an example key is
 `quadrupole/d0/(2,1)/b1/quadrupole/literal`. Every pre-existing key is
 unchanged. Its batching refusal is the dipole's structural one; HGP is
-refused with its own reason (`spec._NO_HGP_QUAD`: `kernel_hgp` covers the
-dipole only), and Rys by the general `_NO_RYS`.
+legal (`quadrupole.hgp`, "The HGP route" below), and Rys is refused by the
+general `_NO_RYS`.
 
 **The kernel is the dipole's builder at `e = 2`.** `kernel_mu.ORDER` maps
 each target to its order, and `build_quad_kernel(cls)` (`quad_{la}{lb}`) is
@@ -795,21 +795,24 @@ pass under nvcc and hipcc with no warning; its device case first ran on
 2026-10-30 and passed on the RTX 3080 and the RX 9060 XT. Nothing
 above (dd), nothing spherical, no traceless tensor, no consumer.
 
-## The HGP route: `S`, `T`, `V` and `MU` on engine #2
+## The HGP route: `S`, `T`, `V`, `MU` and the quadrupole on engine #2
 
-**Status: built and interpreted, s and p shells only; compiled and run on
-both cards (the RX 9060 XT since the #658 runner port).** `one_electron/kernel_hgp.py` builds the same four matrices
+**Status: `S`, `T`, `V` and `MU` built and interpreted, s and p shells;
+compiled and run on both cards (the RX 9060 XT since the #658 runner port).
+The dipole and the quadrupole through (ff): interpreted and compiled by nvcc
+and hipcc, on no card above (pp), the quadrupole on none at all** (below,
+"The moments through f"). `one_electron/kernel_hgp.py` builds the same five matrices
 on Head-Gordon & Pople's split of Obara & Saika's one-electron recurrences,
 promoted from the spike `experimental/hgp/one_electron/` (whose route and
 oracle it keeps). The MMD kernels above are untouched, byte for byte.
 
-**Keys.** `Target.S`, `T`, `V` and `DIPOLE` with `engine=Engine.HGP`
-(`kernel_hgp.hgp_spec`), legal since this change (`spec.py`, "AN HGP
-ONE-ELECTRON CLASS"; `SX` stays refused). The key spells the engine as a
-slot suffix, `overlap/d0/(1,0)/b1/s.hgp/literal`, so no MMD key moves;
-`s.hgp`, `t.hgp`, `v.hgp` and `dipole.hgp` are engine slots
-(`levers.ENGINE_SLOTS`) that refuse every lever. Units are `hs_{la}{lb}`,
-`ht_`, `hv_`, `hmu_`.
+**Keys.** `Target.S`, `T`, `V`, `DIPOLE` and `QUADRUPOLE` with
+`engine=Engine.HGP` (`kernel_hgp.hgp_spec`), legal since this change
+(`spec.py`, "AN HGP ONE-ELECTRON CLASS"; `SX` stays refused). The key spells
+the engine as a slot suffix, `overlap/d0/(1,0)/b1/s.hgp/literal`, so no MMD
+key moves; `s.hgp`, `t.hgp`, `v.hgp`, `dipole.hgp` and `quadrupole.hgp` are
+engine slots (`levers.ENGINE_SLOTS`) that refuse every lever. Units are
+`hs_{la}{lb}`, `ht_`, `hv_`, `hmu_`, `hquad_`.
 
 **The route.** Per primitive pair a VRR on the bra centre builds `(e|0)`;
 the pairs are summed; then the HRR `(a|b+1_d) = (a+1_d|b) + AB_d (a|b)` runs
@@ -820,11 +823,16 @@ contracted overlap-type integrals:
 |---|---|---|
 | `S` | `(a\|b)` | `la + lb` |
 | `MU_d` | `q [(a\|b+1_d) + (B_d − C_d)(a\|b)]` | `la + lb + 1` |
+| `Q_de` | `q [(a\|b+1_d+1_e) + BC_e (a\|b+1_d) + BC_d (a\|b+1_e) + BC_d BC_e (a\|b)]` | `la + lb + 2` |
 | `T` | `(2lb+3)(a\|b)₁ − 2 Σ_d (a\|b+2_d)₂ − ½ Σ_d b_d(b_d−1)(a\|b−2_d)₀` | `la + lb + 2` |
 | `V` | `−Σ_C Z_C (a\|b)⁽⁰⁾_C` | `la + lb` (Boys `m ≤ la + lb`) |
 
 `T`'s subscript `n` is a table weighted by `β^n` (`β` the ket exponent),
-each with its own HRR; `V` sums the nuclei into one table first.
+each with its own HRR; `V` sums the nuclei into one table first. The moments
+put the operator on the ket, `(r − C)_d = (r − B)_d + BC_d` with
+`BC = B − C` and `(r − B)_d |b⟩ = |b+1_d⟩`; `Q`'s six components are
+`kernel_mu.build_quad_kernel`'s, xx xy xz yy yz zz, the raw second moments
+into `MU[6, n_ao, n_ao]`.
 
 **The recurrences are `hgp/`'s, not rewritten.** The VRR is `hgp.vrr`'s
 eq 25 DAG at `f = 0`, spelled by `hgp.recurrence.vrr_body` unchanged, in
@@ -871,8 +879,32 @@ and, the first run there, on the RX 9060 XT.
 bare, **0..1 only**, exit 2 above) adds the 12 units beside the J ladders;
 never in the bare default, not in `KERNEL_GEN_CMD`.
 
-**Not done.** d and above (the recurrences are general in `l`; the builder
-refuses `l > 1`, the requested scope); no measurement;
+**The moments through f.** The builder takes the dipole and the
+quadrupole through (ff) (`kernel_hgp.MOMENT_L_MAX = 3`, `l_max(target)`;
+`S`, `T`, `V` stay at p) -- every `hmu_` text through (pp) byte-identical.
+Interpreted (`test_kernel_hgp.py`), against the MMD host's
+`multipole_matrix(e = 1, 2)` on the synthetic basis with d shells added
+(`SYNTHETIC_D`, fast) and d and f (`SYNTHETIC_F`, `slow`): worst 2.9e-16
+of `max|M|`; against libcint, `int1e_r_cart` on `hf_ccpvtz_spd_dipole` and
+`hf_ccpvtz_dipole` (worst 2.1e-15, the f basis at 0) and `int1e_rr_cart`
+on `hf_ccpvtz_spd_quadrupole` (worst 1.5e-15), at each fixture's origin and
+at 0; the quadrupole's origin shift, `q = −1` the exact negation. **No
+libcint quadrupole witness is tracked at f**: there the quadrupole is held
+to the MMD host only. The ladder is `python -m felizjueves.emit --hgp-mu-l
+[LMAX]` (`hmu_`, `hquad_`; 2 bare, **0..3 only**, exit 2 above), never in
+the bare default nor `KERNEL_GEN_CMD`; goldens
+`test/golden/{cuda,hip}/{hmu,hquad}_{00,01,02,11,12,22}`
+(`test_emit_hgp_mu.py`). Every unit through (ff) compiles warning-free
+under nvcc (sm_86) and hipcc (gfx1200) (`test_emit_hgp_mu.py`, 2026-10-30,
+a device-less cloud container), and the card harness
+(`hgp_one_e_driver`, `test_hgp_one_e_device.py`'s
+`hgp_moment_program_compiles`) builds both programs over `SYNTHETIC_F`
+under both. Their `gpu` cases (`hgp_moments_through_ff_match_host_and_libcint`,
+the same bounds) are written and **have run on no card**.
+
+**Not done.** `S`, `T`, `V` at d and above (the recurrences are general in
+`l`; the builder refuses `l > 1` for them, the requested scope); the moments
+above f; no measurement;
 no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
 ladder); no screening inside the kernel; no comparison of the two engines'
 cost.
@@ -972,5 +1004,7 @@ MMD and HGP kernels.
 - **The quadrupole's emit compile cases**: `test_emit_quad.py`'s (built,
   "The quadrupole"); `test_quad_device.py` ran on both cards with #658.
 - **The dipole at f and above**, past `--mu-l`'s cap of 2.
+- **The HGP moments on a card**: `test_hgp_one_e_device.py`'s
+  `hgp_moments_through_ff_match_host_and_libcint` cases, written, never run.
 - **A three-kernel dipole A/B arm** (one kernel per component against the
   fused one), opened only if the fused kernel is found to spill.

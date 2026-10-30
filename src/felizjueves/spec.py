@@ -193,18 +193,22 @@ builder at `e = 2` (`one_electron.kernel_mu`, `quad_{la}{lb}`): the same
 fragment, record and scatter, six components where the dipole writes three.
 These are the raw second moments, not the traceless (Buckingham) tensor,
 which is a linear combination of them the consumer forms. Unbatched for the
-dipole's structural reason; HGP and Rys are refused (`_NO_HGP_QUAD`).
+dipole's structural reason; HGP is legal, as for the dipole (below), and
+Rys is refused (`_NO_RYS`).
 
-AN HGP ONE-ELECTRON CLASS. `Target.S`, `T`, `V` and `DIPOLE` are legal on
-`Engine.HGP` too: `one_electron.kernel_hgp` builds each on Head-Gordon &
+AN HGP ONE-ELECTRON CLASS. `Target.S`, `T`, `V`, `DIPOLE` and `QUADRUPOLE`
+are legal on `Engine.HGP` too: `one_electron.kernel_hgp` builds each on Head-Gordon &
 Pople's split of Obara & Saika's one-electron recurrences (a VRR on the bra
 centre per primitive pair -- `hgp.vrr`'s eq 25 at `f = 0`, its point-charge
 limit for `V` -- the contraction, then `hgp.hrr`'s eq 28 on contracted
 values). The key spells the engine as a slot suffix,
 ``overlap/d0/(1,0)/b1/s.hgp/literal``, so no MMD key moves; `am` is the same
 pair `(la, lb)`, unbatched for the same reason as the MMD class's (an HGP
-class has no Hermite targets at all). The builder takes s and p shells only
-(`kernel_hgp.L_MAX`); `SX` stays refused (`_NO_HGP_ONE_E`).
+class has no Hermite targets at all). The builder takes s and p shells for
+`S`, `T` and `V` (`kernel_hgp.L_MAX`) and shells through f for the two
+moments (`kernel_hgp.MOMENT_L_MAX`), which put the operator on the ket
+(`(r - C)_d |b> = |b+1_d> + (B - C)_d |b>`); `SX` stays refused
+(`_NO_HGP_ONE_E`).
 
 A RYS ONE-ELECTRON CLASS. `Target.S`, `T` and `V` are legal on
 `Engine.RYS` too: `one_electron.kernel_rys` builds each on the Rys
@@ -517,7 +521,8 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 
 # Why a (target, engine) other than the native one is refused (#401). Legal
 # off-native: HGP `J` and HGP `K` (milestone 14 builds them), HGP `S`, `T`,
-# `V` and `DIPOLE` (`one_electron.kernel_hgp`), and HGP `METRIC` and `ERI3`
+# `V`, `DIPOLE` and `QUADRUPOLE` (`one_electron.kernel_hgp`), and HGP
+# `METRIC` and `ERI3`
 # (`eri/density_fit/kernel_hgp.py`); Rys `F` (`eri/fock/kernel_frys.py`) and
 # Rys `S`, `T` and `V` (`one_electron.kernel_rys`) and Rys `METRIC`
 # (`eri/density_fit/kernel_rmetric.py`).
@@ -528,16 +533,9 @@ _NO_HGP_PAIR = (
 )
 _NO_HGP_ONE_E = (
     "the HGP engine is the two-electron VRR/HRR of [Fock] §3.1, and its "
-    "one-electron instance (one_electron.kernel_hgp) covers S, T, V and the "
-    "dipole only; this one-electron kernel is McMurchie-Davidson's E "
-    "fragment, and an HGP instance of it is a follow-up nobody has declared"
-)
-
-
-_NO_HGP_QUAD = (
-    "the quadrupole is built on McMurchie-Davidson's E fragment and Hermite "
-    "moments at e = 2 (one_electron.kernel_mu); one_electron.kernel_hgp "
-    "covers S, T, V and the dipole only, and an HGP quadrupole is a "
+    "one-electron instance (one_electron.kernel_hgp) covers S, T, V, the "
+    "dipole and the quadrupole only; this one-electron kernel is "
+    "McMurchie-Davidson's E fragment, and an HGP instance of it is a "
     "follow-up nobody has declared"
 )
 
@@ -574,10 +572,10 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
         "the dressed record bound is the E fragment and a closed form per "
         "primitive-pair record, with no ERI recurrence for HGP to replace"
     ),
-    # S, T, V and DIPOLE are legal on HGP (`one_electron.kernel_hgp`, s and p
-    # shells): the module docstring's "AN HGP ONE-ELECTRON CLASS".
+    # S, T, V, DIPOLE and QUADRUPOLE are legal on HGP
+    # (`one_electron.kernel_hgp`): the module docstring's "AN HGP
+    # ONE-ELECTRON CLASS".
     (Target.SX, Engine.HGP): _NO_HGP_ONE_E,
-    (Target.QUADRUPOLE, Engine.HGP): _NO_HGP_QUAD,
     (Target.SCHWARZ, Engine.HGP): _mmd_only(
         "the Schwarz kernel (la lb|la lb)"),
     **{(t, Engine.HGP): (

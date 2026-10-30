@@ -13,9 +13,14 @@ CASES = [
     # The quadrupole: not compiled by nvcc or hipcc, not run on a card.
     *ladder("mmd", "quadrupole", 0, compile=range(5), gpu=range(5)),
     # HGP S, T, V and the dipole, s and p: the RTX 3080 only.
-    *(case for q in ("s", "t", "v", "dipole") for case in ladder(
+    *(case for q in ("s", "t", "v") for case in ladder(
         "hgp", q, 0, compile=range(3), gpu=range(3),
         cards={"rtx3080": range(3)})),
+    # The HGP dipole and quadrupole through (ff): interpreted and compiled by
+    # nvcc and hipcc; above (pp) (and the quadrupole at all) on no card.
+    *ladder("hgp", "dipole", 0, compile=range(7), gpu=range(7),
+            cards={"rtx3080": range(3)}),
+    *ladder("hgp", "quadrupole", 0, compile=range(7), gpu=range(7)),
     # Rys S, T, V: interpreted and emitted, never on a card.
     *(case for q in "stv" for case in ladder("rys", q, 0, compile=range(7))),
 ]
@@ -23,6 +28,16 @@ CASES = [
 # HGP one-electron: s and p shells only (kernel_hgp.L_MAX = 1).
 _HGP = {q: span("hgp", t, 0, range(3)) for q, t in (
     ("s", "s"), ("t", "t"), ("v", "v"), ("dipole", "dipole"))}
+# The HGP moments through (ff) (kernel_hgp.MOMENT_L_MAX = 3): a synthetic
+# basis or a fixture's, through (dd) or (ff).
+_HGP_MOMENTS = {
+    **{f"{q}-synthetic_{top}": span("hgp", q, 0, range(L + 1))
+       for q in ("dipole", "quadrupole") for top, L in (("d", 4), ("f", 6))},
+    "dipole-hf_ccpvtz_spd_dipole": span("hgp", "dipole", 0, range(5)),
+    "dipole-hf_ccpvtz_dipole": span("hgp", "dipole", 0, range(7)),
+    "quadrupole-hf_ccpvtz_spd_quadrupole":
+        span("hgp", "quadrupole", 0, range(5)),
+}
 
 # The paths whose change touches this family (sample.py's change weighting):
 # its source, its drivers and the two engines it runs on besides MMD; its
@@ -57,6 +72,13 @@ TESTS = {
     "test/test_quad_device.py::test_X_quad_program_compiles":
         span("mmd", "quadrupole", 0, range(5)),
     "test/test_emit_hgp_one_e.py::test_X_compiles_the_unit": Classes("hgp", "s"),
+    "test/test_emit_hgp_mu.py::test_X_compiles_the_unit":
+        Classes("hgp", "dipole"),
+    "test/test_hgp_one_e_device.py::test_X_hgp_moments_through_ff_match_host_and_libcint":
+        ById(_HGP_MOMENTS),
+    "test/test_hgp_one_e_device.py::test_X_hgp_moment_program_compiles":
+        ById({q: span("hgp", q, 0, range(7))
+              for q in ("dipole", "quadrupole")}),
     "test/test_hgp_one_e_device.py::test_X_hgp_one_e_matches_the_mmd_host": ById(_HGP),
     "test/test_hgp_one_e_device.py::test_X_hgp_one_e_program_compiles": ById(_HGP),
     "test/test_hgp_one_e_device.py::test_X_hgp_one_e_matches_libcint": Allow(MOLECULE),
