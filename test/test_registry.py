@@ -12,7 +12,10 @@ conftest.py's collection hook resolves every `gpu` and compile-only case
 - every registry case's `compile` and `gpu` tiers are collected by some case
   of that tier, and every card it records by a `gpu` case on that card's
   backend;
-- no rule, and no `ById` id, names a function or a case that is gone.
+- no rule, and no `ById` id, names a function or a case that is gone;
+- every registry case has a cost (#652): a figure for its compile and its
+  `gpu` tests on each backend, each marked measured or modelled, and the
+  cost store names no case the registry does not.
 
 The allowlist is the `Allow` rules, each with its reason; it is printed here
 so a run shows what covers no case.
@@ -21,35 +24,25 @@ so a run shows what covers no case.
 from __future__ import annotations
 
 import collections
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 import registry
-from registry import BACKEND_CARD, REGISTRY, RULES, Allow, ById, CollectedCase
+from registry import BACKEND_CARD, REGISTRY, RULES, Allow, ById, CollectedCase, cost
 
 from felizjueves.spec import Target
 
-ROOT = Path(__file__).resolve().parents[1]
 QUANTITIES = {t.value for t in Target}
 
 
 @pytest.fixture(scope="module")
 def collected(tmp_path_factory) -> list[CollectedCase]:
     out = tmp_path_factory.mktemp("registry") / "cases.json"
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
-    env[registry.DUMP_ENV] = str(out)
-    done = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q",
-         "-p", "no:cacheprovider", "-o", "addopts=", "test"],
-        cwd=ROOT, env=env, capture_output=True, text=True)
-    assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-4000:]
-    rows = json.loads(out.read_text())
+    try:
+        rows = registry.collect(out)
+    except RuntimeError as exc:
+        pytest.fail(f"collection failed:\n{exc}")
     assert rows, "the collection hook wrote no device case"
-    return [CollectedCase.from_json(r) for r in rows]
+    return rows
 
 
 def _parametrized(collected: list[CollectedCase]) -> list[CollectedCase]:
@@ -63,6 +56,24 @@ def test_the_registry_is_well_formed() -> None:
         assert case.deriv in (0, 1, 2), case
         assert case.L >= 0, case
         assert case.tiers, f"{key}: no tier"
+
+
+def test_every_registry_case_has_a_cost() -> None:
+    missing = [key for key, case in sorted(REGISTRY.items())
+               if case.cost_s is None]
+    assert not missing, (
+        f"{len(missing)} registry cases have no cost -- run "
+        "`devtools/measure.sh registry-cost` and commit "
+        f"{cost.STORE.relative_to(cost.ROOT)}:\n  "
+        + "\n  ".join(map(str, missing[:20])))
+    for key, case in REGISTRY.items():
+        for tier in cost.COST_TIERS:
+            for backend in BACKEND_CARD:
+                e = case.cost_s.of(tier, backend)
+                assert e.basis in cost.BASES, (key, tier, backend, e)
+                assert e.seconds > 0 and e.source, (key, tier, backend, e)
+    stale = sorted(set(cost.load()) - set(REGISTRY))
+    assert not stale, f"the cost store names cases the registry does not: {stale}"
 
 
 def test_every_parametrized_device_case_resolves(collected) -> None:
