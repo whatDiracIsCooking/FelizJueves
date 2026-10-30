@@ -97,8 +97,10 @@ def test_the_key_is_f_on_the_rys_engine() -> None:
 @pytest.mark.parametrize("target", [
     t for t in Target
     # F here; J and K in eri/hjk/kernel_rj.py / kernel_rk.py; S, T and V
-    # in one_electron/kernel_rys.py (test_kernel_rys_one_e)
-    if t not in (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V)])
+    # in one_electron/kernel_rys.py (test_kernel_rys_one_e); ERI3 in
+    # eri/density_fit/kernel_rys.py (test_kernel_rys_df)
+    if t not in (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V,
+                 Target.ERI3)])
 def test_rys_is_refused_on_every_other_target(target) -> None:
     from felizjueves.spec import AM_LENGTH, OPERATOR_OF
     with pytest.raises(ValueError, match=f"engine rys on target {target}"):

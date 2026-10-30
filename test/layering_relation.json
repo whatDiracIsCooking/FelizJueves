@@ -140,6 +140,7 @@
    "eri.density_fit.kernel_eri3",
    "eri.density_fit.kernel_hgp",
    "eri.density_fit.kernel_metric",
+   "eri.density_fit.kernel_rys",
    "eri.fock.kernel_f",
    "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",
@@ -266,6 +267,7 @@
    "eri.density_fit.eri3",
    "eri.density_fit.kernel_eri3",
    "eri.density_fit.kernel_hgp",
+   "eri.density_fit.kernel_rys",
    "eri.density_fit.metric",
    "eri.density_fit.metric_drive",
    "eri.eri",
@@ -335,6 +337,16 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
+   "spec"
+  ],
+  "eri.density_fit.kernel_rys": [
+   "eri.density_fit.kernel_hgp",
+   "hgp.vrr",
+   "ir",
+   "rys",
+   "rys.exact",
+   "rys.recurrence",
+   "rys.roots",
    "spec"
   ],
   "eri.density_fit.metric": [
@@ -2526,6 +2538,7 @@
    "eri.density_fit.kernel_eri3",
    "eri.density_fit.kernel_hgp",
    "eri.density_fit.kernel_metric",
+   "eri.density_fit.kernel_rys",
    "eri.fock.kernel_f",
    "eri.fock.kernel_frys",
    "eri.hjk.kernel_hj",

@@ -72,6 +72,13 @@ H₂O, `slow`) STO-3G `K` against the MMD sweep and libcint's `vk` (worst
 digests (`test_emit_rk.py`, `rk_digests.json`). All 102 cuda units passed
 clang 18's CUDA front end (a proxy). Nothing measured; a `k.rys` row is
 refused by the store.
+**The three-center `(mn|P)` on Rys too, compiled by nvcc and hipcc, NOT
+run on a card** (`rys_fock.md`, "The three-center `(mn|P)` on Rys";
+`schwarz-overlap-df.md` has the family's entry): `reri3_` units through
+`la + lb + lP <= 9`, `kernel_hgp`'s `(mn|P)` skeleton with
+`rys.recurrence`'s rule and root loop (a new `ket_centred=` option, every
+other Rys golden byte-identical). Its units are the first vendor compiles
+of `fj_rys<N>`.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence

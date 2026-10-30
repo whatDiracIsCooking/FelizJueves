@@ -189,3 +189,24 @@ per backend (`test_emit_hgp_df.py`); **compiled and run on the RTX 3080
 only** (`test_hgp_df_device.py`, 8 passed: worst 6.06 eps of the tower twin
 against the host, 2.1e-14 of max against libcint, runs bit-identical); the
 RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run). Nothing measured.
+**`(mn|P)` also has a Rys twin, compiled by both vendors and run on no
+card** (`docs/implementation/rys_fock.md`, "The three-center `(mn|P)` on
+Rys", is the one place with the detail): `eri/density_fit/kernel_rys.py`'s
+`build_reri3_kernel` (`reri3_{la}{lb}{lP}`), keyed `Target.ERI3` with
+`engine=Engine.RYS` (slot `eri3.rys`, no lever). It is `kernel_hgp`'s
+`(mn|P)` skeleton through a seam that module now exposes
+(`three_center_kernel`; every `heri3_` golden byte-identical), with the
+`N = L // 2 + 1` point Rys rule (`fj_rys<N>`) and its 2D VRR as the
+per-aux-record body. The ket is single-centre (`rys.recurrence`'s
+`ket_centred`: `QC = 0` not spelled; every other Rys golden
+byte-identical). The reach is `la + lb + lP <= 9`. Ladder `--rys-eri3-l`
+(total L, bare 4, `0..9`), never in the bare default nor in
+`KERNEL_GEN_CMD`. Interpreted (`test_kernel_rys_df.py`): every class
+through L = 4 against the host (worst 6.62 eps of the tower twin), the s/p
+classes against the MMD and HGP kernels, and the whole
+`h2o_sto3g_jkfit_3c` tensor through (pp|g) against libcint (3.31e-14 of
+max, `slow`). 22 goldens per backend (`test_emit_rys_df.py`). **Compiled**
+by nvcc 13.0 (`sm_86`) and hipcc (ROCm 7.2.4, `gfx1200`), all 22 units and
+the device test's three runner programs, under #92's filter, on a
+device-less box. **Not run on either card** (`test_rys_df_device.py`
+skipped). Nothing measured.

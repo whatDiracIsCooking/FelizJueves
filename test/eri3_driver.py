@@ -11,8 +11,9 @@ staged `la <= lb`, swapped when the basis order has the higher `l` first,
 crossed with every aux shell; per class one bra record table, one aux record
 table, and two record ranges and three offsets per cell), the kernels
 `kernel_eri3.build_eri3_kernel`'s (or `kernel_hgp`'s `build_heri3_kernel`,
-`engine=HGP`), emitted by `emit/cuda.py` / `emit/hip.py` unchanged into
-`workdir` (the kernel tier's `KERNEL_GEN_CMD` writes no eri3 unit).
+`engine=HGP`, or `kernel_rys`'s `build_reri3_kernel`, `engine=RYS`),
+emitted by `emit/cuda.py` / `emit/hip.py` unchanged into `workdir` (the
+kernel tier's `KERNEL_GEN_CMD` writes no eri3 unit).
 
 ON THE SHARED RUNNER (#649, ported by #657): ONE runner over every class's
 unit (`harness_driver.units_runner`, each unit in its own namespace),
@@ -54,6 +55,7 @@ from felizjueves.eri.density_fit.kernel_eri3 import (
     launch_shape,
 )
 from felizjueves.eri.density_fit.kernel_hgp import build_heri3_kernel
+from felizjueves.eri.density_fit.kernel_rys import build_reri3_kernel
 from felizjueves.ir import Intent, Kernel
 from felizjueves.spec import Engine
 
@@ -69,8 +71,12 @@ def eri3_kernel(cls: Eri3Class, engine: Engine = Engine.MMD,
                 lowstack: bool | None = None) -> Kernel:
     """The class's kernel, its signature checked against the records."""
     am = (cls.la, cls.lb, cls.lP)
-    kern = (build_heri3_kernel(am) if engine is Engine.HGP
-            else build_eri3_kernel(am, lowstack=lowstack))
+    if engine is Engine.HGP:
+        kern = build_heri3_kernel(am)
+    elif engine is Engine.RYS:
+        kern = build_reri3_kernel(am)
+    else:
+        kern = build_eri3_kernel(am, lowstack=lowstack)
     names = [p.name for p in kern.params]
     want = [*SIZES,
             *(_param(n) for n in (*Eri3Class.BRA_ARRAYS,

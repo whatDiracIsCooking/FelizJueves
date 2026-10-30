@@ -26,6 +26,10 @@ and what is not done.
   the six `(mn|P)` classes `la ≤ lb ≤ 1`, `lP ≤ 1`. The builders accept any
   class the DAGs accept.
 
+**The Rys twin** of `(mn|P)` (`reri3_*`) fills this note's `(mn|P)`
+skeleton through `kernel_hgp.three_center_kernel`, its HGP output
+byte-identical: `rys_fock.md`, "The three-center `(mn|P)` on Rys".
+
 **Nothing here is measured or scored.** There is no published board (as for
 the MMD kernels: `limits.json`'s #417 and #447 records) and no
 `data/measured/` row.

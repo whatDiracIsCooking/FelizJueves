@@ -45,7 +45,9 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     (Target.K, Engine.RYS),
                     # one_electron/kernel_rys.py: S, T and V by Rys
                     (Target.S, Engine.RYS), (Target.T, Engine.RYS),
-                    (Target.V, Engine.RYS)}
+                    (Target.V, Engine.RYS),
+                    # eri/density_fit/kernel_rys.py: (mn|P) by Rys
+                    (Target.ERI3, Engine.RYS)}
 
 
 def _spec(target: Target, engine: Engine | None = None, *,

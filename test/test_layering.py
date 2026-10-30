@@ -4448,6 +4448,78 @@ def test_the_hgt_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
         assert not hit, f"kernel_hgt reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The three-center DF integral on Rys quadrature, `Target.ERI3` on
+# `Engine.RYS` (`eri.density_fit.kernel_rys`): the Rys rule and its 2D VRR
+# (`rys.recurrence`, a single-centre ket) filling `kernel_hgp`'s `(mn|P)`
+# skeleton (`three_center_kernel`: the bra record, the HRR and the scatter).
+# Checked in the interpreter against the MMD host, the MMD and HGP kernels
+# and libcint, so neither `ao`, the hosts, the MMD builders, the plan, the
+# interpreter, a backend, a card nor `reference/` may be its ancestor. The
+# adapter (`eri3_drive`, `engine=RYS`) and the generator CLI
+# (`--rys-eri3-l`) compose it.
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "rys_df_builder": _rule(
+        "kernel_rys.py: the three-center DF integral by Rys quadrature -- "
+        "key -> IR, the Rys rule and 2D VRR of `rys.recurrence` into "
+        "`kernel_hgp`'s `(mn|P)` skeleton (bra record, HRR, scatter)",
+        ("spec", "=ir", "hgp.vrr", "rys", "=eri.density_fit.kernel_hgp"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao="`ao.eri3` is the witness the kernel is interpreted against: "
+           "importing it shares ancestry (#20)",
+        mmd="McMurchie-Davidson is another engine, a cross-engine witness",
+        **{"eri.density_fit.kernel_metric":
+            "the MMD metric builder reaches `plan/`",
+           "eri.density_fit.kernel_eri3":
+            "the MMD three-center builder is a witness, not an ancestor",
+           "eri.density_fit.eri3": "the host is the witness",
+           "ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.density_fit.kernel_rys"] = "rys_df_builder"
+EDGES["eri.density_fit.kernel_rys"] = frozenset(
+    ("eri.density_fit.kernel_hgp", "hgp.vrr", "ir", "rys.recurrence",
+     "rys.roots", "spec"))
+RULES["eri3_adapter"] = Rule(RULES["eri3_adapter"].why + ", and on "
+                             "`engine=RYS` the Rys builder `kernel_rys`",
+                             RULES["eri3_adapter"].may
+                             | frozenset(("eri.density_fit.kernel_rys",)),
+                             RULES["eri3_adapter"].must_not)
+EDGES["eri.density_fit.eri3_drive"] = EDGES["eri.density_fit.eri3_drive"] | (
+    frozenset(("eri.density_fit.kernel_rys",)))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the Rys three-center "
+                       "ladder through `eri.density_fit.kernel_rys`",
+                       RULES["driver"].may
+                       | frozenset(("eri.density_fit.kernel_rys",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("eri.density_fit.kernel_rys",))
+
+
+def test_the_rys_df_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["eri.density_fit.kernel_rys"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"eri.density_fit.kernel_hgp", "rys.recurrence", "rys.roots",
+            "hgp.hrr"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "plan", "mmd",
+                   "performance.device", "eri.density_fit.kernel_eri3",
+                   "eri.density_fit.kernel_metric", "eri.density_fit.eri3"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_rys reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

@@ -1,5 +1,5 @@
 """Schwarz `Q`, the cross overlap `SX`, the DF metric `(P|Q)` and the
-three-center `(mn|P)`, with their HGP twins: tree-state's
+three-center `(mn|P)`, with their HGP and Rys twins: tree-state's
 `references/schwarz-overlap-df.md`."""
 
 from __future__ import annotations
@@ -21,6 +21,9 @@ CASES = [
             cards={"rtx3080": range(3)}),
     *ladder("hgp", "eri3", 0, compile=range(4), gpu=range(4),
             cards={"rtx3080": range(4)}),
+    # The Rys (mn|P): units compiled through L = 4, programs and gpu tests
+    # through L = 6 (the whole fixture); on no card yet.
+    *ladder("rys", "eri3", 0, compile=range(7), gpu=range(7)),
 ]
 
 # Schwarz's L is 2 (la + lb) (tiers.py): through la + lb = 2.
@@ -28,6 +31,10 @@ _SCHWARZ = span("mmd", "schwarz", 0, (0, 2, 4))
 # The HGP DF kernels are tested for s and p shells only (HGP_DF_L_MAX = 1).
 _HGP_METRIC = span("hgp", "metric", 0, range(3))
 _HGP_ERI3 = span("hgp", "eri3", 0, range(4))
+# The Rys (mn|P): every class through L = 4, and the whole fixture to L = 6.
+_RYS_ERI3 = ById({"synthetic": span("rys", "eri3", 0, range(5)),
+                  "fixture": Allow(PROGRAM),
+                  "fixture-all": span("rys", "eri3", 0, range(7))})
 
 # The paths whose change touches this family (sample.py's change weighting):
 # its source, its drivers; its test files come from TESTS. The HGP twins
@@ -38,6 +45,7 @@ PATHS = (
     "src/felizjueves/eri/kernel_schwarz.py",
     "src/felizjueves/one_electron/kernel_sx.py",
     "src/felizjueves/hgp/",
+    "src/felizjueves/rys/",
     "test/eri3_driver.py",
     "test/metric_driver.py",
     "test/schwarz_driver.py",
@@ -84,4 +92,10 @@ TESTS = {
         ById({"synthetic": _HGP_ERI3, "fixture": Allow(PROGRAM)}),
     "test/test_hgp_df_device.py::test_X_hgp_df_programs_compile":
         ById({"synthetic": _HGP_METRIC + _HGP_ERI3, "fixture": Allow(PROGRAM)}),
+    # The Rys twin of (mn|P).
+    "test/test_emit_rys_df.py::test_X_compiles_the_rys_eri3_class":
+        Classes("rys", "eri3"),
+    "test/test_rys_df_device.py::test_X_rys_eri3_matches_the_host_and_libcint":
+        _RYS_ERI3,
+    "test/test_rys_df_device.py::test_X_rys_eri3_programs_compile": _RYS_ERI3,
 }
