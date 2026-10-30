@@ -106,11 +106,10 @@ from felizjueves.ir import (
     Var,
 )
 from felizjueves.one_electron.kernel_hgp import (
-    _boundary,
-    _factors,
-    _hrr_dag,
-    _vrr_dag,
     boundary_union,
+    factors,
+    table_dags,
+    vrr_dag,
 )
 from felizjueves.spec import OPERATOR_OF, Engine, Spec, Target
 
@@ -321,14 +320,13 @@ def build_hgt_kernel(cls: Spec | tuple[int, int], *,
     docstring.
     """
     la, lb = _class(cls)
-    hrrs = {t: _hrr_dag(tg) for t, tg in tables(la, lb).items()}
-    bounds = {t: _boundary(d) for t, d in hrrs.items()}
-    vdag = _vrr_dag(boundary_union(bounds), nuclear=False)
+    hrrs, bounds = table_dags(tables(la, lb))
+    vdag = vrr_dag(boundary_union(bounds), nuclear=False)
 
     # --- per record: the seed, the VRR, the weighted accumulation ----------
     k = Var(_REC)
     vstmts = vrr_body(vdag, lambda m: Var("u"))
-    used = _factors(vstmts)
+    used = factors(vstmts)
     record: list[Stmt] = [Decl("zeta", Scalar.F64,
                                init=Index("zeta_ab", (k,)))]
     if Factor.INV2P.value in used:
@@ -378,7 +376,7 @@ def build_hgt_kernel(cls: Spec | tuple[int, int], *,
                            name=lambda node, t=t: _hname(t, node))
     pool = Locals()
     grad = _gradient(la, lb, pool)
-    used_ab = _factors(tuple(hstmts))
+    used_ab = factors(tuple(hstmts))
 
     pair = Var(PAIR)
     head: list[Stmt] = [

@@ -254,7 +254,7 @@ card with the DF-K weights; the solve stays host-side. No clock.
 **The kinetic gradient on HGP is generated, interpreted and compiled,
 not run on a card** (`gradient.md`, "The kinetic gradient on HGP"):
 `spec.GRADIENT_OFF_NATIVE` makes `T` at d1 legal on `Engine.HGP`
-(`kinetic/d1/(la,lb)/b1/t.hgp/literal`; `S` and `V` stay refused),
+(`kinetic/d1/(la,lb)/b1/t.hgp/literal`; `V` stays refused; `S` is `hgs`, below),
 built by `gradient/kernel_hgt.py` (`hgt_{la}{lb}`, through f,
 `L_MAX = 3`): `kernel_hgp`'s VRR per primitive pair into up to six
 contracted tables weighted `(2 alpha)^p beta^n`, their HRRs on contracted
@@ -300,6 +300,26 @@ straight-line unit in ptxas; no rolled form), so it is not in the compile
 set; nothing measured, not in
 `gradient.rhf`'s runners. Registry: `hgp`/`k`/d1, L 0..8 interpreted,
 compile at L 0..4 and 6, no card.
+**The overlap gradient is also built on HGP, through (ff), interpreted
+and compiled, not run on a card** (`gradient.md`, "The overlap gradient on
+HGP"): `S` at d1 on `Engine.HGP` (`spec.GRADIENT_OFF_NATIVE`, beside
+HGP `J`, `T` and `K`; `V` and every other target still refuse HGP at
+d1), `gradient/kernel_hgs.py`'s `hgs_{la}{lb}`, `gs_`'s contraction on
+`hs_`'s recurrence: one overlap VRR to `la + lb + 1` per primitive pair
+into three contracted tables (unweighted, `2 alpha`, `2 beta`), each its
+own HRR on contracted values (`kernel_hgp.table_dags`), `gs_`'s weights,
+six `AtomicAdd`s per shell pair, both centres computed; one thread per
+contracted shell pair, staged by `host.pair_records`. Interpreted
+(`test_kernel_hgs.py`): every ordered class (ss)–(ff) on HF/cc-pVTZ
+against the host and against `gs_` within 64 eps of the split-centre scale
+(worst 17.3 at (sd), the rest <= 9.8; not bitwise -- the contracted HRR),
+whole H₂O/STO-3G and CO/cc-pVTZ (`slow`). `hgt_`'s ladder `python -m
+felizjueves.emit --hgp-grad-l [LMAX]` writes it too (both per class); 6 goldens (`test_emit_hgs.py`), every
+unit through (ff) compiled by nvcc and hipcc with no warning
+(2026-10-30, a device-less cloud container). Its card cases are
+`test_grad_device.py`'s `*-hs` (H₂O/STO-3G, H₂O/cc-pVDZ and
+CO/cc-pVTZ with the bare proton, `grad_driver.hgs_launches`, the same
+`DEV_TOL`): written, **not run on either card**. Nothing measured.
 
 **RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
 nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O

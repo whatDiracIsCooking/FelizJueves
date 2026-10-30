@@ -324,14 +324,20 @@ def test_k_takes_order_one_in_its_hermite_pairing() -> None:
     hgp = Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.HGP)
     assert hgp.key() == "coulomb/d1/(1,0|0,0)/b1/k.hgp/literal"
     assert GRADIENT_OFF_NATIVE == {(Target.J, Engine.HGP),
-                                   (Target.K, Engine.HGP), (Target.T, Engine.HGP)}
+                                   (Target.K, Engine.HGP), (Target.T, Engine.HGP),
+                                   (Target.S, Engine.HGP)}
     with pytest.raises(ValueError, match="derivative order 1 on target k.rys"):
         Spec(Operator.COULOMB, 1, (1, 0, 0, 0), Target.K, engine=Engine.RYS)
 
 
 def test_order_one_is_refused_on_a_non_native_engine() -> None:
-    with pytest.raises(ValueError, match="derivative order 1 on target s.hgp"):
-        Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.HGP)
+    # S on HGP is an off-native gradient (gradient.kernel_hgs); V is not
+    assert Spec(Operator.OVERLAP, 1, (1, 0), Target.S,
+                engine=Engine.HGP).key() == "overlap/d1/(1,0)/b1/s.hgp/literal"
+    with pytest.raises(ValueError, match="derivative order 1 on target s.rys"):
+        Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.RYS)
+    with pytest.raises(ValueError, match="derivative order 1 on target v.hgp"):
+        Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.HGP)
     assert Spec(Operator.COULOMB, 1, (1, 0), Target.JAB).key() == \
         "coulomb/d1/(1,0)/b1/jab/literal"
 

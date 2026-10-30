@@ -145,9 +145,7 @@ def test_the_refusals() -> None:
     with pytest.raises(ValueError, match="not an HGP d1 T key"):
         kt.build_hgt_kernel(Spec(Operator.KINETIC, 0, (1, 0), Target.T,
                                  engine=Engine.HGP))
-    # the other one-electron gradients stay refused on HGP
-    with pytest.raises(ValueError, match="derivative order 1 on target s.hgp"):
-        Spec(Operator.OVERLAP, 1, (1, 0), Target.S, engine=Engine.HGP)
+    # V stays refused on HGP (S is gradient.kernel_hgs's)
     with pytest.raises(ValueError, match="derivative order 1 on target v.hgp"):
         Spec(Operator.NUCLEAR, 1, (1, 0), Target.V, engine=Engine.HGP)
     with pytest.raises(ValueError, match="derivative order 2 on target t.hgp"):

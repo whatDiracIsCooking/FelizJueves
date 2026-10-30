@@ -39,12 +39,14 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
 Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
-every other engine -- except three off-native pairs,
+every other engine -- except four off-native pairs,
 `spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
 recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`,
 `T` on HGP ("The kinetic gradient on HGP", below), key
 `kinetic/d1/(la,lb)/b1/t.hgp/literal`, and `K` on HGP ("The exchange
-gradient on HGP", below), key `coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal`. A gradient class is its integral's class, `am` the
+gradient on HGP", below), key `coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal`, and `S` on HGP ("The
+overlap gradient on HGP", below), key
+`overlap/d1/(la,lb)/b1/s.hgp/literal`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
 d0 key is byte-identical. Unbatched, for each target's d0 reason. `K` at
@@ -429,6 +431,13 @@ classes (unrolled) and the four classes with one f shell and nothing else
 `test/golden/gk_digests.json` (`slow` above `L + 1 = 4`;
 `test_emit_grad_k.py`).
 
+`python -m felizjueves.emit --hgp-grad-l [LMAX]` (1 bare, accepted 0..3,
+exit 2 above) adds `hgt_{la}{lb}` and `hgs_{la}{lb}`, the kinetic and overlap
+gradients on HGP, for every
+`la <= lb <= LMAX`, beside the J ladders, never in the bare default nor in
+`KERNEL_GEN_CMD`. Goldens: `test/golden/{cuda,hip}/hgs_{00,01,11}`, 6
+files (`test_emit_hgs.py`).
+
 ## The RHF gradient, assembled (`gradient/rhf.py`, #565)
 
 With `D` and `W` the total density and energy-weighted density,
@@ -476,6 +485,8 @@ nine-primitive s), and its interpreted `gk_` runs for hours.
 | host invariance | `SUM_A G = 0` | same | ~1e-15 of `max\|G\|`, gate 1e-13 |
 | `V`'s Hellmann–Feynman term | a nucleus with no basis function, by finite difference | two-atom s, p basis plus a bare nucleus | as above |
 | `gs`, `gt`, `gv` interpreted (`test_kernel_g1e.py`) | `host`, per class | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G; `gv` also in its other form at every class (#614) | `gs`, `gt` bitwise; `gv` 2.2 eps of the split-centre scale, gate 16 eps |
+| `hgs` interpreted (`test_kernel_hgs.py`) | `host`, per class, and `gs` interpreted on the same pairs | every ordered class (ss)–(ff) on HF/cc-pVTZ; whole H₂O/STO-3G and CO/cc-pVTZ (`slow`), `SUM_A G = 0` | 17.3 eps of the split-centre scale at (sd), every other class <= 9.8; gate 64 eps |
+| compile, nvcc / hipcc (`test_emit_hgs.py`) | #92's filter | `sm_86` and `gfx1200`, every `hgs` unit (ss)–(ff) | passed, no warning in generated text (2026-10-30, a device-less cloud container) |
 | `gjab` interpreted (`test_kernel_gjab.py`) | `host`, per bra class, host `J_p` | every ordered class (ss)–(ff) on a three-atom s–f basis; also in its other form (low-stack) at every class (#619) | unrolled 1.8 eps, low-stack 5.7 eps of the split-centre scale, gate 16 eps |
 | the chain: `[p|q]` at `gjab_pq_spec` (interpreted) → `gjab` | `host.coulomb_gradient` | the two-atom s, p basis; H₂O/STO-3G `slow`; each in both forms (#619) | gate 64 eps of the scale |
 | host `E_K` (`test_gradient_host.py`) | central differences of `1/2 SUM D exchange_matrix` (libcint-witnessed) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.2e-9 of `max\|G\|` on the s, p basis, gate 1e-7 |
@@ -734,6 +745,42 @@ default nor in `KERNEL_GEN_CMD`; goldens `test/golden/{cuda,hip}/hgt_{00,
 compilers (`test_emit_hgp_grad.py`, slowest `hgt_33`: 6.3 s nvcc, 14.6 s
 hipcc, 2026-10-30). `S` and `V` on HGP stay refused at d1.
 
+## The overlap gradient on HGP (`gradient/kernel_hgs.py`)
+
+`Target.S` at d1 is also legal on `Engine.HGP` (`spec.GRADIENT_OFF_NATIVE`,
+beside HGP `J`, `T` and `K`), keyed `overlap/d1/(la,lb)/b1/s.hgp/literal`
+and built by `kernel_hgs.build_hgs_kernel` (`hgs_{la}{lb}`, shells
+through f): the same contraction as `gs_`, `G[A, k] += SUM_mn M_mn
+dS_mn/dR_{A,k}`, on the recurrence of the HGP one-electron `hs_`
+(`one_electron.md`, "The HGP route") instead of McMurchie & Davidson's
+`E`.
+
+The rule is the Cartesian one above, read on the integrals:
+
+    dA_k (a|b) = 2 alpha (a+1_k|b) - a_k (a-1_k|b)
+    dB_k (a|b) = 2 beta  (a|b+1_k) - b_k (a|b-1_k)
+
+`alpha` and `beta` are per primitive, and the HGP HRR runs on contracted
+values, so each exponent is folded in before the contraction (as `hs_`'s
+`T` folds `beta^n`): one overlap VRR (`[Fock]` eq 25 at `f = 0`, the
+`m + 1` terms dropped) to `la + lb + 1` per primitive pair feeds three
+contracted tables -- unweighted (the `a-1_k`, `b-1_k` targets), times `2
+alpha` (`a+1_k`) and times `2 beta` (`b+1_k`) -- each with its own HRR
+(`[Fock]` eq 28's bra half), `kernel_hgp.table_dags`'s DAGs. Then per
+block row `gs_`'s weight from `M` (`kernel_g1e.weights`), and six
+`AtomicAdd`s into `G` per SHELL PAIR, both centres computed (no
+translational invariance is used, so `SUM_A G = 0` stays a check). One
+thread per contracted shell pair, `kernel_hgp`'s mapping; staged by
+`host.pair_records` (the per-record arrays are `host.records`', so `gs_`
+and `hgs_` read one sweep). Interpreted it is round-off, not bitwise,
+against the host -- 17.3 eps of the split-centre scale at (sd), where
+the contracted HRR's `AB` terms cancel, so its gate is 64 eps rather
+than `gs`'s 16. It shares `hgt_`'s ladder, `--hgp-grad-l`, which writes both
+per class. Compiled by nvcc and hipcc through (ff); its card cases
+(`test_grad_device.py`'s `*-hs`, H₂O/STO-3G, H₂O/cc-pVDZ and CO/cc-pVTZ
+with the bare proton) are written and **not yet run on a card**. Not
+measured.
+
 ## What is not done
 
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
@@ -742,6 +789,8 @@ hipcc, 2026-10-30). `S` and `V` on HGP stay refused at d1.
   and compiled by nvcc and hipcc through `(dd|pp)` only (`(dd|dd)` over
   600 s on nvcc); no card, no measurement ("The
   exchange gradient on HGP").
+- `hgs` (the overlap gradient on HGP, above) has not run on a card and
+  is not measured.
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
   (ff), #614), `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618) and the
@@ -761,7 +810,7 @@ hipcc, 2026-10-30). `S` and `V` on HGP stay refused at d1.
   (`kernel_kblock`'s, one warp per `K_AB` block) is not built, and no
   `gk` clock is measured.
 - `hgt_` (the kinetic gradient on HGP, above) has not run on a card and
-  is not measured; `S` and `V` have no HGP gradient.
+  is not measured; `V` has no HGP gradient.
 - `gs`, `gt`, `gv` are measured for registers, spill, stack and compile
   time (`g1e.json`, #614), and `gjab` likewise (`gjab.json`, #619), not
   for wall-clock.

@@ -262,12 +262,15 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. The `cuda` and `hip` backends carry `fj_rys`; there is no
   CLI `gpu` backend.
 
-- the HGP kinetic-gradient ladder, `--hgp-grad-l [LMAX]`: for every pair
-  class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
+- the HGP one-electron gradient ladder, `--hgp-grad-l [LMAX]`: for every
+  pair class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
   `kernel_hgt.build_hgt_kernel`, `Target.T` at derivative order 1 on
   `Engine.HGP` (`hgt_{la}{lb}`): `kernel_hgp`'s VRR per primitive pair into
   six contracted tables weighted `(2 alpha)^p beta^n`, their HRRs, the
-  contraction with `M` into `G`, one thread per contracted shell pair.
+  contraction with `M` into `G`, one thread per contracted shell pair; and
+  `kernel_hgs.build_hgs_kernel`, `Target.S` at d1 on `Engine.HGP`
+  (`hgs_{la}{lb}`), the same route over three tables (unweighted, `2 alpha`,
+  `2 beta`).
   Accepted 0..`HGP_GRAD_L_MAX` = 3 ONLY (the builder is checked through (ff),
   interpreted; above it is a 2). It ADDS units beside the J ladders, as
   `--grad-l` does, and is NEVER in the no-flag default nor in
@@ -514,6 +517,7 @@ from felizjueves.gradient.kernel_ghk import build_ghk_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
+from felizjueves.gradient.kernel_hgs import build_hgs_kernel
 from felizjueves.gradient.kernel_hgt import build_hgt_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
@@ -586,8 +590,8 @@ DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
 RYS_ONE_E_L_MAX = 3  # kernel_rys.L_MAX: built and checked through (ff)
-DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_ (ss) (sp) (pp)
-HGP_GRAD_L_MAX = 3  # kernel_hgt.L_MAX: interpreted through (ff)
+DEFAULT_HGP_GRAD_L = 1  # `--hgp-grad-l` given bare: hgt_, hgs_ (ss) (sp) (pp)
+HGP_GRAD_L_MAX = 3  # kernel_hgt.L_MAX = kernel_hgs.L_MAX: interpreted through (ff)
 FOCK_L_MAX = 2  # milestone 12's ladder tops out at (dd|dd) (pin 3)
 _FOCK_PAIRS = tuple((a, b) for a in range(FOCK_L_MAX + 1)
                     for b in range(a, FOCK_L_MAX + 1))
@@ -1117,28 +1121,30 @@ def generate_hgp_one_e(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
-# The HGP kinetic-gradient ladder
+# The HGP one-electron gradient ladder
 # ---------------------------------------------------------------------------
 
 
 def hgp_grad_classes(lmax: int) -> list[tuple[int, int]]:
     """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
-    `0..HGP_GRAD_L_MAX` (the HGP kinetic gradient is built through f)."""
+    `0..HGP_GRAD_L_MAX` (the HGP gradients are built through f)."""
     if type(lmax) is not int or not 0 <= lmax <= HGP_GRAD_L_MAX:
         raise ValueError(f"--hgp-grad-l {lmax!r} is outside "
-                         f"0..{HGP_GRAD_L_MAX}: the HGP kinetic gradient "
+                         f"0..{HGP_GRAD_L_MAX}: the HGP gradient "
                          "kernels are built for shells through f only")
     return pair_classes(lmax)
 
 
 def hgp_grad_kernels(lmax: int) -> list[Kernel]:
-    """`hgt_{la}{lb}` for every class through `lmax`."""
-    return [build_hgt_kernel((la, lb)) for la, lb in hgp_grad_classes(lmax)]
+    """`hgt_{la}{lb}` and `hgs_{la}{lb}` for every class through `lmax`,
+    class-major."""
+    return [build((la, lb)) for la, lb in hgp_grad_classes(lmax)
+            for build in (build_hgt_kernel, build_hgs_kernel)]
 
 
 def generate_hgp_grad(backend: str, arch: Arch, out: Path,
                       lmax: int) -> list[Path]:
-    """Emit the HGP kinetic-gradient unit of every pair class through
+    """Emit the HGP kinetic and overlap gradient units of every pair class through
     `lmax` into `out`; return the paths."""
     kernels = hgp_grad_kernels(lmax)
     out.mkdir(parents=True, exist_ok=True)
@@ -1821,7 +1827,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if (args.hgp_grad_l is not None
             and not 0 <= args.hgp_grad_l <= HGP_GRAD_L_MAX):
         print(f"emit: --hgp-grad-l {args.hgp_grad_l} is outside "
-              f"0..{HGP_GRAD_L_MAX}: the HGP kinetic gradient kernels are "
+              f"0..{HGP_GRAD_L_MAX}: the HGP gradient kernels are "
               "built for shells through f only", file=sys.stderr)
         return 2
     try:

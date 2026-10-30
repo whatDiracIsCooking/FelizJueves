@@ -19,6 +19,11 @@ room and would still catch any wrong term (a gradient term is >= 1e-6 of
 `max|G|` on these inputs). The runs are compared with each other too.
 
 `gjab`'s `Jp` is the host's at `L + 1` (grad_driver.py's docstring).
+`hs` is `S` on the HGP engine (`gradient.kernel_hgs`, `hgs_{la}{lb}`,
+one thread per contracted shell pair, `grad_driver.hgs_launches`), held
+to the same host overlap gradient and the same `DEV_TOL`, every case
+`gs`'s; not yet run on a card.
+
 `gk` (H2O/STO-3G here until #618) is test_gk_device.py's now: its units
 are compiled one at a time there (test/gk_driver.py), in both forms.
 
@@ -52,6 +57,7 @@ from grad_driver import (
     gk_launches,
     grad_runners,
     grad_steps,
+    hgs_launches,
     one_electron_launches,
 )
 from harness_driver import build_chain, chain_specs
@@ -67,7 +73,7 @@ DEV_TOL = 1e-13  # of max|G| (module docstring)
 MOLECULES = [pytest.param("h2o_sto3g_j", id="h2o_sto3g"),
              pytest.param("h2o_ccpvdz_j", id="h2o_ccpvdz",
                           marks=(pytest.mark.slow,))]
-TARGETS = ("s", "t", "v", "j")
+TARGETS = ("s", "t", "v", "j", "hs")  # hs: S on HGP, kernel_hgs
 # `k` moved to test_gk_device.py (#618): its units are compiled one at a
 # time there, under the user's per-unit budget, in both forms
 CASES = [pytest.param(m.values[0], w, id=f"{m.id}-{w}", marks=m.marks)
@@ -77,7 +83,8 @@ CASES = [pytest.param(m.values[0], w, id=f"{m.id}-{w}", marks=m.marks)
 FF = "co_ccpvtz_j"
 EXTRA_NUCLEI = {FF: ((1.0, (-1.1, 0.9, -0.4)),)}
 FF_CASES = [pytest.param(FF, w, id=f"co_ccpvtz_proton-{w}",
-                         marks=(pytest.mark.slow,)) for w in ("s", "t", "v")]
+                         marks=(pytest.mark.slow,))
+            for w in ("s", "t", "v", "hs")]
 COMPILE_TIMEOUT_S = 300.0  # the user's per-compile budget
 
 
@@ -91,7 +98,7 @@ def _case(name: str):
 
 def _host(name: str, which: str) -> np.ndarray:
     basis, nuclei, D = _case(name)
-    if which == "s":
+    if which in ("s", "hs"):
         return np.array(host.overlap_gradient(basis, D, nuclei))
     if which == "t":
         return np.array(host.kinetic_gradient(basis, D, nuclei))
@@ -111,6 +118,8 @@ def _launches(name: str, which: str):
         return gjab_launches(basis, nuclei, D, one_centre=one_centre)
     if which == "k":
         return gk_launches(basis, nuclei, D)
+    if which == "hs":
+        return hgs_launches(basis, nuclei, D)
     target = {"s": Target.S, "t": Target.T, "v": Target.V}[which]
     return one_electron_launches(basis, nuclei, target, D)
 
@@ -121,7 +130,7 @@ def _check(backend: str, name: str, which: str, request,
     _, nuclei, _ = _case(name)
     launches = _launches(name, which)
     if name == FF:
-        names = {x.kernel.name[3:] for x in launches}
+        names = {x.kernel.name.split("_")[1] for x in launches}
         assert names == {f"{a}{b}" for a in range(4) for b in range(4)}, names
     b = compile_grad(launches, len(nuclei), backend, tc, tmp_path,
                      timeout=COMPILE_TIMEOUT_S)

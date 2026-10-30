@@ -4420,6 +4420,36 @@ EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
     ("one_electron.kernel_rys",))
 
 
+# ---------------------------------------------------------------------------
+# The overlap gradient on HGP (`gradient.kernel_hgs`): `kernel_hgp`'s VRR /
+# HRR machinery (`table_dags`, `vrr_dag`) and `kernel_g1e`'s weights, checked
+# against `gradient.host` (and `gs_`) in the interpreter. The generator CLI
+# writes its ladder (`--hgp-grad-l`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "hgs_builder": _rule(
+        "kernel_hgs.py: the HGP overlap-gradient kernel -- key -> IR, "
+        "`kernel_hgp`'s overlap VRR and contracted HRR over three tables, "
+        "`kernel_g1e`'s weights from M",
+        ("spec", "=ir", "hgp.hrr", "hgp.recurrence", "hgp.vrr",
+         "=one_electron.kernel_hgp", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["gradient.kernel_hgs"] = "hgs_builder"
+EDGES["gradient.kernel_hgs"] = frozenset(
+    ("gradient.kernel_g1e", "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+     "one_electron.kernel_hgp", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP overlap-"
+                       "gradient ladder through `kernel_hgs`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_hgs",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_hgs",))
+
+
 def test_the_rys1e_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
     graph = _graph()
     seen: set[str] = set()

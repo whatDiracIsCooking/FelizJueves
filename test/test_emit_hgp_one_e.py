@@ -175,13 +175,16 @@ def test_above_p_says_why(tmp_path, capsys) -> None:
 # --- the compile (a compiler, no card) ----------------------------------------
 
 
-def _compile(tc, backend: str, unit, tmp_path: Path) -> None:
+def _compile(tc, backend: str, unit, tmp_path: Path, *,
+             build=build_hgp_kernel) -> None:
+    """`build(unit)` compiled alone, failing on a warning in its text
+    (test_emit_hgs.py passes its own builder)."""
     import devcache
 
     from felizjueves.performance import measured
 
     emit, arch, ext = BACKEND[backend]
-    k = build_hgp_kernel(unit)
+    k = build(unit)
     main = f"{k.name}.{ext}"
     target = (f"-arch=sm_{tc.arch}" if tc.name == "nvcc"
               else f"--offload-arch={tc.arch}")
