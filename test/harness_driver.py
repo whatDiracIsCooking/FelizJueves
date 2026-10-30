@@ -32,8 +32,8 @@ runner checks the spec again against the compiled signature
 (test/harness/kernel_table.h), so the two halves cannot drift silently.
 
 COMPILED LIKE EVERY OTHER TEST-SIDE DRIVER: `compile_checked`, the one
-compile entry point (folded in from plan_driver.py by #659, which still
-re-exports it for the drivers not yet ported), so devtools/config.sh's
+compile entry point (folded in from plan_driver.py by #659, which
+re-exports it for the drivers that import it from there), so devtools/config.sh's
 NVCC_FLAGS / HIPCC_FLAGS, the compiler cache (#186) and #92's warning
 filter -- which here covers the unit AND every harness header, so "the
 runner builds with no warnings" is a checked statement.
@@ -47,6 +47,10 @@ launch, so its runs are separate processes and the test bounds their
 spread, as the string-built programs' `RUNS` loop did.
 
 REPEATS (#654): `runs=` / `warmup=`, runner.h's run-to-run witness and clock.
+A WHOLE BUILD AS ONE TIMED REGION (#659, plan_driver's J driver):
+`timed_readback=True` puts each out buffer's read-back inside every run's
+host clock (`Sequenced.readback_ns`), `launch_events=False` records only the
+run's two events, and the runner reports its `upload_ns` once.
 
 SEQUENCES (#657): the ERI drivers launch many kernels, from several units,
 in order into one output -- `F`, `J`, `K`, `(mn|P)`, a `G` per launch. A
@@ -347,8 +351,10 @@ def write_case(workdir: Path, spec: dict, arrays: Mapping[str, np.ndarray]) -> P
     return path
 
 
-_RUN = re.compile(r"^fj-runner run \d+ events_ns ([0-9.]+) wall_ns (\d+)$",
-                  re.MULTILINE)
+_RUN = re.compile(r"^fj-runner run \d+ events_ns ([0-9.]+) wall_ns (\d+)"
+                  r"(?: readback_ns (\d+))?$", re.MULTILINE)
+_UPLOAD = re.compile(r"^fj-runner upload_ns (\d+)$", re.MULTILINE)
+_LAUNCHED = re.compile(r"^fj-runner launch (\w+) ", re.MULTILINE)
 _LAUNCH = re.compile(r"^fj-runner run (\d+) launch (\d+) events_ns ([0-9.]+)$",
                      re.MULTILINE)
 
@@ -545,7 +551,8 @@ def _dims(d: Sequence[int] | int, what: str) -> list[int]:
 def sequence_spec(buffers: Mapping[str, np.ndarray | Zeros],
                   steps: Sequence[Step], *, outs: Sequence[str],
                   runs: int = 1, warmup: int = 0,
-                  witness: str = "identical"
+                  witness: str = "identical", timed_readback: bool = False,
+                  launch_events: bool = True
                   ) -> tuple[dict, dict[str, np.ndarray]]:
     """A SEQUENCE's spec (runner.h) and the arrays to write beside it.
 
@@ -646,6 +653,10 @@ def sequence_spec(buffers: Mapping[str, np.ndarray | Zeros],
         spec["warmup"] = int(warmup)
     if witness != "identical":
         spec["witness"] = witness
+    if timed_readback:
+        spec["timed_readback"] = True
+    if not launch_events:
+        spec["launch_events"] = False
     return spec, arrays
 
 
@@ -653,7 +664,10 @@ class Sequenced(NamedTuple):
     outs: dict[str, list[Path]]  # per out buffer, each kept run's `.npy`
     events_ns: list[float]  # per timed run, the whole sequence
     wall_ns: list[int]  # per timed run, the host clock
-    launch_ns: list[list[float]]  # per timed run, per launch
+    launch_ns: list[list[float]]  # per timed run, per launch ([] without)
+    readback_ns: list[int]  # per timed run, with timed_readback ([] without)
+    upload_ns: int  # every buffer allocated and uploaded, once, before run 0
+    launched: list[str]  # the kernel of each launch, in order, as it ran
 
     def load(self, name: str) -> list[np.ndarray]:
         return [np.load(p) for p in self.outs[name]]
@@ -663,12 +677,16 @@ def run_sequence(binary: Path, workdir: Path,
                  buffers: Mapping[str, np.ndarray | Zeros],
                  steps: Sequence[Step], *, outs: Sequence[str],
                  runs: int = 1, warmup: int = 0, witness: str = "identical",
+                 timed_readback: bool = False, launch_events: bool = True,
                  timeout: float = 300) -> Sequenced:
     """Write the sequence, run the runner on it, and return each out
     buffer's files (one, or with `witness="each"` one per run) and the
-    clocks. A nonzero exit fails with its stderr."""
+    clocks. A nonzero exit fails with its stderr. `timed_readback` /
+    `launch_events`: runner.h's switches of those names (#659)."""
     spec, arrays = sequence_spec(buffers, steps, outs=outs, runs=runs,
-                                 warmup=warmup, witness=witness)
+                                 warmup=warmup, witness=witness,
+                                 timed_readback=timed_readback,
+                                 launch_events=launch_events)
     path = write_case(workdir, spec, arrays)
     done = subprocess.run([str(binary), str(path)], capture_output=True,
                           text=True, timeout=timeout)
@@ -683,11 +701,19 @@ def run_sequence(binary: Path, workdir: Path,
                                  for r in range(1, kept)]
         for p in files[name]:
             assert f"fj-runner out {name} {p}" in done.stdout, done.stdout[-4000:]
-    clocks = [(float(m.group(1)), int(m.group(2)))
-              for m in _RUN.finditer(done.stdout)]
+    found = list(_RUN.finditer(done.stdout))
+    clocks = [(float(m.group(1)), int(m.group(2))) for m in found]
     assert len(clocks) == runs, done.stdout[-4000:]
+    readback = [int(m.group(3)) for m in found if m.group(3) is not None]
+    assert len(readback) == (runs if timed_readback else 0), done.stdout[-4000:]
+    up = _UPLOAD.search(done.stdout)
+    assert up, done.stdout[-4000:]
+    launched = _LAUNCHED.findall(done.stdout)
+    assert len(launched) == len(steps), done.stdout[-4000:]
     per = [[0.0] * len(steps) for _ in range(runs)]
-    if len(steps) > 1:
+    if not launch_events:
+        per = [[] for _ in range(runs)]
+    elif len(steps) > 1:
         seen = 0
         for m in _LAUNCH.finditer(done.stdout):
             per[int(m.group(1))][int(m.group(2))] = float(m.group(3))
@@ -696,4 +722,4 @@ def run_sequence(binary: Path, workdir: Path,
     else:
         per = [[e] for e, _ in clocks]
     return Sequenced(files, [e for e, _ in clocks], [w for _, w in clocks],
-                     per)
+                     per, readback, int(up.group(1)), launched)

@@ -28,7 +28,7 @@ felizjueves.emit --hess-l [LMAX]` (1 bare, 0..2; `hjab` is ~1 MB of
 unrolled text at (dd)), never in the bare default nor in
 `KERNEL_GEN_CMD`; 12 goldens (`test_emit_hess.py`). **On both cards**
 (`test_hess_j_device.py`, generator `test/hess_driver.py` with its OUT
-`D1` for `hdq`, on the shared runner since #659, not yet run on a card): `hdq` and `hjab` for every ordered class (ss)–(dd) and
+`D1` for `hdq`, on the shared runner since #659, which ran on both cards on 2026-10-30): `hdq` and `hjab` for every ordered class (ss)–(dd) and
 the whole H₂O/STO-3G `H` (`slow`), against the host with the host's `J`s,
 19 passed per card; `hdq` 4.98e-16 of `max|D1|`, `hjab` 9.28e-17 of the
 absolute twin, the same on both cards. The on-card chain through the
@@ -77,7 +77,7 @@ the absolute twin for every ordered class through (ff), and every class
 is held in both forms. Below the rule the text is byte-identical; the
 unrolled `d2v_22` is pinned by its old digest (`d2v_22.unrolled`) in
 `test/golden/hessian_digests.json`. Neither form is measured.
-**On both cards, in the unrolled form** (before the low-stack `d2v`) (`test_hess_device.py`, generator `test/hess_driver.py`, on the shared runner since #659, not yet run on a card):
+**On both cards, in the unrolled form** (before the low-stack `d2v`) (`test_hess_device.py`, generator `test/hess_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30):
 H₂O/STO-3G and cc-pVDZ (`slow`), against the host, 6 passed per card;
 worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
 `d2v` on cc-pVDZ. Nothing above (dd) on a card, nothing measured; the low-stack `d2v` has not run on a card (clang 18's CUDA front end passed `d2v_22` / `d2v_33`, a proxy).

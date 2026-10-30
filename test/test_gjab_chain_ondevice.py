@@ -61,9 +61,9 @@ from plan_driver import (
     RUNS,
     compile_checked,
     compile_dq,
-    counts,
     dq_classes,
     driver,
+    run,
     stage,
 )
 from test_j_chain_ondevice import _host_dq_rows, _ket_data, _plan_from, _rows_of
@@ -128,22 +128,22 @@ def _chain(backend: str, name: str, form: str, request, run_device_binary,
 
     # 2 and 3: the raised [p|q] and gjab, one process
     tail = gjab_tail(plan, basis, nuclei, D, lowstack=lowstack)
-    gjabs = {kern.name for _, kern in tail.kernels}
+    gjabs = {kern.name for kern in tail.kernels}
     if name == FF:
         assert gjabs == {f"gjab_{a}{b}" for a in range(4)
                          for b in range(4)}, gjabs
     drv = driver(plan, backend, tmp_path / "gen", tail=tail)
     binary = compile_checked(tc, drv, tmp_path / "driver",
                              timeout=COMPILE_TIMEOUT_S)
-    src, dst = tmp_path / "in.bin", tmp_path / "out.bin"
-    stage(plan, basis, D, drv, ket_data=_ket_data(basis, dq_rows)).tofile(src)
-    out = run_device_binary(binary, str(src), str(dst), vram=backend)
-    _check_counts(counts(out), drv, plan, warmup=0, reps=RUNS)
+    _check_counts(drv, plan)
     ng = len(tail.kernels)
-    assert (f"fj-gjab classes {ng} uploads_gjab {ng} gjab_launches "
-            f"{ng * RUNS} g_memsets {RUNS} g_readbacks {RUNS}") in out, out
-    jps, got = gjab_read_back(drv, np.fromfile(dst, dtype=np.float64),
-                              len(nuclei))
+    assert [s.kernel.name for s in drv.steps[len(drv.launches):]] == [
+        k.name for k in tail.kernels]
+    ran = run(drv, binary, stage(plan, basis, D, drv,
+                                 ket_data=_ket_data(basis, dq_rows)),
+              tmp_path / "run", runs=RUNS)
+    jps, got = gjab_read_back(drv, ran, len(nuclei))
+    assert len(got) == RUNS
     for r in range(RUNS):
         assert all(np.all(np.isfinite(jp)) for jp in jps[r].values())
 
@@ -151,7 +151,7 @@ def _chain(backend: str, name: str, form: str, request, run_device_binary,
     scale = float(np.abs(want).max())
     errs = [float(np.abs(g - want).max() / scale) for g in got]
     spread = float(np.abs(got[0] - got[1]).max() / scale)
-    low = sorted(k.name for _, k in tail.kernels
+    low = sorted(k.name for k in tail.kernels
                  if lowstack or gjab_lowstack((int(k.name[5]), int(k.name[6]))))
     print(f"\n{backend} {arch.name} {name} gjab chain ({form}): [p|q] "
           f"{' '.join(f'({c.lp},{c.lq})' for c in plan)} (L <= "
@@ -209,5 +209,10 @@ def test_the_raised_plan_is_the_plans_bras_one_up(cell) -> None:
     for cl in up:
         rows.setdefault(cl.lp, len(cl.bras))
     n_rec = sum(rows.values())
-    assert tail.n_output == 3 * len(nuclei)
-    assert tail.n_input == 15 * n_rec + basis.n_ao ** 2
+    assert tail.out == "G" and tail.shape == (len(nuclei), 3)
+    assert tail.steps[0].zero == ("G",)
+    assert sum(s.args["n_rec"] for s in tail.steps) == n_rec
+    gd = sum(a.size for k, a in tail.buffers.items() if k.startswith("gd"))
+    gi = sum(a.size for k, a in tail.buffers.items() if k.startswith("gi"))
+    assert (gd, gi) == (10 * n_rec, 5 * n_rec)
+    assert tail.buffers["M"].shape == (basis.n_ao, basis.n_ao)

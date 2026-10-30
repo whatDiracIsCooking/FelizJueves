@@ -30,11 +30,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import check_vram
 from plan_driver import (
     compile_command,
-    counts,
     read_back,
+    run,
 )
 from plan_driver import reps as rep_lines
 from test_j_launched_ondevice import (
@@ -75,7 +74,7 @@ from felizjueves.performance.measured import host as measured_host
 # 2. CHECK every compiled binary in its correctness mode (`_check`: counts,
 #    the fp64-atomic run-to-run bound, the launch oracle, libcint) -- the
 #    TIMED binary is the CHECKED binary.
-# 3. TIME each cell: the VRAM probe first (off the clock), then the gate
+# 3. TIME each cell: the gate
 #    (`gate.wait_quiet`: card at most GPU_BUSY_MAX by its own SMI, CPU at
 #    most BUSY_MAX), ONE process running BUILD_WARMUP untimed builds and
 #    BUILD_REPEATS timed ones, then `gate.after_reading`. A phase whose
@@ -189,9 +188,6 @@ def time_builds(backend: str, cells, store_path: Path, request,
     got: dict[str, object] = {}
     table = []
     for cell, key, ck in zip(cells, keys, checked, strict=True):
-        dst = ck.src.parent / "timed.bin"
-        args = (str(ck.src), str(dst), str(BUILD_WARMUP), str(BUILD_REPEATS))
-        check_vram(ck.binary, args, backend)  # before the wait, off the clock
         discarded = 0
         for take in range(1 + BUILD_RETAKES):
             try:
@@ -200,7 +196,9 @@ def time_builds(backend: str, cells, store_path: Path, request,
             except gate.Contended as e:
                 pytest.fail(f"{key}: {e} -- nothing recorded")
             load1 = os.getloadavg()[0]
-            out = run_device_binary(ck.binary, *args)
+            ran = run(ck.drv, ck.binary, ck.buffers,
+                      tmp_path / f"timed{len(got)}_{take}",
+                      runs=BUILD_REPEATS, warmup=BUILD_WARMUP)
             after = gate.after_reading(backend)
             if gate.is_idle(after):
                 break
@@ -211,17 +209,17 @@ def time_builds(backend: str, cells, store_path: Path, request,
             pytest.fail(f"{key}: the card was taken during {BUILD_RETAKES + 1} "
                         "phases -- nothing recorded")
 
-        c = counts(out)
-        _check_counts(c, ck.drv, ck.plan, warmup=BUILD_WARMUP,
-                      reps=BUILD_REPEATS)
-        rows = rep_lines(out)
-        assert len(rows) == BUILD_REPEATS, out
+        _check_counts(ck.drv, ck.plan)
+        rows = rep_lines(ran)
+        assert len(rows) == BUILD_REPEATS, rows
         wall, dev, back, events = (list(x) for x in zip(*rows, strict=True))
-        first, last = read_back(ck.drv, np.fromfile(dst, dtype=np.float64))
+        timed = read_back(ck.drv, ran)
+        assert len(timed) == BUILD_REPEATS
+        first, last = timed[0], timed[-1]
         bitwise = True
         for lp, bound in ck.bound.items():
-            for run in (first, last):
-                diff = np.abs(run[lp] - ck.jp[lp])
+            for one in (first, last):
+                diff = np.abs(one[lp] - ck.jp[lp])
                 assert np.all(diff <= bound), (
                     f"{key}: timed J_p[{lp}] off the checked run by "
                     f"{float(np.max(diff)):.3e}, over the atomic bound")
@@ -240,7 +238,7 @@ def time_builds(backend: str, cells, store_path: Path, request,
             "build:device_q3_ns": round(dq3),
             "build:readback_median_ns": round(float(np.median(back))),
             "build:events_median_ns": round(float(np.median(events))),
-            "build:upload_ns": c["upload_ns"],
+            "build:upload_ns": ran.upload_ns,
             "build:classes": len(ck.plan),
             "build:kernels": len(ck.drv.launches),
             "build:bra_classes": len(ck.drv.bra),
@@ -275,7 +273,7 @@ def time_builds(backend: str, cells, store_path: Path, request,
               f"us, range [{min(wall) / 1e3:.1f}, {max(wall) / 1e3:.1f}] us "
               f"(device {dmed / 1e3:.1f} us, read-back "
               f"{raw['build:readback_median_ns'] / 1e3:.1f} us, upload once "
-              f"{c['upload_ns'] / 1e3:.1f} us); {len(ck.drv.launches)} "
+              f"{ran.upload_ns / 1e3:.1f} us); {len(ck.drv.launches)} "
               f"kernels/build; {BUILD_REPEATS} timed (+{BUILD_WARMUP} "
               f"warm-up); card {before}% -> {after}%, CPU {cpu:.1%}, "
               f"discarded {discarded}; J_p bit-repeatable {bitwise}",

@@ -19,6 +19,7 @@ are checked with no compiler. Nothing here is kernel text.
 | `j_h2o_ccpvdz_bse` | npy | `(mmd, j, 0, 8)` | J, H2O, `data/basis/cc-pVDZ.json` unreduced, `h2o_ccpvdz_j`'s density |
 | `metric_h2o_ccpvdz_jkfit_bse` | npy | `(mmd, metric, 0, 6)` | `(P\|Q)`, `data/aux_basis/cc-pVDZ-JKFIT.json` on H2O |
 | `metric_h2o_def2_universal_jkfit_bse` | npy | `(mmd, metric, 0, 8)` | `(P\|Q)`, `data/aux_basis/def2-universal-JKFIT.json` on H2O |
+| `metric_ip1{x,y,z}_h2o_ccpvdz_jkfit_bse` | npy | `(mmd, metric, 1, 6)` | `d(P\|Q)/dA_k`, `A` the centre of `P` (minus libcint's `int2c2e_ip1_cart`), one axis per entry, cc-pVDZ-JKFIT on H2O (#693; the whole `[3, naux, naux]` is over the per-array budget) |
 | `j_h2_sto3g`, `j_h2o_sto3g`, `j_h2o_631g`, `j_h2o_ccpvdz`, `j_h10_chain_ccpvdz`, `j_co_ccpvtz` | fixture | `(mmd, j, 0, 0…12)` | each `_j` fixture's `vj` |
 | `metric_h2o_ccpvtz_jkfit`, `metric_prim_spd_f_auxi` | fixture | `(mmd, metric, 0, 8 / 12)` | each metric set's `int2c2e_cart` |
 

@@ -2332,14 +2332,23 @@ def numeric_array(name: str) -> np.ndarray:
 
     e = numeric.entry(name)
     mol = numeric_mole(name)
-    if e.quantity == "j":
+    if e.what == "j":
         a = j_array(mol, numeric.density(name))
-    elif e.quantity == "metric":
+    elif e.what == "metric":
         a = np.ascontiguousarray(mol.intor("int2c2e_cart"))
         if not np.array_equal(a, mol.intor("int2c2e")):
             raise ValueError(f"{name}: int2c2e_cart and int2c2e differ")
+    elif e.what.startswith("metric.d1."):
+        # #693: d(P|Q)/dA_k on P's centre; libcint's ip1 is d/dr, so minus.
+        ip1 = mol.intor("int2c2e_ip1_cart", comp=3)
+        if not np.array_equal(ip1, mol.intor("int2c2e_ip1", comp=3)):
+            raise ValueError(f"{name}: int2c2e_ip1_cart and int2c2e_ip1 "
+                             "differ")
+        a = -ip1["xyz".index(e.component)]
+        if np.abs(a + a.T).max() > 1e-13 * np.abs(a).max():
+            raise ValueError(f"{name}: d(P|Q)/dA is not antisymmetric")
     else:
-        raise ValueError(f"{name}: no builder for quantity {e.quantity!r}")
+        raise ValueError(f"{name}: no builder for quantity {e.what!r}")
     return np.ascontiguousarray(a, dtype=np.float64)
 
 

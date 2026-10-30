@@ -59,6 +59,7 @@ __all__ = [
     "VOCABULARY",
     "Lever",
     "is_kernel_lever",
+    "order_refusal",
     "provenance",
     "refusal",
     "split",
@@ -91,6 +92,10 @@ ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
 SLOTS: tuple[str, ...] = TARGET_SLOTS + ENGINE_SLOTS
+
+# Every derivative order a lever may be legal at: `spec.DERIVATIVE_ORDERS`,
+# restated (this module is a leaf; a test pins the two).
+ORDERS: frozenset[int] = frozenset((0, 1, 2))
 
 # The `Spec.levers` names owned by layers other than the kernel builder.
 OTHER_LAYERS: Mapping[str, str] = MappingProxyType({
@@ -260,6 +265,11 @@ class Lever:
     `refusals` maps EVERY other slot to the reason it is refused -- the table
     is total, checked here, so no target is ever silently unconsidered.
     `Lever.of` fills the refusals from `DEFAULT_REFUSALS`.
+
+    `orders` is the derivative orders the lever means anything at
+    (`ORDERS`, every one, by default); `orders_why` says why the others are
+    refused (`order_refusal`), given exactly when some are (#693:
+    `uncontracted` is a d1 output form).
     """
 
     name: str
@@ -267,6 +277,8 @@ class Lever:
     what: str  # one line: what the lever changes in the built Kernel
     legal: frozenset[str]
     refusals: Mapping[str, str] = field(default_factory=dict)
+    orders: frozenset[int] = ORDERS
+    orders_why: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name or "+" in self.name:
@@ -298,12 +310,24 @@ class Lever:
             if not isinstance(why, str) or not why:
                 raise ValueError(f"lever {self.name!r}: refusal on {slot!r} "
                                  "states no reason")
+        object.__setattr__(self, "orders", frozenset(self.orders))
+        if not self.orders or not self.orders <= ORDERS:
+            raise ValueError(f"lever {self.name!r}: orders "
+                             f"{sorted(self.orders)} are not a non-empty "
+                             f"subset of {sorted(ORDERS)}")
+        if (self.orders != ORDERS) != bool(self.orders_why):
+            raise ValueError(f"lever {self.name!r}: a reason is given for "
+                             "the refused derivative orders exactly when "
+                             "some are refused")
 
     @classmethod
     def of(cls, name: str, issue: int, what: str, legal: Iterable[str],
-           **why_not: str) -> Lever:
+           *, orders: Iterable[int] | None = None,
+           orders_why: str | None = None, **why_not: str) -> Lever:
         """A lever legal on `legal`, refused everywhere else with
-        `DEFAULT_REFUSALS`' reason unless `why_not[slot]` gives its own."""
+        `DEFAULT_REFUSALS`' reason unless `why_not[slot]` gives its own;
+        at `orders` only (every order by default), `orders_why` the reason
+        for the rest."""
         legal = frozenset(legal)
         refusals = {s: why_not.get(s, DEFAULT_REFUSALS[s])
                     for s in SLOTS if s not in legal}
@@ -311,7 +335,9 @@ class Lever:
         if unknown:
             raise ValueError(f"lever {name!r}: a reason given for "
                              f"{sorted(unknown)}, which is legal or no target")
-        return cls(name, issue, what, legal, refusals)
+        return cls(name, issue, what, legal, refusals,
+                   ORDERS if orders is None else frozenset(orders),
+                   orders_why)
 
 
 # THE VOCABULARY. Empty at #337, by design: each lever issue adds its entry,
@@ -635,6 +661,32 @@ VOCABULARY: dict[str, Lever] = {
            "ordered mode would undo the digestion its weights are derived "
            "for (and Target.F's lever surface is #340's)"),
     ),
+    # #693: the DF metric's first derivative as a MATRIX, not a contraction.
+    # An output form rather than a departure from a paper: the d1 metric
+    # kernel (`gradient.kernel_gmetric`) contracts every d(P|Q)/dR into
+    # `G[atom, 3]`, and the DF Hessian needs the derivative integrals
+    # themselves. Its builder is `gradient.kernel_ipmetric`; ERI3's twin is
+    # #692's.
+    "uncontracted": Lever.of(
+        "uncontracted", 693,
+        "the derivative integrals themselves, M1[k, P, Q] = d(P|Q)/dA_k "
+        "with A the centre of P, as an n_aux x n_aux matrix per axis, in "
+        "place of their contraction into G[atom, k] "
+        "(gradient/kernel_ipmetric.py)",
+        {"metric"},
+        orders=(1,),
+        orders_why=("the uncontracted form is the first derivative's: at "
+                    "d0 the metric kernel already writes the integrals, and "
+                    "a d2 matrix form is a follow-up nobody has declared"),
+        eri3=("the uncontracted three-center derivative (dm n|P) is #692's, "
+              "not yet built"),
+        **{"metric.hgp": ("the uncontracted metric derivative is built on "
+                          "the MMD engine only (gradient.kernel_ipmetric); "
+                          "an HGP twin is a follow-up nobody has declared"),
+           "metric.rys": ("the uncontracted metric derivative is built on "
+                          "the MMD engine only (gradient.kernel_ipmetric); "
+                          "the Rys metric has no gradient at all")},
+    ),
 }
 
 
@@ -651,6 +703,15 @@ def refusal(target: str, name: str) -> str | None:
     if lever is None or target in lever.legal:
         return None
     return lever.refusals[target]
+
+
+def order_refusal(name: str, order: int) -> str | None:
+    """Why `name` may not be pulled at derivative order `order`, or None
+    when it may -- or when `name` is not a kernel-body lever at all."""
+    lever = VOCABULARY.get(name)
+    if lever is None or order in lever.orders:
+        return None
+    return lever.orders_why
 
 
 def split(levers: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:

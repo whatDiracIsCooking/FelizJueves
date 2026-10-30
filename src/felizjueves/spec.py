@@ -253,7 +253,12 @@ terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 pair `(lP, lQ)` and triple `(la, lb, lP)`; `METRIC` at d1 is legal on
 `Engine.HGP` too (`GRADIENT_OFF_NATIVE`: `gradient.kernel_hgmetric`, the
 Cartesian rule on the HGP VRR), so ``coulomb/d1/(1,1)/b1/metric.hgp/literal``
-is a key. `DQ` at d1 is the ket
+is a key. THE ONE UNCONTRACTED d1 FORM (#693): the kernel-body lever
+`uncontracted` (`levers.VOCABULARY`, legal on `metric` at d1 only,
+`levers.order_refusal`) asks for the derivative integrals themselves,
+`M1[k, P, Q] = d(P|Q)/dA_k` as an `[3, n_aux, n_aux]` matrix
+(`gradient.kernel_ipmetric`), keyed
+``coulomb/d1/(1,2)/b1/metric/uncontracted``. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
 target's d0 reason. SIX OFF-NATIVE PAIRS ARE LEGAL AT d1
@@ -805,6 +810,11 @@ class Spec:
             if why is not None:
                 raise ValueError(
                     f"lever {lever!r} on target {self.target_slot}: {why}")
+            why = _levers.order_refusal(lever, self.derivative_order)
+            if why is not None:
+                raise ValueError(
+                    f"lever {lever!r} at derivative order "
+                    f"{self.derivative_order}: {why}")
         if not is_batch_count(self.n_batches):
             raise ValueError(
                 f"n_batches {self.n_batches!r} is neither 1 nor a positive "

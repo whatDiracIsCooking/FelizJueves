@@ -272,6 +272,17 @@ for CUDA, `.hip` for HIP):
   KERNEL_GEN_CMD. Every name starts `d2metric_` (not `hmetric_`: the HGP
   metric's), so none collides with another ladder's.
 
+- the uncontracted DF metric derivative ladder, `--ip-metric-l [LMAX]`
+  (`gradient.kernel_ipmetric`, #693): `ipmetric_{lP}{lQ}` (`M1[k, P, Q] =
+  d(P|Q)/dA_k` as a `[3, n_aux, n_aux]` matrix, `Target.METRIC` at d1
+  with the `uncontracted` lever) for every `lP <= lQ <= LMAX` (2 when the
+  flag is given bare: 6 units). Accepted 0..`IP_METRIC_L_MAX` = 6
+  (validated through (i|i), interpreted); above it is a 2. It ADDS units
+  beside the J ladders, as `--grad-df-l` does, and is NEVER in the
+  no-flag default nor in KERNEL_GEN_CMD. Every name starts `ipmetric_`
+  (not `gmetric_`: the contraction's), so none collides with another
+  ladder's.
+
 - the three-center DF Hessian ladder, `--hess-eri3-l [LMAX]`
   (`hessian.kernel_d2eri3`): `d2eri3_{la}{lb}{lP}` (`SUM_mnP Gam_mnP
   d2(mn|P)/dR dR` over the three centres, `Target.ERI3` at d2) for every
@@ -577,6 +588,7 @@ from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
 from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
 from felizjueves.gradient.kernel_hgs import build_hgs_kernel
 from felizjueves.gradient.kernel_hgt import build_hgt_kernel
+from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
@@ -647,6 +659,8 @@ DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
 DEFAULT_HESS_METRIC_L = 4  # `--hess-metric-l` bare: 9 d2metric units
 HESS_METRIC_L_MAX = 4  # kernel_d2metric is validated at the d0 metric's cap
+DEFAULT_IP_METRIC_L = 2  # `--ip-metric-l` bare: lP <= lQ <= 2, 6 units
+IP_METRIC_L_MAX = 6  # kernel_ipmetric is validated through (i|i) (#693)
 DEFAULT_HESS_ERI3_L = 3  # `--hess-eri3-l` bare: la + lb + lP <= 3, 13 units
 HESS_ERI3_L_MAX = 4  # kernel_d2eri3 is validated at the d0 kernel's cap
 DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
@@ -1186,6 +1200,29 @@ def generate_hess_metric(backend: str, arch: Arch, out: Path,
 
 
 # ---------------------------------------------------------------------------
+# The uncontracted DF metric derivative ladder (gradient.kernel_ipmetric)
+# ---------------------------------------------------------------------------
+
+
+def ip_metric_classes(lmax: int) -> list[tuple[int, int]]:
+    """The metric classes `(lP, lQ)`, `lP <= lQ <= lmax`, over
+    `0..IP_METRIC_L_MAX` (each aux shell's l, as `--grad-df-aux-l`)."""
+    if type(lmax) is not int or not 0 <= lmax <= IP_METRIC_L_MAX:
+        raise ValueError(f"--ip-metric-l {lmax!r} is outside "
+                         f"0..{IP_METRIC_L_MAX}")
+    return [(p, q) for p in range(lmax + 1) for q in range(p, lmax + 1)]
+
+
+def generate_ip_metric(backend: str, arch: Arch, out: Path,
+                       lmax: int) -> list[Path]:
+    """Emit `ipmetric_{lP}{lQ}` for every metric class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_ipmetric_kernel(c) for c in ip_metric_classes(lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
 # The three-center DF Hessian ladder (hessian.kernel_d2eri3)
 # ---------------------------------------------------------------------------
 
@@ -1602,6 +1639,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
+            or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
             or args.hgp_one_e_l is not None
             or args.rys_one_e_l is not None
@@ -1616,7 +1654,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--grad-f-l / "
               "--grad-df-l / --hess-l / "
               "--hess-k-l / --hess-kx-l / "
-              "--hess-one-e-l / --hess-metric-l / "
+              "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
@@ -1729,6 +1767,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hess-metric-l", dest="hess_metric_l", type=int,
                     nargs="?", const=DEFAULT_HESS_METRIC_L, default=None,
                     metavar="LMAX")
+    ap.add_argument("--ip-metric-l", dest="ip_metric_l", type=int,
+                    nargs="?", const=DEFAULT_IP_METRIC_L, default=None,
+                    metavar="LMAX")
     ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--rys-one-e-l", dest="rys_one_e_l", type=int, nargs="?",
@@ -1801,6 +1842,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
+            or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
                  or args.hgp_one_e_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
@@ -1815,7 +1857,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--grad-f-l / "
               "--grad-df-l / --hess-l / "
               "--hess-k-l / --hess-kx-l / "
-              "--hess-one-e-l / --hess-metric-l / "
+              "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
@@ -1849,6 +1891,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
+            or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
                      or args.hgp_one_e_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
@@ -1861,7 +1904,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--grad-f-l / "
               "--grad-df-l / --hess-l / "
               "--hess-k-l / --hess-kx-l / "
-              "--hess-one-e-l / --hess-metric-l / "
+              "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l (and a lever "
               "flag) and "
@@ -1999,6 +2042,12 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{HESS_METRIC_L_MAX}: the DF metric Hessian kernels are "
               "validated at L <= 4 only", file=sys.stderr)
         return 2
+    if (args.ip_metric_l is not None
+            and not 0 <= args.ip_metric_l <= IP_METRIC_L_MAX):
+        print(f"emit: --ip-metric-l {args.ip_metric_l} is outside "
+              f"0..{IP_METRIC_L_MAX}: the uncontracted metric derivative is "
+              "validated through aux i only", file=sys.stderr)
+        return 2
     if (args.hgp_one_e_l is not None
             and not 0 <= args.hgp_one_e_l <= HGP_ONE_E_L_MAX):
         print(f"emit: --hgp-one-e-l {args.hgp_one_e_l} is outside "
@@ -2100,6 +2149,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hess_metric_l is not None:  # beside the J chain, never by default
         written += generate_hess_metric(args.backend, arch, args.out,
                                         args.hess_metric_l)
+    if args.ip_metric_l is not None:  # beside the J chain, never by default
+        written += generate_ip_metric(args.backend, arch, args.out,
+                                      args.ip_metric_l)
     if args.hess_eri3_l is not None:  # beside the J chain, never by default
         written += generate_hess_eri3(args.backend, arch, args.out,
                                       args.hess_eri3_l)

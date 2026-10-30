@@ -737,6 +737,59 @@
         ]
       },
       "source": "not [JEngine]: ct5c00775 is J only; E from McMurchie & Davidson (docs/references.md entry 46), the Hermite moments from Helgaker, Jørgensen & Olsen §9.5 (entry 48); milestone 19, issue #524"
+    },
+    {
+      "claim": "The analytic nuclear gradients by McMurchie-Davidson (derivative_order = 1, milestone 20: gs_, gt_, gv_ with its Hellmann-Feynman term, the J chain's gjab_, gk_, and the DF terms geri3 / gmetric; the RHF assembly gradient/rhf.py) have NO PUBLISHED BOARD. [JEngine] (ct5c00775) is J only: it prints no derivative table, count or claim. The rule is McMurchie & Davidson's (docs/references.md entry 46) and the kernels are THIS REPO'S OWN DESIGN on it, as the one-electron (#245), metric (#417), three-center (#447) and dipole (#524) records above are. Nothing about them is scored and nothing is timed: no tables.json cell, no scoreboard, no floor, no claims.json record and no wall-clock row was added. The whole RHF gradient has run on ONE card, the RX 9060 XT, on s, p bases only, and a device gradient is NOT bit-reproducible.",
+      "mechanism": "(1) WHY THERE IS NOTHING TO SCORE. A d1 key keeps its integral's am (spec.DERIVATIVE_ORDERS, spec.GRADIENT_TARGETS); no rule in literature/rules.py indexes a gradient, and no published table covers one. The witnesses are of a different kind: finite differences of libcint-witnessed matrices, translational invariance (SUM_A G = 0, a check, since every kernel differentiates both centres of a pair and every nucleus for V; no invariance is used to save work), libcint's int2e_ip1_cart (#618, #639), and #550's RHF gradient fixtures (PySCF's converged D and W, each term from libcint, the total nuc_grad_method()'s). (2) WHAT DEPARTED FROM THE PLAN. The milestone planned partials and a fixed-order reduction, a separate Hellmann-Feynman kernel and a nuclear_gradient/ package. The tree has: every d1 kernel AtomicAdd-ing into G[n_atom, 3] (no partials), the Hellmann-Feynman term inside gv_ (no vhf_ kernel), and the module in src/felizjueves/gradient/. So the order of a device reduction is the hardware's and a device gradient varies run to run: #566 asked for bit-identity across two launches, and the user restated it as SPREAD_TOL = 1e-13 absolute on every term and the total (measured 6.9e-17 on H2O/STO-3G, 4.4e-15 on H2O/6-31G; the interpreted gradient is reproducible). (3) WHAT DOES NOT REACH. The milestone's rule was L <= 4 (every shell l <= 2; the raised [p|q] at L = 5 the one class above); later issues took each term alone through (ff) on both cards (gs/gt/gv #614, gk #618, the gjab chain #619) and the DF terms through (ff|i) and (i|i) (#613), but the WHOLE device gradient is held only on H2O/STO-3G and H2O/6-31G (s, p shells) and only on gfx1200: CUDA was not run (#566, PR #696, unverified-on-card). Cartesian only. H2O/cc-pVDZ: its gs/gt/gv/gjab ran on both cards against the host, but its whole RHF gradient is not run on a card and its interpreted total was not run to the end (hours of interpreted gk_); #565's H2O/STO-3G plus one d primitive on O covers its classes interpreted. No screen: K's bound bounds the integral, not its derivative. Measured for compile only (registers, spill, stack: data/measured/g1e.json, gjab.json, gk.json, df_grad_lowstack.json), never for wall-clock. (4) WHAT AIMD STILL NEEDS. The SCF solver that produces D and W (no eigensolver and no SCF loop in src/; every D here is a fixture's); the per-step host rebuild of the pair records and bounds (ao/pairs.py), the plans (plan/, host-side) and the launch packing at each geometry; a gradient screen proved against the derivative integrals; d and f shells in the whole gradient on a card (each term alone reaches (ff), the assembly only s, p), and nothing at g; RI gradients end to end ((mn|P)^x and (P|Q)^x run on both cards as geri3 / gmetric, but the metric solve and DF-K weights are host-side and the one-electron terms are not added to the DF two-electron gradient); UHF (rhf.py only; the exchange rule assumes a symmetric D); and, if a trajectory needs it, bit reproducibility, which needs partials and a fixed-order reduction in the kernels.",
+      "evidence": "docs/implementation/gradient.md (the derived note: the rule, the kernels, the departure, 'The RHF gradient, assembled', 'Witnesses, and what ran where', 'What is not done', 'What AIMD still needs'). Host: test/test_gradient_host.py (central differences, ~2e-9 to 6e-9 of max|G|, gate 1e-7; invariance ~1e-15). Interpreted: test/test_kernel_g1e.py, test_kernel_gjab.py, test_kernel_gk.py (within 16 eps of their scales); test/test_rhf_gradient.py (#565) against #550's fixtures within 1e-10 absolute, worst total 7.9e-14 (H2O/STO-3G), 6.9e-14 on the d case. On both cards: test/test_grad_device.py, test_gjab_chain_ondevice.py, test_gk_device.py against the host and libcint within 1e-13 of max|G| (worst 3.20e-14 CUDA, 2.36e-14 HIP, gt on cc-pVDZ). On the RX 9060 XT only: test/test_rhf_gradient_device.py (#566), devtools/kernel-tier.sh --backend hip --full, 2 passed, 2026-10-30: total against PySCF 8.17e-14 (STO-3G) / 4.66e-14 (6-31G), against the interpreted gradient 1.78e-15 / 3.11e-15, run to run 6.9e-17 / 4.4e-15.",
+      "asserted_value": {
+        "board": null,
+        "rule": null,
+        "claim": null,
+        "subject": "analytic nuclear gradients (derivative_order = 1)",
+        "own_design": [
+          "Target.S",
+          "Target.T",
+          "Target.V",
+          "Target.JAB",
+          "Target.K",
+          "Target.METRIC",
+          "Target.ERI3"
+        ],
+        "published_board": null,
+        "source_of_E": "docs/references.md entry 46",
+        "claims_added": 0,
+        "cells_moved": 0,
+        "measured_wallclock_rows": 0,
+        "milestone_l_max": 4,
+        "cartesian_only": true,
+        "reduction": "atomicAdd into G[n_atom, 3]; no partials, no fixed-order reduction",
+        "bit_reproducible_on_device": false,
+        "spread_tol_abs": 1e-13,
+        "whole_rhf_gradient_on_card": {
+          "ran_on": [
+            "gfx1200"
+          ],
+          "not_run_on": [
+            "sm_86"
+          ],
+          "inputs": [
+            "h2o_sto3g_grad",
+            "h2o_631g_grad"
+          ]
+        },
+        "ccpvdz_whole_gradient_on_card": false,
+        "aimd_still_needs": [
+          "an SCF solver producing D and W (no eigensolver here)",
+          "the per-step host rebuild of pairs, bounds and plans",
+          "a gradient screen proved against derivative integrals",
+          "d and f shells in the whole gradient on a card; g shells",
+          "RI gradients end to end, (P|Q)^x and (mn|P)^x with the solve and weights on the device and the one-electron terms added",
+          "UHF",
+          "bit reproducibility, if required (partials and a fixed-order reduction)"
+        ]
+      },
+      "source": "not [JEngine]: ct5c00775 is J only; the derivative rule from McMurchie & Davidson (docs/references.md entry 46); milestone 20, issue #567"
     }
   ]
 }
