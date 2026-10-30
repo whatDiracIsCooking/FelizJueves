@@ -33,9 +33,12 @@ def test_every_vocabulary_lever_is_in_an_arm_on_its_one_target() -> None:
     assert set(store.ledger_levers()) == {
         lv for a in arms for lv in a.split("+")}
     # #401: a lever left out is one legal only on an engine slot (j.hgp,
-    # k.hgp), which has no ledger class yet.
+    # k.hgp), which has no ledger class yet -- or (#693) one illegal at d0,
+    # an output form such as `uncontracted`: every ledger class is d0.
     for lv in set(levers.VOCABULARY) - set(store.ledger_levers()):
-        assert levers.VOCABULARY[lv].legal <= set(levers.ENGINE_SLOTS), lv
+        lever = levers.VOCABULARY[lv]
+        assert (lever.legal <= set(levers.ENGINE_SLOTS)
+                or 0 not in lever.orders), lv
     for a in arms:
         t = store.arm_target(a)
         assert t.value in set.intersection(

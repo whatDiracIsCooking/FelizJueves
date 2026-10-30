@@ -85,6 +85,15 @@ QUANTITIES = {
     "metric": ("libcint's two-center Coulomb metric (P|Q), int2c2e_cart, "
                "naux x naux, checked equal to int2c2e (cart=True) before it "
                "is written"),
+    # #693: the uncontracted d1 metric, one axis per entry (the whole
+    # [3, naux, naux] is over FILE_BUDGET at cc-pVDZ-JKFIT's 131 functions).
+    **{f"metric.d1.{x}": (
+        f"the uncontracted metric derivative on axis {x}, M1[{k}, P, Q] = "
+        f"d(P|Q)/dA_{x} with A the centre of P: MINUS libcint's "
+        f"int2c2e_ip1_cart[{k}] (which differentiates the electron "
+        "coordinate), naux x naux, checked equal to int2c2e_ip1 (cart=True) "
+        "and antisymmetric to 1e-13 of its max before it is written")
+       for k, x in enumerate("xyz")},
 }
 
 # The basis file's directory, by quantity: an orbital set for J, a fitting
@@ -113,6 +122,7 @@ class Entry:
     fixture: str | None = None
     array: str | None = None
     metric_set: str | None = None
+    component: str | None = None  # an npy derivative entry's axis, x y z
 
     @property
     def kind(self) -> str:
@@ -121,6 +131,14 @@ class Entry:
     @property
     def quantity(self) -> str:
         return self.key[1]
+
+    @property
+    def what(self) -> str:
+        """The `QUANTITIES` key the generator dispatches on: the quantity,
+        `.d<n>` at a derivative order, `.<axis>` for one component."""
+        q = self.quantity if not self.key[2] else (
+            f"{self.quantity}.d{self.key[2]}")
+        return q if self.component is None else f"{q}.{self.component}"
 
 
 _H2O = "the H2O geometry every H2O fixture shares"
@@ -150,6 +168,12 @@ ENTRIES: tuple[Entry, ...] = (
           f"(P|Q) of data/aux_basis/def2-universal-JKFIT.json on {_H2O} "
           "(O to g)",
           basis="def2-universal-JKFIT", molecule="h2o_sto3g_j"),
+    # The uncontracted d1 metric (#693) over cc-pVDZ-JKFIT, one axis each.
+    *(Entry(f"metric_ip1{x}_h2o_ccpvdz_jkfit_bse", ("mmd", "metric", 1, 6),
+            f"d(P|Q)/dA_{x} of data/aux_basis/cc-pVDZ-JKFIT.json on {_H2O} "
+            "(O to f), A the centre of P",
+            basis="cc-pVDZ-JKFIT", molecule="h2o_sto3g_j", component=x)
+      for x in "xyz"),
     # What test/oracle/fixtures/ already holds, indexed, not copied.
     Entry("j_h2_sto3g", ("mmd", "j", 0, 0), "h2_sto3g_j's vj",
           fixture="h2_sto3g_j", array=fixtures.J_ARRAY),
@@ -311,7 +335,7 @@ def recipe_record(e: Entry) -> dict[str, Any]:
     path = basis_file(e)
     prov = json.loads((path.parent / bse.PROVENANCE).read_text())
     mol = _molecule(e.molecule)
-    out["quantity"] = QUANTITIES[e.quantity]
+    out["quantity"] = QUANTITIES[e.what]
     out["molecule"] = {"fixture": e.molecule, "mol": mol.provenance.mol}
     out["basis"] = {
         "file": path.relative_to(bse.DATA.parent).as_posix(),

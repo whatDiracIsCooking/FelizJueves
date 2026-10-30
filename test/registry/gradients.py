@@ -20,8 +20,10 @@ CASES = [
     # classes and the d classes test_emit_grad_hk.py names; no card yet.
     *ladder("hgp", "k", 1, compile=(0, 1, 2, 3, 4, 6),
             interpreted=range(9)),
-    # The DF-J terms through (ff|i) and (i|i) on both cards (#613).
-    *ladder("mmd", "metric", 1, compile=range(5), gpu=range(13),
+    # The DF-J terms through (ff|i) and (i|i) on both cards (#613). The
+    # metric's uncontracted variant (ipmetric_, #693) has compile cases
+    # through (i|i), L = 12, and runs on no card.
+    *ladder("mmd", "metric", 1, compile=range(13), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
     *ladder("mmd", "eri3", 1, compile=range(5), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
@@ -88,6 +90,8 @@ TESTS = {
     "test/test_emit_grad.py::test_X_compiles_the_gradient_unit": Classes("mmd", "s", 1),
     "test/test_emit_hgs.py::test_X_compiles_the_unit": Classes("hgp", "s", 1),
     "test/test_emit_grad_df.py::test_X_compiles_the_df_gradient_unit":
+        Classes("mmd", "metric", 1),
+    "test/test_emit_ipmetric.py::test_X_compiles_the_ipmetric_unit":
         Classes("mmd", "metric", 1),
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":
         Classes("mmd", "k", 1),
