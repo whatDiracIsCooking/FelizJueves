@@ -3,11 +3,15 @@
     FAST_L_MAX                       -> 4
     is_fast(L)                       -> L <= FAST_L_MAX
     DEVICE_L_MAX                     -> 8
-    by_l(value, L, id=None)          -> pytest.param, `slow` when L > FAST_L_MAX,
-                                        and `high_l` too when L > DEVICE_L_MAX
+    by_l(value, L, id=None)          -> pytest.param, `slow` and `l_cut` when
+                                        L > FAST_L_MAX, and `high_l` too when
+                                        L > DEVICE_L_MAX
     split_by_l(values, l_of, ids=)   -> [by_l(v, l_of(v)) for v in values]
-    sample_compiles(items)           -> marks `slow` every compile-only case
-                                        but the first of its kind
+    sample_compiles(items)           -> marks `slow` and `l_cut` every
+                                        compile-only case but the first of
+                                        its kind
+    settle_l_cut(items)              -> drops `l_cut` from a case that is
+                                        `slow` for another reason too
 
 WHY. The fast tier is the pre-push gate (`FAST_TEST_ARGS`), and a gate that
 costs minutes is one people bypass. Its time went almost entirely to classes
@@ -51,6 +55,16 @@ or `-` (`hj_0000` and `hj_1111` are one kind, `hk_0000` another; a bare
 still compiles under both compilers; the classes above each kind's first
 (parameters are listed lowest first) run with the `slow` tier or a bare
 `pytest`, and the kernel tier compiles every class it launches anyway.
+
+`l_cut`: SLOW ONLY BY ONE OF THE TWO CUTS ABOVE. Both mark `l_cut` beside
+`slow`, so a selection can tell "slow because its class is above the fast
+cut, or because the compile sample dropped it" from "slow because it is
+slow" (a large basis, a search re-run, a function decorated `slow`).
+`settle_l_cut` takes the marker back from a case that is the second kind as
+well. The PR gate (devtools/gate.sh, #656) selects `not slow or l_cut` for
+its compile and `gpu` phases and hands the L choice to the registry sampler
+(test/registry/sample.py): the cuts stay for the fast tier, `kernel-tier.sh`
+and a bare `-m "not slow"`, and the gate draws from what they would drop.
 """
 
 from __future__ import annotations
@@ -63,6 +77,7 @@ import pytest
 
 FAST_L_MAX = 4
 DEVICE_L_MAX = 8
+L_CUT = "l_cut"
 
 
 def is_fast(L: int) -> bool:
@@ -72,7 +87,7 @@ def is_fast(L: int) -> bool:
 def by_l(value: Any, L: int, id: str | None = None) -> Any:
     """`value` as a parameter, marked `slow` when its class's L is above the
     fast cut and `high_l` when it is above the device cap."""
-    marks = () if is_fast(L) else (pytest.mark.slow,)
+    marks = () if is_fast(L) else (pytest.mark.slow, pytest.mark.l_cut)
     if L > DEVICE_L_MAX:
         marks = (*marks, pytest.mark.high_l)
     return pytest.param(value, id=id, marks=marks)
@@ -89,8 +104,9 @@ def _kind(case_id: str) -> str:
 
 
 def sample_compiles(items: Iterable[pytest.Item]) -> None:
-    """Mark `slow` each compile-only case after the first of its kind in its
-    test function (THE COMPILE SAMPLE above); `items` in collection order."""
+    """Mark `slow` and `l_cut` each compile-only case after the first of its
+    kind in its test function (THE COMPILE SAMPLE above); `items` in
+    collection order."""
     seen: set[tuple[str, str]] = set()
     for item in items:
         callspec = getattr(item, "callspec", None)
@@ -102,4 +118,29 @@ def sample_compiles(items: Iterable[pytest.Item]) -> None:
         key = (item.nodeid.partition("[")[0], _kind(callspec.id))
         if key in seen:
             item.add_marker(pytest.mark.slow)
+            item.add_marker(pytest.mark.l_cut)
         seen.add(key)
+
+
+def _slow_besides_l_cut(item: pytest.Item) -> bool:
+    """Is `item` `slow` by a mark neither cut put there: one on its function,
+    class or module, or a parameter's `slow` that carries no `l_cut`?"""
+    callspec = getattr(item, "callspec", None)
+    params = list(callspec.marks) if callspec is not None else []
+    if (any(m.name == "slow" for m in params)
+            and not any(m.name == L_CUT for m in params)):
+        return True
+    for node in (item, item.getparent(pytest.Class), item.getparent(pytest.Module)):
+        obj = getattr(node, "obj", None) if node is not None else None
+        if any(m.name == "slow" for m in getattr(obj, "pytestmark", ())):
+            return True
+    return False
+
+
+def settle_l_cut(items: Iterable[pytest.Item]) -> None:
+    """Take `l_cut` back from every case that is also `slow` for another
+    reason (`l_cut` above), so `not slow or l_cut` never selects it."""
+    for item in items:
+        if item.get_closest_marker(L_CUT) and _slow_besides_l_cut(item):
+            item.own_markers[:] = [m for m in item.own_markers
+                                   if m.name != L_CUT]

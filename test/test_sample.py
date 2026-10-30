@@ -92,20 +92,41 @@ def test_the_bands_follow_each_ladders_top() -> None:
         assert bands[c.nodeid] == want, c
 
 
-def test_a_budget_is_never_exceeded_by_more_than_one_case() -> None:
+def test_a_budget_is_never_exceeded_and_what_is_left_would_have() -> None:
     cost = {c.nodeid: c.cost_s for c in UNEVEN}
     for seed in SEEDS:
         for budget in ({"med": 25.0, "max": 7.0}, {"med": 0.5, "max": 100.0}):
             d = sample.draw(UNEVEN, seed=seed, budget=budget)
-            for p in d.pools.values():
+            for pool, p in d.pools.items():
+                bands = sample.bands_of([c for c in UNEVEN if c.pool == pool])
                 for name in ("med", "max"):
                     b = getattr(p, name)
                     spent = sum(cost[n] for n in b.drawn)
                     assert spent == pytest.approx(b.spent_s)
-                    if b.drawn:
-                        assert spent - cost[b.drawn[-1]] < budget[name]
-                    if len(b.drawn) < b.candidates:
-                        assert spent >= budget[name]  # it stopped at the budget
+                    assert spent <= budget[name] + 1e-9
+                    left = [n for n, band in bands.items()
+                            if band == name and n not in b.drawn]
+                    for n in left:  # it was passed over: it would not fit
+                        assert spent + cost[n] > budget[name]
+
+
+def test_a_forced_case_fits_the_budget_when_its_family_has_one() -> None:
+    budget = {"med": 3.0, "max": 3.0}
+    for family in FAMILIES:
+        d = sample.draw(UNEVEN, seed="f", budget=budget,
+                        touched=frozenset({family}))
+        cost = {c.nodeid: c.cost_s for c in UNEVEN}
+        for pool, p in d.pools.items():
+            bands = sample.bands_of([c for c in UNEVEN if c.pool == pool])
+            for name in ("med", "max"):
+                for n in getattr(p, name).forced:
+                    members = [c for c in UNEVEN if c.pool == pool
+                               and bands[c.nodeid] == name
+                               and family in c.families]
+                    if any(c.cost_s <= budget[name] for c in members):
+                        assert cost[n] <= budget[name], (family, pool, n)
+                    else:
+                        assert cost[n] == min(c.cost_s for c in members)
 
 
 def test_a_count_cap_holds() -> None:
@@ -219,6 +240,25 @@ def test_the_knobs_parse() -> None:
         Knobs.from_values({"FJ_SAMPLE": "maybe"})
     with pytest.raises(pytest.UsageError):
         Knobs.from_values({"FJ_K_MAX": "lots"})
+    assert Knobs.from_values({}).min_l_max == sample.MIN_L_MAX
+    assert Knobs.from_values({"FJ_MIN_L_MAX": "0"}).min_l_max == 0
+    with pytest.raises(pytest.UsageError):
+        Knobs.from_values({"FJ_MIN_L_MAX": "low"})
+
+
+def test_the_min_band_moves_with_its_knob() -> None:
+    """FJ_MIN_L_MAX = 0 (the gate's compile sample) keeps every L = 0 case
+    and hands L = 1, 2 to the `med` band."""
+    pool = [c for c in CANDS if c.pool == "compile/cuda"]
+    low = sample.bands_of(pool, min_l_max=0)
+    for c in pool:
+        if c.keys and all(k.L == 0 for k in c.keys):
+            assert low[c.nodeid] == "min"
+        elif c.keys:
+            assert low[c.nodeid] != "min"
+    one = sample.draw(pool, seed="s", budget=BUDGET, min_l_max=0)
+    assert all(all(k.L == 0 for k in c.keys) for c in pool
+               if c.nodeid in one.pools["compile/cuda"].min)
 
 
 def test_config_sh_spells_every_knob() -> None:

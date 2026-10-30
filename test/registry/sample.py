@@ -8,27 +8,35 @@
     draw(candidates, ...)           -> Draw: what is kept, and why
     shard(nodeids, cost, i, n)      -> the i-th of n disjoint shards
     Plugin                          -> the pytest plugin conftest registers
+    markdown_lines(report, title)   -> a report as a PR body's section
 
 THE BANDS. Every collected device case (`registry.device_cases`: `gpu`, or
 `cuda` / `hip` without `gpu`) falls in a POOL, its (tier, backend) --
 `gpu/cuda`, `compile/hip`, ... -- and in one band of it, by the classes it
 covers (its registry keys):
 
-- `min`: every key at L <= MIN_L_MAX (2). Every such case runs; it is never
-  sampled.
+- `min`: every key at L <= `FJ_MIN_L_MAX` (MIN_L_MAX, 2, by default). Every
+  such case runs; it is never sampled. gate.sh's compile phase lowers it
+  to 0 (`GATE_COMPILE_MIN_L_MAX`): one compiler pass per emitter and class
+  is milliseconds of host work and a second or more of nvcc, and the L <= 2
+  compile cases alone are ~420 per compiler -- most of a half hour on a
+  4-core box.
 - `max`: some key at the top L its ladder -- its `(engine, quantity,
   deriv)` -- reaches among the pool's candidates: the highest class of that
   ladder this run could reach (after `-m`, so `not high_l` and `not slow`
   have already cut it).
-- `med`: the rest, 2 < L < that top.
+- `med`: the rest, `FJ_MIN_L_MAX` < L < that top.
 - `unsampled`: a case that covers no key -- an `Allow` (a whole molecule, a
   program, the generator's machinery), or one the registry cannot resolve
   (test_registry.py fails on that, not this). It always runs.
 
-`med` and `max` are each drawn without replacement, per pool, until the
-band's budget (`FJ_BUDGET_MED`, `FJ_BUDGET_MAX`, seconds of `cost_s`) is
-spent: the case that crosses it is the last drawn, so a budget is overshot
-by at most one case. `FJ_K_MED` / `FJ_K_MAX` cap the count as well. A case's
+`med` and `max` are each drawn without replacement, per pool, against the
+band's budget (`FJ_BUDGET_MED`, `FJ_BUDGET_MAX`, seconds of `cost_s`): a
+case that would take the band past it is passed over and the draw goes on
+down its order, so the drawn cases never exceed the budget and each case
+left out would have. (Until #656 the case that crossed it was drawn last,
+and one Fock (pd|pd) compile, ~420 s of nvcc and ~590 s of hipcc, then took
+a 60 s band ten times over.) `FJ_K_MED` / `FJ_K_MAX` cap the count as well. A case's
 cost (`cost_of`) is its keys' registry figure for its tier and backend
 (#652, `cost.py`), shared evenly among the pool's cases that cover each
 key, and the largest share over its keys; `FJ_DEFAULT_COST_S` when a key
@@ -46,7 +54,8 @@ CHANGE WEIGHTING. The paths the diff against the merge-base touches
 module's PATHS, plus the files its TESTS name, plus EVERY_FAMILY (the IR,
 the emitters, the MMD engine, the planner, the runtime header and `spec`),
 which touch them all. A touched family gets one `med` and one `max` case
-in every pool that has one, drawn first and whatever the budget ("forced");
+in every pool that has one, drawn first and whatever the budget ("forced":
+one that fits the budget alone when the family has one, else its cheapest);
 the budget's remainder is then drawn with the touched families'
 cases `FJ_TOUCH_WEIGHT` times as likely (Efraimidis-Spirakis keys,
 `u ** (1 / w)`).
@@ -58,14 +67,18 @@ the n shards is the unsharded run.
 
 OPT IN. The plugin acts only under `--fj-sample` (or `FJ_SAMPLE=on`) and
 `--fj-shard`; `FJ_SAMPLE=all` turns the draw off -- every case kept, a
-shard still split -- whatever the flag says. Nothing passes the flag yet:
-#656's gate.sh is what moves the PR gate's selection onto it. It reads only
+shard still split -- whatever the flag says. devtools/gate.sh (#656), the
+PR gate, passes the flag to its compile and `gpu` phases, over a selection
+of `not slow or l_cut` (test/tiers.py): the L cut those phases used to take
+from `FAST_L_MAX` and `tiers.sample_compiles` is this draw's. It reads only
 test/'s items (measure/ re-exports conftest.py, and its sweeps are not
 sampled), and leaves every non-device item alone but for the shard.
 
 THE REPORT. The seed, the budgets, the touched families and every pool's
 drawn cases go to `FJ_SAMPLE_REPORT` as JSON and to the terminal summary.
 Under xdist the first worker writes it and the controller prints it.
+`PYTHONPATH=src:test python -m registry.sample --markdown TITLE REPORT`
+prints it as the section gate.sh pastes into a PR body.
 """
 
 from __future__ import annotations
@@ -108,7 +121,8 @@ EVERY_FAMILY = (
 
 # The knobs: environment name -> its config.sh default's meaning.
 KNOBS = ("FJ_SAMPLE", "FJ_SAMPLE_SEED", "FJ_SAMPLE_BASE", "FJ_BUDGET_MED",
-         "FJ_BUDGET_MAX", "FJ_K_MED", "FJ_K_MAX", "FJ_DEFAULT_COST_S",
+         "FJ_BUDGET_MAX", "FJ_K_MED", "FJ_K_MAX", "FJ_MIN_L_MAX",
+         "FJ_DEFAULT_COST_S",
          "FJ_TOUCH_WEIGHT", "FJ_SAMPLE_REPORT")
 
 
@@ -172,6 +186,7 @@ class Knobs:
         default_factory=lambda: {"med": 120.0, "max": 60.0})
     cap: Mapping[str, int | None] = field(
         default_factory=lambda: {"med": None, "max": None})
+    min_l_max: int = MIN_L_MAX
     default_cost_s: float = 10.0
     touch_weight: float = 4.0
     report: str = ".kernel-tier-reports/sample.json"
@@ -190,6 +205,8 @@ class Knobs:
                                f"FJ_BUDGET_{b.upper()}") for b in ("med", "max")},
             cap={b: _number(v.get(f"FJ_K_{b.upper()}", ""), f"FJ_K_{b.upper()}",
                             int) for b in ("med", "max")},
+            min_l_max=_number(v.get("FJ_MIN_L_MAX", ""), "FJ_MIN_L_MAX", int)
+            if v.get("FJ_MIN_L_MAX", "").strip() else d.min_l_max,
             default_cost_s=_number(v.get("FJ_DEFAULT_COST_S", ""),
                                    "FJ_DEFAULT_COST_S") or d.default_cost_s,
             touch_weight=_number(v.get("FJ_TOUCH_WEIGHT", ""),
@@ -273,7 +290,8 @@ def _ladder(key: Key) -> tuple[str, str, int]:
     return key.engine, key.quantity, key.deriv
 
 
-def bands_of(candidates: Sequence[Candidate]) -> dict[str, str]:
+def bands_of(candidates: Sequence[Candidate],
+             min_l_max: int = MIN_L_MAX) -> dict[str, str]:
     """nodeid -> its band, `min` / `med` / `max` / `unsampled`, within one
     pool (module docstring)."""
     top: dict[tuple[str, str, int], int] = {}
@@ -284,7 +302,7 @@ def bands_of(candidates: Sequence[Candidate]) -> dict[str, str]:
     for c in candidates:
         if not c.keys:
             out[c.nodeid] = "unsampled"
-        elif all(k.L <= MIN_L_MAX for k in c.keys):
+        elif all(k.L <= min_l_max for k in c.keys):
             out[c.nodeid] = "min"
         elif any(k.L == top[_ladder(k)] for k in c.keys):
             out[c.nodeid] = "max"
@@ -348,7 +366,10 @@ def _draw_band(band: list[Candidate], *, seed: str, pool: str, name: str,
     for family in sorted(touched):
         members = [c for c in band if family in c.families and c not in picked]
         if members and not any(family in c.families for c in picked):
-            picked.append(rng.choice(members))
+            fits = [c for c in members
+                    if budget is None or c.cost_s <= budget]
+            picked.append(rng.choice(fits) if fits else
+                          min(members, key=lambda c: (c.cost_s, c.nodeid)))
     out.forced = [c.nodeid for c in picked]
     limit = math.inf if budget is None else budget
     count = math.inf if cap is None else cap
@@ -358,8 +379,10 @@ def _draw_band(band: list[Candidate], *, seed: str, pool: str, name: str,
                        strict=True), key=lambda kc: -kc[0])
     spent = sum(c.cost_s for c in picked)
     for _, c in keyed:
-        if spent >= limit or len(picked) >= count:
+        if len(picked) >= count:
             break
+        if spent + c.cost_s > limit:
+            continue  # it would not fit: pass it over
         picked.append(c)
         spent += c.cost_s
     out.drawn = [c.nodeid for c in picked]
@@ -371,7 +394,7 @@ def draw(candidates: Iterable[Candidate], *, seed: str,
          budget: Mapping[str, float | None],
          cap: Mapping[str, int | None] | None = None,
          touched: frozenset[str] = frozenset(), touch_weight: float = 4.0,
-         sampled: bool = True) -> Draw:
+         sampled: bool = True, min_l_max: int = MIN_L_MAX) -> Draw:
     """The kept cases of every pool (module docstring). `sampled=False` keeps
     every case, as FJ_SAMPLE=all does."""
     cap = cap or {}
@@ -380,7 +403,7 @@ def draw(candidates: Iterable[Candidate], *, seed: str,
         by_pool[c.pool].append(c)
     pools = {}
     for pool, members in sorted(by_pool.items()):
-        bands = bands_of(members)
+        bands = bands_of(members, min_l_max)
         out = PoolDraw()
         out.min = [c.nodeid for c in members if bands[c.nodeid] == "min"]
         out.unsampled = [c.nodeid for c in members
@@ -501,7 +524,7 @@ class Plugin:
         touched = touched_families(paths)
         got = draw(cands, seed=seed, budget=knobs.budget, cap=knobs.cap,
                    touched=touched, touch_weight=knobs.touch_weight,
-                   sampled=sampled)
+                   sampled=sampled, min_l_max=knobs.min_l_max)
         device = {c.nodeid for c in cands}
         kept_device = got.kept()
         keep = [i for i in items
@@ -521,6 +544,7 @@ class Plugin:
             "token": self.token, "seed": seed, "merge_base": base,
             "head": head, "base_ref": knobs.base, "sampled": sampled,
             "budget_s": dict(knobs.budget), "cap": dict(knobs.cap),
+            "min_l_max": knobs.min_l_max,
             "default_cost_s": knobs.default_cost_s,
             "touch_weight": knobs.touch_weight,
             "changed_paths": len(paths), "touched": sorted(touched),
@@ -557,7 +581,8 @@ def summary_lines(report: Mapping[str, Any]) -> list[str]:
           + f", seed {report['seed']} (merge-base {report['merge_base']}, "
           f"HEAD {report['head']})",
           f"  budgets med {report['budget_s']['med']}s max "
-          f"{report['budget_s']['max']}s, caps med {report['cap']['med']} "
+          f"{report['budget_s']['max']}s, min L <= "
+          f"{report.get('min_l_max', MIN_L_MAX)}, caps med {report['cap']['med']} "
           f"max {report['cap']['max']}, default cost "
           f"{report['default_cost_s']}s, touched: "
           + (", ".join(report["touched"]) or "none")
@@ -579,9 +604,64 @@ def summary_lines(report: Mapping[str, Any]) -> list[str]:
     return tw
 
 
+def markdown_lines(report: Mapping[str, Any], title: str) -> list[str]:
+    """`report` (the JSON `FJ_SAMPLE_REPORT` holds) as a markdown section: the
+    seed, the budgets, one table row per pool, and every case drawn."""
+    def short(sha: str | None) -> str:
+        return (sha or "none")[:12]
+
+    def band(d: Mapping[str, Any], b: str) -> str:
+        return (f"{len(d[b]['drawn'])}/{d[b]['candidates']} "
+                f"({d[b]['spent_s']:.0f} s)")
+
+    caps = report["cap"]
+    out = [f"#### {title}", "",
+           f"- seed `{report['seed']}` (merge-base "
+           f"`{short(report['merge_base'])}` against `{report['base_ref']}`, "
+           f"HEAD `{short(report['head'])}`)"
+           + ("" if report["sampled"] else "; **not sampled** (FJ_SAMPLE=all)"),
+           f"- budgets per pool: med {report['budget_s']['med']} s, max "
+           f"{report['budget_s']['max']} s; every case at L <= "
+           f"{report.get('min_l_max', MIN_L_MAX)} kept; caps med {caps['med']}, max "
+           f"{caps['max']}; default cost {report['default_cost_s']} s; "
+           f"touch weight {report['touch_weight']}",
+           "- touched families: "
+           + (", ".join(f"`{t}`" for t in report["touched"]) or "none"),
+           "", "| pool | min (all) | unsampled | med drawn | max drawn |",
+           "|---|---|---|---|---|"]
+    for pool, d in report["pools"].items():
+        out.append(f"| `{pool}` | {len(d['min'])} | {len(d['unsampled'])} | "
+                   f"{band(d, 'med')} | {band(d, 'max')} |")
+    drawn = [(pool, b, n, n in set(d[b]["forced"]))
+             for pool, d in report["pools"].items() for b in ("med", "max")
+             for n in d[b]["drawn"]]
+    out += ["", f"<details><summary>{len(drawn)} case(s) drawn, "
+            f"{report['deselected']} deselected</summary>", ""]
+    out += [f"- `{pool}` {b}{' (forced)' if forced else ''}: `{n}`"
+            for pool, b, n, forced in drawn] or ["- none"]
+    out += ["", "</details>"]
+    return out
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(prog="python -m registry.sample")
+    parser.add_argument("--markdown", nargs=2, metavar=("TITLE", "REPORT"),
+                        required=True, help="print REPORT.json as markdown")
+    args = parser.parse_args(argv)
+    title, path = args.markdown
+    print("\n".join(markdown_lines(json.loads(Path(path).read_text()), title)))
+    return 0
+
+
 __all__ = [
     "BANDS", "EVERY_FAMILY", "KEY_FAMILY", "MIN_L_MAX", "Candidate",
     "Draw", "Knobs", "Plugin", "addoption", "bands_of", "candidates_of",
-    "changed_paths", "cost_of", "draw", "family_paths", "parse_shard",
+    "changed_paths", "cost_of", "draw", "family_paths", "main",
+    "markdown_lines", "parse_shard",
     "seed_of", "shard", "summary_lines", "touched_families",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
