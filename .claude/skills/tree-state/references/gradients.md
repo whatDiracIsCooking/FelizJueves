@@ -264,3 +264,25 @@ sums them to the total, and checks zero net force (structural only: it cannot
 see a wrong factor). An `oracle` test holds H2O/STO-3G's total to a central
 difference of RHF energies. The sign conventions are `manifest`'s docstring.
 No card was involved.
+
+**`dE_J/dR` on the HGP recurrence: generated and interpreted only**
+(`gradient.md`, "The Coulomb gradient on the HGP recurrence"):
+`Spec(COULOMB, 1, (la, lb, lc, ld), Target.J, engine=Engine.HGP)`, legal
+through `spec.GRADIENT_OFF_NATIVE` (the one off-native d1 pair; MMD `J`
+at d1 stays refused), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`.
+`gradient/kernel_ghj.py`'s `ghj_{la}{lb}{lc}{ld}`, one unit per ORDERED
+class (no canonical mode, no lever, no screen): `kernel_hj`'s nest and
+record, one VRR one Boys order up into three contractions (plain, `2
+alpha`, `2 beta` per primitive pair, exact because eq 28 is linear), up
+to four HRRs (`a +- 1`, `b +- 1`), the bra derivative on `a`'s and `b`'s
+atoms by six `AtomicAdd`s. `gradient/interpreted.py`'s
+`ghj_class_gradient` / `ghj_gradient` pack and launch it;
+`interpreted_runners(coulomb="hgp")` puts it in the RHF assembly.
+Interpreted (`test_kernel_ghj.py`): every ordered class with each
+`l <= 2`, summed per unordered group, against `host.coulomb_gradient`
+restricted to it within `1e-12` of the per-shell absolute scale; the
+whole s, p pair against the host; and the Coulomb term of H₂O/STO-3G,
+H₂O/STO-3G plus a d primitive and H₂O/6-31G against PySCF's `grad:j`
+within `1e-10` absolute (raised `L + 1 > 4` and the whole cases `slow`).
+**Not emitted** (no ladder flag, no golden), **not compiled**, **not on
+a card**, not measured.

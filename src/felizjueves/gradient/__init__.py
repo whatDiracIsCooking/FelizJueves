@@ -1,5 +1,6 @@
-"""Analytic nuclear gradients by McMurchie-Davidson: host references and the
-generated kernels (`Spec.derivative_order = 1`).
+"""Analytic nuclear gradients by McMurchie-Davidson (and, for `J`, by
+Head-Gordon-Pople too): host references and the generated kernels
+(`Spec.derivative_order = 1`).
 
     host.py          the references, pure Python, on the AO layer
     kernel_g1e.py    Target.S / T / V at d1: gs_, gt_, gv_{la}{lb}
@@ -7,6 +8,9 @@ generated kernels (`Spec.derivative_order = 1`).
                      bra derivative from J_p one Hermite order higher
     kernel_gk.py     Target.K at d1: gk_{la}{lc}_{lb}{ld}, the exchange
                      energy's bra derivative, K's plan one bra order up
+    kernel_ghj.py    Target.J on Engine.HGP at d1: ghj_{la}{lb}{lc}{ld},
+                     the Coulomb energy's bra derivative per ordered
+                     class on the Head-Gordon-Pople recurrence
     host_df.py       the density-fitting references, (P|Q) and (mn|P)
     kernel_gmetric.py  Target.METRIC at d1: gmetric_{lP}{lQ}
     kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}

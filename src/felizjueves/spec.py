@@ -244,7 +244,13 @@ terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 pair `(lP, lQ)` and triple `(la, lb, lP)`. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
-target's d0 reason.
+target's d0 reason. ONE OFF-NATIVE PAIR IS LEGAL AT d1
+(`GRADIENT_OFF_NATIVE`): `J` on `Engine.HGP`, the Coulomb energy's bra
+derivative over every ordered quartet of the class on the Head-Gordon-Pople
+recurrence (`gradient.kernel_ghj`), `am` the d0 HGP J class `(la, lb | lc,
+ld)`, so ``coulomb/d1/(1,0|0,0)/b1/j.hgp/literal`` differs from the d0 key
+in the `d` segment alone; MMD `J` at d1 stays refused (its gradient is
+`JAB`'s).
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
@@ -574,10 +580,16 @@ GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
                               Target.DQ))
 
+# The (target, engine) pairs off the native engine whose first derivative is
+# built: `J` on HGP, the Coulomb energy's bra derivative over every ordered
+# quartet on the Head-Gordon-Pople recurrence (`gradient.kernel_ghj`). MMD
+# `J` at d1 stays refused: its gradient is `JAB`'s, through the J chain.
+GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),))
+
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
-    "the MMD engine only (felizjueves.gradient, felizjueves.hessian); this "
-    "target's gradient is a follow-up"
+    "the MMD engine, and for J on the HGP engine (felizjueves.gradient, "
+    "felizjueves.hessian); this target's gradient is a follow-up"
 )
 
 # The targets whose second derivative is built (`felizjueves.hessian`):
@@ -658,7 +670,7 @@ class Spec:
         if self.derivative_order == 1 and (
             self.target not in GRADIENT_TARGETS
             or self.engine is not NATIVE_ENGINE[self.target]
-        ):
+        ) and (self.target, self.engine) not in GRADIENT_OFF_NATIVE:
             raise ValueError(
                 f"derivative order {self.derivative_order} on target "
                 f"{self.target_slot}: {_GRADIENT_REFUSAL}")

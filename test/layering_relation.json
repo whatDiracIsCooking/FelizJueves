@@ -1722,12 +1722,15 @@
   ],
   "gradient.interpreted": [
    "ao.shell",
+   "eri.fock.kernel_f",
+   "eri.hjk.walk_hjk",
    "eri.j_coulomb.drive",
    "gradient",
    "gradient.host",
    "gradient.host_df",
    "gradient.kernel_g1e",
    "gradient.kernel_geri3",
+   "gradient.kernel_ghj",
    "gradient.kernel_gjab",
    "gradient.kernel_gk",
    "gradient.kernel_gmetric",
@@ -1783,6 +1786,19 @@
    "plan.search",
    "plan.sieve",
    "plan.targets",
+   "spec"
+  ],
+  "gradient.kernel_ghj": [
+   "eri.fock.kernel_f",
+   "eri.hjk.kernel_hj",
+   "hgp",
+   "hgp.cost",
+   "hgp.etr",
+   "hgp.hrr",
+   "hgp.orbits",
+   "hgp.recurrence",
+   "hgp.vrr",
+   "ir",
    "spec"
   ],
   "gradient.kernel_gjab": [

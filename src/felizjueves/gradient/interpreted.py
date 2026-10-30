@@ -4,6 +4,8 @@
     g1e_gradient(target, basis, nuclei, M, *, boys)      gs_ / gt_ / gv_
     gjab_gradient(basis, nuclei, D, *, boys)             [p|q]@L+1 -> gjab_
     gk_gradient(basis, nuclei, D, *, boys, lanes=)       gk_
+    ghj_gradient(basis, nuclei, D, *, boys, threads=)    ghj_ (HGP J)
+    ghj_class_gradient(basis, nuclei, D, cls, *, boys)   one ordered class
 
 Every term of the RHF gradient from the GENERATED kernels, with no compiler
 and no card: one launch per class into one zeroed `G` (the kernels'
@@ -23,6 +25,13 @@ arrays packed as `test/grad_driver.py` packs them for a card:
 - `gk_{la}{lc}_{lb}{ld}`: every K class the basis's `l`s reach, every
   ordered bra record against every ordered ket record
   (`gradient.host.exchange_records`), one warp of `lanes` per bra record.
+- `ghj_{la}{lb}{lc}{ld}`, the Coulomb term on the HGP recurrence: every
+  ordered class the basis's `l`s reach, its bra side every ordered shell
+  pair of `(la, lb)` and its ket side every one of `(lc, ld)` --
+  `eri.hjk.walk_hjk.pair_record`'s staged records, packed by
+  `kernel_f.pack`, one launch per pair of contraction degrees (a packed
+  side is degree-uniform) -- plus each bra pair's exponents and atoms.
+  `interpreted_runners(coulomb="hgp")` runs it in place of the J chain.
 
 BOYS IS INJECTED (`boys=`), as the interpreter requires: nothing here
 imports `reference/`. The interpreted `G` is the sum the card's `atomicAdd`s
@@ -34,13 +43,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from functools import cache
+from itertools import product
 
 import numpy as np
 
 from felizjueves.ao.shell import Basis
+from felizjueves.eri.fock.kernel_f import pack
+from felizjueves.eri.hjk.walk_hjk import pair_record
 from felizjueves.eri.j_coulomb.drive import KernelJP
 from felizjueves.gradient import host
 from felizjueves.gradient.kernel_g1e import build_g1e_kernel, launch_shape
+from felizjueves.gradient.kernel_ghj import build_ghj_kernel
+from felizjueves.gradient.kernel_ghj import launch_shape as ghj_launch_shape
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel, n_p1
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gk import launch_shape as gk_launch_shape
@@ -68,6 +82,11 @@ def _gjab(la: int, lb: int) -> Kernel:
 @cache
 def _gk(am: tuple[int, int, int, int]) -> Kernel:
     return build_gk_kernel(am)
+
+
+@cache
+def _ghj(am: tuple[int, int, int, int]) -> Kernel:
+    return build_ghj_kernel(am)
 
 
 def _pair_classes(basis: Basis) -> list[tuple[int, int]]:
@@ -167,17 +186,84 @@ def gk_gradient(basis: Basis, nuclei: Sequence[Nucleus], D: Matrix, *,
     return G
 
 
-def interpreted_runners(*, boys: Boys, lanes: int = 4) -> Runners:
+def _ordered_pairs(basis: Basis, la: int, lb: int) -> dict[int, list]:
+    """Every ordered shell pair of class `(la, lb)`, `a` outer, by its
+    contraction degree `K_a K_b`."""
+    sh = basis.shells
+    out: dict[int, list] = {}
+    for a, sa in enumerate(sh):
+        for b, sb in enumerate(sh):
+            if (sa.l, sb.l) == (la, lb):
+                n = len(sa.exponents) * len(sb.exponents)
+                out.setdefault(n, []).append((a, b))
+    return out
+
+
+def ghj_class_gradient(basis: Basis, nuclei: Sequence[Nucleus], D: Matrix,
+                       cls: tuple[int, int, int, int], *, boys: Boys,
+                       threads: int = 4, G: np.ndarray | None = None
+                       ) -> np.ndarray:
+    """One ordered class's `ghj_` launches over every ordered quartet of
+    it, added into `G` (zeroed when not given)."""
+    G = _zero(nuclei) if G is None else G
+    Dx = np.asarray(D, dtype=np.float64)
+    sh = basis.shells
+    atom = host.shell_atoms(basis, nuclei)
+    kern = _ghj(tuple(cls))
+    la, lb, lc, ld = cls
+    for bra in _ordered_pairs(basis, la, lb).values():
+        for ket in _ordered_pairs(basis, lc, ld).values():
+            pb = pack([pair_record(basis, a, b, G=0.0) for a, b in bra])
+            pk = pack([pair_record(basis, c, d, G=0.0) for c, d in ket])
+            arrs = {
+                "bra_prim": np.array(pb.prim),
+                "bra_exp": np.array([(x, y) for a, b in bra
+                                     for x in sh[a].exponents
+                                     for y in sh[b].exponents]),
+                "AB": np.array(pb.sep), "ket_prim": np.array(pk.prim),
+                "CD": np.array(pk.sep),
+                "bra_ao": np.array(pb.ao, dtype=np.int32),
+                "ket_ao": np.array(pk.ao, dtype=np.int32),
+                "bra_atom": np.array([atom[s] for s in pb.sh],
+                                     dtype=np.int32)}
+            grid, block = ghj_launch_shape(pb.n, threads)
+            G = Interpreter(kern, launch=Launch(grid, block, threads),
+                            boys=boys).run(
+                n_bra=pb.n, n_ket=pk.n, k_ab=pb.degree, k_cd=pk.degree,
+                n_ao=basis.n_ao, n_atom=len(nuclei), D=Dx, G=G,
+                **{p.name: arrs[p.name] for p in kern.params
+                   if p.name in arrs})["G"]
+    return G
+
+
+def ghj_gradient(basis: Basis, nuclei: Sequence[Nucleus], D: Matrix, *,
+                 boys: Boys, threads: int = 4) -> np.ndarray:
+    """`dE_J/dR` on the HGP recurrence: every ordered class's `ghj_` unit
+    over every ordered quartet of it (module docstring)."""
+    G = _zero(nuclei)
+    ls = sorted({s.l for s in basis.shells})
+    for cls in product(ls, repeat=4):
+        G = ghj_class_gradient(basis, nuclei, D, cls, boys=boys,
+                               threads=threads, G=G)
+    return G
+
+
+def interpreted_runners(*, boys: Boys, lanes: int = 4,
+                        coulomb: str = "mmd") -> Runners:
     """Every electronic term of `gradient.rhf` from the interpreted kernels
-    (module docstring)."""
+    (module docstring); `coulomb` picks the Coulomb term's engine, `"mmd"`
+    (the J chain, `gjab_`) or `"hgp"` (`ghj_`)."""
+    if coulomb not in ("mmd", "hgp"):
+        raise ValueError(f"coulomb = {coulomb!r} is not 'mmd' or 'hgp'")
+    jterm = gjab_gradient if coulomb == "mmd" else ghj_gradient
     return Runners(
         overlap=lambda b, n, M: g1e_gradient(Target.S, b, n, M, boys=boys),
         kinetic=lambda b, n, M: g1e_gradient(Target.T, b, n, M, boys=boys),
         potential=lambda b, n, M: g1e_gradient(Target.V, b, n, M, boys=boys),
-        coulomb=lambda b, n, M: gjab_gradient(b, n, M, boys=boys),
+        coulomb=lambda b, n, M: jterm(b, n, M, boys=boys),
         exchange=lambda b, n, M: gk_gradient(b, n, M, boys=boys,
                                              lanes=lanes))
 
 
-__all__ = ["g1e_gradient", "gjab_gradient", "gk_gradient",
-           "interpreted_runners"]
+__all__ = ["g1e_gradient", "ghj_class_gradient", "ghj_gradient",
+           "gjab_gradient", "gk_gradient", "interpreted_runners"]
