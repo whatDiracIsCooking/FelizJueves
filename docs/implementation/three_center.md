@@ -574,5 +574,5 @@ is the card's first `(mn|P)` run; it was #431's.
   `rys_fock.md`, "The three-center `(mn|P)` on Rys".
 - **An aux-major layout** for DF-J (the trade above). Derivatives are
   built elsewhere: `geri3_` (gradient, #603/#613, both cards;
-  `gradient.md`) and `d2eri3_` (Hessian, #612, interpreted only;
-  `hessian.md`).
+  `gradient.md`) and `d2eri3_` (Hessian, #612 / #694, through (ff|i),
+  interpreted and nvcc-compiled, on no card; `hessian.md`).
