@@ -21,8 +21,8 @@ split exchange `K`** (`rk_` units, `kernel_hk`'s nest with the same Rys
 VRR), "The split `K` on Rys", with the same status. The fourth, **the three-center
 `(mn|P)`** (`reri3_` units, `kernel_hgp`'s `(mn|P)` skeleton with the same
 Rys VRR and a single-centre ket), "The three-center `(mn|P)` on Rys", is
-the first Rys kernel **compiled by nvcc and hipcc**; it has not run on a
-card either.
+**compiled by nvcc and hipcc** in its own tests; it has not run on a card
+either.
 
 ## What it is
 
@@ -440,8 +440,8 @@ the root loop into the accumulators.
 - **Compiled:** each of the 22 units alone, by nvcc and by hipcc, with the
   kernel tier's flags and no warning located in generated text. The
   device test's three runner programs (the synthetic pair, the fixture at
-  `L <= 4`, the whole fixture) also compile under both. These are the
-  first vendor compiles of `fj_rys<N>` (`N <= 3` here).
+  `L <= 4`, the whole fixture) also compile under both (`fj_rys<N>`,
+  `N <= 3` here, carried in each unit).
 - **On a card** (`test_rys_df_device.py`, `gpu`): the synthetic pair at
   `L <= 4` against the host, and the fixture at `L <= 4` against the host
   and libcint. The whole fixture against libcint is `slow`. The bounds are
