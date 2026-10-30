@@ -40,7 +40,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from gk_driver import UNIT_BUDGET_S, compile_gk, gk_class_launches
+from gk_driver import UNIT_BUDGET_S, G, compile_gk, gk_class_launches, gk_steps
+from harness_driver import Ref, sequence_spec
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import _toolchain
@@ -104,7 +105,7 @@ def _h2o(backend: str, request, run_device_binary, tmp_path: Path) -> None:
     launches = (gk_class_launches(basis, nuclei, D, classes)
                 + _other(basis, nuclei, D, classes))
     b = compile_gk(launches, len(nuclei), backend, tc, tmp_path)
-    got = b.run(run_device_binary)
+    got = b.run()
     n = len(classes)
     want = np.array(host.exchange_gradient(basis, D, nuclei,
                                            one_centre=one_centre))
@@ -134,7 +135,7 @@ def _co(backend: str, request, run_device_binary, tmp_path: Path) -> None:
     slowest = max(b.compile_s, key=b.compile_s.get)
     print(f"\n{backend}: {len(b.compile_s)} units, slowest {slowest} "
           f"{b.compile_s[slowest]:.2f} s")
-    got = b.run(run_device_binary)
+    got = b.run()
     n = len(classes)
     scale = float(np.abs(wit.whole).max())
     errs = []
@@ -182,3 +183,54 @@ def test_cuda_gk_co_ccpvtz_against_libcint(request, run_device_binary,
 def test_hip_gk_co_ccpvtz_against_libcint(request, run_device_binary,
                                           tmp_path) -> None:
     _co("hip", request, run_device_binary, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Compile-only companions (`cuda` / `hip`, no `gpu`): the H2O program
+# ---------------------------------------------------------------------------
+
+
+def _h2o_compiles(backend: str, tc, tmp_path: Path) -> None:
+    """Every H2O/STO-3G unit in its default form and the shared runner's
+    `main()`, each its own `-c` under `UNIT_BUDGET_S`, linked -- no card.
+    One compile at a time (`jobs=1`): the compile tier already runs its
+    tests in parallel, and the budget is per unit, not per box."""
+    basis, nuclei, D = _case(H2O)
+    launches = gk_class_launches(basis, nuclei, D, _classes(basis))
+    b = compile_gk(launches, len(nuclei), backend, tc, tmp_path, jobs=1)
+    assert b.binary.exists() and "gk_main" in b.compile_s
+    slowest = max(b.compile_s, key=b.compile_s.get)
+    print(f"\n{backend}: {len(b.compile_s)} units, slowest {slowest} "
+          f"{b.compile_s[slowest]:.2f} s (budget {UNIT_BUDGET_S:g} s)")
+
+
+@pytest.mark.cuda
+def test_cuda_gk_h2o_sto3g_compiles(nvcc, tmp_path) -> None:
+    _h2o_compiles("cuda", nvcc, tmp_path)
+
+
+@pytest.mark.hip
+def test_hip_gk_h2o_sto3g_compiles(hipcc, tmp_path) -> None:
+    _h2o_compiles("hip", hipcc, tmp_path)
+
+
+def test_the_sequence_hands_each_launch_its_arrays() -> None:
+    """Each launch of the runner's sequence names its own arrays (the
+    density one shared buffer) holding exactly the launch's, and its own
+    `G` slice; `sequence_spec` accepts every launch (no card, no
+    compiler)."""
+    basis, nuclei, D = _case(H2O)
+    classes = _classes(basis)
+    launches = (gk_class_launches(basis, nuclei, D, classes)
+                + _other(basis, nuclei, D, classes))
+    n_atom = len(nuclei)
+    buffers, steps = gk_steps(launches, n_atom)
+    assert buffers[G].shape == (len(launches), n_atom, 3)
+    for c, (x, st) in enumerate(zip(launches, steps, strict=True)):
+        assert st.args[G] == Ref(G, c * n_atom * 3)
+        assert (st.args["n_bra"], st.args["n_ket"]) == (x.n_bra, x.n_ket)
+        for name, a in x.arrays.items():
+            buf = st.args[name]
+            assert buf == ("M" if name == "M" else f"c{c}.{name}")
+            assert np.array_equal(buffers[buf], np.ravel(a))
+    sequence_spec(buffers, steps, outs=[G], runs=2, witness="each")

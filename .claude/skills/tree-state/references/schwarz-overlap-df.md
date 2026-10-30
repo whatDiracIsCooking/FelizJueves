@@ -112,7 +112,8 @@ tensor differs from its transpose in 1,998 of 8,134 entries, worst 4.4e-16).
 `1e-12·max|(mn|P)|`: the host (`test_ao_eri3.py`, worst 3.3e-14), the
 kernel interpreted (`test_kernel_eri3.py`, worst 1.80 eps), the 22 goldens
 per backend (`test_emit_eri3.py`, no digests file), and on the RTX 3080
-(`test_eri3_device.py`, generator `test/eri3_driver.py`, PR #457: worst
+(`test_eri3_device.py`, generator `test/eri3_driver.py` -- on the shared
+runner since #657, which has not run on a card -- PR #457: worst
 3.30e-14 of `max|(mn|P)|` against libcint, 4.77 eps of the tower-twin scale
 against the host on the fixture and 4.66 on the synthetic bases; the
 fixture's (sp|g), (pp|f) and (pp|g) are not launched). **It has not run on

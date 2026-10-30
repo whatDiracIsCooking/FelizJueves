@@ -1,15 +1,20 @@
 """A device driver for the block exchange kernel and `kernel_k`, one upload (#481).
 
-    kb_driver(plan, basis, backend, workdir)      -> KBDriver (source + layout)
+    kb_driver(plan, basis, backend, workdir)      -> KBDriver (runner + layout)
     kb_stage(drv, basis, D)                       -> np.ndarray, the packed input
+    kb_steps(drv, staged, mode)                   -> (buffers, [Step], groups)
     class_args(drv, basis, D, c)                  -> one class's arrays, by name
-    kb_read_back(drv, raw)                        -> (K_mn per run, scratch per run)
     k_scatter(drv, basis, buf)                    -> K_mn from kernel_k's scratch
-    timings(stdout)                               -> {(mode, class): [ns per rep]}
+    ClassBinary.run / .timings / .case            -> one class's runner, its clocks
 
 HARNESS, in `test/`, beside `plan_driver.k_driver` (#206), of whose layout
 it is a copy cut to `launch_kblock`'s plan. The kernels are the generator's
-text, unchanged; only `main()` is written here.
+text, unchanged; the `main()` is the shared runner's (#649; ported by #657),
+over every unit (`harness_driver.units_runner`), and each mode a SEQUENCE
+whose buffers are the packed input cut as the old `main()` cut its uploads
+(per class its doubles `bp<c>` and its ints `ip<c>`, per density class its
+`Dcd` `dp<e>`), every argument an offset into them (`Ref`), named from the
+kernel's own parameter list.
 
 ONE UPLOAD, TWO MAPPINGS. Per K class the driver uploads ONE copy of its
 bra records (grouped by first shell, sorted by `Ip`), its ket records
@@ -30,14 +35,15 @@ block table and its density class, and can launch on that same data either
 per `b` shell are exactly the plan's `b` groups, so the one upload serves
 both: the comparison is the mapping and nothing else.
 
-THE TIMING MODE: `driver in out MODE WARMUP REPS`. Every run zeroes the
-output, launches every class in plan order, synchronizes and reads back;
-each class's launches are bracketed by a pair of GPU events, and per timed
-run the driver prints `rep <r> class <c> events_ns <x>` per class and `rep
-<r> total events_ns <x>` (memset to last launch). `out` is the first timed
-run's output, then the last's. The correctness mode is `WARMUP 0 REPS 2`.
-Mode 1's host scatter is NOT in its time: the comparison favours
-`kernel_k` by exactly that pass.
+THE TIMING MODE: `ClassBinary.run(mode, ..., warmup=, reps=)`. Every run
+zeroes the output (the first launch's `zero`, inside the run's time),
+launches every class in plan order and synchronizes; every timed run's
+output is kept (`run_classes` sums the first's and the last's). Each launch
+is bracketed by a pair of GPU events, and `ClassBinary.timings` gives per
+timed run each class's time (the sum of its launches') and the `total`
+(memset to last launch). The correctness mode is `WARMUP 0 REPS 2`. Mode
+1's host scatter is NOT in its time: the comparison favours `kernel_k` by
+exactly that pass.
 
 MODE 2, opt-in (`kb_driver(..., split=granularity)`, #548): each class's
 `kernel_kblock_split` set at `R = 1`, every kernel on the block kernel's
@@ -77,14 +83,23 @@ from __future__ import annotations
 
 import math
 import os
-import re
-from collections import defaultdict
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
-from plan_driver import UPLOAD_INT, k_accumulating
-from test_kernel_device import BACKEND, PORTABLE
+from harness_driver import (
+    Ref,
+    Sequenced,
+    Step,
+    Zeros,
+    run_sequence,
+    sequence_spec,
+    units_runner,
+    write_case,
+)
+from plan_driver import k_accumulating
+from test_kernel_device import BACKEND
 
 from felizjueves.ao.density import checked_density, epair
 from felizjueves.ao.shell import Basis, n_cartesians
@@ -139,6 +154,10 @@ class KBClass:
     scratch: tuple[int, ...]  # offset of each segment's scratch block
     n_e: tuple[int, int] = (0, 0)  # rolled=: E entries per bra, per ket
     n_tab: int = 0  # rolled=: the class tables' ints
+    # per mode, the class's launches (harness_driver.Step, #657), their
+    # arrays named by buffer: `bp<c>` / `ip<c>` the class's doubles / ints,
+    # `dp<e>` a density class, `K` or `S` the output
+    launches: Mapping[str, tuple[Step, ...]] = field(default_factory=dict)
 
     @property
     def e_doubles(self) -> int:
@@ -156,6 +175,9 @@ class KBClass:
 
 @dataclass(frozen=True)
 class KBDriver:
+    """The layout, and the runner over every unit (`source`, `path` and
+    `units` are its `Program`'s, so `compile_checked` takes the driver)."""
+
     backend: str
     source: str
     path: Path
@@ -194,11 +216,15 @@ def _segments(kets: tuple[PairRec, ...]) -> tuple[tuple[int, int, int], ...]:
     return tuple(out)
 
 
-def _call(ns: str, kern: Kernel, args: list[str], grid: str, shared: int
-          ) -> str:
-    return (f"        {ns}::{kern.name}<<<dim3({grid}), dim3(1, LANES), "
-            f"(size_t){shared} * LANES * sizeof(double)>>>(\n            "
-            + ", ".join(args) + ");\n        CHECK(devGetLastError());")
+def _launch(kern: Kernel, args: list, grid: int, shared: int, lanes: int
+            ) -> Step:
+    """One launch: `args` in the kernel's parameter order, `grid` blocks of
+    `(1, lanes)`, `shared` doubles of dynamic shared memory per lane."""
+    names = [p.name for p in kern.params]
+    if len(names) != len(args):
+        raise ValueError(f"{kern.name}: {len(args)} arguments for {names}")
+    return Step(kern, grid, (1, lanes), dict(zip(names, args, strict=True)),
+                shared_bytes=shared * lanes * 8)
 
 
 def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
@@ -232,10 +258,11 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
     emit, arch, ext = BACKEND[backend]
     workdir.mkdir(parents=True, exist_ok=True)
     n_sh = len(basis.shells)
+    n_dc, lanes, n_ao = n_sh * n_sh, arch.wavefront, basis.n_ao
     dcd_cls = sorted({(c.am[1], c.am[3]) for c in plan})
     eslot = {x: i for i, x in enumerate(dcd_cls)}
     classes: list[KBClass] = []
-    includes, units, kb_body, k_body, kbs_body = [], [], [], [], []
+    units: list[tuple[Path, list[str]]] = []
     scratch = 0
     for c, cl in enumerate(plan):
         if cl.kernel is None and not rolled:
@@ -256,8 +283,7 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                          *((f"fj_kbs{c}_{i}", x) for i, x in enumerate(kbs))):
             path = workdir / f"{ns}_{kern.name}.{ext}"
             path.write_text(emit(kern, arch))
-            units.append(path)
-            includes.append(f'namespace {ns} {{\n#include "{path.name}"\n}}')
+            units.append((path, [kern.name]))
         la, lc, lb, ld = cl.am
         n_ab = n_cartesians(la) * n_cartesians(lb)
         segs = _segments(cl.kets)
@@ -270,93 +296,94 @@ def kb_driver(plan: KBLaunchPlan, basis: Basis, backend: str,
                if rolled else (0, 0))
         n_tab = (sum(map(len, tables(cl.am).values()))
                  if rolled and not dense else 0)
-        x = KBClass(cl.am, len(cl.bras), len(cl.kets), len(cl.blocks), n_ab,
-                    kb, k, kbs, segs, tuple(offs), n_e, n_tab)
-        classes.append(x)
         e = eslot[(lc, ld)]
-        nb, nk = len(cl.bras), len(cl.kets)
-        b, kk, bi, ki, blk = (f"bp[{c}]", f"bp[{c}] + {12 * nb}",
-                              f"ip[{c}]", f"ip[{c}] + {nb}",
-                              f"ip[{c}] + {nb + nk}")
-        bra_args = [f"{b}", f"{b} + {3 * nb}", f"{b} + {4 * nb}",
-                    f"{b} + {7 * nb}", f"{b} + {10 * nb}", f"{b} + {11 * nb}",
-                    bi]
+        nb, nk, ng = len(cl.bras), len(cl.kets), len(cl.blocks)
+        bp, ip, dp = f"bp{c}", f"ip{c}", f"dp{e}"
+        bra_args = [Ref(bp, 0), Ref(bp, 3 * nb), Ref(bp, 4 * nb),
+                    Ref(bp, 7 * nb), Ref(bp, 10 * nb), Ref(bp, 11 * nb),
+                    Ref(ip, 0)]
 
-        def ket_args(s: int, kk: str = kk, ki: str = ki, nk: int = nk
-                     ) -> list[str]:
-            return [f"{kk} + {3 * s}", f"{kk} + {3 * nk + s}",
-                    f"{kk} + {4 * nk + 3 * s}", f"{kk} + {7 * nk + 3 * s}",
-                    f"{kk} + {10 * nk + s}", f"{kk} + {11 * nk + s}",
-                    f"{ki} + {s}"]
+        def ket_args(s: int, bp: str = bp, ip: str = ip, nb: int = nb,
+                     nk: int = nk) -> list:
+            kk = 12 * nb
+            return [Ref(bp, kk + 3 * s), Ref(bp, kk + 3 * nk + s),
+                    Ref(bp, kk + 4 * nk + 3 * s), Ref(bp, kk + 7 * nk + 3 * s),
+                    Ref(bp, kk + 10 * nk + s), Ref(bp, kk + 11 * nk + s),
+                    Ref(ip, nb + s)]
 
-        kb_args = [str(len(cl.blocks)), str(nb), str(nk), "NDC", str(basis.n_ao),
-                   "tau",
-                   *(f"{blk} + {j * len(cl.blocks)}" for j in range(BLK_INTS)),
-                   f"bp[{c}] + {12 * (nb + nk)}",
-                   *bra_args, *ket_args(0), f"dp[{e}]", "dK"]
+        kb_args = [ng, nb, nk, n_dc, n_ao, plan.tau,
+                   *(Ref(ip, nb + nk + j * ng) for j in range(BLK_INTS)),
+                   Ref(bp, 12 * (nb + nk)),
+                   *bra_args, *ket_args(0), Ref(dp, 0), "K"]
         if rolled:  # #571: no XPA XPC XQB XQD; E and the tables before Dcd
-            ea = 12 * (nb + nk) + len(cl.blocks)
-            ti = nb + nk + BLK_INTS * len(cl.blocks)
-            tabs, at = [], ti
+            ea = 12 * (nb + nk) + ng
+            tabs, at = [], nb + nk + BLK_INTS * ng
             for n in () if dense else TABLES:
-                tabs.append(f"ip[{c}] + {at}")
+                tabs.append(Ref(ip, at))
                 at += len(tables(cl.am)[n])
             kb_args = [*kb_args[:6 + BLK_INTS + 1],
                        *(bra_args[i] for i in (0, 1, 4, 5, 6)),
                        *(ket_args(0)[i] for i in (0, 1, 4, 5, 6)),
-                       f"bp[{c}] + {ea}", f"bp[{c}] + {ea + n_e[0] * nb}",
-                       *tabs, f"dp[{e}]", "dK"]
+                       Ref(bp, ea), Ref(bp, ea + n_e[0] * nb),
+                       *tabs, Ref(dp, 0), "K"]
             assert len(kb_args) == len(DENSE_PARAMS if dense else KBR_PARAMS)
-        kb_body.append(
-            f"        // class ({la}{lc}|{lb}{ld}): {len(cl.blocks)} blocks\n"
-            f"        CHECK(devEventRecord(ev[{c}]));\n"
-            + _call(f"fj_kb{c}", kb, kb_args, str(len(cl.blocks)),
-                    column_shared_doubles(cl.am) if column
-                    else kb_shared_doubles(cl.am)))
+        launches = {"kb": (_launch(kb, kb_args, ng, column_shared_doubles(
+            cl.am) if column else kb_shared_doubles(cl.am), lanes),)}
         if kbs:
             acc = accumulators_per_density(cl.am, split)
-            kbs_body.append(
-                f"        // class ({la}{lc}|{lb}{ld}): {len(kbs)} split "
-                f"kernels by {split}\n"
-                f"        CHECK(devEventRecord(ev[{c}]));\n"
-                + "\n".join(_call(f"fj_kbs{c}_{i}", kern, kb_args,
-                                   str(len(cl.blocks)),
-                                   split_shared_doubles(cl.am, acc, 1))
-                             for i, kern in enumerate(kbs)))
-        if not with_k:
-            continue
-        calls = [f"        // class ({la}{lc}|{lb}{ld}): {len(segs)} b shells\n"
-                 f"        CHECK(devEventRecord(ev[{c}]));"]
-        for (_, s, t), off in zip(segs, offs, strict=True):
-            calls.append(_call(f"fj_k{c}", k, [
-                str(nb), str(t - s), "NDC", "tau", "maxD", *bra_args,
-                *ket_args(s), f"dp[{e}]", f"dS + {off}"],
-                               str(nb), k_shared_doubles(cl.am)))
-        k_body.append("\n".join(calls))
-    drv = KBDriver(backend, "", workdir, (), plan.tau, plan.dm, n_sh,
-                   basis.n_ao, tuple(classes), tuple(dcd_cls), scratch, rolled,
-                   dense, transposed)
-    src = KB_DRIVER.format(
-        prologue="#include <hip/hip_runtime.h>" if backend == "hip" else "",
-        portable=PORTABLE, includes="\n".join(includes), upload_int=UPLOAD_INT,
-        n_c=len(classes), n_e=len(dcd_cls), n_dc=n_sh * n_sh,
-        lanes=arch.wavefront, n_ao=basis.n_ao, n_s=max(scratch, 1),
-        cd=", ".join(str(x.doubles) for x in classes),
-        ci=", ".join(str(x.ints) for x in classes),
-        ne=", ".join(str(drv.dcd_doubles(*x)) for x in dcd_cls),
-        vram_kernels=", ".join(
-            f"(const void*)fj_kb{c}::{x.kb.name}"
-            + (f", (const void*)fj_k{c}::{x.k.name}" if with_k else "")
-            for c, x in enumerate(classes)),
-        kb_launches="\n".join(kb_body),
-        k_launches=("\n".join(k_body) if with_k else
-                    '            std::fprintf(stderr, "mode 1: kernel_k not '
-                    'built (with_k=False)\\n");\n            return 1;'),
-        n_modes=3 if split is not None else 2,
-        kbs_launches="\n".join(kbs_body))
-    path = workdir / f"kb_driver.{ext}"
-    path.write_text(src)
-    return replace(drv, source=src, path=path, units=tuple(units))
+            launches["kbs"] = tuple(
+                _launch(x, kb_args, ng, split_shared_doubles(cl.am, acc, 1),
+                        lanes) for x in kbs)
+        if with_k:
+            launches["k"] = tuple(
+                _launch(k, [nb, t - s, n_dc, plan.tau, plan.dm, *bra_args,
+                            *ket_args(s), Ref(dp, 0), Ref("S", off)],
+                        nb, k_shared_doubles(cl.am), lanes)
+                for (_, s, t), off in zip(segs, offs, strict=True))
+        classes.append(KBClass(cl.am, nb, nk, ng, n_ab, kb, k, kbs, segs,
+                               tuple(offs), n_e, n_tab, launches))
+    prog = units_runner(backend, units, workdir, "kb_driver")
+    return KBDriver(backend, prog.source, prog.path, prog.units, plan.tau,
+                    plan.dm, n_sh, n_ao, tuple(classes), tuple(dcd_cls),
+                    scratch, rolled, dense, transposed)
+
+
+def kb_steps(drv: KBDriver, staged: np.ndarray, mode: str
+             ) -> tuple[dict, list[Step], list[list[int]]]:
+    """Mode `mode`'s sequence on `staged` (`kb_stage`'s): the buffers cut
+    from it as the old `main()` cut its uploads -- per class its doubles and
+    its ints, per density class its `Dcd` -- every class's launches in plan
+    order, the output zeroed by the first (inside the run's time, as the
+    old `main()`'s memset was), and each class's launch indices."""
+    if mode not in {**MODES, **SPLIT_MODE}:
+        raise ValueError(f"mode {mode!r}: one of {sorted({**MODES, **SPLIT_MODE})}")
+    assert staged.size == drv.n_input, (staged.size, drv.n_input)
+    out = "S" if mode == "k" else "K"
+    buffers: dict[str, object] = {
+        out: Zeros((max(drv.n_scratch, 1),) if mode == "k"
+                   else (drv.n_ao, drv.n_ao))}
+    h = 2
+    steps: list[Step] = []
+    groups: list[list[int]] = []
+    for c, x in enumerate(drv.classes):
+        nd = x.doubles - x.ints
+        buffers[f"bp{c}"] = staged[h:h + nd].astype(np.float64)
+        buffers[f"ip{c}"] = staged[h + nd:h + x.doubles].astype(np.int32)
+        h += x.doubles
+        if mode not in x.launches:
+            raise ValueError(f"mode {mode}: class {x.am} has no such kernel"
+                             + (" (kernel_k not built, with_k=False)"
+                                if mode == "k" else ""))
+        groups.append(list(range(len(steps), len(steps) + len(
+            x.launches[mode]))))
+        steps += x.launches[mode]
+    for e, (lc, ld) in enumerate(drv.dcd):
+        n = drv.dcd_doubles(lc, ld)
+        buffers[f"dp{e}"] = staged[h:h + n].astype(np.float64)
+        h += n
+    assert h == staged.size
+    steps[0] = replace(steps[0], zero=(out,))
+    return buffers, steps, groups
 
 
 def _rows(basis: Basis, recs: tuple[PairRec, ...], *, bra: bool
@@ -510,13 +537,6 @@ def class_args(drv: KBDriver, staged: np.ndarray, c: int) -> dict:
     return out
 
 
-def kb_read_back(drv: KBDriver, raw: np.ndarray) -> list[np.ndarray]:
-    """`[first, last]` timed run's output: `K_mn` (mode 0) or the scratch
-    (mode 1), as `out` holds it."""
-    assert raw.size % 2 == 0
-    return [raw[: raw.size // 2], raw[raw.size // 2:]]
-
-
 def k_scatter(drv: KBDriver, plan: KBLaunchPlan, basis: Basis,
               buf: np.ndarray) -> np.ndarray:
     """`K_mn` from mode 1's scratch: every bra record's row (first shell `a`)
@@ -537,12 +557,39 @@ def k_scatter(drv: KBDriver, plan: KBLaunchPlan, basis: Basis,
 
 @dataclass(frozen=True)
 class ClassBinary:
-    """One class's own driver: its one-class plan, layout, binary, input."""
+    """One class's own runner: its one-class plan, layout, binary, input."""
 
     plan: KBLaunchPlan
     drv: KBDriver
     binary: Path
-    staged: Path
+    staged: np.ndarray  # kb_stage's
+
+    def run(self, mode: str, workdir: Path, *, warmup: int = 0,
+            reps: int = 2) -> Sequenced:
+        """Mode `mode`'s sequence `warmup + reps` times, every timed run's
+        output kept. The caller holds the card (its device fixture)."""
+        buffers, steps, _ = kb_steps(self.drv, self.staged, mode)
+        return run_sequence(self.binary, workdir, buffers, steps,
+                            outs=["S" if mode == "k" else "K"], runs=reps,
+                            warmup=warmup, witness="each")
+
+    def case(self, mode: str, workdir: Path, *, warmup: int = 0,
+             reps: int = 1) -> list[str]:
+        """The argv of one run of mode `mode` (its spec written into
+        `workdir`): for a profiler wrapping the runner."""
+        buffers, steps, _ = kb_steps(self.drv, self.staged, mode)
+        spec, arrays = sequence_spec(buffers, steps, outs=[], runs=reps,
+                                     warmup=warmup, witness="each")
+        return [str(self.binary), str(write_case(workdir, spec, arrays))]
+
+    def timings(self, mode: str, ran: Sequenced) -> dict[str, list[float]]:
+        """`{"total" | class index: [ns per timed run]}`: the run's events,
+        and per class the sum of its launches' (each kernel alone)."""
+        _, _, groups = kb_steps(self.drv, self.staged, mode)
+        out = {"total": list(ran.events_ns)}
+        for c, g in enumerate(groups):
+            out[str(c)] = [sum(r[i] for i in g) for r in ran.launch_ns]
+        return out
 
 
 def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
@@ -551,7 +598,7 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
                    dense: bool = False, transposed: bool = False,
                    column: bool = False, with_k: bool = True,
                    timeout: float = 1800.0) -> list[ClassBinary]:
-    """One driver PER CLASS (`plan` cut to that one class), compiled in
+    """One runner PER CLASS (`plan` cut to that one class), compiled in
     parallel, each staged. A whole molecule's 162 kernels in one translation
     unit leave one compiler thread at it for most of an hour; one class per
     unit compiles on every core, and times each class in its own process."""
@@ -566,9 +613,7 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
                         rolled=rolled, dense=dense, transposed=transposed,
                         column=column, with_k=with_k)
         binary = compile_checked(tc, drv, w / "kb_driver", timeout=timeout)
-        staged = w / "in.bin"
-        kb_stage(drv, sub, basis, D).tofile(staged)
-        return ClassBinary(sub, drv, binary, staged)
+        return ClassBinary(sub, drv, binary, kb_stage(drv, sub, basis, D))
 
     n = jobs or max(1, min(len(plan), (os.cpu_count() or 2) // 2))
     with ThreadPoolExecutor(n) as pool:
@@ -576,158 +621,22 @@ def class_binaries(tc, plan: KBLaunchPlan, basis: Basis, D: object,
 
 
 def run_classes(parts: list[ClassBinary], basis: Basis, mode: str,
-                run_device_binary, backend: str, *, warmup: int = 0,
-                reps: int = 2) -> tuple[list[np.ndarray], list[str], bool]:
-    """Every class's binary in `mode`, in plan order: `K_mn` of the first and
-    the last run (each the sum over classes), every stdout, and whether each
-    class's two runs were bit-identical."""
+                workdir: Path, *, warmup: int = 0, reps: int = 2
+                ) -> tuple[list[np.ndarray], list[dict], bool]:
+    """Every class's runner in `mode`, in plan order: `K_mn` of the first and
+    the last timed run (each the sum over classes), every class's
+    `ClassBinary.timings`, and whether each class's first and last runs
+    were bit-identical."""
     n = basis.n_ao
     Ks = [np.zeros((n, n)), np.zeros((n, n))]
     outs, same = [], True
-    for p in parts:
-        dst = p.staged.with_name(f"out_{mode}.bin")
-        outs.append(run_device_binary(p.binary, str(p.staged), str(dst),
-                                      str({**MODES, **SPLIT_MODE}[mode]),
-                                      str(warmup),
-                                      str(reps), vram=backend))
-        runs = kb_read_back(p.drv, np.fromfile(dst, dtype=np.float64))
+    for i, p in enumerate(parts):
+        ran = p.run(mode, workdir / f"{mode}_{i}", warmup=warmup, reps=reps)
+        runs = ran.load("S" if mode == "k" else "K")
+        runs = [runs[0], runs[-1]]
         same &= runs[0].tobytes() == runs[1].tobytes()
-        for i, r in enumerate(runs):
-            Ks[i] += (r.reshape(n, n) if mode in ("kb", "kbs")
+        for j, r in enumerate(runs):
+            Ks[j] += (r.reshape(n, n) if mode in ("kb", "kbs")
                       else k_scatter(p.drv, p.plan, basis, r))
+        outs.append(p.timings(mode, ran))
     return Ks, outs, same
-
-
-_REP = re.compile(r"^rep (\d+) (class (\d+)|total) events_ns ([0-9.]+)$",
-                  re.MULTILINE)
-
-
-def timings(stdout: str) -> dict[str, list[float]]:
-    """`{"total" | class index: [ns per timed run]}` from the rep lines."""
-    out: dict[str, list[float]] = defaultdict(list)
-    for m in _REP.finditer(stdout):
-        out["total" if m.group(3) is None else m.group(3)].append(
-            float(m.group(4)))
-    return dict(out)
-
-
-KB_DRIVER = r"""// generated from a block-K launch plan by test/kblock_driver.py (#481).
-{prologue}
-{portable}
-#if defined(__HIP_PLATFORM_AMD__) || defined(__HIPCC__)
-#define devMemset hipMemset
-#define devFree   hipFree
-#define devEvent_t          hipEvent_t
-#define devEventCreate      hipEventCreate
-#define devEventRecord(e)   hipEventRecord(e, 0)
-#define devEventElapsedTime hipEventElapsedTime
-#else
-#define devMemset cudaMemset
-#define devFree   cudaFree
-#define devEvent_t          cudaEvent_t
-#define devEventCreate      cudaEventCreate
-#define devEventRecord(e)   cudaEventRecord(e, 0)
-#define devEventElapsedTime cudaEventElapsedTime
-#endif
-{includes}
-{upload_int}
-static const int NC = {n_c}, NE = {n_e}, NDC = {n_dc}, LANES = {lanes};
-static const size_t NAO = {n_ao}, NS = {n_s};
-static const int cd[NC] = {{{cd}}};  // doubles staged per class
-static const int ci[NC] = {{{ci}}};  // of them ints: bra, ket, block table
-static const int ne[NE] = {{{ne}}};  // Dcd doubles per density class
-
-// usage: in out MODE WARMUP REPS. MODE 0 the block kernel into K_mn, MODE 1
-// kernel_k into its scratch, MODE 2 (when emitted) the split set into K_mn;
-// `out` is the first timed run's output, then the last's.
-int main(int argc, char** argv) {{
-    if (argc != 6) {{
-        std::fprintf(stderr, "usage: in out mode warmup reps\n");
-        return 2;
-    }}
-    const int mode = std::atoi(argv[3]), warmup = std::atoi(argv[4]),
-              reps = std::atoi(argv[5]);
-    if (mode < 0 || mode >= {n_modes} || warmup < 0 || reps < 1) {{
-        std::fprintf(stderr, "bad mode/warmup/reps\n");
-        return 2;
-    }}
-    std::vector<double> in;
-    if (!slurp(argv[1], in)) {{ std::fprintf(stderr, "bad input\n"); return 2; }}
-    size_t want = 2;
-    for (int c = 0; c < NC; ++c) want += (size_t)cd[c];
-    for (int e = 0; e < NE; ++e) want += (size_t)ne[e];
-    if (in.size() != want) {{
-        std::fprintf(stderr, "input has %zu doubles, the plan wants %zu\n",
-                     in.size(), want);
-        return 2;
-    }}
-    const size_t nout = mode != 1 ? NAO * NAO : NS;
-    if (fj_vram_probe(in.size() * sizeof(double) + nout * sizeof(double)
-                          + (size_t)16 * (NC + NE),
-                      {{{vram_kernels}}})) return 0;
-    const double tau = in[0], maxD = in[1];
-    (void)maxD;  // read by kernel_k's mode only: with_k=False leaves it unused
-    const double* h = in.data() + 2;
-    double* bp[NC];
-    int* ip[NC];
-    for (int c = 0; c < NC; ++c) {{
-        const size_t nd = (size_t)(cd[c] - ci[c]);
-        bp[c] = upload(h, nd);
-        ip[c] = upload_int(h + nd, (size_t)ci[c]);
-        if (!bp[c] || !ip[c]) {{
-            std::fprintf(stderr, "upload %d failed\n", c);
-            return 1;
-        }}
-        h += cd[c];
-    }}
-    double* dp[NE];
-    for (int e = 0; e < NE; ++e) {{
-        dp[e] = upload(h, (size_t)ne[e]);
-        if (!dp[e]) {{ std::fprintf(stderr, "Dcd upload %d failed\n", e); return 1; }}
-        h += ne[e];
-    }}
-    double* dK = nullptr;
-    double* dS = nullptr;
-    if (mode != 1) CHECK(devMalloc(&dK, NAO * NAO * sizeof(double)));
-    else CHECK(devMalloc(&dS, NS * sizeof(double)));
-    double* dOut = mode != 1 ? dK : dS;
-    devEvent_t ev[NC + 2];
-    for (int e = 0; e < NC + 2; ++e) CHECK(devEventCreate(&ev[e]));
-    std::vector<double> buf(nout), first, last;
-    for (int r = 0; r < warmup + reps; ++r) {{
-        CHECK(devSynchronize());
-        CHECK(devEventRecord(ev[NC + 1]));
-        CHECK(devMemset(dOut, 0, nout * sizeof(double)));
-        if (mode == 0) {{
-{kb_launches}
-        }} else if (mode == 1) {{
-{k_launches}
-        }} else {{
-{kbs_launches}
-        }}
-        CHECK(devEventRecord(ev[NC]));
-        CHECK(devSynchronize());
-        CHECK(devMemcpy(buf.data(), dOut, nout * sizeof(double), devMemcpyD2H));
-        if (r < warmup) continue;
-        for (int c = 0; c < NC; ++c) {{
-            float ms = 0.f;
-            CHECK(devEventElapsedTime(&ms, ev[c], c + 1 < NC ? ev[c + 1] : ev[NC]));
-            std::printf("rep %d class %d events_ns %.0f\n", r - warmup, c,
-                        (double)ms * 1e6);
-        }}
-        float ms = 0.f;
-        CHECK(devEventElapsedTime(&ms, ev[NC + 1], ev[NC]));
-        std::printf("rep %d total events_ns %.0f\n", r - warmup, (double)ms * 1e6);
-        if (r == warmup) first = buf;
-        last = buf;
-    }}
-    for (int c = 0; c < NC; ++c) {{ CHECK(devFree(bp[c])); CHECK(devFree(ip[c])); }}
-    for (int e = 0; e < NE; ++e) CHECK(devFree(dp[e]));
-    CHECK(devFree(dOut));
-    first.insert(first.end(), last.begin(), last.end());
-    if (!spill(argv[2], first)) {{ std::fprintf(stderr, "write failed\n"); return 1; }}
-    std::printf("fj-kbdriver mode %d classes %d warmup %d reps %d\n", mode, NC,
-                warmup, reps);
-    return 0;
-}}
-"""

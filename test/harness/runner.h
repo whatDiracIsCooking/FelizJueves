@@ -1,4 +1,4 @@
-// runner.h -- the generic runner: one launch of one generated kernel (#649).
+// runner.h -- the generic runner: launches of generated kernels (#649, #657).
 //
 //     <runner> spec.json
 //
@@ -25,24 +25,55 @@
 // spec's own directory. `type` is f64 f32 i32 i64 u32 u64; an input's dtype
 // must be exactly that type's little-endian spelling.
 //
-// Optional `runs` (default 1) and `warmup` (default 0), #654: `warmup + runs`
-// launches, each from the same state (every `out` restored to its `in`, or
-// zero), each one's outputs required byte-identical to the first's -- the
-// run-to-run witness -- and each of the `runs` timed by device events, one
-// `fj-runner run <r> events_ns <ns>` line apiece.
+// A SEQUENCE (#657) is the same thing for several launches over shared
+// arrays -- the ERI drivers' many launches into one `F`, `J`, `K` or `G`:
 //
-// Before anything is allocated the spec is checked against the kernel's
+//     {"buffers": [
+//        {"name": "D", "type": "f64", "in": "D.in.npy"},
+//        {"name": "F", "type": "f64", "shape": [49], "out": "F.out.npy"}],
+//      "launches": [
+//        {"kernel": "f_0000", "grid": [3], "block": [32], "shared_bytes": 0,
+//         "zero": ["W"],
+//         "args": [{"name": "n_bra", "type": "i32", "value": 3}, ...,
+//                  {"name": "F", "type": "f64", "array": true,
+//                   "buffer": "F", "offset": 0}]}, ...]}
+//
+// A buffer is what an array argument of the single form is (`in`, or a
+// zero-filled `shape`; `out` to read it back); an array argument names one
+// by `buffer`, `offset` elements in (default 0), at the buffer's own type.
+// A launch's optional `zero` buffers are memset to 0 just before it, inside
+// its time. The launches run in order on one stream; the single form is the
+// one-launch sequence whose buffers are its arrays, one per argument.
+//
+// Optional `runs` (default 1) and `warmup` (default 0), #654: `warmup + runs`
+// runs of the whole sequence, each from the same state (every buffer some
+// launch can write -- a non-const pointer names it, or `zero` does --
+// restored to its `in`, or zero, outside the clock). `witness`:
+//   "identical" (the default) -- every run's outputs required byte-identical
+//               to the first's, the run-to-run witness; the first is written.
+//   "each"      -- for kernels that add by atomics, whose order is the
+//               card's: no comparison; the first run after warmup is written
+//               to `out` and run r > 0 of the `runs` to `<out stem>.run<r>.npy`.
+// Each of the `runs` prints `fj-runner run <r> events_ns <ns> wall_ns <ns>`
+// (device events around the whole sequence, its `zero`s included; the host
+// steady clock from before the first launch to the closing synchronize),
+// and, for a sequence of more than one launch, `fj-runner run <r> launch <l>
+// events_ns <ns>` per launch: an event pair around the kernel alone.
+//
+// Before anything is allocated every launch is checked against its kernel's
 // compiled signature (kernel_table.h): the arity, and per argument scalar or
-// pointer, kind and size, and that no `out` names a pointer-to-const. A
-// mismatch is an error, not a launch.
+// pointer, kind and size, that no single-form `out` names a
+// pointer-to-const, and that a buffer's type is the argument's. A mismatch
+// is an error, not a launch.
 //
 // Exit 0 with every output written; 1 on any error (stderr says which); 2 on
 // bad usage. On success stdout carries the `run` lines, then one
-// `fj-runner launch ...` line, then one `fj-runner out <name> <path>` line
-// per output.
+// `fj-runner launch ...` line per launch, then one `fj-runner out <name>
+// <path>` line per file written.
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -128,12 +159,32 @@ inline std::uint64_t scalar_bits(const TypeInfo& t, const json::Value& v,
     return slot;
 }
 
-struct Output {
+// One device array of the case: an `in` .npy uploaded, or a zero-filled
+// `shape`; written back to `out` when it has one. `initial` is what it holds
+// before each run -- restored before every run but the first when any launch
+// can write it (a non-const pointer names it).
+struct Buffer {
     std::string name;
-    std::string path;
-    npy::Array host;                     // the first launch's result
-    std::vector<unsigned char> initial;  // its `in`, or zeros: restored per launch
-    std::size_t arg = 0;                 // index into the device buffers
+    const TypeInfo* type = nullptr;
+    std::string out;                     // empty: never read back
+    npy::Array host;                     // the first run's result (shape, dtype)
+    std::vector<unsigned char> initial;  // its `in`, or zeros
+    std::vector<npy::Array> each;        // witness "each": runs 1.. after warmup
+    DeviceBuffer dev;
+    bool written = false;
+};
+
+struct Launch {
+    const KernelEntry* entry = nullptr;
+    std::string kernel;
+    dim3 grid, block;
+    long long shm = 0;
+    std::vector<std::uint64_t> scalars;
+    std::vector<std::size_t> buffer;  // per argument: its buffer (pointers only)
+    std::vector<std::size_t> offset;  // per argument: elements into it
+    std::vector<std::size_t> zero;    // buffers memset to 0 before the launch
+    std::vector<void*> pointers;
+    std::vector<void*> args;
 };
 
 inline int count(const json::Value& spec, const char* key, int fallback, int least) {
@@ -146,32 +197,71 @@ inline int count(const json::Value& spec, const char* key, int fallback, int lea
     return static_cast<int>(x);
 }
 
-inline int run(const std::string& spec_path, const KernelEntry* table, std::size_t n_table) {
-    const json::Value spec = json::read(spec_path);
-    const std::size_t slash = spec_path.rfind('/');
-    const std::string base = slash == std::string::npos ? "" : spec_path.substr(0, slash);
-
-    const std::string& kname = spec.at("kernel").str();
-    const KernelEntry* entry = nullptr;
-    for (std::size_t k = 0; k < n_table; ++k) {
-        if (kname == table[k].name) entry = &table[k];
+// A buffer from `{name, type, in | shape, out?}`: a `buffers` entry, or a
+// single-launch spec's array argument.
+inline Buffer read_buffer(const json::Value& b, const std::string& base, const std::string& where) {
+    Buffer buf;
+    buf.name = b.at("name").str();
+    buf.type = &type_info(b.at("type").str());
+    const json::Value* in = b.find("in");
+    if (in != nullptr) {
+        const std::string path = resolve(base, in->str());
+        buf.host = npy::read(path);
+        if (buf.host.descr != buf.type->descr) {
+            throw std::runtime_error(path + ": dtype " + buf.host.descr + ", but " + buf.name +
+                                     " is " + buf.type->name + " (" + buf.type->descr + ")");
+        }
+    } else {
+        const json::Value* shape = b.find("shape");
+        if (shape == nullptr) {
+            throw std::runtime_error(where + ": an array needs `in`, `out` or both");
+        }
+        buf.host.descr = buf.type->descr;
+        for (const json::Value& d : shape->items) {
+            const long long x = d.integer();
+            if (x < 0) throw std::runtime_error(buf.name + ": negative extent");
+            buf.host.shape.push_back(static_cast<std::size_t>(x));
+        }
+        buf.host.data.assign(buf.host.count() * buf.type->size, 0);
     }
-    if (entry == nullptr) throw std::runtime_error("no kernel '" + kname + "' in this runner");
+    const json::Value* out = b.find("out");
+    if (out != nullptr) buf.out = resolve(base, out->str());
+    buf.initial = buf.host.data;
+    return buf;
+}
 
-    const json::Value& args = spec.at("args");
-    if (!args.is(json::Value::Kind::Array) || args.items.size() != entry->arity) {
-        throw std::runtime_error(kname + " takes " + std::to_string(entry->arity) +
+inline const KernelEntry* find_kernel(const std::string& name, const KernelEntry* table,
+                                      std::size_t n_table) {
+    for (std::size_t k = 0; k < n_table; ++k) {
+        if (name == table[k].name) return &table[k];
+    }
+    throw std::runtime_error("no kernel '" + name + "' in this runner");
+}
+
+// One launch's description checked against its kernel's compiled signature;
+// `single` is the single-launch form, whose arrays ARE its buffers (each
+// named after its argument, appended to `buffers` here).
+inline Launch read_launch(const json::Value& l, const std::string& base, const KernelEntry* table,
+                          std::size_t n_table, std::vector<Buffer>& buffers, bool single) {
+    Launch run;
+    run.kernel = l.at("kernel").str();
+    run.entry = find_kernel(run.kernel, table, n_table);
+    const KernelEntry& entry = *run.entry;
+    const std::string& kname = run.kernel;
+    const json::Value& args = l.at("args");
+    if (!args.is(json::Value::Kind::Array) || args.items.size() != entry.arity) {
+        throw std::runtime_error(kname + " takes " + std::to_string(entry.arity) +
                                  " arguments; the spec lists " +
                                  std::to_string(args.items.size()));
     }
-
-    // Check every argument against the signature before touching the card.
-    std::vector<const TypeInfo*> types(entry->arity);
-    for (std::size_t k = 0; k < entry->arity; ++k) {
+    run.scalars.assign(entry.arity, 0);
+    run.buffer.assign(entry.arity, 0);
+    run.offset.assign(entry.arity, 0);
+    for (std::size_t k = 0; k < entry.arity; ++k) {
         const json::Value& a = args.items[k];
         const std::string& name = a.at("name").str();
         const TypeInfo& t = type_info(a.at("type").str());
-        const ArgType& want = entry->args[k];
+        const ArgType& want = entry.args[k];
         const json::Value* array = a.find("array");
         const bool is_array = array != nullptr && array->boolean;
         const std::string where = kname + " argument " + std::to_string(k) + " (" + name + ")";
@@ -185,7 +275,14 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
                                      std::string(1, want.kind) + "', " +
                                      std::to_string(want.size) + " bytes)");
         }
-        if (is_array) {
+        if (!is_array) {
+            if (a.find("value") == nullptr) {
+                throw std::runtime_error(where + ": a scalar needs `value`");
+            }
+            run.scalars[k] = scalar_bits(t, a.at("value"), name);
+            continue;
+        }
+        if (single) {
             if (a.find("in") == nullptr && a.find("out") == nullptr) {
                 throw std::runtime_error(where + ": an array needs `in`, `out` or both");
             }
@@ -193,13 +290,99 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
                 throw std::runtime_error(where + ": the kernel takes it const; it cannot "
                                                  "be an output");
             }
-        } else if (a.find("value") == nullptr) {
-            throw std::runtime_error(where + ": a scalar needs `value`");
+            buffers.push_back(read_buffer(a, base, where));
+            run.buffer[k] = buffers.size() - 1;
+        } else {
+            const std::string& bname = a.at("buffer").str();
+            std::size_t b = buffers.size();
+            for (std::size_t j = 0; j < buffers.size(); ++j) {
+                if (buffers[j].name == bname) b = j;
+            }
+            if (b == buffers.size()) throw std::runtime_error(where + ": no buffer '" + bname + "'");
+            if (buffers[b].type != &t) {
+                throw std::runtime_error(where + ": spec type " + t.name + ", but buffer " +
+                                         bname + " is " + buffers[b].type->name);
+            }
+            const json::Value* off = a.find("offset");
+            const long long o = off ? off->integer() : 0;
+            if (o < 0 || static_cast<std::size_t>(o) > buffers[b].host.count()) {
+                throw std::runtime_error(where + ": offset " + std::to_string(o) +
+                                         " is outside buffer " + bname);
+            }
+            run.buffer[k] = b;
+            run.offset[k] = static_cast<std::size_t>(o);
         }
-        types[k] = &t;
+        if (!want.is_const) buffers[run.buffer[k]].written = true;
+    }
+    run.grid = dims(l.at("grid"), "grid");
+    run.block = dims(l.at("block"), "block");
+    const json::Value* shared = l.find("shared_bytes");
+    run.shm = shared ? shared->integer() : 0;
+    if (run.shm < 0) throw std::runtime_error("shared_bytes is negative");
+    const json::Value* zero = l.find("zero");
+    if (zero != nullptr) {
+        for (const json::Value& z : zero->items) {
+            std::size_t b = buffers.size();
+            for (std::size_t j = 0; j < buffers.size(); ++j) {
+                if (buffers[j].name == z.str()) b = j;
+            }
+            if (b == buffers.size()) {
+                throw std::runtime_error(kname + ": `zero` names no buffer '" + z.str() + "'");
+            }
+            run.zero.push_back(b);
+            buffers[b].written = true;
+        }
+    }
+    return run;
+}
+
+// `<stem>.npy` -> `<stem>.run<r>.npy`: witness "each"'s later runs.
+inline std::string run_path(const std::string& path, int r) {
+    const std::string tail = ".npy";
+    const bool npy_ext = path.size() >= tail.size() &&
+                         path.compare(path.size() - tail.size(), tail.size(), tail) == 0;
+    const std::string stem = npy_ext ? path.substr(0, path.size() - tail.size()) : path;
+    return stem + ".run" + std::to_string(r) + ".npy";
+}
+
+inline int run(const std::string& spec_path, const KernelEntry* table, std::size_t n_table) {
+    const json::Value spec = json::read(spec_path);
+    const std::size_t slash = spec_path.rfind('/');
+    const std::string base = slash == std::string::npos ? "" : spec_path.substr(0, slash);
+
+    // Every launch, and every buffer, checked before the card is touched.
+    std::vector<Buffer> buffers;
+    std::vector<Launch> launches;
+    const json::Value* seq = spec.find("launches");
+    if (seq == nullptr) {
+        launches.push_back(read_launch(spec, base, table, n_table, buffers, true));
+    } else {
+        if (spec.find("kernel") != nullptr || spec.find("args") != nullptr) {
+            throw std::runtime_error("a spec is one launch (`kernel`, `args`) or a sequence "
+                                     "(`buffers`, `launches`), not both");
+        }
+        const json::Value& bs = spec.at("buffers");
+        for (const json::Value& b : bs.items) {
+            const std::string where = "buffer " + b.at("name").str();
+            for (const Buffer& x : buffers) {
+                if (x.name == b.at("name").str()) throw std::runtime_error(where + " is listed twice");
+            }
+            buffers.push_back(read_buffer(b, base, where));
+        }
+        if (!seq->is(json::Value::Kind::Array) || seq->items.empty()) {
+            throw std::runtime_error("launches must be a non-empty list");
+        }
+        for (const json::Value& l : seq->items) {
+            launches.push_back(read_launch(l, base, table, n_table, buffers, false));
+        }
     }
     const int warmup = count(spec, "warmup", 0, 0);
     const int runs = count(spec, "runs", 1, 1);
+    const json::Value* wit = spec.find("witness");
+    const std::string witness = wit ? wit->str() : "identical";
+    if (witness != "identical" && witness != "each") {
+        throw std::runtime_error("witness must be \"identical\" or \"each\"");
+    }
 
     int devices = 0;
     gpu::check(gpu::device_count(&devices), "device count");
@@ -207,101 +390,109 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
     const json::Value* dev = spec.find("device");
     gpu::check(gpu::set_device(dev ? static_cast<int>(dev->integer()) : 0), "set device");
 
-    std::vector<std::uint64_t> scalars(entry->arity, 0);
-    std::vector<DeviceBuffer> buffers(entry->arity);
-    std::vector<void*> pointers(entry->arity, nullptr);
-    std::vector<void*> launch_args(entry->arity, nullptr);
-    std::vector<Output> outputs;
-
-    for (std::size_t k = 0; k < entry->arity; ++k) {
-        const json::Value& a = args.items[k];
-        const std::string& name = a.at("name").str();
-        const TypeInfo& t = *types[k];
-        if (!entry->args[k].pointer) {
-            scalars[k] = scalar_bits(t, a.at("value"), name);
-            launch_args[k] = &scalars[k];
-            continue;
-        }
-        npy::Array host;
-        const json::Value* in = a.find("in");
-        if (in != nullptr) {
-            const std::string path = resolve(base, in->str());
-            host = npy::read(path);
-            if (host.descr != t.descr) {
-                throw std::runtime_error(path + ": dtype " + host.descr + ", but " + name +
-                                         " is " + t.name + " (" + t.descr + ")");
+    for (Buffer& b : buffers) {
+        b.dev = DeviceBuffer(b.initial.size());
+        b.dev.upload(b.initial.data());
+    }
+    for (Launch& l : launches) {
+        const std::size_t n = l.entry->arity;
+        l.pointers.assign(n, nullptr);
+        l.args.assign(n, nullptr);
+        for (std::size_t k = 0; k < n; ++k) {
+            if (!l.entry->args[k].pointer) {
+                l.args[k] = &l.scalars[k];
+                continue;
             }
-            buffers[k] = DeviceBuffer(host.data.size());
-            buffers[k].upload(host.data.data());
-        } else {
-            host.descr = t.descr;
-            for (const json::Value& d : a.at("shape").items) {
-                const long long x = d.integer();
-                if (x < 0) throw std::runtime_error(name + ": negative extent");
-                host.shape.push_back(static_cast<std::size_t>(x));
-            }
-            host.data.assign(host.count() * t.size, 0);
-            buffers[k] = DeviceBuffer(host.data.size());
-            buffers[k].zero();
-        }
-        pointers[k] = buffers[k].get();
-        launch_args[k] = &pointers[k];
-        const json::Value* out = a.find("out");
-        if (out != nullptr) {
-            std::vector<unsigned char> initial = host.data;
-            outputs.push_back(
-                Output{name, resolve(base, out->str()), std::move(host), std::move(initial), k});
+            const Buffer& b = buffers[l.buffer[k]];
+            l.pointers[k] = static_cast<unsigned char*>(b.dev.get()) + l.offset[k] * b.type->size;
+            l.args[k] = &l.pointers[k];
         }
     }
 
-    const dim3 grid = dims(spec.at("grid"), "grid");
-    const dim3 block = dims(spec.at("block"), "block");
-    const json::Value* shared = spec.find("shared_bytes");
-    const long long shm = shared ? shared->integer() : 0;
-    if (shm < 0) throw std::runtime_error("shared_bytes is negative");
-
-    gpu::event_t ev[2];  // destroyed at the end; an error exits the process anyway
+    // ev[0] opens the run, before the first launch's `zero`; launch l is
+    // ev[2l + 1] -> ev[2l + 2], the kernel alone; the run is ev[0] -> ev[2n].
+    const std::size_t n_launch = launches.size();
+    std::vector<gpu::event_t> ev(2 * n_launch + 1);
     for (gpu::event_t& e : ev) gpu::check(gpu::event_create(&e), "event create");
     std::vector<unsigned char> again;
     for (int r = 0; r < warmup + runs; ++r) {
         if (r > 0) {
-            for (const Output& o : outputs) buffers[o.arg].upload(o.initial.data());
+            for (Buffer& b : buffers) {
+                if (b.written) b.dev.upload(b.initial.data());
+            }
         }
-        gpu::check(gpu::event_record(ev[0]), "event record");
-        gpu::check(gpu::launch(entry->fn, grid, block, launch_args.data(),
-                               static_cast<std::size_t>(shm), nullptr),
-                   "launch");
-        gpu::check(gpu::last_error(), "launch (last error)");
-        gpu::check(gpu::event_record(ev[1]), "event record");
         gpu::check(gpu::synchronize(), "synchronize");
+        const auto t0 = std::chrono::steady_clock::now();
+        gpu::check(gpu::event_record(ev[0]), "event record");
+        for (std::size_t i = 0; i < n_launch; ++i) {
+            Launch& l = launches[i];
+            for (std::size_t z : l.zero) buffers[z].dev.zero();
+            gpu::check(gpu::event_record(ev[2 * i + 1]), "event record");
+            gpu::check(gpu::launch(l.entry->fn, l.grid, l.block, l.args.data(),
+                                   static_cast<std::size_t>(l.shm), nullptr),
+                       "launch");
+            gpu::check(gpu::last_error(), "launch (last error)");
+            gpu::check(gpu::event_record(ev[2 * i + 2]), "event record");
+        }
+        gpu::check(gpu::synchronize(), "synchronize");
+        const auto t1 = std::chrono::steady_clock::now();
         if (r >= warmup) {
             float ms = 0.0f;
-            gpu::check(gpu::elapsed_ms(&ms, ev[0], ev[1]), "event elapsed");
-            std::printf("fj-runner run %d events_ns %.0f\n", r - warmup, 1e6 * double(ms));
+            gpu::check(gpu::elapsed_ms(&ms, ev[0], ev[2 * n_launch]), "event elapsed");
+            const long long wall =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+            std::printf("fj-runner run %d events_ns %.0f wall_ns %lld\n", r - warmup,
+                        1e6 * double(ms), wall);
+            for (std::size_t i = 0; n_launch > 1 && i < n_launch; ++i) {
+                gpu::check(gpu::elapsed_ms(&ms, ev[2 * i + 1], ev[2 * i + 2]), "event elapsed");
+                std::printf("fj-runner run %d launch %zu events_ns %.0f\n", r - warmup, i,
+                            1e6 * double(ms));
+            }
         }
-        for (Output& o : outputs) {
+        for (Buffer& b : buffers) {
+            if (b.out.empty()) continue;
             if (r == 0) {
-                buffers[o.arg].download(o.host.data.data());
+                b.dev.download(b.host.data.data());
                 continue;
             }
-            again.resize(o.host.data.size());
-            buffers[o.arg].download(again.data());
-            if (again != o.host.data) {
-                throw std::runtime_error(o.name + ": launch " + std::to_string(r) +
-                                         " differs from launch 0 -- not run-to-run "
+            if (witness == "each") {
+                if (r <= warmup) continue;
+                b.each.push_back(b.host);
+                b.dev.download(b.each.back().data.data());
+                continue;
+            }
+            again.resize(b.host.data.size());
+            b.dev.download(again.data());
+            if (again != b.host.data) {
+                throw std::runtime_error(b.name + ": run " + std::to_string(r) +
+                                         " differs from run 0 -- not run-to-run "
                                          "deterministic");
+            }
+        }
+        // witness "each": the first kept run is the first after warmup.
+        if (witness == "each" && r == warmup && r > 0) {
+            for (Buffer& b : buffers) {
+                if (!b.out.empty()) b.dev.download(b.host.data.data());
             }
         }
     }
     for (gpu::event_t e : ev) (void)gpu::event_destroy(e);
-    std::printf("fj-runner launch %s grid %u %u %u block %u %u %u shared %lld warmup %d "
-                "runs %d\n",
-                kname.c_str(), grid.x, grid.y, grid.z, block.x, block.y, block.z, shm, warmup,
-                runs);
+    for (const Launch& l : launches) {
+        std::printf("fj-runner launch %s grid %u %u %u block %u %u %u shared %lld warmup %d "
+                    "runs %d\n",
+                    l.kernel.c_str(), l.grid.x, l.grid.y, l.grid.z, l.block.x, l.block.y,
+                    l.block.z, l.shm, warmup, runs);
+    }
 
-    for (Output& o : outputs) {
-        npy::write(o.path, o.host);
-        std::printf("fj-runner out %s %s\n", o.name.c_str(), o.path.c_str());
+    for (Buffer& b : buffers) {
+        if (b.out.empty()) continue;
+        npy::write(b.out, b.host);
+        std::printf("fj-runner out %s %s\n", b.name.c_str(), b.out.c_str());
+        for (std::size_t i = 0; i < b.each.size(); ++i) {
+            const std::string path = run_path(b.out, static_cast<int>(i + 1));
+            npy::write(path, b.each[i]);
+            std::printf("fj-runner out %s %s\n", b.name.c_str(), path.c_str());
+        }
     }
     return 0;
 }

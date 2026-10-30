@@ -127,8 +127,7 @@ def _run(backend: str, cls, threads: int, request, run_device_binary,
     kernels = [recs[0].kernel]
     binary = tfo._build(backend, tc, kernels, tmp_path, kernels[0].name)
     basis, _, _ = tfo.molecule(tfo.PART1)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     w = tfo._check_class(backend, cls, Fs)
     print(f"\n{backend} {cls} {NAME} at {threads} threads on {tfo.PART1}: "
           f"{len(recs)} launches; worst |F - sweep| / scale "
@@ -190,8 +189,7 @@ def _per_molecule(backend: str, name: str, tau: float, n: int, threads: int,
     kernels = tfo._kernels(recs)
     binary = tfo._build(backend, tc, kernels, tmp_path, f"fock_{name}_lv")
     basis, _, libcint = molecule(name)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     got = [np.array(KF.close(F)) for F in Fs]
     w_int, _ = walk(name, tau, n)  # the literal kernels, interpreted
     scale = sweep(name, block="scale")

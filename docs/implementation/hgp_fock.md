@@ -348,7 +348,10 @@ compile in over 5 s, about 15 s at `(dd|dd)` on each backend, so they are
 (`gfx1200`, hipcc / ROCm 7.2.4), through `test/fock_driver.py` and
 `test/test_fock_ondevice.py` (#288, PR #321; #290, PR #324). The driver
 records the launches `walk_f` makes, and one binary serves both the checks
-and the timing.
+and the timing. Since #657 that binary is the shared runner (#649,
+`test/harness/`) over the kernel set's units, each check or timing a
+sequence of the recorded launches; that port has run through the real
+runner on the host against a scratch stub runtime only, not yet on a card.
 
 - **Part 1, per class.** H₂O/cc-pVDZ's plan at `τ = 0` reaches all 21
   classes. Each class's launches on the card are held to the same launches
@@ -509,7 +512,8 @@ unread **array** parameter to `(void)`, and no existing unit's text moved.
 nothing is timed.
 
 **Where it ran: the RTX 3080 only** (#408, PR #477; `test/hjk_driver.py`,
-`test/test_hjk_ondevice.py`). Part 1 ran all 70 L ≤ 4 ordered classes and
+`test/test_hjk_ondevice.py`; on the shared runner since #657, not yet run
+on a card). Part 1 ran all 70 L ≤ 4 ordered classes and
 all 17 canonical kernels, for each screen. Each ran on a synthetic basis
 holding only its own shells, against `eri.fock.fock`'s weight-1 sweep. Part 2 ran
 H₂/STO-3G and H₂O/STO-3G at `τ = 0`, in both modes for both screens, against

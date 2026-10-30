@@ -114,11 +114,9 @@ def _kernels(recs) -> list[Kernel]:
     return list(out.values())
 
 
-def _build(backend: str, tc, kernels, tmp_path: Path, name: str, *,
-           f_only: bool = False) -> Path:
+def _build(backend: str, tc, kernels, tmp_path: Path, name: str) -> Path:
     name = f"prog_{name}"
-    prog = fock_scatter_program(kernels, backend, tmp_path, name=name,
-                                f_only=f_only)
+    prog = fock_scatter_program(kernels, backend, tmp_path, name=name)
     return compile_checked(tc, prog, tmp_path / f"{name}_bin")
 
 
@@ -177,9 +175,7 @@ def _programs(backend: str, tc, cell, tmp_path: Path) -> None:
         kernels, name = [lever(cell[1])], "".join(map(str, cell[1]))
     else:
         kernels, name = _kernels(_molecule_recs(*cell[1:])), cell[1]
-    for f_only in (False, True):
-        _build(backend, tc, kernels, tmp_path / str(f_only), name,
-               f_only=f_only)
+    _build(backend, tc, kernels, tmp_path, name)  # f_only is a sequence's
 
 
 @pytest.mark.cuda
@@ -206,9 +202,7 @@ def _class(backend: str, cls, threads: int, request, run_device_binary,
     kernels = [recs[0].kernel]
     binary = _build(backend, tc, kernels, tmp_path, kernels[0].name)
     basis, _, _ = tfo.molecule(tfo.PART1)
-    Fs, _ = run_on_card(binary, fock_scatter_stage(recs, kernels),
-                        basis.n_ao, tmp_path, run_device_binary,
-                        backend=backend)
+    Fs, _ = run_on_card(binary, fock_scatter_stage(recs, kernels), tmp_path)
     w = tfo._check_class(backend, cls, Fs)
     print(f"\n{backend} {cls} {NAME} at {threads} threads on {tfo.PART1}: "
           f"{len(recs)} launches + their scatters; worst |F - sweep| / "
@@ -254,9 +248,7 @@ def _molecule(backend: str, name: str, tau: float, n: int, request,
     kernels = _kernels(recs)
     binary = _build(backend, tc, kernels, tmp_path, f"fock_{name}")
     basis, _, libcint = tfo.molecule(name)
-    Fs, _ = run_on_card(binary, fock_scatter_stage(recs, kernels),
-                        basis.n_ao, tmp_path, run_device_binary,
-                        backend=backend)
+    Fs, _ = run_on_card(binary, fock_scatter_stage(recs, kernels), tmp_path)
     got = np.array(KF.close(Fs[0]))
     w_int, _ = walk(name, tau, n)  # the literal interpreted walk
     scale = sweep(name, block="scale")
@@ -323,19 +315,29 @@ def test_the_vectorised_map_is_the_builders(cls) -> None:
 
 
 def test_the_staged_input_carries_each_launchs_map() -> None:
+    """Per launch: W zeroed then the F kernel into W, then `f_scatter` over
+    the launch's own map into F; `f_only` keeps the F kernels alone."""
     recs = _molecule_recs("h2o_sto3g", 0.0, 1)
     kernels = _kernels(recs)
-    data = fock_scatter_stage(recs, kernels)
-    nl = int(data[0])
-    assert nl == len(recs)
-    heads = data[4:4 + 11 * nl].reshape(nl, 11)
-    for h, r in zip(heads, recs, strict=True):
+    staged = fock_scatter_stage(recs, kernels)
+    assert len(staged.steps) == 2 * len(recs)
+    n_slot = 0
+    for i, r in enumerate(recs):
+        f, sc = staged.steps[2 * i], staged.steps[2 * i + 1]
         cls = tuple(int(c) for c in r.name[2:6])
         m = FS.scatter_map(cls, r.args["n_ket"], r.args["bra_ao"],
                            r.args["ket_ao"])
-        assert (int(h[9]), int(h[10])) == (m.n_el, m.n_slot)
-        nb, nk = int(h[1]), int(h[2])
-        assert int(h[8]) == 4 * nb + 4 * nk + 3 * m.n_el + 1 + m.n_slot
+        assert f.kernel == r.kernel and f.zero == (FS.SLOTS,)
+        assert f.args[FS.SLOTS] == FS.SLOTS
+        assert sc.kernel.name == FS.NAME
+        assert (sc.args["n_el"], sc.args["n_slot"]) == (m.n_el, m.n_slot)
+        assert (sc.args[FS.SLOTS], sc.args[KF.FOCK]) == (FS.SLOTS, KF.FOCK)
+        for n in ("el", "ptr", "src"):
+            assert tuple(staged.buffers[sc.args[n]]) == tuple(getattr(m, n))
+        n_slot = max(n_slot, m.n_slot)
+    assert staged.buffers[FS.SLOTS].shape == (n_slot,)
+    only = fock_scatter_stage(recs, kernels, f_only=True)
+    assert [st.kernel for st in only.steps] == [r.kernel for r in recs]
 
 
 @pytest.mark.slow  # interprets the class's cc-pVDZ launches twice (~40 s)

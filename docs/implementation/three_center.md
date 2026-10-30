@@ -339,11 +339,16 @@ text, and the device suite gave 2 passed, 0 skipped:
   are **not launched**, and their elements are asserted to be exactly 0.0.
 
 Both parts assert bit-identical runs and an exactly `(m, n)`-symmetric
-tensor. The driver is `test/eri3_driver.py`, after `test/metric_driver.py`:
-one program per (AO basis, aux basis), every class launched once into one
-zeroed `(n_ao, n_ao, n_aux)` tensor `RUNS` times behind the VRAM probe,
-compiled through `plan_driver.compile_checked`, each call built from the
-kernel's own parameter list.
+tensor. The driver is `test/eri3_driver.py`. At PR #457 it built one
+program per (AO basis, aux basis), after `test/metric_driver.py`, launched
+every class once into one zeroed `(n_ao, n_ao, n_aux)` tensor `RUNS` times
+behind the VRAM probe, and compiled through `plan_driver.compile_checked`,
+each call built from the kernel's own parameter list. Since #657 it runs on
+the shared runner (#649, `test/harness/`): one runner over every class's
+unit and one sequence launching each class into the tensor, `RUNS` times,
+the runner failing unless every run is bit-identical to the first. That
+port has run through the real runner on the host against a scratch stub
+runtime only, not yet on a card.
 
 **Not on the RX 9060 XT (`gfx1200`), at PR #457.** The card was on the
 PCI bus but kfd

@@ -57,7 +57,8 @@ synthetic density, where it skips 18,154 of 20,736 record pairs against
 17,980; `F_ab = max|D|` exactly on H₂O/STO-3G at every `τ`). Dropping whole
 blocks from the launch (a launch filter) is not built. Interpreted, one bra
 record per block is `kernel_k`'s row bitwise for every class through
-`(dd|dd)`; `test/kblock_driver.py` runs either kernel on one upload, and on
+`(dd|dd)`; `test/kblock_driver.py` runs either kernel on one upload (on the
+shared runner since #657, which has not run on a card), and on
 the RTX 3080 both matched `walk_kb` and libcint's `vk` on H₂O/STO-3G (τ 0 and
 1e-8), two H₂ and H₂O/cc-pVDZ (`slow`), and since #484 the decaying chain
 with its per-block factors (against `walk_kb`, 2.60e-16 of max); the RX

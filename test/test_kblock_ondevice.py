@@ -86,7 +86,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 import test_ao_k
-from kblock_driver import MODES, class_binaries, kb_driver, run_classes
+from harness_driver import Ref, sequence_spec
+from kblock_driver import (
+    MODES,
+    class_args,
+    class_binaries,
+    kb_driver,
+    kb_stage,
+    kb_steps,
+    run_classes,
+)
 from oracle import manifest
 from plan_driver import compile_checked
 from test_ao_k_decay import TAU, chain
@@ -247,8 +256,8 @@ def _check(backend: str, cell: Cell, request, run_device_binary,
         assert w.n_skipped > 0, "the screen never fired"
     lines = []
     for mode in ("kb",) if cell.rolled else MODES:
-        Ks, _, same = run_classes(parts, basis, mode, run_device_binary,
-                                  backend)
+        Ks, _, same = run_classes(parts, basis, mode,
+                                  workdir / "runs")
         if mode == "kb":
             assert same, "the block kernel's two runs differ: its atomics met"
         mode = ("kbd" if cell.dense else "kbrt" if cell.transposed
@@ -324,3 +333,47 @@ def test_cuda_kblock_driver_compiles(nvcc, tmp_path) -> None:
 @pytest.mark.hip
 def test_hip_kblock_driver_compiles(hipcc, tmp_path) -> None:
     _compile_only("hip", hipcc, tmp_path)
+
+
+VARIANTS = {"kb": {}, "rolled": {"rolled": True},
+            "dense": {"rolled": True, "dense": True},
+            "rolled-T": {"rolled": True, "transposed": True},
+            "rolled-C": {"rolled": True, "column": True}}
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_the_sequence_hands_each_kernel_the_interpreted_arrays(
+        variant, tmp_path) -> None:
+    """The runner's mode-0 sequence (`kb_steps`), read back out of its
+    buffers at each argument's offset, is `class_args` -- the arrays the
+    interpreted twin is handed -- argument for argument; and every mode's
+    sequence names every parameter (`sequence_spec` refuses otherwise)."""
+    cell = FAST[0]
+    _, basis, D = _case(cell.case)
+    plan = _plan(cell)
+    kw = VARIANTS[variant]
+    drv = kb_driver(plan, basis, "cuda", tmp_path, **kw)
+    staged = kb_stage(drv, plan, basis, D)
+    buffers, steps, groups = kb_steps(drv, staged, "kb")
+    assert [len(g) for g in groups] == [1] * len(plan)
+    assert steps[0].zero == ("K",)
+    for c, st in enumerate(steps):
+        want = class_args(drv, staged, c)
+        for p in st.kernel.params:
+            v = st.args[p.name]
+            if p.name == "K" or not p.array:
+                assert p.name == "K" or v == want[p.name], (c, p.name)
+                continue
+            w = np.ravel(np.asarray(want[p.name]))
+            got = np.ravel(buffers[v.buffer])[v.offset:v.offset + w.size]
+            assert np.array_equal(got, w.astype(got.dtype)), (c, p.name)
+    for mode in ("kb", "k") if not kw else ("kb",):
+        b, st, _ = kb_steps(drv, staged, mode)
+        sequence_spec(b, st, outs=["S" if mode == "k" else "K"])
+    if not kw:
+        _, ks, groups = kb_steps(drv, staged, "k")
+        assert [len(g) for g in groups] == [len(x.segs) for x in drv.classes]
+        offs = [st.args[st.kernel.params[-1].name] for st in ks]
+        assert all(isinstance(o, Ref) and o.buffer == "S" for o in offs)
+        assert [o.offset for o in offs] == [o for x in drv.classes
+                                            for o in x.scratch]

@@ -90,7 +90,6 @@ from test_fock_ondevice import (
 from test_kernel_device import (
     BACKEND,
     _toolchain,
-    check_vram,
 )
 from tiers import is_fast
 
@@ -188,12 +187,9 @@ def _f_wallclock(backend: str, request, run_device_binary,
     # 2-3. time, one cell at a time, near then wide, behind the gate
     discarded = [0]
 
-    def timed(binary: Path, data: np.ndarray, n_ao: int, label: str):
+    def timed(binary: Path, data, n_ao: int, label: str):
         work = tmp_path / "timing"
         work.mkdir(exist_ok=True)
-        src = work / "timing.in"
-        data.tofile(src)
-        check_vram(binary, (str(src), str(work / "timing.out")), backend)
         for take in range(1 + STUDY_RETAKES):
             try:
                 busy, util = gate.wait_quiet(
@@ -202,9 +198,8 @@ def _f_wallclock(backend: str, request, run_device_binary,
                 discarded[0] += 1
                 print(f"  DISCARDED {label}: {e} (take {take + 1})", flush=True)
                 continue
-            Fs, out = run_on_card(binary, data, n_ao, work, run_device_binary,
-                                  backend=backend, timing=(WARMUP, REPEATS),
-                                  tag="timing")
+            Fs, out = run_on_card(binary, data, work, timing=(WARMUP, REPEATS),
+                                  tag=f"timing{take}")
             card = (util, gate.after_reading(backend))
             if card[0] is not None and card[1] is not None \
                     and card[1] <= GPU_BUSY_MAX:

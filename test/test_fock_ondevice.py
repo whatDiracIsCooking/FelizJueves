@@ -7,10 +7,11 @@ THE LAUNCHES ARE WALK_F'S (test/fock_driver.py, `record`): `launch_f`'s plan
 (#285) walked by `walk_f` (#286) with a run that records each launch, so the
 card replays exactly the launches -- packed records, `diag`, `Dsh`, `D` --
 the interpreted build runs, through `kernel_f`'s kernels (#282, #283)
-emitted by `emit/` unchanged (#287). One program per kernel set, driven by
-its input; `F` is closed on the host (`kernel_f.close`), as walk_f closes
-it. Every program is compiled with devtools/config.sh's flags and FAILS on a
-warning located in generated text (#92, `plan_driver.compile_checked`). No
+emitted by `emit/` unchanged (#287). One shared runner (#657) per kernel
+set, driven by its sequence; `F` is closed on the host (`kernel_f.close`),
+as walk_f closes it. Every runner is compiled with devtools/config.sh's
+flags and FAILS on a warning located in generated text or a harness header
+(#92, `plan_driver.compile_checked`). No
 F unit is written by KERNEL_GEN_CMD (the Fock path is separate, #287), so
 the driver emits every unit itself, the same text `--fock-class` writes.
 
@@ -63,8 +64,8 @@ already read them.
 
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every program the
 device tests run, so a vendor spelling problem shows without the card. The
-device tests are `gpu` plus `cuda` or `hip`, behind the card lock and the
-VRAM probe: on a box without the card they skip, and kernel-tier.sh exits 2.
+device tests are `gpu` plus `cuda` or `hip`, behind the card lock: on a box
+without the card they skip, and kernel-tier.sh exits 2.
 """
 
 from __future__ import annotations
@@ -81,7 +82,9 @@ from fock_driver import (
     interpret,
     record,
     run_on_card,
+    unstage,
 )
+from harness_driver import sequence_spec
 from plan_driver import compile_checked
 from test_fock_build import BOUND, LIBCINT_TOL, TOL, members, molecule, sweep, walk
 from test_kernel_device import (
@@ -255,8 +258,7 @@ def _part1(backend: str, cls, request, run_device_binary,
     kernels = [recs[0].kernel]
     binary = _build(backend, tc, kernels, tmp_path, _class_name(cls))
     basis, _, _ = molecule(PART1)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     w = _check_class(backend, cls, Fs)
     n_q = sum(r.args["n_bra"] * r.args["n_ket"] for r in recs)
     print(f"\n{backend} {BACKEND[backend][1].name} {cls} on {PART1}: "
@@ -297,8 +299,7 @@ def _part2(backend: str, name: str, tau: float, n: int, request,
     kernels = _kernels(recs)
     binary = _build(backend, tc, kernels, tmp_path, f"fock_{name}")
     basis, _, libcint = molecule(name)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     got = [np.array(KF.close(F)) for F in Fs]
     w_int, _ = walk(name, tau, n)  # test_fock_build's interpreted walk
     F_int = np.array(w_int.F)
@@ -414,64 +415,35 @@ def test_part2s_molecules_kernels_are_the_recorded_launches() -> None:
 
 
 def test_the_program_reads_the_kernels_parameters(tmp_path) -> None:
-    """Every case passes one argument per kernel parameter, `AB` and `CD`
-    only where the kernel has them."""
-    kernels = list(_molecule_kernels("h2o_631g", 0.0, 1))
+    """The runner carries every kernel's unit, and every launch of the
+    sequence names one argument per kernel parameter -- `AB` and `CD` only
+    where the kernel has them (`sequence_spec` refuses anything else)."""
+    recs, _ = _plan("h2o_631g", 0.0, 1)
+    kernels = _kernels(recs)
     prog = fock_program(kernels, "hip", tmp_path)
     for k in kernels:
-        at = prog.source.index(">>>(", prog.source.index(f"::{k.name}<<<"))
-        call = prog.source[at:prog.source.index(");", at)]
-        assert call.count(",") == len(k.params) - 1, k.name
-        assert ("a_AB" in call) == ("AB" in KF.params_of(
+        assert f'kernel_entry("{k.name}", &' in prog.source, k.name
+    staged = fock_stage(recs, kernels)
+    spec, _ = sequence_spec(staged.buffers, staged.steps, outs=[KF.FOCK])
+    for launch, k in zip(spec["launches"], (r.kernel for r in recs),
+                         strict=True):
+        names = [a["name"] for a in launch["args"]]
+        assert names == [p.name for p in k.params], k.name
+        assert ("AB" in names) == ("AB" in KF.params_of(
             tuple(int(x) for x in k.name[2:])))
 
 
-def _unstage(data: np.ndarray, kernels) -> list[dict]:
-    """The input sliced as the program slices it, back into each launch's
-    arguments (the program's layout, restated)."""
-    nl, n_sh, n_ao, tau = int(data[0]), int(data[1]), int(data[2]), data[3]
-    heads = data[4:4 + 9 * nl].reshape(nl, 9)
-    at = 4 + 9 * nl
-    Dsh = data[at:at + n_sh * n_sh]
-    at += n_sh * n_sh
-    D = data[at:at + n_ao * n_ao]
-    at += n_ao * n_ao
-    out = []
-    for h in heads:
-        ki, nb, nk, kab, kcd, dg, th, nd, ni = (int(x) for x in h)
-        k = kernels[ki]
-        has = {p.name for p in k.params}
-        sizes = {"bra_prim": nb * kab * len(KF.REC), "AB": 3 * nb,
-                 "G_ab": nb, "ket_prim": nk * kcd * len(KF.REC), "CD": 3 * nk,
-                 "G_cd": nk, "bra_sh": 2 * nb, "bra_ao": 2 * nb,
-                 "ket_sh": 2 * nk, "ket_ao": 2 * nk}
-        args = {"n_bra": nb, "n_ket": nk, "k_ab": kab, "k_cd": kcd,
-                "n_sh": n_sh, "n_ao": n_ao, "diag": dg, "tau": tau,
-                "Dsh": Dsh, "D": D}
-        start = at
-        for n in ("bra_prim", "AB", "G_ab", "ket_prim", "CD", "G_cd",
-                  "bra_sh", "bra_ao", "ket_sh", "ket_ao"):
-            if n in has:
-                args[n] = data[at:at + sizes[n]]
-                at += sizes[n]
-        assert at - start == nd + ni
-        out.append((k, nb, th, args))
-    assert at == data.size
-    return out
-
-
 def test_the_staged_data_through_the_interpreter_is_the_walk() -> None:
-    """The input the card receives, sliced back as the program slices it
-    and interpreted launch by launch, gives walk_f's interpreted `F`
-    within `2 TOL` of scale (another block width): the staging, checked
-    without a card."""
+    """The sequence the card receives, read back out of its buffers and
+    interpreted launch by launch, gives walk_f's interpreted `F` within
+    `2 TOL` of scale (another block width): the staging, checked without
+    a card."""
     name = "h2o_sto3g"
     recs, _ = _plan(name, 0.1, 4)
     kernels = _kernels(recs)
-    data = fock_stage(recs, kernels)
     basis, _, _ = molecule(name)
     again = []
-    for k, nb, th, args in _unstage(data, kernels):
+    for k, nb, th, args in unstage(fock_stage(recs, kernels)):
         a = {p.name: args[p.name] for p in k.params if p.name != KF.FOCK}
         again.append(FRec(k, nb, th, {**a, KF.FOCK: None}))
     F = np.array(KF.close(interpret(again, basis.n_ao)))

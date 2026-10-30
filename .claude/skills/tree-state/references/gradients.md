@@ -95,7 +95,9 @@ tracked **libcint witness**, `test/oracle/k_gradient/co_ccpvtz_k_grad.json`
 matches it on four s, p, d classes within 2.7e-16 of `max|G|`
 (`test_k_gradient_witness.py`, `slow`). On the cards `gk` runs through
 `test/gk_driver.py` (every unit its own translation unit, `-c` under the
-10 s cap, linked; one `G` per launch) in `test_gk_device.py`, which took
+10 s cap, linked; one `G` per launch; on the shared runner since #657,
+which has not run on a card, its H₂O program compiled under nvcc and
+hipcc) in `test_gk_device.py`, which took
 over `test_grad_device.py`'s `gk` case. **On both cards** (2026-10-29):
 H₂O/STO-3G, every class in both forms on one upload, whole against the
 host 3.22e-15 / 3.37e-15 of `max|G|` (RTX 3080 / RX 9060 XT), rolled

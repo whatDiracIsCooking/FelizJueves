@@ -43,7 +43,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from kblock_driver import MODES, class_binaries, run_classes, timings
+from kblock_driver import MODES, class_binaries, run_classes
 from test_k_ondevice import ORACLE_TOL
 from test_kblock_ondevice import Cell, _case
 from test_kernel_device import BACKEND, _toolchain
@@ -102,7 +102,7 @@ def _measure(backend: str, request, run_device_binary, tmp_path: Path):
     parts = class_binaries(tc, plan, basis, D, backend, tmp_path)
     Kw = np.array(walk_kb(plan, basis, D, pq=pq).K)
     for mode in MODES:  # the timed binaries are the checked ones
-        Ks, _, _ = run_classes(parts, basis, mode, run_device_binary, backend)
+        Ks, _, _ = run_classes(parts, basis, mode, tmp_path / "runs")
         rel = float(np.max(np.abs(Ks[0] - Kw)) / np.max(np.abs(Kw)))
         assert rel <= ORACLE_TOL, f"{mode}: K vs walk_kb {rel:.2e}"
 
@@ -122,7 +122,7 @@ def _measure(backend: str, request, run_device_binary, tmp_path: Path):
                     print(f"  DISCARDED {mode}: {e} (take {take + 1})")
                     continue
                 _, outs, _ = run_classes(parts, basis, mode,
-                                         run_device_binary, backend,
+                                         tmp_path / "runs",
                                          warmup=WARMUP, reps=REPEATS)
                 after = gate.after_reading(backend)
                 if util is not None and after is not None \
@@ -137,7 +137,7 @@ def _measure(backend: str, request, run_device_binary, tmp_path: Path):
                              round(1000 * busy), "gpu_util_before": util,
                              "gpu_util_after": after})
             for c, out in enumerate(outs):
-                per[mode][c].extend(timings(out)["0"])
+                per[mode][c].extend(out["0"])
 
     work = tmp_path / "res"
     work.mkdir()

@@ -8,11 +8,11 @@ H2/STO-3G and H2O/STO-3G `J` and `K` against `walk_hjk`'s interpreted build,
 THE LAUNCHES ARE WALK_HJK'S (test/hjk_driver.py): `launch_hjk`'s ordered
 pair stream (#403), recorded from `walk_hjk` (#406), replayed on the card
 through `kernel_hj` / `kernel_hk` (#404, #405) emitted by `emit/` unchanged
-(#407), one program per kernel set. Every program is compiled with
-devtools/config.sh's flags and FAILS on a warning located in generated text
-(#92, `plan_driver.compile_checked`). No HGP J / K unit is written by
-KERNEL_GEN_CMD (the HGP path is `--hgp-*`, #407), so the driver emits every
-unit itself, the same text `--hgp-class` writes.
+(#407), one shared runner (#657) per kernel set. Every runner is compiled
+with devtools/config.sh's flags and FAILS on a warning located in generated
+text or a harness header (#92, `plan_driver.compile_checked`). No HGP J / K
+unit is written by KERNEL_GEN_CMD (the HGP path is `--hgp-*`, #407), so
+the driver emits every unit itself, the same text `--hgp-class` writes.
 
 PART 1, PER CLASS. All 70 ordered classes of total `L = la + lb + lc + ld
 <= 4` (`hgp.orbits.ordered_classes(4, lmax_shell=None)`, test_kernel_hj.py's
@@ -87,8 +87,8 @@ addition to contract), so both compute the same quartets.
 COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every program the
 device tests run, so a vendor spelling problem, or a warning in generated
 text, shows without the card. The device tests are `gpu` plus `cuda` or
-`hip`, behind the card lock and the VRAM probe: on a box without the card
-they skip, and kernel-tier.sh exits 2. No timing (#331).
+`hip`, behind the card lock: on a box without the card they skip, and
+kernel-tier.sh exits 2. No timing (#331).
 """
 
 from __future__ import annotations
@@ -99,6 +99,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from fock_driver import unstage
+from harness_driver import sequence_spec
 from hjk_driver import (
     HRec,
     hjk_program,
@@ -118,7 +120,7 @@ from felizjueves.ao.shell import Basis, Shell
 from felizjueves.eri import hgp_drive as HD
 from felizjueves.eri.eri import eri_block_and_scale
 from felizjueves.eri.fock import fock
-from felizjueves.eri.fock import kernel_f as KF
+from felizjueves.eri.hjk import kernel_hk as HK
 from felizjueves.eri.hjk import walk_hjk as W
 from felizjueves.eri.hjk.launch_hjk import hjk_launches
 from felizjueves.hgp import orbits
@@ -309,9 +311,7 @@ def _part1(backend: str, screen: str, mode: str, name: str, request,
     kernels = [recs[0].kernel]
     binary = _build(backend, tc, kernels, tmp_path, name)
     basis, _ = class_basis(ls)
-    Xs, _ = run_on_card(binary, hjk_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend,
-                        tag=name)
+    Xs, _ = run_on_card(binary, hjk_stage(recs, kernels), tmp_path, tag=name)
     X_int, ref, S = group_reference(screen, mode, name)
     w = {"host": _worst(Xs[0], ref, S), "interp": _worst(Xs[0], X_int, S),
          "runs": _worst(Xs[1], Xs[0], S)}
@@ -366,8 +366,7 @@ def _part2(backend: str, name: str, tau: float, mode: str, screen: str,
     tag = f"hjk_{name}_{mode}_{screen}"
     binary = _build(backend, tc, kernels, tmp_path, tag)
     basis, _, vj, vk = molecule(name)
-    Xs, _ = run_on_card(binary, hjk_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend, tag=tag)
+    Xs, _ = run_on_card(binary, hjk_stage(recs, kernels), tmp_path, tag=tag)
     w_int = walk(name, tau, mode, screen)  # test_hjk_build's interpreted walk
     assert w_int.kernel_screened == wrec.kernel_screened
     S = sweep(name, screen, block="scale", mode=mode)
@@ -494,67 +493,46 @@ def test_the_restated_launch_loop_is_the_walks(name, mode, screen) -> None:
 
 
 def test_the_program_reads_the_kernels_parameters(tmp_path) -> None:
-    """Every case passes one argument per kernel parameter, `perm` in the
-    `diag` slot only for a canonical kernel."""
+    """The runner carries every kernel's unit; every launch of the sequence
+    names one argument per kernel parameter, `perm` only for a canonical
+    kernel, into the one output matrix."""
     for mode in MODES:
         recs, _ = molecule_recs("h2o_sto3g", 0.0, mode, "k")
         kernels = _kernels(recs)
         prog = hjk_program(kernels, "hip", tmp_path / mode)
         for k in kernels:
-            at = prog.source.index(">>>(", prog.source.index(f"::{k.name}<<<"))
-            call = prog.source[at:prog.source.index(");", at)]
-            assert call.count(",") == len(k.params) - 1, k.name
-            assert (" dg," in call) == (mode == "canonical"), k.name
-            assert "dF" in call
+            assert f'kernel_entry("{k.name}", &' in prog.source, k.name
+        staged = hjk_stage(recs, kernels)
+        assert staged.out == HK.K_OUT
+        spec, _ = sequence_spec(staged.buffers, staged.steps,
+                                outs=[staged.out])
+        for launch, r in zip(spec["launches"], recs, strict=True):
+            names = [a["name"] for a in launch["args"]]
+            assert names == [p.name for p in r.kernel.params], r.name
+            assert ("perm" in names) == (mode == "canonical"), r.name
+            (out,) = [a for a in launch["args"] if a["name"] == HK.K_OUT]
+            assert out["buffer"] == HK.K_OUT
     with pytest.raises(ValueError, match="not one matrix"):
         hjk_program([_kernels(molecule_recs("h2_sto3g", 0.0, "ordered",
                                             s)[0])[0] for s in SCREENS],
                     "cuda", tmp_path / "mixed")
 
 
-def _unstage(data: np.ndarray, kernels, template) -> list[HRec]:
-    """The input sliced as the program slices it, back into launches."""
-    nl, n_sh, n_ao, tau = int(data[0]), int(data[1]), int(data[2]), data[3]
-    heads = data[4:4 + 9 * nl].reshape(nl, 9)
-    at = 4 + 9 * nl
-    Dsh = data[at:at + n_sh * n_sh]
-    at += n_sh * n_sh
-    D = data[at:at + n_ao * n_ao]
-    at += n_ao * n_ao
-    out = []
-    for h, t in zip(heads, template, strict=True):
-        ki, nb, nk, kab, kcd, perm, th, nd, ni = (int(x) for x in h)
-        k = kernels[ki]
-        has = {p.name for p in k.params}
-        rec = len(KF.REC)
-        sizes = {"bra_prim": nb * kab * rec, "AB": 3 * nb, "G_ab": nb,
-                 "ket_prim": nk * kcd * rec, "CD": 3 * nk, "G_cd": nk,
-                 "bra_sh": 2 * nb, "bra_ao": 2 * nb, "ket_sh": 2 * nk,
-                 "ket_ao": 2 * nk}
-        args = {"n_bra": nb, "n_ket": nk, "k_ab": kab, "k_cd": kcd,
-                "n_sh": n_sh, "n_ao": n_ao, "perm": perm, "tau": tau,
-                "Dsh": Dsh, "D": D, t.out: None}
-        start = at
-        for n in ("bra_prim", "AB", "G_ab", "ket_prim", "CD", "G_cd",
-                  "bra_sh", "bra_ao", "ket_sh", "ket_ao"):
-            if n in has:
-                args[n] = data[at:at + sizes[n]]
-                at += sizes[n]
-        assert at - start == nd + ni
-        out.append(HRec(k, nb, th, {p.name: args[p.name] for p in k.params}))
-    assert at == data.size
-    return out
+def _unstage(staged, template) -> list[HRec]:
+    """The sequence read back out of its buffers, into launches."""
+    return [HRec(k, grid, th, args) for (k, grid, th, args), _ in
+            zip(unstage(staged), template, strict=True)]
 
 
 @pytest.mark.parametrize("mode", MODES)
 def test_the_staged_data_through_the_interpreter_is_the_recording(mode
                                                                   ) -> None:
-    """The input the card receives, sliced back as the program slices it and
+    """The sequence the card receives, read back out of its buffers and
     interpreted launch by launch, is the recorded launches interpreted, bit
     for bit: the staging, checked without a card."""
     recs, _ = molecule_recs("h2_sto3g", 0.0, mode, "k")
     kernels = _kernels(recs)
     basis, _, _, _ = molecule("h2_sto3g")
-    again = _unstage(hjk_stage(recs, kernels), kernels, recs)
+    again = _unstage(hjk_stage(recs, kernels), recs)
     assert np.array_equal(interpret(again, basis.n_ao),
                           interpret(recs, basis.n_ao))

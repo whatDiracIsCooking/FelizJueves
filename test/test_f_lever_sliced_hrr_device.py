@@ -165,8 +165,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
     kernels = [recs[0].kernel]
     binary = fo._build(backend, tc, kernels, tmp_path, kernels[0].name)
     basis, _, _ = molecule(fo.PART1)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     w = fo._check_class(backend, cls, Fs)  # the literal's references
     print(f"\n{backend} {BACKEND[backend][1].name} {cls} {'+'.join(BOTH)} "
           f"({sh.n_slices(cls)} slices, {sh.n_groups(cls)} groups) on "
@@ -201,8 +200,7 @@ def _per_molecule(backend: str, name: str, tau: float, n: int, request,
     kernels = fo._kernels(recs)
     binary = fo._build(backend, tc, kernels, tmp_path, f"fock_{name}_lvs")
     basis, _, libcint = molecule(name)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     got = [np.array(KF.close(F)) for F in Fs]
     w_int, _ = walk(name, tau, n)  # the literal kernels, interpreted
     F_int = np.array(w_int.F)

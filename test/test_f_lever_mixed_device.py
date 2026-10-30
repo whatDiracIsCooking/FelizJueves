@@ -174,8 +174,7 @@ def _per_class(backend: str, cls, request, run_device_binary,
     kernels = [recs[0].kernel]
     binary = fo._build(backend, tc, kernels, tmp_path, kernels[0].name)
     basis, _, _ = molecule(fo.PART1)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     got = [np.array(KF.close(F)) for F in Fs]
     F_int, G, scale = _class_reference(cls)
     w = {"sweep": fo._worst(got[0], G, scale),
@@ -229,8 +228,7 @@ def _per_molecule(backend: str, name: str, tau: float, n: int, request,
     kernels = fo._kernels(recs)
     binary = fo._build(backend, tc, kernels, tmp_path, f"fock_{name}_lvm")
     basis, _, libcint = molecule(name)
-    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), basis.n_ao,
-                        tmp_path, run_device_binary, backend=backend)
+    Fs, _ = run_on_card(binary, fock_stage(recs, kernels), tmp_path)
     got = [np.array(KF.close(F)) for F in Fs]
     F_int = _lever_walk(name, tau, n)
     scale = sweep(name, block="scale")

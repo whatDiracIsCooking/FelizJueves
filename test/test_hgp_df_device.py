@@ -4,8 +4,8 @@ against the host and libcint, on the RTX 3080 and the RX 9060 XT.
 THE BUILD is the MMD tests' harnesses with `engine=Engine.HGP`
 (`metric_driver.build_on_card`, `eri3_driver.build_on_card`): the same
 staging and launches, every class's `kernel_hgp` unit launched once into
-one zeroed output, `RUNS` times -- `(P|Q)` through the shared runner (#654),
-one runner per unit; `(mn|P)` through eri3_driver's `main()` -- compiled
+one zeroed output, `RUNS` times, on the shared runner -- `(P|Q)` one
+runner per unit (#654), `(mn|P)` one runner over every unit (#657) -- compiled
 with devtools/config.sh's flags and FAILING on a warning located in
 generated text (#92). The signatures are the MMD kernels' (the harnesses
 check them), so nothing else changes.
@@ -24,7 +24,7 @@ NOT added: a Boys error that mattered would fail here. An element no
 launched pair or cell owns must come back exactly 0.0.
 
 THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runs are
-asserted bit-identical (for `(P|Q)` by the runner, which fails otherwise),
+asserted bit-identical (by the runner, which fails otherwise),
 and the output exactly symmetric.
 
 NOT A MEASUREMENT: nothing is written to `data/measured/`.
@@ -93,7 +93,7 @@ def _check(X, want, scale, owned, Xs, label):
     assert np.all(X[~owned] == 0.0)
 
 
-def _metric(backend, name, request, run_device_binary, tmp_path):
+def _metric(backend, name, request, tmp_path):
     tc = _toolchain(backend, request)
     aux = _metric_basis(name)
     classes = list(metric_classes(aux))
@@ -112,21 +112,21 @@ def _metric(backend, name, request, run_device_binary, tmp_path):
         assert worst <= TOL, worst
 
 
-def _eri3(backend, name, request, run_device_binary, tmp_path):
+def _eri3(backend, name, request, tmp_path):
     tc = _toolchain(backend, request)
     basis, aux = _eri3_bases(name)
     classes = list(eri3_classes(basis, aux))
     assert sorted((c.la, c.lb, c.lP) for c in classes) == ERI3
-    Ts = eri3_on_card(classes, basis.n_ao, aux.n_ao, backend, tc, tmp_path,
-                      run_device_binary, engine=HGP)
+    T = eri3_on_card(classes, basis.n_ao, aux.n_ao, backend, tc, tmp_path,
+                     engine=HGP)
     want, scale, owned = te._host(basis, aux, set(ERI3))
     label = f"{backend} {BACKEND[backend][1].name} heri3 {name}"
-    _check(Ts[0], want, scale, owned, Ts, label)
-    assert np.array_equal(Ts[0], Ts[0].transpose(1, 0, 2))
+    _check(T, want, scale, owned, [T], label)  # the runner witnessed the runs
+    assert np.array_equal(T, T.transpose(1, 0, 2))
     if name == "fixture":
         cols = _sp(te._aux())[1]
         ref = te._ts().tensor[:, :, cols]
-        worst = float(np.max(np.abs(Ts[0] - ref))) / float(
+        worst = float(np.max(np.abs(T - ref))) / float(
             np.max(np.abs(te._ts().tensor)))
         print(f"{label}: max |T - int3c2e_cart| = {worst:.2e} of max|T|")
         assert worst <= TOL, worst
@@ -136,32 +136,32 @@ def _eri3(backend, name, request, run_device_binary, tmp_path):
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", NAMES)
 def test_cuda_hgp_metric_matches_the_host_and_libcint(
-        name, request, run_device_binary, tmp_path):
-    _metric("cuda", name, request, run_device_binary, tmp_path)
+        name, request, tmp_path):
+    _metric("cuda", name, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", NAMES)
 def test_hip_hgp_metric_matches_the_host_and_libcint(
-        name, request, run_device_binary, tmp_path):
-    _metric("hip", name, request, run_device_binary, tmp_path)
+        name, request, tmp_path):
+    _metric("hip", name, request, tmp_path)
 
 
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", NAMES)
 def test_cuda_hgp_eri3_matches_the_host_and_libcint(
-        name, request, run_device_binary, tmp_path):
-    _eri3("cuda", name, request, run_device_binary, tmp_path)
+        name, request, tmp_path):
+    _eri3("cuda", name, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", NAMES)
 def test_hip_hgp_eri3_matches_the_host_and_libcint(
-        name, request, run_device_binary, tmp_path):
-    _eri3("hip", name, request, run_device_binary, tmp_path)
+        name, request, tmp_path):
+    _eri3("hip", name, request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def test_hip_hgp_eri3_matches_the_host_and_libcint(
 
 
 def _programs(name: str, backend: str, tmp_path: Path):
-    """Every metric class's runner, then the `(mn|P)` program."""
+    """Every metric class's runner, then the `(mn|P)` runner."""
     aux = _metric_basis(name)
     for _, prog in metric_runners(list(metric_classes(aux)), backend,
                                   tmp_path / "m", engine=HGP):
@@ -206,4 +206,5 @@ def test_the_programs_launch_the_hgp_units_of_every_sp_class(name, tmp_path):
     for prog in metric:  # each runner launches its HGP unit, no MMD one
         assert "FJ_KERNEL(hmetric_" in prog.source
         assert "FJ_KERNEL(metric_" not in prog.source
-    assert "::eri3_" not in eri3.source
+    assert "::heri3_" in eri3.source  # the runner launches the HGP units
+    assert "::eri3_" not in eri3.source  # and no MMD one

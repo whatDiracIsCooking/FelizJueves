@@ -41,7 +41,6 @@ import numpy as np
 import pytest
 import test_f_lever_scatter_device as tsd
 import test_fock_ondevice as tfo
-from conftest import check_vram
 from fock_driver import (
     FRec,
     fock_program,
@@ -69,22 +68,17 @@ def _tail_classes(env=os.environ) -> tuple:
     return got
 
 
-def _timed(backend: str, binary: Path, data: np.ndarray, n_ao: int,
-           label: str, run_device_binary, tmp_path: Path):
+def _timed(backend: str, binary: Path, data, label: str, tmp_path: Path):
     work = tmp_path / "timing"
     work.mkdir(exist_ok=True)
-    src = work / "timing.in"
-    data.tofile(src)
-    check_vram(binary, (str(src), str(work / "timing.out")), backend)
     for take in range(1 + STUDY_RETAKES):
         try:
             gate.wait_quiet(backend, say=lambda line: print(line, flush=True))
         except gate.Contended as e:
             print(f"  DISCARDED {label}: {e} (take {take + 1})", flush=True)
             continue
-        Fs, out = run_on_card(binary, data, n_ao, work, run_device_binary,
-                              backend=backend, timing=(WARMUP, REPEATS),
-                              tag="timing")
+        Fs, out = run_on_card(binary, data, work, timing=(WARMUP, REPEATS),
+                              tag=f"timing{take}")
         after = gate.after_reading(backend)
         if after is not None and after <= GPU_BUSY_MAX:
             break
@@ -112,15 +106,15 @@ def _tail(backend: str, request, run_device_binary, tmp_path: Path) -> None:
             binary = compile_checked(tc, prog, work / arm / "bin")
             arms[arm] = (binary, fock_stage([r], [k]))
         (r,) = tsd.as_lever([rec])
-        data = fock_scatter_stage([r], [r.kernel], mapper=scatter_map_np)
+        binary = tsd._build(backend, tc, [r.kernel], work / "scatter",
+                            "scatter")
         for arm, f_only in (("f-only", True), ("path", False)):
-            binary = tsd._build(backend, tc, [r.kernel], work / arm, arm,
-                                f_only=f_only)
-            arms[arm] = (binary, data)
+            arms[arm] = (binary, fock_scatter_stage(
+                [r], [r.kernel], mapper=scatter_map_np, f_only=f_only))
         t, bitwise = {}, None
         for arm, (binary, staged) in arms.items():
-            ev, wall, Fs = _timed(backend, binary, staged, basis.n_ao,
-                                  f"{cls} {arm}", run_device_binary, work)
+            ev, wall, Fs = _timed(backend, binary, staged, f"{cls} {arm}",
+                                  work)
             t[arm] = ev
             if arm == "path":
                 bitwise = bool(np.array_equal(Fs[0], Fs[1]))

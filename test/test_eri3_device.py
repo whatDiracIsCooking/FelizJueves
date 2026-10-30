@@ -3,11 +3,12 @@
 H2O/STO-3G x cc-pVTZ-jkfit tensor against the host and libcint's
 `int3c2e_cart`, on the RTX 3080 and the RX 9060 XT.
 
-THE BUILD is `eri3_driver.build_on_card`: one program per (AO basis, aux
-basis), every class's kernel (`kernel_eri3`) launched once into one zeroed
-`n_ao x n_ao x n_aux` tensor, `RUNS` times, compiled with
-devtools/config.sh's flags and FAILING on a warning located in generated
-text (#92).
+THE BUILD is `eri3_driver.build_on_card`, on the shared runner (#657): one
+runner per (AO basis, aux basis) over every class's unit (`kernel_eri3`),
+compiled with devtools/config.sh's flags and FAILING on a warning located
+in generated text or a harness header (#92), and one sequence launching
+every class once into one zeroed `n_ao x n_ao x n_aux` tensor, `RUNS`
+times.
 
 SCOPE, by the milestone's decision: correctness is tested at
 `la + lb + lP <= 4` only (`tiers.FAST_L_MAX`). Nothing above L = 4 is
@@ -42,14 +43,15 @@ over the owned elements, `TOL = 1e-12`, `max|(mn|P)|` the whole fixture
 tensor's largest element (~7.21) -- test_ao_eri3.py's and
 test_kernel_eri3.py's, unchanged.
 
-THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runs are
-asserted bit-identical, and the tensor exactly symmetric in `(m, n)`.
+THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runner
+fails unless every run is bit-identical to its first, and the tensor is
+asserted exactly symmetric in `(m, n)`.
 
 NOT A MEASUREMENT: nothing is written to `data/measured/`.
 
-COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build both programs.
-The device tests are `gpu` plus `cuda` or `hip`, behind the card lock and
-the VRAM probe: without the card they skip, and kernel-tier.sh exits 2.
+COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build both runners.
+The device tests are `gpu` plus `cuda` or `hip`, behind the card lock:
+without the card they skip, and kernel-tier.sh exits 2.
 """
 
 from __future__ import annotations
@@ -110,25 +112,20 @@ def _host_of(name: str):
     return _host(*_bases(name), set(_expected(name)))
 
 
-def _run(backend: str, name: str, request, run_device_binary,
-         tmp_path: Path) -> np.ndarray:
+def _run(backend: str, name: str, request, tmp_path: Path) -> np.ndarray:
     tc = _toolchain(backend, request)
     basis, aux = _bases(name)
     classes = _classes(name)
     assert sorted((c.la, c.lb, c.lP) for c in classes) == _expected(name)
-    Ts = build_on_card(classes, basis.n_ao, aux.n_ao, backend, tc, tmp_path,
-                       run_device_binary)
-    T = Ts[0]
+    T = build_on_card(classes, basis.n_ao, aux.n_ao, backend, tc, tmp_path)
     want, scale, owned = _host_of(name)
     err = np.abs(T - want)
     pos = owned & (scale > 0)
     worst = float(np.max(err[pos] / (EPS * scale[pos])))
-    same = all(np.array_equal(T, t) for t in Ts[1:])
     print(f"\n{backend} {BACKEND[backend][1].name} {name}: "
           f"{len(classes)} classes, {sum(c.n_cell for c in classes)} cells; "
           f"max |T - host| = {err[owned].max():.2e}, worst {worst:.2f} eps "
-          f"scale (tol {TOL_ULPS}); runs bit-identical {same}")
-    assert same
+          f"scale (tol {TOL_ULPS}); runs bit-identical (the runner's witness)")
     assert np.all(err[owned] <= TOL_ULPS * EPS * scale[owned]), worst
     assert np.all(T[~owned] == 0.0)
     assert np.array_equal(T, T.transpose(1, 0, 2))
@@ -143,15 +140,15 @@ def _run(backend: str, name: str, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 def test_cuda_every_eri3_class_through_l4_matches_the_host(
-        request, run_device_binary, tmp_path):
-    _run("cuda", "synthetic", request, run_device_binary, tmp_path)
+        request, tmp_path):
+    _run("cuda", "synthetic", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 def test_hip_every_eri3_class_through_l4_matches_the_host(
-        request, run_device_binary, tmp_path):
-    _run("hip", "synthetic", request, run_device_binary, tmp_path)
+        request, tmp_path):
+    _run("hip", "synthetic", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +156,8 @@ def test_hip_every_eri3_class_through_l4_matches_the_host(
 # ---------------------------------------------------------------------------
 
 
-def _part2(backend: str, request, run_device_binary, tmp_path: Path) -> None:
-    T = _run(backend, "fixture", request, run_device_binary, tmp_path)
+def _part2(backend: str, request, tmp_path: Path) -> None:
+    T = _run(backend, "fixture", request, tmp_path)
     _, _, owned = _host_of("fixture")
     ref = _ts().tensor
     st = float(np.max(np.abs(ref)))
@@ -173,16 +170,16 @@ def _part2(backend: str, request, run_device_binary, tmp_path: Path) -> None:
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-def test_cuda_eri3_through_l4_matches_libcint(request, run_device_binary,
+def test_cuda_eri3_through_l4_matches_libcint(request,
                                               tmp_path):
-    _part2("cuda", request, run_device_binary, tmp_path)
+    _part2("cuda", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
-def test_hip_eri3_through_l4_matches_libcint(request, run_device_binary,
+def test_hip_eri3_through_l4_matches_libcint(request,
                                              tmp_path):
-    _part2("hip", request, run_device_binary, tmp_path)
+    _part2("hip", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +195,7 @@ def _auxi_host():
     return _host(basis, aux, set(ERI3_LADDER))
 
 
-def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
+def _part3(backend: str, request, tmp_path: Path) -> None:
     """All 70 classes of `la <= lb <= 3`, `lP <= 6` on the aux-i set, each
     in the form the gate picks (24 low-stack), one program per `lP` (so no
     program's compile passes the budget), against the host (the same
@@ -210,11 +207,9 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
     T = np.zeros((basis.n_ao, basis.n_ao, aux.n_ao))
     for lP in range(7):
         part = [c for c in classes if c.lP == lP]
-        Ts = build_on_card(part, basis.n_ao, aux.n_ao, backend, tc,
-                           tmp_path / f"lP{lP}", run_device_binary,
-                           timeout=AUXI_COMPILE_S)
-        assert all(np.array_equal(Ts[0], t) for t in Ts[1:]), lP
-        T += Ts[0]  # disjoint elements: every other one is exactly 0.0
+        T += build_on_card(part, basis.n_ao, aux.n_ao, backend, tc,
+                           tmp_path / f"lP{lP}",
+                           timeout=AUXI_COMPILE_S)  # disjoint: others 0.0
     want, scale, owned = _auxi_host()
     assert owned.all()
     err = np.abs(T - want)
@@ -238,18 +233,18 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
 @pytest.mark.high_l
 @pytest.mark.cuda
 @pytest.mark.gpu
-def test_cuda_eri3_through_ff_i_matches_libcint(request, run_device_binary,
+def test_cuda_eri3_through_ff_i_matches_libcint(request,
                                                 tmp_path):
-    _part3("cuda", request, run_device_binary, tmp_path)
+    _part3("cuda", request, tmp_path)
 
 
 @pytest.mark.slow
 @pytest.mark.high_l
 @pytest.mark.hip
 @pytest.mark.gpu
-def test_hip_eri3_through_ff_i_matches_libcint(request, run_device_binary,
+def test_hip_eri3_through_ff_i_matches_libcint(request,
                                                tmp_path):
-    _part3("hip", request, run_device_binary, tmp_path)
+    _part3("hip", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
