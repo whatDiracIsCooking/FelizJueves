@@ -72,6 +72,13 @@
 #                   order: source, compile, RSS, registers,
 #                   spill, stack, a 300 s budget a unit (#613;
 #                   a compiler, no card)          FJ_DF_GRAD_LOWSTACK_STORE
+#     d2-df-lowstack-compile  every d2metric / d2eri3 class of
+#                   the DF Hessian ladder in its low-stack
+#                   form, and the unrolled form level by
+#                   level in L: source, compile, RSS,
+#                   registers, spill, stack, a 300 s budget a
+#                   unit (#694; a compiler, no card)
+#                                                 FJ_D2_DF_LOWSTACK_STORE
 #     g1e-compile   every gs / gt / gv class through (ff)
 #                   unrolled, and every gv class low-stack:
 #                   source, compile, RSS, registers, spill,
@@ -156,6 +163,7 @@ SWEEPS=(
   "df-lowstack-compile|compile|eri3/metric aux ladder through i, both forms' compile (#606) -> df_lowstack.json"
   "df-lowstack|timed|eri3/metric low-stack vs unrolled wall-clock per class (#606) -> df_lowstack.json"
   "df-grad-lowstack-compile|compile|gmetric/geri3 DF gradient ladder through (i|i)/(ff|i), both forms' compile (#613) -> df_grad_lowstack.json"
+  "d2-df-lowstack-compile|compile|d2metric/d2eri3 DF Hessian ladder through (i|i)/(ff|i), both forms' compile (#694) -> d2_df_lowstack.json"
   "g1e-compile|compile|gs/gt/gv one-electron gradients through (ff), unrolled and gv low-stack compile (#614) -> g1e.json"
   "gjab-compile|compile|gjab Coulomb gradient through (ff), unrolled and low-stack compile (#619) -> gjab.json"
   "gk-compile|compile|gk exchange gradient through (ff|ff), rolled and unrolled-to-the-floor compile, 10 s a unit (#618) -> gk.json"
@@ -259,6 +267,8 @@ case $sweep in
                 envs=("FJ_DF_LOWSTACK_STORE=${FJ_DF_LOWSTACK_STORE:-$MEASURE_DF_LOWSTACK_STORE}") ;;
   df-grad-lowstack-compile) files=("$M/measure_df_grad_lowstack.py"); select=(-k df_grad_lowstack_compile)
                 envs=("FJ_DF_GRAD_LOWSTACK_STORE=${FJ_DF_GRAD_LOWSTACK_STORE:-$MEASURE_DF_GRAD_LOWSTACK_STORE}") ;;
+  d2-df-lowstack-compile) files=("$M/measure_d2_df_lowstack.py"); select=(-k d2_df_lowstack_compile)
+                envs=("FJ_D2_DF_LOWSTACK_STORE=${FJ_D2_DF_LOWSTACK_STORE:-$MEASURE_D2_DF_LOWSTACK_STORE}") ;;
   g1e-compile)  files=("$M/measure_g1e.py"); select=(-k g1e_compile)
                 envs=("FJ_G1E_STORE=${FJ_G1E_STORE:-$MEASURE_G1E_STORE}") ;;
   gjab-compile) files=("$M/measure_gjab.py"); select=(-k gjab_compile)

@@ -21,7 +21,8 @@ test_kernel_d2metric.py, test_kernel_d2eri3.py and test/grad_df_driver.py
 (which stages the same arrays for the card). `run_d2metric` is the d2
 metric kernel (`hessian.kernel_d2metric`) on `run_metric`'s arrays, and
 `run_d2eri3` the d2 three-center kernel (`hessian.kernel_d2eri3`) on
-`run_eri3`'s, `H` in place of `G`.
+`run_eri3`'s, `H` in place of `G`; their `lowstack=` is the d2
+builders' (#694), the same three-way choice.
 """
 
 from __future__ import annotations
@@ -118,7 +119,8 @@ def run_eri3(basis, aux, nuclei, Gam, *, boys,
 
 
 def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
-                threads: int = 7, H: np.ndarray | None = None):
+                threads: int = 7, H: np.ndarray | None = None,
+                lowstack: bool | None = None):
     want = None if classes is None else set(classes)
     n = len(nuclei)
     H = np.zeros((n, 3, n, 3)) if H is None else H
@@ -127,7 +129,8 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
         if want is not None and (cls.lP, cls.lQ) not in want:
             continue
         grid, block = launch_shape(cls.n_pair, threads)
-        H = Interpreter(build_d2metric_kernel((cls.lP, cls.lQ)),
+        H = Interpreter(build_d2metric_kernel((cls.lP, cls.lQ),
+                                              lowstack=lowstack),
                         launch=Launch(grid, block, 1), boys=boys).run(
             n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=aux.n_ao,
             n_atom=len(H), M=np.asarray(W, dtype=float), H=H,
@@ -138,9 +141,9 @@ def run_d2metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
 
 def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
                classes: Iterable | None = None, threads: int = 7,
-               H: np.ndarray | None = None):
+               H: np.ndarray | None = None, lowstack: bool | None = None):
     """The d2 `(mn|P)` kernels on `geri3`'s arrays, into `H[n_atom, 3,
-    n_atom, 3]`."""
+    n_atom, 3]`; `lowstack` is `build_d2eri3_kernel`'s."""
     want = None if classes is None else set(classes)
     n = len(nuclei)
     H = np.zeros((n, 3, n, 3)) if H is None else H
@@ -150,7 +153,7 @@ def run_d2eri3(basis, aux, nuclei, Gam, *, boys,
         if want is not None and c not in want:
             continue
         grid, block = launch_shape(cls.n_cell, threads)
-        H = Interpreter(build_d2eri3_kernel(c),
+        H = Interpreter(build_d2eri3_kernel(c, lowstack=lowstack),
                         launch=Launch(grid, block, 1), boys=boys).run(
             n_cell=cls.n_cell, n_bra_rec=cls.n_bra_rec,
             n_aux_rec=cls.n_aux_rec, n_ao=basis.n_ao, n_aux=aux.n_ao,
