@@ -76,8 +76,8 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # same lever can mean nothing there: an MMD J lever acts on the [p|q] tower,
 # which an HGP J kernel never runs. So legality is per SLOT, and every
 # legality table covers these too. Only the off-native pairings `spec`
-# admits are slots (HGP J and HGP K, the HGP one-electron S, T, V and
-# dipole of `one_electron.kernel_hgp`, and the HGP DF metric and three-center
+# admits are slots (HGP J and HGP K, the HGP one-electron S, T, V, dipole
+# and quadrupole of `one_electron.kernel_hgp`, and the HGP DF metric and three-center
 # of `eri.density_fit.kernel_hgp`; and the fused F and the split J and K on
 # Rys quadrature, `eri.fock.kernel_frys`, `eri.hjk.kernel_rj` and
 # `eri.hjk.kernel_rk`, and the Rys
@@ -85,7 +85,8 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # of `eri.density_fit.kernel_rmetric`, and the Rys three-center of
 # `eri.density_fit.kernel_reri3`; a test pins this to `spec`).
 ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
-                                 "dipole.hgp", "metric.hgp", "eri3.hgp",
+                                 "dipole.hgp", "quadrupole.hgp",
+                                 "metric.hgp", "eri3.hgp",
                                  "f.rys", "j.rys", "k.rys", "s.rys", "t.rys",
                                  "v.rys", "metric.rys", "eri3.rys")
 
@@ -205,7 +206,7 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "pair and an HRR on contracted values, one batch, and a lever on it "
         "is a follow-up nobody has declared"
     ) for slot, what in (("s", "S"), ("t", "T"), ("v", "V"),
-                         ("dipole", "dipole"))},
+                         ("dipole", "dipole"), ("quadrupole", "quadrupole"))},
     "metric.hgp": (
         "the HGP metric (P|Q) has no option surface: it is the VRR of "
         "(lP 0|lQ 0) with exponent-0 partners, one batch, and an HGP metric "

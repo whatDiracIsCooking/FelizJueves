@@ -554,14 +554,14 @@ class OneEClass:
         """The parameter arrays of `target`'s HGP kernel
         (`one_electron.kernel_hgp`, one thread per contracted shell pair):
         the per-record arrays `arrays(target)` gives, less the offsets (and
-        less `P` for the dipole, which reads `B - C` per pair instead), then
-        the per-pair block, one entry per `blocks` row -- `rec0` / `rec1`
-        its record range, `off_a` / `off_b`, `ab_*` = `A - B` from the
-        shells' centres, and for the dipole `b_*` = `B`. `n_pair` is
+        less `P` for the dipole and quadrupole, which read `B - C` per pair
+        instead), then the per-pair block, one entry per `blocks` row --
+        `rec0` / `rec1` its record range, `off_a` / `off_b`, `ab_*` = `A - B`
+        from the shells' centres, and for the two moments `b_*` = `B`. `n_pair` is
         `len(blocks)`; the names are `kernel_hgp`'s (a test pins them)."""
         out = {k: v for k, v in self.arrays(target).items()
                if not k.startswith("off_")
-               and not (target is Target.DIPOLE and k.startswith("p_"))}
+               and not (target in _MULTIPOLE_ORDER and k.startswith("p_"))}
         sh, off = basis.shells, basis.offsets
         out["rec0"] = [start for _, _, start, _ in self.blocks]
         out["rec1"] = [stop for _, _, _, stop in self.blocks]
@@ -570,7 +570,7 @@ class OneEClass:
         out |= per_axis("ab", [
             tuple(sh[i].centre[d] - sh[j].centre[d] for d in range(3))
             for i, j, _, _ in self.blocks])
-        if target is Target.DIPOLE:
+        if target in _MULTIPOLE_ORDER:
             out |= per_axis("b", [sh[j].centre for _, j, _, _ in self.blocks])
         return out
 

@@ -1,5 +1,6 @@
 """The HGP one-electron kernels on the card (#598): `S`, `T`, `V` and the
-dipole for s and p shells against the MMD host and libcint.
+dipole for s and p shells against the MMD host and libcint; and the dipole
+and the quadrupole through (ff) the same way.
 
 THE BUILD is `hgp_one_e_driver.build_on_card`, on the shared runner (#658):
 one runner per class's `kernel_hgp` unit over `one_electron_launch`'s plan
@@ -18,9 +19,15 @@ THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runner
 fails unless every run of a class is bit-identical to its first, and every
 matrix is asserted exactly symmetric.
 
-SCOPE: s and p shells only (`kernel_hgp.L_MAX = 1`): the synthetic off-axis
-basis (every ordered class (ss) (sp) (ps) (pp), four nuclei), and H2O
-STO-3G and 6-31G, all s and p. NOT A MEASUREMENT.
+SCOPE: s and p shells (`kernel_hgp.L_MAX = 1`) for `S`, `T`, `V` and the
+dipole: the synthetic off-axis basis (every ordered class (ss) (sp) (ps)
+(pp), four nuclei), and H2O STO-3G and 6-31G, all s and p. THE MOMENTS
+THROUGH (ff) (`kernel_hgp.MOMENT_L_MAX = 3`): test_kernel_hgp.py's
+`SYNTHETIC_D` (through (dd), fast) and `SYNTHETIC_F` (through (ff), `slow`)
+against the MMD host's `multipole_matrix`, and libcint's `int1e_r_cart` on
+`hf_ccpvtz_spd_dipole` / `hf_ccpvtz_dipole` and `int1e_rr_cart` on
+`hf_ccpvtz_spd_quadrupole`, at each fixture's origin and at 0, the bounds
+test_kernel_hgp.py's. NOT A MEASUREMENT.
 """
 
 from __future__ import annotations
@@ -39,11 +46,14 @@ from test_kernel_hgp import (
     NUCLEI,
     ORIGIN,
     SYNTHETIC,
+    SYNTHETIC_D,
+    SYNTHETIC_F,
     ZERO,
     _h2o,
     _host,
     _rel,
 )
+from tiers import by_l
 
 from felizjueves.ao.pairs import overlap_bound
 from felizjueves.eri.j_coulomb.launch import one_electron_launch
@@ -52,7 +62,18 @@ from felizjueves.spec import Target
 
 FIXTURE_ARRAY = {Target.S: "int1e_ovlp", Target.T: "int1e_kin",
                  Target.V: "int1e_nuc"}
-TARGETS = [t.value for t in kh.TARGETS]
+TARGETS = [t.value for t in kh.TARGETS if t is not Target.QUADRUPOLE]
+MOMENTS = [t.value for t in kh.MOMENTS]
+# Each moment case: (target, what it is held to), the fast cut by its
+# basis's top class (tiers.by_l).
+MOMENT_CASES = [
+    *(by_l((t, "synthetic_d"), 4, id=f"{t}-synthetic_d") for t in MOMENTS),
+    *(by_l((t, "synthetic_f"), 6, id=f"{t}-synthetic_f") for t in MOMENTS),
+    by_l(("dipole", manifest.SPD_DIPOLE), 4, id=f"dipole-{manifest.SPD_DIPOLE}"),
+    by_l(("dipole", manifest.F_DIPOLE), 6, id=f"dipole-{manifest.F_DIPOLE}"),
+    by_l(("quadrupole", manifest.QUADRUPOLE), 4,
+         id=f"quadrupole-{manifest.QUADRUPOLE}"),
+]
 
 
 def _plan(basis, nuclei):
@@ -104,6 +125,66 @@ def _fixture(backend, tname, name, request, tmp_path):
           f"|M - MMD host| = {host:.2e} of max")
     assert rel <= LIBCINT_TOL
     assert host <= HOST_TOL
+
+
+def _moments(backend, case, request, tmp_path):
+    target, what = Target(case[0]), case[1]
+    label = f"\n{backend} {BACKEND[backend][1].name} {target.value} {what}"
+    if what.startswith("synthetic"):
+        basis = SYNTHETIC_D if what == "synthetic_d" else SYNTHETIC_F
+        M, _ = _on_card(backend, basis, (), target, request, tmp_path)
+        rel = _rel(M, _host(basis, (), target))
+        print(f"{label}: |M - MMD host| = {rel:.2e} of max (tol {HOST_TOL})")
+        assert rel <= HOST_TOL
+        return
+    if target is Target.QUADRUPOLE:
+        w = manifest.quadrupole_integrals(what)
+        fx, pairs = w.parent.fixture, ((w.origin, w.rr), (ZERO, w.rr0))
+    else:
+        d = manifest.dipole_integrals(what)
+        fx, pairs = d.fixture, ((d.origin, d.r), (ZERO, d.r0))
+    basis = ob.from_fixture(fx)
+    assert max(s.l for s in basis.shells) <= kh.MOMENT_L_MAX
+    for C, want in pairs:
+        M, _ = _on_card(backend, basis, (), target, request,
+                        tmp_path / str(C is ZERO), origin=C)
+        rel, host = _rel(M, want), _rel(M, _host(basis, (), target, C=C))
+        print(f"{label} C={tuple(C)}: |M - libcint| = {rel:.2e}, "
+              f"|M - MMD host| = {host:.2e} of max")
+        assert rel <= LIBCINT_TOL
+        assert host <= HOST_TOL
+
+
+@pytest.mark.cuda
+@pytest.mark.gpu
+@pytest.mark.parametrize("case", MOMENT_CASES)
+def test_cuda_hgp_moments_through_ff_match_host_and_libcint(
+        case, request, tmp_path):
+    _moments("cuda", case, request, tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.gpu
+@pytest.mark.parametrize("case", MOMENT_CASES)
+def test_hip_hgp_moments_through_ff_match_host_and_libcint(
+        case, request, tmp_path):
+    _moments("hip", case, request, tmp_path)
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("tname", MOMENTS)
+def test_cuda_hgp_moment_program_compiles(tname, nvcc, tmp_path):
+    build_steps(nvcc, "cuda", hgp_one_e_steps(_plan(SYNTHETIC_F, ()),
+                                              Target(tname), SYNTHETIC_F),
+                tmp_path)
+
+
+@pytest.mark.hip
+@pytest.mark.parametrize("tname", MOMENTS)
+def test_hip_hgp_moment_program_compiles(tname, hipcc, tmp_path):
+    build_steps(hipcc, "hip", hgp_one_e_steps(_plan(SYNTHETIC_F, ()),
+                                             Target(tname), SYNTHETIC_F),
+                tmp_path)
 
 
 @pytest.mark.cuda

@@ -41,8 +41,8 @@ stack / 0 spills on sm_86 through (ff) and 92 B a lane of scratch for
 `e = 1` only, Cartesian only.
 **The quadrupole (raw second moments) is generated too, interpreted only**
 (`one_electron.md`, "The quadrupole"): `Target.QUADRUPOLE` (`spec.py`; `am`
-a pair `(la, lb)`, operator `QUADRUPOLE`, unbatched as the dipole, HGP and
-Rys refused, no lever) is the dipole's builder at `e = 2`
+a pair `(la, lb)`, operator `QUADRUPOLE`, unbatched as the dipole, Rys
+refused, HGP legal since the HGP moments below, no lever) is the dipole's builder at `e = 2`
 (`kernel_mu.build_quad_kernel`, `quad_{la}{lb}`; `kernel_mu.ORDER`): the six
 components xx, xy, xz, yy, yz, zz of `<a| q (r - C)(r - C) |b>` into
 `MU[6, n_ao, n_ao]`, the dipole's parameters, record and scatter, every
@@ -79,6 +79,29 @@ goldens in `test_emit_hgp_one_e.py`. **Compiled and run on both cards** (`test_h
 -- on the shared runner since #658, which ran on both cards on 2026-10-30 -- 16 passed on the RTX 3080 before the port: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
 since the port its 12 `gpu` cases passed on the RTX 3080 and, for the first time, the RX 9060 XT (2026-10-30), nothing measured.
+**The dipole and the quadrupole on HGP through (ff): interpreted, and
+compiled by nvcc and hipcc, on no card above (pp)** (`one_electron.md`,
+"The moments through f"): `Target.DIPOLE` and `QUADRUPOLE` with
+`engine=Engine.HGP` (slots `dipole.hgp`, `quadrupole.hgp`), built by the
+same `kernel_hgp` (`hmu_`, `hquad_{la}{lb}`, `MOMENT_L_MAX = 3`;
+`S`/`T`/`V` stay at p): the operator moved onto the ket,
+`(r - C)_d |b> = |b+1_d> + (B - C)_d |b>`, once for `MU[3, ...]` and twice
+for the six raw second moments into `MU[6, ...]` (`kernel_mu`'s component
+order). Every `hmu_` text through (pp) byte-identical. Interpreted
+(`test_kernel_hgp.py`): the MMD host's `multipole_matrix(e = 1, 2)` on
+the synthetic basis with d (fast) and d + f (`slow`) shells, worst 2.9e-16
+of `max|M|`; libcint's `int1e_r_cart` on `hf_ccpvtz_spd_dipole` and
+`hf_ccpvtz_dipole` (worst 2.1e-15) and `int1e_rr_cart` on
+`hf_ccpvtz_spd_quadrupole` (worst 1.5e-15), both origins; the quadrupole's
+origin shift. No libcint quadrupole witness at f. `python -m
+felizjueves.emit --hgp-mu-l [LMAX]` (2 bare, 0..3 only), never in the bare
+default nor `KERNEL_GEN_CMD`; 12 goldens per backend through (dd)
+(`test_emit_hgp_mu.py`). Every unit through (ff) compiled warning-free by
+nvcc (sm_86) and hipcc (gfx1200), and both card programs over the f basis
+built under both (`test_hgp_one_e_device.py`'s `hgp_moment_program_compiles`),
+2026-10-30, a device-less cloud container. Its `gpu` cases
+(`hgp_moments_through_ff_match_host_and_libcint`) are written and **have
+run on no card**; nothing measured.
 **`S`, `T` and `V` are also built on the Rys engine, through (ff),
 interpreted only** (`one_electron.md`, "The Rys route"): `Target.S` / `T` /
 `V` with `engine=Engine.RYS` (slots `s.rys`, `t.rys`, `v.rys`; `DIPOLE` and

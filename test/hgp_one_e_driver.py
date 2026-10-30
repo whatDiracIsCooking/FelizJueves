@@ -1,5 +1,5 @@
-"""S, T, V or the dipole of a basis built ON A CARD by the HGP one-electron
-kernels (`one_electron.kernel_hgp`, #598) -- harness.
+"""S, T, V, the dipole or the quadrupole of a basis built ON A CARD by the
+HGP one-electron kernels (`one_electron.kernel_hgp`, #598) -- harness.
 
     hgp_one_e_steps(launch, target, basis, origin=, q=)       -> [Step]
     build_on_card(launch, target, basis, backend, tc, workdir,
@@ -11,7 +11,7 @@ arrays `OneEClass.hgp_arrays(target, basis)` gives, and PLAIN STORES (no
 atomics: each element has one owner). Every argument is named from the
 kernel's own parameter list, so the call cannot drift from the signature:
 an `int` scalar is a launch extent (`n_pair`, `n_rec`, `n_ao`, `n_nuc`), a
-`double` scalar the dipole's `C_x C_y C_z q` (spec values: one runner per
+`double` scalar the moments' `C_x C_y C_z q` (spec values: one runner per
 class serves every origin), an array its `hgp_arrays` entry (V's `Z` and
 `Cnuc` the launch's), and the one OUT array the matrix.
 
@@ -88,12 +88,13 @@ def hgp_one_e_steps(launch: OneELaunch, target: Target, basis: Basis, *,
 def build_on_card(launch: OneELaunch, target: Target, basis: Basis,
                   backend: str, tc: Toolchain, workdir: Path, *,
                   origin=(0.0, 0.0, 0.0), q: float = 1.0) -> np.ndarray:
-    """The matrix (`[3, n, n]` for the dipole) built on the card, the
-    chain run `RUNS` times bit-identically."""
+    """The matrix (`[3 | 6, n, n]` for the dipole | quadrupole) built on
+    the card, the chain run `RUNS` times bit-identically."""
     steps = hgp_one_e_steps(launch, target, basis, origin=origin, q=q)
     binaries = build_steps(tc, backend, steps, workdir)
     n = basis.n_ao
-    shape = (3, n, n) if target is Target.DIPOLE else (n, n)
+    shape = ((kh.n_components(target), n, n) if target in kh.MOMENTS
+             else (n, n))
     Ms = run_chain(binaries, steps, carried(steps), np.zeros(shape), workdir,
                    runs=RUNS)
     assert all(np.array_equal(Ms[0], M) for M in Ms[1:]), "runs differ"

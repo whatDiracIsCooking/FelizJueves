@@ -1,4 +1,5 @@
-"""The one-electron kernels by the HGP route: `S`, `T`, `V` and the dipole.
+"""The one-electron kernels by the HGP route: `S`, `T`, `V`, the dipole and
+the quadrupole.
 
     build_hgp_kernel(spec | (target, la, lb)) -> Kernel   one per class
     hgp_name(spec | (target, la, lb))         -> str      its name, unbuilt
@@ -6,11 +7,13 @@
     pair_arrays(target)                       -> names    its per-pair arrays
     launch_shape(n_pair, threads)             -> (grid, block)
 
-`Target.S`, `T`, `V` and `DIPOLE` on `Engine.HGP` (`spec.py`, "AN HGP
-ONE-ELECTRON CLASS"), s and p shells (`L_MAX = 1`), Cartesian. The MMD
-kernels (`kernel_s`, `kernel_t`, `kernel_v`, `kernel_mu`) are untouched; this
-is the second engine's instance of the same four matrices, promoted from the
-spike `experimental/hgp/one_electron/hgp1e.py`, whose route it follows.
+`Target.S`, `T`, `V`, `DIPOLE` and `QUADRUPOLE` on `Engine.HGP` (`spec.py`,
+"AN HGP ONE-ELECTRON CLASS"), Cartesian: `S`, `T` and `V` for s and p shells
+(`L_MAX = 1`), the two moments through f (`MOMENT_L_MAX = 3`, `l_max`). The
+MMD kernels (`kernel_s`, `kernel_t`, `kernel_v`, `kernel_mu`) are untouched;
+this is the second engine's instance of the same five matrices, promoted
+from the spike `experimental/hgp/one_electron/hgp1e.py`, whose route it
+follows.
 
 THE ROUTE: Head-Gordon & Pople's split on Obara & Saika's one-electron
 recurrences. Per primitive pair, with `p = zeta`, `P`, `PA = P - A`:
@@ -31,6 +34,8 @@ Each operator is a combination of contracted overlap-type integrals:
 
     S     (a|b)                                                VRR to la+lb
     MU_d  q [(a|b+1_d) + (B_d - C_d) (a|b)]                    VRR to la+lb+1
+    Q_de  q [(a|b+1_d+1_e) + BC_e (a|b+1_d) + BC_d (a|b+1_e)
+             + BC_d BC_e (a|b)]                                VRR to la+lb+2
     T     (2 lb + 3) (a|b)_1 - 2 SUM_d (a|b+2_d)_2
           - 1/2 SUM_d b_d (b_d - 1) (a|b-2_d)_0                VRR to la+lb+2
     V     -SUM_C Z_C (a|b)^{(0)}_C                             VRR to la+lb
@@ -40,8 +45,13 @@ ket exponent): differentiating `B`'s Gaussian twice brings out powers of
 `beta`, which is per primitive, so it is folded in before the contraction;
 each table then runs its own HRR. (The spike's
 `-1/2 SUM_d [... - 2 (2 b_d + 1) (a|b)_1 ...]` with its three `(a|b)_1`
-terms collected: `SUM_d (2 b_d + 1) = 2 lb + 3`.) `V` sums the nuclei into
-one table before the HRR, so its HRR also runs once per shell pair.
+terms collected: `SUM_d (2 b_d + 1) = 2 lb + 3`.) The moments move the
+operator onto the ket: `(r - C)_d = (r - B)_d + BC_d`, `BC = B - C`, and
+`(r - B)_d |b> = |b+1_d>`, applied once for `MU` and twice for `Q` (the
+raw second moments, `kernel_mu.build_quad_kernel`'s six components xx, xy,
+xz, yy, yz, zz in `cartesians(2)` order, not the traceless tensor). `V`
+sums the nuclei into one table before the HRR, so its HRR also runs once
+per shell pair.
 
 THE RECURRENCES ARE `hgp/`'s, NOT REWRITTEN. The VRR is `hgp.vrr`'s eq 25
 DAG at `f = 0` (`hgp.vrr.build((0, top, 0, 0), prune=False)`'s bra phase,
@@ -59,7 +69,8 @@ coefficients, give the two one-electron VRRs:
 The HRR is `hgp.hrr.reduce` (eq 28's bra half, `c = d = 0`), closed over the
 class's targets and spelled by `hgp.recurrence.hrr_body` (its `name=` hook
 prefixes `T`'s three tables). `S` reads the targets `(a|b)`; `MU` the
-targets `(a|b)` and `(a|b+1_d)` of one table, one DAG over their union;
+targets `(a|b)` and `(a|b+1_d)` of one table, one DAG over their union, and
+`Q` those and `(a|b+1_d+1_e)`;
 `T` table 0 `(a|b-2_d)` (absent through p: `b_d <= 1`), table 1 `(a|b)`
 and table 2 `(a|b+2_d)`.
 
@@ -98,12 +109,13 @@ per axis, `kernel_s`'s names) plus a per-pair block:
             rec0 rec1 off_a off_b  [n_pair]  (I32)      per shell pair
             ab_x ab_y ab_z  [b_x b_y b_z]  [n_pair]     A - B  [and B]
             [n_nuc (I32)  Z[n_nuc]  Cnuc[n_nuc, 3]]     V only
-            [C_x C_y C_z q (F64)]                       DIPOLE only
-            S | T | V [n_ao, n_ao]  or  MU[3, n_ao, n_ao]   (OUT, stored)
+            [C_x C_y C_z q (F64)]                       DIPOLE, QUADRUPOLE
+            S | T | V [n_ao, n_ao]  or  MU[n_comp, n_ao, n_ao]  (OUT, stored)
 
 `P` is `V`'s only (`P - C`); `eb_ket`, the ket primitive's exponent, `T`'s
-only (`kernel_t`'s name); `B`, the ket shell's centre, the dipole's only
-(`B - C`). `ab_*` is `A - B` exactly, from the centres, not from the record
+only (`kernel_t`'s name); `B`, the ket shell's centre, the two moments' only
+(`B - C`); `n_comp` is 3 for the dipole and 6 for the quadrupole
+(`n_components`). `ab_*` is `A - B` exactly, from the centres, not from the record
 arrays' `PB - PA`. `pair_arrays(target)` names the per-pair block; the
 records of pair `n` are `rec0[n] <= k < rec1[n]`, contiguous, as
 `launch.OneEClass.blocks` lays them out.
@@ -152,6 +164,8 @@ from felizjueves.spec import OPERATOR_OF, Engine, Spec, Target
 
 __all__ = [
     "L_MAX",
+    "MOMENTS",
+    "MOMENT_L_MAX",
     "OUT",
     "PAIR",
     "TARGETS",
@@ -159,18 +173,27 @@ __all__ = [
     "hgp_name",
     "hgp_spec",
     "factors",
+    "l_max",
     "launch_shape",
+    "n_components",
     "pair_arrays",
     "table_dags",
     "vrr_dag",
 ]
 
-L_MAX = 1  # s and p shells: the scope this instance is built and checked for
-TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE)
+L_MAX = 1  # S, T, V: s and p shells, the scope they are built and checked for
+MOMENT_L_MAX = 3  # the dipole and quadrupole: built and checked through f
+TARGETS = (Target.S, Target.T, Target.V, Target.DIPOLE, Target.QUADRUPOLE)
+MOMENTS = (Target.DIPOLE, Target.QUADRUPOLE)  # (r - C)^e on the ket, e = 1, 2
 PAIR = "pair"  # the contracted shell pair: one thread each
-OUT = {Target.S: "S", Target.T: "T", Target.V: "V", Target.DIPOLE: "MU"}
+OUT = {Target.S: "S", Target.T: "T", Target.V: "V", Target.DIPOLE: "MU",
+       Target.QUADRUPOLE: "MU"}
 _PREFIX = {Target.S: "hs", Target.T: "ht", Target.V: "hv",
-           Target.DIPOLE: "hmu"}
+           Target.DIPOLE: "hmu", Target.QUADRUPOLE: "hquad"}
+# The quadrupole's components, `cartesians(2)` order (xx xy xz yy yz zz), as
+# the axis pairs (d, e), d <= e: kernel_mu.build_quad_kernel's order.
+_QUAD = tuple(tuple(d for d in range(3) for _ in range(c[d]))
+              for c in vrr.cartesians(2))
 _AXES = "xyz"
 _TWO_OVER_SQRT_PI = 2.0 / math.sqrt(math.pi)
 _REC = "kr"  # the record loop's variable
@@ -209,15 +232,31 @@ def _class(cls: Spec | tuple[Target, int, int]) -> tuple[Target, int, int]:
         raise ValueError(f"{spec.key()}: the HGP one-electron kernels take "
                          "no levers")
     la, lb = spec.am
-    if max(la, lb) > L_MAX:
-        raise ValueError(f"{spec.key()}: the HGP one-electron kernels are "
-                         f"built for s and p shells only (l <= {L_MAX})")
+    top = l_max(spec.target)
+    if max(la, lb) > top:
+        raise ValueError(
+            f"{spec.key()}: the HGP one-electron kernels are built for "
+            + ("s and p shells only" if top == 1 else "shells through f only")
+            + f" (l <= {top})")
     return spec.target, la, lb
+
+
+def l_max(target: Target) -> int:
+    """The highest shell `l` `target`'s HGP kernel is built and checked
+    for: `MOMENT_L_MAX` for the dipole and quadrupole, `L_MAX` else."""
+    return MOMENT_L_MAX if target in MOMENTS else L_MAX
+
+
+def n_components(target: Target) -> int:
+    """The output's components: 3 for the dipole, 6 for the quadrupole,
+    1 for `S`, `T`, `V`."""
+    return {Target.DIPOLE: 3, Target.QUADRUPOLE: len(_QUAD)}.get(target, 1)
 
 
 def hgp_name(cls: Spec | tuple[Target, int, int]) -> str:
     """The name `build_hgp_kernel(cls)` gives its kernel, unbuilt:
-    `hs_{la}{lb}`, `ht_`, `hv_`, `hmu_` (`hj_` / `hk_`'s spelling)."""
+    `hs_{la}{lb}`, `ht_`, `hv_`, `hmu_`, `hquad_` (`hj_` / `hk_`'s
+    spelling)."""
     target, la, lb = _class(cls)
     return f"{_PREFIX[target]}_{la}{lb}"
 
@@ -227,7 +266,7 @@ def pair_arrays(target: Target) -> tuple[str, ...]:
     if target not in TARGETS:
         raise ValueError(f"{target!r} is not an HGP one-electron target")
     out = ("rec0", "rec1", "off_a", "off_b", "ab_x", "ab_y", "ab_z")
-    if target is Target.DIPOLE:
+    if target in MOMENTS:
         out += ("b_x", "b_y", "b_z")
     return out
 
@@ -348,7 +387,8 @@ def _tables(target: Target, la: int, lb: int
             ) -> dict[int, tuple[hrr.Node, ...]]:
     """Each contracted table's HRR targets (module docstring): one table for
     `S`, `V` and `MU`, three weighted by `beta^n` for `T` (an empty one
-    left out)."""
+    left out); the moments one table, every `(a|b)` the operator moved
+    onto the ket reaches."""
     na, nb = vrr.cartesians(la), vrr.cartesians(lb)
     if target is Target.T:
         out = {
@@ -360,9 +400,12 @@ def _tables(target: Target, la: int, lb: int
         }
         return {n: tuple(dict.fromkeys(t)) for n, t in out.items() if t}
     tg = tuple((a, b, ZERO, ZERO) for a in na for b in nb)
-    if target is Target.DIPOLE:
+    if target in MOMENTS:
         tg += tuple((a, _shift(b, d, 1), ZERO, ZERO) for a in na for b in nb
                     for d in range(3))
+    if target is Target.QUADRUPOLE:
+        tg += tuple((a, _shift(_shift(b, d, 1), e, 1), ZERO, ZERO)
+                    for a in na for b in nb for d, e in _QUAD)
     return {0: tuple(dict.fromkeys(tg))}
 
 
@@ -393,6 +436,17 @@ def _values(target: Target, la: int, lb: int,
                     v = _c(Fn.SUB, v, _c(Fn.MUL, Lit(0.5), _sum(low)))
                 stmts.append(Decl(f"tv_{i}_{j}", Scalar.F64, init=v))
                 out[(0, i, j)] = Var(f"tv_{i}_{j}")
+            elif target is Target.QUADRUPOLE:
+                for n, (d, e) in enumerate(_QUAD):
+                    bd, be = (Var(f"BC_{_AXES[x]}") for x in (d, e))
+                    v = _sum([
+                        h(0, a, _shift(_shift(b, d, 1), e, 1)),
+                        _c(Fn.MUL, be, h(0, a, _shift(b, d, 1))),
+                        _c(Fn.MUL, bd, h(0, a, _shift(b, e, 1))),
+                        _c(Fn.MUL, _c(Fn.MUL, bd, be), h(0, a, b))])
+                    stmts.append(Decl(f"qu{n}_{i}_{j}", Scalar.F64,
+                                      init=_c(Fn.MUL, Var("q"), v)))
+                    out[(n, i, j)] = Var(f"qu{n}_{i}_{j}")
             else:
                 for d in range(3):
                     v = _c(Fn.MUL, Var("q"), _c(
@@ -408,10 +462,10 @@ def _scatter(target: Target, la: int, lb: int,
     """`kernel_jab`'s placement, as plain stores (module docstring)."""
     out = OUT[target]
     na, nb = len(vrr.cartesians(la)), len(vrr.cartesians(lb))
-    comps = 3 if target is Target.DIPOLE else 1
+    comps = n_components(target)
 
     def at(comp: int, row: Expr, col: Expr) -> Index:
-        if target is Target.DIPOLE:
+        if target in MOMENTS:
             return Index(out, (Lit(comp), row, col))
         return Index(out, (row, col))
 
@@ -441,7 +495,8 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
                      name: str | None = None) -> Kernel:
     """The HGP one-electron kernel of one class.
 
-    `cls` is an HGP `Target.S` / `T` / `V` / `DIPOLE` `Spec`, or
+    `cls` is an HGP `Target.S` / `T` / `V` / `DIPOLE` / `QUADRUPOLE`
+    `Spec`, or
     `(target, la, lb)`. See the module docstring.
     """
     target, la, lb = _class(cls)
@@ -532,7 +587,9 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
 
     what = {Target.S: "overlap S", Target.T: "kinetic T",
             Target.V: "nuclear attraction V",
-            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>"}[target]
+            Target.DIPOLE: "dipole MU = <a| q (r - C) |b>",
+            Target.QUADRUPOLE: ("quadrupole (raw second moments) "
+                                "<a| q (r - C)_d (r - C)_e |b>")}[target]
     return assemble(
         target, la, lb, hrrs, bounds, tuple(record),
         name=name or hgp_name((target, la, lb)),
@@ -620,7 +677,7 @@ def assemble(target: Target, la: int, lb: int,
         if Factor.ab(d).value in used_ab:
             head.append(Decl(Factor.ab(d).value, Scalar.F64,
                              init=Index(f"ab_{_AXES[d]}", (pair,))))
-    if target is Target.DIPOLE:
+    if target in MOMENTS:
         head += [Decl(f"BC_{_AXES[d]}", Scalar.F64, init=_c(
             Fn.SUB, Index(f"b_{_AXES[d]}", (pair,)), Var(f"C_{_AXES[d]}")))
             for d in range(3)]
@@ -663,11 +720,11 @@ def assemble(target: Target, la: int, lb: int,
         params += [Param("n_nuc", Scalar.I32),
                    _f64("Z", (Var("n_nuc"),)),
                    _f64("Cnuc", (Var("n_nuc"), Lit(3)))]
-    if target is Target.DIPOLE:
+    if target in MOMENTS:
         params += [Param(f"C_{a}", Scalar.F64) for a in _AXES]
         params.append(Param("q", Scalar.F64))
         params.append(Param("MU", Scalar.F64, array=True, intent=Intent.OUT,
-                            shape=(Lit(3), nao, nao)))
+                            shape=(Lit(n_components(target)), nao, nao)))
     else:
         params.append(Param(OUT[target], Scalar.F64, array=True,
                             intent=Intent.OUT, shape=(nao, nao)))
