@@ -19,7 +19,11 @@ step a generated kernel:
 
 THE BOUND, stated before any run: `|G_dev - G_host| <= DEV_TOL max|G|`,
 `DEV_TOL = 1e-13`, against `gradient.host.coulomb_gradient` (held to finite
-differences of the libcint-witnessed `coulomb_matrix`) -- test_grad_device.py's
+differences of the libcint-witnessed `coulomb_matrix`) on H2 and H2O, and on
+CO against its tracked libcint `dE_J/dR` (`manifest.j_gradient`, #639),
+which the host matches class by class within 1e-14 of `max|G|`
+(test_j_gradient_witness.py, `slow`): the pure-Python host on CO was most
+of the cell's 17 minutes, with the card idle. test_grad_device.py's
 bound for `gjab` over the host's `J_p`, not loosened. What the chain adds
 is the card's `J_p`: the plan's MILD recurrence, the vendor's Boys and
 `exp`, and the `[p|q]` atomics, each a few ulps of a `J_p` entry; the
@@ -94,9 +98,20 @@ def _case(name: str):
 
 @cache
 def _host(name: str) -> np.ndarray:
+    """The reference `G`: CO's tracked libcint witness (#639), the live
+    host on the small cells, where it is cheap."""
+    if name == FF:
+        return np.array(_witness().whole)
     basis, nuclei, D = _case(name)
     return np.array(host.coulomb_gradient(basis, D, nuclei,
                                           one_centre=one_centre))
+
+
+@cache
+def _witness():
+    w = manifest.j_gradient()
+    assert w.parent.name == FF, w.parent.name
+    return w
 
 
 def _chain(backend: str, name: str, form: str, request, run_device_binary,
@@ -170,6 +185,18 @@ def test_cuda_gjab_chain_matches_the_host(cell, request, run_device_binary,
 def test_hip_gjab_chain_matches_the_host(cell, request, run_device_binary,
                                          tmp_path) -> None:
     _chain("hip", *cell, request, run_device_binary, tmp_path)
+
+
+def test_cos_witness_is_on_the_cells_inputs() -> None:
+    """No card: the tracked `G` the CO cell is held to was computed on the
+    cell's own basis, density and nuclei, and has its shape."""
+    basis, nuclei, D = _case(FF)
+    w = _witness()
+    assert np.array_equal(np.asarray(w.parent.density), D)
+    assert tuple((float(a.charge), tuple(a.coord))
+                 for a in w.parent.atoms) == nuclei
+    assert w.parent.nao == basis.n_ao
+    assert np.asarray(w.whole).shape == (len(nuclei), 3)
 
 
 @pytest.mark.parametrize("cell", [by_l(n, L, id=n) for n, L, _ in CELLS[:2]])
