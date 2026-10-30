@@ -586,5 +586,3 @@ int runner_main(int argc, char** argv, const KernelEntry (&table)[N]) {
 }
 
 }  // namespace fj
-
-// changed
