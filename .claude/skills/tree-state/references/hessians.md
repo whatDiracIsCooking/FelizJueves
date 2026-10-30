@@ -181,8 +181,9 @@ lP >= LOWSTACK_MIN_L = 3`, the floor measured (same sweep; the unrolled
 at (ff|.), and 19 units exceed #606's 14 KB, worst (ff|i) at 24,544 B
 with 8 KB of spill. Every unit compiles in <= 29 s. Interpreted, every
 class of the ladder in its default form, every class below the floor
-forced low-stack and (sp|d), (pp|p) forced unrolled, against the host's
-twin (`test_kernel_d2_df_ladder.py`). **nvcc 13.0 (`sm_86`) compiles all
+forced low-stack and (sp|d), (pp|p) forced unrolled, within 16 eps of
+the host's twin (`test_kernel_d2_df_ladder.py`, 79 cases; worst printed
+0.49 eps, `d2eri3_010`). **nvcc 13.0 (`sm_86`) compiles all
 71 pinned units** (#92's filter, 2026-10-30), **and so does hipcc 7.2.4
 (`gfx1200`)**, worst low-stack scratch 20,640 B (9 units over 14 KB). A device test and driver are written (`test_hess_df_device.py`,
 `hess_driver.d2eri3_launches`) and have **run on neither card**. No
