@@ -7,6 +7,7 @@
     coulomb_gradient(basis, D, nuclei, one_centre=)  -> G   dE_J/dR
     exchange_gradient(basis, D, nuclei, one_centre=) -> G   dE_K/dR
     nuclear_repulsion_gradient(nuclei)               -> G   dE_nuc/dR
+    records / pair_records(basis, nuclei, la, lb)    -> the d1 kernels' arrays
 
 `G` is `n_atom x 3`, `G[A][k] = SUM_mn M_mn dX_mn/dR_{A,k}` (the package
 docstring) -- over every shell pair, or over `pairs=` (`i <= j`) only
@@ -671,3 +672,39 @@ def records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
             out["atom_a"].append(atoms[i])
             out["atom_b"].append(atoms[j])
     return out
+
+
+def pair_records(basis: Basis, nuclei: Sequence[Nucleus], la: int, lb: int,
+                 *, pairs: Sequence[tuple[int, int]] | None = None
+                 ) -> dict[str, list]:
+    """The HGP d1 kernels' arrays of class `(la, lb)`
+    (`gradient.kernel_hgt`, one thread per contracted shell pair):
+    `records`' per-record arrays less its per-record offsets and atoms,
+    then one entry per shell pair -- `rec0` / `rec1` its record range
+    (contiguous: `records` sweeps a pair's primitive pairs together),
+    `off_a`, `off_b`, `atom_a`, `atom_b`, and `ab_*` = `A - B` from the
+    shells' centres."""
+    if pairs is None:
+        pairs = class_pairs(basis, la, lb)
+    rec = records(basis, nuclei, la, lb, pairs=pairs)
+    out = {k: v for k, v in rec.items()
+           if not k.startswith(("off_", "atom_"))}
+    atoms = shell_atoms(basis, nuclei)
+    sh = basis.shells
+    per_pair: dict[str, list] = {k: [] for k in (
+        "rec0", "rec1", "off_a", "off_b", "atom_a", "atom_b",
+        "ab_x", "ab_y", "ab_z")}
+    start = 0
+    for i, j in pairs:
+        stop = start + len(primitive_pairs(sh[i], sh[j]))
+        per_pair["rec0"].append(start)
+        per_pair["rec1"].append(stop)
+        per_pair["off_a"].append(basis.offsets[i])
+        per_pair["off_b"].append(basis.offsets[j])
+        per_pair["atom_a"].append(atoms[i])
+        per_pair["atom_b"].append(atoms[j])
+        for d, a in enumerate("xyz"):
+            per_pair[f"ab_{a}"].append(sh[i].centre[d] - sh[j].centre[d])
+        start = stop
+    assert start == len(rec["s_ab"]), "the pair ranges tile the records"
+    return out | per_pair

@@ -13,11 +13,11 @@
  },
  "counts": {
   "compile/cuda/measured": 178,
-  "compile/cuda/modelled": 135,
+  "compile/cuda/modelled": 142,
   "compile/hip/measured": 178,
-  "compile/hip/modelled": 135,
-  "gpu/cuda/modelled": 313,
-  "gpu/hip/modelled": 313
+  "compile/hip/modelled": 142,
+  "gpu/cuda/modelled": 320,
+  "gpu/hip/modelled": 320
  },
  "held_out": {
   "compile/cuda": {
@@ -3072,6 +3072,223 @@
     },
     "hip": {
      "s": 3.482,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 0,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 0.892,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    },
+    "hip": {
+     "s": 1.667,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 0.892,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 1.667,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 1,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 1.238,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    },
+    "hip": {
+     "s": 2.158,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.238,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.158,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 2,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 1.717,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    },
+    "hip": {
+     "s": 2.795,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 1.717,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 2.795,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 3,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 2.382,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    },
+    "hip": {
+     "s": 3.619,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 2.382,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 3.619,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 4,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 3.304,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    },
+    "hip": {
+     "s": 4.687,
+     "basis": "modelled",
+     "source": "fit:gradients"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 3.304,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 4.687,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 5,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 4.584,
+     "basis": "modelled",
+     "source": "fit:gradients, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 6.069,
+     "basis": "modelled",
+     "source": "fit:gradients, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 4.584,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 6.069,
+     "basis": "modelled",
+     "source": "compile"
+    }
+   }
+  },
+  {
+   "engine": "hgp",
+   "quantity": "t",
+   "deriv": 1,
+   "L": 6,
+   "family": "gradients",
+   "compile": {
+    "cuda": {
+     "s": 6.359,
+     "basis": "modelled",
+     "source": "fit:gradients, extrapolated past L 4"
+    },
+    "hip": {
+     "s": 7.86,
+     "basis": "modelled",
+     "source": "fit:gradients, extrapolated past L 4"
+    }
+   },
+   "gpu": {
+    "cuda": {
+     "s": 6.359,
+     "basis": "modelled",
+     "source": "compile"
+    },
+    "hip": {
+     "s": 7.86,
      "basis": "modelled",
      "source": "compile"
     }
