@@ -158,8 +158,11 @@ __all__ = [
     "build_hgp_kernel",
     "hgp_name",
     "hgp_spec",
+    "factors",
     "launch_shape",
     "pair_arrays",
+    "table_dags",
+    "vrr_dag",
 ]
 
 L_MAX = 1  # s and p shells: the scope this instance is built and checked for
@@ -273,7 +276,7 @@ def _boundary(dag: hrr.HrrDag) -> tuple[Cart, ...]:
                         key=lambda e: vrr.order_key((e, ZERO, 0))))
 
 
-def _vrr_dag(roots: tuple[Cart, ...], nuclear: bool) -> vrr.VrrDag:
+def vrr_dag(roots: tuple[Cart, ...], nuclear: bool) -> vrr.VrrDag:
     """`hgp.vrr`'s eq 25 at `f = 0`, cut to what `roots` reach: every Boys
     order for `V` (the point-charge limit), `m = 0` with the `m + 1` terms
     dropped for the overlap (module docstring)."""
@@ -326,7 +329,7 @@ def _i32(name: str, shape: tuple[Expr, ...]) -> Param:
     return Param(name, Scalar.I32, array=True, shape=shape)
 
 
-def _factors(body: tuple[Stmt, ...]) -> set[str]:
+def factors(body: tuple[Stmt, ...]) -> set[str]:
     """Every `Factor` scalar a `Weighted` of `body` reads."""
     out: set[str] = set()
     for s in walk(body):
@@ -444,7 +447,7 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
     target, la, lb = _class(cls)
     nuclear = target is Target.V
     hrrs, bounds = contracted_tables(target, la, lb)
-    vdag = _vrr_dag(boundary_union(bounds), nuclear)
+    vdag = vrr_dag(boundary_union(bounds), nuclear)
 
     k = Var(_REC)
     # --- per record: the seed, the VRR, the accumulation -------------------
@@ -457,7 +460,7 @@ def build_hgp_kernel(cls: Spec | tuple[Target, int, int], *,
         def fundamental(m: int) -> Expr:
             return Var("u")
     vstmts = vrr_body(vdag, fundamental)
-    used = _factors(vstmts)
+    used = factors(vstmts)
 
     def read(e: Cart) -> Expr:
         return Var(vrr_name((e, ZERO, 0)))
@@ -553,7 +556,16 @@ def contracted_tables(target: Target, la: int, lb: int
     `acc_name(table, e)` -- `S`, `V`, `MU` one table, `T` up to three
     (module docstring). Built for any `l`: `L_MAX` is the scope of this
     module's builder, not of this function."""
-    hrrs = {n: _hrr_dag(tg) for n, tg in _tables(target, la, lb).items()}
+    return table_dags(_tables(target, la, lb))
+
+
+def table_dags(tables: dict[int, tuple[hrr.Node, ...]]
+               ) -> tuple[dict[int, hrr.HrrDag], dict[int, tuple[Cart, ...]]]:
+    """`contracted_tables` for any tables: each table's HRR targets (all
+    `(a, b | 0, 0)`) to its DAG and the boundary `(e|0)` it reads. The
+    overlap gradient's tables (`gradient.kernel_hgs`) are not an operator's
+    of this module."""
+    hrrs = {n: _hrr_dag(tg) for n, tg in tables.items()}
     return hrrs, {n: _boundary(d) for n, d in hrrs.items()}
 
 
@@ -595,7 +607,7 @@ def assemble(target: Target, la: int, lb: int,
         hstmts += hrr_body(dag, lambda e, f, n=n: Var(acc_name(n, e)),
                            name=lambda node, n=n: hname(n, node))
     vals, values = _values(target, la, lb, hname)
-    used_ab = _factors(tuple(hstmts))
+    used_ab = factors(tuple(hstmts))
 
     pair = Var(PAIR)
     head: list[Stmt] = [

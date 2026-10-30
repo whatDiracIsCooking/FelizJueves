@@ -11,6 +11,8 @@ CASES = [
     *(case for q in ("s", "t", "v", "jab") for case in ladder(
         "mmd", q, 1, compile=range(5), gpu=range(7),
         cards=dict.fromkeys(BOTH, range(7)))),
+    # hgs, S on HGP (kernel_hgs): compiled through (ff), not run on a card.
+    *ladder("hgp", "s", 1, compile=range(7), gpu=range(7)),
     # gk: H2O/STO-3G and CO/cc-pVTZ's 256 classes on both cards (#618).
     *ladder("mmd", "k", 1, compile=range(5), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
@@ -43,11 +45,14 @@ _LADDER = {
 # d, CO cc-pVTZ f.
 _TOP_PAIR_L = {"h2_sto3g": 0, "h2o_sto3g": 2, "h2o_ccpvdz": 4,
                "co_ccpvtz_proton": 6, "co_ccpvtz": 6}
+# A `which` -> (engine, quantity): `hs` is S on HGP (kernel_hgs).
+_WHICH = {"s": ("mmd", "s"), "t": ("mmd", "t"), "v": ("mmd", "v"),
+          "j": ("mmd", "jab"), "hs": ("hgp", "s")}
 _GRAD = {
-    f"{name}-{which}": span("mmd", "jab" if which == "j" else which, 1,
-                            range(_TOP_PAIR_L[name] + 1))
-    for name, whiches in (("h2o_sto3g", "stvj"), ("h2o_ccpvdz", "stvj"),
-                          ("co_ccpvtz_proton", "stv"))
+    f"{name}-{which}": span(*_WHICH[which], 1, range(_TOP_PAIR_L[name] + 1))
+    for name, whiches in (("h2o_sto3g", ("s", "t", "v", "j", "hs")),
+                          ("h2o_ccpvdz", ("s", "t", "v", "j", "hs")),
+                          ("co_ccpvtz_proton", ("s", "t", "v", "hs")))
     for which in whiches
 }
 # The on-card gjab chain (#619): DQ -> the raised [p|q] -> gjab, per bra pair.
@@ -68,6 +73,7 @@ PATHS = (
 
 TESTS = {
     "test/test_emit_grad.py::test_X_compiles_the_gradient_unit": Classes("mmd", "s", 1),
+    "test/test_emit_hgs.py::test_X_compiles_the_unit": Classes("hgp", "s", 1),
     "test/test_emit_grad_df.py::test_X_compiles_the_df_gradient_unit":
         Classes("mmd", "metric", 1),
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":

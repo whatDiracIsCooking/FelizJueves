@@ -170,6 +170,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "ghk": ("hgp", "k", 1),
     "hs": ("hgp", "s", 0), "ht": ("hgp", "t", 0), "hv": ("hgp", "v", 0),
     "hmu": ("hgp", "dipole", 0),
+    "hgs": ("hgp", "s", 1),
     "hmetric": ("hgp", "metric", 0), "heri3": ("hgp", "eri3", 0),
     "fr": ("rys", "f", 0), "rj": ("rys", "j", 0), "rk": ("rys", "k", 0),
     "rs": ("rys", "s", 0), "rt": ("rys", "t", 0), "rv": ("rys", "v", 0),

@@ -260,7 +260,9 @@ in the `d` segment alone; MMD `J` at d1 stays refused (its gradient is
 `JAB`'s). And `T` on `Engine.HGP`, ``kinetic/d1/(1,0)/b1/t.hgp/literal``
 (`gradient.kernel_hgt`: the HGP one-electron route of "AN HGP ONE-ELECTRON
 CLASS" with the bra derivative folded into its contracted tables). And `K`
-on `Engine.HGP` (above, `gradient.kernel_ghk`).
+on `Engine.HGP` (above, `gradient.kernel_ghk`). And `S` on `Engine.HGP`,
+``overlap/d1/(1,0)/b1/s.hgp/literal`` (`gradient.kernel_hgs`, `hgt_`'s
+route over three tables).
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
@@ -589,7 +591,7 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # density-fitting `METRIC` and `ERI3`, and `DQ`, the ket pre-contraction
 # differentiated on each ket centre, which the Coulomb Hessian's bra-ket
 # term reads (`hessian.kernel_hdq`). Each on its native engine, MMD, and
-# `J`, `K` and `T` on HGP too (`GRADIENT_OFF_NATIVE`).
+# `J`, `K`, `T` and `S` on HGP too (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
                               Target.DQ))
@@ -599,15 +601,17 @@ GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
 # quartet on the Head-Gordon-Pople recurrence (`gradient.kernel_ghj`), and
 # `T` on HGP, the kinetic energy's gradient by Head-Gordon & Pople's split of
 # the Obara-Saika recurrences (`gradient.kernel_hgt`), and `K` on HGP, the
-# exchange energy's (`gradient.kernel_ghk`). MMD `J` at d1 stays refused: its
-# gradient is `JAB`'s, through the J chain.
+# exchange energy's (`gradient.kernel_ghk`), and `S` on HGP, the overlap
+# gradient on `hgt_`'s route (`gradient.kernel_hgs`). MMD `J` at d1 stays
+# refused: its gradient is `JAB`'s, through the J chain.
 GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.K, Engine.HGP),
-                                 (Target.T, Engine.HGP)))
+                                 (Target.T, Engine.HGP),
+                                 (Target.S, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
-    "the MMD engine, and for J, K and T on the HGP engine "
+    "the MMD engine, and for J, K, T and S on the HGP engine "
     "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"
 )

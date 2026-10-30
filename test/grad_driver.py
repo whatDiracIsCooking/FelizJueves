@@ -3,6 +3,7 @@ harness.
 
     GradLaunch(kernel, n_rec, arrays, scalars)      one kernel launch
     one_electron_launches(basis, nuclei, target, M) -> [GradLaunch]
+    hgs_launches(basis, nuclei, M)                  -> [GradLaunch]
     gjab_launches(basis, nuclei, D, one_centre=)            -> [GradLaunch]
     gk_launches(basis, nuclei, D)                   -> [GradLaunch]
     grad_steps(launches)                            -> [harness_driver.Step]
@@ -76,6 +77,7 @@ from felizjueves.gradient.kernel_g1e import build_g1e_kernel, launch_shape
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel, gjab_pq_spec, n_p1
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gk import launch_shape as gk_launch_shape
+from felizjueves.gradient.kernel_hgs import build_hgs_kernel
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.mmd.kernel import bra_functions, split
 from felizjueves.spec import Target
@@ -83,7 +85,7 @@ from felizjueves.spec import Target
 __all__ = ["GjabChainLaunch", "GradBinary", "GradLaunch", "compile_grad",
            "gjab_chain_launches", "gjab_launches", "gjab_read_back",
            "gjab_tail", "gk_launches", "grad_runners", "grad_steps",
-           "one_electron_launches", "raised_plan"]
+           "hgs_launches", "one_electron_launches", "raised_plan"]
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
 G = "G"
@@ -138,6 +140,26 @@ def one_electron_launches(basis, nuclei, target: Target,
         n = len(rec["s_ab"])
         out.append(GradLaunch(kern, n, arrs, {
             "n_rec": n, "n_ao": basis.n_ao, "n_atom": len(nuclei)}))
+    return out
+
+
+def hgs_launches(basis, nuclei, M) -> list[GradLaunch]:
+    """One `hgs_` launch (the overlap gradient on HGP, `kernel_hgs`) per
+    ordered-by-`i <= j` pair class of `basis`: one thread per CONTRACTED
+    SHELL PAIR, so the launch's `n_rec` is its shell-pair count
+    (`kernel_hgs.launch_shape` is `kernel_g1e`'s over that count)."""
+    out = []
+    classes = sorted({(a.l, b.l) for k, a in enumerate(basis.shells)
+                      for b in basis.shells[k:]})
+    for la, lb in classes:
+        kern = build_hgs_kernel((la, lb))
+        rec = host.pair_records(basis, nuclei, la, lb)
+        arrs = _rec_arrays(rec, kern)
+        arrs["M"] = np.asarray(M, dtype=np.float64)
+        n_pair = len(rec["rec0"])
+        out.append(GradLaunch(kern, n_pair, arrs, {
+            "n_pair": n_pair, "n_rec": len(rec["s_ab"]), "n_ao": basis.n_ao,
+            "n_atom": len(nuclei)}))
     return out
 
 

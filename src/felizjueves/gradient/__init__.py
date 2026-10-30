@@ -4,6 +4,8 @@ by Head-Gordon-Pople too): host references and the generated kernels
 
     host.py          the references, pure Python, on the AO layer
     kernel_g1e.py    Target.S / T / V at d1: gs_, gt_, gv_{la}{lb}
+    kernel_hgs.py    Target.S at d1 on Engine.HGP: hgs_{la}{lb}, the
+                     overlap gradient by the HGP one-electron route
     kernel_gjab.py   Target.JAB at d1: gjab_{la}{lb}, the Coulomb energy's
                      bra derivative from J_p one Hermite order higher
     kernel_gk.py     Target.K at d1: gk_{la}{lc}_{lb}{ld}, the exchange
