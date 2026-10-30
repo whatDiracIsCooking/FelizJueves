@@ -267,6 +267,9 @@ GATE_GPU_TEST_ARGS=${GATE_GPU_TEST_ARGS:-'-m "gpu and {backend} and not high_l a
 # because the compile cases at L <= 2 are ~420 per compiler, which measured
 # most of half an hour on a 4-core cloud box (the gpu sample keeps 2: those
 # are ~110 per card, and the card, not the compiler, is the cost).
+# At 0, and the sampler's budgets, the phase took 7m57s (371 cases) on a
+# 4-core cloud box where the sample_compiles selection it replaces took
+# 7m02s (272 cases), back to back, 2026-10-30.
 GATE_COMPILE_MIN_L_MAX=${GATE_COMPILE_MIN_L_MAX:-0}
 
 # --- measurement ------------------------------------------------------------

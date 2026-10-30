@@ -28,7 +28,9 @@ covers (its registry keys):
 - `med`: the rest, `FJ_MIN_L_MAX` < L < that top.
 - `unsampled`: a case that covers no key -- an `Allow` (a whole molecule, a
   program, the generator's machinery), or one the registry cannot resolve
-  (test_registry.py fails on that, not this). It always runs.
+  (test_registry.py fails on that, not this). It always runs -- unless it is
+  marked `l_cut` (test/tiers.py): with no class to draw by, the cut that
+  made it slow stands, and it is deselected (`cut_unsampled` in the report).
 
 `med` and `max` are each drawn without replacement, per pool, against the
 band's budget (`FJ_BUDGET_MED`, `FJ_BUDGET_MAX`, seconds of `cost_s`): a
@@ -519,6 +521,11 @@ class Plugin:
         sampled = (self.wanted or knobs.mode == "on") and knobs.mode != "all"
         ours = [i for i in items if i.path.is_relative_to(TEST_DIR)]
         cands = candidates_of(ours, knobs.default_cost_s)
+        # An `l_cut` case that covers no class is not the draw's to keep:
+        # the cut that made it slow (tiers.py) still stands.
+        marked = {i.nodeid for i in ours if i.get_closest_marker("l_cut")}
+        uncut = {c.nodeid for c in cands if not c.keys and c.nodeid in marked}
+        cands = [c for c in cands if c.nodeid not in uncut]
         seed, base, head = seed_of(knobs)
         paths = changed_paths(base)
         touched = touched_families(paths)
@@ -527,8 +534,8 @@ class Plugin:
                    sampled=sampled, min_l_max=knobs.min_l_max)
         device = {c.nodeid for c in cands}
         kept_device = got.kept()
-        keep = [i for i in items
-                if i.nodeid not in device or i.nodeid in kept_device]
+        keep = [i for i in items if i.nodeid not in uncut and (
+            i.nodeid not in device or i.nodeid in kept_device)]
         if self.shard:
             cost = {c.nodeid: c.cost_s for c in cands}
             mine = set(shard((i.nodeid for i in keep),
@@ -550,7 +557,8 @@ class Plugin:
             "changed_paths": len(paths), "touched": sorted(touched),
             "shard": "/".join(map(str, self.shard)) if self.shard else None,
             "pools": {p: d.to_json() for p, d in got.pools.items()},
-            "deselected": len(dropped), "kept": sorted(kept),
+            "deselected": len(dropped), "cut_unsampled": len(uncut),
+            "kept": sorted(kept),
             "report": knobs.report,
         }
         if self.worker in (None, "gw0"):

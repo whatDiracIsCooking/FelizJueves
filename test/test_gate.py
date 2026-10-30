@@ -98,3 +98,13 @@ def test_a_draw_renders_as_the_pr_body_section() -> None:
         for band in ("med", "max"):
             for n in d[band]["drawn"]:
                 assert f"`{n}`" in text
+
+
+def test_an_l_cut_case_with_no_class_stays_cut() -> None:
+    """test_sx_device.py's compile cases name molecules, not classes (an
+    `Allow`): the sampler cannot draw them, so the gate's selection keeps
+    exactly what the compile sample's `not slow` kept."""
+    sx = "test/test_sx_device.py"
+    gate = _collected("cuda and not gpu and (not slow or l_cut)", sx,
+                      "--fj-sample")
+    assert gate and gate == _collected("cuda and not gpu and not slow", sx)
