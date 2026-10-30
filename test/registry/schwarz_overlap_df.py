@@ -29,6 +29,21 @@ _SCHWARZ = span("mmd", "schwarz", 0, (0, 2, 4))
 _HGP_METRIC = span("hgp", "metric", 0, range(3))
 _HGP_ERI3 = span("hgp", "eri3", 0, range(4))
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its drivers; its test files come from TESTS. The HGP twins
+# make the HGP engine one of its paths.
+PATHS = (
+    "src/felizjueves/eri/density_fit/",
+    "src/felizjueves/eri/schwarz.py",
+    "src/felizjueves/eri/kernel_schwarz.py",
+    "src/felizjueves/one_electron/kernel_sx.py",
+    "src/felizjueves/hgp/",
+    "test/eri3_driver.py",
+    "test/metric_driver.py",
+    "test/schwarz_driver.py",
+    "test/sx_driver.py",
+)
+
 TESTS = {
     # Schwarz.
     "test/test_schwarz_device.py::test_X_every_class_through_l4_matches_the_host":

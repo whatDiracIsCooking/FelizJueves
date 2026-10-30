@@ -32,6 +32,9 @@ cards, tiers)` and how each device test's cases map onto them.
 cases in both directions. When a PR adds a device test, a class or a card
 run, change the family's module in the same PR; the test names what is
 missing.
+Each module's `PATHS` are the source and driver paths whose change touches
+the family, for the sampler's change weighting (`test/registry/sample.py`,
+#653); a new kernel module or driver goes there too.
 
 ## Kernel families
 

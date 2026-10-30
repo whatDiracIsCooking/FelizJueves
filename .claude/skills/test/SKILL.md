@@ -106,6 +106,26 @@ covers every emitter under both compilers and stays under five minutes cold
 sample (`test/compile-only-timings.xml`); the cases it drops still run with
 `slow` and a bare `pytest`. A green run here proves no number.
 
+### The registry sampler — `--fj-sample` (opt in, #653)
+
+`test/registry/sample.py` is a pytest plugin over the case registry that
+draws the compile and `gpu` cases a run keeps, after `-m` has cut them:
+every case with L ≤ 2, then per pool (`gpu/cuda`, `compile/hip`, ...) a
+seeded draw of the `med` and `max` bands until `FJ_BUDGET_MED` /
+`FJ_BUDGET_MAX` seconds of `cost_s` are spent, the families the diff
+touches drawn first. Cases that cover no class (an `Allow`) always run.
+Nothing passes `--fj-sample` yet -- #656's `gate.sh` will -- so every tier
+above selects exactly what it did before. The knobs and their defaults are
+in `devtools/config.sh`; the seed is a hash of the merge-base and HEAD
+(`FJ_SAMPLE_SEED` overrides), so a draw replays on its commit;
+`FJ_SAMPLE=all` keeps everything; `--fj-shard i/n` splits what was kept.
+The terminal summary and `FJ_SAMPLE_REPORT` name the seed and every case
+drawn -- quote them when a sampled run is the evidence.
+
+```bash
+pytest -rs -m "gpu and cuda and not slow and not high_l" --fj-sample
+```
+
 ### Measurement is not a tier — `devtools/measure.sh`
 
 No test times, profiles or reads back a stored measurement. The timed sweeps,

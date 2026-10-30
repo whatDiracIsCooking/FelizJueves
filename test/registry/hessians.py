@@ -29,6 +29,13 @@ _HESS = {f"{name}-{which}": span("mmd", which, 2, range(top + 1))
          for name, top in (("h2o_sto3g", 2), ("h2o_ccpvdz", 4))
          for which in "stv"}
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its driver; its test files come from TESTS.
+PATHS = (
+    "src/felizjueves/hessian/",
+    "test/hess_driver.py",
+)
+
 TESTS = {
     "test/test_emit_hess.py::test_X_compiles_the_hessian_unit": Classes("mmd", "dq", 2),
     "test/test_emit_hess_1e.py::test_X_compiles_the_hessian_unit":

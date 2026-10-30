@@ -21,6 +21,17 @@ _F = Classes("hgp", "f", otherwise=Allow(MOLECULE))
 _LEVERS = ("batched_vrr", "etr", "mixed", "sliced_hrr", "sliced_site_digest",
            "slim_fock", "struct_reads", "sub_slice", "subdag_vrr")
 
+# The paths whose change touches this family (sample.py's change weighting):
+# its source, its drivers; its test files come from TESTS.
+PATHS = (
+    "src/felizjueves/hgp/",
+    "src/felizjueves/eri/fock/",
+    "src/felizjueves/eri/hjk/",
+    "src/felizjueves/eri/hgp_drive.py",
+    "test/fock_driver.py",
+    "test/hjk_driver.py",
+)
+
 TESTS = {
     "test/test_emit_fock.py::test_X_compiles_the_fock_class": _F,
     "test/test_fock_ondevice.py::test_X_each_class_matches_the_host": _F,

@@ -74,6 +74,7 @@ import devcache
 import pytest
 import registry
 import tiers
+from registry import sample
 
 from felizjueves.performance.device import Vendor, from_env
 
@@ -345,8 +346,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 _CONTROLLER_LOCKS = pytest.StashKey[list[int]]()
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    sample.addoption(parser)
+
+
 def pytest_configure(config: pytest.Config) -> None:
-    """Under xdist, take each card's lock in the CONTROLLER (module docstring)."""
+    """Register the registry sampler (#653, test/registry/sample.py) in every
+    process; then, under xdist, take each card's lock in the CONTROLLER
+    (module docstring)."""
+    if not config.pluginmanager.has_plugin("fj-sample"):
+        config.pluginmanager.register(sample.Plugin(config), "fj-sample")
     if hasattr(config, "workerinput"):
         return
     dist = getattr(config.option, "dist", "no")

@@ -212,6 +212,33 @@ KERNEL_TIER_REPORTS=${KERNEL_TIER_REPORTS:-.kernel-tier-reports}
 KERNEL_TEST_ARGS=${KERNEL_TEST_ARGS:-'-m "gpu and {backend} and not slow and not high_l"'}
 KERNEL_FULL_TEST_ARGS=${KERNEL_FULL_TEST_ARGS:-'-m "gpu and {backend} and not high_l"'}
 
+# The registry-sampled selection (#653, test/registry/sample.py): a pytest
+# plugin that, under `--fj-sample` or FJ_SAMPLE=on, deselects the compile and
+# `gpu` cases its draw does not keep. Every case with L <= 2 runs; the `med`
+# (2 < L < its ladder's top) and `max` (the top) bands of each pool -- a
+# (tier, backend): `gpu/cuda`, `compile/hip`, ... -- are drawn until their
+# budget, in seconds of the registry's `cost_s`, is spent. Opt in: nothing
+# passes the flag until #656's gate.sh. FJ_SAMPLE=all keeps every case even
+# under the flag (empty, `on` and `all` are the three values).
+#   FJ_SAMPLE_SEED     the seed; empty is a hash of the merge-base and HEAD
+#   FJ_SAMPLE_BASE     the ref the merge-base (and the changed paths) is from
+#   FJ_BUDGET_MED/MAX  seconds per pool and band; empty is no limit
+#   FJ_K_MED/MAX       a count cap per pool and band; empty is none
+#   FJ_DEFAULT_COST_S  a case's cost while its keys' cost_s is unset (#652)
+#   FJ_TOUCH_WEIGHT    how much likelier a family the diff touches is drawn
+#   FJ_SAMPLE_REPORT   the JSON report (seed, budgets, cases drawn); relative
+#                      to the repo root
+FJ_SAMPLE=${FJ_SAMPLE:-}
+FJ_SAMPLE_SEED=${FJ_SAMPLE_SEED:-}
+FJ_SAMPLE_BASE=${FJ_SAMPLE_BASE:-origin/main}
+FJ_BUDGET_MED=${FJ_BUDGET_MED-120}
+FJ_BUDGET_MAX=${FJ_BUDGET_MAX-60}
+FJ_K_MED=${FJ_K_MED:-}
+FJ_K_MAX=${FJ_K_MAX:-}
+FJ_DEFAULT_COST_S=${FJ_DEFAULT_COST_S:-10}
+FJ_TOUCH_WEIGHT=${FJ_TOUCH_WEIGHT:-4}
+FJ_SAMPLE_REPORT=${FJ_SAMPLE_REPORT:-${KERNEL_TIER_REPORTS}/sample.json}
+
 # --- measurement ------------------------------------------------------------
 #
 # devtools/measure.sh runs everything that MEASURES rather than checks: the
