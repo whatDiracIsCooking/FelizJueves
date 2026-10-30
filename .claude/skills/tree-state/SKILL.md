@@ -31,7 +31,11 @@ cards, tiers)` and how each device test's cases map onto them.
 `test/test_registry.py` holds it to the collected `gpu` and compile-only
 cases in both directions. When a PR adds a device test, a class or a card
 run, change the family's module in the same PR; the test names what is
-missing.
+missing. Each case also carries `cost_s` (#652): seconds for its compile
+and its `gpu` tests on each backend, measured from the junit reports or
+modelled on L, read from `data/measured/registry_cost.json`; a new case
+needs `devtools/measure.sh registry-cost` rerun and the store committed
+(`test_every_registry_case_has_a_cost` says so).
 
 ## Kernel families
 

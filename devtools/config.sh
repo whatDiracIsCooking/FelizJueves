@@ -242,6 +242,7 @@ MEASURE_DF_GRAD_LOWSTACK_STORE=${MEASURE_DF_GRAD_LOWSTACK_STORE:-data/measured/d
 MEASURE_G1E_STORE=${MEASURE_G1E_STORE:-data/measured/g1e.json}
 MEASURE_GJAB_STORE=${MEASURE_GJAB_STORE:-data/measured/gjab.json}
 MEASURE_GK_STORE=${MEASURE_GK_STORE:-data/measured/gk.json}
+MEASURE_REGISTRY_COST_STORE=${MEASURE_REGISTRY_COST_STORE:-data/measured/registry_cost.json}
 
 # How a timed or profiled sweep runs: ALONE (no xdist -- a worker compiling
 # beside a timing makes it a different experiment), its prints shown, its

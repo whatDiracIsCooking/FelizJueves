@@ -25,7 +25,10 @@ compile-only test under nvcc / hipcc exists) and `gpu` (a test launches it
 on a card). `cards` is the tree-state record of which cards a `gpu` test of
 it has RUN on -- `rtx3080` (CUDA) and `rx9060xt` (HIP) -- not which could:
 the HGP split `J` / `K` has `gpu` tests on both backends and ran on the RTX
-3080 only. `cost_s` is unset until #652 fills it.
+3080 only. `cost_s` is a `cost.Cost`: seconds for its `compile` and its
+`gpu` tests on each backend, each measured or modelled, read from
+data/measured/registry_cost.json (#652; `cost.py` says how, and
+`devtools/measure.sh registry-cost` refreshes it).
 
 WHERE IT COMES FROM. Each family module (one per
 `.claude/skills/tree-state/references/*.md` kernel file) declares its CASES
@@ -61,9 +64,12 @@ both directions; conftest.py's collection hook writes them out for it.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
+import subprocess
+import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,6 +78,7 @@ from typing import Any
 from felizjueves.spec import Spec, Target
 
 from . import (
+    cost,
     fock_hgp,
     gradients,
     hessians,
@@ -98,7 +105,8 @@ from .rules import (
 __all__ = [
     "BACKEND_CARD", "CARDS", "ENGINES", "FAMILIES", "REGISTRY", "RULES",
     "TIERS", "Allow", "ById", "Case", "Classes", "CollectedCase", "Key",
-    "Resolution", "Span", "device_cases", "dump_if_asked", "resolve",
+    "Resolution", "Span", "collect", "cost", "device_cases", "dump_if_asked",
+    "family_of", "resolve",
 ]
 
 FAMILIES = {
@@ -115,12 +123,20 @@ FAMILIES = {
 
 def _registry() -> dict[Key, Case]:
     out: dict[Key, Case] = {}
+    costs = cost.load()
     for name, module in FAMILIES.items():
         for case in module.CASES:
             if case.key in out:
                 raise ValueError(f"{name}: {case.key} declared twice")
-            out[case.key] = case
+            out[case.key] = dataclasses.replace(case,
+                                                cost_s=costs.get(case.key))
     return out
+
+
+def family_of() -> dict[Key, str]:
+    """Every registry case's key -> the family that declares it."""
+    return {case.key: name for name, module in FAMILIES.items()
+            for case in module.CASES}
 
 
 def _rules() -> dict[str, Rule]:
@@ -330,6 +346,7 @@ def device_cases(items: Iterable[Any]) -> Iterator[CollectedCase]:
 
 
 DUMP_ENV = "FJ_REGISTRY_DUMP"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def dump_if_asked(items: Iterable[Any]) -> None:
@@ -340,3 +357,17 @@ def dump_if_asked(items: Iterable[Any]) -> None:
         return
     rows = [c.to_json() for c in device_cases(items)]
     Path(path).write_text(json.dumps(rows, indent=0))
+
+
+def collect(out: Path) -> list[CollectedCase]:
+    """Collect the whole of test/ -- every marker, no `-m` -- in a child
+    pytest with `FJ_REGISTRY_DUMP=<out>`, and read back its device cases."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
+    env[DUMP_ENV] = str(out)
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q",
+         "-p", "no:cacheprovider", "-o", "addopts=", "test"],
+        cwd=ROOT, env=env, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(done.stdout[-4000:] + done.stderr[-4000:])
+    return [CollectedCase.from_json(r) for r in json.loads(out.read_text())]
