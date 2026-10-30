@@ -218,3 +218,32 @@ the host's twin (`test_kernel_d2_df_ladder.py`, 79 cases; worst printed
 `hess_driver.d2eri3_launches`) and have **run on neither card**. No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), no clock
 measured.
+**The one-electron derivative MATRICES, `S^x`, `T^x`, `V^x` (#687),
+interpreted through (ff), held to libcint, compiled by nvcc and hipcc
+through (dd), not on a card** (`hessian.md`, "The one-electron
+derivative matrices"; the one-electron half of the CPHF right-hand side's
+`F^x`, `J^x` #688 and `K^x` #689 its siblings): the matrix form is a
+kernel-body lever, as #693's metric one is -- `uncontracted` (#693's,
+widened to `s`, `t`, `v`: the ip1 form) and `rinv` (`v` only: the
+operator term), each d1 and MMD only (`levers.order_refusal`, the
+`.hgp` / `.rys` slots refuse), keys ``overlap/d1/(2,1)/b1/s/uncontracted``
+and ``nuclear/d1/(2,1)/b1/v/rinv``. `hessian/kernel_ip1e.py` (`ips_`, `ipt_`, `ipv_`,
+`iprv_{la}{lb}`) writes `X1[k, m, n] += dX_mn/dA_k`, `A` the centre of
+`m` (libcint's `int1e_ip*` negated), all atoms in one launch per class, a
+record its `(m, n)` block by `dA` and, off the diagonal, `(n, m)` by `dB`
+(`kernel_g1e`'s head, rules and tables reused; `ipv` per record folds the
+nuclei into `U_t = -SUM_C Z_C [t]^(0)` and rolls the rows against it);
+`iprv_` is `V`'s operator term at the one nucleus `nuc` (a kernel
+argument, one launch per nucleus), `-Z_C (iprinv + iprinv^T)`. Out
+`[3, n_ao, n_ao]` Cartesian. Host reference `gradient.host`'s
+`overlap_ip1`, `kinetic_ip1`, `potential_ip1`, `potential_rinv`, held to
+libcint element by element on #550's H₂O/STO-3G and cc-pVDZ gradient
+fixtures (2.8e-15 of max, gate 1e-12) and to `X1 + X1^T + SUM_C XC(C) =
+0` (3.2e-16); interpreted, every ordered class (ss)–(ff) on HF/cc-pVTZ
+within 16 eps of the host (`ips`, `ipt` bitwise) and the whole H₂O
+matrices against libcint (`test_kernel_ip1e.py`, L + 1 > 4 `slow`).
+Ladder `--ip-one-e-l [LMAX]` (2 bare, 0..3), never in the bare default nor in
+`KERNEL_GEN_CMD`; 24 goldens per backend (`test_emit_ip1e.py`), every
+unit through (ff) under the cap. Device test `test_ip1e_device.py`
+(generator `test/ip1e_driver.py`, the shared runner) written, its runners
+compiled by both vendors, **not run on a card**. Nothing measured.

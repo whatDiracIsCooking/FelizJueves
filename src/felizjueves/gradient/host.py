@@ -373,6 +373,168 @@ def potential_gradient(basis: Basis, M: Matrix, nuclei: Sequence[Nucleus],
     return _one_electron(basis, M, nuc, per_record, pairs, atoms)
 
 
+# ---------------------------------------------------------------------------
+# The derivative MATRICES (#687): hessian.kernel_ip1e's references
+# ---------------------------------------------------------------------------
+
+Mat3 = list[list[list[float]]]  # X[k][m][n]
+
+
+def _matrix_sweep(basis: Basis, per_record, pairs: Pairs = None) -> Mat3:
+    """THE MATRIX SWEEP: the gradient sweep's shell pairs `i <= j` and
+    records; `per_record(rec, sa, sb)` returns the record's `row(a, b) ->
+    (vA, vB)`, one Cartesian row's per-axis values before `s`. Then
+    `X[k][m][n] += s vA[k]` (`m = oa + r`, `n = ob + c`) and, off the
+    diagonal (`i < j`), `X[k][n][m] += s vB[k]`. A diagonal pair (`i ==
+    j`) writes `vA` alone: its records are every ORDERED primitive pair, so
+    `vA` over them is already the whole first-index derivative of the
+    block (`ao.pairs.primitive_pairs`)."""
+    n = basis.n_ao
+    X = [[[0.0] * n for _ in range(n)] for _ in range(3)]
+    for i, j in (_unique_pairs(basis) if pairs is None else pairs):
+        if not 0 <= i <= j < len(basis.shells):
+            raise ValueError(f"shell pair ({i}, {j}) is not i <= j")
+        sa, sb = basis.shells[i], basis.shells[j]
+        oa, ob = basis.offsets[i], basis.offsets[j]
+        for rec in _records(sa, sb):
+            s = rec[2]
+            row = per_record(rec, sa, sb)
+            for r, a in enumerate(cartesians(sa.l)):
+                for c, b in enumerate(cartesians(sb.l)):
+                    vA, vB = row(a, b)
+                    for k in range(3):
+                        X[k][oa + r][ob + c] += s * vA[k]
+                        if i != j:
+                            X[k][ob + c][oa + r] += s * vB[k]
+    return X
+
+
+def overlap_ip1(basis: Basis, *, pairs: Pairs = None) -> Mat3:
+    """`X[k][m][n] = dS_mn / dA_k`, `A` the centre of `m` (`-int1e_ipovlp`):
+    `E^{ab}_0` with axis `k` differentiated, on the matrix sweep."""
+    def per_record(rec, sa, sb):
+        zeta, P, _, alpha, beta = rec
+        ax = _Axes(zeta, P, sa.centre, sb.centre, sa.l + 1, sb.l + 1)
+
+        def row(a, b):
+            e0 = [ax.e(d, a[d], b[d])[0] for d in range(3)]
+            vA, vB = [0.0] * 3, [0.0] * 3
+            for k in range(3):
+                da, db = _axis_derivs(ax, k, a[k], b[k], alpha, beta)
+                fa, fb = list(e0), list(e0)
+                fa[k], fb[k] = da[0], db[0]
+                vA[k] = fa[0] * fa[1] * fa[2]
+                vB[k] = fb[0] * fb[1] * fb[2]
+            return vA, vB
+        return row
+
+    return _matrix_sweep(basis, per_record, pairs)
+
+
+def kinetic_ip1(basis: Basis, *, pairs: Pairs = None) -> Mat3:
+    """`X[k][m][n] = dT_mn / dA_k` (`-int1e_ipkin`): `kinetic_gradient`'s
+    bracket per row, on the matrix sweep."""
+    def per_record(rec, sa, sb):
+        zeta, P, _, alpha, beta = rec
+        ax = _Axes(zeta, P, sa.centre, sb.centre, sa.l + 1, sb.l + 3)
+
+        def S(d, i, j):
+            return ax.e(d, i, j)[0]
+
+        def K(d, i, j):
+            return kinetic_axis([ax.e(d, i, jj)[0] for jj in range(j + 3)],
+                                j, beta)
+
+        def rule(f, d, i, j):
+            return (2.0 * alpha * f(d, i + 1, j) - (i * f(d, i - 1, j) if i
+                                                    else 0.0),
+                    2.0 * beta * f(d, i, j + 1) - (j * f(d, i, j - 1) if j
+                                                   else 0.0))
+
+        def row(a, b):
+            s0 = [S(d, a[d], b[d]) for d in range(3)]
+            k0 = [K(d, a[d], b[d]) for d in range(3)]
+            out = ([0.0] * 3, [0.0] * 3)
+            for k in range(3):
+                dsk, dkk = rule(S, k, a[k], b[k]), rule(K, k, a[k], b[k])
+                for side in (0, 1):
+                    for m in range(3):  # the bracket's term with K on axis m
+                        f = [k0[d] if d == m else s0[d] for d in range(3)]
+                        f[k] = (dkk if k == m else dsk)[side]
+                        out[side][k] += f[0] * f[1] * f[2]
+            return out
+        return row
+
+    return _matrix_sweep(basis, per_record, pairs)
+
+
+def potential_ip1(basis: Basis, nuclei: Sequence[Nucleus], *,
+                  one_centre: OneCentre, pairs: Pairs = None) -> Mat3:
+    """`X[k][m][n] = dV_mn / dA_k` (`-int1e_ipnuc`), the basis function's
+    derivative only, every nucleus's operator held fixed: per record the
+    nuclei's potential in Hermite space, `U_t = -SUM_C Z_C [t]^(0)(P - C)`
+    over `|t| <= L + 1`, then per row `SUM_t (dA_k E^{ab})_t U_t`."""
+    nuc = _check_nuclei(nuclei)
+
+    def per_record(rec, sa, sb):
+        zeta, P, _, alpha, beta = rec
+        t1 = hermite_order(sa.l + sb.l + 1)
+        theta = math.sqrt(zeta)
+        U = [0.0] * len(t1)
+        for Z, C in nuc:
+            pc = (P[0] - C[0], P[1] - C[1], P[2] - C[2])
+            for n, t in enumerate(t1):
+                U[n] -= Z * one_centre(t, 0, pc, theta)
+        ax = _Axes(zeta, P, sa.centre, sb.centre, sa.l + 1, sb.l + 1)
+
+        def row(a, b):
+            e = [ax.e(d, a[d], b[d]) for d in range(3)]
+            vA, vB = [0.0] * 3, [0.0] * 3
+            for k in range(3):
+                da, db = _axis_derivs(ax, k, a[k], b[k], alpha, beta)
+                for v, dk in ((vA, da), (vB, db)):
+                    f = list(e)
+                    f[k] = dk
+                    v[k] = sum(h * u for h, u in zip(_hermite(f, t1), U,
+                                                     strict=True))
+            return vA, vB
+        return row
+
+    return _matrix_sweep(basis, per_record, pairs)
+
+
+def potential_rinv(basis: Basis, nuclei: Sequence[Nucleus], c: int, *,
+                   one_centre: OneCentre, pairs: Pairs = None) -> Mat3:
+    """`X[k][m][n] = dV^C_mn / dC_k`, nucleus `c`'s operator term: `V^C =
+    -Z_C <m|1/|r - C||n>` moved with its nucleus, `+Z_C SUM_t E^{ab}_t
+    [t + 1_k]^(0)(P - C)` per row (`d/dC_k [t]^(0) = -[t + 1_k]^(0)`) --
+    `-Z_C (iprinv + iprinv^T)` with libcint's origin at `C`. Symmetric in
+    `m <-> n`, so a row writes the same value both ways."""
+    nuc = _check_nuclei(nuclei)
+    if type(c) is not int or not 0 <= c < len(nuc):
+        raise ValueError(f"nucleus {c!r} is not in 0..{len(nuc) - 1}")
+    Z, C = nuc[c]
+
+    def per_record(rec, sa, sb):
+        zeta, P, _, _, _ = rec
+        L = sa.l + sb.l
+        t0, t1 = hermite_order(L), hermite_order(L + 1)
+        index = {t: n for n, t in enumerate(t1)}
+        pc = (P[0] - C[0], P[1] - C[1], P[2] - C[2])
+        R = [one_centre(t, 0, pc, math.sqrt(zeta)) for t in t1]
+        up = [[R[index[_shift(t, k, 1)]] for t in t0] for k in range(3)]
+        ax = _Axes(zeta, P, sa.centre, sb.centre, sa.l, sb.l)
+
+        def row(a, b):
+            E = _hermite([ax.e(d, a[d], b[d]) for d in range(3)], t0)
+            v = [Z * sum(h * r for h, r in zip(E, up[k], strict=True))
+                 for k in range(3)]
+            return v, v
+        return row
+
+    return _matrix_sweep(basis, per_record, pairs)
+
+
 def coulomb_jp(P, zeta: float, L: int, kets, *,
                one_centre: OneCentre) -> list[float]:
     """`J_t = SUM_k SUM_q [t|q] D_q` of one bra record `(P, zeta)` at

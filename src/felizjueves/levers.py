@@ -667,20 +667,25 @@ VOCABULARY: dict[str, Lever] = {
     # `G[atom, 3]`, and the DF Hessian needs the derivative integrals
     # themselves. Its builder is `gradient.kernel_ipmetric`; ERI3's twin,
     # the three-center (nabla m n|P) in aux blocks, is #692's
-    # `gradient.kernel_xeri3`.
+    # `gradient.kernel_xeri3`. #687 widened it to the one-electron S, T and
+    # V, whose CPHF right-hand side needs S^x and h^x as matrices: their ip1
+    # form, the derivative on the centre of the first index,
+    # `hessian.kernel_ip1e`.
     "uncontracted": Lever.of(
         "uncontracted", 693,
         "the derivative integrals themselves, in place of their contraction "
         "into G[atom, k]: M1[k, P, Q] = d(P|Q)/dA_k with A the centre of P, "
         "an n_aux x n_aux matrix per axis (gradient/kernel_ipmetric.py); "
         "X[k, m, n, P] = (nabla_k m n|P) over one aux block, libcint's "
-        "int3c2e_ip1 (gradient/kernel_xeri3.py, #692)",
-        {"metric", "eri3"},
+        "int3c2e_ip1 (gradient/kernel_xeri3.py, #692); X1[k, m, n] = "
+        "dX_mn/dA_k with A the centre of m for S, T and V, libcint's "
+        "int1e_ip* negated (hessian/kernel_ip1e.py, #687)",
+        {"metric", "eri3", "s", "t", "v"},
         orders=(1,),
         orders_why=("the uncontracted form is the first derivative's: at "
-                    "d0 the metric and three-center kernels already write "
-                    "the integrals, and a d2 form is a follow-up nobody has "
-                    "declared"),
+                    "d0 the metric, three-center and one-electron kernels "
+                    "already write the integrals, and a d2 form is a "
+                    "follow-up nobody has declared"),
         **{"eri3.hgp": ("the uncontracted three-center derivative is built "
                         "on the MMD engine only (gradient.kernel_xeri3); an "
                         "HGP twin is a follow-up nobody has declared"),
@@ -692,7 +697,39 @@ VOCABULARY: dict[str, Lever] = {
                           "an HGP twin is a follow-up nobody has declared"),
            "metric.rys": ("the uncontracted metric derivative is built on "
                           "the MMD engine only (gradient.kernel_ipmetric); "
-                          "the Rys metric has no gradient at all")},
+                          "the Rys metric has no gradient at all"),
+           **{f"{t}.{e}": (f"the uncontracted {t.upper()} derivative is "
+                           "built on the MMD engine only "
+                           "(hessian.kernel_ip1e); an off-native twin is a "
+                           "follow-up nobody has declared")
+              for t in "stv" for e in ("hgp", "rys")}},
+    ),
+    # #687: V's OPERATOR term as a matrix, which no first-index derivative
+    # holds -- d/dC_k of the operator at nucleus C moved with it, one launch
+    # per nucleus (`hessian.kernel_ip1e`'s `iprv_`). Like `uncontracted`, an
+    # output form, not a departure from a paper; it stands alone (a V key
+    # with `rinv` is the operator term, with `uncontracted` the ip1 form).
+    "rinv": Lever.of(
+        "rinv", 687,
+        "V's per-nucleus operator term as a matrix, XC[k, m, n] = "
+        "dV^C_mn/dC_k for the one nucleus C = nuc a kernel argument, "
+        "-Z_C (iprinv + iprinv^T) with libcint's rinv origin at C, in "
+        "place of its contraction into G[C, k] (hessian/kernel_ip1e.py)",
+        {"v"},
+        orders=(1,),
+        orders_why=("the operator term is the first derivative's: at d0 "
+                    "there is none, and its second derivative is the d2 "
+                    "kernel's own (hessian.kernel_h1e)"),
+        **{"v.hgp": ("V's operator term as a matrix is built on the MMD "
+                     "engine only (hessian.kernel_ip1e); an HGP twin is a "
+                     "follow-up nobody has declared"),
+           "v.rys": ("V's operator term as a matrix is built on the MMD "
+                     "engine only (hessian.kernel_ip1e); a Rys twin is a "
+                     "follow-up nobody has declared"),
+           "s": "S has no operator: its derivative is the basis functions' "
+                "alone (the uncontracted form)",
+           "t": "T's operator commutes with a translation: its derivative "
+                "is the basis functions' alone (the uncontracted form)"},
     ),
 }
 

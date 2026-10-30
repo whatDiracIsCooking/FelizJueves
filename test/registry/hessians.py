@@ -46,11 +46,20 @@ _HESS = {f"{name}-{which}": span("mmd", which, 2, range(top + 1))
          for name, top in (("h2o_sto3g", 2), ("h2o_ccpvdz", 4))
          for which in "stv"}
 
+# The d1 derivative matrices (#687, kernel_ip1e): a variant of the d1 S, T,
+# V cases (gradients.py's), as a lever is; the rinv form at each nucleus
+# is V's.
+_IP1E = {f"{name}-{which}": span("mmd", which[0] if which[0] in "st" else
+                                 "v", 1, range(top + 1))
+         for name, top in (("h2o_sto3g", 2), ("h2o_ccpvdz", 4))
+         for which in ("s", "t", "v", "rinv0", "rinv1", "rinv2")}
+
 # The paths whose change touches this family (sample.py's change weighting):
-# its source, its driver; its test files come from TESTS.
+# its source, its drivers; its test files come from TESTS.
 PATHS = (
     "src/felizjueves/hessian/",
     "test/hess_driver.py",
+    "test/ip1e_driver.py",
     "test/df_grad_launch.py",
 )
 
@@ -68,6 +77,10 @@ TESTS = {
         Classes("mmd", "metric", 2),
     "test/test_emit_d2eri3.py::test_X_compiles_the_df_hessian_unit":
         Classes("mmd", "eri3", 2),
+    "test/test_emit_ip1e.py::test_X_compiles_the_ip1_unit":
+        Classes("mmd", "s", 1),
+    "test/test_ip1e_device.py::test_X_ip1e_matches_the_host": ById(_IP1E),
+    "test/test_ip1e_device.py::test_X_ip1e_runners_compile": ById(_IP1E),
     "test/test_hess_df_device.py::test_X_df_hessian_matches_the_host":
         Allow(PROGRAM),
     "test/test_hess_df_device.py::test_X_df_hessian_ladder_through_i":

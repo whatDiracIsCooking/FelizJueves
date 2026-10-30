@@ -366,7 +366,9 @@ def test_an_order_table_without_its_reason_is_refused() -> None:
 def test_uncontracted_is_the_metric_s_and_eri3_s_at_d1_only() -> None:
     lever = levers.VOCABULARY[UNCONTRACTED]
     assert (lever.name, lever.issue) == (UNCONTRACTED, 693)
-    assert lever.legal == {"metric", "eri3"} and lever.orders == {1}
+    # the metric's and (mn|P)'s (#693, #692), and S, T, V's ip1 form (#687)
+    assert lever.legal == {"metric", "eri3", "s", "t", "v"}
+    assert lever.orders == {1}
     assert levers.order_refusal(UNCONTRACTED, 1) is None
     assert levers.order_refusal(UNCONTRACTED, 0) == lever.orders_why
     assert levers.order_refusal(NO_SIEVE, 0) is None  # not a kernel lever

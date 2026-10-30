@@ -723,8 +723,9 @@ once the derivative exists as a matrix. `ipmetric_{lP}{lQ}` writes it:
     M1[k, P, Q] = d(P|Q)/dA_k        A the centre of P,  [3, n_aux, n_aux]
 
 keyed `coulomb/d1/(lP,lQ)/b1/metric/uncontracted` -- the kernel-body lever
-`uncontracted` (`levers.VOCABULARY`, legal on the MMD `metric` slot only and
-at d1 only, by the lever's new `orders` field, `levers.order_refusal`).
+`uncontracted` (`levers.VOCABULARY`, legal on the MMD `metric` slot -- and,
+since #687, on `s`, `t` and `v`, their ip1 form, `hessian.kernel_ip1e` --
+and at d1 only, by the lever's new `orders` field, `levers.order_refusal`).
 `gmetric_`'s Hermite shift and tower one order up, in its low-stack rolled
 form at every class (no `3 nP nQ` accumulators: 2,352 at (i|i)), each
 element accumulated in place in the pair's own slots, which it zeroes
