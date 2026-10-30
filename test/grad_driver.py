@@ -12,7 +12,7 @@ harness.
     gjab_tail(plan, basis, nuclei, D, lowstack=)    -> plan_driver.ChainTail
     gjab_read_back(drv, raw, n_atom)                -> ([run][lp] J_p, G[run])
 
-`mu_driver.py`'s pattern, made generic over the parameter list: every
+`mu_driver.py`'s pattern before #658, made generic over the parameter list: every
 array argument of every launch is staged (int arrays as exact doubles,
 converted on upload, `plan_driver.UPLOAD_INT`), scalar arguments are
 spelled into the call, and `G` is the one OUT, shared by every launch.

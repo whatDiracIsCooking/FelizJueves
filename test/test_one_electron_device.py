@@ -4,16 +4,18 @@ RTX 3080 and the RX 9060 XT; and, `slow` (#244, the deferred tier), every
 pair class through (ff) against the host -- the predecessor's
 `sgen`/`tgen`/`vgen` parity bar.
 
-THE BUILD is `one_electron_driver.build_on_card`: one program per target of
-one launch (`launch.one_electron_launch`, #241), every pair class's kernel
-(`kernel_s` / `kernel_t` / `kernel_v`, #237-#239) launched once into one
-zeroed matrix, `RUNS` times. Under devtools/kernel-tier.sh a class whose
-unit the generate phase wrote (`--one-e-l 2`: `la <= lb <= 2`) includes
-THAT file, asserted byte-identical to `emit(...)` and already through the
-tier's compile phase and #92's filter; a class `la > lb` (a basis whose p or
-d shells precede its s shells reaches them: H2O's O p before H s) is
-emitted by the driver, the same text. Every program is compiled with
-devtools/config.sh's flags and FAILS on a warning located in generated text.
+THE BUILD is `one_electron_driver.build_on_card`, on the shared runner
+(#658): one runner per pair class's unit (`kernel_s` / `kernel_t` /
+`kernel_v`, #237-#239) of one target of one launch
+(`launch.one_electron_launch`, #241), each launched once into one matrix
+carried from class to class from zero, the whole chain `RUNS` times. Under
+devtools/kernel-tier.sh a class whose unit the generate phase wrote
+(`--one-e-l 2`: `la <= lb <= 2`) includes THAT file, asserted
+byte-identical to `emit(...)` and already through the tier's compile phase
+and #92's filter; a class `la > lb` (a basis whose p or d shells precede
+its s shells reaches them: H2O's O p before H s) is emitted by the driver,
+the same text. Every runner is compiled with devtools/config.sh's flags and
+FAILS on a warning located in generated text or a harness header.
 
 PART 1, PER PAIR CLASS, THROUGH (dd). HF/cc-pVTZ's launch, its classes
 restricted to `la, lb <= 2` -- all nine ordered classes `(0..2, 0..2)` are
@@ -90,10 +92,10 @@ and nothing is written to `data/measured/`: no register, spill, wall-clock
 or counter row (the issue: an unmeasured row is worse than none). V's
 registers and spills per class are read from the compilers in the PR.
 
-COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every program both
+COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every runner both
 parts use, so a vendor spelling problem shows without the card. The device
-tests are `gpu` plus `cuda` or `hip`, behind the card lock and the VRAM
-probe: on a box without the card they skip, and kernel-tier.sh exits 2.
+tests are `gpu` plus `cuda` or `hip`, behind the card lock: on a box without
+the card they skip, and kernel-tier.sh exits 2.
 """
 
 from __future__ import annotations
@@ -104,16 +106,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from one_electron_driver import (
-    build_on_card,
-    kernel_of,
-    one_e_program,
-    one_e_stage,
-    tier_units,
-)
+from harness_driver import build_chain, launch_spec
+from one_electron_driver import build_on_card, kernel_of, one_e_steps, tier_units
 from oracle import basis as ob
 from oracle import manifest
-from plan_driver import compile_checked
 from test_ao_kinetic import kinetic_scale_block
 from test_ao_overlap import ONE_E_TOL, _overlap_scale_block, one_e_scale
 from test_ao_potential import potential_scale_block
@@ -400,14 +396,14 @@ def _units(backend: str, launch: OneELaunch, target: Target):
 _THROUGH = {LMAX: "(dd)", LMAX_DEFERRED: "(ff)"}
 
 
-def _part1(backend: str, target: Target, request, run_device_binary,
-           tmp_path: Path, lmax: int = LMAX) -> None:
+def _part1(backend: str, target: Target, request, tmp_path: Path,
+           lmax: int = LMAX) -> None:
     tc = _toolchain(backend, request)
     launch = _launch(PART1, lmax)
     _, basis, _ = _case(PART1)
     units = _units(backend, launch, target)
     Ms = build_on_card(launch, target, basis.n_ao, backend, tc, tmp_path,
-                       run_device_binary, units=units)
+                       units=units)
     worst = _check_host(backend, PART1, target, lmax, Ms)
     recs = {f"{c.la}{c.lb}": len(c.recs) for c in launch}
     print(f"\n{backend} {BACKEND[backend][1].name} {target.name} {PART1} "
@@ -422,20 +418,18 @@ def _part1(backend: str, target: Target, request, run_device_binary,
 @pytest.mark.gpu
 @pytest.mark.parametrize("target", TARGET_PARAMS)
 def test_cuda_every_class_through_dd_matches_the_host(target, request,
-                                                      run_device_binary,
                                                       tmp_path) -> None:
     """Part 1 on the RTX 3080."""
-    _part1("cuda", target, request, run_device_binary, tmp_path)
+    _part1("cuda", target, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("target", TARGET_PARAMS)
 def test_hip_every_class_through_dd_matches_the_host(target, request,
-                                                     run_device_binary,
                                                      tmp_path) -> None:
     """Part 1 on the RX 9060 XT."""
-    _part1("hip", target, request, run_device_binary, tmp_path)
+    _part1("hip", target, request, tmp_path)
 
 
 @pytest.mark.slow
@@ -443,11 +437,9 @@ def test_hip_every_class_through_dd_matches_the_host(target, request,
 @pytest.mark.gpu
 @pytest.mark.parametrize("target", TARGET_PARAMS)
 def test_cuda_every_class_through_ff_matches_the_host(target, request,
-                                                      run_device_binary,
                                                       tmp_path) -> None:
     """Part 1 through (ff) on the RTX 3080 (#244, deferred)."""
-    _part1("cuda", target, request, run_device_binary, tmp_path,
-           LMAX_DEFERRED)
+    _part1("cuda", target, request, tmp_path, LMAX_DEFERRED)
 
 
 @pytest.mark.slow
@@ -455,11 +447,9 @@ def test_cuda_every_class_through_ff_matches_the_host(target, request,
 @pytest.mark.gpu
 @pytest.mark.parametrize("target", TARGET_PARAMS)
 def test_hip_every_class_through_ff_matches_the_host(target, request,
-                                                     run_device_binary,
                                                      tmp_path) -> None:
     """Part 1 through (ff) on the RX 9060 XT (#244, deferred)."""
-    _part1("hip", target, request, run_device_binary, tmp_path,
-           LMAX_DEFERRED)
+    _part1("hip", target, request, tmp_path, LMAX_DEFERRED)
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +472,7 @@ def _libcint_scale(name: str, target: Target) -> np.ndarray:
 
 
 def _part2(backend: str, name: str, target: Target, request,
-           run_device_binary, tmp_path: Path) -> None:
+           tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     fx, basis, _ = _case(name)
     launch = _launch(name)
@@ -490,7 +480,7 @@ def _part2(backend: str, name: str, target: Target, request,
         LMAX_DEFERRED if name in F_MOLECULES else LMAX)
     units = _units(backend, launch, target)
     Ms = build_on_card(launch, target, basis.n_ao, backend, tc, tmp_path,
-                       run_device_binary, units=units)
+                       units=units)
     worst = _check_host(backend, name, target, None, Ms)
     ref = fx.arrays[FIXTURE_ARRAY[target]]
     scale = _libcint_scale(name, target)
@@ -512,20 +502,18 @@ def _part2(backend: str, name: str, target: Target, request,
 @pytest.mark.gpu
 @pytest.mark.parametrize(("name", "target"), MOLECULE_CELLS)
 def test_cuda_one_electron_matrices_match_libcint(name, target, request,
-                                                  run_device_binary,
                                                   tmp_path) -> None:
     """Part 2 on the RTX 3080."""
-    _part2("cuda", name, target, request, run_device_binary, tmp_path)
+    _part2("cuda", name, target, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize(("name", "target"), MOLECULE_CELLS)
 def test_hip_one_electron_matrices_match_libcint(name, target, request,
-                                                 run_device_binary,
                                                  tmp_path) -> None:
     """Part 2 on the RX 9060 XT."""
-    _part2("hip", name, target, request, run_device_binary, tmp_path)
+    _part2("hip", name, target, request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -544,9 +532,8 @@ def _compiles(backend: str, tc, name: str, target: Target, tmp_path: Path,
               lmax: int = LMAX):
     _, basis, _ = _case(name)
     launch = _launch(name, lmax if name == PART1 else None)
-    prog = one_e_program(launch, target, basis.n_ao, backend, tmp_path,
-                         units=_units(backend, launch, target))
-    compile_checked(tc, prog, tmp_path / "bin")
+    build_chain(tc, backend, one_e_steps(launch, target, basis.n_ao), tmp_path,
+                units=_units(backend, launch, target))
 
 
 @pytest.mark.cuda
@@ -603,59 +590,51 @@ def test_the_tier_writes_the_ladders_classes_and_no_other(cell,
 
 
 @pytest.mark.parametrize("target", TARGET_PARAMS)
-def test_the_program_reads_the_kernels_parameters(target, tmp_path) -> None:
-    """Every class's launch passes one argument per kernel parameter, the
-    staged input is the size the program's own check asks for."""
+def test_every_step_names_the_kernels_parameters(target) -> None:
+    """Every class's launch names every kernel parameter but the matrix,
+    each array of exactly its parameter's dtype and one entry per record
+    (V's nuclei one per nucleus): `launch_spec` accepts it as the runner
+    will, with the matrix added."""
     launch = _launch("h2o_sto3g_j")
     _, basis, _ = _case("h2o_sto3g_j")
-    prog = one_e_program(launch, target, basis.n_ao, "hip", tmp_path)
-    for c in launch:
-        k = kernel_of(c, target)
-        at = prog.source.index(">>>(", prog.source.index(f"::{k.name}<<<"))
-        call = prog.source[at:prog.source.index(");", at)]
-        assert call.count(",") == len(k.params) - 1, k.name
-    data = one_e_stage(launch, target)
-    n_nuc = len(launch.nuclei) if target is Target.V else 0
-    nd = {Target.S: 8, Target.T: 9, Target.V: 11}[target]
-    assert data.size == 4 * n_nuc + sum((nd + 2) * len(c.recs) for c in launch)
+    n = basis.n_ao
+    steps = one_e_steps(launch, target, n)
+    assert [s.kernel.name for s in steps] == [kernel_of(c, target).name
+                                              for c in launch]
+    nuclei = len(launch.nuclei)
+    for c, st in zip(launch, steps, strict=True):
+        mat = st.kernel.params[-1].name  # the OUT matrix, last
+        assert mat not in st.args
+        spec, arrays = launch_spec(st.kernel, st.grid, st.block,
+                                   {**st.args, mat: (n, n)})
+        assert [a["name"] for a in spec["args"]] == [p.name for p in
+                                                     st.kernel.params]
+        for fname, a in arrays.items():
+            want = nuclei if fname.split(".")[0] in ("Z", "Cnuc") else len(
+                c.recs)
+            assert a.shape[0] == want, fname
+        assert st.args["n_rec"] == len(c.recs) and st.args["n_ao"] == n
 
 
 @pytest.mark.parametrize("target", TARGET_PARAMS)
 def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
-    """The arrays the card receives, sliced as the program slices them and
-    run through the INTERPRETED kernels into one matrix, give the host's
-    matrix within the device-vs-host bound: the staging, checked without a
-    card."""
+    """The arguments the runner receives, run through the INTERPRETED
+    kernels into one carried matrix, give the host's matrix within the
+    device-vs-host bound: the staging, checked without a card."""
     name = "h2o_sto3g_j"
     launch = _launch(name)
     _, basis, _ = _case(name)
     n = basis.n_ao
-    data = one_e_stage(launch, target)
-    at = 0
-    kw: dict = {}
-    if target is Target.V:
-        nn = len(launch.nuclei)
-        kw = dict(n_nuc=nn, Z=data[:nn].copy(),
-                  Cnuc=data[nn:4 * nn].reshape(nn, 3).copy())
-        at = 4 * nn
     out = np.zeros((n, n))
-    for c in launch:
-        k = kernel_of(c, target)
-        nr = len(c.recs)
-        mat = k.params[-1].name  # the OUT matrix, last
-        args = {}
-        for p in k.params:
-            if not p.array or p.name in kw or p.name in ("off_a", "off_b", mat):
-                continue
-            args[p.name] = data[at:at + nr].copy()
-            at += nr
-        args["off_a"] = data[at:at + nr].astype(np.int32)
-        args["off_b"] = data[at + nr:at + 2 * nr].astype(np.int32)
-        at += 2 * nr
+    for st in one_e_steps(launch, target, n):
+        k = st.kernel
+        mat = k.params[-1].name
+        nr = st.args["n_rec"]
+        args = {a: (v.copy() if isinstance(v, np.ndarray) else v)
+                for a, v in st.args.items()}
         grid, block = (-(-nr // 8), (8, 1))
         out = Interpreter(k, launch=Launch(grid, block, 1), boys=boys).run(
-            n_rec=nr, n_ao=n, **kw, **args, **{mat: out})[mat]
-    assert at == data.size
+            **args, **{mat: out})[mat]
     tol, _, _, _, _ = _bound(name, target, None)
     err = np.abs(out - _host_cached(name, target, None))
     assert np.all(err <= tol), _ratio(err, tol)

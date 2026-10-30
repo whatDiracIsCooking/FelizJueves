@@ -327,7 +327,11 @@ H's s) and HF/cc-pVTZ also reach `(1,0)`, `(2,0)`, `(2,1)` and so on, and
 `test/one_electron_driver.py` emits those `la > lb` units itself: the same
 text, under the same flags and warning filter. When the generate phase
 wrote a unit, the driver includes that file and asserts it byte-identical
-to `emit(...)`. Ordered ladder classes are a named follow-up.
+to `emit(...)`. Since #658 the driver runs on the shared runner
+(`test/harness/`): one runner per class's unit, the matrix carried from
+class to class, and the whole chain run `RUNS` times from zero, since the
+fp64 atomics' order may differ between runs; that port has not run on a
+card. Ordered ladder classes are a named follow-up.
 
 ## Witnesses, and what ran where
 
@@ -527,7 +531,8 @@ and `KERNEL_GEN_CMD` does not ask for it.
   the launch and the walk. `test_kernel_sx.py` checks the kernel
   interpreted, every ordered class (ss) through (ff) on HF/cc-pVTZ
   against itself and the three cases whole, all `np.array_equal`.
-- *Both cards.* `test_sx_device.py` (generator `test/sx_driver.py`) runs
+- *Both cards.* `test_sx_device.py` (generator `test/sx_driver.py`, on
+  the shared runner since #658, which has not run on a card) runs
   the same cases under `S`'s device bound, `2 γ_{N+K} Mabs` with
   `N = 4L + 9`, and checks run-to-run spread within `2 γ_K Mabs`. On the
   RTX 3080 and the RX 9060 XT all 7 cases passed. The worst result was
@@ -674,8 +679,9 @@ and (df) and (ff), L = 5 and 6, are `slow` (`tiers.FAST_L_MAX`).
   cases per compiler, `cuda`/`hip`, all green on a device-less box for
   #627).
 - *Both cards* (#523). `test_mu_device.py` (generator `test/mu_driver.py`,
-  which reads `C` and `q` from its input, so one binary serves every
-  origin and charge, and refuses a class above (ff) since #627): per class on
+  which takes `C` and `q` as runtime values, so one build serves every
+  origin and charge -- on the shared runner since #658, which has not run
+  on a card -- and refuses a class above (ff) since #627): per class on
   `hf_ccpvtz_spd_dipole` against the host under `2 γ_{N+K} MUabs` with
   `N = 4L + 16` and against `int1e_r_cart`; whole H₂O/STO-3G and 6-31G
   (cc-pVDZ `slow`) against `int1e_r_cart` and, at `q = -1`, against
@@ -777,14 +783,15 @@ is not the parent's exactly.
 the bare default nor in `KERNEL_GEN_CMD`, refusing the selector, the Fock
 and HGP paths and `--n-batches` as `--mu-l` does.
 
-**On a card: written, not run.** `test/mu_driver.py` takes `target=`
+**On a card: compiled, not run.** `test/mu_driver.py` takes `target=`
 (`Target.DIPOLE` by default, every dipole call unchanged), and
 `test_quad_device.py` (`gpu` + `cuda`/`hip`) builds the spd basis's
 quadrupole from its plan on each card against libcint (`1e-12` of
 `max|rr|`) and the host under a per-element bound stated in its docstring
 (`2 γ_{N+K} Qabs`, `N = 4L + 8 + 16`), with `q = -1` from the same binary.
-Its fast-tier cases (the program's text, the staging through the
-interpreter) pass; its device and compile cases have not run. Nothing
+Its fast-tier cases (the steps' parameters, the staging through the
+interpreter) pass, and since #658 (on the shared runner) its compile cases
+pass under nvcc and hipcc with no warning; its device cases have not run. Nothing
 above (dd), nothing spherical, no traceless tensor, no consumer.
 
 ## The HGP route: `S`, `T`, `V` and `MU` on engine #2
@@ -851,7 +858,8 @@ origin shift. Goldens: `test/golden/{cuda,hip}/{hs,ht,hv,hmu}_{00,01,11}`
 
 **On the card** (`test/test_hgp_one_e_device.py`, generator
 `test/hgp_one_e_driver.py`: one thread per contracted shell pair over
-`one_electron_launch`'s plan, `hgp_arrays` staged, plain stores): on the
+`one_electron_launch`'s plan, `hgp_arrays` staged, plain stores; on the
+shared runner since #658, which has not run on a card): on the
 RTX 3080, 16 passed -- each of `S`, `T`, `V`, `MU` on the synthetic basis
 against the MMD host (worst 5.03e-16 of `max|M|`, `T`) and on H₂O/STO-3G
 and 6-31G against libcint (worst 1.01e-15, `V`), the dipole at both

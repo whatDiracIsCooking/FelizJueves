@@ -13,18 +13,19 @@ them. #627's f cases were WRITTEN on a device-less box (compiled by nvcc and
 hipcc there, every compile-only companion green); their device runs are
 the card's to do.
 
-THE BUILD is `mu_driver.compile_mu`: one program per launch
-(`launch.one_electron_launch`, no nuclei, tau = 0), every pair class's
-`kernel_mu` kernel (#521) launched once into one zeroed `MU`, `RUNS` times.
-The origin and the charge are read from the input, so ONE binary runs at
-every `(C, q)` a test asks for: the origin shift and `q = -1` exercise the
-kernel's runtime scalars, not a second compilation. A class whose unit the
-tier's generate phase wrote (`--mu-l`) includes THAT file, asserted
-byte-identical to `emit(...)`; any other class -- `la > lb`, which no ladder
-writes, or every class when the tier's generator did not ask for `--mu-l`
--- is emitted by the driver, the same text. Every program is compiled with
-devtools/config.sh's flags and FAILS on a warning located in generated
-text.
+THE BUILD is `mu_driver.compile_mu`, on the shared runner (#658): one
+runner per pair class's `kernel_mu` unit (#521) of one launch
+(`launch.one_electron_launch`, no nuclei, tau = 0), each launched once into
+one `MU` carried from class to class from zero, the whole chain `RUNS`
+times. The origin and the charge are spec values, so ONE set of runners
+runs at every `(C, q)` a test asks for: the origin shift and `q = -1`
+exercise the kernel's runtime scalars, not a second compilation. A class
+whose unit the tier's generate phase wrote (`--mu-l`) includes THAT file,
+asserted byte-identical to `emit(...)`; any other class -- `la > lb`, which
+no ladder writes, or every class when the tier's generator did not ask for
+`--mu-l` -- is emitted by the driver, the same text. Every runner is
+compiled with devtools/config.sh's flags and FAILS on a warning located in
+generated text or a harness header.
 
 PART 1, PER PAIR CLASS, THROUGH (dd): `hf_ccpvtz_spd_dipole` (#520,
 HF/cc-pVTZ without f), whose launch reaches all nine ordered classes
@@ -83,9 +84,9 @@ element with one record repeats bit for bit.
 NOT A MEASUREMENT: worst ratios are printed, nothing is written to
 `data/measured/`.
 
-COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every program, so
+COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every runner, so
 a vendor spelling problem shows without the card. The device tests are
-`gpu` plus `cuda` or `hip`, behind the card lock and the VRAM probe.
+`gpu` plus `cuda` or `hip`, behind the card lock.
 """
 
 from __future__ import annotations
@@ -95,20 +96,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from mu_driver import (
-    MU_LMAX,
-    compile_mu,
-    kernel_of,
-    mu_program,
-    mu_stage,
-    units_of,
-)
+from harness_driver import build_chain, launch_spec
+from mu_driver import MU_LMAX, compile_mu, kernel_of, mu_steps, units_of
 from one_electron_driver import build_on_card
 from one_electron_driver import kernel_of as one_e_kernel_of
 from one_electron_driver import tier_units as one_e_tier_units
 from oracle import basis as ob
 from oracle import manifest
-from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_mu import _host as _host_jab
 from test_one_electron_device import _axis_abs, _place
@@ -301,7 +295,7 @@ def _tag(backend: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _part1(backend: str, request, run_device_binary, tmp_path: Path,
+def _part1(backend: str, request, tmp_path: Path,
            name: str = SPD) -> None:
     lmax = CLASS_LMAX[name]
     b, n_tier = _binary(backend, name, request, tmp_path)
@@ -311,13 +305,13 @@ def _part1(backend: str, request, run_device_binary, tmp_path: Path,
     classes = sorted(set(cls_of[K > 0]))
     lines = []
     for C, want, tag in ((origin, r, "C"), (ZERO, r0, "0")):
-        plus = b.run(C, 1.0, run_device_binary)
+        plus = b.run(C, 1.0)
         worst = _check_host(backend, name, C, 1.0, plus)
         lc = {c: _libcint_rel(plus[0], want, cls_of == c) for c in classes}
         bad = {c: v for c, v in lc.items() if v > LIBCINT_TOL}
         assert not bad, (f"{backend} {name} at {tag}: per-class |MU - "
                          f"int1e_r_cart| / max|r| over {LIBCINT_TOL:g}: {bad}")
-        minus = b.run(C, -1.0, run_device_binary)
+        minus = b.run(C, -1.0)
         _check_host(backend, name, C, -1.0, minus)
         _, r2r, _, _ = _bound(name, C, 1.0)
         d = np.abs(minus[0] + plus[0])
@@ -345,35 +339,35 @@ def _part1(backend: str, request, run_device_binary, tmp_path: Path,
 @pytest.mark.cuda
 @pytest.mark.gpu
 def test_cuda_mu_every_class_through_dd_matches_host_and_libcint(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     """Part 1 on the RTX 3080."""
-    _part1("cuda", request, run_device_binary, tmp_path)
+    _part1("cuda", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 def test_hip_mu_every_class_through_dd_matches_host_and_libcint(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     """Part 1 on the RX 9060 XT."""
-    _part1("hip", request, run_device_binary, tmp_path)
+    _part1("hip", request, tmp_path)
 
 
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.slow  # launches (ff), L = 6
 def test_cuda_mu_every_class_through_ff_matches_host_and_libcint(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     """Part 1 at f (#627) on the RTX 3080."""
-    _part1("cuda", request, run_device_binary, tmp_path, F)
+    _part1("cuda", request, tmp_path, F)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.slow  # launches (ff), L = 6
 def test_hip_mu_every_class_through_ff_matches_host_and_libcint(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     """Part 1 at f (#627) on the RX 9060 XT."""
-    _part1("hip", request, run_device_binary, tmp_path, F)
+    _part1("hip", request, tmp_path, F)
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +375,7 @@ def test_hip_mu_every_class_through_ff_matches_host_and_libcint(
 # ---------------------------------------------------------------------------
 
 
-def _part2(backend: str, name: str, request, run_device_binary,
+def _part2(backend: str, name: str, request,
            tmp_path: Path) -> None:
     b, n_tier = _binary(backend, name, request, tmp_path)
     basis, origin, r, r0, p = _case(name)
@@ -391,13 +385,13 @@ def _part2(backend: str, name: str, request, run_device_binary,
     lines = []
     for C, want, dip, tag in ((origin, r, p.dip, "C"),
                               (ZERO, r0, p.dip0, "0")):
-        Ms = b.run(C, 1.0, run_device_binary)
+        Ms = b.run(C, 1.0)
         worst = _check_host(backend, name, C, 1.0, Ms)
         lc = _libcint_rel(Ms[0], want)
         assert lc <= LIBCINT_TOL, (
             f"{backend} {name} at {tag}: |MU - int1e_r_cart| / max|r| = "
             f"{lc:.2e} over {LIBCINT_TOL:g}")
-        neg = b.run(C, -1.0, run_device_binary)
+        neg = b.run(C, -1.0)
         wneg = _check_host(backend, name, C, -1.0, neg)
         el = np.einsum("xij,ji->x", neg[0], D)  # q = -1: the electrons'
         nuc = Z @ (R - np.asarray(C, dtype=float)[None, :])
@@ -423,18 +417,18 @@ def _part2(backend: str, name: str, request, run_device_binary,
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", MOLECULE_PARAMS)
 def test_cuda_mu_h2o_matches_libcint_and_dip_moment(
-        name, request, run_device_binary, tmp_path) -> None:
+        name, request, tmp_path) -> None:
     """Part 2 on the RTX 3080."""
-    _part2("cuda", name, request, run_device_binary, tmp_path)
+    _part2("cuda", name, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", MOLECULE_PARAMS)
 def test_hip_mu_h2o_matches_libcint_and_dip_moment(
-        name, request, run_device_binary, tmp_path) -> None:
+        name, request, tmp_path) -> None:
     """Part 2 on the RX 9060 XT."""
-    _part2("hip", name, request, run_device_binary, tmp_path)
+    _part2("hip", name, request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +436,7 @@ def test_hip_mu_h2o_matches_libcint_and_dip_moment(
 # ---------------------------------------------------------------------------
 
 
-def _part3(backend: str, request, run_device_binary, tmp_path: Path,
+def _part3(backend: str, request, tmp_path: Path,
            name: str = SPD) -> None:
     b, _ = _binary(backend, name, request, tmp_path / "mu")
     basis, origin, _, _, d = _case(name)
@@ -451,19 +445,19 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path,
     units = one_e_tier_units(backend,
                              [one_e_kernel_of(c, Target.S) for c in launch])
     S = build_on_card(launch, Target.S, basis.n_ao, backend, tc,
-                      tmp_path / "s", run_device_binary, units=units)[0]
+                      tmp_path / "s", units=units)[0]
     C, C2v = np.asarray(origin, dtype=float), np.asarray(C2)
     shift = {}
     for q in (1.0, -1.0):
-        at_c = b.run(C, q, run_device_binary)[0]
-        at_c2 = b.run(C2v, q, run_device_binary)[0]
+        at_c = b.run(C, q)[0]
+        at_c2 = b.run(C2v, q)[0]
         want = at_c + q * (C - C2v)[:, None, None] * S[None]
         shift[q] = float(np.max(np.abs(at_c2 - want)) / np.max(np.abs(want)))
         assert shift[q] <= SHIFT_TOL, (
             f"{backend} q={q}: MU(C') - MU(C) - q (C - C') S_card = "
             f"{shift[q]:.2e} of max|MU|, over {SHIFT_TOL:g}")
-    at_c = b.run(C, 1.0, run_device_binary)[0]
-    mu0 = b.run(ZERO, 1.0, run_device_binary)[0]
+    at_c = b.run(C, 1.0)[0]
+    mu0 = b.run(ZERO, 1.0)[0]
     want = mu0 - C[:, None, None] * d.ovlp[None]
     lc = float(np.max(np.abs(at_c - want)) / np.max(np.abs(want)))
     assert lc <= LIBCINT_TOL, (
@@ -478,18 +472,18 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path,
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", CLASS_PARAMS)
 def test_cuda_mu_origin_shift_against_the_cards_s(
-        name, request, run_device_binary, tmp_path) -> None:
+        name, request, tmp_path) -> None:
     """Part 3 on the RTX 3080."""
-    _part3("cuda", request, run_device_binary, tmp_path, name)
+    _part3("cuda", request, tmp_path, name)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", CLASS_PARAMS)
 def test_hip_mu_origin_shift_against_the_cards_s(
-        name, request, run_device_binary, tmp_path) -> None:
+        name, request, tmp_path) -> None:
     """Part 3 on the RX 9060 XT."""
-    _part3("hip", request, run_device_binary, tmp_path, name)
+    _part3("hip", request, tmp_path, name)
 
 
 # ---------------------------------------------------------------------------
@@ -501,9 +495,8 @@ COMPILE_CELLS = CLASS_PARAMS + MOLECULE_PARAMS
 
 def _compiles(backend: str, tc, name: str, tmp_path: Path) -> None:
     launch = _launch(name)
-    prog = mu_program(launch, _case(name)[0].n_ao, backend, tmp_path,
-                      units=units_of(backend, launch))
-    compile_checked(tc, prog, tmp_path / "bin")
+    build_chain(tc, backend, mu_steps(launch, _case(name)[0].n_ao, ZERO, 1.0),
+                tmp_path, units=units_of(backend, launch))
 
 
 @pytest.mark.cuda
@@ -545,53 +538,40 @@ def test_mu_driver_refuses_a_class_above_ff() -> None:
         kernel_of(_G())  # type: ignore[arg-type]
 
 
-def test_mu_program_reads_the_kernels_parameters(tmp_path) -> None:
-    """Every class's launch passes one argument per kernel parameter; the
-    staged input is the size the program's own check asks for."""
+def test_mu_steps_name_the_kernels_parameters() -> None:
+    """Every class's launch names every kernel parameter but `MU`, the
+    origin and charge as values, each record array of exactly its dtype and
+    one entry per record: `launch_spec` accepts it as the runner will."""
     name = "h2o_sto3g"
     launch = _launch(name)
-    prog = mu_program(launch, _case(name)[0].n_ao, "hip", tmp_path)
-    for c in launch:
-        k = kernel_of(c)
-        at = prog.source.index(">>>(", prog.source.index(f"::{k.name}<<<"))
-        call = prog.source[at:prog.source.index(");", at)]
-        assert call.count(",") == len(k.params) - 1, k.name
-        assert "Cx, Cy, Cz, Q, dM" in call, k.name
-    data = mu_stage(launch, (0.5, -0.25, 1.0), -1.0)
-    assert list(data[:4]) == [0.5, -0.25, 1.0, -1.0]
-    assert data.size == 4 + sum((11 + 2) * len(c.recs) for c in launch)
+    n = _case(name)[0].n_ao
+    steps = mu_steps(launch, n, (0.5, -0.25, 1.0), -1.0)
+    for c, st in zip(launch, steps, strict=True):
+        assert st.kernel.name == kernel_of(c).name and MU not in st.args
+        assert [st.args[k] for k in ("C_x", "C_y", "C_z", "q")] == [
+            0.5, -0.25, 1.0, -1.0]
+        spec, arrays = launch_spec(st.kernel, st.grid, st.block,
+                                   {**st.args, MU: (3, n, n)})
+        assert [a["name"] for a in spec["args"]] == [p.name for p in
+                                                     st.kernel.params]
+        assert len(arrays) == 11 + 2
+        assert all(a.shape == (len(c.recs),) for a in arrays.values())
 
 
 @pytest.mark.parametrize("q", [1.0, -1.0])
 def test_mu_staged_data_through_the_interpreter_is_the_host(q) -> None:
-    """The arrays the card receives, sliced as the program slices them, run
-    through the INTERPRETED kernels into one `MU`, give the host within the
-    device-vs-host bound: the staging, checked without a card."""
+    """The arguments the runners receive, run through the INTERPRETED
+    kernels into one carried `MU`, give the host within the device-vs-host
+    bound: the staging, checked without a card."""
     name = "h2o_sto3g"
     launch = _launch(name)
     basis, origin = _case(name)[:2]
     n = basis.n_ao
-    data = mu_stage(launch, origin, q)
-    C = data[:3]
-    at = 4
     out = np.zeros((3, n, n))
-    for c in launch:
-        k = kernel_of(c)
-        nr = len(c.recs)
-        args = {}
-        for p in k.params:
-            if not p.array or p.name in ("off_a", "off_b", MU):
-                continue
-            args[p.name] = data[at:at + nr].copy()
-            at += nr
-        args["off_a"] = data[at:at + nr].astype(np.int32)
-        args["off_b"] = data[at + nr:at + 2 * nr].astype(np.int32)
-        at += 2 * nr
-        grid, block = launch_shape(nr, 8)
-        out = Interpreter(k, launch=Launch(grid, block, 1)).run(
-            n_rec=nr, n_ao=n, C_x=float(C[0]), C_y=float(C[1]),
-            C_z=float(C[2]), q=float(data[3]), **args, MU=out)[MU]
-    assert at == data.size
+    for st in mu_steps(launch, n, origin, q):
+        grid, block = launch_shape(st.args["n_rec"], 8)
+        out = Interpreter(st.kernel, launch=Launch(grid, block, 1)).run(
+            **st.args, MU=out)[MU]
     tol, _, _, _ = _bound(name, origin, q)
     err = np.abs(out - _host(name, tuple(float(x) for x in origin), q))
     assert np.all(err <= tol), _ratio(err, tol)

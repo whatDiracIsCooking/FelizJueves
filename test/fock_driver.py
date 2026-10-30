@@ -22,7 +22,7 @@ the launches (one class) has a host reference too.
 
 THE PROGRAM is one `main()` around a set of emitted F units (`kernel_f.
 build_f_kernel`, spelt by `emit/cuda.py` / `emit/hip.py` unchanged, each in
-its own namespace as test/one_electron_driver.py does), driven at RUN time
+its own namespace as test/one_electron_driver.py did before #658), driven at RUN time
 by its input: any number of launches of any of its kernels, in order, into
 ONE `F`. The per-class parity runs and the wall-clock sweep therefore run
 the SAME binary on different inputs -- the timed binary is the checked

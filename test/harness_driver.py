@@ -6,6 +6,10 @@
     launch_spec(kernel, grid, block, args)     -> (spec dict, {file: array})
     write_case(workdir, spec, arrays)          -> the spec's path
     run_case(binary, kernel, workdir, ...)     -> Ran(outs, events_ns)
+    typed(kernel, arrays)                      -> each array as its parameter's dtype
+    Step(kernel, grid, block, args)            -> one launch of a chain
+    build_chain(tc, backend, steps, workdir, units=) -> [runner per step]
+    run_chain(binaries, steps, initial, workdir, runs=) -> the carried OUT array
 
 WHY. Every device test before this wrote its own `main()` (test_f32_device.py's
 HARNESS, plan_driver.py's DRIVER, ...): the uploads, the launch and the
@@ -29,6 +33,13 @@ header, so "the runner builds with no warnings" is a checked statement.
 
 REPEATS (#654): `runs=` / `warmup=`, runner.h's run-to-run witness and clock.
 
+CHAINS (#658): a matrix several classes' kernels write into -- one launch
+per class, every kernel with exactly one OUT array -- is a list of `Step`s.
+`build_chain` emits each step's unit (or takes the caller's, `units=`) and
+compiles one runner per step; `run_chain` carries the OUT array from step to
+step, read and updated, from `initial`. A runner depends on its unit alone,
+so the compiler cache (#186) serves every basis after the first.
+
 The harness is C++17 (the tier's `--std=c++17`) and C++20-clean: no modules,
 no `import std`, nothing from FreeBreakfast.
 """
@@ -44,7 +55,7 @@ from typing import NamedTuple
 
 import numpy as np
 from conftest import Toolchain
-from plan_driver import Program, compile_checked
+from plan_driver import Program, _unit, compile_checked
 
 from felizjueves.ir import Intent, Kernel, Scalar
 
@@ -220,3 +231,72 @@ def run_case(binary: Path, kernel: Kernel, workdir: Path,
     times = [float(m.group(1)) for m in _RUN.finditer(done.stdout)]
     assert len(times) == runs, done.stdout
     return Ran(outs, times)
+
+
+def typed(kernel: Kernel, arrays: Mapping[str, object]) -> dict[str, np.ndarray]:
+    """Each of `arrays` (by parameter name: lists, nested lists or ndarrays)
+    as an ndarray of exactly its array parameter's dtype. An integer array
+    whose values do not survive the conversion raises: nothing is truncated
+    silently."""
+    params = {p.name: p for p in kernel.params}
+    out = {}
+    for name, value in arrays.items():
+        p = params.get(name)
+        if p is None or not p.array:
+            raise ValueError(f"{kernel.name}: {name} is not an array parameter")
+        a = np.asarray(value, dtype=DTYPE[p.type])
+        if p.type is Scalar.I32 and not np.array_equal(a, np.asarray(value)):
+            raise ValueError(f"{kernel.name}: {name} is not exactly i32")
+        out[name] = a
+    return out
+
+
+class Step(NamedTuple):
+    """One launch of a chain: every argument but the carried OUT array."""
+
+    kernel: Kernel
+    grid: Sequence[int] | int
+    block: Sequence[int] | int
+    args: Mapping[str, object]
+
+
+def _carried(kernel: Kernel) -> str:
+    outs = [p.name for p in kernel.params if p.intent is Intent.OUT]
+    if len(outs) != 1:
+        raise ValueError(f"{kernel.name}: a chain carries exactly one OUT "
+                         f"array, the kernel has {outs}")
+    return outs[0]
+
+
+def build_chain(tc: Toolchain, backend: str, steps: Sequence[Step],
+                workdir: Path, *, units: Mapping[str, Path] | None = None,
+                timeout: float = 1800.0) -> list[Path]:
+    """Each step's runner, compiled: its unit `units[name]` when the caller
+    has the file, else emitted into `workdir`."""
+    workdir.mkdir(parents=True, exist_ok=True)
+    out = []
+    for s in steps:
+        _carried(s.kernel)
+        unit = _unit(s.kernel, backend, workdir, units)
+        prog = runner_program(backend, unit, [s.kernel.name], workdir)
+        out.append(build_runner(tc, prog, workdir / f"runner_{s.kernel.name}",
+                                timeout=timeout))
+    return out
+
+
+def run_chain(binaries: Sequence[Path], steps: Sequence[Step],
+              initial: np.ndarray, workdir: Path, *,
+              runs: int = 1) -> np.ndarray:
+    """Every step launched in order, the OUT array carried from `initial`
+    through each; each step `runs` times (runner.h's run-to-run witness)."""
+    M = initial
+    for c, (binary, s) in enumerate(zip(binaries, steps, strict=True)):
+        out = _carried(s.kernel)
+        if out in s.args:
+            raise ValueError(f"{s.kernel.name}: {out} is the carried array")
+        ran = run_case(binary, s.kernel, workdir / f"case{c}", s.grid, s.block,
+                       {**s.args, out: M}, runs=runs)
+        got = np.load(ran.outs[out])
+        assert got.shape == M.shape, (s.kernel.name, got.shape, M.shape)
+        M = got
+    return M

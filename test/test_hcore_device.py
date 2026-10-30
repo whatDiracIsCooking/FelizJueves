@@ -57,8 +57,8 @@ THE FAST TIER also holds the HOST's `T + V` (`one_electron.kinetic` +
 to the same two tolerances against the fixture: the same comparison with
 no card, so a device failure here is the device's.
 
-The device tests are `gpu` plus `cuda` or `hip`, behind the card lock and
-the VRAM probe; without the card they skip, and kernel-tier.sh exits 2.
+The device tests are `gpu` plus `cuda` or `hip`, behind the card lock;
+without the card they skip, and kernel-tier.sh exits 2.
 """
 
 from __future__ import annotations
@@ -249,7 +249,7 @@ def test_hcore_trace_sees_a_flipped_sign_a_dropped_term_or_a_shared_slip(
 # ---------------------------------------------------------------------------
 
 
-def _on_card(backend: str, name: str, request, run_device_binary,
+def _on_card(backend: str, name: str, request,
              tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     _, basis, _ = _case(name)
@@ -260,7 +260,7 @@ def _on_card(backend: str, name: str, request, run_device_binary,
         work = tmp_path / target.name
         work.mkdir()
         got[target] = (build_on_card(launch, target, basis.n_ao, backend, tc,
-                                     work, run_device_binary, units=units),
+                                     work, units=units),
                        len(units))
     Ts, Vs = got[Target.T][0], got[Target.V][0]
     assert Ts.shape == Vs.shape and Ts.shape[0] >= 1
@@ -287,17 +287,15 @@ def _on_card(backend: str, name: str, request, run_device_binary,
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", MOLECULES)
 def test_cuda_hcore_and_its_trace_on_the_card(name, request,
-                                              run_device_binary,
                                               tmp_path) -> None:
     """`h = T + V` and `Tr(D h)` on the RTX 3080."""
-    _on_card("cuda", name, request, run_device_binary, tmp_path)
+    _on_card("cuda", name, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", MOLECULES)
 def test_hip_hcore_and_its_trace_on_the_card(name, request,
-                                             run_device_binary,
                                              tmp_path) -> None:
     """`h = T + V` and `Tr(D h)` on the RX 9060 XT."""
-    _on_card("hip", name, request, run_device_binary, tmp_path)
+    _on_card("hip", name, request, tmp_path)

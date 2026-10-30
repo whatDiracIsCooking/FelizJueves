@@ -7,15 +7,17 @@ THE CAP is the dipole's: nothing above L = 4, every shell `l <= 2`; the
 driver (`mu_driver.py`, `target=Target.QUADRUPOLE`) refuses a class above
 (dd).
 
-THE BUILD is `mu_driver.compile_mu(..., target=Target.QUADRUPOLE)`: one
-program over `launch.one_electron_launch`'s plan of `hf_ccpvtz_spd_dipole`
-(HF/cc-pVTZ without f: all nine ordered classes `(0..2, 0..2)`, each between
-two centres), every class's `quad_{la}{lb}` kernel launched once into one
-zeroed `6 x n_ao x n_ao` `MU`, `RUNS` times; the origin and charge read
-from the input, so ONE binary serves every `(C, q)`. A unit the tier's
-generate phase wrote (`--quad-l`) is that file, asserted byte-identical; any
-other is emitted by the driver, the same text. Compiled with
-devtools/config.sh's flags, FAILING on a warning located in generated text.
+THE BUILD is `mu_driver.compile_mu(..., target=Target.QUADRUPOLE)`, on the
+shared runner (#658): one runner per class's `quad_{la}{lb}` unit over
+`launch.one_electron_launch`'s plan of `hf_ccpvtz_spd_dipole` (HF/cc-pVTZ
+without f: all nine ordered classes `(0..2, 0..2)`, each between two
+centres), each launched once into one `6 x n_ao x n_ao` `MU` carried from
+class to class from zero, the whole chain `RUNS` times; the origin and
+charge are spec values, so ONE set of runners serves every `(C, q)`. A unit
+the tier's generate phase wrote (`--quad-l`) is that file, asserted
+byte-identical; any other is emitted by the driver, the same text. Compiled
+with devtools/config.sh's flags, FAILING on a warning located in generated
+text or a harness header.
 
 AGAINST:
 
@@ -59,10 +61,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from mu_driver import QUAD_LMAX, compile_mu, kernel_of, mu_program, mu_stage, units_of
+from harness_driver import build_chain
+from mu_driver import QUAD_LMAX, compile_mu, kernel_of, mu_steps, units_of
 from oracle import basis as ob
 from oracle import manifest
-from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_quad import _host as _host_jab
 from test_one_electron_device import _axis_abs, _place
@@ -179,7 +181,7 @@ def _check_host(backend: str, C, q: float, Ms: np.ndarray) -> dict:
     return worst
 
 
-def _part1(backend: str, request, run_device_binary, tmp_path: Path) -> None:
+def _part1(backend: str, request, tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     basis, origin, rr, rr0 = _case()
     launch = _launch()
@@ -191,7 +193,7 @@ def _part1(backend: str, request, run_device_binary, tmp_path: Path) -> None:
     assert classes == [f"{a}{c}" for a in range(3) for c in range(3)]
     lines = []
     for C, want, tag in ((origin, rr, "C"), (ZERO, rr0, "0")):
-        plus = b.run(C, 1.0, run_device_binary)
+        plus = b.run(C, 1.0)
         worst = _check_host(backend, C, 1.0, plus)
         scale = float(np.max(np.abs(want)))
         lc = {c: float(np.max(np.where((cls_of == c)[None],
@@ -200,7 +202,7 @@ def _part1(backend: str, request, run_device_binary, tmp_path: Path) -> None:
         bad = {c: v for c, v in lc.items() if v > LIBCINT_TOL}
         assert not bad, (f"{backend} at {tag}: per-class |Q - int1e_rr_cart| "
                          f"/ max|rr| over {LIBCINT_TOL:g}: {bad}")
-        minus = b.run(C, -1.0, run_device_binary)
+        minus = b.run(C, -1.0)
         _check_host(backend, C, -1.0, minus)
         _, r2r, _, _ = _bound(C, 1.0)
         d = np.abs(minus[0] + plus[0])
@@ -220,17 +222,17 @@ def _part1(backend: str, request, run_device_binary, tmp_path: Path) -> None:
 @pytest.mark.cuda
 @pytest.mark.gpu
 def test_cuda_quad_every_class_through_dd_matches_host_and_libcint(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     """On the RTX 3080 (the card fixture taken by `_toolchain`)."""
-    _part1("cuda", request, run_device_binary, tmp_path)
+    _part1("cuda", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 def test_hip_quad_every_class_through_dd_matches_host_and_libcint(
-        request, run_device_binary, tmp_path) -> None:
+        request, tmp_path) -> None:
     """On the RX 9060 XT (the card fixture taken by `_toolchain`)."""
-    _part1("hip", request, run_device_binary, tmp_path)
+    _part1("hip", request, tmp_path)
 
 
 # --- compile-only companions (`cuda` / `hip`, no `gpu`) ------------------------
@@ -238,9 +240,8 @@ def test_hip_quad_every_class_through_dd_matches_host_and_libcint(
 
 def _compiles(backend: str, tc, tmp_path: Path) -> None:
     launch = _launch()
-    prog = mu_program(launch, _case()[0].n_ao, backend, tmp_path,
-                      units=units_of(backend, launch, QUAD), target=QUAD)
-    compile_checked(tc, prog, tmp_path / "bin")
+    build_chain(tc, backend, mu_steps(launch, _case()[0].n_ao, ZERO, 1.0, QUAD),
+                tmp_path, units=units_of(backend, launch, QUAD))
 
 
 @pytest.mark.cuda
@@ -256,19 +257,12 @@ def test_hip_quad_program_compiles(hipcc, tmp_path) -> None:
 # --- fast tier: the program's text and data -----------------------------------
 
 
-def test_quad_program_launches_the_quad_units_into_six_components(
-        tmp_path) -> None:
+def test_quad_steps_launch_the_quad_units() -> None:
     launch = _launch()
-    prog = mu_program(launch, _case()[0].n_ao, "hip", tmp_path, target=QUAD)
-    assert "NCOMP = 6" in prog.source
-    for c in launch:
-        k = kernel_of(c, QUAD)
-        assert k.name == f"quad_{c.la}{c.lb}"
-        at = prog.source.index(">>>(", prog.source.index(f"::{k.name}<<<"))
-        call = prog.source[at:prog.source.index(");", at)]
-        assert call.count(",") == len(k.params) - 1, k.name
-        assert "Cx, Cy, Cz, Q, dM" in call, k.name
-    assert "mu_" not in "".join(p.name for p in prog.units)
+    steps = mu_steps(launch, _case()[0].n_ao, ZERO, 1.0, QUAD)
+    for c, st in zip(launch, steps, strict=True):
+        assert st.kernel.name == f"quad_{c.la}{c.lb}"
+        assert {p.name for p in st.kernel.params} - set(st.args) == {MU}
 
 
 def test_the_driver_refuses_a_non_multipole_target() -> None:
@@ -278,32 +272,16 @@ def test_the_driver_refuses_a_non_multipole_target() -> None:
 
 @pytest.mark.parametrize("q", [1.0, -1.0])
 def test_quad_staged_data_through_the_interpreter_is_the_host(q) -> None:
-    """The arrays the card receives, sliced as the program slices them, run
-    through the INTERPRETED kernels: the staging, checked without a card."""
-    launch = _launch()
+    """The arguments the runners receive, run through the INTERPRETED
+    kernels into one carried six-component `MU`: the staging, checked
+    without a card."""
     basis, origin = _case()[:2]
     n = basis.n_ao
-    data = mu_stage(launch, origin, q, QUAD)
-    C = data[:3]
-    at = 4
     out = np.zeros((NCOMP, n, n))
-    for c in launch:
-        k = kernel_of(c, QUAD)
-        nr = len(c.recs)
-        args = {}
-        for p in k.params:
-            if not p.array or p.name in ("off_a", "off_b", MU):
-                continue
-            args[p.name] = data[at:at + nr].copy()
-            at += nr
-        args["off_a"] = data[at:at + nr].astype(np.int32)
-        args["off_b"] = data[at + nr:at + 2 * nr].astype(np.int32)
-        at += 2 * nr
-        grid, block = launch_shape(nr, 8)
-        out = Interpreter(k, launch=Launch(grid, block, 1)).run(
-            n_rec=nr, n_ao=n, C_x=float(C[0]), C_y=float(C[1]),
-            C_z=float(C[2]), q=float(data[3]), **args, MU=out)[MU]
-    assert at == data.size
+    for st in mu_steps(_launch(), n, origin, q, QUAD):
+        grid, block = launch_shape(st.args["n_rec"], 8)
+        out = Interpreter(st.kernel, launch=Launch(grid, block, 1)).run(
+            **st.args, MU=out)[MU]
     tol, _, _, _ = _bound(origin, q)
     err = np.abs(out - _host(tuple(float(x) for x in origin), q))
     assert np.all(err <= tol), _ratio(err, tol)

@@ -2,10 +2,11 @@
 H2O/STO-3G and H2O/6-31G against the host and libcint, on the RTX 3080 and the
 RX 9060 XT.
 
-THE BUILD is `schwarz_driver.build_on_card`: one program per basis, every
-pair class's kernel (`kernel_schwarz`) launched once into one zeroed matrix,
-`RUNS` times, compiled with devtools/config.sh's flags and FAILING on a
-warning located in generated text (#92).
+THE BUILD is `schwarz_driver.build_on_card`, on the shared runner (#658):
+one runner per pair class's unit (`kernel_schwarz`), compiled with
+devtools/config.sh's flags and FAILING on a warning located in generated
+text or a harness header (#92); every class launched once into one matrix
+carried from class to class from zero, each launch `RUNS` times.
 
 SCOPE, by decision: correctness is tested through L = 2 (la + lb) <= 4 --
 (ss), (sp), (pp) and (sd). PART 1 is `test_kernel_schwarz.SYNTHETIC`'s
@@ -34,8 +35,8 @@ roundings. `delta = BOYS_REL` (1e-13, test_kernel_device.py): the
 device `fj_boys` is held within it of `reference.boys`, and every term is a
 combination of `F_m` with its absolute value in `scale`.
 
-THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runs are
-asserted bit-identical.
+THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runner
+fails unless every run of a class is bit-identical to its first.
 """
 
 from __future__ import annotations
@@ -46,10 +47,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from harness_driver import build_chain
 from oracle import basis as ob
 from oracle import manifest
-from plan_driver import compile_checked
-from schwarz_driver import build_on_card, schwarz_program
+from schwarz_driver import build_on_card, schwarz_steps
 from test_kernel_device import BACKEND, BOYS_REL, _toolchain
 from test_kernel_schwarz import L_MAX, SYNTHETIC
 
@@ -111,27 +112,24 @@ def _bound(name: str) -> tuple[np.ndarray, np.ndarray]:
     return tol, owned
 
 
-def _run(backend: str, name: str, request, run_device_binary,
+def _run(backend: str, name: str, request,
          tmp_path: Path) -> np.ndarray:
     tc = _toolchain(backend, request)
     basis = _basis(name)
     classes = _classes(basis)
-    Qs = build_on_card(classes, basis.n_ao, backend, tc, tmp_path,
-                       run_device_binary)
+    Q = build_on_card(classes, basis.n_ao, backend, tc, tmp_path)
     want, _ = _host(name)
     tol, owned = _bound(name)
-    err = np.abs(Qs[0] ** 2 - want)
+    err = np.abs(Q ** 2 - want)
     worst = float(np.max(err[owned] / tol[owned]))
-    same = bool(np.array_equal(Qs[0], Qs[1]))
     print(f"\n{backend} {BACKEND[backend][1].name} {name}: classes "
           f"{[f'{c.la}{c.lb}' for c in classes]}; max |Q^2 - host| = "
           f"{err[owned].max():.2e}, worst / bound {worst:.2e}; runs "
-          f"bit-identical {same}")
-    assert same
+          "bit-identical (the runner's witness)")
     assert np.all(err[owned] <= tol[owned]), worst
-    assert np.all(Qs[0][~owned] == 0.0)
-    assert np.array_equal(Qs[0], Qs[0].T)
-    return Qs[0]
+    assert np.all(Q[~owned] == 0.0)
+    assert np.array_equal(Q, Q.T)
+    return Q
 
 
 # ---------------------------------------------------------------------------
@@ -142,17 +140,15 @@ def _run(backend: str, name: str, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 def test_cuda_every_class_through_l4_matches_the_host(request,
-                                                      run_device_binary,
                                                       tmp_path):
-    _run("cuda", "synthetic", request, run_device_binary, tmp_path)
+    _run("cuda", "synthetic", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 def test_hip_every_class_through_l4_matches_the_host(request,
-                                                     run_device_binary,
                                                      tmp_path):
-    _run("hip", "synthetic", request, run_device_binary, tmp_path)
+    _run("hip", "synthetic", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +156,10 @@ def test_hip_every_class_through_l4_matches_the_host(request,
 # ---------------------------------------------------------------------------
 
 
-def _part2(backend: str, name: str, request, run_device_binary,
+def _part2(backend: str, name: str, request,
            tmp_path: Path) -> None:
     assert len(_classes(_basis(name))) == len(schwarz_classes(_basis(name)))
-    Q = _run(backend, name, request, run_device_binary, tmp_path)
+    Q = _run(backend, name, request, tmp_path)
     ref = _fixture(name).arrays[manifest.SCHWARZ_ARRAY]
     _, scale = _host(name)
     err = np.abs(Q ** 2 - ref)
@@ -177,17 +173,17 @@ def _part2(backend: str, name: str, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", MOLECULES)
-def test_cuda_schwarz_matrix_matches_libcint(name, request, run_device_binary,
+def test_cuda_schwarz_matrix_matches_libcint(name, request,
                                              tmp_path):
-    _part2("cuda", name, request, run_device_binary, tmp_path)
+    _part2("cuda", name, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("name", MOLECULES)
-def test_hip_schwarz_matrix_matches_libcint(name, request, run_device_binary,
+def test_hip_schwarz_matrix_matches_libcint(name, request,
                                             tmp_path):
-    _part2("hip", name, request, run_device_binary, tmp_path)
+    _part2("hip", name, request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -198,16 +194,16 @@ def test_hip_schwarz_matrix_matches_libcint(name, request, run_device_binary,
 @pytest.mark.parametrize("name", ("synthetic", *MOLECULES))
 def test_cuda_schwarz_programs_compile(name, nvcc, tmp_path):
     basis = _basis(name)
-    compile_checked(nvcc, schwarz_program(_classes(basis), basis.n_ao, "cuda",
-                                          tmp_path), tmp_path / "bin")
+    build_chain(nvcc, "cuda", schwarz_steps(_classes(basis), basis.n_ao),
+                tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("name", ("synthetic", *MOLECULES))
 def test_hip_schwarz_programs_compile(name, hipcc, tmp_path):
     basis = _basis(name)
-    compile_checked(hipcc, schwarz_program(_classes(basis), basis.n_ao, "hip",
-                                           tmp_path), tmp_path / "bin")
+    build_chain(hipcc, "hip", schwarz_steps(_classes(basis), basis.n_ao),
+                tmp_path)
 
 
 def test_part1_reaches_every_class_at_l4_and_no_more():
