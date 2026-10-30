@@ -122,8 +122,17 @@ runners, each term returned with their fixed-order total;
 NH₂F/6-31G, H₂O/cc-pVDZ, and #565's `h2o_sto3g_d_grad` (H₂O/STO-3G plus one
 d primitive on O, `Case.extra_shells`: every J and K class through
 `(dd|dd)` at STO-3G's cost). The one-electron terms on s, p bases are fast;
-every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). Not on a
-card: the device assembly is #566. **`gjab` defaults to a low-stack form from `la + lb =
+every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). **On the RX 9060
+XT only (#566, 2026-10-30; CUDA not run)**: `test_rhf_gradient_device.py`
+(`slow`) injects device runners -- `gs_` / `gt_` / `gv_`
+(`grad_driver`), the J chain on the card (DQ -> raised `[p|q]` ->
+`gjab_`, no host `J_p`) and every `gk_` class (`gk_driver`) -- into
+`rhf_gradient` on H₂O/STO-3G and 6-31G, 2 passed: every term and the
+total within `1e-10` absolute of PySCF (worst total 8.2e-14, STO-3G) and
+of the interpreted `rhf_gradient` (worst 4.4e-15); run to run within
+`SPREAD_TOL = 1e-13` (worst 4.4e-15, 6-31G) -- NOT bit-identical, the
+kernels' `atomicAdd`s, so the issue's bit-identity was restated as that
+bound by the user. **`gjab` defaults to a low-stack form from `la + lb =
 5`, and its whole chain runs on both cards through (ff)** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the
