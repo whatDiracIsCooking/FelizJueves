@@ -19,12 +19,19 @@ import pytest
 from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,
+    D1_ONLY_TARGETS,
     OPERATOR_OF,
     Operator,
     Spec,
     Target,
     is_batch_count,
 )
+
+
+def _base_order(target: Target) -> int:
+    """The lowest derivative order `target` is keyed at: 1 for a d1-only
+    target (#689, `spec.D1_ONLY_TARGETS`), 0 for every other."""
+    return 1 if target in D1_ONLY_TARGETS else 0
 
 
 def _f(am: tuple[int, ...], **kw) -> Spec:
@@ -111,7 +118,7 @@ def test_an_f_key_never_collides_with_any_other_target_key() -> None:
         if t is Target.F:
             continue
         shapes = itertools.product(ls, repeat=AM_LENGTH[t])
-        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+        others |= {Spec(OPERATOR_OF[t], _base_order(t), am, t).key() for am in shapes}
     assert f.isdisjoint(others)
 
 

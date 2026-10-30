@@ -13,7 +13,13 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      energy's Hessian, both terms in one kernel per K
                      class (D_ab D_cd straddles bra and ket, so there is
                      no ket derivative density to precompute)
-    host_df.py       the DF metric reference, pure Python
+    host_kx.py       the exchange derivative matrix K^X reference (#689),
+                     pure Python: the ip1 and contracted forms and their
+                     assembly, the CPHF right-hand side's exchange part
+    kernel_kx.py     Target.KX1 / KXC at d1: kx1_ / kxc_{la}{lc}_{lb}{ld},
+                     K^X's two forms as AO matrices (gk's rolled form,
+                     scattered into X[3, n_ao, n_ao], not reduced)
+    host_df.py      the DF metric reference, pure Python
     kernel_d2metric.py  Target.METRIC at d2: d2metric_{lP}{lQ},
                      H[A, k, B, l] += SUM_PQ W_PQ d2(P|Q) / dR_{A,k} dR_{B,l}
                      (the Hermite shift twice: [r] -> [r + 1_k + 1_l],

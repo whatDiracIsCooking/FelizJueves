@@ -12,6 +12,7 @@ from felizjueves.performance.measured_store import target_of
 from felizjueves.spec import (
     _PAIR_BATCH_REFUSAL,
     AM_LENGTH,
+    D1_ONLY_TARGETS,
     GRADIENT_OFF_NATIVE,
     GRADIENT_TARGETS,
     HESSIAN_TARGETS,
@@ -21,6 +22,12 @@ from felizjueves.spec import (
     Spec,
     Target,
 )
+
+
+def _base_order(target: Target) -> int:
+    """The lowest derivative order `target` is keyed at: 1 for a d1-only
+    target (#689, `spec.D1_ONLY_TARGETS`), 0 for every other."""
+    return 1 if target in D1_ONLY_TARGETS else 0
 
 
 def _spec(**kw) -> Spec:
@@ -131,16 +138,18 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # three-center integral `eri3`, a triple, and the record bound
     # `pair_bound`, a pair class, and #499 K's dressed `record_bound`, an
     # ordered pair class, and #518 the dipole matrix `dipole`, a pair class,
-    # and the quadrupole matrix `quadrupole`, a pair class.
+    # and the quadrupole matrix `quadrupole`, a pair class, and #689 the
+    # exchange derivative matrices `kx1` and `kxc`, quartets at d1 only.
     assert [t.value for t in Target] == [
         "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric",
-        "eri3", "pair_bound", "record_bound", "dipole", "quadrupole"]
+        "eri3", "pair_bound", "record_bound", "dipole", "quadrupole", "kx1",
+        "kxc"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
         Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
         Target.PAIR_BOUND: 2, Target.RECORD_BOUND: 2, Target.DIPOLE: 2,
-        Target.QUADRUPOLE: 2,
+        Target.QUADRUPOLE: 2, Target.KX1: 4, Target.KXC: 4,
     }
 
 
@@ -247,6 +256,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.RECORD_BOUND: Operator.COULOMB,
         Target.DIPOLE: Operator.DIPOLE,
         Target.QUADRUPOLE: Operator.QUADRUPOLE,
+        Target.KX1: Operator.COULOMB, Target.KXC: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -260,7 +270,8 @@ def test_every_target_operator_pairing_is_admitted_or_refused(
     # Spec(COULOMB, 0, (1, 1), S) as much as Spec(OVERLAP, 0, (1, 1), DQ).
     am = (1,) * AM_LENGTH[target]
     if OPERATOR_OF[target] is operator:
-        assert Spec(operator, 0, am, target).operator is operator
+        assert Spec(operator, _base_order(target), am,
+                    target).operator is operator
     else:
         want = OPERATOR_OF[target]
         with pytest.raises(ValueError, match=f"built from operator {want}"):
@@ -610,7 +621,7 @@ def test_a_metric_key_never_collides_with_any_other_target_key() -> None:
         if t is Target.METRIC:
             continue
         shapes = itertools.product(ls, repeat=AM_LENGTH[t])
-        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+        others |= {Spec(OPERATOR_OF[t], _base_order(t), am, t).key() for am in shapes}
     assert metric.isdisjoint(others)
     # The quartet it runs, (lP 0|lQ 0), is a different key, and the class
     # field alone tells them apart (no `|` in a pair).
@@ -697,7 +708,7 @@ def test_a_triple_is_refused_by_every_other_target_naming_its_shape() -> None:
             continue
         shape = {2: "pair", 4: "quartet"}[AM_LENGTH[t]]
         with pytest.raises(ValueError, match=f"takes a {shape} class") as err:
-            Spec(OPERATOR_OF[t], 0, (1, 1, 1), t)
+            Spec(OPERATOR_OF[t], _base_order(t), (1, 1, 1), t)
         assert "triple" not in str(err.value)
 
 
@@ -721,7 +732,7 @@ def test_an_eri3_key_never_collides_with_any_other_target_key() -> None:
         if t is Target.ERI3:
             continue
         shapes = itertools.product(ls, repeat=AM_LENGTH[t])
-        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+        others |= {Spec(OPERATOR_OF[t], _base_order(t), am, t).key() for am in shapes}
     assert eri3.isdisjoint(others)
     # The quartet it runs, (la lb|lP 0), is a different key: a triple's ket
     # holds one shell, a quartet's two.
@@ -811,7 +822,7 @@ def test_a_dipole_key_never_collides_with_any_other_target_key() -> None:
         if t is Target.DIPOLE:
             continue
         shapes = itertools.product(ls, repeat=AM_LENGTH[t])
-        others |= {Spec(OPERATOR_OF[t], 0, am, t).key() for am in shapes}
+        others |= {Spec(OPERATOR_OF[t], _base_order(t), am, t).key() for am in shapes}
     assert dipole.isdisjoint(others)
     # Not S's key either, though both are one-electron pairs of one shape.
     assert _dipole().key() != Spec(Operator.OVERLAP, 0, (2, 1), Target.S).key()

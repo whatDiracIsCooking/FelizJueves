@@ -4002,6 +4002,52 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the Hessian ladders "
                        RULES["driver"].must_not)
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_HESS_BUILDERS)
 
+# The exchange derivative matrix (#689): `hessian.kernel_kx` (kx1_ / kxc_,
+# `gk`'s rolled form with a matrix scatter) and its host reference.
+RULES |= {
+    "kx_host": _rule(
+        "hessian/host_kx.py: the exchange derivative matrix K^X on the AO "
+        "layer -- kernel_kx's witness -- from the gradient reference's "
+        "records, per-axis E and Hermite products (`gradient.host`), the "
+        "undressed E's Hermite order and the nucleus type; `[t]^(0)` "
+        "injected",
+        ("ao", "mmd.hermite", "gradient.host", "one_electron.potential"),
+        reference=_GROUND_TRUTH,
+        **{"=ir": "a host reference is arithmetic, not instructions",
+           "plan": "the reference recurses directly; the plan is what the "
+                   "kernels it checks are built on",
+           "hessian.kernel_kx": "the kernel is what this module checks"}),
+    "kx_builder": _rule(
+        "kernel_kx.py: the exchange derivative matrix kernels -- key -> "
+        "IR, `kernel_gk`'s plan, compact tables, rolled sums and ket signs, "
+        "the K seams' fragment bindings and the per-axis `E` tables "
+        "(`e_fragment`)",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "mmd.recurrence",
+         "mmd.kernel", "gradient.kernel_gk", "eri.k_exchange.levers.seams"),
+        ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
+                             "hessian.host_kx": _HESS_WITNESS,
+                             "gradient.host": _HESS_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF |= {
+    "hessian.host_kx": "kx_host",
+    "hessian.kernel_kx": "kx_builder",
+}
+EDGES |= {k: frozenset(v) for k, v in {
+    "hessian.host_kx": ("ao.density", "ao.pairs", "ao.shell",
+                        "gradient.host", "mmd.hermite",
+                        "one_electron.potential"),
+    "hessian.kernel_kx": ("eri.k_exchange.levers.seams",
+                          "gradient.kernel_gk", "ir", "mmd.e_fragment",
+                          "mmd.kernel", "mmd.recurrence", "plan.schedule",
+                          "plan.targets", "spec"),
+}.items()}
+RULES["driver"] = Rule(RULES["driver"].why + ", and the exchange derivative "
+                       "matrix ladder through `kernel_kx`",
+                       RULES["driver"].may | {"hessian.kernel_kx"},
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | {"hessian.kernel_kx"}
+
 # The one-electron Hessians (`hessian.kernel_h1e`: S, T, V at d2) and their
 # host reference (`hessian.host_1e`), the same way: the builder on
 # `kernel_g1e`'s record head and `kernel_v`'s plan, checked against
@@ -4199,6 +4245,34 @@ def test_the_hgp_gradient_builder_reaches_neither_the_plan_nor_mmd() -> None:
                    "gradient.kernel_geri3", "gradient.kernel_g1e"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hgeri3 reaches {hit}"
+
+
+# The UNCONTRACTED three-center d1 kernel (`gradient.kernel_xeri3`, #692):
+# `kernel_geri3`'s low-stack route -- its plan, its R / U / aux-table names --
+# and `kernel_gmetric`'s tower, with a raw scatter in place of the weights.
+# Its witness is `gradient.host_df.eri3_ip1`, which it never reaches.
+RULES["xeri3_builder"] = _rule(
+    "kernel_xeri3.py: the uncontracted three-center d1 kernel -- key -> IR, "
+    "`kernel_geri3`'s low-stack route and `kernel_gmetric`'s tower, the "
+    "derivative integrals stored raw",
+    ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+     "gradient.kernel_geri3", "gradient.kernel_gmetric",
+     "eri.density_fit.kernel_metric"),
+    ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+    reference=_GROUND_TRUTH, **_NO_MACHINE)
+RULE_OF["gradient.kernel_xeri3"] = "xeri3_builder"
+EDGES["gradient.kernel_xeri3"] = frozenset(
+    ("eri.density_fit.kernel_metric", "gradient.kernel_geri3",
+     "gradient.kernel_gmetric", "ir", "mmd.e_fragment", "mmd.recurrence",
+     "plan.targets", "spec"))
+_DF_GRAD_BUILDERS = (*_DF_GRAD_BUILDERS, "gradient.kernel_xeri3")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the uncontracted DF "
+                       "ladder through `kernel_xeri3`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_xeri3",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_xeri3",))
 
 
 # The three-center DF Hessian (`hessian.kernel_d2eri3`: ERI3 at d2) and its
@@ -4853,6 +4927,51 @@ def test_the_hgmetric_builder_reaches_neither_the_plan_nor_the_mmd_engine(
                    "gradient.kernel_gmetric", "gradient.kernel_g1e"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_hgmetric reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# The uncontracted DF metric derivative (`gradient.kernel_ipmetric`, #693):
+# `kernel_gmetric`'s tower and launch, `kernel_metric`'s `s_aux`, and the
+# single-center tables -- its witness `gradient.host_df` never. The generator
+# CLI writes its ladder (`--ip-metric-l`).
+# ---------------------------------------------------------------------------
+
+RULES["ipmetric_builder"] = _rule(
+    "kernel_ipmetric.py: the uncontracted DF metric derivative -- key -> IR, "
+    "`kernel_gmetric`'s tower one order up and its rolled per-axis form, "
+    "the elements stored in place of their contraction",
+    ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+     "gradient.kernel_gmetric", "eri.density_fit.kernel_metric"),
+    ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+    reference=_GROUND_TRUTH, **_NO_MACHINE)
+RULE_OF["gradient.kernel_ipmetric"] = "ipmetric_builder"
+EDGES["gradient.kernel_ipmetric"] = frozenset(
+    ("eri.density_fit.kernel_metric", "gradient.kernel_gmetric", "ir",
+     "mmd.e_fragment", "mmd.recurrence", "plan.targets", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the uncontracted DF "
+                       "metric derivative ladder through `kernel_ipmetric`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_ipmetric",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_ipmetric",))
+
+
+def test_the_ipmetric_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_ipmetric"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"mmd.e_fragment", "mmd.recurrence", "plan.pipeline"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "gradient.host", "gradient.host_df",
+                   "ir.interp", "emit", "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"gradient.kernel_ipmetric reaches {hit}"
 
 
 if __name__ == "__main__":

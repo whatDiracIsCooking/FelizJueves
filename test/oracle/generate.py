@@ -43,6 +43,11 @@ written to `k_gradient/` and loaded by `manifest.k_gradient`.
 `dE_J/dR`, per `gjab` bra class and whole, written to `j_gradient/` and
 loaded by `manifest.j_gradient`.
 
+`--kx` (the same way) is the exchange derivative matrix witness instead
+(#689, `kx_build`): per atom, PySCF's `hessian.rhf.make_h1` exchange part
+on each gradient fixture of `manifest.KX_PARENTS`, with its recorded
+density, written to `k_deriv/` and loaded by `manifest.kx_witness`.
+
 A GRADIENT case (#550, `Case.record_gradient`, `<m>_grad`) records its
 converged SCF (`mo_energy`, `mo_occ`, `mo_coeff`) the way an "rhf" density
 is recorded, and computes everything else from it: the density, `W`, the
@@ -2327,14 +2332,23 @@ def numeric_array(name: str) -> np.ndarray:
 
     e = numeric.entry(name)
     mol = numeric_mole(name)
-    if e.quantity == "j":
+    if e.what == "j":
         a = j_array(mol, numeric.density(name))
-    elif e.quantity == "metric":
+    elif e.what == "metric":
         a = np.ascontiguousarray(mol.intor("int2c2e_cart"))
         if not np.array_equal(a, mol.intor("int2c2e")):
             raise ValueError(f"{name}: int2c2e_cart and int2c2e differ")
+    elif e.what.startswith("metric.d1."):
+        # #693: d(P|Q)/dA_k on P's centre; libcint's ip1 is d/dr, so minus.
+        ip1 = mol.intor("int2c2e_ip1_cart", comp=3)
+        if not np.array_equal(ip1, mol.intor("int2c2e_ip1", comp=3)):
+            raise ValueError(f"{name}: int2c2e_ip1_cart and int2c2e_ip1 "
+                             "differ")
+        a = -ip1["xyz".index(e.component)]
+        if np.abs(a + a.T).max() > 1e-13 * np.abs(a).max():
+            raise ValueError(f"{name}: d(P|Q)/dA is not antisymmetric")
     else:
-        raise ValueError(f"{name}: no builder for quantity {e.quantity!r}")
+        raise ValueError(f"{name}: no builder for quantity {e.what!r}")
     return np.ascontiguousarray(a, dtype=np.float64)
 
 
@@ -2430,6 +2444,103 @@ def numeric_main(regenerate: bool, names: Sequence[str]) -> int:
     return 1 if bad else 0
 
 
+# ---------------------------------------------------------------------------
+# #689: the exchange derivative matrix witness (manifest.kx_witness)
+# ---------------------------------------------------------------------------
+
+KX_COMMAND = ("PYTHONPATH=test uv run --group oracle python -m "
+              "oracle.generate --kx")
+
+
+def kx_build(parent: str) -> dict[str, Any]:
+    """The exchange derivative matrix witness of gradient fixture `parent`
+    (manifest.kx_witness), computed now: per atom `X`, PySCF's
+    `hessian.rhf.make_h1` exchange part, exactly as it forms it -- its
+    `_get_jk` over `int2e_ip1` with the first shell on `X`, scripts
+    `li->s1kj` (`vk1`) on `-D[:, X]` and `jk->s1il` (`vk2`) on `-D`, `kx
+    = vk1 + vk2` on the rows of `X` -- recorded as `K^X = kx + kx^T`, so
+    `make_h1`'s exchange part is `-1/2 K^X`. With the parent's own recorded
+    density `D` (symmetric, asserted)."""
+    import pyscf
+    from pyscf.hessian import rhf as rhf_hess
+
+    from .manifest import KX_SCHEMA, density_sha256
+
+    case = CASES[parent]
+    mol = _mole(case)
+    D = _tracked_density(parent)
+    if D is None:
+        raise ValueError(f"{parent} is not tracked")
+    if not np.array_equal(D, D.T):
+        raise ValueError(f"{parent}'s density is not symmetric")
+    nao = int(mol.nao_nr())
+    out = []
+    for shl0, shl1, p0, p1 in mol.aoslice_by_atom():
+        vk1, vk2 = rhf_hess._get_jk(
+            mol, "int2e_ip1", 3, "s2kl",
+            ["li->s1kj", -D[:, p0:p1], "jk->s1il", -D],
+            shls_slice=(shl0, shl1) + (0, mol.nbas) * 3)
+        kx = np.array(vk1, dtype=np.float64)
+        kx[:, p0:p1] += vk2
+        out.append(kx + kx.transpose(0, 2, 1))
+    kxs = np.array(out)
+    if kxs.shape != (mol.natm, 3, nao, nao):
+        raise ValueError(f"unexpected shape {kxs.shape}")
+    return {
+        "schema": KX_SCHEMA,
+        "name": f"{parent}_kx",
+        "description": (
+            f"#689: the exchange derivative matrix K^X_ab = SUM_cd D_cd "
+            f"d(ac|bd)/dR_X of {parent}'s molecule, basis and recorded "
+            "density, per atom and axis, from PySCF's hessian.rhf.make_h1 "
+            "exchange part (which is -1/2 K^X; oracle.generate.kx_build "
+            "has the scripts)."),
+        "provenance": {
+            "pyscf": pyscf.__version__,
+            "libcint": _libcint_version(),
+            "numpy": np.__version__,
+            "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+            "host": _host(),
+            "command": KX_COMMAND,
+            "mol": {"atom": case.atom, "unit": case.unit,
+                    "charge": case.charge, "spin": case.spin},
+            "basis": _basis_name(case),
+            "cart": case.cart,
+            "nao": nao,
+            "density_sha256": density_sha256(D),
+        },
+        "parent": parent,
+        "kx": [float(x) for x in kxs.ravel()],
+    }
+
+
+def kx_main(regenerate: bool) -> int:
+    """`--kx`: rewrite every witness of `manifest.KX_PARENTS`, or
+    (`--check`) compare."""
+    import json
+
+    from .manifest import KX_DIR, KX_PARENTS, kx_witness
+
+    status = 0
+    for parent in KX_PARENTS:
+        path = KX_DIR / f"{parent}_kx.json"
+        fresh = kx_build(parent)
+        if regenerate:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(dumps(fresh))
+            kx_witness(parent)
+            print(f"wrote {path}")
+            continue
+        tracked = json.loads(path.read_text())
+        if comparable(fresh) == comparable(tracked):
+            print(f"{path.stem}: matches the tracked witness")
+        else:
+            print(f"{path}: PySCF now computes it differently from the "
+                  "tracked witness; news about PySCF until proven otherwise")
+            status = 1
+    return status
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.generate",
                                  description=__doc__.split("\n\n")[0])
@@ -2452,6 +2563,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--j-gradient", action="store_true",
                     help="the Coulomb-gradient witness (#639, "
                          "manifest.j_gradient) instead of the fixtures")
+    ap.add_argument("--kx", action="store_true",
+                    help="the exchange derivative matrix witnesses (#689, "
+                         "manifest.kx_witness) instead of the fixtures")
     ap.add_argument("--numeric", action="store_true",
                     help="the numerical golden store (#655, "
                          "oracle.numeric): the named npy entries, default "
@@ -2460,6 +2574,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.numeric and (args.df_gradient or args.quadrupole
                          or args.k_gradient or args.j_gradient):
         ap.error("--numeric takes no other witness")
+    if args.kx and (args.names or args.numeric or args.df_gradient
+                    or args.quadrupole or args.k_gradient
+                    or args.j_gradient):
+        ap.error("--kx takes no case names and no other witness")
     if args.df_gradient and args.names:
         ap.error("--df-gradient takes no case names")
     if args.k_gradient and (args.names or args.df_gradient
@@ -2500,6 +2618,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return k_gradient_main(args.regenerate)
     if args.j_gradient:
         return j_gradient_main(args.regenerate)
+    if args.kx:
+        return kx_main(args.regenerate)
 
     status = 0
     for name in args.names or list(CASES):

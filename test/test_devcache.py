@@ -165,9 +165,10 @@ def test_the_plan_drivers_key_ignores_tmp_path(tmp_path: Path) -> None:
         assert set(units) == {u.name for u in drv.units}
         keys.append(devcache.unit_key("nvcc", [], drv.path.name, text, units))
     assert keys[0] == keys[1]
-    # a generated unit under tmp_path: the shared harness headers the driver
-    # also lists are tracked files (#659), never written by a test
-    unit = next(u for u in drv.units if tmp_path in u.parents)
+    # a GENERATED unit, under tmp_path: since #659 the last unit is the
+    # tracked test/harness/runner.h, which a test must never write
+    unit = [u for u in drv.units if u.resolve().is_relative_to(
+        tmp_path.resolve())][-1]
     unit.write_text(unit.read_text() + "\n// changed\n")
     text, units = devcache.localize(drv.path.read_text(), drv.path.parent)
     assert devcache.unit_key("nvcc", [], drv.path.name, text, units) != keys[0]

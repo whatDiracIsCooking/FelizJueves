@@ -28,6 +28,7 @@ from felizjueves.plan.pipeline import TUNED, plan
 from felizjueves.plan.sieve import NO_SIEVE
 from felizjueves.spec import (
     AM_LENGTH,
+    D1_ONLY_TARGETS,
     NATIVE_ENGINE,
     OPERATOR_OF,
     Engine,
@@ -37,6 +38,12 @@ from felizjueves.spec import (
 
 PROBE = "probe"
 K_REASON = "the probe's own reason for K"
+
+
+def _base_order(target: Target) -> int:
+    """The lowest derivative order `target` is keyed at: 1 for a d1-only
+    target (#689, `spec.D1_ONLY_TARGETS`), 0 for every other."""
+    return 1 if target in D1_ONLY_TARGETS else 0
 
 
 @pytest.fixture
@@ -57,8 +64,8 @@ def probe_j_only(monkeypatch: pytest.MonkeyPatch) -> levers.Lever:
 def _spec(target: Target, *lv: str, n_batches: int = 1,
           engine: Engine | None = None) -> Spec:
     am = {2: (2, 1), 3: (2, 1, 1), 4: (1, 0, 1, 0)}[AM_LENGTH[target]]
-    return Spec(OPERATOR_OF[target], 0, am, target, tuple(lv), n_batches,
-                engine)
+    return Spec(OPERATOR_OF[target], _base_order(target), am, target,
+                tuple(lv), n_batches, engine)
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +337,58 @@ def test_no_other_kernel_lever_is_legal_on_an_hgp_split_slot(
     assert levers.refusal(slot, name) == levers.DEFAULT_REFUSALS[slot]
     with pytest.raises(ValueError, match=f"on target {slot}: "):
         _spec(target, name, engine=Engine.HGP)
+
+
+# ---------------------------------------------------------------------------
+# #693: a lever's derivative orders, and `uncontracted` (a d1 output form)
+# ---------------------------------------------------------------------------
+
+UNCONTRACTED = "uncontracted"
+
+
+def test_the_lever_orders_are_spec_s_derivative_orders() -> None:
+    from felizjueves.spec import DERIVATIVE_ORDERS
+    assert levers.ORDERS == frozenset(DERIVATIVE_ORDERS)
+    for name, lever in levers.VOCABULARY.items():
+        assert lever.orders <= levers.ORDERS, name
+        assert (lever.orders != levers.ORDERS) == bool(lever.orders_why), name
+
+
+def test_an_order_table_without_its_reason_is_refused() -> None:
+    with pytest.raises(ValueError, match="exactly when some are refused"):
+        levers.Lever.of("p", 1, "x", {"j"}, orders=(1,))
+    with pytest.raises(ValueError, match="exactly when some are refused"):
+        levers.Lever.of("p", 1, "x", {"j"}, orders_why="why")
+    with pytest.raises(ValueError, match="non-empty subset"):
+        levers.Lever.of("p", 1, "x", {"j"}, orders=(3,), orders_why="why")
+
+
+def test_uncontracted_is_the_metric_s_and_eri3_s_at_d1_only() -> None:
+    lever = levers.VOCABULARY[UNCONTRACTED]
+    assert (lever.name, lever.issue) == (UNCONTRACTED, 693)
+    assert lever.legal == {"metric", "eri3"} and lever.orders == {1}
+    assert levers.order_refusal(UNCONTRACTED, 1) is None
+    assert levers.order_refusal(UNCONTRACTED, 0) == lever.orders_why
+    assert levers.order_refusal(NO_SIEVE, 0) is None  # not a kernel lever
+    spec = Spec(OPERATOR_OF[Target.METRIC], 1, (1, 2), Target.METRIC,
+                (UNCONTRACTED,))
+    assert spec.key() == "coulomb/d1/(1,2)/b1/metric/uncontracted"
+    for order in (0, 2):
+        with pytest.raises(ValueError, match=(
+                f"lever 'uncontracted' at derivative order {order}: ")):
+            Spec(OPERATOR_OF[Target.METRIC], order, (1, 2), Target.METRIC,
+                 (UNCONTRACTED,))
+    # #692: the three-center twin, MMD only.
+    eri3 = Spec(OPERATOR_OF[Target.ERI3], 1, (0, 1, 2), Target.ERI3,
+                (UNCONTRACTED,))
+    assert eri3.key() == "coulomb/d1/(0,1|2)/b1/eri3/uncontracted"
+    for order in (0, 2):
+        with pytest.raises(ValueError, match=(
+                f"lever 'uncontracted' at derivative order {order}: ")):
+            Spec(OPERATOR_OF[Target.ERI3], order, (0, 1, 2), Target.ERI3,
+                 (UNCONTRACTED,))
+    for slot in ("eri3.hgp", "eri3.rys", "metric.hgp", "metric.rys"):
+        assert "MMD engine only" in lever.refusals[slot], slot
 
 
 def test_legality_is_per_slot_not_per_target(probe) -> None:

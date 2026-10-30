@@ -214,6 +214,19 @@ for CUDA, `.hip` for HIP):
   the no-flag default nor in KERNEL_GEN_CMD. Every name starts `gmetric_`
   or `geri3_`, so none collides with another ladder's.
 
+- the UNCONTRACTED (mn|P) derivative ladder, `--grad-dfx-l [LMAX]
+  [--grad-dfx-aux-l AUXMAX]` (#692): `xeri3_{la}{lb}{lP}`
+  (`gradient.kernel_xeri3`: `X[k, m, n, P] = (nabla_k m n|P)`, libcint's
+  `int3c2e_ip1`, over one aux block, for a DF Hessian) for every `la <= lb
+  <= LMAX`, `lP <= AUXMAX` -- `--grad-df-l`'s three-center classes under
+  its limits and defaults (bare: 9 units; 0..3 and 0..6, interpreted
+  against the host through (ff|i)); above either it is a 2, and
+  `--grad-dfx-aux-l` without `--grad-dfx-l` is a 2. One form at every
+  class. It ADDS units as `--grad-df-l` does, and is NEVER in the no-flag
+  default nor in KERNEL_GEN_CMD. Every name starts `xeri3_`, which no other
+  ladder's prefix (`eri3_`, `geri3_`, `heri3_`, `hgeri3_`, `reri3_`,
+  `d2eri3_`) is, so none collides.
+
 - the Coulomb-Hessian ladder, `--hess-l [LMAX]` (`felizjueves.hessian`):
   for every pair class `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is
   given bare), `hdq_{la}{lb}` (`kernel_hdq`: the ket pre-contraction
@@ -239,6 +252,18 @@ for CUDA, `.hip` for HIP):
   starts `hkx_`, so none collides with another ladder's (HGP's `K` is
   `hk_`).
 
+- the exchange derivative matrix ladder, `--hess-kx-l [LMAX]`
+  (`hessian.kernel_kx`, #689): for every K class `(la, lc | lb, ld)`, the
+  Hermite pairing, each `l <= LMAX` (1 when the flag is given bare: the
+  16 classes with every shell s or p), BOTH forms, `kx1_{la}{lc}_{lb}{ld}`
+  (`Target.KX1`, the derivative on the matrix index, ip1) and
+  `kxc_{la}{lc}_{lb}{ld}` (`Target.KXC`, on the contracted index), the
+  exchange part of the RHF Hessian's derivative Fock matrix. Accepted
+  0..`HESS_KX_L_MAX` = 3 (validated through (ff|ff), interpreted); above
+  it is a 2. It ADDS units beside the J ladders, as `--grad-k-l` does,
+  and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name
+  starts `kx1_` or `kxc_`, so none collides with another ladder's.
+
 - the one-electron Hessian ladder, `--hess-one-e-l [LMAX]`
   (`hessian.kernel_h1e`): for every pair class `(la, lb)`,
   `la <= lb <= LMAX` (2 when the flag is given bare), the three d2
@@ -261,6 +286,17 @@ for CUDA, `.hip` for HIP):
   as `--grad-df-l` does, and is NEVER in the no-flag default nor in
   KERNEL_GEN_CMD. Every name starts `d2metric_` (not `hmetric_`: the HGP
   metric's), so none collides with another ladder's.
+
+- the uncontracted DF metric derivative ladder, `--ip-metric-l [LMAX]`
+  (`gradient.kernel_ipmetric`, #693): `ipmetric_{lP}{lQ}` (`M1[k, P, Q] =
+  d(P|Q)/dA_k` as a `[3, n_aux, n_aux]` matrix, `Target.METRIC` at d1
+  with the `uncontracted` lever) for every `lP <= lQ <= LMAX` (2 when the
+  flag is given bare: 6 units). Accepted 0..`IP_METRIC_L_MAX` = 6
+  (validated through (i|i), interpreted); above it is a 2. It ADDS units
+  beside the J ladders, as `--grad-df-l` does, and is NEVER in the
+  no-flag default nor in KERNEL_GEN_CMD. Every name starts `ipmetric_`
+  (not `gmetric_`: the contraction's), so none collides with another
+  ladder's.
 
 - the three-center DF Hessian ladder, `--hess-eri3-l [LMAX]
   [--hess-eri3-aux-l AUXMAX]` (`hessian.kernel_d2eri3`), split as
@@ -572,12 +608,15 @@ from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
 from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
 from felizjueves.gradient.kernel_hgs import build_hgs_kernel
 from felizjueves.gradient.kernel_hgt import build_hgt_kernel
+from felizjueves.gradient.kernel_ipmetric import build_ipmetric_kernel
+from felizjueves.gradient.kernel_xeri3 import build_xeri3_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.hessian.kernel_h1e import HESSIAN_1E, build_h1e_kernel
 from felizjueves.hessian.kernel_hdq import build_hdq_kernel
 from felizjueves.hessian.kernel_hjab import build_hjab_kernel
 from felizjueves.hessian.kernel_hkx import build_hkx_kernel
+from felizjueves.hessian.kernel_kx import build_kx_kernel
 from felizjueves.ir import Kernel
 from felizjueves.ir.lever_ladder import FOCK, LADDER, LadderFlag, flags, unit_name
 from felizjueves.mmd.kernel import (
@@ -635,10 +674,14 @@ DEFAULT_HESS_L = 1  # `--hess-l` given bare: (ss) (sp) (pp), 6 units
 HESS_L_MAX = 2  # the Hessian kernels are validated through (dd) interpreted
 DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
 HESS_K_L_MAX = 1  # kernel_hkx is validated through (pp|pp) interpreted
+DEFAULT_HESS_KX_L = 1  # `--hess-kx-l` bare: every s / p K class, 32 units
+HESS_KX_L_MAX = 3  # kernel_kx is validated through (ff|ff) interpreted
 DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
 DEFAULT_HESS_METRIC_L = 2  # `--hess-metric-l` bare: aux l <= 2, 6 units
 HESS_METRIC_L_MAX = 6  # aux l: kernel_d2metric is validated through i (#694)
+DEFAULT_IP_METRIC_L = 2  # `--ip-metric-l` bare: lP <= lQ <= 2, 6 units
+IP_METRIC_L_MAX = 6  # kernel_ipmetric is validated through (i|i) (#693)
 DEFAULT_HESS_ERI3_L = 1  # `--hess-eri3-l` given bare: orbital l <= 1
 DEFAULT_HESS_ERI3_AUX_L = 2  # `--hess-eri3-aux-l` bare or omitted: aux l <= 2
 HESS_ERI3_L_MAX = 3  # orbital l: kernel_d2eri3 is validated through f (#694)
@@ -1094,6 +1137,27 @@ def generate_grad_df(backend: str, arch: Arch, out: Path, lmax: int,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
+def grad_dfx_classes(lmax: int, aux_lmax: int = DEFAULT_GRAD_DF_AUX_L
+                     ) -> list[tuple[int, int, int]]:
+    """`grad_df_classes`' three-center classes, for the uncontracted
+    `xeri3_` (#692), under the same limits, spelled with this ladder's
+    flags."""
+    try:
+        return grad_df_classes(lmax, aux_lmax)[1]
+    except ValueError as e:
+        raise ValueError(str(e).replace("--grad-df-", "--grad-dfx-")) from None
+
+
+def generate_grad_dfx(backend: str, arch: Arch, out: Path, lmax: int,
+                      aux_lmax: int = DEFAULT_GRAD_DF_AUX_L) -> list[Path]:
+    """Emit `xeri3_` per three-center class through `lmax` / `aux_lmax`
+    into `out`; return the paths."""
+    kernels = [build_xeri3_kernel(c) for c in grad_dfx_classes(lmax,
+                                                                aux_lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
 # ---------------------------------------------------------------------------
 # The Coulomb-Hessian ladder (felizjueves.hessian)
 # ---------------------------------------------------------------------------
@@ -1135,6 +1199,26 @@ def generate_hess_k(backend: str, arch: Arch, out: Path,
     return [_write(backend, arch, out, k) for k in kernels]
 
 
+def hess_kx_classes(lmax: int) -> list[tuple[int, int, int, int]]:
+    """Every K class `(la, lc, lb, ld)`, each `l <= lmax`, over
+    `0..HESS_KX_L_MAX`, `la` outermost."""
+    if type(lmax) is not int or not 0 <= lmax <= HESS_KX_L_MAX:
+        raise ValueError(
+            f"--hess-kx-l {lmax!r} is outside 0..{HESS_KX_L_MAX}")
+    r = range(lmax + 1)
+    return [(la, lc, lb, ld) for la in r for lc in r for lb in r for ld in r]
+
+
+def generate_hess_kx(backend: str, arch: Arch, out: Path,
+                     lmax: int) -> list[Path]:
+    """Emit `kx1_` and `kxc_{la}{lc}_{lb}{ld}` for every K class through
+    `lmax` into `out`; return the paths."""
+    kernels = [build_kx_kernel(c, form=t) for c in hess_kx_classes(lmax)
+               for t in (Target.KX1, Target.KXC)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
 # ---------------------------------------------------------------------------
 # The DF metric Hessian ladder (hessian.kernel_d2metric)
 # ---------------------------------------------------------------------------
@@ -1156,6 +1240,29 @@ def generate_hess_metric(backend: str, arch: Arch, out: Path,
     into `out`; return the paths."""
     kernels = [build_d2metric_kernel(c)
                for c in hess_metric_classes(aux_lmax)]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+# ---------------------------------------------------------------------------
+# The uncontracted DF metric derivative ladder (gradient.kernel_ipmetric)
+# ---------------------------------------------------------------------------
+
+
+def ip_metric_classes(lmax: int) -> list[tuple[int, int]]:
+    """The metric classes `(lP, lQ)`, `lP <= lQ <= lmax`, over
+    `0..IP_METRIC_L_MAX` (each aux shell's l, as `--grad-df-aux-l`)."""
+    if type(lmax) is not int or not 0 <= lmax <= IP_METRIC_L_MAX:
+        raise ValueError(f"--ip-metric-l {lmax!r} is outside "
+                         f"0..{IP_METRIC_L_MAX}")
+    return [(p, q) for p in range(lmax + 1) for q in range(p, lmax + 1)]
+
+
+def generate_ip_metric(backend: str, arch: Arch, out: Path,
+                       lmax: int) -> list[Path]:
+    """Emit `ipmetric_{lP}{lQ}` for every metric class through `lmax` into
+    `out`; return the paths."""
+    kernels = [build_ipmetric_kernel(c) for c in ip_metric_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1579,9 +1686,12 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.grad_hk_l is not None
             or args.grad_f_l is not None
             or args.grad_df_l is not None
+            or args.grad_dfx_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
+            or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
+            or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
             or args.hgp_one_e_l is not None
             or args.rys_one_e_l is not None
@@ -1594,9 +1704,9 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
-              "--grad-df-l / --hess-l / "
-              "--hess-k-l / "
-              "--hess-one-e-l / --hess-metric-l / "
+              "--grad-df-l / --grad-dfx-l / --hess-l / "
+              "--hess-k-l / --hess-kx-l / "
+              "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
@@ -1688,6 +1798,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--grad-df-aux-l", dest="grad_df_aux_l", type=int,
                     nargs="?", const=DEFAULT_GRAD_DF_AUX_L, default=None,
                     metavar="AUXMAX")
+    ap.add_argument("--grad-dfx-l", dest="grad_dfx_l", type=int, nargs="?",
+                    const=DEFAULT_GRAD_DF_L, default=None, metavar="LMAX")
+    ap.add_argument("--grad-dfx-aux-l", dest="grad_dfx_aux_l", type=int,
+                    nargs="?", const=DEFAULT_GRAD_DF_AUX_L, default=None,
+                    metavar="AUXMAX")
     ap.add_argument("--grad-k-l", dest="grad_k_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_K_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-hk-l", dest="grad_hk_l", type=int, nargs="?",
@@ -1698,6 +1813,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_HESS_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-k-l", dest="hess_k_l", type=int, nargs="?",
                     const=DEFAULT_HESS_K_L, default=None, metavar="LMAX")
+    ap.add_argument("--hess-kx-l", dest="hess_kx_l", type=int, nargs="?",
+                    const=DEFAULT_HESS_KX_L, default=None, metavar="LMAX")
     ap.add_argument("--hess-one-e-l", dest="hess_one_e_l", type=int,
                     nargs="?", const=DEFAULT_HESS_ONE_E_L, default=None,
                     metavar="LMAX")
@@ -1710,6 +1827,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hess-metric-l", dest="hess_metric_l", type=int,
                     nargs="?", const=DEFAULT_HESS_METRIC_L, default=None,
                     metavar="AUXMAX")
+    ap.add_argument("--ip-metric-l", dest="ip_metric_l", type=int,
+                    nargs="?", const=DEFAULT_IP_METRIC_L, default=None,
+                    metavar="LMAX")
     ap.add_argument("--hgp-one-e-l", dest="hgp_one_e_l", type=int, nargs="?",
                     const=DEFAULT_HGP_ONE_E_L, default=None, metavar="LMAX")
     ap.add_argument("--rys-one-e-l", dest="rys_one_e_l", type=int, nargs="?",
@@ -1778,9 +1898,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_hk_l is not None
             or args.grad_f_l is not None
             or args.grad_df_l is not None
+            or args.grad_dfx_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
+            or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
+            or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
                  or args.hgp_one_e_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
@@ -1793,9 +1916,9 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
-              "--grad-df-l / --hess-l / "
-              "--hess-k-l / "
-              "--hess-one-e-l / --hess-metric-l / "
+              "--grad-df-l / --grad-dfx-l / --hess-l / "
+              "--hess-k-l / --hess-kx-l / "
+              "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l / "
               "--class / "
@@ -1825,9 +1948,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.grad_hk_l is not None
             or args.grad_f_l is not None
             or args.grad_df_l is not None
+            or args.grad_dfx_l is not None
             or args.hess_l is not None or args.hess_k_l is not None
+            or args.hess_kx_l is not None
             or args.hess_one_e_l is not None
             or args.hess_metric_l is not None
+            or args.ip_metric_l is not None
             or args.hess_eri3_l is not None
                      or args.hgp_one_e_l is not None
                  or args.rys_one_e_l is not None or _hgp_df(args)
@@ -1838,9 +1964,9 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--rys-metric-l / --rys-eri3-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
               "--grad-f-l / "
-              "--grad-df-l / --hess-l / "
-              "--hess-k-l / "
-              "--hess-one-e-l / --hess-metric-l / "
+              "--grad-df-l / --grad-dfx-l / --hess-l / "
+              "--hess-k-l / --hess-kx-l / "
+              "--hess-one-e-l / --hess-metric-l / --ip-metric-l / "
               "--hess-eri3-l / "
               "--hgp-one-e-l / --rys-one-e-l / --hgp-grad-l (and a lever "
               "flag) and "
@@ -1944,6 +2070,22 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"0..{GRAD_DF_AUX_L_MAX}: the DF gradient kernels are "
               "validated through aux i only", file=sys.stderr)
         return 2
+    if (args.grad_dfx_l is not None
+            and not 0 <= args.grad_dfx_l <= GRAD_DF_L_MAX):
+        print(f"emit: --grad-dfx-l {args.grad_dfx_l} is outside "
+              f"0..{GRAD_DF_L_MAX}: the uncontracted (mn|P) derivative "
+              "kernels are validated through orbital f only", file=sys.stderr)
+        return 2
+    if args.grad_dfx_aux_l is not None and args.grad_dfx_l is None:
+        print("emit: --grad-dfx-aux-l needs --grad-dfx-l (the orbital "
+              "limit)", file=sys.stderr)
+        return 2
+    if (args.grad_dfx_aux_l is not None
+            and not 0 <= args.grad_dfx_aux_l <= GRAD_DF_AUX_L_MAX):
+        print(f"emit: --grad-dfx-aux-l {args.grad_dfx_aux_l} is outside "
+              f"0..{GRAD_DF_AUX_L_MAX}: the uncontracted (mn|P) derivative "
+              "kernels are validated through aux i only", file=sys.stderr)
+        return 2
     if args.hess_l is not None and not 0 <= args.hess_l <= HESS_L_MAX:
         print(f"emit: --hess-l {args.hess_l} is outside 0..{HESS_L_MAX}: "
               "the Coulomb-Hessian kernels are validated through (dd) only",
@@ -1953,6 +2095,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"emit: --hess-k-l {args.hess_k_l} is outside "
               f"0..{HESS_K_L_MAX}: the exchange-Hessian kernels are "
               "validated through (pp|pp) only", file=sys.stderr)
+        return 2
+    if (args.hess_kx_l is not None
+            and not 0 <= args.hess_kx_l <= HESS_KX_L_MAX):
+        print(f"emit: --hess-kx-l {args.hess_kx_l} is outside "
+              f"0..{HESS_KX_L_MAX}: the exchange derivative matrix kernels "
+              "are validated through (ff|ff) only", file=sys.stderr)
         return 2
     if (args.hess_one_e_l is not None
             and not 0 <= args.hess_one_e_l <= HESS_ONE_E_L_MAX):
@@ -1980,6 +2128,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not 0 <= args.hess_metric_l <= HESS_METRIC_L_MAX):
         print(f"emit: --hess-metric-l {args.hess_metric_l} is outside "
               f"0..{HESS_METRIC_L_MAX}: the DF metric Hessian kernels are "
+              "validated through aux i only", file=sys.stderr)
+        return 2
+    if (args.ip_metric_l is not None
+            and not 0 <= args.ip_metric_l <= IP_METRIC_L_MAX):
+        print(f"emit: --ip-metric-l {args.ip_metric_l} is outside "
+              f"0..{IP_METRIC_L_MAX}: the uncontracted metric derivative is "
               "validated through aux i only", file=sys.stderr)
         return 2
     if (args.hgp_one_e_l is not None
@@ -2069,17 +2223,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.backend, arch, args.out, args.grad_df_l,
             DEFAULT_GRAD_DF_AUX_L if args.grad_df_aux_l is None
             else args.grad_df_aux_l)
+    if args.grad_dfx_l is not None:  # beside the J chain, never by default
+        written += generate_grad_dfx(
+            args.backend, arch, args.out, args.grad_dfx_l,
+            DEFAULT_GRAD_DF_AUX_L if args.grad_dfx_aux_l is None
+            else args.grad_dfx_aux_l)
     if args.hess_l is not None:  # beside the J chain, never by default
         written += generate_hess(args.backend, arch, args.out, args.hess_l)
     if args.hess_k_l is not None:  # beside the J chain, never by default
         written += generate_hess_k(args.backend, arch, args.out,
                                    args.hess_k_l)
+    if args.hess_kx_l is not None:  # beside the J chain, never by default
+        written += generate_hess_kx(args.backend, arch, args.out,
+                                    args.hess_kx_l)
     if args.hess_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hess_one_e(args.backend, arch, args.out,
                                        args.hess_one_e_l)
     if args.hess_metric_l is not None:  # beside the J chain, never by default
         written += generate_hess_metric(args.backend, arch, args.out,
                                         args.hess_metric_l)
+    if args.ip_metric_l is not None:  # beside the J chain, never by default
+        written += generate_ip_metric(args.backend, arch, args.out,
+                                      args.ip_metric_l)
     if args.hess_eri3_l is not None:  # beside the J chain, never by default
         written += generate_hess_eri3(
             args.backend, arch, args.out, args.hess_eri3_l,

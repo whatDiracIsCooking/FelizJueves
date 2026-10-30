@@ -2,7 +2,9 @@
 
 **Status: implemented host-side and as generated kernels, compiled by
 nvcc and hipcc and run on both cards; the whole RHF gradient assembled and
-held to PySCF interpreted only (#565)** (the RTX 3080 and the RX 9060 XT,
+held to PySCF interpreted (#565) and on the RX 9060 XT only, H₂O/STO-3G
+and 6-31G, CUDA not run (#566); nothing scored or timed, the closing
+`StructuralLimit` is #567's** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
 through (ff|i) and (i|i) since #613, `gs`, `gt`, `gv` through (ff)
 since #614, `gk` through `(ff|ff)` since #618 and the whole `gjab` chain
@@ -14,7 +16,10 @@ through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`, on no
 card; the kinetic, overlap and nuclear-attraction gradients on HGP
 (`hgt_`, `hgs_`, `ghv_`, through (ff)) are interpreted and compiled, not
 run on a card; the HGP `(mn|P)` gradient `hgeri3` is interpreted and
-compiled only, no card.
+compiled only, no card. The uncontracted `(nabla m n|P)` of `xeri3_`
+(#692, "The uncontracted three-center derivative") is interpreted through
+(ff|i) against a host held to libcint, and compiled by nvcc and hipcc; it
+has not run on a card.
 **The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
 interpreted and compiled, not run**: held to `eri.eri`'s derivative
 integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
@@ -79,6 +84,9 @@ energy is `-1/2 E_K`). Per shell pair `i <= j`
 the weight of Cartesian pair `(r, c)` is `M[a_r, b_c] + M[b_c, a_r]` off
 the diagonal and `M[a_r, a_c]` on it, which is `SUM_mn M_mn X_mn` exactly
 for any `M` (no symmetry assumed) and any `X` symmetric in `m <-> n`.
+One exception writes the integrals themselves: the DF metric's
+`uncontracted` form, `ipmetric_` (#693, "The uncontracted metric
+derivative", below), for the DF Hessian.
 
 ## The rule
 
@@ -478,7 +486,41 @@ the generated kernels in `ir.interp`, each in its default form, launched
 class by class into one zeroed `G` as `test/grad_driver.py` packs them for
 a card. J is the chain, not the host's `J_p`: the d0 `[p|q]` of
 `kernel_gjab.gjab_pq_spec`'s class (the bra raised by one) through
-`eri.j_coulomb.drive.KernelJP`, then `gjab_`. The device runners are #566.
+`eri.j_coulomb.drive.KernelJP`, then `gjab_`.
+
+**On a card (#566, `test/test_rhf_gradient_device.py`).** The device
+runners feed the same `rhf_gradient`, one program per term, every kernel
+in its default form, the terms reduced on the host: `gs_` / `gt_` / `gv_`
+per pair class (`grad_driver.one_electron_launches`; `gv_` carries the
+Hellmann–Feynman term); the J chain wholly on the card (`DQ`, the plan
+keyed on its `Dmax`, every bra class raised by one by
+`grad_driver.raised_plan`, the raised `[p|q]`, then `gjab_` reading `J_p`
+where it lies, `grad_driver.gjab_tail`; no host `J_p`); every `gk_` class
+through `gk_driver`, each unit compiled alone under its 10 s budget, the
+per-class `G` summed on the host in launch order; `V_nn^x` the host's.
+Inputs are #550's H₂O/STO-3G and H₂O/6-31G fixtures, both `slow`
+(`tiers.by_l`: `gk_` at `(pp|pp)` and the raised `[p|q]` reach L = 5).
+Bounds, set before the run: every term and the total within `1e-10`
+absolute of PySCF and of the interpreted `rhf_gradient`, and run to run
+within `SPREAD_TOL = 1e-13` absolute.
+
+Run on the RX 9060 XT (gfx1200) only, 2026-10-30, `kernel-tier.sh
+--backend hip --full`, 2 passed: total against PySCF 8.17e-14 (STO-3G) /
+4.66e-14 (6-31G), against the interpreted gradient 1.78e-15 / 3.11e-15,
+run to run 6.9e-17 / 4.4e-15; worst term `potential` against PySCF
+(7.64e-14 / 4.97e-14). **CUDA was not run** (NVML failed to initialise in
+that container; PR #696 is labelled `unverified-on-card`).
+
+**Decision (the user's, #566): run-to-run bound, not bit-identity.** #566
+asked for the device gradient to be bit-identical across two launches.
+Because every d1 kernel `atomicAdd`s into `G` (the departure below), the
+order of the additions is the hardware's and a device gradient is **not
+bit-reproducible**: the first hip run's totals differed by 2.8e-17
+(STO-3G) and 1.8e-15 (6-31G). The criterion was restated as `SPREAD_TOL =
+1e-13` absolute on every term and the total; the test still reports
+whether the totals came out bit-identical (they did not). Getting bit
+reproducibility back means the plan's partials and a fixed-order
+reduction, a kernel change nobody has made.
 
 This departs from the milestone's plan where #552 and #557 closed: the
 kernels `atomicAdd` into `G` (no partials and no fixed-order reduction, so
@@ -519,6 +561,7 @@ nine-primitive s), and its interpreted `gk_` runs for hours.
 | libcint `gjab` witness (`test_j_gradient_witness.py`, #639) | `int2e_ip1_cart` on CO/cc-pVTZ, `co_ccpvtz_j`'s density, contracted into `dE_J/dR` per `gjab` bra class and whole (`manifest.j_gradient`) | the file: 10 classes, sum, invariance; the host on every class, so the whole `host.coulomb_gradient` (`slow`); the file against PySCF today (`oracle`) | host 1.25e-15 of `max\|G\|` (worst `(ss)`), gate 1e-14; host ~37 CPU-min |
 | `gk` on a card (`test_gk_device.py`, `test/gk_driver.py`, #618; on the shared runner since #657, not yet re-run on a card) | H₂O/STO-3G: the host (whole) and the other form (per class); CO/cc-pVTZ (`slow`, `high_l`): the libcint witness per class and whole, and the unrolled form on the same upload | RTX 3080 and RX 9060 XT; every unit its own TU under a 10 s kill | H₂O 3.22e-15 / 3.37e-15 of `max\|G\|`; CO 2.63e-15 / 2.94e-15 against libcint, differential over 62 / 58 classes 9.2e-17 / 1.2e-16 |
 | the RHF gradient, interpreted (`test_rhf_gradient.py`, #565) | #550's gradient fixtures: each term from libcint at the recorded `D`, `W` (`grad:h` split into `T`, `V`); the total `nuc_grad_method()`'s | H₂O/STO-3G, H₂O/6-31G, C1 NH₂F/6-31G, H₂O/STO-3G + one d on O, H₂O/cc-pVDZ; one-electron and nuclear terms on s, p bases fast, J, K, the totals and every d case `slow` | H₂O/STO-3G worst term 7.5e-14 (`V`), total 7.9e-14, net 2.7e-15 (118 s interpreted); the d case 6.9e-14 / 6.9e-14 (1162 s, `gk_`'s rolled form from L = 5 the bulk); H₂O/6-31G passes; every one-electron term on all five passes; NH₂F and cc-pVDZ totals not run to the end (hours interpreted); gate `1e-10` absolute |
+| the RHF gradient on a card (`test_rhf_gradient_device.py`, #566) | as the interpreted row, and the interpreted `rhf_gradient`; two runs against each other | RX 9060 XT only (CUDA not run): H₂O/STO-3G and H₂O/6-31G, both `slow`, every term from device runners (the J chain wholly on the card), 2 passed | total 8.17e-14 / 4.66e-14 of PySCF, 1.78e-15 / 3.11e-15 of interpreted; run to run 6.9e-17 / 4.4e-15, gate `SPREAD_TOL = 1e-13` (not bit-identical: the atomics) |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 40 pair units through (ff); the 16 `gk` goldens | no diagnostic (a proxy) |
 | compile, nvcc / hipcc (`test_emit_grad.py`, `test_emit_grad_k.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
 | on a card (`test_grad_device.py`, `test/grad_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30) | `host`, `1e-13` of `max\|G\|`; `gk` on H₂O/STO-3G only | RTX 3080 and RX 9060 XT: `gs`, `gt`, `gv`, `gjab` on H₂O/STO-3G and cc-pVDZ (`slow`, its (dd) classes), `gk` on H₂O/STO-3G (through `(pp\|pp)`); 9 cases per card | 3.20e-14 (CUDA), 2.36e-14 (HIP), both `gt` on cc-pVDZ; `gk` 4.1e-15 / 4.0e-15; the atomics' run-to-run spread up to 2e-14 |
@@ -669,6 +712,43 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 the Cartesian rule on the HGP VRR instead of the Hermite shift; same
 parameters and `G` contract), interpreted through L = 4 and compiled for s
 and p, on no card: `hgp_df.md`, "The metric's nuclear gradient on HGP".
+
+### The uncontracted metric derivative (`gradient/kernel_ipmetric.py`, #693)
+
+The DF Hessian needs `d(P|Q)/dR` in more contractions than `gmetric_`'s
+one (`SUM_Q (P|Q)^x d_Q` for the response of `d`, `SUM_Q (P|Q)^x c_Q,ij`
+inside `c^x = M^-1 (T^x - M^x c)`, the `M^x M^y` cross terms), each a gemm
+once the derivative exists as a matrix. `ipmetric_{lP}{lQ}` writes it:
+
+    M1[k, P, Q] = d(P|Q)/dA_k        A the centre of P,  [3, n_aux, n_aux]
+
+keyed `coulomb/d1/(lP,lQ)/b1/metric/uncontracted` -- the kernel-body lever
+`uncontracted` (`levers.VOCABULARY`, legal on the MMD `metric` slot only and
+at d1 only, by the lever's new `orders` field, `levers.order_refusal`).
+`gmetric_`'s Hermite shift and tower one order up, in its low-stack rolled
+form at every class (no `3 nP nQ` accumulators: 2,352 at (i|i)), each
+element accumulated in place in the pair's own slots, which it zeroes
+first, and plain stores, no atomics. The other centre needs no second
+kernel: `(P|Q)` reads `A - B`, so `M1[k, Q, P] = -M1[k, P, Q]`, written as
+the negated mirror of an off-diagonal pair (bitwise); a diagonal pair forms
+its whole block. libcint's `int2c2e_ip1` differentiates the electron
+coordinate, so `M1 = -int2c2e_ip1`. Atom `X`'s block is the rows on `X`
+and their mirror; that slicing, and a launch of only some classes (the
+kernel leaves every other element untouched), are the caller's.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| host `host_df.metric_derivative` (each centre by the Cartesian rule) | libcint `-int2c2e_ip1_cart`, the numeric golden store (`metric_ip1{x,y,z}_h2o_ccpvdz_jkfit_bse`, one axis per entry: the whole array is over the per-array budget) | cc-pVDZ-JKFIT on H₂O, every class through (f\|f) (`slow`; s, p fast) | 7.21e-14 of max, gate `1e-12` |
+| host | the aux-i witness (`manifest.df_gradient`, libcint `int2c2e_ip1_cart` contracted per class), `M1` contracted with the same `W` | all 28 classes through (i\|i) (`slow`) | 1.72e-14 of the largest class `max\|G\|`, gate `1e-12` |
+| kernel, interpreted (`test_kernel_ipmetric.py`) | the host, per class, every owned element; every other element untouched | all 28 classes `lP <= lQ <= 6`: L <= 4 on `test_kernel_gmetric.py`'s basis, above on two-shell bases with the absolute-value tower's scale | 3.62 eps ((d\|d)), gate 16 eps |
+| kernel, interpreted | libcint: the golden over all of cc-pVDZ-JKFIT (`slow`; s, p fast), and the aux-i witness at (s\|s), (p\|p), (f\|g), (h\|i), (i\|i) | | 7.21e-14 (golden), 5.29e-15 (witness) |
+| compile, nvcc / hipcc (`test_emit_ipmetric.py`) | #92's filter | all 28 classes on `sm_86` and `gfx1200`, device-less cloud container, 2026-10-30 | no warning in generated text |
+
+Ladder `--ip-metric-l [LMAX]` (`lP <= lQ <= LMAX`, 0..6, bare 2: six
+goldens), never in the bare default nor in `KERNEL_GEN_CMD`. **Not run on a
+card and not measured** (no device harness: the d1 DF program of
+`test_grad_df_device.py` launches `gmetric_` only). The three-center twin
+is #692.
 
 Not done for DF: the metric solve and `d` stay host-side (DF-K's `Gam^K`,
 `W^K` are staged on the host only, #620; no device run of them, the
@@ -888,6 +968,94 @@ Goldens `test/golden/{cuda,hip}/hgeri3_*` (`test_emit_hgp_grad_df.py`).
 **Not on a card**: there is no device harness for it yet, and the session
 that built it had no card. Not measured.
 
+## The uncontracted three-center derivative (`gradient/kernel_xeri3.py`, #692)
+
+**Status: generated, interpreted against the host, the host held to
+libcint, and compiled by nvcc and hipcc; not run on a card** (the session
+that built it had no card; its device tests are written).
+
+**Why.** The DF-RHF Hessian's derivative Fock matrices contract the first
+derivatives of `(mn|P)` in more ways than one fused kernel covers: DF-J's
+`SUM_P (mn|P)^x d_P` and `SUM_mn (mn|P)^x D_mn`, DF-K's three-index
+`SUM_lP (ml|P)^x Gam_lnP`, and the cross terms' `(ij|P)^x` in occ x occ.
+PySCF's `df.hessian.rhf` writes the raw derivative integrals
+(`int3c2e_ip1`) in aux blocks and does each as a gemm, which is also the
+GPU-friendly route. So this kernel writes the tensor and nothing else.
+
+**The key.** `Spec(COULOMB, 1, (la, lb, lP), ERI3, ("uncontracted",))`,
+``coulomb/d1/(la,lb|lP)/b1/eri3/uncontracted``: #693's kernel-body lever
+`uncontracted` (the metric's `ipmetric_`, above), widened from `metric` to
+`eri3`, legal at d1 on MMD only (`levers.order_refusal`, and its refusals
+of `eri3.hgp` / `eri3.rys`). `kernel_geri3` refuses it, as it refuses
+every lever, and `kernel_xeri3` builds only the key with exactly it. The
+kernel prefix is `xeri3_`, which collides with none of `eri3_`, `geri3_`,
+`heri3_`, `hgeri3_`, `reri3_`, `d2eri3_`.
+
+**What it writes.** `X[k, m, n, P - aux0] = (nabla_k m n|P) = -d(mn|P)
+/ dA_k`, `A` the centre of `m`: `eri3`'s `(m, n, P)` layout with the axis
+outermost, `[3, n_ao, n_ao, n_blk]`, over the aux functions `aux0 ..
+aux0 + n_blk - 1`. A cell (shell pair `i <= j` x aux shell) writes its
+`(m, n)` slot by the `dA` rule and its `(n, m)` slot by the `dB` rule; a
+diagonal shell pair writes the `dA` slot alone, which over every `(a, b)`
+of the shell is every slot. Each slot is one cell's, so the stores are
+plain. They accumulate over the records in `X` itself, and the kernel
+zeroes its own slots first.
+
+**No second kernel for the aux centre.** Each integral is translationally
+invariant, and `nabla = -d/dR` on every centre, so
+
+    (mn | nabla_k P) = -X[k, m, n, P] - X[k, n, m, P]
+
+The sign check: `ip1 = -dA`, its transpose in `(m, n)` is `-dB` (the `(n,
+m)` slot differentiates `n`'s own centre), and `ip2 = -dC = dA + dB`. The
+caller forms it. The test holds it to libcint's `int3c2e_ip2_cart`.
+
+**Blocking.** The full tensor is `3 n_ao^2 n_aux` doubles (9 GB at 500
+AOs and 1500 aux functions), so the caller launches over the cells of one
+aux block, as PySCF batches over aux shells: `kernel_eri3`'s staging with
+the per-cell arrays (`ab_rec0/1`, `p_rec0/1`, `off_a/b/p`) restricted to
+the block's cells (`test/df_grad_launch.xeri3_arrays`). `off_p` stays the
+whole-basis index, and the column written is `off_p - aux0`. The kernel
+writes only the slots of the cells it is given: an entry of `X` that no
+given cell owns keeps whatever the caller passed. The linear index is
+I32, so `3 n_ao^2 n_blk < 2^31`.
+
+**The route** is `kernel_geri3`'s low-stack form (#613) with the weights,
+the aux centre and the atom reduction removed, one form at every class:
+the bra's per-axis `E` tables one index up, the tower of the quartet `(la
++ 1, lb | lP, 0)` at `L + 1` stored into `R`, `U[t] = SUM_tau [t +
+tau]^(0) E^q_tau` per aux row, then per element `X[k, m, n] -+= w (2 alpha
+SUM E^{a+1_k,b} U - a_k SUM E^{a-1_k,b} U)` (`w = s_ab s_aux`, the sign
+`(-1)^{lP}` then nabla's `-`), and `X[k, n, m]` likewise on `b`. At
+(ff|i) nvcc's frame is 13,536 B of `sm_86` stack (1,564 B spill stores)
+and hipcc's 12,672 B of `gfx1200` scratch, inside #606's 14,000 B line
+(one compile each, read from ptxas `-v` and hipcc's resource remarks; not
+a sweep, and not stored).
+
+| Check | Against | Over | Worst |
+|---|---|---|---|
+| host `eri3_ip1` (`test_kernel_xeri3.py`, `oracle` + `slow`) | libcint `int3c2e_ip1_cart`, live, every element | H₂O/cc-pVDZ with cc-pVDZ-JKFIT; `prim_spd_f` with AUX_I (orbital f, aux i) | 3.54e-14 / 2.21e-14 of `max\|ip1\|`, gate `1e-13` |
+| the aux identity, `-X - X^T` | libcint `int3c2e_ip2_cart`, live | the same two systems | 3.09e-14 / 1.95e-14 of `max\|ip2\|`, gate `1e-13` |
+| host, contracted per class (`slow`) | the tracked DF gradient witness (`oracle.manifest.df_gradient`) | all 70 ladder classes | 3.91e-14 of `max\|G\|`, gate `1e-12` |
+| kernel, interpreted, one launch per class | host `eri3_ip1` | every class at L <= 4 on test_kernel_geri3.py's bases | 4.66 eps of the class's `max\|X\|` ((sg\|s)), gate 16 |
+| kernel, interpreted (`slow`) | host `eri3_ip1` | every ladder class above L = 4 through (ff\|i), one primitive per shell | 0.53 eps of the tower-twin scale, gate 16 |
+| kernel over a strict aux block and half its cells | host, and the sentinel elsewhere | aux p, d, f of the geri3 bases, classes at L <= 3 | 1.90 eps; every unowned entry untouched |
+| kernel contracted onto the atoms | `host_df.eri3_gradient` (another route on the aux centre) | the geri3 bases' s and p shells; H₂O/STO-3G with JKFIT s, p (`slow`) | within 64 eps of `max\|G\|` |
+
+**The ladder** is `--grad-dfx-l [LMAX] [--grad-dfx-aux-l AUXMAX]`:
+`--grad-df-l`'s three-center classes, limits (0..3, 0..6) and defaults
+(bare: 9 units), never in the bare default nor in `KERNEL_GEN_CMD`, with 18
+goldens (`test_emit_grad_dfx.py`). **Compiled, not run**: its nvcc
+(CUDA 13.0, `sm_86`) and hipcc (ROCm 7.2.4, `gfx1200`) compile cases, the
+bare ladder plus (dd|g), (ff|i), (sf|i), 24 in all, pass with no warning in
+generated text, and the card program's runners build under both
+(device-less cloud container, 2026-10-30). Its device tests
+(`test_xeri3_device.py`: H₂O/STO-3G against JKFIT s, p, d, in one whole
+block and in a strict block over every other cell; the ladder through
+(ff|i), one program per aux `l`) have not run on a card. The card test's
+own staging, run through the interpreter in place of the card, matches the
+host to 1.2e-16 of max. Not measured.
+
 ## The fused Fock gradient on HGP (`gradient/kernel_gf.py`)
 
 `Target.F` at `derivative_order = 1`, on F's native engine:
@@ -991,9 +1159,11 @@ ladder).
   `gjab` chain (through (ff) on CO/cc-pVTZ, #619). The
   forced-unrolled `gv` and `gjab` at (df) / (ff) are compiled
   (`g1e.json`, `gjab.json`) but not run on a card.
-- The whole RHF gradient is assembled and held to PySCF interpreted
-  only ("The RHF gradient, assembled", #565); on a card each term has run
-  alone, and the device assembly is #566. The DF
+- The whole RHF gradient on a card has run on the RX 9060 XT only, on
+  s, p bases only (H₂O/STO-3G, 6-31G; #566): not on the RTX 3080, and no
+  basis with a d or f shell (H₂O/cc-pVDZ is not run whole even
+  interpreted). A device gradient is not bit-reproducible (the atomics),
+  held run to run to `SPREAD_TOL = 1e-13` by the user's decision. The DF
   two-electron gradient, `G_J - 1/2 G_K`, is assembled on the host and
   held to PySCF's DF RHF gradient (above, #620); the one-electron terms
   are not added to it.
@@ -1016,3 +1186,35 @@ ladder).
   exchange Hessian (`hkx`, on `gk`'s mapping) and the DF metric and
   three-center Hessians (`d2metric`, `d2eri3`, on `gmetric`'s and
   `geri3`'s).
+- Nothing is scored (no published board) and no gradient kernel is timed;
+  milestone 20's limits are one record in
+  `data/literature/jengine/limits.json` (#567).
+
+### What AIMD still needs
+
+The gradient is a piece of an ab initio MD step, not the step. Missing, by
+what the tree holds today:
+
+- **The SCF that produces `D` and `W`.** Every input density here is a
+  fixture's (PySCF's converged RHF, #550); there is no eigensolver and no
+  SCF loop in `src/`.
+- **The per-step rebuild** of everything geometry-dependent that is built
+  on the host today: the primitive-pair records and their bounds
+  (`ao/pairs.py`), the J chain's plan (`plan/`, host-side only) and the
+  launch packing, once per nuclear step.
+- **A gradient screen proved against the derivative integrals.** `gk_`,
+  `ghk` and `gf_` visit every ordered quartet: K's bound bounds the
+  integral, not its derivative, and no derivative bound is derived.
+- **d and f shells in the whole gradient on a card.** Each term has run
+  alone through (ff) on both cards, but the assembled device gradient only
+  on s, p bases, and no orbital g shell is built.
+- **RI gradients end to end.** `geri3` (`(mn|P)^x`) and `gmetric`
+  (`(P|Q)^x`) run on both cards, but the metric solve and the DF-K weights
+  are host-side and the one-electron terms are not added to the DF
+  two-electron gradient.
+- **UHF.** Only `rhf.py` assembles a gradient; the exchange rule assumes
+  a symmetric `D` (`host.exchange_gradient` refuses an asymmetric one),
+  and no spin-resolved assembly exists.
+- **Bit reproducibility, if a trajectory needs it**: the atomics make a
+  device gradient vary run to run (within 1e-13 measured), so two runs of
+  one step can differ in the last bits.

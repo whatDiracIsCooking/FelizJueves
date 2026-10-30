@@ -19,6 +19,7 @@ from felizjueves.performance.device import MeasuredKey, by_name
 from felizjueves.performance.measured_store import engine_of, split_key, target_of
 from felizjueves.spec import (
     AM_LENGTH,
+    D1_ONLY_TARGETS,
     NATIVE_ENGINE,
     OPERATOR_OF,
     Engine,
@@ -52,9 +53,16 @@ LEGAL_OFF_NATIVE = {(Target.J, Engine.HGP), (Target.K, Engine.HGP),
                     (Target.ERI3, Engine.RYS)}
 
 
+def _base_order(target: Target) -> int:
+    """The lowest derivative order `target` is keyed at: 1 for a d1-only
+    target (#689, `spec.D1_ONLY_TARGETS`), 0 for every other."""
+    return 1 if target in D1_ONLY_TARGETS else 0
+
+
 def _spec(target: Target, engine: Engine | None = None, *,
           am: tuple[int, ...] | None = None, n_batches: int = 1) -> Spec:
-    return Spec(OPERATOR_OF[target], 0, am or _AM[AM_LENGTH[target]],
+    return Spec(OPERATOR_OF[target], _base_order(target),
+                am or _AM[AM_LENGTH[target]],
                 target, (), n_batches, engine)
 
 

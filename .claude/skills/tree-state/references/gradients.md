@@ -122,8 +122,24 @@ runners, each term returned with their fixed-order total;
 NH₂F/6-31G, H₂O/cc-pVDZ, and #565's `h2o_sto3g_d_grad` (H₂O/STO-3G plus one
 d primitive on O, `Case.extra_shells`: every J and K class through
 `(dd|dd)` at STO-3G's cost). The one-electron terms on s, p bases are fast;
-every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). Not on a
-card: the device assembly is #566. **`gjab` defaults to a low-stack form from `la + lb =
+every J/K term, every total and every d case `slow`. Worst against PySCF 7.5e-14 per term and 7.9e-14 in total (H₂O/STO-3G), 6.9e-14 / 6.9e-14 on the d case; H₂O/6-31G passes. Not run to the end: the NH₂F/6-31G and H₂O/cc-pVDZ totals (`gk_`'s rolled form, the default from L = 5, interprets for hours on their contractions; the d case covers cc-pVDZ's classes, and NH₂F's p on two atoms is held class by class to the host by the kernel tests). **On the RX 9060
+XT only (#566, 2026-10-30; CUDA not run)**: `test_rhf_gradient_device.py`
+(`slow`) injects device runners -- `gs_` / `gt_` / `gv_`
+(`grad_driver`), the J chain on the card (DQ -> raised `[p|q]` ->
+`gjab_`, no host `J_p`) and every `gk_` class (`gk_driver`) -- into
+`rhf_gradient` on H₂O/STO-3G and 6-31G, 2 passed: every term and the
+total within `1e-10` absolute of PySCF (worst total 8.2e-14, STO-3G) and
+of the interpreted `rhf_gradient` (worst 4.4e-15); run to run within
+`SPREAD_TOL = 1e-13` (worst 4.4e-15, 6-31G) -- NOT bit-identical, the
+kernels' `atomicAdd`s, so the issue's bit-identity was restated as that
+bound by the user. **Nothing scored or timed; the milestone's limits are
+one `StructuralLimit` record** (#567, `data/literature/jengine/limits.json`;
+`gradient.md`, "What is not done" and "What AIMD still needs"): no
+published board, Cartesian only, the whole gradient on the RX 9060 XT
+only and on s, p bases only, cc-pVDZ's whole gradient on no card, and for
+AIMD an SCF producing `D` and `W` (no eigensolver in `src/`), the per-step
+host rebuild of pairs, bounds and plans, a derivative screen, d/f in the
+whole gradient on a card, RI gradients end to end, UHF. **`gjab` defaults to a low-stack form from `la + lb =
 5`, and its whole chain runs on both cards through (ff)** (#619;
 `kernel_gjab.build_gjab_kernel(cls, lowstack=True)`, `gv`'s low-stack
 shape reading the record's `Jp` row from global memory, no `R`; the
@@ -183,6 +199,23 @@ bare 1), never in the bare default nor in `KERNEL_GEN_CMD`; six goldens,
 compiled by nvcc and hipcc warning-free (`test_emit_hgp_df.py`, device-less
 cloud container, 2026-10-30). Not run on a card, not measured; its
 `(mn|P)` sibling is `hgeri3`, below.
+**The metric's derivative uncontracted, `ipmetric_`, interpreted and
+compiled through (i|i), on no card** (#693; `gradient.md`, "The
+uncontracted metric derivative"): `gradient/kernel_ipmetric.py`'s
+`ipmetric_{lP}{lQ}` writes `M1[k, P, Q] = d(P|Q)/dA_k` (`A` the centre of
+`P`, `= -int2c2e_ip1`) as `[3, n_aux, n_aux]`, the mirror `(Q, P)` negated;
+keyed `coulomb/d1/(lP,lQ)/b1/metric/uncontracted` (the `uncontracted`
+kernel-body lever, `metric` at d1 only). Interpreted
+(`test_kernel_ipmetric.py`): all 28 classes `lP <= lQ <= 6` against
+`host_df.metric_derivative` (worst 3.62 eps, gate 16; above L = 4 `slow`);
+the host against libcint `-int2c2e_ip1_cart` on cc-pVDZ-JKFIT/H₂O (the
+numeric golden store, one axis per entry, 7.21e-14) and through (i|i)
+against the aux-i witness contracted (1.72e-14); the kernel against both
+(at most 7.21e-14). Ladder `--ip-metric-l [LMAX]` (0..6, bare 2), never in
+the bare default nor in `KERNEL_GEN_CMD`; six goldens; all 28 classes
+compiled by nvcc and hipcc warning-free (`test_emit_ipmetric.py`,
+device-less cloud container, 2026-10-30). Not run on a card (no device
+harness yet), not measured.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
@@ -270,7 +303,41 @@ Ladder `--hgp-grad-eri3-l [LMAX]` (s and p, 0..1, bare 1: 6 units), never
 in the bare default nor in `KERNEL_GEN_CMD`; 12 goldens
 (`test_emit_hgp_grad_df.py`), compiled by nvcc and hipcc warning-free on a
 device-less container (2026-10-30). **No card, no device harness**, not
-measured. **The DF-K
+measured. **The UNCONTRACTED `(mn|P)` derivative integrals, interpreted
+and compiled only** (#692; `gradient.md`, "The uncontracted three-center derivative"):
+`gradient/kernel_xeri3.py`'s `xeri3_{la}{lb}{lP}`, keyed
+`coulomb/d1/(la,lb|lP)/b1/eri3/uncontracted` (#693's kernel-body lever
+`uncontracted`, widened from `metric` to MMD `eri3`, d1 only), writes `X[k, m, n, P - aux0] = (nabla_k
+m n|P)` -- libcint's `int3c2e_ip1`, no `Gam`, no atom reduction -- over
+the cells of one caller-chosen aux block, `X` `[3, n_ao, n_ao, n_blk]`,
+plain stores (each slot one cell's), zeroed by the kernel; the aux centre
+is the caller's, `-X - X^T` (`int3c2e_ip2`). `geri3`'s low-stack route at
+every class, one form. Host reference `host_df.eri3_ip1`, held to libcint
+live (`oracle` + `slow`): `int3c2e_ip1_cart` within 3.54e-14 of max on
+H₂O/cc-pVDZ with cc-pVDZ-JKFIT and 2.21e-14 on the aux-i system
+(`prim_spd_f`, AUX_I: orbital f, aux i), the identity against
+`int3c2e_ip2_cart` within 3.09e-14 / 1.95e-14, and through the tracked DF
+gradient witness contracted per class (3.91e-14 of `max|G|`, `slow`).
+Interpreted (`test_kernel_xeri3.py`): every class at L <= 4 within 4.66
+eps of the class's `max|X|` (gate 16), every ladder class above it through
+(ff|i) within 0.53 eps of the tower-twin scale, an aux block that is a
+strict subset of the cells (its slots the host's, every other entry
+untouched), and `X` contracted onto the atoms equal to `host_df.
+eri3_gradient` (another route on the aux centre). Ladder `--grad-dfx-l
+[LMAX] [--grad-dfx-aux-l AUXMAX]` (`--grad-df-l`'s three-center classes
+and limits, bare 9 units), never in the bare default nor in
+`KERNEL_GEN_CMD`; 18 goldens (`test_emit_grad_dfx.py`). **Compiled by
+nvcc and hipcc, no card**: the 9 bare-ladder units and (dd|g), (ff|i),
+(sf|i), 24 cases, warning-free (CUDA 13.0 `sm_86`, ROCm 7.2.4 `gfx1200`,
+device-less cloud container, 2026-10-30), and the card program's runners
+built (`test_xeri3_device.py`'s compile twins); (ff|i) at 13,536 B of
+`sm_86` stack (1,564 B spill stores) and 12,672 B of `gfx1200` scratch
+(ptxas / hipcc's resource remarks, one compile, not a sweep). Its device
+tests (H₂O/STO-3G whole and a strict block; the ladder through (ff|i) per
+aux `l`, `high_l`) are written and have not run on a card; their staging,
+run through the interpreter in place of the card, matches the host to
+1.2e-16 of max. Not measured.
+**The DF-K
 weights and the whole DF two-electron gradient are staged on the host**
 (#620; `gradient.md`, "The density-fitting gradients"):
 `host_df.df_k_stage` gives `E_K`, `Gam^K`, `W^K` from the occupied
