@@ -121,7 +121,7 @@ from felizjueves.ir import (
 )
 from felizjueves.mmd import e_fragment as ef
 from felizjueves.one_electron.kernel_s import AXES, REC, pa_name, pb_name
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import Engine, Operator, Spec, Target
 
 __all__ = [
     "ATOMIC_REASON",
@@ -178,6 +178,9 @@ def _class(cls: Spec | tuple[int, int],
     if spec.target not in ORDER:
         raise ValueError(f"{spec.key()} is not a Target.DIPOLE key (nor a "
                          "Target.QUADRUPOLE one)")
+    if spec.engine is not Engine.MMD:
+        raise ValueError(f"{spec.key()} is not an MMD key; the HGP dipole "
+                         "and quadrupole are one_electron.kernel_hgp's")
     if spec.levers:
         raise ValueError(f"{spec.key()}: the multipole kernel takes no "
                          "levers")

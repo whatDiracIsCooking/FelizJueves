@@ -187,9 +187,14 @@ def test_the_refusals() -> None:
         build_quad_kernel(mu_spec(1, 1))
     with pytest.raises(ValueError, match="not a Target.DIPOLE key"):
         build_quad_kernel(Spec(Operator.OVERLAP, 0, (1, 1), Target.S))
-    with pytest.raises(ValueError, match="quadrupole is built on"):
-        Spec(Operator.QUADRUPOLE, 0, (1, 1), Target.QUADRUPOLE,
-             engine=Engine.HGP)
+    # an HGP quadrupole key is legal (one_electron.kernel_hgp's), not this
+    # builder's
+    with pytest.raises(ValueError, match="not an MMD key"):
+        build_quad_kernel(Spec(Operator.QUADRUPOLE, 0, (1, 1),
+                               Target.QUADRUPOLE, engine=Engine.HGP))
+    with pytest.raises(ValueError, match="not an MMD key"):
+        build_mu_kernel(Spec(Operator.DIPOLE, 0, (1, 1), Target.DIPOLE,
+                             engine=Engine.HGP))
     with pytest.raises(ValueError):
         Spec(Operator.QUADRUPOLE, 0, (1, 1), Target.QUADRUPOLE, n_batches=3)
     with pytest.raises(ValueError):
