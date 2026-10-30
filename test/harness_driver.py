@@ -5,7 +5,7 @@
     build_runner(tc, program, out)             -> Path, via compile_checked (#92)
     launch_spec(kernel, grid, block, args)     -> (spec dict, {file: array})
     write_case(workdir, spec, arrays)          -> the spec's path
-    run_case(binary, kernel, workdir, ...)     -> {output name: .npy path}
+    run_case(binary, kernel, workdir, ...)     -> Ran(outs, events_ns)
 
 WHY. Every device test before this wrote its own `main()` (test_f32_device.py's
 HARNESS, plan_driver.py's DRIVER, ...): the uploads, the launch and the
@@ -27,6 +27,8 @@ so devtools/config.sh's NVCC_FLAGS / HIPCC_FLAGS, the compiler cache (#186)
 and #92's warning filter -- which here covers the unit AND every harness
 header, so "the runner builds with no warnings" is a checked statement.
 
+REPEATS (#654): `runs=` / `warmup=`, runner.h's run-to-run witness and clock.
+
 The harness is C++17 (the tier's `--std=c++17`) and C++20-clean: no modules,
 no `import std`, nothing from FreeBreakfast.
 """
@@ -34,9 +36,11 @@ no `import std`, nothing from FreeBreakfast.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from conftest import Toolchain
@@ -87,10 +91,11 @@ def runner_program(backend: str, unit: Path, kernels: Sequence[str],
     return Program(backend, src, path, (unit, *HEADERS))
 
 
-def build_runner(tc: Toolchain, program: Program, out: Path) -> Path:
+def build_runner(tc: Toolchain, program: Program, out: Path, *,
+                 timeout: float = 1800.0) -> Path:
     """Compile the runner with the tier's flags; fail on an error or on any
     warning located in the unit or a harness header (#92)."""
-    return compile_checked(tc, program, out)
+    return compile_checked(tc, program, out, timeout=timeout)
 
 
 def _spec_value(p, value) -> dict:
@@ -107,7 +112,8 @@ def _spec_value(p, value) -> dict:
 
 def launch_spec(kernel: Kernel, grid: Sequence[int] | int,
                 block: Sequence[int] | int, args: Mapping[str, object], *,
-                shared_bytes: int = 0) -> tuple[dict, dict[str, np.ndarray]]:
+                shared_bytes: int = 0, runs: int = 1,
+                warmup: int = 0) -> tuple[dict, dict[str, np.ndarray]]:
     """The runner's spec for one launch of `kernel`, and the arrays to write
     beside it (`{file name: array}`).
 
@@ -157,9 +163,19 @@ def launch_spec(kernel: Kernel, grid: Sequence[int] | int,
             raise ValueError(f"{what} {d!r}: 1 to 3 positive extents")
         return got
 
+    def at_least(n: int, least: int, what: str) -> int:
+        if isinstance(n, bool) or int(n) != n or n < least:
+            raise ValueError(f"{what} {n!r}: an integer >= {least}")
+        return int(n)
+
     spec = {"kernel": kernel.name, "grid": dims(grid, "grid"),
             "block": dims(block, "block"), "shared_bytes": int(shared_bytes),
             "args": spec_args}
+    runs, warmup = at_least(runs, 1, "runs"), at_least(warmup, 0, "warmup")
+    if runs != 1:
+        spec["runs"] = runs
+    if warmup:
+        spec["warmup"] = warmup
     return spec, arrays
 
 
@@ -173,13 +189,25 @@ def write_case(workdir: Path, spec: dict, arrays: Mapping[str, np.ndarray]) -> P
     return path
 
 
+_RUN = re.compile(r"^fj-runner run \d+ events_ns ([0-9.]+)$", re.MULTILINE)
+
+
+class Ran(NamedTuple):
+    outs: dict[str, Path]  # each OUT array's `.npy`, by parameter name
+    events_ns: list[float]  # per timed run, in order
+
+
 def run_case(binary: Path, kernel: Kernel, workdir: Path,
              grid: Sequence[int] | int, block: Sequence[int] | int,
              args: Mapping[str, object], *, shared_bytes: int = 0,
-             timeout: float = 300) -> dict[str, Path]:
+             runs: int = 1, warmup: int = 0, timeout: float = 300) -> Ran:
     """Write the case, run the runner on it, and return each OUT array's
-    `.npy` path by parameter name. A nonzero exit fails with its stderr."""
-    spec, arrays = launch_spec(kernel, grid, block, args, shared_bytes=shared_bytes)
+    `.npy` path and each run's event time. A nonzero exit -- a launch
+    whose outputs differ from the first's among them -- fails with its
+    stderr."""
+    spec, arrays = launch_spec(kernel, grid, block, args,
+                               shared_bytes=shared_bytes, runs=runs,
+                               warmup=warmup)
     path = write_case(workdir, spec, arrays)
     done = subprocess.run([str(binary), str(path)], capture_output=True,
                           text=True, timeout=timeout)
@@ -189,4 +217,6 @@ def run_case(binary: Path, kernel: Kernel, workdir: Path,
     outs = {a["name"]: workdir / a["out"] for a in spec["args"] if "out" in a}
     for name, p in outs.items():
         assert f"fj-runner out {name} {p}" in done.stdout, done.stdout
-    return outs
+    times = [float(m.group(1)) for m in _RUN.finditer(done.stdout)]
+    assert len(times) == runs, done.stdout
+    return Ran(outs, times)

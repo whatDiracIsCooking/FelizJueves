@@ -3,11 +3,12 @@ against the host and libcint, on the RTX 3080 and the RX 9060 XT.
 
 THE BUILD is the MMD tests' harnesses with `engine=Engine.HGP`
 (`metric_driver.build_on_card`, `eri3_driver.build_on_card`): the same
-staging, the same `main()`, every class's `kernel_hgp` unit launched once
-into one zeroed output, `RUNS` times, compiled with devtools/config.sh's
-flags and FAILING on a warning located in generated text (#92). The
-signatures are the MMD kernels' (the harness checks them), so nothing else
-changes.
+staging and launches, every class's `kernel_hgp` unit launched once into
+one zeroed output, `RUNS` times -- `(P|Q)` through the shared runner (#654),
+one runner per unit; `(mn|P)` through eri3_driver's `main()` -- compiled
+with devtools/config.sh's flags and FAILING on a warning located in
+generated text (#92). The signatures are the MMD kernels' (the harnesses
+check them), so nothing else changes.
 
 SCOPE: s and p shells only (`kernel_hgp.HGP_DF_L_MAX = 1`). The synthetic
 bases are `test_kernel_hgp_df`'s (the MMD tests' cut to s and p); the
@@ -23,7 +24,8 @@ NOT added: a Boys error that mattered would fail here. An element no
 launched pair or cell owns must come back exactly 0.0.
 
 THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runs are
-asserted bit-identical, and the output exactly symmetric.
+asserted bit-identical (for `(P|Q)` by the runner, which fails otherwise),
+and the output exactly symmetric.
 
 NOT A MEASUREMENT: nothing is written to `data/measured/`.
 
@@ -44,7 +46,7 @@ import test_kernel_metric as tm
 from eri3_driver import build_on_card as eri3_on_card
 from eri3_driver import eri3_program
 from metric_driver import build_on_card as metric_on_card
-from metric_driver import metric_program
+from metric_driver import metric_runners
 from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_hgp_df import AUX, BASIS, BASIS_AUX, EPS, ERI3, METRIC, TOL, TOL_ULPS
@@ -96,16 +98,15 @@ def _metric(backend, name, request, run_device_binary, tmp_path):
     aux = _metric_basis(name)
     classes = list(metric_classes(aux))
     assert sorted((c.lP, c.lQ) for c in classes) == METRIC
-    Ms = metric_on_card(classes, aux.n_ao, backend, tc, tmp_path,
-                        run_device_binary, engine=HGP)
+    M = metric_on_card(classes, aux.n_ao, backend, tc, tmp_path, engine=HGP)
     want, scale, owned = tm._host(aux, set(METRIC))
     label = f"{backend} {BACKEND[backend][1].name} hmetric {name}"
-    _check(Ms[0], want, scale, owned, Ms, label)
-    assert np.array_equal(Ms[0], Ms[0].T)
+    _check(M, want, scale, owned, [M], label)  # the runner witnessed the runs
+    assert np.array_equal(M, M.T)
     if name == "fixture":
         rows = _sp(tm._aux())[1]
         ref = tm._ms().metric[np.ix_(rows, rows)]
-        worst = float(np.max(np.abs(Ms[0] - ref))) / float(
+        worst = float(np.max(np.abs(M - ref))) / float(
             np.max(np.abs(tm._ms().metric)))
         print(f"{label}: max |M - int2c2e_cart| = {worst:.2e} of max|M|")
         assert worst <= TOL, worst
@@ -169,9 +170,11 @@ def test_hip_hgp_eri3_matches_the_host_and_libcint(
 
 
 def _programs(name: str, backend: str, tmp_path: Path):
+    """Every metric class's runner, then the `(mn|P)` program."""
     aux = _metric_basis(name)
-    yield metric_program(list(metric_classes(aux)), aux.n_ao, backend,
-                         tmp_path / "m", engine=HGP)
+    for _, prog in metric_runners(list(metric_classes(aux)), backend,
+                                  tmp_path / "m", engine=HGP):
+        yield prog
     basis, aux3 = _eri3_bases(name)
     yield eri3_program(list(eri3_classes(basis, aux3)), basis.n_ao,
                        aux3.n_ao, backend, tmp_path / "e", engine=HGP)
@@ -194,9 +197,13 @@ def test_hip_hgp_df_programs_compile(name, hipcc, tmp_path):
 @pytest.mark.parametrize("name", NAMES)
 def test_the_programs_launch_the_hgp_units_of_every_sp_class(name, tmp_path):
     progs = list(_programs(name, "cuda", tmp_path))
-    units = {p.name for prog in progs for p in prog.units}
+    units = {p.name for prog in progs for p in prog.units
+             if p.suffix == ".cu"}
     assert units == ({f"hmetric_{a}{b}.cu" for a, b in METRIC}
                      | {f"heri3_{''.join(map(str, c))}.cu" for c in ERI3})
-    assert "::hmetric_11<<<" in progs[0].source  # the HGP unit is launched
-    assert "::metric_" not in progs[0].source  # and no MMD one
-    assert "::eri3_" not in progs[1].source
+    *metric, eri3 = progs
+    assert len(metric) == len(METRIC)
+    for prog in metric:  # each runner launches its HGP unit, no MMD one
+        assert "FJ_KERNEL(hmetric_" in prog.source
+        assert "FJ_KERNEL(metric_" not in prog.source
+    assert "::eri3_" not in eri3.source

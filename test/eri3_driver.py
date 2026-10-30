@@ -11,8 +11,9 @@ crossed with every aux shell; per class one bra record table, one aux record
 table, and two record ranges and three offsets per cell), the kernels
 `kernel_eri3.build_eri3_kernel`'s, emitted by `emit/cuda.py` / `emit/hip.py`
 unchanged. Only the `main()` around them is written here, as
-`metric_driver.py` does for `(P|Q)` -- harness, in `test/`, not a second
-emitter. Every unit is emitted into `workdir` (the kernel tier's
+`schwarz_driver.py` does for `Q` -- harness, in `test/`, not a second
+emitter (#657 moves it to the shared runner, as #654 did
+`metric_driver.py`). Every unit is emitted into `workdir` (the kernel tier's
 `KERNEL_GEN_CMD` writes no eri3 unit), and the program is compiled with
 devtools/config.sh's flags under #92's warning filter
 (`plan_driver.compile_checked`).
@@ -239,7 +240,7 @@ EVENTS = r"""
 
 
 def timed_source(src: str, out: str) -> str:
-    """A RUNS-loop program (this module's, `metric_driver`'s) made TIMED:
+    """A RUNS-loop program (this module's) made TIMED:
     `usage: in out warmup reps`, `warmup + reps` runs, only the last run's
     `out` array written. Each edit must apply exactly once."""
     def once(s: str, a: str, b: str) -> str:

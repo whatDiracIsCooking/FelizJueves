@@ -357,8 +357,8 @@ def _clock(backend: str, request, run_device_binary, tmp_path: Path) -> None:
             def run(low, warmup, reps, classes=classes, n_aux=n_aux,
                     units=units, work=work):
                 return metric_driver.run_timed(
-                    units[low], classes, n_aux, backend, work / str(low),
-                    run_device_binary, warmup=warmup, reps=reps)
+                    units[low], classes, n_aux, work / str(low),
+                    lowstack=low, warmup=warmup, reps=reps)
             size = {"n_aux": n_aux,
                     "n_pair": sum(c.n_pair for c in classes)}
         assert len(classes) == 1, (kern.name, len(classes))

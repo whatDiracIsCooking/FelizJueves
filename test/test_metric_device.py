@@ -3,10 +3,12 @@ against the host, and the whole L <= 4-filtered H2O/cc-pVTZ-jkfit metric
 against the host and libcint's `int2c2e_cart`, on the RTX 3080 and the
 RX 9060 XT.
 
-THE BUILD is `metric_driver.build_on_card`: one program per aux basis,
-every class's kernel (`kernel_metric`) launched once into one zeroed
-`n_aux x n_aux` matrix, `RUNS` times, compiled with devtools/config.sh's
-flags and FAILING on a warning located in generated text (#92).
+THE BUILD is `metric_driver.build_on_card`, on the shared runner (#654):
+one runner per class's unit (`kernel_metric`), compiled with
+devtools/config.sh's flags and FAILING on a warning located in generated
+text or a harness header (#92); every class launched once into one
+`n_aux x n_aux` matrix carried from class to class, from zero, each
+launch `RUNS` times.
 
 SCOPE, by the milestone's decision: correctness is tested at `lP + lQ <= 4`
 only -- the nine classes `lP <= lQ`, (s|s) (s|p) (s|d) (s|f) (s|g) (p|p)
@@ -39,14 +41,16 @@ THE LIBCINT BOUND, Part 2: `|M_dev - int2c2e_cart| <= TOL max|M|`,
 `TOL = 1e-12`, `max|M|` the whole fixture matrix's largest element
 (~96.5) -- test_ao_metric.py's and test_kernel_metric.py's, unchanged.
 
-THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runs are
-asserted bit-identical, and the matrix exactly symmetric.
+THE RUN-TO-RUN WITNESS: plain stores, one owner per element -- the runner
+fails unless every run of a class is bit-identical to its first, and the
+matrix is asserted exactly symmetric.
 
 NOT A MEASUREMENT: nothing is written to `data/measured/`.
 
-COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build both programs.
-The device tests are `gpu` plus `cuda` or `hip`, behind the card lock and
-the VRAM probe: without the card they skip, and kernel-tier.sh exits 2.
+COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every class's
+runner -- the same nine for both bases, since a runner depends on its class
+alone. The device tests are `gpu` plus `cuda` or `hip`, behind the card
+lock: without the card they skip, and kernel-tier.sh exits 2.
 """
 
 from __future__ import annotations
@@ -56,7 +60,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from metric_driver import build_on_card, metric_program
+from metric_driver import build_on_card, metric_runners
 from plan_driver import compile_checked
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_df_lowstack import METRIC_LADDER, auxi_metric
@@ -95,25 +99,20 @@ def _host_of(name: str):
     return _host(_basis(name), set(CLASSES))
 
 
-def _run(backend: str, name: str, request, run_device_binary,
-         tmp_path: Path) -> np.ndarray:
+def _run(backend: str, name: str, request, tmp_path: Path) -> np.ndarray:
     tc = _toolchain(backend, request)
     basis = _basis(name)
     classes = _classes(basis)
     assert sorted((c.lP, c.lQ) for c in classes) == CLASSES
-    Ms = build_on_card(classes, basis.n_ao, backend, tc, tmp_path,
-                       run_device_binary)
-    M = Ms[0]
+    M = build_on_card(classes, basis.n_ao, backend, tc, tmp_path)
     want, scale, owned = _host_of(name)
     err = np.abs(M - want)
     pos = owned & (scale > 0)
     worst = float(np.max(err[pos] / (EPS * scale[pos])))
-    same = all(np.array_equal(M, m) for m in Ms[1:])
     print(f"\n{backend} {BACKEND[backend][1].name} {name}: "
           f"{len(classes)} classes, {sum(c.n_pair for c in classes)} pairs; "
           f"max |M - host| = {err[owned].max():.2e}, worst {worst:.2f} eps "
-          f"scale (tol {TOL_ULPS}); runs bit-identical {same}")
-    assert same
+          f"scale (tol {TOL_ULPS}); runs bit-identical (the runner's witness)")
     assert np.all(err[owned] <= TOL_ULPS * EPS * scale[owned]), worst
     assert np.all(M[~owned] == 0.0)
     assert np.array_equal(M, M.T)
@@ -128,15 +127,15 @@ def _run(backend: str, name: str, request, run_device_binary,
 @pytest.mark.cuda
 @pytest.mark.gpu
 def test_cuda_every_metric_class_through_l4_matches_the_host(
-        request, run_device_binary, tmp_path):
-    _run("cuda", "synthetic", request, run_device_binary, tmp_path)
+        request, tmp_path):
+    _run("cuda", "synthetic", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 def test_hip_every_metric_class_through_l4_matches_the_host(
-        request, run_device_binary, tmp_path):
-    _run("hip", "synthetic", request, run_device_binary, tmp_path)
+        request, tmp_path):
+    _run("hip", "synthetic", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +143,8 @@ def test_hip_every_metric_class_through_l4_matches_the_host(
 # ---------------------------------------------------------------------------
 
 
-def _part2(backend: str, request, run_device_binary, tmp_path: Path) -> None:
-    M = _run(backend, "fixture", request, run_device_binary, tmp_path)
+def _part2(backend: str, request, tmp_path: Path) -> None:
+    M = _run(backend, "fixture", request, tmp_path)
     _, _, owned = _host_of("fixture")
     ref = _ms().metric
     sm = float(np.max(np.abs(ref)))
@@ -158,16 +157,14 @@ def _part2(backend: str, request, run_device_binary, tmp_path: Path) -> None:
 
 @pytest.mark.cuda
 @pytest.mark.gpu
-def test_cuda_metric_through_l4_matches_libcint(request, run_device_binary,
-                                                tmp_path):
-    _part2("cuda", request, run_device_binary, tmp_path)
+def test_cuda_metric_through_l4_matches_libcint(request, tmp_path):
+    _part2("cuda", request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
-def test_hip_metric_through_l4_matches_libcint(request, run_device_binary,
-                                               tmp_path):
-    _part2("hip", request, run_device_binary, tmp_path)
+def test_hip_metric_through_l4_matches_libcint(request, tmp_path):
+    _part2("hip", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +180,7 @@ def _auxi_host():
     return _host(aux, set(METRIC_LADDER))
 
 
-def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
+def _part3(backend: str, request, tmp_path: Path) -> None:
     """All 28 classes `lP <= lQ <= 6` on the aux-i set, each in the form
     the gate picks (8 low-stack), one program per `lQ`, against the host
     (16 eps of the tower twin) and libcint (TOL of max)."""
@@ -194,10 +191,8 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
     M = np.zeros((aux.n_ao, aux.n_ao))
     for lQ in range(7):
         part = [c for c in classes if c.lQ == lQ]
-        Ms = build_on_card(part, aux.n_ao, backend, tc, tmp_path / f"lQ{lQ}",
-                           run_device_binary, timeout=AUXI_COMPILE_S)
-        assert all(np.array_equal(Ms[0], m) for m in Ms[1:]), lQ
-        M += Ms[0]  # disjoint elements: every other one is exactly 0.0
+        M += build_on_card(part, aux.n_ao, backend, tc, tmp_path / f"lQ{lQ}",
+                           timeout=AUXI_COMPILE_S)  # disjoint: others 0.0
     want, scale, owned = _auxi_host()
     assert owned.all()
     err = np.abs(M - want)
@@ -220,18 +215,16 @@ def _part3(backend: str, request, run_device_binary, tmp_path: Path) -> None:
 @pytest.mark.high_l
 @pytest.mark.cuda
 @pytest.mark.gpu
-def test_cuda_metric_through_i_i_matches_libcint(request, run_device_binary,
-                                                 tmp_path):
-    _part3("cuda", request, run_device_binary, tmp_path)
+def test_cuda_metric_through_i_i_matches_libcint(request, tmp_path):
+    _part3("cuda", request, tmp_path)
 
 
 @pytest.mark.slow
 @pytest.mark.high_l
 @pytest.mark.hip
 @pytest.mark.gpu
-def test_hip_metric_through_i_i_matches_libcint(request, run_device_binary,
-                                                tmp_path):
-    _part3("hip", request, run_device_binary, tmp_path)
+def test_hip_metric_through_i_i_matches_libcint(request, tmp_path):
+    _part3("hip", request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -239,26 +232,27 @@ def test_hip_metric_through_i_i_matches_libcint(request, run_device_binary,
 # ---------------------------------------------------------------------------
 
 
+def _compiles(tc, backend: str, tmp_path: Path) -> None:
+    for kern, prog in metric_runners(_classes(_basis("synthetic")), backend,
+                                     tmp_path):
+        compile_checked(tc, prog, tmp_path / f"runner_{kern.name}")
+
+
 @pytest.mark.cuda
-@pytest.mark.parametrize("name", BASES)
-def test_cuda_metric_programs_compile(name, nvcc, tmp_path):
-    basis = _basis(name)
-    compile_checked(nvcc, metric_program(_classes(basis), basis.n_ao, "cuda",
-                                         tmp_path), tmp_path / "bin")
+def test_cuda_metric_runners_compile(nvcc, tmp_path):
+    _compiles(nvcc, "cuda", tmp_path)
 
 
 @pytest.mark.hip
-@pytest.mark.parametrize("name", BASES)
-def test_hip_metric_programs_compile(name, hipcc, tmp_path):
-    basis = _basis(name)
-    compile_checked(hipcc, metric_program(_classes(basis), basis.n_ao, "hip",
-                                          tmp_path), tmp_path / "bin")
+def test_hip_metric_runners_compile(hipcc, tmp_path):
+    _compiles(hipcc, "hip", tmp_path)
 
 
 @pytest.mark.parametrize("name", BASES)
 def test_the_device_metric_reaches_the_nine_classes_and_no_more(name):
-    """Both programs launch exactly the nine `lP + lQ <= 4` classes; the
-    fixture also has classes above the cap, which are left out."""
+    """Both bases launch exactly the nine `lP + lQ <= 4` classes -- the
+    same nine runners; the fixture also has classes above the cap, which
+    are left out."""
     basis = _basis(name)
     got = sorted((c.lP, c.lQ) for c in _classes(basis))
     assert got == CLASSES and len(got) == 9
