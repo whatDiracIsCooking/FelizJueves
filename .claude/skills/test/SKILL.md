@@ -53,6 +53,24 @@ sampler's `min` band (every L ≤ 2 case); the compile sample's is L = 0
 compiler. Its report directory holds every phase's log, each draw's JSON and
 `summary.md` -- seed, budgets, every case drawn -- for the PR body.
 
+### The catch-up card run — `devtools/verify-unverified.sh`
+
+```bash
+devtools/verify-unverified.sh --dry-run   # what is owed, per labelled merged PR
+devtools/verify-unverified.sh <PR>        # replay its gpu sample; no PR = all
+```
+
+A PR merged `unverified-on-card` (the `pr` skill) owes a card run. This
+replays the gate's **gpu phase** on the merge commit, in a throwaway
+worktree with that commit's devtools and a `.venv` synced from its own `uv.lock`, on the backends
+the PR body names unverified, with `FJ_SAMPLE_BASE` the commit's parent: the
+seed and the touched families are the PR's own, so the draw replays. Pass:
+comment + label removed; fail: comment naming the failing cases, label
+kept; exit 2: could not run, nothing posted. It runs one PR and one backend
+at a time, so one card is busy at once, and the device phase takes the
+card's lock (`GPU_LOCK_PATH`) as any kernel-tier run does. Logs, draws and
+the posted `comment.md` stay under `KERNEL_TIER_REPORTS/verify-pr<N>-<time>`.
+
 ## The two tiers
 
 ### Fast tier — `pytest`
