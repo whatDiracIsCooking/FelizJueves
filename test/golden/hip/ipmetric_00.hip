@@ -61,9 +61,11 @@ extern "C" __global__ void ipmetric_00(
     (void)n_rec;
     // uncontracted derivative of the DF metric, class (lP, lQ) = (0, 0): M1[k, P,
     // Q] = d(P|Q)/dA_k, A the centre of P (felizjueves.gradient)
-    // lever uncontracted (#693): the derivative integrals themselves, M1[k, P, Q]
-    // = d(P|Q)/dA_k with A the centre of P, as an n_aux x n_aux matrix per axis,
-    // in place of their contraction into G[atom, k] (gradient/kernel_ipmetric.py)
+    // lever uncontracted (#693): the derivative integrals themselves, in place of
+    // their contraction into G[atom, k]: M1[k, P, Q] = d(P|Q)/dA_k with A the
+    // centre of P, an n_aux x n_aux matrix per axis (gradient/kernel_ipmetric.py);
+    // X[k, m, n, P] = (nabla_k m n|P) over one aux block, libcint's int3c2e_ip1
+    // (gradient/kernel_xeri3.py, #692)
     // launch: one thread per aux shell pair
     int pair = ((int)threadIdx.x + ((int)blockIdx.x * (int)blockDim.x));
     if (pair < n_pair) {

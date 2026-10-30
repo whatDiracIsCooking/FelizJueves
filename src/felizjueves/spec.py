@@ -253,12 +253,14 @@ terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 pair `(lP, lQ)` and triple `(la, lb, lP)`; `METRIC` at d1 is legal on
 `Engine.HGP` too (`GRADIENT_OFF_NATIVE`: `gradient.kernel_hgmetric`, the
 Cartesian rule on the HGP VRR), so ``coulomb/d1/(1,1)/b1/metric.hgp/literal``
-is a key. THE ONE UNCONTRACTED d1 FORM (#693): the kernel-body lever
-`uncontracted` (`levers.VOCABULARY`, legal on `metric` at d1 only,
-`levers.order_refusal`) asks for the derivative integrals themselves,
-`M1[k, P, Q] = d(P|Q)/dA_k` as an `[3, n_aux, n_aux]` matrix
+is a key. THE UNCONTRACTED d1 FORM (#693, #692): the kernel-body lever
+`uncontracted` (`levers.VOCABULARY`, legal on `metric` and `eri3` at d1
+only, `levers.order_refusal`) asks for the derivative integrals
+themselves -- `M1[k, P, Q] = d(P|Q)/dA_k` as an `[3, n_aux, n_aux]` matrix
 (`gradient.kernel_ipmetric`), keyed
-``coulomb/d1/(1,2)/b1/metric/uncontracted``. `DQ` at d1 is the ket
+``coulomb/d1/(1,2)/b1/metric/uncontracted``, and `X[k, m, n, P] =
+(nabla_k m n|P)` over one aux block (`gradient.kernel_xeri3`), keyed
+``coulomb/d1/(0,1|2)/b1/eri3/uncontracted``. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
 target's d0 reason. SIX OFF-NATIVE PAIRS ARE LEGAL AT d1

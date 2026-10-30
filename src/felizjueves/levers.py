@@ -665,22 +665,29 @@ VOCABULARY: dict[str, Lever] = {
     # An output form rather than a departure from a paper: the d1 metric
     # kernel (`gradient.kernel_gmetric`) contracts every d(P|Q)/dR into
     # `G[atom, 3]`, and the DF Hessian needs the derivative integrals
-    # themselves. Its builder is `gradient.kernel_ipmetric`; ERI3's twin is
-    # #692's.
+    # themselves. Its builder is `gradient.kernel_ipmetric`; ERI3's twin,
+    # the three-center (nabla m n|P) in aux blocks, is #692's
+    # `gradient.kernel_xeri3`.
     "uncontracted": Lever.of(
         "uncontracted", 693,
-        "the derivative integrals themselves, M1[k, P, Q] = d(P|Q)/dA_k "
-        "with A the centre of P, as an n_aux x n_aux matrix per axis, in "
-        "place of their contraction into G[atom, k] "
-        "(gradient/kernel_ipmetric.py)",
-        {"metric"},
+        "the derivative integrals themselves, in place of their contraction "
+        "into G[atom, k]: M1[k, P, Q] = d(P|Q)/dA_k with A the centre of P, "
+        "an n_aux x n_aux matrix per axis (gradient/kernel_ipmetric.py); "
+        "X[k, m, n, P] = (nabla_k m n|P) over one aux block, libcint's "
+        "int3c2e_ip1 (gradient/kernel_xeri3.py, #692)",
+        {"metric", "eri3"},
         orders=(1,),
         orders_why=("the uncontracted form is the first derivative's: at "
-                    "d0 the metric kernel already writes the integrals, and "
-                    "a d2 matrix form is a follow-up nobody has declared"),
-        eri3=("the uncontracted three-center derivative (dm n|P) is #692's, "
-              "not yet built"),
-        **{"metric.hgp": ("the uncontracted metric derivative is built on "
+                    "d0 the metric and three-center kernels already write "
+                    "the integrals, and a d2 form is a follow-up nobody has "
+                    "declared"),
+        **{"eri3.hgp": ("the uncontracted three-center derivative is built "
+                        "on the MMD engine only (gradient.kernel_xeri3); an "
+                        "HGP twin is a follow-up nobody has declared"),
+           "eri3.rys": ("the uncontracted three-center derivative is built "
+                        "on the MMD engine only (gradient.kernel_xeri3); the "
+                        "Rys (mn|P) has no gradient at all"),
+           "metric.hgp": ("the uncontracted metric derivative is built on "
                           "the MMD engine only (gradient.kernel_ipmetric); "
                           "an HGP twin is a follow-up nobody has declared"),
            "metric.rys": ("the uncontracted metric derivative is built on "

@@ -4247,6 +4247,34 @@ def test_the_hgp_gradient_builder_reaches_neither_the_plan_nor_mmd() -> None:
         assert not hit, f"kernel_hgeri3 reaches {hit}"
 
 
+# The UNCONTRACTED three-center d1 kernel (`gradient.kernel_xeri3`, #692):
+# `kernel_geri3`'s low-stack route -- its plan, its R / U / aux-table names --
+# and `kernel_gmetric`'s tower, with a raw scatter in place of the weights.
+# Its witness is `gradient.host_df.eri3_ip1`, which it never reaches.
+RULES["xeri3_builder"] = _rule(
+    "kernel_xeri3.py: the uncontracted three-center d1 kernel -- key -> IR, "
+    "`kernel_geri3`'s low-stack route and `kernel_gmetric`'s tower, the "
+    "derivative integrals stored raw",
+    ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+     "gradient.kernel_geri3", "gradient.kernel_gmetric",
+     "eri.density_fit.kernel_metric"),
+    ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+    reference=_GROUND_TRUTH, **_NO_MACHINE)
+RULE_OF["gradient.kernel_xeri3"] = "xeri3_builder"
+EDGES["gradient.kernel_xeri3"] = frozenset(
+    ("eri.density_fit.kernel_metric", "gradient.kernel_geri3",
+     "gradient.kernel_gmetric", "ir", "mmd.e_fragment", "mmd.recurrence",
+     "plan.targets", "spec"))
+_DF_GRAD_BUILDERS = (*_DF_GRAD_BUILDERS, "gradient.kernel_xeri3")
+RULES["driver"] = Rule(RULES["driver"].why + ", and the uncontracted DF "
+                       "ladder through `kernel_xeri3`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_xeri3",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_xeri3",))
+
+
 # The three-center DF Hessian (`hessian.kernel_d2eri3`: ERI3 at d2) and its
 # host reference (`hessian.host_eri3`): the builder on `kernel_geri3`'s
 # mapping and weights, `kernel_h1e`'s per-axis operators and

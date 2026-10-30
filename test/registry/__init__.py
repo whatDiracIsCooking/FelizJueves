@@ -162,7 +162,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "gs": ("mmd", "s", 1), "gt": ("mmd", "t", 1), "gv": ("mmd", "v", 1),
     "gjab": ("mmd", "jab", 1), "gk": ("mmd", "k", 1),
     "gmetric": ("mmd", "metric", 1), "geri3": ("mmd", "eri3", 1),
-    "ipmetric": ("mmd", "metric", 1),
+    "ipmetric": ("mmd", "metric", 1), "xeri3": ("mmd", "eri3", 1),
     "hdq": ("mmd", "dq", 2), "hjab": ("mmd", "jab", 2),
     "d2s": ("mmd", "s", 2), "d2t": ("mmd", "t", 2), "d2v": ("mmd", "v", 2),
     "hkx": ("mmd", "k", 2),
