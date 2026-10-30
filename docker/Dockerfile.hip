@@ -74,7 +74,7 @@ ENV PATH=${PATH}:/opt/rocm/bin
 # Dockerfile.cuda, .hip and .combined, so bump it with
 # `devtools/claude-version.sh --apply`, which rewrites all three at once --
 # doctor.sh warns when they have drifted apart.
-ARG CLAUDE_CODE_VERSION=2.1.310
+ARG CLAUDE_CODE_VERSION=2.1.314
 ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
 RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
     bash /tmp/install-claude-code.sh
@@ -101,8 +101,8 @@ RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-c
 # `autoUpdates: false` in .devcontainer/seed-claude-config.sh. The install is
 # root-owned and the container runs as uid 1000, so an update attempt fails
 # regardless; what this stops is it being attempted behind the image's back.
-ARG AGY_RELEASE=1.4.7-5900205422411776
-ARG AGY_SHA512=beda760587589f5827b0b516c3ec2c5bd5cd2e91eb0e2533807ba1e990a27dcd63aef0191e0b76fb60feab0d16eaa8210fb79842c34dd4809e257e1712edd152
+ARG AGY_RELEASE=1.4.11-5180209989812224
+ARG AGY_SHA512=2935601efa745ed6e314d32b415c71f44d9d455f0e6a2583372584be5a9074c28154cf81d5eec65b4416579453a3b3b05d3abe4d4f176754d5ef93a84af6cf28
 ENV AGY_RELEASE=${AGY_RELEASE} \
     AGY_CLI_DISABLE_AUTO_UPDATE=1
 RUN --mount=type=bind,source=docker/install-agy.sh,target=/tmp/install-agy.sh \
