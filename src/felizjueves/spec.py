@@ -279,6 +279,20 @@ gradient, `dE_J - 1/2 dE_K`, its `am` the AO order as at d0, on F's
 native HGP engine (`gradient.kernel_gf`):
 ``coulomb/d1/(1,0|0,0)/b1/f/literal``.
 
+A d1 KEY MAY NAME A MATRIX FORM (#687), `form`: not the contraction above
+but the derivative integrals themselves, `[3, n_ao, n_ao]`, which an
+analytic Hessian's CPHF right-hand side needs per perturbation and a
+contraction cannot give. Two forms, each legal at d1 on MMD only, with no
+lever and one batch (`FORM_TARGETS`; refused elsewhere, `_FORM_REFUSAL`):
+`ip1` on `S`, `T` and `V`, `X1[k, m, n] += dX_mn / dA_k` with `A` the
+centre of `m` (libcint's `int1e_ipovlp` / `ipkin` / `ipnuc`, negated), and
+`rinv` on `V`, nucleus `C`'s operator term `dV^C_mn / dC_k` (`-Z_C` times
+libcint's `int1e_iprinv` at `C` plus its transpose), one launch per nucleus
+(`hessian.kernel_ip1e`). `None`, the default, is the contraction, and the
+key spells a form in its `d` segment only when one is set --
+``overlap/d1.ip1/(2,1)/b1/s/literal``, ``nuclear/d1.rinv/(2,1)/b1/v/literal``
+-- so every key without one is byte-identical.
+
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
 on MMD -- every other target refusing it (`_HESSIAN_REFUSAL`). Like a d1
@@ -661,6 +675,22 @@ _HESSIAN_REFUSAL = (
 )
 
 
+# A d1 key's matrix forms (#687; module docstring, "A d1 KEY MAY NAME A
+# MATRIX FORM"), each with the targets it is legal on (MMD, d1, no lever,
+# one batch): `ip1`, the derivative on the centre of the matrix's first
+# index; `rinv`, V's per-nucleus operator term.
+FORM_TARGETS: dict[str, frozenset[Target]] = {
+    "ip1": frozenset((Target.S, Target.T, Target.V)),
+    "rinv": frozenset((Target.V,)),
+}
+
+_FORM_REFUSAL = (
+    "a matrix form is built at derivative order 1 on the MMD engine with no "
+    "lever and one batch -- ip1 for S, T and V, rinv for V only "
+    "(hessian.kernel_ip1e); this pairing is a follow-up"
+)
+
+
 def is_batch_count(n: object) -> bool:
     """1, or a positive multiple of 3 ([JEngine, v2, §5])."""
     return type(n) is int and (n == 1 or (n > 0 and n % 3 == 0))
@@ -689,6 +719,9 @@ class Spec:
     # native engine (`NATIVE_ENGINE`), so after construction it is always an
     # `Engine`; the key spells it only when it is not the native one.
     engine: Engine | None = None
+    # A d1 matrix form (#687, `FORM_TARGETS`): None, the default, is the
+    # contraction; the key spells a form only when one is set.
+    form: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.operator, Operator):
@@ -760,6 +793,16 @@ class Spec:
             if why is not None:
                 raise ValueError(
                     f"lever {lever!r} on target {self.target_slot}: {why}")
+        if self.form is not None and (
+            self.form not in FORM_TARGETS
+            or self.target not in FORM_TARGETS[self.form]
+            or self.derivative_order != 1
+            or self.engine is not Engine.MMD
+            or self.levers or self.n_batches != 1
+        ):
+            raise ValueError(
+                f"form {self.form!r} on {self.target_slot} at derivative "
+                f"order {self.derivative_order!r}: {_FORM_REFUSAL}")
         if not is_batch_count(self.n_batches):
             raise ValueError(
                 f"n_batches {self.n_batches!r} is neither 1 nor a positive "
@@ -831,7 +874,9 @@ class Spec:
         -- the AO order, target slot ``f`` (#272). An ERI3 triple spells
         ``coulomb/d0/(2,1|3)/b1/eri3/literal`` -- the bra pair, ``|``, the
         one aux shell (#441). A non-native engine suffixes the target slot:
-        ``coulomb/d0/(1,1|1,0)/b1/j.hgp/literal`` (#401, `target_slot`).
+        ``coulomb/d0/(1,1|1,0)/b1/j.hgp/literal`` (#401, `target_slot`). A
+        d1 matrix form suffixes the `d` segment:
+        ``overlap/d1.ip1/(2,1)/b1/s/literal`` (#687, `form`).
         """
         if len(self.am) == 4:
             l1, l2, l3, l4 = self.am
@@ -843,8 +888,9 @@ class Spec:
             la, lb = self.am
             cls = f"({la},{lb})"
         levers = "+".join(self.levers) or "literal"
+        form = "" if self.form is None else f".{self.form}"
         return (
-            f"{self.operator}/d{self.derivative_order}/{cls}/"
+            f"{self.operator}/d{self.derivative_order}{form}/{cls}/"
             f"b{self.n_batches}/{self.target_slot}/{levers}"
         )
 
@@ -861,7 +907,8 @@ class Spec:
         if not body:
             return self
         return Spec(self.operator, self.derivative_order, self.am,
-                    self.target, rest, self.n_batches, self.engine)
+                    self.target, rest, self.n_batches, self.engine,
+                    self.form)
 
 
 def lever_provenance(name: str) -> str:

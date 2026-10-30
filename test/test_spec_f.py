@@ -41,6 +41,7 @@ def test_f_is_a_widening_not_a_new_field() -> None:
     assert [f.name for f in dataclasses.fields(Spec)] == [
         "operator", "derivative_order", "am", "target", "levers", "n_batches",
         "engine",  # #401's field, the recurrence; F added none
+        "form",  # #687's d1 matrix form, None on every F key
     ]
 
 

@@ -160,6 +160,9 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "mu": ("mmd", "dipole", 0), "quad": ("mmd", "quadrupole", 0),
     "metric": ("mmd", "metric", 0), "eri3": ("mmd", "eri3", 0),
     "gs": ("mmd", "s", 1), "gt": ("mmd", "t", 1), "gv": ("mmd", "v", 1),
+    # the d1 matrix forms (#687): a variant of the d1 case, as a lever is
+    "ips": ("mmd", "s", 1), "ipt": ("mmd", "t", 1), "ipv": ("mmd", "v", 1),
+    "iprv": ("mmd", "v", 1),
     "gjab": ("mmd", "jab", 1), "gk": ("mmd", "k", 1),
     "gmetric": ("mmd", "metric", 1), "geri3": ("mmd", "eri3", 1),
     "hdq": ("mmd", "dq", 2), "hjab": ("mmd", "jab", 2),

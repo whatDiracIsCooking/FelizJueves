@@ -4855,6 +4855,55 @@ def test_the_hgmetric_builder_reaches_neither_the_plan_nor_the_mmd_engine(
         assert not hit, f"kernel_hgmetric reaches {hit}"
 
 
+# ---------------------------------------------------------------------------
+# The one-electron derivative matrices (`hessian.kernel_ip1e`, #687): S, T,
+# V at d1 in matrix form, on `kernel_g1e`'s record head, rules and rolled
+# sums and `kernel_v`'s plan, checked against `gradient.host`'s `*_ip1` /
+# `potential_rinv` in the interpreter. The generator CLI writes its ladder
+# (`--ip1-l`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "ip1e_builder": _rule(
+        "kernel_ip1e.py: the one-electron derivative-matrix kernels -- key "
+        "-> IR, `kernel_g1e`'s record head, rules and rolled sums, `V`'s "
+        "`[t]^(0)` by the plan layer one order up (`kernel_v.v_plan`, "
+        "`recurrence`)",
+        ("spec", "=ir", "mmd.e_fragment", "mmd.recurrence", "plan",
+         "one_electron.kernel_v", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["hessian.kernel_ip1e"] = "ip1e_builder"
+EDGES["hessian.kernel_ip1e"] = frozenset(
+    ("gradient.kernel_g1e", "ir", "mmd.e_fragment", "mmd.recurrence",
+     "one_electron.kernel_v", "plan.targets", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the one-electron "
+                       "derivative-matrix ladder through `kernel_ip1e`",
+                       RULES["driver"].may
+                       | frozenset(("hessian.kernel_ip1e",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("hessian.kernel_ip1e",))
+
+
+def test_the_ip1e_builder_reaches_neither_its_witness_nor_a_machine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["hessian.kernel_ip1e"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"gradient.kernel_g1e", "one_electron.kernel_v"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "gradient.host"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_ip1e reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

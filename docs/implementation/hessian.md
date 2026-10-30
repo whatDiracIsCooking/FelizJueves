@@ -239,8 +239,10 @@ at most, with 36 reductions each) is unexamined.
 - The skeleton Coulomb and exchange terms and (below) the one-electron
   and DF `(P|Q)`, `(mn|P)` skeletons only. Not built: the exchange
   Hessian above p ("The exchange Hessian"), the nuclear repulsion as a
-  kernel (it is host-side), the derivative Fock matrices `F^x` and the
-  CPHF response, so no whole RHF Hessian is assembled or checked against `pyscf.hessian.rhf`.
+  kernel (it is host-side), the two-electron half of the derivative Fock
+  matrices `F^x` (`J^x` #688, `K^x` #689; the one-electron half, `S^x` and
+  `h^x`, is "The one-electron derivative matrices" below) and the CPHF
+  response, so no whole RHF Hessian is assembled or checked against `pyscf.hessian.rhf`.
 - The bra–ket term runs the `[p|q]` kernel `3 n_atom` times per class
   pair, each over the kets touching one atom (about `6 n_ket` kets in all),
   and `hjab` adds `18 n_atom` atomics per bra record whether or not the
@@ -439,6 +441,111 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
   reaches (`t > i + j`, the doubly raised corner); packing them is a
   follow-up. `S` and `T` stay unrolled (`d2t_33` is 456 KB).
 - No screening, Cartesian only.
+
+## The one-electron derivative matrices (`S^x`, `T^x`, `V^x`, #687)
+
+**Status: implemented host-side and as generated kernels, interpreted
+through (ff) and held to libcint, compiled by nvcc and hipcc through (dd);
+not run on a card** (the session that built them had both compilers and
+no card; the device test is written, its compile-only twins green).
+
+An analytic RHF Hessian needs, per perturbation `x = (atom X, axis k)`,
+the CPHF right-hand side `B^x_ai = F^x_ai - eps_i S^x_ai - ...`, with
+`F^x = h^x + J^x[D] - 1/2 K^x[D]` the skeleton derivative Fock matrix, and
+`B^x` has to exist explicitly in occ x virt for all `3 n_atom`
+perturbations. A d1 kernel writes a contraction, `G[atom, k] += SUM_mn
+M_mn dX_mn/dR`, which cannot produce it. These kernels are the
+one-electron half: `S^x` and `h^x = T^x + V^x` as `[3, n_ao, n_ao]`
+Cartesian matrices, row-major (spherical is the caller's, `U X U^T`).
+
+### Their keys
+
+A d1 key may name a matrix FORM (`Spec.form`, `spec.FORM_TARGETS`), legal
+at d1 on MMD only, with no lever and one batch, and refused elsewhere
+(`_FORM_REFUSAL`): `ip1` on `S`, `T`, `V` and `rinv` on `V`. The key
+spells it in its `d` segment, `overlap/d1.ip1/(2,1)/b1/s/literal`,
+`nuclear/d1.rinv/(2,1)/b1/v/literal`; every key without a form is
+byte-identical. The case registry counts a form as a variant of the d1
+case, as it does a lever (`ips_` is `(mmd, s, 1)`).
+
+### What they write
+
+The **ip1 form** (`ips_`, `ipt_`, `ipv_{la}{lb}`): the derivative on the
+centre of the matrix's FIRST index, every atom in one launch per pair
+class (the `gs` / `gt` / `gv` launch, one thread per record),
+
+    X1[k, m, n] += d X_mn / dA_k        A the centre of m
+
+libcint's `int1e_ipovlp` / `int1e_ipkin` / `int1e_ipnuc`, negated. A
+record of shell pair `i <= j` on `A`, `B` writes its `(m, n)` block (the
+`dA` rule) and, off the diagonal, its `(n, m)` block (the `dB` rule); a
+diagonal pair's records are every ordered primitive pair, so its `dA`
+sum is already the block's whole first-index derivative and it writes
+that alone. The caller gets atom `X`'s matrix as the rows of `m` on `X`
+plus that slab's transpose. `kernel_g1e`'s record head, rule and per-axis
+tables (`axis_tables_fragment(la + 1, lb + 1)`, `lb + 3` for `T`) are
+reused; `ips` and `ipt` are `gs` / `gt` per row with no weight, unrolled.
+`ipv` holds the basis function's derivative with every nucleus's operator
+fixed: per record the nuclei's potential in Hermite space, `U_t = -SUM_C
+Z_C [t]^(0)(P - C)` over `|t| <= L + 1` (`kernel_v.v_plan((la, lb + 1))`
+per nucleus, into a local `R`, added into `U`), then per block row the
+low-stack `gv`'s rolled sums (`kernel_g1e.lowstack_derivative`) against
+`U` -- one form at every class, the frame the tables, `R` and `U`.
+
+**`V`'s operator term** (`iprv_{la}{lb}`, the rinv form) is not in ip1:
+`d/dC_k` of the operator at nucleus `C` moved with it,
+
+    XC[k, m, n] += d V^C_mn / dC_k = s Z_C SUM_t E^{ab}_t [t + 1_k]^(0)(P - C)
+
+which is `-Z_C (iprinv + iprinv^T)` with libcint's `rinv` origin at `C`.
+One launch per nucleus, its index the kernel argument `nuc` (PySCF's
+`with_rinv_at_nucleus` form), writing `[3, n_ao, n_ao]`; `gv`'s
+Hellmann–Feynman branch has the same term reduced against `M`. The matrix
+is symmetric, so a row writes one value to `(m, n)` and `(n, m)`.
+
+So `dV/dR_X = (X1 rows on X) + (that)^T + XC(X)`, and translational
+invariance is `X1 + X1^T + SUM_C XC(C) = 0`; `S` and `T` have no operator
+term (`X1 + X1^T = 0`).
+
+### The host reference (`gradient/host.py`)
+
+`overlap_ip1`, `kinetic_ip1`, `potential_ip1` and `potential_rinv`, on the
+gradient sweep's shell pairs and records (`_matrix_sweep`), each row by
+its own arithmetic: `gradient.host`'s per-axis `E`, derivative rule and
+kinetic bracket, `[t]^(0)` injected (`one_centre=`).
+
+### The generator
+
+`python -m felizjueves.emit --ip1-l [LMAX]` (2 bare, 0..3, a 2 above) adds
+`ips_`, `ipt_`, `ipv_` and `iprv_{la}{lb}` for every `la <= lb <= LMAX`
+beside the J ladders; never in the no-flag output and not in
+`KERNEL_GEN_CMD`. The goldens are the six classes (ss) through (dd) per
+backend (`test/golden/{cuda,hip}/{ips,ipt,ipv,iprv}_*`, 24 each); every
+unit through (ff), both orders, is under the 512 KiB cap (the largest,
+`ipt_33`, ~210 KB).
+
+### Witnesses, and what ran where
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| the host, `S` `T` `V` ip1 and `V`'s rinv at each nucleus | libcint, `-int1e_ip*` and `-Z_C (iprinv + iprinv^T)`, element by element (#550's gradient fixtures) | H₂O/STO-3G; H₂O/cc-pVDZ `slow` (`test_kernel_ip1e.py`) | 2.8e-15 of `max\|libcint\|` (`V`, cc-pVDZ), gate 1e-12 |
+| the host | `X1 + X1^T + SUM_C XC(C) = 0` (`V`); `X1 + X1^T = 0` (`S`, `T`) | the same | 3.2e-16 of `max\|X1\|`, gate 1e-13 |
+| `kernel_ip1e`, interpreted | the host per class, every form, `iprv` at two nuclei | every ordered class (ss)–(ff) on HF/cc-pVTZ (above L + 1 = 4 `slow`) | `ips`, `ipt` bitwise; `ipv`, `iprv` <= 2 eps of the class's `max\|X\|`, gate 16 eps |
+| the same, whole matrices | libcint, and the invariance | H₂O/STO-3G; cc-pVDZ `slow` | as the host |
+| nvcc / hipcc compile | #92's warning filter | `test_emit_ip1e.py`'s 24 units per backend, `sm_86` and `gfx1200`; `test_ip1e_device.py`'s runners | passed, no warning in generated text |
+| on a card | the host within 1e-14 of `max\|X\|`, libcint within 1e-12 | `test_ip1e_device.py` (generator `test/ip1e_driver.py`), H₂O/STO-3G, cc-pVDZ `slow` | **not run** (no card in that session) |
+
+### What is not done
+
+- Not run on a card; nothing measured. Above (dd) interpreted only (the
+  ladder emits through (ff); the compile goldens stop at (dd)).
+- The two-electron half of `F^x`, `J^x` (#688) and `K^x` (#689); the
+  CPHF solve and the whole RHF Hessian.
+- The ladder emits `la <= lb` only, as `--hess-one-e-l` does; a build
+  whose shell order puts the higher `l` first needs the `(lb, la)` units,
+  which build and are interpreted but are not on the ladder.
+- Cartesian only, no screening; `X1` takes `3 n_ao^2` doubles per matrix
+  and `iprv` one launch and one matrix per nucleus.
 
 ## The DF metric Hessian (`(P|Q)`)
 
