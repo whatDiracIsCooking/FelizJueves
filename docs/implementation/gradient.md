@@ -665,6 +665,11 @@ the 31 classes at `L <= 4`, 62 files, the largest 232 KB.
 | the DF gradient witness (`oracle.manifest.df_gradient`, #613) | libcint's `int3c2e_ip1_cart` / `int3c2e_ip2_cart`, `int2c2e_ip1_cart`, contracted per class with closed-form `Gam`, `W`, on `prim_spd_f` against the aux-i basis (every ladder class) | the host, every class (`slow`); the kernel interpreted at (df\|i), (ff\|h), (ff\|i), (h\|i), (i\|i) (`slow`) | host 3.91e-14 (`geri3`), 1.71e-14 (`gmetric`) of the witness's largest `max\|G\|`; the kernel at most 2.72e-15 ((h\|i)); gate `1e-12` |
 | on a card, the ladder (`test_grad_df_device.py` Part 2, `slow` + `high_l`) | `host_df` at `1e-13` of `max\|G\|` per program, and the witness at `1e-12` | RTX 3080 and RX 9060 XT: all 70 + 28 classes in their default forms on the aux-i system, one program per aux `l`, each compile under a 300 s timeout; 16 passed per card (with Part 1) | host 1.20e-14 (CUDA) / 9.34e-15 (HIP), (`geri3`, aux i); libcint 5.49e-14 / 5.48e-14 of max; runs bit-identical on both |
 
+`gmetric` has an HGP twin, `hgmetric_{lP}{lQ}` (`gradient/kernel_hgmetric.py`,
+the Cartesian rule on the HGP VRR instead of the Hermite shift; same
+parameters and `G` contract), interpreted through L = 4 and compiled for s
+and p, on no card: `hgp_df.md`, "The metric's nuclear gradient on HGP".
+
 Not done for DF: the metric solve and `d` stay host-side (DF-K's `Gam^K`,
 `W^K` are staged on the host only, #620; no device run of them, the
 kernels having run on both cards with an arbitrary `Gam`); no screen;

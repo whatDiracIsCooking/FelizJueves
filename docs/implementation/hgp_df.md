@@ -139,8 +139,50 @@ Nine goldens per backend are in `test/golden/{cuda,hip}/{hmetric,heri3}_*`
 no open issue tracks that run: #431 closed on 2026-10-17 when the card's
 detection was fixed, not when this was run.
 
+## The metric's nuclear gradient on HGP (`hgmetric`)
+
+**Status: implemented, interpreted through L = 4 and compiled by nvcc and
+hipcc for s and p; run on no card.** `gradient/kernel_hgmetric.py`'s
+`build_hgmetric_kernel((lP, lQ))` → `hgmetric_{lP}{lQ}`, keyed
+`Spec(COULOMB, 1, (lP, lQ), Target.METRIC, engine=Engine.HGP)`
+(``coulomb/d1/(lP,lQ)/b1/metric.hgp/literal``; `spec.GRADIENT_OFF_NATIVE`
+admits d1 on this off-native pair, as on `eri3.hgp`). It is the HGP twin of
+`gradient.md`'s `gmetric`: the same parameters, staging (`metric_classes` plus
+`host_df.metric_records`' atoms), weights `w_ab` from `M`, thread mapping
+(one thread per aux shell pair) and six `AtomicAdd`s into a caller-zeroed
+`G`, so `test/df_grad_launch.run_metric(..., engine=Engine.HGP)` swaps it
+in and changes nothing else.
+
+**The rule is Cartesian, not the Hermite shift.** An HGP class has no tower
+to shift; the derivative of a Cartesian Gaussian is two of the same
+exponent, so per primitive pair
+
+    d(a|b)/dA_k = 2 alpha [a + 1_k | b] - a_k [a - 1_k | b]
+    d(a|b)/dB_k = -d(a|b)/dA_k            ((P|Q) depends on A - B alone)
+
+from ONE VRR whose targets are the bra one up and one down: the closure of
+`|e| = lP ± 1`, `|f| = lQ` in the DAG of `(lP - 1, 2 | lQ, 0)`
+(`hgmetric_dag`, `hgp.vrr.group_dag`), the `|e| = lP` row never formed, the
+`PA` / `QC` terms not spelled (`kernel_hgp.vrr_ket_body`, factored out of
+the d0 builder with its goldens unchanged). `2 alpha` is the bra
+primitive's, applied inside the record loops.
+
+**Checked** (`test_kernel_hgmetric.py`): every class `lP + lQ <= 4`
+(`= 4` `slow`) on `test_kernel_gmetric.py`'s system and weights, against
+`host_df.metric_gradient` within 16 eps of the split-centre scale (worst
+7.87 eps, (d|d)) and against the MMD `gmetric` within 32 eps, with
+`SUM_A G` zero to 4 eps; the whole gradient of an s, p aux basis.
+**Emitted** by `python -m felizjueves.emit --hgp-grad-metric-l [LMAX]`,
+LMAX 0..`HGMETRIC_L_MAX = 1` (bare: 1, 3 units), refused and placed as
+`--hgp-metric-l` is; six goldens, and each unit compiled by nvcc (`sm_86`)
+and hipcc (`gfx1200`) with no warning in generated text
+(`test_emit_hgp_df.py`, in a device-less cloud container, 2026-10-30).
+**Not run on a card, not measured.**
+
 ## What is not done
 
+- **`hgmetric` on a card** (compiled only), and its d and above units in
+  the CLI. (The HGP `(mn|P)` gradient is `hgeri3`, `gradient.md`.)
 - **The RX 9060 XT** compile and card run (above; no open issue).
 - **d and above.** The builders accept them, but nothing is tested there and
   the CLI refuses them.

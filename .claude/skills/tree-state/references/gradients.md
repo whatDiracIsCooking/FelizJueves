@@ -168,6 +168,20 @@ CO cell now holds the card to the witness's whole `G` at the same
 check that the witness is on the cell's own density and nuclei; the
 cell has **not** been re-run on either card since, so its after-time
 is unmeasured (#639).
+**`gmetric` has an HGP twin, interpreted and compiled, on no card**
+(`docs/implementation/hgp_df.md`, "The metric's nuclear gradient on HGP"):
+`gradient/kernel_hgmetric.py`'s `hgmetric_{lP}{lQ}`, keyed
+`coulomb/d1/(lP,lQ)/b1/metric.hgp/literal` (`spec.GRADIENT_OFF_NATIVE`,
+beside `eri3.hgp`), `gmetric`'s parameters, staging, weights and `G`
+contract; `d/dA = 2 alpha [a+1_k|b] - a_k [a-1_k|b]` per primitive from one
+HGP VRR of the bra one up and one down (`hgmetric_dag`), `d/dB = -d/dA`.
+Interpreted (`test_kernel_hgmetric.py`): every class `lP + lQ <= 4` against
+`host_df` within 16 eps of the split-centre scale (worst 7.87, (d|d)) and
+against `gmetric` within 32. Ladder `--hgp-grad-metric-l [LMAX]` (0..1,
+bare 1), never in the bare default nor in `KERNEL_GEN_CMD`; six goldens,
+compiled by nvcc and hipcc warning-free (`test_emit_hgp_df.py`, device-less
+cloud container, 2026-10-30). Not run on a card, not measured; its
+`(mn|P)` sibling is `hgeri3`, below.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
@@ -240,8 +254,8 @@ default forms on that system, 16 passed per card with Part 1; worst
 and 5.5e-14 of max against libcint, runs bit-identical. **The `(mn|P)` gradient on the HGP engine too, interpreted and compiled
 only** (`gradient.md`, "The three-center gradient on HGP"):
 `gradient/kernel_hgeri3.py`'s `hgeri3_{la}{lb}{lP}`, keyed
-`.../d1/.../eri3.hgp/...` (`spec.GRADIENT_OFF_NATIVE`, the one off-native
-d1 slot), `geri3`'s parameters, staging, mapping and `G` contract. The
+`.../d1/.../eri3.hgp/...` (`spec.GRADIENT_OFF_NATIVE`, beside
+`metric.hgp`), `geri3`'s parameters, staging, mapping and `G` contract. The
 Cartesian rule on all three centres (the aux one too, by its exponent-0
 partner: no Hermite shift, nothing inferred), each raised class contracted
 with its own primitive weight `2 xi` / `2 eta` / `2 gam`, one VRR per

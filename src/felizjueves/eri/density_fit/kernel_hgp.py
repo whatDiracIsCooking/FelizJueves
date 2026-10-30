@@ -164,7 +164,11 @@ __all__ = [
     "metric_acc",
     "metric_class",
     "metric_kernel",
+    "metric_params",
     "three_center_kernel",
+    "vrr_ket_body",
+    "ZERO_PA",
+    "ZERO_QC",
 ]
 
 HGP_DF_L_MAX = 1  # the highest shell l the HGP DF kernels are tested for
@@ -186,6 +190,7 @@ _DIAGONAL3 = (
 # The quartet scalars that vanish on a single-centre (exponent-0 partner) side.
 _QC = frozenset(Factor.qc(d) for d in range(3))
 _PA = frozenset(Factor.pa(d) for d in range(3))
+ZERO_QC, ZERO_PA = _QC, _PA  # public, for gradient.kernel_hgmetric
 
 
 def hmetric_spec(lP: int, lQ: int) -> Spec:
@@ -359,16 +364,16 @@ def _quartet_scalars(p: Expr, q: Expr, ket_pair: Expr) -> tuple[Stmt, ...]:
     return tuple(stmts)
 
 
-def _ket_body(cls: AmClass, zero: frozenset[Factor], centre: str,
-              ket: Var) -> tuple[tuple[Stmt, ...], list[tuple[Cart, Cart]]]:
-    """One aux record's statements inside the bra loop: the quartet scalars,
-    the prelude and the VRR of `cls` with its `zero` terms dropped and
-    everything nothing kept reads gone with them, then one `c += V` per
-    boundary value; and the boundary `(e, f)` in `hgp.vrr.targets` order.
-    `centre` names the bra centre's three locals (`A`, `P`)."""
-    dag = vrr.build(cls)
-    prelude, fundamental = fundamental_prelude(sum(cls))
-    bnd = [(e, f) for e, f, _ in vrr.targets(cls)]
+def vrr_ket_body(dag: vrr.VrrDag, zero: frozenset[Factor], centre: str,
+                 ket: Var) -> tuple[Stmt, ...]:
+    """One aux record's statements inside the bra loop, up to the VRR: the
+    aux exponent `aq`, `PQ`, the quartet scalars, the prelude and `dag`'s
+    VRR with its `zero` terms dropped and everything its targets do not read
+    gone with them; every target `(e, f, 0)` is the local `vrr_name` of it.
+    `centre` names the bra centre's three locals (`A`, `P`); the bra
+    exponent and pair factor are the locals `pe` and `up`."""
+    prelude, fundamental = fundamental_prelude(max(
+        n[2] for n in dag.terms if vrr.is_leaf(n)))
     body: tuple[Stmt, ...] = (
         *(Decl(n, Scalar.F64, init=_c(Fn.SUB, Var(f"{centre}{d}"),
                                       Index("A", (ket, Lit(d)))))
@@ -377,17 +382,26 @@ def _ket_body(cls: AmClass, zero: frozenset[Factor], centre: str,
         *prelude,
         *_without(vrr_body(dag, fundamental), zero),
     )
+    kept = _live(body, {vrr_name(n) for n in dag.targets})
+    return (Decl("aq", Scalar.F64, init=Index("alpha", (ket,))),
+            Note(f"[e0|f0]^(0) by the HGP VRR of {dag.cls} ([Fock] eqs 25-26); "
+                 "the single-centre side's terms in "
+                 f"{', '.join(sorted(g.value for g in zero))} (exactly zero) "
+                 "dropped with everything only they read"),
+            *kept)
+
+
+def _ket_body(cls: AmClass, zero: frozenset[Factor], centre: str,
+              ket: Var) -> tuple[tuple[Stmt, ...], list[tuple[Cart, Cart]]]:
+    """`vrr_ket_body` of `cls`'s whole DAG, then one `c += V` per boundary
+    value; and the boundary `(e, f)` in `hgp.vrr.targets` order."""
+    bnd = [(e, f) for e, f, _ in vrr.targets(cls)]
     accumulate = tuple(
         Assign(Var(_acc(e, f)), _c(Fn.ADD, Var(_acc(e, f)),
                                    Var(vrr_name((e, f, 0)))))
         for e, f in bnd)
-    kept = _live(body, {vrr_name((e, f, 0)) for e, f in bnd})
-    return (Decl("aq", Scalar.F64, init=Index("alpha", (ket,))),
-            Note(f"[e0|f0]^(0) by the HGP VRR of {cls} ([Fock] eqs 25-26); "
-                 "the single-centre side's terms in "
-                 f"{', '.join(sorted(g.value for g in zero))} (exactly zero) "
-                 "dropped with everything only they read"),
-            *kept, *accumulate), bnd
+    return (*vrr_ket_body(vrr.build(cls), zero, centre, ket),
+            *accumulate), bnd
 
 
 def _thread(index: str, count: str, per: tuple[Stmt, ...], what: str
@@ -416,7 +430,7 @@ def _i32(n: str, shape: tuple[Expr, ...]) -> Param:
     return Param(n, Scalar.I32, array=True, shape=shape)
 
 
-def _metric_params() -> tuple[Param, ...]:
+def metric_params() -> tuple[Param, ...]:
     """`kernel_metric`'s parameters, in its order."""
     npair, nrec, naux = Var("n_pair"), Var("n_rec"), Var("n_aux")
     return (
@@ -507,7 +521,7 @@ def metric_kernel(lP: int, lQ: int, bra: tuple[Stmt, ...],
         Note(title),
         *_thread(PAIR, "n_pair", per_pair, "aux shell pair"),
     )
-    return Kernel(name, _metric_params(), body)
+    return Kernel(name, metric_params(), body)
 
 
 def metric_acc(e: Cart, f: Cart) -> str:

@@ -37,6 +37,9 @@ CASES = [
     # The fused Fock gradient on HGP: interpreted through (dd|dd), compiled
     # through (pp|pp), never on a card.
     *ladder("hgp", "f", 1, compile=range(5), interpreted=range(9)),
+    # The metric's HGP twin (kernel_hgmetric): interpreted through L = 4,
+    # compiled for s and p (test_emit_hgp_df.py), on no card.
+    *ladder("hgp", "metric", 1, compile=range(3), interpreted=range(5)),
 ]
 
 # #613's ladder: one program per aux l, every class of the aux-i system
