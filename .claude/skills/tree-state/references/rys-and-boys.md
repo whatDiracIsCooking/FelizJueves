@@ -77,6 +77,13 @@ COMPILED by nvcc and hipcc, NOT run on a card** (`rmetric_`,
 `eri/density_fit/kernel_rmetric.py`, slot `metric.rys`; `rys_fock.md`,
 "The DF metric on Rys"): the first Rys unit through a vendor compiler. Its
 entry is in `schwarz-overlap-df.md`.
+**The three-center `(mn|P)` on Rys too, compiled by nvcc and hipcc, NOT
+run on a card** (`rys_fock.md`, "The three-center `(mn|P)` on Rys";
+`schwarz-overlap-df.md` has the family's entry): `reri3_` units through
+`la + lb + lP <= 9`, `kernel_hgp`'s `(mn|P)` skeleton with
+`rys.recurrence`'s rule and root loop (a new `ket_centred=` option, every
+other Rys golden byte-identical). Its 22 units and runner programs are
+compiled by nvcc and hipcc, each carrying `fj_rys<N>`.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence

@@ -567,6 +567,11 @@ is the card's first `(mn|P)` run; it was #431's.
   `Target.ERI3` on `Engine.HGP`), the same parameters and output, is built
   for s and p shells, checked interpreted and run on the RTX 3080 only
   (PR #601): `hgp_df.md`.
+- **A Rys twin.** `(mn|P)` by Rys quadrature (`reri3_*`, `Target.ERI3` on
+  `Engine.RYS`), the same parameters and output, is built through
+  `la + lb + lP <= 9`. It is checked interpreted (against libcint through
+  (pp|g)) and compiled by nvcc and hipcc, and has run on no card:
+  `rys_fock.md`, "The three-center `(mn|P)` on Rys".
 - **An aux-major layout** for DF-J (the trade above). Derivatives are
   built elsewhere: `geri3_` (gradient, #603/#613, both cards;
   `gradient.md`) and `d2eri3_` (Hessian, #612, interpreted only;

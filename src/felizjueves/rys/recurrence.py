@@ -1,8 +1,8 @@
 """The Rys 2D vertical recurrence as IR: per root, per axis, then the HGP
 boundary `[e0|f0]^(0)` as a product of three 2D integrals.
 
-    root_loop(cls, boundary, acc, *, n_roots) -> (Stmt, ...)
-    scalar_needs(cls) -> frozenset[str]       the quartet scalars it reads
+    root_loop(cls, boundary, acc, *, n_roots, ket_centred=False) -> (Stmt, ...)
+    scalar_needs(cls, *, ket_centred=False) -> frozenset[str]   what it reads
     quartet_rule(cls, scalar) -> (Stmt, ...)  those scalars, T, S, the rule
 
 THE FORM (#468, settled against libcint and a 50-digit route, every sign
@@ -40,6 +40,12 @@ The root loop is a real `For` over the `N` nodes, its body the 2D tables
 plain products and sums, not `ir.Weighted` (their coefficients depend on the
 node, which no `Factor` names). Only the coefficients a class reads are
 formed: `(ss|ss)` reads none, and its boundary is `S w_0` alone.
+
+A SINGLE-CENTRE KET (`ket_centred=True`): when the ket "pair" is one
+Gaussian and an exponent-0 s partner on its own centre -- a DF aux shell,
+`eri/density_fit/kernel_reri3.py`'s `(mn|P) = (la lb|lP 0)` -- `Q = C`, so
+`QC_d = 0` and `D00_d = x (W - Q)_d`: the zero term is not spelled and
+`QC_*` is not read (`kernel_hgp._without`'s rule, here in the 2D VRR).
 """
 
 from __future__ import annotations
@@ -101,17 +107,21 @@ def _spans(cls: AmClass) -> tuple[int, int]:
     return la + lb, lc + ld
 
 
-def scalar_needs(cls: AmClass) -> frozenset[str]:
+def scalar_needs(cls: AmClass, *, ket_centred: bool = False
+                 ) -> frozenset[str]:
     """The per-quartet scalars `root_loop` reads (besides `pair`, `theta`
     and `T`, which every class reads): `PA_*`, `WP_*` and `q_ppq` for a bra
     VRR, `QC_*`, `WQ_*` and `p_ppq` for a ket one, `inv2p` / `inv2q` from
-    the second step, `inv2pq` when both sides step."""
+    the second step, `inv2pq` when both sides step; no `QC_*` when
+    `ket_centred` (module docstring, "A SINGLE-CENTRE KET")."""
     lab, lcd = _spans(cls)
     need: set[str] = set()
     if lab:
         need |= {f"PA_{a}" for a in _AXES} | {f"WP_{a}" for a in _AXES}
     if lcd:
-        need |= {f"QC_{a}" for a in _AXES} | {f"WQ_{a}" for a in _AXES}
+        need |= {f"WQ_{a}" for a in _AXES}
+        if not ket_centred:
+            need |= {f"QC_{a}" for a in _AXES}
     if lab > 1:
         need |= {"inv2p", "q_ppq"}
     if lcd > 1:
@@ -127,7 +137,8 @@ def _name(axis: str, i: int, k: int) -> str:
 
 def root_loop(cls: AmClass, boundary: Sequence[tuple[Cart, Cart]],
               acc: Callable[[Cart, Cart], str], *, n_roots: int,
-              single_centre: bool = False) -> tuple[Stmt, ...]:
+              single_centre: bool = False,
+              ket_centred: bool = False) -> tuple[Stmt, ...]:
     """The `Rys` rule's root loop for one primitive quartet (module
     docstring): reads the arrays `NODES` / `WEIGHTS` (extent `n_roots`), the
     scale `WEIGHT_SCALE` and `scalar_needs(cls)`, and adds each boundary
@@ -136,7 +147,9 @@ def root_loop(cls: AmClass, boundary: Sequence[tuple[Cart, Cart]],
     `single_centre`: both sides are single-centre Gaussians (an aux shell
     with an exponent-0 partner, `eri/density_fit/kernel_rmetric.py`), so
     `PA = QC = 0`: `C00 = x WP` and `D00 = x WQ`, the zero terms not spelled
-    and `PA_*` / `QC_*` never read."""
+    and `PA_*` / `QC_*` never read. `ket_centred`: the ket alone is
+    (`eri/density_fit/kernel_reri3.py`'s `(mn|P)`), so only `D00`'s `QC`
+    term is dropped (module docstring, "A SINGLE-CENTRE KET")."""
     lab, lcd = _spans(cls)
     x = Var("rys_xr")
     body: list[Stmt] = [
@@ -162,7 +175,8 @@ def root_loop(cls: AmClass, boundary: Sequence[tuple[Cart, Cart]],
                              else _c(Fn.ADD, Var(f"PA_{ax}"), xw)))
         if lcd:
             xw = _c(Fn.MUL, x, Var(f"WQ_{ax}"))
-            body.append(Decl(f"d00_{ax}", Scalar.F64, init=xw if single_centre
+            body.append(Decl(f"d00_{ax}", Scalar.F64, init=xw
+                             if single_centre or ket_centred
                              else _c(Fn.ADD, Var(f"QC_{ax}"), xw)))
         g: dict[tuple[int, int], Expr | None] = {
             (0, 0): Var("rys_wr") if d == 2 else None}
