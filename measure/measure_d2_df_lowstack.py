@@ -26,10 +26,14 @@ THE CLOCK is not measured here (no card took these rows).
 THE RULE is the store's `declared`, written before any row (DECLARED): the
 d1 sweep's (measure_df_grad_lowstack.py), read over the arches that have
 rows, with one change: a low-stack frame is recorded, not held to #606's
-14 KB, which the two-up bra tables alone nearly fill at f. The first rows
-are `sm_86` only: the box that took them has nvcc and no hipcc, so the
-`gfx1200` rows are owed, and the check below reads the rule over `sm_86`
-alone until they land.
+14 KB, which the two-up bra tables alone nearly fill at f. DECLARED's
+`arches` line says the `gfx1200` rows were owed: the session that wrote it
+looked for hipcc on PATH only and missed /opt/rocm/bin. It took the
+`gfx1200` rows the same day, after the `sm_86` ones, on the same 4-core
+device-less container, both sweeps beside other work, so each compile
+wall-clock is an upper reading. The check reads the rule over every arch
+with rows, now both: the floors are sm_86's (gfx1200's first inadmissible
+level is higher for d2metric, L = 11, and the same for d2eri3, L = 3).
 """
 
 from __future__ import annotations

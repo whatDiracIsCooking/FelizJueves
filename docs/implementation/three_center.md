@@ -575,4 +575,4 @@ is the card's first `(mn|P)` run; it was #431's.
 - **An aux-major layout** for DF-J (the trade above). Derivatives are
   built elsewhere: `geri3_` (gradient, #603/#613, both cards;
   `gradient.md`) and `d2eri3_` (Hessian, #612 / #694, through (ff|i),
-  interpreted and nvcc-compiled, on no card; `hessian.md`).
+  interpreted and compiled by nvcc and hipcc, on no card; `hessian.md`).
