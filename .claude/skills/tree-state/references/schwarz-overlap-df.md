@@ -68,7 +68,7 @@ unsound) and against libcint within `1e-12·max|M|`: the host
 (`test_ao_metric.py`), the kernel interpreted (`test_kernel_metric.py`), the
 nine goldens per backend (`test_emit_metric.py`), and on the RTX 3080
 (`test_metric_device.py`, generator `test/metric_driver.py` -- on the
-shared runner since #654, which has not run on a card -- PR #430: worst
+shared runner since #654, run on both cards 2026-10-30 -- PR #430: worst
 2.61e-14 of `max|M|` against libcint, 7.17 eps of the tower-twin scale
 against the host). **It has not run on the RX 9060 XT**: the card was not
 enumerated in the container, so on `gfx1200` it is compiled only; that run,
