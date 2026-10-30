@@ -136,7 +136,8 @@ compiler only): all admissible under the declared 14,000 B / 30 s, worst
 `kx1_33_33` at 9,824 B (`sm_86`) and 10,192 B (`gfx1200`), slowest
 compile 5.6 s. No device test or driver: nothing has
 launched on either card. `J^X` (#688) and `h^x` (#687) are not built.
-**The DF metric's Hessian too, `lP + lQ <= 4`, interpreted only**
+**The DF metric's Hessian too, through (i|i), interpreted and nvcc-compiled
+(#694); a device test written, on no card**
 (`hessian.md`, "The DF metric Hessian"): `Target.METRIC` joins
 `spec.HESSIAN_TARGETS` (MMD only; `metric.hgp` refuses d2), a
 d2 key `coulomb/d2/(lP,lQ)/b1/metric/literal`, every d0 and d1 key
@@ -155,14 +156,28 @@ finite differences of `gradient.host_df.metric_gradient` (~2.5e-9 of
 `max|H|`), `H = H^T` and invariance (`test_hessian_host_df.py`; s/p fast,
 d and f/g `slow`); interpreted, every class `lP + lQ <= 4` within 0.17 eps
 of the absolute twin, gate 16 (`test_kernel_d2metric.py`, `lP + lQ + 2 >
-4` `slow`; launches `test/df_grad_launch.run_d2metric`). Ladder
-`--hess-metric-l [LMAX]` (4 bare, 0..4), never in the bare default nor in
-`KERNEL_GEN_CMD`; 9 goldens per backend (`test_emit_d2metric.py`). Not
-compiled by nvcc or hipcc (clang 18's front end passed all 9 cuda units, a
-proxy), no device test, not run on either card. No
-`d` response, no assembled DF-J Hessian, nothing measured.
-**The three-center DF integral's Hessian too, through L = 4, interpreted
-only** (`hessian.md`, "The three-center DF Hessian"): `Target.ERI3` joins
+4` `slow`; launches `test/df_grad_launch.run_d2metric`). **#694 raised
+it to the d1 DF ladder's reach**: ladder `--hess-metric-l [AUXMAX]`, now
+the aux `l` per shell (2 bare, 6 units; 0..6), never in the bare default
+nor in `KERNEL_GEN_CMD`; the 9 goldens per backend unchanged, the other 19
+classes through (i|i) pinned by digest (`test_emit_d2metric.py`,
+`test/golden/d2metric_digests.json`). A LOW-STACK form (`kernel_gmetric`'s
+one order up) is the default from `lP + lQ >= LOWSTACK_MIN_L = 9`, the
+floor measured (`devtools/measure.sh d2-df-lowstack-compile`,
+`data/measured/d2_df_lowstack.json`, rule declared before any row; the
+unrolled (d|i) is 19,216 B of `sm_86` stack). Interpreted, every class
+`lP <= lQ <= 6` in its default form, every class below the floor forced
+low-stack and (d|i), (g|h) forced unrolled, within 0.34 eps of the twin
+(`test_kernel_d2_df_ladder.py`, 52 cases). **nvcc 13.0 (`sm_86`) compiles
+all 28 units** (#92's filter, 2026-10-30, a device-less container); every
+low-stack frame is <= 9,200 B and <= 1.9 s of nvcc; **hipcc 7.2.4
+(`gfx1200`) compiles all 28 too**, frames <= 9,744 B. A device test and driver are written
+(`test_hess_df_device.py`, `hess_driver.d2metric_launches`: H₂O/cc-pVDZ
+against cc-pVDZ-JKFIT with DF-J's `W`, and the d1 ladder's aux-i system per
+aux `l`) and have **run on neither card**. No `d` response, no assembled
+DF-J Hessian, no clock measured.
+**The three-center DF integral's Hessian too, through (ff|i), interpreted and
+nvcc-compiled (#694); a device test written, on no card** (`hessian.md`, "The three-center DF Hessian"): `Target.ERI3` joins
 `spec.HESSIAN_TARGETS` (MMD only), a d2 key
 `coulomb/d2/(la,lb|lP)/b1/eri3/literal`. `hessian/kernel_d2eri3.py`
 (`d2eri3_{la}{lb}{lP}`, not `heri3_`: the HGP `(mn|P)`'s) writes
@@ -179,13 +194,29 @@ held to finite differences of `gradient.host_df.eri3_gradient` (4.8e-9
 of `max|H|`), invariance and symmetry (`test_hessian_host_eri3.py`, H₂O
 against JKFIT s, p `slow`); interpreted, every class `la + lb + lP <= 4`
 within 16 eps of the twin (measured <= 0.40) and the whole H₂O/STO-3G
-(`test_kernel_d2eri3.py`, L + 2 > 4 `slow`). Ladder `--hess-eri3-l
-[LMAX]` (3 bare, 0..4), never in the bare default nor in
-`KERNEL_GEN_CMD`; 7 goldens per backend plus 15 digests
-(`test_emit_d2eri3.py`, `test/golden/d2eri3_digests.json`; `(pd|p)` is
-1.25 MB of text). Not compiled by nvcc or hipcc (clang 18's front end
-passed all 22 units, a proxy), no device test, not run on either card. No
-assembled DF-J Hessian (with `d2metric_` and `d`'s response), nothing
+(`test_kernel_d2eri3.py`, L + 2 > 4 `slow`). **#694 raised it to the d1
+DF ladder's reach**: ladder `--hess-eri3-l [LMAX] [--hess-eri3-aux-l
+AUXMAX]`, split as `--grad-df-l` (orbital 1 and aux 2 bare, 9 units;
+0..3 and 0..6), never in the bare default nor in `KERNEL_GEN_CMD`; 7
+goldens per backend unchanged, every other class of the old and new
+ladders (71 in all) pinned by digest in its default form, the 15 old L = 3
+and 4 unrolled digests kept as `<name>.unrolled` (`test_emit_d2eri3.py`).
+A LOW-STACK form (`kernel_geri3`'s, with the low-stack `d2v`'s operated
+factors and rolled contractions, `kernel_h1e.operated_value` / `rolled`,
+made public with the `d2v` text unchanged) is the default from `la + lb +
+lP >= LOWSTACK_MIN_L = 3`, the floor measured (same sweep; the unrolled
+(sp|d) is 14,768 B, (pp|p) 20,280 B). Its frames are RECORDED, NOT GATED
+(declared before any row): the bra tables two indices up are 9.5 KB alone
+at (ff|.), and 19 units exceed #606's 14 KB, worst (ff|i) at 24,544 B
+with 8 KB of spill. Every unit compiles in <= 29 s. Interpreted, every
+class of the ladder in its default form, every class below the floor
+forced low-stack and (sp|d), (pp|p) forced unrolled, within 16 eps of
+the host's twin (`test_kernel_d2_df_ladder.py`, 79 cases; worst printed
+0.49 eps, `d2eri3_010`). **nvcc 13.0 (`sm_86`) compiles all
+71 pinned units** (#92's filter, 2026-10-30), **and so does hipcc 7.2.4
+(`gfx1200`)**, worst low-stack scratch 20,640 B (9 units over 14 KB). A device test and driver are written (`test_hess_df_device.py`,
+`hess_driver.d2eri3_launches`) and have **run on neither card**. No
+assembled DF-J Hessian (with `d2metric_` and `d`'s response), no clock
 measured.
 **The one-electron derivative MATRICES, `S^x`, `T^x`, `V^x` (#687),
 interpreted through (ff), held to libcint, compiled by nvcc and hipcc

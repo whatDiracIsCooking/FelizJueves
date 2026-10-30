@@ -286,13 +286,15 @@ for CUDA, `.hip` for HIP):
   nor in KERNEL_GEN_CMD. Every name starts `ips_`, `ipt_`, `ipv_` or
   `iprv_`, so none collides with another ladder's.
 
-- the DF metric Hessian ladder, `--hess-metric-l [LMAX]`
+- the DF metric Hessian ladder, `--hess-metric-l [AUXMAX]`
   (`hessian.kernel_d2metric`): `d2metric_{lP}{lQ}` (`SUM_PQ W_PQ
-  d2(P|Q)/dR dR`, `Target.METRIC` at d2) for every `lP <= lQ`, `lP + lQ
-  <= LMAX` (4 when the flag is given bare: 9 units). Accepted
-  0..`HESS_METRIC_L_MAX` = 4 (validated at the d0 metric kernel's cap,
-  interpreted); above it is a 2. It ADDS units beside the J ladders, as
-  `--grad-df-l` does, and is NEVER in the no-flag default nor in
+  d2(P|Q)/dR dR`, `Target.METRIC` at d2) for every `lP <= lQ <= AUXMAX`,
+  the aux `l` per shell as `--grad-df-aux-l`'s (#694; 2 when the flag is
+  given bare: 6 units). Accepted 0..`HESS_METRIC_L_MAX` = 6 (every class
+  through (i|i), interpreted against the host); above it is a 2. The
+  builder picks its own form (the low-stack one from
+  `kernel_d2metric.LOWSTACK_MIN_L`). It ADDS units beside the J ladders,
+  as `--grad-df-l` does, and is NEVER in the no-flag default nor in
   KERNEL_GEN_CMD. Every name starts `d2metric_` (not `hmetric_`: the HGP
   metric's), so none collides with another ladder's.
 
@@ -307,16 +309,21 @@ for CUDA, `.hip` for HIP):
   (not `gmetric_`: the contraction's), so none collides with another
   ladder's.
 
-- the three-center DF Hessian ladder, `--hess-eri3-l [LMAX]`
-  (`hessian.kernel_d2eri3`): `d2eri3_{la}{lb}{lP}` (`SUM_mnP Gam_mnP
-  d2(mn|P)/dR dR` over the three centres, `Target.ERI3` at d2) for every
-  `la <= lb`, `la + lb + lP <= LMAX` (3 when the flag is given bare: 13
-  units). Accepted 0..`HESS_ERI3_L_MAX` = 4 (validated at the d0
-  kernel's cap, interpreted; the unrolled text is ~1.25 MB there); above
-  it is a 2. It ADDS units beside the J ladders, as `--grad-df-l` does,
-  and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name
-  starts `d2eri3_` (not `heri3_`: the HGP `(mn|P)`'s), so none collides
-  with another ladder's.
+- the three-center DF Hessian ladder, `--hess-eri3-l [LMAX]
+  [--hess-eri3-aux-l AUXMAX]` (`hessian.kernel_d2eri3`), split as
+  `--grad-df-l` is (#694): LMAX the orbital `l` per shell, AUXMAX the aux
+  `l`. `d2eri3_{la}{lb}{lP}` (`SUM_mnP Gam_mnP d2(mn|P)/dR dR` over the
+  three centres, `Target.ERI3` at d2) for every `la <= lb <= LMAX`, `lP
+  <= AUXMAX` (1 and 2 when the flags are given bare or AUXMAX omitted: 9
+  units). Accepted 0..`HESS_ERI3_L_MAX` = 3 and
+  0..`HESS_ERI3_AUX_L_MAX` = 6 (every class through (ff|i), interpreted
+  against the host); above either it is a 2, and `--hess-eri3-aux-l`
+  without `--hess-eri3-l` is a 2. The builder picks its own form (the
+  low-stack one from `kernel_d2eri3.LOWSTACK_MIN_L`). It ADDS units
+  beside the J ladders, as `--grad-df-l` does, and is NEVER in the
+  no-flag default nor in KERNEL_GEN_CMD. Every name starts `d2eri3_`
+  (not `heri3_`: the HGP `(mn|P)`'s), so none collides with another
+  ladder's.
 
 - the HGP one-electron ladder, `--hgp-one-e-l [LMAX]`: for every pair class
   `(la, lb)`, `la <= lb <= LMAX` (1 when the flag is given bare),
@@ -685,12 +692,14 @@ DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
 HESS_ONE_E_L_MAX = 3  # kernel_h1e is validated through (ff) interpreted
 DEFAULT_IP_ONE_E_L = 2  # `--ip-one-e-l` bare: (ss) through (dd), 24 units
 IP_ONE_E_L_MAX = 3  # kernel_ip1e is validated through (ff) interpreted
-DEFAULT_HESS_METRIC_L = 4  # `--hess-metric-l` bare: 9 d2metric units
-HESS_METRIC_L_MAX = 4  # kernel_d2metric is validated at the d0 metric's cap
+DEFAULT_HESS_METRIC_L = 2  # `--hess-metric-l` bare: aux l <= 2, 6 units
+HESS_METRIC_L_MAX = 6  # aux l: kernel_d2metric is validated through i (#694)
 DEFAULT_IP_METRIC_L = 2  # `--ip-metric-l` bare: lP <= lQ <= 2, 6 units
 IP_METRIC_L_MAX = 6  # kernel_ipmetric is validated through (i|i) (#693)
-DEFAULT_HESS_ERI3_L = 3  # `--hess-eri3-l` bare: la + lb + lP <= 3, 13 units
-HESS_ERI3_L_MAX = 4  # kernel_d2eri3 is validated at the d0 kernel's cap
+DEFAULT_HESS_ERI3_L = 1  # `--hess-eri3-l` given bare: orbital l <= 1
+DEFAULT_HESS_ERI3_AUX_L = 2  # `--hess-eri3-aux-l` bare or omitted: aux l <= 2
+HESS_ERI3_L_MAX = 3  # orbital l: kernel_d2eri3 is validated through f (#694)
+HESS_ERI3_AUX_L_MAX = 6  # aux l: validated through i (#694)
 DEFAULT_HGP_ONE_E_L = 1  # `--hgp-one-e-l` given bare: (ss) (sp) (pp), 12 units
 HGP_ONE_E_L_MAX = 1  # kernel_hgp.L_MAX: built and checked for s and p only
 DEFAULT_RYS_ONE_E_L = 3  # `--rys-one-e-l` given bare: (ss) through (ff), 30
@@ -1229,21 +1238,22 @@ def generate_hess_kx(backend: str, arch: Arch, out: Path,
 # ---------------------------------------------------------------------------
 
 
-def hess_metric_classes(lmax: int) -> list[tuple[int, int]]:
-    """The metric classes `(lP, lQ)`, `lP <= lQ`, `lP + lQ <= lmax`, over
-    `0..HESS_METRIC_L_MAX`."""
-    if type(lmax) is not int or not 0 <= lmax <= HESS_METRIC_L_MAX:
-        raise ValueError(f"--hess-metric-l {lmax!r} is outside "
+def hess_metric_classes(aux_lmax: int) -> list[tuple[int, int]]:
+    """The metric classes `(lP, lQ)`, `lP <= lQ <= aux_lmax`, over
+    `0..HESS_METRIC_L_MAX` (#694: the aux `l` per shell)."""
+    if type(aux_lmax) is not int or not 0 <= aux_lmax <= HESS_METRIC_L_MAX:
+        raise ValueError(f"--hess-metric-l {aux_lmax!r} is outside "
                          f"0..{HESS_METRIC_L_MAX}")
-    r = range(lmax + 1)
-    return [(p, q) for p in r for q in r if p <= q and p + q <= lmax]
+    r = range(aux_lmax + 1)
+    return [(p, q) for p in r for q in r if p <= q]
 
 
 def generate_hess_metric(backend: str, arch: Arch, out: Path,
-                         lmax: int) -> list[Path]:
-    """Emit `d2metric_{lP}{lQ}` for every metric class through `lmax` into
-    `out`; return the paths."""
-    kernels = [build_d2metric_kernel(c) for c in hess_metric_classes(lmax)]
+                         aux_lmax: int) -> list[Path]:
+    """Emit `d2metric_{lP}{lQ}` for every metric class through `aux_lmax`
+    into `out`; return the paths."""
+    kernels = [build_d2metric_kernel(c)
+               for c in hess_metric_classes(aux_lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1276,22 +1286,28 @@ def generate_ip_metric(backend: str, arch: Arch, out: Path,
 # ---------------------------------------------------------------------------
 
 
-def hess_eri3_classes(lmax: int) -> list[tuple[int, int, int]]:
-    """The three-center classes `(la, lb, lP)`, `la <= lb`, `la + lb + lP
-    <= lmax`, over `0..HESS_ERI3_L_MAX`."""
+def hess_eri3_classes(lmax: int, aux_lmax: int = DEFAULT_HESS_ERI3_AUX_L
+                      ) -> list[tuple[int, int, int]]:
+    """The three-center classes `(la, lb, lP)`, `la <= lb <= lmax`, `lP <=
+    aux_lmax`, over `0..HESS_ERI3_L_MAX` and `0..HESS_ERI3_AUX_L_MAX`
+    (#694: `grad_df_classes`' split, one derivative order up)."""
     if type(lmax) is not int or not 0 <= lmax <= HESS_ERI3_L_MAX:
         raise ValueError(f"--hess-eri3-l {lmax!r} is outside "
                          f"0..{HESS_ERI3_L_MAX}")
-    r = range(lmax + 1)
-    return [(a, b, p) for a in r for b in r for p in r
-            if a <= b and a + b + p <= lmax]
+    if (type(aux_lmax) is not int
+            or not 0 <= aux_lmax <= HESS_ERI3_AUX_L_MAX):
+        raise ValueError(f"--hess-eri3-aux-l {aux_lmax!r} is outside "
+                         f"0..{HESS_ERI3_AUX_L_MAX}")
+    r, x = range(lmax + 1), range(aux_lmax + 1)
+    return [(a, b, p) for a in r for b in r for p in x if a <= b]
 
 
-def generate_hess_eri3(backend: str, arch: Arch, out: Path,
-                       lmax: int) -> list[Path]:
+def generate_hess_eri3(backend: str, arch: Arch, out: Path, lmax: int,
+                       aux_lmax: int = DEFAULT_HESS_ERI3_AUX_L) -> list[Path]:
     """Emit `d2eri3_{la}{lb}{lP}` for every three-center class through
-    `lmax` into `out`; return the paths."""
-    kernels = [build_d2eri3_kernel(c) for c in hess_eri3_classes(lmax)]
+    `lmax` / `aux_lmax` into `out`; return the paths."""
+    kernels = [build_d2eri3_kernel(c)
+               for c in hess_eri3_classes(lmax, aux_lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1847,9 +1863,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hess-eri3-l", dest="hess_eri3_l", type=int,
                     nargs="?", const=DEFAULT_HESS_ERI3_L, default=None,
                     metavar="LMAX")
+    ap.add_argument("--hess-eri3-aux-l", dest="hess_eri3_aux_l", type=int,
+                    nargs="?", const=DEFAULT_HESS_ERI3_AUX_L, default=None,
+                    metavar="AUXMAX")
     ap.add_argument("--hess-metric-l", dest="hess_metric_l", type=int,
                     nargs="?", const=DEFAULT_HESS_METRIC_L, default=None,
-                    metavar="LMAX")
+                    metavar="AUXMAX")
     ap.add_argument("--ip-metric-l", dest="ip_metric_l", type=int,
                     nargs="?", const=DEFAULT_IP_METRIC_L, default=None,
                     metavar="LMAX")
@@ -2145,13 +2164,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not 0 <= args.hess_eri3_l <= HESS_ERI3_L_MAX):
         print(f"emit: --hess-eri3-l {args.hess_eri3_l} is outside "
               f"0..{HESS_ERI3_L_MAX}: the three-center DF Hessian kernels "
-              "are validated at L <= 4 only", file=sys.stderr)
+              "are validated through orbital f only", file=sys.stderr)
+        return 2
+    if args.hess_eri3_aux_l is not None and args.hess_eri3_l is None:
+        print("emit: --hess-eri3-aux-l needs --hess-eri3-l (the orbital "
+              "limit)", file=sys.stderr)
+        return 2
+    if (args.hess_eri3_aux_l is not None
+            and not 0 <= args.hess_eri3_aux_l <= HESS_ERI3_AUX_L_MAX):
+        print(f"emit: --hess-eri3-aux-l {args.hess_eri3_aux_l} is outside "
+              f"0..{HESS_ERI3_AUX_L_MAX}: the three-center DF Hessian "
+              "kernels are validated through aux i only", file=sys.stderr)
         return 2
     if (args.hess_metric_l is not None
             and not 0 <= args.hess_metric_l <= HESS_METRIC_L_MAX):
         print(f"emit: --hess-metric-l {args.hess_metric_l} is outside "
               f"0..{HESS_METRIC_L_MAX}: the DF metric Hessian kernels are "
-              "validated at L <= 4 only", file=sys.stderr)
+              "validated through aux i only", file=sys.stderr)
         return 2
     if (args.ip_metric_l is not None
             and not 0 <= args.ip_metric_l <= IP_METRIC_L_MAX):
@@ -2271,8 +2300,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         written += generate_ip_metric(args.backend, arch, args.out,
                                       args.ip_metric_l)
     if args.hess_eri3_l is not None:  # beside the J chain, never by default
-        written += generate_hess_eri3(args.backend, arch, args.out,
-                                      args.hess_eri3_l)
+        written += generate_hess_eri3(
+            args.backend, arch, args.out, args.hess_eri3_l,
+            DEFAULT_HESS_ERI3_AUX_L if args.hess_eri3_aux_l is None
+            else args.hess_eri3_aux_l)
     if args.hgp_one_e_l is not None:  # beside the J chain, never by default
         written += generate_hgp_one_e(args.backend, arch, args.out,
                                       args.hgp_one_e_l)

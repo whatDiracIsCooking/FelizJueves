@@ -395,4 +395,5 @@ That bound was eri3's (dd|g), restated. It is now the metric's own, because
   checked interpreted and run on the RTX 3080 only (PR #601): `hgp_df.md`.
 - **A batched metric kernel and a metric lever.** Derivatives are built
   elsewhere: `gmetric_` (gradient, #603/#613, both cards; `gradient.md`)
-  and `d2metric_` (Hessian, #611, interpreted only; `hessian.md`).
+  and `d2metric_` (Hessian, #611 / #694, through (i|i), interpreted and
+  compiled by nvcc and hipcc, on no card; `hessian.md`).
