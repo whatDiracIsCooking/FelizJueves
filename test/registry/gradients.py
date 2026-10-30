@@ -20,11 +20,15 @@ CASES = [
     # classes and the d classes test_emit_grad_hk.py names; no card yet.
     *ladder("hgp", "k", 1, compile=(0, 1, 2, 3, 4, 6),
             interpreted=range(9)),
-    # The DF-J terms through (ff|i) and (i|i) on both cards (#613).
-    *ladder("mmd", "metric", 1, compile=range(5), gpu=range(13),
+    # The DF-J terms through (ff|i) and (i|i) on both cards (#613). The
+    # metric's uncontracted variant (ipmetric_, #693) has compile cases
+    # through (i|i), L = 12, and runs on no card.
+    *ladder("mmd", "metric", 1, compile=range(13), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
-    *ladder("mmd", "eri3", 1, compile=range(5), gpu=range(13),
-            cards=dict.fromkeys(BOTH, range(13))),
+    # The (mn|P) gradient's uncontracted variant (xeri3_, #692) adds compile
+    # cases at L = 8, 9 and 12 and device tests that have run on no card.
+    *ladder("mmd", "eri3", 1, compile=(0, 1, 2, 3, 4, 8, 9, 12),
+            gpu=range(13), cards=dict.fromkeys(BOTH, range(13))),
     # The HGP kinetic gradient, hgt_ (ss) through (ff): interpreted and
     # compiled by nvcc and hipcc, never run on a card.
     *ladder("hgp", "t", 1, compile=range(7)),
@@ -40,16 +44,11 @@ CASES = [
     # The metric's HGP twin (kernel_hgmetric): interpreted through L = 4,
     # compiled for s and p (test_emit_hgp_df.py), on no card.
     *ladder("hgp", "metric", 1, compile=range(3), interpreted=range(5)),
-    # The UNCONTRACTED (mn|P) derivative integrals, xeri3_ (#692; quantity
-    # `eri3.ip1`, the key's `d1u`): interpreted through (ff|i); compiled by
-    # nvcc and hipcc (the bare ladder and three top classes); its device
-    # tests written, run on no card.
-    *ladder("mmd", "eri3.ip1", 1, compile=(0, 1, 2, 3, 4, 8, 9, 12),
-            gpu=range(13), interpreted=range(13)),
 ]
 
-# The uncontracted kernel's card ladder: one program per aux l, as #613's.
-_XLADDER = {f"xeri3-{aux}": span("mmd", "eri3.ip1", 1, range(aux, aux + 7))
+# The uncontracted (mn|P) kernel's card ladder (#692): one program per aux l,
+# as #613's; a variant of the mmd/eri3/d1 cases.
+_XLADDER = {f"xeri3-{aux}": span("mmd", "eri3", 1, range(aux, aux + 7))
             for aux in range(7)}
 
 # #613's ladder: one program per aux l, every class of the aux-i system
@@ -100,6 +99,8 @@ TESTS = {
     "test/test_emit_hgs.py::test_X_compiles_the_unit": Classes("hgp", "s", 1),
     "test/test_emit_grad_df.py::test_X_compiles_the_df_gradient_unit":
         Classes("mmd", "metric", 1),
+    "test/test_emit_ipmetric.py::test_X_compiles_the_ipmetric_unit":
+        Classes("mmd", "metric", 1),
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":
         Classes("mmd", "k", 1),
     "test/test_emit_hgp_grad.py::test_X_compiles_the_unit": Classes("hgp", "t", 1),
@@ -119,13 +120,13 @@ TESTS = {
     "test/test_emit_grad_f.py::test_X_compiles_the_fock_gradient_unit":
         Classes("hgp", "f", 1),
     "test/test_emit_grad_dfx.py::test_X_compiles_the_xeri3_unit":
-        Classes("mmd", "eri3.ip1", 1),
+        Classes("mmd", "eri3", 1),
     # H2O/STO-3G against s, p, d aux shells: every class through (pp|d).
     "test/test_xeri3_device.py::test_X_xeri3_matches_the_host":
-        span("mmd", "eri3.ip1", 1, range(5)),
+        span("mmd", "eri3", 1, range(5)),
     "test/test_xeri3_device.py::test_X_xeri3_ladder_through_i": ById(_XLADDER),
     "test/test_xeri3_device.py::test_X_xeri3_program_compiles":
-        span("mmd", "eri3.ip1", 1, range(5)),
+        span("mmd", "eri3", 1, range(5)),
     "test/test_grad_device.py::test_X_gradient_matches_the_host": ById(_GRAD),
     # #659's compile-only twins, the registry's compile tier (L <= 4)
     "test/test_grad_device.py::test_X_gradient_runners_compile": ById(

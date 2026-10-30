@@ -3,6 +3,7 @@ nuclear gradients of the Coulomb metric `(P|Q)` and the three-center
 integral `(mn|P)`.
 
     metric_gradient(aux, W, nuclei, *, pq)         -> G  SUM_PQ W_PQ d(P|Q)/dR
+    metric_derivative(aux, *, pq)                  -> M1 d(P|Q)/dA_P, uncontracted
     eri3_gradient(basis, aux, Gam, nuclei, *, pq)  -> G  SUM_mnP Gam_mnP d(mn|P)/dR
     metric_records(cls, aux, nuclei)               -> gmetric's extra arrays
     eri3_records(cls, basis, aux, nuclei)          -> geri3's extra arrays
@@ -385,6 +386,54 @@ def eri3_ip1(basis: Basis, aux: Basis, *, pq: PQ,
                                     X[k][ob + ib][oa + ia][op + q] -= (
                                         s * _contract(dB, m, e))
     return X
+
+
+def metric_derivative(aux: Basis, *, pq: PQ,
+                      pairs: Sequence[tuple[int, int]] | None = None
+                      ) -> list[Matrix]:
+    """`M1[k][P][Q] = d(P|Q) / dA_k`, `A` the centre of `P`: the
+    uncontracted d1 metric (#693, `gradient.kernel_ipmetric`'s witness),
+    `[3][n_aux][n_aux]`, every element of every pair in `pairs` (default
+    all `i <= j`), zero elsewhere.
+
+    Each centre is differentiated on its own, by the Cartesian rule: an
+    off-diagonal pair `(i, j)` writes `d/dA` of `(P_a|Q_b)` at `[a][b]` and
+    `d/dB` of it at `[b][a]` (there `Q_b` is the moved first index); a
+    diagonal pair writes `d/dA` at every `[a][b]` (its `[b][a]` is the
+    element `(b, a)`'s own). So `M1[k][Q][P] = -M1[k][P][Q]`, which the
+    kernel writes as its mirror, is a CHECK here, not an assumption.
+    libcint's `int2c2e_ip1` differentiates the electron coordinate:
+    `M1 = -int2c2e_ip1`."""
+    sh, off = aux.shells, aux.offsets
+    n = aux.n_ao
+    M1 = [[[0.0] * n for _ in range(n)] for _ in range(3)]
+    if pairs is None:
+        pairs = [(i, j) for i in range(len(sh)) for j in range(i, len(sh))]
+    for i, j in pairs:
+        if not 0 <= i <= j < len(sh):
+            raise ValueError(f"aux shell pair ({i}, {j}) is not i <= j")
+        sP, sQ = sh[i], sh[j]
+        ts, taus = hermite_order(sP.l + 1), hermite_order(sQ.l + 1)
+        for p in aux_records(sP):
+            cp = _Center(p.alpha, sP.l)
+            for q in aux_records(sQ):
+                cq = _Center(q.alpha, sQ.l)
+                R = (p.A[0] - q.A[0], p.A[1] - q.A[1], p.A[2] - q.A[2])
+                theta = math.sqrt(p.alpha * q.alpha / (p.alpha + q.alpha))
+                m = [[pq(t, tau, R, theta) for tau in taus] for t in ts]
+                s = p.s * q.s
+                for x, a in enumerate(cartesians(sP.l)):
+                    ea = _hermite(cp.e(a), ts)
+                    for y, b in enumerate(cartesians(sQ.l)):
+                        eb = _hermite(cq.e(b), taus)
+                        for k in range(3):
+                            M1[k][off[i] + x][off[j] + y] += s * _contract(
+                                _hermite(cp.d(a, k), ts), m, eb)
+                            if i != j:
+                                M1[k][off[j] + y][off[i] + x] += (
+                                    s * _contract(ea, m, _hermite(
+                                        cq.d(b, k), taus)))
+    return M1
 
 
 def metric_records(cls: MetricClass, aux: Basis,

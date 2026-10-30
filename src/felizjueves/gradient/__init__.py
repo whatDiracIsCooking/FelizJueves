@@ -47,10 +47,11 @@ which is what every term of an SCF energy gradient is (`M = D` for `T`,
 and the half are the caller's). The DF terms contract an aux matrix
 (`SUM_PQ W_PQ d(P|Q)/dR`) and a three-index tensor (`SUM_mnP Gam_mnP
 d(mn|P)/dR`) the same way (`host_df`'s module docstring has DF-J's).
-ONE KERNEL IS THE EXCEPTION (#692): `kernel_xeri3` writes the
-three-center derivative integrals themselves, `(nabla_k m n|P)` over one
-aux block, because a DF Hessian contracts them in more ways than one
-kernel can fuse (`Spec.uncontracted`).
+THE UNCONTRACTED KERNELS ARE THE EXCEPTION (the `uncontracted` lever,
+#693 and #692): `kernel_ipmetric` writes `d(P|Q)/dA` and `kernel_xeri3`
+the three-center `(nabla_k m n|P)` over one aux block -- the derivative
+integrals themselves, because a DF Hessian contracts them in more ways
+than one kernel can fuse.
 The rule is McMurchie & Davidson's, the one `experimental/mmd/gradient`
 checked against libcint and finite differences:
 

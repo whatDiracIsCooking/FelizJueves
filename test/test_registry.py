@@ -31,10 +31,7 @@ from registry import BACKEND_CARD, REGISTRY, RULES, Allow, ById, CollectedCase, 
 
 from felizjueves.spec import Target
 
-# Every target's matrix, and the one uncontracted form a `Spec` admits
-# (#692: ERI3 at d1, `uncontracted=True`, spelled apart since it is another
-# quantity, the derivative integrals rather than their contraction).
-QUANTITIES = {t.value for t in Target} | {"eri3.ip1"}
+QUANTITIES = {t.value for t in Target}
 
 
 @pytest.fixture(scope="module")

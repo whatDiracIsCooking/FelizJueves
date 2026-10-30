@@ -295,35 +295,33 @@ def test_the_host_is_libcints_ip1_through_orbital_f_and_aux_i() -> None:
 
 def test_the_key_and_the_name() -> None:
     s = xeri3_spec(0, 1, 2)
-    assert s.key() == "coulomb/d1u/(0,1|2)/b1/eri3/literal"
-    assert s.key() == geri3_spec(0, 1, 2).key().replace("/d1/", "/d1u/")
+    assert s.key() == "coulomb/d1/(0,1|2)/b1/eri3/uncontracted"
+    assert s.key() == geri3_spec(0, 1, 2).key().replace(
+        "/literal", "/uncontracted")
     assert xeri3_name((0, 1, 2)) == "xeri3_012"
     assert xeri3_name((0, 11, 0)) == "xeri3_0_11_0"
     assert build_xeri3_kernel(s).name == "xeri3_012"
 
 
 def test_a_contracted_key_or_another_target_is_refused() -> None:
-    with pytest.raises(ValueError, match="not an uncontracted d1"):
+    with pytest.raises(ValueError, match="exactly the lever 'uncontracted'"):
         build_xeri3_kernel(geri3_spec(0, 1, 2))
-    with pytest.raises(ValueError, match="not an uncontracted d1"):
+    with pytest.raises(ValueError, match="not a d1 Target.ERI3 key"):
         build_xeri3_kernel(Spec(Operator.COULOMB, 0, (1, 0, 0), Target.ERI3))
-    with pytest.raises(ValueError, match="kernel_xeri3 builds it"):
+    with pytest.raises(ValueError, match="take no levers"):
         build_geri3_kernel(xeri3_spec(0, 1, 2))
 
 
-def test_the_spec_admits_the_form_on_mmd_eri3_at_d1_alone() -> None:
+def test_the_lever_is_legal_on_mmd_eri3_at_d1_alone() -> None:
     for d in (0, 2):
-        with pytest.raises(ValueError, match="uncontracted form is built"):
+        with pytest.raises(ValueError, match="lever 'uncontracted' at "
+                                             f"derivative order {d}"):
             Spec(Operator.COULOMB, d, (0, 1, 2), Target.ERI3,
-                 uncontracted=True)
-    with pytest.raises(ValueError, match="uncontracted on d1 target "
+                 ("uncontracted",))
+    with pytest.raises(ValueError, match="lever 'uncontracted' on target "
                                          "eri3.hgp"):
-        Spec(Operator.COULOMB, 1, (0, 1, 2), Target.ERI3, engine=Engine.HGP,
-             uncontracted=True)
-    with pytest.raises(ValueError, match="uncontracted on d1 target metric"):
-        Spec(Operator.COULOMB, 1, (1, 2), Target.METRIC, uncontracted=True)
-    with pytest.raises(ValueError, match="not a bool"):
-        Spec(Operator.COULOMB, 1, (0, 1, 2), Target.ERI3, uncontracted=1)
+        Spec(Operator.COULOMB, 1, (0, 1, 2), Target.ERI3, ("uncontracted",),
+             engine=Engine.HGP)
 
 
 def test_the_parameters_and_the_one_output() -> None:

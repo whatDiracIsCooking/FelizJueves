@@ -753,8 +753,7 @@ def test_the_dipole_key_is_a_dipole_pair_and_round_trips() -> None:
     assert a.total_am == 3
     assert [f.name for f in dataclasses.fields(Spec)] == [
         "operator", "derivative_order", "am", "target", "levers",
-        "n_batches", "engine",
-        "uncontracted"]  # no multipole-order field (#692's form is ERI3's)
+        "n_batches", "engine"]  # no multipole-order field
     for la in range(5):
         for lb in range(5):
             s = _dipole((la, lb))

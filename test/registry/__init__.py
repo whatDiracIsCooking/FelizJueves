@@ -162,7 +162,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "gs": ("mmd", "s", 1), "gt": ("mmd", "t", 1), "gv": ("mmd", "v", 1),
     "gjab": ("mmd", "jab", 1), "gk": ("mmd", "k", 1),
     "gmetric": ("mmd", "metric", 1), "geri3": ("mmd", "eri3", 1),
-    "xeri3": ("mmd", "eri3.ip1", 1),
+    "ipmetric": ("mmd", "metric", 1), "xeri3": ("mmd", "eri3", 1),
     "hdq": ("mmd", "dq", 2), "hjab": ("mmd", "jab", 2),
     "d2s": ("mmd", "s", 2), "d2t": ("mmd", "t", 2), "d2v": ("mmd", "v", 2),
     "hkx": ("mmd", "k", 2),
@@ -214,10 +214,9 @@ Found = tuple[tuple[str, str, int] | str | None, int]
 def _from_value(value: Any) -> Found | None:
     """One parameter's L, and what it names of (engine, quantity, deriv): all
     three, the quantity alone (a `str`), or nothing (None)."""
-    if isinstance(value, Spec):  # the uncontracted form (#692) is its own
-        q = value.target.value + (".ip1" if value.uncontracted else "")
-        return ((value.engine.value, q, value.derivative_order),
-                value.total_am)
+    if isinstance(value, Spec):
+        return ((value.engine.value, value.target.value,
+                 value.derivative_order), value.total_am)
     if isinstance(getattr(value, "name", None), str) and hasattr(
             value, "params"):  # an ir.Kernel
         return _unit(value.name)

@@ -1,5 +1,6 @@
 """The UNCONTRACTED three-center d1 kernel: `Target.ERI3` at
-`derivative_order = 1`, `uncontracted=True` (#692).
+`derivative_order = 1` with the kernel-body lever `uncontracted` (#692,
+#693's lever), keyed ``coulomb/d1/(la,lb|lP)/b1/eri3/uncontracted``.
 
     build_xeri3_kernel(spec | (la, lb, lP)) -> Kernel        one per class
     xeri3_name(spec | (la, lb, lP))         -> str           xeri3_{la}{lb}{lP}
@@ -130,7 +131,7 @@ from felizjueves.mmd.recurrence import (
     store_targets,
 )
 from felizjueves.plan.targets import hermite_targets
-from felizjueves.spec import Operator, Spec, Target
+from felizjueves.spec import Operator, Spec, Target, lever_provenance
 
 __all__ = [
     "build_xeri3_kernel",
@@ -139,6 +140,7 @@ __all__ = [
     "xeri3_spec",
 ]
 
+UNCONTRACTED = "uncontracted"  # the kernel-body lever (levers.VOCABULARY)
 CELL = "cell"  # one thread per (AO shell pair, aux shell) of the block
 BRA = "ib"  # the bra record, serial
 KET = "ik"  # the aux record, serial inside the bra
@@ -153,15 +155,18 @@ DIAGONAL = ("a diagonal shell pair (oa == ob) writes the dA slot alone: over "
 def xeri3_spec(la: int, lb: int, lP: int) -> Spec:
     """The class `(la, lb, lP)` at d1, `Target.ERI3`, uncontracted."""
     return Spec(Operator.COULOMB, 1, (la, lb, lP), Target.ERI3,
-                uncontracted=True)
+                (UNCONTRACTED,))
 
 
 def _class(cls: Spec | tuple[int, int, int]) -> tuple[int, int, int]:
     spec = cls if isinstance(cls, Spec) else xeri3_spec(*cls)
-    if (spec.target is not Target.ERI3 or spec.derivative_order != 1
-            or not spec.uncontracted):
-        raise ValueError(f"{spec.key()} is not an uncontracted d1 "
-                         "Target.ERI3 key")
+    if spec.target is not Target.ERI3 or spec.derivative_order != 1:
+        raise ValueError(f"{spec.key()} is not a d1 Target.ERI3 key")
+    if spec.levers != (UNCONTRACTED,):
+        raise ValueError(f"{spec.key()}: the uncontracted three-center "
+                         f"derivative is the key with exactly the lever "
+                         f"{UNCONTRACTED!r} (the contraction is "
+                         "kernel_geri3's)")
     la, lb, lP = spec.am
     return la, lb, lP
 
@@ -364,6 +369,7 @@ def build_xeri3_kernel(cls: Spec | tuple[int, int, int], *,
              f"lP) = ({la}, {lb}, {lP}): X[k, m, n, P - aux0] = (nabla_k m n"
              "|P), libcint's int3c2e_ip1, over the cells of one aux block "
              "(felizjueves.gradient.kernel_xeri3)"),
+        Note(lever_provenance(UNCONTRACTED)),
         Note("the aux centre is the caller's: (mn|nabla_k P) = -X[k, m, n, "
              "P] - X[k, n, m, P] (translational invariance)"),
         Note("launch: one thread per (AO shell pair, aux shell) cell"),

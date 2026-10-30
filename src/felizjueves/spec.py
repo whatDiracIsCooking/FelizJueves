@@ -253,7 +253,14 @@ terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 pair `(lP, lQ)` and triple `(la, lb, lP)`; `METRIC` at d1 is legal on
 `Engine.HGP` too (`GRADIENT_OFF_NATIVE`: `gradient.kernel_hgmetric`, the
 Cartesian rule on the HGP VRR), so ``coulomb/d1/(1,1)/b1/metric.hgp/literal``
-is a key. `DQ` at d1 is the ket
+is a key. THE UNCONTRACTED d1 FORM (#693, #692): the kernel-body lever
+`uncontracted` (`levers.VOCABULARY`, legal on `metric` and `eri3` at d1
+only, `levers.order_refusal`) asks for the derivative integrals
+themselves -- `M1[k, P, Q] = d(P|Q)/dA_k` as an `[3, n_aux, n_aux]` matrix
+(`gradient.kernel_ipmetric`), keyed
+``coulomb/d1/(1,2)/b1/metric/uncontracted``, and `X[k, m, n, P] =
+(nabla_k m n|P)` over one aux block (`gradient.kernel_xeri3`), keyed
+``coulomb/d1/(0,1|2)/b1/eri3/uncontracted``. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
 target's d0 reason. SIX OFF-NATIVE PAIRS ARE LEGAL AT d1
@@ -305,16 +312,6 @@ one segment. `ERI3` at d2 is the three-center DF integral's Hessian,
 three centres (`hessian.kernel_d2eri3`), `am` the triple, so
 ``coulomb/d2/(0,1|2)/b1/eri3/literal`` differs from the d1 key in one
 segment.
-
-ONE d1 CLASS IS UNCONTRACTED (#692). `ERI3` at d1 on MMD, with no lever,
-may carry `uncontracted=True`: its kernel writes the derivative integrals
-themselves, `X[k, m, n, P] = (nabla_k m n|P)` (libcint's `int3c2e_ip1`), not
-their contraction (`gradient.kernel_xeri3`), because a DF Hessian's
-derivative Fock matrices contract them in more ways than one kernel can
-fuse. The key spells it in the `d` segment, ``coulomb/d1u/(0,1|2)/b1/eri3/
-literal``, so it differs from the contracted d1 key in that segment alone;
-every other spec refuses it (`_UNCONTRACTED_REFUSAL`), and every
-pre-existing key is byte-identical.
 
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
@@ -671,17 +668,6 @@ _HESSIAN_REFUSAL = (
 )
 
 
-# THE UNCONTRACTED FORM (#692) is legal on one slot: `ERI3` at d1 on MMD,
-# no lever (`gradient.kernel_xeri3`, the raw `(nabla m n|P)` a DF Hessian's
-# derivative Fock matrices contract by BLAS). Every other d1 kernel writes
-# its contraction, and nobody has asked for another target's raw tensor.
-_UNCONTRACTED_REFUSAL = (
-    "the uncontracted form is built for ERI3 at derivative order 1 on the "
-    "MMD engine only, with no lever (gradient.kernel_xeri3); every other "
-    "kernel writes a contraction"
-)
-
-
 def is_batch_count(n: object) -> bool:
     """1, or a positive multiple of 3 ([JEngine, v2, §5])."""
     return type(n) is int and (n == 1 or (n > 0 and n % 3 == 0))
@@ -710,10 +696,6 @@ class Spec:
     # native engine (`NATIVE_ENGINE`), so after construction it is always an
     # `Engine`; the key spells it only when it is not the native one.
     engine: Engine | None = None
-    # The UNCONTRACTED form (#692): the derivative integrals themselves, not
-    # their contraction -- legal on `Target.ERI3` at d1 on MMD alone, with
-    # no lever (`_UNCONTRACTED_REFUSAL`); the key spells it ``d1u``.
-    uncontracted: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.operator, Operator):
@@ -785,6 +767,11 @@ class Spec:
             if why is not None:
                 raise ValueError(
                     f"lever {lever!r} on target {self.target_slot}: {why}")
+            why = _levers.order_refusal(lever, self.derivative_order)
+            if why is not None:
+                raise ValueError(
+                    f"lever {lever!r} at derivative order "
+                    f"{self.derivative_order}: {why}")
         if not is_batch_count(self.n_batches):
             raise ValueError(
                 f"n_batches {self.n_batches!r} is neither 1 nor a positive "
@@ -801,18 +788,6 @@ class Spec:
                 f"{self.target}: "
                 f"{_PAIR_BATCH_REFUSAL[self.target]}"
             )
-        if type(self.uncontracted) is not bool:
-            raise ValueError(
-                f"uncontracted {self.uncontracted!r} is not a bool")
-        if self.uncontracted and not (
-            self.target is Target.ERI3 and self.derivative_order == 1
-            and self.engine is Engine.MMD and not self.levers
-        ):
-            raise ValueError(
-                f"uncontracted on d{self.derivative_order} target "
-                f"{self.target_slot}"
-                f"{' with levers' if self.levers else ''}: "
-                f"{_UNCONTRACTED_REFUSAL}")
 
     @property
     def target_slot(self) -> str:
@@ -881,8 +856,7 @@ class Spec:
             cls = f"({la},{lb})"
         levers = "+".join(self.levers) or "literal"
         return (
-            f"{self.operator}/d{self.derivative_order}"
-            f"{'u' if self.uncontracted else ''}/{cls}/"
+            f"{self.operator}/d{self.derivative_order}/{cls}/"
             f"b{self.n_batches}/{self.target_slot}/{levers}"
         )
 
@@ -899,8 +873,7 @@ class Spec:
         if not body:
             return self
         return Spec(self.operator, self.derivative_order, self.am,
-                    self.target, rest, self.n_batches, self.engine,
-                    self.uncontracted)
+                    self.target, rest, self.n_batches, self.engine)
 
 
 def lever_provenance(name: str) -> str:

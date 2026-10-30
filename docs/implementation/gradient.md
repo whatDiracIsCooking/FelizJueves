@@ -84,6 +84,9 @@ energy is `-1/2 E_K`). Per shell pair `i <= j`
 the weight of Cartesian pair `(r, c)` is `M[a_r, b_c] + M[b_c, a_r]` off
 the diagonal and `M[a_r, a_c]` on it, which is `SUM_mn M_mn X_mn` exactly
 for any `M` (no symmetry assumed) and any `X` symmetric in `m <-> n`.
+One exception writes the integrals themselves: the DF metric's
+`uncontracted` form, `ipmetric_` (#693, "The uncontracted metric
+derivative", below), for the DF Hessian.
 
 ## The rule
 
@@ -710,6 +713,43 @@ the Cartesian rule on the HGP VRR instead of the Hermite shift; same
 parameters and `G` contract), interpreted through L = 4 and compiled for s
 and p, on no card: `hgp_df.md`, "The metric's nuclear gradient on HGP".
 
+### The uncontracted metric derivative (`gradient/kernel_ipmetric.py`, #693)
+
+The DF Hessian needs `d(P|Q)/dR` in more contractions than `gmetric_`'s
+one (`SUM_Q (P|Q)^x d_Q` for the response of `d`, `SUM_Q (P|Q)^x c_Q,ij`
+inside `c^x = M^-1 (T^x - M^x c)`, the `M^x M^y` cross terms), each a gemm
+once the derivative exists as a matrix. `ipmetric_{lP}{lQ}` writes it:
+
+    M1[k, P, Q] = d(P|Q)/dA_k        A the centre of P,  [3, n_aux, n_aux]
+
+keyed `coulomb/d1/(lP,lQ)/b1/metric/uncontracted` -- the kernel-body lever
+`uncontracted` (`levers.VOCABULARY`, legal on the MMD `metric` slot only and
+at d1 only, by the lever's new `orders` field, `levers.order_refusal`).
+`gmetric_`'s Hermite shift and tower one order up, in its low-stack rolled
+form at every class (no `3 nP nQ` accumulators: 2,352 at (i|i)), each
+element accumulated in place in the pair's own slots, which it zeroes
+first, and plain stores, no atomics. The other centre needs no second
+kernel: `(P|Q)` reads `A - B`, so `M1[k, Q, P] = -M1[k, P, Q]`, written as
+the negated mirror of an off-diagonal pair (bitwise); a diagonal pair forms
+its whole block. libcint's `int2c2e_ip1` differentiates the electron
+coordinate, so `M1 = -int2c2e_ip1`. Atom `X`'s block is the rows on `X`
+and their mirror; that slicing, and a launch of only some classes (the
+kernel leaves every other element untouched), are the caller's.
+
+| What | Against | Where | Worst |
+|---|---|---|---|
+| host `host_df.metric_derivative` (each centre by the Cartesian rule) | libcint `-int2c2e_ip1_cart`, the numeric golden store (`metric_ip1{x,y,z}_h2o_ccpvdz_jkfit_bse`, one axis per entry: the whole array is over the per-array budget) | cc-pVDZ-JKFIT on H₂O, every class through (f\|f) (`slow`; s, p fast) | 7.21e-14 of max, gate `1e-12` |
+| host | the aux-i witness (`manifest.df_gradient`, libcint `int2c2e_ip1_cart` contracted per class), `M1` contracted with the same `W` | all 28 classes through (i\|i) (`slow`) | 1.72e-14 of the largest class `max\|G\|`, gate `1e-12` |
+| kernel, interpreted (`test_kernel_ipmetric.py`) | the host, per class, every owned element; every other element untouched | all 28 classes `lP <= lQ <= 6`: L <= 4 on `test_kernel_gmetric.py`'s basis, above on two-shell bases with the absolute-value tower's scale | 3.62 eps ((d\|d)), gate 16 eps |
+| kernel, interpreted | libcint: the golden over all of cc-pVDZ-JKFIT (`slow`; s, p fast), and the aux-i witness at (s\|s), (p\|p), (f\|g), (h\|i), (i\|i) | | 7.21e-14 (golden), 5.29e-15 (witness) |
+| compile, nvcc / hipcc (`test_emit_ipmetric.py`) | #92's filter | all 28 classes on `sm_86` and `gfx1200`, device-less cloud container, 2026-10-30 | no warning in generated text |
+
+Ladder `--ip-metric-l [LMAX]` (`lP <= lQ <= LMAX`, 0..6, bare 2: six
+goldens), never in the bare default nor in `KERNEL_GEN_CMD`. **Not run on a
+card and not measured** (no device harness: the d1 DF program of
+`test_grad_df_device.py` launches `gmetric_` only). The three-center twin
+is #692.
+
 Not done for DF: the metric solve and `d` stay host-side (DF-K's `Gam^K`,
 `W^K` are staged on the host only, #620; no device run of them, the
 kernels having run on both cards with an arbitrary `Gam`); no screen;
@@ -942,10 +982,12 @@ PySCF's `df.hessian.rhf` writes the raw derivative integrals
 (`int3c2e_ip1`) in aux blocks and does each as a gemm, which is also the
 GPU-friendly route. So this kernel writes the tensor and nothing else.
 
-**The key.** `Spec(COULOMB, 1, (la, lb, lP), ERI3, uncontracted=True)`,
-``coulomb/d1u/(la,lb|lP)/b1/eri3/literal``: the contracted d1 key with
-`d1u` in the `d` segment. It is legal on MMD `ERI3` at d1 with no lever
-alone (`spec._UNCONTRACTED_REFUSAL`), and `kernel_geri3` refuses it. The
+**The key.** `Spec(COULOMB, 1, (la, lb, lP), ERI3, ("uncontracted",))`,
+``coulomb/d1/(la,lb|lP)/b1/eri3/uncontracted``: #693's kernel-body lever
+`uncontracted` (the metric's `ipmetric_`, above), widened from `metric` to
+`eri3`, legal at d1 on MMD only (`levers.order_refusal`, and its refusals
+of `eri3.hgp` / `eri3.rys`). `kernel_geri3` refuses it, as it refuses
+every lever, and `kernel_xeri3` builds only the key with exactly it. The
 kernel prefix is `xeri3_`, which collides with none of `eri3_`, `geri3_`,
 `heri3_`, `hgeri3_`, `reri3_`, `d2eri3_`.
 
