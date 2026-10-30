@@ -48,7 +48,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from harness_driver import build_chain
+from harness_driver import build_steps
 from oracle import basis as ob
 from oracle import manifest
 from sx_driver import build_on_card, sx_steps
@@ -169,13 +169,13 @@ def test_hip_cross_overlap_matches_the_host_and_libcint(
 @pytest.mark.cuda
 @pytest.mark.parametrize("case", CASES)
 def test_cuda_sx_programs_compile(case, nvcc, tmp_path):
-    build_chain(nvcc, "cuda", sx_steps(_launch(case)), tmp_path)
+    build_steps(nvcc, "cuda", sx_steps(_launch(case)), tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("case", CASES)
 def test_hip_sx_programs_compile(case, hipcc, tmp_path):
-    build_chain(hipcc, "hip", sx_steps(_launch(case)), tmp_path)
+    build_steps(hipcc, "hip", sx_steps(_launch(case)), tmp_path)
 
 
 @pytest.mark.slow  # plans (ff), L > FAST_L_MAX (tiers.py)

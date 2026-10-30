@@ -61,12 +61,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from harness_driver import build_chain
+from harness_driver import build_steps
 from mu_driver import QUAD_LMAX, compile_mu, kernel_of, mu_steps, units_of
 from oracle import basis as ob
 from oracle import manifest
 from test_kernel_device import BACKEND, _toolchain
 from test_kernel_quad import _host as _host_jab
+from test_mu_device import _as_params
 from test_one_electron_device import _axis_abs, _place
 
 from felizjueves.ao.pairs import overlap_bound
@@ -240,7 +241,7 @@ def test_hip_quad_every_class_through_dd_matches_host_and_libcint(
 
 def _compiles(backend: str, tc, tmp_path: Path) -> None:
     launch = _launch()
-    build_chain(tc, backend, mu_steps(launch, _case()[0].n_ao, ZERO, 1.0, QUAD),
+    build_steps(tc, backend, mu_steps(launch, _case()[0].n_ao, ZERO, 1.0, QUAD),
                 tmp_path, units=units_of(backend, launch, QUAD))
 
 
@@ -281,7 +282,7 @@ def test_quad_staged_data_through_the_interpreter_is_the_host(q) -> None:
     for st in mu_steps(_launch(), n, origin, q, QUAD):
         grid, block = launch_shape(st.args["n_rec"], 8)
         out = Interpreter(st.kernel, launch=Launch(grid, block, 1)).run(
-            **st.args, MU=out)[MU]
+            **_as_params(st), MU=out)[MU]
     tol, _, _, _ = _bound(origin, q)
     err = np.abs(out - _host(tuple(float(x) for x in origin), q))
     assert np.all(err <= tol), _ratio(err, tol)

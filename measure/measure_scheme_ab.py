@@ -85,10 +85,8 @@ from oracle import polyglycine
 from plan_driver import (
     RUNS,
     compile_checked,
+    compile_dq,
     dq_classes,
-    dq_program,
-    dq_read_back,
-    dq_stage,
     driver,
     read_back_j,
     reps,
@@ -143,6 +141,11 @@ TIMED_REGION = {
     "f": "GPU events around every F launch; the zeroing of F and a "
          "synchronize outside (fock_driver's timing mode)",
     "f_block_fab": "as f",
+    # The tracked rows were taken on plan_driver.DQ_PROGRAM, which #659
+    # replaced by the shared runner (`plan_driver.DQBinary.run`): one
+    # process per DQ class, its events around its one launch, the poison
+    # restored outside -- every cell here has one DQ class, so the same
+    # region. Restate this entry with the store's header at the next sweep.
     "dq": "GPU events around every DQ launch; the outputs' poisoning "
           "outside (plan_driver.DQ_PROGRAM's timing mode)",
     "j": "GPU events from before the J_p and J_mn memsets to after the last "
@@ -213,7 +216,7 @@ class Cell:
     basis: Basis
     D: np.ndarray
     f: dict  # arm -> (binary, data, recs)
-    dq: tuple  # (binary, staged, classes)
+    dq: object  # plan_driver.DQBinary
     j: tuple  # (binary, staged, drv, plan)
     k: list  # kblock ClassBinary
     wd: Path
@@ -236,13 +239,8 @@ def build(tc, backend: str, n: int, cls: str, tau: float, run,
         f[arm] = (binary, fock_stage(recs, kernels), recs)
 
     classes = dq_classes(basis, D)
-    dqp = dq_program(classes, backend, wd / "dq")
-    dq_bin = compile_checked(tc, dqp, wd / "dq_bin")
-    dq_in = wd / "dq.in"
-    dq_stage(classes).tofile(dq_in)
-    run(dq_bin, str(dq_in), str(wd / "dq.out"), vram=backend)
-    dq_runs = dq_read_back(classes, np.fromfile(wd / "dq.out"))
-    rows = _rows_of(classes, dq_runs[0])
+    dq = compile_dq(classes, backend, tc, wd / "dq")
+    rows = _rows_of(classes, dq.run()[0])
     pairs = _unique_pairs(basis)
     gs = {(a, b): [bound_value(J_BOUND, zeta,
                                basis.shells[a].l + basis.shells[b].l)
@@ -260,7 +258,7 @@ def build(tc, backend: str, n: int, cls: str, tau: float, run,
                         tau=tau, build=build_kblock_kernel)
     assert [c.am for c in kplan] == [(CLASSES[cls],) * 4], kplan
     parts = class_binaries(tc, kplan, basis, D, backend, wd / "k")
-    return Cell(n, cls, tau, basis, D, f, (dq_bin, dq_in, classes),
+    return Cell(n, cls, tau, basis, D, f, dq,
                 (j_bin, j_in, drv, jplan), parts, wd)
 
 
@@ -276,10 +274,9 @@ def run_arm(c: Cell, arm: str, backend: str, run, *, warmup: int = 0,
         _, ev = _f_reps(out)
         return np.array(KF.close(F[0].tolist())), ev
     if arm == "dq":
-        binary, staged, _ = c.dq
-        out = run(binary, str(staged), str(c.wd / "dqt.out"),
-                  str(warmup), str(reps_), vram=backend)
-        return None, _dq_reps(out)
+        _, times = c.dq.run(runs=reps_, warmup=warmup, tag="timed")
+        return None, [float(sum(t)) for t in zip(*times.values(),
+                                                  strict=True)]
     if arm == "j":
         binary, staged, drv, _ = c.j
         dst = c.wd / "j.out"
@@ -299,13 +296,6 @@ def _f_reps(out: str):
     from fock_driver import reps as f_reps
 
     return f_reps(out)
-
-
-def _dq_reps(out: str) -> list[float]:
-    got = [line.split() for line in out.splitlines()
-           if line.startswith("rep ") and " dq events_ns " in line]
-    assert [int(g[1]) for g in got] == list(range(len(got))), out
-    return [float(g[4]) for g in got]
 
 
 def agreement(c: Cell, backend: str, run) -> dict:
@@ -452,7 +442,7 @@ def _measure(backend: str, request, run_device_binary, tmp_path: Path):
                 "n_ao": c.basis.n_ao,
                 "counts": {
                     "f_launches": len(c.f["f"][2]),
-                    "dq_launches": len(c.dq[2]),
+                    "dq_launches": len(c.dq.classes),
                     "pq_launches": len(c.j[2].launches),
                     "jab_launches": len(c.j[2].jab),
                     "kb_blocks": sum(len(cl.blocks)

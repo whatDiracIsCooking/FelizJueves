@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from harness_driver import build_chain
+from harness_driver import build_steps
 from hgp_one_e_driver import build_on_card, hgp_one_e_steps
 from oracle import basis as ob
 from oracle import manifest
@@ -139,7 +139,7 @@ def test_hip_hgp_one_e_matches_libcint(tname, name, request, tmp_path):
 @pytest.mark.cuda
 @pytest.mark.parametrize("tname", TARGETS)
 def test_cuda_hgp_one_e_program_compiles(tname, nvcc, tmp_path):
-    build_chain(nvcc, "cuda", hgp_one_e_steps(_plan(SYNTHETIC, NUCLEI),
+    build_steps(nvcc, "cuda", hgp_one_e_steps(_plan(SYNTHETIC, NUCLEI),
                                               Target(tname), SYNTHETIC),
                 tmp_path)
 
@@ -147,6 +147,6 @@ def test_cuda_hgp_one_e_program_compiles(tname, nvcc, tmp_path):
 @pytest.mark.hip
 @pytest.mark.parametrize("tname", TARGETS)
 def test_hip_hgp_one_e_program_compiles(tname, hipcc, tmp_path):
-    build_chain(hipcc, "hip", hgp_one_e_steps(_plan(SYNTHETIC, NUCLEI),
+    build_steps(hipcc, "hip", hgp_one_e_steps(_plan(SYNTHETIC, NUCLEI),
                                              Target(tname), SYNTHETIC),
                 tmp_path)

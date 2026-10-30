@@ -6,10 +6,12 @@
     launch_spec(kernel, grid, block, args)     -> (spec dict, {file: array})
     write_case(workdir, spec, arrays)          -> the spec's path
     run_case(binary, kernel, workdir, ...)     -> Ran(outs, events_ns)
-    typed(kernel, arrays)                      -> each array as its parameter's dtype
-    Step(kernel, grid, block, args)            -> one launch of a chain
-    build_chain(tc, backend, steps, workdir, units=) -> [runner per step]
-    run_chain(binaries, steps, initial, workdir, runs=) -> the carried OUT array
+    compile_checked(tc, program, out)          -> Path, #92's warning filter
+    Step / chain_runners / build_chain / run_chain -> several launches, one
+                                                  carried output (#659)
+    chain_specs(steps, carried, init)          -> the specs, checked host-side
+    build_steps(tc, backend, steps, workdir)   -> chain_runners + build_chain (#658)
+    carried(steps)                             -> the one OUT every step writes
 
 WHY. Every device test before this wrote its own `main()` (test_f32_device.py's
 HARNESS, plan_driver.py's DRIVER, ...): the uploads, the launch and the
@@ -26,19 +28,22 @@ exactly its dtype, an OUT array an ndarray (read and updated) or a shape
 runner checks the spec again against the compiled signature
 (test/harness/kernel_table.h), so the two halves cannot drift silently.
 
-COMPILED LIKE EVERY OTHER TEST-SIDE DRIVER: `plan_driver.compile_checked`,
-so devtools/config.sh's NVCC_FLAGS / HIPCC_FLAGS, the compiler cache (#186)
-and #92's warning filter -- which here covers the unit AND every harness
-header, so "the runner builds with no warnings" is a checked statement.
+COMPILED LIKE EVERY OTHER TEST-SIDE DRIVER: `compile_checked`, the one
+compile entry point (folded in from plan_driver.py by #659, which still
+re-exports it for the drivers not yet ported), so devtools/config.sh's
+NVCC_FLAGS / HIPCC_FLAGS, the compiler cache (#186) and #92's warning
+filter -- which here covers the unit AND every harness header, so "the
+runner builds with no warnings" is a checked statement.
+
+CHAINS (#659): several launches into ONE output -- a gradient's `G`, a
+hessian's `H` -- are `Step`s: each launch its own process, the output of
+one the read-and-update input of the next (#654's pattern), the chain
+repeated `runs` times from the same initial value by `run_chain`. A chain
+whose kernels add with fp64 atomics is not bit-reproducible launch to
+launch, so its runs are separate processes and the test bounds their
+spread, as the string-built programs' `RUNS` loop did.
 
 REPEATS (#654): `runs=` / `warmup=`, runner.h's run-to-run witness and clock.
-
-CHAINS (#658): a matrix several classes' kernels write into -- one launch
-per class, every kernel with exactly one OUT array -- is a list of `Step`s.
-`build_chain` emits each step's unit (or takes the caller's, `units=`) and
-compiles one runner per step; `run_chain` carries the OUT array from step to
-step, read and updated, from `initial`. A runner depends on its unit alone,
-so the compiler cache (#186) serves every basis after the first.
 
 The harness is C++17 (the tier's `--std=c++17`) and C++20-clean: no modules,
 no `import std`, nothing from FreeBreakfast.
@@ -48,16 +53,20 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
+import devcache
 import numpy as np
 from conftest import Toolchain
-from plan_driver import Program, _unit, compile_checked
+from test_kernel_device import BACKEND
 
 from felizjueves.ir import Intent, Kernel, Scalar
+from felizjueves.performance import measured
 
 HARNESS = Path(__file__).resolve().parent / "harness"
 HEADERS = tuple(HARNESS / n for n in ("fj_gpu.h", "device_buffer.h", "npy.h",
@@ -69,6 +78,83 @@ EXT = {"cuda": "cu", "hip": "hip"}
 TYPE = {Scalar.F64: "f64", Scalar.F32: "f32", Scalar.I32: "i32"}
 DTYPE = {Scalar.F64: np.dtype("<f8"), Scalar.F32: np.dtype("<f4"),
          Scalar.I32: np.dtype("<i4")}
+
+@dataclass(frozen=True)
+class Program:
+    """A generated translation unit and the emitted units it includes:
+    what `compile_checked` compiles and filters (it reads `backend`, `path`,
+    `units`; `plan_driver.Driver` / `KDriver` carry the same three)."""
+
+    backend: str
+    source: str
+    path: Path
+    units: tuple[Path, ...]
+
+
+
+
+# --- compiling it: the tier's flags, and #92's warning filter -------------
+
+FLAGS_VAR = {"cuda": "NVCC_FLAGS", "hip": "HIPCC_FLAGS"}
+# kernel-tier.sh's two spellings of a located warning: nvcc's front end
+# `file(LINE): warning ...`, clang/gcc `file:LINE[:COL]: warning: ...`.
+_WARNING = r"(?:\((\d+)\): warning|:(\d+)(?::\d+)?: warning:?)\s*(.*)"
+
+
+def compile_command(tc: Toolchain, drv: Program, out: Path) -> list[str]:
+    """The tier's compile command for the driver: devtools/config.sh's
+    NVCC_FLAGS / HIPCC_FLAGS (the flag set the compile phase uses, warnings
+    on) and the arch, linked to an executable."""
+    flags = shlex.split(measured.config_value(FLAGS_VAR[drv.backend]))
+    arch = (f"-arch=sm_{tc.arch}" if tc.name == "nvcc"
+            else f"--offload-arch={tc.arch}")
+    return [tc.path, *flags, arch, str(drv.path), "-o", str(out)]
+
+
+def generated_warnings(drv: Program, diagnostics: str) -> list[str]:
+    """Every warning whose LOCATION is generated text -- the driver or one of
+    the kernel units it includes -- as `file, line N: message` (#92: a
+    warning in a vendor header is not the generator's and is not counted)."""
+    hits: list[str] = []
+    for f in (drv.path, *drv.units):
+        for name in {str(f), f.name}:
+            pat = re.compile(r"(?:^|[\s\"'/])" + re.escape(name) + _WARNING,
+                             re.MULTILINE)
+            for m in pat.finditer(diagnostics):
+                hit = f"{f.name}, line {m.group(1) or m.group(2)}: {m.group(3)}"
+                if hit not in hits:
+                    hits.append(hit)
+    return hits
+
+
+def compile_checked(tc: Toolchain, drv: Program, out: Path, *,
+                    env: Mapping[str, str] | None = None,
+                    timeout: float = 1800.0) -> Path:
+    """Compile the driver with the tier's flags; FAIL on an error, and on any
+    warning located in generated text (#92), naming file and line.
+
+    `compile_command`'s flags, run through the compiler cache (#186,
+    test/devcache.py): the driver and every unit it includes are carried, by
+    name, into a content-addressed directory and compiled there -- `-c`
+    through sccache, then linked -- so the same plan in a fresh `tmp_path`
+    is a hit. The compiler always runs; on a hit sccache replays the stored
+    diagnostics, and the filter below reads them the same way (the carried
+    units keep their names, which is what `generated_warnings` matches)."""
+    cmd = compile_command(tc, drv, out)
+    text, units = devcache.localize(drv.path.read_text(), drv.path.parent)
+    got = devcache.compile_unit(cmd[0], cmd[1:-3], drv.path.name, text, units,
+                                out, env=env, timeout=timeout)
+    diag = got.diagnostics
+    assert got.returncode == 0, (
+        f"{tc.name} failed in {got.workdir}:\n"
+        + "\n".join(shlex.join(c) for c in got.commands) + f"\n{diag}")
+    warned = generated_warnings(drv, diag)
+    assert not warned, (
+        f"{tc.name}: {len(warned)} warning(s) in generated text (#92) -- fix "
+        "the emitter or the driver, never a flag:\n  " + "\n  ".join(warned))
+    assert out.exists() and out.stat().st_size > 0, f"{out} is empty"
+    return out
+
 
 RUNNER = """\
 // runner for {unit}: generated by test/harness_driver.py (#649) -- harness.
@@ -233,70 +319,130 @@ def run_case(binary: Path, kernel: Kernel, workdir: Path,
     return Ran(outs, times)
 
 
-def typed(kernel: Kernel, arrays: Mapping[str, object]) -> dict[str, np.ndarray]:
-    """Each of `arrays` (by parameter name: lists, nested lists or ndarrays)
-    as an ndarray of exactly its array parameter's dtype. An integer array
-    whose values do not survive the conversion raises: nothing is truncated
-    silently."""
-    params = {p.name: p for p in kernel.params}
-    out = {}
-    for name, value in arrays.items():
-        p = params.get(name)
-        if p is None or not p.array:
-            raise ValueError(f"{kernel.name}: {name} is not an array parameter")
-        a = np.asarray(value, dtype=DTYPE[p.type])
-        if p.type is Scalar.I32 and not np.array_equal(a, np.asarray(value)):
-            raise ValueError(f"{kernel.name}: {name} is not exactly i32")
-        out[name] = a
-    return out
+# --- chains: several launches carrying one output (#659) ----------------------
 
 
-class Step(NamedTuple):
-    """One launch of a chain: every argument but the carried OUT array."""
+def emit_unit(kern: Kernel, backend: str, workdir: Path,
+              units: Mapping[str, Path] | None = None) -> Path:
+    """The emitted text of `kern`: `units[kern.name]` when the caller has the
+    file (the tier's own, asserted byte-identical by the caller), else
+    written into `workdir`."""
+    if units is not None and kern.name in units:
+        return units[kern.name]
+    emit, arch, ext = BACKEND[backend]
+    workdir.mkdir(parents=True, exist_ok=True)
+    path = workdir / f"{kern.name}.{ext}"
+    path.write_text(emit(kern, arch))
+    return path
+
+
+def as_param(kernel: Kernel, name: str, value) -> np.ndarray:
+    """`value` as parameter `name`'s dtype, converted deliberately: an integer
+    parameter takes only values its dtype holds exactly (the int arrays the
+    staging builds as float64, the old harnesses' exact doubles)."""
+    (p,) = [q for q in kernel.params if q.name == name]
+    if not p.array:
+        raise TypeError(f"{kernel.name}.{name} is a scalar")
+    a = np.asarray(value)
+    want = DTYPE[p.type]
+    if a.dtype == want:
+        return a
+    got = a.astype(want)
+    if p.type is Scalar.I32 and not np.array_equal(got, a):
+        raise ValueError(f"{kernel.name}.{name}: a value is not an exact "
+                         f"{want}")
+    return got
+
+
+@dataclass(frozen=True)
+class Step:
+    """One launch of a chain: `kernel` over `grid` x `block`, with every
+    argument but the carried one (`run_chain`), arrays converted to their
+    parameter's dtype by `as_param`."""
 
     kernel: Kernel
     grid: Sequence[int] | int
     block: Sequence[int] | int
     args: Mapping[str, object]
+    shared_bytes: int = 0
 
 
-def _carried(kernel: Kernel) -> str:
-    outs = [p.name for p in kernel.params if p.intent is Intent.OUT]
-    if len(outs) != 1:
-        raise ValueError(f"{kernel.name}: a chain carries exactly one OUT "
-                         f"array, the kernel has {outs}")
-    return outs[0]
+def _step_args(s: Step) -> dict:
+    return {k: as_param(s.kernel, k, v) if isinstance(v, np.ndarray) else v
+            for k, v in s.args.items()}
 
 
-def build_chain(tc: Toolchain, backend: str, steps: Sequence[Step],
-                workdir: Path, *, units: Mapping[str, Path] | None = None,
-                timeout: float = 1800.0) -> list[Path]:
-    """Each step's runner, compiled: its unit `units[name]` when the caller
-    has the file, else emitted into `workdir`."""
-    workdir.mkdir(parents=True, exist_ok=True)
-    out = []
-    for s in steps:
-        _carried(s.kernel)
-        unit = _unit(s.kernel, backend, workdir, units)
-        prog = runner_program(backend, unit, [s.kernel.name], workdir)
-        out.append(build_runner(tc, prog, workdir / f"runner_{s.kernel.name}",
-                                timeout=timeout))
+def chain_specs(steps: Sequence[Step], carried: str,
+                init: np.ndarray) -> list[dict]:
+    """Every step's launch spec, as `run_chain` would write it: each
+    argument named, typed and converted against its kernel's parameter
+    list on the host -- no compiler, no card."""
+    return [launch_spec(s.kernel, s.grid, s.block,
+                        {**_step_args(s), carried: np.ascontiguousarray(init)},
+                        shared_bytes=s.shared_bytes)[0] for s in steps]
+
+
+def chain_runners(kernels: Iterable[Kernel], backend: str, workdir: Path, *,
+                  units: Mapping[str, Path] | None = None
+                  ) -> dict[str, Program]:
+    """One runner per distinct kernel name, its unit `emit_unit`'s."""
+    out: dict[str, Program] = {}
+    for k in kernels:
+        if k.name not in out:
+            unit = emit_unit(k, backend, workdir, units)
+            out[k.name] = runner_program(backend, unit, [k.name], workdir)
     return out
 
 
-def run_chain(binaries: Sequence[Path], steps: Sequence[Step],
-              initial: np.ndarray, workdir: Path, *,
-              runs: int = 1) -> np.ndarray:
-    """Every step launched in order, the OUT array carried from `initial`
-    through each; each step `runs` times (runner.h's run-to-run witness)."""
-    M = initial
-    for c, (binary, s) in enumerate(zip(binaries, steps, strict=True)):
-        out = _carried(s.kernel)
-        if out in s.args:
-            raise ValueError(f"{s.kernel.name}: {out} is the carried array")
-        ran = run_case(binary, s.kernel, workdir / f"case{c}", s.grid, s.block,
-                       {**s.args, out: M}, runs=runs)
-        got = np.load(ran.outs[out])
-        assert got.shape == M.shape, (s.kernel.name, got.shape, M.shape)
-        M = got
-    return M
+def build_chain(tc: Toolchain, runners: Mapping[str, Program], workdir: Path,
+                *, timeout: float = 1800.0) -> dict[str, Path]:
+    """Every runner compiled (`build_runner`), by kernel name; `timeout`
+    caps each compile."""
+    return {name: build_runner(tc, prog, workdir / f"runner_{name}",
+                               timeout=timeout)
+            for name, prog in runners.items()}
+
+
+def carried(steps: Sequence[Step]) -> str:
+    """The one OUT array every step's kernel writes: the chain's carried
+    output, refused unless there is exactly one (#658)."""
+    names = {p.name for s in steps for p in s.kernel.params
+             if p.intent is Intent.OUT}
+    if len(names) != 1:
+        raise ValueError(f"a chain carries one OUT array, the steps write "
+                         f"{sorted(names)}")
+    return names.pop()
+
+
+def build_steps(tc: Toolchain, backend: str, steps: Sequence[Step],
+                workdir: Path, *, units: Mapping[str, Path] | None = None,
+                timeout: float = 1800.0) -> dict[str, Path]:
+    """Every step's runner, compiled: `chain_runners` of the steps' kernels
+    (`units` as `emit_unit`'s), then `build_chain`."""
+    return build_chain(tc, chain_runners([s.kernel for s in steps], backend,
+                                         workdir, units=units),
+                       workdir, timeout=timeout)
+
+
+def run_chain(binaries: Mapping[str, Path], steps: Sequence[Step],
+              carried: str, init: np.ndarray, workdir: Path, *,
+              runs: int) -> list[np.ndarray]:
+    """`runs` times: `carried` from `init`, through every step in order --
+    each launch reads and updates it, its output the next one's input --
+    and that run's final value. Each launch is its own process (one
+    `run_case`); the runs are independent, so a kernel whose atomics make
+    one launch's sum order the hardware's shows its run-to-run spread here
+    rather than failing the runner's bitwise witness."""
+    init = np.ascontiguousarray(init)
+    out = []
+    for r in range(runs):
+        x = init
+        for c, s in enumerate(steps):
+            ran = run_case(binaries[s.kernel.name], s.kernel,
+                           workdir / f"run{r}" / f"step{c}", s.grid, s.block,
+                           {**_step_args(s), carried: x},
+                           shared_bytes=s.shared_bytes)
+            x = np.load(ran.outs[carried])
+            assert x.shape == init.shape, (s.kernel.name, x.shape, init.shape)
+        out.append(x)
+    return out

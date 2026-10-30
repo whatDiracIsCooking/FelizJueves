@@ -96,7 +96,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from harness_driver import build_chain, launch_spec
+from harness_driver import as_param, build_steps, launch_spec
 from mu_driver import MU_LMAX, compile_mu, kernel_of, mu_steps, units_of
 from one_electron_driver import build_on_card
 from one_electron_driver import kernel_of as one_e_kernel_of
@@ -495,7 +495,7 @@ COMPILE_CELLS = CLASS_PARAMS + MOLECULE_PARAMS
 
 def _compiles(backend: str, tc, name: str, tmp_path: Path) -> None:
     launch = _launch(name)
-    build_chain(tc, backend, mu_steps(launch, _case(name)[0].n_ao, ZERO, 1.0),
+    build_steps(tc, backend, mu_steps(launch, _case(name)[0].n_ao, ZERO, 1.0),
                 tmp_path, units=units_of(backend, launch))
 
 
@@ -538,6 +538,12 @@ def test_mu_driver_refuses_a_class_above_ff() -> None:
         kernel_of(_G())  # type: ignore[arg-type]
 
 
+def _as_params(st) -> dict:
+    """A step's arguments as the runner receives them (`as_param`)."""
+    return {k: as_param(st.kernel, k, v) if isinstance(v, np.ndarray) else v
+            for k, v in st.args.items()}
+
+
 def test_mu_steps_name_the_kernels_parameters() -> None:
     """Every class's launch names every kernel parameter but `MU`, the
     origin and charge as values, each record array of exactly its dtype and
@@ -551,7 +557,7 @@ def test_mu_steps_name_the_kernels_parameters() -> None:
         assert [st.args[k] for k in ("C_x", "C_y", "C_z", "q")] == [
             0.5, -0.25, 1.0, -1.0]
         spec, arrays = launch_spec(st.kernel, st.grid, st.block,
-                                   {**st.args, MU: (3, n, n)})
+                                   {**_as_params(st), MU: (3, n, n)})
         assert [a["name"] for a in spec["args"]] == [p.name for p in
                                                      st.kernel.params]
         assert len(arrays) == 11 + 2
@@ -571,7 +577,7 @@ def test_mu_staged_data_through_the_interpreter_is_the_host(q) -> None:
     for st in mu_steps(launch, n, origin, q):
         grid, block = launch_shape(st.args["n_rec"], 8)
         out = Interpreter(st.kernel, launch=Launch(grid, block, 1)).run(
-            **st.args, MU=out)[MU]
+            **_as_params(st), MU=out)[MU]
     tol, _, _, _ = _bound(name, origin, q)
     err = np.abs(out - _host(name, tuple(float(x) for x in origin), q))
     assert np.all(err <= tol), _ratio(err, tol)

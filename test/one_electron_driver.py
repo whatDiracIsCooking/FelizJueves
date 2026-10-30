@@ -10,7 +10,7 @@
 THE ONE FUNCTION a later test reuses (#243's `h = T + V` capstone) is
 `build_on_card`: it compiles one runner per class for one target of one
 launch with devtools/config.sh's flags under #92's warning filter
-(`harness_driver.build_chain`, through `plan_driver.compile_checked`), runs
+(`harness_driver.build_steps`, through `compile_checked`), runs
 them behind the caller's card lock and returns each run's matrix. Nothing
 else is decided here: the launch is `launch.one_electron_launch`'s value,
 the records are `OneEClass.arrays(target)` under the kernel's own parameter
@@ -46,7 +46,7 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from harness_driver import Step, build_chain, run_chain, typed
+from harness_driver import Step, build_steps, carried, run_chain
 from plan_driver import RUNS
 from test_kernel_device import BACKEND
 
@@ -98,10 +98,11 @@ def one_e_steps(launch: OneELaunch, target: Target, n_ao: int) -> list[Step]:
         _check_signature(kern, cls, target)
         n = len(cls.recs)
         args: dict = {"n_rec": n, "n_ao": n_ao,
-                      **typed(kern, cls.arrays(target))}
+                      **{k: np.asarray(v)
+                         for k, v in cls.arrays(target).items()}}
         if target is Target.V:
-            args["n_nuc"] = len(launch.nuclei)
-            args |= typed(kern, {"Z": launch.Z, "Cnuc": launch.Cnuc})
+            args |= {"n_nuc": len(launch.nuclei), "Z": np.asarray(launch.Z),
+                     "Cnuc": np.asarray(launch.Cnuc)}
         grid, block = SHAPE[target](n, THREADS)
         steps.append(Step(kern, grid, block, args))
     return steps
@@ -134,6 +135,6 @@ def build_on_card(launch: OneELaunch, target: Target, n_ao: int, backend: str,
     (`RUNS` whole runs, each from zero). The caller holds the card (its
     device fixture)."""
     steps = one_e_steps(launch, target, n_ao)
-    binaries = build_chain(tc, backend, steps, workdir, units=units)
-    return np.stack([run_chain(binaries, steps, np.zeros((n_ao, n_ao)),
-                               workdir / f"run{r}") for r in range(RUNS)])
+    binaries = build_steps(tc, backend, steps, workdir, units=units)
+    return np.stack(run_chain(binaries, steps, carried(steps),
+                              np.zeros((n_ao, n_ao)), workdir, runs=RUNS))

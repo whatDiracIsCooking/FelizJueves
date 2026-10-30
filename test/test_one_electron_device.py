@@ -106,7 +106,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from harness_driver import build_chain, launch_spec
+from harness_driver import as_param, build_steps, launch_spec
 from one_electron_driver import build_on_card, kernel_of, one_e_steps, tier_units
 from oracle import basis as ob
 from oracle import manifest
@@ -532,7 +532,7 @@ def _compiles(backend: str, tc, name: str, target: Target, tmp_path: Path,
               lmax: int = LMAX):
     _, basis, _ = _case(name)
     launch = _launch(name, lmax if name == PART1 else None)
-    build_chain(tc, backend, one_e_steps(launch, target, basis.n_ao), tmp_path,
+    build_steps(tc, backend, one_e_steps(launch, target, basis.n_ao), tmp_path,
                 units=_units(backend, launch, target))
 
 
@@ -589,6 +589,12 @@ def test_the_tier_writes_the_ladders_classes_and_no_other(cell,
                 assert path.read_text() == emit(k, arch)
 
 
+def _as_params(st) -> dict:
+    """A step's arguments as the runner receives them (`as_param`)."""
+    return {k: as_param(st.kernel, k, v) if isinstance(v, np.ndarray) else v
+            for k, v in st.args.items()}
+
+
 @pytest.mark.parametrize("target", TARGET_PARAMS)
 def test_every_step_names_the_kernels_parameters(target) -> None:
     """Every class's launch names every kernel parameter but the matrix,
@@ -606,7 +612,7 @@ def test_every_step_names_the_kernels_parameters(target) -> None:
         mat = st.kernel.params[-1].name  # the OUT matrix, last
         assert mat not in st.args
         spec, arrays = launch_spec(st.kernel, st.grid, st.block,
-                                   {**st.args, mat: (n, n)})
+                                   {**_as_params(st), mat: (n, n)})
         assert [a["name"] for a in spec["args"]] == [p.name for p in
                                                      st.kernel.params]
         for fname, a in arrays.items():
@@ -631,7 +637,7 @@ def test_the_staged_data_through_the_interpreter_is_the_host(target) -> None:
         mat = k.params[-1].name
         nr = st.args["n_rec"]
         args = {a: (v.copy() if isinstance(v, np.ndarray) else v)
-                for a, v in st.args.items()}
+                for a, v in _as_params(st).items()}
         grid, block = (-(-nr // 8), (8, 1))
         out = Interpreter(k, launch=Launch(grid, block, 1), boys=boys).run(
             **args, **{mat: out})[mat]

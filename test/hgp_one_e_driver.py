@@ -16,10 +16,10 @@ class serves every origin), an array its `hgp_arrays` entry (V's `Z` and
 `Cnuc` the launch's), and the one OUT array the matrix.
 
 ON THE SHARED RUNNER (#649, ported by #658): one runner per class's unit
-(`harness_driver.build_chain`, compiled under #92's warning filter), the
+(`harness_driver.build_steps`, compiled under #92's warning filter), the
 output carried from class to class from zero. Plain stores into disjoint
-elements, so each class runs `RUNS` times and the runner fails unless every
-run is bit-identical.
+elements, so the chain runs `RUNS` times and every run must be
+bit-identical to the first.
 
 Harness, in `test/`, not a second emitter: the units are `emit/cuda.py` /
 `emit/hip.py`'s text of `build_hgp_kernel`, unchanged.
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from harness_driver import Step, build_chain, run_chain, typed
+from harness_driver import Step, build_steps, carried, run_chain
 from plan_driver import RUNS
 
 from felizjueves.ao.shell import Basis
@@ -80,17 +80,21 @@ def hgp_one_e_steps(launch: OneELaunch, target: Target, basis: Basis, *,
         args = {"n_pair": len(cls.blocks), "n_rec": len(cls.recs), **scalars}
         args = {p.name: args[p.name] for p in kern.params if not p.array}
         grid, block = kh.launch_shape(len(cls.blocks), THREADS)
-        steps.append(Step(kern, grid, block, {**args, **typed(kern, arrs)}))
+        steps.append(Step(kern, grid, block, {
+            **args, **{k: np.asarray(v) for k, v in arrs.items()}}))
     return steps
 
 
 def build_on_card(launch: OneELaunch, target: Target, basis: Basis,
                   backend: str, tc: Toolchain, workdir: Path, *,
                   origin=(0.0, 0.0, 0.0), q: float = 1.0) -> np.ndarray:
-    """The matrix (`[3, n, n]` for the dipole) built on the card, every
-    class run `RUNS` times bit-identically."""
+    """The matrix (`[3, n, n]` for the dipole) built on the card, the
+    chain run `RUNS` times bit-identically."""
     steps = hgp_one_e_steps(launch, target, basis, origin=origin, q=q)
-    binaries = build_chain(tc, backend, steps, workdir)
+    binaries = build_steps(tc, backend, steps, workdir)
     n = basis.n_ao
     shape = (3, n, n) if target is Target.DIPOLE else (n, n)
-    return run_chain(binaries, steps, np.zeros(shape), workdir, runs=RUNS)
+    Ms = run_chain(binaries, steps, carried(steps), np.zeros(shape), workdir,
+                   runs=RUNS)
+    assert all(np.array_equal(Ms[0], M) for M in Ms[1:]), "runs differ"
+    return Ms[0]

@@ -28,7 +28,7 @@ component in one launch), emitted by `emit/cuda.py` / `emit/hip.py`
 unchanged -- harness, in `test/`, not a second emitter.
 
 ON THE SHARED RUNNER (#649, ported by #658): one runner per class's unit
-(`harness_driver.build_chain`, under #92's warning filter), one launch per
+(`harness_driver.build_steps`, under #92's warning filter), one launch per
 pair class, one thread per record (`kernel_mu.launch_shape`, `THREADS`
 lanes), `MU` carried from class to class from zero (the kernel's
 precondition, `kernel_mu.ZEROED_MU`). Every class ADDS (kernel_jab's
@@ -52,7 +52,7 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from harness_driver import Step, build_chain, run_chain, typed
+from harness_driver import Step, build_steps, run_chain
 from one_electron_driver import tier_units
 from plan_driver import RUNS
 
@@ -118,7 +118,8 @@ def mu_steps(launch: OneELaunch, n_ao: int, origin: Sequence[float],
         n = len(cls.recs)
         grid, block = launch_shape(n, THREADS)
         steps.append(Step(kern, grid, block, {
-            "n_rec": n, "n_ao": n_ao, **typed(kern, cls.arrays(target)),
+            "n_rec": n, "n_ao": n_ao,
+            **{k: np.asarray(v) for k, v in cls.arrays(target).items()},
             **scalars}))
     return steps
 
@@ -130,7 +131,7 @@ class MuBinary:
 
     launch: OneELaunch
     n_ao: int
-    binaries: tuple[Path, ...]
+    binaries: Mapping[str, Path]
     workdir: Path
     target: Target = Target.DIPOLE
 
@@ -142,8 +143,8 @@ class MuBinary:
         cases = self.workdir / "cases"  # one directory per call
         at = cases / str(len(list(cases.glob("*"))) if cases.exists() else 0)
         zero = np.zeros((NCOMPS[self.target], self.n_ao, self.n_ao))
-        return np.stack([run_chain(self.binaries, steps, zero, at / f"run{r}")
-                         for r in range(RUNS)])
+        return np.stack(run_chain(self.binaries, steps, MU, zero, at,
+                                  runs=RUNS))
 
 
 def compile_mu(launch: OneELaunch, n_ao: int, backend: str, tc: Toolchain,
@@ -153,8 +154,8 @@ def compile_mu(launch: OneELaunch, n_ao: int, backend: str, tc: Toolchain,
     flags, FAILING on a warning located in generated text or a harness
     header (#92). The runners do not depend on the origin or the charge."""
     steps = mu_steps(launch, n_ao, (0.0, 0.0, 0.0), 1.0, target)
-    binaries = build_chain(tc, backend, steps, workdir, units=units)
-    return MuBinary(launch, n_ao, tuple(binaries), workdir, target)
+    binaries = build_steps(tc, backend, steps, workdir, units=units)
+    return MuBinary(launch, n_ao, binaries, workdir, target)
 
 
 def units_of(backend: str, launch: OneELaunch,

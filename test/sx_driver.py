@@ -13,7 +13,7 @@ unchanged -- harness, in `test/`, not a second emitter.
 ON THE SHARED RUNNER (#649, ported by #658), as `one_electron_driver.py`
 does for `S`, `T` and `V`: one runner per ordered class's unit, compiled
 with devtools/config.sh's flags under #92's warning filter
-(`harness_driver.build_chain`), one launch per class, one thread per record
+(`harness_driver.build_steps`), one launch per class, one thread per record
 (`launch_shape`, `THREADS` lanes), the `n_a x n_b` matrix carried from
 class to class from zero. Every element is owned by exactly one ordered
 shell pair, whose records add into it atomically -- so the whole chain is
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from harness_driver import Step, build_chain, run_chain, typed
+from harness_driver import Step, build_steps, run_chain
 from plan_driver import RUNS
 
 from felizjueves.eri.j_coulomb.launch import XClass, XLaunch
@@ -60,7 +60,7 @@ def sx_steps(launch: XLaunch) -> list[Step]:
         grid, block = launch_shape(n, THREADS)
         steps.append(Step(kern, grid, block, {
             "n_rec": n, "n_a": launch.n_a, "n_b": launch.n_b,
-            **typed(kern, cls.arrays())}))
+            **{k: np.asarray(v) for k, v in cls.arrays().items()}}))
     return steps
 
 
@@ -70,7 +70,7 @@ def build_on_card(launch: XLaunch, backend: str, tc: Toolchain, workdir: Path,
     whole runs, each from zero). The caller holds the card (its device
     fixture)."""
     steps = sx_steps(launch)
-    binaries = build_chain(tc, backend, steps, workdir, units=units)
-    zero = np.zeros((launch.n_a, launch.n_b))
-    return np.stack([run_chain(binaries, steps, zero, workdir / f"run{r}")
-                     for r in range(RUNS)])
+    binaries = build_steps(tc, backend, steps, workdir, units=units)
+    return np.stack(run_chain(binaries, steps, "S",
+                              np.zeros((launch.n_a, launch.n_b)), workdir,
+                              runs=RUNS))

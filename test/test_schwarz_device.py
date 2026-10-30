@@ -47,7 +47,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from harness_driver import build_chain
+from harness_driver import build_steps
 from oracle import basis as ob
 from oracle import manifest
 from schwarz_driver import build_on_card, schwarz_steps
@@ -194,7 +194,7 @@ def test_hip_schwarz_matrix_matches_libcint(name, request,
 @pytest.mark.parametrize("name", ("synthetic", *MOLECULES))
 def test_cuda_schwarz_programs_compile(name, nvcc, tmp_path):
     basis = _basis(name)
-    build_chain(nvcc, "cuda", schwarz_steps(_classes(basis), basis.n_ao),
+    build_steps(nvcc, "cuda", schwarz_steps(_classes(basis), basis.n_ao),
                 tmp_path)
 
 
@@ -202,7 +202,7 @@ def test_cuda_schwarz_programs_compile(name, nvcc, tmp_path):
 @pytest.mark.parametrize("name", ("synthetic", *MOLECULES))
 def test_hip_schwarz_programs_compile(name, hipcc, tmp_path):
     basis = _basis(name)
-    build_chain(hipcc, "hip", schwarz_steps(_classes(basis), basis.n_ao),
+    build_steps(hipcc, "hip", schwarz_steps(_classes(basis), basis.n_ao),
                 tmp_path)
 
 

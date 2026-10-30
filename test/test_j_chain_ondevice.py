@@ -8,28 +8,28 @@ the expensive driver:
 PART 1, PER PAIR CLASS, (ss) THROUGH (ff). For each pair class `(la, lb)`,
 `la <= lb <= 3`, of KERNEL_GEN_CMD's pair ladder (#156: `dq_{la}_{lb}` and
 `jab_{la}{lb}`, 10 classes, 20 units), each unit is compiled ALONE into a
-small harness (`plan_driver.dq_program` / `jab_program`: one translation
-unit, no `[p|q]`, no Boys) and run on the card over every record of every
-unique shell pair of that class in the tracked HF/cc-pVTZ basis (the one
-fixture whose shells reach f; s-f on F, s-d on H), against the host on the
-SAME inputs: `eri.j_coulomb.j.dq_from_host` for `D_q` / `Dmax`, and
-`eri.j_coulomb.j.jab_from_host`
-applied pair by pair for the scatter over a seeded `J_p`. Under
-devtools/kernel-tier.sh the unit compiled is THE FILE THE GENERATE PHASE
-WROTE (`KERNEL_TIER_OUT`, already compiled by the tier's compile phase, #92's
-filter): the test asserts it is byte-identical to `emit(...)` and includes
-that file, as test_kernel_device.py does for `[p|q]`. The witness chain for
-f: `E` is held to the closed-form Hermite identity (#152) and, through
-`eri/eri.py`, to libcint's ERI blocks up to (ff|ff) (test_ao_eri.py); the host
-`D_q` and scatter are built from that `E`. No f `J` fixture is needed.
+small harness (the shared runner, #659: `plan_driver.compile_dq` /
+`compile_jab`, one unit per runner, no `[p|q]`, no Boys) and run on the card
+over every record of every unique shell pair of that class in the tracked
+HF/cc-pVTZ basis (the one fixture whose shells reach f; s-f on F, s-d on H),
+against the host on the SAME inputs: `eri.j_coulomb.j.dq_from_host` for
+`D_q` / `Dmax`, and `eri.j_coulomb.j.jab_from_host` applied pair by pair for
+the scatter over a seeded `J_p`. Under devtools/kernel-tier.sh the unit
+compiled is THE FILE THE GENERATE PHASE WROTE (`KERNEL_TIER_OUT`, already
+compiled by the tier's compile phase, #92's filter): the test asserts it is
+byte-identical to `emit(...)` and includes that file, as
+test_kernel_device.py does for `[p|q]`. The witness chain for f: `E` is held
+to the closed-form Hermite identity (#152) and, through `eri/eri.py`, to
+libcint's ERI blocks up to (ff|ff) (test_ao_eri.py); the host `D_q` and
+scatter are built from that `E`. No f `J` fixture is needed.
 
 PART 2, PER MOLECULE, THROUGH d. `J_mn` for H2/STO-3G, H2O/STO-3G (at 1 and
 3 batches) and H2O/cc-pVDZ, every step on the card, on MILESTONE 6'S
 DRIVER (#144, `plan_driver.driver`), not a new one:
 
-  1. DQ: every ket pair class's `Target.DQ` kernel (`plan_driver.dq_program`,
-     one launch per class); `D_q` and `Dmax` READ BACK -- the chain's one
-     round-trip (j_engine.md, "The round-trip");
+  1. DQ: every ket pair class's `Target.DQ` kernel (`plan_driver.compile_dq`,
+     one launch per class on the shared runner); `D_q` and `Dmax` READ
+     BACK -- the chain's one round-trip (j_engine.md, "The round-trip");
   2. the host keys each ket record `G * Dmax` with the KERNEL's `Dmax` and
      sorts (`eri.j_coulomb.drive._chain_plan`, #155's plan builder: `launch`'s own
      stable descending sort, no host pre-contraction);
@@ -123,25 +123,30 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from harness_driver import chain_specs, launch_spec
 from oracle import basis as ob
 from oracle import manifest
 from plan_driver import (
+    DQ_LANES,
     RUNS,
     DQClass,
     chain_counts,
     compile_checked,
+    compile_dq,
+    compile_jab,
     counts,
+    dq_args,
     dq_classes,
-    dq_program,
-    dq_read_back,
-    dq_stage,
+    dq_kernel,
+    dq_runners,
     driver,
-    jab_program,
+    jab_kernel,
     jab_records,
     jab_rows,
-    jab_stage,
+    jab_step,
     read_back,
     read_back_j,
+    run_jab,
     stage,
     transform,
 )
@@ -335,14 +340,14 @@ def _dq_host(basis, dc: DQClass) -> tuple[np.ndarray, np.ndarray]:
     return np.array(Dh), np.array(S)
 
 
-def _check_dq(basis, dc: DQClass, runs) -> float:
+def _check_dq(basis, dc: DQClass, out) -> float:
     """One DQ class on the card against the host (module docstring); the
-    worst `|D_dev - D_host| / S` (the tolerance is `2 gamma_{N_DQ}`)."""
-    (D0, M0), (D1, M1) = (r[dc.cls] for r in runs)
+    worst `|D_dev - D_host| / S` (the tolerance is `2 gamma_{N_DQ}`). Its
+    `RUNS` runs are bit-identical already: no atomic, so the runner refuses
+    any two that differ (`plan_driver.DQBinary.run`)."""
+    D0, M0 = out[dc.cls]
     assert np.all(np.isfinite(D0)) and np.all(np.isfinite(M0)), (
         f"DQ {dc.cls}: an unwritten (poisoned) or non-finite output")
-    assert np.array_equal(D0, D1) and np.array_equal(M0, M1), (
-        f"DQ {dc.cls}: two runs differ -- no atomic, so they may not")
     assert np.array_equal(M0, np.max(np.abs(D0), axis=1)), (
         f"DQ {dc.cls}: Dmax is not max_q |D_q| of the kernel's own D_q")
     Dh, S = _dq_host(basis, dc)
@@ -415,42 +420,33 @@ def _jab_host(cls, members, jp) -> np.ndarray:
     return np.array(J)
 
 
-def _pair_programs(backend: str, cls, workdir: Path):
-    """Both part-1 programs of `cls`: the units are the tier's when it ran."""
-    basis, _ = _case(PART1)
+def _pair_binaries(backend: str, tc, cls, workdir: Path):
+    """Both part-1 runners of `cls`, compiled: the units are the tier's when
+    it ran."""
     units = _tier_units(backend, [build_dq_kernel(cls), build_jab_kernel(cls)])
     dc = _dq_classes(PART1)[cls]
-    dqp = dq_program([dc], backend, workdir / "dq", units=units)
-    members, data, ints, jp = _jab_inputs(cls)
-    jabp = jab_program(cls, len(data), jp.shape[0], basis.n_ao, backend,
-                       workdir / "jab", units=units)
-    return dc, dqp, (members, data, ints, jp), jabp, units is not None
+    dq = compile_dq([dc], backend, tc, workdir / "dq", units=units)
+    jab_kern, jab_bin = compile_jab(cls, backend, tc, workdir / "jab",
+                                    units=units)
+    return dc, dq, jab_kern, jab_bin, units is not None
 
 
-def _part1(backend: str, cls, request, run_device_binary, tmp_path: Path):
+def _part1(backend: str, cls, request, tmp_path: Path):
     tc = _toolchain(backend, request)
     arch = BACKEND[backend][1]
     basis, _ = _case(PART1)
-    dc, dqp, (members, data, ints, jp), jabp, tier = _pair_programs(
-        backend, cls, tmp_path)
+    dc, dq, jab_kern, jab_bin, tier = _pair_binaries(backend, tc, cls,
+                                                     tmp_path)
+    members, data, ints, jp = _jab_inputs(cls)
 
-    # DQ: every record of the class, one launch, two runs
-    dq_bin = compile_checked(tc, dqp, tmp_path / "dq_bin")
-    src, dst = tmp_path / "dq.in", tmp_path / "dq.out"
-    dq_stage([dc]).tofile(src)
-    out = run_device_binary(dq_bin, str(src), str(dst), vram=backend)
-    assert f"fj-dq classes 1 launches {RUNS} runs {RUNS}" in out, out
-    dq_worst = _check_dq(basis, dc, dq_read_back(
-        [dc], np.fromfile(dst, dtype=np.float64)))
+    # DQ: every record of the class, one launch, RUNS runs bit-identical
+    dq_out, _ = dq.run()
+    dq_worst = _check_dq(basis, dc, dq_out)
 
     # JAB: every record of the class, one launch per run, from a zeroed J
-    jab_bin = compile_checked(tc, jabp, tmp_path / "jab_bin")
-    src, dst = tmp_path / "jab.in", tmp_path / "jab.out"
-    jab_stage(jp, data, ints).tofile(src)
-    out = run_device_binary(jab_bin, str(src), str(dst), vram=backend)
-    assert f"fj-jab launches {RUNS} runs {RUNS}" in out, out
     n = basis.n_ao
-    J = np.fromfile(dst, dtype=np.float64).reshape(RUNS, n, n)
+    J = run_jab(jab_bin, jab_step(jab_kern, jp, data, ints, n), n,
+                tmp_path / "jab_runs")
     host = _jab_host(cls, members, jp)
     L, n_p = sum(cls), jp.shape[1]
     T, Dl, K = _jab_scales(cls[0], cls[1], data, ints, jp, jp, n)
@@ -479,19 +475,17 @@ def _part1(backend: str, cls, request, run_device_binary, tmp_path: Path):
 @pytest.mark.cuda
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", PAIR_PARAMS)
-def test_cuda_pair_kernels_match_the_host(cls, request, run_device_binary,
-                                          tmp_path) -> None:
+def test_cuda_pair_kernels_match_the_host(cls, request, tmp_path) -> None:
     """Part 1 on the RTX 3080: `dq_{la}_{lb}` and `jab_{la}{lb}` alone."""
-    _part1("cuda", cls, request, run_device_binary, tmp_path)
+    _part1("cuda", cls, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("cls", PAIR_PARAMS)
-def test_hip_pair_kernels_match_the_host(cls, request, run_device_binary,
-                                         tmp_path) -> None:
+def test_hip_pair_kernels_match_the_host(cls, request, tmp_path) -> None:
     """Part 1 on the RX 9060 XT: `dq_{la}_{lb}` and `jab_{la}{lb}` alone."""
-    _part1("hip", cls, request, run_device_binary, tmp_path)
+    _part1("hip", cls, request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -567,16 +561,9 @@ def _part2(backend: str, name: str, n: int, request, run_device_binary,
 
     # step 2 on the card: D_q and Dmax per ket pair class; THE ROUND-TRIP
     classes = dq_classes(basis, D)
-    dqp = dq_program(classes, backend, tmp_path / "dq")
-    dq_bin = compile_checked(tc, dqp, tmp_path / "dq_bin")
-    src, dst = tmp_path / "dq.in", tmp_path / "dq.out"
-    dq_stage(classes).tofile(src)
-    out = run_device_binary(dq_bin, str(src), str(dst), vram=backend)
-    assert (f"fj-dq classes {len(classes)} launches {len(classes) * RUNS} "
-            f"runs {RUNS}") in out, out
-    dq_runs = dq_read_back(classes, np.fromfile(dst, dtype=np.float64))
-    dq_worst = max(_check_dq(basis, dc, dq_runs) for dc in classes)
-    dq_rows = _rows_of(classes, dq_runs[0])
+    dq_out, _ = compile_dq(classes, backend, tc, tmp_path / "dq").run()
+    dq_worst = max(_check_dq(basis, dc, dq_out) for dc in classes)
+    dq_rows = _rows_of(classes, dq_out)
 
     # the sort on the card's Dmax; steps 3 and 4 on milestone 6's driver
     plan = _plan_from(basis, dq_rows, n, _l_max_driver(name))
@@ -692,16 +679,13 @@ def test_hip_j_through_the_chain(name, n, request, run_device_binary,
 
 
 def _part1_compiles(backend: str, tc, cls, tmp_path: Path) -> None:
-    _, dqp, _, jabp, _ = _pair_programs(backend, cls, tmp_path)
-    compile_checked(tc, dqp, tmp_path / "dq_bin")
-    compile_checked(tc, jabp, tmp_path / "jab_bin")
+    _pair_binaries(backend, tc, cls, tmp_path)
 
 
 def _part2_compiles(backend: str, tc, name: str, n: int, tmp_path: Path):
     basis, D = _case(name)
     classes = dq_classes(basis, D)
-    compile_checked(tc, dq_program(classes, backend, tmp_path / "dq"),
-                    tmp_path / "dq_bin")
+    compile_dq(classes, backend, tc, tmp_path / "dq")
     plan = _plan_from(basis, _host_dq_rows(basis, classes), n,
                       _l_max_driver(name))
     drv = driver(plan, backend, tmp_path / "gen", chain=basis)
@@ -736,7 +720,7 @@ def _planted_warning_fails(backend: str, tc, tmp_path: Path) -> None:
     """A warning planted in a pair unit fails `compile_checked`, naming the
     unit: #92's ratchet is live on these programs."""
     basis, D = _case("h2_sto3g_j")
-    prog = dq_program(dq_classes(basis, D), backend, tmp_path / "dq")
+    ((_, prog),) = dq_runners(dq_classes(basis, D), backend, tmp_path / "dq")
     unit = prog.units[0]
     unit.write_text(unit.read_text() + "\n__device__ int fj_planted() "
                     "{ int fj_unused; return 0; }\n")
@@ -894,3 +878,28 @@ def test_e_abs_bounds_e():
 @pytest.mark.slow  # L > FAST_L_MAX (tiers.py)
 def test_e_abs_bounds_e_above_l4():
     _e_abs_bounds_e(fast=False)
+
+
+def test_the_dq_launches_name_every_argument():
+    """Every DQ class's runner spec, built host-side: `D` / `Dmax` read and
+    updated from the poison (every byte 0xff), the rest inputs."""
+    basis, D = _case("h2o_sto3g_j")
+    for dc in dq_classes(basis, D):
+        grid, block = dq_launch_shape(dc.n_rec, DQ_LANES)
+        spec, arrays = launch_spec(dq_kernel(dc), grid, block, dq_args(dc))
+        assert [a["name"] for a in spec["args"] if "out" in a] == ["D", "Dmax"]
+        for name in ("D", "Dmax"):
+            assert set(arrays[f"{name}.in.npy"].tobytes()) == {0xFF}
+
+
+@pytest.mark.parametrize("cls", [c for c in PAIR_CLASSES if is_fast(sum(c))])
+def test_the_jab_launch_names_every_argument(cls):
+    """Part 1's JAB launch, its runner spec built host-side, `J` carried."""
+    basis, _ = _case(PART1)
+    _, data, ints, jp = _jab_inputs(cls)
+    n = basis.n_ao
+    (spec,) = chain_specs([jab_step(jab_kernel(cls), jp, data, ints, n)], "J",
+                          np.zeros((n, n)))
+    assert [a["name"] for a in spec["args"]] == [
+        p.name for p in jab_kernel(cls).params]
+    assert [a["name"] for a in spec["args"] if "out" in a] == ["J"]

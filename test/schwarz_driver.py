@@ -10,14 +10,13 @@ The records are `eri.schwarz.schwarz_classes`' (every shell pair staged with
 writes no Schwarz unit) -- harness, in `test/`, not a second emitter.
 
 ON THE SHARED RUNNER (#649, ported by #658): one runner per class's unit
-(compiled by `plan_driver.compile_checked` under #92's warning filter,
-through `harness_driver.build_chain`), one launch per pair class, one
-thread per shell pair (`launch_shape`, `THREADS` lanes), the `n_ao x n_ao`
-matrix carried from class to class from zero. The spec names every argument
-from the kernel's own parameter list, so the call cannot drift from the
-signature. Each element is owned by one shell pair and written by a plain
-store, so each class runs `RUNS` times and the runner fails unless every
-run is bit-identical.
+(compiled by `harness_driver.build_steps` under #92's warning filter), one
+launch per pair class, one thread per shell pair (`launch_shape`, `THREADS`
+lanes), the `n_ao x n_ao` matrix carried from class to class from zero. The
+spec names every argument from the kernel's own parameter list, so the call
+cannot drift from the signature. Each element is owned by one shell pair and
+written by a plain store, so the chain runs `RUNS` times and every run must
+be bit-identical to the first.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 from conftest import Toolchain
-from harness_driver import Step, build_chain, run_chain, typed
+from harness_driver import Step, build_steps, run_chain
 from plan_driver import RUNS
 
 from felizjueves.eri.kernel_schwarz import OUT, build_schwarz_kernel, launch_shape
@@ -55,16 +54,18 @@ def schwarz_steps(classes: Sequence[SchwarzClass], n_ao: int) -> list[Step]:
         grid, block = launch_shape(cls.n_pair, THREADS)
         steps.append(Step(kern, grid, block, {
             "n_pair": cls.n_pair, "n_rec": cls.n_rec, "n_ao": n_ao,
-            **typed(kern, cls.arrays())}))
+            **{k: np.asarray(v) for k, v in cls.arrays().items()}}))
     return steps
 
 
 def build_on_card(classes: Sequence[SchwarzClass], n_ao: int, backend: str,
                   tc: Toolchain, workdir: Path) -> np.ndarray:
-    """`Q` of `classes` built on the card, `[n_ao, n_ao]`, every class run
+    """`Q` of `classes` built on the card, `[n_ao, n_ao]`, the chain run
     `RUNS` times bit-identically. The caller holds the card (its device
     fixture)."""
     steps = schwarz_steps(classes, n_ao)
-    binaries = build_chain(tc, backend, steps, workdir)
-    return run_chain(binaries, steps, np.zeros((n_ao, n_ao)), workdir,
-                     runs=RUNS)
+    binaries = build_steps(tc, backend, steps, workdir)
+    Qs = run_chain(binaries, steps, OUT, np.zeros((n_ao, n_ao)), workdir,
+                   runs=RUNS)
+    assert all(np.array_equal(Qs[0], Q) for Q in Qs[1:]), "runs differ"
+    return Qs[0]
