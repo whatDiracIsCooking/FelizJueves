@@ -136,7 +136,11 @@ from felizjueves.ir import (
 from felizjueves.spec import Engine, Operator, Spec, Target
 
 __all__ = [
+    "BRA",
     "HGP_DF_L_MAX",
+    "KET",
+    "OUT",
+    "S_AUX",
     "build_heri3_kernel",
     "build_hmetric_kernel",
     "eri3_class",
@@ -144,7 +148,9 @@ __all__ = [
     "heri3_spec",
     "hmetric_name",
     "hmetric_spec",
+    "metric_acc",
     "metric_class",
+    "metric_kernel",
 ]
 
 HGP_DF_L_MAX = 1  # the highest shell l the HGP DF kernels are tested for
@@ -419,26 +425,21 @@ def _eri3_params() -> tuple[Param, ...]:
     )
 
 
-def build_hmetric_kernel(cls: Spec | tuple[int, int], *,
-                         name: str | None = None) -> Kernel:
-    """The HGP metric kernel of one aux class (module docstring); its
-    parameters, launch and output are `kernel_metric.build_metric_kernel`'s.
-    """
-    spec = _spec(cls, Target.METRIC, hmetric_spec)
-    lP, lQ = spec.am
+def metric_kernel(lP: int, lQ: int, bra: tuple[Stmt, ...],
+                  ket: tuple[Stmt, ...], *, name: str, title: str) -> Kernel:
+    """The metric kernel's engine-neutral skeleton: one thread per staged aux
+    shell pair, the accumulators `metric_acc(e, f)` zeroed, the P records
+    walked serially (`bra`, the bra record's statements, then the Q records,
+    `ket` once per record, which must add every boundary value into its
+    accumulator), and the plain mirrored scatter -- `kernel_metric`'s
+    parameters, launch and output. The HGP builder below and the Rys one
+    (`kernel_rmetric`) fill it; `title` is the body's first `Note`."""
     rowsP, rowsQ = vrr.cartesians(lP), vrr.cartesians(lQ)
-    ip = Var(BRA)
-    ket_body, bnd = _ket_body(metric_class(spec), _PA | _QC, "A",
-                              Var(KET))
-    assert bnd == [(e, f) for e in rowsP for f in rowsQ]
+    bnd = [(e, f) for e in rowsP for f in rowsQ]
     bra_body: tuple[Stmt, ...] = (
-        Decl("pe", Scalar.F64, init=Index("alpha", (ip,))),
-        *(Decl(f"A{d}", Scalar.F64, init=Index("A", (ip, Lit(d))))
-          for d in range(3)),
-        Note("U_P = s_aux of the bra record: c (pi/alpha)^(3/2), K = 1"),
-        Decl("up", Scalar.F64, init=Index(S_AUX, (ip,))),
+        *bra,
         Note("the Q records of the pair"),
-        For(KET, Var("q0"), Var("q1"), Lit(1), ket_body),
+        For(KET, Var("q0"), Var("q1"), Lit(1), ket),
     )
 
     def at(row: Expr, col: Expr) -> Index:
@@ -479,12 +480,41 @@ def build_hmetric_kernel(cls: Spec | tuple[int, int], *,
         scatter,
     )
     body = (
-        Note(f"DF Coulomb metric on the HGP engine, class (lP, lQ) = ({lP}, "
-             f"{lQ}): (P|Q) = ({lP}0|{lQ}0) with exponent-0 partners "
-             "(eri/density_fit/kernel_hgp.py)"),
+        Note(title),
         *_thread(PAIR, "n_pair", per_pair, "aux shell pair"),
     )
-    return Kernel(name or hmetric_name(spec), _metric_params(), body)
+    return Kernel(name, _metric_params(), body)
+
+
+def metric_acc(e: Cart, f: Cart) -> str:
+    """The register accumulator of the metric boundary value `(e0|f0)`."""
+    return _acc(e, f)
+
+
+def build_hmetric_kernel(cls: Spec | tuple[int, int], *,
+                         name: str | None = None) -> Kernel:
+    """The HGP metric kernel of one aux class (module docstring); its
+    parameters, launch and output are `kernel_metric.build_metric_kernel`'s.
+    """
+    spec = _spec(cls, Target.METRIC, hmetric_spec)
+    lP, lQ = spec.am
+    rowsP, rowsQ = vrr.cartesians(lP), vrr.cartesians(lQ)
+    ip = Var(BRA)
+    ket_body, bnd = _ket_body(metric_class(spec), _PA | _QC, "A",
+                              Var(KET))
+    assert bnd == [(e, f) for e in rowsP for f in rowsQ]
+    bra: tuple[Stmt, ...] = (
+        Decl("pe", Scalar.F64, init=Index("alpha", (ip,))),
+        *(Decl(f"A{d}", Scalar.F64, init=Index("A", (ip, Lit(d))))
+          for d in range(3)),
+        Note("U_P = s_aux of the bra record: c (pi/alpha)^(3/2), K = 1"),
+        Decl("up", Scalar.F64, init=Index(S_AUX, (ip,))),
+    )
+    return metric_kernel(
+        lP, lQ, bra, ket_body, name=name or hmetric_name(spec),
+        title=(f"DF Coulomb metric on the HGP engine, class (lP, lQ) = "
+               f"({lP}, {lQ}): (P|Q) = ({lP}0|{lQ}0) with exponent-0 partners "
+               "(eri/density_fit/kernel_hgp.py)"))
 
 
 def build_heri3_kernel(cls: Spec | tuple[int, int, int], *,

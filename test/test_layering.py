@@ -4448,6 +4448,68 @@ def test_the_hgt_builder_reaches_neither_its_witnesses_nor_a_machine() -> None:
         assert not hit, f"kernel_hgt reaches {hit}"
 
 
+# The DF metric on Rys (`eri/density_fit/kernel_rmetric.py`): `kernel_hgp`'s
+# metric skeleton (`metric_kernel`) with the Rys rule and 2D VRR of
+# `rys.recurrence` as the record-pair body, under `hgp_df_builder`'s
+# prohibitions; the metric adapter takes it on `engine=RYS` and the emit
+# driver names it by its entry point.
+RULES |= {
+    "rys_metric_builder": _rule(
+        "kernel_rmetric.py: the DF metric on Rys, `Target.METRIC` on "
+        "`Engine.RYS` -- `kernel_hgp`'s metric skeleton with the Rys nest",
+        ("spec", "=ir", "hgp", "rys", "eri.density_fit.kernel_hgp"),
+        plan="the plan layer keys on a [JEngine] row a Rys class does not have",
+        ao="`ao.metric` is the witness the kernel is interpreted against: "
+           "importing it shares ancestry (#20)",
+        mmd="the other engine: the MMD kernel is this builder's "
+            "cross-engine witness, not its ancestor",
+        **{"eri.density_fit.kernel_metric":
+            "the MMD metric builder reaches `plan/`",
+           "ir.interp":
+            "the builder is checked by the interpreter, never built on it"},
+        emit="nothing in the produced `Kernel` may be CUDA- or HIP-specific",
+        **{"performance.device":
+            "the `Kernel` is arch-neutral; the arch enters at emission"},
+        reference=_GROUND_TRUTH),
+}
+RULE_OF["eri.density_fit.kernel_rmetric"] = "rys_metric_builder"
+EDGES["eri.density_fit.kernel_rmetric"] = frozenset(
+    ("eri.density_fit.kernel_hgp", "hgp.vrr", "ir", "rys.recurrence",
+     "rys.roots", "spec"))
+RULES["metric_adapter"] = Rule(RULES["metric_adapter"].why + ", and on "
+                               "`engine=RYS` the Rys builder `kernel_rmetric`",
+                               RULES["metric_adapter"].may
+                               | frozenset(("eri.density_fit.kernel_rmetric",)),
+                               RULES["metric_adapter"].must_not)
+EDGES["eri.density_fit.metric_drive"] = (
+    EDGES["eri.density_fit.metric_drive"]
+    | frozenset(("eri.density_fit.kernel_rmetric",)))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the DF metric on Rys "
+                       "through `kernel_rmetric`, by its entry point only",
+                       RULES["driver"].may
+                       | frozenset(("eri.density_fit.kernel_rmetric",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = (EDGES["emit.__main__"]
+                          | frozenset(("eri.density_fit.kernel_rmetric",)))
+
+
+def test_the_rys_metric_builder_reaches_neither_the_plan_nor_the_mmd_engine(
+        ) -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["eri.density_fit.kernel_rmetric"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"rys.recurrence", "rys.roots", "eri.density_fit.kernel_hgp"} <= seen
+    for banned in (_REF, "plan", "mmd", "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "eri.density_fit.kernel_metric"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_rmetric reaches {hit}"
+
+
 if __name__ == "__main__":
     import sys
 

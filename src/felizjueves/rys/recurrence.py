@@ -126,12 +126,17 @@ def _name(axis: str, i: int, k: int) -> str:
 
 
 def root_loop(cls: AmClass, boundary: Sequence[tuple[Cart, Cart]],
-              acc: Callable[[Cart, Cart], str], *, n_roots: int
-              ) -> tuple[Stmt, ...]:
+              acc: Callable[[Cart, Cart], str], *, n_roots: int,
+              single_centre: bool = False) -> tuple[Stmt, ...]:
     """The `Rys` rule's root loop for one primitive quartet (module
     docstring): reads the arrays `NODES` / `WEIGHTS` (extent `n_roots`), the
     scale `WEIGHT_SCALE` and `scalar_needs(cls)`, and adds each boundary
-    value `(e, f)` into the accumulator `acc(e, f)`."""
+    value `(e, f)` into the accumulator `acc(e, f)`.
+
+    `single_centre`: both sides are single-centre Gaussians (an aux shell
+    with an exponent-0 partner, `eri/density_fit/kernel_rmetric.py`), so
+    `PA = QC = 0`: `C00 = x WP` and `D00 = x WQ`, the zero terms not spelled
+    and `PA_*` / `QC_*` never read."""
     lab, lcd = _spans(cls)
     x = Var("rys_xr")
     body: list[Stmt] = [
@@ -152,11 +157,13 @@ def root_loop(cls: AmClass, boundary: Sequence[tuple[Cart, Cart]],
     tables: list[dict[tuple[int, int], Expr | None]] = []
     for d, ax in enumerate(_AXES):
         if lab:
-            body.append(Decl(f"c00_{ax}", Scalar.F64, init=_c(
-                Fn.ADD, Var(f"PA_{ax}"), _c(Fn.MUL, x, Var(f"WP_{ax}")))))
+            xw: Expr = _c(Fn.MUL, x, Var(f"WP_{ax}"))
+            body.append(Decl(f"c00_{ax}", Scalar.F64, init=xw if single_centre
+                             else _c(Fn.ADD, Var(f"PA_{ax}"), xw)))
         if lcd:
-            body.append(Decl(f"d00_{ax}", Scalar.F64, init=_c(
-                Fn.ADD, Var(f"QC_{ax}"), _c(Fn.MUL, x, Var(f"WQ_{ax}")))))
+            xw = _c(Fn.MUL, x, Var(f"WQ_{ax}"))
+            body.append(Decl(f"d00_{ax}", Scalar.F64, init=xw if single_centre
+                             else _c(Fn.ADD, Var(f"QC_{ax}"), xw)))
         g: dict[tuple[int, int], Expr | None] = {
             (0, 0): Var("rys_wr") if d == 2 else None}
 

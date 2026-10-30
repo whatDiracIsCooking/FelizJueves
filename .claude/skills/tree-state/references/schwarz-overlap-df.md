@@ -189,3 +189,24 @@ per backend (`test_emit_hgp_df.py`); **compiled and run on the RTX 3080
 only** (`test_hgp_df_device.py`, 8 passed: worst 6.06 eps of the tower twin
 against the host, 2.1e-14 of max against libcint, runs bit-identical); the
 RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run). Nothing measured.
+**The DF metric also has a Rys twin, through (g|h), interpreted and
+compiled, NOT run on a card** (`docs/implementation/rys_fock.md`, "The DF
+metric on Rys", is the one place with the detail):
+`eri/density_fit/kernel_rmetric.py`'s `build_rmetric_kernel`
+(`rmetric_{lP}{lQ}`), keyed `Target.METRIC` with `engine=Engine.RYS` (slot
+`metric.rys`, no lever), a drop-in sibling of `metric_` / `hmetric_` that
+fills `kernel_hgp.metric_kernel`'s skeleton (extracted from
+`build_hmetric_kernel`, every `hmetric_` golden byte-identical) with the
+`N = (lP + lQ)//2 + 1` point Rys rule (`ir.Rys`, `fj_rys<N>`) and
+`rys.recurrence.root_loop(..., single_centre=True)` per record pair, `P - A
+= Q - C = 0` not spelled (every other Rys golden byte-identical). Reach
+`lP + lQ <= 9` (`N <= 5`). `metric_drive` takes `engine=Engine.RYS` with the
+rule injected (`rys=`). Ladder `--rys-metric-l [LMAX]` (total L, 0..9, bare
+4), never in the bare default nor `KERNEL_GEN_CMD`. Interpreted
+(`test_kernel_rmetric.py`, `L > 4` `slow`): every class through (g|h)
+within 3.69 eps of the tower twin against the host and 4.26 against the
+MMD kernel (and the HGP twin through p), the whole `cc-pvtz-jkfit` set
+within 2.6e-14 of `max|M|` against libcint. Nine goldens per backend
+(`test_emit_rmetric.py`); **all 30 units compiled warning-free by nvcc
+(sm_86) and hipcc (gfx1200)** on a device-less cloud box, 2026-10-30
+(60 passed). **Not run on either card**; nothing measured.

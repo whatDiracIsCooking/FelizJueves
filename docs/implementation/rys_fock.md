@@ -1,4 +1,4 @@
-# Rys quadrature: the fused `F` (`Target.F`) and the split `J` and `K` (`Target.J`, `Target.K`) on `Engine.RYS`
+# Rys quadrature: the fused `F` (`Target.F`), the split `J` and `K` (`Target.J`, `Target.K`) and the DF metric (`Target.METRIC`) on `Engine.RYS`
 
 **Status: implemented and interpreted; emitted for both vendors; NOT
 compiled by nvcc or hipcc and NOT run on either card.** The session that
@@ -18,7 +18,11 @@ nest with the same Rys VRR), has its own section, "The split `J` on Rys",
 with the same status: interpreted and emitted, not compiled by a vendor
 compiler, not run on a card, nothing measured. So has the third, **the
 split exchange `K`** (`rk_` units, `kernel_hk`'s nest with the same Rys
-VRR), "The split `K` on Rys", with the same status.
+VRR), "The split `K` on Rys", with the same status. The fourth, **the DF
+metric `(P|Q)`** (`rmetric_` units, `kernel_hgp`'s metric skeleton with the
+same rule and VRR), "The DF metric on Rys", is further along: it is
+**compiled by nvcc and hipcc** (warning-free, every class through (g|h)),
+though not run on a card either.
 
 ## What it is
 
@@ -380,3 +384,59 @@ hipcc compile cases reuse `test_emit_hjk.py`'s and have **not run**.
   signature is `hk_`'s).
 - **Nothing measured**, no `gpu` backend spelling, nothing above
   `(dd|dd)`.
+
+## The DF metric on Rys: `Target.METRIC` on `Engine.RYS`
+
+**Status: implemented and interpreted; emitted for both vendors and
+COMPILED by nvcc (sm_86, CUDA 13.0) and hipcc (gfx1200, ROCm 7.2.4) with
+no warning in generated text, every class through (g|h); NOT run on either
+card.** The session that built it had both compilers and no card. **Nothing
+is measured or scored.**
+
+`eri/density_fit/kernel_rmetric.py`'s `build_rmetric_kernel((lP, lQ))`
+builds `rmetric_{lP}{lQ}`: the DF Coulomb metric of `metric.md` and its HGP
+twin of `hgp_df.md` with the vertical recurrence replaced by this note's
+rule and 2D VRR. An aux Gaussian is a pair with an exponent-0 partner
+(`hgp_df.md`, "A DF class is an HGP quartet"), so the class is `(lP 0 | lQ
+0)`, `N = (lP + lQ) // 2 + 1` nodes per record pair, no HRR, and the root
+sum over the record pairs is the contracted `(P|Q)` itself.
+
+| Piece | Where |
+|---|---|
+| the seam | `kernel_hgp.metric_kernel(lP, lQ, bra, ket, name=, title=)`: the HGP metric's skeleton (thread per aux shell pair, accumulators, the two record loops, the plain mirrored scatter, `kernel_metric`'s parameters) taking the bra record's statements and the per-ket-record body; `build_hmetric_kernel` is that skeleton with the HGP VRR, every `hmetric_` golden byte-identical |
+| the key | `Spec(..., Target.METRIC, engine=Engine.RYS)`, `coulomb/d0/(lP,lQ)/b1/metric.rys/literal`; `spec._RYS_TARGETS` admits `METRIC`, and `levers.ENGINE_SLOTS` gained `metric.rys`, refusing every lever |
+| the nest | per bra record `p`, `Pb`, `Ub`; per ket record `q`, `Qk`, `Uq`, then `rys.recurrence.quartet_rule` (unchanged) and `root_loop(..., single_centre=True)`: both sides single-centre, so `C00 = x (W - P)` and `D00 = x (W - Q)`, the zero `P - A` / `Q - C` terms not spelled (the option defaults off; every other Rys golden byte-identical) |
+| the reach | `N <= 5`, so `lP + lQ <= 9` (`RYS_METRIC_L_MAX`, (g|h)); (h\|h) is refused |
+| the adapter | `metric_drive.metric_matrix_kernel(..., engine=Engine.RYS, rys=roots_weights)`: the Rys rule injected as the interpreter's `rys=` |
+| the generator | `python -m felizjueves.emit --rys-metric-l [LMAX]`, LMAX the class's total L as `--metric-l`'s, 0..9 (bare: 4, nine units); it adds units beside the J ladders, never in the bare default nor in `KERNEL_GEN_CMD` |
+
+So an `rmetric_` unit is a **drop-in** for the `metric_` / `hmetric_` unit of
+the same class: the same parameters (signature text equal,
+`test_emit_rmetric.py`), staging, launch and output.
+
+### How it is checked
+
+`test/test_kernel_rmetric.py`, interpreted, on `test_kernel_metric.SYNTHETIC`
+plus one h shell (every class through (g|h); swapped, diagonal and
+off-diagonal pairs), the MMD tests' `TIGHT` pair, and the tracked
+`cc-pvtz-jkfit` set. `L <= 4` is fast; above it, and the whole set, `slow`.
+
+| Check | Worst | Gate |
+|---|---|---|
+| every class through (g\|h) against the host (`eri.density_fit.metric`, MMD) | 3.69 eps of the tower-twin scale ((s\|p)) | 16 eps |
+| the same against the MMD kernel, and through p the HGP twin | 4.26 eps ((s\|d)) | 32 eps |
+| `TIGHT` (`T` = 2000, the rule's Laguerre end) | 0.90 eps | 16 eps |
+| the jkfit set's s and p shells / the whole set (O to g, (g\|g)) against libcint's `int2c2e_cart` | 6.3e-15 / 2.6e-14 of `max \|M\|` | `1e-12 max \|M\|` |
+
+Emission (`test_emit_rmetric.py`): nine goldens per backend (`L <= 4`,
+`test/golden/{cuda,hip}/rmetric_*`), the 21 classes above emitted for both
+vendors (`slow`), and the compile of all 30 through nvcc and hipcc with the
+kernel tier's flags and #92's warning filter: 60 passed, 47 s on 8 workers.
+
+### What is not done
+
+- **Nothing on a card.** Next: a device test on `test/metric_driver.py`'s
+  harness, which should take the `rmetric_` unit unchanged.
+- **Nothing measured**: no word on Rys against MMD or HGP here, and no
+  `metric.rys` row in `data/measured/`.
+- **`(mn|P)` on Rys**, and anything past (g|h): the rule stops at `N = 5`.

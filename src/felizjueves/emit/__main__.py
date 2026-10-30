@@ -18,6 +18,8 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --hgp-one-e-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-metric-l --hgp-eri3-l
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda \\
+            --rys-metric-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --hgp-j-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
             --hgp-k-l 1 --hgp-class 2 0 1 1 --ordered
@@ -94,6 +96,16 @@ for CUDA, `.hip` for HIP):
   ladders and are NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every
   name starts `hmetric_` or `heri3_`, so none collides with another
   ladder's.
+
+- the DF metric ladder on Rys quadrature, `--rys-metric-l [LMAX]`:
+  `kernel_rmetric.build_rmetric_kernel` for every aux class `lP <= lQ`,
+  `lP + lQ <= LMAX` (`rmetric_{lP}{lQ}`): `(P|Q)` by the Rys rule
+  (`fj_rys<N>`, carried in the unit) and its 2D VRR instead of the MMD
+  tower, the same parameters, launch and output as `metric_*` /
+  `hmetric_*`. LMAX is the class's TOTAL L, as `--metric-l`'s, accepted
+  0..`RYS_METRIC_L_MAX` = 9 ONLY (the rule's N <= 5; bare: 4, 9 units). It
+  ADDS units beside the J ladders and is NEVER in the no-flag default nor
+  in KERNEL_GEN_CMD. Every name starts `rmetric_`.
 
 - the dipole ladder, `--mu-l [LMAX]` (#522): for every pair class
   `(la, lb)`, `la <= lb <= LMAX` (2 when the flag is given bare),
@@ -473,6 +485,10 @@ from felizjueves.eri.density_fit.kernel_hgp import (
     build_hmetric_kernel,
 )
 from felizjueves.eri.density_fit.kernel_metric import build_metric_kernel
+from felizjueves.eri.density_fit.kernel_rmetric import (
+    RYS_METRIC_L_MAX,
+    build_rmetric_kernel,
+)
 from felizjueves.eri.fock.kernel_f import build_f_kernel, f_class_spec
 from felizjueves.eri.fock.kernel_frys import build_frys_kernel
 from felizjueves.eri.hjk.kernel_hj import build_hj_kernel, hj_class_spec, hj_name
@@ -533,6 +549,7 @@ DEFAULT_SX_L = 2  # `--sx-l` given bare: every ordered class through d, 9 units
 DEFAULT_METRIC_L = 4  # `--metric-l` given bare: lP <= lQ, lP + lQ <= 4, 9 units
 DEFAULT_ERI3_L = 4  # `--eri3-l` given bare: la <= lb, la + lb + lP <= 4, 22 units
 DEFAULT_HGP_DF_L = HGP_DF_L_MAX  # `--hgp-metric-l` / `--hgp-eri3-l` bare: p
+DEFAULT_RYS_METRIC_L = 4  # `--rys-metric-l` bare: (s|s) through (d|d), 9
 DEFAULT_MU_L = 2  # `--mu-l` given bare: (ss) through (dd), 6 units
 MU_L_MAX = 3  # #627: the dipole is validated through (ff) only
 DEFAULT_QUAD_L = 2  # `--quad-l` given bare: (ss) through (dd), 6 units
@@ -749,7 +766,11 @@ def generate_eri3(backend: str, arch: Arch, out: Path,
 
 
 def _hgp_df(args: argparse.Namespace) -> bool:
-    return args.hgp_metric_l is not None or args.hgp_eri3_l is not None
+    """Whether a DF ladder on a non-MMD engine is asked: the HGP pair, or
+    the Rys metric (`--rys-metric-l`), which every other path refuses
+    alike."""
+    return (args.hgp_metric_l is not None or args.hgp_eri3_l is not None
+            or args.rys_metric_l is not None)
 
 
 def _hgp_df_check(flag: str, lmax: int) -> None:
@@ -781,6 +802,26 @@ def generate_hgp_df(backend: str, arch: Arch, out: Path,
         hgp_metric_classes(metric_l) if metric_l is not None else ())),
                *(build_heri3_kernel(c) for c in (
         hgp_eri3_classes(eri3_l) if eri3_l is not None else ()))]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+def rys_metric_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every aux class `(lP, lQ)`, `lP <= lQ`, `lP + lQ <= lmax`, over
+    `0..RYS_METRIC_L_MAX` (LMAX is the class's total L)."""
+    if type(lmax) is not int or not 0 <= lmax <= RYS_METRIC_L_MAX:
+        raise ValueError(f"--rys-metric-l {lmax!r} is outside "
+                         f"0..{RYS_METRIC_L_MAX}: the Rys rule stops at "
+                         "N = 5 nodes")
+    return [(lp, lq) for lp in range(lmax + 1) for lq in range(lp, lmax + 1)
+            if lp + lq <= lmax]
+
+
+def generate_rys_metric(backend: str, arch: Arch, out: Path,
+                        lmax: int) -> list[Path]:
+    """Emit the Rys metric unit of every aux class through total `lmax`
+    into `out`; return the paths."""
+    kernels = [build_rmetric_kernel(c) for c in rys_metric_classes(lmax)]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1386,7 +1427,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
         print("emit: --hgp-j-l / --hgp-k-l / --hgp-class (and --ordered) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
-              "--hgp-eri3-l / "
+              "--hgp-eri3-l / --rys-metric-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
@@ -1459,6 +1500,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     metavar="LMAX")
     ap.add_argument("--hgp-eri3-l", dest="hgp_eri3_l", type=int, nargs="?",
                     const=DEFAULT_HGP_DF_L, default=None, metavar="LMAX")
+    ap.add_argument("--rys-metric-l", dest="rys_metric_l", type=int,
+                    nargs="?", const=DEFAULT_RYS_METRIC_L, default=None,
+                    metavar="LMAX")
     ap.add_argument("--mu-l", dest="mu_l", type=int, nargs="?",
                     const=DEFAULT_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--quad-l", dest="quad_l", type=int, nargs="?",
@@ -1562,7 +1606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("emit: --fock-l / --fock-class (and an F lever flag) is a "
               "separate path from --L / --pair-l / --one-e-l / --schwarz-l / "
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
-              "--hgp-eri3-l / "
+              "--hgp-eri3-l / --rys-metric-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
@@ -1603,6 +1647,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or ladder_levers):
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
+              "--rys-metric-l / "
               "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-df-l / --hess-l / "
               "--hess-k-l / "
               "--hess-one-e-l / --hess-metric-l / "
@@ -1648,6 +1693,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                   "DF kernels are tested for s and p shells only",
                   file=sys.stderr)
             return 2
+    if (args.rys_metric_l is not None
+            and not 0 <= args.rys_metric_l <= RYS_METRIC_L_MAX):
+        print(f"emit: --rys-metric-l {args.rys_metric_l} is outside "
+              f"0..{RYS_METRIC_L_MAX}: the Rys rule stops at N = 5 nodes "
+              "(lP + lQ <= 9)", file=sys.stderr)
+        return 2
     if args.mu_l is not None and not 0 <= args.mu_l <= MU_L_MAX:
         print(f"emit: --mu-l {args.mu_l} is outside 0..{MU_L_MAX}: the "
               "dipole is validated through (ff) only (#627)",
@@ -1766,9 +1817,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                                    args.metric_l)
     if args.eri3_l is not None:  # beside the J chain, never by default
         written += generate_eri3(args.backend, arch, args.out, args.eri3_l)
-    if _hgp_df(args):  # beside the J chain, never by default
+    if args.hgp_metric_l is not None or args.hgp_eri3_l is not None:
         written += generate_hgp_df(args.backend, arch, args.out,
                                    args.hgp_metric_l, args.hgp_eri3_l)
+    if args.rys_metric_l is not None:  # beside the J chain, never by default
+        written += generate_rys_metric(args.backend, arch, args.out,
+                                       args.rys_metric_l)
     if args.mu_l is not None:  # beside the J chain, never by default
         written += generate_mu(args.backend, arch, args.out, args.mu_l)
     if args.quad_l is not None:  # beside the J chain, never by default

@@ -72,6 +72,11 @@ H₂O, `slow`) STO-3G `K` against the MMD sweep and libcint's `vk` (worst
 digests (`test_emit_rk.py`, `rk_digests.json`). All 102 cuda units passed
 clang 18's CUDA front end (a proxy). Nothing measured; a `k.rys` row is
 refused by the store.
+**The DF metric `(P|Q)` on Rys too, through (g|h), interpreted and
+COMPILED by nvcc and hipcc, NOT run on a card** (`rmetric_`,
+`eri/density_fit/kernel_rmetric.py`, slot `metric.rys`; `rys_fock.md`,
+"The DF metric on Rys"): the first Rys unit through a vendor compiler. Its
+entry is in `schwarz-overlap-df.md`.
 **The device Boys is one template, `fj_boys<M>`** (#301; `emit/_c.py`'s
 `BOYS_DEVICE`, every unit with a fundamental): every order `F_0..F_M` of one
 `T` from one `exp(−T)`, the Kummer series at `M` and the downward recurrence
