@@ -4104,6 +4104,53 @@ RULES["driver"] = Rule(RULES["driver"].why + ", and the DF gradient ladder "
 EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(_DF_GRAD_BUILDERS)
 
 
+# The three-center DF gradient on the HGP engine (`gradient.kernel_hgeri3`):
+# `kernel_hgp`'s VRR pieces and `hgp.recurrence`'s VRR and HRR, the MMD
+# sibling's parameters and `kernel_g1e`'s notes restated -- so it reaches
+# neither the plan nor the MMD engine, as `kernel_hgp` does not.
+RULES["hgeri3_builder"] = _rule(
+    "kernel_hgeri3.py: the three-center DF gradient kernel on the HGP "
+    "engine -- key -> IR, the raised and lowered classes by one VRR and "
+    "their bra HRRs, `kernel_geri3`'s parameters and mapping restated",
+    ("spec", "=ir", "hgp", "eri.density_fit.kernel_hgp"),
+    plan=RULES["hgp"].must_not["plan"],
+    mmd="the other engine: the MMD kernels are this builder's "
+        "cross-engine witnesses, not its ancestors",
+    ao=_GRAD_WITNESS, **{"gradient.host_df": _GRAD_WITNESS},
+    **{"gradient.kernel_geri3":
+       "the MMD sibling reaches `plan/`; its names are restated",
+       "gradient.kernel_g1e":
+       "reaches the MMD engine; its notes are restated"},
+    reference=_GROUND_TRUTH, **_NO_MACHINE)
+RULE_OF["gradient.kernel_hgeri3"] = "hgeri3_builder"
+EDGES["gradient.kernel_hgeri3"] = frozenset(
+    ("eri.density_fit.kernel_hgp", "hgp.hrr", "hgp.recurrence", "hgp.vrr",
+     "ir", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP DF gradient "
+                       "ladder through `kernel_hgeri3`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_hgeri3",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_hgeri3",))
+
+
+def test_the_hgp_gradient_builder_reaches_neither_the_plan_nor_mmd() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_hgeri3"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.vrr", "hgp.hrr", "eri.density_fit.kernel_hgp"} <= seen
+    for banned in (_REF, "plan", "mmd", "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "gradient.kernel_geri3", "gradient.kernel_g1e"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_hgeri3 reaches {hit}"
+
+
 # The three-center DF Hessian (`hessian.kernel_d2eri3`: ERI3 at d2) and its
 # host reference (`hessian.host_eri3`): the builder on `kernel_geri3`'s
 # mapping and weights, `kernel_h1e`'s per-axis operators and

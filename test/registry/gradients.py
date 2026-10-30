@@ -31,6 +31,9 @@ CASES = [
     # The HGP V gradient, ghv_ (ss) through (ff): interpreted and compiled by
     # nvcc and hipcc; its device tests (s and p) written, never run on a card.
     *ladder("hgp", "v", 1, compile=range(7), gpu=range(3)),
+    # The HGP (mn|P) gradient: interpreted through L = 4, its s / p ladder
+    # compiled; no card.
+    *ladder("hgp", "eri3", 1, compile=range(4), interpreted=range(5)),
 ]
 
 # #613's ladder: one program per aux l, every class of the aux-i system
@@ -94,6 +97,8 @@ TESTS = {
         span("hgp", "v", 1, range(3)),
     "test/test_emit_grad_hk.py::test_X_compiles_the_hgp_exchange_gradient_unit":
         Classes("hgp", "k", 1),
+    "test/test_emit_hgp_grad_df.py::test_X_compiles_the_hgp_gradient_unit":
+        Classes("hgp", "eri3", 1),
     "test/test_grad_device.py::test_X_gradient_matches_the_host": ById(_GRAD),
     # #659's compile-only twins, the registry's compile tier (L <= 4)
     "test/test_grad_device.py::test_X_gradient_runners_compile": ById(

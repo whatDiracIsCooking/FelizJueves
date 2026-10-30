@@ -148,3 +148,7 @@ detection was fixed, not when this was run.
   spill.
 - **A screen, a lever, batching, spherical functions, and DF-J/K
   themselves**, all out of scope as for the MMD kernels.
+- **The gradients**: `(mn|P)`'s is built on this engine
+  (`gradient/kernel_hgeri3.py`, `hgeri3_*`, `--hgp-grad-eri3-l`;
+  `gradient.md`, "The three-center gradient on HGP"), interpreted and
+  compiled, not on a card; the metric's is not.
