@@ -17,7 +17,8 @@ L <= 4 only** ((ss), (sp), (pp), (sd)), by the user's decision: the host
 against libcint's `int2e_diag` (`test_ao_schwarz.py`, which also checks
 `|(ab|cd)| <= Q_ab Q_cd` on every tracked libcint block at L <= 4), the
 kernel interpreted (`test_kernel_schwarz.py`), and on both cards
-(`test_schwarz_device.py`, generator `test/schwarz_driver.py`). Nothing about
+(`test_schwarz_device.py`, generator `test/schwarz_driver.py`;
+on the shared runner since #658, which has not run on a card). Nothing about
 it is measured.
 **The cross-basis overlap `S_{B1,B2}[m][n] = <m|n>` is generated too**
 (`one_electron.md`, "The cross-basis overlap"; nothing consumes it yet, no
@@ -38,7 +39,8 @@ through three tracked fixtures (`h2o_sto3g_x_631g`, `_x_ccpvdz`,
 fixture, `oracle.manifest.cross_overlap`), both orientations
 (`test_ao_cross_overlap.py`); the kernel interpreted bitwise
 (`test_kernel_sx.py`, (ss) through (ff)); and on both cards
-(`test_sx_device.py`, generator `test/sx_driver.py`). Nothing about it is
+(`test_sx_device.py`, generator `test/sx_driver.py`;
+on the shared runner since #658, which has not run on a card). Nothing about it is
 measured.
 **The DF Coulomb metric `(P|Q)` of a Cartesian auxiliary basis is generated
 too, and ran on both cards** (the RTX 3080 first, both since #606; milestone 15, #410–#416;

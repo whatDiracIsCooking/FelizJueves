@@ -11,12 +11,12 @@ crossed with every aux shell; per class one bra record table, one aux record
 table, and two record ranges and three offsets per cell), the kernels
 `kernel_eri3.build_eri3_kernel`'s, emitted by `emit/cuda.py` / `emit/hip.py`
 unchanged. Only the `main()` around them is written here, as
-`schwarz_driver.py` does for `Q` -- harness, in `test/`, not a second
-emitter (#657 moves it to the shared runner, as #654 did
-`metric_driver.py`). Every unit is emitted into `workdir` (the kernel tier's
-`KERNEL_GEN_CMD` writes no eri3 unit), and the program is compiled with
-devtools/config.sh's flags under #92's warning filter
-(`plan_driver.compile_checked`).
+`schwarz_driver.py` did for `Q` before #658 -- harness, in `test/`, not a
+second emitter (#657 moves it to the shared runner, as #654 and #658 did
+`metric_driver.py` and `schwarz_driver.py`). Every unit is emitted into
+`workdir` (the kernel tier's `KERNEL_GEN_CMD` writes no eri3 unit), and the
+program is compiled with devtools/config.sh's flags under #92's warning
+filter (`plan_driver.compile_checked`).
 
 WHAT THE GENERATED `main()` DOES, `RUNS` times: zero ONE
 `n_ao x n_ao x n_aux` tensor (`[m][n][P]`, aux fastest), launch every

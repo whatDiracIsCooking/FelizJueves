@@ -10,6 +10,8 @@
     Step / chain_runners / build_chain / run_chain -> several launches, one
                                                   carried output (#659)
     chain_specs(steps, carried, init)          -> the specs, checked host-side
+    build_steps(tc, backend, steps, workdir)   -> chain_runners + build_chain (#658)
+    carried(steps)                             -> the one OUT every step writes
 
 WHY. Every device test before this wrote its own `main()` (test_f32_device.py's
 HARNESS, plan_driver.py's DRIVER, ...): the uploads, the launch and the
@@ -399,6 +401,27 @@ def build_chain(tc: Toolchain, runners: Mapping[str, Program], workdir: Path,
     return {name: build_runner(tc, prog, workdir / f"runner_{name}",
                                timeout=timeout)
             for name, prog in runners.items()}
+
+
+def carried(steps: Sequence[Step]) -> str:
+    """The one OUT array every step's kernel writes: the chain's carried
+    output, refused unless there is exactly one (#658)."""
+    names = {p.name for s in steps for p in s.kernel.params
+             if p.intent is Intent.OUT}
+    if len(names) != 1:
+        raise ValueError(f"a chain carries one OUT array, the steps write "
+                         f"{sorted(names)}")
+    return names.pop()
+
+
+def build_steps(tc: Toolchain, backend: str, steps: Sequence[Step],
+                workdir: Path, *, units: Mapping[str, Path] | None = None,
+                timeout: float = 1800.0) -> dict[str, Path]:
+    """Every step's runner, compiled: `chain_runners` of the steps' kernels
+    (`units` as `emit_unit`'s), then `build_chain`."""
+    return build_chain(tc, chain_runners([s.kernel for s in steps], backend,
+                                         workdir, units=units),
+                       workdir, timeout=timeout)
 
 
 def run_chain(binaries: Mapping[str, Path], steps: Sequence[Step],

@@ -3,11 +3,12 @@
 (both orientations) against the host and libcint, on the RTX 3080 and the
 RX 9060 XT.
 
-THE BUILD is `sx_driver.build_on_card`: one program per launch
-(`launch.cross_overlap_launch`), every ordered class's kernel
-(`kernel_sx`) launched once into one zeroed `n_a x n_b` matrix, `RUNS`
-times, compiled with devtools/config.sh's flags and FAILING on a warning
-located in generated text (#92).
+THE BUILD is `sx_driver.build_on_card`, on the shared runner (#658): one
+runner per ordered class's unit (`kernel_sx`) of one launch
+(`launch.cross_overlap_launch`), compiled with devtools/config.sh's flags
+and FAILING on a warning located in generated text or a harness header
+(#92); every class launched once into one `n_a x n_b` matrix carried from
+class to class from zero, the whole chain `RUNS` times.
 
 PART 1, PER CLASS, THROUGH (ff). HF/cc-pVTZ against itself as two bases:
 all sixteen ordered classes `(0..3, 0..3)`, every record, same-centre and
@@ -35,10 +36,9 @@ pair with one record repeats bit for bit.
 
 NOT A MEASUREMENT: nothing is written to `data/measured/`.
 
-COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every program both
+COMPILE-ONLY COMPANIONS (`cuda` / `hip`, no `gpu`) build every runner both
 parts use. The device tests are `gpu` plus `cuda` or `hip`, behind the card
-lock and the VRAM probe: without the card they skip, and kernel-tier.sh
-exits 2.
+lock: without the card they skip, and kernel-tier.sh exits 2.
 """
 
 from __future__ import annotations
@@ -48,10 +48,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from harness_driver import build_steps
 from oracle import basis as ob
 from oracle import manifest
-from plan_driver import compile_checked
-from sx_driver import build_on_card, sx_program
+from sx_driver import build_on_card, sx_steps
 from test_ao_cross_overlap import _scale as libcint_scale
 from test_ao_overlap import ONE_E_TOL
 from test_kernel_device import BACKEND, _toolchain
@@ -122,11 +122,11 @@ def _bound(case: str) -> tuple[np.ndarray, np.ndarray]:
     return host, runs * Mabs
 
 
-def _run(backend: str, case: str, request, run_device_binary,
+def _run(backend: str, case: str, request,
          tmp_path: Path) -> None:
     tc = _toolchain(backend, request)
     plan = _launch(case)
-    Ss = build_on_card(plan, backend, tc, tmp_path, run_device_binary)
+    Ss = build_on_card(plan, backend, tc, tmp_path)
     want = _host(case)
     tol, rtol = _bound(case)
     err = np.abs(Ss[0] - want)
@@ -149,16 +149,16 @@ def _run(backend: str, case: str, request, run_device_binary,
 @pytest.mark.gpu
 @pytest.mark.parametrize("case", CASE_PARAMS)
 def test_cuda_cross_overlap_matches_the_host_and_libcint(
-        case, request, run_device_binary, tmp_path):
-    _run("cuda", case, request, run_device_binary, tmp_path)
+        case, request, tmp_path):
+    _run("cuda", case, request, tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.gpu
 @pytest.mark.parametrize("case", CASE_PARAMS)
 def test_hip_cross_overlap_matches_the_host_and_libcint(
-        case, request, run_device_binary, tmp_path):
-    _run("hip", case, request, run_device_binary, tmp_path)
+        case, request, tmp_path):
+    _run("hip", case, request, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -169,15 +169,13 @@ def test_hip_cross_overlap_matches_the_host_and_libcint(
 @pytest.mark.cuda
 @pytest.mark.parametrize("case", CASES)
 def test_cuda_sx_programs_compile(case, nvcc, tmp_path):
-    compile_checked(nvcc, sx_program(_launch(case), "cuda", tmp_path),
-                    tmp_path / "bin")
+    build_steps(nvcc, "cuda", sx_steps(_launch(case)), tmp_path)
 
 
 @pytest.mark.hip
 @pytest.mark.parametrize("case", CASES)
 def test_hip_sx_programs_compile(case, hipcc, tmp_path):
-    compile_checked(hipcc, sx_program(_launch(case), "hip", tmp_path),
-                    tmp_path / "bin")
+    build_steps(hipcc, "hip", sx_steps(_launch(case)), tmp_path)
 
 
 @pytest.mark.slow  # plans (ff), L > FAST_L_MAX (tiers.py)
