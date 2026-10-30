@@ -160,8 +160,12 @@ reference is now tracked so it need not run the host (#639): a
 density into `dE_J/dR` per `gjab` bra class (10) and whole; the host
 matches it on every class within 1.25e-15 of `max|G|` (gate 1e-14,
 `test_j_gradient_witness.py`, `slow`: 13 min on 4 workers, ~37 CPU-min
-of host), and its `oracle` test rebuilds it from PySCF in ~2 s. No
-device test reads it yet (#639's device half).
+of host), and its `oracle` test rebuilds it from PySCF in ~2 s. The
+CO cell now holds the card to the witness's whole `G` at the same
+`DEV_TOL = 1e-13` (H₂ and H₂O keep the live host), with a fast no-card
+check that the witness is on the cell's own density and nuclei; the
+cell has **not** been re-run on either card since, so its after-time
+is unmeasured (#639).
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`

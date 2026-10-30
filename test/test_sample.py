@@ -241,7 +241,8 @@ def _collect(tmp_path: Path, *args: str, **env: str) -> tuple[list[str], dict]:
     child = {k: v for k, v in os.environ.items()
              if not k.startswith(("PYTEST_", "FJ_"))}
     child.update(FJ_SAMPLE_SEED="fixed", FJ_SAMPLE_REPORT=str(report),
-                 FJ_BUDGET_MED="20", FJ_BUDGET_MAX="10", **env)
+                 FJ_BUDGET_MED="0.001", FJ_BUDGET_MAX="0.001",
+                 **env)
     done = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q",
          "-p", "no:cacheprovider", "-p", "no:xdist", "-o", "addopts=",
@@ -268,3 +269,14 @@ def test_the_plugin_deselects_what_it_did_not_draw(tmp_path: Path) -> None:
               for i in (1, 2)]
     assert not set(halves[0]) & set(halves[1])
     assert sorted(halves[0] + halves[1]) == sorted(drawn)
+
+
+def test_a_cost_is_the_registry_figure_shared_among_its_coverers() -> None:
+    key = next(k for k, c in REGISTRY.items()
+               if c.cost_s is not None and "gpu" in c.tiers)
+    whole = REGISTRY[key].cost_s.of("gpu", "cuda").seconds
+    assert sample.cost_of((key,), "gpu", "cuda", {key: 1}, 99.0) == whole
+    assert sample.cost_of((key,), "gpu", "cuda", {key: 4}, 99.0) == (
+        pytest.approx(whole / 4))
+    gone = key._replace(L=999)
+    assert sample.cost_of((key, gone), "gpu", "cuda", {}, 99.0) == 99.0

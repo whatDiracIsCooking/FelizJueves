@@ -29,9 +29,11 @@ covers (its registry keys):
 band's budget (`FJ_BUDGET_MED`, `FJ_BUDGET_MAX`, seconds of `cost_s`) is
 spent: the case that crosses it is the last drawn, so a budget is overshot
 by at most one case. `FJ_K_MED` / `FJ_K_MAX` cap the count as well. A case's
-cost is the sum of its keys' `cost_s`, or `FJ_DEFAULT_COST_S` when any of
-them is unset -- all of them, until #652 fills the registry. A budget is per
-pool, so a budget reads as "seconds per compiler, or per card".
+cost (`cost_of`) is its keys' registry figure for its tier and backend
+(#652, `cost.py`), shared evenly among the pool's cases that cover each
+key, and the largest share over its keys; `FJ_DEFAULT_COST_S` when a key
+has no figure. A budget is per pool, so it reads as "seconds per compiler,
+or per card".
 
 THE SEED is `FJ_SAMPLE_SEED` when set, else a hash of the merge-base with
 `FJ_SAMPLE_BASE` (origin/main) and HEAD: a run on one commit replays its
@@ -83,7 +85,7 @@ from typing import Any
 
 import pytest
 
-from . import FAMILIES, REGISTRY, Key, device_cases
+from . import FAMILIES, REGISTRY, Key, device_cases, family_of
 
 ROOT = Path(__file__).resolve().parents[2]
 TEST_DIR = ROOT / "test"
@@ -113,12 +115,7 @@ KNOBS = ("FJ_SAMPLE", "FJ_SAMPLE_SEED", "FJ_SAMPLE_BASE", "FJ_BUDGET_MED",
 # -- the family maps ----------------------------------------------------------
 
 
-def _key_families() -> dict[Key, str]:
-    return {case.key: name for name, module in FAMILIES.items()
-            for case in module.CASES}
-
-
-KEY_FAMILY: dict[Key, str] = _key_families()
+KEY_FAMILY: dict[Key, str] = family_of()
 
 
 def family_paths() -> dict[str, tuple[str, ...]]:
@@ -254,11 +251,22 @@ class Candidate:
     families: frozenset[str]
 
 
-def cost_of(keys: Sequence[Key], default: float) -> float:
-    costs = [REGISTRY[k].cost_s if k in REGISTRY else None for k in keys]
-    if not costs or any(c is None for c in costs):
-        return default
-    return float(sum(costs))
+def cost_of(keys: Sequence[Key], tier: str, backend: str,
+            covering: Mapping[Key, int], default: float) -> float:
+    """One case's seconds: for each key, its registry figure (#652) for this
+    tier and backend, shared among the `covering[key]` cases of the pool
+    that cover it -- the figure is the sum over every test covering the key
+    (cost.py), so an even share is this case's part -- and the largest share
+    over its keys, as the keys of one case are one compile and one launch.
+    `default` when a key has no figure."""
+    shares = []
+    for k in keys:
+        case = REGISTRY.get(k)
+        if case is None or case.cost_s is None:
+            return default
+        shares.append(case.cost_s.of(tier, backend).seconds
+                      / max(covering.get(k, 1), 1))
+    return max(shares) if shares else default
 
 
 def _ladder(key: Key) -> tuple[str, str, int]:
@@ -435,13 +443,18 @@ def addoption(parser: pytest.Parser) -> None:
 
 def candidates_of(items: Iterable[pytest.Item],
                   default_cost: float) -> list[Candidate]:
-    out = []
-    for c in device_cases(items):
-        out.append(Candidate(
-            c.nodeid, f"{c.tier}/{c.backend}", c.keys,
-            cost_of(c.keys, default_cost),
-            frozenset(KEY_FAMILY[k] for k in c.keys if k in KEY_FAMILY)))
-    return out
+    cases = list(device_cases(items))
+    covering: dict[tuple[str, str], dict[Key, int]] = defaultdict(
+        lambda: defaultdict(int))
+    for c in cases:
+        for k in c.keys:
+            covering[c.tier, c.backend][k] += 1
+    return [Candidate(
+        c.nodeid, f"{c.tier}/{c.backend}", c.keys,
+        cost_of(c.keys, c.tier, c.backend, covering[c.tier, c.backend],
+                default_cost),
+        frozenset(KEY_FAMILY[k] for k in c.keys if k in KEY_FAMILY))
+        for c in cases]
 
 
 class Plugin:

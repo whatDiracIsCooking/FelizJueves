@@ -55,6 +55,12 @@ atom A -- so `grad.rhf.get_hcore` and `get_ovlp` are the integrals NEGATED,
 `grad_elec` split by term. `manifest.check_gradient` recomputes every term
 from the stored arrays and runs on every written file.
 
+`--numeric` (with `--regenerate` or `--check`, and optionally entry names)
+is the numerical golden store instead (#655, `oracle.numeric`): each npy
+entry's array over a `data/` basis file, written to `test/golden/numeric/`
+with its `manifest.json` record; `--check` holds a fresh build to the
+tracked `.npy` bit for bit (`numeric_drift`).
+
 `--quadrupole` (the same way) is the quadrupole witness instead
 (`quadrupole_build`): libcint's `int1e_rr_cart` on `hf_ccpvtz_spd_dipole`'s
 inputs at its origin and at 0, written to `quadrupole/` and loaded by
@@ -2265,6 +2271,165 @@ def quadrupole_main(regenerate: bool) -> int:
     return 1
 
 
+# ---------------------------------------------------------------------------
+# The numerical golden store (#655, oracle.numeric)
+# ---------------------------------------------------------------------------
+
+# Our shells (`numeric.basis`, no PySCF) against the Mole's (`from_mole`):
+# the same l and exponents exactly, coefficients to this fraction of each
+# function's largest. Measured worst at writing: 4.7e-16.
+NUMERIC_BASIS_TOL = 1e-14
+
+
+def numeric_mole(name: str) -> Any:
+    """The PySCF `Mole` of npy entry `name`: its molecule fixture's
+    `provenance.mol`, the `data/` basis file's contractions in libcint's
+    order with no reduction, `cart=True` -- refused unless the atoms are the
+    fixture's exactly and `from_mole` of it is `numeric.basis(name)`."""
+    from pyscf import gto
+
+    from . import numeric
+    from .basis import from_mole, libcint_order
+
+    e = numeric.entry(name)
+    fx = numeric._molecule(e.molecule)
+    bs = numeric.bse.load(numeric.basis_file(e))
+    by_symbol: dict[str, list[Any]] = {}
+    for a in fx.atoms:
+        by_symbol[a.symbol] = [
+            [c.l, *[[x, *[row[p] for row in c.coefficients]]
+                    for p, x in enumerate(c.exponents)]]
+            for c in libcint_order(bs.contractions(a.charge))]
+    m = fx.provenance.mol
+    mol = gto.M(atom=m["atom"], unit=m["unit"], charge=m["charge"],
+                spin=m["spin"], basis=by_symbol, cart=True, verbose=0)
+    coords = np.array([a.coord for a in fx.atoms])
+    if not np.array_equal(mol.atom_coords(), coords):
+        raise ValueError(f"{name}: the Mole's atoms are not {e.molecule}'s")
+    ours, theirs = numeric.basis(name).shells, from_mole(mol).shells
+    if len(ours) != len(theirs):
+        raise ValueError(f"{name}: {len(ours)} shells from the file, "
+                         f"{len(theirs)} in the Mole")
+    for a, b in zip(ours, theirs, strict=True):
+        top = max(abs(x) for x in b.coefficients)
+        if ((a.l, a.centre, a.exponents) != (b.l, b.centre, b.exponents)
+                or max(abs(x - y) for x, y in zip(
+                    a.coefficients, b.coefficients, strict=True))
+                > NUMERIC_BASIS_TOL * top):
+            raise ValueError(f"{name}: numeric.basis and the Mole's shells "
+                             "are not the same functions")
+    return mol
+
+
+def numeric_array(name: str) -> np.ndarray:
+    """npy entry `name`'s array, computed now (`numeric.QUANTITIES`)."""
+    from . import numeric
+
+    e = numeric.entry(name)
+    mol = numeric_mole(name)
+    if e.quantity == "j":
+        a = j_array(mol, numeric.density(name))
+    elif e.quantity == "metric":
+        a = np.ascontiguousarray(mol.intor("int2c2e_cart"))
+        if not np.array_equal(a, mol.intor("int2c2e")):
+            raise ValueError(f"{name}: int2c2e_cart and int2c2e differ")
+    else:
+        raise ValueError(f"{name}: no builder for quantity {e.quantity!r}")
+    return np.ascontiguousarray(a, dtype=np.float64)
+
+
+def _npy_bytes(a: np.ndarray) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    np.save(buf, a, allow_pickle=False)
+    return buf.getvalue()
+
+
+def numeric_drift(name: str) -> str | None:
+    """None when a fresh build of npy entry `name` is the tracked file BIT
+    FOR BIT (the whole `.npy`, header and all); else what differs."""
+    from . import numeric
+
+    path = numeric.STORE / f"{name}.npy"
+    if not path.is_file():
+        return f"{name}: {path} is not tracked -- {numeric.COMMAND} {name}"
+    fresh = numeric_array(name)
+    if _npy_bytes(fresh) == path.read_bytes():
+        return None
+    old = np.load(path, allow_pickle=False)
+    worst = (float(np.max(np.abs(fresh - old)))
+             if old.shape == fresh.shape else float("nan"))
+    return (f"{name}: PySCF {_pyscf_version()} / libcint "
+            f"{_libcint_version()} now computes it differently from "
+            f"{path.name} (shape {fresh.shape} vs {old.shape}, max |diff| "
+            f"{worst:.3e}); news about PySCF until proven otherwise")
+
+
+def _pyscf_version() -> str:
+    import pyscf
+
+    return pyscf.__version__
+
+
+def numeric_main(regenerate: bool, names: Sequence[str]) -> int:
+    """`--numeric`: rewrite the named npy entries (default every one) and
+    the manifest, or (`--check`) compare fresh builds bit for bit."""
+    import json
+
+    from . import numeric
+
+    names = list(names) or numeric.entries("npy")
+    if not regenerate:
+        status = 0
+        for name in names:
+            msg = numeric_drift(name)
+            print(msg or f"{name}: matches the tracked array bit for bit")
+            status |= msg is not None
+        return status
+    old = (json.loads(numeric.MANIFEST.read_text())["entries"]
+           if numeric.MANIFEST.is_file() else {})
+    out: dict[str, Any] = {}
+    for e in numeric.ENTRIES:
+        rec = numeric.recipe_record(e)
+        if e.kind == "fixture":
+            out[e.name] = rec
+            continue
+        if e.name not in names:
+            if e.name not in old:
+                raise ValueError(f"{e.name} has no record to keep; "
+                                 "regenerate it too")
+            out[e.name] = old[e.name]
+            continue
+        a = numeric_array(e.name)
+        path = numeric.STORE / rec["file"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(_npy_bytes(a))
+        rec.update({
+            "shape": list(a.shape), "dtype": "float64",
+            "sha256": numeric.sha256(path),
+            "provenance": {
+                "pyscf": _pyscf_version(), "libcint": _libcint_version(),
+                "numpy": np.__version__,
+                "date": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d"),
+                "host": _host(), "command": f"{numeric.COMMAND} {e.name}",
+                "cart": True}})
+        out[e.name] = rec
+        print(f"wrote {path}")
+    numeric.MANIFEST.write_text(json.dumps(
+        {"schema": numeric.SCHEMA,
+         "description": ("the numerical golden store (#655): one record "
+                         "per entry of oracle.numeric.ENTRIES, written by "
+                         f"{numeric.COMMAND}"),
+         "entries": out}, indent=1) + "\n")
+    numeric._manifest.cache_clear()
+    numeric.want.cache_clear()
+    bad = numeric.check_manifest()
+    for msg in bad:
+        print(msg, file=sys.stderr)
+    return 1 if bad else 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.generate",
                                  description=__doc__.split("\n\n")[0])
@@ -2287,7 +2452,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--j-gradient", action="store_true",
                     help="the Coulomb-gradient witness (#639, "
                          "manifest.j_gradient) instead of the fixtures")
+    ap.add_argument("--numeric", action="store_true",
+                    help="the numerical golden store (#655, "
+                         "oracle.numeric): the named npy entries, default "
+                         "every one, instead of the fixtures")
     args = ap.parse_args(argv)
+    if args.numeric and (args.df_gradient or args.quadrupole
+                         or args.k_gradient or args.j_gradient):
+        ap.error("--numeric takes no other witness")
     if args.df_gradient and args.names:
         ap.error("--df-gradient takes no case names")
     if args.k_gradient and (args.names or args.df_gradient
@@ -2299,21 +2471,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.quadrupole and (args.names or args.df_gradient):
         ap.error("--quadrupole takes no case names and no --df-gradient")
 
-    unknown = [n for n in args.names if n not in CASES]
+    # `oracle.basis` (the converted slot) imports felizjueves.ao.shell,
+    # and `oracle.numeric` felizjueves.ao.bse. pytest
+    # gets `src` from `pythonpath`; the project is virtual (nothing installed),
+    # so run as `python -m oracle.generate` it is put on the path here.
+    src = str(Path(__file__).resolve().parents[2] / "src")
+    if src not in sys.path:
+        sys.path.append(src)
+    from . import numeric
+
+    known = numeric.entries("npy") if args.numeric else list(CASES)
+    unknown = [n for n in args.names if n not in known]
     if unknown:
-        ap.error(f"unknown case(s) {unknown}; known: {list(CASES)}")
+        ap.error(f"unknown case(s) {unknown}; known: {known}")
     try:
         import pyscf  # noqa: F401
     except ImportError:
         print("could not run: PySCF is not installed -- uv sync --group oracle",
               file=sys.stderr)
         return 2
-    # `oracle.basis` (the converted slot) imports felizjueves.ao.shell. pytest
-    # gets `src` from `pythonpath`; the project is virtual (nothing installed),
-    # so run as `python -m oracle.generate` it is put on the path here.
-    src = str(Path(__file__).resolve().parents[2] / "src")
-    if src not in sys.path:
-        sys.path.append(src)
+    if args.numeric:
+        return numeric_main(args.regenerate, args.names)
     if args.df_gradient:
         return df_gradient_main(args.regenerate)
     if args.quadrupole:

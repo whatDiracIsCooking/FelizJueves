@@ -93,6 +93,13 @@
 #   compiler, no card:
 #     recheck       recompile and compare against the stored rows
 #   neither (fast; xdist):
+#     registry-cost every registry case's compile and gpu cost per
+#                   backend, measured from the compile-only junit report
+#                   and any kernel-tier reports, else modelled on L per
+#                   family (#652; FJ_COMPILE_TIMINGS and
+#                   FJ_KERNEL_TIER_REPORTS pass through, the latter
+#                   defaulting to KERNEL_TIER_REPORTS)
+#                                                       FJ_REGISTRY_COST_STORE
 #     check         the tracked stores and reports are what their rows
 #                   recompute to, and the recorded hashes today's text
 #
@@ -154,6 +161,7 @@ SWEEPS=(
   "gk-compile|compile|gk exchange gradient through (ff|ff), rolled and unrolled-to-the-floor compile, 10 s a unit (#618) -> gk.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
+  "registry-cost|check|registry cases' compile and gpu cost per backend, measured or modelled (#652) -> registry_cost.json"
   "recheck|compile|recompile and compare against the stored rows (no card)"
   "check|check|tracked stores and reports recomputed (no compiler, no card)"
   "remeasure|driver|python -m felizjueves.performance.measured --remeasure <args>"
@@ -257,6 +265,9 @@ case $sweep in
                 envs=("FJ_GJAB_STORE=${FJ_GJAB_STORE:-$MEASURE_GJAB_STORE}") ;;
   gk-compile)   files=("$M/measure_gk.py"); select=(-k gk_compile)
                 envs=("FJ_GK_STORE=${FJ_GK_STORE:-$MEASURE_GK_STORE}") ;;
+  registry-cost) files=("$M/measure_registry_cost.py"); select=(-k registry_cost_refresh)
+                envs=("FJ_REGISTRY_COST_STORE=${FJ_REGISTRY_COST_STORE:-$MEASURE_REGISTRY_COST_STORE}"
+                      "FJ_KERNEL_TIER_REPORTS=${FJ_KERNEL_TIER_REPORTS:-$KERNEL_TIER_REPORTS}") ;;
   scatter-tail) files=("$M/measure_f_scatter_tail.py") ;;
   probes)       files=("$M/measure_toolchain.py" "$M/measure_ceilings_device.py")
                 select=(-k "not record_ceilings") ;;
