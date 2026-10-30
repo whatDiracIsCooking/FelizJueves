@@ -1,0 +1,350 @@
+{
+ "schema": 1,
+ "description": "the numerical golden store (#655): one record per entry of oracle.numeric.ENTRIES, written by PYTHONPATH=test uv run --group oracle python -m oracle.generate --numeric --regenerate",
+ "entries": {
+  "j_h2o_sto3g_bse": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    4
+   ],
+   "kind": "npy",
+   "description": "J of the H2O geometry every H2O fixture shares, in data/basis/sto-3g.json, for h2o_sto3g_j's density",
+   "quantity": "PySCF's scf.hf.get_jk Coulomb matrix (hermi=1, no vhfopt) for the referenced density, J_mn = sum_ls (mn|ls) D_ls, nao x nao, cross-checked against einsum(int2e, D) before it is written",
+   "molecule": {
+    "fixture": "h2o_sto3g_j",
+    "mol": {
+     "atom": "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+     "unit": "Bohr",
+     "charge": 0,
+     "spin": 0
+    }
+   },
+   "basis": {
+    "file": "data/basis/sto-3g.json",
+    "name": "STO-3G",
+    "sha256": "013c12933f648faddfa3f3741a1bfb12d5f6e1609a43066687d49d1e5727d937",
+    "provenance": "data/basis/provenance.json",
+    "commit": "67a5bb47cd9268a6d2c15978a6b3230e8b8b3c81",
+    "form": "the file's contractions in libcint's order (by l, file order within one), no free-primitive reduction; read Cartesian (cart=True)"
+   },
+   "density": {
+    "fixture": "h2o_sto3g_j",
+    "sha256": "7a97bcbe52a9bb3c02987cec58f9ecd02a32e37c310605e8898c8f8ff43bf677"
+   },
+   "file": "j_h2o_sto3g_bse.npy",
+   "shape": [
+    7,
+    7
+   ],
+   "dtype": "float64",
+   "sha256": "f1af0b2eaf22dfbd4a096bd6c9da4385b6548a03763993b1b0dce65d889a585a",
+   "provenance": {
+    "pyscf": "2.14.0",
+    "libcint": "6.1.3",
+    "numpy": "2.5.3",
+    "date": "2026-10-30",
+    "host": "vm",
+    "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --numeric --regenerate j_h2o_sto3g_bse",
+    "cart": true
+   }
+  },
+  "j_h2o_631g_bse": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    4
+   ],
+   "kind": "npy",
+   "description": "J of the H2O geometry every H2O fixture shares, in data/basis/6-31g.json, for h2o_631g_j's density",
+   "quantity": "PySCF's scf.hf.get_jk Coulomb matrix (hermi=1, no vhfopt) for the referenced density, J_mn = sum_ls (mn|ls) D_ls, nao x nao, cross-checked against einsum(int2e, D) before it is written",
+   "molecule": {
+    "fixture": "h2o_631g_j",
+    "mol": {
+     "atom": "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+     "unit": "Bohr",
+     "charge": 0,
+     "spin": 0
+    }
+   },
+   "basis": {
+    "file": "data/basis/6-31g.json",
+    "name": "6-31G",
+    "sha256": "05368c86f56b9bfb7b6a8d1fb056c665f1c7b7b20011f3786d8e7c8c379d5088",
+    "provenance": "data/basis/provenance.json",
+    "commit": "67a5bb47cd9268a6d2c15978a6b3230e8b8b3c81",
+    "form": "the file's contractions in libcint's order (by l, file order within one), no free-primitive reduction; read Cartesian (cart=True)"
+   },
+   "density": {
+    "fixture": "h2o_631g_j",
+    "sha256": "57de4f581170b06007df332ae58ff2e1f127226838008e38e70829b07583f8ba"
+   },
+   "file": "j_h2o_631g_bse.npy",
+   "shape": [
+    13,
+    13
+   ],
+   "dtype": "float64",
+   "sha256": "c62b2cd8d44caccd73bd01e51d8bdf60606fed86b7adeba31773f80720edeb29",
+   "provenance": {
+    "pyscf": "2.14.0",
+    "libcint": "6.1.3",
+    "numpy": "2.5.3",
+    "date": "2026-10-30",
+    "host": "vm",
+    "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --numeric --regenerate j_h2o_631g_bse",
+    "cart": true
+   }
+  },
+  "j_h2o_ccpvdz_bse": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    8
+   ],
+   "kind": "npy",
+   "description": "J of the H2O geometry every H2O fixture shares, in data/basis/cc-pVDZ.json as the file states it (general contraction, no free-primitive reduction), for h2o_ccpvdz_j's density",
+   "quantity": "PySCF's scf.hf.get_jk Coulomb matrix (hermi=1, no vhfopt) for the referenced density, J_mn = sum_ls (mn|ls) D_ls, nao x nao, cross-checked against einsum(int2e, D) before it is written",
+   "molecule": {
+    "fixture": "h2o_ccpvdz_j",
+    "mol": {
+     "atom": "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+     "unit": "Bohr",
+     "charge": 0,
+     "spin": 0
+    }
+   },
+   "basis": {
+    "file": "data/basis/cc-pVDZ.json",
+    "name": "cc-pVDZ",
+    "sha256": "a3c0ea7ff628750e17f939c5ea885bcd488523b860ded2aaddd7df086f4f6da6",
+    "provenance": "data/basis/provenance.json",
+    "commit": "67a5bb47cd9268a6d2c15978a6b3230e8b8b3c81",
+    "form": "the file's contractions in libcint's order (by l, file order within one), no free-primitive reduction; read Cartesian (cart=True)"
+   },
+   "density": {
+    "fixture": "h2o_ccpvdz_j",
+    "sha256": "3777842a0747cacc65822fabf11b6c713214f484e7f29ad123aa0b2677f0b314"
+   },
+   "file": "j_h2o_ccpvdz_bse.npy",
+   "shape": [
+    25,
+    25
+   ],
+   "dtype": "float64",
+   "sha256": "5cb4ae3a3504ac632e4073252b09cb9c75b705ee7bfd26db2b7d275388f1ce04",
+   "provenance": {
+    "pyscf": "2.14.0",
+    "libcint": "6.1.3",
+    "numpy": "2.5.3",
+    "date": "2026-10-30",
+    "host": "vm",
+    "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --numeric --regenerate j_h2o_ccpvdz_bse",
+    "cart": true
+   }
+  },
+  "metric_h2o_ccpvdz_jkfit_bse": {
+   "key": [
+    "mmd",
+    "metric",
+    0,
+    6
+   ],
+   "kind": "npy",
+   "description": "(P|Q) of data/aux_basis/cc-pVDZ-JKFIT.json on the H2O geometry every H2O fixture shares (O to f)",
+   "quantity": "libcint's two-center Coulomb metric (P|Q), int2c2e_cart, naux x naux, checked equal to int2c2e (cart=True) before it is written",
+   "molecule": {
+    "fixture": "h2o_sto3g_j",
+    "mol": {
+     "atom": "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+     "unit": "Bohr",
+     "charge": 0,
+     "spin": 0
+    }
+   },
+   "basis": {
+    "file": "data/aux_basis/cc-pVDZ-JKFIT.json",
+    "name": "cc-pVDZ-JKFIT",
+    "sha256": "9bd0ad8ffdcadc0c08bacbee8f288e4765bb2426c0ea81465238806e2a18457c",
+    "provenance": "data/aux_basis/provenance.json",
+    "commit": "67a5bb47cd9268a6d2c15978a6b3230e8b8b3c81",
+    "form": "the file's contractions in libcint's order (by l, file order within one), no free-primitive reduction; read Cartesian (cart=True)"
+   },
+   "density": null,
+   "file": "metric_h2o_ccpvdz_jkfit_bse.npy",
+   "shape": [
+    131,
+    131
+   ],
+   "dtype": "float64",
+   "sha256": "af0981d3f3facb26cc53b1d4bfa0271babff9fecd5e70d09a4359c8476c44d8f",
+   "provenance": {
+    "pyscf": "2.14.0",
+    "libcint": "6.1.3",
+    "numpy": "2.5.3",
+    "date": "2026-10-30",
+    "host": "vm",
+    "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --numeric --regenerate metric_h2o_ccpvdz_jkfit_bse",
+    "cart": true
+   }
+  },
+  "metric_h2o_def2_universal_jkfit_bse": {
+   "key": [
+    "mmd",
+    "metric",
+    0,
+    8
+   ],
+   "kind": "npy",
+   "description": "(P|Q) of data/aux_basis/def2-universal-JKFIT.json on the H2O geometry every H2O fixture shares (O to g)",
+   "quantity": "libcint's two-center Coulomb metric (P|Q), int2c2e_cart, naux x naux, checked equal to int2c2e (cart=True) before it is written",
+   "molecule": {
+    "fixture": "h2o_sto3g_j",
+    "mol": {
+     "atom": "O 0 0 0; H 1.43 0.21 -1.07; H -1.38 0.35 -1.12",
+     "unit": "Bohr",
+     "charge": 0,
+     "spin": 0
+    }
+   },
+   "basis": {
+    "file": "data/aux_basis/def2-universal-JKFIT.json",
+    "name": "def2-universal-JKFIT",
+    "sha256": "12a7de701600ede3d07857027c72c6f6c9b763d0f8797aa77500ec5c113a475f",
+    "provenance": "data/aux_basis/provenance.json",
+    "commit": "67a5bb47cd9268a6d2c15978a6b3230e8b8b3c81",
+    "form": "the file's contractions in libcint's order (by l, file order within one), no free-primitive reduction; read Cartesian (cart=True)"
+   },
+   "density": null,
+   "file": "metric_h2o_def2_universal_jkfit_bse.npy",
+   "shape": [
+    133,
+    133
+   ],
+   "dtype": "float64",
+   "sha256": "2965badc1b24bf93428b4490466fbfe5995683eda1d58c38497dc9dcc38a2ce6",
+   "provenance": {
+    "pyscf": "2.14.0",
+    "libcint": "6.1.3",
+    "numpy": "2.5.3",
+    "date": "2026-10-30",
+    "host": "vm",
+    "command": "PYTHONPATH=test uv run --group oracle python -m oracle.generate --numeric --regenerate metric_h2o_def2_universal_jkfit_bse",
+    "cart": true
+   }
+  },
+  "j_h2_sto3g": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    0
+   ],
+   "kind": "fixture",
+   "description": "h2_sto3g_j's vj",
+   "source": {
+    "fixture": "h2_sto3g_j",
+    "array": "vj"
+   }
+  },
+  "j_h2o_sto3g": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    4
+   ],
+   "kind": "fixture",
+   "description": "h2o_sto3g_j's vj",
+   "source": {
+    "fixture": "h2o_sto3g_j",
+    "array": "vj"
+   }
+  },
+  "j_h2o_631g": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    4
+   ],
+   "kind": "fixture",
+   "description": "h2o_631g_j's vj",
+   "source": {
+    "fixture": "h2o_631g_j",
+    "array": "vj"
+   }
+  },
+  "j_h2o_ccpvdz": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    8
+   ],
+   "kind": "fixture",
+   "description": "h2o_ccpvdz_j's vj",
+   "source": {
+    "fixture": "h2o_ccpvdz_j",
+    "array": "vj"
+   }
+  },
+  "j_h10_chain_ccpvdz": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    8
+   ],
+   "kind": "fixture",
+   "description": "h10_chain_ccpvdz_j's vj (an RHF density)",
+   "source": {
+    "fixture": "h10_chain_ccpvdz_j",
+    "array": "vj"
+   }
+  },
+  "j_co_ccpvtz": {
+   "key": [
+    "mmd",
+    "j",
+    0,
+    12
+   ],
+   "kind": "fixture",
+   "description": "co_ccpvtz_j's vj",
+   "source": {
+    "fixture": "co_ccpvtz_j",
+    "array": "vj"
+   }
+  },
+  "metric_h2o_ccpvtz_jkfit": {
+   "key": [
+    "mmd",
+    "metric",
+    0,
+    8
+   ],
+   "kind": "fixture",
+   "description": "the h2o_ccpvtz_jkfit_metric set's int2c2e_cart",
+   "source": {
+    "metric_set": "h2o_ccpvtz_jkfit_metric"
+   }
+  },
+  "metric_prim_spd_f_auxi": {
+   "key": [
+    "mmd",
+    "metric",
+    0,
+    12
+   ],
+   "kind": "fixture",
+   "description": "the prim_spd_f_auxi_metric set's int2c2e_cart (aux to i)",
+   "source": {
+    "metric_set": "prim_spd_f_auxi_metric"
+   }
+  }
+ }
+}
