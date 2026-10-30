@@ -250,7 +250,10 @@ sets weighted by `2 alpha` / `2 gamma` (`gradient.kernel_ghk`), keyed
 are the density-fitting
 terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 (`gradient.kernel_gmetric`, `gradient.kernel_geri3`), `am` the integral's
-pair `(lP, lQ)` and triple `(la, lb, lP)`. `DQ` at d1 is the ket
+pair `(lP, lQ)` and triple `(la, lb, lP)`; `METRIC` at d1 is legal on
+`Engine.HGP` too (`GRADIENT_OFF_NATIVE`: `gradient.kernel_hgmetric`, the
+Cartesian rule on the HGP VRR), so ``coulomb/d1/(1,1)/b1/metric.hgp/literal``
+is a key. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
 target's d0 reason. SIX OFF-NATIVE PAIRS ARE LEGAL AT d1
@@ -606,7 +609,7 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # term reads (`hessian.kernel_hdq`); and `F`, the fused Fock build's
 # two-electron energy, `dE_J - 1/2 dE_K` in one kernel per class
 # (`gradient.kernel_gf`). Each on its native engine (MMD; HGP for `F`),
-# and `J`, `K`, `T`, `S`, `V` and `ERI3` on HGP too
+# and `J`, `K`, `T`, `S`, `V`, `ERI3` and `METRIC` on HGP too
 # (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
@@ -620,18 +623,20 @@ GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
 # exchange energy's (`gradient.kernel_ghk`), `S` on HGP, the overlap
 # gradient on `hgt_`'s route (`gradient.kernel_hgs`), `V` on HGP, the
 # nuclear attraction's on the same route, per nucleus (`gradient.kernel_ghv`),
-# and `ERI3` on HGP, the three-center DF gradient (`gradient.kernel_hgeri3`).
+# `ERI3` on HGP, the three-center DF gradient (`gradient.kernel_hgeri3`),
+# and `METRIC` on HGP, the DF metric's (`gradient.kernel_hgmetric`).
 # MMD `J` at d1 stays refused: its gradient is `JAB`'s, through the J chain.
 GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.K, Engine.HGP),
                                  (Target.T, Engine.HGP),
                                  (Target.S, Engine.HGP),
                                  (Target.V, Engine.HGP),
-                                 (Target.ERI3, Engine.HGP)))
+                                 (Target.ERI3, Engine.HGP),
+                                 (Target.METRIC, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
-    "the MMD engine, and for F, J, K, T, S, V and ERI3 on the HGP engine "
+    "the MMD engine, and for F, J, K, T, S, V, ERI3 and METRIC on the HGP engine "
     "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"
 )

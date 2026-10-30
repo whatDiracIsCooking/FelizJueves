@@ -14,6 +14,8 @@ exponents. One launch per class into one `G` (or `H`), zeroed here once.
 `False` either form forced. `run_eri3(engine=Engine.HGP)` launches the
 HGP sibling `gradient.kernel_hgeri3` on the same arrays (it has one form, so
 `lowstack` must stay `None` there).
+`False` either form forced. `run_metric`'s `engine=Engine.HGP` launches
+the HGP twin (`gradient.kernel_hgmetric`) on the same arrays instead.
 Shared by test_kernel_gmetric.py, test_kernel_geri3.py,
 test_kernel_d2metric.py, test_kernel_d2eri3.py and test/grad_df_driver.py
 (which stages the same arrays for the card). `run_d2metric` is the d2
@@ -38,6 +40,7 @@ from felizjueves.gradient.kernel_gmetric import (
     launch_shape,
 )
 from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
+from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.ir.interp import Interpreter, Launch
@@ -68,7 +71,7 @@ def eri3_arrays(cls: Eri3Class, basis, aux, nuclei
 
 def run_metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
                threads: int = 7, G: np.ndarray | None = None,
-               lowstack: bool | None = None):
+               lowstack: bool | None = None, engine: Engine = Engine.MMD):
     want = None if classes is None else set(classes)
     G = np.zeros((len(nuclei), 3)) if G is None else G
     ran = []
@@ -76,8 +79,10 @@ def run_metric(aux, nuclei, W, *, boys, classes: Iterable | None = None,
         if want is not None and (cls.lP, cls.lQ) not in want:
             continue
         grid, block = launch_shape(cls.n_pair, threads)
-        G = Interpreter(build_gmetric_kernel((cls.lP, cls.lQ),
-                                             lowstack=lowstack),
+        kernel = (build_hgmetric_kernel((cls.lP, cls.lQ))
+                  if engine is Engine.HGP else
+                  build_gmetric_kernel((cls.lP, cls.lQ), lowstack=lowstack))
+        G = Interpreter(kernel,
                         launch=Launch(grid, block, 1), boys=boys).run(
             n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=aux.n_ao,
             n_atom=len(G), M=np.asarray(W, dtype=float), G=G,

@@ -1,7 +1,8 @@
 """The HGP DF kernels emitted for both vendors: golden texts for the metric's
-three and the three-center's six s/p classes, the `--hgp-metric-l` /
-`--hgp-eri3-l` ladders, and a compile of each through nvcc (sm_86) and hipcc
-(gfx1200).
+three and the three-center's six s/p classes and the metric gradient's three
+(`hgmetric_*`, d1), the `--hgp-metric-l` / `--hgp-eri3-l` /
+`--hgp-grad-metric-l` ladders, and a compile of each through nvcc (sm_86) and
+hipcc (gfx1200).
 
 THE LADDERS. `python -m felizjueves.emit --hgp-metric-l [LMAX]` writes
 `hmetric_{lP}{lQ}` (`kernel_hgp.build_hmetric_kernel`) for every `lP <= lQ <=
@@ -9,8 +10,11 @@ LMAX`, and `--hgp-eri3-l [LMAX]` writes `heri3_{la}{lb}{lP}`
 (`kernel_hgp.build_heri3_kernel`) for every `la <= lb <= LMAX`, `lP <= LMAX`.
 LMAX bounds each SHELL and is accepted 0..`HGP_DF_L_MAX` = 1 only (bare: 1);
 neither is in the bare default nor in KERNEL_GEN_CMD.
+`--hgp-grad-metric-l [LMAX]` writes `hgmetric_{lP}{lQ}`
+(`gradient.kernel_hgmetric.build_hgmetric_kernel`) for every `lP <= lQ <=
+LMAX`, LMAX 0..`HGMETRIC_L_MAX` = 1 (bare: 1), placed as the other two.
 
-THE GOLDENS are `test/golden/{cuda,hip}/{hmetric,heri3}_*.{cu,hip}`.
+THE GOLDENS are `test/golden/{cuda,hip}/{hmetric,heri3,hgmetric}_*.{cu,hip}`.
 Regenerate (and review the diff) with
 
     PYTHONPATH=src uv run python test/test_emit_hgp_df.py --write
@@ -34,13 +38,20 @@ from felizjueves.eri.density_fit.kernel_hgp import (
     build_heri3_kernel,
     build_hmetric_kernel,
 )
+from felizjueves.gradient.kernel_hgmetric import (
+    HGMETRIC_L_MAX,
+    build_hgmetric_kernel,
+)
 from felizjueves.ir import Raw, walk
 
 GOLDEN, BACKEND = tem.GOLDEN, tem.BACKEND
 METRIC = [(0, 0), (0, 1), (1, 1)]
 ERI3 = [(0, 0, 0), (0, 0, 1), (0, 1, 0), (0, 1, 1), (1, 1, 0), (1, 1, 1)]
-UNITS = [("hmetric", c) for c in METRIC] + [("heri3", c) for c in ERI3]
-BUILD = {"hmetric": build_hmetric_kernel, "heri3": build_heri3_kernel}
+UNITS = ([("hmetric", c) for c in METRIC] + [("heri3", c) for c in ERI3]
+         + [("hgmetric", c) for c in METRIC])
+BUILD = {"hmetric": build_hmetric_kernel, "heri3": build_heri3_kernel,
+         "hgmetric": build_hgmetric_kernel}
+D0 = [u for u in UNITS if u[0] != "hgmetric"]  # the nine d0 units
 
 
 def _name(unit) -> str:
@@ -84,7 +95,12 @@ def test_the_ladders_through_p_are_the_nine_classes() -> None:
     assert emit_cli.hgp_eri3_classes(1) == ERI3
     assert emit_cli.hgp_metric_classes(0) == [(0, 0)]
     assert emit_cli.hgp_eri3_classes(0) == [(0, 0, 0)]
+    assert HGMETRIC_L_MAX == 1
+    assert emit_cli.hgp_grad_metric_classes(1) == METRIC
+    assert emit_cli.hgp_grad_metric_classes(0) == [(0, 0)]
     for bad in (-1, 2, 1.0, True):
+        with pytest.raises(ValueError, match="s and p shells only"):
+            emit_cli.hgp_grad_metric_classes(bad)
         with pytest.raises(ValueError, match="s and p shells only"):
             emit_cli.hgp_metric_classes(bad)
         with pytest.raises(ValueError, match="s and p shells only"):
@@ -108,15 +124,15 @@ def test_the_hgp_df_golden_is_unchanged(unit, backend: str) -> None:
     assert _text(unit, backend) == path.read_text()
 
 
-def test_the_golden_set_is_exactly_the_nine_units() -> None:
+def test_the_golden_set_is_exactly_the_twelve_units() -> None:
     for backend, (_, _, ext) in BACKEND.items():
         files = {p.stem for kind in BUILD
                  for p in (GOLDEN / backend).glob(f"{kind}_*.{ext}")}
         assert files == {_name(u) for u in UNITS}
 
 
-@pytest.mark.parametrize("unit", [("hmetric", (1, 1)), ("heri3", (1, 1, 1))],
-                         ids=_name)
+@pytest.mark.parametrize("unit", [("hmetric", (1, 1)), ("heri3", (1, 1, 1)),
+                                  ("hgmetric", (1, 1))], ids=_name)
 def test_the_vendors_differ_only_in_the_prologue(unit) -> None:
     c, h = _text(unit, "cuda"), _text(unit, "hip")
     assert c.split("\n")[2:] == h.split("\n")[3:]
@@ -143,8 +159,8 @@ def test_both_flags_bare_write_the_nine_golden_units(backend, tmp_path) -> None:
     assert _run(tmp_path, backend, "--pair-l", "0", "--hgp-metric-l",
                 "--hgp-eri3-l") == 0
     assert _names(tmp_path) == {f"dq_0_0.{ext}", f"jab_00.{ext}"} | {
-        f"{_name(u)}.{ext}" for u in UNITS}
-    for u in UNITS:
+        f"{_name(u)}.{ext}" for u in D0}
+    for u in D0:
         p = f"{_name(u)}.{ext}"
         assert (tmp_path / p).read_text() == (GOLDEN / backend / p).read_text()
 
@@ -157,6 +173,13 @@ def test_each_flag_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
     out = tmp_path / "e"
     assert _run(out, "hip", "--L", "0", "--hgp-eri3-l", "0") == 0
     assert _names(out) == {"pq_L0_p0_q0.hip", "heri3_000.hip"}
+    g = tmp_path / "g"
+    assert _run(g, "cuda", "--L", "0", "--hgp-grad-metric-l") == 0
+    assert _names(g) == {"pq_L0_p0_q0.cu"} | {
+        f"hgmetric_{lp}{lq}.cu" for lp, lq in METRIC}
+    for c in METRIC:
+        p = _name(("hgmetric", c)) + ".cu"
+        assert (g / p).read_text() == (GOLDEN / "cuda" / p).read_text()
 
 
 @pytest.mark.parametrize("argv", [
@@ -169,6 +192,9 @@ def test_each_flag_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
     ["--hgp-metric-l", "1", "--fock-l", "0"],
     ["--hgp-eri3-l", "1", "--hgp-j-l", "0"],
     ["--hgp-metric-l", "1", "--n-batches", "3"],
+    ["--hgp-grad-metric-l", "2"],
+    ["--hgp-grad-metric-l", "1", "--fock-l", "0"],
+    ["--hgp-grad-metric-l", "1", "--hgp-j-l", "0"],
 ], ids=lambda a: "_".join(a))
 def test_a_flag_it_cannot_honour_is_a_2(argv, tmp_path) -> None:
     assert _run(tmp_path / "out", "cuda", *argv) == 2
