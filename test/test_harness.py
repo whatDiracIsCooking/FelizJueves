@@ -198,6 +198,17 @@ def test_f32_scalar_is_rounded_to_float32():
     assert spec["args"][0]["value"] == float(np.float32(0.1)) != 0.1
 
 
+def test_spec_carries_runs_and_warmup_only_when_asked():
+    spec, _ = launch_spec(axpy_kernel(), GRID, BLOCK, args(inputs()))
+    assert "runs" not in spec and "warmup" not in spec
+    spec, _ = launch_spec(axpy_kernel(), GRID, BLOCK, args(inputs()), runs=3,
+                          warmup=2)
+    assert spec["runs"] == 3 and spec["warmup"] == 2
+    for bad in ({"runs": 0}, {"runs": 1.5}, {"warmup": -1}, {"runs": True}):
+        with pytest.raises(ValueError, match="integer"):
+            launch_spec(axpy_kernel(), GRID, BLOCK, args(inputs()), **bad)
+
+
 @pytest.mark.parametrize("backend", ["cuda", "hip"])
 def test_runner_source(backend, tmp_path):
     emit, arch, ext = BACKEND[backend]
@@ -309,6 +320,8 @@ def _refuses(tc, backend: str, tmp_path: Path) -> None:
         "x-out": (lie(2, out="x.out.npy"), "const"),
         "arity": ({**spec, "args": spec["args"][:-1]}, "takes 10 arguments"),
         "kernel": ({**spec, "kernel": "nope"}, "no kernel 'nope'"),
+        "runs": ({**spec, "runs": 0}, "runs must be an integer"),
+        "warmup": ({**spec, "warmup": -1}, "warmup must be an integer"),
     }
     for name, (bad, match) in cases.items():
         work = tmp_path / name
@@ -340,8 +353,11 @@ def _on_card(backend: str, request, tmp_path: Path) -> None:
     binary = _build(tc, backend, tmp_path)
     data = inputs()
     want = numpy_reference(data)
-    outs = run_case(binary, axpy_kernel(), tmp_path / "case", GRID, BLOCK,
-                    args(data))
+    # Three runs: `acc` is read and updated, so this also witnesses that every
+    # launch starts from the restored input (the runner fails otherwise).
+    outs, times = run_case(binary, axpy_kernel(), tmp_path / "case", GRID,
+                           BLOCK, args(data), runs=3, warmup=1)
+    assert len(times) == 3 and all(t >= 0 for t in times), times
     assert sorted(outs) == sorted(want)
     for name, w in want.items():
         got = np.load(outs[name])

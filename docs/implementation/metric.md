@@ -283,11 +283,16 @@ suite gave 2 passed, 0 skipped. The two tests are:
 - `test_cuda_metric_through_l4_matches_libcint`: every pair of the nine
   classes, 962 pairs.
 
-The driver is `test/metric_driver.py`, after `test/schwarz_driver.py`. It
-builds one program per aux basis, launches every class once into one zeroed
-`n_aux × n_aux` matrix `RUNS` times behind the VRAM probe, and compiles
-through `plan_driver.compile_checked`. The runs were bit-identical and the
-matrix exactly symmetric. The results are in the tables above: 2.61e-14 of
+The driver is `test/metric_driver.py`. At PR #430 it built one program per
+aux basis, after `test/schwarz_driver.py`, launched every class once into
+one zeroed `n_aux × n_aux` matrix `RUNS` times behind the VRAM probe, and
+compiled through `plan_driver.compile_checked`. The runs were bit-identical
+and the matrix exactly symmetric. Since #654 it runs on the shared runner
+(#649, `test/harness/`): one runner per class's unit, one launch per class
+with the matrix carried from class to class, each launch `RUNS` times and
+the runner failing unless every run is bit-identical to the first. That
+port has been run through the real runner and units on the host against a
+stub runtime only, not yet on a card. The results are in the tables above: 2.61e-14 of
 `max|M|` against libcint, and 7.17 eps of the tower-twin scale against the
 host (max abs 3.55e-14) on the fixture.
 

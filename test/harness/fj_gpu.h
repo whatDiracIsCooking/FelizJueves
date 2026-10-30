@@ -1,7 +1,7 @@
 // fj_gpu.h -- the one place the test harness spells a vendor (#649).
 //
 // Every `cuda*` / `hip*` runtime call the harness makes goes through the
-// inline functions below, so device_buffer.h and runner.cpp say each thing
+// inline functions below, so device_buffer.h and runner.h say each thing
 // once and compile under nvcc and hipcc alike. The selector is the compiler's
 // own: hipcc (and `clang -x hip`) defines __HIPCC__, a ROCm build defines
 // __HIP_PLATFORM_AMD__; anything else is CUDA. It is the same test as
@@ -51,6 +51,11 @@ inline error_t last_error() { return hipGetLastError(); }
 inline error_t synchronize() { return hipDeviceSynchronize(); }
 inline error_t device_count(int* n) { return hipGetDeviceCount(n); }
 inline error_t set_device(int d) { return hipSetDevice(d); }
+using event_t = hipEvent_t;
+inline error_t event_create(event_t* e) { return hipEventCreate(e); }
+inline error_t event_destroy(event_t e) { return hipEventDestroy(e); }
+inline error_t event_record(event_t e) { return hipEventRecord(e, nullptr); }
+inline error_t elapsed_ms(float* ms, event_t a, event_t b) { return hipEventElapsedTime(ms, a, b); }
 #else
 using error_t = cudaError_t;
 using stream_t = cudaStream_t;
@@ -73,6 +78,11 @@ inline error_t last_error() { return cudaGetLastError(); }
 inline error_t synchronize() { return cudaDeviceSynchronize(); }
 inline error_t device_count(int* n) { return cudaGetDeviceCount(n); }
 inline error_t set_device(int d) { return cudaSetDevice(d); }
+using event_t = cudaEvent_t;
+inline error_t event_create(event_t* e) { return cudaEventCreate(e); }
+inline error_t event_destroy(event_t e) { return cudaEventDestroy(e); }
+inline error_t event_record(event_t e) { return cudaEventRecord(e, nullptr); }
+inline error_t elapsed_ms(float* ms, event_t a, event_t b) { return cudaEventElapsedTime(ms, a, b); }
 #endif
 
 // Throw, naming `what`, unless `e` is success.

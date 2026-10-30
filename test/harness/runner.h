@@ -25,14 +25,21 @@
 // spec's own directory. `type` is f64 f32 i32 i64 u32 u64; an input's dtype
 // must be exactly that type's little-endian spelling.
 //
+// Optional `runs` (default 1) and `warmup` (default 0), #654: `warmup + runs`
+// launches, each from the same state (every `out` restored to its `in`, or
+// zero), each one's outputs required byte-identical to the first's -- the
+// run-to-run witness -- and each of the `runs` timed by device events, one
+// `fj-runner run <r> events_ns <ns>` line apiece.
+//
 // Before anything is allocated the spec is checked against the kernel's
 // compiled signature (kernel_table.h): the arity, and per argument scalar or
 // pointer, kind and size, and that no `out` names a pointer-to-const. A
 // mismatch is an error, not a launch.
 //
 // Exit 0 with every output written; 1 on any error (stderr says which); 2 on
-// bad usage. On success stdout carries one `fj-runner out <name> <path>` line
-// per output, after one `fj-runner launch ...` line.
+// bad usage. On success stdout carries the `run` lines, then one
+// `fj-runner launch ...` line, then one `fj-runner out <name> <path>` line
+// per output.
 
 #pragma once
 
@@ -124,9 +131,20 @@ inline std::uint64_t scalar_bits(const TypeInfo& t, const json::Value& v,
 struct Output {
     std::string name;
     std::string path;
-    npy::Array host;
-    std::size_t arg = 0;  // index into the device buffers
+    npy::Array host;                     // the first launch's result
+    std::vector<unsigned char> initial;  // its `in`, or zeros: restored per launch
+    std::size_t arg = 0;                 // index into the device buffers
 };
+
+inline int count(const json::Value& spec, const char* key, int fallback, int least) {
+    const json::Value* v = spec.find(key);
+    const long long x = v ? v->integer() : fallback;
+    if (x < least || x > 1000000) {
+        throw std::runtime_error(std::string(key) + " must be an integer from " +
+                                 std::to_string(least) + " to 1000000");
+    }
+    return static_cast<int>(x);
+}
 
 inline int run(const std::string& spec_path, const KernelEntry* table, std::size_t n_table) {
     const json::Value spec = json::read(spec_path);
@@ -180,6 +198,8 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
         }
         types[k] = &t;
     }
+    const int warmup = count(spec, "warmup", 0, 0);
+    const int runs = count(spec, "runs", 1, 1);
 
     int devices = 0;
     gpu::check(gpu::device_count(&devices), "device count");
@@ -228,7 +248,9 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
         launch_args[k] = &pointers[k];
         const json::Value* out = a.find("out");
         if (out != nullptr) {
-            outputs.push_back(Output{name, resolve(base, out->str()), std::move(host), k});
+            std::vector<unsigned char> initial = host.data;
+            outputs.push_back(
+                Output{name, resolve(base, out->str()), std::move(host), std::move(initial), k});
         }
     }
 
@@ -238,16 +260,46 @@ inline int run(const std::string& spec_path, const KernelEntry* table, std::size
     const long long shm = shared ? shared->integer() : 0;
     if (shm < 0) throw std::runtime_error("shared_bytes is negative");
 
-    gpu::check(gpu::launch(entry->fn, grid, block, launch_args.data(),
-                           static_cast<std::size_t>(shm), nullptr),
-               "launch");
-    gpu::check(gpu::last_error(), "launch (last error)");
-    gpu::check(gpu::synchronize(), "synchronize");
-    std::printf("fj-runner launch %s grid %u %u %u block %u %u %u shared %lld\n", kname.c_str(),
-                grid.x, grid.y, grid.z, block.x, block.y, block.z, shm);
+    gpu::event_t ev[2];  // destroyed at the end; an error exits the process anyway
+    for (gpu::event_t& e : ev) gpu::check(gpu::event_create(&e), "event create");
+    std::vector<unsigned char> again;
+    for (int r = 0; r < warmup + runs; ++r) {
+        if (r > 0) {
+            for (const Output& o : outputs) buffers[o.arg].upload(o.initial.data());
+        }
+        gpu::check(gpu::event_record(ev[0]), "event record");
+        gpu::check(gpu::launch(entry->fn, grid, block, launch_args.data(),
+                               static_cast<std::size_t>(shm), nullptr),
+                   "launch");
+        gpu::check(gpu::last_error(), "launch (last error)");
+        gpu::check(gpu::event_record(ev[1]), "event record");
+        gpu::check(gpu::synchronize(), "synchronize");
+        if (r >= warmup) {
+            float ms = 0.0f;
+            gpu::check(gpu::elapsed_ms(&ms, ev[0], ev[1]), "event elapsed");
+            std::printf("fj-runner run %d events_ns %.0f\n", r - warmup, 1e6 * double(ms));
+        }
+        for (Output& o : outputs) {
+            if (r == 0) {
+                buffers[o.arg].download(o.host.data.data());
+                continue;
+            }
+            again.resize(o.host.data.size());
+            buffers[o.arg].download(again.data());
+            if (again != o.host.data) {
+                throw std::runtime_error(o.name + ": launch " + std::to_string(r) +
+                                         " differs from launch 0 -- not run-to-run "
+                                         "deterministic");
+            }
+        }
+    }
+    for (gpu::event_t e : ev) (void)gpu::event_destroy(e);
+    std::printf("fj-runner launch %s grid %u %u %u block %u %u %u shared %lld warmup %d "
+                "runs %d\n",
+                kname.c_str(), grid.x, grid.y, grid.z, block.x, block.y, block.z, shm, warmup,
+                runs);
 
     for (Output& o : outputs) {
-        buffers[o.arg].download(o.host.data.data());
         npy::write(o.path, o.host);
         std::printf("fj-runner out %s %s\n", o.name.c_str(), o.path.c_str());
     }

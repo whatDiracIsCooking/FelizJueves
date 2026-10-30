@@ -49,9 +49,8 @@ TESTS = {
         span("mmd", "metric", 0, range(5)),
     "test/test_metric_device.py::test_X_metric_through_i_i_matches_libcint":
         span("mmd", "metric", 0, range(13)),
-    "test/test_metric_device.py::test_X_metric_programs_compile": ById({
-        "synthetic": span("mmd", "metric", 0, range(5)),
-        "fixture": Allow(PROGRAM)}),
+    "test/test_metric_device.py::test_X_metric_runners_compile":
+        span("mmd", "metric", 0, range(5)),
     # (mn|P).
     "test/test_emit_eri3.py::test_X_compiles_the_eri3_class": Classes("mmd", "eri3"),
     "test/test_eri3_device.py::test_X_every_eri3_class_through_l4_matches_the_host":
