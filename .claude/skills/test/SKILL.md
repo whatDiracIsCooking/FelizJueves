@@ -25,6 +25,34 @@ Three rules, and the third is the one this project turns on:
    an *architecture*, so every compile is happy on a device-less box. Only the
    kernel tier, on this machine, can say a kernel computes the right integrals.
 
+## The PR gate — `devtools/gate.sh`
+
+```bash
+devtools/gate.sh                 # what this box can run, chosen for you
+devtools/gate.sh --no-gpu        # stop after the compile sample
+devtools/gate.sh --seed fixed    # replay a draw on another commit
+```
+
+The one check that blocks a merge (#656; the `pr` skill runs it). Its
+phases, stopping at the first that fails: **lint** (`ruff check .`),
+**fast** (`FAST_TEST_ARGS`), the **compile sample** (nvcc and hipcc, no card)
+and, for each backend whose card is enumerated (`lib.sh`'s `card_present`),
+the **gpu sample** through `kernel-tier.sh --backend <b>`. With no card it
+ends after the compile sample, exits 0, and names cuda and hip **unverified
+on card** (the PR's `unverified-on-card` label). It needs both compilers in
+one shell, so it exits **2** on this box's host (no hipcc): run it from the
+combined container.
+
+The compile and gpu samples select `not slow or l_cut` (`GATE_*_TEST_ARGS`
+in `devtools/config.sh`): `l_cut` is the marker `tiers.by_l` and
+`tiers.sample_compiles` put beside `slow`, so the cases those two cuts would
+drop are the sampler's to draw and a case `slow` for any other reason (a
+large basis, a decorated function) stays out. The gpu sample keeps the
+sampler's `min` band (every L ≤ 2 case); the compile sample's is L = 0
+(`GATE_COMPILE_MIN_L_MAX`), because its L ≤ 2 cases alone are ~420 per
+compiler. Its report directory holds every phase's log, each draw's JSON and
+`summary.md` -- seed, budgets, every case drawn -- for the PR body.
+
 ## The two tiers
 
 ### Fast tier — `pytest`
@@ -114,8 +142,11 @@ every case with L ≤ 2, then per pool (`gpu/cuda`, `compile/hip`, ...) a
 seeded draw of the `med` and `max` bands until `FJ_BUDGET_MED` /
 `FJ_BUDGET_MAX` seconds of `cost_s` are spent, the families the diff
 touches drawn first. Cases that cover no class (an `Allow`) always run.
-Nothing passes `--fj-sample` yet -- #656's `gate.sh` will -- so every tier
-above selects exactly what it did before. The knobs and their defaults are
+Only `devtools/gate.sh` passes `--fj-sample`; every other tier selects
+exactly what it did before. A case that would take a band past its budget
+is passed over (the draw never exceeds it); a family the diff touches is
+still drawn first, with a case that fits when it has one. `FJ_MIN_L_MAX`
+moves the `min` band's top (2 by default). The knobs and their defaults are
 in `devtools/config.sh`; the seed is a hash of the merge-base and HEAD
 (`FJ_SAMPLE_SEED` overrides), so a draw replays on its commit;
 `FJ_SAMPLE=all` keeps everything; `--fj-shard i/n` splits what was kept.
@@ -147,8 +178,9 @@ gets reported as a pass:
 | `hip` | hipcc — **no card required** | `hipcc` |
 | `gpu` | a live device | `cuda_device` / `hip_device` |
 | `slow` | nothing; costs minutes (an exhaustive search re-run, a class above `FAST_L_MAX`, a large input: 6-31G, cc-pVDZ, cc-pVTZ, or a compile-only case after the first of its kind in its function, `tiers.sample_compiles`); off the pre-push gate via `FAST_TEST_ARGS` and off the kernel tier unless `--full` | — |
+| `l_cut` | nothing; beside `slow` when only the L cut or the compile sample put it there (`tiers.by_l`, `tiers.sample_compiles`; `tiers.settle_l_cut` takes it back from a case slow for another reason). `devtools/gate.sh` selects `not slow or l_cut` and lets the sampler draw | — |
 
-Those are the registered markers (with `oracle` and `claim(id)`). An issue that
+Those are the registered markers (with `high_l`, `oracle` and `claim(id)`). An issue that
 names a `kernel-tier` or `high-L` marker means `slow`: neither is registered.
 
 A test takes exactly the fixtures it needs, so the skip message names the real

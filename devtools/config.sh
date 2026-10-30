@@ -217,13 +217,14 @@ KERNEL_FULL_TEST_ARGS=${KERNEL_FULL_TEST_ARGS:-'-m "gpu and {backend} and not hi
 # `gpu` cases its draw does not keep. Every case with L <= 2 runs; the `med`
 # (2 < L < its ladder's top) and `max` (the top) bands of each pool -- a
 # (tier, backend): `gpu/cuda`, `compile/hip`, ... -- are drawn until their
-# budget, in seconds of the registry's `cost_s`, is spent. Opt in: nothing
-# passes the flag until #656's gate.sh. FJ_SAMPLE=all keeps every case even
-# under the flag (empty, `on` and `all` are the three values).
+# budget, in seconds of the registry's `cost_s`, is spent. Opt in: only
+# devtools/gate.sh passes the flag (GATE_* below). FJ_SAMPLE=all keeps every
+# case even under the flag (empty, `on` and `all` are the three values).
 #   FJ_SAMPLE_SEED     the seed; empty is a hash of the merge-base and HEAD
 #   FJ_SAMPLE_BASE     the ref the merge-base (and the changed paths) is from
 #   FJ_BUDGET_MED/MAX  seconds per pool and band; empty is no limit
 #   FJ_K_MED/MAX       a count cap per pool and band; empty is none
+#   FJ_MIN_L_MAX       the `min` band's top L: every case at or below it runs
 #   FJ_DEFAULT_COST_S  a case's cost while its keys' cost_s is unset (#652)
 #   FJ_TOUCH_WEIGHT    how much likelier a family the diff touches is drawn
 #   FJ_SAMPLE_REPORT   the JSON report (seed, budgets, cases drawn); relative
@@ -235,9 +236,41 @@ FJ_BUDGET_MED=${FJ_BUDGET_MED-120}
 FJ_BUDGET_MAX=${FJ_BUDGET_MAX-60}
 FJ_K_MED=${FJ_K_MED:-}
 FJ_K_MAX=${FJ_K_MAX:-}
+FJ_MIN_L_MAX=${FJ_MIN_L_MAX:-2}
 FJ_DEFAULT_COST_S=${FJ_DEFAULT_COST_S:-10}
 FJ_TOUCH_WEIGHT=${FJ_TOUCH_WEIGHT:-4}
 FJ_SAMPLE_REPORT=${FJ_SAMPLE_REPORT:-${KERNEL_TIER_REPORTS}/sample.json}
+
+# --- the PR gate (devtools/gate.sh, #656) ----------------------------------
+#
+# The one check that blocks a merge, chosen by what this box has: lint, the
+# fast tier, the compile sample under nvcc AND hipcc, and -- for each backend
+# whose card is enumerated (lib.sh's card_present) -- the gpu sample on that
+# card through kernel-tier.sh. With no card it stops after the compile sample
+# and says which backends a PR from here carries as `unverified-on-card`
+# (#651). Both sampled phases pass `--fj-sample` over these selections:
+#
+# `not slow or l_cut` (test/tiers.py): a case that is `slow` ONLY because its
+# class is above FAST_L_MAX, or because tiers.sample_compiles dropped it, is
+# a candidate, and the registry sampler draws which of them run; a case slow
+# for any other reason (a large basis, a function decorated `slow`) stays
+# out, as `high_l` does. The fast tier keeps FAST_TEST_ARGS, its L cut
+# included; kernel-tier.sh's own selections above are unchanged.
+#
+# `{backend}` as in KERNEL_TEST_ARGS. Single quotes load-bearing, as for
+# FAST_TEST_ARGS below.
+GATE_COMPILE_TEST_ARGS=${GATE_COMPILE_TEST_ARGS:-'-m "(cuda or hip) and not gpu and not high_l and (not slow or l_cut)"'}
+GATE_GPU_TEST_ARGS=${GATE_GPU_TEST_ARGS:-'-m "gpu and {backend} and not high_l and (not slow or l_cut)"'}
+
+# The compile sample's `min` band (FJ_MIN_L_MAX for that phase only): every
+# compile case at L <= this runs, the rest are drawn. 0, not the sampler's 2,
+# because the compile cases at L <= 2 are ~420 per compiler, which measured
+# most of half an hour on a 4-core cloud box (the gpu sample keeps 2: those
+# are ~110 per card, and the card, not the compiler, is the cost).
+# At 0, and the sampler's budgets, the phase took 7m57s (371 cases) on a
+# 4-core cloud box where the sample_compiles selection it replaces took
+# 7m02s (272 cases), back to back, 2026-10-30.
+GATE_COMPILE_MIN_L_MAX=${GATE_COMPILE_MIN_L_MAX:-0}
 
 # --- measurement ------------------------------------------------------------
 #

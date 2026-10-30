@@ -38,6 +38,38 @@ Before pushing, look at what the diff touches and whether this repo guards it:
 
 A repo with neither has nothing to do in this step.
 
+## 2½. Run the gate
+
+```bash
+devtools/gate.sh            # lint, fast, compile sample, gpu sample per card
+```
+
+`devtools/gate.sh` (#656) is **the one check that blocks a merge**, and it
+picks its phases from what this box has:
+
+- **both cards enumerated**: lint + fast + the compile sample (nvcc and
+  hipcc) + the gpu sample on **both** cards (each through
+  `kernel-tier.sh --backend <b>`);
+- **no card** (a Claude cloud container): lint + fast + the compile sample,
+  exit 0, and it says cuda and hip are **unverified on card** -- the PR
+  takes the `unverified-on-card` label (below);
+- **one card**: the gpu sample on that one, the other unverified.
+
+The compile sample needs **both** device compilers in one shell, so on this
+box's host (no hipcc) it exits 2; run it from the combined container
+(`devtools/devcontainer.sh --combined shell`). In a cloud container with the
+toolkits installed but off `PATH`, put `/usr/local/cuda/bin` and
+`/opt/rocm/bin` on it first. **Exit 2 is "could not run", never a pass** --
+do not merge on it.
+
+The sampled phases draw their classes above L = 2 (L = 0 for the compile
+sample) from the case registry (#653), seeded by the merge-base and HEAD, so
+a rerun on one commit draws the same cases. The gate writes
+`<report>/summary.md`: the mode, every phase's verdict and wall-clock, **the
+seed, the budgets and every case drawn**. Paste it into the PR body's *What
+was run* -- it is the record of what this merge was checked against. Run
+the gate on the commit you push; a later commit draws afresh.
+
 ## 3. Push
 
 ```bash
@@ -81,14 +113,15 @@ bash -c '. devtools/lib.sh; echo "present: [$(card_present)] absent: [$(card_abs
 GPU under `/proc/driver/nvidia/gpus/` or in `nvidia-smi -L` — and
 `devtools/doctor.sh` prints the same verdict as its `card verdict` line.
 
-- **Both cards present**: the kernel tier is expected on each backend the diff
-  touches, as above. No label.
+- **Both cards present**: `devtools/gate.sh` runs the gpu sample on both
+  cards. No label. A change to kernel text above the sample's reach still
+  wants `kernel-tier.sh --full` on each backend it touches.
 - **One card, or none** (a Claude cloud container has none): the PR may still
-  merge after the **fast** tier and the **compile** tier (`(cuda or hip) and
-  not gpu and not slow`, both compilers, no card) are green — but it carries
+  merge after `devtools/gate.sh` is green, which there means lint, the
+  **fast** tier and the **compile sample** (both compilers, no card) — but it carries
   the `unverified-on-card` label (`gh pr create … --label unverified-on-card`;
   the label already exists), and the body's *What was run* names each backend
-  in `card_absent` as **unverified on card**. A session with one card still
+  in `card_absent` as **unverified on card** -- the gate's summary does. A session with one card still
   runs the kernel tier on that one and says so.
 
 The label is the record that a card run is owed: whoever next has both cards
@@ -104,8 +137,8 @@ gh pr merge <number> --squash
 
 - **There is no CI yet** — no `.github/workflows/` in this repo. So there is
   nothing to wait for, and nothing server-side will catch what you did not run
-  locally: the fast tier, `ruff check .`, and the kernel tier on each backend
-  you touched. Say in the PR which backends you ran. When CI lands, wait for it
+  locally: `devtools/gate.sh` (step 2½) is the whole check. Its summary in
+  the PR says which backends ran. When CI lands, wait for it
   with `gh pr checks <number> --watch` and do not merge red.
 - **Never pass `--admin`.** It merges past required status checks, and it is the
   one move in this whole flow that can defeat the branch ruleset. Red checks
@@ -156,7 +189,8 @@ differ; the merge already confirmed the patches landed).
 
 Stop after step 4 and hand the PR to the user instead of merging when:
 
-- CI is red, or the push gate was bypassed with `--no-verify`;
+- CI is red, `devtools/gate.sh` failed or could not run (exit 1 or 2), or
+  the push gate was bypassed with `--no-verify`;
 - the diff moves a ratchet floor or touches the correctness references in ways
   only a human should sign off on;
 - the user asked for a PR but not a merge.
