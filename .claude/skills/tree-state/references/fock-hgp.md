@@ -36,7 +36,7 @@ VGPRs, 3.70 s on `gfx1200`). `[Fock]` §3's claims are scored:
 (the paper has no register table for the §3.2 kernel, and its tables are
 A100/V100 wall-clock); milestone 12 built only the **diagonal** cells of
 `[Fock]`'s 2x2 (the HGP split is milestone 14's, below; no fused MMD `F`,
-#326); no gradient, no lever, nothing persists across SCF iterations, `f` and above
+#326); its gradient is `gf_` (interpreted, compiled through (pp|pp), not on a card; `gradients.md`), no lever, nothing persists across SCF iterations, `f` and above
 are not built (#330), and the screening comparison the fused scheme most
 wants is unmeasured on compact fixtures (#329, #331). `KERNEL_GEN_CMD`
 writes no `F` unit: `--fock-l` / `--fock-class` is its own emit path.

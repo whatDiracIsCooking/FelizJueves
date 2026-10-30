@@ -3863,6 +3863,56 @@ def test_the_ghv_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
         assert not hit, f"kernel_ghv reaches {hit}"
 
 
+# The fused Fock gradient on HGP (`gradient.kernel_gf`, `Target.F` at d1):
+# `kernel_f`'s record, cap and orbit group and the HGP recurrences, checked
+# against `gradient.host` in the interpreter, so neither it nor `ao` nor
+# `reference/` may be an ancestor; the plan layer refuses an HGP class and
+# MMD is the other engine. `gradient.interpreted` runs it, and the
+# generator CLI writes its ladder (`--grad-f-l`).
+RULES |= {
+    "gf_builder": _rule(
+        "kernel_gf.py: the fused Fock gradient kernel -- key -> IR, one VRR "
+        "over the derivative classes' boundaries and one HRR per class "
+        "(`hgp.recurrence`), `kernel_f`'s record, staging cap and orbit "
+        "group",
+        ("spec", "=ir", "hgp", "eri.fock.kernel_f"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        plan="the plan layer is MMD machinery keyed on a [JEngine] row an "
+             "HGP class does not have",
+        mmd="McMurchie-Davidson is another engine (#292)",
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["gradient.kernel_gf"] = "gf_builder"
+EDGES["gradient.kernel_gf"] = frozenset(
+    ("eri.fock.kernel_f", "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+     "spec"))
+EDGES["gradient.interpreted"] = EDGES["gradient.interpreted"] | frozenset(
+    ("gradient.kernel_gf",))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the fused Fock "
+                       "gradient ladder through `kernel_gf`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_gf",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_gf",))
+
+
+def test_the_gf_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_gf"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"eri.fock.kernel_f", "hgp.recurrence", "hgp.hrr"} <= seen
+    for banned in (_REF, "ao", "gradient.host", "ir.interp", "emit", "plan",
+                   "mmd", "performance.device"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_gf reaches {hit}"
+
+
 # ---------------------------------------------------------------------------
 # The Coulomb and exchange energies' analytic nuclear Hessians by MMD
 # (`felizjueves.hessian`): the host reference on the AO layer and the

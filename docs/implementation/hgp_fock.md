@@ -16,6 +16,13 @@ call.
 quartet at weight 1. It was interpreted at every class with L ≤ 4 and run on
 the **RTX 3080 only** ("The split cell", below). Nothing about it is timed.
 
+**The fused `F` has a nuclear gradient, interpreted and compiled, not run**: `Target.F` at
+`derivative_order = 1`, `gradient/kernel_gf.py`'s `gf_` units, on this
+kernel's mapping, canonical half and degeneracy factor, one VRR to
+`L + 1` and one HRR per derivative class. Its design, witnesses and what
+it does not reach are in `gradient.md`, "The fused Fock gradient on HGP".
+Compiled through `(pp|pp)` under both compilers, never on a card.
+
 **Nothing here is scored against a published table.** `[Fock]` is
 `docs/references.md` entry 23 (ct4c00994). The text read is the arXiv
 preprint, arXiv:2407.21445v1, because the journal version is paywalled, so
@@ -633,7 +640,9 @@ Said plainly, and recorded in `data/literature/fock/limits.json`:
 - **No HGP `J`/`K` split** (#325), and **no fused MMD `F`** (#326): the
   2x2's off-diagonal cells. Milestone 14 built the first ("The split cell",
   above), and #325 was closed into it.
-- **No gradient.** `derivative_order` stays 0.
+- **Its gradient is not run on a card** (`gf_`, `derivative_order = 1`;
+  `gradient.md`, "The fused Fock gradient on HGP"): compiled through
+  `(pp|pp)`, never on a card. Milestone 12 itself built no gradient.
 - **No lever.** The store refuses a lever on an F key, and `n_batches` is 1
   by `Target.F`'s own refusal.
 - **Nothing persists across SCF iterations.** `F` is rebuilt from the

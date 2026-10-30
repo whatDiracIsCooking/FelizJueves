@@ -365,6 +365,37 @@ unrolled form, a reading, not a measured row). **`test_ghv_device.py`
 and 6-31G) has run on neither card.** Nothing measured; registry
 `hgp/v/d1` L 0..6 compile, L 0..2 `gpu`, no card, its cost modelled.
 
+**The fused Fock gradient on HGP is generated, interpreted and compiled, not run on a card**
+(`gradient.md`, "The fused Fock gradient on HGP"): `Target.F` joined
+`spec.GRADIENT_TARGETS`, on its native HGP engine
+(`coulomb/d1/(la,lb|lc,ld)/b1/f/literal`). `gradient/kernel_gf.py`'s
+`gf_{la}{lb}{lc}{ld}` writes `dE_J - 1/2 dE_K` (`E_2e = SUM Gam (ab|cd)`,
+`Gam = 1/2 D_ab D_cd - 1/4 D_ac D_bd`) in one kernel per F class on
+`kernel_f`'s mapping, canonical half and degeneracy factor, the weights
+DERIVED from `kernel_f.orbit_group()` (`w = deg (4 D_ab D_cd - D_ac D_bd
+- D_ad D_bc)`), all four centres differentiated (no translational
+invariance used): one VRR to `L + 1` over the eight derivative classes'
+boundaries, five contracted families (unweighted, and `2 alpha` ..
+`2 delta` from two exponent fields added to `kernel_f`'s record), one HRR
+per derivative class, 12 `AtomicAdd`s, no screen, no lever. The stream
+(`gradient.interpreted.gf_launches`, nothing pruned) and `gf_gradient` /
+`gf_run` run it interpreted. Held (`test_kernel_gf.py`) to `eri.eri`'s
+derivative integrals per class, all 21 ladder classes through `(dd|dd)`
+as launched and transposed (1.4e-15 of the abs-value twin at L <= 6, gate
+1e-13); to the host's `coulomb_gradient - 1/2 exchange_gradient` on
+synthetic bases where `a = b`, `c = d` and `P = Q` all occur (4.8e-15 of
+`max|G|`); and to PySCF's `grad:j + grad:k` on H₂O/STO-3G and
+`h2o_sto3g_d_grad` (2.2e-14 / 2.1e-14 absolute, gate 1e-10); zero net
+force a check. Fast: L + 1 <= 4 and the s-only basis; 26 cases `slow`.
+Ladder `--grad-f-l [LMAX]` (1 bare, 0..2), never in the bare default nor
+in `KERNEL_GEN_CMD`; one text golden (`gf_0000`, both vendors) and 20
+digests (`test/golden/gf_digests.json`, `test_emit_grad_f.py`); `(dd|dd)`
+is 11 MB of CUDA. **Compiled** through `(pp|pp)` (the six bare-ladder
+units, nvcc `sm_86` and hipcc `gfx1200`, no warning in generated text, 12
+passed, 2026-10-30, `test_emit_grad_f.py`); the d classes are not
+compiled. **Never on a card, nothing measured**; no low-stack form; not
+in `rhf.py`'s `Runners`.
+
 **RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
 nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O
 `_j` fixtures (STO-3G, 6-31G; cc-pVDZ is for `slow` tests only) plus a C1

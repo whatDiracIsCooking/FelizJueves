@@ -14,7 +14,11 @@ through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`, on no
 card; the kinetic, overlap and nuclear-attraction gradients on HGP
 (`hgt_`, `hgs_`, `ghv_`, through (ff)) are interpreted and compiled, not
 run on a card; the HGP `(mn|P)` gradient `hgeri3` is interpreted and
-compiled only, no card. This is
+compiled only, no card.
+**The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
+interpreted and compiled, not run**: held to `eri.eri`'s derivative
+integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
+and to PySCF; compiled by nvcc (sm_86) and hipcc (gfx1200) through `(pp|pp)`, never on a card ("The fused Fock gradient on HGP", below). This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -41,7 +45,8 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `spec.GRADIENT_TARGETS` only: `S`, `T`, `V`, `JAB`, `K`, `METRIC` and
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
-Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
+`F` takes it on its native engine, HGP ("The fused Fock gradient on
+HGP", below). Every other target refuses it with `_GRADIENT_REFUSAL`, and so does
 every other engine -- except six off-native pairs,
 `spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
 recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`,
@@ -444,6 +449,16 @@ gradients on HGP, for every
 `la <= lb <= LMAX`, beside the J ladders, never in the bare default nor in
 `KERNEL_GEN_CMD`. Goldens: `test/golden/{cuda,hip}/hgs_{00,01,11}`, 6
 files (`test_emit_hgs.py`).
+
+`python -m felizjueves.emit --grad-f-l [LMAX]` (1 bare, accepted 0..2,
+exit 2 above) adds `gf_{la}{lb}{lc}{ld}` for every F class of milestone
+12's ladder with each `l <= LMAX` (6 units bare, 21 at 2), beside the J
+ladders, never in the bare default nor in `KERNEL_GEN_CMD`. Golden:
+`test/golden/{cuda,hip}/gf_0000` (2 files, 17 KB each); the other 20
+units are pinned by size and sha256 in `test/golden/gf_digests.json`
+(`slow` above `L + 1 = 4`; `test_emit_grad_f.py`, which also compiles
+the six bare-ladder units under both compilers). An unrolled `gf_` is
+large: `(pp|pp)`'s CUDA text is ~590 KB.
 
 ## The RHF gradient, assembled (`gradient/rhf.py`, #565)
 
@@ -868,6 +883,88 @@ Goldens `test/golden/{cuda,hip}/hgeri3_*` (`test_emit_hgp_grad_df.py`).
 **Not on a card**: there is no device harness for it yet, and the session
 that built it had no card. Not measured.
 
+## The fused Fock gradient on HGP (`gradient/kernel_gf.py`)
+
+`Target.F` at `derivative_order = 1`, on F's native engine:
+`coulomb/d1/(la,lb|lc,ld)/b1/f/literal`, the d0 key with `d1` in place of
+`d0`. One kernel per F class, `gf_{la}{lb}{lc}{ld}`, AO order, writes
+
+    G[A, k] += dE_2e / dR_{A,k},   E_2e = 1/2 SUM D G = SUM Gam (ab|cd),
+    Gam_abcd = 1/2 D_ab D_cd - 1/4 D_ac D_bd,
+
+which is `dE_J - 1/2 dE_K` in `rhf.py`'s terms: the whole two-electron
+RHF gradient from one fused kernel per class, as `kernel_f` builds the
+whole `G = J - K/2`. It is the (HGP, fused) cell of `[Fock]`'s 2x2 at d1;
+the (MMD, split) cell is `gjab` + `gk` above.
+
+**The weights are derived** (`derive_gradient_weights`): the kernel visits
+one representative per orbit of `kernel_f.orbit_group()`, with
+`kernel_f`'s canonical half and degeneracy factor, and summing `Gam` over
+the eight images gives, per component,
+
+    w_ijkl = deg (4 D_ab D_cd - D_ac D_bd - D_ad D_bc)
+
+(8 images x 1/2 on the Coulomb pairing; 4 x -1/4 on each exchange
+pairing). Because one representative stands for members whose bra
+centres are its ket centres, **all four centres are differentiated**: the
+bra-only shortcut belongs to a sweep over every ordered quartet. No
+translational invariance is used, so zero net force stays a check.
+
+**The derivative by HGP.** `d(ab|cd)/dA_k = (a+1_k b|cd)^{2 alpha} - a_k
+(a-1_k b|cd)`, the first a contracted integral whose primitive quartets
+carry `2 alpha`. HRR's coefficients (`AB`, `CD`) are the same for every
+primitive, so it transfers a weighted contracted sum exactly as an
+unweighted one, and the contraction stays inside the kernel as in
+`kernel_f` (pin 5). Per primitive quartet: one VRR (`hgp.vrr.reduce`'s
+terms, `order_key`'s order) over the union of the boundaries of the eight
+derivative classes (each centre raised by one, and lowered by one where
+its `l > 0`), Boys to `L + 1`; five contracted families (`c0`
+unweighted, for the lowered classes; `cA`..`cD` weighted by `2 alpha`,
+`2 beta`, `2 gamma`, `2 delta`, read from two exponent fields appended to
+`kernel_f`'s record); after the nest one HRR per derivative class (its
+locals prefixed `ap`, `am`, ...), then per ERI the weight and twelve
+multiply-adds into the four centres' sums. `AB` and `CD` are always
+parameters (the B- and D-raised classes always transfer). The mapping is
+`kernel_f`'s (one block per bra pair, one thread per contracted quartet,
+shared staging per thread); the bra's two centres are summed over the ket
+loop and flushed once, C and D per quartet: `AtomicAdd` into `G[atom,
+k]`, 12 statements. **No screen** (a gradient bound needs the factor one
+`l` higher, #555), so no `tau`, no `G_ab`, no `Dsh`. No lever.
+
+**The stream** (`gradient/interpreted.py`, `gf_launches`): built from the
+basis alone, nothing pruned or screened -- canonical pairs (`launch_f`'s
+rule), batched by `(la, lb)` and degree, each batch pair `I <= J` one
+launch, `diag` on `I == J`. `gf_gradient` runs every launch interpreted
+into one `G`; `gf_run` is one launch. It does not import `launch_f` (whose
+screens and pruning the kernel does not read).
+
+**Witnesses** (`test/test_kernel_gf.py`), none of them HGP:
+
+| Witness | Inputs | Worst | Gate |
+|---|---|---|---|
+| `eri.eri`'s derivative integrals (MMD, the shell raised with `2 alpha` coefficients, lowered), one quartet, `deg = 1` | every ladder class through `(dd|dd)`, as launched and transposed (36), four distinct atoms, random symmetric `D` | 1.4e-15 of the abs-value twin (L <= 6) | 1e-13 |
+| `host.coulomb_gradient - 1/2 host.exchange_gradient` | three-atom synthetic bases, two s shells on one atom (so `a = b`, `c = d`, `P = Q` occur), plus an s, p or d shell | 4.8e-15 of `max|G|` | 1e-13 |
+| PySCF `grad:j + grad:k` (#550's fixtures) | H2O/STO-3G; H2O/STO-3G plus one d primitive on O | 2.2e-14 / 2.1e-14 absolute | 1e-10 |
+
+Every whole-basis `G` sums to zero within `1e-12` of its max. A wrong
+Coulomb weight (`kernel_f`'s 2) fails the per-class witness. The fast
+tier holds the classes with `L + 1 <= 4` and the s-only basis; the rest
+are `slow` (26 cases, ~66 s on 4 workers).
+
+**Compiled** (`test_emit_grad_f.py`, a compiler and no card): the six
+units through `(pp|pp)` under nvcc 13.0 (`sm_86`) and hipcc / ROCm 7.2.4
+(`gfx1200`), each alone with the kernel tier's flags, no warning in the
+generated text, 12 passed (2026-10-30, a device-less cloud container).
+
+**Not done.** Never run on a card, not timed, not measured for registers,
+spill or stack; the d classes are not compiled by any test; only one
+text golden. No low-stack form: the unrolled `(dd|dd)`
+builds in ~6 s and its CUDA text is 11 MB (`(pp|pp)` 0.59 MB), so a
+low-stack or rolled form is the obvious next step before any compile. Not wired into `rhf.py`'s
+`Runners` (it replaces two of them; the assembly takes the two terms
+apart). No screen, Cartesian only, nothing above `(dd|dd)` (milestone 12's
+ladder).
+
 ## What is not done
 
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
@@ -881,6 +978,8 @@ that built it had no card. Not measured.
 - The HGP `(mn|P)` gradient (`hgeri3`) has run on no card and has no
   device harness; its CLI ladder stops at s and p shells. The DF metric's
   gradient is not built on HGP.
+- The fused Fock gradient `gf_` (above) is interpreted, and compiled
+  through `(pp|pp)`: no d-class compile, no card, no measurement.
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
   (ff), #614), `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618) and the
