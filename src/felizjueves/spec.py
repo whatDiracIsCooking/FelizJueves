@@ -240,13 +240,18 @@ whose bra order is one higher (`gradient.kernel_gjab.gjab_pq_spec`), a d0
 key. `K` at d1 is the exchange energy's bra derivative, its `am` K's
 Hermite pairing `(la, lc, lb, ld)`; it runs the plan of the d0 K class with
 the bra raised by one (`gradient.kernel_gk.gk_pq_spec`), and its builder
-refuses `n_batches != 1`. `METRIC` and `ERI3` at d1 are the density-fitting
+refuses `n_batches != 1`. `K` at d1 is also legal on `Engine.HGP`
+(`GRADIENT_OFF_NATIVE`, below): the same contraction by
+the HGP recurrence, the raised and lowered bra classes' HRRs on contracted
+sets weighted by `2 alpha` / `2 gamma` (`gradient.kernel_ghk`), keyed
+``coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal``. `METRIC` and `ERI3` at d1
+are the density-fitting
 terms, `SUM_PQ W_PQ d(P|Q)/dR` and `SUM_mnP Gam_mnP d(mn|P)/dR`
 (`gradient.kernel_gmetric`, `gradient.kernel_geri3`), `am` the integral's
 pair `(lP, lQ)` and triple `(la, lb, lP)`. `DQ` at d1 is the ket
 pre-contraction differentiated on each of the ket's two centres
 (`hessian.kernel_hdq`), which only the Hessian reads. Unbatched, for each
-target's d0 reason. TWO OFF-NATIVE PAIRS ARE LEGAL AT d1
+target's d0 reason. THREE OFF-NATIVE PAIRS ARE LEGAL AT d1
 (`GRADIENT_OFF_NATIVE`): `J` on `Engine.HGP`, the Coulomb energy's bra
 derivative over every ordered quartet of the class on the Head-Gordon-Pople
 recurrence (`gradient.kernel_ghj`), `am` the d0 HGP J class `(la, lb | lc,
@@ -254,7 +259,8 @@ ld)`, so ``coulomb/d1/(1,0|0,0)/b1/j.hgp/literal`` differs from the d0 key
 in the `d` segment alone; MMD `J` at d1 stays refused (its gradient is
 `JAB`'s). And `T` on `Engine.HGP`, ``kinetic/d1/(1,0)/b1/t.hgp/literal``
 (`gradient.kernel_hgt`: the HGP one-electron route of "AN HGP ONE-ELECTRON
-CLASS" with the bra derivative folded into its contracted tables).
+CLASS" with the bra derivative folded into its contracted tables). And `K`
+on `Engine.HGP` (above, `gradient.kernel_ghk`).
 
 A HESSIAN CLASS IS ITS INTEGRAL'S CLASS AT `derivative_order = 2`, legal on
 `HESSIAN_TARGETS` alone -- `JAB`, `S`, `T`, `V`, `K`, `METRIC` and `ERI3`,
@@ -583,7 +589,7 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # density-fitting `METRIC` and `ERI3`, and `DQ`, the ket pre-contraction
 # differentiated on each ket centre, which the Coulomb Hessian's bra-ket
 # term reads (`hessian.kernel_hdq`). Each on its native engine, MMD, and
-# `J` and `T` on HGP too (`GRADIENT_OFF_NATIVE`).
+# `J`, `K` and `T` on HGP too (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
                               Target.DQ))
@@ -592,14 +598,17 @@ GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
 # built: `J` on HGP, the Coulomb energy's bra derivative over every ordered
 # quartet on the Head-Gordon-Pople recurrence (`gradient.kernel_ghj`), and
 # `T` on HGP, the kinetic energy's gradient by Head-Gordon & Pople's split of
-# the Obara-Saika recurrences (`gradient.kernel_hgt`). MMD `J` at d1 stays
-# refused: its gradient is `JAB`'s, through the J chain.
+# the Obara-Saika recurrences (`gradient.kernel_hgt`), and `K` on HGP, the
+# exchange energy's (`gradient.kernel_ghk`). MMD `J` at d1 stays refused: its
+# gradient is `JAB`'s, through the J chain.
 GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
+                                 (Target.K, Engine.HGP),
                                  (Target.T, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
     "a first derivative is built for S, T, V, JAB, K, METRIC, ERI3 and DQ on "
-    "the MMD engine, and for J and T on the HGP engine (felizjueves.gradient, "
+    "the MMD engine, and for J, K and T on the HGP engine "
+    "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"
 )
 

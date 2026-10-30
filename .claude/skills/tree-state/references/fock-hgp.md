@@ -70,6 +70,10 @@ passed); the card run is not made, and no open issue tracks it; #431 closed on t
 timed** (`measured_store` refuses an HGP `J`/`K` row, `HGP_JK_REFUSED`),
 nothing above L = 4 is tested, nothing persists, and
 `fock/symmetry-vs-screening` stays unverifiable (#331).
+**The HGP recurrence also carries the exchange gradient**, `ghk`
+(`K` at d1 on HGP, `gradient/kernel_ghk.py`, on `kernel_hj`'s nest;
+`gradients.md` has it): interpreted through `(dd|dd)`, compiled by nvcc and hipcc through `(dd|pp)`, no
+card.
 **The 2x2's two diagonal cells are timed against each other, per class**
 (`devtools/measure.sh scheme-ab`, `measure/measure_scheme_ab.py`,
 `data/measured/scheme_ab.json`; `hgp_fock.md`, "The diagonal cells timed per

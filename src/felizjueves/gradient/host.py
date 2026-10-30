@@ -6,6 +6,7 @@
     potential_gradient(basis, M, nuclei, one_centre=) -> G  SUM M dV/dR
     coulomb_gradient(basis, D, nuclei, one_centre=)  -> G   dE_J/dR
     exchange_gradient(basis, D, nuclei, one_centre=) -> G   dE_K/dR
+    hgp_exchange_launches(basis, nuclei, am)         -> kernel_ghk's launches
     nuclear_repulsion_gradient(nuclei)               -> G   dE_nuc/dR
     records / pair_records(basis, nuclei, la, lb)    -> the d1 kernels' arrays
 
@@ -614,6 +615,67 @@ def exchange_records(basis: Basis, nuclei: Sequence[Nucleus],
             ket["off_b"].append(off[j])
             ket["off_d"].append(off[m])
     return bra, ket
+
+
+def _hgp_side(basis: Basis, pairs, atoms) -> dict[str, list]:
+    """One side of `hgp_exchange_launches`: `kernel_f`'s record per
+    primitive pair, `i` outer, by `eri.hgp_drive.primitive_scalars`' own
+    expressions (`U` carries `K_ab` and both coefficients)."""
+    sh, off = basis.shells, basis.offsets
+    out: dict[str, list] = {k: [] for k in ("prim", "exp", "sep", "ao",
+                                           "atom")}
+    for a, b in pairs:
+        sa, sb = sh[a], sh[b]
+        A, B = sa.centre, sb.centre
+        AB = tuple(A[x] - B[x] for x in range(3))
+        r2 = AB[0] ** 2 + AB[1] ** 2 + AB[2] ** 2
+        for i, x in enumerate(sa.exponents):
+            for j, y in enumerate(sb.exponents):
+                p = x + y
+                P = tuple((x * A[d] + y * B[d]) / p for d in range(3))
+                U = (sa.coefficients[i] * sb.coefficients[j]
+                     * (math.pi / p) ** 1.5 * math.exp(-x * y / p * r2))
+                out["prim"] += [*P, *(P[d] - A[d] for d in range(3)), p, U]
+                out["exp"] += [x, y]
+        out["sep"] += list(AB)
+        out["ao"] += [off[a], off[b]]
+        out["atom"] += [atoms[a], atoms[b]]
+    return out
+
+
+def hgp_exchange_launches(basis: Basis, nuclei: Sequence[Nucleus],
+                          am: tuple[int, int, int, int]) -> list[dict]:
+    """`kernel_ghk`'s launches of K class `am = (la, lc, lb, ld)`: every
+    ordered bra pair of `exchange_pairs(la, lc)` against every ordered ket
+    pair of `exchange_pairs(lb, ld)`, cut by contraction degree (a side is
+    degree-uniform, `kernel_f.pack`'s rule), one dict per `(k_ab, k_cd)`
+    holding every parameter but `n_ao`, `n_atom`, `M` and `G`, as flat
+    lists. Together the launches visit every quartet of
+    `class_quartets(am)` once."""
+    la, lc, lb, ld = am
+    atoms = shell_atoms(basis, nuclei)
+    sh = basis.shells
+
+    def by_degree(pairs) -> dict[int, list]:
+        out: dict[int, list] = {}
+        for a, b in pairs:
+            out.setdefault(len(sh[a].exponents) * len(sh[b].exponents),
+                           []).append((a, b))
+        return out
+
+    bras = by_degree(exchange_pairs(basis, la, lc))
+    kets = by_degree(exchange_pairs(basis, lb, ld))
+    launches = []
+    for kab, bp in bras.items():
+        b = _hgp_side(basis, bp, atoms)
+        for kcd, kp in kets.items():
+            k = _hgp_side(basis, kp, atoms)
+            launches.append({
+                "n_bra": len(bp), "n_ket": len(kp), "k_ab": kab, "k_cd": kcd,
+                "bra_prim": b["prim"], "bra_exp": b["exp"], "AB": b["sep"],
+                "bra_ao": b["ao"], "bra_atom": b["atom"],
+                "ket_prim": k["prim"], "CD": k["sep"], "ket_ao": k["ao"]})
+    return launches
 
 
 def nuclear_repulsion_gradient(nuclei: Sequence[Nucleus]) -> Grad:

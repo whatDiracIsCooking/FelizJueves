@@ -273,6 +273,33 @@ run on a card**: every class through (ff) warning-free under both
 (2026-10-30, a device-less cloud container, slowest `hgt_33` 6.3 s /
 14.6 s). No driver, no device test, nothing measured; registry
 `hgp/t/d1` L 0..6, compile tier only, its cost modelled.
+**The exchange gradient on HGP, `ghk`, is generated, interpreted
+through `(dd|dd)` and compiled by nvcc and hipcc through `(dd|pp)`; it
+has run on no card**
+(`gradient.md`, "The exchange gradient on HGP"): `K` at d1 on
+`Engine.HGP` (`spec.GRADIENT_OFF_NATIVE`, beside `J` on HGP;
+`coulomb/d1/(la,lc|lb,ld)/b1/k.hgp/literal`), `gradient/kernel_ghk.py`'s
+`ghk_{la}{lc}_{lb}{ld}`, the same `G` as `gk`. One HGP VRR per primitive
+quartet (`vrr_class`), its ket-inner sums folded per bra primitive pair
+into three contracted sets (`2 alpha`, `2 gamma`, 1), then the raised and
+lowered bra classes' HRRs (`hrr_classes`) and the deposit `W = M_ab M_cd`
+into six thread sums, six `AtomicAdd`s a thread; `kernel_hj`'s nest,
+staging and mapping imported; one class mode, no lever, no screen.
+`gradient.host.hgp_exchange_launches` packs a class's launches by
+contraction degree. Interpreted (`test_kernel_ghk.py`) against
+`host.exchange_gradient` at `gk`'s gate, 16 eps of the `absolute=True`
+twin: every K class through `(dd|dd)` (L + 1 > 4 `slow`), worst 4.4 eps
+(`(ss|ss)`); the whole s, p `dE_K`, a mixed-degree basis, 1/2/32 threads;
+and `(dd|dd)` on CO/cc-pVTZ against the libcint `k_gradient` witness,
+4.99e-16 of `max|G|` (gate 1e-12, `slow`, 73 s). Ladder `--grad-hk-l
+[LMAX]` (1 bare, 0..2), never in the bare default nor in
+`KERNEL_GEN_CMD`; 32 goldens (`test_emit_grad_hk.py`), the 16 s, p
+classes. nvcc and hipcc compile the goldens and five d classes through
+`(dd|pp)` (worst `ghk_22_11` 11.6 s / 44 s); **`ghk_22_22` overran a 600 s cap** (the
+straight-line unit in ptxas; no rolled form), so it is not in the compile
+set; nothing measured, not in
+`gradient.rhf`'s runners. Registry: `hgp`/`k`/d1, L 0..8 interpreted,
+compile at L 0..4 and 6, no card.
 
 **RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
 nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O
@@ -291,7 +318,7 @@ No card was involved.
 **`dE_J/dR` on the HGP recurrence: generated and interpreted only**
 (`gradient.md`, "The Coulomb gradient on the HGP recurrence"):
 `Spec(COULOMB, 1, (la, lb, lc, ld), Target.J, engine=Engine.HGP)`, legal
-through `spec.GRADIENT_OFF_NATIVE` (the one off-native d1 pair; MMD `J`
+through `spec.GRADIENT_OFF_NATIVE` (one of its two off-native d1 pairs, with `K`; MMD `J`
 at d1 stays refused), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`.
 `gradient/kernel_ghj.py`'s `ghj_{la}{lb}{lc}{ld}`, one unit per ORDERED
 class (no canonical mode, no lever, no screen): `kernel_hj`'s nest and

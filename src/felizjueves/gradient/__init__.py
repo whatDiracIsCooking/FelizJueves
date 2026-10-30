@@ -1,4 +1,4 @@
-"""Analytic nuclear gradients by McMurchie-Davidson (and, for `J` and `T`,
+"""Analytic nuclear gradients by McMurchie-Davidson (and, for `J`, `K` and `T`,
 by Head-Gordon-Pople too): host references and the generated kernels
 (`Spec.derivative_order = 1`).
 
@@ -13,6 +13,9 @@ by Head-Gordon-Pople too): host references and the generated kernels
                      class on the Head-Gordon-Pople recurrence
     kernel_hgt.py    Target.T on Engine.HGP at d1: hgt_{la}{lb}, the
                      kinetic energy's gradient on kernel_hgp's route
+    kernel_ghk.py    Target.K on Engine.HGP at d1: ghk_{la}{lc}_{lb}{ld},
+                     the exchange energy's bra derivative on the same
+                     recurrence, kernel_hj's nest
     host_df.py       the density-fitting references, (P|Q) and (mn|P)
     kernel_gmetric.py  Target.METRIC at d1: gmetric_{lP}{lQ}
     kernel_geri3.py    Target.ERI3 at d1: geri3_{la}{lb}{lP}
