@@ -254,7 +254,7 @@ card with the DF-K weights; the solve stays host-side. No clock.
 **The kinetic gradient on HGP is generated, interpreted and compiled,
 not run on a card** (`gradient.md`, "The kinetic gradient on HGP"):
 `spec.GRADIENT_OFF_NATIVE` makes `T` at d1 legal on `Engine.HGP`
-(`kinetic/d1/(la,lb)/b1/t.hgp/literal`; `V` stays refused; `S` is `hgs`, below),
+(`kinetic/d1/(la,lb)/b1/t.hgp/literal`; `S` is `hgs`, `V` is `ghv`, below),
 built by `gradient/kernel_hgt.py` (`hgt_{la}{lb}`, through f,
 `L_MAX = 3`): `kernel_hgp`'s VRR per primitive pair into up to six
 contracted tables weighted `(2 alpha)^p beta^n`, their HRRs on contracted
@@ -303,7 +303,7 @@ compile at L 0..4 and 6, no card.
 **The overlap gradient is also built on HGP, through (ff), interpreted
 and compiled, not run on a card** (`gradient.md`, "The overlap gradient on
 HGP"): `S` at d1 on `Engine.HGP` (`spec.GRADIENT_OFF_NATIVE`, beside
-HGP `J`, `T` and `K`; `V` and every other target still refuse HGP at
+HGP `J`, `T`, `K` and `V`; every other target still refuses HGP at
 d1), `gradient/kernel_hgs.py`'s `hgs_{la}{lb}`, `gs_`'s contraction on
 `hs_`'s recurrence: one overlap VRR to `la + lb + 1` per primitive pair
 into three contracted tables (unweighted, `2 alpha`, `2 beta`), each its
@@ -320,6 +320,32 @@ unit through (ff) compiled by nvcc and hipcc with no warning
 `test_grad_device.py`'s `*-hs` (H₂O/STO-3G, H₂O/cc-pVDZ and
 CO/cc-pVTZ with the bare proton, `grad_driver.hgs_launches`, the same
 `DEV_TOL`): written, **not run on either card**. Nothing measured.
+
+**The nuclear-attraction gradient on HGP is generated, interpreted and
+compiled, its device test written and not run on a card** (`gradient.md`,
+"The nuclear-attraction gradient on HGP"): `(V, HGP)` in
+`spec.GRADIENT_OFF_NATIVE` (`nuclear/d1/(la,lb)/b1/v.hgp/literal`), built
+by `gradient/kernel_ghv.py` (`ghv_{la}{lb}`, through f, `L_MAX = 3`) on
+`kernel_hgp`'s `hv_` route: per nucleus the point-charge VRR per primitive
+pair to `la + lb + 1`, three contracted tables weighted `2 alpha`,
+`2 beta`, 1 and their HRRs (`kernel_hgp.table_dags`), `dA` and `dB` by the
+Cartesian rule, the nucleus row `-(dA + dB)` of that nucleus's own tables
+(translational invariance, exact per nucleus); one thread per contracted
+shell pair, `G` atomic (three per nucleus, six per pair); staged by
+`host.pair_records`; no MMD in its ancestry (`ghv_builder`). Interpreted
+(`test_kernel_ghv.py`): every class (ss)-(ff) on HF/cc-pVTZ and the s, p
+classes on a synthetic off-axis basis with a bare fourth nucleus, against
+`host.potential_gradient`, worst 6.0 eps of the split-centre scale (gate
+16 eps); whole H₂O/STO-3G and 6-31G against PySCF's `potential` term,
+7.9e-14 / 4.9e-14 absolute (gate `1e-10`). On the `--hgp-grad-l` ladder
+beside `hgt_` and `hgs_` (class-major), 6 goldens (`test_emit_ghv.py`).
+**Compiled by nvcc and hipcc**: every class through (ff) warning-free, and
+the synthetic program (2026-10-30, a device-less cloud container; `ghv_33`
+2.5 s / 7.3 s, 6,104 B `sm_86` stack / 4,708 B `gfx1200` scratch -- one
+unrolled form, a reading, not a measured row). **`test_ghv_device.py`
+(generator `test/ghv_driver.py`; s and p: the synthetic basis, H₂O/STO-3G
+and 6-31G) has run on neither card.** Nothing measured; registry
+`hgp/v/d1` L 0..6 compile, L 0..2 `gpu`, no card, its cost modelled.
 
 **RHF nuclear-gradient fixtures (#550, schema 5): tracked, consumed by
 nothing yet.** `test/oracle/fixtures/<m>_grad.json` beside the H2O
@@ -338,7 +364,7 @@ No card was involved.
 **`dE_J/dR` on the HGP recurrence: generated and interpreted only**
 (`gradient.md`, "The Coulomb gradient on the HGP recurrence"):
 `Spec(COULOMB, 1, (la, lb, lc, ld), Target.J, engine=Engine.HGP)`, legal
-through `spec.GRADIENT_OFF_NATIVE` (one of its two off-native d1 pairs, with `K`; MMD `J`
+through `spec.GRADIENT_OFF_NATIVE` (one of its five off-native d1 pairs, with `K`, `T`, `S` and `V`; MMD `J`
 at d1 stays refused), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`.
 `gradient/kernel_ghj.py`'s `ghj_{la}{lb}{lc}{ld}`, one unit per ORDERED
 class (no canonical mode, no lever, no screen): `kernel_hj`'s nest and

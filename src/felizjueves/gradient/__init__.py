@@ -1,5 +1,5 @@
-"""Analytic nuclear gradients by McMurchie-Davidson (and, for `J`, `K` and `T`,
-by Head-Gordon-Pople too): host references and the generated kernels
+"""Analytic nuclear gradients by McMurchie-Davidson (and, for `J`, `K`, `S`,
+`T` and `V`, by Head-Gordon-Pople too): host references and the generated kernels
 (`Spec.derivative_order = 1`).
 
     host.py          the references, pure Python, on the AO layer
@@ -15,6 +15,8 @@ by Head-Gordon-Pople too): host references and the generated kernels
                      class on the Head-Gordon-Pople recurrence
     kernel_hgt.py    Target.T on Engine.HGP at d1: hgt_{la}{lb}, the
                      kinetic energy's gradient on kernel_hgp's route
+    kernel_ghv.py    Target.V on Engine.HGP at d1: ghv_{la}{lb}, the
+                     nuclear attraction's gradient on kernel_hgp's route
     kernel_ghk.py    Target.K on Engine.HGP at d1: ghk_{la}{lc}_{lb}{ld},
                      the exchange energy's bra derivative on the same
                      recurrence, kernel_hj's nest
@@ -55,5 +57,10 @@ D_ab D_cd (ac|bd)`, for a symmetric `D`: `dE_K = SUM D_ab D_cd d_bra
 
 NO TRANSLATIONAL INVARIANCE IS USED: the derivative on both centres of a
 pair (and on every nucleus, for `V`) is computed, so `SUM_A G[A] = 0` is a
-check (test/test_gradient_host.py), not an assumption.
+check (test/test_gradient_host.py), not an assumption. Two HGP one-electron
+kernels are the exceptions (`kernel_hgs` computes both centres), each
+against a host that differentiates every centre on its own: `kernel_hgt`
+adds `-dA` to `B`'s row (`T_ab` depends on `A - B` alone), and
+`kernel_ghv` takes a nucleus's row as `-(dA + dB)` of that nucleus's own
+tables (`(a|1/r_C|b)` depends on `A - C` and `B - C`).
 """

@@ -3814,6 +3814,55 @@ EDGES |= {k: frozenset(v) for k, v in {
 }.items()}
 
 
+# The nuclear-attraction gradient on the HGP engine (`gradient.kernel_ghv`,
+# `V` at d1 on `Engine.HGP`): `kernel_hgp`'s VRR, tables and HRR, nothing of
+# MMD's. Checked in the interpreter against `gradient.host` and PySCF, so
+# neither `ao`, the host references, the interpreter, a backend, a card,
+# MMD nor `reference/` may be its ancestor. The generator CLI composes it
+# (`--grad-hgp-l`).
+RULES |= {
+    "ghv_builder": _rule(
+        "kernel_ghv.py: the HGP V gradient kernel -- key -> IR, a VRR per "
+        "primitive pair per nucleus (`hgp.vrr` eq 25 at f = 0), three "
+        "contracted tables and their HRRs (`hgp.hrr` eq 28) through "
+        "`kernel_hgp`'s table builders",
+        ("spec", "=ir", "hgp", "=one_electron.kernel_hgp"),
+        ao=_GRAD_WITNESS, gradient=_GRAD_WITNESS,
+        mmd="McMurchie-Davidson is the other engine (#292); the weight rule "
+            "of `kernel_g1e` is restated, not imported",
+        plan="the plan layer is MMD machinery keyed on a [JEngine] row an "
+             "HGP class does not have",
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["gradient.kernel_ghv"] = "ghv_builder"
+EDGES["gradient.kernel_ghv"] = frozenset(
+    ("hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+     "one_electron.kernel_hgp", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the HGP V gradient "
+                       "ladder through `kernel_ghv`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_ghv",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_ghv",))
+
+
+def test_the_ghv_builder_reaches_neither_its_witnesses_nor_mmd() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_ghv"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert {"hgp.vrr", "hgp.hrr", "one_electron.kernel_hgp"} <= seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit", "plan", "mmd",
+                   "performance.device", "eri", "gradient.host"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_ghv reaches {hit}"
+
+
 # ---------------------------------------------------------------------------
 # The Coulomb and exchange energies' analytic nuclear Hessians by MMD
 # (`felizjueves.hessian`): the host reference on the AO layer and the

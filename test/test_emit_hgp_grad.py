@@ -4,8 +4,10 @@ each through nvcc (sm_86) and hipcc (gfx1200).
 
 THE LADDER. `python -m felizjueves.emit --hgp-grad-l [LMAX]` writes
 `hgt_{la}{lb}` (`kernel_hgt.build_hgt_kernel`, `Target.T` at d1 on
-`Engine.HGP`) and `hgs_{la}{lb}` (`kernel_hgs.build_hgs_kernel`, `S`; its
-goldens and compiles are test_emit_hgs.py's) for every `la <= lb <= LMAX`
+`Engine.HGP`), `hgs_{la}{lb}` (`kernel_hgs.build_hgs_kernel`, `S`; its
+goldens and compiles are test_emit_hgs.py's) and `ghv_{la}{lb}`
+(`kernel_ghv.build_ghv_kernel`, `V`; test_emit_ghv.py's) for every `la <=
+lb <= LMAX`
 -- 1 when the flag is bare. It
 accepts 0..3 ONLY (the kernels are checked through (ff), interpreted),
 exits 2 above that, is NEVER in the bare default and is not in
@@ -33,6 +35,7 @@ from test_emit_hgp_one_e import BACKEND, GOLDEN, _names, _no_tier_env, _run
 from tiers import by_l
 
 from felizjueves.emit import __main__ as emit_cli
+from felizjueves.gradient.kernel_ghv import ghv_name
 from felizjueves.gradient.kernel_hgs import hgs_name
 from felizjueves.gradient.kernel_hgt import build_hgt_kernel, hgt_name
 from felizjueves.ir import Raw, walk
@@ -70,7 +73,7 @@ def test_the_ladder_is_through_f() -> None:
     assert emit_cli.DEFAULT_HGP_GRAD_L == 1
     assert emit_cli.HGP_GRAD_L_MAX == 3
     assert [k.name for k in emit_cli.hgp_grad_kernels(1)] == [
-        n for c in CLASSES for n in (hgt_name(c), hgs_name(c))]
+        n for c in CLASSES for n in (hgt_name(c), hgs_name(c), ghv_name(c))]
     for bad in (-1, 4, 1.0, True):
         with pytest.raises(ValueError, match=r"outside 0\.\.3: .* through f"):
             emit_cli.hgp_grad_classes(bad)
@@ -119,7 +122,8 @@ def test_atomics_and_no_shared() -> None:
 def test_bare_writes_the_golden_units(backend, tmp_path) -> None:
     _, _, ext = BACKEND[backend]
     assert _run(tmp_path, backend, "--pair-l", "0", "--hgp-grad-l") == 0
-    units = [n for c in CLASSES for n in (hgt_name(c), hgs_name(c))]
+    units = [n for c in CLASSES
+             for n in (hgt_name(c), hgs_name(c), ghv_name(c))]
     assert _names(tmp_path) == {f"dq_0_0.{ext}", f"jab_00.{ext}"} | {
         f"{n}.{ext}" for n in units}
     for n in units:
@@ -129,12 +133,14 @@ def test_bare_writes_the_golden_units(backend, tmp_path) -> None:
 
 def test_it_adds_its_units_beside_the_ladder_flags(tmp_path) -> None:
     assert _run(tmp_path, "cuda", "--L", "0", "--hgp-grad-l", "0") == 0
-    assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "hgt_00.cu", "hgs_00.cu"}
+    assert _names(tmp_path) == {"pq_L0_p0_q0.cu", "hgt_00.cu", "hgs_00.cu",
+                                "ghv_00.cu"}
 
 
 def test_the_bare_default_writes_none(tmp_path) -> None:
     assert _run(tmp_path, "cuda", "--L", "0") == 0
-    assert not any(n.startswith((PREFIX, "hgs_")) for n in _names(tmp_path))
+    assert not any(n.startswith((PREFIX, "hgs_", "ghv_"))
+                   for n in _names(tmp_path))
 
 
 @pytest.mark.parametrize("argv", [
