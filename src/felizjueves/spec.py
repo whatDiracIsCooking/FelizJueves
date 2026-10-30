@@ -331,6 +331,19 @@ three centres (`hessian.kernel_d2eri3`), `am` the triple, so
 ``coulomb/d2/(0,1|2)/b1/eri3/literal`` differs from the d1 key in one
 segment.
 
+A JX CLASS IS A PAIR THAT EXISTS ONLY AS A DERIVATIVE (#688). `Target.JX`
+is the ip1 bra half of the Coulomb derivative matrix the RHF Hessian's
+CPHF right-hand side needs, `J1[k, m, n] = SUM_ls (d/dA_k m n|ls) D_ls`
+with `A` the centre of `m` -- the J chain's bra back-transform
+differentiated, as `JAB` at d1 is, but SCATTERED into `(m, n)` as `JAB` at
+d0 is, not reduced into `G[atom]` (`hessian.kernel_jx`). It is a different
+matrix from either, so a target and not a lever: its class is the bra pair
+`(la, lb)`, operator `COULOMB`, key ``coulomb/d1/(la,lb)/b1/jx/literal``,
+and it reads the same raised `J_p` as `JAB` at d1
+(`gradient.kernel_gjab.gjab_pq_spec`). Like `KX1` and `KXC` it exists at
+derivative order 1 ONLY (`D1_ONLY_TARGETS`). Unbatched for `JAB`'s
+structural reason; MMD only.
+
 HOW A SPEC MEETS THE [JEngine] TABLES, stated once so the next change honours
 it rather than choosing its own: for this engine the Hermite class is the
 total angular momentum, L = l1 + l2 + l3 + l4 (the [p|q] class has
@@ -443,6 +456,12 @@ class Target(StrEnum):
     # matrix index a (`kx1`, ip1) and on the contracted index c (`kxc`).
     KX1 = "kx1"
     KXC = "kxc"
+    # The ip1 bra half of the Coulomb derivative matrix,
+    # J1[k, m, n] = SUM_ls (d/dA_k m n|ls) D_ls with A the centre of m, a
+    # PAIR class (la, lb) at derivative order 1 ONLY: the J chain's bra
+    # back-transform differentiated and scattered into (m, n)
+    # (hessian.kernel_jx; module docstring "A JX CLASS").
+    JX = "jx"
 
 
 class Engine(StrEnum):
@@ -467,7 +486,7 @@ AM_LENGTH: dict[Target, int] = {
     Target.S: 2, Target.T: 2, Target.V: 2, Target.SCHWARZ: 2,
     Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3, Target.PAIR_BOUND: 2,
     Target.RECORD_BOUND: 2, Target.DIPOLE: 2, Target.QUADRUPOLE: 2,
-    Target.KX1: 4, Target.KXC: 4,
+    Target.KX1: 4, Target.KXC: 4, Target.JX: 2,
 }
 
 
@@ -485,6 +504,7 @@ OPERATOR_OF: dict[Target, Operator] = {
     Target.PAIR_BOUND: Operator.COULOMB, Target.RECORD_BOUND: Operator.COULOMB,
     Target.DIPOLE: Operator.DIPOLE, Target.QUADRUPOLE: Operator.QUADRUPOLE,
     Target.KX1: Operator.COULOMB, Target.KXC: Operator.COULOMB,
+    Target.JX: Operator.COULOMB,
 }
 
 
@@ -565,6 +585,7 @@ _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {
         "MMD form with a matrix scatter; an HGP instance is a follow-up "
         "nobody has declared"
     ) for t in (Target.KX1, Target.KXC)},
+    (Target.JX, Engine.HGP): _NO_HGP_PAIR,
     (Target.F, Engine.MMD): (
         "the fused F is built on HGP only ([Fock] §3.2); a fused MMD F is "
         "#326, not yet built"
@@ -583,6 +604,7 @@ _STRUCTURAL = (
 _PAIR_BATCH_REFUSAL: dict[Target, str] = {
     Target.DQ: _STRUCTURAL,
     Target.JAB: _STRUCTURAL,
+    Target.JX: _STRUCTURAL,
     Target.PAIR_BOUND: _STRUCTURAL,
     Target.RECORD_BOUND: _STRUCTURAL,
     Target.S: _STRUCTURAL,
@@ -648,21 +670,27 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # differentiated on each ket centre, which the Coulomb Hessian's bra-ket
 # term reads (`hessian.kernel_hdq`); and `F`, the fused Fock build's
 # two-electron energy, `dE_J - 1/2 dE_K` in one kernel per class
-# (`gradient.kernel_gf`). Each on its native engine (MMD; HGP for `F`),
+# (`gradient.kernel_gf`); and `JX`, the matrix form of `JAB`'s bra
+# derivative, `J1[k, m, n]` (`hessian.kernel_jx`, d1 only). Each on its
+# native engine (MMD; HGP for `F`),
 # and `J`, `K`, `T`, `S`, `V`, `ERI3` and `METRIC` on HGP too
 # (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
-                              Target.DQ, Target.F, Target.KX1, Target.KXC))
+                              Target.DQ, Target.F, Target.KX1, Target.KXC,
+                              Target.JX))
 
-# The targets that exist at d1 ONLY (#689): a derivative matrix, whose d0
-# is `Target.K` itself and whose d2 nothing asks for.
-D1_ONLY_TARGETS = frozenset((Target.KX1, Target.KXC))
+# The targets that exist at d1 ONLY: a derivative matrix, whose d0 is the
+# matrix itself and whose d2 nothing asks for -- the exchange derivative
+# matrices (#689, d0 `Target.K`) and the Coulomb one's ip1 bra half (#688,
+# d0 `Target.JAB`'s matrix).
+D1_ONLY_TARGETS = frozenset((Target.KX1, Target.KXC, Target.JX))
 
 _D1_ONLY_REFUSAL = (
-    "an exchange derivative matrix (kx1, kxc; hessian.kernel_kx) exists at "
-    "derivative order 1 only: at d0 it is Target.K itself, and no second "
-    "derivative of it is asked for"
+    "a derivative matrix (kx1, kxc: hessian.kernel_kx; jx: "
+    "hessian.kernel_jx) exists at derivative order 1 only: at d0 it is "
+    "Target.K / Target.JAB's matrix itself, and no second derivative of it "
+    "is asked for"
 )
 
 # The (target, engine) pairs off the native engine whose first derivative is
@@ -685,7 +713,7 @@ GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.METRIC, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
-    "a first derivative is built for S, T, V, JAB, K, KX1, KXC, METRIC, "
+    "a first derivative is built for S, T, V, JAB, JX, K, KX1, KXC, METRIC, "
     "ERI3 and DQ on "
     "the MMD engine, and for F, J, K, T, S, V, ERI3 and METRIC on the HGP engine "
     "(felizjueves.gradient, "

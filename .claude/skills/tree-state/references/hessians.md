@@ -247,3 +247,44 @@ Ladder `--ip-one-e-l [LMAX]` (2 bare, 0..3), never in the bare default nor in
 unit through (ff) under the cap. Device test `test_ip1e_device.py`
 (generator `test/ip1e_driver.py`, the shared runner) written, its runners
 compiled by both vendors, **not run on a card**. Nothing measured.
+**The Coulomb derivative matrix `J^X` too, the two-electron Coulomb part
+of the CPHF right-hand side's `F^x`, its bra kernel interpreted and
+compiled through (ff), not on a card** (#688; `hessian.md`, "The Coulomb
+derivative matrix"): `J^X_mn = SUM_ls D_ls d(mn|ls)/dR_{X,k}` as an AO
+matrix per atom and axis, split into a bra half and a ket half. A new
+target, `Target.JX` (in `spec.D1_ONLY_TARGETS` beside `KX1` / `KXC`: d0
+and d2 refused with the reason), key `coulomb/d1/(la,lb)/b1/jx/literal`.
+`hessian/kernel_jx.py` (`jx_{la}{lb}`, the prefix colliding with no other
+ladder's) writes the ip1 bra half `J1[k, m, n] = SUM_ls (dA_k m n|ls) D_ls`
+for all atoms in one launch per ordered bra class: `gjab`'s chain (`DQ`,
+the raised `[p|q]` at `gjab_pq_spec`) up to its last step, then per block
+row `s SUM_t (dA_k E^{ab})_t J_t` scattered into `(m, n)` and the `dB`
+term into `(n, m)` (no mirror; a diagonal shell pair writes the `A` term
+alone), ONE ROLLED form (`kernel_g1e.lowstack_derivative` with the record
+scalar for weight; an unrolled form is unmeasured and not built), no `M`,
+no atoms, `J1[3, n_ao, n_ao]` the OUT. The caller takes atom `X`'s rows
+plus their transpose. The ket half has no kernel: `hdq`'s `D1` slabs
+gathered per (atom, axis), the d0 `[p|q]` of `(la, lb | lc + ld + 1, 0)`
+and the d0 `jab`. Host reference `hessian/host_jx.py` (`coulomb_ip1`, with
+an `absolute=True` twin, and `coulomb_derivative_matrix`, `parts=` either
+half), held to PySCF through four numeric goldens (`oracle.numeric`,
+`jx1_*` = `grad.rhf.get_jk`'s `vj`, `jx_*` = `hessian.rhf`'s `h1ao`
+Coulomb part by its own `_get_jk` scripts, each cross-checked against the
+full `int2e_ip1_cart` tensor before it is written; H₂O over STO-3G and
+cc-pVDZ): on STO-3G `J1` 1.37e-15 and `J^X` 4.32e-15 of max, on cc-pVDZ
+`J1` alone (`slow`; the whole `J^X` there is hours of pure-Python ket
+half, not held by any test), `SUM_X J^X = 0` on both goldens and the
+host; interpreted, `jx` against the host for every ordered class through
+(ff), worst 0.73 eps of the absolute twin (gate 16), and the whole chain
+(`[p|q]` -> `jx`, `hdq` -> gather -> `[p|q]` -> `jab`) against the host on
+an s, p pair (`J^X` 1.8 eps of max) and against PySCF on H₂O/STO-3G
+(`slow`; 4.32e-15) (`test_kernel_jx.py`, L + 1 > 4 `slow`). Ladder `--jx-l [LMAX]` (2 bare, 0..3), never in the bare default
+nor in `KERNEL_GEN_CMD`; 4 goldens per backend (`test_emit_jx.py`), and
+**all 32 units through (ff) compiled by nvcc 13.0 (sm_86) and hipcc
+(gfx1200) with no warning in generated text** (a cloud container, no
+card, 2026-10-30). Device test `test_jx_device.py` (per class through (dd)
+against the host; whole `J1` of H₂O STO-3G / cc-pVDZ against PySCF and
+STO-3G's `J^X` with the host ket half, on `hess_driver`)
+written, **not run on either card**. With `K^X` (`kx1`/`kxc`, above) both
+two-electron parts of `F^x` exist; no one-electron half (#687), so no
+assembled `F^x`, no CPHF solve, nothing measured.

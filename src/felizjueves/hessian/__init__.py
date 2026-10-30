@@ -30,6 +30,13 @@ references and as generated kernels (`Spec.derivative_order = 2`).
                      (`M = D` for T and V, `W` for S; V's operator moves
                      with its nucleus: centre-nucleus and nucleus-nucleus
                      terms by `d/dC_k [t]^(0) = -[t + 1_k]^(0)`)
+    host_jx.py       the Coulomb derivative matrix J^X (#688) and its ip1
+                     bra half J1, pure Python: the CPHF right-hand side's
+                     two-electron Coulomb part, an AO matrix per (atom, axis)
+    kernel_jx.py     Target.JX at d1: jx_{la}{lb}, J1[k, m, n] = SUM_ls
+                     (dA_k m n|ls) D_ls -- the J chain's bra back-transform
+                     differentiated and scattered into (m, n); the ket half
+                     is hdq_ + the d0 [p|q] + jab_, no kernel of its own
     host_eri3.py     the three-center DF reference, pure Python
     kernel_d2eri3.py Target.ERI3 at d2: d2eri3_{la}{lb}{lP},
                      H[X, k, Y, l] += SUM_mnP Gam_mnP d2(mn|P) / dR dR

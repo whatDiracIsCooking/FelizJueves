@@ -139,17 +139,18 @@ def test_the_target_enum_is_widened_not_renamed() -> None:
     # `pair_bound`, a pair class, and #499 K's dressed `record_bound`, an
     # ordered pair class, and #518 the dipole matrix `dipole`, a pair class,
     # and the quadrupole matrix `quadrupole`, a pair class, and #689 the
-    # exchange derivative matrices `kx1` and `kxc`, quartets at d1 only.
+    # exchange derivative matrices `kx1` and `kxc`, quartets at d1 only,
+    # and #688 the Coulomb one's ip1 bra half `jx`, a pair at d1 only.
     assert [t.value for t in Target] == [
         "j", "dq", "jab", "k", "s", "t", "v", "f", "schwarz", "sx", "metric",
         "eri3", "pair_bound", "record_bound", "dipole", "quadrupole", "kx1",
-        "kxc"]
+        "kxc", "jx"]
     assert AM_LENGTH == {
         Target.J: 4, Target.DQ: 2, Target.JAB: 2, Target.K: 4,
         Target.S: 2, Target.T: 2, Target.V: 2, Target.F: 4,
         Target.SCHWARZ: 2, Target.SX: 2, Target.METRIC: 2, Target.ERI3: 3,
         Target.PAIR_BOUND: 2, Target.RECORD_BOUND: 2, Target.DIPOLE: 2,
-        Target.QUADRUPOLE: 2, Target.KX1: 4, Target.KXC: 4,
+        Target.QUADRUPOLE: 2, Target.KX1: 4, Target.KXC: 4, Target.JX: 2,
     }
 
 
@@ -257,6 +258,7 @@ def test_operator_of_pins_each_target_to_one_operator() -> None:
         Target.DIPOLE: Operator.DIPOLE,
         Target.QUADRUPOLE: Operator.QUADRUPOLE,
         Target.KX1: Operator.COULOMB, Target.KXC: Operator.COULOMB,
+        Target.JX: Operator.COULOMB,
     }
     assert set(OPERATOR_OF) == set(Target) == set(AM_LENGTH)
 
@@ -835,3 +837,22 @@ def test_the_docstring_says_the_order_is_not_in_the_key() -> None:
     assert "A DIPOLE CLASS IS A ONE-ELECTRON PAIR" in doc
     assert "IS A BUILDER ARGUMENT, NOT A KEY FIELD" in doc
     assert "§9.5 (docs/references.md entry" in doc
+
+
+def test_jx_is_a_pair_at_order_one_only() -> None:
+    # #688: the ip1 bra half of the Coulomb derivative matrix, J1[k, m, n]
+    # (hessian.kernel_jx). Order 1 is its only order -- d0 is JAB's matrix
+    # -- and its key differs from JAB's d1 key in the target slot alone.
+    jx = Spec(Operator.COULOMB, 1, (2, 1), Target.JX)
+    assert jx.key() == "coulomb/d1/(2,1)/b1/jx/literal"
+    assert jx.key() == Spec(Operator.COULOMB, 1, (2, 1),
+                            Target.JAB).key().replace("/jab/", "/jx/")
+    assert Target.JX in GRADIENT_TARGETS and Target.JX in D1_ONLY_TARGETS
+    for order in (0, 2):
+        with pytest.raises(ValueError, match=f"derivative order {order} on "
+                                             "target jx: a derivative matrix"):
+            Spec(Operator.COULOMB, order, (2, 1), Target.JX)
+    with pytest.raises(ValueError, match="engine hgp on target jx"):
+        Spec(Operator.COULOMB, 1, (2, 1), Target.JX, engine=Engine.HGP)
+    with pytest.raises(ValueError, match="never batched"):
+        Spec(Operator.COULOMB, 1, (2, 1), Target.JX, n_batches=3)

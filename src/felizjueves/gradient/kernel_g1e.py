@@ -293,12 +293,14 @@ def derivative_reader(E: Axis, pool: Locals, side: str) -> Axis:
     return read
 
 
-def record_head(la_t: int, lb_t: int, *, interleaved: bool = False
-                ) -> list[Stmt]:
+def record_head(la_t: int, lb_t: int, *, interleaved: bool = False,
+                atoms: bool = True) -> list[Stmt]:
     """Record `rec`'s scalars (`zeta`, `half_inv_zeta`, `sk`, `ea2`,
     `eb2`, `oa`, `ob`, `aa`, `ab`) and the axis tables at `(la_t, lb_t)`,
     inlined. `interleaved` reads `XPA[rec, d]` / `XPB[rec, d]` and `s`
-    (the J chain's spelling) instead of `pa_x ...` and `s_ab`."""
+    (the J chain's spelling) instead of `pa_x ...` and `s_ab`. `atoms=False`
+    leaves out `aa` / `ab`, for a kernel that reads no atom
+    (`hessian.kernel_jx`)."""
     rec = Var(REC)
     frag = ef.axis_tables_fragment(la_t, lb_t)
     n = ef.axis_table_extent(la_t, lb_t)
@@ -325,8 +327,9 @@ def record_head(la_t: int, lb_t: int, *, interleaved: bool = False
              init=_mul(Lit(2.0), Index("eb_ket", (rec,)))),
         Decl("oa", Scalar.I32, init=Index("off_a", (rec,))),
         Decl("ob", Scalar.I32, init=Index("off_b", (rec,))),
-        Decl("aa", Scalar.I32, init=Index("atom_a", (rec,))),
-        Decl("ab", Scalar.I32, init=Index("atom_b", (rec,))),
+        *((Decl("aa", Scalar.I32, init=Index("atom_a", (rec,))),
+           Decl("ab", Scalar.I32, init=Index("atom_b", (rec,))))
+          if atoms else ()),
         Note(f"the undressed per-axis E^{{ij}}_t, i <= {la_t}, j <= {lb_t}: "
              "one index above the class on each side, for the derivative "
              "rule"),
