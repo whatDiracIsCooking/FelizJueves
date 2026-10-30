@@ -6,7 +6,9 @@ held to PySCF interpreted only (#565)** (the RTX 3080 and the RX 9060 XT,
 against the host, kernel classes at L <= 4 only, except the DF terms,
 through (ff|i) and (i|i) since #613, `gs`, `gt`, `gv` through (ff)
 since #614, `gk` through `(ff|ff)` since #618 and the whole `gjab` chain
-(`DQ`, raised `[p|q]`, `gjab`) through (ff) since #619; which inputs, per kernel, in the tables below). This is
+(`DQ`, raised `[p|q]`, `gjab`) through (ff) since #619; which inputs, per kernel, in the tables below).
+The Coulomb gradient on the HGP recurrence (`ghj_`, "The Coulomb gradient
+on the HGP recurrence") is generated and interpreted only. This is
 the derived note for the first `derivative_order = 1` keys: the contracted
 nuclear gradients of the overlap, the kinetic energy, the nuclear
 attraction (its Hellmann–Feynman term included), the Coulomb energy
@@ -34,7 +36,9 @@ widening it would not retrofit every consumer. It is now `(0, 1, 2)`
 `ERI3`, each on its native engine, MMD (the last two: "The density-fitting
 gradients", below), and `DQ`, which only the Hessian reads (`hessian.md`).
 Every other target, and HGP, refuses it with
-`_GRADIENT_REFUSAL`. A gradient class is its integral's class, `am` the
+`_GRADIENT_REFUSAL` -- except one off-native pair,
+`spec.GRADIENT_OFF_NATIVE`: `J` on HGP ("The Coulomb gradient on the HGP
+recurrence", below), key `coulomb/d1/(la,lb|lc,ld)/b1/j.hgp/literal`. A gradient class is its integral's class, `am` the
 same pair `(la, lb)`, so `overlap/d1/(2,1)/b1/s/literal` and
 `overlap/d0/(2,1)/b1/s/literal` differ in the `d` segment alone and every
 d0 key is byte-identical. Unbatched, for each target's d0 reason. `K` at
@@ -547,8 +551,70 @@ libcint witness is Cartesian `_cart` integrals, not the spherical
 `int3c2e_ip1` / `int2c2e_ip1` #613 named: the kernels are Cartesian and
 the spherical transform is the consumer's, as #615 decided for d0).
 
+## The Coulomb gradient on the HGP recurrence (`gradient/kernel_ghj.py`)
+
+**Status: generated and interpreted only -- not emitted by any ladder, not
+compiled by nvcc or hipcc, not run on a card, not measured.** A second
+route to `dE_J/dR`, on the Head-Gordon–Pople engine of `hgp_fock.md`
+instead of the MMD J chain: `Spec(COULOMB, 1, (la, lb, lc, ld), Target.J,
+engine=Engine.HGP)`, the d0 HGP `J` key with `d1` in its `d` segment, one
+unit per ORDERED class, `ghj_{la}{lb}{lc}{ld}`.
+
+What it computes is the MMD gradient's split, reached through the other
+recurrence: `dE_J/dR = SUM D_ab D_cd (d/dA + d/dB)(ab|cd)` over every
+ordered quartet, the bra derivative alone (the ket's equals it), the bra
+derivative on `a`'s and `b`'s atoms, no half and no factor 2. Per
+contracted quartet the Cartesian rule gives
+
+    d/dA_k (ab|cd) = 2 alpha (a+1_k, b|cd) - a_k (a-1_k, b|cd)
+    d/dB_k (ab|cd) = 2 beta  (a, b+1_k|cd) - b_k (a, b-1_k|cd)
+
+and the one design point is where `2 alpha` / `2 beta` go. They belong to
+the primitive pair, and the HRR (eq 28) runs on contracted values -- but
+eq 28 is linear with geometry-only coefficients, so it holds for any
+per-primitive weighting of its boundary. So ONE VRR (the closure of the
+union of the boundaries, `|e|` from `la - 1` to `la + lb + 1`, on the
+fundamental one Boys order up) feeds THREE contractions in the
+`K_AB x K_CD` nest -- `C` plain, `CA` weighted `2 alpha`, `CB` weighted
+`2 beta` -- and up to FOUR HRRs after it: `(la+1, lb)` on `CA`,
+`(la, lb+1)` on `CB`, `(la-1, lb)` and `(la, lb-1)` on `C` (each absent
+when its `l` is 0). The deposit forms `gA_k`, `gB_k` from `D_ab D_cd`
+read where the ordered quartet puts them and adds six values to `G` by
+atomic add.
+
+Everything else is `kernel_hj`'s: one block per bra shell pair, one
+thread per contracted quartet, `|ab)` staged in shared memory (plus its
+`(alpha, beta)` per primitive pair, `bra_exp`), bra primitives outer, the
+quartet scalars in `eri/hgp_drive.py`'s order, `kernel_f`'s record. Two
+departures, each for a stated reason: no canonical mode (a bra derivative
+breaks the 8-fold orbit a canonical kernel shares, so every ordered class
+is its own unit and the key takes no lever), and no screen
+(`G_ab G_cd max|D_cd|` bounds an ERI, not a derivative ERI; `gk` takes the
+same position).
+
+Host side, `gradient/interpreted.py`: `ghj_class_gradient` packs one
+ordered class's every ordered bra and ket shell pair
+(`walk_hjk.pair_record`, `kernel_f.pack`, one launch per pair of
+contraction degrees) and `ghj_gradient` sums every class;
+`interpreted_runners(coulomb="hgp")` puts it in `rhf.py`'s Coulomb slot in
+place of the J chain.
+
+| what | held to | result |
+|---|---|---|
+| every ordered class with each `l <= 2`, summed per unordered group `{la, lb} x {lc, ld}` (36 groups, 81 classes; three atoms, a two-primitive s), interpreted (`test_kernel_ghj.py`; raised `L + 1 > 4` `slow`) | `host.coulomb_gradient` restricted to the group's bra pairs and kets, `1e-12` of the per-shell absolute scale (`test_hgp_eri.py`'s cross-engine bound) | RESULT_GROUPS |
+| the whole `dE_J` of test_gradient_host.py's s, p pair (`slow`) | the host, `1e-12` of `max\|G\|`; zero net force | RESULT_PAIR |
+| the Coulomb term of H₂O/STO-3G, H₂O/STO-3G plus a d primitive, H₂O/6-31G (`slow`) | PySCF's `grad:j` (#550's fixtures), `1e-10` absolute | RESULT_PYSCF |
+
+Not done: no `--grad-*` emit ladder writes a `ghj_` unit and no golden
+holds its text, so nvcc and hipcc have never seen it; no card; no
+register, stack or clock measurement; nothing above `(dd|dd)` is
+exercised (the builder takes any class); the device assembly of the RHF
+gradient (#566) does not use it.
+
 ## What is not done
 
+- The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
+  emitted, not compiled, not on a card.
 - On a card, nothing above L = 4 has run but the DF terms (through
   (ff|i) and (i|i), #613) and the one-electron `gs`, `gt`, `gv` (through
   (ff), #614), `gk` (through `(ff|ff)` on CO/cc-pVTZ, #618) and the

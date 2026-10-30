@@ -3681,7 +3681,8 @@ RULES |= {
                    "kernels it checks are built on",
            "gradient.kernel_g1e": "the kernel is what this module checks",
            "gradient.kernel_gjab": "the kernel is what this module checks",
-           "gradient.kernel_gk": "the kernel is what this module checks"}),
+           "gradient.kernel_gk": "the kernel is what this module checks",
+           "gradient.kernel_ghj": "the kernel is what this module checks"}),
     "g1e_builder": _rule(
         "kernel_g1e.py: the S, T and V gradient kernels -- key -> IR, the "
         "per-axis `E` tables inlined (`e_fragment`), `V`'s `[t]^(0)` by the "
@@ -3707,10 +3708,20 @@ RULES |= {
          "eri.k_exchange.levers.seams", "gradient.kernel_g1e"),
         ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
+    "ghj_builder": _rule(
+        "kernel_ghj.py: the Coulomb-energy gradient on the HGP recurrence "
+        "-- key -> IR, one VRR into three contractions and up to four HRRs "
+        "(`hgp.recurrence` over `hgp.vrr` / `hgp.hrr`), `kernel_hj`'s nest "
+        "pieces and `kernel_f`'s staged record reused",
+        ("spec", "=ir", "hgp", "eri.fock.kernel_f", "eri.hjk.kernel_hj"),
+        plan=RULES["hgp"].must_not["plan"],
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
 }
 RULE_OF |= {
     "gradient": "gradient_package",
     "gradient.host": "gradient_host",
+    "gradient.kernel_ghj": "ghj_builder",
     "gradient.kernel_g1e": "g1e_builder",
     "gradient.kernel_gjab": "gjab_builder",
     "gradient.kernel_gk": "gk_builder",
@@ -3723,6 +3734,9 @@ EDGES |= {k: frozenset(v) for k, v in {
                             "one_electron.kernel_v", "plan.targets", "spec"),
     "gradient.kernel_gjab": ("gradient.kernel_g1e", "ir", "plan.targets",
                              "spec"),
+    "gradient.kernel_ghj": ("eri.fock.kernel_f", "eri.hjk.kernel_hj",
+                            "hgp.hrr", "hgp.recurrence", "hgp.vrr", "ir",
+                            "spec"),
     "gradient.kernel_gk": ("eri.k_exchange.kernel_k",
                            "eri.k_exchange.levers.seams",
                            "gradient.kernel_g1e", "ir", "mmd.e_fragment",
@@ -3757,10 +3771,12 @@ RULES |= {
     "grad_interpreted": _rule(
         "gradient/interpreted.py: the d1 kernels as `gradient.rhf` runners, "
         "run in `ir.interp` -- the builders, `gradient.host`'s records and "
-        "kets, the J chain's interpreted `[p|q]` (`eri.j_coulomb.drive`); "
-        "Boys injected",
+        "kets, the J chain's interpreted `[p|q]` (`eri.j_coulomb.drive`), "
+        "the HGP J gradient's packed records (`eri.hjk.walk_hjk`, "
+        "`eri.fock.kernel_f`); Boys injected",
         ("ao.shell", "spec", "ir", "mmd.hermite", "one_electron.potential",
-         "eri.j_coulomb.drive", "gradient"),
+         "eri.j_coulomb.drive", "eri.hjk.walk_hjk", "eri.fock.kernel_f",
+         "gradient"),
         reference=_GROUND_TRUTH,
         emit="interpreted, never emitted: no card, no compiler",
         **{"performance.device": "no card is reached"}),
@@ -3772,8 +3788,10 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "gradient.rhf": ("ao.pairs", "ao.shell", "gradient.host",
                      "one_electron.potential"),
-    "gradient.interpreted": ("ao.shell", "eri.j_coulomb.drive",
+    "gradient.interpreted": ("ao.shell", "eri.fock.kernel_f",
+                             "eri.hjk.walk_hjk", "eri.j_coulomb.drive",
                              "gradient.host", "gradient.kernel_g1e",
+                             "gradient.kernel_ghj",
                              "gradient.kernel_gjab", "gradient.kernel_gk",
                              "gradient.rhf", "ir", "ir.interp",
                              "mmd.hermite", "one_electron.potential", "spec"),
