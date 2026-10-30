@@ -21,6 +21,9 @@ CASES = [
             cards={"rtx3080": range(3)}),
     *ladder("hgp", "eri3", 0, compile=range(4), gpu=range(4),
             cards={"rtx3080": range(4)}),
+    # The Rys metric through (g|h): interpreted, compiled by nvcc and hipcc,
+    # never run on a card.
+    *ladder("rys", "metric", 0, compile=range(10)),
 ]
 
 # Schwarz's L is 2 (la + lb) (tiers.py): through la + lb = 2.
@@ -31,13 +34,14 @@ _HGP_ERI3 = span("hgp", "eri3", 0, range(4))
 
 # The paths whose change touches this family (sample.py's change weighting):
 # its source, its drivers; its test files come from TESTS. The HGP twins
-# make the HGP engine one of its paths.
+# make the HGP engine one of its paths, and the Rys metric the Rys engine.
 PATHS = (
     "src/felizjueves/eri/density_fit/",
     "src/felizjueves/eri/schwarz.py",
     "src/felizjueves/eri/kernel_schwarz.py",
     "src/felizjueves/one_electron/kernel_sx.py",
     "src/felizjueves/hgp/",
+    "src/felizjueves/rys/",
     "test/eri3_driver.py",
     "test/metric_driver.py",
     "test/schwarz_driver.py",
@@ -84,4 +88,7 @@ TESTS = {
         ById({"synthetic": _HGP_ERI3, "fixture": Allow(PROGRAM)}),
     "test/test_hgp_df_device.py::test_X_hgp_df_programs_compile":
         ById({"synthetic": _HGP_METRIC + _HGP_ERI3, "fixture": Allow(PROGRAM)}),
+    # The Rys metric.
+    "test/test_emit_rmetric.py::test_X_compiles_the_rmetric_unit":
+        Classes("rys", "metric"),
 }

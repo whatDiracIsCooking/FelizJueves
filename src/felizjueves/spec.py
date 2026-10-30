@@ -97,7 +97,9 @@ HRR and `kernel_f`'s digestion, keyed ``.../f.rys/...``), on `J`
 ``.../j.rys/...``), on `K` (`eri/hjk/kernel_rk.py`: the same VRR in
 `kernel_hk`'s split nest, keyed ``.../k.rys/...``, K's Hermite pairing) and
 on the one-electron `S`, `T` and `V`
-(`one_electron/kernel_rys.py`, keyed ``.../s.rys/...``). Every other
+(`one_electron/kernel_rys.py`, keyed ``.../s.rys/...``) and on the DF
+metric `METRIC` (`eri/density_fit/kernel_rmetric.py`, keyed
+``.../metric.rys/...``, through (g|g)). Every other
 non-native pairing is refused with its reason (`_ENGINE_REFUSAL`), MMD `F`
 among them until #326.
 
@@ -441,7 +443,8 @@ NATIVE_ENGINE: dict[Target, Engine] = {
 # off-native: HGP `J` and HGP `K` (milestone 14 builds them), HGP `S`, `T`,
 # `V` and `DIPOLE` (`one_electron.kernel_hgp`), and HGP `METRIC` and `ERI3`
 # (`eri/density_fit/kernel_hgp.py`); Rys `F` (`eri/fock/kernel_frys.py`) and
-# Rys `S`, `T` and `V` (`one_electron.kernel_rys`).
+# Rys `S`, `T` and `V` (`one_electron.kernel_rys`) and Rys `METRIC`
+# (`eri/density_fit/kernel_rmetric.py`).
 _NO_HGP_PAIR = (
     "the HGP engine is a quartet ERI recurrence (VRR/HRR, [Fock] §3.1); "
     "this pair kernel runs no ERI recurrence at all, so there is nothing "
@@ -471,13 +474,15 @@ def _mmd_only(what: str) -> str:
 
 _NO_RYS = (
     "the Rys engine is built for the fused F (eri/fock/kernel_frys.py), "
-    "the split J and K (eri/hjk/kernel_rj.py, kernel_rk.py) and the "
-    "one-electron S, T and V (one_electron/kernel_rys.py) only: its VRR "
-    "feeds the HGP HRR of kernel_f / kernel_hj / kernel_hk / kernel_hgp; "
+    "the split J and K (eri/hjk/kernel_rj.py, kernel_rk.py), the "
+    "one-electron S, T and V (one_electron/kernel_rys.py) and the DF metric "
+    "(eri/density_fit/kernel_rmetric.py) only: its VRR feeds the HGP HRR of "
+    "kernel_f / kernel_hj / kernel_hk / kernel_hgp; "
     "a Rys instance of this target is a "
     "follow-up nobody has declared"
 )
-_RYS_TARGETS = (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V)
+_RYS_TARGETS = (Target.F, Target.J, Target.K, Target.S, Target.T, Target.V,
+                Target.METRIC)
 
 
 _ENGINE_REFUSAL: dict[tuple[Target, Engine], str] = {

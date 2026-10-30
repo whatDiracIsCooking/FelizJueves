@@ -80,12 +80,13 @@ TARGET_SLOTS: tuple[str, ...] = ("j", "dq", "jab", "k", "s", "t", "v", "f",
 # of `eri.density_fit.kernel_hgp`; and the fused F and the split J and K on
 # Rys quadrature, `eri.fock.kernel_frys`, `eri.hjk.kernel_rj` and
 # `eri.hjk.kernel_rk`, and the Rys
-# one-electron S, T and V of `one_electron.kernel_rys`; a test pins this to
+# one-electron S, T and V of `one_electron.kernel_rys`, and the Rys metric
+# of `eri.density_fit.kernel_rmetric`; a test pins this to
 # `spec`).
 ENGINE_SLOTS: tuple[str, ...] = ("j.hgp", "k.hgp", "s.hgp", "t.hgp", "v.hgp",
                                  "dipole.hgp", "metric.hgp", "eri3.hgp",
                                  "f.rys", "j.rys", "k.rys", "s.rys", "t.rys",
-                                 "v.rys")
+                                 "v.rys", "metric.rys")
 
 # Every slot a legality table covers: each target's native slot, then the
 # engine slots.
@@ -204,6 +205,12 @@ DEFAULT_REFUSALS: Mapping[str, str] = MappingProxyType({
         "the HGP three-center (mn|P) has no option surface: it is the VRR "
         "and bra HRR of (la lb|lP 0) with an exponent-0 partner, one batch, "
         "and an HGP three-center lever is a follow-up nobody has declared"
+    ),
+    "metric.rys": (
+        "the Rys metric (P|Q) (eri.density_fit.kernel_rmetric) has no "
+        "option surface: kernel_hgp's metric skeleton with the Rys rule and "
+        "2D VRR per record pair, one batch, and a lever on it is a follow-up "
+        "nobody has declared"
     ),
     "f.rys": (
         "the fused F on Rys quadrature (eri.fock.kernel_frys) has no option "

@@ -15,7 +15,9 @@ which classes ran (`Run.ran`).
 
 `engine=Engine.HGP` runs `kernel_hgp.build_hmetric_kernel` instead (the HGP
 twin, `docs/implementation/hgp_df.md`): the same parameters, launch and
-output, so nothing else here changes.
+output, so nothing else here changes. `engine=Engine.RYS` runs
+`kernel_rmetric.build_rmetric_kernel` (the Rys twin, the same again), and
+then the Rys rule is injected too (`rys=`, the interpreter's own hook).
 
 BOYS IS INJECTED (`boys=`), as the interpreter requires; nothing here imports
 `reference/`. Kernels are memoised per class (building is pure); results are
@@ -39,23 +41,28 @@ from felizjueves.eri.density_fit.kernel_metric import (
     build_metric_kernel,
     launch_shape,
 )
+from felizjueves.eri.density_fit.kernel_rmetric import build_rmetric_kernel
 from felizjueves.eri.density_fit.metric import MetricClass, metric_classes
 from felizjueves.ir import Kernel
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.spec import Engine
 
 Boys = Callable[[int, float], float]
+RysRule = Callable[[int, float], tuple[tuple[float, ...], tuple[float, ...]]]
 
 
 @cache
 def metric_kernel(lP: int, lQ: int, engine: Engine = Engine.MMD,
                   lowstack: bool | None = None) -> Kernel:
     """`build_metric_kernel((lP, lQ))`, or on `Engine.HGP`
-    `kernel_hgp.build_hmetric_kernel((lP, lQ))` (the same parameters, launch and
-    output), built once. `lowstack` forces the MMD kernel's form (None:
+    `kernel_hgp.build_hmetric_kernel((lP, lQ))`, on `Engine.RYS`
+    `kernel_rmetric.build_rmetric_kernel((lP, lQ))` (the same parameters,
+    launch and output), built once. `lowstack` forces the MMD kernel's form (None:
     the builder's default)."""
     if engine is Engine.HGP:
         return build_hmetric_kernel((lP, lQ))
+    if engine is Engine.RYS:
+        return build_rmetric_kernel((lP, lQ))
     if engine is not Engine.MMD:
         raise ValueError(f"engine {engine!r} is not an Engine")
     return build_metric_kernel((lP, lQ), lowstack=lowstack)
@@ -69,13 +76,16 @@ def _arrays(cls: MetricClass) -> dict[str, np.ndarray]:
 
 def launch_class(cls: MetricClass, M: np.ndarray, *, boys: Boys,
                  threads: int = 32, engine: Engine = Engine.MMD,
-                 lowstack: bool | None = None) -> np.ndarray:
+                 lowstack: bool | None = None,
+                 rys: RysRule | None = None) -> np.ndarray:
     """One interpreted launch of `cls`'s kernel over every staged pair,
-    writing into (a copy of) `M`, which is returned."""
+    writing into (a copy of) `M`, which is returned. `rys` is the Rys rule
+    `(n, T) -> (nodes, weights)`, which `Engine.RYS` needs."""
     n = M.shape[0]
     grid, block = launch_shape(cls.n_pair, threads)
     return Interpreter(metric_kernel(cls.lP, cls.lQ, engine, lowstack),
-                       launch=Launch(grid, block, 1), boys=boys).run(
+                       launch=Launch(grid, block, 1), boys=boys,
+                       rys=rys).run(
         n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=n, **{OUT: M},
         **_arrays(cls))[OUT]
 
@@ -91,7 +101,8 @@ class Run:
 def metric_matrix_kernel(aux: Basis, *, boys: Boys,
                          classes: Iterable[tuple[int, int]] | None = None,
                          threads: int = 32, engine: Engine = Engine.MMD,
-                         lowstack: bool | None = None) -> Run:
+                         lowstack: bool | None = None,
+                         rys: RysRule | None = None) -> Run:
     """`(P|Q)` over `aux` from the interpreted kernels of `classes` (every
     class of `aux` when None); the elements of any other class are 0.0."""
     want = None if classes is None else set(classes)
@@ -100,6 +111,6 @@ def metric_matrix_kernel(aux: Basis, *, boys: Boys,
     for cls in metric_classes(aux):
         if want is None or (cls.lP, cls.lQ) in want:
             M = launch_class(cls, M, boys=boys, threads=threads,
-                             engine=engine, lowstack=lowstack)
+                             engine=engine, lowstack=lowstack, rys=rys)
             ran.append((cls.lP, cls.lQ))
     return Run(M, tuple(ran))

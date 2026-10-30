@@ -22,6 +22,11 @@ and what is not done.
   `0..HGP_DF_L_MAX = 1` is accepted (bare: 1); above is exit 2. Both add
   units beside the J ladders. Neither is in the bare default or in
   `KERNEL_GEN_CMD`.
+- **The metric's skeleton is a seam:** `kernel_hgp.metric_kernel` (thread
+  mapping, accumulators, record loops, scatter, parameters) is what
+  `build_hmetric_kernel` fills with the HGP VRR and the Rys metric
+  (`kernel_rmetric`, `rys_fock.md`, "The DF metric on Rys") fills with the
+  Rys rule; every `hmetric_` golden is byte-identical to before the seam.
 - **Correctness is tested for s and p shells only:** (s|s), (s|p), (p|p) and
   the six `(mn|P)` classes `la ≤ lb ≤ 1`, `lP ≤ 1`. The builders accept any
   class the DAGs accept.
