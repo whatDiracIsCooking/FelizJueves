@@ -31,10 +31,10 @@ shell `l <= 2`, (ss) through (dd)), by the user's decision: the host
 (`test_ao_multipole.py`, worst 8.8e-16), the kernel interpreted, bitwise
 against the host block (`test_kernel_mu.py`), the six goldens per backend
 (`test_emit_mu.py`), and on **both** cards (`test_mu_device.py`, generator
-`test/mu_driver.py` -- on the shared runner since #658, which has not run on a card -- PR #546: 4 passed / 0 skipped on the RTX 3080 and on
+`test/mu_driver.py` -- on the shared runner since #658, which ran on both cards on 2026-10-30, f cases included -- PR #546: 4 passed / 0 skipped on the RTX 3080 and on
 the RX 9060 XT, the slow cc-pVDZ case 5 passed on each; worst 8.62e-16 of
 `max|r|` against libcint and 3.16e-16 against `dip_moment`, the same on
-both cards). #627 lifted the cap to (ff): `--mu-l` accepts 0..3 (2 bare), the driver refuses above (ff), and every class (ss) through (ff) is held to libcint's `int1e_r_cart` on the host and interpreted through `hf_ccpvtz_dipole` (HF/cc-pVTZ with its f shells, 50 AOs, no density; worst 2.25e-15 of `max|r|`), with ten goldens per backend, compiled warning-free by nvcc (sm_86) and hipcc (gfx1200); **the f classes have not run on either card** (`test_mu_device.py`'s f cases are written, `slow`, for `kernel-tier.sh --full`). Nothing about it is measured or scored
+both cards). #627 lifted the cap to (ff): `--mu-l` accepts 0..3 (2 bare), the driver refuses above (ff), and every class (ss) through (ff) is held to libcint's `int1e_r_cart` on the host and interpreted through `hf_ccpvtz_dipole` (HF/cc-pVTZ with its f shells, 50 AOs, no density; worst 2.25e-15 of `max|r|`), with ten goldens per backend, compiled warning-free by nvcc (sm_86) and hipcc (gfx1200); the f classes (`test_mu_device.py`'s `slow` f cases) **ran on both cards** for the first time with the #658 runner port (2026-10-30), passed on each. Nothing about it is measured or scored
 (no published board; a `StructuralLimit`, #524; #627's compile reading, 0
 stack / 0 spills on sm_86 through (ff) and 92 B a lane of scratch for
 `mu_33` on gfx1200, is not a row, and no low-stack form was needed);
@@ -57,11 +57,12 @@ Interpreted, through (dd): the kernel bitwise the host block per class, the
 plan and walk within 1.1e-15 of libcint (`test_kernel_quad.py`), the host
 the same (`test_ao_multipole.py`); `--quad-l [LMAX]` (2 bare, 0..2 only),
 never in the bare default nor `KERNEL_GEN_CMD`; 6 goldens per backend
-(`test_emit_quad.py`). **Compiled by nvcc and hipcc, not run on a card**:
+(`test_emit_quad.py`). **Compiled by nvcc and hipcc, and run on both cards**:
 `test_quad_device.py` (on `mu_driver`'s `target=`, on the shared runner
 since #658) builds every class's runner under both compilers with no
-warning (2 passed, 2026-10-30, a device-less cloud container); its device
-cases have not run. Nothing measured.
+warning (2 passed, 2026-10-30, a device-less cloud container), and its
+device case (every class through (dd)) passed on the RTX 3080 and the
+RX 9060 XT on 2026-10-30, its first card run. Nothing measured.
 **`S`, `T`, `V` and the dipole are also built on the HGP engine, s and p
 only, interpreted only** (`one_electron.md`, "The HGP route"):
 `Target.S` / `T` / `V` / `DIPOLE` with `engine=Engine.HGP` (slots `s.hgp`,
@@ -74,11 +75,10 @@ Staged by `OneEClass.hgp_arrays`; `python -m felizjueves.emit --hgp-one-e-l
 [LMAX]` (1 bare, 0..1 only), never in the bare default nor `KERNEL_GEN_CMD`.
 Witnessed interpreted (`test_kernel_hgp.py`) against the MMD host and
 libcint's `int1e_ovlp` / `kin` / `nuc` / `r_cart` on H₂O/STO-3G and 6-31G;
-goldens in `test_emit_hgp_one_e.py`. **Compiled and run on the RTX 3080
-only** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`
--- on the shared runner since #658, which has not run on a card -- 16 passed: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
+goldens in `test_emit_hgp_one_e.py`. **Compiled and run on both cards** (`test_hgp_one_e_device.py`, generator `test/hgp_one_e_driver.py`
+-- on the shared runner since #658, which ran on both cards on 2026-10-30 -- 16 passed on the RTX 3080 before the port: within 5.0e-16 of `max|M|` of the MMD host on the synthetic
 basis and 1.0e-15 of libcint on H₂O/STO-3G and 6-31G, runs bit-identical);
-the RX 9060 XT is not run (no open issue tracks it; #431 closed on the card's detection fix, not the run), nothing measured.
+since the port its 12 `gpu` cases passed on the RTX 3080 and, for the first time, the RX 9060 XT (2026-10-30), nothing measured.
 **`S`, `T` and `V` are also built on the Rys engine, through (ff),
 interpreted only** (`one_electron.md`, "The Rys route"): `Target.S` / `T` /
 `V` with `engine=Engine.RYS` (slots `s.rys`, `t.rys`, `v.rys`; `DIPOLE` and

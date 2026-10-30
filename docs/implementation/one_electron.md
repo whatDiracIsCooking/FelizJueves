@@ -330,8 +330,8 @@ wrote a unit, the driver includes that file and asserts it byte-identical
 to `emit(...)`. Since #658 the driver runs on the shared runner
 (`test/harness/`): one runner per class's unit, the matrix carried from
 class to class, and the whole chain run `RUNS` times from zero, since the
-fp64 atomics' order may differ between runs; that port has not run on a
-card. Ordered ladder classes are a named follow-up.
+fp64 atomics' order may differ between runs; that port ran on both
+cards on 2026-10-30. Ordered ladder classes are a named follow-up.
 
 ## Witnesses, and what ran where
 
@@ -532,7 +532,7 @@ and `KERNEL_GEN_CMD` does not ask for it.
   interpreted, every ordered class (ss) through (ff) on HF/cc-pVTZ
   against itself and the three cases whole, all `np.array_equal`.
 - *Both cards.* `test_sx_device.py` (generator `test/sx_driver.py`, on
-  the shared runner since #658, which has not run on a card) runs
+  the shared runner since #658, which ran on both cards on 2026-10-30) runs
   the same cases under `S`'s device bound, `2 γ_{N+K} Mabs` with
   `N = 4L + 9`, and checks run-to-run spread within `2 γ_K Mabs`. On the
   RTX 3080 and the RX 9060 XT all 7 cases passed. The worst result was
@@ -545,8 +545,8 @@ and `KERNEL_GEN_CMD` does not ask for it.
 ## The dipole `MU`
 
 **Status: implemented, and run on both cards (milestone 19, #517–#524),
-through (dd); through (ff) on the host, interpreted and compiled, NOT on a
-card (#627).** This section covers the Cartesian dipole moment
+through (dd); through (ff) since #627, on both cards since the #658
+runner port (2026-10-30).** This section covers the Cartesian dipole moment
 integrals `mu^d_ab = <a| q (r_d - C_d) |b>`, `d ∈ {x, y, z}`: the
 multipole moments of order `e = 1` about an origin `C`, scaled by a
 charge `q`. Like the rest of this note, nothing here is scored or
@@ -680,8 +680,8 @@ and (df) and (ff), L = 5 and 6, are `slow` (`tiers.FAST_L_MAX`).
   #627).
 - *Both cards* (#523). `test_mu_device.py` (generator `test/mu_driver.py`,
   which takes `C` and `q` as runtime values, so one build serves every
-  origin and charge -- on the shared runner since #658, which has not run
-  on a card -- and refuses a class above (ff) since #627): per class on
+  origin and charge -- on the shared runner since #658, which ran on
+  both cards on 2026-10-30 -- and refuses a class above (ff) since #627): per class on
   `hf_ccpvtz_spd_dipole` against the host under `2 γ_{N+K} MUabs` with
   `N = 4L + 16` and against `int1e_r_cart`; whole H₂O/STO-3G and 6-31G
   (cc-pVDZ `slow`) against `int1e_r_cart` and, at `q = -1`, against
@@ -693,10 +693,9 @@ and (df) and (ff), L = 5 and 6, are `slow` (`tiers.FAST_L_MAX`).
   `dip_moment`, `7.23e-2` of the per-element host bound, and `2.36e-16`
   of `max|MU|` for the origin shift against the card's `S`. Runs are not
   always bit-identical between repeats (the fp64 atomics' order), within
-  the run-to-run bound `2 γ_K MUabs`. **At f (#627) the card cases are
-  written and have NOT run**: Part 1 and Part 3 on `hf_ccpvtz_dipole`
-  (`slow`, so `kernel-tier.sh --full`), and their compile-only companions,
-  which nvcc and hipcc passed.
+  the run-to-run bound `2 γ_K MUabs`. **At f (#627) the card cases**, Part 1 and Part 3 on `hf_ccpvtz_dipole`
+  (`slow`), first ran with the #658 runner port on 2026-10-30 and passed
+  on both cards; their compile-only companions pass under nvcc and hipcc.
 
 **Not built, and what does not reach.** `e = 1` only; Cartesian only;
 nothing above (ff) is built, emitted, launched or checked, and `--mu-l`
@@ -712,8 +711,9 @@ built.
 ## The quadrupole
 
 **Status: implemented and interpreted through (dd); emitted for both
-vendors; NOT compiled by nvcc or hipcc and NOT run on a card** (the session
-that built it had neither compiler nor card; all six units passed clang 18's
+vendors; compiled by nvcc and hipcc and run on both cards since the #658
+runner port (2026-10-30)** (the session that built it had neither compiler
+nor card; all six units passed clang 18's
 CUDA front end, device side, `-Wall -Wextra`, a declaration stub for the
 runtime: a proxy). This section covers the Cartesian second moments
 `Q^{de}_ab = <a| q (r_d - C_d)(r_e - C_e) |b>`, the six components xx, xy,
@@ -783,7 +783,7 @@ is not the parent's exactly.
 the bare default nor in `KERNEL_GEN_CMD`, refusing the selector, the Fock
 and HGP paths and `--n-batches` as `--mu-l` does.
 
-**On a card: compiled, not run.** `test/mu_driver.py` takes `target=`
+**On a card: compiled, and run on both cards.** `test/mu_driver.py` takes `target=`
 (`Target.DIPOLE` by default, every dipole call unchanged), and
 `test_quad_device.py` (`gpu` + `cuda`/`hip`) builds the spd basis's
 quadrupole from its plan on each card against libcint (`1e-12` of
@@ -791,13 +791,14 @@ quadrupole from its plan on each card against libcint (`1e-12` of
 (`2 γ_{N+K} Qabs`, `N = 4L + 8 + 16`), with `q = -1` from the same binary.
 Its fast-tier cases (the steps' parameters, the staging through the
 interpreter) pass, and since #658 (on the shared runner) its compile cases
-pass under nvcc and hipcc with no warning; its device cases have not run. Nothing
+pass under nvcc and hipcc with no warning; its device case first ran on
+2026-10-30 and passed on the RTX 3080 and the RX 9060 XT. Nothing
 above (dd), nothing spherical, no traceless tensor, no consumer.
 
 ## The HGP route: `S`, `T`, `V` and `MU` on engine #2
 
 **Status: built and interpreted, s and p shells only; compiled and run on
-the RTX 3080 only.** `one_electron/kernel_hgp.py` builds the same four matrices
+both cards (the RX 9060 XT since the #658 runner port).** `one_electron/kernel_hgp.py` builds the same four matrices
 on Head-Gordon & Pople's split of Obara & Saika's one-electron recurrences,
 promoted from the spike `experimental/hgp/one_electron/` (whose route and
 oracle it keeps). The MMD kernels above are untouched, byte for byte.
@@ -859,21 +860,19 @@ origin shift. Goldens: `test/golden/{cuda,hip}/{hs,ht,hv,hmu}_{00,01,11}`
 **On the card** (`test/test_hgp_one_e_device.py`, generator
 `test/hgp_one_e_driver.py`: one thread per contracted shell pair over
 `one_electron_launch`'s plan, `hgp_arrays` staged, plain stores; on the
-shared runner since #658, which has not run on a card): on the
+shared runner since #658): before the port, on the
 RTX 3080, 16 passed -- each of `S`, `T`, `V`, `MU` on the synthetic basis
 against the MMD host (worst 5.03e-16 of `max|M|`, `T`) and on H₂O/STO-3G
 and 6-31G against libcint (worst 1.01e-15, `V`), the dipole at both
-origins; runs bit-identical, every matrix exactly symmetric. The RX 9060 XT
-run has not been made, and no open issue tracks it (#431 closed on
-2026-10-17 with the card's detection fixed, not with this run).
+origins; runs bit-identical, every matrix exactly symmetric. On the runner (2026-10-30) its 12 `gpu` cases passed on the RTX 3080
+and, the first run there, on the RX 9060 XT.
 
 **The generator.** `python -m felizjueves.emit --hgp-one-e-l [LMAX]` (1
 bare, **0..1 only**, exit 2 above) adds the 12 units beside the J ladders;
 never in the bare default, not in `KERNEL_GEN_CMD`.
 
 **Not done.** d and above (the recurrences are general in `l`; the builder
-refuses `l > 1`, the requested scope); no RX 9060 XT run (untracked:
-#431 closed with the card's detection fixed, not the run), no measurement;
+refuses `l > 1`, the requested scope); no measurement;
 no `(1, 0)` ladder unit (a basis's driver builds it, as for the MMD
 ladder); no screening inside the kernel; no comparison of the two engines'
 cost.
@@ -970,8 +969,8 @@ MMD and HGP kernels.
   template for every unit.
 - **Ordered ladder classes** (`la > lb`), so the generator, rather than the
   test-side driver, writes every class a real basis reaches.
-- **The quadrupole on a card**: `test_quad_device.py` on both cards, and
-  the compile cases of `test_emit_quad.py` (built, "The quadrupole").
+- **The quadrupole's emit compile cases**: `test_emit_quad.py`'s (built,
+  "The quadrupole"); `test_quad_device.py` ran on both cards with #658.
 - **The dipole at f and above**, past `--mu-l`'s cap of 2.
 - **A three-kernel dipole A/B arm** (one kernel per component against the
   fused one), opened only if the fused kernel is found to spill.
