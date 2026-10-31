@@ -954,9 +954,13 @@ keep their unrolled digests, unchanged, under `<name>.unrolled`.
 **Status: implemented host-side and as generated kernels, interpreted
 through (dd|dd) and at three f classes, held to PySCF, compiled by nvcc
 and hipcc at every class through (ff|ff) (the local-memory frame
-recorded); not run on either card** (#689). The session that built it had
-both compilers and no card: no device test or driver is written, so
-nothing here has launched on the RTX 3080 or the RX 9060 XT.
+recorded); every class through (ff|ff) and three H₂O witnesses run on
+the RX 9060 XT against the host and PySCF; not run on the RTX 3080**
+(#689). The device-free half (PR #702) was built with no card; the device
+test (`test/test_kx_device.py`, driver `hess_driver.kx_launches`) came
+next, in a session whose RTX 3080 had dropped out of the container
+(NVML "Unknown Error"), so the issue's "every class launches on the RTX
+3080" is still owed.
 
 **Nothing here is scored.** The rule is `kernel_gk`'s (`docs/references.md`
 entry 46, McMurchie & Davidson); no `claims.json` record, cell or floor was
@@ -1051,7 +1055,8 @@ It is pure Python: H₂O/cc-pVDZ's `K1` takes ~5 min.
 | `kx1`, `kxc` per class (interpreted) | the host, `quartets=` the class | every s, p class; every d class through (dd\|dd) (`slow` above L + 1 = 4); (ff\|ff), (fs\|fs), (fd\|pd) (`slow`) | within 16 eps of the absolute twin |
 | nvcc / hipcc compile | #92's warning filter | `test_emit_hess_kx.py`: the 14 goldens and (ff\|ff) in both forms | 32 passed, no warning; slowest 6.0 s (`kx1_33_33`, hipcc) |
 | frame | `data/measured/kx.json` (`devtools/measure.sh kx-compile`, rule declared before any row: stack ≤ 14,000 B, compile ≤ 30 s on both arches) | all 512 units, `sm_86` and `gfx1200` | every unit admissible on both: worst `kx1_33_33`, 9,824 B of `sm_86` stack (556 B spill stores at most) and 10,192 B of `gfx1200` scratch; slowest compile 5.6 s |
-| on a card | — | — | **not run**: no device test or driver |
+| `kx1`, `kxc` per class, on a card | the host over the witness's two quartets, `DEV_TOL = 1e-14` of the absolute twin | every class through (ff\|ff), both forms (512 programs), on `TRI_SPDF` (three atoms, one bra pair against two ket pairs; `slow` above L + 1 = 4, `high_l` from L = 8) | RX 9060 XT: KXCLASSRESULT; RTX 3080: not run (card lost) |
+| `K1`, `K^X` per atom, `SUM_X K^X`, on a card | the fixtures' `vk1` and `make_h1`'s exchange part, `1e-12` of `max\|PySCF\|`; the sum within `1e-13 max\|K1\|` | H₂O/STO-3G, its d case, cc-pVDZ, every class of the basis (`slow`) | RX 9060 XT: KXMOLRESULT; RTX 3080: not run |
 
 ### The generator
 
@@ -1063,11 +1068,10 @@ per backend (`test/golden/kx_digests.json`).
 
 ### What is not done
 
-- **No card.** Nothing has launched. The issue's "every class launches on
-  the RTX 3080" and "run on both cards against the host" are open: what
-  stands in for them is the compiled frame of every unit. The device test
-  and its driver (`gk_driver.py`'s pattern, `X` zeroed, `kxc` once per
-  atom) are the next step.
+- **The RTX 3080.** Every unit compiles for `sm_86` (its frame recorded),
+  but none has launched there: run `pytest -m "cuda and gpu"
+  test/test_kx_device.py -n 2` (at most two workers on the card for the
+  `high_l` cases, #691's lesson) when the card is back.
 - `h^x`, `S^x` (#687) are not built (`J^X` is the next section), so
   `F^x` is not assembled, and neither is the CPHF right-hand side.
 - Nothing is timed, and nothing is screened. A per-atom ket mask for
