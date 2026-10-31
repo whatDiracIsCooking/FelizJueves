@@ -68,6 +68,16 @@ PROJECT_NAME=${PROJECT_NAME:-fj}
 # that worktree's volumes, so run the suite in one at a time.
 DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 
+# Where the workspace is mounted INSIDE the container -- the `workspaceFolder`
+# every .devcontainer/*/devcontainer.json sets, which is not the host path.
+#
+# One of the two things this file cannot reach and that must be kept in step by
+# hand (the other is the FJ_ prefix; see the note at the top of the file).
+# devcontainer.sh needs it to run this repo's own devtools/lib.sh INSIDE the
+# container -- which is how the GPU probe stays ONE rule asked in two places
+# rather than a snippet duplicated into a docker exec.
+DEVCONTAINER_WORKSPACE_FOLDER=${DEVCONTAINER_WORKSPACE_FOLDER:-/workspace}
+
 # --- the kernel tier ------------------------------------------------------
 #
 # devtools/kernel-tier.sh is the local gate for anything touching device

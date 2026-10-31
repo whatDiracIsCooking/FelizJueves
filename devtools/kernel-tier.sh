@@ -221,9 +221,18 @@ note "${compiler_version%%$'\n'*}"
 # the why; the extra line below is for the case that actually happens, because
 # "ABSENT" alone sends you looking at the container's passthrough when the
 # answer is on the host.
+#
+# BOTH SIDES ASK THE SAME HELPER NOW (#712). The cuda branch used to test
+# `[ -e /dev/nvidiactl ] || [ -d /proc/driver/nvidia/gpus ]` inline, which is
+# #431's bug in the other vendor twice over: the first node exists whenever the
+# module is loaded, and neither says this container may still OPEN the card.
+# With the grant revoked, that line printed `device: present` and the device
+# phase then failed 311 cases on `no CUDA-capable device is detected` instead
+# of skipping -- so the helper, which folds usability into presence, is the
+# only thing either branch should consult.
 device_present=0
 case $backend in
-  cuda) [ -e /dev/nvidiactl ] || [ -d /proc/driver/nvidia/gpus ] && device_present=1 ;;
+  cuda) nvidia_gpu_present && device_present=1 ;;
   hip)  amd_gpu_present && device_present=1 ;;
 esac
 if [ "$device_present" = 1 ]; then
@@ -231,7 +240,15 @@ if [ "$device_present" = 1 ]; then
 else
   note "device: ABSENT -- the compile phase still runs and proves nothing about"
   note "        a number; every \`gpu\` test will SKIP, not fail."
-  if [ "$backend" = hip ] && [ -e /dev/kfd ]; then
+  # Which KIND of absent, because the three send you to different places.
+  if card_revoked "$backend"; then
+    note "        the card IS enumerated and cannot be OPENED: this container's"
+    note "        device cgroup no longer grants $(gpu_denied_nodes "$backend" | tr '\n' ' ')"
+    note "        -- a host driver reload, a systemd daemon-reload, or a"
+    note "        'docker update' after start. RECREATE the container"
+    note "        (devtools/devcontainer.sh rebuild); a plain 'up' reuses it"
+    note "        and cannot restore the grant. devtools/doctor.sh says so too."
+  elif [ "$backend" = hip ] && [ -e /dev/kfd ]; then
     note "        /dev/kfd IS here but kfd lists no GPU node, so this is NOT a"
     note "        container passthrough problem: amdgpu bound no card on the"
     note "        HOST. Usual cause is a kernel upgrade the DKMS module was"

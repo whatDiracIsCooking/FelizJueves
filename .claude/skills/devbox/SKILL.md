@@ -28,6 +28,7 @@ devtools/devcontainer.sh up        # reuse if it exists, else create
 devtools/devcontainer.sh rebuild   # recreate from scratch
 devtools/devcontainer.sh shell     # bash inside
 devtools/devcontainer.sh test      # the Python tier inside (see the `test` skill)
+devtools/devcontainer.sh gpu       # can it still open its cards?
 devtools/devcontainer.sh down      # stop and remove the container
 ```
 
@@ -194,10 +195,14 @@ Three things to know:
   NVIDIA runtime's OCI hook only at container *start*. So a bare `docker update`
   silently revokes GPU access (`nvidia-smi: Failed to initialize NVML`, and in
   this repo a kernel tier whose compile phase still passes while every `gpu`
-  test skips — a green, empty run). `devcontainer.sh` restarts to re-run the hook; the limits
-  persist across it because they live in the container config. The HIP variant
-  is untouched — `--device=/dev/kfd` populates `HostConfig.Devices`, which
-  `docker update` preserves — so the restart is gated on `DeviceRequests`.
+  test fails on a card that is right there). `devcontainer.sh` restarts to
+  re-run the hook; the limits persist across it because they live in the
+  container config. The HIP variant is untouched — `--device=/dev/kfd`
+  populates `HostConfig.Devices`, which `docker update` preserves — so the
+  restart is gated on `DeviceRequests`. Since the cuda and combined configs
+  now name their NVIDIA nodes with `--device` too, the restart is belt and
+  braces rather than the only thing holding it up — see "A card that drops
+  mid-session" below.
 - `docker update` changes only what it is passed, so a second call with just
   `CPUSET` leaves an earlier `CPUS` quota in place, and running `up` with both
   unset **clears nothing** — it only stops applying. `rebuild` is how you get
@@ -218,6 +223,42 @@ devtools/devcontainer.sh shell -c "ps -eo pid,pcpu,cmd --sort=-pcpu | head"
 
 `pkill -f pytest` reaches only the master (a worker's command line is a bare
 `python3 -u -c import sys;...`), so kill the workers **by PID**.
+
+### A card that drops mid-session
+
+A container's device grant can be **revoked while it runs**, and the symptom
+names neither the cause nor the fix. `--gpus all` lands in
+`HostConfig.DeviceRequests` and is injected by the NVIDIA runtime's OCI hook at
+container *start*, so anything that regenerates the device cgroup afterwards —
+a host driver reload, a `systemctl daemon-reload`, a `docker update` — drops it
+while leaving **every `/dev/nvidia*` node visible inside**. Presence probes
+still say the card is there; `open()` returns `EPERM`; `nvidia-smi` says
+`Failed to initialize NVML: Unknown Error`.
+
+```bash
+devtools/devcontainer.sh gpu          # one row per backend the variant reaches
+```
+
+Exit **0** = every card opens (or the variant asks for no device), **1** =
+present and not openable, **2** = **could not run** (no container, no docker,
+no probe in there) — the same contract as `kernel-tier.sh`, so a 2 is never a
+pass. `up` and `rebuild` run the same check for you.
+
+- **The fix is `rebuild`, not `up`.** A plain `up` reuses the container, and a
+  reuse cannot re-run the hook that grants the devices — so the one command
+  people retry is the one that cannot work.
+- **If a fresh container still warns, stop rebuilding.** The fault is
+  host-side: run `devtools/doctor.sh`, whose `card usable` row FAILs with the
+  denied nodes named.
+- The cuda and combined configs also pass their NVIDIA nodes as `--device`, so
+  the grant lives in the list docker *rebuilds* the cgroup from and survives a
+  regeneration. Only the **first** card is pinned; a second still rides on
+  `--gpus all` alone.
+- A revoked card counts as **absent** for every tier decision (#712), so `gpu`
+  tests skip and `gate.sh` labels the PR `unverified-on-card` and merges rather
+  than failing every case. It is never *silently* absent: this command exits 1,
+  doctor's `card usable` row FAILs, and the skip message names the denied nodes
+  and the recreate. Fix the container and the next run verifies for real.
 
 ## Container-backed worktrees
 

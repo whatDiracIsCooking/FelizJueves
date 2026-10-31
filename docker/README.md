@@ -158,6 +158,60 @@ lspci -nnk | grep -A3 1002:             # a 'Kernel driver in use:' line?
 sudo dkms autoinstall -k "$(uname -r)"  # the fix, then reload amdgpu or reboot
 ```
 
+## The NVIDIA failure mode: a grant that drops mid-session
+
+AMD's two modes above are both decided before the first launch. NVIDIA has one
+that lands **while the container runs**, and it is the mirror image of mode 2 —
+the card is genuinely here, and the container is no longer allowed to open it.
+
+`--gpus all` is not a device list. The ask lives in
+`HostConfig.DeviceRequests` and is honoured by the container runtime's OCI hook
+at container **start**; `--device` lands in `HostConfig.Devices`, which is the
+list docker **regenerates the device cgroup from**. So anything that regenerates
+it afterwards — a `docker update` (`devtools/devcontainer.sh`'s CPU limits), a
+host driver reload, a `systemctl daemon-reload` — drops a DeviceRequests-only
+grant while leaving every `/dev/nvidia*` node **visible** inside:
+
+```
+/proc/driver/nvidia/gpus/      still populated     -> presence probes: yes
+/dev/nvidia0                   still a node        -> ls: yes
+open("/dev/nvidia0", O_RDWR)                       -> EPERM
+```
+
+and `nvidia-smi` reports `Failed to initialize NVML: Unknown Error`, which
+names neither the cause nor the fix.
+
+The `cuda` and `combined` devcontainer configs therefore pass their NVIDIA
+nodes as `--device` **as well as** `--gpus all`, so the grant is in the list
+that gets rebuilt. Keep both: the hook also injects the driver libraries,
+`nvidia-smi` and that procfs view, which no `--device` does. Each path comes
+from `devcontainer.sh`'s `export_nvidia_devices` and falls back to `/dev/null`,
+because `runArgs` cannot ask whether a node exists and `--device` on a missing
+path fails container *creation*. Only the **first** card is pinned; a second
+still rides on `--gpus all`. `compose.yaml` is left alone: its services are the
+one-shot runs described above, nothing applies `docker update` to them, and a
+`run --rm` that outlives a host driver reload is not the case this is for.
+
+Checking it is one command, and the repair is a **recreate**:
+
+```bash
+devtools/devcontainer.sh gpu       # 0 = opens, 1 = present and denied, 2 = could not run
+devtools/devcontainer.sh rebuild   # the fix; a plain `up` reuses the container
+```
+
+`up`/`rebuild` run the same check for you, and `doctor.sh`'s `card usable` row
+is the host-side form. The probe is an `open(O_RDWR)` on the nodes a backend
+needs (`devtools/lib.sh`'s `gpu_nodes`): no CUDA or ROCm required, and the
+exact operation the cgroup adjudicates. It covers the AMD gid fault above too —
+a wrong `--group-add` is a denied open on `/dev/kfd`.
+
+Presence folds that in (#712), so a revoked card is **absent**: the tiers skip,
+`gate.sh` labels the PR `unverified-on-card` and merges, and
+`verify-unverified.sh` repays it later. `card_revoked` — enumerated *and*
+denied — is the distinction kept for the humans, and it is why the state is
+never *silently* absent: doctor FAILs, `devcontainer.sh gpu` exits 1, and
+`kernel-tier.sh`'s `device: ABSENT` says which kind of absent it is.
+
 ## The Antigravity CLI is pinned by *release*, not version
 
 Each GPU file ends with `docker/install-agy.sh`, the layer after Claude Code's.

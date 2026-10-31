@@ -327,7 +327,9 @@ fi
 if [ "$kind" = timed ] || [ "$kind" = device ]; then
   present=0
   case $backend in
-    cuda) { [ -e /dev/nvidiactl ] || [ -d /proc/driver/nvidia/gpus ]; } && present=1 ;;
+    # Both through lib.sh since #712, so a card that is enumerated but cannot
+    # be opened stops a sweep here rather than producing a store full of skips.
+    cuda) nvidia_gpu_present && present=1 ;;
     hip)  amd_gpu_present && present=1 ;;
   esac
   collect_only=0

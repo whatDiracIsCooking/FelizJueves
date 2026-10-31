@@ -308,7 +308,8 @@ ROCm 7.2.4 for `gfx1200`, with no warning in generated text:
 
 **#431** fixed `devtools/kernel-tier.sh`'s HIP device check, which tested
 `/dev/kfd` only and printed `device: present` with no usable card: it now
-asks `lib.sh`'s `amd_gpu_present` (an enumerated kfd GPU node). It closed
+asks `lib.sh`'s `amd_gpu_present` (an enumerated kfd GPU node, and since #712
+one this process can also open). It closed
 on 2026-10-17 with that fix. The device tests first ran on the card in
 #606's session (PR #615): "The low-stack form" below.
 

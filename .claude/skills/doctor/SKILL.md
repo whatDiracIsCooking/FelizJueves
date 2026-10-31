@@ -199,12 +199,23 @@ Five failures that look like something else entirely:
    `devtools/kernel-tier.sh` runs locally, on each backend. Doctor reports
    tools, not that absence.
 
-6. **A card that is visible but unusable.** Doctor probes the driver, so it
-   catches the case `devcontainer.sh`'s CPU-limit path creates -- `docker
-   update` revoking the NVIDIA device cgroup while every `/dev/nvidia*` node
-   stays in place. What it cannot tell you is whether the gids passed to an AMD
-   container are the right ones: a wrong `--group-add` looks exactly like
-   having no card.
+6. **A card that is visible but unusable** -- the `card usable` row, and the
+   one row here that **FAILs**. Everything else in doctor's gpu section reports
+   *enumeration*: what the driver and the kernel say is present. A container
+   can hold an enumerated card whose device-cgroup grant has been revoked
+   mid-life -- a host driver reload, a `systemctl daemon-reload`, a
+   `docker update` -- and then every node stays *visible* inside while `open()`
+   returns `EPERM`. This row opens the nodes each backend actually needs, so it
+   separates the two, and it names the denied ones plus the repair (in a
+   container, `devcontainer.sh rebuild`; a plain `up` reuses it and cannot
+   restore the grant).
+
+   Read it **before** the `card state` row beneath it: a denied node makes
+   every utilisation and VRAM reading unobtainable, so a `free VRAM unknown`
+   warning there is a consequence and not a second finding. This row is also
+   what finally catches the AMD gid question doctor used to be blind to -- a
+   wrong `--group-add` means `/dev/kfd` will not open, which used to look
+   exactly like having no card and now reads as what it is.
 
    It *does* now separate the other AMD lookalike (#431): `/dev/kfd` present
    with no GPU node in kfd's topology means `amdgpu` bound no card on the
