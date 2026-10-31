@@ -22,7 +22,8 @@ emits kernel text may import this module.
 from __future__ import annotations
 
 import math
-from functools import cache, lru_cache
+import struct
+from functools import cache
 
 from felizjueves.reference.boys import boys
 
@@ -58,7 +59,9 @@ def fundamental(m: int, pq: Vec, theta: float) -> float:
 
 
 def _check_r(r: R) -> None:
-    if len(r) != 3 or any(type(c) is not int or c < 0 for c in r):
+    if len(r) != 3 or not (type(r[0]) is int and r[0] >= 0
+                           and type(r[1]) is int and r[1] >= 0
+                           and type(r[2]) is int and r[2] >= 0):
         raise ValueError(f"r = {r!r} is not a Cartesian index of three ints >= 0")
 
 
@@ -85,15 +88,26 @@ def _nodes(pq: Vec, theta: float):
     recomputed it, Boys quadratures included, for every element (most of a
     fast-tier reference's time). The recursion and its arithmetic are the
     ones a fresh memo runs, so a value is the same float either way. Keyed
-    by `float.hex`, which tells -0.0 from 0.0 where `==` would not.
+    by the four float64s' bytes, which tell -0.0 from 0.0 where `==` would
+    not; a theta that is not a float gets a memo of its own, uncached.
     """
-    return _nodes_at(tuple(x.hex() for x in pq), float(theta).hex(), pq, theta)
+    if type(theta) is not float:
+        return _node_fn(pq, theta)
+    key = _KEY(pq[0], pq[1], pq[2], theta)
+    node = _MEMOS.get(key)
+    if node is None:
+        if len(_MEMOS) >= _MEMOS_MAX:
+            del _MEMOS[next(iter(_MEMOS))]  # the oldest
+        node = _MEMOS[key] = _node_fn(pq, theta)
+    return node
 
 
-@lru_cache(maxsize=64)
-def _nodes_at(key_pq: tuple[str, ...], key_theta: str, pq: Vec, theta: float):
-    del key_pq, key_theta  # the key; pq and theta ride along unhashed-equal
+_KEY = struct.Struct("<4d").pack
+_MEMOS: dict[bytes, object] = {}
+_MEMOS_MAX = 64
 
+
+def _node_fn(pq: Vec, theta: float):
     @cache
     def node(r: R, m: int) -> float:
         for d in range(3):

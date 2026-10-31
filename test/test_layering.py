@@ -35,6 +35,7 @@ Names are relative to `felizjueves`; `__init__` is the root package.
 from __future__ import annotations
 
 import ast
+import functools
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -830,9 +831,18 @@ def imports_of(source: str, name: str, is_package: bool,
 
 
 def _graph() -> dict[str, set[str]]:
+    """The import graph of src/felizjueves: parsed once per process (it was
+    re-parsed by each of the ~50 tests that read it, a fast-tier minute),
+    handed to each caller as a fresh copy so no test sees another's edits."""
+    return {n: set(edges) for n, edges in _parsed_graph().items()}
+
+
+@functools.cache
+def _parsed_graph() -> dict[str, frozenset[str]]:
     mods = _modules()
     known = set(mods)
-    return {n: imports_of(p.read_text(), n, p.name == "__init__.py", known)
+    return {n: frozenset(imports_of(p.read_text(), n, p.name == "__init__.py",
+                                    known))
             for n, p in mods.items()}
 
 

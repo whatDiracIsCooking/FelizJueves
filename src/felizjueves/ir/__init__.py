@@ -104,6 +104,7 @@ an `Inline`, so every census here sees through the splice.
 
 from __future__ import annotations
 
+import itertools
 import keyword
 import re
 import struct
@@ -340,9 +341,16 @@ class Intent(Enum):
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
+_IDENTS: set[str] = set()  # names `_ident` has passed: every node re-checks
+
+
 def _ident(name: object, what: str) -> None:
+    if type(name) is str and name in _IDENTS:
+        return
     if not isinstance(name, str) or not _IDENT.match(name) or keyword.iskeyword(name):
         raise ValueError(f"{what} {name!r} is not an identifier")
+    if type(name) is str:
+        _IDENTS.add(name)
 
 
 def _tuple(obj: object, field: str, value: object) -> tuple:
@@ -1074,15 +1082,23 @@ def walk(body: tuple[Stmt, ...], *, into_inline: bool = True) -> Iterator[Stmt]:
     An `Inline` is yielded, then -- unless `into_inline` is false -- its
     fragment's body, so every census sees through the splice.
     """
-    for s in body:
-        yield s
-        if isinstance(s, For):
-            yield from walk(s.body, into_inline=into_inline)
-        elif isinstance(s, If):
-            yield from walk(s.then, into_inline=into_inline)
-            yield from walk(s.orelse, into_inline=into_inline)
-        elif isinstance(s, Inline) and into_inline:
-            yield from walk(s.fragment.body, into_inline=into_inline)
+    # An explicit stack, not a recursive generator: each statement a nested
+    # `yield from` hands out costs one resume per level, and kernels nest.
+    stack = [iter(body)]
+    while stack:
+        for s in stack[-1]:
+            yield s
+            if isinstance(s, For):
+                stack.append(iter(s.body))
+            elif isinstance(s, If):
+                stack.append(itertools.chain(s.then, s.orelse))
+            elif isinstance(s, Inline) and into_inline:
+                stack.append(iter(s.fragment.body))
+            else:
+                continue
+            break
+        else:
+            stack.pop()
 
 
 def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
@@ -1104,16 +1120,18 @@ def _exprs_of(s: Stmt) -> tuple[Expr | None, ...]:
 
 
 def _subexprs(e: Expr) -> Iterator[Expr]:
-    yield e
-    if isinstance(e, Index):
-        for i in e.at:
-            yield from _subexprs(i)
-    elif isinstance(e, Call):
-        for a in e.args:
-            yield from _subexprs(a)
-    elif isinstance(e, Weighted):
-        for t in e.terms:
-            yield from _subexprs(t.src)
+    """`e` and every expression under it, pre-order (as `walk` orders
+    statements), from an explicit stack rather than nested generators."""
+    stack = [e]
+    while stack:
+        e = stack.pop()
+        yield e
+        if isinstance(e, Index):
+            stack.extend(reversed(e.at))
+        elif isinstance(e, Call):
+            stack.extend(reversed(e.args))
+        elif isinstance(e, Weighted):
+            stack.extend([t.src for t in reversed(e.terms)])
 
 
 def _check_breaks(body: tuple[Stmt, ...], in_loop: bool) -> None:
@@ -1201,6 +1219,11 @@ def expr_type(e: Expr, lookup: Callable[[str], Scalar | None]) -> Scalar | None:
     Raises `PrecisionError` where the module docstring's PRECISION HYGIENE
     refuses; returns None where an unknown name hides the answer.
     """
+    t0 = type(e)  # exact types first; a subclass takes the isinstance chain
+    if t0 is Var:
+        return lookup(e.name)
+    if t0 is Lit:
+        return e.type
     if isinstance(e, Lit):
         return e.type
     if isinstance(e, Var):
@@ -1366,10 +1389,11 @@ class Kernel:
         _check_inlines(params, self.body)
         _check_types(params, self.body)
 
-        bound = set(names) | {s.name for s in walk(self.body) if isinstance(s, Decl)}
-        bound |= {b for s in walk(self.body) if isinstance(s, Inline)
+        stmts = list(walk(self.body))  # walked once, read by each check below
+        bound = set(names) | {s.name for s in stmts if isinstance(s, Decl)}
+        bound |= {b for s in stmts if isinstance(s, Inline)
                   for b in s.fragment.binds}
-        for s in walk(self.body):
+        for s in stmts:
             for root in _exprs_of(s):
                 if root is None:
                     continue
@@ -1383,8 +1407,8 @@ class Kernel:
                                 f"Factor {t.g.name} needs a Param or Decl "
                                 f"named {need!r}"
                             )
-        arrays = {s.name: s for s in walk(self.body) if isinstance(s, Decl)}
-        for s in walk(self.body):
+        arrays = {s.name: s for s in stmts if isinstance(s, Decl)}
+        for s in stmts:
             if not isinstance(s, Boys):
                 continue
             d = arrays.get(s.dst)
@@ -1394,7 +1418,7 @@ class Kernel:
                 raise ValueError(
                     f"Boys into {s.dst!r} needs a LOCAL F64 array Decl'd "
                     f"with the one extent {s.top + 1} (top + 1)")
-        for s in walk(self.body):
+        for s in stmts:
             if not isinstance(s, Rys):
                 continue
             for a in (s.nodes, s.weights):

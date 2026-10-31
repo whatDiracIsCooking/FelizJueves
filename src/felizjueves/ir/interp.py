@@ -321,6 +321,9 @@ class _Break(Exception):
     pass
 
 
+_UNBOUND = object()  # `_Thread._shadowed`: the name was not visible before
+
+
 def _bound_scalar(v: Any, name: str) -> _Scalar:
     """A scalar bind's slot: typed by its value, as `Lit` types a literal."""
     v = _number(v)
@@ -388,7 +391,17 @@ class _Thread:
     def __init__(self, interp: Interpreter, globals_: dict[str, Any],
                  shared: dict[str, _Array], geometry: dict[Fn, int]) -> None:
         self.interp = interp
+        # The scope chain, innermost last: each dict holds the names that
+        # scope declared (what "declared twice in one scope" is checked
+        # against). `env` is the chain flattened -- every name to its
+        # innermost slot -- so a lookup is one dict read however deep the
+        # nest; `_shadowed[i]` is what scope i's declarations hid in `env`
+        # (or _UNBOUND), restored by `pop`. Change the chain only through
+        # `push`, `pop`, `declare` and `inline`'s swap, which keep the two
+        # in step.
         self.scopes: list[dict[str, Any]] = [globals_]
+        self.env: dict[str, Any] = dict(globals_)
+        self._shadowed: list[dict[str, Any]] = [{}]
         self.shared = shared
         self.geometry = geometry
         # The same map keyed by id(): an `Fn` hashes in Python (enum.py),
@@ -400,11 +413,8 @@ class _Thread:
     def value(self, name: str) -> int | float:
         """`load(Var(name))` without building the `Var`: the scalar's value,
         with `lookup`'s, `scalar`'s and `load`'s errors."""
-        for scope in reversed(self.scopes):
-            slot = scope.get(name)  # slots are never None
-            if slot is not None:
-                break
-        else:
+        slot = self.env.get(name)  # slots are never None
+        if slot is None:
             raise InterpError(f"{name!r} is not bound")
         if type(slot) is not _Scalar:
             raise InterpError(f"{name!r} is an array, used as a scalar")
@@ -414,10 +424,10 @@ class _Thread:
         return v
 
     def lookup(self, name: str) -> Any:
-        for scope in reversed(self.scopes):
-            if name in scope:
-                return scope[name]
-        raise InterpError(f"{name!r} is not bound")
+        slot = self.env.get(name)
+        if slot is None:
+            raise InterpError(f"{name!r} is not bound")
+        return slot
 
     def scalar(self, name: str) -> _Scalar:
         slot = self.lookup(name)
@@ -436,6 +446,27 @@ class _Thread:
         if name in scope:
             raise InterpError(f"{name!r} declared twice in one scope")
         scope[name] = slot
+        self._shadowed[-1][name] = self.env.get(name, _UNBOUND)
+        self.env[name] = slot
+
+    def push(self, scope: dict[str, Any] | None = None) -> None:
+        """Open a scope (empty, or `scope`'s names declared into it)."""
+        self.scopes.append({})
+        self._shadowed.append({})
+        for name, slot in (scope or {}).items():
+            self.declare(name, slot)
+        if scope is not None:
+            self.scopes[-1] = scope  # the caller's dict, read back after
+
+    def pop(self) -> None:
+        """Close the innermost scope, unhiding what it shadowed."""
+        self.scopes.pop()
+        env = self.env
+        for name, hidden in self._shadowed.pop().items():
+            if hidden is _UNBOUND:
+                del env[name]
+            else:
+                env[name] = hidden
 
     # --- expressions ------------------------------------------------------
 
@@ -453,9 +484,34 @@ class _Thread:
                 raise InterpError(f"{e.array}{list(at)} outside shape {shape}")
         return arr, at
 
+    def _at(self, e: Index) -> tuple[_Array, tuple[int, ...]] | None:
+        """`subscript`'s answer when every check passes, else None (and the
+        caller re-runs `subscript` for its error: expressions are pure)."""
+        arr = self.env.get(e.array)
+        if type(arr) is not _Array:
+            return None
+        at = tuple([self.eval(i) for i in e.at])
+        shape = arr.data.shape
+        if len(at) != len(shape):
+            return None
+        for i, n in zip(at, shape, strict=True):
+            if type(i) is not int or not 0 <= i < n:
+                return None
+        return arr, at
+
     def load(self, e: Var | Index) -> int | float:
         if type(e) is Var:
             return self.value(e.name)
+        if type(e) is Index:
+            got = self._at(e)
+            if got is not None:
+                arr, at = got
+                if arr.written is None or arr.written[at]:
+                    ty = arr.type
+                    if ty is _F64:
+                        return float(arr.data[at])
+                    if ty is _I32:
+                        return int(arr.data[at])
         if isinstance(e, Var):
             slot = self.scalar(e.name)
             if slot.value is None:
@@ -484,10 +540,28 @@ class _Thread:
     def eval(self, e: Expr) -> int | float:
         t = type(e)
         if t is Var:
-            return self.value(e.name)
+            slot = self.env.get(e.name)
+            if type(slot) is _Scalar:
+                v = slot.value
+                if v is not None:
+                    return v
+            return self.value(e.name)  # its error
         if t is Lit:
             return e.value
         if t is Call:
+            args = e.args
+            if len(args) == 2:  # ADD SUB MUL DIV LT; no geometry Fn has args
+                a = self.eval(args[0])
+                b = self.eval(args[1])
+                if type(a) is float and type(b) is float:
+                    fn = e.fn
+                    if fn is _MUL:
+                        return a * b
+                    if fn is _ADD:
+                        return a + b
+                    if fn is _SUB:
+                        return a - b
+                return _arith(e.fn, a, b)
             return self.call(e)
         if t is Index:
             return self.load(e)
@@ -605,11 +679,11 @@ class _Thread:
                 yield from self.stmt(s)
 
     def block(self, body: tuple[Stmt, ...]) -> Generator[Any, Any, None]:
-        self.scopes.append({})
+        self.push()
         try:
             yield from self.run(body)
         finally:
-            self.scopes.pop()
+            self.pop()
 
     def stmt(self, s: Stmt) -> Generator[Any, Any, None]:
         if isinstance(s, Note):
@@ -697,11 +771,13 @@ class _Thread:
                 binds[name] = self.array(e.name)  # an alias: writes reach the host
             else:
                 binds[name] = _bound_scalar(self.eval(e), name)
-        host, self.scopes = self.scopes, [binds, {}]
+        host = self.scopes, self.env, self._shadowed
+        self.scopes, self.env, self._shadowed = [binds], dict(binds), [{}]
+        self.push()
         try:
             yield from self.run(frag.body)
         finally:
-            self.scopes = host
+            self.scopes, self.env, self._shadowed = host
 
     def decl(self, s: Decl) -> None:
         if not s.shape:
@@ -727,7 +803,7 @@ class _Thread:
         self.declare(s.name, arr)
 
     def loop(self, s: For) -> Generator[Any, Any, None]:
-        self.scopes.append({})
+        self.push()
         try:
             # The loop variable's slot, read and written directly: the body
             # runs in a scope of its own, popped before each test, so a
@@ -747,7 +823,7 @@ class _Thread:
                     raise InterpError(f"For {s.var}: step {step!r} is not > 0")
                 slot.value = _check_i32(slot.value + step)
         finally:
-            self.scopes.pop()
+            self.pop()
 
 
 # ---------------------------------------------------------------------------
@@ -994,7 +1070,7 @@ def interpret_fragment(fragment: Fragment, *,
                 Fn.BLOCK_DIM_X: 1, Fn.BLOCK_DIM_Y: 1}
     thread = _Thread(_Alone(boys), binds, {}, geometry)  # type: ignore[arg-type]
     local: dict[str, Any] = {}
-    thread.scopes.append(local)
+    thread.push(local)
     for at in thread.run(fragment.body):
         if isinstance(at[0], Barrier):
             raise InterpError("Barrier in a fragment run alone: there is no "
