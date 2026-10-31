@@ -98,6 +98,11 @@
 #                   source, compile, RSS, registers, spill,
 #                   stack, a 30 s budget a unit (#689; a
 #                   compiler, no card)                  FJ_KX_STORE
+#     hkx-compile   every hkx class through (ff|ff) in its
+#                   default form, each s, p class in its
+#                   other: source, compile, RSS, registers,
+#                   spill, stack, a 120 s budget a unit
+#                   (#691; a compiler, no card)         FJ_HKX_STORE
 #     scatter-tail  F scatter write-back tail (#358), printed, no store
 #     probes        the profilers' counter witnesses and the ceiling probe's
 #                   published-peak bound; nothing written
@@ -172,6 +177,7 @@ SWEEPS=(
   "gjab-compile|compile|gjab Coulomb gradient through (ff), unrolled and low-stack compile (#619) -> gjab.json"
   "gk-compile|compile|gk exchange gradient through (ff|ff), rolled and unrolled-to-the-floor compile, 10 s a unit (#618) -> gk.json"
   "kx-compile|compile|kx1/kxc exchange derivative matrix through (ff|ff), compile, 30 s a unit (#689) -> kx.json"
+  "hkx-compile|compile|hkx exchange Hessian through (ff|ff), default form and s/p other form, compile, 120 s a unit (#691) -> hkx.json"
   "scatter-tail|device|F scatter write-back tail, printed only"
   "probes|device|profiler counter witnesses and the published-peak bound"
   "registry-cost|check|registry cases' compile and gpu cost per backend, measured or modelled (#652) -> registry_cost.json"
@@ -282,6 +288,8 @@ case $sweep in
                 envs=("FJ_GK_STORE=${FJ_GK_STORE:-$MEASURE_GK_STORE}") ;;
   kx-compile)   files=("$M/measure_kx.py"); select=(-k kx_compile)
                 envs=("FJ_KX_STORE=${FJ_KX_STORE:-$MEASURE_KX_STORE}") ;;
+  hkx-compile)  files=("$M/measure_hkx.py"); select=(-k hkx_compile)
+                envs=("FJ_HKX_STORE=${FJ_HKX_STORE:-$MEASURE_HKX_STORE}") ;;
   registry-cost) files=("$M/measure_registry_cost.py"); select=(-k registry_cost_refresh)
                 envs=("FJ_REGISTRY_COST_STORE=${FJ_REGISTRY_COST_STORE:-$MEASURE_REGISTRY_COST_STORE}"
                       "FJ_KERNEL_TIER_REPORTS=${FJ_KERNEL_TIER_REPORTS:-$KERNEL_TIER_REPORTS}") ;;

@@ -82,31 +82,66 @@ H₂O/STO-3G and cc-pVDZ (`slow`), against the host, 6 passed per card;
 worst 1.57e-16 (RTX 3080) and 2.30e-16 (RX 9060 XT) of the absolute twin,
 `d2v` on cc-pVDZ. Nothing above (dd) on a card, nothing measured; the low-stack `d2v` has not run on a card (clang 18's CUDA front end passed `d2v_22` / `d2v_33`, a proxy).
 **The exchange
-energy's Hessian too, s and p only, interpreted only** (`hessian.md`, "The
+energy's Hessian too, through (ff|ff), on both cards (#691)** (`hessian.md`, "The
 exchange Hessian"): `Target.K` joins `spec.HESSIAN_TARGETS`, a d2 K key in
 K's pairing (`coulomb/d2/(la,lc|lb,ld)/b1/k/literal`).
 `hessian/kernel_hkx.py` (`hkx_{la}{lc}_{lb}{ld}`) is ONE kernel per K
 class writing both terms (`D_ab D_cd` straddles bra and ket, so no
 derivative density exists to precompute): `kernel_gk`'s mapping, one warp
 per bra record, no screen, the plan of the d0 K class with the bra raised
-by two (`hkx_pq_spec`), the bra derivatives as shifted rows composed by
-the rule (`_derivative_terms`) and folded once each, the ket's as
-`s_bd (dY_l E^{bd})_q` from per-axis tables; the ket's atom varies across
-lanes, so the host groups each class's kets by atom pair
-(`hessian.host.exchange_hessian_records`: `seg_start`, `seg_b`, `seg_d`)
-and the kernel walks the segments serially, 36 warp reductions and
-atomics each. Host reference `hessian.host.exchange_hessian`, held to
-finite differences of `gradient.host.exchange_gradient` (5.7e-9 of
-`max|H|`), `H = H^T` and invariance (`test_hessian_host.py`), and by hand
-once to `experimental/mmd/hessian`'s `d2(ab|cd)` (1.2e-14); interpreted,
-`hkx` within ~1 eps of the absolute twin for every s, p class
-(`test_kernel_hkx.py`, L + 2 > 4 `slow`). Ladder `--hess-k-l [LMAX]` (1
-bare, 0..1; `(pp|pp)` is 1.6 MB of text), never in the bare default nor
-in `KERNEL_GEN_CMD`; 22 goldens plus 10 digests
-(`test_emit_hess_k.py`, `test/golden/hkx_digests.json`). Not compiled by
-nvcc or hipcc (clang 18's front end passed all 16 cuda units, a proxy),
-no device test, not run on either card. No response term, no whole RHF
-Hessian, nothing measured.
+by two (`hkx_pq_spec`); the ket's atom varies across lanes, so the host
+groups each class's kets by atom pair
+(`hessian.host.exchange_hessian_records`: `seg_start`, `seg_b`, `seg_d`;
+`bra_pairs=` / `ket_pairs=` keep part of a class, #691) and the kernel
+walks the segments serially, 36 warp reductions and atomics each. Two
+forms: the UNROLLED one (the bra derivatives as shifted rows composed by
+the rule, `_derivative_terms`, folded once each and digested) for the 11
+s, p classes below `LOWSTACK_MIN_L = 3`, and from it and for every d or f
+class the ROLLED one (#691, `hkx_lowstack`; `lowstack=` forces either,
+the unrolled only with every `l <= 1`): `kernel_gk`'s #618 shape two
+orders up -- compact per-axis tables `(la + 2, lc + 2)` / `(lb + 1, ld +
+1)`, `[r]^(0)` into a local `R`, `I` then each `J{Y}{l}` into one local --
+with the derivative AXES as run-time loops too (unit vectors as I32
+locals, accumulators `BB[27]` / `BK[36]`), so a unit is the recurrence
+plus 25 rolled sums (147 KB at `(pp|ps)`, 361 KB at `(ff|ff)`); a first
+draft with the components unrolled in Python took 75-90 s of nvcc a unit
+and was discarded. The floor is measured: the unrolled `(pp|ps)` is 17 KB
+of `sm_86` stack, `(pp|pp)` 34 KB and 69 s. Host reference
+`hessian.host.exchange_hessian`, held to finite differences of
+`gradient.host.exchange_gradient` (5.7e-9 of `max|H|`), `H = H^T` and
+invariance (`test_hessian_host.py`), and on H₂O/STO-3G to LIBCINT through
+the numeric golden `hkx_h2o_sto3g_bse` (4.5e-13 of `max|H|`, `slow`;
+`oracle.numeric`'s `k.d2`: `int2e_ipip1` / `_ipvip1` / `_ip1ip2` `_cart`
+contracted with `D (x) D`, STO-3G and cc-pVDZ entries). Interpreted
+(`test_kernel_hkx.py`, L + 2 > 4 `slow`): every s, p class in both
+forms (~1 eps of the absolute twin unrolled), every class with a d shell
+and none above (65) and the f witnesses `(ff|ff)`, `(fs|fs)`, `(fd|pd)`
+rolled on a three-atom basis, one bra and one ket pair (<= ~0.4 eps).
+Ladder `--hess-k-l [LMAX]` (1 bare, 0..3), never in the bare default nor
+in `KERNEL_GEN_CMD`; 12 goldens a backend (the 11 unrolled s, p, one
+rolled `hkx_11_10`) and 249 digests a backend (every other default unit,
+and the five pre-#691 unrolled s, p texts as `<name>.unrolled`)
+(`test_emit_hess_k.py`, `test/golden/hkx_digests.json`). **Compiled**:
+all 256 default units and the 16 s, p in their other form, nvcc 13.0
+(`sm_86`) and hipcc 7.2.4 (`gfx1200`), each alone, no warning in
+generated text; `data/measured/hkx.json` (`devtools/measure.sh
+hkx-compile`, rule declared before any row: 120 s a unit; frames
+RECORDED, NOT GATED): every default unit <= 4.9 s of nvcc and <= 7.5 s of
+hipcc, worst frame `hkx_33_33` 19,984 B (`sm_86`) / 16,864 B
+(`gfx1200`), 19 / 3 default units over 14 KB, all `l = 3`. **On both
+cards** (`test_hkx_device.py`, `hess_driver.hkx_launches`, 2026-10-31):
+all 256 classes on a three-atom s, p, d, f basis (one bra pair, two ket
+segments) against the host, worst 1.03e-16 of the absolute twin on each
+card; the five s, p classes from the floor rolled against unrolled
+(<= 6.5e-17); and H₂O/STO-3G and cc-pVDZ whole against the libcint
+goldens at 1e-12 of `max|H|`: 1.8e-13 / 8.4e-13 (RTX 3080), 3.3e-13 /
+9.3e-13 (RX 9060 XT) -- a thin margin, the runs of one card differing by
+up to 3.9e-13 (the O s exponents' `(2 alpha)^2`, cancelling); 263 passed
+per card. With six xdist workers on the RTX 3080 `hkx_33_32` /
+`hkx_33_33` (~20 KB of stack, ~2 GB reserved a launch) failed to launch
+(out of memory) and passed alone: run the `high_l` cases with at most two
+workers. No response term, no whole RHF Hessian, no clock measured, no
+screen.
 **The exchange derivative matrix `K^X` at d1, interpreted through (dd|dd)
 and at f, compiled through (ff|ff), on no card** (#689; `hessian.md`, "The
 exchange derivative matrix"): the exchange part of the CPHF right-hand

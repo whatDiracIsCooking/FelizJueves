@@ -18,8 +18,10 @@ CASES = [
         cards=dict.fromkeys(BOTH, range(5)))),
     *ladder("mmd", "v", 2, compile=(0, 1, 2, 3, 4, 6), gpu=range(5),
             cards=dict.fromkeys(BOTH, range(5))),
-    # hkx: no device test, not run on either card.
-    *ladder("mmd", "k", 2, compile=range(5)),
+    # hkx (#691): interpreted through (dd|dd) and at f, compiled by nvcc
+    # and hipcc through (ff|ff), every class on both cards against the host.
+    *ladder("mmd", "k", 2, compile=range(13), gpu=range(13),
+            cards=dict.fromkeys(BOTH, range(13))),
     # d2metric, d2eri3 through (i|i) / (ff|i) (#694): interpreted, compiled
     # by nvcc and hipcc, and run on both cards against the host (2026-10-31).
     *ladder("mmd", "metric", 2, compile=range(13), gpu=range(13),
@@ -55,6 +57,10 @@ _HESS = {f"{name}-{which}": span("mmd", which, 2, range(top + 1))
 # jx's whole-molecule cells (#688): every bra class of the basis.
 _JX = {name: span("mmd", "jx", 1, range(top + 1))
        for name, top in (("h2o_sto3g", 2), ("h2o_ccpvdz", 4))}
+
+# hkx's whole-molecule cells (#691): every K class of the basis.
+_HKX = {name: span("mmd", "k", 2, range(top + 1))
+        for name, top in (("h2o_sto3g", 4), ("h2o_ccpvdz", 8))}
 
 # The d1 derivative matrices (#687, kernel_ip1e): a variant of the d1 S, T,
 # V cases (gradients.py's), as a lever is; the rinv form at each nucleus
@@ -104,4 +110,9 @@ TESTS = {
     "test/test_jx_device.py::test_X_jx_class_matches_the_host":
         Classes("mmd", "jx", 1),
     "test/test_jx_device.py::test_X_jx_molecule_matches_pyscf": ById(_JX),
+    "test/test_hkx_device.py::test_X_hkx_class_matches_the_host":
+        Classes("mmd", "k", 2),
+    "test/test_hkx_device.py::test_X_hkx_rolled_is_the_unrolled":
+        Classes("mmd", "k", 2),
+    "test/test_hkx_device.py::test_X_hkx_molecule_matches_pyscf": ById(_HKX),
 }

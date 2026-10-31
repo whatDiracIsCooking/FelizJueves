@@ -504,7 +504,9 @@ def exchange_hessian(basis: Basis, D, nuclei: Sequence[Nucleus], *,
 
 
 def exchange_hessian_records(basis: Basis, nuclei: Sequence[Nucleus],
-                             am: tuple[int, int, int, int]
+                             am: tuple[int, int, int, int], *,
+                             bra_pairs: Sequence[tuple[int, int]] | None = None,
+                             ket_pairs: Sequence[tuple[int, int]] | None = None
                              ) -> tuple[dict, dict, dict]:
     """`kernel_hkx`'s per-record arrays of K class `am = (la, lc, lb, ld)`,
     as lists: `gradient.host.exchange_records`' bra side unchanged; its
@@ -512,18 +514,33 @@ def exchange_hessian_records(basis: Basis, nuclei: Sequence[Nucleus],
     `D`) added, STABLY regrouped by the ket's atom pair `(atom_b,
     atom_d)`; and the segments of that grouping, `seg_start` (`n_seg + 1`
     record offsets), `seg_b`, `seg_d` (each segment's two atoms). One
-    launch over both sides is every quartet of `class_quartets(am)`."""
+    launch over both sides is every quartet of `class_quartets(am)`.
+
+    `bra_pairs` / `ket_pairs` (ordered shell pairs of the class; None, the
+    default, for every one) keep only those pairs' records, so one launch
+    is the quartets of `bra_pairs x ket_pairs`: a witness over part of a
+    class (#691)."""
     _, _, lb, ld = am
     bra, ket = exchange_records(basis, nuclei, am)
     atoms = shell_atoms(basis, nuclei)
-    sh = basis.shells
+    sh, off = basis.shells, basis.offsets
+    if bra_pairs is not None:
+        keep_ac = {(off[i], off[k]) for i, k in bra_pairs}
+        rows = [r for r, o in enumerate(zip(bra["off_a"], bra["off_c"],
+                                            strict=True)) if o in keep_ac]
+        bra = {k: [v[r] for r in rows] for k, v in bra.items()}
     extra: list[tuple[float, float, int, int]] = []
+    pair_of: list[tuple[int, int]] = []
     for j, m in exchange_pairs(basis, lb, ld):
         for _, _, _, beta, delta in _records(sh[j], sh[m]):
             extra.append((beta, delta, atoms[j], atoms[m]))
+            pair_of.append((j, m))
     if len(extra) != len(ket["s_bd"]):
         raise AssertionError("the ket records and their exponents disagree")
-    order = sorted(range(len(extra)), key=lambda r: extra[r][2:])
+    kept = (range(len(extra)) if ket_pairs is None else
+            [r for r in range(len(extra))
+             if pair_of[r] in {tuple(p) for p in ket_pairs}])
+    order = sorted(kept, key=lambda r: extra[r][2:])
     out = {k: [v[r] for r in order] for k, v in ket.items()}
     out["eb_ket"] = [extra[r][0] for r in order]
     out["ed_ket"] = [extra[r][1] for r in order]

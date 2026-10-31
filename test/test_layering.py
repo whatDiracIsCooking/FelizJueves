@@ -3965,10 +3965,12 @@ RULES |= {
         "the K class's plan two bra orders up (`kernel_k.k_class_spec`, "
         "`mmd.kernel.builder_plan`, `recurrence`), the K seams' fragment "
         "bindings, the per-axis `E` tables (`e_fragment`) and "
-        "`kernel_hjab`'s precondition note",
+        "`kernel_hjab`'s precondition note, and (#691, the rolled form) "
+        "`kernel_gk`'s compact tables and rolled sums",
         ("spec", "=ir", "plan", "mmd.e_fragment", "mmd.recurrence",
          "mmd.kernel", "eri.k_exchange.kernel_k",
-         "eri.k_exchange.levers.seams", "hessian.kernel_hjab"),
+         "eri.k_exchange.levers.seams", "hessian.kernel_hjab",
+         "gradient.kernel_gk"),
         ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
                              "gradient.host": _HESS_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
@@ -3988,8 +3990,10 @@ EDGES |= {k: frozenset(v) for k, v in {
                            "spec"),
     "hessian.kernel_hjab": ("gradient.kernel_g1e", "ir", "mmd.e_fragment",
                             "plan.targets", "spec"),
+    # #691: the rolled form reuses kernel_gk's compact tables and rolled sums
     "hessian.kernel_hkx": ("eri.k_exchange.kernel_k",
                            "eri.k_exchange.levers.seams",
+                           "gradient.kernel_gk",
                            "hessian.kernel_hjab", "ir", "mmd.e_fragment",
                            "mmd.kernel", "mmd.recurrence", "plan.schedule",
                            "plan.targets", "spec"),

@@ -5,7 +5,8 @@ kernels -- harness.
     one_electron_launches(basis, nuclei, target, M)     -> [HessLaunch]
     d2metric_launches(aux, nuclei, W, *, lQ=)          -> [HessLaunch]  (#694)
     d2eri3_launches(basis, aux, nuclei, Gam, *, lP=)   -> [HessLaunch]  (#694)
-    hess_steps(launches)                                -> [harness_driver.Step]
+    hkx_launches(basis, nuclei, D, classes, *, pairs=) -> [HessLaunch]  (#691)
+    hess_steps(launches)                               -> [harness_driver.Step]
     hess_runners(launches, backend, workdir, units=)    -> {kernel: Program}
     compile_hess(launches, n_atom, backend, tc, workdir, units=) -> HessBinary
     HessBinary.run()                           -> [run][n_atom][3][n_atom][3]
@@ -14,7 +15,9 @@ kernels -- harness.
 place of `G[n_atom, 3]` (`hdq_`'s is `D1`, sized by `n_out`), on the shared
 runner (#649, ported by #659): one runner per distinct kernel
 (`harness_driver.chain_runners`, compiled under #92's warning filter), one
-launch per `HessLaunch` -- one thread per record, `THREADS` lanes -- every
+launch per `HessLaunch` -- one thread per record, `THREADS` lanes, or for
+`hkx_` (`kernel_hkx`, the exchange Hessian) one warp of `THREADS` lanes per
+bra record over its kets grouped by atom pair -- every
 argument named from the kernel's parameter list, and the OUT carried from
 zero (the kernels' precondition, `kernel_h1e.ZEROED_H`) through every
 launch. The kernels are `hessian.kernel_h1e`'s (and `kernel_hjab` /
@@ -43,15 +46,18 @@ from plan_driver import RUNS
 from felizjueves.eri.density_fit.eri3 import eri3_classes
 from felizjueves.eri.density_fit.metric import metric_classes
 from felizjueves.gradient import host
+from felizjueves.hessian import host as hessian_host
 from felizjueves.hessian.kernel_d2eri3 import build_d2eri3_kernel
 from felizjueves.hessian.kernel_d2metric import build_d2metric_kernel
 from felizjueves.hessian.kernel_h1e import build_h1e_kernel, launch_shape
+from felizjueves.hessian.kernel_hkx import build_hkx_kernel
+from felizjueves.hessian.kernel_hkx import launch_shape as hkx_launch_shape
 from felizjueves.ir import Intent, Kernel, Scalar
 from felizjueves.spec import Target
 
 __all__ = ["HessBinary", "HessLaunch", "compile_hess", "d2eri3_launches",
            "d2metric_launches", "hess_runners", "hess_steps",
-           "one_electron_launches"]
+           "hkx_launches", "one_electron_launches"]
 
 THREADS = 32  # lanes per block, one record per thread; not numerical
 H = "H"
@@ -67,6 +73,7 @@ class HessLaunch:
     arrays: Mapping[str, np.ndarray]
     scalars: Mapping[str, int] = field(default_factory=dict)
     out: str = H  # the one OUT, shared by every launch (`hdq_`'s is `D1`)
+    warp_per_record: bool = False  # `hkx_`: one warp per bra record
 
     def __post_init__(self) -> None:
         want = {p.name for p in self.kernel.params if p.array} - {self.out}
@@ -140,12 +147,49 @@ def d2eri3_launches(basis, aux, nuclei, Gam, *, lP: int | None = None
     return out
 
 
+def hkx_launches(basis, nuclei, D, classes=None, *, pairs=None,
+                 lowstack: bool | None = None) -> list[HessLaunch]:
+    """One `hkx_` launch per K class `(la, lc, lb, ld)` (#691), every
+    ordered bra record of `(la, lc)` against every ordered ket record of
+    `(lb, ld)`, the kets grouped by atom pair
+    (`hessian.host.exchange_hessian_records`); one warp of `THREADS` lanes
+    per bra record (`kernel_hkx.launch_shape`). `classes` defaults to every
+    class the basis reaches; `pairs` maps a class to `(bra_pairs,
+    ket_pairs)`, the shell pairs a witness launches (all when absent);
+    `lowstack` forces a form (the default form otherwise)."""
+    if classes is None:
+        ls = sorted({s.l for s in basis.shells})
+        classes = [(a, c, b, d) for a in ls for c in ls for b in ls
+                   for d in ls]
+    out = []
+    for am in classes:
+        kern = build_hkx_kernel(am, lowstack=lowstack)
+        bp, kp = (pairs or {}).get(am, (None, None))
+        bra, ket, seg = hessian_host.exchange_hessian_records(
+            basis, nuclei, am, bra_pairs=bp, ket_pairs=kp)
+        types = {p.name: p.type for p in kern.params if p.array}
+        arrs = {k: np.asarray(v, dtype=np.int32 if types[k] is Scalar.I32
+                              else np.float64)
+                for k, v in {**bra, **ket, **seg}.items() if k in types}
+        arrs["M"] = np.asarray(D, dtype=np.float64)
+        n_bra, n_ket = len(bra["s_ac"]), len(ket["s_bd"])
+        if not n_bra or not n_ket:
+            continue
+        out.append(HessLaunch(kern, n_bra, arrs, {
+            "n_bra": n_bra, "n_ket": n_ket, "n_seg": len(seg["seg_b"]),
+            "n_ao": basis.n_ao, "n_atom": len(nuclei)},
+            warp_per_record=True))
+    return out
+
+
 def hess_steps(launches: Sequence[HessLaunch]) -> list[Step]:
     """Each launch as a `harness_driver.Step`, one thread per record,
-    `THREADS` lanes; its OUT carried."""
+    `THREADS` lanes -- or for `hkx_` one warp of `THREADS` lanes per bra
+    record; its OUT carried."""
     out = []
     for x in launches:
-        grid, block = launch_shape(x.n_rec, THREADS)
+        shape = hkx_launch_shape if x.warp_per_record else launch_shape
+        grid, block = shape(x.n_rec, THREADS)
         out.append(Step(x.kernel, grid, block, {**x.arrays, **x.scalars}))
     return out
 

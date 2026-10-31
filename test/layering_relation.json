@@ -2225,6 +2225,7 @@
   "hessian.kernel_hkx": [
    "eri.k_exchange.kernel_k",
    "eri.k_exchange.levers.seams",
+   "gradient.kernel_gk",
    "hessian.kernel_hjab",
    "ir",
    "mmd.e_fragment",
