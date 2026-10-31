@@ -183,8 +183,13 @@ of host), and its `oracle` test rebuilds it from PySCF in ~2 s. The
 CO cell now holds the card to the witness's whole `G` at the same
 `DEV_TOL = 1e-13` (H₂ and H₂O keep the live host), with a fast no-card
 check that the witness is on the cell's own density and nuclei; the
-cell has **not** been re-run on either card since, so its after-time
-is unmeasured (#639).
+after-time on the RX 9060 XT (2026-10-31, 1 passed): 4m41s wall,
+the call 256 s with every compile cold (`KERNEL_NO_CACHE=1`), almost
+all of it hipcc building the one shared runner (GPU use 0 % and one
+clang process at 100 % CPU throughout); with sccache warm the call is
+10 s (35 s wall, collection included). The RTX 3080's after-time is
+unmeasured: the card was lost in that container (NVML init failed),
+so #639 stays open for it.
 **`gmetric` has an HGP twin, interpreted and compiled, on no card**
 (`docs/implementation/hgp_df.md`, "The metric's nuclear gradient on HGP"):
 `gradient/kernel_hgmetric.py`'s `hgmetric_{lP}{lQ}`, keyed
