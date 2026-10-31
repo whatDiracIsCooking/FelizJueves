@@ -64,43 +64,70 @@ Citations are by `docs/references.md` key. **`[DRK]` (entry 49) and `[LRL]`
 (entry 50) are closed access and were not read for this note**, so no
 equation number is cited against either. Each equation below names the
 openly readable source it was checked against, or says it is derived here
-in the lines that follow it. The checked sources are three:
+in the lines that follow it. The checked sources are four:
 
+- `[FV]` (entry 9), Fermann and Valeev's openly readable review, arXiv
+  v1's numbering. It is the one **printed** source here: eq. 6.4 defines
+  `F_m`, eq. 6.5 is the `(ss|ss)` prefactor, eqs. 7.3 and 7.9–7.12 are
+  the Rys measure, the rule and the `I_x I_y I_z` product, and eqs. 7.14
+  and 7.23 are the Obara–Saika VRR that the per-root 2D recurrence is read
+  off ("The recurrence"). It prints no Rys 2D recurrence of its own; for
+  those it cites `[DRK]`.
 - `[GPU4PySCF]` (entry 26), arXiv v1's numbering: eq. 1, the ERI as
   `SUM_n w_n I_x(t_n) I_y(t_n) I_z(t_n)`, and eq. 3, `N = floor((a+b+c+d)/2)
   + 1`. It cites `[DRK]` and Rys–Dupuis–King 1983 (entry 42) for the
   recurrences, and prints none of them.
 - `[Libcint]` (entry 51), its **source** at commit `4909749`: `src/g2e.c`'s
   `CINTg0_2e` forms the coefficients, and `CINTg0_2e_2d` runs the
-  recurrences. This is the oracle that the spike (#468) and the
-  interpreted checks below are held to, through PySCF. Code has no
-  equation numbers, so the functions are named instead.
+  recurrences; `src/rys_roots.c`'s `CINTrys_roots` holds the large-`T`
+  rule. This is the oracle that the spike (#468) and the interpreted
+  checks below are held to, through PySCF. Code has no equation numbers,
+  so the functions are named instead. The libcint paper (arXiv:1412.0649)
+  prints none of the recurrences and cites `[DRK]` for them.
 - `[JEngine, v2, eqs. 13, 18]` for the Boys function, as `j_engine.md`
   cites it.
 
-`[DRK]` remains the origin of the recurrences, and `[LRL]` is their
-re-derivation with a reduced operation count. Reading either one against
-the forms below, and recording its equation numbers, is still open.
+So every coefficient and both recurrences have two checks: a printed
+equation (`[FV]` eq. 7.23 and its mirror, through a substitution derived
+in "The recurrence") and a second, independent implementation
+(`[Libcint]`'s source). `[DRK]` remains the origin of the recurrences, and
+`[LRL]` is their re-derivation with a reduced operation count. Both were
+looked for in an open copy on 2026-10-31 and none was found (Semantic
+Scholar lists both as closed). Their own equation numbers, and their own
+names for the coefficients (`C00`, `C00'` is the customary spelling, not
+quoted from either paper here), are the one part still open.
 
 ## The rule
 
 The Boys function is `F_m(T) = ∫₀¹ t^{2m} exp(-T t²) dt` (`[JEngine, v2,
-eqs. 13, 18]`). The change of variable `x = t²` (derived here: `dt = dx /
-(2 sqrt(x))`) gives `F_m(T) = ∫₀¹ x^m (1/2) x^(-1/2) exp(-T x) dx`, so the
-measure is `(1/2) x^(-1/2) exp(-T x) dx` on `[0, 1]` and the `N`-point rule
-has `SUM w x^m = F_m(T)` for `m <= 2N - 1`. The node `x` is `t²`, the
-square of the Rys root `t`. libcint carries `u = t²/(1 - t²)` instead
-(`CINTg0_2e`'s comment `u(irys) = t2/(1-t2)`), so `x = u/(1 + u)`.
-`N = L // 2 + 1` is `[GPU4PySCF, eq. 3]`, and `N_MAX = 5` reaches
-`(dd|dd)` (L = 8).
+eqs. 13, 18]`; `[FV, eq. 6.4]` prints the same, in `u`). `[FV, eq. 7.3]`
+writes every ERI as `∫₀¹ P_L(t) exp(-T t²) dt` with `P_L` even of degree
+`2L`, and `[FV, eqs. 7.9–7.10]` make `exp(-T t²) dt` on `[0, 1]` the Rys
+measure and `n > L/2` points enough. The change of variable `x = t²`
+(derived here: `dt = dx / (2 sqrt(x))`) gives `F_m(T) = ∫₀¹ x^m (1/2)
+x^(-1/2) exp(-T x) dx`, so the measure is `(1/2) x^(-1/2) exp(-T x) dx` on
+`[0, 1]` and the `N`-point rule has `SUM w x^m = F_m(T)` for `m <= 2N -
+1`. The node `x` is `t²`, the square of the Rys root `t`. libcint carries
+`u = t²/(1 - t²)` instead (`CINTg0_2e`'s comment `u(irys) = t2/(1-t2)`),
+so `x = u/(1 + u)`; that is the square of `[FV, eq. 7.12]`'s `u ~ t/(1 -
+t²)^(1/2)`. `N = L // 2 + 1` is `[GPU4PySCF, eq. 3]`, the least integer
+above `L/2` of `[FV, eq. 7.10]`, and `N_MAX = 5` reaches `(dd|dd)` (L = 8).
 
 - `T >= T_SWITCH = 80`: generalised Gauss–Laguerre with `alpha = -1/2`
-  on constants, `x = s / T`, `w = v / (2 sqrt(T))`. This is derived here,
-  with no source cited: extend the upper limit from `1` to `infinity` and
-  substitute `s = T x`, which gives `F_m(T) ~ T^(-m - 1/2) ∫₀^∞ s^m (1/2)
-  s^(-1/2) e^(-s) ds`. That is the `alpha = -1/2` Laguerre weight, with the
-  rule's `x = s/T` and its weights scaled by `1/(2 sqrt(T))`. The dropped
-  tail is
+  on constants, `x = s / T`, `w = v / (2 sqrt(T))`. No printed source was
+  found for it, so it is derived here: extend the upper limit from `1` to
+  `infinity` and substitute `s = T x`, which gives `F_m(T) ~ T^(-m - 1/2)
+  ∫₀^∞ s^m (1/2) s^(-1/2) e^(-s) ds`. That is the `alpha = -1/2` Laguerre
+  weight, with the rule's `x = s/T` and its weights scaled by `1/(2
+  sqrt(T))`. It is checked against `[Libcint]`'s source: `CINTrys_roots`'s
+  large-`x` branch sets `u = rt/(T - rt)` (so `x = rt/T`) and `w = ww
+  sqrt(pi/(4T))` from `roots_for_x0.dat`'s `POLY_LARGEX_RT` /
+  `POLY_LARGEX_WW`. Those tables are this rule with the weights normalised
+  to sum 1 (`v = sqrt(pi) ww`): against `rys.roots.laguerre(n)`, `N` 1..5,
+  the nodes agree bit for bit and the weights to 2.0e-16 relative, and the
+  whole branch against `roots_weights` at `T` = 80, 100, 1e3, 1e6 to
+  2.6e-16 (2026-10-31, by hand, not a test). libcint switches earlier, at
+  `T >= 35 + 5N` (60 at `N = 5`). The dropped tail is
   `O(e^-T T^(2N - 3/2))`: at `N = 5` it is 5.6e-11 in the weights at
   `T = 50` (#468's switch, which held for `N <= 3` only) and below rounding
   at 80.
@@ -135,8 +162,41 @@ alone, and each flip was caught:
     I(i+1, 0) = c00 I(i, 0) + i B10 I(i-1, 0)
     I(i, k+1) = d00 I(i, k) + k B01 I(i, k-1) + i B00 I(i-1, k)
 
-The forms originate in `[DRK]`, unread here (see "Sources"). Each one is
-checked against `[Libcint]`'s source, with `p`, `q` the exponent sums
+The forms originate in `[DRK]`, unread here (see "Sources"). They are
+checked twice: read off a printed equation, `[FV]`'s, and against a second
+implementation, `[Libcint]`'s source.
+
+**From `[FV, eq. 7.23]`.** That is Head-Gordon and Pople's VRR, the
+Obara–Saika relation `[FV, eq. 7.14]` with `b = d = 0`:
+
+    [a+1_i,0|c0]^(m) = PA_i [a0|c0]^(m) + WP_i [a0|c0]^(m+1)
+                     + (a_i/2ζ) ([a-1_i,0|c0]^(m) - η/(ζ+η) [a-1_i,0|c0]^(m+1))
+                     + c_i/(2(ζ+η)) [a0|c-1_i,0]^(m+1)
+
+with `[FV]`'s `ζ`, `η` our `p`, `q` (`[FV, eqs. 7.17–7.18]`), `a_i`, `c_i`
+our `i`, `k`, and `PA_i`, `WP_i` ours. The step to one Rys node is derived
+here. Write every auxiliary as `[a0|c0]^(m) = S ∫ x^m I_{a,c}(x) dμ(x)`,
+with `dμ` the measure of "The rule", `I` the product of the three axes'
+polynomials in `x`, and `I_{0,0} = 1`, which is `[00|00]^(m) = S F_m(T)`
+(`[FV, eq. 7.22]`). Raising `m` by one is then multiplying the integrand by
+`x`, so eq. 7.23 holds under the integral when, at every `x`, each axis
+obeys it with `^(m+1)` read as `x ·`. On the axis `d`, that is
+
+    I(i+1, k) = (PA_d + x WP_d) I(i, k) + (i/(2p)) (1 - x q/(p+q)) I(i-1, k)
+              + k (x/(2(p+q))) I(i, k-1)
+
+which is `c00`, `B10` and `B00` above, and with `k = 0` the bra step. The
+ket step is the same relation built on `C`, the case of `[FV, eq. 7.14]`'s
+footnote ("the other three being the relations increasing angular momentum
+on centers B, C, and D"): `QC_d + x WQ_d`, `(k/(2q)) (1 - x p/(p+q))` and
+`i x/(2(p+q))`, which is `d00`, `B01` and `B00`. Only `m = 0` is ever
+taken, and `I` has degree at most `L` in `x` (`[FV, eq. 7.3]`'s `P_L` is of
+degree `2L` in `t`), which the `N`-point rule integrates exactly because
+`2N - 1 >= L`. So the quadrature replaces the integral at no loss.
+`[FV]` does not define `W`; `WP = W - P = -(q/(p+q)) PQ` is `[Fock]`
+eq 25's `W`, derived in `hgp_fock.md`.
+
+**Against `[Libcint]`'s source**, with `p`, `q` the exponent sums
 (libcint's `aij`, `akl`) and `PQ = P - Q` (its `xij_kl`):
 
 | Here (`rys/recurrence.py`) | libcint (`g2e.c`) | libcint's form, `u = x/(1 - x)`, `u2 = rho u` | Reduces to ours |
@@ -166,11 +226,16 @@ here the build is always on `A` and `C`. That choice is the open item
 under "What is not done" (#468's `P` near `B` rounding). Third, the order
 of the table fill differs, as the last row shows.
 
-**No misprint is recorded**, because no printed form of these recurrences
-was read. The one sign they share with a printed paper is the `W - P` /
-`W - Q` displacement. `hgp_fock.md` derives that sign and records `[Fock]`
-eq 26's printed `W - Q` as wrong. Here it is held by the libcint rows above
-and by #468's flip test.
+**One misprint is recorded, in `[FV]`**: eq. 7.23 prints the `a_i` term's
+denominator as `2ξ`, where eq. 7.14, the relation it specialises, has `2ζ`,
+and `ξ` is defined nowhere in the text. It is read as `ζ`, which is what
+`B10`'s `1/(2p)` and libcint's `b10` both say. Eqs. 7.14 and 7.23 carry no
+other discrepancy against the forms above. `[DRK]`'s and `[LRL]`'s printed
+forms were not read, so no misprint of theirs is recorded. The one sign
+these recurrences share with `[Fock]` is the `W - P` / `W - Q`
+displacement: `hgp_fock.md` derives it and records `[Fock]` eq 26's printed
+`W - Q` as wrong. Here it is held by `[FV, eq. 7.14]`'s `WP_i`, by the
+libcint rows above and by #468's flip test.
 
 `WP`, `WQ` are `kernel_f`'s derived signs (`W - P = -(q/(p+q)) PQ`). #468's
 two transfer steps are **not** run per node: the HGP boundary `(e0|f0)`,
@@ -184,7 +249,11 @@ contraction are one sum.
 **The prefactor, reconciled.** `S = U_P U_Q (2/sqrt(pi)) theta` is the HGP
 seed's scale, with `[00|00]^(m) = S F_m(T)`, `U_P = (pi/p)^(3/2) K_ab` and
 `theta = sqrt(rho)`. `hgp/recurrence.py` derives it, and it equals `[Fock]`
-§3.1's `R0_m` prefactor `2 pi^(5/2) K_ab K_cd / (p q sqrt(p+q))`. Because
+§3.1's `R0_m` prefactor `2 pi^(5/2) K_ab K_cd / (p q sqrt(p+q))`, which is
+the printed `(ss|ss)` of `[FV, eq. 6.5]`, `2 pi^(5/2) K1 K2 / (γp γq (γp +
+γq)^(1/2)) F_0(T)`, with `[FV]`'s `γp`, `γq`, `K1`, `K2` our `p`, `q`,
+`K_ab`, `K_cd`. (Algebra: `(pi/p)^(3/2) (pi/q)^(3/2) (2/sqrt(pi)) sqrt(pq/(p
++ q)) = 2 pi^(5/2) / (pq sqrt(p+q))`.) Because
 `SUM_n w_n = F_0(T)` (the rule at `m = 0`, above), the `(ss|ss)` case is
 `S SUM w_n = S F_0(T)`, which is HGP's own fundamental, so the two engines
 share one scale by construction. libcint uses the same scale. `CINTg0_2e`
@@ -241,10 +310,13 @@ over 512 KiB, `(pd|dd)` and `(dd|dd)`, pinned in
 - The bra-transfer rounding #468 measured (`P` near `B`) is now eq 28's,
   shared with `f_`; choosing the VRR centre by `l` is still open (libcint
   does choose it: "The recurrence").
-- **`[DRK]` and `[LRL]` unread** (closed access): their equation numbers
-  for the coefficients and the two recurrences, and any misprint in them,
-  are not recorded ("Sources"). The forms are held to libcint's source and
-  to the interpreted checks instead.
+- **`[DRK]` and `[LRL]` unread** (closed access, no open copy found on
+  2026-10-31): their own equation numbers and names for the coefficients
+  and the two recurrences, and any misprint in them, are not recorded
+  ("Sources"). Every equation used is cited instead to a printed source
+  that was read (`[FV]`, `[GPU4PySCF]`, `[JEngine]`, `[Fock]`), or to
+  libcint's source, or derived in place, and the large-`T` rule's libcint
+  check (2026-10-31) was by hand and is not a test.
 
 ## The split `J` on Rys: `Target.J` on `Engine.RYS`
 

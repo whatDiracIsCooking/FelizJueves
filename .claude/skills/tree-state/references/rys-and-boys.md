@@ -28,11 +28,15 @@ of libcint. `python -m felizjueves.emit --fock-l LMAX --rys`, never in the
 bare default nor in `KERNEL_GEN_CMD`; 21 goldens per backend
 (`test_emit_frys.py`, two in `frys_digests.json`). All 21 units passed clang
 18's CUDA front end (a proxy). Nothing measured or scored. Sources
-(#489): the VRR's coefficients and recurrences and the prefactor are
+(#489): the VRR's coefficients and recurrences are read off Fermann and
+Valeev's printed Obara–Saika VRR (`[FV]`, entry 9, eqs. 7.14 / 7.23, one
+misprint recorded: 7.23's `2ξ` for `2ζ`), the measure and rule off its
+eqs. 7.3, 7.9–7.12 and the prefactor off its eq. 6.5, and each is also
 checked against libcint's source (`docs/references.md` entry 51,
-`[Libcint]`), and `N` and the product form against `[GPU4PySCF]` (entry
-26). `[DRK]` and `[LRL]` (entries 49 and 50) are cited but closed access
-and unread, so none of their equation numbers is recorded.
+`[Libcint]`; the large-`T` Laguerre rule against `CINTrys_roots`'s
+tables, by hand), and `N` and the product form against `[GPU4PySCF]`
+(entry 26). `[DRK]` and `[LRL]` (entries 49 and 50) are cited but closed
+access and unread, so none of their own equation numbers is recorded.
 **The split `J` on Rys quadrature too, interpreted and emitted, NOT
 compiled by nvcc / hipcc and NOT run on a card** (`rys_fock.md`, "The split
 `J` on Rys"): `Target.J` on `Engine.RYS` (slot `j.rys`, whose only legal

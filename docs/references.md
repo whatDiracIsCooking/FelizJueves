@@ -31,7 +31,12 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
    124–131 (1997). doi:10.1063/1.474359
 9. J. T. Fermann and E. F. Valeev, "Fundamentals of molecular integrals
    evaluation," arXiv:2007.12057 [quant-ph] (2020).
-   doi:10.48550/arXiv.2007.12057
+   doi:10.48550/arXiv.2007.12057 — `[FV]`. Openly readable; equation
+   numbers cited against this entry are the arXiv v1's. Cited by
+   `docs/implementation/rys_fock.md` for eqs. 6.4–6.5 (`F_m` and the
+   `(ss|ss)` prefactor), 7.3 and 7.9–7.12 (the Rys measure and rule) and
+   7.14 / 7.23 (the Obara–Saika VRR the 2D recurrence is read off). It
+   prints no Rys recurrence of its own and cites entry 49 for them.
 10. C. C. Forgy and D. A. Mazziotti, "A differential derivation of the
     Obara–Saika relation for Gaussian electron repulsion integrals,"
     arXiv:2607.00102 [physics.chem-ph] (2026).
@@ -213,5 +218,8 @@ Cite by number. Every entry resolves by DOI; no PDFs are tracked here.
     doi:10.1002/jcc.23981 — `[Libcint]`. Cited for its source, which
     implements `[DRK]`'s recurrences and is this repo's oracle (through
     PySCF): `src/g2e.c`'s `CINTg0_2e` (the coefficients) and
-    `CINTg0_2e_2d` (the recurrences), read at commit `4909749` of
-    github.com/sunqm/libcint.
+    `CINTg0_2e_2d` (the recurrences), and `src/rys_roots.c`'s
+    `CINTrys_roots` with `src/roots_for_x0.dat`'s `POLY_LARGEX_RT` /
+    `POLY_LARGEX_WW` (the large-`T` rule), read at commit `4909749` of
+    github.com/sunqm/libcint. Also arXiv:1412.0649 (openly readable),
+    which prints none of the recurrences and cites entry 49 for them.
