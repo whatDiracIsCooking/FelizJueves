@@ -21,9 +21,11 @@ CASES = [
     # hkx: no device test, not run on either card.
     *ladder("mmd", "k", 2, compile=range(5)),
     # d2metric, d2eri3 through (i|i) / (ff|i) (#694): interpreted, compiled
-    # by nvcc and hipcc, a device test written; not run on either card.
-    *ladder("mmd", "metric", 2, compile=range(13), gpu=range(13)),
-    *ladder("mmd", "eri3", 2, compile=range(13), gpu=range(13)),
+    # by nvcc and hipcc, and run on both cards against the host (2026-10-31).
+    *ladder("mmd", "metric", 2, compile=range(13), gpu=range(13),
+            cards=dict.fromkeys(BOTH, range(13))),
+    *ladder("mmd", "eri3", 2, compile=range(13), gpu=range(13),
+            cards=dict.fromkeys(BOTH, range(13))),
     # kx1 / kxc (#689), the exchange derivative matrix at d1: interpreted
     # through (dd|dd) and at three f classes, compiled at the goldens and
     # (ff|ff); no device test, not run on either card.
