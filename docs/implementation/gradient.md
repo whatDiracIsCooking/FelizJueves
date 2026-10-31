@@ -24,8 +24,8 @@ has not run on a card. The uncontracted metric derivative `ipmetric_`
 held to libcint, and run on both cards through (i|i).
 The dipole and quadrupole gradients `gmu_` / `gquad_` ("The dipole and
 quadrupole gradients") are generated and interpreted through (ff), bitwise
-the host, the host held to libcint's `int1e_irp` / `int1e_irrp`; not
-compiled by nvcc or hipcc, on no card.
+the host, the host held to libcint's `int1e_irp` / `int1e_irrp`; compiled by
+nvcc and hipcc through (ff), on no card.
 **The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
 interpreted and compiled, not run**: held to `eri.eri`'s derivative
 integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
@@ -1070,8 +1070,9 @@ host to 1.2e-16 of max. Not measured.
 
 ## The dipole and quadrupole gradients (`gradient/kernel_gmu.py`)
 
-**Status: generated, interpreted, held to libcint through f; not compiled
-by nvcc or hipcc, not run on a card, not measured.**
+**Status: generated, interpreted, held to libcint through f; every unit
+through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200); not
+run on a card, not measured.**
 
 `Target.DIPOLE` and `Target.QUADRUPOLE` at `derivative_order = 1`, MMD
 only: `dipole/d1/(la,lb)/b1/dipole/literal` and
@@ -1115,11 +1116,11 @@ q)`, the same arithmetic. Witnesses (`test_kernel_gmu.py`):
 | kernel, every ordered class (ss)–(ff), HF/cc-pVTZ, interpreted | the host, per class | bitwise (gate 16 eps of a split-centre scale) |
 | kernel, whole H₂O/STO-3G gradient, interpreted | the host | bitwise |
 
-Every unit through (ff) passed clang 18's CUDA front end with `-Wall
--Wextra -Werror` (a proxy, 2026-10-31, a cloud container with neither
-nvcc nor hipcc); the `cuda` / `hip` compile cases
-(`test_emit_grad_mu.py`, through (ff)) are written and **have not run**.
-There is no device harness: nothing has run on a card, and nothing is
+Every unit through (ff) compiled warning-free by nvcc 13.0 (sm_86) and
+hipcc / ROCm 7.2.4 (gfx1200), `-c`, the kernel tier's flags
+(`test_emit_grad_mu.py`'s 40 `cuda` / `hip` cases, 2026-10-31, a
+device-less cloud container; slowest `gquad_33`, 7.4 s on nvcc). There
+is no device harness: nothing has run on a card, and nothing is
 measured (the largest unit, `gquad_33`, folds 3,600 products; whether it
 fits #613's 14,000 B stack budget unrolled is unmeasured).
 
@@ -1208,7 +1209,7 @@ ladder).
 ## What is not done
 
 - The dipole and quadrupole gradients (`gmu_`, `gquad_`, above) are
-  interpreted only: not compiled by nvcc or hipcc, no device harness, no
+  interpreted and compiled by nvcc and hipcc only: no device harness, no
   card, not measured.
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
   emitted, not compiled, not on a card.

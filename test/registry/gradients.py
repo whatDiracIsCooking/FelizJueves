@@ -44,8 +44,8 @@ CASES = [
     # The metric's HGP twin (kernel_hgmetric): interpreted through L = 4,
     # compiled for s and p (test_emit_hgp_df.py), on no card.
     *ladder("hgp", "metric", 1, compile=range(3), interpreted=range(5)),
-    # The dipole and quadrupole gradients (kernel_gmu): interpreted through
-    # (ff); compile cases through (ff) written, never run; no device test.
+    # The dipole and quadrupole gradients (kernel_gmu): interpreted and
+    # compiled by nvcc and hipcc through (ff); no device test.
     *(case for q in ("dipole", "quadrupole") for case in ladder(
         "mmd", q, 1, compile=range(7))),
 ]

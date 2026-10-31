@@ -108,8 +108,8 @@ on-card differential against the unrolled form over the 62 / 58 classes
 whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
 319 / 315 units, every one under the 10 s cap (slowest 5.7 s / 6.1 s).
 `gk` measured for its compile only (the DF-J terms: below).
-**The dipole and quadrupole gradients are generated and interpreted,
-not compiled by a device compiler, on no card** (`gradient.md`, "The
+**The dipole and quadrupole gradients are generated, interpreted and
+compiled by nvcc and hipcc, on no card** (`gradient.md`, "The
 dipole and quadrupole gradients"): `Target.DIPOLE` and `QUADRUPOLE` at d1
 (MMD only; `spec.GRADIENT_TARGETS`; an HGP moment at d1 refused),
 `gradient/kernel_gmu.py` (`gmu_`, `gquad_{la}{lb}`): `G[c, A, k] +=
@@ -128,10 +128,9 @@ H₂O/STO-3G gradient are **bitwise** the host (gate 16 eps of the
 split-centre scale). Ladder `python -m felizjueves.emit --grad-mu-l
 [LMAX]` (2 bare, 0..3), never in the bare default nor `KERNEL_GEN_CMD`;
 12 goldens per backend (ss)-(dd) (`test_emit_grad_mu.py`). Every unit
-through (ff) passed clang 18's CUDA front end `-Wall -Wextra -Werror` (a
-proxy, 2026-10-31, a container with neither nvcc nor hipcc); the `cuda` /
-`hip` compile cases through (ff) are written and **have not run**. No
-device harness, no card, nothing measured.
+through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200)
+(the 40 `cuda` / `hip` cases, 2026-10-31, a device-less cloud
+container). No device harness, no card, nothing measured.
 **The whole RHF gradient is assembled and interpreted** (#565,
 `gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
 `rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,
