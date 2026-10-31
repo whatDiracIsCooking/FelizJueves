@@ -259,9 +259,10 @@ for CUDA, `.hip` for HIP):
   (`hessian.kernel_hkx`): for every K class `(la, lc | lb, ld)`, the
   Hermite pairing, each `l <= LMAX` (1 when the flag is given bare: the
   16 classes with every shell s or p), `hkx_{la}{lc}_{lb}{ld}`, the whole
-  skeleton `d2 E_K/dR dR` of the class (`Target.K` at d2). Accepted
-  0..`HESS_K_L_MAX` = 1 (validated through (pp|pp), interpreted); above
-  it is a 2. It ADDS units beside the J ladders, as `--grad-k-l` does,
+  skeleton `d2 E_K/dR dR` of the class (`Target.K` at d2), in its
+  default form (rolled from L = 3, #691). Accepted 0..`HESS_K_L_MAX` = 3
+  (validated through (ff|ff): interpreted, and on both cards); above it
+  is a 2. It ADDS units beside the J ladders, as `--grad-k-l` does,
   and is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name
   starts `hkx_`, so none collides with another ladder's (HGP's `K` is
   `hk_`).
@@ -714,7 +715,7 @@ HESS_L_MAX = 2  # the Hessian kernels are validated through (dd) interpreted
 DEFAULT_JX_L = 2  # `--jx-l` given bare: every ordered class through (dd), 9 units
 JX_L_MAX = 3  # kernel_jx is validated through (ff) interpreted
 DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
-HESS_K_L_MAX = 1  # kernel_hkx is validated through (pp|pp) interpreted
+HESS_K_L_MAX = 3  # kernel_hkx through (ff|ff), on both cards (#691)
 DEFAULT_HESS_KX_L = 1  # `--hess-kx-l` bare: every s / p K class, 32 units
 HESS_KX_L_MAX = 3  # kernel_kx is validated through (ff|ff) interpreted
 DEFAULT_HESS_ONE_E_L = 2  # `--hess-one-e-l` bare: (ss) through (dd), 18 units
@@ -2230,7 +2231,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.hess_k_l is not None and not 0 <= args.hess_k_l <= HESS_K_L_MAX:
         print(f"emit: --hess-k-l {args.hess_k_l} is outside "
               f"0..{HESS_K_L_MAX}: the exchange-Hessian kernels are "
-              "validated through (pp|pp) only", file=sys.stderr)
+              "validated through (ff|ff) only", file=sys.stderr)
         return 2
     if (args.hess_kx_l is not None
             and not 0 <= args.hess_kx_l <= HESS_KX_L_MAX):

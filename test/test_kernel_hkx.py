@@ -19,6 +19,16 @@ digests them into each component, one accumulator per power of `2 alpha`,
   by `tiers.by_l` on the raised `L + 2`), and on a three-atom s, p basis
   with two primitives per shell (up to nine segments, contracted records;
   all but `(ss|ss)` `slow`, ~25 s a class interpreted).
+  Both in the UNROLLED form, forced (`lowstack=False`).
+- THE ROLLED FORM (#691), the default from `LOWSTACK_MIN_L = 3`: every s,
+  p class forced rolled on the two-atom basis (by `tiers.by_l` on `L +
+  2`); every class with a d shell and none above (65) and the f witnesses
+  `(ff|ff)`, `(fs|fs)`, `(fd|pd)` on test_hkx_device.py's TRI_SPDF, one
+  bra pair `(l_a on A, l_c on B)` against one ket pair `(l_b on B, l_d on
+  C)`, three centres, every term live (`slow`; ~2 min interpreted at
+  `(dd|dd)`). The rolled loops are generic over the class: f adds no new
+  code path. Every class through `(ff|ff)` runs on both cards against
+  the host (test_hkx_device.py).
 - THE WHOLE `d2 E_K` of the s, p basis: the 16 class launches into one
   `H` (`slow`), against the host's every-quartet sweep, symmetric and
   translationally invariant.
@@ -28,7 +38,8 @@ digests them into each component, one accumulator per power of `2 alpha`,
 ROUND-OFF: `|H_kernel - H_host| <= TOL max(scale)`, `TOL = 16 eps`,
 `scale` the host's `absolute=True` twin (every factor in `|.|`, both terms
 of each derivative rule added). Measured: at most ~1 eps of the scale on
-every class through `(pp|pp)`.
+every class through `(pp|pp)` unrolled, and ~0.4 eps rolled (s, p, d
+and the f witnesses).
 """
 
 from __future__ import annotations
@@ -38,6 +49,8 @@ from functools import cache
 import numpy as np
 import pytest
 from test_gradient_host import PAIR_SP
+from test_hkx_device import TRI_SPDF, _tri_density
+from test_hkx_device import _pairs as _tri_pairs
 from tiers import by_l
 
 from felizjueves.ao.shell import Basis, Shell
@@ -47,12 +60,13 @@ from felizjueves.hessian.kernel_hkx import (
     PARAMS,
     _derivative_terms,
     build_hkx_kernel,
+    hkx_lowstack,
     hkx_name,
     hkx_pq_spec,
     hkx_spec,
     launch_shape,
 )
-from felizjueves.ir import AtomicAdd, For, Intent, WarpReduce, walk
+from felizjueves.ir import AtomicAdd, Decl, For, Intent, WarpReduce, walk
 from felizjueves.ir.interp import Interpreter, Launch
 from felizjueves.mmd.kernel import split
 from felizjueves.reference.boys import boys
@@ -81,7 +95,8 @@ def _density(name: str) -> np.ndarray:
     return X @ X.T / n
 
 
-def _launch(name: str, am, H: np.ndarray, lanes: int = 4) -> np.ndarray:
+def _launch(name: str, am, H: np.ndarray, lanes: int = 4, *,
+            lowstack: bool | None = None) -> np.ndarray:
     basis, nuclei = _case(name)
     bra, ket, seg = host.exchange_hessian_records(basis, nuclei, am)
     arrays = {k: np.array(v, dtype=np.int32
@@ -90,7 +105,8 @@ def _launch(name: str, am, H: np.ndarray, lanes: int = 4) -> np.ndarray:
               for k, v in {**bra, **ket, **seg}.items()}
     n_bra, n_ket = len(bra["s_ac"]), len(ket["s_bd"])
     grid, block = launch_shape(n_bra, lanes)
-    return Interpreter(build_hkx_kernel(am), launch=Launch(grid, block, lanes),
+    return Interpreter(build_hkx_kernel(am, lowstack=lowstack),
+                       launch=Launch(grid, block, lanes),
                        boys=boys).run(
         n_bra=n_bra, n_ket=n_ket, n_seg=len(seg["seg_b"]), n_ao=basis.n_ao,
         n_atom=len(nuclei), M=_density(name), H=H, **arrays)["H"]
@@ -133,12 +149,101 @@ def test_one_launch_over_the_class_is_the_host_hessian(case) -> None:
     q = gh.class_quartets(basis, am)
     assert q, am
     n = len(nuclei)
-    H = _launch(name, am, np.zeros((n, 3, n, 3)))
+    # the unrolled form at every s, p class (the rolled one: below)
+    H = _launch(name, am, np.zeros((n, 3, n, 3)), lowstack=False)
     want = _host(name, q)
     sc = float(_host(name, q, absolute=True).max())
     assert sc > 0.0
     err = float(np.abs(H - want).max())
     assert err <= TOL * sc, f"{am}: {err / sc / EPS:.2f} eps of scale"
+
+
+# --- the rolled form (#691) -----------------------------------------------------
+
+
+def _rolled_param(am):
+    return by_l(am, sum(am) + 2, id=f"rolled-{hkx_name(am)}")
+
+
+@pytest.mark.parametrize("am", [_rolled_param(am) for am in _classes(1)])
+def test_the_rolled_form_is_the_host_hessian_on_s_p(am) -> None:
+    basis, nuclei = PAIR_SP
+    q = gh.class_quartets(basis, am)
+    n = len(nuclei)
+    H = _launch("pair_sp", am, np.zeros((n, 3, n, 3)), lowstack=True)
+    want = _host("pair_sp", q)
+    sc = float(_host("pair_sp", q, absolute=True).max())
+    err = float(np.abs(H - want).max())
+    assert err <= TOL * sc, f"{am}: {err / sc / EPS:.2f} eps of scale"
+
+
+def _tri_launch(am, lowstack: bool | None = None):
+    """One bra shell pair `(l_a on A, l_c on B)` against one ket pair `(l_b
+    on B, l_d on C)` of test_hkx_device.py's TRI_SPDF (every term live),
+    and the host over that quartet."""
+    basis, nuclei = TRI_SPDF
+    bras, kets = _tri_pairs(am)
+    kets = kets[:1]
+    bra, ket, seg = host.exchange_hessian_records(
+        basis, nuclei, am, bra_pairs=bras, ket_pairs=kets)
+    arrays = {k: np.array(v, dtype=np.int32
+                          if k.startswith(("off", "atom", "seg"))
+                          else np.float64)
+              for k, v in {**bra, **ket, **seg}.items()}
+    n = len(nuclei)
+    grid, block = launch_shape(1, 4)
+    D = _tri_density()
+    H = Interpreter(build_hkx_kernel(am, lowstack=lowstack),
+                    launch=Launch(grid, block, 4), boys=boys).run(
+        n_bra=1, n_ket=1, n_seg=1, n_ao=basis.n_ao, n_atom=n, M=D,
+        H=np.zeros((n, 3, n, 3)), **arrays)["H"]
+    q = [bras[0] + kets[0]]
+    want, twin = (np.array(host.exchange_hessian(
+        basis, D, nuclei, one_centre=one_centre, quartets=q,
+        absolute=a)).reshape(n, 3, n, 3) for a in (False, True))
+    return H, want, float(twin.max())
+
+
+# Every class with a d shell and none above (65), and the f witnesses:
+# (ff|ff), (fs|fs), (fd|pd) (test_kernel_kx.py's), ~2 min (dd|dd) and
+# longer at f, one quartet each
+D_CLASSES = [am for am in _classes(2) if max(am) == 2]
+F_WITNESSES = [(3, 3, 3, 3), (3, 0, 3, 0), (3, 2, 1, 2)]
+
+
+@pytest.mark.parametrize("am", [
+    *(by_l(am, sum(am) + 2, id=hkx_name(am)) for am in D_CLASSES),
+    *(by_l(am, sum(am) + 2, id=hkx_name(am)) for am in F_WITNESSES)])
+def test_the_rolled_form_is_the_host_hessian_at_d_and_f(am) -> None:
+    H, want, sc = _tri_launch(am)
+    assert float(np.abs(want).max()) > 1e-4 * sc, am
+    err = float(np.abs(H - want).max())
+    assert err <= TOL * sc, f"{am}: {err / sc / EPS:.2f} eps of scale"
+
+
+def test_the_floor_and_the_unrolled_forms_reach() -> None:
+    assert not hkx_lowstack((1, 1, 0, 0)) and hkx_lowstack((1, 1, 1, 0))
+    assert hkx_lowstack((2, 0, 0, 0))
+    with pytest.raises(ValueError, match="unrolled form is built only"):
+        build_hkx_kernel((2, 0, 0, 0), lowstack=False)
+
+
+@pytest.mark.slow
+def test_the_rolled_form_holds_no_e_block_or_shifted_row_digest() -> None:
+    k = build_hkx_kernel((2, 1, 1, 2))
+    assert hkx_lowstack((2, 1, 1, 2)) and k.name == "hkx_21_12"
+    assert tuple(p.name for p in k.params) == PARAMS
+    stmts = list(walk(k.body))
+    adds = [s for s in stmts if isinstance(s, AtomicAdd)]
+    assert len(adds) == 72 and all(a.dst.array == "H" for a in adds)
+    assert sum(isinstance(s, WarpReduce) for s in stmts) == 36 + 21
+    arrays = {s.name for s in stmts if isinstance(s, Decl) and s.shape}
+    assert arrays == {"Ex", "Ey", "Ez", "Fx", "Fy", "Fz", "R", "I", "BB",
+                      "BK", "va", "vc", "vb", "vd", "uk", "ul", "boys"}
+    # the derivative axes are loops: one fold for I, 12 bra-bra sums, and
+    # per Y two J sums and four bra-ket sums
+    loops = [s.var for s in stmts if isinstance(s, For)]
+    assert loops.count("kk") == 3 + 2 and loops.count("ll") == 3 + 2
 
 
 @pytest.mark.slow
@@ -217,7 +322,7 @@ def test_what_is_not_a_one_batch_d2_k_key_is_refused(spec) -> None:
 
 
 def test_the_parameters_the_one_output_and_the_adds() -> None:
-    k = build_hkx_kernel((1, 0, 1, 1))
+    k = build_hkx_kernel((1, 0, 1, 1), lowstack=False)
     assert tuple(p.name for p in k.params) == PARAMS
     assert [p.name for p in k.params if p.intent is Intent.OUT] == ["H"]
     stmts = list(walk(k.body))

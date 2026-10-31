@@ -15,8 +15,8 @@ against the host, with the host's `J`s; the on-card chain through the
 `[p|q]` kernel is interpreted only). This is
 the derived note for the first `derivative_order = 2` key: the skeleton
 Coulomb part of an SCF Hessian, `d2 E_J / dR dR` for a fixed density. Its
-exchange twin `d2 E_K / dR dR` (s and p) is interpreted only and has its
-own status line ("The exchange Hessian"). It
+exchange twin `d2 E_K / dR dR` runs on both cards through (ff|ff) (#691)
+and has its own status line ("The exchange Hessian"). It
 says what is generated, what it is checked against, and what is not done.
 The session that built it had no device compiler and no card (the kernel
 texts passed clang 18's CUDA front end, `-Wall -Wextra`, through (dd), a
@@ -155,8 +155,12 @@ at (ff); `hdq` is about a fifth of that.
 
 ## The exchange Hessian (`hkx`)
 
-**Interpreted only, s and p only. Not compiled by nvcc or hipcc, not run
-on either card.** The same skeleton for the exchange energy,
+**Through (ff|ff) (#691): interpreted through (dd|dd) and at f, compiled
+by nvcc and hipcc, every class run on both cards against the host, and
+H₂O/STO-3G and cc-pVDZ against libcint.** The unrolled form below is the
+s, p one; from `L = 3` and for every d or f class the kernel is a ROLLED
+form ("The rolled form", below). The same skeleton for the exchange
+energy,
 
     H[A, k, B, l] = d2 E_K / dR_{A,k} dR_{B,l},   E_K = 1/2 SUM D_ab D_cd (ac|bd)
 
@@ -208,30 +212,86 @@ quartets=, atoms=, parts=, absolute=)`, every ordered quartet or
 `quartets=` (`gradient.host.class_quartets`), differentiating `E^{ac}`
 and `E^{bd}` *before* the fold (`_Axes`), `reference.pq`'s `[r]`.
 
+**The rolled form (#691).** The unrolled text is large -- cuda 58 KB at
+`(ss|ss)`, 221 KB at `(ss|pp)`, 1.63 MB at `(pp|pp)` -- and over #613's
+14,000 B of `sm_86` stack from `L = 3` (`(pp|ps)` 16,936 B, `(pp|pp)`
+33,952 B and 69 s of nvcc). So `kernel_hkx.hkx_lowstack` makes the
+default rolled from `LOWSTACK_MIN_L = 3` and for every class with a d or
+f shell (the unrolled form is built only with every `l <= 1`;
+`lowstack=` forces either). It is `kernel_gk`'s #618 shape two orders
+up: the bra's per-axis tables at `(la + 2, lc + 2)` and the ket's at
+`(lb + 1, ld + 1)`, compact, the ket sign folded into the odd-`t`
+entries; `[r]^(0)` stored into a local `R` as it forms; per `(b, d)` row
+`I[p]` into a local, then each `J{Y}{l}` into the same local in turn; and
+per `(a, c)` row the derivative terms as rolled sums over the bra tables.
+The derivative AXES are loops too (`k`, `l` at run time, their unit
+vectors I32 locals the shifted rows add, the accumulators local arrays
+`BB[27]`, `BK[36]`): a bra-bra component is the rule applied twice, four
+shifted rows with each lowered row guarded by the component it lowers;
+a bra-ket one is the first-derivative rule against `J`. So the text is
+the recurrence plus 25 rolled sums, whatever the class: 147 KB at
+`(pp|ps)`, 361 KB at `(ff|ff)`. A first draft unrolled the components in
+Python (~160 rolled sums, ~420 KB a unit) and took 75-90 s of nvcc a
+unit alone; with the axes rolled every unit compiles in seconds. The
+powers of `2 alpha`, `2 gamma` are multiplied in per term, so the forms
+agree to round-off, not bitwise; the reductions, atomics, parameters,
+launch and `H` contract are the unrolled form's.
+
 Generator: `python -m felizjueves.emit --hess-k-l [LMAX]` (1 bare,
-accepted 0..1, exit 2 above) adds the 16 s, p units beside the J ladders;
-never in the bare default nor in `KERNEL_GEN_CMD`. The text is large:
-cuda 58 KB at `(ss|ss)`, 221 KB at `(ss|pp)`, 1.63 MB at `(pp|pp)`; the
-ten units over 512 KiB (five per backend) are pinned by size and sha256
-in `test/golden/hkx_digests.json`, the rest are goldens
+accepted 0..3, exit 2 above) adds the units beside the J ladders, each in
+its default form; never in the bare default nor in `KERNEL_GEN_CMD`. The
+11 unrolled s, p units below the floor and one rolled unit (`hkx_11_10`)
+are goldens; every other default unit through (ff|ff) (244 a backend)
+and the unrolled text of the five s, p classes from the floor
+(`<name>.unrolled`, the pre-#691 default, its digests unchanged) are
+pinned by size and sha256 in `test/golden/hkx_digests.json`
 (`test_emit_hess_k.py`).
+
+**Compiled, every unit** (`data/measured/hkx.json`, `devtools/measure.sh
+hkx-compile`, the rule declared before any row: within 120 s a unit on
+both arches; the stack RECORDED, NOT GATED, as #694's d2eri3, its gate
+the card's): all 256 default units and the 16 s, p ones in their other
+form, each its own compile, nvcc 13.0 `sm_86` and hipcc 7.2.4 `gfx1200`.
+Every default unit at most 4.9 s of nvcc and 7.5 s of hipcc (medians 3.4
+s, 4.4 s). Frames: worst `hkx_33_33`, 19,984 B of `sm_86` stack and
+16,864 B of `gfx1200` scratch; 19 default units over 14,000 B on
+`sm_86`, 3 on `gfx1200`, all `l = 3` classes. The floor is the rows':
+the smallest `L` with an unrolled s, p unit over 14,000 B on `sm_86` is
+3 (`hkx_11_01`, 17,088 B).
 
 | What | Against | Where | Worst |
 |---|---|---|---|
 | host `H` (`test_hessian_host.py`) | central differences, `h = 1e-4`, of `gradient.host.exchange_gradient` (itself held to FD of the libcint-witnessed `exchange_matrix`) | the two-atom s, p basis; H₂O/STO-3G `slow` | 5.7e-9 of `max\|H\|` on the s, p basis, gate 1e-7 |
 | host symmetry, invariance, parts | `H = H^T`, `SUM_A H = 0`, `bb + bk = H` (each ~10x `max\|H\|`, cancelling), each part symmetric; class quartets sum to the whole; `atoms=` folds back | same | ~4e-15 of `max\|H\|`, gate 1e-13 |
 | host, once, by hand (not a test) | `experimental/mmd/hessian`'s `two_electron2` (checked there against libcint's `int2e_ipip1` / `_ipvip1` / `_ip1ip2`) contracted with `D D / 2` | the two-atom s, p basis | 1.2e-14 of `max\|H\|` |
-| `hkx` interpreted (`test_kernel_hkx.py`) | `host.exchange_hessian(quartets=)`, the absolute twin as scale | every s, p class on the two-atom basis (L + 2 > 4 `slow`) and on a three-atom basis with two primitives a shell (all but `(ss\|ss)` `slow`) | ~1 eps of the scale at `(pp\|pp)`, gate 16 eps |
+| host against libcint (`test_hkx_device.py`, host-only, `slow`) | the numeric golden `hkx_h2o_sto3g_bse` (`oracle.numeric`, #691: libcint's `int2e_ipip1` / `_ipvip1` / `_ip1ip2` `_cart`, placed by the 8-fold symmetry and contracted with `D (x) D`) | H₂O over data/basis/'s STO-3G, the fixture's density | 4.5e-13 of `max\|H\|`, gate 1e-12 |
+| `hkx` interpreted, unrolled (`test_kernel_hkx.py`) | `host.exchange_hessian(quartets=)`, the absolute twin as scale | every s, p class forced unrolled on the two-atom basis (L + 2 > 4 `slow`) and on a three-atom basis with two primitives a shell (all but `(ss\|ss)` `slow`) | ~1 eps of the scale at `(pp\|pp)`, gate 16 eps |
+| `hkx` interpreted, rolled | the same | every s, p class forced rolled on the two-atom basis; every class with a d shell and none above (65) and `(ff\|ff)`, `(fs\|fs)`, `(fd\|pd)` on `TRI_SPDF` (three atoms, one bra pair against one off-centre ket pair; `slow`, ~2 min at `(dd\|dd)`) | ≤ ~0.4 eps of the scale, gate 16 eps |
 | the whole `d2 E_K` from the 16 launches | the host sweep; symmetry, invariance | the two-atom basis (`slow`) | gate 16 eps; 1e-13 |
-| compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | all 16 cuda units | no diagnostic (a proxy) |
-| compile, nvcc / hipcc (`test_emit_hess_k.py`) | #92's filter | — | **not run** (no compiler) |
-| on a card | — | — | **not written, not run** |
+| compile, nvcc / hipcc (`test_emit_hess_k.py`, `data/measured/hkx.json`) | #92's filter; the store's declared 120 s | every default unit through (ff\|ff), both arches, each alone | no warning in generated text; ≤ 4.9 s nvcc, ≤ 7.5 s hipcc; frames ≤ 19,984 B (`sm_86`) / 16,864 B (`gfx1200`) |
+| on a card, per class (`test_hkx_device.py`, `hess_driver.hkx_launches`) | the host over the launched quartets, `1e-14` of the absolute twin | RTX 3080 and RX 9060 XT: all 256 classes through (ff\|ff) on `TRI_SPDF` (one bra pair, two ket segments, three centres), each its own program in its default form | 1.03e-16 of the twin, both cards (2026-10-31) |
+| on a card, rolled against unrolled | each other, `1e-14` of the twin | both cards: the five s, p classes from the floor | ≤ 6.5e-17 |
+| on a card, whole molecule | the numeric goldens `hkx_h2o_{sto3g,ccpvdz}_bse` (libcint), the fp64 tier (1e-12 of `max\|H\|`) | both cards: H₂O over STO-3G and cc-pVDZ (every K class of the basis in one program) | STO-3G 1.8e-13 / 3.3e-13, cc-pVDZ 8.4e-13 / 9.3e-13 of `max\|H\|` (RTX 3080 / RX 9060 XT); run to run up to 3.9e-13 |
 
-Not done for `hkx`: d and above (the ladder refuses them; the unrolled
-text would be far past (pp|pp)'s 1.6 MB, so a rolled form is the way
-there), a device driver and test, any measurement, a screen, and the
-cost of the segment loop (one serial pass per ket atom pair, `n_atom^2`
-at most, with 36 reductions each) is unexamined.
+The whole-molecule margin is thin, and why: the two runs of one card
+differ by up to 3.9e-13 of `max|H|` (STO-3G, the RX 9060 XT), so the
+rounding scale of an assembled `d2 E_K` is not `max|H|`. The O s
+exponents enter the bra-bra rule as `(2 alpha)^2` and the same-atom
+blocks cancel (the twin is ~3e3 `max|H|` at f), and the host itself
+meets libcint at 4.5e-13. The gate is the store's fp64 tier, stated
+before the run and not widened; experimental/mmd/hessian's check uses
+1e-11 for the same reason. The per-class witness is the tight one.
+
+**On the card the frame is the launch's.** A launch reserves its stack
+for every resident thread, ~2 GB of the RTX 3080's 10 GB at `(ff|ff)`:
+under xdist every worker shares the card, and with six `hkx_33_32` and
+`hkx_33_33` failed to launch ("cuda: launch: out of memory") where they
+pass alone. The `high_l` cases are run with at most two workers.
+
+Not done for `hkx`: a screen; any clock (no wall-clock row: the cost of
+the segment loop, one serial pass per ket atom pair with 36 reductions
+each, and of the run-time axis loops against the unrolled digests is
+unexamined); the response term and an assembled RHF Hessian.
 
 ## What is not done
 
@@ -239,8 +299,8 @@ at most, with 36 reductions each) is unexamined.
   gather → `[p|q]` → `hjab` is checked interpreted only. Nothing above
   (dd) has run on a card.
 - The skeleton Coulomb and exchange terms and (below) the one-electron
-  and DF `(P|Q)`, `(mn|P)` skeletons only. Not built: the exchange
-  Hessian above p ("The exchange Hessian"), the nuclear repulsion as a
+  and DF `(P|Q)`, `(mn|P)` skeletons only. Not built: the nuclear
+  repulsion as a
   kernel (it is host-side), the derivative Fock matrices `F^x` (only
   their exchange part, "The exchange derivative matrix", and their
   one-electron part, "The one-electron derivative matrices", are built;
@@ -434,7 +494,7 @@ byte count and sha256 in `test/golden/hessian_digests.json`.
 ### What is not done
 
 - The two-electron second derivatives are this note's first part and
-  "The exchange Hessian" (s and p only); no CPHF response, no assembled
+  "The exchange Hessian" (through (ff|ff), #691); no CPHF response, no assembled
   RHF hessian; `experimental/mmd/hessian` has the
   rest for s and p, in numpy.
 - Nothing above (dd) has run on a card; nothing measured.

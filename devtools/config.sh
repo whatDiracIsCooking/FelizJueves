@@ -304,6 +304,7 @@ MEASURE_G1E_STORE=${MEASURE_G1E_STORE:-data/measured/g1e.json}
 MEASURE_GJAB_STORE=${MEASURE_GJAB_STORE:-data/measured/gjab.json}
 MEASURE_GK_STORE=${MEASURE_GK_STORE:-data/measured/gk.json}
 MEASURE_KX_STORE=${MEASURE_KX_STORE:-data/measured/kx.json}
+MEASURE_HKX_STORE=${MEASURE_HKX_STORE:-data/measured/hkx.json}
 MEASURE_REGISTRY_COST_STORE=${MEASURE_REGISTRY_COST_STORE:-data/measured/registry_cost.json}
 
 # How a timed or profiled sweep runs: ALONE (no xdist -- a worker compiling
