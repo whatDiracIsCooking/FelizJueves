@@ -199,8 +199,8 @@ bare 1), never in the bare default nor in `KERNEL_GEN_CMD`; six goldens,
 compiled by nvcc and hipcc warning-free (`test_emit_hgp_df.py`, device-less
 cloud container, 2026-10-30). Not run on a card, not measured; its
 `(mn|P)` sibling is `hgeri3`, below.
-**The metric's derivative uncontracted, `ipmetric_`, interpreted and
-compiled through (i|i), on no card** (#693; `gradient.md`, "The
+**The metric's derivative uncontracted, `ipmetric_`, interpreted,
+compiled and run on both cards through (i|i)** (#693; `gradient.md`, "The
 uncontracted metric derivative"): `gradient/kernel_ipmetric.py`'s
 `ipmetric_{lP}{lQ}` writes `M1[k, P, Q] = d(P|Q)/dA_k` (`A` the centre of
 `P`, `= -int2c2e_ip1`) as `[3, n_aux, n_aux]`, the mirror `(Q, P)` negated;
@@ -214,8 +214,17 @@ against the aux-i witness contracted (1.72e-14); the kernel against both
 (at most 7.21e-14). Ladder `--ip-metric-l [LMAX]` (0..6, bare 2), never in
 the bare default nor in `KERNEL_GEN_CMD`; six goldens; all 28 classes
 compiled by nvcc and hipcc warning-free (`test_emit_ipmetric.py`,
-device-less cloud container, 2026-10-30). Not run on a card (no device
-harness yet), not measured.
+device-less cloud container, 2026-10-30). **On both cards, 2026-10-31**
+(`test_ipmetric_device.py`, the RTX 3080 and the RX 9060 XT, every class
+launched into one `M1` from a sentinel): cc-pVDZ-JKFIT's s, p shells
+(fast tier) and all of it through (f|f) (`slow`) against the host (worst
+8.48 eps of the class's scale, (s|f), gate 16) and the golden (7.24e-14
+of max, gate 1e-12); the aux-i ladder, one program per aux `l` through
+(i|i) (`slow` + `high_l`), against the host (worst 7.25 eps, (p|d) on the
+RX 9060 XT) and libcint contracted (1.72e-14). Runs bit-identical, every
+unowned element the sentinel, mirrors exact negations; each unit 1-2 s
+cold (nvcc / hipcc, the rolled form). 9 device tests per card. Not
+measured.
 **The DF-J gradient terms are generated too, run on both cards through
 (ff|i) and (i|i)** (#613)
 (`gradient.md`, "The density-fitting gradients"): `gmetric_{lP}{lQ}`
