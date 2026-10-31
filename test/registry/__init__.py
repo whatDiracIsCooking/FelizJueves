@@ -164,6 +164,7 @@ UNITS: dict[str, tuple[str, str, int]] = {
     "ips": ("mmd", "s", 1), "ipt": ("mmd", "t", 1), "ipv": ("mmd", "v", 1),
     "iprv": ("mmd", "v", 1),
     "gjab": ("mmd", "jab", 1), "gk": ("mmd", "k", 1),
+    "gmu": ("mmd", "dipole", 1), "gquad": ("mmd", "quadrupole", 1),
     "gmetric": ("mmd", "metric", 1), "geri3": ("mmd", "eri3", 1),
     "ipmetric": ("mmd", "metric", 1), "xeri3": ("mmd", "eri3", 1),
     "hdq": ("mmd", "dq", 2), "hjab": ("mmd", "jab", 2),

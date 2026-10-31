@@ -22,6 +22,10 @@ compiled only, no card. The uncontracted `(nabla m n|P)` of `xeri3_`
 has not run on a card. The uncontracted metric derivative `ipmetric_`
 (#693, "The uncontracted metric derivative") is interpreted through (i|i),
 held to libcint, and run on both cards through (i|i).
+The dipole and quadrupole gradients `gmu_` / `gquad_` ("The dipole and
+quadrupole gradients") are generated and interpreted through (ff), bitwise
+the host, the host held to libcint's `int1e_irp` / `int1e_irrp`; not
+compiled by nvcc or hipcc, on no card.
 **The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
 interpreted and compiled, not run**: held to `eri.eri`'s derivative
 integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
@@ -1064,6 +1068,61 @@ block and in a strict block over every other cell; the ladder through
 own staging, run through the interpreter in place of the card, matches the
 host to 1.2e-16 of max. Not measured.
 
+## The dipole and quadrupole gradients (`gradient/kernel_gmu.py`)
+
+**Status: generated, interpreted, held to libcint through f; not compiled
+by nvcc or hipcc, not run on a card, not measured.**
+
+`Target.DIPOLE` and `Target.QUADRUPOLE` at `derivative_order = 1`, MMD
+only: `dipole/d1/(la,lb)/b1/dipole/literal` and
+`quadrupole/d1/(la,lb)/b1/quadrupole/literal`, the d0 keys with `d1` in
+place of `d0` (an HGP moment at d1 stays refused, `_GRADIENT_REFUSAL`).
+The kernel writes, per component `c` of `<a| q (r - C)^(ex,ey,ez) |b>`
+(x, y, z; or the raw second moments xx, xy, xz, yy, yz, zz, `kernel_mu`'s
+order),
+
+    G[c, A, k] += SUM_mn M_mn dMU^c_mn / dR_{A,k}       G[n_comp, n_atom, 3]
+
+which is what a dipole (or quadrupole) derivative at a fixed density
+needs: the electronic part of the atomic polar tensor is `-G` at `M = D`,
+`q = 1` (the nuclear part `Z_A delta_ck`, the density response and the
+sign are the caller's). Per axis the factor `F^n_ij = SUM_{t <= min(n,
+i+j)} E^{ij}_t M^n_t` (the d0 kernel's Hermite moments about `C`) and its
+derivative by the rule above, `dA F^n_ij = 2 alpha F^n_{i+1,j} - i
+F^n_{i-1,j}`, on the same `E` tables one index up on each side
+(`kernel_g1e.record_head`); the moments, at the record's `P`, are not
+differentiated, because the rule acts on the basis function. **The origin
+is not a nucleus**: `C` is fixed, so there is no operator term, and the
+atoms' sum is the origin shift, `SUM_A G^c[A, k] = q delta_ck SUM M S`
+for the dipole and `q (delta_ck SUM M MU^d + delta_dk SUM M MU^c)` for
+the quadrupole's `cd` -- a check, not an assumption. One thread per
+primitive-pair record, `gs_`'s weights and head, the origin and charge
+runtime scalars (`C_x C_y C_z q`, as at d0), `6 n_comp` `AtomicAdd`s per
+record, `G` zeroed by the caller. Units `gmu_{la}{lb}` and
+`gquad_{la}{lb}`; ladder `python -m felizjueves.emit --grad-mu-l
+[LMAX]` (2 bare, 0..3), never in the bare default nor in
+`KERNEL_GEN_CMD`; 12 goldens per backend, (ss) through (dd)
+(`test_emit_grad_mu.py`).
+
+Host reference `gradient.host.multipole_gradient(basis, M, nuclei, C, e,
+q)`, the same arithmetic. Witnesses (`test_kernel_gmu.py`):
+
+| what | against | result |
+|---|---|---|
+| host, H₂O/cc-pVTZ (s–f), non-symmetric `M` | libcint `int1e_irp_cart` / `int1e_irrp_cart` at a common origin, live (`oracle`) | 1.7e-15 / 2.6e-15 of max\|G\| (gate 1e-12) |
+| host, H₂O/STO-3G | central differences of `multipole_matrix`, `h = 1e-4` | under 1e-8 of max\|G\| |
+| host, H₂O/STO-3G | the origin shift through `S` and `MU` | 1e-13 of max\|G\| |
+| kernel, every ordered class (ss)–(ff), HF/cc-pVTZ, interpreted | the host, per class | bitwise (gate 16 eps of a split-centre scale) |
+| kernel, whole H₂O/STO-3G gradient, interpreted | the host | bitwise |
+
+Every unit through (ff) passed clang 18's CUDA front end with `-Wall
+-Wextra -Werror` (a proxy, 2026-10-31, a cloud container with neither
+nvcc nor hipcc); the `cuda` / `hip` compile cases
+(`test_emit_grad_mu.py`, through (ff)) are written and **have not run**.
+There is no device harness: nothing has run on a card, and nothing is
+measured (the largest unit, `gquad_33`, folds 3,600 products; whether it
+fits #613's 14,000 B stack budget unrolled is unmeasured).
+
 ## The fused Fock gradient on HGP (`gradient/kernel_gf.py`)
 
 `Target.F` at `derivative_order = 1`, on F's native engine:
@@ -1148,6 +1207,9 @@ ladder).
 
 ## What is not done
 
+- The dipole and quadrupole gradients (`gmu_`, `gquad_`, above) are
+  interpreted only: not compiled by nvcc or hipcc, no device harness, no
+  card, not measured.
 - The HGP Coulomb gradient (`ghj_`, above) is interpreted only: not
   emitted, not compiled, not on a card.
 - `ghk`, the exchange gradient on HGP, is interpreted through `(dd|dd)`

@@ -289,6 +289,10 @@ translational invariance). And
 `ERI3` on `Engine.HGP`, ``coulomb/d1/(0,1|2)/b1/eri3.hgp/literal``
 (`gradient.kernel_hgeri3`: the three-center DF gradient, the Cartesian rule
 on all three centres by `kernel_hgp`'s VRR and the bra HRR).
+`DIPOLE` and `QUADRUPOLE` at d1 are the moments' nuclear gradients,
+`G[c, A, k] += SUM_mn M_mn dMU^c_mn/dR_{A,k}` per component about a fixed
+origin (`gradient.kernel_gmu`, `gmu_` / `gquad_`), `am` the pair, MMD only
+(an HGP d1 moment stays refused): ``dipole/d1/(2,1)/b1/dipole/literal``.
 `F` at d1 is the fused Fock build's two-electron energy
 gradient, `dE_J - 1/2 dE_K`, its `am` the AO order as at d0, on F's
 native HGP engine (`gradient.kernel_gf`):
@@ -669,14 +673,16 @@ DERIVATIVE_ORDERS = (0, 1, 2)
 # term reads (`hessian.kernel_hdq`); and `F`, the fused Fock build's
 # two-electron energy, `dE_J - 1/2 dE_K` in one kernel per class
 # (`gradient.kernel_gf`); and `JX`, the matrix form of `JAB`'s bra
-# derivative, `J1[k, m, n]` (`hessian.kernel_jx`, d1 only). Each on its
+# derivative, `J1[k, m, n]` (`hessian.kernel_jx`, d1 only); and `DIPOLE`
+# and `QUADRUPOLE`, `SUM_mn M_mn dMU^c_mn/dR` per component about a fixed
+# origin (`gradient.kernel_gmu`). Each on its
 # native engine (MMD; HGP for `F`),
 # and `J`, `K`, `T`, `S`, `V`, `ERI3` and `METRIC` on HGP too
 # (`GRADIENT_OFF_NATIVE`).
 GRADIENT_TARGETS = frozenset((Target.S, Target.T, Target.V, Target.JAB,
                               Target.K, Target.METRIC, Target.ERI3,
                               Target.DQ, Target.F, Target.KX1, Target.KXC,
-                              Target.JX))
+                              Target.JX, Target.DIPOLE, Target.QUADRUPOLE))
 
 # The targets that exist at d1 ONLY: a derivative matrix, whose d0 is the
 # matrix itself and whose d2 nothing asks for -- the exchange derivative
@@ -711,8 +717,8 @@ GRADIENT_OFF_NATIVE = frozenset(((Target.J, Engine.HGP),
                                  (Target.METRIC, Engine.HGP)))
 
 _GRADIENT_REFUSAL = (
-    "a first derivative is built for S, T, V, JAB, JX, K, KX1, KXC, METRIC, "
-    "ERI3 and DQ on "
+    "a first derivative is built for S, T, V, DIPOLE, QUADRUPOLE, JAB, JX, "
+    "K, KX1, KXC, METRIC, ERI3 and DQ on "
     "the MMD engine, and for F, J, K, T, S, V, ERI3 and METRIC on the HGP engine "
     "(felizjueves.gradient, "
     "felizjueves.hessian); this target's gradient is a follow-up"

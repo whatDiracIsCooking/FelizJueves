@@ -3671,15 +3671,17 @@ RULES |= {
         "gradient/host.py: the contracted nuclear gradients of S, T, V, "
         "E_J and E_K on the AO layer -- the d1 kernels' witness -- from the undressed "
         "E (`mmd.hermite`), the kinetic shift and nucleus type of the "
-        "one-electron references, and the J chain's kets (`ao.density`); "
-        "`[t]^(0)` and `[p|q]` injected",
+        "one-electron references, the Hermite moments of the multipole "
+        "reference (`one_electron.multipole`), and the J chain's kets "
+        "(`ao.density`); `[t]^(0)` and `[p|q]` injected",
         ("ao", "mmd.hermite", "one_electron.kinetic",
-         "one_electron.potential"),
+         "one_electron.potential", "one_electron.multipole"),
         reference=_GROUND_TRUTH,
         **{"=ir": "a host reference is arithmetic, not instructions",
            "plan": "the reference recurses directly; the plan is what the "
                    "kernels it checks are built on",
            "gradient.kernel_g1e": "the kernel is what this module checks",
+           "gradient.kernel_gmu": "the kernel is what this module checks",
            "gradient.kernel_gjab": "the kernel is what this module checks",
            "gradient.kernel_gk": "the kernel is what this module checks",
            "gradient.kernel_ghj": "the kernel is what this module checks",
@@ -3739,7 +3741,8 @@ RULE_OF |= {
 EDGES |= {k: frozenset(v) for k, v in {
     "gradient": (),
     "gradient.host": ("ao.density", "ao.pairs", "ao.shell", "mmd.hermite",
-                      "one_electron.kinetic", "one_electron.potential"),
+                      "one_electron.kinetic", "one_electron.multipole",
+                      "one_electron.potential"),
     "gradient.kernel_g1e": ("ir", "mmd.e_fragment", "mmd.recurrence",
                             "one_electron.kernel_v", "plan.targets", "spec"),
     "gradient.kernel_gjab": ("gradient.kernel_g1e", "ir", "plan.targets",
@@ -5031,6 +5034,50 @@ def test_the_ip1e_builder_reaches_neither_its_witness_nor_a_machine(
                    "performance.device", "gradient.host"):
         hit = sorted(e for e in seen if _under(e, banned))
         assert not hit, f"kernel_ip1e reaches {hit}"
+
+
+# ---------------------------------------------------------------------------
+# The dipole and quadrupole gradients: `gradient.kernel_gmu` (DIPOLE /
+# QUADRUPOLE at d1) on `kernel_g1e`'s record head, weights and axis tables,
+# checked against `gradient.host.multipole_gradient` in the interpreter.
+# The generator CLI writes its ladder (`--grad-mu-l`).
+# ---------------------------------------------------------------------------
+
+RULES |= {
+    "gmu_builder": _rule(
+        "kernel_gmu.py: the dipole and quadrupole gradient kernels -- key -> "
+        "IR, `kernel_g1e`'s record head, weights and per-axis tables, the "
+        "Hermite moments about the origin spelled inline",
+        ("spec", "=ir", "mmd.e_fragment", "gradient.kernel_g1e"),
+        ao=_GRAD_WITNESS, **{"gradient.host": _GRAD_WITNESS},
+        reference=_GROUND_TRUTH, **_NO_MACHINE),
+}
+RULE_OF["gradient.kernel_gmu"] = "gmu_builder"
+EDGES["gradient.kernel_gmu"] = frozenset(
+    ("gradient.kernel_g1e", "ir", "mmd.e_fragment", "spec"))
+RULES["driver"] = Rule(RULES["driver"].why + ", and the moment-gradient "
+                       "ladder through `kernel_gmu`",
+                       RULES["driver"].may
+                       | frozenset(("gradient.kernel_gmu",)),
+                       RULES["driver"].must_not)
+EDGES["emit.__main__"] = EDGES["emit.__main__"] | frozenset(
+    ("gradient.kernel_gmu",))
+
+
+def test_the_gmu_builder_reaches_neither_its_witness_nor_a_machine() -> None:
+    graph = _graph()
+    seen: set[str] = set()
+    todo = ["gradient.kernel_gmu"]
+    while todo:
+        for e in graph.get(todo.pop(), set()):
+            if e not in seen:
+                seen.add(e)
+                todo.append(e)
+    assert "gradient.kernel_g1e" in seen
+    for banned in (_REF, "ao", *_LEFT_AO, "ir.interp", "emit",
+                   "performance.device", "gradient.host"):
+        hit = sorted(e for e in seen if _under(e, banned))
+        assert not hit, f"kernel_gmu reaches {hit}"
 
 
 
