@@ -22,7 +22,7 @@ emits kernel text may import this module.
 from __future__ import annotations
 
 import math
-from functools import cache
+from functools import cache, lru_cache
 
 from felizjueves.reference.boys import boys
 
@@ -74,6 +74,25 @@ def one_centre(r: R, m: int, pq: Vec, theta: float) -> float:
     if type(m) is not int or m < 0:
         raise ValueError(f"m = {m!r} is not an int >= 0")
     pq = (float(pq[0]), float(pq[1]), float(pq[2]))
+    return _nodes(pq, theta)(tuple(r), m)
+
+
+def _nodes(pq: Vec, theta: float):
+    """The memoised `node(r, m)` of one `(PQ, theta)`, kept across calls.
+
+    A caller walks every `(p, q)` of a block at one `(PQ, theta)`, and each
+    walk shares its whole tree with the others; a memo made afresh per call
+    recomputed it, Boys quadratures included, for every element (most of a
+    fast-tier reference's time). The recursion and its arithmetic are the
+    ones a fresh memo runs, so a value is the same float either way. Keyed
+    by `float.hex`, which tells -0.0 from 0.0 where `==` would not.
+    """
+    return _nodes_at(tuple(x.hex() for x in pq), float(theta).hex(), pq, theta)
+
+
+@lru_cache(maxsize=64)
+def _nodes_at(key_pq: tuple[str, ...], key_theta: str, pq: Vec, theta: float):
+    del key_pq, key_theta  # the key; pq and theta ride along unhashed-equal
 
     @cache
     def node(r: R, m: int) -> float:
@@ -88,7 +107,7 @@ def one_centre(r: R, m: int, pq: Vec, theta: float) -> float:
                 return value
         return fundamental(m, pq, theta)
 
-    return node(tuple(r), m)
+    return node
 
 
 def pq(p: R, q: R, pq: Vec, theta: float) -> float:
