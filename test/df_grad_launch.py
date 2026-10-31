@@ -3,6 +3,7 @@
     metric_arrays(cls, aux, nuclei)             -> gmetric's arrays by name
     eri3_arrays(cls, basis, aux, nuclei)        -> geri3's arrays by name
     run_metric(aux, nuclei, W, *, boys, ...)    -> (G, classes run)
+    ipmetric_arrays(cls)                        -> ipmetric's arrays by name
     run_ipmetric(aux, *, boys, ...)             -> (M1, classes run)
     run_eri3(basis, aux, nuclei, Gam, *, boys, ...) -> (G, classes run)
     run_d2metric(aux, nuclei, W, *, boys, ...)   -> (H, classes run)
@@ -70,6 +71,12 @@ def metric_arrays(cls: MetricClass, aux, nuclei) -> dict[str, np.ndarray]:
     return out
 
 
+def ipmetric_arrays(cls: MetricClass) -> dict[str, np.ndarray]:
+    """`ipmetric_`'s arrays: `kernel_metric`'s staging alone, no atoms
+    (#693; run_ipmetric's and test_ipmetric_device.py's)."""
+    return {PARAM_OF.get(k, k): _np(k, v) for k, v in cls.arrays().items()}
+
+
 def eri3_arrays(cls: Eri3Class, basis, aux, nuclei
                 ) -> dict[str, np.ndarray]:
     out = {PARAM_OF.get(k, k): _np(k, v) for k, v in cls.arrays().items()}
@@ -115,8 +122,7 @@ def run_ipmetric(aux, *, boys, classes: Iterable | None = None,
         M1 = Interpreter(build_ipmetric_kernel((cls.lP, cls.lQ)),
                          launch=Launch(grid, block, 1), boys=boys).run(
             n_pair=cls.n_pair, n_rec=cls.n_rec, n_aux=aux.n_ao, M1=M1,
-            **{PARAM_OF.get(k, k): _np(k, v)
-               for k, v in cls.arrays().items()})["M1"]
+            **ipmetric_arrays(cls))["M1"]
         ran.append((cls.lP, cls.lQ))
     return M1, tuple(ran)
 

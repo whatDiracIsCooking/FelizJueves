@@ -19,7 +19,9 @@ run on a card; the HGP `(mn|P)` gradient `hgeri3` is interpreted and
 compiled only, no card. The uncontracted `(nabla m n|P)` of `xeri3_`
 (#692, "The uncontracted three-center derivative") is interpreted through
 (ff|i) against a host held to libcint, and compiled by nvcc and hipcc; it
-has not run on a card.
+has not run on a card. The uncontracted metric derivative `ipmetric_`
+(#693, "The uncontracted metric derivative") is interpreted through (i|i),
+held to libcint, and run on both cards through (i|i).
 **The fused Fock gradient `gf_` (HGP, `Target.F` at d1) is generated,
 interpreted and compiled, not run**: held to `eri.eri`'s derivative
 integrals per class through `(dd|dd)`, to the host's `dE_J - 1/2 dE_K`
@@ -744,12 +746,17 @@ kernel leaves every other element untouched), are the caller's.
 | kernel, interpreted (`test_kernel_ipmetric.py`) | the host, per class, every owned element; every other element untouched | all 28 classes `lP <= lQ <= 6`: L <= 4 on `test_kernel_gmetric.py`'s basis, above on two-shell bases with the absolute-value tower's scale | 3.62 eps ((d\|d)), gate 16 eps |
 | kernel, interpreted | libcint: the golden over all of cc-pVDZ-JKFIT (`slow`; s, p fast), and the aux-i witness at (s\|s), (p\|p), (f\|g), (h\|i), (i\|i) | | 7.21e-14 (golden), 5.29e-15 (witness) |
 | compile, nvcc / hipcc (`test_emit_ipmetric.py`) | #92's filter | all 28 classes on `sm_86` and `gfx1200`, device-less cloud container, 2026-10-30 | no warning in generated text |
+| card, RTX 3080 and RX 9060 XT (`test_ipmetric_device.py`, 2026-10-31) | the host per class (gate 16 eps of its scale, a class with no derivative judged against the program's largest), the golden per axis (`1e-12`) | cc-pVDZ-JKFIT on H₂O: s, p shells (fast tier), all of it through (f\|f) (`slow`) | 8.48 eps ((s\|f)); golden 7.24e-14 |
+| card, both | the host per class, the aux-i witness contracted (`1e-12`) | aux-i ladder, one program per aux `l`, all 28 classes through (i\|i) (`slow` + `high_l`) | 7.25 eps ((p\|d), RX 9060 XT; 6.77 RTX 3080); libcint 1.72e-14 |
+
+On the card the runs are bit-identical (plain stores), every element no
+launched pair owns keeps the sentinel, and every off-diagonal mirror is the
+exact negation. Each unit compiles in 1-2 s cold under nvcc and hipcc (the
+rolled form at every class), far inside the 120 s per-unit budget.
 
 Ladder `--ip-metric-l [LMAX]` (`lP <= lQ <= LMAX`, 0..6, bare 2: six
-goldens), never in the bare default nor in `KERNEL_GEN_CMD`. **Not run on a
-card and not measured** (no device harness: the d1 DF program of
-`test_grad_df_device.py` launches `gmetric_` only). The three-center twin
-is #692.
+goldens), never in the bare default nor in `KERNEL_GEN_CMD`. **Not
+measured.** The three-center twin is #692.
 
 Not done for DF: the metric solve and `d` stay host-side (DF-K's `Gam^K`,
 `W^K` are staged on the host only, #620; no device run of them, the

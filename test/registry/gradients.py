@@ -21,8 +21,8 @@ CASES = [
     *ladder("hgp", "k", 1, compile=(0, 1, 2, 3, 4, 6),
             interpreted=range(9)),
     # The DF-J terms through (ff|i) and (i|i) on both cards (#613). The
-    # metric's uncontracted variant (ipmetric_, #693) has compile cases
-    # through (i|i), L = 12, and runs on no card.
+    # metric's uncontracted variant (ipmetric_, #693): compile cases through
+    # (i|i), L = 12, and on both cards through (i|i) (test_ipmetric_device.py).
     *ladder("mmd", "metric", 1, compile=range(13), gpu=range(13),
             cards=dict.fromkeys(BOTH, range(13))),
     # The (mn|P) gradient's uncontracted variant (xeri3_, #692) adds compile
@@ -50,6 +50,11 @@ CASES = [
 # as #613's; a variant of the mmd/eri3/d1 cases.
 _XLADDER = {f"xeri3-{aux}": span("mmd", "eri3", 1, range(aux, aux + 7))
             for aux in range(7)}
+
+# The uncontracted metric's card ladder (#693): one program per aux l, the
+# classes lP <= lQ = l, as #613's; a variant of the mmd/metric/d1 cases.
+_IPLADDER = {f"ipmetric-{aux}": span("mmd", "metric", 1, range(aux, 2 * aux + 1))
+             for aux in range(7)}
 
 # #613's ladder: one program per aux l, every class of the aux-i system
 # whose aux shell is l -- the metric's lP <= lQ = l, (mn|P)'s la <= lb <= 3
@@ -101,6 +106,14 @@ TESTS = {
         Classes("mmd", "metric", 1),
     "test/test_emit_ipmetric.py::test_X_compiles_the_ipmetric_unit":
         Classes("mmd", "metric", 1),
+    # cc-pVDZ-JKFIT on H2O: its s and p shells (Part 0), all of it through
+    # (f|f) (Part 1); the aux-i ladder through (i|i) (Part 2).
+    "test/test_ipmetric_device.py::test_X_ipmetric_sp_matches_the_host_and_libcint":
+        span("mmd", "metric", 1, range(3)),
+    "test/test_ipmetric_device.py::test_X_ipmetric_matches_the_host_and_libcint":
+        span("mmd", "metric", 1, range(7)),
+    "test/test_ipmetric_device.py::test_X_ipmetric_ladder_through_i":
+        ById(_IPLADDER),
     "test/test_emit_grad_k.py::test_X_compiles_the_exchange_gradient_unit":
         Classes("mmd", "k", 1),
     "test/test_emit_hgp_grad.py::test_X_compiles_the_unit": Classes("hgp", "t", 1),
