@@ -789,8 +789,11 @@ def test_the_dipole_takes_its_own_operator_and_a_pair() -> None:
     for am in ((2, 1, 0, 0), (2, 1, 0), (2,), (2, -1)):
         with pytest.raises(ValueError):
             _dipole(am)
+    # d1 is the moment's nuclear gradient (gradient.kernel_gmu); d2 is not
+    assert Spec(Operator.DIPOLE, 1, (2, 1), Target.DIPOLE).key() == (
+        "dipole/d1/(2,1)/b1/dipole/literal")
     with pytest.raises(ValueError, match="derivative order"):
-        Spec(Operator.DIPOLE, 1, (2, 1), Target.DIPOLE)
+        Spec(Operator.DIPOLE, 2, (2, 1), Target.DIPOLE)
 
 
 @pytest.mark.parametrize("n", [3, 6, 9, 12])

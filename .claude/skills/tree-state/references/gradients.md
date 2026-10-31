@@ -108,6 +108,29 @@ on-card differential against the unrolled form over the 62 / 58 classes
 whose unrolled unit compiled within half the budget, 9.2e-17 / 1.2e-16;
 319 / 315 units, every one under the 10 s cap (slowest 5.7 s / 6.1 s).
 `gk` measured for its compile only (the DF-J terms: below).
+**The dipole and quadrupole gradients are generated, interpreted and
+compiled by nvcc and hipcc, on no card** (`gradient.md`, "The
+dipole and quadrupole gradients"): `Target.DIPOLE` and `QUADRUPOLE` at d1
+(MMD only; `spec.GRADIENT_TARGETS`; an HGP moment at d1 refused),
+`gradient/kernel_gmu.py` (`gmu_`, `gquad_{la}{lb}`): `G[c, A, k] +=
+SUM_mn M_mn dMU^c_mn/dR_{A,k}` per component (3, or the quadrupole's six
+raw second moments in `kernel_mu`'s order) about a FIXED origin `C` (no
+operator term; the atoms' sum is the origin shift, a check), the axis
+factor `F^n_ij = SUM_t E^{ij}_t M^n_t` and its `dA` / `dB` rule on
+`kernel_g1e.record_head`'s tables one index up, `C` and `q` runtime
+scalars, `G[n_comp, n_atom, 3]` zeroed by the caller. Host
+`gradient.host.multipole_gradient`, held to libcint's `int1e_irp_cart` /
+`int1e_irrp_cart` live on H₂O/cc-pVTZ (s-f; 1.7e-15 / 2.6e-15 of
+`max|G|`, `oracle`, `slow`), to central differences of `multipole_matrix`
+and to the origin shift on H₂O/STO-3G (`test_kernel_gmu.py`).
+Interpreted, every ordered class (ss)-(ff) on HF/cc-pVTZ and the whole
+H₂O/STO-3G gradient are **bitwise** the host (gate 16 eps of the
+split-centre scale). Ladder `python -m felizjueves.emit --grad-mu-l
+[LMAX]` (2 bare, 0..3), never in the bare default nor `KERNEL_GEN_CMD`;
+12 goldens per backend (ss)-(dd) (`test_emit_grad_mu.py`). Every unit
+through (ff) compiled warning-free by nvcc (sm_86) and hipcc (gfx1200)
+(the 40 `cuda` / `hip` cases, 2026-10-31, a device-less cloud
+container). No device harness, no card, nothing measured.
 **The whole RHF gradient is assembled and interpreted** (#565,
 `gradient.md`, "The RHF gradient, assembled"): `gradient/rhf.py`'s
 `rhf_gradient(basis, nuclei, D, W, runners)` signs and sums `-W dS`, `D dT`,

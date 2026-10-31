@@ -15,6 +15,7 @@ THE GENERATOR'S ENTRY POINT, and the command `devtools/config.sh` names as
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --eri3-l 4
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --mu-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --quad-l 2
+    PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --grad-mu-l 2
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip --hgp-one-e-l 1
     PYTHONPATH=src uv run python -m felizjueves.emit --backend cuda --hgp-mu-l 3
     PYTHONPATH=src uv run python -m felizjueves.emit --backend hip \\
@@ -170,6 +171,17 @@ for CUDA, `.hip` for HIP):
   `--mu-l` does, and is NEVER in the no-flag default nor in
   KERNEL_GEN_CMD. Every name starts `gs_`, `gt_`, `gv_` or `gjab_`, so
   none collides with another ladder's.
+
+- the moment-gradient ladder, `--grad-mu-l [LMAX]`
+  (`gradient.kernel_gmu`): for every pair class `(la, lb)`, `la <= lb <=
+  LMAX` (2 when the flag is given bare), the dipole's and the
+  quadrupole's d1 kernels `gmu_` and `gquad_{la}{lb}` (`SUM_mn M_mn
+  dMU^c_mn/dR` per component about a fixed origin). Accepted
+  0..`GRAD_MU_L_MAX` = 3 (validated through (ff), interpreted, against
+  the host and, through it, libcint's `int1e_irp` / `int1e_irrp`); above
+  it is a 2. It ADDS units beside the J ladders, as `--grad-l` does, and
+  is NEVER in the no-flag default nor in KERNEL_GEN_CMD. Every name
+  starts `gmu_` or `gquad_`, so none collides with another ladder's.
 
 - the exchange-gradient ladder, `--grad-k-l [LMAX]`
   (`gradient.kernel_gk`): for every K class `(la, lc | lb, ld)`, the
@@ -643,6 +655,7 @@ from felizjueves.gradient.kernel_ghv import build_ghv_kernel
 from felizjueves.gradient.kernel_gjab import build_gjab_kernel
 from felizjueves.gradient.kernel_gk import build_gk_kernel
 from felizjueves.gradient.kernel_gmetric import build_gmetric_kernel
+from felizjueves.gradient.kernel_gmu import GRADIENT_MOMENTS, build_gmu_kernel
 from felizjueves.gradient.kernel_hgeri3 import build_hgeri3_kernel
 from felizjueves.gradient.kernel_hgmetric import build_hgmetric_kernel
 from felizjueves.gradient.kernel_hgs import build_hgs_kernel
@@ -702,6 +715,8 @@ DEFAULT_QUAD_L = 2  # `--quad-l` given bare: (ss) through (dd), 6 units
 QUAD_L_MAX = 2  # the quadrupole is validated through (dd) only
 DEFAULT_GRAD_L = 2  # `--grad-l` given bare: (ss) through (dd), 24 units
 GRAD_L_MAX = 3  # the gradient kernels are validated through (ff) interpreted
+DEFAULT_GRAD_MU_L = 2  # `--grad-mu-l` given bare: (ss) through (dd), 12 units
+GRAD_MU_L_MAX = 3  # gmu_ / gquad_ are validated through (ff) interpreted
 DEFAULT_GRAD_K_L = 1  # `--grad-k-l` given bare: every s / p K class, 16 units
 GRAD_K_L_MAX = 3  # kernel_gk is validated through (ff|ff) (#618)
 DEFAULT_GRAD_HK_L = 1  # `--grad-hk-l` given bare: every s / p K class, 16 units
@@ -1098,6 +1113,25 @@ def generate_grad(backend: str, arch: Arch, out: Path,
     kernels = [k for c in grad_classes(lmax) for k in (
         *(build_g1e_kernel((t, *c)) for t in GRADIENT_1E),
         build_gjab_kernel(c))]
+    out.mkdir(parents=True, exist_ok=True)
+    return [_write(backend, arch, out, k) for k in kernels]
+
+
+def grad_mu_classes(lmax: int) -> list[tuple[int, int]]:
+    """Every pair class `(la, lb)`, `la <= lb <= lmax`, over
+    `0..GRAD_MU_L_MAX`."""
+    if type(lmax) is not int or not 0 <= lmax <= GRAD_MU_L_MAX:
+        raise ValueError(f"--grad-mu-l {lmax!r} is outside "
+                         f"0..{GRAD_MU_L_MAX}")
+    return [(la, lb) for la in range(lmax + 1) for lb in range(la, lmax + 1)]
+
+
+def generate_grad_mu(backend: str, arch: Arch, out: Path,
+                     lmax: int) -> list[Path]:
+    """Emit the moment d1 units of every pair class through `lmax` into
+    `out`: `gmu_` and `gquad_{la}{lb}` per class; return the paths."""
+    kernels = [build_gmu_kernel((t, *c)) for c in grad_mu_classes(lmax)
+               for t in GRADIENT_MOMENTS]
     out.mkdir(parents=True, exist_ok=True)
     return [_write(backend, arch, out, k) for k in kernels]
 
@@ -1799,6 +1833,7 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
             or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
+            or args.grad_mu_l is not None
             or args.grad_hk_l is not None
             or args.grad_f_l is not None
             or args.grad_df_l is not None
@@ -1821,7 +1856,8 @@ def _main_hgp(args: argparse.Namespace, other_path: bool) -> int:
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
               "--rys-metric-l / --rys-eri3-l / "
-              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
+              "--grad-hk-l / "
               "--grad-f-l / "
               "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
@@ -1913,6 +1949,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     const=DEFAULT_QUAD_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-l", dest="grad_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_L, default=None, metavar="LMAX")
+    ap.add_argument("--grad-mu-l", dest="grad_mu_l", type=int, nargs="?",
+                    const=DEFAULT_GRAD_MU_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-df-l", dest="grad_df_l", type=int, nargs="?",
                     const=DEFAULT_GRAD_DF_L, default=None, metavar="LMAX")
     ap.add_argument("--grad-df-aux-l", dest="grad_df_aux_l", type=int,
@@ -2021,6 +2059,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                  or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
+            or args.grad_mu_l is not None
             or args.grad_hk_l is not None
             or args.grad_f_l is not None
             or args.grad_df_l is not None
@@ -2043,7 +2082,8 @@ def main(argv: Sequence[str] | None = None) -> int:
               "--sx-l / --metric-l / --eri3-l / --hgp-metric-l / "
               "--hgp-eri3-l / --hgp-grad-eri3-l / --hgp-grad-metric-l / "
               "--rys-metric-l / --rys-eri3-l / "
-              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
+              "--grad-hk-l / "
               "--grad-f-l / "
               "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
@@ -2075,6 +2115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                      or args.eri3_l is not None or args.mu_l is not None
             or args.quad_l is not None
             or args.grad_l is not None or args.grad_k_l is not None
+            or args.grad_mu_l is not None
             or args.grad_hk_l is not None
             or args.grad_f_l is not None
             or args.grad_df_l is not None
@@ -2095,7 +2136,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("emit: --L / --pair-l / --one-e-l / --schwarz-l / --sx-l / "
               "--metric-l / --eri3-l / --hgp-metric-l / --hgp-eri3-l / "
               "--rys-metric-l / --rys-eri3-l / "
-              "--mu-l / --quad-l / --grad-l / --grad-k-l / --grad-hk-l / "
+              "--mu-l / --quad-l / --grad-l / --grad-mu-l / --grad-k-l / "
+              "--grad-hk-l / "
               "--grad-f-l / "
               "--grad-df-l / --grad-dfx-l / --hess-l / --jx-l / "
               "--hess-k-l / --hess-kx-l / "
@@ -2171,6 +2213,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"emit: --grad-l {args.grad_l} is outside 0..{GRAD_L_MAX}: the "
               "gradient kernels are validated through (ff) only",
               file=sys.stderr)
+        return 2
+    if (args.grad_mu_l is not None
+            and not 0 <= args.grad_mu_l <= GRAD_MU_L_MAX):
+        print(f"emit: --grad-mu-l {args.grad_mu_l} is outside "
+              f"0..{GRAD_MU_L_MAX}: the moment gradient kernels are "
+              "validated through (ff) only", file=sys.stderr)
         return 2
     if args.grad_k_l is not None and not 0 <= args.grad_k_l <= GRAD_K_L_MAX:
         print(f"emit: --grad-k-l {args.grad_k_l} is outside "
@@ -2360,6 +2408,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         written += generate_quad(args.backend, arch, args.out, args.quad_l)
     if args.grad_l is not None:  # beside the J chain, never by default
         written += generate_grad(args.backend, arch, args.out, args.grad_l)
+    if args.grad_mu_l is not None:  # beside the J chain, never by default
+        written += generate_grad_mu(args.backend, arch, args.out,
+                                    args.grad_mu_l)
     if args.grad_k_l is not None:  # beside the J chain, never by default
         written += generate_grad_k(args.backend, arch, args.out,
                                    args.grad_k_l)

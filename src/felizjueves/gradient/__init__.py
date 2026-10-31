@@ -11,6 +11,8 @@ the generated kernels
                      bra derivative from J_p one Hermite order higher
     kernel_gk.py     Target.K at d1: gk_{la}{lc}_{lb}{ld}, the exchange
                      energy's bra derivative, K's plan one bra order up
+    kernel_gmu.py    Target.DIPOLE / QUADRUPOLE at d1: gmu_ / gquad_{la}{lb},
+                     SUM M dMU^c/dR per moment component, fixed origin
     kernel_ghj.py    Target.J on Engine.HGP at d1: ghj_{la}{lb}{lc}{ld},
                      the Coulomb energy's bra derivative per ordered
                      class on the Head-Gordon-Pople recurrence
@@ -44,7 +46,9 @@ WHAT A GRADIENT KERNEL WRITES. Not the derivative integrals -- a
 
 which is what every term of an SCF energy gradient is (`M = D` for `T`,
 `V`, `J` and `K`, `M = W`, the energy-weighted density, for `S`; the sign
-and the half are the caller's). The DF terms contract an aux matrix
+and the half are the caller's), and what a dipole or quadrupole
+derivative at a fixed density is, one `G` per moment component
+(`kernel_gmu`). The DF terms contract an aux matrix
 (`SUM_PQ W_PQ d(P|Q)/dR`) and a three-index tensor (`SUM_mnP Gam_mnP
 d(mn|P)/dR`) the same way (`host_df`'s module docstring has DF-J's).
 THE UNCONTRACTED KERNELS ARE THE EXCEPTION (the `uncontracted` lever,

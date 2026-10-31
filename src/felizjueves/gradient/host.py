@@ -4,6 +4,7 @@
     overlap_gradient(basis, M, nuclei)               -> G   SUM M dS/dR
     kinetic_gradient(basis, M, nuclei)               -> G   SUM M dT/dR
     potential_gradient(basis, M, nuclei, one_centre=) -> G  SUM M dV/dR
+    multipole_gradient(basis, M, nuclei, C, e=, q=)  -> [G]  SUM M dMU^c/dR
     coulomb_gradient(basis, D, nuclei, one_centre=)  -> G   dE_J/dR
     exchange_gradient(basis, D, nuclei, one_centre=) -> G   dE_K/dR
     hgp_exchange_launches(basis, nuclei, am)         -> kernel_ghk's launches
@@ -44,6 +45,16 @@ on the differentiated axis, the plain `E` on the other two. Then
   i K_{i-1,j}`, `dB K_ij = 2 beta K_{i,j+1} - j K_{i,j-1}` (the operator
   commutes with a translation, so the rule applies to the ket function
   before the Laplacian, as `experimental/mmd/gradient/ints.py` does).
+- `MU` (the dipole, `e = 1`) and the quadrupole's raw second moments
+  (`e = 2`), `<a| q (r - C)^(ex, ey, ez) |b>` about a FIXED origin `C`
+  (`one_electron.multipole`): per axis the factor `F^n_{ij} = SUM_{t <=
+  min(n, i+j)} E^{ij}_t M^n_t` (`multipole.multipole_axis`, its moments
+  `multipole.hermite_moments(n, P - C, zeta)`), and its derivative
+  `dA F^n_{ij} = 2 alpha F^n_{i+1,j} - i F^n_{i-1,j}` (`dB` likewise) --
+  the rule acts on the basis function, so the moments, at the record's
+  own `P`, are unchanged. One `G` per component (`cartesians(e)` order),
+  times `q s`. The origin is not a nucleus: no operator term, and
+  `SUM_A G^c[A, k]` is minus the origin derivative, a check.
 - `V`:  the Hermite densities `H0_t = SUM_r w_r E^r_t` (`|t| <= L`) and
   `HA_k,t`, `HB_k,t` (`|t| <= L + 1`), then per nucleus
   `-Z SUM_t HA_k,t [t]^(0)` on `A` (and `B`) and `+Z SUM_t H0_t
@@ -95,6 +106,7 @@ from felizjueves.ao.pairs import OneCentre, primitive_pairs
 from felizjueves.ao.shell import Basis, Shell, cartesians
 from felizjueves.mmd.hermite import e_axis, hermite_order
 from felizjueves.one_electron.kinetic import kinetic_axis
+from felizjueves.one_electron.multipole import hermite_moments, multipole_axis
 from felizjueves.one_electron.potential import Nucleus
 
 Ang = tuple[int, int, int]
@@ -339,6 +351,61 @@ def _hermite_densities(ax: _Axes, sa: Shell, sb: Shell, w: Sequence[float],
                 for n, v in enumerate(_hermite(f, t1)):
                     H[k][n] += wr * v
     return H0, HA, HB
+
+
+def multipole_gradient(basis: Basis, M: Matrix, nuclei: Sequence[Nucleus],
+                       C: Sequence[float], e: int = 1, q: float = 1.0, *,
+                       pairs: Pairs = None,
+                       atoms: Sequence[int] | None = None) -> list[Grad]:
+    """`G[c][A][k] = SUM_mn M_mn dMU^c_mn / dR_{A,k}`, one `G` per component
+    `c` of `cartesians(e)` -- the dipole at `e = 1`, the quadrupole's raw
+    second moments at `e = 2` (module docstring, `MU`)."""
+    if type(e) is not int or e < 0:
+        raise ValueError(f"e = {e!r} is not an int >= 0")
+    c = tuple(float(x) for x in C)
+    if len(c) != 3 or not all(math.isfinite(x) for x in c):
+        raise ValueError(f"origin C = {C!r} is not three finite floats")
+    q = float(q)
+    comps = cartesians(e)
+    out: list[Grad] = []
+
+    def per_record(G, at_a, at_b, sa, sb, w, rec):
+        if not out:  # one G per component, `_one_electron`'s rows
+            out.extend([r[:] for r in G] for _ in comps)
+        zeta, P, s, alpha, beta = rec
+        ax = _Axes(zeta, P, sa.centre, sb.centre, sa.l + 1, sb.l + 1)
+        mom = [[hermite_moments(n, P[d] - c[d], zeta) for n in range(e + 1)]
+               for d in range(3)]
+
+        def F(d: int, n: int, i: int, j: int) -> float:
+            return multipole_axis(ax.e(d, i, j), mom[d][n])
+
+        def dF(d: int, n: int, i: int, j: int) -> tuple[float, float]:
+            da = 2.0 * alpha * F(d, n, i + 1, j)
+            if i:
+                da -= i * F(d, n, i - 1, j)
+            db = 2.0 * beta * F(d, n, i, j + 1)
+            if j:
+                db -= j * F(d, n, i, j - 1)
+            return da, db
+
+        rows = [(a, b) for a in cartesians(sa.l) for b in cartesians(sb.l)]
+        qs = q * s
+        for n, ek in enumerate(comps):
+            gA, gB = [0.0] * 3, [0.0] * 3
+            for wr, (a, b) in zip(w, rows, strict=True):
+                f = [F(d, ek[d], a[d], b[d]) for d in range(3)]
+                for k in range(3):
+                    da, db = dF(k, ek[k], a[k], b[k])
+                    fa, fb = list(f), list(f)
+                    fa[k], fb[k] = da, db
+                    gA[k] += wr * (fa[0] * fa[1] * fa[2])
+                    gB[k] += wr * (fb[0] * fb[1] * fb[2])
+            _add(out[n], at_a, gA, qs)
+            _add(out[n], at_b, gB, qs)
+
+    G0 = _one_electron(basis, M, nuclei, per_record, pairs, atoms)
+    return out or [[r[:] for r in G0] for _ in comps]
 
 
 def potential_gradient(basis: Basis, M: Matrix, nuclei: Sequence[Nucleus],
