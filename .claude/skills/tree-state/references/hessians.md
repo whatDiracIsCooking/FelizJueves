@@ -136,8 +136,8 @@ compiler only): all admissible under the declared 14,000 B / 30 s, worst
 `kx1_33_33` at 9,824 B (`sm_86`) and 10,192 B (`gfx1200`), slowest
 compile 5.6 s. No device test or driver: nothing has
 launched on either card. `J^X` (#688) and `h^x` (#687) are not built.
-**The DF metric's Hessian too, through (i|i), interpreted and nvcc-compiled
-(#694); a device test written, on no card**
+**The DF metric's Hessian too, through (i|i), interpreted, nvcc- and
+hipcc-compiled, and run on both cards against the host (#694)**
 (`hessian.md`, "The DF metric Hessian"): `Target.METRIC` joins
 `spec.HESSIAN_TARGETS` (MMD only; `metric.hgp` refuses d2), a
 d2 key `coulomb/d2/(lP,lQ)/b1/metric/literal`, every d0 and d1 key
@@ -174,10 +174,13 @@ low-stack frame is <= 9,200 B and <= 1.9 s of nvcc; **hipcc 7.2.4
 (`gfx1200`) compiles all 28 too**, frames <= 9,744 B. A device test and driver are written
 (`test_hess_df_device.py`, `hess_driver.d2metric_launches`: H₂O/cc-pVDZ
 against cc-pVDZ-JKFIT with DF-J's `W`, and the d1 ladder's aux-i system per
-aux `l`) and have **run on neither card**. No `d` response, no assembled
-DF-J Hessian, no clock measured.
-**The three-center DF integral's Hessian too, through (ff|i), interpreted and
-nvcc-compiled (#694); a device test written, on no card** (`hessian.md`, "The three-center DF Hessian"): `Target.ERI3` joins
+aux `l`), and **ran on both cards** (RTX 3080 and RX 9060 XT,
+2026-10-31): H₂O's 10 classes through (f|f) and all 28 classes through
+(i|i) on the aux-i system, default forms, within 9.0e-18 of the twin
+(bound 1e-14); the ladder's runs bit-identical. No `d` response, no
+assembled DF-J Hessian, no clock measured.
+**The three-center DF integral's Hessian too, through (ff|i), interpreted,
+nvcc- and hipcc-compiled, and run on both cards against the host (#694)** (`hessian.md`, "The three-center DF Hessian"): `Target.ERI3` joins
 `spec.HESSIAN_TARGETS` (MMD only), a d2 key
 `coulomb/d2/(la,lb|lP)/b1/eri3/literal`. `hessian/kernel_d2eri3.py`
 (`d2eri3_{la}{lb}{lP}`, not `heri3_`: the HGP `(mn|P)`'s) writes
@@ -215,7 +218,10 @@ the host's twin (`test_kernel_d2_df_ladder.py`, 79 cases; worst printed
 0.49 eps, `d2eri3_010`). **nvcc 13.0 (`sm_86`) compiles all
 71 pinned units** (#92's filter, 2026-10-30), **and so does hipcc 7.2.4
 (`gfx1200`)**, worst low-stack scratch 20,640 B (9 units over 14 KB). A device test and driver are written (`test_hess_df_device.py`,
-`hess_driver.d2eri3_launches`) and have **run on neither card**. No
+`hess_driver.d2eri3_launches`), and **ran on both cards** (RTX 3080 and
+RX 9060 XT, 2026-10-31): H₂O's 24 classes through (dd|f) and all 70
+classes through (ff|i) on the aux-i system, default forms (the over-14-KB
+low-stack frames included), within 1.2e-17 of the twin (bound 1e-14). No
 assembled DF-J Hessian (with `d2metric_` and `d`'s response), no clock
 measured.
 **The one-electron derivative MATRICES, `S^x`, `T^x`, `V^x` (#687),

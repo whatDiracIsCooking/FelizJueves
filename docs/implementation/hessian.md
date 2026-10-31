@@ -556,13 +556,16 @@ unit through (ff), both orders, is under the 512 KiB cap (the largest,
 ## The DF metric Hessian (`(P|Q)`)
 
 **Status: implemented host-side and as a generated kernel through (i|i),
-interpreted against the host and compiled by nvcc; a device test is
-written and has not run on a card** (#694). Every class `lP <= lQ <= 6`
+interpreted against the host, compiled by nvcc and hipcc, and run on both
+cards against the host** (#694). Every class `lP <= lQ <= 6`
 is interpreted against the host and compiled by nvcc 13.0 for `sm_86`,
 and by hipcc (ROCm 7.2.4) for `gfx1200`, with each unit's compile time
 and frame recorded on both arches (`data/measured/d2_df_lowstack.json`).
-The session that did this had both compilers and no card, so the device
-test (`test_hess_df_device.py`) has run on neither card. Nothing is
+The device test (`test_hess_df_device.py`) ran on the RTX 3080 and the
+RX 9060 XT on 2026-10-31: H₂O/cc-pVDZ against cc-pVDZ-JKFIT (every class
+through (f|f)) and the aux-i system per aux `l` (every class through (i|i),
+each in its default form), within 9.0e-18 of the host's twin on both, the
+bound 1e-14. Nothing is
 scored: there is no published board and no claim was added.
 
 ### The key
@@ -651,11 +654,10 @@ are pinned by byte count and sha256 in
 | nvcc 13.0, `sm_86` | #92's warning filter | all 28 classes (`test_emit_d2metric.py`), 2026-10-30 | clean |
 | hipcc 7.2.4, `gfx1200` | #92's warning filter | all 28 classes, 2026-10-30 | clean |
 | the same, frames | `d2-df-lowstack-compile` | every class low-stack on both arches; unrolled through `L = 9` (`sm_86`) and `L = 11` (`gfx1200`) | low-stack ≤ 9,200 B `sm_86`, ≤ 9,744 B `gfx1200` scratch; ≤ 10 s a unit |
-| on a card | `test_hess_df_device.py` | — | **not run** (no card in that session) |
+| on a card | `test_hess_df_device.py`, `hess_driver.d2metric_launches`, `RUNS` = 2 runs into a zeroed `H` | RTX 3080 and RX 9060 XT, 2026-10-31: H₂O/cc-pVDZ against cc-pVDZ-JKFIT (10 classes through (f\|f)); the aux-i system, one program per `lQ` = 0..6 (all 28 classes through (i\|i), default forms) | 5.0e-18 (cuda) / 5.1e-18 (hip) of the twin on H₂O; ≤ 9.0e-18 on the ladder, bound 1e-14; ladder runs bit-identical, H₂O's not (atomics) |
 
 ### What is not done
 
-- No card run: the device test is written and has run on neither card.
 - No `d` response, no assembled DF-J (or DF-K) Hessian (the three-center
   `(mn|P)` Hessian is the next section).
 - Nothing against libcint directly (the chain is FD → gradient host →
@@ -665,13 +667,16 @@ are pinned by byte count and sha256 in
 ## The three-center DF Hessian (`(mn|P)`)
 
 **Status: implemented host-side and as generated kernels through (ff|i),
-interpreted against the host and compiled by nvcc; a device test is
-written and has not run on a card** (#694). Every class `la <= lb <= 3`,
+interpreted against the host, compiled by nvcc and hipcc, and run on both
+cards against the host** (#694). Every class `la <= lb <= 3`,
 `lP <= 6` is interpreted against the host and compiled by nvcc 13.0 for
 `sm_86`, and by hipcc (ROCm 7.2.4) for `gfx1200`, with each unit's compile time
 and frame recorded on both arches (`data/measured/d2_df_lowstack.json`).
-The session that did this had both compilers and no card, so the device
-test (`test_hess_df_device.py`) has run on neither card. This
+The device test (`test_hess_df_device.py`) ran on the RTX 3080 and the
+RX 9060 XT on 2026-10-31: H₂O/cc-pVDZ against cc-pVDZ-JKFIT (every class
+through (dd|f)) and the aux-i system per aux `l` (all 70 classes through
+(ff|i), each in its default form), within 1.2e-17 of the host's twin on
+both, the bound 1e-14. This
 section covers the first density-fitting `derivative_order = 2` key: the
 contracted second nuclear derivatives of the three-center integral
 `(mn|P)`, which is the three-center half of a DF-J skeleton Hessian.
@@ -814,12 +819,10 @@ keep their unrolled digests, unchanged, under `<name>.unrolled`.
 | nvcc 13.0, `sm_86` | #92's warning filter | all 71 pinned classes (`test_emit_d2eri3.py`), 2026-10-30 | clean |
 | hipcc 7.2.4, `gfx1200` | #92's warning filter | all 71 pinned classes, 2026-10-30 | clean |
 | the same, frames | `d2-df-lowstack-compile` | every class low-stack on both arches; unrolled through `L = 3` | low-stack ≤ 24,544 B `sm_86`, ≤ 20,640 B `gfx1200` (recorded, not gated), ≤ 29 s a unit |
-| on a card | `test_hess_df_device.py` (H₂O/cc-pVDZ against cc-pVDZ-JKFIT; the aux-i system per aux `l`) | — | **not run** (no card in that session) |
+| on a card | `test_hess_df_device.py`, `hess_driver.d2eri3_launches`, `RUNS` = 2 | RTX 3080 and RX 9060 XT, 2026-10-31: H₂O/cc-pVDZ against cc-pVDZ-JKFIT (24 classes through (dd\|f)); the aux-i system, one program per `lP` = 0..6 (all 70 classes through (ff\|i), default forms, the over-14-KB low-stack frames included) | 4.5e-18 (cuda) / 3.2e-18 (hip) of the twin on H₂O; ≤ 1.2e-17 on the ladder (`lP` = 2), bound 1e-14; ladder runs bit-identical, H₂O's not (atomics) |
 
 ### What is not done
 
-- No card run. The device test and driver are written (`test_hess_df_device.py`, `hess_driver.py`'s
-  `d2eri3_launches`), and its host-only staging tests ran.
 - The low-stack frames at f exceed #606's 14 KB (above). No clock is
   measured.
 - No assembled DF-J Hessian. The DF-J Hessian is this term with

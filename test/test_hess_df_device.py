@@ -17,7 +17,7 @@ ladder's aux-i system (`manifest.df_gradient`: `prim_spd_f`, He s, p, d and
 a contracted Ne f, against l = 0..6 aux shells on both atoms), which reaches
 every class of the ladder, each in its DEFAULT form, with that witness's
 closed-form `Gam` and `W`. One program per aux `l` (`lP` for d2eri3, `lQ`
-for d2metric), each compile within the user's 300 s budget
+for d2metric), each compile within the user's 120 s per-.cu budget
 (`COMPILE_BUDGET_S`, a hard timeout). There is no libcint witness at d2;
 the host is the one witness, itself held to finite differences of the d1
 host (test_hessian_host_df.py, test_hessian_host_eri3.py).
@@ -30,8 +30,12 @@ interpreted kernels are within 0.4 eps of the twin and up to ~7,000 eps of
 and its `exp` and Boys differ from the interpreter's by ulps, each rounding
 bounded by the same twin. The runs are compared with each other too.
 
-NOT RUN ON ANY CARD YET: the session that wrote this file had nvcc and no
-card (#694). Its host-only tests (the staging covers every class once) ran.
+RAN ON BOTH CARDS, 2026-10-31 (#694): the RTX 3080 and the RX 9060 XT,
+2 + 14 device tests per card. Worst, of max(twin): H2O 5.1e-18, the
+ladder 1.2e-17 (eri3 lP = 2). Wall clock per card: Part 1 11-14 min (the
+eri3 host ~10 min of it), Part 2 7-9 min at `-n 7` (eri3 lP = 6 the
+longest cell, ~5 min). The ladder's runs are bit-identical; H2O's differ
+by the atomics' order, within 4e-18.
 """
 
 from __future__ import annotations
@@ -60,7 +64,7 @@ from felizjueves.hessian import host_df, host_eri3
 from felizjueves.reference.pq import pq
 
 DEV_TOL = 1e-14  # of max(twin) (module docstring)
-COMPILE_BUDGET_S = 300.0  # the user's per-compile budget (#613, #694)
+COMPILE_BUDGET_S = 120.0  # the user's per-.cu compile budget (#694)
 FIXTURE = "h2o_ccpvdz_j"
 AUX_SET = "cc-pVDZ-JKFIT"
 
