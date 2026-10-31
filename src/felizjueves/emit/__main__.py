@@ -234,8 +234,10 @@ for CUDA, `.hip` for HIP):
   differentiated on each ket centre, `Target.DQ` at d1) and
   `hjab_{la}{lb}` (`kernel_hjab`: `d2 E_J/dR dR` from `J_p` two bra
   orders up and from `J_p` of the derivative kets, `Target.JAB` at d2).
-  Accepted 0..`HESS_L_MAX` = 2 (validated through (dd), interpreted; the
-  unrolled `hjab` is ~1 MB there); above it is a 2. The two `[p|q]`
+  Each unit in its default form (#690: `hjab` rolled from `la + lb = 3`,
+  `hdq` from `lc + ld = 5`; the unrolled `hjab` is ~1 MB at (dd)).
+  Accepted 0..`HESS_L_MAX` = 3 (validated through (ff), interpreted and
+  on both cards); above it is a 2. The two `[p|q]`
   classes `hjab` reads are ordinary d0 classes
   (`kernel_hjab.hjab_pq2_spec`, `hjab_pq1_spec`), written by `--class`,
   not by this flag. It ADDS units beside the J ladders, as `--grad-l`
@@ -711,7 +713,7 @@ DEFAULT_GRAD_DF_AUX_L = 2  # `--grad-df-aux-l` bare or omitted: aux l <= 2
 GRAD_DF_L_MAX = 3  # orbital l: the DF gradients are validated through f
 GRAD_DF_AUX_L_MAX = 6  # aux l: validated through i (#613)
 DEFAULT_HESS_L = 1  # `--hess-l` given bare: (ss) (sp) (pp), 6 units
-HESS_L_MAX = 2  # the Hessian kernels are validated through (dd) interpreted
+HESS_L_MAX = 3  # hjab / hdq validated through (ff), rolled from floors (#690)
 DEFAULT_JX_L = 2  # `--jx-l` given bare: every ordered class through (dd), 9 units
 JX_L_MAX = 3  # kernel_jx is validated through (ff) interpreted
 DEFAULT_HESS_K_L = 1  # `--hess-k-l` given bare: every s / p K class, 16 units
@@ -2220,7 +2222,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.hess_l is not None and not 0 <= args.hess_l <= HESS_L_MAX:
         print(f"emit: --hess-l {args.hess_l} is outside 0..{HESS_L_MAX}: "
-              "the Coulomb-Hessian kernels are validated through (dd) only",
+              "the Coulomb-Hessian kernels are validated through (ff) only",
               file=sys.stderr)
         return 2
     if args.jx_l is not None and not 0 <= args.jx_l <= JX_L_MAX:

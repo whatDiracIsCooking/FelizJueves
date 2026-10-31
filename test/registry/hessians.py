@@ -7,10 +7,11 @@ from .rules import PROGRAM, Allow, ById, Classes, ladder, span
 BOTH = ("rtx3080", "rx9060xt")
 
 CASES = [
-    # hdq / hjab on both cards through (dd).
+    # hdq / hjab through (ff) (#690): interpreted, compiled by nvcc and
+    # hipcc, every class and the on-card chain on both cards.
     *(case for q in ("dq", "jab") for case in ladder(
-        "mmd", q, 2, compile=range(3), gpu=range(5),
-        cards=dict.fromkeys(BOTH, range(5)))),
+        "mmd", q, 2, compile=range(7), gpu=range(7),
+        cards=dict.fromkeys(BOTH, range(7)))),
     # d2s / d2t / d2v, unrolled, on both cards through (dd); the low-stack
     # d2v at (ff) compiled only.
     *(case for q in "st" for case in ladder(
@@ -57,6 +58,13 @@ _HESS = {f"{name}-{which}": span("mmd", which, 2, range(top + 1))
 # jx's whole-molecule cells (#688): every bra class of the basis.
 _JX = {name: span("mmd", "jx", 1, range(top + 1))
        for name, top in (("h2o_sto3g", 2), ("h2o_ccpvdz", 4))}
+
+# The Coulomb Hessian's on-card chain cells (#690): every hdq ket class
+# and hjab bra class of the basis.
+_HJAB_CHAIN = {name: span("mmd", "jab", 2, Ls) + span("mmd", "dq", 2, Ls)
+               for name, Ls in (("h2_sto3g_j", (0,)),
+                                ("h2o_sto3g", range(3)),
+                                ("h2o_ccpvdz", range(5)), ("sf", (0, 3, 6)))}
 
 # hkx's whole-molecule cells (#691): every K class of the basis.
 _HKX = {name: span("mmd", "k", 2, range(top + 1))
@@ -106,6 +114,12 @@ TESTS = {
     "test/test_hess_j_device.py::test_X_hdq_matches_the_host": Classes("mmd", "dq", 2),
     "test/test_hess_j_device.py::test_X_hjab_class_matches_the_host":
         Classes("mmd", "jab", 2),
+    "test/test_hess_j_device.py::test_X_hdq_other_form_matches_the_host":
+        Classes("mmd", "dq", 2),
+    "test/test_hess_j_device.py::test_X_hjab_other_form_matches_the_host":
+        Classes("mmd", "jab", 2),
+    "test/test_hjab_chain_ondevice.py::test_X_hjab_chain_matches_the_reference":
+        ById(_HJAB_CHAIN),
     "test/test_emit_jx.py::test_X_compiles_the_jx_unit": Classes("mmd", "jx", 1),
     "test/test_jx_device.py::test_X_jx_class_matches_the_host":
         Classes("mmd", "jx", 1),

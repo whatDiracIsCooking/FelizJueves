@@ -2403,10 +2403,55 @@ def hkx_array(mol: Any, dm: np.ndarray) -> np.ndarray:
     the sign is +). experimental/mmd/hessian/check.py's assembly, which
     holds the spike's MMD `d2(ab|cd)` to it. Refused unless symmetric and
     translationally invariant to 1e-12 of its max."""
-    import itertools
-
     if not np.array_equal(dm, dm.T):
         raise ValueError("the density is not symmetric")
+    H = _d2_eri_sum(mol, np.einsum("ik,jl->ijkl", dm, dm))
+    M = H.reshape(3 * mol.natm, 3 * mol.natm)
+    top = float(np.abs(M).max())
+    if np.abs(M - M.T).max() > 1e-12 * top:
+        raise ValueError("the exchange Hessian is not symmetric")
+    if np.abs(H.sum(axis=0)).max() > 1e-12 * top:
+        raise ValueError("the exchange Hessian is not translationally "
+                         "invariant")
+    return H
+
+
+def hjab_array(mol: Any, dm: np.ndarray, *,
+               absolute: bool = False) -> np.ndarray:
+    """#690: the skeleton Coulomb Hessian `H[A, k, B, l] = d2 E_J /
+    dR_{A,k} dR_{B,l}`, `E_J = 1/2 sum_ijkl (ij|kl) D_ij D_kl`, `D` fixed:
+    `hkx_array`'s assembly of libcint's three second-derivative tensors,
+    contracted with `D (x) D` in J's pairing. `absolute=True` is its
+    ABSOLUTE TWIN, the same sums with every tensor element and weight in
+    `|.|`: the size of what cancels (~650 to ~1800 `max|H|` on H2O, the same-atom
+    blocks' `(2 alpha)^2`), the scale `hessian.host.coulomb_hessian(...,
+    absolute=True)` is for the host. Refused unless symmetric to 1e-12 of
+    its max and translationally invariant to 1e-14 of its twin's max -- not
+    of its own: libcint's invariance residual is ~1e-12 of `max|H|` at
+    STO-3G, a few eps of the twin."""
+    if not np.array_equal(dm, dm.T):
+        raise ValueError("the density is not symmetric")
+    W = np.einsum("ij,kl->ijkl", dm, dm)
+    H = _d2_eri_sum(mol, W, absolute=absolute)
+    M = H.reshape(3 * mol.natm, 3 * mol.natm)
+    if np.abs(M - M.T).max() > 1e-12 * float(np.abs(M).max()):
+        raise ValueError("the Coulomb Hessian is not symmetric")
+    if absolute:
+        return H
+    twin = float(np.abs(_d2_eri_sum(mol, W, absolute=True)).max())
+    if np.abs(H.sum(axis=0)).max() > 1e-14 * twin:
+        raise ValueError("the Coulomb Hessian is not translationally "
+                         "invariant")
+    return H
+
+
+def _d2_eri_sum(mol: Any, W: np.ndarray, *,
+                absolute: bool = False) -> np.ndarray:
+    """`hkx_array`'s assembly (its docstring) for any four-index weight
+    `W[i, j, k, l]` on `(ij|kl)`: `H = 1/2 SUM d2(ij|kl) W` per atom pair,
+    unchecked; `absolute` puts every tensor element and weight in `|.|`."""
+    import itertools
+
     nao, natm = int(mol.nao_nr()), mol.natm
     atom_of = np.zeros(nao, dtype=int)
     for A, (_, _, p0, p1) in enumerate(mol.aoslice_by_atom()):
@@ -2414,7 +2459,9 @@ def hkx_array(mol: Any, dm: np.ndarray) -> np.ndarray:
     canon = {s: mol.intor(n, comp=9).reshape((3, 3) + (nao,) * 4)
              for s, n in ((0, "int2e_ipip1_cart"), (1, "int2e_ipvip1_cart"),
                           (2, "int2e_ip1ip2_cart"))}
-    W = np.einsum("ik,jl->ijkl", dm, dm)
+    if absolute:
+        canon = {s: np.abs(t) for s, t in canon.items()}
+        W = np.abs(W)
     H = np.zeros((natm, 3, natm, 3))
     idx = "ijkl"
     for p, q in itertools.product(range(4), range(4)):
@@ -2431,13 +2478,6 @@ def hkx_array(mol: Any, dm: np.ndarray) -> np.ndarray:
             for m in range(nao):
                 for n in range(nao):
                     H[atom_of[m], :, atom_of[n], :] += 0.5 * g[:, :, m, n]
-    M = H.reshape(3 * natm, 3 * natm)
-    top = float(np.abs(M).max())
-    if np.abs(M - M.T).max() > 1e-12 * top:
-        raise ValueError("the exchange Hessian is not symmetric")
-    if np.abs(H.sum(axis=0)).max() > 1e-12 * top:
-        raise ValueError("the exchange Hessian is not translationally "
-                         "invariant")
     return H
 
 
@@ -2451,6 +2491,10 @@ def numeric_array(name: str) -> np.ndarray:
         a = j_array(mol, numeric.density(name))
     elif e.what == "k.d2":
         a = hkx_array(mol, numeric.density(name))
+    elif e.what == "jab.d2":
+        a = hjab_array(mol, numeric.density(name))
+    elif e.what == "jab.d2.abs":
+        a = hjab_array(mol, numeric.density(name), absolute=True)
     elif e.what == "jx1":
         a = jx1_array(mol, numeric.density(name))
     elif e.what == "jx":

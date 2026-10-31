@@ -8,11 +8,15 @@ Hessian"), and the CPHF right-hand side's exchange and Coulomb derivative
 matrices ("The exchange derivative matrix", "The Coulomb derivative
 matrix").
 
-**Status: implemented host-side and as generated kernels, compiled by
-nvcc and hipcc and run on both cards** (the RTX 3080 and the RX 9060 XT,
-`hdq` and `hjab` per class through (dd) and the whole H₂O/STO-3G `H`,
-against the host, with the host's `J`s; the on-card chain through the
-`[p|q]` kernel is interpreted only). This is
+**Status: implemented host-side and as generated kernels through (ff),
+compiled by nvcc and hipcc and run on both cards** (the RTX 3080 and the
+RX 9060 XT): `hdq` and `hjab` per class through (ff), in both forms where
+each compiles, against the host with the host's `J`s, and since #690 the
+WHOLE CHAIN on the card -- `DQ` and `hdq`, the host's gather, the `[p|q]`
+kernels at both raised classes to L = 14, `hjab` -- against libcint on
+H₂O/STO-3G and cc-pVDZ and against the host on a two-atom s, f basis.
+From `la + lb = 3` `hjab`, and from `lc + ld = 5` `hdq`, is a ROLLED form
+("The rolled `hjab` and `hdq`", below). This is
 the derived note for the first `derivative_order = 2` key: the skeleton
 Coulomb part of an SCF Hessian, `d2 E_J / dR dR` for a fixed density. Its
 exchange twin `d2 E_K / dR dR` runs on both cards through (ff|ff) (#691)
@@ -129,14 +133,62 @@ kets, `J_p` (`coulomb_jp`, which reads any ket by duck type) and
 
 ## The generator
 
-`python -m felizjueves.emit --hess-l [LMAX]` (1 bare, accepted 0..2, exit 2
-above) adds `hdq_{la}{lb}` and `hjab_{la}{lb}` for every `la <= lb <=
-LMAX`, beside the J ladders; never in the bare default nor in
-`KERNEL_GEN_CMD`. The two `[p|q]` classes are written by the class
-selector, not by this flag. Goldens: `test/golden/{cuda,hip}/{hdq,hjab}_`
-for (ss), (sp), (pp), 12 files (`test_emit_hess.py`). The unrolled `hjab`
+`python -m felizjueves.emit --hess-l [LMAX]` (1 bare, accepted 0..3 since
+#690, exit 2 above) adds `hdq_{la}{lb}` and `hjab_{la}{lb}` for every `la
+<= lb <= LMAX`, each in its default form, beside the J ladders; never in
+the bare default nor in `KERNEL_GEN_CMD`. The two `[p|q]` classes are
+written by the class selector, not by this flag. Goldens:
+`test/golden/{cuda,hip}/{hdq,hjab}_` for (ss), (sp), (pp), 12 files, below
+both floors and unchanged by #690; every other ladder unit through (ff),
+and the unrolled `hjab_12` / `hjab_22` that ran on both cards before #690
+(`<name>.unrolled`), are pinned by size and sha256 in
+`test/golden/hjab_digests.json` (`test_emit_hess.py`). The unrolled `hjab`
 grows fast (cuda): 29 KB at (ss), 188 KB at (pp), 1.08 MB at (dd), 4.8 MB
 at (ff); `hdq` is about a fifth of that.
+
+## The rolled `hjab` and `hdq` (#690)
+
+The unrolled densities are straight-line text, every Hermite index times
+every row: over #613's 14,000 B of `sm_86` stack from `hjab_12` (22,056 B;
+`hjab_22` 50,368 B and 186 s of nvcc alone) and from `hdq_23` (20,096 B;
+`hdq_33` 49,040 B and ~114 s). So each builder takes `lowstack=` and
+defaults to a ROLLED form from its floor, `kernel_hjab.LOWSTACK_MIN_LSUM =
+3` and `kernel_hdq.LOWSTACK_MIN_LSUM = 5`, the smallest `la + lb` with an
+unrolled class over the budget in `data/measured/hjab.json` (the store's
+check holds both to its rows). Same name, parameters, launch and output
+contract; below the floor the text is byte-identical.
+
+- `hdq`, rolled: a local `HD[6 n_q1]`, zeroed; per block row
+  (`kernel_g1e.lowstack_rows`, the row's weight from `M`), the operated
+  per-axis factors `F{op}[d, t]` for `op` in `""`, `A`, `B`
+  (`kernel_h1e.operated_value`, bitwise the unrolled pooled locals), and
+  the six first-derivative densities `HD[3 side + k, t] += wt ((F0 F1)
+  F2)` as rolled loops over the reachable `t`; then `D1 = s HD`, every
+  element stored. Rows in `block_rows` order, the product associated as
+  the unrolled one: the SAME sums in the same order, so the rolled `hdq`
+  is bitwise the unrolled one and the host.
+- `hjab`, rolled: the same `HD` (the bra-ket densities, bitwise), 21
+  accumulators for the bra-bra components, each `+= SUM_t wt PROD_d
+  F{o_d}[d, t_d] Jp2[row, t]` rolled per row over the six operated factors
+  (`"" A B AA AB BB`, the tables `(la + 2, lb + 2)`), `Jp2` read where it
+  lies; the 36 bra-bra atomics; then the atom loop with `l` and `k` at run
+  time, `H[X, k, C, l] += s SUM_n HD[k, n] Jp1[C, l, row, n]`, two atomics
+  per iteration. The bra-bra sums are regrouped by row, so the forms agree
+  to rounding.
+
+Compiled (`data/measured/hjab.json`, `devtools/measure.sh hjab-compile`,
+the rule declared before any row: within 120 s a unit on both arches;
+the stack RECORDED, NOT GATED, as #691's `hkx`): every `hjab` / `hdq`
+class through (ff) in its default form, its other form where buildable
+(every `hdq`; `hjab` through `la + lb = 4`), and every `[p|q]` class the
+ladder reads (62, to L = 14), each alone, nvcc 13.0 `sm_86` and hipcc
+7.2.4 `gfx1200`. Default units: `hjab` at most 15.3 s of nvcc
+(`hjab_32`) and 2.0 s of hipcc, `hdq` at most 4.5 s / 5.9 s; frames worst
+`hjab_33` 20,528 B (`sm_86`) / 16,624 B (`gfx1200`), `hdq_33` 12,992 /
+11,776 B; three `hjab` units over 14,000 B on `sm_86` (`hjab_23`, `_32`,
+`_33`), one on `gfx1200`. The `[p|q]` towers: at most 28 s of nvcc
+(`pq_L14_p7_q7`, 28,224 B) and 54 s of hipcc (`pq_L14_p8_q6`). Killed at
+120 s, other form only: the unrolled `hjab_22` and `hdq_33` on `sm_86`.
 
 ## Witnesses, and what ran where
 
@@ -146,12 +198,15 @@ at (ff); `hdq` is about a fifth of that.
 | host symmetry, invariance, parts | `H = H^T`, `SUM_A H = 0`, `bb + bk = H`, each part symmetric alone | same | ~2e-15 of `max\|H\|`, gate 1e-13 |
 | derivative kets | `SUM` of their `q = 0` entries is the overlap gradient at `M = D` | s, p basis | gate 1e-14 |
 | `E_nuc` | FD of `nuclear_repulsion_gradient` | three nuclei | gate 1e-7 |
-| `hdq` interpreted (`test_kernel_hessian.py`) | `host.ket_derivative_records` | every ordered class (ss)–(dd) on a three-atom s, p, d basis | **bitwise** |
-| `hjab` interpreted | `host.coulomb_hessian(pairs=)`, host `J`s, the absolute twin as scale | the same classes and basis ((pd), (dp), (dd) `slow`) | worst 0.14 eps of the scale ((pp)), 0.08 at (dd); gate 16 eps |
+| `hdq` interpreted (`test_kernel_hessian.py`) | `host.ket_derivative_records` | every ordered class (ss)–(dd) on a three-atom s, p, d basis, and with an f shell on a two-atom s, p, d, f basis (`SPDF`, #690); both forms | **bitwise**, both forms |
+| `hjab` interpreted | `host.coulomb_hessian(pairs=)`, host `J`s, the absolute twin as scale | the same classes and bases (L + 2 > 4 `slow`), the default form, and the other form through `la + lb = 4` | worst 0.53 eps of the scale (`hjab_33`, rolled), 0.27 through (dd); gate 16 eps |
 | the chain: `hdq` → gather → `[p|q]` at both specs (interpreted) → `hjab` | `host.coulomb_hessian` | the s, p basis; H₂O/STO-3G `slow` | 0.14 eps of the scale on the s, p basis, gate 64 eps; symmetry and invariance 1e-13 |
 | compile, `-Wall -Wextra` | clang 18 CUDA front end, device side, runtime stub | `hdq` and `hjab` for every class through (dd), (10), (21) | no diagnostic (a proxy) |
-| compile, nvcc / hipcc (`test_emit_hess.py`) | #92's filter | `sm_86` and `gfx1200` | passed, no warning in generated text |
+| compile, nvcc / hipcc (`test_emit_hess.py`, `data/measured/hjab.json`) | #92's filter; the store's declared 120 s | every ladder unit through (ff), both arches, each alone; the store also the other forms and the 62 `[p\|q]` classes read | no warning in generated text; default units ≤ 15.3 s nvcc, ≤ 5.9 s hipcc; `[p\|q]` ≤ 28 s / 54 s |
 | on a card (`test_hess_j_device.py`, generator `test/hess_driver.py`, on the shared runner since #659, which ran on both cards on 2026-10-30) | `hdq`: `host.ket_derivative_records`, `1e-13` of `max\|D1\|`; `hjab`: `host.coulomb_hessian`, host `J`s, `1e-14` of the absolute twin | RTX 3080 and RX 9060 XT: `hdq` and `hjab` for every ordered class (ss)–(dd) on the three-atom s, p, d basis; the whole H₂O/STO-3G `H` (`slow`); 19 cases per card | `hdq` 4.98e-16 (`hdq_02`); `hjab` 7.16e-17 of the scale per class, 9.28e-17 whole H₂O; the same on both cards, per-class runs bit-identical |
+| on a card through (ff) (#690, the same test, 2026-10-31) | the same | both cards: every ordered class (ss)–(ff) in its default form (f classes on `SPDF`), `hdq` in its other form but (ff), `hjab` in its other form through `la + lb = 3`, whole H₂O/STO-3G; 58 cases per card, at most two xdist workers | `hdq` 7.28e-16 (`hdq_32`, rolled); `hjab` 1.16e-16 of the twin (`hjab_33`, rolled); the same on both cards |
+| THE CHAIN ON THE CARD (#690, `test_hjab_chain_ondevice.py`): `DQ` and `hdq` on the card, the host's gather, one process of the `Jp2` and `Jp1` `[p\|q]` launches and `hjab` | libcint (numeric goldens `hjab_h2o_*_bse`, `jab.d2`, scale their absolute twins `*_abs`) on H₂O/STO-3G and cc-pVDZ (BSE files); the host on H₂/STO-3G and `SF` (two atoms, s and f, `[p\|q]` to L = 14); `1e-14` of the twin | both cards (cc-pVDZ and `SF` `high_l`, run by hand); 4 cells per card | cc-pVDZ 2.9e-15 / 3.1e-15 of the twin (1.9e-12 / 2.0e-12 of `max\|H\|`), STO-3G 7.9e-16 / 7.4e-16, `SF` 5.2e-17 / 5.1e-17 (RTX 3080 / RX 9060 XT) |
+| the host against libcint (`test_hjab_chain_ondevice.py`, host-only, `slow`) | `hjab_h2o_sto3g_bse`, its twin | H₂O/STO-3G (BSE) | 6.7e-16 of the twin (1.2e-12 of `max\|H\|`) |
 
 ## The exchange Hessian (`hkx`)
 
@@ -295,9 +350,12 @@ unexamined); the response term and an assembled RHF Hessian.
 
 ## What is not done
 
-- On a card, `hjab` takes the host's `Jp2` / `Jp1`: the chain `hdq` →
-  gather → `[p|q]` → `hjab` is checked interpreted only. Nothing above
-  (dd) has run on a card.
+- The gather of the derivative kets is the host's (the design's step 3),
+  so the on-card chain reads `D1` back once, as the J chain reads `Dmax`
+  back for its sort; the derivative kets are unsorted and unscreened (the
+  chain's plan runs at tau = 0). The chain is witnessed on four bases, not
+  on a molecule with f (the f cell is a synthetic two-atom s, f basis,
+  held to the host; a libcint golden over cc-pVTZ is not built).
 - The skeleton Coulomb and exchange terms and (below) the one-electron
   and DF `(P|Q)`, `(mn|P)` skeletons only. Not built: the nuclear
   repulsion as a
@@ -311,9 +369,9 @@ unexamined); the response term and an assembled RHF Hessian.
   and `hjab` adds `18 n_atom` atomics per bra record whether or not the
   atom's `Jp1` row is zero. A per-atom ket mask or a block mapping is a
   follow-up.
-- Unrolled text only; the ladder stops at (dd) (~1 MB). A low-stack or
-  rolled form (#586's) is not built. Nothing is measured, nothing is
-  screened, Cartesian only.
+- The ladder stops at (ff). Only the compile is measured
+  (`data/measured/hjab.json`); no clock, rolled against unrolled or
+  otherwise. Nothing is screened, Cartesian only.
 
 ## The one-electron Hessians (`S`, `T`, `V`)
 

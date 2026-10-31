@@ -3,7 +3,8 @@
 Moved verbatim from `.claude/CLAUDE.md`, "The state of the tree" (indexed by `../SKILL.md`).
 
 **The first `derivative_order = 2` key: the Coulomb energy's analytic
-nuclear Hessian by MMD, run on both cards through (dd)** (`docs/implementation/hessian.md`
+nuclear Hessian by MMD, run on both cards through (ff), the whole chain
+on the card (#690)** (`docs/implementation/hessian.md`
 is the one place with the detail; after `experimental/mmd/hessian`):
 `spec.DERIVATIVE_ORDERS` is `(0, 1, 2)`, order 2 legal on
 `spec.HESSIAN_TARGETS` (`JAB`, then `S`, `T`, `V`, the exchange Hessian
@@ -22,18 +23,65 @@ the host gathers. Host reference `hessian/host.py` (`coulomb_hessian`,
 `gradient.host.coulomb_gradient` (~6e-9 of `max|H|`), `H = H^T` and
 translational invariance (`test_hessian_host.py`); interpreted, `hdq` is
 bitwise the host and `hjab` within 16 eps of the absolute twin for every
-class through (dd), and the whole chain through the interpreted `[p|q]`
-within 64 eps (`test_kernel_hessian.py`; L > 4 `slow`). Ladder `python -m
-felizjueves.emit --hess-l [LMAX]` (1 bare, 0..2; `hjab` is ~1 MB of
-unrolled text at (dd)), never in the bare default nor in
-`KERNEL_GEN_CMD`; 12 goldens (`test_emit_hess.py`). **On both cards**
-(`test_hess_j_device.py`, generator `test/hess_driver.py` with its OUT
-`D1` for `hdq`, on the shared runner since #659, which ran on both cards on 2026-10-30): `hdq` and `hjab` for every ordered class (ss)–(dd) and
-the whole H₂O/STO-3G `H` (`slow`), against the host with the host's `J`s,
-19 passed per card; `hdq` 4.98e-16 of `max|D1|`, `hjab` 9.28e-17 of the
-absolute twin, the same on both cards. The on-card chain through the
-`[p|q]` kernel is interpreted only. No response term (the exchange
-Hessian: below), no whole RHF Hessian, nothing measured.
+class through (ff) (worst 0.53 eps, `hjab_33`; f classes on a two-atom
+s, p, d, f basis, `SPDF`), every class through `la + lb = 4` in its
+other form too, and the whole chain through the interpreted `[p|q]`
+within 64 eps (`test_kernel_hessian.py`; L > 4 `slow`). **From `la + lb
+= 3` `hjab`, and from `lc + ld = 5` `hdq`, default to a ROLLED form**
+(#690; `kernel_hjab.hjab_lowstack` / `kernel_hdq.hdq_lowstack`,
+`LOWSTACK_MIN_LSUM` 3 / 5; `lowstack=` forces either; `hessian.md`, "The
+rolled `hjab` and `hdq`"): per block row the operated per-axis factors
+(`kernel_h1e.operated_value`) and the six first-derivative densities into
+a local `HD[6, n_q1]` as rolled loops -- the rolled `hdq` is bitwise the
+unrolled one and the host --, `hjab`'s 21 bra-bra sums against `Jp2` per
+row, its atom loop with `l`, `k` at run time; same name, parameters,
+launch and output, the text below the floors byte-identical. Ladder
+`python -m felizjueves.emit --hess-l [LMAX]` (1 bare, 0..3 since #690),
+never in the bare default nor in `KERNEL_GEN_CMD`; 12 goldens, every
+other ladder unit and the unrolled `hjab_12` / `hjab_22` (`.unrolled`)
+pinned in `test/golden/hjab_digests.json` (`test_emit_hess.py`).
+**Measured** (`data/measured/hjab.json`, `devtools/measure.sh
+hjab-compile`, rule declared before any row: 120 s a unit, frames
+RECORDED, NOT GATED; `measure.sh check` holds both floors to the rows):
+every class in its default form, the other forms where buildable, and
+the 62 `[p|q]` classes the ladder reads (to L = 14), each alone, nvcc
+13.0 and hipcc 7.2.4: default `hjab` <= 15.3 s nvcc / 2.0 s hipcc, `hdq`
+<= 4.5 / 5.9 s, `[p|q]` <= 28 s (`pq_L14_p7_q7`) / 54 s
+(`pq_L14_p8_q6`); worst frames `hjab_33` 20,528 B (`sm_86`) / 16,624 B
+(`gfx1200`), `pq_L14_p7_q7` 28,224 B; the unrolled `hjab_12` 22,056 B and
+`hdq_23` 20,096 B set the floors, the unrolled `hjab_22` / `hdq_33` killed
+at 120 s on `sm_86`. **On both cards per class** (`test_hess_j_device.py`,
+generator `test/hess_driver.py` with its OUT `D1` for `hdq`, 2026-10-31):
+`hdq` and `hjab` for every ordered class (ss)–(ff) in the default form,
+`hdq` in the other form but (ff), `hjab` in the other form through `la +
+lb = 3`, and the whole H₂O/STO-3G `H` (`slow`), against the host with the
+host's `J`s, 58 passed per card; `hdq` worst 7.28e-16 of `max|D1|`
+(`hdq_32`, rolled, both cards), `hjab` 1.16e-16 of the absolute twin
+(`hjab_33`, rolled, both cards), the unrolled ones 7.16e-17, the whole
+H₂O/STO-3G 9.28e-17. **The whole chain on the
+card** (#690, `test_hjab_chain_ondevice.py`; `hess_driver.hdq_on_card`,
+`gather_dkets`, `hjab_tail` on `plan_driver.driver`'s `tail=` slot, the
+plan raised by two with `grad_driver.raised_plan(plan, 2)`): `DQ` and
+`hdq` on the card, `D_q` / `Dmax` and `D1` read back (the J chain's sort
+and the design's gather are the host's), then one runner process -- the
+`Jp2` `[p|q]` launches, the `Jp1` `[p|q]` launches into each `(C, l)` slab
+of `jp1_<L>` (a `Ref`), the `hjab`s reading both where they lie -- against
+LIBCINT on H₂O over data/basis/'s STO-3G and cc-pVDZ (the numeric goldens
+`hjab_h2o_*_bse`, `oracle.numeric`'s `jab.d2`: `int2e_ipip1` / `_ipvip1`
+/ `_ip1ip2` `_cart` in J's pairing, with their absolute twins
+`hjab_h2o_*_bse_abs` as the scale) and against the host on H₂ and on `SF`
+(two atoms, an s of two primitives and an f each: `hjab_33`, `[p|q]` to L
+= 14), at `1e-14` of the reference's twin, stated before any run (a d2
+E_J cancels to 1/650-1/1800 of libcint's twin; libcint's own
+translational residual is 1.1e-12 of `max|H|`): 4 passed per card
+(2026-10-31); worst H₂O/cc-pVDZ 2.9e-15 / 3.1e-15 of the twin (1.9e-12 /
+2.0e-12 of `max|H|`, RTX 3080 / RX 9060 XT), H₂O/STO-3G 7.9e-16 /
+7.4e-16, `SF` 5.2e-17 / 5.1e-17; the driver compile of `SF` 99 s (nvcc) /
+183 s (hipcc), every unit in it alone under 120 s. The host meets the
+STO-3G golden at 6.7e-16 of its twin (`slow`). H₂O/cc-pVDZ and `SF` are
+`high_l` (`[p|q]` above L = 8): off both kernel-tier selections, run by
+hand. No response term (the exchange Hessian: below), no whole RHF
+Hessian, no clock.
 **Beside it, the one-electron Hessians of `S`, `T` and `V` at d2,
 run on both cards through (dd)** (`hessian.md`, "The one-electron Hessians"; the spike's
 one-electron half): `HESSIAN_TARGETS` also holds `S`, `T`, `V` (MMD only).

@@ -1,0 +1,134 @@
+{
+  "cuda": {
+    "hdq_02": {
+      "bytes": 30041,
+      "sha256": "c3eff3ce5008e8909b540e9cd5ddcb3e9c23069d00604dd3339fa46aaf196538"
+    },
+    "hdq_03": {
+      "bytes": 56416,
+      "sha256": "97b44f415029e1544d166501efcab2c6a196fc4f2db8e79ee9dd1a8f1028fc44"
+    },
+    "hdq_12": {
+      "bytes": 82813,
+      "sha256": "089f014e39dd8a02a82c2c9ab783273495f20910f0b8fdc154715e59299652d7"
+    },
+    "hdq_13": {
+      "bytes": 166847,
+      "sha256": "fd55fd4d2f186301088e619f48a3b9154186c896c4568f48f1c73122a83f3dde"
+    },
+    "hdq_22": {
+      "bytes": 197409,
+      "sha256": "81604506824c11f81aafaf8a809b23ab17acb8ff74c0dc6c3d7ff2bb2778f173"
+    },
+    "hdq_23": {
+      "bytes": 42209,
+      "sha256": "7230465f545ad79f28555278d505a7f0a1972304fdfa1dc5fe61f5a2c1e9c761"
+    },
+    "hdq_33": {
+      "bytes": 54907,
+      "sha256": "9dc22b81ec9227689b794a344490be008e2ecfadaf7687924e27b1ecf4bde565"
+    },
+    "hjab_02": {
+      "bytes": 148158,
+      "sha256": "76a37b9afaddb278efb8831b8996bb9a6c3904ac28b459b40cf35803d0631ea0"
+    },
+    "hjab_03": {
+      "bytes": 69267,
+      "sha256": "bad3506cab1a8ab8e50c2fbf67a7af9826914b488b40b5e6246ae5be996b2c77"
+    },
+    "hjab_12": {
+      "bytes": 72255,
+      "sha256": "67d744e7a2f6da4c3d52ddd6f8e7ab472d2c95997db81e1082e8fc764f0e0bbd"
+    },
+    "hjab_12.unrolled": {
+      "bytes": 440822,
+      "sha256": "190e73011f6a18d459fb97788bc02eb37593dbd2d6c5a2a1c25a87fcf2875e4c"
+    },
+    "hjab_13": {
+      "bytes": 83006,
+      "sha256": "65a82440ccd2c30530a4bb26131441a14a5388b9395f74d622edbce08c5ceb04"
+    },
+    "hjab_22": {
+      "bytes": 84950,
+      "sha256": "26abc9b7eb4409616270d38fabe3bd732a360e408a9bae6151f1785546b4ac26"
+    },
+    "hjab_22.unrolled": {
+      "bytes": 1082034,
+      "sha256": "660b06d04375700118662b3d844223f2fab60bfd563062ef3ab99de838a48523"
+    },
+    "hjab_23": {
+      "bytes": 99203,
+      "sha256": "543abb053bcf25fa24f54a609bd207d1dea3a43c57d1f88b176cafe24977c5dc"
+    },
+    "hjab_33": {
+      "bytes": 117972,
+      "sha256": "c7aaf18c8c3c7643950ac221d8a9062bc909cc8b4c2fd3d225d1fdfaf3c59898"
+    }
+  },
+  "hip": {
+    "hdq_02": {
+      "bytes": 30071,
+      "sha256": "9d9cf3a1a85f69dc8dcdfa5f7bb76f31fb0d01d44bcf42b6e6064a8733ff5c68"
+    },
+    "hdq_03": {
+      "bytes": 56446,
+      "sha256": "710e9ce04077be3aefb77099759673ac71869389cd859d36f5d9ed6d249a6884"
+    },
+    "hdq_12": {
+      "bytes": 82843,
+      "sha256": "06cbf3be9a76e17987ce62ee268e8e5a94e49cf094c00e93eb8ce27ca0d63fce"
+    },
+    "hdq_13": {
+      "bytes": 166877,
+      "sha256": "5ad353c3c84ef7d22ab579b0a7bc12d0a859bb19ef8996811dc343c4d91961ea"
+    },
+    "hdq_22": {
+      "bytes": 197439,
+      "sha256": "c56685ffc7395abf1283294f34e9b0ed5fedf6b73aac222d58249a12b50ba02a"
+    },
+    "hdq_23": {
+      "bytes": 42239,
+      "sha256": "241224724ac085cc95363632d4460f580ccbd7835c59036db2f4a7d067712f62"
+    },
+    "hdq_33": {
+      "bytes": 54937,
+      "sha256": "8229ecb6d40daa0bd00c3022c8db1e25c60c752ababd851ee014a127041ebfcc"
+    },
+    "hjab_02": {
+      "bytes": 148188,
+      "sha256": "de57eeb5292197367ba6b3464f3efedb9863ee56dafc6d81f840793a8635a5ef"
+    },
+    "hjab_03": {
+      "bytes": 69297,
+      "sha256": "2b895dcd0b331e504833dbd27afc0081a6a48bb653ce75e6c36d61de3bd04d0e"
+    },
+    "hjab_12": {
+      "bytes": 72285,
+      "sha256": "597e6f14f2a8199718115cc945395edf29e77c7268cfaf27531c0ba85ee23cce"
+    },
+    "hjab_12.unrolled": {
+      "bytes": 440852,
+      "sha256": "2ab9bbde97ed3693294cb6c4690ddeadcfe2ee8e45329bad76281d86deecdd93"
+    },
+    "hjab_13": {
+      "bytes": 83036,
+      "sha256": "73d8c7e4700d91d480b01a6489a861fa3fe9956f828624cdfee306f0f9a40bd6"
+    },
+    "hjab_22": {
+      "bytes": 84980,
+      "sha256": "dd54f426d6ab6626ec6c4fd2eb03c26dc109f899e0858325ef73720f498901e3"
+    },
+    "hjab_22.unrolled": {
+      "bytes": 1082064,
+      "sha256": "a5c4788e03f0d5af723ee6fcf3f768a8d516d504ecbe2cbbd3fe28fe18d7811b"
+    },
+    "hjab_23": {
+      "bytes": 99233,
+      "sha256": "b3a4461b437ab54741a0ac35b4f59cffb1973d920cc7a9bba3103c9e2bff821e"
+    },
+    "hjab_33": {
+      "bytes": 118002,
+      "sha256": "ec1da4e0cd6f27635b3722f6abf49133caeb2aa44594fd38cc0434390aa59865"
+    }
+  }
+}

@@ -67,6 +67,32 @@ THE PARAMETER BLOCK, `kernel_gjab`'s with the two `J`s and the Hessian:
 ROUND-OFF, NOT BITWISE, against `hessian.host.coulomb_hessian`; the bound
 is in test/test_kernel_hessian.py.
 
+THE ROLLED FORM (#690), the default from `la + lb = LOWSTACK_MIN_LSUM`.
+The densities above are straight-line text over `hermite_targets(L + 2)`
+times every row: 440 KB and 22 KB of `sm_86` stack at (pd), 1.08 MB, 50
+KB and 186 s of nvcc at (dd), ~4.8 MB at (ff) (data/measured/hjab.json).
+From the floor the kernel has the SAME name, parameters, launch and `H`
+contract and no named density:
+
+    a local HD[6 n_p1], zeroed; 21 accumulators hXY_kl
+    for each block row (a, b) (`kernel_g1e.lowstack_rows`), weight `wt`
+    from M (`lowstack_weight`):
+        F{op}[d, t] = (op E)^{a_d b_d}_t, op in "" A B AA AB BB
+                                     (`kernel_h1e.operated_value`)
+        hXY_kl += SUM_t wt PROD_d F{o_d}[d, t_d] Jp2[row, t]
+                                     21 rolled sums, Jp2 where it lies
+        HD[3 side + k, t] += wt PROD_d F{o_d}[d, t_d]   (`kernel_hdq`'s)
+    the 36 bra-bra atomics of s hXY_kl
+    for C in atoms, l, k (run-time loops):
+        H[aa, k, C, l] += s SUM_n HD[k, n] Jp1[C, l, row, n]   (and B)
+
+`HD` is the unrolled `HA`, `HB` bit for bit (`kernel_hdq`'s rolled form);
+the bra-bra sums are regrouped by row (contracted with `Jp2` per row, not
+per Hermite index), so the forms agree to rounding, and both are held to
+the host to the same bound. Below the floor the text is byte-identical to
+the form before #690; the unrolled text of the classes from it is pinned
+by digest (`<name>.unrolled`, test/golden/hessian_digests.json).
+
 A builder: vendor-neutral IR. It imports neither `ao/` nor `hessian.host`
 nor the interpreter nor `reference/`.
 """
@@ -81,10 +107,27 @@ from felizjueves.gradient.kernel_g1e import (
     derivative_reader,
     hermite_densities,
     launch_shape,
+    lowstack_differ,
+    lowstack_rows,
+    lowstack_weight,
     record_head,
     weights,
 )
+from felizjueves.hessian.kernel_h1e import (
+    COMPONENTS,
+    OPS,
+    axis_ops,
+    f_array,
+)
+from felizjueves.hessian.kernel_hdq import (
+    HD_ARRAY,
+    fill_factors,
+    first_densities,
+    rolled_terms,
+    zeroed,
+)
 from felizjueves.ir import (
+    Assign,
     AtomicAdd,
     Call,
     Decl,
@@ -109,8 +152,10 @@ from felizjueves.spec import Operator, Spec, Target
 __all__ = [
     "ATOM",
     "KINDS",
+    "LOWSTACK_MIN_LSUM",
     "ZEROED_H",
     "build_hjab_kernel",
+    "hjab_lowstack",
     "hjab_name",
     "hjab_pq1_spec",
     "hjab_pq2_spec",
@@ -122,6 +167,17 @@ __all__ = [
 ]
 
 ATOM = "c"  # the atom index of the bra-ket term, serial inside the record
+
+# The la + lb floor of the rolled default (#690): the smallest la + lb with
+# an inadmissible unrolled class in data/measured/hjab.json
+# (`devtools/measure.sh hjab-compile`, the rule declared before any row).
+LOWSTACK_MIN_LSUM: int | None = 3
+
+LOWSTACK_NOTE = (
+    "ROLLED (#690): no named density; per block row, its weight read from "
+    "M, the operated per-axis factors F{op}[d, t], the 21 bra-bra sums "
+    "against Jp2 and the six first-derivative densities into a local HD, "
+    "as rolled loops")
 
 # The second-derivative kinds: both on A, one on each, both on B.
 KINDS = ("AA", "AB", "BB")
@@ -176,6 +232,14 @@ def hjab_name(cls: Spec | tuple[int, int]) -> str:
     """The name `build_hjab_kernel(cls)` gives its kernel, unbuilt."""
     la, lb = _class(cls)
     return f"hjab_{la}{lb}"
+
+
+def hjab_lowstack(cls: Spec | tuple[int, int]) -> bool:
+    """THE SELECTION RULE (#690): True when `LOWSTACK_MIN_LSUM` is set and
+    `la + lb >= LOWSTACK_MIN_LSUM`; there `build_hjab_kernel` emits the
+    rolled form by default."""
+    la, lb = _class(cls)
+    return LOWSTACK_MIN_LSUM is not None and la + lb >= LOWSTACK_MIN_LSUM
 
 
 def _c(fn: Fn, *args: Expr) -> Call:
@@ -315,16 +379,109 @@ def _bra_ket(la: int, lb: int, names: dict) -> list[Stmt]:
     ]
 
 
+def _iadd(x: Expr, y: Expr) -> Call:
+    return _c(Fn.ADD, x, y)
+
+
+def _comp(x: str, k: int, y: str, l: int) -> str:  # noqa: E741
+    return f"h{x}{y}_{k}{l}"
+
+
+def _rolled_values(la: int, lb: int) -> list[Stmt]:
+    """THE ROLLED FORM (module docstring): the bra-bra sums against `Jp2`
+    per row, the first-derivative densities into `HD`, then the atomics
+    and the atom loop."""
+    L = la + lb
+    width = L + 3  # one axis's operated factor, t <= a_d + b_d + 2
+    n1 = n_p1(la, lb)
+    jr = Var("jr")
+
+    def elem(a, b) -> tuple[Stmt, ...]:
+        out: list[Stmt] = [
+            *lowstack_weight(la, lb),
+            *fill_factors(OPS, a, b, width, lb + 2, L + 4),
+            Note("hXY_kl += wt SUM_t PROD_d F{o_d}[d, t_d] Jp2[row, t]"),
+        ]
+        for comp in COMPONENTS:
+            acc = Var(_comp(*comp))
+
+            def body(t, e, acc=acc) -> tuple[Stmt, ...]:
+                return (Assign(acc, _c(Fn.ADD, acc, _mul(e, Index(
+                    "Jp2", (jr, ef.hermite_index(t)))))),)
+            out.append(rolled_terms(axis_ops(*comp), a, b, width, body))
+        out.append(Note("HD[3 side + k, t] += wt PROD_d (op_d E)_{t_d}: "
+                        "the first-derivative densities"))
+        out += first_densities(a, b, width, n1)
+        return tuple(out)
+
+    def h(x: Expr, k: Expr, y: Expr, l: Expr) -> Index:  # noqa: E741
+        return Index("H", (x, k, y, l))
+
+    atom = {"A": Var("aa"), "B": Var("ab")}
+    bb: list[Stmt] = [Note(_ATOMIC)]
+    for x, k, y, l in COMPONENTS:  # noqa: E741
+        v = _mul(Var("sk"), Var(_comp(x, k, y, l)))
+        bb.append(AtomicAdd(h(atom[x], Lit(k), atom[y], Lit(l)), v))
+        if x != y or k != l:  # the mirror: (B, l, A, k), or (X, l, X, k)
+            bb.append(AtomicAdd(h(atom[y], Lit(l), atom[x], Lit(k)), v))
+
+    c, ll, kk, n = Var(ATOM), Var("l"), Var("k"), Var("n")
+
+    def jp1() -> Index:
+        return Index("Jp1", (c, ll, jr, n))
+
+    def hd(side: int) -> Index:
+        return Index(HD_ARRAY, (_iadd(_mul(_iadd(kk, Lit(3 * side)),
+                                           Lit(n1)), n),))
+
+    per_k: tuple[Stmt, ...] = (
+        Decl("sA", Scalar.F64, init=Lit(0.0)),
+        Decl("sB", Scalar.F64, init=Lit(0.0)),
+        For("n", Lit(0), Lit(n1), Lit(1), (
+            Assign(Var("sA"), _c(Fn.ADD, Var("sA"), _mul(hd(0), jp1()))),
+            Assign(Var("sB"), _c(Fn.ADD, Var("sB"), _mul(hd(1), jp1()))),
+        )),
+        AtomicAdd(h(atom["A"], kk, c, ll), _mul(Var("sk"), Var("sA"))),
+        AtomicAdd(h(atom["B"], kk, c, ll), _mul(Var("sk"), Var("sB"))),
+    )
+    return [
+        Note(LOWSTACK_NOTE),
+        *lowstack_differ(la, lb),
+        *(Decl(f_array(op), Scalar.F64, (Lit(3 * width),)) for op in OPS),
+        *zeroed(HD_ARRAY, 6 * n1),
+        *(Decl(_comp(*comp), Scalar.F64, init=Lit(0.0))
+          for comp in COMPONENTS),
+        Note(f"per block row (a, b), weight wt from M; J2_t = Jp2[row, t] "
+             f"at Hermite order {L + 2}"),
+        lowstack_rows(la, lb, elem),
+        Note("the bra-bra term: 36 atomics of s hXY_kl"),
+        *bb,
+        Note(f"the bra-ket term: J1^(C,l)_t = Jp1[C, l, row, t] at Hermite "
+             f"order {L + 1}, every atom C serially, l and k at run time"),
+        For(ATOM, Lit(0), Var("n_atom"), Lit(1), (
+            For("l", Lit(0), Lit(3), Lit(1), (
+                For("k", Lit(0), Lit(3), Lit(1), per_k),)),)),
+    ]
+
+
 def build_hjab_kernel(cls: Spec | tuple[int, int], *,
-                      name: str | None = None) -> Kernel:
+                      name: str | None = None,
+                      lowstack: bool | None = None) -> Kernel:
     """The Coulomb-energy Hessian kernel of one bra pair class.
 
     `cls` is a d2 `Target.JAB` `Spec` or `(la, lb)`. See the module
-    docstring.
+    docstring. `lowstack` picks the form: `None` (the default) is
+    `hjab_lowstack(cls)`, `True` / `False` force either at any class. Both
+    forms have the same name, parameters, launch and `H` contract.
     """
     la, lb = _class(cls)
+    if lowstack is None:
+        lowstack = hjab_lowstack(cls)
     head = record_head(la + 2, lb + 2, interleaved=True)
     head.append(Decl("jr", Scalar.I32, init=Index("row", (Var(REC),))))
+    if lowstack:
+        return _kernel(la, lb, (*head, *_rolled_values(la, lb)), name,
+                       ", ROLLED")
     E = axis_reader(la + 2, lb + 2)
     pool = Locals()
     first = {"A": derivative_reader(E, pool, "A"),
@@ -339,8 +496,13 @@ def build_hjab_kernel(cls: Spec | tuple[int, int], *,
                     "read"),
                *pool.decls, *d2, *d1, *_bra_bra(la, lb, names2),
                *_bra_ket(la, lb, names1))
+    return _kernel(la, lb, per_rec, name, "")
+
+
+def _kernel(la: int, lb: int, per_rec: tuple[Stmt, ...], name: str | None,
+            form: str) -> Kernel:
     body: tuple[Stmt, ...] = (
-        Note(f"Hessian of E_J, bra class (la, lb) = ({la}, {lb}): "
+        Note(f"Hessian of E_J, bra class (la, lb) = ({la}, {lb}){form}: "
              "H[A, k, B, l] += d2 E_J / dR_{A,k} dR_{B,l} "
              "(felizjueves.hessian)"),
         Note(ZEROED_H),
