@@ -3947,16 +3947,21 @@ RULES |= {
            "hessian.kernel_hkx": "the kernel is what this module checks"}),
     "hdq_builder": _rule(
         "kernel_hdq.py: the ket derivative-density kernel -- key -> IR, "
-        "`kernel_g1e`'s record head, weights and Hermite densities reused",
-        ("spec", "=ir", "plan", "gradient.kernel_g1e"),
+        "`kernel_g1e`'s record head, weights and Hermite densities reused; "
+        "the rolled form (#690) `kernel_h1e`'s operated factors and "
+        "`e_fragment`'s Hermite index",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "gradient.kernel_g1e",
+         "hessian.kernel_h1e"),
         ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
                              "gradient.host": _HESS_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
     "hjab_builder": _rule(
         "kernel_hjab.py: the Coulomb-energy Hessian kernel -- key -> IR, "
         "`kernel_g1e`'s record head, readers, weights and Hermite densities "
-        "reused, the block rows of `e_fragment`",
-        ("spec", "=ir", "plan", "mmd.e_fragment", "gradient.kernel_g1e"),
+        "reused, the block rows of `e_fragment`; the rolled form (#690) "
+        "`kernel_h1e`'s operated factors and `kernel_hdq`'s rolled densities",
+        ("spec", "=ir", "plan", "mmd.e_fragment", "gradient.kernel_g1e",
+         "hessian.kernel_h1e", "hessian.kernel_hdq"),
         ao=_HESS_WITNESS, **{"hessian.host": _HESS_WITNESS,
                              "gradient.host": _HESS_WITNESS},
         reference=_GROUND_TRUTH, **_NO_MACHINE),
@@ -3986,9 +3991,10 @@ EDGES |= {k: frozenset(v) for k, v in {
     "hessian": (),
     "hessian.host": ("ao.density", "ao.pairs", "ao.shell", "gradient.host",
                      "mmd.hermite", "one_electron.potential"),
-    "hessian.kernel_hdq": ("gradient.kernel_g1e", "ir", "plan.targets",
-                           "spec"),
-    "hessian.kernel_hjab": ("gradient.kernel_g1e", "ir", "mmd.e_fragment",
+    "hessian.kernel_hdq": ("gradient.kernel_g1e", "hessian.kernel_h1e",
+                           "ir", "mmd.e_fragment", "plan.targets", "spec"),
+    "hessian.kernel_hjab": ("gradient.kernel_g1e", "hessian.kernel_h1e",
+                            "hessian.kernel_hdq", "ir", "mmd.e_fragment",
                             "plan.targets", "spec"),
     # #691: the rolled form reuses kernel_gk's compact tables and rolled sums
     "hessian.kernel_hkx": ("eri.k_exchange.kernel_k",
