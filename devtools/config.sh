@@ -371,10 +371,17 @@ ROCM_IMAGE=${ROCM_IMAGE:-${PROJECT_NAME}:hip}
 # resolve it through VENV_PATHS below instead.
 TEST_CMD=${TEST_CMD:-pytest}
 
-# Default xdist worker count. 8 rather than `auto` on purpose: several worktree
-# containers can be up at once, and `auto` in each would claim every core on
-# the box. Set to empty to drop the -n flag entirely.
-JOBS=${JOBS:-8}
+# Default xdist worker count: the cores this process may run on, capped at 8.
+# The cap rather than `auto` on purpose: several worktree containers can be up
+# at once, and `auto` in each would claim every core on the box. The core
+# count because more workers than cores is slower, not free: each worker
+# collects the whole suite and they contend for the same cores -- on a 4-core
+# Claude cloud container the fast tier took 5m22s at 8 workers and 4m51s at
+# 4, back to back (2026-10-31). `nproc` honours the affinity mask (CPUSET
+# below, a container's cpuset). Set to empty to drop the -n flag entirely.
+_fj_cores=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 8)
+JOBS=${JOBS:-$(( _fj_cores < 8 ? _fj_cores : 8 ))}
+unset _fj_cores
 
 # The xdist scheduler, passed as `--dist` beside JOBS; empty = xdist's own
 # default (`load`). `worksteal` because the suite's cost is lopsided -- a few

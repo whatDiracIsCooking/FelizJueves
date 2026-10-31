@@ -126,7 +126,7 @@ Nothing that emits kernel text may import this module.
 from __future__ import annotations
 
 import math
-from functools import cache
+from functools import cache, lru_cache
 
 import numpy as np
 
@@ -182,6 +182,26 @@ def asymptote(m: int, T: float) -> float:
 
 
 def boys(m: int, T: float, *, nodes: int = NODES) -> float:
+    """F_m(T), as `_boys` below; an exact `(int, float)` call is memoised.
+
+    The interpreter's pins inject this as `boys=` and call it once per order
+    per thread, with the same handful of T a geometry gives, millions of
+    times a test run. A pure function of its arguments, so a cached value is
+    the float a fresh call returns. Only an exact `int` m and `float` T are
+    keyed (a numpy scalar hashes equal to a float but need not compute the
+    same, a bool is refused below); the rest, and every refusal, run uncached.
+    """
+    if type(m) is int and type(T) is float and type(nodes) is int:
+        return _boys_cached(m, T, nodes)
+    return _boys(m, T, nodes=nodes)
+
+
+@lru_cache(maxsize=1 << 17)
+def _boys_cached(m: int, T: float, nodes: int) -> float:
+    return _boys(m, T, nodes=nodes)
+
+
+def _boys(m: int, T: float, *, nodes: int = NODES) -> float:
     """F_m(T) = integral_0^1 t^(2m) exp(-t^2 T) dt: Gauss-Legendre on [0, 1]
     below T_SWITCH, the asymptote from T_SWITCH to T_MAX, refused past it.
 

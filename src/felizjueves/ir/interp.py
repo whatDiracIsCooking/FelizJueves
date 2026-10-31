@@ -201,8 +201,44 @@ def _mixed(what: str) -> InterpError:
     return InterpError(f"{what}: F32 meets F64 without TO_F32 / TO_F64")
 
 
+# Hot-path constants. The interpreter's time is spent in a few functions run
+# tens of millions of times per fast-tier run, where an enum attribute read,
+# an enum hash or a dataclass construction costs more than the arithmetic
+# itself. Every fast path below is taken only for EXACT types (`type(x) is`,
+# never `isinstance`) and computes what the general path would, in the same
+# operation order; anything else -- a subclass such as `Member`, an F32, a
+# mixed pair, every error -- falls through to the general code unchanged.
+_ADD, _SUB, _MUL, _DIV, _LT = Fn.ADD, Fn.SUB, Fn.MUL, Fn.DIV, Fn.LT
+_TO_F32, _TO_F64, _SQRT, _EXP = Fn.TO_F32, Fn.TO_F64, Fn.SQRT, Fn.EXP
+_F64, _I32 = Scalar.F64, Scalar.I32
+_ONE = Factor.ONE
+
+
 def _arith(fn: Fn, a: int | float, b: int | float) -> int | float:
     """ADD SUB MUL DIV LT on two values, in the type C would compute them in."""
+    ta, tb = type(a), type(b)
+    if ta is float and tb is float:  # F64 op F64, the common case
+        if fn is _MUL:
+            return a * b
+        if fn is _ADD:
+            return a + b
+        if fn is _SUB:
+            return a - b
+        if fn is _LT:
+            return int(a < b)
+    elif ta is int and tb is int:  # I32 op I32 (DIV keeps the general path)
+        if fn is _ADD:
+            return _check_i32(a + b)
+        if fn is _MUL:
+            return _check_i32(a * b)
+        if fn is _SUB:
+            return _check_i32(a - b)
+        if fn is _LT:
+            return int(a < b)
+    return _arith_general(fn, a, b)
+
+
+def _arith_general(fn: Fn, a: int | float, b: int | float) -> int | float:
     ka, kb = _kind(a, fn.name), _kind(b, fn.name)
     if Scalar.F32 in (ka, kb):
         if Scalar.F64 in (ka, kb):
@@ -285,6 +321,9 @@ class _Break(Exception):
     pass
 
 
+_UNBOUND = object()  # `_Thread._shadowed`: the name was not visible before
+
+
 def _bound_scalar(v: Any, name: str) -> _Scalar:
     """A scalar bind's slot: typed by its value, as `Lit` types a literal."""
     v = _number(v)
@@ -317,6 +356,12 @@ def _check_i32(v: int) -> int:
 def _coerce(type_: Scalar, v: Any, what: str) -> int | float:
     """Store `v` into a `type_` slot: int widens into F64 (exact) or F32
     (rounded); float never into I32; F32 and F64 never into each other."""
+    t = type(v)
+    if type_ is _F64:
+        if t is float:
+            return v
+    elif type_ is _I32 and t is int:
+        return _check_i32(v)
     k = _kind(v, what)
     if type_ is Scalar.F64:
         if k is Scalar.F32:
@@ -346,17 +391,43 @@ class _Thread:
     def __init__(self, interp: Interpreter, globals_: dict[str, Any],
                  shared: dict[str, _Array], geometry: dict[Fn, int]) -> None:
         self.interp = interp
+        # The scope chain, innermost last: each dict holds the names that
+        # scope declared (what "declared twice in one scope" is checked
+        # against). `env` is the chain flattened -- every name to its
+        # innermost slot -- so a lookup is one dict read however deep the
+        # nest; `_shadowed[i]` is what scope i's declarations hid in `env`
+        # (or _UNBOUND), restored by `pop`. Change the chain only through
+        # `push`, `pop`, `declare` and `inline`'s swap, which keep the two
+        # in step.
         self.scopes: list[dict[str, Any]] = [globals_]
+        self.env: dict[str, Any] = dict(globals_)
+        self._shadowed: list[dict[str, Any]] = [{}]
         self.shared = shared
         self.geometry = geometry
+        # The same map keyed by id(): an `Fn` hashes in Python (enum.py),
+        # and `call` asks it once per Call evaluated.
+        self._geometry = {id(fn): v for fn, v in geometry.items()}
 
     # --- names ------------------------------------------------------------
 
+    def value(self, name: str) -> int | float:
+        """`load(Var(name))` without building the `Var`: the scalar's value,
+        with `lookup`'s, `scalar`'s and `load`'s errors."""
+        slot = self.env.get(name)  # slots are never None
+        if slot is None:
+            raise InterpError(f"{name!r} is not bound")
+        if type(slot) is not _Scalar:
+            raise InterpError(f"{name!r} is an array, used as a scalar")
+        v = slot.value
+        if v is None:
+            raise InterpError(f"{name!r} read before it was written")
+        return v
+
     def lookup(self, name: str) -> Any:
-        for scope in reversed(self.scopes):
-            if name in scope:
-                return scope[name]
-        raise InterpError(f"{name!r} is not bound")
+        slot = self.env.get(name)
+        if slot is None:
+            raise InterpError(f"{name!r} is not bound")
+        return slot
 
     def scalar(self, name: str) -> _Scalar:
         slot = self.lookup(name)
@@ -375,21 +446,72 @@ class _Thread:
         if name in scope:
             raise InterpError(f"{name!r} declared twice in one scope")
         scope[name] = slot
+        self._shadowed[-1][name] = self.env.get(name, _UNBOUND)
+        self.env[name] = slot
+
+    def push(self, scope: dict[str, Any] | None = None) -> None:
+        """Open a scope (empty, or `scope`'s names declared into it)."""
+        self.scopes.append({})
+        self._shadowed.append({})
+        for name, slot in (scope or {}).items():
+            self.declare(name, slot)
+        if scope is not None:
+            self.scopes[-1] = scope  # the caller's dict, read back after
+
+    def pop(self) -> None:
+        """Close the innermost scope, unhiding what it shadowed."""
+        self.scopes.pop()
+        env = self.env
+        for name, hidden in self._shadowed.pop().items():
+            if hidden is _UNBOUND:
+                del env[name]
+            else:
+                env[name] = hidden
 
     # --- expressions ------------------------------------------------------
 
     def subscript(self, e: Index) -> tuple[_Array, tuple[int, ...]]:
         arr = self.array(e.array)
-        at = tuple(self.eval(i) for i in e.at)
-        if any(type(i) is not int for i in at):
-            raise InterpError(f"{e.array}: subscript {at} is not all I32")
+        at = tuple([self.eval(i) for i in e.at])
+        for i in at:
+            if type(i) is not int:
+                raise InterpError(f"{e.array}: subscript {at} is not all I32")
         shape = arr.data.shape
-        if len(at) != len(shape) or any(not 0 <= i < n for i, n in
-                                        zip(at, shape, strict=True)):
+        if len(at) != len(shape):
             raise InterpError(f"{e.array}{list(at)} outside shape {shape}")
+        for i, n in zip(at, shape, strict=True):
+            if not 0 <= i < n:
+                raise InterpError(f"{e.array}{list(at)} outside shape {shape}")
+        return arr, at
+
+    def _at(self, e: Index) -> tuple[_Array, tuple[int, ...]] | None:
+        """`subscript`'s answer when every check passes, else None (and the
+        caller re-runs `subscript` for its error: expressions are pure)."""
+        arr = self.env.get(e.array)
+        if type(arr) is not _Array:
+            return None
+        at = tuple([self.eval(i) for i in e.at])
+        shape = arr.data.shape
+        if len(at) != len(shape):
+            return None
+        for i, n in zip(at, shape, strict=True):
+            if type(i) is not int or not 0 <= i < n:
+                return None
         return arr, at
 
     def load(self, e: Var | Index) -> int | float:
+        if type(e) is Var:
+            return self.value(e.name)
+        if type(e) is Index:
+            got = self._at(e)
+            if got is not None:
+                arr, at = got
+                if arr.written is None or arr.written[at]:
+                    ty = arr.type
+                    if ty is _F64:
+                        return float(arr.data[at])
+                    if ty is _I32:
+                        return int(arr.data[at])
         if isinstance(e, Var):
             slot = self.scalar(e.name)
             if slot.value is None:
@@ -416,6 +538,35 @@ class _Thread:
             arr.written[at] = True
 
     def eval(self, e: Expr) -> int | float:
+        t = type(e)
+        if t is Var:
+            slot = self.env.get(e.name)
+            if type(slot) is _Scalar:
+                v = slot.value
+                if v is not None:
+                    return v
+            return self.value(e.name)  # its error
+        if t is Lit:
+            return e.value
+        if t is Call:
+            args = e.args
+            if len(args) == 2:  # ADD SUB MUL DIV LT; no geometry Fn has args
+                a = self.eval(args[0])
+                b = self.eval(args[1])
+                if type(a) is float and type(b) is float:
+                    fn = e.fn
+                    if fn is _MUL:
+                        return a * b
+                    if fn is _ADD:
+                        return a + b
+                    if fn is _SUB:
+                        return a - b
+                return _arith(e.fn, a, b)
+            return self.call(e)
+        if t is Index:
+            return self.load(e)
+        if t is Weighted:
+            return self.weighted(e)
         if isinstance(e, Lit):
             return e.value
         if isinstance(e, (Var, Index)):
@@ -438,6 +589,34 @@ class _Thread:
             return self.call(e)
         raise InterpError(f"not an Expr: {e!r}")  # pragma: no cover
 
+    def weighted(self, e: Weighted) -> int | float:
+        """`eval` of an exact `Weighted`: the general branch's terms, read
+        without building a `Var` per factor (each one re-ran the identifier
+        check), and its F64 sum when no term is F32."""
+        terms = []
+        f32 = f64 = False
+        for t in e.terms:
+            g = t.g
+            gv = None if g is _ONE else self.value(g._value_)
+            sv = self.load(t.src)
+            for v in (gv, sv):
+                tv = type(v)
+                if tv is float:
+                    f64 = True
+                elif tv is F32:
+                    f32 = True
+                elif tv is not int and v is not None:
+                    _kind(v, "a Weighted term")  # raises
+            terms.append((t.c, gv, sv))
+        if f32:
+            if f64:
+                raise _mixed("a Weighted sum")
+            return self.weighted32(terms)
+        acc = 0.0
+        for c, g, src in terms:
+            acc += float(c) * float(1.0 if g is None else g) * float(src)
+        return acc
+
     @staticmethod
     def weighted32(terms: list) -> F32:
         """An F32 `Weighted`, rounded as the emitted `((c * g) * src)` terms
@@ -452,9 +631,12 @@ class _Thread:
 
     def call(self, e: Call) -> int | float:
         fn = e.fn
-        if fn in self.geometry:
-            return self.geometry[fn]
+        geo = self._geometry.get(id(fn))
+        if geo is not None:
+            return geo
         args = [self.eval(a) for a in e.args]
+        if len(args) == 2:
+            return _arith(fn, args[0], args[1])
         if fn is Fn.TO_F32:
             (x,) = args
             if _kind(x, fn.name) is Scalar.F32:
@@ -479,15 +661,29 @@ class _Thread:
     # --- statements -------------------------------------------------------
 
     def run(self, body: tuple[Stmt, ...]) -> Generator[Any, Any, None]:
+        # The statements that never yield run here, exactly as `stmt` runs
+        # them, without a generator each (one per Decl was most of the cost).
+        # `AtomicAdd` and everything else still go through `self.stmt`, which
+        # a test may wrap (test_f_lever_block_fab.py's recorder).
         for s in body:
-            yield from self.stmt(s)
+            t = type(s)
+            if t is Assign:
+                self.store(s.dst, self.eval(s.value))
+            elif t is Decl:
+                self.decl(s)
+            elif t is For:
+                yield from self.loop(s)
+            elif t is If:
+                yield from self.block(s.then if self.eval(s.cond) else s.orelse)
+            elif t is not Note:
+                yield from self.stmt(s)
 
     def block(self, body: tuple[Stmt, ...]) -> Generator[Any, Any, None]:
-        self.scopes.append({})
+        self.push()
         try:
             yield from self.run(body)
         finally:
-            self.scopes.pop()
+            self.pop()
 
     def stmt(self, s: Stmt) -> Generator[Any, Any, None]:
         if isinstance(s, Note):
@@ -575,11 +771,13 @@ class _Thread:
                 binds[name] = self.array(e.name)  # an alias: writes reach the host
             else:
                 binds[name] = _bound_scalar(self.eval(e), name)
-        host, self.scopes = self.scopes, [binds, {}]
+        host = self.scopes, self.env, self._shadowed
+        self.scopes, self.env, self._shadowed = [binds], dict(binds), [{}]
+        self.push()
         try:
             yield from self.run(frag.body)
         finally:
-            self.scopes = host
+            self.scopes, self.env, self._shadowed = host
 
     def decl(self, s: Decl) -> None:
         if not s.shape:
@@ -605,12 +803,17 @@ class _Thread:
         self.declare(s.name, arr)
 
     def loop(self, s: For) -> Generator[Any, Any, None]:
-        self.scopes.append({})
+        self.push()
         try:
-            self.declare(s.var, _Scalar(Scalar.I32, _coerce(
-                Scalar.I32, self.eval(s.start), s.var)))
-            while self.eval(Var(s.var)) < self.eval(s.stop):
-                self.interp.iterations[s.var] += 1
+            # The loop variable's slot, read and written directly: the body
+            # runs in a scope of its own, popped before each test, so a
+            # lookup of `s.var` here always finds this slot.
+            slot = _Scalar(Scalar.I32, _coerce(
+                Scalar.I32, self.eval(s.start), s.var))
+            self.declare(s.var, slot)
+            iterations = self.interp.iterations
+            while slot.value < self.eval(s.stop):
+                iterations[s.var] += 1
                 try:
                     yield from self.block(s.body)
                 except _Break:
@@ -618,9 +821,9 @@ class _Thread:
                 step = self.eval(s.step)
                 if type(step) is not int or step <= 0:
                     raise InterpError(f"For {s.var}: step {step!r} is not > 0")
-                self.store(Var(s.var), _check_i32(self.eval(Var(s.var)) + step))
+                slot.value = _check_i32(slot.value + step)
         finally:
-            self.scopes.pop()
+            self.pop()
 
 
 # ---------------------------------------------------------------------------
@@ -867,7 +1070,7 @@ def interpret_fragment(fragment: Fragment, *,
                 Fn.BLOCK_DIM_X: 1, Fn.BLOCK_DIM_Y: 1}
     thread = _Thread(_Alone(boys), binds, {}, geometry)  # type: ignore[arg-type]
     local: dict[str, Any] = {}
-    thread.scopes.append(local)
+    thread.push(local)
     for at in thread.run(fragment.body):
         if isinstance(at[0], Barrier):
             raise InterpError("Barrier in a fragment run alone: there is no "
